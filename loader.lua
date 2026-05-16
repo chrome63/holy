@@ -1,45 +1,43 @@
--- Holy Loader
+-- Holy Loader Debug
 
-local URLS = {
-    "https://raw.githubusercontent.com/bencapalot041/holy/main/HolyV3.lua?v=" .. tostring(os.time()),
-}
+local MAIN_URL =
+    "https://raw.githubusercontent.com/bencapalot041/holy/main/HolyV3.lua?v="
+    .. tostring(os.time())
 
-local lastError =
-    nil
+print("[HOLY LOADER] Fetching:", MAIN_URL)
 
-for _, url in ipairs(URLS) do
+local ok, source =
+    pcall(function()
+        return game:HttpGet(MAIN_URL, true)
+    end)
 
-    local ok, source =
-        pcall(function()
-            return game:HttpGet(url, true)
-        end)
-
-    if ok
-    and type(source) == "string"
-    and #source > 100 then
-
-        local fn, compileErr =
-            loadstring(source)
-
-        if fn then
-
-            local okRun, runtimeErr =
-                pcall(fn)
-
-            if okRun then
-                return
-            end
-
-            lastError =
-                runtimeErr
-        else
-            lastError =
-                compileErr
-        end
-    else
-        lastError =
-            source
-    end
+if not ok then
+    error("[HOLY LOADER] HttpGet failed: " .. tostring(source))
 end
 
-error("[HOLY] Loader failed: " .. tostring(lastError))
+if type(source) ~= "string" then
+    error("[HOLY LOADER] Source is not string: " .. typeof(source))
+end
+
+print("[HOLY LOADER] Loaded bytes:", #source)
+print("[HOLY LOADER] First 80 chars:", string.sub(source, 1, 80))
+
+local fn, compileErr =
+    loadstring(source)
+
+if not fn then
+    error("[HOLY LOADER] Compile failed: " .. tostring(compileErr))
+end
+
+print("[HOLY LOADER] Compile OK, running...")
+
+local okRun, runtimeErr =
+    xpcall(fn, function(err)
+        return tostring(err) .. "\n" .. debug.traceback()
+    end)
+
+if not okRun then
+    error("[HOLY LOADER] Runtime failed:\n" .. tostring(runtimeErr))
+end
+
+print("[HOLY LOADER] Runtime OK")
