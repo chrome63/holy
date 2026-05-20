@@ -1884,7 +1884,7 @@ if petName == "Seal"
 or petName == "Mimic Octopus"
 or petName == "Ghostly Spider"
 or petName == "Rainbow Dilophosaurus" then
-    
+
 end
 
 local mutationText =
@@ -3841,7 +3841,7 @@ function SendMarketTrackerWebhookNow(listing)
         .. "\n"
         .. "**BaseWeight:** "
         .. FormatMarketTrackerBaseWeight(baseWeight)
-        .. " BW"
+        .. " KG"
         .. "\n\n"
         .. "**Server:**\n"
         .. "[Open Game]("
