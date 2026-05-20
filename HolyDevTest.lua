@@ -3932,11 +3932,7 @@ function SendMarketTrackerWebhookNow(listing)
         .. "```lua\n"
         .. serverCopy
         .. "\n```"
-        .. "\n"
-        .. "**App Link:**\n"
-        .. "```lua\n"
-        .. appJoinLink
-        .. "\n```"
+        
 
     local payload = {
         embeds = {{
