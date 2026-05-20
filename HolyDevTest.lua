@@ -1221,17 +1221,36 @@ MarketTrackerWebhook = {
 
 MarketTrackerTargets = {
 
-    -- Rare / premium pets:
-    -- Send regardless of KG.
-    -- Ping only if price is <= PingBelow.
+    --==================================================
+    -- RARE / PREMIUM PETS
+    -- These send regardless of KG.
+    -- Price only controls color + ping.
+    --==================================================
+
     ["Ghostly Spider"] = {
         Type = "Rare",
         Emoji = "🕷️",
 
-        MaxPrice = 100000,
+        -- <= SnipePrice  = 🔥 Snipe / bright green / role ping
+        -- <= GoodPrice   = ✅ Good / green
+        -- <= MaxPrice    = ⚖️ Fair / yellow
+        -- > MaxPrice     = ❌ Overpriced / red
+        MaxPrice = 50000,
         GoodPrice = 30000,
-        SnipePrice = 20000,
+        SnipePrice = 30000,
         PingBelow = 20000,
+
+        MinWeight = 0,
+    },
+
+    ["Rainbow Elephant"] = {
+        Type = "Rare",
+        Emoji = "🐘",
+
+        MaxPrice = 500000,
+        GoodPrice = 250000,
+        SnipePrice = 100000,
+        PingBelow = 100000,
 
         MinWeight = 0,
     },
@@ -1240,10 +1259,10 @@ MarketTrackerTargets = {
         Type = "Rare",
         Emoji = "🐦",
 
-        MaxPrice = 150000,
-        GoodPrice = 100000,
-        SnipePrice = 65000,
-        PingBelow = 65000,
+        MaxPrice = 50000,
+        GoodPrice = 40000,
+        SnipePrice = 30000,
+        PingBelow = 30000,
 
         MinWeight = 0,
     },
@@ -1260,16 +1279,44 @@ MarketTrackerTargets = {
         MinWeight = 0,
     },
 
-    -- Normal pets:
-    -- Only send if KG is high enough.
+    ["Blue Whale"] = {
+        Type = "Rare",
+        Emoji = "🐋",
+
+        MaxPrice = 50000,
+        GoodPrice = 20000,
+        SnipePrice = 15000,
+        PingBelow = 15000,
+
+        MinWeight = 0,
+    },
+
+    ["Albino Peacock"] = {
+        Type = "Rare",
+        Emoji = "🦚",
+
+        MaxPrice = 50000,
+        GoodPrice = 20000,
+        SnipePrice = 15000,
+        PingBelow = 15000,
+
+        MinWeight = 0,
+    },
+
+    --==================================================
+    -- WEIGHT PETS
+    -- These only send if KG >= MinWeight.
+    -- Good for normal pets where size matters.
+    --==================================================
+
     ["Seal"] = {
         Type = "Weight",
         Emoji = "🦭",
 
-        MaxPrice = 100000,
-        GoodPrice = 15000,
-        SnipePrice = 10000,
-        PingBelow = 10000,
+        MaxPrice = 25000,
+        GoodPrice = 20000,
+        SnipePrice = 15000,
+        PingBelow = 15000,
 
         MinWeight = 80,
     },
@@ -1281,7 +1328,7 @@ MarketTrackerTargets = {
         MaxPrice = 10000,
         GoodPrice = 6000,
         SnipePrice = 3000,
-        PingBelow = 5000,
+        PingBelow = 3000,
 
         MinWeight = 100,
     },
