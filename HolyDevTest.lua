@@ -1227,9 +1227,8 @@ MarketTrackerTargets = {
     ["Blue Whale"] = true,
     ["Rainbow Griffin"] = true,
     ["Festive Moose"] = true,
-    ["Raccoon"] = true,
-    ["Kitsune"] = true,
-    ["Seal"] = true,
+    ["Ghostly Spider"] = true,
+    ["Ghostly Headless Horseman"] = true,
 }
 --==================================================
 -- TOKEN FAILURE + BOOTH SALE DETECTION
