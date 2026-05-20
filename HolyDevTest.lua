@@ -1189,6 +1189,40 @@ GlobalBoothSaleWebhook = {
     LastSend = 0,
     SendDelay = 1.25,
 }
+
+--==================================================
+-- GLOBAL MARKET TRACKER WEBHOOK
+-- Sends rare market finds when any scanned booth lists
+-- an exact tracked pet name.
+-- Exact pet names only:
+-- "Rainbow Birb" matches PetName == "Rainbow Birb"
+-- It does NOT match PetName == "Birb" + Mutation == "Rainbow".
+--==================================================
+
+MarketTrackerWebhook = {
+    Enabled = true,
+
+    -- Put your Market Tracker Discord webhook here.
+    URL = "https://discord.com/api/webhooks/1461800728174526475/cliNh1mRSwNHyMKMJ5o0MqxAQY8FgvVwuI9YYFDT4z4VVwS7rcv-vHuh8kdRUU1nNx8y",
+
+    Queue = {},
+    Sending = false,
+
+    LastSend = 0,
+    SendDelay = 1.25,
+
+    -- Prevents the same listing from being sent repeatedly.
+    SentListings = {},
+    DedupeSeconds = 600,
+
+    LastCleanup = 0,
+    CleanupInterval = 120,
+}
+
+MarketTrackerTargets = {
+    ["Rainbow Birb"] = true,
+    ["Ghostly Spider"] = true,
+}
 --==================================================
 -- TOKEN FAILURE + BOOTH SALE DETECTION
 --==================================================
@@ -3216,6 +3250,583 @@ task.spawn(function()
             false
     end
 end)
+
+--==================================================
+-- GLOBAL MARKET TRACKER WEBHOOK
+-- Exact pet-name market discovery tracker.
+--==================================================
+
+function NormalizeMarketTrackerName(value)
+
+    return tostring(value or "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+function IsMarketTrackerTarget(petName)
+
+    petName =
+        NormalizeMarketTrackerName(petName)
+
+    if petName == "" then
+        return false
+    end
+
+    return MarketTrackerTargets
+        and MarketTrackerTargets[petName] == true
+end
+
+function BuildMarketTrackerListingKey(listing)
+
+    if type(listing) ~= "table" then
+        return ""
+    end
+
+    return tostring(game.JobId)
+        .. ":"
+        .. tostring(listing.BoothId or "UnknownBooth")
+        .. ":"
+        .. tostring(listing.UID or "UnknownUID")
+end
+
+function CleanupMarketTrackerDedupe()
+
+    if type(MarketTrackerWebhook) ~= "table" then
+        return
+    end
+
+    MarketTrackerWebhook.SentListings =
+        MarketTrackerWebhook.SentListings
+        or {}
+
+    local now =
+        os.clock()
+
+    local lastCleanup =
+        SafeNumber(
+            MarketTrackerWebhook.LastCleanup,
+            0
+        )
+
+    local cleanupInterval =
+        SafeNumber(
+            MarketTrackerWebhook.CleanupInterval,
+            120
+        )
+
+    if now - lastCleanup < cleanupInterval then
+        return
+    end
+
+    MarketTrackerWebhook.LastCleanup =
+        now
+
+    local dedupeSeconds =
+        SafeNumber(
+            MarketTrackerWebhook.DedupeSeconds,
+            600
+        )
+
+    for key, sentAt in pairs(MarketTrackerWebhook.SentListings) do
+
+        sentAt =
+            tonumber(sentAt)
+
+        if not sentAt
+        or now - sentAt > dedupeSeconds then
+            MarketTrackerWebhook.SentListings[key] =
+                nil
+        end
+    end
+end
+
+function HasMarketTrackerSentListing(listing)
+
+    local key =
+        BuildMarketTrackerListingKey(listing)
+
+    if key == "" then
+        return true
+    end
+
+    CleanupMarketTrackerDedupe()
+
+    local sentAt =
+        MarketTrackerWebhook.SentListings
+        and MarketTrackerWebhook.SentListings[key]
+
+    if not sentAt then
+        return false
+    end
+
+    local dedupeSeconds =
+        SafeNumber(
+            MarketTrackerWebhook.DedupeSeconds,
+            600
+        )
+
+    return os.clock() - SafeNumber(sentAt, 0)
+        < dedupeSeconds
+end
+
+function MarkMarketTrackerListingSent(listing)
+
+    local key =
+        BuildMarketTrackerListingKey(listing)
+
+    if key == "" then
+        return false
+    end
+
+    MarketTrackerWebhook.SentListings =
+        MarketTrackerWebhook.SentListings
+        or {}
+
+    MarketTrackerWebhook.SentListings[key] =
+        os.clock()
+
+    return true
+end
+
+function FormatMarketTrackerNumber(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "Unknown"
+    end
+
+    number =
+        math.floor(number)
+
+    local text =
+        tostring(number)
+
+    local left, num, right =
+        string.match(
+            text,
+            "^([^%d]*%d)(%d*)(.-)$"
+        )
+
+    if not left then
+        return text
+    end
+
+    return left
+        .. (
+            num:reverse()
+                :gsub("(%d%d%d)", "%1,")
+                :reverse()
+        )
+        .. right
+end
+
+function FormatMarketTrackerWeightKG(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "Unknown"
+    end
+
+    return string.format(
+        "%.2f KG",
+        number
+    )
+end
+
+function FormatMarketTrackerBaseWeight(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "Unknown"
+    end
+
+    return string.format(
+        "%.2f",
+        number
+    )
+end
+
+function SendMarketTrackerWebhookNow(listing)
+
+    if type(MarketTrackerWebhook) ~= "table"
+    or MarketTrackerWebhook.Enabled ~= true then
+        return false
+    end
+
+    if type(listing) ~= "table" then
+        return false
+    end
+
+    local webhookUrl =
+        tostring(MarketTrackerWebhook.URL or "")
+            :gsub("%s+", "")
+
+    if webhookUrl == ""
+    or webhookUrl == "PUT_MARKET_TRACKER_WEBHOOK_HERE" then
+        warn("[MARKET TRACKER] Webhook URL missing")
+        return false
+    end
+
+    RequestFunction =
+        RequestFunction
+        or syn and syn.request
+        or http_request
+        or request
+        or (http and http.request)
+        or (fluxus and fluxus.request)
+
+    if not RequestFunction then
+        warn("[MARKET TRACKER] No request function available")
+        return false
+    end
+
+    local petName =
+        tostring(listing.PetName or "Unknown")
+
+    local sellerName =
+        tostring(listing.Seller or "Unknown")
+
+    if listing.SellerUserId then
+        sellerName =
+            ResolveSeller(listing.SellerUserId)
+    end
+
+    local priceText =
+        FormatMarketTrackerNumber(
+            listing.Price
+        )
+
+    local displayWeight =
+        tonumber(listing.DisplayWeight)
+        or tonumber(listing.Weight)
+
+    local baseWeight =
+        tonumber(listing.BaseWeight)
+
+    local age =
+        tonumber(listing.Age)
+
+    local deepLink =
+        "roblox://placeId="
+        .. tostring(TRADING_WORLD_PLACE_ID)
+        .. "&gameInstanceId="
+        .. tostring(game.JobId)
+
+    local serverCopy =
+        tostring(TRADING_WORLD_PLACE_ID)
+        .. ":"
+        .. tostring(game.JobId)
+
+    local description =
+        "**Pet:** "
+        .. tostring(petName)
+        .. "\n"
+        .. "**Seller:** "
+        .. tostring(sellerName)
+        .. "\n"
+        .. "**Listed Price:** "
+        .. tostring(priceText)
+        .. " tokens"
+        .. "\n\n"
+        .. "**Server:**\n"
+        .. "[Open Game]("
+        .. deepLink
+        .. ")"
+        .. "\n"
+        .. "**Copy:**\n"
+        .. "```lua\n"
+        .. serverCopy
+        .. "\n```"
+
+    local payload = {
+        embeds = {{
+
+            title =
+                "🔎 Market Tracker Found",
+
+            description =
+                description,
+
+            color =
+                0x5865F2,
+
+            fields = {
+
+                {
+                    name = "Weight",
+                    value =
+                        FormatMarketTrackerWeightKG(
+                            displayWeight
+                        ),
+                    inline = true,
+                },
+
+                {
+                    name = "BaseWeight",
+                    value =
+                        FormatMarketTrackerBaseWeight(
+                            baseWeight
+                        ),
+                    inline = true,
+                },
+
+                {
+                    name = "Age",
+                    value =
+                        age
+                        and tostring(age)
+                        or "Unknown",
+                    inline = true,
+                },
+
+                {
+                    name = "Booth",
+                    value =
+                        tostring(listing.BoothId or "Unknown"),
+                    inline = true,
+                },
+
+                {
+                    name = "Listing UID",
+                    value =
+                        tostring(listing.UID or "Unknown"),
+                    inline = false,
+                },
+            },
+
+            footer = {
+                text = "Holy Market Tracker"
+            },
+
+            timestamp =
+                DateTime.now():ToIsoDate(),
+        }}
+    }
+
+    local ok, response =
+        pcall(function()
+            return RequestFunction({
+                Url = webhookUrl,
+                Method = "POST",
+
+                Headers = {
+                    ["Content-Type"] = "application/json"
+                },
+
+                Body = HttpService:JSONEncode(payload)
+            })
+        end)
+
+    if not ok then
+        warn(
+            "[MARKET TRACKER] Request failed:",
+            tostring(response)
+        )
+
+        return false
+    end
+
+    if type(response) == "table" then
+
+        local statusCode =
+            tonumber(
+                response.StatusCode
+                or response.status_code
+            )
+
+        if statusCode
+        and statusCode ~= 200
+        and statusCode ~= 204 then
+
+            warn(
+                "[MARKET TRACKER] Bad status:",
+                tostring(statusCode),
+                tostring(response.Body or response.body or "")
+            )
+
+            return false
+        end
+    end
+
+    print(
+        "[MARKET TRACKER] Sent:",
+        tostring(petName),
+        "|",
+        tostring(priceText),
+        "tokens"
+    )
+
+    return true
+end
+
+function QueueMarketTrackerWebhook(listing)
+
+    if type(MarketTrackerWebhook) ~= "table"
+    or MarketTrackerWebhook.Enabled ~= true then
+        return false
+    end
+
+    if type(listing) ~= "table" then
+        return false
+    end
+
+    if HasMarketTrackerSentListing(listing) then
+        return false
+    end
+
+    MarkMarketTrackerListingSent(listing)
+
+    MarketTrackerWebhook.Queue =
+        MarketTrackerWebhook.Queue
+        or {}
+
+    table.insert(
+        MarketTrackerWebhook.Queue,
+        listing
+    )
+
+    print(
+        "[MARKET TRACKER] Queued:",
+        tostring(listing.PetName or "Unknown"),
+        "| queue:",
+        tostring(#MarketTrackerWebhook.Queue)
+    )
+
+    return true
+end
+
+function TrackMarketListings(listings)
+
+    if type(MarketTrackerWebhook) ~= "table"
+    or MarketTrackerWebhook.Enabled ~= true then
+        return 0
+    end
+
+    if type(listings) ~= "table" then
+        return 0
+    end
+
+    local queued =
+        0
+
+    for _, listing in ipairs(listings) do
+
+        if type(listing) ~= "table" then
+            continue
+        end
+
+        local petName =
+            NormalizeMarketTrackerName(
+                listing.PetName
+            )
+
+        if IsMarketTrackerTarget(petName) then
+
+            local added =
+                QueueMarketTrackerWebhook(
+                    listing
+                )
+
+            if added then
+                queued += 1
+            end
+        end
+    end
+
+    if queued > 0 then
+
+        print(
+            "[MARKET TRACKER] Matches queued:",
+            tostring(queued)
+        )
+    end
+
+    return queued
+end
+
+task.spawn(function()
+
+    while true do
+
+        task.wait(0.1)
+
+        if ScriptState
+        and ScriptState.ForceStopped then
+            continue
+        end
+
+        if type(MarketTrackerWebhook) ~= "table"
+        or MarketTrackerWebhook.Enabled ~= true then
+            continue
+        end
+
+        MarketTrackerWebhook.Queue =
+            MarketTrackerWebhook.Queue
+            or {}
+
+        if MarketTrackerWebhook.Sending then
+            continue
+        end
+
+        if #MarketTrackerWebhook.Queue <= 0 then
+            continue
+        end
+
+        local elapsed =
+            os.clock()
+            - SafeNumber(
+                MarketTrackerWebhook.LastSend,
+                0
+            )
+
+        local sendDelay =
+            SafeNumber(
+                MarketTrackerWebhook.SendDelay,
+                1.25
+            )
+
+        if elapsed < sendDelay then
+            task.wait(sendDelay - elapsed)
+        end
+
+        local listing =
+            table.remove(
+                MarketTrackerWebhook.Queue,
+                1
+            )
+
+        if not listing then
+            continue
+        end
+
+        MarketTrackerWebhook.Sending =
+            true
+
+        MarketTrackerWebhook.LastSend =
+            os.clock()
+
+        local ok, err =
+            pcall(function()
+                SendMarketTrackerWebhookNow(listing)
+            end)
+
+        if not ok then
+            warn(
+                "[MARKET TRACKER] Queue send failed:",
+                tostring(err)
+            )
+        end
+
+        MarketTrackerWebhook.Sending =
+            false
+    end
+end)
 --==================================================
 -- CONFIRMED TOOL SNAPSHOT PARSER
 -- Source of truth after a successful snipe.
@@ -4279,6 +4890,12 @@ function RunSniperScan()
 
         local listings, scannedCount =
         ExtractListings()
+
+if type(TrackMarketListings) == "function" then
+    pcall(function()
+        TrackMarketListings(listings)
+    end)
+end
 
 if SniperMonitorState then
     SniperMonitorState.PetsScanned =
