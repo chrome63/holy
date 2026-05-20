@@ -3531,91 +3531,54 @@ function SendMarketTrackerWebhookNow(listing)
         .. ":"
         .. tostring(game.JobId)
 
-    local description =
-        "**Pet:** "
-        .. tostring(petName)
-        .. "\n"
-        .. "**Seller:** "
-        .. tostring(sellerName)
-        .. "\n"
-        .. "**Listed Price:** "
-        .. tostring(priceText)
-        .. " tokens"
-        .. "\n\n"
-        .. "**Server:**\n"
-        .. "[Open Game]("
-        .. deepLink
-        .. ")"
-        .. "\n"
-        .. "**Copy:**\n"
-        .. "```lua\n"
-        .. serverCopy
-        .. "\n```"
+local description =
+    "**Seller:** "
+    .. tostring(sellerName)
+    .. "\n"
+    .. "**Price:** "
+    .. tostring(priceText)
+    .. " tokens"
+    .. "\n\n"
+    .. "**Stats:** "
+    .. FormatMarketTrackerWeightKG(displayWeight)
+    .. " | "
+    .. FormatMarketTrackerBaseWeight(baseWeight)
+    .. " BW"
+    .. " | Age "
+    .. tostring(age or "Unknown")
+    .. "\n\n"
+    .. "**Server:**\n"
+    .. "[Open Game]("
+    .. deepLink
+    .. ")"
+    .. "\n"
+    .. "**Copy:**\n"
+    .. "```lua\n"
+    .. serverCopy
+    .. "\n```"
 
-    local payload = {
-        embeds = {{
+local payload = {
+    embeds = {{
 
-            title =
-                "🔎 Market Tracker Found",
+        title =
+            "🔎 "
+            .. tostring(petName)
+            .. " Found",
 
-            description =
-                description,
+        description =
+            description,
 
-            color =
-                0x5865F2,
+        color =
+            0x5865F2,
 
-            fields = {
+        footer = {
+            text = "Holy Market Tracker"
+        },
 
-                {
-                    name = "Weight",
-                    value =
-                        FormatMarketTrackerWeightKG(
-                            displayWeight
-                        ),
-                    inline = true,
-                },
-
-                {
-                    name = "BaseWeight",
-                    value =
-                        FormatMarketTrackerBaseWeight(
-                            baseWeight
-                        ),
-                    inline = true,
-                },
-
-                {
-                    name = "Age",
-                    value =
-                        age
-                        and tostring(age)
-                        or "Unknown",
-                    inline = true,
-                },
-
-                {
-                    name = "Booth",
-                    value =
-                        tostring(listing.BoothId or "Unknown"),
-                    inline = true,
-                },
-
-                {
-                    name = "Listing UID",
-                    value =
-                        tostring(listing.UID or "Unknown"),
-                    inline = false,
-                },
-            },
-
-            footer = {
-                text = "Holy Market Tracker"
-            },
-
-            timestamp =
-                DateTime.now():ToIsoDate(),
-        }}
-    }
+        timestamp =
+            DateTime.now():ToIsoDate(),
+    }}
+}
 
     local ok, response =
         pcall(function()
