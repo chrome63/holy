@@ -1884,29 +1884,7 @@ if petName == "Seal"
 or petName == "Mimic Octopus"
 or petName == "Ghostly Spider"
 or petName == "Rainbow Dilophosaurus" then
-
-    print(
-        "[MARKET AGE DEBUG]",
-        tostring(petName),
-        "| Price:",
-        tostring(price),
-        "| BW:",
-        tostring(baseWeight),
-        "| KG:",
-        tostring(displayWeight),
-        "| Level:",
-        tostring(petData.Level),
-        "| Age:",
-        tostring(petData.Age),
-        "| ItemAge:",
-        tostring(itemData.Age),
-        "| ItemLevel:",
-        tostring(itemData.Level),
-        "| ListingAge:",
-        tostring(listingData.Age),
-        "| ListingLevel:",
-        tostring(listingData.Level)
-    )
+    
 end
 
 local mutationText =
