@@ -1220,15 +1220,71 @@ MarketTrackerWebhook = {
 }
 
 MarketTrackerTargets = {
-    ["Rainbow Birb"] = true,
-    ["Rainbow Elephant"] = true,
-    ["Rainbow Dilophosaurus"] = true,
-    ["Albino Peacock"] = true,
-    ["Blue Whale"] = true,
-    ["Rainbow Griffin"] = true,
-    ["Festive Moose"] = true,
-    ["Ghostly Spider"] = true,
-    ["Ghostly Headless Horseman"] = true,
+
+    -- Rare / premium pets:
+    -- Send regardless of KG.
+    -- Ping only if price is <= PingBelow.
+    ["Ghostly Spider"] = {
+        Type = "Rare",
+        Emoji = "🕷️",
+
+        MaxPrice = 100000,
+        GoodPrice = 80000,
+        SnipePrice = 65000,
+        PingBelow = 65000,
+
+        MinWeight = 0,
+    },
+
+    ["Rainbow Birb"] = {
+        Type = "Rare",
+        Emoji = "🌈",
+
+        MaxPrice = 150000,
+        GoodPrice = 100000,
+        SnipePrice = 65000,
+        PingBelow = 65000,
+
+        MinWeight = 0,
+    },
+
+    ["Rainbow Dilophosaurus"] = {
+        Type = "Rare",
+        Emoji = "🌈",
+
+        MaxPrice = 150000,
+        GoodPrice = 100000,
+        SnipePrice = 65000,
+        PingBelow = 65000,
+
+        MinWeight = 0,
+    },
+
+    -- Normal pets:
+    -- Only send if KG is high enough.
+    ["Seal"] = {
+        Type = "Weight",
+        Emoji = "🦭",
+
+        MaxPrice = 100000,
+        GoodPrice = 70000,
+        SnipePrice = 50000,
+        PingBelow = 50000,
+
+        MinWeight = 80,
+    },
+
+    ["Mimic Octopus"] = {
+        Type = "Weight",
+        Emoji = "🐙",
+
+        MaxPrice = 150000,
+        GoodPrice = 100000,
+        SnipePrice = 70000,
+        PingBelow = 70000,
+
+        MinWeight = 80,
+    },
 }
 --==================================================
 -- TOKEN FAILURE + BOOTH SALE DETECTION
@@ -3270,17 +3326,86 @@ function NormalizeMarketTrackerName(value)
         :gsub("%s+$", "")
 end
 
-function IsMarketTrackerTarget(petName)
+function GetMarketTrackerTargetConfig(petName)
 
     petName =
         NormalizeMarketTrackerName(petName)
 
     if petName == "" then
-        return false
+        return nil
     end
 
-    return MarketTrackerTargets
-        and MarketTrackerTargets[petName] == true
+    if type(MarketTrackerTargets) ~= "table" then
+        return nil
+    end
+
+    local config =
+        MarketTrackerTargets[petName]
+
+    if config == true then
+
+        return {
+            Type = "Rare",
+            Emoji = "🔎",
+
+            MaxPrice = nil,
+            GoodPrice = nil,
+            SnipePrice = nil,
+            PingBelow = nil,
+
+            MinWeight = 0,
+        }
+    end
+
+    if type(config) == "table" then
+        return config
+    end
+
+    return nil
+end
+
+function IsMarketTrackerTarget(listing)
+
+    if type(listing) ~= "table" then
+        return false, nil
+    end
+
+    local petName =
+        NormalizeMarketTrackerName(
+            listing.PetName
+        )
+
+    local config =
+        GetMarketTrackerTargetConfig(
+            petName
+        )
+
+    if type(config) ~= "table" then
+        return false, nil
+    end
+
+    local targetType =
+        tostring(config.Type or "Rare")
+
+    local displayWeight =
+        tonumber(listing.DisplayWeight)
+        or tonumber(listing.Weight)
+        or 0
+
+    if targetType == "Weight" then
+
+        local minWeight =
+            SafeNumber(
+                config.MinWeight,
+                80
+            )
+
+        if displayWeight < minWeight then
+            return false, config
+        end
+    end
+
+    return true, config
 end
 
 function BuildMarketTrackerListingKey(listing)
@@ -3459,6 +3584,142 @@ function FormatMarketTrackerBaseWeight(value)
     )
 end
 
+function ResolveMarketTrackerWeightClass(weight)
+
+    weight =
+        tonumber(weight)
+        or 0
+
+    if weight < 10 then
+        return "Small"
+    elseif weight < 30 then
+        return "Normal"
+    elseif weight < 50 then
+        return "Semi Huge"
+    elseif weight < 70 then
+        return "Huge"
+    elseif weight < 80 then
+        return "Semi Titanic"
+    elseif weight < 90 then
+        return "Titanic"
+    elseif weight < 100 then
+        return "Godly"
+    end
+
+    return "Colossal"
+end
+
+function ResolveMarketTrackerDeal(config, price)
+
+    price =
+        tonumber(price)
+        or math.huge
+
+    if type(config) ~= "table" then
+
+        return {
+            Text = "🔎 Found",
+            Color = 0x5865F2,
+            ShouldPing = false,
+        }
+    end
+
+    local snipePrice =
+        tonumber(config.SnipePrice)
+
+    local goodPrice =
+        tonumber(config.GoodPrice)
+
+    local maxPrice =
+        tonumber(config.MaxPrice)
+
+    local pingBelow =
+        tonumber(config.PingBelow)
+
+    local shouldPing =
+        pingBelow ~= nil
+        and price <= pingBelow
+
+    if snipePrice
+    and price <= snipePrice then
+
+        return {
+            Text = "🔥 Snipe",
+            Color = 0x22C55E,
+            ShouldPing = shouldPing,
+        }
+    end
+
+    if goodPrice
+    and price <= goodPrice then
+
+        return {
+            Text = "✅ Good",
+            Color = 0x16A34A,
+            ShouldPing = shouldPing,
+        }
+    end
+
+    if maxPrice
+    and price <= maxPrice then
+
+        return {
+            Text = "⚖️ Fair",
+            Color = 0xFACC15,
+            ShouldPing = shouldPing,
+        }
+    end
+
+    if maxPrice then
+
+        return {
+            Text = "❌ Overpriced",
+            Color = 0xEF4444,
+            ShouldPing = shouldPing,
+        }
+    end
+
+    return {
+        Text = "🔎 Found",
+        Color = 0x5865F2,
+        ShouldPing = shouldPing,
+    }
+end
+
+function BuildMarketTrackerTitle(petName, age, displayWeight, config)
+
+    local emoji =
+        type(config) == "table"
+        and tostring(config.Emoji or "🔎")
+        or "🔎"
+
+    local ageText =
+        age
+        and tostring(age)
+        or "Unknown"
+
+    local weightText =
+        FormatMarketTrackerWeightKG(
+            displayWeight
+        )
+
+    local weightClass =
+        ResolveMarketTrackerWeightClass(
+            displayWeight
+        )
+
+    return emoji
+        .. " "
+        .. tostring(petName or "Unknown")
+        .. " [Age "
+        .. tostring(ageText)
+        .. "] ["
+        .. tostring(weightText)
+        .. "] ("
+        .. tostring(weightClass)
+        .. ")"
+end
+
 function SendMarketTrackerWebhookNow(listing)
 
     if type(MarketTrackerWebhook) ~= "table"
@@ -3494,7 +3755,19 @@ function SendMarketTrackerWebhookNow(listing)
     end
 
     local petName =
-        tostring(listing.PetName or "Unknown")
+        NormalizeMarketTrackerName(
+            listing.PetName
+        )
+
+    if petName == "" then
+        petName =
+            "Unknown"
+    end
+
+    local config =
+        GetMarketTrackerTargetConfig(
+            petName
+        )
 
     local sellerName =
         tostring(listing.Seller or "Unknown")
@@ -3504,9 +3777,13 @@ function SendMarketTrackerWebhookNow(listing)
             ResolveSeller(listing.SellerUserId)
     end
 
+    local price =
+        tonumber(listing.Price)
+        or 0
+
     local priceText =
         FormatMarketTrackerNumber(
-            listing.Price
+            price
         )
 
     local displayWeight =
@@ -3519,81 +3796,95 @@ function SendMarketTrackerWebhookNow(listing)
     local age =
         tonumber(listing.Age)
 
+    local deal =
+        ResolveMarketTrackerDeal(
+            config,
+            price
+        )
+
+    local title =
+        BuildMarketTrackerTitle(
+            petName,
+            age,
+            displayWeight,
+            config
+        )
+
     local webJoinLink =
-    "https://www.roblox.com/games/"
-    .. tostring(TRADING_WORLD_PLACE_ID)
-    .. "?gameInstanceId="
-    .. tostring(game.JobId)
-
-local appJoinLink =
-    "roblox://placeId="
-    .. tostring(TRADING_WORLD_PLACE_ID)
-    .. "&gameInstanceId="
-    .. tostring(game.JobId)
-
-local serverCopy =
-    tostring(TRADING_WORLD_PLACE_ID)
-    .. ":"
-    .. tostring(game.JobId)
+        "https://www.roblox.com/games/"
+        .. tostring(TRADING_WORLD_PLACE_ID)
+        .. "?gameInstanceId="
+        .. tostring(game.JobId)
 
     local serverCopy =
         tostring(TRADING_WORLD_PLACE_ID)
         .. ":"
         .. tostring(game.JobId)
 
-local description =
-    "**Seller:** "
-    .. tostring(sellerName)
-    .. "\n"
-    .. "**Price:** "
-    .. tostring(priceText)
-    .. " tokens"
-    .. "\n\n"
-    .. "**Stats:** "
-    .. FormatMarketTrackerWeightKG(displayWeight)
-    .. " | "
-    .. FormatMarketTrackerBaseWeight(baseWeight)
-    .. " BW"
-    .. " | Age "
-    .. tostring(age or "Unknown")
-    .. "\n\n"
-    .. "**Server:**\n"
-    .. "[Open Game]("
-    .. webJoinLink
-    .. ")"
-    .. "\n"
-    .. "**Copy:**\n"
-    .. "```lua\n"
-    .. serverCopy
-    .. "\n```"
-    .. "\n"
-    .. "**App Link:**\n"
-    .. "```lua\n"
-    .. appJoinLink
-    .. "\n```"
+    local description =
+        "**Seller:** "
+        .. tostring(sellerName)
+        .. "\n"
+        .. "**Price:** "
+        .. tostring(priceText)
+        .. " tokens"
+        .. "\n"
+        .. "**Deal:** "
+        .. tostring(deal.Text)
+        .. "\n"
+        .. "**BaseWeight:** "
+        .. FormatMarketTrackerBaseWeight(baseWeight)
+        .. " BW"
+        .. "\n\n"
+        .. "**Server:**\n"
+        .. "[Open Game]("
+        .. webJoinLink
+        .. ")"
+        .. "\n"
+        .. "**Copy:**\n"
+        .. "```lua\n"
+        .. serverCopy
+        .. "\n```"
 
-local payload = {
-    embeds = {{
+    local payload = {
+        embeds = {{
 
-        title =
-            "🔎 "
-            .. tostring(petName)
-            .. " Found",
+            title =
+                title,
 
-        description =
-            description,
+            description =
+                description,
 
-        color =
-            0x5865F2,
+            color =
+                deal.Color
+                or 0x5865F2,
 
-        footer = {
-            text = "Holy Market Tracker"
+            footer = {
+                text = "Holy Market Tracker"
+            },
+
+            timestamp =
+                DateTime.now():ToIsoDate(),
+        }}
+    }
+
+    if deal.ShouldPing == true then
+
+    payload.content =
+        "<@&1506753055050170559>"
+
+    payload.allowed_mentions = {
+        parse = {},
+        roles = {
+            "1506753055050170559",
         },
+    }
+else
 
-        timestamp =
-            DateTime.now():ToIsoDate(),
-    }}
-}
+    payload.allowed_mentions = {
+        parse = {},
+    }
+end
 
     local ok, response =
         pcall(function()
@@ -3642,15 +3933,16 @@ local payload = {
 
     print(
         "[MARKET TRACKER] Sent:",
-        tostring(petName),
+        tostring(title),
         "|",
         tostring(priceText),
-        "tokens"
+        "tokens",
+        "|",
+        tostring(deal.Text)
     )
 
     return true
 end
-
 function QueueMarketTrackerWebhook(listing)
 
     if type(MarketTrackerWebhook) ~= "table"
@@ -3707,22 +3999,31 @@ function TrackMarketListings(listings)
             continue
         end
 
-        local petName =
-            NormalizeMarketTrackerName(
-                listing.PetName
-            )
+        local isTarget =
+    false
 
-        if IsMarketTrackerTarget(petName) then
+local config =
+    nil
 
-            local added =
-                QueueMarketTrackerWebhook(
-                    listing
-                )
+isTarget, config =
+    IsMarketTrackerTarget(
+        listing
+    )
 
-            if added then
-                queued += 1
-            end
-        end
+if isTarget then
+
+    listing.MarketTrackerConfig =
+        config
+
+    local added =
+        QueueMarketTrackerWebhook(
+            listing
+        )
+
+    if added then
+        queued += 1
+    end
+end
     end
 
     if queued > 0 then
