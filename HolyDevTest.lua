@@ -3520,11 +3520,22 @@ function SendMarketTrackerWebhookNow(listing)
     local age =
         tonumber(listing.Age)
 
-    local deepLink =
-        "roblox://placeId="
-        .. tostring(TRADING_WORLD_PLACE_ID)
-        .. "&gameInstanceId="
-        .. tostring(game.JobId)
+    local webJoinLink =
+    "https://www.roblox.com/games/"
+    .. tostring(TRADING_WORLD_PLACE_ID)
+    .. "?gameInstanceId="
+    .. tostring(game.JobId)
+
+local appJoinLink =
+    "roblox://placeId="
+    .. tostring(TRADING_WORLD_PLACE_ID)
+    .. "&gameInstanceId="
+    .. tostring(game.JobId)
+
+local serverCopy =
+    tostring(TRADING_WORLD_PLACE_ID)
+    .. ":"
+    .. tostring(game.JobId)
 
     local serverCopy =
         tostring(TRADING_WORLD_PLACE_ID)
@@ -3549,12 +3560,17 @@ local description =
     .. "\n\n"
     .. "**Server:**\n"
     .. "[Open Game]("
-    .. deepLink
+    .. webJoinLink
     .. ")"
     .. "\n"
     .. "**Copy:**\n"
     .. "```lua\n"
     .. serverCopy
+    .. "\n```"
+    .. "\n"
+    .. "**App Link:**\n"
+    .. "```lua\n"
+    .. appJoinLink
     .. "\n```"
 
 local payload = {
