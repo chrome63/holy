@@ -1221,7 +1221,15 @@ MarketTrackerWebhook = {
 
 MarketTrackerTargets = {
     ["Rainbow Birb"] = true,
-    ["Ghostly Spider"] = true,
+    ["Rainbow Elephant"] = true,
+    ["Rainbow Dilophosaurus"] = true,
+    ["Albino Peacock"] = true,
+    ["Blue Whale"] = true,
+    ["Rainbow Griffin"] = true,
+    ["Festive Moose"] = true,
+    ["Raccoon"] = true,
+    ["Kitsune"] = true,
+    ["Seal"] = true,
 }
 --==================================================
 -- TOKEN FAILURE + BOOTH SALE DETECTION
