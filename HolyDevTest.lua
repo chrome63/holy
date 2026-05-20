@@ -1229,16 +1229,16 @@ MarketTrackerTargets = {
         Emoji = "🕷️",
 
         MaxPrice = 100000,
-        GoodPrice = 80000,
-        SnipePrice = 65000,
-        PingBelow = 65000,
+        GoodPrice = 30000,
+        SnipePrice = 20000,
+        PingBelow = 20000,
 
         MinWeight = 0,
     },
 
     ["Rainbow Birb"] = {
         Type = "Rare",
-        Emoji = "🌈",
+        Emoji = "🐦",
 
         MaxPrice = 150000,
         GoodPrice = 100000,
@@ -1250,12 +1250,12 @@ MarketTrackerTargets = {
 
     ["Rainbow Dilophosaurus"] = {
         Type = "Rare",
-        Emoji = "🌈",
+        Emoji = "🦖",
 
-        MaxPrice = 150000,
-        GoodPrice = 100000,
-        SnipePrice = 65000,
-        PingBelow = 65000,
+        MaxPrice = 60000,
+        GoodPrice = 30000,
+        SnipePrice = 25000,
+        PingBelow = 25000,
 
         MinWeight = 0,
     },
@@ -1267,9 +1267,9 @@ MarketTrackerTargets = {
         Emoji = "🦭",
 
         MaxPrice = 100000,
-        GoodPrice = 70000,
-        SnipePrice = 50000,
-        PingBelow = 50000,
+        GoodPrice = 15000,
+        SnipePrice = 10000,
+        PingBelow = 10000,
 
         MinWeight = 80,
     },
@@ -1278,12 +1278,12 @@ MarketTrackerTargets = {
         Type = "Weight",
         Emoji = "🐙",
 
-        MaxPrice = 150000,
-        GoodPrice = 100000,
-        SnipePrice = 70000,
-        PingBelow = 70000,
+        MaxPrice = 10000,
+        GoodPrice = 6000,
+        SnipePrice = 3000,
+        PingBelow = 5000,
 
-        MinWeight = 80,
+        MinWeight = 100,
     },
 }
 --==================================================
@@ -1466,6 +1466,29 @@ function ResolveDisplayedWeight(baseWeight)
     -- Game display conversion.
     -- Keeps decimal KG instead of rounding to whole KG.
     return math.floor((baseWeight * 11) * 100 + 0.5) / 100
+end
+
+function ResolveBoothPetAge(petData)
+
+    if type(petData) ~= "table" then
+        return nil
+    end
+
+    local level =
+        tonumber(petData.Level)
+
+    if level then
+        return level
+    end
+
+    local age =
+        tonumber(petData.Age)
+
+    if age then
+        return age
+    end
+
+    return nil
 end
 
 function ResolveSeller(userId)
@@ -1876,9 +1899,18 @@ local displayWeight =
     ResolveDisplayedWeight(baseWeight)
 
 local age =
-    tonumber(petData.Level)
-    or tonumber(petData.Age)
-    or 0
+    ResolveBoothPetAge(petData)
+
+if not age then
+    warn(
+        "[MARKET TRACKER] Missing pet age:",
+        tostring(petName),
+        "| ItemId:",
+        tostring(itemId)
+    )
+
+    continue
+end
 
 if petName == "Seal"
 or petName == "Mimic Octopus"
@@ -3701,9 +3733,10 @@ function BuildMarketTrackerTitle(petName, age, displayWeight, config)
         or "🔎"
 
     local ageText =
-        age
-        and tostring(age)
-        or "Unknown"
+    tostring(
+        tonumber(age)
+        or 0
+    )
 
     local weightText =
         FormatMarketTrackerWeightKG(
