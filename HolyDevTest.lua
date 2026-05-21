@@ -19528,7 +19528,80 @@ ListingExcludeMutationsDropdown:OnChanged(function(value)
     )
 end)
 
-    local ListingMinLevelInput =
+local function FormatListingSetupValue(value, fallback)
+
+    if value == nil then
+        return tostring(fallback or "-")
+    end
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return tostring(value)
+    end
+
+    if number % 1 == 0 then
+        return tostring(math.floor(number))
+    end
+
+    return tostring(number)
+end
+
+local function RefreshListingSetupInputLabels()
+
+    if ListingMinLevelInput then
+        ListingMinLevelInput:SetText(
+            "Min Level  "
+            .. FormatListingSetupValue(
+                ListingsState.MinLevel,
+                1
+            )
+        )
+    end
+
+    if ListingMaxLevelInput then
+        ListingMaxLevelInput:SetText(
+            "Max Level  "
+            .. FormatListingSetupValue(
+                ListingsState.MaxLevel,
+                100
+            )
+        )
+    end
+
+    if ListingMinWeightInput then
+        ListingMinWeightInput:SetText(
+            "Min BaseWeight  "
+            .. FormatListingSetupValue(
+                ListingsState.MinWeight,
+                "-"
+            )
+        )
+    end
+
+    if ListingMaxWeightInput then
+        ListingMaxWeightInput:SetText(
+            "Max BaseWeight  "
+            .. FormatListingSetupValue(
+                ListingsState.MaxWeight,
+                "-"
+            )
+        )
+    end
+
+    if ListingPriceInput then
+        ListingPriceInput:SetText(
+            "🟢 Tokens  "
+            .. FormatListingSetupValue(
+                ListingsState.Price,
+                "-"
+            )
+        )
+    end
+end
+
+    ListingMinLevelInput =
     ListingSetupBox:AddInput(
         "ListingMinLevel",
         {
@@ -19536,7 +19609,7 @@ end)
             Placeholder = "1",
             Default = tostring(ListingsState.MinLevel or 1),
             Numeric = false,
-            Finished = true,
+            Finished = false,
         }
     )
 
@@ -19566,16 +19639,17 @@ ListingMinLevelInput:OnChanged(function(value)
         0
 
     BuildListingPreview()
-    MarkConfigDirty()
-    ListingsStatusRefresh()
+MarkConfigDirty()
+ListingsStatusRefresh()
+RefreshListingSetupInputLabels()
 
-    print(
+        print(
         "[LISTINGS] Min Level:",
         tostring(ListingsState.MinLevel)
     )
 end)
 
-local ListingMaxLevelInput =
+ListingMaxLevelInput =
     ListingSetupBox:AddInput(
         "ListingMaxLevel",
         {
@@ -19583,7 +19657,7 @@ local ListingMaxLevelInput =
             Placeholder = "100",
             Default = tostring(ListingsState.MaxLevel or 100),
             Numeric = false,
-            Finished = true,
+            Finished = false,
         }
     )
 
@@ -19615,6 +19689,7 @@ ListingMaxLevelInput:OnChanged(function(value)
     BuildListingPreview()
     MarkConfigDirty()
     ListingsStatusRefresh()
+    RefreshListingSetupInputLabels()
 
     print(
         "[LISTINGS] Max Level:",
@@ -19622,15 +19697,15 @@ ListingMaxLevelInput:OnChanged(function(value)
     )
 end)
 
-    local ListingMinWeightInput =
-        ListingSetupBox:AddInput(
+    ListingMinWeightInput =
+    ListingSetupBox:AddInput(
             "ListingMinWeight",
             {
                 Text = "Min BaseWeight",
                 Placeholder = "required",
                 Default = "",
                 Numeric = true,
-                Finished = true,
+                Finished = false,
             }
         )
 
@@ -19659,6 +19734,7 @@ end)
             BuildListingPreview()
             MarkConfigDirty()
             ListingsStatusRefresh()
+            RefreshListingSetupInputLabels()
 
             return
         end
@@ -19675,6 +19751,7 @@ end)
         BuildListingPreview()
         MarkConfigDirty()
         ListingsStatusRefresh()
+        RefreshListingSetupInputLabels()
 
         print(
             "[LISTINGS] Min BaseWeight:",
@@ -19682,15 +19759,15 @@ end)
         )
     end)
 
-    local ListingMaxWeightInput =
-        ListingSetupBox:AddInput(
+    ListingMaxWeightInput =
+    ListingSetupBox:AddInput(
             "ListingMaxWeight",
             {
                 Text = "Max BaseWeight",
                 Placeholder = "required",
                 Default = "",
                 Numeric = true,
-                Finished = true,
+                Finished = false,
             }
         )
 
@@ -19719,7 +19796,7 @@ end)
             BuildListingPreview()
             MarkConfigDirty()
             ListingsStatusRefresh()
-
+            RefreshListingSetupInputLabels()
             return
         end
 
@@ -19735,6 +19812,7 @@ end)
         BuildListingPreview()
         MarkConfigDirty()
         ListingsStatusRefresh()
+        RefreshListingSetupInputLabels()
 
         print(
             "[LISTINGS] Max BaseWeight:",
@@ -19742,15 +19820,15 @@ end)
         )
     end)
 
-    local ListingPriceInput =
-        ListingSetupBox:AddInput(
+    ListingPriceInput =
+    ListingSetupBox:AddInput(
             "ListingPrice",
             {
-                Text = "Price",
+                Text = "🟢 Tokens",
                 Placeholder = "required",
                 Default = "",
                 Numeric = true,
-                Finished = true,
+                Finished = false,
             }
         )
 
@@ -19768,31 +19846,43 @@ end)
         or num <= 0 then
 
             ListingsState.Price =
-                nil
+    nil
 
-            ListingsState.PriceWasEntered =
-                false
+ListingsState.PriceWasEntered =
+    false
 
-            MarkConfigDirty()
-            ListingsStatusRefresh()
+ListingsState.NoWorkSleepUntil =
+    0
 
-            return
+BuildListingPreview()
+MarkConfigDirty()
+ListingsStatusRefresh()
+RefreshListingSetupInputLabels()
+
+return
         end
 
         ListingsState.Price =
-            math.floor(num)
+    math.floor(num)
 
-        ListingsState.PriceWasEntered =
-            true
+ListingsState.PriceWasEntered =
+    true
 
-        MarkConfigDirty()
-        ListingsStatusRefresh()
+ListingsState.NoWorkSleepUntil =
+    0
 
-        print(
+BuildListingPreview()
+MarkConfigDirty()
+ListingsStatusRefresh()
+RefreshListingSetupInputLabels()
+
+print(
             "[LISTINGS] Price:",
             tostring(ListingsState.Price)
         )
     end)
+
+    RefreshListingSetupInputLabels()
 
         ListingSetupBox:AddDivider({
         Text = "Filter Preset",
@@ -19965,7 +20055,7 @@ end)
                 Text = "Max Queue / Pass",
                 Default = tostring(ListingsState.MaxQueuePerPass or 2),
                 Numeric = true,
-                Finished = true,
+                Finished = false,
             }
         )
 
