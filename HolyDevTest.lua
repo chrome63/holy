@@ -14623,13 +14623,10 @@ or result == "PENDING_UUID" then
 end
 
 --==================================================
--- LISTINGS: POST-CONFIG AUTOSTART
--- Auto-starts AutoList after rejoin when saved listing
--- filters exist and at least one filter is valid.
---
--- Important:
--- This no longer depends on the saved Start AutoList toggle.
--- Saved listing filters are now the source of truth.
+-- LISTINGS: POST-CONFIG RESTORE
+-- Saved listing filters should restore only.
+-- They must never start AutoList by themselves.
+-- Start AutoList toggle is the only authority.
 --==================================================
 
 function ArmListingsAutostartFromSavedToggle()
@@ -14670,8 +14667,21 @@ function ArmListingsAutostartFromSavedToggle()
         ListingsState.QueuedUUIDs
         or {}
 
-    table.clear(ListingsState.ListingQueue)
-    table.clear(ListingsState.QueuedUUIDs)
+    ListingsState.ListedUUIDs =
+        ListingsState.ListedUUIDs
+        or {}
+
+    ListingsState.FailedUUIDs =
+        ListingsState.FailedUUIDs
+        or {}
+
+    table.clear(
+        ListingsState.ListingQueue
+    )
+
+    table.clear(
+        ListingsState.QueuedUUIDs
+    )
 
     if type(BuildListingPreview) == "function" then
         pcall(BuildListingPreview)
