@@ -13819,18 +13819,16 @@ function ListingPetMatchesFilter(pet, filter)
     --==================================================
     -- PET IDENTITY
     -- Source of truth is pet.PetName, which comes from
-    -- the tool attribute "f" / resolved base pet identity.
+    -- the tool attribute "f" / resolved true pet identity.
     --
-    -- This must be exact-only:
-    -- Gilded Choc Peryton must NOT match Peryton.
-    -- Rainbow Dilophosaurus must NOT match Dilophosaurus.
-    -- Rainbow Elephant must NOT match Elephant.
-    -- Rainbow Birb must NOT match Birb.
+    -- IMPORTANT:
+    -- Never use visible-name suffix matching here.
     --
-    -- Mutation versions still work because their PetName
-    -- resolves to the true base pet:
-    -- HyperHunger Mimic Octopus -> Mimic Octopus
-    -- Tiny Peryton -> Peryton
+    -- Safe examples:
+    -- Tiny Peryton -> PetName = Peryton
+    -- Everchanted Gilded Choc Peryton -> PetName = Gilded Choc Peryton
+    -- Rainbow Rainbow Dilophosaurus -> PetName = Rainbow Dilophosaurus
+    -- Rainbow Dilophosaurus mutation on normal Dilophosaurus -> PetName = Dilophosaurus
     --==================================================
 
     local petName =
