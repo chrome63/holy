@@ -1041,9 +1041,9 @@ MaxWeightWasEntered = false,
     QuietWhenComplete = true,
 
     NoWorkSleepUntil = 0,
-    NoWorkBackoff = 120,
+    NoWorkBackoff = 15,
 
-    AutoDisableWhenDone = true,
+    AutoDisableWhenDone = false,
     PreserveVisualTagsOnNextDisable = false,
 
     VisualTagsEnabled = false,
@@ -6475,6 +6475,9 @@ FILTER_SAVE_FILE = "HolyV2/sniper_filters.json"
 
 LISTING_FILTER_SAVE_FILE =
     "HolyV2/listing_filters.json"
+
+LISTING_AUTOLIST_INTENT_SAVE_FILE =
+    "HolyV2/listing_autolist_intent.json"
 --==================================================
 -- FILTER PERSISTENCE
 -- Supports two active watchlists and migrates older single-list saves.
@@ -6992,6 +6995,85 @@ end
 )
 
 return true
+end
+
+--==================================================
+-- LISTINGS: AUTOLIST INTENT PERSISTENCE
+-- Source of truth for whether AutoList should restore ON.
+-- This does not depend on Obsidian option timing.
+--==================================================
+
+function SaveListingAutoListIntent(enabled)
+
+    if not writefile then
+        return false
+    end
+
+    local ok, err =
+        pcall(function()
+
+            if makefolder
+            and not isfolder("HolyV2") then
+                makefolder("HolyV2")
+            end
+
+            local payload = {
+                Version = 1,
+                Enabled = enabled == true,
+                SavedAt = os.time(),
+            }
+
+            writefile(
+                LISTING_AUTOLIST_INTENT_SAVE_FILE,
+                HttpService:JSONEncode(payload)
+            )
+        end)
+
+    if not ok then
+
+        warn(
+            "[LISTINGS INTENT] Save failed:",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    print(
+        "[LISTINGS INTENT] Saved AutoList:",
+        tostring(enabled == true)
+    )
+
+    return true
+end
+
+function LoadListingAutoListIntent()
+
+    if not isfile
+    or not readfile then
+        return nil
+    end
+
+    if not isfile(LISTING_AUTOLIST_INTENT_SAVE_FILE) then
+        return nil
+    end
+
+    local ok, decoded =
+        pcall(function()
+
+            local raw =
+                readfile(LISTING_AUTOLIST_INTENT_SAVE_FILE)
+
+            return HttpService:JSONDecode(raw)
+        end)
+
+    if not ok
+    or type(decoded) ~= "table" then
+        warn("[LISTINGS INTENT] Failed to load intent")
+        return nil
+    end
+
+    return decoded.Enabled == true
 end
 --==================================================
 -- [5] WINDOW INIT (SYNCHRONOUS)
@@ -14748,59 +14830,55 @@ function ArmListingsAutostartFromSavedToggle()
     end
 
     --==================================================
-    -- WAIT FOR OBSIDIAN OPTION TO EXIST
-    -- The UI can visually restore ON after this function
-    -- if we read too early. So we wait for the option.
+    -- SOURCE OF TRUTH:
+    -- Prefer the independent intent file.
+    -- Fall back to Obsidian option only if the file does not exist yet.
     --==================================================
 
+    local savedIntent =
+        LoadListingAutoListIntent()
+
     local option =
-        nil
+        Library
+        and Library.Options
+        and Library.Options.EnableAutoList
 
-    local startedAt =
-        os.clock()
-
-    while os.clock() - startedAt < 6 do
-
-        option =
-            Library
-            and Library.Options
-            and Library.Options.EnableAutoList
-
-        if option then
-            break
-        end
-
-        task.wait(0.10)
-    end
-
-    local savedAutoListEnabled =
+    local optionEnabled =
         false
 
     if option then
 
-        if option.Value == true then
-            savedAutoListEnabled =
-                true
+        optionEnabled =
+            option.Value == true
+            or option.CurrentValue == true
+            or option.State == true
+    end
 
-        elseif option.CurrentValue == true then
-            savedAutoListEnabled =
-                true
+    local shouldRestore =
+        false
 
-        elseif option.State == true then
-            savedAutoListEnabled =
-                true
-        end
+    if savedIntent ~= nil then
+        shouldRestore =
+            savedIntent == true
+    else
+        shouldRestore =
+            optionEnabled == true
     end
 
     print(
-        "[LISTINGS RESTORE] EnableAutoList option:",
-        tostring(savedAutoListEnabled),
+        "[LISTINGS RESTORE] AutoList intent:",
+        tostring(shouldRestore),
+        "| intent file:",
+        tostring(savedIntent),
         "| option exists:",
-        tostring(option ~= nil)
+        tostring(option ~= nil),
+        "| option:",
+        tostring(optionEnabled)
     )
 
     --==================================================
-    -- RESET UNSAFE RUNTIME STATE
+    -- Reset unsafe runtime state.
+    -- Do NOT clear OwnListedUUIDs here; booth sync owns it.
     --==================================================
 
     ListingsState.Busy =
@@ -14818,6 +14896,9 @@ function ArmListingsAutostartFromSavedToggle()
     ListingsState.ActiveCreateStartedAt =
         0
 
+    ListingsState.AutoDisableWhenDone =
+        false
+
     ListingsState.ListingQueue =
         ListingsState.ListingQueue
         or {}
@@ -14830,23 +14911,15 @@ function ArmListingsAutostartFromSavedToggle()
         ListingsState.PendingUUIDs
         or {}
 
-    table.clear(
-        ListingsState.ListingQueue
-    )
-
-    table.clear(
-        ListingsState.QueuedUUIDs
-    )
-
-    table.clear(
-        ListingsState.PendingUUIDs
-    )
+    table.clear(ListingsState.ListingQueue)
+    table.clear(ListingsState.QueuedUUIDs)
+    table.clear(ListingsState.PendingUUIDs)
 
     --==================================================
-    -- TOGGLE OFF OR OPTION MISSING = STAY OFF
+    -- Saved OFF = stay off.
     --==================================================
 
-    if savedAutoListEnabled ~= true then
+    if shouldRestore ~= true then
 
         ListingsState.Enabled =
             false
@@ -14877,7 +14950,7 @@ function ArmListingsAutostartFromSavedToggle()
     end
 
     --==================================================
-    -- TOGGLE ON = ENABLE RUNTIME
+    -- Saved ON = enable persistent AutoList.
     --==================================================
 
     if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
@@ -14906,58 +14979,6 @@ function ArmListingsAutostartFromSavedToggle()
         pcall(SyncListingRequiredFlagsFromValues)
     end
 
-    local allowed =
-        true
-
-    local reason =
-        "OK"
-
-    if type(IsListingConfigurationAllowed) == "function" then
-
-        local okCheck, resultAllowed, resultReason =
-            pcall(IsListingConfigurationAllowed)
-
-        if okCheck then
-
-            allowed =
-                resultAllowed == true
-
-            reason =
-                tostring(resultReason or "Config blocked")
-
-        else
-
-            allowed =
-                false
-
-            reason =
-                tostring(resultAllowed or "Config check failed")
-        end
-    end
-
-    if not allowed then
-
-        ListingsState.Enabled =
-            false
-
-        ListingsState.VisualTagsEnabled =
-            false
-
-        ListingsState.Status =
-            reason
-
-        if type(ListingsStatusRefresh) == "function" then
-            pcall(ListingsStatusRefresh)
-        end
-
-        warn(
-            "[LISTINGS RESTORE] Start AutoList saved ON but blocked:",
-            tostring(reason)
-        )
-
-        return false
-    end
-
     ListingsState.Enabled =
         true
 
@@ -14965,7 +14986,7 @@ function ArmListingsAutostartFromSavedToggle()
         true
 
     ListingsState.Status =
-        "AutoList running"
+        "AutoList restored | watching"
 
     ListingsState.LastScan =
         0
@@ -14975,6 +14996,23 @@ function ArmListingsAutostartFromSavedToggle()
 
     ListingsState.ListedThisSession =
         0
+
+    SaveListingAutoListIntent(true)
+
+    -- Sync the UI toggle visually if it exists.
+    task.defer(function()
+
+        pcall(function()
+
+            if Library
+            and Library.Options
+            and Library.Options.EnableAutoList
+            and Library.Options.EnableAutoList.Value ~= true then
+
+                Library.Options.EnableAutoList:SetValue(true)
+            end
+        end)
+    end)
 
     if type(RefreshListingInventorySnapshot) == "function" then
         pcall(RefreshListingInventorySnapshot)
@@ -14999,16 +15037,13 @@ function ArmListingsAutostartFromSavedToggle()
     end
 
     print(
-        "[LISTINGS RESTORE] Start AutoList saved ON; runtime enabled"
+        "[LISTINGS RESTORE] Start AutoList restored ON; runtime enabled"
     )
 
-    --==================================================
-    -- IMMEDIATE FIRST PASS
-    --==================================================
-
+    -- Immediate first pass.
     task.spawn(function()
 
-        task.wait(0.5)
+        task.wait(0.75)
 
         if ListingsState.Enabled ~= true then
             return
@@ -15017,6 +15052,12 @@ function ArmListingsAutostartFromSavedToggle()
         if ScriptState
         and ScriptState.ForceStopped then
             return
+        end
+
+        if type(WaitForOwnListedUUIDSync) == "function" then
+            pcall(function()
+                WaitForOwnListedUUIDSync(4)
+            end)
         end
 
         if type(RefreshListingInventorySnapshot) == "function" then
@@ -15045,10 +15086,10 @@ function ArmListingsAutostartFromSavedToggle()
                 "AutoList running"
 
             pcall(RunAutoListingPass)
+        end
 
-            if type(ListingsStatusRefresh) == "function" then
-                pcall(ListingsStatusRefresh)
-            end
+        if type(ListingsStatusRefresh) == "function" then
+            pcall(ListingsStatusRefresh)
         end
     end)
 
@@ -15381,27 +15422,16 @@ function RunAutoListingPass()
                         os.clock() + ListingsState.NoWorkBackoff
 
                     ListingsState.Status =
-                        "Done | all matched handled"
+                        "Done | all filters handled"
 
-                    if ListingsState.AutoDisableWhenDone
-                    and ListingsState.Enabled then
+                    -- Option A:
+-- Do not turn AutoList off when current matching pets are handled.
+-- Keep watching until the user manually turns Start AutoList OFF.
+ListingsState.AutoDisableWhenDone =
+    false
 
-                        ListingsState.PreserveVisualTagsOnNextDisable =
-                            true
-
-                        ListingsState.Enabled =
-                            false
-
-                        task.defer(function()
-
-                            pcall(function()
-
-                                if Library.Options.EnableAutoList then
-                                    Library.Options.EnableAutoList:SetValue(false)
-                                end
-                            end)
-                        end)
-                    end
+ListingsState.PreserveVisualTagsOnNextDisable =
+    false
                 end
 
             else
@@ -20081,24 +20111,39 @@ print(
         )
     end)
 
-    local AutoDisableToggle =
-        ListingSafetyBox:AddToggle(
-            "ListingAutoDisableWhenDone",
-            {
-                Text = "✅ Stop When Done",
-                Tooltip = "Turns AutoList off after all matching pets are handled.",
-                Default = true,
-            }
-        )
+local AutoDisableToggle =
+    ListingSafetyBox:AddToggle(
+        "ListingAutoDisableWhenDone",
+        {
+            Text = "♾️ Keep Running",
+            Tooltip = "AutoList stays enabled and watches for new matching pets until you turn Start AutoList OFF.",
+            Default = false,
+        }
+    )
 
-    AutoDisableToggle:OnChanged(function(value)
+AutoDisableToggle:OnChanged(function(value)
 
-        ListingsState.AutoDisableWhenDone =
-            value == true
+    -- Option A:
+    -- AutoList must never turn itself off after current work is done.
+    ListingsState.AutoDisableWhenDone =
+        false
 
-        MarkConfigDirty()
+    if value == true then
+
+        task.defer(function()
+
+            pcall(function()
+                AutoDisableToggle:SetValue(false)
+            end)
+        end)
+    end
+
+    MarkConfigDirty()
+
+    if type(ListingsStatusRefresh) == "function" then
         ListingsStatusRefresh()
-    end)
+    end
+end)
 
     --==================================================
     -- ACTIONS TAB
@@ -20215,17 +20260,24 @@ AutoListToggle:OnChanged(function(value)
     ListingsState.VisualTagsEnabled =
         ListingsState.Enabled
 
+    ListingsState.AutoDisableWhenDone =
+        false
+
     ListingsState.LastScan =
         0
 
     ListingsState.NoWorkSleepUntil =
         0
 
+    -- Save the user's real intent separately from Obsidian timing.
+    -- This is what restore reads after rejoin.
+    SaveListingAutoListIntent(
+        ListingsState.Enabled
+    )
+
     --==================================================
-    -- IMPORTANT:
-    -- During SaveManager hydration, do NOT validate config.
-    -- Saved dropdown/input values may not be restored yet.
-    -- Validation here is what caused "Pet required".
+    -- During SaveManager hydration, do not validate.
+    -- Saved filters/dropdowns may still be restoring.
     --==================================================
 
     if ConfigState
@@ -20248,7 +20300,7 @@ AutoListToggle:OnChanged(function(value)
 
     --==================================================
     -- Manual user toggle ON.
-    -- Validate only after hydration is finished.
+    -- Validate after hydration only.
     --==================================================
 
     if ListingsState.Enabled then
@@ -20280,6 +20332,8 @@ AutoListToggle:OnChanged(function(value)
 
             ListingsState.Status =
                 tostring(configReason or "Config blocked")
+
+            SaveListingAutoListIntent(false)
 
             task.defer(function()
 
@@ -20356,13 +20410,34 @@ AutoListToggle:OnChanged(function(value)
             0
 
         ListingsState.Status =
-            "Enabled | cache cleared"
+            "Enabled | watching"
 
         print("[LISTINGS] AutoList enabled | runtime cache cleared")
 
         if type(BuildListingPreview) == "function" then
             pcall(BuildListingPreview)
         end
+
+        -- Run one immediate pass instead of waiting for the scan timer.
+        task.defer(function()
+
+            if ListingsState.Enabled ~= true then
+                return
+            end
+
+            if ScriptState
+            and ScriptState.ForceStopped then
+                return
+            end
+
+            if type(RunAutoListingPass) == "function" then
+                pcall(RunAutoListingPass)
+            end
+
+            if type(ListingsStatusRefresh) == "function" then
+                pcall(ListingsStatusRefresh)
+            end
+        end)
 
     else
 
