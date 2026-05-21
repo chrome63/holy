@@ -14635,28 +14635,38 @@ function ArmListingsAutostartFromSavedToggle()
         return false
     end
 
-    --==================================================
-    -- READ SAVED TOGGLE STATE
-    -- Source of truth after rejoin:
-    -- Library.Options.EnableAutoList.Value
-    --==================================================
+    if ScriptState
+    and ScriptState.ForceStopped then
+        return false
+    end
+
+    local option =
+        Library
+        and Library.Options
+        and Library.Options.EnableAutoList
 
     local savedAutoListEnabled =
         false
 
-    pcall(function()
+    if option then
 
-        savedAutoListEnabled =
-            Library
-            and Library.Options
-            and Library.Options.EnableAutoList
-            and Library.Options.EnableAutoList.Value == true
-    end)
+        if option.Value == true then
+            savedAutoListEnabled = true
 
-    --==================================================
-    -- RESET UNSAFE RUNTIME STATE
-    -- Do not keep stale queues / busy locks across rejoin.
-    --==================================================
+        elseif option.CurrentValue == true then
+            savedAutoListEnabled = true
+
+        elseif option.State == true then
+            savedAutoListEnabled = true
+        end
+    end
+
+    print(
+        "[LISTINGS RESTORE] EnableAutoList option:",
+        tostring(savedAutoListEnabled),
+        "| option exists:",
+        tostring(option ~= nil)
+    )
 
     ListingsState.Busy =
         false
@@ -14681,14 +14691,6 @@ function ArmListingsAutostartFromSavedToggle()
         ListingsState.QueuedUUIDs
         or {}
 
-    ListingsState.ListedUUIDs =
-        ListingsState.ListedUUIDs
-        or {}
-
-    ListingsState.FailedUUIDs =
-        ListingsState.FailedUUIDs
-        or {}
-
     ListingsState.PendingUUIDs =
         ListingsState.PendingUUIDs
         or {}
@@ -14698,8 +14700,7 @@ function ArmListingsAutostartFromSavedToggle()
     table.clear(ListingsState.PendingUUIDs)
 
     --==================================================
-    -- SAVED TOGGLE OFF
-    -- Keep AutoList fully disabled.
+    -- TOGGLE OFF = STAY OFF
     --==================================================
 
     if savedAutoListEnabled ~= true then
@@ -14726,21 +14727,15 @@ function ArmListingsAutostartFromSavedToggle()
         end
 
         print(
-            "[LISTINGS] Saved Start AutoList is OFF; AutoList remains disabled"
+            "[LISTINGS RESTORE] Start AutoList saved OFF; runtime disabled"
         )
 
         return false
     end
 
     --==================================================
-    -- SAVED TOGGLE ON
-    -- Validate before enabling runtime.
+    -- TOGGLE ON = ENABLE RUNTIME
     --==================================================
-
-    if ScriptState
-    and ScriptState.ForceStopped then
-        return false
-    end
 
     if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
 
@@ -14768,33 +14763,33 @@ function ArmListingsAutostartFromSavedToggle()
         pcall(SyncListingRequiredFlagsFromValues)
     end
 
-    local configAllowed =
+    local allowed =
         true
 
-    local configReason =
-        "Config blocked"
+    local reason =
+        "OK"
 
     if type(IsListingConfigurationAllowed) == "function" then
 
-        local okConfig, allowed, reason =
+        local okCheck, resultAllowed, resultReason =
             pcall(IsListingConfigurationAllowed)
 
-        if okConfig then
-            configAllowed =
-                allowed == true
+        if okCheck then
+            allowed =
+                resultAllowed == true
 
-            configReason =
-                tostring(reason or configReason)
+            reason =
+                tostring(resultReason or "Config blocked")
         else
-            configAllowed =
+            allowed =
                 false
 
-            configReason =
-                tostring(allowed or "Config check failed")
+            reason =
+                tostring(resultAllowed or "Config check failed")
         end
     end
 
-    if not configAllowed then
+    if not allowed then
 
         ListingsState.Enabled =
             false
@@ -14803,41 +14798,19 @@ function ArmListingsAutostartFromSavedToggle()
             false
 
         ListingsState.Status =
-            configReason
-
-        task.defer(function()
-
-            pcall(function()
-
-                if Library
-                and Library.Options
-                and Library.Options.EnableAutoList then
-
-                    Library.Options.EnableAutoList:SetValue(false)
-                end
-            end)
-        end)
-
-        warn(
-            "[LISTINGS] Saved Start AutoList blocked:",
-            tostring(configReason)
-        )
-
-        if type(BuildListingPreview) == "function" then
-            pcall(BuildListingPreview)
-        end
+            reason
 
         if type(ListingsStatusRefresh) == "function" then
             pcall(ListingsStatusRefresh)
         end
 
+        warn(
+            "[LISTINGS RESTORE] Start AutoList saved ON but blocked:",
+            tostring(reason)
+        )
+
         return false
     end
-
-    --==================================================
-    -- ENABLE RUNTIME
-    -- This is the important part your current state is missing.
-    --==================================================
 
     ListingsState.Enabled =
         true
@@ -14848,17 +14821,23 @@ function ArmListingsAutostartFromSavedToggle()
     ListingsState.Status =
         "AutoList running"
 
-    ListingsState.ListedThisSession =
-        0
-
     ListingsState.LastScan =
         0
 
     ListingsState.NoWorkSleepUntil =
         0
 
+    ListingsState.ListedThisSession =
+        0
+
     if type(RefreshListingInventorySnapshot) == "function" then
         pcall(RefreshListingInventorySnapshot)
+    end
+
+    if type(BuildOwnBoothListingSnapshot) == "function" then
+        pcall(function()
+            BuildOwnBoothListingSnapshot(true)
+        end)
     end
 
     if type(BuildListingPreview) == "function" then
@@ -14874,13 +14853,8 @@ function ArmListingsAutostartFromSavedToggle()
     end
 
     print(
-        "[LISTINGS] Saved Start AutoList is ON; AutoList runtime enabled"
+        "[LISTINGS RESTORE] Start AutoList saved ON; runtime enabled"
     )
-
-    --==================================================
-    -- IMMEDIATE FIRST PASS
-    -- Do not wait for normal scan interval.
-    --==================================================
 
     task.spawn(function()
 
@@ -14895,10 +14869,16 @@ function ArmListingsAutostartFromSavedToggle()
                 return
             end
 
-            task.wait(0.35)
+            task.wait(0.5)
 
             if type(RefreshListingInventorySnapshot) == "function" then
                 pcall(RefreshListingInventorySnapshot)
+            end
+
+            if type(BuildOwnBoothListingSnapshot) == "function" then
+                pcall(function()
+                    BuildOwnBoothListingSnapshot(true)
+                end)
             end
 
             if type(BuildListingPreview) == "function" then
@@ -19928,6 +19908,13 @@ end)
 
         ListingsState.VisualTagsEnabled =
             ListingsState.Enabled
+
+        ListingsState.LastScan =
+            0
+
+        ListingsState.NoWorkSleepUntil =
+            0
+
 
         if ListingsState.Enabled then
 
