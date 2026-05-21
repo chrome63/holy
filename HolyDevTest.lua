@@ -14134,6 +14134,94 @@ function PrintListingPreview()
     print("==================================================")
 end
 
+
+function PrintDetailedListingPreview()
+
+    local pets =
+        RefreshListingInventorySnapshot()
+
+    print("==================================================")
+    print("[LISTINGS DETAILED PREVIEW]")
+
+    local total =
+        0
+
+    local matched =
+        0
+
+    local ready =
+        0
+
+    for _, pet in ipairs(pets) do
+
+        total += 1
+
+        local matches, filter =
+            PetMatchesListingFilter(pet)
+
+        if matches then
+
+            matched += 1
+
+            local reason =
+                "READY"
+
+            if ListingsState.OwnListedUUIDs[pet.UUID] then
+                reason =
+                    "SKIP | already listed in booth"
+
+            elseif ListingsState.ListedUUIDs[pet.UUID] then
+                reason =
+                    "SKIP | runtime listed"
+
+            elseif IsListingUUIDPending(pet.UUID) then
+                reason =
+                    "SKIP | pending sale cooldown"
+
+            elseif ListingsState.FailedUUIDs[pet.UUID] then
+                reason =
+                    "SKIP | failed UUID"
+
+            elseif ListingsState.QueuedUUIDs[pet.UUID] then
+                reason =
+                    "SKIP | already queued"
+
+            else
+                ready += 1
+            end
+
+            print(
+                "[LISTING MATCH]",
+                tostring(reason),
+                "| Pet:",
+                tostring(pet.ToolName or pet.PetName),
+                "| UUID:",
+                tostring(pet.UUID),
+                "| PetName:",
+                tostring(pet.PetName),
+                "| Mutation:",
+                tostring(pet.Mutation),
+                "| Age:",
+                tostring(pet.Age or pet.Level),
+                "| BW:",
+                tostring(pet.BaseWeight),
+                "| Price:",
+                tostring(filter and filter.Price)
+            )
+        end
+    end
+
+    print(
+        "[LISTINGS DETAILED PREVIEW] Total:",
+        tostring(total),
+        "| Matched:",
+        tostring(matched),
+        "| Ready:",
+        tostring(ready)
+    )
+
+    print("==================================================")
+end
 --==================================================
 -- LISTINGS: UNFAVORITE
 --==================================================
@@ -20338,6 +20426,17 @@ end)
             ListingsStatusRefresh()
         end,
     })
+
+    ListingActionsBox:AddButton({
+    Text = "Debug Preview",
+    Tooltip = "Print every matching listing pet and why it is ready/skipped.",
+    Func = function()
+
+        if type(PrintDetailedListingPreview) == "function" then
+            PrintDetailedListingPreview()
+        end
+    end,
+})
 
     QueueButton:AddButton({
     Text = "Refresh",
