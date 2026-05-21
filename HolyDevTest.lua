@@ -19939,113 +19939,175 @@ end)
             }
         )
 
-    AutoListToggle:OnChanged(function(value)
+AutoListToggle:OnChanged(function(value)
 
-        ListingsState.Enabled =
-            value == true
+    ListingsState.Enabled =
+        value == true
 
-        ListingsState.VisualTagsEnabled =
-            ListingsState.Enabled
+    ListingsState.VisualTagsEnabled =
+        ListingsState.Enabled
 
-        ListingsState.LastScan =
-            0
+    ListingsState.LastScan =
+        0
 
-        ListingsState.NoWorkSleepUntil =
-            0
+    ListingsState.NoWorkSleepUntil =
+        0
 
+    --==================================================
+    -- IMPORTANT:
+    -- During SaveManager hydration, do NOT validate config.
+    -- Saved dropdown/input values may not be restored yet.
+    -- Validation here is what caused "Pet required".
+    --==================================================
 
-        if ListingsState.Enabled then
-
-            if type(SyncListingRequiredFlagsFromValues) == "function" then
-                SyncListingRequiredFlagsFromValues()
-            end
-
-            local configAllowed, configReason =
-                IsListingConfigurationAllowed()
-
-            if not configAllowed then
-
-                ListingsState.Enabled =
-                    false
-
-                ListingsState.VisualTagsEnabled =
-                    false
-
-                ListingsState.Status =
-                    configReason
-
-                task.defer(function()
-
-                    pcall(function()
-
-                        if Library.Options.EnableAutoList then
-                            Library.Options.EnableAutoList:SetValue(false)
-                        end
-                    end)
-                end)
-
-                warn(
-                    "[LISTINGS] AutoList blocked:",
-                    tostring(configReason)
-                )
-
-                ListingsStatusRefresh()
-
-                return
-            end
-        end
-
-        ListingsState.LastScan =
-            0
-
-        ListingsState.NoWorkSleepUntil =
-            0
+    if ConfigState
+    and ConfigState.IsHydrating then
 
         if ListingsState.Enabled then
-
-            table.clear(ListingsState.ListedUUIDs)
-            table.clear(ListingsState.FailedUUIDs)
-            table.clear(ListingsState.ListingQueue)
-            table.clear(ListingsState.QueuedUUIDs)
-            table.clear(ListingsState.OwnListedUUIDs)
-
-ListingsState.PendingUUIDs =
-    ListingsState.PendingUUIDs
-    or {}
-
-table.clear(ListingsState.PendingUUIDs)
-
-ListingsState.ActiveCreateUUID =
-    nil
-
-ListingsState.ActiveCreateStartedAt =
-    0
-
-            ListingsState.ListedThisSession =
-                0
-
-            ListingsState.LastScan =
-                0
-
-            ListingsState.NoWorkSleepUntil =
-                0
-
             ListingsState.Status =
-                "Enabled | cache cleared"
-
-            print("[LISTINGS] AutoList enabled | runtime cache cleared")
-
-            BuildListingPreview()
-
+                "Restore pending"
         else
-
             ListingsState.Status =
                 "Disabled"
         end
 
-        MarkConfigDirty()
+        if type(ListingsStatusRefresh) == "function" then
+            pcall(ListingsStatusRefresh)
+        end
+
+        return
+    end
+
+    --==================================================
+    -- Manual user toggle ON.
+    -- Validate only after hydration is finished.
+    --==================================================
+
+    if ListingsState.Enabled then
+
+        if type(EnsureListingFilters) == "function" then
+            pcall(EnsureListingFilters)
+        end
+
+        if type(SyncListingRequiredFlagsFromValues) == "function" then
+            pcall(SyncListingRequiredFlagsFromValues)
+        end
+
+        local configAllowed, configReason =
+            true,
+            "OK"
+
+        if type(IsListingConfigurationAllowed) == "function" then
+            configAllowed, configReason =
+                IsListingConfigurationAllowed()
+        end
+
+        if not configAllowed then
+
+            ListingsState.Enabled =
+                false
+
+            ListingsState.VisualTagsEnabled =
+                false
+
+            ListingsState.Status =
+                tostring(configReason or "Config blocked")
+
+            task.defer(function()
+
+                pcall(function()
+
+                    if Library
+                    and Library.Options
+                    and Library.Options.EnableAutoList then
+
+                        Library.Options.EnableAutoList:SetValue(false)
+                    end
+                end)
+            end)
+
+            warn(
+                "[LISTINGS] AutoList blocked:",
+                tostring(configReason)
+            )
+
+            if type(ListingsStatusRefresh) == "function" then
+                ListingsStatusRefresh()
+            end
+
+            return
+        end
+    end
+
+    if ListingsState.Enabled then
+
+        ListingsState.ListedUUIDs =
+            ListingsState.ListedUUIDs
+            or {}
+
+        ListingsState.FailedUUIDs =
+            ListingsState.FailedUUIDs
+            or {}
+
+        ListingsState.ListingQueue =
+            ListingsState.ListingQueue
+            or {}
+
+        ListingsState.QueuedUUIDs =
+            ListingsState.QueuedUUIDs
+            or {}
+
+        ListingsState.OwnListedUUIDs =
+            ListingsState.OwnListedUUIDs
+            or {}
+
+        ListingsState.PendingUUIDs =
+            ListingsState.PendingUUIDs
+            or {}
+
+        table.clear(ListingsState.ListedUUIDs)
+        table.clear(ListingsState.FailedUUIDs)
+        table.clear(ListingsState.ListingQueue)
+        table.clear(ListingsState.QueuedUUIDs)
+        table.clear(ListingsState.OwnListedUUIDs)
+        table.clear(ListingsState.PendingUUIDs)
+
+        ListingsState.ActiveCreateUUID =
+            nil
+
+        ListingsState.ActiveCreateStartedAt =
+            0
+
+        ListingsState.ListedThisSession =
+            0
+
+        ListingsState.LastScan =
+            0
+
+        ListingsState.NoWorkSleepUntil =
+            0
+
+        ListingsState.Status =
+            "Enabled | cache cleared"
+
+        print("[LISTINGS] AutoList enabled | runtime cache cleared")
+
+        if type(BuildListingPreview) == "function" then
+            pcall(BuildListingPreview)
+        end
+
+    else
+
+        ListingsState.Status =
+            "Disabled"
+    end
+
+    MarkConfigDirty()
+
+    if type(ListingsStatusRefresh) == "function" then
         ListingsStatusRefresh()
-    end)
+    end
+end)
 
     ListingActionsBox:AddDivider({
         Text = "Queue",
@@ -23355,8 +23417,27 @@ end
 
 if IsTradeWorld() then
 
-    -- Do heavy listing/UI restore after the loading screen finishes.
-    task.defer(function()
+    --==================================================
+    -- LISTINGS RESTORE AFTER UI OPTIONS EXIST
+    -- Wait for EnableAutoList to exist before deciding
+    -- whether AutoList should restore ON or stay OFF.
+    --==================================================
+
+    task.spawn(function()
+
+        local startedAt =
+            os.clock()
+
+        while os.clock() - startedAt < 10 do
+
+            if Library
+            and Library.Options
+            and Library.Options.EnableAutoList then
+                break
+            end
+
+            task.wait(0.15)
+        end
 
         task.wait(0.75)
 
@@ -23381,29 +23462,24 @@ if IsTradeWorld() then
             pcall(ListingsStatusRefresh)
         end
 
-        task.spawn(function()
+        if type(ArmListingsAutostartFromSavedToggle) == "function" then
 
-    task.wait(1.25)
+            local okRestore, restoreErr =
+                pcall(ArmListingsAutostartFromSavedToggle)
 
-    if type(ArmListingsAutostartFromSavedToggle) == "function" then
+            if not okRestore then
+                warn(
+                    "[LISTINGS] AutoList restore failed:",
+                    tostring(restoreErr)
+                )
+            end
 
-        local ok, err =
-            pcall(ArmListingsAutostartFromSavedToggle)
+        else
 
-        if not ok then
             warn(
-                "[LISTINGS] AutoList restore failed:",
-                tostring(err)
+                "[LISTINGS] ArmListingsAutostartFromSavedToggle missing at config restore"
             )
         end
-
-    else
-
-        warn(
-            "[LISTINGS] ArmListingsAutostartFromSavedToggle missing at config restore"
-        )
-    end
-end)
 
         if type(RefreshEggFocus) == "function" then
             pcall(RefreshEggFocus)
