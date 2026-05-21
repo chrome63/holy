@@ -1001,7 +1001,7 @@ MaxWeightWasEntered = false,
     Price = nil,
     PriceWasEntered = false,
 
-    LowPriceThreshold = 10,
+    LowPriceThreshold = 100,
     AllowLowPriceListings = false,
 
     InventorySnapshot = {},
@@ -15422,7 +15422,7 @@ function RunAutoListingPass()
                         os.clock() + ListingsState.NoWorkBackoff
 
                     ListingsState.Status =
-                        "Done | all filters handled"
+                        "Done | all filters listed or skipped"
 
                     -- Option A:
 -- Do not turn AutoList off when current matching pets are handled.
@@ -20070,7 +20070,7 @@ print(
             "ListingAllowLowPrice",
             {
                 Text = "⚠️ Allow Low Price",
-                Tooltip = "Required before Holy can list pets below 10 tokens.",
+                Tooltip = "Required before Holy can list pets below 100 tokens.",
                 Default = false,
             }
         )
@@ -20111,38 +20111,41 @@ print(
         )
     end)
 
-local AutoDisableToggle =
+local KeepRunningToggle =
     ListingSafetyBox:AddToggle(
-        "ListingAutoDisableWhenDone",
+        "ListingKeepRunning",
         {
             Text = "♾️ Keep Running",
-            Tooltip = "AutoList stays enabled and watches for new matching pets until you turn Start AutoList OFF.",
-            Default = false,
+            Tooltip = "ON = AutoList keeps watching. OFF = AutoList stops when all current matching pets are handled.",
+            Default = true,
         }
     )
 
-AutoDisableToggle:OnChanged(function(value)
+KeepRunningToggle:OnChanged(function(value)
 
-    -- Option A:
-    -- AutoList must never turn itself off after current work is done.
+    local keepRunning =
+        value == true
+
+    -- Keep Running ON  = never auto-disable when done.
+    -- Keep Running OFF = old Stop When Done behavior.
     ListingsState.AutoDisableWhenDone =
-        false
+        not keepRunning
 
-    if value == true then
-
-        task.defer(function()
-
-            pcall(function()
-                AutoDisableToggle:SetValue(false)
-            end)
-        end)
-    end
+    ListingsState.NoWorkSleepUntil =
+        0
 
     MarkConfigDirty()
 
     if type(ListingsStatusRefresh) == "function" then
         ListingsStatusRefresh()
     end
+
+    print(
+        "[LISTINGS] Keep Running:",
+        tostring(keepRunning),
+        "| AutoDisableWhenDone:",
+        tostring(ListingsState.AutoDisableWhenDone)
+    )
 end)
 
     --==================================================
