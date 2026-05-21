@@ -21199,27 +21199,53 @@ end
             end)
         end,
     })
-    --==================================================
-    -- PREVIEW TAB
-    --==================================================
+--==================================================
+-- PREVIEW TAB
+-- Purpose:
+-- Clear safety summary of what the current setup will do.
+--==================================================
 
-    local PreviewMatchedLabel =
-        ListingPreviewBox:AddLabel("Matching: 0", false)
+local PreviewVerdictLabel =
+    ListingPreviewBox:AddLabel("⚠️ Not Ready", false)
 
-    local PreviewListedLabel =
-        ListingPreviewBox:AddLabel("Already Listed: 0", false)
+local PreviewFilterLabel =
+    ListingPreviewBox:AddLabel("Pet: -", false)
 
-    local PreviewReadyLabel =
-        ListingPreviewBox:AddLabel("Ready To List: 0", false)
+local PreviewMutationLabel =
+    ListingPreviewBox:AddLabel("Mutation: -", false)
 
-    local PreviewFailedLabel =
-        ListingPreviewBox:AddLabel("Failed: 0", false)
+local PreviewLevelLabel =
+    ListingPreviewBox:AddLabel("Level: -", false)
 
-    local PreviewPriceLabel =
-        ListingPreviewBox:AddLabel("Price: required", false)
+local PreviewWeightLabel =
+    ListingPreviewBox:AddLabel("BaseWeight: required", false)
 
-    local PreviewWeightLabel =
-        ListingPreviewBox:AddLabel("Weight: required", false)
+local PreviewPriceLabel =
+    ListingPreviewBox:AddLabel("Tokens: required", false)
+
+ListingPreviewBox:AddDivider({
+    Text = "Inventory Check",
+    MarginTop = 8,
+    MarginBottom = 8,
+})
+
+local PreviewCountsLabel =
+    ListingPreviewBox:AddLabel("Matching: 0 | Ready: 0", false)
+
+local PreviewHandledLabel =
+    ListingPreviewBox:AddLabel("Already Listed: 0 | Queued: 0", false)
+
+local PreviewFailedLabel =
+    ListingPreviewBox:AddLabel("Failed: 0 | Runtime: 0", false)
+
+ListingPreviewBox:AddDivider({
+    Text = "Result",
+    MarginTop = 8,
+    MarginBottom = 8,
+})
+
+local PreviewResultLabel =
+    ListingPreviewBox:AddLabel("Set pet, weight, and price to preview.", true)
 
     --==================================================
     -- FILTERS TAB
@@ -21666,107 +21692,356 @@ local FilterHelpLabel =
 
 RenderBoothListedTable()
 
-        local preview =
-            ListingsState.Preview
-            or {}
+local preview =
+    ListingsState.Preview
+    or {}
 
-        if PreviewMatchedLabel then
-            PreviewMatchedLabel:SetText(
-                "Matching: "
-                .. tostring(preview.Matching or 0)
+local function FormatPreviewNumber(value, fallback)
+
+    if value == nil then
+        return tostring(fallback or "-")
+    end
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return tostring(value)
+    end
+
+    if number % 1 == 0 then
+        return tostring(math.floor(number))
+    end
+
+    return tostring(number)
+end
+
+local priceAllowed, priceReason =
+    IsListingPriceAllowed()
+
+local minWeight =
+    tonumber(ListingsState.MinWeight)
+
+local maxWeight =
+    tonumber(ListingsState.MaxWeight)
+
+local weightAllowed =
+    true
+
+local weightReason =
+    "OK"
+
+if ListingsState.MinWeightWasEntered ~= true then
+
+    weightAllowed =
+        false
+
+    weightReason =
+        "Min required"
+
+elseif ListingsState.MaxWeightWasEntered ~= true then
+
+    weightAllowed =
+        false
+
+    weightReason =
+        "Max required"
+
+elseif not minWeight
+or not maxWeight then
+
+    weightAllowed =
+        false
+
+    weightReason =
+        "Invalid"
+
+elseif maxWeight < minWeight then
+
+    weightAllowed =
+        false
+
+    weightReason =
+        "Max < Min"
+end
+
+local minLevel =
+    SafeNumber(
+        ListingsState.MinLevel,
+        1
+    )
+
+local maxLevel =
+    SafeNumber(
+        ListingsState.MaxLevel,
+        100
+    )
+
+local levelAllowed =
+    maxLevel >= minLevel
+
+local levelReason =
+    levelAllowed
+    and "OK"
+    or "Max < Min"
+
+local petName =
+    tostring(
+        ListingsState.SelectedPet
+        or ""
+    )
+
+local petAllowed =
+    petName ~= ""
+
+local mutationText =
+    tostring(
+        ListingsState.SelectedMutation
+        or "---"
+    )
+
+if mutationText == "All Except" then
+
+    mutationText =
+        "All Except "
+        .. FormatExcludedListingMutations(
+            ListingsState.SelectedExcludedMutations
+        )
+end
+
+local readyCount =
+    SafeNumber(
+        preview.Ready,
+        0
+    )
+
+local matchingCount =
+    SafeNumber(
+        preview.Matching,
+        0
+    )
+
+local alreadyListed =
+    SafeNumber(
+        preview.AlreadyListed,
+        0
+    )
+
+local queuedCount =
+    SafeNumber(
+        preview.Queued,
+        0
+    )
+
+local failedCount =
+    SafeNumber(
+        preview.Failed,
+        0
+    )
+
+local runtimeListed =
+    SafeNumber(
+        preview.RuntimeListed,
+        0
+    )
+
+local setupAllowed =
+    petAllowed
+    and priceAllowed
+    and weightAllowed
+    and levelAllowed
+
+local verdictText =
+    "⚠️ Not Ready"
+
+local resultText =
+    "Fix required fields before adding this filter."
+
+if setupAllowed then
+
+    if readyCount > 0 then
+
+        verdictText =
+            "✅ Ready To List"
+
+        resultText =
+            "AutoList can queue "
+            .. tostring(readyCount)
+            .. " matching pet"
+            .. (
+                readyCount == 1
+                and "."
+                or "s."
             )
-        end
 
-        if PreviewListedLabel then
-            PreviewListedLabel:SetText(
-                "Already Listed: "
-                .. tostring(preview.AlreadyListed or 0)
-                .. " | Runtime: "
-                .. tostring(preview.RuntimeListed or 0)
-                .. " | Queued: "
-                .. tostring(preview.Queued or 0)
-            )
-        end
+    elseif matchingCount > 0
+    and alreadyListed >= matchingCount then
 
-        if PreviewReadyLabel then
-            PreviewReadyLabel:SetText(
-                "Ready To List: "
-                .. tostring(preview.Ready or 0)
-            )
-        end
+        verdictText =
+            "✅ Already Handled"
 
-        if PreviewFailedLabel then
-            PreviewFailedLabel:SetText(
-                "Failed: "
-                .. tostring(preview.Failed or 0)
-            )
-        end
+        resultText =
+            "All matching pets are already listed in your booth."
 
-        if PreviewPriceLabel then
+    elseif matchingCount > 0 then
 
-            local priceAllowed, priceReason =
-                IsListingPriceAllowed()
+        verdictText =
+            "✅ Filter Valid"
 
-            PreviewPriceLabel:SetText(
-                "Price: "
-                .. tostring(ListingsState.Price or "required")
-                .. " | "
-                .. tostring(priceAllowed and "OK" or priceReason)
-            )
-        end
+        resultText =
+            "Filter is valid, but no new pets are ready right now."
 
-        if PreviewWeightLabel then
+    else
 
-            local minText =
-                ListingsState.MinWeightWasEntered == true
-                and tostring(ListingsState.MinWeight)
-                or "required"
+        verdictText =
+            "✅ Filter Valid"
 
-            local maxText =
-                ListingsState.MaxWeightWasEntered == true
-                and tostring(ListingsState.MaxWeight)
-                or "required"
+        resultText =
+            "No inventory pets currently match this setup."
+    end
 
-            local statusText =
-                "OK"
+else
 
-            local minWeight =
-                tonumber(ListingsState.MinWeight)
+    if not petAllowed then
 
-            local maxWeight =
-                tonumber(ListingsState.MaxWeight)
+        resultText =
+            "Select a pet before adding this filter."
 
-            if ListingsState.MinWeightWasEntered ~= true then
+    elseif not priceAllowed then
 
-                statusText =
-                    "Min required"
+        resultText =
+            "Price blocked: "
+            .. tostring(priceReason or "Invalid price")
 
-            elseif ListingsState.MaxWeightWasEntered ~= true then
+    elseif not weightAllowed then
 
-                statusText =
-                    "Max required"
+        resultText =
+            "BaseWeight blocked: "
+            .. tostring(weightReason)
 
-            elseif not minWeight
-            or not maxWeight then
+    elseif not levelAllowed then
 
-                statusText =
-                    "Invalid"
+        resultText =
+            "Level blocked: "
+            .. tostring(levelReason)
+    end
+end
 
-            elseif maxWeight < minWeight then
+if PreviewVerdictLabel then
 
-                statusText =
-                    "Max < Min"
-            end
+    PreviewVerdictLabel:SetText(
+        verdictText
+    )
+end
 
-            PreviewWeightLabel:SetText(
-                "Weight: "
-                    .. tostring(minText)
-                    .. " - "
-                    .. tostring(maxText)
-                    .. " | "
-                    .. tostring(statusText)
-            )
-        end
+if PreviewFilterLabel then
+
+    PreviewFilterLabel:SetText(
+        "Pet: "
+        .. (
+            petAllowed
+            and petName
+            or "-"
+        )
+    )
+end
+
+if PreviewMutationLabel then
+
+    PreviewMutationLabel:SetText(
+        "Mutation: "
+        .. tostring(mutationText)
+    )
+end
+
+if PreviewLevelLabel then
+
+    PreviewLevelLabel:SetText(
+        "Level: "
+        .. FormatPreviewNumber(minLevel, 1)
+        .. " - "
+        .. FormatPreviewNumber(maxLevel, 100)
+        .. " | "
+        .. tostring(levelReason)
+    )
+end
+
+if PreviewWeightLabel then
+
+    local minText =
+        ListingsState.MinWeightWasEntered == true
+        and FormatPreviewNumber(ListingsState.MinWeight, "-")
+        or "required"
+
+    local maxText =
+        ListingsState.MaxWeightWasEntered == true
+        and FormatPreviewNumber(ListingsState.MaxWeight, "-")
+        or "required"
+
+    PreviewWeightLabel:SetText(
+        "BaseWeight: "
+        .. tostring(minText)
+        .. " - "
+        .. tostring(maxText)
+        .. " | "
+        .. tostring(weightReason)
+    )
+end
+
+if PreviewPriceLabel then
+
+    PreviewPriceLabel:SetText(
+        "Tokens: "
+        .. FormatPreviewNumber(
+            ListingsState.Price,
+            "required"
+        )
+        .. " | "
+        .. tostring(
+            priceAllowed
+            and "OK"
+            or priceReason
+        )
+    )
+end
+
+if PreviewCountsLabel then
+
+    PreviewCountsLabel:SetText(
+        "Matching: "
+        .. tostring(matchingCount)
+        .. " | Ready: "
+        .. tostring(readyCount)
+    )
+end
+
+if PreviewHandledLabel then
+
+    PreviewHandledLabel:SetText(
+        "Already Listed: "
+        .. tostring(alreadyListed)
+        .. " | Queued: "
+        .. tostring(queuedCount)
+    )
+end
+
+if PreviewFailedLabel then
+
+    PreviewFailedLabel:SetText(
+        "Failed: "
+        .. tostring(failedCount)
+        .. " | Runtime: "
+        .. tostring(runtimeListed)
+    )
+end
+
+if PreviewResultLabel then
+
+    PreviewResultLabel:SetText(
+        "Result: "
+        .. tostring(resultText)
+    )
+end
 
         if type(RefreshListingFilterUI) == "function" then
             RefreshListingFilterUI()
