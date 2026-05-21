@@ -14638,12 +14638,6 @@ function ArmListingsAutostartFromSavedToggle()
         return false
     end
 
-    --==================================================
-    -- SAFETY:
-    -- Saved listing filters should load only.
-    -- They must never start AutoList by themselves.
-    --==================================================
-
     ListingsState.Enabled =
         false
 
@@ -14676,13 +14670,8 @@ function ArmListingsAutostartFromSavedToggle()
         ListingsState.QueuedUUIDs
         or {}
 
-    table.clear(
-        ListingsState.ListingQueue
-    )
-
-    table.clear(
-        ListingsState.QueuedUUIDs
-    )
+    table.clear(ListingsState.ListingQueue)
+    table.clear(ListingsState.QueuedUUIDs)
 
     if type(BuildListingPreview) == "function" then
         pcall(BuildListingPreview)
@@ -14702,168 +14691,6 @@ function ArmListingsAutostartFromSavedToggle()
 
     return false
 end
-
-    --==================================================
-    -- FIRST PASS STARTER
-    -- Waits briefly for inventory/booth data, then runs
-    -- listing pass immediately instead of waiting for timer.
-    --==================================================
-
-    task.spawn(function()
-
-    print(
-        "[LISTINGS] Saved listing filters detected, auto-starting AutoList"
-    )
-
-    for attempt = 1, 12 do
-
-        if not ListingsState.Enabled then
-            return
-        end
-
-        if ScriptState
-        and ScriptState.ForceStopped then
-            return
-        end
-
-        task.wait(0.5)
-
-        local syncReady =
-            true
-
-        if type(WaitForOwnListedUUIDSync) == "function" then
-
-            local okSync, ready =
-                pcall(function()
-                    local result =
-                        WaitForOwnListedUUIDSync(4)
-
-                    return result
-                end)
-
-            syncReady =
-                okSync
-                and ready == true
-        end
-
-        if syncReady then
-
-            if type(RefreshListingInventorySnapshot) == "function" then
-                pcall(RefreshListingInventorySnapshot)
-            end
-
-            local preview =
-                nil
-
-            if type(BuildListingPreview) == "function" then
-
-                local okPreview, result =
-                    pcall(BuildListingPreview)
-
-                if okPreview then
-                    preview =
-                        result
-                end
-            end
-
-            if preview
-            and tonumber(preview.Ready) ~= nil
-            and tonumber(preview.Ready) > 0 then
-
-                ListingsState.LastScan =
-                    0
-
-                ListingsState.NoWorkSleepUntil =
-                    0
-
-                ListingsState.Status =
-                    "AutoList running"
-
-                pcall(function()
-                    RunAutoListingPass()
-                end)
-
-                if type(ListingsStatusRefresh) == "function" then
-                    pcall(ListingsStatusRefresh)
-                end
-
-                return
-            end
-
-        else
-
-            ListingsState.Status =
-                "Waiting for own booth sync"
-
-            if type(ListingsStatusRefresh) == "function" then
-                pcall(ListingsStatusRefresh)
-            end
-        end
-    end
-
-    -- Final fallback pass.
-    -- Even if preview says 0 ready, run once so status becomes correct:
-    -- already listed / all handled / no matching pets.
-    if ListingsState.Enabled
-    and not (
-        ScriptState
-        and ScriptState.ForceStopped
-    ) then
-
-        local syncReady =
-            true
-
-        if type(WaitForOwnListedUUIDSync) == "function" then
-
-            local okSync, ready =
-                pcall(function()
-                    local result =
-                        WaitForOwnListedUUIDSync(6)
-
-                    return result
-                end)
-
-            syncReady =
-                okSync
-                and ready == true
-        end
-
-        if not syncReady then
-
-            ListingsState.Status =
-                "Waiting for own booth sync"
-
-            if type(ListingsStatusRefresh) == "function" then
-                pcall(ListingsStatusRefresh)
-            end
-
-            return
-        end
-
-        ListingsState.LastScan =
-            0
-
-        ListingsState.NoWorkSleepUntil =
-            0
-
-        pcall(function()
-            RunAutoListingPass()
-        end)
-
-        if type(ListingsStatusRefresh) == "function" then
-            pcall(ListingsStatusRefresh)
-        end
-    end
-end)
-
-    print(
-        "[LISTINGS] AutoList armed from saved filters:",
-        tostring(filterCount)
-    )
-
-    return true
-end
-
 --==================================================
 -- LISTINGS: SCANNER
 --==================================================
