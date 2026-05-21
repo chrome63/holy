@@ -14640,10 +14640,31 @@ function ArmListingsAutostartFromSavedToggle()
         return false
     end
 
+    --==================================================
+    -- WAIT FOR OBSIDIAN OPTION TO EXIST
+    -- The UI can visually restore ON after this function
+    -- if we read too early. So we wait for the option.
+    --==================================================
+
     local option =
-        Library
-        and Library.Options
-        and Library.Options.EnableAutoList
+        nil
+
+    local startedAt =
+        os.clock()
+
+    while os.clock() - startedAt < 6 do
+
+        option =
+            Library
+            and Library.Options
+            and Library.Options.EnableAutoList
+
+        if option then
+            break
+        end
+
+        task.wait(0.10)
+    end
 
     local savedAutoListEnabled =
         false
@@ -14651,13 +14672,16 @@ function ArmListingsAutostartFromSavedToggle()
     if option then
 
         if option.Value == true then
-            savedAutoListEnabled = true
+            savedAutoListEnabled =
+                true
 
         elseif option.CurrentValue == true then
-            savedAutoListEnabled = true
+            savedAutoListEnabled =
+                true
 
         elseif option.State == true then
-            savedAutoListEnabled = true
+            savedAutoListEnabled =
+                true
         end
     end
 
@@ -14667,6 +14691,10 @@ function ArmListingsAutostartFromSavedToggle()
         "| option exists:",
         tostring(option ~= nil)
     )
+
+    --==================================================
+    -- RESET UNSAFE RUNTIME STATE
+    --==================================================
 
     ListingsState.Busy =
         false
@@ -14695,12 +14723,20 @@ function ArmListingsAutostartFromSavedToggle()
         ListingsState.PendingUUIDs
         or {}
 
-    table.clear(ListingsState.ListingQueue)
-    table.clear(ListingsState.QueuedUUIDs)
-    table.clear(ListingsState.PendingUUIDs)
+    table.clear(
+        ListingsState.ListingQueue
+    )
+
+    table.clear(
+        ListingsState.QueuedUUIDs
+    )
+
+    table.clear(
+        ListingsState.PendingUUIDs
+    )
 
     --==================================================
-    -- TOGGLE OFF = STAY OFF
+    -- TOGGLE OFF OR OPTION MISSING = STAY OFF
     --==================================================
 
     if savedAutoListEnabled ~= true then
@@ -14775,12 +14811,15 @@ function ArmListingsAutostartFromSavedToggle()
             pcall(IsListingConfigurationAllowed)
 
         if okCheck then
+
             allowed =
                 resultAllowed == true
 
             reason =
                 tostring(resultReason or "Config blocked")
+
         else
+
             allowed =
                 false
 
@@ -14856,53 +14895,52 @@ function ArmListingsAutostartFromSavedToggle()
         "[LISTINGS RESTORE] Start AutoList saved ON; runtime enabled"
     )
 
+    --==================================================
+    -- IMMEDIATE FIRST PASS
+    --==================================================
+
     task.spawn(function()
 
-        for attempt = 1, 20 do
+        task.wait(0.5)
 
-            if ListingsState.Enabled ~= true then
-                return
-            end
+        if ListingsState.Enabled ~= true then
+            return
+        end
 
-            if ScriptState
-            and ScriptState.ForceStopped then
-                return
-            end
+        if ScriptState
+        and ScriptState.ForceStopped then
+            return
+        end
 
-            task.wait(0.5)
+        if type(RefreshListingInventorySnapshot) == "function" then
+            pcall(RefreshListingInventorySnapshot)
+        end
 
-            if type(RefreshListingInventorySnapshot) == "function" then
-                pcall(RefreshListingInventorySnapshot)
-            end
+        if type(BuildOwnBoothListingSnapshot) == "function" then
+            pcall(function()
+                BuildOwnBoothListingSnapshot(true)
+            end)
+        end
 
-            if type(BuildOwnBoothListingSnapshot) == "function" then
-                pcall(function()
-                    BuildOwnBoothListingSnapshot(true)
-                end)
-            end
+        if type(BuildListingPreview) == "function" then
+            pcall(BuildListingPreview)
+        end
 
-            if type(BuildListingPreview) == "function" then
-                pcall(BuildListingPreview)
-            end
+        if type(RunAutoListingPass) == "function" then
 
-            if type(RunAutoListingPass) == "function" then
+            ListingsState.LastScan =
+                0
 
-                ListingsState.LastScan =
-                    0
+            ListingsState.NoWorkSleepUntil =
+                0
 
-                ListingsState.NoWorkSleepUntil =
-                    0
+            ListingsState.Status =
+                "AutoList running"
 
-                ListingsState.Status =
-                    "AutoList running"
+            pcall(RunAutoListingPass)
 
-                pcall(RunAutoListingPass)
-
-                if type(ListingsStatusRefresh) == "function" then
-                    pcall(ListingsStatusRefresh)
-                end
-
-                return
+            if type(ListingsStatusRefresh) == "function" then
+                pcall(ListingsStatusRefresh)
             end
         end
     end)
@@ -23343,11 +23381,29 @@ if IsTradeWorld() then
             pcall(ListingsStatusRefresh)
         end
 
-        if type(ArmListingsAutostartFromSavedToggle) == "function" then
+        task.spawn(function()
+
+    task.wait(1.25)
+
+    if type(ArmListingsAutostartFromSavedToggle) == "function" then
+
+        local ok, err =
             pcall(ArmListingsAutostartFromSavedToggle)
-        else
-            warn("[LISTINGS] ArmListingsAutostartFromSavedToggle missing at config restore")
+
+        if not ok then
+            warn(
+                "[LISTINGS] AutoList restore failed:",
+                tostring(err)
+            )
         end
+
+    else
+
+        warn(
+            "[LISTINGS] ArmListingsAutostartFromSavedToggle missing at config restore"
+        )
+    end
+end)
 
         if type(RefreshEggFocus) == "function" then
             pcall(RefreshEggFocus)
