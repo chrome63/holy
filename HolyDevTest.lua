@@ -13817,60 +13817,43 @@ function ListingPetMatchesFilter(pet, filter)
     end
 
     --==================================================
-    -- PET NAME + DECORATED PET NAME SUPPORT
-    -- Examples:
-    -- PetName = "Peryton", Mutation = "Gilded Choc"
-    -- Filter.Pet = "Gilded Choc Peryton"
-    -- This should match.
+    -- PET IDENTITY
+    -- Source of truth is pet.PetName, which comes from
+    -- the tool attribute "f" / resolved base pet identity.
+    --
+    -- This must be exact-only:
+    -- Gilded Choc Peryton must NOT match Peryton.
+    -- Rainbow Dilophosaurus must NOT match Dilophosaurus.
+    -- Rainbow Elephant must NOT match Elephant.
+    -- Rainbow Birb must NOT match Birb.
+    --
+    -- Mutation versions still work because their PetName
+    -- resolves to the true base pet:
+    -- HyperHunger Mimic Octopus -> Mimic Octopus
+    -- Tiny Peryton -> Peryton
     --==================================================
 
     local petName =
         tostring(pet.PetName or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
 
     local wantedPet =
         tostring(filter.Pet or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
 
     local petMutation =
         NormalizeListingPetMutationValue(
             pet.Mutation
         )
 
-    local petNameMatches =
-        petName == wantedPet
-
-    if not petNameMatches
-    and petName ~= ""
-    and wantedPet ~= "" then
-
-        -- Handles decorated filter names like:
-        -- "Gilded Choc Peryton" -> base pet "Peryton"
-        if wantedPet:sub(-#petName) == petName then
-
-            local prefixMutation =
-                wantedPet:sub(
-                    1,
-                    #wantedPet - #petName
-                )
-
-            prefixMutation =
-                prefixMutation
-                    :gsub("^%s+", "")
-                    :gsub("%s+$", "")
-
-            prefixMutation =
-                NormalizeListingPetMutationValue(
-                    prefixMutation
-                )
-
-            if prefixMutation ~= "---"
-            and petMutation == prefixMutation then
-                petNameMatches =
-                    true
-            end
-        end
+    if petName == ""
+    or wantedPet == "" then
+        return false
     end
 
-    if not petNameMatches then
+    if string.lower(petName) ~= string.lower(wantedPet) then
         return false
     end
 
