@@ -13817,7 +13817,11 @@ function ListingPetMatchesFilter(pet, filter)
     end
 
     --==================================================
-    -- PET NAME
+    -- PET NAME + DECORATED PET NAME SUPPORT
+    -- Examples:
+    -- PetName = "Peryton", Mutation = "Gilded Choc"
+    -- Filter.Pet = "Gilded Choc Peryton"
+    -- This should match.
     --==================================================
 
     local petName =
@@ -13826,41 +13830,76 @@ function ListingPetMatchesFilter(pet, filter)
     local wantedPet =
         tostring(filter.Pet or "")
 
-    if petName ~= wantedPet then
+    local petMutation =
+        NormalizeListingPetMutationValue(
+            pet.Mutation
+        )
+
+    local petNameMatches =
+        petName == wantedPet
+
+    if not petNameMatches
+    and petName ~= ""
+    and wantedPet ~= "" then
+
+        -- Handles decorated filter names like:
+        -- "Gilded Choc Peryton" -> base pet "Peryton"
+        if wantedPet:sub(-#petName) == petName then
+
+            local prefixMutation =
+                wantedPet:sub(
+                    1,
+                    #wantedPet - #petName
+                )
+
+            prefixMutation =
+                prefixMutation
+                    :gsub("^%s+", "")
+                    :gsub("%s+$", "")
+
+            prefixMutation =
+                NormalizeListingPetMutationValue(
+                    prefixMutation
+                )
+
+            if prefixMutation ~= "---"
+            and petMutation == prefixMutation then
+                petNameMatches =
+                    true
+            end
+        end
+    end
+
+    if not petNameMatches then
         return false
     end
 
---==================================================
--- MUTATION
--- "---" / "All" means any mutation.
--- "All Except" means any mutation except selected blocked ones.
---==================================================
+    --==================================================
+    -- MUTATION
+    -- "---" / "All" means any mutation.
+    -- "All Except" means any mutation except selected blocked ones.
+    --==================================================
 
-local wantedMutation =
-    NormalizeListingFilterMutation(
-        filter.Mutation
-    )
+    local wantedMutation =
+        NormalizeListingFilterMutation(
+            filter.Mutation
+        )
 
-local petMutation =
-    NormalizeListingPetMutationValue(
-        pet.Mutation
-    )
+    if wantedMutation == "All Except" then
 
-if wantedMutation == "All Except" then
+        local excluded =
+            filter.ExcludedMutations
 
-    local excluded =
-        filter.ExcludedMutations
+        if type(excluded) == "table"
+        and excluded[petMutation] == true then
+            return false
+        end
 
-    if type(excluded) == "table"
-    and excluded[petMutation] == true then
+    elseif wantedMutation ~= "---"
+    and petMutation ~= wantedMutation then
+
         return false
     end
-
-elseif wantedMutation ~= "---"
-and petMutation ~= wantedMutation then
-
-    return false
-end
 
     --==================================================
     -- LEVEL / AGE
@@ -13951,7 +13990,6 @@ end
 
     return true
 end
-
 function ResolveListingFilterForPet(pet)
 
     local filters =
