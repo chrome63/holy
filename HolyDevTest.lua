@@ -473,6 +473,7 @@ SniperFilterUIState = {
     -- Per-filter default.
     -- DisplayWeight = shown KG value, BaseWeight = raw PetData.BaseWeight.
     WeightMode = "DisplayWeight",
+    Priority = 5,
 }
 
 function NormalizeWatchlistId(value)
@@ -500,6 +501,140 @@ function NormalizeWeightMode(value)
     end
 
     return "DisplayWeight"
+end
+
+--==================================================
+-- SNIPER PRIORITY HELPERS
+-- Priority is per-filter.
+-- 10 = buy first, 1 = low priority.
+--==================================================
+
+function ClampSniperPriority(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return 5
+    end
+
+    return math.clamp(
+        math.floor(number),
+        1,
+        10
+    )
+end
+
+function ResolveSniperFilterPriority(filter)
+
+    if type(filter) ~= "table" then
+        return 5
+    end
+
+    return ClampSniperPriority(
+        filter.Priority
+    )
+end
+
+function ResolveSniperDealScore(listing, filter)
+
+    if type(listing) ~= "table"
+    or type(filter) ~= "table" then
+        return 0
+    end
+
+    local price =
+        tonumber(listing.Price)
+        or math.huge
+
+    local maxPrice =
+        tonumber(filter.MaxPrice)
+
+    if not maxPrice
+    or maxPrice == math.huge
+    or maxPrice <= 0 then
+        return 0
+    end
+
+    local score =
+        1 - (price / maxPrice)
+
+    return math.clamp(
+        score,
+        -1,
+        1
+    )
+end
+
+function ComparePriorityListings(a, b)
+
+    if type(a) ~= "table" then
+        return false
+    end
+
+    if type(b) ~= "table" then
+        return true
+    end
+
+    local aPriority =
+        ClampSniperPriority(
+            a.MatchedPriority
+            or a.Priority
+            or 5
+        )
+
+    local bPriority =
+        ClampSniperPriority(
+            b.MatchedPriority
+            or b.Priority
+            or 5
+        )
+
+    if aPriority ~= bPriority then
+        return aPriority > bPriority
+    end
+
+    local aDeal =
+        tonumber(a.MatchedDealScore)
+        or 0
+
+    local bDeal =
+        tonumber(b.MatchedDealScore)
+        or 0
+
+    if aDeal ~= bDeal then
+        return aDeal > bDeal
+    end
+
+    local aPrice =
+        tonumber(a.Price)
+        or math.huge
+
+    local bPrice =
+        tonumber(b.Price)
+        or math.huge
+
+    if aPrice ~= bPrice then
+        return aPrice < bPrice
+    end
+
+    local aWeight =
+        tonumber(a.MatchedWeight)
+        or tonumber(a.DisplayWeight)
+        or tonumber(a.Weight)
+        or 0
+
+    local bWeight =
+        tonumber(b.MatchedWeight)
+        or tonumber(b.DisplayWeight)
+        or tonumber(b.Weight)
+        or 0
+
+    if aWeight ~= bWeight then
+        return aWeight > bWeight
+    end
+
+    return tostring(a.UID or "") < tostring(b.UID or "")
 end
 
 function ResolveListingWeightForFilter(listing, filter)
@@ -2108,6 +2243,11 @@ function ListingMatchesFilter(listing)
             if listing.Price <= maxPrice
             and listingWeight >= minWeight then
 
+                local priority =
+                    ResolveSniperFilterPriority(
+                        filter
+                    )
+
                 listing.MatchedWatchlistId =
                     watchlistId
 
@@ -2120,6 +2260,18 @@ function ListingMatchesFilter(listing)
                 listing.MatchedFilterType =
                     "Pet"
 
+                listing.MatchedFilter =
+                    filter
+
+                listing.MatchedPriority =
+                    priority
+
+                listing.MatchedDealScore =
+                    ResolveSniperDealScore(
+                        listing,
+                        filter
+                    )
+
                 return true, watchlistId, filter
             end
         end
@@ -2127,7 +2279,7 @@ function ListingMatchesFilter(listing)
 
     --==================================================
     -- EGG FOCUS FILTERS
-    -- Simple filters: egg pet pool + max price only.
+    -- For now, egg focus uses default priority 5.
     --==================================================
 
     for watchlistId = 1, 2 do
@@ -2156,6 +2308,20 @@ function ListingMatchesFilter(listing)
 
                     listing.MatchedFilterType =
                         "EggFocus"
+
+                    listing.MatchedFilter =
+                        eggFilter
+
+                    listing.MatchedPriority =
+                        ResolveSniperFilterPriority(
+                            eggFilter
+                        )
+
+                    listing.MatchedDealScore =
+                        ResolveSniperDealScore(
+                            listing,
+                            eggFilter
+                        )
 
                     return true, watchlistId, eggFilter
                 end
@@ -2393,14 +2559,26 @@ function QueuePurchase(listing)
 
     QueuedListings[listingKey] = true
 
-    table.insert(
+        table.insert(
         PurchaseQueue,
         listing
     )
 
-    print(
+    table.sort(
+        PurchaseQueue,
+        ComparePriorityListings
+    )
+
+        print(
         string.format(
-            "[QUEUE] Added → %s | Queue: %s",
+            "[QUEUE] Added → P%s %s | Queue: %s",
+            tostring(
+                ClampSniperPriority(
+                    listing.MatchedPriority
+                    or listing.Priority
+                    or 5
+                )
+            ),
             tostring(listing.PetName),
             tostring(#PurchaseQueue)
         )
@@ -5259,160 +5437,232 @@ function RunSniperScan()
         return
     end
 
-    SniperState.Scanning = true
+    SniperState.Scanning =
+        true
 
-    local ok, err = pcall(function()
+    local ok, err =
+        pcall(function()
 
-        local listings, scannedCount =
-        ExtractListings()
+            local listings, scannedCount =
+                ExtractListings()
 
-if type(TrackMarketListings) == "function" then
-    pcall(function()
-        TrackMarketListings(listings)
-    end)
-end
+            if type(TrackMarketListings) == "function" then
+                pcall(function()
+                    TrackMarketListings(listings)
+                end)
+            end
 
-if SniperMonitorState then
-    SniperMonitorState.PetsScanned =
-        tonumber(scannedCount) or 0
+            if SniperMonitorState then
 
-    SniperMonitorState.ScanPasses =
-        (SniperMonitorState.ScanPasses or 0) + 1
-end
+                SniperMonitorState.PetsScanned =
+                    tonumber(scannedCount)
+                    or 0
 
-        local matches = 0
+                SniperMonitorState.ScanPasses =
+                    (SniperMonitorState.ScanPasses or 0) + 1
+            end
 
-        for i = 1, #listings do
+            local priorityMatches =
+                {}
 
-            local listing = listings[i]
+            local matches =
+                0
 
-if ListingMatchesFilter(listing) then
+            --==================================================
+            -- FIRST PASS:
+            -- collect all valid matches.
+            -- Do NOT buy during booth scan order.
+            --==================================================
 
-    local inventoryFull, currentPets, maxPets =
-        IsHolyPetInventoryFull()
+            for i = 1, #listings do
 
-    if inventoryFull then
+                local listing =
+                    listings[i]
 
-        warn(
-            string.format(
-                "[SNIPER] Inventory safety limit reached: %s/%s pets",
-                tostring(currentPets),
-                tostring(maxPets)
+                local matched =
+                    ListingMatchesFilter(listing)
+
+                if matched then
+
+                    local inventoryFull, currentPets, maxPets =
+                        IsHolyPetInventoryFull()
+
+                    if inventoryFull then
+
+                        warn(
+                            string.format(
+                                "[SNIPER] Inventory safety limit reached: %s/%s pets",
+                                tostring(currentPets),
+                                tostring(maxPets)
+                            )
+                        )
+
+                        HolyNotify(
+                            "Inventory Limit Reached",
+                            tostring(currentPets)
+                                .. "/"
+                                .. tostring(maxPets)
+                                .. " pets. Holy paused buying.",
+                            "package-x",
+                            5
+                        )
+
+                        continue
+                    end
+
+                    local listingKey =
+                        tostring(listing.BoothId)
+                        .. "_"
+                        .. tostring(listing.UID)
+
+                    if ClaimedListings[listingKey] then
+                        continue
+                    end
+
+                    matches += 1
+
+                    table.insert(
+                        priorityMatches,
+                        listing
+                    )
+                end
+            end
+
+            --==================================================
+            -- PRIORITY SORT:
+            -- 1. Filter priority
+            -- 2. Better deal %
+            -- 3. Lower price
+            -- 4. Higher weight
+            --==================================================
+
+            table.sort(
+                priorityMatches,
+                ComparePriorityListings
             )
-        )
 
-        HolyNotify(
-            "Inventory Limit Reached",
-            tostring(currentPets)
-                .. "/"
-                .. tostring(maxPets)
-                .. " pets. Holy paused buying.",
-            "package-x",
-            5
-        )
+            --==================================================
+            -- SECOND PASS:
+            -- dispatch in priority order.
+            --==================================================
 
-        continue
-    end
-    local listingKey =
-        tostring(listing.BoothId)
-        .. "_"
-        .. tostring(listing.UID)
+            for index, listing in ipairs(priorityMatches) do
 
-    --==================================================
-    -- SKIP ALREADY CLAIMED
-    --==================================================
+                local listingKey =
+                    tostring(listing.BoothId)
+                    .. "_"
+                    .. tostring(listing.UID)
 
-    if ClaimedListings[listingKey] then
-        continue
-    end
+                if ClaimedListings[listingKey] then
+                    continue
+                end
 
-    ClaimedListings[listingKey] = true
+                ClaimedListings[listingKey] =
+                    true
 
-    matches = matches + 1
+                print(
+                    string.format(
+                        "[MATCH P%s #%s] %s | %s tokens | %skg | deal %.2f",
+                        tostring(
+                            ClampSniperPriority(
+                                listing.MatchedPriority
+                            )
+                        ),
+                        tostring(index),
+                        tostring(listing.PetName),
+                        tostring(listing.Price),
+                        tostring(listing.Weight),
+                        tonumber(listing.MatchedDealScore) or 0
+                    )
+                )
 
-    print(
-        string.format(
-            "[MATCH] %s | %s tokens | %skg",
-            listing.PetName,
-            listing.Price,
-            listing.Weight
-        )
-    )
+                local dispatched =
+                    DispatchPurchase(listing)
 
-local dispatched =
-    DispatchPurchase(listing)
+                if dispatched then
 
-if dispatched then
+                    task.delay(15, function()
 
-    task.delay(15, function()
+                        ClaimedListings[listingKey] =
+                            nil
+                    end)
 
-        ClaimedListings[listingKey] =
-            nil
-    end)
+                else
 
-else
+                    ClaimedListings[listingKey] =
+                        nil
+                end
+            end
 
-    ClaimedListings[listingKey] =
-        nil
-end
-end
-        end 
-if matches > 0 then
+            if matches > 0 then
 
-    print(
-        "[SNIPER] Matches:",
-        matches
-    )
+                print(
+                    "[SNIPER] Priority matches:",
+                    tostring(matches),
+                    "| dispatched:",
+                    tostring(#priorityMatches)
+                )
 
-else
+            else
 
-    if SniperState.AutoHop then
+                if SniperState.AutoHop then
 
-        SniperState.ScanStartedAt =
-            SafeNumber(SniperState.ScanStartedAt, os.clock())
+                    SniperState.ScanStartedAt =
+                        SafeNumber(
+                            SniperState.ScanStartedAt,
+                            os.clock()
+                        )
 
-        local elapsed =
-            SafeElapsed(SniperState.ScanStartedAt)
+                    local elapsed =
+                        SafeElapsed(
+                            SniperState.ScanStartedAt
+                        )
 
-if elapsed >= SniperState.ScanDuration then
+                    if elapsed >= SniperState.ScanDuration then
 
-    SniperState.StayAfterSnipeUntil =
-        SafeNumber(SniperState.StayAfterSnipeUntil, 0)
+                        SniperState.StayAfterSnipeUntil =
+                            SafeNumber(
+                                SniperState.StayAfterSnipeUntil,
+                                0
+                            )
 
-    local stayRemaining =
-        SafeRemaining(SniperState.StayAfterSnipeUntil)
+                        local stayRemaining =
+                            SafeRemaining(
+                                SniperState.StayAfterSnipeUntil
+                            )
 
-    if SniperState.StayAfterSnipe == true
-    and stayRemaining > 0 then
+                        if SniperState.StayAfterSnipe == true
+                        and stayRemaining > 0 then
 
-        print(
-            string.format(
-                "[SniperHop] Staying after snipe: %.1fs remaining",
-                stayRemaining
-            )
-        )
+                            print(
+                                string.format(
+                                    "[SniperHop] Staying after snipe: %.1fs remaining",
+                                    stayRemaining
+                                )
+                            )
 
-        return
-    end
+                            return
+                        end
 
-    SniperState.ScanStartedAt =
-        os.clock()
+                        SniperState.ScanStartedAt =
+                            os.clock()
 
-    task.spawn(ExecuteSniperHop)
-end
-    end
-end
+                        task.spawn(
+                            ExecuteSniperHop
+                        )
+                    end
+                end
+            end
 
-        SniperState.LastScan =
-            os.clock()
+            SniperState.LastScan =
+                os.clock()
+        end)
 
-    end)
-
-    SniperState.Scanning = false
+    SniperState.Scanning =
+        false
 
     if not ok then
         warn("[SNIPER] Scan failed:", err)
-    
     end
 end
 --==================================================
@@ -6507,7 +6757,10 @@ function SerializeFilterSet(filters)
                     or math.huge,
 
                 WeightMode =
-                    NormalizeWeightMode(data.WeightMode),
+    NormalizeWeightMode(data.WeightMode),
+
+                Priority =
+    ResolveSniperFilterPriority(data),
             }
         end
     end
@@ -6619,7 +6872,10 @@ function LoadFilterSetFromTable(target, source)
                     or math.huge,
 
                 WeightMode =
-                    NormalizeWeightMode(data.WeightMode),
+    NormalizeWeightMode(data.WeightMode),
+
+Priority =
+    ClampSniperPriority(data.Priority),
             }
         end
     end
@@ -16820,6 +17076,25 @@ local MaxPriceInput =
         }
     )
 
+local PriorityInput =
+    SniperFilterBox:AddInput(
+        "SniperFilterPriority",
+        {
+            Text = "Priority",
+            Tooltip = "1 = low priority, 10 = buy first.",
+            Default = "5",
+            Numeric = true,
+            Finished = true,
+        }
+    )
+
+PriorityInput:OnChanged(function(value)
+
+    SniperFilterUIState.Priority =
+        ClampSniperPriority(value)
+
+    MarkConfigDirty()
+end)
 --==================================================
 -- WATCHLIST VIEW SELECTOR
 -- Both watchlists are active for sniping; this only changes display/manage.
@@ -17958,11 +18233,12 @@ RefreshWatchlist = function()
             or 0
 
         table.insert(entries, {
-            Pet = tostring(pet),
-            MaxPrice = maxPrice,
-            MinWeight = minWeight,
-            WeightMode = NormalizeWeightMode(data.WeightMode),
-        })
+    Pet = tostring(pet),
+    MaxPrice = maxPrice,
+    MinWeight = minWeight,
+    WeightMode = data.WeightMode,
+    Priority = ResolveSniperFilterPriority(data),
+})
     end
 
     table.sort(entries, function(a, b)
@@ -18135,15 +18411,25 @@ RefreshWatchlist = function()
                     8
                 )
 
+                local priorityText =
+    PadLeft(
+        "P" .. tostring(
+            ClampSniperPriority(entry.Priority)
+        ),
+        4
+    )
+
             label:SetText(
-                marker
-                    .. " "
-                    .. petText
-                    .. " "
-                    .. priceText
-                    .. " "
-                    .. weightText
-            )
+    marker
+        .. " "
+        .. petText
+        .. " "
+        .. priceText
+        .. " "
+        .. weightText
+        .. " "
+        .. priorityText
+)
 
             label:SetVisible(true)
 
@@ -18203,11 +18489,19 @@ SniperFilterBox:AddButton({
                 SniperFilterUIState.WeightMode
             )
 
-        filters[pet] = {
-            MinWeight = minWeight,
-            MaxPrice = maxPrice,
-            WeightMode = weightMode,
-        }
+        local priority =
+    ClampSniperPriority(
+        PriorityInput.Value
+        or SniperFilterUIState.Priority
+        or 5
+    )
+
+filters[pet] = {
+    MinWeight = minWeight,
+    MaxPrice = maxPrice,
+    WeightMode = weightMode,
+    Priority = priority,
+}
 
         SniperFilterUIState.ViewTarget =
             saveTarget
@@ -18224,13 +18518,15 @@ end
         SaveSniperFilters()
 
         print(
-            "[Sniper] Filter updated:",
-            pet,
-            "Watchlist:",
-            tostring(saveTarget),
-            "WeightMode:",
-            tostring(weightMode)
-        )
+    "[Sniper] Filter updated:",
+    pet,
+    "Watchlist:",
+    tostring(saveTarget),
+    "WeightMode:",
+    tostring(weightMode),
+    "Priority:",
+    tostring(priority)
+)
 
         HolyNotify(
             "Filter Updated",
