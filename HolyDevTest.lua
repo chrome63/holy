@@ -16146,9 +16146,46 @@ local EquipPetToggle = BoothBox:AddToggle("EquipPet", {
 
 EquipPetToggle:OnChanged(function(enabled)
 
-    BoothPetState.Enabled = enabled
+    BoothPetState.Enabled =
+        enabled == true
+
+    -- Reset equip lifecycle whenever the user toggles this.
+    -- This prevents stale UID locks from blocking re-enable.
+    BoothPetState.LastEquippedUID =
+        nil
+
+    BoothPetState.LockedShowcaseUID =
+        nil
+
+    BoothPetState.LastMissingPet =
+        nil
+
+    BoothPetState.LastMissingWarnAt =
+        0
+
+    BoothPetState.LastEquipAttemptAt =
+        0
+
+    ShowcaseEquipState.ReequipPending =
+        false
 
     MarkConfigDirty()
+
+    if enabled == true then
+
+        task.spawn(function()
+
+            task.wait(0.15)
+
+            if BoothPetState.Enabled ~= true then
+                return
+            end
+
+            if type(EquipShowcasePet) == "function" then
+                EquipShowcasePet(true)
+            end
+        end)
+    end
 end)
 
 RefreshDynamicPetList()
@@ -20765,7 +20802,7 @@ print(
             "ListingAutoUnfavorite",
             {
                 Text = "❤️ Auto Unfavorite",
-                Default = true,
+                Default = false,
             }
         )
 
@@ -20788,7 +20825,7 @@ local KeepRunningToggle =
         {
             Text = "♾️ Keep Running",
             Tooltip = "ON = AutoList keeps watching. OFF = AutoList stops when all current matching pets are handled.",
-            Default = true,
+            Default = false,
         }
     )
 
