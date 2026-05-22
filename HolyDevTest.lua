@@ -17143,7 +17143,7 @@ MaxServerPlayersInput:OnChanged(function(value)
 end)
 
 local ServerHopModeDropdown =
-    SniperHopBox:AddInput(
+    SniperHopBox:AddDropdown(
         "SniperServerHopMode",
         {
             Text = "⇄ Server Hop Mode",
@@ -17242,7 +17242,7 @@ StayAfterSnipeToggle:OnChanged(function(enabled)
 end)
 
 local StayAfterSnipeDependencyBox =
-    SniperConfigBox:AddDependencyBox()
+    SniperHopBox:AddDependencyBox()
 
 local StayAfterSnipeInput =
     SniperHopBox:AddInput(
