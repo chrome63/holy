@@ -5291,7 +5291,7 @@ function FutureLeakRunScan(sendWebhook)
                 FutureLeakLoadSnapshot()
             end
 
-            local products =
+local products =
     FutureLeakFetchDeveloperProducts()
 
 FutureLeakWebhook.LastFound =
@@ -5314,9 +5314,9 @@ if #products <= 0 then
     return
 end
 
-            local oldMap =
-                FutureLeakWebhook.Products
-                or {}
+local oldMap =
+    FutureLeakWebhook.Products
+    or {}
 
             local newMap =
                 FutureLeakBuildProductMap(products)
