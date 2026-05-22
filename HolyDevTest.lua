@@ -432,9 +432,15 @@ task.spawn(function()
             end
         end
 
-                task.wait(
-            GetBoothDataRefreshInterval()
-        )
+        local refreshInterval =
+            0.05
+
+        if type(GetBoothDataRefreshInterval) == "function" then
+            refreshInterval =
+                GetBoothDataRefreshInterval()
+        end
+
+        task.wait(refreshInterval)
     end
 end)
 
@@ -1084,7 +1090,7 @@ function GetBoothDataRefreshInterval()
 
     return math.clamp(
         interval,
-        0.03,
+        0.01,
         0.20
     )
 end
