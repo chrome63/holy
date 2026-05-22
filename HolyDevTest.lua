@@ -115,17 +115,50 @@ Executor.GetUpvalues =
 
 Executor.WriteFile =
     type(writefile) == "function"
-    and writefile
+    and function(path, content)
+
+        path =
+            tostring(path or "")
+
+        if path == "" then
+            return false, "Missing writefile path"
+        end
+
+        return writefile(
+            path,
+            tostring(content or "")
+        )
+    end
     or nil
 
 Executor.ReadFile =
     type(readfile) == "function"
-    and readfile
+    and function(path)
+
+        path =
+            tostring(path or "")
+
+        if path == "" then
+            return nil
+        end
+
+        return readfile(path)
+    end
     or nil
 
 Executor.IsFile =
     type(isfile) == "function"
-    and isfile
+    and function(path)
+
+        path =
+            tostring(path or "")
+
+        if path == "" then
+            return false
+        end
+
+        return isfile(path)
+    end
     or nil
 
 Executor.MakeFolder =
@@ -7250,7 +7283,12 @@ function LoadSniperFilters()
         return
     end
 
-    if not Executor.IsFile(FILTER_SAVE_FILE) then
+    if tostring(FILTER_SAVE_FILE or "") == "" then
+    warn("[Filters] FILTER_SAVE_FILE missing")
+    return
+end
+
+if not Executor.IsFile(FILTER_SAVE_FILE) then
         print("[Filters] No existing filter save")
         return
     end
@@ -7443,7 +7481,12 @@ function LoadListingFilters()
         return false
     end
 
-    if not Executor.IsFile(LISTING_FILTER_SAVE_FILE) then
+    if tostring(LISTING_FILTER_SAVE_FILE or "") == "" then
+    warn("[LISTINGS FILTERS] LISTING_FILTER_SAVE_FILE missing")
+    return false
+end
+
+if not Executor.IsFile(LISTING_FILTER_SAVE_FILE) then
         print("[LISTINGS FILTERS] No existing save")
         return false
     end
@@ -7637,7 +7680,12 @@ function LoadListingAutoListIntent()
         return nil
     end
 
-    if not Executor.IsFile(LISTING_AUTOLIST_INTENT_SAVE_FILE) then
+    if tostring(LISTING_AUTOLIST_INTENT_SAVE_FILE or "") == "" then
+    warn("[LISTINGS INTENT] LISTING_AUTOLIST_INTENT_SAVE_FILE missing")
+    return nil
+end
+
+if not Executor.IsFile(LISTING_AUTOLIST_INTENT_SAVE_FILE) then
         return nil
     end
 
