@@ -432,7 +432,9 @@ task.spawn(function()
             end
         end
 
-        task.wait(0.02)
+                task.wait(
+            GetBoothDataRefreshInterval()
+        )
     end
 end)
 
@@ -905,9 +907,16 @@ SniperState = {
     MaxPetInventory = 350,
     StopAtPetInventoryLimit = true,
 
-    -- scan timing
+        -- scan timing
     LastScan = 0,
     ScanInterval = 0.02,
+    ScanSpeedMode = "Fast",
+
+    -- booth-data refresh timing
+    -- Controls how often LatestBoothData is refreshed from TradeBoothController data.
+    -- Keep separate from ScanInterval because GetDataAsync is heavier than scanning an existing snapshot.
+    BoothDataRefreshMode = "Fast",
+    BoothDataRefreshInterval = 0.05,
 
     -- auto hop
     AutoHop = false,
@@ -993,6 +1002,91 @@ function SetSniperScanSpeedMode(mode)
         ResolveSniperScanInterval(mode)
 
     return SniperState.ScanInterval
+end
+
+--==================================================
+-- BOOTH DATA REFRESH SPEED CONFIG
+-- Controls how often LatestBoothData is refreshed.
+-- This is intentionally separate from Sniper Scan Speed.
+--==================================================
+
+function ResolveBoothDataRefreshInterval(mode)
+
+    mode =
+        tostring(mode or "Fast")
+
+    if mode == "Aggressive" then
+        return 0.03
+    end
+
+    if mode == "Fast" then
+        return 0.05
+    end
+
+    if mode == "Balanced" then
+        return 0.10
+    end
+
+    if mode == "Low CPU" then
+        return 0.15
+    end
+
+    if mode == "Ultra Safe" then
+        return 0.20
+    end
+
+    return 0.05
+end
+
+function SetBoothDataRefreshMode(mode)
+
+    mode =
+        tostring(mode or "Fast")
+
+    local allowed = {
+        ["Aggressive"] = true,
+        ["Fast"] = true,
+        ["Balanced"] = true,
+        ["Low CPU"] = true,
+        ["Ultra Safe"] = true,
+    }
+
+    if not allowed[mode] then
+        mode =
+            "Fast"
+    end
+
+    SniperState.BoothDataRefreshMode =
+        mode
+
+    SniperState.BoothDataRefreshInterval =
+        ResolveBoothDataRefreshInterval(mode)
+
+    return SniperState.BoothDataRefreshInterval
+end
+
+function GetBoothDataRefreshInterval()
+
+    local interval =
+        tonumber(
+            SniperState
+            and SniperState.BoothDataRefreshInterval
+        )
+
+    if not interval then
+        interval =
+            ResolveBoothDataRefreshInterval(
+                SniperState
+                and SniperState.BoothDataRefreshMode
+                or "Fast"
+            )
+    end
+
+    return math.clamp(
+        interval,
+        0.03,
+        0.20
+    )
 end
 
 TeleportRetryState = nil
@@ -16953,6 +17047,46 @@ ScanSpeedDropdown:OnChanged(function(value)
             .. tostring(interval)
             .. "s interval",
         "zap",
+        3
+    )
+end)
+
+local BoothDataRefreshDropdown =
+    SniperConfigBox:AddDropdown(
+        "BoothDataRefreshMode",
+        {
+            Text = "📡 Booth Data Refresh",
+            Tooltip = "Controls how often HOLY refreshes LatestBoothData. Fast is recommended. Aggressive is faster but can stutter on low-end devices.",
+            Values = {
+                "Aggressive",
+                "Fast",
+                "Balanced",
+                "Low CPU",
+                "Ultra Safe",
+            },
+            Default = SniperState.BoothDataRefreshMode or "Fast",
+            Searchable = false,
+        }
+    )
+
+BoothDataRefreshDropdown:OnChanged(function(value)
+
+    local interval =
+        SetBoothDataRefreshMode(value)
+
+    MarkConfigDirty()
+
+    if ConfigState.IsHydrating then
+        return
+    end
+
+    HolyNotify(
+        "Booth Data Refresh Updated",
+        tostring(SniperState.BoothDataRefreshMode)
+            .. " • "
+            .. tostring(interval)
+            .. "s interval",
+        "radio",
         3
     )
 end)
