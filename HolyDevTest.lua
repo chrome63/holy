@@ -19366,12 +19366,18 @@ end
 
 function SendWebhook(payload)
 
-    local body =
-        HttpService:JSONEncode(payload)
+local webhookUrl =
+    tostring(WebhookState.URL or "")
+        :gsub("%s+", "")
+
+if webhookUrl == "" then
+    warn("[WEBHOOK] Missing URL")
+    return
+end
 
 local ok, response =
     ExecutorSendRequest({
-        Url = ...,
+        Url = webhookUrl,
         Method = "POST",
         Headers = {
             ["Content-Type"] = "application/json"
