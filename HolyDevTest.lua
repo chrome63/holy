@@ -81,6 +81,144 @@ function IsTradeWorld()
 
     return game.PlaceId == TRADING_WORLD_PLACE_ID
 end
+
+--==================================================
+-- EXECUTOR API WRAPPERS
+-- Centralized compatibility layer for obfuscation safety.
+-- Never call executor globals directly in runtime systems.
+--==================================================
+
+Executor =
+    Executor
+    or {}
+
+Executor.Request =
+    (
+        syn
+        and syn.request
+    )
+    or http_request
+    or request
+    or (
+        http
+        and http.request
+    )
+    or (
+        fluxus
+        and fluxus.request
+    )
+
+Executor.GetUpvalues =
+    type(getupvalues) == "function"
+    and getupvalues
+    or nil
+
+Executor.WriteFile =
+    type(writefile) == "function"
+    and writefile
+    or nil
+
+Executor.ReadFile =
+    type(readfile) == "function"
+    and readfile
+    or nil
+
+Executor.IsFile =
+    type(isfile) == "function"
+    and isfile
+    or nil
+
+Executor.MakeFolder =
+    type(makefolder) == "function"
+    and makefolder
+    or nil
+
+Executor.IsFolder =
+    type(isfolder) == "function"
+    and isfolder
+    or nil
+
+Executor.DeleteFile =
+    type(delfile) == "function"
+    and delfile
+    or nil
+
+Executor.SetClipboard =
+    type(setclipboard) == "function"
+    and setclipboard
+    or nil
+
+Executor.GetHiddenUI =
+    type(gethui) == "function"
+    and gethui
+    or nil
+
+function ExecutorCanUseFiles()
+
+    return Executor.WriteFile ~= nil
+        and Executor.ReadFile ~= nil
+        and Executor.IsFile ~= nil
+end
+
+function ExecutorEnsureFolder(folderName)
+
+    folderName =
+        tostring(folderName or "")
+
+    if folderName == "" then
+        return false
+    end
+
+    if not Executor.MakeFolder then
+        return false
+    end
+
+    if Executor.IsFolder
+    and Executor.IsFolder(folderName) then
+        return true
+    end
+
+    local ok =
+        pcall(function()
+            Executor.MakeFolder(folderName)
+        end)
+
+    return ok == true
+end
+
+function ExecutorCopyText(text)
+
+    if not Executor.SetClipboard then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+            Executor.SetClipboard(
+                tostring(text or "")
+            )
+        end)
+
+    return ok == true
+end
+
+function ExecutorSendRequest(payload)
+
+    if not Executor.Request then
+        return false, "No request function available"
+    end
+
+    local ok, response =
+        pcall(function()
+            return Executor.Request(payload)
+        end)
+
+    if not ok then
+        return false, response
+    end
+
+    return true, response
+end
 --==================================================
 -- PRODUCTION CONSOLE FILTER
 -- Hides normal HOLY debug/status output for users.
@@ -450,10 +588,23 @@ function GetBoothStore()
         return nil
     end
 
-    local upvalues =
-        getupvalues(
-            Controller.GetPlayerBoothData
-        )
+    if not Executor.GetUpvalues then
+        warn("[BoothData] getupvalues unsupported")
+        return nil
+    end
+
+    local ok, upvalues =
+        pcall(function()
+            return Executor.GetUpvalues(
+                Controller.GetPlayerBoothData
+            )
+        end)
+
+    if not ok
+    or type(upvalues) ~= "table" then
+        warn("[BoothData] Failed to inspect booth data upvalues")
+        return nil
+    end
 
     local store =
         upvalues
@@ -3521,15 +3672,7 @@ function SendGlobalBoothSaleWebhookNow(sale)
         return
     end
 
-    RequestFunction =
-        RequestFunction
-        or syn and syn.request
-        or http_request
-        or request
-        or (http and http.request)
-        or (fluxus and fluxus.request)
-
-    if not RequestFunction then
+    if not Executor.Request then
         warn("[GLOBAL BOOTH WEBHOOK] No request function available")
         return
     end
@@ -3627,21 +3770,19 @@ function SendGlobalBoothSaleWebhookNow(sale)
         }
 
         local ok, response =
-            pcall(function()
-                return RequestFunction({
-                    Url =
-                        tostring(GlobalBoothSaleWebhook.URL)
-                            :gsub("%s+", ""),
+            ExecutorSendRequest({
+                Url =
+                    tostring(GlobalBoothSaleWebhook.URL)
+                        :gsub("%s+", ""),
 
-                    Method = "POST",
+                Method = "POST",
 
-                    Headers = {
-                        ["Content-Type"] = "application/json"
-                    },
+                Headers = {
+                    ["Content-Type"] = "application/json"
+                },
 
-                    Body = HttpService:JSONEncode(payload)
-                })
-            end)
+                Body = HttpService:JSONEncode(payload)
+            })
 
         if not ok then
             warn(
@@ -4205,15 +4346,7 @@ function SendMarketTrackerWebhookNow(listing)
         return false
     end
 
-    RequestFunction =
-        RequestFunction
-        or syn and syn.request
-        or http_request
-        or request
-        or (http and http.request)
-        or (fluxus and fluxus.request)
-
-    if not RequestFunction then
+    if not Executor.Request then
         warn("[MARKET TRACKER] No request function available")
         return false
     end
@@ -4363,18 +4496,16 @@ else
 end
 
     local ok, response =
-        pcall(function()
-            return RequestFunction({
-                Url = webhookUrl,
-                Method = "POST",
+        ExecutorSendRequest({
+            Url = webhookUrl,
+            Method = "POST",
 
-                Headers = {
-                    ["Content-Type"] = "application/json"
-                },
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
 
-                Body = HttpService:JSONEncode(payload)
-            })
-        end)
+            Body = HttpService:JSONEncode(payload)
+        })
 
     if not ok then
         warn(
@@ -4685,15 +4816,7 @@ function SendGlobalSnipeWebhook(listing, toolName, source)
         return
     end
 
-RequestFunction =
-    RequestFunction
-    or syn and syn.request
-    or http_request
-    or request
-    or (http and http.request)
-    or (fluxus and fluxus.request)
-
-if not RequestFunction then
+if not Executor.Request then
     warn("[GLOBAL SNIPER WEBHOOK] No request function available")
     return
 end
@@ -4821,21 +4944,19 @@ local confirmedTitle =
         }
 
         local ok, response =
-            pcall(function()
-                return RequestFunction({
-                    Url =
-                        tostring(GlobalSnipeWebhook.URL)
-                            :gsub("%s+", ""),
+            ExecutorSendRequest({
+                Url =
+                    tostring(GlobalSnipeWebhook.URL)
+                        :gsub("%s+", ""),
 
-                    Method = "POST",
+                Method = "POST",
 
-                    Headers = {
-                        ["Content-Type"] = "application/json"
-                    },
+                Headers = {
+                    ["Content-Type"] = "application/json"
+                },
 
-                    Body = HttpService:JSONEncode(payload)
-                })
-            end)
+                Body = HttpService:JSONEncode(payload)
+            })
 
         if not ok then
             warn(
@@ -7004,7 +7125,7 @@ function SerializeEggFocusSet(filters)
 end
 function SaveSniperFilters()
 
-    if not writefile then
+    if not Executor.WriteFile then
         warn("[Filters] writefile unsupported")
         return false
     end
@@ -7039,7 +7160,9 @@ function SaveSniperFilters()
     },
 }
 
-        writefile(
+        ExecutorEnsureFolder("HolyV2")
+
+        Executor.WriteFile(
             FILTER_SAVE_FILE,
             HttpService:JSONEncode(serialized)
         )
@@ -7117,17 +7240,17 @@ end
 
 function LoadSniperFilters()
 
-    if not isfile then
+    if not Executor.IsFile then
         warn("[Filters] isfile unsupported")
         return
     end
 
-    if not readfile then
+    if not Executor.ReadFile then
         warn("[Filters] readfile unsupported")
         return
     end
 
-    if not isfile(FILTER_SAVE_FILE) then
+    if not Executor.IsFile(FILTER_SAVE_FILE) then
         print("[Filters] No existing filter save")
         return
     end
@@ -7135,7 +7258,7 @@ function LoadSniperFilters()
     local ok, decoded = pcall(function()
 
         local raw =
-            readfile(FILTER_SAVE_FILE)
+            Executor.ReadFile(FILTER_SAVE_FILE)
 
         return HttpService:JSONDecode(raw)
 
@@ -7145,9 +7268,9 @@ function LoadSniperFilters()
 
         warn("[Filters] Corrupted filter file")
 
-        if delfile then
+        if Executor.DeleteFile then
             pcall(function()
-                delfile(FILTER_SAVE_FILE)
+                Executor.DeleteFile(FILTER_SAVE_FILE)
             end)
         end
 
@@ -7269,7 +7392,7 @@ end
 
 function SaveListingFilters()
 
-    if not writefile then
+    if not Executor.WriteFile then
         warn("[LISTINGS FILTERS] writefile unsupported")
         return false
     end
@@ -7277,17 +7400,14 @@ function SaveListingFilters()
     local ok, err =
         pcall(function()
 
-            if makefolder
-            and not isfolder("HolyV2") then
-                makefolder("HolyV2")
-            end
+            ExecutorEnsureFolder("HolyV2")
 
             local payload = {
                 Version = 1,
                 Filters = SerializeListingFilters(),
             }
 
-            writefile(
+            Executor.WriteFile(
                 LISTING_FILTER_SAVE_FILE,
                 HttpService:JSONEncode(payload)
             )
@@ -7317,13 +7437,13 @@ end
 
 function LoadListingFilters()
 
-    if not isfile
-    or not readfile then
+    if not Executor.IsFile
+    or not Executor.ReadFile then
         warn("[LISTINGS FILTERS] file API unsupported")
         return false
     end
 
-    if not isfile(LISTING_FILTER_SAVE_FILE) then
+    if not Executor.IsFile(LISTING_FILTER_SAVE_FILE) then
         print("[LISTINGS FILTERS] No existing save")
         return false
     end
@@ -7332,7 +7452,7 @@ function LoadListingFilters()
         pcall(function()
 
             local raw =
-                readfile(LISTING_FILTER_SAVE_FILE)
+                Executor.ReadFile(LISTING_FILTER_SAVE_FILE)
 
             return HttpService:JSONDecode(raw)
         end)
@@ -7342,9 +7462,9 @@ function LoadListingFilters()
 
         warn("[LISTINGS FILTERS] Corrupted save")
 
-        if delfile then
+        if Executor.DeleteFile then
             pcall(function()
-                delfile(LISTING_FILTER_SAVE_FILE)
+                Executor.DeleteFile(LISTING_FILTER_SAVE_FILE)
             end)
         end
 
@@ -7471,17 +7591,14 @@ end
 
 function SaveListingAutoListIntent(enabled)
 
-    if not writefile then
+    if not Executor.WriteFile then
         return false
     end
 
     local ok, err =
         pcall(function()
 
-            if makefolder
-            and not isfolder("HolyV2") then
-                makefolder("HolyV2")
-            end
+            ExecutorEnsureFolder("HolyV2")
 
             local payload = {
                 Version = 1,
@@ -7489,7 +7606,7 @@ function SaveListingAutoListIntent(enabled)
                 SavedAt = os.time(),
             }
 
-            writefile(
+            Executor.WriteFile(
                 LISTING_AUTOLIST_INTENT_SAVE_FILE,
                 HttpService:JSONEncode(payload)
             )
@@ -7515,12 +7632,12 @@ end
 
 function LoadListingAutoListIntent()
 
-    if not isfile
-    or not readfile then
+    if not Executor.IsFile
+    or not Executor.ReadFile then
         return nil
     end
 
-    if not isfile(LISTING_AUTOLIST_INTENT_SAVE_FILE) then
+    if not Executor.IsFile(LISTING_AUTOLIST_INTENT_SAVE_FILE) then
         return nil
     end
 
@@ -7528,7 +7645,7 @@ function LoadListingAutoListIntent()
         pcall(function()
 
             local raw =
-                readfile(LISTING_AUTOLIST_INTENT_SAVE_FILE)
+                Executor.ReadFile(LISTING_AUTOLIST_INTENT_SAVE_FILE)
 
             return HttpService:JSONDecode(raw)
         end)
@@ -7623,11 +7740,11 @@ local function GetHolyGuiRoots()
         table.insert(roots, coreGui)
     end
 
-    if type(gethui) == "function" then
+    if Executor.GetHiddenUI then
 
         local okHui, hui =
             pcall(function()
-                return gethui()
+                return Executor.GetHiddenUI()
             end)
 
         if okHui
@@ -9127,11 +9244,7 @@ local function JoinParsedServer(parsed)
         .. tostring(parsed.Code)
         .. "&type=Server"
 
-    if setclipboard then
-        pcall(function()
-            setclipboard(privateUrl)
-        end)
-    end
+    ExecutorCopyText(privateUrl)
 
     warn(
         "[Gateway] Private server links cannot be joined with TeleportService from the client."
@@ -9197,21 +9310,19 @@ GatewayBox:AddButton({
             return
         end
 
-        if not setclipboard then
-            SetGatewayStatus(
-                "Clipboard unsupported"
-            )
-            return
-        end
+if not Executor.SetClipboard then
+    SetGatewayStatus(
+        "Clipboard unsupported"
+    )
+    return
+end
 
         local payload =
             tostring(game.PlaceId)
             .. ":"
             .. tostring(game.JobId)
 
-        pcall(function()
-            setclipboard(payload)
-        end)
+        ExecutorCopyText(payload)
 
         SetGatewayStatus(
             "Current server copied"
@@ -9443,7 +9554,7 @@ ServerActionButton:AddButton({
     Tooltip = "Copy current placeId:jobId.",
     Func = function()
 
-        if not setclipboard then
+        if not Executor.SetClipboard then
 
             HolyNotify(
                 "Clipboard Unsupported",
@@ -9460,9 +9571,7 @@ ServerActionButton:AddButton({
             .. ":"
             .. tostring(game.JobId)
 
-        pcall(function()
-            setclipboard(payload)
-        end)
+        ExecutorCopyText(payload)
 
         HolyNotify(
             "Server Copied",
@@ -19091,11 +19200,8 @@ end
 --==================================================
 
 RequestFunction =
-    syn and syn.request
-    or http_request
-    or request
-    or (http and http.request)
-    or (fluxus and fluxus.request)
+    Executor.Request
+
 print("[WEBHOOK] RequestFunction:", RequestFunction)
 
 function CanSendWebhook()
@@ -19215,24 +19321,15 @@ function SendWebhook(payload)
     local body =
         HttpService:JSONEncode(payload)
 
-    local ok, response = pcall(function()
-
-        return RequestFunction({
-
-            Url =
-                tostring(WebhookState.URL)
-                    :gsub("%s+", ""),
-
-            Method = "POST",
-
-            Headers = {
-                ["Content-Type"] = "application/json"
-            },
-
-            Body = body
-        })
-
-    end)
+local ok, response =
+    ExecutorSendRequest({
+        Url = ...,
+        Method = "POST",
+        Headers = {
+            ["Content-Type"] = "application/json"
+        },
+        Body = HttpService:JSONEncode(payload)
+    })
 
     if not ok then
         warn("[WEBHOOK] REQUEST FAILED:", response)
