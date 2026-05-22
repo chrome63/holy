@@ -1485,7 +1485,7 @@ DevProductLeakWebhook = {
 
     SnapshotFile = "HolyV2/dev_product_leaks_snapshot.json",
 
-    CheckInterval = 300,
+    CheckInterval = 60,
 
     Running = false,
     Checking = false,
