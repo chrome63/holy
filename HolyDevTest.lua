@@ -15,6 +15,72 @@ VirtualUser =
 UserInputService =
     game:GetService("UserInputService")
 
+
+--==================================================
+-- OBFUSCATION / RE-EXECUTION SAFETY
+-- Stops old worker loops when the script is re-executed.
+--==================================================
+
+HOLY_RUNTIME_ROOT =
+    (
+        type(getgenv) == "function"
+        and getgenv()
+        or _G
+    ).HOLY_RUNTIME_ROOT
+    or {}
+
+if type(getgenv) == "function" then
+    getgenv().HOLY_RUNTIME_ROOT =
+        HOLY_RUNTIME_ROOT
+else
+    _G.HOLY_RUNTIME_ROOT =
+        HOLY_RUNTIME_ROOT
+end
+
+HOLY_RUN_ID =
+    tostring(os.clock())
+    .. "_"
+    .. tostring(math.random(100000, 999999))
+
+HOLY_RUNTIME_ROOT.RunId =
+    HOLY_RUN_ID
+
+function IsCurrentRun()
+
+    return HOLY_RUNTIME_ROOT
+        and HOLY_RUNTIME_ROOT.RunId == HOLY_RUN_ID
+end
+
+-- Early safe helpers.
+-- These are defined again later, but must exist before early workers start.
+function SafeNumber(value, fallback)
+
+    local numberValue =
+        tonumber(value)
+
+    if numberValue == nil then
+        return fallback or 0
+    end
+
+    return numberValue
+end
+
+function SafeElapsed(lastTime)
+
+    return os.clock()
+        - SafeNumber(lastTime, 0)
+end
+
+function SafeRemaining(targetTime)
+
+    return SafeNumber(targetTime, 0)
+        - os.clock()
+end
+
+function IsTradeWorld()
+
+    return game.PlaceId == TRADING_WORLD_PLACE_ID
+end
 --==================================================
 -- PRODUCTION CONSOLE FILTER
 -- Hides normal HOLY debug/status output for users.
@@ -408,7 +474,7 @@ function GetBoothStore()
 end
 task.spawn(function()
 
-    while true do
+    while IsCurrentRun() do
 
         if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
             task.wait(1)
@@ -2730,7 +2796,7 @@ function StartPurchaseWorker()
 
     task.spawn(function()
 
-        while true do
+        while IsCurrentRun() do
             task.wait(0.01)
 
             if PurchaseState.Busy then
@@ -3644,7 +3710,7 @@ end
 
 task.spawn(function()
 
-    while true do
+    while IsCurrentRun() do
 
         task.wait(0.1)
 
@@ -4449,7 +4515,7 @@ end
 
 task.spawn(function()
 
-    while true do
+    while IsCurrentRun() do
 
         task.wait(0.1)
 
@@ -8737,7 +8803,7 @@ RefreshInventoryDetails()
 
 task.spawn(function()
 
-    while true do
+    while IsCurrentRun() do
 
         if type(RefreshInventoryDetails) == "function" then
             pcall(RefreshInventoryDetails)
@@ -10547,7 +10613,7 @@ Players.LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
 --==================================================
 function BoothPositionWatchdog()
 
-    while true do
+    while IsCurrentRun() do
 
         task.wait(0.10)
 
@@ -15255,7 +15321,7 @@ function StartListingWorker()
 
     task.spawn(function()
 
-        while true do
+        while IsCurrentRun() do
 
             task.wait(0.1)
 
@@ -19206,7 +19272,7 @@ end
 
 task.spawn(function()
 
-    while true do
+    while IsCurrentRun() do
 
         if #WebhookState.Queue <= 0 then
             task.wait(0.15)
@@ -19858,7 +19924,7 @@ end
 
 task.spawn(function()
 
-    while true do
+    while IsCurrentRun() do
         task.wait(OwnBoothTracker.ScanInterval)
 
         if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
@@ -23831,7 +23897,7 @@ task.spawn(function()
     -- Prevents webhook/reconnect spam for terminal Roblox prompts.
     local handledTerminalPrompts = {}
 
-    while true do
+    while IsCurrentRun() do
         task.wait(0.25)
 
         local robloxGui =
@@ -24670,7 +24736,7 @@ SaveManager:SetIgnoreIndexes({})
 
 -- Autosave worker
 task.spawn(function()
-    while true do
+    while IsCurrentRun() do
         task.wait(1)
 
         if not ConfigState.Dirty then
@@ -24938,7 +25004,7 @@ end
 -- [9] RUNTIME LOOP (EMPTY, DETERMINISTIC)
 --==================================================
 function MainLoop()
-    while true do
+    while IsCurrentRun() do
         task.wait(0.1)
 
         if ScriptState.ForceStopped then
@@ -25181,7 +25247,7 @@ end
 ScriptState.Loaded = true
 
 AutoServerHopWorker = function()
-    while true do
+    while IsCurrentRun() do
         task.wait(1)
 
         if ScriptState.ForceStopped then
@@ -25440,7 +25506,7 @@ end)
 --==================================================
 
 task.spawn(function()
-    while true do
+    while IsCurrentRun() do
         task.wait(0.5)
 
         local playerGui =
@@ -25484,7 +25550,7 @@ task.spawn(function()
 end)
 task.spawn(function()
 
-    while true do
+    while IsCurrentRun() do
         task.wait(0.25)
 
         if ScriptState.ForceStopped then
@@ -25514,7 +25580,7 @@ task.spawn(BoothPositionWatchdog)
 
 task.spawn(function()
 
-    while true do
+    while IsCurrentRun() do
         task.wait(0.15)
 
         if ScriptState.ForceStopped then
@@ -25644,7 +25710,7 @@ if IsTradeWorld() then
 
     StartWorker("AutoPromoteWorker", function()
 
-        while true do
+        while IsCurrentRun() do
             task.wait(3)
 
             if ScriptState.ForceStopped then
@@ -25799,7 +25865,7 @@ end
 
 task.spawn(function()
 
-    while true do
+    while IsCurrentRun() do
         task.wait(0.25)
 
         pcall(function()
@@ -25827,7 +25893,7 @@ task.spawn(function()
     local lastErrorAt =
         0
 
-    while true do
+    while IsCurrentRun() do
 
         task.wait(2)
 
