@@ -4810,6 +4810,121 @@ function BuildMarketTrackerTitle(petName, age, displayWeight, config)
         .. tostring(weightClass)
         .. ")"
 end
+--==================================================
+-- MARKET TRACKER PET THUMBNAILS
+-- Source:
+-- ReplicatedStorage.Data.PetRegistry.PetList[PetName].Icon
+-- Example Icon: rbxassetid://70977930937021
+--==================================================
+
+MarketTrackerPetIconCache =
+    MarketTrackerPetIconCache
+    or {}
+
+function ExtractMarketTrackerAssetId(value)
+
+    if value == nil then
+        return nil
+    end
+
+    local text =
+        tostring(value)
+
+    local assetId =
+        text:match("rbxassetid://(%d+)")
+        or text:match("(%d+)")
+
+    assetId =
+        tonumber(assetId)
+
+    if not assetId
+    or assetId <= 0 then
+        return nil
+    end
+
+    return assetId
+end
+
+function BuildMarketTrackerThumbnailUrl(assetId)
+
+    assetId =
+        tonumber(assetId)
+
+    if not assetId
+    or assetId <= 0 then
+        return nil
+    end
+
+    return "https://www.roblox.com/asset-thumbnail/image?assetId="
+        .. tostring(assetId)
+        .. "&width=420&height=420&format=png"
+end
+
+function ResolveMarketTrackerPetThumbnail(petName)
+
+    petName =
+        NormalizeMarketTrackerName(
+            petName
+        )
+
+    if petName == "" then
+        return nil
+    end
+
+    if MarketTrackerPetIconCache[petName] ~= nil then
+
+        local cached =
+            MarketTrackerPetIconCache[petName]
+
+        if cached == false then
+            return nil
+        end
+
+        return cached
+    end
+
+    local registry =
+        GetPetRegistry()
+
+    if type(registry) ~= "table"
+    or type(registry.PetList) ~= "table" then
+
+        MarketTrackerPetIconCache[petName] =
+            false
+
+        return nil
+    end
+
+    local petData =
+        registry.PetList[petName]
+
+    if type(petData) ~= "table" then
+
+        MarketTrackerPetIconCache[petName] =
+            false
+
+        return nil
+    end
+
+    local assetId =
+        ExtractMarketTrackerAssetId(
+            petData.Icon
+            or petData.IconImage
+            or petData.Image
+            or petData.Thumbnail
+        )
+
+    local thumbnail =
+        BuildMarketTrackerThumbnailUrl(
+            assetId
+        )
+
+    MarketTrackerPetIconCache[petName] =
+        thumbnail
+        or false
+
+    return thumbnail
+end
 
 function SendMarketTrackerWebhookNow(listing)
 
@@ -4893,6 +5008,24 @@ function SendMarketTrackerWebhookNow(listing)
             price
         )
 
+    if type(deal) ~= "table" then
+        deal = {
+            Text = "🔎 Found",
+            Color = 0x5865F2,
+            ShouldPing = false,
+        }
+    end
+
+    deal.Text =
+        tostring(deal.Text or "🔎 Found")
+
+    deal.Color =
+        tonumber(deal.Color)
+        or 0x5865F2
+
+    deal.ShouldPing =
+        deal.ShouldPing == true
+
     local title =
         BuildMarketTrackerTitle(
             petName,
@@ -4949,26 +5082,40 @@ function SendMarketTrackerWebhookNow(listing)
         .. "\n```"
         
 
+    local embed = {
+        title =
+            title,
+
+        description =
+            description,
+
+        color =
+            tonumber(deal and deal.Color)
+            or 0x5865F2,
+
+        footer = {
+            text = "Holy Market Tracker"
+        },
+
+        timestamp =
+            DateTime.now():ToIsoDate(),
+    }
+
+    local petThumbnail =
+        ResolveMarketTrackerPetThumbnail(
+            petName
+        )
+
+    if petThumbnail then
+        embed.thumbnail = {
+            url = petThumbnail
+        }
+    end
+
     local payload = {
-        embeds = {{
-
-            title =
-                title,
-
-            description =
-                description,
-
-            color =
-                deal.Color
-                or 0x5865F2,
-
-            footer = {
-                text = "Holy Market Tracker"
-            },
-
-            timestamp =
-                DateTime.now():ToIsoDate(),
-        }}
+        embeds = {
+            embed
+        }
     }
 
     if deal.ShouldPing == true then
