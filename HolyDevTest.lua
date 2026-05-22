@@ -5292,15 +5292,27 @@ function FutureLeakRunScan(sendWebhook)
             end
 
             local products =
-                FutureLeakFetchDeveloperProducts()
+    FutureLeakFetchDeveloperProducts()
 
-            FutureLeakWebhook.LastFound =
-                #products
+FutureLeakWebhook.LastFound =
+    #products
 
-            print(
-                "[FUTURE LEAKS] Products found:",
-                tostring(#products)
-            )
+print(
+    "[FUTURE LEAKS] Products found:",
+    tostring(#products)
+)
+
+if #products <= 0 then
+
+    FutureLeakWebhook.LastStatus =
+        "No products found"
+
+    warn(
+        "[FUTURE LEAKS] Scan returned 0 products. Snapshot NOT saved."
+    )
+
+    return
+end
 
             local oldMap =
                 FutureLeakWebhook.Products
