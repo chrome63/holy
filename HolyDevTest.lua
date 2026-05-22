@@ -1030,7 +1030,7 @@ function ResolveBoothDataRefreshInterval(mode)
     end
 
     if mode == "Balanced" then
-        return 0.5
+        return 0.05
     end
 
     if mode == "Low CPU" then
@@ -2203,6 +2203,20 @@ end
 
 local mutationText =
     ResolvePetMutationTextFromPetData(petData)
+
+    local hatchedFrom =
+    petData.HatchedFrom
+    or petData.Hatchedfrom
+    or petData.HatchFrom
+    or petData.EggName
+    or petData.SourceEgg
+    or petData.Origin
+    or itemData.HatchedFrom
+    or itemData.EggName
+    or itemData.SourceEgg
+    or listingData.HatchedFrom
+    or listingData.EggName
+    or listingData.SourceEgg
             --==================================================
             -- UNIQUE LISTING KEY
             --==================================================
@@ -2262,7 +2276,10 @@ local sellerName =
                 Weight = displayWeight,
                 Age = age,
                 MutationText = mutationText,
-            
+
+                HatchedFrom = hatchedFrom,
+                SourceEgg = hatchedFrom,
+
                 SeenAt = os.clock(),
             }
 
@@ -2399,6 +2416,22 @@ function ListingMatchesFilter(listing)
                     or math.huge
 
                 if listing.Price <= maxPrice then
+
+                    local selectedEgg =
+                    tostring(eggName or "")
+
+                local listingEgg =
+                    tostring(
+                    listing.HatchedFrom
+                or listing.SourceEgg
+                or ""
+                )
+
+                if selectedEgg ~= ""
+                and listingEgg ~= ""
+                and selectedEgg ~= listingEgg then
+                    continue
+                end
 
                     listing.MatchedWatchlistId =
                         watchlistId
