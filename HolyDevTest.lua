@@ -432,9 +432,15 @@ task.spawn(function()
             end
         end
 
-                task.wait(
-            GetBoothDataRefreshInterval()
-        )
+                    local refreshInterval =
+            0.05
+
+        if type(GetBoothDataRefreshInterval) == "function" then
+            refreshInterval =
+                GetBoothDataRefreshInterval()
+        end
+
+        task.wait(refreshInterval)
     end
 end)
 
@@ -17200,14 +17206,14 @@ ServerHopPagesInput:OnChanged(function(value)
     )
 end)
 
-SniperConfigBox:AddDivider({
+SniperHopBox:AddDivider({
     Text = "After Snipe",
     MarginTop = 10,
     MarginBottom = 8,
 })
 
 local StayAfterSnipeToggle =
-    SniperHopBox:AddInput(
+    SniperHopBox:AddToggle(
         "StayAfterSnipe",
         {
             Text = "⏱️ Stay After Snipe",
