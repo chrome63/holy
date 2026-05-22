@@ -1652,16 +1652,24 @@ function ScanDevProductCandidates()
     local candidates =
         {}
 
-    local moduleNames = {
-        "DevProductIds",
-        "EventShopData",
-        "SeedShopData",
-        "PetEggShopData",
-        "GearShopData",
-        "CosmeticShopData",
+    local scannedModules =
+        0
+
+    local directPriority = {
+        DevProductIds = true,
+        EventShopData = true,
+        SeedShopData = true,
+        PetEggShopData = true,
+        GearShopData = true,
+        CosmeticShopData = true,
     }
 
-    for _, moduleName in ipairs(moduleNames) do
+    --==================================================
+    -- PASS 1:
+    -- Scan known important modules first.
+    --==================================================
+
+    for moduleName in pairs(directPriority) do
 
         local module =
             dataFolder:FindFirstChild(moduleName)
@@ -1670,6 +1678,8 @@ function ScanDevProductCandidates()
             SafeRequireDevProductModule(module)
 
         if type(data) == "table" then
+
+            scannedModules += 1
 
             ScanDevProductTable(
                 data,
@@ -1681,6 +1691,57 @@ function ScanDevProductCandidates()
             )
         end
     end
+
+    --==================================================
+    -- PASS 2:
+    -- Scan every Data ModuleScript.
+    -- Still safe because ScanDevProductTable only accepts
+    -- keys like PurchaseID / ProductId / DevProductId.
+    --==================================================
+
+    for _, module in ipairs(dataFolder:GetDescendants()) do
+
+        if not module:IsA("ModuleScript") then
+            continue
+        end
+
+        -- Already scanned in pass 1.
+        if directPriority[module.Name] == true
+        and module.Parent == dataFolder then
+            continue
+        end
+
+        local data =
+            SafeRequireDevProductModule(module)
+
+        if type(data) == "table" then
+
+            scannedModules += 1
+
+            ScanDevProductTable(
+                data,
+                module:GetFullName(),
+                module.Name,
+                candidates,
+                0,
+                nil
+            )
+        end
+    end
+
+    local count =
+        0
+
+    for _ in pairs(candidates) do
+        count += 1
+    end
+
+    print(
+        "[DEV LEAKS] Candidate scan | modules:",
+        tostring(scannedModules),
+        "| candidates:",
+        tostring(count)
+    )
 
     return candidates
 end
