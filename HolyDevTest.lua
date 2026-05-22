@@ -2542,6 +2542,8 @@ for uid, listingData in pairs(listingsTable) do
 if petData[
     HolyStrings.PetFields.IsFavorite
 ] then
+    continue
+end
 
 local petName =
     itemData[
