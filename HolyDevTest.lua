@@ -1016,19 +1016,19 @@ function ResolveBoothDataRefreshInterval(mode)
         tostring(mode or "Fast")
 
     if mode == "Aggressive" then
-        return 0.03
+        return 0.01
     end
 
     if mode == "Fast" then
-        return 0.05
+        return 0.03
     end
 
     if mode == "Balanced" then
-        return 0.10
+        return 0.5
     end
 
     if mode == "Low CPU" then
-        return 0.15
+        return 0.10
     end
 
     if mode == "Ultra Safe" then
