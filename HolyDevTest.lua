@@ -1,12 +1,26418 @@
---[[
- .____                  ________ ___.    _____                           __                
- |    |    __ _______   \_____  \\_ |___/ ____\_ __  ______ ____ _____ _/  |_  ___________ 
- |    |   |  |  \__  \   /   |   \| __ \   __\  |  \/  ___// ___\\__  \\   __\/  _ \_  __ \
- |    |___|  |  // __ \_/    |    \ \_\ \  | |  |  /\___ \\  \___ / __ \|  | (  <_> )  | \/
- |_______ \____/(____  /\_______  /___  /__| |____//____  >\___  >____  /__|  \____/|__|   
-         \/          \/         \/    \/                \/     \/     \/                   
-          \_Welcome to LuaObfuscator.com   (Alpha 0.10.9) ~  Much Love, Ferib 
+--==================================================
+-- HOLY v3.2.0 — OBSIDIAN FOUNDATION GROW A GARDEN TRADE MARKET SCRIPT
+-- Purpose: Deterministic, modular base (no features)
+--==================================================
 
-]]--
+--==================================================
+-- [0] GLOBAL CONSTANTS (ORDER CRITICAL)
+--==================================================
+HttpService =
+    game:GetService("HttpService")
 
-HttpService=game:GetService("HttpService");VirtualUser=game:GetService("VirtualUser");UserInputService=game:GetService("UserInputService");if  not game:IsLoaded() then game.Loaded:Wait();end TRADING_WORLD_PLACE_ID=129954712878723;Players=game:GetService("Players");ReplicatedStorage=game:GetService("ReplicatedStorage");ServerInfoStartedAt=0;function ResolveServerJoinClock() local v17=Players.LocalPlayer;if  not v17 then return os.clock();end local v18=v17:GetAttribute("HolyServerJoinJobId");local v19=v17:GetAttribute("HolyServerJoinClock");if ((v18==game.JobId) and (type(v19)=="number")) then return v19;end local v20=os.clock();v17:SetAttribute("HolyServerJoinJobId",game.JobId);v17:SetAttribute("HolyServerJoinClock",v20);return v20;end ServerInfoStartedAt=ResolveServerJoinClock();task.spawn(function() local v21=ReplicatedStorage:WaitForChild("SendLikelySpeakingUsers",10);if ( not v21 or  not v21:IsA("RemoteEvent")) then return;end v21.OnClientEvent:Connect(function() end);end);TradeBoothController=nil;function GetController() if TradeBoothController then return TradeBoothController;end local v22,v23=pcall(function() return require(ReplicatedStorage.Modules.TradeBoothControllers.TradeBoothController);end);if (v22 and v23) then TradeBoothController=v23;return v23;end return nil;end function GetTokenBalance() local v24=Players.LocalPlayer:FindFirstChild("PlayerGui");if  not v24 then return 0;end local v25=v24:FindFirstChild("TradeTokenCurrency_UI");if  not v25 then return 0;end local v26=v25:FindFirstChild("TradeTokens");if  not v26 then return 0;end local v27=0;for v1197,v1198 in ipairs(v26:GetDescendants()) do if v1198:IsA("TextLabel") then local v2632=tostring(v1198.Text);local v2633=v2632:gsub(",",""):match("%d+");v2633=tonumber(v2633);if (v2633 and (v2633>v27)) then v27=v2633;end end end return v27;end function WaitForClientReady() local v28=Players.LocalPlayer;if  not v28 then return false;end local v29=os.clock();while  not (v28:FindFirstChild("Backpack") and v28:FindFirstChild("PlayerGui")) do if ((os.clock() -v29)>15) then warn("[BOOT] Player core timeout");return false;end task.wait(0.1);end v29=os.clock();while  not ReplicatedStorage:FindFirstChild("GameEvents") do if ((os.clock() -v29)>15) then warn("[BOOT] Replication timeout");return false;end task.wait(0.1);end return true;end if (game.PlaceId==TRADING_WORLD_PLACE_ID) then local v1199=os.clock();while  not (workspace:FindFirstChild("TradeWorld") and workspace.TradeWorld:FindFirstChild("Booths")) do if ((os.clock() -v1199)>20) then warn("[BOOT] Trade World timeout");return false;end task.wait(0.2);end end if  not WaitForClientReady() then warn("[HOLY] Boot failed");return;end print("[HOLY] Client ready");print("[DEBUG] Passed readiness gate");function ApplyBlackTopBaseplate() local v30=workspace:FindFirstChild("TradeWorld");if  not v30 then return false;end local v31=v30:FindFirstChild("TopBaseplate");if  not v31 then return false;end if v31:IsA("BasePart") then v31.Color=Color3.fromRGB(17,17,17);v31.Material=Enum.Material.Plastic;v31.Reflectance=0;return true;end return false;end task.spawn(function() if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then return;end for v1200=1,30 do local v1201=ApplyBlackTopBaseplate();if v1201 then print("[VISUAL] TopBaseplate set to black");break;end task.wait(0.5);end end);function ApplyBlackTradeWorldParts() local v32=workspace:FindFirstChild("TradeWorld");if  not v32 then return false;end local v33=false;local function v34(v1202) if ( not v1202 or  not v1202:IsA("BasePart")) then return;end v1202.Color=Color3.fromRGB(17,17,17);v1202.BrickColor=BrickColor.new("Really black");v1202.Material=Enum.Material.Plastic;v1202.Reflectance=0;v33=true;end v34(v32:FindFirstChild("TopBaseplate"));local v35=v32:FindFirstChild("Ring");if v35 then v34(v35:FindFirstChild("Union"));end return v33;end task.spawn(function() if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then return;end for v1208=1,30 do local v1209=ApplyBlackTradeWorldParts();if v1209 then print("[VISUAL] TradeWorld floor/ring set to black");break;end task.wait(0.5);end end);BoothStore=nil;LatestBoothData=nil;LatestBoothUpdate=0;function GetBoothStore() if BoothStore then return BoothStore;end local v36=GetController();if  not v36 then return nil;end local v37=getupvalues(v36.GetPlayerBoothData);local v38=v37 and (type(v37[2])=="table") and v37[2] ;if  not v38 then return nil;end if (type(v38.GetDataAsync)~="function") then return nil;end BoothStore=v38;return BoothStore;end task.spawn(function() while true do if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then task.wait(1);continue;end local v1210=GetBoothStore();if v1210 then local v2634,v2635=pcall(function() return v1210:GetDataAsync();end);if (v2634 and v2635 and v2635.Booths) then LatestBoothData=v2635;LatestBoothUpdate=os.clock();end end local v1211=0.05;if (type(GetBoothDataRefreshInterval)=="function") then v1211=GetBoothDataRefreshInterval();end task.wait(v1211);end end);SniperFilterSets={[1]={},[2]={}};EggFocusFilterSets={[1]={},[2]={}};EggFocusUIState={SaveTarget=1,ViewTarget=1};SniperFilters=SniperFilterSets[1];SniperFilterUIState={SaveTarget=1,ViewTarget=1,WeightMode="DisplayWeight",Priority=5};function NormalizeWatchlistId(v39) if ((v39==2) or (v39=="2") or (v39=="Watchlist 2")) then return 2;end return 1;end function NormalizeWeightMode(v40) v40=tostring(v40 or "DisplayWeight" );if ((v40=="BaseWeight") or (v40=="Base Weight") or (v40=="Raw BaseWeight") or (v40:lower()=="baseweight") or (v40:lower()=="base weight")) then return "BaseWeight";end return "DisplayWeight";end function ClampSniperPriority(v41) local v42=tonumber(v41);if  not v42 then return 5;end return math.clamp(math.floor(v42),1,10);end function ResolveSniperFilterPriority(v43) if (type(v43)~="table") then return 5;end return ClampSniperPriority(v43.Priority);end function ResolveSniperDealScore(v44,v45) if ((type(v44)~="table") or (type(v45)~="table")) then return 0;end local v46=tonumber(v44.Price) or math.huge ;local v47=tonumber(v45.MaxPrice);if ( not v47 or (v47==math.huge) or (v47<=0)) then return 0;end local v48=1 -(v46/v47) ;return math.clamp(v48, -1,1);end function ComparePriorityListings(v49,v50) if (type(v49)~="table") then return false;end if (type(v50)~="table") then return true;end local v51=ClampSniperPriority(v49.MatchedPriority or v49.Priority or 5 );local v52=ClampSniperPriority(v50.MatchedPriority or v50.Priority or 5 );if (v51~=v52) then return v51>v52 ;end local v53=tonumber(v49.MatchedDealScore) or 0 ;local v54=tonumber(v50.MatchedDealScore) or 0 ;if (v53~=v54) then return v53>v54 ;end local v55=tonumber(v49.Price) or math.huge ;local v56=tonumber(v50.Price) or math.huge ;if (v55~=v56) then return v55<v56 ;end local v57=tonumber(v49.MatchedWeight) or tonumber(v49.DisplayWeight) or tonumber(v49.Weight) or 0 ;local v58=tonumber(v50.MatchedWeight) or tonumber(v50.DisplayWeight) or tonumber(v50.Weight) or 0 ;if (v57~=v58) then return v57>v58 ;end return tostring(v49.UID or "" )<tostring(v50.UID or "" ) ;end function ResolveListingWeightForFilter(v59,v60) if (type(v59)~="table") then return 0,"DisplayWeight";end local v61=NormalizeWeightMode((v60 and v60.WeightMode) or "DisplayWeight" );if (v61=="BaseWeight") then return tonumber(v59.BaseWeight) or 0 ,v61;end return tonumber(v59.DisplayWeight or v59.Weight ) or 0 ,v61;end function FormatFilterWeight(v62,v63) local v64=tonumber(v62) or 0 ;if (v64<=0) then return "-";end v63=NormalizeWeightMode(v63);if (v63=="BaseWeight") then return tostring(v64)   .. "bw" ;end return tostring(v64)   .. "kg" ;end function GetSniperFilterSet(v65) v65=NormalizeWatchlistId(v65);if  not SniperFilterSets[v65] then SniperFilterSets[v65]={};end return SniperFilterSets[v65];end function GetEggFocusSet(v66) v66=NormalizeWatchlistId(v66);if  not EggFocusFilterSets[v66] then EggFocusFilterSets[v66]={};end return EggFocusFilterSets[v66];end function CountEggFocusSet(v67) local v68=GetEggFocusSet(v67);local v69=0;for v1212 in pairs(v68) do v69=v69 + 1 ;end return v69;end function CountAllEggFocusFilters() local v70=0;for v1213=1,2 do v70=v70 + CountEggFocusSet(v1213) ;end return v70;end PetRegistry=PetRegistry or nil ;function GetPetRegistry() if (type(PetRegistry)=="table") then return PetRegistry;end local v71,v72=pcall(function() return require(ReplicatedStorage:WaitForChild("Data"):WaitForChild("PetRegistry"));end);if (v71 and (type(v72)=="table")) then PetRegistry=v72;return PetRegistry;end return nil;end function GetEggFocusNames() local v73=GetPetRegistry();if ((type(v73)~="table") or (type(v73.PetEggs)~="table")) then return {};end local v74={};for v1214,v1215 in pairs(v73.PetEggs) do if ((type(v1215)=="table") and (type(v1215.RarityData)=="table") and (type(v1215.RarityData.Items)=="table")) then table.insert(v74,tostring(v1214));end end table.sort(v74);return v74;end function GetEggFocusPets(v75) local v76=GetPetRegistry();if ((type(v76)~="table") or (type(v76.PetEggs)~="table")) then return {};end local v77=v76.PetEggs[tostring(v75)];local v78=v77 and v77.RarityData and v77.RarityData.Items ;if (type(v78)~="table") then return {};end local v79={};for v1216 in pairs(v78) do table.insert(v79,tostring(v1216));end table.sort(v79);return v79;end function EggFocusContainsPet(v80,v81) v80=tostring(v80 or "" );v81=tostring(v81 or "" );if ((v80=="") or (v81=="")) then return false;end local v82=GetPetRegistry();if ((type(v82)~="table") or (type(v82.PetEggs)~="table")) then return false;end local v83=v82.PetEggs[v80];local v84=v83 and v83.RarityData and v83.RarityData.Items ;if (type(v84)~="table") then return false;end return v84[v81]~=nil ;end function CountSniperFilterSet(v85) local v86=GetSniperFilterSet(v85);local v87=0;for v1217 in pairs(v86) do v87=v87 + 1 ;end return v87;end function CountAllSniperFilters() local v88=0;for v1218=1,2 do v88=v88 + CountSniperFilterSet(v1218) ;end return v88;end SniperMonitorState={Status="Idle",PetsScanned=0,ScanPasses=0};SniperState={Scanning=false,Buying=false,Hopping=false,MaxPetInventory=350,StopAtPetInventoryLimit=true,LastScan=0,ScanInterval=0.02,ScanSpeedMode="Fast",BoothDataRefreshMode="Fast",BoothDataRefreshInterval=0.05,AutoHop=false,HopDelay=10,LastHop=0,ScanDuration=10,ScanStartedAt=0,StayAfterSnipe=true,StayAfterSnipeSeconds=5,StayAfterSnipeUntil=0,MaxServerPlayers=30,ServerHopMode="Fullest Under Max",ServerHopPages=1,RecentServers={}};function ResolveSniperScanInterval(v89) v89=tostring(v89 or "Fast" );if (v89=="Max Speed") then return 0.01;end if (v89=="Fast") then return 0.02;end if (v89=="Balanced") then return 0.05;end if (v89=="Low CPU") then return 0.1;end if (v89=="Ultra Safe") then return 0.2;end return 0.02;end function SetSniperScanSpeedMode(v90) v90=tostring(v90 or "Fast" );local v91={["Max Speed"]=true,Fast=true,Balanced=true,["Low CPU"]=true,["Ultra Safe"]=true};if  not v91[v90] then v90="Fast";end SniperState.ScanSpeedMode=v90;SniperState.ScanInterval=ResolveSniperScanInterval(v90);return SniperState.ScanInterval;end function ResolveBoothDataRefreshInterval(v94) v94=tostring(v94 or "Fast" );if (v94=="Aggressive") then return 0.01;end if (v94=="Fast") then return 0.03;end if (v94=="Balanced") then return 0.05;end if (v94=="Low CPU") then return 0.1;end if (v94=="Ultra Safe") then return 0.2;end return 0.05;end function SetBoothDataRefreshMode(v95) v95=tostring(v95 or "Fast" );local v96={Aggressive=true,Fast=true,Balanced=true,["Low CPU"]=true,["Ultra Safe"]=true};if  not v96[v95] then v95="Fast";end SniperState.BoothDataRefreshMode=v95;SniperState.BoothDataRefreshInterval=ResolveBoothDataRefreshInterval(v95);return SniperState.BoothDataRefreshInterval;end function GetBoothDataRefreshInterval() local v99=tonumber(SniperState and SniperState.BoothDataRefreshInterval );if  not v99 then v99=ResolveBoothDataRefreshInterval((SniperState and SniperState.BoothDataRefreshMode) or "Fast" );end return math.clamp(v99,0.01,0.2);end TeleportRetryState=nil;BoothPetState={Enabled=false,SelectedPetType=nil,LastEquippedUID=nil,LockedShowcaseUID=nil,LastMissingPet=nil,LastMissingWarnAt=0,MissingWarnCooldown=15,LastEquipAttemptAt=0,EquipCooldown=1.5};ShowcaseEquipState={ReequipPending=false,InventoryConfirmedAt=0,ReequipDelay=10,Attempting=false,RequestId=0};WebhookState={Enabled=false,NotifySuccessfulSnipe=true,NotifyBoothSales=true,NotifyErrors=true,PingSuccessfulSnipes="",PingBoothSales="",PingErrors="",URL="",Queue={},Sending=false,LastSend=0,SendDelay=0.8};ListingsState={Enabled=false,Busy=false,LastScan=0,ScanInterval=2,LastCreateAttempt=0,CreateCooldown=5,ListingSpeedMode="Adaptive",AdaptiveCreateCooldown=5,AdaptiveMinCooldown=5,AdaptiveMaxCooldown=10,AdaptiveSuccessStreak=0,AdaptiveLastWaitSignal=0,AdaptiveLastTuneAt=0,MaxQueuePerPass=2,LastPendingSaleLock=0,PendingCooldown=10,PendingUUIDs={},ActiveCreateUUID=nil,ActiveCreateStartedAt=0,AutoUnfavorite=true,SelectedPet="",SelectedMutation="---",SelectedExcludedMutations={},ListingFilters={},ListingFilterUI={Page=1,PerPage=8},MinLevel=1,MaxLevel=100,MinWeight=nil,MaxWeight=nil,MinWeightWasEntered=false,MaxWeightWasEntered=false,Price=nil,PriceWasEntered=false,LowPriceThreshold=100,AllowLowPriceListings=false,InventorySnapshot={},ListedUUIDs={},OwnListedUUIDs={},OwnListedMetadata={},OwnBoothSnapshot={},OwnBoothSnapshotPage=1,OwnBoothSnapshotPerPage=7,OwnBoothSnapshotLastRefresh=0,OwnBoothSnapshotStatus="Not synced",FailedUUIDs={},ListingQueue={},QueuedUUIDs={},WorkerRunning=false,ListedThisSession=0,Preview={Matching=0,AlreadyListed=0,Ready=0,Failed=0,RuntimeListed=0,Queued=0},Status="Idle",LastListed="None",LastSummaryPrint="",LastSummaryPrintAt=0,QuietWhenComplete=true,NoWorkSleepUntil=0,NoWorkBackoff=15,AutoDisableWhenDone=false,PreserveVisualTagsOnNextDisable=false,VisualTagsEnabled=false,VisualTags={}};CreateListingRemote=nil;RemoveListingRemote=nil;FavoriteRemote=nil;ListingsStatusRefresh=nil;function CleanupListingPendingUUIDs() if (type(ListingsState)~="table") then return 0;end ListingsState.PendingUUIDs=ListingsState.PendingUUIDs or {} ;local v101=os.clock();local v102=0;for v1219,v1220 in pairs(ListingsState.PendingUUIDs) do v1220=tonumber(v1220);if ( not v1220 or (v101>=v1220)) then ListingsState.PendingUUIDs[v1219]=nil;else v102+=1 end end return v102;end function IsListingUUIDPending(v103) v103=tostring(v103 or "" );if (v103=="") then return false;end CleanupListingPendingUUIDs();local v104=ListingsState.PendingUUIDs and ListingsState.PendingUUIDs[v103] ;if  not v104 then return false;end return os.clock()<tonumber(v104) ;end function MarkListingUUIDPending(v105,v106) v105=tostring(v105 or "" );if (v105=="") then return false;end ListingsState.PendingUUIDs=ListingsState.PendingUUIDs or {} ;v106=SafeNumber(v106,ListingsState.PendingCooldown or 10 );v106=math.max(v106,1);ListingsState.PendingUUIDs[v105]=os.clock() + v106 ;ListingsState.LastPendingSaleLock=os.clock();print("[LISTINGS PENDING] Deferred UUID:",v105,"| cooldown:",tostring(v106));return true;end GlobalSnipeWebhook={Enabled=true,URL="https://discord.com/api/webhooks/1453483052780093511/vd_TsWGFC80paUm1rrKG88GR-7vKlhTeDlMLg_U2bVTtIx1M7atFB5P9q6pM70h6yQ01"};GlobalBoothSaleWebhook={Enabled=true,URL="https://discord.com/api/webhooks/1504643775186604203/DxboQrnzN8na8bGzCfwa1IvrreIzg1pUTtveAOKx2ubtYWHR9sLA-oUib4w5FuMrHOnD",Queue={},Sending=false,LastSend=0,SendDelay=1.25};MarketTrackerWebhook={Enabled=true,URL="https://discord.com/api/webhooks/1461800728174526475/cliNh1mRSwNHyMKMJ5o0MqxAQY8FgvVwuI9YYFDT4z4VVwS7rcv-vHuh8kdRUU1nNx8y",Queue={},Sending=false,LastSend=0,SendDelay=1.25,SentListings={},DedupeSeconds=600,LastCleanup=0,CleanupInterval=120};MarketTrackerTargets={["Ghostly Spider"]={Type="Rare",Emoji="🕷️",MaxPrice=50000,GoodPrice=30000,SnipePrice=30000,PingBelow=20000,MinWeight=0},["Rainbow Elephant"]={Type="Rare",Emoji="🐘",MaxPrice=500000,GoodPrice=250000,SnipePrice=100000,PingBelow=100000,MinWeight=0},["Rainbow Birb"]={Type="Rare",Emoji="🐦",MaxPrice=50000,GoodPrice=40000,SnipePrice=30000,PingBelow=30000,MinWeight=0},["Rainbow Dilophosaurus"]={Type="Rare",Emoji="🦖",MaxPrice=60000,GoodPrice=30000,SnipePrice=25000,PingBelow=25000,MinWeight=0},["Blue Whale"]={Type="Rare",Emoji="🐋",MaxPrice=50000,GoodPrice=20000,SnipePrice=15000,PingBelow=15000,MinWeight=0},["Albino Peacock"]={Type="Rare",Emoji="🦚",MaxPrice=50000,GoodPrice=20000,SnipePrice=15000,PingBelow=15000,MinWeight=0},Seal={Type="Weight",Emoji="🦭",MaxPrice=25000,GoodPrice=20000,SnipePrice=15000,PingBelow=15000,MinWeight=80},["Mimic Octopus"]={Type="Weight",Emoji="🐙",MaxPrice=10000,GoodPrice=6000,SnipePrice=3000,PingBelow=3000,MinWeight=100}};NotificationRemote=ReplicatedStorage.GameEvents.Notification;LastTokenFailure=0;LastPendingSale=0;NotificationRemote.OnClientEvent:Connect(function(v110) if (type(v110)~="string") then return;end local v111=string.lower(v110);if string.find(v111,"don't have enough tokens",1,true) then LastTokenFailure=os.clock();warn("[BUY] Not enough tokens");return;end if string.find(v111,"please wait before trying to create another listing",1,true) then if ListingsState then ListingsState.LastCreateWaitSignal=os.clock();AdaptiveListingRegisterCreateWait("CreateListing notification");ListingsState.Status="Create cooldown";if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end end warn("[LISTINGS] CreateListing cooldown detected");return;end if string.find(v111,"pending sale",1,true) then LastPendingSale=os.clock();if ListingsState then ListingsState.LastPendingSaleLock=os.clock();local v2905=tostring(ListingsState.ActiveCreateUUID or "" );if (v2905~="") then MarkListingUUIDPending(v2905,ListingsState.PendingCooldown);ListingsState.Status="Pet pending, trying next";else ListingsState.Status="Pending sale detected";end if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end end warn("[BUY] Pending sale lock detected");return;end if (string.find(v111,"favorite",1,true) or string.find(v111,"favourited",1,true) or string.find(v111,"favorited",1,true)) then if ListingsState then ListingsState.Status="Favorite blocked";if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end end warn("[LISTINGS] Favorite block detected");return;end end);MarketCache={};SeenListings={};SellerCache={};function ResolveDisplayedWeight(v112) v112=tonumber(v112);if  not v112 then return 0;end return math.floor((v112 * 11 * 100) + 0.5 )/100 ;end function ResolveBoothPetAge(v113) if (type(v113)~="table") then return nil;end local v114=tonumber(v113.Level);if v114 then return v114;end local v115=tonumber(v113.Age);if v115 then return v115;end return nil;end function ResolveSeller(v116) if  not v116 then return "Unknown";end if SellerCache[v116] then return SellerCache[v116];end local v117,v118=pcall(function() return Players:GetNameFromUserIdAsync(v116);end);if (v117 and v118) then SellerCache[v116]=v118;return v118;end return tostring(v116);end function ResolvePetToolStableUID(v119) if ( not v119 or  not v119:IsA("Tool")) then return "";end local v120={v119:GetAttribute("PET_UUID"),v119:GetAttribute("UUID"),v119:GetAttribute("ItemUUID"),v119:GetAttribute("ItemId")};for v1221,v1222 in ipairs(v120) do v1222=tostring(v1222 or "" );if (v1222~="") then return v1222;end end return tostring(v119:GetDebugId());end function IsToolCurrentlyEquipped(v121) if  not v121 then return false;end local v122=Players.LocalPlayer;local v123=v122 and v122.Character ;return v123 and (v121.Parent==v123) ;end function ShouldWarnMissingShowcasePet(v124) v124=tostring(v124 or "" );local v125=os.clock();if (BoothPetState.LastMissingPet~=v124) then BoothPetState.LastMissingPet=v124;BoothPetState.LastMissingWarnAt=v125;return true;end local v126=SafeNumber(BoothPetState.MissingWarnCooldown,15);if ((v125-SafeNumber(BoothPetState.LastMissingWarnAt,0))>=v126) then BoothPetState.LastMissingWarnAt=v125;return true;end return false;end function ParsePetTool(v127) if ( not v127 or  not v127:IsA("Tool")) then return nil;end local v128=v127.Name;local v129=v128:match("%[(.-)%s*KG%]");if  not v129 then return nil;end local v130=v128:gsub("%b[]","");v130=v130:gsub("%s+"," ");v130=v130:gsub("^%s+",""):gsub("%s+$","");if ( not v130 or  not v129) then return nil;end v129=tonumber(v129);if  not v129 then return nil;end return {Tool=v127,PetName=v130,Weight=v129,UID=ResolvePetToolStableUID(v127),StableKey=ResolvePetToolStableUID(v127)   .. "|"   .. tostring(v127.Name) };end function ResolveBestPet(v131) local v132=Players.LocalPlayer;if  not v132 then return nil;end v131=tostring(v131 or "" );if (v131=="") then return nil;end local v133={v132.Character,v132:FindFirstChild("Backpack")};local v134=tostring(BoothPetState.LockedShowcaseUID or "" );local v135=nil;local v136= -math.huge;local v137=nil;for v1223,v1224 in ipairs(v133) do if  not v1224 then continue;end for v2240,v2241 in ipairs(v1224:GetChildren()) do local v2242=ParsePetTool(v2241);if  not v2242 then continue;end local v2243=string.lower(v2242.PetName);local v2244=string.lower(v131);local v2245=v2243==v2244 ;local v2246=v2243:sub( -#v2244)==v2244 ;if ( not v2245 and  not v2246) then continue;end if ((v134~="") and (tostring(v2242.UID)==v134)) then return v2242;end local v2247=tonumber(v2242.Weight) or 0 ;local v2248=tostring(v2242.StableKey or v2242.UID or v2241.Name );local v2249=false;if  not v135 then v2249=true;elseif (v2247>v136) then v2249=true;elseif ((v2247==v136) and (v2248<tostring(v137 or "" ))) then v2249=true;end if v2249 then v135=v2242;v136=v2247;v137=v2248;end end end return v135;end function BuildActiveBoothMap() local v138={};local v139=workspace:FindFirstChild("TradeWorld");if  not v139 then return v138;end local v140=v139:FindFirstChild("Booths");if  not v140 then return v138;end for v1225,v1226 in ipairs(v140:GetChildren()) do v138[v1226.Name]=true;end return v138;end function ExtractListings() local v141=LatestBoothData;if ( not v141 or  not v141.Booths) then warn("[Sniper] Booth data missing");return {};end local v142=BuildActiveBoothMap();local v143={};local v144=0;for v1228,v1229 in pairs(v141.Booths) do if  not v142[v1228] then continue;end local v1230=v1229.Owner;if  not v1230 then continue;end if ( not v141.Players or  not v141.Players[v1230]) then continue;end local v1231=v141.Players[v1230];local v1232=v1231.Listings;local v1233=v1231.Items;if ((type(v1232)~="table") or (type(v1233)~="table")) then continue;end for v2250,v2251 in pairs(v1232) do if (v2251.ItemType~="Pet") then continue;end local v2252=v2251.ItemId;local v2253=v1233[v2252];if  not v2253 then continue;end local v2254=v2253.PetData;if  not v2254 then continue;end if v2254.IsFavorite then continue;end local v2255=v2253.PetType or "Unknown" ;local v2256=tonumber(v2251.Price) or 0 ;local v2257=tonumber(v2254.BaseWeight);if  not v2257 then continue;end local v2258=ResolveDisplayedWeight(v2257);local v2259=ResolveBoothPetAge(v2254);if  not v2259 then warn("[MARKET TRACKER] Missing pet age:",tostring(v2255),"| ItemId:",tostring(v2252));continue;end if ((v2255=="Seal") or (v2255=="Mimic Octopus") or (v2255=="Ghostly Spider") or (v2255=="Rainbow Dilophosaurus")) then end local v2260=ResolvePetMutationTextFromPetData(v2254);local v2261=v2254.HatchedFrom or v2254.Hatchedfrom or v2254.HatchFrom or v2254.EggName or v2254.SourceEgg or v2254.Origin or v2253.HatchedFrom or v2253.EggName or v2253.SourceEgg or v2251.HatchedFrom or v2251.EggName or v2251.SourceEgg ;local v2262=tostring(v1228)   .. "_"   .. tostring(v2250) ;local v2263=os.clock();local v2264=SeenListings[v2262];if (v2264 and ((v2263-v2264)<0.03)) then continue;end SeenListings[v2262]=v2263;local v2266=tonumber(tostring(v1230):match("_(%d+)$"));if (v2266==Players.LocalPlayer.UserId) then continue;end v144=v144 + 1 ;local v2267=tostring(v2266);local v2268={BoothId=v1228,UID=v2250,Seller=v2267,SellerUserId=v2266,PetName=v2255,Price=v2256,BaseWeight=v2257,DisplayWeight=v2258,Weight=v2258,Age=v2259,MutationText=v2260,HatchedFrom=v2261,SourceEgg=v2261,SeenAt=os.clock()};MarketCache[v2262]=v2268;table.insert(v143,v2268);end end local v145={};for v1234,v1235 in ipairs(v143) do local v1236=tostring(v1235.BoothId)   .. "_"   .. tostring(v1235.UID) ;v145[v1236]=true;end for v1238 in pairs(MarketCache) do if  not v145[v1238] then MarketCache[v1238]=nil;SeenListings[v1238]=nil;end end return v143,v144;end function ListingMatchesFilter(v146) if ( not v146 or  not v146.PetName) then return false;end for v1239=1,2 do local v1240=GetSniperFilterSet(v1239);local v1241=v1240[v146.PetName];if v1241 then local v2639=tonumber(v1241.MaxPrice) or math.huge ;local v2640=tonumber(v1241.MinWeight) or 0 ;local v2641,v2642=ResolveListingWeightForFilter(v146,v1241);if ((v146.Price<=v2639) and (v2641>=v2640)) then local v3013=ResolveSniperFilterPriority(v1241);v146.MatchedWatchlistId=v1239;v146.MatchedWeightMode=v2642;v146.MatchedWeight=v2641;v146.MatchedFilterType="Pet";v146.MatchedFilter=v1241;v146.MatchedPriority=v3013;v146.MatchedDealScore=ResolveSniperDealScore(v146,v1241);return true,v1239,v1241;end end end for v1242=1,2 do local v1243=GetEggFocusSet(v1242);for v2270,v2271 in pairs(v1243) do if EggFocusContainsPet(v2270,v146.PetName) then local v2907=tonumber(v2271.MaxPrice) or math.huge ;if (v146.Price<=v2907) then local v3090=tostring(v2270 or "" );local v3091=tostring(v146.HatchedFrom or v146.SourceEgg or "" );if ((v3090~="") and (v3091~="") and (v3090~=v3091)) then continue;end v146.MatchedWatchlistId=v1242;v146.MatchedEggFocus=tostring(v2270);v146.MatchedFilterType="EggFocus";v146.MatchedFilter=v2271;v146.MatchedPriority=ResolveSniperFilterPriority(v2271);v146.MatchedDealScore=ResolveSniperDealScore(v146,v2271);return true,v1242,v2271;end end end end return false;end ProcessedListings={};FailedListings={};ActivePurchases={};ClaimedListings={};BuyListingRemote=nil;function GetBuyRemote() if BuyListingRemote then return BuyListingRemote;end local v147=ReplicatedStorage.GameEvents.TradeEvents.Booths:FindFirstChild("BuyListing");if (v147 and v147:IsA("RemoteFunction")) then BuyListingRemote=v147;return v147;end warn("[BUY] BuyListing remote missing");return nil;end PurchaseQueue={};PurchaseWorkerRunning=false;QueuedListings={};PurchaseState={Busy=false,LastPurchase=0,RecoveryDelay=0.05,InventoryTimeout=10};TryPurchaseListing=nil;function GetListingKey(v148) return tostring(v148.BoothId)   .. "_"   .. tostring(v148.UID) ;end function ToolMatchesListing(v149,v150) if ( not v149 or  not v149:IsA("Tool")) then return false;end if ( not v150 or  not v150.PetName) then return false;end local v151=ParsePetTool(v149);if ( not v151 or  not v151.PetName) then return false;end local v152=string.lower(v151.PetName);local v153=string.lower(tostring(v150.PetName));if (v153=="") then return false;end if (v152==v153) then return true;end if (v152:sub( -#v153)==v153) then return true;end return false;end function CreateInventoryWaiter(v154) local v155=Players.LocalPlayer;local v156=false;local v157=nil;local v158=nil;local v159={};local function v160() for v2272,v2273 in ipairs(v159) do pcall(function() v2273:Disconnect();end);end table.clear(v159);end local function v161(v1244,v1245) if v156 then return;end if  not ToolMatchesListing(v1244,v154) then return;end v156=true;v157=v1244.Name;v158=v1245;print(string.format("[INV CONFIRM] %s entered %s at %.3f",tostring(v1244.Name),tostring(v1245),os.clock()));end local v162=v155:FindFirstChild("Backpack");if v162 then table.insert(v159,v162.ChildAdded:Connect(function(v2643) v161(v2643,"Backpack");end));end local v163=v155.Character;if v163 then table.insert(v159,v163.ChildAdded:Connect(function(v2644) v161(v2644,"Character");end));end return {Wait=function(v1247) local v1248=os.clock() + v1247 ;while  not v156 and (os.clock()<v1248)  do task.wait(0.03);end v160();return v156,v157,v158;end,Disconnect=v160};end function QueuePurchase(v164) if  not v164 then return false;end local v165=GetListingKey(v164);if QueuedListings[v165] then return false;end if ActivePurchases[v165] then return false;end if ProcessedListings[v165] then return false;end if FailedListings[v165] then return false;end QueuedListings[v165]=true;table.insert(PurchaseQueue,v164);table.sort(PurchaseQueue,ComparePriorityListings);print(string.format("[QUEUE] Added → P%s %s | Queue: %s",tostring(ClampSniperPriority(v164.MatchedPriority or v164.Priority or 5 )),tostring(v164.PetName),tostring( #PurchaseQueue)));return true;end function StartPurchaseWorker() if PurchaseWorkerRunning then return;end PurchaseWorkerRunning=true;task.spawn(function() while true do task.wait(0.01);if PurchaseState.Busy then continue;end local v2274=table.remove(PurchaseQueue,1);if  not v2274 then continue;end local v2275=GetListingKey(v2274);QueuedListings[v2275]=nil;PurchaseState.Busy=true;print(string.format("[QUEUE] Processing → %s | Remaining: %s",tostring(v2274.PetName),tostring( #PurchaseQueue)));local v2278,v2279=pcall(function() return TryPurchaseListing(v2274);end);if  not v2278 then warn("[QUEUE] Purchase worker error:",v2279);elseif (v2279=="PENDING") then warn(string.format("[QUEUE] Pending lock → requeue %s",tostring(v2274.PetName)));task.delay(1.25,function() QueuePurchase(v2274);end);end PurchaseState.LastPurchase=os.clock();task.wait(PurchaseState.RecoveryDelay);PurchaseState.Busy=false;end end);end StartPurchaseWorker();function DispatchPurchase(v167) if  not v167 then return false;end local v168=GetListingKey(v167);if QueuedListings[v168] then return false;end if ActivePurchases[v168] then return false;end if ProcessedListings[v168] then return false;end if FailedListings[v168] then return false;end if ( not PurchaseState.Busy and ( #PurchaseQueue<=0)) then PurchaseState.Busy=true;task.spawn(function() local v2645,v2646=pcall(function() return TryPurchaseListing(v167);end);if  not v2645 then warn("[BUY FAST] Purchase error:",tostring(v2646));elseif (v2646=="PENDING") then warn("[BUY FAST] Pending lock → queue retry:",tostring(v167.PetName));task.delay(0.75,function() QueuePurchase(v167);end);end PurchaseState.LastPurchase=os.clock();task.wait(SafeNumber(PurchaseState.RecoveryDelay,0.05));PurchaseState.Busy=false;end);return true;end return QueuePurchase(v167);end CreateSuccessEmbed=nil;CreateBoothSaleEmbed=nil;ApplyWebhookPing=nil;QueueWebhook=nil;function FormatWebhookNumber(v169,v170) local v171=tonumber(v169);if  not v171 then return "Unknown";end v170=tonumber(v170) or 2 ;return string.format("%."   .. tostring(v170)   .. "f" ,v171);end function FormatWebhookWeightKG(v172) local v173=tonumber(v172);if  not v173 then return "Unknown";end return string.format("%.2f KG",v173);end function FormatWebhookBaseWeight(v174) local v175=tonumber(v174);if  not v175 then return "Unknown";end return string.format("%.2f",v175);end function ResolvePetMutationTextFromPetData(v176) local v177={};if (type(v176)~="table") then return "Normal";end if (type(v176.Variants)=="table") then for v2649,v2650 in pairs(v176.Variants) do if (v2650==true) then table.insert(v177,tostring(v2649));end end end if (type(v176.Mutations)=="table") then for v2651,v2652 in pairs(v176.Mutations) do if (v2652==true) then table.insert(v177,tostring(v2651));end end end table.sort(v177);if ( #v177<=0) then return "Normal";end return table.concat(v177," ");end HolyDataService=HolyDataService or nil ;function GetHolyDataService() if HolyDataService then return HolyDataService;end local v178=ReplicatedStorage:FindFirstChild("Modules");if  not v178 then return nil;end local v179=v178:FindFirstChild("DataService");if  not v179 then return nil;end local v180,v181=pcall(function() return require(v179);end);if (v180 and v181) then HolyDataService=v181;return HolyDataService;end return nil;end function GetHolyInventoryPetDataByUUID(v182) v182=tostring(v182 or "" );if (v182=="") then return nil;end local v183=GetHolyDataService();if  not v183 then return nil;end local v184,v185=pcall(function() return v183:GetData();end);if ( not v184 or (type(v185)~="table")) then v184,v185=pcall(function() return v183.GetData();end);end if ( not v184 or (type(v185)~="table")) then return nil;end local v186=rawget(v185,"PetsData");local v187=((type(v186)=="table") and rawget(v186,"PetInventory")) or nil ;local v188=((type(v187)=="table") and rawget(v187,"Data")) or nil ;if (type(v188)~="table") then return nil;end local v189=rawget(v188,v182);if (type(v189)~="table") then return nil;end local v190=rawget(v189,"PetData");if (type(v190)=="table") then return v190,v189;end return v189,v189;end function ResolveRawPetDataAgeFromUUID(v191) local v192=GetHolyInventoryPetDataByUUID(v191);if (type(v192)~="table") then return nil;end local v193=tonumber(rawget(v192,"Level"));if v193 then return v193;end local v194=tonumber(rawget(v192,"Age"));if v194 then return v194;end return nil;end function ResolveInventoryPetToolByUUID(v195) v195=tostring(v195 or "" );if (v195=="") then return nil;end local v196=Players.LocalPlayer;if  not v196 then return nil;end local v197={v196:FindFirstChild("Backpack"),v196.Character};for v1249,v1250 in ipairs(v197) do if v1250 then for v2908,v2909 in ipairs(v1250:GetChildren()) do if v2909:IsA("Tool") then local v3098=v2909:GetAttribute("PET_UUID") or v2909:GetAttribute("UUID") or v2909:GetAttribute("ItemUUID") ;if (tostring(v3098 or "" )==v195) then return v2909;end end end end end return nil;end function ResolveRawPetDataMutationFromUUID(v198,v199) local v200=ResolveInventoryPetToolByUUID(v198);if  not v200 then return nil;end local v201=ResolveListingPetMutation(v200.Name,v199);if ((v201=="---") or (v201=="") or (v201=="Normal") or (v201=="Unknown")) then return nil;end return v201;end function StoreOwnListedPetMetadata(v202) if (type(v202)~="table") then return false;end local v203=tostring(v202.UUID or "" );if (v203=="") then return false;end ListingsState.OwnListedMetadata=ListingsState.OwnListedMetadata or {} ;local v205=tostring(v202.Mutation or v202.MutationText or "---" );if ((v205=="---") or (v205=="") or (v205=="Unknown")) then v205="Normal";end ListingsState.OwnListedMetadata[v203]={UUID=v203,ToolName=tostring(v202.ToolName or "" ),PetName=tostring(v202.PetName or "" ),MutationText=v205,Age=tonumber(v202.Age),DisplayWeight=tonumber(v202.Weight),BaseWeight=tonumber(v202.BaseWeight),StoredAt=os.clock()};print("[LISTINGS META] Stored:",tostring(v202.ToolName or v202.PetName or "Unknown" ),"| UUID:",v203,"| Mutation:",v205);return true;end function ResolveOwnListedMetadataMutation(v207) v207=tostring(v207 or "" );if (v207=="") then return nil;end local v208=ListingsState and ListingsState.OwnListedMetadata and ListingsState.OwnListedMetadata[v207] ;if (type(v208)~="table") then return nil;end local v209=tostring(v208.MutationText or "" );if ((v209=="") or (v209=="---") or (v209=="Unknown") or (v209=="Normal")) then return nil;end return v209;end function ResolveRawPetDataAge(v210) if (type(v210)~="table") then return nil;end local v211=tonumber(rawget(v210,"Level"));if v211 then return v211;end local v212=tonumber(rawget(v210,"Age"));if v212 then return v212;end return nil;end function ResolveRawPetDataBaseWeight(v213) if (type(v213)~="table") then return nil;end local v214={v213.BaseWeight,v213.baseWeight,v213.BaseKg,v213.BaseKG};for v1251,v1252 in ipairs(v214) do local v1253=tonumber(v1252);if v1253 then return v1253;end end return nil;end function ResolveRawPetDataDisplayWeight(v215) if (type(v215)~="table") then return nil;end local v216={v215.DisplayWeight,v215.displayWeight,v215.Weight,v215.weight,v215.KG,v215.Kg,v215.Mass,v215.mass};for v1254,v1255 in ipairs(v216) do local v1256=tonumber(v1255);if v1256 then return v1256;end end local v217=ResolveRawPetDataBaseWeight(v215);if v217 then return ResolveDisplayedWeight(v217);end return nil;end function ResolveRawPetDataWebhookTitle(v218,v219,v220,v221) return BuildWebhookPetTitle(v218,v219,v220 or "Unknown" ,v221);end function BuildWebhookPetTitle(v222,v223,v224,v225) local v226=tostring(v222 or "Unknown" );v223=tostring(v223 or "Normal" );if ((v223~="") and (v223~="Normal") and (v223~="Unknown")) then v226=v223   .. " "   .. v226 ;end return string.format("%s [Age %s] [%s]",v226,tostring(v224 or "Unknown" ),FormatWebhookWeightKG(v225));end function SendGlobalBoothSaleWebhookNow(v227) if  not GlobalBoothSaleWebhook.Enabled then warn("[GLOBAL BOOTH WEBHOOK] Disabled");return;end if ((type(GlobalBoothSaleWebhook.URL)~="string") or (GlobalBoothSaleWebhook.URL=="")) then warn("[GLOBAL BOOTH WEBHOOK] Missing URL");return;end RequestFunction=RequestFunction or (syn and syn.request) or http_request or request or (http and http.request) or (fluxus and fluxus.request) ;if  not RequestFunction then warn("[GLOBAL BOOTH WEBHOOK] No request function available");return;end v227=v227 or {} ;local v228=tostring(v227.ToolName or BuildWebhookPetTitle(v227.PetName,v227.MutationText,v227.Age,v227.DisplayWeight or v227.Weight ) or "Unknown" );local v229={embeds={{title=v228,description="By User: ||Holy||",color=16096779,fields={{name="💰 Sold For",value=string.format("%s Tokens",tostring(v227.NetPrice or v227.Price or 0 )),inline=false},{name="Age",value=tostring(v227.Age or "Unknown" ),inline=true},{name="Mutation",value=tostring(v227.MutationText or "Unknown" ),inline=true},{name="BaseWeight",value=FormatWebhookBaseWeight(v227.BaseWeight),inline=true},{name="✨ Token Balance",value=string.format("%s Tokens",tostring(GetTokenBalance())),inline=false},{name="Server",value="```lua\n"   .. tostring(game.PlaceId)   .. ":"   .. tostring(game.JobId)   .. "\n```" ,inline=false}},footer={text="Holy V2 Global"},timestamp=DateTime.now():ToIsoDate()}}};local v230,v231=pcall(function() return RequestFunction({Url=tostring(GlobalBoothSaleWebhook.URL):gsub("%s+",""),Method="POST",Headers={["Content-Type"]="application/json"},Body=HttpService:JSONEncode(v229)});end);if  not v230 then warn("[GLOBAL BOOTH WEBHOOK] Request failed:",tostring(v231));return;end if (type(v231)=="table") then local v2282=tonumber(v231.StatusCode or v231.status_code );if (v2282 and (v2282~=200) and (v2282~=204)) then warn("[GLOBAL BOOTH WEBHOOK] Bad status:",tostring(v2282),tostring(v231.Body or v231.body or "" ));return;end end print("[GLOBAL BOOTH WEBHOOK] Sent booth sale:",v228);return true;end function QueueGlobalBoothSaleWebhook(v232) if  not GlobalBoothSaleWebhook.Enabled then return false;end if (type(v232)~="table") then return false;end table.insert(GlobalBoothSaleWebhook.Queue,v232);print("[GLOBAL BOOTH WEBHOOK] Queued sale:",tostring(v232.ToolName or v232.PetName or "Unknown" ),"| queue:",tostring( #GlobalBoothSaleWebhook.Queue));return true;end task.spawn(function() while true do task.wait(0.1);if (ScriptState and ScriptState.ForceStopped) then continue;end if GlobalBoothSaleWebhook.Sending then continue;end if ( #GlobalBoothSaleWebhook.Queue<=0) then continue;end local v1257=os.clock() -SafeNumber(GlobalBoothSaleWebhook.LastSend,0) ;local v1258=SafeNumber(GlobalBoothSaleWebhook.SendDelay,1.25);if (v1257<v1258) then task.wait(v1258-v1257 );end local v1259=table.remove(GlobalBoothSaleWebhook.Queue,1);if  not v1259 then continue;end GlobalBoothSaleWebhook.Sending=true;GlobalBoothSaleWebhook.LastSend=os.clock();local v1262,v1263=pcall(function() SendGlobalBoothSaleWebhookNow(v1259);end);if  not v1262 then warn("[GLOBAL BOOTH WEBHOOK] Queue send failed:",tostring(v1263));end GlobalBoothSaleWebhook.Sending=false;end end);function NormalizeMarketTrackerName(v233) return tostring(v233 or "" ):gsub("^%s+",""):gsub("%s+$","");end function GetMarketTrackerTargetConfig(v234) v234=NormalizeMarketTrackerName(v234);if (v234=="") then return nil;end if (type(MarketTrackerTargets)~="table") then return nil;end local v235=MarketTrackerTargets[v234];if (v235==true) then return {Type="Rare",Emoji="🔎",MaxPrice=nil,GoodPrice=nil,SnipePrice=nil,PingBelow=nil,MinWeight=0};end if (type(v235)=="table") then return v235;end return nil;end function IsMarketTrackerTarget(v236) if (type(v236)~="table") then return false,nil;end local v237=NormalizeMarketTrackerName(v236.PetName);local v238=GetMarketTrackerTargetConfig(v237);if (type(v238)~="table") then return false,nil;end local v239=tostring(v238.Type or "Rare" );local v240=tonumber(v236.DisplayWeight) or tonumber(v236.Weight) or 0 ;if (v239=="Weight") then local v2283=SafeNumber(v238.MinWeight,80);if (v240<v2283) then return false,v238;end end return true,v238;end function BuildMarketTrackerListingKey(v241) if (type(v241)~="table") then return "";end return tostring(game.JobId)   .. ":"   .. tostring(v241.BoothId or "UnknownBooth" )   .. ":"   .. tostring(v241.UID or "UnknownUID" ) ;end function CleanupMarketTrackerDedupe() if (type(MarketTrackerWebhook)~="table") then return;end MarketTrackerWebhook.SentListings=MarketTrackerWebhook.SentListings or {} ;local v243=os.clock();local v244=SafeNumber(MarketTrackerWebhook.LastCleanup,0);local v245=SafeNumber(MarketTrackerWebhook.CleanupInterval,120);if ((v243-v244)<v245) then return;end MarketTrackerWebhook.LastCleanup=v243;local v247=SafeNumber(MarketTrackerWebhook.DedupeSeconds,600);for v1264,v1265 in pairs(MarketTrackerWebhook.SentListings) do v1265=tonumber(v1265);if ( not v1265 or ((v243-v1265)>v247)) then MarketTrackerWebhook.SentListings[v1264]=nil;end end end function HasMarketTrackerSentListing(v248) local v249=BuildMarketTrackerListingKey(v248);if (v249=="") then return true;end CleanupMarketTrackerDedupe();local v250=MarketTrackerWebhook.SentListings and MarketTrackerWebhook.SentListings[v249] ;if  not v250 then return false;end local v251=SafeNumber(MarketTrackerWebhook.DedupeSeconds,600);return (os.clock() -SafeNumber(v250,0))<v251 ;end function MarkMarketTrackerListingSent(v252) local v253=BuildMarketTrackerListingKey(v252);if (v253=="") then return false;end MarketTrackerWebhook.SentListings=MarketTrackerWebhook.SentListings or {} ;MarketTrackerWebhook.SentListings[v253]=os.clock();return true;end function FormatMarketTrackerNumber(v256) local v257=tonumber(v256);if  not v257 then return "Unknown";end v257=math.floor(v257);local v258=tostring(v257);local v259,v260,v261=string.match(v258,"^([^%d]*%d)(%d*)(.-)$");if  not v259 then return v258;end return v259   .. (v260:reverse():gsub("(%d%d%d)","%1,"):reverse())   .. v261 ;end function FormatMarketTrackerWeightKG(v262) local v263=tonumber(v262);if  not v263 then return "Unknown";end return string.format("%.2f KG",v263);end function FormatMarketTrackerBaseWeight(v264) local v265=tonumber(v264);if  not v265 then return "Unknown";end return string.format("%.2f",v265);end function ResolveMarketTrackerWeightClass(v266) v266=tonumber(v266) or 0 ;if (v266<10) then return "Small";elseif (v266<30) then return "Normal";elseif (v266<50) then return "Semi Huge";elseif (v266<70) then return "Huge";elseif (v266<80) then return "Semi Titanic";elseif (v266<90) then return "Titanic";elseif (v266<100) then return "Godly";end return "Colossal";end function ResolveMarketTrackerDeal(v267,v268) v268=tonumber(v268) or math.huge ;if (type(v267)~="table") then return {Text="🔎 Found",Color=5793266,ShouldPing=false};end local v269=tonumber(v267.SnipePrice);local v270=tonumber(v267.GoodPrice);local v271=tonumber(v267.MaxPrice);local v272=tonumber(v267.PingBelow);local v273=(v272~=nil) and (v268<=v272) ;if (v269 and (v268<=v269)) then return {Text="🔥 Snipe",Color=2278750,ShouldPing=v273};end if (v270 and (v268<=v270)) then return {Text="✅ Good",Color=1483594,ShouldPing=v273};end if (v271 and (v268<=v271)) then return {Text="⚖️ Fair",Color=16436245,ShouldPing=v273};end if v271 then return {Text="❌ Overpriced",Color=15680580,ShouldPing=v273};end return {Text="🔎 Found",Color=5793266,ShouldPing=v273};end function BuildMarketTrackerTitle(v274,v275,v276,v277) local v278=((type(v277)=="table") and tostring(v277.Emoji or "🔎" )) or "🔎" ;local v279=tostring(tonumber(v275) or 0 );local v280=FormatMarketTrackerWeightKG(v276);local v281=ResolveMarketTrackerWeightClass(v276);return v278   .. " "   .. tostring(v274 or "Unknown" )   .. " [Age "   .. tostring(v279)   .. "] ["   .. tostring(v280)   .. "] ("   .. tostring(v281)   .. ")" ;end function SendMarketTrackerWebhookNow(v282) if ((type(MarketTrackerWebhook)~="table") or (MarketTrackerWebhook.Enabled~=true)) then return false;end if (type(v282)~="table") then return false;end local v283=tostring(MarketTrackerWebhook.URL or "" ):gsub("%s+","");if ((v283=="") or (v283=="PUT_MARKET_TRACKER_WEBHOOK_HERE")) then warn("[MARKET TRACKER] Webhook URL missing");return false;end RequestFunction=RequestFunction or (syn and syn.request) or http_request or request or (http and http.request) or (fluxus and fluxus.request) ;if  not RequestFunction then warn("[MARKET TRACKER] No request function available");return false;end local v284=NormalizeMarketTrackerName(v282.PetName);if (v284=="") then v284="Unknown";end local v285=GetMarketTrackerTargetConfig(v284);local v286=tostring(v282.Seller or "Unknown" );if v282.SellerUserId then v286=ResolveSeller(v282.SellerUserId);end local v287=tonumber(v282.Price) or 0 ;local v288=FormatMarketTrackerNumber(v287);local v289=tonumber(v282.DisplayWeight) or tonumber(v282.Weight) ;local v290=tonumber(v282.BaseWeight);local v291=tonumber(v282.Age);local v292=ResolveMarketTrackerDeal(v285,v287);local v293=BuildMarketTrackerTitle(v284,v291,v289,v285);local v294="https://www.roblox.com/games/"   .. tostring(TRADING_WORLD_PLACE_ID)   .. "?gameInstanceId="   .. tostring(game.JobId) ;local v295="roblox://experiences/start?placeId="   .. tostring(TRADING_WORLD_PLACE_ID)   .. "&gameInstanceId="   .. tostring(game.JobId) ;local v296=tostring(TRADING_WORLD_PLACE_ID)   .. ":"   .. tostring(game.JobId) ;local v297="**Seller:** "   .. tostring(v286)   .. "\n"   .. "**Price:** "   .. tostring(v288)   .. " tokens"   .. "\n"   .. "**Deal:** "   .. tostring(v292.Text)   .. "\n"   .. "**BaseWeight:** "   .. FormatMarketTrackerBaseWeight(v290)   .. " KG"   .. "\n\n"   .. "**Server:**\n"   .. "[Open Game]("   .. v294   .. ")"   .. "\n"   .. "**Copy App Link:**\n"   .. "```lua\n"   .. v295   .. "\n```"   .. "\n"   .. "**Copy Server:**\n"   .. "```lua\n"   .. v296   .. "\n```" ;local v298={embeds={{title=v293,description=v297,color=v292.Color or 5793266 ,footer={text="Holy Market Tracker"},timestamp=DateTime.now():ToIsoDate()}}};if (v292.ShouldPing==true) then v298.content="<@&1506753055050170559>";v298.allowed_mentions={parse={},roles={"1506753055050170559"}};else v298.allowed_mentions={parse={}};end local v299,v300=pcall(function() return RequestFunction({Url=v283,Method="POST",Headers={["Content-Type"]="application/json"},Body=HttpService:JSONEncode(v298)});end);if  not v299 then warn("[MARKET TRACKER] Request failed:",tostring(v300));return false;end if (type(v300)=="table") then local v2287=tonumber(v300.StatusCode or v300.status_code );if (v2287 and (v2287~=200) and (v2287~=204)) then warn("[MARKET TRACKER] Bad status:",tostring(v2287),tostring(v300.Body or v300.body or "" ));return false;end end print("[MARKET TRACKER] Sent:",tostring(v293),"|",tostring(v288),"tokens","|",tostring(v292.Text));return true;end function QueueMarketTrackerWebhook(v301) if ((type(MarketTrackerWebhook)~="table") or (MarketTrackerWebhook.Enabled~=true)) then return false;end if (type(v301)~="table") then return false;end if HasMarketTrackerSentListing(v301) then return false;end MarkMarketTrackerListingSent(v301);MarketTrackerWebhook.Queue=MarketTrackerWebhook.Queue or {} ;table.insert(MarketTrackerWebhook.Queue,v301);print("[MARKET TRACKER] Queued:",tostring(v301.PetName or "Unknown" ),"| queue:",tostring( #MarketTrackerWebhook.Queue));return true;end function TrackMarketListings(v303) if ((type(MarketTrackerWebhook)~="table") or (MarketTrackerWebhook.Enabled~=true)) then return 0;end if (type(v303)~="table") then return 0;end local v304=0;for v1266,v1267 in ipairs(v303) do if (type(v1267)~="table") then continue;end local v1268=false;local v1269=nil;v1268,v1269=IsMarketTrackerTarget(v1267);if v1268 then v1267.MarketTrackerConfig=v1269;local v2655=QueueMarketTrackerWebhook(v1267);if v2655 then v304+=1 end end end if (v304>0) then print("[MARKET TRACKER] Matches queued:",tostring(v304));end return v304;end task.spawn(function() while true do task.wait(0.1);if (ScriptState and ScriptState.ForceStopped) then continue;end if ((type(MarketTrackerWebhook)~="table") or (MarketTrackerWebhook.Enabled~=true)) then continue;end MarketTrackerWebhook.Queue=MarketTrackerWebhook.Queue or {} ;if MarketTrackerWebhook.Sending then continue;end if ( #MarketTrackerWebhook.Queue<=0) then continue;end local v1271=os.clock() -SafeNumber(MarketTrackerWebhook.LastSend,0) ;local v1272=SafeNumber(MarketTrackerWebhook.SendDelay,1.25);if (v1271<v1272) then task.wait(v1272-v1271 );end local v1273=table.remove(MarketTrackerWebhook.Queue,1);if  not v1273 then continue;end MarketTrackerWebhook.Sending=true;MarketTrackerWebhook.LastSend=os.clock();local v1276,v1277=pcall(function() SendMarketTrackerWebhookNow(v1273);end);if  not v1276 then warn("[MARKET TRACKER] Queue send failed:",tostring(v1277));end MarketTrackerWebhook.Sending=false;end end);function ParseConfirmedToolSnapshot(v305) local v306=tostring(v305 or "" );if (v306=="") then return nil;end local v307=v306:match("%[([%d%.]+)%s*KG%]");local v308=v306:match("%[Age%s*(%d+)%]");local v309=v306:gsub("%b[]","");v309=v309:gsub("%s+"," "):gsub("^%s+",""):gsub("%s+$","");return {RawName=v306,CleanName=((v309~="") and v309) or v306 ,Weight=tonumber(v307),Age=tonumber(v308)};end function ResolveMutationFromConfirmedToolName(v310,v311) local v312=ParseConfirmedToolSnapshot(v310);if ( not v312 or  not v312.CleanName) then return "Normal";end local v313=tostring(v312.CleanName);v311=tostring(v311 or "" );if ((v313=="") or (v311=="") or (v313==v311)) then return "Normal";end local v314=v313:find(v311,1,true);if  not v314 then return "Normal";end local v315=v313:sub(1,v314-1 );v315=v315:gsub("^%s+",""):gsub("%s+$","");if (v315=="") then return "Normal";end return v315;end function SendGlobalSnipeWebhook(v316,v317,v318) if  not GlobalSnipeWebhook.Enabled then warn("[GLOBAL SNIPER WEBHOOK] Disabled");return;end if ((type(GlobalSnipeWebhook.URL)~="string") or (GlobalSnipeWebhook.URL=="")) then warn("[GLOBAL SNIPER WEBHOOK] Missing URL");return;end RequestFunction=RequestFunction or (syn and syn.request) or http_request or request or (http and http.request) or (fluxus and fluxus.request) ;if  not RequestFunction then warn("[GLOBAL SNIPER WEBHOOK] No request function available");return;end task.spawn(function() local v1278=ParseConfirmedToolSnapshot(v317);local v1279=(v1278 and v1278.CleanName) or tostring(v316.PetName or "Unknown" ) ;local v1280=(v1278 and v1278.Weight) or tonumber(v316.DisplayWeight) or tonumber(v316.Weight) ;local v1281=(v1278 and v1278.Age) or tonumber(v316.Age) ;local v1282=ResolveMutationFromConfirmedToolName(v317,v316.PetName);if ((v1282=="Normal") or (v1282=="Unknown") or (v1282=="")) then v1282=tostring(v316.MutationText or v316.Mutation or "Normal" );end local v1283=string.format("%s [Age %s] [%s]",tostring(v1279),tostring(v1281 or "Unknown" ),FormatWebhookWeightKG(v1280));local v1284=tostring(game.PlaceId)   .. ":"   .. tostring(game.JobId) ;local v1285=tostring(v316.Seller or "Unknown" );if v316.SellerUserId then v1285=ResolveSeller(v316.SellerUserId);end local v1286={{name="Price",value=tostring(v316.Price),inline=true},{name="Weight",value=(v1280 and (tostring(v1280)   .. " KG")) or "Unknown" ,inline=true}};if v1281 then table.insert(v1286,{name="Age",value=tostring(v1281),inline=true});end table.insert(v1286,{name="Seller",value=v1285,inline=true});table.insert(v1286,{name="Server",value="```lua\n"   .. v1284   .. "\n```" ,inline=false});local v1287={embeds={{title=string.format("**%s**",v1283),color=9133302,fields=v1286,footer={text="Holy V2 Global"},timestamp=DateTime.now():ToIsoDate()}}};local v1288,v1289=pcall(function() return RequestFunction({Url=tostring(GlobalSnipeWebhook.URL):gsub("%s+",""),Method="POST",Headers={["Content-Type"]="application/json"},Body=HttpService:JSONEncode(v1287)});end);if  not v1288 then warn("[GLOBAL SNIPER WEBHOOK] Request failed:",tostring(v1289));return;end if (type(v1289)=="table") then local v2656=tonumber(v1289.StatusCode or v1289.status_code );if (v2656 and (v2656~=200) and (v2656~=204)) then warn("[GLOBAL SNIPER WEBHOOK] Bad status:",tostring(v2656),tostring(v1289.Body or v1289.body or "" ));return;end end print("[GLOBAL SNIPER WEBHOOK] Sent successful snipe:",v1283);end);end function TryPurchaseListing(v319) local v320=tostring(v319.BoothId)   .. "_"   .. tostring(v319.UID) ;local function v321() ActivePurchases[v320]=nil;end local v322=os.clock();local v323=FailedListings[v320];if (v323 and ((v322-v323)<999999)) then v321();return false;end ActivePurchases[v320]=true;local v325=GetBuyRemote();if  not v325 then v321();return false;end local v326=Players:GetPlayerByUserId(v319.SellerUserId);if  not v326 then warn("[BUY] Seller player missing");FailedListings[v320]=os.clock();v321();return false;end print(string.format("[BUYING] %s | %s tokens | %skg",tostring(v319.PetName),tostring(v319.Price),tostring(v319.Weight)));local v327=CreateInventoryWaiter(v319);local v328,v329=pcall(function() return v325:InvokeServer(v326,v319.UID);end);LastTokenFailure=SafeNumber(LastTokenFailure,0);if (SafeElapsed(LastTokenFailure)<1) then v327.Disconnect();warn(string.format("[BUY FAILED] Insufficient tokens → %s",tostring(v319.PetName)));FailedListings[v320]=os.clock();v321();return false;end if  not v328 then v327.Disconnect();warn("[BUY] Invoke failed:",v329);FailedListings[v320]=os.clock();v321();return false;end if (v329==false) then v327.Disconnect();LastPendingSale=SafeNumber(LastPendingSale,0);if (SafeElapsed(LastPendingSale)<1.25) then warn(string.format("[BUY PENDING] %s → will retry",tostring(v319.PetName)));v321();return "PENDING";end warn(string.format("[BUY FAILED] %s",tostring(v319.PetName)));FailedListings[v320]=os.clock();v321();return false;end print(string.format("[BUY ACCEPTED] Waiting for inventory → %s",tostring(v319.PetName)));local v330,v331,v332=v327.Wait(PurchaseState.InventoryTimeout);if v330 then local v2292=string.format("%s added via %s",tostring(v331),tostring(v332));print("[BOUGHT CONFIRMED] "   .. v2292 );SniperState.StayAfterSnipeSeconds=SafeNumber(SniperState.StayAfterSnipeSeconds,5);if ((SniperState.StayAfterSnipe==true) and (SniperState.StayAfterSnipeSeconds>0)) then local v2910=os.clock() + SniperState.StayAfterSnipeSeconds ;SniperState.StayAfterSnipeUntil=math.max(SafeNumber(SniperState.StayAfterSnipeUntil,0),v2910);print(string.format("[SniperHop] Confirmed snipe stay added: %.1fs",SniperState.StayAfterSnipeSeconds));HolyNotify("Confirmed Snipe","Auto hop delayed by "   .. tostring(SniperState.StayAfterSnipeSeconds)   .. " seconds." ,"clock",3);end HolyNotify("Snipe Confirmed",v2292,"badge-check",5);SendGlobalSnipeWebhook(v319,v331,v332);if BoothPetState.Enabled then ShowcaseEquipState.ReequipPending=true;ShowcaseEquipState.InventoryConfirmedAt=os.clock();ShowcaseEquipState.RequestId=ShowcaseEquipState.RequestId + 1 ;print(string.format("[BoothPet] Re-equip scheduled in %.1fs",ShowcaseEquipState.ReequipDelay));end else warn(string.format("[BUY WARNING] Inventory confirmation timeout → %s",tostring(v319.PetName)));end ProcessedListings[v320]=true;if (WebhookState.Enabled and WebhookState.NotifySuccessfulSnipe) then QueueWebhook(ApplyWebhookPing(CreateSuccessEmbed(v319,v331,v332),WebhookState.PingSuccessfulSnipes));end v321();return true;end function GetRandomTradeServer() local v334=tonumber(SniperState.MaxServerPlayers) or 24 ;v334=math.clamp(math.floor(v334),1,30);local v335=tostring(SniperState.ServerHopMode or "Fullest Under Max" );local v336="Desc";if (v335=="Low Player") then v336="Asc";end local v337={};local v338=nil;local v339=math.clamp(math.floor(SafeNumber(SniperState.ServerHopPages,((v335=="Low Player") and 8) or 4 )),1,10);local function v340(v1291,v1292) if (type(v1291)~="table") then return;end local v1293=v1291.id;local v1294=tonumber(v1291.playing);local v1295=tonumber(v1291.maxPlayers);if ( not v1293 or  not v1294 or  not v1295) then return;end if (v1293==game.JobId) then return;end if (v1294>=v1295) then return;end if (v1294>v334) then return;end if ( not v1292 and SniperState.RecentServers[v1293]) then return;end table.insert(v337,{Id=v1293,Playing=v1294,MaxPlayers=v1295,OpenSlots=v1295-v1294 });end local function v341(v1296) v338=nil;for v2294=1,v339 do local v2295="https://games.roblox.com/v1/games/"   .. TRADING_WORLD_PLACE_ID   .. "/servers/Public?sortOrder="   .. v336   .. "&limit=100&excludeFullGames=true" ;if v338 then v2295=v2295   .. "&cursor="   .. HttpService:UrlEncode(v338) ;end local v2296,v2297=pcall(function() return game:HttpGet(v2295);end);if ( not v2296 or  not v2297) then HolyNotify("Server Hop Failed","Could not fetch public server list.","wifi-off",3);break;end local v2298;v2296,v2298=pcall(function() return HttpService:JSONDecode(v2297);end);if ( not v2296 or  not v2298 or (type(v2298.data)~="table")) then HolyNotify("Server Hop Failed","Invalid server list response.","server-off",3);break;end for v2657,v2658 in ipairs(v2298.data) do v340(v2658,v1296);end v338=v2298.nextPageCursor;if ( not v338 or (v338=="")) then break;end end end v341(false);if ( #v337<=0) then table.clear(SniperState.RecentServers);v341(true);end if ( #v337<=0) then HolyNotify("No Server Found","No public server found under "   .. tostring(v334)   .. " players. Try raising Max Server Players." ,"server-off",4);warn("[SniperHop] No valid servers found | max:",tostring(v334),"| mode:",tostring(v335),"| sort:",tostring(v336));return nil;end if (v335=="Low Player") then table.sort(v337,function(v2659,v2660) if (v2659.Playing~=v2660.Playing) then return v2659.Playing<v2660.Playing ;end return v2659.OpenSlots>v2660.OpenSlots ;end);elseif (v335=="Balanced") then table.sort(v337,function(v3021,v3022) local v3023=math.max(1,math.floor(v334 * 0.65 ));local v3024=math.abs(v3021.Playing-v3023 );local v3025=math.abs(v3022.Playing-v3023 );if (v3024~=v3025) then return v3024<v3025 ;end return v3021.Playing>v3022.Playing ;end);else table.sort(v337,function(v3026,v3027) if (v3026.Playing~=v3027.Playing) then return v3026.Playing>v3027.Playing ;end return v3026.OpenSlots>v3027.OpenSlots ;end);end local v342;if (v335=="Low Player") then v342=math.min( #v337,12);elseif (v335=="Balanced") then v342=math.min( #v337,16);else v342=math.min( #v337,8);end local v343=v337[math.random(1,v342)];if  not v343 then return nil;end local v344=string.format("%s/%s players • max %s • %s",tostring(v343.Playing),tostring(v343.MaxPlayers),tostring(v334),tostring(v335));print("[SniperHop] Selected server | "   .. v344   .. " | pages "   .. tostring(v339)   .. " | pool "   .. tostring( #v337) );HolyNotify("Server Selected",v344,"server",3);return v343.Id;end function ExecuteSniperHop() if SniperState.Hopping then return;end SniperState.Hopping=true;SniperState.LastHop=SafeNumber(SniperState.LastHop,0);SniperState.HopDelay=SafeNumber(SniperState.HopDelay,10);local v348=SafeElapsed(SniperState.LastHop);if (v348<SniperState.HopDelay) then SniperState.Hopping=false;return;end local v349=GetRandomTradeServer();if  not v349 then SniperState.Hopping=false;return;end SniperState.LastHop=os.clock();SniperState.RecentServers[v349]=true;if TeleportRetryState then TeleportRetryState.LastTarget=v349;TeleportRetryState.BlockedServers[v349]=true;end print("[SniperHop] Joining:",v349);HolyNotify("Server Hop","Joining selected Trade World server...","send",3);local v351=game:GetService("TeleportService");local v352=Players.LocalPlayer;pcall(function() v351:TeleportToPlaceInstance(TRADING_WORLD_PLACE_ID,v349,v352);end);task.delay(8,function() SniperState.Hopping=false;end);end function CountVisiblePetTools() local v353=Players.LocalPlayer;if  not v353 then return 0;end local v354=0;local v355={v353:FindFirstChild("Backpack"),v353.Character};for v1298,v1299 in ipairs(v355) do if v1299 then for v2915,v2916 in ipairs(v1299:GetChildren()) do if v2916:IsA("Tool") then local v3099=tostring(v2916.Name or "" );if (v3099:find("%[.-KG%]") or v3099:find("%[Age%s*%d+%]")) then v354=v354 + 1 ;end end end end end return v354;end function IsHolyPetInventoryFull() if (SniperState.StopAtPetInventoryLimit~=true) then return false;end local v356=tonumber(SniperState.MaxPetInventory) or math.huge ;if (v356<=0) then return false;end local v357=CountVisiblePetTools();return v357>=v356 ,v357,v356;end function RunSniperScan() if SniperState.Scanning then return;end SniperState.Scanning=true;local v359,v360=pcall(function() local v1300,v1301=ExtractListings();if (type(TrackMarketListings)=="function") then pcall(function() TrackMarketListings(v1300);end);end if SniperMonitorState then SniperMonitorState.PetsScanned=tonumber(v1301) or 0 ;SniperMonitorState.ScanPasses=(SniperMonitorState.ScanPasses or 0) + 1 ;end local v1302={};local v1303=0;for v2304=1, #v1300 do local v2305=v1300[v2304];local v2306=ListingMatchesFilter(v2305);if v2306 then local v2917,v2918,v2919=IsHolyPetInventoryFull();if v2917 then warn(string.format("[SNIPER] Inventory safety limit reached: %s/%s pets",tostring(v2918),tostring(v2919)));HolyNotify("Inventory Limit Reached",tostring(v2918)   .. "/"   .. tostring(v2919)   .. " pets. Holy paused buying." ,"package-x",5);continue;end local v2920=tostring(v2305.BoothId)   .. "_"   .. tostring(v2305.UID) ;if ClaimedListings[v2920] then continue;end v1303+=1 table.insert(v1302,v2305);end end table.sort(v1302,ComparePriorityListings);for v2307,v2308 in ipairs(v1302) do local v2309=tostring(v2308.BoothId)   .. "_"   .. tostring(v2308.UID) ;if ClaimedListings[v2309] then continue;end ClaimedListings[v2309]=true;print(string.format("[MATCH P%s #%s] %s | %s tokens | %skg | deal %.2f",tostring(ClampSniperPriority(v2308.MatchedPriority)),tostring(v2307),tostring(v2308.PetName),tostring(v2308.Price),tostring(v2308.Weight),tonumber(v2308.MatchedDealScore) or 0 ));local v2311=DispatchPurchase(v2308);if v2311 then task.delay(15,function() ClaimedListings[v2309]=nil;end);else ClaimedListings[v2309]=nil;end end if (v1303>0) then print("[SNIPER] Priority matches:",tostring(v1303),"| dispatched:",tostring( #v1302));elseif SniperState.AutoHop then SniperState.ScanStartedAt=SafeNumber(SniperState.ScanStartedAt,os.clock());local v3030=SafeElapsed(SniperState.ScanStartedAt);if (v3030>=SniperState.ScanDuration) then SniperState.StayAfterSnipeUntil=SafeNumber(SniperState.StayAfterSnipeUntil,0);local v3121=SafeRemaining(SniperState.StayAfterSnipeUntil);if ((SniperState.StayAfterSnipe==true) and (v3121>0)) then print(string.format("[SniperHop] Staying after snipe: %.1fs remaining",v3121));return;end SniperState.ScanStartedAt=os.clock();task.spawn(ExecuteSniperHop);end end SniperState.LastScan=os.clock();end);SniperState.Scanning=false;if  not v359 then warn("[SNIPER] Scan failed:",v360);end end if (game.PlaceId==TRADING_WORLD_PLACE_ID) then task.spawn(function() local v2312=LatestBoothData;if v2312 then print("[BOOT] Booth data ready");else warn("[BOOT] Booth data not ready (will resolve later)");end end);end repo="https://raw.githubusercontent.com/bencapalot041/goons/main/";function SafeLoad(v361) local v362,v363=pcall(function() return game:HttpGet(v361,true);end);if ( not v362 or (type(v363)~="string") or ( #v363<100)) then error("[Loader] HTTP failed: "   .. tostring(v361) );end local v364,v365=loadstring(v363);if  not v364 then error("[Loader] Compile failed: "   .. tostring(v365) );end local v366,v367=pcall(v364);if  not v366 then error("[Loader] Runtime failed: "   .. tostring(v367) );end return v367;end Library=SafeLoad(repo   .. "librarytest.lua?v="   .. tostring(os.time()) );SaveManager=SafeLoad(repo   .. "addons/SaveManager.lua?v="   .. tostring(os.time()) );ThemeManager=SafeLoad(repo   .. "addons/ThemeManager.lua?v="   .. tostring(os.time()) );print("[LIB TEST]","Library loaded:",tostring(type(Library)),"| version file:","librarytest.lua");function HolyNotify(v368,v369,v370,v371) if ( not Library or (type(Library.Notify)~="function")) then return false;end local v372=pcall(function() Library:Notify({Title=tostring(v368 or "Holy" ),Description=tostring(v369 or "" ),Icon=tostring(v370 or "info" ),Time=tonumber(v371) or 4 });end);return v372;end HolyLoading=Library:CreateLoading({Title="Holy",Icon="zap",TotalSteps=6});HolyLoading:SetMessage("Initializing Holy...");HolyLoading:SetDescription("Loading core services...");HolyLoading:SetCurrentStep(1);Services={};RuntimeWorkers={};function StartWorker(v373,v374) if RuntimeWorkers[v373] then warn(string.format("[WORKER] %s already running",tostring(v373)));return RuntimeWorkers[v373];end local v375=task.spawn(function() local v1305,v1306=pcall(v374);if  not v1305 then warn(string.format("[WORKER] %s crashed: %s",tostring(v373),tostring(v1306)));end RuntimeWorkers[v373]=nil;end);RuntimeWorkers[v373]=v375;print(string.format("[WORKER] Started → %s",tostring(v373)));return v375;end TelemetryService={};Services.Telemetry=TelemetryService;TelemetryService.Enabled=true;TelemetryService.Push=function(v377,v378,v379) if  not v377.Enabled then return;end print(string.format("[%s] %s",tostring(v378),tostring(v379)));end;TelemetryService.Warn=function(v380,v381,v382) warn(string.format("[%s] %s",tostring(v381),tostring(v382)));end;TelemetryService.Error=function(v383,v384,v385) warn(string.format("[%s ERROR] %s",tostring(v384),tostring(v385)));end;ScriptState={Loaded=false,ForceStopped=false};RuntimeState={Started=false};BoothAuto={Enabled=false,InProgress=false,AutoTeleport=false,LockBehindBooth=false,BoothDistance=5,ReturnDistance=8,LastBoothPosition=nil,LastBoothCFrame=nil,LastSoftReturnAt=0,LastHardLockAt=0,SoftReturnCooldown=1.5,HardLockInterval=0.15,AutoServerHop=false,ServerHopMinutes=10,LastServerHop=0};function ClearBoothAnchor() if  not BoothAuto then return;end BoothAuto.LastBoothPosition=nil;BoothAuto.LastBoothCFrame=nil;BoothAuto.LastSoftReturnAt=0;BoothAuto.LastHardLockAt=0;end function RestoreCharacterMovement() local v390=Players.LocalPlayer;if  not v390 then return false;end local v391=v390.Character;if  not v391 then return false;end local v392=v391:FindFirstChildOfClass("Humanoid");local v393=v391:FindFirstChild("HumanoidRootPart");if v393 then v393.Anchored=false;end if  not v392 then return false;end v392.AutoRotate=true;if (v392.WalkSpeed<=0) then v392.WalkSpeed=16;end if (v392.JumpPower<=0) then v392.JumpPower=50;end return true;end function MoveCharacterToBoothCFrame(v395) if (typeof(v395)~="CFrame") then return false;end local v396=Players.LocalPlayer;if  not v396 then return false;end local v397=v396.Character;if  not v397 then return false;end local v398=v397:FindFirstChildOfClass("Humanoid");if ( not v398 or (v398.Health<=0)) then return false;end local v399=v397:FindFirstChild("HumanoidRootPart");if v399 then v399.Anchored=false;end if v398.Sit then v398.Sit=false;task.wait();end v397:PivotTo(v395);return true;end function SetBoothHardLockAnchored(v400) local v401=Players.LocalPlayer;if  not v401 then return false;end local v402=v401.Character;if  not v402 then return false;end local v403=v402:FindFirstChildOfClass("Humanoid");local v404=v402:FindFirstChild("HumanoidRootPart");if ( not v404 or  not v403 or (v403.Health<=0)) then return false;end if v400 then v403:Move(Vector3.zero,true);v403.WalkSpeed=0;v403.JumpPower=0;v403.AutoRotate=false;v404.AssemblyLinearVelocity=Vector3.zero;v404.AssemblyAngularVelocity=Vector3.zero;local v2324=GetBoothHardLockCFrame();if v2324 then local v2922=(v404.Anchored~=true) or ((v404.Position-v2324.Position).Magnitude>0.05) ;if v2922 then v404.CFrame=v2324;v404.AssemblyLinearVelocity=Vector3.zero;v404.AssemblyAngularVelocity=Vector3.zero;end end v404.Anchored=true;return true;end v404.Anchored=false;v403.AutoRotate=true;RestoreCharacterMovement();return true;end function GetBoothHardLockLift() return 0;end function GetBoothHardLockCFrame() if (typeof(BoothAuto.LastBoothCFrame)~="CFrame") then return nil;end return BoothAuto.LastBoothCFrame + Vector3.new(0,GetBoothHardLockLift(),0) ;end function GetCharacterGroundOffset() local v407=Players.LocalPlayer;if  not v407 then return 3;end local v408=v407.Character;if  not v408 then return 3;end local v409=v408:FindFirstChildOfClass("Humanoid");local v410=v408:FindFirstChild("HumanoidRootPart");local v411=(v409 and tonumber(v409.HipHeight)) or 2 ;local v412=(v410 and v410.Size and (v410.Size.Y * 0.5)) or 1 ;return math.clamp(v411 + v412 + 0.05 ,2.75,5.5);end ConfigState={IsHydrating=false,Dirty=false,LastMutation=0,AutosaveName="autosave"};UIState={AutoMinimize=false,DPIScale=90,PerformanceMode=false};VisualState={ExoticHUD=true,WatchlistHUD=false,ServerInfoHUD=false,SniperMonitorHUD=false};WorldState={AutoJoinTradeWorld=false};TradeWorldJoinState=TradeWorldJoinState or {Busy=false,LastAttempt=0,Cooldown=3,DelaySeconds=10,PendingRequestId=0} ;function RequestJoinTradeWorld(v413) if ScriptState.ForceStopped then return false;end if IsTradeWorld() then HolyNotify("Already in Trade World","HOLY is already running in Trade World.","check",3);return false;end local v414=os.clock();local v415=SafeNumber(TradeWorldJoinState.LastAttempt,0);local v416=SafeNumber(TradeWorldJoinState.Cooldown,3);if TradeWorldJoinState.Busy then return false;end if ((v414-v415)<v416) then return false;end local v417=Players.LocalPlayer;if  not v417 then warn("[WORLD] LocalPlayer missing");return false;end TradeWorldJoinState.Busy=true;TradeWorldJoinState.LastAttempt=v414;HolyNotify("Joining Trade World",tostring(v413 or "Teleporting to Trade World..." ),"send",4);print("[WORLD] Joining Trade World");local v420=game:GetService("TeleportService");local v421,v422=pcall(function() v420:Teleport(TRADING_WORLD_PLACE_ID,v417);end);if  not v421 then TradeWorldJoinState.Busy=false;warn("[WORLD] Trade World teleport failed:",tostring(v422));HolyNotify("Teleport Failed",tostring(v422),"triangle-alert",4);return false;end task.delay(8,function() TradeWorldJoinState.Busy=false;end);return true;end function CancelScheduledTradeWorldJoin() TradeWorldJoinState.PendingRequestId=SafeNumber(TradeWorldJoinState.PendingRequestId,0) + 1 ;print("[WORLD] Scheduled Trade World join cancelled");end function ScheduleJoinTradeWorld(v424) if ScriptState.ForceStopped then return false;end if IsTradeWorld() then return false;end TradeWorldJoinState.PendingRequestId=SafeNumber(TradeWorldJoinState.PendingRequestId,0) + 1 ;local v426=TradeWorldJoinState.PendingRequestId;local v427=SafeNumber(TradeWorldJoinState.DelaySeconds,10);v427=math.max(v427,1);HolyNotify("Trade World Scheduled","Teleporting in "   .. tostring(v427)   .. " seconds. Turn the toggle off to cancel." ,"clock",5);print("[WORLD] Trade World teleport scheduled in",tostring(v427),"seconds");task.delay(v427,function() if ScriptState.ForceStopped then return;end if (v426~=TradeWorldJoinState.PendingRequestId) then return;end if (WorldState.AutoJoinTradeWorld~=true) then HolyNotify("Teleport Cancelled","Auto Teleport Trade World was turned off.","x",3);return;end if IsTradeWorld() then return;end RequestJoinTradeWorld(v424 or "Auto Teleport Trade World delay finished." );end);return true;end ReconnectState={AutoReconnect=false,Busy=false,LastAttempt=0,Cooldown=5};BoothCustomization={SelectedSkin="Default"};TradeBoothSkinRegistry=TradeBoothSkinRegistry or nil ;BoothSkinList={"Default"};function GetTradeBoothSkinRegistry() if (type(TradeBoothSkinRegistry)=="table") then return TradeBoothSkinRegistry;end local v428=ReplicatedStorage:FindFirstChild("Data");if  not v428 then return nil;end local v429=v428:FindFirstChild("TradeBoothSkinRegistry");if  not v429 then return nil;end local v430,v431=pcall(function() return require(v429);end);if (v430 and (type(v431)=="table")) then TradeBoothSkinRegistry=v431;return TradeBoothSkinRegistry;end return nil;end function GetHolyPlayerData() local v432=(GetHolyDataService and GetHolyDataService()) or nil ;if  not v432 then return nil;end local v433,v434=pcall(function() return v432:GetData();end);if (v433 and (type(v434)=="table")) then return v434;end v433,v434=pcall(function() return v432.GetData();end);if (v433 and (type(v434)=="table")) then return v434;end return nil;end function GetOwnedBoothSkinMap() local v435=GetHolyPlayerData();local v436=((type(v435)=="table") and rawget(v435,"TradeBoothSkinData")) or nil ;local v437=((type(v436)=="table") and rawget(v436,"OwnedSkins")) or nil ;if (type(v437)~="table") then return {Default=true};end local v438={Default=true};for v1309,v1310 in pairs(v437) do if ((v1310==true) or (tonumber(v1310)~=nil)) then v438[tostring(v1309)]=true;end end return v438;end function RefreshBoothSkinList() local v439=GetTradeBoothSkinRegistry();local v440=GetOwnedBoothSkinMap();local v441={};local v442={};local function v443(v1311) local v1312=tostring(v1311 or "" ):gsub("^%s+",""):gsub("%s+$","");if (v1312=="") then return false;end if v442[v1312] then return false;end if  not v440[v1312] then return false;end if (v1312~="Default") then if ((type(v439)~="table") or (type(v439[v1312])~="table")) then return false;end end v442[v1312]=true;table.insert(v441,v1312);return true;end v443("Default");for v1314 in pairs(v440) do v443(v1314);end table.sort(v441,function(v1315,v1316) if (v1315=="Default") then return true;end if (v1316=="Default") then return false;end return v1315<v1316 ;end);if ( #v441<=0) then v441={"Default"};end BoothSkinList=v441;print("[BOOTH SKINS] Owned loaded:",tostring( #BoothSkinList));return BoothSkinList;end function IsOwnedBoothSkin(v444) v444=tostring(v444 or "" );if (v444=="") then return false;end local v445=GetOwnedBoothSkinMap();return v445[v444]==true ;end function ResolveSelectedBoothSkin() local v446=tostring((BoothCustomization and BoothCustomization.SelectedSkin) or "Default" );if IsOwnedBoothSkin(v446) then return v446;end BoothCustomization.SelectedSkin="Default";return "Default";end BeeEggAuto={Enabled=false,Buying=false,SelectedEggs={["Mythical Bee Egg"]=true},EggList={},BuyRemote=nil,LastAttempt=0,BuyInterval=1.5};function MarkConfigDirty() if ConfigState.IsHydrating then return;end ConfigState.Dirty=true;ConfigState.LastMutation=os.clock();end function SafeNumber(v450,v451) local v452=tonumber(v450);if (v452==nil) then return v451 or 0 ;end return v452;end function SafeElapsed(v453) return os.clock() -SafeNumber(v453,0) ;end function SafeRemaining(v454) return SafeNumber(v454,0) -os.clock() ;end function IsTradeWorld() return game.PlaceId==TRADING_WORLD_PLACE_ID ;end FILTER_SAVE_FILE="HolyV2/sniper_filters.json";LISTING_FILTER_SAVE_FILE="HolyV2/listing_filters.json";LISTING_AUTOLIST_INTENT_SAVE_FILE="HolyV2/listing_autolist_intent.json";function SerializeFilterSet(v455) local v456={};if (type(v455)~="table") then return v456;end for v1317,v1318 in pairs(v455) do if (type(v1318)=="table") then v456[tostring(v1317)]={MinWeight=tonumber(v1318.MinWeight) or 0 ,MaxPrice=((v1318.MaxPrice==math.huge) and "INF") or tonumber(v1318.MaxPrice) or math.huge ,WeightMode=NormalizeWeightMode(v1318.WeightMode),Priority=ResolveSniperFilterPriority(v1318)};end end return v456;end function SerializeEggFocusSet(v457) local v458={};if (type(v457)~="table") then return v458;end for v1319,v1320 in pairs(v457) do if (type(v1320)=="table") then v458[tostring(v1319)]={MaxPrice=((v1320.MaxPrice==math.huge) and "INF") or tonumber(v1320.MaxPrice) or math.huge };end end return v458;end function SaveSniperFilters() if  not writefile then warn("[Filters] writefile unsupported");return false;end local v459,v460=pcall(function() local v1321={Version=3,Watchlists={["1"]=SerializeFilterSet(GetSniperFilterSet(1)),["2"]=SerializeFilterSet(GetSniperFilterSet(2))},EggFocus={["1"]=SerializeEggFocusSet(GetEggFocusSet(1)),["2"]=SerializeEggFocusSet(GetEggFocusSet(2))}};writefile(FILTER_SAVE_FILE,HttpService:JSONEncode(v1321));end);if  not v459 then warn("[Filters] Save failed:",v460);return false;end print("[Filters] Saved");return true;end function LoadFilterSetFromTable(v461,v462) if ((type(v461)~="table") or (type(v462)~="table")) then return;end table.clear(v461);for v1322,v1323 in pairs(v462) do if ((v1322~="Version") and (v1322~="Watchlists") and (type(v1323)=="table")) then v461[tostring(v1322)]={MinWeight=tonumber(v1323.MinWeight) or 0 ,MaxPrice=((v1323.MaxPrice=="INF") and math.huge) or tonumber(v1323.MaxPrice) or math.huge ,WeightMode=NormalizeWeightMode(v1323.WeightMode),Priority=ClampSniperPriority(v1323.Priority)};end end end function LoadEggFocusSetFromTable(v463,v464) if ((type(v463)~="table") or (type(v464)~="table")) then return;end table.clear(v463);for v1324,v1325 in pairs(v464) do if (type(v1325)=="table") then v463[tostring(v1324)]={MaxPrice=((v1325.MaxPrice=="INF") and math.huge) or tonumber(v1325.MaxPrice) or math.huge };end end end function LoadSniperFilters() if  not isfile then warn("[Filters] isfile unsupported");return;end if  not readfile then warn("[Filters] readfile unsupported");return;end if  not isfile(FILTER_SAVE_FILE) then print("[Filters] No existing filter save");return;end local v465,v466=pcall(function() local v1326=readfile(FILTER_SAVE_FILE);return HttpService:JSONDecode(v1326);end);if ( not v465 or (type(v466)~="table")) then warn("[Filters] Corrupted filter file");if delfile then pcall(function() delfile(FILTER_SAVE_FILE);end);end return;end table.clear(GetSniperFilterSet(1));table.clear(GetSniperFilterSet(2));if (type(v466.Watchlists)=="table") then LoadFilterSetFromTable(GetSniperFilterSet(1),v466.Watchlists["1"] or v466.Watchlists[1] or {} );LoadFilterSetFromTable(GetSniperFilterSet(2),v466.Watchlists["2"] or v466.Watchlists[2] or {} );if (type(v466.EggFocus)=="table") then LoadEggFocusSetFromTable(GetEggFocusSet(1),v466.EggFocus["1"] or v466.EggFocus[1] or {} );LoadEggFocusSetFromTable(GetEggFocusSet(2),v466.EggFocus["2"] or v466.EggFocus[2] or {} );else table.clear(GetEggFocusSet(1));table.clear(GetEggFocusSet(2));end print("[Filters] Loaded two watchlists");return;end LoadFilterSetFromTable(GetSniperFilterSet(1),v466);print("[Filters] Loaded legacy watchlist into Watchlist 1");end function SerializeListingFilters() local v467={};if (type(ListingsState)~="table") then return v467;end ListingsState.ListingFilters=ListingsState.ListingFilters or {} ;for v1327,v1328 in ipairs(ListingsState.ListingFilters) do if (type(v1328)=="table") then table.insert(v467,{Pet=tostring(v1328.Pet or "" ),Mutation=tostring(v1328.Mutation or "---" ),ExcludedMutations=SerializeListingMutationMap(v1328.ExcludedMutations),MinLevel=tonumber(v1328.MinLevel) or 1 ,MaxLevel=tonumber(v1328.MaxLevel) or 100 ,MinWeight=tonumber(v1328.MinWeight),MaxWeight=tonumber(v1328.MaxWeight),Price=tonumber(v1328.Price),Enabled=v1328.Enabled~=false });end end return v467;end function SaveListingFilters() if  not writefile then warn("[LISTINGS FILTERS] writefile unsupported");return false;end local v469,v470=pcall(function() if (makefolder and  not isfolder("HolyV2")) then makefolder("HolyV2");end local v1329={Version=1,Filters=SerializeListingFilters()};writefile(LISTING_FILTER_SAVE_FILE,HttpService:JSONEncode(v1329));end);if  not v469 then warn("[LISTINGS FILTERS] Save failed:",tostring(v470));return false;end print("[LISTINGS FILTERS] Saved:",tostring((ListingsState.ListingFilters and  #ListingsState.ListingFilters) or 0 ));return true;end function LoadListingFilters() if ( not isfile or  not readfile) then warn("[LISTINGS FILTERS] file API unsupported");return false;end if  not isfile(LISTING_FILTER_SAVE_FILE) then print("[LISTINGS FILTERS] No existing save");return false;end local v471,v472=pcall(function() local v1330=readfile(LISTING_FILTER_SAVE_FILE);return HttpService:JSONDecode(v1330);end);if ( not v471 or (type(v472)~="table")) then warn("[LISTINGS FILTERS] Corrupted save");if delfile then pcall(function() delfile(LISTING_FILTER_SAVE_FILE);end);end return false;end local v473=v472.Filters;if (type(v473)~="table") then v473=v472;end ListingsState.ListingFilters=ListingsState.ListingFilters or {} ;table.clear(ListingsState.ListingFilters);for v1331,v1332 in ipairs(v473) do if (type(v1332)=="table") then local v2668={Pet=tostring(v1332.Pet or "" ),Mutation=NormalizeListingFilterMutation(v1332.Mutation),ExcludedMutations=DeserializeListingMutationMap(v1332.ExcludedMutations),MinLevel=tonumber(v1332.MinLevel) or 1 ,MaxLevel=tonumber(v1332.MaxLevel) or 100 ,MinWeight=tonumber(v1332.MinWeight),MaxWeight=tonumber(v1332.MaxWeight),Price=tonumber(v1332.Price),Enabled=v1332.Enabled~=false };local v2669=true;if (v2668.Pet=="") then v2669=false;end if ( not v2668.MinWeight or  not v2668.MaxWeight or  not v2668.Price) then v2669=false;end if ( not v2668.MinLevel or  not v2668.MaxLevel or (v2668.MaxLevel<v2668.MinLevel)) then v2669=false;end if (v2668.MinWeight and v2668.MaxWeight and (v2668.MaxWeight<v2668.MinWeight)) then v2669=false;end if v2669 then table.insert(ListingsState.ListingFilters,v2668);end end end ListingsState.ListingFilterUI=ListingsState.ListingFilterUI or {Page=1,PerPage=8} ;ListingsState.ListingFilterUI.Page=1;print("[LISTINGS FILTERS] Loaded:",tostring( #ListingsState.ListingFilters));return true;end function SaveListingAutoListIntent(v477) if  not writefile then return false;end local v478,v479=pcall(function() if (makefolder and  not isfolder("HolyV2")) then makefolder("HolyV2");end local v1333={Version=1,Enabled=v477==true ,SavedAt=os.time()};writefile(LISTING_AUTOLIST_INTENT_SAVE_FILE,HttpService:JSONEncode(v1333));end);if  not v478 then warn("[LISTINGS INTENT] Save failed:",tostring(v479));return false;end print("[LISTINGS INTENT] Saved AutoList:",tostring(v477==true ));return true;end function LoadListingAutoListIntent() if ( not isfile or  not readfile) then return nil;end if  not isfile(LISTING_AUTOLIST_INTENT_SAVE_FILE) then return nil;end local v480,v481=pcall(function() local v1334=readfile(LISTING_AUTOLIST_INTENT_SAVE_FILE);return HttpService:JSONDecode(v1334);end);if ( not v480 or (type(v481)~="table")) then warn("[LISTINGS INTENT] Failed to load intent");return nil;end return v481.Enabled==true ;end Window=Library:CreateWindow({Title="HOLY",Footer="private build • made by ben",Center=true,AutoShow=true,ToggleKeybind=Enum.KeyCode.LeftAlt});HolyBrandStyleState={Passes=0};local v7=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(255,218,120)),ColorSequenceKeypoint.new(0.45,Color3.fromRGB(255,120,185)),ColorSequenceKeypoint.new(1,Color3.fromRGB(155,105,255))});local function v8(v482) return tostring(v482 or "" ):gsub("^%s+",""):gsub("%s+$","");end local function v9(v483) v483=v8(v483);return (v483=="Holy") or (v483=="HOLY") or (v483=="HOLY") ;end local function v10() local v484={};local v485=Players.LocalPlayer;if v485 then local v2327=v485:FindFirstChild("PlayerGui");if v2327 then table.insert(v484,v2327);end end local v486,v487=pcall(function() return game:GetService("CoreGui");end);if (v486 and v487) then table.insert(v484,v487);end if (type(gethui)=="function") then local v2328,v2329=pcall(function() return gethui();end);if (v2328 and v2329) then table.insert(v484,v2329);end end return v484;end function StyleHolyBrandObject(v488) if  not v488 then return false;end if ( not v488:IsA("TextLabel") and  not v488:IsA("TextButton")) then return false;end if  not v9(v488.Text) then return false;end v488.Text="HOLY";v488.Font=Enum.Font.GothamBlack;v488.TextColor3=Color3.fromRGB(255,235,170);v488.TextStrokeColor3=Color3.fromRGB(10,5,20);v488.TextStrokeTransparency=0;v488.RichText=false;v488.TextXAlignment=Enum.TextXAlignment.Center;if (v488.TextSize<17) then v488.TextSize=math.clamp(v488.TextSize + 2 ,15,20);end local v498=v488:FindFirstChild("HolyPremiumGradient");if  not v498 then v498=Instance.new("UIGradient");v498.Name="HolyPremiumGradient";v498.Parent=v488;end v498.Color=v7;v498.Rotation=0;local v501=v488:FindFirstChild("HolyPremiumStroke");if  not v501 then v501=Instance.new("UIStroke");v501.Name="HolyPremiumStroke";v501.ApplyStrokeMode=Enum.ApplyStrokeMode.Contextual;v501.Parent=v488;end v501.Color=Color3.fromRGB(150,75,255);v501.Thickness=1.5;v501.Transparency=0.12;if v488:IsA("TextButton") then v488.AutoButtonColor=true;v488.BackgroundColor3=Color3.fromRGB(12,8,24);v488.BackgroundTransparency=0.02;local v2340=v488:FindFirstChild("HolyPremiumCorner");if  not v2340 then v2340=Instance.new("UICorner");v2340.Name="HolyPremiumCorner";v2340.Parent=v488;end v2340.CornerRadius=UDim.new(0,8);end v488:SetAttribute("HolyPremiumStyled",true);return true;end function StyleHolyToggleText() local v505=0;for v1335,v1336 in ipairs(v10()) do for v2342,v2343 in ipairs(v1336:GetDescendants()) do if StyleHolyBrandObject(v2343) then v505+=1 end end end return v505;end task.spawn(function() local v506=0;for v1337=1,40 do pcall(function() v506=StyleHolyToggleText();end);if (v506>0) then break;end task.wait(0.25);end task.wait(2);pcall(function() StyleHolyToggleText();end);end);HolyLoading:SetCurrentStep(2);HolyLoading:SetDescription("Creating Obsidian window...");Tabs={Home=Window:AddTab({Name="Home",Icon="house",Description="Runtime controls, inventory safety, and quick server actions."}),Sniper=Window:AddTab({Name="Sniper",Icon="crosshair",Description="Pet filters, watchlists, egg focus, server hopping, and purchase safety."}),Booth=Window:AddTab({Name="Booth",Icon="store",Description="Booth claiming, teleporting, skins, and listing promotion."}),Listings=Window:AddTab({Name="Listings",Icon="tag",Description="Auto-list inventory pets with price, mutation, and weight filters."}),Events=Window:AddTab({Name="Events",Icon="calendar",Description="Event shop automation and limited-time systems."}),Visuals=Window:AddTab({Name="Visuals",Icon="eye",Description="HUDs, overlays, and client-side visual tools."}),Webhook=Window:AddTab({Name="Webhook",Icon="link",Description="Personal and global Discord webhook delivery settings."}),Settings=Window:AddTab({Name="Settings",Icon="settings",Description="UI scale, performance, reconnect, and developer tools."})};print("[TAB TEST]","AddLeftGroupbox:",tostring(type(Tabs.Visuals.AddLeftGroupbox)),"| AddLeftCollapsibleGroupbox:",tostring(type(Tabs.Visuals.AddLeftCollapsibleGroupbox)));function AddGardenModePlaceholder(v507,v508,v509) if  not v507 then return;end local v510;if (type(v507.AddLeftCollapsibleGroupbox)=="function") then v510=v507:AddLeftCollapsibleGroupbox(v508,v509 or "lock" ,true);else v510=v507:AddLeftGroupbox(v508,v509 or "lock" );end v510:AddLabel("🌱 Garden Mode",false);v510:AddLabel("This system only works in Trade World.",true);v510:AddButton({Text="🌐 Join Trade World",Tooltip="Teleport to Grow a Garden Trade World.",Func=function() RequestJoinTradeWorld("Manual Trade World join requested.");end});end function BuildGardenModeTradeTabs() AddGardenModePlaceholder(Tabs.Sniper,"Sniper","crosshair");AddGardenModePlaceholder(Tabs.Booth,"Booth","store");AddGardenModePlaceholder(Tabs.Listings,"Listings","tag");if  not EventsBox then AddGardenModePlaceholder(Tabs.Events,"Events","calendar");end end HolyLoading:SetCurrentStep(3);HolyLoading:SetDescription("Building tabs...");EventsBox=nil;if IsTradeWorld() then if (type(Tabs.Events.AddLeftCollapsibleGroupbox)=="function") then EventsBox=Tabs.Events:AddLeftCollapsibleGroupbox("Events","calendar",true);else warn("[LIB TEST] Collapsible Events unavailable, using normal groupbox");EventsBox=Tabs.Events:AddLeftGroupbox("Events","calendar");end end CreateWatchlistHUD=nil;RefreshWatchlistHUD=nil;CreateServerInfoHUD=nil;RefreshServerInfoHUD=nil;CreateSniperMonitorHUD=nil;RefreshSniperMonitorHUD=nil;WatchlistHUDGui=nil;WatchlistHUDFrame=nil;WatchlistHUDContainer=nil;ServerInfoHUDGui=nil;ServerInfoHUDFrame=nil;ServerInfoVersionLabel=nil;ServerInfoSessionLabel=nil;SniperMonitorHUDGui=nil;SniperMonitorHUDFrame=nil;SniperMonitorStatusLabel=nil;SniperMonitorScannedLabel=nil;SniperMonitorHopLabel=nil;InventoryDetailsLabel=nil;InventoryDetailsStatusLabel=nil;RefreshInventoryDetails=nil;function BuildVisualTab() local v511;if (type(Tabs.Visuals.AddLeftCollapsibleGroupbox)=="function") then v511=Tabs.Visuals:AddLeftCollapsibleGroupbox("Visual Settings","eye",false);else warn("[LIB TEST] Collapsible groupbox unavailable, using normal groupbox");v511=Tabs.Visuals:AddLeftGroupbox("Visual Settings","eye");end local v512=v511:AddToggle("WatchlistHUD",{Text="🔫 Sniper Watchlist HUD",Default=false});v512:OnChanged(function(v1338) VisualState.WatchlistHUD=v1338;MarkConfigDirty();if  not WatchlistHUDGui then if (type(CreateWatchlistHUD)=="function") then CreateWatchlistHUD();end end if WatchlistHUDGui then WatchlistHUDGui.Enabled=v1338;end if WatchlistHUDFrame then WatchlistHUDFrame.Visible=v1338;end if (v1338 and (type(RefreshWatchlistHUD)=="function")) then RefreshWatchlistHUD();end end);local v513=v511:AddToggle("ServerInfoHUD",{Text="🖥️ Server Info HUD",Default=false});v513:OnChanged(function(v1340) VisualState.ServerInfoHUD=v1340;MarkConfigDirty();if  not ServerInfoHUDGui then CreateServerInfoHUD();end if ServerInfoHUDGui then ServerInfoHUDGui.Enabled=v1340;end if ServerInfoHUDFrame then ServerInfoHUDFrame.Visible=v1340;end if v1340 then RefreshServerInfoHUD();end end);local v514=v511:AddToggle("SniperMonitorHUD",{Text="🎯 Sniper Monitor HUD",Default=false});v514:OnChanged(function(v1342) VisualState.SniperMonitorHUD=v1342;MarkConfigDirty();if  not SniperMonitorHUDGui then CreateSniperMonitorHUD();end if SniperMonitorHUDGui then SniperMonitorHUDGui.Enabled=v1342;end if SniperMonitorHUDFrame then SniperMonitorHUDFrame.Visible=v1342;end if v1342 then RefreshSniperMonitorHUD();end end);function CreateWatchlistHUD() if WatchlistHUDGui then return;end local v1344=Players.LocalPlayer:WaitForChild("PlayerGui");local v1345=Instance.new("ScreenGui");v1345.Name="HolyWatchlistHUD";v1345.ResetOnSpawn=false;v1345.IgnoreGuiInset=true;v1345.Enabled=VisualState.WatchlistHUD;v1345.Parent=v1344;WatchlistHUDGui=v1345;local v1352=Instance.new("Frame");v1352.Name="Container";v1352.BackgroundTransparency=1;v1352.AnchorPoint=Vector2.new(1,0);v1352.Position=UDim2.new(1, -10,0,34);v1352.Size=UDim2.new(0,210,0,320);v1352.Parent=v1345;WatchlistHUDContainer=v1352;local v1359=Instance.new("TextLabel");v1359.BackgroundTransparency=1;v1359.Size=UDim2.new(1,0,0,18);v1359.Font=Enum.Font.Code;v1359.Text="WATCHLIST";v1359.TextSize=15;v1359.TextColor3=Color3.fromRGB(220,0,0);v1359.TextStrokeTransparency=0.7;v1359.TextXAlignment=Enum.TextXAlignment.Right;v1359.Parent=v1352;local v1371=Instance.new("Frame");v1371.Name="List";v1371.BackgroundTransparency=1;v1371.Position=UDim2.new(0,0,0,24);v1371.Size=UDim2.new(1,0,1, -24);v1371.Parent=v1352;WatchlistHUDContainer=v1371;local v1377=Instance.new("UIListLayout");v1377.HorizontalAlignment=Enum.HorizontalAlignment.Right;v1377.SortOrder=Enum.SortOrder.LayoutOrder;v1377.Padding=UDim.new(0,1);v1377.Parent=v1371;end local function v515(v1384) v1384=math.max(0,math.floor(v1384));local v1385=math.floor(v1384/3600 );local v1386=math.floor((v1384%3600)/60 );local v1387=v1384%60 ;if (v1385>0) then return string.format("%dh %02dm %02ds",v1385,v1386,v1387);end return string.format("%dm %02ds",v1386,v1387);end local function v516() local v1388=Players.LocalPlayer:FindFirstChild("PlayerGui");if  not v1388 then return "Server Version: Unknown";end local v1389=v1388:FindFirstChild("Version_UI");if  not v1389 then return "Server Version: Unknown";end local v1390=v1389:FindFirstChild("Version");if ( not v1390 or  not v1390:IsA("TextLabel")) then return "Server Version: Unknown";end local v1391=tostring(v1390.Text or "" );if (v1391=="") then return "Server Version: Unknown";end if string.lower(v1391):find("server version",1,true) then return v1391;end return "Server Version: "   .. v1391 ;end function CreateServerInfoHUD() if ServerInfoHUDGui then return;end local v1392=Players.LocalPlayer:WaitForChild("PlayerGui");local v1393=Instance.new("ScreenGui");v1393.Name="HolyServerInfoHUD";v1393.ResetOnSpawn=false;v1393.IgnoreGuiInset=true;v1393.Enabled=VisualState.ServerInfoHUD;v1393.Parent=v1392;ServerInfoHUDGui=v1393;local v1400=Instance.new("Frame");v1400.Name="Frame";v1400.BackgroundTransparency=1;v1400.AnchorPoint=Vector2.new(0,0);v1400.Position=UDim2.new(0,12,0.18,0);v1400.Size=UDim2.new(0,240,0,38);v1400.Parent=v1393;ServerInfoHUDFrame=v1400;local v1407=Instance.new("TextLabel");v1407.Name="ServerVersion";v1407.BackgroundTransparency=1;v1407.Position=UDim2.new(0,0,0,0);v1407.Size=UDim2.new(1,0,0,24);v1407.Font=Enum.Font.GothamBold;v1407.TextSize=12;v1407.TextColor3=Color3.fromRGB(245,245,245);v1407.TextStrokeTransparency=0.35;v1407.TextStrokeColor3=Color3.fromRGB(0,0,0);v1407.TextXAlignment=Enum.TextXAlignment.Left;v1407.Text="Server Version: Unknown";v1407.Parent=v1400;ServerInfoVersionLabel=v1407;local v1422=Instance.new("TextLabel");v1422.Name="SessionTime";v1422.BackgroundTransparency=1;v1422.Position=UDim2.new(0,0,0,17);v1422.Size=UDim2.new(1,0,0,17);v1422.Font=Enum.Font.GothamBold;v1422.TextSize=12;v1422.TextColor3=Color3.fromRGB(245,245,245);v1422.TextStrokeTransparency=0.35;v1422.TextStrokeColor3=Color3.fromRGB(0,0,0);v1422.TextXAlignment=Enum.TextXAlignment.Left;v1422.Text="SessionTime: 0m 00s";v1422.Parent=v1400;ServerInfoSessionLabel=v1422;end function RefreshServerInfoHUD() if  not ServerInfoHUDGui then return;end if  not VisualState.ServerInfoHUD then return;end if ServerInfoVersionLabel then ServerInfoVersionLabel.Text=v516();end if ServerInfoSessionLabel then ServerInfoSessionLabel.Text="SessionTime: "   .. v515(SafeElapsed(ServerInfoStartedAt)) ;end end local function v517(v1435) v1435=math.max(0,tonumber(v1435) or 0 );if (v1435>=60) then local v2678=math.floor(v1435/60 );local v2679=math.floor(v1435%60 );return string.format("%dm %02ds",v2678,v2679);end return string.format("%.1fs",v1435);end local function v518() if ScriptState.ForceStopped then return "Stopped";end if SniperState.Hopping then return "Hopping";end if (PurchaseState and PurchaseState.Busy) then return "Buying";end if RuntimeState.Started then return "Active";end return "Idle";end local function v519() if  not SniperState.AutoHop then return "Off";end if  not RuntimeState.Started then return "Paused";end if SniperState.Hopping then return "Now";end SniperState.ScanStartedAt=SafeNumber(SniperState.ScanStartedAt,os.clock());SniperState.ScanDuration=SafeNumber(SniperState.ScanDuration,10);local v1438=SafeElapsed(SniperState.ScanStartedAt);local v1439=SniperState.ScanDuration-v1438 ;return v517(v1439);end function CreateSniperMonitorHUD() if SniperMonitorHUDGui then return;end local v1440=Players.LocalPlayer:WaitForChild("PlayerGui");local v1441=Instance.new("ScreenGui");v1441.Name="HolySniperMonitorHUD";v1441.ResetOnSpawn=false;v1441.IgnoreGuiInset=true;v1441.Enabled=VisualState.SniperMonitorHUD;v1441.Parent=v1440;SniperMonitorHUDGui=v1441;local v1448=Instance.new("Frame");v1448.Name="Frame";v1448.BackgroundTransparency=1;v1448.AnchorPoint=Vector2.new(0,0);v1448.Position=UDim2.new(0,12,0.26,0);v1448.Size=UDim2.new(0,240,0,72);v1448.Parent=v1441;SniperMonitorHUDFrame=v1448;local v1455=Instance.new("TextLabel");v1455.Name="Title";v1455.BackgroundTransparency=1;v1455.Position=UDim2.new(0,0,0,0);v1455.Size=UDim2.new(1,0,0,18);v1455.Font=Enum.Font.GothamBold;v1455.TextSize=12;v1455.TextColor3=Color3.fromRGB(220,0,0);v1455.TextStrokeTransparency=0.35;v1455.TextStrokeColor3=Color3.fromRGB(0,0,0);v1455.TextXAlignment=Enum.TextXAlignment.Left;v1455.Text="SNIPER MONITOR";v1455.Parent=v1448;local v1470=Instance.new("TextLabel");v1470.Name="Status";v1470.BackgroundTransparency=1;v1470.Position=UDim2.new(0,0,0,18);v1470.Size=UDim2.new(1,0,0,16);v1470.Font=Enum.Font.GothamBold;v1470.TextSize=12;v1470.TextColor3=Color3.fromRGB(245,245,245);v1470.TextStrokeTransparency=0.35;v1470.TextStrokeColor3=Color3.fromRGB(0,0,0);v1470.TextXAlignment=Enum.TextXAlignment.Left;v1470.Text="Status: Idle";v1470.Parent=v1448;SniperMonitorStatusLabel=v1470;local v1483=Instance.new("TextLabel");v1483.Name="PetsScanned";v1483.BackgroundTransparency=1;v1483.Position=UDim2.new(0,0,0,34);v1483.Size=UDim2.new(1,0,0,16);v1483.Font=Enum.Font.GothamBold;v1483.TextSize=12;v1483.TextColor3=Color3.fromRGB(245,245,245);v1483.TextStrokeTransparency=0.35;v1483.TextStrokeColor3=Color3.fromRGB(0,0,0);v1483.TextXAlignment=Enum.TextXAlignment.Left;v1483.Text="Pets Scanned: 0";v1483.Parent=v1448;SniperMonitorScannedLabel=v1483;local v1496=Instance.new("TextLabel");v1496.Name="NextHop";v1496.BackgroundTransparency=1;v1496.Position=UDim2.new(0,0,0,50);v1496.Size=UDim2.new(1,0,0,16);v1496.Font=Enum.Font.GothamBold;v1496.TextSize=12;v1496.TextColor3=Color3.fromRGB(245,245,245);v1496.TextStrokeTransparency=0.35;v1496.TextStrokeColor3=Color3.fromRGB(0,0,0);v1496.TextXAlignment=Enum.TextXAlignment.Left;v1496.Text="Next Hop: Off";v1496.Parent=v1448;SniperMonitorHopLabel=v1496;end function RefreshSniperMonitorHUD() if  not SniperMonitorHUDGui then return;end if  not VisualState.SniperMonitorHUD then return;end if SniperMonitorStatusLabel then SniperMonitorStatusLabel.Text="Status: "   .. v518() ;end if SniperMonitorScannedLabel then SniperMonitorScannedLabel.Text="Pets Scanned: "   .. tostring(SniperMonitorState.PetsScanned) ;end if SniperMonitorHopLabel then SniperMonitorHopLabel.Text="Next Hop: "   .. v519() ;end end end GatewayBusy=false;function BuildHomeTab() local v520;if (type(Tabs.Home.AddLeftCollapsibleGroupbox)=="function") then v520=Tabs.Home:AddLeftCollapsibleGroupbox("Sniper Control","crosshair",true);else warn("[LIB TEST] Collapsible Sniper Control unavailable, using normal groupbox");v520=Tabs.Home:AddLeftGroupbox("Sniper Control","crosshair");end local v521;if (type(Tabs.Home.AddRightCollapsibleGroupbox)=="function") then v521=Tabs.Home:AddRightCollapsibleGroupbox("Details","info",true);else warn("[LIB TEST] Collapsible Details unavailable, using normal groupbox");v521=Tabs.Home:AddRightGroupbox("Details","info");end InventoryDetailsLabel=v521:AddLabel("📦 Pet Inventory: checking...",false);InventoryDetailsStatusLabel=v521:AddLabel("Status: waiting",false);function RefreshInventoryDetails() if ( not InventoryDetailsLabel or  not InventoryDetailsStatusLabel) then return;end local v1509=0;if (type(CountVisiblePetTools)=="function") then v1509=CountVisiblePetTools();end local v1510=tonumber(SniperState.MaxPetInventory) or 0 ;local v1511=SniperState.StopAtPetInventoryLimit==true ;local v1512;if (v1510>0) then v1512="📦 Pet Inventory: "   .. tostring(v1509)   .. " / "   .. tostring(v1510) ;else v1512="📦 Pet Inventory: "   .. tostring(v1509) ;end InventoryDetailsLabel:SetText(v1512);local v1513;if  not v1511 then v1513="Status: safety off";elseif (v1510<=0) then v1513="Status: no limit set";elseif (v1509>=v1510) then v1513="Status: limit reached";else local v3123=v1510-v1509 ;v1513="Status: safe • "   .. tostring(v3123)   .. " slots left" ;end InventoryDetailsStatusLabel:SetText(v1513);end RefreshInventoryDetails();task.spawn(function() while true do if (type(RefreshInventoryDetails)=="function") then pcall(RefreshInventoryDetails);end task.wait(1);end end);local v522={Mode="PublicInstance",PlaceId=game.PlaceId,JobId=game.JobId,Code=nil};GatewayBusy=false;local v523;if (type(Tabs.Home.AddLeftCollapsibleGroupbox)=="function") then v523=Tabs.Home:AddLeftCollapsibleGroupbox("Join Server (Manual)","radio",false);else warn("[LIB TEST] Collapsible Gateway unavailable, using normal groupbox");v523=Tabs.Home:AddLeftGroupbox("Join Server (Manual)","radio");end local v524=v523:AddLabel("Gateway • Idle");local function v525(v1514) v524:SetText("Gateway • "   .. tostring(v1514) );end local v526=v523:AddInput("GatewayInput",{Text="Target Server",Placeholder="placeId:jobId or roblox://",Numeric=false,Finished=false});local function v527(v1515) v1515=tostring(v1515 or "" );v1515=v1515:gsub("+"," ");v1515=v1515:gsub("%%(%x%x)",function(v2344) return string.char(tonumber(v2344,16));end);return v1515;end local function v528(v1516) if ( not v1516 or (v1516=="")) then return nil;end local v1517=tostring(v1516);local v1518=v1517:gsub("%s+","");if (v1518=="") then return nil;end local v1519=v1518:match("[?&]code=([^&]+)");local v1520=v1518:match("[?&]type=([^&]+)");if (v1519 and ( not v1520 or (tostring(v1520):lower()=="server"))) then return {Mode="PrivateLink",PlaceId=TRADING_WORLD_PLACE_ID,Code=v527(v1519)};end local v1521=v1518:match("placeId=(%d+)");local v1522=v1518:match("[?&]linkCode=([^&]+)") or v1518:match("[?&]privateServerLinkCode=([^&]+)") ;if v1522 then return {Mode="PrivateLink",PlaceId=tonumber(v1521) or TRADING_WORLD_PLACE_ID ,Code=v527(v1522)};end local v1523,v1524=v1518:match("placeId=(%d+).-[%&%?]gameInstanceId=([%w%-]+)");if (v1523 and v1524) then return {Mode="PublicInstance",PlaceId=tonumber(v1523),JobId=v1524};end v1523,v1524=v1518:match("^(%d+):([%w%-]+)$");if (v1523 and v1524) then return {Mode="PublicInstance",PlaceId=tonumber(v1523),JobId=v1524};end if (v1518:match("^[%w%-]+$") and ( #v1518>=30)) then return {Mode="PublicInstance",PlaceId=TRADING_WORLD_PLACE_ID,JobId=v1518};end if (v1518:match("^[%w%-_]+$") and ( #v1518>=16) and ( #v1518<80)) then return {Mode="PrivateLink",PlaceId=TRADING_WORLD_PLACE_ID,Code=v1518};end return nil;end v526:OnChanged(function(v1525) local v1526=v528(v1525);if  not v1526 then v525("Invalid input");return;end if (v1526.PlaceId~=TRADING_WORLD_PLACE_ID) then v525("Blocked non-trade server");return;end if (v1526.Mode=="PrivateLink") then v525("Valid private server link");return;end if (v1526.Mode=="PublicInstance") then v525("Valid public server");return;end v525("Invalid input");end);local function v529(v1527) if GatewayBusy then v525("Busy");return;end if (type(v1527)~="table") then v525("Invalid input");return;end if (v1527.PlaceId~=TRADING_WORLD_PLACE_ID) then v525("Blocked non-trade server");return;end GatewayBusy=true;local v1528=game:GetService("TeleportService");local v1529=Players.LocalPlayer;if  not v1529 then GatewayBusy=false;v525("LocalPlayer missing");return;end v522.Mode=v1527.Mode;v522.PlaceId=v1527.PlaceId;v522.JobId=v1527.JobId;v522.Code=v1527.Code;if (v1527.Mode=="PrivateLink") then v525("Private link copied");local v2683="https://www.roblox.com/share?code="   .. tostring(v1527.Code)   .. "&type=Server" ;if setclipboard then pcall(function() setclipboard(v2683);end);end warn("[Gateway] Private server links cannot be joined with TeleportService from the client.");warn("[Gateway] Link copied. Open it through browser / RoValra / Roblox app:",v2683);HolyNotify("Private Link Copied","Roblox blocks client-side TeleportToPrivateServer. Open the copied link through browser/RoValra.","link",5);elseif (v1527.Mode=="PublicInstance") then v525("Connecting public server...");local v3031,v3032=pcall(function() v1528:TeleportToPlaceInstance(v1527.PlaceId,v1527.JobId,v1529);end);if  not v3031 then warn("[Gateway] Public server teleport failed:",tostring(v3032));v525("Public join failed");end else v525("Invalid mode");end task.delay(5,function() GatewayBusy=false;end);end v523:AddButton({Text="📎 Copy Current Server",Func=function() if ScriptState.ForceStopped then v525("Blocked (ForceStopped)");return;end if  not setclipboard then v525("Clipboard unsupported");return;end local v1538=tostring(game.PlaceId)   .. ":"   .. tostring(game.JobId) ;pcall(function() setclipboard(v1538);end);v525("Current server copied");end});v523:AddButton({Text="↺ Reconnect Last Server",Func=function() if ScriptState.ForceStopped then v525("Blocked (ForceStopped)");return;end if  not v522.JobId then v525("No previous server");return;end v529(v522);end});v523:AddButton({Text="🚪 Connect",Tooltip="Join target server instance",Func=function() if ScriptState.ForceStopped then v525("Blocked (ForceStopped)");return;end local v1539=v526.Value;local v1540=v528(v1539);if  not v1540 then v525("Invalid input");return;end if (v1540.PlaceId~=TRADING_WORLD_PLACE_ID) then v525("Blocked non-trade server");return;end v529(v1540);v526:SetValue("");end});v526:SetValue("");if  not IsTradeWorld() then v520:AddDivider({Text="Garden Mode",MarginTop=10,MarginBottom=8});v520:AddLabel("🌱 Trade World automation is disabled here.",true);v520:AddButton({Text="🌐 Join Trade World",Tooltip="Teleport to Grow a Garden Trade World.",Func=function() RequestJoinTradeWorld("Manual Trade World join requested.");end});return;end local v530=v520:AddToggle("StartSystem",{Text="⚡ Activate Sniper",Default=false});v530:OnChanged(function(v1541) RuntimeState.Started=v1541;if v1541 then SniperMonitorState.Status="Active";SniperMonitorState.PetsScanned=0;SniperMonitorState.ScanPasses=0;SniperState.ScanStartedAt=os.clock();HolyNotify("Sniper Started","Scanning Trade World listings.","crosshair",4);else SniperMonitorState.Status="Idle";SniperMonitorState.PetsScanned=0;HolyNotify("Sniper Stopped","Scanning has been paused.","pause",3);end MarkConfigDirty();end);local v531=v520:AddToggle("SniperAutoHop",{Text="🚀 Sniper Auto Hop",Default=false});v531:OnChanged(function(v1543) SniperState.AutoHop=v1543;SniperState.ScanStartedAt=os.clock();MarkConfigDirty();if v1543 then HolyNotify("Auto Hop Enabled","Sniper will hop after the scan duration expires.","refresh-cw",3);else HolyNotify("Auto Hop Disabled","Sniper will stay in the current server.","pause",3);end end);local v532=v520:AddInput("SniperHopDuration",{Text="Scan Duration (sec)",Default="10",Numeric=true,Finished=true});v532:OnChanged(function(v1546) local v1547=tonumber(v1546);if  not v1547 then return;end SniperState.ScanDuration=math.clamp(v1547,1,3600);MarkConfigDirty();end);v520:AddDivider({Text="Quick Actions",MarginTop=10,MarginBottom=8});local v533=v520:AddButton({Text="Server",Tooltip="Quick server controls.",Func=function() HolyNotify("Server Actions","Use Copy, Rejoin, Hop, or STOP.","server",3);end});v533:AddButton({Text="Copy",Tooltip="Copy current placeId:jobId.",Func=function() if  not setclipboard then HolyNotify("Clipboard Unsupported","Your executor does not support setclipboard.","clipboard-x",3);return;end local v1549=tostring(game.PlaceId)   .. ":"   .. tostring(game.JobId) ;pcall(function() setclipboard(v1549);end);HolyNotify("Server Copied","Current server copied to clipboard.","clipboard-check",3);end});v533:AddButton({Text="Rejoin",Tooltip="Reconnect to this exact server instance.",Func=function() if ScriptState.ForceStopped then warn("[Rejoin] Blocked (ForceStopped)");return;end local v1550=game:GetService("TeleportService");local v1551=Players.LocalPlayer;if  not v1551 then warn("[Rejoin] LocalPlayer missing");return;end pcall(function() v1550:TeleportToPlaceInstance(game.PlaceId,game.JobId,v1551);end);end});v533:AddButton({Text="Hop",Tooltip="Join a different public Trade World server.",Func=function() if ScriptState.ForceStopped then warn("[Hop] Blocked (ForceStopped)");return;end local v1552=game:GetService("TeleportService");local v1553=Players.LocalPlayer;if  not v1553 then warn("[Hop] LocalPlayer missing");return;end local v1554=nil;if (type(GetRandomTradeServer)=="function") then v1554=GetRandomTradeServer();end if  not v1554 then HolyNotify("Hop Failed","No valid server found. Raise Max Server Players or change hop mode.","server-off",4);warn("[Hop] No valid target server found");return;end SniperState.RecentServers[v1554]=true;if TeleportRetryState then TeleportRetryState.LastTarget=v1554;TeleportRetryState.BlockedServers[v1554]=true;end pcall(function() v1552:TeleportToPlaceInstance(TRADING_WORLD_PLACE_ID,v1554,v1553);end);end});v533:AddButton({Text="STOP",Tooltip="Hard stop all HOLY runtime systems.",Risky=true,DoubleClick=true,Func=function() ScriptState.ForceStopped=true;RuntimeState.Started=false;SniperState.Scanning=false;SniperState.Buying=false;SniperState.Hopping=false;if PurchaseState then PurchaseState.Busy=false;end if BoothAuto then BoothAuto.Enabled=false;BoothAuto.InProgress=false;BoothAuto.AutoTeleport=false;BoothAuto.LockBehindBooth=false;BoothAuto.AutoServerHop=false;ClearBoothAnchor();RestoreCharacterMovement();end HolyNotify("Emergency Stop","All active HOLY runtime systems were stopped.","octagon-alert",5);end});end function RefreshBeeEggList() table.clear(BeeEggAuto.EggList);local v534=ReplicatedStorage:FindFirstChild("Assets");if  not v534 then warn("[BEE EGG] Assets missing");return BeeEggAuto.EggList;end local v535=v534:FindFirstChild("Models");if  not v535 then warn("[BEE EGG] Assets.Models missing");return BeeEggAuto.EggList;end local v536=v535:FindFirstChild("BeeEggs");if  not v536 then warn("[BEE EGG] Assets.Models.BeeEggs missing");return BeeEggAuto.EggList;end for v1561,v1562 in ipairs(v536:GetChildren()) do if (v1562.Name and (v1562.Name~="")) then table.insert(BeeEggAuto.EggList,tostring(v1562.Name));end end table.sort(BeeEggAuto.EggList);return BeeEggAuto.EggList;end function GetBuyBeeEggRemote() if BeeEggAuto.BuyRemote then return BeeEggAuto.BuyRemote;end local v537=ReplicatedStorage:FindFirstChild("GameEvents");if  not v537 then return nil;end local v538=v537:FindFirstChild("BeeColonyEggShopService");if  not v538 then return nil;end local v539=v538:FindFirstChild("BuyBeeEggStock");if (v539 and v539:IsA("RemoteFunction")) then BeeEggAuto.BuyRemote=v539;return v539;end return nil;end function TryBuyBeeEgg() if ScriptState.ForceStopped then return false;end if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then return false;end if BeeEggAuto.Buying then return false;end local v540=os.clock();BeeEggAuto.LastAttempt=SafeNumber(BeeEggAuto.LastAttempt,0);BeeEggAuto.BuyInterval=SafeNumber(BeeEggAuto.BuyInterval,1.5);if ((v540-BeeEggAuto.LastAttempt)<BeeEggAuto.BuyInterval) then return false;end BeeEggAuto.LastAttempt=v540;BeeEggAuto.Buying=true;local v544=GetBuyBeeEggRemote();if  not v544 then BeeEggAuto.Buying=false;warn("[BEE EGG] Buy remote missing");return false;end local v545=false;for v1563,v1564 in pairs(BeeEggAuto.SelectedEggs) do if (v1564==true) then local v2698,v2699=pcall(function() return v544:InvokeServer(tostring(v1563));end);if v2698 then v545=true;else warn("[BEE EGG] Buy failed:",tostring(v1563),tostring(v2699));end task.wait(0.15);end end BeeEggAuto.Buying=false;return v545;end function TeleportViaController() local v546=GetController();if (v546 and v546.TeleportToBooth) then local v2347=pcall(function() v546:TeleportToBooth();end);if v2347 then print("[Booth] Teleport via controller SUCCESS");return true;end end warn("[Booth] Controller teleport failed");return false;end BoothPositionState=BoothPositionState or {LastPivotSource=nil,LastPivotPrintAt=0,LastRepositionAt=0} ;function ResolveBoothPriorityPointGlobal() local v547=workspace:FindFirstChild("TradeWorld");if  not v547 then return nil;end local v548=v547:FindFirstChild("Model");if  not v548 then return nil;end local v549=v548:GetChildren();local v550=v549[5];if  not v550 then return nil;end local v551=v550:GetChildren();local v552=v551[8];if  not v552 then return nil;end if v552:IsA("BasePart") then return v552.Position;end if v552:IsA("Model") then return v552:GetPivot().Position;end if v552:IsA("Attachment") then return v552.WorldPosition;end local v553,v554=pcall(function() return v552:GetPivot();end);if (v553 and v554) then return v554.Position;end return nil;end function ResolveBoothBehindDirection(v555,v556,v557) v556=v556 or (v557 and v557.Position) ;if  not v556 then return Vector3.new(0,0, -1),"Fallback";end local v558=ResolveBoothPriorityPointGlobal();if v558 then local v2348=Vector3.new(v556.X-v558.X ,0,v556.Z-v558.Z );if (v2348.Magnitude>0.001) then return v2348.Unit,"AwayFromPriorityPoint";end end if (v555 and v555:IsA("Model")) then local v2349,v2350=pcall(function() return v555:GetPivot();end);if (v2349 and v2350) then local v2925=Vector3.new(v2350.LookVector.X,0,v2350.LookVector.Z);if (v2925.Magnitude>0.001) then return v2925.Unit,"BoothModelLookVector";end end end if v557 then local v2351=Vector3.new(v557.LookVector.X,0,v557.LookVector.Z);if (v2351.Magnitude>0.001) then return v2351.Unit,"StandLookVectorFallback";end end return Vector3.new(0,0, -1),"HardFallback";end function ResolveCenteredBehindBoothPlacement(v559,v560,v561) if  not v559 then return nil,nil,"NO_BOOTH_MODEL";end local v562=nil;local v563=nil;if v559:IsA("Model") then local v2352,v2353,v2354=pcall(function() return v559:GetBoundingBox();end);if (v2352 and v2353 and v2354) then v562=v2353;v563=v2354;end end if  not v562 then local v2355,v2356=pcall(function() return v559:GetPivot();end);if (v2355 and v2356) then v562=v2356;v563=Vector3.new(12,8,12);end end if  not v562 then if v561 then v562=v561;v563=Vector3.new(12,8,12);elseif v560 then v562=CFrame.new(v560);v563=Vector3.new(12,8,12);end end if  not v562 then return nil,nil,"NO_BOOTH_CFRAME";end v563=v563 or Vector3.new(12,8,12) ;local v564=v562.Position;local v565,v566=ResolveBoothBehindDirection(v559,v564,v561);v565=Vector3.new(v565.X,0,v565.Z);if (v565.Magnitude<=0.001) then v565=Vector3.new(0,0, -1);else v565=v565.Unit;end local v567=Vector3.new(v562.RightVector.X,0,v562.RightVector.Z);local v568=Vector3.new(v562.LookVector.X,0,v562.LookVector.Z);if (v567.Magnitude<=0.001) then v567=Vector3.new(1,0,0);else v567=v567.Unit;end if (v568.Magnitude<=0.001) then v568=Vector3.new(0,0, -1);else v568=v568.Unit;end local v569=((math.abs(v565:Dot(v567)) * v563.X) + (math.abs(v565:Dot(v568)) * v563.Z)) * 0.5 ;local v570=SafeNumber(BoothAuto.BoothDistance,20);v570=math.max(v570,4);local v571=v564 + (v565 * (v569 + v570)) ;local v572=Vector3.new(v564.X,v571.Y,v564.Z);return v571,v572,v566;end function ResolveOwnedBoothStandPivot(v573) if  not v573 then return nil,"NO_BOOTH_MODEL";end local function v574(v1565) if  not v1565 then return nil;end if v1565:IsA("Model") then local v2700,v2701=pcall(function() return v1565:GetPivot();end);if (v2700 and v2701) then return v2701;end end if v1565:IsA("BasePart") then return v1565.CFrame;end return nil;end for v1566,v1567 in ipairs(v573:GetChildren()) do local v1568=v1567:FindFirstChild("Booth");local v1569=v1568 and v1568:FindFirstChild("Stand") ;local v1570=v1569 and v1569:FindFirstChild("Model") ;local v1571=v574(v1570);if v1571 then return v1571,"Booth.Stand.Model";end end for v1572,v1573 in ipairs(v573:GetDescendants()) do if (v1573.Name=="Stand") then local v2702=v1573:FindFirstChild("Model");local v2703=v574(v2702) or v574(v1573) ;if v2703 then return v2703,"Descendant.Stand";end end end for v1574,v1575 in ipairs(v573:GetDescendants()) do if (v1575.Name=="Model") then local v2704=v1575.Parent;local v2705=v2704 and v2704.Parent ;local v2706=(v2704 and tostring(v2704.Name):lower()) or "" ;local v2707=(v2705 and tostring(v2705.Name):lower()) or "" ;if (v2706:find("stand",1,true) or v2706:find("booth",1,true) or v2707:find("stand",1,true) or v2707:find("booth",1,true)) then local v3033=v574(v1575);if v3033 then return v3033,"BoothLike.Model";end end end end local v575=v574(v573);if v575 then return v575,"BoothModelFallback";end local v576=v573:FindFirstChildWhichIsA("BasePart",true);local v577=v574(v576);if v577 then return v577,"FirstBasePartFallback";end return nil,"NO_VALID_PIVOT";end function PositionBehindOwnedBooth() local v578=Players.LocalPlayer;local v579=v578.Character;if  not v579 then return false;end local v580=v579:FindFirstChild("HumanoidRootPart");if  not v580 then return false;end if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then return false;end local v581=workspace:FindFirstChild("TradeWorld");if  not v581 then return false;end local v582=v581:FindFirstChild("Booths");if  not v582 then return false;end local v583=LatestBoothData;if ( not v583 or  not v583.Booths) then warn("[Booth] Failed to resolve booth data");return false;end local v584=tostring(v578.UserId);for v1576,v1577 in pairs(v583.Booths) do if (v1577.Owner and tostring(v1577.Owner):find(v584)) then local v2708=v582:FindFirstChild(v1576);if  not v2708 then warn("[Booth] Booth model missing");return false;end local v2709,v2710=ResolveOwnedBoothStandPivot(v2708);if  not v2709 then warn("[Booth] Failed to resolve booth pivot:",tostring(v2710));return false;end local v2711=os.clock();BoothPositionState=BoothPositionState or {} ;if ((BoothPositionState.LastPivotSource~=v2710) or ((v2711-SafeNumber(BoothPositionState.LastPivotPrintAt,0))>5)) then BoothPositionState.LastPivotSource=v2710;BoothPositionState.LastPivotPrintAt=v2711;print("[Booth] Stand pivot source:",tostring(v2710));end local v2712=v2709.Position;local v2713=SafeNumber(BoothAuto.BoothDistance,20);local v2714,v2715=ResolveBoothBehindDirection(v2708,v2712,v2709);if ((BoothPositionState.LastDirectionSource~=v2715) or ((v2711-SafeNumber(BoothPositionState.LastDirectionPrintAt,0))>5)) then BoothPositionState.LastDirectionSource=v2715;BoothPositionState.LastDirectionPrintAt=v2711;print("[Booth] Behind direction source:",tostring(v2715));end local v2716,v2717,v2718=ResolveCenteredBehindBoothPlacement(v2708,v2712,v2709);if  not v2716 then warn("[Booth] Failed centered booth placement:",tostring(v2718));return false;end if ((BoothPositionState.LastPlacementSource~=v2718) or ((v2711-SafeNumber(BoothPositionState.LastPlacementPrintAt,0))>5)) then BoothPositionState.LastPlacementSource=v2718;BoothPositionState.LastPlacementPrintAt=v2711;print("[Booth] Placement source:",tostring(v2718));end local v2719=v2716 + Vector3.new(0,20,0) ;local v2720=RaycastParams.new();v2720.FilterType=Enum.RaycastFilterType.Blacklist;v2720.FilterDescendantsInstances={v579,v2708};local v2724=workspace:Raycast(v2719,Vector3.new(0, -100,0),v2720);local v2725=GetCharacterGroundOffset();local v2726;if v2724 then v2726=v2724.Position + Vector3.new(0,v2725,0) ;else v2726=v2716 + Vector3.new(0,v2725,0) ;end local v2727=v2717 or Vector3.new(v2712.X,v2726.Y,v2712.Z) ;v2727=Vector3.new(v2727.X,v2726.Y,v2727.Z);local v2728=CFrame.lookAt(v2726,v2727);BoothAuto.LastBoothPosition=v2726;BoothAuto.LastBoothCFrame=v2728;MoveCharacterToBoothCFrame(v2728);return true;end end warn("[Booth] Failed to find owned booth");return false;end function TeleportToOwnedBooth() if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then return;end print("[Booth] Waiting for ownership (server)...");local v585=os.clock();local v586=6;local v587=tostring(Players.LocalPlayer.UserId);while (os.clock() -v585)<v586  do local v1578=LatestBoothData;if (v1578 and v1578.Booths) then for v2926,v2927 in pairs(v1578.Booths) do if (v2927.Owner and tostring(v2927.Owner):find(v587)) then print("[Booth] Ownership confirmed → teleporting");task.wait(0.25);TeleportViaController();local v3104=false;for v3124=1,8 do task.wait(0.35);v3104=PositionBehindOwnedBooth();if v3104 then print("[Booth] Positioned behind booth on attempt:",tostring(v3124));break;end warn("[Booth] Position retry:",tostring(v3124));end if  not v3104 then warn("[Booth] Failed positioning behind booth");end return;end end end task.wait(0.35);end warn("[Booth] Teleport failed (ownership timeout)");end function OnCharacterAdded(v588) if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then return;end if  not BoothAuto.AutoTeleport then return;end task.wait(1);if  not BoothAuto.LockBehindBooth then RestoreCharacterMovement();end PositionBehindOwnedBooth();end Players.LocalPlayer.CharacterAdded:Connect(OnCharacterAdded);function BoothPositionWatchdog() while true do task.wait(0.1);if ScriptState.ForceStopped then continue;end if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then continue;end if  not BoothAuto.AutoTeleport then continue;end if  not BoothAuto.LastBoothPosition then continue;end local v1579=Players.LocalPlayer;if  not v1579 then continue;end local v1580=v1579.Character;if  not v1580 then continue;end local v1581=v1580:FindFirstChild("HumanoidRootPart");local v1582=v1580:FindFirstChildOfClass("Humanoid");if ( not v1581 or  not v1582 or (v1582.Health<=0)) then continue;end local v1583=os.clock();local v1584=(v1581.Position-BoothAuto.LastBoothPosition).Magnitude;if (BoothAuto.LockBehindBooth==true) then if BoothAuto.LastBoothCFrame then SetBoothHardLockAnchored(true);elseif ((v1583-SafeNumber(BoothAuto.LastHardLockAt,0))>=1) then BoothAuto.LastHardLockAt=v1583;PositionBehindOwnedBooth();end continue;end if (v1581.Anchored==true) then v1581.Anchored=false;end RestoreCharacterMovement();local v1585=SafeNumber(BoothAuto.ReturnDistance,8);v1585=math.clamp(v1585,5,15);if (v1584<v1585) then continue;end if ((v1583-SafeNumber(BoothAuto.LastSoftReturnAt,0))<SafeNumber(BoothAuto.SoftReturnCooldown,1.5)) then continue;end BoothAuto.LastSoftReturnAt=v1583;if BoothAuto.LastBoothCFrame then MoveCharacterToBoothCFrame(BoothAuto.LastBoothCFrame);else PositionBehindOwnedBooth();end end end function ExecuteBoothClaim() if (BoothAuto.InProgress or  not BoothAuto.Enabled) then return;end if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then warn("[Booth] Not in Trade World");BoothAuto.Enabled=false;return;end BoothAuto.InProgress=true;print("[Booth] Claim session started");print("[Booth] Fetching booth data...");local v590=ReplicatedStorage:FindFirstChild("GameEvents");if  not v590 then warn("[Booth] GameEvents missing");BoothAuto.Enabled=false;BoothAuto.InProgress=false;return;end local v591=v590:FindFirstChild("TradeEvents");local v592=v591 and v591:FindFirstChild("Booths") ;local v593=v592 and v592:FindFirstChild("ClaimBooth") ;local v594=v590:FindFirstChild("TradeBoothSkinService");local v595=v594 and v594:FindFirstChild("Equip") ;if ( not v593 or  not v595) then warn("[Booth] ClaimBooth or EquipSkin remote missing");BoothAuto.Enabled=false;BoothAuto.InProgress=false;return;end local v596=workspace:FindFirstChild("TradeWorld");local v597=v596 and v596:FindFirstChild("Booths") ;if  not v597 then warn("[Booth] Booth folder missing");BoothAuto.Enabled=false;BoothAuto.InProgress=false;return;end local function v598() local v1587=workspace:FindFirstChild("TradeWorld");if  not v1587 then return nil;end local v1588=v1587:FindFirstChild("Model");if  not v1588 then return nil;end local v1589=v1588:GetChildren();local v1590=v1589[5];if  not v1590 then return nil;end local v1591=v1590:GetChildren();local v1592=v1591[8];if  not v1592 then return nil;end if v1592:IsA("BasePart") then return v1592.Position;end if v1592:IsA("Model") then return v1592:GetPivot().Position;end if v1592:IsA("Attachment") then return v1592.WorldPosition;end local v1593,v1594=pcall(function() return v1592:GetPivot();end);if (v1593 and v1594) then return v1594.Position;end return nil;end local function v599(v1595) if  not v1595 then return nil;end if v1595:IsA("Model") then local v2732,v2733=pcall(function() return v1595:GetPivot();end);if (v2732 and v2733) then return v2733.Position;end end if v1595:IsA("BasePart") then return v1595.Position;end local v1596=v1595.PrimaryPart;if v1596 then return v1596.Position;end local v1597=v1595:FindFirstChildWhichIsA("BasePart",true);if v1597 then return v1597.Position;end return nil;end local function v600(v1598) local v1599=LatestBoothData;if ( not v1599 or (type(v1599.Booths)~="table")) then return {};end local v1600=v598();if  not v1600 then warn("[Booth] Priority point missing, using fallback booth order");end local v1601={};for v2367,v2368 in pairs(v1599.Booths) do if v1598[v2367] then continue;end if (v2368.Owner~=nil) then continue;end local v2369=v597:FindFirstChild(v2367);if  not v2369 then continue;end local v2370=math.huge;if v1600 then local v2928=v599(v2369);if v2928 then v2370=(v2928-v1600).Magnitude;end end table.insert(v1601,{BoothId=v2367,Model=v2369,Distance=v2370});end table.sort(v1601,function(v2371,v2372) local v2373=tonumber(v2371.Distance) or math.huge ;local v2374=tonumber(v2372.Distance) or math.huge ;if (v2373~=v2374) then return v2373<v2374 ;end return tostring(v2371.BoothId)<tostring(v2372.BoothId) ;end);return v1601;end local function v601(v1602) local v1603=LatestBoothData;if ( not v1603 or (type(v1603.Booths)~="table")) then return false;end local v1604=v1603.Booths[v1602];local v1605=v1604 and v1604.Owner ;if  not v1605 then return false;end local v1606=tostring(Players.LocalPlayer.UserId);return tostring(v1605):find(v1606,1,true)~=nil ;end local function v602(v1607,v1608) local v1609=os.clock();v1608=SafeNumber(v1608,3);while (os.clock() -v1609)<v1608  do if v601(v1607) then return true;end task.wait(0.2);end return false;end local function v603(v1610) BoothAuto.InProgress=false;BoothAuto.Enabled=false;if (Library and Library.Options and Library.Options.AutoClaimBooth) then task.defer(function() pcall(function() Library.Options.AutoClaimBooth:SetValue(false);end);end);end if v1610 then print("[Booth] Claim session complete");else warn("[Booth] Claim session failed");end end local v604={};local v605=6;local v606=3;local v607=0.35;local v608=ResolveSelectedBoothSkin();for v1613=1,v605 do if (ScriptState and ScriptState.ForceStopped) then v603(false);return;end local v1614=v600(v604);if ( #v1614<=0) then warn("[Booth] No free booth candidates left");v603(false);return;end local v1615=v1614[1];local v1616=tostring(v1615.BoothId);local v1617=v1615.Model;v604[v1616]=true;if (v1615.Distance~=math.huge) then print("[Booth] Attempt "   .. tostring(v1613)   .. "/"   .. tostring(v605)   .. " -> "   .. tostring(v1616)   .. " | distance: "   .. tostring(math.floor(v1615.Distance)) );else print("[Booth] Attempt "   .. tostring(v1613)   .. "/"   .. tostring(v605)   .. " -> "   .. tostring(v1616) );end v608=ResolveSelectedBoothSkin();pcall(function() v595:FireServer(v608);end);task.wait(0.15);pcall(function() v593:FireServer(v1617);end);task.wait(0.2);v608=ResolveSelectedBoothSkin();pcall(function() v595:FireServer(v608);end);print("[Booth] Equipped skin:",tostring(v608));print("[Booth] Claim attempt sent:",tostring(v1616));local v1619=v602(v1616,v606);if v1619 then print("[Booth] Ownership confirmed:",tostring(v1616));if BoothAuto.AutoTeleport then task.spawn(function() task.wait(1.25);TeleportToOwnedBooth();end);end v603(true);return;end warn("[Booth] Claim verify failed, trying next booth:",tostring(v1616));task.wait(v607);end warn("[Booth] Max claim attempts reached:",tostring(v605));v603(false);end PetList={};function AddUniquePetName(v609,v610,v611) local v612=tostring(v611 or "" ):gsub("^%s+",""):gsub("%s+$","");if (v612=="") then return false;end if (v612:sub(1,4)=="Egg/") then return false;end if v610[v612] then return false;end v610[v612]=true;table.insert(v609,v612);return true;end function BuildDynamicPetList() local v614=GetPetRegistry();local v615={};local v616={};if ((type(v614)=="table") and (type(v614.PetList)=="table")) then for v2734,v2735 in pairs(v614.PetList) do if ((type(v2734)=="string") and (type(v2735)=="table")) then AddUniquePetName(v615,v616,v2734);end end end if ( #v615<=0) then local v2375=Players.LocalPlayer;local v2376={v2375 and v2375:FindFirstChild("Backpack") ,v2375 and v2375.Character };for v2736,v2737 in ipairs(v2376) do if v2737 then for v3106,v3107 in ipairs(v2737:GetChildren()) do if v3107:IsA("Tool") then local v3132=v3107:GetAttribute("f") or v3107:GetAttribute("PetType") or v3107:GetAttribute("PetName") ;if v3132 then AddUniquePetName(v615,v616,v3132);end end end end end end table.sort(v615);return v615;end function RefreshDynamicPetList() local v617=BuildDynamicPetList();if ( #v617<=0) then warn("[PET LIST] Dynamic pet list empty");return PetList;end PetList=v617;print("[PET LIST] Dynamic pets loaded:",tostring( #PetList));return PetList;end PetList=RefreshDynamicPetList();ListingMutationList={"---"};function AddUniqueListingMutationName(v618,v619,v620) local v621=tostring(v620 or "" ):gsub("^%s+",""):gsub("%s+$","");if (v621=="") then return false;end if ((v621=="---") or (v621=="Normal")) then return false;end if ((v621=="EnumToPetMutation") or (v621=="PetMutationToEnum") or (v621=="PetMutationRegistry") or (v621=="MachineMutationTypes") or (v621=="RollRandomMutation")) then return false;end if v619[v621] then return false;end v619[v621]=true;table.insert(v618,v621);return true;end function BuildDynamicListingMutationList() local v623={"---"};local v624={["---"]=true};local v625=GetPetRegistry();local v626=((type(v625)=="table") and rawget(v625,"PetMutationRegistry")) or nil ;local v627=((type(v626)=="table") and rawget(v626,"PetMutationRegistry")) or nil ;if (type(v627)=="table") then for v2738,v2739 in pairs(v627) do if (type(v2738)=="string") then AddUniqueListingMutationName(v623,v624,v2738);elseif (type(v2739)=="string") then AddUniqueListingMutationName(v623,v624,v2739);end end end local v628=((type(v626)=="table") and rawget(v626,"MachineMutationTypes")) or nil ;if (type(v628)=="table") then for v2740,v2741 in pairs(v628) do if (type(v2740)=="string") then AddUniqueListingMutationName(v623,v624,v2740);elseif (type(v2741)=="string") then AddUniqueListingMutationName(v623,v624,v2741);end end end local v629=((type(v626)=="table") and rawget(v626,"EnumToPetMutation")) or nil ;if (type(v629)=="table") then for v2742,v2743 in pairs(v629) do if (type(v2743)=="string") then AddUniqueListingMutationName(v623,v624,v2743);end end end local v630=((type(v626)=="table") and rawget(v626,"PetMutationToEnum")) or nil ;if (type(v630)=="table") then for v2744,v2745 in pairs(v630) do if (type(v2744)=="string") then AddUniqueListingMutationName(v623,v624,v2744);end end end if ( #v623<=1) then local v2377=Players.LocalPlayer;local v2378={v2377 and v2377:FindFirstChild("Backpack") ,v2377 and v2377.Character };for v2746,v2747 in ipairs(v2378) do if v2747 then for v3108,v3109 in ipairs(v2747:GetChildren()) do if v3109:IsA("Tool") then local v3133=v3109:GetAttribute("f") or v3109:GetAttribute("PetType") or v3109:GetAttribute("PetName") ;if v3133 then local v3136=ResolveListingPetMutation(v3109.Name,tostring(v3133));AddUniqueListingMutationName(v623,v624,v3136);end end end end end end table.sort(v623,function(v1620,v1621) if (v1620=="---") then return true;end if (v1621=="---") then return false;end return v1620<v1621 ;end);return v623;end function RefreshListingMutationList() local v631=BuildDynamicListingMutationList();if ( #v631<=0) then v631={"---"};end ListingMutationList=v631;print("[MUTATION LIST] Dynamic mutations loaded:",tostring( #ListingMutationList));return ListingMutationList;end function TrimListingText(v632) return tostring(v632 or "" ):gsub("^%s+",""):gsub("%s+$","");end function ParseListingDisplayWeight(v633) return tonumber(tostring(v633 or "" ):match("%[([%d%.]+)%s*KG%]"));end function ParseListingDisplayAge(v634) return tonumber(tostring(v634 or "" ):match("%[Age%s*(%d+)%]"));end function ResolveListingBaseWeightFromDisplay(v635,v636) return nil;end function ResolveListingPetMutation(v637,v638) v637=TrimListingText(tostring(v637 or "" ):gsub("%b[]",""):gsub("%s+"," "));v638=TrimListingText(v638);if (v637==v638) then return "---";end local v639=v637:find(v638,1,true);if  not v639 then return "---";end local v640=TrimListingText(v637:sub(1,v639-1 ));if (v640=="") then return "---";end return v640;end ListingMutationList=RefreshListingMutationList();function ResolveListingRawBaseWeight(v641,v642) local v643={v641,v642};for v1622,v1623 in ipairs(v643) do if (type(v1623)=="table") then local v2748={v1623.BaseWeight,rawget(v1623,"BaseWeight"),v1623.baseWeight,rawget(v1623,"baseWeight"),v1623.Base_Weight,rawget(v1623,"Base_Weight"),v1623.BaseKg,rawget(v1623,"BaseKg"),v1623.BaseKG,rawget(v1623,"BaseKG"),v1623.Base,rawget(v1623,"Base")};for v2929,v2930 in ipairs(v2748) do local v2931=tonumber(v2930);if v2931 then return v2931;end end end end return nil;end function ResolveListingRawLevel(v644,v645,v646,v647) local v648={v644,v645};for v1624,v1625 in ipairs(v648) do if (type(v1625)=="table") then local v2749={v1625.Level,rawget(v1625,"Level"),v1625.level,rawget(v1625,"level"),v1625.Age,rawget(v1625,"Age"),v1625.age,rawget(v1625,"age")};for v2932,v2933 in ipairs(v2749) do local v2934=tonumber(v2933);if v2934 then return math.floor(v2934);end end end end if v646 then local v2379={v646:GetAttribute("Level"),v646:GetAttribute("level"),v646:GetAttribute("Age"),v646:GetAttribute("age")};for v2750,v2751 in ipairs(v2379) do local v2752=tonumber(v2751);if v2752 then return math.floor(v2752);end end end local v649=tonumber(v647);if v649 then return math.floor(v649);end return nil;end function ResolveListingPetTool(v650,v651) if ( not v650 or  not v650:IsA("Tool")) then return nil;end if (v650:GetAttribute("ItemType")~="Pet") then return nil;end local v652=v650:GetAttribute("PET_UUID");if ((type(v652)~="string") or (v652=="")) then return nil;end local v653=v650:GetAttribute("f");if ((type(v653)~="string") or (v653=="")) then return nil;end local v654=ParseListingDisplayWeight(v650.Name);if  not v654 then return nil;end local v655=ParseListingDisplayAge(v650.Name);local v656=ResolveListingPetMutation(v650.Name,v653);local v657=nil;local v658=nil;if (type(GetHolyInventoryPetDataByUUID)=="function") then local v2380,v2381,v2382=pcall(function() return GetHolyInventoryPetDataByUUID(v652);end);if v2380 then v657=v2381;v658=v2382;end end local v659=nil;local v660=v655;v659=ResolveListingRawBaseWeight(v657,v658);v660=ResolveListingRawLevel(v657,v658,v650,v655);if  not v659 then warn("[LISTINGS] SKIP | raw PetData.BaseWeight missing:",tostring(v650.Name),"| DisplayKG:",tostring(v654),"| Age:",tostring(v660 or v655 or "Unknown" ),"| UUID:",tostring(v652));return nil;end if  not v660 then v660=v655;end return {Tool=v650,Source=v651,UUID=v652,ToolName=v650.Name,PetName=v653,Mutation=v656,Weight=v654,BaseWeight=v659,Age=v660,IsFavorite=v650:GetAttribute("d")==true ,PetData=v657,ItemData=v658};end function GetListingInventoryPetSnapshot() local v661={};local v662=Players.LocalPlayer;if  not v662 then return v661;end local v663={{Source="Backpack",Container=v662:FindFirstChild("Backpack")},{Source="Character",Container=v662.Character}};for v1626,v1627 in ipairs(v663) do local v1628=v1627.Container;if v1628 then for v2935,v2936 in ipairs(v1628:GetChildren()) do local v2937=ResolveListingPetTool(v2936,v1627.Source);if v2937 then table.insert(v661,v2937);end end end end table.sort(v661,function(v1629,v1630) if (v1629.PetName~=v1630.PetName) then return v1629.PetName<v1630.PetName ;end if (v1629.Mutation~=v1630.Mutation) then return v1629.Mutation<v1630.Mutation ;end return v1629.Weight>v1630.Weight ;end);return v661;end function GetCreateListingRemote() if CreateListingRemote then return CreateListingRemote;end local v664=ReplicatedStorage:FindFirstChild("GameEvents");if  not v664 then return nil;end local v665=v664:FindFirstChild("TradeEvents");if  not v665 then return nil;end local v666=v665:FindFirstChild("Booths");if  not v666 then return nil;end local v667=v666:FindFirstChild("CreateListing");if (v667 and v667:IsA("RemoteFunction")) then CreateListingRemote=v667;return v667;end return nil;end function GetRemoveListingRemote() if RemoveListingRemote then return RemoveListingRemote;end local v668=ReplicatedStorage:FindFirstChild("GameEvents");if  not v668 then return nil;end local v669=v668:FindFirstChild("TradeEvents");if  not v669 then return nil;end local v670=v669:FindFirstChild("Booths");if  not v670 then return nil;end local v671=v670:FindFirstChild("RemoveListing");if (v671 and v671:IsA("RemoteFunction")) then RemoveListingRemote=v671;return v671;end return nil;end function GetFavoriteRemote() if FavoriteRemote then return FavoriteRemote;end local v672=ReplicatedStorage:FindFirstChild("GameEvents");if  not v672 then return nil;end local v673=v672:FindFirstChild("Favorite_Item");if (v673 and v673:IsA("RemoteEvent")) then FavoriteRemote=v673;return v673;end return nil;end function FetchLatestBoothDataNow() if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then return nil,"Not in Trade World";end local v674=GetBoothStore();if ( not v674 or (type(v674.GetDataAsync)~="function")) then return nil,"Booth store missing";end local v675,v676=pcall(function() return v674:GetDataAsync();end);if ( not v675 or (type(v676)~="table")) then return nil,"Booth data fetch failed";end if ((type(v676.Booths)~="table") or (type(v676.Players)~="table")) then return nil,"Booth data incomplete";end LatestBoothData=v676;LatestBoothUpdate=os.clock();return v676,"Fetched";end function RefreshOwnListedUUIDs(v677) if (type(ListingsState)~="table") then return 0,"ListingsState missing";end ListingsState.OwnListedUUIDs=ListingsState.OwnListedUUIDs or {} ;ListingsState.OwnListedMetadata=ListingsState.OwnListedMetadata or {} ;table.clear(ListingsState.OwnListedUUIDs);ListingsState.OwnBoothListedSyncReady=false;ListingsState.OwnListedLastSync=0;ListingsState.OwnListedLastCount=0;local v683=LatestBoothData;if ((v677==true) or (type(v683)~="table") or (type(v683.Booths)~="table") or (type(v683.Players)~="table")) then v683=FetchLatestBoothDataNow();end if ((type(v683)~="table") or (type(v683.Booths)~="table") or (type(v683.Players)~="table")) then return 0,"Booth data missing";end local v684=Players.LocalPlayer;if  not v684 then return 0,"LocalPlayer missing";end local v685=tonumber(v684.UserId);local v686=nil;for v1631,v1632 in pairs(v683.Booths) do local v1633=v1632 and v1632.Owner ;if v1633 then local v2753=tonumber(tostring(v1633):match("_(%d+)$"));if (v2753==v685) then v686=v1633;break;end end end if  not v686 then return 0,"Own booth not found";end local v687=v683.Players[v686];if (type(v687)~="table") then return 0,"Own booth playerData missing";end local v688=v687.Listings;if (type(v688)~="table") then ListingsState.OwnBoothListedSyncReady=true;ListingsState.OwnListedLastSync=os.clock();ListingsState.OwnListedLastCount=0;return 0,"Own booth synced, no listings";end local v689=0;for v1634,v1635 in pairs(v688) do if (type(v1635)~="table") then continue;end local v1636=v1635.ItemId;if v1636 then local v2754=tostring(v1636);ListingsState.OwnListedUUIDs[v2754]=true;v689+=1 end end ListingsState.OwnBoothListedSyncReady=true;ListingsState.OwnListedLastSync=os.clock();ListingsState.OwnListedLastCount=v689;ListingsState.OwnListedLastPrintAt=SafeNumber(ListingsState.OwnListedLastPrintAt,0);ListingsState.OwnListedLastPrintedCount=tonumber(ListingsState.OwnListedLastPrintedCount);local v692=false;if (ListingsState.OwnListedLastPrintedCount~=v689) then v692=true;elseif ((os.clock() -ListingsState.OwnListedLastPrintAt)>=30) then v692=true;end if v692 then ListingsState.OwnListedLastPrintAt=os.clock();ListingsState.OwnListedLastPrintedCount=v689;print("[LISTINGS] Own listed UUID sync:",tostring(v689));end return v689,"Synced";end function WaitForOwnListedUUIDSync(v693) v693=SafeNumber(v693,12);local v694=os.clock() + v693 ;while os.clock()<v694  do if (ScriptState and ScriptState.ForceStopped) then return false,"Force stopped";end if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then return false,"Not in Trade World";end local v1637,v1638=RefreshOwnListedUUIDs(true);if (ListingsState.OwnBoothListedSyncReady==true) then return true,v1638 or ("Synced "   .. tostring(v1637)   .. " own listings") ;end ListingsState.Status=tostring(v1638 or "Waiting for own booth sync" );if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end task.wait(0.25);end return false,"Own booth sync timeout";end function ShortenListingText(v695,v696) v695=tostring(v695 or "" );v696=tonumber(v696) or 24 ;if ( #v695<=v696) then return v695;end if (v696<=3) then return v695:sub(1,v696);end return v695:sub(1,v696-3 )   .. "..." ;end function PadRightListingText(v697,v698) v697=tostring(v697 or "" );v698=tonumber(v698) or 1 ;if ( #v697>=v698) then return v697;end return v697   .. string.rep(" ",v698-#v697 ) ;end function PadLeftListingText(v699,v700) v699=tostring(v699 or "" );v700=tonumber(v700) or 1 ;if ( #v699>=v700) then return v699;end return string.rep(" ",v700-#v699 )   .. v699 ;end function FormatOwnBoothCompactPrice(v701) local v702=tonumber(v701) or 0 ;v702=math.floor(v702);local v703=tostring(v702);local v704,v705,v706=string.match(v703,"^([^%d]*%d)(%d*)(.-)$");if  not v704 then return v703;end return v704   .. (v705:reverse():gsub("(%d%d%d)","%1,"):reverse())   .. v706 ;end function FormatOwnBoothListedPetLine(v707,v708) if (type(v708)~="table") then return string.format("%02d %-30s %9s %7s",tonumber(v707) or 0 ,"-","-","-");end local v709=tostring(v708.PetName or "Unknown" );local v710=tostring(v708.MutationText or "Normal" );local v711=v709;if ((v710~="") and (v710~="Normal") and (v710~="Unknown") and (v710~="---")) then v711=v710   .. " "   .. v709 ;end v711=ShortenListingText(v711,30);local v712=FormatOwnBoothCompactPrice(v708.Price);local v713=tonumber(v708.BaseWeight);local v714=(v713 and (string.format("%.2f",v713)   .. "bw")) or "-" ;local v715=tonumber(v708.Age);local v716=(v715 and (v715>=100) and "★") or "•" ;return string.format("%s %-30s %9s %7s",v716,v711,v712,v714);end function ResolveBoothMutationTypeText(v717) v717=tostring(v717 or "" );if ((v717=="") or (v717=="nil") or (v717=="---") or (v717=="Normal")) then return nil;end local v718=((type(GetPetRegistry)=="function") and GetPetRegistry()) or nil ;local v719=((type(v718)=="table") and rawget(v718,"PetMutationRegistry")) or nil ;local v720=((type(v719)=="table") and rawget(v719,"EnumToPetMutation")) or nil ;if (type(v720)=="table") then local v2388=v720[v717];if ((type(v2388)=="string") and (v2388~="")) then return v2388;end for v2756,v2757 in pairs(v720) do if ((tostring(v2756)==v717) and (type(v2757)=="string") and (v2757~="")) then return v2757;end end end local v721=((type(v719)=="table") and rawget(v719,"PetMutationToEnum")) or nil ;if (type(v721)=="table") then for v2758,v2759 in pairs(v721) do if ((tostring(v2759)==v717) and (type(v2758)=="string") and (v2758~="")) then return v2758;end end end local v722={EV="Everchanted"};if v722[v717] then return v722[v717];end return v717;end function ResolveBoothListingMutationText(v723,v724) local v725={};if (type(v723)=="table") then table.insert(v725,rawget(v723,"MutationType"));table.insert(v725,rawget(v723,"Mutation"));table.insert(v725,rawget(v723,"Variant"));end if (type(v724)=="table") then table.insert(v725,rawget(v724,"MutationType"));table.insert(v725,rawget(v724,"Mutation"));table.insert(v725,rawget(v724,"Variant"));end for v1640,v1641 in ipairs(v725) do local v1642=ResolveBoothMutationTypeText(v1641);if (v1642 and (v1642~="") and (v1642~="---") and (v1642~="Normal")) then return v1642;end end if (type(ResolvePetMutationTextFromPetData)=="function") then local v2389=ResolvePetMutationTextFromPetData(v723);if (v2389 and (v2389~="") and (v2389~="---") and (v2389~="Normal") and (v2389~="Unknown")) then return v2389;end end return "Normal";end function BuildOwnBoothListingSnapshot(v726) if (type(ListingsState)~="table") then return {},"ListingsState missing";end ListingsState.OwnBoothSnapshot=ListingsState.OwnBoothSnapshot or {} ;table.clear(ListingsState.OwnBoothSnapshot);if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then ListingsState.OwnBoothSnapshotStatus="Garden Mode";return ListingsState.OwnBoothSnapshot,ListingsState.OwnBoothSnapshotStatus;end local v728=LatestBoothData;if ((v726==true) or (type(v728)~="table") or (type(v728.Booths)~="table") or (type(v728.Players)~="table")) then v728=FetchLatestBoothDataNow();end if ((type(v728)~="table") or (type(v728.Booths)~="table") or (type(v728.Players)~="table")) then ListingsState.OwnBoothSnapshotStatus="Booth data missing";return ListingsState.OwnBoothSnapshot,ListingsState.OwnBoothSnapshotStatus;end local v729=Players.LocalPlayer;if  not v729 then ListingsState.OwnBoothSnapshotStatus="LocalPlayer missing";return ListingsState.OwnBoothSnapshot,ListingsState.OwnBoothSnapshotStatus;end local v730=tonumber(v729.UserId);local v731=nil;for v1643,v1644 in pairs(v728.Booths) do local v1645=v1644 and v1644.Owner ;if v1645 then local v2760=tonumber(tostring(v1645):match("_(%d+)$"));if (v2760==v730) then v731=v1645;break;end end end if  not v731 then ListingsState.OwnBoothSnapshotStatus="Own booth not found";return ListingsState.OwnBoothSnapshot,ListingsState.OwnBoothSnapshotStatus;end local v732=v728.Players[v731];if (type(v732)~="table") then ListingsState.OwnBoothSnapshotStatus="Own booth data missing";return ListingsState.OwnBoothSnapshot,ListingsState.OwnBoothSnapshotStatus;end local v733=v732.Listings;local v734=v732.Items;if ((type(v733)~="table") or (type(v734)~="table")) then ListingsState.OwnBoothSnapshotStatus="No active listings";ListingsState.OwnBoothSnapshotLastRefresh=os.clock();return ListingsState.OwnBoothSnapshot,ListingsState.OwnBoothSnapshotStatus;end for v1646,v1647 in pairs(v733) do if (type(v1647)~="table") then continue;end local v1648=v1647.ItemId;if  not v1648 then continue;end local v1649=v734[v1648];if (type(v1649)~="table") then continue;end local v1650=v1649.PetData;local v1651=tostring(v1649.PetType or "Unknown" );local v1652=tonumber(v1647.Price) or 0 ;local v1653=((type(v1650)=="table") and tonumber(v1650.BaseWeight)) or nil ;local v1654=(v1653 and ResolveDisplayedWeight(v1653)) or nil ;local v1655=((type(v1650)=="table") and (tonumber(v1650.Level) or tonumber(v1650.Age))) or nil ;local v1656=ResolveBoothListingMutationText(v1650,v1649);table.insert(ListingsState.OwnBoothSnapshot,{ListingUID=tostring(v1646),UUID=tostring(v1648),PetName=v1651,MutationText=v1656,Price=v1652,Age=v1655,BaseWeight=v1653,DisplayWeight=v1654});end table.sort(ListingsState.OwnBoothSnapshot,function(v1657,v1658) local v1659=tonumber(v1657.Price) or 0 ;local v1660=tonumber(v1658.Price) or 0 ;if (v1659~=v1660) then return v1659>v1660 ;end return tostring(v1657.PetName)<tostring(v1658.PetName) ;end);ListingsState.OwnBoothSnapshotLastRefresh=os.clock();ListingsState.OwnBoothSnapshotStatus="Synced";return ListingsState.OwnBoothSnapshot,ListingsState.OwnBoothSnapshotStatus;end function RefreshOwnBoothListingSnapshotThrottled() if (type(ListingsState)~="table") then return;end local v737=SafeNumber(ListingsState.OwnBoothSnapshotLastRefresh,0);if ((os.clock() -v737)<3) then return;end BuildOwnBoothListingSnapshot(false);end function ClearAutoListRuntimeQueuesForRemoval() if (type(ListingsState)~="table") then return;end ListingsState.ListingQueue=ListingsState.ListingQueue or {} ;ListingsState.QueuedUUIDs=ListingsState.QueuedUUIDs or {} ;ListingsState.PendingUUIDs=ListingsState.PendingUUIDs or {} ;table.clear(ListingsState.ListingQueue);table.clear(ListingsState.QueuedUUIDs);ListingsState.ActiveCreateUUID=nil;ListingsState.ActiveCreateStartedAt=0;ListingsState.Busy=false;ListingsState.NoWorkSleepUntil=os.clock() + 5 ;end function PauseAutoListForBoothRemoval(v745) if (type(ListingsState)~="table") then return;end ListingsState.Enabled=false;ListingsState.VisualTagsEnabled=false;ListingsState.Status=tostring(v745 or "Booth removal paused AutoList" );ClearAutoListRuntimeQueuesForRemoval();if (Library and Library.Options) then local v2397=Library.Options.EnableAutoList or Library.Options.StartAutoList ;if (v2397 and (type(v2397.SetValue)=="function")) then pcall(function() v2397:SetValue(false);end);end end if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end end function RemoveOwnBoothListingByUID(v749,v750) v749=tostring(v749 or "" );if (v749=="") then return false,"Missing listing UID";end if (ScriptState and ScriptState.ForceStopped) then return false,"Force stopped";end if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then return false,"Not in Trade World";end local v751=GetRemoveListingRemote();if  not v751 then return false,"RemoveListing remote missing";end local v752,v753=pcall(function() return v751:InvokeServer(v749);end);if  not v752 then return false,tostring(v753);end if (v753==false) then return false,"Server returned false";end if (type(v750)=="table") then local v2398=tostring(v750.UUID or "" );if (v2398~="") then ListingsState.OwnListedUUIDs=ListingsState.OwnListedUUIDs or {} ;ListingsState.ListedUUIDs=ListingsState.ListedUUIDs or {} ;ListingsState.PendingUUIDs=ListingsState.PendingUUIDs or {} ;ListingsState.OwnListedUUIDs[v2398]=nil;ListingsState.ListedUUIDs[v2398]=nil;MarkListingUUIDPending(v2398,30);end end print("[LISTINGS] Removed booth listing:",tostring(v749),"|",(v750 and tostring(v750.PetName or "Unknown" )) or "Unknown" );return true,v753;end function GetOwnBoothSnapshotAbsoluteIndex(v754) v754=math.max(1,math.floor(SafeNumber(v754,1)));local v755=math.max(1,math.floor(SafeNumber(ListingsState.OwnBoothSnapshotPage,1)));local v756=math.max(1,math.floor(SafeNumber(ListingsState.OwnBoothSnapshotPerPage,7)));return ((v755-1) * v756) + v754 ;end function RemoveOwnBoothSnapshotPageIndex(v757) if (type(ListingsState)~="table") then return false,"ListingsState missing";end BuildOwnBoothListingSnapshot(true);local v758=GetOwnBoothSnapshotAbsoluteIndex(v757);local v759=ListingsState.OwnBoothSnapshot and ListingsState.OwnBoothSnapshot[v758] ;if (type(v759)~="table") then return false,"No listing at page index "   .. tostring(v757) ;end local v760=tostring(v759.ListingUID or "" );if (v760=="") then return false,"Selected listing has no ListingUID";end local v761,v762=RemoveOwnBoothListingByUID(v760,v759);task.wait(0.35);BuildOwnBoothListingSnapshot(true);RefreshOwnListedUUIDs(true);if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end return v761,v762;end function RemoveAllOwnBoothListings() if (type(ListingsState)~="table") then return 0,0,"ListingsState missing";end PauseAutoListForBoothRemoval("Removing all booth listings");local v763=0;local v764=0;local v765={};local v766=8;for v1661=1,v766 do local v1662=BuildOwnBoothListingSnapshot(true);if ((type(v1662)~="table") or ( #v1662<=0)) then ListingsState.Status="Booth empty";break;end print("[LISTINGS] Remove all pass:",tostring(v1661),"| found:",tostring( #v1662));local v1663=0;for v2399,v2400 in ipairs(v1662) do if (type(v2400)~="table") then v764+=1 continue;end local v2401=tostring(v2400.ListingUID or "" );if (v2401=="") then v764+=1 continue;end if v765[v2401] then continue;end v765[v2401]=true;local v2403,v2404=RemoveOwnBoothListingByUID(v2401,v2400);if v2403 then v763+=1 v1663+=1 else v764+=1 warn("[LISTINGS] Remove all failed:",tostring(v2401),tostring(v2404));end task.wait(0.18);end task.wait(0.75);BuildOwnBoothListingSnapshot(true);RefreshOwnListedUUIDs(true);if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end if (v1663<=0) then break;end end task.wait(0.5);local v767=BuildOwnBoothListingSnapshot(true);RefreshOwnListedUUIDs(true);local v768=((type(v767)=="table") and  #v767) or 0 ;if (v768>0) then ListingsState.Status="Remove all partial: "   .. tostring(v768)   .. " remaining" ;else ListingsState.Status="Removed all booth listings";end ListingsState.OwnBoothSnapshotPage=1;if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end return v763,v764,((v768>0) and ("Remaining: "   .. tostring(v768))) or "Done" ;end function SyncListingRequiredFlagsFromValues() if (type(ListingsState)~="table") then return;end local v770=tonumber(ListingsState.Price);ListingsState.PriceWasEntered=(v770~=nil) and (v770>0) ;if ListingsState.PriceWasEntered then ListingsState.Price=math.floor(v770);end local v772=tonumber(ListingsState.MinWeight);ListingsState.MinWeightWasEntered=(v772~=nil) and (v772>=0) ;if ListingsState.MinWeightWasEntered then ListingsState.MinWeight=v772;end local v774=tonumber(ListingsState.MaxWeight);ListingsState.MaxWeightWasEntered=(v774~=nil) and (v774>=0) ;if ListingsState.MaxWeightWasEntered then ListingsState.MaxWeight=v774;end end function IsListingPriceAllowed() if (type(ListingsState)~="table") then return false,"ListingsState missing";end SyncListingRequiredFlagsFromValues();local v776=tonumber(ListingsState.Price);if ( not v776 or (v776<=0)) then return false,"Price required";end ListingsState.LowPriceThreshold=tonumber(ListingsState.LowPriceThreshold) or 10 ;if ((v776<ListingsState.LowPriceThreshold) and (ListingsState.AllowLowPriceListings~=true)) then return false,"Low price blocked";end return true,"OK";end function IsListingConfigurationAllowed() if (type(ListingsState)~="table") then return false,"ListingsState missing";end if (CountListingFilters()>0) then local v2410=0;for v2762,v2763 in ipairs(EnsureListingFilters()) do if (v2763.Enabled~=false) then local v3040=IsListingFilterAllowed(v2763);if v3040 then v2410+=1 end end end if (v2410<=0) then return false,"No valid listing filters";end return true,"OK";end local v778=BuildCurrentListingFilter();return IsListingFilterAllowed(v778);end function ResolveListingSpeedConfig(v779) v779=tostring(v779 or "Adaptive" );if (v779=="Adaptive") then return {ScanInterval=1,CreateCooldown=5,MaxQueuePerPass=2,Adaptive=true};end if (v779=="Safe") then return {ScanInterval=4,CreateCooldown=7,MaxQueuePerPass=1,Adaptive=false};end if (v779=="Balanced") then return {ScanInterval=2,CreateCooldown=5,MaxQueuePerPass=2,Adaptive=false};end if (v779=="Fast") then return {ScanInterval=1,CreateCooldown=5,MaxQueuePerPass=3,Adaptive=false};end if (v779=="Aggressive") then return {ScanInterval=0.5,CreateCooldown=5,MaxQueuePerPass=5,Adaptive=false};end return {ScanInterval=1,CreateCooldown=5,MaxQueuePerPass=2,Adaptive=true};end function SetListingSpeedMode(v780) v780=tostring(v780 or "Adaptive" );local v781={Adaptive=true,Safe=true,Balanced=true,Fast=true,Aggressive=true};if  not v781[v780] then v780="Adaptive";end local v782=ResolveListingSpeedConfig(v780);ListingsState.ListingSpeedMode=v780;ListingsState.ScanInterval=v782.ScanInterval;ListingsState.CreateCooldown=v782.CreateCooldown;ListingsState.MaxQueuePerPass=v782.MaxQueuePerPass;if (v782.Adaptive==true) then ListingsState.AdaptiveCreateCooldown=math.clamp(SafeNumber(ListingsState.AdaptiveCreateCooldown,v782.CreateCooldown),SafeNumber(ListingsState.AdaptiveMinCooldown,5),SafeNumber(ListingsState.AdaptiveMaxCooldown,10));else ListingsState.AdaptiveCreateCooldown=v782.CreateCooldown;ListingsState.AdaptiveSuccessStreak=0;end return v782;end function IsAdaptiveListingMode() return tostring((ListingsState and ListingsState.ListingSpeedMode) or "" )=="Adaptive" ;end function ResolveListingCreateCooldown() if  not ListingsState then return 5;end if IsAdaptiveListingMode() then return math.clamp(SafeNumber(ListingsState.AdaptiveCreateCooldown,5),SafeNumber(ListingsState.AdaptiveMinCooldown,5),SafeNumber(ListingsState.AdaptiveMaxCooldown,10));end return math.max(SafeNumber(ListingsState.CreateCooldown,5),5);end function AdaptiveListingRegisterCreateSuccess() if  not IsAdaptiveListingMode() then return;end ListingsState.AdaptiveSuccessStreak=SafeNumber(ListingsState.AdaptiveSuccessStreak,0) + 1 ;if (ListingsState.AdaptiveSuccessStreak>=3) then ListingsState.AdaptiveCreateCooldown=math.max(SafeNumber(ListingsState.AdaptiveMinCooldown,5),SafeNumber(ListingsState.AdaptiveCreateCooldown,5) -0.25 );ListingsState.AdaptiveSuccessStreak=0;print("[LISTINGS ADAPTIVE] Success tune | cooldown:",tostring(ListingsState.AdaptiveCreateCooldown));end end function AdaptiveListingRegisterCreateWait(v791) if  not ListingsState then return;end ListingsState.AdaptiveLastWaitSignal=os.clock();ListingsState.AdaptiveSuccessStreak=0;if IsAdaptiveListingMode() then ListingsState.AdaptiveCreateCooldown=math.min(SafeNumber(ListingsState.AdaptiveMaxCooldown,10),SafeNumber(ListingsState.AdaptiveCreateCooldown,5) + 1 );print("[LISTINGS ADAPTIVE] Server wait detected | cooldown:",tostring(ListingsState.AdaptiveCreateCooldown),"| reason:",tostring(v791 or "unknown" ));end end function NormalizeListingFilterMutation(v794) v794=tostring(v794 or "---" );if ((v794=="") or (v794=="Normal") or (v794=="Any") or (v794=="All")) then return "---";end if ((v794=="All Except") or (v794=="AllExcept")) then return "All Except";end return v794;end function NormalizeListingPetMutationValue(v795) v795=tostring(v795 or "---" );if ((v795=="") or (v795=="nil") or (v795=="Normal") or (v795=="Unknown")) then return "---";end return v795;end function CloneListingMutationMap(v796) local v797={};if (type(v796)~="table") then return v797;end for v1664,v1665 in pairs(v796) do if (v1665==true) then v1664=NormalizeListingFilterMutation(v1664);if ((v1664~="") and (v1664~="---") and (v1664~="All Except")) then v797[v1664]=true;end end end return v797;end function BuildListingMutationMapFromDropdownValue(v798) local v799={};if (type(v798)~="table") then return v799;end for v1666,v1667 in pairs(v798) do local v1668=nil;if (v1667==true) then v1668=v1666;elseif (type(v1667)=="string") then v1668=v1667;end v1668=NormalizeListingFilterMutation(v1668);if ((v1668~="") and (v1668~="---") and (v1668~="All Except")) then v799[v1668]=true;end end return v799;end function SerializeListingMutationMap(v800) local v801={};v800=CloneListingMutationMap(v800);for v1669,v1670 in pairs(v800) do if (v1670==true) then table.insert(v801,tostring(v1669));end end table.sort(v801);return v801;end function DeserializeListingMutationMap(v802) local v803={};if (type(v802)~="table") then return v803;end for v1671,v1672 in pairs(v802) do local v1673=nil;if (v1672==true) then v1673=v1671;elseif (type(v1672)=="string") then v1673=v1672;end v1673=NormalizeListingFilterMutation(v1673);if ((v1673~="") and (v1673~="---") and (v1673~="All Except")) then v803[v1673]=true;end end return v803;end function CountListingMutationMap(v804) local v805=0;if (type(v804)~="table") then return 0;end for v1674,v1675 in pairs(v804) do if (v1675==true) then v805+=1 end end return v805;end function FormatExcludedListingMutations(v806) local v807=SerializeListingMutationMap(v806);if ( #v807<=0) then return "None";end if ( #v807<=3) then return table.concat(v807,", ");end return tostring( #v807)   .. " blocked" ;end function EnsureListingFilters() ListingsState.ListingFilters=ListingsState.ListingFilters or {} ;ListingsState.ListingFilterUI=ListingsState.ListingFilterUI or {Page=1,PerPage=8} ;return ListingsState.ListingFilters;end function CountListingFilters() local v810=EnsureListingFilters();return  #v810;end function CountActiveListingFilters() local v811=EnsureListingFilters();local v812=0;for v1676,v1677 in ipairs(v811) do if ((type(v1677)=="table") and (v1677.Enabled~=false)) then v812+=1 end end return v812;end function IsListingPriceAllowedValue(v813) v813=tonumber(v813);if ( not v813 or (v813<=0)) then return false,"Price required";end ListingsState.LowPriceThreshold=tonumber(ListingsState.LowPriceThreshold) or 10 ;if ((v813<ListingsState.LowPriceThreshold) and (ListingsState.AllowLowPriceListings~=true)) then return false,"Low price blocked";end return true,"OK";end function IsListingFilterAllowed(v815) if (type(v815)~="table") then return false,"Filter missing";end local v816=tostring(v815.Pet or "" );if (v816=="") then return false,"Pet required";end local v817=tonumber(v815.MinLevel) or 1 ;local v818=tonumber(v815.MaxLevel) or 100 ;if (v817<1) then return false,"Min Level required";end if (v818<v817) then return false,"Max Level must be >= Min Level";end local v819=tonumber(v815.MinWeight);local v820=tonumber(v815.MaxWeight);if ( not v819 or (v819<0)) then return false,"Min BaseWeight required";end if ( not v820 or (v820<0)) then return false,"Max BaseWeight required";end if (v820<v819) then return false,"Max must be >= Min";end local v821,v822=IsListingPriceAllowedValue(v815.Price);if  not v821 then return false,v822;end return true,"OK";end function BuildCurrentListingFilter() SyncListingRequiredFlagsFromValues();return {Pet=tostring(ListingsState.SelectedPet or "" ),Mutation=NormalizeListingFilterMutation(ListingsState.SelectedMutation),ExcludedMutations=CloneListingMutationMap(ListingsState.SelectedExcludedMutations),MinLevel=tonumber(ListingsState.MinLevel) or 1 ,MaxLevel=tonumber(ListingsState.MaxLevel) or 100 ,MinWeight=tonumber(ListingsState.MinWeight),MaxWeight=tonumber(ListingsState.MaxWeight),Price=tonumber(ListingsState.Price),Enabled=true};end function GetListingFilterKey(v823) if (type(v823)~="table") then return "";end local v824=NormalizeListingFilterMutation(v823.Mutation);local v825="";if (v824=="All Except") then v825=table.concat(SerializeListingMutationMap(v823.ExcludedMutations),",");end return table.concat({tostring(v823.Pet or "" ),tostring(v824),tostring(v825),tostring(tonumber(v823.MinLevel) or 1 ),tostring(tonumber(v823.MaxLevel) or 100 ),tostring(tonumber(v823.MinWeight) or "" ),tostring(tonumber(v823.MaxWeight) or "" ),tostring(tonumber(v823.Price) or "" )},"|");end function AddCurrentListingFilter() local v826=BuildCurrentListingFilter();local v827,v828=IsListingFilterAllowed(v826);if  not v827 then ListingsState.Status=v828;if (type(ListingsStatusRefresh)=="function") then ListingsStatusRefresh();end HolyNotify("Filter Blocked",tostring(v828),"shield-alert",4);return false,v828;end local v829=EnsureListingFilters();local v830=GetListingFilterKey(v826);for v1678,v1679 in ipairs(v829) do if (GetListingFilterKey(v1679)==v830) then ListingsState.Status="Filter already exists";HolyNotify("Duplicate Filter","This listing filter already exists.","copy-x",3);return false,"Duplicate";end end table.insert(v829,v826);ListingsState.NoWorkSleepUntil=0;BuildListingPreview();MarkConfigDirty();if (type(SaveListingFilters)=="function") then SaveListingFilters();end if (type(RefreshListingFilterUI)=="function") then RefreshListingFilterUI();end if (type(ListingsStatusRefresh)=="function") then ListingsStatusRefresh();end local v832=NormalizeListingFilterMutation(v826.Mutation);if (v832=="All Except") then v832="except "   .. FormatExcludedListingMutations(v826.ExcludedMutations) ;elseif (v832=="---") then v832="All mutations";end HolyNotify("Listing Filter Added",tostring(v826.Pet)   .. " | "   .. tostring(v832)   .. " | Lv "   .. tostring(v826.MinLevel or 1 )   .. "-"   .. tostring(v826.MaxLevel or 100 )   .. " | BW "   .. tostring(v826.MinWeight or "?" )   .. "-"   .. tostring(v826.MaxWeight or "?" )   .. " | "   .. tostring(v826.Price or "?" )   .. "T" ,"list-plus",4);return true,v826;end function ClearListingFilters() table.clear(EnsureListingFilters());ListingsState.ListingFilterUI.Page=1;ListingsState.NoWorkSleepUntil=0;BuildListingPreview();MarkConfigDirty();if (type(SaveListingFilters)=="function") then SaveListingFilters();end if (type(RefreshListingFilterUI)=="function") then RefreshListingFilterUI();end if (type(ListingsStatusRefresh)=="function") then ListingsStatusRefresh();end HolyNotify("Listing Filters Cleared","All listing filters were removed.","trash",3);end function RemoveListingFilterAt(v835) local v836=EnsureListingFilters();v835=tonumber(v835);if ( not v835 or  not v836[v835]) then return false;end table.remove(v836,v835);local v837=math.max(1,math.ceil( #v836/SafeNumber(ListingsState.ListingFilterUI.PerPage,8) ));ListingsState.ListingFilterUI.Page=math.clamp(SafeNumber(ListingsState.ListingFilterUI.Page,1),1,v837);BuildListingPreview();MarkConfigDirty();if (type(SaveListingFilters)=="function") then SaveListingFilters();end if (type(RefreshListingFilterUI)=="function") then RefreshListingFilterUI();end if (type(ListingsStatusRefresh)=="function") then ListingsStatusRefresh();end return true;end function FormatListingTokenAmount(v839) local v840=tonumber(v839) or 0 ;v840=math.floor(v840);local v841=tostring(v840);local v842,v843,v844=string.match(v841,"^([^%d]*%d)(%d*)(.-)$");if  not v842 then return v841   .. " tokens" ;end return v842   .. (v843:reverse():gsub("(%d%d%d)","%1,"):reverse())   .. v844   .. " tokens" ;end function FormatListingNumber(v845) local v846=tonumber(v845);if  not v846 then return "?";end if ((v846%1)==0) then return tostring(v846);end return string.format("%.2f",v846):gsub("0+$",""):gsub("%.$","");end function FormatListingMutationDisplay(v847) local v848=NormalizeListingFilterMutation(v847);if (v848=="---") then return "🧬 Any";end return "🧬 "   .. tostring(v848) ;end function FormatListingFilterLine(v849,v850) if (type(v850)~="table") then return string.format("%02d -",tonumber(v849) or 0 );end local function v851(v1680) local v1681=tonumber(v1680);if  not v1681 then return "?";end if ((v1681%1)==0) then return tostring(v1681);end return string.format("%.2f",v1681):gsub("0+$",""):gsub("%.$","");end local function v852(v1682) local v1683=tonumber(v1682) or 0 ;v1683=math.floor(v1683);if (v1683>=1000000) then return string.format("%.1fm",v1683/1000000 ):gsub("%.0m","m");end if (v1683>=1000) then return string.format("%.1fk",v1683/1000 ):gsub("%.0k","k");end return tostring(v1683);end local function v853(v1684,v1685) v1684=tostring(v1684 or "" );v1685=tonumber(v1685) or 18 ;if ( #v1684<=v1685) then return v1684;end return v1684:sub(1,v1685-1 )   .. "…" ;end local v854=NormalizeListingFilterMutation(v850.Mutation);local v855=tostring(v850.Pet or "?" );local v856=v855;if (v854=="All Except") then v856=v855   .. " | except "   .. FormatExcludedListingMutations(v850.ExcludedMutations) ;elseif (v854~="---") then v856=tostring(v854)   .. " "   .. v855 ;end v856=v853(v856,22);local v857=tonumber(v850.MinLevel) or 1 ;local v858=tonumber(v850.MaxLevel) or 100 ;local v859=tonumber(v850.MinWeight) or 0 ;local v860=tonumber(v850.MaxWeight) or 0 ;local v861=tonumber(v850.Price) or 0 ;return string.format("%02d %s | L%s-%s | BW %s-%s | %s",tonumber(v849) or 0 ,v856,v851(v857),v851(v858),v851(v859),v851(v860),v852(v861));end function ListingPetMatchesFilter(v862,v863) if ((type(v862)~="table") or (type(v863)~="table")) then return false;end if (v863.Enabled==false) then return false;end local v864=tostring(v862.PetName or "" ):gsub("^%s+",""):gsub("%s+$","");local v865=tostring(v863.Pet or "" ):gsub("^%s+",""):gsub("%s+$","");local v866=NormalizeListingPetMutationValue(v862.Mutation);if ((v864=="") or (v865=="")) then return false;end if (string.lower(v864)~=string.lower(v865)) then return false;end local v867=NormalizeListingFilterMutation(v863.Mutation);if (v867=="All Except") then local v2419=v863.ExcludedMutations;if ((type(v2419)=="table") and (v2419[v866]==true)) then return false;end elseif ((v867~="---") and (v866~=v867)) then return false;end local v868=tonumber(v862.Age) or tonumber(v862.Level) ;local v869=tonumber(v863.MinLevel) or 1 ;local v870=tonumber(v863.MaxLevel) or 100 ;if  not v868 then warn("[LISTINGS] SKIP | level missing:",tostring(v862.ToolName),"| BaseWeight:",tostring(v862.BaseWeight),"| DisplayKG:",tostring(v862.Weight),"| UUID:",tostring(v862.UUID));return false;end if ((v868<v869) or (v868>v870)) then return false;end local v871=tonumber(v862.BaseWeight);local v872=tonumber(v863.MinWeight);local v873=tonumber(v863.MaxWeight);if ( not v871 or  not v872 or  not v873) then warn("[LISTINGS] SKIP | baseweight invalid:",tostring(v862.ToolName),"| Level:",tostring(v868),"| BaseWeight:",tostring(v871),"| Filter BW:",tostring(v872),"-",tostring(v873),"| DisplayKG:",tostring(v862.Weight),"| UUID:",tostring(v862.UUID));return false;end if (v873<v872) then return false;end if ((v871<v872) or (v871>v873)) then return false;end return true;end function ResolveListingFilterForPet(v874) local v875=EnsureListingFilters();if ( #v875>0) then for v2767,v2768 in ipairs(v875) do if ListingPetMatchesFilter(v874,v2768) then return v2768;end end return nil;end local v876=BuildCurrentListingFilter();local v877=IsListingFilterAllowed(v876);if (v877 and ListingPetMatchesFilter(v874,v876)) then return v876;end return nil;end function PetMatchesListingFilter(v878) local v879=ResolveListingFilterForPet(v878);if  not v879 then return false;end return true,v879;end function RefreshListingInventorySnapshot() if (game.PlaceId==TRADING_WORLD_PLACE_ID) then RefreshOwnListedUUIDs(true);else RefreshOwnListedUUIDs(false);end ListingsState.InventorySnapshot=GetListingInventoryPetSnapshot();return ListingsState.InventorySnapshot;end function BuildListingPreview() ListingsState.ListedUUIDs=ListingsState.ListedUUIDs or {} ;ListingsState.OwnListedUUIDs=ListingsState.OwnListedUUIDs or {} ;ListingsState.OwnListedMetadata=ListingsState.OwnListedMetadata or {} ;ListingsState.FailedUUIDs=ListingsState.FailedUUIDs or {} ;ListingsState.QueuedUUIDs=ListingsState.QueuedUUIDs or {} ;local v886=RefreshListingInventorySnapshot();local v887={Matching=0,AlreadyListed=0,Ready=0,Failed=0,RuntimeListed=0,Queued=0};for v1686,v1687 in ipairs(v886) do if PetMatchesListingFilter(v1687) then v887.Matching+=1 if ListingsState.OwnListedUUIDs[v1687.UUID] then v887.AlreadyListed+=1 elseif IsListingUUIDPending(v1687.UUID) then v887.Failed+=1 elseif ListingsState.FailedUUIDs[v1687.UUID] then v887.Failed+=1 elseif ListingsState.QueuedUUIDs[v1687.UUID] then v887.Queued+=1 else v887.Ready+=1 end end end ListingsState.Preview=v887;return v887;end function PrintListingPreview() local v889=BuildListingPreview();print("==================================================");print("[LISTINGS PREVIEW]");print("SelectedPet:",tostring(ListingsState.SelectedPet));print("SelectedMutation:",tostring(ListingsState.SelectedMutation));print("MinWeight:",tostring(ListingsState.MinWeight));print("MaxWeight:",tostring(ListingsState.MaxWeight));print("Price:",tostring(ListingsState.Price or "required" ));print("Matching:",tostring(v889.Matching));print("Already listed:",tostring(v889.AlreadyListed));print("Runtime listed:",tostring(v889.RuntimeListed));print("Queued:",tostring(v889.Queued));print("Failed:",tostring(v889.Failed));print("Ready to list:",tostring(v889.Ready));print("==================================================");end function PrintDetailedListingPreview() local v890=RefreshListingInventorySnapshot();print("==================================================");print("[LISTINGS DETAILED PREVIEW]");local v891=0;local v892=0;local v893=0;for v1688,v1689 in ipairs(v890) do v891+=1 local v1690,v1691=PetMatchesListingFilter(v1689);if v1690 then v892+=1 local v2769="READY";if ListingsState.OwnListedUUIDs[v1689.UUID] then v2769="SKIP | already listed in booth";elseif ListingsState.ListedUUIDs[v1689.UUID] then v2769="SKIP | runtime listed";elseif IsListingUUIDPending(v1689.UUID) then v2769="SKIP | pending sale cooldown";elseif ListingsState.FailedUUIDs[v1689.UUID] then v2769="SKIP | failed UUID";elseif ListingsState.QueuedUUIDs[v1689.UUID] then v2769="SKIP | already queued";else v893+=1 end print("[LISTING MATCH]",tostring(v2769),"| Pet:",tostring(v1689.ToolName or v1689.PetName ),"| UUID:",tostring(v1689.UUID),"| PetName:",tostring(v1689.PetName),"| Mutation:",tostring(v1689.Mutation),"| Age:",tostring(v1689.Age or v1689.Level ),"| BW:",tostring(v1689.BaseWeight),"| Price:",tostring(v1691 and v1691.Price ));end end print("[LISTINGS DETAILED PREVIEW] Total:",tostring(v891),"| Matched:",tostring(v892),"| Ready:",tostring(v893));print("==================================================");end function TryUnfavoriteListingPet(v894) if (ListingsState.AutoUnfavorite~=true) then return true;end if ( not v894 or  not v894.Tool) then return false;end if (v894.Tool:GetAttribute("d")~=true) then return true;end local v895=GetFavoriteRemote();if  not v895 then warn("[LISTINGS] Favorite_Item remote missing");return false;end print("[LISTINGS] Unfavoriting:",tostring(v894.ToolName));pcall(function() v895:FireServer(v894.Tool);end);local v896=os.clock() + 3 ;while os.clock()<v896  do local v1692=v894.Tool:GetAttribute("d");if (v1692==false) then print("[LISTINGS] Unfavorite confirmed:",tostring(v894.ToolName));return true;end task.wait(0.1);end warn("[LISTINGS] Unfavorite timeout:",tostring(v894.ToolName));return false;end function CreatePetListing(v897,v898) if ( not v897 or  not v897.UUID) then return false;end local v899=tostring(v897.UUID);if IsListingUUIDPending(v899) then return "PENDING_UUID";end v898=tonumber(v898 or v897.ListingPrice or ListingsState.Price );local v900,v901=IsListingPriceAllowedValue(v898);if  not v900 then ListingsState.Status=v901;warn("[LISTINGS] Blocked:",tostring(v901));return "CONFIG_BLOCKED";end local v902=os.clock();local v903=v902-SafeNumber(ListingsState.LastCreateAttempt,0) ;local v904=ResolveListingCreateCooldown();if (v903<v904) then ListingsState.Status="Waiting create cooldown";return "COOLDOWN";end local v905=GetCreateListingRemote();if  not v905 then warn("[LISTINGS] CreateListing remote missing");return false;end local v906=TryUnfavoriteListingPet(v897);if  not v906 then ListingsState.Status="Failed unfavorite";return "FAVORITE";end task.wait(0.2);print(string.format("[LISTINGS] Creating: %s | UUID %s | %s tokens",tostring(v897.ToolName),tostring(v899),tostring(v898)));StoreOwnListedPetMetadata(v897);ListingsState.LastCreateAttempt=os.clock();ListingsState.ActiveCreateUUID=v899;ListingsState.ActiveCreateStartedAt=os.clock();local v910,v911=pcall(function() return v905:InvokeServer("Pet",v899,v898);end);local v912=ListingsState.ActiveCreateUUID;ListingsState.ActiveCreateUUID=nil;ListingsState.ActiveCreateStartedAt=0;print("[LISTINGS] Listing create:",tostring(v897.ToolName),"| result:",tostring(v911));if  not v910 then warn("[LISTINGS] Invoke failed:",tostring(v911));return false;end if IsListingUUIDPending(v899) then return "PENDING_UUID";end if (v911==false) then task.wait(0.15);local v2423=ListingsState.LastCreateWaitSignal and ((os.clock() -SafeNumber(ListingsState.LastCreateWaitSignal,0))<1.5) ;if v2423 then AdaptiveListingRegisterCreateWait("CreateListing returned false");ListingsState.LastCreateAttempt=os.clock();return "CREATE_WAIT";end MarkListingUUIDPending(v899,ListingsState.PendingCooldown);return "PENDING_UUID";end AdaptiveListingRegisterCreateSuccess();return true;end function QueueListingPet(v913,v914) if ( not v913 or  not v913.UUID) then return false;end local v915=tostring(v913.UUID);if IsListingUUIDPending(v915) then return false;end if ListingsState.QueuedUUIDs[v915] then return false;end if ListingsState.OwnListedUUIDs[v915] then return false;end if ListingsState.ListedUUIDs[v915] then return false;end if ListingsState.FailedUUIDs[v915] then return false;end v914=v914 or ResolveListingFilterForPet(v913) ;if  not v914 then return false;end local v916,v917=IsListingFilterAllowed(v914);if  not v916 then ListingsState.Status=v917;return false;end v913.ListingFilter=v914;v913.ListingPrice=tonumber(v914.Price);ListingsState.QueuedUUIDs[v915]=true;table.insert(ListingsState.ListingQueue,v913);print(string.format("[LISTINGS QUEUE] Added → %s | %s tokens | Queue: %s",tostring(v913.ToolName),tostring(v913.ListingPrice),tostring( #ListingsState.ListingQueue)));return true;end function StartListingWorker() if ListingsState.WorkerRunning then return;end ListingsState.WorkerRunning=true;task.spawn(function() while true do task.wait(0.1);if ScriptState.ForceStopped then continue;end if  not ListingsState.Enabled then continue;end if ListingsState.Busy then continue;end local v2425=table.remove(ListingsState.ListingQueue,1);if  not v2425 then continue;end ListingsState.QueuedUUIDs[v2425.UUID]=nil;ListingsState.Busy=true;ListingsState.Status="Listing queued pet";local v2429,v2430=pcall(function() return CreatePetListing(v2425,v2425.ListingPrice or (v2425.ListingFilter and v2425.ListingFilter.Price) or ListingsState.Price );end);if  not v2429 then v2430=false;warn("[LISTINGS WORKER] Error:",tostring(v2430));end if (v2430==true) then ListingsState.ListedUUIDs[v2425.UUID]=os.clock();ListingsState.OwnListedUUIDs[v2425.UUID]=true;ListingsState.ListedThisSession+=1 ListingsState.LastListed=v2425.ToolName;ListingsState.Status="Listed 1 pet";print("[LISTINGS] Listed:",tostring(v2425.ToolName),"| UUID:",tostring(v2425.UUID));if (type(BuildOwnBoothListingSnapshot)=="function") then pcall(function() BuildOwnBoothListingSnapshot(true);end);end if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end elseif ((v2430=="COOLDOWN") or (v2430=="CREATE_WAIT")) then ListingsState.Status="Waiting create cooldown";local v3111=ResolveListingCreateCooldown();task.delay(v3111,function() if ListingsState.Enabled then QueueListingPet(v2425);end end);elseif ((v2430=="PENDING") or (v2430=="PENDING_UUID")) then MarkListingUUIDPending(v2425.UUID,ListingsState.PendingCooldown);ListingsState.Status="Pet pending, trying next";print("[LISTINGS] Pending UUID skipped:",tostring(v2425.ToolName),"| UUID:",tostring(v2425.UUID));elseif (v2430=="FAVORITE") then ListingsState.Status="Waiting unfavorite";task.delay(1,function() if ListingsState.Enabled then QueueListingPet(v2425);end end);elseif (v2430=="CONFIG_BLOCKED") then ListingsState.Status="Config blocked";ListingsState.FailedUUIDs[v2425.UUID]=os.clock();else ListingsState.Status="Hard failure";ListingsState.FailedUUIDs[v2425.UUID]=os.clock();warn("[LISTINGS] Hard failure:",tostring(v2425.ToolName),"| UUID:",tostring(v2425.UUID));end if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end task.wait(ResolveListingCreateCooldown());ListingsState.Busy=false;end end);end function ArmListingsAutostartFromSavedToggle() if (type(ListingsState)~="table") then return false;end if (ScriptState and ScriptState.ForceStopped) then return false;end local v922=LoadListingAutoListIntent();local v923=Library and Library.Options and Library.Options.EnableAutoList ;local v924=false;if v923 then v924=(v923.Value==true) or (v923.CurrentValue==true) or (v923.State==true) ;end local v925=false;if (v922~=nil) then v925=v922==true ;else v925=v924==true ;end print("[LISTINGS RESTORE] AutoList intent:",tostring(v925),"| intent file:",tostring(v922),"| option exists:",tostring(v923~=nil ),"| option:",tostring(v924));ListingsState.Busy=false;ListingsState.LastScan=0;ListingsState.NoWorkSleepUntil=0;ListingsState.ActiveCreateUUID=nil;ListingsState.ActiveCreateStartedAt=0;ListingsState.AutoDisableWhenDone=false;ListingsState.ListingQueue=ListingsState.ListingQueue or {} ;ListingsState.QueuedUUIDs=ListingsState.QueuedUUIDs or {} ;ListingsState.PendingUUIDs=ListingsState.PendingUUIDs or {} ;table.clear(ListingsState.ListingQueue);table.clear(ListingsState.QueuedUUIDs);table.clear(ListingsState.PendingUUIDs);if (v925~=true) then ListingsState.Enabled=false;ListingsState.VisualTagsEnabled=false;ListingsState.Status="Disabled";if (type(BuildListingPreview)=="function") then pcall(BuildListingPreview);end if (type(RefreshListingFilterUI)=="function") then pcall(RefreshListingFilterUI);end if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end print("[LISTINGS RESTORE] Start AutoList saved OFF; runtime disabled");return false;end if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then ListingsState.Enabled=false;ListingsState.VisualTagsEnabled=false;ListingsState.Status="Not in Trade World";if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end return false;end if (type(EnsureListingFilters)=="function") then pcall(EnsureListingFilters);end if (type(SyncListingRequiredFlagsFromValues)=="function") then pcall(SyncListingRequiredFlagsFromValues);end ListingsState.Enabled=true;ListingsState.VisualTagsEnabled=true;ListingsState.Status="AutoList restored | watching";ListingsState.LastScan=0;ListingsState.NoWorkSleepUntil=0;ListingsState.ListedThisSession=0;SaveListingAutoListIntent(true);task.defer(function() pcall(function() if (Library and Library.Options and Library.Options.EnableAutoList and (Library.Options.EnableAutoList.Value~=true)) then Library.Options.EnableAutoList:SetValue(true);end end);end);if (type(RefreshListingInventorySnapshot)=="function") then pcall(RefreshListingInventorySnapshot);end if (type(BuildOwnBoothListingSnapshot)=="function") then pcall(function() BuildOwnBoothListingSnapshot(true);end);end if (type(BuildListingPreview)=="function") then pcall(BuildListingPreview);end if (type(RefreshListingFilterUI)=="function") then pcall(RefreshListingFilterUI);end if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end print("[LISTINGS RESTORE] Start AutoList restored ON; runtime enabled");task.spawn(function() task.wait(0.75);if (ListingsState.Enabled~=true) then return;end if (ScriptState and ScriptState.ForceStopped) then return;end if (type(WaitForOwnListedUUIDSync)=="function") then pcall(function() WaitForOwnListedUUIDSync(4);end);end if (type(RefreshListingInventorySnapshot)=="function") then pcall(RefreshListingInventorySnapshot);end if (type(BuildOwnBoothListingSnapshot)=="function") then pcall(function() BuildOwnBoothListingSnapshot(true);end);end if (type(BuildListingPreview)=="function") then pcall(BuildListingPreview);end if (type(RunAutoListingPass)=="function") then ListingsState.LastScan=0;ListingsState.NoWorkSleepUntil=0;ListingsState.Status="AutoList running";pcall(RunAutoListingPass);end if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end end);return true;end function PrintListingSummaryOnce(v939) v939=tostring(v939 or "" );local v940=os.clock();if ((v939==ListingsState.LastSummaryPrint) and ((v940-ListingsState.LastSummaryPrintAt)<15)) then return;end ListingsState.LastSummaryPrint=v939;ListingsState.LastSummaryPrintAt=v940;print(v939);end function RunAutoListingPass() if ListingsState.Busy then return;end ListingsState.Status="Scanning";local v944,v945=pcall(function() local v1693,v1694=IsListingConfigurationAllowed();if  not v1693 then ListingsState.Status=v1694;warn("[LISTINGS] Scan blocked:",tostring(v1694));return;end local v1695,v1696=true,"Sync unavailable";if (type(WaitForOwnListedUUIDSync)=="function") then v1695,v1696=WaitForOwnListedUUIDSync(8);end if  not v1695 then ListingsState.Status=tostring(v1696 or "Waiting for own booth sync" );warn("[LISTINGS] Scan delayed:",tostring(v1696));if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end return;end local v1697=RefreshListingInventorySnapshot();local v1698=EnsureListingFilters();local v1699={};if ( #v1698>0) then for v2949,v2950 in ipairs(v1698) do local v2951=IsListingFilterAllowed(v2950);if v2951 then table.insert(v1699,v2950);end end else local v2775=BuildCurrentListingFilter();local v2776=IsListingFilterAllowed(v2775);if v2776 then table.insert(v1699,v2775);end end local v1700=0;local v1701=0;local v1702=0;local v1703=0;local v1704=0;local v1705=0;local v1706=0;local v1707={};local v1708=math.clamp(math.floor(SafeNumber(ListingsState.MaxQueuePerPass,2)),1,10);for v2437,v2438 in ipairs(v1699) do if ScriptState.ForceStopped then break;end if  not ListingsState.Enabled then break;end for v2777,v2778 in ipairs(v1697) do if ScriptState.ForceStopped then break;end if  not ListingsState.Enabled then break;end if  not ListingPetMatchesFilter(v2778,v2438) then continue;end local v2779=tostring(v2778.UUID or "" );if ((v2779~="") and  not v1707[v2779]) then v1707[v2779]=true;v1700+=1 end if ListingsState.OwnListedUUIDs[v2778.UUID] then v1702+=1 ListingsState.ListedUUIDs[v2778.UUID]=ListingsState.ListedUUIDs[v2778.UUID] or os.clock() ;continue;end if ListingsState.ListedUUIDs[v2778.UUID] then v1703+=1 continue;end if IsListingUUIDPending(v2778.UUID) then v1706+=1 continue;end if ListingsState.FailedUUIDs[v2778.UUID] then v1704+=1 continue;end if ListingsState.QueuedUUIDs[v2778.UUID] then v1705+=1 continue;end print("[LISTINGS] Queue match:",tostring(v2778.ToolName),"| Age:",tostring(v2778.Age or "Unknown" ),"| DisplayKG:",tostring(v2778.Weight or "Unknown" ),"| Mutation:",tostring(v2778.Mutation),"| TRUE BaseWeight:",string.format("%.2f",tonumber(v2778.BaseWeight) or 0 ),"| Filter:",tostring((v2438 and v2438.MinWeight) or "?" ),"-",tostring((v2438 and v2438.MaxWeight) or "?" ),"| Price:",tostring((v2438 and v2438.Price) or ListingsState.Price ),"| UUID:",tostring(v2778.UUID));local v2780=tonumber(v2778.BaseWeight);local v2781=tonumber(v2438 and v2438.MinWeight );local v2782=tonumber(v2438 and v2438.MaxWeight );if ( not v2780 or  not v2781 or  not v2782) then warn("[LISTINGS] SKIP | invalid raw BaseWeight/filter:",tostring(v2778.ToolName),"| RawBaseWeight:",tostring(v2780),"| Filter:",tostring(v2781),"-",tostring(v2782));continue;end if ((v2780<v2781) or (v2780>v2782)) then warn("[LISTINGS] SKIP | raw BaseWeight outside filter:",tostring(v2778.ToolName),"| RawBaseWeight:",string.format("%.2f",v2780),"| Filter:",tostring(v2781),"-",tostring(v2782),"| DisplayKG:",tostring(v2778.Weight),"| Age:",tostring(v2778.Age or "Unknown" ));continue;end if QueueListingPet(v2778,v2438) then v1701+=1 end if (v1701>=v1708) then break;end end if (v1701>=v1708) then break;end end if (v1701<=0) then ListingsState.Status=string.format("Matched %s | Queued 0",tostring(v1700));if ((v1700>0) and (v1700==(v1702 + v1703 + v1704 + v1705 + v1706))) then ListingsState.NoWorkSleepUntil=os.clock() + ListingsState.NoWorkBackoff ;ListingsState.Status="Done | all filters listed or skipped";ListingsState.AutoDisableWhenDone=false;ListingsState.PreserveVisualTagsOnNextDisable=false;end else ListingsState.Status="Queued "   .. tostring(v1701)   .. " pet"   .. (((v1701==1) and "") or "s") ;end BuildListingPreview();local v1709=string.format("[LISTINGS] Pass complete | mode: filter-first | matched: %s | queued: %s | booth-skip: %s | runtime-skip: %s | failed-skip: %s | pending-skip: %s | queued-skip: %s | queue: %s",tostring(v1700),tostring(v1701),tostring(v1702),tostring(v1703),tostring(v1704),tostring(v1706),tostring(v1705),tostring( #ListingsState.ListingQueue));if ((v1701>0) or  not ListingsState.QuietWhenComplete) then PrintListingSummaryOnce(v1709);else PrintListingSummaryOnce(string.format("[LISTINGS] Idle | mode: filter-first | matched: %s | already listed: %s | runtime listed: %s | failed: %s | pending: %s | queue: %s",tostring(v1700),tostring(v1702),tostring(v1703),tostring(v1704),tostring(v1706),tostring( #ListingsState.ListingQueue)));end end);if  not v944 then ListingsState.Status="Error";warn("[LISTINGS] Pass failed:",tostring(v945));end end function BuildBoothTab() if (type(Tabs.Booth.AddLeftCollapsibleGroupbox)=="function") then BoothBox=Tabs.Booth:AddLeftCollapsibleGroupbox("Booth Automation","zap",true);else warn("[LIB TEST] Collapsible Booth Automation unavailable, using normal groupbox");BoothBox=Tabs.Booth:AddLeftGroupbox("Booth Automation","zap");end BoothCustomizationBox=Tabs.Booth:AddRightGroupbox("Booth Customization","wand");local v946=BoothBox:AddToggle("AutoClaimBooth",{Text="🎪 Auto Claim Booth",Default=false});v946:OnChanged(function(v1710) BoothAuto.Enabled=v1710;MarkConfigDirty();if v1710 then print("[Booth] Auto claim triggered");HolyNotify("Booth Claim Started","HOLY is searching for a free booth.","store",4);task.spawn(function() task.wait(0.25);ExecuteBoothClaim();end);end end);local v947=BoothBox:AddToggle("EquipPet",{Text="🐶 Equip Pet",Tooltip="Equips a pet from your inventory",Default=false});v947:OnChanged(function(v1712) BoothPetState.Enabled=v1712==true ;BoothPetState.LastEquippedUID=nil;BoothPetState.LockedShowcaseUID=nil;BoothPetState.LastMissingPet=nil;BoothPetState.LastMissingWarnAt=0;BoothPetState.LastEquipAttemptAt=0;ShowcaseEquipState.ReequipPending=false;MarkConfigDirty();if (v1712==true) then task.spawn(function() task.wait(0.15);if (BoothPetState.Enabled~=true) then return;end if (type(EquipShowcasePet)=="function") then EquipShowcasePet(true);end end);end end);RefreshDynamicPetList();local v948=BoothCustomizationBox:AddDropdown("ShowcasePetSelect",{Text="Showcase Pets",Values=PetList,Default="",Searchable=true});v948:OnChanged(function(v1720) BoothPetState.SelectedPetType=v1720;BoothPetState.LastEquippedUID=nil;BoothPetState.LockedShowcaseUID=nil;BoothPetState.LastMissingPet=nil;BoothPetState.LastMissingWarnAt=0;MarkConfigDirty();end);RefreshBoothSkinList();local v949=BoothCustomizationBox:AddDropdown("BoothSkinSelect",{Text="Booth Skin",Values=BoothSkinList,Default=ResolveSelectedBoothSkin(),Searchable=true});v949:OnChanged(function(v1726) local v1727=tostring(v1726 or "Default" );if  not IsOwnedBoothSkin(v1727) then v1727="Default";HolyNotify("Booth Skin Reset","Selected skin is not owned. Using Default.","shield-alert",3);end BoothCustomization.SelectedSkin=v1727;MarkConfigDirty();print("[BOOTH SKIN] Selected:",BoothCustomization.SelectedSkin);end);local v950=BoothBox:AddToggle("AutoTpBooth",{Text="📍 Auto Teleport Booth",Tooltip="Teleports back only after you move too far from your booth.",Default=false});v950:OnChanged(function(v1729) BoothAuto.AutoTeleport=v1729;if  not v1729 then ClearBoothAnchor();RestoreCharacterMovement();end if ConfigState.IsHydrating then return;end if v1729 then RestoreCharacterMovement();task.spawn(function() task.wait(0.15);PositionBehindOwnedBooth();end);else RestoreCharacterMovement();end MarkConfigDirty();end);local v951=BoothBox:AddToggle("LockBehindBooth",{Text="🔒 Lock Behind Booth",Tooltip="Hard-locks your character behind your booth. Requires Auto Teleport Booth.",Default=false});v951:OnChanged(function(v1731) BoothAuto.LockBehindBooth=v1731;if  not v1731 then SetBoothHardLockAnchored(false);RestoreCharacterMovement();end if (v1731 and BoothAuto.AutoTeleport and  not ConfigState.IsHydrating) then task.spawn(function() task.wait(0.1);local v2952=PositionBehindOwnedBooth();if v2952 then task.wait(0.1);SetBoothHardLockAnchored(true);end end);end MarkConfigDirty();end);local v952=BoothBox:AddSlider("BoothDistance",{Text="Booth Distance",Default=20,Min=2,Max=30,Rounding=1,Compact=false});v952:OnChanged(function(v1733) BoothAuto.BoothDistance=v1733;MarkConfigDirty();if ConfigState.IsHydrating then return;end if BoothAuto.AutoTeleport then task.spawn(function() task.wait(0.05);local v2953=PositionBehindOwnedBooth();if  not v2953 then warn("[Booth] Live reposition failed");end end);end end);local v953=BoothBox:AddSlider("BoothReturnDistance",{Text="Return Distance",Default=8,Min=5,Max=15,Rounding=0,Compact=false,Tooltip="How far you can move from your booth before Auto Teleport returns you."});v953:OnChanged(function(v1735) BoothAuto.ReturnDistance=math.clamp(SafeNumber(v1735,8),5,15);MarkConfigDirty();end);local v954=BoothBox:AddToggle("AutoPromoteListings",{Text="💬 Auto Promote Listings",Tooltip="Sends chat promotion messages for your listings",Default=false});v954:OnChanged(function(v1737) BoothAuto.AutoPromote=v1737;MarkConfigDirty();end);do RefreshBeeEggList();EventsBox:AddDropdown("BeeEggSelect",{Text="Bee Eggs",Values=BeeEggAuto.EggList,Default=BeeEggAuto.SelectedEggs,Multi=true,Searchable=true}):OnChanged(function(v2440) table.clear(BeeEggAuto.SelectedEggs);if (type(v2440)=="table") then for v3048,v3049 in pairs(v2440) do if (v3049==true) then BeeEggAuto.SelectedEggs[tostring(v3048)]=true;end end elseif ((type(v2440)=="string") and (v2440~="")) then BeeEggAuto.SelectedEggs[tostring(v2440)]=true;end MarkConfigDirty();local v2441=0;for v2785 in pairs(BeeEggAuto.SelectedEggs) do v2441=v2441 + 1 ;end print("[BEE EGG] Selected count:",tostring(v2441));end);EventsBox:AddToggle("AutoBuyBeeEgg",{Text="🐝 Auto Buy Bee Eggs",Tooltip="Buys selected Bee Eggs from Trade World",Default=false}):OnChanged(function(v2442) BeeEggAuto.Enabled=v2442;MarkConfigDirty();if v2442 then print("[BEE EGG] Auto buy enabled");else print("[BEE EGG] Auto buy disabled");end end);end local v955=HttpService:GenerateGUID(false);_G.HolyPromoteSessionId=v955;local v956={LastMessage="",LastSent=0,NextAllowedAt=0,MinInterval=75,MaxInterval=120,FailUntil=0};local v957={"%s at my booth","%s listed at my booth","%s in my booth","%s available at my booth","my booth has %s","come check %s at my booth","check my booth for %s","booth has %s right now","%s is up at my booth","%s in booth right now","new %s listing at my booth","fresh %s listing at my booth","got %s in my booth","booth open with %s","%s ready in booth","%s waiting at my booth","come see %s at my booth","my booth got %s","%s is listed now","check booth if you want %s","✨ %s at my booth","👀 %s in my booth","🌱 %s listed at my booth","📦 booth has %s","💎 %s up at my booth","🛒 %s in booth now","🔥 %s at booth","⚡ %s listed now","🎯 looking for %s? check booth","🏪 booth has %s","come look at %s","come check out %s","my booth is open with %s","got a cheap %s listed","%s listed if anyone wants it","anyone looking for %s?","anyone need %s?","%s at booth if anyone wants","✨ come see %s","👀 anyone need %s?","📦 got %s listed","💎 %s at my booth now","🔥 %s is up","⚡ %s in booth","🛒 check booth for %s","🎯 %s listed here","🏪 booth open with %s","skibidi %s for sale🔥"};function GeneratePromoteMessage() local v1739=BoothPetState.SelectedPetType;if ( not v1739 or (v1739=="")) then return nil;end local v1740;for v2444=1,10 do local v2445=v957[math.random(1, #v957)];if (v2445~=v956.LastMessage) then v1740=v2445;break;end end v1740=v1740 or v957[1] ;return string.format(v1740,v1739);end local v958=game:GetService("TextChatService");function SendTextChatMessageSafely(v1741) v1741=tostring(v1741 or "" );if (v1741=="") then return false,"empty message";end local v1742=v958:FindFirstChild("TextChannels");if  not v1742 then return false,"TextChannels missing";end local v1743=nil;local v1744=pcall(function() local v2446=v958.ChatInputBarConfiguration;if (v2446 and v2446.TargetTextChannel) then v1743=v2446.TargetTextChannel;end end);if  not v1744 then v1743=nil;end if  not v1743 then v1743=v1742:FindFirstChild("RBXGeneral");end if ( not v1743 or (type(v1743.SendAsync)~="function")) then return false,"No sendable TextChannel";end local v1745=false;local v1746=nil;pcall(function() v1746=v958.OnIncomingMessage;v1745=true;end);pcall(function() v958.OnIncomingMessage=function() return nil;end;end);local v1747,v1748=pcall(function() v1743:SendAsync(v1741);end);task.delay(0.35,function() if v1745 then pcall(function() v958.OnIncomingMessage=v1746;end);end end);if  not v1747 then return false,tostring(v1748);end return true,"sent";end function SendPromoteMessage() if  not BoothAuto.AutoPromote then return;end if (ScriptState and ScriptState.ForceStopped) then return;end local v1749=os.clock();v956.LastSent=SafeNumber(v956.LastSent,0);v956.Interval=SafeNumber(v956.Interval,35);v956.FailUntil=SafeNumber(v956.FailUntil,0);if (v1749<v956.FailUntil) then return;end if ((v1749-v956.LastSent)<v956.Interval) then return;end local v1753=GeneratePromoteMessage();if  not v1753 then warn("[PROMOTE] No message");return;end v956.LastMessage=v1753;print("[PROMOTE] ATTEMPT:",v1753);local v1755=false;local v1756=nil;local v1757,v1758=SendTextChatMessageSafely(v1753);if v1757 then v1755=true;else v1756=tostring(v1758);warn("[PROMOTE] Safe SendAsync failed:",v1756);end if  not v1755 then local v2786=ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents");local v2787=v2786 and v2786:FindFirstChild("SayMessageRequest") ;if (v2787 and v2787:IsA("RemoteEvent")) then local v3051,v3052=pcall(function() v2787:FireServer(v1753,"All");end);if v3051 then v1755=true;else v1756=tostring(v3052);warn("[PROMOTE] Legacy send failed:",v1756);end end end if v1755 then v956.LastSent=os.clock();v956.FailUntil=0;print("[PROMOTE] SENT:",v1753);else v956.LastSent=os.clock();v956.FailUntil=os.clock() + 90 ;warn("[PROMOTE] TOTAL FAILURE | cooldown 90s |",tostring(v1756 or "unknown" ));end end local v959=BoothBox:AddToggle("AutoServerHop",{Text="🌍 Join New Server",Tooltip="Joins new server every X min",Default=false});v959:OnChanged(function(v1759) BoothAuto.AutoServerHop=v1759;if v1759 then BoothAuto.LastServerHop=os.clock();end MarkConfigDirty();end);local v960=BoothBox:AddInput("HopMinutes",{Text="⌛ Minutes",Default="10",Numeric=true,Finished=true});v960:OnChanged(function(v1761) local v1762=tonumber(v1761);if  not v1762 then return;end v1762=math.clamp(v1762,1,999);BoothAuto.ServerHopMinutes=v1762;MarkConfigDirty();end);BoothBox:AddButton({Text="Unclaim Booth",Tooltip="Unclaim your current booth",Func=function() if ScriptState.ForceStopped then warn("[Booth] Blocked (ForceStopped)");return;end local v1764=ReplicatedStorage:FindFirstChild("GameEvents");if  not v1764 then warn("[Booth] GameEvents missing");return;end local v1765=v1764:WaitForChild("TradeEvents"):WaitForChild("Booths"):WaitForChild("RemoveBooth");local v1766,v1767=pcall(function() v1765:FireServer();end);if  not v1766 then warn("[Booth] Unclaim failed:",v1767);end end});end WatchlistLabels={};WatchlistDropdown=nil;WatchlistSaveDropdown=nil;EggFocusLabels={};EggFocusInfoLabel=nil;RefreshEggFocus=nil;ITEMS_PER_PAGE=7;WatchlistPage=1;WatchlistInfoLabel=nil;RefreshWatchlist=nil;function BuildSniperTab() local v961;local v962;local v963;local v964;if ((type(Tabs.Sniper.AddLeftTabbox)=="function") and (type(Tabs.Sniper.AddRightTabbox)=="function")) then local v2449=Tabs.Sniper:AddLeftTabbox("SniperLeft");v961=v2449:AddTab("Config","settings");v962=v2449:AddTab("Filter","plus");local v2450=Tabs.Sniper:AddRightTabbox("SniperRight");v963=v2450:AddTab("Watchlist","star");v964=v2450:AddTab("Egg Focus","egg");elseif (type(Tabs.Sniper.AddLeftCollapsibleGroupbox)=="function") then v961=Tabs.Sniper:AddLeftCollapsibleGroupbox("Sniper Configuration","settings",true);v962=Tabs.Sniper:AddLeftCollapsibleGroupbox("Add Filter","plus",true);v963=Tabs.Sniper:AddRightCollapsibleGroupbox("Active Watchlist","star",true);v964=Tabs.Sniper:AddRightCollapsibleGroupbox("Egg Focus","egg",false);else warn("[LIB TEST] Tabbox/collapsible unavailable, using normal groupboxes");v961=Tabs.Sniper:AddLeftGroupbox("Sniper Configuration","settings");v962=Tabs.Sniper:AddLeftGroupbox("Add Filter","plus");v963=Tabs.Sniper:AddRightGroupbox("Active Watchlist","star");v964=Tabs.Sniper:AddRightGroupbox("Egg Focus","egg");end v961:AddDivider({Text="Scan Speed",MarginTop=4,MarginBottom=8});local v965=v961:AddDropdown("SniperScanSpeedMode",{Text="⚡ Scan Speed",Tooltip="Lower delay scans faster but can cause Server Shutdowns. Fast is recommended.",Values={"Max Speed","Fast","Balanced","Low CPU","Ultra Safe"},Default=SniperState.ScanSpeedMode or "Fast" ,Searchable=false});v965:OnChanged(function(v1768) local v1769=SetSniperScanSpeedMode(v1768);MarkConfigDirty();if ConfigState.IsHydrating then return;end HolyNotify("Scan Speed Updated",tostring(SniperState.ScanSpeedMode)   .. " • "   .. tostring(v1769)   .. "s interval" ,"zap",3);end);local v966=v961:AddDropdown("BoothDataRefreshMode",{Text="📡 Booth Data Refresh",Tooltip="How fast HOLY refreshes booth listings. Faster can snipe sooner but may cause lag. Recommended: Fast.",Values={"Aggressive","Fast","Balanced","Low CPU","Ultra Safe"},Default=SniperState.BoothDataRefreshMode or "Fast" ,Searchable=false});v966:OnChanged(function(v1770) local v1771=SetBoothDataRefreshMode(v1770);MarkConfigDirty();if ConfigState.IsHydrating then return;end HolyNotify("Booth Data Refresh Updated",tostring(SniperState.BoothDataRefreshMode)   .. " • "   .. tostring(v1771)   .. "s interval" ,"radio",3);end);v961:AddDivider({Text="Server Hop",MarginTop=4,MarginBottom=8});local v967=v961:AddInput("SniperMaxServerPlayers",{Text="👥 Max Server Players",Default=tostring(SniperState.MaxServerPlayers),Numeric=true,Finished=true});v967:OnChanged(function(v1772) local v1773=tonumber(v1772);if  not v1773 then return;end SniperState.MaxServerPlayers=math.clamp(math.floor(v1773),1,30);MarkConfigDirty();print("[SniperHop] Max server players:",tostring(SniperState.MaxServerPlayers));end);local v968=v961:AddDropdown("SniperServerHopMode",{Text="⇄ Server Hop Mode",Values={"Fullest Under Max","Balanced","Low Player"},Default=SniperState.ServerHopMode or "Fullest Under Max" ,Searchable=false});v968:OnChanged(function(v1775) SniperState.ServerHopMode=tostring(v1775 or "Fullest Under Max" );MarkConfigDirty();print("[SniperHop] Mode:",tostring(SniperState.ServerHopMode));end);local v969=v961:AddInput("SniperServerHopPages",{Text="📄 Server Hop Pages",Tooltip="How many Roblox server-list pages to fetch. 1 is fastest; higher gives better server selection but slower hops.",Default=tostring(SniperState.ServerHopPages or 1 ),Numeric=true,Finished=true});v969:OnChanged(function(v1777) local v1778=tonumber(v1777);if  not v1778 then return;end SniperState.ServerHopPages=math.clamp(math.floor(v1778),1,10);MarkConfigDirty();print("[SniperHop] Server hop pages:",tostring(SniperState.ServerHopPages));end);v961:AddDivider({Text="After Snipe",MarginTop=10,MarginBottom=8});local v970=v961:AddToggle("StayAfterSnipe",{Text="⏱️ Stay After Snipe",Tooltip="Stay in the server a little longer after Holy snipes a pet.",Default=SniperState.StayAfterSnipe==true });v970:OnChanged(function(v1780) SniperState.StayAfterSnipe=v1780==true ;MarkConfigDirty();if ConfigState.IsHydrating then return;end HolyNotify((v1780 and "Stay After Snipe Enabled") or "Stay After Snipe Disabled" ,(v1780 and "Holy will wait after a confirmed snipe before hopping.") or "Holy will hop normally after the scan timer ends." ,(v1780 and "clock") or "pause" ,3);end);local v971=v961:AddDependencyBox();local v972=v971:AddInput("StayAfterSnipeSeconds",{Text="Extra Stay (sec)",Tooltip="Adds extra time only after Holy successfully confirms a snipe.",Default=tostring(SniperState.StayAfterSnipeSeconds or 5 ),Numeric=true,Finished=true});v972:OnChanged(function(v1782) local v1783=tonumber(v1782);if  not v1783 then return;end SniperState.StayAfterSnipeSeconds=math.clamp(math.floor(v1783),0,60);MarkConfigDirty();if ConfigState.IsHydrating then return;end HolyNotify("Stay Time Updated","Extra stay time set to "   .. tostring(SniperState.StayAfterSnipeSeconds)   .. " seconds." ,"clock",3);end);v971:SetupDependencies({{v970,true}});v961:AddDivider({Text="Inventory Safety",MarginTop=10,MarginBottom=8});local v973=v961:AddToggle("StopAtPetInventoryLimit",{Text="📦 Stop At Pet Limit",Tooltip="Stops Holy from buying when your visible pet inventory reaches the selected limit.",Default=SniperState.StopAtPetInventoryLimit==false });v973:OnChanged(function(v1785) SniperState.StopAtPetInventoryLimit=v1785==true ;if (type(RefreshInventoryDetails)=="function") then RefreshInventoryDetails();end MarkConfigDirty();if ConfigState.IsHydrating then return;end HolyNotify((v1785 and "Inventory Safety Enabled") or "Inventory Safety Disabled" ,(v1785 and "Holy will stop buying at your pet limit.") or "Holy can buy even above the selected pet limit." ,(v1785 and "package-check") or "package-x" ,3);end);local v974=v961:AddInput("MaxPetInventory",{Text="Max Pet Inventory",Tooltip="Holy stops queueing snipes when visible pets reach this number.",Default=tostring(SniperState.MaxPetInventory or 350 ),Numeric=true,Finished=true});v974:OnChanged(function(v1787) local v1788=tonumber(v1787);if  not v1788 then return;end SniperState.MaxPetInventory=math.clamp(math.floor(v1788),1,9999);if (type(RefreshInventoryDetails)=="function") then RefreshInventoryDetails();end MarkConfigDirty();if ConfigState.IsHydrating then return;end HolyNotify("Pet Limit Updated","Holy will stop buying at "   .. tostring(SniperState.MaxPetInventory)   .. " visible pets." ,"package",3);end);WatchlistSaveDropdown=v962:AddDropdown("SniperFilterSaveTarget",{Text="Save To",Values={"Watchlist 1","Watchlist 2"},Default="Watchlist 1",Searchable=false});WatchlistSaveDropdown:OnChanged(function(v1790) SniperFilterUIState.SaveTarget=NormalizeWatchlistId(v1790);MarkConfigDirty();end);local v975=v962:AddDropdown("SniperWeightMode",{Text="Weight Mode",Tooltip="Base Weight is best for accurate sniping. Display KG matches the in-game weight.",Values={"Display KG","Base Weight"},Default="Display KG",Searchable=false});v975:OnChanged(function(v1792) SniperFilterUIState.WeightMode=NormalizeWeightMode(v1792);MarkConfigDirty();end);RefreshDynamicPetList();local v976=v962:AddDropdown("SniperPetSelect",{Text="Pet",Values=PetList,Default="",Searchable=true});local v977=v962:AddInput("SniperMinWeight",{Text="Min Weight",Placeholder="Display KG or BaseWeight"});local v978=v962:AddInput("SniperMaxPrice",{Text="Max Price",Placeholder="empty = inf"});local v979=v962:AddInput("SniperFilterPriority",{Text="Priority",Tooltip="1 = low priority, 10 = buy first.",Default="5",Numeric=true,Finished=true});v979:OnChanged(function(v1794) SniperFilterUIState.Priority=ClampSniperPriority(v1794);MarkConfigDirty();end);WatchlistDropdown=v963:AddDropdown("SniperWatchlistView",{Text="Viewing",Values={"Watchlist 1","Watchlist 2"},Default="Watchlist 1",Searchable=false});WatchlistDropdown:OnChanged(function(v1796) SniperFilterUIState.ViewTarget=NormalizeWatchlistId(v1796);WatchlistPage=1;if (IsTradeWorld() and (type(RefreshWatchlist)=="function")) then RefreshWatchlist();end MarkConfigDirty();end);WatchlistInfoLabel=v963:AddLabel("Watchlist 1 • 0 filters • Page 1/1",false);for v1798=1,ITEMS_PER_PAGE do local v1799=v963:AddLabel(" ",false);v1799:SetVisible(false);table.insert(WatchlistLabels,v1799);end local v980=v963:AddButton({Text="‹ Prev",Func=function() if (WatchlistPage>1) then WatchlistPage=WatchlistPage-1 ;if (IsTradeWorld() and (type(RefreshWatchlist)=="function")) then RefreshWatchlist();end end end});v980:AddButton({Text="Next ›",Func=function() local v1800=CountSniperFilterSet(SniperFilterUIState.ViewTarget);local v1801=math.max(1,math.ceil(v1800/ITEMS_PER_PAGE ));if (WatchlistPage<v1801) then WatchlistPage=WatchlistPage + 1 ;if (IsTradeWorld() and (type(RefreshWatchlist)=="function")) then RefreshWatchlist();end end end});v963:AddButton({Text="Manage Watchlist",Tooltip="Remove a filter from the currently viewed watchlist.",Func=function() local v1802=NormalizeWatchlistId(SniperFilterUIState.ViewTarget);local v1803=GetSniperFilterSet(v1802);local v1804=CountSniperFilterSet(v1802);if (v1804<=0) then HolyNotify("Watchlist Empty","There are no filters to manage in Watchlist "   .. tostring(v1802)   .. "." ,"info",3);return;end local v1805="";local v1806=nil;local function v1807(v2451) v2451=tostring(v2451 or "" ):lower():gsub("^%s+",""):gsub("%s+$","");if (v2451=="") then return nil,"EMPTY";end local v2452=nil;local v2453={};for v2793 in pairs(v1803) do local v2794=tostring(v2793);local v2795=v2794:lower();if (v2795==v2451) then v2452=v2794;break;end if v2795:find(v2451,1,true) then table.insert(v2453,v2794);end end if v2452 then return v2452,"EXACT";end if ( #v2453==1) then return v2453[1],"PARTIAL";end if ( #v2453>1) then return nil,"MULTIPLE",v2453;end return nil,"NONE";end v1806=Window:AddDialog("ManageWatchlistDialog",{Title="Manage Watchlist "   .. tostring(v1802) ,Description="Type a pet name to remove it from Watchlist "   .. tostring(v1802)   .. "." ,Icon="star",AutoDismiss=true,OutsideClickDismiss=true,FooterButtons={Cancel={Title="Cancel",Variant="Ghost",Order=1,Callback=function() if v1806 then v1806:Dismiss();end end},Remove={Title="Remove",Variant="Destructive",Order=2,Callback=function() local v2454,v2455,v2456=v1807(v1805);if (v2455=="EMPTY") then HolyNotify("No Filter Typed","Type the pet name you want to remove.","triangle-alert",3);return;end if (v2455=="MULTIPLE") then HolyNotify("Too Many Matches","Type more of the pet name.","search",4);return;end if ((v2455=="NONE") or  not v2454) then HolyNotify("Filter Not Found","No watchlist filter matched that name.","triangle-alert",3);return;end v1803[v2454]=nil;WatchlistPage=1;if (IsTradeWorld() and (type(RefreshWatchlist)=="function")) then RefreshWatchlist();end MarkConfigDirty();SaveSniperFilters();HolyNotify("Filter Removed",tostring(v2454)   .. " was removed from Watchlist "   .. tostring(v1802)   .. "." ,"trash",3);if v1806 then v1806:Dismiss();end end}}});v1806:AddInput("ManageWatchlistSearch",{Text="Pet Name",Placeholder="e.g. Rainbow Elephant",Numeric=false,Finished=false,Callback=function(v2458) v1805=tostring(v2458 or "" );end});end});v963:AddButton({Text="🗑 Clear Watchlist",Tooltip="Clear the currently viewed watchlist only.",Func=function() local v1808=NormalizeWatchlistId(SniperFilterUIState.ViewTarget);local v1809=GetSniperFilterSet(v1808);local v1810=CountSniperFilterSet(v1808);if (v1810<=0) then HolyNotify("Watchlist Empty","There are no filters to clear in Watchlist "   .. tostring(v1808)   .. "." ,"info",3);return;end local v1811=nil;v1811=Window:AddDialog("ClearWatchlistDialog",{Title="Clear Watchlist "   .. tostring(v1808)   .. "?" ,Description="This will permanently remove all "   .. tostring(v1810)   .. " filters from Watchlist "   .. tostring(v1808)   .. ". The other watchlist will stay active." ,Icon="triangle-alert",AutoDismiss=true,OutsideClickDismiss=true,FooterButtons={Cancel={Title="Cancel",Variant="Ghost",Order=1,Callback=function() if v1811 then v1811:Dismiss();end end},Delete={Title="Clear All",Variant="Destructive",WaitTime=2,Order=2,Callback=function() table.clear(v1809);WatchlistPage=1;if (IsTradeWorld() and (type(RefreshWatchlist)=="function")) then RefreshWatchlist();end MarkConfigDirty();SaveSniperFilters();HolyNotify("Watchlist Cleared","Watchlist "   .. tostring(v1808)   .. " was cleared." ,"trash-2",4);if v1811 then v1811:Dismiss();end end}}});end});local v981=GetEggFocusNames();local v982=v964:AddDropdown("EggFocusEggSelect",{Text="Egg",Values=v981,Default="",Searchable=true});local v983=v964:AddInput("EggFocusMaxPrice",{Text="Max Price",Placeholder="required",Numeric=true,Finished=true});v964:AddButton({Text="Add / Update Egg Focus",Tooltip="Snipes any pet from the selected egg under the max price.",Func=function() local v1812=v982.Value;if ( not v1812 or (v1812=="")) then HolyNotify("No Egg Selected","Choose an egg before adding an Egg Focus.","egg",3);return;end local v1813=GetEggFocusPets(v1812);if ( #v1813<=0) then HolyNotify("Egg Has No Pets",tostring(v1812)   .. " has no readable pet pool." ,"triangle-alert",4);return;end local v1814=tostring(v983.Value or "" ):gsub(",",""):gsub("%s+","");local v1815=tonumber(v1814);if ( not v1815 or (v1815<=0)) then HolyNotify("Max Price Required","Enter a max price before adding an Egg Focus.","triangle-alert",4);return;end v1815=math.floor(v1815);local v1816=1;local v1817=GetEggFocusSet(v1816);v1817[tostring(v1812)]={MaxPrice=v1815};EggFocusUIState.ViewTarget=v1816;if (type(RefreshEggFocus)=="function") then if (IsTradeWorld() and (type(RefreshEggFocus)=="function")) then RefreshEggFocus();end end MarkConfigDirty();SaveSniperFilters();HolyNotify("Egg Focus Updated",tostring(v1812)   .. " added with "   .. tostring( #v1813)   .. " pets." ,"egg",4);end});EggFocusInfoLabel=v964:AddLabel("Watchlist 1 • 0 egg focuses",false);for v1820=1,5 do local v1821=v964:AddLabel(" ",false);v1821:SetVisible(false);table.insert(EggFocusLabels,v1821);end v964:AddButton({Text="Manage Egg Focus",Tooltip="Remove an egg focus from the currently viewed watchlist.",Func=function() local v1822=1;local v1823=GetEggFocusSet(v1822);local v1824=CountEggFocusSet(v1822);if (v1824<=0) then HolyNotify("Egg Focus Empty","There are no egg focuses in Watchlist "   .. tostring(v1822)   .. "." ,"info",3);return;end local v1825="";local v1826=nil;local function v1827(v2459) v2459=tostring(v2459 or "" ):lower():gsub("^%s+",""):gsub("%s+$","");if (v2459=="") then return nil,"EMPTY";end local v2460=nil;local v2461={};for v2796 in pairs(v1823) do local v2797=tostring(v2796);local v2798=v2797:lower();if (v2798==v2459) then v2460=v2797;break;end if v2798:find(v2459,1,true) then table.insert(v2461,v2797);end end if v2460 then return v2460,"EXACT";end if ( #v2461==1) then return v2461[1],"PARTIAL";end if ( #v2461>1) then return nil,"MULTIPLE",v2461;end return nil,"NONE";end v1826=Window:AddDialog("ManageEggFocusDialog",{Title="Manage Egg Focus "   .. tostring(v1822) ,Description="Type an egg name to remove it from Watchlist "   .. tostring(v1822)   .. "." ,Icon="egg",AutoDismiss=true,OutsideClickDismiss=true,FooterButtons={Cancel={Title="Cancel",Variant="Ghost",Order=1,Callback=function() if v1826 then v1826:Dismiss();end end},Remove={Title="Remove",Variant="Destructive",Order=2,Callback=function() local v2462,v2463=v1827(v1825);if (v2463=="EMPTY") then HolyNotify("No Egg Typed","Type the egg name you want to remove.","triangle-alert",3);return;end if (v2463=="MULTIPLE") then HolyNotify("Too Many Matches","Type more of the egg name.","search",4);return;end if ((v2463=="NONE") or  not v2462) then HolyNotify("Egg Focus Not Found","No egg focus matched that name.","triangle-alert",3);return;end v1823[v2462]=nil;if (IsTradeWorld() and (type(RefreshEggFocus)=="function")) then RefreshEggFocus();end MarkConfigDirty();SaveSniperFilters();HolyNotify("Egg Focus Removed",tostring(v2462)   .. " was removed from Watchlist "   .. tostring(v1822)   .. "." ,"trash",3);if v1826 then v1826:Dismiss();end end}}});v1826:AddInput("ManageEggFocusSearch",{Text="Egg Name",Placeholder="e.g. Paradise Egg",Numeric=false,Finished=false,Callback=function(v2465) v1825=tostring(v2465 or "" );end});end});function RefreshWatchlistHUD() if  not WatchlistHUDContainer then return;end for v2466,v2467 in ipairs(WatchlistHUDContainer:GetChildren()) do if v2467:IsA("Frame") then v2467:Destroy();end end local v1828={};for v2468=1,2 do local v2469=GetSniperFilterSet(v2468);for v2799,v2800 in pairs(v2469) do local v2801=((v2800.MaxPrice==math.huge) and "∞") or tostring(v2800.MaxPrice) ;local v2802=tostring(v2799);if ( #v2802>22) then v2802=v2802:sub(1,19)   .. "..." ;end local v2803=FormatFilterWeight(v2800.MinWeight,v2800.WeightMode);table.insert(v1828,{WatchlistId=v2468,Pet=v2799,Price=v2800.MaxPrice,Text=string.format("W%s · %s [%s | ≥%s]",tostring(v2468),v2802,v2801,v2803)});end end table.sort(v1828,function(v2470,v2471) local v2472=((v2470.Price==math.huge) and math.huge) or tonumber(v2470.Price) or 0 ;local v2473=((v2471.Price==math.huge) and math.huge) or tonumber(v2471.Price) or 0 ;if (v2472~=v2473) then return v2472>v2473 ;end if (v2470.WatchlistId~=v2471.WatchlistId) then return v2470.WatchlistId<v2471.WatchlistId ;end return tostring(v2470.Pet)<tostring(v2471.Pet) ;end);local v1829=18;for v2474,v2475 in ipairs(v1828) do if (v2474>v1829) then break;end local v2476=Instance.new("Frame");v2476.BackgroundTransparency=1;v2476.Size=UDim2.new(1,0,0,14);v2476.Parent=WatchlistHUDContainer;local v2480=Instance.new("TextLabel");v2480.BackgroundTransparency=1;v2480.Size=UDim2.new(1,0,1,0);v2480.Font=Enum.Font.GothamBold;v2480.TextSize=11;v2480.TextXAlignment=Enum.TextXAlignment.Right;v2480.TextStrokeTransparency=0.5;v2480.TextStrokeColor3=Color3.fromRGB(0,0,0);if (v2474<=2) then v2480.TextColor3=Color3.fromRGB(255,220,120);elseif (v2474<=6) then v2480.TextColor3=Color3.fromRGB(235,235,235);else v2480.TextColor3=Color3.fromRGB(180,180,180);end v2480.Text=v2475.Text;v2480.Parent=v2476;end if ( #v1828>v1829) then local v2804= #v1828-v1829 ;local v2805=Instance.new("Frame");v2805.BackgroundTransparency=1;v2805.Size=UDim2.new(1,0,0,14);v2805.Parent=WatchlistHUDContainer;local v2809=Instance.new("TextLabel");v2809.BackgroundTransparency=1;v2809.Size=UDim2.new(1,0,1,0);v2809.Font=Enum.Font.GothamBold;v2809.TextSize=11;v2809.TextXAlignment=Enum.TextXAlignment.Right;v2809.TextStrokeTransparency=0.55;v2809.TextStrokeColor3=Color3.fromRGB(0,0,0);v2809.TextColor3=Color3.fromRGB(170,170,170);v2809.Text="+"   .. tostring(v2804)   .. " more" ;v2809.Parent=v2805;end end function RefreshEggFocus() local v1830=1;local v1831=GetEggFocusSet(v1830);local v1832={};for v2493,v2494 in pairs(v1831) do local v2495=GetEggFocusPets(v2493);table.insert(v1832,{EggName=tostring(v2493),MaxPrice=v2494.MaxPrice,PetCount= #v2495});end table.sort(v1832,function(v2496,v2497) local v2498=((v2496.MaxPrice==math.huge) and math.huge) or tonumber(v2496.MaxPrice) or 0 ;local v2499=((v2497.MaxPrice==math.huge) and math.huge) or tonumber(v2497.MaxPrice) or 0 ;if (v2498~=v2499) then return v2498>v2499 ;end return v2496.EggName<v2497.EggName ;end);local function v1833(v2500) if (v2500==math.huge) then return "∞";end local v2501=tonumber(v2500);if  not v2501 then return "0";end v2501=math.floor(v2501);local v2502=tostring(v2501);while true do local v2822,v2823=v2502:gsub("^(-?%d+)(%d%d%d)","%1,%2");v2502=v2822;if (v2823<=0) then break;end end return v2502;end if EggFocusInfoLabel then EggFocusInfoLabel:SetText("Egg Focus • "   .. tostring( #v1832)   .. " eggs" );end for v2503=1, #EggFocusLabels do local v2504=EggFocusLabels[v2503];local v2505=v1832[v2503];if v2505 then v2504:SetText("🥚 "   .. tostring(v2505.EggName)   .. "  ≤"   .. v1833(v2505.MaxPrice)   .. "  • "   .. tostring(v2505.PetCount)   .. " pets" );v2504:SetVisible(true);else v2504:SetVisible(false);end end end function RefreshWatchlist() RefreshWatchlistHUD();local v1834=NormalizeWatchlistId(SniperFilterUIState.ViewTarget);local v1835=GetSniperFilterSet(v1834);local v1836={};for v2506,v2507 in pairs(v1835) do local v2508=v2507.MaxPrice;local v2509=tonumber(v2507.MinWeight) or 0 ;table.insert(v1836,{Pet=tostring(v2506),MaxPrice=v2508,MinWeight=v2509,WeightMode=v2507.WeightMode,Priority=ResolveSniperFilterPriority(v2507)});end table.sort(v1836,function(v2510,v2511) local v2512=((v2510.MaxPrice==math.huge) and math.huge) or tonumber(v2510.MaxPrice) or 0 ;local v2513=((v2511.MaxPrice==math.huge) and math.huge) or tonumber(v2511.MaxPrice) or 0 ;if (v2512~=v2513) then return v2512>v2513 ;end return v2510.Pet<v2511.Pet ;end);local function v1837(v2514,v2515) v2514=tostring(v2514 or "" );if ( #v2514<=v2515) then return v2514;end return v2514:sub(1,v2515-3 )   .. "..." ;end local function v1838(v2516,v2517) v2516=tostring(v2516 or "" );if ( #v2516>=v2517) then return v2516;end return v2516   .. string.rep(" ",v2517-#v2516 ) ;end local function v1839(v2518,v2519) v2518=tostring(v2518 or "" );if ( #v2518>=v2519) then return v2518;end return string.rep(" ",v2519-#v2518 )   .. v2518 ;end local function v1840(v2520) if (v2520==math.huge) then return "∞";end local v2521=tonumber(v2520);if  not v2521 then return "0";end v2521=math.floor(v2521);local v2522=tostring(v2521);while true do local v2824,v2825=v2522:gsub("^(-?%d+)(%d%d%d)","%1,%2");v2522=v2824;if (v2825<=0) then break;end end return v2522;end local function v1841(v2523,v2524) return FormatFilterWeight(v2523,v2524);end local v1842= #v1836;local v1843=math.max(1,math.ceil(v1842/ITEMS_PER_PAGE ));WatchlistPage=math.clamp(SafeNumber(WatchlistPage,1),1,v1843);if WatchlistInfoLabel then WatchlistInfoLabel:SetText("Watchlist "   .. tostring(v1834)   .. " • "   .. tostring(v1842)   .. " filters • Page "   .. tostring(WatchlistPage)   .. "/"   .. tostring(v1843)   .. " • Total active: "   .. tostring(CountAllSniperFilters()) );end local v1844=(WatchlistPage-1) * ITEMS_PER_PAGE ;for v2525=1, #WatchlistLabels do local v2526=WatchlistLabels[v2525];local v2527=v1836[v1844 + v2525 ];if v2527 then local v2956=v1844 + v2525 ;local v2957=((v2956<=2) and "★") or "•" ;local v2958=v1838(v1837(v2527.Pet,22),22);local v2959=v1839(v1840(v2527.MaxPrice),7);local v2960=v1839(v1841(v2527.MinWeight,v2527.WeightMode),8);local v2961=v1839("P"   .. tostring(ClampSniperPriority(v2527.Priority)) ,4);v2526:SetText(v2957   .. " "   .. v2958   .. " "   .. v2959   .. " "   .. v2960   .. " "   .. v2961 );v2526:SetVisible(true);else v2526:SetVisible(false);end end end v962:AddButton({Text="Add / Update Filter",Func=function() local v1845=v976.Value;if ( not v1845 or (v1845=="")) then warn("[Sniper] No pet selected");return;end local v1846=NormalizeWatchlistId(SniperFilterUIState.SaveTarget);local v1847=GetSniperFilterSet(v1846);local v1848=tonumber(v977.Value) or 0 ;local v1849;if (v978.Value=="") then v1849=math.huge;else v1849=tonumber(v978.Value);if  not v1849 then warn("[Sniper] Invalid max price");return;end end local v1850=NormalizeWeightMode(SniperFilterUIState.WeightMode);local v1851=ClampSniperPriority(v979.Value or SniperFilterUIState.Priority or 5 );v1847[v1845]={MinWeight=v1848,MaxPrice=v1849,WeightMode=v1850,Priority=v1851};SniperFilterUIState.ViewTarget=v1846;WatchlistPage=1;if (IsTradeWorld() and (type(RefreshWatchlist)=="function")) then RefreshWatchlist();end MarkConfigDirty();SaveSniperFilters();print("[Sniper] Filter updated:",v1845,"Watchlist:",tostring(v1846),"WeightMode:",tostring(v1850),"Priority:",tostring(v1851));HolyNotify("Filter Updated",tostring(v1845)   .. " was added to Watchlist "   .. tostring(v1846)   .. " using "   .. tostring(((v1850=="BaseWeight") and "BaseWeight") or "Display KG" )   .. "." ,"plus",3);end});end local v11;if (type(Tabs.Webhook.AddLeftCollapsibleGroupbox)=="function") then v11=Tabs.Webhook:AddLeftCollapsibleGroupbox("Webhook Configuration","link",true);else warn("[LIB TEST] Collapsible webhook unavailable, using normal groupbox");v11=Tabs.Webhook:AddLeftGroupbox("Webhook Configuration","link");end RequestFunction=(syn and syn.request) or http_request or request or (http and http.request) or (fluxus and fluxus.request) ;print("[WEBHOOK] RequestFunction:",RequestFunction);function CanSendWebhook() if  not WebhookState.Enabled then warn("[Webhook] Disabled");return false;end if ((type(WebhookState.URL)~="string") or (WebhookState.URL=="")) then warn("[Webhook] Missing URL");return false;end if  not RequestFunction then warn("[Webhook] No request function available");return false;end return true;end function ApplyWebhookPing(v984,v985) v985=tostring(v985 or "" ):gsub("^%s+",""):gsub("%s+$","");if (v985=="") then print("[WebhookPing] No ping");return v984;end local v986={};if (v985:lower()=="@everyone") then v984.content="@everyone";v986.parse={"everyone"};elseif (v985:lower()=="@here") then v984.content="@here";v986.parse={"everyone"};else local v2964=v985:match("<@!?(%d+)>") or v985:match("@?(%d+)") ;if  not v2964 then warn("[WebhookPing] Invalid ping:",v985);return v984;end v984.content="<@"   .. tostring(v2964)   .. ">" ;v986.users={tostring(v2964)};end v984.allowed_mentions=v986;print("[WebhookPing] Applied:",tostring(v984.content));return v984;end function QueueWebhook(v988) if (type(v988)~="table") then warn("[Webhook] Invalid payload");return false;end if  not CanSendWebhook() then return false;end table.insert(WebhookState.Queue,v988);print("[Webhook] Queued | Queue:",tostring( #WebhookState.Queue));return true;end function SendWebhook(v989) local v990=HttpService:JSONEncode(v989);local v991,v992=pcall(function() return RequestFunction({Url=tostring(WebhookState.URL):gsub("%s+",""),Method="POST",Headers={["Content-Type"]="application/json"},Body=v990});end);if  not v991 then warn("[WEBHOOK] REQUEST FAILED:",v992);return;end if (type(v992)=="table") then local v2530=tonumber(v992.StatusCode or v992.status_code or v992.Status );if ((v2530==200) or (v2530==204)) then print("[WEBHOOK] Sent successfully:",tostring(v2530));return;end warn("[WEBHOOK] BAD STATUS:",tostring(v2530),tostring(v992.Body or v992.body or "" ));return;end print("[WEBHOOK] Request completed");end task.spawn(function() while true do if ( #WebhookState.Queue<=0) then task.wait(0.15);continue;end if WebhookState.Sending then task.wait(0.05);continue;end WebhookState.LastSend=SafeNumber(WebhookState.LastSend,0);WebhookState.SendDelay=SafeNumber(WebhookState.SendDelay,0.8);local v1856=SafeElapsed(WebhookState.LastSend);if (v1856<WebhookState.SendDelay) then task.wait(math.max(0,WebhookState.SendDelay-v1856 ));end WebhookState.Sending=true;local v1858=table.remove(WebhookState.Queue,1);WebhookState.LastSend=os.clock();task.spawn(function() pcall(function() SendWebhook(v1858);end);WebhookState.Sending=false;end);end end);function CreateSuccessEmbed(v993,v994,v995) v993=v993 or {} ;local v996=tostring(v993.Seller or "Unknown" );if v993.SellerUserId then v996=ResolveSeller(v993.SellerUserId);end local v997=ParseConfirmedToolSnapshot(v994);local v998=(v997 and v997.CleanName) or tostring(v993.PetName or "Unknown" ) ;local v999=(v997 and v997.Weight) or tonumber(v993.DisplayWeight) or tonumber(v993.Weight) ;local v1000=(v997 and v997.Age) or tonumber(v993.Age) or "Unknown" ;local v1001=ResolveMutationFromConfirmedToolName(v994,v993.PetName);if ((v1001=="Normal") or (v1001=="Unknown") or (v1001=="")) then v1001=tostring(v993.MutationText or v993.Mutation or "Normal" );end local v1002=string.format("⚡ SNIPED • %s [Age %s] [%s]",tostring(v998),tostring(v1000 or "Unknown" ),FormatWebhookWeightKG(v999));return {embeds={{title=v1002,description="Sniped By: ||"   .. tostring(Players.LocalPlayer.Name)   .. "||" ,color=16732120,fields={{name="💰 Bought For",value=tostring(v993.Price or 0 )   .. " Tokens" ,inline=true},{name="🧬 Mutation",value=tostring(v1001 or "Unknown" ),inline=true},{name="⚖️ BaseWeight",value=FormatWebhookBaseWeight(v993.BaseWeight),inline=true},{name="👤 Seller",value=tostring(v996),inline=true},{name="🌍 Server",value="```lua\n"   .. tostring(game.PlaceId)   .. ":"   .. tostring(game.JobId)   .. "\n```" ,inline=false}},footer={text="Holy V2"},timestamp=DateTime.now():ToIsoDate()}}};end function CreateBoothSaleEmbed(v1003) v1003=v1003 or {} ;local v1004=tostring(v1003.ToolName or BuildWebhookPetTitle(v1003.PetName,v1003.MutationText,v1003.Age,v1003.DisplayWeight or v1003.Weight ) or "Unknown" );return {embeds={{title=v1004,description=string.format("By User: ||%s||",Players.LocalPlayer.Name),color=16096779,fields={{name="💰 Sold For",value=string.format("%s Tokens",tostring(v1003.NetPrice or v1003.Price or 0 )),inline=false},{name="Age",value=tostring(v1003.Age or "Unknown" ),inline=true},{name="Mutation",value=tostring(v1003.MutationText or "Unknown" ),inline=true},{name="BaseWeight",value=FormatWebhookBaseWeight(v1003.BaseWeight),inline=true},{name="✨ Token Balance",value=string.format("%s Tokens",tostring(GetTokenBalance())),inline=false},{name="Server",value="```lua\n"   .. tostring(game.PlaceId)   .. ":"   .. tostring(game.JobId)   .. "\n```" ,inline=false}},footer={text="Holy V2"},timestamp=DateTime.now():ToIsoDate()}}};end function CreateErrorEmbed(v1005) return {embeds={{title="Runtime Error",description=tostring(v1005),color=15680580,fields={{name="PlaceId",value=tostring(game.PlaceId),inline=true},{name="JobId",value=tostring(game.JobId),inline=false}},footer={text="Holy V2"},timestamp=DateTime.now():ToIsoDate()}}};end OwnBoothTracker={LastListings={},PendingMissing={},Initialized=false,LastTokenBalance=0,SaleTokenCheckpoint=0,ConfirmDelay=1.75,MaxConfirmDelay=12,ScanInterval=0.35,MinSaleRatio=0.5};TradeBoothsData=TradeBoothsData or nil ;if  not TradeBoothsData then pcall(function() TradeBoothsData=require(ReplicatedStorage:WaitForChild("Data"):WaitForChild("TradeBoothsData"));end);end function ResolveBoothNetTokens(v1006) local v1007=tonumber(v1006);if ( not v1007 or (v1007<=0)) then return 0;end if ((type(TradeBoothsData)=="table") and (type(TradeBoothsData.applyFee)=="function")) then local v2532,v2533=pcall(function() return TradeBoothsData.applyFee(v1007);end);if (v2532 and tonumber(v2533)) then return math.max(1,math.floor(tonumber(v2533)));end end return math.max(1,math.floor(v1007 * 0.99 ));end function BuildOwnListingSnapshot() local v1008={};local v1009=LatestBoothData;if ( not v1009 or  not v1009.Booths or  not v1009.Players) then return v1008;end local v1010=Players.LocalPlayer.UserId;for v1859,v1860 in pairs(v1009.Booths) do local v1861=v1860.Owner;if  not v1861 then continue;end local v1862=tonumber(tostring(v1861):match("_(%d+)$"));if (v1862~=v1010) then continue;end local v1863=v1009.Players[v1861];if  not v1863 then continue;end local v1864=v1863.Listings;local v1865=v1863.Items;if ((type(v1864)~="table") or (type(v1865)~="table")) then continue;end for v2534,v2535 in pairs(v1864) do if (type(v2535)~="table") then continue;end local v2536=v1865[v2535.ItemId];if  not v2536 then continue;end local v2537=v2536.PetData;if  not v2537 then continue;end local v2538=tostring(v2535.ItemId or v2534 or "" );local v2539=tostring(v2536.PetType or "Unknown" );local v2540=ResolveRawPetDataAge(v2537) or ResolveRawPetDataAgeFromUUID(v2538) ;local v2541=ResolveRawPetDataBaseWeight(v2537);local v2542=ResolveRawPetDataDisplayWeight(v2537);local v2543=ResolvePetMutationTextFromPetData(v2537);if ((v2543=="Normal") or (v2543=="Unknown") or (v2543=="")) then v2543=ResolveOwnListedMetadataMutation(v2538) or ResolveRawPetDataMutationFromUUID(v2538,v2539) or v2543 ;end local v2544=v2539;if ((v2543~="Normal") and (v2543~="Unknown") and (v2543~="")) then v2544=tostring(v2543)   .. " "   .. v2539 ;end local v2545=ResolveRawPetDataWebhookTitle(v2539,v2543,v2540,v2542);local v2546=tostring(v1859)   .. "_"   .. tostring(v2534) ;local v2547=tonumber(v2535.Price) or 0 ;local v2548=ResolveBoothNetTokens(v2547);v1008[v2546]={UID=tostring(v2534),ListingKey=v2546,BoothId=tostring(v1859),PetName=v2539,DisplayName=v2544,ToolName=v2545,MetadataSource="RawPetData",RawPetData=v2537,Age=v2540,MutationText=v2543,BaseWeight=v2541,DisplayWeight=v2542,Weight=v2542,GrossPrice=v2547,NetPrice=v2548,Price=v2548};end end return v1008;end function ResolveRequiredSaleGain(v1011) if  not v1011 then return math.huge;end local v1012=tonumber(v1011.NetPrice) or tonumber(v1011.Price) or 0 ;if (v1012<=0) then return 1;end return math.max(1,math.floor(v1012 * OwnBoothTracker.MinSaleRatio ));end function FireConfirmedBoothSale(v1013) print("[BOOTH SALE CONFIRMED]",tostring(v1013.PetName),"| source:",tostring(v1013.MetadataSource or "Unknown" ),"| age:",tostring(v1013.Age),"| displayKG:",tostring(v1013.DisplayWeight or v1013.Weight ),"| baseWeight:",tostring(v1013.BaseWeight));QueueGlobalBoothSaleWebhook(v1013);if (WebhookState.Enabled and WebhookState.NotifyBoothSales) then QueueWebhook(ApplyWebhookPing(CreateBoothSaleEmbed(v1013),WebhookState.PingBoothSales));print("[WEBHOOK] Booth sale queued");end end task.spawn(function() while true do task.wait(OwnBoothTracker.ScanInterval);if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then continue;end local v1866=BuildOwnListingSnapshot();local v1867=os.clock();local v1868=GetTokenBalance();if  not OwnBoothTracker.Initialized then OwnBoothTracker.LastListings=v1866;OwnBoothTracker.LastTokenBalance=v1868;OwnBoothTracker.SaleTokenCheckpoint=v1868;OwnBoothTracker.Initialized=true;continue;end local v1869=OwnBoothTracker.LastListings;for v2550,v2551 in pairs(v1869) do v2550=tostring(v2550);if ( not v1866[v2550] and  not OwnBoothTracker.PendingMissing[v2550]) then OwnBoothTracker.PendingMissing[v2550]={Listing=v2551,MissingAt=v1867,TokenBefore=OwnBoothTracker.LastTokenBalance};print("[BOOTH LISTING REMOVED/PENDING]",v2551.PetName);end end for v2552 in pairs(OwnBoothTracker.PendingMissing) do v2552=tostring(v2552);if v1866[v2552] then OwnBoothTracker.PendingMissing[v2552]=nil;end end local v1870={};for v2553,v2554 in pairs(OwnBoothTracker.PendingMissing) do local v2555=v1867-v2554.MissingAt ;if (v2555>=OwnBoothTracker.ConfirmDelay) then table.insert(v1870,{ListingKey=tostring(v2553),Pending=v2554,Elapsed=v2555});end end table.sort(v1870,function(v2556,v2557) local v2558=(v2556.Pending and v2556.Pending.MissingAt) or 0 ;local v2559=(v2557.Pending and v2557.Pending.MissingAt) or 0 ;if (v2558~=v2559) then return v2558<v2559 ;end return tostring(v2556.ListingKey)<tostring(v2557.ListingKey) ;end);local v1871=v1868-(tonumber(OwnBoothTracker.SaleTokenCheckpoint) or v1868) ;local v1872=0;local v1873=0;if ((v1871>0) and ( #v1870>0)) then for v2969,v2970 in ipairs(v1870) do local v2971=v2970.ListingKey;local v2972=v2970.Pending;local v2973=v2972 and v2972.Listing ;if  not v2973 then OwnBoothTracker.PendingMissing[v2971]=nil;continue;end local v2974=ResolveRequiredSaleGain(v2973);local v2975=v1871-v1872 ;if (v2975>=v2974) then FireConfirmedBoothSale(v2973);v1872=v1872 + v2974 ;v1873=v1873 + 1 ;OwnBoothTracker.PendingMissing[v2971]=nil;end end end if (v1872>0) then OwnBoothTracker.SaleTokenCheckpoint=OwnBoothTracker.SaleTokenCheckpoint + v1872 ;end if (v1868<OwnBoothTracker.SaleTokenCheckpoint) then OwnBoothTracker.SaleTokenCheckpoint=v1868;end for v2560,v2561 in pairs(OwnBoothTracker.PendingMissing) do local v2562=v1867-v2561.MissingAt ;if (v2562>=OwnBoothTracker.MaxConfirmDelay) then local v2976=v2561.Listing;print("[BOOTH REMOVE IGNORED]",(v2976 and v2976.PetName) or tostring(v2560) );OwnBoothTracker.PendingMissing[v2560]=nil;end end local v1874=false;for v2563 in pairs(OwnBoothTracker.PendingMissing) do v1874=true;break;end if  not v1874 then OwnBoothTracker.SaleTokenCheckpoint=v1868;end OwnBoothTracker.LastListings=v1866;OwnBoothTracker.LastTokenBalance=v1868;if (v1873>1) then print("[BOOTH MULTI-SALE CONFIRMED]",tostring(v1873));end end end);function BuildListingsTab() local v1014;local v1015;local v1016;local v1017;local v1018;local v1019;local v1020;local v1021;if (type(Tabs.Listings.AddLeftTabbox)=="function") then local v2564=Tabs.Listings:AddLeftTabbox("Listing Engine");v1014=v2564:AddTab("Setup","sliders-horizontal");v1015=v2564:AddTab("Safety","shield-check");v1016=v2564:AddTab("Actions","zap");else warn("[LISTINGS UI] Tabbox unavailable, using groupboxes");v1014=Tabs.Listings:AddLeftGroupbox("Setup","sliders-horizontal");v1015=Tabs.Listings:AddLeftGroupbox("Safety","shield-check");v1016=Tabs.Listings:AddLeftGroupbox("Actions","zap");end if (type(Tabs.Listings.AddRightTabbox)=="function") then local v2565=Tabs.Listings:AddRightTabbox("Listing Data");v1017=v2565:AddTab("Status","activity");v1018=v2565:AddTab("Preview","search");v1019=v2565:AddTab("Filters","list-filter");v1020=v2565:AddTab("History","history");else warn("[LISTINGS UI] Right tabbox unavailable, using groupboxes");v1017=Tabs.Listings:AddRightGroupbox("Status","activity");v1018=Tabs.Listings:AddRightGroupbox("Preview","search");v1019=Tabs.Listings:AddRightGroupbox("Filters","list-filter");v1020=Tabs.Listings:AddRightGroupbox("History","history");end if (type(Tabs.Listings.AddRightCollapsibleGroupbox)=="function") then v1021=Tabs.Listings:AddRightCollapsibleGroupbox("Listed In Booth","package",true);else v1021=Tabs.Listings:AddRightGroupbox("Listed In Booth","package");end v1014:AddLabel("⚠️ Review Preview before adding.",false);v1014:AddLabel("Saved filters WILL auto-list matching pets.",true);RefreshDynamicPetList();RefreshListingMutationList();local v1022={};local v1023={};local function v1024(v1877) v1877=tostring(v1877 or "" );if (v1877=="") then return;end if v1023[v1877] then return;end v1023[v1877]=true;table.insert(v1022,v1877);end v1024("---");v1024("All");v1024("All Except");for v1879,v1880 in ipairs(ListingMutationList or {} ) do v1024(v1880);end local v1025=v1014:AddDropdown("ListingPetSelect",{Text="Pet",Values=PetList,Default="",Searchable=true});v1025:OnChanged(function(v1881) ListingsState.SelectedPet=tostring(v1881 or "" );ListingsState.NoWorkSleepUntil=0;BuildListingPreview();MarkConfigDirty();ListingsStatusRefresh();print("[LISTINGS] Selected pet:",ListingsState.SelectedPet);end);local v1026=v1014:AddDropdown("ListingMutationSelect",{Text="Mutation",Values=v1022,Default="---",Searchable=true});v1026:OnChanged(function(v1884) ListingsState.SelectedMutation=NormalizeListingFilterMutation(v1884);ListingsState.NoWorkSleepUntil=0;BuildListingPreview();MarkConfigDirty();ListingsStatusRefresh();print("[LISTINGS] Selected mutation:",ListingsState.SelectedMutation);end);local v1027=v1014:AddDropdown("ListingExcludeMutations",{Text="Exclude Mutations",Tooltip="Only used when Mutation is set to All Except.",Values=ListingMutationList,Default={},Searchable=true,Multi=true});v1027:OnChanged(function(v1887) ListingsState.SelectedExcludedMutations=BuildListingMutationMapFromDropdownValue(v1887);ListingsState.NoWorkSleepUntil=0;BuildListingPreview();MarkConfigDirty();ListingsStatusRefresh();print("[LISTINGS] Excluded mutations:",FormatExcludedListingMutations(ListingsState.SelectedExcludedMutations));end);local function v1028(v1890,v1891) if (v1890==nil) then return tostring(v1891 or "-" );end local v1892=tonumber(v1890);if  not v1892 then return tostring(v1890);end if ((v1892%1)==0) then return tostring(math.floor(v1892));end return tostring(v1892);end local function v1029() if ListingMinLevelInput then ListingMinLevelInput:SetText("Min Level  "   .. v1028(ListingsState.MinLevel,1) );end if ListingMaxLevelInput then ListingMaxLevelInput:SetText("Max Level  "   .. v1028(ListingsState.MaxLevel,100) );end if ListingMinWeightInput then ListingMinWeightInput:SetText("Min BaseWeight  "   .. v1028(ListingsState.MinWeight,"-") );end if ListingMaxWeightInput then ListingMaxWeightInput:SetText("Max BaseWeight  "   .. v1028(ListingsState.MaxWeight,"-") );end if ListingPriceInput then ListingPriceInput:SetText("🟢 Tokens  "   .. v1028(ListingsState.Price,"-") );end end ListingMinLevelInput=v1014:AddInput("ListingMinLevel",{Text="Min Level",Placeholder="1",Default=tostring(ListingsState.MinLevel or 1 ),Numeric=false,Finished=false});ListingMinLevelInput:OnChanged(function(v1893) local v1894=tostring(v1893 or "" ):gsub(",",""):gsub("%s+","");local v1895=tonumber(v1894);if ( not v1895 or (v1895<1)) then v1895=1;end ListingsState.MinLevel=math.clamp(math.floor(v1895),1,999);ListingsState.NoWorkSleepUntil=0;BuildListingPreview();MarkConfigDirty();ListingsStatusRefresh();v1029();print("[LISTINGS] Min Level:",tostring(ListingsState.MinLevel));end);ListingMaxLevelInput=v1014:AddInput("ListingMaxLevel",{Text="Max Level",Placeholder="100",Default=tostring(ListingsState.MaxLevel or 100 ),Numeric=false,Finished=false});ListingMaxLevelInput:OnChanged(function(v1898) local v1899=tostring(v1898 or "" ):gsub(",",""):gsub("%s+","");local v1900=tonumber(v1899);if ( not v1900 or (v1900<1)) then v1900=100;end ListingsState.MaxLevel=math.clamp(math.floor(v1900),1,999);ListingsState.NoWorkSleepUntil=0;BuildListingPreview();MarkConfigDirty();ListingsStatusRefresh();v1029();print("[LISTINGS] Max Level:",tostring(ListingsState.MaxLevel));end);ListingMinWeightInput=v1014:AddInput("ListingMinWeight",{Text="Min BaseWeight",Placeholder="required",Default="",Numeric=true,Finished=false});ListingMinWeightInput:OnChanged(function(v1903) local v1904=tostring(v1903 or "" ):gsub(",",""):gsub("%s+","");local v1905=tonumber(v1904);if ( not v1905 or (v1905<0)) then ListingsState.MinWeight=nil;ListingsState.MinWeightWasEntered=false;ListingsState.NoWorkSleepUntil=0;BuildListingPreview();MarkConfigDirty();ListingsStatusRefresh();v1029();return;end ListingsState.MinWeight=v1905;ListingsState.MinWeightWasEntered=true;ListingsState.NoWorkSleepUntil=0;BuildListingPreview();MarkConfigDirty();ListingsStatusRefresh();v1029();print("[LISTINGS] Min BaseWeight:",tostring(ListingsState.MinWeight));end);ListingMaxWeightInput=v1014:AddInput("ListingMaxWeight",{Text="Max BaseWeight",Placeholder="required",Default="",Numeric=true,Finished=false});ListingMaxWeightInput:OnChanged(function(v1909) local v1910=tostring(v1909 or "" ):gsub(",",""):gsub("%s+","");local v1911=tonumber(v1910);if ( not v1911 or (v1911<0)) then ListingsState.MaxWeight=nil;ListingsState.MaxWeightWasEntered=false;ListingsState.NoWorkSleepUntil=0;BuildListingPreview();MarkConfigDirty();ListingsStatusRefresh();v1029();return;end ListingsState.MaxWeight=v1911;ListingsState.MaxWeightWasEntered=true;ListingsState.NoWorkSleepUntil=0;BuildListingPreview();MarkConfigDirty();ListingsStatusRefresh();v1029();print("[LISTINGS] Max BaseWeight:",tostring(ListingsState.MaxWeight));end);ListingPriceInput=v1014:AddInput("ListingPrice",{Text="🟢 Tokens",Placeholder="required",Default="",Numeric=true,Finished=false});ListingPriceInput:OnChanged(function(v1915) local v1916=tostring(v1915 or "" ):gsub(",",""):gsub("%s+","");local v1917=tonumber(v1916);if ( not v1917 or (v1917<=0)) then ListingsState.Price=nil;ListingsState.PriceWasEntered=false;ListingsState.NoWorkSleepUntil=0;BuildListingPreview();MarkConfigDirty();ListingsStatusRefresh();v1029();return;end ListingsState.Price=math.floor(v1917);ListingsState.PriceWasEntered=true;ListingsState.NoWorkSleepUntil=0;BuildListingPreview();MarkConfigDirty();ListingsStatusRefresh();v1029();print("[LISTINGS] Price:",tostring(ListingsState.Price));end);v1029();v1014:AddDivider({Text="Filter Preset",MarginTop=8,MarginBottom=8});local v1030=v1014:AddButton({Text="Filter",Tooltip="Add the current setup as a reusable listing filter.",Func=function() AddCurrentListingFilter();end});v1030:AddButton({Text="Add",Tooltip="Add current pet/mutation/weight/price as a filter.",Func=function() AddCurrentListingFilter();end});v1030:AddButton({Text="Clear",Tooltip="Clear all listing filters.",Risky=true,DoubleClick=true,Func=function() ClearListingFilters();end});v1015:AddLabel("Safety rules before creating booth listings.",false);local v1031=v1015:AddToggle("ListingAllowLowPrice",{Text="⚠️ Allow Low Price",Tooltip="Required before Holy can list pets below 100 tokens.",Default=false});v1031:OnChanged(function(v1921) ListingsState.AllowLowPriceListings=v1921==true ;MarkConfigDirty();ListingsStatusRefresh();print("[LISTINGS] Allow low price:",tostring(ListingsState.AllowLowPriceListings));end);local v1032=v1015:AddToggle("ListingAutoUnfavorite",{Text="❤️ Auto Unfavorite",Default=false});v1032:OnChanged(function(v1923) ListingsState.AutoUnfavorite=v1923==true ;MarkConfigDirty();print("[LISTINGS] Auto Unfav:",tostring(ListingsState.AutoUnfavorite));end);local v1033=v1015:AddToggle("ListingKeepRunning",{Text="♾️ Keep Running",Tooltip="ON = AutoList keeps watching. OFF = AutoList stops when all current matching pets are handled.",Default=false});v1033:OnChanged(function(v1925) local v1926=v1925==true ;ListingsState.AutoDisableWhenDone= not v1926;ListingsState.NoWorkSleepUntil=0;MarkConfigDirty();if (type(ListingsStatusRefresh)=="function") then ListingsStatusRefresh();end print("[LISTINGS] Keep Running:",tostring(v1926),"| AutoDisableWhenDone:",tostring(ListingsState.AutoDisableWhenDone));end);v1016:AddLabel("Runtime controls for the listing worker.",false);local v1034=v1016:AddDropdown("ListingSpeedMode",{Text="⚡ Listing Speed",Tooltip="Controls AutoList scan and CreateListing cooldown.",Values={"Adaptive","Safe","Balanced","Fast","Aggressive"},Default=ListingsState.ListingSpeedMode or "Adaptive" ,Searchable=false});v1034:OnChanged(function(v1929) local v1930=SetListingSpeedMode(v1929);ListingsState.NoWorkSleepUntil=0;MarkConfigDirty();if ConfigState.IsHydrating then return;end HolyNotify("Listing Speed Updated",tostring(ListingsState.ListingSpeedMode)   .. " • cooldown "   .. tostring(ResolveListingCreateCooldown())   .. "s" ,"zap",3);if (type(ListingsStatusRefresh)=="function") then ListingsStatusRefresh();end end);local v1035=v1016:AddInput("ListingMaxQueuePerPass",{Text="Max Queue / Pass",Default=tostring(ListingsState.MaxQueuePerPass or 2 ),Numeric=true,Finished=false});v1035:OnChanged(function(v1932) local v1933=tonumber(v1932);if  not v1933 then return;end ListingsState.MaxQueuePerPass=math.clamp(math.floor(v1933),1,10);ListingsState.NoWorkSleepUntil=0;MarkConfigDirty();if (type(ListingsStatusRefresh)=="function") then ListingsStatusRefresh();end end);v1016:AddDivider({Text="Runtime",MarginTop=8,MarginBottom=8});local v1036=v1016:AddToggle("EnableAutoList",{Text="⚡ Start AutoList",Default=false});v1036:OnChanged(function(v1936) ListingsState.Enabled=v1936==true ;ListingsState.VisualTagsEnabled=ListingsState.Enabled;ListingsState.AutoDisableWhenDone=false;ListingsState.LastScan=0;ListingsState.NoWorkSleepUntil=0;SaveListingAutoListIntent(ListingsState.Enabled);if (ConfigState and ConfigState.IsHydrating) then if ListingsState.Enabled then ListingsState.Status="Restore pending";else ListingsState.Status="Disabled";end if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end return;end if ListingsState.Enabled then if (type(EnsureListingFilters)=="function") then pcall(EnsureListingFilters);end if (type(SyncListingRequiredFlagsFromValues)=="function") then pcall(SyncListingRequiredFlagsFromValues);end local v2843,v2844=true,"OK";if (type(IsListingConfigurationAllowed)=="function") then v2843,v2844=IsListingConfigurationAllowed();end if  not v2843 then ListingsState.Enabled=false;ListingsState.VisualTagsEnabled=false;ListingsState.Status=tostring(v2844 or "Config blocked" );SaveListingAutoListIntent(false);task.defer(function() pcall(function() if (Library and Library.Options and Library.Options.EnableAutoList) then Library.Options.EnableAutoList:SetValue(false);end end);end);warn("[LISTINGS] AutoList blocked:",tostring(v2844));if (type(ListingsStatusRefresh)=="function") then ListingsStatusRefresh();end return;end end if ListingsState.Enabled then ListingsState.ListedUUIDs=ListingsState.ListedUUIDs or {} ;ListingsState.FailedUUIDs=ListingsState.FailedUUIDs or {} ;ListingsState.ListingQueue=ListingsState.ListingQueue or {} ;ListingsState.QueuedUUIDs=ListingsState.QueuedUUIDs or {} ;ListingsState.OwnListedUUIDs=ListingsState.OwnListedUUIDs or {} ;ListingsState.PendingUUIDs=ListingsState.PendingUUIDs or {} ;table.clear(ListingsState.ListedUUIDs);table.clear(ListingsState.FailedUUIDs);table.clear(ListingsState.ListingQueue);table.clear(ListingsState.QueuedUUIDs);table.clear(ListingsState.OwnListedUUIDs);table.clear(ListingsState.PendingUUIDs);ListingsState.ActiveCreateUUID=nil;ListingsState.ActiveCreateStartedAt=0;ListingsState.ListedThisSession=0;ListingsState.LastScan=0;ListingsState.NoWorkSleepUntil=0;ListingsState.Status="Enabled | watching";print("[LISTINGS] AutoList enabled | runtime cache cleared");if (type(BuildListingPreview)=="function") then pcall(BuildListingPreview);end task.defer(function() if (ListingsState.Enabled~=true) then return;end if (ScriptState and ScriptState.ForceStopped) then return;end if (type(RunAutoListingPass)=="function") then pcall(RunAutoListingPass);end if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end end);else ListingsState.Status="Disabled";end MarkConfigDirty();if (type(ListingsStatusRefresh)=="function") then ListingsStatusRefresh();end end);v1016:AddDivider({Text="Queue",MarginTop=8,MarginBottom=8});local v1037=v1016:AddButton({Text="Queue",Tooltip="Listing queue controls.",Func=function() HolyNotify("Listing Queue","Use Preview, Refresh, Clear, or STOP.","list",3);end});v1037:AddButton({Text="Preview",Tooltip="Preview matching inventory pets.",Func=function() PrintListingPreview();ListingsStatusRefresh();end});v1016:AddButton({Text="Debug Preview",Tooltip="Print every matching listing pet and why it is ready/skipped.",Func=function() if (type(PrintDetailedListingPreview)=="function") then PrintDetailedListingPreview();end end});v1037:AddButton({Text="Refresh",Tooltip="Refresh inventory, preview, and own booth listings.",Func=function() RefreshListingInventorySnapshot();BuildOwnBoothListingSnapshot(true);BuildListingPreview();ListingsStatusRefresh();end});v1037:AddButton({Text="Clear",Tooltip="Clear pending listing queue.",Func=function() table.clear(ListingsState.ListingQueue);table.clear(ListingsState.QueuedUUIDs);ListingsState.PendingUUIDs=ListingsState.PendingUUIDs or {} ;table.clear(ListingsState.PendingUUIDs);ListingsState.ActiveCreateUUID=nil;ListingsState.ActiveCreateStartedAt=0;ListingsState.Status="Queue cleared";BuildListingPreview();ListingsStatusRefresh();end});v1037:AddButton({Text="STOP",Tooltip="Hard stop listings and script runtime.",Risky=true,DoubleClick=true,Func=function() ScriptState.ForceStopped=true;ListingsState.Enabled=false;ListingsState.Status="ForceStopped";table.clear(ListingsState.ListingQueue);table.clear(ListingsState.QueuedUUIDs);if Library.Options.EnableAutoList then Library.Options.EnableAutoList:SetValue(false);end ListingsStatusRefresh();warn("[LISTINGS] Emergency stop");end});local v1038=v1017:AddLabel("Status: Idle",false);local v1039=v1017:AddLabel("Pets: 0",false);local v1040=v1017:AddLabel("Queue: 0",false);local v1041=v1017:AddLabel("Listed Session: 0",false);local v1042=v1017:AddLabel("Last Listed: None",false);local v1043=v1017:AddLabel("Booth Listed: syncing...",false);local v1044=v1021:AddLabel("0 listings • Page 1/1 • Not synced",false);local v1045={Rows={},BusyRows={}};local v1046=Instance.new("Frame");v1046.Name="HolyBoothListedTable";v1046.BackgroundTransparency=1;v1046.Size=UDim2.new(1,0,0,190);local v1050=Instance.new("Frame");v1050.Name="Header";v1050.BackgroundTransparency=1;v1050.Position=UDim2.fromOffset(0,0);v1050.Size=UDim2.new(1,0,0,20);v1050.Parent=v1046;local function v1056(v1949,v1950,v1951,v1952,v1953,v1954) local v1955=Instance.new("TextLabel");v1955.Name=v1949;v1955.BackgroundTransparency=1;v1955.Position=v1951;v1955.Size=v1952;v1955.Font=Enum.Font.Code;v1955.Text=tostring(v1953 or "" );v1955.TextSize=14;v1955.TextColor3=Color3.fromRGB(205,205,205);v1955.TextTransparency=0.25;v1955.TextXAlignment=v1954 or Enum.TextXAlignment.Left ;v1955.TextYAlignment=Enum.TextYAlignment.Center;v1955.TextTruncate=Enum.TextTruncate.AtEnd;v1955.RichText=false;v1955.Parent=v1950;return v1955;end v1056("PetHeader",v1050,UDim2.fromOffset(10,0),UDim2.new(1, -170,1,0),"Pet",Enum.TextXAlignment.Left);v1056("PriceHeader",v1050,UDim2.new(1, -160,0,0),UDim2.fromOffset(70,20),"Price",Enum.TextXAlignment.Right);v1056("BWHeader",v1050,UDim2.new(1, -84,0,0),UDim2.fromOffset(42,20),"BW",Enum.TextXAlignment.Right);v1056("RemoveHeader",v1050,UDim2.new(1, -35,0,0),UDim2.fromOffset(30,20),"",Enum.TextXAlignment.Center);local function v1057(v1973) if (type(v1973)~="table") then return "-";end local v1974=tostring(v1973.PetName or "Unknown" );local v1975=tostring(v1973.MutationText or "Normal" );if ((v1975~="") and (v1975~="Normal") and (v1975~="---") and (v1975~="Unknown")) then return v1975   .. " "   .. v1974 ;end return v1974;end local function v1058(v1976) v1976=math.max(1,math.floor(SafeNumber(v1976,1)));if v1045.BusyRows[v1976] then return;end if (ScriptState and ScriptState.ForceStopped) then return;end v1045.BusyRows[v1976]=true;task.spawn(function() local v2566=GetOwnBoothSnapshotAbsoluteIndex(v1976);local v2567=ListingsState.OwnBoothSnapshot and ListingsState.OwnBoothSnapshot[v2566] ;if (type(v2567)~="table") then HolyNotify("No Listing","There is no booth listing on row "   .. tostring(v1976)   .. "." ,"info",3);v1045.BusyRows[v1976]=nil;return;end local v2568=v1057(v2567);local v2569,v2570=RemoveOwnBoothSnapshotPageIndex(v1976);if v2569 then HolyNotify("Listing Removed",v2568,"check",3);else HolyNotify("Remove Failed",tostring(v2570 or "Could not remove listing." ),"triangle-alert",4);warn("[LISTINGS] Click-remove failed:",tostring(v2570));end v1045.BusyRows[v1976]=nil;end);end local function v1059(v1978) local v1979=Instance.new("TextButton");v1979.Name="Row"   .. tostring(v1978) ;v1979.AutoButtonColor=false;v1979.BackgroundColor3=Color3.fromRGB(22,22,22);v1979.BackgroundTransparency=0.28;v1979.BorderSizePixel=0;v1979.Position=UDim2.fromOffset(0,22 + ((v1978-1) * 22) );v1979.Size=UDim2.new(1,0,0,20);v1979.Text="";v1979.Parent=v1046;local v1989=Instance.new("UICorner");v1989.CornerRadius=UDim.new(0,3);v1989.Parent=v1979;local v1992=Instance.new("UIStroke");v1992.Color=Color3.fromRGB(48,48,48);v1992.Transparency=0.45;v1992.Thickness=1;v1992.Parent=v1979;local v1997=v1056("Pet",v1979,UDim2.fromOffset(10,0),UDim2.new(1, -178,1,0),"• -",Enum.TextXAlignment.Left);local v1998=v1056("Price",v1979,UDim2.new(1, -160,0,0),UDim2.fromOffset(70,20),"-",Enum.TextXAlignment.Right);local v1999=v1056("BW",v1979,UDim2.new(1, -84,0,0),UDim2.fromOffset(42,20),"-",Enum.TextXAlignment.Right);local v2000=v1056("Remove",v1979,UDim2.new(1, -35,0,0),UDim2.fromOffset(30,20),"×",Enum.TextXAlignment.Center);v2000.TextColor3=Color3.fromRGB(255,80,80);v2000.TextTransparency=0.15;v1979.MouseEnter:Connect(function() v1979.BackgroundTransparency=0.08;v1992.Transparency=0.15;v1997.TextTransparency=0;v1998.TextTransparency=0;v1999.TextTransparency=0;v2000.TextTransparency=0;end);v1979.MouseLeave:Connect(function() v1979.BackgroundTransparency=0.28;v1992.Transparency=0.45;v1997.TextTransparency=0.25;v1998.TextTransparency=0.25;v1999.TextTransparency=0.25;v2000.TextTransparency=0.15;end);v1979.MouseButton1Click:Connect(function() v1058(v1978);end);v1045.Rows[v1978]={Button=v1979,Pet=v1997,Price=v1998,BW=v1999,Remove=v2000,Stroke=v1992};end for v2004=1,7 do v1059(v2004);end v1021:AddUIPassthrough("BoothListedTable",{Instance=v1046,Height=190});local function v1060(v2005) local v2006=tonumber(v2005);if  not v2006 then return "-";end v2006=math.floor(v2006);local v2007=tostring(v2006);local v2008,v2009,v2010=string.match(v2007,"^([^%d]*%d)(%d*)(.-)$");if  not v2008 then return v2007;end return v2008   .. (v2009:reverse():gsub("(%d%d%d)","%1,"):reverse())   .. v2010 ;end local function v1061(v2011) local v2012=tonumber(v2011);if  not v2012 then return "-";end return string.format("%.2fbw",v2012);end local function v1062() local v2013=ListingsState.OwnBoothSnapshot or {} ;local v2014=math.max(1,math.floor(SafeNumber(ListingsState.OwnBoothSnapshotPage,1)));local v2015=math.max(1,math.floor(SafeNumber(ListingsState.OwnBoothSnapshotPerPage,7)));for v2584=1,7 do local v2585=v1045.Rows[v2584];if  not v2585 then continue;end local v2586=((v2014-1) * v2015) + v2584 ;local v2587=v2013[v2586];if (type(v2587)=="table") then local v2979=(v2587.Favorite and "★ ") or "• " ;v2585.Pet.Text=v2979   .. v1057(v2587) ;v2585.Price.Text=v1060(v2587.Price);v2585.BW.Text=v1061(v2587.BaseWeight or v2587.DisplayWeight or v2587.Weight );v2585.Remove.Text="×";v2585.Button.Active=true;v2585.Button.AutoButtonColor=false;v2585.Button.BackgroundTransparency=0.28;v2585.Stroke.Transparency=0.45;v2585.Pet.TextTransparency=0.25;v2585.Price.TextTransparency=0.25;v2585.BW.TextTransparency=0.25;v2585.Remove.TextTransparency=0.15;else v2585.Pet.Text="• -";v2585.Price.Text="-";v2585.BW.Text="-";v2585.Remove.Text="";v2585.Button.Active=false;v2585.Button.BackgroundTransparency=0.72;v2585.Stroke.Transparency=0.85;v2585.Pet.TextTransparency=0.65;v2585.Price.TextTransparency=0.65;v2585.BW.TextTransparency=0.65;v2585.Remove.TextTransparency=1;end end end local v1063=v1021:AddButton({Text="‹ Prev",Tooltip="Previous booth listing page.",Func=function() ListingsState.OwnBoothSnapshotPage=math.max(1,SafeNumber(ListingsState.OwnBoothSnapshotPage,1) -1 );if (type(ListingsStatusRefresh)=="function") then ListingsStatusRefresh();end end});v1063:AddButton({Text="Next ›",Tooltip="Next booth listing page.",Func=function() local v2017=(ListingsState.OwnBoothSnapshot and  #ListingsState.OwnBoothSnapshot) or 0 ;local v2018=SafeNumber(ListingsState.OwnBoothSnapshotPerPage,7);local v2019=math.max(1,math.ceil(v2017/v2018 ));ListingsState.OwnBoothSnapshotPage=math.min(v2019,SafeNumber(ListingsState.OwnBoothSnapshotPage,1) + 1 );if (type(ListingsStatusRefresh)=="function") then ListingsStatusRefresh();end end});v1021:AddButton({Text="Refresh Booth",Tooltip="Force-refresh pets currently listed in your booth.",Func=function() BuildOwnBoothListingSnapshot(true);if (type(ListingsStatusRefresh)=="function") then ListingsStatusRefresh();end end});v1021:AddDivider({Text="Remove Listings",MarginTop=8,MarginBottom=8});local v1064=1;local v1065=v1021:AddInput("BoothRemoveListingIndex",{Text="Remove Page Pet",Placeholder="1-7 on current page",Default="1",Numeric=false,Finished=true});v1065:OnChanged(function(v2021) local v2022=tostring(v2021 or "" ):gsub(",",""):gsub("%s+","");local v2023=tonumber(v2022);if  not v2023 then return;end v1064=math.max(1,math.floor(v2023));end);local v1066=v1021:AddButton({Text="Remove Selected",Tooltip="Removes the selected listed pet from the current booth page.",Func=function() if (ScriptState and ScriptState.ForceStopped) then return;end local v2024=math.max(1,math.floor(SafeNumber(v1064,1)));local v2025,v2026=RemoveOwnBoothSnapshotPageIndex(v2024);if v2025 then HolyNotify("Listing Removed","Removed booth listing at page slot "   .. tostring(v2024)   .. "." ,"check",3);else HolyNotify("Remove Failed",tostring(v2026 or "Could not remove selected listing." ),"triangle-alert",4);warn("[LISTINGS] Remove selected failed:",tostring(v2026));end end});v1066:AddButton({Text="Remove All",Tooltip="Removes every pet currently listed in your booth. AutoList is paused first.",Risky=true,DoubleClick=true,Func=function() if (ScriptState and ScriptState.ForceStopped) then return;end task.spawn(function() local v2588,v2589,v2590=RemoveAllOwnBoothListings();HolyNotify("Remove All Complete","Removed: "   .. tostring(v2588)   .. " | Failed: "   .. tostring(v2589) ,((v2589>0) and "triangle-alert") or "check" ,5);print("[LISTINGS] Remove all complete | removed:",tostring(v2588),"| failed:",tostring(v2589),"| reason:",tostring(v2590));end);end});local v1067=v1018:AddLabel("⚠️ Not Ready",false);local v1068=v1018:AddLabel("Pet: -",false);local v1069=v1018:AddLabel("Mutation: -",false);local v1070=v1018:AddLabel("Level: -",false);local v1071=v1018:AddLabel("BaseWeight: required",false);local v1072=v1018:AddLabel("Tokens: required",false);v1018:AddDivider({Text="Inventory Check",MarginTop=8,MarginBottom=8});local v1073=v1018:AddLabel("Matching: 0 | Ready: 0",false);local v1074=v1018:AddLabel("Already Listed: 0 | Queued: 0",false);local v1075=v1018:AddLabel("Failed: 0 | Runtime: 0",false);v1018:AddDivider({Text="Result",MarginTop=8,MarginBottom=8});local v1076=v1018:AddLabel("Set pet, weight, and price to preview.",true);ListingsState.ListingFilterUI=ListingsState.ListingFilterUI or {Page=1,PerPage=8} ;ListingsState.ListingFilterUI.PerPage=8;local v1079=1;local v1080=v1019:AddLabel("Active Filters: 0",false);local v1081=v1019:AddLabel("Only pets matching active filters can be listed.",false);local v1082={};for v2027=1,8 do v1082[v2027]=v1019:AddLabel(tostring(v2027)   .. ". -" ,false);end v1019:AddDivider({Text="Manage Filters",MarginTop=8,MarginBottom=8});local v1083=v1019:AddInput("ListingRemoveFilterIndex",{Text="Remove Index",Placeholder="Filter number",Default="1",Numeric=false,Finished=true});v1083:OnChanged(function(v2029) local v2030=tostring(v2029 or "" ):gsub(",",""):gsub("%s+","");local v2031=tonumber(v2030);if  not v2031 then return;end v1079=math.max(1,math.floor(v2031));end);local v1084=v1019:AddButton({Text="Page Controls",Tooltip="Move through active listing filter pages.",Func=function() HolyNotify("Active Listing Filters","Use Prev/Next to change pages. Use Remove Selected to delete by index.","list-filter",4);end});v1084:AddButton({Text="Prev",Func=function() ListingsState.ListingFilterUI.Page=math.max(1,SafeNumber(ListingsState.ListingFilterUI.Page,1) -1 );RefreshListingFilterUI();end});v1084:AddButton({Text="Next",Func=function() local v2033=EnsureListingFilters();local v2034=SafeNumber(ListingsState.ListingFilterUI.PerPage,8);local v2035=math.max(1,math.ceil( #v2033/v2034 ));ListingsState.ListingFilterUI.Page=math.min(v2035,SafeNumber(ListingsState.ListingFilterUI.Page,1) + 1 );RefreshListingFilterUI();end});local v1085=v1019:AddButton({Text="Remove Selected Filter",Tooltip="Removes the filter number typed above.",Risky=true,DoubleClick=true,Func=function() local v2037=EnsureListingFilters();local v2038=tonumber(v1079);if ( not v2038 or  not v2037[v2038]) then HolyNotify("Remove Failed","No listing filter exists at index "   .. tostring(v2038 or "?" ) ,"circle-alert",4);return;end local v2039=v2037[v2038];RemoveListingFilterAt(v2038);HolyNotify("Listing Filter Removed",tostring(v2039.Pet or "Unknown" )   .. " removed from AutoList filters." ,"trash",4);end});local v1086=v1019:AddButton({Text="Clear All Filters",Tooltip="Removes every active listing filter.",Risky=true,DoubleClick=true,Func=function() ClearListingFilters();end});function RefreshListingFilterUI() local v2040=EnsureListingFilters();ListingsState.ListingFilterUI=ListingsState.ListingFilterUI or {Page=1,PerPage=8} ;ListingsState.ListingFilterUI.PerPage=8;local v2043=SafeNumber(ListingsState.ListingFilterUI.PerPage,8);local v2044=SafeNumber(ListingsState.ListingFilterUI.Page,1);local v2045=math.max(1,math.ceil( #v2040/v2043 ));v2044=math.clamp(v2044,1,v2045);ListingsState.ListingFilterUI.Page=v2044;if v1080 then v1080:SetText("Active Filters: "   .. tostring( #v2040)   .. "  •  Page "   .. tostring(v2044)   .. "/"   .. tostring(v2045) );end local v2047=((v2044-1) * v2043) + 1 ;for v2591=1,v2043 do local v2592=v1082[v2591];local v2593=(v2047 + v2591) -1 ;local v2594=v2040[v2593];if v2592 then if v2594 then v2592:SetText(FormatListingFilterLine(v2593,v2594));else v2592:SetText(string.format("%02d  -",v2593));end end end end RefreshListingFilterUI();local v1087=v1020:AddLabel("Runtime Listed: 0",false);local v1088=v1020:AddLabel("Queued: 0",false);local v1089=v1020:AddLabel("Failed: 0",false);local v1090=v1020:AddLabel("Last: None",false);function ListingsStatusRefresh() if (IsTradeWorld() and (type(RefreshOwnBoothListingSnapshotThrottled)=="function")) then pcall(RefreshOwnBoothListingSnapshotThrottled);end if v1038 then local v2858=tostring(ListingsState.Status or "Idle" );local v2859,v2860=IsListingConfigurationAllowed();if  not v2859 then v2858=v2860;elseif ((v2858=="Price required") or (v2858=="Min BaseWeight required") or (v2858=="Max BaseWeight required") or (v2858=="Max must be >= Min")) then if ListingsState.Enabled then v2858="Enabled";else v2858="Ready";end end v1038:SetText("Status: "   .. v2858 );end if v1039 then v1039:SetText("Pets: "   .. tostring( #ListingsState.InventorySnapshot) );end if v1040 then v1040:SetText("Queue: "   .. tostring( #ListingsState.ListingQueue) );end if v1041 then v1041:SetText("Listed Session: "   .. tostring(ListingsState.ListedThisSession) );end local v2048=ListingsState.OwnBoothSnapshot or {} ;local v2049= #v2048;local v2050=tostring(ListingsState.OwnBoothSnapshotStatus or "Unknown" );if v1043 then v1043:SetText("Booth Listed: "   .. tostring(v2049)   .. " pets"   .. " | "   .. v2050 );end local v2051=SafeNumber(ListingsState.OwnBoothSnapshotPerPage,7);local v2052= #v2048;local v2053=math.max(1,math.ceil(v2052/v2051 ));ListingsState.OwnBoothSnapshotPage=math.clamp(SafeNumber(ListingsState.OwnBoothSnapshotPage,1),1,v2053);local v2055=ListingsState.OwnBoothSnapshotPage;if v1044 then v1044:SetText(tostring(v2052)   .. " listings"   .. " • Page "   .. tostring(v2055)   .. "/"   .. tostring(v2053)   .. " • "   .. v2050 );end v1062();local v2056=ListingsState.Preview or {} ;local function v2057(v2595,v2596) if (v2595==nil) then return tostring(v2596 or "-" );end local v2597=tonumber(v2595);if  not v2597 then return tostring(v2595);end if ((v2597%1)==0) then return tostring(math.floor(v2597));end return tostring(v2597);end local v2058,v2059=IsListingPriceAllowed();local v2060=tonumber(ListingsState.MinWeight);local v2061=tonumber(ListingsState.MaxWeight);local v2062=true;local v2063="OK";if (ListingsState.MinWeightWasEntered~=true) then v2062=false;v2063="Min required";elseif (ListingsState.MaxWeightWasEntered~=true) then v2062=false;v2063="Max required";elseif ( not v2060 or  not v2061) then v2062=false;v2063="Invalid";elseif (v2061<v2060) then v2062=false;v2063="Max < Min";end local v2064=SafeNumber(ListingsState.MinLevel,1);local v2065=SafeNumber(ListingsState.MaxLevel,100);local v2066=v2065>=v2064 ;local v2067=(v2066 and "OK") or "Max < Min" ;local v2068=tostring(ListingsState.SelectedPet or "" );local v2069=v2068~="" ;local v2070=tostring(ListingsState.SelectedMutation or "---" );if (v2070=="All Except") then v2070="All Except "   .. FormatExcludedListingMutations(ListingsState.SelectedExcludedMutations) ;end local v2071=SafeNumber(v2056.Ready,0);local v2072=SafeNumber(v2056.Matching,0);local v2073=SafeNumber(v2056.AlreadyListed,0);local v2074=SafeNumber(v2056.Queued,0);local v2075=SafeNumber(v2056.Failed,0);local v2076=SafeNumber(v2056.RuntimeListed,0);local v2077=v2069 and v2058 and v2062 and v2066 ;local v2078="⚠️ Not Ready";local v2079="Fix required fields before adding this filter.";if v2077 then if (v2071>0) then v2078="✅ Ready To List";v2079="AutoList can queue "   .. tostring(v2071)   .. " matching pet"   .. (((v2071==1) and ".") or "s.") ;elseif ((v2072>0) and (v2073>=v2072)) then v2078="✅ Already Handled";v2079="All matching pets are already listed in your booth.";elseif (v2072>0) then v2078="✅ Filter Valid";v2079="Filter is valid, but no new pets are ready right now.";else v2078="✅ Filter Valid";v2079="No inventory pets currently match this setup.";end elseif  not v2069 then v2079="Select a pet before adding this filter.";elseif  not v2058 then v2079="Price blocked: "   .. tostring(v2059 or "Invalid price" ) ;elseif  not v2062 then v2079="BaseWeight blocked: "   .. tostring(v2063) ;elseif  not v2066 then v2079="Level blocked: "   .. tostring(v2067) ;end if v1067 then v1067:SetText(v2078);end if v1068 then v1068:SetText("Pet: "   .. ((v2069 and v2068) or "-") );end if v1069 then v1069:SetText("Mutation: "   .. tostring(v2070) );end if v1070 then v1070:SetText("Level: "   .. v2057(v2064,1)   .. " - "   .. v2057(v2065,100)   .. " | "   .. tostring(v2067) );end if v1071 then local v2861=((ListingsState.MinWeightWasEntered==true) and v2057(ListingsState.MinWeight,"-")) or "required" ;local v2862=((ListingsState.MaxWeightWasEntered==true) and v2057(ListingsState.MaxWeight,"-")) or "required" ;v1071:SetText("BaseWeight: "   .. tostring(v2861)   .. " - "   .. tostring(v2862)   .. " | "   .. tostring(v2063) );end if v1072 then v1072:SetText("Tokens: "   .. v2057(ListingsState.Price,"required")   .. " | "   .. tostring((v2058 and "OK") or v2059 ) );end if v1073 then v1073:SetText("Matching: "   .. tostring(v2072)   .. " | Ready: "   .. tostring(v2071) );end if v1074 then v1074:SetText("Already Listed: "   .. tostring(v2073)   .. " | Queued: "   .. tostring(v2074) );end if v1075 then v1075:SetText("Failed: "   .. tostring(v2075)   .. " | Runtime: "   .. tostring(v2076) );end if v1076 then v1076:SetText("Result: "   .. tostring(v2079) );end if (type(RefreshListingFilterUI)=="function") then RefreshListingFilterUI();end if v1087 then v1087:SetText("Runtime Listed: "   .. tostring(v2056.RuntimeListed or 0 ) );end if v1088 then v1088:SetText("Queued: "   .. tostring(v2056.Queued or 0 ) );end if v1089 then v1089:SetText("Failed: "   .. tostring(v2056.Failed or 0 ) );end if v1090 then v1090:SetText("Last: "   .. tostring(ListingsState.LastListed or "None" ) );end end ListingsStatusRefresh();end function BuildWebhookTab() local v1091=v11:AddToggle("EnableWebhook",{Text="🔗 Enable Webhook",Tooltip="Master switch for all personal webhook notifications.",Default=false});v1091:OnChanged(function(v2080) WebhookState.Enabled=v2080;MarkConfigDirty();end);local v1092=v11:AddDependencyGroupbox();v1092:SetupDependencies({{Library.Toggles.EnableWebhook,true}});v1092:AddDivider({Text="Notifications",MarginTop=6,MarginBottom=8});local v1093=v1092:AddToggle("WebhookSuccessfulSnipes",{Text="⚡ Successful Snipes",Tooltip="Send a webhook when Holy successfully snipes a pet.",Default=true});v1093:OnChanged(function(v2082) WebhookState.NotifySuccessfulSnipe=v2082;MarkConfigDirty();end);local v1094=v1092:AddToggle("WebhookBoothSales",{Text="💰 Booth Sales",Tooltip="Send a webhook when one of your booth pets sells.",Default=true});v1094:OnChanged(function(v2084) WebhookState.NotifyBoothSales=v2084;MarkConfigDirty();end);local v1095=v1092:AddToggle("WebhookErrors",{Text="⚠️ Game Errors",Tooltip="Send a webhook when Holy detects an error, disconnect, or teleport issue.",Default=true});v1095:OnChanged(function(v2086) WebhookState.NotifyErrors=v2086;MarkConfigDirty();end);v1092:AddDivider({Text="Mentions",MarginTop=10,MarginBottom=8});local v1096=v1092:AddInput("WebhookPingSuccessfulSnipes",{Text="📣 Snipe Ping",Placeholder="@everyone | @here | <@userid> | empty = no ping",Numeric=false,Finished=false});v1096:OnChanged(function(v2088) WebhookState.PingSuccessfulSnipes=tostring(v2088 or "" );MarkConfigDirty();end);local v1097=v1092:AddInput("WebhookPingBoothSales",{Text="🛒 Booth Sale Ping",Placeholder="@everyone | @here | <@userid> | empty = no ping",Numeric=false,Finished=false});v1097:OnChanged(function(v2090) WebhookState.PingBoothSales=tostring(v2090 or "" );MarkConfigDirty();end);local v1098=v1092:AddInput("WebhookPingErrors",{Text="🚨 Error Ping",Placeholder="@everyone | @here | <@userid> | empty = no ping",Numeric=false,Finished=false});v1098:OnChanged(function(v2092) WebhookState.PingErrors=tostring(v2092 or "" );MarkConfigDirty();end);v1092:AddDivider({Text="Delivery",MarginTop=10,MarginBottom=8});local v1099=v1092:AddInput("WebhookURL",{Text="🌐 Webhook URL",Placeholder="Discord webhook URL",Numeric=false,Finished=true});v1099:OnChanged(function(v2094) WebhookState.URL=tostring(v2094 or "" );MarkConfigDirty();end);v1092:AddButton({Text="🧪 Test Webhook",Func=function() if  not CanSendWebhook() then warn("[Webhook] Invalid configuration");HolyNotify("Webhook Test Failed","Enable webhook and enter a valid Discord webhook URL.","triangle-alert",4);return;end local v2096=ApplyWebhookPing({embeds={{title="⚡ Holy Webhook Connected",description="Personal webhook delivery is working.",color=16732120,fields={{name="Account",value="||"   .. tostring(Players.LocalPlayer.Name)   .. "||" ,inline=true},{name="Server",value="```lua\n"   .. tostring(game.PlaceId)   .. ":"   .. tostring(game.JobId)   .. "\n```" ,inline=false}},footer={text="Holy V2"},timestamp=DateTime.now():ToIsoDate()}}},WebhookState.PingSuccessfulSnipes);local v2097=QueueWebhook(v2096);if v2097 then print("[Webhook] Test queued");HolyNotify("Webhook Test Queued","A test webhook has been added to the send queue.","send",4);else warn("[Webhook] Test failed to queue");HolyNotify("Webhook Test Failed","Holy could not queue the webhook test.","triangle-alert",5);end end});end TeleportService=game:GetService("TeleportService");GuiService=game:GetService("GuiService");CoreGui=game:GetService("CoreGui");function SendRuntimeError(v1100,v1101) warn("[RUNTIME]",v1100,v1101);if ( not WebhookState.Enabled or  not WebhookState.NotifyErrors) then return;end QueueWebhook(ApplyWebhookPing({embeds={{title=tostring(v1100),description="```lua\n"   .. tostring(v1101)   .. "\n```" ,color=15680580,fields={{name="PlaceId",value=tostring(game.PlaceId),inline=true},{name="JobId",value=tostring(game.JobId),inline=false},{name="Player",value=Players.LocalPlayer.Name,inline=true}},footer={text="Holy V2 Runtime"},timestamp=DateTime.now():ToIsoDate()}}},WebhookState.PingErrors));end TeleportRetryState={Retrying=false,Attempt=0,MaxAttempts=8,LastTarget=nil,BlockedServers={},RetryDelay=0.35};function GetRetryPlaceId() if (game.PlaceId==TRADING_WORLD_PLACE_ID) then return TRADING_WORLD_PLACE_ID;end return game.PlaceId;end function GetFreshRetryServer(v1102) local v1103="https://games.roblox.com/v1/games/"   .. tostring(v1102)   .. "/servers/Public?sortOrder=Desc&limit=100" ;local v1104,v1105=pcall(function() return game:HttpGet(v1103);end);if ( not v1104 or  not v1105) then warn("[TeleportRetry] Server fetch failed");return nil;end local v1106;v1104,v1106=pcall(function() return HttpService:JSONDecode(v1105);end);if ( not v1104 or  not v1106 or (type(v1106.data)~="table")) then warn("[TeleportRetry] Decode failed");return nil;end local v1107={};for v2098,v2099 in ipairs(v1106.data) do local v2100=v2099.id;local v2101=tonumber(v2099.playing);local v2102=tonumber(v2099.maxPlayers);if (v2100 and v2101 and v2102 and (v2101<v2102) and (v2100~=game.JobId) and  not TeleportRetryState.BlockedServers[v2100]) then table.insert(v1107,v2100);end end if ( #v1107<=0) then warn("[TeleportRetry] Server pool exhausted → clearing blacklist");table.clear(TeleportRetryState.BlockedServers);for v2863,v2864 in ipairs(v1106.data) do local v2865=v2864.id;local v2866=tonumber(v2864.playing);local v2867=tonumber(v2864.maxPlayers);if (v2865 and v2866 and v2867 and (v2866<v2867) and (v2865~=game.JobId)) then table.insert(v1107,v2865);end end end if ( #v1107<=0) then return nil;end return v1107[math.random(1, #v1107)];end function ForceRetryTeleport(v1108) if TeleportRetryState.Retrying then return;end TeleportRetryState.Retrying=true;TeleportRetryState.Attempt=0;task.spawn(function() local v2103=GetRetryPlaceId();local v2104=Players.LocalPlayer;if  not v2104 then TeleportRetryState.Retrying=false;return;end SniperState.Hopping=false;GatewayBusy=false;if TeleportRetryState.LastTarget then TeleportRetryState.BlockedServers[TeleportRetryState.LastTarget]=true;end while TeleportRetryState.Attempt<TeleportRetryState.MaxAttempts  do TeleportRetryState.Attempt=TeleportRetryState.Attempt + 1 ;local v2599=GetFreshRetryServer(v2103);if  not v2599 then warn("[TeleportRetry] No valid target");task.wait(1);continue;end TeleportRetryState.LastTarget=v2599;TeleportRetryState.BlockedServers[v2599]=true;print(string.format("[TeleportRetry] Attempt %s/%s → %s | %s",tostring(TeleportRetryState.Attempt),tostring(TeleportRetryState.MaxAttempts),tostring(v2599),tostring(v1108)));pcall(function() TeleportService:TeleportToPlaceInstance(v2103,v2599,v2104);end);task.wait(TeleportRetryState.RetryDelay);end warn("[TeleportRetry] Max attempts reached");TeleportRetryState.Retrying=false;end);end TeleportService.TeleportInitFailed:Connect(function(v1111,v1112,v1113,v1114) local v1115=(v1112 and v1112.Name) or "Unknown" ;SendRuntimeError("Teleport Failed",string.format("Result: %s\nMessage: %s\nTarget PlaceId: %s",v1115,tostring(v1113),tostring(v1114)));warn(string.format("[Teleport] Failed → %s | %s",tostring(v1115),tostring(v1113)));ForceRetryTeleport(v1115);end);NetworkClient=game:GetService("NetworkClient");NetworkClient.ChildRemoved:Connect(function(v1116) if (v1116.Name=="ClientReplicator") then SendRuntimeError("Disconnected","Lost connection to server / shutdown detected.");ForceReconnectFromTerminalPrompt("ClientReplicator removed");end end);function ForceReconnectFromTerminalPrompt(v1117) print("[AutoReconnect] Terminal prompt → immediate server retry:",tostring(v1117));RuntimeState.Started=false;SniperState.Hopping=false;GatewayBusy=false;if ReconnectState then ReconnectState.Busy=false;end if TeleportRetryState then TeleportRetryState.Retrying=false;end ForceRetryTeleport(tostring(v1117 or "TerminalPrompt" ));return true;end function TryAutoReconnectFromPrompt(v1120) if  not ReconnectState.AutoReconnect then return;end if ReconnectState.Busy then return;end local v1121=os.clock();ReconnectState.LastAttempt=SafeNumber(ReconnectState.LastAttempt,0);ReconnectState.Cooldown=SafeNumber(ReconnectState.Cooldown,5);if ((v1121-ReconnectState.LastAttempt)<ReconnectState.Cooldown) then return;end ReconnectState.Busy=true;ReconnectState.LastAttempt=v1121;print("[AutoReconnect] Attempting reconnect:",tostring(v1120));task.spawn(function() local v2107=Players.LocalPlayer;if  not v2107 then ReconnectState.Busy=false;return;end local v2108=false;pcall(function() local v2604=CoreGui:FindFirstChild("RobloxPromptGui");if  not v2604 then return;end for v2871,v2872 in ipairs(v2604:GetDescendants()) do if (v2872:IsA("TextButton") or v2872:IsA("ImageButton")) then local v3058="";if v2872:IsA("TextButton") then v3058=tostring(v2872.Text or "" ):lower();end for v3117,v3118 in ipairs(v2872:GetDescendants()) do if (v3118:IsA("TextLabel") or v3118:IsA("TextButton")) then v3058=v3058   .. " "   .. tostring(v3118.Text or "" ):lower() ;end end if v3058:find("reconnect",1,true) then print("[AutoReconnect] Reconnect button found:",v2872:GetFullName());if getconnections then for v3138,v3139 in ipairs(getconnections(v2872.Activated)) do if (v3139.Enabled~=false) then local v3144=v3139.Function or v3139.func or v3139._function ;if (type(v3144)=="function") then pcall(v3144);v2108=true;end end end end if firesignal then pcall(function() firesignal(v2872.Activated);v2108=true;end);end pcall(function() v2872:Activate();v2108=true;end);break;end end end end);if v2108 then print("[AutoReconnect] Reconnect button activated");task.delay(8,function() ReconnectState.Busy=false;end);return;end warn("[AutoReconnect] Reconnect button unavailable, teleport fallback");local v2109=game.PlaceId;if (game.PlaceId==TRADING_WORLD_PLACE_ID) then v2109=TRADING_WORLD_PLACE_ID;end pcall(function() TeleportService:Teleport(v2109,v2107);end);task.delay(8,function() ReconnectState.Busy=false;end);end);end task.spawn(function() local v1125="";local v1126=0;local v1127={};while true do task.wait(0.25);local v2110=CoreGui:FindFirstChild("RobloxPromptGui");if  not v2110 then continue;end local v2111=v2110:FindFirstChild("promptOverlay");if  not v2111 then continue;end local v2112=v2111:FindFirstChild("ErrorPrompt");if  not v2112 then continue;end local v2113=v2112:FindFirstChild("MessageArea");if  not v2113 then continue;end local v2114=v2113:FindFirstChild("ErrorFrame");if  not v2114 then continue;end local v2115=v2114:FindFirstChild("ErrorMessage");if ( not v2115 or  not v2115:IsA("TextLabel")) then continue;end local v2116=tostring(v2115.Text);if (v2116=="") then continue;end local v2117=os.clock();if ((v2116==v1125) and ((v2117-v1126)<3)) then continue;end v1125=v2116;v1126=v2117;local v2118=string.lower(v2116);local v2119=v2118:find("error code: 267",1,true) or v2118:find("you have been kicked",1,true) or v2118:find("moderators",1,true) ;local v2120=v2118:find("server has shut down",1,true) or v2118:find("error code: 288",1,true) or v2118:find("disconnected from the experience",1,true) ;local v2121=v2118:find("server is full",1,true) or v2118:find("error code: 772",1,true) or v2118:find("teleport failed",1,true) or v2118:find("please try again",1,true) ;local v2122=tostring(v2116);if (v2119 or v2120 or v2121) then if v1127[v2122] then continue;end v1127[v2122]=true;end local v2118=string.lower(v2116);local v2119=v2118:find("error code: 267",1,true) or v2118:find("you have been kicked",1,true) or v2118:find("moderators",1,true) ;local v2120=v2118:find("server has shut down",1,true) or v2118:find("error code: 288",1,true) or v2118:find("disconnected from the experience",1,true) ;local v2121=v2118:find("server is full",1,true) or v2118:find("error code: 772",1,true) or v2118:find("teleport failed",1,true) or v2118:find("please try again",1,true) ;SendRuntimeError("Roblox Error Prompt",v2116);if v2119 then warn("[AutoReconnect] Kick / Error 267 prompt detected");ForceReconnectFromTerminalPrompt("Kick / Error 267");elseif v2120 then warn("[AutoReconnect] Shutdown / disconnect prompt detected");ForceReconnectFromTerminalPrompt("Shutdown / Error 288");elseif v2121 then warn("[TeleportRetry] GUI teleport failure detected");SniperState.Hopping=false;GatewayBusy=false;ForceRetryTeleport("GUI ErrorPrompt");end end end);PerformanceModeState={Applied=false,Original={}};function StoreOriginalPerformanceValue(v1128,v1129,v1130) if  not v1128 then return;end PerformanceModeState.Original[v1128]=PerformanceModeState.Original[v1128] or {} ;if (PerformanceModeState.Original[v1128][v1129]==nil) then PerformanceModeState.Original[v1128][v1129]=v1130;end end function ApplyPerformanceMode() if PerformanceModeState.Applied then return;end PerformanceModeState.Applied=true;local v1133=game:GetService("Lighting");StoreOriginalPerformanceValue(v1133,"GlobalShadows",v1133.GlobalShadows);v1133.GlobalShadows=false;StoreOriginalPerformanceValue(v1133,"FogEnd",v1133.FogEnd);v1133.FogEnd=100000;for v2123,v2124 in ipairs(v1133:GetChildren()) do if v2124:IsA("PostEffect") then StoreOriginalPerformanceValue(v2124,"Enabled",v2124.Enabled);v2124.Enabled=false;end end for v2125,v2126 in ipairs(workspace:GetDescendants()) do if (v2126:IsA("ParticleEmitter") or v2126:IsA("Trail") or v2126:IsA("Beam") or v2126:IsA("Smoke") or v2126:IsA("Fire") or v2126:IsA("Sparkles")) then StoreOriginalPerformanceValue(v2126,"Enabled",v2126.Enabled);v2126.Enabled=false;end if (v2126:IsA("PointLight") or v2126:IsA("SpotLight") or v2126:IsA("SurfaceLight")) then StoreOriginalPerformanceValue(v2126,"Enabled",v2126.Enabled);v2126.Enabled=false;end if (v2126:IsA("Decal") or v2126:IsA("Texture")) then StoreOriginalPerformanceValue(v2126,"Transparency",v2126.Transparency);v2126.Transparency=1;end if v2126:IsA("BasePart") then StoreOriginalPerformanceValue(v2126,"Material",v2126.Material);StoreOriginalPerformanceValue(v2126,"Reflectance",v2126.Reflectance);StoreOriginalPerformanceValue(v2126,"CastShadow",v2126.CastShadow);v2126.Material=Enum.Material.Plastic;v2126.Reflectance=0;v2126.CastShadow=false;end end local function v1136(v2127) local v2128=workspace;for v2607 in tostring(v2127):gmatch("[^%.]+") do if (v2607~="workspace") then v2128=v2128 and v2128:FindFirstChild(v2607) ;end end if  not v2128 then return;end for v2608,v2609 in ipairs(v2128:GetDescendants()) do if v2609:IsA("BasePart") then StoreOriginalPerformanceValue(v2609,"Transparency",v2609.Transparency);StoreOriginalPerformanceValue(v2609,"CanCollide",v2609.CanCollide);StoreOriginalPerformanceValue(v2609,"CastShadow",v2609.CastShadow);v2609.Transparency=1;v2609.CanCollide=false;v2609.CastShadow=false;end if (v2609:IsA("ParticleEmitter") or v2609:IsA("Trail") or v2609:IsA("Beam")) then StoreOriginalPerformanceValue(v2609,"Enabled",v2609.Enabled);v2609.Enabled=false;end end end local v1137={"workspace.Visuals","workspace.WeatherVisuals","workspace.Water_Effect","workspace.WeatherObjects","workspace.TradeWorld.PortalPetePlatform"};for v2129,v2130 in ipairs(v1137) do v1136(v2130);end HolyNotify("Performance Mode Enabled","Extra visuals were reduced to improve FPS.","zap",4);end function RestorePerformanceMode() for v2131,v2132 in pairs(PerformanceModeState.Original) do if (v2131 and v2131.Parent) then for v3008,v3009 in pairs(v2132) do pcall(function() v2131[v3008]=v3009;end);end end end table.clear(PerformanceModeState.Original);PerformanceModeState.Applied=false;HolyNotify("Performance Mode Disabled","Visual settings were restored.","refresh-cw",4);end function SetPerformanceMode(v1139) UIState.PerformanceMode=v1139==true ;if UIState.PerformanceMode then ApplyPerformanceMode();else RestorePerformanceMode();end end function BuildSettingsTab() local v1141=Tabs.Settings:AddLeftGroupbox("Settings","settings");local v1142=Tabs.Settings:AddRightGroupbox("Dev Tools","terminal");local function v1143(v2133) local v2134,v2135=pcall(function() return game:HttpGet(v2133,true);end);if ( not v2134 or (type(v2135)~="string") or ( #v2135<100)) then warn("[DevTools] HTTP failed:",v2133);return;end local v2136,v2137=loadstring(v2135);if  not v2136 then warn("[DevTools] Compile failed:",v2137);return;end local v2138,v2139=pcall(v2136);if  not v2138 then warn("[DevTools] Runtime failed:",v2139);return;end end local function v1144() local v2140=math.clamp(math.floor(SafeNumber(UIState.DPIScale,100) + 0.5 ),50,150);local v2141={50,75,90,100,110,125,150};local v2142=4;local v2143=math.huge;for v2610,v2611 in ipairs(v2141) do local v2612=math.abs(v2140-v2611 );if (v2612<v2143) then v2143=v2612;v2142=v2610;end end return v2142;end local v1145=v1141:AddDropdown("HolyDPIScale",{Text="UI Scale",Tooltip="Adjusts the size of the Holy interface.",Values={"50%","75%","90%","100%","110%","125%","150%"},Default=v1144(),Searchable=false});v1145:OnChanged(function(v2144) local v2145=tostring(v2144 or "100%" );local v2146=v2145:gsub("%%","");local v2147=tonumber(v2146);if  not v2147 then return;end v2147=math.clamp(math.floor(v2147 + 0.5 ),50,150);UIState.DPIScale=v2147;if (Library and (type(Library.SetDPIScale)=="function")) then pcall(function() Library:SetDPIScale(v2147);end);end MarkConfigDirty();if ConfigState.IsHydrating then return;end HolyNotify("UI Scale Updated","Holy UI scale set to "   .. tostring(v2147)   .. "%." ,"maximize",3);end);local v1146=v1141:AddToggle("PerformanceMode",{Text="Performance Mode",Tooltip="Removes extra visual effects client-side to improve FPS. Safe for AFK/sniping.",Default=false});v1146:OnChanged(function(v2149) UIState.PerformanceMode=v2149==true ;MarkConfigDirty();if ConfigState.IsHydrating then return;end SetPerformanceMode(v2149);end);function RequestHolyAutoClose(v2151) UIState.PendingAutoClose=true;UIState.PendingAutoCloseReason=tostring(v2151 or "Auto Close UI" );end function CloseHolyWindowSafe() if  not Library then return false;end if (ScriptState and (ScriptState.BootComplete~=true)) then RequestHolyAutoClose("waiting for boot complete");return false;end local v2154=false;if (type(Library.Toggle)=="function") then v2154=pcall(function() Library:Toggle();end);return v2154;end if (Window and (type(Window.Hide)=="function")) then v2154=pcall(function() Window:Hide();end);return v2154;end if (Window and (type(Window.SetVisible)=="function")) then v2154=pcall(function() Window:SetVisible(false);end);return v2154;end return false;end local v1147=v1141:AddToggle("AutoMinimizeUI",{Text="Auto Close UI",Tooltip="Closes the Holy UI after loading finishes. Reopen with LeftAlt.",Default=false});v1147:OnChanged(function(v2155) UIState.AutoMinimize=v2155==true ;MarkConfigDirty();if ConfigState.IsHydrating then return;end if (v2155==true) then RequestHolyAutoClose("toggle enabled");task.defer(function() task.wait(0.25);CloseHolyWindowSafe();end);end end);local v1148=v1141:AddToggle("Auto Trade World",{Text="Auto Teleport Trade World",Default=false});v1148:OnChanged(function(v2157) WorldState.AutoJoinTradeWorld=v2157==true ;MarkConfigDirty();v1148:OnChanged(function(v2613) WorldState.AutoJoinTradeWorld=v2613==true ;MarkConfigDirty();if ConfigState.IsHydrating then return;end if (v2613~=true) then CancelScheduledTradeWorldJoin();HolyNotify("Auto Teleport Disabled","Pending Trade World teleport cancelled.","x",3);return;end if  not IsTradeWorld() then ScheduleJoinTradeWorld("Auto Teleport Trade World enabled.");end end);if  not IsTradeWorld() then ScheduleJoinTradeWorld("Auto Teleport Trade World enabled.");end end);task.spawn(function() task.wait(2);if ((WorldState.AutoJoinTradeWorld==true) and  not IsTradeWorld()) then ScheduleJoinTradeWorld("Auto Teleport Trade World restored from config.");end end);local v1149=v1141:AddToggle("AutoReconnect",{Text="Auto Reconnect",Tooltip="Automatically reconnects when Roblox shows a disconnect / shutdown prompt",Default=false});v1149:OnChanged(function(v2159) ReconnectState.AutoReconnect=v2159;MarkConfigDirty();end);v1142:AddButton({Text="Open Remote Spy",Tooltip="",Func=function() if ScriptState.ForceStopped then warn("[DevTools] Blocked (ForceStopped)");return;end v1143("https://raw.githubusercontent.com/Klinac/scripts/main/utopia_spy.lua");end});v1142:AddButton({Text="Open Dex Explorer",Tooltip="",Func=function() if ScriptState.ForceStopped then warn("[DevTools] Blocked (ForceStopped)");return;end v1143("https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua");end});end function CanWriteFullHolyConfig() return IsTradeWorld()==true ;end function InitializeSaveAndConfig() SaveManager:SetLibrary(Library);ThemeManager:SetLibrary(Library);SaveManager:SetFolder("HolyV2");ThemeManager:SetFolder("HolyV2");ThemeManager:ApplyTheme("Dark");SaveManager:IgnoreThemeSettings();SaveManager:SetIgnoreIndexes({});task.spawn(function() while true do task.wait(1);if  not ConfigState.Dirty then continue;end ConfigState.LastMutation=SafeNumber(ConfigState.LastMutation,0);if (SafeElapsed(ConfigState.LastMutation)<2) then continue;end ConfigState.Dirty=false;if  not CanWriteFullHolyConfig() then print("[Config] Autosave skipped in Garden Mode to protect Trade World settings");continue;end local v2617,v2618=pcall(function() SaveManager:Save(ConfigState.AutosaveName);end);if v2617 then HolyNotify("Config Saved","Your Holy settings were autosaved.","save",3);else warn("[Config] Autosave failed:",v2618);end end end);ConfigState.IsHydrating=true;local v1151,v1152=pcall(function() SaveManager:Load(ConfigState.AutosaveName);end);ConfigState.IsHydrating=false;UIState.DPIScale=SafeNumber(UIState.DPIScale,100);UIState.DPIScale=math.clamp(math.floor(UIState.DPIScale + 0.5 ),50,150);if (Library and (type(Library.SetDPIScale)=="function")) then pcall(function() Library:SetDPIScale(UIState.DPIScale);end);end UIState.PerformanceMode=UIState.PerformanceMode==true ;if UIState.PerformanceMode then task.spawn(function() task.wait(1);SetPerformanceMode(true);end);end if  not v1151 then warn("[Config] Corrupted config detected:",v1152);if CanWriteFullHolyConfig() then pcall(function() SaveManager:Save(ConfigState.AutosaveName);end);warn("[Config] Autosave reset complete");else warn("[Config] Reset skipped in Garden Mode to protect Trade World settings");end else print("[Config] Autoload complete");end LoadSniperFilters();if (type(LoadListingFilters)=="function") then LoadListingFilters();end if (IsTradeWorld() and (type(RefreshWatchlist)=="function")) then RefreshWatchlist();end if (type(SyncListingRequiredFlagsFromValues)=="function") then SyncListingRequiredFlagsFromValues();end if IsTradeWorld() then task.spawn(function() local v2882=os.clock();while (os.clock() -v2882)<10  do if (Library and Library.Options and Library.Options.EnableAutoList) then break;end task.wait(0.15);end task.wait(0.75);if (ScriptState and ScriptState.ForceStopped) then return;end if (type(RefreshListingInventorySnapshot)=="function") then pcall(RefreshListingInventorySnapshot);end if (type(BuildListingPreview)=="function") then pcall(BuildListingPreview);end if (type(RefreshListingFilterUI)=="function") then pcall(RefreshListingFilterUI);end if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end if (type(ArmListingsAutostartFromSavedToggle)=="function") then local v3060,v3061=pcall(ArmListingsAutostartFromSavedToggle);if  not v3060 then warn("[LISTINGS] AutoList restore failed:",tostring(v3061));end else warn("[LISTINGS] ArmListingsAutostartFromSavedToggle missing at config restore");end if (type(RefreshEggFocus)=="function") then pcall(RefreshEggFocus);end end);end task.spawn(function() if  not BoothAuto.AutoTeleport then return;end if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then return;end local v2161=tostring(Players.LocalPlayer.UserId);local v2162=os.clock() + 15 ;while os.clock()<v2162  do local v2619=LatestBoothData;if (v2619 and v2619.Booths) then for v3062,v3063 in pairs(v2619.Booths) do if (v3063.Owner and tostring(v3063.Owner):find(v2161)) then print("[BOOT] Restoring booth auto teleport");local v3128=Players.LocalPlayer.Character or Players.LocalPlayer.CharacterAdded:Wait() ;local v3129=v3128:FindFirstChildOfClass("Humanoid");if  not BoothAuto.LockBehindBooth then RestoreCharacterMovement();end task.wait(0.5);local v3130=PositionBehindOwnedBooth();if  not v3130 then warn("[BOOT] Booth restore failed");end return;end end end task.wait(0.25);end end);end function MainLoop() while true do task.wait(0.1);if ScriptState.ForceStopped then continue;end if (ListingsState and ListingsState.Enabled) then if (game.PlaceId~=TRADING_WORLD_PLACE_ID) then ListingsState.Status="Not in Trade World";else local v3065=os.clock();ListingsState.NoWorkSleepUntil=SafeNumber(ListingsState.NoWorkSleepUntil,0);ListingsState.LastScan=SafeNumber(ListingsState.LastScan,0);ListingsState.ScanInterval=SafeNumber(ListingsState.ScanInterval,6);if (v3065>=ListingsState.NoWorkSleepUntil) then local v3131=v3065-ListingsState.LastScan ;if (v3131>=ListingsState.ScanInterval) then ListingsState.LastScan=os.clock();pcall(function() RunAutoListingPass();end);if (type(ListingsStatusRefresh)=="function") then pcall(ListingsStatusRefresh);end end end end end if  not RuntimeState.Started then continue;end if (game.PlaceId==TRADING_WORLD_PLACE_ID) then SniperState.LastScan=SafeNumber(SniperState.LastScan,0);local v2884=SafeElapsed(SniperState.LastScan);if (v2884>=SniperState.ScanInterval) then if ( not SniperState.Scanning and  not SniperState.Hopping) then RunSniperScan();end end end end end LocalPlayer=Players.LocalPlayer;LocalPlayer.Idled:Connect(function() pcall(function() VirtualUser:CaptureController();VirtualUser:ClickButton2(Vector2.new(0,0));end);end);function EquipShowcasePet(v1155) if  not IsTradeWorld() then return;end if  not BoothPetState.Enabled then return;end local v1156=BoothPetState.SelectedPetType;if ( not v1156 or (v1156=="")) then return;end local v1157=os.clock();if  not v1155 then local v2620=v1157-SafeNumber(BoothPetState.LastEquipAttemptAt,0) ;if (v2620<SafeNumber(BoothPetState.EquipCooldown,1.5)) then return;end end BoothPetState.LastEquipAttemptAt=v1157;local v1159=ResolveBestPet(v1156);if  not v1159 then BoothPetState.LastEquippedUID=nil;BoothPetState.LockedShowcaseUID=nil;if ShouldWarnMissingShowcasePet(v1156) then warn("[BoothPet] No matching pet:",v1156);end return;end BoothPetState.LastMissingPet=nil;if  not BoothPetState.LockedShowcaseUID then BoothPetState.LockedShowcaseUID=v1159.UID;end if IsToolCurrentlyEquipped(v1159.Tool) then BoothPetState.LastEquippedUID=v1159.UID;BoothPetState.LockedShowcaseUID=v1159.UID;return;end if ( not v1155 and (BoothPetState.LastEquippedUID==v1159.UID)) then return;end local v1161=Players.LocalPlayer.Character;if  not v1161 then return;end local v1162=v1161:FindFirstChildOfClass("Humanoid");if ( not v1162 or (v1162.Health<=0)) then return;end BoothPetState.LastEquippedUID=v1159.UID;BoothPetState.LockedShowcaseUID=v1159.UID;print(string.format("[BoothPet] Equipping → %s | %.2f KG | UID %s",tostring(v1159.PetName),tonumber(v1159.Weight) or 0 ,tostring(v1159.UID)));v1162:EquipTool(v1159.Tool);end ScriptState.Loaded=true;function AutoServerHopWorker() while true do task.wait(1);if ScriptState.ForceStopped then continue;end if  not BoothAuto.AutoServerHop then continue;end BoothAuto.LastServerHop=SafeNumber(BoothAuto.LastServerHop,0);BoothAuto.ServerHopMinutes=SafeNumber(BoothAuto.ServerHopMinutes,10);local v2165=SafeElapsed(BoothAuto.LastServerHop);local v2166=BoothAuto.ServerHopMinutes * 60 ;if (v2165<v2166) then continue;end BoothAuto.LastServerHop=os.clock();print("[Hop] Auto joining new server");local v2167=game:GetService("TeleportService");local v2168=Players.LocalPlayer;if  not v2168 then continue;end local v2169="https://games.roblox.com/v1/games/"   .. game.PlaceId   .. "/servers/Public?sortOrder=Desc&limit=100" ;local v2170,v2171=pcall(function() return game:HttpGet(v2169);end);if ( not v2170 or  not v2171) then warn("[Hop] Server fetch failed");continue;end local v2172;v2170,v2172=pcall(function() return HttpService:JSONDecode(v2171);end);if ( not v2170 or  not v2172 or  not v2172.data) then warn("[Hop] Decode failed");continue;end local v2173={};for v2628,v2629 in ipairs(v2172.data) do if (v2629.id and v2629.playing and v2629.maxPlayers and (v2629.playing<v2629.maxPlayers) and (v2629.id~=game.JobId)) then table.insert(v2173,v2629.id);end end if ( #v2173==0) then warn("[Hop] No servers available");continue;end local v2174=v2173[math.random( #v2173)];pcall(function() v2167:TeleportToPlaceInstance(game.PlaceId,v2174,v2168);end);end end task.spawn(function() task.wait(3);local v1166=Players.LocalPlayer:WaitForChild("PlayerGui");local v1167=v1166:WaitForChild("Teleport_UI"):WaitForChild("TradePlaza");local v1168={"Booth","Index","Tokens"};for v2175,v2176 in ipairs(v1168) do local v2177=v1167:FindFirstChild(v2176);if v2177 then v2177.Size=UDim2.new(0,70,0,28);v2177.Position=v2177.Position + UDim2.new(0,0,0, -10) ;v2177.BackgroundTransparency=0.2;local v2888=v2177:FindFirstChildOfClass("UICorner");if v2888 then v2888.CornerRadius=UDim.new(0,6);end local v2889=v2177:FindFirstChild("Title");if (v2889 and v2889:IsA("TextLabel")) then v2889.TextScaled=true;v2889.TextWrapped=false;v2889.Size=UDim2.new(1, -4,1, -2);v2889.Position=UDim2.new(0,2,0,0);v2889.AnchorPoint=Vector2.new(0,0);v2889.BackgroundTransparency=1;v2889.TextXAlignment=Enum.TextXAlignment.Center;v2889.TextYAlignment=Enum.TextYAlignment.Center;v2889.Font=Enum.Font.GothamBold;v2889.TextStrokeTransparency=0.5;end for v3010,v3011 in ipairs(v2177:GetDescendants()) do if (v3011:IsA("ImageLabel") or v3011:IsA("ImageButton")) then v3011.Size=UDim2.new(0,16,0,16);end end end end end);task.spawn(function() task.wait(2);local v1169=Players.LocalPlayer:WaitForChild("PlayerGui");local v1170=v1169:WaitForChild("Hud_UI"):WaitForChild("SideBtns");local v1171={"Shop","Trade"};for v2178,v2179 in ipairs(v1171) do local v2180=v1170:FindFirstChild(v2179);if  not v2180 then continue;end v2180.Size=UDim2.new(0,50,0,26);end end);task.spawn(function() while true do task.wait(0.5);local v2182=Players.LocalPlayer:FindFirstChild("PlayerGui");if  not v2182 then continue;end local v2183=v2182:FindFirstChild("TopbarStandard");if  not v2183 then continue;end local v2184=v2183:FindFirstChild("Holders");if  not v2184 then continue;end local v2185=v2184:FindFirstChild("Right");if  not v2185 then continue;end local v2186=v2185:FindFirstChild("EVENT NOTIFY");if v2186 then v2186.Visible=false;v2186:Destroy();print("[UI] EVENT NOTIFY removed");end end end);task.spawn(function() while true do task.wait(0.25);if ScriptState.ForceStopped then continue;end if  not IsTradeWorld() then continue;end if  not BeeEggAuto.Enabled then continue;end pcall(function() TryBuyBeeEgg();end);end end);task.spawn(AutoServerHopWorker);task.spawn(BoothPositionWatchdog);task.spawn(function() while true do task.wait(0.15);if ScriptState.ForceStopped then continue;end if  not IsTradeWorld() then if (BoothPetState.Enabled or ShowcaseEquipState.ReequipPending or ShowcaseEquipState.Attempting) then BoothPetState.Enabled=false;BoothPetState.LastEquippedUID=nil;ShowcaseEquipState.ReequipPending=false;ShowcaseEquipState.Attempting=false;ShowcaseEquipState.InventoryConfirmedAt=0;end continue;end if ( not ShowcaseEquipState.ReequipPending and  not ShowcaseEquipState.Attempting) then pcall(EquipShowcasePet);end if  not ShowcaseEquipState.ReequipPending then continue;end if ShowcaseEquipState.Attempting then continue;end if  not BoothPetState.Enabled then ShowcaseEquipState.ReequipPending=false;continue;end local v2187=BoothPetState.SelectedPetType;if ( not v2187 or (v2187=="")) then ShowcaseEquipState.ReequipPending=false;continue;end ShowcaseEquipState.InventoryConfirmedAt=SafeNumber(ShowcaseEquipState.InventoryConfirmedAt,0);local v2189=SafeElapsed(ShowcaseEquipState.InventoryConfirmedAt);if (v2189<ShowcaseEquipState.ReequipDelay) then continue;end ShowcaseEquipState.ReequipPending=false;ShowcaseEquipState.Attempting=true;local v2192=ShowcaseEquipState.RequestId;task.spawn(function() print(string.format("[BoothPet] Post-snipe re-equip → %s",tostring(v2187)));pcall(function() for v3012=1,5 do if ScriptState.ForceStopped then break;end if (v2192~=ShowcaseEquipState.RequestId) then break;end EquipShowcasePet(true);task.wait(0.2);end end);ShowcaseEquipState.Attempting=false;end);end end);if IsTradeWorld() then StartWorker("AutoPromoteWorker",function() while true do task.wait(3);if ScriptState.ForceStopped then continue;end if  not IsTradeWorld() then continue;end pcall(function() SendPromoteMessage();end);end end);end BuildHomeTab();if IsTradeWorld() then BuildBoothTab();BuildSniperTab();BuildListingsTab();else BuildGardenModeTradeTabs();RuntimeState.Started=false;SniperState.AutoHop=false;BoothAuto.Enabled=false;BoothAuto.AutoTeleport=false;BoothPetState.Enabled=false;BeeEggAuto.Enabled=false;ListingsState.Enabled=false;ListingsState.VisualTagsEnabled=false;ListingsState.Status="Garden Mode";print("[BOOT] Garden mode active - Trade World logic disabled");end BuildWebhookTab();BuildSettingsTab();BuildVisualTab();if IsTradeWorld() then StartListingWorker();end HolyLoading:SetCurrentStep(4);HolyLoading:SetDescription("Loading saved configuration...");local v14,v15=pcall(function() InitializeSaveAndConfig();end);if  not v14 then warn("[CONFIG] InitializeSaveAndConfig failed:",tostring(v15));HolyNotify("Config Load Failed","Holy skipped saved config because it errored. Check console.","triangle-alert",5);end HolyLoading:SetCurrentStep(5);HolyLoading:SetDescription("Starting workers...");if (type(CreateWatchlistHUD)=="function") then pcall(CreateWatchlistHUD);if WatchlistHUDGui then WatchlistHUDGui.Enabled=VisualState.WatchlistHUD==true ;end if (type(RefreshWatchlistHUD)=="function") then pcall(RefreshWatchlistHUD);end end if (type(CreateServerInfoHUD)=="function") then pcall(CreateServerInfoHUD);if ServerInfoHUDGui then ServerInfoHUDGui.Enabled=VisualState.ServerInfoHUD==true ;end if (type(RefreshServerInfoHUD)=="function") then pcall(RefreshServerInfoHUD);end end if (IsTradeWorld() and (type(CreateSniperMonitorHUD)=="function")) then pcall(CreateSniperMonitorHUD);if SniperMonitorHUDGui then SniperMonitorHUDGui.Enabled=VisualState.SniperMonitorHUD==true ;end if (type(RefreshSniperMonitorHUD)=="function") then pcall(RefreshSniperMonitorHUD);end end task.spawn(function() while true do task.wait(0.25);pcall(function() if (type(RefreshServerInfoHUD)=="function") then RefreshServerInfoHUD();end if (IsTradeWorld() and (type(RefreshSniperMonitorHUD)=="function")) then RefreshSniperMonitorHUD();end end);end end);task.spawn(function() local v1172=0;while true do task.wait(2);if ScriptState.ForceStopped then continue;end if  not IsTradeWorld() then continue;end local v2202,v2203=pcall(function() if (type(BuildListingPreview)=="function") then BuildListingPreview();end if (type(ListingsStatusRefresh)=="function") then ListingsStatusRefresh();end end);if  not v2202 then local v2896=os.clock();if ((v2896-v1172)>10) then v1172=v2896;warn("[LISTINGS STATUS] Refresh failed:",tostring(v2203));end end end end);do local function v1173() if  not IsTradeWorld() then return;end task.defer(function() pcall(function() if (type(RefreshListingInventorySnapshot)=="function") then RefreshListingInventorySnapshot();end if (type(BuildListingPreview)=="function") then BuildListingPreview();end if (type(ListingsStatusRefresh)=="function") then ListingsStatusRefresh();end end);end);end local v1174=Players.LocalPlayer;if v1174 then local v2631=v1174:FindFirstChild("Backpack");if v2631 then v2631.ChildAdded:Connect(function() v1173();end);v2631.ChildRemoved:Connect(function() v1173();end);end if v1174.Character then v1174.Character.ChildAdded:Connect(function() v1173();end);v1174.Character.ChildRemoved:Connect(function() v1173();end);end v1174.CharacterAdded:Connect(function(v2897) task.wait(1);v2897.ChildAdded:Connect(function() v1173();end);v2897.ChildRemoved:Connect(function() v1173();end);v1173();end);end end AutoPlayState={Started=false,Finished=false,LastClick=0,Attempts=0};function GetLoadingGui() local v1175=Players.LocalPlayer;if  not v1175 then return nil;end local v1176=v1175:FindFirstChild("PlayerGui");if  not v1176 then return nil;end return v1176:FindFirstChild("LoadingGui");end function IsLoadingPlayScreenVisible() local v1177=GetLoadingGui();if  not v1177 then return false;end if (v1177:IsA("ScreenGui") and (v1177.Enabled==false)) then return false;end for v2204,v2205 in ipairs(v1177:GetDescendants()) do if (v2205:IsA("TextLabel") or v2205:IsA("TextButton")) then local v2898=tostring(v2205.Text or "" ):lower();if (v2898:find("click anywhere",1,true) or v2898:find("tap anywhere",1,true) or v2898:find("press any",1,true) or v2898:find("play",1,true)) then return true;end end end return true;end function SendLoadingScreenClick() local v1178=game:GetService("VirtualInputManager");local v1179=workspace.CurrentCamera;if  not v1179 then return false;end local v1180=v1179.ViewportSize;if ((v1180.X<=0) or (v1180.Y<=0)) then return false;end local v1181=math.floor(v1180.X * 0.5 );local v1182=math.floor(v1180.Y * 0.55 );local v1183=pcall(function() v1178:SendMouseButtonEvent(v1181,v1182,0,true,game,0);task.wait(0.08);v1178:SendMouseButtonEvent(v1181,v1182,0,false,game,0);end);return v1183;end function FireFinishLoadingRemoteSafe() local v1184=ReplicatedStorage:FindFirstChild("GameEvents");if  not v1184 then return false;end local v1185=v1184:FindFirstChild("Finish_Loading");if ( not v1185 or  not v1185:IsA("RemoteEvent")) then return false;end v1185:FireServer();return true;end function RestoreCameraSoft() local v1186=Players.LocalPlayer;if  not v1186 then return false;end local v1187=v1186.Character;if  not v1187 then return false;end local v1188=v1187:FindFirstChildOfClass("Humanoid");local v1189=workspace.CurrentCamera;if ( not v1189 or  not v1188) then return false;end v1189.CameraType=Enum.CameraType.Custom;v1189.CameraSubject=v1188;return true;end function CleanupLoadingGuiVisualOnly() local v1193=GetLoadingGui();if  not v1193 then return true;end pcall(function() v1193.Enabled=false;end);return true;end task.spawn(function() if AutoPlayState.Started then return;end AutoPlayState.Started=true;local v1195=Players.LocalPlayer;if  not v1195 then return;end local v1196=v1195:WaitForChild("PlayerGui",20);if  not v1196 then return;end task.wait(2);for v2207=1,20 do if AutoPlayState.Finished then break;end local v2208=GetLoadingGui();if  not v2208 then AutoPlayState.Finished=true;break;end AutoPlayState.Attempts=v2207;pcall(function() FireFinishLoadingRemoteSafe();end);task.wait(0.15);if IsLoadingPlayScreenVisible() then pcall(function() SendLoadingScreenClick();end);AutoPlayState.LastClick=os.clock();end task.wait(0.75);pcall(function() RestoreCameraSoft();end);local v2210=GetLoadingGui();if ( not v2210 or (v2210:IsA("ScreenGui") and (v2210.Enabled==false))) then AutoPlayState.Finished=true;break;end task.wait(0.25);end task.wait(1);pcall(function() RestoreCameraSoft();end);pcall(function() CleanupLoadingGuiVisualOnly();end);end);ServerInfoStartedAt=SafeNumber(ServerInfoStartedAt,os.clock());LatestBoothUpdate=SafeNumber(LatestBoothUpdate,0);LastTokenFailure=SafeNumber(LastTokenFailure,0);LastPendingSale=SafeNumber(LastPendingSale,0);if ConfigState then ConfigState.LastMutation=SafeNumber(ConfigState.LastMutation,0);end if SniperState then SniperState.LastScan=SafeNumber(SniperState.LastScan,0);SniperState.LastHop=SafeNumber(SniperState.LastHop,0);SniperState.ScanStartedAt=SafeNumber(SniperState.ScanStartedAt,os.clock());SniperState.ScanDuration=SafeNumber(SniperState.ScanDuration,10);SniperState.ScanInterval=SafeNumber(SniperState.ScanInterval,0.25);SniperState.StayAfterSnipe=SniperState.StayAfterSnipe==true ;SniperState.StayAfterSnipeSeconds=SafeNumber(SniperState.StayAfterSnipeSeconds,5);SniperState.StayAfterSnipeUntil=SafeNumber(SniperState.StayAfterSnipeUntil,0);end if BoothAuto then BoothAuto.LastServerHop=SafeNumber(BoothAuto.LastServerHop,0);BoothAuto.ServerHopMinutes=SafeNumber(BoothAuto.ServerHopMinutes,10);end if BeeEggAuto then BeeEggAuto.LastAttempt=SafeNumber(BeeEggAuto.LastAttempt,0);BeeEggAuto.BuyInterval=SafeNumber(BeeEggAuto.BuyInterval,1.5);end if WebhookState then WebhookState.LastSend=SafeNumber(WebhookState.LastSend,0);WebhookState.SendDelay=SafeNumber(WebhookState.SendDelay,0.8);end if ShowcaseEquipState then ShowcaseEquipState.InventoryConfirmedAt=SafeNumber(ShowcaseEquipState.InventoryConfirmedAt,0);ShowcaseEquipState.ReequipDelay=SafeNumber(ShowcaseEquipState.ReequipDelay,10);end if ReconnectState then ReconnectState.LastAttempt=SafeNumber(ReconnectState.LastAttempt,0);ReconnectState.Cooldown=SafeNumber(ReconnectState.Cooldown,5);end HolyLoading:SetCurrentStep(6);HolyLoading:SetDescription("Ready.");task.wait(0.25);HolyLoading:Continue();ScriptState.BootComplete=true;if ((UIState.AutoMinimize==true) or (UIState.PendingAutoClose==true)) then task.defer(function() task.wait(0.35);CloseHolyWindowSafe();end);end task.spawn(MainLoop);
+VirtualUser =
+    game:GetService("VirtualUser")
+
+UserInputService =
+    game:GetService("UserInputService")
+
+
+--==================================================
+-- OBFUSCATION / RE-EXECUTION SAFETY
+-- Stops old worker loops when the script is re-executed.
+--==================================================
+
+HOLY_RUNTIME_ROOT =
+    (
+        type(getgenv) == "function"
+        and getgenv()
+        or _G
+    ).HOLY_RUNTIME_ROOT
+    or {}
+
+if type(getgenv) == "function" then
+    getgenv().HOLY_RUNTIME_ROOT =
+        HOLY_RUNTIME_ROOT
+else
+    _G.HOLY_RUNTIME_ROOT =
+        HOLY_RUNTIME_ROOT
+end
+
+HOLY_RUN_ID =
+    tostring(os.clock())
+    .. "_"
+    .. tostring(math.random(100000, 999999))
+
+HOLY_RUNTIME_ROOT.RunId =
+    HOLY_RUN_ID
+
+function IsCurrentRun()
+
+    return HOLY_RUNTIME_ROOT
+        and HOLY_RUNTIME_ROOT.RunId == HOLY_RUN_ID
+end
+
+-- Early safe helpers.
+-- These are defined again later, but must exist before early workers start.
+function SafeNumber(value, fallback)
+
+    local numberValue =
+        tonumber(value)
+
+    if numberValue == nil then
+        return fallback or 0
+    end
+
+    return numberValue
+end
+
+function SafeElapsed(lastTime)
+
+    return os.clock()
+        - SafeNumber(lastTime, 0)
+end
+
+function SafeRemaining(targetTime)
+
+    return SafeNumber(targetTime, 0)
+        - os.clock()
+end
+
+function IsTradeWorld()
+
+    return game.PlaceId == TRADING_WORLD_PLACE_ID
+end
+
+--==================================================
+-- [1] BOOTSTRAP
+--==================================================
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+TRADING_WORLD_PLACE_ID = 129954712878723
+Players = game:GetService("Players")
+ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+ServerInfoStartedAt = 0
+
+function ResolveServerJoinClock()
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return os.clock()
+    end
+
+    local storedJobId =
+        player:GetAttribute("HolyServerJoinJobId")
+
+    local storedClock =
+        player:GetAttribute("HolyServerJoinClock")
+
+    -- Only reuse the stored time if it belongs to this exact server.
+    if storedJobId == game.JobId
+    and type(storedClock) == "number" then
+        return storedClock
+    end
+
+    local joinClock =
+        os.clock()
+
+    player:SetAttribute(
+        "HolyServerJoinJobId",
+        game.JobId
+    )
+
+    player:SetAttribute(
+        "HolyServerJoinClock",
+        joinClock
+    )
+
+    return joinClock
+end
+
+ServerInfoStartedAt =
+    ResolveServerJoinClock()
+--==================================================
+-- VOICE CHAT REMOTE SINK
+-- Prevents discarded event spam
+--==================================================
+
+task.spawn(function()
+
+    local remote =
+        ReplicatedStorage:WaitForChild(
+            "SendLikelySpeakingUsers",
+            10
+        )
+
+    if not remote
+    or not remote:IsA("RemoteEvent") then
+        return
+    end
+
+    remote.OnClientEvent:Connect(function()
+        -- intentionally ignored
+    end)
+
+end)
+
+TradeBoothController = nil
+function GetController()
+    if TradeBoothController then
+        return TradeBoothController
+    end
+
+    local ok, result = pcall(function()
+        return require(
+            ReplicatedStorage
+                .Modules
+                .TradeBoothControllers
+                .TradeBoothController
+        )
+    end)
+
+    if ok and result then
+        TradeBoothController = result
+        return result
+    end
+
+    return nil
+end
+
+
+function GetTokenBalance()
+
+    local playerGui =
+        Players.LocalPlayer:FindFirstChild("PlayerGui")
+
+    if not playerGui then
+        return 0
+    end
+
+    local tokenUI =
+        playerGui:FindFirstChild("TradeTokenCurrency_UI")
+
+    if not tokenUI then
+        return 0
+    end
+
+    local tradeTokens =
+        tokenUI:FindFirstChild("TradeTokens")
+
+    if not tradeTokens then
+        return 0
+    end
+
+    local bestNumber = 0
+
+    for _, obj in ipairs(tradeTokens:GetDescendants()) do
+
+        if obj:IsA("TextLabel") then
+
+            local text =
+                tostring(obj.Text)
+
+            local number =
+                text:gsub(",", "")
+                    :match("%d+")
+
+            number = tonumber(number)
+
+            if number
+            and number > bestNumber then
+
+                bestNumber = number
+            end
+        end
+    end
+
+    return bestNumber
+end
+
+
+--==================================================
+-- [2] CLIENT READINESS GATE
+--==================================================
+function WaitForClientReady()
+    local player = Players.LocalPlayer
+    if not player then
+        return false
+    end
+
+    local start = os.clock()
+
+    -- Phase 1: player core
+    while not (
+        player:FindFirstChild("Backpack")
+        and player:FindFirstChild("PlayerGui")
+    ) do
+        if os.clock() - start > 15 then
+            warn("[BOOT] Player core timeout")
+            return false
+        end
+        task.wait(0.1)
+    end
+
+    -- Phase 2: replication
+    start = os.clock()
+    while not ReplicatedStorage:FindFirstChild("GameEvents") do
+        if os.clock() - start > 15 then
+            warn("[BOOT] Replication timeout")
+            return false
+        end
+        task.wait(0.1)
+    end
+
+    return true
+end
+
+-- Phase 3: Trade World (authoritative world objects)
+if game.PlaceId == TRADING_WORLD_PLACE_ID then
+    local start = os.clock()
+
+    while not (
+        workspace:FindFirstChild("TradeWorld")
+        and workspace.TradeWorld:FindFirstChild("Booths")
+    ) do
+        if os.clock() - start > 20 then
+            warn("[BOOT] Trade World timeout")
+            return false
+        end
+
+        task.wait(0.2)
+    end
+end
+
+if not WaitForClientReady() then
+    warn("[HOLY] Boot failed")
+    return
+end
+
+print("[HOLY] Client ready")
+print("[DEBUG] Passed readiness gate")
+
+--==================================================
+-- VISUAL PATCH: BLACK TRADE WORLD TOP BASEPLATE
+-- Keeps workspace.TradeWorld.TopBaseplate black client-side
+--==================================================
+
+function ApplyBlackTopBaseplate()
+
+    local tradeWorld =
+        workspace:FindFirstChild("TradeWorld")
+
+    if not tradeWorld then
+        return false
+    end
+
+    local topBaseplate =
+        tradeWorld:FindFirstChild("TopBaseplate")
+
+    if not topBaseplate then
+        return false
+    end
+
+    if topBaseplate:IsA("BasePart") then
+
+        topBaseplate.Color =
+            Color3.fromRGB(17, 17, 17)
+
+        topBaseplate.Material =
+            Enum.Material.Plastic
+
+        topBaseplate.Reflectance =
+            0
+
+        return true
+    end
+
+    return false
+end
+
+task.spawn(function()
+
+    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+        return
+    end
+
+    for i = 1, 30 do
+
+        local applied =
+            ApplyBlackTopBaseplate()
+
+        if applied then
+            print("[VISUAL] TopBaseplate set to black")
+            break
+        end
+
+        task.wait(0.5)
+    end
+end)
+--==================================================
+-- VISUAL PATCH: BLACK TRADE WORLD FLOOR / RING
+-- Keeps selected TradeWorld parts black client-side
+--==================================================
+
+function ApplyBlackTradeWorldParts()
+
+    local tradeWorld =
+        workspace:FindFirstChild("TradeWorld")
+
+    if not tradeWorld then
+        return false
+    end
+
+    local applied = false
+
+    local function PaintBlack(part)
+
+        if not part
+        or not part:IsA("BasePart") then
+            return
+        end
+
+        part.Color =
+            Color3.fromRGB(17, 17, 17)
+
+        part.BrickColor =
+            BrickColor.new("Really black")
+
+        part.Material =
+            Enum.Material.Plastic
+
+        part.Reflectance =
+            0
+
+        applied = true
+    end
+
+    -- workspace.TradeWorld.TopBaseplate
+    PaintBlack(
+        tradeWorld:FindFirstChild("TopBaseplate")
+    )
+
+    -- workspace.TradeWorld.Ring.Union
+    local ring =
+        tradeWorld:FindFirstChild("Ring")
+
+    if ring then
+        PaintBlack(
+            ring:FindFirstChild("Union")
+        )
+    end
+
+    return applied
+end
+
+task.spawn(function()
+
+    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+        return
+    end
+
+    for i = 1, 30 do
+
+        local applied =
+            ApplyBlackTradeWorldParts()
+
+        if applied then
+            print("[VISUAL] TradeWorld floor/ring set to black")
+            break
+        end
+
+        task.wait(0.5)
+    end
+end)
+--==================================================
+-- BOOTH DATA ACCESS
+--==================================================
+
+BoothStore = nil
+LatestBoothData = nil
+LatestBoothUpdate = 0
+
+function GetBoothStore()
+
+    if BoothStore then
+        return BoothStore
+    end
+
+    local Controller = GetController()
+
+    if not Controller then
+        return nil
+    end
+
+    local upvalues =
+        getupvalues(
+            Controller.GetPlayerBoothData
+        )
+
+    local store =
+        upvalues
+        and type(upvalues[2]) == "table"
+        and upvalues[2]
+
+    if not store then
+        return nil
+    end
+
+    if type(store.GetDataAsync) ~= "function" then
+        return nil
+    end
+
+    BoothStore = store
+
+    return BoothStore
+end
+task.spawn(function()
+
+    while IsCurrentRun() do
+
+        if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+            task.wait(1)
+            continue
+        end
+
+        local store = GetBoothStore()
+
+        if store then
+
+            local ok, data = pcall(function()
+                return store:GetDataAsync()
+            end)
+
+            if ok
+            and data
+            and data.Booths
+            then
+                LatestBoothData = data
+                LatestBoothUpdate = os.clock()
+            end
+        end
+
+        local refreshInterval =
+            0.05
+
+        if type(GetBoothDataRefreshInterval) == "function" then
+            refreshInterval =
+                GetBoothDataRefreshInterval()
+        end
+
+        task.wait(refreshInterval)
+    end
+end)
+
+--==================================================
+-- SNIPER RUNTIME STATE
+--==================================================
+
+SniperFilterSets = {
+    [1] = {},
+    [2] = {},
+}
+--==================================================
+-- EGG FOCUS FILTERS
+-- Simple egg-based sniper filters.
+-- Example:
+-- EggFocusFilterSets[1]["Paradise Egg"] = {
+--     MaxPrice = 1000,
+-- }
+--==================================================
+
+EggFocusFilterSets = {
+    [1] = {},
+    [2] = {},
+}
+
+EggFocusUIState = {
+    SaveTarget = 1,
+    ViewTarget = 1,
+}
+-- Legacy alias for compatibility with older code paths.
+SniperFilters =
+    SniperFilterSets[1]
+
+SniperFilterUIState = {
+    SaveTarget = 1,
+    ViewTarget = 1,
+
+    -- Per-filter default.
+    -- DisplayWeight = shown KG value, BaseWeight = raw PetData.BaseWeight.
+    WeightMode = "DisplayWeight",
+    Priority = 5,
+}
+
+function NormalizeWatchlistId(value)
+
+    if value == 2
+    or value == "2"
+    or value == "Watchlist 2" then
+        return 2
+    end
+
+    return 1
+end
+
+function NormalizeWeightMode(value)
+
+    value =
+        tostring(value or "DisplayWeight")
+
+    if value == "BaseWeight"
+    or value == "Base Weight"
+    or value == "Raw BaseWeight"
+    or value:lower() == "baseweight"
+    or value:lower() == "base weight" then
+        return "BaseWeight"
+    end
+
+    return "DisplayWeight"
+end
+
+--==================================================
+-- SNIPER PRIORITY HELPERS
+-- Priority is per-filter.
+-- 10 = buy first, 1 = low priority.
+--==================================================
+
+function ClampSniperPriority(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return 5
+    end
+
+    return math.clamp(
+        math.floor(number),
+        1,
+        10
+    )
+end
+
+function ResolveSniperFilterPriority(filter)
+
+    if type(filter) ~= "table" then
+        return 5
+    end
+
+    return ClampSniperPriority(
+        filter.Priority
+    )
+end
+
+function ResolveSniperDealScore(listing, filter)
+
+    if type(listing) ~= "table"
+    or type(filter) ~= "table" then
+        return 0
+    end
+
+    local price =
+        tonumber(listing.Price)
+        or math.huge
+
+    local maxPrice =
+        tonumber(filter.MaxPrice)
+
+    if not maxPrice
+    or maxPrice == math.huge
+    or maxPrice <= 0 then
+        return 0
+    end
+
+    local score =
+        1 - (price / maxPrice)
+
+    return math.clamp(
+        score,
+        -1,
+        1
+    )
+end
+
+function ComparePriorityListings(a, b)
+
+    if type(a) ~= "table" then
+        return false
+    end
+
+    if type(b) ~= "table" then
+        return true
+    end
+
+    local aPriority =
+        ClampSniperPriority(
+            a.MatchedPriority
+            or a.Priority
+            or 5
+        )
+
+    local bPriority =
+        ClampSniperPriority(
+            b.MatchedPriority
+            or b.Priority
+            or 5
+        )
+
+    if aPriority ~= bPriority then
+        return aPriority > bPriority
+    end
+
+    local aDeal =
+        tonumber(a.MatchedDealScore)
+        or 0
+
+    local bDeal =
+        tonumber(b.MatchedDealScore)
+        or 0
+
+    if aDeal ~= bDeal then
+        return aDeal > bDeal
+    end
+
+    local aPrice =
+        tonumber(a.Price)
+        or math.huge
+
+    local bPrice =
+        tonumber(b.Price)
+        or math.huge
+
+    if aPrice ~= bPrice then
+        return aPrice < bPrice
+    end
+
+    local aWeight =
+        tonumber(a.MatchedWeight)
+        or tonumber(a.DisplayWeight)
+        or tonumber(a.Weight)
+        or 0
+
+    local bWeight =
+        tonumber(b.MatchedWeight)
+        or tonumber(b.DisplayWeight)
+        or tonumber(b.Weight)
+        or 0
+
+    if aWeight ~= bWeight then
+        return aWeight > bWeight
+    end
+
+    return tostring(a.UID or "") < tostring(b.UID or "")
+end
+
+function ResolveListingWeightForFilter(listing, filter)
+
+    if type(listing) ~= "table" then
+        return 0, "DisplayWeight"
+    end
+
+    local weightMode =
+        NormalizeWeightMode(
+            filter
+            and filter.WeightMode
+            or "DisplayWeight"
+        )
+
+    if weightMode == "BaseWeight" then
+        return tonumber(listing.BaseWeight) or 0, weightMode
+    end
+
+    return tonumber(listing.DisplayWeight or listing.Weight) or 0, weightMode
+end
+
+function FormatFilterWeight(value, weightMode)
+
+    local weight =
+        tonumber(value)
+        or 0
+
+    if weight <= 0 then
+        return "-"
+    end
+
+    weightMode =
+        NormalizeWeightMode(weightMode)
+
+    if weightMode == "BaseWeight" then
+        return tostring(weight) .. "bw"
+    end
+
+    return tostring(weight) .. "kg"
+end
+
+function GetSniperFilterSet(watchlistId)
+
+    watchlistId =
+        NormalizeWatchlistId(watchlistId)
+
+    if not SniperFilterSets[watchlistId] then
+        SniperFilterSets[watchlistId] = {}
+    end
+
+    return SniperFilterSets[watchlistId]
+end
+
+function GetEggFocusSet(watchlistId)
+
+    watchlistId =
+        NormalizeWatchlistId(watchlistId)
+
+    if not EggFocusFilterSets[watchlistId] then
+        EggFocusFilterSets[watchlistId] = {}
+    end
+
+    return EggFocusFilterSets[watchlistId]
+end
+
+function CountEggFocusSet(watchlistId)
+
+    local filters =
+        GetEggFocusSet(watchlistId)
+
+    local count = 0
+
+    for _ in pairs(filters) do
+        count = count + 1
+    end
+
+    return count
+end
+
+function CountAllEggFocusFilters()
+
+    local total = 0
+
+    for watchlistId = 1, 2 do
+        total =
+            total
+            + CountEggFocusSet(watchlistId)
+    end
+
+    return total
+end
+
+PetRegistry =
+    PetRegistry
+    or nil
+
+function GetPetRegistry()
+
+    if type(PetRegistry) == "table" then
+        return PetRegistry
+    end
+
+    local ok, result =
+        pcall(function()
+            return require(
+                ReplicatedStorage
+                    :WaitForChild("Data")
+                    :WaitForChild("PetRegistry")
+            )
+        end)
+
+    if ok
+    and type(result) == "table" then
+        PetRegistry = result
+        return PetRegistry
+    end
+
+    return nil
+end
+
+function GetEggFocusNames()
+
+    local registry =
+        GetPetRegistry()
+
+    if type(registry) ~= "table"
+    or type(registry.PetEggs) ~= "table" then
+        return {}
+    end
+
+    local names = {}
+
+    for eggName, eggData in pairs(registry.PetEggs) do
+
+        if type(eggData) == "table"
+        and type(eggData.RarityData) == "table"
+        and type(eggData.RarityData.Items) == "table" then
+
+            table.insert(
+                names,
+                tostring(eggName)
+            )
+        end
+    end
+
+    table.sort(names)
+
+    return names
+end
+
+function GetEggFocusPets(eggName)
+
+    local registry =
+        GetPetRegistry()
+
+    if type(registry) ~= "table"
+    or type(registry.PetEggs) ~= "table" then
+        return {}
+    end
+
+    local eggData =
+        registry.PetEggs[tostring(eggName)]
+
+    local items =
+        eggData
+        and eggData.RarityData
+        and eggData.RarityData.Items
+
+    if type(items) ~= "table" then
+        return {}
+    end
+
+    local pets = {}
+
+    for petName in pairs(items) do
+        table.insert(
+            pets,
+            tostring(petName)
+        )
+    end
+
+    table.sort(pets)
+
+    return pets
+end
+
+function EggFocusContainsPet(eggName, petName)
+
+    eggName =
+        tostring(eggName or "")
+
+    petName =
+        tostring(petName or "")
+
+    if eggName == ""
+    or petName == "" then
+        return false
+    end
+
+    local registry =
+        GetPetRegistry()
+
+    if type(registry) ~= "table"
+    or type(registry.PetEggs) ~= "table" then
+        return false
+    end
+
+    local eggData =
+        registry.PetEggs[eggName]
+
+    local items =
+        eggData
+        and eggData.RarityData
+        and eggData.RarityData.Items
+
+    if type(items) ~= "table" then
+        return false
+    end
+
+    return items[petName] ~= nil
+end
+function CountSniperFilterSet(watchlistId)
+
+    local filters =
+        GetSniperFilterSet(watchlistId)
+
+    local count = 0
+
+    for _ in pairs(filters) do
+        count = count + 1
+    end
+
+    return count
+end
+
+function CountAllSniperFilters()
+
+    local total = 0
+
+    for watchlistId = 1, 2 do
+        total =
+            total
+            + CountSniperFilterSet(watchlistId)
+    end
+
+    return total
+end
+
+SniperMonitorState = {
+    Status = "Idle",
+
+    -- pets/listings found in the latest scan pass only
+    PetsScanned = 0,
+
+    -- optional debug counter, hidden from HUD unless needed
+    ScanPasses = 0,
+}
+
+SniperState = {
+
+    -- runtime
+    Scanning = false,
+    Buying = false,
+    Hopping = false,
+
+    -- inventory safety
+    MaxPetInventory = 350,
+    StopAtPetInventoryLimit = true,
+
+        -- scan timing
+    LastScan = 0,
+    ScanInterval = 0.02,
+    ScanSpeedMode = "Fast",
+
+    -- booth-data refresh timing
+    -- Controls how often LatestBoothData is refreshed from TradeBoothController data.
+    -- Keep separate from ScanInterval because GetDataAsync is heavier than scanning an existing snapshot.
+    BoothDataRefreshMode = "Fast",
+    BoothDataRefreshInterval = 0.05,
+
+    -- auto hop
+    AutoHop = false,
+    HopDelay = 10,
+    LastHop = 0,
+
+    -- duration-based hopping
+    ScanDuration = 10,
+    ScanStartedAt = 0,
+
+    -- stay after snipe
+    StayAfterSnipe = true,
+    StayAfterSnipeSeconds = 5,
+    StayAfterSnipeUntil = 0,
+
+    -- server selection
+    MaxServerPlayers = 30,
+    ServerHopMode = "Fullest Under Max",
+
+    -- How many Roblox server-list pages to fetch during server hop.
+    -- 1 = fastest hop, smaller server pool.
+    -- Higher = better selection, slower hop.
+    ServerHopPages = 1,
+
+    -- server history
+    RecentServers = {},
+}
+--==================================================
+-- SNIPER SCAN SPEED CONFIG
+-- Controls how often HOLY scans booth listings.
+--==================================================
+
+function ResolveSniperScanInterval(mode)
+
+    mode =
+        tostring(mode or "Fast")
+
+    if mode == "Max Speed" then
+        return 0.01
+    end
+
+    if mode == "Fast" then
+        return 0.02
+    end
+
+    if mode == "Balanced" then
+        return 0.05
+    end
+
+    if mode == "Low CPU" then
+        return 0.10
+    end
+
+    if mode == "Ultra Safe" then
+        return 0.20
+    end
+
+    return 0.02
+end
+
+function SetSniperScanSpeedMode(mode)
+
+    mode =
+        tostring(mode or "Fast")
+
+    local allowed = {
+        ["Max Speed"] = true,
+        ["Fast"] = true,
+        ["Balanced"] = true,
+        ["Low CPU"] = true,
+        ["Ultra Safe"] = true,
+    }
+
+    if not allowed[mode] then
+        mode =
+            "Fast"
+    end
+
+    SniperState.ScanSpeedMode =
+        mode
+
+    SniperState.ScanInterval =
+        ResolveSniperScanInterval(mode)
+
+    return SniperState.ScanInterval
+end
+
+--==================================================
+-- BOOTH DATA REFRESH SPEED CONFIG
+-- Controls how often LatestBoothData is refreshed.
+-- This is intentionally separate from Sniper Scan Speed.
+--==================================================
+
+function ResolveBoothDataRefreshInterval(mode)
+
+    mode =
+        tostring(mode or "Fast")
+
+    if mode == "Aggressive" then
+        return 0.01
+    end
+
+    if mode == "Fast" then
+        return 0.03
+    end
+
+    if mode == "Balanced" then
+        return 0.05
+    end
+
+    if mode == "Low CPU" then
+        return 0.10
+    end
+
+    if mode == "Ultra Safe" then
+        return 0.20
+    end
+
+    return 0.05
+end
+
+function SetBoothDataRefreshMode(mode)
+
+    mode =
+        tostring(mode or "Fast")
+
+    local allowed = {
+        ["Aggressive"] = true,
+        ["Fast"] = true,
+        ["Balanced"] = true,
+        ["Low CPU"] = true,
+        ["Ultra Safe"] = true,
+    }
+
+    if not allowed[mode] then
+        mode =
+            "Fast"
+    end
+
+    SniperState.BoothDataRefreshMode =
+        mode
+
+    SniperState.BoothDataRefreshInterval =
+        ResolveBoothDataRefreshInterval(mode)
+
+    return SniperState.BoothDataRefreshInterval
+end
+
+function GetBoothDataRefreshInterval()
+
+    local interval =
+        tonumber(
+            SniperState
+            and SniperState.BoothDataRefreshInterval
+        )
+
+    if not interval then
+        interval =
+            ResolveBoothDataRefreshInterval(
+                SniperState
+                and SniperState.BoothDataRefreshMode
+                or "Fast"
+            )
+    end
+
+    return math.clamp(
+        interval,
+        0.01,
+        0.20
+    )
+end
+
+TeleportRetryState = nil
+
+BoothPetState = {
+    Enabled = false,
+    SelectedPetType = nil,
+
+    LastEquippedUID = nil,
+    LockedShowcaseUID = nil,
+
+    LastMissingPet = nil,
+    LastMissingWarnAt = 0,
+    MissingWarnCooldown = 15,
+
+    LastEquipAttemptAt = 0,
+    EquipCooldown = 1.5,
+}
+--==================================================
+-- SHOWCASE RE-EQUIP STATE
+--==================================================
+
+ShowcaseEquipState = {
+
+    ReequipPending = false,
+
+    -- set only after bought pet enters Backpack/Character
+    InventoryConfirmedAt = 0,
+
+    -- wait after inventory confirmation before re-equipping showcase pet
+    ReequipDelay = 10,
+
+    Attempting = false,
+
+    RequestId = 0,
+}
+
+--==================================================
+-- WEBHOOK STATE
+--==================================================
+
+WebhookState = {
+
+    Enabled = false,
+
+    NotifySuccessfulSnipe = true,
+    NotifyBoothSales = true,
+    NotifyErrors = true,
+
+    PingSuccessfulSnipes = "",
+    PingBoothSales = "",
+    PingErrors = "",
+
+    URL = "",
+
+    Queue = {},
+    Sending = false,
+
+    --==================================================
+    -- RATE LIMITING
+    --==================================================
+
+    LastSend = 0,
+    SendDelay = 0.8,
+}
+
+--==================================================
+-- LISTINGS STATE
+-- Auto-lists inventory pets matching user filters.
+-- Integrated into Holy, uses Holy SaveManager/config.
+--==================================================
+
+ListingsState = {
+    Enabled = false,
+    Busy = false,
+
+        LastScan = 0,
+
+    -- AutoList scan speed.
+    -- Lower = faster queue building.
+    ScanInterval = 2,
+
+    LastCreateAttempt = 0,
+
+-- CreateListing remote pacing.
+-- Adaptive starts at the fastest confirmed safe value.
+CreateCooldown = 5,
+
+ListingSpeedMode = "Adaptive",
+
+AdaptiveCreateCooldown = 5,
+AdaptiveMinCooldown = 5,
+AdaptiveMaxCooldown = 10,
+AdaptiveSuccessStreak = 0,
+AdaptiveLastWaitSignal = 0,
+AdaptiveLastTuneAt = 0,
+
+    -- How many matching pets can be queued per scan pass.
+    -- Worker still lists one-by-one safely.
+    MaxQueuePerPass = 2,
+
+    LastPendingSaleLock = 0,
+    PendingCooldown = 10,
+
+-- Per-pet pending-sale deferral.
+-- Prevents one locked pet from blocking the whole listing lane.
+    PendingUUIDs = {},
+    ActiveCreateUUID = nil,
+    ActiveCreateStartedAt = 0,
+
+    AutoUnfavorite = true,
+
+    SelectedPet = "",
+SelectedMutation = "---",
+
+-- Used only when SelectedMutation / filter.Mutation == "All Except".
+    SelectedExcludedMutations = {},
+   
+    -- Multi-filter listing system.
+    -- Each filter has its own pet, mutation, weight range, and price.
+    ListingFilters = {},
+
+    ListingFilterUI = {
+        Page = 1,
+        PerPage = 8,
+    },
+
+    -- No default weight range.
+-- User must manually enter both before AutoList can list anything.
+MinLevel = 1,
+MaxLevel = 100,
+
+MinWeight = nil,
+MaxWeight = nil,
+
+MinWeightWasEntered = false,
+MaxWeightWasEntered = false,
+
+    -- No default price.
+    -- User must manually enter price before listings can run.
+    Price = nil,
+    PriceWasEntered = false,
+
+    LowPriceThreshold = 100,
+    AllowLowPriceListings = false,
+
+    InventorySnapshot = {},
+
+    ListedUUIDs = {},
+    OwnListedUUIDs = {},
+    OwnListedMetadata = {},
+
+    OwnBoothSnapshot = {},
+    OwnBoothSnapshotPage = 1,
+    OwnBoothSnapshotPerPage = 7,
+    OwnBoothSnapshotLastRefresh = 0,
+    OwnBoothSnapshotStatus = "Not synced",
+
+    FailedUUIDs = {},
+
+    ListingQueue = {},
+    QueuedUUIDs = {},
+    WorkerRunning = false,
+
+    ListedThisSession = 0,
+
+    Preview = {
+        Matching = 0,
+        AlreadyListed = 0,
+        Ready = 0,
+        Failed = 0,
+        RuntimeListed = 0,
+        Queued = 0,
+    },
+
+    Status = "Idle",
+    LastListed = "None",
+
+    LastSummaryPrint = "",
+    LastSummaryPrintAt = 0,
+    QuietWhenComplete = true,
+
+    NoWorkSleepUntil = 0,
+    NoWorkBackoff = 15,
+
+    AutoDisableWhenDone = false,
+    PreserveVisualTagsOnNextDisable = false,
+
+    VisualTagsEnabled = false,
+    VisualTags = {},
+}
+
+CreateListingRemote = nil
+RemoveListingRemote = nil
+FavoriteRemote = nil
+
+ListingsStatusRefresh = nil
+
+--==================================================
+-- LISTINGS: PER-UUID PENDING LOCKS
+-- Prevents one pending sale pet from blocking all other
+-- matching inventory pets.
+--==================================================
+
+function CleanupListingPendingUUIDs()
+
+    if type(ListingsState) ~= "table" then
+        return 0
+    end
+
+    ListingsState.PendingUUIDs =
+        ListingsState.PendingUUIDs
+        or {}
+
+    local now =
+        os.clock()
+
+    local activeCount =
+        0
+
+    for uuid, pendingUntil in pairs(ListingsState.PendingUUIDs) do
+
+        pendingUntil =
+            tonumber(pendingUntil)
+
+        if not pendingUntil
+        or now >= pendingUntil then
+
+            ListingsState.PendingUUIDs[uuid] =
+                nil
+
+        else
+
+            activeCount += 1
+        end
+    end
+
+    return activeCount
+end
+
+function IsListingUUIDPending(uuid)
+
+    uuid =
+        tostring(uuid or "")
+
+    if uuid == "" then
+        return false
+    end
+
+    CleanupListingPendingUUIDs()
+
+    local pendingUntil =
+        ListingsState.PendingUUIDs
+        and ListingsState.PendingUUIDs[uuid]
+
+    if not pendingUntil then
+        return false
+    end
+
+    return os.clock() < tonumber(pendingUntil)
+end
+
+function MarkListingUUIDPending(uuid, cooldown)
+
+    uuid =
+        tostring(uuid or "")
+
+    if uuid == "" then
+        return false
+    end
+
+    ListingsState.PendingUUIDs =
+        ListingsState.PendingUUIDs
+        or {}
+
+    cooldown =
+        SafeNumber(
+            cooldown,
+            ListingsState.PendingCooldown or 10
+        )
+
+    cooldown =
+        math.max(
+            cooldown,
+            1
+        )
+
+    ListingsState.PendingUUIDs[uuid] =
+        os.clock() + cooldown
+
+    ListingsState.LastPendingSaleLock =
+        os.clock()
+
+    print(
+        "[LISTINGS PENDING] Deferred UUID:",
+        uuid,
+        "| cooldown:",
+        tostring(cooldown)
+    )
+
+    return true
+end
+--==================================================
+-- GLOBAL SNIPE WEBHOOK
+-- Sends successful sniper buys to the owner/global feed.
+-- Fire-and-forget so it never slows the sniper.
+--==================================================
+
+GlobalSnipeWebhook = {
+    Enabled = true,
+
+    URL = "https://discord.com/api/webhooks/1453483052780093511/vd_TsWGFC80paUm1rrKG88GR-7vKlhTeDlMLg_U2bVTtIx1M7atFB5P9q6pM70h6yQ01",
+}
+
+--==================================================
+-- GLOBAL BOOTH SALE WEBHOOK
+-- Sends sold booth pets to the owner/global feed.
+-- Fire-and-forget so it never slows booth tracking.
+--==================================================
+
+GlobalBoothSaleWebhook = {
+    Enabled = true,
+
+    URL = "https://discord.com/api/webhooks/1504643775186604203/DxboQrnzN8na8bGzCfwa1IvrreIzg1pUTtveAOKx2ubtYWHR9sLA-oUib4w5FuMrHOnD",
+
+    Queue = {},
+    Sending = false,
+
+    LastSend = 0,
+    SendDelay = 1.25,
+}
+
+--==================================================
+-- GLOBAL MARKET TRACKER WEBHOOK
+-- Sends rare market finds when any scanned booth lists
+-- an exact tracked pet name.
+-- Exact pet names only:
+-- "Rainbow Birb" matches PetName == "Rainbow Birb"
+-- It does NOT match PetName == "Birb" + Mutation == "Rainbow".
+--==================================================
+
+MarketTrackerWebhook = {
+    Enabled = true,
+
+    -- Put your Market Tracker Discord webhook here.
+    URL = "https://discord.com/api/webhooks/1461800728174526475/cliNh1mRSwNHyMKMJ5o0MqxAQY8FgvVwuI9YYFDT4z4VVwS7rcv-vHuh8kdRUU1nNx8y",
+
+    Queue = {},
+    Sending = false,
+
+    LastSend = 0,
+    SendDelay = 1.25,
+
+    -- Prevents the same listing from being sent repeatedly.
+    SentListings = {},
+    DedupeSeconds = 600,
+
+    LastCleanup = 0,
+    CleanupInterval = 120,
+}
+
+MarketTrackerTargets = {
+
+    --==================================================
+    -- RARE / PREMIUM PETS
+    -- These send regardless of KG.
+    -- Price only controls color + ping.
+    --==================================================
+
+    ["Ghostly Spider"] = {
+        Type = "Rare",
+        Emoji = "🕷️",
+
+        -- <= SnipePrice  = 🔥 Snipe / bright green / role ping
+        -- <= GoodPrice   = ✅ Good / green
+        -- <= MaxPrice    = ⚖️ Fair / yellow
+        -- > MaxPrice     = ❌ Overpriced / red
+        MaxPrice = 50000,
+        GoodPrice = 30000,
+        SnipePrice = 30000,
+        PingBelow = 20000,
+
+        MinWeight = 0,
+    },
+
+    ["Rainbow Elephant"] = {
+        Type = "Rare",
+        Emoji = "🐘",
+
+        MaxPrice = 500000,
+        GoodPrice = 250000,
+        SnipePrice = 100000,
+        PingBelow = 100000,
+
+        MinWeight = 0,
+    },
+
+    ["Rainbow Birb"] = {
+        Type = "Rare",
+        Emoji = "🐦",
+
+        MaxPrice = 50000,
+        GoodPrice = 40000,
+        SnipePrice = 30000,
+        PingBelow = 30000,
+
+        MinWeight = 0,
+    },
+
+    ["Rainbow Dilophosaurus"] = {
+        Type = "Rare",
+        Emoji = "🦖",
+
+        MaxPrice = 60000,
+        GoodPrice = 30000,
+        SnipePrice = 25000,
+        PingBelow = 25000,
+
+        MinWeight = 0,
+    },
+
+    ["Blue Whale"] = {
+        Type = "Rare",
+        Emoji = "🐋",
+
+        MaxPrice = 50000,
+        GoodPrice = 20000,
+        SnipePrice = 15000,
+        PingBelow = 15000,
+
+        MinWeight = 0,
+    },
+
+    ["Albino Peacock"] = {
+        Type = "Rare",
+        Emoji = "🦚",
+
+        MaxPrice = 50000,
+        GoodPrice = 20000,
+        SnipePrice = 15000,
+        PingBelow = 15000,
+
+        MinWeight = 0,
+    },
+
+    --==================================================
+    -- WEIGHT PETS
+    -- These only send if KG >= MinWeight.
+    -- Good for normal pets where size matters.
+    --==================================================
+
+    ["Seal"] = {
+        Type = "Weight",
+        Emoji = "🦭",
+
+        MaxPrice = 25000,
+        GoodPrice = 20000,
+        SnipePrice = 15000,
+        PingBelow = 15000,
+
+        MinWeight = 80,
+    },
+
+    ["Mimic Octopus"] = {
+        Type = "Weight",
+        Emoji = "🐙",
+
+        MaxPrice = 10000,
+        GoodPrice = 6000,
+        SnipePrice = 3000,
+        PingBelow = 3000,
+
+        MinWeight = 100,
+    },
+}
+--==================================================
+-- TOKEN FAILURE + BOOTH SALE DETECTION
+--==================================================
+NotificationRemote =
+    ReplicatedStorage
+    .GameEvents
+    .Notification
+
+LastTokenFailure = 0
+LastPendingSale = 0
+
+NotificationRemote.OnClientEvent:Connect(function(message)
+
+    if type(message) ~= "string" then
+        return
+    end
+
+    local lower =
+        string.lower(message)
+
+    if string.find(
+        lower,
+        "don't have enough tokens",
+        1,
+        true
+    ) then
+
+        LastTokenFailure = os.clock()
+
+        warn("[BUY] Not enough tokens")
+
+        return
+    end
+
+--==================================================
+-- CREATE LISTING SERVER COOLDOWN
+-- This is a global CreateListing cooldown, not a pet UUID lock.
+-- Console testing confirmed this triggers when listing too fast.
+--==================================================
+
+if string.find(
+    lower,
+    "please wait before trying to create another listing",
+    1,
+    true
+) then
+
+    if ListingsState then
+
+        ListingsState.LastCreateWaitSignal =
+            os.clock()
+
+        AdaptiveListingRegisterCreateWait(
+            "CreateListing notification"
+        )
+
+        ListingsState.Status =
+            "Create cooldown"
+
+        if type(ListingsStatusRefresh) == "function" then
+            pcall(ListingsStatusRefresh)
+        end
+    end
+
+    warn("[LISTINGS] CreateListing cooldown detected")
+
+    return
+end
+
+--==================================================
+-- PENDING SALE / PET-SPECIFIC LOCK
+-- This can be attributed to the active listing UUID.
+--==================================================
+
+if string.find(
+    lower,
+    "pending sale",
+    1,
+    true
+) then
+
+    LastPendingSale =
+        os.clock()
+
+    if ListingsState then
+
+        ListingsState.LastPendingSaleLock =
+            os.clock()
+
+        local activeUUID =
+            tostring(
+                ListingsState.ActiveCreateUUID
+                or ""
+            )
+
+        if activeUUID ~= "" then
+
+            MarkListingUUIDPending(
+                activeUUID,
+                ListingsState.PendingCooldown
+            )
+
+            ListingsState.Status =
+                "Pet pending, trying next"
+
+        else
+
+            ListingsState.Status =
+                "Pending sale detected"
+        end
+
+        if type(ListingsStatusRefresh) == "function" then
+            pcall(ListingsStatusRefresh)
+        end
+    end
+
+    warn("[BUY] Pending sale lock detected")
+
+    return
+end
+if string.find(
+    lower,
+    "favorite",
+    1,
+    true
+)
+or string.find(
+    lower,
+    "favourited",
+    1,
+    true
+)
+or string.find(
+    lower,
+    "favorited",
+    1,
+    true
+) then
+
+    if ListingsState then
+
+        ListingsState.Status =
+            "Favorite blocked"
+
+        if type(ListingsStatusRefresh) == "function" then
+            pcall(ListingsStatusRefresh)
+        end
+    end
+
+    warn("[LISTINGS] Favorite block detected")
+
+    return
+end
+
+end)
+
+--==================================================
+-- MARKET CACHE
+--==================================================
+
+MarketCache = {}
+SeenListings = {}
+SellerCache = {}
+
+--==================================================
+-- WEIGHT RESOLUTION
+--==================================================
+
+function ResolveDisplayedWeight(baseWeight)
+
+    baseWeight =
+        tonumber(baseWeight)
+
+    if not baseWeight then
+        return 0
+    end
+
+    -- Game display conversion.
+    -- Keeps decimal KG instead of rounding to whole KG.
+    return math.floor((baseWeight * 11) * 100 + 0.5) / 100
+end
+
+function ResolveBoothPetAge(petData)
+
+    if type(petData) ~= "table" then
+        return nil
+    end
+
+    local level =
+        tonumber(petData.Level)
+
+    if level then
+        return level
+    end
+
+    local age =
+        tonumber(petData.Age)
+
+    if age then
+        return age
+    end
+
+    return nil
+end
+
+function ResolveSeller(userId)
+
+    if not userId then
+        return "Unknown"
+    end
+
+    if SellerCache[userId] then
+        return SellerCache[userId]
+    end
+
+    local ok, result = pcall(function()
+        return Players:GetNameFromUserIdAsync(userId)
+    end)
+
+    if ok and result then
+        SellerCache[userId] = result
+        return result
+    end
+
+    return tostring(userId)
+end
+--==================================================
+-- PET RESOLUTION
+--==================================================
+--==================================================
+-- SHOWCASE PET IDENTITY HELPERS
+-- Stable identity prevents equal-weight pet flip-flop.
+--==================================================
+
+function ResolvePetToolStableUID(tool)
+
+    if not tool
+    or not tool:IsA("Tool") then
+        return ""
+    end
+
+    local candidates = {
+        tool:GetAttribute("PET_UUID"),
+        tool:GetAttribute("UUID"),
+        tool:GetAttribute("ItemUUID"),
+        tool:GetAttribute("ItemId"),
+    }
+
+    for _, value in ipairs(candidates) do
+        value =
+            tostring(value or "")
+
+        if value ~= "" then
+            return value
+        end
+    end
+
+    return tostring(tool:GetDebugId())
+end
+
+function IsToolCurrentlyEquipped(tool)
+
+    if not tool then
+        return false
+    end
+
+    local player =
+        Players.LocalPlayer
+
+    local character =
+        player
+        and player.Character
+
+    return character
+        and tool.Parent == character
+end
+
+function ShouldWarnMissingShowcasePet(targetPet)
+
+    targetPet =
+        tostring(targetPet or "")
+
+    local now =
+        os.clock()
+
+    if BoothPetState.LastMissingPet ~= targetPet then
+
+        BoothPetState.LastMissingPet =
+            targetPet
+
+        BoothPetState.LastMissingWarnAt =
+            now
+
+        return true
+    end
+
+    local cooldown =
+        SafeNumber(
+            BoothPetState.MissingWarnCooldown,
+            15
+        )
+
+    if now - SafeNumber(BoothPetState.LastMissingWarnAt, 0)
+        >= cooldown
+    then
+        BoothPetState.LastMissingWarnAt =
+            now
+
+        return true
+    end
+
+    return false
+end
+
+function ParsePetTool(tool)
+
+    if not tool
+    or not tool:IsA("Tool") then
+        return nil
+    end
+
+    local rawName = tool.Name
+
+    --==================================================
+    -- EXAMPLES:
+    -- Ostrich [10.61 KG] [Age 1]
+    -- Nightmare Mimic Octopus [61.37 KG]
+    --==================================================
+
+local weight =
+    rawName:match("%[(.-)%s*KG%]")
+
+if not weight then
+    return nil
+end
+
+-- remove ALL bracket metadata
+local petName =
+    rawName:gsub("%b[]", "")
+
+-- normalize spacing
+petName =
+    petName:gsub("%s+", " ")
+
+petName =
+    petName:gsub("^%s+", "")
+        :gsub("%s+$", "")
+
+    if not petName
+    or not weight then
+        return nil
+    end
+
+    weight = tonumber(weight)
+
+    if not weight then
+        return nil
+    end
+
+    return {
+    Tool = tool,
+    PetName = petName,
+    Weight = weight,
+
+    -- Stable unique identity.
+    UID = ResolvePetToolStableUID(tool),
+
+    -- Deterministic tie-breaker.
+    StableKey =
+        ResolvePetToolStableUID(tool)
+        .. "|"
+        .. tostring(tool.Name),
+}
+end
+
+function ResolveBestPet(targetPet)
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return nil
+    end
+
+    targetPet =
+        tostring(targetPet or "")
+
+    if targetPet == "" then
+        return nil
+    end
+
+    local containers = {
+        player.Character,
+        player:FindFirstChild("Backpack"),
+    }
+
+    local lockedUID =
+        tostring(
+            BoothPetState.LockedShowcaseUID
+            or ""
+        )
+
+    local best = nil
+    local bestWeight = -math.huge
+    local bestKey = nil
+
+    for _, container in ipairs(containers) do
+
+        if not container then
+            continue
+        end
+
+        for _, tool in ipairs(container:GetChildren()) do
+
+            local parsed =
+                ParsePetTool(tool)
+
+            if not parsed then
+                continue
+            end
+
+            local normalizedParsed =
+                string.lower(parsed.PetName)
+
+            local normalizedTarget =
+                string.lower(targetPet)
+
+            local exactMatch =
+                normalizedParsed == normalizedTarget
+
+            local suffixMatch =
+                normalizedParsed:sub(
+                    -#normalizedTarget
+                ) == normalizedTarget
+
+            if not exactMatch
+            and not suffixMatch then
+                continue
+            end
+
+            -- If we already locked one showcase pet, keep using it
+            -- while it still exists. This prevents equal-pet flip-flop.
+            if lockedUID ~= ""
+            and tostring(parsed.UID) == lockedUID then
+                return parsed
+            end
+
+            local weight =
+                tonumber(parsed.Weight)
+                or 0
+
+            local key =
+                tostring(parsed.StableKey or parsed.UID or tool.Name)
+
+            local better =
+                false
+
+            if not best then
+
+                better =
+                    true
+
+            elseif weight > bestWeight then
+
+                better =
+                    true
+
+            elseif weight == bestWeight
+            and key < tostring(bestKey or "") then
+
+                -- Deterministic tie-breaker for same KG / same mutation.
+                better =
+                    true
+            end
+
+            if better then
+                best = parsed
+                bestWeight = weight
+                bestKey = key
+            end
+        end
+    end
+
+    return best
+end
+
+--==================================================
+-- ACTIVE BOOTH MAP
+--==================================================
+
+function BuildActiveBoothMap()
+
+    local active = {}
+
+    local tradeWorld =
+        workspace:FindFirstChild("TradeWorld")
+
+    if not tradeWorld then
+        return active
+    end
+
+    local booths =
+        tradeWorld:FindFirstChild("Booths")
+
+    if not booths then
+        return active
+    end
+
+    for _, booth in ipairs(booths:GetChildren()) do
+        active[booth.Name] = true
+    end
+
+    return active
+end
+--==================================================
+-- NORMALIZED LISTING EXTRACTION
+--==================================================
+function ExtractListings()
+
+    local data = LatestBoothData
+
+    if not data or not data.Booths then
+        warn("[Sniper] Booth data missing")
+        return {}
+    end
+
+    local activeBooths =
+        BuildActiveBoothMap()
+
+    local freshListings = {}
+    local scannedCount = 0
+
+    for boothId, boothData in pairs(data.Booths) do
+
+        --==================================================
+        -- SKIP DEAD BOOTHS
+        --==================================================
+
+        if not activeBooths[boothId] then
+            continue
+        end
+
+local owner = boothData.Owner
+
+if not owner then
+    continue
+end
+
+if not data.Players
+or not data.Players[owner] then
+    continue
+end
+
+local playerData =
+    data.Players[owner]
+
+local listingsTable =
+    playerData.Listings
+
+local itemsTable =
+    playerData.Items
+
+if type(listingsTable) ~= "table"
+or type(itemsTable) ~= "table" then
+    continue
+end
+
+for uid, listingData in pairs(listingsTable) do
+
+    if listingData.ItemType ~= "Pet" then
+        continue
+    end
+
+    local itemId =
+        listingData.ItemId
+
+    local itemData =
+        itemsTable[itemId]
+
+    if not itemData then
+        continue
+    end
+
+    local petData =
+        itemData.PetData
+
+    if not petData then
+        continue
+    end
+
+if petData.IsFavorite then
+    continue
+end
+
+local petName =
+    itemData.PetType
+    or "Unknown"
+
+local price =
+    tonumber(listingData.Price)
+    or 0
+
+local baseWeight =
+    tonumber(petData.BaseWeight)
+
+if not baseWeight then
+    continue
+end
+
+local displayWeight =
+    ResolveDisplayedWeight(baseWeight)
+
+local age =
+    ResolveBoothPetAge(petData)
+
+if not age then
+    warn(
+        "[MARKET TRACKER] Missing pet age:",
+        tostring(petName),
+        "| ItemId:",
+        tostring(itemId)
+    )
+
+    continue
+end
+
+if petName == "Seal"
+or petName == "Mimic Octopus"
+or petName == "Ghostly Spider"
+or petName == "Rainbow Dilophosaurus" then
+
+end
+
+local mutationText =
+    ResolvePetMutationTextFromPetData(petData)
+
+    local hatchedFrom =
+    petData.HatchedFrom
+    or petData.Hatchedfrom
+    or petData.HatchFrom
+    or petData.EggName
+    or petData.SourceEgg
+    or petData.Origin
+    or itemData.HatchedFrom
+    or itemData.EggName
+    or itemData.SourceEgg
+    or listingData.HatchedFrom
+    or listingData.EggName
+    or listingData.SourceEgg
+            --==================================================
+            -- UNIQUE LISTING KEY
+            --==================================================
+
+            local listingKey =
+                tostring(boothId)
+                .. "_"
+                .. tostring(uid)
+
+            --==================================================
+            -- SKIP UNCHANGED LISTINGS
+            --==================================================
+local now = os.clock()
+
+local lastSeen =
+    SeenListings[listingKey]
+
+if lastSeen
+and now - lastSeen < 0.03 then
+    continue
+end
+
+SeenListings[listingKey] = now
+
+local sellerUserId =
+    tonumber(
+        tostring(owner):match("_(%d+)$")
+    )
+
+--==================================================
+-- SKIP OWN LISTINGS
+--==================================================
+
+if sellerUserId == Players.LocalPlayer.UserId then
+    continue
+end
+
+scannedCount = scannedCount + 1
+
+local sellerName =
+    tostring(sellerUserId)
+            local listing = {
+                BoothId = boothId,
+                UID = uid,
+
+                Seller = sellerName,
+                SellerUserId = sellerUserId,
+
+                PetName = petName,
+                Price = price,
+
+                -- Store both scales so filters can choose per entry.
+                BaseWeight = baseWeight,
+                DisplayWeight = displayWeight,
+
+                -- Legacy compatibility: existing webhook/buy code reads Weight.
+                Weight = displayWeight,
+                Age = age,
+                MutationText = mutationText,
+
+                HatchedFrom = hatchedFrom,
+                SourceEgg = hatchedFrom,
+
+                SeenAt = os.clock(),
+            }
+
+            MarketCache[listingKey] = listing
+
+            table.insert(
+                freshListings,
+                listing
+            )
+        end
+    end
+
+--==================================================
+-- CLEAN STALE CACHE
+--==================================================
+
+local alive = {}
+
+for _, listing in ipairs(freshListings) do
+
+    local key =
+        tostring(listing.BoothId)
+        .. "_"
+        .. tostring(listing.UID)
+
+    alive[key] = true
+end
+
+for key in pairs(MarketCache) do
+
+    if not alive[key] then
+        MarketCache[key] = nil
+        SeenListings[key] = nil
+    end
+end
+        return freshListings, scannedCount
+end
+--==================================================
+-- FILTER MATCHING
+--==================================================
+
+function ListingMatchesFilter(listing)
+
+    if not listing
+    or not listing.PetName then
+        return false
+    end
+
+    --==================================================
+    -- NORMAL PET WATCHLIST FILTERS
+    -- Advanced filters: pet + max price + min weight.
+    --==================================================
+
+    for watchlistId = 1, 2 do
+
+        local filters =
+            GetSniperFilterSet(watchlistId)
+
+        local filter =
+            filters[listing.PetName]
+
+        if filter then
+
+            local maxPrice =
+                tonumber(filter.MaxPrice)
+                or math.huge
+
+            local minWeight =
+                tonumber(filter.MinWeight)
+                or 0
+
+            local listingWeight, weightMode =
+                ResolveListingWeightForFilter(
+                    listing,
+                    filter
+                )
+
+            if listing.Price <= maxPrice
+            and listingWeight >= minWeight then
+
+                local priority =
+                    ResolveSniperFilterPriority(
+                        filter
+                    )
+
+                listing.MatchedWatchlistId =
+                    watchlistId
+
+                listing.MatchedWeightMode =
+                    weightMode
+
+                listing.MatchedWeight =
+                    listingWeight
+
+                listing.MatchedFilterType =
+                    "Pet"
+
+                listing.MatchedFilter =
+                    filter
+
+                listing.MatchedPriority =
+                    priority
+
+                listing.MatchedDealScore =
+                    ResolveSniperDealScore(
+                        listing,
+                        filter
+                    )
+
+                return true, watchlistId, filter
+            end
+        end
+    end
+
+    --==================================================
+    -- EGG FOCUS FILTERS
+    -- For now, egg focus uses default priority 5.
+    --==================================================
+
+    for watchlistId = 1, 2 do
+
+        local eggFilters =
+            GetEggFocusSet(watchlistId)
+
+        for eggName, eggFilter in pairs(eggFilters) do
+
+            if EggFocusContainsPet(
+                eggName,
+                listing.PetName
+            ) then
+
+                local maxPrice =
+                    tonumber(eggFilter.MaxPrice)
+                    or math.huge
+
+                if listing.Price <= maxPrice then
+
+                    local selectedEgg =
+                    tostring(eggName or "")
+
+                local listingEgg =
+                    tostring(
+                    listing.HatchedFrom
+                or listing.SourceEgg
+                or ""
+                )
+
+                if selectedEgg ~= ""
+                and listingEgg ~= ""
+                and selectedEgg ~= listingEgg then
+                    continue
+                end
+
+                    listing.MatchedWatchlistId =
+                        watchlistId
+
+                    listing.MatchedEggFocus =
+                        tostring(eggName)
+
+                    listing.MatchedFilterType =
+                        "EggFocus"
+
+                    listing.MatchedFilter =
+                        eggFilter
+
+                    listing.MatchedPriority =
+                        ResolveSniperFilterPriority(
+                            eggFilter
+                        )
+
+                    listing.MatchedDealScore =
+                        ResolveSniperDealScore(
+                            listing,
+                            eggFilter
+                        )
+
+                    return true, watchlistId, eggFilter
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+--==================================================
+-- PURCHASE STATE
+--==================================================
+
+ProcessedListings = {}
+FailedListings = {}
+ActivePurchases = {}
+ClaimedListings = {}
+--==================================================
+-- BUY REMOTE RESOLUTION
+--==================================================
+
+BuyListingRemote = nil
+
+function GetBuyRemote()
+
+    if BuyListingRemote then
+        return BuyListingRemote
+    end
+
+    local remote =
+        ReplicatedStorage
+        .GameEvents
+        .TradeEvents
+        .Booths
+        :FindFirstChild("BuyListing")
+
+    if remote
+    and remote:IsA("RemoteFunction") then
+
+        BuyListingRemote = remote
+        return remote
+    end
+
+    warn("[BUY] BuyListing remote missing")
+
+    return nil
+end
+--==================================================
+-- SERIAL PURCHASE QUEUE
+-- Event-driven: buy next only after inventory confirms
+--==================================================
+
+PurchaseQueue = {}
+PurchaseWorkerRunning = false
+QueuedListings = {}
+
+PurchaseState = {
+    Busy = false,
+    LastPurchase = 0,
+
+    -- tiny safety gap after inventory confirmation
+    RecoveryDelay = 0.05,
+
+    -- max time to wait for Backpack/Character replication
+    InventoryTimeout = 10,
+}
+
+-- forward declaration because worker is defined before function body
+TryPurchaseListing = nil
+
+function GetListingKey(listing)
+    return tostring(listing.BoothId)
+        .. "_"
+        .. tostring(listing.UID)
+end
+
+function ToolMatchesListing(tool, listing)
+
+    if not tool
+    or not tool:IsA("Tool") then
+        return false
+    end
+
+    if not listing
+    or not listing.PetName then
+        return false
+    end
+
+    local parsed =
+        ParsePetTool(tool)
+
+    if not parsed
+    or not parsed.PetName then
+        return false
+    end
+
+    local parsedName =
+        string.lower(parsed.PetName)
+
+    local targetName =
+        string.lower(tostring(listing.PetName))
+
+    if targetName == "" then
+        return false
+    end
+
+    if parsedName == targetName then
+        return true
+    end
+
+    -- Handles mutation prefixes:
+    -- "Rainbow Mimic Octopus" should match "Mimic Octopus"
+    if parsedName:sub(-#targetName) == targetName then
+        return true
+    end
+
+    return false
+end
+
+function CreateInventoryWaiter(listing)
+
+    local player =
+        Players.LocalPlayer
+
+    local resolved = false
+    local matchedToolName = nil
+    local matchedSource = nil
+
+    local connections = {}
+
+    local function Disconnect()
+
+        for _, connection in ipairs(connections) do
+            pcall(function()
+                connection:Disconnect()
+            end)
+        end
+
+        table.clear(connections)
+    end
+
+    local function OnAdded(child, source)
+
+        if resolved then
+            return
+        end
+
+        if not ToolMatchesListing(child, listing) then
+            return
+        end
+
+        resolved = true
+        matchedToolName = child.Name
+        matchedSource = source
+
+        print(
+            string.format(
+                "[INV CONFIRM] %s entered %s at %.3f",
+                tostring(child.Name),
+                tostring(source),
+                os.clock()
+            )
+        )
+    end
+
+    local backpack =
+        player:FindFirstChild("Backpack")
+
+    if backpack then
+        table.insert(
+            connections,
+            backpack.ChildAdded:Connect(function(child)
+                OnAdded(child, "Backpack")
+            end)
+        )
+    end
+
+    local character =
+        player.Character
+
+    if character then
+        table.insert(
+            connections,
+            character.ChildAdded:Connect(function(child)
+                OnAdded(child, "Character")
+            end)
+        )
+    end
+
+    return {
+        Wait = function(timeout)
+
+            local deadline =
+                os.clock() + timeout
+
+            while not resolved
+            and os.clock() < deadline do
+                task.wait(0.03)
+            end
+
+            Disconnect()
+
+            return resolved, matchedToolName, matchedSource
+        end,
+
+        Disconnect = Disconnect,
+    }
+end
+
+function QueuePurchase(listing)
+
+    if not listing then
+        return false
+    end
+
+    local listingKey =
+        GetListingKey(listing)
+
+    if QueuedListings[listingKey] then
+        return false
+    end
+
+    if ActivePurchases[listingKey] then
+        return false
+    end
+
+    if ProcessedListings[listingKey] then
+        return false
+    end
+
+    if FailedListings[listingKey] then
+        return false
+    end
+
+    QueuedListings[listingKey] = true
+
+        table.insert(
+        PurchaseQueue,
+        listing
+    )
+
+    table.sort(
+        PurchaseQueue,
+        ComparePriorityListings
+    )
+
+        print(
+        string.format(
+            "[QUEUE] Added → P%s %s | Queue: %s",
+            tostring(
+                ClampSniperPriority(
+                    listing.MatchedPriority
+                    or listing.Priority
+                    or 5
+                )
+            ),
+            tostring(listing.PetName),
+            tostring(#PurchaseQueue)
+        )
+    )
+
+    return true
+end
+
+function StartPurchaseWorker()
+
+    if PurchaseWorkerRunning then
+        return
+    end
+
+    PurchaseWorkerRunning = true
+
+    task.spawn(function()
+
+        while IsCurrentRun() do
+            task.wait(0.01)
+
+            if PurchaseState.Busy then
+                continue
+            end
+
+            local listing =
+                table.remove(PurchaseQueue, 1)
+
+            if not listing then
+                continue
+            end
+
+            local listingKey =
+                GetListingKey(listing)
+
+            QueuedListings[listingKey] = nil
+            PurchaseState.Busy = true
+
+            print(
+                string.format(
+                    "[QUEUE] Processing → %s | Remaining: %s",
+                    tostring(listing.PetName),
+                    tostring(#PurchaseQueue)
+                )
+            )
+
+            local ok, result =
+                pcall(function()
+                    return TryPurchaseListing(listing)
+                end)
+
+            if not ok then
+
+                warn(
+                    "[QUEUE] Purchase worker error:",
+                    result
+                )
+
+            elseif result == "PENDING" then
+
+                warn(
+                    string.format(
+                        "[QUEUE] Pending lock → requeue %s",
+                        tostring(listing.PetName)
+                    )
+                )
+
+                task.delay(1.25, function()
+                    QueuePurchase(listing)
+                end)
+            end
+
+            PurchaseState.LastPurchase =
+                os.clock()
+
+            task.wait(PurchaseState.RecoveryDelay)
+
+            PurchaseState.Busy = false
+        end
+    end)
+end
+
+StartPurchaseWorker()
+--==================================================
+-- IMMEDIATE PURCHASE DISPATCH
+-- Fast path:
+-- If sniper finds a match while no purchase is active,
+-- invoke BuyListing immediately instead of waiting for
+-- the queue worker tick.
+--==================================================
+
+function DispatchPurchase(listing)
+
+    if not listing then
+        return false
+    end
+
+    local listingKey =
+        GetListingKey(listing)
+
+    if QueuedListings[listingKey] then
+        return false
+    end
+
+    if ActivePurchases[listingKey] then
+        return false
+    end
+
+    if ProcessedListings[listingKey] then
+        return false
+    end
+
+    if FailedListings[listingKey] then
+        return false
+    end
+
+    --==================================================
+    -- FAST PATH
+    -- Buy instantly when purchase lane is free.
+    --==================================================
+
+    if not PurchaseState.Busy
+    and #PurchaseQueue <= 0 then
+
+        PurchaseState.Busy =
+            true
+
+        task.spawn(function()
+
+            local ok, result =
+                pcall(function()
+                    return TryPurchaseListing(listing)
+                end)
+
+            if not ok then
+
+                warn(
+                    "[BUY FAST] Purchase error:",
+                    tostring(result)
+                )
+
+            elseif result == "PENDING" then
+
+                warn(
+                    "[BUY FAST] Pending lock → queue retry:",
+                    tostring(listing.PetName)
+                )
+
+                task.delay(0.75, function()
+                    QueuePurchase(listing)
+                end)
+            end
+
+            PurchaseState.LastPurchase =
+                os.clock()
+
+            task.wait(
+                SafeNumber(
+                    PurchaseState.RecoveryDelay,
+                    0.05
+                )
+            )
+
+            PurchaseState.Busy =
+                false
+        end)
+
+        return true
+    end
+
+    --==================================================
+    -- SAFE FALLBACK
+    -- Another buy is already running, so queue normally.
+    --==================================================
+
+    return QueuePurchase(listing)
+end
+--==================================================
+-- PURCHASE EXECUTION
+--==================================================
+
+
+CreateSuccessEmbed = nil
+CreateBoothSaleEmbed = nil
+ApplyWebhookPing = nil
+QueueWebhook = nil
+
+--==================================================
+-- WEBHOOK PET METADATA HELPERS
+-- Normalizes mutation, age, display KG, and base weight.
+--==================================================
+
+function FormatWebhookNumber(value, decimals)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "Unknown"
+    end
+
+    decimals =
+        tonumber(decimals)
+        or 2
+
+    return string.format(
+        "%."
+            .. tostring(decimals)
+            .. "f",
+        number
+    )
+end
+
+function FormatWebhookWeightKG(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "Unknown"
+    end
+
+    return string.format(
+        "%.2f KG",
+        number
+    )
+end
+
+function FormatWebhookBaseWeight(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "Unknown"
+    end
+
+    return string.format(
+        "%.2f",
+        number
+    )
+end
+
+function ResolvePetMutationTextFromPetData(petData)
+
+    local mutations = {}
+
+    if type(petData) ~= "table" then
+        return "Normal"
+    end
+
+    if type(petData.Variants) == "table" then
+
+        for mutationName, enabled in pairs(petData.Variants) do
+
+            if enabled == true then
+                table.insert(
+                    mutations,
+                    tostring(mutationName)
+                )
+            end
+        end
+    end
+
+    if type(petData.Mutations) == "table" then
+
+        for mutationName, enabled in pairs(petData.Mutations) do
+
+            if enabled == true then
+                table.insert(
+                    mutations,
+                    tostring(mutationName)
+                )
+            end
+        end
+    end
+
+    table.sort(mutations)
+
+    if #mutations <= 0 then
+        return "Normal"
+    end
+
+    return table.concat(mutations, " ")
+end
+
+--==================================================
+-- RAW PETDATA WEBHOOK RESOLUTION
+-- Source of truth for booth-sale metadata.
+-- Does not use Tool name/cache.
+--==================================================
+--==================================================
+-- INVENTORY DATASERVICE PETDATA RESOLUTION
+-- Used only as metadata fallback for own booth sales.
+-- Level = visible Age.
+--==================================================
+
+HolyDataService =
+    HolyDataService
+    or nil
+
+function GetHolyDataService()
+
+    if HolyDataService then
+        return HolyDataService
+    end
+
+    local modules =
+        ReplicatedStorage:FindFirstChild("Modules")
+
+    if not modules then
+        return nil
+    end
+
+    local dataServiceModule =
+        modules:FindFirstChild("DataService")
+
+    if not dataServiceModule then
+        return nil
+    end
+
+    local ok, result =
+        pcall(function()
+            return require(dataServiceModule)
+        end)
+
+    if ok
+    and result then
+        HolyDataService =
+            result
+
+        return HolyDataService
+    end
+
+    return nil
+end
+
+function GetHolyInventoryPetDataByUUID(uuid)
+
+    uuid =
+        tostring(uuid or "")
+
+    if uuid == "" then
+        return nil
+    end
+
+    local dataService =
+        GetHolyDataService()
+
+    if not dataService then
+        return nil
+    end
+
+    local ok, data =
+        pcall(function()
+            return dataService:GetData()
+        end)
+
+    if not ok
+    or type(data) ~= "table" then
+
+        ok, data =
+            pcall(function()
+                return dataService.GetData()
+            end)
+    end
+
+    if not ok
+    or type(data) ~= "table" then
+        return nil
+    end
+
+    local petsData =
+        rawget(data, "PetsData")
+
+    local petInventory =
+        type(petsData) == "table"
+        and rawget(petsData, "PetInventory")
+        or nil
+
+    local inventoryData =
+        type(petInventory) == "table"
+        and rawget(petInventory, "Data")
+        or nil
+
+    if type(inventoryData) ~= "table" then
+        return nil
+    end
+
+    local item =
+        rawget(inventoryData, uuid)
+
+    if type(item) ~= "table" then
+        return nil
+    end
+
+    local petData =
+        rawget(item, "PetData")
+
+    if type(petData) == "table" then
+        return petData, item
+    end
+
+    return item, item
+end
+
+function ResolveRawPetDataAgeFromUUID(uuid)
+
+    local inventoryPetData =
+        GetHolyInventoryPetDataByUUID(uuid)
+
+    if type(inventoryPetData) ~= "table" then
+        return nil
+    end
+
+    local level =
+        tonumber(
+            rawget(inventoryPetData, "Level")
+        )
+
+    if level then
+        return level
+    end
+
+    local age =
+        tonumber(
+            rawget(inventoryPetData, "Age")
+        )
+
+    if age then
+        return age
+    end
+
+    return nil
+end
+
+function ResolveInventoryPetToolByUUID(uuid)
+
+    uuid =
+        tostring(uuid or "")
+
+    if uuid == "" then
+        return nil
+    end
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return nil
+    end
+
+    local containers = {
+        player:FindFirstChild("Backpack"),
+        player.Character,
+    }
+
+    for _, container in ipairs(containers) do
+
+        if container then
+
+            for _, child in ipairs(container:GetChildren()) do
+
+                if child:IsA("Tool") then
+
+                    local toolUUID =
+                        child:GetAttribute("PET_UUID")
+                        or child:GetAttribute("UUID")
+                        or child:GetAttribute("ItemUUID")
+
+                    if tostring(toolUUID or "") == uuid then
+                        return child
+                    end
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function ResolveRawPetDataMutationFromUUID(uuid, basePetName)
+
+    local tool =
+        ResolveInventoryPetToolByUUID(uuid)
+
+    if not tool then
+        return nil
+    end
+
+    local mutation =
+        ResolveListingPetMutation(
+            tool.Name,
+            basePetName
+        )
+
+    if mutation == "---"
+    or mutation == ""
+    or mutation == "Normal"
+    or mutation == "Unknown" then
+        return nil
+    end
+
+    return mutation
+end
+function StoreOwnListedPetMetadata(pet)
+
+    if type(pet) ~= "table" then
+        return false
+    end
+
+    local uuid =
+        tostring(pet.UUID or "")
+
+    if uuid == "" then
+        return false
+    end
+
+    ListingsState.OwnListedMetadata =
+        ListingsState.OwnListedMetadata
+        or {}
+
+    local mutation =
+        tostring(
+            pet.Mutation
+            or pet.MutationText
+            or "---"
+        )
+
+    if mutation == "---"
+    or mutation == ""
+    or mutation == "Unknown" then
+        mutation =
+            "Normal"
+    end
+
+    ListingsState.OwnListedMetadata[uuid] = {
+        UUID = uuid,
+
+        ToolName =
+            tostring(pet.ToolName or ""),
+
+        PetName =
+            tostring(pet.PetName or ""),
+
+        MutationText =
+            mutation,
+
+        Age =
+            tonumber(pet.Age),
+
+        DisplayWeight =
+            tonumber(pet.Weight),
+
+        BaseWeight =
+            tonumber(pet.BaseWeight),
+
+        StoredAt =
+            os.clock(),
+    }
+
+    print(
+        "[LISTINGS META] Stored:",
+        tostring(pet.ToolName or pet.PetName or "Unknown"),
+        "| UUID:",
+        uuid,
+        "| Mutation:",
+        mutation
+    )
+
+    return true
+end
+
+function ResolveOwnListedMetadataMutation(uuid)
+
+    uuid =
+        tostring(uuid or "")
+
+    if uuid == "" then
+        return nil
+    end
+
+    local metadata =
+        ListingsState
+        and ListingsState.OwnListedMetadata
+        and ListingsState.OwnListedMetadata[uuid]
+
+    if type(metadata) ~= "table" then
+        return nil
+    end
+
+    local mutation =
+        tostring(metadata.MutationText or "")
+
+    if mutation == ""
+    or mutation == "---"
+    or mutation == "Unknown"
+    or mutation == "Normal" then
+        return nil
+    end
+
+    return mutation
+end
+
+function ResolveRawPetDataAge(petData)
+
+    if type(petData) ~= "table" then
+        return nil
+    end
+
+    -- In Grow a Garden pet data, Level is the visible Age.
+    local level =
+        tonumber(
+            rawget(petData, "Level")
+        )
+
+    if level then
+        return level
+    end
+
+    local age =
+        tonumber(
+            rawget(petData, "Age")
+        )
+
+    if age then
+        return age
+    end
+
+    return nil
+end
+
+function ResolveRawPetDataBaseWeight(petData)
+
+    if type(petData) ~= "table" then
+        return nil
+    end
+
+    local candidates = {
+        petData.BaseWeight,
+        petData.baseWeight,
+        petData.BaseKg,
+        petData.BaseKG,
+    }
+
+    for _, value in ipairs(candidates) do
+
+        local number =
+            tonumber(value)
+
+        if number then
+            return number
+        end
+    end
+
+    return nil
+end
+
+function ResolveRawPetDataDisplayWeight(petData)
+
+    if type(petData) ~= "table" then
+        return nil
+    end
+
+    -- First: trust any explicit display/current weight if the game stores it.
+    local directCandidates = {
+        petData.DisplayWeight,
+        petData.displayWeight,
+        petData.Weight,
+        petData.weight,
+        petData.KG,
+        petData.Kg,
+        petData.Mass,
+        petData.mass,
+    }
+
+    for _, value in ipairs(directCandidates) do
+
+        local number =
+            tonumber(value)
+
+        if number then
+            return number
+        end
+    end
+
+    -- Fallback: current known game conversion from raw BaseWeight.
+    local baseWeight =
+        ResolveRawPetDataBaseWeight(petData)
+
+    if baseWeight then
+        return ResolveDisplayedWeight(baseWeight)
+    end
+
+    return nil
+end
+
+function ResolveRawPetDataWebhookTitle(petName, mutationText, age, displayWeight)
+
+    return BuildWebhookPetTitle(
+        petName,
+        mutationText,
+        age or "Unknown",
+        displayWeight
+    )
+end
+
+function BuildWebhookPetTitle(petName, mutationText, age, displayWeight)
+
+    local finalName =
+        tostring(petName or "Unknown")
+
+    mutationText =
+        tostring(mutationText or "Normal")
+
+    if mutationText ~= ""
+    and mutationText ~= "Normal"
+    and mutationText ~= "Unknown" then
+        finalName =
+            mutationText .. " " .. finalName
+    end
+
+    return string.format(
+        "%s [Age %s] [%s]",
+        finalName,
+        tostring(age or "Unknown"),
+        FormatWebhookWeightKG(displayWeight)
+    )
+end
+
+function SendGlobalBoothSaleWebhookNow(sale)
+
+    if not GlobalBoothSaleWebhook.Enabled then
+        warn("[GLOBAL BOOTH WEBHOOK] Disabled")
+        return
+    end
+
+    if type(GlobalBoothSaleWebhook.URL) ~= "string"
+    or GlobalBoothSaleWebhook.URL == "" then
+        warn("[GLOBAL BOOTH WEBHOOK] Missing URL")
+        return
+    end
+
+    RequestFunction =
+        RequestFunction
+        or syn and syn.request
+        or http_request
+        or request
+        or (http and http.request)
+        or (fluxus and fluxus.request)
+
+    if not RequestFunction then
+        warn("[GLOBAL BOOTH WEBHOOK] No request function available")
+        return
+    end
+
+        sale =
+            sale or {}
+
+        local toolTitle =
+            tostring(
+                sale.ToolName
+                or BuildWebhookPetTitle(
+                    sale.PetName,
+                    sale.MutationText,
+                    sale.Age,
+                    sale.DisplayWeight or sale.Weight
+                )
+                or "Unknown"
+            )
+
+        local payload = {
+            embeds = {{
+
+                title = toolTitle,
+
+                description = "By User: ||Holy||",
+
+                color = 0xF59E0B,
+
+                fields = {
+
+                    {
+                        name = "💰 Sold For",
+                        value = string.format(
+                            "%s Tokens",
+                            tostring(
+                                sale.NetPrice
+                                or sale.Price
+                                or 0
+                            )
+                        ),
+                        inline = false,
+                    },
+
+                    {
+                        name = "Age",
+                        value =
+                            tostring(sale.Age or "Unknown"),
+                        inline = true,
+                    },
+
+                    {
+                        name = "Mutation",
+                        value =
+                            tostring(sale.MutationText or "Unknown"),
+                        inline = true,
+                    },
+
+                    {
+                        name = "BaseWeight",
+                        value =
+                            FormatWebhookBaseWeight(
+                                sale.BaseWeight
+                            ),
+                        inline = true,
+                    },
+
+                    {
+                        name = "✨ Token Balance",
+                        value = string.format(
+                            "%s Tokens",
+                            tostring(GetTokenBalance())
+                        ),
+                        inline = false,
+                    },
+
+                    {
+                        name = "Server",
+                        value =
+                            "```lua\n"
+                            .. tostring(game.PlaceId)
+                            .. ":"
+                            .. tostring(game.JobId)
+                            .. "\n```",
+                        inline = false,
+                    },
+                },
+
+                footer = {
+                    text = "Holy V2 Global"
+                },
+
+                timestamp =
+                    DateTime.now():ToIsoDate(),
+            }}
+        }
+
+        local ok, response =
+            pcall(function()
+                return RequestFunction({
+                    Url =
+                        tostring(GlobalBoothSaleWebhook.URL)
+                            :gsub("%s+", ""),
+
+                    Method = "POST",
+
+                    Headers = {
+                        ["Content-Type"] = "application/json"
+                    },
+
+                    Body = HttpService:JSONEncode(payload)
+                })
+            end)
+
+        if not ok then
+            warn(
+                "[GLOBAL BOOTH WEBHOOK] Request failed:",
+                tostring(response)
+            )
+            return
+        end
+
+        if type(response) == "table" then
+
+            local statusCode =
+                tonumber(response.StatusCode or response.status_code)
+
+            if statusCode
+            and statusCode ~= 200
+            and statusCode ~= 204 then
+
+                warn(
+                    "[GLOBAL BOOTH WEBHOOK] Bad status:",
+                    tostring(statusCode),
+                    tostring(response.Body or response.body or "")
+                )
+
+                return
+            end
+        end
+
+            print(
+        "[GLOBAL BOOTH WEBHOOK] Sent booth sale:",
+        toolTitle
+    )
+
+    return true
+end
+--==================================================
+-- GLOBAL BOOTH SALE WEBHOOK QUEUE
+-- Prevents Discord/global webhook drops when multiple
+-- booth sales confirm in the same scan pass.
+--==================================================
+
+function QueueGlobalBoothSaleWebhook(sale)
+
+    if not GlobalBoothSaleWebhook.Enabled then
+        return false
+    end
+
+    if type(sale) ~= "table" then
+        return false
+    end
+
+    table.insert(
+        GlobalBoothSaleWebhook.Queue,
+        sale
+    )
+
+    print(
+        "[GLOBAL BOOTH WEBHOOK] Queued sale:",
+        tostring(sale.ToolName or sale.PetName or "Unknown"),
+        "| queue:",
+        tostring(#GlobalBoothSaleWebhook.Queue)
+    )
+
+    return true
+end
+
+task.spawn(function()
+
+    while IsCurrentRun() do
+
+        task.wait(0.1)
+
+        if ScriptState
+        and ScriptState.ForceStopped then
+            continue
+        end
+
+        if GlobalBoothSaleWebhook.Sending then
+            continue
+        end
+
+        if #GlobalBoothSaleWebhook.Queue <= 0 then
+            continue
+        end
+
+        local elapsed =
+            os.clock()
+            - SafeNumber(
+                GlobalBoothSaleWebhook.LastSend,
+                0
+            )
+
+        local sendDelay =
+            SafeNumber(
+                GlobalBoothSaleWebhook.SendDelay,
+                1.25
+            )
+
+        if elapsed < sendDelay then
+            task.wait(sendDelay - elapsed)
+        end
+
+        local sale =
+            table.remove(
+                GlobalBoothSaleWebhook.Queue,
+                1
+            )
+
+        if not sale then
+            continue
+        end
+
+        GlobalBoothSaleWebhook.Sending =
+            true
+
+        GlobalBoothSaleWebhook.LastSend =
+            os.clock()
+
+        local ok, err =
+            pcall(function()
+                SendGlobalBoothSaleWebhookNow(sale)
+            end)
+
+        if not ok then
+            warn(
+                "[GLOBAL BOOTH WEBHOOK] Queue send failed:",
+                tostring(err)
+            )
+        end
+
+        GlobalBoothSaleWebhook.Sending =
+            false
+    end
+end)
+
+--==================================================
+-- GLOBAL MARKET TRACKER WEBHOOK
+-- Exact pet-name market discovery tracker.
+--==================================================
+
+function NormalizeMarketTrackerName(value)
+
+    return tostring(value or "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+function GetMarketTrackerTargetConfig(petName)
+
+    petName =
+        NormalizeMarketTrackerName(petName)
+
+    if petName == "" then
+        return nil
+    end
+
+    if type(MarketTrackerTargets) ~= "table" then
+        return nil
+    end
+
+    local config =
+        MarketTrackerTargets[petName]
+
+    if config == true then
+
+        return {
+            Type = "Rare",
+            Emoji = "🔎",
+
+            MaxPrice = nil,
+            GoodPrice = nil,
+            SnipePrice = nil,
+            PingBelow = nil,
+
+            MinWeight = 0,
+        }
+    end
+
+    if type(config) == "table" then
+        return config
+    end
+
+    return nil
+end
+
+function IsMarketTrackerTarget(listing)
+
+    if type(listing) ~= "table" then
+        return false, nil
+    end
+
+    local petName =
+        NormalizeMarketTrackerName(
+            listing.PetName
+        )
+
+    local config =
+        GetMarketTrackerTargetConfig(
+            petName
+        )
+
+    if type(config) ~= "table" then
+        return false, nil
+    end
+
+    local targetType =
+        tostring(config.Type or "Rare")
+
+    local displayWeight =
+        tonumber(listing.DisplayWeight)
+        or tonumber(listing.Weight)
+        or 0
+
+    if targetType == "Weight" then
+
+        local minWeight =
+            SafeNumber(
+                config.MinWeight,
+                80
+            )
+
+        if displayWeight < minWeight then
+            return false, config
+        end
+    end
+
+    return true, config
+end
+
+function BuildMarketTrackerListingKey(listing)
+
+    if type(listing) ~= "table" then
+        return ""
+    end
+
+    return tostring(game.JobId)
+        .. ":"
+        .. tostring(listing.BoothId or "UnknownBooth")
+        .. ":"
+        .. tostring(listing.UID or "UnknownUID")
+end
+
+function CleanupMarketTrackerDedupe()
+
+    if type(MarketTrackerWebhook) ~= "table" then
+        return
+    end
+
+    MarketTrackerWebhook.SentListings =
+        MarketTrackerWebhook.SentListings
+        or {}
+
+    local now =
+        os.clock()
+
+    local lastCleanup =
+        SafeNumber(
+            MarketTrackerWebhook.LastCleanup,
+            0
+        )
+
+    local cleanupInterval =
+        SafeNumber(
+            MarketTrackerWebhook.CleanupInterval,
+            120
+        )
+
+    if now - lastCleanup < cleanupInterval then
+        return
+    end
+
+    MarketTrackerWebhook.LastCleanup =
+        now
+
+    local dedupeSeconds =
+        SafeNumber(
+            MarketTrackerWebhook.DedupeSeconds,
+            600
+        )
+
+    for key, sentAt in pairs(MarketTrackerWebhook.SentListings) do
+
+        sentAt =
+            tonumber(sentAt)
+
+        if not sentAt
+        or now - sentAt > dedupeSeconds then
+            MarketTrackerWebhook.SentListings[key] =
+                nil
+        end
+    end
+end
+
+function HasMarketTrackerSentListing(listing)
+
+    local key =
+        BuildMarketTrackerListingKey(listing)
+
+    if key == "" then
+        return true
+    end
+
+    CleanupMarketTrackerDedupe()
+
+    local sentAt =
+        MarketTrackerWebhook.SentListings
+        and MarketTrackerWebhook.SentListings[key]
+
+    if not sentAt then
+        return false
+    end
+
+    local dedupeSeconds =
+        SafeNumber(
+            MarketTrackerWebhook.DedupeSeconds,
+            600
+        )
+
+    return os.clock() - SafeNumber(sentAt, 0)
+        < dedupeSeconds
+end
+
+function MarkMarketTrackerListingSent(listing)
+
+    local key =
+        BuildMarketTrackerListingKey(listing)
+
+    if key == "" then
+        return false
+    end
+
+    MarketTrackerWebhook.SentListings =
+        MarketTrackerWebhook.SentListings
+        or {}
+
+    MarketTrackerWebhook.SentListings[key] =
+        os.clock()
+
+    return true
+end
+
+function FormatMarketTrackerNumber(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "Unknown"
+    end
+
+    number =
+        math.floor(number)
+
+    local text =
+        tostring(number)
+
+    local left, num, right =
+        string.match(
+            text,
+            "^([^%d]*%d)(%d*)(.-)$"
+        )
+
+    if not left then
+        return text
+    end
+
+    return left
+        .. (
+            num:reverse()
+                :gsub("(%d%d%d)", "%1,")
+                :reverse()
+        )
+        .. right
+end
+
+function FormatMarketTrackerWeightKG(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "Unknown"
+    end
+
+    return string.format(
+        "%.2f KG",
+        number
+    )
+end
+
+function FormatMarketTrackerBaseWeight(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "Unknown"
+    end
+
+    return string.format(
+        "%.2f",
+        number
+    )
+end
+
+function ResolveMarketTrackerWeightClass(weight)
+
+    weight =
+        tonumber(weight)
+        or 0
+
+    if weight < 10 then
+        return "Small"
+    elseif weight < 30 then
+        return "Normal"
+    elseif weight < 50 then
+        return "Semi Huge"
+    elseif weight < 70 then
+        return "Huge"
+    elseif weight < 80 then
+        return "Semi Titanic"
+    elseif weight < 90 then
+        return "Titanic"
+    elseif weight < 100 then
+        return "Godly"
+    end
+
+    return "Colossal"
+end
+
+function ResolveMarketTrackerDeal(config, price)
+
+    price =
+        tonumber(price)
+        or math.huge
+
+    if type(config) ~= "table" then
+
+        return {
+            Text = "🔎 Found",
+            Color = 0x5865F2,
+            ShouldPing = false,
+        }
+    end
+
+    local snipePrice =
+        tonumber(config.SnipePrice)
+
+    local goodPrice =
+        tonumber(config.GoodPrice)
+
+    local maxPrice =
+        tonumber(config.MaxPrice)
+
+    local pingBelow =
+        tonumber(config.PingBelow)
+
+    local shouldPing =
+        pingBelow ~= nil
+        and price <= pingBelow
+
+    if snipePrice
+    and price <= snipePrice then
+
+        return {
+            Text = "🔥 Snipe",
+            Color = 0x22C55E,
+            ShouldPing = shouldPing,
+        }
+    end
+
+    if goodPrice
+    and price <= goodPrice then
+
+        return {
+            Text = "✅ Good",
+            Color = 0x16A34A,
+            ShouldPing = shouldPing,
+        }
+    end
+
+    if maxPrice
+    and price <= maxPrice then
+
+        return {
+            Text = "⚖️ Fair",
+            Color = 0xFACC15,
+            ShouldPing = shouldPing,
+        }
+    end
+
+    if maxPrice then
+
+        return {
+            Text = "❌ Overpriced",
+            Color = 0xEF4444,
+            ShouldPing = shouldPing,
+        }
+    end
+
+    return {
+        Text = "🔎 Found",
+        Color = 0x5865F2,
+        ShouldPing = shouldPing,
+    }
+end
+
+function BuildMarketTrackerTitle(petName, age, displayWeight, config)
+
+    local emoji =
+        type(config) == "table"
+        and tostring(config.Emoji or "🔎")
+        or "🔎"
+
+    local ageText =
+    tostring(
+        tonumber(age)
+        or 0
+    )
+
+    local weightText =
+        FormatMarketTrackerWeightKG(
+            displayWeight
+        )
+
+    local weightClass =
+        ResolveMarketTrackerWeightClass(
+            displayWeight
+        )
+
+    return emoji
+        .. " "
+        .. tostring(petName or "Unknown")
+        .. " [Age "
+        .. tostring(ageText)
+        .. "] ["
+        .. tostring(weightText)
+        .. "] ("
+        .. tostring(weightClass)
+        .. ")"
+end
+
+function SendMarketTrackerWebhookNow(listing)
+
+    if type(MarketTrackerWebhook) ~= "table"
+    or MarketTrackerWebhook.Enabled ~= true then
+        return false
+    end
+
+    if type(listing) ~= "table" then
+        return false
+    end
+
+    local webhookUrl =
+        tostring(MarketTrackerWebhook.URL or "")
+            :gsub("%s+", "")
+
+    if webhookUrl == ""
+    or webhookUrl == "PUT_MARKET_TRACKER_WEBHOOK_HERE" then
+        warn("[MARKET TRACKER] Webhook URL missing")
+        return false
+    end
+
+    RequestFunction =
+        RequestFunction
+        or syn and syn.request
+        or http_request
+        or request
+        or (http and http.request)
+        or (fluxus and fluxus.request)
+
+    if not RequestFunction then
+        warn("[MARKET TRACKER] No request function available")
+        return false
+    end
+
+    local petName =
+        NormalizeMarketTrackerName(
+            listing.PetName
+        )
+
+    if petName == "" then
+        petName =
+            "Unknown"
+    end
+
+    local config =
+        GetMarketTrackerTargetConfig(
+            petName
+        )
+
+    local sellerName =
+        tostring(listing.Seller or "Unknown")
+
+    if listing.SellerUserId then
+        sellerName =
+            ResolveSeller(listing.SellerUserId)
+    end
+
+    local price =
+        tonumber(listing.Price)
+        or 0
+
+    local priceText =
+        FormatMarketTrackerNumber(
+            price
+        )
+
+    local displayWeight =
+        tonumber(listing.DisplayWeight)
+        or tonumber(listing.Weight)
+
+    local baseWeight =
+        tonumber(listing.BaseWeight)
+
+    local age =
+        tonumber(listing.Age)
+
+    local deal =
+        ResolveMarketTrackerDeal(
+            config,
+            price
+        )
+
+    local title =
+        BuildMarketTrackerTitle(
+            petName,
+            age,
+            displayWeight,
+            config
+        )
+
+    local webJoinLink =
+        "https://www.roblox.com/games/"
+        .. tostring(TRADING_WORLD_PLACE_ID)
+        .. "?gameInstanceId="
+        .. tostring(game.JobId)
+
+    local appLink =
+        "roblox://experiences/start?placeId="
+        .. tostring(TRADING_WORLD_PLACE_ID)
+        .. "&gameInstanceId="
+        .. tostring(game.JobId)
+
+    local serverCopy =
+        tostring(TRADING_WORLD_PLACE_ID)
+        .. ":"
+        .. tostring(game.JobId)
+
+    local description =
+        "**Seller:** "
+        .. tostring(sellerName)
+        .. "\n"
+        .. "**Price:** "
+        .. tostring(priceText)
+        .. " tokens"
+        .. "\n"
+        .. "**Deal:** "
+        .. tostring(deal.Text)
+        .. "\n"
+        .. "**BaseWeight:** "
+        .. FormatMarketTrackerBaseWeight(baseWeight)
+        .. " KG"
+        .. "\n\n"
+        .. "**Server:**\n"
+        .. "[Open Game]("
+        .. webJoinLink
+        .. ")"
+        .. "\n"
+        .. "**Copy App Link:**\n"
+        .. "```lua\n"
+        .. appLink
+        .. "\n```"
+        .. "\n"
+        .. "**Copy Server:**\n"
+        .. "```lua\n"
+        .. serverCopy
+        .. "\n```"
+        
+
+    local payload = {
+        embeds = {{
+
+            title =
+                title,
+
+            description =
+                description,
+
+            color =
+                deal.Color
+                or 0x5865F2,
+
+            footer = {
+                text = "Holy Market Tracker"
+            },
+
+            timestamp =
+                DateTime.now():ToIsoDate(),
+        }}
+    }
+
+    if deal.ShouldPing == true then
+
+    payload.content =
+        "<@&1506753055050170559>"
+
+    payload.allowed_mentions = {
+        parse = {},
+        roles = {
+            "1506753055050170559",
+        },
+    }
+else
+
+    payload.allowed_mentions = {
+        parse = {},
+    }
+end
+
+    local ok, response =
+        pcall(function()
+            return RequestFunction({
+                Url = webhookUrl,
+                Method = "POST",
+
+                Headers = {
+                    ["Content-Type"] = "application/json"
+                },
+
+                Body = HttpService:JSONEncode(payload)
+            })
+        end)
+
+    if not ok then
+        warn(
+            "[MARKET TRACKER] Request failed:",
+            tostring(response)
+        )
+
+        return false
+    end
+
+    if type(response) == "table" then
+
+        local statusCode =
+            tonumber(
+                response.StatusCode
+                or response.status_code
+            )
+
+        if statusCode
+        and statusCode ~= 200
+        and statusCode ~= 204 then
+
+            warn(
+                "[MARKET TRACKER] Bad status:",
+                tostring(statusCode),
+                tostring(response.Body or response.body or "")
+            )
+
+            return false
+        end
+    end
+
+    print(
+        "[MARKET TRACKER] Sent:",
+        tostring(title),
+        "|",
+        tostring(priceText),
+        "tokens",
+        "|",
+        tostring(deal.Text)
+    )
+
+    return true
+end
+function QueueMarketTrackerWebhook(listing)
+
+    if type(MarketTrackerWebhook) ~= "table"
+    or MarketTrackerWebhook.Enabled ~= true then
+        return false
+    end
+
+    if type(listing) ~= "table" then
+        return false
+    end
+
+    if HasMarketTrackerSentListing(listing) then
+        return false
+    end
+
+    MarkMarketTrackerListingSent(listing)
+
+    MarketTrackerWebhook.Queue =
+        MarketTrackerWebhook.Queue
+        or {}
+
+    table.insert(
+        MarketTrackerWebhook.Queue,
+        listing
+    )
+
+    print(
+        "[MARKET TRACKER] Queued:",
+        tostring(listing.PetName or "Unknown"),
+        "| queue:",
+        tostring(#MarketTrackerWebhook.Queue)
+    )
+
+    return true
+end
+
+function TrackMarketListings(listings)
+
+    if type(MarketTrackerWebhook) ~= "table"
+    or MarketTrackerWebhook.Enabled ~= true then
+        return 0
+    end
+
+    if type(listings) ~= "table" then
+        return 0
+    end
+
+    local queued =
+        0
+
+    for _, listing in ipairs(listings) do
+
+        if type(listing) ~= "table" then
+            continue
+        end
+
+        local isTarget =
+    false
+
+local config =
+    nil
+
+isTarget, config =
+    IsMarketTrackerTarget(
+        listing
+    )
+
+if isTarget then
+
+    listing.MarketTrackerConfig =
+        config
+
+    local added =
+        QueueMarketTrackerWebhook(
+            listing
+        )
+
+    if added then
+        queued += 1
+    end
+end
+    end
+
+    if queued > 0 then
+
+        print(
+            "[MARKET TRACKER] Matches queued:",
+            tostring(queued)
+        )
+    end
+
+    return queued
+end
+
+task.spawn(function()
+
+    while IsCurrentRun() do
+
+        task.wait(0.1)
+
+        if ScriptState
+        and ScriptState.ForceStopped then
+            continue
+        end
+
+        if type(MarketTrackerWebhook) ~= "table"
+        or MarketTrackerWebhook.Enabled ~= true then
+            continue
+        end
+
+        MarketTrackerWebhook.Queue =
+            MarketTrackerWebhook.Queue
+            or {}
+
+        if MarketTrackerWebhook.Sending then
+            continue
+        end
+
+        if #MarketTrackerWebhook.Queue <= 0 then
+            continue
+        end
+
+        local elapsed =
+            os.clock()
+            - SafeNumber(
+                MarketTrackerWebhook.LastSend,
+                0
+            )
+
+        local sendDelay =
+            SafeNumber(
+                MarketTrackerWebhook.SendDelay,
+                1.25
+            )
+
+        if elapsed < sendDelay then
+            task.wait(sendDelay - elapsed)
+        end
+
+        local listing =
+            table.remove(
+                MarketTrackerWebhook.Queue,
+                1
+            )
+
+        if not listing then
+            continue
+        end
+
+        MarketTrackerWebhook.Sending =
+            true
+
+        MarketTrackerWebhook.LastSend =
+            os.clock()
+
+        local ok, err =
+            pcall(function()
+                SendMarketTrackerWebhookNow(listing)
+            end)
+
+        if not ok then
+            warn(
+                "[MARKET TRACKER] Queue send failed:",
+                tostring(err)
+            )
+        end
+
+        MarketTrackerWebhook.Sending =
+            false
+    end
+end)
+--==================================================
+-- CONFIRMED TOOL SNAPSHOT PARSER
+-- Source of truth after a successful snipe.
+-- Parses actual inventory Tool name:
+-- Example:
+-- Shocked Mimic Octopus [3.14 KG] [Age 2]
+-- Orangutan [1.29 KG] [Age 2]
+-- Nightmare Mimic Octopus [61.37 KG]
+--==================================================
+
+function ParseConfirmedToolSnapshot(toolName)
+
+    local raw =
+        tostring(toolName or "")
+
+    if raw == "" then
+        return nil
+    end
+
+    local weight =
+        raw:match("%[([%d%.]+)%s*KG%]")
+
+    local age =
+        raw:match("%[Age%s*(%d+)%]")
+
+    local cleanName =
+        raw:gsub("%b[]", "")
+
+    cleanName =
+        cleanName:gsub("%s+", " ")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    return {
+        RawName = raw,
+        CleanName = cleanName ~= "" and cleanName or raw,
+        Weight = tonumber(weight),
+        Age = tonumber(age),
+    }
+end
+function ResolveMutationFromConfirmedToolName(toolName, basePetName)
+
+    local snapshot =
+        ParseConfirmedToolSnapshot(toolName)
+
+    if not snapshot
+    or not snapshot.CleanName then
+        return "Normal"
+    end
+
+    local cleanName =
+        tostring(snapshot.CleanName)
+
+    basePetName =
+        tostring(basePetName or "")
+
+    if cleanName == ""
+    or basePetName == ""
+    or cleanName == basePetName then
+        return "Normal"
+    end
+
+    local suffixStart =
+        cleanName:find(basePetName, 1, true)
+
+    if not suffixStart then
+        return "Normal"
+    end
+
+    local mutation =
+        cleanName:sub(1, suffixStart - 1)
+
+    mutation =
+        mutation:gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if mutation == "" then
+        return "Normal"
+    end
+
+    return mutation
+end
+function SendGlobalSnipeWebhook(listing, toolName, source)
+
+    if not GlobalSnipeWebhook.Enabled then
+        warn("[GLOBAL SNIPER WEBHOOK] Disabled")
+        return
+    end
+
+    if type(GlobalSnipeWebhook.URL) ~= "string"
+    or GlobalSnipeWebhook.URL == "" then
+        warn("[GLOBAL SNIPER WEBHOOK] Missing URL")
+        return
+    end
+
+RequestFunction =
+    RequestFunction
+    or syn and syn.request
+    or http_request
+    or request
+    or (http and http.request)
+    or (fluxus and fluxus.request)
+
+if not RequestFunction then
+    warn("[GLOBAL SNIPER WEBHOOK] No request function available")
+    return
+end
+
+    task.spawn(function()
+
+        local snapshot =
+            ParseConfirmedToolSnapshot(toolName)
+
+local confirmedPetName =
+    snapshot
+    and snapshot.CleanName
+    or tostring(listing.PetName or "Unknown")
+
+local confirmedWeight =
+    snapshot
+    and snapshot.Weight
+    or tonumber(listing.DisplayWeight)
+    or tonumber(listing.Weight)
+
+local confirmedAge =
+    snapshot
+    and snapshot.Age
+    or tonumber(listing.Age)
+
+local mutationText =
+    ResolveMutationFromConfirmedToolName(
+        toolName,
+        listing.PetName
+    )
+
+if mutationText == "Normal"
+or mutationText == "Unknown"
+or mutationText == "" then
+
+    mutationText =
+        tostring(
+            listing.MutationText
+            or listing.Mutation
+            or "Normal"
+        )
+end
+
+local confirmedTitle =
+    string.format(
+        "%s [Age %s] [%s]",
+        tostring(confirmedPetName),
+        tostring(confirmedAge or "Unknown"),
+        FormatWebhookWeightKG(confirmedWeight)
+    )
+
+        local serverCopy =
+            tostring(game.PlaceId)
+            .. ":"
+            .. tostring(game.JobId)
+
+        local sellerName =
+            tostring(listing.Seller or "Unknown")
+
+        if listing.SellerUserId then
+            sellerName =
+                ResolveSeller(listing.SellerUserId)
+        end
+
+        local fields = {
+
+            {
+                name = "Price",
+                value = tostring(listing.Price),
+                inline = true,
+            },
+
+            {
+                name = "Weight",
+                value =
+                    confirmedWeight
+                    and (tostring(confirmedWeight) .. " KG")
+                    or "Unknown",
+                inline = true,
+            },
+        }
+
+        if confirmedAge then
+            table.insert(fields, {
+                name = "Age",
+                value = tostring(confirmedAge),
+                inline = true,
+            })
+        end
+
+        table.insert(fields, {
+            name = "Seller",
+            value = sellerName,
+            inline = true,
+        })
+
+        table.insert(fields, {
+            name = "Server",
+            value =
+                "```lua\n"
+                .. serverCopy
+                .. "\n```",
+            inline = false,
+        })
+
+        local payload = {
+            embeds = {{
+
+                title =
+                    string.format(
+                        "**%s**",
+                        confirmedTitle
+                    ),
+
+                color = 0x8B5CF6,
+
+                fields = fields,
+
+                footer = {
+                    text = "Holy V2 Global"
+                },
+
+                timestamp = DateTime.now():ToIsoDate(),
+            }}
+        }
+
+        local ok, response =
+            pcall(function()
+                return RequestFunction({
+                    Url =
+                        tostring(GlobalSnipeWebhook.URL)
+                            :gsub("%s+", ""),
+
+                    Method = "POST",
+
+                    Headers = {
+                        ["Content-Type"] = "application/json"
+                    },
+
+                    Body = HttpService:JSONEncode(payload)
+                })
+            end)
+
+        if not ok then
+            warn(
+                "[GLOBAL SNIPER WEBHOOK] Request failed:",
+                tostring(response)
+            )
+            return
+        end
+
+        if type(response) == "table" then
+
+            local statusCode =
+                tonumber(response.StatusCode or response.status_code)
+
+            if statusCode
+            and statusCode ~= 200
+            and statusCode ~= 204 then
+
+                warn(
+                    "[GLOBAL SNIPER WEBHOOK] Bad status:",
+                    tostring(statusCode),
+                    tostring(response.Body or response.body or "")
+                )
+
+                return
+            end
+        end
+
+        print(
+            "[GLOBAL SNIPER WEBHOOK] Sent successful snipe:",
+            confirmedTitle
+        )
+    end)
+end
+function TryPurchaseListing(listing)
+
+    local listingKey =
+        tostring(listing.BoothId)
+        .. "_"
+        .. tostring(listing.UID)
+
+    local function ReleaseLock()
+        ActivePurchases[listingKey] = nil
+    end
+
+    local now = os.clock()
+
+    --==================================================
+    -- FAILED LISTING LOCK
+    --==================================================
+
+    local failedAt =
+        FailedListings[listingKey]
+
+    if failedAt
+    and now - failedAt < 999999 then
+        ReleaseLock()
+        return false
+    end
+
+    --==================================================
+    -- GLOBAL BUY LOCK
+    --==================================================
+
+    ActivePurchases[listingKey] = true
+
+    local remote =
+        GetBuyRemote()
+
+    if not remote then
+        ReleaseLock()
+        return false
+    end
+
+    local sellerPlayer =
+        Players:GetPlayerByUserId(
+            listing.SellerUserId
+        )
+
+    if not sellerPlayer then
+
+        warn("[BUY] Seller player missing")
+
+        FailedListings[listingKey] =
+            os.clock()
+
+        ReleaseLock()
+        return false
+    end
+
+    print(
+        string.format(
+            "[BUYING] %s | %s tokens | %skg",
+            tostring(listing.PetName),
+            tostring(listing.Price),
+            tostring(listing.Weight)
+        )
+    )
+
+    --==================================================
+    -- IMPORTANT:
+    -- hook inventory BEFORE InvokeServer so we cannot miss
+    -- fast replication
+    --==================================================
+
+    local inventoryWaiter =
+        CreateInventoryWaiter(listing)
+
+    local ok, result =
+        pcall(function()
+
+            return remote:InvokeServer(
+                sellerPlayer,
+                listing.UID
+            )
+
+        end)
+
+    --==================================================
+    -- TOKEN FAILURE
+    --==================================================
+
+        LastTokenFailure =
+        SafeNumber(LastTokenFailure, 0)
+
+    if SafeElapsed(LastTokenFailure) < 1 then
+
+        inventoryWaiter.Disconnect()
+
+        warn(
+            string.format(
+                "[BUY FAILED] Insufficient tokens → %s",
+                tostring(listing.PetName)
+            )
+        )
+
+        FailedListings[listingKey] =
+            os.clock()
+
+        ReleaseLock()
+        return false
+    end
+
+    --==================================================
+    -- HARD INVOKE FAILURE
+    --==================================================
+
+    if not ok then
+
+        inventoryWaiter.Disconnect()
+
+        warn("[BUY] Invoke failed:", result)
+
+        FailedListings[listingKey] =
+            os.clock()
+
+        ReleaseLock()
+        return false
+    end
+
+    --==================================================
+    -- SERVER REJECTED PURCHASE
+    --==================================================
+
+    if result == false then
+
+        inventoryWaiter.Disconnect()
+
+                LastPendingSale =
+            SafeNumber(LastPendingSale, 0)
+
+        if SafeElapsed(LastPendingSale) < 1.25 then
+
+            warn(
+                string.format(
+                    "[BUY PENDING] %s → will retry",
+                    tostring(listing.PetName)
+                )
+            )
+
+            ReleaseLock()
+            return "PENDING"
+        end
+
+        warn(
+            string.format(
+                "[BUY FAILED] %s",
+                tostring(listing.PetName)
+            )
+        )
+
+        FailedListings[listingKey] =
+            os.clock()
+
+        ReleaseLock()
+        return false
+    end
+
+    --==================================================
+    -- SERVER ACCEPTED PURCHASE
+    -- Now wait until matching Tool replicates into inventory
+    --==================================================
+
+    print(
+        string.format(
+            "[BUY ACCEPTED] Waiting for inventory → %s",
+            tostring(listing.PetName)
+        )
+    )
+
+    local confirmed, toolName, source =
+        inventoryWaiter.Wait(
+            PurchaseState.InventoryTimeout
+        )
+
+if confirmed then
+
+local boughtMessage =
+    string.format(
+        "%s added via %s",
+        tostring(toolName),
+        tostring(source)
+    )
+
+print(
+    "[BOUGHT CONFIRMED] "
+    .. boughtMessage
+)
+--==================================================
+-- STAY AFTER CONFIRMED SNIPE
+-- Adds extra time to the auto-hop timer only after
+-- the purchased pet is confirmed in inventory.
+--==================================================
+
+SniperState.StayAfterSnipeSeconds =
+    SafeNumber(
+        SniperState.StayAfterSnipeSeconds,
+        5
+    )
+
+if SniperState.StayAfterSnipe == true
+and SniperState.StayAfterSnipeSeconds > 0 then
+
+    local extraStayUntil =
+        os.clock()
+        + SniperState.StayAfterSnipeSeconds
+
+    SniperState.StayAfterSnipeUntil =
+        math.max(
+            SafeNumber(
+                SniperState.StayAfterSnipeUntil,
+                0
+            ),
+            extraStayUntil
+        )
+
+    print(
+        string.format(
+            "[SniperHop] Confirmed snipe stay added: %.1fs",
+            SniperState.StayAfterSnipeSeconds
+        )
+    )
+
+    HolyNotify(
+        "Confirmed Snipe",
+        "Auto hop delayed by "
+            .. tostring(SniperState.StayAfterSnipeSeconds)
+            .. " seconds.",
+        "clock",
+        3
+    )
+end
+
+HolyNotify(
+    "Snipe Confirmed",
+    boughtMessage,
+    "badge-check",
+    5
+)
+
+    --==================================================
+    -- GLOBAL SNIPE WEBHOOK
+    -- Sends only after inventory confirmation.
+    -- Does not depend on personal webhook toggle.
+    --==================================================
+
+    SendGlobalSnipeWebhook(
+        listing,
+        toolName,
+        source
+    )
+
+    --==================================================
+    -- EVENT-DRIVEN SHOWCASE RE-EQUIP
+    -- Triggered only after bought pet reaches inventory
+    --==================================================
+
+    if BoothPetState.Enabled then
+
+        ShowcaseEquipState.ReequipPending = true
+        ShowcaseEquipState.InventoryConfirmedAt = os.clock()
+        ShowcaseEquipState.RequestId =
+        ShowcaseEquipState.RequestId + 1
+
+        print(
+            string.format(
+                "[BoothPet] Re-equip scheduled in %.1fs",
+                ShowcaseEquipState.ReequipDelay
+            )
+        )
+    end
+
+else
+
+    warn(
+        string.format(
+            "[BUY WARNING] Inventory confirmation timeout → %s",
+            tostring(listing.PetName)
+        )
+    )
+end
+
+    ProcessedListings[listingKey] = true
+
+    --==================================================
+    -- PERSONAL WEBHOOK
+    --==================================================
+
+    if WebhookState.Enabled
+    and WebhookState.NotifySuccessfulSnipe then
+
+        QueueWebhook(
+        ApplyWebhookPing(
+        CreateSuccessEmbed(
+            listing,
+            toolName,
+            source
+        ),
+        WebhookState.PingSuccessfulSnipes
+    )
+)
+    end
+
+    ReleaseLock()
+    return true
+end
+--==================================================
+-- SNIPER SERVER RESOLUTION
+-- Mode-aware paginated server search.
+--
+-- Fullest Under Max:
+--   Fetches Desc pages and prefers high population under MaxServerPlayers.
+--
+-- Balanced:
+--   Fetches Desc pages but picks from a wider mixed pool.
+--
+-- Low Player:
+--   Fetches Asc pages so low-pop servers are actually discoverable.
+--==================================================
+
+function GetRandomTradeServer()
+
+    local maxAllowedPlayers =
+        tonumber(SniperState.MaxServerPlayers)
+        or 24
+
+    maxAllowedPlayers =
+        math.clamp(
+            math.floor(maxAllowedPlayers),
+            1,
+            30
+        )
+
+    local hopMode =
+        tostring(
+            SniperState.ServerHopMode
+            or "Fullest Under Max"
+        )
+
+    local sortOrder =
+        "Desc"
+
+    if hopMode == "Low Player" then
+        sortOrder =
+            "Asc"
+    end
+
+    local valid = {}
+    local cursor = nil
+
+    local MAX_PAGES =
+    math.clamp(
+        math.floor(
+            SafeNumber(
+                SniperState.ServerHopPages,
+                hopMode == "Low Player" and 8 or 4
+            )
+        ),
+        1,
+        10
+    )
+
+    local function AddServer(server, ignoreHistory)
+
+        if type(server) ~= "table" then
+            return
+        end
+
+        local id =
+            server.id
+
+        local playing =
+            tonumber(server.playing)
+
+        local maxPlayers =
+            tonumber(server.maxPlayers)
+
+        if not id
+        or not playing
+        or not maxPlayers then
+            return
+        end
+
+        if id == game.JobId then
+            return
+        end
+
+        if playing >= maxPlayers then
+            return
+        end
+
+        if playing > maxAllowedPlayers then
+            return
+        end
+
+        if not ignoreHistory
+        and SniperState.RecentServers[id] then
+            return
+        end
+
+        table.insert(valid, {
+            Id = id,
+            Playing = playing,
+            MaxPlayers = maxPlayers,
+            OpenSlots = maxPlayers - playing,
+        })
+    end
+
+    local function FetchPages(ignoreHistory)
+
+        cursor =
+            nil
+
+        for page = 1, MAX_PAGES do
+
+            local url =
+                "https://games.roblox.com/v1/games/"
+                .. TRADING_WORLD_PLACE_ID
+                .. "/servers/Public?sortOrder="
+                .. sortOrder
+                .. "&limit=100&excludeFullGames=true"
+
+            if cursor then
+                url =
+                    url
+                    .. "&cursor="
+                    .. HttpService:UrlEncode(cursor)
+            end
+
+            local ok, body =
+                pcall(function()
+                    return game:HttpGet(url)
+                end)
+
+            if not ok
+            or not body then
+
+                HolyNotify(
+                    "Server Hop Failed",
+                    "Could not fetch public server list.",
+                    "wifi-off",
+                    3
+                )
+
+                break
+            end
+
+            local decoded
+
+            ok, decoded =
+                pcall(function()
+                    return HttpService:JSONDecode(body)
+                end)
+
+            if not ok
+            or not decoded
+            or type(decoded.data) ~= "table" then
+
+                HolyNotify(
+                    "Server Hop Failed",
+                    "Invalid server list response.",
+                    "server-off",
+                    3
+                )
+
+                break
+            end
+
+            for _, server in ipairs(decoded.data) do
+                AddServer(server, ignoreHistory)
+            end
+
+            cursor =
+                decoded.nextPageCursor
+
+            if not cursor
+            or cursor == "" then
+                break
+            end
+        end
+    end
+
+    FetchPages(false)
+
+    -- If recent-server history blocked everything, clear history and retry once.
+    if #valid <= 0 then
+
+        table.clear(SniperState.RecentServers)
+
+        FetchPages(true)
+    end
+
+    if #valid <= 0 then
+
+        HolyNotify(
+            "No Server Found",
+            "No public server found under "
+                .. tostring(maxAllowedPlayers)
+                .. " players. Try raising Max Server Players.",
+            "server-off",
+            4
+        )
+
+        warn(
+            "[SniperHop] No valid servers found | max:",
+            tostring(maxAllowedPlayers),
+            "| mode:",
+            tostring(hopMode),
+            "| sort:",
+            tostring(sortOrder)
+        )
+
+        return nil
+    end
+
+    --==================================================
+    -- MODE SORTING
+    --==================================================
+
+    if hopMode == "Low Player" then
+
+        table.sort(valid, function(a, b)
+
+            if a.Playing ~= b.Playing then
+                return a.Playing < b.Playing
+            end
+
+            return a.OpenSlots > b.OpenSlots
+        end)
+
+    elseif hopMode == "Balanced" then
+
+        table.sort(valid, function(a, b)
+
+            local target =
+                math.max(
+                    1,
+                    math.floor(maxAllowedPlayers * 0.65)
+                )
+
+            local aDelta =
+                math.abs(a.Playing - target)
+
+            local bDelta =
+                math.abs(b.Playing - target)
+
+            if aDelta ~= bDelta then
+                return aDelta < bDelta
+            end
+
+            return a.Playing > b.Playing
+        end)
+
+    else
+
+        table.sort(valid, function(a, b)
+
+            if a.Playing ~= b.Playing then
+                return a.Playing > b.Playing
+            end
+
+            return a.OpenSlots > b.OpenSlots
+        end)
+    end
+
+    local poolSize
+
+    if hopMode == "Low Player" then
+        poolSize =
+            math.min(
+                #valid,
+                12
+            )
+
+    elseif hopMode == "Balanced" then
+        poolSize =
+            math.min(
+                #valid,
+                16
+            )
+
+    else
+        poolSize =
+            math.min(
+                #valid,
+                8
+            )
+    end
+
+    local selected =
+        valid[
+            math.random(
+                1,
+                poolSize
+            )
+        ]
+
+    if not selected then
+        return nil
+    end
+
+    local selectedServerMessage =
+        string.format(
+            "%s/%s players • max %s • %s",
+            tostring(selected.Playing),
+            tostring(selected.MaxPlayers),
+            tostring(maxAllowedPlayers),
+            tostring(hopMode)
+        )
+
+    print(
+    "[SniperHop] Selected server | "
+    .. selectedServerMessage
+    .. " | pages "
+    .. tostring(MAX_PAGES)
+    .. " | pool "
+    .. tostring(#valid)
+)
+
+    HolyNotify(
+        "Server Selected",
+        selectedServerMessage,
+        "server",
+        3
+    )
+
+    return selected.Id
+end
+--==================================================
+-- SNIPER SERVER HOP
+--==================================================
+
+function ExecuteSniperHop()
+
+    if SniperState.Hopping then
+        return
+    end
+
+    SniperState.Hopping = true
+
+    SniperState.LastHop =
+    SafeNumber(SniperState.LastHop, 0)
+
+SniperState.HopDelay =
+    SafeNumber(SniperState.HopDelay, 10)
+
+local elapsed =
+    SafeElapsed(SniperState.LastHop)
+
+    if elapsed < SniperState.HopDelay then
+        SniperState.Hopping = false
+        return
+    end
+
+    local target =
+        GetRandomTradeServer()
+
+    if not target then
+        SniperState.Hopping = false
+        return
+    end
+
+SniperState.LastHop = os.clock()
+
+SniperState.RecentServers[target] = true
+
+if TeleportRetryState then
+    TeleportRetryState.LastTarget = target
+    TeleportRetryState.BlockedServers[target] = true
+end
+
+print(
+    "[SniperHop] Joining:",
+    target
+)
+
+HolyNotify(
+    "Server Hop",
+    "Joining selected Trade World server...",
+    "send",
+    3
+)
+
+    local TeleportService =
+        game:GetService("TeleportService")
+
+    local player =
+        Players.LocalPlayer
+
+    pcall(function()
+
+        TeleportService:TeleportToPlaceInstance(
+            TRADING_WORLD_PLACE_ID,
+            target,
+            player
+        )
+
+    end)
+
+    task.delay(8, function()
+        SniperState.Hopping = false
+    end)
+end
+--==================================================
+-- TEST SNIPER SCAN
+--==================================================
+function CountVisiblePetTools()
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return 0
+    end
+
+    local total = 0
+
+    local containers = {
+        player:FindFirstChild("Backpack"),
+        player.Character,
+    }
+
+    for _, container in ipairs(containers) do
+
+        if container then
+
+            for _, child in ipairs(container:GetChildren()) do
+
+                if child:IsA("Tool") then
+
+                    local name =
+                        tostring(child.Name or "")
+
+                    if name:find("%[.-KG%]")
+                    or name:find("%[Age%s*%d+%]") then
+                        total = total + 1
+                    end
+                end
+            end
+        end
+    end
+
+    return total
+end
+
+function IsHolyPetInventoryFull()
+
+    if SniperState.StopAtPetInventoryLimit ~= true then
+        return false
+    end
+
+    local maxPets =
+        tonumber(SniperState.MaxPetInventory)
+        or math.huge
+
+    if maxPets <= 0 then
+        return false
+    end
+
+    local currentPets =
+        CountVisiblePetTools()
+
+    return currentPets >= maxPets, currentPets, maxPets
+end
+
+function RunSniperScan()
+
+    if SniperState.Scanning then
+        return
+    end
+
+    SniperState.Scanning =
+        true
+
+    local ok, err =
+        pcall(function()
+
+            local listings, scannedCount =
+                ExtractListings()
+
+            if type(TrackMarketListings) == "function" then
+                pcall(function()
+                    TrackMarketListings(listings)
+                end)
+            end
+
+            if SniperMonitorState then
+
+                SniperMonitorState.PetsScanned =
+                    tonumber(scannedCount)
+                    or 0
+
+                SniperMonitorState.ScanPasses =
+                    (SniperMonitorState.ScanPasses or 0) + 1
+            end
+
+            local priorityMatches =
+                {}
+
+            local matches =
+                0
+
+            --==================================================
+            -- FIRST PASS:
+            -- collect all valid matches.
+            -- Do NOT buy during booth scan order.
+            --==================================================
+
+            for i = 1, #listings do
+
+                local listing =
+                    listings[i]
+
+                local matched =
+                    ListingMatchesFilter(listing)
+
+                if matched then
+
+                    local inventoryFull, currentPets, maxPets =
+                        IsHolyPetInventoryFull()
+
+                    if inventoryFull then
+
+                        warn(
+                            string.format(
+                                "[SNIPER] Inventory safety limit reached: %s/%s pets",
+                                tostring(currentPets),
+                                tostring(maxPets)
+                            )
+                        )
+
+                        HolyNotify(
+                            "Inventory Limit Reached",
+                            tostring(currentPets)
+                                .. "/"
+                                .. tostring(maxPets)
+                                .. " pets. Holy paused buying.",
+                            "package-x",
+                            5
+                        )
+
+                        continue
+                    end
+
+                    local listingKey =
+                        tostring(listing.BoothId)
+                        .. "_"
+                        .. tostring(listing.UID)
+
+                    if ClaimedListings[listingKey] then
+                        continue
+                    end
+
+                    matches += 1
+
+                    table.insert(
+                        priorityMatches,
+                        listing
+                    )
+                end
+            end
+
+            --==================================================
+            -- PRIORITY SORT:
+            -- 1. Filter priority
+            -- 2. Better deal %
+            -- 3. Lower price
+            -- 4. Higher weight
+            --==================================================
+
+            table.sort(
+                priorityMatches,
+                ComparePriorityListings
+            )
+
+            --==================================================
+            -- SECOND PASS:
+            -- dispatch in priority order.
+            --==================================================
+
+            for index, listing in ipairs(priorityMatches) do
+
+                local listingKey =
+                    tostring(listing.BoothId)
+                    .. "_"
+                    .. tostring(listing.UID)
+
+                if ClaimedListings[listingKey] then
+                    continue
+                end
+
+                ClaimedListings[listingKey] =
+                    true
+
+                print(
+                    string.format(
+                        "[MATCH P%s #%s] %s | %s tokens | %skg | deal %.2f",
+                        tostring(
+                            ClampSniperPriority(
+                                listing.MatchedPriority
+                            )
+                        ),
+                        tostring(index),
+                        tostring(listing.PetName),
+                        tostring(listing.Price),
+                        tostring(listing.Weight),
+                        tonumber(listing.MatchedDealScore) or 0
+                    )
+                )
+
+                local dispatched =
+                    DispatchPurchase(listing)
+
+                if dispatched then
+
+                    task.delay(15, function()
+
+                        ClaimedListings[listingKey] =
+                            nil
+                    end)
+
+                else
+
+                    ClaimedListings[listingKey] =
+                        nil
+                end
+            end
+
+            if matches > 0 then
+
+                print(
+                    "[SNIPER] Priority matches:",
+                    tostring(matches),
+                    "| dispatched:",
+                    tostring(#priorityMatches)
+                )
+
+            else
+
+                if SniperState.AutoHop then
+
+                    SniperState.ScanStartedAt =
+                        SafeNumber(
+                            SniperState.ScanStartedAt,
+                            os.clock()
+                        )
+
+                    local elapsed =
+                        SafeElapsed(
+                            SniperState.ScanStartedAt
+                        )
+
+                    if elapsed >= SniperState.ScanDuration then
+
+                        SniperState.StayAfterSnipeUntil =
+                            SafeNumber(
+                                SniperState.StayAfterSnipeUntil,
+                                0
+                            )
+
+                        local stayRemaining =
+                            SafeRemaining(
+                                SniperState.StayAfterSnipeUntil
+                            )
+
+                        if SniperState.StayAfterSnipe == true
+                        and stayRemaining > 0 then
+
+                            print(
+                                string.format(
+                                    "[SniperHop] Staying after snipe: %.1fs remaining",
+                                    stayRemaining
+                                )
+                            )
+
+                            return
+                        end
+
+                        SniperState.ScanStartedAt =
+                            os.clock()
+
+                        task.spawn(
+                            ExecuteSniperHop
+                        )
+                    end
+                end
+            end
+
+            SniperState.LastScan =
+                os.clock()
+        end)
+
+    SniperState.Scanning =
+        false
+
+    if not ok then
+        warn("[SNIPER] Scan failed:", err)
+    end
+end
+--==================================================
+-- BOOTH DATA WARMUP (NON-BLOCKING SAFETY)
+--==================================================
+if game.PlaceId == TRADING_WORLD_PLACE_ID then
+    task.spawn(function()
+        local data = LatestBoothData
+
+        if data then
+            print("[BOOT] Booth data ready")
+        else
+            warn("[BOOT] Booth data not ready (will resolve later)")
+        end
+    end)
+end
+--==================================================
+-- [3] LOAD OBSIDIAN (ISOLATED)
+--==================================================
+repo = "https://raw.githubusercontent.com/bencapalot041/goons/main/"
+
+function SafeLoad(url)
+    local ok, src = pcall(function()
+        return game:HttpGet(url, true)
+    end)
+
+    if not ok or type(src) ~= "string" or #src < 100 then
+        error("[Loader] HTTP failed: " .. tostring(url))
+    end
+
+    local fn, err = loadstring(src)
+    if not fn then
+        error("[Loader] Compile failed: " .. tostring(err))
+    end
+
+    local okRun, result = pcall(fn)
+    if not okRun then
+        error("[Loader] Runtime failed: " .. tostring(result))
+    end
+
+    return result
+end
+
+--==================================================
+-- OBSIDIAN LOAD
+-- TEST LIBRARY MODE
+-- Uses library.test.lua so Library.lua stays safe.
+--==================================================
+
+Library =
+    SafeLoad(
+        repo
+        .. "librarytest.lua?v="
+        .. tostring(os.time())
+    )
+
+SaveManager =
+    SafeLoad(
+        repo
+        .. "addons/SaveManager.lua?v="
+        .. tostring(os.time())
+    )
+
+ThemeManager =
+    SafeLoad(
+        repo
+        .. "addons/ThemeManager.lua?v="
+        .. tostring(os.time())
+    )
+print(
+    "[LIB TEST]",
+    "Library loaded:",
+    tostring(type(Library)),
+    "| version file:",
+    "librarytest.lua"
+)
+--==================================================
+-- HOLY NOTIFICATION WRAPPER
+-- User-facing Obsidian notifications only.
+-- Console prints should stay for debug/dev-only logs.
+--==================================================
+
+function HolyNotify(title, description, icon, duration)
+
+    if not Library
+    or type(Library.Notify) ~= "function" then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+            Library:Notify({
+                Title = tostring(title or "Holy"),
+                Description = tostring(description or ""),
+                Icon = tostring(icon or "info"),
+                Time = tonumber(duration) or 4,
+            })
+        end)
+
+    return ok
+end
+
+HolyLoading =
+    Library:CreateLoading({
+        Title = "Holy",
+        Icon = "zap",
+        TotalSteps = 6,
+    })
+
+HolyLoading:SetMessage("Initializing Holy...")
+HolyLoading:SetDescription("Loading core services...")
+HolyLoading:SetCurrentStep(1)
+--==================================================
+-- SERVICE REGISTRY
+--==================================================
+
+Services = {}
+
+--==================================================
+-- WORKER REGISTRY
+--==================================================
+
+RuntimeWorkers = {}
+
+function StartWorker(name, fn)
+
+    if RuntimeWorkers[name] then
+        warn(
+            string.format(
+                "[WORKER] %s already running",
+                tostring(name)
+            )
+        )
+
+        return RuntimeWorkers[name]
+    end
+
+    local thread = task.spawn(function()
+
+        local ok, err = pcall(fn)
+
+        if not ok then
+            warn(
+                string.format(
+                    "[WORKER] %s crashed: %s",
+                    tostring(name),
+                    tostring(err)
+                )
+            )
+        end
+
+        RuntimeWorkers[name] = nil
+    end)
+
+    RuntimeWorkers[name] = thread
+
+    print(
+        string.format(
+            "[WORKER] Started → %s",
+            tostring(name)
+        )
+    )
+
+    return thread
+end
+--==================================================
+-- TELEMETRY SERVICE
+--==================================================
+
+TelemetryService = {}
+
+Services.Telemetry = TelemetryService
+
+TelemetryService.Enabled = true
+
+function TelemetryService:Push(category, message)
+
+    if not self.Enabled then
+        return
+    end
+
+    print(
+        string.format(
+            "[%s] %s",
+            tostring(category),
+            tostring(message)
+        )
+    )
+end
+
+function TelemetryService:Warn(category, message)
+
+    warn(
+        string.format(
+            "[%s] %s",
+            tostring(category),
+            tostring(message)
+        )
+    )
+end
+
+function TelemetryService:Error(category, message)
+
+    warn(
+        string.format(
+            "[%s ERROR] %s",
+            tostring(category),
+            tostring(message)
+        )
+    )
+end
+--==================================================
+-- [4] GLOBAL STATE (AUTHORITATIVE)
+--==================================================
+ScriptState = {
+    Loaded = false,
+    ForceStopped = false,
+}
+
+RuntimeState = {
+    Started = false,
+}
+
+BoothAuto = {
+    Enabled = false,
+    InProgress = false,
+
+    -- Auto Teleport = soft return mode.
+    AutoTeleport = false,
+
+    -- Lock Behind Booth = intentional hard lock mode.
+    LockBehindBooth = false,
+
+    -- Distance behind booth placement.
+    BoothDistance = 5,
+
+    -- Distance allowed before soft-return teleports back.
+    ReturnDistance = 8,
+
+    LastBoothPosition = nil,
+    LastBoothCFrame = nil,
+
+    LastSoftReturnAt = 0,
+    LastHardLockAt = 0,
+
+    SoftReturnCooldown = 1.50,
+    HardLockInterval = 0.15,
+
+    AutoServerHop = false,
+    ServerHopMinutes = 10,
+    LastServerHop = 0,
+}
+
+function ClearBoothAnchor()
+    if not BoothAuto then
+        return
+    end
+
+    BoothAuto.LastBoothPosition = nil
+    BoothAuto.LastBoothCFrame = nil
+    BoothAuto.LastSoftReturnAt = 0
+    BoothAuto.LastHardLockAt = 0
+end
+
+function RestoreCharacterMovement()
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return false
+    end
+
+    local character =
+        player.Character
+
+    if not character then
+        return false
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    local root =
+        character:FindFirstChild("HumanoidRootPart")
+
+    if root then
+        root.Anchored = false
+    end
+
+    if not humanoid then
+        return false
+    end
+
+    humanoid.AutoRotate =
+        true
+
+    if humanoid.WalkSpeed <= 0 then
+        humanoid.WalkSpeed = 16
+    end
+
+    if humanoid.JumpPower <= 0 then
+        humanoid.JumpPower = 50
+    end
+
+    return true
+end
+
+function MoveCharacterToBoothCFrame(targetCFrame)
+    if typeof(targetCFrame) ~= "CFrame" then
+        return false
+    end
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return false
+    end
+
+    local character =
+        player.Character
+
+    if not character then
+        return false
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid
+    or humanoid.Health <= 0 then
+        return false
+    end
+
+    local root =
+    character:FindFirstChild("HumanoidRootPart")
+
+if root then
+    root.Anchored = false
+end
+
+if humanoid.Sit then
+    humanoid.Sit = false
+    task.wait()
+end
+
+character:PivotTo(targetCFrame)
+
+    return true
+end
+
+function SetBoothHardLockAnchored(enabled)
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return false
+    end
+
+    local character =
+        player.Character
+
+    if not character then
+        return false
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    local root =
+        character:FindFirstChild("HumanoidRootPart")
+
+    if not root
+    or not humanoid
+    or humanoid.Health <= 0 then
+        return false
+    end
+
+    if enabled then
+
+        humanoid:Move(Vector3.zero, true)
+
+        humanoid.WalkSpeed =
+            0
+
+        humanoid.JumpPower =
+            0
+
+        humanoid.AutoRotate =
+            false
+
+        root.AssemblyLinearVelocity =
+            Vector3.zero
+
+        root.AssemblyAngularVelocity =
+            Vector3.zero
+
+        local hardLockCFrame =
+    GetBoothHardLockCFrame()
+
+if hardLockCFrame then
+
+    local needsCorrection =
+        root.Anchored ~= true
+        or (
+            root.Position - hardLockCFrame.Position
+        ).Magnitude > 0.05
+
+    if needsCorrection then
+
+        root.CFrame =
+            hardLockCFrame
+
+        root.AssemblyLinearVelocity =
+            Vector3.zero
+
+        root.AssemblyAngularVelocity =
+            Vector3.zero
+    end
+end
+
+root.Anchored =
+    true
+
+        return true
+    end
+
+    root.Anchored =
+        false
+
+    humanoid.AutoRotate =
+        true
+
+    RestoreCharacterMovement()
+
+    return true
+end
+
+function GetBoothHardLockLift()
+    return 0
+end
+
+function GetBoothHardLockCFrame()
+    if typeof(BoothAuto.LastBoothCFrame) ~= "CFrame" then
+        return nil
+    end
+
+    return BoothAuto.LastBoothCFrame
+        + Vector3.new(
+            0,
+            GetBoothHardLockLift(),
+            0
+        )
+end
+
+function GetCharacterGroundOffset()
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return 3
+    end
+
+    local character =
+        player.Character
+
+    if not character then
+        return 3
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    local root =
+        character:FindFirstChild("HumanoidRootPart")
+
+    local hipHeight =
+        humanoid
+        and tonumber(humanoid.HipHeight)
+        or 2
+
+    local rootHalfHeight =
+        root
+        and root.Size
+        and (root.Size.Y * 0.5)
+        or 1
+
+    return math.clamp(
+        hipHeight + rootHalfHeight + 0.05,
+        2.75,
+        5.5
+    )
+end
+
+ConfigState = {
+    IsHydrating = false,
+    Dirty = false,
+    LastMutation = 0,
+    AutosaveName = "autosave",
+}
+
+UIState = {
+    AutoMinimize = false,
+    DPIScale = 90,
+    PerformanceMode = false,
+}
+
+VisualState = {
+
+    ExoticHUD = true,
+
+    WatchlistHUD = false,
+
+    ServerInfoHUD = false,
+
+    SniperMonitorHUD = false,
+}
+
+
+WorldState = {
+    AutoJoinTradeWorld = false,
+}
+--==================================================
+-- TRADE WORLD JOIN STATE
+-- Manual join is instant.
+-- Auto toggle waits 10 seconds before joining.
+--==================================================
+
+TradeWorldJoinState =
+    TradeWorldJoinState
+    or {
+        Busy = false,
+        LastAttempt = 0,
+        Cooldown = 3,
+
+        DelaySeconds = 10,
+        PendingRequestId = 0,
+    }
+
+function RequestJoinTradeWorld(reason)
+
+    if ScriptState.ForceStopped then
+        return false
+    end
+
+    if IsTradeWorld() then
+
+        HolyNotify(
+            "Already in Trade World",
+            "HOLY is already running in Trade World.",
+            "check",
+            3
+        )
+
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    local lastAttempt =
+        SafeNumber(
+            TradeWorldJoinState.LastAttempt,
+            0
+        )
+
+    local cooldown =
+        SafeNumber(
+            TradeWorldJoinState.Cooldown,
+            3
+        )
+
+    if TradeWorldJoinState.Busy then
+        return false
+    end
+
+    if now - lastAttempt < cooldown then
+        return false
+    end
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        warn("[WORLD] LocalPlayer missing")
+        return false
+    end
+
+    TradeWorldJoinState.Busy =
+        true
+
+    TradeWorldJoinState.LastAttempt =
+        now
+
+    HolyNotify(
+        "Joining Trade World",
+        tostring(reason or "Teleporting to Trade World..."),
+        "send",
+        4
+    )
+
+    print("[WORLD] Joining Trade World")
+
+    local TeleportService =
+        game:GetService("TeleportService")
+
+    local ok, err =
+        pcall(function()
+
+            TeleportService:Teleport(
+                TRADING_WORLD_PLACE_ID,
+                player
+            )
+        end)
+
+    if not ok then
+
+        TradeWorldJoinState.Busy =
+            false
+
+        warn(
+            "[WORLD] Trade World teleport failed:",
+            tostring(err)
+        )
+
+        HolyNotify(
+            "Teleport Failed",
+            tostring(err),
+            "triangle-alert",
+            4
+        )
+
+        return false
+    end
+
+    task.delay(8, function()
+
+        TradeWorldJoinState.Busy =
+            false
+    end)
+
+    return true
+end
+
+function CancelScheduledTradeWorldJoin()
+
+    TradeWorldJoinState.PendingRequestId =
+        SafeNumber(
+            TradeWorldJoinState.PendingRequestId,
+            0
+        ) + 1
+
+    print("[WORLD] Scheduled Trade World join cancelled")
+end
+
+function ScheduleJoinTradeWorld(reason)
+
+    if ScriptState.ForceStopped then
+        return false
+    end
+
+    if IsTradeWorld() then
+        return false
+    end
+
+    TradeWorldJoinState.PendingRequestId =
+        SafeNumber(
+            TradeWorldJoinState.PendingRequestId,
+            0
+        ) + 1
+
+    local requestId =
+        TradeWorldJoinState.PendingRequestId
+
+    local delaySeconds =
+        SafeNumber(
+            TradeWorldJoinState.DelaySeconds,
+            10
+        )
+
+    delaySeconds =
+        math.max(
+            delaySeconds,
+            1
+        )
+
+    HolyNotify(
+        "Trade World Scheduled",
+        "Teleporting in "
+            .. tostring(delaySeconds)
+            .. " seconds. Turn the toggle off to cancel.",
+        "clock",
+        5
+    )
+
+    print(
+        "[WORLD] Trade World teleport scheduled in",
+        tostring(delaySeconds),
+        "seconds"
+    )
+
+    task.delay(delaySeconds, function()
+
+        if ScriptState.ForceStopped then
+            return
+        end
+
+        if requestId ~= TradeWorldJoinState.PendingRequestId then
+            return
+        end
+
+        if WorldState.AutoJoinTradeWorld ~= true then
+
+            HolyNotify(
+                "Teleport Cancelled",
+                "Auto Teleport Trade World was turned off.",
+                "x",
+                3
+            )
+
+            return
+        end
+
+        if IsTradeWorld() then
+            return
+        end
+
+        RequestJoinTradeWorld(
+            reason or "Auto Teleport Trade World delay finished."
+        )
+    end)
+
+    return true
+end
+
+ReconnectState = {
+    AutoReconnect = false,
+    Busy = false,
+    LastAttempt = 0,
+    Cooldown = 5,
+}
+
+BoothCustomization = {
+    SelectedSkin = "Default",
+}
+
+--==================================================
+-- BOOTH SKIN OWNERSHIP
+-- Source of truth:
+-- DataService:GetData().TradeBoothSkinData.OwnedSkins
+--==================================================
+
+TradeBoothSkinRegistry =
+    TradeBoothSkinRegistry
+    or nil
+
+BoothSkinList =
+    {
+        "Default",
+    }
+
+function GetTradeBoothSkinRegistry()
+
+    if type(TradeBoothSkinRegistry) == "table" then
+        return TradeBoothSkinRegistry
+    end
+
+    local dataFolder =
+        ReplicatedStorage:FindFirstChild("Data")
+
+    if not dataFolder then
+        return nil
+    end
+
+    local module =
+        dataFolder:FindFirstChild("TradeBoothSkinRegistry")
+
+    if not module then
+        return nil
+    end
+
+    local ok, result =
+        pcall(function()
+            return require(module)
+        end)
+
+    if ok
+    and type(result) == "table" then
+        TradeBoothSkinRegistry =
+            result
+
+        return TradeBoothSkinRegistry
+    end
+
+    return nil
+end
+
+function GetHolyPlayerData()
+
+    local dataService =
+        GetHolyDataService
+        and GetHolyDataService()
+        or nil
+
+    if not dataService then
+        return nil
+    end
+
+    local ok, data =
+        pcall(function()
+            return dataService:GetData()
+        end)
+
+    if ok
+    and type(data) == "table" then
+        return data
+    end
+
+    ok, data =
+        pcall(function()
+            return dataService.GetData()
+        end)
+
+    if ok
+    and type(data) == "table" then
+        return data
+    end
+
+    return nil
+end
+
+function GetOwnedBoothSkinMap()
+
+    local data =
+        GetHolyPlayerData()
+
+    local skinData =
+        type(data) == "table"
+        and rawget(data, "TradeBoothSkinData")
+        or nil
+
+    local ownedSkins =
+        type(skinData) == "table"
+        and rawget(skinData, "OwnedSkins")
+        or nil
+
+    if type(ownedSkins) ~= "table" then
+        return {
+            Default = true,
+        }
+    end
+
+    local owned = {
+        Default = true,
+    }
+
+    for skinName, value in pairs(ownedSkins) do
+
+        if value == true
+        or tonumber(value) ~= nil then
+
+            owned[tostring(skinName)] =
+                true
+        end
+    end
+
+    return owned
+end
+
+function RefreshBoothSkinList()
+
+    local registry =
+        GetTradeBoothSkinRegistry()
+
+    local owned =
+        GetOwnedBoothSkinMap()
+
+    local names = {}
+    local seen = {}
+
+    local function AddSkinName(value)
+
+        local name =
+            tostring(value or "")
+                :gsub("^%s+", "")
+                :gsub("%s+$", "")
+
+        if name == "" then
+            return false
+        end
+
+        if seen[name] then
+            return false
+        end
+
+        if not owned[name] then
+            return false
+        end
+
+        if name ~= "Default" then
+
+            if type(registry) ~= "table"
+            or type(registry[name]) ~= "table" then
+                return false
+            end
+        end
+
+        seen[name] =
+            true
+
+        table.insert(
+            names,
+            name
+        )
+
+        return true
+    end
+
+    AddSkinName("Default")
+
+    for skinName in pairs(owned) do
+        AddSkinName(skinName)
+    end
+
+    table.sort(names, function(a, b)
+
+        if a == "Default" then
+            return true
+        end
+
+        if b == "Default" then
+            return false
+        end
+
+        return a < b
+    end)
+
+    if #names <= 0 then
+        names = {
+            "Default",
+        }
+    end
+
+    BoothSkinList =
+        names
+
+    print(
+        "[BOOTH SKINS] Owned loaded:",
+        tostring(#BoothSkinList)
+    )
+
+    return BoothSkinList
+end
+
+function IsOwnedBoothSkin(skinName)
+
+    skinName =
+        tostring(skinName or "")
+
+    if skinName == "" then
+        return false
+    end
+
+    local owned =
+        GetOwnedBoothSkinMap()
+
+    return owned[skinName] == true
+end
+
+function ResolveSelectedBoothSkin()
+
+    local selected =
+        tostring(
+            BoothCustomization
+            and BoothCustomization.SelectedSkin
+            or "Default"
+        )
+
+    if IsOwnedBoothSkin(selected) then
+        return selected
+    end
+
+    BoothCustomization.SelectedSkin =
+        "Default"
+
+    return "Default"
+end
+--==================================================
+-- BEE EGG AUTO BUY STATE
+-- Trade World remote-accessible event shop buyer.
+--==================================================
+
+BeeEggAuto = {
+    Enabled = false,
+    Buying = false,
+
+    SelectedEggs = {
+        ["Mythical Bee Egg"] = true,
+    },
+
+    EggList = {},
+
+    BuyRemote = nil,
+
+    LastAttempt = 0,
+    BuyInterval = 1.5,
+}
+--==================================================
+-- CONFIG AUTOSAVE (DEBOUNCED)
+--==================================================
+function MarkConfigDirty()
+    if ConfigState.IsHydrating then
+        return
+    end
+
+    ConfigState.Dirty = true
+    ConfigState.LastMutation = os.clock()
+end
+--==================================================
+-- SAFE NUMBER / TIMER HELPERS
+-- Prevents obfuscator/minifier nil arithmetic crashes.
+--==================================================
+
+function SafeNumber(value, fallback)
+
+    local numberValue =
+        tonumber(value)
+
+    if numberValue == nil then
+        return fallback or 0
+    end
+
+    return numberValue
+end
+
+function SafeElapsed(lastTime)
+
+    return os.clock()
+        - SafeNumber(lastTime, 0)
+end
+
+function SafeRemaining(targetTime)
+
+    return SafeNumber(targetTime, 0)
+        - os.clock()
+end
+
+--==================================================
+-- PLACE GATE
+-- Core/UI can load everywhere.
+-- Trade World automation may only execute in Trade World.
+--==================================================
+
+function IsTradeWorld()
+
+    return game.PlaceId == TRADING_WORLD_PLACE_ID
+end
+
+FILTER_SAVE_FILE = "HolyV2/sniper_filters.json"
+
+LISTING_FILTER_SAVE_FILE =
+    "HolyV2/listing_filters.json"
+
+LISTING_AUTOLIST_INTENT_SAVE_FILE =
+    "HolyV2/listing_autolist_intent.json"
+--==================================================
+-- FILTER PERSISTENCE
+-- Supports two active watchlists and migrates older single-list saves.
+--==================================================
+
+function SerializeFilterSet(filters)
+
+    local serialized = {}
+
+    if type(filters) ~= "table" then
+        return serialized
+    end
+
+    for pet, data in pairs(filters) do
+
+        if type(data) == "table" then
+
+            serialized[tostring(pet)] = {
+                MinWeight =
+                    tonumber(data.MinWeight)
+                    or 0,
+
+                MaxPrice =
+                    data.MaxPrice == math.huge
+                    and "INF"
+                    or tonumber(data.MaxPrice)
+                    or math.huge,
+
+                WeightMode =
+    NormalizeWeightMode(data.WeightMode),
+
+                Priority =
+    ResolveSniperFilterPriority(data),
+            }
+        end
+    end
+
+    return serialized
+end
+
+function SerializeEggFocusSet(filters)
+
+    local serialized = {}
+
+    if type(filters) ~= "table" then
+        return serialized
+    end
+
+    for eggName, data in pairs(filters) do
+
+        if type(data) == "table" then
+
+            serialized[tostring(eggName)] = {
+                MaxPrice =
+                    data.MaxPrice == math.huge
+                    and "INF"
+                    or tonumber(data.MaxPrice)
+                    or math.huge,
+            }
+        end
+    end
+
+    return serialized
+end
+function SaveSniperFilters()
+
+    if not writefile then
+        warn("[Filters] writefile unsupported")
+        return false
+    end
+
+    local ok, err = pcall(function()
+
+        local serialized = {
+    Version = 3,
+
+    Watchlists = {
+        ["1"] =
+            SerializeFilterSet(
+                GetSniperFilterSet(1)
+            ),
+
+        ["2"] =
+            SerializeFilterSet(
+                GetSniperFilterSet(2)
+            ),
+    },
+
+    EggFocus = {
+        ["1"] =
+            SerializeEggFocusSet(
+                GetEggFocusSet(1)
+            ),
+
+        ["2"] =
+            SerializeEggFocusSet(
+                GetEggFocusSet(2)
+            ),
+    },
+}
+
+        writefile(
+            FILTER_SAVE_FILE,
+            HttpService:JSONEncode(serialized)
+        )
+    end)
+
+    if not ok then
+        warn("[Filters] Save failed:", err)
+        return false
+    end
+
+    print("[Filters] Saved")
+
+    return true
+end
+
+function LoadFilterSetFromTable(target, source)
+
+    if type(target) ~= "table"
+    or type(source) ~= "table" then
+        return
+    end
+
+    table.clear(target)
+
+    for pet, data in pairs(source) do
+
+        if pet ~= "Version"
+        and pet ~= "Watchlists"
+        and type(data) == "table" then
+
+            target[tostring(pet)] = {
+                MinWeight =
+                    tonumber(data.MinWeight)
+                    or 0,
+
+                MaxPrice =
+                    data.MaxPrice == "INF"
+                    and math.huge
+                    or tonumber(data.MaxPrice)
+                    or math.huge,
+
+                WeightMode =
+    NormalizeWeightMode(data.WeightMode),
+
+Priority =
+    ClampSniperPriority(data.Priority),
+            }
+        end
+    end
+end
+
+function LoadEggFocusSetFromTable(target, source)
+
+    if type(target) ~= "table"
+    or type(source) ~= "table" then
+        return
+    end
+
+    table.clear(target)
+
+    for eggName, data in pairs(source) do
+
+        if type(data) == "table" then
+
+            target[tostring(eggName)] = {
+                MaxPrice =
+                    data.MaxPrice == "INF"
+                    and math.huge
+                    or tonumber(data.MaxPrice)
+                    or math.huge,
+            }
+        end
+    end
+end
+
+function LoadSniperFilters()
+
+    if not isfile then
+        warn("[Filters] isfile unsupported")
+        return
+    end
+
+    if not readfile then
+        warn("[Filters] readfile unsupported")
+        return
+    end
+
+    if not isfile(FILTER_SAVE_FILE) then
+        print("[Filters] No existing filter save")
+        return
+    end
+
+    local ok, decoded = pcall(function()
+
+        local raw =
+            readfile(FILTER_SAVE_FILE)
+
+        return HttpService:JSONDecode(raw)
+
+    end)
+
+    if not ok or type(decoded) ~= "table" then
+
+        warn("[Filters] Corrupted filter file")
+
+        if delfile then
+            pcall(function()
+                delfile(FILTER_SAVE_FILE)
+            end)
+        end
+
+        return
+    end
+
+    table.clear(GetSniperFilterSet(1))
+    table.clear(GetSniperFilterSet(2))
+
+    if type(decoded.Watchlists) == "table" then
+
+        LoadFilterSetFromTable(
+            GetSniperFilterSet(1),
+            decoded.Watchlists["1"]
+                or decoded.Watchlists[1]
+                or {}
+        )
+
+        LoadFilterSetFromTable(
+            GetSniperFilterSet(2),
+            decoded.Watchlists["2"]
+                or decoded.Watchlists[2]
+                or {}
+        )
+
+                if type(decoded.EggFocus) == "table" then
+
+            LoadEggFocusSetFromTable(
+                GetEggFocusSet(1),
+                decoded.EggFocus["1"]
+                    or decoded.EggFocus[1]
+                    or {}
+            )
+
+            LoadEggFocusSetFromTable(
+                GetEggFocusSet(2),
+                decoded.EggFocus["2"]
+                    or decoded.EggFocus[2]
+                    or {}
+            )
+        else
+            table.clear(GetEggFocusSet(1))
+            table.clear(GetEggFocusSet(2))
+        end
+
+        print("[Filters] Loaded two watchlists")
+        return
+    end
+
+    -- Legacy migration: old save format was a single pet-keyed table.
+    LoadFilterSetFromTable(
+        GetSniperFilterSet(1),
+        decoded
+    )
+
+    print("[Filters] Loaded legacy watchlist into Watchlist 1")
+end
+
+--==================================================
+-- LISTINGS: FILTER PERSISTENCE
+-- Keeps AutoList filter presets after rejoin.
+-- Saves separately from sniper watchlists.
+--==================================================
+
+function SerializeListingFilters()
+
+    local output =
+        {}
+
+    if type(ListingsState) ~= "table" then
+        return output
+    end
+
+    ListingsState.ListingFilters =
+        ListingsState.ListingFilters
+        or {}
+
+    for _, filter in ipairs(ListingsState.ListingFilters) do
+
+        if type(filter) == "table" then
+
+            table.insert(output, {
+                Pet =
+                    tostring(filter.Pet or ""),
+
+                Mutation =
+    tostring(filter.Mutation or "---"),
+
+ExcludedMutations =
+    SerializeListingMutationMap(
+        filter.ExcludedMutations
+    ),
+
+MinLevel =
+    tonumber(filter.MinLevel)
+    or 1,
+
+MaxLevel =
+    tonumber(filter.MaxLevel)
+    or 100,
+
+MinWeight =
+    tonumber(filter.MinWeight),
+
+                MaxWeight =
+                    tonumber(filter.MaxWeight),
+
+                Price =
+                    tonumber(filter.Price),
+
+                Enabled =
+                    filter.Enabled ~= false,
+            })
+        end
+    end
+
+    return output
+end
+
+function SaveListingFilters()
+
+    if not writefile then
+        warn("[LISTINGS FILTERS] writefile unsupported")
+        return false
+    end
+
+    local ok, err =
+        pcall(function()
+
+            if makefolder
+            and not isfolder("HolyV2") then
+                makefolder("HolyV2")
+            end
+
+            local payload = {
+                Version = 1,
+                Filters = SerializeListingFilters(),
+            }
+
+            writefile(
+                LISTING_FILTER_SAVE_FILE,
+                HttpService:JSONEncode(payload)
+            )
+        end)
+
+    if not ok then
+
+        warn(
+            "[LISTINGS FILTERS] Save failed:",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    print(
+        "[LISTINGS FILTERS] Saved:",
+        tostring(
+            ListingsState.ListingFilters
+            and #ListingsState.ListingFilters
+            or 0
+        )
+    )
+
+    return true
+end
+
+function LoadListingFilters()
+
+    if not isfile
+    or not readfile then
+        warn("[LISTINGS FILTERS] file API unsupported")
+        return false
+    end
+
+    if not isfile(LISTING_FILTER_SAVE_FILE) then
+        print("[LISTINGS FILTERS] No existing save")
+        return false
+    end
+
+    local ok, decoded =
+        pcall(function()
+
+            local raw =
+                readfile(LISTING_FILTER_SAVE_FILE)
+
+            return HttpService:JSONDecode(raw)
+        end)
+
+    if not ok
+    or type(decoded) ~= "table" then
+
+        warn("[LISTINGS FILTERS] Corrupted save")
+
+        if delfile then
+            pcall(function()
+                delfile(LISTING_FILTER_SAVE_FILE)
+            end)
+        end
+
+        return false
+    end
+
+    local source =
+        decoded.Filters
+
+    if type(source) ~= "table" then
+        source =
+            decoded
+    end
+
+    ListingsState.ListingFilters =
+        ListingsState.ListingFilters
+        or {}
+
+    table.clear(
+        ListingsState.ListingFilters
+    )
+
+    for _, filter in ipairs(source) do
+
+        if type(filter) == "table" then
+
+            local restored = {
+                Pet =
+                    tostring(filter.Pet or ""),
+
+                Mutation =
+    NormalizeListingFilterMutation(
+        filter.Mutation
+    ),
+
+ExcludedMutations =
+    DeserializeListingMutationMap(
+        filter.ExcludedMutations
+    ),
+
+MinLevel =
+    tonumber(filter.MinLevel)
+    or 1,
+
+MaxLevel =
+    tonumber(filter.MaxLevel)
+    or 100,
+
+MinWeight =
+    tonumber(filter.MinWeight),
+
+                MaxWeight =
+                    tonumber(filter.MaxWeight),
+
+                Price =
+                    tonumber(filter.Price),
+
+                Enabled =
+                    filter.Enabled ~= false,
+            }
+
+            local valid =
+                true
+
+            if restored.Pet == "" then
+                valid =
+                    false
+            end
+
+            if not restored.MinWeight
+            or not restored.MaxWeight
+            or not restored.Price then
+                valid =
+                    false
+            end
+
+            if not restored.MinLevel
+or not restored.MaxLevel
+or restored.MaxLevel < restored.MinLevel then
+    valid =
+        false
+end
+
+            if restored.MinWeight
+            and restored.MaxWeight
+            and restored.MaxWeight < restored.MinWeight then
+                valid =
+                    false
+            end
+
+            if valid then
+
+                table.insert(
+                    ListingsState.ListingFilters,
+                    restored
+                )
+            end
+        end
+    end
+
+    ListingsState.ListingFilterUI =
+        ListingsState.ListingFilterUI
+        or {
+            Page = 1,
+            PerPage = 8,
+        }
+
+    ListingsState.ListingFilterUI.Page =
+        1
+
+    print(
+    "[LISTINGS FILTERS] Loaded:",
+    tostring(#ListingsState.ListingFilters)
+)
+
+return true
+end
+
+--==================================================
+-- LISTINGS: AUTOLIST INTENT PERSISTENCE
+-- Source of truth for whether AutoList should restore ON.
+-- This does not depend on Obsidian option timing.
+--==================================================
+
+function SaveListingAutoListIntent(enabled)
+
+    if not writefile then
+        return false
+    end
+
+    local ok, err =
+        pcall(function()
+
+            if makefolder
+            and not isfolder("HolyV2") then
+                makefolder("HolyV2")
+            end
+
+            local payload = {
+                Version = 1,
+                Enabled = enabled == true,
+                SavedAt = os.time(),
+            }
+
+            writefile(
+                LISTING_AUTOLIST_INTENT_SAVE_FILE,
+                HttpService:JSONEncode(payload)
+            )
+        end)
+
+    if not ok then
+
+        warn(
+            "[LISTINGS INTENT] Save failed:",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    print(
+        "[LISTINGS INTENT] Saved AutoList:",
+        tostring(enabled == true)
+    )
+
+    return true
+end
+
+function LoadListingAutoListIntent()
+
+    if not isfile
+    or not readfile then
+        return nil
+    end
+
+    if not isfile(LISTING_AUTOLIST_INTENT_SAVE_FILE) then
+        return nil
+    end
+
+    local ok, decoded =
+        pcall(function()
+
+            local raw =
+                readfile(LISTING_AUTOLIST_INTENT_SAVE_FILE)
+
+            return HttpService:JSONDecode(raw)
+        end)
+
+    if not ok
+    or type(decoded) ~= "table" then
+        warn("[LISTINGS INTENT] Failed to load intent")
+        return nil
+    end
+
+    return decoded.Enabled == true
+end
+--==================================================
+-- [5] WINDOW INIT (SYNCHRONOUS)
+--==================================================
+Window = Library:CreateWindow({
+    Title = "HOLY",
+    Footer = "private build • made by ben",
+    Center = true,
+    AutoShow = true,
+    ToggleKeybind = Enum.KeyCode.LeftAlt,
+})
+--==================================================
+-- HOLY PREMIUM BRAND PATCH
+-- Searches PlayerGui, CoreGui, and gethui() because
+-- executor/Obsidian UIs are often not parented to PlayerGui.
+--==================================================
+
+HolyBrandStyleState = {
+    Passes = 0,
+}
+
+local HolyBrandGradientColors =
+    ColorSequence.new({
+        ColorSequenceKeypoint.new(
+            0,
+            Color3.fromRGB(255, 218, 120)
+        ),
+
+        ColorSequenceKeypoint.new(
+            0.45,
+            Color3.fromRGB(255, 120, 185)
+        ),
+
+        ColorSequenceKeypoint.new(
+            1,
+            Color3.fromRGB(155, 105, 255)
+        ),
+    })
+
+local function HolyTrimText(value)
+
+    return tostring(value or "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+local function IsHolyBrandText(value)
+
+    value =
+        HolyTrimText(value)
+
+    return value == "Holy"
+        or value == "HOLY"
+        or value == "HOLY"
+end
+
+local function GetHolyGuiRoots()
+
+    local roots = {}
+
+    local player =
+        Players.LocalPlayer
+
+    if player then
+
+        local playerGui =
+            player:FindFirstChild("PlayerGui")
+
+        if playerGui then
+            table.insert(roots, playerGui)
+        end
+    end
+
+    local okCoreGui, coreGui =
+        pcall(function()
+            return game:GetService("CoreGui")
+        end)
+
+    if okCoreGui
+    and coreGui then
+        table.insert(roots, coreGui)
+    end
+
+    if type(gethui) == "function" then
+
+        local okHui, hui =
+            pcall(function()
+                return gethui()
+            end)
+
+        if okHui
+        and hui then
+            table.insert(roots, hui)
+        end
+    end
+
+    return roots
+end
+
+function StyleHolyBrandObject(obj)
+
+    if not obj then
+        return false
+    end
+
+    if not obj:IsA("TextLabel")
+    and not obj:IsA("TextButton") then
+        return false
+    end
+
+    if not IsHolyBrandText(obj.Text) then
+        return false
+    end
+
+    obj.Text =
+        "HOLY"
+
+    obj.Font =
+        Enum.Font.GothamBlack
+
+    obj.TextColor3 =
+        Color3.fromRGB(255, 235, 170)
+
+    obj.TextStrokeColor3 =
+        Color3.fromRGB(10, 5, 20)
+
+    obj.TextStrokeTransparency =
+        0
+
+    obj.RichText =
+        false
+
+    obj.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    if obj.TextSize < 17 then
+        obj.TextSize =
+            math.clamp(
+                obj.TextSize + 2,
+                15,
+                20
+            )
+    end
+
+    local gradient =
+        obj:FindFirstChild("HolyPremiumGradient")
+
+    if not gradient then
+
+        gradient =
+            Instance.new("UIGradient")
+
+        gradient.Name =
+            "HolyPremiumGradient"
+
+        gradient.Parent =
+            obj
+    end
+
+    gradient.Color =
+        HolyBrandGradientColors
+
+    gradient.Rotation =
+        0
+
+    local stroke =
+        obj:FindFirstChild("HolyPremiumStroke")
+
+    if not stroke then
+
+        stroke =
+            Instance.new("UIStroke")
+
+        stroke.Name =
+            "HolyPremiumStroke"
+
+        stroke.ApplyStrokeMode =
+            Enum.ApplyStrokeMode.Contextual
+
+        stroke.Parent =
+            obj
+    end
+
+    stroke.Color =
+        Color3.fromRGB(150, 75, 255)
+
+    stroke.Thickness =
+        1.5
+
+    stroke.Transparency =
+        0.12
+
+    if obj:IsA("TextButton") then
+
+        obj.AutoButtonColor =
+            true
+
+        obj.BackgroundColor3 =
+            Color3.fromRGB(12, 8, 24)
+
+        obj.BackgroundTransparency =
+            0.02
+
+        local corner =
+            obj:FindFirstChild("HolyPremiumCorner")
+
+        if not corner then
+
+            corner =
+                Instance.new("UICorner")
+
+            corner.Name =
+                "HolyPremiumCorner"
+
+                corner.Parent =
+                    obj
+        end
+
+        corner.CornerRadius =
+            UDim.new(0, 8)
+    end
+
+    obj:SetAttribute(
+        "HolyPremiumStyled",
+        true
+    )
+
+    return true
+end
+
+function StyleHolyToggleText()
+
+    local styled =
+        0
+
+    for _, root in ipairs(GetHolyGuiRoots()) do
+
+        for _, obj in ipairs(root:GetDescendants()) do
+
+            if StyleHolyBrandObject(obj) then
+                styled += 1
+            end
+        end
+    end
+
+    return styled
+end
+
+task.spawn(function()
+
+    local styled =
+        0
+
+    -- Give Obsidian/executor UI time to fully create.
+    for i = 1, 40 do
+
+        pcall(function()
+            styled =
+                StyleHolyToggleText()
+        end)
+
+        if styled > 0 then
+            break
+        end
+
+        task.wait(0.25)
+    end
+
+    -- One delayed final pass in case the toggle/title refreshes once after init.
+    task.wait(2)
+
+    pcall(function()
+        StyleHolyToggleText()
+    end)
+end)
+HolyLoading:SetCurrentStep(2)
+HolyLoading:SetDescription("Creating Obsidian window...")
+--==================================================
+-- [6] TABS (EMPTY STRUCTURE)
+--==================================================
+Tabs = {
+    Home = Window:AddTab({
+        Name = "Home",
+        Icon = "house",
+        Description = "Runtime controls, inventory safety, and quick server actions.",
+    }),
+
+    Sniper = Window:AddTab({
+        Name = "Sniper",
+        Icon = "crosshair",
+        Description = "Pet filters, watchlists, egg focus, server hopping, and purchase safety.",
+    }),
+
+    Booth = Window:AddTab({
+        Name = "Booth",
+        Icon = "store",
+        Description = "Booth claiming, teleporting, skins, and listing promotion.",
+    }),
+
+    Listings = Window:AddTab({
+        Name = "Listings",
+        Icon = "tag",
+        Description = "Auto-list inventory pets with price, mutation, and weight filters.",
+    }),
+
+    Events = Window:AddTab({
+        Name = "Events",
+        Icon = "calendar",
+        Description = "Event shop automation and limited-time systems.",
+    }),
+
+    Visuals = Window:AddTab({
+        Name = "Visuals",
+        Icon = "eye",
+        Description = "HUDs, overlays, and client-side visual tools.",
+    }),
+
+    Webhook = Window:AddTab({
+        Name = "Webhook",
+        Icon = "link",
+        Description = "Personal and global Discord webhook delivery settings.",
+    }),
+
+    Settings = Window:AddTab({
+        Name = "Settings",
+        Icon = "settings",
+        Description = "UI scale, performance, reconnect, and developer tools.",
+    }),
+}
+
+print(
+    "[TAB TEST]",
+    "AddLeftGroupbox:",
+    tostring(type(Tabs.Visuals.AddLeftGroupbox)),
+    "| AddLeftCollapsibleGroupbox:",
+    tostring(type(Tabs.Visuals.AddLeftCollapsibleGroupbox))
+)
+
+--==================================================
+-- GARDEN MODE PLACEHOLDERS
+-- Tabs stay visible and in the original order.
+-- Real Trade World systems are not built in Garden.
+--==================================================
+
+function AddGardenModePlaceholder(tab, title, icon)
+
+    if not tab then
+        return
+    end
+
+    local box
+
+    if type(tab.AddLeftCollapsibleGroupbox) == "function" then
+
+        box =
+            tab:AddLeftCollapsibleGroupbox(
+                title,
+                icon or "lock",
+                true
+            )
+
+    else
+
+        box =
+            tab:AddLeftGroupbox(
+                title,
+                icon or "lock"
+            )
+    end
+
+    box:AddLabel(
+        "🌱 Garden Mode",
+        false
+    )
+
+    box:AddLabel(
+        "This system only works in Trade World.",
+        true
+    )
+
+    box:AddButton({
+        Text = "🌐 Join Trade World",
+        Tooltip = "Teleport to Grow a Garden Trade World.",
+        Func = function()
+
+            RequestJoinTradeWorld(
+                "Manual Trade World join requested."
+            )
+        end,
+    })
+end
+
+function BuildGardenModeTradeTabs()
+
+    AddGardenModePlaceholder(
+        Tabs.Sniper,
+        "Sniper",
+        "crosshair"
+    )
+
+    AddGardenModePlaceholder(
+        Tabs.Booth,
+        "Booth",
+        "store"
+    )
+
+    AddGardenModePlaceholder(
+        Tabs.Listings,
+        "Listings",
+        "tag"
+    )
+
+    if not EventsBox then
+
+        AddGardenModePlaceholder(
+            Tabs.Events,
+            "Events",
+            "calendar"
+        )
+    end
+end
+
+HolyLoading:SetCurrentStep(3)
+HolyLoading:SetDescription("Building tabs...")
+--==================================================
+-- EVENTS TAB
+-- Trade World only.
+-- Garden Mode gets a placeholder from BuildGardenModeTradeTabs().
+--==================================================
+
+EventsBox = nil
+
+if IsTradeWorld() then
+
+    if type(Tabs.Events.AddLeftCollapsibleGroupbox) == "function" then
+
+        EventsBox =
+            Tabs.Events:AddLeftCollapsibleGroupbox(
+                "Events",
+                "calendar",
+                true
+            )
+
+    else
+
+        warn("[LIB TEST] Collapsible Events unavailable, using normal groupbox")
+
+        EventsBox =
+            Tabs.Events:AddLeftGroupbox(
+                "Events",
+                "calendar"
+            )
+    end
+end
+--==================================================
+-- VISUAL TAB
+--==================================================
+CreateWatchlistHUD = nil
+RefreshWatchlistHUD = nil
+
+CreateServerInfoHUD = nil
+RefreshServerInfoHUD = nil
+
+CreateSniperMonitorHUD = nil
+RefreshSniperMonitorHUD = nil
+
+WatchlistHUDGui = nil
+WatchlistHUDFrame = nil
+WatchlistHUDContainer = nil
+
+ServerInfoHUDGui = nil
+ServerInfoHUDFrame = nil
+ServerInfoVersionLabel = nil
+ServerInfoSessionLabel = nil
+
+SniperMonitorHUDGui = nil
+SniperMonitorHUDFrame = nil
+SniperMonitorStatusLabel = nil
+SniperMonitorScannedLabel = nil
+SniperMonitorHopLabel = nil
+
+InventoryDetailsLabel = nil
+InventoryDetailsStatusLabel = nil
+RefreshInventoryDetails = nil
+
+function BuildVisualTab()
+
+    local VisualBox
+
+if type(Tabs.Visuals.AddLeftCollapsibleGroupbox) == "function" then
+
+    VisualBox =
+        Tabs.Visuals:AddLeftCollapsibleGroupbox(
+            "Visual Settings",
+            "eye",
+            false
+        )
+
+else
+
+    warn("[LIB TEST] Collapsible groupbox unavailable, using normal groupbox")
+
+    VisualBox =
+        Tabs.Visuals:AddLeftGroupbox(
+            "Visual Settings",
+            "eye"
+        )
+end
+
+local WatchlistHUDToggle =
+    VisualBox:AddToggle(
+        "WatchlistHUD",
+        {
+            Text = "🔫 Sniper Watchlist HUD",
+            Default = false,
+        }
+    )
+
+WatchlistHUDToggle:OnChanged(function(v)
+
+    VisualState.WatchlistHUD = v
+
+    MarkConfigDirty()
+
+    if not WatchlistHUDGui then
+        if type(CreateWatchlistHUD) == "function" then
+            CreateWatchlistHUD()
+        end
+    end
+
+    if WatchlistHUDGui then
+        WatchlistHUDGui.Enabled = v
+    end
+
+    if WatchlistHUDFrame then
+        WatchlistHUDFrame.Visible = v
+    end
+
+    if v
+    and type(RefreshWatchlistHUD) == "function" then
+        RefreshWatchlistHUD()
+    end
+end)
+local ServerInfoHUDToggle =
+    VisualBox:AddToggle(
+        "ServerInfoHUD",
+        {
+            Text = "🖥️ Server Info HUD",
+            Default = false,
+        }
+    )
+
+ServerInfoHUDToggle:OnChanged(function(v)
+
+    VisualState.ServerInfoHUD = v
+
+    MarkConfigDirty()
+
+    if not ServerInfoHUDGui then
+        CreateServerInfoHUD()
+    end
+
+    if ServerInfoHUDGui then
+        ServerInfoHUDGui.Enabled = v
+    end
+
+    if ServerInfoHUDFrame then
+        ServerInfoHUDFrame.Visible = v
+    end
+
+    if v then
+        RefreshServerInfoHUD()
+    end
+end)
+
+local SniperMonitorHUDToggle =
+    VisualBox:AddToggle(
+        "SniperMonitorHUD",
+        {
+            Text = "🎯 Sniper Monitor HUD",
+            Default = false,
+        }
+    )
+
+SniperMonitorHUDToggle:OnChanged(function(v)
+
+    VisualState.SniperMonitorHUD = v
+
+    MarkConfigDirty()
+
+    if not SniperMonitorHUDGui then
+        CreateSniperMonitorHUD()
+    end
+
+    if SniperMonitorHUDGui then
+        SniperMonitorHUDGui.Enabled = v
+    end
+
+    if SniperMonitorHUDFrame then
+        SniperMonitorHUDFrame.Visible = v
+    end
+
+    if v then
+        RefreshSniperMonitorHUD()
+    end
+end)
+
+
+--==================================================
+-- ACTIVE WATCHLIST HUD
+--==================================================
+
+
+--==================================================
+-- SERVER INFO HUD STATE
+--==================================================
+
+CreateWatchlistHUD = function()
+
+    if WatchlistHUDGui then
+        return
+    end
+
+    local playerGui =
+        Players.LocalPlayer:WaitForChild("PlayerGui")
+
+    local screenGui =
+        Instance.new("ScreenGui")
+
+    screenGui.Name = "HolyWatchlistHUD"
+    screenGui.ResetOnSpawn = false
+    screenGui.IgnoreGuiInset = true
+    screenGui.Enabled = VisualState.WatchlistHUD
+    screenGui.Parent = playerGui
+
+    WatchlistHUDGui = screenGui
+
+    --==================================================
+    -- CONTAINER
+    --==================================================
+
+    local container =
+        Instance.new("Frame")
+
+    container.Name = "Container"
+
+    container.BackgroundTransparency = 1
+
+    container.AnchorPoint =
+        Vector2.new(1, 0)
+
+    container.Position =
+        UDim2.new(1, -10, 0, 34)
+
+    container.Size =
+        UDim2.new(0, 210, 0, 320)
+
+    container.Parent = screenGui
+
+    WatchlistHUDContainer = container
+
+    --==================================================
+    -- TITLE
+    --==================================================
+
+    local title =
+        Instance.new("TextLabel")
+
+    title.BackgroundTransparency = 1
+
+    title.Size =
+        UDim2.new(1, 0, 0, 18)
+
+    title.Font =
+        Enum.Font.Code
+
+    title.Text =
+        "WATCHLIST"
+
+    title.TextSize = 15
+
+    title.TextColor3 =
+        Color3.fromRGB(220, 0, 0)
+
+    title.TextStrokeTransparency = 0.7
+
+    title.TextXAlignment =
+        Enum.TextXAlignment.Right
+
+    title.Parent = container
+
+    --==================================================
+    -- LIST HOLDER
+    --==================================================
+
+    local list =
+        Instance.new("Frame")
+
+    list.Name = "List"
+
+    list.BackgroundTransparency = 1
+
+    list.Position =
+        UDim2.new(0, 0, 0, 24)
+
+    list.Size =
+        UDim2.new(1, 0, 1, -24)
+
+    list.Parent = container
+
+    WatchlistHUDContainer = list
+
+    local layout =
+        Instance.new("UIListLayout")
+
+    layout.HorizontalAlignment =
+        Enum.HorizontalAlignment.Right
+
+    layout.SortOrder =
+        Enum.SortOrder.LayoutOrder
+
+    layout.Padding =
+        UDim.new(0, 1)
+
+    layout.Parent = list
+end
+--==================================================
+-- SERVER INFO HUD
+-- Shows only server version + session time
+--==================================================
+
+local function FormatServerInfoSessionTime(seconds)
+
+    seconds =
+        math.max(
+            0,
+            math.floor(seconds)
+        )
+
+    local hours =
+        math.floor(seconds / 3600)
+
+    local minutes =
+        math.floor((seconds % 3600) / 60)
+
+    local secs =
+        seconds % 60
+
+    if hours > 0 then
+        return string.format(
+            "%dh %02dm %02ds",
+            hours,
+            minutes,
+            secs
+        )
+    end
+
+    return string.format(
+        "%dm %02ds",
+        minutes,
+        secs
+    )
+end
+
+local function FindServerVersionText()
+
+    local playerGui =
+        Players.LocalPlayer:FindFirstChild("PlayerGui")
+
+    if not playerGui then
+        return "Server Version: Unknown"
+    end
+
+    local versionUI =
+        playerGui:FindFirstChild("Version_UI")
+
+    if not versionUI then
+        return "Server Version: Unknown"
+    end
+
+    local versionLabel =
+        versionUI:FindFirstChild("Version")
+
+    if not versionLabel
+    or not versionLabel:IsA("TextLabel") then
+        return "Server Version: Unknown"
+    end
+
+    local text =
+        tostring(versionLabel.Text or "")
+
+    if text == "" then
+        return "Server Version: Unknown"
+    end
+
+    -- Handles both:
+    -- "1.09.0"
+    -- "Server Version: 1.09.0"
+    if string.lower(text):find("server version", 1, true) then
+        return text
+    end
+
+    return "Server Version: " .. text
+end
+
+CreateServerInfoHUD = function()
+
+    if ServerInfoHUDGui then
+        return
+    end
+
+    local playerGui =
+        Players.LocalPlayer:WaitForChild("PlayerGui")
+
+    local screenGui =
+        Instance.new("ScreenGui")
+
+    screenGui.Name = "HolyServerInfoHUD"
+    screenGui.ResetOnSpawn = false
+    screenGui.IgnoreGuiInset = true
+    screenGui.Enabled = VisualState.ServerInfoHUD
+    screenGui.Parent = playerGui
+
+    ServerInfoHUDGui = screenGui
+
+    local frame =
+        Instance.new("Frame")
+
+    frame.Name = "Frame"
+    frame.BackgroundTransparency = 1
+    frame.AnchorPoint = Vector2.new(0, 0)
+    frame.Position = UDim2.new(0, 12, 0.18, 0)
+    frame.Size = UDim2.new(0, 240, 0, 38)
+    frame.Parent = screenGui
+
+    ServerInfoHUDFrame = frame
+
+    local versionLabel =
+        Instance.new("TextLabel")
+
+    versionLabel.Name = "ServerVersion"
+    versionLabel.BackgroundTransparency = 1
+    versionLabel.Position = UDim2.new(0, 0, 0, 0)
+    versionLabel.Size = UDim2.new(1, 0, 0, 24)
+    versionLabel.Font = Enum.Font.GothamBold
+    versionLabel.TextSize = 12
+    versionLabel.TextColor3 = Color3.fromRGB(245, 245, 245)
+    versionLabel.TextStrokeTransparency = 0.35
+    versionLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    versionLabel.TextXAlignment = Enum.TextXAlignment.Left
+    versionLabel.Text = "Server Version: Unknown"
+    versionLabel.Parent = frame
+
+    ServerInfoVersionLabel = versionLabel
+
+    local sessionLabel =
+        Instance.new("TextLabel")
+
+    sessionLabel.Name = "SessionTime"
+    sessionLabel.BackgroundTransparency = 1
+    sessionLabel.Position = UDim2.new(0, 0, 0, 17)
+    sessionLabel.Size = UDim2.new(1, 0, 0, 17)
+    sessionLabel.Font = Enum.Font.GothamBold
+    sessionLabel.TextSize = 12
+    sessionLabel.TextColor3 = Color3.fromRGB(245, 245, 245)
+    sessionLabel.TextStrokeTransparency = 0.35
+    sessionLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    sessionLabel.TextXAlignment = Enum.TextXAlignment.Left
+    sessionLabel.Text = "SessionTime: 0m 00s"
+    sessionLabel.Parent = frame
+
+    ServerInfoSessionLabel = sessionLabel
+end
+
+RefreshServerInfoHUD = function()
+
+    if not ServerInfoHUDGui then
+        return
+    end
+
+    if not VisualState.ServerInfoHUD then
+        return
+    end
+
+    if ServerInfoVersionLabel then
+        ServerInfoVersionLabel.Text =
+            FindServerVersionText()
+    end
+
+    if ServerInfoSessionLabel then
+        ServerInfoSessionLabel.Text =
+            "SessionTime: "
+            .. FormatServerInfoSessionTime(
+                SafeElapsed(ServerInfoStartedAt)
+            )
+    end
+end
+
+--==================================================
+-- SNIPER MONITOR HUD
+-- Shows sniper status, scanned pets, and next hop timer
+--==================================================
+
+local function FormatSniperMonitorTime(seconds)
+
+    seconds =
+        math.max(
+            0,
+            tonumber(seconds) or 0
+        )
+
+    if seconds >= 60 then
+        local minutes =
+            math.floor(seconds / 60)
+
+        local secs =
+            math.floor(seconds % 60)
+
+        return string.format(
+            "%dm %02ds",
+            minutes,
+            secs
+        )
+    end
+
+    return string.format(
+        "%.1fs",
+        seconds
+    )
+end
+
+local function ResolveSniperMonitorStatus()
+
+    if ScriptState.ForceStopped then
+        return "Stopped"
+    end
+
+    if SniperState.Hopping then
+        return "Hopping"
+    end
+
+    if PurchaseState
+    and PurchaseState.Busy then
+        return "Buying"
+    end
+
+    if RuntimeState.Started then
+        return "Active"
+    end
+
+    return "Idle"
+end
+
+local function ResolveSniperMonitorHopText()
+
+    if not SniperState.AutoHop then
+        return "Off"
+    end
+
+    if not RuntimeState.Started then
+        return "Paused"
+    end
+
+    if SniperState.Hopping then
+        return "Now"
+    end
+
+    SniperState.ScanStartedAt =
+        SafeNumber(SniperState.ScanStartedAt, os.clock())
+
+    SniperState.ScanDuration =
+        SafeNumber(SniperState.ScanDuration, 10)
+
+    local elapsed =
+        SafeElapsed(SniperState.ScanStartedAt)
+
+    local remaining =
+        SniperState.ScanDuration
+        - elapsed
+
+    return FormatSniperMonitorTime(
+        remaining
+    )
+end
+
+CreateSniperMonitorHUD = function()
+
+    if SniperMonitorHUDGui then
+        return
+    end
+
+    local playerGui =
+        Players.LocalPlayer:WaitForChild("PlayerGui")
+
+    local screenGui =
+        Instance.new("ScreenGui")
+
+    screenGui.Name = "HolySniperMonitorHUD"
+    screenGui.ResetOnSpawn = false
+    screenGui.IgnoreGuiInset = true
+    screenGui.Enabled = VisualState.SniperMonitorHUD
+    screenGui.Parent = playerGui
+
+    SniperMonitorHUDGui = screenGui
+
+    local frame =
+        Instance.new("Frame")
+
+    frame.Name = "Frame"
+    frame.BackgroundTransparency = 1
+    frame.AnchorPoint = Vector2.new(0, 0)
+    frame.Position = UDim2.new(0, 12, 0.26, 0)
+    frame.Size = UDim2.new(0, 240, 0, 72)
+    frame.Parent = screenGui
+
+    SniperMonitorHUDFrame = frame
+
+    local title =
+        Instance.new("TextLabel")
+
+    title.Name = "Title"
+    title.BackgroundTransparency = 1
+    title.Position = UDim2.new(0, 0, 0, 0)
+    title.Size = UDim2.new(1, 0, 0, 18)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 12
+    title.TextColor3 = Color3.fromRGB(220, 0, 0)
+    title.TextStrokeTransparency = 0.35
+    title.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Text = "SNIPER MONITOR"
+    title.Parent = frame
+
+    local statusLabel =
+        Instance.new("TextLabel")
+
+    statusLabel.Name = "Status"
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Position = UDim2.new(0, 0, 0, 18)
+    statusLabel.Size = UDim2.new(1, 0, 0, 16)
+    statusLabel.Font = Enum.Font.GothamBold
+    statusLabel.TextSize = 12
+    statusLabel.TextColor3 = Color3.fromRGB(245, 245, 245)
+    statusLabel.TextStrokeTransparency = 0.35
+    statusLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    statusLabel.Text = "Status: Idle"
+    statusLabel.Parent = frame
+
+    SniperMonitorStatusLabel = statusLabel
+
+    local scannedLabel =
+        Instance.new("TextLabel")
+
+    scannedLabel.Name = "PetsScanned"
+    scannedLabel.BackgroundTransparency = 1
+    scannedLabel.Position = UDim2.new(0, 0, 0, 34)
+    scannedLabel.Size = UDim2.new(1, 0, 0, 16)
+    scannedLabel.Font = Enum.Font.GothamBold
+    scannedLabel.TextSize = 12
+    scannedLabel.TextColor3 = Color3.fromRGB(245, 245, 245)
+    scannedLabel.TextStrokeTransparency = 0.35
+    scannedLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    scannedLabel.TextXAlignment = Enum.TextXAlignment.Left
+    scannedLabel.Text = "Pets Scanned: 0"
+    scannedLabel.Parent = frame
+
+    SniperMonitorScannedLabel = scannedLabel
+
+    local hopLabel =
+        Instance.new("TextLabel")
+
+    hopLabel.Name = "NextHop"
+    hopLabel.BackgroundTransparency = 1
+    hopLabel.Position = UDim2.new(0, 0, 0, 50)
+    hopLabel.Size = UDim2.new(1, 0, 0, 16)
+    hopLabel.Font = Enum.Font.GothamBold
+    hopLabel.TextSize = 12
+    hopLabel.TextColor3 = Color3.fromRGB(245, 245, 245)
+    hopLabel.TextStrokeTransparency = 0.35
+    hopLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    hopLabel.TextXAlignment = Enum.TextXAlignment.Left
+    hopLabel.Text = "Next Hop: Off"
+    hopLabel.Parent = frame
+
+    SniperMonitorHopLabel = hopLabel
+end
+
+RefreshSniperMonitorHUD = function()
+
+    if not SniperMonitorHUDGui then
+        return
+    end
+
+    if not VisualState.SniperMonitorHUD then
+        return
+    end
+
+    if SniperMonitorStatusLabel then
+        SniperMonitorStatusLabel.Text =
+            "Status: "
+            .. ResolveSniperMonitorStatus()
+    end
+
+    if SniperMonitorScannedLabel then
+        SniperMonitorScannedLabel.Text =
+            "Pets Scanned: "
+            .. tostring(SniperMonitorState.PetsScanned)
+    end
+
+    if SniperMonitorHopLabel then
+        SniperMonitorHopLabel.Text =
+            "Next Hop: "
+            .. ResolveSniperMonitorHopText()
+    end
+end
+
+end
+--==================================================
+-- [7] BASIC UI (CONTROL ONLY)
+--==================================================
+
+GatewayBusy = false
+
+function BuildHomeTab()
+
+local HomeBox
+
+if type(Tabs.Home.AddLeftCollapsibleGroupbox) == "function" then
+
+    HomeBox =
+        Tabs.Home:AddLeftCollapsibleGroupbox(
+            "Sniper Control",
+            "crosshair",
+            true
+        )
+
+else
+
+    warn("[LIB TEST] Collapsible Sniper Control unavailable, using normal groupbox")
+
+    HomeBox =
+        Tabs.Home:AddLeftGroupbox(
+            "Sniper Control",
+            "crosshair"
+        )
+end
+
+local DetailsBox
+
+if type(Tabs.Home.AddRightCollapsibleGroupbox) == "function" then
+
+    DetailsBox =
+        Tabs.Home:AddRightCollapsibleGroupbox(
+            "Details",
+            "info",
+            true
+        )
+
+else
+
+    warn("[LIB TEST] Collapsible Details unavailable, using normal groupbox")
+
+    DetailsBox =
+        Tabs.Home:AddRightGroupbox(
+            "Details",
+            "info"
+        )
+end
+
+--==================================================
+-- DETAILS: INVENTORY TRACKER
+--==================================================
+
+InventoryDetailsLabel =
+    DetailsBox:AddLabel(
+        "📦 Pet Inventory: checking...",
+        false
+    )
+
+InventoryDetailsStatusLabel =
+    DetailsBox:AddLabel(
+        "Status: waiting",
+        false
+    )
+
+RefreshInventoryDetails = function()
+
+    if not InventoryDetailsLabel
+    or not InventoryDetailsStatusLabel then
+        return
+    end
+
+    local currentPets =
+        0
+
+    if type(CountVisiblePetTools) == "function" then
+        currentPets =
+            CountVisiblePetTools()
+    end
+
+    local maxPets =
+        tonumber(SniperState.MaxPetInventory)
+        or 0
+
+    local safetyEnabled =
+        SniperState.StopAtPetInventoryLimit == true
+
+    local inventoryText
+
+    if maxPets > 0 then
+        inventoryText =
+            "📦 Pet Inventory: "
+            .. tostring(currentPets)
+            .. " / "
+            .. tostring(maxPets)
+    else
+        inventoryText =
+            "📦 Pet Inventory: "
+            .. tostring(currentPets)
+    end
+
+    InventoryDetailsLabel:SetText(
+        inventoryText
+    )
+
+    local statusText
+
+    if not safetyEnabled then
+
+        statusText =
+            "Status: safety off"
+
+    elseif maxPets <= 0 then
+
+        statusText =
+            "Status: no limit set"
+
+    elseif currentPets >= maxPets then
+
+        statusText =
+            "Status: limit reached"
+
+    else
+
+        local remaining =
+            maxPets - currentPets
+
+        statusText =
+            "Status: safe • "
+            .. tostring(remaining)
+            .. " slots left"
+    end
+
+    InventoryDetailsStatusLabel:SetText(
+        statusText
+    )
+end
+
+RefreshInventoryDetails()
+
+task.spawn(function()
+
+    while IsCurrentRun() do
+
+        if type(RefreshInventoryDetails) == "function" then
+            pcall(RefreshInventoryDetails)
+        end
+
+        task.wait(1)
+    end
+end)
+--==================================================
+-- SERVER GATEWAY
+--==================================================
+
+local LastServer = {
+    Mode = "PublicInstance",
+    PlaceId = game.PlaceId,
+    JobId = game.JobId,
+    Code = nil,
+}
+
+GatewayBusy = false
+
+local GatewayBox
+
+if type(Tabs.Home.AddLeftCollapsibleGroupbox) == "function" then
+
+    GatewayBox =
+        Tabs.Home:AddLeftCollapsibleGroupbox(
+            "Join Server (Manual)",
+            "radio",
+            false
+        )
+
+else
+
+    warn("[LIB TEST] Collapsible Gateway unavailable, using normal groupbox")
+
+    GatewayBox =
+        Tabs.Home:AddLeftGroupbox(
+            "Join Server (Manual)",
+            "radio"
+        )
+end
+
+--==================================================
+-- SESSION INFO
+--==================================================
+
+
+
+--==================================================
+-- STATUS LABEL
+--==================================================
+
+local GatewayStatus = GatewayBox:AddLabel(
+    "Gateway • Idle"
+)
+
+local function SetGatewayStatus(text)
+    GatewayStatus:SetText(
+        "Gateway • " .. tostring(text)
+    )
+end
+
+--==================================================
+-- INPUT
+--==================================================
+
+local GatewayInput = GatewayBox:AddInput("GatewayInput", {
+    Text = "Target Server",
+    Placeholder = "placeId:jobId or roblox://",
+    Numeric = false,
+    Finished = false,
+})
+
+--==================================================
+-- PARSER
+--==================================================
+
+local function UrlDecode(value)
+
+    value =
+        tostring(value or "")
+
+    value =
+        value:gsub("+", " ")
+
+    value =
+        value:gsub("%%(%x%x)", function(hex)
+
+            return string.char(
+                tonumber(hex, 16)
+            )
+        end)
+
+    return value
+end
+
+local function ParseServerInput(text)
+
+    if not text
+    or text == "" then
+        return nil
+    end
+
+    local raw =
+        tostring(text)
+
+    local compact =
+        raw:gsub("%s+", "")
+
+    if compact == "" then
+        return nil
+    end
+
+    --==================================================
+    -- ROBLOX WEB SHARE PRIVATE SERVER LINK
+    -- Example:
+    -- https://www.roblox.com/share?code=xxxx&type=Server
+    --==================================================
+
+    local shareCode =
+        compact:match("[?&]code=([^&]+)")
+
+    local shareType =
+        compact:match("[?&]type=([^&]+)")
+
+    if shareCode
+    and (
+        not shareType
+        or tostring(shareType):lower() == "server"
+    ) then
+
+        return {
+            Mode = "PrivateLink",
+            PlaceId = TRADING_WORLD_PLACE_ID,
+            Code = UrlDecode(shareCode),
+        }
+    end
+
+    --==================================================
+    -- ROBLOX APP / DEEP LINK PRIVATE SERVER
+    -- Example:
+    -- roblox://experiences/start?placeId=123&linkCode=xxxx
+    --==================================================
+
+    local deepPlaceId =
+        compact:match("placeId=(%d+)")
+
+    local linkCode =
+        compact:match("[?&]linkCode=([^&]+)")
+        or compact:match("[?&]privateServerLinkCode=([^&]+)")
+
+    if linkCode then
+
+        return {
+            Mode = "PrivateLink",
+            PlaceId = tonumber(deepPlaceId) or TRADING_WORLD_PLACE_ID,
+            Code = UrlDecode(linkCode),
+        }
+    end
+
+    --==================================================
+    -- ROBLOX APP / DEEP LINK PUBLIC INSTANCE
+    -- Example:
+    -- roblox://experiences/start?placeId=123&gameInstanceId=xxxx
+    --==================================================
+
+    local placeId, jobId =
+        compact:match(
+            "placeId=(%d+).-[%&%?]gameInstanceId=([%w%-]+)"
+        )
+
+    if placeId
+    and jobId then
+
+        return {
+            Mode = "PublicInstance",
+            PlaceId = tonumber(placeId),
+            JobId = jobId,
+        }
+    end
+
+    --==================================================
+    -- placeId:jobId
+    --==================================================
+
+    placeId, jobId =
+        compact:match(
+            "^(%d+):([%w%-]+)$"
+        )
+
+    if placeId
+    and jobId then
+
+        return {
+            Mode = "PublicInstance",
+            PlaceId = tonumber(placeId),
+            JobId = jobId,
+        }
+    end
+
+    --==================================================
+    -- RAW PUBLIC JOB ID
+    --==================================================
+
+    if compact:match("^[%w%-]+$")
+    and #compact >= 30 then
+
+        return {
+            Mode = "PublicInstance",
+            PlaceId = TRADING_WORLD_PLACE_ID,
+            JobId = compact,
+        }
+    end
+
+    --==================================================
+    -- RAW PRIVATE SERVER SHARE CODE
+    -- Example:
+    -- e4ee60eb4af7a243b82dfb576bc75cdc
+    --==================================================
+
+    if compact:match("^[%w%-_]+$")
+    and #compact >= 16
+    and #compact < 80 then
+
+        return {
+            Mode = "PrivateLink",
+            PlaceId = TRADING_WORLD_PLACE_ID,
+            Code = compact,
+        }
+    end
+
+    return nil
+end
+
+--==================================================
+-- LIVE VALIDATION
+--==================================================
+
+GatewayInput:OnChanged(function(text)
+
+    local parsed =
+        ParseServerInput(text)
+
+    if not parsed then
+        SetGatewayStatus("Invalid input")
+        return
+    end
+
+    if parsed.PlaceId ~= TRADING_WORLD_PLACE_ID then
+        SetGatewayStatus("Blocked non-trade server")
+        return
+    end
+
+    if parsed.Mode == "PrivateLink" then
+        SetGatewayStatus("Valid private server link")
+        return
+    end
+
+    if parsed.Mode == "PublicInstance" then
+        SetGatewayStatus("Valid public server")
+        return
+    end
+
+    SetGatewayStatus("Invalid input")
+end)
+
+--==================================================
+-- TELEPORT
+--==================================================
+
+local function JoinParsedServer(parsed)
+
+    if GatewayBusy then
+        SetGatewayStatus("Busy")
+        return
+    end
+
+    if type(parsed) ~= "table" then
+        SetGatewayStatus("Invalid input")
+        return
+    end
+
+    if parsed.PlaceId ~= TRADING_WORLD_PLACE_ID then
+        SetGatewayStatus("Blocked non-trade server")
+        return
+    end
+
+    GatewayBusy = true
+
+    local TeleportService =
+        game:GetService("TeleportService")
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        GatewayBusy = false
+        SetGatewayStatus("LocalPlayer missing")
+        return
+    end
+
+    LastServer.Mode =
+        parsed.Mode
+
+    LastServer.PlaceId =
+        parsed.PlaceId
+
+    LastServer.JobId =
+        parsed.JobId
+
+    LastServer.Code =
+        parsed.Code
+
+    if parsed.Mode == "PrivateLink" then
+
+    SetGatewayStatus("Private link copied")
+
+    local privateUrl =
+        "https://www.roblox.com/share?code="
+        .. tostring(parsed.Code)
+        .. "&type=Server"
+
+    if setclipboard then
+        pcall(function()
+            setclipboard(privateUrl)
+        end)
+    end
+
+    warn(
+        "[Gateway] Private server links cannot be joined with TeleportService from the client."
+    )
+
+    warn(
+        "[Gateway] Link copied. Open it through browser / RoValra / Roblox app:",
+        privateUrl
+    )
+
+    HolyNotify(
+        "Private Link Copied",
+        "Roblox blocks client-side TeleportToPrivateServer. Open the copied link through browser/RoValra.",
+        "link",
+        5
+    )
+
+    elseif parsed.Mode == "PublicInstance" then
+
+        SetGatewayStatus("Connecting public server...")
+
+        local ok, err =
+            pcall(function()
+
+                TeleportService:TeleportToPlaceInstance(
+                    parsed.PlaceId,
+                    parsed.JobId,
+                    player
+                )
+            end)
+
+        if not ok then
+
+            warn(
+                "[Gateway] Public server teleport failed:",
+                tostring(err)
+            )
+
+            SetGatewayStatus("Public join failed")
+        end
+
+    else
+
+        SetGatewayStatus("Invalid mode")
+    end
+
+    task.delay(5, function()
+        GatewayBusy = false
+    end)
+end
+
+--==================================================
+-- BUTTONS
+--==================================================
+
+GatewayBox:AddButton({
+    Text = "📎 Copy Current Server",
+    Func = function()
+        if ScriptState.ForceStopped then
+            SetGatewayStatus(
+                "Blocked (ForceStopped)"
+            )
+            return
+        end
+
+        if not setclipboard then
+            SetGatewayStatus(
+                "Clipboard unsupported"
+            )
+            return
+        end
+
+        local payload =
+            tostring(game.PlaceId)
+            .. ":"
+            .. tostring(game.JobId)
+
+        pcall(function()
+            setclipboard(payload)
+        end)
+
+        SetGatewayStatus(
+            "Current server copied"
+        )
+    end,
+})
+
+GatewayBox:AddButton({
+    Text = "↺ Reconnect Last Server",
+    Func = function()
+        if ScriptState.ForceStopped then
+            SetGatewayStatus(
+                "Blocked (ForceStopped)"
+            )
+            return
+        end
+
+        if not LastServer.JobId then
+            SetGatewayStatus(
+                "No previous server"
+            )
+            return
+        end
+
+        JoinParsedServer(LastServer)
+    end,
+})
+
+GatewayBox:AddButton({
+    Text = "🚪 Connect",
+    Tooltip = "Join target server instance",
+    Func = function()
+        if ScriptState.ForceStopped then
+            SetGatewayStatus(
+                "Blocked (ForceStopped)"
+            )
+            return
+        end
+
+local text =
+    GatewayInput.Value
+
+local parsed =
+    ParseServerInput(text)
+
+if not parsed then
+    SetGatewayStatus("Invalid input")
+    return
+end
+
+if parsed.PlaceId ~= TRADING_WORLD_PLACE_ID then
+    SetGatewayStatus(
+        "Blocked non-trade server"
+    )
+    return
+end
+
+JoinParsedServer(parsed)
+
+GatewayInput:SetValue("")
+    end,
+})
+
+GatewayInput:SetValue("")
+
+--==================================================
+-- GARDEN MODE HOME GATE
+-- Keeps Home useful, but does not expose real sniper
+-- runtime controls outside Trade World.
+--==================================================
+
+if not IsTradeWorld() then
+
+    HomeBox:AddDivider({
+        Text = "Garden Mode",
+        MarginTop = 10,
+        MarginBottom = 8,
+    })
+
+    HomeBox:AddLabel(
+        "🌱 Trade World automation is disabled here.",
+        true
+    )
+
+    HomeBox:AddButton({
+        Text = "🌐 Join Trade World",
+        Tooltip = "Teleport to Grow a Garden Trade World.",
+        Func = function()
+
+            RequestJoinTradeWorld(
+                "Manual Trade World join requested."
+            )
+        end,
+    })
+
+    return
+end
+--==================================================
+-- ISOLATED
+--==================================================
+
+local StartToggle = HomeBox:AddToggle("StartSystem", {
+    Text = "⚡ Activate Sniper",
+    Default = false,
+})
+
+StartToggle:OnChanged(function(enabled)
+
+    RuntimeState.Started = enabled
+
+if enabled then
+    SniperMonitorState.Status = "Active"
+    SniperMonitorState.PetsScanned = 0
+    SniperMonitorState.ScanPasses = 0
+
+    SniperState.ScanStartedAt =
+        os.clock()
+
+    HolyNotify(
+        "Sniper Started",
+        "Scanning Trade World listings.",
+        "crosshair",
+        4
+    )
+else
+    SniperMonitorState.Status = "Idle"
+    SniperMonitorState.PetsScanned = 0
+
+    HolyNotify(
+        "Sniper Stopped",
+        "Scanning has been paused.",
+        "pause",
+        3
+    )
+end
+
+    MarkConfigDirty()
+end)
+
+local SniperAutoHopToggle =
+    HomeBox:AddToggle(
+        "SniperAutoHop",
+        {
+            Text = "🚀 Sniper Auto Hop",
+            Default = false,
+        }
+    )
+
+SniperAutoHopToggle:OnChanged(function(v)
+
+    SniperState.AutoHop = v
+
+    SniperState.ScanStartedAt =
+        os.clock()
+
+    MarkConfigDirty()
+
+    if v then
+        HolyNotify(
+            "Auto Hop Enabled",
+            "Sniper will hop after the scan duration expires.",
+            "refresh-cw",
+            3
+        )
+    else
+        HolyNotify(
+            "Auto Hop Disabled",
+            "Sniper will stay in the current server.",
+            "pause",
+            3
+        )
+    end
+end)
+
+local ScanDurationInput =
+    HomeBox:AddInput(
+        "SniperHopDuration",
+        {
+            Text = "Scan Duration (sec)",
+            Default = "10",
+            Numeric = true,
+            Finished = true,
+        }
+    )
+
+ScanDurationInput:OnChanged(function(v)
+
+    local num = tonumber(v)
+
+    if not num then
+        return
+    end
+
+    SniperState.ScanDuration =
+        math.clamp(num, 1, 3600)
+
+    MarkConfigDirty()
+end)
+
+--==================================================
+-- HOME: CLEAN SERVER ACTION ROW
+-- Compact labels only. Sub-buttons render horizontally,
+-- so long text will always look weak/cramped.
+--==================================================
+
+HomeBox:AddDivider({
+    Text = "Quick Actions",
+    MarginTop = 10,
+    MarginBottom = 8,
+})
+
+local ServerActionButton =
+    HomeBox:AddButton({
+        Text = "Server",
+        Tooltip = "Quick server controls.",
+        Func = function()
+
+            HolyNotify(
+                "Server Actions",
+                "Use Copy, Rejoin, Hop, or STOP.",
+                "server",
+                3
+            )
+        end,
+    })
+
+ServerActionButton:AddButton({
+    Text = "Copy",
+    Tooltip = "Copy current placeId:jobId.",
+    Func = function()
+
+        if not setclipboard then
+
+            HolyNotify(
+                "Clipboard Unsupported",
+                "Your executor does not support setclipboard.",
+                "clipboard-x",
+                3
+            )
+
+            return
+        end
+
+        local payload =
+            tostring(game.PlaceId)
+            .. ":"
+            .. tostring(game.JobId)
+
+        pcall(function()
+            setclipboard(payload)
+        end)
+
+        HolyNotify(
+            "Server Copied",
+            "Current server copied to clipboard.",
+            "clipboard-check",
+            3
+        )
+    end,
+})
+
+ServerActionButton:AddButton({
+    Text = "Rejoin",
+    Tooltip = "Reconnect to this exact server instance.",
+    Func = function()
+
+        if ScriptState.ForceStopped then
+            warn("[Rejoin] Blocked (ForceStopped)")
+            return
+        end
+
+        local TeleportService =
+            game:GetService("TeleportService")
+
+        local player =
+            Players.LocalPlayer
+
+        if not player then
+            warn("[Rejoin] LocalPlayer missing")
+            return
+        end
+
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(
+                game.PlaceId,
+                game.JobId,
+                player
+            )
+        end)
+    end,
+})
+
+ServerActionButton:AddButton({
+    Text = "Hop",
+    Tooltip = "Join a different public Trade World server.",
+    Func = function()
+
+        if ScriptState.ForceStopped then
+            warn("[Hop] Blocked (ForceStopped)")
+            return
+        end
+
+        local TeleportService =
+            game:GetService("TeleportService")
+
+        local player =
+            Players.LocalPlayer
+
+        if not player then
+            warn("[Hop] LocalPlayer missing")
+            return
+        end
+
+        local target = nil
+
+        if type(GetRandomTradeServer) == "function" then
+            target = GetRandomTradeServer()
+        end
+
+        if not target then
+
+    HolyNotify(
+        "Hop Failed",
+        "No valid server found. Raise Max Server Players or change hop mode.",
+        "server-off",
+        4
+    )
+
+    warn("[Hop] No valid target server found")
+
+    return
+end
+
+        SniperState.RecentServers[target] =
+            true
+
+        if TeleportRetryState then
+            TeleportRetryState.LastTarget =
+                target
+
+            TeleportRetryState.BlockedServers[target] =
+                true
+        end
+
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(
+                TRADING_WORLD_PLACE_ID,
+                target,
+                player
+            )
+        end)
+    end,
+})
+
+ServerActionButton:AddButton({
+    Text = "STOP",
+    Tooltip = "Hard stop all HOLY runtime systems.",
+    Risky = true,
+    DoubleClick = true,
+    Func = function()
+
+        ScriptState.ForceStopped =
+            true
+
+        RuntimeState.Started =
+            false
+
+        SniperState.Scanning =
+            false
+
+        SniperState.Buying =
+            false
+
+        SniperState.Hopping =
+            false
+
+        if PurchaseState then
+            PurchaseState.Busy =
+                false
+        end
+
+        if BoothAuto then
+    BoothAuto.Enabled =
+        false
+
+    BoothAuto.InProgress =
+        false
+
+    BoothAuto.AutoTeleport =
+        false
+
+    BoothAuto.LockBehindBooth =
+        false
+
+    BoothAuto.AutoServerHop =
+        false
+
+    ClearBoothAnchor()
+    RestoreCharacterMovement()
+end
+
+        HolyNotify(
+            "Emergency Stop",
+            "All active HOLY runtime systems were stopped.",
+            "octagon-alert",
+            5
+        )
+    end,
+})
+end
+--==================================================
+-- BEE EGG LIST RESOLUTION
+-- Reads available egg names from ReplicatedStorage.Assets.Models.BeeEggs
+--==================================================
+
+function RefreshBeeEggList()
+
+    table.clear(BeeEggAuto.EggList)
+
+    local assets =
+        ReplicatedStorage:FindFirstChild("Assets")
+
+    if not assets then
+        warn("[BEE EGG] Assets missing")
+        return BeeEggAuto.EggList
+    end
+
+    local models =
+        assets:FindFirstChild("Models")
+
+    if not models then
+        warn("[BEE EGG] Assets.Models missing")
+        return BeeEggAuto.EggList
+    end
+
+    local beeEggs =
+        models:FindFirstChild("BeeEggs")
+
+    if not beeEggs then
+        warn("[BEE EGG] Assets.Models.BeeEggs missing")
+        return BeeEggAuto.EggList
+    end
+
+    for _, eggModel in ipairs(beeEggs:GetChildren()) do
+
+        if eggModel.Name
+        and eggModel.Name ~= "" then
+
+            table.insert(
+                BeeEggAuto.EggList,
+                tostring(eggModel.Name)
+            )
+        end
+    end
+
+    table.sort(BeeEggAuto.EggList)
+
+    return BeeEggAuto.EggList
+end
+--==================================================
+-- BEE EGG SHOP REMOTE RESOLUTION
+--==================================================
+
+function GetBuyBeeEggRemote()
+
+    if BeeEggAuto.BuyRemote then
+        return BeeEggAuto.BuyRemote
+    end
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    if not gameEvents then
+        return nil
+    end
+
+    local service =
+        gameEvents:FindFirstChild("BeeColonyEggShopService")
+
+    if not service then
+        return nil
+    end
+
+    local remote =
+        service:FindFirstChild("BuyBeeEggStock")
+
+    if remote
+    and remote:IsA("RemoteFunction") then
+        BeeEggAuto.BuyRemote = remote
+        return remote
+    end
+
+    return nil
+end
+
+function TryBuyBeeEgg()
+
+    if ScriptState.ForceStopped then
+        return false
+    end
+
+    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+        return false
+    end
+
+    if BeeEggAuto.Buying then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    BeeEggAuto.LastAttempt =
+        SafeNumber(BeeEggAuto.LastAttempt, 0)
+
+    BeeEggAuto.BuyInterval =
+        SafeNumber(BeeEggAuto.BuyInterval, 1.5)
+
+    if now - BeeEggAuto.LastAttempt
+        < BeeEggAuto.BuyInterval
+    then
+        return false
+    end
+
+    BeeEggAuto.LastAttempt = now
+    BeeEggAuto.Buying = true
+
+    local remote =
+        GetBuyBeeEggRemote()
+
+    if not remote then
+        BeeEggAuto.Buying = false
+        warn("[BEE EGG] Buy remote missing")
+        return false
+    end
+
+    local boughtAny = false
+
+    for eggName, selected in pairs(BeeEggAuto.SelectedEggs) do
+
+        if selected == true then
+
+            local ok, result =
+                pcall(function()
+                    return remote:InvokeServer(
+                        tostring(eggName)
+                    )
+                end)
+
+            if ok then
+                boughtAny = true
+
+                -- Do not print every successful nil response.
+                -- The Bee Egg remote commonly returns nil even when the call is valid.
+
+            else
+
+                warn(
+                    "[BEE EGG] Buy failed:",
+                    tostring(eggName),
+                    tostring(result)
+                )
+            end
+
+            task.wait(0.15)
+        end
+    end
+
+    BeeEggAuto.Buying = false
+
+    return boughtAny
+end
+function TeleportViaController()
+    local Controller = GetController()
+
+    if Controller and Controller.TeleportToBooth then
+        local ok = pcall(function()
+            Controller:TeleportToBooth()
+        end)
+
+        if ok then
+            print("[Booth] Teleport via controller SUCCESS")
+            return true
+        end
+    end
+
+    warn("[Booth] Controller teleport failed")
+    return false
+end
+--==================================================
+-- TELEPORT TO OWNED BOOTH (ISOLATED, SAFE)
+--==================================================
+--==================================================
+-- TRADE WORLD BOOTH CENTER / DIRECTION HELPERS
+-- Used for skin-safe behind-booth positioning.
+--==================================================
+
+BoothPositionState =
+    BoothPositionState
+    or {
+        LastPivotSource = nil,
+        LastPivotPrintAt = 0,
+        LastRepositionAt = 0,
+    }
+
+function ResolveBoothPriorityPointGlobal()
+
+    local tradeWorld =
+        workspace:FindFirstChild("TradeWorld")
+
+    if not tradeWorld then
+        return nil
+    end
+
+    local model =
+        tradeWorld:FindFirstChild("Model")
+
+    if not model then
+        return nil
+    end
+
+    local children1 =
+        model:GetChildren()
+
+    local parent =
+        children1[5]
+
+    if not parent then
+        return nil
+    end
+
+    local children2 =
+        parent:GetChildren()
+
+    local target =
+        children2[8]
+
+    if not target then
+        return nil
+    end
+
+    if target:IsA("BasePart") then
+        return target.Position
+    end
+
+    if target:IsA("Model") then
+        return target:GetPivot().Position
+    end
+
+    if target:IsA("Attachment") then
+        return target.WorldPosition
+    end
+
+    local ok, pivot =
+        pcall(function()
+            return target:GetPivot()
+        end)
+
+    if ok
+    and pivot then
+        return pivot.Position
+    end
+
+    return nil
+end
+
+function ResolveBoothBehindDirection(boothModel, standPosition, standPivot)
+
+    standPosition =
+        standPosition
+        or (
+            standPivot
+            and standPivot.Position
+        )
+
+    if not standPosition then
+        return Vector3.new(0, 0, -1), "Fallback"
+    end
+
+    -- Best direction:
+    -- booths face inward toward the trade-world center/priority point.
+    -- behind = away from that center/priority point.
+    local priorityPosition =
+        ResolveBoothPriorityPointGlobal()
+
+    if priorityPosition then
+
+        local away =
+            Vector3.new(
+                standPosition.X - priorityPosition.X,
+                0,
+                standPosition.Z - priorityPosition.Z
+            )
+
+        if away.Magnitude > 0.001 then
+            return away.Unit, "AwayFromPriorityPoint"
+        end
+    end
+
+    -- Fallback: use whole booth pivot, not skin stand pivot.
+    -- Custom skin Stand pivots can be rotated sideways.
+    if boothModel
+    and boothModel:IsA("Model") then
+
+        local ok, boothPivot =
+            pcall(function()
+                return boothModel:GetPivot()
+            end)
+
+        if ok
+        and boothPivot then
+
+            local direction =
+                Vector3.new(
+                    boothPivot.LookVector.X,
+                    0,
+                    boothPivot.LookVector.Z
+                )
+
+            if direction.Magnitude > 0.001 then
+                return direction.Unit, "BoothModelLookVector"
+            end
+        end
+    end
+
+    if standPivot then
+
+        local direction =
+            Vector3.new(
+                standPivot.LookVector.X,
+                0,
+                standPivot.LookVector.Z
+            )
+
+        if direction.Magnitude > 0.001 then
+            return direction.Unit, "StandLookVectorFallback"
+        end
+    end
+
+    return Vector3.new(0, 0, -1), "HardFallback"
+end
+
+function ResolveCenteredBehindBoothPlacement(boothModel, fallbackPosition, fallbackPivot)
+
+    if not boothModel then
+        return nil, nil, "NO_BOOTH_MODEL"
+    end
+
+    local boothCFrame = nil
+    local boothSize = nil
+
+    if boothModel:IsA("Model") then
+
+        local ok, cf, size =
+            pcall(function()
+                return boothModel:GetBoundingBox()
+            end)
+
+        if ok
+        and cf
+        and size then
+
+            boothCFrame =
+                cf
+
+            boothSize =
+                size
+        end
+    end
+
+    if not boothCFrame then
+
+        local ok, pivot =
+            pcall(function()
+                return boothModel:GetPivot()
+            end)
+
+        if ok
+        and pivot then
+
+            boothCFrame =
+                pivot
+
+            boothSize =
+                Vector3.new(12, 8, 12)
+        end
+    end
+
+    if not boothCFrame then
+
+        if fallbackPivot then
+            boothCFrame =
+                fallbackPivot
+
+            boothSize =
+                Vector3.new(12, 8, 12)
+
+        elseif fallbackPosition then
+            boothCFrame =
+                CFrame.new(fallbackPosition)
+
+            boothSize =
+                Vector3.new(12, 8, 12)
+        end
+    end
+
+    if not boothCFrame then
+        return nil, nil, "NO_BOOTH_CFRAME"
+    end
+
+    boothSize =
+        boothSize
+        or Vector3.new(12, 8, 12)
+
+    local boothCenter =
+        boothCFrame.Position
+
+    local behindDirection, directionSource =
+        ResolveBoothBehindDirection(
+            boothModel,
+            boothCenter,
+            fallbackPivot
+        )
+
+    behindDirection =
+        Vector3.new(
+            behindDirection.X,
+            0,
+            behindDirection.Z
+        )
+
+    if behindDirection.Magnitude <= 0.001 then
+        behindDirection =
+            Vector3.new(0, 0, -1)
+    else
+        behindDirection =
+            behindDirection.Unit
+    end
+
+    local right =
+        Vector3.new(
+            boothCFrame.RightVector.X,
+            0,
+            boothCFrame.RightVector.Z
+        )
+
+    local look =
+        Vector3.new(
+            boothCFrame.LookVector.X,
+            0,
+            boothCFrame.LookVector.Z
+        )
+
+    if right.Magnitude <= 0.001 then
+        right =
+            Vector3.new(1, 0, 0)
+    else
+        right =
+            right.Unit
+    end
+
+    if look.Magnitude <= 0.001 then
+        look =
+            Vector3.new(0, 0, -1)
+    else
+        look =
+            look.Unit
+    end
+
+    -- Project the booth bounding box onto the behind direction.
+    -- This places the player behind the center of the whole booth,
+    -- not behind a custom skin's offset Stand pivot.
+    local halfDepth =
+        (
+            math.abs(behindDirection:Dot(right)) * boothSize.X
+            + math.abs(behindDirection:Dot(look)) * boothSize.Z
+        ) * 0.5
+
+    local distance =
+        SafeNumber(
+            BoothAuto.BoothDistance,
+            20
+        )
+
+    -- Keep a small minimum spacing so large skins do not trap the player
+    -- inside decorative geometry.
+    distance =
+        math.max(
+            distance,
+            4
+        )
+
+    local targetPosition =
+        boothCenter
+        + (
+            behindDirection
+            * (
+                halfDepth
+                + distance
+            )
+        )
+
+    local lookTarget =
+        Vector3.new(
+            boothCenter.X,
+            targetPosition.Y,
+            boothCenter.Z
+        )
+
+    return targetPosition, lookTarget, directionSource
+end
+--==================================================
+-- BOOTH GEOMETRY RESOLUTION
+-- Skin-safe resolver for Default / custom booth skins.
+--==================================================
+
+function ResolveOwnedBoothStandPivot(boothModel)
+
+    if not boothModel then
+        return nil, "NO_BOOTH_MODEL"
+    end
+
+    local function TryGetPivot(instance)
+
+        if not instance then
+            return nil
+        end
+
+        if instance:IsA("Model") then
+
+            local ok, pivot =
+                pcall(function()
+                    return instance:GetPivot()
+                end)
+
+            if ok and pivot then
+                return pivot
+            end
+        end
+
+        if instance:IsA("BasePart") then
+            return instance.CFrame
+        end
+
+        return nil
+    end
+
+    --==================================================
+    -- Priority 1:
+    -- Existing default path:
+    -- Any child -> Booth -> Stand -> Model
+    --==================================================
+
+    for _, child in ipairs(boothModel:GetChildren()) do
+
+        local booth =
+            child:FindFirstChild("Booth")
+
+        local stand =
+            booth
+            and booth:FindFirstChild("Stand")
+
+        local model =
+            stand
+            and stand:FindFirstChild("Model")
+
+        local pivot =
+            TryGetPivot(model)
+
+        if pivot then
+            return pivot, "Booth.Stand.Model"
+        end
+    end
+
+    --==================================================
+    -- Priority 2:
+    -- Direct descendants named Stand.
+    -- Custom skins often move Stand deeper.
+    --==================================================
+
+    for _, descendant in ipairs(boothModel:GetDescendants()) do
+
+        if descendant.Name == "Stand" then
+
+            local model =
+                descendant:FindFirstChild("Model")
+
+            local pivot =
+                TryGetPivot(model)
+                or TryGetPivot(descendant)
+
+            if pivot then
+                return pivot, "Descendant.Stand"
+            end
+        end
+    end
+
+    --==================================================
+    -- Priority 3:
+    -- Any descendant named Model under a Booth/Stand-like tree.
+    --==================================================
+
+    for _, descendant in ipairs(boothModel:GetDescendants()) do
+
+        if descendant.Name == "Model" then
+
+            local parent =
+                descendant.Parent
+
+            local grandparent =
+                parent and parent.Parent
+
+            local parentName =
+                parent and tostring(parent.Name):lower() or ""
+
+            local grandparentName =
+                grandparent and tostring(grandparent.Name):lower() or ""
+
+            if parentName:find("stand", 1, true)
+            or parentName:find("booth", 1, true)
+            or grandparentName:find("stand", 1, true)
+            or grandparentName:find("booth", 1, true) then
+
+                local pivot =
+                    TryGetPivot(descendant)
+
+                if pivot then
+                    return pivot, "BoothLike.Model"
+                end
+            end
+        end
+    end
+
+    --==================================================
+    -- Priority 4:
+    -- Fallback to booth model pivot.
+    -- This prevents total failure if a skin has unknown structure.
+    --==================================================
+
+    local boothPivot =
+        TryGetPivot(boothModel)
+
+    if boothPivot then
+        return boothPivot, "BoothModelFallback"
+    end
+
+    local firstPart =
+        boothModel:FindFirstChildWhichIsA(
+            "BasePart",
+            true
+        )
+
+    local partPivot =
+        TryGetPivot(firstPart)
+
+    if partPivot then
+        return partPivot, "FirstBasePartFallback"
+    end
+
+    return nil, "NO_VALID_PIVOT"
+end
+--==================================================
+-- POSITION PLAYER BEHIND OWNED BOOTH
+--==================================================
+function PositionBehindOwnedBooth()
+    local player = Players.LocalPlayer
+    local character = player.Character
+
+    if not character then
+        return false
+    end
+
+    local root = character:FindFirstChild("HumanoidRootPart")
+
+    if not root then
+        return false
+    end
+
+    --==================================================
+    -- TRADE WORLD GATE
+    --==================================================
+
+    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+        return false
+    end
+
+local tradeWorld = workspace:FindFirstChild("TradeWorld")
+
+if not tradeWorld then
+    return false
+end
+
+local boothsFolder = tradeWorld:FindFirstChild("Booths")
+
+if not boothsFolder then
+    return false
+end
+
+    local data = LatestBoothData
+
+    if not data or not data.Booths then
+        warn("[Booth] Failed to resolve booth data")
+        return false
+    end
+
+    local playerId = tostring(player.UserId)
+
+    for boothId, boothInfo in pairs(data.Booths) do
+        if boothInfo.Owner
+            and tostring(boothInfo.Owner):find(playerId)
+        then
+            local boothModel = boothsFolder:FindFirstChild(boothId)
+
+            if not boothModel then
+                warn("[Booth] Booth model missing")
+                return false
+            end
+
+
+            --==================================================
+            -- GET REAL BOOTH GEOMETRY
+            -- Skin-safe: supports Default and custom booth skins.
+            --==================================================
+
+            local standPivot, pivotSource =
+                ResolveOwnedBoothStandPivot(
+                    boothModel
+                )
+
+            if not standPivot then
+
+                warn(
+                    "[Booth] Failed to resolve booth pivot:",
+                    tostring(pivotSource)
+                )
+
+                return false
+            end
+
+                        local now =
+                os.clock()
+
+            BoothPositionState =
+                BoothPositionState
+                or {}
+
+            if BoothPositionState.LastPivotSource ~= pivotSource
+            or now - SafeNumber(BoothPositionState.LastPivotPrintAt, 0) > 5 then
+
+                BoothPositionState.LastPivotSource =
+                    pivotSource
+
+                BoothPositionState.LastPivotPrintAt =
+                    now
+
+                print(
+                    "[Booth] Stand pivot source:",
+                    tostring(pivotSource)
+                )
+            end
+
+            local standPosition =
+                standPivot.Position
+
+            local distance =
+                SafeNumber(
+                    BoothAuto.BoothDistance,
+                    20
+                )
+
+            local flatDirection, directionSource =
+                ResolveBoothBehindDirection(
+                    boothModel,
+                    standPosition,
+                    standPivot
+                )
+
+            if BoothPositionState.LastDirectionSource ~= directionSource
+            or now - SafeNumber(BoothPositionState.LastDirectionPrintAt, 0) > 5 then
+
+                BoothPositionState.LastDirectionSource =
+                    directionSource
+
+                BoothPositionState.LastDirectionPrintAt =
+                    now
+
+                print(
+                    "[Booth] Behind direction source:",
+                    tostring(directionSource)
+                )
+            end
+
+                        --==================================================
+            -- FINAL TARGET POSITION
+            -- Centered behind whole booth model, not skin Stand pivot.
+            --==================================================
+
+            local targetPosition, lookTarget, placementSource =
+                ResolveCenteredBehindBoothPlacement(
+                    boothModel,
+                    standPosition,
+                    standPivot
+                )
+
+            if not targetPosition then
+
+                warn(
+                    "[Booth] Failed centered booth placement:",
+                    tostring(placementSource)
+                )
+
+                return false
+            end
+
+            if BoothPositionState.LastPlacementSource ~= placementSource
+            or now - SafeNumber(BoothPositionState.LastPlacementPrintAt, 0) > 5 then
+
+                BoothPositionState.LastPlacementSource =
+                    placementSource
+
+                BoothPositionState.LastPlacementPrintAt =
+                    now
+
+                print(
+                    "[Booth] Placement source:",
+                    tostring(placementSource)
+                )
+            end
+
+            --==================================================
+            -- GROUND RESOLUTION
+            --==================================================
+
+            local rayOrigin =
+                targetPosition + Vector3.new(0, 20, 0)
+
+            local rayParams = RaycastParams.new()
+            rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+            rayParams.FilterDescendantsInstances = {
+                character,
+                boothModel
+            }
+
+            local rayResult = workspace:Raycast(
+                rayOrigin,
+                Vector3.new(0, -100, 0),
+                rayParams
+            )
+
+            local groundOffset =
+    GetCharacterGroundOffset()
+
+local finalPosition
+
+if rayResult then
+    finalPosition =
+        rayResult.Position
+        + Vector3.new(0, groundOffset, 0)
+else
+    finalPosition =
+        targetPosition
+        + Vector3.new(0, groundOffset, 0)
+end
+--==================================================
+-- FLAT LOOK TARGET (NO VERTICAL TILT)
+-- Look at the booth center, not the custom Stand pivot.
+--==================================================
+
+local flatLookTarget =
+    lookTarget
+    or Vector3.new(
+        standPosition.X,
+        finalPosition.Y,
+        standPosition.Z
+    )
+
+flatLookTarget =
+    Vector3.new(
+        flatLookTarget.X,
+        finalPosition.Y,
+        flatLookTarget.Z
+    )
+
+local finalCFrame =
+    CFrame.lookAt(
+        finalPosition,
+        flatLookTarget
+    )
+
+BoothAuto.LastBoothPosition =
+    finalPosition
+
+BoothAuto.LastBoothCFrame =
+    finalCFrame
+
+MoveCharacterToBoothCFrame(finalCFrame)
+
+            return true
+        end
+    end
+
+    warn("[Booth] Failed to find owned booth")
+
+    return false
+end
+
+function TeleportToOwnedBooth()
+    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+        return
+    end
+
+    print("[Booth] Waiting for ownership (server)...")
+
+    local start = os.clock()
+    local timeout = 6
+    local playerId = tostring(Players.LocalPlayer.UserId)
+
+    while os.clock() - start < timeout do
+        local data = LatestBoothData
+
+        if data and data.Booths then
+            for _, booth in pairs(data.Booths) do
+                if booth.Owner and tostring(booth.Owner):find(playerId) then
+                    print("[Booth] Ownership confirmed → teleporting")
+
+
+
+task.wait(0.25)
+
+TeleportViaController()
+
+local success =
+    false
+
+for attempt = 1, 8 do
+
+    task.wait(0.35)
+
+    success =
+        PositionBehindOwnedBooth()
+
+    if success then
+
+        print(
+            "[Booth] Positioned behind booth on attempt:",
+            tostring(attempt)
+        )
+
+        break
+    end
+
+    warn(
+        "[Booth] Position retry:",
+        tostring(attempt)
+    )
+end
+
+if not success then
+    warn("[Booth] Failed positioning behind booth")
+end
+
+return
+                end
+            end
+        end
+
+        task.wait(0.35)
+    end
+
+    warn("[Booth] Teleport failed (ownership timeout)")
+end
+
+--==================================================
+-- CHARACTER RESPAWN SUPPORT
+--==================================================
+function OnCharacterAdded(character)
+    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+        return
+    end
+
+    if not BoothAuto.AutoTeleport then
+        return
+    end
+
+    task.wait(1)
+
+    if not BoothAuto.LockBehindBooth then
+        RestoreCharacterMovement()
+    end
+
+    PositionBehindOwnedBooth()
+end
+
+Players.LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
+--==================================================
+-- BOOTH POSITION SUPERVISOR
+-- Auto Teleport = soft return
+-- Lock Behind Booth = hard lock
+--==================================================
+function BoothPositionWatchdog()
+
+    while IsCurrentRun() do
+
+        task.wait(0.10)
+
+        if ScriptState.ForceStopped then
+            continue
+        end
+
+        if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+            continue
+        end
+
+        if not BoothAuto.AutoTeleport then
+            continue
+        end
+
+        if not BoothAuto.LastBoothPosition then
+            continue
+        end
+
+        local player =
+            Players.LocalPlayer
+
+        if not player then
+            continue
+        end
+
+        local character =
+            player.Character
+
+        if not character then
+            continue
+        end
+
+        local root =
+            character:FindFirstChild("HumanoidRootPart")
+
+        local humanoid =
+            character:FindFirstChildOfClass("Humanoid")
+
+        if not root
+        or not humanoid
+        or humanoid.Health <= 0 then
+            continue
+        end
+
+        local now =
+            os.clock()
+
+        local distance =
+            (root.Position - BoothAuto.LastBoothPosition).Magnitude
+
+        --==================================================
+        -- HARD LOCK MODE
+        -- Only active when Lock Behind Booth is enabled.
+        --==================================================
+
+        if BoothAuto.LockBehindBooth == true then
+
+            if BoothAuto.LastBoothCFrame then
+
+                SetBoothHardLockAnchored(true)
+
+            else
+
+                if now - SafeNumber(BoothAuto.LastHardLockAt, 0)
+                    >= 1.00
+                then
+                    BoothAuto.LastHardLockAt =
+                        now
+
+                    PositionBehindOwnedBooth()
+                end
+            end
+
+            continue
+        end
+
+        --==================================================
+        -- SOFT RETURN MODE
+        -- Auto Teleport keeps you near booth, but lets you move.
+        --==================================================
+
+        if root.Anchored == true then
+            root.Anchored = false
+        end
+
+        RestoreCharacterMovement()
+
+        local returnDistance =
+            SafeNumber(
+                BoothAuto.ReturnDistance,
+                8
+            )
+
+        returnDistance =
+            math.clamp(
+                returnDistance,
+                5,
+                15
+            )
+
+        if distance < returnDistance then
+            continue
+        end
+
+        if now - SafeNumber(BoothAuto.LastSoftReturnAt, 0)
+            < SafeNumber(BoothAuto.SoftReturnCooldown, 1.50)
+        then
+            continue
+        end
+
+        BoothAuto.LastSoftReturnAt =
+            now
+
+        if BoothAuto.LastBoothCFrame then
+            MoveCharacterToBoothCFrame(
+                BoothAuto.LastBoothCFrame
+            )
+        else
+            PositionBehindOwnedBooth()
+        end
+    end
+end
+--==================================================
+-- BOOTH AUTO CLAIM
+-- Retry-based, verified claim session.
+-- If the first booth gets claimed by another player,
+-- HOLY tries the next best free booth instead of going AFK.
+--==================================================
+
+function ExecuteBoothClaim()
+
+    if BoothAuto.InProgress
+    or not BoothAuto.Enabled then
+        return
+    end
+
+    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+
+        warn("[Booth] Not in Trade World")
+
+        BoothAuto.Enabled =
+            false
+
+        return
+    end
+
+    BoothAuto.InProgress =
+        true
+
+    print("[Booth] Claim session started")
+    print("[Booth] Fetching booth data...")
+
+    local GameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    if not GameEvents then
+
+        warn("[Booth] GameEvents missing")
+
+        BoothAuto.Enabled =
+            false
+
+        BoothAuto.InProgress =
+            false
+
+        return
+    end
+
+    local tradeEvents =
+        GameEvents:FindFirstChild("TradeEvents")
+
+    local boothsEvents =
+        tradeEvents
+        and tradeEvents:FindFirstChild("Booths")
+
+    local ClaimBooth =
+        boothsEvents
+        and boothsEvents:FindFirstChild("ClaimBooth")
+
+    local skinService =
+        GameEvents:FindFirstChild("TradeBoothSkinService")
+
+    local EquipSkin =
+        skinService
+        and skinService:FindFirstChild("Equip")
+
+    if not ClaimBooth
+    or not EquipSkin then
+
+        warn("[Booth] ClaimBooth or EquipSkin remote missing")
+
+        BoothAuto.Enabled =
+            false
+
+        BoothAuto.InProgress =
+            false
+
+        return
+    end
+
+    local tradeWorld =
+        workspace:FindFirstChild("TradeWorld")
+
+    local boothsFolder =
+        tradeWorld
+        and tradeWorld:FindFirstChild("Booths")
+
+    if not boothsFolder then
+
+        warn("[Booth] Booth folder missing")
+
+        BoothAuto.Enabled =
+            false
+
+        BoothAuto.InProgress =
+            false
+
+        return
+    end
+
+    --==================================================
+    -- LOCAL HELPERS
+    --==================================================
+
+    local function ResolveBoothPriorityPoint()
+
+        local world =
+            workspace:FindFirstChild("TradeWorld")
+
+        if not world then
+            return nil
+        end
+
+        local model =
+            world:FindFirstChild("Model")
+
+        if not model then
+            return nil
+        end
+
+        local children1 =
+            model:GetChildren()
+
+        local parent =
+            children1[5]
+
+        if not parent then
+            return nil
+        end
+
+        local children2 =
+            parent:GetChildren()
+
+        local target =
+            children2[8]
+
+        if not target then
+            return nil
+        end
+
+        if target:IsA("BasePart") then
+            return target.Position
+        end
+
+        if target:IsA("Model") then
+            return target:GetPivot().Position
+        end
+
+        if target:IsA("Attachment") then
+            return target.WorldPosition
+        end
+
+        local ok, pivot =
+            pcall(function()
+                return target:GetPivot()
+            end)
+
+        if ok
+        and pivot then
+            return pivot.Position
+        end
+
+        return nil
+    end
+
+    local function ResolveBoothPosition(boothModel)
+
+        if not boothModel then
+            return nil
+        end
+
+        if boothModel:IsA("Model") then
+
+            local ok, pivot =
+                pcall(function()
+                    return boothModel:GetPivot()
+                end)
+
+            if ok
+            and pivot then
+                return pivot.Position
+            end
+        end
+
+        if boothModel:IsA("BasePart") then
+            return boothModel.Position
+        end
+
+        local primary =
+            boothModel.PrimaryPart
+
+        if primary then
+            return primary.Position
+        end
+
+        local firstPart =
+            boothModel:FindFirstChildWhichIsA(
+                "BasePart",
+                true
+            )
+
+        if firstPart then
+            return firstPart.Position
+        end
+
+        return nil
+    end
+
+    local function BuildFreeBoothCandidates(triedBooths)
+
+        local data =
+            LatestBoothData
+
+        if not data
+        or type(data.Booths) ~= "table" then
+            return {}
+        end
+
+        local priorityPosition =
+            ResolveBoothPriorityPoint()
+
+        if not priorityPosition then
+            warn("[Booth] Priority point missing, using fallback booth order")
+        end
+
+        local candidates =
+            {}
+
+        for boothId, boothInfo in pairs(data.Booths) do
+
+            if triedBooths[boothId] then
+                continue
+            end
+
+            if boothInfo.Owner ~= nil then
+                continue
+            end
+
+            local model =
+                boothsFolder:FindFirstChild(boothId)
+
+            if not model then
+                continue
+            end
+
+            local distance =
+                math.huge
+
+            if priorityPosition then
+
+                local boothPosition =
+                    ResolveBoothPosition(model)
+
+                if boothPosition then
+                    distance =
+                        (boothPosition - priorityPosition).Magnitude
+                end
+            end
+
+            table.insert(candidates, {
+                BoothId = boothId,
+                Model = model,
+                Distance = distance,
+            })
+        end
+
+        table.sort(candidates, function(a, b)
+
+            local aDistance =
+                tonumber(a.Distance)
+                or math.huge
+
+            local bDistance =
+                tonumber(b.Distance)
+                or math.huge
+
+            if aDistance ~= bDistance then
+                return aDistance < bDistance
+            end
+
+            return tostring(a.BoothId) < tostring(b.BoothId)
+        end)
+
+        return candidates
+    end
+
+    local function IsOwnBoothId(boothId)
+
+        local data =
+            LatestBoothData
+
+        if not data
+        or type(data.Booths) ~= "table" then
+            return false
+        end
+
+        local boothInfo =
+            data.Booths[boothId]
+
+        local owner =
+            boothInfo
+            and boothInfo.Owner
+
+        if not owner then
+            return false
+        end
+
+        local userId =
+            tostring(Players.LocalPlayer.UserId)
+
+        return tostring(owner):find(userId, 1, true) ~= nil
+    end
+
+    local function WaitForBoothOwnership(boothId, timeout)
+
+        local start =
+            os.clock()
+
+        timeout =
+            SafeNumber(timeout, 3)
+
+        while os.clock() - start < timeout do
+
+            if IsOwnBoothId(boothId) then
+                return true
+            end
+
+            task.wait(0.20)
+        end
+
+        return false
+    end
+
+    local function FinishClaim(success)
+
+        BoothAuto.InProgress =
+            false
+
+        BoothAuto.Enabled =
+            false
+
+        if Library
+        and Library.Options
+        and Library.Options.AutoClaimBooth then
+
+            task.defer(function()
+
+                pcall(function()
+                    Library.Options.AutoClaimBooth:SetValue(false)
+                end)
+            end)
+        end
+
+        if success then
+            print("[Booth] Claim session complete")
+        else
+            warn("[Booth] Claim session failed")
+        end
+    end
+
+    --==================================================
+    -- CLAIM SESSION CONFIG
+    --==================================================
+
+    local triedBooths =
+        {}
+
+    local maxAttempts =
+        6
+
+    local verifyTimeout =
+        3
+
+    local retryDelay =
+        0.35
+
+    local selectedSkin =
+        ResolveSelectedBoothSkin()
+
+    --==================================================
+    -- CLAIM LOOP
+    --==================================================
+
+    for attempt = 1, maxAttempts do
+
+        if ScriptState
+        and ScriptState.ForceStopped then
+
+            FinishClaim(false)
+            return
+        end
+
+        local candidates =
+            BuildFreeBoothCandidates(triedBooths)
+
+        if #candidates <= 0 then
+
+            warn("[Booth] No free booth candidates left")
+
+            FinishClaim(false)
+            return
+        end
+
+        local candidate =
+            candidates[1]
+
+        local boothId =
+            tostring(candidate.BoothId)
+
+        local targetBooth =
+            candidate.Model
+
+        triedBooths[boothId] =
+            true
+
+        if candidate.Distance ~= math.huge then
+
+            print(
+                "[Booth] Attempt "
+                    .. tostring(attempt)
+                    .. "/"
+                    .. tostring(maxAttempts)
+                    .. " -> "
+                    .. tostring(boothId)
+                    .. " | distance: "
+                    .. tostring(math.floor(candidate.Distance))
+            )
+
+        else
+
+            print(
+                "[Booth] Attempt "
+                    .. tostring(attempt)
+                    .. "/"
+                    .. tostring(maxAttempts)
+                    .. " -> "
+                    .. tostring(boothId)
+            )
+        end
+
+        selectedSkin =
+            ResolveSelectedBoothSkin()
+
+        pcall(function()
+            EquipSkin:FireServer(selectedSkin)
+        end)
+
+        task.wait(0.15)
+
+        pcall(function()
+            ClaimBooth:FireServer(targetBooth)
+        end)
+
+        task.wait(0.20)
+
+        selectedSkin =
+            ResolveSelectedBoothSkin()
+
+        pcall(function()
+            EquipSkin:FireServer(selectedSkin)
+        end)
+
+        print(
+            "[Booth] Equipped skin:",
+            tostring(selectedSkin)
+        )
+
+        print(
+            "[Booth] Claim attempt sent:",
+            tostring(boothId)
+        )
+
+        local owned =
+            WaitForBoothOwnership(
+                boothId,
+                verifyTimeout
+            )
+
+        if owned then
+
+            print(
+                "[Booth] Ownership confirmed:",
+                tostring(boothId)
+            )
+
+            if BoothAuto.AutoTeleport then
+
+                -- Custom booth skins can rebuild the stand model after EquipSkin.
+                task.spawn(function()
+
+                    task.wait(1.25)
+
+                    TeleportToOwnedBooth()
+                end)
+            end
+
+            FinishClaim(true)
+
+            return
+        end
+
+        warn(
+            "[Booth] Claim verify failed, trying next booth:",
+            tostring(boothId)
+        )
+
+        task.wait(retryDelay)
+    end
+
+    warn(
+        "[Booth] Max claim attempts reached:",
+        tostring(maxAttempts)
+    )
+
+    FinishClaim(false)
+end
+--==================================================
+-- DYNAMIC PET LIST
+-- Source of truth:
+-- ReplicatedStorage.Data.PetRegistry.PetList
+--==================================================
+
+PetList =
+    {}
+
+function AddUniquePetName(target, seen, value)
+
+    local name =
+        tostring(value or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if name == "" then
+        return false
+    end
+
+    -- Defensive: never add egg pseudo-items to normal pet dropdowns.
+    if name:sub(1, 4) == "Egg/" then
+        return false
+    end
+
+    if seen[name] then
+        return false
+    end
+
+    seen[name] =
+        true
+
+    table.insert(
+        target,
+        name
+    )
+
+    return true
+end
+
+function BuildDynamicPetList()
+
+    local registry =
+        GetPetRegistry()
+
+    local names = {}
+    local seen = {}
+
+    if type(registry) == "table"
+    and type(registry.PetList) == "table" then
+
+        for petName, petData in pairs(registry.PetList) do
+
+            if type(petName) == "string"
+            and type(petData) == "table" then
+
+                AddUniquePetName(
+                    names,
+                    seen,
+                    petName
+                )
+            end
+        end
+    end
+
+    -- Fallback only: if PetRegistry.PetList ever fails,
+    -- recover names from visible inventory tools.
+    if #names <= 0 then
+
+        local player =
+            Players.LocalPlayer
+
+        local containers = {
+            player and player:FindFirstChild("Backpack"),
+            player and player.Character,
+        }
+
+        for _, container in ipairs(containers) do
+
+            if container then
+
+                for _, child in ipairs(container:GetChildren()) do
+
+                    if child:IsA("Tool") then
+
+                        local petName =
+                            child:GetAttribute("f")
+                            or child:GetAttribute("PetType")
+                            or child:GetAttribute("PetName")
+
+                        if petName then
+                            AddUniquePetName(
+                                names,
+                                seen,
+                                petName
+                            )
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    table.sort(names)
+
+    return names
+end
+
+function RefreshDynamicPetList()
+
+    local names =
+        BuildDynamicPetList()
+
+    if #names <= 0 then
+
+        warn("[PET LIST] Dynamic pet list empty")
+
+        return PetList
+    end
+
+    PetList =
+        names
+
+    print(
+        "[PET LIST] Dynamic pets loaded:",
+        tostring(#PetList)
+    )
+
+    return PetList
+end
+
+PetList =
+    RefreshDynamicPetList()
+
+--==================================================
+-- LISTINGS: MUTATION LIST
+-- Source of truth:
+-- ReplicatedStorage.Data.PetRegistry.PetMutationRegistry
+--==================================================
+
+ListingMutationList =
+    {
+        "---",
+    }
+
+function AddUniqueListingMutationName(target, seen, value)
+
+    local name =
+        tostring(value or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if name == "" then
+        return false
+    end
+
+    if name == "---"
+    or name == "Normal" then
+        return false
+    end
+
+    -- Defensive: do not add internal registry table names.
+    if name == "EnumToPetMutation"
+    or name == "PetMutationToEnum"
+    or name == "PetMutationRegistry"
+    or name == "MachineMutationTypes"
+    or name == "RollRandomMutation" then
+        return false
+    end
+
+    if seen[name] then
+        return false
+    end
+
+    seen[name] =
+        true
+
+    table.insert(
+        target,
+        name
+    )
+
+    return true
+end
+
+function BuildDynamicListingMutationList()
+
+    local names =
+        {
+            "---",
+        }
+
+    local seen =
+        {
+            ["---"] = true,
+        }
+
+    local registry =
+        GetPetRegistry()
+
+    local mutationRoot =
+        type(registry) == "table"
+        and rawget(registry, "PetMutationRegistry")
+        or nil
+
+    --==================================================
+    -- Primary source:
+    -- PetMutationRegistry.PetMutationRegistry
+    --
+    -- Example:
+    -- Tranquil = table
+    -- Inverted = table
+    -- Radiant = table
+    -- Fried = table
+    -- Dreadbound = table
+    -- Mega = table
+    -- Shocked = table
+    --==================================================
+
+    local petMutationRegistry =
+        type(mutationRoot) == "table"
+        and rawget(mutationRoot, "PetMutationRegistry")
+        or nil
+
+    if type(petMutationRegistry) == "table" then
+
+        for mutationName, mutationData in pairs(petMutationRegistry) do
+
+            if type(mutationName) == "string" then
+
+                AddUniqueListingMutationName(
+                    names,
+                    seen,
+                    mutationName
+                )
+
+            elseif type(mutationData) == "string" then
+
+                AddUniqueListingMutationName(
+                    names,
+                    seen,
+                    mutationData
+                )
+            end
+        end
+    end
+
+    --==================================================
+    -- Secondary source:
+    -- MachineMutationTypes
+    --
+    -- Includes machine/event mutation types like:
+    -- Aurora, Ascended, Rainbow, Golden, Windy, etc.
+    --==================================================
+
+    local machineMutationTypes =
+        type(mutationRoot) == "table"
+        and rawget(mutationRoot, "MachineMutationTypes")
+        or nil
+
+    if type(machineMutationTypes) == "table" then
+
+        for mutationName, mutationData in pairs(machineMutationTypes) do
+
+            if type(mutationName) == "string" then
+
+                AddUniqueListingMutationName(
+                    names,
+                    seen,
+                    mutationName
+                )
+
+            elseif type(mutationData) == "string" then
+
+                AddUniqueListingMutationName(
+                    names,
+                    seen,
+                    mutationData
+                )
+            end
+        end
+    end
+
+    --==================================================
+    -- EnumToPetMutation:
+    -- a = Shocked
+    -- b = Golden
+    -- c = Rainbow
+    -- etc.
+    --==================================================
+
+    local enumToPetMutation =
+        type(mutationRoot) == "table"
+        and rawget(mutationRoot, "EnumToPetMutation")
+        or nil
+
+    if type(enumToPetMutation) == "table" then
+
+        for _, mutationName in pairs(enumToPetMutation) do
+
+            if type(mutationName) == "string" then
+
+                AddUniqueListingMutationName(
+                    names,
+                    seen,
+                    mutationName
+                )
+            end
+        end
+    end
+
+    --==================================================
+    -- PetMutationToEnum:
+    -- Tranquil = o
+    -- Inverted = g
+    -- Everchanted = EV
+    -- etc.
+    --==================================================
+
+    local petMutationToEnum =
+        type(mutationRoot) == "table"
+        and rawget(mutationRoot, "PetMutationToEnum")
+        or nil
+
+    if type(petMutationToEnum) == "table" then
+
+        for mutationName, _ in pairs(petMutationToEnum) do
+
+            if type(mutationName) == "string" then
+
+                AddUniqueListingMutationName(
+                    names,
+                    seen,
+                    mutationName
+                )
+            end
+        end
+    end
+
+    --==================================================
+    -- Fallback:
+    -- If registry shape changes, recover mutation prefixes
+    -- from visible inventory tools.
+    --==================================================
+
+    if #names <= 1 then
+
+        local player =
+            Players.LocalPlayer
+
+        local containers = {
+            player and player:FindFirstChild("Backpack"),
+            player and player.Character,
+        }
+
+        for _, container in ipairs(containers) do
+
+            if container then
+
+                for _, child in ipairs(container:GetChildren()) do
+
+                    if child:IsA("Tool") then
+
+                        local basePetName =
+                            child:GetAttribute("f")
+                            or child:GetAttribute("PetType")
+                            or child:GetAttribute("PetName")
+
+                        if basePetName then
+
+                            local mutation =
+                                ResolveListingPetMutation(
+                                    child.Name,
+                                    tostring(basePetName)
+                                )
+
+                            AddUniqueListingMutationName(
+                                names,
+                                seen,
+                                mutation
+                            )
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    table.sort(names, function(a, b)
+
+        if a == "---" then
+            return true
+        end
+
+        if b == "---" then
+            return false
+        end
+
+        return a < b
+    end)
+
+    return names
+end
+
+function RefreshListingMutationList()
+
+    local names =
+        BuildDynamicListingMutationList()
+
+    if #names <= 0 then
+        names =
+            {
+                "---",
+            }
+    end
+
+    ListingMutationList =
+        names
+
+    print(
+        "[MUTATION LIST] Dynamic mutations loaded:",
+        tostring(#ListingMutationList)
+    )
+
+    return ListingMutationList
+end
+
+--==================================================
+-- LISTINGS: TOOL PARSING
+--==================================================
+
+function TrimListingText(text)
+
+    return tostring(text or "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+function ParseListingDisplayWeight(toolName)
+
+    return tonumber(
+        tostring(toolName or "")
+            :match("%[([%d%.]+)%s*KG%]")
+    )
+end
+
+function ParseListingDisplayAge(toolName)
+
+    return tonumber(
+        tostring(toolName or "")
+            :match("%[Age%s*(%d+)%]")
+    )
+end
+
+function ResolveListingBaseWeightFromDisplay(displayWeight, displayAge)
+
+    -- AutoList must never guess BaseWeight from visible KG.
+    -- Visible KG changes with age, and reverse formulas can underprice pets.
+    -- Returning nil forces AutoList to use raw PetData.BaseWeight only.
+    return nil
+end
+
+function ResolveListingPetMutation(displayName, basePetName)
+
+    displayName =
+        TrimListingText(
+            tostring(displayName or "")
+                :gsub("%b[]", "")
+                :gsub("%s+", " ")
+        )
+
+    basePetName =
+        TrimListingText(basePetName)
+
+    if displayName == basePetName then
+        return "---"
+    end
+
+    local suffixStart =
+        displayName:find(basePetName, 1, true)
+
+    if not suffixStart then
+        return "---"
+    end
+
+    local mutation =
+        TrimListingText(
+            displayName:sub(1, suffixStart - 1)
+        )
+
+    if mutation == "" then
+        return "---"
+    end
+
+    return mutation
+end
+
+ListingMutationList =
+    RefreshListingMutationList()
+
+--==================================================
+-- LISTINGS: OPTIMIZED RAW PETDATA RESOLVERS
+-- BaseWeight = age-1/base/raw size.
+-- Level/Age = current visible pet age.
+-- No hidden caps. Filters control all limits.
+--==================================================
+
+function ResolveListingRawBaseWeight(petData, itemData)
+
+    local sources = {
+        petData,
+        itemData,
+    }
+
+    for _, source in ipairs(sources) do
+
+        if type(source) == "table" then
+
+            local candidates = {
+                source.BaseWeight,
+                rawget(source, "BaseWeight"),
+
+                source.baseWeight,
+                rawget(source, "baseWeight"),
+
+                source.Base_Weight,
+                rawget(source, "Base_Weight"),
+
+                source.BaseKg,
+                rawget(source, "BaseKg"),
+
+                source.BaseKG,
+                rawget(source, "BaseKG"),
+
+                source.Base,
+                rawget(source, "Base"),
+            }
+
+            for _, value in ipairs(candidates) do
+
+                local number =
+                    tonumber(value)
+
+                if number then
+                    return number
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function ResolveListingRawLevel(petData, itemData, tool, fallbackAge)
+
+    local sources = {
+        petData,
+        itemData,
+    }
+
+    for _, source in ipairs(sources) do
+
+        if type(source) == "table" then
+
+            local candidates = {
+                source.Level,
+                rawget(source, "Level"),
+
+                source.level,
+                rawget(source, "level"),
+
+                source.Age,
+                rawget(source, "Age"),
+
+                source.age,
+                rawget(source, "age"),
+            }
+
+            for _, value in ipairs(candidates) do
+
+                local number =
+                    tonumber(value)
+
+                if number then
+                    return math.floor(number)
+                end
+            end
+        end
+    end
+
+    if tool then
+
+        local attributeCandidates = {
+            tool:GetAttribute("Level"),
+            tool:GetAttribute("level"),
+            tool:GetAttribute("Age"),
+            tool:GetAttribute("age"),
+        }
+
+        for _, value in ipairs(attributeCandidates) do
+
+            local number =
+                tonumber(value)
+
+            if number then
+                return math.floor(number)
+            end
+        end
+    end
+
+    local fallback =
+        tonumber(fallbackAge)
+
+    if fallback then
+        return math.floor(fallback)
+    end
+
+    return nil
+end
+
+function ResolveListingPetTool(tool, source)
+
+    if not tool
+    or not tool:IsA("Tool") then
+        return nil
+    end
+
+    if tool:GetAttribute("ItemType") ~= "Pet" then
+        return nil
+    end
+
+    local uuid =
+        tool:GetAttribute("PET_UUID")
+
+    if type(uuid) ~= "string"
+    or uuid == "" then
+        return nil
+    end
+
+    local basePetName =
+        tool:GetAttribute("f")
+
+    if type(basePetName) ~= "string"
+    or basePetName == "" then
+        return nil
+    end
+
+    local displayWeight =
+        ParseListingDisplayWeight(tool.Name)
+
+    if not displayWeight then
+        return nil
+    end
+
+    local displayAge =
+        ParseListingDisplayAge(tool.Name)
+
+    local mutation =
+        ResolveListingPetMutation(
+            tool.Name,
+            basePetName
+        )
+
+    --==================================================
+    -- AUTHORITATIVE PETDATA RESOLUTION
+    -- Source of truth for AutoList filters:
+    -- PetData.BaseWeight = age-1/base/raw weight.
+    -- PetData.Level      = visible age.
+    --==================================================
+
+    local petData =
+        nil
+
+    local itemData =
+        nil
+
+    if type(GetHolyInventoryPetDataByUUID) == "function" then
+
+        local ok, resolvedPetData, resolvedItemData =
+            pcall(function()
+                return GetHolyInventoryPetDataByUUID(uuid)
+            end)
+
+        if ok then
+            petData =
+                resolvedPetData
+
+            itemData =
+                resolvedItemData
+        end
+    end
+
+    local baseWeight =
+        nil
+
+    local age =
+        displayAge
+
+        baseWeight =
+        ResolveListingRawBaseWeight(
+            petData,
+            itemData
+        )
+
+    age =
+        ResolveListingRawLevel(
+            petData,
+            itemData,
+            tool,
+            displayAge
+        )
+
+    --==================================================
+    -- STRICT BASEWEIGHT GUARD
+    -- AutoList filters are based on age-1 raw BaseWeight only.
+    -- Never derive BaseWeight from visible KG, because high-age pets
+    -- can be underpriced incorrectly.
+    --==================================================
+
+    if not baseWeight then
+
+        warn(
+            "[LISTINGS] SKIP | raw PetData.BaseWeight missing:",
+            tostring(tool.Name),
+            "| DisplayKG:",
+            tostring(displayWeight),
+            "| Age:",
+            tostring(age or displayAge or "Unknown"),
+            "| UUID:",
+            tostring(uuid)
+        )
+
+        return nil
+    end
+
+    if not age then
+        age =
+            displayAge
+    end
+
+    return {
+        Tool = tool,
+        Source = source,
+
+        UUID = uuid,
+
+        ToolName = tool.Name,
+        PetName = basePetName,
+        Mutation = mutation,
+
+        Weight = displayWeight,
+
+        -- This is now true age-1/base/raw weight from PetData when available.
+        BaseWeight = baseWeight,
+
+        Age = age,
+
+        IsFavorite = tool:GetAttribute("d") == true,
+
+        PetData = petData,
+        ItemData = itemData,
+    }
+end
+
+function GetListingInventoryPetSnapshot()
+
+    local snapshot = {}
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return snapshot
+    end
+
+    local containers = {
+        {
+            Source = "Backpack",
+            Container = player:FindFirstChild("Backpack"),
+        },
+
+        {
+            Source = "Character",
+            Container = player.Character,
+        },
+    }
+
+    for _, entry in ipairs(containers) do
+
+        local container =
+            entry.Container
+
+        if container then
+
+            for _, child in ipairs(container:GetChildren()) do
+
+                local resolved =
+                    ResolveListingPetTool(
+                        child,
+                        entry.Source
+                    )
+
+                if resolved then
+                    table.insert(
+                        snapshot,
+                        resolved
+                    )
+                end
+            end
+        end
+    end
+
+    table.sort(snapshot, function(a, b)
+
+        if a.PetName ~= b.PetName then
+            return a.PetName < b.PetName
+        end
+
+        if a.Mutation ~= b.Mutation then
+            return a.Mutation < b.Mutation
+        end
+
+        return a.Weight > b.Weight
+    end)
+
+    return snapshot
+end
+
+--==================================================
+-- LISTINGS: REMOTES
+--==================================================
+
+function GetCreateListingRemote()
+
+    if CreateListingRemote then
+        return CreateListingRemote
+    end
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    if not gameEvents then
+        return nil
+    end
+
+    local tradeEvents =
+        gameEvents:FindFirstChild("TradeEvents")
+
+    if not tradeEvents then
+        return nil
+    end
+
+    local booths =
+        tradeEvents:FindFirstChild("Booths")
+
+    if not booths then
+        return nil
+    end
+
+    local remote =
+        booths:FindFirstChild("CreateListing")
+
+    if remote
+    and remote:IsA("RemoteFunction") then
+
+        CreateListingRemote = remote
+        return remote
+    end
+
+    return nil
+end
+
+function GetRemoveListingRemote()
+
+    if RemoveListingRemote then
+        return RemoveListingRemote
+    end
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    if not gameEvents then
+        return nil
+    end
+
+    local tradeEvents =
+        gameEvents:FindFirstChild("TradeEvents")
+
+    if not tradeEvents then
+        return nil
+    end
+
+    local booths =
+        tradeEvents:FindFirstChild("Booths")
+
+    if not booths then
+        return nil
+    end
+
+    local remote =
+        booths:FindFirstChild("RemoveListing")
+
+    if remote
+    and remote:IsA("RemoteFunction") then
+
+        RemoveListingRemote = remote
+        return remote
+    end
+
+    return nil
+end
+
+function GetFavoriteRemote()
+
+    if FavoriteRemote then
+        return FavoriteRemote
+    end
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    if not gameEvents then
+        return nil
+    end
+
+    local remote =
+        gameEvents:FindFirstChild("Favorite_Item")
+
+    if remote
+    and remote:IsA("RemoteEvent") then
+
+        FavoriteRemote = remote
+        return remote
+    end
+
+    return nil
+end
+
+--==================================================
+-- LISTINGS: BOOTH-LISTED UUID SYNC
+-- Source of truth:
+-- TradeBoothController.GetPlayerBoothData upvalue[2]
+--
+-- Purpose:
+-- Prevent AutoList from relisting pets that are already
+-- listed on your own booth after rejoin/server hop.
+--==================================================
+
+function FetchLatestBoothDataNow()
+
+    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+        return nil, "Not in Trade World"
+    end
+
+    local store =
+        GetBoothStore()
+
+    if not store
+    or type(store.GetDataAsync) ~= "function" then
+        return nil, "Booth store missing"
+    end
+
+    local ok, data =
+        pcall(function()
+            return store:GetDataAsync()
+        end)
+
+    if not ok
+    or type(data) ~= "table" then
+        return nil, "Booth data fetch failed"
+    end
+
+    if type(data.Booths) ~= "table"
+    or type(data.Players) ~= "table" then
+        return nil, "Booth data incomplete"
+    end
+
+    LatestBoothData =
+        data
+
+    LatestBoothUpdate =
+        os.clock()
+
+    return data, "Fetched"
+end
+
+function RefreshOwnListedUUIDs(forceFetch)
+
+    if type(ListingsState) ~= "table" then
+        return 0, "ListingsState missing"
+    end
+
+    ListingsState.OwnListedUUIDs =
+        ListingsState.OwnListedUUIDs
+        or {}
+
+    ListingsState.OwnListedMetadata =
+        ListingsState.OwnListedMetadata
+        or {}
+
+    table.clear(
+        ListingsState.OwnListedUUIDs
+    )
+
+    ListingsState.OwnBoothListedSyncReady =
+        false
+
+    ListingsState.OwnListedLastSync =
+        0
+
+    ListingsState.OwnListedLastCount =
+        0
+
+    local data =
+        LatestBoothData
+
+    if forceFetch == true
+    or type(data) ~= "table"
+    or type(data.Booths) ~= "table"
+    or type(data.Players) ~= "table" then
+
+        data =
+            FetchLatestBoothDataNow()
+    end
+
+    if type(data) ~= "table"
+    or type(data.Booths) ~= "table"
+    or type(data.Players) ~= "table" then
+
+        return 0, "Booth data missing"
+    end
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return 0, "LocalPlayer missing"
+    end
+
+    local localUserId =
+        tonumber(player.UserId)
+
+    local ownOwnerKey =
+        nil
+
+    for _, boothData in pairs(data.Booths) do
+
+        local owner =
+            boothData
+            and boothData.Owner
+
+        if owner then
+
+            local ownerUserId =
+                tonumber(
+                    tostring(owner):match("_(%d+)$")
+                )
+
+            if ownerUserId == localUserId then
+
+                ownOwnerKey =
+                    owner
+
+                break
+            end
+        end
+    end
+
+    if not ownOwnerKey then
+        return 0, "Own booth not found"
+    end
+
+    local playerData =
+        data.Players[ownOwnerKey]
+
+    if type(playerData) ~= "table" then
+        return 0, "Own booth playerData missing"
+    end
+
+    local listings =
+        playerData.Listings
+
+    -- Own booth exists, but has no listings yet.
+    -- This is still a successful sync.
+    if type(listings) ~= "table" then
+
+        ListingsState.OwnBoothListedSyncReady =
+            true
+
+        ListingsState.OwnListedLastSync =
+            os.clock()
+
+        ListingsState.OwnListedLastCount =
+            0
+
+        return 0, "Own booth synced, no listings"
+    end
+
+    local count =
+        0
+
+    for _, listingData in pairs(listings) do
+
+        if type(listingData) ~= "table" then
+            continue
+        end
+
+        local itemId =
+            listingData.ItemId
+
+        if itemId then
+
+            local uuid =
+                tostring(itemId)
+
+            ListingsState.OwnListedUUIDs[uuid] =
+                true
+
+            count += 1
+        end
+    end
+
+    ListingsState.OwnBoothListedSyncReady =
+        true
+
+    ListingsState.OwnListedLastSync =
+        os.clock()
+
+    ListingsState.OwnListedLastCount =
+        count
+
+    ListingsState.OwnListedLastPrintAt =
+    SafeNumber(
+        ListingsState.OwnListedLastPrintAt,
+        0
+    )
+
+ListingsState.OwnListedLastPrintedCount =
+    tonumber(
+        ListingsState.OwnListedLastPrintedCount
+    )
+
+local shouldPrintOwnListedSync =
+    false
+
+if ListingsState.OwnListedLastPrintedCount ~= count then
+
+    shouldPrintOwnListedSync =
+        true
+
+elseif os.clock() - ListingsState.OwnListedLastPrintAt >= 30 then
+
+    shouldPrintOwnListedSync =
+        true
+end
+
+if shouldPrintOwnListedSync then
+
+    ListingsState.OwnListedLastPrintAt =
+        os.clock()
+
+    ListingsState.OwnListedLastPrintedCount =
+        count
+
+    print(
+        "[LISTINGS] Own listed UUID sync:",
+        tostring(count)
+    )
+end
+
+    return count, "Synced"
+end
+
+function WaitForOwnListedUUIDSync(timeout)
+
+    timeout =
+        SafeNumber(timeout, 12)
+
+    local deadline =
+        os.clock() + timeout
+
+    while os.clock() < deadline do
+
+        if ScriptState
+        and ScriptState.ForceStopped then
+            return false, "Force stopped"
+        end
+
+        if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+            return false, "Not in Trade World"
+        end
+
+        local count, reason =
+            RefreshOwnListedUUIDs(true)
+
+        if ListingsState.OwnBoothListedSyncReady == true then
+
+            return true,
+                reason
+                or (
+                    "Synced "
+                    .. tostring(count)
+                    .. " own listings"
+                )
+        end
+
+        ListingsState.Status =
+            tostring(reason or "Waiting for own booth sync")
+
+        if type(ListingsStatusRefresh) == "function" then
+            pcall(ListingsStatusRefresh)
+        end
+
+        task.wait(0.25)
+    end
+
+    return false, "Own booth sync timeout"
+end
+
+--==================================================
+-- LISTINGS: OWN BOOTH LISTING SNAPSHOT
+-- UI-facing snapshot of pets currently listed in your booth.
+-- Uses the same booth data source as OwnListedUUIDs.
+--==================================================
+
+function ShortenListingText(value, maxLength)
+
+    value =
+        tostring(value or "")
+
+    maxLength =
+        tonumber(maxLength)
+        or 24
+
+    if #value <= maxLength then
+        return value
+    end
+
+    if maxLength <= 3 then
+        return value:sub(1, maxLength)
+    end
+
+    return value:sub(1, maxLength - 3) .. "..."
+end
+
+function PadRightListingText(value, width)
+
+    value =
+        tostring(value or "")
+
+    width =
+        tonumber(width)
+        or 1
+
+    if #value >= width then
+        return value
+    end
+
+    return value .. string.rep(" ", width - #value)
+end
+
+function PadLeftListingText(value, width)
+
+    value =
+        tostring(value or "")
+
+    width =
+        tonumber(width)
+        or 1
+
+    if #value >= width then
+        return value
+    end
+
+    return string.rep(" ", width - #value) .. value
+end
+
+function FormatOwnBoothCompactPrice(value)
+
+    local number =
+        tonumber(value)
+        or 0
+
+    number =
+        math.floor(number)
+
+    local text =
+        tostring(number)
+
+    local left, num, right =
+        string.match(text, "^([^%d]*%d)(%d*)(.-)$")
+
+    if not left then
+        return text
+    end
+
+    return left
+        .. (
+            num:reverse()
+                :gsub("(%d%d%d)", "%1,")
+                :reverse()
+        )
+        .. right
+end
+
+function FormatOwnBoothListedPetLine(index, item)
+
+    if type(item) ~= "table" then
+
+        return string.format(
+    "%02d %-30s %9s %7s",
+    tonumber(index) or 0,
+    "-",
+    "-",
+    "-"
+)
+    end
+
+    local petName =
+        tostring(item.PetName or "Unknown")
+
+    local mutation =
+        tostring(item.MutationText or "Normal")
+
+    local displayName =
+        petName
+
+    if mutation ~= ""
+    and mutation ~= "Normal"
+    and mutation ~= "Unknown"
+    and mutation ~= "---" then
+
+        displayName =
+            mutation .. " " .. petName
+    end
+
+    displayName =
+        ShortenListingText(
+            displayName,
+            30
+        )
+
+    local priceText =
+        FormatOwnBoothCompactPrice(
+            item.Price
+        )
+
+    local baseWeight =
+        tonumber(item.BaseWeight)
+
+    local weightText =
+        baseWeight
+        and (
+            string.format("%.2f", baseWeight)
+            .. "bw"
+        )
+        or "-"
+
+    local age =
+        tonumber(item.Age)
+
+    local icon =
+        age
+        and age >= 100
+        and "★"
+        or "•"
+
+    return string.format(
+    "%s %-30s %9s %7s",
+    icon,
+    displayName,
+    priceText,
+    weightText
+)
+end
+
+function ResolveBoothMutationTypeText(value)
+
+    value =
+        tostring(value or "")
+
+    if value == ""
+    or value == "nil"
+    or value == "---"
+    or value == "Normal" then
+        return nil
+    end
+
+    local registry =
+        type(GetPetRegistry) == "function"
+        and GetPetRegistry()
+        or nil
+
+    local mutationRoot =
+        type(registry) == "table"
+        and rawget(registry, "PetMutationRegistry")
+        or nil
+
+    local enumToPetMutation =
+        type(mutationRoot) == "table"
+        and rawget(mutationRoot, "EnumToPetMutation")
+        or nil
+
+    if type(enumToPetMutation) == "table" then
+
+        local direct =
+            enumToPetMutation[value]
+
+        if type(direct) == "string"
+        and direct ~= "" then
+            return direct
+        end
+
+        for enumValue, mutationName in pairs(enumToPetMutation) do
+
+            if tostring(enumValue) == value
+            and type(mutationName) == "string"
+            and mutationName ~= "" then
+                return mutationName
+            end
+        end
+    end
+
+    local petMutationToEnum =
+        type(mutationRoot) == "table"
+        and rawget(mutationRoot, "PetMutationToEnum")
+        or nil
+
+    if type(petMutationToEnum) == "table" then
+
+        for mutationName, enumValue in pairs(petMutationToEnum) do
+
+            if tostring(enumValue) == value
+            and type(mutationName) == "string"
+            and mutationName ~= "" then
+                return mutationName
+            end
+        end
+    end
+
+    -- Fallback for known event codes if registry lookup is late.
+    local hardFallback = {
+        EV = "Everchanted",
+    }
+
+    if hardFallback[value] then
+        return hardFallback[value]
+    end
+
+    -- Last fallback: show the raw code instead of hiding it.
+    return value
+end
+
+function ResolveBoothListingMutationText(petData, itemData)
+
+    local candidates = {}
+
+    if type(petData) == "table" then
+
+        table.insert(candidates, rawget(petData, "MutationType"))
+        table.insert(candidates, rawget(petData, "Mutation"))
+        table.insert(candidates, rawget(petData, "Variant"))
+    end
+
+    if type(itemData) == "table" then
+
+        table.insert(candidates, rawget(itemData, "MutationType"))
+        table.insert(candidates, rawget(itemData, "Mutation"))
+        table.insert(candidates, rawget(itemData, "Variant"))
+    end
+
+    for _, value in ipairs(candidates) do
+
+        local resolved =
+            ResolveBoothMutationTypeText(value)
+
+        if resolved
+        and resolved ~= ""
+        and resolved ~= "---"
+        and resolved ~= "Normal" then
+            return resolved
+        end
+    end
+
+    if type(ResolvePetMutationTextFromPetData) == "function" then
+
+        local fallback =
+            ResolvePetMutationTextFromPetData(petData)
+
+        if fallback
+        and fallback ~= ""
+        and fallback ~= "---"
+        and fallback ~= "Normal"
+        and fallback ~= "Unknown" then
+            return fallback
+        end
+    end
+
+    return "Normal"
+end
+
+function BuildOwnBoothListingSnapshot(forceFetch)
+
+    if type(ListingsState) ~= "table" then
+        return {}, "ListingsState missing"
+    end
+
+    ListingsState.OwnBoothSnapshot =
+        ListingsState.OwnBoothSnapshot
+        or {}
+
+    table.clear(
+        ListingsState.OwnBoothSnapshot
+    )
+
+    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+
+        ListingsState.OwnBoothSnapshotStatus =
+            "Garden Mode"
+
+        return ListingsState.OwnBoothSnapshot,
+            ListingsState.OwnBoothSnapshotStatus
+    end
+
+    local data =
+        LatestBoothData
+
+    if forceFetch == true
+    or type(data) ~= "table"
+    or type(data.Booths) ~= "table"
+    or type(data.Players) ~= "table" then
+
+        data =
+            FetchLatestBoothDataNow()
+    end
+
+    if type(data) ~= "table"
+    or type(data.Booths) ~= "table"
+    or type(data.Players) ~= "table" then
+
+        ListingsState.OwnBoothSnapshotStatus =
+            "Booth data missing"
+
+        return ListingsState.OwnBoothSnapshot,
+            ListingsState.OwnBoothSnapshotStatus
+    end
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+
+        ListingsState.OwnBoothSnapshotStatus =
+            "LocalPlayer missing"
+
+        return ListingsState.OwnBoothSnapshot,
+            ListingsState.OwnBoothSnapshotStatus
+    end
+
+    local localUserId =
+        tonumber(player.UserId)
+
+    local ownOwnerKey =
+        nil
+
+    for _, boothData in pairs(data.Booths) do
+
+        local owner =
+            boothData
+            and boothData.Owner
+
+        if owner then
+
+            local ownerUserId =
+                tonumber(
+                    tostring(owner):match("_(%d+)$")
+                )
+
+            if ownerUserId == localUserId then
+
+                ownOwnerKey =
+                    owner
+
+                break
+            end
+        end
+    end
+
+    if not ownOwnerKey then
+
+        ListingsState.OwnBoothSnapshotStatus =
+            "Own booth not found"
+
+        return ListingsState.OwnBoothSnapshot,
+            ListingsState.OwnBoothSnapshotStatus
+    end
+
+    local playerData =
+        data.Players[ownOwnerKey]
+
+    if type(playerData) ~= "table" then
+
+        ListingsState.OwnBoothSnapshotStatus =
+            "Own booth data missing"
+
+        return ListingsState.OwnBoothSnapshot,
+            ListingsState.OwnBoothSnapshotStatus
+    end
+
+    local listings =
+        playerData.Listings
+
+    local items =
+        playerData.Items
+
+    if type(listings) ~= "table"
+    or type(items) ~= "table" then
+
+        ListingsState.OwnBoothSnapshotStatus =
+            "No active listings"
+
+        ListingsState.OwnBoothSnapshotLastRefresh =
+            os.clock()
+
+        return ListingsState.OwnBoothSnapshot,
+            ListingsState.OwnBoothSnapshotStatus
+    end
+
+    for listingUid, listingData in pairs(listings) do
+
+        if type(listingData) ~= "table" then
+            continue
+        end
+
+        local itemId =
+            listingData.ItemId
+
+        if not itemId then
+            continue
+        end
+
+        local itemData =
+            items[itemId]
+
+        if type(itemData) ~= "table" then
+            continue
+        end
+
+        local petData =
+            itemData.PetData
+
+        local petName =
+            tostring(
+                itemData.PetType
+                or "Unknown"
+            )
+
+        local price =
+            tonumber(listingData.Price)
+            or 0
+
+        local baseWeight =
+            type(petData) == "table"
+            and tonumber(petData.BaseWeight)
+            or nil
+
+        local displayWeight =
+            baseWeight
+            and ResolveDisplayedWeight(baseWeight)
+            or nil
+
+        local age =
+            type(petData) == "table"
+            and (
+                tonumber(petData.Level)
+                or tonumber(petData.Age)
+            )
+            or nil
+
+        local mutationText =
+    ResolveBoothListingMutationText(
+        petData,
+        itemData
+    )
+
+        table.insert(
+            ListingsState.OwnBoothSnapshot,
+            {
+                ListingUID =
+                    tostring(listingUid),
+
+                UUID =
+                    tostring(itemId),
+
+                PetName =
+                    petName,
+
+                MutationText =
+                    mutationText,
+
+                Price =
+                    price,
+
+                Age =
+                    age,
+
+                BaseWeight =
+                    baseWeight,
+
+                DisplayWeight =
+                    displayWeight,
+            }
+        )
+    end
+
+    table.sort(
+        ListingsState.OwnBoothSnapshot,
+        function(a, b)
+
+            local aPrice =
+                tonumber(a.Price)
+                or 0
+
+            local bPrice =
+                tonumber(b.Price)
+                or 0
+
+            if aPrice ~= bPrice then
+                return aPrice > bPrice
+            end
+
+            return tostring(a.PetName) < tostring(b.PetName)
+        end
+    )
+
+    ListingsState.OwnBoothSnapshotLastRefresh =
+        os.clock()
+
+    ListingsState.OwnBoothSnapshotStatus =
+        "Synced"
+
+    return ListingsState.OwnBoothSnapshot,
+        ListingsState.OwnBoothSnapshotStatus
+end
+
+function RefreshOwnBoothListingSnapshotThrottled()
+
+    if type(ListingsState) ~= "table" then
+        return
+    end
+
+    local lastRefresh =
+        SafeNumber(
+            ListingsState.OwnBoothSnapshotLastRefresh,
+            0
+        )
+
+    if os.clock() - lastRefresh < 3 then
+        return
+    end
+
+    BuildOwnBoothListingSnapshot(false)
+end
+
+--==================================================
+-- LISTINGS: REMOVE OWN BOOTH LISTINGS
+-- RemoveListing confirmed by console:
+-- RemoveListing:InvokeServer(listingUID)
+--==================================================
+
+function ClearAutoListRuntimeQueuesForRemoval()
+
+    if type(ListingsState) ~= "table" then
+        return
+    end
+
+    ListingsState.ListingQueue =
+        ListingsState.ListingQueue
+        or {}
+
+    ListingsState.QueuedUUIDs =
+        ListingsState.QueuedUUIDs
+        or {}
+
+    ListingsState.PendingUUIDs =
+        ListingsState.PendingUUIDs
+        or {}
+
+    table.clear(ListingsState.ListingQueue)
+    table.clear(ListingsState.QueuedUUIDs)
+
+    ListingsState.ActiveCreateUUID =
+        nil
+
+    ListingsState.ActiveCreateStartedAt =
+        0
+
+    ListingsState.Busy =
+        false
+
+    ListingsState.NoWorkSleepUntil =
+        os.clock() + 5
+end
+
+function PauseAutoListForBoothRemoval(reason)
+
+    if type(ListingsState) ~= "table" then
+        return
+    end
+
+    ListingsState.Enabled =
+        false
+
+    ListingsState.VisualTagsEnabled =
+        false
+
+    ListingsState.Status =
+        tostring(reason or "Booth removal paused AutoList")
+
+    ClearAutoListRuntimeQueuesForRemoval()
+
+    if Library
+and Library.Options then
+
+    local autoListOption =
+        Library.Options.EnableAutoList
+        or Library.Options.StartAutoList
+
+    if autoListOption
+    and type(autoListOption.SetValue) == "function" then
+
+        pcall(function()
+            autoListOption:SetValue(false)
+        end)
+    end
+end
+
+    if type(ListingsStatusRefresh) == "function" then
+        pcall(ListingsStatusRefresh)
+    end
+end
+
+function RemoveOwnBoothListingByUID(listingUID, item)
+
+    listingUID =
+        tostring(listingUID or "")
+
+    if listingUID == "" then
+        return false, "Missing listing UID"
+    end
+
+    if ScriptState
+    and ScriptState.ForceStopped then
+        return false, "Force stopped"
+    end
+
+    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+        return false, "Not in Trade World"
+    end
+
+    local remote =
+        GetRemoveListingRemote()
+
+    if not remote then
+        return false, "RemoveListing remote missing"
+    end
+
+    local ok, result =
+        pcall(function()
+            return remote:InvokeServer(listingUID)
+        end)
+
+    if not ok then
+        return false, tostring(result)
+    end
+
+    if result == false then
+        return false, "Server returned false"
+    end
+
+    if type(item) == "table" then
+
+        local uuid =
+            tostring(item.UUID or "")
+
+        if uuid ~= "" then
+
+            ListingsState.OwnListedUUIDs =
+                ListingsState.OwnListedUUIDs
+                or {}
+
+            ListingsState.ListedUUIDs =
+                ListingsState.ListedUUIDs
+                or {}
+
+            ListingsState.PendingUUIDs =
+                ListingsState.PendingUUIDs
+                or {}
+
+            ListingsState.OwnListedUUIDs[uuid] =
+                nil
+
+            ListingsState.ListedUUIDs[uuid] =
+                nil
+
+            -- Short deferral so AutoList does not instantly relist
+            -- before the user sees the booth refresh.
+            MarkListingUUIDPending(
+                uuid,
+                30
+            )
+        end
+    end
+
+    print(
+        "[LISTINGS] Removed booth listing:",
+        tostring(listingUID),
+        "|",
+        item
+        and tostring(item.PetName or "Unknown")
+        or "Unknown"
+    )
+
+    return true, result
+end
+
+function GetOwnBoothSnapshotAbsoluteIndex(pageIndex)
+
+    pageIndex =
+        math.max(
+            1,
+            math.floor(
+                SafeNumber(pageIndex, 1)
+            )
+        )
+
+    local page =
+        math.max(
+            1,
+            math.floor(
+                SafeNumber(
+                    ListingsState.OwnBoothSnapshotPage,
+                    1
+                )
+            )
+        )
+
+    local perPage =
+        math.max(
+            1,
+            math.floor(
+                SafeNumber(
+                    ListingsState.OwnBoothSnapshotPerPage,
+                    7
+                )
+            )
+        )
+
+    return ((page - 1) * perPage) + pageIndex
+end
+
+function RemoveOwnBoothSnapshotPageIndex(pageIndex)
+
+    if type(ListingsState) ~= "table" then
+        return false, "ListingsState missing"
+    end
+
+    BuildOwnBoothListingSnapshot(true)
+
+    local absoluteIndex =
+        GetOwnBoothSnapshotAbsoluteIndex(pageIndex)
+
+    local item =
+        ListingsState.OwnBoothSnapshot
+        and ListingsState.OwnBoothSnapshot[absoluteIndex]
+
+    if type(item) ~= "table" then
+        return false, "No listing at page index " .. tostring(pageIndex)
+    end
+
+    local listingUID =
+        tostring(item.ListingUID or "")
+
+    if listingUID == "" then
+        return false, "Selected listing has no ListingUID"
+    end
+
+    local ok, reason =
+        RemoveOwnBoothListingByUID(
+            listingUID,
+            item
+        )
+
+    task.wait(0.35)
+
+    BuildOwnBoothListingSnapshot(true)
+    RefreshOwnListedUUIDs(true)
+
+    if type(ListingsStatusRefresh) == "function" then
+        pcall(ListingsStatusRefresh)
+    end
+
+    return ok, reason
+end
+
+function RemoveAllOwnBoothListings()
+
+    if type(ListingsState) ~= "table" then
+        return 0, 0, "ListingsState missing"
+    end
+
+    PauseAutoListForBoothRemoval(
+        "Removing all booth listings"
+    )
+
+    local removed =
+        0
+
+    local failed =
+        0
+
+    local seenListingUIDs =
+        {}
+
+    local maxPasses =
+        8
+
+    for pass = 1, maxPasses do
+
+        local snapshot =
+            BuildOwnBoothListingSnapshot(true)
+
+        if type(snapshot) ~= "table"
+        or #snapshot <= 0 then
+
+            ListingsState.Status =
+                "Booth empty"
+
+            break
+        end
+
+        print(
+            "[LISTINGS] Remove all pass:",
+            tostring(pass),
+            "| found:",
+            tostring(#snapshot)
+        )
+
+        local removedThisPass =
+            0
+
+        for _, item in ipairs(snapshot) do
+
+            if type(item) ~= "table" then
+                failed += 1
+                continue
+            end
+
+            local listingUID =
+                tostring(item.ListingUID or "")
+
+            if listingUID == "" then
+                failed += 1
+                continue
+            end
+
+            -- Prevent retrying the exact same listing forever if booth data lags.
+            if seenListingUIDs[listingUID] then
+                continue
+            end
+
+            seenListingUIDs[listingUID] =
+                true
+
+            local ok, reason =
+                RemoveOwnBoothListingByUID(
+                    listingUID,
+                    item
+                )
+
+            if ok then
+
+                removed += 1
+                removedThisPass += 1
+
+            else
+
+                failed += 1
+
+                warn(
+                    "[LISTINGS] Remove all failed:",
+                    tostring(listingUID),
+                    tostring(reason)
+                )
+            end
+
+            task.wait(0.18)
+        end
+
+        task.wait(0.75)
+
+        BuildOwnBoothListingSnapshot(true)
+        RefreshOwnListedUUIDs(true)
+
+        if type(ListingsStatusRefresh) == "function" then
+            pcall(ListingsStatusRefresh)
+        end
+
+        -- If this pass could not remove anything new, stop instead of looping forever.
+        if removedThisPass <= 0 then
+            break
+        end
+    end
+
+    task.wait(0.50)
+
+    local finalSnapshot =
+        BuildOwnBoothListingSnapshot(true)
+
+    RefreshOwnListedUUIDs(true)
+
+    local remaining =
+        type(finalSnapshot) == "table"
+        and #finalSnapshot
+        or 0
+
+    if remaining > 0 then
+
+        ListingsState.Status =
+            "Remove all partial: "
+            .. tostring(remaining)
+            .. " remaining"
+
+    else
+
+        ListingsState.Status =
+            "Removed all booth listings"
+    end
+
+    ListingsState.OwnBoothSnapshotPage =
+        1
+
+    if type(ListingsStatusRefresh) == "function" then
+        pcall(ListingsStatusRefresh)
+    end
+
+    return removed, failed, remaining > 0
+        and ("Remaining: " .. tostring(remaining))
+        or "Done"
+end
+--==================================================
+-- LISTINGS: PRICE SAFETY
+--==================================================
+
+function SyncListingRequiredFlagsFromValues()
+
+    if type(ListingsState) ~= "table" then
+        return
+    end
+
+    local price =
+        tonumber(ListingsState.Price)
+
+    ListingsState.PriceWasEntered =
+        price ~= nil
+        and price > 0
+
+    if ListingsState.PriceWasEntered then
+        ListingsState.Price =
+            math.floor(price)
+    end
+
+    local minWeight =
+        tonumber(ListingsState.MinWeight)
+
+    ListingsState.MinWeightWasEntered =
+        minWeight ~= nil
+        and minWeight >= 0
+
+    if ListingsState.MinWeightWasEntered then
+        ListingsState.MinWeight =
+            minWeight
+    end
+
+    local maxWeight =
+        tonumber(ListingsState.MaxWeight)
+
+    ListingsState.MaxWeightWasEntered =
+        maxWeight ~= nil
+        and maxWeight >= 0
+
+    if ListingsState.MaxWeightWasEntered then
+        ListingsState.MaxWeight =
+            maxWeight
+    end
+end
+
+function IsListingPriceAllowed()
+
+    if type(ListingsState) ~= "table" then
+        return false, "ListingsState missing"
+    end
+
+    SyncListingRequiredFlagsFromValues()
+
+    local price =
+        tonumber(ListingsState.Price)
+
+    if not price
+    or price <= 0 then
+        return false, "Price required"
+    end
+
+    ListingsState.LowPriceThreshold =
+        tonumber(ListingsState.LowPriceThreshold)
+        or 10
+
+    if price < ListingsState.LowPriceThreshold
+    and ListingsState.AllowLowPriceListings ~= true then
+        return false, "Low price blocked"
+    end
+
+    return true, "OK"
+end
+
+function IsListingConfigurationAllowed()
+
+    if type(ListingsState) ~= "table" then
+        return false, "ListingsState missing"
+    end
+
+    -- Multi-filter mode:
+    -- If filters exist, at least one valid active filter is enough.
+    if CountListingFilters() > 0 then
+
+        local activeValid =
+            0
+
+        for _, filter in ipairs(EnsureListingFilters()) do
+
+            if filter.Enabled ~= false then
+
+                local allowed =
+                    IsListingFilterAllowed(filter)
+
+                if allowed then
+                    activeValid += 1
+                end
+            end
+        end
+
+        if activeValid <= 0 then
+            return false, "No valid listing filters"
+        end
+
+        return true, "OK"
+    end
+
+    -- Legacy single-filter mode.
+    local filter =
+        BuildCurrentListingFilter()
+
+    return IsListingFilterAllowed(filter)
+end
+
+--==================================================
+-- LISTINGS: FILTER / PREVIEW
+--==================================================
+--==================================================
+-- LISTINGS: SPEED CONFIG
+--==================================================
+
+function ResolveListingSpeedConfig(mode)
+
+    mode =
+        tostring(mode or "Adaptive")
+
+    --==================================================
+    -- Adaptive:
+    -- Starts at 5s because console testing confirmed:
+    -- 1s / 2s / 3s / 4s = server rejected
+    -- 5s / 6s = accepted
+    --==================================================
+
+    if mode == "Adaptive" then
+        return {
+            ScanInterval = 1,
+            CreateCooldown = 5,
+            MaxQueuePerPass = 2,
+            Adaptive = true,
+        }
+    end
+
+    if mode == "Safe" then
+        return {
+            ScanInterval = 4,
+            CreateCooldown = 7,
+            MaxQueuePerPass = 1,
+            Adaptive = false,
+        }
+    end
+
+    if mode == "Balanced" then
+        return {
+            ScanInterval = 2,
+            CreateCooldown = 5,
+            MaxQueuePerPass = 2,
+            Adaptive = false,
+        }
+    end
+
+    if mode == "Fast" then
+        return {
+            ScanInterval = 1,
+            CreateCooldown = 5,
+            MaxQueuePerPass = 3,
+            Adaptive = false,
+        }
+    end
+
+    if mode == "Aggressive" then
+        return {
+            ScanInterval = 0.5,
+            CreateCooldown = 5,
+            MaxQueuePerPass = 5,
+            Adaptive = false,
+        }
+    end
+
+    return {
+        ScanInterval = 1,
+        CreateCooldown = 5,
+        MaxQueuePerPass = 2,
+        Adaptive = true,
+    }
+end
+
+function SetListingSpeedMode(mode)
+
+    mode =
+        tostring(mode or "Adaptive")
+
+    local allowed = {
+        Adaptive = true,
+        Safe = true,
+        Balanced = true,
+        Fast = true,
+        Aggressive = true,
+    }
+
+    if not allowed[mode] then
+        mode =
+            "Adaptive"
+    end
+
+    local config =
+        ResolveListingSpeedConfig(mode)
+
+    ListingsState.ListingSpeedMode =
+        mode
+
+    ListingsState.ScanInterval =
+        config.ScanInterval
+
+    ListingsState.CreateCooldown =
+        config.CreateCooldown
+
+    ListingsState.MaxQueuePerPass =
+        config.MaxQueuePerPass
+
+    if config.Adaptive == true then
+
+        ListingsState.AdaptiveCreateCooldown =
+            math.clamp(
+                SafeNumber(
+                    ListingsState.AdaptiveCreateCooldown,
+                    config.CreateCooldown
+                ),
+                SafeNumber(ListingsState.AdaptiveMinCooldown, 5),
+                SafeNumber(ListingsState.AdaptiveMaxCooldown, 10)
+            )
+
+    else
+
+        ListingsState.AdaptiveCreateCooldown =
+            config.CreateCooldown
+
+        ListingsState.AdaptiveSuccessStreak =
+            0
+    end
+
+    return config
+end
+
+function IsAdaptiveListingMode()
+
+    return tostring(
+        ListingsState
+        and ListingsState.ListingSpeedMode
+        or ""
+    ) == "Adaptive"
+end
+
+function ResolveListingCreateCooldown()
+
+    if not ListingsState then
+        return 5
+    end
+
+    if IsAdaptiveListingMode() then
+
+        return math.clamp(
+            SafeNumber(
+                ListingsState.AdaptiveCreateCooldown,
+                5
+            ),
+            SafeNumber(
+                ListingsState.AdaptiveMinCooldown,
+                5
+            ),
+            SafeNumber(
+                ListingsState.AdaptiveMaxCooldown,
+                10
+            )
+        )
+    end
+
+    return math.max(
+        SafeNumber(
+            ListingsState.CreateCooldown,
+            5
+        ),
+        5
+    )
+end
+
+function AdaptiveListingRegisterCreateSuccess()
+
+    if not IsAdaptiveListingMode() then
+        return
+    end
+
+    ListingsState.AdaptiveSuccessStreak =
+        SafeNumber(
+            ListingsState.AdaptiveSuccessStreak,
+            0
+        ) + 1
+
+    -- Keep 5s as the proven safe floor.
+    -- After several clean successes, gently return toward 5s.
+    if ListingsState.AdaptiveSuccessStreak >= 3 then
+
+        ListingsState.AdaptiveCreateCooldown =
+            math.max(
+                SafeNumber(
+                    ListingsState.AdaptiveMinCooldown,
+                    5
+                ),
+                SafeNumber(
+                    ListingsState.AdaptiveCreateCooldown,
+                    5
+                ) - 0.25
+            )
+
+        ListingsState.AdaptiveSuccessStreak =
+            0
+
+        print(
+            "[LISTINGS ADAPTIVE] Success tune | cooldown:",
+            tostring(ListingsState.AdaptiveCreateCooldown)
+        )
+    end
+end
+
+function AdaptiveListingRegisterCreateWait(reason)
+
+    if not ListingsState then
+        return
+    end
+
+    ListingsState.AdaptiveLastWaitSignal =
+        os.clock()
+
+    ListingsState.AdaptiveSuccessStreak =
+        0
+
+    if IsAdaptiveListingMode() then
+
+        ListingsState.AdaptiveCreateCooldown =
+            math.min(
+                SafeNumber(
+                    ListingsState.AdaptiveMaxCooldown,
+                    10
+                ),
+                SafeNumber(
+                    ListingsState.AdaptiveCreateCooldown,
+                    5
+                ) + 1
+            )
+
+        print(
+            "[LISTINGS ADAPTIVE] Server wait detected | cooldown:",
+            tostring(ListingsState.AdaptiveCreateCooldown),
+            "| reason:",
+            tostring(reason or "unknown")
+        )
+    end
+end
+--==================================================
+-- LISTINGS: MULTI-FILTER ENGINE
+--==================================================
+
+function NormalizeListingFilterMutation(value)
+
+    value =
+        tostring(value or "---")
+
+    if value == ""
+    or value == "Normal"
+    or value == "Any"
+    or value == "All" then
+        return "---"
+    end
+
+    if value == "All Except"
+    or value == "AllExcept" then
+        return "All Except"
+    end
+
+    return value
+end
+
+function NormalizeListingPetMutationValue(value)
+
+    value =
+        tostring(value or "---")
+
+    if value == ""
+    or value == "nil"
+    or value == "Normal"
+    or value == "Unknown" then
+        return "---"
+    end
+
+    return value
+end
+
+function CloneListingMutationMap(source)
+
+    local output =
+        {}
+
+    if type(source) ~= "table" then
+        return output
+    end
+
+    for mutationName, enabled in pairs(source) do
+
+        if enabled == true then
+
+            mutationName =
+                NormalizeListingFilterMutation(
+                    mutationName
+                )
+
+            if mutationName ~= ""
+            and mutationName ~= "---"
+            and mutationName ~= "All Except" then
+                output[mutationName] =
+                    true
+            end
+        end
+    end
+
+    return output
+end
+
+function BuildListingMutationMapFromDropdownValue(value)
+
+    local output =
+        {}
+
+    if type(value) ~= "table" then
+        return output
+    end
+
+    for key, selected in pairs(value) do
+
+        local mutationName =
+            nil
+
+        -- Common Obsidian multi-dropdown shape:
+        -- { Golden = true, Rainbow = true }
+        if selected == true then
+            mutationName =
+                key
+
+        -- Fallback array shape:
+        -- { "Golden", "Rainbow" }
+        elseif type(selected) == "string" then
+            mutationName =
+                selected
+        end
+
+        mutationName =
+            NormalizeListingFilterMutation(
+                mutationName
+            )
+
+        if mutationName ~= ""
+        and mutationName ~= "---"
+        and mutationName ~= "All Except" then
+            output[mutationName] =
+                true
+        end
+    end
+
+    return output
+end
+
+function SerializeListingMutationMap(source)
+
+    local output =
+        {}
+
+    source =
+        CloneListingMutationMap(source)
+
+    for mutationName, enabled in pairs(source) do
+
+        if enabled == true then
+            table.insert(
+                output,
+                tostring(mutationName)
+            )
+        end
+    end
+
+    table.sort(output)
+
+    return output
+end
+
+function DeserializeListingMutationMap(source)
+
+    local output =
+        {}
+
+    if type(source) ~= "table" then
+        return output
+    end
+
+    for key, value in pairs(source) do
+
+        local mutationName =
+            nil
+
+        if value == true then
+            mutationName =
+                key
+
+        elseif type(value) == "string" then
+            mutationName =
+                value
+        end
+
+        mutationName =
+            NormalizeListingFilterMutation(
+                mutationName
+            )
+
+        if mutationName ~= ""
+        and mutationName ~= "---"
+        and mutationName ~= "All Except" then
+            output[mutationName] =
+                true
+        end
+    end
+
+    return output
+end
+
+function CountListingMutationMap(source)
+
+    local count =
+        0
+
+    if type(source) ~= "table" then
+        return 0
+    end
+
+    for _, enabled in pairs(source) do
+        if enabled == true then
+            count += 1
+        end
+    end
+
+    return count
+end
+
+function FormatExcludedListingMutations(source)
+
+    local names =
+        SerializeListingMutationMap(source)
+
+    if #names <= 0 then
+        return "None"
+    end
+
+    if #names <= 3 then
+        return table.concat(names, ", ")
+    end
+
+    return tostring(#names) .. " blocked"
+end
+
+function EnsureListingFilters()
+
+    ListingsState.ListingFilters =
+        ListingsState.ListingFilters
+        or {}
+
+    ListingsState.ListingFilterUI =
+        ListingsState.ListingFilterUI
+        or {
+            Page = 1,
+            PerPage = 8,
+        }
+
+    return ListingsState.ListingFilters
+end
+
+function CountListingFilters()
+
+    local filters =
+        EnsureListingFilters()
+
+    return #filters
+end
+
+function CountActiveListingFilters()
+
+    local filters =
+        EnsureListingFilters()
+
+    local count =
+        0
+
+    for _, filter in ipairs(filters) do
+
+        if type(filter) == "table"
+        and filter.Enabled ~= false then
+            count += 1
+        end
+    end
+
+    return count
+end
+
+function IsListingPriceAllowedValue(price)
+
+    price =
+        tonumber(price)
+
+    if not price
+    or price <= 0 then
+        return false, "Price required"
+    end
+
+    ListingsState.LowPriceThreshold =
+        tonumber(ListingsState.LowPriceThreshold)
+        or 10
+
+    if price < ListingsState.LowPriceThreshold
+    and ListingsState.AllowLowPriceListings ~= true then
+        return false, "Low price blocked"
+    end
+
+    return true, "OK"
+end
+
+function IsListingFilterAllowed(filter)
+
+    if type(filter) ~= "table" then
+        return false, "Filter missing"
+    end
+
+    local petName =
+        tostring(filter.Pet or "")
+
+    if petName == "" then
+        return false, "Pet required"
+    end
+
+    local minLevel =
+    tonumber(filter.MinLevel)
+    or 1
+
+local maxLevel =
+    tonumber(filter.MaxLevel)
+    or 100
+
+if minLevel < 1 then
+    return false, "Min Level required"
+end
+
+if maxLevel < minLevel then
+    return false, "Max Level must be >= Min Level"
+end
+
+    local minWeight =
+        tonumber(filter.MinWeight)
+
+    local maxWeight =
+        tonumber(filter.MaxWeight)
+
+    if not minWeight
+    or minWeight < 0 then
+        return false, "Min BaseWeight required"
+    end
+
+    if not maxWeight
+    or maxWeight < 0 then
+        return false, "Max BaseWeight required"
+    end
+
+    if maxWeight < minWeight then
+        return false, "Max must be >= Min"
+    end
+
+    local priceAllowed, priceReason =
+        IsListingPriceAllowedValue(
+            filter.Price
+        )
+
+    if not priceAllowed then
+        return false, priceReason
+    end
+
+    return true, "OK"
+end
+
+function BuildCurrentListingFilter()
+
+    SyncListingRequiredFlagsFromValues()
+
+    return {
+        Pet =
+            tostring(ListingsState.SelectedPet or ""),
+
+        Mutation =
+    NormalizeListingFilterMutation(
+        ListingsState.SelectedMutation
+    ),
+
+ExcludedMutations =
+    CloneListingMutationMap(
+        ListingsState.SelectedExcludedMutations
+    ),
+
+MinLevel =
+    tonumber(ListingsState.MinLevel)
+    or 1,
+
+MaxLevel =
+    tonumber(ListingsState.MaxLevel)
+    or 100,
+
+MinWeight =
+    tonumber(ListingsState.MinWeight),
+
+        MaxWeight =
+            tonumber(ListingsState.MaxWeight),
+
+        Price =
+            tonumber(ListingsState.Price),
+
+        Enabled =
+            true,
+    }
+end
+
+function GetListingFilterKey(filter)
+
+    if type(filter) ~= "table" then
+        return ""
+    end
+
+    local mutation =
+        NormalizeListingFilterMutation(
+            filter.Mutation
+        )
+
+    local excludedText =
+        ""
+
+    if mutation == "All Except" then
+        excludedText =
+            table.concat(
+                SerializeListingMutationMap(
+                    filter.ExcludedMutations
+                ),
+                ","
+            )
+    end
+
+    return table.concat({
+        tostring(filter.Pet or ""),
+        tostring(mutation),
+        tostring(excludedText),
+        tostring(tonumber(filter.MinLevel) or 1),
+        tostring(tonumber(filter.MaxLevel) or 100),
+        tostring(tonumber(filter.MinWeight) or ""),
+        tostring(tonumber(filter.MaxWeight) or ""),
+        tostring(tonumber(filter.Price) or ""),
+    }, "|")
+end
+
+function AddCurrentListingFilter()
+
+    local filter =
+        BuildCurrentListingFilter()
+
+    local allowed, reason =
+        IsListingFilterAllowed(filter)
+
+    if not allowed then
+
+        ListingsState.Status =
+            reason
+
+        if type(ListingsStatusRefresh) == "function" then
+            ListingsStatusRefresh()
+        end
+
+        HolyNotify(
+            "Filter Blocked",
+            tostring(reason),
+            "shield-alert",
+            4
+        )
+
+        return false, reason
+    end
+
+    local filters =
+        EnsureListingFilters()
+
+    local newKey =
+        GetListingFilterKey(filter)
+
+    for _, existing in ipairs(filters) do
+
+        if GetListingFilterKey(existing) == newKey then
+
+            ListingsState.Status =
+                "Filter already exists"
+
+            HolyNotify(
+                "Duplicate Filter",
+                "This listing filter already exists.",
+                "copy-x",
+                3
+            )
+
+            return false, "Duplicate"
+        end
+    end
+
+    table.insert(
+        filters,
+        filter
+    )
+
+    ListingsState.NoWorkSleepUntil =
+        0
+
+    BuildListingPreview()
+    MarkConfigDirty()
+
+    if type(SaveListingFilters) == "function" then
+        SaveListingFilters()
+    end
+
+    if type(RefreshListingFilterUI) == "function" then
+        RefreshListingFilterUI()
+    end
+
+    if type(ListingsStatusRefresh) == "function" then
+        ListingsStatusRefresh()
+    end
+
+local mutationText =
+    NormalizeListingFilterMutation(
+        filter.Mutation
+    )
+
+if mutationText == "All Except" then
+
+    mutationText =
+        "except "
+        .. FormatExcludedListingMutations(
+            filter.ExcludedMutations
+        )
+
+elseif mutationText == "---" then
+
+    mutationText =
+        "All mutations"
+end
+
+HolyNotify(
+    "Listing Filter Added",
+    tostring(filter.Pet)
+        .. " | "
+        .. tostring(mutationText)
+        .. " | Lv "
+        .. tostring(filter.MinLevel or 1)
+        .. "-"
+        .. tostring(filter.MaxLevel or 100)
+        .. " | BW "
+        .. tostring(filter.MinWeight or "?")
+        .. "-"
+        .. tostring(filter.MaxWeight or "?")
+        .. " | "
+        .. tostring(filter.Price or "?")
+        .. "T",
+    "list-plus",
+    4
+)
+
+    return true, filter
+end
+
+function ClearListingFilters()
+
+    table.clear(
+        EnsureListingFilters()
+    )
+
+    ListingsState.ListingFilterUI.Page =
+        1
+
+    ListingsState.NoWorkSleepUntil =
+        0
+
+    BuildListingPreview()
+    MarkConfigDirty()
+
+    if type(SaveListingFilters) == "function" then
+        SaveListingFilters()
+    end
+
+    if type(RefreshListingFilterUI) == "function" then
+        RefreshListingFilterUI()
+    end
+
+    if type(ListingsStatusRefresh) == "function" then
+        ListingsStatusRefresh()
+    end
+
+    HolyNotify(
+        "Listing Filters Cleared",
+        "All listing filters were removed.",
+        "trash",
+        3
+    )
+end
+
+function RemoveListingFilterAt(index)
+
+    local filters =
+        EnsureListingFilters()
+
+    index =
+        tonumber(index)
+
+    if not index
+    or not filters[index] then
+        return false
+    end
+
+    table.remove(
+        filters,
+        index
+    )
+
+    local maxPage =
+        math.max(
+            1,
+            math.ceil(
+                #filters
+                / SafeNumber(
+                    ListingsState.ListingFilterUI.PerPage,
+                    8
+                )
+            )
+        )
+
+    ListingsState.ListingFilterUI.Page =
+        math.clamp(
+            SafeNumber(
+                ListingsState.ListingFilterUI.Page,
+                1
+            ),
+            1,
+            maxPage
+        )
+
+    BuildListingPreview()
+    MarkConfigDirty()
+
+    if type(SaveListingFilters) == "function" then
+        SaveListingFilters()
+    end
+
+    if type(RefreshListingFilterUI) == "function" then
+        RefreshListingFilterUI()
+    end
+
+    if type(ListingsStatusRefresh) == "function" then
+        ListingsStatusRefresh()
+    end
+
+    return true
+end
+--==================================================
+-- LISTINGS UI: FILTER DISPLAY FORMATTERS
+-- UI-only. Does not affect matching/listing logic.
+--==================================================
+
+function FormatListingTokenAmount(value)
+
+    local number =
+        tonumber(value)
+        or 0
+
+    number =
+        math.floor(number)
+
+    local text =
+        tostring(number)
+
+    local left, num, right =
+        string.match(
+            text,
+            "^([^%d]*%d)(%d*)(.-)$"
+        )
+
+    if not left then
+        return text .. " tokens"
+    end
+
+    return left
+        .. (
+            num:reverse()
+                :gsub("(%d%d%d)", "%1,")
+                :reverse()
+        )
+        .. right
+        .. " tokens"
+end
+
+function FormatListingNumber(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "?"
+    end
+
+    if number % 1 == 0 then
+        return tostring(number)
+    end
+
+    return string.format("%.2f", number)
+        :gsub("0+$", "")
+        :gsub("%.$", "")
+end
+
+function FormatListingMutationDisplay(value)
+
+    local mutation =
+        NormalizeListingFilterMutation(
+            value
+        )
+
+    if mutation == "---" then
+        return "🧬 Any"
+    end
+
+    return "🧬 " .. tostring(mutation)
+end
+
+function FormatListingFilterLine(index, filter)
+
+    if type(filter) ~= "table" then
+        return string.format(
+            "%02d -",
+            tonumber(index) or 0
+        )
+    end
+
+    local function FormatShortNumber(value)
+
+        local number =
+            tonumber(value)
+
+        if not number then
+            return "?"
+        end
+
+        if number % 1 == 0 then
+            return tostring(number)
+        end
+
+        return string.format("%.2f", number)
+            :gsub("0+$", "")
+            :gsub("%.$", "")
+    end
+
+    local function FormatCompactTokens(value)
+
+        local number =
+            tonumber(value)
+            or 0
+
+        number =
+            math.floor(number)
+
+        if number >= 1000000 then
+
+            return string.format(
+                "%.1fm",
+                number / 1000000
+            ):gsub("%.0m", "m")
+        end
+
+        if number >= 1000 then
+
+            return string.format(
+                "%.1fk",
+                number / 1000
+            ):gsub("%.0k", "k")
+        end
+
+        return tostring(number)
+    end
+
+    local function ShortenText(text, maxLength)
+
+        text =
+            tostring(text or "")
+
+        maxLength =
+            tonumber(maxLength)
+            or 18
+
+        if #text <= maxLength then
+            return text
+        end
+
+        return text:sub(1, maxLength - 1) .. "…"
+    end
+
+    local mutation =
+    NormalizeListingFilterMutation(
+        filter.Mutation
+    )
+
+local petName =
+    tostring(filter.Pet or "?")
+
+local nameText =
+    petName
+
+if mutation == "All Except" then
+
+    nameText =
+        petName
+        .. " | except "
+        .. FormatExcludedListingMutations(
+            filter.ExcludedMutations
+        )
+
+elseif mutation ~= "---" then
+
+    nameText =
+        tostring(mutation)
+        .. " "
+        .. petName
+end
+
+    nameText =
+        ShortenText(
+            nameText,
+            22
+        )
+
+    local minLevel =
+        tonumber(filter.MinLevel)
+        or 1
+
+    local maxLevel =
+        tonumber(filter.MaxLevel)
+        or 100
+
+    local minWeight =
+        tonumber(filter.MinWeight)
+        or 0
+
+    local maxWeight =
+        tonumber(filter.MaxWeight)
+        or 0
+
+    local price =
+        tonumber(filter.Price)
+        or 0
+
+    return string.format(
+        "%02d %s | L%s-%s | BW %s-%s | %s",
+        tonumber(index) or 0,
+        nameText,
+        FormatShortNumber(minLevel),
+        FormatShortNumber(maxLevel),
+        FormatShortNumber(minWeight),
+        FormatShortNumber(maxWeight),
+        FormatCompactTokens(price)
+    )
+end
+
+function ListingPetMatchesFilter(pet, filter)
+
+    if type(pet) ~= "table"
+    or type(filter) ~= "table" then
+        return false
+    end
+
+    if filter.Enabled == false then
+        return false
+    end
+
+    --==================================================
+    -- PET IDENTITY
+    -- Source of truth is pet.PetName, which comes from
+    -- the tool attribute "f" / resolved true pet identity.
+    --
+    -- IMPORTANT:
+    -- Never use visible-name suffix matching here.
+    --
+    -- Safe examples:
+    -- Tiny Peryton -> PetName = Peryton
+    -- Everchanted Gilded Choc Peryton -> PetName = Gilded Choc Peryton
+    -- Rainbow Rainbow Dilophosaurus -> PetName = Rainbow Dilophosaurus
+    -- Rainbow Dilophosaurus mutation on normal Dilophosaurus -> PetName = Dilophosaurus
+    --==================================================
+
+    local petName =
+        tostring(pet.PetName or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    local wantedPet =
+        tostring(filter.Pet or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    local petMutation =
+        NormalizeListingPetMutationValue(
+            pet.Mutation
+        )
+
+    if petName == ""
+    or wantedPet == "" then
+        return false
+    end
+
+    if string.lower(petName) ~= string.lower(wantedPet) then
+        return false
+    end
+
+    --==================================================
+    -- MUTATION
+    -- "---" / "All" means any mutation.
+    -- "All Except" means any mutation except selected blocked ones.
+    --==================================================
+
+    local wantedMutation =
+        NormalizeListingFilterMutation(
+            filter.Mutation
+        )
+
+    if wantedMutation == "All Except" then
+
+        local excluded =
+            filter.ExcludedMutations
+
+        if type(excluded) == "table"
+        and excluded[petMutation] == true then
+            return false
+        end
+
+    elseif wantedMutation ~= "---"
+    and petMutation ~= wantedMutation then
+
+        return false
+    end
+
+    --==================================================
+    -- LEVEL / AGE
+    -- Fully controlled by filter.
+    -- No hidden age cap.
+    --==================================================
+
+    local petLevel =
+        tonumber(pet.Age)
+        or tonumber(pet.Level)
+
+    local minLevel =
+        tonumber(filter.MinLevel)
+        or 1
+
+    local maxLevel =
+        tonumber(filter.MaxLevel)
+        or 100
+
+    if not petLevel then
+
+        warn(
+            "[LISTINGS] SKIP | level missing:",
+            tostring(pet.ToolName),
+            "| BaseWeight:",
+            tostring(pet.BaseWeight),
+            "| DisplayKG:",
+            tostring(pet.Weight),
+            "| UUID:",
+            tostring(pet.UUID)
+        )
+
+        return false
+    end
+
+    if petLevel < minLevel
+    or petLevel > maxLevel then
+        return false
+    end
+
+    --==================================================
+    -- BASEWEIGHT
+    -- Fully controlled by filter.
+    -- No hidden BaseWeight cap.
+    --==================================================
+
+    local baseWeight =
+        tonumber(pet.BaseWeight)
+
+    local minWeight =
+        tonumber(filter.MinWeight)
+
+    local maxWeight =
+        tonumber(filter.MaxWeight)
+
+    if not baseWeight
+    or not minWeight
+    or not maxWeight then
+
+        warn(
+            "[LISTINGS] SKIP | baseweight invalid:",
+            tostring(pet.ToolName),
+            "| Level:",
+            tostring(petLevel),
+            "| BaseWeight:",
+            tostring(baseWeight),
+            "| Filter BW:",
+            tostring(minWeight),
+            "-",
+            tostring(maxWeight),
+            "| DisplayKG:",
+            tostring(pet.Weight),
+            "| UUID:",
+            tostring(pet.UUID)
+        )
+
+        return false
+    end
+
+    if maxWeight < minWeight then
+        return false
+    end
+
+    if baseWeight < minWeight
+    or baseWeight > maxWeight then
+        return false
+    end
+
+    return true
+end
+function ResolveListingFilterForPet(pet)
+
+    local filters =
+        EnsureListingFilters()
+
+    if #filters > 0 then
+
+        for _, filter in ipairs(filters) do
+
+            if ListingPetMatchesFilter(pet, filter) then
+                return filter
+            end
+        end
+
+        return nil
+    end
+
+    -- Legacy fallback:
+    -- If no multi-filters exist, use the current single setup values.
+    local legacyFilter =
+        BuildCurrentListingFilter()
+
+    local allowed =
+        IsListingFilterAllowed(legacyFilter)
+
+    if allowed
+    and ListingPetMatchesFilter(pet, legacyFilter) then
+        return legacyFilter
+    end
+
+    return nil
+end
+
+function PetMatchesListingFilter(pet)
+
+    local filter =
+        ResolveListingFilterForPet(pet)
+
+    if not filter then
+        return false
+    end
+
+    return true, filter
+end
+
+function RefreshListingInventorySnapshot()
+
+    if game.PlaceId == TRADING_WORLD_PLACE_ID then
+        RefreshOwnListedUUIDs(true)
+    else
+        RefreshOwnListedUUIDs(false)
+    end
+
+    ListingsState.InventorySnapshot =
+        GetListingInventoryPetSnapshot()
+
+    return ListingsState.InventorySnapshot
+end
+
+function BuildListingPreview()
+
+    ListingsState.ListedUUIDs =
+        ListingsState.ListedUUIDs
+        or {}
+
+    ListingsState.OwnListedUUIDs =
+        ListingsState.OwnListedUUIDs
+        or {}
+
+    ListingsState.OwnListedMetadata =
+        ListingsState.OwnListedMetadata
+        or {}
+
+    ListingsState.FailedUUIDs =
+        ListingsState.FailedUUIDs
+        or {}
+
+    ListingsState.QueuedUUIDs =
+        ListingsState.QueuedUUIDs
+        or {}
+
+    local pets =
+        RefreshListingInventorySnapshot()
+
+    local preview = {
+        Matching = 0,
+        AlreadyListed = 0,
+        Ready = 0,
+        Failed = 0,
+        RuntimeListed = 0,
+        Queued = 0,
+    }
+
+    for _, pet in ipairs(pets) do
+
+        if PetMatchesListingFilter(pet) then
+
+            preview.Matching += 1
+
+            if ListingsState.OwnListedUUIDs[pet.UUID] then
+                preview.AlreadyListed += 1
+
+            elseif IsListingUUIDPending(pet.UUID) then
+    preview.Failed += 1
+
+elseif ListingsState.FailedUUIDs[pet.UUID] then
+    preview.Failed += 1
+
+elseif ListingsState.QueuedUUIDs[pet.UUID] then
+    preview.Queued += 1
+
+else
+    preview.Ready += 1
+end
+        end
+    end
+
+    ListingsState.Preview =
+        preview
+
+    return preview
+end
+
+function PrintListingPreview()
+
+    local preview =
+        BuildListingPreview()
+
+    print("==================================================")
+    print("[LISTINGS PREVIEW]")
+    print("SelectedPet:", tostring(ListingsState.SelectedPet))
+    print("SelectedMutation:", tostring(ListingsState.SelectedMutation))
+    print("MinWeight:", tostring(ListingsState.MinWeight))
+    print("MaxWeight:", tostring(ListingsState.MaxWeight))
+    print("Price:", tostring(ListingsState.Price or "required"))
+    print("Matching:", tostring(preview.Matching))
+    print("Already listed:", tostring(preview.AlreadyListed))
+    print("Runtime listed:", tostring(preview.RuntimeListed))
+    print("Queued:", tostring(preview.Queued))
+    print("Failed:", tostring(preview.Failed))
+    print("Ready to list:", tostring(preview.Ready))
+    print("==================================================")
+end
+
+
+function PrintDetailedListingPreview()
+
+    local pets =
+        RefreshListingInventorySnapshot()
+
+    print("==================================================")
+    print("[LISTINGS DETAILED PREVIEW]")
+
+    local total =
+        0
+
+    local matched =
+        0
+
+    local ready =
+        0
+
+    for _, pet in ipairs(pets) do
+
+        total += 1
+
+        local matches, filter =
+            PetMatchesListingFilter(pet)
+
+        if matches then
+
+            matched += 1
+
+            local reason =
+                "READY"
+
+            if ListingsState.OwnListedUUIDs[pet.UUID] then
+                reason =
+                    "SKIP | already listed in booth"
+
+            elseif ListingsState.ListedUUIDs[pet.UUID] then
+                reason =
+                    "SKIP | runtime listed"
+
+            elseif IsListingUUIDPending(pet.UUID) then
+                reason =
+                    "SKIP | pending sale cooldown"
+
+            elseif ListingsState.FailedUUIDs[pet.UUID] then
+                reason =
+                    "SKIP | failed UUID"
+
+            elseif ListingsState.QueuedUUIDs[pet.UUID] then
+                reason =
+                    "SKIP | already queued"
+
+            else
+                ready += 1
+            end
+
+            print(
+                "[LISTING MATCH]",
+                tostring(reason),
+                "| Pet:",
+                tostring(pet.ToolName or pet.PetName),
+                "| UUID:",
+                tostring(pet.UUID),
+                "| PetName:",
+                tostring(pet.PetName),
+                "| Mutation:",
+                tostring(pet.Mutation),
+                "| Age:",
+                tostring(pet.Age or pet.Level),
+                "| BW:",
+                tostring(pet.BaseWeight),
+                "| Price:",
+                tostring(filter and filter.Price)
+            )
+        end
+    end
+
+    print(
+        "[LISTINGS DETAILED PREVIEW] Total:",
+        tostring(total),
+        "| Matched:",
+        tostring(matched),
+        "| Ready:",
+        tostring(ready)
+    )
+
+    print("==================================================")
+end
+--==================================================
+-- LISTINGS: UNFAVORITE
+--==================================================
+
+function TryUnfavoriteListingPet(pet)
+
+    if ListingsState.AutoUnfavorite ~= true then
+        return true
+    end
+
+    if not pet
+    or not pet.Tool then
+        return false
+    end
+
+    if pet.Tool:GetAttribute("d") ~= true then
+        return true
+    end
+
+    local remote =
+        GetFavoriteRemote()
+
+    if not remote then
+        warn("[LISTINGS] Favorite_Item remote missing")
+        return false
+    end
+
+    print(
+        "[LISTINGS] Unfavoriting:",
+        tostring(pet.ToolName)
+    )
+
+    pcall(function()
+        remote:FireServer(pet.Tool)
+    end)
+
+    local timeout =
+        os.clock() + 3
+
+    while os.clock() < timeout do
+
+        local favoriteState =
+            pet.Tool:GetAttribute("d")
+
+        if favoriteState == false then
+
+            print(
+                "[LISTINGS] Unfavorite confirmed:",
+                tostring(pet.ToolName)
+            )
+
+            return true
+        end
+
+        task.wait(0.1)
+    end
+
+    warn(
+        "[LISTINGS] Unfavorite timeout:",
+        tostring(pet.ToolName)
+    )
+
+    return false
+end
+
+--==================================================
+-- LISTINGS: CREATE LISTING
+--==================================================
+
+function CreatePetListing(pet, price)
+
+    if not pet
+    or not pet.UUID then
+        return false
+    end
+
+    local uuid =
+        tostring(pet.UUID)
+
+    if IsListingUUIDPending(uuid) then
+        return "PENDING_UUID"
+    end
+
+    price =
+        tonumber(
+            price
+            or pet.ListingPrice
+            or ListingsState.Price
+        )
+
+    local priceAllowed, priceReason =
+        IsListingPriceAllowedValue(price)
+
+    if not priceAllowed then
+
+        ListingsState.Status =
+            priceReason
+
+        warn(
+            "[LISTINGS] Blocked:",
+            tostring(priceReason)
+        )
+
+        return "CONFIG_BLOCKED"
+    end
+
+    local now =
+        os.clock()
+
+    local createElapsed =
+        now - SafeNumber(
+            ListingsState.LastCreateAttempt,
+            0
+        )
+
+    local requiredCooldown =
+    ResolveListingCreateCooldown()
+
+if createElapsed < requiredCooldown then
+
+    ListingsState.Status =
+        "Waiting create cooldown"
+
+    return "COOLDOWN"
+end
+
+    local remote =
+        GetCreateListingRemote()
+
+    if not remote then
+        warn("[LISTINGS] CreateListing remote missing")
+        return false
+    end
+
+    local unfavorited =
+        TryUnfavoriteListingPet(pet)
+
+    if not unfavorited then
+
+        ListingsState.Status =
+            "Failed unfavorite"
+
+        return "FAVORITE"
+    end
+
+    task.wait(0.2)
+
+    print(
+        string.format(
+            "[LISTINGS] Creating: %s | UUID %s | %s tokens",
+            tostring(pet.ToolName),
+            tostring(uuid),
+            tostring(price)
+        )
+    )
+
+    StoreOwnListedPetMetadata(pet)
+
+    ListingsState.LastCreateAttempt =
+        os.clock()
+
+    ListingsState.ActiveCreateUUID =
+        uuid
+
+    ListingsState.ActiveCreateStartedAt =
+        os.clock()
+
+    local ok, result =
+        pcall(function()
+
+            return remote:InvokeServer(
+                "Pet",
+                uuid,
+                price
+            )
+        end)
+
+    local activeUUID =
+        ListingsState.ActiveCreateUUID
+
+    ListingsState.ActiveCreateUUID =
+        nil
+
+    ListingsState.ActiveCreateStartedAt =
+        0
+
+    print(
+        "[LISTINGS] Listing create:",
+        tostring(pet.ToolName),
+        "| result:",
+        tostring(result)
+    )
+
+    if not ok then
+
+        warn(
+            "[LISTINGS] Invoke failed:",
+            tostring(result)
+        )
+
+        return false
+    end
+
+    if IsListingUUIDPending(uuid) then
+        return "PENDING_UUID"
+    end
+
+    if result == false then
+
+    -- Give Notification.OnClientEvent a tiny window to report
+    -- whether this was global CreateListing cooldown.
+    task.wait(0.15)
+
+    local sawCreateWait =
+        ListingsState.LastCreateWaitSignal
+        and (
+            os.clock()
+            - SafeNumber(
+                ListingsState.LastCreateWaitSignal,
+                0
+            )
+        ) < 1.5
+
+    if sawCreateWait then
+
+        AdaptiveListingRegisterCreateWait(
+            "CreateListing returned false"
+        )
+
+        ListingsState.LastCreateAttempt =
+            os.clock()
+
+        return "CREATE_WAIT"
+    end
+
+    -- If it was not the global create cooldown, treat it as
+    -- a pet-specific pending lock.
+    MarkListingUUIDPending(
+        uuid,
+        ListingsState.PendingCooldown
+    )
+
+    return "PENDING_UUID"
+end
+
+AdaptiveListingRegisterCreateSuccess()
+
+return true
+end
+
+--==================================================
+-- LISTINGS: QUEUE WORKER
+--==================================================
+
+function QueueListingPet(pet, filter)
+
+    if not pet
+    or not pet.UUID then
+        return false
+    end
+
+    local uuid =
+        tostring(pet.UUID)
+
+    if IsListingUUIDPending(uuid) then
+        return false
+    end
+
+    if ListingsState.QueuedUUIDs[uuid] then
+        return false
+    end
+
+    if ListingsState.OwnListedUUIDs[uuid] then
+        return false
+    end
+
+    if ListingsState.ListedUUIDs[uuid] then
+        return false
+    end
+
+    if ListingsState.FailedUUIDs[uuid] then
+        return false
+    end
+
+    filter =
+        filter
+        or ResolveListingFilterForPet(pet)
+
+    if not filter then
+        return false
+    end
+
+    local filterAllowed, filterReason =
+        IsListingFilterAllowed(filter)
+
+    if not filterAllowed then
+
+        ListingsState.Status =
+            filterReason
+
+        return false
+    end
+
+    pet.ListingFilter =
+        filter
+
+    pet.ListingPrice =
+        tonumber(filter.Price)
+
+    ListingsState.QueuedUUIDs[uuid] =
+        true
+
+    table.insert(
+        ListingsState.ListingQueue,
+        pet
+    )
+
+    print(
+        string.format(
+            "[LISTINGS QUEUE] Added → %s | %s tokens | Queue: %s",
+            tostring(pet.ToolName),
+            tostring(pet.ListingPrice),
+            tostring(#ListingsState.ListingQueue)
+        )
+    )
+
+    return true
+end
+
+function StartListingWorker()
+
+    if ListingsState.WorkerRunning then
+        return
+    end
+
+    ListingsState.WorkerRunning =
+        true
+
+    task.spawn(function()
+
+        while IsCurrentRun() do
+
+            task.wait(0.1)
+
+            if ScriptState.ForceStopped then
+                continue
+            end
+
+            if not ListingsState.Enabled then
+                continue
+            end
+
+            if ListingsState.Busy then
+                continue
+            end
+
+            local pet =
+                table.remove(
+                    ListingsState.ListingQueue,
+                    1
+                )
+
+            if not pet then
+                continue
+            end
+
+            ListingsState.QueuedUUIDs[pet.UUID] =
+                nil
+
+            ListingsState.Busy =
+                true
+
+            ListingsState.Status =
+                "Listing queued pet"
+
+            local ok, result =
+                pcall(function()
+
+                    return CreatePetListing(
+                        pet,
+                        pet.ListingPrice
+                            or (
+                                pet.ListingFilter
+                                and pet.ListingFilter.Price
+                            )
+                            or ListingsState.Price
+                    )
+                end)
+
+            if not ok then
+
+                result =
+                    false
+
+                warn(
+                    "[LISTINGS WORKER] Error:",
+                    tostring(result)
+                )
+            end
+
+            if result == true then
+
+    ListingsState.ListedUUIDs[pet.UUID] =
+        os.clock()
+
+    ListingsState.OwnListedUUIDs[pet.UUID] =
+        true
+
+    ListingsState.ListedThisSession += 1
+
+    ListingsState.LastListed =
+        pet.ToolName
+
+    ListingsState.Status =
+        "Listed 1 pet"
+
+    print(
+        "[LISTINGS] Listed:",
+        tostring(pet.ToolName),
+        "| UUID:",
+        tostring(pet.UUID)
+    )
+
+    --==================================================
+    -- REFRESH OWN BOOTH DASHBOARD AFTER SUCCESS
+    -- The server accepted the listing, so force-refresh
+    -- the booth snapshot instead of waiting for the
+    -- 3-second throttled UI refresh.
+    --==================================================
+
+    if type(BuildOwnBoothListingSnapshot) == "function" then
+
+        pcall(function()
+            BuildOwnBoothListingSnapshot(true)
+        end)
+    end
+
+    if type(ListingsStatusRefresh) == "function" then
+
+        pcall(ListingsStatusRefresh)
+    end
+
+            elseif result == "COOLDOWN"
+or result == "CREATE_WAIT" then
+
+    ListingsState.Status =
+        "Waiting create cooldown"
+
+    local retryDelay =
+        ResolveListingCreateCooldown()
+
+    task.delay(retryDelay, function()
+
+        if ListingsState.Enabled then
+            QueueListingPet(pet)
+        end
+    end)
+
+            elseif result == "PENDING"
+or result == "PENDING_UUID" then
+
+    MarkListingUUIDPending(
+        pet.UUID,
+        ListingsState.PendingCooldown
+    )
+
+    ListingsState.Status =
+        "Pet pending, trying next"
+
+    print(
+        "[LISTINGS] Pending UUID skipped:",
+        tostring(pet.ToolName),
+        "| UUID:",
+        tostring(pet.UUID)
+    )
+
+            elseif result == "FAVORITE" then
+
+                ListingsState.Status =
+                    "Waiting unfavorite"
+
+                task.delay(1, function()
+
+                    if ListingsState.Enabled then
+                        QueueListingPet(pet)
+                    end
+                end)
+
+            elseif result == "CONFIG_BLOCKED" then
+
+    ListingsState.Status =
+        "Config blocked"
+
+    ListingsState.FailedUUIDs[pet.UUID] =
+        os.clock()
+
+            else
+
+                ListingsState.Status =
+                    "Hard failure"
+
+                ListingsState.FailedUUIDs[pet.UUID] =
+                    os.clock()
+
+                warn(
+                    "[LISTINGS] Hard failure:",
+                    tostring(pet.ToolName),
+                    "| UUID:",
+                    tostring(pet.UUID)
+                )
+            end
+
+            if type(ListingsStatusRefresh) == "function" then
+                pcall(ListingsStatusRefresh)
+            end
+
+            task.wait(
+    ResolveListingCreateCooldown()
+)
+
+            ListingsState.Busy =
+                false
+        end
+    end)
+end
+
+--==================================================
+-- LISTINGS: POST-CONFIG RESTORE
+-- Saved listing filters should restore only.
+-- They must never start AutoList by themselves.
+-- Start AutoList toggle is the only authority.
+--==================================================
+
+function ArmListingsAutostartFromSavedToggle()
+
+    if type(ListingsState) ~= "table" then
+        return false
+    end
+
+    if ScriptState
+    and ScriptState.ForceStopped then
+        return false
+    end
+
+    --==================================================
+    -- SOURCE OF TRUTH:
+    -- Prefer the independent intent file.
+    -- Fall back to Obsidian option only if the file does not exist yet.
+    --==================================================
+
+    local savedIntent =
+        LoadListingAutoListIntent()
+
+    local option =
+        Library
+        and Library.Options
+        and Library.Options.EnableAutoList
+
+    local optionEnabled =
+        false
+
+    if option then
+
+        optionEnabled =
+            option.Value == true
+            or option.CurrentValue == true
+            or option.State == true
+    end
+
+    local shouldRestore =
+        false
+
+    if savedIntent ~= nil then
+        shouldRestore =
+            savedIntent == true
+    else
+        shouldRestore =
+            optionEnabled == true
+    end
+
+    print(
+        "[LISTINGS RESTORE] AutoList intent:",
+        tostring(shouldRestore),
+        "| intent file:",
+        tostring(savedIntent),
+        "| option exists:",
+        tostring(option ~= nil),
+        "| option:",
+        tostring(optionEnabled)
+    )
+
+    --==================================================
+    -- Reset unsafe runtime state.
+    -- Do NOT clear OwnListedUUIDs here; booth sync owns it.
+    --==================================================
+
+    ListingsState.Busy =
+        false
+
+    ListingsState.LastScan =
+        0
+
+    ListingsState.NoWorkSleepUntil =
+        0
+
+    ListingsState.ActiveCreateUUID =
+        nil
+
+    ListingsState.ActiveCreateStartedAt =
+        0
+
+    ListingsState.AutoDisableWhenDone =
+        false
+
+    ListingsState.ListingQueue =
+        ListingsState.ListingQueue
+        or {}
+
+    ListingsState.QueuedUUIDs =
+        ListingsState.QueuedUUIDs
+        or {}
+
+    ListingsState.PendingUUIDs =
+        ListingsState.PendingUUIDs
+        or {}
+
+    table.clear(ListingsState.ListingQueue)
+    table.clear(ListingsState.QueuedUUIDs)
+    table.clear(ListingsState.PendingUUIDs)
+
+    --==================================================
+    -- Saved OFF = stay off.
+    --==================================================
+
+    if shouldRestore ~= true then
+
+        ListingsState.Enabled =
+            false
+
+        ListingsState.VisualTagsEnabled =
+            false
+
+        ListingsState.Status =
+            "Disabled"
+
+        if type(BuildListingPreview) == "function" then
+            pcall(BuildListingPreview)
+        end
+
+        if type(RefreshListingFilterUI) == "function" then
+            pcall(RefreshListingFilterUI)
+        end
+
+        if type(ListingsStatusRefresh) == "function" then
+            pcall(ListingsStatusRefresh)
+        end
+
+        print(
+            "[LISTINGS RESTORE] Start AutoList saved OFF; runtime disabled"
+        )
+
+        return false
+    end
+
+    --==================================================
+    -- Saved ON = enable persistent AutoList.
+    --==================================================
+
+    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+
+        ListingsState.Enabled =
+            false
+
+        ListingsState.VisualTagsEnabled =
+            false
+
+        ListingsState.Status =
+            "Not in Trade World"
+
+        if type(ListingsStatusRefresh) == "function" then
+            pcall(ListingsStatusRefresh)
+        end
+
+        return false
+    end
+
+    if type(EnsureListingFilters) == "function" then
+        pcall(EnsureListingFilters)
+    end
+
+    if type(SyncListingRequiredFlagsFromValues) == "function" then
+        pcall(SyncListingRequiredFlagsFromValues)
+    end
+
+    ListingsState.Enabled =
+        true
+
+    ListingsState.VisualTagsEnabled =
+        true
+
+    ListingsState.Status =
+        "AutoList restored | watching"
+
+    ListingsState.LastScan =
+        0
+
+    ListingsState.NoWorkSleepUntil =
+        0
+
+    ListingsState.ListedThisSession =
+        0
+
+    SaveListingAutoListIntent(true)
+
+    -- Sync the UI toggle visually if it exists.
+    task.defer(function()
+
+        pcall(function()
+
+            if Library
+            and Library.Options
+            and Library.Options.EnableAutoList
+            and Library.Options.EnableAutoList.Value ~= true then
+
+                Library.Options.EnableAutoList:SetValue(true)
+            end
+        end)
+    end)
+
+    if type(RefreshListingInventorySnapshot) == "function" then
+        pcall(RefreshListingInventorySnapshot)
+    end
+
+    if type(BuildOwnBoothListingSnapshot) == "function" then
+        pcall(function()
+            BuildOwnBoothListingSnapshot(true)
+        end)
+    end
+
+    if type(BuildListingPreview) == "function" then
+        pcall(BuildListingPreview)
+    end
+
+    if type(RefreshListingFilterUI) == "function" then
+        pcall(RefreshListingFilterUI)
+    end
+
+    if type(ListingsStatusRefresh) == "function" then
+        pcall(ListingsStatusRefresh)
+    end
+
+    print(
+        "[LISTINGS RESTORE] Start AutoList restored ON; runtime enabled"
+    )
+
+    -- Immediate first pass.
+    task.spawn(function()
+
+        task.wait(0.75)
+
+        if ListingsState.Enabled ~= true then
+            return
+        end
+
+        if ScriptState
+        and ScriptState.ForceStopped then
+            return
+        end
+
+        if type(WaitForOwnListedUUIDSync) == "function" then
+            pcall(function()
+                WaitForOwnListedUUIDSync(4)
+            end)
+        end
+
+        if type(RefreshListingInventorySnapshot) == "function" then
+            pcall(RefreshListingInventorySnapshot)
+        end
+
+        if type(BuildOwnBoothListingSnapshot) == "function" then
+            pcall(function()
+                BuildOwnBoothListingSnapshot(true)
+            end)
+        end
+
+        if type(BuildListingPreview) == "function" then
+            pcall(BuildListingPreview)
+        end
+
+        if type(RunAutoListingPass) == "function" then
+
+            ListingsState.LastScan =
+                0
+
+            ListingsState.NoWorkSleepUntil =
+                0
+
+            ListingsState.Status =
+                "AutoList running"
+
+            pcall(RunAutoListingPass)
+        end
+
+        if type(ListingsStatusRefresh) == "function" then
+            pcall(ListingsStatusRefresh)
+        end
+    end)
+
+    return true
+end
+--==================================================
+-- LISTINGS: SCANNER
+--==================================================
+
+function PrintListingSummaryOnce(summary)
+
+    summary =
+        tostring(summary or "")
+
+    local now =
+        os.clock()
+
+    if summary == ListingsState.LastSummaryPrint
+    and now - ListingsState.LastSummaryPrintAt < 15 then
+        return
+    end
+
+    ListingsState.LastSummaryPrint =
+        summary
+
+    ListingsState.LastSummaryPrintAt =
+        now
+
+    print(summary)
+end
+
+function RunAutoListingPass()
+
+    if ListingsState.Busy then
+        return
+    end
+
+    ListingsState.Status =
+        "Scanning"
+
+    local ok, err =
+        pcall(function()
+
+            local configAllowed, configReason =
+                IsListingConfigurationAllowed()
+
+            if not configAllowed then
+
+                ListingsState.Status =
+                    configReason
+
+                warn(
+                    "[LISTINGS] Scan blocked:",
+                    tostring(configReason)
+                )
+
+                return
+            end
+
+            local syncReady, syncReason =
+                true,
+                "Sync unavailable"
+
+            if type(WaitForOwnListedUUIDSync) == "function" then
+
+                syncReady, syncReason =
+                    WaitForOwnListedUUIDSync(8)
+            end
+
+            if not syncReady then
+
+                ListingsState.Status =
+                    tostring(syncReason or "Waiting for own booth sync")
+
+                warn(
+                    "[LISTINGS] Scan delayed:",
+                    tostring(syncReason)
+                )
+
+                if type(ListingsStatusRefresh) == "function" then
+                    pcall(ListingsStatusRefresh)
+                end
+
+                return
+            end
+
+            local pets =
+                RefreshListingInventorySnapshot()
+
+            local filters =
+                EnsureListingFilters()
+
+            local activeFilters = {}
+
+            if #filters > 0 then
+
+                for _, filter in ipairs(filters) do
+
+                    local allowed =
+                        IsListingFilterAllowed(filter)
+
+                    if allowed then
+                        table.insert(
+                            activeFilters,
+                            filter
+                        )
+                    end
+                end
+
+            else
+
+                local legacyFilter =
+                    BuildCurrentListingFilter()
+
+                local allowed =
+                    IsListingFilterAllowed(legacyFilter)
+
+                if allowed then
+                    table.insert(
+                        activeFilters,
+                        legacyFilter
+                    )
+                end
+            end
+
+            local matched = 0
+            local queued = 0
+            local skippedBoothListed = 0
+            local skippedRuntimeListed = 0
+            local skippedFailed = 0
+            local skippedQueued = 0
+            local skippedPending = 0
+
+            local countedMatchedUUIDs = {}
+
+            local maxQueuePerPass =
+                math.clamp(
+                    math.floor(
+                        SafeNumber(
+                            ListingsState.MaxQueuePerPass,
+                            2
+                        )
+                    ),
+                    1,
+                    10
+                )
+
+            --==================================================
+            -- FILTER-FIRST QUEUE ORDER
+            -- Example:
+            -- Filter 1 Mimic runs through all matching Mimics first.
+            -- Filter 2 Kitsune only starts after earlier filters have
+            -- no queueable pets left, or after MaxQueuePerPass allows it.
+            --==================================================
+
+            for _, filter in ipairs(activeFilters) do
+
+                if ScriptState.ForceStopped then
+                    break
+                end
+
+                if not ListingsState.Enabled then
+                    break
+                end
+
+                for _, pet in ipairs(pets) do
+
+                    if ScriptState.ForceStopped then
+                        break
+                    end
+
+                    if not ListingsState.Enabled then
+                        break
+                    end
+
+                    if not ListingPetMatchesFilter(
+                        pet,
+                        filter
+                    ) then
+                        continue
+                    end
+
+                    local uuid =
+                        tostring(pet.UUID or "")
+
+                    if uuid ~= ""
+                    and not countedMatchedUUIDs[uuid] then
+
+                        countedMatchedUUIDs[uuid] =
+                            true
+
+                        matched += 1
+                    end
+
+                    if ListingsState.OwnListedUUIDs[pet.UUID] then
+
+                        skippedBoothListed += 1
+
+                        ListingsState.ListedUUIDs[pet.UUID] =
+                            ListingsState.ListedUUIDs[pet.UUID]
+                            or os.clock()
+
+                        continue
+                    end
+
+                    if ListingsState.ListedUUIDs[pet.UUID] then
+                        skippedRuntimeListed += 1
+                        continue
+                    end
+
+                    if IsListingUUIDPending(pet.UUID) then
+                        skippedPending += 1
+                        continue
+                    end
+
+                    if ListingsState.FailedUUIDs[pet.UUID] then
+                        skippedFailed += 1
+                        continue
+                    end
+
+                    if ListingsState.QueuedUUIDs[pet.UUID] then
+                        skippedQueued += 1
+                        continue
+                    end
+
+                    print(
+                        "[LISTINGS] Queue match:",
+                        tostring(pet.ToolName),
+                        "| Age:",
+                        tostring(pet.Age or "Unknown"),
+                        "| DisplayKG:",
+                        tostring(pet.Weight or "Unknown"),
+                        "| Mutation:",
+                        tostring(pet.Mutation),
+                        "| TRUE BaseWeight:",
+                        string.format("%.2f", tonumber(pet.BaseWeight) or 0),
+                        "| Filter:",
+                        tostring(filter and filter.MinWeight or "?"),
+                        "-",
+                        tostring(filter and filter.MaxWeight or "?"),
+                        "| Price:",
+                        tostring(filter and filter.Price or ListingsState.Price),
+                        "| UUID:",
+                        tostring(pet.UUID)
+                    )
+
+                    local rawBaseWeight =
+                        tonumber(pet.BaseWeight)
+
+                    local minWeight =
+                        tonumber(filter and filter.MinWeight)
+
+                    local maxWeight =
+                        tonumber(filter and filter.MaxWeight)
+
+                    if not rawBaseWeight
+                    or not minWeight
+                    or not maxWeight then
+
+                        warn(
+                            "[LISTINGS] SKIP | invalid raw BaseWeight/filter:",
+                            tostring(pet.ToolName),
+                            "| RawBaseWeight:",
+                            tostring(rawBaseWeight),
+                            "| Filter:",
+                            tostring(minWeight),
+                            "-",
+                            tostring(maxWeight)
+                        )
+
+                        continue
+                    end
+
+                    if rawBaseWeight < minWeight
+                    or rawBaseWeight > maxWeight then
+
+                        warn(
+                            "[LISTINGS] SKIP | raw BaseWeight outside filter:",
+                            tostring(pet.ToolName),
+                            "| RawBaseWeight:",
+                            string.format("%.2f", rawBaseWeight),
+                            "| Filter:",
+                            tostring(minWeight),
+                            "-",
+                            tostring(maxWeight),
+                            "| DisplayKG:",
+                            tostring(pet.Weight),
+                            "| Age:",
+                            tostring(pet.Age or "Unknown")
+                        )
+
+                        continue
+                    end
+
+                    if QueueListingPet(
+                        pet,
+                        filter
+                    ) then
+                        queued += 1
+                    end
+
+                    if queued >= maxQueuePerPass then
+                        break
+                    end
+                end
+
+                if queued >= maxQueuePerPass then
+                    break
+                end
+            end
+
+            if queued <= 0 then
+
+                ListingsState.Status =
+                    string.format(
+                        "Matched %s | Queued 0",
+                        tostring(matched)
+                    )
+
+                if matched > 0
+                and matched == (
+                    skippedBoothListed
+                    + skippedRuntimeListed
+                    + skippedFailed
+                    + skippedQueued
+                    + skippedPending
+                ) then
+
+                    ListingsState.NoWorkSleepUntil =
+                        os.clock() + ListingsState.NoWorkBackoff
+
+                    ListingsState.Status =
+                        "Done | all filters listed or skipped"
+
+                    -- Option A:
+-- Do not turn AutoList off when current matching pets are handled.
+-- Keep watching until the user manually turns Start AutoList OFF.
+ListingsState.AutoDisableWhenDone =
+    false
+
+ListingsState.PreserveVisualTagsOnNextDisable =
+    false
+                end
+
+            else
+
+                ListingsState.Status =
+                    "Queued "
+                    .. tostring(queued)
+                    .. " pet"
+                    .. (
+                        queued == 1
+                        and ""
+                        or "s"
+                    )
+            end
+
+            BuildListingPreview()
+
+            local summary =
+                string.format(
+                    "[LISTINGS] Pass complete | mode: filter-first | matched: %s | queued: %s | booth-skip: %s | runtime-skip: %s | failed-skip: %s | pending-skip: %s | queued-skip: %s | queue: %s",
+                    tostring(matched),
+                    tostring(queued),
+                    tostring(skippedBoothListed),
+                    tostring(skippedRuntimeListed),
+                    tostring(skippedFailed),
+                    tostring(skippedPending),
+                    tostring(skippedQueued),
+                    tostring(#ListingsState.ListingQueue)
+                )
+
+            if queued > 0
+            or not ListingsState.QuietWhenComplete then
+
+                PrintListingSummaryOnce(summary)
+
+            else
+
+                PrintListingSummaryOnce(
+                    string.format(
+                        "[LISTINGS] Idle | mode: filter-first | matched: %s | already listed: %s | runtime listed: %s | failed: %s | pending: %s | queue: %s",
+                        tostring(matched),
+                        tostring(skippedBoothListed),
+                        tostring(skippedRuntimeListed),
+                        tostring(skippedFailed),
+                        tostring(skippedPending),
+                        tostring(#ListingsState.ListingQueue)
+                    )
+                )
+            end
+        end)
+
+    if not ok then
+
+        ListingsState.Status =
+            "Error"
+
+        warn(
+            "[LISTINGS] Pass failed:",
+            tostring(err)
+        )
+    end
+end
+--==================================================
+-- BOOTH TAB → AUTOMATION (UI ONLY)
+--==================================================
+function BuildBoothTab()
+
+if type(Tabs.Booth.AddLeftCollapsibleGroupbox) == "function" then
+
+    BoothBox =
+        Tabs.Booth:AddLeftCollapsibleGroupbox(
+            "Booth Automation",
+            "zap",
+            true
+        )
+
+else
+
+    warn("[LIB TEST] Collapsible Booth Automation unavailable, using normal groupbox")
+
+    BoothBox =
+        Tabs.Booth:AddLeftGroupbox(
+            "Booth Automation",
+            "zap"
+        )
+end
+BoothCustomizationBox = Tabs.Booth:AddRightGroupbox("Booth Customization", "wand")
+
+local AutoClaimToggle = BoothBox:AddToggle("AutoClaimBooth", {
+    Text = "🎪 Auto Claim Booth",
+    Default = false,
+})
+
+AutoClaimToggle:OnChanged(function(enabled)
+    BoothAuto.Enabled = enabled
+
+    MarkConfigDirty()
+
+if enabled then
+    print("[Booth] Auto claim triggered")
+
+    HolyNotify(
+        "Booth Claim Started",
+        "HOLY is searching for a free booth.",
+        "store",
+        4
+    )
+
+    task.spawn(function()
+        task.wait(0.25) -- small replication buffer
+        ExecuteBoothClaim()
+    end)
+end
+end)
+
+local EquipPetToggle = BoothBox:AddToggle("EquipPet", {
+    Text = "🐶 Equip Pet",
+    Tooltip = "Equips a pet from your inventory",
+    Default = false,
+})
+
+EquipPetToggle:OnChanged(function(enabled)
+
+    BoothPetState.Enabled =
+        enabled == true
+
+    -- Reset equip lifecycle whenever the user toggles this.
+    -- This prevents stale UID locks from blocking re-enable.
+    BoothPetState.LastEquippedUID =
+        nil
+
+    BoothPetState.LockedShowcaseUID =
+        nil
+
+    BoothPetState.LastMissingPet =
+        nil
+
+    BoothPetState.LastMissingWarnAt =
+        0
+
+    BoothPetState.LastEquipAttemptAt =
+        0
+
+    ShowcaseEquipState.ReequipPending =
+        false
+
+    MarkConfigDirty()
+
+    if enabled == true then
+
+        task.spawn(function()
+
+            task.wait(0.15)
+
+            if BoothPetState.Enabled ~= true then
+                return
+            end
+
+            if type(EquipShowcasePet) == "function" then
+                EquipShowcasePet(true)
+            end
+        end)
+    end
+end)
+
+RefreshDynamicPetList()
+
+local ShowcaseDropdown =
+    BoothCustomizationBox:AddDropdown(
+        "ShowcasePetSelect",
+        {
+            Text = "Showcase Pets",
+            Values = PetList,
+            Default = "",
+            Searchable = true,
+        }
+    )
+
+ShowcaseDropdown:OnChanged(function(value)
+
+    BoothPetState.SelectedPetType = value
+
+    BoothPetState.LastEquippedUID =
+    nil
+
+BoothPetState.LockedShowcaseUID =
+    nil
+
+BoothPetState.LastMissingPet =
+    nil
+
+BoothPetState.LastMissingWarnAt =
+    0
+
+    MarkConfigDirty()
+end)
+
+RefreshBoothSkinList()
+
+local BoothSkinDropdown =
+    BoothCustomizationBox:AddDropdown(
+        "BoothSkinSelect",
+        {
+            Text = "Booth Skin",
+            Values = BoothSkinList,
+            Default = ResolveSelectedBoothSkin(),
+            Searchable = true,
+        }
+    )
+
+BoothSkinDropdown:OnChanged(function(value)
+
+    local selected =
+        tostring(value or "Default")
+
+    if not IsOwnedBoothSkin(selected) then
+
+        selected =
+            "Default"
+
+        HolyNotify(
+            "Booth Skin Reset",
+            "Selected skin is not owned. Using Default.",
+            "shield-alert",
+            3
+        )
+    end
+
+    BoothCustomization.SelectedSkin =
+        selected
+
+    MarkConfigDirty()
+
+    print(
+        "[BOOTH SKIN] Selected:",
+        BoothCustomization.SelectedSkin
+    )
+end)
+
+local AutoTpToggle = BoothBox:AddToggle("AutoTpBooth", {
+    Text = "📍 Auto Teleport Booth",
+    Tooltip = "Teleports back only after you move too far from your booth.",
+    Default = false,
+})
+
+AutoTpToggle:OnChanged(function(enabled)
+
+    BoothAuto.AutoTeleport =
+        enabled
+
+    if not enabled then
+        ClearBoothAnchor()
+        RestoreCharacterMovement()
+    end
+
+    -- skip restore-time execution
+    if ConfigState.IsHydrating then
+        return
+    end
+
+    if enabled then
+
+        RestoreCharacterMovement()
+
+        task.spawn(function()
+            task.wait(0.15)
+            PositionBehindOwnedBooth()
+        end)
+
+    else
+
+        RestoreCharacterMovement()
+    end
+
+    MarkConfigDirty()
+end)
+
+local LockBehindBoothToggle = BoothBox:AddToggle("LockBehindBooth", {
+    Text = "🔒 Lock Behind Booth",
+    Tooltip = "Hard-locks your character behind your booth. Requires Auto Teleport Booth.",
+    Default = false,
+})
+
+LockBehindBoothToggle:OnChanged(function(enabled)
+
+    BoothAuto.LockBehindBooth =
+        enabled
+
+    if not enabled then
+        SetBoothHardLockAnchored(false)
+        RestoreCharacterMovement()
+    end
+
+    if enabled
+    and BoothAuto.AutoTeleport
+    and not ConfigState.IsHydrating then
+
+        task.spawn(function()
+            task.wait(0.10)
+
+            local success =
+                PositionBehindOwnedBooth()
+
+            if success then
+                task.wait(0.10)
+                SetBoothHardLockAnchored(true)
+            end
+        end)
+    end
+
+    MarkConfigDirty()
+end)
+
+local BoothDistanceSlider = BoothBox:AddSlider("BoothDistance", {
+    Text = "Booth Distance",
+    Default = 20,
+    Min = 2,
+    Max = 30,
+    Rounding = 1,
+    Compact = false,
+})
+
+BoothDistanceSlider:OnChanged(function(value)
+
+    BoothAuto.BoothDistance = value
+
+    MarkConfigDirty()
+
+    -- prevent hydration restore calls
+    if ConfigState.IsHydrating then
+        return
+    end
+
+    if BoothAuto.AutoTeleport then
+        task.spawn(function()
+            task.wait(0.05)
+
+            local success = PositionBehindOwnedBooth()
+
+            if not success then
+                warn("[Booth] Live reposition failed")
+            end
+        end)
+    end
+end)
+
+local BoothReturnDistanceSlider = BoothBox:AddSlider("BoothReturnDistance", {
+    Text = "Return Distance",
+    Default = 8,
+    Min = 5,
+    Max = 15,
+    Rounding = 0,
+    Compact = false,
+    Tooltip = "How far you can move from your booth before Auto Teleport returns you.",
+})
+
+BoothReturnDistanceSlider:OnChanged(function(value)
+
+    BoothAuto.ReturnDistance =
+        math.clamp(
+            SafeNumber(value, 8),
+            5,
+            15
+        )
+
+    MarkConfigDirty()
+end)
+
+local ChatPromoteListings = BoothBox:AddToggle("AutoPromoteListings", {
+    Text = "💬 Auto Promote Listings",
+    Tooltip = "Sends chat promotion messages for your listings",
+    Default = false,
+})
+ChatPromoteListings:OnChanged(function(enabled)
+    BoothAuto.AutoPromote = enabled
+
+    MarkConfigDirty()
+end)
+
+do
+    RefreshBeeEggList()
+
+    EventsBox:AddDropdown(
+        "BeeEggSelect",
+        {
+            Text = "Bee Eggs",
+            Values = BeeEggAuto.EggList,
+            Default = BeeEggAuto.SelectedEggs,
+            Multi = true,
+            Searchable = true,
+        }
+    ):OnChanged(function(value)
+
+        table.clear(BeeEggAuto.SelectedEggs)
+
+        if type(value) == "table" then
+
+            for eggName, selected in pairs(value) do
+
+                if selected == true then
+                    BeeEggAuto.SelectedEggs[
+                        tostring(eggName)
+                    ] = true
+                end
+            end
+
+        elseif type(value) == "string"
+        and value ~= "" then
+
+            BeeEggAuto.SelectedEggs[
+                tostring(value)
+            ] = true
+        end
+
+        MarkConfigDirty()
+
+        local selectedCount = 0
+
+        for _ in pairs(BeeEggAuto.SelectedEggs) do
+            selectedCount = selectedCount + 1
+        end
+
+        print(
+            "[BEE EGG] Selected count:",
+            tostring(selectedCount)
+        )
+    end)
+
+    
+    EventsBox:AddToggle(
+        "AutoBuyBeeEgg",
+        {
+            Text = "🐝 Auto Buy Bee Eggs",
+            Tooltip = "Buys selected Bee Eggs from Trade World",
+            Default = false,
+        }
+    ):OnChanged(function(enabled)
+
+        BeeEggAuto.Enabled = enabled
+
+        MarkConfigDirty()
+
+        if enabled then
+            print("[BEE EGG] Auto buy enabled")
+        else
+            print("[BEE EGG] Auto buy disabled")
+        end
+    end)
+end
+
+--==================================================
+-- AUTO PROMOTE CHAT SYSTEM
+--==================================================
+
+local ChatPromoteSessionId =
+    HttpService:GenerateGUID(false)
+
+_G.HolyPromoteSessionId =
+    ChatPromoteSessionId
+
+local ChatPromoteState = {
+    LastMessage = "",
+    LastSent = 0,
+    NextAllowedAt = 0,
+
+    -- Randomized spacing looks less bot-like and avoids chat filter pressure.
+    MinInterval = 75,
+    MaxInterval = 120,
+
+    -- prevents console spam when Roblox chat / HTTP fails
+    FailUntil = 0,
+}
+
+local PromoteMessages = {
+
+    "%s at my booth",
+    "%s listed at my booth",
+    "%s in my booth",
+    "%s available at my booth",
+    "my booth has %s",
+    "come check %s at my booth",
+    "check my booth for %s",
+    "booth has %s right now",
+    "%s is up at my booth",
+    "%s in booth right now",
+
+    "new %s listing at my booth",
+    "fresh %s listing at my booth",
+    "got %s in my booth",
+    "booth open with %s",
+    "%s ready in booth",
+    "%s waiting at my booth",
+    "come see %s at my booth",
+    "my booth got %s",
+    "%s is listed now",
+    "check booth if you want %s",
+
+    "✨ %s at my booth",
+    "👀 %s in my booth",
+    "🌱 %s listed at my booth",
+    "📦 booth has %s",
+    "💎 %s up at my booth",
+    "🛒 %s in booth now",
+    "🔥 %s at booth",
+    "⚡ %s listed now",
+    "🎯 looking for %s? check booth",
+    "🏪 booth has %s",
+
+    "come look at %s",
+    "come check out %s",
+    "my booth is open with %s",
+    "got a cheap %s listed",
+    "%s listed if anyone wants it",
+    "anyone looking for %s?",
+    "anyone need %s?",
+    "%s at booth if anyone wants",
+
+    "✨ come see %s",
+    "👀 anyone need %s?",
+    "📦 got %s listed",
+    "💎 %s at my booth now",
+    "🔥 %s is up",
+    "⚡ %s in booth",
+    "🛒 check booth for %s",
+    "🎯 %s listed here",
+    "🏪 booth open with %s",
+    "skibidi %s for sale🔥",
+}
+
+function GeneratePromoteMessage()
+
+    local pet =
+        BoothPetState.SelectedPetType
+
+    if not pet
+    or pet == "" then
+        return nil
+    end
+
+local template
+
+for i = 1, 10 do
+
+    local candidate =
+        PromoteMessages[
+            math.random(
+                1,
+                #PromoteMessages
+            )
+        ]
+
+    if candidate ~= ChatPromoteState.LastMessage then
+        template = candidate
+        break
+    end
+end
+
+template =
+    template
+    or PromoteMessages[1]
+
+    return string.format(
+        template,
+        pet
+    )
+end
+
+local TextChatService =
+    game:GetService("TextChatService")
+
+function SendTextChatMessageSafely(message)
+
+    message =
+        tostring(message or "")
+
+    if message == "" then
+        return false, "empty message"
+    end
+
+    local textChannels =
+        TextChatService:FindFirstChild("TextChannels")
+
+    if not textChannels then
+        return false, "TextChannels missing"
+    end
+
+    local targetChannel =
+        nil
+
+    local okTarget =
+        pcall(function()
+
+            local inputConfig =
+                TextChatService.ChatInputBarConfiguration
+
+            if inputConfig
+            and inputConfig.TargetTextChannel then
+                targetChannel =
+                    inputConfig.TargetTextChannel
+            end
+        end)
+
+    if not okTarget then
+        targetChannel =
+            nil
+    end
+
+    if not targetChannel then
+
+        targetChannel =
+            textChannels:FindFirstChild("RBXGeneral")
+    end
+
+    if not targetChannel
+    or type(targetChannel.SendAsync) ~= "function" then
+        return false, "No sendable TextChannel"
+    end
+
+    --==================================================
+    -- TEMPORARY CHAT MIDDLEWARE BYPASS
+    -- The game's ChatMiddleware can fail inside
+    -- TextChatService.OnIncomingMessage when Roblox
+    -- GetRankInGroup returns HTTP 503.
+    --
+    -- We disable only for this send attempt, then restore.
+    --==================================================
+
+    local hadOldCallback =
+        false
+
+    local oldCallback =
+        nil
+
+    pcall(function()
+        oldCallback =
+            TextChatService.OnIncomingMessage
+
+        hadOldCallback =
+            true
+    end)
+
+    pcall(function()
+
+        TextChatService.OnIncomingMessage =
+            function()
+                return nil
+            end
+    end)
+
+    local okSend, err =
+        pcall(function()
+
+            targetChannel:SendAsync(
+                message
+            )
+        end)
+
+    task.delay(0.35, function()
+
+        if hadOldCallback then
+
+            pcall(function()
+                TextChatService.OnIncomingMessage =
+                    oldCallback
+            end)
+        end
+    end)
+
+    if not okSend then
+        return false, tostring(err)
+    end
+
+    return true, "sent"
+end
+
+function SendPromoteMessage()
+
+    if not BoothAuto.AutoPromote then
+        return
+    end
+
+    if ScriptState
+    and ScriptState.ForceStopped then
+        return
+    end
+
+    local now =
+        os.clock()
+
+    ChatPromoteState.LastSent =
+        SafeNumber(ChatPromoteState.LastSent, 0)
+
+    ChatPromoteState.Interval =
+        SafeNumber(ChatPromoteState.Interval, 35)
+
+    ChatPromoteState.FailUntil =
+        SafeNumber(ChatPromoteState.FailUntil, 0)
+
+    if now < ChatPromoteState.FailUntil then
+        return
+    end
+
+    if now - ChatPromoteState.LastSent
+        < ChatPromoteState.Interval
+    then
+        return
+    end
+
+    local message =
+        GeneratePromoteMessage()
+
+    if not message then
+        warn("[PROMOTE] No message")
+        return
+    end
+
+    ChatPromoteState.LastMessage =
+        message
+
+    print(
+        "[PROMOTE] ATTEMPT:",
+        message
+    )
+
+    local success =
+        false
+
+    local failureReason =
+        nil
+
+    --==================================================
+    -- MODERN CHAT
+    -- Uses safe sender because game ChatMiddleware can
+    -- crash SendAsync through TextChatService.OnIncomingMessage.
+    --==================================================
+
+    local sent, sendReason =
+        SendTextChatMessageSafely(
+            message
+        )
+
+    if sent then
+
+        success =
+            true
+
+    else
+
+        failureReason =
+            tostring(sendReason)
+
+        warn(
+            "[PROMOTE] Safe SendAsync failed:",
+            failureReason
+        )
+    end
+
+    --==================================================
+    -- LEGACY FALLBACK — SAFE CHECK ONLY
+    -- Prevents nil :WaitForChild crash.
+    --==================================================
+
+    if not success then
+
+        local legacyFolder =
+            ReplicatedStorage:FindFirstChild(
+                "DefaultChatSystemChatEvents"
+            )
+
+        local legacyRemote =
+            legacyFolder
+            and legacyFolder:FindFirstChild(
+                "SayMessageRequest"
+            )
+
+        if legacyRemote
+        and legacyRemote:IsA("RemoteEvent") then
+
+            local ok, err =
+                pcall(function()
+                    legacyRemote:FireServer(
+                        message,
+                        "All"
+                    )
+                end)
+
+            if ok then
+                success =
+                    true
+            else
+                failureReason =
+                    tostring(err)
+
+                warn(
+                    "[PROMOTE] Legacy send failed:",
+                    failureReason
+                )
+            end
+        end
+    end
+
+    if success then
+
+        ChatPromoteState.LastSent =
+            os.clock()
+
+        ChatPromoteState.FailUntil =
+            0
+
+        print(
+            "[PROMOTE] SENT:",
+            message
+        )
+
+    else
+
+        -- Roblox chat sometimes fails from HTTP 503 internally.
+        -- Back off so Holy does not spam console every interval.
+        ChatPromoteState.LastSent =
+            os.clock()
+
+        ChatPromoteState.FailUntil =
+            os.clock() + 90
+
+        warn(
+            "[PROMOTE] TOTAL FAILURE | cooldown 90s |",
+            tostring(failureReason or "unknown")
+        )
+    end
+end
+--------------------------------------------------
+local AutoHopToggle = BoothBox:AddToggle("AutoServerHop", {
+    Text = "🌍 Join New Server",
+    Tooltip = "Joins new server every X min",
+    Default = false,
+})
+
+AutoHopToggle:OnChanged(function(enabled)
+    BoothAuto.AutoServerHop = enabled
+
+    if enabled then
+        BoothAuto.LastServerHop = os.clock()
+    end
+
+    MarkConfigDirty()
+end)
+
+local HopMinutesInput = BoothBox:AddInput("HopMinutes", {
+    Text = "⌛ Minutes",
+    Default = "10",
+    Numeric = true,
+    Finished = true,
+})
+
+HopMinutesInput:OnChanged(function(value)
+    local num = tonumber(value)
+
+    if not num then
+        return
+    end
+
+    num = math.clamp(num, 1, 999)
+
+    BoothAuto.ServerHopMinutes = num
+
+    MarkConfigDirty()
+end)
+
+BoothBox:AddButton({
+    Text = "Unclaim Booth",
+    Tooltip = "Unclaim your current booth",
+    Func = function()
+        if ScriptState.ForceStopped then
+            warn("[Booth] Blocked (ForceStopped)")
+            return
+        end
+
+        local GameEvents = ReplicatedStorage:FindFirstChild("GameEvents")
+        if not GameEvents then
+            warn("[Booth] GameEvents missing")
+            return
+        end
+
+        local RemoveBooth = GameEvents
+            :WaitForChild("TradeEvents")
+            :WaitForChild("Booths")
+            :WaitForChild("RemoveBooth")
+
+        local ok, err = pcall(function()
+            RemoveBooth:FireServer()
+        end)
+
+        if not ok then
+            warn("[Booth] Unclaim failed:", err)
+        end
+    end,
+})
+end
+--==================================================
+-- SNIPER FILTER STATE
+--==================================================
+
+WatchlistLabels = {}
+WatchlistDropdown = nil
+WatchlistSaveDropdown = nil
+
+EggFocusLabels = {}
+EggFocusInfoLabel = nil
+RefreshEggFocus = nil
+
+ITEMS_PER_PAGE = 7
+WatchlistPage = 1
+WatchlistInfoLabel = nil
+
+RefreshWatchlist = nil
+
+function BuildSniperTab()
+--==================================================
+-- SNIPER TAB → UI
+--==================================================
+
+--==================================================
+-- SNIPER TAB → CLEAN TABBOX LAYOUT
+-- Left side: Configuration + Add Filter
+-- Right side: Watchlist + Egg Focus
+--==================================================
+
+local SniperConfigBox
+local SniperFilterBox
+local SniperWatchlistBox
+local EggFocusBox
+
+if type(Tabs.Sniper.AddLeftTabbox) == "function"
+and type(Tabs.Sniper.AddRightTabbox) == "function" then
+
+    local SniperLeftTabbox =
+        Tabs.Sniper:AddLeftTabbox("SniperLeft")
+
+    SniperConfigBox =
+        SniperLeftTabbox:AddTab("Config", "settings")
+
+    SniperFilterBox =
+        SniperLeftTabbox:AddTab("Filter", "plus")
+
+    local SniperRightTabbox =
+        Tabs.Sniper:AddRightTabbox("SniperRight")
+
+    SniperWatchlistBox =
+        SniperRightTabbox:AddTab("Watchlist", "star")
+
+    EggFocusBox =
+        SniperRightTabbox:AddTab("Egg Focus", "egg")
+
+else
+
+    -- Fallback for older library versions.
+    if type(Tabs.Sniper.AddLeftCollapsibleGroupbox) == "function" then
+
+        SniperConfigBox =
+            Tabs.Sniper:AddLeftCollapsibleGroupbox(
+                "Sniper Configuration",
+                "settings",
+                true
+            )
+
+        SniperFilterBox =
+            Tabs.Sniper:AddLeftCollapsibleGroupbox(
+                "Add Filter",
+                "plus",
+                true
+            )
+
+        SniperWatchlistBox =
+            Tabs.Sniper:AddRightCollapsibleGroupbox(
+                "Active Watchlist",
+                "star",
+                true
+            )
+
+        EggFocusBox =
+            Tabs.Sniper:AddRightCollapsibleGroupbox(
+                "Egg Focus",
+                "egg",
+                false
+            )
+
+    else
+
+        warn("[LIB TEST] Tabbox/collapsible unavailable, using normal groupboxes")
+
+        SniperConfigBox =
+            Tabs.Sniper:AddLeftGroupbox(
+                "Sniper Configuration",
+                "settings"
+            )
+
+        SniperFilterBox =
+            Tabs.Sniper:AddLeftGroupbox(
+                "Add Filter",
+                "plus"
+            )
+
+        SniperWatchlistBox =
+            Tabs.Sniper:AddRightGroupbox(
+                "Active Watchlist",
+                "star"
+            )
+
+        EggFocusBox =
+            Tabs.Sniper:AddRightGroupbox(
+                "Egg Focus",
+                "egg"
+            )
+    end
+end
+--==================================================
+-- SNIPER CONFIG CONTENT
+-- Must be added before FILTER INPUTS so Config tab is not empty.
+--==================================================
+SniperConfigBox:AddDivider({
+    Text = "Scan Speed",
+    MarginTop = 4,
+    MarginBottom = 8,
+})
+
+local ScanSpeedDropdown =
+    SniperConfigBox:AddDropdown(
+        "SniperScanSpeedMode",
+        {
+            Text = "⚡ Scan Speed",
+            Tooltip = "Lower delay scans faster but can cause Server Shutdowns. Fast is recommended.",
+            Values = {
+                "Max Speed",
+                "Fast",
+                "Balanced",
+                "Low CPU",
+                "Ultra Safe",
+            },
+            Default = SniperState.ScanSpeedMode or "Fast",
+            Searchable = false,
+        }
+    )
+
+ScanSpeedDropdown:OnChanged(function(value)
+
+    local interval =
+        SetSniperScanSpeedMode(value)
+
+    MarkConfigDirty()
+
+    if ConfigState.IsHydrating then
+        return
+    end
+
+    HolyNotify(
+        "Scan Speed Updated",
+        tostring(SniperState.ScanSpeedMode)
+            .. " • "
+            .. tostring(interval)
+            .. "s interval",
+        "zap",
+        3
+    )
+end)
+
+local BoothDataRefreshDropdown =
+    SniperConfigBox:AddDropdown(
+        "BoothDataRefreshMode",
+        {
+            Text = "📡 Booth Data Refresh",
+            Tooltip = "How fast HOLY refreshes booth listings. Faster can snipe sooner but may cause lag. Recommended: Fast.",
+            Values = {
+                "Aggressive",
+                "Fast",
+                "Balanced",
+                "Low CPU",
+                "Ultra Safe",
+            },
+            Default = SniperState.BoothDataRefreshMode or "Fast",
+            Searchable = false,
+        }
+    )
+
+BoothDataRefreshDropdown:OnChanged(function(value)
+
+    local interval =
+        SetBoothDataRefreshMode(value)
+
+    MarkConfigDirty()
+
+    if ConfigState.IsHydrating then
+        return
+    end
+
+    HolyNotify(
+        "Booth Data Refresh Updated",
+        tostring(SniperState.BoothDataRefreshMode)
+            .. " • "
+            .. tostring(interval)
+            .. "s interval",
+        "radio",
+        3
+    )
+end)
+
+SniperConfigBox:AddDivider({
+    Text = "Server Hop",
+    MarginTop = 4,
+    MarginBottom = 8,
+})
+
+local MaxServerPlayersInput =
+    SniperConfigBox:AddInput(
+        "SniperMaxServerPlayers",
+        {
+            Text = "👥 Max Server Players",
+            Default = tostring(SniperState.MaxServerPlayers),
+            Numeric = true,
+            Finished = true,
+        }
+    )
+
+MaxServerPlayersInput:OnChanged(function(value)
+
+    local num =
+        tonumber(value)
+
+    if not num then
+        return
+    end
+
+    SniperState.MaxServerPlayers =
+        math.clamp(
+            math.floor(num),
+            1,
+            30
+        )
+
+    MarkConfigDirty()
+
+    print(
+        "[SniperHop] Max server players:",
+        tostring(SniperState.MaxServerPlayers)
+    )
+end)
+
+local ServerHopModeDropdown =
+    SniperConfigBox:AddDropdown(
+        "SniperServerHopMode",
+        {
+            Text = "⇄ Server Hop Mode",
+            Values = {
+                "Fullest Under Max",
+                "Balanced",
+                "Low Player",
+            },
+            Default = SniperState.ServerHopMode or "Fullest Under Max",
+            Searchable = false,
+        }
+    )
+
+ServerHopModeDropdown:OnChanged(function(value)
+
+    SniperState.ServerHopMode =
+        tostring(value or "Fullest Under Max")
+
+    MarkConfigDirty()
+
+    print(
+        "[SniperHop] Mode:",
+        tostring(SniperState.ServerHopMode)
+    )
+end)
+
+local ServerHopPagesInput =
+    SniperConfigBox:AddInput(
+        "SniperServerHopPages",
+        {
+            Text = "📄 Server Hop Pages",
+            Tooltip = "How many Roblox server-list pages to fetch. 1 is fastest; higher gives better server selection but slower hops.",
+            Default = tostring(SniperState.ServerHopPages or 1),
+            Numeric = true,
+            Finished = true,
+        }
+    )
+
+ServerHopPagesInput:OnChanged(function(value)
+
+    local pages =
+        tonumber(value)
+
+    if not pages then
+        return
+    end
+
+    SniperState.ServerHopPages =
+        math.clamp(
+            math.floor(pages),
+            1,
+            10
+        )
+
+    MarkConfigDirty()
+
+    print(
+        "[SniperHop] Server hop pages:",
+        tostring(SniperState.ServerHopPages)
+    )
+end)
+
+SniperConfigBox:AddDivider({
+    Text = "After Snipe",
+    MarginTop = 10,
+    MarginBottom = 8,
+})
+
+local StayAfterSnipeToggle =
+    SniperConfigBox:AddToggle(
+        "StayAfterSnipe",
+        {
+            Text = "⏱️ Stay After Snipe",
+            Tooltip = "Stay in the server a little longer after Holy snipes a pet.",
+            Default = SniperState.StayAfterSnipe == true,
+        }
+    )
+
+StayAfterSnipeToggle:OnChanged(function(enabled)
+
+    SniperState.StayAfterSnipe =
+        enabled == true
+
+    MarkConfigDirty()
+
+    if ConfigState.IsHydrating then
+        return
+    end
+
+    HolyNotify(
+        enabled and "Stay After Snipe Enabled" or "Stay After Snipe Disabled",
+        enabled and "Holy will wait after a confirmed snipe before hopping." or "Holy will hop normally after the scan timer ends.",
+        enabled and "clock" or "pause",
+        3
+    )
+end)
+
+local StayAfterSnipeDependencyBox =
+    SniperConfigBox:AddDependencyBox()
+
+local StayAfterSnipeInput =
+    StayAfterSnipeDependencyBox:AddInput(
+        "StayAfterSnipeSeconds",
+        {
+            Text = "Extra Stay (sec)",
+            Tooltip = "Adds extra time only after Holy successfully confirms a snipe.",
+            Default = tostring(SniperState.StayAfterSnipeSeconds or 5),
+            Numeric = true,
+            Finished = true,
+        }
+    )
+
+StayAfterSnipeInput:OnChanged(function(value)
+
+    local num =
+        tonumber(value)
+
+    if not num then
+        return
+    end
+
+    SniperState.StayAfterSnipeSeconds =
+        math.clamp(
+            math.floor(num),
+            0,
+            60
+        )
+
+    MarkConfigDirty()
+
+    if ConfigState.IsHydrating then
+        return
+    end
+
+    HolyNotify(
+        "Stay Time Updated",
+        "Extra stay time set to "
+            .. tostring(SniperState.StayAfterSnipeSeconds)
+            .. " seconds.",
+        "clock",
+        3
+    )
+end)
+
+StayAfterSnipeDependencyBox:SetupDependencies({
+    {
+        StayAfterSnipeToggle,
+        true,
+    },
+})
+
+SniperConfigBox:AddDivider({
+    Text = "Inventory Safety",
+    MarginTop = 10,
+    MarginBottom = 8,
+})
+
+local InventoryLimitToggle =
+    SniperConfigBox:AddToggle(
+        "StopAtPetInventoryLimit",
+        {
+            Text = "📦 Stop At Pet Limit",
+            Tooltip = "Stops Holy from buying when your visible pet inventory reaches the selected limit.",
+            Default = SniperState.StopAtPetInventoryLimit == false,
+        }
+    )
+
+InventoryLimitToggle:OnChanged(function(enabled)
+
+    SniperState.StopAtPetInventoryLimit =
+        enabled == true
+
+    if type(RefreshInventoryDetails) == "function" then
+        RefreshInventoryDetails()
+    end
+
+    MarkConfigDirty()
+
+    if ConfigState.IsHydrating then
+        return
+    end
+
+    HolyNotify(
+        enabled and "Inventory Safety Enabled" or "Inventory Safety Disabled",
+        enabled and "Holy will stop buying at your pet limit." or "Holy can buy even above the selected pet limit.",
+        enabled and "package-check" or "package-x",
+        3
+    )
+end)
+
+local MaxPetInventoryInput =
+    SniperConfigBox:AddInput(
+        "MaxPetInventory",
+        {
+            Text = "Max Pet Inventory",
+            Tooltip = "Holy stops queueing snipes when visible pets reach this number.",
+            Default = tostring(SniperState.MaxPetInventory or 350),
+            Numeric = true,
+            Finished = true,
+        }
+    )
+
+MaxPetInventoryInput:OnChanged(function(value)
+
+    local num =
+        tonumber(value)
+
+    if not num then
+        return
+    end
+
+    SniperState.MaxPetInventory =
+        math.clamp(
+            math.floor(num),
+            1,
+            9999
+        )
+
+    if type(RefreshInventoryDetails) == "function" then
+        RefreshInventoryDetails()
+    end
+
+    MarkConfigDirty()
+
+    if ConfigState.IsHydrating then
+        return
+    end
+
+    HolyNotify(
+        "Pet Limit Updated",
+        "Holy will stop buying at "
+            .. tostring(SniperState.MaxPetInventory)
+            .. " visible pets.",
+        "package",
+        3
+    )
+end)
+--==================================================
+-- FILTER INPUTS
+--==================================================
+
+WatchlistSaveDropdown =
+    SniperFilterBox:AddDropdown(
+        "SniperFilterSaveTarget",
+        {
+            Text = "Save To",
+            Values = {
+                "Watchlist 1",
+                "Watchlist 2",
+            },
+            Default = "Watchlist 1",
+            Searchable = false,
+        }
+    )
+
+WatchlistSaveDropdown:OnChanged(function(value)
+
+    SniperFilterUIState.SaveTarget =
+        NormalizeWatchlistId(value)
+
+    MarkConfigDirty()
+end)
+
+local WeightModeDropdown =
+    SniperFilterBox:AddDropdown(
+        "SniperWeightMode",
+        {
+            Text = "Weight Mode",
+            Tooltip = "Base Weight is best for accurate sniping. Display KG matches the in-game weight.",
+            Values = {
+                "Display KG",
+                "Base Weight",
+            },
+            Default = "Display KG",
+            Searchable = false,
+        }
+    )
+
+WeightModeDropdown:OnChanged(function(value)
+
+    SniperFilterUIState.WeightMode =
+        NormalizeWeightMode(value)
+
+    MarkConfigDirty()
+end)
+
+RefreshDynamicPetList()
+
+local PetDropdown =
+    SniperFilterBox:AddDropdown(
+        "SniperPetSelect",
+        {
+            Text = "Pet",
+            Values = PetList,
+            Default = "",
+            Searchable = true,
+        }
+    )
+
+local MinWeightInput =
+    SniperFilterBox:AddInput(
+        "SniperMinWeight",
+        {
+            Text = "Min Weight",
+            Placeholder = "Display KG or BaseWeight",
+        }
+    )
+
+local MaxPriceInput =
+    SniperFilterBox:AddInput(
+        "SniperMaxPrice",
+        {
+            Text = "Max Price",
+            Placeholder = "empty = inf",
+        }
+    )
+
+local PriorityInput =
+    SniperFilterBox:AddInput(
+        "SniperFilterPriority",
+        {
+            Text = "Priority",
+            Tooltip = "1 = low priority, 10 = buy first.",
+            Default = "5",
+            Numeric = true,
+            Finished = true,
+        }
+    )
+
+PriorityInput:OnChanged(function(value)
+
+    SniperFilterUIState.Priority =
+        ClampSniperPriority(value)
+
+    MarkConfigDirty()
+end)
+--==================================================
+-- WATCHLIST VIEW SELECTOR
+-- Both watchlists are active for sniping; this only changes display/manage.
+--==================================================
+
+WatchlistDropdown =
+    SniperWatchlistBox:AddDropdown(
+        "SniperWatchlistView",
+        {
+            Text = "Viewing",
+            Values = {
+                "Watchlist 1",
+                "Watchlist 2",
+            },
+            Default = "Watchlist 1",
+            Searchable = false,
+        }
+    )
+
+WatchlistDropdown:OnChanged(function(value)
+
+    SniperFilterUIState.ViewTarget =
+        NormalizeWatchlistId(value)
+
+    WatchlistPage = 1
+
+    if IsTradeWorld()
+and type(RefreshWatchlist) == "function" then
+    RefreshWatchlist()
+end
+    MarkConfigDirty()
+end)
+--==================================================
+-- WATCHLIST LABEL POOL
+-- Clean compact rows with aligned columns.
+--==================================================
+
+WatchlistInfoLabel =
+    SniperWatchlistBox:AddLabel(
+        "Watchlist 1 • 0 filters • Page 1/1",
+        false
+    )
+
+for i = 1, ITEMS_PER_PAGE do
+
+    local lbl =
+        SniperWatchlistBox:AddLabel(" ", false)
+
+    lbl:SetVisible(false)
+
+    table.insert(
+        WatchlistLabels,
+        lbl
+    )
+end
+
+--==================================================
+-- PAGINATION
+--==================================================
+
+local PageButton =
+    SniperWatchlistBox:AddButton({
+        Text = "‹ Prev",
+
+        Func = function()
+
+            if WatchlistPage > 1 then
+                WatchlistPage =
+                    WatchlistPage - 1
+
+                if IsTradeWorld()
+and type(RefreshWatchlist) == "function" then
+    RefreshWatchlist()
+end
+            end
+        end,
+    })
+
+PageButton:AddButton({
+    Text = "Next ›",
+
+    Func = function()
+
+        local total =
+            CountSniperFilterSet(
+                SniperFilterUIState.ViewTarget
+            )
+
+        local maxPages =
+            math.max(
+                1,
+                math.ceil(total / ITEMS_PER_PAGE)
+            )
+
+        if WatchlistPage < maxPages then
+            WatchlistPage =
+                WatchlistPage + 1
+
+            if IsTradeWorld()
+and type(RefreshWatchlist) == "function" then
+    RefreshWatchlist()
+end
+        end
+    end,
+})
+
+--==================================================
+-- WATCHLIST MANAGEMENT
+--==================================================
+
+SniperWatchlistBox:AddButton({
+    Text = "Manage Watchlist",
+    Tooltip = "Remove a filter from the currently viewed watchlist.",
+
+    Func = function()
+
+        local viewTarget =
+            NormalizeWatchlistId(
+                SniperFilterUIState.ViewTarget
+            )
+
+        local filters =
+            GetSniperFilterSet(viewTarget)
+
+        local total =
+            CountSniperFilterSet(viewTarget)
+
+        if total <= 0 then
+
+            HolyNotify(
+                "Watchlist Empty",
+                "There are no filters to manage in Watchlist "
+                    .. tostring(viewTarget)
+                    .. ".",
+                "info",
+                3
+            )
+
+            return
+        end
+
+        local removeQuery = ""
+
+        local ManageDialog = nil
+
+        local function FindFilterByQuery(query)
+
+            query =
+                tostring(query or "")
+                    :lower()
+                    :gsub("^%s+", "")
+                    :gsub("%s+$", "")
+
+            if query == "" then
+                return nil, "EMPTY"
+            end
+
+            local exactMatch = nil
+            local partialMatches = {}
+
+            for pet in pairs(filters) do
+
+                local petText =
+                    tostring(pet)
+
+                local petLower =
+                    petText:lower()
+
+                if petLower == query then
+                    exactMatch = petText
+                    break
+                end
+
+                if petLower:find(query, 1, true) then
+                    table.insert(
+                        partialMatches,
+                        petText
+                    )
+                end
+            end
+
+            if exactMatch then
+                return exactMatch, "EXACT"
+            end
+
+            if #partialMatches == 1 then
+                return partialMatches[1], "PARTIAL"
+            end
+
+            if #partialMatches > 1 then
+                return nil, "MULTIPLE", partialMatches
+            end
+
+            return nil, "NONE"
+        end
+
+        ManageDialog =
+            Window:AddDialog(
+                "ManageWatchlistDialog",
+                {
+                    Title =
+                        "Manage Watchlist "
+                        .. tostring(viewTarget),
+
+                    Description =
+                        "Type a pet name to remove it from Watchlist "
+                        .. tostring(viewTarget)
+                        .. ".",
+
+                    Icon = "star",
+                    AutoDismiss = true,
+                    OutsideClickDismiss = true,
+
+                    FooterButtons = {
+                        Cancel = {
+                            Title = "Cancel",
+                            Variant = "Ghost",
+                            Order = 1,
+
+                            Callback = function()
+
+                                if ManageDialog then
+                                    ManageDialog:Dismiss()
+                                end
+                            end,
+                        },
+
+                        Remove = {
+                            Title = "Remove",
+                            Variant = "Destructive",
+                            Order = 2,
+
+                            Callback = function()
+
+                                local selectedPet, status, matches =
+                                    FindFilterByQuery(removeQuery)
+
+                                if status == "EMPTY" then
+
+                                    HolyNotify(
+                                        "No Filter Typed",
+                                        "Type the pet name you want to remove.",
+                                        "triangle-alert",
+                                        3
+                                    )
+
+                                    return
+                                end
+
+                                if status == "MULTIPLE" then
+
+                                    HolyNotify(
+                                        "Too Many Matches",
+                                        "Type more of the pet name.",
+                                        "search",
+                                        4
+                                    )
+
+                                    return
+                                end
+
+                                if status == "NONE"
+                                or not selectedPet then
+
+                                    HolyNotify(
+                                        "Filter Not Found",
+                                        "No watchlist filter matched that name.",
+                                        "triangle-alert",
+                                        3
+                                    )
+
+                                    return
+                                end
+
+                                filters[selectedPet] = nil
+
+                                WatchlistPage = 1
+
+                                if IsTradeWorld()
+                            and type(RefreshWatchlist) == "function" then
+                                RefreshWatchlist()
+                            end
+
+                                MarkConfigDirty()
+
+                                SaveSniperFilters()
+
+                                HolyNotify(
+                                    "Filter Removed",
+                                    tostring(selectedPet)
+                                        .. " was removed from Watchlist "
+                                        .. tostring(viewTarget)
+                                        .. ".",
+                                    "trash",
+                                    3
+                                )
+
+                                if ManageDialog then
+                                    ManageDialog:Dismiss()
+                                end
+                            end,
+                        },
+                    },
+                }
+            )
+
+        ManageDialog:AddInput(
+            "ManageWatchlistSearch",
+            {
+                Text = "Pet Name",
+                Placeholder = "e.g. Rainbow Elephant",
+                Numeric = false,
+                Finished = false,
+
+                Callback = function(value)
+
+                    removeQuery =
+                        tostring(value or "")
+                end,
+            }
+        )
+    end,
+})
+
+--==================================================
+-- CLEAR WATCHLIST
+-- Destructive action guarded by confirmation dialog.
+--==================================================
+
+SniperWatchlistBox:AddButton({
+    Text = "🗑 Clear Watchlist",
+    Tooltip = "Clear the currently viewed watchlist only.",
+
+    Func = function()
+
+        local viewTarget =
+            NormalizeWatchlistId(
+                SniperFilterUIState.ViewTarget
+            )
+
+        local filters =
+            GetSniperFilterSet(viewTarget)
+
+        local total =
+            CountSniperFilterSet(viewTarget)
+
+        if total <= 0 then
+
+            HolyNotify(
+                "Watchlist Empty",
+                "There are no filters to clear in Watchlist "
+                    .. tostring(viewTarget)
+                    .. ".",
+                "info",
+                3
+            )
+
+            return
+        end
+
+        local ClearDialog = nil
+
+        ClearDialog =
+            Window:AddDialog(
+                "ClearWatchlistDialog",
+                {
+                    Title =
+                        "Clear Watchlist "
+                        .. tostring(viewTarget)
+                        .. "?",
+
+                    Description =
+                        "This will permanently remove all "
+                        .. tostring(total)
+                        .. " filters from Watchlist "
+                        .. tostring(viewTarget)
+                        .. ". The other watchlist will stay active.",
+
+                    Icon = "triangle-alert",
+                    AutoDismiss = true,
+                    OutsideClickDismiss = true,
+
+                    FooterButtons = {
+                        Cancel = {
+                            Title = "Cancel",
+                            Variant = "Ghost",
+                            Order = 1,
+
+                            Callback = function()
+
+                                if ClearDialog then
+                                    ClearDialog:Dismiss()
+                                end
+                            end,
+                        },
+
+                        Delete = {
+                            Title = "Clear All",
+                            Variant = "Destructive",
+                            WaitTime = 2,
+                            Order = 2,
+
+                            Callback = function()
+
+                                table.clear(filters)
+
+                                WatchlistPage = 1
+
+                                if IsTradeWorld()
+and type(RefreshWatchlist) == "function" then
+    RefreshWatchlist()
+end
+
+                                MarkConfigDirty()
+
+                                SaveSniperFilters()
+
+                                HolyNotify(
+                                    "Watchlist Cleared",
+                                    "Watchlist "
+                                        .. tostring(viewTarget)
+                                        .. " was cleared.",
+                                    "trash-2",
+                                    4
+                                )
+
+                                if ClearDialog then
+                                    ClearDialog:Dismiss()
+                                end
+                            end,
+                        },
+                    },
+                }
+            )
+    end,
+})
+
+--==================================================
+-- EGG FOCUS UI
+-- Simple egg-based filters.
+--==================================================
+
+local EggFocusNames =
+    GetEggFocusNames()
+
+
+local EggFocusEggDropdown =
+    EggFocusBox:AddDropdown(
+        "EggFocusEggSelect",
+        {
+            Text = "Egg",
+            Values = EggFocusNames,
+            Default = "",
+            Searchable = true,
+        }
+    )
+
+local EggFocusMaxPriceInput =
+    EggFocusBox:AddInput(
+        "EggFocusMaxPrice",
+        {
+            Text = "Max Price",
+            Placeholder = "required",
+            Numeric = true,
+            Finished = true,
+        }
+    )
+
+EggFocusBox:AddButton({
+    Text = "Add / Update Egg Focus",
+    Tooltip = "Snipes any pet from the selected egg under the max price.",
+
+    Func = function()
+
+        local eggName =
+            EggFocusEggDropdown.Value
+
+        if not eggName
+        or eggName == "" then
+
+            HolyNotify(
+                "No Egg Selected",
+                "Choose an egg before adding an Egg Focus.",
+                "egg",
+                3
+            )
+
+            return
+        end
+
+        local pets =
+            GetEggFocusPets(eggName)
+
+        if #pets <= 0 then
+
+            HolyNotify(
+                "Egg Has No Pets",
+                tostring(eggName)
+                    .. " has no readable pet pool.",
+                "triangle-alert",
+                4
+            )
+
+            return
+        end
+
+local maxPriceText =
+    tostring(EggFocusMaxPriceInput.Value or "")
+        :gsub(",", "")
+        :gsub("%s+", "")
+
+local maxPrice =
+    tonumber(maxPriceText)
+
+if not maxPrice
+or maxPrice <= 0 then
+
+    HolyNotify(
+        "Max Price Required",
+        "Enter a max price before adding an Egg Focus.",
+        "triangle-alert",
+        4
+    )
+
+    return
+end
+
+maxPrice =
+    math.floor(maxPrice)
+
+        local saveTarget =
+    1
+
+local eggFilters =
+    GetEggFocusSet(saveTarget)
+
+        eggFilters[tostring(eggName)] = {
+            MaxPrice = maxPrice,
+        }
+
+        EggFocusUIState.ViewTarget =
+            saveTarget
+
+        if type(RefreshEggFocus) == "function" then
+            if IsTradeWorld()
+and type(RefreshEggFocus) == "function" then
+    RefreshEggFocus()
+end
+        end
+
+        MarkConfigDirty()
+
+        SaveSniperFilters()
+
+        HolyNotify(
+    "Egg Focus Updated",
+    tostring(eggName)
+        .. " added with "
+        .. tostring(#pets)
+        .. " pets.",
+    "egg",
+    4
+)
+    end,
+})
+
+EggFocusInfoLabel =
+    EggFocusBox:AddLabel(
+        "Watchlist 1 • 0 egg focuses",
+        false
+    )
+
+for i = 1, 5 do
+
+    local lbl =
+        EggFocusBox:AddLabel(" ", false)
+
+    lbl:SetVisible(false)
+
+    table.insert(
+        EggFocusLabels,
+        lbl
+    )
+end
+
+EggFocusBox:AddButton({
+    Text = "Manage Egg Focus",
+    Tooltip = "Remove an egg focus from the currently viewed watchlist.",
+
+    Func = function()
+
+        local viewTarget = 1
+
+        local eggFilters =
+            GetEggFocusSet(viewTarget)
+
+        local total =
+            CountEggFocusSet(viewTarget)
+
+        if total <= 0 then
+
+            HolyNotify(
+                "Egg Focus Empty",
+                "There are no egg focuses in Watchlist "
+                    .. tostring(viewTarget)
+                    .. ".",
+                "info",
+                3
+            )
+
+            return
+        end
+
+        local removeQuery = ""
+
+        local ManageDialog = nil
+
+        local function FindEggByQuery(query)
+
+            query =
+                tostring(query or "")
+                    :lower()
+                    :gsub("^%s+", "")
+                    :gsub("%s+$", "")
+
+            if query == "" then
+                return nil, "EMPTY"
+            end
+
+            local exactMatch = nil
+            local partialMatches = {}
+
+            for eggName in pairs(eggFilters) do
+
+                local eggText =
+                    tostring(eggName)
+
+                local eggLower =
+                    eggText:lower()
+
+                if eggLower == query then
+                    exactMatch = eggText
+                    break
+                end
+
+                if eggLower:find(query, 1, true) then
+                    table.insert(
+                        partialMatches,
+                        eggText
+                    )
+                end
+            end
+
+            if exactMatch then
+                return exactMatch, "EXACT"
+            end
+
+            if #partialMatches == 1 then
+                return partialMatches[1], "PARTIAL"
+            end
+
+            if #partialMatches > 1 then
+                return nil, "MULTIPLE", partialMatches
+            end
+
+            return nil, "NONE"
+        end
+
+        ManageDialog =
+            Window:AddDialog(
+                "ManageEggFocusDialog",
+                {
+                    Title =
+                        "Manage Egg Focus "
+                        .. tostring(viewTarget),
+
+                    Description =
+                        "Type an egg name to remove it from Watchlist "
+                        .. tostring(viewTarget)
+                        .. ".",
+
+                    Icon = "egg",
+                    AutoDismiss = true,
+                    OutsideClickDismiss = true,
+
+                    FooterButtons = {
+                        Cancel = {
+                            Title = "Cancel",
+                            Variant = "Ghost",
+                            Order = 1,
+
+                            Callback = function()
+
+                                if ManageDialog then
+                                    ManageDialog:Dismiss()
+                                end
+                            end,
+                        },
+
+                        Remove = {
+                            Title = "Remove",
+                            Variant = "Destructive",
+                            Order = 2,
+
+                            Callback = function()
+
+                                local selectedEgg, status =
+                                    FindEggByQuery(removeQuery)
+
+                                if status == "EMPTY" then
+
+                                    HolyNotify(
+                                        "No Egg Typed",
+                                        "Type the egg name you want to remove.",
+                                        "triangle-alert",
+                                        3
+                                    )
+
+                                    return
+                                end
+
+                                if status == "MULTIPLE" then
+
+                                    HolyNotify(
+                                        "Too Many Matches",
+                                        "Type more of the egg name.",
+                                        "search",
+                                        4
+                                    )
+
+                                    return
+                                end
+
+                                if status == "NONE"
+                                or not selectedEgg then
+
+                                    HolyNotify(
+                                        "Egg Focus Not Found",
+                                        "No egg focus matched that name.",
+                                        "triangle-alert",
+                                        3
+                                    )
+
+                                    return
+                                end
+
+                                eggFilters[selectedEgg] = nil
+
+                                if IsTradeWorld()
+and type(RefreshEggFocus) == "function" then
+    RefreshEggFocus()
+end
+
+                                MarkConfigDirty()
+
+                                SaveSniperFilters()
+
+                                HolyNotify(
+                                    "Egg Focus Removed",
+                                    tostring(selectedEgg)
+                                        .. " was removed from Watchlist "
+                                        .. tostring(viewTarget)
+                                        .. ".",
+                                    "trash",
+                                    3
+                                )
+
+                                if ManageDialog then
+                                    ManageDialog:Dismiss()
+                                end
+                            end,
+                        },
+                    },
+                }
+            )
+
+        ManageDialog:AddInput(
+            "ManageEggFocusSearch",
+            {
+                Text = "Egg Name",
+                Placeholder = "e.g. Paradise Egg",
+                Numeric = false,
+                Finished = false,
+
+                Callback = function(value)
+
+                    removeQuery =
+                        tostring(value or "")
+                end,
+            }
+        )
+    end,
+})
+--==================================================
+-- WATCHLIST HUD REFRESH
+-- Shows both watchlists because both are active for sniping.
+--==================================================
+
+RefreshWatchlistHUD = function()
+
+    if not WatchlistHUDContainer then
+        return
+    end
+
+    for _, child in ipairs(
+        WatchlistHUDContainer:GetChildren()
+    ) do
+        if child:IsA("Frame") then
+            child:Destroy()
+        end
+    end
+
+    local entries = {}
+
+    for watchlistId = 1, 2 do
+
+        local filters =
+            GetSniperFilterSet(watchlistId)
+
+        for pet, data in pairs(filters) do
+
+            local price =
+                data.MaxPrice == math.huge
+                and "∞"
+                or tostring(data.MaxPrice)
+
+            local displayPet =
+                tostring(pet)
+
+            if #displayPet > 22 then
+                displayPet =
+                    displayPet:sub(1, 19) .. "..."
+            end
+
+            local weightText =
+                FormatFilterWeight(
+                    data.MinWeight,
+                    data.WeightMode
+                )
+
+            table.insert(entries, {
+                WatchlistId = watchlistId,
+                Pet = pet,
+                Price = data.MaxPrice,
+                Text = string.format(
+                    "W%s · %s [%s | ≥%s]",
+                    tostring(watchlistId),
+                    displayPet,
+                    price,
+                    weightText
+                )
+            })
+        end
+    end
+
+    table.sort(entries, function(a, b)
+
+        local aPrice =
+            a.Price == math.huge
+            and math.huge
+            or tonumber(a.Price)
+            or 0
+
+        local bPrice =
+            b.Price == math.huge
+            and math.huge
+            or tonumber(b.Price)
+            or 0
+
+        if aPrice ~= bPrice then
+            return aPrice > bPrice
+        end
+
+        if a.WatchlistId ~= b.WatchlistId then
+            return a.WatchlistId < b.WatchlistId
+        end
+
+        return tostring(a.Pet) < tostring(b.Pet)
+    end)
+
+    local MAX_HUD_ROWS = 18
+
+    for index, entry in ipairs(entries) do
+
+        if index > MAX_HUD_ROWS then
+            break
+        end
+
+        local holder =
+            Instance.new("Frame")
+
+        holder.BackgroundTransparency = 1
+
+        holder.Size =
+            UDim2.new(1, 0, 0, 14)
+
+        holder.Parent =
+            WatchlistHUDContainer
+
+        local label =
+            Instance.new("TextLabel")
+
+        label.BackgroundTransparency = 1
+
+        label.Size =
+            UDim2.new(1, 0, 1, 0)
+
+        label.Font =
+            Enum.Font.GothamBold
+
+        label.TextSize = 11
+
+        label.TextXAlignment =
+            Enum.TextXAlignment.Right
+
+        label.TextStrokeTransparency = 0.5
+
+        label.TextStrokeColor3 =
+            Color3.fromRGB(0, 0, 0)
+
+        if index <= 2 then
+
+            label.TextColor3 =
+                Color3.fromRGB(255, 220, 120)
+
+        elseif index <= 6 then
+
+            label.TextColor3 =
+                Color3.fromRGB(235, 235, 235)
+
+        else
+
+            label.TextColor3 =
+                Color3.fromRGB(180, 180, 180)
+        end
+
+        label.Text =
+            entry.Text
+
+        label.Parent =
+            holder
+    end
+
+    if #entries > MAX_HUD_ROWS then
+
+        local hiddenCount =
+            #entries - MAX_HUD_ROWS
+
+        local holder =
+            Instance.new("Frame")
+
+        holder.BackgroundTransparency = 1
+
+        holder.Size =
+            UDim2.new(1, 0, 0, 14)
+
+        holder.Parent =
+            WatchlistHUDContainer
+
+        local label =
+            Instance.new("TextLabel")
+
+        label.BackgroundTransparency = 1
+
+        label.Size =
+            UDim2.new(1, 0, 1, 0)
+
+        label.Font =
+            Enum.Font.GothamBold
+
+        label.TextSize = 11
+
+        label.TextXAlignment =
+            Enum.TextXAlignment.Right
+
+        label.TextStrokeTransparency = 0.55
+
+        label.TextStrokeColor3 =
+            Color3.fromRGB(0, 0, 0)
+
+        label.TextColor3 =
+            Color3.fromRGB(170, 170, 170)
+
+        label.Text =
+            "+"
+            .. tostring(hiddenCount)
+            .. " more"
+
+        label.Parent =
+            holder
+    end
+end
+--==================================================
+-- EGG FOCUS REFRESH
+--==================================================
+
+RefreshEggFocus = function()
+
+    local viewTarget =
+        1
+
+    local eggFilters =
+        GetEggFocusSet(viewTarget)
+
+    local entries = {}
+
+    for eggName, data in pairs(eggFilters) do
+
+        local pets =
+            GetEggFocusPets(eggName)
+
+        table.insert(entries, {
+            EggName = tostring(eggName),
+            MaxPrice = data.MaxPrice,
+            PetCount = #pets,
+        })
+    end
+
+    table.sort(entries, function(a, b)
+
+        local aPrice =
+            a.MaxPrice == math.huge
+            and math.huge
+            or tonumber(a.MaxPrice)
+            or 0
+
+        local bPrice =
+            b.MaxPrice == math.huge
+            and math.huge
+            or tonumber(b.MaxPrice)
+            or 0
+
+        if aPrice ~= bPrice then
+            return aPrice > bPrice
+        end
+
+        return a.EggName < b.EggName
+    end)
+
+    local function FormatPrice(value)
+
+        if value == math.huge then
+            return "∞"
+        end
+
+        local number =
+            tonumber(value)
+
+        if not number then
+            return "0"
+        end
+
+        number =
+            math.floor(number)
+
+        local formatted =
+            tostring(number)
+
+        while true do
+
+            local nextFormatted, changed =
+                formatted:gsub("^(-?%d+)(%d%d%d)", "%1,%2")
+
+            formatted =
+                nextFormatted
+
+            if changed <= 0 then
+                break
+            end
+        end
+
+        return formatted
+    end
+
+    if EggFocusInfoLabel then
+        EggFocusInfoLabel:SetText(
+    "Egg Focus • "
+        .. tostring(#entries)
+        .. " eggs"
+)
+    end
+
+    for i = 1, #EggFocusLabels do
+
+        local label =
+            EggFocusLabels[i]
+
+        local entry =
+            entries[i]
+
+        if entry then
+
+            label:SetText(
+    "🥚 "
+        .. tostring(entry.EggName)
+        .. "  ≤"
+        .. FormatPrice(entry.MaxPrice)
+        .. "  • "
+        .. tostring(entry.PetCount)
+        .. " pets"
+)
+
+            label:SetVisible(true)
+
+        else
+
+            label:SetVisible(false)
+        end
+    end
+end
+--==================================================
+-- WATCHLIST REFRESH
+--==================================================
+
+RefreshWatchlist = function()
+
+    RefreshWatchlistHUD()
+
+    local viewTarget =
+        NormalizeWatchlistId(
+            SniperFilterUIState.ViewTarget
+        )
+
+    local filters =
+        GetSniperFilterSet(viewTarget)
+
+    local entries = {}
+
+    for pet, data in pairs(filters) do
+
+        local maxPrice =
+            data.MaxPrice
+
+        local minWeight =
+            tonumber(data.MinWeight)
+            or 0
+
+        table.insert(entries, {
+    Pet = tostring(pet),
+    MaxPrice = maxPrice,
+    MinWeight = minWeight,
+    WeightMode = data.WeightMode,
+    Priority = ResolveSniperFilterPriority(data),
+})
+    end
+
+    table.sort(entries, function(a, b)
+
+        local aPrice =
+            a.MaxPrice == math.huge
+            and math.huge
+            or tonumber(a.MaxPrice)
+            or 0
+
+        local bPrice =
+            b.MaxPrice == math.huge
+            and math.huge
+            or tonumber(b.MaxPrice)
+            or 0
+
+        if aPrice ~= bPrice then
+            return aPrice > bPrice
+        end
+
+        return a.Pet < b.Pet
+    end)
+
+    local function ShortenText(text, maxLength)
+
+        text =
+            tostring(text or "")
+
+        if #text <= maxLength then
+            return text
+        end
+
+        return text:sub(1, maxLength - 3) .. "..."
+    end
+
+    local function PadRight(text, width)
+
+        text =
+            tostring(text or "")
+
+        if #text >= width then
+            return text
+        end
+
+        return text .. string.rep(" ", width - #text)
+    end
+
+    local function PadLeft(text, width)
+
+        text =
+            tostring(text or "")
+
+        if #text >= width then
+            return text
+        end
+
+        return string.rep(" ", width - #text) .. text
+    end
+
+    local function FormatNumber(value)
+
+        if value == math.huge then
+            return "∞"
+        end
+
+        local number =
+            tonumber(value)
+
+        if not number then
+            return "0"
+        end
+
+        number =
+            math.floor(number)
+
+        local formatted =
+            tostring(number)
+
+        while true do
+
+            local nextFormatted, changed =
+                formatted:gsub("^(-?%d+)(%d%d%d)", "%1,%2")
+
+            formatted =
+                nextFormatted
+
+            if changed <= 0 then
+                break
+            end
+        end
+
+        return formatted
+    end
+
+    local function FormatWeight(value, weightMode)
+        return FormatFilterWeight(value, weightMode)
+    end
+
+    local total =
+        #entries
+
+    local maxPages =
+        math.max(
+            1,
+            math.ceil(total / ITEMS_PER_PAGE)
+        )
+
+    WatchlistPage =
+        math.clamp(
+            SafeNumber(WatchlistPage, 1),
+            1,
+            maxPages
+        )
+
+    if WatchlistInfoLabel then
+        WatchlistInfoLabel:SetText(
+            "Watchlist "
+                .. tostring(viewTarget)
+                .. " • "
+                .. tostring(total)
+                .. " filters • Page "
+                .. tostring(WatchlistPage)
+                .. "/"
+                .. tostring(maxPages)
+                .. " • Total active: "
+                .. tostring(CountAllSniperFilters())
+        )
+    end
+
+    local startIndex =
+        (WatchlistPage - 1)
+        * ITEMS_PER_PAGE
+
+    for i = 1, #WatchlistLabels do
+
+        local label =
+            WatchlistLabels[i]
+
+        local entry =
+            entries[startIndex + i]
+
+        if entry then
+
+            local globalIndex =
+                startIndex + i
+
+            local marker =
+                globalIndex <= 2
+                and "★"
+                or "•"
+
+            local petText =
+                PadRight(
+                    ShortenText(entry.Pet, 22),
+                    22
+                )
+
+            local priceText =
+                PadLeft(
+                    FormatNumber(entry.MaxPrice),
+                    7
+                )
+
+            local weightText =
+                PadLeft(
+                    FormatWeight(
+                        entry.MinWeight,
+                        entry.WeightMode
+                    ),
+                    8
+                )
+
+                local priorityText =
+    PadLeft(
+        "P" .. tostring(
+            ClampSniperPriority(entry.Priority)
+        ),
+        4
+    )
+
+            label:SetText(
+    marker
+        .. " "
+        .. petText
+        .. " "
+        .. priceText
+        .. " "
+        .. weightText
+        .. " "
+        .. priorityText
+)
+
+            label:SetVisible(true)
+
+        else
+
+            label:SetVisible(false)
+        end
+    end
+end
+
+--==================================================
+-- ADD / UPDATE FILTER
+--==================================================
+
+SniperFilterBox:AddButton({
+    Text = "Add / Update Filter",
+
+    Func = function()
+
+        local pet =
+            PetDropdown.Value
+
+        if not pet
+        or pet == "" then
+            warn("[Sniper] No pet selected")
+            return
+        end
+
+        local saveTarget =
+            NormalizeWatchlistId(
+                SniperFilterUIState.SaveTarget
+            )
+
+        local filters =
+            GetSniperFilterSet(saveTarget)
+
+        local minWeight =
+            tonumber(MinWeightInput.Value)
+            or 0
+
+        local maxPrice
+
+        if MaxPriceInput.Value == "" then
+            maxPrice = math.huge
+        else
+            maxPrice =
+                tonumber(MaxPriceInput.Value)
+
+            if not maxPrice then
+                warn("[Sniper] Invalid max price")
+                return
+            end
+        end
+
+        local weightMode =
+            NormalizeWeightMode(
+                SniperFilterUIState.WeightMode
+            )
+
+        local priority =
+    ClampSniperPriority(
+        PriorityInput.Value
+        or SniperFilterUIState.Priority
+        or 5
+    )
+
+filters[pet] = {
+    MinWeight = minWeight,
+    MaxPrice = maxPrice,
+    WeightMode = weightMode,
+    Priority = priority,
+}
+
+        SniperFilterUIState.ViewTarget =
+            saveTarget
+
+        WatchlistPage = 1
+
+        if IsTradeWorld()
+and type(RefreshWatchlist) == "function" then
+    RefreshWatchlist()
+end
+
+        MarkConfigDirty()
+
+        SaveSniperFilters()
+
+        print(
+    "[Sniper] Filter updated:",
+    pet,
+    "Watchlist:",
+    tostring(saveTarget),
+    "WeightMode:",
+    tostring(weightMode),
+    "Priority:",
+    tostring(priority)
+)
+
+        HolyNotify(
+            "Filter Updated",
+            tostring(pet)
+                .. " was added to Watchlist "
+                .. tostring(saveTarget)
+                .. " using "
+                .. tostring(weightMode == "BaseWeight" and "BaseWeight" or "Display KG")
+                .. ".",
+            "plus",
+            3
+        )
+    end,
+})
+
+end
+--==================================================
+-- WEBHOOK TAB → CONFIGURATION (UI ONLY)
+--==================================================
+local WebhookBox
+
+if type(Tabs.Webhook.AddLeftCollapsibleGroupbox) == "function" then
+
+    WebhookBox =
+        Tabs.Webhook:AddLeftCollapsibleGroupbox(
+            "Webhook Configuration",
+            "link",
+            true
+        )
+
+else
+
+    warn("[LIB TEST] Collapsible webhook unavailable, using normal groupbox")
+
+    WebhookBox =
+        Tabs.Webhook:AddLeftGroupbox(
+            "Webhook Configuration",
+            "link"
+        )
+end
+
+
+--==================================================
+-- WEBHOOK REQUEST RESOLUTION
+--==================================================
+
+RequestFunction =
+    syn and syn.request
+    or http_request
+    or request
+    or (http and http.request)
+    or (fluxus and fluxus.request)
+print("[WEBHOOK] RequestFunction:", RequestFunction)
+
+function CanSendWebhook()
+
+    if not WebhookState.Enabled then
+        warn("[Webhook] Disabled")
+        return false
+    end
+
+    if type(WebhookState.URL) ~= "string"
+    or WebhookState.URL == "" then
+        warn("[Webhook] Missing URL")
+        return false
+    end
+
+    if not RequestFunction then
+        warn("[Webhook] No request function available")
+        return false
+    end
+
+    return true
+end
+
+--==================================================
+-- WEBHOOK QUEUE
+--==================================================
+ApplyWebhookPing = function(payload, pingText)
+
+    pingText =
+        tostring(pingText or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if pingText == "" then
+        print("[WebhookPing] No ping")
+        return payload
+    end
+
+    local allowedMentions = {}
+
+    if pingText:lower() == "@everyone" then
+
+        payload.content = "@everyone"
+
+        allowedMentions.parse = {
+            "everyone"
+        }
+
+    elseif pingText:lower() == "@here" then
+
+        payload.content = "@here"
+
+        allowedMentions.parse = {
+            "everyone"
+        }
+
+    else
+
+        local userId =
+            pingText:match("<@!?(%d+)>")
+            or pingText:match("@?(%d+)")
+
+        if not userId then
+            warn("[WebhookPing] Invalid ping:", pingText)
+            return payload
+        end
+
+        payload.content =
+            "<@" .. tostring(userId) .. ">"
+
+        allowedMentions.users = {
+            tostring(userId)
+        }
+    end
+
+    payload.allowed_mentions =
+        allowedMentions
+
+    print(
+        "[WebhookPing] Applied:",
+        tostring(payload.content)
+    )
+
+    return payload
+end
+
+QueueWebhook = function(payload)
+
+    if type(payload) ~= "table" then
+        warn("[Webhook] Invalid payload")
+        return false
+    end
+
+    if not CanSendWebhook() then
+        return false
+    end
+
+    table.insert(
+        WebhookState.Queue,
+        payload
+    )
+
+    print(
+        "[Webhook] Queued | Queue:",
+        tostring(#WebhookState.Queue)
+    )
+
+    return true
+end
+
+--==================================================
+-- WEBHOOK EMBED SEND
+--==================================================
+
+function SendWebhook(payload)
+
+    local body =
+        HttpService:JSONEncode(payload)
+
+    local ok, response = pcall(function()
+
+        return RequestFunction({
+
+            Url =
+                tostring(WebhookState.URL)
+                    :gsub("%s+", ""),
+
+            Method = "POST",
+
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+
+            Body = body
+        })
+
+    end)
+
+    if not ok then
+        warn("[WEBHOOK] REQUEST FAILED:", response)
+        return
+    end
+
+    if type(response) == "table" then
+
+        local statusCode =
+            tonumber(
+                response.StatusCode
+                or response.status_code
+                or response.Status
+            )
+
+        if statusCode == 200
+        or statusCode == 204 then
+            print("[WEBHOOK] Sent successfully:", tostring(statusCode))
+            return
+        end
+
+        warn(
+            "[WEBHOOK] BAD STATUS:",
+            tostring(statusCode),
+            tostring(response.Body or response.body or "")
+        )
+
+        return
+    end
+
+    print("[WEBHOOK] Request completed")
+end
+
+--==================================================
+-- WEBHOOK WORKER
+--==================================================
+
+task.spawn(function()
+
+    while IsCurrentRun() do
+
+        if #WebhookState.Queue <= 0 then
+            task.wait(0.15)
+            continue
+        end
+
+        if WebhookState.Sending then
+            task.wait(0.05)
+            continue
+        end
+
+        WebhookState.LastSend =
+            SafeNumber(WebhookState.LastSend, 0)
+
+        WebhookState.SendDelay =
+            SafeNumber(WebhookState.SendDelay, 0.8)
+
+        local elapsed =
+            SafeElapsed(WebhookState.LastSend)
+
+        if elapsed < WebhookState.SendDelay then
+
+            task.wait(
+                math.max(
+                    0,
+                    WebhookState.SendDelay - elapsed
+                )
+            )
+        end
+
+        WebhookState.Sending = true
+
+        local payload =
+            table.remove(
+                WebhookState.Queue,
+                1
+            )
+
+        WebhookState.LastSend =
+            os.clock()
+
+        task.spawn(function()
+
+            pcall(function()
+
+                SendWebhook(payload)
+
+            end)
+
+            WebhookState.Sending = false
+
+        end)
+    end
+end)
+--==================================================
+-- WEBHOOK BUILDERS
+--==================================================
+
+CreateSuccessEmbed = function(listing, toolName, source)
+
+    listing =
+        listing or {}
+
+    local sellerName =
+        tostring(listing.Seller or "Unknown")
+
+    if listing.SellerUserId then
+        sellerName =
+            ResolveSeller(listing.SellerUserId)
+    end
+
+    local snapshot =
+        ParseConfirmedToolSnapshot(toolName)
+
+    local confirmedPetName =
+        snapshot
+        and snapshot.CleanName
+        or tostring(listing.PetName or "Unknown")
+
+    local confirmedWeight =
+        snapshot
+        and snapshot.Weight
+        or tonumber(listing.DisplayWeight)
+        or tonumber(listing.Weight)
+
+    local confirmedAge =
+        snapshot
+        and snapshot.Age
+        or tonumber(listing.Age)
+        or "Unknown"
+
+    local mutationText =
+        ResolveMutationFromConfirmedToolName(
+            toolName,
+            listing.PetName
+        )
+
+    if mutationText == "Normal"
+    or mutationText == "Unknown"
+    or mutationText == "" then
+
+        mutationText =
+            tostring(
+                listing.MutationText
+                or listing.Mutation
+                or "Normal"
+            )
+    end
+
+local title =
+    string.format(
+        "⚡ SNIPED • %s [Age %s] [%s]",
+        tostring(confirmedPetName),
+        tostring(confirmedAge or "Unknown"),
+        FormatWebhookWeightKG(confirmedWeight)
+    )
+
+    return {
+        embeds = {{
+
+            title = title,
+
+            description =
+                "Sniped By: ||"
+                .. tostring(Players.LocalPlayer.Name)
+                .. "||",
+
+            color = 0xFF4FD8,
+
+            fields = {
+
+
+                {
+                    name = "💰 Bought For",
+                    value =
+                    tostring(listing.Price or 0)
+                    .. " Tokens",
+                    inline = true,
+                },
+
+                {
+                    name = "🧬 Mutation",
+                    value =
+                        tostring(mutationText or "Unknown"),
+                    inline = true,
+                },
+
+                {
+                    name = "⚖️ BaseWeight",
+                    value =
+                        FormatWebhookBaseWeight(
+                            listing.BaseWeight
+                        ),
+                    inline = true,
+                },
+
+                {
+                    name = "👤 Seller",
+                    value =
+                        tostring(sellerName),
+                    inline = true,
+                },
+
+                {
+                    name = "🌍 Server",
+                    value =
+                        "```lua\n"
+                        .. tostring(game.PlaceId)
+                        .. ":"
+                        .. tostring(game.JobId)
+                        .. "\n```",
+                    inline = false,
+                },
+            },
+
+            footer = {
+                text = "Holy V2"
+            },
+
+            timestamp =
+                DateTime.now():ToIsoDate(),
+        }}
+    }
+end
+
+CreateBoothSaleEmbed = function(sale)
+
+    sale =
+        sale or {}
+
+    local toolTitle =
+        tostring(
+            sale.ToolName
+            or BuildWebhookPetTitle(
+                sale.PetName,
+                sale.MutationText,
+                sale.Age,
+                sale.DisplayWeight or sale.Weight
+            )
+            or "Unknown"
+        )
+
+    return {
+        embeds = {{
+
+            title = toolTitle,
+
+            description =
+                string.format(
+                    "By User: ||%s||",
+                    Players.LocalPlayer.Name
+                ),
+
+            color = 0xF59E0B,
+
+            fields = {
+
+                {
+                    name = "💰 Sold For",
+                    value = string.format(
+                        "%s Tokens",
+                        tostring(
+                            sale.NetPrice
+                            or sale.Price
+                            or 0
+                        )
+                    ),
+                    inline = false,
+                },
+
+                {
+                    name = "Age",
+                    value =
+                        tostring(sale.Age or "Unknown"),
+                    inline = true,
+                },
+
+                {
+                    name = "Mutation",
+                    value =
+                        tostring(sale.MutationText or "Unknown"),
+                    inline = true,
+                },
+
+                {
+                    name = "BaseWeight",
+                    value =
+                        FormatWebhookBaseWeight(
+                            sale.BaseWeight
+                        ),
+                    inline = true,
+                },
+
+                {
+                    name = "✨ Token Balance",
+                    value = string.format(
+                        "%s Tokens",
+                        tostring(GetTokenBalance())
+                    ),
+                    inline = false,
+                },
+
+                {
+                    name = "Server",
+                    value =
+                        "```lua\n"
+                        .. tostring(game.PlaceId)
+                        .. ":"
+                        .. tostring(game.JobId)
+                        .. "\n```",
+                    inline = false,
+                },
+            },
+
+            footer = {
+                text = "Holy V2"
+            },
+
+            timestamp =
+                DateTime.now():ToIsoDate(),
+        }}
+    }
+end
+function CreateErrorEmbed(message)
+
+    return {
+        embeds = {{
+            title = "Runtime Error",
+
+            description = tostring(message),
+
+            color = 0xEF4444,
+
+            fields = {
+
+                {
+                    name = "PlaceId",
+                    value = tostring(game.PlaceId),
+                    inline = true,
+                },
+
+                {
+                    name = "JobId",
+                    value = tostring(game.JobId),
+                    inline = false,
+                },
+            },
+
+            footer = {
+                text = "Holy V2"
+            },
+
+            timestamp = DateTime.now():ToIsoDate(),
+        }}
+    }
+end
+
+--==================================================
+-- OWN BOOTH SALE TRACKER
+-- Manual-unlist safe:
+-- A missing listing is only treated as SOLD if token balance increases.
+--
+-- Multi-sale safe:
+-- Multiple listings disappearing inside the same confirmation window
+-- are confirmed from one shared token-gain budget.
+--==================================================
+
+OwnBoothTracker = {
+    LastListings = {},
+    PendingMissing = {},
+
+    Initialized = false,
+
+    -- Last observed token balance from the previous scan pass.
+    LastTokenBalance = 0,
+
+    -- Token balance checkpoint used for confirmed sale accounting.
+    -- This is intentionally separate from LastTokenBalance so multiple
+    -- simultaneous sales can be confirmed from the same token increase.
+    SaleTokenCheckpoint = 0,
+
+    ConfirmDelay = 1.75,
+    MaxConfirmDelay = 12,
+
+    ScanInterval = 0.35,
+
+    -- Allows tiny UI/replication mismatch but still blocks manual unlisting.
+    MinSaleRatio = 0.5,
+}
+--==================================================
+-- TRADE BOOTH FEE RESOLVER
+-- Source of truth for booth sale webhook payouts.
+-- Uses the game's own TradeBoothsData.applyFee().
+--==================================================
+
+TradeBoothsData =
+    TradeBoothsData
+    or nil
+
+if not TradeBoothsData then
+    pcall(function()
+        TradeBoothsData =
+            require(
+                ReplicatedStorage
+                    :WaitForChild("Data")
+                    :WaitForChild("TradeBoothsData")
+            )
+    end)
+end
+
+function ResolveBoothNetTokens(grossPrice)
+
+    local price =
+        tonumber(grossPrice)
+
+    if not price
+    or price <= 0 then
+        return 0
+    end
+
+    if type(TradeBoothsData) == "table"
+    and type(TradeBoothsData.applyFee) == "function" then
+
+        local ok, result =
+            pcall(function()
+                return TradeBoothsData.applyFee(price)
+            end)
+
+        if ok
+        and tonumber(result) then
+            return math.max(
+                1,
+                math.floor(tonumber(result))
+            )
+        end
+    end
+
+    -- Fallback confirmed from your test:
+    -- 1000 -> 990, so booth fee is 1%.
+    return math.max(
+        1,
+        math.floor(price * 0.99)
+    )
+end
+
+function BuildOwnListingSnapshot()
+
+    local snapshot = {}
+
+    local data = LatestBoothData
+
+    if not data
+    or not data.Booths
+    or not data.Players then
+        return snapshot
+    end
+
+    local localUserId =
+        Players.LocalPlayer.UserId
+
+    for boothId, boothData in pairs(data.Booths) do
+
+        local owner =
+            boothData.Owner
+
+        if not owner then
+            continue
+        end
+
+        local ownerId =
+            tonumber(
+                tostring(owner):match("_(%d+)$")
+            )
+
+        if ownerId ~= localUserId then
+            continue
+        end
+
+        local playerData =
+            data.Players[owner]
+
+        if not playerData then
+            continue
+        end
+
+        local listings =
+            playerData.Listings
+
+        local items =
+            playerData.Items
+
+        if type(listings) ~= "table"
+        or type(items) ~= "table" then
+            continue
+        end
+
+        for uid, listingData in pairs(listings) do
+
+            if type(listingData) ~= "table" then
+                continue
+            end
+
+            local item =
+                items[listingData.ItemId]
+
+            if not item then
+                continue
+            end
+
+            local petData =
+                item.PetData
+
+            if not petData then
+                continue
+            end
+
+local itemUUID =
+    tostring(
+        listingData.ItemId
+        or uid
+        or ""
+    )
+
+local rawPetName =
+    tostring(item.PetType or "Unknown")
+
+local age =
+    ResolveRawPetDataAge(
+        petData
+    )
+    or ResolveRawPetDataAgeFromUUID(
+        itemUUID
+    )
+
+local baseWeight =
+    ResolveRawPetDataBaseWeight(
+        petData
+    )
+
+local displayWeight =
+    ResolveRawPetDataDisplayWeight(
+        petData
+    )
+
+local mutationText =
+    ResolvePetMutationTextFromPetData(
+        petData
+    )
+
+if mutationText == "Normal"
+or mutationText == "Unknown"
+or mutationText == "" then
+
+    mutationText =
+        ResolveOwnListedMetadataMutation(
+            itemUUID
+        )
+        or ResolveRawPetDataMutationFromUUID(
+            itemUUID,
+            rawPetName
+        )
+        or mutationText
+end
+
+local finalName =
+    rawPetName
+
+if mutationText ~= "Normal"
+and mutationText ~= "Unknown"
+and mutationText ~= "" then
+
+    finalName =
+        tostring(mutationText)
+        .. " "
+        .. rawPetName
+end
+
+local toolName =
+    ResolveRawPetDataWebhookTitle(
+        rawPetName,
+        mutationText,
+        age,
+        displayWeight
+    )
+
+            local listingKey =
+                tostring(boothId)
+                .. "_"
+                .. tostring(uid)
+
+local grossPrice =
+    tonumber(listingData.Price)
+    or 0
+
+local netPrice =
+    ResolveBoothNetTokens(grossPrice)
+
+snapshot[listingKey] = {
+    UID = tostring(uid),
+    ListingKey = listingKey,
+    BoothId = tostring(boothId),
+
+    PetName = rawPetName,
+    DisplayName = finalName,
+    ToolName = toolName,
+
+    -- Raw pet metadata from booth data.
+    MetadataSource = "RawPetData",
+
+    RawPetData = petData,
+
+    Age = age,
+    MutationText = mutationText,
+    BaseWeight = baseWeight,
+    DisplayWeight = displayWeight,
+
+    -- Legacy compatibility.
+    Weight = displayWeight,
+
+    -- Gross listing price shown in the booth input.
+    GrossPrice = grossPrice,
+
+    -- Net tokens actually received after booth tax.
+    NetPrice = netPrice,
+
+    -- Keep Price as net payout so existing webhook builders
+    -- and sale confirmation logic display the correct received value.
+    Price = netPrice,
+}
+        end
+    end
+
+    return snapshot
+end
+
+function ResolveRequiredSaleGain(listing)
+
+    if not listing then
+        return math.huge
+    end
+
+    local netPrice =
+        tonumber(listing.NetPrice)
+        or tonumber(listing.Price)
+        or 0
+
+    if netPrice <= 0 then
+        return 1
+    end
+
+    return math.max(
+        1,
+        math.floor(
+            netPrice * OwnBoothTracker.MinSaleRatio
+        )
+    )
+end
+
+function FireConfirmedBoothSale(oldListing)
+
+    print(
+        "[BOOTH SALE CONFIRMED]",
+        tostring(oldListing.PetName),
+        "| source:",
+        tostring(oldListing.MetadataSource or "Unknown"),
+        "| age:",
+        tostring(oldListing.Age),
+        "| displayKG:",
+        tostring(oldListing.DisplayWeight or oldListing.Weight),
+        "| baseWeight:",
+        tostring(oldListing.BaseWeight)
+    )
+
+    QueueGlobalBoothSaleWebhook(oldListing)
+
+    if WebhookState.Enabled
+    and WebhookState.NotifyBoothSales then
+
+        QueueWebhook(
+            ApplyWebhookPing(
+                CreateBoothSaleEmbed(oldListing),
+                WebhookState.PingBoothSales
+            )
+        )
+
+        print("[WEBHOOK] Booth sale queued")
+    end
+end
+
+task.spawn(function()
+
+    while IsCurrentRun() do
+        task.wait(OwnBoothTracker.ScanInterval)
+
+        if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+            continue
+        end
+
+        local current =
+            BuildOwnListingSnapshot()
+
+        local now =
+            os.clock()
+
+        local tokenBalance =
+            GetTokenBalance()
+
+        -- First pass only initializes state.
+        -- This prevents startup / teleport / booth-load false sales.
+        if not OwnBoothTracker.Initialized then
+
+            OwnBoothTracker.LastListings =
+                current
+
+            OwnBoothTracker.LastTokenBalance =
+                tokenBalance
+
+            OwnBoothTracker.SaleTokenCheckpoint =
+                tokenBalance
+
+            OwnBoothTracker.Initialized =
+                true
+
+            continue
+        end
+
+        local previous =
+            OwnBoothTracker.LastListings
+
+        --==================================================
+        -- MARK MISSING LISTINGS AS PENDING
+        -- Do NOT instantly call them sales.
+        --==================================================
+
+        for listingKey, oldListing in pairs(previous) do
+
+            listingKey =
+                tostring(listingKey)
+
+            if not current[listingKey]
+            and not OwnBoothTracker.PendingMissing[listingKey] then
+
+                OwnBoothTracker.PendingMissing[listingKey] = {
+                    Listing = oldListing,
+                    MissingAt = now,
+
+                    -- Keep the original removal-time balance for diagnostics.
+                    TokenBefore = OwnBoothTracker.LastTokenBalance,
+                }
+
+                print(
+                    "[BOOTH LISTING REMOVED/PENDING]",
+                    oldListing.PetName
+                )
+            end
+        end
+
+        --==================================================
+        -- REMOVE RETURNED LISTINGS FROM PENDING
+        -- Listing came back, so it was not sold.
+        --==================================================
+
+        for listingKey in pairs(OwnBoothTracker.PendingMissing) do
+
+            listingKey =
+                tostring(listingKey)
+
+            if current[listingKey] then
+                OwnBoothTracker.PendingMissing[listingKey] = nil
+            end
+        end
+
+        --==================================================
+        -- BUILD CONFIRMATION BATCH
+        -- Multiple sales can share the same token increase.
+        --==================================================
+
+        local confirmBatch = {}
+
+        for listingKey, pending in pairs(OwnBoothTracker.PendingMissing) do
+
+            local elapsed =
+                now - pending.MissingAt
+
+            if elapsed >= OwnBoothTracker.ConfirmDelay then
+
+                table.insert(confirmBatch, {
+                    ListingKey = tostring(listingKey),
+                    Pending = pending,
+                    Elapsed = elapsed,
+                })
+            end
+        end
+
+        table.sort(confirmBatch, function(a, b)
+
+            local aTime =
+                a.Pending
+                and a.Pending.MissingAt
+                or 0
+
+            local bTime =
+                b.Pending
+                and b.Pending.MissingAt
+                or 0
+
+            if aTime ~= bTime then
+                return aTime < bTime
+            end
+
+            return tostring(a.ListingKey) < tostring(b.ListingKey)
+        end)
+
+        --==================================================
+        -- TOKEN-GAIN BUDGET
+        -- This is what fixes same-server / same-time multi-sales.
+        -- Example:
+        -- 2 Mimics sold at 180 each = +360 token gain.
+        -- The tracker confirms both and consumes 180 + 180.
+        --==================================================
+
+        local tokenGainBudget =
+            tokenBalance
+            - (
+                tonumber(OwnBoothTracker.SaleTokenCheckpoint)
+                or tokenBalance
+            )
+
+        local consumedBudget = 0
+        local confirmedCount = 0
+
+        if tokenGainBudget > 0
+        and #confirmBatch > 0 then
+
+            for _, entry in ipairs(confirmBatch) do
+
+                local listingKey =
+                    entry.ListingKey
+
+                local pending =
+                    entry.Pending
+
+                local oldListing =
+                    pending
+                    and pending.Listing
+
+                if not oldListing then
+                    OwnBoothTracker.PendingMissing[listingKey] = nil
+                    continue
+                end
+
+                local requiredGain =
+                    ResolveRequiredSaleGain(oldListing)
+
+                local availableBudget =
+                    tokenGainBudget - consumedBudget
+
+                if availableBudget >= requiredGain then
+
+                    FireConfirmedBoothSale(oldListing)
+
+                    consumedBudget =
+                    consumedBudget + requiredGain
+                    confirmedCount =
+                    confirmedCount + 1
+
+                    OwnBoothTracker.PendingMissing[listingKey] = nil
+                end
+            end
+        end
+
+        -- Advance sale checkpoint only by budget we actually consumed.
+        -- Do not jump it to tokenBalance blindly, or later pending removals
+        -- can lose their token evidence.
+        if consumedBudget > 0 then
+            OwnBoothTracker.SaleTokenCheckpoint =
+                OwnBoothTracker.SaleTokenCheckpoint + consumedBudget
+        end
+
+        -- If tokens dropped or reset, resync safely.
+        if tokenBalance < OwnBoothTracker.SaleTokenCheckpoint then
+            OwnBoothTracker.SaleTokenCheckpoint = tokenBalance
+        end
+
+        --==================================================
+        -- DISCARD EXPIRED NON-SALES
+        -- Manual unlisting reaches this path.
+        --==================================================
+
+        for listingKey, pending in pairs(OwnBoothTracker.PendingMissing) do
+
+            local elapsed =
+                now - pending.MissingAt
+
+            if elapsed >= OwnBoothTracker.MaxConfirmDelay then
+
+                local oldListing =
+                    pending.Listing
+
+                print(
+                    "[BOOTH REMOVE IGNORED]",
+                    oldListing
+                    and oldListing.PetName
+                    or tostring(listingKey)
+                )
+
+                OwnBoothTracker.PendingMissing[listingKey] = nil
+            end
+        end
+
+        -- If there are no unresolved pending removals, keep checkpoint aligned.
+        -- This prevents stale token gain from confirming future manual removals.
+        local hasPending = false
+
+        for _ in pairs(OwnBoothTracker.PendingMissing) do
+            hasPending = true
+            break
+        end
+
+        if not hasPending then
+            OwnBoothTracker.SaleTokenCheckpoint =
+                tokenBalance
+        end
+
+        OwnBoothTracker.LastListings =
+            current
+
+        OwnBoothTracker.LastTokenBalance =
+            tokenBalance
+
+        if confirmedCount > 1 then
+            print(
+                "[BOOTH MULTI-SALE CONFIRMED]",
+                tostring(confirmedCount)
+            )
+        end
+    end
+end)
+
+--==================================================
+-- LISTINGS TAB
+--==================================================
+
+function BuildListingsTab()
+
+    --==================================================
+    -- LISTINGS UI: CLEAN TABBOX LAYOUT
+    -- Left: Setup / Safety / Actions
+    -- Right: Status / Preview / History
+    --==================================================
+
+    local ListingSetupBox
+    local ListingSafetyBox
+    local ListingActionsBox
+
+    local ListingStatusBox
+    local ListingPreviewBox
+    local ListingFiltersBox
+    local ListingHistoryBox
+    local ListingBoothBox
+
+    --==================================================
+    -- LEFT SIDE
+    --==================================================
+
+    if type(Tabs.Listings.AddLeftTabbox) == "function" then
+
+        local LeftTabbox =
+            Tabs.Listings:AddLeftTabbox("Listing Engine")
+
+        ListingSetupBox =
+            LeftTabbox:AddTab(
+                "Setup",
+                "sliders-horizontal"
+            )
+
+        ListingSafetyBox =
+            LeftTabbox:AddTab(
+                "Safety",
+                "shield-check"
+            )
+
+        ListingActionsBox =
+            LeftTabbox:AddTab(
+                "Actions",
+                "zap"
+            )
+
+    else
+
+        warn("[LISTINGS UI] Tabbox unavailable, using groupboxes")
+
+        ListingSetupBox =
+            Tabs.Listings:AddLeftGroupbox(
+                "Setup",
+                "sliders-horizontal"
+            )
+
+        ListingSafetyBox =
+            Tabs.Listings:AddLeftGroupbox(
+                "Safety",
+                "shield-check"
+            )
+
+        ListingActionsBox =
+            Tabs.Listings:AddLeftGroupbox(
+                "Actions",
+                "zap"
+            )
+    end
+
+    --==================================================
+    -- RIGHT SIDE
+    --==================================================
+
+    if type(Tabs.Listings.AddRightTabbox) == "function" then
+
+        local RightTabbox =
+            Tabs.Listings:AddRightTabbox("Listing Data")
+
+        ListingStatusBox =
+            RightTabbox:AddTab(
+                "Status",
+                "activity"
+            )
+
+        ListingPreviewBox =
+            RightTabbox:AddTab(
+                "Preview",
+                "search"
+            )
+
+        ListingFiltersBox =
+            RightTabbox:AddTab(
+                "Filters",
+                "list-filter"
+            )
+
+        ListingHistoryBox =
+            RightTabbox:AddTab(
+                "History",
+                "history"
+            )
+
+    else
+
+        warn("[LISTINGS UI] Right tabbox unavailable, using groupboxes")
+
+        ListingStatusBox =
+            Tabs.Listings:AddRightGroupbox(
+                "Status",
+                "activity"
+            )
+
+        ListingPreviewBox =
+            Tabs.Listings:AddRightGroupbox(
+                "Preview",
+                "search"
+            )
+
+        ListingFiltersBox =
+            Tabs.Listings:AddRightGroupbox(
+                "Filters",
+                "list-filter"
+            )
+
+        ListingHistoryBox =
+            Tabs.Listings:AddRightGroupbox(
+                "History",
+                "history"
+            )
+    end
+
+    --==================================================
+    -- RIGHT SIDE BOTTOM
+    -- Always-visible booth listings panel.
+    -- This is intentionally outside the Status/Preview/
+    -- Filters/History tabbox so users can always see it.
+    --==================================================
+
+    if type(Tabs.Listings.AddRightCollapsibleGroupbox) == "function" then
+
+        ListingBoothBox =
+            Tabs.Listings:AddRightCollapsibleGroupbox(
+                "Listed In Booth",
+                "package",
+                true
+            )
+
+    else
+
+        ListingBoothBox =
+            Tabs.Listings:AddRightGroupbox(
+                "Listed In Booth",
+                "package"
+            )
+    end
+    --==================================================
+    -- SETUP TAB
+    --==================================================
+
+    ListingSetupBox:AddLabel(
+    "⚠️ Review Preview before adding.",
+    false
+)
+
+ListingSetupBox:AddLabel(
+    "Saved filters WILL auto-list matching pets.",
+    true
+)
+
+RefreshDynamicPetList()
+RefreshListingMutationList()
+
+local ListingMutationModeList =
+    {}
+
+local seenListingMutationMode =
+    {}
+
+local function AddListingMutationMode(value)
+
+    value =
+        tostring(value or "")
+
+    if value == "" then
+        return
+    end
+
+    if seenListingMutationMode[value] then
+        return
+    end
+
+    seenListingMutationMode[value] =
+        true
+
+    table.insert(
+        ListingMutationModeList,
+        value
+    )
+end
+
+AddListingMutationMode("---")
+AddListingMutationMode("All")
+AddListingMutationMode("All Except")
+
+for _, mutationName in ipairs(ListingMutationList or {}) do
+    AddListingMutationMode(mutationName)
+end
+
+        local ListingPetDropdown =
+        ListingSetupBox:AddDropdown(
+            "ListingPetSelect",
+            {
+                Text = "Pet",
+                Values = PetList,
+                Default = "",
+                Searchable = true,
+            }
+        )
+
+    ListingPetDropdown:OnChanged(function(value)
+
+        ListingsState.SelectedPet =
+            tostring(value or "")
+
+        ListingsState.NoWorkSleepUntil =
+            0
+
+        BuildListingPreview()
+        MarkConfigDirty()
+        ListingsStatusRefresh()
+
+        print(
+            "[LISTINGS] Selected pet:",
+            ListingsState.SelectedPet
+        )
+    end)
+
+    local ListingMutationDropdown =
+    ListingSetupBox:AddDropdown(
+        "ListingMutationSelect",
+        {
+            Text = "Mutation",
+            Values = ListingMutationModeList,
+            Default = "---",
+            Searchable = true,
+        }
+    )
+
+ListingMutationDropdown:OnChanged(function(value)
+
+    ListingsState.SelectedMutation =
+        NormalizeListingFilterMutation(
+            value
+        )
+
+    ListingsState.NoWorkSleepUntil =
+        0
+
+    BuildListingPreview()
+    MarkConfigDirty()
+    ListingsStatusRefresh()
+
+    print(
+        "[LISTINGS] Selected mutation:",
+        ListingsState.SelectedMutation
+    )
+end)
+
+local ListingExcludeMutationsDropdown =
+    ListingSetupBox:AddDropdown(
+        "ListingExcludeMutations",
+        {
+            Text = "Exclude Mutations",
+            Tooltip = "Only used when Mutation is set to All Except.",
+            Values = ListingMutationList,
+            Default = {},
+            Searchable = true,
+            Multi = true,
+        }
+    )
+
+ListingExcludeMutationsDropdown:OnChanged(function(value)
+
+    ListingsState.SelectedExcludedMutations =
+        BuildListingMutationMapFromDropdownValue(
+            value
+        )
+
+    ListingsState.NoWorkSleepUntil =
+        0
+
+    BuildListingPreview()
+    MarkConfigDirty()
+    ListingsStatusRefresh()
+
+    print(
+        "[LISTINGS] Excluded mutations:",
+        FormatExcludedListingMutations(
+            ListingsState.SelectedExcludedMutations
+        )
+    )
+end)
+
+local function FormatListingSetupValue(value, fallback)
+
+    if value == nil then
+        return tostring(fallback or "-")
+    end
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return tostring(value)
+    end
+
+    if number % 1 == 0 then
+        return tostring(math.floor(number))
+    end
+
+    return tostring(number)
+end
+
+local function RefreshListingSetupInputLabels()
+
+    if ListingMinLevelInput then
+        ListingMinLevelInput:SetText(
+            "Min Level  "
+            .. FormatListingSetupValue(
+                ListingsState.MinLevel,
+                1
+            )
+        )
+    end
+
+    if ListingMaxLevelInput then
+        ListingMaxLevelInput:SetText(
+            "Max Level  "
+            .. FormatListingSetupValue(
+                ListingsState.MaxLevel,
+                100
+            )
+        )
+    end
+
+    if ListingMinWeightInput then
+        ListingMinWeightInput:SetText(
+            "Min BaseWeight  "
+            .. FormatListingSetupValue(
+                ListingsState.MinWeight,
+                "-"
+            )
+        )
+    end
+
+    if ListingMaxWeightInput then
+        ListingMaxWeightInput:SetText(
+            "Max BaseWeight  "
+            .. FormatListingSetupValue(
+                ListingsState.MaxWeight,
+                "-"
+            )
+        )
+    end
+
+    if ListingPriceInput then
+        ListingPriceInput:SetText(
+            "🟢 Tokens  "
+            .. FormatListingSetupValue(
+                ListingsState.Price,
+                "-"
+            )
+        )
+    end
+end
+
+    ListingMinLevelInput =
+    ListingSetupBox:AddInput(
+        "ListingMinLevel",
+        {
+            Text = "Min Level",
+            Placeholder = "1",
+            Default = tostring(ListingsState.MinLevel or 1),
+            Numeric = false,
+            Finished = false,
+        }
+    )
+
+ListingMinLevelInput:OnChanged(function(value)
+
+    local text =
+        tostring(value or "")
+            :gsub(",", "")
+            :gsub("%s+", "")
+
+    local num =
+        tonumber(text)
+
+    if not num
+    or num < 1 then
+        num = 1
+    end
+
+    ListingsState.MinLevel =
+        math.clamp(
+            math.floor(num),
+            1,
+            999
+        )
+
+    ListingsState.NoWorkSleepUntil =
+        0
+
+    BuildListingPreview()
+MarkConfigDirty()
+ListingsStatusRefresh()
+RefreshListingSetupInputLabels()
+
+        print(
+        "[LISTINGS] Min Level:",
+        tostring(ListingsState.MinLevel)
+    )
+end)
+
+ListingMaxLevelInput =
+    ListingSetupBox:AddInput(
+        "ListingMaxLevel",
+        {
+            Text = "Max Level",
+            Placeholder = "100",
+            Default = tostring(ListingsState.MaxLevel or 100),
+            Numeric = false,
+            Finished = false,
+        }
+    )
+
+ListingMaxLevelInput:OnChanged(function(value)
+
+    local text =
+        tostring(value or "")
+            :gsub(",", "")
+            :gsub("%s+", "")
+
+    local num =
+        tonumber(text)
+
+    if not num
+    or num < 1 then
+        num = 100
+    end
+
+    ListingsState.MaxLevel =
+        math.clamp(
+            math.floor(num),
+            1,
+            999
+        )
+
+    ListingsState.NoWorkSleepUntil =
+        0
+
+    BuildListingPreview()
+    MarkConfigDirty()
+    ListingsStatusRefresh()
+    RefreshListingSetupInputLabels()
+
+    print(
+        "[LISTINGS] Max Level:",
+        tostring(ListingsState.MaxLevel)
+    )
+end)
+
+    ListingMinWeightInput =
+    ListingSetupBox:AddInput(
+            "ListingMinWeight",
+            {
+                Text = "Min BaseWeight",
+                Placeholder = "required",
+                Default = "",
+                Numeric = true,
+                Finished = false,
+            }
+        )
+
+    ListingMinWeightInput:OnChanged(function(value)
+
+        local text =
+            tostring(value or "")
+                :gsub(",", "")
+                :gsub("%s+", "")
+
+        local num =
+            tonumber(text)
+
+        if not num
+        or num < 0 then
+
+            ListingsState.MinWeight =
+                nil
+
+            ListingsState.MinWeightWasEntered =
+                false
+
+            ListingsState.NoWorkSleepUntil =
+                0
+
+            BuildListingPreview()
+            MarkConfigDirty()
+            ListingsStatusRefresh()
+            RefreshListingSetupInputLabels()
+
+            return
+        end
+
+        ListingsState.MinWeight =
+            num
+
+        ListingsState.MinWeightWasEntered =
+            true
+
+        ListingsState.NoWorkSleepUntil =
+            0
+
+        BuildListingPreview()
+        MarkConfigDirty()
+        ListingsStatusRefresh()
+        RefreshListingSetupInputLabels()
+
+        print(
+            "[LISTINGS] Min BaseWeight:",
+            tostring(ListingsState.MinWeight)
+        )
+    end)
+
+    ListingMaxWeightInput =
+    ListingSetupBox:AddInput(
+            "ListingMaxWeight",
+            {
+                Text = "Max BaseWeight",
+                Placeholder = "required",
+                Default = "",
+                Numeric = true,
+                Finished = false,
+            }
+        )
+
+    ListingMaxWeightInput:OnChanged(function(value)
+
+        local text =
+            tostring(value or "")
+                :gsub(",", "")
+                :gsub("%s+", "")
+
+        local num =
+            tonumber(text)
+
+        if not num
+        or num < 0 then
+
+            ListingsState.MaxWeight =
+                nil
+
+            ListingsState.MaxWeightWasEntered =
+                false
+
+            ListingsState.NoWorkSleepUntil =
+                0
+
+            BuildListingPreview()
+            MarkConfigDirty()
+            ListingsStatusRefresh()
+            RefreshListingSetupInputLabels()
+            return
+        end
+
+        ListingsState.MaxWeight =
+            num
+
+        ListingsState.MaxWeightWasEntered =
+            true
+
+        ListingsState.NoWorkSleepUntil =
+            0
+
+        BuildListingPreview()
+        MarkConfigDirty()
+        ListingsStatusRefresh()
+        RefreshListingSetupInputLabels()
+
+        print(
+            "[LISTINGS] Max BaseWeight:",
+            tostring(ListingsState.MaxWeight)
+        )
+    end)
+
+    ListingPriceInput =
+    ListingSetupBox:AddInput(
+            "ListingPrice",
+            {
+                Text = "🟢 Tokens",
+                Placeholder = "required",
+                Default = "",
+                Numeric = true,
+                Finished = false,
+            }
+        )
+
+    ListingPriceInput:OnChanged(function(value)
+
+        local text =
+            tostring(value or "")
+                :gsub(",", "")
+                :gsub("%s+", "")
+
+        local num =
+            tonumber(text)
+
+        if not num
+        or num <= 0 then
+
+            ListingsState.Price =
+    nil
+
+ListingsState.PriceWasEntered =
+    false
+
+ListingsState.NoWorkSleepUntil =
+    0
+
+BuildListingPreview()
+MarkConfigDirty()
+ListingsStatusRefresh()
+RefreshListingSetupInputLabels()
+
+return
+        end
+
+        ListingsState.Price =
+    math.floor(num)
+
+ListingsState.PriceWasEntered =
+    true
+
+ListingsState.NoWorkSleepUntil =
+    0
+
+BuildListingPreview()
+MarkConfigDirty()
+ListingsStatusRefresh()
+RefreshListingSetupInputLabels()
+
+print(
+            "[LISTINGS] Price:",
+            tostring(ListingsState.Price)
+        )
+    end)
+
+    RefreshListingSetupInputLabels()
+
+        ListingSetupBox:AddDivider({
+        Text = "Filter Preset",
+        MarginTop = 8,
+        MarginBottom = 8,
+    })
+
+    local FilterButton =
+        ListingSetupBox:AddButton({
+            Text = "Filter",
+            Tooltip = "Add the current setup as a reusable listing filter.",
+            Func = function()
+
+                AddCurrentListingFilter()
+            end,
+        })
+
+    FilterButton:AddButton({
+        Text = "Add",
+        Tooltip = "Add current pet/mutation/weight/price as a filter.",
+        Func = function()
+
+            AddCurrentListingFilter()
+        end,
+    })
+
+    FilterButton:AddButton({
+        Text = "Clear",
+        Tooltip = "Clear all listing filters.",
+        Risky = true,
+        DoubleClick = true,
+        Func = function()
+
+            ClearListingFilters()
+        end,
+    })
+    --==================================================
+    -- SAFETY TAB
+    --==================================================
+
+    ListingSafetyBox:AddLabel(
+        "Safety rules before creating booth listings.",
+        false
+    )
+
+    local AllowLowPriceToggle =
+        ListingSafetyBox:AddToggle(
+            "ListingAllowLowPrice",
+            {
+                Text = "⚠️ Allow Low Price",
+                Tooltip = "Required before Holy can list pets below 100 tokens.",
+                Default = false,
+            }
+        )
+
+    AllowLowPriceToggle:OnChanged(function(value)
+
+        ListingsState.AllowLowPriceListings =
+            value == true
+
+        MarkConfigDirty()
+        ListingsStatusRefresh()
+
+        print(
+            "[LISTINGS] Allow low price:",
+            tostring(ListingsState.AllowLowPriceListings)
+        )
+    end)
+
+    local AutoUnfavToggle =
+        ListingSafetyBox:AddToggle(
+            "ListingAutoUnfavorite",
+            {
+                Text = "❤️ Auto Unfavorite",
+                Default = false,
+            }
+        )
+
+    AutoUnfavToggle:OnChanged(function(value)
+
+        ListingsState.AutoUnfavorite =
+            value == true
+
+        MarkConfigDirty()
+
+        print(
+            "[LISTINGS] Auto Unfav:",
+            tostring(ListingsState.AutoUnfavorite)
+        )
+    end)
+
+local KeepRunningToggle =
+    ListingSafetyBox:AddToggle(
+        "ListingKeepRunning",
+        {
+            Text = "♾️ Keep Running",
+            Tooltip = "ON = AutoList keeps watching. OFF = AutoList stops when all current matching pets are handled.",
+            Default = false,
+        }
+    )
+
+KeepRunningToggle:OnChanged(function(value)
+
+    local keepRunning =
+        value == true
+
+    -- Keep Running ON  = never auto-disable when done.
+    -- Keep Running OFF = old Stop When Done behavior.
+    ListingsState.AutoDisableWhenDone =
+        not keepRunning
+
+    ListingsState.NoWorkSleepUntil =
+        0
+
+    MarkConfigDirty()
+
+    if type(ListingsStatusRefresh) == "function" then
+        ListingsStatusRefresh()
+    end
+
+    print(
+        "[LISTINGS] Keep Running:",
+        tostring(keepRunning),
+        "| AutoDisableWhenDone:",
+        tostring(ListingsState.AutoDisableWhenDone)
+    )
+end)
+
+    --==================================================
+    -- ACTIONS TAB
+    --==================================================
+
+    ListingActionsBox:AddLabel(
+        "Runtime controls for the listing worker.",
+        false
+    )
+        local ListingSpeedDropdown =
+        ListingActionsBox:AddDropdown(
+            "ListingSpeedMode",
+            {
+                Text = "⚡ Listing Speed",
+                Tooltip = "Controls AutoList scan and CreateListing cooldown.",
+                Values = {
+                "Adaptive",
+                "Safe",
+                "Balanced",
+                "Fast",
+                "Aggressive",
+                },
+                Default = ListingsState.ListingSpeedMode or "Adaptive",
+                Searchable = false,
+            }
+        )
+
+    ListingSpeedDropdown:OnChanged(function(value)
+
+        local config =
+            SetListingSpeedMode(value)
+
+        ListingsState.NoWorkSleepUntil =
+            0
+
+        MarkConfigDirty()
+
+        if ConfigState.IsHydrating then
+            return
+        end
+
+        HolyNotify(
+            "Listing Speed Updated",
+            tostring(ListingsState.ListingSpeedMode)
+                .. " • cooldown "
+                .. tostring(ResolveListingCreateCooldown())
+                .. "s",
+            "zap",
+            3
+        )
+
+        if type(ListingsStatusRefresh) == "function" then
+            ListingsStatusRefresh()
+        end
+    end)
+
+    local MaxQueueInput =
+        ListingActionsBox:AddInput(
+            "ListingMaxQueuePerPass",
+            {
+                Text = "Max Queue / Pass",
+                Default = tostring(ListingsState.MaxQueuePerPass or 2),
+                Numeric = true,
+                Finished = false,
+            }
+        )
+
+    MaxQueueInput:OnChanged(function(value)
+
+        local num =
+            tonumber(value)
+
+        if not num then
+            return
+        end
+
+        ListingsState.MaxQueuePerPass =
+            math.clamp(
+                math.floor(num),
+                1,
+                10
+            )
+
+        ListingsState.NoWorkSleepUntil =
+            0
+
+        MarkConfigDirty()
+
+        if type(ListingsStatusRefresh) == "function" then
+            ListingsStatusRefresh()
+        end
+    end)
+
+    ListingActionsBox:AddDivider({
+        Text = "Runtime",
+        MarginTop = 8,
+        MarginBottom = 8,
+    })
+
+    local AutoListToggle =
+        ListingActionsBox:AddToggle(
+            "EnableAutoList",
+            {
+                Text = "⚡ Start AutoList",
+                Default = false,
+            }
+        )
+
+AutoListToggle:OnChanged(function(value)
+
+    ListingsState.Enabled =
+        value == true
+
+    ListingsState.VisualTagsEnabled =
+        ListingsState.Enabled
+
+    ListingsState.AutoDisableWhenDone =
+        false
+
+    ListingsState.LastScan =
+        0
+
+    ListingsState.NoWorkSleepUntil =
+        0
+
+    -- Save the user's real intent separately from Obsidian timing.
+    -- This is what restore reads after rejoin.
+    SaveListingAutoListIntent(
+        ListingsState.Enabled
+    )
+
+    --==================================================
+    -- During SaveManager hydration, do not validate.
+    -- Saved filters/dropdowns may still be restoring.
+    --==================================================
+
+    if ConfigState
+    and ConfigState.IsHydrating then
+
+        if ListingsState.Enabled then
+            ListingsState.Status =
+                "Restore pending"
+        else
+            ListingsState.Status =
+                "Disabled"
+        end
+
+        if type(ListingsStatusRefresh) == "function" then
+            pcall(ListingsStatusRefresh)
+        end
+
+        return
+    end
+
+    --==================================================
+    -- Manual user toggle ON.
+    -- Validate after hydration only.
+    --==================================================
+
+    if ListingsState.Enabled then
+
+        if type(EnsureListingFilters) == "function" then
+            pcall(EnsureListingFilters)
+        end
+
+        if type(SyncListingRequiredFlagsFromValues) == "function" then
+            pcall(SyncListingRequiredFlagsFromValues)
+        end
+
+        local configAllowed, configReason =
+            true,
+            "OK"
+
+        if type(IsListingConfigurationAllowed) == "function" then
+            configAllowed, configReason =
+                IsListingConfigurationAllowed()
+        end
+
+        if not configAllowed then
+
+            ListingsState.Enabled =
+                false
+
+            ListingsState.VisualTagsEnabled =
+                false
+
+            ListingsState.Status =
+                tostring(configReason or "Config blocked")
+
+            SaveListingAutoListIntent(false)
+
+            task.defer(function()
+
+                pcall(function()
+
+                    if Library
+                    and Library.Options
+                    and Library.Options.EnableAutoList then
+
+                        Library.Options.EnableAutoList:SetValue(false)
+                    end
+                end)
+            end)
+
+            warn(
+                "[LISTINGS] AutoList blocked:",
+                tostring(configReason)
+            )
+
+            if type(ListingsStatusRefresh) == "function" then
+                ListingsStatusRefresh()
+            end
+
+            return
+        end
+    end
+
+    if ListingsState.Enabled then
+
+        ListingsState.ListedUUIDs =
+            ListingsState.ListedUUIDs
+            or {}
+
+        ListingsState.FailedUUIDs =
+            ListingsState.FailedUUIDs
+            or {}
+
+        ListingsState.ListingQueue =
+            ListingsState.ListingQueue
+            or {}
+
+        ListingsState.QueuedUUIDs =
+            ListingsState.QueuedUUIDs
+            or {}
+
+        ListingsState.OwnListedUUIDs =
+            ListingsState.OwnListedUUIDs
+            or {}
+
+        ListingsState.PendingUUIDs =
+            ListingsState.PendingUUIDs
+            or {}
+
+        table.clear(ListingsState.ListedUUIDs)
+        table.clear(ListingsState.FailedUUIDs)
+        table.clear(ListingsState.ListingQueue)
+        table.clear(ListingsState.QueuedUUIDs)
+        table.clear(ListingsState.OwnListedUUIDs)
+        table.clear(ListingsState.PendingUUIDs)
+
+        ListingsState.ActiveCreateUUID =
+            nil
+
+        ListingsState.ActiveCreateStartedAt =
+            0
+
+        ListingsState.ListedThisSession =
+            0
+
+        ListingsState.LastScan =
+            0
+
+        ListingsState.NoWorkSleepUntil =
+            0
+
+        ListingsState.Status =
+            "Enabled | watching"
+
+        print("[LISTINGS] AutoList enabled | runtime cache cleared")
+
+        if type(BuildListingPreview) == "function" then
+            pcall(BuildListingPreview)
+        end
+
+        -- Run one immediate pass instead of waiting for the scan timer.
+        task.defer(function()
+
+            if ListingsState.Enabled ~= true then
+                return
+            end
+
+            if ScriptState
+            and ScriptState.ForceStopped then
+                return
+            end
+
+            if type(RunAutoListingPass) == "function" then
+                pcall(RunAutoListingPass)
+            end
+
+            if type(ListingsStatusRefresh) == "function" then
+                pcall(ListingsStatusRefresh)
+            end
+        end)
+
+    else
+
+        ListingsState.Status =
+            "Disabled"
+    end
+
+    MarkConfigDirty()
+
+    if type(ListingsStatusRefresh) == "function" then
+        ListingsStatusRefresh()
+    end
+end)
+
+    ListingActionsBox:AddDivider({
+        Text = "Queue",
+        MarginTop = 8,
+        MarginBottom = 8,
+    })
+
+    local QueueButton =
+        ListingActionsBox:AddButton({
+            Text = "Queue",
+            Tooltip = "Listing queue controls.",
+            Func = function()
+
+                HolyNotify(
+                    "Listing Queue",
+                    "Use Preview, Refresh, Clear, or STOP.",
+                    "list",
+                    3
+                )
+            end,
+        })
+
+    QueueButton:AddButton({
+        Text = "Preview",
+        Tooltip = "Preview matching inventory pets.",
+        Func = function()
+
+            PrintListingPreview()
+            ListingsStatusRefresh()
+        end,
+    })
+
+    ListingActionsBox:AddButton({
+    Text = "Debug Preview",
+    Tooltip = "Print every matching listing pet and why it is ready/skipped.",
+    Func = function()
+
+        if type(PrintDetailedListingPreview) == "function" then
+            PrintDetailedListingPreview()
+        end
+    end,
+})
+
+    QueueButton:AddButton({
+    Text = "Refresh",
+    Tooltip = "Refresh inventory, preview, and own booth listings.",
+    Func = function()
+
+        RefreshListingInventorySnapshot()
+        BuildOwnBoothListingSnapshot(true)
+        BuildListingPreview()
+        ListingsStatusRefresh()
+    end,
+})
+
+    QueueButton:AddButton({
+        Text = "Clear",
+        Tooltip = "Clear pending listing queue.",
+        Func = function()
+
+            table.clear(ListingsState.ListingQueue)
+table.clear(ListingsState.QueuedUUIDs)
+
+ListingsState.PendingUUIDs =
+    ListingsState.PendingUUIDs
+    or {}
+
+table.clear(ListingsState.PendingUUIDs)
+
+ListingsState.ActiveCreateUUID =
+    nil
+
+ListingsState.ActiveCreateStartedAt =
+    0
+
+ListingsState.Status =
+    "Queue cleared"
+
+            BuildListingPreview()
+            ListingsStatusRefresh()
+        end,
+    })
+
+    QueueButton:AddButton({
+        Text = "STOP",
+        Tooltip = "Hard stop listings and script runtime.",
+        Risky = true,
+        DoubleClick = true,
+        Func = function()
+
+            ScriptState.ForceStopped =
+                true
+
+            ListingsState.Enabled =
+                false
+
+            ListingsState.Status =
+                "ForceStopped"
+
+            table.clear(ListingsState.ListingQueue)
+            table.clear(ListingsState.QueuedUUIDs)
+
+            if Library.Options.EnableAutoList then
+                Library.Options.EnableAutoList:SetValue(false)
+            end
+
+            ListingsStatusRefresh()
+
+            warn("[LISTINGS] Emergency stop")
+        end,
+    })
+
+    --==================================================
+    -- STATUS TAB
+    --==================================================
+
+    local StatusLabel =
+        ListingStatusBox:AddLabel("Status: Idle", false)
+
+    local InventoryLabel =
+        ListingStatusBox:AddLabel("Pets: 0", false)
+
+    local QueueLabel =
+        ListingStatusBox:AddLabel("Queue: 0", false)
+
+    local SessionListedLabel =
+        ListingStatusBox:AddLabel("Listed Session: 0", false)
+
+    local LastListedLabel =
+        ListingStatusBox:AddLabel("Last Listed: None", false)
+
+    
+    --==================================================
+    -- STATUS SUMMARY ONLY
+    -- Keep Status clean. The full booth list is rendered
+    -- in the always-visible bottom groupbox.
+    --==================================================
+
+    local BoothListedSummaryLabel =
+        ListingStatusBox:AddLabel(
+            "Booth Listed: syncing...",
+            false
+        )
+
+    --==================================================
+    -- ALWAYS-VISIBLE BOOTH LIST PANEL
+    -- Watchlist-style compact rows.
+    --==================================================
+
+    local BoothListedHeaderLabel =
+        ListingBoothBox:AddLabel(
+            "0 listings • Page 1/1 • Not synced",
+            false
+        )
+
+--==================================================
+-- CUSTOM BOOTH LIST TABLE
+-- Clean clickable table rendered through Obsidian UIPassthrough.
+--==================================================
+
+local BoothListUI =
+{
+    Rows = {},
+    BusyRows = {},
+}
+
+local BoothListContainer =
+    Instance.new("Frame")
+
+BoothListContainer.Name =
+    "HolyBoothListedTable"
+
+BoothListContainer.BackgroundTransparency =
+    1
+
+BoothListContainer.Size =
+    UDim2.new(1, 0, 0, 190)
+
+local BoothTableHeader =
+    Instance.new("Frame")
+
+BoothTableHeader.Name =
+    "Header"
+
+BoothTableHeader.BackgroundTransparency =
+    1
+
+BoothTableHeader.Position =
+    UDim2.fromOffset(0, 0)
+
+BoothTableHeader.Size =
+    UDim2.new(1, 0, 0, 20)
+
+BoothTableHeader.Parent =
+    BoothListContainer
+
+local function CreateTableTextLabel(name, parent, position, size, text, alignment)
+
+    local label =
+        Instance.new("TextLabel")
+
+    label.Name =
+        name
+
+    label.BackgroundTransparency =
+        1
+
+    label.Position =
+        position
+
+    label.Size =
+        size
+
+    label.Font =
+        Enum.Font.Code
+
+    label.Text =
+        tostring(text or "")
+
+    label.TextSize =
+        14
+
+    label.TextColor3 =
+        Color3.fromRGB(205, 205, 205)
+
+    label.TextTransparency =
+        0.25
+
+    label.TextXAlignment =
+        alignment or Enum.TextXAlignment.Left
+
+    label.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    label.TextTruncate =
+        Enum.TextTruncate.AtEnd
+
+    label.RichText =
+        false
+
+    label.Parent =
+        parent
+
+    return label
+end
+
+CreateTableTextLabel(
+    "PetHeader",
+    BoothTableHeader,
+    UDim2.fromOffset(10, 0),
+    UDim2.new(1, -170, 1, 0),
+    "Pet",
+    Enum.TextXAlignment.Left
+)
+
+CreateTableTextLabel(
+    "PriceHeader",
+    BoothTableHeader,
+    UDim2.new(1, -160, 0, 0),
+    UDim2.fromOffset(70, 20),
+    "Price",
+    Enum.TextXAlignment.Right
+)
+
+CreateTableTextLabel(
+    "BWHeader",
+    BoothTableHeader,
+    UDim2.new(1, -84, 0, 0),
+    UDim2.fromOffset(42, 20),
+    "BW",
+    Enum.TextXAlignment.Right
+)
+
+CreateTableTextLabel(
+    "RemoveHeader",
+    BoothTableHeader,
+    UDim2.new(1, -35, 0, 0),
+    UDim2.fromOffset(30, 20),
+    "",
+    Enum.TextXAlignment.Center
+)
+
+local function ResolveBoothTableDisplayName(item)
+
+    if type(item) ~= "table" then
+        return "-"
+    end
+
+    local petName =
+        tostring(item.PetName or "Unknown")
+
+    local mutation =
+        tostring(item.MutationText or "Normal")
+
+    if mutation ~= ""
+    and mutation ~= "Normal"
+    and mutation ~= "---"
+    and mutation ~= "Unknown" then
+        return mutation .. " " .. petName
+    end
+
+    return petName
+end
+
+local function RemoveVisibleBoothListingRow(rowIndex)
+
+    rowIndex =
+        math.max(
+            1,
+            math.floor(
+                SafeNumber(rowIndex, 1)
+            )
+        )
+
+    if BoothListUI.BusyRows[rowIndex] then
+        return
+    end
+
+    if ScriptState
+    and ScriptState.ForceStopped then
+        return
+    end
+
+    BoothListUI.BusyRows[rowIndex] =
+        true
+
+    task.spawn(function()
+
+        local absoluteIndex =
+            GetOwnBoothSnapshotAbsoluteIndex(rowIndex)
+
+        local item =
+            ListingsState.OwnBoothSnapshot
+            and ListingsState.OwnBoothSnapshot[absoluteIndex]
+
+        if type(item) ~= "table" then
+
+            HolyNotify(
+                "No Listing",
+                "There is no booth listing on row "
+                    .. tostring(rowIndex)
+                    .. ".",
+                "info",
+                3
+            )
+
+            BoothListUI.BusyRows[rowIndex] =
+                nil
+
+            return
+        end
+
+        local displayName =
+            ResolveBoothTableDisplayName(item)
+
+        local ok, reason =
+            RemoveOwnBoothSnapshotPageIndex(rowIndex)
+
+        if ok then
+
+            HolyNotify(
+                "Listing Removed",
+                displayName,
+                "check",
+                3
+            )
+
+        else
+
+            HolyNotify(
+                "Remove Failed",
+                tostring(reason or "Could not remove listing."),
+                "triangle-alert",
+                4
+            )
+
+            warn(
+                "[LISTINGS] Click-remove failed:",
+                tostring(reason)
+            )
+        end
+
+        BoothListUI.BusyRows[rowIndex] =
+            nil
+    end)
+end
+
+local function CreateBoothTableRow(rowIndex)
+
+    local row =
+        Instance.new("TextButton")
+
+    row.Name =
+        "Row" .. tostring(rowIndex)
+
+    row.AutoButtonColor =
+        false
+
+    row.BackgroundColor3 =
+        Color3.fromRGB(22, 22, 22)
+
+    row.BackgroundTransparency =
+        0.28
+
+    row.BorderSizePixel =
+        0
+
+    row.Position =
+        UDim2.fromOffset(
+            0,
+            22 + ((rowIndex - 1) * 22)
+        )
+
+    row.Size =
+        UDim2.new(1, 0, 0, 20)
+
+    row.Text =
+        ""
+
+    row.Parent =
+        BoothListContainer
+
+    local corner =
+        Instance.new("UICorner")
+
+    corner.CornerRadius =
+        UDim.new(0, 3)
+
+    corner.Parent =
+        row
+
+    local stroke =
+        Instance.new("UIStroke")
+
+    stroke.Color =
+        Color3.fromRGB(48, 48, 48)
+
+    stroke.Transparency =
+        0.45
+
+    stroke.Thickness =
+        1
+
+    stroke.Parent =
+        row
+
+    local petLabel =
+        CreateTableTextLabel(
+            "Pet",
+            row,
+            UDim2.fromOffset(10, 0),
+            UDim2.new(1, -178, 1, 0),
+            "• -",
+            Enum.TextXAlignment.Left
+        )
+
+    local priceLabel =
+        CreateTableTextLabel(
+            "Price",
+            row,
+            UDim2.new(1, -160, 0, 0),
+            UDim2.fromOffset(70, 20),
+            "-",
+            Enum.TextXAlignment.Right
+        )
+
+    local bwLabel =
+        CreateTableTextLabel(
+            "BW",
+            row,
+            UDim2.new(1, -84, 0, 0),
+            UDim2.fromOffset(42, 20),
+            "-",
+            Enum.TextXAlignment.Right
+        )
+
+    local removeLabel =
+        CreateTableTextLabel(
+            "Remove",
+            row,
+            UDim2.new(1, -35, 0, 0),
+            UDim2.fromOffset(30, 20),
+            "×",
+            Enum.TextXAlignment.Center
+        )
+
+    removeLabel.TextColor3 =
+        Color3.fromRGB(255, 80, 80)
+
+    removeLabel.TextTransparency =
+        0.15
+
+    row.MouseEnter:Connect(function()
+
+        row.BackgroundTransparency =
+            0.08
+
+        stroke.Transparency =
+            0.15
+
+        petLabel.TextTransparency =
+            0
+
+        priceLabel.TextTransparency =
+            0
+
+        bwLabel.TextTransparency =
+            0
+
+        removeLabel.TextTransparency =
+            0
+    end)
+
+    row.MouseLeave:Connect(function()
+
+        row.BackgroundTransparency =
+            0.28
+
+        stroke.Transparency =
+            0.45
+
+        petLabel.TextTransparency =
+            0.25
+
+        priceLabel.TextTransparency =
+            0.25
+
+        bwLabel.TextTransparency =
+            0.25
+
+        removeLabel.TextTransparency =
+            0.15
+    end)
+
+    row.MouseButton1Click:Connect(function()
+        RemoveVisibleBoothListingRow(rowIndex)
+    end)
+
+    BoothListUI.Rows[rowIndex] =
+    {
+        Button = row,
+        Pet = petLabel,
+        Price = priceLabel,
+        BW = bwLabel,
+        Remove = removeLabel,
+        Stroke = stroke,
+    }
+end
+
+for i = 1, 7 do
+    CreateBoothTableRow(i)
+end
+
+ListingBoothBox:AddUIPassthrough(
+    "BoothListedTable",
+    {
+        Instance = BoothListContainer,
+        Height = 190,
+    }
+)
+
+local function FormatBoothTablePrice(value)
+
+    local numberValue =
+        tonumber(value)
+
+    if not numberValue then
+        return "-"
+    end
+
+    numberValue =
+        math.floor(numberValue)
+
+    local text =
+        tostring(numberValue)
+
+    local left, num, right =
+        string.match(
+            text,
+            "^([^%d]*%d)(%d*)(.-)$"
+        )
+
+    if not left then
+        return text
+    end
+
+    return left
+        .. (
+            num:reverse()
+                :gsub("(%d%d%d)", "%1,")
+                :reverse()
+        )
+        .. right
+end
+
+local function FormatBoothTableWeight(value)
+
+    local numberValue =
+        tonumber(value)
+
+    if not numberValue then
+        return "-"
+    end
+
+    return string.format("%.2fbw", numberValue)
+end
+
+local function RenderBoothListedTable()
+
+    local snapshot =
+        ListingsState.OwnBoothSnapshot
+        or {}
+
+    local page =
+        math.max(
+            1,
+            math.floor(
+                SafeNumber(
+                    ListingsState.OwnBoothSnapshotPage,
+                    1
+                )
+            )
+        )
+
+    local perPage =
+        math.max(
+            1,
+            math.floor(
+                SafeNumber(
+                    ListingsState.OwnBoothSnapshotPerPage,
+                    7
+                )
+            )
+        )
+
+    for i = 1, 7 do
+
+        local row =
+            BoothListUI.Rows[i]
+
+        if not row then
+            continue
+        end
+
+        local index =
+            ((page - 1) * perPage)
+            + i
+
+        local item =
+            snapshot[index]
+
+        if type(item) == "table" then
+
+            local prefix =
+                item.Favorite
+                and "★ "
+                or "• "
+
+            row.Pet.Text =
+                prefix
+                .. ResolveBoothTableDisplayName(item)
+
+            row.Price.Text =
+                FormatBoothTablePrice(item.Price)
+
+            row.BW.Text =
+    FormatBoothTableWeight(
+        item.BaseWeight
+        or item.DisplayWeight
+        or item.Weight
+    )
+
+            row.Remove.Text =
+                "×"
+
+            row.Button.Active =
+                true
+
+            row.Button.AutoButtonColor =
+                false
+
+            row.Button.BackgroundTransparency =
+                0.28
+
+            row.Stroke.Transparency =
+                0.45
+
+            row.Pet.TextTransparency =
+                0.25
+
+            row.Price.TextTransparency =
+                0.25
+
+            row.BW.TextTransparency =
+                0.25
+
+            row.Remove.TextTransparency =
+                0.15
+
+        else
+
+            row.Pet.Text =
+                "• -"
+
+            row.Price.Text =
+                "-"
+
+            row.BW.Text =
+                "-"
+
+            row.Remove.Text =
+                ""
+
+            row.Button.Active =
+                false
+
+            row.Button.BackgroundTransparency =
+                0.72
+
+            row.Stroke.Transparency =
+                0.85
+
+            row.Pet.TextTransparency =
+                0.65
+
+            row.Price.TextTransparency =
+                0.65
+
+            row.BW.TextTransparency =
+                0.65
+
+            row.Remove.TextTransparency =
+                1
+        end
+    end
+end
+
+    local BoothListedPageButton =
+        ListingBoothBox:AddButton({
+            Text = "‹ Prev",
+            Tooltip = "Previous booth listing page.",
+            Func = function()
+
+                ListingsState.OwnBoothSnapshotPage =
+                    math.max(
+                        1,
+                        SafeNumber(
+                            ListingsState.OwnBoothSnapshotPage,
+                            1
+                        ) - 1
+                    )
+
+                if type(ListingsStatusRefresh) == "function" then
+                    ListingsStatusRefresh()
+                end
+            end,
+        })
+
+    BoothListedPageButton:AddButton({
+        Text = "Next ›",
+        Tooltip = "Next booth listing page.",
+        Func = function()
+
+            local total =
+                ListingsState.OwnBoothSnapshot
+                and #ListingsState.OwnBoothSnapshot
+                or 0
+
+            local perPage =
+                SafeNumber(
+                    ListingsState.OwnBoothSnapshotPerPage,
+                    7
+                )
+
+            local maxPage =
+                math.max(
+                    1,
+                    math.ceil(total / perPage)
+                )
+
+            ListingsState.OwnBoothSnapshotPage =
+                math.min(
+                    maxPage,
+                    SafeNumber(
+                        ListingsState.OwnBoothSnapshotPage,
+                        1
+                    ) + 1
+                )
+
+            if type(ListingsStatusRefresh) == "function" then
+                ListingsStatusRefresh()
+            end
+        end,
+    })
+
+    ListingBoothBox:AddButton({
+        Text = "Refresh Booth",
+        Tooltip = "Force-refresh pets currently listed in your booth.",
+        Func = function()
+
+            BuildOwnBoothListingSnapshot(true)
+
+            if type(ListingsStatusRefresh) == "function" then
+                ListingsStatusRefresh()
+            end
+        end,
+    })
+    
+        ListingBoothBox:AddDivider({
+        Text = "Remove Listings",
+        MarginTop = 8,
+        MarginBottom = 8,
+    })
+
+    local SelectedBoothRemoveIndex =
+        1
+
+    local BoothRemoveIndexInput =
+        ListingBoothBox:AddInput(
+            "BoothRemoveListingIndex",
+            {
+                Text = "Remove Page Pet",
+                Placeholder = "1-7 on current page",
+                Default = "1",
+                Numeric = false,
+                Finished = true,
+            }
+        )
+
+    BoothRemoveIndexInput:OnChanged(function(value)
+
+        local text =
+            tostring(value or "")
+                :gsub(",", "")
+                :gsub("%s+", "")
+
+        local index =
+            tonumber(text)
+
+        if not index then
+            return
+        end
+
+        SelectedBoothRemoveIndex =
+            math.max(
+                1,
+                math.floor(index)
+            )
+    end)
+
+    local RemoveSelectedBoothListingButton =
+        ListingBoothBox:AddButton({
+            Text = "Remove Selected",
+            Tooltip = "Removes the selected listed pet from the current booth page.",
+            Func = function()
+
+                if ScriptState
+                and ScriptState.ForceStopped then
+                    return
+                end
+
+                local index =
+                    math.max(
+                        1,
+                        math.floor(
+                            SafeNumber(
+                                SelectedBoothRemoveIndex,
+                                1
+                            )
+                        )
+                    )
+
+                local ok, reason =
+                    RemoveOwnBoothSnapshotPageIndex(index)
+
+                if ok then
+
+                    HolyNotify(
+                        "Listing Removed",
+                        "Removed booth listing at page slot "
+                            .. tostring(index)
+                            .. ".",
+                        "check",
+                        3
+                    )
+
+                else
+
+                    HolyNotify(
+                        "Remove Failed",
+                        tostring(reason or "Could not remove selected listing."),
+                        "triangle-alert",
+                        4
+                    )
+
+                    warn(
+                        "[LISTINGS] Remove selected failed:",
+                        tostring(reason)
+                    )
+                end
+            end,
+        })
+
+    RemoveSelectedBoothListingButton:AddButton({
+        Text = "Remove All",
+        Tooltip = "Removes every pet currently listed in your booth. AutoList is paused first.",
+        Risky = true,
+        DoubleClick = true,
+        Func = function()
+
+            if ScriptState
+            and ScriptState.ForceStopped then
+                return
+            end
+
+            task.spawn(function()
+
+                local removed, failed, reason =
+                    RemoveAllOwnBoothListings()
+
+                HolyNotify(
+                    "Remove All Complete",
+                    "Removed: "
+                        .. tostring(removed)
+                        .. " | Failed: "
+                        .. tostring(failed),
+                    failed > 0 and "triangle-alert" or "check",
+                    5
+                )
+
+                print(
+                    "[LISTINGS] Remove all complete | removed:",
+                    tostring(removed),
+                    "| failed:",
+                    tostring(failed),
+                    "| reason:",
+                    tostring(reason)
+                )
+            end)
+        end,
+    })
+--==================================================
+-- PREVIEW TAB
+-- Purpose:
+-- Clear safety summary of what the current setup will do.
+--==================================================
+
+local PreviewVerdictLabel =
+    ListingPreviewBox:AddLabel("⚠️ Not Ready", false)
+
+local PreviewFilterLabel =
+    ListingPreviewBox:AddLabel("Pet: -", false)
+
+local PreviewMutationLabel =
+    ListingPreviewBox:AddLabel("Mutation: -", false)
+
+local PreviewLevelLabel =
+    ListingPreviewBox:AddLabel("Level: -", false)
+
+local PreviewWeightLabel =
+    ListingPreviewBox:AddLabel("BaseWeight: required", false)
+
+local PreviewPriceLabel =
+    ListingPreviewBox:AddLabel("Tokens: required", false)
+
+ListingPreviewBox:AddDivider({
+    Text = "Inventory Check",
+    MarginTop = 8,
+    MarginBottom = 8,
+})
+
+local PreviewCountsLabel =
+    ListingPreviewBox:AddLabel("Matching: 0 | Ready: 0", false)
+
+local PreviewHandledLabel =
+    ListingPreviewBox:AddLabel("Already Listed: 0 | Queued: 0", false)
+
+local PreviewFailedLabel =
+    ListingPreviewBox:AddLabel("Failed: 0 | Runtime: 0", false)
+
+ListingPreviewBox:AddDivider({
+    Text = "Result",
+    MarginTop = 8,
+    MarginBottom = 8,
+})
+
+local PreviewResultLabel =
+    ListingPreviewBox:AddLabel("Set pet, weight, and price to preview.", true)
+
+    --==================================================
+    -- FILTERS TAB
+    -- Purpose:
+    -- Make active listing filters readable and obvious.
+    -- This is display/control UI only. Listing logic is unchanged.
+    --==================================================
+
+    ListingsState.ListingFilterUI =
+        ListingsState.ListingFilterUI
+        or {
+            Page = 1,
+            PerPage = 8,
+        }
+
+    ListingsState.ListingFilterUI.PerPage =
+        8
+
+    local SelectedListingFilterIndex =
+        1
+
+local FilterHeaderLabel =
+    ListingFiltersBox:AddLabel(
+        "Active Filters: 0",
+        false
+    )
+
+local FilterHelpLabel =
+    ListingFiltersBox:AddLabel(
+        "Only pets matching active filters can be listed.",
+        false
+    )
+
+    local FilterLineLabels =
+        {}
+
+    for i = 1, 8 do
+
+        FilterLineLabels[i] =
+            ListingFiltersBox:AddLabel(
+                tostring(i) .. ". -",
+                false
+            )
+    end
+
+    ListingFiltersBox:AddDivider({
+        Text = "Manage Filters",
+        MarginTop = 8,
+        MarginBottom = 8,
+    })
+
+    local RemoveIndexInput =
+        ListingFiltersBox:AddInput(
+            "ListingRemoveFilterIndex",
+            {
+                Text = "Remove Index",
+                Placeholder = "Filter number",
+                Default = "1",
+                Numeric = false,
+                Finished = true,
+            }
+        )
+
+    RemoveIndexInput:OnChanged(function(value)
+
+        local text =
+            tostring(value or "")
+                :gsub(",", "")
+                :gsub("%s+", "")
+
+        local index =
+            tonumber(text)
+
+        if not index then
+            return
+        end
+
+        SelectedListingFilterIndex =
+            math.max(
+                1,
+                math.floor(index)
+            )
+    end)
+
+    local FilterPageButton =
+        ListingFiltersBox:AddButton({
+            Text = "Page Controls",
+            Tooltip = "Move through active listing filter pages.",
+            Func = function()
+
+                HolyNotify(
+                    "Active Listing Filters",
+                    "Use Prev/Next to change pages. Use Remove Selected to delete by index.",
+                    "list-filter",
+                    4
+                )
+            end,
+        })
+
+    FilterPageButton:AddButton({
+        Text = "Prev",
+        Func = function()
+
+            ListingsState.ListingFilterUI.Page =
+                math.max(
+                    1,
+                    SafeNumber(
+                        ListingsState.ListingFilterUI.Page,
+                        1
+                    ) - 1
+                )
+
+            RefreshListingFilterUI()
+        end,
+    })
+
+    FilterPageButton:AddButton({
+        Text = "Next",
+        Func = function()
+
+            local filters =
+                EnsureListingFilters()
+
+            local perPage =
+                SafeNumber(
+                    ListingsState.ListingFilterUI.PerPage,
+                    8
+                )
+
+            local maxPage =
+                math.max(
+                    1,
+                    math.ceil(#filters / perPage)
+                )
+
+            ListingsState.ListingFilterUI.Page =
+                math.min(
+                    maxPage,
+                    SafeNumber(
+                        ListingsState.ListingFilterUI.Page,
+                        1
+                    ) + 1
+                )
+
+            RefreshListingFilterUI()
+        end,
+    })
+
+    local RemoveSelectedButton =
+        ListingFiltersBox:AddButton({
+            Text = "Remove Selected Filter",
+            Tooltip = "Removes the filter number typed above.",
+            Risky = true,
+            DoubleClick = true,
+            Func = function()
+
+                local filters =
+                    EnsureListingFilters()
+
+                local index =
+                    tonumber(SelectedListingFilterIndex)
+
+                if not index
+                or not filters[index] then
+
+                    HolyNotify(
+                        "Remove Failed",
+                        "No listing filter exists at index "
+                            .. tostring(index or "?"),
+                        "circle-alert",
+                        4
+                    )
+
+                    return
+                end
+
+                local removed =
+                    filters[index]
+
+                RemoveListingFilterAt(index)
+
+                HolyNotify(
+                    "Listing Filter Removed",
+                    tostring(removed.Pet or "Unknown")
+                        .. " removed from AutoList filters.",
+                    "trash",
+                    4
+                )
+            end,
+        })
+
+    local ClearFiltersButton =
+        ListingFiltersBox:AddButton({
+            Text = "Clear All Filters",
+            Tooltip = "Removes every active listing filter.",
+            Risky = true,
+            DoubleClick = true,
+            Func = function()
+
+                ClearListingFilters()
+            end,
+        })
+
+    RefreshListingFilterUI = function()
+
+        local filters =
+            EnsureListingFilters()
+
+        ListingsState.ListingFilterUI =
+            ListingsState.ListingFilterUI
+            or {
+                Page = 1,
+                PerPage = 8,
+            }
+
+        ListingsState.ListingFilterUI.PerPage =
+            8
+
+        local perPage =
+            SafeNumber(
+                ListingsState.ListingFilterUI.PerPage,
+                8
+            )
+
+        local page =
+            SafeNumber(
+                ListingsState.ListingFilterUI.Page,
+                1
+            )
+
+        local maxPage =
+            math.max(
+                1,
+                math.ceil(#filters / perPage)
+            )
+
+        page =
+            math.clamp(
+                page,
+                1,
+                maxPage
+            )
+
+        ListingsState.ListingFilterUI.Page =
+            page
+
+        if FilterHeaderLabel then
+
+            FilterHeaderLabel:SetText(
+    "Active Filters: "
+    .. tostring(#filters)
+    .. "  •  Page "
+    .. tostring(page)
+    .. "/"
+    .. tostring(maxPage)
+)
+        end
+
+        local startIndex =
+            ((page - 1) * perPage) + 1
+
+        for slot = 1, perPage do
+
+            local label =
+                FilterLineLabels[slot]
+
+            local filterIndex =
+                startIndex + slot - 1
+
+            local filter =
+                filters[filterIndex]
+
+            if label then
+
+                if filter then
+
+                    label:SetText(
+                        FormatListingFilterLine(
+                            filterIndex,
+                            filter
+                        )
+                    )
+
+                else
+
+                label:SetText(
+    string.format(
+        "%02d  -",
+        filterIndex
+    )
+)
+                end
+            end
+        end
+    end
+
+    RefreshListingFilterUI()
+    --==================================================
+    -- HISTORY TAB
+    --==================================================
+
+    local HistoryRuntimeLabel =
+        ListingHistoryBox:AddLabel("Runtime Listed: 0", false)
+
+    local HistoryQueuedLabel =
+        ListingHistoryBox:AddLabel("Queued: 0", false)
+
+    local HistoryFailedLabel =
+        ListingHistoryBox:AddLabel("Failed: 0", false)
+
+    local HistoryLastLabel =
+        ListingHistoryBox:AddLabel("Last: None", false)
+
+    --==================================================
+    -- STATUS REFRESH
+    --==================================================
+
+    ListingsStatusRefresh = function()
+
+        if IsTradeWorld()
+        and type(RefreshOwnBoothListingSnapshotThrottled) == "function" then
+            pcall(RefreshOwnBoothListingSnapshotThrottled)
+        end
+
+        if StatusLabel then
+
+            local displayStatus =
+                tostring(ListingsState.Status or "Idle")
+
+            local configAllowed, configReason =
+                IsListingConfigurationAllowed()
+
+            if not configAllowed then
+
+                displayStatus =
+                    configReason
+
+            elseif displayStatus == "Price required"
+            or displayStatus == "Min BaseWeight required"
+            or displayStatus == "Max BaseWeight required"
+            or displayStatus == "Max must be >= Min" then
+
+                if ListingsState.Enabled then
+                    displayStatus =
+                        "Enabled"
+                else
+                    displayStatus =
+                        "Ready"
+                end
+            end
+
+            StatusLabel:SetText(
+                "Status: "
+                .. displayStatus
+            )
+        end
+
+        if InventoryLabel then
+            InventoryLabel:SetText(
+                "Pets: "
+                .. tostring(#ListingsState.InventorySnapshot)
+            )
+        end
+
+        if QueueLabel then
+            QueueLabel:SetText(
+                "Queue: "
+                .. tostring(#ListingsState.ListingQueue)
+            )
+        end
+
+        if SessionListedLabel then
+            SessionListedLabel:SetText(
+                "Listed Session: "
+                .. tostring(ListingsState.ListedThisSession)
+            )
+        end
+
+                local snapshot =
+            ListingsState.OwnBoothSnapshot
+            or {}
+
+        local listedCount =
+            #snapshot
+
+        local boothStatus =
+            tostring(
+                ListingsState.OwnBoothSnapshotStatus
+                or "Unknown"
+            )
+
+        if BoothListedSummaryLabel then
+
+            BoothListedSummaryLabel:SetText(
+                "Booth Listed: "
+                .. tostring(listedCount)
+                .. " pets"
+                .. " | "
+                .. boothStatus
+            )
+        end
+
+        local perPage =
+            SafeNumber(
+                ListingsState.OwnBoothSnapshotPerPage,
+                7
+            )
+
+        local total =
+            #snapshot
+
+        local maxPage =
+            math.max(
+                1,
+                math.ceil(total / perPage)
+            )
+
+        ListingsState.OwnBoothSnapshotPage =
+            math.clamp(
+                SafeNumber(
+                    ListingsState.OwnBoothSnapshotPage,
+                    1
+                ),
+                1,
+                maxPage
+            )
+
+        local page =
+            ListingsState.OwnBoothSnapshotPage
+
+        if BoothListedHeaderLabel then
+
+            BoothListedHeaderLabel:SetText(
+                tostring(total)
+                .. " listings"
+                .. " • Page "
+                .. tostring(page)
+                .. "/"
+                .. tostring(maxPage)
+                .. " • "
+                .. boothStatus
+            )
+        end
+
+RenderBoothListedTable()
+
+local preview =
+    ListingsState.Preview
+    or {}
+
+local function FormatPreviewNumber(value, fallback)
+
+    if value == nil then
+        return tostring(fallback or "-")
+    end
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return tostring(value)
+    end
+
+    if number % 1 == 0 then
+        return tostring(math.floor(number))
+    end
+
+    return tostring(number)
+end
+
+local priceAllowed, priceReason =
+    IsListingPriceAllowed()
+
+local minWeight =
+    tonumber(ListingsState.MinWeight)
+
+local maxWeight =
+    tonumber(ListingsState.MaxWeight)
+
+local weightAllowed =
+    true
+
+local weightReason =
+    "OK"
+
+if ListingsState.MinWeightWasEntered ~= true then
+
+    weightAllowed =
+        false
+
+    weightReason =
+        "Min required"
+
+elseif ListingsState.MaxWeightWasEntered ~= true then
+
+    weightAllowed =
+        false
+
+    weightReason =
+        "Max required"
+
+elseif not minWeight
+or not maxWeight then
+
+    weightAllowed =
+        false
+
+    weightReason =
+        "Invalid"
+
+elseif maxWeight < minWeight then
+
+    weightAllowed =
+        false
+
+    weightReason =
+        "Max < Min"
+end
+
+local minLevel =
+    SafeNumber(
+        ListingsState.MinLevel,
+        1
+    )
+
+local maxLevel =
+    SafeNumber(
+        ListingsState.MaxLevel,
+        100
+    )
+
+local levelAllowed =
+    maxLevel >= minLevel
+
+local levelReason =
+    levelAllowed
+    and "OK"
+    or "Max < Min"
+
+local petName =
+    tostring(
+        ListingsState.SelectedPet
+        or ""
+    )
+
+local petAllowed =
+    petName ~= ""
+
+local mutationText =
+    tostring(
+        ListingsState.SelectedMutation
+        or "---"
+    )
+
+if mutationText == "All Except" then
+
+    mutationText =
+        "All Except "
+        .. FormatExcludedListingMutations(
+            ListingsState.SelectedExcludedMutations
+        )
+end
+
+local readyCount =
+    SafeNumber(
+        preview.Ready,
+        0
+    )
+
+local matchingCount =
+    SafeNumber(
+        preview.Matching,
+        0
+    )
+
+local alreadyListed =
+    SafeNumber(
+        preview.AlreadyListed,
+        0
+    )
+
+local queuedCount =
+    SafeNumber(
+        preview.Queued,
+        0
+    )
+
+local failedCount =
+    SafeNumber(
+        preview.Failed,
+        0
+    )
+
+local runtimeListed =
+    SafeNumber(
+        preview.RuntimeListed,
+        0
+    )
+
+local setupAllowed =
+    petAllowed
+    and priceAllowed
+    and weightAllowed
+    and levelAllowed
+
+local verdictText =
+    "⚠️ Not Ready"
+
+local resultText =
+    "Fix required fields before adding this filter."
+
+if setupAllowed then
+
+    if readyCount > 0 then
+
+        verdictText =
+            "✅ Ready To List"
+
+        resultText =
+            "AutoList can queue "
+            .. tostring(readyCount)
+            .. " matching pet"
+            .. (
+                readyCount == 1
+                and "."
+                or "s."
+            )
+
+    elseif matchingCount > 0
+    and alreadyListed >= matchingCount then
+
+        verdictText =
+            "✅ Already Handled"
+
+        resultText =
+            "All matching pets are already listed in your booth."
+
+    elseif matchingCount > 0 then
+
+        verdictText =
+            "✅ Filter Valid"
+
+        resultText =
+            "Filter is valid, but no new pets are ready right now."
+
+    else
+
+        verdictText =
+            "✅ Filter Valid"
+
+        resultText =
+            "No inventory pets currently match this setup."
+    end
+
+else
+
+    if not petAllowed then
+
+        resultText =
+            "Select a pet before adding this filter."
+
+    elseif not priceAllowed then
+
+        resultText =
+            "Price blocked: "
+            .. tostring(priceReason or "Invalid price")
+
+    elseif not weightAllowed then
+
+        resultText =
+            "BaseWeight blocked: "
+            .. tostring(weightReason)
+
+    elseif not levelAllowed then
+
+        resultText =
+            "Level blocked: "
+            .. tostring(levelReason)
+    end
+end
+
+if PreviewVerdictLabel then
+
+    PreviewVerdictLabel:SetText(
+        verdictText
+    )
+end
+
+if PreviewFilterLabel then
+
+    PreviewFilterLabel:SetText(
+        "Pet: "
+        .. (
+            petAllowed
+            and petName
+            or "-"
+        )
+    )
+end
+
+if PreviewMutationLabel then
+
+    PreviewMutationLabel:SetText(
+        "Mutation: "
+        .. tostring(mutationText)
+    )
+end
+
+if PreviewLevelLabel then
+
+    PreviewLevelLabel:SetText(
+        "Level: "
+        .. FormatPreviewNumber(minLevel, 1)
+        .. " - "
+        .. FormatPreviewNumber(maxLevel, 100)
+        .. " | "
+        .. tostring(levelReason)
+    )
+end
+
+if PreviewWeightLabel then
+
+    local minText =
+        ListingsState.MinWeightWasEntered == true
+        and FormatPreviewNumber(ListingsState.MinWeight, "-")
+        or "required"
+
+    local maxText =
+        ListingsState.MaxWeightWasEntered == true
+        and FormatPreviewNumber(ListingsState.MaxWeight, "-")
+        or "required"
+
+    PreviewWeightLabel:SetText(
+        "BaseWeight: "
+        .. tostring(minText)
+        .. " - "
+        .. tostring(maxText)
+        .. " | "
+        .. tostring(weightReason)
+    )
+end
+
+if PreviewPriceLabel then
+
+    PreviewPriceLabel:SetText(
+        "Tokens: "
+        .. FormatPreviewNumber(
+            ListingsState.Price,
+            "required"
+        )
+        .. " | "
+        .. tostring(
+            priceAllowed
+            and "OK"
+            or priceReason
+        )
+    )
+end
+
+if PreviewCountsLabel then
+
+    PreviewCountsLabel:SetText(
+        "Matching: "
+        .. tostring(matchingCount)
+        .. " | Ready: "
+        .. tostring(readyCount)
+    )
+end
+
+if PreviewHandledLabel then
+
+    PreviewHandledLabel:SetText(
+        "Already Listed: "
+        .. tostring(alreadyListed)
+        .. " | Queued: "
+        .. tostring(queuedCount)
+    )
+end
+
+if PreviewFailedLabel then
+
+    PreviewFailedLabel:SetText(
+        "Failed: "
+        .. tostring(failedCount)
+        .. " | Runtime: "
+        .. tostring(runtimeListed)
+    )
+end
+
+if PreviewResultLabel then
+
+    PreviewResultLabel:SetText(
+        "Result: "
+        .. tostring(resultText)
+    )
+end
+
+        if type(RefreshListingFilterUI) == "function" then
+            RefreshListingFilterUI()
+        end
+
+        if HistoryRuntimeLabel then
+            HistoryRuntimeLabel:SetText(
+                "Runtime Listed: "
+                .. tostring(preview.RuntimeListed or 0)
+            )
+        end
+
+        if HistoryQueuedLabel then
+            HistoryQueuedLabel:SetText(
+                "Queued: "
+                .. tostring(preview.Queued or 0)
+            )
+        end
+
+        if HistoryFailedLabel then
+            HistoryFailedLabel:SetText(
+                "Failed: "
+                .. tostring(preview.Failed or 0)
+            )
+        end
+
+        if HistoryLastLabel then
+            HistoryLastLabel:SetText(
+                "Last: "
+                .. tostring(ListingsState.LastListed or "None")
+            )
+        end
+    end
+
+    ListingsStatusRefresh()
+end
+--==================================================
+-- WEBHOOK UI
+--==================================================
+function BuildWebhookTab()
+
+    --==================================================
+    -- MASTER TOGGLE
+    --==================================================
+
+    local EnableWebhookToggle =
+        WebhookBox:AddToggle(
+            "EnableWebhook",
+            {
+                Text = "🔗 Enable Webhook",
+                Tooltip = "Master switch for all personal webhook notifications.",
+                Default = false,
+            }
+        )
+
+    EnableWebhookToggle:OnChanged(function(v)
+
+        WebhookState.Enabled = v
+
+        MarkConfigDirty()
+    end)
+
+    --==================================================
+    -- DEPENDENCY GROUPBOX
+    -- Everything below only matters when webhooks are enabled.
+    --==================================================
+
+    local WebhookDependencyBox =
+        WebhookBox:AddDependencyGroupbox()
+
+    WebhookDependencyBox:SetupDependencies({
+    {
+        Library.Toggles.EnableWebhook,
+        true,
+    },
+})
+
+    --==================================================
+    -- NOTIFICATION TYPES
+    --==================================================
+
+    WebhookDependencyBox:AddDivider({
+        Text = "Notifications",
+        MarginTop = 6,
+        MarginBottom = 8,
+    })
+
+    local SuccessfulToggle =
+        WebhookDependencyBox:AddToggle(
+            "WebhookSuccessfulSnipes",
+            {
+                Text = "⚡ Successful Snipes",
+                Tooltip = "Send a webhook when Holy successfully snipes a pet.",
+                Default = true,
+            }
+        )
+
+    SuccessfulToggle:OnChanged(function(v)
+
+        WebhookState.NotifySuccessfulSnipe = v
+
+        MarkConfigDirty()
+    end)
+
+    local BoothSalesToggle =
+        WebhookDependencyBox:AddToggle(
+            "WebhookBoothSales",
+            {
+                Text = "💰 Booth Sales",
+                Tooltip = "Send a webhook when one of your booth pets sells.",
+                Default = true,
+            }
+        )
+
+    BoothSalesToggle:OnChanged(function(v)
+
+        WebhookState.NotifyBoothSales = v
+
+        MarkConfigDirty()
+    end)
+
+    local ErrorToggle =
+        WebhookDependencyBox:AddToggle(
+            "WebhookErrors",
+            {
+                Text = "⚠️ Game Errors",
+                Tooltip = "Send a webhook when Holy detects an error, disconnect, or teleport issue.",
+                Default = true,
+            }
+        )
+
+    ErrorToggle:OnChanged(function(v)
+
+        WebhookState.NotifyErrors = v
+
+        MarkConfigDirty()
+    end)
+
+    --==================================================
+    -- PINGS
+    --==================================================
+
+    WebhookDependencyBox:AddDivider({
+        Text = "Mentions",
+        MarginTop = 10,
+        MarginBottom = 8,
+    })
+
+    local PingSuccessfulInput =
+        WebhookDependencyBox:AddInput(
+            "WebhookPingSuccessfulSnipes",
+            {
+                Text = "📣 Snipe Ping",
+                Placeholder = "@everyone | @here | <@userid> | empty = no ping",
+                Numeric = false,
+                Finished = false,
+            }
+        )
+
+    PingSuccessfulInput:OnChanged(function(v)
+
+        WebhookState.PingSuccessfulSnipes =
+            tostring(v or "")
+
+        MarkConfigDirty()
+    end)
+
+    local PingBoothSalesInput =
+        WebhookDependencyBox:AddInput(
+            "WebhookPingBoothSales",
+            {
+                Text = "🛒 Booth Sale Ping",
+                Placeholder = "@everyone | @here | <@userid> | empty = no ping",
+                Numeric = false,
+                Finished = false,
+            }
+        )
+
+    PingBoothSalesInput:OnChanged(function(v)
+
+        WebhookState.PingBoothSales =
+            tostring(v or "")
+
+        MarkConfigDirty()
+    end)
+
+    local PingErrorsInput =
+        WebhookDependencyBox:AddInput(
+            "WebhookPingErrors",
+            {
+                Text = "🚨 Error Ping",
+                Placeholder = "@everyone | @here | <@userid> | empty = no ping",
+                Numeric = false,
+                Finished = false,
+            }
+        )
+
+    PingErrorsInput:OnChanged(function(v)
+
+        WebhookState.PingErrors =
+            tostring(v or "")
+
+        MarkConfigDirty()
+    end)
+
+    --==================================================
+    -- DELIVERY
+    --==================================================
+
+    WebhookDependencyBox:AddDivider({
+        Text = "Delivery",
+        MarginTop = 10,
+        MarginBottom = 8,
+    })
+
+    local WebhookInput =
+        WebhookDependencyBox:AddInput(
+            "WebhookURL",
+            {
+                Text = "🌐 Webhook URL",
+                Placeholder = "Discord webhook URL",
+                Numeric = false,
+                Finished = true,
+            }
+        )
+
+    WebhookInput:OnChanged(function(v)
+
+        WebhookState.URL =
+            tostring(v or "")
+
+        MarkConfigDirty()
+    end)
+
+    WebhookDependencyBox:AddButton({
+
+        Text = "🧪 Test Webhook",
+
+        Func = function()
+
+            if not CanSendWebhook() then
+
+                warn("[Webhook] Invalid configuration")
+
+                HolyNotify(
+                    "Webhook Test Failed",
+                    "Enable webhook and enter a valid Discord webhook URL.",
+                    "triangle-alert",
+                    4
+                )
+
+                return
+            end
+
+            local payload =
+                ApplyWebhookPing(
+                    {
+                        embeds = {{
+                            title = "⚡ Holy Webhook Connected",
+
+                            description =
+                                "Personal webhook delivery is working.",
+
+                            color = 0xFF4FD8,
+
+                            fields = {
+                                {
+                                    name = "Account",
+                                    value =
+                                        "||"
+                                        .. tostring(Players.LocalPlayer.Name)
+                                        .. "||",
+                                    inline = true,
+                                },
+
+                                {
+                                    name = "Server",
+                                    value =
+                                        "```lua\n"
+                                        .. tostring(game.PlaceId)
+                                        .. ":"
+                                        .. tostring(game.JobId)
+                                        .. "\n```",
+                                    inline = false,
+                                },
+                            },
+
+                            footer = {
+                                text = "Holy V2"
+                            },
+
+                            timestamp =
+                                DateTime.now():ToIsoDate(),
+                        }}
+                    },
+                    WebhookState.PingSuccessfulSnipes
+                )
+
+            local queued =
+                QueueWebhook(payload)
+
+            if queued then
+
+                print("[Webhook] Test queued")
+
+                HolyNotify(
+                    "Webhook Test Queued",
+                    "A test webhook has been added to the send queue.",
+                    "send",
+                    4
+                )
+
+            else
+
+                warn("[Webhook] Test failed to queue")
+
+                HolyNotify(
+                    "Webhook Test Failed",
+                    "Holy could not queue the webhook test.",
+                    "triangle-alert",
+                    5
+                )
+            end
+        end,
+    })
+end
+--==================================================
+-- GLOBAL ERROR / DISCONNECT TELEMETRY
+--==================================================
+
+TeleportService =
+    game:GetService("TeleportService")
+
+GuiService =
+    game:GetService("GuiService")
+
+CoreGui =
+    game:GetService("CoreGui")
+
+function SendRuntimeError(title, message)
+
+    warn("[RUNTIME]", title, message)
+
+    if not WebhookState.Enabled
+    or not WebhookState.NotifyErrors then
+        return
+    end
+
+QueueWebhook(
+    ApplyWebhookPing(
+        {
+            embeds = {{
+                title = tostring(title),
+
+                description =
+                    "```lua\n"
+                    .. tostring(message)
+                    .. "\n```",
+
+                color = 0xEF4444,
+
+                fields = {
+
+                    {
+                        name = "PlaceId",
+                        value = tostring(game.PlaceId),
+                        inline = true,
+                    },
+
+                    {
+                        name = "JobId",
+                        value = tostring(game.JobId),
+                        inline = false,
+                    },
+
+                    {
+                        name = "Player",
+                        value = Players.LocalPlayer.Name,
+                        inline = true,
+                    },
+                },
+
+                footer = {
+                    text = "Holy V2 Runtime"
+                },
+
+                timestamp =
+                    DateTime.now():ToIsoDate(),
+            }}
+        },
+        WebhookState.PingErrors
+    )
+)
+end
+
+--==================================================
+-- TELEPORT FAILURES + IMMEDIATE RETRY CONTROLLER
+--==================================================
+
+TeleportRetryState = {
+    Retrying = false,
+    Attempt = 0,
+    MaxAttempts = 8,
+
+    LastTarget = nil,
+    BlockedServers = {},
+
+    RetryDelay = 0.35,
+}
+
+function GetRetryPlaceId()
+    if game.PlaceId == TRADING_WORLD_PLACE_ID then
+        return TRADING_WORLD_PLACE_ID
+    end
+
+    return game.PlaceId
+end
+
+function GetFreshRetryServer(placeId)
+
+    local url =
+        "https://games.roblox.com/v1/games/"
+        .. tostring(placeId)
+        .. "/servers/Public?sortOrder=Desc&limit=100"
+
+    local ok, body = pcall(function()
+        return game:HttpGet(url)
+    end)
+
+    if not ok or not body then
+        warn("[TeleportRetry] Server fetch failed")
+        return nil
+    end
+
+    local decoded
+
+    ok, decoded = pcall(function()
+        return HttpService:JSONDecode(body)
+    end)
+
+    if not ok
+    or not decoded
+    or type(decoded.data) ~= "table" then
+        warn("[TeleportRetry] Decode failed")
+        return nil
+    end
+
+    local candidates = {}
+
+    for _, server in ipairs(decoded.data) do
+
+        local id =
+            server.id
+
+        local playing =
+            tonumber(server.playing)
+
+        local maxPlayers =
+            tonumber(server.maxPlayers)
+
+        if id
+        and playing
+        and maxPlayers
+        and playing < maxPlayers
+        and id ~= game.JobId
+        and not TeleportRetryState.BlockedServers[id]
+        then
+            table.insert(candidates, id)
+        end
+    end
+
+    if #candidates <= 0 then
+        warn("[TeleportRetry] Server pool exhausted → clearing blacklist")
+
+        table.clear(TeleportRetryState.BlockedServers)
+
+        for _, server in ipairs(decoded.data) do
+
+            local id =
+                server.id
+
+            local playing =
+                tonumber(server.playing)
+
+            local maxPlayers =
+                tonumber(server.maxPlayers)
+
+            if id
+            and playing
+            and maxPlayers
+            and playing < maxPlayers
+            and id ~= game.JobId
+            then
+                table.insert(candidates, id)
+            end
+        end
+    end
+
+    if #candidates <= 0 then
+        return nil
+    end
+
+    return candidates[math.random(1, #candidates)]
+end
+
+function ForceRetryTeleport(reason)
+
+    if TeleportRetryState.Retrying then
+        return
+    end
+
+    TeleportRetryState.Retrying = true
+    TeleportRetryState.Attempt = 0
+
+    task.spawn(function()
+
+        local placeId =
+            GetRetryPlaceId()
+
+        local player =
+            Players.LocalPlayer
+
+        if not player then
+            TeleportRetryState.Retrying = false
+            return
+        end
+
+        -- release any hop locks immediately
+        SniperState.Hopping = false
+        GatewayBusy = false
+
+        if TeleportRetryState.LastTarget then
+            TeleportRetryState.BlockedServers[
+                TeleportRetryState.LastTarget
+            ] = true
+        end
+
+        while TeleportRetryState.Attempt
+            < TeleportRetryState.MaxAttempts
+        do
+            TeleportRetryState.Attempt =
+            TeleportRetryState.Attempt + 1
+
+            local target =
+                GetFreshRetryServer(placeId)
+
+            if not target then
+                warn("[TeleportRetry] No valid target")
+                task.wait(1)
+                continue
+            end
+
+            TeleportRetryState.LastTarget = target
+            TeleportRetryState.BlockedServers[target] = true
+
+            print(
+                string.format(
+                    "[TeleportRetry] Attempt %s/%s → %s | %s",
+                    tostring(TeleportRetryState.Attempt),
+                    tostring(TeleportRetryState.MaxAttempts),
+                    tostring(target),
+                    tostring(reason)
+                )
+            )
+
+            pcall(function()
+                TeleportService:TeleportToPlaceInstance(
+                    placeId,
+                    target,
+                    player
+                )
+            end)
+
+            task.wait(TeleportRetryState.RetryDelay)
+        end
+
+        warn("[TeleportRetry] Max attempts reached")
+
+        TeleportRetryState.Retrying = false
+    end)
+end
+
+TeleportService.TeleportInitFailed:Connect(function(
+    player,
+    teleportResult,
+    errorMessage,
+    placeId
+)
+
+    local resultName =
+        teleportResult
+        and teleportResult.Name
+        or "Unknown"
+
+    SendRuntimeError(
+        "Teleport Failed",
+        string.format(
+            "Result: %s\nMessage: %s\nTarget PlaceId: %s",
+            resultName,
+            tostring(errorMessage),
+            tostring(placeId)
+        )
+    )
+
+    warn(
+        string.format(
+            "[Teleport] Failed → %s | %s",
+            tostring(resultName),
+            tostring(errorMessage)
+        )
+    )
+
+    ForceRetryTeleport(resultName)
+end)
+--==================================================
+-- CLIENT DISCONNECT / KICK DETECTION
+--==================================================
+
+NetworkClient =
+    game:GetService("NetworkClient")
+
+NetworkClient.ChildRemoved:Connect(function(child)
+
+    if child.Name == "ClientReplicator" then
+
+        SendRuntimeError(
+            "Disconnected",
+            "Lost connection to server / shutdown detected."
+        )
+
+        ForceReconnectFromTerminalPrompt(
+            "ClientReplicator removed"
+        )
+    end
+end)
+
+--==================================================
+-- GUI ERROR DETECTION
+-- catches Roblox disconnect / teleport popups
+--==================================================
+function ForceReconnectFromTerminalPrompt(reason)
+
+    print(
+        "[AutoReconnect] Terminal prompt → immediate server retry:",
+        tostring(reason)
+    )
+
+    RuntimeState.Started =
+        false
+
+    SniperState.Hopping =
+        false
+
+    GatewayBusy =
+        false
+
+    if ReconnectState then
+        ReconnectState.Busy =
+            false
+    end
+
+    if TeleportRetryState then
+        TeleportRetryState.Retrying =
+            false
+    end
+
+    ForceRetryTeleport(
+        tostring(reason or "TerminalPrompt")
+    )
+
+    return true
+end
+
+
+function TryAutoReconnectFromPrompt(reason)
+
+    if not ReconnectState.AutoReconnect then
+        return
+    end
+
+    if ReconnectState.Busy then
+        return
+    end
+
+    local now =
+        os.clock()
+
+    ReconnectState.LastAttempt =
+    SafeNumber(ReconnectState.LastAttempt, 0)
+
+ReconnectState.Cooldown =
+    SafeNumber(ReconnectState.Cooldown, 5)
+
+if now - ReconnectState.LastAttempt < ReconnectState.Cooldown then
+    return
+end
+
+    ReconnectState.Busy = true
+    ReconnectState.LastAttempt = now
+
+    print(
+        "[AutoReconnect] Attempting reconnect:",
+        tostring(reason)
+    )
+
+    task.spawn(function()
+
+        local player =
+            Players.LocalPlayer
+
+        if not player then
+            ReconnectState.Busy = false
+            return
+        end
+
+        --==================================================
+        -- METHOD 1:
+        -- Fire the Roblox Reconnect button safely.
+        -- No real mouse click.
+        --==================================================
+
+        local clickedReconnect = false
+
+        pcall(function()
+
+            local robloxGui =
+                CoreGui:FindFirstChild("RobloxPromptGui")
+
+            if not robloxGui then
+                return
+            end
+
+            for _, obj in ipairs(robloxGui:GetDescendants()) do
+
+                if obj:IsA("TextButton")
+                or obj:IsA("ImageButton") then
+
+                    local text =
+                        ""
+
+                    if obj:IsA("TextButton") then
+                        text =
+                            tostring(obj.Text or ""):lower()
+                    end
+
+                    for _, child in ipairs(obj:GetDescendants()) do
+
+                        if child:IsA("TextLabel")
+                        or child:IsA("TextButton") then
+                            text =
+                            text
+                            .. " "
+                            .. tostring(child.Text or ""):lower()
+                        end
+                    end
+
+                    if text:find("reconnect", 1, true) then
+
+                        print(
+                            "[AutoReconnect] Reconnect button found:",
+                            obj:GetFullName()
+                        )
+
+                        if getconnections then
+
+                            for _, connection in ipairs(
+                                getconnections(obj.Activated)
+                            ) do
+                                if connection.Enabled ~= false then
+
+                                    local fn =
+                                        connection.Function
+                                        or connection.func
+                                        or connection._function
+
+                                    if type(fn) == "function" then
+                                        pcall(fn)
+                                        clickedReconnect = true
+                                    end
+                                end
+                            end
+                        end
+
+                        if firesignal then
+                            pcall(function()
+                                firesignal(obj.Activated)
+                                clickedReconnect = true
+                            end)
+                        end
+
+                        pcall(function()
+                            obj:Activate()
+                            clickedReconnect = true
+                        end)
+
+                        break
+                    end
+                end
+            end
+        end)
+
+        if clickedReconnect then
+            print("[AutoReconnect] Reconnect button activated")
+
+            task.delay(8, function()
+                ReconnectState.Busy = false
+            end)
+
+            return
+        end
+
+        --==================================================
+        -- METHOD 2:
+        -- Teleport fallback.
+        -- For shutdowns, same JobId is dead, so join same place.
+        --==================================================
+
+        warn("[AutoReconnect] Reconnect button unavailable, teleport fallback")
+
+        local targetPlaceId =
+            game.PlaceId
+
+        if game.PlaceId == TRADING_WORLD_PLACE_ID then
+            targetPlaceId = TRADING_WORLD_PLACE_ID
+        end
+
+        pcall(function()
+            TeleportService:Teleport(
+                targetPlaceId,
+                player
+            )
+        end)
+
+        task.delay(8, function()
+            ReconnectState.Busy = false
+        end)
+    end)
+end
+task.spawn(function()
+
+    local lastPromptText = ""
+    local lastPromptAt = 0
+
+    -- Prevents webhook/reconnect spam for terminal Roblox prompts.
+    local handledTerminalPrompts = {}
+
+    while IsCurrentRun() do
+        task.wait(0.25)
+
+        local robloxGui =
+            CoreGui:FindFirstChild("RobloxPromptGui")
+
+        if not robloxGui then
+            continue
+        end
+
+        local promptOverlay =
+            robloxGui:FindFirstChild("promptOverlay")
+
+        if not promptOverlay then
+            continue
+        end
+
+        local errorPrompt =
+            promptOverlay:FindFirstChild("ErrorPrompt")
+
+        if not errorPrompt then
+            continue
+        end
+
+        local messageArea =
+            errorPrompt:FindFirstChild("MessageArea")
+
+        if not messageArea then
+            continue
+        end
+
+        local errorFrame =
+            messageArea:FindFirstChild("ErrorFrame")
+
+        if not errorFrame then
+            continue
+        end
+
+        local errorMessage =
+            errorFrame:FindFirstChild("ErrorMessage")
+
+        if not errorMessage
+        or not errorMessage:IsA("TextLabel") then
+            continue
+        end
+
+        local text =
+            tostring(errorMessage.Text)
+
+        if text == "" then
+            continue
+        end
+
+        local now =
+            os.clock()
+
+        if text == lastPromptText
+        and now - lastPromptAt < 3 then
+            continue
+        end
+
+        lastPromptText = text
+        lastPromptAt = now
+
+                local lower =
+            string.lower(text)
+
+        local isKickPrompt =
+            lower:find("error code: 267", 1, true)
+            or lower:find("you have been kicked", 1, true)
+            or lower:find("moderators", 1, true)
+
+        local isShutdownPrompt =
+            lower:find("server has shut down", 1, true)
+            or lower:find("error code: 288", 1, true)
+            or lower:find("disconnected from the experience", 1, true)
+
+        local isTeleportFailurePrompt =
+            lower:find("server is full", 1, true)
+            or lower:find("error code: 772", 1, true)
+            or lower:find("teleport failed", 1, true)
+            or lower:find("please try again", 1, true)
+
+        local terminalPromptKey =
+            tostring(text)
+
+        if isKickPrompt
+        or isShutdownPrompt
+        or isTeleportFailurePrompt then
+
+            if handledTerminalPrompts[terminalPromptKey] then
+                continue
+            end
+
+            handledTerminalPrompts[terminalPromptKey] =
+                true
+        end
+
+                local lower =
+            string.lower(text)
+
+        local isKickPrompt =
+            lower:find("error code: 267", 1, true)
+            or lower:find("you have been kicked", 1, true)
+            or lower:find("moderators", 1, true)
+
+        local isShutdownPrompt =
+            lower:find("server has shut down", 1, true)
+            or lower:find("error code: 288", 1, true)
+            or lower:find("disconnected from the experience", 1, true)
+
+        local isTeleportFailurePrompt =
+            lower:find("server is full", 1, true)
+            or lower:find("error code: 772", 1, true)
+            or lower:find("teleport failed", 1, true)
+            or lower:find("please try again", 1, true)
+
+        SendRuntimeError(
+            "Roblox Error Prompt",
+            text
+        )
+
+        if isKickPrompt then
+
+            warn("[AutoReconnect] Kick / Error 267 prompt detected")
+
+            ForceReconnectFromTerminalPrompt(
+                "Kick / Error 267"
+            )
+
+        elseif isShutdownPrompt then
+
+            warn("[AutoReconnect] Shutdown / disconnect prompt detected")
+
+            ForceReconnectFromTerminalPrompt(
+                "Shutdown / Error 288"
+            )
+
+        elseif isTeleportFailurePrompt then
+
+            warn("[TeleportRetry] GUI teleport failure detected")
+
+            SniperState.Hopping =
+                false
+
+            GatewayBusy =
+                false
+
+            ForceRetryTeleport(
+                "GUI ErrorPrompt"
+            )
+        end
+    end
+end)
+--==================================================
+-- SETTINGS / DEV TOOLS UI BUILDER
+--==================================================
+--==================================================
+-- PERFORMANCE MODE
+-- Client-side visual reducer for better FPS.
+-- Safe: stores original values and can restore them.
+--==================================================
+
+PerformanceModeState = {
+    Applied = false,
+    Original = {},
+}
+
+function StoreOriginalPerformanceValue(obj, property, value)
+
+    if not obj then
+        return
+    end
+
+    PerformanceModeState.Original[obj] =
+        PerformanceModeState.Original[obj]
+        or {}
+
+    if PerformanceModeState.Original[obj][property] == nil then
+        PerformanceModeState.Original[obj][property] = value
+    end
+end
+
+function ApplyPerformanceMode()
+
+    if PerformanceModeState.Applied then
+        return
+    end
+
+    PerformanceModeState.Applied = true
+
+    local lighting =
+        game:GetService("Lighting")
+
+    --==================================================
+    -- LIGHTING
+    --==================================================
+
+    StoreOriginalPerformanceValue(
+        lighting,
+        "GlobalShadows",
+        lighting.GlobalShadows
+    )
+
+    lighting.GlobalShadows = false
+
+    StoreOriginalPerformanceValue(
+        lighting,
+        "FogEnd",
+        lighting.FogEnd
+    )
+
+    lighting.FogEnd = 100000
+
+    for _, obj in ipairs(lighting:GetChildren()) do
+
+        if obj:IsA("PostEffect") then
+
+            StoreOriginalPerformanceValue(
+                obj,
+                "Enabled",
+                obj.Enabled
+            )
+
+            obj.Enabled = false
+        end
+    end
+
+    --==================================================
+    -- WORLD VISUALS
+    --==================================================
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+
+        if obj:IsA("ParticleEmitter")
+        or obj:IsA("Trail")
+        or obj:IsA("Beam")
+        or obj:IsA("Smoke")
+        or obj:IsA("Fire")
+        or obj:IsA("Sparkles") then
+
+            StoreOriginalPerformanceValue(
+                obj,
+                "Enabled",
+                obj.Enabled
+            )
+
+            obj.Enabled = false
+        end
+
+        if obj:IsA("PointLight")
+        or obj:IsA("SpotLight")
+        or obj:IsA("SurfaceLight") then
+
+            StoreOriginalPerformanceValue(
+                obj,
+                "Enabled",
+                obj.Enabled
+            )
+
+            obj.Enabled = false
+        end
+
+        if obj:IsA("Decal")
+        or obj:IsA("Texture") then
+
+            StoreOriginalPerformanceValue(
+                obj,
+                "Transparency",
+                obj.Transparency
+            )
+
+            obj.Transparency = 1
+        end
+
+        if obj:IsA("BasePart") then
+
+            StoreOriginalPerformanceValue(
+                obj,
+                "Material",
+                obj.Material
+            )
+
+            StoreOriginalPerformanceValue(
+                obj,
+                "Reflectance",
+                obj.Reflectance
+            )
+
+            StoreOriginalPerformanceValue(
+                obj,
+                "CastShadow",
+                obj.CastShadow
+            )
+
+            obj.Material = Enum.Material.Plastic
+            obj.Reflectance = 0
+            obj.CastShadow = false
+        end
+    end
+
+    --==================================================
+    -- OPTIONAL MAP REMOVALS
+    -- Add Dex paths here later.
+    -- These are hidden, not destroyed.
+    --==================================================
+
+    local function HidePath(path)
+
+        local current =
+            workspace
+
+        for part in tostring(path):gmatch("[^%.]+") do
+
+            if part ~= "workspace" then
+                current =
+                    current and current:FindFirstChild(part)
+            end
+        end
+
+        if not current then
+            return
+        end
+
+        for _, obj in ipairs(current:GetDescendants()) do
+
+            if obj:IsA("BasePart") then
+
+                StoreOriginalPerformanceValue(
+                    obj,
+                    "Transparency",
+                    obj.Transparency
+                )
+
+                StoreOriginalPerformanceValue(
+                    obj,
+                    "CanCollide",
+                    obj.CanCollide
+                )
+
+                StoreOriginalPerformanceValue(
+                    obj,
+                    "CastShadow",
+                    obj.CastShadow
+                )
+
+                obj.Transparency = 1
+                obj.CanCollide = false
+                obj.CastShadow = false
+            end
+
+            if obj:IsA("ParticleEmitter")
+            or obj:IsA("Trail")
+            or obj:IsA("Beam") then
+
+                StoreOriginalPerformanceValue(
+                    obj,
+                    "Enabled",
+                    obj.Enabled
+                )
+
+                obj.Enabled = false
+            end
+        end
+    end
+
+    -- Add specific Dex paths here later:
+    -- HidePath("workspace.TradeWorld.SomeLaggyModel")
+    -- HidePath("workspace.TradeWorld.Decorations")
+    -- HidePath("workspace.TradeWorld.Effects")
+local PerformanceHidePaths = {
+    "workspace.Visuals",
+    "workspace.WeatherVisuals",
+    "workspace.Water_Effect",
+    "workspace.WeatherObjects",
+    "workspace.TradeWorld.PortalPetePlatform",
+}
+
+for _, path in ipairs(PerformanceHidePaths) do
+    HidePath(path)
+end
+
+    HolyNotify(
+        "Performance Mode Enabled",
+        "Extra visuals were reduced to improve FPS.",
+        "zap",
+        4
+    )
+end
+
+function RestorePerformanceMode()
+
+    for obj, properties in pairs(PerformanceModeState.Original) do
+
+        if obj and obj.Parent then
+
+            for property, value in pairs(properties) do
+
+                pcall(function()
+                    obj[property] = value
+                end)
+            end
+        end
+    end
+
+    table.clear(
+        PerformanceModeState.Original
+    )
+
+    PerformanceModeState.Applied = false
+
+    HolyNotify(
+        "Performance Mode Disabled",
+        "Visual settings were restored.",
+        "refresh-cw",
+        4
+    )
+end
+
+function SetPerformanceMode(enabled)
+
+    UIState.PerformanceMode =
+        enabled == true
+
+    if UIState.PerformanceMode then
+        ApplyPerformanceMode()
+    else
+        RestorePerformanceMode()
+    end
+end
+
+function BuildSettingsTab()
+
+local SettingsBox =
+    Tabs.Settings:AddLeftGroupbox(
+        "Settings",
+        "settings"
+    )
+
+local DevBox =
+    Tabs.Settings:AddRightGroupbox(
+        "Dev Tools",
+        "terminal"
+    )
+--==================================================
+-- SAFE LOADER (REUSED)
+--==================================================
+local function SafeExec(url)
+    local ok, src = pcall(function()
+        return game:HttpGet(url, true)
+    end)
+
+    if not ok or type(src) ~= "string" or #src < 100 then
+        warn("[DevTools] HTTP failed:", url)
+        return
+    end
+
+    local fn, compileErr = loadstring(src)
+    if not fn then
+        warn("[DevTools] Compile failed:", compileErr)
+        return
+    end
+
+    local okRun, runtimeErr = pcall(fn)
+    if not okRun then
+        warn("[DevTools] Runtime failed:", runtimeErr)
+        return
+    end
+end
+--==================================================
+-- UI DPI SCALE
+-- Controls Obsidian library scale.
+-- 90% = normal size.
+--==================================================
+
+local function ResolveDPIScaleDropdownDefault()
+
+    local scale =
+        math.clamp(
+            math.floor(SafeNumber(UIState.DPIScale, 100) + 0.5),
+            50,
+            150
+        )
+
+    local allowed = {
+        50,
+        75,
+        90,
+        100,
+        110,
+        125,
+        150,
+    }
+
+    local closestIndex = 4
+    local closestDistance = math.huge
+
+    for index, value in ipairs(allowed) do
+
+        local distance =
+            math.abs(scale - value)
+
+        if distance < closestDistance then
+            closestDistance = distance
+            closestIndex = index
+        end
+    end
+
+    return closestIndex
+end
+
+local DPIScaleDropdown =
+    SettingsBox:AddDropdown(
+        "HolyDPIScale",
+        {
+            Text = "UI Scale",
+            Tooltip = "Adjusts the size of the Holy interface.",
+            Values = {
+                "50%",
+                "75%",
+                "90%",
+                "100%",
+                "110%",
+                "125%",
+                "150%",
+            },
+            Default = ResolveDPIScaleDropdownDefault(),
+            Searchable = false,
+        }
+    )
+
+DPIScaleDropdown:OnChanged(function(value)
+
+    local rawValue =
+        tostring(value or "100%")
+
+    local cleanedValue =
+        rawValue:gsub("%%", "")
+
+    local scale =
+        tonumber(cleanedValue)
+
+    if not scale then
+        return
+    end
+
+    scale =
+        math.clamp(
+            math.floor(scale + 0.5),
+            50,
+            150
+        )
+
+    UIState.DPIScale =
+        scale
+
+    if Library
+    and type(Library.SetDPIScale) == "function" then
+
+        pcall(function()
+            Library:SetDPIScale(scale)
+        end)
+    end
+
+    MarkConfigDirty()
+
+    if ConfigState.IsHydrating then
+        return
+    end
+
+    HolyNotify(
+        "UI Scale Updated",
+        "Holy UI scale set to "
+            .. tostring(scale)
+            .. "%.",
+        "maximize",
+        3
+    )
+end)
+local PerformanceModeToggle =
+    SettingsBox:AddToggle(
+        "PerformanceMode",
+        {
+            Text = "Performance Mode",
+            Tooltip = "Removes extra visual effects client-side to improve FPS. Safe for AFK/sniping.",
+            Default = false,
+        }
+    )
+
+PerformanceModeToggle:OnChanged(function(enabled)
+
+    UIState.PerformanceMode =
+        enabled == true
+
+    MarkConfigDirty()
+
+    if ConfigState.IsHydrating then
+        return
+    end
+
+    SetPerformanceMode(enabled)
+end)
+--==================================================
+-- AUTO CLOSE UI
+-- Saves preference only during config hydration.
+-- Actually closes only after boot is complete.
+--==================================================
+
+function RequestHolyAutoClose(reason)
+    UIState.PendingAutoClose =
+        true
+
+    UIState.PendingAutoCloseReason =
+        tostring(reason or "Auto Close UI")
+end
+
+function CloseHolyWindowSafe()
+    if not Library then
+        return false
+    end
+
+    -- Do not close while the loading screen is still running.
+    if ScriptState
+    and ScriptState.BootComplete ~= true then
+        RequestHolyAutoClose("waiting for boot complete")
+        return false
+    end
+
+    local ok = false
+
+    -- Preferred: use library toggle key behavior only once after boot.
+    if type(Library.Toggle) == "function" then
+        ok =
+            pcall(function()
+                Library:Toggle()
+            end)
+
+        return ok
+    end
+
+    if Window and type(Window.Hide) == "function" then
+        ok =
+            pcall(function()
+                Window:Hide()
+            end)
+
+        return ok
+    end
+
+    if Window and type(Window.SetVisible) == "function" then
+        ok =
+            pcall(function()
+                Window:SetVisible(false)
+            end)
+
+        return ok
+    end
+
+    return false
+end
+
+local UIToggle = SettingsBox:AddToggle("AutoMinimizeUI", {
+    Text = "Auto Close UI",
+    Tooltip = "Closes the Holy UI after loading finishes. Reopen with LeftAlt.",
+    Default = false,
+})
+
+UIToggle:OnChanged(function(enabled)
+
+    UIState.AutoMinimize =
+        enabled == true
+
+    MarkConfigDirty()
+
+    if ConfigState.IsHydrating then
+        return
+    end
+
+    if enabled == true then
+        RequestHolyAutoClose("toggle enabled")
+
+        task.defer(function()
+            task.wait(0.25)
+            CloseHolyWindowSafe()
+        end)
+    end
+end)
+
+local TradeWorldToggle = SettingsBox:AddToggle("Auto Trade World", {
+    Text = "Auto Teleport Trade World",
+    Default = false,
+})
+
+TradeWorldToggle:OnChanged(function(enabled)
+
+    WorldState.AutoJoinTradeWorld =
+        enabled == true
+
+    MarkConfigDirty()
+
+    TradeWorldToggle:OnChanged(function(enabled)
+
+    WorldState.AutoJoinTradeWorld =
+        enabled == true
+
+    MarkConfigDirty()
+
+    if ConfigState.IsHydrating then
+        return
+    end
+
+    if enabled ~= true then
+
+        CancelScheduledTradeWorldJoin()
+
+        HolyNotify(
+            "Auto Teleport Disabled",
+            "Pending Trade World teleport cancelled.",
+            "x",
+            3
+        )
+
+        return
+    end
+
+    if not IsTradeWorld() then
+
+        ScheduleJoinTradeWorld(
+            "Auto Teleport Trade World enabled."
+        )
+    end
+end)
+
+    if not IsTradeWorld() then
+
+        ScheduleJoinTradeWorld(
+            "Auto Teleport Trade World enabled."
+        )
+    end
+end)
+
+task.spawn(function()
+
+    task.wait(2)
+
+    if WorldState.AutoJoinTradeWorld == true
+    and not IsTradeWorld() then
+
+        ScheduleJoinTradeWorld(
+            "Auto Teleport Trade World restored from config."
+        )
+    end
+end)
+
+local AutoReconnectToggle = SettingsBox:AddToggle("AutoReconnect", {
+    Text = "Auto Reconnect",
+    Tooltip = "Automatically reconnects when Roblox shows a disconnect / shutdown prompt",
+    Default = false,
+})
+
+AutoReconnectToggle:OnChanged(function(enabled)
+    ReconnectState.AutoReconnect = enabled
+    MarkConfigDirty()
+end)
+--==================================================
+-- REMOTE SPY
+--==================================================
+DevBox:AddButton({
+    Text = "Open Remote Spy",
+    Tooltip = "",
+    Func = function()
+        if ScriptState.ForceStopped then
+            warn("[DevTools] Blocked (ForceStopped)")
+            return
+        end
+
+        SafeExec("https://raw.githubusercontent.com/Klinac/scripts/main/utopia_spy.lua")
+    end,
+})
+
+--==================================================
+-- DEX EXPLORER
+--==================================================
+DevBox:AddButton({
+    Text = "Open Dex Explorer",
+    Tooltip = "",
+    Func = function()
+        if ScriptState.ForceStopped then
+            warn("[DevTools] Blocked (ForceStopped)")
+            return
+        end
+
+        SafeExec("https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua")
+    end,
+})
+end
+
+--==================================================
+-- CONFIG WRITE GATE
+-- SaveManager only knows options that currently exist.
+-- In Garden Mode, Trade World tabs/options are not built,
+-- so saving would overwrite autosave with a partial config.
+--==================================================
+
+function CanWriteFullHolyConfig()
+
+    return IsTradeWorld() == true
+end
+--==================================================
+-- SAVE / CONFIG BOOTSTRAP
+-- Isolated so obfuscators do not overload main-scope locals.
+--==================================================
+
+function InitializeSaveAndConfig()
+--==================================================
+-- [8] SETTINGS (MINIMAL)
+--==================================================
+SaveManager:SetLibrary(Library)
+ThemeManager:SetLibrary(Library)
+
+SaveManager:SetFolder("HolyV2")
+ThemeManager:SetFolder("HolyV2")
+
+ThemeManager:ApplyTheme("Dark")
+
+--==================================================
+-- SAVE MANAGER SETUP
+--==================================================
+SaveManager:IgnoreThemeSettings()
+
+SaveManager:SetIgnoreIndexes({})
+
+--==================================================
+-- BUILD UI
+--==================================================
+
+
+-- Autosave worker
+task.spawn(function()
+    while IsCurrentRun() do
+        task.wait(1)
+
+        if not ConfigState.Dirty then
+            continue
+        end
+
+        -- debounce window
+        ConfigState.LastMutation =
+            SafeNumber(ConfigState.LastMutation, 0)
+
+        if SafeElapsed(ConfigState.LastMutation) < 2 then
+            continue
+        end
+
+ConfigState.Dirty = false
+
+if not CanWriteFullHolyConfig() then
+
+    print(
+        "[Config] Autosave skipped in Garden Mode to protect Trade World settings"
+    )
+
+    continue
+end
+
+local ok, err = pcall(function()
+    SaveManager:Save(ConfigState.AutosaveName)
+end)
+
+if ok then
+
+    HolyNotify(
+        "Config Saved",
+        "Your Holy settings were autosaved.",
+        "save",
+        3
+    )
+
+else
+
+    warn("[Config] Autosave failed:", err)
+end
+    end
+end)
+--==================================================
+-- LOAD AUTOCONFIG
+--==================================================
+ConfigState.IsHydrating = true
+
+local ok, err = pcall(function()
+    SaveManager:Load(ConfigState.AutosaveName)
+end)
+
+ConfigState.IsHydrating = false
+
+UIState.DPIScale =
+    SafeNumber(UIState.DPIScale, 100)
+
+UIState.DPIScale =
+    math.clamp(
+        math.floor(UIState.DPIScale + 0.5),
+        50,
+        150
+    )
+
+if Library
+and type(Library.SetDPIScale) == "function" then
+
+    pcall(function()
+        Library:SetDPIScale(UIState.DPIScale)
+    end)
+end
+
+UIState.PerformanceMode =
+    UIState.PerformanceMode == true
+
+if UIState.PerformanceMode then
+    task.spawn(function()
+        task.wait(1)
+        SetPerformanceMode(true)
+    end)
+end
+
+if not ok then
+
+    warn("[Config] Corrupted config detected:", err)
+
+    if CanWriteFullHolyConfig() then
+
+        pcall(function()
+            SaveManager:Save(ConfigState.AutosaveName)
+        end)
+
+        warn("[Config] Autosave reset complete")
+
+    else
+
+        warn(
+            "[Config] Reset skipped in Garden Mode to protect Trade World settings"
+        )
+    end
+
+else
+
+    print("[Config] Autoload complete")
+end
+
+LoadSniperFilters()
+
+if type(LoadListingFilters) == "function" then
+    LoadListingFilters()
+end
+
+if IsTradeWorld()
+and type(RefreshWatchlist) == "function" then
+    RefreshWatchlist()
+end
+
+if type(SyncListingRequiredFlagsFromValues) == "function" then
+    SyncListingRequiredFlagsFromValues()
+end
+
+
+if IsTradeWorld() then
+
+    --==================================================
+    -- LISTINGS RESTORE AFTER UI OPTIONS EXIST
+    -- Wait for EnableAutoList to exist before deciding
+    -- whether AutoList should restore ON or stay OFF.
+    --==================================================
+
+    task.spawn(function()
+
+        local startedAt =
+            os.clock()
+
+        while os.clock() - startedAt < 10 do
+
+            if Library
+            and Library.Options
+            and Library.Options.EnableAutoList then
+                break
+            end
+
+            task.wait(0.15)
+        end
+
+        task.wait(0.75)
+
+        if ScriptState
+        and ScriptState.ForceStopped then
+            return
+        end
+
+        if type(RefreshListingInventorySnapshot) == "function" then
+            pcall(RefreshListingInventorySnapshot)
+        end
+
+        if type(BuildListingPreview) == "function" then
+            pcall(BuildListingPreview)
+        end
+
+        if type(RefreshListingFilterUI) == "function" then
+            pcall(RefreshListingFilterUI)
+        end
+
+        if type(ListingsStatusRefresh) == "function" then
+            pcall(ListingsStatusRefresh)
+        end
+
+        if type(ArmListingsAutostartFromSavedToggle) == "function" then
+
+            local okRestore, restoreErr =
+                pcall(ArmListingsAutostartFromSavedToggle)
+
+            if not okRestore then
+                warn(
+                    "[LISTINGS] AutoList restore failed:",
+                    tostring(restoreErr)
+                )
+            end
+
+        else
+
+            warn(
+                "[LISTINGS] ArmListingsAutostartFromSavedToggle missing at config restore"
+            )
+        end
+
+        if type(RefreshEggFocus) == "function" then
+            pcall(RefreshEggFocus)
+        end
+    end)
+end
+
+--==================================================
+-- RESTORE AUTO TELEPORT STATE
+--==================================================
+
+task.spawn(function()
+
+    if not BoothAuto.AutoTeleport then
+        return
+    end
+
+    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+        return
+    end
+
+    local playerId =
+        tostring(Players.LocalPlayer.UserId)
+
+    local timeout = os.clock() + 15
+
+    while os.clock() < timeout do
+
+        local data = LatestBoothData
+
+        if data and data.Booths then
+
+            for _, booth in pairs(data.Booths) do
+
+                if booth.Owner
+                and tostring(booth.Owner):find(playerId)
+                then
+
+                    print(
+                        "[BOOT] Restoring booth auto teleport"
+                    )
+
+                    local character =
+                        Players.LocalPlayer.Character
+                        or Players.LocalPlayer.CharacterAdded:Wait()
+
+                    local humanoid =
+                        character:FindFirstChildOfClass("Humanoid")
+
+                    if not BoothAuto.LockBehindBooth then
+    RestoreCharacterMovement()
+end
+
+task.wait(0.5)
+
+local success =
+    PositionBehindOwnedBooth()
+
+                    if not success then
+                        warn(
+                            "[BOOT] Booth restore failed"
+                        )
+                    end
+
+                    return
+                end
+            end
+        end
+
+        task.wait(0.25)
+    end
+
+end)
+
+end
+--==================================================
+-- [9] RUNTIME LOOP (EMPTY, DETERMINISTIC)
+--==================================================
+function MainLoop()
+    while IsCurrentRun() do
+        task.wait(0.1)
+
+        if ScriptState.ForceStopped then
+            continue
+        end
+
+        --==================================================
+-- LISTINGS LOOP
+-- Independent from sniper activation.
+-- Controlled only by EnableAutoList.
+--==================================================
+
+if ListingsState
+and ListingsState.Enabled then
+
+    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+
+        ListingsState.Status =
+            "Not in Trade World"
+
+    else
+
+        local now =
+            os.clock()
+
+        ListingsState.NoWorkSleepUntil =
+            SafeNumber(
+                ListingsState.NoWorkSleepUntil,
+                0
+            )
+
+        ListingsState.LastScan =
+            SafeNumber(
+                ListingsState.LastScan,
+                0
+            )
+
+        ListingsState.ScanInterval =
+            SafeNumber(
+                ListingsState.ScanInterval,
+                6
+            )
+
+        if now >= ListingsState.NoWorkSleepUntil then
+
+            local elapsed =
+                now - ListingsState.LastScan
+
+            if elapsed >= ListingsState.ScanInterval then
+
+                ListingsState.LastScan =
+                    os.clock()
+
+                pcall(function()
+                    RunAutoListingPass()
+                end)
+
+                if type(ListingsStatusRefresh) == "function" then
+                    pcall(ListingsStatusRefresh)
+                end
+            end
+        end
+    end
+end
+
+        if not RuntimeState.Started then
+            continue
+        end
+
+--==================================================
+-- SNIPER SCAN
+--==================================================
+
+if game.PlaceId == TRADING_WORLD_PLACE_ID then
+
+    SniperState.LastScan =
+        SafeNumber(SniperState.LastScan, 0)
+
+    local elapsed =
+        SafeElapsed(SniperState.LastScan)
+
+    if elapsed >= SniperState.ScanInterval then
+
+        -- prevent overlapping scans
+        if not SniperState.Scanning
+        and not SniperState.Hopping then
+
+    RunSniperScan()
+        end
+    end
+end
+
+    end
+end
+
+--==================================================
+-- ANTI AFK
+--==================================================
+
+LocalPlayer =
+    Players.LocalPlayer
+
+LocalPlayer.Idled:Connect(function()
+
+    pcall(function()
+
+        VirtualUser:CaptureController()
+
+        VirtualUser:ClickButton2(
+            Vector2.new(0, 0)
+        )
+
+    end)
+
+end)
+
+--==================================================
+-- AUTO EQUIP SHOWCASE PET
+--==================================================
+
+function EquipShowcasePet(force)
+
+    if not IsTradeWorld() then
+        return
+    end
+
+    if not BoothPetState.Enabled then
+        return
+    end
+
+    local targetPet =
+        BoothPetState.SelectedPetType
+
+    if not targetPet
+    or targetPet == "" then
+        return
+    end
+
+    local now =
+        os.clock()
+
+    if not force then
+
+        local elapsed =
+            now - SafeNumber(
+                BoothPetState.LastEquipAttemptAt,
+                0
+            )
+
+        if elapsed < SafeNumber(BoothPetState.EquipCooldown, 1.5) then
+            return
+        end
+    end
+
+    BoothPetState.LastEquipAttemptAt =
+        now
+
+    local bestPet =
+        ResolveBestPet(targetPet)
+
+    if not bestPet then
+
+        BoothPetState.LastEquippedUID =
+            nil
+
+        BoothPetState.LockedShowcaseUID =
+            nil
+
+        if ShouldWarnMissingShowcasePet(targetPet) then
+            warn(
+                "[BoothPet] No matching pet:",
+                targetPet
+            )
+        end
+
+        return
+    end
+
+    BoothPetState.LastMissingPet =
+        nil
+
+    -- Lock onto this exact pet until it disappears or user changes selection.
+    if not BoothPetState.LockedShowcaseUID then
+        BoothPetState.LockedShowcaseUID =
+            bestPet.UID
+    end
+
+    -- Already holding the selected showcase pet.
+    if IsToolCurrentlyEquipped(bestPet.Tool) then
+
+        BoothPetState.LastEquippedUID =
+            bestPet.UID
+
+        BoothPetState.LockedShowcaseUID =
+            bestPet.UID
+
+        return
+    end
+
+    if not force
+    and BoothPetState.LastEquippedUID == bestPet.UID then
+        return
+    end
+
+    local character =
+        Players.LocalPlayer.Character
+
+    if not character then
+        return
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid
+    or humanoid.Health <= 0 then
+        return
+    end
+
+    BoothPetState.LastEquippedUID =
+        bestPet.UID
+
+    BoothPetState.LockedShowcaseUID =
+        bestPet.UID
+
+    print(
+        string.format(
+            "[BoothPet] Equipping → %s | %.2f KG | UID %s",
+            tostring(bestPet.PetName),
+            tonumber(bestPet.Weight) or 0,
+            tostring(bestPet.UID)
+        )
+    )
+
+    humanoid:EquipTool(bestPet.Tool)
+end
+--==================================================
+-- [10] LIFECYCLE START
+--==================================================
+ScriptState.Loaded = true
+
+AutoServerHopWorker = function()
+    while IsCurrentRun() do
+        task.wait(1)
+
+        if ScriptState.ForceStopped then
+            continue
+        end
+
+        if not BoothAuto.AutoServerHop then
+            continue
+        end
+
+                BoothAuto.LastServerHop =
+            SafeNumber(BoothAuto.LastServerHop, 0)
+
+        BoothAuto.ServerHopMinutes =
+            SafeNumber(BoothAuto.ServerHopMinutes, 10)
+
+        local elapsed =
+            SafeElapsed(BoothAuto.LastServerHop)
+
+        local targetSeconds =
+            BoothAuto.ServerHopMinutes * 60
+        if elapsed < targetSeconds then
+            continue
+        end
+
+        BoothAuto.LastServerHop = os.clock()
+
+        print("[Hop] Auto joining new server")
+
+        local TeleportService =
+    game:GetService("TeleportService")
+        local player = Players.LocalPlayer
+
+        if not player then
+            continue
+        end
+
+        local url =
+            "https://games.roblox.com/v1/games/"
+            .. game.PlaceId
+            .. "/servers/Public?sortOrder=Desc&limit=100"
+
+        local ok, body = pcall(function()
+            return game:HttpGet(url)
+        end)
+
+        if not ok or not body then
+            warn("[Hop] Server fetch failed")
+            continue
+        end
+
+        local decoded
+
+        ok, decoded = pcall(function()
+            return HttpService:JSONDecode(body)
+        end)
+
+        if not ok or not decoded or not decoded.data then
+            warn("[Hop] Decode failed")
+            continue
+        end
+
+        local servers = {}
+
+        for _, server in ipairs(decoded.data) do
+            if server.id
+                and server.playing
+                and server.maxPlayers
+                and server.playing < server.maxPlayers
+                and server.id ~= game.JobId
+            then
+                table.insert(servers, server.id)
+            end
+        end
+
+        if #servers == 0 then
+            warn("[Hop] No servers available")
+            continue
+        end
+
+        local target =
+            servers[math.random(#servers)]
+
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(
+                game.PlaceId,
+                target,
+                player
+            )
+        end)
+    end
+end
+--==================================================
+-- CUSTOMIZE TRADE PLAZA BUTTONS
+--==================================================
+
+task.spawn(function()
+    task.wait(3)
+
+    local playerGui =
+        Players.LocalPlayer:WaitForChild("PlayerGui")
+
+    local tradePlaza =
+        playerGui
+        :WaitForChild("Teleport_UI")
+        :WaitForChild("TradePlaza")
+
+    local buttons = {
+        "Booth",
+        "Index",
+        "Tokens"
+    }
+
+    for _, name in ipairs(buttons) do
+        local button =
+            tradePlaza:FindFirstChild(name)
+
+        if button then
+
+            --==================================================
+            -- MAIN BUTTON SIZE
+            --==================================================
+
+            button.Size = UDim2.new(
+                0,
+                70, -- width
+                0,
+                28  -- height
+            )
+
+            --==================================================
+            -- POSITION OFFSET (OPTIONAL)
+            --==================================================
+
+            button.Position = button.Position + UDim2.new(
+                0,
+                0,
+                0,
+                -10
+            )
+
+            --==================================================
+            -- BACKGROUND
+            --==================================================
+
+            button.BackgroundTransparency = 0.2
+
+            --==================================================
+            -- CORNERS
+            --==================================================
+
+            local corner =
+                button:FindFirstChildOfClass("UICorner")
+
+            if corner then
+                corner.CornerRadius = UDim.new(0, 6)
+            end
+--==================================================
+-- TEXT
+--==================================================
+
+local title =
+    button:FindFirstChild("Title")
+
+if title and title:IsA("TextLabel") then
+
+    title.TextScaled = true
+    title.TextWrapped = false
+
+    title.Size = UDim2.new(
+        1,
+        -4,
+        1,
+        -2
+    )
+
+    title.Position = UDim2.new(
+        0,
+        2,
+        0,
+        0
+    )
+
+    title.AnchorPoint = Vector2.new(0, 0)
+
+    title.BackgroundTransparency = 1
+
+    title.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    title.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    title.Font = Enum.Font.GothamBold
+
+    title.TextStrokeTransparency = 0.5
+end
+            --==================================================
+            -- ICONS
+            --==================================================
+
+            for _, obj in ipairs(button:GetDescendants()) do
+                if obj:IsA("ImageLabel")
+                or obj:IsA("ImageButton") then
+
+                    obj.Size = UDim2.new(
+                        0,
+                        16,
+                        0,
+                        16
+                    )
+                end
+            end
+        end
+    end
+end)
+
+
+task.spawn(function()
+
+    task.wait(2)
+
+    local playerGui =
+        Players.LocalPlayer:WaitForChild("PlayerGui")
+
+    local sideBtns =
+        playerGui
+        :WaitForChild("Hud_UI")
+        :WaitForChild("SideBtns")
+
+    local buttons = {
+        "Shop",
+        "Trade"
+    }
+
+    for _, name in ipairs(buttons) do
+
+        local button =
+            sideBtns:FindFirstChild(name)
+
+        if not button then
+            continue
+        end
+
+        button.Size = UDim2.new(
+            0,
+            50,
+            0,
+            26
+        )
+    end
+end)
+
+--==================================================
+-- REMOVE EVENT NOTIFY (PERSISTENT)
+--==================================================
+
+task.spawn(function()
+    while IsCurrentRun() do
+        task.wait(0.5)
+
+        local playerGui =
+            Players.LocalPlayer:FindFirstChild("PlayerGui")
+
+        if not playerGui then
+            continue
+        end
+
+        local topbar =
+            playerGui:FindFirstChild("TopbarStandard")
+
+        if not topbar then
+            continue
+        end
+
+        local holders =
+            topbar:FindFirstChild("Holders")
+
+        if not holders then
+            continue
+        end
+
+        local right =
+            holders:FindFirstChild("Right")
+
+        if not right then
+            continue
+        end
+
+        local notify =
+            right:FindFirstChild("EVENT NOTIFY")
+
+        if notify then
+            notify.Visible = false
+            notify:Destroy()
+
+            print("[UI] EVENT NOTIFY removed")
+        end
+    end
+end)
+task.spawn(function()
+
+    while IsCurrentRun() do
+        task.wait(0.25)
+
+        if ScriptState.ForceStopped then
+            continue
+        end
+
+        if not IsTradeWorld() then
+    continue
+end
+
+if not BeeEggAuto.Enabled then
+    continue
+end
+
+pcall(function()
+    TryBuyBeeEgg()
+end)
+    end
+end)
+task.spawn(AutoServerHopWorker)
+task.spawn(BoothPositionWatchdog)
+
+--==================================================
+-- AUTO EQUIP WORKER
+-- Event-driven post-snipe showcase re-equip
+--==================================================
+
+task.spawn(function()
+
+    while IsCurrentRun() do
+        task.wait(0.15)
+
+        if ScriptState.ForceStopped then
+            continue
+        end
+
+if not IsTradeWorld() then
+
+    if BoothPetState.Enabled
+    or ShowcaseEquipState.ReequipPending
+    or ShowcaseEquipState.Attempting then
+
+        BoothPetState.Enabled =
+            false
+
+        BoothPetState.LastEquippedUID =
+            nil
+
+        ShowcaseEquipState.ReequipPending =
+            false
+
+        ShowcaseEquipState.Attempting =
+            false
+
+        ShowcaseEquipState.InventoryConfirmedAt =
+            0
+    end
+
+    continue
+end
+        --==================================================
+        -- NORMAL MAINTENANCE EQUIP
+        -- Keeps selected showcase pet equipped during idle
+        --==================================================
+
+        -- Do not auto re-equip showcase pet during post-snipe delay window
+if not ShowcaseEquipState.ReequipPending
+and not ShowcaseEquipState.Attempting then
+    pcall(EquipShowcasePet)
+end
+
+        --==================================================
+        -- POST-SNIPE RE-EQUIP
+        -- Runs 10 after inventory confirmation
+        --==================================================
+
+        if not ShowcaseEquipState.ReequipPending then
+            continue
+        end
+
+        if ShowcaseEquipState.Attempting then
+            continue
+        end
+
+        if not BoothPetState.Enabled then
+            ShowcaseEquipState.ReequipPending = false
+            continue
+        end
+
+        local targetPet =
+            BoothPetState.SelectedPetType
+
+        if not targetPet
+        or targetPet == "" then
+            ShowcaseEquipState.ReequipPending = false
+            continue
+        end
+
+        ShowcaseEquipState.InventoryConfirmedAt =
+            SafeNumber(ShowcaseEquipState.InventoryConfirmedAt, 0)
+
+        local elapsed =
+            SafeElapsed(ShowcaseEquipState.InventoryConfirmedAt)
+
+        if elapsed < ShowcaseEquipState.ReequipDelay then
+            continue
+        end
+
+        ShowcaseEquipState.ReequipPending = false
+        ShowcaseEquipState.Attempting = true
+
+        local requestId =
+            ShowcaseEquipState.RequestId
+
+        task.spawn(function()
+
+            print(
+                string.format(
+                    "[BoothPet] Post-snipe re-equip → %s",
+                    tostring(targetPet)
+                )
+            )
+
+            pcall(function()
+
+                --==================================================
+                -- FORCE EQUIP BURST
+                -- This wins against purchase/tool replication swaps
+                --==================================================
+
+                for i = 1, 5 do
+
+                    if ScriptState.ForceStopped then
+                        break
+                    end
+
+                    if requestId ~= ShowcaseEquipState.RequestId then
+                        break
+                    end
+
+                    EquipShowcasePet(true)
+
+                    task.wait(0.2)
+                end
+            end)
+
+            ShowcaseEquipState.Attempting = false
+        end)
+    end
+end)
+--==================================================
+-- AUTO PROMOTE WORKER
+-- Trade World only.
+--==================================================
+
+if IsTradeWorld() then
+
+    StartWorker("AutoPromoteWorker", function()
+
+        while IsCurrentRun() do
+            task.wait(3)
+
+            if ScriptState.ForceStopped then
+                continue
+            end
+
+            if not IsTradeWorld() then
+                continue
+            end
+
+            pcall(function()
+                SendPromoteMessage()
+            end)
+        end
+    end)
+end
+
+--==================================================
+-- UI BUILD
+-- Keep original tab order.
+-- Build real systems only in Trade World.
+--==================================================
+
+BuildHomeTab()
+
+if IsTradeWorld() then
+
+    BuildBoothTab()
+    BuildSniperTab()
+    BuildListingsTab()
+
+else
+
+    BuildGardenModeTradeTabs()
+
+    RuntimeState.Started =
+        false
+
+    SniperState.AutoHop =
+        false
+
+    BoothAuto.Enabled =
+        false
+
+    BoothAuto.AutoTeleport =
+        false
+
+    BoothPetState.Enabled =
+        false
+
+    BeeEggAuto.Enabled =
+        false
+
+    ListingsState.Enabled =
+        false
+
+    ListingsState.VisualTagsEnabled =
+        false
+
+    ListingsState.Status =
+        "Garden Mode"
+
+    print(
+        "[BOOT] Garden mode active - Trade World logic disabled"
+    )
+end
+
+BuildWebhookTab()
+BuildSettingsTab()
+BuildVisualTab()
+
+if IsTradeWorld() then
+    StartListingWorker()
+end
+--==================================================
+-- LISTINGS WORKER START
+--==================================================
+
+HolyLoading:SetCurrentStep(4)
+HolyLoading:SetDescription("Loading saved configuration...")
+
+local configOk, configErr =
+    pcall(function()
+        InitializeSaveAndConfig()
+    end)
+
+if not configOk then
+    warn(
+        "[CONFIG] InitializeSaveAndConfig failed:",
+        tostring(configErr)
+    )
+
+    HolyNotify(
+        "Config Load Failed",
+        "Holy skipped saved config because it errored. Check console.",
+        "triangle-alert",
+        5
+    )
+end
+
+HolyLoading:SetCurrentStep(5)
+HolyLoading:SetDescription("Starting workers...")
+
+--==================================================
+-- SAFE HUD STARTUP
+-- Garden Mode may not build every Trade World UI/HUD.
+-- Only call constructors that actually exist.
+--==================================================
+
+if type(CreateWatchlistHUD) == "function" then
+
+    pcall(CreateWatchlistHUD)
+
+    if WatchlistHUDGui then
+        WatchlistHUDGui.Enabled =
+            VisualState.WatchlistHUD == true
+    end
+
+    if type(RefreshWatchlistHUD) == "function" then
+        pcall(RefreshWatchlistHUD)
+    end
+end
+
+if type(CreateServerInfoHUD) == "function" then
+
+    pcall(CreateServerInfoHUD)
+
+    if ServerInfoHUDGui then
+        ServerInfoHUDGui.Enabled =
+            VisualState.ServerInfoHUD == true
+    end
+
+    if type(RefreshServerInfoHUD) == "function" then
+        pcall(RefreshServerInfoHUD)
+    end
+end
+
+if IsTradeWorld()
+and type(CreateSniperMonitorHUD) == "function" then
+
+    pcall(CreateSniperMonitorHUD)
+
+    if SniperMonitorHUDGui then
+        SniperMonitorHUDGui.Enabled =
+            VisualState.SniperMonitorHUD == true
+    end
+
+    if type(RefreshSniperMonitorHUD) == "function" then
+        pcall(RefreshSniperMonitorHUD)
+    end
+end
+
+task.spawn(function()
+
+    while IsCurrentRun() do
+        task.wait(0.25)
+
+        pcall(function()
+
+    if type(RefreshServerInfoHUD) == "function" then
+        RefreshServerInfoHUD()
+    end
+
+    if IsTradeWorld()
+    and type(RefreshSniperMonitorHUD) == "function" then
+        RefreshSniperMonitorHUD()
+    end
+end)
+    end
+end)
+
+--==================================================
+-- LISTINGS STATUS REFRESH LOOP
+-- Keeps Listings tab counters current even when
+-- no listing action is currently happening.
+--==================================================
+
+task.spawn(function()
+
+    local lastErrorAt =
+        0
+
+    while IsCurrentRun() do
+
+        task.wait(2)
+
+        if ScriptState.ForceStopped then
+            continue
+        end
+
+        if not IsTradeWorld() then
+            continue
+        end
+
+        local ok, err =
+            pcall(function()
+
+                if type(BuildListingPreview) == "function" then
+                    BuildListingPreview()
+                end
+
+                if type(ListingsStatusRefresh) == "function" then
+                    ListingsStatusRefresh()
+                end
+
+            end)
+
+        if not ok then
+
+            local now =
+                os.clock()
+
+            if now - lastErrorAt > 10 then
+
+                lastErrorAt =
+                    now
+
+                warn(
+                    "[LISTINGS STATUS] Refresh failed:",
+                    tostring(err)
+                )
+            end
+        end
+    end
+end)
+
+--==================================================
+-- LISTINGS INVENTORY EVENT REFRESH
+-- Updates Listings preview when Backpack/Character changes.
+-- This avoids heavy constant inventory scans.
+--==================================================
+
+do
+    local function ScheduleListingInventoryRefresh()
+
+    if not IsTradeWorld() then
+        return
+    end
+
+    task.defer(function()
+
+            pcall(function()
+
+                if type(RefreshListingInventorySnapshot) == "function" then
+                    RefreshListingInventorySnapshot()
+                end
+
+                if type(BuildListingPreview) == "function" then
+                    BuildListingPreview()
+                end
+
+                if type(ListingsStatusRefresh) == "function" then
+                    ListingsStatusRefresh()
+                end
+            end)
+        end)
+    end
+
+    local player =
+        Players.LocalPlayer
+
+    if player then
+
+        local backpack =
+            player:FindFirstChild("Backpack")
+
+        if backpack then
+
+            backpack.ChildAdded:Connect(function()
+                ScheduleListingInventoryRefresh()
+            end)
+
+            backpack.ChildRemoved:Connect(function()
+                ScheduleListingInventoryRefresh()
+            end)
+        end
+
+        if player.Character then
+
+            player.Character.ChildAdded:Connect(function()
+                ScheduleListingInventoryRefresh()
+            end)
+
+            player.Character.ChildRemoved:Connect(function()
+                ScheduleListingInventoryRefresh()
+            end)
+        end
+
+        player.CharacterAdded:Connect(function(character)
+
+            task.wait(1)
+
+            character.ChildAdded:Connect(function()
+                ScheduleListingInventoryRefresh()
+            end)
+
+            character.ChildRemoved:Connect(function()
+                ScheduleListingInventoryRefresh()
+            end)
+
+            ScheduleListingInventoryRefresh()
+        end)
+    end
+end
+--==================================================
+-- AUTO PLAY SCREEN ACTIVATOR - REAL INPUT PATH
+-- Purpose:
+-- Automatically passes Grow a Garden's "Click Anywhere to Play"
+-- screen by sending the same input the player would manually send.
+--
+-- Important:
+-- Do NOT destroy LoadingGui.
+-- Do NOT hide LoadingGui before the click.
+-- The game needs the local click path to unlock camera/player state.
+--==================================================
+
+AutoPlayState = {
+    Started = false,
+    Finished = false,
+    LastClick = 0,
+    Attempts = 0,
+}
+
+function GetLoadingGui()
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return nil
+    end
+
+    local playerGui =
+        player:FindFirstChild("PlayerGui")
+
+    if not playerGui then
+        return nil
+    end
+
+    return playerGui:FindFirstChild("LoadingGui")
+end
+
+function IsLoadingPlayScreenVisible()
+
+    local loadingGui =
+        GetLoadingGui()
+
+    if not loadingGui then
+        return false
+    end
+
+    if loadingGui:IsA("ScreenGui")
+    and loadingGui.Enabled == false then
+        return false
+    end
+
+    for _, obj in ipairs(loadingGui:GetDescendants()) do
+
+        if obj:IsA("TextLabel")
+        or obj:IsA("TextButton") then
+
+            local text =
+                tostring(obj.Text or ""):lower()
+
+            if text:find("click anywhere", 1, true)
+            or text:find("tap anywhere", 1, true)
+            or text:find("press any", 1, true)
+            or text:find("play", 1, true) then
+                return true
+            end
+        end
+    end
+
+    -- If LoadingGui exists but text is not found, still treat it as active.
+    return true
+end
+
+function SendLoadingScreenClick()
+
+    local VirtualInputManager =
+        game:GetService("VirtualInputManager")
+
+    local camera =
+        workspace.CurrentCamera
+
+    if not camera then
+        return false
+    end
+
+    local viewport =
+        camera.ViewportSize
+
+    if viewport.X <= 0
+    or viewport.Y <= 0 then
+        return false
+    end
+
+    -- Safe center-screen click.
+    -- Avoids Roblox topbar, Holy toggle, shop/trade side buttons.
+    local x =
+        math.floor(viewport.X * 0.50)
+
+    local y =
+        math.floor(viewport.Y * 0.55)
+
+    local ok =
+        pcall(function()
+
+            VirtualInputManager:SendMouseButtonEvent(
+                x,
+                y,
+                0,
+                true,
+                game,
+                0
+            )
+
+            task.wait(0.08)
+
+            VirtualInputManager:SendMouseButtonEvent(
+                x,
+                y,
+                0,
+                false,
+                game,
+                0
+            )
+        end)
+
+    return ok
+end
+
+function FireFinishLoadingRemoteSafe()
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    if not gameEvents then
+        return false
+    end
+
+    local finishLoading =
+        gameEvents:FindFirstChild("Finish_Loading")
+
+    if not finishLoading
+    or not finishLoading:IsA("RemoteEvent") then
+        return false
+    end
+
+    finishLoading:FireServer()
+
+    return true
+end
+
+function RestoreCameraSoft()
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return false
+    end
+
+    local character =
+        player.Character
+
+    if not character then
+        return false
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    local camera =
+        workspace.CurrentCamera
+
+    if not camera
+    or not humanoid then
+        return false
+    end
+
+    camera.CameraType =
+        Enum.CameraType.Custom
+
+    camera.CameraSubject =
+        humanoid
+
+    return true
+end
+
+function CleanupLoadingGuiVisualOnly()
+
+    local loadingGui =
+        GetLoadingGui()
+
+    if not loadingGui then
+        return true
+    end
+
+    -- Do not destroy. The game loading module may still reference children.
+    pcall(function()
+        loadingGui.Enabled = false
+    end)
+
+    return true
+end
+
+task.spawn(function()
+
+    if AutoPlayState.Started then
+        return
+    end
+
+    AutoPlayState.Started = true
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return
+    end
+
+    local playerGui =
+        player:WaitForChild("PlayerGui", 20)
+
+    if not playerGui then
+        return
+    end
+
+    -- Let the game's LoadingScreenHandler create UI and connect input first.
+    task.wait(2)
+
+    for attempt = 1, 20 do
+
+        if AutoPlayState.Finished then
+            break
+        end
+
+        local loadingGui =
+            GetLoadingGui()
+
+        if not loadingGui then
+            AutoPlayState.Finished = true
+            break
+        end
+
+        AutoPlayState.Attempts =
+            attempt
+
+        -- Fire server finish too, but do not rely on it alone.
+        pcall(function()
+            FireFinishLoadingRemoteSafe()
+        end)
+
+        task.wait(0.15)
+
+        -- This is the important part.
+        -- It triggers the same local path as your manual click.
+        if IsLoadingPlayScreenVisible() then
+
+            pcall(function()
+                SendLoadingScreenClick()
+            end)
+
+            AutoPlayState.LastClick =
+                os.clock()
+        end
+
+        task.wait(0.75)
+
+        pcall(function()
+            RestoreCameraSoft()
+        end)
+
+        -- If the game removed/disabled LoadingGui after the click, done.
+        local stillLoading =
+            GetLoadingGui()
+
+        if not stillLoading
+        or (
+            stillLoading:IsA("ScreenGui")
+            and stillLoading.Enabled == false
+        ) then
+
+            AutoPlayState.Finished = true
+            break
+        end
+
+        task.wait(0.25)
+    end
+
+    -- Final cleanup after all activation attempts.
+    -- Hide only, never destroy.
+    task.wait(1)
+
+    pcall(function()
+        RestoreCameraSoft()
+    end)
+
+    pcall(function()
+        CleanupLoadingGuiVisualOnly()
+    end)
+end)
+--==================================================
+-- FINAL TIMER DEFAULTS
+-- Must run before MainLoop starts.
+--==================================================
+
+ServerInfoStartedAt =
+    SafeNumber(ServerInfoStartedAt, os.clock())
+
+LatestBoothUpdate =
+    SafeNumber(LatestBoothUpdate, 0)
+
+LastTokenFailure =
+    SafeNumber(LastTokenFailure, 0)
+
+LastPendingSale =
+    SafeNumber(LastPendingSale, 0)
+
+if ConfigState then
+    ConfigState.LastMutation =
+        SafeNumber(ConfigState.LastMutation, 0)
+end
+
+if SniperState then
+    SniperState.LastScan =
+        SafeNumber(SniperState.LastScan, 0)
+
+    SniperState.LastHop =
+        SafeNumber(SniperState.LastHop, 0)
+
+    SniperState.ScanStartedAt =
+        SafeNumber(SniperState.ScanStartedAt, os.clock())
+
+    SniperState.ScanDuration =
+        SafeNumber(SniperState.ScanDuration, 10)
+
+    SniperState.ScanInterval =
+        SafeNumber(SniperState.ScanInterval, 0.25)
+
+    SniperState.StayAfterSnipe =
+    SniperState.StayAfterSnipe == true
+
+    SniperState.StayAfterSnipeSeconds =
+    SafeNumber(SniperState.StayAfterSnipeSeconds, 5)
+
+    SniperState.StayAfterSnipeUntil =
+    SafeNumber(SniperState.StayAfterSnipeUntil, 0)
+end
+
+if BoothAuto then
+    BoothAuto.LastServerHop =
+        SafeNumber(BoothAuto.LastServerHop, 0)
+
+    BoothAuto.ServerHopMinutes =
+        SafeNumber(BoothAuto.ServerHopMinutes, 10)
+end
+
+if BeeEggAuto then
+    BeeEggAuto.LastAttempt =
+        SafeNumber(BeeEggAuto.LastAttempt, 0)
+
+    BeeEggAuto.BuyInterval =
+        SafeNumber(BeeEggAuto.BuyInterval, 1.5)
+end
+
+if WebhookState then
+    WebhookState.LastSend =
+        SafeNumber(WebhookState.LastSend, 0)
+
+    WebhookState.SendDelay =
+        SafeNumber(WebhookState.SendDelay, 0.8)
+end
+
+if ShowcaseEquipState then
+    ShowcaseEquipState.InventoryConfirmedAt =
+        SafeNumber(ShowcaseEquipState.InventoryConfirmedAt, 0)
+
+    ShowcaseEquipState.ReequipDelay =
+        SafeNumber(ShowcaseEquipState.ReequipDelay, 10)
+end
+
+if ReconnectState then
+    ReconnectState.LastAttempt =
+        SafeNumber(ReconnectState.LastAttempt, 0)
+
+    ReconnectState.Cooldown =
+        SafeNumber(ReconnectState.Cooldown, 5)
+end
+HolyLoading:SetCurrentStep(6)
+HolyLoading:SetDescription("Ready.")
+
+task.wait(0.25)
+
+HolyLoading:Continue()
+
+ScriptState.BootComplete =
+    true
+
+if UIState.AutoMinimize == true
+or UIState.PendingAutoClose == true then
+
+    task.defer(function()
+        task.wait(0.35)
+        CloseHolyWindowSafe()
+    end)
+end
+
+task.spawn(MainLoop)
