@@ -4841,6 +4841,83 @@ function FutureLeakExtractProductsFromResponse(decoded)
     return products
 end
 
+function FutureLeakFetchDevProductIdsFallback()
+
+    local products =
+        {}
+
+    local dataFolder =
+        ReplicatedStorage:FindFirstChild("Data")
+
+    if not dataFolder then
+        return products
+    end
+
+    local module =
+        dataFolder:FindFirstChild("DevProductIds")
+
+    if not module
+    or not module:IsA("ModuleScript") then
+        return products
+    end
+
+    local ok, devProducts =
+        pcall(function()
+            return require(module)
+        end)
+
+    if not ok
+    or type(devProducts) ~= "table" then
+        warn("[FUTURE LEAKS] DevProductIds fallback require failed")
+        return products
+    end
+
+    for itemName, itemData in pairs(devProducts) do
+
+        local productId =
+            type(itemData) == "table"
+            and tonumber(itemData.PurchaseID)
+
+        if productId then
+
+            local okInfo, info =
+                pcall(function()
+                    return MarketplaceService:GetProductInfo(
+                        productId,
+                        Enum.InfoType.Product
+                    )
+                end)
+
+            if okInfo
+            and type(info) == "table"
+            and info.Name
+            and FutureLeakIsWantedProductName(info.Name) then
+
+                table.insert(products, {
+                    ProductId = productId,
+                    Name = tostring(info.Name),
+                    Price = tonumber(info.PriceInRobux),
+                    IconImageAssetId = tonumber(info.IconImageAssetId),
+                    Created = tostring(info.Created or ""),
+                })
+
+                print(
+                    "[FUTURE LEAKS] Fallback product:",
+                    tostring(info.Name),
+                    "|",
+                    tostring(productId),
+                    "|",
+                    tostring(info.PriceInRobux)
+                )
+            end
+
+            task.wait(0.08)
+        end
+    end
+
+    return products
+end
+
 function FutureLeakFetchDeveloperProducts()
 
     local universeId =
@@ -4904,13 +4981,23 @@ function FutureLeakFetchDeveloperProducts()
         task.wait(0.15)
     end
 
-    table.sort(allProducts, function(a, b)
+    if #allProducts <= 0 then
 
-        return tostring(a.ProductId)
-            < tostring(b.ProductId)
-    end)
+    warn(
+        "[FUTURE LEAKS] External product API returned 0. Using DevProductIds fallback."
+    )
 
-    return allProducts
+    allProducts =
+        FutureLeakFetchDevProductIdsFallback()
+end
+
+table.sort(allProducts, function(a, b)
+
+    return tostring(a.ProductId)
+        < tostring(b.ProductId)
+end)
+
+return allProducts
 end
 
 --==================================================
