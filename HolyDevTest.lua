@@ -1354,6 +1354,40 @@ MarketTrackerWebhook = {
     CleanupInterval = 120,
 }
 
+--==================================================
+-- GLOBAL FUTURE LEAK WEBHOOK
+-- Runs automatically. No UI toggle.
+-- Source-locked leak scanner for Grow a Garden products.
+--==================================================
+
+FutureLeakWebhook = {
+    Enabled = true,
+
+    -- Put your #gag-leaks webhook here.
+    URL = "https://discord.com/api/webhooks/1507154230916419604/pajARI-3_yo58BYT6w40GF39tOSi2kLvQraKLnjmTqLB8X9IKKjd9U-_EbFWj4d_024z",
+
+    Queue = {},
+    Sending = false,
+
+    LastSend = 0,
+    SendDelay = 1.25,
+
+    -- Auto scan timing.
+    ScanInterval = 60,
+    LastScan = 0,
+    Scanning = false,
+
+    -- First scan saves baseline only so it does not spam old products.
+    BaselineLoaded = false,
+
+    SnapshotFile = "HolyV2/future_leaks_products_snapshot.json",
+
+    Products = {},
+
+    LastStatus = "Idle",
+    LastFound = 0,
+}
+
 MarketTrackerTargets = {
 
     --==================================================
@@ -4391,6 +4425,1105 @@ task.spawn(function()
             false
     end
 end)
+
+--==================================================
+-- FUTURE LEAKS: REQUEST HELPERS
+--==================================================
+
+function GetFutureLeakRequestFunction()
+
+    return syn and syn.request
+        or http_request
+        or request
+        or (http and http.request)
+        or (fluxus and fluxus.request)
+end
+
+function FutureLeakHttpGet(url)
+
+    local requestFunc =
+        GetFutureLeakRequestFunction()
+
+    if not requestFunc then
+        return false, "No request function"
+    end
+
+    local ok, response =
+        pcall(function()
+            return requestFunc({
+                Url = tostring(url),
+                Method = "GET",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                },
+            })
+        end)
+
+    if not ok then
+        return false, tostring(response)
+    end
+
+    if type(response) ~= "table" then
+        return false, "Invalid response"
+    end
+
+    local statusCode =
+        tonumber(
+            response.StatusCode
+            or response.status_code
+            or 0
+        )
+
+    local body =
+        tostring(
+            response.Body
+            or response.body
+            or ""
+        )
+
+    if statusCode < 200
+    or statusCode >= 300 then
+        return false, "HTTP " .. tostring(statusCode) .. " | " .. string.sub(body, 1, 300)
+    end
+
+    return true, body
+end
+
+function FutureLeakDecodeJson(body)
+
+    local ok, decoded =
+        pcall(function()
+            return HttpService:JSONDecode(body)
+        end)
+
+    if ok
+    and type(decoded) == "table" then
+        return decoded
+    end
+
+    return nil
+end
+
+--==================================================
+-- FUTURE LEAKS: FILTERS
+--==================================================
+
+FutureLeakWantedWords = {
+    "egg",
+    "seed",
+    "pack",
+    "sack",
+    "pet",
+    "jelly",
+    "shard",
+    "bee",
+    "honey",
+    "flower",
+    "droplet",
+    "pollen",
+    "incubator",
+    "skip",
+    "premium",
+    "royal",
+    "mutation",
+    "fruit",
+}
+
+FutureLeakBlockedWords = {
+    "bench",
+    "chair",
+    "table",
+    "wall",
+    "path",
+    "floor",
+    "torch",
+    "well",
+    "gnome",
+    "tractor",
+    "cosmetic",
+    "decoration",
+    "sign",
+    "canopy",
+    "pillar",
+}
+
+function FutureLeakNormalizeText(value)
+
+    return tostring(value or "")
+        :lower()
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+function FutureLeakTextHasWord(text, words)
+
+    text =
+        FutureLeakNormalizeText(text)
+
+    if text == "" then
+        return false
+    end
+
+    for _, word in ipairs(words or {}) do
+
+        word =
+            FutureLeakNormalizeText(word)
+
+        if word ~= ""
+        and text:find(word, 1, true) then
+            return true
+        end
+    end
+
+    return false
+end
+
+function FutureLeakIsWantedProductName(name)
+
+    local text =
+        FutureLeakNormalizeText(name)
+
+    if text == "" then
+        return false
+    end
+
+    if FutureLeakTextHasWord(text, FutureLeakBlockedWords) then
+        return false
+    end
+
+    return FutureLeakTextHasWord(text, FutureLeakWantedWords)
+end
+
+--==================================================
+-- FUTURE LEAKS: PRODUCT FIELD RESOLUTION
+--==================================================
+
+function FutureLeakResolveProductId(product)
+
+    if type(product) ~= "table" then
+        return nil
+    end
+
+    return tonumber(
+        product.id
+        or product.Id
+        or product.productId
+        or product.ProductId
+        or product.developerProductId
+        or product.DeveloperProductId
+    )
+end
+
+function FutureLeakResolveProductName(product)
+
+    if type(product) ~= "table" then
+        return "Unknown"
+    end
+
+    return tostring(
+        product.name
+        or product.Name
+        or product.displayName
+        or product.DisplayName
+        or "Unknown"
+    )
+end
+
+function FutureLeakResolveProductPrice(product)
+
+    if type(product) ~= "table" then
+        return nil
+    end
+
+    return tonumber(
+        product.priceInRobux
+        or product.PriceInRobux
+        or product.price
+        or product.Price
+        or product.robux
+        or product.Robux
+    )
+end
+
+function FutureLeakResolveProductIcon(product)
+
+    if type(product) ~= "table" then
+        return nil
+    end
+
+    local icon =
+        product.iconImageAssetId
+        or product.IconImageAssetId
+        or product.iconAssetId
+        or product.IconAssetId
+        or product.imageAssetId
+        or product.ImageAssetId
+
+    icon =
+        tonumber(icon)
+
+    if not icon
+    or icon <= 0 then
+        return nil
+    end
+
+    return icon
+end
+
+function FutureLeakResolveProductCreated(product)
+
+    if type(product) ~= "table" then
+        return ""
+    end
+
+    return tostring(
+        product.created
+        or product.Created
+        or product.createdUtc
+        or product.CreatedUtc
+        or ""
+    )
+end
+
+function FutureLeakBuildThumbnailUrl(iconAssetId)
+
+    iconAssetId =
+        tonumber(iconAssetId)
+
+    if not iconAssetId
+    or iconAssetId <= 0 then
+        return nil
+    end
+
+    return "https://www.roblox.com/asset-thumbnail/image?assetId="
+        .. tostring(iconAssetId)
+        .. "&width=420&height=420&format=png"
+end
+
+--==================================================
+-- FUTURE LEAKS: SNAPSHOT
+--==================================================
+
+function FutureLeakLoadSnapshot()
+
+    FutureLeakWebhook.Products =
+        FutureLeakWebhook.Products
+        or {}
+
+    if not isfile
+    or not readfile then
+        return false
+    end
+
+    if not isfile(FutureLeakWebhook.SnapshotFile) then
+        return false
+    end
+
+    local ok, decoded =
+        pcall(function()
+
+            local raw =
+                readfile(FutureLeakWebhook.SnapshotFile)
+
+            return HttpService:JSONDecode(raw)
+        end)
+
+    if ok
+    and type(decoded) == "table"
+    and type(decoded.Products) == "table" then
+
+        FutureLeakWebhook.Products =
+            decoded.Products
+
+        FutureLeakWebhook.BaselineLoaded =
+            true
+
+        print("[FUTURE LEAKS] Snapshot loaded")
+
+        return true
+    end
+
+    return false
+end
+
+function FutureLeakSaveSnapshot()
+
+    if not writefile then
+        return false
+    end
+
+    local ok, err =
+        pcall(function()
+
+            if makefolder
+            and not isfolder("HolyV2") then
+                makefolder("HolyV2")
+            end
+
+            writefile(
+                FutureLeakWebhook.SnapshotFile,
+                HttpService:JSONEncode({
+                    Version = 1,
+                    UniverseId = game.GameId,
+                    SavedAt = os.time(),
+                    Products = FutureLeakWebhook.Products or {},
+                })
+            )
+        end)
+
+    if not ok then
+
+        warn(
+            "[FUTURE LEAKS] Snapshot save failed:",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    return true
+end
+
+--==================================================
+-- FUTURE LEAKS: PRODUCT API
+--==================================================
+
+function FutureLeakExtractProductsFromResponse(decoded)
+
+    local products = {}
+
+    if type(decoded) ~= "table" then
+        return products
+    end
+
+    local source =
+        decoded.data
+        or decoded.Data
+        or decoded.developerProducts
+        or decoded.DeveloperProducts
+        or decoded.products
+        or decoded.Products
+        or decoded
+
+    if type(source) ~= "table" then
+        return products
+    end
+
+    for _, product in pairs(source) do
+
+        if type(product) == "table" then
+
+            local productId =
+                FutureLeakResolveProductId(product)
+
+            local name =
+                FutureLeakResolveProductName(product)
+
+            local price =
+                FutureLeakResolveProductPrice(product)
+
+            if productId
+            and productId > 0
+            and name ~= "Unknown"
+            and FutureLeakIsWantedProductName(name) then
+
+                table.insert(products, {
+                    ProductId = productId,
+                    Name = name,
+                    Price = price,
+                    IconImageAssetId = FutureLeakResolveProductIcon(product),
+                    Created = FutureLeakResolveProductCreated(product),
+                })
+            end
+        end
+    end
+
+    return products
+end
+
+function FutureLeakFetchDeveloperProducts()
+
+    local universeId =
+        tonumber(game.GameId)
+
+    if not universeId
+    or universeId <= 0 then
+        return {}
+    end
+
+    local allProducts = {}
+    local seen = {}
+
+    local urls = {
+        "https://apis.roblox.com/developer-products/v1/universes/"
+            .. tostring(universeId)
+            .. "/developerproducts?pageNumber=1&pageSize=100",
+
+        "https://api.roblox.com/developerproducts?universeId="
+            .. tostring(universeId)
+            .. "&page=1",
+    }
+
+    for _, url in ipairs(urls) do
+
+        local ok, body =
+            FutureLeakHttpGet(url)
+
+        if ok then
+
+            local decoded =
+                FutureLeakDecodeJson(body)
+
+            local products =
+                FutureLeakExtractProductsFromResponse(decoded)
+
+            for _, product in ipairs(products) do
+
+                local key =
+                    tostring(product.ProductId)
+
+                if not seen[key] then
+
+                    seen[key] =
+                        true
+
+                    table.insert(
+                        allProducts,
+                        product
+                    )
+                end
+            end
+        else
+
+            warn(
+                "[FUTURE LEAKS] Product API failed:",
+                tostring(body)
+            )
+        end
+
+        task.wait(0.15)
+    end
+
+    table.sort(allProducts, function(a, b)
+
+        return tostring(a.ProductId)
+            < tostring(b.ProductId)
+    end)
+
+    return allProducts
+end
+
+--==================================================
+-- FUTURE LEAKS: WEBHOOK
+--==================================================
+
+function FutureLeakFormatRobux(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "Unknown"
+    end
+
+    return tostring(math.floor(number)) .. " Robux"
+end
+
+function FutureLeakBuildProductEmbed(kind, product, oldProduct)
+
+    local name =
+        tostring(product.Name or "Unknown")
+
+    local productId =
+        tostring(product.ProductId or "Unknown")
+
+    local color =
+        0x57F287
+
+    if kind == "PriceChanged" then
+        color = 0xF59E0B
+    elseif kind == "NameChanged" then
+        color = 0x38BDF8
+    end
+
+    local title =
+        "New Developer Product"
+
+    if kind == "PriceChanged" then
+        title =
+            "Developer Product Price Changed"
+
+    elseif kind == "NameChanged" then
+        title =
+            "Developer Product Name Changed"
+    end
+
+    local fields = {
+        {
+            name = name,
+            value =
+                "**Product ID**\n"
+                .. productId,
+            inline = false,
+        },
+    }
+
+    if kind == "PriceChanged" then
+
+        table.insert(fields, {
+            name = "Old Price",
+            value = FutureLeakFormatRobux(oldProduct and oldProduct.Price),
+            inline = true,
+        })
+
+        table.insert(fields, {
+            name = "New Price",
+            value = FutureLeakFormatRobux(product.Price),
+            inline = true,
+        })
+
+    elseif kind == "NameChanged" then
+
+        table.insert(fields, {
+            name = "Old Name",
+            value = tostring(oldProduct and oldProduct.Name or "Unknown"),
+            inline = false,
+        })
+
+        table.insert(fields, {
+            name = "New Name",
+            value = name,
+            inline = false,
+        })
+
+        table.insert(fields, {
+            name = "Price",
+            value = FutureLeakFormatRobux(product.Price),
+            inline = true,
+        })
+
+    else
+
+        table.insert(fields, {
+            name = "Price",
+            value = FutureLeakFormatRobux(product.Price),
+            inline = true,
+        })
+    end
+
+    if product.Created
+    and tostring(product.Created) ~= "" then
+
+        table.insert(fields, {
+            name = "Created",
+            value = tostring(product.Created),
+            inline = false,
+        })
+    end
+
+    local embed = {
+        title = title,
+        color = color,
+        fields = fields,
+
+        footer = {
+            text =
+                "Holy Future Leaks • Grow a Garden",
+        },
+
+        timestamp =
+            DateTime.now():ToIsoDate(),
+    }
+
+    local thumbnailUrl =
+        FutureLeakBuildThumbnailUrl(
+            product.IconImageAssetId
+        )
+
+    if thumbnailUrl then
+        embed.thumbnail = {
+            url = thumbnailUrl,
+        }
+    end
+
+    return embed
+end
+
+function FutureLeakQueueWebhook(embed)
+
+    if type(FutureLeakWebhook) ~= "table"
+    or FutureLeakWebhook.Enabled ~= true then
+        return false
+    end
+
+    if type(embed) ~= "table" then
+        return false
+    end
+
+    FutureLeakWebhook.Queue =
+        FutureLeakWebhook.Queue
+        or {}
+
+    table.insert(FutureLeakWebhook.Queue, {
+        Embed = embed,
+    })
+
+    return true
+end
+
+function FutureLeakSendNow(item)
+
+    if type(FutureLeakWebhook) ~= "table"
+    or FutureLeakWebhook.Enabled ~= true then
+        return false
+    end
+
+    local webhookUrl =
+        tostring(FutureLeakWebhook.URL or "")
+            :gsub("%s+", "")
+
+    if webhookUrl == ""
+    or webhookUrl == "PUT_YOUR_GAG_LEAKS_WEBHOOK_HERE" then
+        warn("[FUTURE LEAKS] Webhook URL missing")
+        return false
+    end
+
+    local requestFunc =
+        GetFutureLeakRequestFunction()
+
+    if not requestFunc then
+        warn("[FUTURE LEAKS] No request function available")
+        return false
+    end
+
+    local payload = {
+        embeds = {
+            item.Embed,
+        },
+
+        allowed_mentions = {
+            parse = {},
+        },
+    }
+
+    local ok, response =
+        pcall(function()
+            return requestFunc({
+                Url = webhookUrl,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                },
+                Body = HttpService:JSONEncode(payload),
+            })
+        end)
+
+    if not ok then
+        warn("[FUTURE LEAKS] Webhook failed:", tostring(response))
+        return false
+    end
+
+    if type(response) == "table" then
+
+        local statusCode =
+            tonumber(
+                response.StatusCode
+                or response.status_code
+            )
+
+        if statusCode
+        and statusCode ~= 200
+        and statusCode ~= 204 then
+
+            warn(
+                "[FUTURE LEAKS] Bad webhook status:",
+                tostring(statusCode),
+                tostring(response.Body or response.body or "")
+            )
+
+            return false
+        end
+    end
+
+    return true
+end
+
+task.spawn(function()
+
+    while true do
+
+        task.wait(0.1)
+
+        if ScriptState
+        and ScriptState.ForceStopped then
+            continue
+        end
+
+        if type(FutureLeakWebhook) ~= "table"
+        or FutureLeakWebhook.Enabled ~= true then
+            continue
+        end
+
+        FutureLeakWebhook.Queue =
+            FutureLeakWebhook.Queue
+            or {}
+
+        if FutureLeakWebhook.Sending then
+            continue
+        end
+
+        if #FutureLeakWebhook.Queue <= 0 then
+            continue
+        end
+
+        local elapsed =
+            os.clock()
+            - SafeNumber(
+                FutureLeakWebhook.LastSend,
+                0
+            )
+
+        local sendDelay =
+            SafeNumber(
+                FutureLeakWebhook.SendDelay,
+                1.25
+            )
+
+        if elapsed < sendDelay then
+            task.wait(sendDelay - elapsed)
+        end
+
+        local item =
+            table.remove(
+                FutureLeakWebhook.Queue,
+                1
+            )
+
+        if not item then
+            continue
+        end
+
+        FutureLeakWebhook.Sending =
+            true
+
+        FutureLeakWebhook.LastSend =
+            os.clock()
+
+        local ok, err =
+            pcall(function()
+                FutureLeakSendNow(item)
+            end)
+
+        if not ok then
+            warn(
+                "[FUTURE LEAKS] Queue send error:",
+                tostring(err)
+            )
+        end
+
+        FutureLeakWebhook.Sending =
+            false
+    end
+end)
+
+--==================================================
+-- FUTURE LEAKS: DIFF ENGINE
+--==================================================
+
+function FutureLeakBuildProductMap(products)
+
+    local map = {}
+
+    for _, product in ipairs(products or {}) do
+
+        local productId =
+            tostring(product.ProductId or "")
+
+        if productId ~= "" then
+
+            map[productId] = {
+                ProductId =
+                    tonumber(product.ProductId),
+
+                Name =
+                    tostring(product.Name or "Unknown"),
+
+                Price =
+                    tonumber(product.Price),
+
+                IconImageAssetId =
+                    tonumber(product.IconImageAssetId),
+
+                Created =
+                    tostring(product.Created or ""),
+            }
+        end
+    end
+
+    return map
+end
+
+function FutureLeakRunScan(sendWebhook)
+
+    if type(FutureLeakWebhook) ~= "table"
+    or FutureLeakWebhook.Enabled ~= true then
+        return false
+    end
+
+    if FutureLeakWebhook.Scanning then
+        return false
+    end
+
+    FutureLeakWebhook.Scanning =
+        true
+
+    FutureLeakWebhook.LastStatus =
+        "Scanning"
+
+    print("==================================================")
+    print("[FUTURE LEAKS] Scan started")
+    print("[FUTURE LEAKS] UniverseId:", tostring(game.GameId))
+
+    local ok, err =
+        pcall(function()
+
+            if FutureLeakWebhook.BaselineLoaded ~= true then
+                FutureLeakLoadSnapshot()
+            end
+
+            local products =
+                FutureLeakFetchDeveloperProducts()
+
+            FutureLeakWebhook.LastFound =
+                #products
+
+            print(
+                "[FUTURE LEAKS] Products found:",
+                tostring(#products)
+            )
+
+            local oldMap =
+                FutureLeakWebhook.Products
+                or {}
+
+            local newMap =
+                FutureLeakBuildProductMap(products)
+
+            local changes =
+                0
+
+            -- First scan only saves baseline.
+            -- This prevents webhook spam every rejoin.
+            if FutureLeakWebhook.BaselineLoaded ~= true
+            or next(oldMap) == nil then
+
+                FutureLeakWebhook.Products =
+                    newMap
+
+                FutureLeakWebhook.BaselineLoaded =
+                    true
+
+                FutureLeakSaveSnapshot()
+
+                FutureLeakWebhook.LastStatus =
+                    "Baseline saved"
+
+                print(
+                    "[FUTURE LEAKS] Baseline saved. No webhook sent on first scan."
+                )
+
+                return
+            end
+
+            for productId, product in pairs(newMap) do
+
+                local old =
+                    oldMap[productId]
+
+                if not old then
+
+                    changes += 1
+
+                    print(
+                        "[FUTURE LEAKS] New product:",
+                        tostring(product.Name),
+                        "|",
+                        tostring(product.ProductId),
+                        "|",
+                        tostring(product.Price)
+                    )
+
+                    if sendWebhook == true then
+                        FutureLeakQueueWebhook(
+                            FutureLeakBuildProductEmbed(
+                                "New",
+                                product,
+                                nil
+                            )
+                        )
+                    end
+
+                else
+
+                    local oldPrice =
+                        tonumber(old.Price)
+
+                    local newPrice =
+                        tonumber(product.Price)
+
+                    if oldPrice ~= newPrice then
+
+                        changes += 1
+
+                        print(
+                            "[FUTURE LEAKS] Price changed:",
+                            tostring(product.Name),
+                            "|",
+                            tostring(oldPrice),
+                            "→",
+                            tostring(newPrice)
+                        )
+
+                        if sendWebhook == true then
+                            FutureLeakQueueWebhook(
+                                FutureLeakBuildProductEmbed(
+                                    "PriceChanged",
+                                    product,
+                                    old
+                                )
+                            )
+                        end
+                    end
+
+                    if tostring(old.Name or "") ~= tostring(product.Name or "") then
+
+                        changes += 1
+
+                        print(
+                            "[FUTURE LEAKS] Name changed:",
+                            tostring(old.Name),
+                            "→",
+                            tostring(product.Name)
+                        )
+
+                        if sendWebhook == true then
+                            FutureLeakQueueWebhook(
+                                FutureLeakBuildProductEmbed(
+                                    "NameChanged",
+                                    product,
+                                    old
+                                )
+                            )
+                        end
+                    end
+                end
+            end
+
+            FutureLeakWebhook.Products =
+                newMap
+
+            FutureLeakSaveSnapshot()
+
+            FutureLeakWebhook.LastStatus =
+                "Done • changes " .. tostring(changes)
+
+            print(
+                "[FUTURE LEAKS] Scan complete | changes:",
+                tostring(changes)
+            )
+        end)
+
+    FutureLeakWebhook.Scanning =
+        false
+
+    if not ok then
+
+        FutureLeakWebhook.LastStatus =
+            "Error"
+
+        warn(
+            "[FUTURE LEAKS] Scan failed:",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    print("==================================================")
+
+    return true
+end
+
+--==================================================
+-- FUTURE LEAKS: ALWAYS-ON AUTO WORKER
+-- Starts automatically. No toggle. No UI.
+--==================================================
+
+task.spawn(function()
+
+    task.wait(8)
+
+    if type(FutureLeakWebhook) ~= "table" then
+        return
+    end
+
+    if FutureLeakWebhook.Enabled ~= true then
+        return
+    end
+
+    print("[FUTURE LEAKS] Auto worker started")
+
+    -- Immediate first scan.
+    FutureLeakWebhook.LastScan =
+        os.clock()
+
+    FutureLeakRunScan(true)
+
+    while true do
+
+        task.wait(1)
+
+        if ScriptState
+        and ScriptState.ForceStopped then
+            continue
+        end
+
+        if type(FutureLeakWebhook) ~= "table"
+        or FutureLeakWebhook.Enabled ~= true then
+            continue
+        end
+
+        local interval =
+            SafeNumber(
+                FutureLeakWebhook.ScanInterval,
+                60
+            )
+
+        interval =
+            math.clamp(
+                interval,
+                30,
+                3600
+            )
+
+        local elapsed =
+            os.clock()
+            - SafeNumber(
+                FutureLeakWebhook.LastScan,
+                0
+            )
+
+        if elapsed < interval then
+            continue
+        end
+
+        FutureLeakWebhook.LastScan =
+            os.clock()
+
+        FutureLeakRunScan(true)
+    end
+end)
+
 --==================================================
 -- CONFIRMED TOOL SNAPSHOT PARSER
 -- Source of truth after a successful snipe.
