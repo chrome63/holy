@@ -17056,7 +17056,7 @@ local BoothDataRefreshDropdown =
         "BoothDataRefreshMode",
         {
             Text = "📡 Booth Data Refresh",
-            Tooltip = "Controls how often HOLY refreshes LatestBoothData. Fast is recommended. Aggressive is faster but can stutter on low-end devices.",
+            Tooltip = "How fast HOLY refreshes booth listings. Faster can snipe sooner but may cause lag. Recommended: Fast.",
             Values = {
                 "Aggressive",
                 "Fast",
