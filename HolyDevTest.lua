@@ -252,6 +252,86 @@ function ExecutorSendRequest(payload)
 
     return true, response
 end
+
+--==================================================
+-- PROTECTED GAME STRINGS
+-- Keep all Roblox/game path names centralized.
+-- If using an obfuscator, whitelist this table from string encryption
+-- or use low/safe string encryption only.
+--==================================================
+
+HolyStrings = {
+    Folders = {
+        ReplicatedStorage = "ReplicatedStorage",
+        GameEvents = "GameEvents",
+        TradeEvents = "TradeEvents",
+        Booths = "Booths",
+        Modules = "Modules",
+        Data = "Data",
+        TradeBoothControllers = "TradeBoothControllers",
+    },
+
+    Remotes = {
+        BuyListing = "BuyListing",
+        Notification = "Notification",
+        SendLikelySpeakingUsers = "SendLikelySpeakingUsers",
+        FavoriteItem = "Favorite_Item",
+    },
+
+    Modules = {
+        TradeBoothController = "TradeBoothController",
+        PetRegistry = "PetRegistry",
+        DataService = "DataService",
+        TradeBoothSkinRegistry = "TradeBoothSkinRegistry",
+    },
+
+    PetFields = {
+        PetData = "PetData",
+        PetType = "PetType",
+        BaseWeight = "BaseWeight",
+        HatchedFrom = "HatchedFrom",
+        Level = "Level",
+        Age = "Age",
+        IsFavorite = "IsFavorite",
+        Variants = "Variants",
+        Mutations = "Mutations",
+    },
+}
+
+function HolyFindChild(parent, childName)
+
+    if not parent then
+        return nil
+    end
+
+    childName =
+        tostring(childName or "")
+
+    if childName == "" then
+        return nil
+    end
+
+    return parent:FindFirstChild(childName)
+end
+
+function HolyWaitChild(parent, childName, timeout)
+
+    if not parent then
+        return nil
+    end
+
+    childName =
+        tostring(childName or "")
+
+    if childName == "" then
+        return nil
+    end
+
+    return parent:WaitForChild(
+        childName,
+        tonumber(timeout) or 10
+    )
+end
 --==================================================
 -- PRODUCTION CONSOLE FILTER
 -- Hides normal HOLY debug/status output for users.
@@ -318,10 +398,11 @@ ServerInfoStartedAt =
 task.spawn(function()
 
     local remote =
-        ReplicatedStorage:WaitForChild(
-            "SendLikelySpeakingUsers",
-            10
-        )
+    HolyWaitChild(
+        ReplicatedStorage,
+        HolyStrings.Remotes.SendLikelySpeakingUsers,
+        10
+    )
 
     if not remote
     or not remote:IsA("RemoteEvent") then
@@ -336,21 +417,45 @@ end)
 
 TradeBoothController = nil
 function GetController()
+
     if TradeBoothController then
         return TradeBoothController
     end
 
-    local ok, result = pcall(function()
-        return require(
-            ReplicatedStorage
-                .Modules
-                .TradeBoothControllers
-                .TradeBoothController
+    local modules =
+        HolyFindChild(
+            ReplicatedStorage,
+            HolyStrings.Folders.Modules
         )
-    end)
 
-    if ok and result then
-        TradeBoothController = result
+    local controllers =
+        modules
+        and HolyFindChild(
+            modules,
+            HolyStrings.Folders.TradeBoothControllers
+        )
+
+    local controllerModule =
+        controllers
+        and HolyFindChild(
+            controllers,
+            HolyStrings.Modules.TradeBoothController
+        )
+
+    if not controllerModule then
+        return nil
+    end
+
+    local ok, result =
+        pcall(function()
+            return require(controllerModule)
+        end)
+
+    if ok
+    and result then
+        TradeBoothController =
+            result
+
         return result
     end
 
@@ -998,11 +1103,27 @@ function GetPetRegistry()
 
     local ok, result =
         pcall(function()
-            return require(
-                ReplicatedStorage
-                    :WaitForChild("Data")
-                    :WaitForChild("PetRegistry")
-            )
+            
+        local dataFolder =
+        HolyWaitChild(
+        ReplicatedStorage,
+        HolyStrings.Folders.Data,
+        10
+    )
+
+local petRegistryModule =
+    dataFolder
+    and HolyWaitChild(
+        dataFolder,
+        HolyStrings.Modules.PetRegistry,
+        10
+    )
+
+if not petRegistryModule then
+    return nil
+end
+
+return require(petRegistryModule)
         end)
 
     if ok
@@ -1822,12 +1943,19 @@ MarketTrackerTargets = {
 -- TOKEN FAILURE + BOOTH SALE DETECTION
 --==================================================
 NotificationRemote =
-    ReplicatedStorage
-    .GameEvents
-    .Notification
+    HolyFindChild(
+        HolyFindChild(
+            ReplicatedStorage,
+            HolyStrings.Folders.GameEvents
+        ),
+        HolyStrings.Remotes.Notification
+    )
 
 LastTokenFailure = 0
 LastPendingSale = 0
+
+if NotificationRemote
+and NotificationRemote:IsA("RemoteEvent") then
 
 NotificationRemote.OnClientEvent:Connect(function(message)
 
@@ -1974,6 +2102,7 @@ end
 
 end)
 
+end
 --==================================================
 -- MARKET CACHE
 --==================================================
@@ -2402,18 +2531,22 @@ for uid, listingData in pairs(listingsTable) do
     end
 
     local petData =
-        itemData.PetData
+    itemData[
+        HolyStrings.PetFields.PetData
+    ]
 
     if not petData then
         continue
     end
 
-if petData.IsFavorite then
-    continue
-end
+if petData[
+    HolyStrings.PetFields.IsFavorite
+] then
 
 local petName =
-    itemData.PetType
+    itemData[
+        HolyStrings.PetFields.PetType
+    ]
     or "Unknown"
 
 local price =
@@ -2421,7 +2554,11 @@ local price =
     or 0
 
 local baseWeight =
-    tonumber(petData.BaseWeight)
+    tonumber(
+        petData[
+            HolyStrings.PetFields.BaseWeight
+        ]
+    )
 
 if not baseWeight then
     continue
@@ -2454,17 +2591,23 @@ end
 local mutationText =
     ResolvePetMutationTextFromPetData(petData)
 
-    local hatchedFrom =
-    petData.HatchedFrom
+local hatchedFrom =
+    petData[
+        HolyStrings.PetFields.HatchedFrom
+    ]
     or petData.Hatchedfrom
     or petData.HatchFrom
     or petData.EggName
     or petData.SourceEgg
     or petData.Origin
-    or itemData.HatchedFrom
+    or itemData[
+        HolyStrings.PetFields.HatchedFrom
+    ]
     or itemData.EggName
     or itemData.SourceEgg
-    or listingData.HatchedFrom
+    or listingData[
+        HolyStrings.PetFields.HatchedFrom
+    ]
     or listingData.EggName
     or listingData.SourceEgg
             --==================================================
@@ -2735,17 +2878,39 @@ function GetBuyRemote()
         return BuyListingRemote
     end
 
+    local gameEvents =
+        HolyFindChild(
+            ReplicatedStorage,
+            HolyStrings.Folders.GameEvents
+        )
+
+    local tradeEvents =
+        gameEvents
+        and HolyFindChild(
+            gameEvents,
+            HolyStrings.Folders.TradeEvents
+        )
+
+    local booths =
+        tradeEvents
+        and HolyFindChild(
+            tradeEvents,
+            HolyStrings.Folders.Booths
+        )
+
     local remote =
-        ReplicatedStorage
-        .GameEvents
-        .TradeEvents
-        .Booths
-        :FindFirstChild("BuyListing")
+        booths
+        and HolyFindChild(
+            booths,
+            HolyStrings.Remotes.BuyListing
+        )
 
     if remote
     and remote:IsA("RemoteFunction") then
 
-        BuyListingRemote = remote
+        BuyListingRemote =
+            remote
+
         return remote
     end
 
