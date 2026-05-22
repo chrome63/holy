@@ -16908,111 +16908,115 @@ function BuildSniperTab()
 --==================================================
 
 --==================================================
--- SNIPER TAB → CLEAN TABBOX LAYOUT
--- Left side: Configuration + Add Filter
--- Right side: Watchlist + Egg Focus
+-- SNIPER TAB → SIMPLE USER LAYOUT
+-- Home tab owns activation.
+-- Sniper tab only configures speed, hop, safety, filters.
 --==================================================
 
-local SniperConfigBox
+local SniperSpeedBox
+local SniperHopBox
+local SniperSafetyBox
 local SniperFilterBox
 local SniperWatchlistBox
 local EggFocusBox
 
-if type(Tabs.Sniper.AddLeftTabbox) == "function"
-and type(Tabs.Sniper.AddRightTabbox) == "function" then
+if type(Tabs.Sniper.AddLeftCollapsibleGroupbox) == "function"
+and type(Tabs.Sniper.AddRightCollapsibleGroupbox) == "function" then
 
-    local SniperLeftTabbox =
-        Tabs.Sniper:AddLeftTabbox("SniperLeft")
+    SniperSpeedBox =
+        Tabs.Sniper:AddLeftCollapsibleGroupbox(
+            "Sniper Speed",
+            "zap",
+            true
+        )
 
-    SniperConfigBox =
-        SniperLeftTabbox:AddTab("Config", "settings")
+    SniperHopBox =
+        Tabs.Sniper:AddLeftCollapsibleGroupbox(
+            "Server Hop",
+            "refresh-cw",
+            true
+        )
 
-    SniperFilterBox =
-        SniperLeftTabbox:AddTab("Filter", "plus")
-
-    local SniperRightTabbox =
-        Tabs.Sniper:AddRightTabbox("SniperRight")
+    SniperSafetyBox =
+        Tabs.Sniper:AddLeftCollapsibleGroupbox(
+            "Buy Safety",
+            "shield",
+            true
+        )
 
     SniperWatchlistBox =
-        SniperRightTabbox:AddTab("Watchlist", "star")
+        Tabs.Sniper:AddRightCollapsibleGroupbox(
+            "Active Watchlist",
+            "star",
+            true
+        )
+
+    SniperFilterBox =
+        Tabs.Sniper:AddRightCollapsibleGroupbox(
+            "Add Filter",
+            "plus",
+            true
+        )
 
     EggFocusBox =
-        SniperRightTabbox:AddTab("Egg Focus", "egg")
+        Tabs.Sniper:AddRightCollapsibleGroupbox(
+            "Egg Focus",
+            "egg",
+            false
+        )
 
 else
 
-    -- Fallback for older library versions.
-    if type(Tabs.Sniper.AddLeftCollapsibleGroupbox) == "function" then
+    warn("[LIB TEST] Collapsible unavailable, using normal sniper groupboxes")
 
-        SniperConfigBox =
-            Tabs.Sniper:AddLeftCollapsibleGroupbox(
-                "Sniper Configuration",
-                "settings",
-                true
-            )
+    SniperSpeedBox =
+        Tabs.Sniper:AddLeftGroupbox(
+            "Sniper Speed",
+            "zap"
+        )
 
-        SniperFilterBox =
-            Tabs.Sniper:AddLeftCollapsibleGroupbox(
-                "Add Filter",
-                "plus",
-                true
-            )
+    SniperHopBox =
+        Tabs.Sniper:AddLeftGroupbox(
+            "Server Hop",
+            "refresh-cw"
+        )
 
-        SniperWatchlistBox =
-            Tabs.Sniper:AddRightCollapsibleGroupbox(
-                "Active Watchlist",
-                "star",
-                true
-            )
+    SniperSafetyBox =
+        Tabs.Sniper:AddLeftGroupbox(
+            "Buy Safety",
+            "shield"
+        )
 
-        EggFocusBox =
-            Tabs.Sniper:AddRightCollapsibleGroupbox(
-                "Egg Focus",
-                "egg",
-                false
-            )
+    SniperWatchlistBox =
+        Tabs.Sniper:AddRightGroupbox(
+            "Active Watchlist",
+            "star"
+        )
 
-    else
+    SniperFilterBox =
+        Tabs.Sniper:AddRightGroupbox(
+            "Add Filter",
+            "plus"
+        )
 
-        warn("[LIB TEST] Tabbox/collapsible unavailable, using normal groupboxes")
-
-        SniperConfigBox =
-            Tabs.Sniper:AddLeftGroupbox(
-                "Sniper Configuration",
-                "settings"
-            )
-
-        SniperFilterBox =
-            Tabs.Sniper:AddLeftGroupbox(
-                "Add Filter",
-                "plus"
-            )
-
-        SniperWatchlistBox =
-            Tabs.Sniper:AddRightGroupbox(
-                "Active Watchlist",
-                "star"
-            )
-
-        EggFocusBox =
-            Tabs.Sniper:AddRightGroupbox(
-                "Egg Focus",
-                "egg"
-            )
-    end
+    EggFocusBox =
+        Tabs.Sniper:AddRightGroupbox(
+            "Egg Focus",
+            "egg"
+        )
 end
 --==================================================
--- SNIPER CONFIG CONTENT
--- Must be added before FILTER INPUTS so Config tab is not empty.
+-- SNIPER SPEED CONTENT
+-- Speed/detection settings only.
 --==================================================
-SniperConfigBox:AddDivider({
-    Text = "Scan Speed",
+SniperSpeedBox:AddDivider({
+    Text = "Detection",
     MarginTop = 4,
     MarginBottom = 8,
 })
 
 local ScanSpeedDropdown =
-    SniperConfigBox:AddDropdown(
+    SniperSpeedBox:AddDropdown(
         "SniperScanSpeedMode",
         {
             Text = "⚡ Scan Speed",
@@ -17052,7 +17056,7 @@ ScanSpeedDropdown:OnChanged(function(value)
 end)
 
 local BoothDataRefreshDropdown =
-    SniperConfigBox:AddDropdown(
+    SniperSpeedBox:AddDropdown(
         "BoothDataRefreshMode",
         {
             Text = "📡 Booth Data Refresh",
@@ -17091,14 +17095,14 @@ BoothDataRefreshDropdown:OnChanged(function(value)
     )
 end)
 
-SniperConfigBox:AddDivider({
-    Text = "Server Hop",
+SniperHopBox:AddDivider({
+    Text = "Server Settings",
     MarginTop = 4,
     MarginBottom = 8,
 })
 
 local MaxServerPlayersInput =
-    SniperConfigBox:AddInput(
+    SniperHopBox:AddInput(
         "SniperMaxServerPlayers",
         {
             Text = "👥 Max Server Players",
@@ -17133,7 +17137,7 @@ MaxServerPlayersInput:OnChanged(function(value)
 end)
 
 local ServerHopModeDropdown =
-    SniperConfigBox:AddDropdown(
+    SniperHopBox:AddInput(
         "SniperServerHopMode",
         {
             Text = "⇄ Server Hop Mode",
@@ -17161,7 +17165,7 @@ ServerHopModeDropdown:OnChanged(function(value)
 end)
 
 local ServerHopPagesInput =
-    SniperConfigBox:AddInput(
+    SniperHopBox:AddInput(
         "SniperServerHopPages",
         {
             Text = "📄 Server Hop Pages",
@@ -17203,7 +17207,7 @@ SniperConfigBox:AddDivider({
 })
 
 local StayAfterSnipeToggle =
-    SniperConfigBox:AddToggle(
+    SniperHopBox:AddInput(
         "StayAfterSnipe",
         {
             Text = "⏱️ Stay After Snipe",
@@ -17235,7 +17239,7 @@ local StayAfterSnipeDependencyBox =
     SniperConfigBox:AddDependencyBox()
 
 local StayAfterSnipeInput =
-    StayAfterSnipeDependencyBox:AddInput(
+    SniperHopBox:AddInput(
         "StayAfterSnipeSeconds",
         {
             Text = "Extra Stay (sec)",
@@ -17285,14 +17289,14 @@ StayAfterSnipeDependencyBox:SetupDependencies({
     },
 })
 
-SniperConfigBox:AddDivider({
-    Text = "Inventory Safety",
-    MarginTop = 10,
+SniperSafetyBox:AddDivider({
+    Text = "Pet Limit",
+    MarginTop = 4,
     MarginBottom = 8,
 })
 
 local InventoryLimitToggle =
-    SniperConfigBox:AddToggle(
+    SniperSafetyBox:AddToggle(
         "StopAtPetInventoryLimit",
         {
             Text = "📦 Stop At Pet Limit",
@@ -17325,7 +17329,7 @@ InventoryLimitToggle:OnChanged(function(enabled)
 end)
 
 local MaxPetInventoryInput =
-    SniperConfigBox:AddInput(
+    SniperSafetyBox:AddInput(
         "MaxPetInventory",
         {
             Text = "Max Pet Inventory",
