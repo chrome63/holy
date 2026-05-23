@@ -1923,6 +1923,39 @@ GlobalSnipeWebhook = {
 }
 
 --==================================================
+-- GLOBAL HOLY SNIPES WEBHOOK
+-- Premium curated global snipe feed.
+-- Sends only confirmed inventory snipes for selected pets.
+-- No seller/server/debug fields.
+--==================================================
+
+HolySnipesWebhook = {
+    Enabled = true,
+
+    -- Put the 👑｜holy-snipes webhook URL here.
+    URL = "https://discord.com/api/webhooks/1507833079388176404/Y4nv0rlSnyWGnJAnc9TSTq_EpcC72_Qw6vkv_kiE8jSRFyGZpoFInJqn7tnC3Knh4mmy",
+
+    -- Icy holy white / angel-blue embed strip.
+    Color = 0xEAF3FF,
+}
+
+HolySnipesTargets = {
+
+    -- Add/remove pets here.
+    -- These names should be BASE pet names from listing.PetName,
+    -- not mutation-prefixed tool names.
+
+    ["Rainbow Elephant"] = true,
+    ["Rainbow Dilophosaurus"] = true,
+    ["Rainbow Birb"] = true,
+    ["Rainbow Hotdog Daschund"] = true,
+    ["Ghostly Spider"] = true,
+    ["Albino Peacock"] = true,
+    ["Giant Scorpion"] = true,
+    ["Blue Whale"] = true,
+    ["Ghostly Headless Horseman"] = true,
+}
+--==================================================
 -- GLOBAL BOOTH SALE WEBHOOK
 -- Sends sold booth pets to the owner/global feed.
 -- Fire-and-forget so it never slows booth tracking.
@@ -5193,6 +5226,196 @@ function ResolveMutationFromConfirmedToolName(toolName, basePetName)
 
     return mutation
 end
+
+--==================================================
+-- HOLY SNIPES TARGET CHECK
+-- Uses base listing pet name so mutation prefixes do not
+-- break selected-pet routing.
+--==================================================
+
+function IsHolySnipesTarget(listing)
+
+    if type(HolySnipesWebhook) ~= "table"
+    or HolySnipesWebhook.Enabled ~= true then
+        return false
+    end
+
+    if type(HolySnipesTargets) ~= "table" then
+        return false
+    end
+
+    if type(listing) ~= "table" then
+        return false
+    end
+
+    local petName =
+        tostring(listing.PetName or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if petName == "" then
+        return false
+    end
+
+    return HolySnipesTargets[petName] == true
+end
+
+--==================================================
+-- GLOBAL HOLY SNIPES WEBHOOK SEND
+-- Premium public flex card.
+-- Title uses confirmed display Tool data:
+-- HOLY SNIPED • Pet [Age X] [Y KG]
+--==================================================
+
+function SendHolySnipesWebhookNow(listing, toolName, confirmedPetName, confirmedAge, confirmedWeight, mutationText)
+
+    if not IsHolySnipesTarget(listing) then
+        return false
+    end
+
+    if type(HolySnipesWebhook.URL) ~= "string"
+    or HolySnipesWebhook.URL == ""
+    or HolySnipesWebhook.URL == "PUT_HOLY_SNIPES_WEBHOOK_HERE" then
+        warn("[HOLY SNIPES WEBHOOK] Missing URL")
+        return false
+    end
+
+    RequestFunction =
+        RequestFunction
+        or syn and syn.request
+        or http_request
+        or request
+        or (http and http.request)
+        or (fluxus and fluxus.request)
+
+    if not RequestFunction then
+        warn("[HOLY SNIPES WEBHOOK] No request function available")
+        return false
+    end
+
+    local title =
+        string.format(
+            "👑 HOLY SNIPED • %s [Age %s] [%s]",
+            tostring(confirmedPetName or listing.PetName or "Unknown"),
+            tostring(confirmedAge or "Unknown"),
+            FormatWebhookWeightKG(confirmedWeight)
+        )
+
+    mutationText =
+        tostring(mutationText or "Normal")
+
+    if mutationText == ""
+    or mutationText == "---"
+    or mutationText == "Unknown" then
+        mutationText =
+            "Normal"
+    end
+
+    local payload = {
+        username = "👑 HOLY",
+
+        embeds = {{
+
+            title = title,
+
+            description = "Sniped By: Holy",
+
+            color =
+                tonumber(HolySnipesWebhook.Color)
+                or 0xEAF3FF,
+
+            fields = {
+
+                {
+                    name = "💰 Bought For",
+                    value =
+                        tostring(listing.Price or 0)
+                        .. " Tokens",
+                    inline = true,
+                },
+
+                {
+                    name = "🧬 Mutation",
+                    value =
+                        mutationText,
+                    inline = true,
+                },
+
+                {
+                    name = "⚖️ BaseWeight",
+                    value =
+                        FormatWebhookBaseWeight(
+                            listing.BaseWeight
+                        ),
+                    inline = true,
+                },
+            },
+
+            footer = {
+                text = "HOLY Crown"
+            },
+
+            timestamp =
+                DateTime.now():ToIsoDate(),
+        }}
+    }
+
+    local ok, response =
+        pcall(function()
+            return RequestFunction({
+                Url =
+                    tostring(HolySnipesWebhook.URL)
+                        :gsub("%s+", ""),
+
+                Method = "POST",
+
+                Headers = {
+                    ["Content-Type"] = "application/json"
+                },
+
+                Body = HttpService:JSONEncode(payload)
+            })
+        end)
+
+    if not ok then
+        warn(
+            "[HOLY SNIPES WEBHOOK] Request failed:",
+            tostring(response)
+        )
+
+        return false
+    end
+
+    if type(response) == "table" then
+
+        local statusCode =
+            tonumber(
+                response.StatusCode
+                or response.status_code
+            )
+
+        if statusCode
+        and statusCode ~= 200
+        and statusCode ~= 204 then
+
+            warn(
+                "[HOLY SNIPES WEBHOOK] Bad status:",
+                tostring(statusCode),
+                tostring(response.Body or response.body or "")
+            )
+
+            return false
+        end
+    end
+
+    print(
+        "[HOLY SNIPES WEBHOOK] Sent:",
+        tostring(title)
+    )
+
+    return true
+end
+
 function SendGlobalSnipeWebhook(listing, toolName, source)
 
     if not GlobalSnipeWebhook.Enabled then
@@ -5389,6 +5612,23 @@ local confirmedTitle =
             "[GLOBAL SNIPER WEBHOOK] Sent successful snipe:",
             confirmedTitle
         )
+
+        --==================================================
+        -- HOLY SNIPES WEBHOOK
+        -- Premium global route. Fires only after confirmed
+        -- inventory snipe and only for selected base pets.
+        --==================================================
+
+        pcall(function()
+            SendHolySnipesWebhookNow(
+                listing,
+                toolName,
+                confirmedPetName,
+                confirmedAge,
+                confirmedWeight,
+                mutationText
+            )
+        end)
     end)
 end
 function TryPurchaseListing(listing)
