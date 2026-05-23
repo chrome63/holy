@@ -1988,11 +1988,17 @@ MarketTrackerWebhook = {
     -- Put your Market Tracker Discord webhook here.
     URL = "https://discord.com/api/webhooks/1461800728174526475/cliNh1mRSwNHyMKMJ5o0MqxAQY8FgvVwuI9YYFDT4z4VVwS7rcv-vHuh8kdRUU1nNx8y",
 
+    -- Legacy fields kept for compatibility.
+    -- Market Tracker no longer uses a queue.
     Queue = {},
     Sending = false,
 
+    -- Non-blocking immediate-send throttle.
+    -- Prevents Discord 429 spam without delaying sniper/server hop.
     LastSend = 0,
-    SendDelay = 1.25,
+    SendDelay = 0.35,
+    RateLimitedUntil = 0,
+    LastRateLimitWarnAt = 0,
 
     -- Prevents the same listing from being sent repeatedly.
     SentListings = {},
@@ -4984,18 +4990,60 @@ function QueueMarketTrackerWebhook(listing)
         return false
     end
 
+    --==================================================
+    -- NON-BLOCKING RATE GATE
+    -- Do not queue and do not wait.
+    -- If Discord is rate-limiting or one send is active,
+    -- skip this attempt and let sniper/server hop continue.
+    --==================================================
+
+    local now =
+        os.clock()
+
+    MarketTrackerWebhook.RateLimitedUntil =
+        SafeNumber(
+            MarketTrackerWebhook.RateLimitedUntil,
+            0
+        )
+
+    if now < MarketTrackerWebhook.RateLimitedUntil then
+        return false
+    end
+
+    if MarketTrackerWebhook.Sending == true then
+        return false
+    end
+
+    local sendDelay =
+        SafeNumber(
+            MarketTrackerWebhook.SendDelay,
+            0.35
+        )
+
+    local elapsed =
+        now - SafeNumber(
+            MarketTrackerWebhook.LastSend,
+            0
+        )
+
+    if elapsed < sendDelay then
+        return false
+    end
+
     if HasMarketTrackerSentListing(listing) then
         return false
     end
 
     -- Mark immediately so the same listing cannot spawn
-    -- multiple webhook requests during fast scan passes.
+    -- duplicate sends during fast scan passes.
     MarkMarketTrackerListingSent(listing)
 
-    -- Fire-and-forget.
-    -- Do not queue.
-    -- Do not wait.
-    -- Do not block server hop or sniper scan.
+    MarketTrackerWebhook.Sending =
+        true
+
+    MarketTrackerWebhook.LastSend =
+        now
+
     task.spawn(function()
 
         local ok, err =
@@ -5009,6 +5057,9 @@ function QueueMarketTrackerWebhook(listing)
                 tostring(err)
             )
         end
+
+        MarketTrackerWebhook.Sending =
+            false
     end)
 
     print(
@@ -5334,17 +5385,68 @@ function SendHolySnipesWebhookNow(listing, toolName, confirmedPetName, confirmed
             )
 
         if statusCode
-        and statusCode ~= 200
-        and statusCode ~= 204 then
+and statusCode ~= 200
+and statusCode ~= 204 then
 
-            warn(
-                "[HOLY SNIPES WEBHOOK] Bad status:",
-                tostring(statusCode),
-                tostring(response.Body or response.body or "")
+    local bodyText =
+        tostring(response.Body or response.body or "")
+
+    if statusCode == 429 then
+
+        local retryAfter =
+            0.5
+
+        local okDecode, decoded =
+            pcall(function()
+                return HttpService:JSONDecode(bodyText)
+            end)
+
+        if okDecode
+        and type(decoded) == "table" then
+            retryAfter =
+                tonumber(decoded.retry_after)
+                or retryAfter
+        end
+
+        retryAfter =
+            math.clamp(
+                retryAfter + 0.15,
+                0.35,
+                5
             )
 
-            return false
+        MarketTrackerWebhook.RateLimitedUntil =
+            os.clock() + retryAfter
+
+        local lastWarn =
+            SafeNumber(
+                MarketTrackerWebhook.LastRateLimitWarnAt,
+                0
+            )
+
+        if os.clock() - lastWarn > 2 then
+
+            MarketTrackerWebhook.LastRateLimitWarnAt =
+                os.clock()
+
+            warn(
+                "[MARKET TRACKER] Discord rate limit, pausing sends for:",
+                tostring(retryAfter),
+                "seconds"
+            )
         end
+
+        return false
+    end
+
+    warn(
+        "[MARKET TRACKER] Bad status:",
+        tostring(statusCode),
+        bodyText
+    )
+
+    return false
+end
     end
 
     print(
