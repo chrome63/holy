@@ -19869,57 +19869,70 @@ local function OpenSniperFilterConfirmDialog(pending)
         .. "Mutation Filter: "
         .. FormatSniperConfirmMutation(pending.Filter)
 
-    Library:CreateDialog({
-        Title =
-            actionText .. " Sniper Filter",
+local ConfirmDialog = nil
 
-        Description =
-            description,
+ConfirmDialog =
+    Window:AddDialog(
+        "SniperFilterConfirmDialog",
+        {
+            Title =
+                actionText .. " Sniper Filter",
 
-        AutoDismiss =
-            false,
+            Description =
+                description,
 
-        OutsideClickDismiss =
-            true,
+            Icon =
+                pending.IsUpdate and "refresh-cw" or "plus",
 
-        FooterButtons = {
-            {
-                Title =
-                    "Cancel",
+            AutoDismiss =
+                true,
 
-                Variant =
-                    "Secondary",
+            OutsideClickDismiss =
+                true,
 
-                Callback = function(dialog)
+            FooterButtons = {
+                Cancel = {
+                    Title =
+                        "Cancel",
 
-                    if dialog
-                    and type(dialog.Dismiss) == "function" then
-                        dialog:Dismiss()
-                    end
-                end,
+                    Variant =
+                        "Ghost",
+
+                    Order =
+                        1,
+
+                    Callback = function()
+
+                        if ConfirmDialog then
+                            ConfirmDialog:Dismiss()
+                        end
+                    end,
+                },
+
+                Confirm = {
+                    Title =
+                        actionText .. " Filter",
+
+                    Variant =
+                        "Primary",
+
+                    Order =
+                        2,
+
+                    Callback = function()
+
+                        SaveConfirmedSniperFilter(
+                            pending
+                        )
+
+                        if ConfirmDialog then
+                            ConfirmDialog:Dismiss()
+                        end
+                    end,
+                },
             },
-
-            {
-                Title =
-                    actionText .. " Filter",
-
-                Variant =
-                    "Primary",
-
-                Callback = function(dialog)
-
-                    SaveConfirmedSniperFilter(
-                        pending
-                    )
-
-                    if dialog
-                    and type(dialog.Dismiss) == "function" then
-                        dialog:Dismiss()
-                    end
-                end,
-            },
-        },
-    })
+        }
+    )
 end
 
 SniperFilterBox:AddButton({
@@ -19943,6 +19956,8 @@ SniperFilterBox:AddButton({
         )
     end,
 })
+
+end
 --==================================================
 -- WEBHOOK TAB → CONFIGURATION (UI ONLY)
 --==================================================
