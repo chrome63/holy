@@ -18049,12 +18049,18 @@ local PetDropdown =
     SniperFilterBox:AddDropdown(
         "SniperPetSelect",
         {
-            Text = "Pet",
+            Text = "Pets",
+            Tooltip = "Select one or more pets. The same price, weight, priority, and mutation filter will be applied to every selected pet.",
             Values = PetList,
-            Default = "",
+            Default = {},
             Searchable = true,
+            Multi = true,
         }
     )
+
+PetDropdown:OnChanged(function()
+    MarkConfigDirty()
+end)
 
 local MinWeightInput =
     SniperFilterBox:AddInput(
@@ -19659,11 +19665,104 @@ local function FormatSniperConfirmMutation(filter)
     return mutationText
 end
 
+local function ClonePendingSniperFilter(filter)
+
+    local output = {}
+
+    if type(filter) ~= "table" then
+        return output
+    end
+
+    output.MinWeight =
+        filter.MinWeight
+
+    output.MaxPrice =
+        filter.MaxPrice
+
+    output.WeightMode =
+        filter.WeightMode
+
+    output.Priority =
+        filter.Priority
+
+    output.Mutation =
+        filter.Mutation
+
+    if type(CloneSniperMutationMap) == "function" then
+
+        output.SpecificMutations =
+            CloneSniperMutationMap(
+                filter.SpecificMutations
+            )
+
+        output.ExcludedMutations =
+            CloneSniperMutationMap(
+                filter.ExcludedMutations
+            )
+    else
+
+        output.SpecificMutations =
+            filter.SpecificMutations
+
+        output.ExcludedMutations =
+            filter.ExcludedMutations
+    end
+
+    return output
+end
+
+local function ClonePendingSniperFilter(filter)
+
+    local output = {}
+
+    if type(filter) ~= "table" then
+        return output
+    end
+
+    output.MinWeight =
+        filter.MinWeight
+
+    output.MaxPrice =
+        filter.MaxPrice
+
+    output.WeightMode =
+        filter.WeightMode
+
+    output.Priority =
+        filter.Priority
+
+    output.Mutation =
+        filter.Mutation
+
+    if type(CloneSniperMutationMap) == "function" then
+
+        output.SpecificMutations =
+            CloneSniperMutationMap(
+                filter.SpecificMutations
+            )
+
+        output.ExcludedMutations =
+            CloneSniperMutationMap(
+                filter.ExcludedMutations
+            )
+    else
+
+        output.SpecificMutations =
+            filter.SpecificMutations
+
+        output.ExcludedMutations =
+            filter.ExcludedMutations
+    end
+
+    return output
+end
+
 local function SaveConfirmedSniperFilter(pending)
 
     if type(pending) ~= "table"
     or type(pending.Filter) ~= "table"
-    or not pending.Pet then
+    or type(pending.Pets) ~= "table"
+    or #pending.Pets <= 0 then
         return false
     end
 
@@ -19672,8 +19771,28 @@ local function SaveConfirmedSniperFilter(pending)
             pending.WatchlistId
         )
 
-    filters[pending.Pet] =
-        pending.Filter
+    local savedCount =
+        0
+
+    for _, pet in ipairs(pending.Pets) do
+
+        pet =
+            tostring(pet or "")
+
+        if pet ~= "" then
+
+            filters[pet] =
+                ClonePendingSniperFilter(
+                    pending.Filter
+                )
+
+            savedCount += 1
+        end
+    end
+
+    if savedCount <= 0 then
+        return false
+    end
 
     SniperFilterUIState.ViewTarget =
         pending.WatchlistId
@@ -19691,8 +19810,8 @@ local function SaveConfirmedSniperFilter(pending)
     SaveSniperFilters()
 
     print(
-        "[Sniper] Filter confirmed:",
-        tostring(pending.Pet),
+        "[Sniper] Filters confirmed:",
+        tostring(savedCount),
         "Watchlist:",
         tostring(pending.WatchlistId),
         "WeightMode:",
@@ -19704,29 +19823,120 @@ local function SaveConfirmedSniperFilter(pending)
     )
 
     HolyNotify(
-        pending.IsUpdate and "Filter Updated" or "Filter Added",
-        tostring(pending.Pet)
+        "Filters Saved",
+        tostring(savedCount)
+            .. " pet filter"
+            .. (savedCount == 1 and "" or "s")
             .. " saved to Watchlist "
             .. tostring(pending.WatchlistId)
             .. ".",
-        pending.IsUpdate and "refresh-cw" or "plus",
+        "plus",
         3
     )
 
     return true
 end
 
+local function GetSelectedSniperPetsFromDropdown(value)
+
+    local output = {}
+    local seen = {}
+
+    local function AddPet(petName)
+
+        petName =
+            tostring(petName or "")
+                :gsub("^%s+", "")
+                :gsub("%s+$", "")
+
+        if petName == "" then
+            return
+        end
+
+        if seen[petName] then
+            return
+        end
+
+        seen[petName] =
+            true
+
+        table.insert(
+            output,
+            petName
+        )
+    end
+
+    if type(value) == "string" then
+
+        AddPet(value)
+
+    elseif type(value) == "table" then
+
+        for key, selected in pairs(value) do
+
+            if selected == true then
+
+                AddPet(key)
+
+            elseif type(selected) == "string" then
+
+                AddPet(selected)
+            end
+        end
+    end
+
+    table.sort(output)
+
+    return output
+end
+
+local function FormatSniperPetListForDialog(pets)
+
+    if type(pets) ~= "table"
+    or #pets <= 0 then
+        return "None"
+    end
+
+    local lines = {}
+    local maxShown = 10
+
+    for index, pet in ipairs(pets) do
+
+        if index > maxShown then
+            break
+        end
+
+        table.insert(
+            lines,
+            "- " .. tostring(pet)
+        )
+    end
+
+    if #pets > maxShown then
+
+        table.insert(
+            lines,
+            "+ "
+                .. tostring(#pets - maxShown)
+                .. " more"
+        )
+    end
+
+    return table.concat(lines, "\n")
+end
+
 local function BuildPendingSniperFilterFromUI()
 
-    local pet =
-        PetDropdown.Value
+    local pets =
+        GetSelectedSniperPetsFromDropdown(
+            PetDropdown.Value
+        )
 
-    if not pet
-    or pet == "" then
+    if #pets <= 0 then
 
         HolyNotify(
-            "No Pet Selected",
-            "Choose a pet before adding a sniper filter.",
+            "No Pets Selected",
+            "Choose one or more pets before adding sniper filters.",
             "triangle-alert",
             4
         )
@@ -19820,7 +20030,6 @@ local function BuildPendingSniperFilterFromUI()
             priority,
     }
 
-    -- Only attach mutation fields if the mutation helpers exist in this build.
     if type(CloneSniperMutationMap) == "function" then
 
         filter.Mutation =
@@ -19837,9 +20046,28 @@ local function BuildPendingSniperFilterFromUI()
             )
     end
 
+    local addCount =
+        0
+
+    local updateCount =
+        0
+
+    for _, pet in ipairs(pets) do
+
+        if filters[pet] ~= nil then
+            updateCount += 1
+        else
+            addCount += 1
+        end
+    end
+
     return {
+        Pets =
+            pets,
+
+        -- Compatibility fallback for old prints/debug paths.
         Pet =
-            tostring(pet),
+            pets[1],
 
         WatchlistId =
             saveTarget,
@@ -19847,30 +20075,66 @@ local function BuildPendingSniperFilterFromUI()
         Filter =
             filter,
 
+        AddCount =
+            addCount,
+
+        UpdateCount =
+            updateCount,
+
         IsUpdate =
-            filters[pet] ~= nil,
+            updateCount > 0
+            and addCount <= 0,
     }
 end
 
 local function OpenSniperFilterConfirmDialog(pending)
 
     if type(pending) ~= "table"
-    or type(pending.Filter) ~= "table" then
+    or type(pending.Filter) ~= "table"
+    or type(pending.Pets) ~= "table"
+    or #pending.Pets <= 0 then
         return
     end
 
-    local actionText =
-        pending.IsUpdate
-        and "Update"
-        or "Add"
+    local totalPets =
+        #pending.Pets
+
+    local actionText
+
+    if pending.AddCount > 0
+    and pending.UpdateCount > 0 then
+
+        actionText =
+            "Save"
+
+    elseif pending.UpdateCount > 0 then
+
+        actionText =
+            "Update"
+
+    else
+
+        actionText =
+            "Add"
+    end
+
+    local summaryText =
+        "Adds: "
+        .. tostring(pending.AddCount or 0)
+        .. " | Updates: "
+        .. tostring(pending.UpdateCount or 0)
 
     local description =
-        "Review this sniper filter before saving.\n\n"
-        .. "Pet: "
-        .. tostring(pending.Pet)
-        .. "\n"
+        "Review these sniper filters before saving.\n\n"
+        .. "Pets ("
+        .. tostring(totalPets)
+        .. "):\n"
+        .. FormatSniperPetListForDialog(pending.Pets)
+        .. "\n\n"
         .. "Watchlist: Watchlist "
         .. tostring(pending.WatchlistId)
+        .. "\n"
+        .. summaryText
         .. "\n"
         .. "Max Price: "
         .. FormatSniperConfirmPrice(pending.Filter.MaxPrice)
@@ -19898,78 +20162,80 @@ local function OpenSniperFilterConfirmDialog(pending)
         .. "Mutation Filter: "
         .. FormatSniperConfirmMutation(pending.Filter)
 
-local ConfirmDialog = nil
+    local ConfirmDialog = nil
 
-ConfirmDialog =
-    Window:AddDialog(
-        "SniperFilterConfirmDialog",
-        {
-            Title =
-                actionText .. " Sniper Filter",
+    ConfirmDialog =
+        Window:AddDialog(
+            "SniperFilterConfirmDialog",
+            {
+                Title =
+                    actionText .. " Sniper Filters",
 
-            Description =
-                description,
+                Description =
+                    description,
 
-            Icon =
-                pending.IsUpdate and "refresh-cw" or "plus",
+                Icon =
+                    actionText == "Update"
+                    and "refresh-cw"
+                    or "plus",
 
-            AutoDismiss =
-                true,
+                AutoDismiss =
+                    true,
 
-            OutsideClickDismiss =
-                true,
+                OutsideClickDismiss =
+                    true,
 
-            FooterButtons = {
-                Cancel = {
-                    Title =
-                        "Cancel",
+                FooterButtons = {
+                    Cancel = {
+                        Title =
+                            "Cancel",
 
-                    Variant =
-                        "Ghost",
+                        Variant =
+                            "Ghost",
 
-                    Order =
-                        1,
+                        Order =
+                            1,
 
-                    Callback = function()
+                        Callback = function()
 
-                        if ConfirmDialog then
-                            ConfirmDialog:Dismiss()
-                        end
-                    end,
+                            if ConfirmDialog then
+                                ConfirmDialog:Dismiss()
+                            end
+                        end,
+                    },
+
+                    Confirm = {
+                        Title =
+                            actionText .. " Filters",
+
+                        Variant =
+                            "Primary",
+
+                        Order =
+                            2,
+
+                        Callback = function()
+
+                            SaveConfirmedSniperFilter(
+                                pending
+                            )
+
+                            if ConfirmDialog then
+                                ConfirmDialog:Dismiss()
+                            end
+                        end,
+                    },
                 },
-
-                Confirm = {
-                    Title =
-                        actionText .. " Filter",
-
-                    Variant =
-                        "Primary",
-
-                    Order =
-                        2,
-
-                    Callback = function()
-
-                        SaveConfirmedSniperFilter(
-                            pending
-                        )
-
-                        if ConfirmDialog then
-                            ConfirmDialog:Dismiss()
-                        end
-                    end,
-                },
-            },
-        }
-    )
+            }
+        )
 end
 
 SniperFilterBox:AddButton({
     Text =
-        "Add / Update Filter",
+        "Add / Update Filters",
 
     Tooltip =
-        "Review the sniper filter before saving it.",
+        "Review selected pet filters before saving them.",
 
     Func = function()
 
