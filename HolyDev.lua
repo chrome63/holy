@@ -19585,7 +19585,36 @@ local function FormatSniperConfirmPrice(value)
         return "No limit"
     end
 
-    return FormatNumber(value) .. " tokens"
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "0 tokens"
+    end
+
+    number =
+        math.floor(number)
+
+    local formatted =
+        tostring(number)
+
+    while true do
+
+        local nextFormatted, changed =
+            formatted:gsub(
+                "^(-?%d+)(%d%d%d)",
+                "%1,%2"
+            )
+
+        formatted =
+            nextFormatted
+
+        if changed <= 0 then
+            break
+        end
+    end
+
+    return formatted .. " tokens"
 end
 
 local function FormatSniperConfirmWeight(value, weightMode)
