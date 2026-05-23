@@ -558,6 +558,8 @@ SelectedMutationSelection = {},
 SelectedSpecificMutations = {},
 SelectedExcludedMutations = {},
 
+}
+
 function NormalizeWatchlistId(value)
 
     if value == 2
