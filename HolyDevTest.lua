@@ -1,5 +1,5 @@
 --==================================================
--- HOLY v3.2.0 — OBSIDIAN FOUNDATION GROW A GARDEN TRADE MARKET SCRIPT
+-- HOLY v3.3.7 — OBSIDIAN FOUNDATION GROW A GARDEN TRADE MARKET SCRIPT
 -- Purpose: Deterministic, modular base (no features)
 --==================================================
 
@@ -543,6 +543,14 @@ SniperFilterUIState = {
     -- DisplayWeight = shown KG value, BaseWeight = raw PetData.BaseWeight.
     WeightMode = "DisplayWeight",
     Priority = 5,
+
+    -- Mutation filter defaults.
+    -- Any = ignore mutation.
+    -- Only = must contain at least one selected mutation.
+    -- Exclude = must not contain any selected mutation.
+    -- Normal Only = only pets with no mutation.
+    MutationMode = "Any",
+    MutationText = "",
 }
 
 function NormalizeWatchlistId(value)
@@ -744,6 +752,306 @@ function FormatFilterWeight(value, weightMode)
     end
 
     return tostring(weight) .. "kg"
+end
+
+--==================================================
+-- SNIPER MUTATION FILTER HELPERS
+-- Runs before purchase dispatch.
+--==================================================
+
+function NormalizeSniperMutationMode(value)
+
+    value =
+        tostring(value or "Any")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    local lower =
+        value:lower()
+
+    if lower == "only"
+    or lower == "include"
+    or lower == "included"
+    or lower == "must have" then
+        return "Only"
+    end
+
+    if lower == "exclude"
+    or lower == "excluded"
+    or lower == "without" then
+        return "Exclude"
+    end
+
+    if lower == "normal"
+    or lower == "normal only"
+    or lower == "none" then
+        return "Normal Only"
+    end
+
+    return "Any"
+end
+
+function NormalizeSniperMutationName(value)
+
+    return tostring(value or "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+function BuildSniperMutationSelectionMap(text)
+
+    local map = {}
+
+    text =
+        tostring(text or "")
+
+    text =
+        text:gsub("[\n\r;/|]+", ",")
+
+    for token in string.gmatch(text, "([^,]+)") do
+
+        local mutation =
+            NormalizeSniperMutationName(token)
+
+        if mutation ~= ""
+        and mutation ~= "Any"
+        and mutation ~= "Normal"
+        and mutation ~= "---"
+        and mutation ~= "Unknown" then
+
+            map[mutation] =
+                true
+        end
+    end
+
+    return map
+end
+
+function SerializeSniperMutationMap(map)
+
+    local output = {}
+
+    if type(map) ~= "table" then
+        return output
+    end
+
+    for mutation, enabled in pairs(map) do
+
+        if enabled == true then
+
+            table.insert(
+                output,
+                tostring(mutation)
+            )
+        end
+    end
+
+    table.sort(output)
+
+    return output
+end
+
+function DeserializeSniperMutationSelection(value)
+
+    local map = {}
+
+    if type(value) == "table" then
+
+        for key, enabled in pairs(value) do
+
+            if enabled == true then
+
+                local mutation =
+                    NormalizeSniperMutationName(key)
+
+                if mutation ~= "" then
+                    map[mutation] = true
+                end
+
+            elseif type(enabled) == "string" then
+
+                local mutation =
+                    NormalizeSniperMutationName(enabled)
+
+                if mutation ~= "" then
+                    map[mutation] = true
+                end
+            end
+        end
+
+        return map
+    end
+
+    return BuildSniperMutationSelectionMap(value)
+end
+
+function BuildListingMutationMap(listing)
+
+    local map = {}
+
+    if type(listing) ~= "table" then
+        return map
+    end
+
+    local mutationText =
+        tostring(
+            listing.MutationText
+            or listing.Mutation
+            or "Normal"
+        )
+
+    if mutationText == ""
+    or mutationText == "---"
+    or mutationText == "Normal"
+    or mutationText == "Unknown" then
+        return map
+    end
+
+    mutationText =
+        mutationText:gsub("[,/;|]+", " ")
+
+    for token in string.gmatch(mutationText, "%S+") do
+
+        local mutation =
+            NormalizeSniperMutationName(token)
+
+        if mutation ~= ""
+        and mutation ~= "Normal"
+        and mutation ~= "---"
+        and mutation ~= "Unknown" then
+
+            map[mutation] =
+                true
+        end
+    end
+
+    return map
+end
+
+function SniperMutationMapIsEmpty(map)
+
+    if type(map) ~= "table" then
+        return true
+    end
+
+    for _ in pairs(map) do
+        return false
+    end
+
+    return true
+end
+
+function SniperMutationMapHasAny(listingMap, selectedMap)
+
+    if type(listingMap) ~= "table"
+    or type(selectedMap) ~= "table" then
+        return false
+    end
+
+    for mutation in pairs(selectedMap) do
+
+        if listingMap[mutation] == true then
+            return true
+        end
+    end
+
+    return false
+end
+
+function ListingPassesMutationFilter(listing, filter)
+
+    local mode =
+        NormalizeSniperMutationMode(
+            filter
+            and filter.MutationMode
+            or "Any"
+        )
+
+    if mode == "Any" then
+        return true
+    end
+
+    local listingMutations =
+        BuildListingMutationMap(listing)
+
+    local hasAnyMutation =
+        not SniperMutationMapIsEmpty(
+            listingMutations
+        )
+
+    if mode == "Normal Only" then
+        return not hasAnyMutation
+    end
+
+    local selectedMutations =
+        DeserializeSniperMutationSelection(
+            filter
+            and (
+                filter.Mutations
+                or filter.MutationList
+                or filter.MutationText
+            )
+            or nil
+        )
+
+    -- Safety:
+    -- Only/Exclude with empty mutation list should not buy everything.
+    if SniperMutationMapIsEmpty(selectedMutations) then
+        return false
+    end
+
+    local hasSelected =
+        SniperMutationMapHasAny(
+            listingMutations,
+            selectedMutations
+        )
+
+    if mode == "Only" then
+        return hasSelected
+    end
+
+    if mode == "Exclude" then
+        return not hasSelected
+    end
+
+    return true
+end
+
+function FormatSniperMutationFilter(filter)
+
+    if type(filter) ~= "table" then
+        return "Any"
+    end
+
+    local mode =
+        NormalizeSniperMutationMode(
+            filter.MutationMode
+        )
+
+    if mode == "Any" then
+        return "Any"
+    end
+
+    if mode == "Normal Only" then
+        return "Normal"
+    end
+
+    local selected =
+        SerializeSniperMutationMap(
+            DeserializeSniperMutationSelection(
+                filter.Mutations
+                or filter.MutationList
+                or filter.MutationText
+            )
+        )
+
+    if #selected <= 0 then
+        return mode .. ": none"
+    end
+
+    return mode
+        .. ": "
+        .. table.concat(selected, ", ")
 end
 
 function GetSniperFilterSet(watchlistId)
@@ -2419,7 +2727,8 @@ function ListingMatchesFilter(listing)
                 )
 
             if listing.Price <= maxPrice
-            and listingWeight >= minWeight then
+            and listingWeight >= minWeight
+            and ListingPassesMutationFilter(listing, filter) then
 
                 local priority =
                     ResolveSniperFilterPriority(
@@ -6966,6 +7275,20 @@ function SerializeFilterSet(filters)
 
                 Priority =
     ResolveSniperFilterPriority(data),
+
+MutationMode =
+    NormalizeSniperMutationMode(
+        data.MutationMode
+    ),
+
+Mutations =
+    SerializeSniperMutationMap(
+        DeserializeSniperMutationSelection(
+            data.Mutations
+            or data.MutationList
+            or data.MutationText
+        )
+    ),
             }
         end
     end
@@ -7081,6 +7404,18 @@ function LoadFilterSetFromTable(target, source)
 
 Priority =
     ClampSniperPriority(data.Priority),
+
+MutationMode =
+    NormalizeSniperMutationMode(
+        data.MutationMode
+    ),
+
+Mutations =
+    DeserializeSniperMutationSelection(
+        data.Mutations
+        or data.MutationList
+        or data.MutationText
+    ),
             }
         end
     end
@@ -17607,6 +17942,54 @@ PriorityInput:OnChanged(function(value)
 
     MarkConfigDirty()
 end)
+
+--==================================================
+-- MUTATION FILTER UI
+--==================================================
+
+local MutationModeDropdown =
+    SniperFilterBox:AddDropdown(
+        "SniperMutationMode",
+        {
+            Text = "Mutation Mode",
+            Tooltip = "Any = ignore mutation. Only = must have selected mutation. Exclude = avoid selected mutation. Normal Only = no mutation.",
+            Values = {
+                "Any",
+                "Only",
+                "Exclude",
+                "Normal Only",
+            },
+            Default = "Any",
+            Searchable = false,
+        }
+    )
+
+MutationModeDropdown:OnChanged(function(value)
+
+    SniperFilterUIState.MutationMode =
+        NormalizeSniperMutationMode(value)
+
+    MarkConfigDirty()
+end)
+
+local MutationInput =
+    SniperFilterBox:AddInput(
+        "SniperMutationList",
+        {
+            Text = "Mutations",
+            Placeholder = "Rainbow, Golden, Shocked",
+            Numeric = false,
+            Finished = false,
+        }
+    )
+
+MutationInput:OnChanged(function(value)
+
+    SniperFilterUIState.MutationText =
+        tostring(value or "")
+
+    MarkConfigDirty()
+end)
 --==================================================
 -- WATCHLIST VIEW SELECTOR
 -- Both watchlists are active for sniping; this only changes display/manage.
@@ -18931,7 +19314,16 @@ RefreshWatchlist = function()
         4
     )
 
-            label:SetText(
+local mutationText =
+    PadRight(
+        ShortenText(
+            FormatSniperMutationFilter(entry),
+            18
+        ),
+        18
+    )
+
+label:SetText(
     marker
         .. " "
         .. petText
@@ -18941,6 +19333,8 @@ RefreshWatchlist = function()
         .. weightText
         .. " "
         .. priorityText
+        .. " "
+        .. mutationText
 )
 
             label:SetVisible(true)
@@ -19013,6 +19407,16 @@ filters[pet] = {
     MaxPrice = maxPrice,
     WeightMode = weightMode,
     Priority = priority,
+
+    MutationMode =
+        NormalizeSniperMutationMode(
+            SniperFilterUIState.MutationMode
+        ),
+
+    Mutations =
+        BuildSniperMutationSelectionMap(
+            SniperFilterUIState.MutationText
+        ),
 }
 
         SniperFilterUIState.ViewTarget =
@@ -19037,7 +19441,9 @@ end
     "WeightMode:",
     tostring(weightMode),
     "Priority:",
-    tostring(priority)
+    tostring(priority),
+    "Mutation:",
+    FormatSniperMutationFilter(filters[pet])
 )
 
         HolyNotify(
@@ -24732,7 +25138,7 @@ SaveManager:SetIgnoreIndexes({})
 -- Autosave worker
 task.spawn(function()
     while IsCurrentRun() do
-        task.wait(1)
+        task.wait(0.25)
 
         if not ConfigState.Dirty then
             continue
@@ -24742,7 +25148,7 @@ task.spawn(function()
         ConfigState.LastMutation =
             SafeNumber(ConfigState.LastMutation, 0)
 
-        if SafeElapsed(ConfigState.LastMutation) < 2 then
+        if SafeElapsed(ConfigState.LastMutation) < 0.5 then
             continue
         end
 
