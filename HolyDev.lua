@@ -4988,22 +4988,32 @@ function QueueMarketTrackerWebhook(listing)
         return false
     end
 
+    -- Mark immediately so the same listing cannot spawn
+    -- multiple webhook requests during fast scan passes.
     MarkMarketTrackerListingSent(listing)
 
-    MarketTrackerWebhook.Queue =
-        MarketTrackerWebhook.Queue
-        or {}
+    -- Fire-and-forget.
+    -- Do not queue.
+    -- Do not wait.
+    -- Do not block server hop or sniper scan.
+    task.spawn(function()
 
-    table.insert(
-        MarketTrackerWebhook.Queue,
-        listing
-    )
+        local ok, err =
+            pcall(function()
+                SendMarketTrackerWebhookNow(listing)
+            end)
+
+        if not ok then
+            warn(
+                "[MARKET TRACKER] Immediate send failed:",
+                tostring(err)
+            )
+        end
+    end)
 
     print(
-        "[MARKET TRACKER] Queued:",
-        tostring(listing.PetName or "Unknown"),
-        "| queue:",
-        tostring(#MarketTrackerWebhook.Queue)
+        "[MARKET TRACKER] Instant send:",
+        tostring(listing.PetName or "Unknown")
     )
 
     return true
@@ -5020,7 +5030,7 @@ function TrackMarketListings(listings)
         return 0
     end
 
-    local queued =
+    local sent =
         0
 
     for _, listing in ipairs(listings) do
@@ -5051,99 +5061,28 @@ if isTarget then
         )
 
     if added then
-        queued += 1
+    sent += 1
     end
 end
     end
 
-    if queued > 0 then
+if sent > 0 then
 
-        print(
-            "[MARKET TRACKER] Matches queued:",
-            tostring(queued)
-        )
-    end
-
-    return queued
+    print(
+        "[MARKET TRACKER] Matches sent instantly:",
+        tostring(sent)
+    )
 end
 
-task.spawn(function()
+return sent
+end
 
-    while IsCurrentRun() do
-
-        task.wait(0.1)
-
-        if ScriptState
-        and ScriptState.ForceStopped then
-            continue
-        end
-
-        if type(MarketTrackerWebhook) ~= "table"
-        or MarketTrackerWebhook.Enabled ~= true then
-            continue
-        end
-
-        MarketTrackerWebhook.Queue =
-            MarketTrackerWebhook.Queue
-            or {}
-
-        if MarketTrackerWebhook.Sending then
-            continue
-        end
-
-        if #MarketTrackerWebhook.Queue <= 0 then
-            continue
-        end
-
-        local elapsed =
-            os.clock()
-            - SafeNumber(
-                MarketTrackerWebhook.LastSend,
-                0
-            )
-
-        local sendDelay =
-            SafeNumber(
-                MarketTrackerWebhook.SendDelay,
-                1.25
-            )
-
-        if elapsed < sendDelay then
-            task.wait(sendDelay - elapsed)
-        end
-
-        local listing =
-            table.remove(
-                MarketTrackerWebhook.Queue,
-                1
-            )
-
-        if not listing then
-            continue
-        end
-
-        MarketTrackerWebhook.Sending =
-            true
-
-        MarketTrackerWebhook.LastSend =
-            os.clock()
-
-        local ok, err =
-            pcall(function()
-                SendMarketTrackerWebhookNow(listing)
-            end)
-
-        if not ok then
-            warn(
-                "[MARKET TRACKER] Queue send failed:",
-                tostring(err)
-            )
-        end
-
-        MarketTrackerWebhook.Sending =
-            false
-    end
-end)
+--==================================================
+-- MARKET TRACKER QUEUE WORKER DISABLED
+-- Market Tracker is live/time-sensitive.
+-- It now sends immediately from QueueMarketTrackerWebhook().
+-- Server hop must never wait for this system.
+--==================================================
 --==================================================
 -- CONFIRMED TOOL SNAPSHOT PARSER
 -- Source of truth after a successful snipe.
