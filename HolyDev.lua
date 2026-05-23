@@ -550,6 +550,11 @@ SniperFilterUIState = {
     -- "All Except" = any mutation except selected excluded mutations
     -- specific mutation = only that mutation
     SelectedMutation = "All",
+
+-- Used only when SelectedMutation == "Specific".
+    SelectedSpecificMutations = {},
+
+-- Used only when SelectedMutation == "All Except".
     SelectedExcludedMutations = {},
 }
 
@@ -989,17 +994,67 @@ function SniperMutationMapHasAny(source, blocked)
     return false
 end
 
+function IsSniperMutationMode(value)
+
+    value =
+        tostring(value or "")
+
+    return value == "---"
+        or value == "All"
+        or value == "All Except"
+        or value == "Specific"
+end
+
+function ResolveSniperMutationModeAndSpecifics(filter)
+
+    local mutation =
+        NormalizeSniperFilterMutation(
+            filter
+            and (
+                filter.Mutation
+                or filter.SelectedMutation
+            )
+            or "All"
+        )
+
+    local specific =
+        DeserializeSniperMutationMap(
+            filter
+            and (
+                filter.SpecificMutations
+                or filter.IncludedMutations
+            )
+            or nil
+        )
+
+    -- Migration support:
+    -- Old filters stored Mutation = "Rainbow" directly.
+    -- New filters store Mutation = "Specific" and SpecificMutations = { Rainbow = true }.
+    if not IsSniperMutationMode(mutation) then
+
+        if mutation ~= ""
+        and mutation ~= "Normal"
+        and mutation ~= "Unknown" then
+            specific[mutation] =
+                true
+        end
+
+        mutation =
+            "Specific"
+    end
+
+    return mutation, specific
+end
+
 function ListingPassesSniperMutationFilter(listing, filter)
 
     if type(filter) ~= "table" then
         return true
     end
 
-    local selectedMutation =
-        NormalizeSniperFilterMutation(
-            filter.Mutation
-            or filter.SelectedMutation
-            or "All"
+    local selectedMutation, specificMutations =
+        ResolveSniperMutationModeAndSpecifics(
+            filter
         )
 
     local listingMutations =
@@ -1010,17 +1065,17 @@ function ListingPassesSniperMutationFilter(listing, filter)
             listingMutations
         )
 
-    -- Normal-only mode.
+    -- Normal/no-mutation only.
     if selectedMutation == "---" then
         return not hasMutation
     end
 
-    -- Any mutation, but not normal.
+    -- Any mutation, but never normal.
     if selectedMutation == "All" then
         return hasMutation
     end
 
-    -- Any mutation except blocked list.
+    -- Any mutation except blocked mutations.
     if selectedMutation == "All Except" then
 
         if not hasMutation then
@@ -1042,11 +1097,25 @@ function ListingPassesSniperMutationFilter(listing, filter)
         )
     end
 
-    -- Specific mutation mode.
-    return SniperMutationMapHas(
-        listingMutations,
-        selectedMutation
-    )
+    -- Multi-select include mode.
+    -- Safety: Specific with no selected mutations buys nothing.
+    if selectedMutation == "Specific" then
+
+        if not hasMutation then
+            return false
+        end
+
+        if SniperMutationMapIsEmpty(specificMutations) then
+            return false
+        end
+
+        return SniperMutationMapHasAny(
+            listingMutations,
+            specificMutations
+        )
+    end
+
+    return true
 end
 
 function FormatSniperMutationFilter(filter)
@@ -1055,11 +1124,9 @@ function FormatSniperMutationFilter(filter)
         return "All"
     end
 
-    local mutation =
-        NormalizeSniperFilterMutation(
-            filter.Mutation
-            or filter.SelectedMutation
-            or "All"
+    local mutation, specificMutations =
+        ResolveSniperMutationModeAndSpecifics(
+            filter
         )
 
     if mutation == "All Except" then
@@ -1078,6 +1145,24 @@ function FormatSniperMutationFilter(filter)
         end
 
         return "Except: " .. tostring(#excluded)
+    end
+
+    if mutation == "Specific" then
+
+        local specific =
+            SerializeSniperMutationMap(
+                specificMutations
+            )
+
+        if #specific <= 0 then
+            return "Specific: None"
+        end
+
+        if #specific <= 2 then
+            return "Specific: " .. table.concat(specific, ", ")
+        end
+
+        return "Specific: " .. tostring(#specific)
     end
 
     if mutation == "---" then
@@ -7310,10 +7395,17 @@ function SerializeFilterSet(filters)
     ResolveSniperFilterPriority(data),
 
 Mutation =
-    NormalizeSniperFilterMutation(
-        data.Mutation
-        or data.SelectedMutation
-        or "All"
+    select(
+        1,
+        ResolveSniperMutationModeAndSpecifics(data)
+    ),
+
+SpecificMutations =
+    SerializeSniperMutationMap(
+        select(
+            2,
+            ResolveSniperMutationModeAndSpecifics(data)
+        )
     ),
 
 ExcludedMutations =
@@ -7437,10 +7529,15 @@ Priority =
     ClampSniperPriority(data.Priority),
 
 Mutation =
-    NormalizeSniperFilterMutation(
-        data.Mutation
-        or data.SelectedMutation
-        or "All"
+    select(
+        1,
+        ResolveSniperMutationModeAndSpecifics(data)
+    ),
+
+SpecificMutations =
+    DeserializeSniperMutationMap(
+        data.SpecificMutations
+        or data.IncludedMutations
     ),
 
 ExcludedMutations =
@@ -17983,47 +18080,22 @@ if type(RefreshListingMutationList) == "function" then
     RefreshListingMutationList()
 end
 
-local SniperMutationModeList = {}
-local seenSniperMutationMode = {}
-
-local function AddSniperMutationMode(value)
-
-    value =
-        tostring(value or "")
-
-    if value == "" then
-        return
-    end
-
-    if seenSniperMutationMode[value] then
-        return
-    end
-
-    seenSniperMutationMode[value] =
-        true
-
-    table.insert(
-        SniperMutationModeList,
-        value
-    )
-end
-
-AddSniperMutationMode("---")
-AddSniperMutationMode("All")
-AddSniperMutationMode("All Except")
-
-for _, mutationName in ipairs(ListingMutationList or {}) do
-    AddSniperMutationMode(mutationName)
-end
+local SniperMutationModeList = {
+    "---",
+    "All",
+    "All Except",
+    "Specific",
+}
 
 local SniperMutationDropdown =
     SniperFilterBox:AddDropdown(
         "SniperMutationSelect",
         {
-            Text = "Mutation",
+            Text = "Mutation Mode",
+            Tooltip = "--- = normal/no mutation only. All = any mutation. All Except = any mutation except excluded. Specific = only selected specific mutations.",
             Values = SniperMutationModeList,
             Default = "All",
-            Searchable = true,
+            Searchable = false,
         }
     )
 
@@ -18035,8 +18107,39 @@ SniperMutationDropdown:OnChanged(function(value)
     MarkConfigDirty()
 
     print(
-        "[Sniper] Selected mutation:",
+        "[Sniper] Selected mutation mode:",
         SniperFilterUIState.SelectedMutation
+    )
+end)
+
+local SniperSpecificMutationsDropdown =
+    SniperFilterBox:AddDropdown(
+        "SniperSpecificMutations",
+        {
+            Text = "Specific Mutations",
+            Tooltip = "Only active when Mutation Mode is Specific. Multi-select allowed. Example: Rainbow + Aromatic buys this selected pet if it has either mutation.",
+            Values = ListingMutationList or {},
+            Default = {},
+            Searchable = true,
+            Multi = true,
+        }
+    )
+
+SniperSpecificMutationsDropdown:OnChanged(function(value)
+
+    SniperFilterUIState.SelectedSpecificMutations =
+        BuildSniperMutationMapFromDropdownValue(value)
+
+    MarkConfigDirty()
+
+    print(
+        "[Sniper] Specific mutations:",
+        table.concat(
+            SerializeSniperMutationMap(
+                SniperFilterUIState.SelectedSpecificMutations
+            ),
+            ", "
+        )
     )
 end)
 
@@ -18045,7 +18148,7 @@ local SniperExcludeMutationsDropdown =
         "SniperExcludeMutations",
         {
             Text = "Exclude Mutations",
-            Tooltip = "Only used when Mutation is set to All Except.",
+            Tooltip = "Only active when Mutation Mode is All Except. Multi-select mutations to avoid.",
             Values = ListingMutationList or {},
             Default = {},
             Searchable = true,
@@ -19482,6 +19585,26 @@ SniperFilterBox:AddButton({
         or 5
     )
 
+local mutationMode =
+    NormalizeSniperFilterMutation(
+        SniperFilterUIState.SelectedMutation
+    )
+
+if mutationMode == "Specific"
+and SniperMutationMapIsEmpty(
+    SniperFilterUIState.SelectedSpecificMutations
+) then
+
+    HolyNotify(
+        "No Specific Mutations",
+        "Select at least one Specific Mutation, or change Mutation Mode.",
+        "triangle-alert",
+        4
+    )
+
+    return
+end
+
 filters[pet] = {
     MinWeight = minWeight,
     MaxPrice = maxPrice,
@@ -19491,6 +19614,11 @@ filters[pet] = {
     Mutation =
         NormalizeSniperFilterMutation(
             SniperFilterUIState.SelectedMutation
+        ),
+
+    SpecificMutations =
+        CloneSniperMutationMap(
+            SniperFilterUIState.SelectedSpecificMutations
         ),
 
     ExcludedMutations =
