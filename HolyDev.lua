@@ -9635,9 +9635,10 @@ SniperMonitorHUDToggle:OnChanged(function(v)
 
     MarkConfigDirty()
 
-    if not SniperMonitorHUDGui then
-        CreateSniperMonitorHUD()
-    end
+    if not SniperMonitorHUDGui
+and type(CreateSniperMonitorHUD) == "function" then
+    CreateSniperMonitorHUD()
+end
 
     if SniperMonitorHUDGui then
         SniperMonitorHUDGui.Enabled = v
@@ -10347,6 +10348,328 @@ local function ResolveSniperMonitorHopText()
     )
 end
 
+CreateSniperMonitorHUD = function()
+
+    if SniperMonitorHUDGui then
+        return
+    end
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return
+    end
+
+    local playerGui =
+        player:WaitForChild("PlayerGui")
+
+    local screenGui =
+        Instance.new("ScreenGui")
+
+    screenGui.Name =
+        "HolySniperMonitorHUD"
+
+    screenGui.ResetOnSpawn =
+        false
+
+    screenGui.IgnoreGuiInset =
+        true
+
+    screenGui.Enabled =
+        VisualState.SniperMonitorHUD == true
+
+    screenGui.Parent =
+        playerGui
+
+    SniperMonitorHUDGui =
+        screenGui
+
+    local frame =
+        Instance.new("Frame")
+
+    frame.Name =
+        "Frame"
+
+    frame.AnchorPoint =
+        Vector2.new(0, 0)
+
+    frame.Position =
+        UDim2.new(0, 12, 0, 164)
+
+    frame.Size =
+        UDim2.new(0, 274, 0, 126)
+
+    frame.BackgroundColor3 =
+        Color3.fromRGB(10, 8, 18)
+
+    frame.BackgroundTransparency =
+        0.08
+
+    frame.BorderSizePixel =
+        0
+
+    frame.Visible =
+        VisualState.SniperMonitorHUD == true
+
+    frame.Parent =
+        screenGui
+
+    SniperMonitorHUDFrame =
+        frame
+
+    local corner =
+        Instance.new("UICorner")
+
+    corner.CornerRadius =
+        UDim.new(0, 10)
+
+    corner.Parent =
+        frame
+
+    local stroke =
+        Instance.new("UIStroke")
+
+    stroke.Name =
+        "HolySniperMonitorStroke"
+
+    stroke.ApplyStrokeMode =
+        Enum.ApplyStrokeMode.Border
+
+    stroke.Color =
+        Color3.fromRGB(145, 95, 255)
+
+    stroke.Thickness =
+        1
+
+    stroke.Transparency =
+        0.22
+
+    stroke.Parent =
+        frame
+
+    local gradient =
+        Instance.new("UIGradient")
+
+    gradient.Name =
+        "HolySniperMonitorGradient"
+
+    gradient.Color =
+        ColorSequence.new({
+            ColorSequenceKeypoint.new(
+                0,
+                Color3.fromRGB(18, 14, 31)
+            ),
+
+            ColorSequenceKeypoint.new(
+                1,
+                Color3.fromRGB(8, 8, 12)
+            ),
+        })
+
+    gradient.Rotation =
+        90
+
+    gradient.Parent =
+        frame
+
+    local padding =
+        Instance.new("UIPadding")
+
+    padding.PaddingTop =
+        UDim.new(0, 8)
+
+    padding.PaddingBottom =
+        UDim.new(0, 8)
+
+    padding.PaddingLeft =
+        UDim.new(0, 10)
+
+    padding.PaddingRight =
+        UDim.new(0, 10)
+
+    padding.Parent =
+        frame
+
+    local title =
+        Instance.new("TextLabel")
+
+    title.Name =
+        "Title"
+
+    title.BackgroundTransparency =
+        1
+
+    title.Position =
+        UDim2.new(0, 0, 0, 0)
+
+    title.Size =
+        UDim2.new(1, 0, 0, 18)
+
+    title.Font =
+        Enum.Font.GothamBlack
+
+    title.TextSize =
+        13
+
+    title.Text =
+        "HOLY SNIPER"
+
+    title.TextColor3 =
+        Color3.fromRGB(255, 235, 170)
+
+    title.TextStrokeTransparency =
+        0.25
+
+    title.TextStrokeColor3 =
+        Color3.fromRGB(0, 0, 0)
+
+    title.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    title.Parent =
+        frame
+
+    SniperMonitorTitleLabel =
+        title
+
+    local titleGradient =
+        Instance.new("UIGradient")
+
+    titleGradient.Name =
+        "HolySniperTitleGradient"
+
+    titleGradient.Color =
+        ColorSequence.new({
+            ColorSequenceKeypoint.new(
+                0,
+                Color3.fromRGB(255, 230, 140)
+            ),
+
+            ColorSequenceKeypoint.new(
+                0.45,
+                Color3.fromRGB(255, 85, 170)
+            ),
+
+            ColorSequenceKeypoint.new(
+                1,
+                Color3.fromRGB(155, 110, 255)
+            ),
+        })
+
+    titleGradient.Rotation =
+        0
+
+    titleGradient.Parent =
+        title
+
+    local divider =
+        Instance.new("Frame")
+
+    divider.Name =
+        "Divider"
+
+    divider.BackgroundColor3 =
+        Color3.fromRGB(145, 95, 255)
+
+    divider.BackgroundTransparency =
+        0.35
+
+    divider.BorderSizePixel =
+        0
+
+    divider.Position =
+        UDim2.new(0, 0, 0, 23)
+
+    divider.Size =
+        UDim2.new(1, 0, 0, 1)
+
+    divider.Parent =
+        frame
+
+    local function CreateMonitorLine(name, yOffset, defaultText)
+
+        local label =
+            Instance.new("TextLabel")
+
+        label.Name =
+            name
+
+        label.BackgroundTransparency =
+            1
+
+        label.Position =
+            UDim2.new(0, 0, 0, yOffset)
+
+        label.Size =
+            UDim2.new(1, 0, 0, 16)
+
+        label.Font =
+            Enum.Font.GothamBold
+
+        label.TextSize =
+            12
+
+        label.TextColor3 =
+            Color3.fromRGB(235, 240, 255)
+
+        label.TextStrokeTransparency =
+            0.42
+
+        label.TextStrokeColor3 =
+            Color3.fromRGB(0, 0, 0)
+
+        label.TextXAlignment =
+            Enum.TextXAlignment.Left
+
+        label.RichText =
+            true
+
+        label.Text =
+            defaultText
+
+        label.Parent =
+            frame
+
+        return label
+    end
+
+    SniperMonitorStatusLabel =
+        CreateMonitorLine(
+            "Status",
+            32,
+            'Status: <font color="#A3A3A3">Idle</font>'
+        )
+
+    SniperMonitorScannedLabel =
+        CreateMonitorLine(
+            "PetsScanned",
+            49,
+            'Scanned: <font color="#FFFFFF">0</font>'
+        )
+
+    SniperMonitorHopLabel =
+        CreateMonitorLine(
+            "NextHop",
+            66,
+            'Next Hop: <font color="#FFFFFF">Off</font>'
+        )
+
+    SniperMonitorPingLabel =
+        CreateMonitorLine(
+            "Ping",
+            83,
+            'Ping: <font color="#A3A3A3">Unknown</font>'
+        )
+
+    SniperMonitorBuyWaitLabel =
+        CreateMonitorLine(
+            "BuyWait",
+            100,
+            'Buy Wait: <font color="#FFFFFF">10s</font>'
+        )
+end
+
 RefreshSniperMonitorHUD = function()
 
     if not SniperMonitorHUDGui then
@@ -10512,69 +10835,6 @@ RefreshSniperMonitorHUD = function()
                 and "#60A5FA"
                 or "#A3A3A3"
             )
-    end
-end
-
-RefreshSniperMonitorHUD = function()
-
-    if not SniperMonitorHUDGui then
-        return
-    end
-
-    if not VisualState.SniperMonitorHUD then
-        return
-    end
-
-    if SniperMonitorStatusLabel then
-        SniperMonitorStatusLabel.Text =
-            "Status: "
-            .. ResolveSniperMonitorStatus()
-    end
-
-    if SniperMonitorScannedLabel then
-        SniperMonitorScannedLabel.Text =
-            "Pets Scanned: "
-            .. tostring(SniperMonitorState.PetsScanned)
-    end
-
-        if SniperMonitorHopLabel then
-        SniperMonitorHopLabel.Text =
-            "Next Hop: "
-            .. ResolveSniperMonitorHopText()
-    end
-
-    if SniperMonitorPingLabel then
-
-    local now =
-        os.clock()
-
-    if now - SafeNumber(SniperMonitorLastPingTextAt, 0)
-        >= SafeNumber(SniperMonitorPingRefreshInterval, 1)
-    then
-        SniperMonitorLastPingTextAt =
-            now
-
-        SniperMonitorLastPingText =
-            FormatLatencyGuardPingText()
-    end
-
-    SniperMonitorPingLabel.Text =
-        SniperMonitorLastPingText
-end
-
-    if SniperMonitorBuyWaitLabel then
-
-        local adaptiveEnabled =
-            LatencyGuard
-            and LatencyGuard.AdaptiveBuyWait == true
-
-        SniperMonitorBuyWaitLabel.Visible =
-            adaptiveEnabled
-
-        if adaptiveEnabled then
-            SniperMonitorBuyWaitLabel.Text =
-                FormatLatencyGuardBuyWaitText()
-        end
     end
 end
 
