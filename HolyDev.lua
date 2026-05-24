@@ -9458,6 +9458,10 @@ SniperMonitorHopLabel = nil
 SniperMonitorPingLabel = nil
 SniperMonitorBuyWaitLabel = nil
 
+SniperMonitorLastPingText = "Ping: Unknown"
+SniperMonitorLastPingTextAt = 0
+SniperMonitorPingRefreshInterval = 2
+
 InventoryDetailsLabel = nil
 InventoryDetailsStatusLabel = nil
 RefreshInventoryDetails = nil
@@ -10545,9 +10549,23 @@ RefreshSniperMonitorHUD = function()
     end
 
     if SniperMonitorPingLabel then
-        SniperMonitorPingLabel.Text =
+
+    local now =
+        os.clock()
+
+    if now - SafeNumber(SniperMonitorLastPingTextAt, 0)
+        >= SafeNumber(SniperMonitorPingRefreshInterval, 1)
+    then
+        SniperMonitorLastPingTextAt =
+            now
+
+        SniperMonitorLastPingText =
             FormatLatencyGuardPingText()
     end
+
+    SniperMonitorPingLabel.Text =
+        SniperMonitorLastPingText
+end
 
     if SniperMonitorBuyWaitLabel then
 
