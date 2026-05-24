@@ -28239,14 +28239,21 @@ function ApplyCompactTradeTopButtons(playerGui)
         and playerGui:FindFirstChild("Teleport_UI")
         and playerGui.Teleport_UI:FindFirstChild("TradePlaza")
 
-    if not tradePlaza
-    or not tradePlaza:IsA("GuiObject") then
+    if not tradePlaza then
         return false
     end
 
     --==================================================
-    -- Clean up old failed HOLY scale attempts
+    -- CLEAN OLD HOLY TOP-BUTTON PATCHES
+    -- Removes failed UIScale attempts from previous tests.
     --==================================================
+
+    local tradePlazaScale =
+        tradePlaza:FindFirstChild("HolyTradePlazaTinyScale")
+
+    if tradePlazaScale then
+        tradePlazaScale:Destroy()
+    end
 
     for _, obj in ipairs(tradePlaza:GetDescendants()) do
 
@@ -28261,27 +28268,36 @@ function ApplyCompactTradeTopButtons(playerGui)
     end
 
     --==================================================
-    -- Restore the actual game button layout.
-    -- Then scale the whole TradePlaza group.
-    -- This avoids cropped text / broken Studs background.
+    -- SIMPLE TOP BUTTON CONFIG
+    -- No group scaling.
+    -- No descendant resizing except Studs + Title.
     --==================================================
 
     local configs = {
         Tokens = {
-            Width = 120,
-            Height = 42,
+            Width = 86,
+            Height = 30,
+            YOffset = -6,
+            TextSize = 13,
         },
 
         Booth = {
-            Width = 70,
-            Height = 62,
+            Width = 74,
+            Height = 34,
+            YOffset = -6,
+            TextSize = 13,
         },
 
         Index = {
-            Width = 120,
-            Height = 42,
+            Width = 86,
+            Height = 30,
+            YOffset = -6,
+            TextSize = 13,
         },
     }
+
+    local applied =
+        false
 
     for name, config in pairs(configs) do
 
@@ -28291,6 +28307,8 @@ function ApplyCompactTradeTopButtons(playerGui)
         if button
         and button:IsA("GuiObject") then
 
+            -- Actual button size.
+            -- Do not use UIScale here.
             button.ClipsDescendants =
                 false
 
@@ -28302,39 +28320,57 @@ function ApplyCompactTradeTopButtons(playerGui)
                     config.Height
                 )
 
-            -- Restore Studs to normal full-button background.
+            MoveHolyGuiFromOriginal(
+                button,
+                0,
+                config.YOffset
+            )
+
+            button.BackgroundTransparency =
+                0.15
+
+            --==================================================
+            -- REMOVE STUDS BACKGROUND
+            -- This is the weird dotted / ghost block.
+            --==================================================
+
             local studs =
                 button:FindFirstChild("Studs")
 
-            if studs
-            and studs:IsA("GuiObject") then
+            if studs then
 
-                studs.ClipsDescendants =
-                    false
+                if studs:IsA("GuiObject") then
 
-                studs.Position =
-                    UDim2.new(0, 0, 0, 0)
+                    studs.BackgroundTransparency =
+                        1
 
-                studs.Size =
-                    UDim2.new(1, 0, 1, 0)
-
-                studs.BackgroundTransparency =
-                    1
+                    studs.Visible =
+                        false
+                end
 
                 if studs:IsA("ImageLabel")
                 or studs:IsA("ImageButton") then
 
                     studs.ImageTransparency =
-                        0.45
+                        1
                 end
             end
 
-            -- Restore title so it fills the button correctly.
+            --==================================================
+            -- KEEP TITLE CENTERED AND VISIBLE
+            --==================================================
+
             local title =
                 button:FindFirstChild("Title")
 
             if title
             and title:IsA("TextLabel") then
+
+                title.Visible =
+                    true
+
+                title.BackgroundTransparency =
+                    1
 
                 title.Position =
                     UDim2.new(0, 0, 0, 0)
@@ -28342,14 +28378,23 @@ function ApplyCompactTradeTopButtons(playerGui)
                 title.Size =
                     UDim2.new(1, 0, 1, 0)
 
-                title.BackgroundTransparency =
-                    1
+                title.AnchorPoint =
+                    Vector2.new(0, 0)
+
+                title.Text =
+                    string.upper(name)
 
                 title.TextScaled =
-                    true
+                    false
+
+                title.TextSize =
+                    config.TextSize
 
                 title.TextWrapped =
                     false
+
+                title.Font =
+                    Enum.Font.GothamBlack
 
                 title.TextXAlignment =
                     Enum.TextXAlignment.Center
@@ -28357,45 +28402,37 @@ function ApplyCompactTradeTopButtons(playerGui)
                 title.TextYAlignment =
                     Enum.TextYAlignment.Center
 
-                title.Font =
-                    Enum.Font.GothamBold
+                title.TextTransparency =
+                    0
+
+                title.TextStrokeColor3 =
+                    Color3.fromRGB(0, 0, 0)
 
                 title.TextStrokeTransparency =
-                    0.35
+                    0.25
+
+                title.ZIndex =
+                    button.ZIndex + 2
             end
+
+            local stroke =
+                button:FindFirstChildOfClass("UIStroke")
+
+            if stroke then
+
+                stroke.Enabled =
+                    true
+
+                stroke.Thickness =
+                    1
+            end
+
+            applied =
+                true
         end
     end
 
-    --==================================================
-    -- Scale the whole top button group instead of each child.
-    -- This keeps spacing/text/studs consistent.
-    --==================================================
-
-    local scale =
-        tradePlaza:FindFirstChild("HolyTradePlazaTinyScale")
-
-    if not scale then
-
-        scale =
-            Instance.new("UIScale")
-
-        scale.Name =
-            "HolyTradePlazaTinyScale"
-
-        scale.Parent =
-            tradePlaza
-    end
-
-    scale.Scale =
-        0.68
-
-    MoveHolyGuiFromOriginal(
-        tradePlaza,
-        0,
-        -4
-    )
-
-    return true
+    return applied
 end
 
 function ApplyCompactLeftGameButtons()
