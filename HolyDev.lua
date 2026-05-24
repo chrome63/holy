@@ -28408,61 +28408,32 @@ end
 
 function StartCompactLeftGameButtonPatch()
 
+    -- Apply immediately.
     pcall(function()
         ApplyCompactLeftGameButtons()
     end)
 
-    if CompactGameButtonPatchState.Connected == true then
-        return
-    end
+    -- Reapply only a few times in case Roblox creates/rebuilds the UI late.
+    -- No permanent DescendantAdded listener.
+    local delays = {
+        0.25,
+        1,
+        3,
+    }
 
-    local player =
-        Players.LocalPlayer
+    for _, delayTime in ipairs(delays) do
 
-    local playerGui =
-        player
-        and player:FindFirstChild("PlayerGui")
+        task.delay(delayTime, function()
 
-    if not playerGui then
-        return
-    end
+            if not IsCurrentRun() then
+                return
+            end
 
-    CompactGameButtonPatchState.Connected =
-        true
-
-    playerGui.DescendantAdded:Connect(function(obj)
-
-        local name =
-            tostring(obj.Name or ""):lower()
-
-        if not (
-            name:find("shop", 1, true)
-            or name:find("trade", 1, true)
-            or name:find("pass", 1, true)
-            or name:find("side", 1, true)
-            or name:find("teleport", 1, true)
-        ) then
-            return
-        end
-
-        local now =
-            os.clock()
-
-        if now - SafeNumber(CompactGameButtonPatchState.LastApply, 0)
-            < SafeNumber(CompactGameButtonPatchState.Debounce, 0.35)
-        then
-            return
-        end
-
-        CompactGameButtonPatchState.LastApply =
-            now
-
-        task.defer(function()
             pcall(function()
                 ApplyCompactLeftGameButtons()
             end)
         end)
-    end)
+    end
 end
 
 StartCompactLeftGameButtonPatch()
