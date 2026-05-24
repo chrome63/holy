@@ -19681,17 +19681,25 @@ local function RefreshSniperPetFilterDropdown()
         )
     end
 
+    -- Clear only the currently selected pets in the Pets dropdown.
+    -- This does NOT clear Watchlist 1 / Watchlist 2 saved filters.
+    if PetDropdown
+    and type(PetDropdown.SetValue) == "function" then
+
+        PetDropdown:SetValue({})
+    end
+
     MarkConfigDirty()
 
     HolyNotify(
         "Pet Filters Refreshed",
-        "Updated the selectable pet list. Saved watchlist filters were not changed.",
+        "Pet dropdown refreshed and selected pets cleared. Saved watchlist filters were not changed.",
         "refresh-cw",
         3
     )
 
     print(
-        "[Sniper] Pet filter dropdown refreshed:",
+        "[Sniper] Pet filter dropdown refreshed and cleared:",
         tostring(#PetList),
         "pets"
     )
