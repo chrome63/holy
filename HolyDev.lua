@@ -10260,10 +10260,12 @@ local function FormatSniperMonitorTime(seconds)
         )
     end
 
-    return string.format(
-        "%.1fs",
-        seconds
+    return tostring(
+    math.max(
+        1,
+        math.ceil(seconds)
     )
+) .. "s"
 end
 
 local function ResolveSniperMonitorStatus()
