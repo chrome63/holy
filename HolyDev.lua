@@ -2454,52 +2454,93 @@ end
 
 function ResolveBoothPetAge(petData, itemData, listingData)
 
-    local sources = {
-        petData,
-        itemData,
-        listingData,
-    }
+    local bestAge =
+        nil
 
-    for _, source in ipairs(sources) do
+    local bestSource =
+        "Missing"
 
-        if type(source) == "table" then
+    local function ConsiderAge(value, sourceName)
 
-            local candidates = {
-                source.Level,
-                rawget(source, "Level"),
+        local number =
+            tonumber(value)
 
-                source.level,
-                rawget(source, "level"),
+        if not number then
+            return
+        end
 
-                source.Age,
-                rawget(source, "Age"),
+        number =
+            math.floor(number)
 
-                source.age,
-                rawget(source, "age"),
+        if number <= 0 then
+            return
+        end
 
-                source.PetAge,
-                rawget(source, "PetAge"),
+        -- Grow a Garden visible pet age is normally 1-100.
+        -- Clamp out impossible junk but keep real max-age pets.
+        if number > 100 then
+            return
+        end
 
-                source.petAge,
-                rawget(source, "petAge"),
+        if not bestAge
+        or number > bestAge then
 
-                source.PetLevel,
-                rawget(source, "PetLevel"),
+            bestAge =
+                number
 
-                source.petLevel,
-                rawget(source, "petLevel"),
-            }
+            bestSource =
+                sourceName
+        end
+    end
 
-            for _, value in ipairs(candidates) do
+    local function ScanAgeSource(source, sourceName)
 
-                local number =
-                    tonumber(value)
+        if type(source) ~= "table" then
+            return
+        end
 
-                if number then
-                    return math.floor(number), "Direct"
-                end
+        -- Check Age before Level.
+        -- Some booth data can expose Level = 1 while Age is the real visible age.
+        ConsiderAge(rawget(source, "Age"), sourceName .. ".Age")
+        ConsiderAge(rawget(source, "age"), sourceName .. ".age")
+        ConsiderAge(rawget(source, "PetAge"), sourceName .. ".PetAge")
+        ConsiderAge(rawget(source, "petAge"), sourceName .. ".petAge")
+
+        ConsiderAge(rawget(source, "Level"), sourceName .. ".Level")
+        ConsiderAge(rawget(source, "level"), sourceName .. ".level")
+        ConsiderAge(rawget(source, "PetLevel"), sourceName .. ".PetLevel")
+        ConsiderAge(rawget(source, "petLevel"), sourceName .. ".petLevel")
+
+        -- One-level nested scan only.
+        -- This catches common nested data without making every scan expensive.
+        for key, value in pairs(source) do
+
+            if type(value) == "table" then
+
+                local nestedName =
+                    sourceName
+                    .. "."
+                    .. tostring(key)
+
+                ConsiderAge(rawget(value, "Age"), nestedName .. ".Age")
+                ConsiderAge(rawget(value, "age"), nestedName .. ".age")
+                ConsiderAge(rawget(value, "PetAge"), nestedName .. ".PetAge")
+                ConsiderAge(rawget(value, "petAge"), nestedName .. ".petAge")
+
+                ConsiderAge(rawget(value, "Level"), nestedName .. ".Level")
+                ConsiderAge(rawget(value, "level"), nestedName .. ".level")
+                ConsiderAge(rawget(value, "PetLevel"), nestedName .. ".PetLevel")
+                ConsiderAge(rawget(value, "petLevel"), nestedName .. ".petLevel")
             end
         end
+    end
+
+    ScanAgeSource(petData, "petData")
+    ScanAgeSource(itemData, "itemData")
+    ScanAgeSource(listingData, "listingData")
+
+    if bestAge then
+        return bestAge, bestSource
     end
 
     return nil, "Missing"
@@ -3276,6 +3317,176 @@ PurchaseState = {
     -- max time to wait for Backpack/Character replication
     InventoryTimeout = 10,
 }
+
+--==================================================
+-- LATENCY GUARD
+-- Ping display + optional adaptive inventory wait.
+--
+-- Ping always shows in Sniper Monitor when the HUD is on.
+-- Adaptive Buy Wait only changes post-buy inventory confirmation wait.
+-- It does NOT delay the BuyListing invoke.
+--==================================================
+
+LatencyGuard = {
+    AdaptiveBuyWait = false,
+
+    CurrentPing = 0,
+    LastPingReadAt = 0,
+    LastPingText = "Ping: Unknown",
+
+    FallbackBuyWait = 10,
+}
+
+function ResolveHolyPingMS()
+
+    local now =
+        os.clock()
+
+    if LatencyGuard
+    and SafeElapsed(LatencyGuard.LastPingReadAt) < 0.5
+    and tonumber(LatencyGuard.CurrentPing)
+    and LatencyGuard.CurrentPing > 0 then
+
+        return LatencyGuard.CurrentPing
+    end
+
+    local ok, value =
+        pcall(function()
+
+            local stats =
+                game:GetService("Stats")
+
+            local network =
+                stats:FindFirstChild("Network")
+
+            local serverStats =
+                network
+                and network:FindFirstChild("ServerStatsItem")
+
+            local dataPing =
+                serverStats
+                and serverStats:FindFirstChild("Data Ping")
+
+            if not dataPing then
+                return nil
+            end
+
+            return dataPing:GetValue()
+        end)
+
+    local ping =
+        ok
+        and tonumber(value)
+        or nil
+
+    if not ping then
+        return nil
+    end
+
+    ping =
+        math.max(
+            0,
+            ping
+        )
+
+    LatencyGuard.CurrentPing =
+        ping
+
+    LatencyGuard.LastPingReadAt =
+        now
+
+    return ping
+end
+
+function ResolveLatencyGuardPingLabel(ping)
+
+    ping =
+        tonumber(ping)
+
+    if not ping then
+        return "Unknown"
+    end
+
+    if ping > 400 then
+        return "Unstable Ping"
+    end
+
+    if ping > 250 then
+        return "Very High Ping"
+    end
+
+    if ping > 160 then
+        return "High Ping"
+    end
+
+    if ping > 80 then
+        return "Medium Ping"
+    end
+
+    return "Low Ping"
+end
+
+function ResolveAdaptiveBuyWait()
+
+    local fallback =
+        SafeNumber(
+            PurchaseState
+            and PurchaseState.InventoryTimeout,
+            10
+        )
+
+    if type(LatencyGuard) ~= "table"
+    or LatencyGuard.AdaptiveBuyWait ~= true then
+        return fallback
+    end
+
+    local ping =
+        ResolveHolyPingMS()
+
+    if not ping then
+        return fallback
+    end
+
+    if ping > 400 then
+        return 18
+    end
+
+    if ping > 250 then
+        return 15
+    end
+
+    if ping > 160 then
+        return 12
+    end
+
+    if ping > 80 then
+        return 10
+    end
+
+    return 8
+end
+
+function FormatLatencyGuardPingText()
+
+    local ping =
+        ResolveHolyPingMS()
+
+    if not ping then
+        return "Ping: Unknown"
+    end
+
+    return "Ping: "
+        .. tostring(math.floor(ping + 0.5))
+        .. "ms • "
+        .. ResolveLatencyGuardPingLabel(ping)
+end
+
+function FormatLatencyGuardBuyWaitText()
+
+    return "Buy Wait: "
+        .. tostring(ResolveAdaptiveBuyWait())
+        .. "s"
+end
 
 -- forward declaration because worker is defined before function body
 TryPurchaseListing = nil
@@ -6138,10 +6349,29 @@ function TryPurchaseListing(listing)
         )
     )
 
-    local confirmed, toolName, source =
-        inventoryWaiter.Wait(
-            PurchaseState.InventoryTimeout
-        )
+    local inventoryWaitTime =
+    ResolveAdaptiveBuyWait()
+
+print(
+    "[BUY WAIT]",
+    tostring(inventoryWaitTime) .. "s",
+    "| adaptive:",
+    tostring(
+        LatencyGuard
+        and LatencyGuard.AdaptiveBuyWait == true
+    ),
+    "| ping:",
+    tostring(
+        LatencyGuard
+        and math.floor(SafeNumber(LatencyGuard.CurrentPing, 0) + 0.5)
+        or "Unknown"
+    )
+)
+
+local confirmed, toolName, source =
+    inventoryWaiter.Wait(
+        inventoryWaitTime
+    )
 
 if confirmed then
 
@@ -9153,6 +9383,8 @@ SniperMonitorHUDFrame = nil
 SniperMonitorStatusLabel = nil
 SniperMonitorScannedLabel = nil
 SniperMonitorHopLabel = nil
+SniperMonitorPingLabel = nil
+SniperMonitorBuyWaitLabel = nil
 
 InventoryDetailsLabel = nil
 InventoryDetailsStatusLabel = nil
@@ -9803,7 +10035,7 @@ CreateSniperMonitorHUD = function()
     frame.BackgroundTransparency = 1
     frame.AnchorPoint = Vector2.new(0, 0)
     frame.Position = UDim2.new(0, 12, 0.26, 0)
-    frame.Size = UDim2.new(0, 240, 0, 72)
+    frame.Size = UDim2.new(0, 260, 0, 104)
     frame.Parent = screenGui
 
     SniperMonitorHUDFrame = frame
@@ -9876,7 +10108,47 @@ CreateSniperMonitorHUD = function()
     hopLabel.Text = "Next Hop: Off"
     hopLabel.Parent = frame
 
-    SniperMonitorHopLabel = hopLabel
+        SniperMonitorHopLabel = hopLabel
+
+    local pingLabel =
+        Instance.new("TextLabel")
+
+    pingLabel.Name = "Ping"
+    pingLabel.BackgroundTransparency = 1
+    pingLabel.Position = UDim2.new(0, 0, 0, 66)
+    pingLabel.Size = UDim2.new(1, 0, 0, 16)
+    pingLabel.Font = Enum.Font.GothamBold
+    pingLabel.TextSize = 12
+    pingLabel.TextColor3 = Color3.fromRGB(245, 245, 245)
+    pingLabel.TextStrokeTransparency = 0.35
+    pingLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    pingLabel.TextXAlignment = Enum.TextXAlignment.Left
+    pingLabel.Text = "Ping: Unknown"
+    pingLabel.Parent = frame
+
+    SniperMonitorPingLabel = pingLabel
+
+    local buyWaitLabel =
+        Instance.new("TextLabel")
+
+    buyWaitLabel.Name = "BuyWait"
+    buyWaitLabel.BackgroundTransparency = 1
+    buyWaitLabel.Position = UDim2.new(0, 0, 0, 82)
+    buyWaitLabel.Size = UDim2.new(1, 0, 0, 16)
+    buyWaitLabel.Font = Enum.Font.GothamBold
+    buyWaitLabel.TextSize = 12
+    buyWaitLabel.TextColor3 = Color3.fromRGB(245, 245, 245)
+    buyWaitLabel.TextStrokeTransparency = 0.35
+    buyWaitLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    buyWaitLabel.TextXAlignment = Enum.TextXAlignment.Left
+    buyWaitLabel.Text = "Buy Wait: 10s"
+    buyWaitLabel.Visible =
+        LatencyGuard
+        and LatencyGuard.AdaptiveBuyWait == true
+
+    buyWaitLabel.Parent = frame
+
+    SniperMonitorBuyWaitLabel = buyWaitLabel
 end
 
 RefreshSniperMonitorHUD = function()
@@ -9901,10 +10173,30 @@ RefreshSniperMonitorHUD = function()
             .. tostring(SniperMonitorState.PetsScanned)
     end
 
-    if SniperMonitorHopLabel then
+        if SniperMonitorHopLabel then
         SniperMonitorHopLabel.Text =
             "Next Hop: "
             .. ResolveSniperMonitorHopText()
+    end
+
+    if SniperMonitorPingLabel then
+        SniperMonitorPingLabel.Text =
+            FormatLatencyGuardPingText()
+    end
+
+    if SniperMonitorBuyWaitLabel then
+
+        local adaptiveEnabled =
+            LatencyGuard
+            and LatencyGuard.AdaptiveBuyWait == true
+
+        SniperMonitorBuyWaitLabel.Visible =
+            adaptiveEnabled
+
+        if adaptiveEnabled then
+            SniperMonitorBuyWaitLabel.Text =
+                FormatLatencyGuardBuyWaitText()
+        end
     end
 end
 
@@ -26752,6 +27044,64 @@ PerformanceModeToggle:OnChanged(function(enabled)
     end
 
     SetPerformanceMode(enabled)
+end)
+
+--==================================================
+-- LATENCY GUARD
+-- Adaptive Buy Wait changes only the post-buy
+-- inventory confirmation wait. Ping still shows
+-- in Sniper Monitor whenever Sniper Monitor is enabled.
+--==================================================
+
+SettingsBox:AddDivider({
+    Text = "Latency Guard",
+    MarginTop = 10,
+    MarginBottom = 8,
+})
+
+local AdaptiveBuyWaitToggle =
+    SettingsBox:AddToggle(
+        "AdaptiveBuyWait",
+        {
+            Text = "Adaptive Buy Wait",
+            Tooltip = "Adjusts inventory confirmation wait based on ping. The buy itself still fires instantly.",
+            Default = false,
+        }
+    )
+
+AdaptiveBuyWaitToggle:OnChanged(function(enabled)
+
+    LatencyGuard.AdaptiveBuyWait =
+        enabled == true
+
+    MarkConfigDirty()
+
+    if type(RefreshSniperMonitorHUD) == "function" then
+        pcall(RefreshSniperMonitorHUD)
+    end
+
+    if ConfigState.IsHydrating then
+        return
+    end
+
+    if enabled then
+
+        HolyNotify(
+            "Latency Guard Enabled",
+            "Adaptive Buy Wait is now active.",
+            "wifi",
+            3
+        )
+
+    else
+
+        HolyNotify(
+            "Latency Guard Disabled",
+            "Using normal fixed buy wait.",
+            "wifi-off",
+            3
+        )
+    end
 end)
 --==================================================
 -- AUTO CLOSE UI
