@@ -7032,6 +7032,100 @@ function CountVisiblePetTools()
     return total
 end
 
+function CountPersonalWebhookPetInventory()
+
+    if type(CountVisiblePetTools) == "function" then
+
+        local ok, result =
+            pcall(function()
+                return CountVisiblePetTools()
+            end)
+
+        if ok then
+            return math.max(
+                0,
+                math.floor(
+                    SafeNumber(result, 0)
+                )
+            )
+        end
+    end
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return 0
+    end
+
+    local total =
+        0
+
+    local function CountContainer(container)
+
+        if not container then
+            return
+        end
+
+        for _, child in ipairs(container:GetChildren()) do
+
+            if child:IsA("Tool") then
+
+                local name =
+                    tostring(child.Name or "")
+
+                if name:find("%[.-KG%]")
+                or name:find("%[Age%s*%d+%]") then
+                    total += 1
+                end
+            end
+        end
+    end
+
+    CountContainer(
+        player:FindFirstChild("Backpack")
+    )
+
+    CountContainer(
+        player.Character
+    )
+
+    return total
+end
+
+function FormatPersonalWebhookPetInventoryText()
+
+    local currentPets =
+        CountPersonalWebhookPetInventory()
+
+    local maxPets =
+        SniperState
+        and tonumber(SniperState.MaxPetInventory)
+        or nil
+
+    if maxPets
+    and maxPets > 0
+    and maxPets < math.huge then
+
+        return tostring(currentPets)
+            .. "/"
+            .. tostring(math.floor(maxPets))
+            .. " pets"
+    end
+
+    return tostring(currentPets)
+        .. " pets"
+end
+
+function CreatePersonalWebhookPetInventoryField()
+
+    return {
+        name = "🎒 Pet Inventory",
+        value = FormatPersonalWebhookPetInventoryText(),
+        inline = true,
+    }
+end
+
 function IsHolyPetInventoryFull()
 
     if SniperState.StopAtPetInventoryLimit ~= true then
@@ -22527,6 +22621,8 @@ local title =
                     inline = true,
                 },
 
+                CreatePersonalWebhookPetInventoryField(),
+
                 {
                     name = "🌍 Server",
                     value =
@@ -22619,6 +22715,8 @@ CreateBoothSaleEmbed = function(sale)
                     ),
                     inline = false,
                 },
+
+                CreatePersonalWebhookPetInventoryField(),
 
                 {
                     name = "Server",
@@ -26464,6 +26562,8 @@ function BuildWebhookTab()
                                         .. "||",
                                     inline = true,
                                 },
+
+                                CreatePersonalWebhookPetInventoryField(),
 
                                 {
                                     name = "Server",
