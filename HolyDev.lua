@@ -28339,11 +28339,14 @@ and sideBtns:IsA("GuiObject") then
         62
     )
 
-    local shop =
-        sideBtns:FindFirstChild("Shop")
+local shop =
+    sideBtns:FindFirstChild("Shop")
 
-    local trade =
-        sideBtns:FindFirstChild("Trade")
+local trade =
+    sideBtns:FindFirstChild("Trade")
+
+local pass =
+    sideBtns:FindFirstChild("Pass")
 
 if CompactHolyGameButtonRoot(shop, 0.55) then
     applied =
@@ -28354,25 +28357,8 @@ if CompactHolyGameButtonRoot(trade, 0.55) then
     applied =
         true
 end
-end
 
-    --==================================================
-    -- PASS
-    -- Pass is usually outside SideBtns, so search by text.
-    --==================================================
-
-    local passRoot =
-        FindHolyPassButtonRoot(playerGui)
-
-if passRoot then
-
-    MoveHolyGuiFromOriginal(
-        passRoot,
-        0,
-        62
-    )
-
-if CompactHolyGameButtonRoot(passRoot, 0.55) then
+if CompactHolyGameButtonRoot(pass, 0.55) then
     applied =
         true
 end
