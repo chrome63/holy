@@ -10396,7 +10396,7 @@ CreateSniperMonitorHUD = function()
         Vector2.new(0, 0)
 
     frame.Position =
-        UDim2.new(0, 12, 0, 164)
+    UDim2.new(0, 8, 0, 164)
 
     frame.Size =
     UDim2.new(0, 260, 0, 112)
@@ -10426,7 +10426,7 @@ SniperMonitorHUDFrame =
         1
 
     title.Position =
-    UDim2.new(0, 16, 0, 0)
+    UDim2.new(0, 0, 0, 0)
 
     title.Size =
         UDim2.new(1, 0, 0, 18)
@@ -10500,7 +10500,7 @@ SniperMonitorHUDFrame =
             1
 
         label.Position =
-    UDim2.new(0, 16, 0, yOffset)
+    UDim2.new(0, 0, 0, yOffset)
 
         label.Size =
             UDim2.new(1, 0, 0, 16)
