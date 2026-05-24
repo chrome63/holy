@@ -1465,6 +1465,51 @@ SniperState = {
     -- server history
     RecentServers = {},
 }
+
+--==================================================
+-- ANTI ALT / AVOID USERS STATE
+-- Detects blocked users after joining a server.
+-- Roblox public server API does not expose player lists,
+-- so unknown servers can only be verified after join.
+--==================================================
+
+AntiAltState = {
+    Enabled = false,
+
+    -- Raw user input from UI.
+    -- Supports: 123456789, AltUsername, AnotherAlt
+    RawInput = "",
+
+    -- Source of truth.
+    -- [userId] = true
+    BlockedUserIds = {},
+
+    -- Optional resolved names.
+    -- [username] = userId
+    ResolvedUsernames = {},
+
+    -- Usernames that failed lookup.
+    UnresolvedUsernames = {},
+
+    -- JobIds confirmed to contain blocked users.
+    -- [jobId] = true
+    BlockedJobIds = {},
+
+    ImmediateHopOnDetect = true,
+
+    CheckInterval = 2,
+    LastCheckAt = 0,
+
+    HopCooldown = 8,
+    LastHopRequestAt = 0,
+
+    LastDetectedUserId = nil,
+    LastDetectedName = nil,
+    LastDetectedAt = 0,
+
+    LastNotifyAt = 0,
+    NotifyCooldown = 8,
+}
 --==================================================
 -- SNIPER SCAN SPEED CONFIG
 -- Controls how often HOLY scans booth listings.
@@ -6671,12 +6716,18 @@ function GetRandomTradeServer()
         end
 
         if id == game.JobId then
-            return
-        end
+    return
+end
 
-        if playing >= maxPlayers then
-            return
-        end
+if AntiAltState
+and AntiAltState.BlockedJobIds
+and AntiAltState.BlockedJobIds[id] == true then
+    return
+end
+
+if playing >= maxPlayers then
+    return
+end
 
         if playing > maxAllowedPlayers then
             return
@@ -6989,6 +7040,403 @@ HolyNotify(
     task.delay(8, function()
         SniperState.Hopping = false
     end)
+end
+
+--==================================================
+-- ANTI ALT / AVOID USERS HELPERS
+--==================================================
+
+function NormalizeAntiAltToken(value)
+
+    value =
+        tostring(value or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    return value
+end
+
+function ParseAntiAltInput(raw)
+
+    raw =
+        tostring(raw or "")
+
+    local tokens = {}
+
+    raw =
+        raw:gsub("[\n\r\t;]+", ",")
+
+    for token in string.gmatch(raw, "([^,]+)") do
+
+        token =
+            NormalizeAntiAltToken(token)
+
+        if token ~= "" then
+
+            -- If user pasted space-separated ids/names inside one chunk,
+            -- split that too.
+            for part in string.gmatch(token, "%S+") do
+
+                part =
+                    NormalizeAntiAltToken(part)
+
+                if part ~= "" then
+                    table.insert(tokens, part)
+                end
+            end
+        end
+    end
+
+    return tokens
+end
+
+function ResolveAntiAltInput(raw, allowUsernameLookup)
+
+    if type(AntiAltState) ~= "table" then
+        return 0, 0
+    end
+
+    AntiAltState.RawInput =
+        tostring(raw or "")
+
+    AntiAltState.BlockedUserIds =
+        AntiAltState.BlockedUserIds
+        or {}
+
+    AntiAltState.ResolvedUsernames =
+        AntiAltState.ResolvedUsernames
+        or {}
+
+    AntiAltState.UnresolvedUsernames =
+        {}
+
+    table.clear(
+        AntiAltState.BlockedUserIds
+    )
+
+    local tokens =
+        ParseAntiAltInput(raw)
+
+    local added =
+        0
+
+    local unresolved =
+        0
+
+    for _, token in ipairs(tokens) do
+
+        local numericId =
+            tonumber(token)
+
+        if numericId
+        and numericId > 0 then
+
+            numericId =
+                math.floor(numericId)
+
+            if numericId ~= Players.LocalPlayer.UserId then
+
+                AntiAltState.BlockedUserIds[numericId] =
+                    true
+
+                added += 1
+            end
+
+        else
+
+            local cached =
+                AntiAltState.ResolvedUsernames[token]
+
+            if cached then
+
+                AntiAltState.BlockedUserIds[cached] =
+                    true
+
+                added += 1
+
+            elseif allowUsernameLookup == true then
+
+                local ok, userId =
+                    pcall(function()
+                        return Players:GetUserIdFromNameAsync(token)
+                    end)
+
+                userId =
+                    ok
+                    and tonumber(userId)
+                    or nil
+
+                if userId
+                and userId > 0
+                and userId ~= Players.LocalPlayer.UserId then
+
+                    userId =
+                        math.floor(userId)
+
+                    AntiAltState.ResolvedUsernames[token] =
+                        userId
+
+                    AntiAltState.BlockedUserIds[userId] =
+                        true
+
+                    added += 1
+
+                else
+
+                    AntiAltState.UnresolvedUsernames[token] =
+                        true
+
+                    unresolved += 1
+                end
+
+            else
+
+                AntiAltState.UnresolvedUsernames[token] =
+                    true
+
+                unresolved += 1
+            end
+        end
+    end
+
+    return added, unresolved
+end
+
+function CountAntiAltBlockedUsers()
+
+    if type(AntiAltState) ~= "table"
+    or type(AntiAltState.BlockedUserIds) ~= "table" then
+        return 0
+    end
+
+    local count =
+        0
+
+    for _ in pairs(AntiAltState.BlockedUserIds) do
+        count += 1
+    end
+
+    return count
+end
+
+function CountAntiAltBlockedServers()
+
+    if type(AntiAltState) ~= "table"
+    or type(AntiAltState.BlockedJobIds) ~= "table" then
+        return 0
+    end
+
+    local count =
+        0
+
+    for _ in pairs(AntiAltState.BlockedJobIds) do
+        count += 1
+    end
+
+    return count
+end
+
+function IsAntiAltBlockedPlayer(player)
+
+    if type(AntiAltState) ~= "table"
+    or AntiAltState.Enabled ~= true then
+        return false
+    end
+
+    if not player
+    or player == Players.LocalPlayer then
+        return false
+    end
+
+    local userId =
+        tonumber(player.UserId)
+
+    if not userId then
+        return false
+    end
+
+    return AntiAltState.BlockedUserIds
+        and AntiAltState.BlockedUserIds[userId] == true
+end
+
+function CanAntiAltServerHopNow()
+
+    if type(AntiAltState) ~= "table" then
+        return false, "AntiAlt missing"
+    end
+
+    if ScriptState
+    and ScriptState.ForceStopped then
+        return false, "ForceStopped"
+    end
+
+    if not IsTradeWorld() then
+        return false, "Not Trade World"
+    end
+
+    if SniperState
+    and SniperState.Hopping then
+        return false, "Already hopping"
+    end
+
+    if PurchaseState
+    and PurchaseState.Busy then
+        return false, "Buying"
+    end
+
+    if PurchaseQueue
+    and #PurchaseQueue > 0 then
+        return false, "Purchase queued"
+    end
+
+    local now =
+        os.clock()
+
+    local cooldown =
+        SafeNumber(
+            AntiAltState.HopCooldown,
+            8
+        )
+
+    if now - SafeNumber(AntiAltState.LastHopRequestAt, 0)
+        < cooldown
+    then
+        return false, "Cooldown"
+    end
+
+    return true, "Ready"
+end
+
+function MarkAntiAltCurrentServerBlocked(player)
+
+    if type(AntiAltState) ~= "table" then
+        return
+    end
+
+    AntiAltState.BlockedJobIds =
+        AntiAltState.BlockedJobIds
+        or {}
+
+    local jobId =
+        tostring(game.JobId or "")
+
+    if jobId ~= "" then
+        AntiAltState.BlockedJobIds[jobId] =
+            true
+    end
+
+    if SniperState
+    and SniperState.RecentServers
+    and jobId ~= "" then
+        SniperState.RecentServers[jobId] =
+            true
+    end
+
+    AntiAltState.LastDetectedUserId =
+        player
+        and player.UserId
+        or nil
+
+    AntiAltState.LastDetectedName =
+        player
+        and player.Name
+        or "Unknown"
+
+    AntiAltState.LastDetectedAt =
+        os.clock()
+end
+
+function CheckAntiAltCurrentServer(source)
+
+    if type(AntiAltState) ~= "table"
+    or AntiAltState.Enabled ~= true then
+        return false
+    end
+
+    if not IsTradeWorld() then
+        return false
+    end
+
+    if CountAntiAltBlockedUsers() <= 0 then
+        return false
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+
+        if IsAntiAltBlockedPlayer(player) then
+
+            MarkAntiAltCurrentServerBlocked(player)
+
+            local message =
+                "Detected "
+                .. tostring(player.Name)
+                .. " in this server. JobId blocked."
+
+            local now =
+                os.clock()
+
+            if now - SafeNumber(AntiAltState.LastNotifyAt, 0)
+                >= SafeNumber(AntiAltState.NotifyCooldown, 8)
+            then
+
+                AntiAltState.LastNotifyAt =
+                    now
+
+                if type(HolyNotify) == "function" then
+                    HolyNotify(
+                        "Anti Alt Detected",
+                        message,
+                        "user-x",
+                        5
+                    )
+                end
+
+                warn(
+                    "[AntiAlt]",
+                    message,
+                    "| source:",
+                    tostring(source or "check")
+                )
+            end
+
+            if AntiAltState.ImmediateHopOnDetect == true then
+
+                local canHop, reason =
+                    CanAntiAltServerHopNow()
+
+                if canHop then
+
+                    AntiAltState.LastHopRequestAt =
+                        os.clock()
+
+                    -- Force this hop to ignore normal HopDelay.
+                    if SniperState then
+                        SniperState.LastHop =
+                            os.clock()
+                            - math.max(
+                                SafeNumber(SniperState.HopDelay, 10),
+                                10
+                            )
+                    end
+
+                    task.spawn(function()
+                        ExecuteSniperHop()
+                    end)
+
+                else
+
+                    warn(
+                        "[AntiAlt] Hop delayed:",
+                        tostring(reason)
+                    )
+                end
+            end
+
+            return true, player
+        end
+    end
+
+    return false
 end
 --==================================================
 -- TEST SNIPER SCAN
@@ -7479,6 +7927,56 @@ function HolyNotify(title, description, icon, duration)
 
     return ok
 end
+
+--==================================================
+-- ANTI ALT WORKER
+-- Low-frequency server player scan.
+-- Does not inspect booths/listings and does not affect buy speed.
+--==================================================
+
+task.spawn(function()
+
+    while IsCurrentRun() do
+
+        if type(CheckAntiAltCurrentServer) == "function" then
+            pcall(function()
+                CheckAntiAltCurrentServer("worker")
+            end)
+        end
+
+        local waitTime =
+            AntiAltState
+            and SafeNumber(AntiAltState.CheckInterval, 2)
+            or 2
+
+        task.wait(
+            math.clamp(
+                waitTime,
+                1,
+                10
+            )
+        )
+    end
+end)
+
+Players.PlayerAdded:Connect(function(player)
+
+    if type(CheckAntiAltCurrentServer) ~= "function" then
+        return
+    end
+
+    task.defer(function()
+
+        task.wait(0.25)
+
+        pcall(function()
+            CheckAntiAltCurrentServer(
+                "PlayerAdded:"
+                    .. tostring(player and player.Name or "Unknown")
+            )
+        end)
+    end)
+end)
 
 HolyLoading =
     Library:CreateLoading({
@@ -11640,6 +12138,265 @@ end
 })
 
 GatewayInput:SetValue("")
+
+--==================================================
+-- ANTI ALT / AVOID USERS UI
+--==================================================
+
+local AntiAltBox
+
+if type(Tabs.Home.AddLeftCollapsibleGroupbox) == "function" then
+
+    AntiAltBox =
+        Tabs.Home:AddLeftCollapsibleGroupbox(
+            "Anti Alt / Avoid Users",
+            "user-x",
+            false
+        )
+
+else
+
+    warn("[LIB TEST] Collapsible Anti Alt unavailable, using normal groupbox")
+
+    AntiAltBox =
+        Tabs.Home:AddLeftGroupbox(
+            "Anti Alt / Avoid Users",
+            "user-x"
+        )
+end
+
+local AntiAltStatusLabel =
+    AntiAltBox:AddLabel(
+        "Status: disabled",
+        true
+    )
+
+local function RefreshAntiAltStatusLabel()
+
+    if not AntiAltStatusLabel then
+        return
+    end
+
+    local enabled =
+        AntiAltState
+        and AntiAltState.Enabled == true
+
+    local userCount =
+        CountAntiAltBlockedUsers()
+
+    local serverCount =
+        CountAntiAltBlockedServers()
+
+    local lastName =
+        AntiAltState
+        and AntiAltState.LastDetectedName
+        or nil
+
+    local text =
+        "Status: "
+        .. (
+            enabled
+            and "enabled"
+            or "disabled"
+        )
+        .. " • users "
+        .. tostring(userCount)
+        .. " • blocked servers "
+        .. tostring(serverCount)
+
+    if lastName
+    and tostring(lastName) ~= "" then
+
+        text =
+            text
+            .. "\nLast detected: "
+            .. tostring(lastName)
+    end
+
+    AntiAltStatusLabel:SetText(text)
+end
+
+local AntiAltInput =
+    AntiAltBox:AddInput(
+        "AntiAltAvoidUsers",
+        {
+            Text = "Avoid UserIds / Usernames",
+            Default = "",
+            Placeholder = "123456789, AltUsername",
+            AllowEmpty = true,
+            ClearTextOnFocus = false,
+            Finished = true,
+            Tooltip = "Comma or space separated UserIds/usernames. UserIds work instantly. Usernames need Resolve Usernames.",
+        }
+    )
+
+AntiAltInput:OnChanged(function(value)
+
+    if AntiAltState then
+
+        AntiAltState.RawInput =
+            tostring(value or "")
+
+        ResolveAntiAltInput(
+            AntiAltState.RawInput,
+            false
+        )
+    end
+
+    RefreshAntiAltStatusLabel()
+
+    MarkConfigDirty()
+end)
+
+local AntiAltToggle =
+    AntiAltBox:AddToggle(
+        "AntiAltEnabled",
+        {
+            Text = "🛡️ Enable Anti Alt",
+            Default = false,
+            Tooltip = "Checks the current server for avoided users and hops away when detected.",
+        }
+    )
+
+AntiAltToggle:OnChanged(function(v)
+
+    if AntiAltState then
+
+        AntiAltState.Enabled =
+            v == true
+
+        ResolveAntiAltInput(
+            AntiAltInput
+            and AntiAltInput.Value
+            or AntiAltState.RawInput,
+            false
+        )
+    end
+
+    RefreshAntiAltStatusLabel()
+
+    MarkConfigDirty()
+
+    if v == true
+    and type(CheckAntiAltCurrentServer) == "function" then
+
+        task.defer(function()
+            CheckAntiAltCurrentServer("toggle")
+        end)
+    end
+end)
+
+local AntiAltImmediateHopToggle =
+    AntiAltBox:AddToggle(
+        "AntiAltImmediateHop",
+        {
+            Text = "🚀 Hop If Detected",
+            Default = true,
+            Tooltip = "If an avoided user is in the server, HOLY will hop when no buy is active.",
+        }
+    )
+
+AntiAltImmediateHopToggle:OnChanged(function(v)
+
+    if AntiAltState then
+        AntiAltState.ImmediateHopOnDetect =
+            v == true
+    end
+
+    RefreshAntiAltStatusLabel()
+
+    MarkConfigDirty()
+end)
+
+AntiAltBox:AddButton({
+    Text = "🔎 Resolve Usernames",
+    Tooltip = "Converts usernames in the input into UserIds. UserIds do not need this.",
+
+    Func = function()
+
+        local raw =
+            AntiAltInput
+            and AntiAltInput.Value
+            or ""
+
+        local added, unresolved =
+            ResolveAntiAltInput(
+                raw,
+                true
+            )
+
+        RefreshAntiAltStatusLabel()
+
+        HolyNotify(
+            "Anti Alt Updated",
+            "Resolved "
+                .. tostring(added)
+                .. " user(s). Unresolved: "
+                .. tostring(unresolved),
+            "user-check",
+            4
+        )
+    end,
+})
+
+AntiAltBox:AddButton({
+    Text = "🧪 Check Current Server",
+    Tooltip = "Manually checks if an avoided user is in this server.",
+
+    Func = function()
+
+        ResolveAntiAltInput(
+            AntiAltInput
+            and AntiAltInput.Value
+            or "",
+            false
+        )
+
+        local detected =
+            false
+
+        if type(CheckAntiAltCurrentServer) == "function" then
+            detected =
+                CheckAntiAltCurrentServer("manual") == true
+        end
+
+        RefreshAntiAltStatusLabel()
+
+        if not detected then
+
+            HolyNotify(
+                "Anti Alt Check",
+                "No avoided users detected in this server.",
+                "shield-check",
+                3
+            )
+        end
+    end,
+})
+
+AntiAltBox:AddButton({
+    Text = "🧹 Clear Blocked Servers",
+    Tooltip = "Clears JobIds that were blocked after detecting avoided users.",
+
+    Func = function()
+
+        if AntiAltState
+        and type(AntiAltState.BlockedJobIds) == "table" then
+            table.clear(AntiAltState.BlockedJobIds)
+        end
+
+        RefreshAntiAltStatusLabel()
+
+        HolyNotify(
+            "Anti Alt",
+            "Cleared detected blocked server list.",
+            "trash",
+            3
+        )
+    end,
+})
+
+RefreshAntiAltStatusLabel()
 
 --==================================================
 -- GARDEN MODE HOME GATE
