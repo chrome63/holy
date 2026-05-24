@@ -28147,6 +28147,65 @@ function HideHolyGameButtonText(root)
     end
 end
 
+function CompactHolyGameButtonRoot(button, width, height)
+
+    if not button
+    or not button:IsA("GuiObject") then
+        return false
+    end
+
+    button.Size =
+        UDim2.new(
+            0,
+            SafeNumber(width, 42),
+            0,
+            SafeNumber(height, 34)
+        )
+
+    button.ClipsDescendants =
+        true
+
+    local scale =
+        button:FindFirstChild("HolyCompactScale")
+
+    if scale then
+        scale:Destroy()
+    end
+
+    HideHolyGameButtonText(button)
+
+    for _, obj in ipairs(button:GetDescendants()) do
+
+        if obj:IsA("ImageLabel")
+        or obj:IsA("ImageButton") then
+
+            obj.Size =
+                UDim2.new(
+                    0,
+                    26,
+                    0,
+                    26
+                )
+
+            obj.Position =
+                UDim2.new(
+                    0.5,
+                    -13,
+                    0.5,
+                    -13
+                )
+
+            obj.AnchorPoint =
+                Vector2.new(0, 0)
+
+            obj.BackgroundTransparency =
+                1
+        end
+    end
+
+    return true
+end
+
 function FindHolyPassButtonRoot(playerGui)
 
     if not playerGui then
@@ -28294,25 +28353,33 @@ function ApplyCompactLeftGameButtons()
         hudUI
         and hudUI:FindFirstChild("SideBtns")
 
-    if sideBtns
-    and sideBtns:IsA("GuiObject") then
+if sideBtns
+and sideBtns:IsA("GuiObject") then
 
-        ApplyHolyCompactScale(
-            sideBtns,
-            0.72
-        )
+    -- Move the whole stack lower, but do NOT scale the full container.
+    -- Scaling the container made the icon buttons look huge/weird.
+    MoveHolyGuiFromOriginal(
+        sideBtns,
+        0,
+        62
+    )
 
-        MoveHolyGuiFromOriginal(
-            sideBtns,
-            0,
-            62
-        )
+    local shop =
+        sideBtns:FindFirstChild("Shop")
 
-HideHolyGameButtonText(sideBtns)
+    local trade =
+        sideBtns:FindFirstChild("Trade")
 
-applied =
-    true
+    if CompactHolyGameButtonRoot(shop, 44, 34) then
+        applied =
+            true
     end
+
+    if CompactHolyGameButtonRoot(trade, 44, 34) then
+        applied =
+            true
+    end
+end
 
     --==================================================
     -- PASS
@@ -28322,24 +28389,19 @@ applied =
     local passRoot =
         FindHolyPassButtonRoot(playerGui)
 
-    if passRoot then
+if passRoot then
 
-        ApplyHolyCompactScale(
-            passRoot,
-            0.70
-        )
+    MoveHolyGuiFromOriginal(
+        passRoot,
+        0,
+        62
+    )
 
-        MoveHolyGuiFromOriginal(
-            passRoot,
-            0,
-            62
-        )
-
-        HideHolyGameButtonText(passRoot)
-
-applied =
-    true
+    if CompactHolyGameButtonRoot(passRoot, 56, 42) then
+        applied =
+            true
     end
+end
 
     return applied
 end
