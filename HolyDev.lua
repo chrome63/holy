@@ -10399,98 +10399,22 @@ CreateSniperMonitorHUD = function()
         UDim2.new(0, 12, 0, 164)
 
     frame.Size =
-        UDim2.new(0, 274, 0, 126)
+    UDim2.new(0, 260, 0, 112)
 
-    frame.BackgroundColor3 =
-        Color3.fromRGB(10, 8, 18)
+frame.BackgroundTransparency =
+    1
 
-    frame.BackgroundTransparency =
-        0.08
+frame.BorderSizePixel =
+    0
 
-    frame.BorderSizePixel =
-        0
+frame.Visible =
+    VisualState.SniperMonitorHUD == true
 
-    frame.Visible =
-        VisualState.SniperMonitorHUD == true
+frame.Parent =
+    screenGui
 
-    frame.Parent =
-        screenGui
-
-    SniperMonitorHUDFrame =
-        frame
-
-    local corner =
-        Instance.new("UICorner")
-
-    corner.CornerRadius =
-        UDim.new(0, 10)
-
-    corner.Parent =
-        frame
-
-    local stroke =
-        Instance.new("UIStroke")
-
-    stroke.Name =
-        "HolySniperMonitorStroke"
-
-    stroke.ApplyStrokeMode =
-        Enum.ApplyStrokeMode.Border
-
-    stroke.Color =
-        Color3.fromRGB(145, 95, 255)
-
-    stroke.Thickness =
-        1
-
-    stroke.Transparency =
-        0.22
-
-    stroke.Parent =
-        frame
-
-    local gradient =
-        Instance.new("UIGradient")
-
-    gradient.Name =
-        "HolySniperMonitorGradient"
-
-    gradient.Color =
-        ColorSequence.new({
-            ColorSequenceKeypoint.new(
-                0,
-                Color3.fromRGB(18, 14, 31)
-            ),
-
-            ColorSequenceKeypoint.new(
-                1,
-                Color3.fromRGB(8, 8, 12)
-            ),
-        })
-
-    gradient.Rotation =
-        90
-
-    gradient.Parent =
-        frame
-
-    local padding =
-        Instance.new("UIPadding")
-
-    padding.PaddingTop =
-        UDim.new(0, 8)
-
-    padding.PaddingBottom =
-        UDim.new(0, 8)
-
-    padding.PaddingLeft =
-        UDim.new(0, 10)
-
-    padding.PaddingRight =
-        UDim.new(0, 10)
-
-    padding.Parent =
-        frame
+SniperMonitorHUDFrame =
+    frame
 
     local title =
         Instance.new("TextLabel")
@@ -10502,7 +10426,7 @@ CreateSniperMonitorHUD = function()
         1
 
     title.Position =
-        UDim2.new(0, 0, 0, 0)
+    UDim2.new(0, 16, 0, 0)
 
     title.Size =
         UDim2.new(1, 0, 0, 18)
@@ -10564,30 +10488,6 @@ CreateSniperMonitorHUD = function()
     titleGradient.Parent =
         title
 
-    local divider =
-        Instance.new("Frame")
-
-    divider.Name =
-        "Divider"
-
-    divider.BackgroundColor3 =
-        Color3.fromRGB(145, 95, 255)
-
-    divider.BackgroundTransparency =
-        0.35
-
-    divider.BorderSizePixel =
-        0
-
-    divider.Position =
-        UDim2.new(0, 0, 0, 23)
-
-    divider.Size =
-        UDim2.new(1, 0, 0, 1)
-
-    divider.Parent =
-        frame
-
     local function CreateMonitorLine(name, yOffset, defaultText)
 
         local label =
@@ -10600,7 +10500,7 @@ CreateSniperMonitorHUD = function()
             1
 
         label.Position =
-            UDim2.new(0, 0, 0, yOffset)
+    UDim2.new(0, 16, 0, yOffset)
 
         label.Size =
             UDim2.new(1, 0, 0, 16)
