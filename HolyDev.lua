@@ -10653,7 +10653,6 @@ RefreshSniperMonitorHUD = function()
         end
     end
 end
-RefreshSniperMonitorHUD
 end
 --==================================================
 -- [7] BASIC UI (CONTROL ONLY)
