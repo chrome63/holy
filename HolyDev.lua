@@ -10030,7 +10030,7 @@ CreateServerInfoHUD = function()
     frame.BackgroundTransparency = 1
     frame.AnchorPoint = Vector2.new(0, 0)
     frame.Position = UDim2.new(0, 12, 0, 112)
-    frame.Size = UDim2.new(0, 260, 0, 88)
+    frame.Size = UDim2.new(0, 260, 0, 56)
     frame.Parent = screenGui
 
     ServerInfoHUDFrame = frame
@@ -10084,7 +10084,8 @@ ServerInfoSessionLabel = sessionLabel
     uptimeLabel.TextStrokeTransparency = 0.35
     uptimeLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
     uptimeLabel.TextXAlignment = Enum.TextXAlignment.Left
-    uptimeLabel.Text = "Server Uptime: Checking"
+    uptimeLabel.Text = ""
+    uptimeLabel.Visible = false
     uptimeLabel.Parent = frame
 
     ServerInfoUptimeLabel = uptimeLabel
@@ -10094,7 +10095,7 @@ ServerInfoSessionLabel = sessionLabel
 
     playersLabel.Name = "Players"
     playersLabel.BackgroundTransparency = 1
-    playersLabel.Position = UDim2.new(0, 0, 0, 51)
+    playersLabel.Position = UDim2.new(0, 0, 0, 34)
     playersLabel.Size = UDim2.new(1, 0, 0, 17)
     playersLabel.Font = Enum.Font.GothamBold
     playersLabel.TextSize = 12
@@ -10120,7 +10121,8 @@ ServerInfoSessionLabel = sessionLabel
     jobIdLabel.TextStrokeTransparency = 0.35
     jobIdLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
     jobIdLabel.TextXAlignment = Enum.TextXAlignment.Left
-    jobIdLabel.Text = "JobId: Unknown"
+    jobIdLabel.Text = ""
+    jobIdLabel.Visible = false
     jobIdLabel.Parent = frame
 
 ServerInfoJobIdLabel = jobIdLabel
@@ -10151,22 +10153,28 @@ RefreshServerInfoHUD = function()
     end
 
     if ServerInfoUptimeLabel then
-        ServerInfoUptimeLabel.Text =
-            "Server Uptime: "
-            .. ResolveServerUptimeText()
-    end
+    ServerInfoUptimeLabel.Visible =
+        false
 
-    if ServerInfoPlayersLabel then
-        ServerInfoPlayersLabel.Text =
-            "Players: "
-            .. ResolveServerPlayersText()
-    end
+    ServerInfoUptimeLabel.Text =
+        ""
+end
 
-    if ServerInfoJobIdLabel then
-        ServerInfoJobIdLabel.Text =
-            "JobId: "
-            .. ResolveShortJobId()
-    end
+if ServerInfoPlayersLabel then
+    ServerInfoPlayersLabel.Text =
+        "Players: "
+        .. ResolveServerPlayersText()
+        .. " • JobId: "
+        .. ResolveShortJobId()
+end
+
+if ServerInfoJobIdLabel then
+    ServerInfoJobIdLabel.Visible =
+        false
+
+    ServerInfoJobIdLabel.Text =
+        ""
+end
 end
 
 --==================================================
@@ -10282,7 +10290,7 @@ CreateSniperMonitorHUD = function()
     frame.Name = "Frame"
     frame.BackgroundTransparency = 1
     frame.AnchorPoint = Vector2.new(0, 0)
-    frame.Position = UDim2.new(0, 12, 0, 204)
+    frame.Position = UDim2.new(0, 12, 0, 178)
     frame.Size = UDim2.new(0, 260, 0, 104)
     frame.Parent = screenGui
 
