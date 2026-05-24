@@ -22621,7 +22621,14 @@ local title =
                     inline = true,
                 },
 
-                CreatePersonalWebhookPetInventoryField(),
+                {
+    name = "🎒 Pet Inventory",
+    value =
+        type(FormatPersonalWebhookPetInventoryText) == "function"
+        and FormatPersonalWebhookPetInventoryText()
+        or "Unavailable",
+    inline = true,
+},
 
                 {
                     name = "🌍 Server",
@@ -22716,7 +22723,14 @@ CreateBoothSaleEmbed = function(sale)
                     inline = false,
                 },
 
-                CreatePersonalWebhookPetInventoryField(),
+                {
+    name = "🎒 Pet Inventory",
+    value =
+        type(FormatPersonalWebhookPetInventoryText) == "function"
+        and FormatPersonalWebhookPetInventoryText()
+        or "Unavailable",
+    inline = true,
+},
 
                 {
                     name = "Server",
