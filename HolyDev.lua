@@ -2460,7 +2460,7 @@ function ResolveBoothPetAge(petData, itemData, listingData)
     local bestSource =
         "Missing"
 
-    local function ConsiderAge(value, sourceName)
+    local function ReadAgeValue(value, sourceName)
 
         local number =
             tonumber(value)
@@ -2476,8 +2476,7 @@ function ResolveBoothPetAge(petData, itemData, listingData)
             return
         end
 
-        -- Grow a Garden visible pet age is normally 1-100.
-        -- Clamp out impossible junk but keep real max-age pets.
+        -- Grow a Garden visible age/level is normally 1-100.
         if number > 100 then
             return
         end
@@ -2493,26 +2492,35 @@ function ResolveBoothPetAge(petData, itemData, listingData)
         end
     end
 
-    local function ScanAgeSource(source, sourceName)
+    local function ScanTable(source, sourceName, depth)
 
         if type(source) ~= "table" then
             return
         end
 
-        -- Check Age before Level.
-        -- Some booth data can expose Level = 1 while Age is the real visible age.
-        ConsiderAge(rawget(source, "Age"), sourceName .. ".Age")
-        ConsiderAge(rawget(source, "age"), sourceName .. ".age")
-        ConsiderAge(rawget(source, "PetAge"), sourceName .. ".PetAge")
-        ConsiderAge(rawget(source, "petAge"), sourceName .. ".petAge")
+        depth =
+            tonumber(depth)
+            or 0
 
-        ConsiderAge(rawget(source, "Level"), sourceName .. ".Level")
-        ConsiderAge(rawget(source, "level"), sourceName .. ".level")
-        ConsiderAge(rawget(source, "PetLevel"), sourceName .. ".PetLevel")
-        ConsiderAge(rawget(source, "petLevel"), sourceName .. ".petLevel")
+        -- Direct known fields.
+        ReadAgeValue(rawget(source, "Level"), sourceName .. ".Level")
+        ReadAgeValue(rawget(source, "level"), sourceName .. ".level")
 
-        -- One-level nested scan only.
-        -- This catches common nested data without making every scan expensive.
+        ReadAgeValue(rawget(source, "Age"), sourceName .. ".Age")
+        ReadAgeValue(rawget(source, "age"), sourceName .. ".age")
+
+        ReadAgeValue(rawget(source, "PetLevel"), sourceName .. ".PetLevel")
+        ReadAgeValue(rawget(source, "petLevel"), sourceName .. ".petLevel")
+
+        ReadAgeValue(rawget(source, "PetAge"), sourceName .. ".PetAge")
+        ReadAgeValue(rawget(source, "petAge"), sourceName .. ".petAge")
+
+        -- Only scan a few nested tables.
+        -- This catches itemData.PetData.Level without making scanning expensive.
+        if depth >= 2 then
+            return
+        end
+
         for key, value in pairs(source) do
 
             if type(value) == "table" then
@@ -2522,22 +2530,21 @@ function ResolveBoothPetAge(petData, itemData, listingData)
                     .. "."
                     .. tostring(key)
 
-                ConsiderAge(rawget(value, "Age"), nestedName .. ".Age")
-                ConsiderAge(rawget(value, "age"), nestedName .. ".age")
-                ConsiderAge(rawget(value, "PetAge"), nestedName .. ".PetAge")
-                ConsiderAge(rawget(value, "petAge"), nestedName .. ".petAge")
-
-                ConsiderAge(rawget(value, "Level"), nestedName .. ".Level")
-                ConsiderAge(rawget(value, "level"), nestedName .. ".level")
-                ConsiderAge(rawget(value, "PetLevel"), nestedName .. ".PetLevel")
-                ConsiderAge(rawget(value, "petLevel"), nestedName .. ".petLevel")
+                ScanTable(
+                    value,
+                    nestedName,
+                    depth + 1
+                )
             end
         end
     end
 
-    ScanAgeSource(petData, "petData")
-    ScanAgeSource(itemData, "itemData")
-    ScanAgeSource(listingData, "listingData")
+    -- Priority order:
+    -- petData first because console confirmed:
+    -- petData.Level = visible Age.
+    ScanTable(petData, "petData", 0)
+    ScanTable(itemData, "itemData", 0)
+    ScanTable(listingData, "listingData", 0)
 
     if bestAge then
         return bestAge, bestSource
@@ -2545,7 +2552,6 @@ function ResolveBoothPetAge(petData, itemData, listingData)
 
     return nil, "Missing"
 end
-
 function ResolveSeller(userId)
 
     if not userId then
@@ -2965,14 +2971,19 @@ local age, ageSource =
     )
 
 if not age then
-    warn(
-        "[MARKET TRACKER] Missing pet age:",
-        tostring(petName),
-        "| ItemId:",
-        tostring(itemId)
-    )
+    ageSource =
+        "Missing"
+end
 
-    continue
+-- Some booth listing snapshots do not expose visible Age/Level.
+-- Do NOT skip the listing because sniper/market tracker can still
+-- use pet name, price, mutation, and weight.
+if not age then
+    age =
+        nil
+
+    ageSource =
+        "Missing"
 end
 
 if petName == "Seal"
@@ -5210,11 +5221,13 @@ function BuildMarketTrackerTitle(petName, age, displayWeight, config)
         and tostring(config.Emoji or "🔎")
         or "🔎"
 
-    local ageText =
-    tostring(
-        tonumber(age)
-        or 0
-    )
+    local numericAge =
+    tonumber(age)
+
+local ageText =
+    numericAge
+    and tostring(math.floor(numericAge))
+    or "Unknown"
 
     local weightText =
         FormatMarketTrackerWeightKG(
