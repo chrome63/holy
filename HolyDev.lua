@@ -9390,6 +9390,9 @@ ServerInfoHUDGui = nil
 ServerInfoHUDFrame = nil
 ServerInfoVersionLabel = nil
 ServerInfoSessionLabel = nil
+ServerInfoUptimeLabel = nil
+ServerInfoPlayersLabel = nil
+ServerInfoJobIdLabel = nil
 
 SniperMonitorHUDGui = nil
 SniperMonitorHUDFrame = nil
@@ -9800,6 +9803,165 @@ local function FormatServerInfoSessionTime(seconds)
     )
 end
 
+local function FormatServerInfoDuration(seconds)
+
+    seconds =
+        math.max(
+            0,
+            math.floor(
+                tonumber(seconds)
+                or 0
+            )
+        )
+
+    local days =
+        math.floor(seconds / 86400)
+
+    local hours =
+        math.floor((seconds % 86400) / 3600)
+
+    local minutes =
+        math.floor((seconds % 3600) / 60)
+
+    local secs =
+        seconds % 60
+
+    if days > 0 then
+        return string.format(
+            "%dd %02dh %02dm",
+            days,
+            hours,
+            minutes
+        )
+    end
+
+    if hours > 0 then
+        return string.format(
+            "%dh %02dm %02ds",
+            hours,
+            minutes,
+            secs
+        )
+    end
+
+    return string.format(
+        "%dm %02ds",
+        minutes,
+        secs
+    )
+end
+
+local function ResolveServerUptimeText()
+
+    -- True server uptime needs a server-replicated start timestamp
+    -- or a callable server command. Cmdr's client uptime module is
+    -- only metadata right now, so this function is future-proofed.
+
+    local possibleStartTimes = {}
+
+    local function AddCandidate(value)
+
+        local number =
+            tonumber(value)
+
+        if not number then
+            return
+        end
+
+        table.insert(
+            possibleStartTimes,
+            number
+        )
+    end
+
+    local roots = {
+        game,
+        workspace,
+        ReplicatedStorage,
+        game:GetService("ReplicatedFirst"),
+    }
+
+    local attributeNames = {
+        "ServerStartTime",
+        "ServerStartedAt",
+        "ServerStartTimestamp",
+        "ServerLaunchTime",
+        "ServerBootTime",
+        "StartedAt",
+        "StartTime",
+        "BootTime",
+        "LaunchTime",
+    }
+
+    for _, root in ipairs(roots) do
+
+        if root then
+
+            for _, attributeName in ipairs(attributeNames) do
+
+                AddCandidate(
+                    root:GetAttribute(attributeName)
+                )
+            end
+        end
+    end
+
+    for _, startTime in ipairs(possibleStartTimes) do
+
+        local now =
+            os.time()
+
+        -- Unix timestamp style.
+        if startTime > 1000000000
+        and startTime <= now then
+
+            return FormatServerInfoDuration(
+                now - startTime
+            )
+        end
+
+        -- os.clock style fallback.
+        if startTime > 0
+        and startTime < os.clock() then
+
+            return FormatServerInfoDuration(
+                os.clock() - startTime
+            )
+        end
+    end
+
+    return "Unavailable"
+end
+
+local function ResolveServerPlayersText()
+
+    local current =
+        #Players:GetPlayers()
+
+    local maxPlayers =
+        Players.MaxPlayers
+
+    return tostring(current)
+        .. "/"
+        .. tostring(maxPlayers)
+end
+
+local function ResolveShortJobId()
+
+    local jobId =
+        tostring(game.JobId or "")
+
+    if jobId == "" then
+        return "Unknown"
+    end
+
+    if #jobId <= 8 then
+        return jobId
+    end
+
+    return jobId:sub(1, 8)
+end
+
 local function FindServerVersionText()
 
     local playerGui =
@@ -9868,7 +10030,7 @@ CreateServerInfoHUD = function()
     frame.BackgroundTransparency = 1
     frame.AnchorPoint = Vector2.new(0, 0)
     frame.Position = UDim2.new(0, 12, 0, 155)
-    frame.Size = UDim2.new(0, 240, 0, 38)
+    frame.Size = UDim2.new(0, 260, 0, 88)
     frame.Parent = screenGui
 
     ServerInfoHUDFrame = frame
@@ -9907,7 +10069,62 @@ CreateServerInfoHUD = function()
     sessionLabel.Text = "SessionTime: 0m 00s"
     sessionLabel.Parent = frame
 
-    ServerInfoSessionLabel = sessionLabel
+ServerInfoSessionLabel = sessionLabel
+
+    local uptimeLabel =
+        Instance.new("TextLabel")
+
+    uptimeLabel.Name = "ServerUptime"
+    uptimeLabel.BackgroundTransparency = 1
+    uptimeLabel.Position = UDim2.new(0, 0, 0, 34)
+    uptimeLabel.Size = UDim2.new(1, 0, 0, 17)
+    uptimeLabel.Font = Enum.Font.GothamBold
+    uptimeLabel.TextSize = 12
+    uptimeLabel.TextColor3 = Color3.fromRGB(245, 245, 245)
+    uptimeLabel.TextStrokeTransparency = 0.35
+    uptimeLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    uptimeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    uptimeLabel.Text = "Server Uptime: Checking"
+    uptimeLabel.Parent = frame
+
+    ServerInfoUptimeLabel = uptimeLabel
+
+    local playersLabel =
+        Instance.new("TextLabel")
+
+    playersLabel.Name = "Players"
+    playersLabel.BackgroundTransparency = 1
+    playersLabel.Position = UDim2.new(0, 0, 0, 51)
+    playersLabel.Size = UDim2.new(1, 0, 0, 17)
+    playersLabel.Font = Enum.Font.GothamBold
+    playersLabel.TextSize = 12
+    playersLabel.TextColor3 = Color3.fromRGB(245, 245, 245)
+    playersLabel.TextStrokeTransparency = 0.35
+    playersLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    playersLabel.TextXAlignment = Enum.TextXAlignment.Left
+    playersLabel.Text = "Players: Checking"
+    playersLabel.Parent = frame
+
+    ServerInfoPlayersLabel = playersLabel
+
+    local jobIdLabel =
+        Instance.new("TextLabel")
+
+    jobIdLabel.Name = "JobId"
+    jobIdLabel.BackgroundTransparency = 1
+    jobIdLabel.Position = UDim2.new(0, 0, 0, 68)
+    jobIdLabel.Size = UDim2.new(1, 0, 0, 17)
+    jobIdLabel.Font = Enum.Font.GothamBold
+    jobIdLabel.TextSize = 12
+    jobIdLabel.TextColor3 = Color3.fromRGB(245, 245, 245)
+    jobIdLabel.TextStrokeTransparency = 0.35
+    jobIdLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    jobIdLabel.TextXAlignment = Enum.TextXAlignment.Left
+    jobIdLabel.Text = "JobId: Unknown"
+    jobIdLabel.Parent = frame
+
+ServerInfoJobIdLabel = jobIdLabel
+
 end
 
 RefreshServerInfoHUD = function()
@@ -9931,6 +10148,24 @@ RefreshServerInfoHUD = function()
             .. FormatServerInfoSessionTime(
                 SafeElapsed(ServerInfoStartedAt)
             )
+    end
+
+    if ServerInfoUptimeLabel then
+        ServerInfoUptimeLabel.Text =
+            "Server Uptime: "
+            .. ResolveServerUptimeText()
+    end
+
+    if ServerInfoPlayersLabel then
+        ServerInfoPlayersLabel.Text =
+            "Players: "
+            .. ResolveServerPlayersText()
+    end
+
+    if ServerInfoJobIdLabel then
+        ServerInfoJobIdLabel.Text =
+            "JobId: "
+            .. ResolveShortJobId()
     end
 end
 
