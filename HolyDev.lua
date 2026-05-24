@@ -10047,7 +10047,7 @@ CreateSniperMonitorHUD = function()
     frame.Name = "Frame"
     frame.BackgroundTransparency = 1
     frame.AnchorPoint = Vector2.new(0, 0)
-    frame.Position = UDim2.new(0, 12, 0, 330)
+    frame.Position = UDim2.new(0, 12, 0, 190)
     frame.Size = UDim2.new(0, 260, 0, 104)
     frame.Parent = screenGui
 
