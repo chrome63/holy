@@ -28109,7 +28109,11 @@ function HideHolyGameButtonText(root)
         return
     end
 
-    for _, obj in ipairs(root:GetDescendants()) do
+    local function HideTextObject(obj)
+
+        if not obj then
+            return
+        end
 
         if obj:IsA("TextLabel")
         or obj:IsA("TextButton") then
@@ -28123,9 +28127,23 @@ function HideHolyGameButtonText(root)
             obj.TextStrokeTransparency =
                 1
 
-            obj.BackgroundTransparency =
+            obj.TextSize =
                 1
+
+            obj.TextScaled =
+                false
+
+            obj.TextWrapped =
+                false
         end
+    end
+
+    -- Important:
+    -- hide the root too, because Shop/Trade/Pass can be TextButtons themselves.
+    HideTextObject(root)
+
+    for _, obj in ipairs(root:GetDescendants()) do
+        HideTextObject(obj)
     end
 end
 
@@ -28233,7 +28251,7 @@ function ApplyCompactTradeTopButtons(playerGui)
                     UDim.new(0, 6)
             end
 
-            HideHolyGameButtonText(sideBtns)
+StyleHolyGameButtonText(button)
 
 applied =
     true
@@ -28290,10 +28308,10 @@ function ApplyCompactLeftGameButtons()
             62
         )
 
-        StyleHolyGameButtonText(sideBtns)
+HideHolyGameButtonText(sideBtns)
 
-        applied =
-            true
+applied =
+    true
     end
 
     --==================================================
