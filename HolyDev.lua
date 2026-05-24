@@ -28147,61 +28147,36 @@ function HideHolyGameButtonText(root)
     end
 end
 
-function CompactHolyGameButtonRoot(button, width, height)
+function CompactHolyGameButtonRoot(button, scaleValue)
 
     if not button
     or not button:IsA("GuiObject") then
         return false
     end
 
-    button.Size =
-        UDim2.new(
-            0,
-            SafeNumber(width, 42),
-            0,
-            SafeNumber(height, 34)
-        )
-
+    -- Do NOT clip/reposition descendants.
+    -- The game buttons are built from nested images/frames.
+    -- Scaling the root preserves the original look.
     button.ClipsDescendants =
-        true
+        false
 
     local scale =
-        button:FindFirstChild("HolyCompactScale")
+        button:FindFirstChild("HolyTinyScale")
 
-    if scale then
-        scale:Destroy()
+    if not scale then
+
+        scale =
+            Instance.new("UIScale")
+
+        scale.Name =
+            "HolyTinyScale"
+
+        scale.Parent =
+            button
     end
 
-    HideHolyGameButtonText(button)
-
-    for _, obj in ipairs(button:GetDescendants()) do
-
-        if obj:IsA("ImageLabel")
-        or obj:IsA("ImageButton") then
-
-            obj.Size =
-                UDim2.new(
-                    0,
-                    26,
-                    0,
-                    26
-                )
-
-            obj.Position =
-                UDim2.new(
-                    0.5,
-                    -13,
-                    0.5,
-                    -13
-                )
-
-            obj.AnchorPoint =
-                Vector2.new(0, 0)
-
-            obj.BackgroundTransparency =
-                1
-        end
-    end
+    scale.Scale =
+        SafeNumber(scaleValue, 0.55)
 
     return true
 end
@@ -28370,15 +28345,15 @@ and sideBtns:IsA("GuiObject") then
     local trade =
         sideBtns:FindFirstChild("Trade")
 
-    if CompactHolyGameButtonRoot(shop, 44, 34) then
-        applied =
-            true
-    end
+if CompactHolyGameButtonRoot(shop, 0.55) then
+    applied =
+        true
+end
 
-    if CompactHolyGameButtonRoot(trade, 44, 34) then
-        applied =
-            true
-    end
+if CompactHolyGameButtonRoot(trade, 0.55) then
+    applied =
+        true
+end
 end
 
     --==================================================
@@ -28397,10 +28372,10 @@ if passRoot then
         62
     )
 
-    if CompactHolyGameButtonRoot(passRoot, 56, 42) then
-        applied =
-            true
-    end
+if CompactHolyGameButtonRoot(passRoot, 0.55) then
+    applied =
+        true
+end
 end
 
     return applied
