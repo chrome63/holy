@@ -28260,35 +28260,38 @@ function ApplyCompactTradeTopButtons(playerGui)
         if button
         and button:IsA("GuiObject") then
 
-            button.Size =
-                UDim2.new(
-                    0,
-                    70,
-                    0,
-                    28
-                )
+            -- Keep original game styling.
+            -- Only make the button visually smaller.
+            button.ClipsDescendants =
+                false
 
+            local scale =
+                button:FindFirstChild("HolyTopTinyScale")
+
+            if not scale then
+
+                scale =
+                    Instance.new("UIScale")
+
+                scale.Name =
+                    "HolyTopTinyScale"
+
+                scale.Parent =
+                    button
+            end
+
+            scale.Scale =
+                0.62
+
+            -- Slightly lift them, but do not over-position them.
             MoveHolyGuiFromOriginal(
                 button,
                 0,
-                -10
+                -4
             )
 
-            button.BackgroundTransparency =
-                0.2
-
-            local corner =
-                button:FindFirstChildOfClass("UICorner")
-
-            if corner then
-                corner.CornerRadius =
-                    UDim.new(0, 6)
-            end
-
-StyleHolyGameButtonText(button)
-
-applied =
-    true
+            applied =
+                true
         end
     end
 
