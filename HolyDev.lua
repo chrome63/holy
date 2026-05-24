@@ -28243,46 +28243,123 @@ function ApplyCompactTradeTopButtons(playerGui)
         return false
     end
 
-    local applied =
-        false
-
-    local buttonConfigs = {
-        Tokens = {
-            Width = 82,
-            Height = 26,
-            XOffset = 0,
-            YOffset = -6,
-        },
-
-        Booth = {
-            Width = 58,
-            Height = 30,
-            XOffset = 0,
-            YOffset = -6,
-        },
-
-        Index = {
-            Width = 82,
-            Height = 26,
-            XOffset = 0,
-            YOffset = -6,
-        },
+    local buttonNames = {
+        Tokens = true,
+        Booth = true,
+        Index = true,
     }
 
-    for name, config in pairs(buttonConfigs) do
+    local buttons = {}
+
+    for name in pairs(buttonNames) do
 
         local button =
             tradePlaza:FindFirstChild(name)
 
         if button
         and button:IsA("GuiObject") then
+            buttons[name] = button
+        end
+    end
 
-            local oldScale =
-                button:FindFirstChild("HolyTopTinyScale")
+    --==================================================
+    -- Remove old HOLY scales from previous attempts
+    --==================================================
 
-            if oldScale then
-                oldScale:Destroy()
+    for _, obj in ipairs(tradePlaza:GetDescendants()) do
+
+        if obj:IsA("UIScale")
+        and (
+            obj.Name == "HolyTopTinyScale"
+            or obj.Name == "HolyCompactScale"
+            or obj.Name == "HolyTinyScale"
+        ) then
+            obj:Destroy()
+        end
+    end
+
+    --==================================================
+    -- Hide only the decorative TradePlaza background.
+    -- Do NOT hide descendants of Tokens/Booth/Index.
+    --==================================================
+
+    local function IsInsideMainButton(obj)
+
+        for _, button in pairs(buttons) do
+
+            if obj == button
+            or obj:IsDescendantOf(button) then
+                return true
             end
+        end
+
+        return false
+    end
+
+    for _, obj in ipairs(tradePlaza:GetDescendants()) do
+
+        if not IsInsideMainButton(obj) then
+
+            local name =
+                tostring(obj.Name or ""):lower()
+
+            if name:find("background", 1, true)
+            or name:find("bg", 1, true)
+            or name:find("shadow", 1, true)
+            or name:find("glow", 1, true)
+            or name:find("outline", 1, true)
+            or name:find("stroke", 1, true) then
+
+                if obj:IsA("GuiObject") then
+                    obj.BackgroundTransparency = 1
+                end
+
+                if obj:IsA("ImageLabel")
+                or obj:IsA("ImageButton") then
+                    obj.ImageTransparency = 1
+                end
+
+                if obj:IsA("UIStroke") then
+                    obj.Transparency = 1
+                end
+            end
+        end
+    end
+
+    --==================================================
+    -- Make the actual buttons small.
+    -- No UIScale. No internal text/icon editing.
+    --==================================================
+
+    local configs = {
+        Tokens = {
+            Width = 78,
+            Height = 26,
+            YOffset = -6,
+        },
+
+        Booth = {
+            Width = 58,
+            Height = 30,
+            YOffset = -6,
+        },
+
+        Index = {
+            Width = 78,
+            Height = 26,
+            YOffset = -6,
+        },
+    }
+
+    local applied =
+        false
+
+    for name, config in pairs(configs) do
+
+        local button =
+            buttons[name]
+
+        if button then
 
             button.ClipsDescendants =
                 false
@@ -28297,7 +28374,7 @@ function ApplyCompactTradeTopButtons(playerGui)
 
             MoveHolyGuiFromOriginal(
                 button,
-                config.XOffset,
+                0,
                 config.YOffset
             )
 
