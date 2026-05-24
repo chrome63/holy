@@ -1476,20 +1476,21 @@ SniperState = {
 AntiAltState = {
     Enabled = false,
 
-    -- Raw user input from UI.
-    -- Supports: 123456789, AltUsername, AnotherAlt
+    -- Temporary text box value only.
+    -- This is NOT the source of truth anymore.
     RawInput = "",
 
     -- Source of truth.
+    -- [userId] = {
+    --     UserId = number,
+    --     Name = string,
+    --     AddedAt = number,
+    -- }
+    AvoidUsers = {},
+
+    -- Runtime fast lookup built from AvoidUsers.
     -- [userId] = true
     BlockedUserIds = {},
-
-    -- Optional resolved names.
-    -- [username] = userId
-    ResolvedUsernames = {},
-
-    -- Usernames that failed lookup.
-    UnresolvedUsernames = {},
 
     -- JobIds confirmed to contain blocked users.
     -- [jobId] = true
@@ -1508,11 +1509,7 @@ AntiAltState = {
     LastDetectedAt = 0,
 
     LastNotifyAt = 0,
-NotifyCooldown = 8,
-
-AutoResolveAttempted = false,
-LastAutoResolveAt = 0,
-AutoResolveCooldown = 15,
+    NotifyCooldown = 8,
 }
 --==================================================
 -- SNIPER SCAN SPEED CONFIG
@@ -7048,6 +7045,8 @@ end
 
 --==================================================
 -- ANTI ALT / AVOID USERS HELPERS
+-- Saved avoid-list version.
+-- UserIds are source of truth; usernames are display only.
 --==================================================
 
 function NormalizeAntiAltToken(value)
@@ -7077,8 +7076,6 @@ function ParseAntiAltInput(raw)
 
         if token ~= "" then
 
-            -- If user pasted space-separated ids/names inside one chunk,
-            -- split that too.
             for part in string.gmatch(token, "%S+") do
 
                 part =
@@ -7094,209 +7091,70 @@ function ParseAntiAltInput(raw)
     return tokens
 end
 
-function ResolveAntiAltInput(raw, allowUsernameLookup)
+function RebuildAntiAltBlockedUserIds()
 
     if type(AntiAltState) ~= "table" then
-        return 0, 0
+        return 0
     end
 
-    AntiAltState.RawInput =
-        tostring(raw or "")
+    AntiAltState.AvoidUsers =
+        AntiAltState.AvoidUsers
+        or {}
 
     AntiAltState.BlockedUserIds =
         AntiAltState.BlockedUserIds
         or {}
 
-    AntiAltState.ResolvedUsernames =
-        AntiAltState.ResolvedUsernames
-        or {}
-
-    AntiAltState.UnresolvedUsernames =
-        {}
-
     table.clear(
         AntiAltState.BlockedUserIds
     )
 
-    local tokens =
-        ParseAntiAltInput(raw)
-
-    local added =
+    local count =
         0
 
-    local unresolved =
-        0
+    for userId, data in pairs(AntiAltState.AvoidUsers) do
 
-    for _, token in ipairs(tokens) do
+        userId =
+            tonumber(userId)
 
-        local numericId =
-            tonumber(token)
+        if userId
+        and userId > 0
+        and userId ~= Players.LocalPlayer.UserId
+        and type(data) == "table" then
 
-        if numericId
-        and numericId > 0 then
-
-            numericId =
-                math.floor(numericId)
-
-            if numericId ~= Players.LocalPlayer.UserId then
-
-                AntiAltState.BlockedUserIds[numericId] =
-                    true
-
-                added += 1
-            end
-
-        else
-
-            local cached =
-                AntiAltState.ResolvedUsernames[token]
-
-            if cached then
-
-                AntiAltState.BlockedUserIds[cached] =
-                    true
-
-                added += 1
-
-            elseif allowUsernameLookup == true then
-
-                local ok, userId =
-                    pcall(function()
-                        return Players:GetUserIdFromNameAsync(token)
-                    end)
-
-                userId =
-                    ok
-                    and tonumber(userId)
-                    or nil
-
-                if userId
-                and userId > 0
-                and userId ~= Players.LocalPlayer.UserId then
-
-                    userId =
-                        math.floor(userId)
-
-                    AntiAltState.ResolvedUsernames[token] =
-                        userId
-
-                    AntiAltState.BlockedUserIds[userId] =
-                        true
-
-                    added += 1
-
-                else
-
-                    AntiAltState.UnresolvedUsernames[token] =
-                        true
-
-                    unresolved += 1
-                end
-
-            else
-
-                AntiAltState.UnresolvedUsernames[token] =
-                    true
-
-                unresolved += 1
-            end
-        end
-    end
-
-    return added, unresolved
-end
-
-function EnsureAntiAltUsersResolved(source)
-
-    if type(AntiAltState) ~= "table" then
-        return false
-    end
-
-    if AntiAltState.Enabled ~= true then
-        return false
-    end
-
-    local raw =
-        tostring(AntiAltState.RawInput or "")
-
-    if raw == "" then
-        return false
-    end
-
-    if CountAntiAltBlockedUsers() > 0 then
-        return true
-    end
-
-    local now =
-        os.clock()
-
-    if AntiAltState.AutoResolveAttempted == true
-    and now - SafeNumber(AntiAltState.LastAutoResolveAt, 0)
-        < SafeNumber(AntiAltState.AutoResolveCooldown, 15)
-    then
-        return false
-    end
-
-    AntiAltState.AutoResolveAttempted =
-        true
-
-    AntiAltState.LastAutoResolveAt =
-        now
-
-    task.spawn(function()
-
-        local added, unresolved =
-            ResolveAntiAltInput(
-                raw,
+            AntiAltState.BlockedUserIds[userId] =
                 true
-            )
 
-        warn(
-            "[AntiAlt] Auto-resolve:",
-            tostring(added),
-            "resolved |",
-            tostring(unresolved),
-            "unresolved | source:",
-            tostring(source or "auto")
-        )
-
-        if type(HolyNotify) == "function" then
-
-            if added > 0 then
-
-                HolyNotify(
-                    "Anti Alt Ready",
-                    "Resolved "
-                        .. tostring(added)
-                        .. " avoided user(s).",
-                    "user-check",
-                    3
-                )
-
-            elseif unresolved > 0 then
-
-                HolyNotify(
-                    "Anti Alt Resolve Failed",
-                    "Could not resolve username(s). Try UserId instead.",
-                    "user-x",
-                    4
-                )
-            end
+            count += 1
         end
+    end
 
-        if type(CheckAntiAltCurrentServer) == "function" then
-            task.wait(0.25)
-            CheckAntiAltCurrentServer("auto-resolve")
-        end
-    end)
-
-    return false
+    return count
 end
 
 function CountAntiAltBlockedUsers()
 
-    if type(AntiAltState) ~= "table"
-    or type(AntiAltState.BlockedUserIds) ~= "table" then
+    if type(AntiAltState) ~= "table" then
+        return 0
+    end
+
+    if type(AntiAltState.AvoidUsers) == "table" then
+
+        local count =
+            0
+
+        for userId, data in pairs(AntiAltState.AvoidUsers) do
+
+            if tonumber(userId)
+            and type(data) == "table" then
+                count += 1
+            end
+        end
+
+        return count
+    end
+
+    if type(AntiAltState.BlockedUserIds) ~= "table" then
         return 0
     end
 
@@ -7327,6 +7185,496 @@ function CountAntiAltBlockedServers()
     return count
 end
 
+function FormatAntiAltAvoidListText(maxRows)
+
+    if type(AntiAltState) ~= "table"
+    or type(AntiAltState.AvoidUsers) ~= "table" then
+        return "Avoid List:\nNone"
+    end
+
+    maxRows =
+        math.clamp(
+            math.floor(
+                tonumber(maxRows)
+                or 6
+            ),
+            1,
+            12
+        )
+
+    local rows =
+        {}
+
+    for userId, data in pairs(AntiAltState.AvoidUsers) do
+
+        if type(data) == "table" then
+
+            table.insert(rows, {
+                UserId =
+                    tonumber(data.UserId)
+                    or tonumber(userId)
+                    or 0,
+
+                Name =
+                    tostring(data.Name or "Unknown"),
+            })
+        end
+    end
+
+    table.sort(rows, function(a, b)
+        return tostring(a.Name):lower()
+            < tostring(b.Name):lower()
+    end)
+
+    if #rows <= 0 then
+        return "Avoid List:\nNone"
+    end
+
+    local lines =
+        {
+            "Avoid List:",
+        }
+
+    for index, row in ipairs(rows) do
+
+        if index > maxRows then
+
+            table.insert(
+                lines,
+                "… +"
+                    .. tostring(#rows - maxRows)
+                    .. " more"
+            )
+
+            break
+        end
+
+        table.insert(
+            lines,
+            "• "
+                .. tostring(row.Name)
+                .. " | "
+                .. tostring(row.UserId)
+        )
+    end
+
+    return table.concat(lines, "\n")
+end
+
+function SaveAntiAltAvoidList()
+
+    if not writefile then
+        warn("[AntiAlt] writefile unsupported")
+        return false
+    end
+
+    local ok, err =
+        pcall(function()
+
+            if makefolder
+            and not isfolder("HolyV2") then
+                makefolder("HolyV2")
+            end
+
+            local users =
+                {}
+
+            if AntiAltState
+            and type(AntiAltState.AvoidUsers) == "table" then
+
+                for userId, data in pairs(AntiAltState.AvoidUsers) do
+
+                    userId =
+                        tonumber(userId)
+
+                    if userId
+                    and userId > 0
+                    and type(data) == "table" then
+
+                        table.insert(users, {
+                            UserId =
+                                userId,
+
+                            Name =
+                                tostring(data.Name or userId),
+
+                            AddedAt =
+                                tonumber(data.AddedAt)
+                                or os.time(),
+                        })
+                    end
+                end
+            end
+
+            table.sort(users, function(a, b)
+                return tostring(a.Name):lower()
+                    < tostring(b.Name):lower()
+            end)
+
+            local payload = {
+                Version = 1,
+                Users = users,
+                SavedAt = os.time(),
+            }
+
+            writefile(
+                ANTI_ALT_AVOID_LIST_SAVE_FILE
+                    or "HolyV2/anti_alt_users.json",
+                HttpService:JSONEncode(payload)
+            )
+        end)
+
+    if not ok then
+
+        warn(
+            "[AntiAlt] Save failed:",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    print(
+        "[AntiAlt] Avoid list saved:",
+        tostring(CountAntiAltBlockedUsers())
+    )
+
+    return true
+end
+
+function LoadAntiAltAvoidList()
+
+    if not isfile
+    or not readfile then
+        warn("[AntiAlt] file API unsupported")
+        return false
+    end
+
+    local filePath =
+        ANTI_ALT_AVOID_LIST_SAVE_FILE
+        or "HolyV2/anti_alt_users.json"
+
+    if not isfile(filePath) then
+        print("[AntiAlt] No saved avoid list")
+        return false
+    end
+
+    local ok, decoded =
+        pcall(function()
+
+            local raw =
+                readfile(filePath)
+
+            return HttpService:JSONDecode(raw)
+        end)
+
+    if not ok
+    or type(decoded) ~= "table" then
+
+        warn("[AntiAlt] Corrupted avoid list")
+
+        if delfile then
+            pcall(function()
+                delfile(filePath)
+            end)
+        end
+
+        return false
+    end
+
+    local users =
+        decoded.Users
+
+    if type(users) ~= "table" then
+        users = decoded
+    end
+
+    AntiAltState.AvoidUsers =
+        AntiAltState.AvoidUsers
+        or {}
+
+    table.clear(
+        AntiAltState.AvoidUsers
+    )
+
+    for _, data in ipairs(users) do
+
+        if type(data) == "table" then
+
+            local userId =
+                tonumber(data.UserId or data.userId or data.Id or data.id)
+
+            if userId
+            and userId > 0
+            and userId ~= Players.LocalPlayer.UserId then
+
+                userId =
+                    math.floor(userId)
+
+                AntiAltState.AvoidUsers[userId] = {
+                    UserId =
+                        userId,
+
+                    Name =
+                        tostring(data.Name or data.Username or userId),
+
+                    AddedAt =
+                        tonumber(data.AddedAt)
+                        or os.time(),
+                }
+            end
+        end
+    end
+
+    RebuildAntiAltBlockedUserIds()
+
+    print(
+        "[AntiAlt] Avoid list loaded:",
+        tostring(CountAntiAltBlockedUsers())
+    )
+
+    return true
+end
+
+function ResolveAntiAltTokenToUser(token)
+
+    token =
+        NormalizeAntiAltToken(token)
+
+    if token == "" then
+        return nil, nil, "Empty input"
+    end
+
+    local numericId =
+        tonumber(token)
+
+    if numericId
+    and numericId > 0 then
+
+        numericId =
+            math.floor(numericId)
+
+        if numericId == Players.LocalPlayer.UserId then
+            return nil, nil, "Cannot add yourself"
+        end
+
+        local name =
+            tostring(numericId)
+
+        local ok, result =
+            pcall(function()
+                return Players:GetNameFromUserIdAsync(numericId)
+            end)
+
+        if ok
+        and type(result) == "string"
+        and result ~= "" then
+            name =
+                result
+        end
+
+        return numericId, name, nil
+    end
+
+    local ok, userId =
+        pcall(function()
+            return Players:GetUserIdFromNameAsync(token)
+        end)
+
+    userId =
+        ok
+        and tonumber(userId)
+        or nil
+
+    if not userId
+    or userId <= 0 then
+        return nil, nil, "Username not found"
+    end
+
+    userId =
+        math.floor(userId)
+
+    if userId == Players.LocalPlayer.UserId then
+        return nil, nil, "Cannot add yourself"
+    end
+
+    return userId, token, nil
+end
+
+function AddAntiAltAvoidUser(token)
+
+    if type(AntiAltState) ~= "table" then
+        return false, "AntiAlt missing"
+    end
+
+    AntiAltState.AvoidUsers =
+        AntiAltState.AvoidUsers
+        or {}
+
+    local userId, name, err =
+        ResolveAntiAltTokenToUser(token)
+
+    if not userId then
+        return false, err or "Could not resolve user"
+    end
+
+    AntiAltState.AvoidUsers[userId] = {
+        UserId =
+            userId,
+
+        Name =
+            tostring(name or userId),
+
+        AddedAt =
+            os.time(),
+    }
+
+    RebuildAntiAltBlockedUserIds()
+    SaveAntiAltAvoidList()
+
+    return true,
+        tostring(name or userId)
+            .. " | "
+            .. tostring(userId)
+end
+
+function AddAntiAltAvoidUsersFromInput(raw)
+
+    local tokens =
+        ParseAntiAltInput(raw)
+
+    local added =
+        0
+
+    local failed =
+        0
+
+    local lastMessage =
+        ""
+
+    for _, token in ipairs(tokens) do
+
+        local ok, message =
+            AddAntiAltAvoidUser(token)
+
+        if ok then
+            added += 1
+            lastMessage = message
+        else
+            failed += 1
+            lastMessage = message
+        end
+    end
+
+    return added, failed, lastMessage
+end
+
+function RemoveAntiAltAvoidUser(token)
+
+    if type(AntiAltState) ~= "table"
+    or type(AntiAltState.AvoidUsers) ~= "table" then
+        return false, "Avoid list empty"
+    end
+
+    token =
+        NormalizeAntiAltToken(token)
+
+    if token == "" then
+        return false, "Missing user"
+    end
+
+    local numericId =
+        tonumber(token)
+
+    if numericId then
+
+        numericId =
+            math.floor(numericId)
+
+        if AntiAltState.AvoidUsers[numericId] then
+
+            local oldName =
+                tostring(
+                    AntiAltState.AvoidUsers[numericId].Name
+                    or numericId
+                )
+
+            AntiAltState.AvoidUsers[numericId] =
+                nil
+
+            RebuildAntiAltBlockedUserIds()
+            SaveAntiAltAvoidList()
+
+            return true,
+                oldName
+                    .. " removed"
+        end
+    end
+
+    local lowered =
+        token:lower()
+
+    for userId, data in pairs(AntiAltState.AvoidUsers) do
+
+        if type(data) == "table"
+        and tostring(data.Name or ""):lower() == lowered then
+
+            AntiAltState.AvoidUsers[userId] =
+                nil
+
+            RebuildAntiAltBlockedUserIds()
+            SaveAntiAltAvoidList()
+
+            return true,
+                tostring(data.Name)
+                    .. " removed"
+        end
+    end
+
+    return false, "User not in avoid list"
+end
+
+function ClearAntiAltAvoidList()
+
+    if type(AntiAltState) ~= "table" then
+        return false
+    end
+
+    AntiAltState.AvoidUsers =
+        AntiAltState.AvoidUsers
+        or {}
+
+    table.clear(
+        AntiAltState.AvoidUsers
+    )
+
+    RebuildAntiAltBlockedUserIds()
+    SaveAntiAltAvoidList()
+
+    return true
+end
+
+-- Backwards-compatible name.
+-- Old UI called this; now it rebuilds from saved AvoidUsers.
+function ResolveAntiAltInput(raw, allowUsernameLookup)
+
+    AntiAltState.RawInput =
+        tostring(raw or "")
+
+    RebuildAntiAltBlockedUserIds()
+
+    return CountAntiAltBlockedUsers(), 0
+end
+
+-- Backwards-compatible name.
+-- No auto-resolve needed once users are saved by UserId.
+function EnsureAntiAltUsersResolved(source)
+
+    RebuildAntiAltBlockedUserIds()
+
+    return CountAntiAltBlockedUsers() > 0
+end
+
 function IsAntiAltBlockedPlayer(player)
 
     if type(AntiAltState) ~= "table"
@@ -7346,6 +7694,12 @@ function IsAntiAltBlockedPlayer(player)
         return false
     end
 
+    if not AntiAltState.BlockedUserIds
+    or not AntiAltState.BlockedUserIds[userId] then
+
+        RebuildAntiAltBlockedUserIds()
+    end
+
     return AntiAltState.BlockedUserIds
         and AntiAltState.BlockedUserIds[userId] == true
 end
@@ -7361,6 +7715,8 @@ function CanAntiAltServerHopNow()
         return false, "ForceStopped"
     end
 
+    -- Detection can work anywhere, but ExecuteSniperHop()
+    -- is Trade World server-hop logic only.
     if not IsTradeWorld() then
         return false, "Not Trade World"
     end
@@ -7444,18 +7800,11 @@ function CheckAntiAltCurrentServer(source)
         return false
     end
 
-    if not IsTradeWorld() then
-        return false
-    end
+    RebuildAntiAltBlockedUserIds()
 
     if CountAntiAltBlockedUsers() <= 0 then
-
-    EnsureAntiAltUsersResolved(
-        source or "check"
-    )
-
-    return false
-end
+        return false
+    end
 
     for _, player in ipairs(Players:GetPlayers()) do
 
@@ -7490,6 +7839,12 @@ end
                 warn(
                     "[AntiAlt]",
                     message,
+                    "| display:",
+                    tostring(player.DisplayName),
+                    "| userId:",
+                    tostring(player.UserId),
+                    "| place:",
+                    tostring(game.PlaceId),
                     "| source:",
                     tostring(source or "check")
                 )
@@ -7505,7 +7860,6 @@ end
                     AntiAltState.LastHopRequestAt =
                         os.clock()
 
-                    -- Force this hop to ignore normal HopDelay.
                     if SniperState then
                         SniperState.LastHop =
                             os.clock()
@@ -7522,7 +7876,7 @@ end
                 else
 
                     warn(
-                        "[AntiAlt] Hop delayed:",
+                        "[AntiAlt] Detection confirmed, no hop:",
                         tostring(reason)
                     )
                 end
@@ -9042,6 +9396,9 @@ LISTING_FILTER_SAVE_FILE =
 
 LISTING_AUTOLIST_INTENT_SAVE_FILE =
     "HolyV2/listing_autolist_intent.json"
+
+ANTI_ALT_AVOID_LIST_SAVE_FILE =
+    "HolyV2/anti_alt_users.json"
 --==================================================
 -- FILTER PERSISTENCE
 -- Supports two active watchlists and migrates older single-list saves.
@@ -9681,6 +10038,9 @@ function LoadListingAutoListIntent()
 
     return decoded.Enabled == true
 end
+
+-- Load Anti Alt avoid-list before the Home UI renders it.
+LoadAntiAltAvoidList()
 --==================================================
 -- [5] WINDOW INIT (SYNCHRONOUS)
 --==================================================
@@ -12292,10 +12652,16 @@ local AntiAltStatusLabel =
         true
     )
 
+local AntiAltListLabel =
+    AntiAltBox:AddLabel(
+        "Avoid List:\nNone",
+        true
+    )
+
 local function RefreshAntiAltStatusLabel()
 
-    if not AntiAltStatusLabel then
-        return
+    if type(RebuildAntiAltBlockedUserIds) == "function" then
+        RebuildAntiAltBlockedUserIds()
     end
 
     local enabled =
@@ -12334,43 +12700,39 @@ local function RefreshAntiAltStatusLabel()
             .. tostring(lastName)
     end
 
-    AntiAltStatusLabel:SetText(text)
+    if AntiAltStatusLabel then
+        AntiAltStatusLabel:SetText(text)
+    end
+
+    if AntiAltListLabel
+    and type(FormatAntiAltAvoidListText) == "function" then
+
+        AntiAltListLabel:SetText(
+            FormatAntiAltAvoidListText(6)
+        )
+    end
 end
 
 local AntiAltInput =
     AntiAltBox:AddInput(
         "AntiAltAvoidUsers",
         {
-            Text = "Avoid UserIds / Usernames",
+            Text = "Add UserId / Username",
             Default = "",
-            Placeholder = "123456789, AltUsername",
+            Placeholder = "123456789 or AltUsername",
             AllowEmpty = true,
             ClearTextOnFocus = false,
             Finished = true,
-            Tooltip = "Comma or space separated UserIds/usernames. UserIds work instantly. Usernames need Resolve Usernames.",
+            Tooltip = "Type one or multiple UserIds/usernames, then press Add To Avoid List. Saved users persist after rejoin.",
         }
     )
 
 AntiAltInput:OnChanged(function(value)
 
     if AntiAltState then
-
         AntiAltState.RawInput =
-    tostring(value or "")
-
-AntiAltState.AutoResolveAttempted =
-    false
-
-AntiAltState.LastAutoResolveAt =
-    0
-
-ResolveAntiAltInput(
-    AntiAltState.RawInput,
-    false
-)
+            tostring(value or "")
     end
-
-    RefreshAntiAltStatusLabel()
 
     MarkConfigDirty()
 end)
@@ -12388,28 +12750,12 @@ local AntiAltToggle =
 AntiAltToggle:OnChanged(function(v)
 
     if AntiAltState then
-
         AntiAltState.Enabled =
             v == true
+    end
 
-        ResolveAntiAltInput(
-            AntiAltInput
-            and AntiAltInput.Value
-            or AntiAltState.RawInput,
-            false
-        )
-        if v == true then
-
-    AntiAltState.AutoResolveAttempted =
-        false
-
-    AntiAltState.LastAutoResolveAt =
-        0
-
-    EnsureAntiAltUsersResolved(
-        "toggle"
-    )
-end
+    if type(RebuildAntiAltBlockedUserIds) == "function" then
+        RebuildAntiAltBlockedUserIds()
     end
 
     RefreshAntiAltStatusLabel()
@@ -12448,8 +12794,8 @@ AntiAltImmediateHopToggle:OnChanged(function(v)
 end)
 
 AntiAltBox:AddButton({
-    Text = "🔎 Resolve Usernames",
-    Tooltip = "Converts usernames in the input into UserIds. UserIds do not need this.",
+    Text = "➕ Add To Avoid List",
+    Tooltip = "Adds the typed UserId/username to the saved avoid-list. Usernames are converted to UserIds once.",
 
     Func = function()
 
@@ -12458,23 +12804,88 @@ AntiAltBox:AddButton({
             and AntiAltInput.Value
             or ""
 
-        local added, unresolved =
-            ResolveAntiAltInput(
-                raw,
-                true
-            )
+        local added, failed, message =
+            AddAntiAltAvoidUsersFromInput(raw)
 
         RefreshAntiAltStatusLabel()
 
-        HolyNotify(
-            "Anti Alt Updated",
-            "Resolved "
-                .. tostring(added)
-                .. " user(s). Unresolved: "
-                .. tostring(unresolved),
-            "user-check",
-            4
-        )
+        if added > 0 then
+
+            if AntiAltInput
+            and type(AntiAltInput.SetValue) == "function" then
+                AntiAltInput:SetValue("")
+            end
+
+            HolyNotify(
+                "Anti Alt User Added",
+                "Added "
+                    .. tostring(added)
+                    .. " user(s). Failed: "
+                    .. tostring(failed),
+                "user-check",
+                4
+            )
+
+            if type(CheckAntiAltCurrentServer) == "function" then
+                task.defer(function()
+                    CheckAntiAltCurrentServer("add-user")
+                end)
+            end
+
+        else
+
+            HolyNotify(
+                "Anti Alt Add Failed",
+                tostring(message or "No valid user found."),
+                "user-x",
+                4
+            )
+        end
+    end,
+})
+
+AntiAltBox:AddButton({
+    Text = "➖ Remove Typed User",
+    Tooltip = "Removes the typed UserId/username from the saved avoid-list.",
+
+    Func = function()
+
+        local raw =
+            AntiAltInput
+            and AntiAltInput.Value
+            or ""
+
+        local token =
+            ParseAntiAltInput(raw)[1]
+
+        local removed, message =
+            RemoveAntiAltAvoidUser(token or raw)
+
+        RefreshAntiAltStatusLabel()
+
+        if removed then
+
+            if AntiAltInput
+            and type(AntiAltInput.SetValue) == "function" then
+                AntiAltInput:SetValue("")
+            end
+
+            HolyNotify(
+                "Anti Alt User Removed",
+                tostring(message),
+                "user-minus",
+                3
+            )
+
+        else
+
+            HolyNotify(
+                "Remove Failed",
+                tostring(message),
+                "user-x",
+                3
+            )
+        end
     end,
 })
 
@@ -12483,13 +12894,6 @@ AntiAltBox:AddButton({
     Tooltip = "Manually checks if an avoided user is in this server.",
 
     Func = function()
-
-        ResolveAntiAltInput(
-            AntiAltInput
-            and AntiAltInput.Value
-            or "",
-            false
-        )
 
         local detected =
             false
@@ -12503,13 +12907,51 @@ AntiAltBox:AddButton({
 
         if not detected then
 
+            local names = {}
+
+            for _, player in ipairs(Players:GetPlayers()) do
+
+                table.insert(
+                    names,
+                    tostring(player.Name)
+                        .. " / "
+                        .. tostring(player.DisplayName)
+                        .. " / "
+                        .. tostring(player.UserId)
+                )
+            end
+
+            warn(
+                "[AntiAlt] Checked players:",
+                table.concat(names, " | ")
+            )
+
             HolyNotify(
                 "Anti Alt Check",
-                "No avoided users detected in this server.",
+                "No avoided users detected. Console printed current server players.",
                 "shield-check",
-                3
+                4
             )
         end
+    end,
+})
+
+AntiAltBox:AddButton({
+    Text = "🧹 Clear Avoid List",
+    Tooltip = "Clears all saved avoided users. This does not clear blocked server JobIds.",
+
+    Func = function()
+
+        ClearAntiAltAvoidList()
+
+        RefreshAntiAltStatusLabel()
+
+        HolyNotify(
+            "Anti Alt",
+            "Saved avoid-list cleared.",
+            "trash",
+            3
+        )
     end,
 })
 
