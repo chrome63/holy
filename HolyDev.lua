@@ -9648,9 +9648,10 @@ end
         SniperMonitorHUDFrame.Visible = v
     end
 
-    if v then
-        RefreshSniperMonitorHUD()
-    end
+    if v
+and type(RefreshSniperMonitorHUD) == "function" then
+    RefreshSniperMonitorHUD()
+end
 end)
 
 
