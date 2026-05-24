@@ -9603,21 +9603,23 @@ ServerInfoHUDToggle:OnChanged(function(v)
 
     MarkConfigDirty()
 
-    if not ServerInfoHUDGui then
-        CreateServerInfoHUD()
-    end
+if not ServerInfoHUDGui
+and type(CreateServerInfoHUD) == "function" then
+    CreateServerInfoHUD()
+end
 
-    if ServerInfoHUDGui then
-        ServerInfoHUDGui.Enabled = v
-    end
+if ServerInfoHUDGui then
+    ServerInfoHUDGui.Enabled = v
+end
 
-    if ServerInfoHUDFrame then
-        ServerInfoHUDFrame.Visible = v
-    end
+if ServerInfoHUDFrame then
+    ServerInfoHUDFrame.Visible = v
+end
 
-    if v then
-        RefreshServerInfoHUD()
-    end
+if v
+and type(RefreshServerInfoHUD) == "function" then
+    RefreshServerInfoHUD()
+end
 end)
 
 local SniperMonitorHUDToggle =
