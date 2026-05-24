@@ -28103,6 +28103,32 @@ function StyleHolyGameButtonText(root)
     end
 end
 
+function HideHolyGameButtonText(root)
+
+    if not root then
+        return
+    end
+
+    for _, obj in ipairs(root:GetDescendants()) do
+
+        if obj:IsA("TextLabel")
+        or obj:IsA("TextButton") then
+
+            obj.Text =
+                ""
+
+            obj.TextTransparency =
+                1
+
+            obj.TextStrokeTransparency =
+                1
+
+            obj.BackgroundTransparency =
+                1
+        end
+    end
+end
+
 function FindHolyPassButtonRoot(playerGui)
 
     if not playerGui then
@@ -28207,10 +28233,10 @@ function ApplyCompactTradeTopButtons(playerGui)
                     UDim.new(0, 6)
             end
 
-            StyleHolyGameButtonText(button)
+            HideHolyGameButtonText(sideBtns)
 
-            applied =
-                true
+applied =
+    true
         end
     end
 
@@ -28291,10 +28317,10 @@ function ApplyCompactLeftGameButtons()
             62
         )
 
-        StyleHolyGameButtonText(passRoot)
+        HideHolyGameButtonText(passRoot)
 
-        applied =
-            true
+applied =
+    true
     end
 
     return applied
