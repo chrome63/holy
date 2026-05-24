@@ -27958,165 +27958,408 @@ AutoServerHopWorker = function()
     end
 end
 --==================================================
--- CUSTOMIZE TRADE PLAZA BUTTONS
+-- CUSTOMIZE GAME BUTTONS
+-- Compact client-side layout for Trade World UI.
+-- Handles top buttons + left Shop/Trade/Pass.
+-- Stores original positions so reapply never drifts.
 --==================================================
 
-task.spawn(function()
-    task.wait(3)
+CompactGameButtonPatchState =
+    CompactGameButtonPatchState
+    or {
+        Connected = false,
+        LastApply = 0,
+        Debounce = 0.35,
+    }
 
-    local playerGui =
-        Players.LocalPlayer:WaitForChild("PlayerGui")
+function StoreHolyOriginalGuiPosition(obj)
+
+    if not obj
+    or not obj:IsA("GuiObject") then
+        return
+    end
+
+    if obj:GetAttribute("HolyOriginalPositionStored") == true then
+        return
+    end
+
+    obj:SetAttribute("HolyOriginalPositionStored", true)
+
+    obj:SetAttribute("HolyOriginalPositionXScale", obj.Position.X.Scale)
+    obj:SetAttribute("HolyOriginalPositionXOffset", obj.Position.X.Offset)
+    obj:SetAttribute("HolyOriginalPositionYScale", obj.Position.Y.Scale)
+    obj:SetAttribute("HolyOriginalPositionYOffset", obj.Position.Y.Offset)
+end
+
+function ResolveHolyOriginalGuiPosition(obj)
+
+    if not obj
+    or not obj:IsA("GuiObject") then
+        return nil
+    end
+
+    StoreHolyOriginalGuiPosition(obj)
+
+    return UDim2.new(
+        SafeNumber(obj:GetAttribute("HolyOriginalPositionXScale"), obj.Position.X.Scale),
+        SafeNumber(obj:GetAttribute("HolyOriginalPositionXOffset"), obj.Position.X.Offset),
+        SafeNumber(obj:GetAttribute("HolyOriginalPositionYScale"), obj.Position.Y.Scale),
+        SafeNumber(obj:GetAttribute("HolyOriginalPositionYOffset"), obj.Position.Y.Offset)
+    )
+end
+
+function MoveHolyGuiFromOriginal(obj, xOffset, yOffset)
+
+    if not obj
+    or not obj:IsA("GuiObject") then
+        return false
+    end
+
+    local original =
+        ResolveHolyOriginalGuiPosition(obj)
+
+    if not original then
+        return false
+    end
+
+    obj.Position =
+        original
+        + UDim2.new(
+            0,
+            SafeNumber(xOffset, 0),
+            0,
+            SafeNumber(yOffset, 0)
+        )
+
+    return true
+end
+
+function ApplyHolyCompactScale(obj, scaleValue)
+
+    if not obj
+    or not obj:IsA("GuiObject") then
+        return false
+    end
+
+    local scale =
+        obj:FindFirstChild("HolyCompactScale")
+
+    if not scale then
+
+        scale =
+            Instance.new("UIScale")
+
+        scale.Name =
+            "HolyCompactScale"
+
+        scale.Parent =
+            obj
+    end
+
+    scale.Scale =
+        SafeNumber(scaleValue, 0.75)
+
+    return true
+end
+
+function StyleHolyGameButtonText(root)
+
+    if not root then
+        return
+    end
+
+    for _, obj in ipairs(root:GetDescendants()) do
+
+        if obj:IsA("TextLabel")
+        or obj:IsA("TextButton") then
+
+            obj.TextScaled =
+                true
+
+            obj.TextWrapped =
+                false
+
+            obj.Font =
+                Enum.Font.GothamBold
+
+            obj.TextStrokeColor3 =
+                Color3.fromRGB(0, 0, 0)
+
+            obj.TextStrokeTransparency =
+                0.35
+        end
+
+        if obj:IsA("ImageLabel")
+        or obj:IsA("ImageButton") then
+
+            obj.Size =
+                UDim2.new(
+                    0,
+                    18,
+                    0,
+                    18
+                )
+        end
+    end
+end
+
+function FindHolyPassButtonRoot(playerGui)
+
+    if not playerGui then
+        return nil
+    end
+
+    local best =
+        nil
+
+    for _, obj in ipairs(playerGui:GetDescendants()) do
+
+        if obj:IsA("TextLabel")
+        or obj:IsA("TextButton") then
+
+            local text =
+                tostring(obj.Text or "")
+
+            if text:lower():find("pass", 1, true) then
+
+                local current =
+                    obj
+
+                for _ = 1, 6 do
+
+                    if not current
+                    or not current.Parent then
+                        break
+                    end
+
+                    if current:IsA("GuiObject") then
+
+                        local size =
+                            current.AbsoluteSize
+
+                        if size.X >= 80
+                        and size.Y >= 35 then
+                            best =
+                                current
+                        end
+                    end
+
+                    current =
+                        current.Parent
+                end
+            end
+        end
+    end
+
+    return best
+end
+
+function ApplyCompactTradeTopButtons(playerGui)
 
     local tradePlaza =
         playerGui
-        :WaitForChild("Teleport_UI")
-        :WaitForChild("TradePlaza")
+        and playerGui:FindFirstChild("Teleport_UI")
+        and playerGui.Teleport_UI:FindFirstChild("TradePlaza")
+
+    if not tradePlaza then
+        return false
+    end
+
+    local applied =
+        false
 
     local buttons = {
         "Booth",
         "Index",
-        "Tokens"
+        "Tokens",
     }
 
     for _, name in ipairs(buttons) do
+
         local button =
             tradePlaza:FindFirstChild(name)
 
-        if button then
+        if button
+        and button:IsA("GuiObject") then
 
-            --==================================================
-            -- MAIN BUTTON SIZE
-            --==================================================
+            button.Size =
+                UDim2.new(
+                    0,
+                    70,
+                    0,
+                    28
+                )
 
-            button.Size = UDim2.new(
-                0,
-                70, -- width
-                0,
-                28  -- height
-            )
-
-            --==================================================
-            -- POSITION OFFSET (OPTIONAL)
-            --==================================================
-
-            button.Position = button.Position + UDim2.new(
-                0,
-                0,
+            MoveHolyGuiFromOriginal(
+                button,
                 0,
                 -10
             )
 
-            --==================================================
-            -- BACKGROUND
-            --==================================================
-
-            button.BackgroundTransparency = 0.2
-
-            --==================================================
-            -- CORNERS
-            --==================================================
+            button.BackgroundTransparency =
+                0.2
 
             local corner =
                 button:FindFirstChildOfClass("UICorner")
 
             if corner then
-                corner.CornerRadius = UDim.new(0, 6)
+                corner.CornerRadius =
+                    UDim.new(0, 6)
             end
---==================================================
--- TEXT
---==================================================
 
-local title =
-    button:FindFirstChild("Title")
+            StyleHolyGameButtonText(button)
 
-if title and title:IsA("TextLabel") then
-
-    title.TextScaled = true
-    title.TextWrapped = false
-
-    title.Size = UDim2.new(
-        1,
-        -4,
-        1,
-        -2
-    )
-
-    title.Position = UDim2.new(
-        0,
-        2,
-        0,
-        0
-    )
-
-    title.AnchorPoint = Vector2.new(0, 0)
-
-    title.BackgroundTransparency = 1
-
-    title.TextXAlignment =
-        Enum.TextXAlignment.Center
-
-    title.TextYAlignment =
-        Enum.TextYAlignment.Center
-
-    title.Font = Enum.Font.GothamBold
-
-    title.TextStrokeTransparency = 0.5
-end
-            --==================================================
-            -- ICONS
-            --==================================================
-
-            for _, obj in ipairs(button:GetDescendants()) do
-                if obj:IsA("ImageLabel")
-                or obj:IsA("ImageButton") then
-
-                    obj.Size = UDim2.new(
-                        0,
-                        16,
-                        0,
-                        16
-                    )
-                end
-            end
+            applied =
+                true
         end
     end
-end)
 
+    return applied
+end
 
-task.spawn(function()
+function ApplyCompactLeftGameButtons()
 
-    task.wait(2)
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return false
+    end
 
     local playerGui =
-        Players.LocalPlayer:WaitForChild("PlayerGui")
+        player:FindFirstChild("PlayerGui")
+
+    if not playerGui then
+        return false
+    end
+
+    local applied =
+        false
+
+    ApplyCompactTradeTopButtons(playerGui)
+
+    --==================================================
+    -- SHOP / TRADE
+    -- Usually: PlayerGui.Hud_UI.SideBtns
+    --==================================================
+
+    local hudUI =
+        playerGui:FindFirstChild("Hud_UI")
 
     local sideBtns =
-        playerGui
-        :WaitForChild("Hud_UI")
-        :WaitForChild("SideBtns")
+        hudUI
+        and hudUI:FindFirstChild("SideBtns")
 
-    local buttons = {
-        "Shop",
-        "Trade"
-    }
+    if sideBtns
+    and sideBtns:IsA("GuiObject") then
 
-    for _, name in ipairs(buttons) do
+        ApplyHolyCompactScale(
+            sideBtns,
+            0.72
+        )
 
-        local button =
-            sideBtns:FindFirstChild(name)
+        MoveHolyGuiFromOriginal(
+            sideBtns,
+            0,
+            62
+        )
 
-        if not button then
-            continue
+        StyleHolyGameButtonText(sideBtns)
+
+        applied =
+            true
+    end
+
+    --==================================================
+    -- PASS
+    -- Pass is usually outside SideBtns, so search by text.
+    --==================================================
+
+    local passRoot =
+        FindHolyPassButtonRoot(playerGui)
+
+    if passRoot then
+
+        ApplyHolyCompactScale(
+            passRoot,
+            0.70
+        )
+
+        MoveHolyGuiFromOriginal(
+            passRoot,
+            0,
+            62
+        )
+
+        StyleHolyGameButtonText(passRoot)
+
+        applied =
+            true
+    end
+
+    return applied
+end
+
+function StartCompactLeftGameButtonPatch()
+
+    pcall(function()
+        ApplyCompactLeftGameButtons()
+    end)
+
+    if CompactGameButtonPatchState.Connected == true then
+        return
+    end
+
+    local player =
+        Players.LocalPlayer
+
+    local playerGui =
+        player
+        and player:FindFirstChild("PlayerGui")
+
+    if not playerGui then
+        return
+    end
+
+    CompactGameButtonPatchState.Connected =
+        true
+
+    playerGui.DescendantAdded:Connect(function(obj)
+
+        local name =
+            tostring(obj.Name or ""):lower()
+
+        if not (
+            name:find("shop", 1, true)
+            or name:find("trade", 1, true)
+            or name:find("pass", 1, true)
+            or name:find("side", 1, true)
+            or name:find("teleport", 1, true)
+        ) then
+            return
         end
 
-        button.Size = UDim2.new(
-            0,
-            50,
-            0,
-            26
-        )
-    end
-end)
+        local now =
+            os.clock()
+
+        if now - SafeNumber(CompactGameButtonPatchState.LastApply, 0)
+            < SafeNumber(CompactGameButtonPatchState.Debounce, 0.35)
+        then
+            return
+        end
+
+        CompactGameButtonPatchState.LastApply =
+            now
+
+        task.defer(function()
+            pcall(function()
+                ApplyCompactLeftGameButtons()
+            end)
+        end)
+    end)
+end
+
+StartCompactLeftGameButtonPatch()
 
 --==================================================
 -- REMOVE EVENT NOTIFY (PERSISTENT)
