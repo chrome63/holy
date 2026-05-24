@@ -10535,7 +10535,40 @@ SniperMonitorHUDFrame =
         return label
     end
 
-    'Status: <font color="#A3A3A3">Idle</font>'
+        SniperMonitorStatusLabel =
+        CreateMonitorLine(
+            "Status",
+            22,
+            'Status: <font color="#A3A3A3">Idle</font>'
+        )
+
+    SniperMonitorScannedLabel =
+        CreateMonitorLine(
+            "PetsScanned",
+            36,
+            'Scanned: <font color="#FFFFFF">0</font>'
+        )
+
+    SniperMonitorHopLabel =
+        CreateMonitorLine(
+            "NextHop",
+            50,
+            'Next Hop: <font color="#FFFFFF">Off</font>'
+        )
+
+    SniperMonitorPingLabel =
+        CreateMonitorLine(
+            "Ping",
+            64,
+            'Ping: <font color="#A3A3A3">Unknown</font>'
+        )
+
+    SniperMonitorBuyWaitLabel =
+        CreateMonitorLine(
+            "BuyWait",
+            78,
+            'Buy Wait: <font color="#FFFFFF">10s</font>'
+        )
 end
 
 RefreshSniperMonitorHUD = function()
