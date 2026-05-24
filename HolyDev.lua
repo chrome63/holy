@@ -19663,6 +19663,40 @@ PetDropdown:OnChanged(function()
     MarkConfigDirty()
 end)
 
+local function RefreshSniperPetFilterDropdown()
+
+    if type(RefreshDynamicPetList) == "function" then
+        RefreshDynamicPetList()
+    end
+
+    PetList =
+        PetList
+        or {}
+
+    if PetDropdown
+    and type(PetDropdown.SetValues) == "function" then
+
+        PetDropdown:SetValues(
+            PetList
+        )
+    end
+
+    MarkConfigDirty()
+
+    HolyNotify(
+        "Pet Filters Refreshed",
+        "Updated the selectable pet list. Saved watchlist filters were not changed.",
+        "refresh-cw",
+        3
+    )
+
+    print(
+        "[Sniper] Pet filter dropdown refreshed:",
+        tostring(#PetList),
+        "pets"
+    )
+end
+
 local MinWeightInput =
     SniperFilterBox:AddInput(
         "SniperMinWeight",
@@ -22093,6 +22127,18 @@ SniperFilterBox:AddButton({
         OpenSniperFilterConfirmDialog(
             pending
         )
+    end,
+})
+
+SniperFilterBox:AddButton({
+    Text = "Refresh Pet Filters",
+    Tooltip = "Refreshes only the selectable Pets dropdown above. This does not clear, add, remove, or update saved watchlist filters.",
+
+    Func = function()
+
+        if type(RefreshSniperPetFilterDropdown) == "function" then
+            RefreshSniperPetFilterDropdown()
+        end
     end,
 })
 
