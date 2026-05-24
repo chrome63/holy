@@ -7721,14 +7721,14 @@ VisualState = {
 
     WatchlistHUD = false,
 
-    -- Watchlist HUD sections.
-    -- Both default ON because both watchlists are active for sniping.
     ShowWatchlist1HUD = true,
     ShowWatchlist2HUD = true,
 
     ServerInfoHUD = false,
 
     SniperMonitorHUD = false,
+
+    CompactStatusHUD = false,
 }
 
 
