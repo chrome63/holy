@@ -3345,7 +3345,29 @@ LatencyGuard = {
     LastPingReadAt = 0,
     LastPingText = "Ping: Unknown",
 
-    FallbackBuyWait = 10,
+    --==================================================
+    -- BUY WAIT CONFIG
+    -- Edit these numbers yourself.
+    --
+    -- This only controls how long HOLY waits AFTER
+    -- BuyListing accepts, while waiting for the pet/tool
+    -- to appear in Backpack/Character.
+    --
+    -- It does NOT delay the actual buy attempt.
+    --==================================================
+
+    FixedBuyWait = 10,
+
+    BuyWaitByPing = {
+        Low = 8,        -- 0-80ms
+        Medium = 9,     -- 81-160ms
+        High = 10,       -- 161-250ms
+        VeryHigh = 11,   -- 251-400ms
+        Unstable = 12,  -- 401ms+
+    },
+
+    -- Legacy compatibility.
+    FallbackBuyWait = 6,
 }
 
 function ResolveHolyPingMS()
@@ -3439,42 +3461,76 @@ end
 
 function ResolveAdaptiveBuyWait()
 
-    local fallback =
-        SafeNumber(
+    local function ReadWait(value, fallback)
+
+        local number =
+            tonumber(value)
+
+        if not number then
+            number =
+                tonumber(fallback)
+                or 6
+        end
+
+        return math.clamp(
+            math.floor(number),
+            1,
+            30
+        )
+    end
+
+    if type(LatencyGuard) ~= "table" then
+        return ReadWait(
             PurchaseState
             and PurchaseState.InventoryTimeout,
-            10
+            6
         )
+    end
 
-    if type(LatencyGuard) ~= "table"
-    or LatencyGuard.AdaptiveBuyWait ~= true then
-        return fallback
+    -- Adaptive OFF:
+    -- use one fixed value from LatencyGuard.FixedBuyWait.
+    if LatencyGuard.AdaptiveBuyWait ~= true then
+        return ReadWait(
+            LatencyGuard.FixedBuyWait
+            or LatencyGuard.FallbackBuyWait
+            or PurchaseState.InventoryTimeout,
+            6
+        )
     end
 
     local ping =
         ResolveHolyPingMS()
 
     if not ping then
-        return fallback
+        return ReadWait(
+            LatencyGuard.FixedBuyWait,
+            6
+        )
     end
 
+    local config =
+        LatencyGuard.BuyWaitByPing
+        or {}
+
+    -- Adaptive ON:
+    -- uses your editable table above.
     if ping > 400 then
-        return 18
+        return ReadWait(config.Unstable, 10)
     end
 
     if ping > 250 then
-        return 15
+        return ReadWait(config.VeryHigh, 8)
     end
 
     if ping > 160 then
-        return 12
+        return ReadWait(config.High, 7)
     end
 
     if ping > 80 then
-        return 10
+        return ReadWait(config.Medium, 6)
     end
 
-    return 8
+    return ReadWait(config.Low, 5)
 end
 
 function FormatLatencyGuardPingText()
