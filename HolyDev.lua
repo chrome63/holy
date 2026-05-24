@@ -10399,7 +10399,7 @@ CreateSniperMonitorHUD = function()
     UDim2.new(0, 8, 0, 164)
 
     frame.Size =
-    UDim2.new(0, 260, 0, 112)
+    UDim2.new(0, 260, 0, 92)
 
 frame.BackgroundTransparency =
     1
@@ -10503,7 +10503,7 @@ SniperMonitorHUDFrame =
     UDim2.new(0, 0, 0, yOffset)
 
         label.Size =
-            UDim2.new(1, 0, 0, 16)
+    UDim2.new(1, 0, 0, 15)
 
         label.Font =
             Enum.Font.GothamBold
@@ -10535,40 +10535,7 @@ SniperMonitorHUDFrame =
         return label
     end
 
-    SniperMonitorStatusLabel =
-        CreateMonitorLine(
-            "Status",
-            32,
-            'Status: <font color="#A3A3A3">Idle</font>'
-        )
-
-    SniperMonitorScannedLabel =
-        CreateMonitorLine(
-            "PetsScanned",
-            49,
-            'Scanned: <font color="#FFFFFF">0</font>'
-        )
-
-    SniperMonitorHopLabel =
-        CreateMonitorLine(
-            "NextHop",
-            66,
-            'Next Hop: <font color="#FFFFFF">Off</font>'
-        )
-
-    SniperMonitorPingLabel =
-        CreateMonitorLine(
-            "Ping",
-            83,
-            'Ping: <font color="#A3A3A3">Unknown</font>'
-        )
-
-    SniperMonitorBuyWaitLabel =
-        CreateMonitorLine(
-            "BuyWait",
-            100,
-            'Buy Wait: <font color="#FFFFFF">10s</font>'
-        )
+    'Status: <font color="#A3A3A3">Idle</font>'
 end
 
 RefreshSniperMonitorHUD = function()
@@ -10598,15 +10565,15 @@ RefreshSniperMonitorHUD = function()
 
     if status == "Active" then
         statusColor =
-            "#22C55E"
+            "#00ff22"
 
     elseif status == "Buying" then
         statusColor =
-            "#FACC15"
+            "#ffcc00"
 
     elseif status == "Hopping" then
         statusColor =
-            "#60A5FA"
+            "#0073ff"
 
     elseif status == "Stopped" then
         statusColor =
@@ -10631,7 +10598,7 @@ RefreshSniperMonitorHUD = function()
                     and SniperMonitorState.PetsScanned
                     or 0
                 ),
-                "#FFFFFF"
+                "#00c707"
             )
     end
 
