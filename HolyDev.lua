@@ -28246,13 +28246,30 @@ function ApplyCompactTradeTopButtons(playerGui)
     local applied =
         false
 
-    local buttons = {
-        "Booth",
-        "Index",
-        "Tokens",
+    local buttonConfigs = {
+        Tokens = {
+            Width = 82,
+            Height = 26,
+            XOffset = 0,
+            YOffset = -6,
+        },
+
+        Booth = {
+            Width = 58,
+            Height = 30,
+            XOffset = 0,
+            YOffset = -6,
+        },
+
+        Index = {
+            Width = 82,
+            Height = 26,
+            XOffset = 0,
+            YOffset = -6,
+        },
     }
 
-    for _, name in ipairs(buttons) do
+    for name, config in pairs(buttonConfigs) do
 
         local button =
             tradePlaza:FindFirstChild(name)
@@ -28260,34 +28277,28 @@ function ApplyCompactTradeTopButtons(playerGui)
         if button
         and button:IsA("GuiObject") then
 
-            -- Keep original game styling.
-            -- Only make the button visually smaller.
+            local oldScale =
+                button:FindFirstChild("HolyTopTinyScale")
+
+            if oldScale then
+                oldScale:Destroy()
+            end
+
             button.ClipsDescendants =
                 false
 
-            local scale =
-                button:FindFirstChild("HolyTopTinyScale")
+            button.Size =
+                UDim2.new(
+                    0,
+                    config.Width,
+                    0,
+                    config.Height
+                )
 
-            if not scale then
-
-                scale =
-                    Instance.new("UIScale")
-
-                scale.Name =
-                    "HolyTopTinyScale"
-
-                scale.Parent =
-                    button
-            end
-
-            scale.Scale =
-                0.62
-
-            -- Slightly lift them, but do not over-position them.
             MoveHolyGuiFromOriginal(
                 button,
-                0,
-                -4
+                config.XOffset,
+                config.YOffset
             )
 
             applied =
