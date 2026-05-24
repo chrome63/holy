@@ -10932,9 +10932,34 @@ local function ResolveSniperMonitorHopText()
     local elapsed =
         SafeElapsed(SniperState.ScanStartedAt)
 
-    local remaining =
+    local scanRemaining =
         SniperState.ScanDuration
         - elapsed
+
+    local stayRemaining =
+        0
+
+    if SniperState.StayAfterSnipe == true then
+
+        stayRemaining =
+            SafeRemaining(
+                SniperState.StayAfterSnipeUntil
+            )
+    end
+
+    local remaining =
+        math.max(
+            scanRemaining,
+            stayRemaining
+        )
+
+    if stayRemaining > 0
+    and stayRemaining >= scanRemaining then
+
+        return FormatSniperMonitorTime(
+            stayRemaining
+        ) .. " stay"
+    end
 
     return FormatSniperMonitorTime(
         remaining
