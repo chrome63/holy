@@ -26563,7 +26563,14 @@ function BuildWebhookTab()
                                     inline = true,
                                 },
 
-                                CreatePersonalWebhookPetInventoryField(),
+                                {
+                                    name = "🎒 Pet Inventory",
+                                    value =
+                                    type(FormatPersonalWebhookPetInventoryText) == "function"
+                                    and FormatPersonalWebhookPetInventoryText()
+                                    or "Unavailable",
+                                    inline = true,
+                            },
 
                                 {
                                     name = "Server",
