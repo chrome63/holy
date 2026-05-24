@@ -9402,6 +9402,10 @@ SniperMonitorHopLabel = nil
 SniperMonitorPingLabel = nil
 SniperMonitorBuyWaitLabel = nil
 
+CompactStatusHUDLabel = nil
+CreateCompactStatusHUD = nil
+RefreshCompactStatusHUD = nil
+
 InventoryDetailsLabel = nil
 InventoryDetailsStatusLabel = nil
 RefreshInventoryDetails = nil
@@ -9571,6 +9575,200 @@ SniperMonitorHUDToggle:OnChanged(function(v)
     end
 end)
 
+local CompactStatusHUDToggle =
+    VisualBox:AddToggle(
+        "CompactStatusHUD",
+        {
+            Text = "💎 Compact Status Bar",
+            Default = false,
+        }
+    )
+
+CompactStatusHUDToggle:OnChanged(function(v)
+
+    VisualState.CompactStatusHUD =
+        v == true
+
+    MarkConfigDirty()
+
+    if not CompactStatusHUDLabel then
+        if type(CreateCompactStatusHUD) == "function" then
+            CreateCompactStatusHUD()
+        end
+    end
+
+    if CompactStatusHUDLabel then
+        CompactStatusHUDLabel:SetVisible(v == true)
+    end
+
+    if v
+    and type(RefreshCompactStatusHUD) == "function" then
+        RefreshCompactStatusHUD()
+    end
+end)
+
+--==================================================
+-- COMPACT STATUS BAR
+-- Obsidian draggable pill:
+-- HOLY │ ACTIVE │ 116ms │ 271 scans
+--==================================================
+
+function ResolveCompactStatusPingText()
+
+    local ping =
+        nil
+
+    if type(ResolveHolyPingMS) == "function" then
+
+        local ok, result =
+            pcall(function()
+                return ResolveHolyPingMS()
+            end)
+
+        if ok then
+            ping =
+                tonumber(result)
+        end
+    end
+
+    if not ping then
+
+        local player =
+            Players.LocalPlayer
+
+        if player
+        and type(player.GetNetworkPing) == "function" then
+
+            local ok, result =
+                pcall(function()
+                    return player:GetNetworkPing()
+                end)
+
+            if ok
+            and type(result) == "number" then
+                ping =
+                    math.floor(result * 1000)
+            end
+        end
+    end
+
+    if not ping then
+        return "Ping?"
+    end
+
+    return tostring(math.floor(ping)) .. "ms"
+end
+
+function ResolveCompactStatusStateText()
+
+    if type(ResolveSniperMonitorStatus) == "function" then
+
+        local ok, result =
+            pcall(function()
+                return ResolveSniperMonitorStatus()
+            end)
+
+        if ok
+        and result then
+            return string.upper(
+                tostring(result)
+            )
+        end
+    end
+
+    if SniperState
+    and SniperState.Scanning == true then
+        return "ACTIVE"
+    end
+
+    return "IDLE"
+end
+
+function ResolveCompactStatusScannedText()
+
+    local scanned =
+        0
+
+    if SniperMonitorState
+    and SniperMonitorState.PetsScanned then
+        scanned =
+            tonumber(SniperMonitorState.PetsScanned)
+            or 0
+    end
+
+    return tostring(scanned) .. " scans"
+end
+
+function BuildCompactStatusText()
+
+    return table.concat(
+        {
+            "HOLY",
+            ResolveCompactStatusStateText(),
+            ResolveCompactStatusPingText(),
+            ResolveCompactStatusScannedText(),
+        },
+        "  │  "
+    )
+end
+
+CreateCompactStatusHUD = function()
+
+    if CompactStatusHUDLabel then
+        return
+    end
+
+    if not Library
+    or type(Library.AddDraggableLabel) ~= "function" then
+        warn("[HOLY] Compact Status Bar unavailable: AddDraggableLabel missing")
+        return
+    end
+
+    CompactStatusHUDLabel =
+        Library:AddDraggableLabel(
+            BuildCompactStatusText()
+        )
+
+    CompactStatusHUDLabel:SetVisible(
+        VisualState.CompactStatusHUD == true
+    )
+end
+
+RefreshCompactStatusHUD = function()
+
+    if not CompactStatusHUDLabel then
+        return
+    end
+
+    if VisualState.CompactStatusHUD ~= true then
+        return
+    end
+
+    CompactStatusHUDLabel:SetText(
+        BuildCompactStatusText()
+    )
+end
+
+task.spawn(function()
+
+    while IsCurrentRun() do
+
+        if VisualState
+        and VisualState.CompactStatusHUD == true then
+
+            if not CompactStatusHUDLabel
+            and type(CreateCompactStatusHUD) == "function" then
+                CreateCompactStatusHUD()
+            end
+
+            if type(RefreshCompactStatusHUD) == "function" then
+                RefreshCompactStatusHUD()
+            end
+        end
+
+        task.wait(0.5)
+    end
+end)
 
 --==================================================
 -- ACTIVE WATCHLIST HUD
@@ -10455,7 +10653,7 @@ RefreshSniperMonitorHUD = function()
         end
     end
 end
-
+RefreshSniperMonitorHUD
 end
 --==================================================
 -- [7] BASIC UI (CONTROL ONLY)
