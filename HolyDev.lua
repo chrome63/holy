@@ -1508,7 +1508,11 @@ AntiAltState = {
     LastDetectedAt = 0,
 
     LastNotifyAt = 0,
-    NotifyCooldown = 8,
+NotifyCooldown = 8,
+
+AutoResolveAttempted = false,
+LastAutoResolveAt = 0,
+AutoResolveCooldown = 15,
 }
 --==================================================
 -- SNIPER SCAN SPEED CONFIG
@@ -7202,6 +7206,93 @@ function ResolveAntiAltInput(raw, allowUsernameLookup)
     return added, unresolved
 end
 
+function EnsureAntiAltUsersResolved(source)
+
+    if type(AntiAltState) ~= "table" then
+        return false
+    end
+
+    if AntiAltState.Enabled ~= true then
+        return false
+    end
+
+    local raw =
+        tostring(AntiAltState.RawInput or "")
+
+    if raw == "" then
+        return false
+    end
+
+    if CountAntiAltBlockedUsers() > 0 then
+        return true
+    end
+
+    local now =
+        os.clock()
+
+    if AntiAltState.AutoResolveAttempted == true
+    and now - SafeNumber(AntiAltState.LastAutoResolveAt, 0)
+        < SafeNumber(AntiAltState.AutoResolveCooldown, 15)
+    then
+        return false
+    end
+
+    AntiAltState.AutoResolveAttempted =
+        true
+
+    AntiAltState.LastAutoResolveAt =
+        now
+
+    task.spawn(function()
+
+        local added, unresolved =
+            ResolveAntiAltInput(
+                raw,
+                true
+            )
+
+        warn(
+            "[AntiAlt] Auto-resolve:",
+            tostring(added),
+            "resolved |",
+            tostring(unresolved),
+            "unresolved | source:",
+            tostring(source or "auto")
+        )
+
+        if type(HolyNotify) == "function" then
+
+            if added > 0 then
+
+                HolyNotify(
+                    "Anti Alt Ready",
+                    "Resolved "
+                        .. tostring(added)
+                        .. " avoided user(s).",
+                    "user-check",
+                    3
+                )
+
+            elseif unresolved > 0 then
+
+                HolyNotify(
+                    "Anti Alt Resolve Failed",
+                    "Could not resolve username(s). Try UserId instead.",
+                    "user-x",
+                    4
+                )
+            end
+        end
+
+        if type(CheckAntiAltCurrentServer) == "function" then
+            task.wait(0.25)
+            CheckAntiAltCurrentServer("auto-resolve")
+        end
+    end)
+
+    return false
+end
+
 function CountAntiAltBlockedUsers()
 
     if type(AntiAltState) ~= "table"
@@ -7358,8 +7449,13 @@ function CheckAntiAltCurrentServer(source)
     end
 
     if CountAntiAltBlockedUsers() <= 0 then
-        return false
-    end
+
+    EnsureAntiAltUsersResolved(
+        source or "check"
+    )
+
+    return false
+end
 
     for _, player in ipairs(Players:GetPlayers()) do
 
@@ -12260,12 +12356,18 @@ AntiAltInput:OnChanged(function(value)
     if AntiAltState then
 
         AntiAltState.RawInput =
-            tostring(value or "")
+    tostring(value or "")
 
-        ResolveAntiAltInput(
-            AntiAltState.RawInput,
-            false
-        )
+AntiAltState.AutoResolveAttempted =
+    false
+
+AntiAltState.LastAutoResolveAt =
+    0
+
+ResolveAntiAltInput(
+    AntiAltState.RawInput,
+    false
+)
     end
 
     RefreshAntiAltStatusLabel()
@@ -12296,6 +12398,18 @@ AntiAltToggle:OnChanged(function(v)
             or AntiAltState.RawInput,
             false
         )
+        if v == true then
+
+    AntiAltState.AutoResolveAttempted =
+        false
+
+    AntiAltState.LastAutoResolveAt =
+        0
+
+    EnsureAntiAltUsersResolved(
+        "toggle"
+    )
+end
     end
 
     RefreshAntiAltStatusLabel()
