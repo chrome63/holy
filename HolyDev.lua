@@ -11251,24 +11251,128 @@ end)
 -- TELEPORT
 --==================================================
 
+local function ResolvePublicServerAvailability(placeId, jobId)
+
+    placeId =
+        tonumber(placeId)
+
+    jobId =
+        tostring(jobId or "")
+
+    if not placeId
+    or placeId ~= TRADING_WORLD_PLACE_ID then
+        return false, "Blocked non-trade server"
+    end
+
+    if jobId == "" then
+        return false, "Missing JobId"
+    end
+
+    local cursor =
+        nil
+
+    local maxPages =
+        10
+
+    for page = 1, maxPages do
+
+        local url =
+            "https://games.roblox.com/v1/games/"
+            .. tostring(placeId)
+            .. "/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=false"
+
+        if cursor
+        and cursor ~= "" then
+
+            url =
+                url
+                .. "&cursor="
+                .. HttpService:UrlEncode(cursor)
+        end
+
+        local ok, body =
+            pcall(function()
+                return game:HttpGet(url)
+            end)
+
+        if not ok
+        or type(body) ~= "string"
+        or body == "" then
+            return false, "Could not verify server"
+        end
+
+        local decoded
+
+        ok, decoded =
+            pcall(function()
+                return HttpService:JSONDecode(body)
+            end)
+
+        if not ok
+        or type(decoded) ~= "table"
+        or type(decoded.data) ~= "table" then
+            return false, "Invalid server response"
+        end
+
+        for _, server in ipairs(decoded.data) do
+
+            if type(server) == "table"
+            and tostring(server.id or "") == jobId then
+
+                local playing =
+                    tonumber(server.playing)
+                    or 0
+
+                local maxPlayers =
+                    tonumber(server.maxPlayers)
+                    or 0
+
+                if maxPlayers > 0
+                and playing >= maxPlayers then
+
+                    return false,
+                        "Server full "
+                        .. tostring(playing)
+                        .. "/"
+                        .. tostring(maxPlayers)
+                end
+
+                return true,
+                    "Server available "
+                    .. tostring(playing)
+                    .. "/"
+                    .. tostring(maxPlayers)
+            end
+        end
+
+        cursor =
+            decoded.nextPageCursor
+
+        if not cursor
+        or cursor == "" then
+            break
+        end
+    end
+
+    return false, "Server unavailable"
+end
+
 local function JoinParsedServer(parsed)
 
     if GatewayBusy then
         SetGatewayStatus("Busy")
-        return
+        return false
     end
 
     if type(parsed) ~= "table" then
         SetGatewayStatus("Invalid input")
-        return
+        return false
     end
 
     if parsed.PlaceId ~= TRADING_WORLD_PLACE_ID then
         SetGatewayStatus("Blocked non-trade server")
-        return
+        return false
     end
-
-    GatewayBusy = true
 
     local TeleportService =
         game:GetService("TeleportService")
@@ -11277,9 +11381,104 @@ local function JoinParsedServer(parsed)
         Players.LocalPlayer
 
     if not player then
-        GatewayBusy = false
         SetGatewayStatus("LocalPlayer missing")
-        return
+        return false
+    end
+
+    if parsed.Mode == "PrivateLink" then
+
+        GatewayBusy =
+            true
+
+        LastServer.Mode =
+            parsed.Mode
+
+        LastServer.PlaceId =
+            parsed.PlaceId
+
+        LastServer.JobId =
+            parsed.JobId
+
+        LastServer.Code =
+            parsed.Code
+
+        SetGatewayStatus("Private link copied")
+
+        local privateUrl =
+            "https://www.roblox.com/share?code="
+            .. tostring(parsed.Code)
+            .. "&type=Server"
+
+        if setclipboard then
+            pcall(function()
+                setclipboard(privateUrl)
+            end)
+        end
+
+        warn(
+            "[Gateway] Private server links cannot be joined with TeleportService from the client."
+        )
+
+        warn(
+            "[Gateway] Link copied. Open it through browser / RoValra / Roblox app:",
+            privateUrl
+        )
+
+        HolyNotify(
+            "Private Link Copied",
+            "Roblox blocks client-side TeleportToPrivateServer. Open the copied link through browser/RoValra.",
+            "link",
+            5
+        )
+
+        task.delay(1, function()
+            GatewayBusy =
+                false
+        end)
+
+        return true
+    end
+
+    if parsed.Mode ~= "PublicInstance" then
+        SetGatewayStatus("Invalid mode")
+        return false
+    end
+
+    GatewayBusy =
+        true
+
+    SetGatewayStatus("Verifying server...")
+
+    local available, reason =
+        ResolvePublicServerAvailability(
+            parsed.PlaceId,
+            parsed.JobId
+        )
+
+    if not available then
+
+        GatewayBusy =
+            false
+
+        SetGatewayStatus(
+            tostring(reason or "Server unavailable")
+        )
+
+        HolyNotify(
+            "Manual Join Blocked",
+            tostring(reason or "Server unavailable. HOLY did not join a random server."),
+            "server-off",
+            4
+        )
+
+        warn(
+            "[Gateway] Manual join blocked:",
+            tostring(reason),
+            "| JobId:",
+            tostring(parsed.JobId)
+        )
+
+        return false
     end
 
     LastServer.Mode =
@@ -11294,69 +11493,48 @@ local function JoinParsedServer(parsed)
     LastServer.Code =
         parsed.Code
 
-    if parsed.Mode == "PrivateLink" then
+    SetGatewayStatus(
+        tostring(reason or "Connecting public server...")
+    )
 
-    SetGatewayStatus("Private link copied")
-
-    local privateUrl =
-        "https://www.roblox.com/share?code="
-        .. tostring(parsed.Code)
-        .. "&type=Server"
-
-    if setclipboard then
+    local ok, err =
         pcall(function()
-            setclipboard(privateUrl)
-        end)
-    end
 
-    warn(
-        "[Gateway] Private server links cannot be joined with TeleportService from the client."
-    )
-
-    warn(
-        "[Gateway] Link copied. Open it through browser / RoValra / Roblox app:",
-        privateUrl
-    )
-
-    HolyNotify(
-        "Private Link Copied",
-        "Roblox blocks client-side TeleportToPrivateServer. Open the copied link through browser/RoValra.",
-        "link",
-        5
-    )
-
-    elseif parsed.Mode == "PublicInstance" then
-
-        SetGatewayStatus("Connecting public server...")
-
-        local ok, err =
-            pcall(function()
-
-                TeleportService:TeleportToPlaceInstance(
-                    parsed.PlaceId,
-                    parsed.JobId,
-                    player
-                )
-            end)
-
-        if not ok then
-
-            warn(
-                "[Gateway] Public server teleport failed:",
-                tostring(err)
+            TeleportService:TeleportToPlaceInstance(
+                parsed.PlaceId,
+                parsed.JobId,
+                player
             )
+        end)
 
-            SetGatewayStatus("Public join failed")
-        end
+    if not ok then
 
-    else
+        GatewayBusy =
+            false
 
-        SetGatewayStatus("Invalid mode")
+        warn(
+            "[Gateway] Public server teleport failed:",
+            tostring(err)
+        )
+
+        SetGatewayStatus("Public join failed")
+
+        HolyNotify(
+            "Manual Join Failed",
+            "Teleport failed. HOLY did not use a random fallback server.",
+            "server-off",
+            4
+        )
+
+        return false
     end
 
     task.delay(5, function()
-        GatewayBusy = false
+        GatewayBusy =
+            false
     end)
+
+    return true
 end
 
 --==================================================
@@ -11412,7 +11590,14 @@ GatewayBox:AddButton({
             return
         end
 
-        JoinParsedServer(LastServer)
+local joined =
+    JoinParsedServer(LastServer)
+
+if not joined
+and GatewayStatusLabel
+and tostring(GatewayStatusLabel.Text or "") == "" then
+    SetGatewayStatus("Reconnect blocked")
+end
     end,
 })
 
@@ -11445,9 +11630,12 @@ if parsed.PlaceId ~= TRADING_WORLD_PLACE_ID then
     return
 end
 
-JoinParsedServer(parsed)
+local joined =
+    JoinParsedServer(parsed)
 
-GatewayInput:SetValue("")
+if joined then
+    GatewayInput:SetValue("")
+end
     end,
 })
 
