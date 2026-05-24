@@ -28243,110 +28243,22 @@ function ApplyCompactTradeTopButtons(playerGui)
         return false
     end
 
-    local buttonNames = {
-        Tokens = true,
-        Booth = true,
-        Index = true,
-    }
-
-    local buttons = {}
-
-    for name in pairs(buttonNames) do
-
-        local button =
-            tradePlaza:FindFirstChild(name)
-
-        if button
-        and button:IsA("GuiObject") then
-            buttons[name] = button
-        end
-    end
-
-    --==================================================
-    -- Remove old HOLY scales from previous attempts
-    --==================================================
-
-    for _, obj in ipairs(tradePlaza:GetDescendants()) do
-
-        if obj:IsA("UIScale")
-        and (
-            obj.Name == "HolyTopTinyScale"
-            or obj.Name == "HolyCompactScale"
-            or obj.Name == "HolyTinyScale"
-        ) then
-            obj:Destroy()
-        end
-    end
-
-    --==================================================
-    -- Hide only the decorative TradePlaza background.
-    -- Do NOT hide descendants of Tokens/Booth/Index.
-    --==================================================
-
-    local function IsInsideMainButton(obj)
-
-        for _, button in pairs(buttons) do
-
-            if obj == button
-            or obj:IsDescendantOf(button) then
-                return true
-            end
-        end
-
-        return false
-    end
-
-    for _, obj in ipairs(tradePlaza:GetDescendants()) do
-
-        if not IsInsideMainButton(obj) then
-
-            local name =
-                tostring(obj.Name or ""):lower()
-
-            if name:find("background", 1, true)
-            or name:find("bg", 1, true)
-            or name:find("shadow", 1, true)
-            or name:find("glow", 1, true)
-            or name:find("outline", 1, true)
-            or name:find("stroke", 1, true) then
-
-                if obj:IsA("GuiObject") then
-                    obj.BackgroundTransparency = 1
-                end
-
-                if obj:IsA("ImageLabel")
-                or obj:IsA("ImageButton") then
-                    obj.ImageTransparency = 1
-                end
-
-                if obj:IsA("UIStroke") then
-                    obj.Transparency = 1
-                end
-            end
-        end
-    end
-
-    --==================================================
-    -- Make the actual buttons small.
-    -- No UIScale. No internal text/icon editing.
-    --==================================================
-
     local configs = {
         Tokens = {
-            Width = 78,
-            Height = 26,
+            Width = 76,
+            Height = 24,
             YOffset = -6,
         },
 
         Booth = {
             Width = 58,
-            Height = 30,
+            Height = 28,
             YOffset = -6,
         },
 
         Index = {
-            Width = 78,
-            Height = 26,
+            Width = 76,
+            Height = 24,
             YOffset = -6,
         },
     }
@@ -28357,12 +28269,26 @@ function ApplyCompactTradeTopButtons(playerGui)
     for name, config in pairs(configs) do
 
         local button =
-            buttons[name]
+            tradePlaza:FindFirstChild(name)
 
-        if button then
+        if button
+        and button:IsA("GuiObject") then
+
+            -- Remove old scale attempts.
+            for _, obj in ipairs(button:GetDescendants()) do
+
+                if obj:IsA("UIScale")
+                and (
+                    obj.Name == "HolyTopTinyScale"
+                    or obj.Name == "HolyCompactScale"
+                    or obj.Name == "HolyTinyScale"
+                ) then
+                    obj:Destroy()
+                end
+            end
 
             button.ClipsDescendants =
-                false
+                true
 
             button.Size =
                 UDim2.new(
@@ -28377,6 +28303,76 @@ function ApplyCompactTradeTopButtons(playerGui)
                 0,
                 config.YOffset
             )
+
+            --==================================================
+            -- FIX THE WEIRD STUDS BACKGROUND
+            --==================================================
+
+            local studs =
+                button:FindFirstChild("Studs")
+
+            if studs
+            and studs:IsA("GuiObject") then
+
+                studs.ClipsDescendants =
+                    true
+
+                studs.Position =
+                    UDim2.new(0, 0, 0, 0)
+
+                studs.Size =
+                    UDim2.new(1, 0, 1, 0)
+
+                studs.BackgroundTransparency =
+                    1
+
+                if studs:IsA("ImageLabel")
+                or studs:IsA("ImageButton") then
+
+                    -- Option A: keep subtle studs, but contained.
+                    studs.ImageTransparency =
+                        0.35
+
+                    studs.ScaleType =
+                        Enum.ScaleType.Tile
+
+                    studs.TileSize =
+                        UDim2.new(0, 12, 0, 12)
+                end
+            end
+
+            local stroke =
+                button:FindFirstChildOfClass("UIStroke")
+
+            if stroke then
+                stroke.Thickness =
+                    1
+            end
+
+            local title =
+                button:FindFirstChild("Title")
+
+            if title
+            and title:IsA("TextLabel") then
+
+                title.Size =
+                    UDim2.new(1, -4, 1, 0)
+
+                title.Position =
+                    UDim2.new(0, 2, 0, 0)
+
+                title.TextScaled =
+                    true
+
+                title.TextWrapped =
+                    false
+
+                title.Font =
+                    Enum.Font.GothamBold
+
+                title.TextStrokeTransparency =
+                    0.35
+            end
 
             applied =
                 true
