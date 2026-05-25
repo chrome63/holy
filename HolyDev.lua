@@ -8050,7 +8050,648 @@ function IsHolyPetInventoryFull()
     return currentPets >= maxPets, currentPets, maxPets
 end
 
-RunSmartSniperScan = nil
+--==================================================
+-- SMART SNIPER SCANNER v1
+-- Experimental engine behind Smart Scanner toggle.
+--
+-- Classic scanner stays untouched.
+--
+-- Goals:
+-- - reduce repeated unchanged listing work
+-- - keep buy invoke path fast
+-- - buy best candidate first
+-- - never hard-lock favorited listings
+--
+-- Important:
+-- ExtractListings() already skips petData.IsFavorite.
+-- If a favorited listing later becomes unfavorited, it can
+-- reappear and Smart Scanner will evaluate it again.
+--==================================================
+
+SmartSniperCache =
+    SmartSniperCache
+    or {
+        Signatures = {},
+        LastSeenAt = {},
+
+        LastCleanupAt = 0,
+        CleanupInterval = 10,
+
+        -- Unchanged listings are still rechecked periodically.
+        -- This protects against filter edits while Smart Scanner is ON.
+        RecheckUnchangedAfter = 0.75,
+
+        -- Cache expiry for listings not seen recently.
+        StaleAfter = 20,
+
+        Stats = {
+            Runs = 0,
+            LastRunMs = 0,
+
+            LastExtracted = 0,
+            LastScanned = 0,
+
+            LastCandidates = 0,
+            LastSkippedUnchanged = 0,
+            LastFavoriteSkipped = 0,
+
+            LastMatches = 0,
+            LastDispatched = 0,
+        },
+    }
+
+function ResetSmartSniperCache(reason)
+
+    SmartSniperCache =
+        SmartSniperCache
+        or {}
+
+    SmartSniperCache.Signatures =
+        SmartSniperCache.Signatures
+        or {}
+
+    SmartSniperCache.LastSeenAt =
+        SmartSniperCache.LastSeenAt
+        or {}
+
+    table.clear(
+        SmartSniperCache.Signatures
+    )
+
+    table.clear(
+        SmartSniperCache.LastSeenAt
+    )
+
+    SmartSniperCache.LastCleanupAt =
+        os.clock()
+
+    print(
+        "[SMART SNIPER] Cache reset:",
+        tostring(reason or "manual")
+    )
+
+    return true
+end
+
+function BuildSmartListingSignature(listing)
+
+    if type(listing) ~= "table" then
+        return ""
+    end
+
+    -- Favorite state is included for safety, even though
+    -- ExtractListings() should already skip favorites.
+    -- Do not use this to permanently fail-lock favorites.
+    return table.concat({
+        tostring(listing.PetName or ""),
+        tostring(listing.Price or ""),
+        tostring(listing.SellerUserId or ""),
+        tostring(listing.BaseWeight or ""),
+        tostring(listing.DisplayWeight or listing.Weight or ""),
+        tostring(listing.Age or ""),
+        tostring(listing.MutationText or listing.Mutation or ""),
+        tostring(listing.HatchedFrom or listing.SourceEgg or ""),
+        "fav=" .. tostring(listing.IsFavorite == true),
+    }, "|")
+end
+
+function ShouldSmartProcessListing(listing, now)
+
+    if type(listing) ~= "table" then
+        return false, "bad listing"
+    end
+
+    local listingKey =
+        GetListingKey(listing)
+
+    if listingKey == "" then
+        return false, "bad key"
+    end
+
+    -- Second safety layer:
+    -- If a favorite listing somehow leaks into this stage,
+    -- skip only this scan pass.
+    -- Do NOT add to FailedListings / ProcessedListings / ClaimedListings.
+    if listing.IsFavorite == true then
+
+        if SmartSniperCache.Signatures then
+            SmartSniperCache.Signatures[listingKey] =
+                nil
+        end
+
+        if SmartSniperCache.LastSeenAt then
+            SmartSniperCache.LastSeenAt[listingKey] =
+                nil
+        end
+
+        return false, "favorite"
+    end
+
+    now =
+        tonumber(now)
+        or os.clock()
+
+    SmartSniperCache.Signatures =
+        SmartSniperCache.Signatures
+        or {}
+
+    SmartSniperCache.LastSeenAt =
+        SmartSniperCache.LastSeenAt
+        or {}
+
+    local signature =
+        BuildSmartListingSignature(listing)
+
+    local oldSignature =
+        SmartSniperCache.Signatures[listingKey]
+
+    local previousSeenAt =
+        tonumber(
+            SmartSniperCache.LastSeenAt[listingKey]
+        )
+
+    SmartSniperCache.Signatures[listingKey] =
+        signature
+
+    SmartSniperCache.LastSeenAt[listingKey] =
+        now
+
+    if oldSignature ~= signature then
+        return true, "changed"
+    end
+
+    local recheckAfter =
+        SafeNumber(
+            SmartSniperCache.RecheckUnchangedAfter,
+            0.75
+        )
+
+    recheckAfter =
+        math.clamp(
+            recheckAfter,
+            0.25,
+            5
+        )
+
+    if not previousSeenAt
+    or now - previousSeenAt >= recheckAfter then
+        return true, "periodic recheck"
+    end
+
+    return false, "unchanged"
+end
+
+function CleanupSmartSniperCache()
+
+    if type(SmartSniperCache) ~= "table" then
+        return 0
+    end
+
+    SmartSniperCache.Signatures =
+        SmartSniperCache.Signatures
+        or {}
+
+    SmartSniperCache.LastSeenAt =
+        SmartSniperCache.LastSeenAt
+        or {}
+
+    local now =
+        os.clock()
+
+    local cleanupInterval =
+        SafeNumber(
+            SmartSniperCache.CleanupInterval,
+            10
+        )
+
+    if now - SafeNumber(SmartSniperCache.LastCleanupAt, 0)
+        < cleanupInterval
+    then
+        return 0
+    end
+
+    SmartSniperCache.LastCleanupAt =
+        now
+
+    local staleAfter =
+        SafeNumber(
+            SmartSniperCache.StaleAfter,
+            20
+        )
+
+    local removed =
+        0
+
+    for listingKey, lastSeenAt in pairs(SmartSniperCache.LastSeenAt) do
+
+        lastSeenAt =
+            tonumber(lastSeenAt)
+
+        if not lastSeenAt
+        or now - lastSeenAt > staleAfter then
+
+            SmartSniperCache.LastSeenAt[listingKey] =
+                nil
+
+            SmartSniperCache.Signatures[listingKey] =
+                nil
+
+            removed += 1
+        end
+    end
+
+    if removed > 0 then
+
+        print(
+            "[SMART SNIPER] Cache cleanup removed:",
+            tostring(removed)
+        )
+    end
+
+    return removed
+end
+
+function CountSmartSniperCache()
+
+    if type(SmartSniperCache) ~= "table"
+    or type(SmartSniperCache.Signatures) ~= "table" then
+        return 0
+    end
+
+    local count =
+        0
+
+    for _ in pairs(SmartSniperCache.Signatures) do
+        count += 1
+    end
+
+    return count
+end
+
+function HandleSmartSniperNoMatchesAutoHop()
+
+    if not SniperState.AutoHop then
+        return
+    end
+
+    SniperState.ScanStartedAt =
+        SafeNumber(
+            SniperState.ScanStartedAt,
+            os.clock()
+        )
+
+    local elapsed =
+        SafeElapsed(
+            SniperState.ScanStartedAt
+        )
+
+    if elapsed < SafeNumber(SniperState.ScanDuration, 10) then
+        return
+    end
+
+    SniperState.StayAfterSnipeUntil =
+        SafeNumber(
+            SniperState.StayAfterSnipeUntil,
+            0
+        )
+
+    local stayRemaining =
+        SafeRemaining(
+            SniperState.StayAfterSnipeUntil
+        )
+
+    if SniperState.StayAfterSnipe == true
+    and stayRemaining > 0 then
+
+        print(
+            string.format(
+                "[SniperHop] Staying after snipe: %.1fs remaining",
+                stayRemaining
+            )
+        )
+
+        return
+    end
+
+    SniperState.ScanStartedAt =
+        os.clock()
+
+    task.spawn(
+        ExecuteSniperHop
+    )
+end
+
+function RunSmartSniperScan()
+
+    if SniperState.Scanning then
+        return
+    end
+
+    SniperState.Scanning =
+        true
+
+    local ok, err =
+        pcall(function()
+
+            local runStartedAt =
+                os.clock()
+
+            SmartSniperCache.Stats =
+                SmartSniperCache.Stats
+                or {}
+
+            SmartSniperCache.Stats.Runs =
+                SafeNumber(
+                    SmartSniperCache.Stats.Runs,
+                    0
+                ) + 1
+
+            local listings, scannedCount =
+                ExtractListings()
+
+            listings =
+                type(listings) == "table"
+                and listings
+                or {}
+
+            scannedCount =
+                tonumber(scannedCount)
+                or #listings
+
+            -- Market Tracker should still see the extracted listings.
+            -- Its own dedupe prevents repeated webhook spam.
+            if type(TrackMarketListings) == "function" then
+                pcall(function()
+                    TrackMarketListings(listings)
+                end)
+            end
+
+            if SniperMonitorState then
+
+                SniperMonitorState.PetsScanned =
+                    scannedCount
+
+                SniperMonitorState.ScanPasses =
+                    SafeNumber(
+                        SniperMonitorState.ScanPasses,
+                        0
+                    ) + 1
+            end
+
+            local now =
+                os.clock()
+
+            local priorityMatches =
+                {}
+
+            local candidates =
+                0
+
+            local skippedUnchanged =
+                0
+
+            local favoriteSkipped =
+                0
+
+            local matches =
+                0
+
+            for i = 1, #listings do
+
+                local listing =
+                    listings[i]
+
+                if type(listing) ~= "table" then
+                    continue
+                end
+
+                if listing.IsFavorite == true then
+                    favoriteSkipped += 1
+                    continue
+                end
+
+                local listingKey =
+                    GetListingKey(listing)
+
+                -- Do not waste matching time on listings already in a
+                -- purchase/queue/failure lane.
+                if listingKey == ""
+                or ClaimedListings[listingKey]
+                or QueuedListings[listingKey]
+                or ActivePurchases[listingKey]
+                or ProcessedListings[listingKey]
+                or FailedListings[listingKey] then
+                    continue
+                end
+
+                local shouldProcess, reason =
+                    ShouldSmartProcessListing(
+                        listing,
+                        now
+                    )
+
+                if not shouldProcess then
+
+                    if reason == "favorite" then
+                        favoriteSkipped += 1
+                    else
+                        skippedUnchanged += 1
+                    end
+
+                    continue
+                end
+
+                candidates += 1
+
+                local matched =
+                    ListingMatchesFilter(listing)
+
+                if matched then
+
+                    matches += 1
+
+                    table.insert(
+                        priorityMatches,
+                        listing
+                    )
+                end
+            end
+
+            table.sort(
+                priorityMatches,
+                ComparePriorityListings
+            )
+
+            local dispatched =
+                0
+
+            if #priorityMatches > 0 then
+
+                local inventoryFull, currentPets, maxPets =
+                    IsHolyPetInventoryFull()
+
+                if inventoryFull then
+
+                    warn(
+                        string.format(
+                            "[SMART SNIPER] Inventory safety limit reached: %s/%s pets",
+                            tostring(currentPets),
+                            tostring(maxPets)
+                        )
+                    )
+
+                    HolyNotify(
+                        "Inventory Limit Reached",
+                        tostring(currentPets)
+                            .. "/"
+                            .. tostring(maxPets)
+                            .. " pets. Holy paused buying.",
+                        "package-x",
+                        5
+                    )
+
+                else
+
+                    -- Smart Scanner v1 dispatches only the best candidate.
+                    -- This prevents stale queue buildup while keeping the
+                    -- actual BuyListing invoke path fast.
+                    for index, listing in ipairs(priorityMatches) do
+
+                        local listingKey =
+                            GetListingKey(listing)
+
+                        if listingKey == ""
+                        or ClaimedListings[listingKey]
+                        or QueuedListings[listingKey]
+                        or ActivePurchases[listingKey]
+                        or ProcessedListings[listingKey]
+                        or FailedListings[listingKey] then
+                            continue
+                        end
+
+                        ClaimedListings[listingKey] =
+                            true
+
+                        print(
+                            string.format(
+                                "[SMART MATCH P%s #%s] %s | %s tokens | %skg | deal %.2f",
+                                tostring(
+                                    ClampSniperPriority(
+                                        listing.MatchedPriority
+                                        or 5
+                                    )
+                                ),
+                                tostring(index),
+                                tostring(listing.PetName),
+                                tostring(listing.Price),
+                                tostring(listing.Weight),
+                                tonumber(listing.MatchedDealScore)
+                                    or 0
+                            )
+                        )
+
+                        local didDispatch =
+                            DispatchPurchase(listing)
+
+                        if didDispatch then
+
+                            dispatched += 1
+
+                            task.delay(15, function()
+                                ClaimedListings[listingKey] =
+                                    nil
+                            end)
+
+                            -- Best-candidate-only mode.
+                            break
+
+                        else
+
+                            ClaimedListings[listingKey] =
+                                nil
+                        end
+                    end
+                end
+            end
+
+            if matches <= 0 then
+                HandleSmartSniperNoMatchesAutoHop()
+            else
+
+                print(
+                    "[SMART SNIPER] Matches:",
+                    tostring(matches),
+                    "| candidates:",
+                    tostring(candidates),
+                    "| dispatched:",
+                    tostring(dispatched)
+                )
+            end
+
+            CleanupSmartSniperCache()
+
+            SmartSniperCache.Stats.LastRunMs =
+                (os.clock() - runStartedAt) * 1000
+
+            SmartSniperCache.Stats.LastExtracted =
+                #listings
+
+            SmartSniperCache.Stats.LastScanned =
+                scannedCount
+
+            SmartSniperCache.Stats.LastCandidates =
+                candidates
+
+            SmartSniperCache.Stats.LastSkippedUnchanged =
+                skippedUnchanged
+
+            SmartSniperCache.Stats.LastFavoriteSkipped =
+                favoriteSkipped
+
+            SmartSniperCache.Stats.LastMatches =
+                matches
+
+            SmartSniperCache.Stats.LastDispatched =
+                dispatched
+
+            SniperState.LastScan =
+                os.clock()
+        end)
+
+    SniperState.Scanning =
+        false
+
+    if not ok then
+        warn(
+            "[SMART SNIPER] Scan failed:",
+            tostring(err)
+        )
+    end
+end
+
+function RunSmartSniperSelfTest()
+
+    print("========== SMART SNIPER SELF TEST ==========")
+    print("Enabled:", tostring(SniperState.SmartScannerEnabled))
+    print("Mode:", tostring(SniperState.SmartScannerMode))
+    print("Cache entries:", tostring(CountSmartSniperCache()))
+
+    if SmartSniperCache
+    and SmartSniperCache.Stats then
+
+        print("Runs:", tostring(SmartSniperCache.Stats.Runs or 0))
+        print("LastRun ms:", string.format("%.3f", SmartSniperCache.Stats.LastRunMs or 0))
+        print("LastExtracted:", tostring(SmartSniperCache.Stats.LastExtracted or 0))
+        print("LastScanned:", tostring(SmartSniperCache.Stats.LastScanned or 0))
+        print("LastCandidates:", tostring(SmartSniperCache.Stats.LastCandidates or 0))
+        print("LastSkippedUnchanged:", tostring(SmartSniperCache.Stats.LastSkippedUnchanged or 0))
+        print("LastFavoriteSkipped:", tostring(SmartSniperCache.Stats.LastFavoriteSkipped or 0))
+        print("LastMatches:", tostring(SmartSniperCache.Stats.LastMatches or 0))
+        print("LastDispatched:", tostring(SmartSniperCache.Stats.LastDispatched or 0))
+    end
+
+    print("============================================")
+end
 
 function RunSniperScan()
 
@@ -8775,6 +9416,53 @@ HolyDebug.BuyLane = function()
     print("=====================================")
 end
 
+HolyDebug.SmartScanner = function()
+
+    print("========== SMART SNIPER DEBUG ==========")
+
+    print(
+        "Enabled:",
+        SniperState
+        and tostring(SniperState.SmartScannerEnabled)
+        or "nil"
+    )
+
+    print(
+        "Mode:",
+        SniperState
+        and tostring(SniperState.SmartScannerMode)
+        or "nil"
+    )
+
+    local cacheCount =
+        type(CountSmartSniperCache) == "function"
+        and CountSmartSniperCache()
+        or 0
+
+    print("Cache entries:", tostring(cacheCount))
+
+    if type(SmartSniperCache) == "table"
+    and type(SmartSniperCache.Stats) == "table" then
+
+        local stats =
+            SmartSniperCache.Stats
+
+        print("Runs:", tostring(stats.Runs or 0))
+        print("LastRun ms:", string.format("%.3f", tonumber(stats.LastRunMs) or 0))
+        print("LastExtracted:", tostring(stats.LastExtracted or 0))
+        print("LastScanned:", tostring(stats.LastScanned or 0))
+        print("LastCandidates:", tostring(stats.LastCandidates or 0))
+        print("LastSkippedUnchanged:", tostring(stats.LastSkippedUnchanged or 0))
+        print("LastFavoriteSkipped:", tostring(stats.LastFavoriteSkipped or 0))
+        print("LastMatches:", tostring(stats.LastMatches or 0))
+        print("LastDispatched:", tostring(stats.LastDispatched or 0))
+    else
+        print("Stats: missing")
+    end
+
+    print("========================================")
+end
+
 HolyDebug.All = function()
 
     HolyDebug.Runtime()
@@ -8782,6 +9470,10 @@ HolyDebug.All = function()
     HolyDebug.ProfileFilters()
     HolyDebug.ServerQuality()
     HolyDebug.BuyLane()
+
+    if type(HolyDebug.SmartScanner) == "function" then
+        HolyDebug.SmartScanner()
+    end
 end
 
 print("[HOLY_DEBUG] Bridge ready. Use getgenv().HOLY_DEBUG.All()")
@@ -13539,6 +14231,15 @@ SmartScannerToggle:OnChanged(function(v)
         v == true
         and "Smart Experimental"
         or "Classic"
+
+    if type(ResetSmartSniperCache) == "function" then
+
+        ResetSmartSniperCache(
+            v == true
+            and "smart enabled"
+            or "classic enabled"
+        )
+    end
 
     MarkConfigDirty()
 
