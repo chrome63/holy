@@ -5558,14 +5558,26 @@ function SendMarketTrackerWebhookNow(listing)
             price
         )
 
-    local mutationText =
+local listingInfo =
+    type(listing) == "table"
+    and listing
+    or {}
+
+local mutationText =
     tostring(
-        listing.Mutation
-        or listing.MutationName
-        or listing.PetMutation
-        or listing.MutationText
+        listingInfo.MutationText
+        or listingInfo.Mutation
+        or listingInfo.MutationName
+        or listingInfo.PetMutation
         or "Normal"
     )
+
+if mutationText == ""
+or mutationText == "---"
+or mutationText == "Unknown" then
+    mutationText =
+        "Normal"
+end
 
 local title =
     BuildMarketTrackerTitle(
