@@ -3183,16 +3183,43 @@ local mutationText =
         itemData,
         listingData
     )
-if mutationText ~= "Normal" then
+
+MarketMutationDebugSeen =
+    MarketMutationDebugSeen
+    or {}
+
+local marketDebugKey =
+    tostring(boothId)
+    .. "_"
+    .. tostring(uid)
+
+local isMarketTrackerPet =
+    type(MarketTrackerTargets) == "table"
+    and MarketTrackerTargets[tostring(petName)] ~= nil
+
+if isMarketTrackerPet
+and not MarketMutationDebugSeen[marketDebugKey] then
+
+    MarketMutationDebugSeen[marketDebugKey] =
+        true
+
     print(
-        "[MUTATION DEBUG]",
-        tostring(itemData.PetType or petName),
+        "[MARKET MUTATION DEBUG]",
+        tostring(petName),
         "| mutation:",
         tostring(mutationText),
-        "| raw variants:",
+        "| petData.Mutation:",
+        tostring(petData and petData.Mutation),
+        "| petData.Mutations:",
+        tostring(petData and petData.Mutations),
+        "| petData.Variant:",
+        tostring(petData and petData.Variant),
+        "| petData.Variants:",
         tostring(petData and petData.Variants),
-        "| raw mutations:",
-        tostring(petData and petData.Mutations)
+        "| itemData.Mutation:",
+        tostring(itemData and itemData.Mutation),
+        "| listingData.Mutation:",
+        tostring(listingData and listingData.Mutation)
     )
 end
     local hatchedFrom =
@@ -4237,23 +4264,35 @@ function BuildPetMutationNameAndCodeCache()
         return PetMutationNameCache, PetMutationCodeCache
     end
 
-    local nameSet =
-        {}
+    local nameSet = {}
+    local codeToName = {}
 
-    local codeToName =
-        {}
+    local function CleanText(value)
+
+        local text =
+            tostring(value or "")
+                :gsub("^%s+", "")
+                :gsub("%s+$", "")
+
+        if text == ""
+        or text == "---"
+        or text == "Normal"
+        or text == "Unknown"
+        or text == "nil"
+        or text == "false"
+        or text == "0" then
+            return nil
+        end
+
+        return text
+    end
 
     local function AddName(name)
 
         name =
-            tostring(name or "")
-                :gsub("^%s+", "")
-                :gsub("%s+$", "")
+            CleanText(name)
 
-        if name == ""
-        or name == "---"
-        or name == "Normal"
-        or name == "Unknown"
+        if not name
         or tonumber(name) then
             return
         end
@@ -4265,79 +4304,53 @@ function BuildPetMutationNameAndCodeCache()
     local function AddCode(code, name)
 
         code =
-            tostring(code or "")
-                :gsub("^%s+", "")
-                :gsub("%s+$", "")
+            CleanText(code)
 
         name =
-            tostring(name or "")
-                :gsub("^%s+", "")
-                :gsub("%s+$", "")
+            CleanText(name)
 
-        if code == ""
-        or name == ""
-        or name == "---"
-        or name == "Normal"
-        or name == "Unknown" then
+        if not code
+        or not name
+        or tonumber(name) then
             return
         end
 
+        -- Save exact, lowercase, and uppercase because game enum
+        -- codes can appear as a / A / EV / ev depending on source.
         codeToName[code] =
+            name
+
+        codeToName[code:lower()] =
+            name
+
+        codeToName[code:upper()] =
             name
 
         AddName(name)
     end
 
-    local mutationRoot =
+    local registry =
         nil
 
-    pcall(function()
+    if type(GetPetRegistry) == "function" then
+        registry =
+            GetPetRegistry()
+    end
 
-        local data =
-            ReplicatedStorage:FindFirstChild("Data")
+    -- Correct root:
+    -- PetRegistry.PetMutationRegistry contains EnumToPetMutation,
+    -- PetMutationToEnum, PetMutationRegistry, MachineMutationTypes.
+    local mutationRoot =
+        type(registry) == "table"
+        and rawget(registry, "PetMutationRegistry")
+        or nil
 
-        if not data then
-            return
-        end
-
-        local candidates = {
-            "PetMutationRegistry",
-            "PetMutations",
-            "MutationRegistry",
-            "MutationData",
-            "PetRegistry",
-        }
-
-        for _, moduleName in ipairs(candidates) do
-
-            local module =
-                data:FindFirstChild(moduleName)
-
-            if module
-            and module:IsA("ModuleScript") then
-
-                local ok, result =
-                    pcall(function()
-                        return require(module)
-                    end)
-
-                if ok
-                and type(result) == "table" then
-
-                    if rawget(result, "EnumToPetMutation")
-                    or rawget(result, "PetMutationToEnum")
-                    or rawget(result, "PetMutationRegistry")
-                    or rawget(result, "MachineMutationTypes") then
-
-                        mutationRoot =
-                            result
-
-                        return
-                    end
-                end
-            end
-        end
-    end)
+    -- Fallback if the required module itself already returned the mutation root.
+    if type(mutationRoot) ~= "table"
+    and type(registry) == "table" then
+        mutationRoot =
+            registry
+    end
 
     if type(mutationRoot) == "table" then
 
@@ -4347,10 +4360,7 @@ function BuildPetMutationNameAndCodeCache()
         if type(enumToPetMutation) == "table" then
 
             for code, mutationName in pairs(enumToPetMutation) do
-
-                if type(mutationName) == "string" then
-                    AddCode(code, mutationName)
-                end
+                AddCode(code, mutationName)
             end
         end
 
@@ -4360,15 +4370,8 @@ function BuildPetMutationNameAndCodeCache()
         if type(petMutationToEnum) == "table" then
 
             for mutationName, code in pairs(petMutationToEnum) do
-
-                if type(mutationName) == "string" then
-                    AddName(mutationName)
-
-                    if type(code) == "string"
-                    or type(code) == "number" then
-                        AddCode(code, mutationName)
-                    end
-                end
+                AddName(mutationName)
+                AddCode(code, mutationName)
             end
         end
 
@@ -4379,25 +4382,26 @@ function BuildPetMutationNameAndCodeCache()
 
             for mutationName, mutationData in pairs(petMutationRegistry) do
 
-                if type(mutationName) == "string" then
-                    AddName(mutationName)
-                end
+                AddName(mutationName)
 
                 if type(mutationData) == "table" then
 
                     local enum =
-                        mutationData.Enum
-                        or mutationData.Code
-                        or mutationData.Id
-                        or mutationData.ID
+                        rawget(mutationData, "Enum")
+                        or rawget(mutationData, "Code")
+                        or rawget(mutationData, "Id")
+                        or rawget(mutationData, "ID")
+                        or rawget(mutationData, "MutationEnum")
+                        or rawget(mutationData, "MutationId")
 
                     if enum then
                         AddCode(enum, mutationName)
                     end
 
-                elseif type(mutationData) == "string" then
+                elseif type(mutationData) == "string"
+                or type(mutationData) == "number" then
 
-                    AddName(mutationData)
+                    AddCode(mutationData, mutationName)
                 end
             end
         end
@@ -4409,25 +4413,26 @@ function BuildPetMutationNameAndCodeCache()
 
             for mutationName, mutationData in pairs(machineMutationTypes) do
 
-                if type(mutationName) == "string" then
-                    AddName(mutationName)
-                end
+                AddName(mutationName)
 
                 if type(mutationData) == "table" then
 
                     local enum =
-                        mutationData.Enum
-                        or mutationData.Code
-                        or mutationData.Id
-                        or mutationData.ID
+                        rawget(mutationData, "Enum")
+                        or rawget(mutationData, "Code")
+                        or rawget(mutationData, "Id")
+                        or rawget(mutationData, "ID")
+                        or rawget(mutationData, "MutationEnum")
+                        or rawget(mutationData, "MutationId")
 
                     if enum then
                         AddCode(enum, mutationName)
                     end
 
-                elseif type(mutationData) == "string" then
+                elseif type(mutationData) == "string"
+                or type(mutationData) == "number" then
 
-                    AddName(mutationData)
+                    AddCode(mutationData, mutationName)
                 end
             end
         end
@@ -4439,23 +4444,24 @@ function BuildPetMutationNameAndCodeCache()
     PetMutationCodeCache =
         codeToName
 
+    local nameCount = 0
+    local codeCount = 0
+
+    for _ in pairs(nameSet) do
+        nameCount = nameCount + 1
+    end
+
+    for _ in pairs(codeToName) do
+        codeCount = codeCount + 1
+    end
+
     print(
         "[MUTATION MAP] names:",
-        tostring((function()
-            local count = 0
-            for _ in pairs(nameSet) do
-                count = count + 1
-            end
-            return count
-        end)()),
+        tostring(nameCount),
         "| codes:",
-        tostring((function()
-            local count = 0
-            for _ in pairs(codeToName) do
-                count = count + 1
-            end
-            return count
-        end)())
+        tostring(codeCount),
+        "| root:",
+        tostring(type(mutationRoot))
     )
 
     return PetMutationNameCache, PetMutationCodeCache
@@ -4481,20 +4487,24 @@ function ResolvePetMutationCodeOrName(value)
         return nil
     end
 
-    -- Internal enum code, example: EV -> Everchanted.
-    if type(codeToName) == "table"
-    and codeToName[text] then
-        return codeToName[text]
+    if type(codeToName) == "table" then
+
+        local fromCode =
+            codeToName[text]
+            or codeToName[text:lower()]
+            or codeToName[text:upper()]
+
+        if fromCode then
+            return fromCode
+        end
     end
 
-    -- Already readable mutation name.
     if type(nameSet) == "table"
     and nameSet[text:lower()] then
         return nameSet[text:lower()]
     end
 
-    -- Safety: do NOT accept random one/two-letter enum-looking values.
-    -- These are what caused H, i, z, X, EV spam.
+    -- Do not accept one/two-letter enum-looking values unless mapped.
     if #text <= 2 then
         return nil
     end
@@ -6070,6 +6080,19 @@ local title =
         config
     )
 
+    print(
+    "[MARKET TITLE DEBUG]",
+    "pet:",
+    tostring(petName),
+    "| mutation:",
+    tostring(mutationText),
+    "| age:",
+    tostring(age),
+    "| display:",
+    tostring(displayWeight),
+    "| title:",
+    tostring(title)
+)
     local webJoinLink =
         "https://www.roblox.com/games/"
         .. tostring(TRADING_WORLD_PLACE_ID)
