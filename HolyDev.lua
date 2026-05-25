@@ -1490,8 +1490,42 @@ function ResolvePetIconAssetId(petName)
     return nil
 end
 
+MarketTrackerPetImageOverrides = {
+    ["Rainbow Dilophosaurus"] =
+        "https://static.wikia.nocookie.net/growagarden/images/d/d8/RainbowDilophosaurus.png/revision/latest?cb=20250806131700",
+
+    -- Add more later like:
+    -- ["Raccoon"] = "https://...",
+    -- ["Kitsune"] = "https://...",
+    -- ["Mimic Octopus"] = "https://...",
+    -- ["Seal"] = "https://...",
+}
+
 function ResolvePetIconThumbnailUrl(petName)
 
+    petName =
+        tostring(petName or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if petName == "" then
+        return nil
+    end
+
+    -- 1. Manual high-quality image override.
+    -- Best for Discord because static.wikia.nocookie.net usually embeds cleanly.
+    if type(MarketTrackerPetImageOverrides) == "table" then
+
+        local overrideUrl =
+            MarketTrackerPetImageOverrides[petName]
+
+        if type(overrideUrl) == "string"
+        and overrideUrl ~= "" then
+            return overrideUrl
+        end
+    end
+
+    -- 2. Fallback to Roblox registry icon.
     local assetId =
         ResolvePetIconAssetId(petName)
 
@@ -1499,9 +1533,7 @@ function ResolvePetIconThumbnailUrl(petName)
         return nil
     end
 
-    return "https://www.roblox.com/asset-thumbnail/image?assetId="
-        .. tostring(assetId)
-        .. "&width=420&height=420&format=png"
+    return ResolveRobloxAssetThumbnailUrl(assetId)
 end
 
 function GetEggFocusNames()
