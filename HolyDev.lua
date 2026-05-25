@@ -1398,6 +1398,112 @@ function DebugPetImageData(targetPet)
     print("====================================")
 end
 
+function ExtractRobloxAssetId(value)
+
+    local text =
+        tostring(value or "")
+
+    if text == "" then
+        return nil
+    end
+
+    local assetId =
+        text:match("rbxassetid://(%d+)")
+        or text:match("assetId=(%d+)")
+        or text:match("(%d+)")
+
+    assetId =
+        tonumber(assetId)
+
+    if not assetId
+    or assetId <= 0 then
+        return nil
+    end
+
+    return math.floor(assetId)
+end
+
+function ResolvePetIconAssetId(petName)
+
+    petName =
+        tostring(petName or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if petName == "" then
+        return nil
+    end
+
+    local registry =
+        GetPetRegistry()
+
+    if type(registry) ~= "table" then
+        return nil
+    end
+
+    local petList =
+        rawget(registry, "PetList")
+
+    if type(petList) ~= "table" then
+        return nil
+    end
+
+    local petData =
+        petList[petName]
+
+    if type(petData) ~= "table" then
+        return nil
+    end
+
+    local candidates = {
+        rawget(petData, "Icon"),
+        rawget(petData, "IconId"),
+        rawget(petData, "IconID"),
+
+        rawget(petData, "Image"),
+        rawget(petData, "ImageId"),
+        rawget(petData, "ImageID"),
+
+        rawget(petData, "Thumbnail"),
+        rawget(petData, "ThumbnailId"),
+        rawget(petData, "ThumbnailID"),
+
+        rawget(petData, "Asset"),
+        rawget(petData, "AssetId"),
+        rawget(petData, "AssetID"),
+
+        rawget(petData, "Texture"),
+        rawget(petData, "TextureId"),
+        rawget(petData, "TextureID"),
+    }
+
+    for _, value in ipairs(candidates) do
+
+        local assetId =
+            ExtractRobloxAssetId(value)
+
+        if assetId then
+            return assetId
+        end
+    end
+
+    return nil
+end
+
+function ResolvePetIconThumbnailUrl(petName)
+
+    local assetId =
+        ResolvePetIconAssetId(petName)
+
+    if not assetId then
+        return nil
+    end
+
+    return "https://www.roblox.com/asset-thumbnail/image?assetId="
+        .. tostring(assetId)
+        .. "&width=420&height=420&format=png"
+end
+
 function GetEggFocusNames()
 
     local registry =
@@ -5953,11 +6059,6 @@ end
 
 function BuildMarketTrackerTitle(petName, mutationText, age, displayWeight, config)
 
-    local emoji =
-        type(config) == "table"
-        and tostring(config.Emoji or "🔎")
-        or "🔎"
-
     local numericAge =
         tonumber(age)
 
@@ -5987,7 +6088,6 @@ function BuildMarketTrackerTitle(petName, mutationText, age, displayWeight, conf
     and mutationText ~= "Normal"
     and mutationText ~= "Unknown" then
 
-        -- Avoid double-prefixing if PetName already includes the mutation.
         if not finalName:lower():find(
             mutationText:lower(),
             1,
@@ -6001,9 +6101,7 @@ function BuildMarketTrackerTitle(petName, mutationText, age, displayWeight, conf
         end
     end
 
-    return emoji
-        .. " "
-        .. finalName
+    return finalName
         .. " [Age "
         .. tostring(ageText)
         .. "] ["
@@ -6125,6 +6223,11 @@ local title =
         config
     )
 
+    local petImageUrl =
+    ResolvePetIconThumbnailUrl(
+        petName
+    )
+
     local webJoinLink =
         "https://www.roblox.com/games/"
         .. tostring(TRADING_WORLD_PLACE_ID)
@@ -6180,27 +6283,35 @@ local title =
         .. "\n```"
         
 
-    local payload = {
-        embeds = {{
+local payload = {
+    embeds = {{
 
-            title =
-                title,
+        title =
+            title,
 
-            description =
-                description,
+        description =
+            description,
 
-            color =
-                deal.Color
-                or 0x5865F2,
+        color =
+            deal.Color
+            or 0x5865F2,
 
-            footer = {
-                text = "Holy Market Tracker"
-            },
+        footer = {
+            text = "Holy Market Tracker"
+        },
 
-            timestamp =
-                DateTime.now():ToIsoDate(),
-        }}
+        timestamp =
+            DateTime.now():ToIsoDate(),
+    }}
+}
+
+if petImageUrl
+and petImageUrl ~= "" then
+
+    payload.embeds[1].thumbnail = {
+        url = petImageUrl
     }
+end
 
     if deal.ShouldPing == true then
 
