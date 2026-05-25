@@ -14218,7 +14218,7 @@ local SmartScannerToggle =
         {
             Text = "🧠 Smart Scanner",
             Default = false,
-            Tooltip = "Experimental sniper scanner. OFF keeps the current stable scanner. ON will use the new optimized scanner path when implemented.",
+            Tooltip = "Experimental efficient scanner. Skips repeated unchanged listings, focuses new/changed listings, and buys the best match first. OFF = classic stable scanner.",
         }
     )
 
