@@ -735,10 +735,35 @@ function ResolveListingWeightForFilter(listing, filter)
         )
 
     if weightMode == "BaseWeight" then
-        return tonumber(listing.BaseWeight) or 0, weightMode
+
+        return tonumber(listing.BaseWeight)
+            or 0,
+            "BaseWeight"
     end
 
-    return tonumber(listing.DisplayWeight or listing.Weight) or 0, weightMode
+    local weightSource =
+        tostring(
+            listing.WeightSource
+            or "Unknown"
+        )
+
+    -- DisplayWeight is only trusted when booth data exposes
+    -- an explicit visible/current weight.
+    --
+    -- If WeightSource is BaseFallback, DisplayWeight is just
+    -- copied from BaseWeight and should NOT be treated as real KG.
+    if weightSource ~= "Explicit" then
+
+        return 0,
+            "DisplayWeight-Untrusted"
+    end
+
+    return tonumber(
+        listing.DisplayWeight
+        or listing.Weight
+    )
+        or 0,
+        "DisplayWeight"
 end
 
 function FormatFilterWeight(value, weightMode)
@@ -3120,6 +3145,14 @@ BaseWeight = baseWeight,
 DisplayWeight = displayWeight,
 
 WeightSource = weightSource,
+
+DisplayWeightTrusted =
+    tostring(weightSource) == "Explicit",
+
+WeightConfidence =
+    tostring(weightSource) == "Explicit"
+    and "TrustedDisplay"
+    or "BaseFallback",
 
 -- Legacy compatibility: existing webhook/buy code reads Weight.
 Weight = displayWeight,
@@ -9762,6 +9795,8 @@ HolyDebug.WeightMatchExplain = function(targetPet, limit)
         print("BaseWeight:", tostring(listing.BaseWeight))
         print("DisplayWeight:", tostring(listing.DisplayWeight or listing.Weight))
         print("WeightSource:", tostring(listing.WeightSource))
+        print("DisplayWeightTrusted:", tostring(listing.DisplayWeightTrusted == true))
+        print("WeightConfidence:", tostring(listing.WeightConfidence or "Unknown"))
         print("Age:", tostring(listing.Age or "nil"))
         print("Mutation:", tostring(listing.MutationText or "nil"))
 
