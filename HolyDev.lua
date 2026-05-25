@@ -1491,14 +1491,36 @@ function ResolvePetIconAssetId(petName)
 end
 
 MarketTrackerPetImageOverrides = {
+
+    ["Ghostly Spider"] =
+        "https://static.wikia.nocookie.net/growagarden/images/a/a3/GhostlySpider.png/revision/latest?cb=20251014124843",
+
+    ["Albino Peacock"] =
+        "https://static.wikia.nocookie.net/growagarden/images/9/92/AlbinoPeacock.png/revision/latest?cb=20251227043649",
+
+    ["Blue Whale"] =
+        "https://static.wikia.nocookie.net/growagarden/images/c/c5/BlueWhale.png/revision/latest?cb=20251227044221",
+
+    ["Ghostly Headless Horseman"] =
+        "https://static.wikia.nocookie.net/growagarden/images/c/c0/GhostlyHeadlessHorseman.png/revision/latest?cb=20251014124925",
+
+    ["Rainbow Elephant"] =
+        "https://static.wikia.nocookie.net/growagarden/images/0/06/RainbowElephant.png/revision/latest?cb=20251101093454",
+
+    ["Raccoon"] =
+        "https://static.wikia.nocookie.net/growagarden/images/5/54/Raccon_Better_Quality.png/revision/latest?cb=20260121085435",
+
+    ["Kitsune"] =
+        "https://static.wikia.nocookie.net/growagarden/images/0/04/Kitsune.png/revision/latest?cb=20250918145223",
+
+    ["Mimic Octopus"] =
+        "https://static.wikia.nocookie.net/growagarden/images/1/15/MimicOctopusImage.png/revision/latest?cb=20250806125636",
+
+    ["Rainbow Birb"] =
+        "https://static.wikia.nocookie.net/growagarden/images/1/13/RainbowBirb.png/revision/latest?cb=20260117041633",
+
     ["Rainbow Dilophosaurus"] =
         "https://static.wikia.nocookie.net/growagarden/images/d/d8/RainbowDilophosaurus.png/revision/latest?cb=20250806131700",
-
-    -- Add more later like:
-    -- ["Raccoon"] = "https://...",
-    -- ["Kitsune"] = "https://...",
-    -- ["Mimic Octopus"] = "https://...",
-    -- ["Seal"] = "https://...",
 }
 
 function ResolvePetIconThumbnailUrl(petName)
