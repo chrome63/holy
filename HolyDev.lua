@@ -5414,7 +5414,7 @@ function ResolveMarketTrackerDeal(config, price)
     }
 end
 
-function BuildMarketTrackerTitle(petName, age, displayWeight, config)
+function BuildMarketTrackerTitle(petName, mutationText, age, displayWeight, config)
 
     local emoji =
         type(config) == "table"
@@ -5422,12 +5422,12 @@ function BuildMarketTrackerTitle(petName, age, displayWeight, config)
         or "🔎"
 
     local numericAge =
-    tonumber(age)
+        tonumber(age)
 
-local ageText =
-    numericAge
-    and tostring(math.floor(numericAge))
-    or "Unknown"
+    local ageText =
+        numericAge
+        and tostring(math.floor(numericAge))
+        or "Unknown"
 
     local weightText =
         FormatMarketTrackerWeightKG(
@@ -5439,9 +5439,34 @@ local ageText =
             displayWeight
         )
 
+    local finalName =
+        tostring(petName or "Unknown")
+
+    mutationText =
+        tostring(mutationText or "Normal")
+
+    if mutationText ~= ""
+    and mutationText ~= "---"
+    and mutationText ~= "Normal"
+    and mutationText ~= "Unknown" then
+
+        -- Avoid double-prefixing if PetName already includes the mutation.
+        if not finalName:lower():find(
+            mutationText:lower(),
+            1,
+            true
+        ) then
+
+            finalName =
+                mutationText
+                .. " "
+                .. finalName
+        end
+    end
+
     return emoji
         .. " "
-        .. tostring(petName or "Unknown")
+        .. finalName
         .. " [Age "
         .. tostring(ageText)
         .. "] ["
@@ -5533,13 +5558,23 @@ function SendMarketTrackerWebhookNow(listing)
             price
         )
 
-    local title =
-        BuildMarketTrackerTitle(
-            petName,
-            age,
-            displayWeight,
-            config
-        )
+    local mutationText =
+    tostring(
+        listing.Mutation
+        or listing.MutationName
+        or listing.PetMutation
+        or listing.MutationText
+        or "Normal"
+    )
+
+local title =
+    BuildMarketTrackerTitle(
+        petName,
+        mutationText,
+        age,
+        displayWeight,
+        config
+    )
 
     local webJoinLink =
         "https://www.roblox.com/games/"
