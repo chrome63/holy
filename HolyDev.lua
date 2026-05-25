@@ -6173,16 +6173,6 @@ end
         end
     end
 
-    print(
-        "[MARKET TRACKER] Sent:",
-        tostring(title),
-        "|",
-        tostring(priceText),
-        "tokens",
-        "|",
-        tostring(deal.Text)
-    )
-
     return true
 end
 function QueueMarketTrackerWebhook(listing)
@@ -6268,11 +6258,6 @@ function QueueMarketTrackerWebhook(listing)
             false
     end)
 
-    print(
-        "[MARKET TRACKER] Instant send:",
-        tostring(listing.PetName or "Unknown")
-    )
-
     return true
 end
 
@@ -6322,14 +6307,6 @@ if isTarget then
     end
 end
     end
-
-if sent > 0 then
-
-    print(
-        "[MARKET TRACKER] Matches sent instantly:",
-        tostring(sent)
-    )
-end
 
 return sent
 end
