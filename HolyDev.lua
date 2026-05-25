@@ -1428,10 +1428,16 @@ SniperState = {
     MaxPetInventory = 350,
     StopAtPetInventoryLimit = true,
 
-        -- scan timing
-    LastScan = 0,
-    ScanInterval = 0.02,
-    ScanSpeedMode = "Fast",
+-- scan timing
+LastScan = 0,
+ScanInterval = 0.02,
+ScanSpeedMode = "Fast",
+
+-- Experimental sniper engine.
+-- OFF = current stable scanner.
+-- ON  = future optimized scanner path.
+SmartScannerEnabled = false,
+SmartScannerMode = "Classic",
 
     -- booth-data refresh timing
     -- Controls how often LatestBoothData is refreshed from TradeBoothController data.
@@ -8044,14 +8050,24 @@ function IsHolyPetInventoryFull()
     return currentPets >= maxPets, currentPets, maxPets
 end
 
+RunSmartSniperScan = nil
+
 function RunSniperScan()
 
-    if SniperState.Scanning then
-        return
-    end
+if SniperState.Scanning then
+    return
+end
 
-    SniperState.Scanning =
-        true
+-- Future engine branch.
+-- Smart scanner stays behind a toggle so Classic behavior remains stable.
+if SniperState.SmartScannerEnabled == true
+and type(RunSmartSniperScan) == "function" then
+
+    return RunSmartSniperScan()
+end
+
+SniperState.Scanning =
+    true
 
     local ok, err =
         pcall(function()
@@ -8428,9 +8444,11 @@ HolyDebug.Runtime = function()
         print("Scanning:", tostring(SniperState.Scanning))
         print("AutoHop:", tostring(SniperState.AutoHop))
         print("ScanInterval:", tostring(SniperState.ScanInterval))
-        print("BoothRefresh:", tostring(SniperState.BoothDataRefreshInterval))
-        print("ScanDuration:", tostring(SniperState.ScanDuration))
-        print("Hopping:", tostring(SniperState.Hopping))
+print("BoothRefresh:", tostring(SniperState.BoothDataRefreshInterval))
+print("ScanDuration:", tostring(SniperState.ScanDuration))
+print("SmartScanner:", tostring(SniperState.SmartScannerEnabled))
+print("ScannerMode:", tostring(SniperState.SmartScannerMode))
+print("Hopping:", tostring(SniperState.Hopping))
     end
 
     print("PurchaseQueue:", PurchaseQueue and #PurchaseQueue or "nil")
@@ -8569,6 +8587,92 @@ HolyDebug.ProfileFilters = function()
         or "0"
     )
     print("==========================================")
+end
+
+HolyDebug.ProfileFiltersFromSnapshot = function()
+
+    print("========== FILTER MATCH PROFILE SNAPSHOT ==========")
+
+    if type(ExtractListings) ~= "function"
+    or type(ListingMatchesFilter) ~= "function" then
+        warn("[HOLY_DEBUG] Missing ExtractListings or ListingMatchesFilter")
+        return
+    end
+
+    local ok, listings, scanned =
+        pcall(function()
+            return ExtractListings()
+        end)
+
+    if not ok
+    or type(listings) ~= "table" then
+        warn("[HOLY_DEBUG] ExtractListings failed:", tostring(listings))
+        return
+    end
+
+    local checked =
+        0
+
+    local matches =
+        0
+
+    local favoriteSkipped =
+        0
+
+    local start =
+        os.clock()
+
+    for _, listing in ipairs(listings) do
+
+        checked += 1
+
+        -- Favorite safety visibility.
+        -- Favorite listings should already be skipped by ExtractListings(),
+        -- but this tells us if any favorite listing leaks into matching.
+        if listing.IsFavorite == true then
+
+            favoriteSkipped += 1
+            continue
+        end
+
+        local matchOk, matched =
+            pcall(function()
+                return ListingMatchesFilter(listing)
+            end)
+
+        if matchOk
+        and matched then
+
+            matches += 1
+
+        elseif not matchOk then
+
+            warn(
+                "[HOLY_DEBUG] Filter error:",
+                tostring(listing and listing.PetName),
+                tostring(matched)
+            )
+        end
+    end
+
+    local elapsed =
+        os.clock() - start
+
+    print("Snapshot listings:", tostring(#listings))
+    print("Scanned:", tostring(scanned or #listings))
+    print("Listings checked:", tostring(checked))
+    print("Matches:", tostring(matches))
+    print("Favorite leaked/skipped:", tostring(favoriteSkipped))
+    print("Filter time ms:", string.format("%.3f", elapsed * 1000))
+
+    print(
+        "Avg per listing ms:",
+        checked > 0
+        and string.format("%.4f", (elapsed / checked) * 1000)
+        or "0"
+    )
+
+    print("===================================================")
 end
 
 HolyDebug.ServerQuality = function()
@@ -13414,6 +13518,38 @@ ScanDurationInput:OnChanged(function(v)
         math.clamp(num, 1, 3600)
 
     MarkConfigDirty()
+end)
+
+local SmartScannerToggle =
+    SniperControlBox:AddToggle(
+        "SmartScannerEnabled",
+        {
+            Text = "⚡ Smart Scanner",
+            Default = false,
+            Tooltip = "Experimental sniper scanner. OFF keeps the current stable scanner. ON will use the new optimized scanner path when implemented.",
+        }
+    )
+
+SmartScannerToggle:OnChanged(function(v)
+
+    SniperState.SmartScannerEnabled =
+        v == true
+
+    SniperState.SmartScannerMode =
+        v == true
+        and "Smart Experimental"
+        or "Classic"
+
+    MarkConfigDirty()
+
+    HolyNotify(
+        "Sniper Engine",
+        v == true
+            and "Smart Scanner enabled. Experimental mode active."
+            or "Classic Scanner enabled. Stable mode active.",
+        v == true and "zap" or "shield-check",
+        3
+    )
 end)
 
 --==================================================
