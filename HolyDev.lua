@@ -3178,8 +3178,19 @@ or petName == "Rainbow Dilophosaurus" then
 end
 
 local mutationText =
-    ResolvePetMutationTextFromPetData(petData)
-
+    ResolvePetMutationTextFromPetData(
+        petData,
+        itemData,
+        listingData
+    )
+if mutationText ~= "Normal" then
+    print(
+        "[MUTATION DEBUG]",
+        tostring(itemData.PetType or petName),
+        "| mutation:",
+        tostring(mutationText)
+    )
+end
     local hatchedFrom =
     petData.HatchedFrom
     or petData.Hatchedfrom
@@ -4206,47 +4217,180 @@ function FormatWebhookBaseWeight(value)
     )
 end
 
-function ResolvePetMutationTextFromPetData(petData)
+function ResolvePetMutationTextFromPetData(petData, itemData, listingData)
 
-    local mutations = {}
+    local found =
+        {}
 
-    if type(petData) ~= "table" then
-        return "Normal"
+    local seen =
+        {}
+
+    local blockedValues = {
+        [""] = true,
+        ["---"] = true,
+        ["normal"] = true,
+        ["none"] = true,
+        ["nil"] = true,
+        ["unknown"] = true,
+        ["false"] = true,
+        ["0"] = true,
+    }
+
+    local mutationKeys = {
+        Mutation = true,
+        mutation = true,
+
+        Mutations = true,
+        mutations = true,
+
+        MutationName = true,
+        mutationName = true,
+
+        MutationType = true,
+        mutationType = true,
+
+        MutationText = true,
+        mutationText = true,
+
+        Variant = true,
+        variant = true,
+
+        Variants = true,
+        variants = true,
+
+        Trait = true,
+        trait = true,
+
+        Traits = true,
+        traits = true,
+    }
+
+    local function CleanMutationName(value)
+
+        local text =
+            tostring(value or "")
+                :gsub("^%s+", "")
+                :gsub("%s+$", "")
+
+        if blockedValues[text:lower()] then
+            return nil
+        end
+
+        -- Ignore obvious non-mutation values.
+        if tonumber(text) then
+            return nil
+        end
+
+        return text
     end
 
-    if type(petData.Variants) == "table" then
+    local function AddMutation(value)
 
-        for mutationName, enabled in pairs(petData.Variants) do
+        local mutationName =
+            CleanMutationName(value)
 
-            if enabled == true then
-                table.insert(
-                    mutations,
-                    tostring(mutationName)
-                )
+        if not mutationName then
+            return
+        end
+
+        local key =
+            mutationName:lower()
+
+        if seen[key] then
+            return
+        end
+
+        seen[key] =
+            true
+
+        table.insert(
+            found,
+            mutationName
+        )
+    end
+
+    local function ScanMutationTable(tbl, depth)
+
+        if type(tbl) ~= "table" then
+            return
+        end
+
+        depth =
+            tonumber(depth)
+            or 0
+
+        if depth > 3 then
+            return
+        end
+
+        for key, value in pairs(tbl) do
+
+            local keyText =
+                tostring(key or "")
+
+            -- Common style:
+            -- Variants = { Venom = true }
+            -- Mutations = { Nightmare = true }
+            if value == true then
+                AddMutation(keyText)
+
+            -- Common style:
+            -- Mutation = "Venom"
+            -- Variant = "Nightmare"
+            elseif type(value) == "string"
+            or type(value) == "number" then
+
+                if mutationKeys[keyText] then
+                    AddMutation(value)
+                end
+
+            elseif type(value) == "table" then
+
+                if mutationKeys[keyText] then
+
+                    -- Handles:
+                    -- Mutation = { Name = "Venom" }
+                    -- Mutations = { "Venom", "Shocked" }
+                    for innerKey, innerValue in pairs(value) do
+
+                        if innerValue == true then
+                            AddMutation(innerKey)
+
+                        elseif type(innerValue) == "string"
+                        or type(innerValue) == "number" then
+                            AddMutation(innerValue)
+
+                        elseif type(innerValue) == "table" then
+                            ScanMutationTable(
+                                innerValue,
+                                depth + 1
+                            )
+                        end
+                    end
+
+                else
+
+                    -- Limited recursive scan for nested PetData-style structures.
+                    ScanMutationTable(
+                        value,
+                        depth + 1
+                    )
+                end
             end
         end
     end
 
-    if type(petData.Mutations) == "table" then
+    ScanMutationTable(petData, 0)
+    ScanMutationTable(itemData, 0)
+    ScanMutationTable(listingData, 0)
 
-        for mutationName, enabled in pairs(petData.Mutations) do
+    table.sort(found)
 
-            if enabled == true then
-                table.insert(
-                    mutations,
-                    tostring(mutationName)
-                )
-            end
-        end
-    end
-
-    table.sort(mutations)
-
-    if #mutations <= 0 then
+    if #found <= 0 then
         return "Normal"
     end
 
-    return table.concat(mutations, " ")
+    return table.concat(found, " ")
 end
 
 --==================================================
