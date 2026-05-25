@@ -13521,7 +13521,7 @@ ScanDurationInput:OnChanged(function(v)
 end)
 
 local SmartScannerToggle =
-    SniperControlBox:AddToggle(
+    HomeBox:AddToggle(
         "SmartScannerEnabled",
         {
             Text = "⚡ Smart Scanner",
