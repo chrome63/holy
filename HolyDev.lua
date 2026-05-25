@@ -2630,19 +2630,36 @@ function ResolveBoothPetAge(petData, itemData, listingData)
         end
     end
 
-    -- Priority order:
-    -- petData first because console confirmed:
-    -- petData.Level = visible Age.
-    ScanTable(petData, "petData", 0)
-    ScanTable(itemData, "itemData", 0)
-    ScanTable(listingData, "listingData", 0)
+-- Hard priority:
+-- Grow a Garden visible Age is the same as petData.Level.
+local directLevel =
+    petData
+    and tonumber(
+        rawget(petData, "Level")
+        or rawget(petData, "level")
+    )
 
-    if bestAge then
-        return bestAge, bestSource
+if directLevel then
+
+    directLevel =
+        math.floor(directLevel)
+
+    if directLevel >= 1
+    and directLevel <= 100 then
+        return directLevel, "petData.Level"
     end
-
-    return nil, "Missing"
 end
+
+-- Fallback only if petData.Level is missing.
+ScanTable(petData, "petData", 0)
+ScanTable(itemData, "itemData", 0)
+ScanTable(listingData, "listingData", 0)
+
+if bestAge then
+    return bestAge, bestSource
+end
+
+return nil, "Missing"
 function ResolveSeller(userId)
 
     if not userId then
