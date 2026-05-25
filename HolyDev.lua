@@ -6527,6 +6527,58 @@ print(
     "[BOUGHT CONFIRMED] "
     .. boughtMessage
 )
+
+--==================================================
+-- WEIGHT DEBUG: CONFIRMED BUY SNAPSHOT
+-- Captures the real Tool name after buy so we can compare
+-- booth DisplayWeight/BaseWeight against confirmed inventory KG.
+--==================================================
+
+WeightDebugState =
+    WeightDebugState
+    or {}
+
+local confirmedSnapshot =
+    nil
+
+if type(ParseConfirmedToolSnapshot) == "function" then
+    confirmedSnapshot =
+        ParseConfirmedToolSnapshot(toolName)
+end
+
+WeightDebugState.LastConfirmedSnipe = {
+    CapturedAt =
+        os.clock(),
+
+    PetName =
+        tostring(listing.PetName or "Unknown"),
+
+    ToolName =
+        tostring(toolName or "Unknown"),
+
+    Source =
+        tostring(source or "Unknown"),
+
+    BoothDisplayWeight =
+        tonumber(listing.DisplayWeight)
+        or tonumber(listing.Weight),
+
+    BoothBaseWeight =
+        tonumber(listing.BaseWeight),
+
+    BoothWeightSource =
+        tostring(listing.WeightSource or "Unknown"),
+
+    ConfirmedToolWeight =
+        confirmedSnapshot
+        and tonumber(confirmedSnapshot.Weight)
+        or nil,
+
+    ConfirmedToolAge =
+        confirmedSnapshot
+        and tonumber(confirmedSnapshot.Age)
+        or nil,
+}
 --==================================================
 -- STAY AFTER CONFIRMED SNIPE
 -- Adds extra time to the auto-hop timer only after
@@ -9461,6 +9513,366 @@ HolyDebug.SmartScanner = function()
     end
 
     print("========================================")
+end
+
+HolyDebug.WeightAccuracy = function(limit, targetPet)
+
+    limit =
+        math.clamp(
+            math.floor(tonumber(limit) or 25),
+            1,
+            100
+        )
+
+    targetPet =
+        tostring(targetPet or "")
+
+    print("========== WEIGHT ACCURACY DEBUG ==========")
+
+    if type(ExtractListings) ~= "function" then
+        warn("[WEIGHT_DEBUG] ExtractListings missing")
+        return
+    end
+
+    local ok, listings, scanned =
+        pcall(function()
+            return ExtractListings()
+        end)
+
+    if not ok
+    or type(listings) ~= "table" then
+        warn("[WEIGHT_DEBUG] ExtractListings failed:", tostring(listings))
+        return
+    end
+
+    local sourceCounts =
+        {}
+
+    local fallbackCount =
+        0
+
+    local explicitCount =
+        0
+
+    local suspiciousCount =
+        0
+
+    local shown =
+        0
+
+    print("Listings:", tostring(#listings))
+    print("Scanned:", tostring(scanned or #listings))
+
+    for _, listing in ipairs(listings) do
+
+        if type(listing) ~= "table" then
+            continue
+        end
+
+        if targetPet ~= ""
+        and tostring(listing.PetName) ~= targetPet then
+            continue
+        end
+
+        local source =
+            tostring(listing.WeightSource or "Unknown")
+
+        sourceCounts[source] =
+            (sourceCounts[source] or 0) + 1
+
+        if source == "BaseFallback" then
+            fallbackCount += 1
+        elseif source == "Explicit" then
+            explicitCount += 1
+        end
+
+        local baseWeight =
+            tonumber(listing.BaseWeight)
+
+        local displayWeight =
+            tonumber(listing.DisplayWeight or listing.Weight)
+
+        local suspicious =
+            false
+
+        if not baseWeight
+        or not displayWeight
+        or displayWeight <= 0
+        or baseWeight <= 0 then
+            suspicious =
+                true
+        end
+
+        -- If DisplayWeight exactly equals BaseWeight, booth data may only
+        -- be giving raw base weight instead of real visible KG.
+        if baseWeight
+        and displayWeight
+        and math.abs(displayWeight - baseWeight) < 0.001 then
+            suspicious =
+                true
+        end
+
+        if suspicious then
+            suspiciousCount += 1
+        end
+
+        if shown < limit then
+
+            shown += 1
+
+            print(
+                "#"
+                    .. tostring(shown),
+                "| pet:",
+                tostring(listing.PetName),
+                "| price:",
+                tostring(listing.Price),
+                "| display:",
+                tostring(displayWeight),
+                "| base:",
+                tostring(baseWeight),
+                "| source:",
+                source,
+                "| age:",
+                tostring(listing.Age or "nil"),
+                "| mutation:",
+                tostring(listing.MutationText or "nil"),
+                "| suspicious:",
+                tostring(suspicious)
+            )
+        end
+    end
+
+    print("--- Source Counts ---")
+
+    for source, count in pairs(sourceCounts) do
+        print(tostring(source) .. ":", tostring(count))
+    end
+
+    print("--- Summary ---")
+    print("Explicit display weight:", tostring(explicitCount))
+    print("Base fallback weight:", tostring(fallbackCount))
+    print("Suspicious rows:", tostring(suspiciousCount))
+
+    if fallbackCount > 0 then
+        warn(
+            "[WEIGHT_DEBUG] Some listings use BaseFallback. Their DisplayWeight may not be real visible KG."
+        )
+    end
+
+    print("===========================================")
+end
+
+HolyDebug.WeightFilters = function()
+
+    print("========== WEIGHT FILTER MODE DEBUG ==========")
+
+    local total =
+        0
+
+    for watchlistId = 1, 2 do
+
+        local filters =
+            type(GetSniperFilterSet) == "function"
+            and GetSniperFilterSet(watchlistId)
+            or {}
+
+        print("--- Watchlist", tostring(watchlistId), "---")
+
+        for petName, filter in pairs(filters) do
+
+            total += 1
+
+            local weightMode =
+                type(NormalizeWeightMode) == "function"
+                and NormalizeWeightMode(filter.WeightMode)
+                or tostring(filter.WeightMode or "DisplayWeight")
+
+            print(
+                tostring(petName),
+                "| mode:",
+                tostring(weightMode),
+                "| min:",
+                tostring(filter.MinWeight),
+                "| max price:",
+                tostring(filter.MaxPrice),
+                "| priority:",
+                tostring(filter.Priority)
+            )
+        end
+    end
+
+    print("Total sniper filters:", tostring(total))
+    print("=============================================")
+end
+
+HolyDebug.WeightMatchExplain = function(targetPet, limit)
+
+    targetPet =
+        tostring(targetPet or "")
+
+    limit =
+        math.clamp(
+            math.floor(tonumber(limit) or 25),
+            1,
+            100
+        )
+
+    print("========== WEIGHT MATCH EXPLAIN ==========")
+
+    if targetPet == "" then
+        warn("[WEIGHT_DEBUG] Usage: getgenv().HOLY_DEBUG.WeightMatchExplain(\"Seal\", 25)")
+        return
+    end
+
+    if type(ExtractListings) ~= "function" then
+        warn("[WEIGHT_DEBUG] ExtractListings missing")
+        return
+    end
+
+    local ok, listings =
+        pcall(function()
+            return ExtractListings()
+        end)
+
+    if not ok
+    or type(listings) ~= "table" then
+        warn("[WEIGHT_DEBUG] ExtractListings failed:", tostring(listings))
+        return
+    end
+
+    local shown =
+        0
+
+    for _, listing in ipairs(listings) do
+
+        if shown >= limit then
+            break
+        end
+
+        if tostring(listing.PetName or "") ~= targetPet then
+            continue
+        end
+
+        shown += 1
+
+        print("--- Listing", tostring(shown), "---")
+        print("Pet:", tostring(listing.PetName))
+        print("Price:", tostring(listing.Price))
+        print("BaseWeight:", tostring(listing.BaseWeight))
+        print("DisplayWeight:", tostring(listing.DisplayWeight or listing.Weight))
+        print("WeightSource:", tostring(listing.WeightSource))
+        print("Age:", tostring(listing.Age or "nil"))
+        print("Mutation:", tostring(listing.MutationText or "nil"))
+
+        for watchlistId = 1, 2 do
+
+            local filters =
+                type(GetSniperFilterSet) == "function"
+                and GetSniperFilterSet(watchlistId)
+                or {}
+
+            local filter =
+                filters[targetPet]
+
+            if filter then
+
+                local listingWeight =
+                    0
+
+                local weightMode =
+                    "?"
+
+                if type(ResolveListingWeightForFilter) == "function" then
+                    listingWeight, weightMode =
+                        ResolveListingWeightForFilter(
+                            listing,
+                            filter
+                        )
+                end
+
+                local minWeight =
+                    tonumber(filter.MinWeight)
+                    or 0
+
+                local passes =
+                    listingWeight >= minWeight
+
+                print(
+                    "WL",
+                    tostring(watchlistId),
+                    "| filter mode:",
+                    tostring(weightMode),
+                    "| used weight:",
+                    tostring(listingWeight),
+                    "| min:",
+                    tostring(minWeight),
+                    "| weight pass:",
+                    tostring(passes)
+                )
+            end
+        end
+    end
+
+    if shown <= 0 then
+        print("No current listings found for:", targetPet)
+    end
+
+    print("==========================================")
+end
+
+HolyDebug.WeightConfirmed = function()
+
+    print("========== CONFIRMED BUY WEIGHT DEBUG ==========")
+
+    local data =
+        WeightDebugState
+        and WeightDebugState.LastConfirmedSnipe
+        or nil
+
+    if type(data) ~= "table" then
+        print("No confirmed snipe captured yet.")
+        print("Buy a pet first, then run this again.")
+        print("===============================================")
+        return
+    end
+
+    local ageText =
+        data.CapturedAt
+        and string.format("%.1fs ago", os.clock() - data.CapturedAt)
+        or "Unknown"
+
+    print("Captured:", ageText)
+    print("Pet:", tostring(data.PetName))
+    print("Tool:", tostring(data.ToolName))
+    print("Source:", tostring(data.Source))
+
+    print("--- Booth Data ---")
+    print("Booth DisplayWeight:", tostring(data.BoothDisplayWeight))
+    print("Booth BaseWeight:", tostring(data.BoothBaseWeight))
+    print("Booth WeightSource:", tostring(data.BoothWeightSource))
+
+    print("--- Confirmed Tool ---")
+    print("Confirmed Tool Weight:", tostring(data.ConfirmedToolWeight or "nil"))
+    print("Confirmed Tool Age:", tostring(data.ConfirmedToolAge or "nil"))
+
+    if data.ConfirmedToolWeight
+    and data.BoothDisplayWeight then
+
+        local delta =
+            math.abs(
+                tonumber(data.ConfirmedToolWeight)
+                - tonumber(data.BoothDisplayWeight)
+            )
+
+        print("Display vs confirmed delta:", string.format("%.3f", delta))
+
+        if delta > 0.05 then
+            warn("[WEIGHT_DEBUG] Booth DisplayWeight differs from confirmed Tool KG.")
+        end
+    end
+
+    print("===============================================")
 end
 
 HolyDebug.All = function()
