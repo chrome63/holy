@@ -3184,44 +3184,6 @@ local mutationText =
         listingData
     )
 
-MarketMutationDebugSeen =
-    MarketMutationDebugSeen
-    or {}
-
-local marketDebugKey =
-    tostring(boothId)
-    .. "_"
-    .. tostring(uid)
-
-local isMarketTrackerPet =
-    type(MarketTrackerTargets) == "table"
-    and MarketTrackerTargets[tostring(petName)] ~= nil
-
-if isMarketTrackerPet
-and not MarketMutationDebugSeen[marketDebugKey] then
-
-    MarketMutationDebugSeen[marketDebugKey] =
-        true
-
-    print(
-        "[MARKET MUTATION DEBUG]",
-        tostring(petName),
-        "| mutation:",
-        tostring(mutationText),
-        "| petData.Mutation:",
-        tostring(petData and petData.Mutation),
-        "| petData.Mutations:",
-        tostring(petData and petData.Mutations),
-        "| petData.Variant:",
-        tostring(petData and petData.Variant),
-        "| petData.Variants:",
-        tostring(petData and petData.Variants),
-        "| itemData.Mutation:",
-        tostring(itemData and itemData.Mutation),
-        "| listingData.Mutation:",
-        tostring(listingData and listingData.Mutation)
-    )
-end
     local hatchedFrom =
     petData.HatchedFrom
     or petData.Hatchedfrom
@@ -4454,15 +4416,6 @@ function BuildPetMutationNameAndCodeCache()
     for _ in pairs(codeToName) do
         codeCount = codeCount + 1
     end
-
-    print(
-        "[MUTATION MAP] names:",
-        tostring(nameCount),
-        "| codes:",
-        tostring(codeCount),
-        "| root:",
-        tostring(type(mutationRoot))
-    )
 
     return PetMutationNameCache, PetMutationCodeCache
 end
@@ -6080,19 +6033,6 @@ local title =
         config
     )
 
-print(
-    "[MARKET TITLE DEBUG]",
-    "pet:",
-    tostring(petName),
-    "| mutation:",
-    tostring(mutationText),
-    "| age:",
-    tostring(age),
-    "| display:",
-    tostring(displayWeight),
-    "| title:",
-    tostring(title)
-)
     local webJoinLink =
         "https://www.roblox.com/games/"
         .. tostring(TRADING_WORLD_PLACE_ID)
