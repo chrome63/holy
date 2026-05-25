@@ -6080,7 +6080,7 @@ local title =
         config
     )
 
-    print(
+print(
     "[MARKET TITLE DEBUG]",
     "pet:",
     tostring(petName),
