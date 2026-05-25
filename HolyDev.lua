@@ -1521,6 +1521,9 @@ MarketTrackerPetImageOverrides = {
 
     ["Rainbow Dilophosaurus"] =
         "https://static.wikia.nocookie.net/growagarden/images/d/d8/RainbowDilophosaurus.png/revision/latest?cb=20250806131700",
+    
+    ["Giant Scorpion"] =
+        "https://static.wikia.nocookie.net/growagarden/images/b/b2/GiantScorpion.png/revision/latest?cb=20251227045639",
 }
 
 function ResolvePetIconThumbnailUrl(petName)
