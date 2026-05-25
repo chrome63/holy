@@ -2437,9 +2437,84 @@ function ResolveDisplayedWeight(baseWeight)
         return 0
     end
 
-    -- Game display conversion.
-    -- Keeps decimal KG instead of rounding to whole KG.
-    return math.floor((baseWeight * 11) * 100 + 0.5) / 100
+    -- Default fallback assumes Age 100.
+    -- Exact formula:
+    -- DisplayKG = BaseWeight * ((Age + 10) / 11)
+    -- At Age 100, multiplier = 10.
+    local displayWeight =
+        baseWeight * 10
+
+    return math.floor(displayWeight * 100 + 0.5) / 100
+end
+
+function InferPetAgeFromBaseAndDisplayWeight(baseWeight, displayWeight)
+
+    baseWeight =
+        tonumber(baseWeight)
+
+    displayWeight =
+        tonumber(displayWeight)
+
+    if not baseWeight
+    or not displayWeight then
+        return nil
+    end
+
+    if baseWeight <= 0
+    or displayWeight <= 0 then
+        return nil
+    end
+
+    -- Grow a Garden visible KG scaling:
+    -- DisplayKG = BaseWeight * ((Age + 10) / 11)
+    -- Therefore:
+    -- Age = ((DisplayKG / BaseWeight) * 11) - 10
+    local inferredAge =
+        ((displayWeight / baseWeight) * 11) - 10
+
+    if inferredAge ~= inferredAge
+    or inferredAge == math.huge
+    or inferredAge == -math.huge then
+        return nil
+    end
+
+    inferredAge =
+        math.floor(inferredAge + 0.5)
+
+    if inferredAge <= 0 then
+        return nil
+    end
+
+    -- Anti-garbage ceiling.
+    if inferredAge > 10000 then
+        return nil
+    end
+
+    return inferredAge
+end
+
+function ResolveDisplayWeightFromBaseAndAge(baseWeight, age)
+
+    baseWeight =
+        tonumber(baseWeight)
+
+    age =
+        tonumber(age)
+
+    if not baseWeight
+    or not age then
+        return nil
+    end
+
+    if baseWeight <= 0
+    or age <= 0 then
+        return nil
+    end
+
+    local displayWeight =
+        baseWeight * ((age + 10) / 11)
+
+    return math.floor(displayWeight * 100 + 0.5) / 100
 end
 
 --==================================================
@@ -3065,15 +3140,29 @@ local age, ageSource =
         listingData
     )
 
-if not age then
-    ageSource =
-        "Missing"
+local inferredAge =
+    InferPetAgeFromBaseAndDisplayWeight(
+        baseWeight,
+        displayWeight
+    )
+
+if inferredAge then
+
+    -- If booth data says Age 1/100 but display KG proves a higher
+    -- broken level, trust the weight-derived age.
+    if not age
+    or inferredAge > tonumber(age) then
+
+        age =
+            inferredAge
+
+        ageSource =
+            "WeightInferred"
+    end
 end
 
--- Some booth listing snapshots do not expose visible Age/Level.
--- Do NOT skip the listing because sniper/market tracker can still
--- use pet name, price, mutation, and weight.
 if not age then
+
     age =
         nil
 
