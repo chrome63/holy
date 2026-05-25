@@ -2459,6 +2459,17 @@ end
 
 function ResolveBoothListingCurrentWeight(petData, itemData, listingData)
 
+    local baseWeight =
+        tonumber(
+            petData
+            and (
+                petData.BaseWeight
+                or rawget(petData, "BaseWeight")
+                or petData.baseWeight
+                or rawget(petData, "baseWeight")
+            )
+        )
+
     local sources = {
         petData,
         itemData,
@@ -2482,12 +2493,6 @@ function ResolveBoothListingCurrentWeight(petData, itemData, listingData)
                 source.currentWeight,
                 rawget(source, "currentWeight"),
 
-                source.Weight,
-                rawget(source, "Weight"),
-
-                source.weight,
-                rawget(source, "weight"),
-
                 source.KG,
                 rawget(source, "KG"),
 
@@ -2499,6 +2504,13 @@ function ResolveBoothListingCurrentWeight(petData, itemData, listingData)
 
                 source.mass,
                 rawget(source, "mass"),
+
+                -- Keep Weight last because this often appears to be raw BaseWeight.
+                source.Weight,
+                rawget(source, "Weight"),
+
+                source.weight,
+                rawget(source, "weight"),
             }
 
             for _, value in ipairs(candidates) do
@@ -2507,34 +2519,30 @@ function ResolveBoothListingCurrentWeight(petData, itemData, listingData)
                     tonumber(value)
 
                 if number then
+
+                    -- If the "explicit" value is exactly the same as BaseWeight,
+                    -- it is probably not real visible KG. Treat it as raw base
+                    -- and estimate DisplayWeight instead.
+                    if baseWeight
+                    and math.abs(number - baseWeight) < 0.001 then
+
+                        return ResolveDisplayedWeight(baseWeight),
+                            "EstimatedBaseX11"
+                    end
+
                     return number, "Explicit"
                 end
             end
         end
     end
 
-    local baseWeight =
-        tonumber(
-            petData
-            and (
-                petData.BaseWeight
-                or rawget(petData, "BaseWeight")
-                or petData.baseWeight
-                or rawget(petData, "baseWeight")
-            )
-        )
-
     if baseWeight then
-
-        -- Better DisplayWeight fallback:
-        -- If the booth does not expose real/current KG,
-        -- estimate visible KG from BaseWeight instead of
-        -- copying BaseWeight directly.
         return ResolveDisplayedWeight(baseWeight), "EstimatedBaseX11"
     end
 
     return 0, "Missing"
 end
+
 function ResolveBoothPetAge(petData, itemData, listingData)
 
     local bestAge =
