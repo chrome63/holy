@@ -1306,6 +1306,98 @@ function GetPetRegistry()
     return nil
 end
 
+function DebugPetImageData(targetPet)
+
+    targetPet =
+        tostring(targetPet or "")
+
+    if targetPet == "" then
+        warn('[PET IMAGE DEBUG] Usage: DebugPetImageData("Raccoon")')
+        return
+    end
+
+    local registry =
+        GetPetRegistry()
+
+    if type(registry) ~= "table" then
+        warn("[PET IMAGE DEBUG] PetRegistry missing")
+        return
+    end
+
+    print("========== PET IMAGE DEBUG ==========")
+    print("Target:", targetPet)
+
+    local petData =
+        nil
+
+    local petList =
+        rawget(registry, "PetList")
+
+    if type(petList) == "table" then
+        petData =
+            petList[targetPet]
+    end
+
+    print("PetList type:", type(petList))
+    print("PetData type:", type(petData))
+
+    if type(petData) ~= "table" then
+        warn("[PET IMAGE DEBUG] Pet not found in PetList:", targetPet)
+        print("====================================")
+        return
+    end
+
+    local possibleKeys = {
+        "Icon",
+        "IconId",
+        "IconID",
+        "Image",
+        "ImageId",
+        "ImageID",
+        "Thumbnail",
+        "ThumbnailId",
+        "ThumbnailID",
+        "Asset",
+        "AssetId",
+        "AssetID",
+        "Texture",
+        "TextureId",
+        "TextureID",
+        "IconAsset",
+        "IconAssetId",
+        "IconAssetID",
+    }
+
+    for _, key in ipairs(possibleKeys) do
+
+        local value =
+            rawget(petData, key)
+
+        if value ~= nil then
+            print(
+                "Direct key:",
+                tostring(key),
+                "=",
+                tostring(value)
+            )
+        end
+    end
+
+    print("--- All first-level keys ---")
+
+    for key, value in pairs(petData) do
+        print(
+            tostring(key),
+            "|",
+            type(value),
+            "|",
+            tostring(value)
+        )
+    end
+
+    print("====================================")
+end
+
 function GetEggFocusNames()
 
     local registry =
