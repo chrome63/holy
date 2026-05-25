@@ -10350,6 +10350,27 @@ HolyDebug.WeightFilters = function()
     print("=============================================")
 end
 
+HolyDebug.PetImage = function(targetPet)
+
+    targetPet =
+        tostring(targetPet or "")
+
+    if targetPet == "" then
+        warn('[HOLY_DEBUG] Usage: getgenv().HOLY_DEBUG.PetImage("Raccoon")')
+        return
+    end
+
+    if type(DebugPetImageData) ~= "function" then
+        warn("[HOLY_DEBUG] DebugPetImageData missing")
+        return
+    end
+
+    return DebugPetImageData(targetPet)
+end
+
+HolyDebug.DebugPetImageData =
+    HolyDebug.PetImage
+
 HolyDebug.WeightMatchExplain = function(targetPet, limit)
 
     targetPet =
