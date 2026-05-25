@@ -14216,7 +14216,7 @@ local SmartScannerToggle =
     HomeBox:AddToggle(
         "SmartScannerEnabled",
         {
-            Text = "⚡ Smart Scanner",
+            Text = "🧠 Smart Scanner",
             Default = false,
             Tooltip = "Experimental sniper scanner. OFF keeps the current stable scanner. ON will use the new optimized scanner path when implemented.",
         }
