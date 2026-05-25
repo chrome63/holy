@@ -747,23 +747,25 @@ function ResolveListingWeightForFilter(listing, filter)
             or "Unknown"
         )
 
-    -- DisplayWeight is only trusted when booth data exposes
-    -- an explicit visible/current weight.
-    --
-    -- If WeightSource is BaseFallback, DisplayWeight is just
-    -- copied from BaseWeight and should NOT be treated as real KG.
-    if weightSource ~= "Explicit" then
+    local displayWeight =
+        tonumber(
+            listing.DisplayWeight
+            or listing.Weight
+        )
 
-        return 0,
-            "DisplayWeight-Untrusted"
+    if not displayWeight then
+        return 0, "DisplayWeight-Missing"
     end
 
-    return tonumber(
-        listing.DisplayWeight
-        or listing.Weight
-    )
-        or 0,
-        "DisplayWeight"
+    if weightSource == "Explicit" then
+        return displayWeight, "DisplayWeight"
+    end
+
+    if weightSource == "EstimatedBaseX11" then
+        return displayWeight, "DisplayWeight-Estimated"
+    end
+
+    return displayWeight, "DisplayWeight-Fallback"
 end
 
 function FormatFilterWeight(value, weightMode)
@@ -2511,23 +2513,27 @@ function ResolveBoothListingCurrentWeight(petData, itemData, listingData)
         end
     end
 
-    local baseWeight =
-        tonumber(
-            petData
-            and (
-                petData.BaseWeight
-                or rawget(petData, "BaseWeight")
-                or petData.baseWeight
-                or rawget(petData, "baseWeight")
-            )
+local baseWeight =
+    tonumber(
+        petData
+        and (
+            petData.BaseWeight
+            or rawget(petData, "BaseWeight")
+            or petData.baseWeight
+            or rawget(petData, "baseWeight")
         )
+    )
 
-    if baseWeight then
-        return baseWeight, "BaseFallback"
-    end
+if baseWeight then
 
-    return 0, "Missing"
+    -- Better DisplayWeight fallback:
+    -- If the booth does not expose real/current KG,
+    -- estimate visible KG from BaseWeight instead of
+    -- copying BaseWeight directly.
+    return ResolveDisplayedWeight(baseWeight), "EstimatedBaseX11"
 end
+
+return 0, "Missing"
 
 function ResolveBoothPetAge(petData, itemData, listingData)
 
@@ -3149,10 +3155,17 @@ WeightSource = weightSource,
 DisplayWeightTrusted =
     tostring(weightSource) == "Explicit",
 
+DisplayWeightEstimated =
+    tostring(weightSource) == "EstimatedBaseX11",
+
 WeightConfidence =
     tostring(weightSource) == "Explicit"
     and "TrustedDisplay"
-    or "BaseFallback",
+    or (
+        tostring(weightSource) == "EstimatedBaseX11"
+        and "EstimatedDisplay"
+        or "Fallback"
+    ),
 
 -- Legacy compatibility: existing webhook/buy code reads Weight.
 Weight = displayWeight,
