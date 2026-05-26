@@ -6928,6 +6928,11 @@ function SendGlobalBoothSaleWebhookNow(sale)
             }}
         }
 
+        ApplyPetThumbnailToEmbed(
+    payload.embeds[1],
+    webhookPetName
+)
+
         local ok, response =
             pcall(function()
                 return RequestFunction({
@@ -27971,7 +27976,13 @@ CreateBoothSaleEmbed = function(sale)
             or "Unknown"
         )
 
-    return {
+    local webhookPetName =
+        ResolveWebhookBasePetName(
+            sale.PetName,
+            sale.ToolName or sale.PetName
+        )
+
+    local payload = {
         embeds = {{
 
             title = toolTitle,
@@ -28032,13 +28043,13 @@ CreateBoothSaleEmbed = function(sale)
                 },
 
                 {
-    name = "🎒 Pet Inventory",
-    value =
-        type(FormatPersonalWebhookPetInventoryText) == "function"
-        and FormatPersonalWebhookPetInventoryText()
-        or "Unavailable",
-    inline = true,
-},
+                    name = "🎒 Pet Inventory",
+                    value =
+                        type(FormatPersonalWebhookPetInventoryText) == "function"
+                        and FormatPersonalWebhookPetInventoryText()
+                        or "Unavailable",
+                    inline = true,
+                },
 
                 {
                     name = "Server",
@@ -28060,11 +28071,13 @@ CreateBoothSaleEmbed = function(sale)
                 DateTime.now():ToIsoDate(),
         }}
     }
-    
-ApplyPetThumbnailToEmbed(
-    payload.embeds[1],
-    webhookPetName
-)
+
+    ApplyPetThumbnailToEmbed(
+        payload.embeds[1],
+        webhookPetName
+    )
+
+    return payload
 end
 function CreateErrorEmbed(message)
 
