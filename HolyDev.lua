@@ -2354,11 +2354,14 @@ end
 function BuildWatchlistExportPayload()
 
     local payload = {
-        Format = "HOLY_WATCHLIST_EXPORT",
-        Version = 1,
-        ExportedAt = os.time(),
+        F = "HOLY_WL",
+        V = 2,
+        T = os.time(),
 
-        Watchlists = {
+        -- W[watchlistId] = {
+        --     {PetName, MaxPrice, MinWeight, WeightModeShort, Priority, Mutation, SpecificMutations, ExcludedMutations}
+        -- }
+        W = {
             ["1"] = {},
             ["2"] = {},
         },
@@ -2368,6 +2371,9 @@ function BuildWatchlistExportPayload()
 
         local filters =
             GetSniperFilterSet(watchlistId)
+
+        local rows =
+            payload.W[tostring(watchlistId)]
 
         for petName, filter in pairs(filters) do
 
@@ -2379,10 +2385,40 @@ function BuildWatchlistExportPayload()
             if petName ~= ""
             and type(filter) == "table" then
 
-                payload.Watchlists[tostring(watchlistId)][petName] =
-                    CloneWatchlistTransferFilter(filter)
+                local mutationMode, specificMutations =
+                    ResolveSniperMutationModeAndSpecifics(filter)
+
+                local weightMode =
+                    NormalizeWeightMode(filter.WeightMode)
+
+                local weightModeShort =
+                    weightMode == "BaseWeight"
+                    and "B"
+                    or "D"
+
+                local maxPrice =
+                    filter.MaxPrice == math.huge
+                    and "INF"
+                    or tonumber(filter.MaxPrice)
+                    or math.huge
+
+                table.insert(rows, {
+                    petName,
+                    maxPrice,
+                    tonumber(filter.MinWeight) or 0,
+                    weightModeShort,
+                    ResolveSniperFilterPriority(filter),
+                    NormalizeSniperFilterMutation(mutationMode),
+                    SerializeSniperMutationMap(specificMutations),
+                    SerializeSniperMutationMap(filter.ExcludedMutations),
+                })
             end
         end
+
+        table.sort(rows, function(a, b)
+            return tostring(a[1] or ""):lower()
+                < tostring(b[1] or ""):lower()
+        end)
     end
 
     return payload
@@ -2510,15 +2546,28 @@ function DecodeWatchlistImport(rawText)
         return nil, "Invalid export code."
     end
 
-    if decoded.Format ~= "HOLY_WATCHLIST_EXPORT" then
-        return nil, "This is not a HOLY watchlist export."
+    -- New compact v2 format.
+    if decoded.F == "HOLY_WL"
+    and tonumber(decoded.V) == 2 then
+
+        if type(decoded.W) ~= "table" then
+            return nil, "Compact export is missing watchlists."
+        end
+
+        return decoded
     end
 
-    if type(decoded.Watchlists) ~= "table" then
-        return nil, "Export is missing Watchlists."
+    -- Old full v1 format.
+    if decoded.Format == "HOLY_WATCHLIST_EXPORT" then
+
+        if type(decoded.Watchlists) ~= "table" then
+            return nil, "Export is missing Watchlists."
+        end
+
+        return decoded
     end
 
-    return decoded
+    return nil, "This is not a HOLY watchlist export."
 end
 
 function NormalizeImportedWatchlistFilter(filter)
@@ -2598,10 +2647,99 @@ function NormalizeImportedWatchlistFilter(filter)
     }
 end
 
+function NormalizeImportedCompactWatchlistRow(row)
+
+    if type(row) ~= "table" then
+        return nil, nil
+    end
+
+    local petName =
+        tostring(row[1] or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if petName == "" then
+        return nil, nil
+    end
+
+    local maxPrice =
+        row[2]
+
+    if maxPrice == "INF" then
+        maxPrice =
+            math.huge
+    else
+        maxPrice =
+            tonumber(maxPrice)
+            or math.huge
+    end
+
+    local weightModeShort =
+        tostring(row[4] or "D")
+
+    local weightMode =
+        weightModeShort == "B"
+        and "BaseWeight"
+        or "DisplayWeight"
+
+    local mutation =
+        NormalizeSniperFilterMutation(
+            row[6] or "Off"
+        )
+
+    local specificMutations =
+        DeserializeSniperMutationMap(
+            row[7]
+        )
+
+    local excludedMutations =
+        DeserializeSniperMutationMap(
+            row[8]
+        )
+
+    if not IsSniperMutationMode(mutation) then
+
+        if mutation ~= ""
+        and mutation ~= "Normal"
+        and mutation ~= "Unknown"
+        and mutation ~= "Off" then
+
+            specificMutations[mutation] =
+                true
+        end
+
+        mutation =
+            "Specific Mutations"
+    end
+
+    return petName, {
+        MaxPrice =
+            maxPrice,
+
+        MinWeight =
+            tonumber(row[3])
+            or 0,
+
+        WeightMode =
+            NormalizeWeightMode(weightMode),
+
+        Priority =
+            ClampSniperPriority(row[5]),
+
+        Mutation =
+            mutation,
+
+        SpecificMutations =
+            specificMutations,
+
+        ExcludedMutations =
+            excludedMutations,
+    }
+end
+
 function ApplyWatchlistImport(decoded, mode)
 
-    if type(decoded) ~= "table"
-    or type(decoded.Watchlists) ~= "table" then
+    if type(decoded) ~= "table" then
         return false, "Decoded watchlist data missing."
     end
 
@@ -2619,38 +2757,94 @@ function ApplyWatchlistImport(decoded, mode)
     local imported =
         0
 
-    for watchlistId = 1, 2 do
+    --==================================================
+    -- NEW COMPACT v2 FORMAT
+    -- decoded.W["1"] = {
+    --     {PetName, MaxPrice, MinWeight, WeightModeShort, Priority, Mutation, SpecificMutations, ExcludedMutations}
+    -- }
+    --==================================================
 
-        local sourceSet =
-            decoded.Watchlists[tostring(watchlistId)]
-            or decoded.Watchlists[watchlistId]
+    if decoded.F == "HOLY_WL"
+    and tonumber(decoded.V) == 2 then
 
-        if type(sourceSet) == "table" then
+        if type(decoded.W) ~= "table" then
+            return false, "Compact watchlist data missing."
+        end
 
-            local targetSet =
-                GetSniperFilterSet(watchlistId)
+        for watchlistId = 1, 2 do
 
-            for petName, filter in pairs(sourceSet) do
+            local sourceRows =
+                decoded.W[tostring(watchlistId)]
+                or decoded.W[watchlistId]
 
-                petName =
-                    tostring(petName or "")
-                        :gsub("^%s+", "")
-                        :gsub("%s+$", "")
+            if type(sourceRows) == "table" then
 
-                local normalized =
-                    NormalizeImportedWatchlistFilter(filter)
+                local targetSet =
+                    GetSniperFilterSet(watchlistId)
 
-                if petName ~= ""
-                and normalized then
+                for _, row in ipairs(sourceRows) do
 
-                    targetSet[petName] =
-                        normalized
+                    local petName, normalized =
+                        NormalizeImportedCompactWatchlistRow(row)
 
-                    imported =
-                        imported + 1
+                    if petName
+                    and normalized then
+
+                        targetSet[petName] =
+                            normalized
+
+                        imported =
+                            imported + 1
+                    end
                 end
             end
         end
+
+    --==================================================
+    -- OLD FULL v1 FORMAT
+    -- decoded.Watchlists["1"][petName] = filterTable
+    --==================================================
+
+    elseif decoded.Format == "HOLY_WATCHLIST_EXPORT"
+    and type(decoded.Watchlists) == "table" then
+
+        for watchlistId = 1, 2 do
+
+            local sourceSet =
+                decoded.Watchlists[tostring(watchlistId)]
+                or decoded.Watchlists[watchlistId]
+
+            if type(sourceSet) == "table" then
+
+                local targetSet =
+                    GetSniperFilterSet(watchlistId)
+
+                for petName, filter in pairs(sourceSet) do
+
+                    petName =
+                        tostring(petName or "")
+                            :gsub("^%s+", "")
+                            :gsub("%s+$", "")
+
+                    local normalized =
+                        NormalizeImportedWatchlistFilter(filter)
+
+                    if petName ~= ""
+                    and normalized then
+
+                        targetSet[petName] =
+                            normalized
+
+                        imported =
+                            imported + 1
+                    end
+                end
+            end
+        end
+
+    else
+
+        return false, "Unsupported watchlist format."
     end
 
     if imported <= 0 then
