@@ -293,6 +293,612 @@ end
 print("[HOLY] Client ready")
 print("[DEBUG] Passed readiness gate")
 
+
+--==================================================
+-- HOLY ACCESS KEY GATE
+-- Simple personal-key UI. No premium wording.
+-- Runs before HOLY background workers start.
+--==================================================
+
+HOLY_ACCESS_KEY_STATE = {
+    Enabled = true,
+
+    -- Replace these with your real keys.
+    -- Format:
+    -- ["KEY"] = "OwnerName"
+    Keys = {
+        ["HOLY-BEN-123"] = "Ben",
+        ["HOLY-TEST-456"] = "Tester",
+    },
+
+    SaveFile = "HolyV2/holy_access_key.txt",
+
+    Accepted = false,
+    Owner = "Unknown",
+}
+
+function NormalizeHolyAccessKey(value)
+
+    return tostring(value or "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+function SaveHolyAccessKey(key)
+
+    key =
+        NormalizeHolyAccessKey(key)
+
+    if key == "" then
+        return false
+    end
+
+    if not writefile then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            if makefolder
+            and not isfolder("HolyV2") then
+                makefolder("HolyV2")
+            end
+
+            writefile(
+                HOLY_ACCESS_KEY_STATE.SaveFile,
+                key
+            )
+        end)
+
+    return ok
+end
+
+function ReadSavedHolyAccessKey()
+
+    if not isfile
+    or not readfile then
+        return ""
+    end
+
+    local filePath =
+        HOLY_ACCESS_KEY_STATE.SaveFile
+
+    local ok, result =
+        pcall(function()
+
+            if not isfile(filePath) then
+                return ""
+            end
+
+            return readfile(filePath)
+        end)
+
+    if not ok then
+        return ""
+    end
+
+    return NormalizeHolyAccessKey(result)
+end
+
+function ValidateHolyAccessKey(key)
+
+    key =
+        NormalizeHolyAccessKey(key)
+
+    if key == "" then
+        return false, "Enter a key."
+    end
+
+    local keys =
+        HOLY_ACCESS_KEY_STATE.Keys
+
+    if type(keys) ~= "table" then
+        return false, "Key list missing."
+    end
+
+    local owner =
+        keys[key]
+
+    if not owner then
+        return false, "Invalid key."
+    end
+
+    HOLY_ACCESS_KEY_STATE.Accepted = true
+    HOLY_ACCESS_KEY_STATE.Owner = tostring(owner)
+
+    SaveHolyAccessKey(key)
+
+    return true, tostring(owner)
+end
+
+function CreateHolyAccessKeyUI()
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return false
+    end
+
+    local parent =
+        nil
+
+    local okGetHui, hui =
+        pcall(function()
+            if type(gethui) == "function" then
+                return gethui()
+            end
+
+            return nil
+        end)
+
+    if okGetHui
+    and hui then
+        parent = hui
+    else
+        parent =
+            player:WaitForChild(
+                "PlayerGui",
+                10
+            )
+    end
+
+    if not parent then
+        warn("[HOLY KEY] No UI parent")
+        return false
+    end
+
+    local existing =
+        parent:FindFirstChild("HolyAccessKeyUI")
+
+    if existing then
+        existing:Destroy()
+    end
+
+    local screenGui =
+        Instance.new("ScreenGui")
+
+    screenGui.Name =
+        "HolyAccessKeyUI"
+
+    screenGui.ResetOnSpawn =
+        false
+
+    screenGui.DisplayOrder =
+        10000
+
+    screenGui.IgnoreGuiInset =
+        true
+
+    screenGui.Parent =
+        parent
+
+    local dim =
+        Instance.new("Frame")
+
+    dim.Name =
+        "Dim"
+
+    dim.BackgroundColor3 =
+        Color3.fromRGB(0, 0, 0)
+
+    dim.BackgroundTransparency =
+        0.35
+
+    dim.Size =
+        UDim2.fromScale(1, 1)
+
+    dim.Parent =
+        screenGui
+
+    local frame =
+        Instance.new("Frame")
+
+    frame.Name =
+        "Main"
+
+    frame.AnchorPoint =
+        Vector2.new(0.5, 0.5)
+
+    frame.Position =
+        UDim2.fromScale(0.5, 0.5)
+
+    frame.Size =
+        UDim2.fromOffset(330, 205)
+
+    frame.BackgroundColor3 =
+        Color3.fromRGB(12, 12, 18)
+
+    frame.BorderSizePixel =
+        0
+
+    frame.Parent =
+        dim
+
+    local corner =
+        Instance.new("UICorner")
+
+    corner.CornerRadius =
+        UDim.new(0, 8)
+
+    corner.Parent =
+        frame
+
+    local stroke =
+        Instance.new("UIStroke")
+
+    stroke.Color =
+        Color3.fromRGB(80, 80, 105)
+
+    stroke.Thickness =
+        1
+
+    stroke.Transparency =
+        0.15
+
+    stroke.Parent =
+        frame
+
+    local title =
+        Instance.new("TextLabel")
+
+    title.Name =
+        "Title"
+
+    title.BackgroundTransparency =
+        1
+
+    title.Position =
+        UDim2.fromOffset(0, 16)
+
+    title.Size =
+        UDim2.new(1, 0, 0, 28)
+
+    title.Font =
+        Enum.Font.GothamBlack
+
+    title.Text =
+        "HOLY"
+
+    title.TextColor3 =
+        Color3.fromRGB(255, 235, 170)
+
+    title.TextSize =
+        22
+
+    title.TextStrokeTransparency =
+        0.65
+
+    title.Parent =
+        frame
+
+    local subtitle =
+        Instance.new("TextLabel")
+
+    subtitle.Name =
+        "Subtitle"
+
+    subtitle.BackgroundTransparency =
+        1
+
+    subtitle.Position =
+        UDim2.fromOffset(0, 46)
+
+    subtitle.Size =
+        UDim2.new(1, 0, 0, 20)
+
+    subtitle.Font =
+        Enum.Font.Gotham
+
+    subtitle.Text =
+        "Enter your access key"
+
+    subtitle.TextColor3 =
+        Color3.fromRGB(190, 190, 205)
+
+    subtitle.TextSize =
+        13
+
+    subtitle.Parent =
+        frame
+
+    local input =
+        Instance.new("TextBox")
+
+    input.Name =
+        "KeyInput"
+
+    input.Position =
+        UDim2.fromOffset(30, 82)
+
+    input.Size =
+        UDim2.new(1, -60, 0, 34)
+
+    input.BackgroundColor3 =
+        Color3.fromRGB(22, 22, 32)
+
+    input.BorderSizePixel =
+        0
+
+    input.ClearTextOnFocus =
+        false
+
+    input.Font =
+        Enum.Font.Gotham
+
+    input.PlaceholderText =
+        "Access key"
+
+    input.PlaceholderColor3 =
+        Color3.fromRGB(110, 110, 130)
+
+    input.Text =
+        ReadSavedHolyAccessKey()
+
+    input.TextColor3 =
+        Color3.fromRGB(240, 240, 255)
+
+    input.TextSize =
+        14
+
+    input.Parent =
+        frame
+
+    local inputCorner =
+        Instance.new("UICorner")
+
+    inputCorner.CornerRadius =
+        UDim.new(0, 6)
+
+    inputCorner.Parent =
+        input
+
+    local inputStroke =
+        Instance.new("UIStroke")
+
+    inputStroke.Color =
+        Color3.fromRGB(55, 55, 75)
+
+    inputStroke.Thickness =
+        1
+
+    inputStroke.Parent =
+        input
+
+    local status =
+        Instance.new("TextLabel")
+
+    status.Name =
+        "Status"
+
+    status.BackgroundTransparency =
+        1
+
+    status.Position =
+        UDim2.fromOffset(30, 120)
+
+    status.Size =
+        UDim2.new(1, -60, 0, 20)
+
+    status.Font =
+        Enum.Font.Gotham
+
+    status.Text =
+        ""
+
+    status.TextColor3 =
+        Color3.fromRGB(255, 95, 120)
+
+    status.TextSize =
+        12
+
+    status.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    status.Parent =
+        frame
+
+    local verify =
+        Instance.new("TextButton")
+
+    verify.Name =
+        "Verify"
+
+    verify.Position =
+        UDim2.fromOffset(30, 145)
+
+    verify.Size =
+        UDim2.new(0.5, -35, 0, 34)
+
+    verify.BackgroundColor3 =
+        Color3.fromRGB(35, 25, 55)
+
+    verify.BorderSizePixel =
+        0
+
+    verify.AutoButtonColor =
+        true
+
+    verify.Font =
+        Enum.Font.GothamBold
+
+    verify.Text =
+        "Verify"
+
+    verify.TextColor3 =
+        Color3.fromRGB(255, 255, 255)
+
+    verify.TextSize =
+        14
+
+    verify.Parent =
+        frame
+
+    local verifyCorner =
+        Instance.new("UICorner")
+
+    verifyCorner.CornerRadius =
+        UDim.new(0, 6)
+
+    verifyCorner.Parent =
+        verify
+
+    local close =
+        Instance.new("TextButton")
+
+    close.Name =
+        "Close"
+
+    close.Position =
+        UDim2.new(0.5, 5, 0, 145)
+
+    close.Size =
+        UDim2.new(0.5, -35, 0, 34)
+
+    close.BackgroundColor3 =
+        Color3.fromRGB(20, 20, 28)
+
+    close.BorderSizePixel =
+        0
+
+    close.AutoButtonColor =
+        true
+
+    close.Font =
+        Enum.Font.GothamBold
+
+    close.Text =
+        "Close UI"
+
+    close.TextColor3 =
+        Color3.fromRGB(180, 180, 195)
+
+    close.TextSize =
+        14
+
+    close.Parent =
+        frame
+
+    local closeCorner =
+        Instance.new("UICorner")
+
+    closeCorner.CornerRadius =
+        UDim.new(0, 6)
+
+    closeCorner.Parent =
+        close
+
+    local finished =
+        false
+
+    local accepted =
+        false
+
+    local function TryVerify()
+
+        local ok, result =
+            ValidateHolyAccessKey(
+                input.Text
+            )
+
+        if ok then
+
+            status.Text =
+                "Access granted • "
+                .. tostring(result)
+
+            status.TextColor3 =
+                Color3.fromRGB(90, 255, 150)
+
+            accepted =
+                true
+
+            task.wait(0.35)
+
+            finished =
+                true
+
+            screenGui:Destroy()
+
+            return
+        end
+
+        status.Text =
+            tostring(result or "Invalid key.")
+
+        status.TextColor3 =
+            Color3.fromRGB(255, 95, 120)
+    end
+
+    verify.MouseButton1Click:Connect(TryVerify)
+
+    input.FocusLost:Connect(function(enterPressed)
+
+        if enterPressed then
+            TryVerify()
+        end
+    end)
+
+    close.MouseButton1Click:Connect(function()
+
+        finished =
+            true
+
+        accepted =
+            false
+
+        screenGui:Destroy()
+    end)
+
+    input:CaptureFocus()
+
+    while not finished do
+        task.wait(0.05)
+    end
+
+    return accepted
+end
+
+function RunHolyAccessKeyGate()
+
+    if HOLY_ACCESS_KEY_STATE.Enabled ~= true then
+        return true
+    end
+
+    -- Silent auto-accept if saved key is still valid.
+    local savedKey =
+        ReadSavedHolyAccessKey()
+
+    if savedKey ~= "" then
+
+        local valid =
+            ValidateHolyAccessKey(
+                savedKey
+            )
+
+        if valid then
+            print(
+                "[HOLY KEY] Saved key accepted:",
+                tostring(HOLY_ACCESS_KEY_STATE.Owner)
+            )
+
+            return true
+        end
+    end
+
+    return CreateHolyAccessKeyUI()
+end
+
+if not RunHolyAccessKeyGate() then
+    warn("[HOLY] Access denied. Script stopped.")
+    return
+end
+
+print(
+    "[HOLY KEY] Access granted:",
+    tostring(HOLY_ACCESS_KEY_STATE.Owner)
+)
 --==================================================
 -- VISUAL PATCH: BLACK TRADE WORLD TOP BASEPLATE
 -- Keeps workspace.TradeWorld.TopBaseplate black client-side
@@ -9802,6 +10408,8 @@ if game.PlaceId == TRADING_WORLD_PLACE_ID then
         end
     end)
 end
+
+
 --==================================================
 -- [3] LOAD OBSIDIAN (ISOLATED)
 --==================================================
