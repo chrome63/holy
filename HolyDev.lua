@@ -25626,8 +25626,8 @@ end
 --==================================================
 
 SniperWatchlistBox:AddButton({
-    Text = "Export Watchlist",
-    Tooltip = "Copies both sniper watchlists as a portable import code.",
+    Text = "Copy Watchlist Filters",
+    Tooltip = "Copies your watchlists filters so you can paste them on another device.",
 
     Func = function()
         ExportWatchlistsToClipboard()
@@ -25638,10 +25638,10 @@ local WatchlistImportInput =
     SniperWatchlistBox:AddInput(
         "WatchlistImportCode",
         {
-            Text = "Import Code",
-            Tooltip = "Paste a HOLY watchlist export code here.",
+            Text = "Paste Watchlist Filters",
+            Tooltip = "Paste a watchlist code from another device.",
             Default = "",
-            Placeholder = "Paste export code...",
+            Placeholder = "Paste watchlist filters...",
             Numeric = false,
             Finished = false,
             ClearTextOnFocus = false,
@@ -25656,8 +25656,8 @@ end)
 
 local WatchlistImportButton =
     SniperWatchlistBox:AddButton({
-        Text = "Import / Replace",
-        Tooltip = "Replace both current watchlists with the pasted export code.",
+        Text = "Replace My Watchlist",
+        Tooltip = "Deletes your current watchlists and loads the pasted one.",
 
         Func = function()
 
@@ -25669,8 +25669,8 @@ local WatchlistImportButton =
     })
 
 WatchlistImportButton:AddButton({
-    Text = "Import / Merge",
-    Tooltip = "Merge the pasted export code into your current watchlists.",
+    Text = "Add To My Watchlist",
+    Tooltip = "Keeps your current watchlists and adds the pasted filters.",
 
     Func = function()
 
