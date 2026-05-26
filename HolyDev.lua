@@ -2173,6 +2173,105 @@ function ResolvePetIconThumbnailUrl(petName)
     return ResolveRobloxAssetThumbnailUrl(assetId)
 end
 
+--==================================================
+-- WEBHOOK PET IMAGE HELPER
+-- Reuses Market Tracker image overrides for every webhook.
+-- Accepts clean base pet names, confirmed tool names, or sale tables.
+--==================================================
+
+function ApplyPetThumbnailToEmbed(embed, petName)
+
+    if type(embed) ~= "table" then
+        return false
+    end
+
+    petName =
+        tostring(petName or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if petName == "" then
+        return false
+    end
+
+    local imageUrl =
+        nil
+
+    if type(ResolvePetIconThumbnailUrl) == "function" then
+
+        local ok, result =
+            pcall(function()
+                return ResolvePetIconThumbnailUrl(petName)
+            end)
+
+        if ok
+        and type(result) == "string"
+        and result ~= "" then
+            imageUrl = result
+        end
+    end
+
+    if not imageUrl then
+        return false
+    end
+
+    embed.thumbnail = {
+        url = imageUrl,
+    }
+
+    return true
+end
+
+function ResolveWebhookBasePetName(primaryName, fallbackName)
+
+    local name =
+        tostring(primaryName or "")
+
+    if name == "" then
+        name =
+            tostring(fallbackName or "")
+    end
+
+    name =
+        name:gsub("%b[]", "")
+            :gsub("%s+", " ")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if name == "" then
+        return ""
+    end
+
+    -- First try exact override / registry name.
+    if type(ResolvePetIconThumbnailUrl) == "function" then
+
+        local ok, result =
+            pcall(function()
+                return ResolvePetIconThumbnailUrl(name)
+            end)
+
+        if ok
+        and type(result) == "string"
+        and result ~= "" then
+            return name
+        end
+    end
+
+    -- If confirmed name includes a mutation prefix, fall back to listing base name.
+    fallbackName =
+        tostring(fallbackName or "")
+            :gsub("%b[]", "")
+            :gsub("%s+", " ")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if fallbackName ~= "" then
+        return fallbackName
+    end
+
+    return name
+end
+
 function GetEggFocusNames()
 
     local registry =
@@ -6745,6 +6844,12 @@ function SendGlobalBoothSaleWebhookNow(sale)
                 ResolveBoothSaleWebhookTitle(sale)
                 or "Unknown"
             )
+        
+        local webhookPetName =
+    ResolveWebhookBasePetName(
+        sale.PetName,
+        sale.PetName
+    )
 
         local payload = {
             embeds = {{
@@ -7975,6 +8080,12 @@ function SendHolySnipesWebhookNow(listing, toolName, confirmedPetName, confirmed
         mutationText =
             "Normal"
     end
+    
+    local webhookPetName =
+    ResolveWebhookBasePetName(
+        listing and listing.PetName,
+        confirmedPetName
+    )
 
     local payload = {
         username = "👑 HOLY",
@@ -8024,6 +8135,11 @@ function SendHolySnipesWebhookNow(listing, toolName, confirmedPetName, confirmed
                 DateTime.now():ToIsoDate(),
         }}
     }
+
+    ApplyPetThumbnailToEmbed(
+    payload.embeds[1],
+    webhookPetName
+)
 
     local ok, response =
         pcall(function()
@@ -8205,6 +8321,12 @@ local confirmedTitle =
         FormatWebhookWeightKG(confirmedWeight)
     )
 
+    local webhookPetName =
+    ResolveWebhookBasePetName(
+        listing and listing.PetName,
+        confirmedPetName
+    )
+
         local serverCopy =
             tostring(game.PlaceId)
             .. ":"
@@ -8279,6 +8401,11 @@ local confirmedTitle =
                 timestamp = DateTime.now():ToIsoDate(),
             }}
         }
+
+ApplyPetThumbnailToEmbed(
+    payload.embeds[1],
+    webhookPetName
+)
 
         local ok, response =
             pcall(function()
@@ -27933,6 +28060,11 @@ CreateBoothSaleEmbed = function(sale)
                 DateTime.now():ToIsoDate(),
         }}
     }
+    
+ApplyPetThumbnailToEmbed(
+    payload.embeds[1],
+    webhookPetName
+)
 end
 function CreateErrorEmbed(message)
 
