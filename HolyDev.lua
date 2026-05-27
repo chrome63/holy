@@ -3326,7 +3326,6 @@ function BuildSniperPriceSyncPreview(percent)
         "Price Sync Preview",
         "Percent: " .. tostring(percent) .. "%",
         "Formula: sniper price = listing price × percent",
-        "Exact pet names only.",
         "",
     }
 
@@ -17390,10 +17389,25 @@ end
 -- ISOLATED
 --==================================================
 
-local StartToggle = HomeBox:AddToggle("StartSystem", {
-    Text = "⚡ Activate Sniper",
-    Default = false,
-})
+local StartToggle =
+    HomeBox:AddToggle(
+        "StartSystem",
+        {
+            Text = "⚡ Activate Sniper",
+            Default = false,
+        }
+    )
+
+StartToggle:AddKeyPicker(
+    "StartSystemKeybind",
+    {
+        Text = "Activate Sniper",
+        Default = "F",
+        Mode = "Toggle",
+        SyncToggleState = true,
+        NoUI = false,
+    }
+)
 
 StartToggle:OnChanged(function(enabled)
 
@@ -17436,7 +17450,17 @@ local SniperAutoHopToggle =
             Default = false,
         }
     )
-
+    
+SniperAutoHopToggle:AddKeyPicker(
+    "SniperAutoHopKeybind",
+    {
+        Text = "Sniper Auto Hop",
+        Default = "H",
+        Mode = "Toggle",
+        SyncToggleState = true,
+        NoUI = false,
+    }
+)
 SniperAutoHopToggle:OnChanged(function(v)
 
     SniperState.AutoHop = v
