@@ -3583,6 +3583,40 @@ SmartScannerMode = "Classic",
 }
 
 --==================================================
+-- TARGET PETS HOP STATE
+-- Independent smart server-skip system.
+-- Scans player Backpacks + Characters for selected pets.
+-- Does NOT depend on Sniper Auto Hop or sniper watchlists.
+--==================================================
+
+TargetPetsHopState = {
+    Enabled = false,
+
+    -- [petName] = true
+    Targets = {},
+
+    Status = "Disabled",
+
+    ScanInterval = 1,
+    GraceSeconds = 4,
+    HopCooldown = 6,
+
+    LastScan = 0,
+    LastHop = 0,
+
+    LastFoundPet = nil,
+    LastFoundPlayer = nil,
+    LastFoundAt = 0,
+
+    LastScannedPlayers = 0,
+    LastScannedTools = 0,
+
+    ConfigLoaded = false,
+}
+
+TargetPetsHopStatusLabel = nil
+TargetPetsHopDropdownRef = nil
+--==================================================
 -- ANTI ALT / AVOID USERS STATE
 -- Detects blocked users after joining a server.
 -- Roblox public server API does not expose player lists,
@@ -9967,6 +10001,166 @@ HolyNotify(
 end
 
 --==================================================
+-- TARGET PETS HOP WORKER
+-- Independent from Sniper Auto Hop.
+-- If no selected target pets are present in any player
+-- Backpack/Character, HOLY hops immediately.
+--==================================================
+
+LoadTargetPetsHopConfig()
+
+task.spawn(function()
+
+    while IsCurrentRun() do
+
+        task.wait(0.25)
+
+        if ScriptState
+        and ScriptState.ForceStopped then
+            continue
+        end
+
+        if type(TargetPetsHopState) ~= "table"
+        or TargetPetsHopState.Enabled ~= true then
+            continue
+        end
+
+        if not IsTradeWorld() then
+
+            SetTargetPetsHopStatus("Trade World only")
+
+            task.wait(1)
+            continue
+        end
+
+        local scanInterval =
+            math.clamp(
+                SafeNumber(
+                    TargetPetsHopState.ScanInterval,
+                    1
+                ),
+                0.5,
+                5
+            )
+
+        if SafeElapsed(TargetPetsHopState.LastScan) < scanInterval then
+            continue
+        end
+
+        TargetPetsHopState.LastScan =
+            os.clock()
+
+        local targetCount =
+            CountTargetPetsHopTargets()
+
+        if targetCount <= 0 then
+
+            SetTargetPetsHopStatus("No pets selected")
+
+            continue
+        end
+
+        local graceSeconds =
+            math.clamp(
+                SafeNumber(
+                    TargetPetsHopState.GraceSeconds,
+                    4
+                ),
+                1,
+                20
+            )
+
+        local serverAge =
+            SafeElapsed(ServerInfoStartedAt)
+
+        if serverAge < graceSeconds then
+
+            SetTargetPetsHopStatus(
+                "Waiting "
+                    .. tostring(
+                        math.max(
+                            0,
+                            math.ceil(graceSeconds - serverAge)
+                        )
+                    )
+                    .. "s"
+            )
+
+            continue
+        end
+
+        if SniperState
+        and SniperState.Hopping == true then
+
+            SetTargetPetsHopStatus("Hop already running")
+
+            continue
+        end
+
+        if PurchaseState
+        and PurchaseState.Busy == true then
+
+            SetTargetPetsHopStatus("Buying, paused")
+
+            continue
+        end
+
+        if PurchaseQueue
+        and #PurchaseQueue > 0 then
+
+            SetTargetPetsHopStatus("Purchase queue active")
+
+            continue
+        end
+
+        if GatewayBusy == true then
+
+            SetTargetPetsHopStatus("Manual join busy")
+
+            continue
+        end
+
+        SetTargetPetsHopStatus("Checking players...")
+
+        local found, petName, playerName, scannedPlayers, scannedTools =
+            ScanPlayersForTargetPetsHop()
+
+        TargetPetsHopState.LastScannedPlayers =
+            scannedPlayers
+
+        TargetPetsHopState.LastScannedTools =
+            scannedTools
+
+        if found then
+
+            TargetPetsHopState.LastFoundPet =
+                petName
+
+            TargetPetsHopState.LastFoundPlayer =
+                playerName
+
+            TargetPetsHopState.LastFoundAt =
+                os.clock()
+
+            SetTargetPetsHopStatus(
+                "Found "
+                    .. tostring(petName)
+                    .. " on "
+                    .. tostring(playerName)
+            )
+
+            -- Do not reset Sniper Auto Hop timer.
+            -- Normal Sniper Auto Hop still hops when it should.
+            continue
+        end
+
+        ExecuteTargetPetsHopNow(
+            scannedPlayers,
+            scannedTools
+        )
+    end
+end)
+--==================================================
 -- ANTI ALT / AVOID USERS HELPERS
 -- Saved avoid-list version.
 -- UserIds are source of truth; usernames are display only.
@@ -13809,6 +14003,569 @@ LISTING_AUTOLIST_INTENT_SAVE_FILE =
 
 ANTI_ALT_AVOID_LIST_SAVE_FILE =
     "HolyV2/anti_alt_users.json"
+
+TARGET_PETS_HOP_SAVE_FILE =
+    "HolyV2/target_pets_hop.json"
+
+--==================================================
+-- TARGET PETS HOP HELPERS
+--==================================================
+
+function NormalizeTargetPetsHopName(value)
+
+    local text =
+        tostring(value or "")
+
+    text =
+        text:gsub("%b[]", "")
+            :gsub("%s+", " ")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    return text
+end
+
+function CountTargetPetsHopTargets()
+
+    local count =
+        0
+
+    if type(TargetPetsHopState) ~= "table"
+    or type(TargetPetsHopState.Targets) ~= "table" then
+        return 0
+    end
+
+    for petName, enabled in pairs(TargetPetsHopState.Targets) do
+
+        if enabled == true
+        and NormalizeTargetPetsHopName(petName) ~= "" then
+            count =
+                count + 1
+        end
+    end
+
+    return count
+end
+
+function BuildTargetPetsHopTargetList()
+
+    local list =
+        {}
+
+    if type(TargetPetsHopState) ~= "table"
+    or type(TargetPetsHopState.Targets) ~= "table" then
+        return list
+    end
+
+    for petName, enabled in pairs(TargetPetsHopState.Targets) do
+
+        petName =
+            NormalizeTargetPetsHopName(petName)
+
+        if enabled == true
+        and petName ~= "" then
+
+            table.insert(
+                list,
+                petName
+            )
+        end
+    end
+
+    table.sort(list, function(a, b)
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return list
+end
+
+function SetTargetPetsHopStatus(text)
+
+    text =
+        tostring(text or "Unknown")
+
+    if type(TargetPetsHopState) == "table" then
+        TargetPetsHopState.Status =
+            text
+    end
+
+    if TargetPetsHopStatusLabel
+    and type(TargetPetsHopStatusLabel.SetText) == "function" then
+
+        TargetPetsHopStatusLabel:SetText(
+            "Target Hop: "
+            .. text
+        )
+    end
+end
+
+function RefreshTargetPetsHopStatus()
+
+    if type(TargetPetsHopState) ~= "table" then
+        return
+    end
+
+    if TargetPetsHopState.Enabled ~= true then
+        SetTargetPetsHopStatus("Disabled")
+        return
+    end
+
+    local count =
+        CountTargetPetsHopTargets()
+
+    if count <= 0 then
+        SetTargetPetsHopStatus("No pets selected")
+        return
+    end
+
+    SetTargetPetsHopStatus(
+        tostring(count)
+        .. " target pet"
+        .. (
+            count == 1
+            and ""
+            or "s"
+        )
+        .. " selected"
+    )
+end
+
+function TargetPetsHopToolMatches(toolName, targetPetName)
+
+    local cleanToolName =
+        NormalizeTargetPetsHopName(toolName)
+
+    local cleanTarget =
+        NormalizeTargetPetsHopName(targetPetName)
+
+    if cleanToolName == ""
+    or cleanTarget == "" then
+        return false
+    end
+
+    local lowerTool =
+        cleanToolName:lower()
+
+    local lowerTarget =
+        cleanTarget:lower()
+
+    -- Exact:
+    -- "Rainbow Elephant" matches "Rainbow Elephant"
+    if lowerTool == lowerTarget then
+        return true
+    end
+
+    -- Mutation prefix:
+    -- "Nightmare Mimic Octopus" matches "Mimic Octopus"
+    -- "Rainbow Elephant" does NOT match plain "Elephant" unless Elephant is selected.
+    if #lowerTool > #lowerTarget
+    and lowerTool:sub(-#lowerTarget) == lowerTarget then
+        return true
+    end
+
+    return false
+end
+
+function ScanTargetPetsHopContainer(container, player, targetList)
+
+    if not container
+    or type(targetList) ~= "table" then
+        return false, nil, nil, 0
+    end
+
+    local scannedTools =
+        0
+
+    for _, child in ipairs(container:GetChildren()) do
+
+        if child:IsA("Tool") then
+
+            scannedTools =
+                scannedTools + 1
+
+            local toolName =
+                tostring(child.Name or "")
+
+            for _, targetPetName in ipairs(targetList) do
+
+                if TargetPetsHopToolMatches(
+                    toolName,
+                    targetPetName
+                ) then
+
+                    return true,
+                        tostring(targetPetName),
+                        player
+                        and tostring(player.Name)
+                        or "Unknown",
+                        scannedTools
+                end
+            end
+        end
+    end
+
+    return false, nil, nil, scannedTools
+end
+
+function ScanPlayersForTargetPetsHop()
+
+    local targetList =
+        BuildTargetPetsHopTargetList()
+
+    local scannedPlayers =
+        0
+
+    local scannedTools =
+        0
+
+    if #targetList <= 0 then
+        return false, nil, nil, scannedPlayers, scannedTools
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+
+        scannedPlayers =
+            scannedPlayers + 1
+
+        local backpack =
+            player:FindFirstChild("Backpack")
+
+        local found, petName, playerName, toolCount =
+            ScanTargetPetsHopContainer(
+                backpack,
+                player,
+                targetList
+            )
+
+        scannedTools =
+            scannedTools + SafeNumber(toolCount, 0)
+
+        if found then
+            return true, petName, playerName, scannedPlayers, scannedTools
+        end
+
+        local character =
+            player.Character
+
+        found, petName, playerName, toolCount =
+            ScanTargetPetsHopContainer(
+                character,
+                player,
+                targetList
+            )
+
+        scannedTools =
+            scannedTools + SafeNumber(toolCount, 0)
+
+        if found then
+            return true, petName, playerName, scannedPlayers, scannedTools
+        end
+    end
+
+    return false, nil, nil, scannedPlayers, scannedTools
+end
+
+function SaveTargetPetsHopConfig()
+
+    if not writefile then
+        warn("[TargetPetsHop] writefile unsupported")
+        return false
+    end
+
+    local ok, err =
+        pcall(function()
+
+            if makefolder
+            and not isfolder("HolyV2") then
+                makefolder("HolyV2")
+            end
+
+            local payload = {
+                Version = 1,
+
+                Enabled =
+                    TargetPetsHopState.Enabled == true,
+
+                Targets =
+                    BuildTargetPetsHopTargetList(),
+
+                SavedAt =
+                    os.time(),
+            }
+
+            writefile(
+                TARGET_PETS_HOP_SAVE_FILE,
+                HttpService:JSONEncode(payload)
+            )
+        end)
+
+    if not ok then
+
+        warn(
+            "[TargetPetsHop] Save failed:",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    return true
+end
+
+function LoadTargetPetsHopConfig()
+
+    if type(TargetPetsHopState) ~= "table" then
+        return false
+    end
+
+    if TargetPetsHopState.ConfigLoaded == true then
+        return true
+    end
+
+    TargetPetsHopState.ConfigLoaded =
+        true
+
+    if not isfile
+    or not readfile then
+        return false
+    end
+
+    local filePath =
+        TARGET_PETS_HOP_SAVE_FILE
+
+    if not filePath
+    or filePath == ""
+    or not isfile(filePath) then
+        return false
+    end
+
+    local ok, decoded =
+        pcall(function()
+            return HttpService:JSONDecode(
+                readfile(filePath)
+            )
+        end)
+
+    if not ok
+    or type(decoded) ~= "table" then
+
+        warn("[TargetPetsHop] Save file corrupted")
+
+        if delfile then
+            pcall(function()
+                delfile(filePath)
+            end)
+        end
+
+        return false
+    end
+
+    TargetPetsHopState.Targets =
+        {}
+
+    if type(decoded.Targets) == "table" then
+
+        for _, petName in ipairs(decoded.Targets) do
+
+            petName =
+                NormalizeTargetPetsHopName(petName)
+
+            if petName ~= "" then
+                TargetPetsHopState.Targets[petName] =
+                    true
+            end
+        end
+    end
+
+    TargetPetsHopState.Enabled =
+        decoded.Enabled == true
+
+    return true
+end
+
+function SyncTargetPetsHopDropdownFromState()
+
+    if not TargetPetsHopDropdownRef
+    or type(TargetPetsHopDropdownRef.SetValue) ~= "function" then
+        return
+    end
+
+    local selected =
+        {}
+
+    for petName, enabled in pairs(TargetPetsHopState.Targets or {}) do
+
+        if enabled == true then
+            selected[petName] =
+                true
+        end
+    end
+
+    TargetPetsHopDropdownRef:SetValue(selected)
+end
+
+function ApplyTargetPetsHopDropdownSelection(value)
+
+    TargetPetsHopState.Targets =
+        {}
+
+    if type(value) ~= "table"
+    and TargetPetsHopDropdownRef
+    and type(TargetPetsHopDropdownRef.Value) == "table" then
+        value =
+            TargetPetsHopDropdownRef.Value
+    end
+
+    if type(value) == "table" then
+
+        for petName, selected in pairs(value) do
+
+            if selected == true then
+
+                petName =
+                    NormalizeTargetPetsHopName(petName)
+
+                if petName ~= "" then
+                    TargetPetsHopState.Targets[petName] =
+                        true
+                end
+            end
+        end
+    end
+
+    SaveTargetPetsHopConfig()
+    RefreshTargetPetsHopStatus()
+end
+
+function ExecuteTargetPetsHopNow(scannedPlayers, scannedTools)
+
+    if not IsTradeWorld() then
+        SetTargetPetsHopStatus("Trade World only")
+        return false
+    end
+
+    if SniperState
+    and SniperState.Hopping == true then
+        SetTargetPetsHopStatus("Hop already running")
+        return false
+    end
+
+    local cooldown =
+        math.clamp(
+            SafeNumber(
+                TargetPetsHopState.HopCooldown,
+                6
+            ),
+            3,
+            30
+        )
+
+    if SafeElapsed(TargetPetsHopState.LastHop) < cooldown then
+        SetTargetPetsHopStatus("Hop cooldown")
+        return false
+    end
+
+    TargetPetsHopState.LastHop =
+        os.clock()
+
+    SniperState.Hopping =
+        true
+
+    SetTargetPetsHopStatus("No targets found, hopping")
+
+    HolyNotify(
+        "Target Pets Hop",
+        "No selected pets found in "
+            .. tostring(scannedPlayers or 0)
+            .. " players / "
+            .. tostring(scannedTools or 0)
+            .. " tools.",
+        "dna",
+        3
+    )
+
+    local target =
+        nil
+
+    if type(GetRandomTradeServer) == "function" then
+        target =
+            GetRandomTradeServer()
+    end
+
+    if not target then
+
+        SniperState.Hopping =
+            false
+
+        SetTargetPetsHopStatus("No server found")
+
+        HolyNotify(
+            "Target Pets Hop Failed",
+            "No valid Trade World server found.",
+            "server-off",
+            4
+        )
+
+        return false
+    end
+
+    SniperState.LastHop =
+        os.clock()
+
+    SniperState.RecentServers[target] =
+        true
+
+    if TeleportRetryState then
+
+        TeleportRetryState.LastTarget =
+            target
+
+        TeleportRetryState.BlockedServers[target] =
+            true
+    end
+
+    local TeleportService =
+        game:GetService("TeleportService")
+
+    local player =
+        Players.LocalPlayer
+
+    local ok, err =
+        pcall(function()
+
+            TeleportService:TeleportToPlaceInstance(
+                TRADING_WORLD_PLACE_ID,
+                target,
+                player
+            )
+        end)
+
+    if not ok then
+
+        SniperState.Hopping =
+            false
+
+        SetTargetPetsHopStatus("Teleport failed")
+
+        warn(
+            "[TargetPetsHop] Teleport failed:",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    task.delay(8, function()
+
+        if SniperState then
+            SniperState.Hopping =
+                false
+        end
+    end)
+
+    return true
+end
 --==================================================
 -- FILTER PERSISTENCE
 -- Supports two active watchlists and migrates older single-list saves.
@@ -18507,6 +19264,198 @@ SmartScannerToggle:OnChanged(function(v)
     )
 end)
 
+--==================================================
+-- TARGET PETS HOP UI
+-- Placed under Smart Scanner because this is smart
+-- server-skipping behavior, not normal timed auto-hop.
+--==================================================
+
+LoadTargetPetsHopConfig()
+
+local TargetPetsHopToggle =
+    HomeBox:AddToggle(
+        "TargetPetsHop",
+        {
+            Text = "🧬 Target Pets Hop",
+            Default =
+                TargetPetsHopState
+                and TargetPetsHopState.Enabled == true
+                or false,
+
+            Tooltip = "Hops instantly if no players have any selected target pets.",
+        }
+    )
+
+TargetPetsHopToggle:AddKeyPicker(
+    "TargetPetsHopKeybind",
+    {
+        Text = "Target Pets Hop",
+        Default = "None",
+        Mode = "Toggle",
+        SyncToggleState = true,
+        NoUI = false,
+    }
+)
+
+TargetPetsHopStatusLabel =
+    HomeBox:AddLabel(
+        "Target Hop: Disabled",
+        false
+    )
+
+if type(RefreshDynamicPetList) == "function" then
+    RefreshDynamicPetList()
+end
+
+PetList =
+    PetList
+    or {}
+
+local TargetPetsHopDropdown =
+    HomeBox:AddDropdown(
+        "TargetPetsHopPets",
+        {
+            Text = "Target Pets",
+            Tooltip = "Select one or more pets. If none are found in player backpacks/characters, HOLY hops.",
+            Values = PetList,
+            Default = {},
+            Searchable = true,
+            Multi = true,
+        }
+    )
+
+TargetPetsHopDropdownRef =
+    TargetPetsHopDropdown
+
+TargetPetsHopDropdown:OnChanged(function(value)
+
+    ApplyTargetPetsHopDropdownSelection(
+        value
+    )
+
+    MarkConfigDirty()
+end)
+
+local TargetPetsHopButtons =
+    HomeBox:AddButton({
+        Text = "Target Pets",
+        Tooltip = "Refresh or clear Target Pets Hop selections.",
+        Func = function()
+
+            HolyNotify(
+                "Target Pets Hop",
+                "Use Refresh to reload pets or Clear to remove selected target pets.",
+                "dna",
+                3
+            )
+        end,
+    })
+
+TargetPetsHopButtons:AddButton({
+    Text = "Refresh",
+    Tooltip = "Refreshes the Target Pets dropdown without clearing saved selections.",
+    Func = function()
+
+        if type(RefreshDynamicPetList) == "function" then
+            RefreshDynamicPetList()
+        end
+
+        PetList =
+            PetList
+            or {}
+
+        if TargetPetsHopDropdown
+        and type(TargetPetsHopDropdown.SetValues) == "function" then
+
+            TargetPetsHopDropdown:SetValues(
+                PetList
+            )
+        end
+
+        SyncTargetPetsHopDropdownFromState()
+        RefreshTargetPetsHopStatus()
+
+        HolyNotify(
+            "Target Pets Refreshed",
+            "Target Pets Hop dropdown refreshed.",
+            "dna",
+            3
+        )
+    end,
+})
+
+TargetPetsHopButtons:AddButton({
+    Text = "Clear",
+    Tooltip = "Clears all selected Target Pets Hop pets.",
+    Risky = true,
+    DoubleClick = true,
+    Func = function()
+
+        TargetPetsHopState.Targets =
+            {}
+
+        if TargetPetsHopDropdown
+        and type(TargetPetsHopDropdown.SetValue) == "function" then
+
+            TargetPetsHopDropdown:SetValue({})
+        end
+
+        SaveTargetPetsHopConfig()
+        RefreshTargetPetsHopStatus()
+        MarkConfigDirty()
+
+        HolyNotify(
+            "Target Pets Cleared",
+            "Target Pets Hop list cleared.",
+            "trash",
+            3
+        )
+    end,
+})
+
+TargetPetsHopToggle:OnChanged(function(enabled)
+
+    TargetPetsHopState.Enabled =
+        enabled == true
+
+    TargetPetsHopState.LastScan =
+        0
+
+    SaveTargetPetsHopConfig()
+    RefreshTargetPetsHopStatus()
+    MarkConfigDirty()
+
+    if ConfigState
+    and ConfigState.IsHydrating then
+        return
+    end
+
+    HolyNotify(
+        "Target Pets Hop",
+        enabled
+            and "Enabled. HOLY will hop if selected target pets are not found."
+            or "Disabled.",
+        enabled and "dna" or "pause",
+        3
+    )
+end)
+
+task.defer(function()
+
+    SyncTargetPetsHopDropdownFromState()
+    RefreshTargetPetsHopStatus()
+
+    if TargetPetsHopToggle
+    and type(TargetPetsHopToggle.SetValue) == "function"
+    and TargetPetsHopToggle.Value ~= TargetPetsHopState.Enabled then
+
+        pcall(function()
+            TargetPetsHopToggle:SetValue(
+                TargetPetsHopState.Enabled == true
+            )
+        end)
+    end
+end)
 --==================================================
 -- HOME: CLEAN SERVER ACTION ROW
 -- Compact labels only. Sub-buttons render horizontally,
