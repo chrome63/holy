@@ -90,8 +90,43 @@ if not game:IsLoaded() then
 end
 
 TRADING_WORLD_PLACE_ID = 129954712878723
+
+GROW_A_GARDEN_PLACE_ID = 126884695634066
+
+HOLY_ALLOWED_JOIN_PLACES = {
+    [GROW_A_GARDEN_PLACE_ID] = "Grow a Garden",
+    [TRADING_WORLD_PLACE_ID] = "Trade World",
+}
+
 Players = game:GetService("Players")
 ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+function IsHolyAllowedJoinPlace(placeId)
+
+    placeId =
+        tonumber(placeId)
+
+    return placeId ~= nil
+        and HOLY_ALLOWED_JOIN_PLACES[placeId] ~= nil
+end
+
+function ResolveHolyJoinPlaceName(placeId)
+
+    placeId =
+        tonumber(placeId)
+
+    return HOLY_ALLOWED_JOIN_PLACES[placeId]
+        or "Unsupported Place"
+end
+
+function ResolveDefaultManualJoinPlaceId()
+
+    if IsHolyAllowedJoinPlace(game.PlaceId) then
+        return game.PlaceId
+    end
+
+    return GROW_A_GARDEN_PLACE_ID
+end
 
 ServerInfoStartedAt = 0
 
@@ -16447,10 +16482,17 @@ local function ParseServerInput(text)
         return nil
     end
 
+    local defaultPlaceId =
+        ResolveDefaultManualJoinPlaceId()
+
     --==================================================
     -- ROBLOX WEB SHARE PRIVATE SERVER LINK
     -- Example:
     -- https://www.roblox.com/share?code=xxxx&type=Server
+    --
+    -- Important:
+    -- Roblox share links do NOT expose a JobId.
+    -- We can detect/copy them, but not direct TeleportToPlaceInstance them.
     --==================================================
 
     local shareCode =
@@ -16467,8 +16509,9 @@ local function ParseServerInput(text)
 
         return {
             Mode = "PrivateLink",
-            PlaceId = TRADING_WORLD_PLACE_ID,
+            PlaceId = defaultPlaceId,
             Code = UrlDecode(shareCode),
+            Source = "RobloxShareLink",
         }
     end
 
@@ -16479,7 +16522,9 @@ local function ParseServerInput(text)
     --==================================================
 
     local deepPlaceId =
-        compact:match("placeId=(%d+)")
+        tonumber(
+            compact:match("placeId=(%d+)")
+        )
 
     local linkCode =
         compact:match("[?&]linkCode=([^&]+)")
@@ -16489,8 +16534,9 @@ local function ParseServerInput(text)
 
         return {
             Mode = "PrivateLink",
-            PlaceId = tonumber(deepPlaceId) or TRADING_WORLD_PLACE_ID,
+            PlaceId = deepPlaceId or defaultPlaceId,
             Code = UrlDecode(linkCode),
+            Source = "RobloxDeepPrivateLink",
         }
     end
 
@@ -16512,11 +16558,36 @@ local function ParseServerInput(text)
             Mode = "PublicInstance",
             PlaceId = tonumber(placeId),
             JobId = jobId,
+            Source = "RobloxDeepPublicInstance",
+        }
+    end
+
+    --==================================================
+    -- ROBLOX WEB GAME LINK PUBLIC INSTANCE
+    -- Example:
+    -- https://www.roblox.com/games/126884695634066/name?gameInstanceId=xxxx
+    --==================================================
+
+    placeId, jobId =
+        compact:match(
+            "roblox%.com/games/(%d+).-gameInstanceId=([%w%-]+)"
+        )
+
+    if placeId
+    and jobId then
+
+        return {
+            Mode = "PublicInstance",
+            PlaceId = tonumber(placeId),
+            JobId = jobId,
+            Source = "RobloxWebPublicInstance",
         }
     end
 
     --==================================================
     -- placeId:jobId
+    -- Example:
+    -- 126884695634066:52511fe2-d3b0-4842-a725-569d2a9f64a7
     --==================================================
 
     placeId, jobId =
@@ -16531,11 +16602,14 @@ local function ParseServerInput(text)
             Mode = "PublicInstance",
             PlaceId = tonumber(placeId),
             JobId = jobId,
+            Source = "PlaceIdJobId",
         }
     end
 
     --==================================================
     -- RAW PUBLIC JOB ID
+    -- Uses current place if current place is allowed.
+    -- If HOLY is somehow outside supported places, default to normal GAG.
     --==================================================
 
     if compact:match("^[%w%-]+$")
@@ -16543,8 +16617,9 @@ local function ParseServerInput(text)
 
         return {
             Mode = "PublicInstance",
-            PlaceId = TRADING_WORLD_PLACE_ID,
+            PlaceId = defaultPlaceId,
             JobId = compact,
+            Source = "RawJobId",
         }
     end
 
@@ -16552,6 +16627,8 @@ local function ParseServerInput(text)
     -- RAW PRIVATE SERVER SHARE CODE
     -- Example:
     -- e4ee60eb4af7a243b82dfb576bc75cdc
+    --
+    -- Kept as private link handling.
     --==================================================
 
     if compact:match("^[%w%-_]+$")
@@ -16560,8 +16637,9 @@ local function ParseServerInput(text)
 
         return {
             Mode = "PrivateLink",
-            PlaceId = TRADING_WORLD_PLACE_ID,
+            PlaceId = defaultPlaceId,
             Code = compact,
+            Source = "RawPrivateCode",
         }
     end
 
@@ -16582,18 +16660,37 @@ GatewayInput:OnChanged(function(text)
         return
     end
 
-    if parsed.PlaceId ~= TRADING_WORLD_PLACE_ID then
-        SetGatewayStatus("Blocked non-trade server")
+    if not IsHolyAllowedJoinPlace(parsed.PlaceId) then
+
+        SetGatewayStatus(
+            "Blocked unsupported place"
+        )
+
         return
     end
 
+    local placeName =
+        ResolveHolyJoinPlaceName(
+            parsed.PlaceId
+        )
+
     if parsed.Mode == "PrivateLink" then
-        SetGatewayStatus("Valid private server link")
+
+        SetGatewayStatus(
+            "Private link detected • "
+            .. tostring(placeName)
+        )
+
         return
     end
 
     if parsed.Mode == "PublicInstance" then
-        SetGatewayStatus("Valid public server")
+
+        SetGatewayStatus(
+            "Valid server • "
+            .. tostring(placeName)
+        )
+
         return
     end
 
@@ -16612,9 +16709,10 @@ local function ResolvePublicServerAvailability(placeId, jobId)
     jobId =
         tostring(jobId or "")
 
-    if not placeId
-    or placeId ~= TRADING_WORLD_PLACE_ID then
-        return false, "Blocked non-trade server"
+    if not IsHolyAllowedJoinPlace(placeId) then
+
+        return false,
+            "Blocked unsupported place"
     end
 
     if jobId == "" then
@@ -16651,6 +16749,9 @@ local function ResolvePublicServerAvailability(placeId, jobId)
         if not ok
         or type(body) ~= "string"
         or body == "" then
+
+            -- Important:
+            -- Do not random-join if verification fails.
             return false, "Could not verify server"
         end
 
@@ -16691,7 +16792,8 @@ local function ResolvePublicServerAvailability(placeId, jobId)
                 end
 
                 return true,
-                    "Server available "
+                    ResolveHolyJoinPlaceName(placeId)
+                    .. " available "
                     .. tostring(playing)
                     .. "/"
                     .. tostring(maxPlayers)
@@ -16702,9 +16804,9 @@ local function ResolvePublicServerAvailability(placeId, jobId)
             decoded.nextPageCursor
 
         if not cursor
-or cursor == "" then
-    return false, "Server unavailable"
-end
+        or cursor == "" then
+            return false, "Server unavailable"
+        end
     end
 
     return false, "Server unavailable"
@@ -16722,8 +16824,19 @@ local function JoinParsedServer(parsed)
         return false
     end
 
-    if parsed.PlaceId ~= TRADING_WORLD_PLACE_ID then
-        SetGatewayStatus("Blocked non-trade server")
+    if not IsHolyAllowedJoinPlace(parsed.PlaceId) then
+
+        SetGatewayStatus(
+            "Blocked unsupported place"
+        )
+
+        HolyNotify(
+            "Manual Join Blocked",
+            "Only Grow a Garden and Trade World are allowed.",
+            "shield-alert",
+            4
+        )
+
         return false
     end
 
@@ -16737,6 +16850,11 @@ local function JoinParsedServer(parsed)
         SetGatewayStatus("LocalPlayer missing")
         return false
     end
+
+    local placeName =
+        ResolveHolyJoinPlaceName(
+            parsed.PlaceId
+        )
 
     if parsed.Mode == "PrivateLink" then
 
@@ -16755,7 +16873,10 @@ local function JoinParsedServer(parsed)
         LastServer.Code =
             parsed.Code
 
-        SetGatewayStatus("Private link copied")
+        SetGatewayStatus(
+            "Private link copied • "
+            .. tostring(placeName)
+        )
 
         local privateUrl =
             "https://www.roblox.com/share?code="
@@ -16779,7 +16900,7 @@ local function JoinParsedServer(parsed)
 
         HolyNotify(
             "Private Link Copied",
-            "Roblox blocks client-side TeleportToPrivateServer. Open the copied link through browser/RoValra.",
+            "Open the copied Roblox private server link through browser/RoValra/Roblox app.",
             "link",
             5
         )
@@ -16800,7 +16921,11 @@ local function JoinParsedServer(parsed)
     GatewayBusy =
         true
 
-    SetGatewayStatus("Verifying server...")
+    SetGatewayStatus(
+        "Verifying "
+        .. tostring(placeName)
+        .. " server..."
+    )
 
     local available, reason =
         ResolvePublicServerAvailability(
@@ -16827,6 +16952,8 @@ local function JoinParsedServer(parsed)
         warn(
             "[Gateway] Manual join blocked:",
             tostring(reason),
+            "| PlaceId:",
+            tostring(parsed.PlaceId),
             "| JobId:",
             tostring(parsed.JobId)
         )
@@ -16847,8 +16974,21 @@ local function JoinParsedServer(parsed)
         parsed.Code
 
     SetGatewayStatus(
-        tostring(reason or "Connecting public server...")
+        tostring(reason or "Connecting server...")
     )
+
+    -- Prevent manual join from racing auto-hop timing.
+    if SniperState then
+
+        SniperState.Hopping =
+            false
+
+        SniperState.LastHop =
+            os.clock()
+
+        SniperState.ScanStartedAt =
+            os.clock()
+    end
 
     local ok, err =
         pcall(function()
@@ -16890,6 +17030,768 @@ local function JoinParsedServer(parsed)
     return true
 end
 
+--==================================================
+-- MANUAL JOIN FLOATING HUD
+-- Small pop-up controlled by a Home toggle.
+-- Reuses ParseServerInput + JoinParsedServer.
+--==================================================
+
+ManualJoinHUDState =
+    ManualJoinHUDState
+    or {
+        Enabled = false,
+        Busy = false,
+        InputText = "",
+        LastStatus = "Paste a server link or placeId:jobId.",
+        Gui = nil,
+        Input = nil,
+        StatusLabel = nil,
+    }
+
+local function GetManualJoinHUDParent()
+
+    local okGetHui, hui =
+        pcall(function()
+            if type(gethui) == "function" then
+                return gethui()
+            end
+
+            return nil
+        end)
+
+    if okGetHui
+    and hui then
+        return hui
+    end
+
+    local player =
+        Players.LocalPlayer
+
+    return player
+        and player:FindFirstChild("PlayerGui")
+        or nil
+end
+
+local function SetManualJoinHUDStatus(text, mode)
+
+    ManualJoinHUDState.LastStatus =
+        tostring(text or "")
+
+    local label =
+        ManualJoinHUDState.StatusLabel
+
+    if not label then
+        return
+    end
+
+    label.Text =
+        "Status: "
+        .. ManualJoinHUDState.LastStatus
+
+    if mode == "Good" then
+        label.TextColor3 =
+            Color3.fromRGB(95, 255, 160)
+
+    elseif mode == "Warn" then
+        label.TextColor3 =
+            Color3.fromRGB(255, 210, 95)
+
+    elseif mode == "Bad" then
+        label.TextColor3 =
+            Color3.fromRGB(255, 95, 120)
+
+    else
+        label.TextColor3 =
+            Color3.fromRGB(190, 190, 205)
+    end
+end
+
+local function RefreshManualJoinHUDValidation()
+
+    local input =
+        ManualJoinHUDState.Input
+
+    local text =
+        input
+        and tostring(input.Text or "")
+        or tostring(ManualJoinHUDState.InputText or "")
+
+    ManualJoinHUDState.InputText =
+        text
+
+    local parsed =
+        ParseServerInput(text)
+
+    if not parsed then
+
+        if text == "" then
+            SetManualJoinHUDStatus(
+                "Paste a server link or placeId:jobId.",
+                "Neutral"
+            )
+        else
+            SetManualJoinHUDStatus(
+                "Invalid input",
+                "Bad"
+            )
+        end
+
+        return nil
+    end
+
+    if not IsHolyAllowedJoinPlace(parsed.PlaceId) then
+
+        SetManualJoinHUDStatus(
+            "Blocked unsupported place",
+            "Bad"
+        )
+
+        return parsed
+    end
+
+    local placeName =
+        ResolveHolyJoinPlaceName(
+            parsed.PlaceId
+        )
+
+    if parsed.Mode == "PrivateLink" then
+
+        SetManualJoinHUDStatus(
+            "Private link detected • "
+            .. tostring(placeName),
+            "Warn"
+        )
+
+        return parsed
+    end
+
+    if parsed.Mode == "PublicInstance" then
+
+        SetManualJoinHUDStatus(
+            "Ready • "
+            .. tostring(placeName),
+            "Good"
+        )
+
+        return parsed
+    end
+
+    SetManualJoinHUDStatus(
+        "Invalid input",
+        "Bad"
+    )
+
+    return parsed
+end
+
+local function TryManualJoinFromHUD()
+
+    if ScriptState.ForceStopped then
+
+        SetManualJoinHUDStatus(
+            "Blocked (ForceStopped)",
+            "Bad"
+        )
+
+        return false
+    end
+
+    local parsed =
+        RefreshManualJoinHUDValidation()
+
+    if not parsed then
+        return false
+    end
+
+    if not IsHolyAllowedJoinPlace(parsed.PlaceId) then
+        return false
+    end
+
+    local joined =
+        JoinParsedServer(parsed)
+
+    if joined
+    and parsed.Mode == "PublicInstance"
+    and ManualJoinHUDState.Input then
+
+        ManualJoinHUDState.Input.Text =
+            ""
+
+        ManualJoinHUDState.InputText =
+            ""
+
+        SetManualJoinHUDStatus(
+            "Joining...",
+            "Good"
+        )
+    end
+
+    return joined
+end
+
+local function CreateManualJoinHUD()
+
+    if ManualJoinHUDState.Gui
+    and ManualJoinHUDState.Gui.Parent then
+        return ManualJoinHUDState.Gui
+    end
+
+    local parent =
+        GetManualJoinHUDParent()
+
+    if not parent then
+        warn("[Manual Join HUD] No UI parent")
+        return nil
+    end
+
+    local existing =
+        parent:FindFirstChild("HolyManualJoinHUD")
+
+    if existing then
+        existing:Destroy()
+    end
+
+    local screenGui =
+        Instance.new("ScreenGui")
+
+    screenGui.Name =
+        "HolyManualJoinHUD"
+
+    screenGui.ResetOnSpawn =
+        false
+
+    screenGui.IgnoreGuiInset =
+        true
+
+    screenGui.DisplayOrder =
+        9999
+
+    screenGui.Enabled =
+        ManualJoinHUDState.Enabled == true
+
+    screenGui.Parent =
+        parent
+
+    local frame =
+        Instance.new("Frame")
+
+    frame.Name =
+        "Main"
+
+    frame.AnchorPoint =
+        Vector2.new(1, 0)
+
+    frame.Position =
+        UDim2.new(1, -22, 0, 120)
+
+    frame.Size =
+        UDim2.fromOffset(360, 180)
+
+    frame.BackgroundColor3 =
+        Color3.fromRGB(12, 12, 18)
+
+    frame.BorderSizePixel =
+        0
+
+    frame.Parent =
+        screenGui
+
+    local corner =
+        Instance.new("UICorner")
+
+    corner.CornerRadius =
+        UDim.new(0, 8)
+
+    corner.Parent =
+        frame
+
+    local stroke =
+        Instance.new("UIStroke")
+
+    stroke.Color =
+        Color3.fromRGB(80, 80, 105)
+
+    stroke.Thickness =
+        1
+
+    stroke.Transparency =
+        0.1
+
+    stroke.Parent =
+        frame
+
+    local title =
+        Instance.new("TextLabel")
+
+    title.Name =
+        "Title"
+
+    title.BackgroundTransparency =
+        1
+
+    title.Position =
+        UDim2.fromOffset(14, 10)
+
+    title.Size =
+        UDim2.new(1, -54, 0, 24)
+
+    title.Font =
+        Enum.Font.GothamBold
+
+    title.Text =
+        "🧭 Manual Join"
+
+    title.TextColor3 =
+        Color3.fromRGB(255, 235, 170)
+
+    title.TextSize =
+        16
+
+    title.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    title.Parent =
+        frame
+
+    local close =
+        Instance.new("TextButton")
+
+    close.Name =
+        "Close"
+
+    close.Position =
+        UDim2.new(1, -38, 0, 10)
+
+    close.Size =
+        UDim2.fromOffset(24, 24)
+
+    close.BackgroundColor3 =
+        Color3.fromRGB(25, 25, 35)
+
+    close.BorderSizePixel =
+        0
+
+    close.Font =
+        Enum.Font.GothamBold
+
+    close.Text =
+        "X"
+
+    close.TextColor3 =
+        Color3.fromRGB(220, 220, 235)
+
+    close.TextSize =
+        12
+
+    close.Parent =
+        frame
+
+    local closeCorner =
+        Instance.new("UICorner")
+
+    closeCorner.CornerRadius =
+        UDim.new(0, 5)
+
+    closeCorner.Parent =
+        close
+
+    local helper =
+        Instance.new("TextLabel")
+
+    helper.Name =
+        "Helper"
+
+    helper.BackgroundTransparency =
+        1
+
+    helper.Position =
+        UDim2.fromOffset(14, 40)
+
+    helper.Size =
+        UDim2.new(1, -28, 0, 32)
+
+    helper.Font =
+        Enum.Font.Gotham
+
+    helper.Text =
+        "Paste placeId:jobId, JobId, Roblox server link, or private share link."
+
+    helper.TextColor3 =
+        Color3.fromRGB(180, 180, 200)
+
+    helper.TextSize =
+        12
+
+    helper.TextWrapped =
+        true
+
+    helper.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    helper.Parent =
+        frame
+
+    local input =
+        Instance.new("TextBox")
+
+    input.Name =
+        "Input"
+
+    input.Position =
+        UDim2.fromOffset(14, 78)
+
+    input.Size =
+        UDim2.new(1, -28, 0, 34)
+
+    input.BackgroundColor3 =
+        Color3.fromRGB(22, 22, 32)
+
+    input.BorderSizePixel =
+        0
+
+    input.ClearTextOnFocus =
+        false
+
+    input.Font =
+        Enum.Font.Gotham
+
+    input.PlaceholderText =
+        "126884695634066:jobId or roblox://..."
+
+    input.PlaceholderColor3 =
+        Color3.fromRGB(115, 115, 135)
+
+    input.Text =
+        tostring(ManualJoinHUDState.InputText or "")
+
+    input.TextColor3 =
+        Color3.fromRGB(240, 240, 255)
+
+    input.TextSize =
+        13
+
+    input.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    input.Parent =
+        frame
+
+    local inputCorner =
+        Instance.new("UICorner")
+
+    inputCorner.CornerRadius =
+        UDim.new(0, 6)
+
+    inputCorner.Parent =
+        input
+
+    local inputStroke =
+        Instance.new("UIStroke")
+
+    inputStroke.Color =
+        Color3.fromRGB(55, 55, 75)
+
+    inputStroke.Thickness =
+        1
+
+    inputStroke.Parent =
+        input
+
+    local status =
+        Instance.new("TextLabel")
+
+    status.Name =
+        "Status"
+
+    status.BackgroundTransparency =
+        1
+
+    status.Position =
+        UDim2.fromOffset(14, 116)
+
+    status.Size =
+        UDim2.new(1, -28, 0, 20)
+
+    status.Font =
+        Enum.Font.Gotham
+
+    status.Text =
+        "Status: Paste a server link or placeId:jobId."
+
+    status.TextColor3 =
+        Color3.fromRGB(190, 190, 205)
+
+    status.TextSize =
+        12
+
+    status.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    status.Parent =
+        frame
+
+    local join =
+        Instance.new("TextButton")
+
+    join.Name =
+        "Join"
+
+    join.Position =
+        UDim2.fromOffset(14, 142)
+
+    join.Size =
+        UDim2.new(0.5, -20, 0, 28)
+
+    join.BackgroundColor3 =
+        Color3.fromRGB(35, 25, 55)
+
+    join.BorderSizePixel =
+        0
+
+    join.Font =
+        Enum.Font.GothamBold
+
+    join.Text =
+        "Join Server"
+
+    join.TextColor3 =
+        Color3.fromRGB(255, 255, 255)
+
+    join.TextSize =
+        13
+
+    join.Parent =
+        frame
+
+    local joinCorner =
+        Instance.new("UICorner")
+
+    joinCorner.CornerRadius =
+        UDim.new(0, 6)
+
+    joinCorner.Parent =
+        join
+
+    local clear =
+        Instance.new("TextButton")
+
+    clear.Name =
+        "Clear"
+
+    clear.Position =
+        UDim2.new(0.5, 6, 0, 142)
+
+    clear.Size =
+        UDim2.new(0.5, -20, 0, 28)
+
+    clear.BackgroundColor3 =
+        Color3.fromRGB(22, 22, 32)
+
+    clear.BorderSizePixel =
+        0
+
+    clear.Font =
+        Enum.Font.GothamBold
+
+    clear.Text =
+        "Clear"
+
+    clear.TextColor3 =
+        Color3.fromRGB(205, 205, 220)
+
+    clear.TextSize =
+        13
+
+    clear.Parent =
+        frame
+
+    local clearCorner =
+        Instance.new("UICorner")
+
+    clearCorner.CornerRadius =
+        UDim.new(0, 6)
+
+    clearCorner.Parent =
+        clear
+
+    -- Simple drag support.
+    local dragging =
+        false
+
+    local dragStart =
+        nil
+
+    local startPos =
+        nil
+
+    title.InputBegan:Connect(function(inputObject)
+
+        if inputObject.UserInputType == Enum.UserInputType.MouseButton1
+        or inputObject.UserInputType == Enum.UserInputType.Touch then
+
+            dragging =
+                true
+
+            dragStart =
+                inputObject.Position
+
+            startPos =
+                frame.Position
+
+            inputObject.Changed:Connect(function()
+
+                if inputObject.UserInputState == Enum.UserInputState.End then
+                    dragging =
+                        false
+                end
+            end)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(inputObject)
+
+        if not dragging then
+            return
+        end
+
+        if inputObject.UserInputType ~= Enum.UserInputType.MouseMovement
+        and inputObject.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+
+        local delta =
+            inputObject.Position - dragStart
+
+        frame.Position =
+            UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+    end)
+
+    input:GetPropertyChangedSignal("Text"):Connect(function()
+
+        ManualJoinHUDState.InputText =
+            tostring(input.Text or "")
+
+        RefreshManualJoinHUDValidation()
+    end)
+
+    input.FocusLost:Connect(function(enterPressed)
+
+        if enterPressed then
+            TryManualJoinFromHUD()
+        end
+    end)
+
+    join.MouseButton1Click:Connect(function()
+        TryManualJoinFromHUD()
+    end)
+
+    clear.MouseButton1Click:Connect(function()
+
+        input.Text =
+            ""
+
+        ManualJoinHUDState.InputText =
+            ""
+
+        SetManualJoinHUDStatus(
+            "Paste a server link or placeId:jobId.",
+            "Neutral"
+        )
+    end)
+
+    close.MouseButton1Click:Connect(function()
+
+        ManualJoinHUDState.Enabled =
+            false
+
+        screenGui.Enabled =
+            false
+
+        local toggle =
+            Library
+            and Library.Toggles
+            and Library.Toggles.ManualJoinHUD
+
+        if toggle then
+            toggle:SetValue(false)
+        end
+    end)
+
+    ManualJoinHUDState.Gui =
+        screenGui
+
+    ManualJoinHUDState.Input =
+        input
+
+    ManualJoinHUDState.StatusLabel =
+        status
+
+    RefreshManualJoinHUDValidation()
+
+    return screenGui
+end
+
+local function SetManualJoinHUDVisible(enabled)
+
+    ManualJoinHUDState.Enabled =
+        enabled == true
+
+    local gui =
+        CreateManualJoinHUD()
+
+    if gui then
+        gui.Enabled =
+            ManualJoinHUDState.Enabled
+    end
+
+    if ManualJoinHUDState.Enabled then
+
+        RefreshManualJoinHUDValidation()
+
+        if ManualJoinHUDState.Input then
+            task.defer(function()
+                pcall(function()
+                    ManualJoinHUDState.Input:CaptureFocus()
+                end)
+            end)
+        end
+    end
+end
+
+local ManualJoinHUDToggle =
+    HomeBox:AddToggle(
+        "ManualJoinHUD",
+        {
+            Text = "🧭 Manual Join HUD",
+            Default = false,
+            Tooltip = "Shows a small floating join box for Grow a Garden or Trade World servers.",
+        }
+    )
+
+ManualJoinHUDToggle:AddKeyPicker(
+    "ManualJoinHUDKeybind",
+    {
+        Text = "Manual Join HUD",
+        Default = "J",
+        Mode = "Toggle",
+        SyncToggleState = true,
+        NoUI = false,
+    }
+)
+
+ManualJoinHUDToggle:OnChanged(function(enabled)
+
+    SetManualJoinHUDVisible(
+        enabled == true
+    )
+
+    MarkConfigDirty()
+end)
 --==================================================
 -- BUTTONS
 --==================================================
@@ -16965,30 +17867,31 @@ GatewayBox:AddButton({
             return
         end
 
-local text =
-    GatewayInput.Value
+        local text =
+            GatewayInput.Value
 
-local parsed =
-    ParseServerInput(text)
+        local parsed =
+            ParseServerInput(text)
 
-if not parsed then
-    SetGatewayStatus("Invalid input")
-    return
-end
+        if not parsed then
+            SetGatewayStatus("Invalid input")
+            return
+        end
 
-if parsed.PlaceId ~= TRADING_WORLD_PLACE_ID then
-    SetGatewayStatus(
-        "Blocked non-trade server"
-    )
-    return
-end
+        if not IsHolyAllowedJoinPlace(parsed.PlaceId) then
+            SetGatewayStatus(
+                "Blocked unsupported place"
+            )
+            return
+        end
 
-local joined =
-    JoinParsedServer(parsed)
+        local joined =
+            JoinParsedServer(parsed)
 
-if joined then
-    GatewayInput:SetValue("")
-end
+        if joined
+        and parsed.Mode == "PublicInstance" then
+            GatewayInput:SetValue("")
+        end
     end,
 })
 
@@ -17450,7 +18353,7 @@ local SniperAutoHopToggle =
             Default = false,
         }
     )
-    
+
 SniperAutoHopToggle:AddKeyPicker(
     "SniperAutoHopKeybind",
     {
@@ -30458,6 +31361,16 @@ end)
             }
         )
 
+        AutoListToggle:AddKeyPicker(
+    "EnableAutoListKeybind",
+    {
+        Text = "Start AutoList",
+        Default = "None",
+        Mode = "Toggle",
+        SyncToggleState = true,
+        NoUI = false,
+    }
+)
 AutoListToggle:OnChanged(function(value)
 
     ListingsState.Enabled =
