@@ -9924,6 +9924,566 @@ end
 
     return selected.Id
 end
+
+--==================================================
+-- TARGET PETS HOP HELPERS
+--==================================================
+
+function NormalizeTargetPetsHopName(value)
+
+    local text =
+        tostring(value or "")
+
+    text =
+        text:gsub("%b[]", "")
+            :gsub("%s+", " ")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    return text
+end
+
+function CountTargetPetsHopTargets()
+
+    local count =
+        0
+
+    if type(TargetPetsHopState) ~= "table"
+    or type(TargetPetsHopState.Targets) ~= "table" then
+        return 0
+    end
+
+    for petName, enabled in pairs(TargetPetsHopState.Targets) do
+
+        if enabled == true
+        and NormalizeTargetPetsHopName(petName) ~= "" then
+            count =
+                count + 1
+        end
+    end
+
+    return count
+end
+
+function BuildTargetPetsHopTargetList()
+
+    local list =
+        {}
+
+    if type(TargetPetsHopState) ~= "table"
+    or type(TargetPetsHopState.Targets) ~= "table" then
+        return list
+    end
+
+    for petName, enabled in pairs(TargetPetsHopState.Targets) do
+
+        petName =
+            NormalizeTargetPetsHopName(petName)
+
+        if enabled == true
+        and petName ~= "" then
+
+            table.insert(
+                list,
+                petName
+            )
+        end
+    end
+
+    table.sort(list, function(a, b)
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return list
+end
+
+function SetTargetPetsHopStatus(text)
+
+    text =
+        tostring(text or "Unknown")
+
+    if type(TargetPetsHopState) == "table" then
+        TargetPetsHopState.Status =
+            text
+    end
+
+    if TargetPetsHopStatusLabel
+    and type(TargetPetsHopStatusLabel.SetText) == "function" then
+
+        TargetPetsHopStatusLabel:SetText(
+            "Target Hop: "
+            .. text
+        )
+    end
+end
+
+function RefreshTargetPetsHopStatus()
+
+    if type(TargetPetsHopState) ~= "table" then
+        return
+    end
+
+    if TargetPetsHopState.Enabled ~= true then
+        SetTargetPetsHopStatus("Disabled")
+        return
+    end
+
+    local count =
+        CountTargetPetsHopTargets()
+
+    if count <= 0 then
+        SetTargetPetsHopStatus("No pets selected")
+        return
+    end
+
+    SetTargetPetsHopStatus(
+        tostring(count)
+        .. " target pet"
+        .. (
+            count == 1
+            and ""
+            or "s"
+        )
+        .. " selected"
+    )
+end
+
+function TargetPetsHopToolMatches(toolName, targetPetName)
+
+    local cleanToolName =
+        NormalizeTargetPetsHopName(toolName)
+
+    local cleanTarget =
+        NormalizeTargetPetsHopName(targetPetName)
+
+    if cleanToolName == ""
+    or cleanTarget == "" then
+        return false
+    end
+
+    local lowerTool =
+        cleanToolName:lower()
+
+    local lowerTarget =
+        cleanTarget:lower()
+
+    -- Exact:
+    -- "Rainbow Elephant" matches "Rainbow Elephant"
+    if lowerTool == lowerTarget then
+        return true
+    end
+
+    -- Mutation prefix:
+    -- "Nightmare Mimic Octopus" matches "Mimic Octopus"
+    -- "Rainbow Elephant" does NOT match plain "Elephant" unless Elephant is selected.
+    if #lowerTool > #lowerTarget
+    and lowerTool:sub(-#lowerTarget) == lowerTarget then
+        return true
+    end
+
+    return false
+end
+
+function ScanTargetPetsHopContainer(container, player, targetList)
+
+    if not container
+    or type(targetList) ~= "table" then
+        return false, nil, nil, 0
+    end
+
+    local scannedTools =
+        0
+
+    for _, child in ipairs(container:GetChildren()) do
+
+        if child:IsA("Tool") then
+
+            scannedTools =
+                scannedTools + 1
+
+            local toolName =
+                tostring(child.Name or "")
+
+            for _, targetPetName in ipairs(targetList) do
+
+                if TargetPetsHopToolMatches(
+                    toolName,
+                    targetPetName
+                ) then
+
+                    return true,
+                        tostring(targetPetName),
+                        player
+                        and tostring(player.Name)
+                        or "Unknown",
+                        scannedTools
+                end
+            end
+        end
+    end
+
+    return false, nil, nil, scannedTools
+end
+
+function ScanPlayersForTargetPetsHop()
+
+    local targetList =
+        BuildTargetPetsHopTargetList()
+
+    local scannedPlayers =
+        0
+
+    local scannedTools =
+        0
+
+    if #targetList <= 0 then
+        return false, nil, nil, scannedPlayers, scannedTools
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+
+        scannedPlayers =
+            scannedPlayers + 1
+
+        local backpack =
+            player:FindFirstChild("Backpack")
+
+        local found, petName, playerName, toolCount =
+            ScanTargetPetsHopContainer(
+                backpack,
+                player,
+                targetList
+            )
+
+        scannedTools =
+            scannedTools + SafeNumber(toolCount, 0)
+
+        if found then
+            return true, petName, playerName, scannedPlayers, scannedTools
+        end
+
+        local character =
+            player.Character
+
+        found, petName, playerName, toolCount =
+            ScanTargetPetsHopContainer(
+                character,
+                player,
+                targetList
+            )
+
+        scannedTools =
+            scannedTools + SafeNumber(toolCount, 0)
+
+        if found then
+            return true, petName, playerName, scannedPlayers, scannedTools
+        end
+    end
+
+    return false, nil, nil, scannedPlayers, scannedTools
+end
+
+function SaveTargetPetsHopConfig()
+
+    if not writefile then
+        warn("[TargetPetsHop] writefile unsupported")
+        return false
+    end
+
+    local ok, err =
+        pcall(function()
+
+            if makefolder
+            and not isfolder("HolyV2") then
+                makefolder("HolyV2")
+            end
+
+            local payload = {
+                Version = 1,
+
+                Enabled =
+                    TargetPetsHopState.Enabled == true,
+
+                Targets =
+                    BuildTargetPetsHopTargetList(),
+
+                SavedAt =
+                    os.time(),
+            }
+
+            writefile(
+                TARGET_PETS_HOP_SAVE_FILE,
+                HttpService:JSONEncode(payload)
+            )
+        end)
+
+    if not ok then
+
+        warn(
+            "[TargetPetsHop] Save failed:",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    return true
+end
+
+function LoadTargetPetsHopConfig()
+
+    if type(TargetPetsHopState) ~= "table" then
+        return false
+    end
+
+    if TargetPetsHopState.ConfigLoaded == true then
+        return true
+    end
+
+    TargetPetsHopState.ConfigLoaded =
+        true
+
+    if not isfile
+    or not readfile then
+        return false
+    end
+
+    local filePath =
+        TARGET_PETS_HOP_SAVE_FILE
+
+    if not filePath
+    or filePath == ""
+    or not isfile(filePath) then
+        return false
+    end
+
+    local ok, decoded =
+        pcall(function()
+            return HttpService:JSONDecode(
+                readfile(filePath)
+            )
+        end)
+
+    if not ok
+    or type(decoded) ~= "table" then
+
+        warn("[TargetPetsHop] Save file corrupted")
+
+        if delfile then
+            pcall(function()
+                delfile(filePath)
+            end)
+        end
+
+        return false
+    end
+
+    TargetPetsHopState.Targets =
+        {}
+
+    if type(decoded.Targets) == "table" then
+
+        for _, petName in ipairs(decoded.Targets) do
+
+            petName =
+                NormalizeTargetPetsHopName(petName)
+
+            if petName ~= "" then
+                TargetPetsHopState.Targets[petName] =
+                    true
+            end
+        end
+    end
+
+    TargetPetsHopState.Enabled =
+        decoded.Enabled == true
+
+    return true
+end
+
+function SyncTargetPetsHopDropdownFromState()
+
+    if not TargetPetsHopDropdownRef
+    or type(TargetPetsHopDropdownRef.SetValue) ~= "function" then
+        return
+    end
+
+    local selected =
+        {}
+
+    for petName, enabled in pairs(TargetPetsHopState.Targets or {}) do
+
+        if enabled == true then
+            selected[petName] =
+                true
+        end
+    end
+
+    TargetPetsHopDropdownRef:SetValue(selected)
+end
+
+function ApplyTargetPetsHopDropdownSelection(value)
+
+    TargetPetsHopState.Targets =
+        {}
+
+    if type(value) ~= "table"
+    and TargetPetsHopDropdownRef
+    and type(TargetPetsHopDropdownRef.Value) == "table" then
+        value =
+            TargetPetsHopDropdownRef.Value
+    end
+
+    if type(value) == "table" then
+
+        for petName, selected in pairs(value) do
+
+            if selected == true then
+
+                petName =
+                    NormalizeTargetPetsHopName(petName)
+
+                if petName ~= "" then
+                    TargetPetsHopState.Targets[petName] =
+                        true
+                end
+            end
+        end
+    end
+
+    SaveTargetPetsHopConfig()
+    RefreshTargetPetsHopStatus()
+end
+
+function ExecuteTargetPetsHopNow(scannedPlayers, scannedTools)
+
+    if not IsTradeWorld() then
+        SetTargetPetsHopStatus("Trade World only")
+        return false
+    end
+
+    if SniperState
+    and SniperState.Hopping == true then
+        SetTargetPetsHopStatus("Hop already running")
+        return false
+    end
+
+    local cooldown =
+        math.clamp(
+            SafeNumber(
+                TargetPetsHopState.HopCooldown,
+                6
+            ),
+            3,
+            30
+        )
+
+    if SafeElapsed(TargetPetsHopState.LastHop) < cooldown then
+        SetTargetPetsHopStatus("Hop cooldown")
+        return false
+    end
+
+    TargetPetsHopState.LastHop =
+        os.clock()
+
+    SniperState.Hopping =
+        true
+
+    SetTargetPetsHopStatus("No targets found, hopping")
+
+    HolyNotify(
+        "Target Pets Hop",
+        "No selected pets found in "
+            .. tostring(scannedPlayers or 0)
+            .. " players / "
+            .. tostring(scannedTools or 0)
+            .. " tools.",
+        "dna",
+        3
+    )
+
+    local target =
+        nil
+
+    if type(GetRandomTradeServer) == "function" then
+        target =
+            GetRandomTradeServer()
+    end
+
+    if not target then
+
+        SniperState.Hopping =
+            false
+
+        SetTargetPetsHopStatus("No server found")
+
+        HolyNotify(
+            "Target Pets Hop Failed",
+            "No valid Trade World server found.",
+            "server-off",
+            4
+        )
+
+        return false
+    end
+
+    SniperState.LastHop =
+        os.clock()
+
+    SniperState.RecentServers[target] =
+        true
+
+    if TeleportRetryState then
+
+        TeleportRetryState.LastTarget =
+            target
+
+        TeleportRetryState.BlockedServers[target] =
+            true
+    end
+
+    local TeleportService =
+        game:GetService("TeleportService")
+
+    local player =
+        Players.LocalPlayer
+
+    local ok, err =
+        pcall(function()
+
+            TeleportService:TeleportToPlaceInstance(
+                TRADING_WORLD_PLACE_ID,
+                target,
+                player
+            )
+        end)
+
+    if not ok then
+
+        SniperState.Hopping =
+            false
+
+        SetTargetPetsHopStatus("Teleport failed")
+
+        warn(
+            "[TargetPetsHop] Teleport failed:",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    task.delay(8, function()
+
+        if SniperState then
+            SniperState.Hopping =
+                false
+        end
+    end)
+
+    return true
+end
 --==================================================
 -- SNIPER SERVER HOP
 --==================================================
@@ -10007,7 +10567,11 @@ end
 -- Backpack/Character, HOLY hops immediately.
 --==================================================
 
-LoadTargetPetsHopConfig()
+if type(LoadTargetPetsHopConfig) == "function" then
+    LoadTargetPetsHopConfig()
+else
+    warn("[TargetPetsHop] LoadTargetPetsHopConfig missing before worker start")
+end
 
 task.spawn(function()
 
@@ -14007,565 +14571,6 @@ ANTI_ALT_AVOID_LIST_SAVE_FILE =
 TARGET_PETS_HOP_SAVE_FILE =
     "HolyV2/target_pets_hop.json"
 
---==================================================
--- TARGET PETS HOP HELPERS
---==================================================
-
-function NormalizeTargetPetsHopName(value)
-
-    local text =
-        tostring(value or "")
-
-    text =
-        text:gsub("%b[]", "")
-            :gsub("%s+", " ")
-            :gsub("^%s+", "")
-            :gsub("%s+$", "")
-
-    return text
-end
-
-function CountTargetPetsHopTargets()
-
-    local count =
-        0
-
-    if type(TargetPetsHopState) ~= "table"
-    or type(TargetPetsHopState.Targets) ~= "table" then
-        return 0
-    end
-
-    for petName, enabled in pairs(TargetPetsHopState.Targets) do
-
-        if enabled == true
-        and NormalizeTargetPetsHopName(petName) ~= "" then
-            count =
-                count + 1
-        end
-    end
-
-    return count
-end
-
-function BuildTargetPetsHopTargetList()
-
-    local list =
-        {}
-
-    if type(TargetPetsHopState) ~= "table"
-    or type(TargetPetsHopState.Targets) ~= "table" then
-        return list
-    end
-
-    for petName, enabled in pairs(TargetPetsHopState.Targets) do
-
-        petName =
-            NormalizeTargetPetsHopName(petName)
-
-        if enabled == true
-        and petName ~= "" then
-
-            table.insert(
-                list,
-                petName
-            )
-        end
-    end
-
-    table.sort(list, function(a, b)
-        return tostring(a):lower()
-            < tostring(b):lower()
-    end)
-
-    return list
-end
-
-function SetTargetPetsHopStatus(text)
-
-    text =
-        tostring(text or "Unknown")
-
-    if type(TargetPetsHopState) == "table" then
-        TargetPetsHopState.Status =
-            text
-    end
-
-    if TargetPetsHopStatusLabel
-    and type(TargetPetsHopStatusLabel.SetText) == "function" then
-
-        TargetPetsHopStatusLabel:SetText(
-            "Target Hop: "
-            .. text
-        )
-    end
-end
-
-function RefreshTargetPetsHopStatus()
-
-    if type(TargetPetsHopState) ~= "table" then
-        return
-    end
-
-    if TargetPetsHopState.Enabled ~= true then
-        SetTargetPetsHopStatus("Disabled")
-        return
-    end
-
-    local count =
-        CountTargetPetsHopTargets()
-
-    if count <= 0 then
-        SetTargetPetsHopStatus("No pets selected")
-        return
-    end
-
-    SetTargetPetsHopStatus(
-        tostring(count)
-        .. " target pet"
-        .. (
-            count == 1
-            and ""
-            or "s"
-        )
-        .. " selected"
-    )
-end
-
-function TargetPetsHopToolMatches(toolName, targetPetName)
-
-    local cleanToolName =
-        NormalizeTargetPetsHopName(toolName)
-
-    local cleanTarget =
-        NormalizeTargetPetsHopName(targetPetName)
-
-    if cleanToolName == ""
-    or cleanTarget == "" then
-        return false
-    end
-
-    local lowerTool =
-        cleanToolName:lower()
-
-    local lowerTarget =
-        cleanTarget:lower()
-
-    -- Exact:
-    -- "Rainbow Elephant" matches "Rainbow Elephant"
-    if lowerTool == lowerTarget then
-        return true
-    end
-
-    -- Mutation prefix:
-    -- "Nightmare Mimic Octopus" matches "Mimic Octopus"
-    -- "Rainbow Elephant" does NOT match plain "Elephant" unless Elephant is selected.
-    if #lowerTool > #lowerTarget
-    and lowerTool:sub(-#lowerTarget) == lowerTarget then
-        return true
-    end
-
-    return false
-end
-
-function ScanTargetPetsHopContainer(container, player, targetList)
-
-    if not container
-    or type(targetList) ~= "table" then
-        return false, nil, nil, 0
-    end
-
-    local scannedTools =
-        0
-
-    for _, child in ipairs(container:GetChildren()) do
-
-        if child:IsA("Tool") then
-
-            scannedTools =
-                scannedTools + 1
-
-            local toolName =
-                tostring(child.Name or "")
-
-            for _, targetPetName in ipairs(targetList) do
-
-                if TargetPetsHopToolMatches(
-                    toolName,
-                    targetPetName
-                ) then
-
-                    return true,
-                        tostring(targetPetName),
-                        player
-                        and tostring(player.Name)
-                        or "Unknown",
-                        scannedTools
-                end
-            end
-        end
-    end
-
-    return false, nil, nil, scannedTools
-end
-
-function ScanPlayersForTargetPetsHop()
-
-    local targetList =
-        BuildTargetPetsHopTargetList()
-
-    local scannedPlayers =
-        0
-
-    local scannedTools =
-        0
-
-    if #targetList <= 0 then
-        return false, nil, nil, scannedPlayers, scannedTools
-    end
-
-    for _, player in ipairs(Players:GetPlayers()) do
-
-        scannedPlayers =
-            scannedPlayers + 1
-
-        local backpack =
-            player:FindFirstChild("Backpack")
-
-        local found, petName, playerName, toolCount =
-            ScanTargetPetsHopContainer(
-                backpack,
-                player,
-                targetList
-            )
-
-        scannedTools =
-            scannedTools + SafeNumber(toolCount, 0)
-
-        if found then
-            return true, petName, playerName, scannedPlayers, scannedTools
-        end
-
-        local character =
-            player.Character
-
-        found, petName, playerName, toolCount =
-            ScanTargetPetsHopContainer(
-                character,
-                player,
-                targetList
-            )
-
-        scannedTools =
-            scannedTools + SafeNumber(toolCount, 0)
-
-        if found then
-            return true, petName, playerName, scannedPlayers, scannedTools
-        end
-    end
-
-    return false, nil, nil, scannedPlayers, scannedTools
-end
-
-function SaveTargetPetsHopConfig()
-
-    if not writefile then
-        warn("[TargetPetsHop] writefile unsupported")
-        return false
-    end
-
-    local ok, err =
-        pcall(function()
-
-            if makefolder
-            and not isfolder("HolyV2") then
-                makefolder("HolyV2")
-            end
-
-            local payload = {
-                Version = 1,
-
-                Enabled =
-                    TargetPetsHopState.Enabled == true,
-
-                Targets =
-                    BuildTargetPetsHopTargetList(),
-
-                SavedAt =
-                    os.time(),
-            }
-
-            writefile(
-                TARGET_PETS_HOP_SAVE_FILE,
-                HttpService:JSONEncode(payload)
-            )
-        end)
-
-    if not ok then
-
-        warn(
-            "[TargetPetsHop] Save failed:",
-            tostring(err)
-        )
-
-        return false
-    end
-
-    return true
-end
-
-function LoadTargetPetsHopConfig()
-
-    if type(TargetPetsHopState) ~= "table" then
-        return false
-    end
-
-    if TargetPetsHopState.ConfigLoaded == true then
-        return true
-    end
-
-    TargetPetsHopState.ConfigLoaded =
-        true
-
-    if not isfile
-    or not readfile then
-        return false
-    end
-
-    local filePath =
-        TARGET_PETS_HOP_SAVE_FILE
-
-    if not filePath
-    or filePath == ""
-    or not isfile(filePath) then
-        return false
-    end
-
-    local ok, decoded =
-        pcall(function()
-            return HttpService:JSONDecode(
-                readfile(filePath)
-            )
-        end)
-
-    if not ok
-    or type(decoded) ~= "table" then
-
-        warn("[TargetPetsHop] Save file corrupted")
-
-        if delfile then
-            pcall(function()
-                delfile(filePath)
-            end)
-        end
-
-        return false
-    end
-
-    TargetPetsHopState.Targets =
-        {}
-
-    if type(decoded.Targets) == "table" then
-
-        for _, petName in ipairs(decoded.Targets) do
-
-            petName =
-                NormalizeTargetPetsHopName(petName)
-
-            if petName ~= "" then
-                TargetPetsHopState.Targets[petName] =
-                    true
-            end
-        end
-    end
-
-    TargetPetsHopState.Enabled =
-        decoded.Enabled == true
-
-    return true
-end
-
-function SyncTargetPetsHopDropdownFromState()
-
-    if not TargetPetsHopDropdownRef
-    or type(TargetPetsHopDropdownRef.SetValue) ~= "function" then
-        return
-    end
-
-    local selected =
-        {}
-
-    for petName, enabled in pairs(TargetPetsHopState.Targets or {}) do
-
-        if enabled == true then
-            selected[petName] =
-                true
-        end
-    end
-
-    TargetPetsHopDropdownRef:SetValue(selected)
-end
-
-function ApplyTargetPetsHopDropdownSelection(value)
-
-    TargetPetsHopState.Targets =
-        {}
-
-    if type(value) ~= "table"
-    and TargetPetsHopDropdownRef
-    and type(TargetPetsHopDropdownRef.Value) == "table" then
-        value =
-            TargetPetsHopDropdownRef.Value
-    end
-
-    if type(value) == "table" then
-
-        for petName, selected in pairs(value) do
-
-            if selected == true then
-
-                petName =
-                    NormalizeTargetPetsHopName(petName)
-
-                if petName ~= "" then
-                    TargetPetsHopState.Targets[petName] =
-                        true
-                end
-            end
-        end
-    end
-
-    SaveTargetPetsHopConfig()
-    RefreshTargetPetsHopStatus()
-end
-
-function ExecuteTargetPetsHopNow(scannedPlayers, scannedTools)
-
-    if not IsTradeWorld() then
-        SetTargetPetsHopStatus("Trade World only")
-        return false
-    end
-
-    if SniperState
-    and SniperState.Hopping == true then
-        SetTargetPetsHopStatus("Hop already running")
-        return false
-    end
-
-    local cooldown =
-        math.clamp(
-            SafeNumber(
-                TargetPetsHopState.HopCooldown,
-                6
-            ),
-            3,
-            30
-        )
-
-    if SafeElapsed(TargetPetsHopState.LastHop) < cooldown then
-        SetTargetPetsHopStatus("Hop cooldown")
-        return false
-    end
-
-    TargetPetsHopState.LastHop =
-        os.clock()
-
-    SniperState.Hopping =
-        true
-
-    SetTargetPetsHopStatus("No targets found, hopping")
-
-    HolyNotify(
-        "Target Pets Hop",
-        "No selected pets found in "
-            .. tostring(scannedPlayers or 0)
-            .. " players / "
-            .. tostring(scannedTools or 0)
-            .. " tools.",
-        "dna",
-        3
-    )
-
-    local target =
-        nil
-
-    if type(GetRandomTradeServer) == "function" then
-        target =
-            GetRandomTradeServer()
-    end
-
-    if not target then
-
-        SniperState.Hopping =
-            false
-
-        SetTargetPetsHopStatus("No server found")
-
-        HolyNotify(
-            "Target Pets Hop Failed",
-            "No valid Trade World server found.",
-            "server-off",
-            4
-        )
-
-        return false
-    end
-
-    SniperState.LastHop =
-        os.clock()
-
-    SniperState.RecentServers[target] =
-        true
-
-    if TeleportRetryState then
-
-        TeleportRetryState.LastTarget =
-            target
-
-        TeleportRetryState.BlockedServers[target] =
-            true
-    end
-
-    local TeleportService =
-        game:GetService("TeleportService")
-
-    local player =
-        Players.LocalPlayer
-
-    local ok, err =
-        pcall(function()
-
-            TeleportService:TeleportToPlaceInstance(
-                TRADING_WORLD_PLACE_ID,
-                target,
-                player
-            )
-        end)
-
-    if not ok then
-
-        SniperState.Hopping =
-            false
-
-        SetTargetPetsHopStatus("Teleport failed")
-
-        warn(
-            "[TargetPetsHop] Teleport failed:",
-            tostring(err)
-        )
-
-        return false
-    end
-
-    task.delay(8, function()
-
-        if SniperState then
-            SniperState.Hopping =
-                false
-        end
-    end)
-
-    return true
-end
 --==================================================
 -- FILTER PERSISTENCE
 -- Supports two active watchlists and migrates older single-list saves.
@@ -19270,7 +19275,11 @@ end)
 -- server-skipping behavior, not normal timed auto-hop.
 --==================================================
 
-LoadTargetPetsHopConfig()
+if type(LoadTargetPetsHopConfig) == "function" then
+    LoadTargetPetsHopConfig()
+else
+    warn("[TargetPetsHop] LoadTargetPetsHopConfig missing before UI build")
+end
 
 local TargetPetsHopToggle =
     HomeBox:AddToggle(
