@@ -3545,9 +3545,12 @@ ScanSpeedMode = "Fast",
 
 -- Experimental sniper engine.
 -- OFF = current stable scanner.
--- ON  = future optimized scanner path.
+-- ON  = faster optimized scanner path.
 SmartScannerEnabled = false,
 SmartScannerMode = "Classic",
+
+-- Smart scanner runs faster than classic because it skips unchanged listings.
+SmartScanInterval = 0.005,
 
     -- booth-data refresh timing
     -- Controls how often LatestBoothData is refreshed from TradeBoothController data.
@@ -3721,6 +3724,45 @@ function SetSniperScanSpeedMode(mode)
     return SniperState.ScanInterval
 end
 
+function ResolveEffectiveSniperScanInterval()
+
+    if SniperState
+    and SniperState.SmartScannerEnabled == true then
+
+        return math.clamp(
+            SafeNumber(
+                SniperState.SmartScanInterval,
+                0.005
+            ),
+            0.003,
+            0.05
+        )
+    end
+
+    return math.clamp(
+        SafeNumber(
+            SniperState
+            and SniperState.ScanInterval,
+            0.02
+        ),
+        0.005,
+        0.25
+    )
+end
+
+function ResolveMainLoopSleep()
+
+    if SniperState
+    and SniperState.SmartScannerEnabled == true
+    and RuntimeState
+    and RuntimeState.Started == true
+    and game.PlaceId == TRADING_WORLD_PLACE_ID then
+
+        return 0.01
+    end
+
+    return 0.1
+end
 --==================================================
 -- BOOTH DATA REFRESH SPEED CONFIG
 -- Controls how often LatestBoothData is refreshed.
@@ -11754,7 +11796,7 @@ SmartSniperCache =
 
         -- Unchanged listings are still rechecked periodically.
         -- This protects against filter edits while Smart Scanner is ON.
-        RecheckUnchangedAfter = 0.75,
+        RecheckUnchangedAfter = 0.25,
 
         -- Cache expiry for listings not seen recently.
         StaleAfter = 20,
@@ -19247,6 +19289,9 @@ SmartScannerToggle:OnChanged(function(v)
         v == true
         and "Smart Experimental"
         or "Classic"
+
+        SniperState.LastScan =
+            0
 
     if type(ResetSmartSniperCache) == "function" then
 
@@ -36372,7 +36417,11 @@ end
 --==================================================
 function MainLoop()
     while IsCurrentRun() do
-        task.wait(0.1)
+        task.wait(
+            type(ResolveMainLoopSleep) == "function"
+            and ResolveMainLoopSleep()
+            or 0.1
+        )
 
         if ScriptState.ForceStopped then
             continue
@@ -36453,13 +36502,18 @@ if game.PlaceId == TRADING_WORLD_PLACE_ID then
     local elapsed =
         SafeElapsed(SniperState.LastScan)
 
-    if elapsed >= SniperState.ScanInterval then
+    local effectiveScanInterval =
+        type(ResolveEffectiveSniperScanInterval) == "function"
+        and ResolveEffectiveSniperScanInterval()
+        or SafeNumber(SniperState.ScanInterval, 0.02)
+
+    if elapsed >= effectiveScanInterval then
 
         -- prevent overlapping scans
         if not SniperState.Scanning
         and not SniperState.Hopping then
 
-    RunSniperScan()
+            RunSniperScan()
         end
     end
 end
@@ -38133,7 +38187,10 @@ if SniperState then
         SafeNumber(SniperState.ScanDuration, 10)
 
     SniperState.ScanInterval =
-        SafeNumber(SniperState.ScanInterval, 0.25)
+    SafeNumber(SniperState.ScanInterval, 0.02)
+
+SniperState.SmartScanInterval =
+    SafeNumber(SniperState.SmartScanInterval, 0.005)
 
     SniperState.StayAfterSnipe =
     SniperState.StayAfterSnipe == true
