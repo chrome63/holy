@@ -312,7 +312,7 @@ HOLY_ACCESS_KEY_STATE = {
         ["HOLY-CL-353"] = "CL",
         ["HOLY-NOMO-342"] = "Nomo",
         ["HOLY-ROOF-645"] = "Roof",
-        ["HOLY-TEST-45736"] = "Tester",
+        ["HOLY-KYOYA-45736"] = "KYOYA",
         ["HOLY-TEST-43756"] = "Tester",
         ["HOLY-TEST-45436"] = "Tester",
     },
@@ -3035,6 +3035,454 @@ function ImportWatchlistsFromText(rawText, mode)
     return true
 end
 
+--==================================================
+-- LISTING → SNIPER PRICE SYNC
+-- Uses listing filter prices to update sniper MaxPrice.
+-- Exact pet names only. No prefix/suffix/fuzzy matching.
+--==================================================
+
+PriceSyncState =
+    PriceSyncState
+    or {
+        Percent = 50,
+        LastPreviewText = "Preview: Press Preview Changes.",
+    }
+
+function NormalizePriceSyncPetName(value)
+
+    return tostring(value or "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+function ResolvePriceSyncPercent(value)
+
+    local percent =
+        tonumber(value)
+
+    if not percent then
+        percent =
+            SafeNumber(
+                PriceSyncState
+                and PriceSyncState.Percent,
+                50
+            )
+    end
+
+    percent =
+        math.clamp(
+            percent,
+            1,
+            100
+        )
+
+    return percent
+end
+
+function FormatPriceSyncNumber(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "Unknown"
+    end
+
+    if number == math.huge then
+        return "∞"
+    end
+
+    number =
+        math.floor(number + 0.5)
+
+    local text =
+        tostring(number)
+
+    local left, num, right =
+        string.match(
+            text,
+            "^([^%d]*%d)(%d*)(.-)$"
+        )
+
+    if not left then
+        return text
+    end
+
+    return left
+        .. (
+            num:reverse()
+                :gsub("(%d%d%d)", "%1,")
+                :reverse()
+        )
+        .. right
+end
+
+function ResolvePriceSyncListingPetName(filter)
+
+    if type(filter) ~= "table" then
+        return ""
+    end
+
+    local petName =
+        filter.Pet
+        or filter.PetName
+        or filter.Name
+        or filter.SelectedPet
+
+    petName =
+        NormalizePriceSyncPetName(petName)
+
+    return petName
+end
+
+function ResolvePriceSyncListingPrice(filter)
+
+    if type(filter) ~= "table" then
+        return nil
+    end
+
+    local price =
+        tonumber(filter.Price)
+
+    if price
+    and price > 0 then
+        return price
+    end
+
+    return nil
+end
+
+function BuildPriceSyncListingPriceIndex()
+
+    local listingFilters =
+        nil
+
+    if type(EnsureListingFilters) == "function" then
+
+        local ok, result =
+            pcall(function()
+                return EnsureListingFilters()
+            end)
+
+        if ok
+        and type(result) == "table" then
+            listingFilters = result
+        end
+    end
+
+    if type(listingFilters) ~= "table" then
+
+        listingFilters =
+            ListingsState
+            and ListingsState.ListingFilters
+            or {}
+    end
+
+    local index = {}
+    local sourceCount = 0
+    local duplicateCount = 0
+
+    for _, filter in ipairs(listingFilters) do
+
+        if type(filter) == "table"
+        and filter.Enabled ~= false then
+
+            local petName =
+                ResolvePriceSyncListingPetName(filter)
+
+            local price =
+                ResolvePriceSyncListingPrice(filter)
+
+            if petName ~= ""
+            and price
+            and price > 0 then
+
+                sourceCount =
+                    sourceCount + 1
+
+                -- Duplicate rule:
+                -- If the same pet has multiple listing filters,
+                -- use the LOWEST price for safety.
+                if index[petName] then
+
+                    duplicateCount =
+                        duplicateCount + 1
+
+                    if price < index[petName] then
+                        index[petName] = price
+                    end
+
+                else
+
+                    index[petName] = price
+                end
+            end
+        end
+    end
+
+    return index, sourceCount, duplicateCount
+end
+
+function CalculateSyncedSniperPrice(listingPrice, percent)
+
+    listingPrice =
+        tonumber(listingPrice)
+
+    percent =
+        ResolvePriceSyncPercent(percent)
+
+    if not listingPrice
+    or listingPrice <= 0 then
+        return nil
+    end
+
+    local newPrice =
+        listingPrice * (percent / 100)
+
+    newPrice =
+        math.floor(newPrice + 0.5)
+
+    return math.max(
+        1,
+        newPrice
+    )
+end
+
+function BuildSniperPriceSyncPreview(percent)
+
+    percent =
+        ResolvePriceSyncPercent(percent)
+
+    local listingIndex, sourceCount, duplicateCount =
+        BuildPriceSyncListingPriceIndex()
+
+    local changes = {}
+    local matched = 0
+    local unchanged = 0
+
+    for watchlistId = 1, 2 do
+
+        local filters =
+            GetSniperFilterSet(watchlistId)
+
+        for petName, filter in pairs(filters) do
+
+            local normalizedPetName =
+                NormalizePriceSyncPetName(petName)
+
+            local listingPrice =
+                listingIndex[normalizedPetName]
+
+            if listingPrice
+            and type(filter) == "table" then
+
+                matched =
+                    matched + 1
+
+                local oldPrice =
+                    tonumber(filter.MaxPrice)
+                    or math.huge
+
+                local newPrice =
+                    CalculateSyncedSniperPrice(
+                        listingPrice,
+                        percent
+                    )
+
+                if newPrice then
+
+                    if oldPrice ~= newPrice then
+
+                        table.insert(changes, {
+                            WatchlistId = watchlistId,
+                            PetName = normalizedPetName,
+                            Filter = filter,
+                            OldPrice = oldPrice,
+                            NewPrice = newPrice,
+                            ListingPrice = listingPrice,
+                        })
+
+                    else
+
+                        unchanged =
+                            unchanged + 1
+                    end
+                end
+            end
+        end
+    end
+
+    table.sort(changes, function(a, b)
+
+        if a.WatchlistId ~= b.WatchlistId then
+            return a.WatchlistId < b.WatchlistId
+        end
+
+        return tostring(a.PetName):lower()
+            < tostring(b.PetName):lower()
+    end)
+
+    local lines = {
+        "Price Sync Preview",
+        "Percent: " .. tostring(percent) .. "%",
+        "Formula: sniper price = listing price × percent",
+        "Exact pet names only.",
+        "",
+    }
+
+    if sourceCount <= 0 then
+
+        table.insert(
+            lines,
+            "No active listing filters with valid prices found."
+        )
+
+    elseif matched <= 0 then
+
+        table.insert(
+            lines,
+            "No exact pet-name matches found."
+        )
+
+    elseif #changes <= 0 then
+
+        table.insert(
+            lines,
+            "No price changes needed."
+        )
+
+    else
+
+        local maxRows =
+            math.min(
+                #changes,
+                6
+            )
+
+        for index = 1, maxRows do
+
+            local change =
+                changes[index]
+
+            table.insert(
+                lines,
+                "W"
+                    .. tostring(change.WatchlistId)
+                    .. " "
+                    .. tostring(change.PetName)
+                    .. ": "
+                    .. FormatPriceSyncNumber(change.OldPrice)
+                    .. " → "
+                    .. FormatPriceSyncNumber(change.NewPrice)
+                    .. " | listing "
+                    .. FormatPriceSyncNumber(change.ListingPrice)
+            )
+        end
+
+        if #changes > maxRows then
+
+            table.insert(
+                lines,
+                "… +"
+                    .. tostring(#changes - maxRows)
+                    .. " more changes"
+            )
+        end
+    end
+
+    table.insert(lines, "")
+    table.insert(
+        lines,
+        tostring(#changes)
+            .. " change(s), "
+            .. tostring(unchanged)
+            .. " already correct, "
+            .. tostring(duplicateCount)
+            .. " duplicate listing(s) used lowest price."
+    )
+
+    return {
+        Text =
+            table.concat(lines, "\n"),
+
+        Changes =
+            changes,
+
+        Matched =
+            matched,
+
+        SourceCount =
+            sourceCount,
+
+        DuplicateCount =
+            duplicateCount,
+
+        Percent =
+            percent,
+    }
+end
+
+function ApplySniperPriceSync(percent)
+
+    local preview =
+        BuildSniperPriceSyncPreview(percent)
+
+    local changes =
+        preview.Changes
+        or {}
+
+    if #changes <= 0 then
+
+        PriceSyncState.LastPreviewText =
+            preview.Text
+
+        HolyNotify(
+            "Price Sync",
+            "No sniper prices need to be changed.",
+            "search",
+            4
+        )
+
+        return false, preview
+    end
+
+    for _, change in ipairs(changes) do
+
+        if type(change.Filter) == "table"
+        and tonumber(change.NewPrice) then
+
+            change.Filter.MaxPrice =
+                tonumber(change.NewPrice)
+        end
+    end
+
+    WatchlistPage =
+        1
+
+    if type(RefreshWatchlist) == "function" then
+        RefreshWatchlist()
+    end
+
+    MarkConfigDirty()
+
+    if type(SaveSniperFilters) == "function" then
+        SaveSniperFilters()
+    end
+
+    PriceSyncState.LastPreviewText =
+        preview.Text
+
+    HolyNotify(
+        "Price Sync Applied",
+        tostring(#changes)
+            .. " sniper price(s) updated.",
+        "refresh-cw",
+        5
+    )
+
+    return true, preview
+end
+
 SniperMonitorState = {
     Status = "Idle",
 
@@ -3666,7 +4114,7 @@ MarketTrackerWebhook = {
     Enabled = true,
 
     -- Put your Market Tracker Discord webhook here.
-    URL = "https://discord.com/api/webhooks/1508970761166131291/Kn9nZyZIN9u7VTRQfW4sA2dK6h7TZRoeDKb_WmSO_sRmZrdQhvSJiaWNlHEnPfH54fdo",
+    URL = "https://discord.com/api/webhooks/1461800728174526475/cliNh1mRSwNHyMKMJ5o0MqxAQY8FgvVwuI9YYFDT4z4VVwS7rcv-vHuh8kdRUU1nNx8y",
 
     -- Legacy fields kept for compatibility.
     -- Market Tracker no longer uses a queue.
@@ -24744,6 +25192,7 @@ local SniperConfigBox
 local SniperFilterBox
 local SniperWatchlistBox
 local EggFocusBox
+local PriceSyncBox
 
 if type(Tabs.Sniper.AddLeftTabbox) == "function"
 and type(Tabs.Sniper.AddRightTabbox) == "function" then
@@ -24760,11 +25209,14 @@ and type(Tabs.Sniper.AddRightTabbox) == "function" then
     local SniperRightTabbox =
         Tabs.Sniper:AddRightTabbox("SniperRight")
 
-    SniperWatchlistBox =
-        SniperRightTabbox:AddTab("Watchlist", "star")
+SniperWatchlistBox =
+    SniperRightTabbox:AddTab("Watchlist", "star")
 
-    EggFocusBox =
-        SniperRightTabbox:AddTab("Egg Focus", "egg")
+EggFocusBox =
+    SniperRightTabbox:AddTab("Egg Focus", "egg")
+
+PriceSyncBox =
+    SniperRightTabbox:AddTab("Price Sync", "refresh-cw")
 
 else
 
@@ -24785,19 +25237,26 @@ else
                 true
             )
 
-        SniperWatchlistBox =
-            Tabs.Sniper:AddRightCollapsibleGroupbox(
-                "Active Watchlist",
-                "star",
-                true
-            )
+SniperWatchlistBox =
+    Tabs.Sniper:AddRightCollapsibleGroupbox(
+        "Active Watchlist",
+        "star",
+        true
+    )
 
-        EggFocusBox =
-            Tabs.Sniper:AddRightCollapsibleGroupbox(
-                "Egg Focus",
-                "egg",
-                false
-            )
+EggFocusBox =
+    Tabs.Sniper:AddRightCollapsibleGroupbox(
+        "Egg Focus",
+        "egg",
+        false
+    )
+
+PriceSyncBox =
+    Tabs.Sniper:AddRightCollapsibleGroupbox(
+        "Price Sync",
+        "refresh-cw",
+        false
+    )
 
     else
 
@@ -24815,17 +25274,23 @@ else
                 "plus"
             )
 
-        SniperWatchlistBox =
-            Tabs.Sniper:AddRightGroupbox(
-                "Active Watchlist",
-                "star"
-            )
+SniperWatchlistBox =
+    Tabs.Sniper:AddRightGroupbox(
+        "Active Watchlist",
+        "star"
+    )
 
-        EggFocusBox =
-            Tabs.Sniper:AddRightGroupbox(
-                "Egg Focus",
-                "egg"
-            )
+EggFocusBox =
+    Tabs.Sniper:AddRightGroupbox(
+        "Egg Focus",
+        "egg"
+    )
+
+PriceSyncBox =
+    Tabs.Sniper:AddRightGroupbox(
+        "Price Sync",
+        "refresh-cw"
+    )
     end
 end
 --==================================================
@@ -25899,6 +26364,111 @@ WatchlistImportButton:AddButton({
     end,
 })
 
+--==================================================
+-- PRICE SYNC TAB
+-- Listing Filters → Sniper Watchlist MaxPrice.
+-- Exact pet names only.
+--==================================================
+
+if PriceSyncBox then
+
+    PriceSyncBox:AddLabel(
+        "Uses your listing filter prices to update matching sniper MaxPrice values.",
+        true
+    )
+
+    PriceSyncBox:AddLabel(
+        "Exact pet names only. Rainbow Dilophosaurus will NOT match Dilophosaurus.",
+        true
+    )
+
+    local PriceSyncPreviewLabel =
+        PriceSyncBox:AddLabel(
+            PriceSyncState.LastPreviewText
+            or "Preview: Press Preview Changes.",
+            true
+        )
+
+    local function RefreshPriceSyncPreviewLabel(text)
+
+        text =
+            tostring(
+                text
+                or PriceSyncState.LastPreviewText
+                or "Preview: Press Preview Changes."
+            )
+
+        PriceSyncState.LastPreviewText =
+            text
+
+        if PriceSyncPreviewLabel
+        and type(PriceSyncPreviewLabel.SetText) == "function" then
+
+            PriceSyncPreviewLabel:SetText(text)
+        end
+    end
+
+    PriceSyncBox:AddInput(
+        "SniperPriceSyncPercent",
+        {
+            Text = "Sniper Price Percent",
+            Tooltip = "Example: 50 means sniper MaxPrice becomes 50% of the listing filter price.",
+            Default = tostring(
+                PriceSyncState.Percent
+                or 50
+            ),
+            Numeric = true,
+            Finished = false,
+            Placeholder = "50",
+
+            Callback = function(value)
+
+                PriceSyncState.Percent =
+                    ResolvePriceSyncPercent(value)
+
+                MarkConfigDirty()
+            end,
+        }
+    )
+
+    local PreviewPriceSyncButton =
+        PriceSyncBox:AddButton({
+            Text = "Preview Changes",
+            Tooltip = "Shows what sniper prices would change before applying.",
+
+            Func = function()
+
+                local preview =
+                    BuildSniperPriceSyncPreview(
+                        PriceSyncState.Percent
+                    )
+
+                RefreshPriceSyncPreviewLabel(
+                    preview.Text
+                )
+            end,
+        })
+
+    PreviewPriceSyncButton:AddButton({
+        Text = "Apply Price Sync",
+        Tooltip = "Applies the previewed price sync to matching sniper filters.",
+        DoubleClick = true,
+
+        Func = function()
+
+            local applied, preview =
+                ApplySniperPriceSync(
+                    PriceSyncState.Percent
+                )
+
+            RefreshPriceSyncPreviewLabel(
+                preview
+                and preview.Text
+                or PriceSyncState.LastPreviewText
+            )
+        end,
+    })
+end
 --==================================================
 -- CLEAR WATCHLIST
 -- Destructive action guarded by confirmation dialog.
