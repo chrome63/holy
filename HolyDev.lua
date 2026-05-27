@@ -15002,11 +15002,27 @@ ManualJoinHUDToggle:OnChanged(function(enabled)
             enabled == true
     end
 
-    SetManualJoinHUDVisible(
-        enabled == true
-    )
+    if type(SetManualJoinHUDVisible) == "function" then
 
-    MarkConfigDirty()
+        SetManualJoinHUDVisible(
+            enabled == true
+        )
+
+    else
+
+        warn("[Manual Join HUD] SetManualJoinHUDVisible is missing")
+
+        HolyNotify(
+            "Manual Join HUD Error",
+            "HUD function is missing. Check placement of Manual Join HUD code.",
+            "triangle-alert",
+            4
+        )
+    end
+
+    if type(MarkConfigDirty) == "function" then
+        MarkConfigDirty()
+    end
 end)
 
 local WatchlistHUDToggle =
@@ -17786,7 +17802,17 @@ end)
     return screenGui
 end
 
-local function SetManualJoinHUDVisible(enabled)
+function SetManualJoinHUDVisible(enabled)
+
+    if type(ManualJoinHUDState) ~= "table" then
+        warn("[Manual Join HUD] State missing")
+        return false
+    end
+
+    if type(CreateManualJoinHUD) ~= "function" then
+        warn("[Manual Join HUD] CreateManualJoinHUD missing")
+        return false
+    end
 
     ManualJoinHUDState.Enabled =
         enabled == true
@@ -17801,7 +17827,9 @@ local function SetManualJoinHUDVisible(enabled)
 
     if ManualJoinHUDState.Enabled then
 
-        RefreshManualJoinHUDValidation()
+        if type(RefreshManualJoinHUDValidation) == "function" then
+            RefreshManualJoinHUDValidation()
+        end
 
         if ManualJoinHUDState.Input then
             task.defer(function()
@@ -17811,6 +17839,8 @@ local function SetManualJoinHUDVisible(enabled)
             end)
         end
     end
+
+    return true
 end
 
 --==================================================
