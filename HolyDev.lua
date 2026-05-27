@@ -26377,11 +26377,6 @@ if PriceSyncBox then
         true
     )
 
-    PriceSyncBox:AddLabel(
-        "Exact pet names only. Rainbow Dilophosaurus will NOT match Dilophosaurus.",
-        true
-    )
-
     local PriceSyncPreviewLabel =
         PriceSyncBox:AddLabel(
             PriceSyncState.LastPreviewText
