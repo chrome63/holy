@@ -26200,16 +26200,59 @@ if enabled then
 end
 end)
 
-local EquipPetToggle = BoothCustomizationBox:AddToggle("EquipPet", {
-    Text = "🐶 Equip Pet",
-    Tooltip = "Equips a pet from your inventory",
-    Default = false,
-})
+local EquipPetToggle =
+    BoothCustomizationBox:AddToggle(
+        "EquipPet",
+        {
+            Text = "🐶 Equip Pet",
+            Tooltip = "Equips a pet from your inventory.",
+            Default = false,
+        }
+    )
 
 EquipPetToggle:OnChanged(function(enabled)
 
     BoothPetState.Enabled =
         enabled == true
+
+    -- Reset equip lifecycle whenever the user toggles this.
+    -- This prevents stale UID locks from blocking re-enable.
+    BoothPetState.LastEquippedUID =
+        nil
+
+    BoothPetState.LockedShowcaseUID =
+        nil
+
+    BoothPetState.LastMissingPet =
+        nil
+
+    BoothPetState.LastMissingWarnAt =
+        0
+
+    BoothPetState.LastEquipAttemptAt =
+        0
+
+    ShowcaseEquipState.ReequipPending =
+        false
+
+    MarkConfigDirty()
+
+    if enabled == true then
+
+        task.spawn(function()
+
+            task.wait(0.15)
+
+            if BoothPetState.Enabled ~= true then
+                return
+            end
+
+            if type(EquipShowcasePet) == "function" then
+                EquipShowcasePet(true)
+            end
+        end)
+    end
+end)
 
 local AutoSwitchShowcaseToggle =
     BoothCustomizationBox:AddToggle(
@@ -26253,44 +26296,6 @@ BoothCustomizationBox:AddDropdown(
         tostring(value or "Highest Weight")
 
     MarkConfigDirty()
-end)
-    -- Reset equip lifecycle whenever the user toggles this.
-    -- This prevents stale UID locks from blocking re-enable.
-    BoothPetState.LastEquippedUID =
-        nil
-
-    BoothPetState.LockedShowcaseUID =
-        nil
-
-    BoothPetState.LastMissingPet =
-        nil
-
-    BoothPetState.LastMissingWarnAt =
-        0
-
-    BoothPetState.LastEquipAttemptAt =
-        0
-
-    ShowcaseEquipState.ReequipPending =
-        false
-
-    MarkConfigDirty()
-
-    if enabled == true then
-
-        task.spawn(function()
-
-            task.wait(0.15)
-
-            if BoothPetState.Enabled ~= true then
-                return
-            end
-
-            if type(EquipShowcasePet) == "function" then
-                EquipShowcasePet(true)
-            end
-        end)
-    end
 end)
 
 RefreshDynamicPetList()
