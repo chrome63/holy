@@ -33,7 +33,7 @@ local HOLY_LOADER_KEY_STATE = {
         ["HOLY-NOMO-342"] = "Nomo",
         ["HOLY-ROOF-645"] = "Roof",
         ["HOLY-KYOYA-45736"] = "KYOYA",
-        ["HOLY-TEST-43756"] = "Tester",
+        ["HOLY-Tricl-43756"] = "Triclrl",
         ["HOLY-TEST-45436"] = "Tester",
     },
 
