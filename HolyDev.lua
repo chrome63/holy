@@ -9795,34 +9795,61 @@ function UpdateTargetPetsHopPlayerActivity(player)
     local lastPosition =
         record.LastPosition
 
-    local distance =
-        0
+local horizontalDistance =
+    0
 
-    if typeof(lastPosition) == "Vector3" then
-        distance =
-            (currentPosition - lastPosition).Magnitude
-    end
+if typeof(lastPosition) == "Vector3" then
 
-    local velocity =
-        0
+    local delta =
+        currentPosition - lastPosition
 
-    pcall(function()
-        velocity =
-            root.AssemblyLinearVelocity.Magnitude
-    end)
+    horizontalDistance =
+        Vector3.new(
+            delta.X,
+            0,
+            delta.Z
+        ).Magnitude
+end
 
-    local moveDirection =
-        0
+local horizontalVelocity =
+    0
 
-    if humanoid then
-        moveDirection =
-            humanoid.MoveDirection.Magnitude
-    end
+pcall(function()
 
-    local moved =
-        distance >= 1.25
-        or velocity >= 2.5
-        or moveDirection >= 0.05
+    local velocityVector =
+        root.AssemblyLinearVelocity
+
+    horizontalVelocity =
+        Vector3.new(
+            velocityVector.X,
+            0,
+            velocityVector.Z
+        ).Magnitude
+end)
+
+local moveDirection =
+    0
+
+if humanoid then
+
+    local direction =
+        humanoid.MoveDirection
+
+    moveDirection =
+        Vector3.new(
+            direction.X,
+            0,
+            direction.Z
+        ).Magnitude
+end
+
+-- Seller AFK Check:
+-- Only horizontal movement counts as activity.
+-- Jumping in place / vertical velocity does not reset AFK.
+local moved =
+    horizontalDistance >= 2.5
+    or horizontalVelocity >= 3.5
+    or moveDirection >= 0.10
 
     record.LastCheckedAt =
         now
@@ -9833,14 +9860,14 @@ function UpdateTargetPetsHopPlayerActivity(player)
     record.DisplayName =
         player.DisplayName
 
-    record.LastDistance =
-        distance
+record.LastDistance =
+    horizontalDistance
 
-    record.LastVelocity =
-        velocity
+record.LastVelocity =
+    horizontalVelocity
 
-    record.LastMoveDirection =
-        moveDirection
+record.LastMoveDirection =
+    moveDirection
 
     if moved then
 
