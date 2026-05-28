@@ -3029,6 +3029,18 @@ TargetPetsHopState = {
     -- [petName] = true
     Targets = {},
 
+    -- UI: "Stay When"
+    --
+    -- "Backpack Only OR Good Listing"
+    -- Stay if another player owns a selected target pet unlisted.
+    -- Stay if a selected target pet is listed and passes sniper filters.
+    -- Hop if a selected target pet is listed but fails sniper filters.
+    --
+    -- "Any Target Found"
+    -- Old/simple behavior. Stay if target exists in Backpack/Character
+    -- or appears listed, regardless of sniper filter.
+    StayWhen = "Backpack Only OR Good Listing",
+
     Status = "Disabled",
 
     ScanInterval = 1,
@@ -9668,6 +9680,20 @@ function NormalizeTargetPetsHopName(value)
     return text
 end
 
+function NormalizeTargetPetsHopStayWhen(value)
+
+    value =
+        tostring(value or "Backpack Only OR Good Listing")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if value == "Any Target Found" then
+        return "Any Target Found"
+    end
+
+    return "Backpack Only OR Good Listing"
+end
+
 function CountTargetPetsHopTargets()
 
     local count =
@@ -9915,6 +9941,353 @@ function ScanPlayersForTargetPetsHop()
     return false, nil, nil, scannedPlayers, scannedTools
 end
 
+function TargetPetsHopListingMatchesTarget(listing, targetList)
+
+    if type(listing) ~= "table"
+    or type(targetList) ~= "table" then
+        return false, nil
+    end
+
+    local listingPetName =
+        tostring(listing.PetName or "")
+
+    if listingPetName == "" then
+        return false, nil
+    end
+
+    for _, targetPetName in ipairs(targetList) do
+
+        if TargetPetsHopToolMatches(
+            listingPetName,
+            targetPetName
+        ) then
+
+            return true, targetPetName
+        end
+    end
+
+    return false, nil
+end
+
+function BuildTargetPetsHopListingFromRaw(boothId, owner, uid, listingData, itemData)
+
+    if type(listingData) ~= "table"
+    or type(itemData) ~= "table" then
+        return nil
+    end
+
+    if listingData.ItemType ~= "Pet" then
+        return nil
+    end
+
+    local petData =
+        itemData.PetData
+
+    if type(petData) ~= "table" then
+        return nil
+    end
+
+    if petData.IsFavorite == true then
+        return nil
+    end
+
+    local petName =
+        tostring(itemData.PetType or "")
+
+    if petName == "" then
+        return nil
+    end
+
+    local price =
+        tonumber(listingData.Price)
+        or 0
+
+    local baseWeight =
+        tonumber(petData.BaseWeight)
+
+    if not baseWeight then
+        return nil
+    end
+
+    local age, ageSource =
+        ResolveBoothPetAge(
+            petData,
+            itemData,
+            listingData
+        )
+
+    local displayWeight, weightSource =
+        ResolveBoothListingCurrentWeight(
+            petData,
+            itemData,
+            listingData,
+            age
+        )
+
+    local mutationText =
+        ResolvePetMutationTextFromPetData(
+            petData,
+            itemData,
+            listingData,
+            petName
+        )
+
+    local hatchedFrom =
+        petData.HatchedFrom
+        or petData.Hatchedfrom
+        or petData.HatchFrom
+        or petData.EggName
+        or petData.SourceEgg
+        or petData.Origin
+        or itemData.HatchedFrom
+        or itemData.EggName
+        or itemData.SourceEgg
+        or listingData.HatchedFrom
+        or listingData.EggName
+        or listingData.SourceEgg
+
+    local sellerUserId =
+        tonumber(
+            tostring(owner):match("_(%d+)$")
+        )
+
+    -- Target Pets Hop should never use your own listings
+    -- as a reason to stay.
+    if sellerUserId == Players.LocalPlayer.UserId then
+        return nil
+    end
+
+    return {
+        BoothId = boothId,
+        UID = uid,
+
+        Seller =
+            tostring(sellerUserId or owner or "Unknown"),
+
+        SellerUserId =
+            sellerUserId,
+
+        PetName =
+            petName,
+
+        Price =
+            price,
+
+        BaseWeight =
+            baseWeight,
+
+        DisplayWeight =
+            displayWeight,
+
+        Weight =
+            displayWeight,
+
+        WeightSource =
+            weightSource,
+
+        Age =
+            age,
+
+        AgeSource =
+            ageSource or "Missing",
+
+        MutationText =
+            mutationText,
+
+        IsFavorite =
+            petData.IsFavorite == true,
+
+        HatchedFrom =
+            hatchedFrom,
+
+        SourceEgg =
+            hatchedFrom,
+
+        SeenAt =
+            os.clock(),
+    }
+end
+
+function ScanListedTargetPetsHop()
+
+    local targetList =
+        BuildTargetPetsHopTargetList()
+
+    if #targetList <= 0 then
+        return {
+            FoundListed = false,
+            GoodListing = nil,
+            BadListing = nil,
+            BadReason = "No targets",
+            CheckedListings = 0,
+        }
+    end
+
+    local data =
+        LatestBoothData
+
+    if not data
+    or type(data.Booths) ~= "table" then
+
+        return {
+            FoundListed = false,
+            GoodListing = nil,
+            BadListing = nil,
+            BadReason = "Booth data missing",
+            CheckedListings = 0,
+        }
+    end
+
+    local activeBooths =
+        BuildActiveBoothMap()
+
+    local checkedListings =
+        0
+
+    local firstBadListing =
+        nil
+
+    local firstBadReason =
+        nil
+
+    for boothId, boothData in pairs(data.Booths) do
+
+        if not activeBooths[boothId] then
+            continue
+        end
+
+        local owner =
+            boothData.Owner
+
+        if not owner then
+            continue
+        end
+
+        local playerData =
+            data.Players
+            and data.Players[owner]
+
+        if type(playerData) ~= "table" then
+            continue
+        end
+
+        local listingsTable =
+            playerData.Listings
+
+        local itemsTable =
+            playerData.Items
+
+        if type(listingsTable) ~= "table"
+        or type(itemsTable) ~= "table" then
+            continue
+        end
+
+        for uid, listingData in pairs(listingsTable) do
+
+            local itemId =
+                listingData.ItemId
+
+            local itemData =
+                itemsTable[itemId]
+
+            local listing =
+                BuildTargetPetsHopListingFromRaw(
+                    boothId,
+                    owner,
+                    uid,
+                    listingData,
+                    itemData
+                )
+
+            if type(listing) ~= "table" then
+                continue
+            end
+
+            local isTarget, matchedTarget =
+                TargetPetsHopListingMatchesTarget(
+                    listing,
+                    targetList
+                )
+
+            if not isTarget then
+                continue
+            end
+
+            checkedListings =
+                checkedListings + 1
+
+            listing.TargetPetsHopMatchedTarget =
+                matchedTarget
+
+            local passesFilter =
+                false
+
+            local ok, result =
+                pcall(function()
+                    return ListingMatchesFilter(listing)
+                end)
+
+            if ok then
+                passesFilter =
+                    result == true
+            end
+
+            if passesFilter then
+
+                return {
+                    FoundListed = true,
+                    GoodListing = listing,
+                    BadListing = nil,
+                    BadReason = nil,
+                    CheckedListings = checkedListings,
+                }
+            end
+
+            if not firstBadListing then
+
+                firstBadListing =
+                    listing
+
+                firstBadReason =
+                    "Listed but failed sniper filter"
+            end
+        end
+    end
+
+    return {
+        FoundListed =
+            firstBadListing ~= nil,
+
+        GoodListing =
+            nil,
+
+        BadListing =
+            firstBadListing,
+
+        BadReason =
+            firstBadReason,
+
+        CheckedListings =
+            checkedListings,
+    }
+end
+
+function FormatTargetPetsHopListingPrice(listing)
+
+    if type(listing) ~= "table" then
+        return "?"
+    end
+
+    local price =
+        tonumber(listing.Price)
+
+    if not price then
+        return "?"
+    end
+
+    return FormatPriceSyncNumber(price)
+end
+
 function SaveTargetPetsHopConfig()
 
     if not writefile then
@@ -9931,17 +10304,22 @@ function SaveTargetPetsHopConfig()
             end
 
             local payload = {
-                Version = 1,
+    Version = 2,
 
-                Enabled =
-                    TargetPetsHopState.Enabled == true,
+    Enabled =
+        TargetPetsHopState.Enabled == true,
 
-                Targets =
-                    BuildTargetPetsHopTargetList(),
+    StayWhen =
+        NormalizeTargetPetsHopStayWhen(
+            TargetPetsHopState.StayWhen
+        ),
 
-                SavedAt =
-                    os.time(),
-            }
+    Targets =
+        BuildTargetPetsHopTargetList(),
+
+    SavedAt =
+        os.time(),
+}
 
             writefile(
                 TARGET_PETS_HOP_SAVE_FILE,
@@ -10028,9 +10406,15 @@ function LoadTargetPetsHopConfig()
     end
 
     TargetPetsHopState.Enabled =
-        decoded.Enabled == true
+    decoded.Enabled == true
 
-    return true
+TargetPetsHopState.StayWhen =
+    NormalizeTargetPetsHopStayWhen(
+        decoded.StayWhen
+        or TargetPetsHopState.StayWhen
+    )
+
+return true
 end
 
 function SyncTargetPetsHopDropdownFromState()
@@ -10087,7 +10471,7 @@ function ApplyTargetPetsHopDropdownSelection(value)
     RefreshTargetPetsHopStatus()
 end
 
-function ExecuteTargetPetsHopNow(scannedPlayers, scannedTools)
+function ExecuteTargetPetsHopNow(scannedPlayers, scannedTools, hopReason, notifyReason)
 
     if not IsTradeWorld() then
         SetTargetPetsHopStatus("Trade World only")
@@ -10121,18 +10505,29 @@ function ExecuteTargetPetsHopNow(scannedPlayers, scannedTools)
     SniperState.Hopping =
         true
 
-    SetTargetPetsHopStatus("No targets found, hopping")
+    hopReason =
+    tostring(hopReason or "No targets found, hopping")
 
-    HolyNotify(
-        "Target Pets Hop",
-        "No selected pets found in "
+notifyReason =
+    tostring(
+        notifyReason
+        or (
+            "No selected pets found in "
             .. tostring(scannedPlayers or 0)
             .. " players / "
             .. tostring(scannedTools or 0)
-            .. " tools.",
-        "dna",
-        3
+            .. " tools."
+        )
     )
+
+SetTargetPetsHopStatus(hopReason)
+
+HolyNotify(
+    "Target Pets Hop",
+    notifyReason,
+    "dna",
+    3
+)
 
     local target =
         nil
@@ -10415,44 +10810,166 @@ task.spawn(function()
             continue
         end
 
-        SetTargetPetsHopStatus("Checking players...")
+SetTargetPetsHopStatus("Checking targets...")
 
-        local found, petName, playerName, scannedPlayers, scannedTools =
-            ScanPlayersForTargetPetsHop()
+local stayWhen =
+    NormalizeTargetPetsHopStayWhen(
+        TargetPetsHopState.StayWhen
+    )
 
-        TargetPetsHopState.LastScannedPlayers =
-            scannedPlayers
+local listedResult =
+    ScanListedTargetPetsHop()
 
-        TargetPetsHopState.LastScannedTools =
-            scannedTools
+local found, petName, playerName, scannedPlayers, scannedTools =
+    ScanPlayersForTargetPetsHop()
 
-        if found then
+TargetPetsHopState.LastScannedPlayers =
+    scannedPlayers
 
-            TargetPetsHopState.LastFoundPet =
-                petName
+TargetPetsHopState.LastScannedTools =
+    scannedTools
 
-            TargetPetsHopState.LastFoundPlayer =
-                playerName
+if found then
 
-            TargetPetsHopState.LastFoundAt =
-                os.clock()
+    TargetPetsHopState.LastFoundPet =
+        petName
 
-            SetTargetPetsHopStatus(
-                "Found "
-                    .. tostring(petName)
-                    .. " on "
-                    .. tostring(playerName)
-            )
+    TargetPetsHopState.LastFoundPlayer =
+        playerName
 
-            -- Do not reset Sniper Auto Hop timer.
-            -- Normal Sniper Auto Hop still hops when it should.
-            continue
-        end
+    TargetPetsHopState.LastFoundAt =
+        os.clock()
+end
 
-        ExecuteTargetPetsHopNow(
-            scannedPlayers,
-            scannedTools
+--==================================================
+-- MODE: OLD / SIMPLE
+-- Stay if the selected target appears anywhere:
+-- listed, Backpack, or Character.
+--==================================================
+
+if stayWhen == "Any Target Found" then
+
+    if listedResult.GoodListing then
+
+        local listing =
+            listedResult.GoodListing
+
+        SetTargetPetsHopStatus(
+            "Listed target found: "
+                .. tostring(listing.PetName)
+                .. " | "
+                .. FormatTargetPetsHopListingPrice(listing)
+                .. "T"
         )
+
+        continue
+    end
+
+    if listedResult.BadListing then
+
+        local listing =
+            listedResult.BadListing
+
+        SetTargetPetsHopStatus(
+            "Listed target found: "
+                .. tostring(listing.PetName)
+                .. " | "
+                .. FormatTargetPetsHopListingPrice(listing)
+                .. "T"
+        )
+
+        continue
+    end
+
+    if found then
+
+        SetTargetPetsHopStatus(
+            "Found "
+                .. tostring(petName)
+                .. " on "
+                .. tostring(playerName)
+        )
+
+        continue
+    end
+
+    ExecuteTargetPetsHopNow(
+        scannedPlayers,
+        scannedTools
+    )
+
+    continue
+end
+
+--==================================================
+-- MODE: BACKPACK ONLY OR GOOD LISTING
+--
+-- Stay if:
+-- 1. Listed target passes sniper filter.
+-- 2. Player owns target but target is not listed.
+--
+-- Hop if:
+-- 1. Target is listed but fails sniper filter.
+-- 2. No target exists.
+--==================================================
+
+if listedResult.GoodListing then
+
+    local listing =
+        listedResult.GoodListing
+
+    SetTargetPetsHopStatus(
+        "Good listing: "
+            .. tostring(listing.PetName)
+            .. " | "
+            .. FormatTargetPetsHopListingPrice(listing)
+            .. "T"
+    )
+
+    continue
+end
+
+if listedResult.BadListing then
+
+    local listing =
+        listedResult.BadListing
+
+    local hopReason =
+    "Listed over filter: "
+    .. tostring(listing.PetName)
+    .. " | "
+    .. FormatTargetPetsHopListingPrice(listing)
+    .. "T"
+
+SetTargetPetsHopStatus(hopReason)
+
+ExecuteTargetPetsHopNow(
+    scannedPlayers,
+    scannedTools,
+    hopReason,
+    "Target pet was listed but failed sniper filters, so HOLY is hopping."
+)
+
+    continue
+end
+
+if found then
+
+    SetTargetPetsHopStatus(
+        "Backpack only: "
+            .. tostring(petName)
+            .. " on "
+            .. tostring(playerName)
+    )
+
+    continue
+end
+
+ExecuteTargetPetsHopNow(
+    scannedPlayers,
+    scannedTools,
+    "No targets found, hopping"
+)
     end
 end)
 --==================================================
@@ -19052,7 +19569,7 @@ local TargetPetsHopToggle =
                 and TargetPetsHopState.Enabled == true
                 or false,
 
-            Tooltip = "Hops instantly if no players have any selected target pets.",
+            Tooltip = "Keeps servers with backpack-only targets or listed targets that pass sniper filters. Hops if a listed target fails sniper filters.",
         }
     )
 
@@ -19072,6 +19589,35 @@ TargetPetsHopStatusLabel =
         "Target Hop: Disabled",
         false
     )
+
+local TargetPetsHopStayWhenDropdown =
+    HomeBox:AddDropdown(
+        "TargetPetsHopStayWhen",
+        {
+            Text = "Stay When",
+            Tooltip = "Backpack Only OR Good Listing = stay if player owns target unlisted, or if listed target passes sniper filters. Hop if listed target fails sniper filters.",
+            Values = {
+                "Backpack Only OR Good Listing",
+                "Any Target Found",
+            },
+            Default =
+                NormalizeTargetPetsHopStayWhen(
+                    TargetPetsHopState
+                    and TargetPetsHopState.StayWhen
+                ),
+            Multi = false,
+        }
+    )
+
+TargetPetsHopStayWhenDropdown:OnChanged(function(value)
+
+    TargetPetsHopState.StayWhen =
+        NormalizeTargetPetsHopStayWhen(value)
+
+    SaveTargetPetsHopConfig()
+    RefreshTargetPetsHopStatus()
+    MarkConfigDirty()
+end)
 
 if type(RefreshDynamicPetList) == "function" then
     RefreshDynamicPetList()
