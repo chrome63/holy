@@ -26094,7 +26094,20 @@ end
 --==================================================
 function BuildBoothTab()
 
-if type(Tabs.Booth.AddLeftCollapsibleGroupbox) == "function" then
+--==================================================
+-- BOOTH TAB GROUPBOXES
+-- Collapsible layout keeps the Booth tab clean.
+-- true  = starts open
+-- false = starts collapsed
+--==================================================
+
+local canLeftCollapse =
+    type(Tabs.Booth.AddLeftCollapsibleGroupbox) == "function"
+
+local canRightCollapse =
+    type(Tabs.Booth.AddRightCollapsibleGroupbox) == "function"
+
+if canLeftCollapse then
 
     BoothBox =
         Tabs.Booth:AddLeftCollapsibleGroupbox(
@@ -26103,34 +26116,62 @@ if type(Tabs.Booth.AddLeftCollapsibleGroupbox) == "function" then
             true
         )
 
+    BoothServerBox =
+        Tabs.Booth:AddLeftCollapsibleGroupbox(
+            "🌍 Server Cycle",
+            "server",
+            false
+        )
+
 else
 
-    warn("[LIB TEST] Collapsible Booth Automation unavailable, using normal groupbox")
+    warn("[LIB TEST] Left collapsible groupboxes unavailable, using normal groupboxes")
 
     BoothBox =
         Tabs.Booth:AddLeftGroupbox(
             "⚡ Booth Automation",
             "zap"
         )
+
+    BoothServerBox =
+        Tabs.Booth:AddLeftGroupbox(
+            "🌍 Server Cycle",
+            "server"
+        )
 end
 
-BoothServerBox =
-    Tabs.Booth:AddLeftGroupbox(
-        "🌍 Server Cycle",
-        "server"
-    )
+if canRightCollapse then
 
-BoothCustomizationBox =
-    Tabs.Booth:AddRightGroupbox(
-        "🎨 Booth Showcase",
-        "wand"
-    )
+    BoothCustomizationBox =
+        Tabs.Booth:AddRightCollapsibleGroupbox(
+            "🎨 Booth Showcase",
+            "wand",
+            true
+        )
 
-BoothPromoteBox =
-    Tabs.Booth:AddRightGroupbox(
-        "💬 Booth Promote",
-        "message-circle"
-    )
+    BoothPromoteBox =
+        Tabs.Booth:AddRightCollapsibleGroupbox(
+            "💬 Booth Promote",
+            "message-circle",
+            false
+        )
+
+else
+
+    warn("[LIB TEST] Right collapsible groupboxes unavailable, using normal groupboxes")
+
+    BoothCustomizationBox =
+        Tabs.Booth:AddRightGroupbox(
+            "🎨 Booth Showcase",
+            "wand"
+        )
+
+    BoothPromoteBox =
+        Tabs.Booth:AddRightGroupbox(
+            "💬 Booth Promote",
+            "message-circle"
+        )
+end
 
 local AutoClaimToggle = BoothBox:AddToggle("AutoClaimBooth", {
     Text = "🎪 Auto Claim Booth",
