@@ -1,8 +1,635 @@
--- Holy Loader Debug
+--==================================================
+-- HOLY LOADER
+-- Key gate runs before HolyV3.lua is fetched/executed.
+--==================================================
+
+local HttpService =
+    game:GetService("HttpService")
+
+local Players =
+    game:GetService("Players")
+
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+local LocalPlayer =
+    Players.LocalPlayer
+    or Players.PlayerAdded:Wait()
 
 local MAIN_URL =
     "https://raw.githubusercontent.com/bencapalot041/holy/main/HolyV3.lua?v="
     .. tostring(os.time())
+
+local HOLY_LOADER_KEY_STATE = {
+    Enabled = true,
+
+    SaveFile = "HolyV2/holy_access_key.txt",
+
+    Keys = {
+        ["HOLY-BEN-123"] = "Ben",
+        ["HOLY-TEST-456"] = "Tester",
+        ["HOLY-CL-353"] = "CL",
+        ["HOLY-NOMO-342"] = "Nomo",
+        ["HOLY-ROOF-645"] = "Roof",
+        ["HOLY-KYOYA-45736"] = "KYOYA",
+        ["HOLY-TEST-43756"] = "Tester",
+        ["HOLY-TEST-45436"] = "Tester",
+    },
+
+    Accepted = false,
+    Owner = "Unknown",
+}
+
+local function NormalizeHolyAccessKey(value)
+
+    return tostring(value or "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+local function EnsureHolyFolder()
+
+    if makefolder
+    and not isfolder("HolyV2") then
+
+        pcall(function()
+            makefolder("HolyV2")
+        end)
+    end
+end
+
+local function SaveHolyAccessKey(key)
+
+    key =
+        NormalizeHolyAccessKey(key)
+
+    if key == ""
+    or not writefile then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+            EnsureHolyFolder()
+
+            writefile(
+                HOLY_LOADER_KEY_STATE.SaveFile,
+                key
+            )
+        end)
+
+    return ok
+end
+
+local function ReadSavedHolyAccessKey()
+
+    if not isfile
+    or not readfile then
+        return ""
+    end
+
+    local filePath =
+        HOLY_LOADER_KEY_STATE.SaveFile
+
+    local ok, result =
+        pcall(function()
+
+            if not isfile(filePath) then
+                return ""
+            end
+
+            return readfile(filePath)
+        end)
+
+    if not ok then
+        return ""
+    end
+
+    return NormalizeHolyAccessKey(result)
+end
+
+local function ValidateHolyAccessKey(key)
+
+    key =
+        NormalizeHolyAccessKey(key)
+
+    if key == "" then
+        return false, "Enter a key."
+    end
+
+    local owner =
+        HOLY_LOADER_KEY_STATE.Keys[key]
+
+    if not owner then
+        return false, "Invalid key."
+    end
+
+    HOLY_LOADER_KEY_STATE.Accepted =
+        true
+
+    HOLY_LOADER_KEY_STATE.Owner =
+        tostring(owner)
+
+    SaveHolyAccessKey(key)
+
+    return true, tostring(owner)
+end
+
+local function ResolveHolyUIParent()
+
+    local ok, hui =
+        pcall(function()
+
+            if type(gethui) == "function" then
+                return gethui()
+            end
+
+            return nil
+        end)
+
+    if ok
+    and hui then
+        return hui
+    end
+
+    return LocalPlayer:WaitForChild(
+        "PlayerGui",
+        10
+    )
+end
+
+local function CreateHolyLoaderKeyUI()
+
+    local parent =
+        ResolveHolyUIParent()
+
+    if not parent then
+        warn("[HOLY LOADER] No UI parent")
+        return false
+    end
+
+    local existing =
+        parent:FindFirstChild("HolyLoaderKeyUI")
+
+    if existing then
+        existing:Destroy()
+    end
+
+    local screenGui =
+        Instance.new("ScreenGui")
+
+    screenGui.Name =
+        "HolyLoaderKeyUI"
+
+    screenGui.ResetOnSpawn =
+        false
+
+    screenGui.IgnoreGuiInset =
+        true
+
+    screenGui.DisplayOrder =
+        100000
+
+    screenGui.Parent =
+        parent
+
+    local dim =
+        Instance.new("Frame")
+
+    dim.Name =
+        "Dim"
+
+    dim.BackgroundColor3 =
+        Color3.fromRGB(0, 0, 0)
+
+    dim.BackgroundTransparency =
+        0.35
+
+    dim.Size =
+        UDim2.fromScale(1, 1)
+
+    dim.Parent =
+        screenGui
+
+    local frame =
+        Instance.new("Frame")
+
+    frame.Name =
+        "Main"
+
+    frame.AnchorPoint =
+        Vector2.new(0.5, 0.5)
+
+    frame.Position =
+        UDim2.fromScale(0.5, 0.5)
+
+    frame.Size =
+        UDim2.fromOffset(330, 205)
+
+    frame.BackgroundColor3 =
+        Color3.fromRGB(12, 12, 18)
+
+    frame.BorderSizePixel =
+        0
+
+    frame.Parent =
+        dim
+
+    local corner =
+        Instance.new("UICorner")
+
+    corner.CornerRadius =
+        UDim.new(0, 8)
+
+    corner.Parent =
+        frame
+
+    local stroke =
+        Instance.new("UIStroke")
+
+    stroke.Color =
+        Color3.fromRGB(80, 80, 105)
+
+    stroke.Thickness =
+        1
+
+    stroke.Transparency =
+        0.15
+
+    stroke.Parent =
+        frame
+
+    local title =
+        Instance.new("TextLabel")
+
+    title.Name =
+        "Title"
+
+    title.BackgroundTransparency =
+        1
+
+    title.Position =
+        UDim2.fromOffset(0, 16)
+
+    title.Size =
+        UDim2.new(1, 0, 0, 28)
+
+    title.Font =
+        Enum.Font.GothamBlack
+
+    title.Text =
+        "HOLY"
+
+    title.TextColor3 =
+        Color3.fromRGB(255, 235, 170)
+
+    title.TextSize =
+        22
+
+    title.TextStrokeTransparency =
+        0.65
+
+    title.Parent =
+        frame
+
+    local subtitle =
+        Instance.new("TextLabel")
+
+    subtitle.Name =
+        "Subtitle"
+
+    subtitle.BackgroundTransparency =
+        1
+
+    subtitle.Position =
+        UDim2.fromOffset(0, 46)
+
+    subtitle.Size =
+        UDim2.new(1, 0, 0, 20)
+
+    subtitle.Font =
+        Enum.Font.Gotham
+
+    subtitle.Text =
+        "Enter your access key"
+
+    subtitle.TextColor3 =
+        Color3.fromRGB(190, 190, 205)
+
+    subtitle.TextSize =
+        13
+
+    subtitle.Parent =
+        frame
+
+    local input =
+        Instance.new("TextBox")
+
+    input.Name =
+        "KeyInput"
+
+    input.Position =
+        UDim2.fromOffset(30, 82)
+
+    input.Size =
+        UDim2.new(1, -60, 0, 34)
+
+    input.BackgroundColor3 =
+        Color3.fromRGB(22, 22, 32)
+
+    input.BorderSizePixel =
+        0
+
+    input.ClearTextOnFocus =
+        false
+
+    input.Font =
+        Enum.Font.Gotham
+
+    input.PlaceholderText =
+        "Access key"
+
+    input.PlaceholderColor3 =
+        Color3.fromRGB(110, 110, 130)
+
+    input.Text =
+        ReadSavedHolyAccessKey()
+
+    input.TextColor3 =
+        Color3.fromRGB(240, 240, 255)
+
+    input.TextSize =
+        14
+
+    input.Parent =
+        frame
+
+    local inputCorner =
+        Instance.new("UICorner")
+
+    inputCorner.CornerRadius =
+        UDim.new(0, 6)
+
+    inputCorner.Parent =
+        input
+
+    local inputStroke =
+        Instance.new("UIStroke")
+
+    inputStroke.Color =
+        Color3.fromRGB(55, 55, 75)
+
+    inputStroke.Thickness =
+        1
+
+    inputStroke.Parent =
+        input
+
+    local status =
+        Instance.new("TextLabel")
+
+    status.Name =
+        "Status"
+
+    status.BackgroundTransparency =
+        1
+
+    status.Position =
+        UDim2.fromOffset(30, 120)
+
+    status.Size =
+        UDim2.new(1, -60, 0, 20)
+
+    status.Font =
+        Enum.Font.Gotham
+
+    status.Text =
+        ""
+
+    status.TextColor3 =
+        Color3.fromRGB(255, 95, 120)
+
+    status.TextSize =
+        12
+
+    status.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    status.Parent =
+        frame
+
+    local verify =
+        Instance.new("TextButton")
+
+    verify.Name =
+        "Verify"
+
+    verify.Position =
+        UDim2.fromOffset(30, 145)
+
+    verify.Size =
+        UDim2.new(0.5, -35, 0, 34)
+
+    verify.BackgroundColor3 =
+        Color3.fromRGB(35, 25, 55)
+
+    verify.BorderSizePixel =
+        0
+
+    verify.AutoButtonColor =
+        true
+
+    verify.Font =
+        Enum.Font.GothamBold
+
+    verify.Text =
+        "Verify"
+
+    verify.TextColor3 =
+        Color3.fromRGB(255, 255, 255)
+
+    verify.TextSize =
+        14
+
+    verify.Parent =
+        frame
+
+    local verifyCorner =
+        Instance.new("UICorner")
+
+    verifyCorner.CornerRadius =
+        UDim.new(0, 6)
+
+    verifyCorner.Parent =
+        verify
+
+    local close =
+        Instance.new("TextButton")
+
+    close.Name =
+        "Close"
+
+    close.Position =
+        UDim2.new(0.5, 5, 0, 145)
+
+    close.Size =
+        UDim2.new(0.5, -35, 0, 34)
+
+    close.BackgroundColor3 =
+        Color3.fromRGB(20, 20, 28)
+
+    close.BorderSizePixel =
+        0
+
+    close.AutoButtonColor =
+        true
+
+    close.Font =
+        Enum.Font.GothamBold
+
+    close.Text =
+        "Close UI"
+
+    close.TextColor3 =
+        Color3.fromRGB(180, 180, 195)
+
+    close.TextSize =
+        14
+
+    close.Parent =
+        frame
+
+    local closeCorner =
+        Instance.new("UICorner")
+
+    closeCorner.CornerRadius =
+        UDim.new(0, 6)
+
+    closeCorner.Parent =
+        close
+
+    local finished =
+        false
+
+    local accepted =
+        false
+
+    local function TryVerify()
+
+        local ok, result =
+            ValidateHolyAccessKey(
+                input.Text
+            )
+
+        if ok then
+
+            status.Text =
+                "Access granted • "
+                .. tostring(result)
+
+            status.TextColor3 =
+                Color3.fromRGB(90, 255, 150)
+
+            accepted =
+                true
+
+            task.wait(0.25)
+
+            finished =
+                true
+
+            screenGui:Destroy()
+
+            return
+        end
+
+        status.Text =
+            tostring(result or "Invalid key.")
+
+        status.TextColor3 =
+            Color3.fromRGB(255, 95, 120)
+    end
+
+    verify.MouseButton1Click:Connect(TryVerify)
+
+    input.FocusLost:Connect(function(enterPressed)
+
+        if enterPressed then
+            TryVerify()
+        end
+    end)
+
+    close.MouseButton1Click:Connect(function()
+
+        finished =
+            true
+
+        accepted =
+            false
+
+        screenGui:Destroy()
+    end)
+
+    input:CaptureFocus()
+
+    while not finished do
+        task.wait(0.05)
+    end
+
+    return accepted
+end
+
+local function RunHolyLoaderKeyGate()
+
+    if HOLY_LOADER_KEY_STATE.Enabled ~= true then
+        return true
+    end
+
+    local savedKey =
+        ReadSavedHolyAccessKey()
+
+    if savedKey ~= "" then
+
+        local valid, owner =
+            ValidateHolyAccessKey(
+                savedKey
+            )
+
+        if valid then
+
+            print(
+                "[HOLY LOADER] Saved key accepted:",
+                tostring(owner)
+            )
+
+            return true
+        end
+    end
+
+    return CreateHolyLoaderKeyUI()
+end
+
+if not RunHolyLoaderKeyGate() then
+    warn("[HOLY LOADER] Access denied. Loader stopped.")
+    return
+end
+
+local root =
+    type(getgenv) == "function"
+    and getgenv()
+    or _G
+
+root.HOLY_LOADER_AUTHORIZED =
+    true
+
+root.HOLY_LOADER_OWNER =
+    HOLY_LOADER_KEY_STATE.Owner
+
+print(
+    "[HOLY LOADER] Access granted:",
+    tostring(HOLY_LOADER_KEY_STATE.Owner)
+)
 
 print("[HOLY LOADER] Fetching:", MAIN_URL)
 
