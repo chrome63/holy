@@ -28378,6 +28378,7 @@ function BuildSniperTab()
 --==================================================
 
 local SniperConfigBox
+local SniperServerBox
 local SniperFilterBox
 local SniperWatchlistBox
 local EggFocusBox
@@ -28391,6 +28392,9 @@ and type(Tabs.Sniper.AddRightTabbox) == "function" then
 
     SniperConfigBox =
         SniperLeftTabbox:AddTab("Config", "settings")
+
+    SniperServerBox =
+        SniperLeftTabbox:AddTab("Server", "server")
 
     SniperFilterBox =
         SniperLeftTabbox:AddTab("Filter", "plus")
@@ -28413,18 +28417,25 @@ else
     if type(Tabs.Sniper.AddLeftCollapsibleGroupbox) == "function" then
 
         SniperConfigBox =
-            Tabs.Sniper:AddLeftCollapsibleGroupbox(
-                "Sniper Configuration",
-                "settings",
-                true
-            )
+    Tabs.Sniper:AddLeftCollapsibleGroupbox(
+        "Sniper Configuration",
+        "settings",
+        true
+    )
 
-        SniperFilterBox =
-            Tabs.Sniper:AddLeftCollapsibleGroupbox(
-                "Add Filter",
-                "plus",
-                true
-            )
+SniperServerBox =
+    Tabs.Sniper:AddLeftCollapsibleGroupbox(
+        "Server Hop",
+        "server",
+        true
+    )
+
+SniperFilterBox =
+    Tabs.Sniper:AddLeftCollapsibleGroupbox(
+        "Add Filter",
+        "plus",
+        true
+    )
 
 SniperWatchlistBox =
     Tabs.Sniper:AddRightCollapsibleGroupbox(
@@ -28452,16 +28463,22 @@ PriceSyncBox =
         warn("[LIB TEST] Tabbox/collapsible unavailable, using normal groupboxes")
 
         SniperConfigBox =
-            Tabs.Sniper:AddLeftGroupbox(
-                "Sniper Configuration",
-                "settings"
-            )
+    Tabs.Sniper:AddLeftGroupbox(
+        "Sniper Configuration",
+        "settings"
+    )
 
-        SniperFilterBox =
-            Tabs.Sniper:AddLeftGroupbox(
-                "Add Filter",
-                "plus"
-            )
+SniperServerBox =
+    Tabs.Sniper:AddLeftGroupbox(
+        "Server Hop",
+        "server"
+    )
+
+SniperFilterBox =
+    Tabs.Sniper:AddLeftGroupbox(
+        "Add Filter",
+        "plus"
+    )
 
 SniperWatchlistBox =
     Tabs.Sniper:AddRightGroupbox(
@@ -28572,14 +28589,14 @@ BoothDataRefreshDropdown:OnChanged(function(value)
     )
 end)
 
-SniperConfigBox:AddDivider({
+SniperServerBox:AddDivider({
     Text = "Server Hop",
     MarginTop = 4,
     MarginBottom = 8,
 })
 
 local MaxServerPlayersInput =
-    SniperConfigBox:AddInput(
+    SniperServerBox:AddInput(
         "SniperMaxServerPlayers",
         {
             Text = "👥 Max Server Players",
@@ -28614,7 +28631,7 @@ MaxServerPlayersInput:OnChanged(function(value)
 end)
 
 local ServerHopModeDropdown =
-    SniperConfigBox:AddDropdown(
+    SniperServerBox:AddDropdown(
         "SniperServerHopMode",
         {
             Text = "⇄ Server Hop Mode",
@@ -28642,7 +28659,7 @@ ServerHopModeDropdown:OnChanged(function(value)
 end)
 
 local ServerHopPagesInput =
-    SniperConfigBox:AddInput(
+    SniperServerBox:AddInput(
         "SniperServerHopPages",
         {
             Text = "📄 Server Hop Pages",
