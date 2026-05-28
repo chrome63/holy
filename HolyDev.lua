@@ -13242,16 +13242,28 @@ BoothAuto = {
     SoftReturnCooldown = 1.50,
     HardLockInterval = 0.15,
 
+    --==================================================
+    -- CHAT PROMOTE
+    --==================================================
+
     AutoPromote = false,
 
     PromoteSource = "Highest Weight Listed Pet",
     PromoteMode = "Mixed Built-in + Custom",
-
-    -- Obsidian AddInput is single-line, so users separate messages with |
-    PromoteCustomMessages =
-        "huge %pet% %kg% listed rn | selling %pet%, check booth | %pet% for %price% tokens",
-
     PromoteInterval = 40,
+
+    CustomPromoteCount = 4,
+
+    CustomPromoteMessages = {
+        [1] = "huge %pet% %kg% listed rn",
+        [2] = "selling %pet%, check booth",
+        [3] = "%pet% for %price% tokens",
+        [4] = "good pets listed, check fast",
+    },
+
+    --==================================================
+    -- SERVER CYCLE
+    --==================================================
 
     AutoServerHop = false,
     ServerHopMinutes = 10,
@@ -25857,7 +25869,7 @@ if type(Tabs.Booth.AddLeftCollapsibleGroupbox) == "function" then
 
     BoothBox =
         Tabs.Booth:AddLeftCollapsibleGroupbox(
-            "Booth Automation",
+            "⚡ Booth Automation",
             "zap",
             true
         )
@@ -25868,11 +25880,28 @@ else
 
     BoothBox =
         Tabs.Booth:AddLeftGroupbox(
-            "Booth Automation",
+            "⚡ Booth Automation",
             "zap"
         )
 end
-BoothCustomizationBox = Tabs.Booth:AddRightGroupbox("Booth Customization", "wand")
+
+BoothServerBox =
+    Tabs.Booth:AddLeftGroupbox(
+        "🌍 Server Cycle",
+        "server"
+    )
+
+BoothCustomizationBox =
+    Tabs.Booth:AddRightGroupbox(
+        "🎨 Booth Showcase",
+        "wand"
+    )
+
+BoothPromoteBox =
+    Tabs.Booth:AddRightGroupbox(
+        "💬 Booth Promote",
+        "message-circle"
+    )
 
 local AutoClaimToggle = BoothBox:AddToggle("AutoClaimBooth", {
     Text = "🎪 Auto Claim Booth",
@@ -25901,7 +25930,7 @@ if enabled then
 end
 end)
 
-local EquipPetToggle = BoothBox:AddToggle("EquipPet", {
+local EquipPetToggle = BoothCustomizationBox:AddToggle("EquipPet", {
     Text = "🐶 Equip Pet",
     Tooltip = "Equips a pet from your inventory",
     Default = false,
@@ -26154,11 +26183,15 @@ BoothReturnDistanceSlider:OnChanged(function(value)
     MarkConfigDirty()
 end)
 
-local ChatPromoteListings = BoothBox:AddToggle("AutoPromoteListings", {
-    Text = "💬 Auto Promote Listings",
-    Tooltip = "Sends rotating chat promotion messages for your live booth listings.",
-    Default = false,
-})
+local ChatPromoteListings =
+    BoothPromoteBox:AddToggle(
+        "AutoPromoteListings",
+        {
+            Text = "Auto Promote Listings",
+            Tooltip = "Sends rotating chat messages for your live booth listings.",
+            Default = false,
+        }
+    )
 
 ChatPromoteListings:OnChanged(function(enabled)
 
@@ -26168,23 +26201,28 @@ ChatPromoteListings:OnChanged(function(enabled)
     MarkConfigDirty()
 end)
 
-BoothBox:AddDropdown("PromoteSource", {
-    Text = "Promote Source",
+BoothPromoteBox:AddDropdown(
+    "PromoteSource",
+    {
+        Text = "Promote Source",
 
-    Values = {
-        "Best Listed Pet",
-        "Highest Weight Listed Pet",
-        "Highest Price Listed Pet",
-        "Showcase Pet If Listed",
-        "Random Listed Pet",
-        "Custom Text Only",
-    },
+        Values = {
+            "Best Listed Pet",
+            "Highest Weight Listed Pet",
+            "Highest Price Listed Pet",
+            "Showcase Pet If Listed",
+            "Random Listed Pet",
+            "Custom Text Only",
+        },
 
-    Default = "Highest Weight Listed Pet",
-    Multi = false,
+        Default = BoothAuto.PromoteSource
+            or "Highest Weight Listed Pet",
 
-    Tooltip = "Controls which current booth listing gets used for %pet%, %kg%, and %price%.",
-}):OnChanged(function(value)
+        Multi = false,
+
+        Tooltip = "Controls which live booth listing is used for %pet%, %kg%, and %price%.",
+    }
+):OnChanged(function(value)
 
     BoothAuto.PromoteSource =
         tostring(value or "Highest Weight Listed Pet")
@@ -26192,20 +26230,25 @@ BoothBox:AddDropdown("PromoteSource", {
     MarkConfigDirty()
 end)
 
-BoothBox:AddDropdown("PromoteMode", {
-    Text = "Promote Mode",
+BoothPromoteBox:AddDropdown(
+    "PromoteMode",
+    {
+        Text = "Promote Mode",
 
-    Values = {
-        "Built-in Rotation",
-        "Custom Rotation",
-        "Mixed Built-in + Custom",
-    },
+        Values = {
+            "Built-in Rotation",
+            "Custom Rotation",
+            "Mixed Built-in + Custom",
+        },
 
-    Default = "Mixed Built-in + Custom",
-    Multi = false,
+        Default = BoothAuto.PromoteMode
+            or "Mixed Built-in + Custom",
 
-    Tooltip = "Built-in uses HOLY messages, Custom uses your messages, Mixed uses both.",
-}):OnChanged(function(value)
+        Multi = false,
+
+        Tooltip = "Built-in uses HOLY messages. Custom uses your message boxes. Mixed uses both.",
+    }
+):OnChanged(function(value)
 
     BoothAuto.PromoteMode =
         tostring(value or "Mixed Built-in + Custom")
@@ -26213,14 +26256,17 @@ BoothBox:AddDropdown("PromoteMode", {
     MarkConfigDirty()
 end)
 
-BoothBox:AddInput("PromoteInterval", {
-    Text = "Promote Every Sec",
-    Default = "40",
-    Numeric = true,
-    Finished = true,
-
-    Tooltip = "How often Auto Promote sends a message. Recommended: 40+ seconds.",
-}):OnChanged(function(value)
+BoothPromoteBox:AddInput(
+    "PromoteInterval",
+    {
+        Text = "Promote Delay",
+        Default = tostring(BoothAuto.PromoteInterval or 40),
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Tooltip = "How many seconds between chat promotions. Recommended: 40+.",
+    }
+):OnChanged(function(value)
 
     local seconds =
         tonumber(value)
@@ -26239,20 +26285,123 @@ BoothBox:AddInput("PromoteInterval", {
     MarkConfigDirty()
 end)
 
-BoothBox:AddInput("CustomPromoteMessages", {
-    Text = "Custom Messages",
-    Default = "huge %pet% %kg% listed rn | selling %pet%, check booth | %pet% for %price% tokens",
-    Finished = true,
-    ClearTextOnFocus = false,
+BoothPromoteBox:AddInput(
+    "CustomPromoteCount",
+    {
+        Text = "Custom Message Count",
+        Default = tostring(BoothAuto.CustomPromoteCount or 4),
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Tooltip = "How many custom message boxes should be shown. Example: 3 shows only Custom Message 1-3.",
+    }
+):OnChanged(function(value)
 
-    Tooltip = "Separate messages with |. Placeholders: %pet%, %kg%, %price%.",
-}):OnChanged(function(value)
+    local count =
+        tonumber(value)
 
-    BoothAuto.PromoteCustomMessages =
-        tostring(value or "")
+    if not count then
+        return
+    end
+
+    BoothAuto.CustomPromoteCount =
+        math.clamp(
+            math.floor(count),
+            1,
+            10
+        )
+
+    if type(RefreshCustomPromoteMessageInputs) == "function" then
+        RefreshCustomPromoteMessageInputs()
+    end
 
     MarkConfigDirty()
 end)
+
+CustomPromoteInputs =
+    CustomPromoteInputs
+    or {}
+
+local DEFAULT_CUSTOM_PROMOTE_MESSAGES = {
+    [1] = "huge %pet% %kg% listed rn",
+    [2] = "selling %pet%, check booth",
+    [3] = "%pet% for %price% tokens",
+    [4] = "good pets listed, check fast",
+    [5] = "rare pets in booth rn",
+    [6] = "%pet% listed now",
+    [7] = "check booth for %pet%",
+    [8] = "%pet% up for %price%",
+    [9] = "big %pet% %kg% in booth",
+    [10] = "booth open, good pets listed",
+}
+
+BoothAuto.CustomPromoteMessages =
+    BoothAuto.CustomPromoteMessages
+    or {}
+
+function RefreshCustomPromoteMessageInputs()
+
+    local count =
+        math.clamp(
+            math.floor(
+                tonumber(BoothAuto.CustomPromoteCount)
+                or 4
+            ),
+            1,
+            10
+        )
+
+    for index, input in pairs(CustomPromoteInputs) do
+
+        if input
+        and type(input.SetVisible) == "function" then
+
+            input:SetVisible(
+                index <= count
+            )
+        end
+    end
+end
+
+for index = 1, 10 do
+
+    local defaultMessage =
+        BoothAuto.CustomPromoteMessages[index]
+        or DEFAULT_CUSTOM_PROMOTE_MESSAGES[index]
+        or ""
+
+    BoothAuto.CustomPromoteMessages[index] =
+        tostring(defaultMessage or "")
+
+    local input =
+        BoothPromoteBox:AddInput(
+            "CustomPromoteMessage" .. tostring(index),
+            {
+                Text = "Custom Message " .. tostring(index),
+                Default = tostring(defaultMessage or ""),
+                Finished = true,
+                ClearTextOnFocus = false,
+                Tooltip = "Placeholders: %pet%, %kg%, %price%.",
+            }
+        )
+
+    CustomPromoteInputs[index] =
+        input
+
+    input:OnChanged(function(value)
+
+        BoothAuto.CustomPromoteMessages[index] =
+            tostring(value or "")
+
+        MarkConfigDirty()
+    end)
+end
+
+BoothPromoteBox:AddLabel(
+    "Placeholders: %pet%  %kg%  %price%"
+)
+
+RefreshCustomPromoteMessageInputs()
 
 do
     RefreshBeeEggList()
@@ -26328,8 +26477,7 @@ end
 --==================================================
 -- AUTO PROMOTE CHAT SYSTEM
 -- Live booth-listing based promotion.
--- Fixes old behavior where chat kept promoting the
--- showcased pet after it was sold out.
+-- Promotes current listed pets, not stale showcase pets.
 --==================================================
 
 local ChatPromoteSessionId =
@@ -26342,44 +26490,24 @@ local ChatPromoteState = {
     LastMessage = "",
     LastTemplate = "",
     LastSent = 0,
-    NextAllowedAt = 0,
-
-    LastMessageIndex = 0,
+    LastTemplateIndex = 0,
     LastPromotedPet = "",
 
-    -- prevents console spam when Roblox chat / HTTP fails
+    -- prevents console spam when Roblox chat fails
     FailUntil = 0,
 }
 
 local PromoteMessages = {
-
-    "%pet% at my booth",
     "%pet% listed at my booth",
     "%pet% in my booth",
+    "check booth for %pet%",
     "%pet% available at my booth",
-    "my booth has %pet%",
-    "come check %pet% at my booth",
-    "check my booth for %pet%",
-    "booth has %pet% right now",
-    "%pet% is up at my booth",
-    "%pet% in booth right now",
-
-    "new %pet% listing at my booth",
-    "fresh %pet% listing at my booth",
-    "got %pet% in my booth",
-    "booth open with %pet%",
-    "%pet% ready in booth",
-    "%pet% waiting at my booth",
-    "come see %pet% at my booth",
-    "my booth got %pet%",
-    "%pet% is listed now",
-    "check booth if you want %pet%",
-
-    "huge %pet% %kg% listed rn",
-    "%pet% for %price% tokens",
     "selling %pet%, check booth",
+    "%pet% for %price% tokens",
+    "huge %pet% %kg% listed rn",
     "good pets listed, check booth",
-    "cheap pets in booth rn",
+    "booth open with %pet%",
+    "%pet% up rn, check fast",
 }
 
 function NormalizePromoteText(value)
@@ -26456,57 +26584,59 @@ function GetPromoteOwnListedPets()
 
     for _, item in ipairs(snapshot) do
 
-        if type(item) == "table" then
-
-            local petName =
-                NormalizePromoteText(
-                    item.PetName
-                )
-
-            local price =
-                tonumber(item.Price)
-                or 0
-
-            if petName ~= ""
-            and petName ~= "Unknown"
-            and price > 0 then
-
-                local displayWeight =
-                    tonumber(item.DisplayWeight)
-                    or tonumber(item.Weight)
-                    or tonumber(item.BaseWeight)
-                    or 0
-
-                table.insert(listings, {
-                    ListingUID =
-                        tostring(item.ListingUID or ""),
-
-                    UUID =
-                        tostring(item.UUID or ""),
-
-                    PetName =
-                        petName,
-
-                    MutationText =
-                        tostring(item.MutationText or "Normal"),
-
-                    Price =
-                        price,
-
-                    Age =
-                        tonumber(item.Age),
-
-                    Weight =
-                        displayWeight,
-
-                    DisplayWeight =
-                        displayWeight,
-
-                    BaseWeight =
-                        tonumber(item.BaseWeight),
-                })
-            end
+        if type(item) ~= "table" then
+            continue
         end
+
+        local petName =
+            NormalizePromoteText(
+                item.PetName
+            )
+
+        local price =
+            tonumber(item.Price)
+            or 0
+
+        if petName == ""
+        or petName == "Unknown"
+        or price <= 0 then
+            continue
+        end
+
+        local displayWeight =
+            tonumber(item.DisplayWeight)
+            or tonumber(item.Weight)
+            or tonumber(item.BaseWeight)
+            or 0
+
+        table.insert(listings, {
+            ListingUID =
+                tostring(item.ListingUID or ""),
+
+            UUID =
+                tostring(item.UUID or ""),
+
+            PetName =
+                petName,
+
+            MutationText =
+                tostring(item.MutationText or "Normal"),
+
+            Price =
+                price,
+
+            Age =
+                tonumber(item.Age),
+
+            Weight =
+                displayWeight,
+
+            DisplayWeight =
+                displayWeight,
+
+            BaseWeight =
+                tonumber(item.BaseWeight),
+        })
     end
 
     return listings
@@ -26632,24 +26762,29 @@ end
 
 function GetCustomPromoteMessages()
 
-    local raw =
-        tostring(
-            BoothAuto.PromoteCustomMessages
-            or ""
-        )
-
     local messages =
         {}
 
-    -- Obsidian AddInput is single-line.
-    -- Use | / ; / newline as separators for flexibility.
-    raw =
-        raw:gsub("[\r\n;]+", "|")
+    local count =
+        math.clamp(
+            math.floor(
+                tonumber(BoothAuto.CustomPromoteCount)
+                or 4
+            ),
+            1,
+            10
+        )
 
-    for part in string.gmatch(raw, "([^|]+)") do
+    if type(BoothAuto.CustomPromoteMessages) ~= "table" then
+        BoothAuto.CustomPromoteMessages = {}
+    end
+
+    for index = 1, count do
 
         local message =
-            NormalizePromoteText(part)
+            NormalizePromoteText(
+                BoothAuto.CustomPromoteMessages[index]
+            )
 
         if message ~= "" then
 
@@ -26716,7 +26851,7 @@ function PickPromoteTemplate()
 
     local nextIndex =
         SafeNumber(
-            ChatPromoteState.LastMessageIndex,
+            ChatPromoteState.LastTemplateIndex,
             0
         ) + 1
 
@@ -26727,7 +26862,7 @@ function PickPromoteTemplate()
     local template =
         pool[nextIndex]
 
-    -- Avoid exact same template twice if possible.
+    -- Avoid same template twice if possible.
     if #pool > 1
     and template == ChatPromoteState.LastTemplate then
 
@@ -26742,7 +26877,7 @@ function PickPromoteTemplate()
             pool[nextIndex]
     end
 
-    ChatPromoteState.LastMessageIndex =
+    ChatPromoteState.LastTemplateIndex =
         nextIndex
 
     ChatPromoteState.LastTemplate =
@@ -26792,7 +26927,7 @@ function ApplyPromotePlaceholders(template, listing)
             weight and FormatPromoteWeight(weight) or "?"
         )
 
-    -- Backwards compatibility with old built-ins using %s.
+    -- Backwards compatibility with old %s templates.
     if text:find("%%s", 1, true) then
 
         local ok, formatted =
@@ -26855,7 +26990,6 @@ function GeneratePromoteMessage()
         return nil
     end
 
-    -- Avoid sending the exact same final chat twice in a row.
     if message == ChatPromoteState.LastMessage then
 
         local retryTemplate =
@@ -26871,9 +27005,7 @@ function GeneratePromoteMessage()
 
             if retryMessage ~= ""
             and retryMessage ~= ChatPromoteState.LastMessage then
-
-                message =
-                    retryMessage
+                message = retryMessage
             end
         end
     end
@@ -26927,7 +27059,6 @@ function SendTextChatMessageSafely(message)
     end
 
     if not targetChannel then
-
         targetChannel =
             textChannels:FindFirstChild("RBXGeneral")
     end
@@ -26936,15 +27067,6 @@ function SendTextChatMessageSafely(message)
     or type(targetChannel.SendAsync) ~= "function" then
         return false, "No sendable TextChannel"
     end
-
-    --==================================================
-    -- TEMPORARY CHAT MIDDLEWARE BYPASS
-    -- The game's ChatMiddleware can fail inside
-    -- TextChatService.OnIncomingMessage when Roblox
-    -- GetRankInGroup returns HTTP 503.
-    --
-    -- We disable only for this send attempt, then restore.
-    --==================================================
 
     local hadOldCallback =
         false
@@ -27037,12 +27159,10 @@ function SendPromoteMessage()
 
     if not message then
 
-        -- No live listings / no valid custom message.
-        -- Update LastSent so it does not warn every loop.
         ChatPromoteState.LastSent =
             os.clock()
 
-        warn("[PROMOTE] No valid promote message")
+        warn("[PROMOTE] No valid live listing/custom message")
         return
     end
 
@@ -27056,12 +27176,6 @@ function SendPromoteMessage()
 
     local failureReason =
         nil
-
-    --==================================================
-    -- MODERN CHAT
-    -- Uses safe sender because game ChatMiddleware can
-    -- crash SendAsync through TextChatService.OnIncomingMessage.
-    --==================================================
 
     local sent, sendReason =
         SendTextChatMessageSafely(
@@ -27083,11 +27197,6 @@ function SendPromoteMessage()
             failureReason
         )
     end
-
-    --==================================================
-    -- LEGACY FALLBACK — SAFE CHECK ONLY
-    -- Prevents nil :WaitForChild crash.
-    --==================================================
 
     if not success then
 
@@ -27146,8 +27255,6 @@ function SendPromoteMessage()
 
     else
 
-        -- Roblox chat sometimes fails from HTTP 503 internally.
-        -- Back off so Holy does not spam console every interval.
         ChatPromoteState.LastSent =
             os.clock()
 
@@ -27160,8 +27267,9 @@ function SendPromoteMessage()
         )
     end
 end
+
 --------------------------------------------------
-local AutoHopToggle = BoothBox:AddToggle("AutoServerHop", {
+local AutoHopToggle = BoothServerBox:AddToggle("AutoServerHop", {
     Text = "🌍 Join New Server",
     Tooltip = "Joins new server every X min",
     Default = false,
@@ -27177,7 +27285,7 @@ AutoHopToggle:OnChanged(function(enabled)
     MarkConfigDirty()
 end)
 
-local HopMinutesInput = BoothBox:AddInput("HopMinutes", {
+local HopMinutesInput = BoothServerBox:AddInput("HopMinutes", {
     Text = "⌛ Minutes",
     Default = "10",
     Numeric = true,
@@ -27198,7 +27306,7 @@ HopMinutesInput:OnChanged(function(value)
     MarkConfigDirty()
 end)
 
-BoothBox:AddButton({
+BoothServerBox:AddButton({
     Text = "Unclaim Booth",
     Tooltip = "Unclaim your current booth",
     Func = function()
