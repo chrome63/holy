@@ -38813,19 +38813,97 @@ end
 -- UI BUILD
 -- Keep original tab order.
 -- Build real systems only in Trade World.
+-- Defensive wrapper prevents loading screen from
+-- getting stuck forever at "Building tabs..." and
+-- prints the exact tab that failed.
 --==================================================
 
-BuildHomeTab()
+local FailedTabBuilds =
+    {}
+
+local function BuildHolyTabStep(tabName, callback)
+
+    tabName =
+        tostring(tabName or "Unknown")
+
+    if type(callback) ~= "function" then
+
+        warn(
+            "[UI BUILD] Missing builder:",
+            tabName
+        )
+
+        table.insert(
+            FailedTabBuilds,
+            tabName .. ": missing builder"
+        )
+
+        return false
+    end
+
+    print(
+        "[UI BUILD] Building:",
+        tabName
+    )
+
+    local ok, err =
+        xpcall(
+            callback,
+            debug.traceback
+        )
+
+    if not ok then
+
+        warn(
+            "[UI BUILD FAILED]",
+            tabName,
+            tostring(err)
+        )
+
+        table.insert(
+            FailedTabBuilds,
+            tabName .. ": " .. tostring(err)
+        )
+
+        return false
+    end
+
+    print(
+        "[UI BUILD] Built:",
+        tabName
+    )
+
+    return true
+end
+
+BuildHolyTabStep(
+    "Home",
+    BuildHomeTab
+)
 
 if IsTradeWorld() then
 
-    BuildBoothTab()
-    BuildSniperTab()
-    BuildListingsTab()
+    BuildHolyTabStep(
+        "Booth",
+        BuildBoothTab
+    )
+
+    BuildHolyTabStep(
+        "Sniper",
+        BuildSniperTab
+    )
+
+    BuildHolyTabStep(
+        "Listings",
+        BuildListingsTab
+    )
 
 else
 
-    BuildGardenModeTradeTabs()
+    BuildHolyTabStep(
+        "GardenModeTradeTabs",
+        BuildGardenModeTradeTabs
+    )
 
     RuntimeState.Started =
         false
@@ -38859,9 +38937,41 @@ else
     )
 end
 
-BuildWebhookTab()
-BuildSettingsTab()
-BuildVisualTab()
+BuildHolyTabStep(
+    "Webhook",
+    BuildWebhookTab
+)
+
+BuildHolyTabStep(
+    "Settings",
+    BuildSettingsTab
+)
+
+BuildHolyTabStep(
+    "Visuals",
+    BuildVisualTab
+)
+
+if #FailedTabBuilds > 0 then
+
+    warn(
+        "[UI BUILD] Some tabs failed:",
+        table.concat(
+            FailedTabBuilds,
+            "\n"
+        )
+    )
+
+    if type(HolyNotify) == "function" then
+
+        HolyNotify(
+            "UI Build Warning",
+            "Some HOLY tabs failed to build. Check console for [UI BUILD FAILED].",
+            "triangle-alert",
+            6
+        )
+    end
+end
 
 if IsTradeWorld() then
     StartListingWorker()
