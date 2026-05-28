@@ -13450,6 +13450,10 @@ BoothAuto = {
     Enabled = false,
     InProgress = false,
 
+    -- Which free booth HOLY should claim first.
+    -- First Available / Nearest Middle / Nearest Player
+    ClaimMode = "Nearest Middle",
+
     -- Auto Teleport = soft return mode.
     AutoTeleport = false,
 
@@ -20757,6 +20761,86 @@ function ExecuteBoothClaim()
         return nil
     end
 
+    local function ResolvePlayerClaimPosition()
+
+        local player =
+            Players.LocalPlayer
+
+        local character =
+            player
+            and player.Character
+
+        local root =
+            character
+            and character:FindFirstChild("HumanoidRootPart")
+
+        if root then
+            return root.Position
+        end
+
+        return nil
+    end
+
+    local function ResolveBoothLayoutCenter()
+
+        local positions =
+            {}
+
+        for _, boothModel in ipairs(boothsFolder:GetChildren()) do
+
+            local position =
+                ResolveBoothPosition(boothModel)
+
+            if position then
+
+                table.insert(
+                    positions,
+                    position
+                )
+            end
+        end
+
+        if #positions <= 0 then
+
+            -- Fallback to the old middle/priority resolver.
+            return ResolveBoothPriorityPoint()
+        end
+
+        local total =
+            Vector3.zero
+
+        for _, position in ipairs(positions) do
+            total =
+                total + position
+        end
+
+        return total / #positions
+    end
+
+    local function ResolveBoothClaimAnchor()
+
+        local claimMode =
+            tostring(
+                BoothAuto.ClaimMode
+                or "Nearest Middle"
+            )
+
+        if claimMode == "Nearest Player" then
+
+            return ResolvePlayerClaimPosition(),
+                "Nearest Player"
+        end
+
+        if claimMode == "Nearest Middle" then
+
+            return ResolveBoothLayoutCenter(),
+                "Nearest Middle"
+        end
+
+        return nil,
+            "First Available"
+    end
+
     local function BuildFreeBoothCandidates(triedBooths)
 
         local data =
@@ -20767,15 +20851,31 @@ function ExecuteBoothClaim()
             return {}
         end
 
-        local priorityPosition =
-            ResolveBoothPriorityPoint()
+        local claimMode =
+            tostring(
+                BoothAuto.ClaimMode
+                or "Nearest Middle"
+            )
 
-        if not priorityPosition then
-            warn("[Booth] Priority point missing, using fallback booth order")
+        local priorityPosition, resolvedMode =
+            ResolveBoothClaimAnchor()
+
+        if claimMode ~= "First Available"
+        and not priorityPosition then
+
+            warn(
+                "[Booth] Claim priority point missing, using First Available fallback"
+            )
+
+            resolvedMode =
+                "First Available"
         end
 
         local candidates =
             {}
+
+        local order =
+            0
 
         for boothId, boothInfo in pairs(data.Booths) do
 
@@ -20794,39 +20894,53 @@ function ExecuteBoothClaim()
                 continue
             end
 
+            order =
+                order + 1
+
+            local boothPosition =
+                ResolveBoothPosition(model)
+
+            local score =
+                order
+
             local distance =
                 math.huge
 
-            if priorityPosition then
+            if priorityPosition
+            and boothPosition
+            and resolvedMode ~= "First Available" then
 
-                local boothPosition =
-                    ResolveBoothPosition(model)
+                distance =
+                    (boothPosition - priorityPosition).Magnitude
 
-                if boothPosition then
-                    distance =
-                        (boothPosition - priorityPosition).Magnitude
-                end
+                score =
+                    distance
             end
 
             table.insert(candidates, {
                 BoothId = boothId,
                 Model = model,
+
+                Score = score,
                 Distance = distance,
+
+                ClaimMode = resolvedMode,
+                Order = order,
             })
         end
 
         table.sort(candidates, function(a, b)
 
-            local aDistance =
-                tonumber(a.Distance)
+            local aScore =
+                tonumber(a.Score)
                 or math.huge
 
-            local bDistance =
-                tonumber(b.Distance)
+            local bScore =
+                tonumber(b.Score)
                 or math.huge
 
-            if aDistance ~= bDistance then
-                return aDistance < bDistance
+            if aScore ~= bScore then
+                return aScore < bScore
             end
 
             return tostring(a.BoothId) < tostring(b.BoothId)
@@ -20973,6 +21087,8 @@ function ExecuteBoothClaim()
                     .. tostring(maxAttempts)
                     .. " -> "
                     .. tostring(boothId)
+                    .. " | mode: "
+                    .. tostring(candidate.ClaimMode or BoothAuto.ClaimMode)
                     .. " | distance: "
                     .. tostring(math.floor(candidate.Distance))
             )
@@ -20986,6 +21102,8 @@ function ExecuteBoothClaim()
                     .. tostring(maxAttempts)
                     .. " -> "
                     .. tostring(boothId)
+                    .. " | mode: "
+                    .. tostring(candidate.ClaimMode or BoothAuto.ClaimMode)
             )
         end
 
@@ -26198,6 +26316,33 @@ if enabled then
         ExecuteBoothClaim()
     end)
 end
+end)
+
+BoothBox:AddDropdown(
+    "BoothClaimMode",
+    {
+        Text = "Claim Mode",
+
+        Values = {
+            "First Available",
+            "Nearest Middle",
+            "Nearest Player",
+        },
+
+        Default =
+            BoothAuto.ClaimMode
+            or "Nearest Middle",
+
+        Multi = false,
+
+        Tooltip = "Controls which free booth HOLY claims first.",
+    }
+):OnChanged(function(value)
+
+    BoothAuto.ClaimMode =
+        tostring(value or "Nearest Middle")
+
+    MarkConfigDirty()
 end)
 
 local EquipPetToggle =
