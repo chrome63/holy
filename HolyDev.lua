@@ -3029,6 +3029,18 @@ TargetPetsHopState = {
     -- [petName] = true
     Targets = {},
 
+        -- Seller AFK Check:
+    -- Not real input AFK. This treats a seller as AFK
+    -- if their character has not moved for X seconds.
+    SellerAfkCheck = false,
+    SellerAfkSeconds = 60,
+
+    LastAfkSkippedPet = nil,
+    LastAfkSkippedPlayer = nil,
+    LastAfkSkippedUserId = nil,
+    LastAfkSkippedFor = 0,
+    LastAfkSkippedAt = 0,
+
     -- UI: "Stay When"
     --
     -- "Backpack Only OR Good Listing"
@@ -3063,6 +3075,8 @@ TargetPetsHopState = {
 TargetPetsHopStatusLabel = nil
 TargetPetsHopDropdownRef = nil
 ShowcaseDropdownRef = nil
+
+TargetPetsHopPlayerActivity = {}
 --==================================================
 -- ANTI ALT / AVOID USERS STATE
 -- Detects blocked users after joining a server.
@@ -9694,6 +9708,234 @@ function NormalizeTargetPetsHopStayWhen(value)
     return "Backpack Only OR Good Listing"
 end
 
+function CleanupTargetPetsHopPlayerActivity()
+
+    TargetPetsHopPlayerActivity =
+        TargetPetsHopPlayerActivity
+        or {}
+
+    local alive =
+        {}
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        alive[tostring(player.UserId)] =
+            true
+    end
+
+    for userId in pairs(TargetPetsHopPlayerActivity) do
+
+        if not alive[tostring(userId)] then
+            TargetPetsHopPlayerActivity[userId] =
+                nil
+        end
+    end
+end
+
+function UpdateTargetPetsHopPlayerActivity(player)
+
+    if not player
+    or player == Players.LocalPlayer then
+        return nil
+    end
+
+    TargetPetsHopPlayerActivity =
+        TargetPetsHopPlayerActivity
+        or {}
+
+    local character =
+        player.Character
+
+    local root =
+        character
+        and character:FindFirstChild("HumanoidRootPart")
+
+    if not root then
+        return nil
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    local now =
+        os.clock()
+
+    local userId =
+        tostring(player.UserId)
+
+    local record =
+        TargetPetsHopPlayerActivity[userId]
+
+    if type(record) ~= "table" then
+
+        record = {
+            UserId = player.UserId,
+            PlayerName = player.Name,
+            DisplayName = player.DisplayName,
+
+            FirstSeenAt = now,
+            LastCheckedAt = now,
+
+            LastMovedAt = now,
+            LastPosition = root.Position,
+
+            LastDistance = 0,
+            LastVelocity = 0,
+            LastMoveDirection = 0,
+        }
+
+        TargetPetsHopPlayerActivity[userId] =
+            record
+
+        return record
+    end
+
+    local currentPosition =
+        root.Position
+
+    local lastPosition =
+        record.LastPosition
+
+    local distance =
+        0
+
+    if typeof(lastPosition) == "Vector3" then
+        distance =
+            (currentPosition - lastPosition).Magnitude
+    end
+
+    local velocity =
+        0
+
+    pcall(function()
+        velocity =
+            root.AssemblyLinearVelocity.Magnitude
+    end)
+
+    local moveDirection =
+        0
+
+    if humanoid then
+        moveDirection =
+            humanoid.MoveDirection.Magnitude
+    end
+
+    local moved =
+        distance >= 1.25
+        or velocity >= 2.5
+        or moveDirection >= 0.05
+
+    record.LastCheckedAt =
+        now
+
+    record.PlayerName =
+        player.Name
+
+    record.DisplayName =
+        player.DisplayName
+
+    record.LastDistance =
+        distance
+
+    record.LastVelocity =
+        velocity
+
+    record.LastMoveDirection =
+        moveDirection
+
+    if moved then
+
+        record.LastMovedAt =
+            now
+
+        record.LastPosition =
+            currentPosition
+    end
+
+    return record
+end
+
+function IsTargetPetsHopSellerAfk(player)
+
+    if type(TargetPetsHopState) ~= "table"
+    or TargetPetsHopState.SellerAfkCheck ~= true then
+        return false, 0
+    end
+
+    local afkSeconds =
+        math.clamp(
+            math.floor(
+                SafeNumber(
+                    TargetPetsHopState.SellerAfkSeconds,
+                    60
+                )
+            ),
+            15,
+            600
+        )
+
+    local record =
+        UpdateTargetPetsHopPlayerActivity(player)
+
+    if type(record) ~= "table" then
+        return false, 0
+    end
+
+    local now =
+        os.clock()
+
+    local observedFor =
+        now - SafeNumber(record.FirstSeenAt, now)
+
+    -- Do not call someone AFK immediately when you first join.
+    -- They must be observed for at least the selected AFK time.
+    if observedFor < afkSeconds then
+        return false, observedFor
+    end
+
+    local afkFor =
+        now - SafeNumber(record.LastMovedAt, now)
+
+    if afkFor >= afkSeconds then
+        return true, afkFor
+    end
+
+    return false, afkFor
+end
+
+function ShouldSkipTargetPetsHopSellerAfk(player, petName)
+
+    local isAfk, afkFor =
+        IsTargetPetsHopSellerAfk(player)
+
+    if isAfk ~= true then
+        return false
+    end
+
+    TargetPetsHopState.LastAfkSkippedPet =
+        tostring(petName or "Unknown")
+
+    TargetPetsHopState.LastAfkSkippedPlayer =
+        player
+        and tostring(player.Name)
+        or "Unknown"
+
+    TargetPetsHopState.LastAfkSkippedUserId =
+        player
+        and player.UserId
+        or nil
+
+    TargetPetsHopState.LastAfkSkippedFor =
+        math.floor(
+            SafeNumber(afkFor, 0)
+            + 0.5
+        )
+
+    TargetPetsHopState.LastAfkSkippedAt =
+        os.clock()
+
+    return true
+end
+
 function CountTargetPetsHopTargets()
 
     local count =
@@ -9896,9 +10138,11 @@ function ScanPlayersForTargetPetsHop()
 
         -- Target Pets Hop should only care about OTHER players.
         -- Your own Backpack/Character must not keep the server alive.
-        if player == Players.LocalPlayer then
+                if player == Players.LocalPlayer then
             continue
         end
+
+        UpdateTargetPetsHopPlayerActivity(player)
 
         scannedPlayers =
             scannedPlayers + 1
@@ -9916,8 +10160,31 @@ function ScanPlayersForTargetPetsHop()
         scannedTools =
             scannedTools + SafeNumber(toolCount, 0)
 
-        if found then
-            return true, petName, playerName, scannedPlayers, scannedTools
+                if found then
+
+            if ShouldSkipTargetPetsHopSellerAfk(
+                player,
+                petName
+            ) then
+
+                print(
+                    "[TargetPetsHop] Seller AFK skipped:",
+                    tostring(petName),
+                    "on",
+                    tostring(playerName),
+                    "| AFK:",
+                    tostring(TargetPetsHopState.LastAfkSkippedFor),
+                    "s"
+                )
+
+            else
+
+                return true,
+                    petName,
+                    playerName,
+                    scannedPlayers,
+                    scannedTools
+            end
         end
 
         local character =
@@ -9933,10 +10200,35 @@ function ScanPlayersForTargetPetsHop()
         scannedTools =
             scannedTools + SafeNumber(toolCount, 0)
 
-        if found then
-            return true, petName, playerName, scannedPlayers, scannedTools
+                if found then
+
+            if ShouldSkipTargetPetsHopSellerAfk(
+                player,
+                petName
+            ) then
+
+                print(
+                    "[TargetPetsHop] Seller AFK skipped:",
+                    tostring(petName),
+                    "on",
+                    tostring(playerName),
+                    "| AFK:",
+                    tostring(TargetPetsHopState.LastAfkSkippedFor),
+                    "s"
+                )
+
+            else
+
+                return true,
+                    petName,
+                    playerName,
+                    scannedPlayers,
+                    scannedTools
+            end
         end
     end
+
+        CleanupTargetPetsHopPlayerActivity()
 
     return false, nil, nil, scannedPlayers, scannedTools
 end
@@ -10309,9 +10601,24 @@ function SaveTargetPetsHopConfig()
     Enabled =
         TargetPetsHopState.Enabled == true,
 
-    StayWhen =
+            StayWhen =
         NormalizeTargetPetsHopStayWhen(
             TargetPetsHopState.StayWhen
+        ),
+
+    SellerAfkCheck =
+        TargetPetsHopState.SellerAfkCheck == true,
+
+    SellerAfkSeconds =
+        math.clamp(
+            math.floor(
+                SafeNumber(
+                    TargetPetsHopState.SellerAfkSeconds,
+                    60
+                )
+            ),
+            15,
+            600
         ),
 
     Targets =
@@ -10412,6 +10719,22 @@ TargetPetsHopState.StayWhen =
     NormalizeTargetPetsHopStayWhen(
         decoded.StayWhen
         or TargetPetsHopState.StayWhen
+    )
+
+TargetPetsHopState.SellerAfkCheck =
+    decoded.SellerAfkCheck == true
+
+TargetPetsHopState.SellerAfkSeconds =
+    math.clamp(
+        math.floor(
+            SafeNumber(
+                decoded.SellerAfkSeconds,
+                TargetPetsHopState.SellerAfkSeconds
+                or 60
+            )
+        ),
+        15,
+        600
     )
 
 return true
@@ -10965,10 +11288,30 @@ if found then
     continue
 end
 
+local finalHopReason =
+    "No targets found, hopping"
+
+local finalNotifyReason =
+    nil
+
+if TargetPetsHopState.SellerAfkCheck == true
+and SafeElapsed(TargetPetsHopState.LastAfkSkippedAt) < 5 then
+
+    finalHopReason =
+        "Seller AFK: "
+        .. tostring(TargetPetsHopState.LastAfkSkippedPet or "Unknown")
+        .. " on "
+        .. tostring(TargetPetsHopState.LastAfkSkippedPlayer or "Unknown")
+
+    finalNotifyReason =
+        "Only selected target pets found were held by AFK sellers, so HOLY is hopping."
+end
+
 ExecuteTargetPetsHopNow(
     scannedPlayers,
     scannedTools,
-    "No targets found, hopping"
+    finalHopReason,
+    finalNotifyReason
 )
     end
 end)
@@ -19617,6 +19960,79 @@ TargetPetsHopStayWhenDropdown:OnChanged(function(value)
     SaveTargetPetsHopConfig()
     RefreshTargetPetsHopStatus()
     MarkConfigDirty()
+end)
+
+local SellerAfkCheckToggle =
+    HomeBox:AddToggle(
+        "TargetPetsSellerAfkCheck",
+        {
+            Text = "Seller AFK Check",
+            Default =
+                TargetPetsHopState
+                and TargetPetsHopState.SellerAfkCheck == true
+                or false,
+
+            Tooltip = "If a target pet owner has not moved for the selected time and the pet is not listed, HOLY treats them as AFK and hops.",
+        }
+    )
+
+SellerAfkCheckToggle:OnChanged(function(value)
+
+    TargetPetsHopState.SellerAfkCheck =
+        value == true
+
+    SaveTargetPetsHopConfig()
+    RefreshTargetPetsHopStatus()
+    MarkConfigDirty()
+
+    print(
+        "[TargetPetsHop] Seller AFK Check:",
+        tostring(TargetPetsHopState.SellerAfkCheck)
+    )
+end)
+
+local SellerAfkSecondsInput =
+    HomeBox:AddInput(
+        "TargetPetsSellerAfkSeconds",
+        {
+            Text = "AFK After (sec)",
+            Tooltip = "How long the target pet owner must stand still before HOLY treats them as AFK. Recommended: 60-120.",
+            Default =
+                tostring(
+                    TargetPetsHopState
+                    and TargetPetsHopState.SellerAfkSeconds
+                    or 60
+                ),
+            Numeric = true,
+            Finished = true,
+        }
+    )
+
+SellerAfkSecondsInput:OnChanged(function(value)
+
+    local seconds =
+        tonumber(value)
+
+    if not seconds then
+        return
+    end
+
+    TargetPetsHopState.SellerAfkSeconds =
+        math.clamp(
+            math.floor(seconds),
+            15,
+            600
+        )
+
+    SaveTargetPetsHopConfig()
+    RefreshTargetPetsHopStatus()
+    MarkConfigDirty()
+
+    print(
+        "[TargetPetsHop] Seller AFK after:",
+        tostring(TargetPetsHopState.SellerAfkSeconds),
+        "sec"
+    )
 end)
 
 if type(RefreshDynamicPetList) == "function" then
