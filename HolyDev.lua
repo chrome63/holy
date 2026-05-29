@@ -3520,11 +3520,21 @@ MaxWeightWasEntered = false,
     OwnListedUUIDs = {},
     OwnListedMetadata = {},
 
-    OwnBoothSnapshot = {},
-    OwnBoothSnapshotPage = 1,
-    OwnBoothSnapshotPerPage = 7,
-    OwnBoothSnapshotLastRefresh = 0,
-    OwnBoothSnapshotStatus = "Not synced",
+OwnBoothSnapshot = {},
+OwnBoothSnapshotPage = 1,
+OwnBoothSnapshotPerPage = 7,
+OwnBoothSnapshotLastRefresh = 0,
+OwnBoothSnapshotStatus = "Not synced",
+
+--==================================================
+-- FULL BOOTH SAFETY
+-- Stops AutoList when own booth is full.
+--==================================================
+StopAtFullBooth = true,
+BoothCapacity = 50,
+BoothFullSleepSeconds = 15,
+BoothFullUntil = 0,
+BoothFullLastNotifyAt = 0,
 
     FailedUUIDs = {},
 
@@ -25737,6 +25747,184 @@ end
         ListingsState.OwnBoothSnapshotStatus
 end
 
+--==================================================
+-- LISTINGS: FULL BOOTH SAFETY
+-- Stops AutoList when booth is 50/50 and resumes when
+-- a slot opens. Uses own booth snapshot as source.
+--==================================================
+
+function ResolveOwnBoothListingCount(forceFetch)
+
+    if type(BuildOwnBoothListingSnapshot) ~= "function" then
+        return 0, "Snapshot missing"
+    end
+
+    local snapshot, status =
+        BuildOwnBoothListingSnapshot(forceFetch == true)
+
+    if type(snapshot) ~= "table" then
+        return 0, tostring(status or "Snapshot failed")
+    end
+
+    return #snapshot, tostring(status or ListingsState.OwnBoothSnapshotStatus or "Synced")
+end
+
+function IsOwnBoothFull(forceFetch)
+
+    if type(ListingsState) ~= "table" then
+        return false, 0, 50, "ListingsState missing"
+    end
+
+    if ListingsState.StopAtFullBooth ~= true then
+        return false, 0, SafeNumber(ListingsState.BoothCapacity, 50), "Disabled"
+    end
+
+    local capacity =
+        math.clamp(
+            math.floor(
+                SafeNumber(
+                    ListingsState.BoothCapacity,
+                    50
+                )
+            ),
+            1,
+            100
+        )
+
+    local listedCount, status =
+        ResolveOwnBoothListingCount(forceFetch == true)
+
+    return listedCount >= capacity,
+        listedCount,
+        capacity,
+        status
+end
+
+function ApplyFullBoothPause(listedCount, capacity)
+
+    if type(ListingsState) ~= "table" then
+        return false
+    end
+
+    listedCount =
+        SafeNumber(listedCount, 0)
+
+    capacity =
+        SafeNumber(capacity, 50)
+
+    local sleepSeconds =
+        math.clamp(
+            math.floor(
+                SafeNumber(
+                    ListingsState.BoothFullSleepSeconds,
+                    15
+                )
+            ),
+            5,
+            60
+        )
+
+    local now =
+        os.clock()
+
+    ListingsState.BoothFullUntil =
+        now + sleepSeconds
+
+    ListingsState.NoWorkSleepUntil =
+        math.max(
+            SafeNumber(ListingsState.NoWorkSleepUntil, 0),
+            ListingsState.BoothFullUntil
+        )
+
+    ListingsState.Status =
+        "Booth full, waiting for slot"
+
+    ListingsState.ListingQueue =
+        ListingsState.ListingQueue
+        or {}
+
+    ListingsState.QueuedUUIDs =
+        ListingsState.QueuedUUIDs
+        or {}
+
+    table.clear(ListingsState.ListingQueue)
+    table.clear(ListingsState.QueuedUUIDs)
+
+    if now - SafeNumber(ListingsState.BoothFullLastNotifyAt, 0) >= 30 then
+
+        ListingsState.BoothFullLastNotifyAt =
+            now
+
+        HolyNotify(
+            "Booth Full",
+            tostring(listedCount)
+                .. "/"
+                .. tostring(capacity)
+                .. " listings. AutoList will resume when a slot opens.",
+            "circle-pause",
+            4
+        )
+    end
+
+    print(
+        "[LISTINGS] Stop at full booth:",
+        tostring(listedCount)
+            .. "/"
+            .. tostring(capacity),
+        "| retry in:",
+        tostring(sleepSeconds) .. "s"
+    )
+
+    if type(ListingsStatusRefresh) == "function" then
+        pcall(ListingsStatusRefresh)
+    end
+
+    return true
+end
+
+function CheckAutoListFullBoothSafety(forceFetch)
+
+    if type(ListingsState) ~= "table" then
+        return false
+    end
+
+    if ListingsState.StopAtFullBooth ~= true then
+        return false
+    end
+
+    local isFull, listedCount, capacity =
+        IsOwnBoothFull(forceFetch == true)
+
+    if isFull then
+        ApplyFullBoothPause(listedCount, capacity)
+        return true
+    end
+
+    if SafeNumber(ListingsState.BoothFullUntil, 0) > 0 then
+
+        ListingsState.BoothFullUntil =
+            0
+
+        if ListingsState.Status == "Booth full, waiting for slot" then
+            ListingsState.Status =
+                "Slot open, resuming"
+        end
+
+        print(
+            "[LISTINGS] Booth slot open:",
+            tostring(listedCount)
+                .. "/"
+                .. tostring(capacity)
+        )
+
+        if type(ListingsStatusRefresh) == "function" then
+            pcall(ListingsStatusRefresh)
+        end
+    end
+
+    return false
+end
+
 function RefreshOwnBoothListingSnapshotThrottled()
 
     if type(ListingsState) ~= "table" then
@@ -27913,6 +28101,16 @@ end
         return false
     end
 
+    --==================================================
+    -- FULL BOOTH SAFETY
+    -- Final guard before invoking CreateListing.
+    -- Protects against booth filling after the pet was queued.
+    --==================================================
+
+    if CheckAutoListFullBoothSafety(true) then
+        return "BOOTH_FULL"
+    end
+
     local unfavorited =
         TryUnfavoriteListingPet(pet)
 
@@ -28250,6 +28448,25 @@ function StartListingWorker()
         pcall(ListingsStatusRefresh)
     end
 
+
+            elseif result == "BOOTH_FULL" then
+
+                ListingsState.Status =
+                    "Booth full, waiting for slot"
+
+                ListingsState.NoWorkSleepUntil =
+                    math.max(
+                        SafeNumber(ListingsState.NoWorkSleepUntil, 0),
+                        os.clock()
+                            + math.clamp(
+                                SafeNumber(ListingsState.BoothFullSleepSeconds, 15),
+                                5,
+                                60
+                            )
+                    )
+
+                -- Do not mark this pet as failed.
+                -- It should become eligible again when a booth slot opens.    
             elseif result == "COOLDOWN"
 or result == "CREATE_WAIT" then
 
@@ -28696,6 +28913,16 @@ function RunAutoListingPass()
                     pcall(ListingsStatusRefresh)
                 end
 
+                return
+            end
+
+            --==================================================
+            -- FULL BOOTH SAFETY
+            -- Stop before building/queueing more pets if own
+            -- booth is already at capacity.
+            --==================================================
+
+            if CheckAutoListFullBoothSafety(true) then
                 return
             end
 
@@ -35948,6 +36175,41 @@ print(
         )
     end)
 
+local StopAtFullBoothToggle =
+    ListingSafetyBox:AddToggle(
+        "ListingStopAtFullBooth",
+        {
+            Text = "🛑 Stop at Full Booth",
+            Tooltip = "Stops AutoList when your booth is 50/50 and resumes when a slot opens.",
+            Default = true,
+        }
+    )
+
+StopAtFullBoothToggle:OnChanged(function(value)
+
+    ListingsState.StopAtFullBooth =
+        value == true
+
+    ListingsState.NoWorkSleepUntil =
+        0
+
+    if ListingsState.StopAtFullBooth ~= true then
+        ListingsState.BoothFullUntil =
+            0
+    end
+
+    MarkConfigDirty()
+
+    if type(ListingsStatusRefresh) == "function" then
+        ListingsStatusRefresh()
+    end
+
+    print(
+        "[LISTINGS] Stop at full booth:",
+        tostring(ListingsState.StopAtFullBooth)
+    )
+end)
+
 local KeepRunningToggle =
     ListingSafetyBox:AddToggle(
         "ListingKeepRunning",
@@ -37654,10 +37916,20 @@ local FilterHelpLabel =
         end
 
         if QueueLabel then
-            QueueLabel:SetText(
-                "Queue: "
-                .. tostring(#ListingsState.ListingQueue)
-            )
+
+            if ListingsState.Status == "Booth full, waiting for slot" then
+
+                QueueLabel:SetText(
+                    "Queue: Paused"
+                )
+
+            else
+
+                QueueLabel:SetText(
+                    "Queue: "
+                    .. tostring(#ListingsState.ListingQueue)
+                )
+            end
         end
 
         if SessionListedLabel then
@@ -37682,12 +37954,35 @@ local FilterHelpLabel =
 
         if BoothListedSummaryLabel then
 
-            BoothListedSummaryLabel:SetText(
+            local boothCapacity =
+                math.clamp(
+                    math.floor(
+                        SafeNumber(
+                            ListingsState.BoothCapacity,
+                            50
+                        )
+                    ),
+                    1,
+                    100
+                )
+
+            local boothText =
                 "Booth Listed: "
                 .. tostring(listedCount)
-                .. " pets"
-                .. " | "
-                .. boothStatus
+                .. " / "
+                .. tostring(boothCapacity)
+
+            if ListingsState.StopAtFullBooth == true
+            and listedCount >= boothCapacity then
+                boothText =
+                    boothText .. " • FULL"
+            else
+                boothText =
+                    boothText .. " | " .. boothStatus
+            end
+
+            BoothListedSummaryLabel:SetText(
+                boothText
             )
         end
 
