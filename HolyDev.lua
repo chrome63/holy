@@ -3107,7 +3107,16 @@ TargetPetsHopState = {
 
     LastFoundPet = nil,
     LastFoundPlayer = nil,
+    LastFoundUserId = nil,
     LastFoundAt = 0,
+
+    -- Live server target list.
+    -- Runtime only, not saved.
+    LastHits = {},
+    LastBackpackHits = {},
+    LastGoodListingCount = 0,
+    LastBadListingCount = 0,
+    LastBackpackCount = 0,
 
     LastScannedPlayers = 0,
     LastScannedTools = 0,
@@ -10434,15 +10443,70 @@ function TargetPetsHopToolMatches(toolName, targetPetName)
     return false
 end
 
-function ScanTargetPetsHopContainer(container, player, targetList)
+function BuildTargetPetsHopHit(petName, player, sourceName, extra)
+
+    extra =
+        type(extra) == "table"
+        and extra
+        or {}
+
+    local userId =
+        player
+        and tonumber(player.UserId)
+        or tonumber(extra.UserId)
+
+    local ownerName =
+        player
+        and tostring(player.Name)
+        or tostring(extra.OwnerName or extra.Seller or "Unknown")
+
+    return {
+        PetName =
+            NormalizeTargetPetsHopName(petName),
+
+        OwnerName =
+            ownerName,
+
+        UserId =
+            userId,
+
+        Source =
+            tostring(sourceName or "Unknown"),
+
+        Price =
+            tonumber(extra.Price),
+
+        Listing =
+            extra.Listing,
+
+        Status =
+            tostring(extra.Status or sourceName or "Target"),
+
+        SeenAt =
+            os.clock(),
+    }
+end
+
+function ScanTargetPetsHopContainer(container, player, targetList, sourceName, hits)
 
     if not container
     or type(targetList) ~= "table" then
-        return false, nil, nil, 0
+        return false, nil, nil, 0, nil
     end
+
+    hits =
+        type(hits) == "table"
+        and hits
+        or {}
+
+    sourceName =
+        tostring(sourceName or "Backpack")
 
     local scannedTools =
         0
+
+    local firstHit =
+        nil
 
     for _, child in ipairs(container:GetChildren()) do
 
@@ -10461,18 +10525,39 @@ function ScanTargetPetsHopContainer(container, player, targetList)
                     targetPetName
                 ) then
 
-                    return true,
-                        tostring(targetPetName),
-                        player
-                        and tostring(player.Name)
-                        or "Unknown",
-                        scannedTools
+                    local hit =
+                        BuildTargetPetsHopHit(
+                            targetPetName,
+                            player,
+                            sourceName,
+                            {
+                                Status = sourceName,
+                            }
+                        )
+
+                    table.insert(
+                        hits,
+                        hit
+                    )
+
+                    if not firstHit then
+                        firstHit = hit
+                    end
                 end
             end
         end
     end
 
-    return false, nil, nil, scannedTools
+    if firstHit then
+
+        return true,
+            firstHit.PetName,
+            firstHit.OwnerName,
+            scannedTools,
+            firstHit
+    end
+
+    return false, nil, nil, scannedTools, nil
 end
 
 function ScanPlayersForTargetPetsHop()
@@ -10486,7 +10571,17 @@ function ScanPlayersForTargetPetsHop()
     local scannedTools =
         0
 
+    local allHits =
+        {}
+
+    local firstValidHit =
+        nil
+
     if #targetList <= 0 then
+
+        TargetPetsHopState.LastBackpackHits =
+            {}
+
         return false, nil, nil, scannedPlayers, scannedTools
     end
 
@@ -10494,7 +10589,7 @@ function ScanPlayersForTargetPetsHop()
 
         -- Target Pets Hop should only care about OTHER players.
         -- Your own Backpack/Character must not keep the server alive.
-                if player == Players.LocalPlayer then
+        if player == Players.LocalPlayer then
             continue
         end
 
@@ -10503,88 +10598,120 @@ function ScanPlayersForTargetPetsHop()
         scannedPlayers =
             scannedPlayers + 1
 
+        local playerHits =
+            {}
+
         local backpack =
             player:FindFirstChild("Backpack")
 
-        local found, petName, playerName, toolCount =
+        local found, petName, playerName, toolCount, firstHit =
             ScanTargetPetsHopContainer(
                 backpack,
                 player,
-                targetList
+                targetList,
+                "Backpack",
+                playerHits
             )
 
         scannedTools =
             scannedTools + SafeNumber(toolCount, 0)
-
-                if found then
-
-            if ShouldSkipTargetPetsHopSellerAfk(
-                player,
-                petName
-            ) then
-
-                print(
-                    "[TargetPetsHop] Seller AFK skipped:",
-                    tostring(petName),
-                    "on",
-                    tostring(playerName),
-                    "| AFK:",
-                    tostring(TargetPetsHopState.LastAfkSkippedFor),
-                    "s"
-                )
-
-            else
-
-                return true,
-                    petName,
-                    playerName,
-                    scannedPlayers,
-                    scannedTools
-            end
-        end
 
         local character =
             player.Character
 
-        found, petName, playerName, toolCount =
+        local foundCharacter, charPetName, charPlayerName, charToolCount, charFirstHit =
             ScanTargetPetsHopContainer(
                 character,
                 player,
-                targetList
+                targetList,
+                "Character",
+                playerHits
             )
 
         scannedTools =
-            scannedTools + SafeNumber(toolCount, 0)
+            scannedTools + SafeNumber(charToolCount, 0)
 
-                if found then
+        if #playerHits > 0 then
+
+            local shouldSkip =
+                false
+
+            local skipPet =
+                petName
+                or charPetName
+                or (
+                    playerHits[1]
+                    and playerHits[1].PetName
+                )
 
             if ShouldSkipTargetPetsHopSellerAfk(
                 player,
-                petName
+                skipPet
             ) then
+
+                shouldSkip =
+                    true
 
                 print(
                     "[TargetPetsHop] Seller AFK skipped:",
-                    tostring(petName),
+                    tostring(skipPet),
                     "on",
-                    tostring(playerName),
+                    tostring(player.Name),
                     "| AFK:",
                     tostring(TargetPetsHopState.LastAfkSkippedFor),
                     "s"
                 )
+            end
 
-            else
+            if not shouldSkip then
 
-                return true,
-                    petName,
-                    playerName,
-                    scannedPlayers,
-                    scannedTools
+                for _, hit in ipairs(playerHits) do
+
+                    table.insert(
+                        allHits,
+                        hit
+                    )
+
+                    if not firstValidHit then
+                        firstValidHit = hit
+                    end
+                end
             end
         end
     end
 
-        CleanupTargetPetsHopPlayerActivity()
+    CleanupTargetPetsHopPlayerActivity()
+
+    table.sort(allHits, function(a, b)
+
+        local aPet =
+            tostring(a.PetName or ""):lower()
+
+        local bPet =
+            tostring(b.PetName or ""):lower()
+
+        if aPet ~= bPet then
+            return aPet < bPet
+        end
+
+        return tostring(a.OwnerName or ""):lower()
+            < tostring(b.OwnerName or ""):lower()
+    end)
+
+    TargetPetsHopState.LastBackpackHits =
+        allHits
+
+    TargetPetsHopState.LastBackpackCount =
+        #allHits
+
+    if firstValidHit then
+
+        return true,
+            firstValidHit.PetName,
+            firstValidHit.OwnerName,
+            scannedPlayers,
+            scannedTools
+    end
 
     return false, nil, nil, scannedPlayers, scannedTools
 end
@@ -10766,6 +10893,8 @@ function ScanListedTargetPetsHop()
             FoundListed = false,
             GoodListing = nil,
             BadListing = nil,
+            GoodListings = {},
+            BadListings = {},
             BadReason = "No targets",
             CheckedListings = 0,
         }
@@ -10781,6 +10910,8 @@ function ScanListedTargetPetsHop()
             FoundListed = false,
             GoodListing = nil,
             BadListing = nil,
+            GoodListings = {},
+            BadListings = {},
             BadReason = "Booth data missing",
             CheckedListings = 0,
         }
@@ -10792,8 +10923,11 @@ function ScanListedTargetPetsHop()
     local checkedListings =
         0
 
-    local firstBadListing =
-        nil
+    local goodListings =
+        {}
+
+    local badListings =
+        {}
 
     local firstBadReason =
         nil
@@ -10882,35 +11016,58 @@ function ScanListedTargetPetsHop()
 
             if passesFilter then
 
-                return {
-                    FoundListed = true,
-                    GoodListing = listing,
-                    BadListing = nil,
-                    BadReason = nil,
-                    CheckedListings = checkedListings,
-                }
-            end
-
-            if not firstBadListing then
-
-                firstBadListing =
+                table.insert(
+                    goodListings,
                     listing
+                )
+
+            else
+
+                table.insert(
+                    badListings,
+                    listing
+                )
 
                 firstBadReason =
-                    "Listed but failed sniper filter"
+                    firstBadReason
+                    or "Listed but failed sniper filter"
             end
         end
     end
 
+    table.sort(goodListings, ComparePriorityListings)
+    table.sort(badListings, function(a, b)
+
+        local aPet =
+            tostring(a.PetName or ""):lower()
+
+        local bPet =
+            tostring(b.PetName or ""):lower()
+
+        if aPet ~= bPet then
+            return aPet < bPet
+        end
+
+        return SafeNumber(a.Price, math.huge)
+            < SafeNumber(b.Price, math.huge)
+    end)
+
     return {
         FoundListed =
-            firstBadListing ~= nil,
+            (#goodListings > 0)
+            or (#badListings > 0),
 
         GoodListing =
-            nil,
+            goodListings[1],
 
         BadListing =
-            firstBadListing,
+            badListings[1],
+
+        GoodListings =
+            goodListings,
+
+        BadListings =
+            badListings,
 
         BadReason =
             firstBadReason,
@@ -10934,6 +11091,358 @@ function FormatTargetPetsHopListingPrice(listing)
     end
 
     return FormatPriceSyncNumber(price)
+end
+
+function ResolveHuntingOwnerName(userId, fallback)
+
+    userId =
+        tonumber(userId)
+
+    fallback =
+        tostring(fallback or "Unknown")
+
+    if userId then
+
+        local player =
+            Players:GetPlayerByUserId(userId)
+
+        if player then
+            return tostring(player.Name)
+        end
+
+        if type(ResolveSeller) == "function" then
+
+            local ok, result =
+                pcall(function()
+                    return ResolveSeller(userId)
+                end)
+
+            if ok
+            and result
+            and tostring(result) ~= "" then
+                return tostring(result)
+            end
+        end
+    end
+
+    return fallback
+end
+
+function BuildTargetPetsHopHitFromListing(listing, statusText)
+
+    if type(listing) ~= "table" then
+        return nil
+    end
+
+    local userId =
+        tonumber(listing.SellerUserId)
+
+    local ownerName =
+        ResolveHuntingOwnerName(
+            userId,
+            listing.Seller
+        )
+
+    return {
+        PetName =
+            tostring(
+                listing.TargetPetsHopMatchedTarget
+                or listing.PetName
+                or "Unknown"
+            ),
+
+        OwnerName =
+            ownerName,
+
+        UserId =
+            userId,
+
+        Source =
+            tostring(statusText or "Listing"),
+
+        Status =
+            tostring(statusText or "Listing"),
+
+        Price =
+            tonumber(listing.Price),
+
+        Listing =
+            listing,
+
+        SeenAt =
+            os.clock(),
+    }
+end
+
+function RefreshTargetPetsHopLiveHits(listedResult)
+
+    if type(TargetPetsHopState) ~= "table" then
+        return {}
+    end
+
+    local hits =
+        {}
+
+    local goodListings =
+        listedResult
+        and listedResult.GoodListings
+        or {}
+
+    local badListings =
+        listedResult
+        and listedResult.BadListings
+        or {}
+
+    for _, listing in ipairs(goodListings) do
+
+        local hit =
+            BuildTargetPetsHopHitFromListing(
+                listing,
+                "Good Listing"
+            )
+
+        if hit then
+            table.insert(hits, hit)
+        end
+    end
+
+    local backpackHits =
+        TargetPetsHopState.LastBackpackHits
+        or {}
+
+    for _, hit in ipairs(backpackHits) do
+
+        if type(hit) == "table" then
+            table.insert(hits, hit)
+        end
+    end
+
+    for _, listing in ipairs(badListings) do
+
+        local hit =
+            BuildTargetPetsHopHitFromListing(
+                listing,
+                "Over Filter"
+            )
+
+        if hit then
+            table.insert(hits, hit)
+        end
+    end
+
+    table.sort(hits, function(a, b)
+
+        local order = {
+            ["Good Listing"] = 1,
+            ["Backpack"] = 2,
+            ["Character"] = 3,
+            ["Over Filter"] = 4,
+        }
+
+        local aOrder =
+            order[tostring(a.Status or a.Source or "")]
+            or 99
+
+        local bOrder =
+            order[tostring(b.Status or b.Source or "")]
+            or 99
+
+        if aOrder ~= bOrder then
+            return aOrder < bOrder
+        end
+
+        local aPet =
+            tostring(a.PetName or ""):lower()
+
+        local bPet =
+            tostring(b.PetName or ""):lower()
+
+        if aPet ~= bPet then
+            return aPet < bPet
+        end
+
+        return tostring(a.OwnerName or ""):lower()
+            < tostring(b.OwnerName or ""):lower()
+    end)
+
+    TargetPetsHopState.LastHits =
+        hits
+
+    TargetPetsHopState.LastGoodListingCount =
+        #goodListings
+
+    TargetPetsHopState.LastBadListingCount =
+        #badListings
+
+    TargetPetsHopState.LastBackpackCount =
+        #(TargetPetsHopState.LastBackpackHits or {})
+
+    if hits[1] then
+
+        TargetPetsHopState.LastFoundPet =
+            hits[1].PetName
+
+        TargetPetsHopState.LastFoundPlayer =
+            hits[1].OwnerName
+
+        TargetPetsHopState.LastFoundUserId =
+            hits[1].UserId
+
+        TargetPetsHopState.LastFoundAt =
+            os.clock()
+    end
+
+    if type(RefreshHuntingStatusPanel) == "function" then
+        pcall(RefreshHuntingStatusPanel)
+    end
+
+    return hits
+end
+
+function ShortenHuntingText(value, maxLength)
+
+    value =
+        tostring(value or "")
+
+    maxLength =
+        tonumber(maxLength)
+        or 14
+
+    if #value <= maxLength then
+        return value
+    end
+
+    return value:sub(1, math.max(1, maxLength - 3))
+        .. "..."
+end
+
+function FormatHuntingTargetRow(hit)
+
+    if type(hit) ~= "table" then
+        return "Empty"
+    end
+
+    local icon =
+        "🎯"
+
+    local status =
+        tostring(hit.Status or hit.Source or "Target")
+
+    if status == "Good Listing" then
+        icon = "✅"
+    elseif status == "Over Filter" then
+        icon = "⚠️"
+    elseif status == "Backpack" then
+        icon = "🎒"
+    elseif status == "Character" then
+        icon = "🧍"
+    end
+
+    local text =
+        icon
+        .. " "
+        .. ShortenHuntingText(hit.PetName, 18)
+        .. " • "
+        .. ShortenHuntingText(hit.OwnerName, 12)
+
+    if hit.Price then
+        text =
+            text
+            .. " • "
+            .. FormatTargetPetsHopListingPrice(hit.Listing or hit)
+            .. "T"
+    else
+        text =
+            text
+            .. " • "
+            .. status
+    end
+
+    return text
+end
+
+function TeleportToHuntingTargetUserId(userId)
+
+    userId =
+        tonumber(userId)
+
+    if not userId then
+
+        HolyNotify(
+            "Teleport Failed",
+            "Target user id is missing.",
+            "triangle-alert",
+            3
+        )
+
+        return false
+    end
+
+    local targetPlayer =
+        Players:GetPlayerByUserId(userId)
+
+    if not targetPlayer then
+
+        HolyNotify(
+            "Target Missing",
+            "That player is no longer in this server.",
+            "user-x",
+            3
+        )
+
+        return false
+    end
+
+    local localPlayer =
+        Players.LocalPlayer
+
+    local localCharacter =
+        localPlayer
+        and localPlayer.Character
+
+    local localRoot =
+        localCharacter
+        and localCharacter:FindFirstChild("HumanoidRootPart")
+
+    local targetCharacter =
+        targetPlayer.Character
+
+    local targetRoot =
+        targetCharacter
+        and targetCharacter:FindFirstChild("HumanoidRootPart")
+
+    if not localRoot
+    or not targetRoot then
+
+        HolyNotify(
+            "Teleport Failed",
+            "Character root is missing.",
+            "triangle-alert",
+            3
+        )
+
+        return false
+    end
+
+    local offset =
+        targetRoot.CFrame.LookVector * -5
+
+    localRoot.CFrame =
+        CFrame.new(
+            targetRoot.Position + offset + Vector3.new(0, 2.5, 0),
+            targetRoot.Position
+        )
+
+    HolyNotify(
+        "Teleported",
+        "Moved near "
+            .. tostring(targetPlayer.Name)
+            .. ".",
+        "navigation",
+        3
+    )
+
+    return true
 end
 
 function SaveTargetPetsHopConfig()
@@ -11527,13 +12036,18 @@ local listedResult =
 local found, petName, playerName, scannedPlayers, scannedTools =
     ScanPlayersForTargetPetsHop()
 
+RefreshTargetPetsHopLiveHits(
+    listedResult
+)
+
 TargetPetsHopState.LastScannedPlayers =
     scannedPlayers
 
 TargetPetsHopState.LastScannedTools =
     scannedTools
 
-if found then
+if found
+and not TargetPetsHopState.LastFoundPet then
 
     TargetPetsHopState.LastFoundPet =
         petName
@@ -20359,6 +20873,7 @@ end)
 
 local HuntingTargetBox
 local HuntingRulesBox
+local HuntingTargetsBox
 local HuntingStatusBox
 local HuntingDecisionBox
 
@@ -20397,6 +20912,13 @@ if Tabs.Hunting then
 
     if type(Tabs.Hunting.AddRightCollapsibleGroupbox) == "function" then
 
+        HuntingTargetsBox =
+            Tabs.Hunting:AddRightCollapsibleGroupbox(
+                "Server Targets",
+                "list",
+                true
+            )
+
         HuntingStatusBox =
             Tabs.Hunting:AddRightCollapsibleGroupbox(
                 "Hunt Status",
@@ -20412,6 +20934,12 @@ if Tabs.Hunting then
             )
 
     else
+
+        HuntingTargetsBox =
+            Tabs.Hunting:AddRightGroupbox(
+                "Server Targets",
+                "list"
+            )
 
         HuntingStatusBox =
             Tabs.Hunting:AddRightGroupbox(
@@ -20435,6 +20963,9 @@ else
     HuntingRulesBox =
         HomeBox
 
+    HuntingTargetsBox =
+        DetailsBox
+
     HuntingStatusBox =
         DetailsBox
 
@@ -20446,6 +20977,184 @@ end
 -- HUNTING STATUS PANEL
 -- Read-only labels. These do not control runtime state.
 --==================================================
+local HuntingTargetRows =
+    {}
+
+for index = 1, 5 do
+
+    local rowButton =
+        HuntingTargetsBox:AddButton({
+            Text =
+                index == 1
+                and "No server targets found"
+                or "-",
+
+            Tooltip = "Click to show target info. Use TP to teleport near the owner.",
+            Disabled = index ~= 1,
+
+            Func = function()
+
+                local hit =
+                    TargetPetsHopState
+                    and TargetPetsHopState.LastHits
+                    and TargetPetsHopState.LastHits[index]
+
+                if type(hit) ~= "table" then
+                    return
+                end
+
+                local detail =
+                    tostring(hit.PetName or "Unknown")
+                    .. " • "
+                    .. tostring(hit.OwnerName or "Unknown")
+                    .. " • "
+                    .. tostring(hit.Status or hit.Source or "Target")
+
+                if hit.Price then
+                    detail =
+                        detail
+                        .. " • "
+                        .. FormatTargetPetsHopListingPrice(hit.Listing or hit)
+                        .. "T"
+                end
+
+                HolyNotify(
+                    "Server Target",
+                    detail,
+                    "radar",
+                    4
+                )
+            end,
+        })
+
+    local tpButton =
+        rowButton:AddButton({
+            Text = "TP",
+            Tooltip = "Teleport near this target owner.",
+            Disabled = true,
+
+            Func = function()
+
+                local hit =
+                    TargetPetsHopState
+                    and TargetPetsHopState.LastHits
+                    and TargetPetsHopState.LastHits[index]
+
+                if type(hit) ~= "table" then
+                    return
+                end
+
+                TeleportToHuntingTargetUserId(
+                    hit.UserId
+                )
+            end,
+        })
+
+    HuntingTargetRows[index] = {
+        Button = rowButton,
+        TP = tpButton,
+    }
+end
+
+local HuntingTargetsMoreLabel =
+    HuntingTargetsBox:AddLabel(
+        "",
+        false
+    )
+
+function RefreshHuntingTargetsPanel()
+
+    if type(HuntingTargetRows) ~= "table" then
+        return
+    end
+
+    local hits =
+        TargetPetsHopState
+        and TargetPetsHopState.LastHits
+        or {}
+
+    local shown =
+        math.min(
+            #hits,
+            #HuntingTargetRows
+        )
+
+    for index, row in ipairs(HuntingTargetRows) do
+
+        local hit =
+            hits[index]
+
+        if type(hit) == "table" then
+
+            row.Button:SetText(
+                FormatHuntingTargetRow(hit)
+            )
+
+            row.Button:SetDisabled(false)
+
+            if hit.UserId then
+
+                row.TP:SetText(
+                    "TP"
+                )
+
+                row.TP:SetDisabled(false)
+
+            else
+
+                row.TP:SetText(
+                    "--"
+                )
+
+                row.TP:SetDisabled(true)
+            end
+
+        else
+
+            if index == 1 then
+
+                row.Button:SetText(
+                    "No server targets found"
+                )
+
+                row.Button:SetDisabled(true)
+
+                row.TP:SetText("--")
+                row.TP:SetDisabled(true)
+
+            else
+
+                row.Button:SetText("-")
+                row.Button:SetDisabled(true)
+
+                row.TP:SetText("--")
+                row.TP:SetDisabled(true)
+            end
+        end
+    end
+
+    if HuntingTargetsMoreLabel
+    and type(HuntingTargetsMoreLabel.SetText) == "function" then
+
+        if #hits > shown then
+
+            HuntingTargetsMoreLabel:SetText(
+                "+"
+                    .. tostring(#hits - shown)
+                    .. " more target"
+                    .. (
+                        (#hits - shown) == 1
+                        and ""
+                        or "s"
+                    )
+            )
+
+        else
+
+            HuntingTargetsMoreLabel:SetText("")
+        end
+    end
+end
 
 local HuntingModeLabel =
     HuntingStatusBox:AddLabel(
@@ -20467,13 +21176,13 @@ local HuntingSelectedLabel =
 
 local HuntingTargetLabel =
     HuntingStatusBox:AddLabel(
-        "Last Target: None",
+        "Found: None",
         false
     )
 
 local HuntingOwnerLabel =
     HuntingStatusBox:AddLabel(
-        "Owner: None",
+        "Breakdown: None",
         false
     )
 
@@ -20508,6 +21217,10 @@ function RefreshHuntingStatusPanel()
 
     if type(state) ~= "table" then
         return
+    end
+
+    if type(RefreshHuntingTargetsPanel) == "function" then
+        pcall(RefreshHuntingTargetsPanel)
     end
 
     local function SetLabel(label, text)
@@ -20570,17 +21283,29 @@ function RefreshHuntingStatusPanel()
         end
     end
 
+    local hits =
+        state.LastHits
+        or {}
+
+    local foundCount =
+        #hits
+
     local lastTarget =
-        tostring(
-            state.LastFoundPet
-            or "None"
-        )
+        foundCount > 0
+        and tostring(foundCount) .. " target(s)"
+        or "None"
 
     local lastOwner =
-        tostring(
-            state.LastFoundPlayer
-            or "None"
+        foundCount > 0
+        and (
+            tostring(SafeNumber(state.LastBackpackCount, 0))
+            .. " backpack • "
+            .. tostring(SafeNumber(state.LastGoodListingCount, 0))
+            .. " good • "
+            .. tostring(SafeNumber(state.LastBadListingCount, 0))
+            .. " bad"
         )
+        or "None"
 
     local lastHopText =
         "--"
@@ -20646,13 +21371,13 @@ function RefreshHuntingStatusPanel()
 
     SetLabel(
         HuntingTargetLabel,
-        "Last Target: "
+        "Found: "
             .. lastTarget
     )
 
     SetLabel(
         HuntingOwnerLabel,
-        "Owner: "
+        "Breakdown: "
             .. lastOwner
     )
 
