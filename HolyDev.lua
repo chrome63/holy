@@ -3092,6 +3092,12 @@ TargetPetsHopState = {
     GraceSeconds = 4,
     HopCooldown = 6,
 
+    -- Home UI:
+    -- Delay only when no selected target pets are found.
+    -- This prevents instant teleport spam after joining bad/empty servers.
+    NoTargetHopDelay = 10,
+    NoTargetHopFirstSeenAt = 0,
+
     LastScan = 0,
     LastHop = 0,
 
@@ -10963,6 +10969,18 @@ function SaveTargetPetsHopConfig()
             600
         ),
 
+    NoTargetHopDelay =
+        math.clamp(
+            math.floor(
+                SafeNumber(
+                    TargetPetsHopState.NoTargetHopDelay,
+                    10
+                )
+            ),
+            0,
+            120
+        ),
+
     Targets =
         BuildTargetPetsHopTargetList(),
 
@@ -11077,6 +11095,19 @@ TargetPetsHopState.SellerAfkSeconds =
         ),
         15,
         600
+    )
+
+TargetPetsHopState.NoTargetHopDelay =
+    math.clamp(
+        math.floor(
+            SafeNumber(
+                decoded.NoTargetHopDelay,
+                TargetPetsHopState.NoTargetHopDelay
+                or 10
+            )
+        ),
+        0,
+        120
     )
 
 return true
@@ -11583,6 +11614,9 @@ if listedResult.GoodListing then
     local listing =
         listedResult.GoodListing
 
+    TargetPetsHopState.NoTargetHopFirstSeenAt =
+        0
+
     SetTargetPetsHopStatus(
         "Good listing: "
             .. tostring(listing.PetName)
@@ -11625,6 +11659,9 @@ end
 
 if found then
 
+    TargetPetsHopState.NoTargetHopFirstSeenAt =
+        0
+
     SetTargetPetsHopStatus(
         "Backpack only: "
             .. tostring(petName)
@@ -11641,8 +11678,11 @@ local finalHopReason =
 local finalNotifyReason =
     nil
 
-if TargetPetsHopState.SellerAfkCheck == true
-and SafeElapsed(TargetPetsHopState.LastAfkSkippedAt) < 5 then
+local isSellerAfkHop =
+    TargetPetsHopState.SellerAfkCheck == true
+    and SafeElapsed(TargetPetsHopState.LastAfkSkippedAt) < 5
+
+if isSellerAfkHop then
 
     finalHopReason =
         "Seller AFK: "
@@ -11652,12 +11692,60 @@ and SafeElapsed(TargetPetsHopState.LastAfkSkippedAt) < 5 then
 
     finalNotifyReason =
         "Only selected target pets found were held by AFK sellers, so HOLY is hopping."
-
-    MarkCurrentServerBlocked(
-        "SellerAFK",
-        finalHopReason
-    )
 end
+
+-- Only delay pure "no target found" hops.
+-- Seller AFK and listed-over-filter hops should stay immediate.
+if not isSellerAfkHop then
+
+    local noTargetDelay =
+        math.clamp(
+            math.floor(
+                SafeNumber(
+                    TargetPetsHopState.NoTargetHopDelay,
+                    10
+                )
+            ),
+            0,
+            120
+        )
+
+    if noTargetDelay > 0 then
+
+        local now =
+            os.clock()
+
+        if SafeNumber(TargetPetsHopState.NoTargetHopFirstSeenAt, 0) <= 0 then
+            TargetPetsHopState.NoTargetHopFirstSeenAt =
+                now
+        end
+
+        local elapsed =
+            now - SafeNumber(
+                TargetPetsHopState.NoTargetHopFirstSeenAt,
+                now
+            )
+
+        if elapsed < noTargetDelay then
+
+            SetTargetPetsHopStatus(
+                "No targets found, hopping in "
+                    .. tostring(
+                        math.max(
+                            0,
+                            math.ceil(noTargetDelay - elapsed)
+                        )
+                    )
+                    .. "s"
+            )
+
+            continue
+        end
+    end
+end
+
+TargetPetsHopState.NoTargetHopFirstSeenAt =
+    0
 
 ExecuteTargetPetsHopNow(
     scannedPlayers,
@@ -20383,6 +20471,50 @@ SellerAfkSecondsInput:OnChanged(function(value)
     print(
         "[TargetPetsHop] Seller AFK after:",
         tostring(TargetPetsHopState.SellerAfkSeconds),
+        "sec"
+    )
+end)
+
+local NoTargetHopDelayInput =
+    HomeBox:AddInput(
+        "TargetPetsNoTargetHopDelay",
+        {
+            Text = "No Target Hop Delay (sec)",
+            Tooltip = "How long HOLY waits before hopping when no selected target pets are found. 0 = instant.",
+            Default =
+                tostring(
+                    TargetPetsHopState
+                    and TargetPetsHopState.NoTargetHopDelay
+                    or 10
+                ),
+            Numeric = true,
+            Finished = true,
+        }
+    )
+
+NoTargetHopDelayInput:OnChanged(function(value)
+
+    local seconds =
+        tonumber(value)
+
+    if not seconds then
+        return
+    end
+
+    TargetPetsHopState.NoTargetHopDelay =
+        math.clamp(
+            math.floor(seconds),
+            0,
+            120
+        )
+
+    SaveTargetPetsHopConfig()
+    RefreshTargetPetsHopStatus()
+    MarkConfigDirty()
+
+    print(
+        "[TargetPetsHop] No target hop delay:",
+        tostring(TargetPetsHopState.NoTargetHopDelay),
         "sec"
     )
 end)
