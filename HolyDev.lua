@@ -2958,6 +2958,39 @@ SniperMonitorState = {
     ScanPasses = 0,
 }
 
+--==================================================
+-- SERVER BLOCK MEMORY
+-- Blocks bad Trade World JobIds for a user-selected
+-- amount of minutes.
+--==================================================
+
+SERVER_BLOCK_SAVE_FOLDER =
+    "HolyV2"
+
+SERVER_BLOCK_SAVE_FILE =
+    "HolyV2/ServerBlockMemory.json"
+
+ServerBlockState = {
+    Loaded = false,
+
+    -- [jobId] = {
+    --     MarkedAt = os.time(),
+    --     Reason = string,
+    --     Type = string,
+    -- }
+    BadServers = {},
+
+    -- UI:
+    -- "Off"
+    -- "Seller AFK Only"
+    -- "Seller AFK + Over Filter"
+    BlockMode = "Seller AFK Only",
+
+    BadServerBlockMinutes = 60,
+
+    MaxEntries = 250,
+}
+
 SniperState = {
 
     -- runtime
@@ -9361,6 +9394,284 @@ end
 --   Fetches Asc pages so low-pop servers are actually discoverable.
 --==================================================
 
+function NormalizeServerBlockMode(value)
+
+    value =
+        tostring(value or "Seller AFK Only")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if value == "Off"
+    or value == "Seller AFK Only"
+    or value == "Seller AFK + Over Filter" then
+        return value
+    end
+
+    return "Seller AFK Only"
+end
+
+function ResolveBadServerBlockSeconds()
+
+    local minutes =
+        math.clamp(
+            math.floor(
+                SafeNumber(
+                    ServerBlockState
+                    and ServerBlockState.BadServerBlockMinutes,
+                    60
+                )
+            ),
+            1,
+            1440
+        )
+
+    return minutes * 60
+end
+
+function CleanupServerBlockMemory()
+
+    if type(ServerBlockState) ~= "table" then
+        return
+    end
+
+    ServerBlockState.BadServers =
+        ServerBlockState.BadServers
+        or {}
+
+    local now =
+        os.time()
+
+    local ttl =
+        ResolveBadServerBlockSeconds()
+
+    for jobId, info in pairs(ServerBlockState.BadServers) do
+
+        local markedAt =
+            type(info) == "table"
+            and tonumber(info.MarkedAt)
+            or tonumber(info)
+
+        if not markedAt
+        or now - markedAt > ttl then
+            ServerBlockState.BadServers[jobId] =
+                nil
+        end
+    end
+end
+
+function SaveServerBlockMemory()
+
+    if not writefile then
+        return false
+    end
+
+    CleanupServerBlockMemory()
+
+    local ok, err =
+        pcall(function()
+
+            if makefolder
+            and not isfolder(SERVER_BLOCK_SAVE_FOLDER) then
+                makefolder(SERVER_BLOCK_SAVE_FOLDER)
+            end
+
+            local payload = {
+                Version = 1,
+                SavedAt = os.time(),
+
+                BlockMode =
+                    NormalizeServerBlockMode(
+                        ServerBlockState.BlockMode
+                    ),
+
+                BadServerBlockMinutes =
+                    math.clamp(
+                        math.floor(
+                            SafeNumber(
+                                ServerBlockState.BadServerBlockMinutes,
+                                60
+                            )
+                        ),
+                        1,
+                        1440
+                    ),
+
+                BadServers =
+                    ServerBlockState.BadServers or {},
+            }
+
+            writefile(
+                SERVER_BLOCK_SAVE_FILE,
+                HttpService:JSONEncode(payload)
+            )
+        end)
+
+    if not ok then
+
+        warn(
+            "[ServerBlock] Save failed:",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    return true
+end
+
+function LoadServerBlockMemory()
+
+    if type(ServerBlockState) ~= "table" then
+        return false
+    end
+
+    if ServerBlockState.Loaded == true then
+        return true
+    end
+
+    ServerBlockState.Loaded =
+        true
+
+    if not isfile
+    or not readfile
+    or not isfile(SERVER_BLOCK_SAVE_FILE) then
+        return false
+    end
+
+    local ok, decoded =
+        pcall(function()
+            return HttpService:JSONDecode(
+                readfile(SERVER_BLOCK_SAVE_FILE)
+            )
+        end)
+
+    if not ok
+    or type(decoded) ~= "table" then
+
+        warn("[ServerBlock] Save file corrupted")
+
+        if delfile then
+            pcall(function()
+                delfile(SERVER_BLOCK_SAVE_FILE)
+            end)
+        end
+
+        return false
+    end
+
+    ServerBlockState.BlockMode =
+        NormalizeServerBlockMode(
+            decoded.BlockMode
+            or ServerBlockState.BlockMode
+        )
+
+    ServerBlockState.BadServerBlockMinutes =
+        math.clamp(
+            math.floor(
+                SafeNumber(
+                    decoded.BadServerBlockMinutes,
+                    ServerBlockState.BadServerBlockMinutes
+                    or 60
+                )
+            ),
+            1,
+            1440
+        )
+
+    ServerBlockState.BadServers =
+        type(decoded.BadServers) == "table"
+        and decoded.BadServers
+        or {}
+
+    CleanupServerBlockMemory()
+
+    return true
+end
+
+function ShouldBlockCurrentServerForReason(reasonType)
+
+    local mode =
+        NormalizeServerBlockMode(
+            ServerBlockState
+            and ServerBlockState.BlockMode
+        )
+
+    reasonType =
+        tostring(reasonType or "")
+
+    if mode == "Off" then
+        return false
+    end
+
+    if reasonType == "SellerAFK" then
+        return true
+    end
+
+    if reasonType == "OverFilter"
+    and mode == "Seller AFK + Over Filter" then
+        return true
+    end
+
+    return false
+end
+
+function MarkCurrentServerBlocked(reasonType, reasonText)
+
+    if not game.JobId
+    or tostring(game.JobId) == "" then
+        return false
+    end
+
+    LoadServerBlockMemory()
+
+    if not ShouldBlockCurrentServerForReason(reasonType) then
+        return false
+    end
+
+    ServerBlockState.BadServers =
+        ServerBlockState.BadServers
+        or {}
+
+    ServerBlockState.BadServers[tostring(game.JobId)] = {
+        MarkedAt = os.time(),
+        Reason = tostring(reasonText or reasonType or "Blocked server"),
+        Type = tostring(reasonType or "Unknown"),
+    }
+
+    SaveServerBlockMemory()
+
+    warn(
+        "[ServerBlock] Blocked current server:",
+        tostring(game.JobId),
+        "| type:",
+        tostring(reasonType),
+        "| reason:",
+        tostring(reasonText),
+        "| minutes:",
+        tostring(ServerBlockState.BadServerBlockMinutes or 60)
+    )
+
+    return true
+end
+
+function IsServerBlockedByMemory(jobId)
+
+    jobId =
+        tostring(jobId or "")
+
+    if jobId == "" then
+        return true
+    end
+
+    LoadServerBlockMemory()
+    CleanupServerBlockMemory()
+
+    return ServerBlockState.BadServers
+        and ServerBlockState.BadServers[jobId] ~= nil
+end
+
+LoadServerBlockMemory()
+
 function GetRandomTradeServer()
 
     local maxAllowedPlayers =
@@ -9431,6 +9742,10 @@ end
 if AntiAltState
 and AntiAltState.BlockedJobIds
 and AntiAltState.BlockedJobIds[id] == true then
+    return
+end
+
+if IsServerBlockedByMemory(id) then
     return
 end
 
@@ -11285,20 +11600,25 @@ if listedResult.BadListing then
         listedResult.BadListing
 
     local hopReason =
-    "Listed over filter: "
-    .. tostring(listing.PetName)
-    .. " | "
-    .. FormatTargetPetsHopListingPrice(listing)
-    .. "T"
+        "Listed over filter: "
+        .. tostring(listing.PetName)
+        .. " | "
+        .. FormatTargetPetsHopListingPrice(listing)
+        .. "T"
 
-SetTargetPetsHopStatus(hopReason)
+    SetTargetPetsHopStatus(hopReason)
 
-ExecuteTargetPetsHopNow(
-    scannedPlayers,
-    scannedTools,
-    hopReason,
-    "Target pet was listed but failed sniper filters, so HOLY is hopping."
-)
+    MarkCurrentServerBlocked(
+        "OverFilter",
+        hopReason
+    )
+
+    ExecuteTargetPetsHopNow(
+        scannedPlayers,
+        scannedTools,
+        hopReason,
+        "Target pet was listed but failed sniper filters, so HOLY is hopping."
+    )
 
     continue
 end
@@ -11332,6 +11652,11 @@ and SafeElapsed(TargetPetsHopState.LastAfkSkippedAt) < 5 then
 
     finalNotifyReason =
         "Only selected target pets found were held by AFK sellers, so HOLY is hopping."
+
+    MarkCurrentServerBlocked(
+        "SellerAFK",
+        finalHopReason
+    )
 end
 
 ExecuteTargetPetsHopNow(
@@ -29134,6 +29459,88 @@ ServerHopPagesInput:OnChanged(function(value)
     print(
         "[SniperHop] Server hop pages:",
         tostring(SniperState.ServerHopPages)
+    )
+end)
+
+SniperServerBox:AddDivider({
+    Text = "Server Memory",
+    MarginTop = 10,
+    MarginBottom = 8,
+})
+
+local ServerBlockModeDropdown =
+    SniperServerBox:AddDropdown(
+        "HolyServerBlockMode",
+        {
+            Text = "Block Server When",
+            Tooltip = "Seller AFK Only = only block the server after Seller AFK Check fully detects an AFK target holder.",
+            Values = {
+                "Off",
+                "Seller AFK Only",
+                "Seller AFK + Over Filter",
+            },
+            Default =
+                NormalizeServerBlockMode(
+                    ServerBlockState
+                    and ServerBlockState.BlockMode
+                ),
+            Searchable = false,
+        }
+    )
+
+ServerBlockModeDropdown:OnChanged(function(value)
+
+    ServerBlockState.BlockMode =
+        NormalizeServerBlockMode(value)
+
+    SaveServerBlockMemory()
+    MarkConfigDirty()
+
+    print(
+        "[ServerBlock] Mode:",
+        tostring(ServerBlockState.BlockMode)
+    )
+end)
+
+local BadServerBlockMinutesInput =
+    SniperServerBox:AddInput(
+        "HolyBadServerBlockMinutes",
+        {
+            Text = "Block Bad Servers For (min)",
+            Tooltip = "How long HOLY avoids blocked servers. Recommended: 30-120 minutes.",
+            Default =
+                tostring(
+                    ServerBlockState
+                    and ServerBlockState.BadServerBlockMinutes
+                    or 60
+                ),
+            Numeric = true,
+            Finished = true,
+        }
+    )
+
+BadServerBlockMinutesInput:OnChanged(function(value)
+
+    local minutes =
+        tonumber(value)
+
+    if not minutes then
+        return
+    end
+
+    ServerBlockState.BadServerBlockMinutes =
+        math.clamp(
+            math.floor(minutes),
+            1,
+            1440
+        )
+
+    SaveServerBlockMemory()
+    MarkConfigDirty()
+
+    print(
+        "[ServerBlock] Bad server block minutes:",
+        tostring(ServerBlockState.BadServerBlockMinutes)
     )
 end)
 
