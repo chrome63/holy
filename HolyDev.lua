@@ -15588,14 +15588,204 @@ BoothAuto = {
         [4] = "good pets listed, check fast",
     },
 
-    --==================================================
-    -- SERVER CYCLE
-    --==================================================
+--==================================================
+-- SERVER CYCLE
+--==================================================
 
-    AutoServerHop = false,
-    ServerHopMinutes = 10,
-    LastServerHop = 0,
+AutoServerHop = false,
+ServerHopMinutes = 10,
+LastServerHop = 0,
+
+--==================================================
+-- SALE HOP EXTENSION
+-- Adds extra stay time after confirmed booth sales.
+-- Applies to Sniper Auto Hop and Booth Join New Server.
+--==================================================
+
+AddHopTimeAfterSale = true,
+HopTimeAfterSaleMinutes = 1,
+HopTimeAfterSaleStackable = false,
+HopTimeAfterSaleUntil = 0,
+LastHopTimeAfterSaleAt = 0,
 }
+
+--==================================================
+-- SALE HOP EXTENSION HELPERS
+-- One shared hop-delay deadline used by:
+-- 1. Sniper Auto Hop
+-- 2. Booth Server Cycle / Join New Server
+--==================================================
+
+function ResolveHopTimeAfterSaleSeconds()
+
+    local minutes =
+        SafeNumber(
+            BoothAuto
+            and BoothAuto.HopTimeAfterSaleMinutes,
+            1
+        )
+
+    minutes =
+        math.clamp(
+            minutes,
+            0,
+            60
+        )
+
+    return minutes * 60
+end
+
+function GetHopTimeAfterSaleRemaining()
+
+    if type(BoothAuto) ~= "table" then
+        return 0
+    end
+
+    return math.max(
+        0,
+        SafeNumber(BoothAuto.HopTimeAfterSaleUntil, 0)
+            - os.clock()
+    )
+end
+
+function IsHopTimeAfterSaleActive()
+
+    return GetHopTimeAfterSaleRemaining() > 0
+end
+
+function FormatHopTimeAfterSaleRemaining()
+
+    local remaining =
+        math.floor(
+            GetHopTimeAfterSaleRemaining()
+                + 0.5
+        )
+
+    if remaining <= 0 then
+        return "Ready"
+    end
+
+    local minutes =
+        math.floor(remaining / 60)
+
+    local seconds =
+        remaining % 60
+
+    if minutes > 0 then
+        return tostring(minutes)
+            .. "m "
+            .. tostring(seconds)
+            .. "s left"
+    end
+
+    return tostring(seconds) .. "s left"
+end
+
+function ApplyHopTimeAfterSale(sale)
+
+    if type(BoothAuto) ~= "table" then
+        return false
+    end
+
+    if BoothAuto.AddHopTimeAfterSale ~= true then
+        return false
+    end
+
+    local extraSeconds =
+        ResolveHopTimeAfterSaleSeconds()
+
+    if extraSeconds <= 0 then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    local currentUntil =
+        SafeNumber(
+            BoothAuto.HopTimeAfterSaleUntil,
+            0
+        )
+
+    if BoothAuto.HopTimeAfterSaleStackable == true then
+
+        BoothAuto.HopTimeAfterSaleUntil =
+            math.max(currentUntil, now)
+                + extraSeconds
+
+    else
+
+        -- Non-stackable mode refreshes the timer from now.
+        BoothAuto.HopTimeAfterSaleUntil =
+            now + extraSeconds
+    end
+
+    BoothAuto.LastHopTimeAfterSaleAt =
+        now
+
+    -- Make Sniper Auto Hop respect the same sale extension.
+    -- This does not replace StayAfterSnipe; it only adds another
+    -- do-not-hop-before deadline.
+    if type(SniperState) == "table" then
+
+        SniperState.StayAfterSnipeUntil =
+            math.max(
+                SafeNumber(
+                    SniperState.StayAfterSnipeUntil,
+                    0
+                ),
+                BoothAuto.HopTimeAfterSaleUntil
+            )
+    end
+
+    local remainingText =
+        FormatHopTimeAfterSaleRemaining()
+
+    print(
+        "[BOOTH SALE HOP EXTENSION]",
+        "Added:",
+        tostring(extraSeconds) .. "s",
+        "| stackable:",
+        tostring(BoothAuto.HopTimeAfterSaleStackable == true),
+        "| remaining:",
+        remainingText,
+        "| sale:",
+        tostring(
+            sale
+            and (
+                sale.ToolName
+                or sale.PetName
+            )
+            or "Unknown"
+        )
+    )
+
+    if type(HolyNotify) == "function" then
+
+        HolyNotify(
+            "Hop Time Added",
+            "Booth sale detected. Next hop delayed: "
+                .. remainingText,
+            "clock-plus",
+            4
+        )
+    end
+
+    return true
+end
+
+function ShouldBlockHopForBoothSale()
+
+    if type(BoothAuto) ~= "table" then
+        return false
+    end
+
+    if BoothAuto.AddHopTimeAfterSale ~= true then
+        return false
+    end
+
+    return IsHopTimeAfterSaleActive()
+end
 
 function ClearBoothAnchor()
     if not BoothAuto then
@@ -30808,6 +30998,125 @@ HopMinutesInput:OnChanged(function(value)
     MarkConfigDirty()
 end)
 
+local AddHopTimeAfterSaleToggle =
+    BoothServerBox:AddToggle(
+        "AddHopTimeAfterSale",
+        {
+            Text = "⏱️ Add Hop Time After Sale",
+            Tooltip = "Adds extra time before server hopping when someone buys from your booth.",
+            Default = true,
+        }
+    )
+
+AddHopTimeAfterSaleToggle:OnChanged(function(enabled)
+
+    BoothAuto.AddHopTimeAfterSale =
+        enabled == true
+
+    if BoothAuto.AddHopTimeAfterSale ~= true then
+        BoothAuto.HopTimeAfterSaleUntil =
+            0
+    end
+
+    MarkConfigDirty()
+
+    print(
+        "[Booth] Add Hop Time After Sale:",
+        tostring(BoothAuto.AddHopTimeAfterSale)
+    )
+end)
+
+local HopTimeAfterSaleInput =
+    BoothServerBox:AddInput(
+        "HopTimeAfterSaleMinutes",
+        {
+            Text = "⏳ Extra Sale Minutes",
+            Default = "1",
+            Numeric = true,
+            Finished = true,
+            Tooltip = "How many minutes to add after each confirmed booth sale. Example: 0.5 = 30 seconds.",
+        }
+    )
+
+HopTimeAfterSaleInput:OnChanged(function(value)
+
+    local minutes =
+        tonumber(value)
+
+    if not minutes then
+        return
+    end
+
+    minutes =
+        math.clamp(
+            minutes,
+            0,
+            60
+        )
+
+    BoothAuto.HopTimeAfterSaleMinutes =
+        minutes
+
+    MarkConfigDirty()
+
+    print(
+        "[Booth] Extra sale minutes:",
+        tostring(minutes)
+    )
+end)
+
+local StackSaleTimeToggle =
+    BoothServerBox:AddToggle(
+        "StackSaleTime",
+        {
+            Text = "➕ Stack Sale Time",
+            Tooltip = "If enabled, every sale adds more time. If disabled, each sale refreshes the timer.",
+            Default = false,
+        }
+    )
+
+StackSaleTimeToggle:OnChanged(function(enabled)
+
+    BoothAuto.HopTimeAfterSaleStackable =
+        enabled == true
+
+    MarkConfigDirty()
+
+    print(
+        "[Booth] Stack sale time:",
+        tostring(BoothAuto.HopTimeAfterSaleStackable)
+    )
+end)
+
+local HopTimeAfterSaleStatusLabel =
+    BoothServerBox:AddLabel(
+        "Sale Hop Time: Ready",
+        false
+    )
+
+task.spawn(function()
+
+    while IsCurrentRun() do
+
+        task.wait(1)
+
+        if not HopTimeAfterSaleStatusLabel then
+            continue
+        end
+
+        if type(FormatHopTimeAfterSaleRemaining) ~= "function" then
+            continue
+        end
+
+        pcall(function()
+            HopTimeAfterSaleStatusLabel:SetText(
+                "Sale Hop Time: "
+                    .. FormatHopTimeAfterSaleRemaining()
+            )
+        end)
+    end
+end)
+
 BoothServerBox:AddButton({
     Text = "Unclaim Booth",
     Tooltip = "Unclaim your current booth",
@@ -35157,6 +35466,18 @@ function FireConfirmedBoothSale(oldListing)
         "| baseWeight:",
         tostring(oldListing.BaseWeight)
     )
+
+    --==================================================
+    -- ADD HOP TIME AFTER SALE
+    -- Runs only after confirmed booth sale.
+    -- Applies to Sniper Auto Hop and Booth Join New Server.
+    --==================================================
+
+    if type(ApplyHopTimeAfterSale) == "function" then
+        pcall(function()
+            ApplyHopTimeAfterSale(oldListing)
+        end)
+    end
 
     QueueGlobalBoothSaleWebhook(oldListing)
 
@@ -40707,7 +41028,26 @@ AutoServerHopWorker = function()
 
         local targetSeconds =
             BoothAuto.ServerHopMinutes * 60
+
         if elapsed < targetSeconds then
+            continue
+        end
+
+        --==================================================
+        -- ADD HOP TIME AFTER SALE
+        -- Delays Booth → Server Cycle → Join New Server.
+        --==================================================
+
+        if type(ShouldBlockHopForBoothSale) == "function"
+        and ShouldBlockHopForBoothSale() then
+
+            print(
+                "[Hop] Delayed by booth sale:",
+                type(FormatHopTimeAfterSaleRemaining) == "function"
+                and FormatHopTimeAfterSaleRemaining()
+                or "active"
+            )
+
             continue
         end
 
@@ -42330,11 +42670,48 @@ SniperState.SmartScanInterval =
 end
 
 if BoothAuto then
+
     BoothAuto.LastServerHop =
         SafeNumber(BoothAuto.LastServerHop, 0)
 
     BoothAuto.ServerHopMinutes =
         SafeNumber(BoothAuto.ServerHopMinutes, 10)
+
+    BoothAuto.ServerHopMinutes =
+        math.clamp(
+            BoothAuto.ServerHopMinutes,
+            1,
+            999
+        )
+
+    BoothAuto.AddHopTimeAfterSale =
+        BoothAuto.AddHopTimeAfterSale == true
+
+    BoothAuto.HopTimeAfterSaleMinutes =
+        SafeNumber(
+            BoothAuto.HopTimeAfterSaleMinutes,
+            1
+        )
+
+    BoothAuto.HopTimeAfterSaleMinutes =
+        math.clamp(
+            BoothAuto.HopTimeAfterSaleMinutes,
+            0,
+            60
+        )
+
+    BoothAuto.HopTimeAfterSaleStackable =
+        BoothAuto.HopTimeAfterSaleStackable == true
+
+    -- Runtime only. Do not preserve this across re-exec/rejoin.
+    BoothAuto.HopTimeAfterSaleUntil =
+        0
+
+    BoothAuto.LastHopTimeAfterSaleAt =
+        SafeNumber(
+            BoothAuto.LastHopTimeAfterSaleAt,
+            0
+        )
 end
 
 if BeeEggAuto then
