@@ -1,4 +1,75 @@
 --==================================================
+-- HOLY BOOT CONSOLE MUTE
+-- Stops noisy game warnings from flooding Delta console
+-- during the first seconds after execution.
+--==================================================
+
+do
+    local root =
+        (
+            type(getgenv) == "function"
+            and getgenv()
+            or _G
+        )
+
+    root.HOLY_BOOT_CONSOLE_MUTE =
+        root.HOLY_BOOT_CONSOLE_MUTE
+        or {
+            Installed = false,
+            Connections = {},
+        }
+
+    local state =
+        root.HOLY_BOOT_CONSOLE_MUTE
+
+    if state.Installed ~= true then
+
+        state.Installed =
+            true
+
+        local LogService =
+            game:GetService("LogService")
+
+        if type(getconnections) == "function" then
+
+            for _, connection in ipairs(getconnections(LogService.MessageOut)) do
+
+                if connection
+                and type(connection.Disable) == "function" then
+
+                    pcall(function()
+                        connection:Disable()
+                    end)
+
+                    table.insert(
+                        state.Connections,
+                        connection
+                    )
+                end
+            end
+        end
+
+        task.delay(8, function()
+
+            for _, connection in ipairs(state.Connections) do
+
+                if connection
+                and type(connection.Enable) == "function" then
+
+                    pcall(function()
+                        connection:Enable()
+                    end)
+                end
+            end
+
+            table.clear(state.Connections)
+
+            state.Installed =
+                false
+        end)
+    end
+end
+--==================================================
 -- HOLY v3.3.7 — OBSIDIAN FOUNDATION GROW A GARDEN TRADE MARKET SCRIPT
 -- Purpose: Deterministic, modular base (no features)
 --==================================================
