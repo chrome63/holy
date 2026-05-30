@@ -8468,15 +8468,22 @@ function AddAgeBreakerTargetUUID(uuid, pets)
         )
 
     table.insert(
-        AgeBreakerState.TargetQueue,
-        {
-            UUID = uuid,
-            PetName = tostring(pet.PetName or ""),
-            GoalLevel = goalLevel,
-            AddedAt = os.time(),
-            Status = "Waiting",
-        }
-    )
+    AgeBreakerState.TargetQueue,
+    {
+        UUID = uuid,
+        PetName = tostring(pet.PetName or ""),
+        MutationText = tostring(pet.MutationText or "Normal"),
+
+        GoalLevel = goalLevel,
+
+        LastKnownAge = tonumber(pet.Age) or 0,
+        LastKnownBaseWeight = tonumber(pet.BaseWeight) or 0,
+        LastKnownDisplayWeight = tonumber(pet.DisplayWeight) or 0,
+
+        AddedAt = os.time(),
+        Status = "Waiting",
+    }
+)
 
     AgeBreakerState.TargetQueueMap[uuid] =
         true
@@ -8849,8 +8856,13 @@ function ResolveAgeBreakerActiveTarget(pets)
             )
         )
 
+    -- Never let a bad saved ActiveQueueIndex make the queue look complete.
     if startIndex > #queue then
-        return nil, "All queued targets are complete."
+        startIndex =
+            1
+
+        AgeBreakerState.ActiveQueueIndex =
+            1
     end
 
     for index = startIndex, #queue do
@@ -8866,34 +8878,135 @@ function ResolveAgeBreakerActiveTarget(pets)
 
         if not pet then
 
-    local entryUUID =
-        AgeBreakerNormalizeUUID(entry.UUID)
+            local entryUUID =
+                AgeBreakerNormalizeUUID(entry.UUID)
 
-    local machineUUID =
-        AgeBreakerNormalizeUUID(
-            AgeBreakerState.MachineTargetUUID
-        )
+            local machineUUID =
+                AgeBreakerNormalizeUUID(
+                    AgeBreakerState.MachineTargetUUID
+                )
 
-    -- If the target was submitted into the machine, it leaves inventory.
-    -- Do not mark it Missing or skip to the next queue target.
-    if AgeBreakerState.MachineRunning == true
-    and entryUUID ~= ""
-    and entryUUID == machineUUID
-    and type(AgeBreakerState.MachineTargetSnapshot) == "table" then
+            -- If this target is known to be inside the machine,
+            -- keep it active and do not mark it complete/missing.
+            if AgeBreakerState.MachineRunning == true
+            and entryUUID ~= ""
+            and entryUUID == machineUUID
+            and type(AgeBreakerState.MachineTargetSnapshot) == "table" then
 
-        entry.Status =
-            "Running"
+                entry.Status =
+                    "Running"
+
+                AgeBreakerState.ActiveQueueIndex =
+                    index
+
+                return AgeBreakerState.MachineTargetSnapshot, entry
+            end
+
+            -- If the machine timer exists/runs and this target is missing,
+            -- assume it may be inside the machine after teleport/reload.
+            -- Missing is NOT complete.
+            if AgeBreakerState.TimerSeconds ~= nil
+            and AgeBreakerState.TimerSeconds > 0 then
+
+                local snapshot = {
+                    UUID = entryUUID,
+                    PetName = tostring(entry.PetName or "Unknown"),
+                    MutationText = tostring(entry.MutationText or "Normal"),
+
+                    Age = tonumber(entry.LastKnownAge) or 0,
+                    BaseWeight = tonumber(entry.LastKnownBaseWeight) or 0,
+                    DisplayWeight = tonumber(entry.LastKnownDisplayWeight) or 0,
+                }
+
+                AgeBreakerState.MachineRunning =
+                    true
+
+                AgeBreakerState.MachineTargetUUID =
+                    entryUUID
+
+                AgeBreakerState.MachineTargetSnapshot =
+                    snapshot
+
+                entry.Status =
+                    "Running"
+
+                AgeBreakerState.ActiveQueueIndex =
+                    index
+
+                return snapshot, entry
+            end
+
+            -- Missing is not complete. Keep this target selected.
+            -- This prevents skipping to the next queued target while inventory
+            -- is still loading or while the target is unavailable.
+            entry.Status =
+                "Missing"
+
+            AgeBreakerState.ActiveQueueIndex =
+                index
+
+            return nil, "Queued target missing or inventory still loading."
+        end
+
+        local goalLevel =
+            math.floor(
+                SafeNumber(
+                    entry.GoalLevel,
+                    AgeBreakerState.DefaultGoalLevel or 125
+                )
+            )
+
+        goalLevel =
+            math.clamp(
+                goalLevel,
+                101,
+                10000
+            )
+
+        entry.GoalLevel =
+            goalLevel
+
+        entry.PetName =
+            tostring(pet.PetName or entry.PetName or "")
+
+        entry.MutationText =
+            tostring(pet.MutationText or entry.MutationText or "Normal")
+
+        entry.LastKnownAge =
+            tonumber(pet.Age) or tonumber(entry.LastKnownAge) or 0
+
+        entry.LastKnownBaseWeight =
+            tonumber(pet.BaseWeight) or tonumber(entry.LastKnownBaseWeight) or 0
+
+        entry.LastKnownDisplayWeight =
+            tonumber(pet.DisplayWeight) or tonumber(entry.LastKnownDisplayWeight) or 0
+
+        if tonumber(pet.Age) >= goalLevel then
+
+            entry.Status =
+                "Complete"
+
+            if index == AgeBreakerState.ActiveQueueIndex then
+                AgeBreakerState.ActiveQueueIndex =
+                    index + 1
+            end
+
+            continue
+        end
 
         AgeBreakerState.ActiveQueueIndex =
             index
 
-        return AgeBreakerState.MachineTargetSnapshot, entry
+        entry.Status =
+            "Active"
+
+        QueueAgeBreakerSave(
+    "active target refreshed"
+)
+        return pet, entry
     end
 
-    entry.Status =
-        "Missing"
-
-    continue
+    return nil, "No available queued target right now."
 end
 
         local goalLevel =
@@ -9220,15 +9333,44 @@ function FormatAgeBreakerQueueText()
 
         else
 
-            table.insert(
-                lines,
-                tostring(index)
-                    .. ". "
-                    .. tostring(entry.PetName or "Unknown")
-                    .. " | Missing | #"
-                    .. FormatAgeBreakerShortUUID(entry.UUID)
-            )
-        end
+    local missingStatus =
+        tostring(entry.Status or "Missing")
+
+    local ageText =
+        tonumber(entry.LastKnownAge)
+        and tostring(entry.LastKnownAge)
+        or "?"
+
+    local goalText =
+        tostring(
+            entry.GoalLevel
+            or AgeBreakerState.DefaultGoalLevel
+            or 125
+        )
+
+    local bwText =
+        tonumber(entry.LastKnownBaseWeight)
+        and FormatAgeBreakerNumber(entry.LastKnownBaseWeight, 2)
+        or "?"
+
+    table.insert(
+        lines,
+        tostring(index)
+            .. ". "
+            .. FormatAgeBreakerMutationPrefix(entry.MutationText or "Normal")
+            .. tostring(entry.PetName or "Unknown")
+            .. " | Age "
+            .. ageText
+            .. "/"
+            .. goalText
+            .. " | BW "
+            .. bwText
+            .. " | #"
+            .. FormatAgeBreakerShortUUID(entry.UUID)
+            .. " | "
+            .. missingStatus
+    )
+end
     end
 
     return table.concat(
@@ -9513,12 +9655,19 @@ function CloneAgeBreakerTargetEntry(entry)
         )
 
     return {
-        UUID = uuid,
-        PetName = tostring(entry.PetName or ""),
-        GoalLevel = goalLevel,
-        AddedAt = tonumber(entry.AddedAt) or os.time(),
-        Status = tostring(entry.Status or "Waiting"),
-    }
+    UUID = uuid,
+    PetName = tostring(entry.PetName or ""),
+    MutationText = tostring(entry.MutationText or "Normal"),
+
+    GoalLevel = goalLevel,
+
+    LastKnownAge = tonumber(entry.LastKnownAge) or 0,
+    LastKnownBaseWeight = tonumber(entry.LastKnownBaseWeight) or 0,
+    LastKnownDisplayWeight = tonumber(entry.LastKnownDisplayWeight) or 0,
+
+    AddedAt = tonumber(entry.AddedAt) or os.time(),
+    Status = tostring(entry.Status or "Waiting"),
+}
 end
 
 function CloneAgeBreakerSacrificeEntry(entry)
@@ -10313,6 +10462,36 @@ AgeBreakerState.MachineTargetSnapshot = {
 AgeBreakerState.MachineRunning =
     true
 
+for _, entry in ipairs(AgeBreakerState.TargetQueue or {}) do
+
+    if AgeBreakerNormalizeUUID(entry.UUID)
+        == AgeBreakerNormalizeUUID(target.UUID) then
+
+        entry.PetName =
+            tostring(target.PetName or entry.PetName or "")
+
+        entry.MutationText =
+            tostring(target.MutationText or entry.MutationText or "Normal")
+
+        entry.LastKnownAge =
+            tonumber(target.Age) or tonumber(entry.LastKnownAge) or 0
+
+        entry.LastKnownBaseWeight =
+            tonumber(target.BaseWeight) or tonumber(entry.LastKnownBaseWeight) or 0
+
+        entry.LastKnownDisplayWeight =
+            tonumber(target.DisplayWeight) or tonumber(entry.LastKnownDisplayWeight) or 0
+
+        entry.Status =
+            "Running"
+
+        break
+    end
+end
+
+QueueAgeBreakerSave(
+    "machine target snapshot saved"
+)
 -- Once submitted, remove this sacrifice from the allowed pool
 -- so HOLY cannot reuse the same disposable pet again.
 RemoveAgeBreakerSacrificeUUID(
