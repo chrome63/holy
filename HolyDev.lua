@@ -8176,6 +8176,26 @@ function GetPetAgeBreakSubmitRemote()
     return nil
 end
 
+function GetPetAgeBreakSubmitHeldRemote()
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    if not gameEvents then
+        return nil
+    end
+
+    local remote =
+        gameEvents:FindFirstChild("PetAgeLimitBreak_SubmitHeld")
+
+    if remote
+    and remote:IsA("RemoteEvent") then
+        return remote
+    end
+
+    return nil
+end
+
 function GetPetAgeBreakClaimRemote()
 
     local gameEvents =
@@ -8220,7 +8240,85 @@ function NormalizeAgeBreakerSubmitUUID(uuid)
     return uuid
 end
 
-function FireAgeBreakerSubmitUUID(uuid)
+function EquipAgeBreakerPetTool(pet)
+
+    if type(pet) ~= "table"
+    or not pet.Tool
+    or not pet.Tool:IsA("Tool") then
+        return false, "Pet tool missing"
+    end
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return false, "LocalPlayer missing"
+    end
+
+    local character =
+        player.Character
+
+    if not character then
+        return false, "Character missing"
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid then
+        return false, "Humanoid missing"
+    end
+
+    local ok, err =
+        pcall(function()
+
+            -- Unequip first so Roblox actually changes held tool state.
+            humanoid:UnequipTools()
+
+            task.wait(0.15)
+
+            humanoid:EquipTool(
+                pet.Tool
+            )
+        end)
+
+    if not ok then
+        return false, tostring(err)
+    end
+
+    task.wait(0.35)
+
+    if pet.Tool.Parent ~= character then
+        return false, "Tool did not equip"
+    end
+
+    return true, "Equipped"
+end
+
+function FireAgeBreakerSubmitHeldFallback()
+
+    local remote =
+        GetPetAgeBreakSubmitHeldRemote()
+
+    if not remote then
+        return false, "SubmitHeld remote missing"
+    end
+
+    local ok, err =
+        pcall(function()
+            remote:FireServer()
+        end)
+
+    if not ok then
+        return false, tostring(err)
+    end
+
+    print("[AGE BREAKER] Fire SubmitHeld fallback")
+
+    return true, "SubmitHeld fired"
+end
+
+function FireAgeBreakerSubmitUUID(uuid, useHeldFallback)
 
     uuid =
         NormalizeAgeBreakerSubmitUUID(uuid)
@@ -8250,6 +8348,15 @@ function FireAgeBreakerSubmitUUID(uuid)
 
     if not ok then
         return false, tostring(err)
+    end
+
+    if useHeldFallback == true then
+
+        task.wait(0.20)
+
+        pcall(function()
+            FireAgeBreakerSubmitHeldFallback()
+        end)
     end
 
     return true, "Submitted"
@@ -8288,38 +8395,96 @@ function SubmitAgeBreakerValidatedPair()
     local sacrifice =
         AgeBreakerState.SacrificePet
 
-    AgeBreakerState.Status =
-        "Submitting target"
+AgeBreakerState.Status =
+    "Equipping target"
 
-    local okTarget, targetReason =
-        FireAgeBreakerSubmitUUID(
-            target.UUID
-        )
+local equippedTarget, equipTargetReason =
+    EquipAgeBreakerPetTool(
+        target
+    )
 
-    if not okTarget then
-
-        AgeBreakerState.Status =
-            "Target submit failed"
-
-        HolyNotify(
-            "Age Breaker",
-            tostring(targetReason),
-            "triangle-alert",
-            4
-        )
-
-        return false
-    end
-
-    task.wait(1.25)
+if not equippedTarget then
 
     AgeBreakerState.Status =
-        "Submitting sacrifice"
+        "Target equip failed"
 
-    local okSacrifice, sacrificeReason =
-        FireAgeBreakerSubmitUUID(
-            sacrifice.UUID
-        )
+    HolyNotify(
+        "Age Breaker",
+        tostring(equipTargetReason),
+        "triangle-alert",
+        4
+    )
+
+    return false
+end
+
+AgeBreakerState.Status =
+    "Submitting target"
+
+local okTarget, targetReason =
+    FireAgeBreakerSubmitUUID(
+        target.UUID,
+        true
+    )
+
+if not okTarget then
+
+    AgeBreakerState.Status =
+        "Target submit failed"
+
+    HolyNotify(
+        "Age Breaker",
+        tostring(targetReason),
+        "triangle-alert",
+        4
+    )
+
+    return false
+end
+
+-- Give the machine/server time to move from target slot
+-- into sacrifice/material slot.
+task.wait(2.00)
+
+print(
+    "[AGE BREAKER] After target submit | Machine text:",
+    tostring(
+        AgeBreakerState.TimerText
+        or "--"
+    )
+)
+
+AgeBreakerState.Status =
+    "Equipping sacrifice"
+
+local equippedSacrifice, equipSacrificeReason =
+    EquipAgeBreakerPetTool(
+        sacrifice
+    )
+
+if not equippedSacrifice then
+
+    AgeBreakerState.Status =
+        "Sacrifice equip failed"
+
+    HolyNotify(
+        "Age Breaker",
+        tostring(equipSacrificeReason),
+        "triangle-alert",
+        4
+    )
+
+    return false
+end
+
+AgeBreakerState.Status =
+    "Submitting sacrifice"
+
+local okSacrifice, sacrificeReason =
+    FireAgeBreakerSubmitUUID(
+        sacrifice.UUID,
+        true
+    )
 
     if not okSacrifice then
 
