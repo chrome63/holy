@@ -1,7 +1,8 @@
 --==================================================
--- HOLY BOOT CONSOLE MUTE
--- Stops noisy game warnings from flooding Delta console
--- during the first seconds after execution.
+-- HOLY CONSOLE QUIET GUARD
+-- Delta/Roblox console can lag badly when LogService
+-- is flooded by game warnings. This disables console
+-- output listeners while HOLY is running.
 --==================================================
 
 do
@@ -12,60 +13,63 @@ do
             or _G
         )
 
-    root.HOLY_BOOT_CONSOLE_MUTE =
-        root.HOLY_BOOT_CONSOLE_MUTE
+    root.HOLY_CONSOLE_QUIET_GUARD =
+        root.HOLY_CONSOLE_QUIET_GUARD
         or {
             Installed = false,
-            Connections = {},
+            Enabled = true,
+            DisabledConnections = {},
         }
 
     local state =
-        root.HOLY_BOOT_CONSOLE_MUTE
+        root.HOLY_CONSOLE_QUIET_GUARD
+
+    local function DisableLogServiceConnections()
+
+        if state.Enabled ~= true then
+            return
+        end
+
+        if type(getconnections) ~= "function" then
+            return
+        end
+
+        local LogService =
+            game:GetService("LogService")
+
+        for _, connection in ipairs(getconnections(LogService.MessageOut)) do
+
+            if connection
+            and type(connection.Disable) == "function" then
+
+                pcall(function()
+                    connection:Disable()
+                end)
+
+                state.DisabledConnections[connection] =
+                    true
+            end
+        end
+    end
 
     if state.Installed ~= true then
 
         state.Installed =
             true
 
-        local LogService =
-            game:GetService("LogService")
+        -- Run immediately before the rest of HOLY loads.
+        DisableLogServiceConnections()
 
-        if type(getconnections) == "function" then
+        -- Keep doing it because Delta / Roblox console can reconnect
+        -- listeners after the script starts.
+        task.spawn(function()
 
-            for _, connection in ipairs(getconnections(LogService.MessageOut)) do
+            while state.Enabled == true do
 
-                if connection
-                and type(connection.Disable) == "function" then
+                DisableLogServiceConnections()
 
-                    pcall(function()
-                        connection:Disable()
-                    end)
-
-                    table.insert(
-                        state.Connections,
-                        connection
-                    )
-                end
+                task.wait(0.50)
             end
-        end
-
-        task.delay(8, function()
-
-            for _, connection in ipairs(state.Connections) do
-
-                if connection
-                and type(connection.Enable) == "function" then
-
-                    pcall(function()
-                        connection:Enable()
-                    end)
-                end
-            end
-
-            table.clear(state.Connections)
-
-            state.Installed =
-                false
         end)
     end
 end
@@ -349,6 +353,55 @@ ServerInfoStartedAt =
 -- VOICE CHAT REMOTE SINK
 -- Prevents discarded event spam
 --==================================================
+
+--==================================================
+-- BEE COLONY REMOTE SINK
+-- Prevents discarded event spam from:
+-- ReplicatedStorage.GameEvents.BeeColonyStateService.Unreliable
+--==================================================
+
+task.spawn(function()
+
+    local gameEvents =
+        ReplicatedStorage:WaitForChild(
+            "GameEvents",
+            15
+        )
+
+    if not gameEvents then
+        return
+    end
+
+    local beeService =
+        gameEvents:WaitForChild(
+            "BeeColonyStateService",
+            15
+        )
+
+    if not beeService then
+        return
+    end
+
+    local unreliable =
+        beeService:WaitForChild(
+            "Unreliable",
+            15
+        )
+
+    if not unreliable then
+        return
+    end
+
+    if unreliable:IsA("RemoteEvent")
+    or unreliable:IsA("UnreliableRemoteEvent") then
+
+        unreliable.OnClientEvent:Connect(function()
+            -- intentionally ignored
+        end)
+
+        print("[REMOTE SINK] BeeColonyStateService.Unreliable connected")
+    end
+end)
 
 task.spawn(function()
 
