@@ -9648,6 +9648,7 @@ if type(RefreshAgeBreakerInventoryDropdowns) == "function" then
 end
 
 return true
+end
 
 function ParseAgeBreakerTimerSeconds(text)
 
