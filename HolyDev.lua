@@ -3587,20 +3587,37 @@ BoothFullLastNotifyAt = 0,
 AgeBreakerState = {
     Enabled = false,
 
-    PetName = "",
+    -- Queue mode:
+    -- TargetQueue = valuable pets to age break.
+    -- SacrificePool = disposable pets HOLY is allowed to consume.
+    DefaultGoalLevel = 125,
 
-    -- Target = exact inventory pet selected by user.
-    -- HOLY must never auto-pick the target pet.
-    ManualTargetUUID = "",
-    ManualTargetDisplay = "",
+    TargetQueue = {},
+    TargetQueueMap = {},
+    ActiveQueueIndex = 1,
 
-    -- Target validation only.
-    -- These do NOT pick the target. They only validate the chosen target.
+    SacrificePool = {},
+    SacrificePoolMap = {},
+
+    -- Dropdown runtime selections.
+    SelectedTargetUUIDMap = {},
+    SelectedSacrificeUUIDMap = {},
+
+    TargetChoices = {},
+    TargetChoiceToUUID = {},
+
+    SacrificeChoices = {},
+    SacrificeChoiceToUUID = {},
+
+    -- Current active pair.
+    TargetPet = nil,
+    SacrificePet = nil,
+
+    -- Hidden validation/safety.
     MinTargetAge = 100,
     MinTargetBaseWeight = 0,
 
-    -- Sacrifice = disposable matching pet selected by safety rules.
-    MaxSacrificeAge = 10,
+    MaxSacrificeAge = 99,
     MaxSacrificeBaseWeight = 0,
     SacrificePriority = "Lowest BaseWeight + Age",
 
@@ -3612,13 +3629,9 @@ AgeBreakerState = {
     SacrificeMustBeLowerAge = true,
 
     LastCandidates = {},
-    TargetChoices = {},
-    TargetChoiceToUUID = {},
-
-    TargetPet = nil,
-    SacrificePet = nil,
 
     Status = "Idle",
+    NextAction = "Waiting",
     LastScanAt = 0,
     LastSubmitAt = 0,
     LastClaimAt = 0,
@@ -7980,21 +7993,20 @@ function BuildAgeBreakerInventoryPets()
     return pets
 end
 
+function AgeBreakerNormalizeUUID(uuid)
+
+    uuid =
+        tostring(uuid or "")
+            :gsub("[{}]", "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    return uuid
+end
+
 function AgeBreakerPetPassesTargetRules(pet)
 
     if type(pet) ~= "table" then
-        return false
-    end
-
-    local selectedPet =
-        NormalizeAgeBreakerPetName(
-            AgeBreakerState
-            and AgeBreakerState.PetName
-            or ""
-        )
-
-    if selectedPet ~= ""
-    and NormalizeAgeBreakerPetName(pet.PetName) ~= selectedPet then
         return false
     end
 
@@ -8024,6 +8036,65 @@ function AgeBreakerPetPassesTargetRules(pet)
     return true
 end
 
+function IsAgeBreakerQueuedTargetUUID(uuid)
+
+    uuid =
+        AgeBreakerNormalizeUUID(uuid)
+
+    if uuid == "" then
+        return false
+    end
+
+    if AgeBreakerState.TargetQueueMap
+    and AgeBreakerState.TargetQueueMap[uuid] == true then
+        return true
+    end
+
+    for _, entry in ipairs(AgeBreakerState.TargetQueue or {}) do
+
+        if AgeBreakerNormalizeUUID(entry.UUID) == uuid then
+            return true
+        end
+    end
+
+    return false
+end
+
+function RebuildAgeBreakerQueueMaps()
+
+    AgeBreakerState.TargetQueueMap =
+        {}
+
+    for _, entry in ipairs(AgeBreakerState.TargetQueue or {}) do
+
+        local uuid =
+            AgeBreakerNormalizeUUID(
+                entry.UUID
+            )
+
+        if uuid ~= "" then
+            AgeBreakerState.TargetQueueMap[uuid] =
+                true
+        end
+    end
+
+    AgeBreakerState.SacrificePoolMap =
+        {}
+
+    for _, entry in ipairs(AgeBreakerState.SacrificePool or {}) do
+
+        local uuid =
+            AgeBreakerNormalizeUUID(
+                entry.UUID
+            )
+
+        if uuid ~= "" then
+            AgeBreakerState.SacrificePoolMap[uuid] =
+                true
+        end
+    end
+end
+
 function AgeBreakerPetPassesSacrificeRules(pet, target)
 
     if type(pet) ~= "table"
@@ -8031,8 +8102,15 @@ function AgeBreakerPetPassesSacrificeRules(pet, target)
         return false, "Missing target or sacrifice pet."
     end
 
-    if tostring(pet.UUID) == tostring(target.UUID) then
+    if AgeBreakerNormalizeUUID(pet.UUID)
+        == AgeBreakerNormalizeUUID(target.UUID) then
         return false, "Target and sacrifice cannot be the same pet."
+    end
+
+    -- Hard queue safety:
+    -- queued targets can never be used as sacrifice.
+    if IsAgeBreakerQueuedTargetUUID(pet.UUID) then
+        return false, "Sacrifice is queued as a target."
     end
 
     if NormalizeAgeBreakerPetName(pet.PetName)
@@ -8054,7 +8132,7 @@ function AgeBreakerPetPassesSacrificeRules(pet, target)
         math.floor(
             SafeNumber(
                 AgeBreakerState.MaxSacrificeAge,
-                10
+                99
             )
         )
 
@@ -8092,19 +8170,19 @@ function AgeBreakerPetPassesSacrificeRules(pet, target)
     return true, "OK"
 end
 
-function BuildAgeBreakerTargetChoices(pets)
+function BuildAgeBreakerInventoryChoiceMaps(pets)
 
     pets =
         pets
         or BuildAgeBreakerInventoryPets()
 
-    local selectedPetName =
-        NormalizeAgeBreakerPetName(
-            AgeBreakerState.PetName
-        )
+    local targetChoices = {}
+    local targetChoiceToUUID = {}
 
-    local choices = {}
-    local choiceToUUID = {}
+    local sacrificeChoices = {}
+    local sacrificeChoiceToUUID = {}
+
+    RebuildAgeBreakerQueueMaps()
 
     for _, pet in ipairs(pets) do
 
@@ -8112,40 +8190,112 @@ function BuildAgeBreakerTargetChoices(pets)
             continue
         end
 
-        if selectedPetName ~= ""
-        and NormalizeAgeBreakerPetName(pet.PetName) ~= selectedPetName then
-            continue
-        end
-
         local display =
             FormatAgeBreakerPetLine(pet)
 
+        local uuid =
+            AgeBreakerNormalizeUUID(pet.UUID)
+
+        if uuid == "" then
+            continue
+        end
+
+        -- Target picker:
+        -- show every real pet so user can queue multiple targets fast.
         table.insert(
-            choices,
+            targetChoices,
             display
         )
 
-        choiceToUUID[display] =
-            tostring(pet.UUID or "")
+        targetChoiceToUUID[display] =
+            uuid
+
+        -- Sacrifice picker:
+        -- show only pets that are not already queued as targets.
+        -- More specific safety is applied when submitting.
+        if not IsAgeBreakerQueuedTargetUUID(uuid) then
+
+            table.insert(
+                sacrificeChoices,
+                display
+            )
+
+            sacrificeChoiceToUUID[display] =
+                uuid
+        end
     end
 
-    table.sort(choices, function(a, b)
+    table.sort(targetChoices, function(a, b)
+        return tostring(a) < tostring(b)
+    end)
+
+    table.sort(sacrificeChoices, function(a, b)
         return tostring(a) < tostring(b)
     end)
 
     AgeBreakerState.TargetChoices =
-        choices
+        targetChoices
 
     AgeBreakerState.TargetChoiceToUUID =
-        choiceToUUID
+        targetChoiceToUUID
 
-    return choices, choiceToUUID
+    AgeBreakerState.SacrificeChoices =
+        sacrificeChoices
+
+    AgeBreakerState.SacrificeChoiceToUUID =
+        sacrificeChoiceToUUID
+
+    return targetChoices, sacrificeChoices
+end
+
+function ResolveAgeBreakerSelectedUUIDMap(dropdownValue, choiceToUUID)
+
+    local output = {}
+
+    if type(choiceToUUID) ~= "table" then
+        return output
+    end
+
+    if type(dropdownValue) == "table" then
+
+        for value, selected in pairs(dropdownValue) do
+
+            if selected == true then
+
+                local uuid =
+                    choiceToUUID[tostring(value)]
+
+                uuid =
+                    AgeBreakerNormalizeUUID(uuid)
+
+                if uuid ~= "" then
+                    output[uuid] =
+                        true
+                end
+            end
+        end
+
+    elseif type(dropdownValue) == "string" then
+
+        local uuid =
+            choiceToUUID[dropdownValue]
+
+        uuid =
+            AgeBreakerNormalizeUUID(uuid)
+
+        if uuid ~= "" then
+            output[uuid] =
+                true
+        end
+    end
+
+    return output
 end
 
 function ResolveAgeBreakerPetByUUID(pets, uuid)
 
     uuid =
-        tostring(uuid or "")
+        AgeBreakerNormalizeUUID(uuid)
 
     if uuid == "" then
         return nil
@@ -8153,7 +8303,7 @@ function ResolveAgeBreakerPetByUUID(pets, uuid)
 
     for _, pet in ipairs(pets or {}) do
 
-        if tostring(pet.UUID or "") == uuid then
+        if AgeBreakerNormalizeUUID(pet.UUID) == uuid then
             return pet
         end
     end
@@ -8161,7 +8311,7 @@ function ResolveAgeBreakerPetByUUID(pets, uuid)
     return nil
 end
 
-function RefreshAgeBreakerTargetDropdown(clearSelection)
+function RefreshAgeBreakerInventoryDropdowns(clearSelections)
 
     local pets =
         BuildAgeBreakerInventoryPets()
@@ -8169,67 +8319,58 @@ function RefreshAgeBreakerTargetDropdown(clearSelection)
     AgeBreakerState.LastCandidates =
         pets
 
-    local choices =
-        BuildAgeBreakerTargetChoices(pets)
+    local targetChoices, sacrificeChoices =
+        BuildAgeBreakerInventoryChoiceMaps(
+            pets
+        )
 
     if AgeBreakerTargetDropdown
     and type(AgeBreakerTargetDropdown.SetValues) == "function" then
 
         AgeBreakerTargetDropdown:SetValues(
-            choices
+            targetChoices
         )
     end
 
-    if clearSelection == true then
+    if AgeBreakerSacrificeDropdown
+    and type(AgeBreakerSacrificeDropdown.SetValues) == "function" then
 
-        AgeBreakerState.ManualTargetUUID =
-            ""
+        AgeBreakerSacrificeDropdown:SetValues(
+            sacrificeChoices
+        )
+    end
 
-        AgeBreakerState.ManualTargetDisplay =
-            ""
+    if clearSelections == true then
 
-        AgeBreakerState.TargetPet =
-            nil
+        AgeBreakerState.SelectedTargetUUIDMap =
+            {}
 
-        AgeBreakerState.SacrificePet =
-            nil
+        AgeBreakerState.SelectedSacrificeUUIDMap =
+            {}
 
         if AgeBreakerTargetDropdown
         and type(AgeBreakerTargetDropdown.SetValue) == "function" then
-            AgeBreakerTargetDropdown:SetValue(nil)
+            AgeBreakerTargetDropdown:SetValue({})
+        end
+
+        if AgeBreakerSacrificeDropdown
+        and type(AgeBreakerSacrificeDropdown.SetValue) == "function" then
+            AgeBreakerSacrificeDropdown:SetValue({})
         end
     end
 
-    return choices
+    return targetChoices, sacrificeChoices
 end
 
-function ResolveManualAgeBreakerTarget(pets)
+-- Backwards-compatible alias for old button calls.
+function RefreshAgeBreakerTargetDropdown(clearSelection)
 
-    local uuid =
-        tostring(
-            AgeBreakerState.ManualTargetUUID
-            or ""
+    local targetChoices =
+        RefreshAgeBreakerInventoryDropdowns(
+            clearSelection
         )
 
-    if uuid == "" then
-        return nil, "Select a target pet first."
-    end
-
-    local target =
-        ResolveAgeBreakerPetByUUID(
-            pets,
-            uuid
-        )
-
-    if not target then
-        return nil, "Selected target pet not found."
-    end
-
-    if not AgeBreakerPetPassesTargetRules(target) then
-        return nil, "Selected target does not pass target validation."
-    end
-
-    return target, "OK"
+    return targetChoices
 end
 
 function SortAgeBreakerSacrifices(sacrifices)
@@ -8267,7 +8408,544 @@ function SortAgeBreakerSacrifices(sacrifices)
     end)
 end
 
-function ScanAgeBreakerPair()
+function AddAgeBreakerTargetUUID(uuid, pets)
+
+    uuid =
+        AgeBreakerNormalizeUUID(uuid)
+
+    if uuid == "" then
+        return false, "Missing target UUID."
+    end
+
+    RebuildAgeBreakerQueueMaps()
+
+    if AgeBreakerState.TargetQueueMap[uuid] == true then
+        return false, "Target already queued."
+    end
+
+    pets =
+        pets
+        or BuildAgeBreakerInventoryPets()
+
+    local pet =
+        ResolveAgeBreakerPetByUUID(
+            pets,
+            uuid
+        )
+
+    if not pet then
+        return false, "Target pet not found."
+    end
+
+    if not AgeBreakerPetPassesTargetRules(pet) then
+        return false, "Target does not pass target rules."
+    end
+
+    local goalLevel =
+        math.floor(
+            SafeNumber(
+                AgeBreakerState.DefaultGoalLevel,
+                125
+            )
+        )
+
+    goalLevel =
+        math.clamp(
+            goalLevel,
+            101,
+            10000
+        )
+
+    table.insert(
+        AgeBreakerState.TargetQueue,
+        {
+            UUID = uuid,
+            PetName = tostring(pet.PetName or ""),
+            GoalLevel = goalLevel,
+            AddedAt = os.time(),
+            Status = "Waiting",
+        }
+    )
+
+    AgeBreakerState.TargetQueueMap[uuid] =
+        true
+
+    -- Remove it from sacrifice pool if it was there.
+    if AgeBreakerState.SacrificePoolMap
+    and AgeBreakerState.SacrificePoolMap[uuid] == true then
+
+        for index = #AgeBreakerState.SacrificePool, 1, -1 do
+
+            if AgeBreakerNormalizeUUID(AgeBreakerState.SacrificePool[index].UUID) == uuid then
+                table.remove(
+                    AgeBreakerState.SacrificePool,
+                    index
+                )
+            end
+        end
+    end
+
+    return true, "Target queued."
+end
+
+function AddAgeBreakerSacrificeUUID(uuid, pets)
+
+    uuid =
+        AgeBreakerNormalizeUUID(uuid)
+
+    if uuid == "" then
+        return false, "Missing sacrifice UUID."
+    end
+
+    RebuildAgeBreakerQueueMaps()
+
+    if IsAgeBreakerQueuedTargetUUID(uuid) then
+        return false, "Cannot add queued target as sacrifice."
+    end
+
+    if AgeBreakerState.SacrificePoolMap[uuid] == true then
+        return false, "Sacrifice already in pool."
+    end
+
+    pets =
+        pets
+        or BuildAgeBreakerInventoryPets()
+
+    local pet =
+        ResolveAgeBreakerPetByUUID(
+            pets,
+            uuid
+        )
+
+    if not pet then
+        return false, "Sacrifice pet not found."
+    end
+
+    if AgeBreakerState.SkipFavorites == true
+    and pet.IsFavorite == true then
+        return false, "Sacrifice is favorited."
+    end
+
+    if AgeBreakerState.NeverSacrificeAge100 == true
+    and tonumber(pet.Age) >= 100 then
+        return false, "Sacrifice is age 100+."
+    end
+
+    table.insert(
+        AgeBreakerState.SacrificePool,
+        {
+            UUID = uuid,
+            PetName = tostring(pet.PetName or ""),
+            AddedAt = os.time(),
+            Status = "Ready",
+        }
+    )
+
+    AgeBreakerState.SacrificePoolMap[uuid] =
+        true
+
+    return true, "Sacrifice added."
+end
+
+function AddSelectedAgeBreakerTargets()
+
+    local pets =
+        BuildAgeBreakerInventoryPets()
+
+    local added = 0
+    local skipped = 0
+    local lastReason = "No selected targets."
+
+    for uuid, selected in pairs(AgeBreakerState.SelectedTargetUUIDMap or {}) do
+
+        if selected == true then
+
+            local ok, reason =
+                AddAgeBreakerTargetUUID(
+                    uuid,
+                    pets
+                )
+
+            if ok then
+                added =
+                    added + 1
+            else
+                skipped =
+                    skipped + 1
+
+                lastReason =
+                    tostring(reason)
+            end
+        end
+    end
+
+    if added > 0 then
+        AgeBreakerState.Status =
+            "Added "
+            .. tostring(added)
+            .. " target(s)"
+
+        if AgeBreakerState.ActiveQueueIndex <= 0 then
+            AgeBreakerState.ActiveQueueIndex =
+                1
+        end
+
+        MarkConfigDirty()
+
+        RefreshAgeBreakerInventoryDropdowns(false)
+
+        return true, AgeBreakerState.Status
+    end
+
+    AgeBreakerState.Status =
+        lastReason
+
+    return false, lastReason
+end
+
+function AddSelectedAgeBreakerSacrifices()
+
+    local pets =
+        BuildAgeBreakerInventoryPets()
+
+    local added = 0
+    local skipped = 0
+    local lastReason = "No selected sacrifices."
+
+    for uuid, selected in pairs(AgeBreakerState.SelectedSacrificeUUIDMap or {}) do
+
+        if selected == true then
+
+            local ok, reason =
+                AddAgeBreakerSacrificeUUID(
+                    uuid,
+                    pets
+                )
+
+            if ok then
+                added =
+                    added + 1
+            else
+                skipped =
+                    skipped + 1
+
+                lastReason =
+                    tostring(reason)
+            end
+        end
+    end
+
+    if added > 0 then
+        AgeBreakerState.Status =
+            "Added "
+            .. tostring(added)
+            .. " sacrifice(s)"
+
+        MarkConfigDirty()
+
+        RefreshAgeBreakerInventoryDropdowns(false)
+
+        return true, AgeBreakerState.Status
+    end
+
+    AgeBreakerState.Status =
+        lastReason
+
+    return false, lastReason
+end
+
+function AddAllSafeMatchingAgeBreakerSacrifices()
+
+    local pets =
+        BuildAgeBreakerInventoryPets()
+
+    local target =
+        nil
+
+    target =
+        ResolveAgeBreakerActiveTarget(
+            pets
+        )
+
+    if not target then
+        return false, "No active target."
+    end
+
+    local candidates = {}
+
+    for _, pet in ipairs(pets) do
+
+        local ok =
+            AgeBreakerPetPassesSacrificeRules(
+                pet,
+                target
+            )
+
+        if ok then
+            table.insert(
+                candidates,
+                pet
+            )
+        end
+    end
+
+    SortAgeBreakerSacrifices(
+        candidates
+    )
+
+    local added = 0
+
+    for _, pet in ipairs(candidates) do
+
+        local ok =
+            AddAgeBreakerSacrificeUUID(
+                pet.UUID,
+                pets
+            )
+
+        if ok then
+            added =
+                added + 1
+        end
+    end
+
+    if added <= 0 then
+        return false, "No safe matching sacrifices found."
+    end
+
+    MarkConfigDirty()
+
+    RefreshAgeBreakerInventoryDropdowns(false)
+
+    return true, "Added " .. tostring(added) .. " safe sacrifice(s)."
+end
+
+function RemoveAgeBreakerSacrificeUUID(uuid)
+
+    uuid =
+        AgeBreakerNormalizeUUID(uuid)
+
+    if uuid == "" then
+        return false
+    end
+
+    for index = #AgeBreakerState.SacrificePool, 1, -1 do
+
+        if AgeBreakerNormalizeUUID(AgeBreakerState.SacrificePool[index].UUID) == uuid then
+
+            table.remove(
+                AgeBreakerState.SacrificePool,
+                index
+            )
+        end
+    end
+
+    RebuildAgeBreakerQueueMaps()
+
+    return true
+end
+
+function ClearAgeBreakerTargets()
+
+    AgeBreakerState.TargetQueue =
+        {}
+
+    AgeBreakerState.TargetQueueMap =
+        {}
+
+    AgeBreakerState.ActiveQueueIndex =
+        1
+
+    AgeBreakerState.TargetPet =
+        nil
+
+    AgeBreakerState.SacrificePet =
+        nil
+
+    AgeBreakerState.Status =
+        "Target queue cleared"
+
+    MarkConfigDirty()
+end
+
+function ClearAgeBreakerSacrifices()
+
+    AgeBreakerState.SacrificePool =
+        {}
+
+    AgeBreakerState.SacrificePoolMap =
+        {}
+
+    AgeBreakerState.SacrificePet =
+        nil
+
+    AgeBreakerState.Status =
+        "Sacrifice pool cleared"
+
+    MarkConfigDirty()
+end
+
+function ResolveAgeBreakerActiveTarget(pets)
+
+    pets =
+        pets
+        or BuildAgeBreakerInventoryPets()
+
+    RebuildAgeBreakerQueueMaps()
+
+    local queue =
+        AgeBreakerState.TargetQueue
+        or {}
+
+    if #queue <= 0 then
+        return nil, "Target queue is empty."
+    end
+
+    local startIndex =
+        math.max(
+            1,
+            math.floor(
+                SafeNumber(
+                    AgeBreakerState.ActiveQueueIndex,
+                    1
+                )
+            )
+        )
+
+    if startIndex > #queue then
+        return nil, "All queued targets are complete."
+    end
+
+    for index = startIndex, #queue do
+
+        local entry =
+            queue[index]
+
+        local pet =
+            ResolveAgeBreakerPetByUUID(
+                pets,
+                entry.UUID
+            )
+
+        if not pet then
+
+            entry.Status =
+                "Missing"
+
+            if index == AgeBreakerState.ActiveQueueIndex then
+                AgeBreakerState.ActiveQueueIndex =
+                    index + 1
+            end
+
+            continue
+        end
+
+        local goalLevel =
+            math.floor(
+                SafeNumber(
+                    entry.GoalLevel,
+                    AgeBreakerState.DefaultGoalLevel or 125
+                )
+            )
+
+        goalLevel =
+            math.clamp(
+                goalLevel,
+                101,
+                10000
+            )
+
+        entry.GoalLevel =
+            goalLevel
+
+        if tonumber(pet.Age) >= goalLevel then
+
+            entry.Status =
+                "Complete"
+
+            if index == AgeBreakerState.ActiveQueueIndex then
+                AgeBreakerState.ActiveQueueIndex =
+                    index + 1
+            end
+
+            continue
+        end
+
+        AgeBreakerState.ActiveQueueIndex =
+            index
+
+        entry.Status =
+            "Active"
+
+        return pet, entry
+    end
+
+    return nil, "No queued target needs age breaking."
+end
+
+function ResolveAgeBreakerSacrificeFromPool(pets, target)
+
+    pets =
+        pets
+        or BuildAgeBreakerInventoryPets()
+
+    if type(target) ~= "table" then
+        return nil, "No active target."
+    end
+
+    local validSacrifices = {}
+
+    for _, entry in ipairs(AgeBreakerState.SacrificePool or {}) do
+
+        local pet =
+            ResolveAgeBreakerPetByUUID(
+                pets,
+                entry.UUID
+            )
+
+        if not pet then
+
+            entry.Status =
+                "Missing"
+
+            continue
+        end
+
+        local ok, reason =
+            AgeBreakerPetPassesSacrificeRules(
+                pet,
+                target
+            )
+
+        if ok then
+
+            entry.Status =
+                "Ready"
+
+            table.insert(
+                validSacrifices,
+                pet
+            )
+
+        else
+
+            entry.Status =
+                tostring(reason)
+        end
+    end
+
+    if #validSacrifices <= 0 then
+        return nil, "No valid sacrifice in pool for active target."
+    end
+
+    SortAgeBreakerSacrifices(
+        validSacrifices
+    )
+
+    return validSacrifices[1], "OK"
+end
+
+function PrepareAgeBreakerCurrentPair()
 
     AgeBreakerState.LastScanAt =
         os.clock()
@@ -8284,70 +8962,66 @@ function ScanAgeBreakerPair()
     AgeBreakerState.LastCandidates =
         pets
 
-    BuildAgeBreakerTargetChoices(
-        pets
-    )
-
-    local target, targetReason =
-        ResolveManualAgeBreakerTarget(
+    local target, targetInfo =
+        ResolveAgeBreakerActiveTarget(
             pets
         )
 
     if not target then
 
         AgeBreakerState.Status =
-            tostring(targetReason)
+            tostring(targetInfo)
+
+        AgeBreakerState.NextAction =
+            "Waiting"
 
         return false, AgeBreakerState.Status
     end
 
-    local sacrifices = {}
-
-    for _, pet in ipairs(pets) do
-
-        local ok =
-            AgeBreakerPetPassesSacrificeRules(
-                pet,
-                target
-            )
-
-        if ok then
-            table.insert(
-                sacrifices,
-                pet
-            )
-        end
-    end
+    local sacrifice, sacrificeReason =
+        ResolveAgeBreakerSacrificeFromPool(
+            pets,
+            target
+        )
 
     AgeBreakerState.TargetPet =
         target
 
-    if #sacrifices <= 0 then
+    if not sacrifice then
 
         AgeBreakerState.Status =
-            "No safe sacrifice found"
+            tostring(sacrificeReason)
+
+        AgeBreakerState.NextAction =
+            "Add more "
+            .. tostring(target.PetName)
+            .. " sacrifices"
 
         return false, AgeBreakerState.Status
     end
 
-    SortAgeBreakerSacrifices(
-        sacrifices
-    )
-
     AgeBreakerState.SacrificePet =
-        sacrifices[1]
+        sacrifice
 
     AgeBreakerState.Status =
         "Pair ready"
 
+    AgeBreakerState.NextAction =
+        "Submit pair"
+
     return true, "Pair ready"
+end
+
+-- Backwards-compatible alias.
+function ScanAgeBreakerPair()
+
+    return PrepareAgeBreakerCurrentPair()
 end
 
 function FormatAgeBreakerShortUUID(uuid)
 
     uuid =
-        tostring(uuid or "")
-            :gsub("[{}]", "")
+        AgeBreakerNormalizeUUID(uuid)
 
     if uuid == "" then
         return "----"
@@ -8386,64 +9060,214 @@ function FormatAgeBreakerPetLine(pet)
         .. FormatAgeBreakerShortUUID(pet.UUID)
 end
 
-function ValidateAgeBreakerPair()
+function FormatAgeBreakerQueueText()
 
     local pets =
-        BuildAgeBreakerInventoryPets()
+        AgeBreakerState.LastCandidates
 
-    local target, targetReason =
-        ResolveManualAgeBreakerTarget(
-            pets
-        )
-
-    if not target then
-
-        AgeBreakerState.TargetPet =
-            nil
-
-        AgeBreakerState.SacrificePet =
-            nil
-
-        return false, tostring(targetReason)
+    if type(pets) ~= "table"
+    or #pets <= 0 then
+        pets =
+            BuildAgeBreakerInventoryPets()
     end
+
+    local lines = {}
+
+    local queue =
+        AgeBreakerState.TargetQueue
+        or {}
+
+    if #queue <= 0 then
+        return "Queue: empty"
+    end
+
+    for index, entry in ipairs(queue) do
+
+        if index > 8 then
+
+            table.insert(
+                lines,
+                "… +"
+                    .. tostring(#queue - 8)
+                    .. " more"
+            )
+
+            break
+        end
+
+        local pet =
+            ResolveAgeBreakerPetByUUID(
+                pets,
+                entry.UUID
+            )
+
+        local status =
+            tostring(entry.Status or "Waiting")
+
+        if index == AgeBreakerState.ActiveQueueIndex
+        and status ~= "Complete"
+        and status ~= "Missing" then
+            status =
+                "Active"
+        end
+
+        local goal =
+            tostring(
+                entry.GoalLevel
+                or AgeBreakerState.DefaultGoalLevel
+                or 125
+            )
+
+        if pet then
+
+            table.insert(
+                lines,
+                tostring(index)
+                    .. ". "
+                    .. FormatAgeBreakerMutationPrefix(pet.MutationText)
+                    .. tostring(pet.PetName)
+                    .. " | Age "
+                    .. tostring(pet.Age or "?")
+                    .. "/"
+                    .. goal
+                    .. " | BW "
+                    .. FormatAgeBreakerNumber(pet.BaseWeight, 2)
+                    .. " | #"
+                    .. FormatAgeBreakerShortUUID(pet.UUID)
+                    .. " | "
+                    .. status
+            )
+
+        else
+
+            table.insert(
+                lines,
+                tostring(index)
+                    .. ". "
+                    .. tostring(entry.PetName or "Unknown")
+                    .. " | Missing | #"
+                    .. FormatAgeBreakerShortUUID(entry.UUID)
+            )
+        end
+    end
+
+    return table.concat(
+        lines,
+        "\n"
+    )
+end
+
+function FormatAgeBreakerSacrificePoolText()
+
+    local pets =
+        AgeBreakerState.LastCandidates
+
+    if type(pets) ~= "table"
+    or #pets <= 0 then
+        pets =
+            BuildAgeBreakerInventoryPets()
+    end
+
+    local lines = {}
+
+    local pool =
+        AgeBreakerState.SacrificePool
+        or {}
+
+    if #pool <= 0 then
+        return "Pool: empty"
+    end
+
+    for index, entry in ipairs(pool) do
+
+        if index > 10 then
+
+            table.insert(
+                lines,
+                "… +"
+                    .. tostring(#pool - 10)
+                    .. " more"
+            )
+
+            break
+        end
+
+        local pet =
+            ResolveAgeBreakerPetByUUID(
+                pets,
+                entry.UUID
+            )
+
+        if pet then
+
+            table.insert(
+                lines,
+                tostring(index)
+                    .. ". "
+                    .. FormatAgeBreakerMutationPrefix(pet.MutationText)
+                    .. tostring(pet.PetName)
+                    .. " | Age "
+                    .. tostring(pet.Age or "?")
+                    .. " | BW "
+                    .. FormatAgeBreakerNumber(pet.BaseWeight, 2)
+                    .. " | #"
+                    .. FormatAgeBreakerShortUUID(pet.UUID)
+            )
+
+        else
+
+            table.insert(
+                lines,
+                tostring(index)
+                    .. ". "
+                    .. tostring(entry.PetName or "Unknown")
+                    .. " | Missing | #"
+                    .. FormatAgeBreakerShortUUID(entry.UUID)
+            )
+        end
+    end
+
+    return table.concat(
+        lines,
+        "\n"
+    )
+end
+
+function ValidateAgeBreakerPair()
+
+    local ok, reason =
+        PrepareAgeBreakerCurrentPair()
+
+    if not ok then
+        return false, tostring(reason)
+    end
+
+    local target =
+        AgeBreakerState.TargetPet
 
     local sacrifice =
         AgeBreakerState.SacrificePet
 
-    if type(sacrifice) ~= "table"
-    or tostring(sacrifice.UUID or "") == "" then
-
-        local ok =
-            ScanAgeBreakerPair()
-
-        if not ok then
-            return false, tostring(AgeBreakerState.Status or "Pair not ready")
-        end
-
-        sacrifice =
-            AgeBreakerState.SacrificePet
+    if type(target) ~= "table" then
+        return false, "Missing active target."
     end
-
-    AgeBreakerState.TargetPet =
-        target
 
     if type(sacrifice) ~= "table" then
         return false, "Missing sacrifice pet."
     end
 
-    local ok, reason =
+    local valid, validReason =
         AgeBreakerPetPassesSacrificeRules(
             sacrifice,
             target
         )
 
-    if not ok then
-        return false, reason
+    if not valid then
+        return false, validReason
     end
 
     return true, "Ready"
 end
-
 function GetPetAgeBreakSubmitRemote()
 
     local gameEvents =
@@ -8799,15 +9623,31 @@ local okSacrifice, sacrificeReason =
         5
     )
 
-    print(
-        "[AGE BREAKER] Submitted pair | Target:",
-        FormatAgeBreakerPetLine(target),
-        "| Sacrifice:",
-        FormatAgeBreakerPetLine(sacrifice)
-    )
+print(
+    "[AGE BREAKER] Submitted pair | Target:",
+    FormatAgeBreakerPetLine(target),
+    "| Sacrifice:",
+    FormatAgeBreakerPetLine(sacrifice)
+)
 
-    return true
+-- Once submitted, remove this sacrifice from the allowed pool
+-- so HOLY cannot reuse the same disposable pet again.
+RemoveAgeBreakerSacrificeUUID(
+    sacrifice.UUID
+)
+
+AgeBreakerState.NextAction =
+    "Waiting for machine"
+
+MarkConfigDirty()
+
+if type(RefreshAgeBreakerInventoryDropdowns) == "function" then
+    pcall(function()
+        RefreshAgeBreakerInventoryDropdowns(false)
+    end)
 end
+
+return true
 
 function ParseAgeBreakerTimerSeconds(text)
 
@@ -43746,11 +44586,17 @@ end
 --==================================================
 
 AgeBreakerTargetDropdown = nil
+AgeBreakerSacrificeDropdown = nil
+
+AgeBreakerQueueLabel = nil
+AgeBreakerPoolLabel = nil
+
 AgeBreakerTargetLabel = nil
 AgeBreakerSacrificeLabel = nil
 AgeBreakerSafetyLabel = nil
 AgeBreakerMachineLabel = nil
 AgeBreakerStatusLabel = nil
+AgeBreakerNextActionLabel = nil
 
 function RefreshAgeBreakerUI()
 
@@ -43758,23 +44604,39 @@ function RefreshAgeBreakerUI()
         pcall(RefreshAgeBreakerMachineState)
     end
 
-if AgeBreakerTargetLabel then
-    AgeBreakerTargetLabel:SetText(
-        "Target: 🔒 "
-        .. FormatAgeBreakerPetLine(
-            AgeBreakerState.TargetPet
-        )
-    )
-end
+    pcall(function()
+        PrepareAgeBreakerCurrentPair()
+    end)
 
-if AgeBreakerSacrificeLabel then
-    AgeBreakerSacrificeLabel:SetText(
-        "Sacrifice: 🧪 "
-        .. FormatAgeBreakerPetLine(
-            AgeBreakerState.SacrificePet
+    if AgeBreakerQueueLabel then
+        AgeBreakerQueueLabel:SetText(
+            FormatAgeBreakerQueueText()
         )
-    )
-end
+    end
+
+    if AgeBreakerPoolLabel then
+        AgeBreakerPoolLabel:SetText(
+            FormatAgeBreakerSacrificePoolText()
+        )
+    end
+
+    if AgeBreakerTargetLabel then
+        AgeBreakerTargetLabel:SetText(
+            "Target: 🔒 "
+            .. FormatAgeBreakerPetLine(
+                AgeBreakerState.TargetPet
+            )
+        )
+    end
+
+    if AgeBreakerSacrificeLabel then
+        AgeBreakerSacrificeLabel:SetText(
+            "Sacrifice: 🧪 "
+            .. FormatAgeBreakerPetLine(
+                AgeBreakerState.SacrificePet
+            )
+        )
+    end
 
     if AgeBreakerSafetyLabel then
 
@@ -43793,8 +44655,15 @@ end
 
     if AgeBreakerMachineLabel then
 
+        local worldText =
+            IsTradeWorld()
+            and "Trade World ⚠️"
+            or "Normal World ✅"
+
         local machineText =
-            "Machine: "
+            "World: "
+            .. worldText
+            .. " | Machine: "
 
         if AgeBreakerState.TimerText == "--" then
             machineText =
@@ -43820,6 +44689,16 @@ end
             .. tostring(
                 AgeBreakerState.Status
                 or "Idle"
+            )
+        )
+    end
+
+    if AgeBreakerNextActionLabel then
+        AgeBreakerNextActionLabel:SetText(
+            "Next: "
+            .. tostring(
+                AgeBreakerState.NextAction
+                or "Waiting"
             )
         )
     end
@@ -43851,14 +44730,21 @@ function OpenAgeBreakerSubmitConfirmDialog()
         AgeBreakerState.SacrificePet
 
     local description =
-        "TARGET\n"
+        "ACTIVE TARGET\n"
         .. FormatAgeBreakerPetLine(target)
         .. "\n\n"
-        .. "SACRIFICE\n"
+        .. "NEXT SACRIFICE\n"
         .. FormatAgeBreakerPetLine(sacrifice)
         .. "\n\n"
-        .. "This will submit both pets to the Age Break machine.\n"
-        .. "BaseWeight is used for safety filtering."
+        .. "Queue: "
+        .. tostring(#(AgeBreakerState.TargetQueue or {}))
+        .. " target(s)"
+        .. "\n"
+        .. "Pool: "
+        .. tostring(#(AgeBreakerState.SacrificePool or {}))
+        .. " sacrifice(s)"
+        .. "\n\n"
+        .. "This will submit the active target and consume one sacrifice from the pool."
 
     local ConfirmDialog = nil
 
@@ -43914,41 +44800,33 @@ function BuildAgeBreakerTab()
         return
     end
 
-    if type(RefreshDynamicPetList) == "function" then
-        pcall(RefreshDynamicPetList)
-    end
-
-    PetList =
-        PetList
-        or {}
-
     local SetupBox =
         Tabs.AgeBreaker:AddLeftGroupbox(
             "🧬 Age Breaker Setup",
             "dna"
         )
 
-    local TargetBox =
-    Tabs.AgeBreaker:AddLeftGroupbox(
-        "🎯 Target Validation",
-        "crosshair"
-    )
-
-    local SacrificeBox =
+    local QueueBox =
         Tabs.AgeBreaker:AddLeftGroupbox(
-            "🧪 Sacrifice Rules",
+            "📋 Target Queue",
+            "list"
+        )
+
+    local PoolBox =
+        Tabs.AgeBreaker:AddLeftGroupbox(
+            "🧪 Sacrifice Pool",
             "flask-conical"
         )
 
-    local SafetyBox =
+    local RulesBox =
         Tabs.AgeBreaker:AddLeftGroupbox(
-            "🛡️ Safety Rules",
+            "🛡️ Safety",
             "shield-check"
         )
 
     local PreviewBox =
         Tabs.AgeBreaker:AddRightGroupbox(
-            "👁️ Pair Preview",
+            "👁️ Current Job",
             "eye"
         )
 
@@ -43958,23 +44836,20 @@ function BuildAgeBreakerTab()
             "clock"
         )
 
-    local LogsBox =
+    local NotesBox =
         Tabs.AgeBreaker:AddRightGroupbox(
             "📜 Notes",
             "scroll-text"
         )
 
-    local AgeBreakerEnableToggle =
-        SetupBox:AddToggle(
-            "AgeBreakerEnabled",
-            {
-                Text = "🧬 Enable Age Breaker",
-                Tooltip = "Enables the Age Breaker helper UI. It will not submit pets without confirmation.",
-                Default = false,
-            }
-        )
-
-    AgeBreakerEnableToggle:OnChanged(function(value)
+    SetupBox:AddToggle(
+        "AgeBreakerEnabled",
+        {
+            Text = "🧬 Enable Age Breaker",
+            Tooltip = "Enables the Age Breaker helper. Queue/pool selection is manual.",
+            Default = false,
+        }
+    ):OnChanged(function(value)
 
         AgeBreakerState.Enabled =
             value == true
@@ -43988,111 +44863,14 @@ function BuildAgeBreakerTab()
         RefreshAgeBreakerUI()
     end)
 
-    local AgeBreakerPetDropdown =
-        SetupBox:AddDropdown(
-            "AgeBreakerPetName",
-            {
-                Text = "Pet Name",
-                Tooltip = "The pet type to age break. Target and sacrifice must match this pet.",
-                Values = PetList,
-                Default = "",
-                Searchable = true,
-                Multi = false,
-            }
-        )
-
-AgeBreakerPetDropdown:OnChanged(function(value)
-
-    AgeBreakerState.PetName =
-        NormalizeAgeBreakerPetName(value)
-
-    AgeBreakerState.ManualTargetUUID =
-        ""
-
-    AgeBreakerState.ManualTargetDisplay =
-        ""
-
-    AgeBreakerState.TargetPet =
-        nil
-
-    AgeBreakerState.SacrificePet =
-        nil
-
-    AgeBreakerState.Status =
-        "Pet selected"
-
-    RefreshAgeBreakerTargetDropdown(true)
-
-    MarkConfigDirty()
-    RefreshAgeBreakerUI()
-end)
-
-AgeBreakerTargetDropdown =
-    SetupBox:AddDropdown(
-        "AgeBreakerManualTargetPet",
+    SetupBox:AddInput(
+        "AgeBreakerGoalLevel",
         {
-            Text = "Target Pet",
-            Tooltip = "Select the exact inventory pet you want to age break. HOLY will never auto-pick this.",
-            Values = {},
-            Default = nil,
-            Searchable = true,
-            Multi = false,
-        }
-    )
-
-AgeBreakerTargetDropdown:OnChanged(function(value)
-
-    local display =
-        tostring(value or "")
-
-    local uuid =
-        AgeBreakerState.TargetChoiceToUUID
-        and AgeBreakerState.TargetChoiceToUUID[display]
-        or ""
-
-    AgeBreakerState.ManualTargetDisplay =
-        display
-
-    AgeBreakerState.ManualTargetUUID =
-        tostring(uuid or "")
-
-    AgeBreakerState.TargetPet =
-        nil
-
-    AgeBreakerState.SacrificePet =
-        nil
-
-    if AgeBreakerState.ManualTargetUUID == "" then
-        AgeBreakerState.Status =
-            "Select a target pet"
-    else
-        AgeBreakerState.Status =
-            "Target locked"
-    end
-
-    MarkConfigDirty()
-    RefreshAgeBreakerUI()
-end)
-
-SetupBox:AddInput(
-    "AgeBreakerTargetMaxLevel",
-        {
-            Text = "Target Max Level",
-            Default = "104",
+            Text = "Goal Level",
+            Default = tostring(AgeBreakerState.DefaultGoalLevel or 125),
             Numeric = true,
             Finished = true,
-            Tooltip = "Visual target level goal. This is only displayed for planning.",
-        }
-    )
-
-    TargetBox:AddInput(
-        "AgeBreakerMinTargetAge",
-        {
-            Text = "Min Target Age",
-            Default = tostring(AgeBreakerState.MinTargetAge),
-            Numeric = true,
-            Finished = true,
-            Tooltip = "Target pet must be at least this age.",
+            Tooltip = "Targets stay active until they reach this age/level.",
         }
     ):OnChanged(function(value)
 
@@ -44103,67 +44881,203 @@ SetupBox:AddInput(
             return
         end
 
-        AgeBreakerState.MinTargetAge =
+        AgeBreakerState.DefaultGoalLevel =
             math.clamp(
                 math.floor(number),
-                1,
+                101,
                 10000
             )
 
-        AgeBreakerState.TargetPet =
-            nil
-
-        AgeBreakerState.SacrificePet =
-            nil
-
         MarkConfigDirty()
         RefreshAgeBreakerUI()
     end)
 
-    TargetBox:AddInput(
-        "AgeBreakerMinTargetBaseWeight",
-        {
-            Text = "Min Target BaseWeight",
-            Default = tostring(AgeBreakerState.MinTargetBaseWeight),
-            Numeric = true,
-            Finished = true,
-            Tooltip = "Target pet must have at least this BaseWeight. 0 = no minimum.",
-        }
-    ):OnChanged(function(value)
+    AgeBreakerTargetDropdown =
+        SetupBox:AddDropdown(
+            "AgeBreakerTargetMulti",
+            {
+                Text = "Target Pets",
+                Tooltip = "Select multiple valuable pets to add to the target queue.",
+                Values = {},
+                Default = {},
+                Searchable = true,
+                Multi = true,
+            }
+        )
 
-        local number =
-            tonumber(value)
+    AgeBreakerTargetDropdown:OnChanged(function(value)
 
-        if not number then
-            return
-        end
-
-        AgeBreakerState.MinTargetBaseWeight =
-            math.clamp(
-                number,
-                0,
-                100000
+        AgeBreakerState.SelectedTargetUUIDMap =
+            ResolveAgeBreakerSelectedUUIDMap(
+                value,
+                AgeBreakerState.TargetChoiceToUUID
             )
 
-        AgeBreakerState.TargetPet =
-            nil
-
-        AgeBreakerState.SacrificePet =
-            nil
-
-        MarkConfigDirty()
         RefreshAgeBreakerUI()
     end)
 
+    SetupBox:AddButton({
+        Text = "➕ Add Selected Targets",
+        Tooltip = "Adds all selected target pets to the queue.",
+        Func = function()
 
-    SacrificeBox:AddInput(
+            local ok, reason =
+                AddSelectedAgeBreakerTargets()
+
+            HolyNotify(
+                "Age Breaker",
+                tostring(reason),
+                ok and "badge-check" or "triangle-alert",
+                4
+            )
+
+            RefreshAgeBreakerUI()
+        end,
+    })
+
+    SetupBox:AddButton({
+        Text = "🔄 Refresh Inventory",
+        Tooltip = "Refreshes target and sacrifice dropdowns from Backpack/Character.",
+        Func = function()
+
+            local targetChoices, sacrificeChoices =
+                RefreshAgeBreakerInventoryDropdowns(false)
+
+            HolyNotify(
+                "Age Breaker",
+                "Found "
+                    .. tostring(#targetChoices)
+                    .. " target option(s), "
+                    .. tostring(#sacrificeChoices)
+                    .. " sacrifice option(s).",
+                "refresh-cw",
+                4
+            )
+
+            RefreshAgeBreakerUI()
+        end,
+    })
+
+    AgeBreakerQueueLabel =
+        QueueBox:AddLabel(
+            "Queue: empty",
+            true
+        )
+
+    QueueBox:AddButton({
+        Text = "🧹 Clear Targets",
+        Tooltip = "Clears the target queue.",
+        Func = function()
+
+            ClearAgeBreakerTargets()
+
+            RefreshAgeBreakerInventoryDropdowns(false)
+            RefreshAgeBreakerUI()
+
+            HolyNotify(
+                "Age Breaker",
+                "Target queue cleared.",
+                "trash",
+                3
+            )
+        end,
+    })
+
+    AgeBreakerSacrificeDropdown =
+        PoolBox:AddDropdown(
+            "AgeBreakerSacrificeMulti",
+            {
+                Text = "Sacrifice Pets",
+                Tooltip = "Select multiple disposable pets HOLY is allowed to consume.",
+                Values = {},
+                Default = {},
+                Searchable = true,
+                Multi = true,
+            }
+        )
+
+    AgeBreakerSacrificeDropdown:OnChanged(function(value)
+
+        AgeBreakerState.SelectedSacrificeUUIDMap =
+            ResolveAgeBreakerSelectedUUIDMap(
+                value,
+                AgeBreakerState.SacrificeChoiceToUUID
+            )
+
+        RefreshAgeBreakerUI()
+    end)
+
+    PoolBox:AddButton({
+        Text = "➕ Add Selected Sacrifices",
+        Tooltip = "Adds all selected sacrifice pets to the sacrifice pool.",
+        Func = function()
+
+            local ok, reason =
+                AddSelectedAgeBreakerSacrifices()
+
+            HolyNotify(
+                "Age Breaker",
+                tostring(reason),
+                ok and "badge-check" or "triangle-alert",
+                4
+            )
+
+            RefreshAgeBreakerUI()
+        end,
+    })
+
+    PoolBox:AddButton({
+        Text = "⚡ Add All Safe Matching",
+        Tooltip = "Adds all safe sacrifices matching the active target pet.",
+        Func = function()
+
+            local ok, reason =
+                AddAllSafeMatchingAgeBreakerSacrifices()
+
+            HolyNotify(
+                "Age Breaker",
+                tostring(reason),
+                ok and "badge-check" or "triangle-alert",
+                4
+            )
+
+            RefreshAgeBreakerUI()
+        end,
+    })
+
+    AgeBreakerPoolLabel =
+        PoolBox:AddLabel(
+            "Pool: empty",
+            true
+        )
+
+    PoolBox:AddButton({
+        Text = "🧹 Clear Sacrifices",
+        Tooltip = "Clears the sacrifice pool.",
+        Func = function()
+
+            ClearAgeBreakerSacrifices()
+
+            RefreshAgeBreakerInventoryDropdowns(false)
+            RefreshAgeBreakerUI()
+
+            HolyNotify(
+                "Age Breaker",
+                "Sacrifice pool cleared.",
+                "trash",
+                3
+            )
+        end,
+    })
+
+    RulesBox:AddInput(
         "AgeBreakerMaxSacrificeAge",
         {
             Text = "Max Sacrifice Age",
-            Default = tostring(AgeBreakerState.MaxSacrificeAge),
+            Default = tostring(AgeBreakerState.MaxSacrificeAge or 99),
             Numeric = true,
             Finished = true,
-            Tooltip = "Sacrifice pet must be at or below this age.",
+            Tooltip = "Sacrifice pets above this age are blocked.",
         }
     ):OnChanged(function(value)
 
@@ -44181,46 +45095,11 @@ SetupBox:AddInput(
                 10000
             )
 
-        AgeBreakerState.SacrificePet =
-            nil
-
         MarkConfigDirty()
         RefreshAgeBreakerUI()
     end)
 
-    SacrificeBox:AddInput(
-        "AgeBreakerMaxSacrificeBaseWeight",
-        {
-            Text = "Max Sacrifice BaseWeight",
-            Default = tostring(AgeBreakerState.MaxSacrificeBaseWeight),
-            Numeric = true,
-            Finished = true,
-            Tooltip = "Sacrifice pet must be at or below this BaseWeight. 0 = no maximum.",
-        }
-    ):OnChanged(function(value)
-
-        local number =
-            tonumber(value)
-
-        if not number then
-            return
-        end
-
-        AgeBreakerState.MaxSacrificeBaseWeight =
-            math.clamp(
-                number,
-                0,
-                100000
-            )
-
-        AgeBreakerState.SacrificePet =
-            nil
-
-        MarkConfigDirty()
-        RefreshAgeBreakerUI()
-    end)
-
-    SacrificeBox:AddDropdown(
+    RulesBox:AddDropdown(
         "AgeBreakerSacrificePriority",
         {
             Text = "Sacrifice Priority",
@@ -44241,12 +45120,12 @@ SetupBox:AddInput(
         RefreshAgeBreakerUI()
     end)
 
-    SafetyBox:AddToggle(
+    RulesBox:AddToggle(
         "AgeBreakerRequireManualConfirm",
         {
             Text = "✅ Require Manual Confirm",
             Default = true,
-            Tooltip = "Shows a confirmation popup before submitting the target and sacrifice pair.",
+            Tooltip = "Shows a confirmation popup before submitting.",
         }
     ):OnChanged(function(value)
 
@@ -44256,12 +45135,12 @@ SetupBox:AddInput(
         MarkConfigDirty()
     end)
 
-    SafetyBox:AddToggle(
+    RulesBox:AddToggle(
         "AgeBreakerNeverSacrificeAge100",
         {
             Text = "🛑 Never Sacrifice Age 100+",
             Default = true,
-            Tooltip = "Blocks any age 100+ pet from being used as sacrifice.",
+            Tooltip = "Blocks age 100+ pets from sacrifice pool use.",
         }
     ):OnChanged(function(value)
 
@@ -44272,39 +45151,7 @@ SetupBox:AddInput(
         RefreshAgeBreakerUI()
     end)
 
-    SafetyBox:AddToggle(
-        "AgeBreakerNeverSacrificeTargetMatch",
-        {
-            Text = "🛡️ Never Sacrifice Target Match",
-            Default = true,
-            Tooltip = "Blocks sacrifice pets that also match your target rules.",
-        }
-    ):OnChanged(function(value)
-
-        AgeBreakerState.NeverSacrificeTargetMatch =
-            value == true
-
-        MarkConfigDirty()
-        RefreshAgeBreakerUI()
-    end)
-
-    SafetyBox:AddToggle(
-        "AgeBreakerLowerBaseWeight",
-        {
-            Text = "⚖️ Sacrifice Must Be Lower BW",
-            Default = true,
-            Tooltip = "Sacrifice BaseWeight must be lower than the target BaseWeight.",
-        }
-    ):OnChanged(function(value)
-
-        AgeBreakerState.SacrificeMustBeLowerBaseWeight =
-            value == true
-
-        MarkConfigDirty()
-        RefreshAgeBreakerUI()
-    end)
-
-    SafetyBox:AddToggle(
+    RulesBox:AddToggle(
         "AgeBreakerSkipFavorites",
         {
             Text = "❤️ Skip Favorites",
@@ -44314,6 +45161,22 @@ SetupBox:AddInput(
     ):OnChanged(function(value)
 
         AgeBreakerState.SkipFavorites =
+            value == true
+
+        MarkConfigDirty()
+        RefreshAgeBreakerUI()
+    end)
+
+    RulesBox:AddToggle(
+        "AgeBreakerLowerBaseWeight",
+        {
+            Text = "⚖️ Sacrifice Must Be Lower BW",
+            Default = true,
+            Tooltip = "Sacrifice BaseWeight must be lower than target BaseWeight.",
+        }
+    ):OnChanged(function(value)
+
+        AgeBreakerState.SacrificeMustBeLowerBaseWeight =
             value == true
 
         MarkConfigDirty()
@@ -44334,62 +45197,22 @@ SetupBox:AddInput(
 
     AgeBreakerSafetyLabel =
         PreviewBox:AddLabel(
-            "Safety: Waiting for scan",
+            "Safety: Waiting",
             false
         )
 
-PreviewBox:AddButton({
-    Text = "🔎 Refresh Target List",
-    Tooltip = "Refreshes the exact inventory target-pet dropdown.",
-    Func = function()
-
-        local choices =
-            RefreshAgeBreakerTargetDropdown(false)
-
-        HolyNotify(
-            "Age Breaker",
-            "Found "
-                .. tostring(#choices)
-                .. " target pet option(s).",
-            "refresh-cw",
-            4
-        )
-
-        RefreshAgeBreakerUI()
-    end,
-})
-
-PreviewBox:AddButton({
-    Text = "🧪 Scan Sacrifice",
-    Tooltip = "Uses your selected target pet and finds the safest matching sacrifice pet.",
-    Func = function()
-
-        local ok, reason =
-            ScanAgeBreakerPair()
-
-        HolyNotify(
-            "Age Breaker",
-            tostring(reason),
-            ok and "badge-check" or "triangle-alert",
-            4
-        )
-
-        RefreshAgeBreakerUI()
-    end,
-})
-
     PreviewBox:AddButton({
-        Text = "✅ Validate Pair",
-        Tooltip = "Checks the current target and sacrifice pair again.",
+        Text = "🔎 Prepare Current Pair",
+        Tooltip = "Finds the active target and next valid sacrifice from the pool.",
         Func = function()
 
-            local valid, reason =
-                ValidateAgeBreakerPair()
+            local ok, reason =
+                PrepareAgeBreakerCurrentPair()
 
             HolyNotify(
                 "Age Breaker",
                 tostring(reason),
-                valid and "shield-check" or "triangle-alert",
+                ok and "badge-check" or "triangle-alert",
                 4
             )
 
@@ -44398,8 +45221,8 @@ PreviewBox:AddButton({
     })
 
     PreviewBox:AddButton({
-        Text = "🧬 Submit Valid Pair",
-        Tooltip = "Submits the validated target and sacrifice pair to the Age Break machine.",
+        Text = "🧬 Submit Next Pair",
+        Tooltip = "Submits active target + next sacrifice from the pool.",
         Func = function()
 
             if AgeBreakerState.RequireManualConfirm == true then
@@ -44420,6 +45243,12 @@ PreviewBox:AddButton({
     AgeBreakerStatusLabel =
         MachineBox:AddLabel(
             "Status: Idle",
+            false
+        )
+
+    AgeBreakerNextActionLabel =
+        MachineBox:AddLabel(
+            "Next: Waiting",
             false
         )
 
@@ -44445,17 +45274,17 @@ PreviewBox:AddButton({
         end,
     })
 
-    LogsBox:AddLabel(
-        "Uses BaseWeight for filter logic. Display KG is shown only for preview.",
+    NotesBox:AddLabel(
+        "Flow: Refresh Inventory → select multiple targets → Add Selected Targets → select multiple sacrifices → Add Selected Sacrifices → Submit Next Pair.",
         true
     )
 
-    LogsBox:AddLabel(
-    "Start with Pet Name → Refresh Target List → choose Target Pet → Scan Sacrifice → Validate Pair.",
-    true
-)
+    NotesBox:AddLabel(
+        "Hard safety: queued targets can never be consumed as sacrifices.",
+        true
+    )
 
-    RefreshAgeBreakerTargetDropdown(true)
+    RefreshAgeBreakerInventoryDropdowns(true)
 
     RefreshAgeBreakerUI()
 
