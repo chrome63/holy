@@ -3609,9 +3609,14 @@ AgeBreakerState = {
     SacrificeChoices = {},
     SacrificeChoiceToUUID = {},
 
-    -- Current active pair.
-    TargetPet = nil,
-    SacrificePet = nil,
+-- Current active pair.
+TargetPet = nil,
+SacrificePet = nil,
+
+-- Target currently inside the Age Break machine.
+MachineTargetUUID = "",
+MachineTargetSnapshot = nil,
+MachineRunning = false,
 
     -- Hidden validation/safety.
     MinTargetAge = 100,
@@ -8861,16 +8866,35 @@ function ResolveAgeBreakerActiveTarget(pets)
 
         if not pet then
 
-            entry.Status =
-                "Missing"
+    local entryUUID =
+        AgeBreakerNormalizeUUID(entry.UUID)
 
-            if index == AgeBreakerState.ActiveQueueIndex then
-                AgeBreakerState.ActiveQueueIndex =
-                    index + 1
-            end
+    local machineUUID =
+        AgeBreakerNormalizeUUID(
+            AgeBreakerState.MachineTargetUUID
+        )
 
-            continue
-        end
+    -- If the target was submitted into the machine, it leaves inventory.
+    -- Do not mark it Missing or skip to the next queue target.
+    if AgeBreakerState.MachineRunning == true
+    and entryUUID ~= ""
+    and entryUUID == machineUUID
+    and type(AgeBreakerState.MachineTargetSnapshot) == "table" then
+
+        entry.Status =
+            "Running"
+
+        AgeBreakerState.ActiveQueueIndex =
+            index
+
+        return AgeBreakerState.MachineTargetSnapshot, entry
+    end
+
+    entry.Status =
+        "Missing"
+
+    continue
+end
 
         local goalLevel =
             math.floor(
@@ -8979,6 +9003,28 @@ end
 
 function PrepareAgeBreakerCurrentPair()
 
+        RefreshAgeBreakerMachineState()
+
+    if AgeBreakerState.MachineRunning == true
+    and AgeBreakerState.ClaimReady ~= true then
+
+        AgeBreakerState.Status =
+            "Machine running"
+
+        AgeBreakerState.NextAction =
+            "Wait for timer"
+
+        if type(AgeBreakerState.MachineTargetSnapshot) == "table" then
+            AgeBreakerState.TargetPet =
+                AgeBreakerState.MachineTargetSnapshot
+        end
+
+        AgeBreakerState.SacrificePet =
+            nil
+
+        return false, "Machine is already running."
+    end
+
     AgeBreakerState.LastScanAt =
         os.clock()
 
@@ -9043,6 +9089,8 @@ function PrepareAgeBreakerCurrentPair()
 
     return true, "Pair ready"
 end
+
+
 
 -- Backwards-compatible alias.
 function ScanAgeBreakerPair()
@@ -9115,12 +9163,12 @@ function FormatAgeBreakerQueueText()
 
     for index, entry in ipairs(queue) do
 
-        if index > 8 then
+        if index > 5 then
 
             table.insert(
                 lines,
                 "… +"
-                    .. tostring(#queue - 8)
+                    .. tostring(#queue - 5)
                     .. " more"
             )
 
@@ -9212,12 +9260,12 @@ function FormatAgeBreakerSacrificePoolText()
 
     for index, entry in ipairs(pool) do
 
-        if index > 10 then
+        if index > 5 then
 
             table.insert(
                 lines,
                 "… +"
-                    .. tostring(#pool - 10)
+                    .. tostring(#pool - 5)
                     .. " more"
             )
 
@@ -10248,6 +10296,23 @@ print(
     FormatAgeBreakerPetLine(sacrifice)
 )
 
+-- The target disappears from inventory while inside the machine.
+-- Keep a snapshot so the queue does not mark it Missing.
+AgeBreakerState.MachineTargetUUID =
+    AgeBreakerNormalizeUUID(target.UUID)
+
+AgeBreakerState.MachineTargetSnapshot = {
+    UUID = AgeBreakerNormalizeUUID(target.UUID),
+    PetName = tostring(target.PetName or ""),
+    MutationText = tostring(target.MutationText or "Normal"),
+    Age = tonumber(target.Age) or 0,
+    BaseWeight = tonumber(target.BaseWeight) or 0,
+    DisplayWeight = tonumber(target.DisplayWeight) or 0,
+}
+
+AgeBreakerState.MachineRunning =
+    true
+
 -- Once submitted, remove this sacrifice from the allowed pool
 -- so HOLY cannot reuse the same disposable pet again.
 RemoveAgeBreakerSacrificeUUID(
@@ -10436,17 +10501,48 @@ function ClaimAgeBreakerIfReady()
         return false
     end
 
-    AgeBreakerState.Status =
-        "Claim requested"
+AgeBreakerState.Status =
+    "Claim requested"
 
-    HolyNotify(
-        "Age Breaker",
-        "Claim requested.",
-        "badge-check",
-        4
+AgeBreakerState.NextAction =
+    "Refresh inventory"
+
+-- Machine target will return to inventory after claim.
+-- Clear running lock after a short delay so inventory can update.
+task.delay(3, function()
+
+    AgeBreakerState.MachineRunning =
+        false
+
+    AgeBreakerState.MachineTargetUUID =
+        ""
+
+    AgeBreakerState.MachineTargetSnapshot =
+        nil
+
+    if type(RefreshAgeBreakerInventoryDropdowns) == "function" then
+        pcall(function()
+            RefreshAgeBreakerInventoryDropdowns(false)
+        end)
+    end
+
+    if type(RefreshAgeBreakerUI) == "function" then
+        pcall(RefreshAgeBreakerUI)
+    end
+
+    QueueAgeBreakerSave(
+        "claimed age break"
     )
+end)
 
-    return true
+HolyNotify(
+    "Age Breaker",
+    "Claim requested.",
+    "badge-check",
+    4
+)
+
+return true
 end
 
 --==================================================
@@ -45273,22 +45369,22 @@ function RefreshAgeBreakerUI()
             or "Normal World ✅"
 
         local machineText =
-            "World: "
-            .. worldText
-            .. " | Machine: "
+    "World: "
+    .. worldText
+    .. "\n"
 
-        if AgeBreakerState.TimerText == "--" then
-            machineText =
-                machineText .. "Not found"
-        elseif AgeBreakerState.ClaimReady == true then
-            machineText =
-                machineText .. "Ready to claim"
-        else
-            machineText =
-                machineText
-                .. "Running • "
-                .. tostring(AgeBreakerState.TimerText)
-        end
+if AgeBreakerState.TimerText == "--" then
+    machineText =
+        machineText .. "Timer: Not found"
+elseif AgeBreakerState.ClaimReady == true then
+    machineText =
+        machineText .. "Timer: Ready to claim"
+else
+    machineText =
+        machineText
+        .. "Timer: "
+        .. tostring(AgeBreakerState.TimerText)
+end
 
         AgeBreakerMachineLabel:SetText(
             machineText
@@ -45686,16 +45782,12 @@ function BuildAgeBreakerTab()
         end,
     })
 
-    StatusBox:AddLabel(
-        "Current active pair and machine state.",
-        false
-    )
 
     AgeBreakerMachineLabel =
-        StatusBox:AddLabel(
-            "World: checking... | Machine: checking...",
-            false
-        )
+    StatusBox:AddLabel(
+        "Timer: checking...",
+        false
+    )
 
     AgeBreakerTargetLabel =
         StatusBox:AddLabel(
