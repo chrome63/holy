@@ -3641,15 +3641,30 @@ MachineRunning = false,
     LastSubmitAt = 0,
     LastClaimAt = 0,
 
-    TimerText = "--",
-    TimerSeconds = nil,
-    ClaimReady = false,
+TimerText = "--",
+TimerSeconds = nil,
+ClaimReady = false,
 
-    -- Standalone persistence because Age Breaker is built before
-    -- InitializeSaveAndConfig() runs.
-    PersistenceLoaded = false,
-    SaveQueued = false,
-    LastPersistentSaveAt = 0,
+--==================================================
+-- AUTO AGE BREAKER
+-- Automation only runs when Enabled is ON.
+--==================================================
+AutoTeleportWhenReady = false,
+AutoClaimWhenReady = false,
+AutoResubmitAfterClaim = false,
+
+AutoLoopRunning = false,
+AutoBusy = false,
+LastAutoActionAt = 0,
+LastAutoTeleportAt = 0,
+LastAutoSubmitAt = 0,
+LastAutoClaimAt = 0,
+
+-- Standalone persistence because Age Breaker is built before
+-- InitializeSaveAndConfig() runs.
+PersistenceLoaded = false,
+SaveQueued = false,
+LastPersistentSaveAt = 0,
 }
 
 CreateListingRemote = nil
@@ -9704,17 +9719,28 @@ function BuildAgeBreakerSavePayload()
             ),
 
         ActiveQueueIndex =
-            math.max(
-                1,
-                math.floor(
-                    SafeNumber(
-                        AgeBreakerState.ActiveQueueIndex,
-                        1
-                    )
-                )
-            ),
+    math.max(
+        1,
+        math.floor(
+            SafeNumber(
+                AgeBreakerState.ActiveQueueIndex,
+                1
+            )
+        )
+    ),
 
-        Safety = {
+Automation = {
+    AutoTeleportWhenReady =
+        AgeBreakerState.AutoTeleportWhenReady == true,
+
+    AutoClaimWhenReady =
+        AgeBreakerState.AutoClaimWhenReady == true,
+
+    AutoResubmitAfterClaim =
+        AgeBreakerState.AutoResubmitAfterClaim == true,
+},
+
+Safety = {
             RequireManualConfirm =
                 AgeBreakerState.RequireManualConfirm == true,
 
@@ -9868,6 +9894,20 @@ function ApplyAgeBreakerLoadedPayload(payload)
                 )
             )
         )
+
+    local automation =
+    type(payload.Automation) == "table"
+    and payload.Automation
+    or {}
+
+AgeBreakerState.AutoTeleportWhenReady =
+    automation.AutoTeleportWhenReady == true
+
+AgeBreakerState.AutoClaimWhenReady =
+    automation.AutoClaimWhenReady == true
+
+AgeBreakerState.AutoResubmitAfterClaim =
+    automation.AutoResubmitAfterClaim == true
 
     local safety =
         type(payload.Safety) == "table"
@@ -10681,6 +10721,366 @@ HolyNotify(
 )
 
 return true
+end
+
+--==================================================
+-- AGE BREAKER AUTO LOOP
+-- Handles:
+-- 1. Auto teleport to Normal World when ready
+-- 2. Auto claim when ready
+-- 3. Auto re-submit next pair after claim / idle
+--==================================================
+
+function IsGrowGardenNormalWorld()
+
+    return game.PlaceId == GROW_A_GARDEN_PLACE_ID
+end
+
+function CanAgeBreakerAutoAct(cooldown)
+
+    cooldown =
+        SafeNumber(
+            cooldown,
+            1
+        )
+
+    if AgeBreakerState.Enabled ~= true then
+        return false, "Disabled"
+    end
+
+    if AgeBreakerState.AutoBusy == true then
+        return false, "Busy"
+    end
+
+    if SafeElapsed(AgeBreakerState.LastAutoActionAt) < cooldown then
+        return false, "Cooldown"
+    end
+
+    return true, "OK"
+end
+
+function RequestAgeBreakerNormalWorldTeleport(reason)
+
+    if AgeBreakerState.AutoTeleportWhenReady ~= true then
+        return false, "Auto teleport disabled"
+    end
+
+    if IsGrowGardenNormalWorld() then
+        return false, "Already in Normal World"
+    end
+
+    if SafeElapsed(AgeBreakerState.LastAutoTeleportAt) < 12 then
+        return false, "Teleport cooldown"
+    end
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return false, "LocalPlayer missing"
+    end
+
+    AgeBreakerState.LastAutoTeleportAt =
+        os.clock()
+
+    AgeBreakerState.LastAutoActionAt =
+        os.clock()
+
+    AgeBreakerState.Status =
+        "Teleporting to Normal World"
+
+    AgeBreakerState.NextAction =
+        "Claim age break"
+
+    QueueAgeBreakerSave(
+        "auto teleport normal world"
+    )
+
+    HolyNotify(
+        "Age Breaker",
+        tostring(reason or "Age break is ready. Teleporting to Normal World."),
+        "send",
+        4
+    )
+
+    local TeleportService =
+        game:GetService("TeleportService")
+
+    local ok, err =
+        pcall(function()
+            TeleportService:Teleport(
+                GROW_A_GARDEN_PLACE_ID,
+                player
+            )
+        end)
+
+    if not ok then
+
+        AgeBreakerState.Status =
+            "Teleport failed"
+
+        AgeBreakerState.NextAction =
+            "Retry teleport"
+
+        HolyNotify(
+            "Age Breaker",
+            tostring(err),
+            "triangle-alert",
+            4
+        )
+
+        return false, tostring(err)
+    end
+
+    return true, "Teleport requested"
+end
+
+function AgeBreakerAutoClaimReady()
+
+    local canAct =
+        CanAgeBreakerAutoAct(1.5)
+
+    if not canAct then
+        return false
+    end
+
+    if AgeBreakerState.AutoClaimWhenReady ~= true then
+        return false
+    end
+
+    RefreshAgeBreakerMachineState()
+
+    if AgeBreakerState.ClaimReady ~= true then
+        return false
+    end
+
+    if IsTradeWorld() then
+
+        if AgeBreakerState.AutoTeleportWhenReady == true then
+            return RequestAgeBreakerNormalWorldTeleport(
+                "Age break is ready to claim."
+            )
+        end
+
+        AgeBreakerState.Status =
+            "Ready in Trade World"
+
+        AgeBreakerState.NextAction =
+            "Teleport to Normal World"
+
+        return false
+    end
+
+    if not IsGrowGardenNormalWorld() then
+        return false
+    end
+
+    if SafeElapsed(AgeBreakerState.LastAutoClaimAt) < 8 then
+        return false
+    end
+
+    AgeBreakerState.AutoBusy =
+        true
+
+    AgeBreakerState.LastAutoActionAt =
+        os.clock()
+
+    AgeBreakerState.LastAutoClaimAt =
+        os.clock()
+
+    local claimed =
+        ClaimAgeBreakerIfReady()
+
+    task.delay(4, function()
+
+        AgeBreakerState.AutoBusy =
+            false
+
+        if claimed == true then
+
+            AgeBreakerState.NextAction =
+                AgeBreakerState.AutoResubmitAfterClaim == true
+                and "Prepare next pair"
+                or "Waiting"
+
+            if type(RefreshAgeBreakerInventoryDropdowns) == "function" then
+                pcall(function()
+                    RefreshAgeBreakerInventoryDropdowns(false)
+                end)
+            end
+
+            if type(RefreshAgeBreakerUI) == "function" then
+                pcall(RefreshAgeBreakerUI)
+            end
+        end
+    end)
+
+    return claimed == true
+end
+
+function AgeBreakerAutoSubmitNextPair()
+
+    local canAct =
+        CanAgeBreakerAutoAct(2.5)
+
+    if not canAct then
+        return false
+    end
+
+    if AgeBreakerState.AutoResubmitAfterClaim ~= true then
+        return false
+    end
+
+    if IsTradeWorld() then
+        return false
+    end
+
+    if not IsGrowGardenNormalWorld() then
+        return false
+    end
+
+    RefreshAgeBreakerMachineState()
+
+    -- If timer exists and is not ready, the machine is already running.
+    if AgeBreakerState.TimerSeconds ~= nil
+    and AgeBreakerState.TimerSeconds > 0
+    and AgeBreakerState.ClaimReady ~= true then
+
+        AgeBreakerState.Status =
+            "Machine running"
+
+        AgeBreakerState.NextAction =
+            "Wait for timer"
+
+        return false
+    end
+
+    -- If ready, claiming takes priority.
+    if AgeBreakerState.ClaimReady == true then
+        return false
+    end
+
+    if SafeElapsed(AgeBreakerState.LastAutoSubmitAt) < 8 then
+        return false
+    end
+
+    local okPrepare, prepareReason =
+        PrepareAgeBreakerCurrentPair()
+
+    if not okPrepare then
+
+        AgeBreakerState.Status =
+            tostring(prepareReason)
+
+        return false
+    end
+
+    AgeBreakerState.AutoBusy =
+        true
+
+    AgeBreakerState.LastAutoActionAt =
+        os.clock()
+
+    AgeBreakerState.LastAutoSubmitAt =
+        os.clock()
+
+    AgeBreakerState.Status =
+        "Auto submitting pair"
+
+    AgeBreakerState.NextAction =
+        "Submit pair"
+
+    local submitted =
+        SubmitAgeBreakerValidatedPair()
+
+    task.delay(3, function()
+
+        AgeBreakerState.AutoBusy =
+            false
+
+        if type(RefreshAgeBreakerUI) == "function" then
+            pcall(RefreshAgeBreakerUI)
+        end
+    end)
+
+    return submitted == true
+end
+
+function AgeBreakerAutoStep()
+
+    if AgeBreakerState.Enabled ~= true then
+        return
+    end
+
+    RefreshAgeBreakerMachineState()
+
+    -- Priority 1:
+    -- If ready, teleport/claim before doing anything else.
+    if AgeBreakerState.ClaimReady == true then
+
+        AgeBreakerState.NextAction =
+            IsTradeWorld()
+            and "Teleport to Normal World"
+            or "Claim age break"
+
+        AgeBreakerAutoClaimReady()
+
+        return
+    end
+
+    -- Priority 2:
+    -- If machine is running, only wait.
+    if AgeBreakerState.TimerSeconds ~= nil
+    and AgeBreakerState.TimerSeconds > 0 then
+
+        AgeBreakerState.Status =
+            "Machine running"
+
+        AgeBreakerState.NextAction =
+            "Wait for timer"
+
+        return
+    end
+
+    -- Priority 3:
+    -- If automation is enabled and machine is idle, submit next pair.
+    AgeBreakerAutoSubmitNextPair()
+end
+
+function StartAgeBreakerAutoWorker()
+
+    if AgeBreakerState.AutoLoopRunning == true then
+        return
+    end
+
+    AgeBreakerState.AutoLoopRunning =
+        true
+
+    task.spawn(function()
+
+        while IsCurrentRun() do
+
+            task.wait(1)
+
+            local ok, err =
+                pcall(function()
+                    AgeBreakerAutoStep()
+                end)
+
+            if not ok then
+
+                AgeBreakerState.Status =
+                    "Auto loop error"
+
+                warn(
+                    "[AGE BREAKER AUTO]",
+                    tostring(err)
+                )
+
+                task.wait(3)
+            end
+        end
+    end)
 end
 
 --==================================================
@@ -45912,6 +46312,75 @@ function BuildAgeBreakerTab()
         RefreshAgeBreakerUI()
     end)
 
+        SetupBox:AddDivider({
+        Text = "Automation",
+        MarginTop = 8,
+        MarginBottom = 8,
+    })
+
+    SetupBox:AddToggle(
+        "AgeBreakerAutoTeleportWhenReady",
+        {
+            Text = "🌍 Auto Teleport When Ready",
+            Tooltip = "When the machine is ready and you are in Trade World, teleport to Normal World.",
+            Default = AgeBreakerState.AutoTeleportWhenReady == true,
+        }
+    ):OnChanged(function(value)
+
+        AgeBreakerState.AutoTeleportWhenReady =
+            value == true
+
+        MarkConfigDirty()
+
+        QueueAgeBreakerSave(
+            "auto teleport changed"
+        )
+
+        RefreshAgeBreakerUI()
+    end)
+
+    SetupBox:AddToggle(
+        "AgeBreakerAutoClaimWhenReady",
+        {
+            Text = "🎁 Auto Claim When Ready",
+            Tooltip = "Claims the Age Break reward automatically in Normal World when the timer is ready.",
+            Default = AgeBreakerState.AutoClaimWhenReady == true,
+        }
+    ):OnChanged(function(value)
+
+        AgeBreakerState.AutoClaimWhenReady =
+            value == true
+
+        MarkConfigDirty()
+
+        QueueAgeBreakerSave(
+            "auto claim changed"
+        )
+
+        RefreshAgeBreakerUI()
+    end)
+
+    SetupBox:AddToggle(
+        "AgeBreakerAutoResubmitAfterClaim",
+        {
+            Text = "🔁 Auto Re-Submit After Claim",
+            Tooltip = "After claiming, uses the next sacrifice from the pool and submits the active target again.",
+            Default = AgeBreakerState.AutoResubmitAfterClaim == true,
+        }
+    ):OnChanged(function(value)
+
+        AgeBreakerState.AutoResubmitAfterClaim =
+            value == true
+
+        MarkConfigDirty()
+
+        QueueAgeBreakerSave(
+            "auto resubmit changed"
+        )
+
+        RefreshAgeBreakerUI()
+    end)
+
     SetupBox:AddDivider({
         Text = "Targets",
         MarginTop = 8,
@@ -46221,11 +46690,13 @@ function BuildAgeBreakerTab()
         end,
     })
 
-    RefreshAgeBreakerInventoryDropdowns(false)
+RefreshAgeBreakerInventoryDropdowns(false)
 
-    RefreshAgeBreakerUI()
+RefreshAgeBreakerUI()
 
-    task.spawn(function()
+StartAgeBreakerAutoWorker()
+
+task.spawn(function()
 
         while IsCurrentRun() do
 
