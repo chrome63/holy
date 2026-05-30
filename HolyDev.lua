@@ -7454,6 +7454,259 @@ function FormatAgeBreakerNumber(value, decimals)
     )
 end
 
+function NormalizeAgeBreakerMutationText(value)
+
+    local text =
+        tostring(value or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if text == ""
+    or text == "---"
+    or text == "Normal"
+    or text == "Unknown"
+    or text == "nil"
+    or text == "false"
+    or text == "0" then
+        return "Normal"
+    end
+
+    return text
+end
+
+AgeBreakerMutationShortTags = {
+    ["Rainbow"] = "RB",
+    ["Golden"] = "GLD",
+    ["Gold"] = "GLD",
+    ["Shiny"] = "SHY",
+    ["Shocked"] = "SH",
+    ["Frozen"] = "FRZ",
+    ["Nightmare"] = "NM",
+    ["Ghostly"] = "GH",
+    ["Corrupt"] = "CR",
+    ["Radioactive"] = "RAD",
+    ["Aromatic"] = "ARO",
+    ["Wet"] = "WET",
+    ["Windy"] = "WND",
+    ["Moonlit"] = "ML",
+    ["Bloodlit"] = "BL",
+    ["Celestial"] = "CEL",
+    ["Disco"] = "DSC",
+    ["Pollinated"] = "POL",
+    ["Sandy"] = "SND",
+    ["Clay"] = "CLY",
+    ["Ceramic"] = "CER",
+    ["Dawnbound"] = "DB",
+    ["Jumbo"] = "JUM",
+    ["Tempestuous"] = "TMP",
+    ["Everchanted"] = "EVE",
+    ["Gilded"] = "GLD",
+}
+
+function ResolveAgeBreakerMutationTag(mutationText)
+
+    mutationText =
+        NormalizeAgeBreakerMutationText(
+            mutationText
+        )
+
+    if mutationText == "Normal" then
+        return ""
+    end
+
+    local exact =
+        AgeBreakerMutationShortTags[mutationText]
+
+    if exact then
+        return exact
+    end
+
+    -- Multi-mutation fallback:
+    -- "Nightmare Rainbow" -> "NM+RB"
+    local tags = {}
+
+    for token in string.gmatch(mutationText, "%S+") do
+
+        token =
+            tostring(token or "")
+                :gsub("^%s+", "")
+                :gsub("%s+$", "")
+
+        if token ~= ""
+        and token ~= "Normal"
+        and token ~= "Unknown" then
+
+            local short =
+                AgeBreakerMutationShortTags[token]
+
+            if not short then
+                short =
+                    token:sub(1, 3):upper()
+            end
+
+            table.insert(tags, short)
+        end
+    end
+
+    if #tags <= 0 then
+        return ""
+    end
+
+    if #tags > 3 then
+        return table.concat({
+            tags[1],
+            tags[2],
+            tags[3],
+        }, "+")
+    end
+
+    return table.concat(tags, "+")
+end
+
+function FormatAgeBreakerMutationPrefix(mutationText)
+
+    local tag =
+        ResolveAgeBreakerMutationTag(
+            mutationText
+        )
+
+    if tag == "" then
+        return ""
+    end
+
+    return "[" .. tag .. "] "
+end
+
+function ResolveAgeBreakerMutationText(tool, petName, petData, itemData)
+
+    local mutation =
+        nil
+
+    if type(ResolvePetMutationTextFromPetData) == "function" then
+
+        local ok, result =
+            pcall(function()
+                return ResolvePetMutationTextFromPetData(
+                    petData,
+                    itemData,
+                    {
+                        ToolName =
+                            tool
+                            and tostring(tool.Name or "")
+                            or "",
+                    },
+                    petName
+                )
+            end)
+
+        if ok then
+            mutation = result
+        end
+    end
+
+    mutation =
+        NormalizeAgeBreakerMutationText(
+            mutation
+        )
+
+    -- Fallback: parse mutation prefix from the actual Tool name.
+    -- Example:
+    -- "Nightmare Mimic Octopus [61.82 KG] [Age 102]"
+    if mutation == "Normal"
+    and tool
+    and petName
+    and tostring(petName) ~= "" then
+
+        local cleanToolName =
+            tostring(tool.Name or "")
+                :gsub("%b[]", "")
+                :gsub("%s+", " ")
+                :gsub("^%s+", "")
+                :gsub("%s+$", "")
+
+        local cleanPetName =
+            tostring(petName or "")
+                :gsub("%b[]", "")
+                :gsub("%s+", " ")
+                :gsub("^%s+", "")
+                :gsub("%s+$", "")
+
+        if cleanToolName ~= ""
+        and cleanPetName ~= ""
+        and cleanToolName ~= cleanPetName then
+
+            local suffixStart =
+                cleanToolName:lower():find(
+                    cleanPetName:lower(),
+                    1,
+                    true
+                )
+
+            if suffixStart then
+
+                local prefix =
+                    cleanToolName:sub(
+                        1,
+                        suffixStart - 1
+                    )
+
+                prefix =
+                    prefix:gsub("^%s+", "")
+                        :gsub("%s+$", "")
+
+                if prefix ~= "" then
+                    mutation =
+                        NormalizeAgeBreakerMutationText(
+                            prefix
+                        )
+                end
+            end
+        end
+    end
+
+    return mutation
+end
+
+function ResolveAgeBreakerCurrentDisplayWeight(baseWeight, age, parsedWeight)
+
+    baseWeight =
+        tonumber(baseWeight)
+
+    age =
+        tonumber(age)
+
+    parsedWeight =
+        tonumber(parsedWeight)
+
+    -- Age Breaker display must show the pet's current visible KG,
+    -- not BaseWeight × 11.
+    if baseWeight
+    and age
+    and age > 0 then
+
+        if type(ResolveDisplayWeightFromBaseAge) == "function" then
+            return ResolveDisplayWeightFromBaseAge(
+                baseWeight,
+                age
+            )
+        end
+
+        local displayWeight =
+            baseWeight * (1 + (0.1 * age))
+
+        return math.floor(displayWeight * 100 + 0.5) / 100
+    end
+
+    -- If age is missing, fall back to the Tool name KG.
+    -- This is better than forcing Age 100.
+    if parsedWeight
+    and parsedWeight > 0 then
+        return parsedWeight
+    end
+
+    return baseWeight or 0
+end
+
 function ResolveAgeBreakerToolUUID(tool)
 
     if not tool
@@ -7637,11 +7890,6 @@ function BuildAgeBreakerInventoryPets()
                     petData
                 )
 
-            local displayWeight =
-                type(ResolveRawPetDataDisplayWeight) == "function"
-                and ResolveRawPetDataDisplayWeight(petData)
-                or tonumber(parsed.Weight)
-
             local petName =
                 ResolveAgeBreakerPetName(
                     parsed,
@@ -7653,12 +7901,39 @@ function BuildAgeBreakerInventoryPets()
                 continue
             end
 
+            local mutationText =
+                ResolveAgeBreakerMutationText(
+                    tool,
+                    petName,
+                    petData,
+                    itemData
+                )
+
+            local mutationTag =
+                ResolveAgeBreakerMutationTag(
+                    mutationText
+                )
+
+            -- IMPORTANT:
+            -- Do not use ResolveRawPetDataDisplayWeight here.
+            -- That can fall back to BaseWeight × 11.
+            -- Age Breaker needs actual current age KG.
+            local displayWeight =
+                ResolveAgeBreakerCurrentDisplayWeight(
+                    baseWeight,
+                    age,
+                    parsed.Weight
+                )
+
             table.insert(pets, {
                 Tool = tool,
                 ToolName = tostring(tool.Name),
 
                 UUID = uuid,
                 PetName = petName,
+
+                MutationText = mutationText,
+                MutationTag = mutationTag,
 
                 Age = tonumber(age) or 0,
                 BaseWeight = tonumber(baseWeight) or 0,
@@ -7684,6 +7959,11 @@ function BuildAgeBreakerInventoryPets()
         if tostring(a.PetName) ~= tostring(b.PetName) then
             return tostring(a.PetName):lower()
                 < tostring(b.PetName):lower()
+        end
+
+        if tostring(a.MutationTag or "") ~= tostring(b.MutationTag or "") then
+            return tostring(a.MutationTag or "")
+                < tostring(b.MutationTag or "")
         end
 
         if tonumber(a.BaseWeight) ~= tonumber(b.BaseWeight) then
@@ -8086,7 +8366,15 @@ function FormatAgeBreakerPetLine(pet)
         return "None"
     end
 
-    return tostring(pet.PetName)
+    local mutationPrefix =
+        FormatAgeBreakerMutationPrefix(
+            pet.MutationText
+            or pet.Mutation
+            or "Normal"
+        )
+
+    return mutationPrefix
+        .. tostring(pet.PetName)
         .. " | Age "
         .. tostring(pet.Age or "Unknown")
         .. " | BW "
