@@ -8196,10 +8196,34 @@ function GetPetAgeBreakClaimRemote()
     return nil
 end
 
-function FireAgeBreakerSubmitUUID(uuid)
+function NormalizeAgeBreakerSubmitUUID(uuid)
 
     uuid =
         tostring(uuid or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if uuid == "" then
+        return ""
+    end
+
+    -- Spy shows the game submits UUIDs wrapped in braces:
+    -- "{965ca883-49fa-422f-8ba4-ba0befa12062}"
+    if uuid:sub(1, 1) ~= "{" then
+        uuid = "{" .. uuid
+    end
+
+    if uuid:sub(-1) ~= "}" then
+        uuid = uuid .. "}"
+    end
+
+    return uuid
+end
+
+function FireAgeBreakerSubmitUUID(uuid)
+
+    uuid =
+        NormalizeAgeBreakerSubmitUUID(uuid)
 
     if uuid == "" then
         return false, "Missing UUID"
@@ -8211,6 +8235,11 @@ function FireAgeBreakerSubmitUUID(uuid)
     if not remote then
         return false, "Submit remote missing"
     end
+
+    print(
+        "[AGE BREAKER] Fire submit UUID:",
+        uuid
+    )
 
     local ok, err =
         pcall(function()
@@ -8282,7 +8311,7 @@ function SubmitAgeBreakerValidatedPair()
         return false
     end
 
-    task.wait(0.35)
+    task.wait(1.25)
 
     AgeBreakerState.Status =
         "Submitting sacrifice"
