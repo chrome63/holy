@@ -18103,6 +18103,17 @@ end
                 end
             end
 
+            --==================================================
+            -- MARKET TRACKER AFTER SMART BUY-CRITICAL PATH
+            -- Important:
+            -- This must run AFTER smart scanner matching + buy dispatch.
+            -- It should never delay DispatchPurchase().
+            --==================================================
+
+            if type(ScheduleMarketTrackerListings) == "function" then
+                ScheduleMarketTrackerListings(listings)
+            end
+
             if matches <= 0 then
                 HandleSmartSniperNoMatchesAutoHop()
             else
@@ -18234,12 +18245,6 @@ SniperState.Scanning =
             scannedCount =
                 tonumber(scannedCount)
                 or #listings
-
-            if type(TrackMarketListings) == "function" then
-                pcall(function()
-                    TrackMarketListings(listings)
-                end)
-            end
 
             if SniperMonitorState then
 
