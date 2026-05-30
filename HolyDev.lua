@@ -9000,56 +9000,15 @@ function ResolveAgeBreakerActiveTarget(pets)
         entry.Status =
             "Active"
 
-        QueueAgeBreakerSave(
-    "active target refreshed"
-)
+if type(QueueAgeBreakerSave) == "function" then
+    QueueAgeBreakerSave(
+        "active target refreshed"
+    )
+end
         return pet, entry
     end
 
     return nil, "No available queued target right now."
-end
-
-        local goalLevel =
-            math.floor(
-                SafeNumber(
-                    entry.GoalLevel,
-                    AgeBreakerState.DefaultGoalLevel or 125
-                )
-            )
-
-        goalLevel =
-            math.clamp(
-                goalLevel,
-                101,
-                10000
-            )
-
-        entry.GoalLevel =
-            goalLevel
-
-        if tonumber(pet.Age) >= goalLevel then
-
-            entry.Status =
-                "Complete"
-
-            if index == AgeBreakerState.ActiveQueueIndex then
-                AgeBreakerState.ActiveQueueIndex =
-                    index + 1
-            end
-
-            continue
-        end
-
-        AgeBreakerState.ActiveQueueIndex =
-            index
-
-        entry.Status =
-            "Active"
-
-        return pet, entry
-    end
-
-    return nil, "No queued target needs age breaking."
 end
 
 function ResolveAgeBreakerSacrificeFromPool(pets, target)
