@@ -3639,6 +3639,12 @@ AgeBreakerState = {
     TimerText = "--",
     TimerSeconds = nil,
     ClaimReady = false,
+
+    -- Standalone persistence because Age Breaker is built before
+    -- InitializeSaveAndConfig() runs.
+    PersistenceLoaded = false,
+    SaveQueued = false,
+    LastPersistentSaveAt = 0,
 }
 
 CreateListingRemote = nil
@@ -8592,6 +8598,10 @@ function AddSelectedAgeBreakerTargets()
 
         MarkConfigDirty()
 
+        QueueAgeBreakerSave(
+            "targets added"
+        )
+
         RefreshAgeBreakerInventoryDropdowns(false)
 
         return true, AgeBreakerState.Status
@@ -8642,6 +8652,10 @@ function AddSelectedAgeBreakerSacrifices()
             .. " sacrifice(s)"
 
         MarkConfigDirty()
+
+        QueueAgeBreakerSave(
+            "sacrifices added"
+        )
 
         RefreshAgeBreakerInventoryDropdowns(false)
 
@@ -8715,6 +8729,10 @@ function AddAllSafeMatchingAgeBreakerSacrifices()
 
     MarkConfigDirty()
 
+    QueueAgeBreakerSave(
+        "safe matching sacrifices added"
+    )
+
     RefreshAgeBreakerInventoryDropdowns(false)
 
     return true, "Added " .. tostring(added) .. " safe sacrifice(s)."
@@ -8742,6 +8760,12 @@ function RemoveAgeBreakerSacrificeUUID(uuid)
 
     RebuildAgeBreakerQueueMaps()
 
+    MarkConfigDirty()
+
+    QueueAgeBreakerSave(
+        "sacrifice removed"
+    )
+
     return true
 end
 
@@ -8766,6 +8790,10 @@ function ClearAgeBreakerTargets()
         "Target queue cleared"
 
     MarkConfigDirty()
+
+    QueueAgeBreakerSave(
+        "targets cleared"
+    )
 end
 
 function ClearAgeBreakerSacrifices()
@@ -8783,6 +8811,10 @@ function ClearAgeBreakerSacrifices()
         "Sacrifice pool cleared"
 
     MarkConfigDirty()
+
+    QueueAgeBreakerSave(
+        "sacrifices cleared"
+    )
 end
 
 function ResolveAgeBreakerActiveTarget(pets)
@@ -9233,6 +9265,103 @@ function FormatAgeBreakerSacrificePoolText()
     )
 end
 
+function CountAgeBreakerMatchingSacrifices(pets, target)
+
+    if type(target) ~= "table" then
+        return 0
+    end
+
+    pets =
+        pets
+        or BuildAgeBreakerInventoryPets()
+
+    local count = 0
+
+    for _, entry in ipairs(AgeBreakerState.SacrificePool or {}) do
+
+        local pet =
+            ResolveAgeBreakerPetByUUID(
+                pets,
+                entry.UUID
+            )
+
+        if pet then
+
+            local ok =
+                AgeBreakerPetPassesSacrificeRules(
+                    pet,
+                    target
+                )
+
+            if ok then
+                count =
+                    count + 1
+            end
+        end
+    end
+
+    return count
+end
+
+function FormatAgeBreakerQueuePoolSummary()
+
+    local pets =
+        AgeBreakerState.LastCandidates
+
+    if type(pets) ~= "table"
+    or #pets <= 0 then
+        pets =
+            BuildAgeBreakerInventoryPets()
+    end
+
+    local activeTarget =
+        AgeBreakerState.TargetPet
+
+    if type(activeTarget) ~= "table" then
+
+        activeTarget =
+            ResolveAgeBreakerActiveTarget(
+                pets
+            )
+    end
+
+    local targetCount =
+        #(AgeBreakerState.TargetQueue or {})
+
+    local poolCount =
+        #(AgeBreakerState.SacrificePool or {})
+
+    local matchingCount =
+        CountAgeBreakerMatchingSacrifices(
+            pets,
+            activeTarget
+        )
+
+    local lines = {
+        "Targets: "
+            .. tostring(targetCount)
+            .. " queued",
+
+        FormatAgeBreakerQueueText(),
+
+        "",
+
+        "Sacrifices: "
+            .. tostring(poolCount)
+            .. " pooled"
+            .. " • "
+            .. tostring(matchingCount)
+            .. " match active target",
+
+        FormatAgeBreakerSacrificePoolText(),
+    }
+
+    return table.concat(
+        lines,
+        "\n"
+    )
+end
+
 function ValidateAgeBreakerPair()
 
     local ok, reason =
@@ -9268,6 +9397,495 @@ function ValidateAgeBreakerPair()
 
     return true, "Ready"
 end
+
+--==================================================
+-- AGE BREAKER PERSISTENCE
+-- Saves queue/pool across teleports and re-executes.
+--==================================================
+
+AGE_BREAKER_SAVE_FOLDER =
+    "HolyV2"
+
+AGE_BREAKER_SAVE_FILE =
+    "HolyV2/AgeBreakerQueue.json"
+
+function CanUseAgeBreakerFileIO()
+
+    return type(writefile) == "function"
+        and type(readfile) == "function"
+        and type(isfile) == "function"
+end
+
+function EnsureAgeBreakerSaveFolder()
+
+    if type(makefolder) ~= "function"
+    or type(isfolder) ~= "function" then
+        return
+    end
+
+    local ok =
+        pcall(function()
+
+            if not isfolder(AGE_BREAKER_SAVE_FOLDER) then
+                makefolder(AGE_BREAKER_SAVE_FOLDER)
+            end
+        end)
+
+    return ok == true
+end
+
+function CloneAgeBreakerTargetEntry(entry)
+
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local uuid =
+        AgeBreakerNormalizeUUID(
+            entry.UUID
+        )
+
+    if uuid == "" then
+        return nil
+    end
+
+    local goalLevel =
+        math.floor(
+            SafeNumber(
+                entry.GoalLevel,
+                AgeBreakerState.DefaultGoalLevel or 125
+            )
+        )
+
+    goalLevel =
+        math.clamp(
+            goalLevel,
+            101,
+            10000
+        )
+
+    return {
+        UUID = uuid,
+        PetName = tostring(entry.PetName or ""),
+        GoalLevel = goalLevel,
+        AddedAt = tonumber(entry.AddedAt) or os.time(),
+        Status = tostring(entry.Status or "Waiting"),
+    }
+end
+
+function CloneAgeBreakerSacrificeEntry(entry)
+
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local uuid =
+        AgeBreakerNormalizeUUID(
+            entry.UUID
+        )
+
+    if uuid == "" then
+        return nil
+    end
+
+    return {
+        UUID = uuid,
+        PetName = tostring(entry.PetName or ""),
+        AddedAt = tonumber(entry.AddedAt) or os.time(),
+        Status = tostring(entry.Status or "Ready"),
+    }
+end
+
+function BuildAgeBreakerSavePayload()
+
+    local targets = {}
+    local sacrifices = {}
+
+    for _, entry in ipairs(AgeBreakerState.TargetQueue or {}) do
+
+        local cloned =
+            CloneAgeBreakerTargetEntry(
+                entry
+            )
+
+        if cloned then
+            table.insert(
+                targets,
+                cloned
+            )
+        end
+    end
+
+    for _, entry in ipairs(AgeBreakerState.SacrificePool or {}) do
+
+        local cloned =
+            CloneAgeBreakerSacrificeEntry(
+                entry
+            )
+
+        if cloned then
+            table.insert(
+                sacrifices,
+                cloned
+            )
+        end
+    end
+
+    return {
+        Format = "HOLY_AGE_BREAKER",
+        Version = 1,
+        SavedAt = os.time(),
+
+        Enabled =
+            AgeBreakerState.Enabled == true,
+
+        DefaultGoalLevel =
+            math.floor(
+                SafeNumber(
+                    AgeBreakerState.DefaultGoalLevel,
+                    125
+                )
+            ),
+
+        ActiveQueueIndex =
+            math.max(
+                1,
+                math.floor(
+                    SafeNumber(
+                        AgeBreakerState.ActiveQueueIndex,
+                        1
+                    )
+                )
+            ),
+
+        Safety = {
+            RequireManualConfirm =
+                AgeBreakerState.RequireManualConfirm == true,
+
+            SkipFavorites =
+                AgeBreakerState.SkipFavorites == true,
+
+            NeverSacrificeAge100 =
+                AgeBreakerState.NeverSacrificeAge100 == true,
+
+            SacrificeMustBeLowerBaseWeight =
+                AgeBreakerState.SacrificeMustBeLowerBaseWeight == true,
+
+            SacrificeMustBeLowerAge =
+                AgeBreakerState.SacrificeMustBeLowerAge == true,
+
+            MaxSacrificeAge =
+                math.floor(
+                    SafeNumber(
+                        AgeBreakerState.MaxSacrificeAge,
+                        99
+                    )
+                ),
+
+            SacrificePriority =
+                tostring(
+                    AgeBreakerState.SacrificePriority
+                    or "Lowest BaseWeight + Age"
+                ),
+        },
+
+        TargetQueue = targets,
+        SacrificePool = sacrifices,
+    }
+end
+
+function SaveAgeBreakerConfigNow(reason)
+
+    if not CanUseAgeBreakerFileIO() then
+        warn("[AGE BREAKER SAVE] File IO unavailable")
+        return false
+    end
+
+    EnsureAgeBreakerSaveFolder()
+
+    local payload =
+        BuildAgeBreakerSavePayload()
+
+    local ok, encoded =
+        pcall(function()
+            return HttpService:JSONEncode(payload)
+        end)
+
+    if not ok
+    or type(encoded) ~= "string"
+    or encoded == "" then
+
+        warn(
+            "[AGE BREAKER SAVE] Encode failed:",
+            tostring(encoded)
+        )
+
+        return false
+    end
+
+    local writeOk, writeErr =
+        pcall(function()
+            writefile(
+                AGE_BREAKER_SAVE_FILE,
+                encoded
+            )
+        end)
+
+    if not writeOk then
+
+        warn(
+            "[AGE BREAKER SAVE] Write failed:",
+            tostring(writeErr)
+        )
+
+        return false
+    end
+
+    AgeBreakerState.LastPersistentSaveAt =
+        os.clock()
+
+    print(
+        "[AGE BREAKER SAVE] Saved",
+        tostring(#(AgeBreakerState.TargetQueue or {})),
+        "target(s),",
+        tostring(#(AgeBreakerState.SacrificePool or {})),
+        "sacrifice(s)",
+        "|",
+        tostring(reason or "manual")
+    )
+
+    return true
+end
+
+function QueueAgeBreakerSave(reason)
+
+    if AgeBreakerState.SaveQueued == true then
+        return
+    end
+
+    AgeBreakerState.SaveQueued =
+        true
+
+    task.delay(0.35, function()
+
+        AgeBreakerState.SaveQueued =
+            false
+
+        SaveAgeBreakerConfigNow(
+            reason
+        )
+    end)
+end
+
+function ApplyAgeBreakerLoadedPayload(payload)
+
+    if type(payload) ~= "table" then
+        return false, "Payload missing."
+    end
+
+    if payload.Format ~= "HOLY_AGE_BREAKER" then
+        return false, "Invalid Age Breaker save."
+    end
+
+    AgeBreakerState.Enabled =
+        payload.Enabled == true
+
+    AgeBreakerState.DefaultGoalLevel =
+        math.clamp(
+            math.floor(
+                SafeNumber(
+                    payload.DefaultGoalLevel,
+                    125
+                )
+            ),
+            101,
+            10000
+        )
+
+    AgeBreakerState.ActiveQueueIndex =
+        math.max(
+            1,
+            math.floor(
+                SafeNumber(
+                    payload.ActiveQueueIndex,
+                    1
+                )
+            )
+        )
+
+    local safety =
+        type(payload.Safety) == "table"
+        and payload.Safety
+        or {}
+
+    AgeBreakerState.RequireManualConfirm =
+        safety.RequireManualConfirm ~= false
+
+    AgeBreakerState.SkipFavorites =
+        safety.SkipFavorites ~= false
+
+    AgeBreakerState.NeverSacrificeAge100 =
+        safety.NeverSacrificeAge100 ~= false
+
+    AgeBreakerState.SacrificeMustBeLowerBaseWeight =
+        safety.SacrificeMustBeLowerBaseWeight ~= false
+
+    AgeBreakerState.SacrificeMustBeLowerAge =
+        safety.SacrificeMustBeLowerAge ~= false
+
+    AgeBreakerState.MaxSacrificeAge =
+        math.clamp(
+            math.floor(
+                SafeNumber(
+                    safety.MaxSacrificeAge,
+                    99
+                )
+            ),
+            1,
+            10000
+        )
+
+    AgeBreakerState.SacrificePriority =
+        tostring(
+            safety.SacrificePriority
+            or "Lowest BaseWeight + Age"
+        )
+
+    AgeBreakerState.TargetQueue =
+        {}
+
+    AgeBreakerState.SacrificePool =
+        {}
+
+    if type(payload.TargetQueue) == "table" then
+
+        for _, entry in ipairs(payload.TargetQueue) do
+
+            local cloned =
+                CloneAgeBreakerTargetEntry(
+                    entry
+                )
+
+            if cloned then
+                table.insert(
+                    AgeBreakerState.TargetQueue,
+                    cloned
+                )
+            end
+        end
+    end
+
+    if type(payload.SacrificePool) == "table" then
+
+        for _, entry in ipairs(payload.SacrificePool) do
+
+            local cloned =
+                CloneAgeBreakerSacrificeEntry(
+                    entry
+                )
+
+            if cloned then
+                table.insert(
+                    AgeBreakerState.SacrificePool,
+                    cloned
+                )
+            end
+        end
+    end
+
+    RebuildAgeBreakerQueueMaps()
+
+    AgeBreakerState.Status =
+        "Loaded saved queue"
+
+    return true, "Loaded"
+end
+
+function LoadAgeBreakerConfig()
+
+    if AgeBreakerState.PersistenceLoaded == true then
+        return true
+    end
+
+    AgeBreakerState.PersistenceLoaded =
+        true
+
+    if not CanUseAgeBreakerFileIO() then
+
+        warn("[AGE BREAKER SAVE] File IO unavailable; queue is runtime only")
+
+        return false
+    end
+
+    local exists =
+        false
+
+    local existsOk =
+        pcall(function()
+            exists =
+                isfile(AGE_BREAKER_SAVE_FILE)
+        end)
+
+    if not existsOk
+    or exists ~= true then
+        return false
+    end
+
+    local ok, raw =
+        pcall(function()
+            return readfile(
+                AGE_BREAKER_SAVE_FILE
+            )
+        end)
+
+    if not ok
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        warn("[AGE BREAKER SAVE] Read failed")
+
+        return false
+    end
+
+    local decodeOk, decoded =
+        pcall(function()
+            return HttpService:JSONDecode(raw)
+        end)
+
+    if not decodeOk
+    or type(decoded) ~= "table" then
+
+        warn("[AGE BREAKER SAVE] Decode failed")
+
+        return false
+    end
+
+    local applyOk, reason =
+        ApplyAgeBreakerLoadedPayload(
+            decoded
+        )
+
+    if applyOk then
+
+        print(
+            "[AGE BREAKER SAVE] Loaded",
+            tostring(#(AgeBreakerState.TargetQueue or {})),
+            "target(s),",
+            tostring(#(AgeBreakerState.SacrificePool or {})),
+            "sacrifice(s)"
+        )
+
+        return true
+    end
+
+    warn(
+        "[AGE BREAKER SAVE] Apply failed:",
+        tostring(reason)
+    )
+
+    return false
+end
+
 function GetPetAgeBreakSubmitRemote()
 
     local gameEvents =
@@ -44589,8 +45207,7 @@ end
 AgeBreakerTargetDropdown = nil
 AgeBreakerSacrificeDropdown = nil
 
-AgeBreakerQueueLabel = nil
-AgeBreakerPoolLabel = nil
+AgeBreakerQueuePoolLabel = nil
 
 AgeBreakerTargetLabel = nil
 AgeBreakerSacrificeLabel = nil
@@ -44609,15 +45226,9 @@ function RefreshAgeBreakerUI()
         PrepareAgeBreakerCurrentPair()
     end)
 
-    if AgeBreakerQueueLabel then
-        AgeBreakerQueueLabel:SetText(
-            FormatAgeBreakerQueueText()
-        )
-    end
-
-    if AgeBreakerPoolLabel then
-        AgeBreakerPoolLabel:SetText(
-            FormatAgeBreakerSacrificePoolText()
+    if AgeBreakerQueuePoolLabel then
+        AgeBreakerQueuePoolLabel:SetText(
+            FormatAgeBreakerQueuePoolSummary()
         )
     end
 
@@ -44801,54 +45412,33 @@ function BuildAgeBreakerTab()
         return
     end
 
+    -- Load saved queue/pool before building labels.
+    LoadAgeBreakerConfig()
+
     local SetupBox =
         Tabs.AgeBreaker:AddLeftGroupbox(
-            "🧬 Age Breaker Setup",
+            "🧬 Queue Setup",
             "dna"
         )
 
-    local QueueBox =
+    local QueuePoolBox =
         Tabs.AgeBreaker:AddLeftGroupbox(
-            "📋 Target Queue",
+            "📋 Queue & Pool",
             "list"
         )
 
-    local PoolBox =
-        Tabs.AgeBreaker:AddLeftGroupbox(
-            "🧪 Sacrifice Pool",
-            "flask-conical"
-        )
-
-    local RulesBox =
-        Tabs.AgeBreaker:AddLeftGroupbox(
-            "🛡️ Safety",
-            "shield-check"
-        )
-
-    local PreviewBox =
+    local StatusBox =
         Tabs.AgeBreaker:AddRightGroupbox(
-            "👁️ Current Job",
+            "👁️ Status",
             "eye"
-        )
-
-    local MachineBox =
-        Tabs.AgeBreaker:AddRightGroupbox(
-            "⏱️ Machine Status",
-            "clock"
-        )
-
-    local NotesBox =
-        Tabs.AgeBreaker:AddRightGroupbox(
-            "📜 Notes",
-            "scroll-text"
         )
 
     SetupBox:AddToggle(
         "AgeBreakerEnabled",
         {
             Text = "🧬 Enable Age Breaker",
-            Tooltip = "Enables the Age Breaker helper. Queue/pool selection is manual.",
-            Default = false,
+            Tooltip = "Enables Age Breaker queue/pool helper.",
+            Default = AgeBreakerState.Enabled == true,
         }
     ):OnChanged(function(value)
 
@@ -44861,6 +45451,11 @@ function BuildAgeBreakerTab()
             or "Disabled"
 
         MarkConfigDirty()
+
+        QueueAgeBreakerSave(
+            "enabled changed"
+        )
+
         RefreshAgeBreakerUI()
     end)
 
@@ -44871,7 +45466,7 @@ function BuildAgeBreakerTab()
             Default = tostring(AgeBreakerState.DefaultGoalLevel or 125),
             Numeric = true,
             Finished = true,
-            Tooltip = "Targets stay active until they reach this age/level.",
+            Tooltip = "Targets stay active until they reach this level.",
         }
     ):OnChanged(function(value)
 
@@ -44890,15 +45485,26 @@ function BuildAgeBreakerTab()
             )
 
         MarkConfigDirty()
+
+        QueueAgeBreakerSave(
+            "goal level changed"
+        )
+
         RefreshAgeBreakerUI()
     end)
+
+    SetupBox:AddDivider({
+        Text = "Targets",
+        MarginTop = 8,
+        MarginBottom = 8,
+    })
 
     AgeBreakerTargetDropdown =
         SetupBox:AddDropdown(
             "AgeBreakerTargetMulti",
             {
                 Text = "Target Pets",
-                Tooltip = "Select multiple valuable pets to add to the target queue.",
+                Tooltip = "Select multiple valuable pets to add to the queue.",
                 Values = {},
                 Default = {},
                 Searchable = true,
@@ -44918,8 +45524,8 @@ function BuildAgeBreakerTab()
     end)
 
     SetupBox:AddButton({
-        Text = "➕ Add Selected Targets",
-        Tooltip = "Adds all selected target pets to the queue.",
+        Text = "➕ Add Targets",
+        Tooltip = "Adds selected target pets to the queue.",
         Func = function()
 
             local ok, reason =
@@ -44936,9 +45542,77 @@ function BuildAgeBreakerTab()
         end,
     })
 
+    SetupBox:AddDivider({
+        Text = "Sacrifices",
+        MarginTop = 8,
+        MarginBottom = 8,
+    })
+
+    AgeBreakerSacrificeDropdown =
+        SetupBox:AddDropdown(
+            "AgeBreakerSacrificeMulti",
+            {
+                Text = "Sacrifice Pets",
+                Tooltip = "Select disposable pets HOLY is allowed to consume.",
+                Values = {},
+                Default = {},
+                Searchable = true,
+                Multi = true,
+            }
+        )
+
+    AgeBreakerSacrificeDropdown:OnChanged(function(value)
+
+        AgeBreakerState.SelectedSacrificeUUIDMap =
+            ResolveAgeBreakerSelectedUUIDMap(
+                value,
+                AgeBreakerState.SacrificeChoiceToUUID
+            )
+
+        RefreshAgeBreakerUI()
+    end)
+
+    SetupBox:AddButton({
+        Text = "➕ Add Sacrifices",
+        Tooltip = "Adds selected sacrifice pets to the sacrifice pool.",
+        Func = function()
+
+            local ok, reason =
+                AddSelectedAgeBreakerSacrifices()
+
+            HolyNotify(
+                "Age Breaker",
+                tostring(reason),
+                ok and "badge-check" or "triangle-alert",
+                4
+            )
+
+            RefreshAgeBreakerUI()
+        end,
+    })
+
+    SetupBox:AddButton({
+        Text = "⚡ Add All Safe Matching",
+        Tooltip = "Adds all safe sacrifices matching the active target.",
+        Func = function()
+
+            local ok, reason =
+                AddAllSafeMatchingAgeBreakerSacrifices()
+
+            HolyNotify(
+                "Age Breaker",
+                tostring(reason),
+                ok and "badge-check" or "triangle-alert",
+                4
+            )
+
+            RefreshAgeBreakerUI()
+        end,
+    })
+
     SetupBox:AddButton({
         Text = "🔄 Refresh Inventory",
-        Tooltip = "Refreshes target and sacrifice dropdowns from Backpack/Character.",
+        Tooltip = "Refreshes target/sacrifice dropdowns from Backpack/Character.",
         Func = function()
 
             local targetChoices, sacrificeChoices =
@@ -44959,15 +45633,22 @@ function BuildAgeBreakerTab()
         end,
     })
 
-    AgeBreakerQueueLabel =
-        QueueBox:AddLabel(
-            "Queue: empty",
+    QueuePoolBox:AddLabel(
+        "Saved across teleports.",
+        false
+    )
+
+    AgeBreakerQueuePoolLabel =
+        QueuePoolBox:AddLabel(
+            "Queue: loading...",
             true
         )
 
-    QueueBox:AddButton({
+    QueuePoolBox:AddButton({
         Text = "🧹 Clear Targets",
-        Tooltip = "Clears the target queue.",
+        Tooltip = "Clears the saved target queue.",
+        Risky = true,
+        DoubleClick = true,
         Func = function()
 
             ClearAgeBreakerTargets()
@@ -44984,77 +45665,11 @@ function BuildAgeBreakerTab()
         end,
     })
 
-    AgeBreakerSacrificeDropdown =
-        PoolBox:AddDropdown(
-            "AgeBreakerSacrificeMulti",
-            {
-                Text = "Sacrifice Pets",
-                Tooltip = "Select multiple disposable pets HOLY is allowed to consume.",
-                Values = {},
-                Default = {},
-                Searchable = true,
-                Multi = true,
-            }
-        )
-
-    AgeBreakerSacrificeDropdown:OnChanged(function(value)
-
-        AgeBreakerState.SelectedSacrificeUUIDMap =
-            ResolveAgeBreakerSelectedUUIDMap(
-                value,
-                AgeBreakerState.SacrificeChoiceToUUID
-            )
-
-        RefreshAgeBreakerUI()
-    end)
-
-    PoolBox:AddButton({
-        Text = "➕ Add Selected Sacrifices",
-        Tooltip = "Adds all selected sacrifice pets to the sacrifice pool.",
-        Func = function()
-
-            local ok, reason =
-                AddSelectedAgeBreakerSacrifices()
-
-            HolyNotify(
-                "Age Breaker",
-                tostring(reason),
-                ok and "badge-check" or "triangle-alert",
-                4
-            )
-
-            RefreshAgeBreakerUI()
-        end,
-    })
-
-    PoolBox:AddButton({
-        Text = "⚡ Add All Safe Matching",
-        Tooltip = "Adds all safe sacrifices matching the active target pet.",
-        Func = function()
-
-            local ok, reason =
-                AddAllSafeMatchingAgeBreakerSacrifices()
-
-            HolyNotify(
-                "Age Breaker",
-                tostring(reason),
-                ok and "badge-check" or "triangle-alert",
-                4
-            )
-
-            RefreshAgeBreakerUI()
-        end,
-    })
-
-    AgeBreakerPoolLabel =
-        PoolBox:AddLabel(
-            "Pool: empty",
-            true
-        )
-
-    PoolBox:AddButton({
+    QueuePoolBox:AddButton({
         Text = "🧹 Clear Sacrifices",
-        Tooltip = "Clears the sacrifice pool.",
+        Tooltip = "Clears the saved sacrifice pool.",
+        Risky = true,
+        DoubleClick = true,
         Func = function()
 
             ClearAgeBreakerSacrifices()
@@ -45071,139 +45686,49 @@ function BuildAgeBreakerTab()
         end,
     })
 
-    RulesBox:AddInput(
-        "AgeBreakerMaxSacrificeAge",
-        {
-            Text = "Max Sacrifice Age",
-            Default = tostring(AgeBreakerState.MaxSacrificeAge or 99),
-            Numeric = true,
-            Finished = true,
-            Tooltip = "Sacrifice pets above this age are blocked.",
-        }
-    ):OnChanged(function(value)
+    StatusBox:AddLabel(
+        "Current active pair and machine state.",
+        false
+    )
 
-        local number =
-            tonumber(value)
-
-        if not number then
-            return
-        end
-
-        AgeBreakerState.MaxSacrificeAge =
-            math.clamp(
-                math.floor(number),
-                1,
-                10000
-            )
-
-        MarkConfigDirty()
-        RefreshAgeBreakerUI()
-    end)
-
-    RulesBox:AddDropdown(
-        "AgeBreakerSacrificePriority",
-        {
-            Text = "Sacrifice Priority",
-            Values = {
-                "Lowest BaseWeight + Age",
-                "Lowest BaseWeight",
-                "Lowest Age",
-            },
-            Default = AgeBreakerState.SacrificePriority,
-            Multi = false,
-        }
-    ):OnChanged(function(value)
-
-        AgeBreakerState.SacrificePriority =
-            tostring(value or "Lowest BaseWeight + Age")
-
-        MarkConfigDirty()
-        RefreshAgeBreakerUI()
-    end)
-
-    RulesBox:AddToggle(
-        "AgeBreakerRequireManualConfirm",
-        {
-            Text = "✅ Require Manual Confirm",
-            Default = true,
-            Tooltip = "Shows a confirmation popup before submitting.",
-        }
-    ):OnChanged(function(value)
-
-        AgeBreakerState.RequireManualConfirm =
-            value == true
-
-        MarkConfigDirty()
-    end)
-
-    RulesBox:AddToggle(
-        "AgeBreakerNeverSacrificeAge100",
-        {
-            Text = "🛑 Never Sacrifice Age 100+",
-            Default = true,
-            Tooltip = "Blocks age 100+ pets from sacrifice pool use.",
-        }
-    ):OnChanged(function(value)
-
-        AgeBreakerState.NeverSacrificeAge100 =
-            value == true
-
-        MarkConfigDirty()
-        RefreshAgeBreakerUI()
-    end)
-
-    RulesBox:AddToggle(
-        "AgeBreakerSkipFavorites",
-        {
-            Text = "❤️ Skip Favorites",
-            Default = true,
-            Tooltip = "Favorited pets cannot be used as sacrifice.",
-        }
-    ):OnChanged(function(value)
-
-        AgeBreakerState.SkipFavorites =
-            value == true
-
-        MarkConfigDirty()
-        RefreshAgeBreakerUI()
-    end)
-
-    RulesBox:AddToggle(
-        "AgeBreakerLowerBaseWeight",
-        {
-            Text = "⚖️ Sacrifice Must Be Lower BW",
-            Default = true,
-            Tooltip = "Sacrifice BaseWeight must be lower than target BaseWeight.",
-        }
-    ):OnChanged(function(value)
-
-        AgeBreakerState.SacrificeMustBeLowerBaseWeight =
-            value == true
-
-        MarkConfigDirty()
-        RefreshAgeBreakerUI()
-    end)
+    AgeBreakerMachineLabel =
+        StatusBox:AddLabel(
+            "World: checking... | Machine: checking...",
+            false
+        )
 
     AgeBreakerTargetLabel =
-        PreviewBox:AddLabel(
+        StatusBox:AddLabel(
             "Target: None",
             false
         )
 
     AgeBreakerSacrificeLabel =
-        PreviewBox:AddLabel(
+        StatusBox:AddLabel(
             "Sacrifice: None",
             false
         )
 
     AgeBreakerSafetyLabel =
-        PreviewBox:AddLabel(
+        StatusBox:AddLabel(
             "Safety: Waiting",
             false
         )
 
-    PreviewBox:AddButton({
-        Text = "🔎 Prepare Current Pair",
+    AgeBreakerStatusLabel =
+        StatusBox:AddLabel(
+            "Status: Idle",
+            false
+        )
+
+    AgeBreakerNextActionLabel =
+        StatusBox:AddLabel(
+            "Next: Waiting",
+            false
+        )
+
+    StatusBox:AddButton({
+        Text = "🔎 Prepare Pair",
         Tooltip = "Finds the active target and next valid sacrifice from the pool.",
         Func = function()
 
@@ -45221,10 +45746,22 @@ function BuildAgeBreakerTab()
         end,
     })
 
-    PreviewBox:AddButton({
+    StatusBox:AddButton({
         Text = "🧬 Submit Next Pair",
-        Tooltip = "Submits active target + next sacrifice from the pool.",
+        Tooltip = "Submits active target + next sacrifice from the pool. Only works in Normal World.",
         Func = function()
+
+            if IsTradeWorld() then
+
+                HolyNotify(
+                    "Age Breaker",
+                    "Submit only works in Normal World.",
+                    "triangle-alert",
+                    4
+                )
+
+                return
+            end
 
             if AgeBreakerState.RequireManualConfirm == true then
                 OpenAgeBreakerSubmitConfirmDialog()
@@ -45235,28 +45772,22 @@ function BuildAgeBreakerTab()
         end,
     })
 
-    AgeBreakerMachineLabel =
-        MachineBox:AddLabel(
-            "Machine: checking...",
-            false
-        )
-
-    AgeBreakerStatusLabel =
-        MachineBox:AddLabel(
-            "Status: Idle",
-            false
-        )
-
-    AgeBreakerNextActionLabel =
-        MachineBox:AddLabel(
-            "Next: Waiting",
-            false
-        )
-
-    MachineBox:AddButton({
+    StatusBox:AddButton({
         Text = "🎁 Claim Age Break",
         Tooltip = "Claims only when the machine timer says it is ready.",
         Func = function()
+
+            if IsTradeWorld() then
+
+                HolyNotify(
+                    "Age Breaker",
+                    "Claim only works in Normal World.",
+                    "triangle-alert",
+                    4
+                )
+
+                return
+            end
 
             ClaimAgeBreakerIfReady()
 
@@ -45264,7 +45795,7 @@ function BuildAgeBreakerTab()
         end,
     })
 
-    MachineBox:AddButton({
+    StatusBox:AddButton({
         Text = "🔄 Refresh Machine",
         Tooltip = "Refreshes the machine timer/status.",
         Func = function()
@@ -45275,17 +45806,7 @@ function BuildAgeBreakerTab()
         end,
     })
 
-    NotesBox:AddLabel(
-        "Flow: Refresh Inventory → select multiple targets → Add Selected Targets → select multiple sacrifices → Add Selected Sacrifices → Submit Next Pair.",
-        true
-    )
-
-    NotesBox:AddLabel(
-        "Hard safety: queued targets can never be consumed as sacrifices.",
-        true
-    )
-
-    RefreshAgeBreakerInventoryDropdowns(true)
+    RefreshAgeBreakerInventoryDropdowns(false)
 
     RefreshAgeBreakerUI()
 
