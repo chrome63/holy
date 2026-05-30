@@ -1,8 +1,7 @@
 --==================================================
--- HOLY CONSOLE QUIET GUARD
--- Delta/Roblox console can lag badly when LogService
--- is flooded by game warnings. This disables console
--- output listeners while HOLY is running.
+-- HOLY BEE GARDEN CONSOLE GUARD
+-- Suppresses known Grow a Garden Bee Garden spam.
+-- This happens in normal world after using bee slots.
 --==================================================
 
 do
@@ -13,16 +12,119 @@ do
             or _G
         )
 
-    root.HOLY_CONSOLE_QUIET_GUARD =
-        root.HOLY_CONSOLE_QUIET_GUARD
+    root.HOLY_BEE_CONSOLE_GUARD =
+        root.HOLY_BEE_CONSOLE_GUARD
         or {
             Installed = false,
             Enabled = true,
-            DisabledConnections = {},
+            Suppressed = {},
+            DisabledLogConnections = {},
         }
 
     local state =
-        root.HOLY_CONSOLE_QUIET_GUARD
+        root.HOLY_BEE_CONSOLE_GUARD
+
+    local blockedTexts = {
+        "[BeeColonySlotUserInterface] Missing billboards for player's bee slot",
+        "BeeColonySlotUserInterface",
+        "BeeColonyStateService.Unreliable",
+        "Remote event invocation discarded event for ReplicatedStorage.GameEvents.BeeColonyStateService.Unreliable",
+    }
+
+    local function MessageIsBlocked(...)
+
+        local parts =
+            {}
+
+        for index = 1, select("#", ...) do
+            parts[index] =
+                tostring(
+                    select(index, ...)
+                )
+        end
+
+        local message =
+            table.concat(
+                parts,
+                " "
+            )
+
+        for _, blockedText in ipairs(blockedTexts) do
+
+            if message:find(
+                blockedText,
+                1,
+                true
+            ) then
+
+                state.Suppressed[blockedText] =
+                    (
+                        tonumber(
+                            state.Suppressed[blockedText]
+                        )
+                        or 0
+                    )
+                    + 1
+
+                return true
+            end
+        end
+
+        return false
+    end
+
+    local function HookConsoleFunction(functionName)
+
+        local original =
+            getfenv()[functionName]
+
+        if type(original) ~= "function" then
+            return
+        end
+
+        local replacement = function(...)
+
+            if state.Enabled == true
+            and MessageIsBlocked(...) then
+                return
+            end
+
+            return original(...)
+        end
+
+        local hooked =
+            false
+
+        if type(hookfunction) == "function" then
+
+            local ok =
+                pcall(function()
+                    hookfunction(
+                        original,
+                        replacement
+                    )
+                end)
+
+            hooked =
+                ok == true
+        end
+
+        -- Important:
+        -- Some executors expose hookfunction but it does not hook these
+        -- console globals correctly. Fall back to direct assignment.
+        if hooked ~= true then
+
+            pcall(function()
+                getfenv()[functionName] =
+                    replacement
+            end)
+
+            pcall(function()
+                _G[functionName] =
+                    replacement
+            end)
+        end
+    end
 
     local function DisableLogServiceConnections()
 
@@ -40,13 +142,14 @@ do
         for _, connection in ipairs(getconnections(LogService.MessageOut)) do
 
             if connection
-            and type(connection.Disable) == "function" then
+            and type(connection.Disable) == "function"
+            and state.DisabledLogConnections[connection] ~= true then
 
                 pcall(function()
                     connection:Disable()
                 end)
 
-                state.DisabledConnections[connection] =
+                state.DisabledLogConnections[connection] =
                     true
             end
         end
@@ -57,18 +160,20 @@ do
         state.Installed =
             true
 
-        -- Run immediately before the rest of HOLY loads.
+        HookConsoleFunction("warn")
+        HookConsoleFunction("print")
+
         DisableLogServiceConnections()
 
-        -- Keep doing it because Delta / Roblox console can reconnect
-        -- listeners after the script starts.
+        -- Delta/Roblox console can reconnect listeners later.
+        -- Keep disabling them while HOLY is running.
         task.spawn(function()
 
             while state.Enabled == true do
 
                 DisableLogServiceConnections()
 
-                task.wait(0.50)
+                task.wait(0.25)
             end
         end)
     end
@@ -89,112 +194,6 @@ VirtualUser =
 
 UserInputService =
     game:GetService("UserInputService")
-
---==================================================
--- CONSOLE SPAM FILTER
--- Suppresses known noisy game warnings that can lag
--- low-end devices/cloud phones by flooding console UI.
---==================================================
-
-do
-    local root =
-        (
-            type(getgenv) == "function"
-            and getgenv()
-            or _G
-        )
-
-    root.HOLY_CONSOLE_SPAM_FILTER =
-        root.HOLY_CONSOLE_SPAM_FILTER
-        or {
-            Installed = false,
-            Suppressed = {},
-        }
-
-    local filterState =
-        root.HOLY_CONSOLE_SPAM_FILTER
-
-    local blockedWarnings = {
-        "[BeeColonySlotUserInterface] Missing billboards for player's bee slot",
-    }
-
-    local function ShouldSuppressHolyConsoleMessage(...)
-
-        local parts =
-            {}
-
-        for index = 1, select("#", ...) do
-            parts[index] =
-                tostring(
-                    select(index, ...)
-                )
-        end
-
-        local message =
-            table.concat(
-                parts,
-                " "
-            )
-
-        for _, blockedText in ipairs(blockedWarnings) do
-
-            if message:find(
-                blockedText,
-                1,
-                true
-            ) then
-
-                filterState.Suppressed[blockedText] =
-                    (
-                        tonumber(
-                            filterState.Suppressed[blockedText]
-                        )
-                        or 0
-                    )
-                    + 1
-
-                return true
-            end
-        end
-
-        return false
-    end
-
-    if filterState.Installed ~= true then
-
-        filterState.Installed =
-            true
-
-        local originalWarn =
-            warn
-
-        if type(hookfunction) == "function" then
-
-            pcall(function()
-
-                hookfunction(warn, function(...)
-
-                    if ShouldSuppressHolyConsoleMessage(...) then
-                        return
-                    end
-
-                    return originalWarn(...)
-                end)
-            end)
-
-        else
-
-            warn = function(...)
-
-                if ShouldSuppressHolyConsoleMessage(...) then
-                    return
-                end
-
-                return originalWarn(...)
-            end
-        end
-    end
-end
 
 --==================================================
 -- OBFUSCATION / RE-EXECUTION SAFETY
@@ -356,8 +355,8 @@ ServerInfoStartedAt =
 
 --==================================================
 -- BEE COLONY REMOTE SINK
--- Prevents discarded event spam from:
--- ReplicatedStorage.GameEvents.BeeColonyStateService.Unreliable
+-- Prevents discarded event spam when Bee Garden slots
+-- fire client remotes in normal world.
 --==================================================
 
 task.spawn(function()
@@ -365,42 +364,55 @@ task.spawn(function()
     local gameEvents =
         ReplicatedStorage:WaitForChild(
             "GameEvents",
-            15
+            30
         )
 
     if not gameEvents then
         return
     end
 
-    local beeService =
-        gameEvents:WaitForChild(
-            "BeeColonyStateService",
-            15
-        )
+    local function ConnectBeeRemote(remote)
 
-    if not beeService then
-        return
-    end
+        if not remote then
+            return false
+        end
 
-    local unreliable =
-        beeService:WaitForChild(
-            "Unreliable",
-            15
-        )
+        if not remote:IsA("RemoteEvent")
+        and not remote:IsA("UnreliableRemoteEvent") then
+            return false
+        end
 
-    if not unreliable then
-        return
-    end
-
-    if unreliable:IsA("RemoteEvent")
-    or unreliable:IsA("UnreliableRemoteEvent") then
-
-        unreliable.OnClientEvent:Connect(function()
+        remote.OnClientEvent:Connect(function()
             -- intentionally ignored
         end)
 
-        print("[REMOTE SINK] BeeColonyStateService.Unreliable connected")
+        return true
     end
+
+    local beeService =
+        gameEvents:FindFirstChild(
+            "BeeColonyStateService"
+        )
+
+    if beeService then
+
+        ConnectBeeRemote(
+            beeService:FindFirstChild("Unreliable")
+        )
+    end
+
+    gameEvents.ChildAdded:Connect(function(child)
+
+        if child.Name ~= "BeeColonyStateService" then
+            return
+        end
+
+        task.wait(0.25)
+
+        ConnectBeeRemote(
+            child:FindFirstChild("Unreliable")
+        )
+    end)
 end)
 
 task.spawn(function()
