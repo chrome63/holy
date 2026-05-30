@@ -15,6 +15,111 @@ VirtualUser =
 UserInputService =
     game:GetService("UserInputService")
 
+--==================================================
+-- CONSOLE SPAM FILTER
+-- Suppresses known noisy game warnings that can lag
+-- low-end devices/cloud phones by flooding console UI.
+--==================================================
+
+do
+    local root =
+        (
+            type(getgenv) == "function"
+            and getgenv()
+            or _G
+        )
+
+    root.HOLY_CONSOLE_SPAM_FILTER =
+        root.HOLY_CONSOLE_SPAM_FILTER
+        or {
+            Installed = false,
+            Suppressed = {},
+        }
+
+    local filterState =
+        root.HOLY_CONSOLE_SPAM_FILTER
+
+    local blockedWarnings = {
+        "[BeeColonySlotUserInterface] Missing billboards for player's bee slot",
+    }
+
+    local function ShouldSuppressHolyConsoleMessage(...)
+
+        local parts =
+            {}
+
+        for index = 1, select("#", ...) do
+            parts[index] =
+                tostring(
+                    select(index, ...)
+                )
+        end
+
+        local message =
+            table.concat(
+                parts,
+                " "
+            )
+
+        for _, blockedText in ipairs(blockedWarnings) do
+
+            if message:find(
+                blockedText,
+                1,
+                true
+            ) then
+
+                filterState.Suppressed[blockedText] =
+                    (
+                        tonumber(
+                            filterState.Suppressed[blockedText]
+                        )
+                        or 0
+                    )
+                    + 1
+
+                return true
+            end
+        end
+
+        return false
+    end
+
+    if filterState.Installed ~= true then
+
+        filterState.Installed =
+            true
+
+        local originalWarn =
+            warn
+
+        if type(hookfunction) == "function" then
+
+            pcall(function()
+
+                hookfunction(warn, function(...)
+
+                    if ShouldSuppressHolyConsoleMessage(...) then
+                        return
+                    end
+
+                    return originalWarn(...)
+                end)
+            end)
+
+        else
+
+            warn = function(...)
+
+                if ShouldSuppressHolyConsoleMessage(...) then
+                    return
+                end
+
+                return originalWarn(...)
+            end
+        end
+    end
+end
 
 --==================================================
 -- OBFUSCATION / RE-EXECUTION SAFETY
@@ -490,40 +595,148 @@ BoothStore = nil
 LatestBoothData = nil
 LatestBoothUpdate = 0
 
+function ResolveHolyGetUpvalues(fn)
+
+    local reader =
+        type(getupvalues) == "function"
+        and getupvalues
+        or (
+            debug
+            and type(debug.getupvalues) == "function"
+            and debug.getupvalues
+        )
+
+    if type(reader) ~= "function"
+    or type(fn) ~= "function" then
+        return nil
+    end
+
+    local ok, upvalues =
+        pcall(function()
+            return reader(fn)
+        end)
+
+    if not ok
+    or type(upvalues) ~= "table" then
+        return nil
+    end
+
+    return upvalues
+end
+
+function PrimeBoothControllerData()
+
+    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+        return false
+    end
+
+    local Controller =
+        GetController()
+
+    if not Controller then
+        return false
+    end
+
+    if type(Controller.GetPlayerBoothData) == "function" then
+
+        -- Warm the controller so its internal booth-store upvalues/data path
+        -- exist before the sniper needs booth listings.
+        pcall(function()
+            Controller:GetPlayerBoothData()
+        end)
+
+        pcall(function()
+            Controller.GetPlayerBoothData(
+                Controller
+            )
+        end)
+    end
+
+    return true
+end
+
 function GetBoothStore()
 
-    if BoothStore then
+    if BoothStore
+    and type(BoothStore.GetDataAsync) == "function" then
         return BoothStore
     end
 
-    local Controller = GetController()
+    local Controller =
+        GetController()
 
-    if not Controller then
+    if not Controller
+    or type(Controller.GetPlayerBoothData) ~= "function" then
         return nil
     end
 
+    PrimeBoothControllerData()
+
     local upvalues =
-        getupvalues(
+        ResolveHolyGetUpvalues(
             Controller.GetPlayerBoothData
         )
 
-    local store =
-        upvalues
-        and type(upvalues[2]) == "table"
-        and upvalues[2]
-
-    if not store then
+    if type(upvalues) ~= "table" then
         return nil
     end
 
-    if type(store.GetDataAsync) ~= "function" then
-        return nil
+    -- Do not trust only upvalue[2].
+    -- If the game/controller changes order, scan for the actual store shape.
+    for _, value in ipairs(upvalues) do
+
+        if type(value) == "table"
+        and type(value.GetDataAsync) == "function" then
+
+            BoothStore =
+                value
+
+            return BoothStore
+        end
     end
 
-    BoothStore = store
-
-    return BoothStore
+    return nil
 end
+
+function RefreshLatestBoothDataNow(reason)
+
+    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+        return nil, "Not in Trade World"
+    end
+
+    PrimeBoothControllerData()
+
+    local store =
+        GetBoothStore()
+
+    if not store
+    or type(store.GetDataAsync) ~= "function" then
+        return nil, "Booth store missing"
+    end
+
+    local ok, data =
+        pcall(function()
+            return store:GetDataAsync()
+        end)
+
+    if not ok
+    or type(data) ~= "table" then
+        return nil, "Booth data fetch failed"
+    end
+
+    if type(data.Booths) ~= "table" then
+        return nil, "Booth data missing Booths"
+    end
+
+    LatestBoothData =
+        data
+
+    LatestBoothUpdate =
+        os.clock()
+
+    return data, tostring(reason or "Fetched")
+end
+
 task.spawn(function()
 
     while IsCurrentRun() do
@@ -533,22 +746,9 @@ task.spawn(function()
             continue
         end
 
-        local store = GetBoothStore()
-
-        if store then
-
-            local ok, data = pcall(function()
-                return store:GetDataAsync()
-            end)
-
-            if ok
-            and data
-            and data.Booths
-            then
-                LatestBoothData = data
-                LatestBoothUpdate = os.clock()
-            end
-        end
+        RefreshLatestBoothDataNow(
+            "worker"
+        )
 
         local refreshInterval =
             0.05
@@ -17984,8 +18184,38 @@ SniperState.Scanning =
     local ok, err =
         pcall(function()
 
+            --==================================================
+            -- SNIPER BOOTH DATA WARMUP
+            -- Sniper should not depend on booth claiming.
+            -- If LatestBoothData is missing/stale, refresh it before extracting listings.
+            --==================================================
+
+            if game.PlaceId == TRADING_WORLD_PLACE_ID then
+
+                local boothDataStale =
+                    LatestBoothData == nil
+                    or SafeElapsed(LatestBoothUpdate) > 1.5
+
+                if boothDataStale
+                and type(RefreshLatestBoothDataNow) == "function" then
+
+                    RefreshLatestBoothDataNow(
+                        "pre sniper scan"
+                    )
+                end
+            end
+
             local listings, scannedCount =
                 ExtractListings()
+
+            listings =
+                type(listings) == "table"
+                and listings
+                or {}
+
+            scannedCount =
+                tonumber(scannedCount)
+                or #listings
 
             if type(TrackMarketListings) == "function" then
                 pcall(function()
