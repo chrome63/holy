@@ -173,68 +173,6 @@ ServerInfoStartedAt =
 -- Prevents discarded event spam
 --==================================================
 
---==================================================
--- BEE COLONY REMOTE SINK
--- Prevents discarded event spam when Bee Garden slots
--- fire client remotes in normal world.
---==================================================
-
-task.spawn(function()
-
-    local gameEvents =
-        ReplicatedStorage:WaitForChild(
-            "GameEvents",
-            30
-        )
-
-    if not gameEvents then
-        return
-    end
-
-    local function ConnectBeeRemote(remote)
-
-        if not remote then
-            return false
-        end
-
-        if not remote:IsA("RemoteEvent")
-        and not remote:IsA("UnreliableRemoteEvent") then
-            return false
-        end
-
-        remote.OnClientEvent:Connect(function()
-            -- intentionally ignored
-        end)
-
-        return true
-    end
-
-    local beeService =
-        gameEvents:FindFirstChild(
-            "BeeColonyStateService"
-        )
-
-    if beeService then
-
-        ConnectBeeRemote(
-            beeService:FindFirstChild("Unreliable")
-        )
-    end
-
-    gameEvents.ChildAdded:Connect(function(child)
-
-        if child.Name ~= "BeeColonyStateService" then
-            return
-        end
-
-        task.wait(0.25)
-
-        ConnectBeeRemote(
-            child:FindFirstChild("Unreliable")
-        )
-    end)
-end)
-
 task.spawn(function()
 
     local remote =
@@ -4030,6 +3968,138 @@ MarketTrackerWebhook = {
     LastCleanup = 0,
     CleanupInterval = 120,
 }
+
+--==================================================
+-- MARKET TRACKER ASYNC SCAN SCHEDULER
+-- Keeps Market Tracker out of the sniper buy-critical path.
+-- Sniper can dispatch buys first; Market Tracker runs after.
+--==================================================
+
+MarketTrackerScanState = {
+    Running = false,
+    PendingListings = nil,
+
+    LastRun = 0,
+
+    -- Rate limit scanner-side market tracking so fast sniper scans
+    -- do not spawn a new Market Tracker task every frame.
+    MinInterval = 0.20,
+}
+
+function CloneMarketTrackerListingsForAsync(listings)
+
+    local output =
+        {}
+
+    if type(listings) ~= "table" then
+        return output
+    end
+
+    for index = 1, #listings do
+
+        local listing =
+            listings[index]
+
+        if type(listing) == "table" then
+            output[#output + 1] =
+                listing
+        end
+    end
+
+    return output
+end
+
+function ScheduleMarketTrackerListings(listings)
+
+    if type(TrackMarketListings) ~= "function" then
+        return false
+    end
+
+    if type(MarketTrackerScanState) ~= "table" then
+        return false
+    end
+
+    local snapshot =
+        CloneMarketTrackerListingsForAsync(
+            listings
+        )
+
+    if #snapshot <= 0 then
+        return false
+    end
+
+    -- Always keep the newest scan batch.
+    -- If Market Tracker is already running, it will process this next.
+    MarketTrackerScanState.PendingListings =
+        snapshot
+
+    if MarketTrackerScanState.Running == true then
+        return true
+    end
+
+    MarketTrackerScanState.Running =
+        true
+
+    task.spawn(function()
+
+        while IsCurrentRun()
+        and type(MarketTrackerScanState.PendingListings) == "table" do
+
+            local now =
+                os.clock()
+
+            local minInterval =
+                math.clamp(
+                    SafeNumber(
+                        MarketTrackerScanState.MinInterval,
+                        0.20
+                    ),
+                    0.05,
+                    2
+                )
+
+            local elapsed =
+                now - SafeNumber(
+                    MarketTrackerScanState.LastRun,
+                    0
+                )
+
+            if elapsed < minInterval then
+                task.wait(
+                    minInterval - elapsed
+                )
+            end
+
+            local batch =
+                MarketTrackerScanState.PendingListings
+
+            MarketTrackerScanState.PendingListings =
+                nil
+
+            MarketTrackerScanState.LastRun =
+                os.clock()
+
+            local ok, err =
+                pcall(function()
+                    TrackMarketListings(batch)
+                end)
+
+            if not ok then
+                warn(
+                    "[MARKET TRACKER] Async scan failed:",
+                    tostring(err)
+                )
+            end
+
+            task.wait(0.03)
+        end
+
+        MarketTrackerScanState.Running =
+            false
+    end)
+
+    return true
+end
 
 MarketTrackerTargets = {
 
@@ -17845,14 +17915,6 @@ function RunSmartSniperScan()
                 tonumber(scannedCount)
                 or #listings
 
-            -- Market Tracker should still see the extracted listings.
-            -- Its own dedupe prevents repeated webhook spam.
-            if type(TrackMarketListings) == "function" then
-                pcall(function()
-                    TrackMarketListings(listings)
-                end)
-            end
-
             if SniperMonitorState then
 
                 SniperMonitorState.PetsScanned =
@@ -18319,6 +18381,17 @@ SniperState.Scanning =
                     ClaimedListings[listingKey] =
                         nil
                 end
+            end
+
+            --==================================================
+            -- MARKET TRACKER AFTER BUY-CRITICAL PATH
+            -- Important:
+            -- This must run AFTER sniper matching + buy dispatch.
+            -- It should never delay DispatchPurchase().
+            --==================================================
+
+            if type(ScheduleMarketTrackerListings) == "function" then
+                ScheduleMarketTrackerListings(listings)
             end
 
             if matches > 0 then
