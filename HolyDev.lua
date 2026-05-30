@@ -19931,6 +19931,191 @@ function SafeRemaining(targetTime)
 end
 
 --==================================================
+-- ROBLOX CONSOLE SPAM FILTER
+-- Prevents game/internal warning spam from lagging
+-- HOLY's in-menu console renderer.
+--==================================================
+
+HolyConsoleSpamFilter = {
+    LastSeen = {},
+    Suppressed = {},
+
+    -- Do not render same spam key more than once per X seconds.
+    Cooldown = 10,
+
+    Patterns = {
+        {
+            Key = "BeeColonyPlayerNotFound",
+            Match = "[BeeColonyStateController] Player not found:",
+            Mode = "Suppress",
+        },
+    },
+}
+
+function ShouldSuppressHolyConsoleMessage(message)
+
+    message =
+        tostring(message or "")
+
+    if message == "" then
+        return false
+    end
+
+    if type(HolyConsoleSpamFilter) ~= "table"
+    or type(HolyConsoleSpamFilter.Patterns) ~= "table" then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    for _, rule in ipairs(HolyConsoleSpamFilter.Patterns) do
+
+        local matchText =
+            tostring(rule.Match or "")
+
+        if matchText ~= ""
+        and message:find(matchText, 1, true) then
+
+            local key =
+                tostring(rule.Key or matchText)
+
+            HolyConsoleSpamFilter.Suppressed[key] =
+                SafeNumber(
+                    HolyConsoleSpamFilter.Suppressed[key],
+                    0
+                ) + 1
+
+            local lastSeen =
+                SafeNumber(
+                    HolyConsoleSpamFilter.LastSeen[key],
+                    0
+                )
+
+            local cooldown =
+                math.clamp(
+                    SafeNumber(
+                        HolyConsoleSpamFilter.Cooldown,
+                        10
+                    ),
+                    1,
+                    60
+                )
+
+            -- Full suppress by default.
+            -- This means the noisy game warning will not be added to HOLY console.
+            if tostring(rule.Mode or "Suppress") == "Suppress" then
+                return true
+            end
+
+            -- Optional mode if you ever want one line every cooldown.
+            if now - lastSeen < cooldown then
+                return true
+            end
+
+            HolyConsoleSpamFilter.LastSeen[key] =
+                now
+
+            return false
+        end
+    end
+
+    return false
+end
+
+--==================================================
+-- GLOBAL WARN SPAM HOOK
+-- Suppresses noisy game/client warnings before they flood console.
+--==================================================
+
+HolyConsoleWarnHookInstalled =
+    HolyConsoleWarnHookInstalled
+    or false
+
+function BuildHolyConsoleMessageFromArgs(...)
+
+    local parts = {}
+
+    for index = 1, select("#", ...) do
+
+        local value =
+            select(index, ...)
+
+        table.insert(
+            parts,
+            tostring(value)
+        )
+    end
+
+    return table.concat(
+        parts,
+        " "
+    )
+end
+
+function InstallHolyConsoleSpamHook()
+
+    if HolyConsoleWarnHookInstalled == true then
+        return true
+    end
+
+    HolyConsoleWarnHookInstalled =
+        true
+
+    -- Best version: suppresses warn() output globally if executor supports it.
+    if type(hookfunction) == "function"
+    and type(warn) == "function" then
+
+        local oldWarn
+
+        oldWarn =
+            hookfunction(warn, function(...)
+
+                local message =
+                    BuildHolyConsoleMessageFromArgs(...)
+
+                if ShouldSuppressHolyConsoleMessage(message) then
+                    return nil
+                end
+
+                return oldWarn(...)
+            end)
+
+        print("[CONSOLE FILTER] Global warn hook active")
+
+        return true
+    end
+
+    -- Fallback: only suppresses warnings from this script environment.
+    if type(warn) == "function" then
+
+        local oldWarn =
+            warn
+
+        warn = function(...)
+
+            local message =
+                BuildHolyConsoleMessageFromArgs(...)
+
+            if ShouldSuppressHolyConsoleMessage(message) then
+                return nil
+            end
+
+            return oldWarn(...)
+        end
+
+        print("[CONSOLE FILTER] Local warn filter active")
+
+        return true
+    end
+
+    print("[CONSOLE FILTER] Warn hook unavailable")
+
+    return false
+end
+
+InstallHolyConsoleSpamHook()
+--==================================================
 -- PLACE GATE
 -- Core/UI can load everywhere.
 -- Trade World automation may only execute in Trade World.
