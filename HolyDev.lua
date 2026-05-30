@@ -19799,6 +19799,9 @@ VisualState = {
     ServerInfoHUD = false,
 
     SniperMonitorHUD = false,
+
+    -- Age Breaker always-on compact HUD.
+    AgeBreakerHUD = false,
 }
 
 
@@ -21691,9 +21694,617 @@ SniperMonitorLastPingText = "Ping: Unknown"
 SniperMonitorLastPingTextAt = 0
 SniperMonitorPingRefreshInterval = 1.25
 
+--==================================================
+-- AGE BREAKER HUD
+-- Compact always-on Age Breaker timer/progress HUD.
+--==================================================
+
+CreateAgeBreakerHUD = nil
+RefreshAgeBreakerHUD = nil
+
+AgeBreakerHUDGui = nil
+AgeBreakerHUDFrame = nil
+AgeBreakerHUDTitleLabel = nil
+AgeBreakerHUDTimerLabel = nil
+AgeBreakerHUDTargetLabel = nil
+AgeBreakerHUDSacrificeLabel = nil
+AgeBreakerHUDNextLabel = nil
+
 InventoryDetailsLabel = nil
 InventoryDetailsStatusLabel = nil
 RefreshInventoryDetails = nil
+
+
+--==================================================
+-- AGE BREAKER HUD
+-- One-toggle compact overlay:
+-- Timer, target progress, sacrifices left, next action.
+--==================================================
+
+function TruncateAgeBreakerHUDText(text, maxLength)
+
+    text =
+        tostring(text or "")
+
+    maxLength =
+        tonumber(maxLength)
+        or 32
+
+    if #text <= maxLength then
+        return text
+    end
+
+    return text:sub(1, maxLength - 1) .. "…"
+end
+
+function ResolveAgeBreakerHUDTimerText()
+
+    if type(RefreshAgeBreakerMachineState) == "function" then
+        pcall(RefreshAgeBreakerMachineState)
+    end
+
+    if AgeBreakerState
+    and AgeBreakerState.ClaimReady == true then
+        return "Ready to claim 🎁"
+    end
+
+    local timerText =
+        tostring(
+            AgeBreakerState
+            and AgeBreakerState.TimerText
+            or "--"
+        )
+
+    if timerText == ""
+    or timerText == "--" then
+        return "No timer"
+    end
+
+    return timerText
+end
+
+function ResolveAgeBreakerHUDActiveEntry()
+
+    local queue =
+        AgeBreakerState
+        and AgeBreakerState.TargetQueue
+        or {}
+
+    if type(queue) ~= "table"
+    or #queue <= 0 then
+        return nil
+    end
+
+    local activeIndex =
+        math.max(
+            1,
+            math.floor(
+                SafeNumber(
+                    AgeBreakerState.ActiveQueueIndex,
+                    1
+                )
+            )
+        )
+
+    if queue[activeIndex] then
+        return queue[activeIndex]
+    end
+
+    for _, entry in ipairs(queue) do
+
+        local status =
+            tostring(entry.Status or "")
+
+        if status ~= "Complete" then
+            return entry
+        end
+    end
+
+    return nil
+end
+
+function ResolveAgeBreakerHUDTargetText()
+
+    local target =
+        AgeBreakerState
+        and AgeBreakerState.TargetPet
+
+    if type(target) ~= "table"
+    and AgeBreakerState
+    and type(AgeBreakerState.MachineTargetSnapshot) == "table" then
+        target =
+            AgeBreakerState.MachineTargetSnapshot
+    end
+
+    local entry =
+        ResolveAgeBreakerHUDActiveEntry()
+
+    local petName =
+        nil
+
+    local mutationPrefix =
+        ""
+
+    local currentAge =
+        nil
+
+    local goalAge =
+        nil
+
+    if type(target) == "table" then
+
+        petName =
+            tostring(target.PetName or "")
+
+        mutationPrefix =
+            FormatAgeBreakerMutationPrefix(
+                target.MutationText
+                or target.Mutation
+                or "Normal"
+            )
+
+        currentAge =
+            tonumber(target.Age)
+
+    elseif type(entry) == "table" then
+
+        petName =
+            tostring(entry.PetName or "")
+
+        mutationPrefix =
+            FormatAgeBreakerMutationPrefix(
+                entry.MutationText
+                or "Normal"
+            )
+
+        currentAge =
+            tonumber(entry.LastKnownAge)
+    end
+
+    if type(entry) == "table" then
+        goalAge =
+            tonumber(entry.GoalLevel)
+            or tonumber(AgeBreakerState.DefaultGoalLevel)
+    else
+        goalAge =
+            tonumber(AgeBreakerState.DefaultGoalLevel)
+    end
+
+    if not petName
+    or petName == "" then
+        return "🎯  No target"
+    end
+
+    local progressText =
+        tostring(currentAge or "?")
+        .. "→"
+        .. tostring(goalAge or "?")
+
+    local line =
+        "🎯  "
+        .. mutationPrefix
+        .. petName
+        .. " "
+        .. progressText
+
+    return TruncateAgeBreakerHUDText(
+        line,
+        34
+    )
+end
+
+function ResolveAgeBreakerHUDSacrificeText()
+
+    local pets =
+        AgeBreakerState
+        and AgeBreakerState.LastCandidates
+
+    if type(pets) ~= "table"
+    or #pets <= 0 then
+
+        if type(BuildAgeBreakerInventoryPets) == "function" then
+            pets =
+                BuildAgeBreakerInventoryPets()
+        else
+            pets =
+                {}
+        end
+    end
+
+    local target =
+        AgeBreakerState
+        and AgeBreakerState.TargetPet
+
+    if type(target) ~= "table"
+    and AgeBreakerState
+    and type(AgeBreakerState.MachineTargetSnapshot) == "table" then
+        target =
+            AgeBreakerState.MachineTargetSnapshot
+    end
+
+    local count =
+        0
+
+    if type(CountAgeBreakerMatchingSacrifices) == "function" then
+
+        local ok, result =
+            pcall(function()
+                return CountAgeBreakerMatchingSacrifices(
+                    pets,
+                    target
+                )
+            end)
+
+        if ok then
+            count =
+                tonumber(result)
+                or 0
+        end
+    end
+
+    return "🧪  "
+        .. tostring(count)
+        .. " sacrifices left"
+end
+
+function ResolveAgeBreakerHUDNextText()
+
+    if type(AgeBreakerState) ~= "table" then
+        return "➜  Waiting"
+    end
+
+    local nextAction =
+        tostring(
+            AgeBreakerState.NextAction
+            or "Waiting"
+        )
+
+    if AgeBreakerState.ClaimReady == true then
+
+        if IsTradeWorld() then
+            nextAction =
+                "Teleport to Normal"
+        else
+            nextAction =
+                "Claim age break"
+        end
+
+    elseif AgeBreakerState.TimerSeconds ~= nil
+    and tonumber(AgeBreakerState.TimerSeconds) > 0 then
+
+        nextAction =
+            "Wait for timer"
+    end
+
+    if nextAction == "" then
+        nextAction =
+            "Waiting"
+    end
+
+    return TruncateAgeBreakerHUDText(
+        "➜  " .. nextAction,
+        34
+    )
+end
+
+function SetAgeBreakerHUDLabel(label, text)
+
+    if label then
+        label.Text =
+            tostring(text or "")
+    end
+end
+
+function CreateAgeBreakerHUD()
+
+    if AgeBreakerHUDGui
+    and AgeBreakerHUDGui.Parent then
+        return
+    end
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return
+    end
+
+    local playerGui =
+        player:FindFirstChild("PlayerGui")
+        or player:WaitForChild("PlayerGui", 10)
+
+    if not playerGui then
+        return
+    end
+
+    local oldGui =
+        playerGui:FindFirstChild("HolyAgeBreakerHUD")
+
+    if oldGui then
+        oldGui:Destroy()
+    end
+
+    local screenGui =
+        Instance.new("ScreenGui")
+
+    screenGui.Name =
+        "HolyAgeBreakerHUD"
+
+    screenGui.ResetOnSpawn =
+        false
+
+    screenGui.IgnoreGuiInset =
+        true
+
+    screenGui.DisplayOrder =
+        9998
+
+    screenGui.Enabled =
+        VisualState
+        and VisualState.AgeBreakerHUD == true
+
+    screenGui.Parent =
+        playerGui
+
+    AgeBreakerHUDGui =
+        screenGui
+
+    local frame =
+        Instance.new("Frame")
+
+    frame.Name =
+        "Main"
+
+    frame.AnchorPoint =
+        Vector2.new(0.5, 0)
+
+    frame.Position =
+        UDim2.new(0.5, 0, 0, 86)
+
+    frame.Size =
+        UDim2.fromOffset(300, 132)
+
+    frame.BackgroundColor3 =
+        Color3.fromRGB(12, 12, 18)
+
+    frame.BackgroundTransparency =
+        0.08
+
+    frame.BorderSizePixel =
+        0
+
+    frame.Visible =
+        VisualState
+        and VisualState.AgeBreakerHUD == true
+
+    frame.Parent =
+        screenGui
+
+    AgeBreakerHUDFrame =
+        frame
+
+    local corner =
+        Instance.new("UICorner")
+
+    corner.CornerRadius =
+        UDim.new(0, 10)
+
+    corner.Parent =
+        frame
+
+    local stroke =
+        Instance.new("UIStroke")
+
+    stroke.Color =
+        Color3.fromRGB(130, 80, 255)
+
+    stroke.Thickness =
+        1
+
+    stroke.Transparency =
+        0.15
+
+    stroke.Parent =
+        frame
+
+    local gradient =
+        Instance.new("UIGradient")
+
+    gradient.Rotation =
+        90
+
+    gradient.Color =
+        ColorSequence.new({
+            ColorSequenceKeypoint.new(
+                0,
+                Color3.fromRGB(22, 18, 36)
+            ),
+            ColorSequenceKeypoint.new(
+                1,
+                Color3.fromRGB(10, 10, 14)
+            ),
+        })
+
+    gradient.Parent =
+        frame
+
+    local title =
+        Instance.new("TextLabel")
+
+    title.Name =
+        "Title"
+
+    title.BackgroundTransparency =
+        1
+
+    title.Position =
+        UDim2.fromOffset(12, 8)
+
+    title.Size =
+        UDim2.new(1, -24, 0, 24)
+
+    title.Font =
+        Enum.Font.GothamBold
+
+    title.Text =
+        "🧬 Age Breaker        ON"
+
+    title.TextColor3 =
+        Color3.fromRGB(245, 240, 255)
+
+    title.TextSize =
+        15
+
+    title.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    title.Parent =
+        frame
+
+    AgeBreakerHUDTitleLabel =
+        title
+
+    local divider =
+        Instance.new("Frame")
+
+    divider.Name =
+        "Divider"
+
+    divider.Position =
+        UDim2.fromOffset(10, 36)
+
+    divider.Size =
+        UDim2.new(1, -20, 0, 1)
+
+    divider.BackgroundColor3 =
+        Color3.fromRGB(85, 70, 135)
+
+    divider.BackgroundTransparency =
+        0.25
+
+    divider.BorderSizePixel =
+        0
+
+    divider.Parent =
+        frame
+
+    local function MakeLine(name, y)
+
+        local label =
+            Instance.new("TextLabel")
+
+        label.Name =
+            name
+
+        label.BackgroundTransparency =
+            1
+
+        label.Position =
+            UDim2.fromOffset(14, y)
+
+        label.Size =
+            UDim2.new(1, -28, 0, 20)
+
+        label.Font =
+            Enum.Font.GothamSemibold
+
+        label.TextColor3 =
+            Color3.fromRGB(225, 225, 235)
+
+        label.TextSize =
+            14
+
+        label.TextXAlignment =
+            Enum.TextXAlignment.Left
+
+        label.TextTruncate =
+            Enum.TextTruncate.AtEnd
+
+        label.Parent =
+            frame
+
+        return label
+    end
+
+    AgeBreakerHUDTimerLabel =
+        MakeLine("Timer", 44)
+
+    AgeBreakerHUDTargetLabel =
+        MakeLine("Target", 66)
+
+    AgeBreakerHUDSacrificeLabel =
+        MakeLine("Sacrifices", 88)
+
+    AgeBreakerHUDNextLabel =
+        MakeLine("Next", 110)
+
+    RefreshAgeBreakerHUD()
+
+    task.spawn(function()
+
+        while IsCurrentRun() do
+
+            task.wait(1)
+
+            if VisualState
+            and VisualState.AgeBreakerHUD == true
+            and type(RefreshAgeBreakerHUD) == "function" then
+                pcall(RefreshAgeBreakerHUD)
+            end
+        end
+    end)
+end
+
+function RefreshAgeBreakerHUD()
+
+    if not AgeBreakerHUDGui
+    or not AgeBreakerHUDFrame then
+        return
+    end
+
+    AgeBreakerHUDGui.Enabled =
+        VisualState
+        and VisualState.AgeBreakerHUD == true
+
+    AgeBreakerHUDFrame.Visible =
+        VisualState
+        and VisualState.AgeBreakerHUD == true
+
+    if not AgeBreakerHUDFrame.Visible then
+        return
+    end
+
+    local enabledText =
+        AgeBreakerState
+        and AgeBreakerState.Enabled == true
+        and "ON"
+        or "OFF"
+
+    SetAgeBreakerHUDLabel(
+        AgeBreakerHUDTitleLabel,
+        "🧬 Age Breaker        " .. enabledText
+    )
+
+    SetAgeBreakerHUDLabel(
+        AgeBreakerHUDTimerLabel,
+        "⏱  " .. ResolveAgeBreakerHUDTimerText()
+    )
+
+    SetAgeBreakerHUDLabel(
+        AgeBreakerHUDTargetLabel,
+        ResolveAgeBreakerHUDTargetText()
+    )
+
+    SetAgeBreakerHUDLabel(
+        AgeBreakerHUDSacrificeLabel,
+        ResolveAgeBreakerHUDSacrificeText()
+    )
+
+    SetAgeBreakerHUDLabel(
+        AgeBreakerHUDNextLabel,
+        ResolveAgeBreakerHUDNextText()
+    )
+end
 
 function BuildVisualTab()
 
@@ -21917,7 +22528,43 @@ and type(RefreshSniperMonitorHUD) == "function" then
 end
 end)
 
+local AgeBreakerHUDToggle =
+    VisualBox:AddToggle(
+        "AgeBreakerHUD",
+        {
+            Text = "🧬 Age Breaker HUD",
+            Default = false,
+            Tooltip = "Shows Age Breaker timer, target progress, sacrifices left, and next action on-screen.",
+        }
+    )
 
+AgeBreakerHUDToggle:OnChanged(function(v)
+
+    VisualState.AgeBreakerHUD =
+        v == true
+
+    MarkConfigDirty()
+
+    if not AgeBreakerHUDGui
+    and type(CreateAgeBreakerHUD) == "function" then
+        CreateAgeBreakerHUD()
+    end
+
+    if AgeBreakerHUDGui then
+        AgeBreakerHUDGui.Enabled =
+            v == true
+    end
+
+    if AgeBreakerHUDFrame then
+        AgeBreakerHUDFrame.Visible =
+            v == true
+    end
+
+    if v == true
+    and type(RefreshAgeBreakerHUD) == "function" then
+        RefreshAgeBreakerHUD()
+    end
+end)
 --==================================================
 -- ACTIVE WATCHLIST HUD
 --==================================================
@@ -46440,8 +47087,8 @@ function BuildAgeBreakerTab()
         SetupBox:AddDropdown(
             "AgeBreakerSacrificeMulti",
             {
-                Text = "Sacrifice Pets",
-                Tooltip = "Select disposable pets HOLY is allowed to consume.",
+                Text = "🧪 Sacrifice Pets",
+                Tooltip = "Select trash pets HOLY is allowed to consume.",
                 Values = {},
                 Default = {},
                 Searchable = true,
