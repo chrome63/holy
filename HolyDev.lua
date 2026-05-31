@@ -8124,33 +8124,32 @@ function BuildPetMutationNameAndCodeCache()
             name
     end
 
-    local function AddCode(code, name)
+local function AddCode(code, name)
 
-        code =
-            CleanText(code)
+    code =
+        CleanText(code)
 
-        name =
-            CleanText(name)
+    name =
+        CleanText(name)
 
-        if not code
-        or not name
-        or tonumber(name) then
-            return
-        end
-
-        -- Save exact, lowercase, and uppercase because game enum
-        -- codes can appear as a / A / EV / ev depending on source.
-        codeToName[code] =
-            name
-
-        codeToName[code:lower()] =
-            name
-
-        codeToName[code:upper()] =
-            name
-
-        AddName(name)
+    if not code
+    or not name
+    or tonumber(name) then
+        return
     end
+
+    -- CRITICAL:
+    -- PetMutationRegistry codes are case-sensitive.
+    -- Example:
+    -- A = Nightmare
+    -- a = Shocked
+    --
+    -- Never store lower/upper aliases here, or A/a overwrite each other.
+    codeToName[code] =
+        name
+
+    AddName(name)
+end
 
     local registry =
         nil
@@ -8303,15 +8302,15 @@ function ResolvePetMutationCodeOrName(value)
 
     if type(codeToName) == "table" then
 
-        local fromCode =
-            codeToName[text]
-            or codeToName[text:lower()]
-            or codeToName[text:upper()]
+    -- Exact-case lookup only.
+    -- Do not lower/upper mutation enum codes.
+    local fromCode =
+        codeToName[text]
 
-        if fromCode then
-            return fromCode
-        end
+    if fromCode then
+        return fromCode
     end
+end
 
     if type(nameSet) == "table"
     and nameSet[text:lower()] then
