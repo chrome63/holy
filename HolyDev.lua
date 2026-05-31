@@ -29041,6 +29041,80 @@ function ResolveBoothPriorityPointGlobal()
     return nil
 end
 
+function ResolveTradeWorldBoothLayoutCenterGlobal()
+
+    local tradeWorld =
+        workspace:FindFirstChild("TradeWorld")
+
+    local boothsFolder =
+        tradeWorld
+        and tradeWorld:FindFirstChild("Booths")
+
+    if not boothsFolder then
+        return nil
+    end
+
+    local total =
+        Vector3.zero
+
+    local count =
+        0
+
+    for _, boothModel in ipairs(boothsFolder:GetChildren()) do
+
+        local position =
+            nil
+
+        if boothModel:IsA("Model") then
+
+            local ok, pivot =
+                pcall(function()
+                    return boothModel:GetPivot()
+                end)
+
+            if ok
+            and pivot then
+                position =
+                    pivot.Position
+            end
+
+        elseif boothModel:IsA("BasePart") then
+
+            position =
+                boothModel.Position
+        end
+
+        if not position then
+
+            local firstPart =
+                boothModel:FindFirstChildWhichIsA(
+                    "BasePart",
+                    true
+                )
+
+            if firstPart then
+                position =
+                    firstPart.Position
+            end
+        end
+
+        if position then
+
+            total =
+                total + position
+
+            count =
+                count + 1
+        end
+    end
+
+    if count <= 0 then
+        return nil
+    end
+
+    return total / count
+end
+
 function ResolveBoothBehindDirection(boothModel, standPosition, standPivot)
 
     standPosition =
@@ -29054,28 +29128,46 @@ function ResolveBoothBehindDirection(boothModel, standPosition, standPivot)
         return Vector3.new(0, 0, -1), "Fallback"
     end
 
+    --==================================================
     -- Best direction:
-    -- booths face inward toward the trade-world center/priority point.
-    -- behind = away from that center/priority point.
-    local priorityPosition =
+    -- booths normally face inward toward the Trade World center.
+    -- behind = away from that center.
+    --==================================================
+
+    local centerPosition =
         ResolveBoothPriorityPointGlobal()
 
-    if priorityPosition then
+    local centerSource =
+        "PriorityPoint"
+
+    if not centerPosition then
+
+        centerPosition =
+            ResolveTradeWorldBoothLayoutCenterGlobal()
+
+        centerSource =
+            "BoothLayoutCenter"
+    end
+
+    if centerPosition then
 
         local away =
             Vector3.new(
-                standPosition.X - priorityPosition.X,
+                standPosition.X - centerPosition.X,
                 0,
-                standPosition.Z - priorityPosition.Z
+                standPosition.Z - centerPosition.Z
             )
 
         if away.Magnitude > 0.001 then
-            return away.Unit, "AwayFromPriorityPoint"
+            return away.Unit, "AwayFrom" .. centerSource
         end
     end
 
-    -- Fallback: use whole booth pivot, not skin stand pivot.
-    -- Custom skin Stand pivots can be rotated sideways.
+    --==================================================
+    -- Fallback:
+    -- use booth model look vector only if the center resolver fails.
+    --==================================================
+
     if boothModel
     and boothModel:IsA("Model") then
 
@@ -29087,30 +29179,68 @@ function ResolveBoothBehindDirection(boothModel, standPosition, standPivot)
         if ok
         and boothPivot then
 
-            local direction =
+            local look =
                 Vector3.new(
                     boothPivot.LookVector.X,
                     0,
                     boothPivot.LookVector.Z
                 )
 
-            if direction.Magnitude > 0.001 then
-                return direction.Unit, "BoothModelLookVector"
+            if look.Magnitude > 0.001 then
+
+                -- Try the side farther away from world origin/center-ish.
+                -- This is safer than always trusting LookVector direction.
+                local plusPosition =
+                    standPosition + look.Unit
+
+                local minusPosition =
+                    standPosition - look.Unit
+
+                local reference =
+                    ResolveTradeWorldBoothLayoutCenterGlobal()
+                    or Vector3.zero
+
+                local plusDistance =
+                    (plusPosition - reference).Magnitude
+
+                local minusDistance =
+                    (minusPosition - reference).Magnitude
+
+                if minusDistance > plusDistance then
+                    return -look.Unit, "BoothModelLookVectorInverted"
+                end
+
+                return look.Unit, "BoothModelLookVector"
             end
         end
     end
 
     if standPivot then
 
-        local direction =
+        local look =
             Vector3.new(
                 standPivot.LookVector.X,
                 0,
                 standPivot.LookVector.Z
             )
 
-        if direction.Magnitude > 0.001 then
-            return direction.Unit, "StandLookVectorFallback"
+        if look.Magnitude > 0.001 then
+
+            local reference =
+                ResolveTradeWorldBoothLayoutCenterGlobal()
+                or Vector3.zero
+
+            local plusDistance =
+                (standPosition + look.Unit - reference).Magnitude
+
+            local minusDistance =
+                (standPosition - look.Unit - reference).Magnitude
+
+            if minusDistance > plusDistance then
+                return -look.Unit, "StandLookVectorInverted"
+            end
+
+            return look.Unit, "StandLookVectorFallback"
         end
     end
 
@@ -29283,6 +29413,71 @@ function ResolveCenteredBehindBoothPlacement(boothModel, fallbackPosition, fallb
             targetPosition.Y,
             boothCenter.Z
         )
+
+    --==================================================
+    -- Safety correction:
+    -- If the chosen target is closer to the Trade World center
+    -- than the booth itself, it is probably the front/customer side.
+    -- Flip it to the opposite side.
+    --==================================================
+
+    local centerPosition =
+        ResolveBoothPriorityPointGlobal()
+        or ResolveTradeWorldBoothLayoutCenterGlobal()
+
+    if centerPosition then
+
+        local boothCenterFlat =
+            Vector3.new(
+                boothCenter.X,
+                0,
+                boothCenter.Z
+            )
+
+        local targetFlat =
+            Vector3.new(
+                targetPosition.X,
+                0,
+                targetPosition.Z
+            )
+
+        local centerFlat =
+            Vector3.new(
+                centerPosition.X,
+                0,
+                centerPosition.Z
+            )
+
+        local boothDistanceFromCenter =
+            (boothCenterFlat - centerFlat).Magnitude
+
+        local targetDistanceFromCenter =
+            (targetFlat - centerFlat).Magnitude
+
+        if targetDistanceFromCenter < boothDistanceFromCenter then
+
+            targetPosition =
+                boothCenter
+                - (
+                    behindDirection
+                    * (
+                        halfDepth
+                        + distance
+                    )
+                )
+
+            lookTarget =
+                Vector3.new(
+                    boothCenter.X,
+                    targetPosition.Y,
+                    boothCenter.Z
+                )
+
+            directionSource =
+                tostring(directionSource)
+                .. "+FlippedAwayFromCenter"
+        end
+    end
 
     return targetPosition, lookTarget, directionSource
 end
