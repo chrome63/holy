@@ -6131,12 +6131,6 @@ function ChooseShowcaseCandidate(pets, mode, missingPetName)
             requireSelected
         )
 
-    if #candidates <= 0
-    and requireSelected ~= true then
-        candidates =
-            SortShowcasePetsForUI(pets)
-    end
-
     if #candidates <= 0 then
         return nil
     end
@@ -6236,6 +6230,20 @@ function ChooseShowcaseCandidate(pets, mode, missingPetName)
 end
 
 function ResolveFallbackShowcasePet(missingPetName)
+
+    if type(RefreshLatestBoothDataNow) == "function" then
+        pcall(function()
+            RefreshLatestBoothDataNow(
+                "showcase fallback resolve"
+            )
+        end)
+    end
+
+    if type(RefreshOwnBoothSnapshot) == "function" then
+        pcall(function()
+            RefreshOwnBoothSnapshot()
+        end)
+    end
 
     local pets =
         BuildAvailableShowcasePets()
@@ -6429,9 +6437,9 @@ function TryAutoSwitchShowcasePet(missingPetName)
     BoothPetState.LastMissingWarnAt =
         0
 
-            SetShowcasePetSelection(
-            candidate
-        )
+    SetShowcasePetSelection(
+        fallback
+    )
 
     task.spawn(function()
 
@@ -48284,14 +48292,14 @@ function EquipShowcasePet(force)
     BoothPetState.LastRotationEquipAt =
         now
 
-    print(
-        string.format(
-            "[BoothPet] Equipping → %s | %.2f KG | UID %s",
-            tostring(bestPet.PetName),
-            tonumber(bestPet.Weight) or 0,
-            tostring(bestPet.UID)
-        )
-    )
+    -- print(
+    --     string.format(
+    --         "[BoothPet] Equipping → %s | %.2f KG | UID %s",
+    --         tostring(bestPet.PetName),
+    --         tonumber(bestPet.Weight) or 0,
+    --         tostring(bestPet.UID)
+    --     )
+    -- )
 
     humanoid:EquipTool(bestPet.Tool)
 end
