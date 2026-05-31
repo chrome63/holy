@@ -5053,20 +5053,6 @@ function BuildAvailableShowcasePets()
     local listedPets =
         BuildOwnListedShowcasePetNames()
 
-    local hasListedPet =
-        false
-
-    for _ in pairs(listedPets) do
-        hasListedPet =
-            true
-
-        break
-    end
-
-    if not hasListedPet then
-        return {}
-    end
-
     local containers = {
         player.Character,
         player:FindFirstChild("Backpack"),
@@ -5111,7 +5097,7 @@ function BuildAvailableShowcasePets()
             local matchedListedPet =
                 nil
 
-            for listedPetName in pairs(listedPets) do
+            for listedPetName in pairs(listedPets or {}) do
 
                 if ShowcaseToolMatchesListedPet(
                     parsedPetName,
@@ -5125,24 +5111,24 @@ function BuildAvailableShowcasePets()
                 end
             end
 
-            if matchedListedPet then
+            table.insert(pets, {
+                Tool = child,
 
-                table.insert(pets, {
-                    Tool = child,
+                -- Actual tool pet name.
+                PetName = parsedPetName,
 
-                    -- Use the actual tool name/pet name for equipping.
-                    PetName = parsedPetName,
+                -- Nil/empty means it is currently not confirmed listed.
+                ListedPetName = matchedListedPet or "",
 
-                    -- Keep booth-listed base name for debug/status.
-                    ListedPetName = matchedListedPet,
+                IsListed =
+                    matchedListedPet ~= nil,
 
-                    Weight = weight,
-                    UID = parsed.UID,
+                Weight = weight,
+                UID = parsed.UID,
 
-                    StableKey =
-                        tostring(parsed.StableKey or parsed.UID or child.Name),
-                })
-            end
+                StableKey =
+                    tostring(parsed.StableKey or parsed.UID or child.Name),
+            })
         end
     end
 
@@ -5214,12 +5200,19 @@ function FormatShowcasePetChoice(pet)
         return "Unknown"
     end
 
+    local listedText =
+        pet.IsListed == true
+        and "Listed"
+        or "Backpack"
+
     return tostring(pet.PetName or "Unknown")
         .. " | "
         .. string.format(
             "%.2f KG",
             tonumber(pet.Weight) or 0
         )
+        .. " | "
+        .. listedText
         .. " | #"
         .. FormatShowcaseShortUID(
             pet.UID or pet.StableKey
@@ -6079,23 +6072,30 @@ function BuildSelectedShowcaseCandidateList(pets, requireSelected)
                 or ""
             )
 
-        if stableKey ~= "" then
+        if stableKey == "" then
+            continue
+        end
 
-            if BoothPetState.SelectedShowcasePets[stableKey] == true then
+        -- Rotation/showcase should only use pets confirmed listed.
+        -- Dropdown can show Backpack pets, but runtime skips unlisted ones.
+        if pet.IsListed ~= true then
+            continue
+        end
 
-                table.insert(
-                    output,
-                    pet
-                )
+        if BoothPetState.SelectedShowcasePets[stableKey] == true then
 
-            elseif requireSelected ~= true
-            and hasSelected ~= true then
+            table.insert(
+                output,
+                pet
+            )
 
-                table.insert(
-                    output,
-                    pet
-                )
-            end
+        elseif requireSelected ~= true
+        and hasSelected ~= true then
+
+            table.insert(
+                output,
+                pet
+            )
         end
     end
 
@@ -36400,6 +36400,83 @@ local ShowcaseDropdown =
 
 ShowcaseDropdownRef =
     ShowcaseDropdown
+
+task.spawn(function()
+
+    task.wait(0.25)
+
+    if not IsCurrentRun() then
+        return
+    end
+
+    RefreshShowcasePetDropdown(false)
+
+    task.wait(1.00)
+
+    if not IsCurrentRun() then
+        return
+    end
+
+    if type(RefreshLatestBoothDataNow) == "function" then
+        pcall(function()
+            RefreshLatestBoothDataNow(
+                "showcase auto load"
+            )
+        end)
+    end
+
+    if type(RefreshOwnBoothSnapshot) == "function" then
+        pcall(function()
+            RefreshOwnBoothSnapshot()
+        end)
+    end
+
+    RefreshShowcasePetDropdown(false)
+end)
+
+do
+    local player =
+        Players.LocalPlayer
+
+    local backpack =
+        player
+        and player:FindFirstChild("Backpack")
+
+    if backpack then
+
+        backpack.ChildAdded:Connect(function(child)
+
+            if not child:IsA("Tool") then
+                return
+            end
+
+            task.delay(0.20, function()
+
+                if not IsCurrentRun() then
+                    return
+                end
+
+                RefreshShowcasePetDropdown(false)
+            end)
+        end)
+
+        backpack.ChildRemoved:Connect(function(child)
+
+            if not child:IsA("Tool") then
+                return
+            end
+
+            task.delay(0.20, function()
+
+                if not IsCurrentRun() then
+                    return
+                end
+
+                RefreshShowcasePetDropdown(false)
+            end)
+        end)
+    end
+end
 
 ShowcaseDropdown:OnChanged(function(value)
 
