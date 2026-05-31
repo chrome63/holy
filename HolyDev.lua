@@ -16464,69 +16464,54 @@ local finalHopReason =
 local finalNotifyReason =
     nil
 
-local isSellerAfkHop =
-    TargetPetsHopState.SellerAfkCheck == true
-    and SafeElapsed(TargetPetsHopState.LastAfkSkippedAt) < 5
+--==================================================
+-- NO TARGET HOP DELAY
+-- This must always apply when the current scan found
+-- no valid target/listing to stay for.
+--==================================================
 
-if isSellerAfkHop then
+local noTargetDelay =
+    math.clamp(
+        math.floor(
+            SafeNumber(
+                TargetPetsHopState.NoTargetHopDelay,
+                10
+            )
+        ),
+        0,
+        120
+    )
 
-    finalHopReason =
-        "Seller AFK: "
-        .. tostring(TargetPetsHopState.LastAfkSkippedPet or "Unknown")
-        .. " on "
-        .. tostring(TargetPetsHopState.LastAfkSkippedPlayer or "Unknown")
+if noTargetDelay > 0 then
 
-    finalNotifyReason =
-        "Only selected target pets found were held by AFK sellers, so HOLY is hopping."
-end
+    local now =
+        os.clock()
 
--- Only delay pure "no target found" hops.
--- Seller AFK and listed-over-filter hops should stay immediate.
-if not isSellerAfkHop then
+    if SafeNumber(TargetPetsHopState.NoTargetHopFirstSeenAt, 0) <= 0 then
+        TargetPetsHopState.NoTargetHopFirstSeenAt =
+            now
+    end
 
-    local noTargetDelay =
-        math.clamp(
-            math.floor(
-                SafeNumber(
-                    TargetPetsHopState.NoTargetHopDelay,
-                    10
-                )
-            ),
-            0,
-            120
+    local elapsed =
+        now - SafeNumber(
+            TargetPetsHopState.NoTargetHopFirstSeenAt,
+            now
         )
 
-    if noTargetDelay > 0 then
+    if elapsed < noTargetDelay then
 
-        local now =
-            os.clock()
-
-        if SafeNumber(TargetPetsHopState.NoTargetHopFirstSeenAt, 0) <= 0 then
-            TargetPetsHopState.NoTargetHopFirstSeenAt =
-                now
-        end
-
-        local elapsed =
-            now - SafeNumber(
-                TargetPetsHopState.NoTargetHopFirstSeenAt,
-                now
-            )
-
-        if elapsed < noTargetDelay then
-
-            SetTargetPetsHopStatus(
-                "No targets found, hopping in "
-                    .. tostring(
-                        math.max(
-                            0,
-                            math.ceil(noTargetDelay - elapsed)
-                        )
+        SetTargetPetsHopStatus(
+            "No targets found, hopping in "
+                .. tostring(
+                    math.max(
+                        0,
+                        math.ceil(noTargetDelay - elapsed)
                     )
-                    .. "s"
-            )
+                )
+                .. "s"
+        )
 
-            continue
-        end
+        continue
     end
 end
 
