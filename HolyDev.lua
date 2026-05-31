@@ -3471,6 +3471,11 @@ BoothPetState = {
     -- Rotation can change this automatically.
     SelectedPetType = nil,
 
+    -- Exact selected tool identity.
+    -- Prevents HOLY from selecting highest KG duplicate by name.
+    SelectedShowcaseStableKey = "",
+    SelectedShowcaseUID = "",
+
     -- Multi-select rotation pool.
     RotationEnabled = false,
     ShowcaseMode = "Selected Listed Rotation",
@@ -6053,17 +6058,14 @@ function BuildSelectedShowcaseCandidateList(pets, requireSelected)
         BoothPetState.SelectedShowcasePets
         or {}
 
-    local hasSelected =
-        false
-
-    for _ in pairs(BoothPetState.SelectedShowcasePets) do
-        hasSelected =
-            true
-
-        break
-    end
+    requireSelected =
+        requireSelected == true
 
     for _, pet in ipairs(pets) do
+
+        if type(pet) ~= "table" then
+            continue
+        end
 
         local stableKey =
             tostring(
@@ -6076,22 +6078,26 @@ function BuildSelectedShowcaseCandidateList(pets, requireSelected)
             continue
         end
 
-        -- Rotation/showcase should only use pets confirmed listed.
-        -- Dropdown can show Backpack pets, but runtime skips unlisted ones.
+        -- Critical:
+        -- Dropdown may show Backpack pets, but showcase runtime
+        -- must only equip pets confirmed listed in your booth.
         if pet.IsListed ~= true then
             continue
         end
 
-        if BoothPetState.SelectedShowcasePets[stableKey] == true then
+        if requireSelected == true then
 
-            table.insert(
-                output,
-                pet
-            )
+            if BoothPetState.SelectedShowcasePets[stableKey] == true then
+                table.insert(
+                    output,
+                    pet
+                )
+            end
 
-        elseif requireSelected ~= true
-        and hasSelected ~= true then
+        else
 
+            -- Highest Weight Listed Pet / Random Listed Pet
+            -- should use all listed pets, not unlisted backpack pets.
             table.insert(
                 output,
                 pet
@@ -6251,10 +6257,43 @@ function ResolveFallbackShowcasePet(missingPetName)
     )
 end
 
-function SetShowcasePetSelection(petName)
+function SetShowcasePetSelection(petOrName)
 
-    petName =
-        NormalizeShowcasePetName(petName)
+    local petName =
+        nil
+
+    local stableKey =
+        ""
+
+    local uid =
+        ""
+
+    if type(petOrName) == "table" then
+
+        petName =
+            NormalizeShowcasePetName(
+                petOrName.PetName
+            )
+
+        stableKey =
+            tostring(
+                petOrName.StableKey
+                or ""
+            )
+
+        uid =
+            tostring(
+                petOrName.UID
+                or ""
+            )
+
+    else
+
+        petName =
+            NormalizeShowcasePetName(
+                petOrName
+            )
+    end
 
     if petName == "" then
         return false
@@ -6263,11 +6302,22 @@ function SetShowcasePetSelection(petName)
     BoothPetState.SelectedPetType =
         petName
 
+    BoothPetState.SelectedShowcaseStableKey =
+        stableKey
+
+    BoothPetState.SelectedShowcaseUID =
+        uid
+
     BoothPetState.LastEquippedUID =
         nil
 
+    -- Important:
+    -- If we know the exact UID, lock to it.
+    -- This prevents duplicate pet names from selecting highest KG.
     BoothPetState.LockedShowcaseUID =
-        nil
+        uid ~= ""
+        and uid
+        or nil
 
     BoothPetState.LastMissingPet =
         nil
@@ -6379,9 +6429,9 @@ function TryAutoSwitchShowcasePet(missingPetName)
     BoothPetState.LastMissingWarnAt =
         0
 
-    SetShowcasePetSelection(
-        newPet
-    )
+            SetShowcasePetSelection(
+            candidate
+        )
 
     task.spawn(function()
 
@@ -6594,7 +6644,7 @@ function ResolveBestPet(targetPet)
     end
 
     targetPet =
-        tostring(targetPet or "")
+        NormalizeShowcasePetName(targetPet)
 
     if targetPet == "" then
         return nil
@@ -6608,8 +6658,62 @@ function ResolveBestPet(targetPet)
     local lockedUID =
         tostring(
             BoothPetState.LockedShowcaseUID
+            or BoothPetState.SelectedShowcaseUID
             or ""
         )
+
+    local selectedStableKey =
+        tostring(
+            BoothPetState.SelectedShowcaseStableKey
+            or ""
+        )
+
+    --==================================================
+    -- 1. Exact identity match first.
+    -- This is the important fix.
+    --==================================================
+
+    if lockedUID ~= ""
+    or selectedStableKey ~= "" then
+
+        for _, container in ipairs(containers) do
+
+            if not container then
+                continue
+            end
+
+            for _, tool in ipairs(container:GetChildren()) do
+
+                local parsed =
+                    ParsePetTool(tool)
+
+                if not parsed then
+                    continue
+                end
+
+                local parsedUID =
+                    tostring(parsed.UID or "")
+
+                local parsedStableKey =
+                    tostring(parsed.StableKey or "")
+
+                if lockedUID ~= ""
+                and parsedUID == lockedUID then
+                    return parsed
+                end
+
+                if selectedStableKey ~= ""
+                and parsedStableKey == selectedStableKey then
+                    return parsed
+                end
+            end
+        end
+    end
+
+    --==================================================
+    -- 2. Name fallback.
+    -- Only used when exact UID/stable key is missing.
+    --==================================================
 
     local best = nil
     local bestWeight = -math.huge
@@ -6631,29 +6735,23 @@ function ResolveBestPet(targetPet)
             end
 
             local normalizedParsed =
-                string.lower(parsed.PetName)
+                NormalizeShowcasePetName(
+                    parsed.PetName
+                ):lower()
 
             local normalizedTarget =
-                string.lower(targetPet)
+                targetPet:lower()
 
             local exactMatch =
                 normalizedParsed == normalizedTarget
 
             local suffixMatch =
-                normalizedParsed:sub(
-                    -#normalizedTarget
-                ) == normalizedTarget
+                #normalizedParsed >= #normalizedTarget
+                and normalizedParsed:sub(-#normalizedTarget) == normalizedTarget
 
             if not exactMatch
             and not suffixMatch then
                 continue
-            end
-
-            -- If we already locked one showcase pet, keep using it
-            -- while it still exists. This prevents equal-pet flip-flop.
-            if lockedUID ~= ""
-            and tostring(parsed.UID) == lockedUID then
-                return parsed
             end
 
             local weight =
@@ -6667,27 +6765,28 @@ function ResolveBestPet(targetPet)
                 false
 
             if not best then
-
                 better =
                     true
 
             elseif weight > bestWeight then
-
                 better =
                     true
 
             elseif weight == bestWeight
             and key < tostring(bestKey or "") then
-
-                -- Deterministic tie-breaker for same KG / same mutation.
                 better =
                     true
             end
 
             if better then
-                best = parsed
-                bestWeight = weight
-                bestKey = key
+                best =
+                    parsed
+
+                bestWeight =
+                    weight
+
+                bestKey =
+                    key
             end
         end
     end
@@ -48081,7 +48180,7 @@ function EquipShowcasePet(force)
             and nextPet.PetName then
 
                 SetShowcasePetSelection(
-                    nextPet.PetName
+                    nextPet
                 )
 
                 targetPet =
