@@ -29750,10 +29750,85 @@ return
     warn("[Booth] Teleport failed (ownership timeout)")
 end
 
+function RequestBoothReposition(reason, attempts, delay)
+
+    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+        return false
+    end
+
+    if not BoothAuto
+    or BoothAuto.AutoTeleport ~= true then
+        return false
+    end
+
+    attempts =
+        math.clamp(
+            math.floor(SafeNumber(attempts, 10)),
+            1,
+            30
+        )
+
+    delay =
+        math.clamp(
+            SafeNumber(delay, 0.35),
+            0.05,
+            2
+        )
+
+    task.spawn(function()
+
+        for attempt = 1, attempts do
+
+            if not IsCurrentRun() then
+                return
+            end
+
+            if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+                return
+            end
+
+            if not BoothAuto
+            or BoothAuto.AutoTeleport ~= true then
+                return
+            end
+
+            local success =
+                PositionBehindOwnedBooth()
+
+            if success then
+
+                if BoothAuto.LockBehindBooth == true then
+                    task.wait(0.10)
+                    SetBoothHardLockAnchored(true)
+                end
+
+                print(
+                    "[Booth] Repositioned behind booth:",
+                    tostring(reason or "unknown"),
+                    "| attempt:",
+                    tostring(attempt)
+                )
+
+                return
+            end
+
+            task.wait(delay)
+        end
+
+        warn(
+            "[Booth] Reposition failed:",
+            tostring(reason or "unknown")
+        )
+    end)
+
+    return true
+end
+
 --==================================================
 -- CHARACTER RESPAWN SUPPORT
 --==================================================
 function OnCharacterAdded(character)
+
     if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
         return
     end
@@ -29768,7 +29843,11 @@ function OnCharacterAdded(character)
         RestoreCharacterMovement()
     end
 
-    PositionBehindOwnedBooth()
+    RequestBoothReposition(
+        "character added",
+        10,
+        0.35
+    )
 end
 
 Players.LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
@@ -29795,7 +29874,24 @@ function BoothPositionWatchdog()
             continue
         end
 
-        if not BoothAuto.LastBoothPosition then
+                if not BoothAuto.LastBoothPosition then
+
+            local now =
+                os.clock()
+
+            if now - SafeNumber(BoothAuto.LastSoftReturnAt, 0)
+                >= 1.50
+            then
+                BoothAuto.LastSoftReturnAt =
+                    now
+
+                RequestBoothReposition(
+                    "missing booth anchor",
+                    4,
+                    0.35
+                )
+            end
+
             continue
         end
 
@@ -36329,30 +36425,33 @@ AutoTpToggle:OnChanged(function(enabled)
         enabled
 
     if not enabled then
+
         ClearBoothAnchor()
         RestoreCharacterMovement()
-    end
 
-    -- skip restore-time execution
-    if ConfigState.IsHydrating then
+        if not ConfigState.IsHydrating then
+            MarkConfigDirty()
+        end
+
         return
     end
 
-    if enabled then
+    RestoreCharacterMovement()
 
-        RestoreCharacterMovement()
+    -- Important:
+    -- Even during config hydration, Auto Teleport must rebuild
+    -- LastBoothPosition / LastBoothCFrame or the watchdog cannot work.
+    RequestBoothReposition(
+        ConfigState.IsHydrating
+            and "auto teleport restored"
+            or "auto teleport enabled",
+        12,
+        0.35
+    )
 
-        task.spawn(function()
-            task.wait(0.15)
-            PositionBehindOwnedBooth()
-        end)
-
-    else
-
-        RestoreCharacterMovement()
+    if not ConfigState.IsHydrating then
+        MarkConfigDirty()
     end
-
-    MarkConfigDirty()
 end)
 
 local LockBehindBoothToggle = BoothBox:AddToggle("LockBehindBooth", {
