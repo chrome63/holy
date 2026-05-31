@@ -9241,11 +9241,6 @@ function ResolveAgeBreakerActiveTarget(pets)
         entry.Status =
             "Active"
 
-if type(QueueAgeBreakerSave) == "function" then
-    QueueAgeBreakerSave(
-        "active target refreshed"
-    )
-end
         return pet, entry
     end
 
