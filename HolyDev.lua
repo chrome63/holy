@@ -21929,6 +21929,12 @@ Tabs = {
         Description = "Target pet hunting, server hop rules, and stay decisions.",
     }),
 
+    Server = Window:AddTab({
+        Name = "Server",
+        Icon = "server",
+        Description = "Server selection, hop behavior, and bad-server memory.",
+    }),
+
     Booth = Window:AddTab({
         Name = "Booth",
         Icon = "store",
@@ -21942,7 +21948,7 @@ Tabs = {
     }),
 
     AgeBreaker = Window:AddTab({
-        Name = "Age Breaker",
+        Name = "Age Break",
         Icon = "dna",
         Description = "Safely age break pets using BaseWeight filters, sacrifice rules, and machine tracking.",
     }),
@@ -22046,6 +22052,12 @@ function BuildGardenModeTradeTabs()
         Tabs.Hunting,
         "Hunting",
         "radar"
+    )
+
+    AddGardenModePlaceholder(
+        Tabs.Server,
+        "Server",
+        "server"
     )
 
     AddGardenModePlaceholder(
@@ -36353,6 +36365,394 @@ WatchlistInfoLabel = nil
 
 RefreshWatchlist = nil
 
+--==================================================
+-- SERVER TAB
+-- Server selection, hop behavior, and bad-server memory.
+-- This replaces the old Sniper → Server sub-tab.
+--==================================================
+
+function BuildServerTab()
+
+    local ServerSelectionBox
+    local ServerMemoryBox
+    local ServerInfoBox
+
+    if type(Tabs.Server.AddLeftCollapsibleGroupbox) == "function" then
+
+        ServerSelectionBox =
+            Tabs.Server:AddLeftCollapsibleGroupbox(
+                "🌐 Server Selection",
+                "server",
+                true
+            )
+
+        ServerMemoryBox =
+            Tabs.Server:AddLeftCollapsibleGroupbox(
+                "🧠 Server Memory",
+                "brain",
+                true
+            )
+
+    else
+
+        ServerSelectionBox =
+            Tabs.Server:AddLeftGroupbox(
+                "🌐 Server Selection",
+                "server"
+            )
+
+        ServerMemoryBox =
+            Tabs.Server:AddLeftGroupbox(
+                "🧠 Server Memory",
+                "brain"
+            )
+    end
+
+    if type(Tabs.Server.AddRightCollapsibleGroupbox) == "function" then
+
+        ServerInfoBox =
+            Tabs.Server:AddRightCollapsibleGroupbox(
+                "📡 Current Server",
+                "info",
+                true
+            )
+
+    else
+
+        ServerInfoBox =
+            Tabs.Server:AddRightGroupbox(
+                "📡 Current Server",
+                "info"
+            )
+    end
+
+    ServerSelectionBox:AddDivider({
+        Text = "Server Hop",
+        MarginTop = 4,
+        MarginBottom = 8,
+    })
+
+    local MaxServerPlayersInput =
+        ServerSelectionBox:AddInput(
+            "SniperMaxServerPlayers",
+            {
+                Text = "👥 Max Server Players",
+                Default = tostring(SniperState.MaxServerPlayers),
+                Numeric = true,
+                Finished = true,
+            }
+        )
+
+    MaxServerPlayersInput:OnChanged(function(value)
+
+        local num =
+            tonumber(value)
+
+        if not num then
+            return
+        end
+
+        SniperState.MaxServerPlayers =
+            math.clamp(
+                math.floor(num),
+                1,
+                30
+            )
+
+        MarkConfigDirty()
+
+        print(
+            "[SniperHop] Max server players:",
+            tostring(SniperState.MaxServerPlayers)
+        )
+    end)
+
+    local ServerHopModeDropdown =
+        ServerSelectionBox:AddDropdown(
+            "SniperServerHopMode",
+            {
+                Text = "⇄ Server Hop Mode",
+                Values = {
+                    "Fullest Under Max",
+                    "Balanced",
+                    "Low Player",
+                },
+                Default = SniperState.ServerHopMode or "Fullest Under Max",
+                Searchable = false,
+            }
+        )
+
+    ServerHopModeDropdown:OnChanged(function(value)
+
+        SniperState.ServerHopMode =
+            tostring(value or "Fullest Under Max")
+
+        MarkConfigDirty()
+
+        print(
+            "[SniperHop] Mode:",
+            tostring(SniperState.ServerHopMode)
+        )
+    end)
+
+    local ServerHopPagesInput =
+        ServerSelectionBox:AddInput(
+            "SniperServerHopPages",
+            {
+                Text = "📄 Server Hop Pages",
+                Tooltip = "How many Roblox server-list pages to fetch. 1 is fastest; higher gives better server selection but slower hops.",
+                Default = tostring(SniperState.ServerHopPages or 1),
+                Numeric = true,
+                Finished = true,
+            }
+        )
+
+    ServerHopPagesInput:OnChanged(function(value)
+
+        local pages =
+            tonumber(value)
+
+        if not pages then
+            return
+        end
+
+        SniperState.ServerHopPages =
+            math.clamp(
+                math.floor(pages),
+                1,
+                10
+            )
+
+        MarkConfigDirty()
+
+        print(
+            "[SniperHop] Server hop pages:",
+            tostring(SniperState.ServerHopPages)
+        )
+    end)
+
+    ServerMemoryBox:AddDivider({
+        Text = "Bad Server Memory",
+        MarginTop = 4,
+        MarginBottom = 8,
+    })
+
+    local ServerBlockModeDropdown =
+        ServerMemoryBox:AddDropdown(
+            "HolyServerBlockMode",
+            {
+                Text = "Block Server When",
+                Tooltip = "Seller AFK Only = only block the server after Seller AFK Check fully detects an AFK target holder.",
+                Values = {
+                    "Off",
+                    "Seller AFK Only",
+                    "Seller AFK + Over Filter",
+                },
+                Default =
+                    NormalizeServerBlockMode(
+                        ServerBlockState
+                        and ServerBlockState.BlockMode
+                    ),
+                Searchable = false,
+            }
+        )
+
+    ServerBlockModeDropdown:OnChanged(function(value)
+
+        ServerBlockState.BlockMode =
+            NormalizeServerBlockMode(value)
+
+        SaveServerBlockMemory()
+        MarkConfigDirty()
+
+        print(
+            "[ServerBlock] Mode:",
+            tostring(ServerBlockState.BlockMode)
+        )
+    end)
+
+    local BadServerBlockMinutesInput =
+        ServerMemoryBox:AddInput(
+            "HolyBadServerBlockMinutes",
+            {
+                Text = "Block For (min)",
+                Tooltip = "How long HOLY avoids a server after it gets marked as bad.",
+                Default =
+                    tostring(
+                        ServerBlockState
+                        and ServerBlockState.BadServerBlockMinutes
+                        or 60
+                    ),
+                Numeric = true,
+                Finished = true,
+            }
+        )
+
+    BadServerBlockMinutesInput:OnChanged(function(value)
+
+        local minutes =
+            tonumber(value)
+
+        if not minutes then
+            return
+        end
+
+        ServerBlockState.BadServerBlockMinutes =
+            math.clamp(
+                math.floor(minutes),
+                1,
+                1440
+            )
+
+        SaveServerBlockMemory()
+        MarkConfigDirty()
+
+        print(
+            "[ServerBlock] Bad server block minutes:",
+            tostring(ServerBlockState.BadServerBlockMinutes)
+        )
+    end)
+
+    ServerInfoBox:AddLabel(
+        "JobId: "
+            .. tostring(game.JobId ~= "" and game.JobId or "Private/Unknown"),
+        true
+    )
+
+    ServerInfoBox:AddLabel(
+        "Players: "
+            .. tostring(#Players:GetPlayers())
+            .. " / "
+            .. tostring(Players.MaxPlayers),
+        false
+    )
+
+    ServerInfoBox:AddLabel(
+        "Recent Servers: "
+            .. tostring(
+                SniperState
+                and SniperState.RecentServers
+                and #SniperState.RecentServers
+                or 0
+            ),
+        false
+    )
+
+    ServerInfoBox:AddLabel(
+        "Blocked Servers: "
+            .. tostring(
+                ServerBlockState
+                and ServerBlockState.BadServers
+                and (function()
+                    local count = 0
+
+                    for _ in pairs(ServerBlockState.BadServers) do
+                        count = count + 1
+                    end
+
+                    return count
+                end)()
+                or 0
+            ),
+        false
+    )
+
+    ServerInfoBox:AddButton({
+        Text = "Copy JobId",
+        Tooltip = "Copies the current Roblox JobId.",
+        Func = function()
+
+            local copied, err =
+                CopyTextToClipboard(
+                    tostring(game.JobId or "")
+                )
+
+            if copied then
+
+                HolyNotify(
+                    "JobId Copied",
+                    "Current server JobId copied.",
+                    "clipboard-check",
+                    3
+                )
+
+            else
+
+                HolyNotify(
+                    "Copy Failed",
+                    tostring(err or "Clipboard unsupported."),
+                    "clipboard-x",
+                    4
+                )
+            end
+        end,
+    })
+
+    ServerInfoBox:AddButton({
+        Text = "Block Current Server",
+        Tooltip = "Marks this JobId as bad using the current block duration.",
+        Func = function()
+
+            if type(MarkCurrentServerBad) == "function" then
+
+                MarkCurrentServerBad(
+                    "Manual block",
+                    "Manual"
+                )
+
+                SaveServerBlockMemory()
+
+                HolyNotify(
+                    "Server Blocked",
+                    "Current server added to bad-server memory.",
+                    "ban",
+                    4
+                )
+
+                return
+            end
+
+            if type(ServerBlockState) ~= "table" then
+                return
+            end
+
+            local jobId =
+                tostring(game.JobId or "")
+
+            if jobId == "" then
+                HolyNotify(
+                    "Block Failed",
+                    "Current JobId is missing.",
+                    "triangle-alert",
+                    4
+                )
+
+                return
+            end
+
+            ServerBlockState.BadServers =
+                ServerBlockState.BadServers
+                or {}
+
+            ServerBlockState.BadServers[jobId] = {
+                MarkedAt = os.time(),
+                Reason = "Manual block",
+                Type = "Manual",
+            }
+
+            SaveServerBlockMemory()
+            MarkConfigDirty()
+
+            HolyNotify(
+                "Server Blocked",
+                "Current server added to bad-server memory.",
+                "ban",
+                4
+            )
+        end,
+    })
+end
+
 function BuildSniperTab()
 --==================================================
 -- SNIPER TAB → UI
@@ -36365,7 +36765,6 @@ function BuildSniperTab()
 --==================================================
 
 local SniperConfigBox
-local SniperServerBox
 local SniperFilterBox
 local SniperWatchlistBox
 local EggFocusBox
@@ -36379,9 +36778,6 @@ and type(Tabs.Sniper.AddRightTabbox) == "function" then
 
     SniperConfigBox =
         SniperLeftTabbox:AddTab("Config", "settings")
-
-    SniperServerBox =
-        SniperLeftTabbox:AddTab("Server", "server")
 
     SniperFilterBox =
         SniperLeftTabbox:AddTab("Filter", "plus")
@@ -36407,13 +36803,6 @@ else
     Tabs.Sniper:AddLeftCollapsibleGroupbox(
         "Sniper Configuration",
         "settings",
-        true
-    )
-
-SniperServerBox =
-    Tabs.Sniper:AddLeftCollapsibleGroupbox(
-        "Server Hop",
-        "server",
         true
     )
 
@@ -36453,12 +36842,6 @@ PriceSyncBox =
     Tabs.Sniper:AddLeftGroupbox(
         "Sniper Configuration",
         "settings"
-    )
-
-SniperServerBox =
-    Tabs.Sniper:AddLeftGroupbox(
-        "Server Hop",
-        "server"
     )
 
 SniperFilterBox =
@@ -36576,192 +36959,6 @@ BoothDataRefreshDropdown:OnChanged(function(value)
     )
 end)
 
-SniperServerBox:AddDivider({
-    Text = "Server Hop",
-    MarginTop = 4,
-    MarginBottom = 8,
-})
-
-local MaxServerPlayersInput =
-    SniperServerBox:AddInput(
-        "SniperMaxServerPlayers",
-        {
-            Text = "👥 Max Server Players",
-            Default = tostring(SniperState.MaxServerPlayers),
-            Numeric = true,
-            Finished = true,
-        }
-    )
-
-MaxServerPlayersInput:OnChanged(function(value)
-
-    local num =
-        tonumber(value)
-
-    if not num then
-        return
-    end
-
-    SniperState.MaxServerPlayers =
-        math.clamp(
-            math.floor(num),
-            1,
-            30
-        )
-
-    MarkConfigDirty()
-
-    print(
-        "[SniperHop] Max server players:",
-        tostring(SniperState.MaxServerPlayers)
-    )
-end)
-
-local ServerHopModeDropdown =
-    SniperServerBox:AddDropdown(
-        "SniperServerHopMode",
-        {
-            Text = "⇄ Server Hop Mode",
-            Values = {
-                "Fullest Under Max",
-                "Balanced",
-                "Low Player",
-            },
-            Default = SniperState.ServerHopMode or "Fullest Under Max",
-            Searchable = false,
-        }
-    )
-
-ServerHopModeDropdown:OnChanged(function(value)
-
-    SniperState.ServerHopMode =
-        tostring(value or "Fullest Under Max")
-
-    MarkConfigDirty()
-
-    print(
-        "[SniperHop] Mode:",
-        tostring(SniperState.ServerHopMode)
-    )
-end)
-
-local ServerHopPagesInput =
-    SniperServerBox:AddInput(
-        "SniperServerHopPages",
-        {
-            Text = "📄 Server Hop Pages",
-            Tooltip = "How many Roblox server-list pages to fetch. 1 is fastest; higher gives better server selection but slower hops.",
-            Default = tostring(SniperState.ServerHopPages or 1),
-            Numeric = true,
-            Finished = true,
-        }
-    )
-
-ServerHopPagesInput:OnChanged(function(value)
-
-    local pages =
-        tonumber(value)
-
-    if not pages then
-        return
-    end
-
-    SniperState.ServerHopPages =
-        math.clamp(
-            math.floor(pages),
-            1,
-            10
-        )
-
-    MarkConfigDirty()
-
-    print(
-        "[SniperHop] Server hop pages:",
-        tostring(SniperState.ServerHopPages)
-    )
-end)
-
-SniperServerBox:AddDivider({
-    Text = "Server Memory",
-    MarginTop = 10,
-    MarginBottom = 8,
-})
-
-local ServerBlockModeDropdown =
-    SniperServerBox:AddDropdown(
-        "HolyServerBlockMode",
-        {
-            Text = "Block Server When",
-            Tooltip = "Seller AFK Only = only block the server after Seller AFK Check fully detects an AFK target holder.",
-            Values = {
-                "Off",
-                "Seller AFK Only",
-                "Seller AFK + Over Filter",
-            },
-            Default =
-                NormalizeServerBlockMode(
-                    ServerBlockState
-                    and ServerBlockState.BlockMode
-                ),
-            Searchable = false,
-        }
-    )
-
-ServerBlockModeDropdown:OnChanged(function(value)
-
-    ServerBlockState.BlockMode =
-        NormalizeServerBlockMode(value)
-
-    SaveServerBlockMemory()
-    MarkConfigDirty()
-
-    print(
-        "[ServerBlock] Mode:",
-        tostring(ServerBlockState.BlockMode)
-    )
-end)
-
-local BadServerBlockMinutesInput =
-    SniperServerBox:AddInput(
-        "HolyBadServerBlockMinutes",
-        {
-            Text = "Block Bad Servers For (min)",
-            Tooltip = "How long HOLY avoids blocked servers. Recommended: 30-120 minutes.",
-            Default =
-                tostring(
-                    ServerBlockState
-                    and ServerBlockState.BadServerBlockMinutes
-                    or 60
-                ),
-            Numeric = true,
-            Finished = true,
-        }
-    )
-
-BadServerBlockMinutesInput:OnChanged(function(value)
-
-    local minutes =
-        tonumber(value)
-
-    if not minutes then
-        return
-    end
-
-    ServerBlockState.BadServerBlockMinutes =
-        math.clamp(
-            math.floor(minutes),
-            1,
-            1440
-        )
-
-    SaveServerBlockMemory()
-    MarkConfigDirty()
-
-    print(
-        "[ServerBlock] Bad server block minutes:",
-        tostring(ServerBlockState.BadServerBlockMinutes)
-    )
-end)
 
 SniperConfigBox:AddDivider({
     Text = "After Snipe",
@@ -47921,13 +48118,18 @@ BuildHolyTabStep(
 if IsTradeWorld() then
 
     BuildHolyTabStep(
-        "Booth",
-        BuildBoothTab
+        "Sniper",
+        BuildSniperTab
     )
 
     BuildHolyTabStep(
-        "Sniper",
-        BuildSniperTab
+        "Server",
+        BuildServerTab
+    )
+
+    BuildHolyTabStep(
+        "Booth",
+        BuildBoothTab
     )
 
     BuildHolyTabStep(
