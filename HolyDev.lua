@@ -3232,6 +3232,10 @@ ShowcaseStableKeyToChoice = {}
 -- Prevent programmatic dropdown restore/refresh from saving.
 ShowcaseDropdownSyncing = false
 
+-- Keep false on cloud phones / Delta.
+-- This stops console spam without disabling the actual save.
+ShowcaseDebugPrints = false
+
 TargetPetsHopPlayerActivity = {}
 --==================================================
 -- ANTI ALT / AVOID USERS STATE
@@ -5619,13 +5623,15 @@ function SaveShowcaseSelectionConfigNow(reason)
     BoothPetState.LastShowcaseSaveAt =
         os.clock()
 
-    print(
-        "[SHOWCASE SAVE] Saved",
-        tostring(#(payload.Selections or {})),
-        "selected pet(s)",
-        "|",
-        tostring(reason or "manual")
-    )
+    if ShowcaseDebugPrints == true then
+        print(
+            "[SHOWCASE SAVE] Saved",
+            tostring(#(payload.Selections or {})),
+            "selected pet(s)",
+            "|",
+            tostring(reason or "manual")
+        )
+    end
 
     return true
 end
@@ -36572,39 +36578,11 @@ local ShowcaseDropdown =
 ShowcaseDropdownRef =
     ShowcaseDropdown
 
-BuildShowcasePetChoiceMaps()
-
-if BoothPetState.ShowcaseRestorePending == true then
-
-    RestoreShowcaseSelectionsFromSaved()
-
-    if ShowcaseDropdownRef
-    and type(ShowcaseDropdownRef.SetValue) == "function" then
-
-        ShowcaseDropdownSyncing =
-            true
-
-        ShowcaseDropdownRef:SetValue(
-            BoothPetState.SelectedShowcasePetLabels
-            or {}
-        )
-
-        ShowcaseDropdownSyncing =
-            false
-    end
-end
-
 task.spawn(function()
 
-    task.wait(0.25)
-
-    if not IsCurrentRun() then
-        return
-    end
-
-    RefreshShowcasePetDropdown(false)
-
-    task.wait(1.00)
+    -- Wait once so Backpack, Character, and booth snapshot have time to exist.
+    -- Avoid early dropdown rebuild spam on load.
+    task.wait(1.25)
 
     if not IsCurrentRun() then
         return
@@ -36625,71 +36603,7 @@ task.spawn(function()
     end
 
     RefreshShowcasePetDropdown(false)
-
-        if BoothPetState.ShowcaseRestorePending == true then
-
-        RestoreShowcaseSelectionsFromSaved()
-
-        if ShowcaseDropdownRef
-        and type(ShowcaseDropdownRef.SetValue) == "function" then
-
-            ShowcaseDropdownSyncing =
-                true
-
-            ShowcaseDropdownRef:SetValue(
-                BoothPetState.SelectedShowcasePetLabels
-                or {}
-            )
-
-            ShowcaseDropdownSyncing =
-                false
-        end
-    end
 end)
-
-do
-    local player =
-        Players.LocalPlayer
-
-    local backpack =
-        player
-        and player:FindFirstChild("Backpack")
-
-    if backpack then
-
-        backpack.ChildAdded:Connect(function(child)
-
-            if not child:IsA("Tool") then
-                return
-            end
-
-            task.delay(0.20, function()
-
-                if not IsCurrentRun() then
-                    return
-                end
-
-                RefreshShowcasePetDropdown(false)
-            end)
-        end)
-
-        backpack.ChildRemoved:Connect(function(child)
-
-            if not child:IsA("Tool") then
-                return
-            end
-
-            task.delay(0.20, function()
-
-                if not IsCurrentRun() then
-                    return
-                end
-
-                RefreshShowcasePetDropdown(false)
-            end)
-        end)
-    end
-end
 
 ShowcaseDropdown:OnChanged(function(value)
 
@@ -36749,9 +36663,8 @@ ShowcaseDropdown:OnChanged(function(value)
     BoothPetState.SavedShowcaseSelections =
         BuildCurrentShowcaseSelectionIdentities()
 
-    QueueShowcaseSelectionSave(
-        "showcase pets selected",
-        true
+        QueueShowcaseSelectionSave(
+        "showcase pets selected"
     )
 end)
 
