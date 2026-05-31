@@ -21920,7 +21920,7 @@ Tabs = {
     Sniper = Window:AddTab({
         Name = "Sniper",
         Icon = "crosshair",
-        Description = "Pet filters, watchlists, egg focus, server hopping, and purchase safety.",
+        Description = "Pet filters, watchlists, egg focus, and purchase safety.",
     }),
 
     Hunting = Window:AddTab({
