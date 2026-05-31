@@ -3229,6 +3229,9 @@ ShowcaseDropdownRef = nil
 ShowcaseChoiceToStableKey = {}
 ShowcaseStableKeyToChoice = {}
 
+-- Prevent programmatic dropdown restore/refresh from saving.
+ShowcaseDropdownSyncing = false
+
 TargetPetsHopPlayerActivity = {}
 --==================================================
 -- ANTI ALT / AVOID USERS STATE
@@ -6003,7 +6006,14 @@ function RefreshShowcasePetDropdown(clearSelection)
 
         if ShowcaseDropdownRef
         and type(ShowcaseDropdownRef.SetValue) == "function" then
+
+            ShowcaseDropdownSyncing =
+                true
+
             ShowcaseDropdownRef:SetValue({})
+
+            ShowcaseDropdownSyncing =
+                false
         end
 
         QueueShowcaseSelectionSave(
@@ -6022,10 +6032,16 @@ function RefreshShowcasePetDropdown(clearSelection)
         if ShowcaseDropdownRef
         and type(ShowcaseDropdownRef.SetValue) == "function" then
 
+            ShowcaseDropdownSyncing =
+                true
+
             ShowcaseDropdownRef:SetValue(
                 BoothPetState.SelectedShowcasePetLabels
                 or {}
             )
+
+            ShowcaseDropdownSyncing =
+                false
         end
     end
 
@@ -6258,8 +6274,6 @@ function SetShowcasePetSelection(petName)
 
     BoothPetState.LastMissingWarnAt =
         0
-
-    MarkConfigDirty()
 
     return true
 end
@@ -35948,8 +35962,6 @@ EquipPetToggle:OnChanged(function(enabled)
     ShowcaseEquipState.ReequipPending =
         false
 
-    MarkConfigDirty()
-
     QueueShowcaseSelectionSave(
         "equip toggle"
     )
@@ -35995,8 +36007,6 @@ ShowcaseRotationToggle:OnChanged(function(enabled)
     BoothPetState.LockedShowcaseUID =
         nil
 
-    MarkConfigDirty()
-
     QueueShowcaseSelectionSave(
         "rotation toggle"
     )
@@ -36031,7 +36041,6 @@ AutoSwitchShowcaseToggle:OnChanged(function(enabled)
     BoothPetState.AutoSwitchWhenMissing =
         enabled == true
 
-    MarkConfigDirty()
     QueueShowcaseSelectionSave(
         "auto switch toggle"
     )
@@ -36065,8 +36074,6 @@ BoothCustomizationBox:AddDropdown(
 
     BoothPetState.LastRotationEquipAt =
         0
-
-    MarkConfigDirty()
 
     QueueShowcaseSelectionSave(
         "showcase mode"
@@ -36104,6 +36111,10 @@ ShowcaseDropdownRef =
     ShowcaseDropdown
 
 ShowcaseDropdown:OnChanged(function(value)
+
+    if ShowcaseDropdownSyncing == true then
+        return
+    end
 
     local selectedMap, selectedLabels =
         ResolveShowcaseSelectedMapFromDropdown(
@@ -36156,8 +36167,6 @@ ShowcaseDropdown:OnChanged(function(value)
 
     BoothPetState.SavedShowcaseSelections =
         BuildCurrentShowcaseSelectionIdentities()
-
-    MarkConfigDirty()
 
     QueueShowcaseSelectionSave(
         "showcase pets selected",
@@ -36229,8 +36238,6 @@ BoothCustomizationBox:AddInput(
             300
         )
 
-    MarkConfigDirty()
-
     QueueShowcaseSelectionSave(
         "equip interval"
     )
@@ -36262,8 +36269,6 @@ BoothCustomizationBox:AddDropdown(
 
     BoothPetState.AutoSwitchMode =
         NormalizeShowcaseSwitchMode(value)
-
-    MarkConfigDirty()
 
     QueueShowcaseSelectionSave(
         "switch mode"
