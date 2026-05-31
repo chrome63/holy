@@ -3224,7 +3224,10 @@ TargetPetsHopState = {
 
 TargetPetsHopStatusLabel = nil
 TargetPetsHopDropdownRef = nil
+
 ShowcaseDropdownRef = nil
+ShowcaseChoiceToStableKey = {}
+ShowcaseStableKeyToChoice = {}
 
 TargetPetsHopPlayerActivity = {}
 --==================================================
@@ -3460,19 +3463,37 @@ TeleportRetryState = nil
 
 BoothPetState = {
     Enabled = false,
+
+    -- Current active showcase target.
+    -- Rotation can change this automatically.
     SelectedPetType = nil,
 
--- If selected showcase pet is gone/sold out,
--- HOLY can automatically select another listed booth pet.
-AutoSwitchWhenMissing = true,
-AutoSwitchMode = "Highest Weight Listed Pet",
+    -- Multi-select rotation pool.
+    RotationEnabled = false,
+    ShowcaseMode = "Selected Listed Rotation",
 
-LastAutoSwitchAt = 0,
-AutoSwitchCooldown = 8,
+    -- [stableKey] = true
+    SelectedShowcasePets = {},
 
-LastAutoSwitchFailedAt = 0,
-AutoSwitchFailCooldown = 20,
-LastAutoSwitchFailedPet = nil,
+    -- dropdown display values, used only for UI restore/sync
+    SelectedShowcasePetLabels = {},
+
+    RotationIndex = 1,
+
+    EquipInterval = 10,
+    LastRotationEquipAt = 0,
+
+    -- If selected/current showcase pet is gone/sold out,
+    -- HOLY can automatically select another listed booth pet.
+    AutoSwitchWhenMissing = true,
+    AutoSwitchMode = "Next Selected Listed Pet",
+
+    LastAutoSwitchAt = 0,
+    AutoSwitchCooldown = 8,
+
+    LastAutoSwitchFailedAt = 0,
+    AutoSwitchFailCooldown = 20,
+    LastAutoSwitchFailedPet = nil,
 
     LastEquippedUID = nil,
     LockedShowcaseUID = nil,
@@ -4811,8 +4832,78 @@ end
 
 function BuildOwnListedShowcasePetNames()
 
-    local output =
-        {}
+    local output = {}
+
+    --==================================================
+    -- SOURCE 1: Own booth snapshot / own listed metadata
+    -- This is more reliable for showcase switching because
+    -- it represents pets HOLY already knows are listed by us.
+    --==================================================
+
+    if type(ListingsState) == "table" then
+
+        local snapshot =
+            ListingsState.OwnBoothSnapshot
+
+        if type(snapshot) == "table" then
+
+            for _, listing in pairs(snapshot) do
+
+                if type(listing) == "table" then
+
+                    local petName =
+                        NormalizeShowcasePetName(
+                            listing.PetName
+                            or listing.Name
+                            or listing.ToolName
+                            or listing.ItemName
+                            or ""
+                        )
+
+                    if petName ~= "" then
+                        output[petName] =
+                            true
+                    end
+                end
+            end
+        end
+
+        local metadata =
+            ListingsState.OwnListedMetadata
+
+        if type(metadata) == "table" then
+
+            for _, data in pairs(metadata) do
+
+                if type(data) == "table" then
+
+                    local petName =
+                        NormalizeShowcasePetName(
+                            data.PetName
+                            or data.ToolName
+                            or data.Name
+                            or ""
+                        )
+
+                    if petName ~= "" then
+                        output[petName] =
+                            true
+                    end
+                end
+            end
+        end
+    end
+
+    -- If we already found own listed pets from local state,
+    -- use that immediately.
+    for _ in pairs(output) do
+        return output
+    end
+
+    --==================================================
+    -- SOURCE 2: LatestBoothData fallback
+    -- More defensive than the old version.
+    --==================================================
 
     local data =
         LatestBoothData
@@ -4830,6 +4921,8 @@ function BuildOwnListedShowcasePetNames()
     local localUserId =
         tostring(localPlayer.UserId)
 
+    local possibleOwnerKeys = {}
+
     for _, boothData in pairs(data.Booths) do
 
         if type(boothData) ~= "table" then
@@ -4837,15 +4930,31 @@ function BuildOwnListedShowcasePetNames()
         end
 
         local owner =
-            tostring(boothData.Owner or "")
+            boothData.Owner
+            or boothData.UserId
+            or boothData.Player
+            or boothData.PlayerId
 
-        if owner == ""
-        or not owner:find(localUserId, 1, true) then
-            continue
+        local ownerText =
+            tostring(owner or "")
+
+        if ownerText ~= ""
+        and ownerText:find(localUserId, 1, true) then
+
+            possibleOwnerKeys[ownerText] =
+                true
+
+            if boothData.Owner then
+                possibleOwnerKeys[tostring(boothData.Owner)] =
+                    true
+            end
         end
+    end
+
+    for ownerKey in pairs(possibleOwnerKeys) do
 
         local playerData =
-            data.Players[boothData.Owner]
+            data.Players[ownerKey]
 
         if type(playerData) ~= "table"
         or type(playerData.Listings) ~= "table"
@@ -5029,68 +5138,96 @@ function BuildAvailableShowcasePets()
     return pets
 end
 
-function ResolveFallbackShowcasePet(missingPetName)
+--==================================================
+-- SHOWCASE ROTATION HELPERS
+-- Multi-select listed-pet rotation for Booth Showcase.
+--==================================================
 
-    local pets =
-        BuildAvailableShowcasePets()
+function NormalizeShowcaseMode(value)
 
-    if #pets <= 0 then
-        return nil
+    value =
+        tostring(value or "Selected Listed Rotation")
+
+    if value == "Selected Listed Rotation"
+    or value == "Highest Weight Listed Pet"
+    or value == "Random Listed Pet"
+    or value == "Selected Only" then
+        return value
     end
 
-    missingPetName =
-        NormalizeShowcasePetName(
-            missingPetName
+    return "Selected Listed Rotation"
+end
+
+function NormalizeShowcaseSwitchMode(value)
+
+    value =
+        tostring(value or "Next Selected Listed Pet")
+
+    if value == "Next Selected Listed Pet"
+    or value == "Highest Weight Listed Pet"
+    or value == "Random Listed Pet" then
+        return value
+    end
+
+    -- backwards compatibility
+    if value == "Highest Weight" then
+        return "Highest Weight Listed Pet"
+    end
+
+    if value == "Random Pet" then
+        return "Random Listed Pet"
+    end
+
+    return "Next Selected Listed Pet"
+end
+
+function FormatShowcaseShortUID(uid)
+
+    uid =
+        tostring(uid or "")
+
+    if uid == "" then
+        return "----"
+    end
+
+    if #uid <= 4 then
+        return uid
+    end
+
+    return uid:sub(#uid - 3)
+end
+
+function FormatShowcasePetChoice(pet)
+
+    if type(pet) ~= "table" then
+        return "Unknown"
+    end
+
+    return tostring(pet.PetName or "Unknown")
+        .. " | "
+        .. string.format(
+            "%.2f KG",
+            tonumber(pet.Weight) or 0
         )
-
-    -- Do not pick the same missing pet again.
-    local filtered =
-        {}
-
-    for _, pet in ipairs(pets) do
-
-        local petName =
-            NormalizeShowcasePetName(
-                pet.PetName
-            )
-
-        local listedPetName =
-            NormalizeShowcasePetName(
-                pet.ListedPetName
-            )
-
-        if petName ~= ""
-        and petName:lower() ~= missingPetName:lower()
-        and listedPetName:lower() ~= missingPetName:lower() then
-
-            table.insert(
-                filtered,
-                pet
-            )
-        end
-    end
-
-    if #filtered > 0 then
-        pets =
-            filtered
-    end
-
-    local mode =
-        tostring(
-            BoothPetState.AutoSwitchMode
-            or "Highest Weight Listed Pet"
+        .. " | #"
+        .. FormatShowcaseShortUID(
+            pet.UID or pet.StableKey
         )
+end
 
-    if mode == "Random Listed Pet"
-    or mode == "Random Pet" then
+function SortShowcasePetsForUI(pets)
 
-        return pets[
-            math.random(1, #pets)
-        ]
-    end
-
-    -- Default: Highest Weight Listed Pet
     table.sort(pets, function(a, b)
+
+        local aName =
+            tostring(a.PetName or ""):lower()
+
+        local bName =
+            tostring(b.PetName or ""):lower()
+
+        if aName ~= bName then
+            return aName < bName
+        end
 
         local aWeight =
             tonumber(a.Weight)
@@ -5108,7 +5245,406 @@ function ResolveFallbackShowcasePet(missingPetName)
             < tostring(b.StableKey or "")
     end)
 
-    return pets[1]
+    return pets
+end
+
+function BuildShowcasePetChoiceMaps()
+
+    local pets =
+        SortShowcasePetsForUI(
+            BuildAvailableShowcasePets()
+        )
+
+    local choices = {}
+    local choiceToKey = {}
+    local keyToChoice = {}
+    local keyToPet = {}
+
+    for _, pet in ipairs(pets) do
+
+        local stableKey =
+            tostring(
+                pet.StableKey
+                or pet.UID
+                or pet.PetName
+                or ""
+            )
+
+        if stableKey ~= "" then
+
+            local choice =
+                FormatShowcasePetChoice(pet)
+
+            -- Prevent duplicate display rows from overwriting each other.
+            if choiceToKey[choice] then
+                choice =
+                    choice
+                    .. " | "
+                    .. tostring(#choices + 1)
+            end
+
+            table.insert(
+                choices,
+                choice
+            )
+
+            choiceToKey[choice] =
+                stableKey
+
+            keyToChoice[stableKey] =
+                choice
+
+            keyToPet[stableKey] =
+                pet
+        end
+    end
+
+    ShowcaseChoiceToStableKey =
+        choiceToKey
+
+    ShowcaseStableKeyToChoice =
+        keyToChoice
+
+    return choices, choiceToKey, keyToPet
+end
+
+function SyncShowcaseSelectedLabelsFromKeys()
+
+    local labels = {}
+
+    BoothPetState.SelectedShowcasePets =
+        BoothPetState.SelectedShowcasePets
+        or {}
+
+    for stableKey, selected in pairs(BoothPetState.SelectedShowcasePets) do
+
+        if selected == true then
+
+            local label =
+                ShowcaseStableKeyToChoice
+                and ShowcaseStableKeyToChoice[stableKey]
+
+            if label then
+                table.insert(
+                    labels,
+                    label
+                )
+            end
+        end
+    end
+
+    table.sort(labels)
+
+    BoothPetState.SelectedShowcasePetLabels =
+        labels
+
+    return labels
+end
+
+function ResolveShowcaseSelectedMapFromDropdown(value)
+
+    local output = {}
+    local labels = {}
+
+    if type(value) == "table" then
+
+        for label, selected in pairs(value) do
+
+            if selected == true then
+
+                local stableKey =
+                    ShowcaseChoiceToStableKey
+                    and ShowcaseChoiceToStableKey[tostring(label)]
+
+                if stableKey then
+
+                    output[stableKey] =
+                        true
+
+                    table.insert(
+                        labels,
+                        tostring(label)
+                    )
+                end
+            end
+        end
+
+    elseif type(value) == "string" then
+
+        local stableKey =
+            ShowcaseChoiceToStableKey
+            and ShowcaseChoiceToStableKey[value]
+
+        if stableKey then
+
+            output[stableKey] =
+                true
+
+            table.insert(
+                labels,
+                value
+            )
+        end
+    end
+
+    table.sort(labels)
+
+    return output, labels
+end
+
+function RefreshShowcasePetDropdown(clearSelection)
+
+    local choices =
+        BuildShowcasePetChoiceMaps()
+
+    if ShowcaseDropdownRef
+    and type(ShowcaseDropdownRef.SetValues) == "function" then
+
+        ShowcaseDropdownRef:SetValues(
+            choices
+        )
+    end
+
+    if clearSelection == true then
+
+        BoothPetState.SelectedShowcasePets =
+            {}
+
+        BoothPetState.SelectedShowcasePetLabels =
+            {}
+
+        BoothPetState.SelectedPetType =
+            nil
+
+        BoothPetState.LastEquippedUID =
+            nil
+
+        BoothPetState.LockedShowcaseUID =
+            nil
+
+        if ShowcaseDropdownRef
+        and type(ShowcaseDropdownRef.SetValue) == "function" then
+            ShowcaseDropdownRef:SetValue({})
+        end
+
+    else
+
+        local labels =
+            SyncShowcaseSelectedLabelsFromKeys()
+
+        if ShowcaseDropdownRef
+        and type(ShowcaseDropdownRef.SetValue) == "function" then
+
+            ShowcaseDropdownRef:SetValue(
+                labels
+            )
+        end
+    end
+
+    return choices
+end
+
+function BuildSelectedShowcaseCandidateList(pets, requireSelected)
+
+    local output = {}
+
+    pets =
+        pets
+        or BuildAvailableShowcasePets()
+
+    BoothPetState.SelectedShowcasePets =
+        BoothPetState.SelectedShowcasePets
+        or {}
+
+    local hasSelected =
+        false
+
+    for _ in pairs(BoothPetState.SelectedShowcasePets) do
+        hasSelected =
+            true
+
+        break
+    end
+
+    for _, pet in ipairs(pets) do
+
+        local stableKey =
+            tostring(
+                pet.StableKey
+                or pet.UID
+                or ""
+            )
+
+        if stableKey ~= "" then
+
+            if BoothPetState.SelectedShowcasePets[stableKey] == true then
+
+                table.insert(
+                    output,
+                    pet
+                )
+
+            elseif requireSelected ~= true
+            and hasSelected ~= true then
+
+                table.insert(
+                    output,
+                    pet
+                )
+            end
+        end
+    end
+
+    return SortShowcasePetsForUI(output)
+end
+
+function ChooseShowcaseCandidate(pets, mode, missingPetName)
+
+    pets =
+        pets
+        or BuildAvailableShowcasePets()
+
+    mode =
+        tostring(mode or "Next Selected Listed Pet")
+
+    missingPetName =
+        NormalizeShowcasePetName(missingPetName)
+
+    local requireSelected =
+        mode == "Selected Listed Rotation"
+        or mode == "Selected Only"
+        or mode == "Next Selected Listed Pet"
+
+    local candidates =
+        BuildSelectedShowcaseCandidateList(
+            pets,
+            requireSelected
+        )
+
+    if #candidates <= 0
+    and requireSelected ~= true then
+        candidates =
+            SortShowcasePetsForUI(pets)
+    end
+
+    if #candidates <= 0 then
+        return nil
+    end
+
+    local filtered = {}
+
+    for _, pet in ipairs(candidates) do
+
+        local petName =
+            NormalizeShowcasePetName(
+                pet.PetName
+            )
+
+        local listedPetName =
+            NormalizeShowcasePetName(
+                pet.ListedPetName
+            )
+
+        if missingPetName == ""
+        or (
+            petName:lower() ~= missingPetName:lower()
+            and listedPetName:lower() ~= missingPetName:lower()
+        ) then
+
+            table.insert(
+                filtered,
+                pet
+            )
+        end
+    end
+
+    if #filtered > 0 then
+        candidates =
+            filtered
+    end
+
+    if mode == "Highest Weight Listed Pet" then
+
+        table.sort(candidates, function(a, b)
+
+            local aWeight =
+                tonumber(a.Weight)
+                or 0
+
+            local bWeight =
+                tonumber(b.Weight)
+                or 0
+
+            if aWeight ~= bWeight then
+                return aWeight > bWeight
+            end
+
+            return tostring(a.StableKey or "")
+                < tostring(b.StableKey or "")
+        end)
+
+        return candidates[1]
+    end
+
+    if mode == "Random Listed Pet" then
+        return candidates[
+            math.random(1, #candidates)
+        ]
+    end
+
+    -- Selected Listed Rotation / Selected Only / Next Selected Listed Pet.
+    BoothPetState.RotationIndex =
+        math.max(
+            1,
+            math.floor(
+                SafeNumber(
+                    BoothPetState.RotationIndex,
+                    1
+                )
+            )
+        )
+
+    if BoothPetState.RotationIndex > #candidates then
+        BoothPetState.RotationIndex =
+            1
+    end
+
+    local selected =
+        candidates[
+            BoothPetState.RotationIndex
+        ]
+
+    BoothPetState.RotationIndex =
+        BoothPetState.RotationIndex + 1
+
+    if BoothPetState.RotationIndex > #candidates then
+        BoothPetState.RotationIndex =
+            1
+    end
+
+    return selected
+end
+
+function ResolveFallbackShowcasePet(missingPetName)
+
+    local pets =
+        BuildAvailableShowcasePets()
+
+    if #pets <= 0 then
+        return nil
+    end
+
+    local mode =
+        NormalizeShowcaseSwitchMode(
+            BoothPetState.AutoSwitchMode
+            or "Next Selected Listed Pet"
+        )
+
+    return ChooseShowcaseCandidate(
+        pets,
+        mode,
+        missingPetName
+    )
 end
 
 function SetShowcasePetSelection(petName)
@@ -5134,14 +5670,6 @@ function SetShowcasePetSelection(petName)
 
     BoothPetState.LastMissingWarnAt =
         0
-
-    if ShowcaseDropdownRef
-    and type(ShowcaseDropdownRef.SetValue) == "function" then
-
-        pcall(function()
-            ShowcaseDropdownRef:SetValue(petName)
-        end)
-    end
 
     MarkConfigDirty()
 
@@ -5177,6 +5705,22 @@ function TryAutoSwitchShowcasePet(missingPetName)
 
     BoothPetState.LastAutoSwitchAt =
         now
+
+    -- Refresh booth data once before choosing fallback.
+    -- This helps right after a sale, where LatestBoothData may be stale.
+    if type(RefreshLatestBoothDataNow) == "function" then
+        pcall(function()
+            RefreshLatestBoothDataNow(
+                "showcase auto switch"
+            )
+        end)
+    end
+
+    if type(RefreshOwnBoothSnapshot) == "function" then
+        pcall(function()
+            RefreshOwnBoothSnapshot()
+        end)
+    end
 
     local fallback =
         ResolveFallbackShowcasePet(
@@ -5221,11 +5765,22 @@ function TryAutoSwitchShowcasePet(missingPetName)
         return false
     end
 
+    BoothPetState.LastEquippedUID =
+        nil
+
+    BoothPetState.LockedShowcaseUID =
+        nil
+
+    BoothPetState.LastMissingPet =
+        nil
+
+    BoothPetState.LastMissingWarnAt =
+        0
+
     SetShowcasePetSelection(
         newPet
     )
 
-    -- Force an equip attempt shortly after the selection changes.
     task.spawn(function()
 
         task.wait(0.20)
@@ -5239,7 +5794,21 @@ function TryAutoSwitchShowcasePet(missingPetName)
         end
 
         if type(EquipShowcasePet) == "function" then
-            EquipShowcasePet(true)
+
+            for attempt = 1, 4 do
+
+                if BoothPetState.Enabled ~= true then
+                    return
+                end
+
+                if NormalizeShowcasePetName(BoothPetState.SelectedPetType) ~= newPet then
+                    return
+                end
+
+                EquipShowcasePet(true)
+
+                task.wait(0.25)
+            end
         end
     end)
 
@@ -34744,7 +35313,7 @@ local EquipPetToggle =
         "EquipPet",
         {
             Text = "🐶 Equip Pet",
-            Tooltip = "Equips a pet from your inventory.",
+            Tooltip = "Allows HOLY to equip/showcase booth pets.",
             Default = false,
         }
     )
@@ -34754,8 +35323,6 @@ EquipPetToggle:OnChanged(function(enabled)
     BoothPetState.Enabled =
         enabled == true
 
-    -- Reset equip lifecycle whenever the user toggles this.
-    -- This prevents stale UID locks from blocking re-enable.
     BoothPetState.LastEquippedUID =
         nil
 
@@ -34769,6 +35336,9 @@ EquipPetToggle:OnChanged(function(enabled)
         0
 
     BoothPetState.LastEquipAttemptAt =
+        0
+
+    BoothPetState.LastRotationEquipAt =
         0
 
     ShowcaseEquipState.ReequipPending =
@@ -34793,12 +35363,53 @@ EquipPetToggle:OnChanged(function(enabled)
     end
 end)
 
+local ShowcaseRotationToggle =
+    BoothCustomizationBox:AddToggle(
+        "ShowcaseRotationEnabled",
+        {
+            Text = "🔁 Rotation",
+            Tooltip = "Rotates through selected listed pets using the Equip Interval.",
+            Default = false,
+        }
+    )
+
+ShowcaseRotationToggle:OnChanged(function(enabled)
+
+    BoothPetState.RotationEnabled =
+        enabled == true
+
+    BoothPetState.LastRotationEquipAt =
+        0
+
+    BoothPetState.LastEquippedUID =
+        nil
+
+    BoothPetState.LockedShowcaseUID =
+        nil
+
+    MarkConfigDirty()
+
+    if BoothPetState.Enabled == true
+    and enabled == true then
+
+        task.spawn(function()
+
+            task.wait(0.15)
+
+            if BoothPetState.Enabled == true
+            and BoothPetState.RotationEnabled == true then
+                EquipShowcasePet(true)
+            end
+        end)
+    end
+end)
+
 local AutoSwitchShowcaseToggle =
     BoothCustomizationBox:AddToggle(
         "AutoSwitchShowcasePet",
         {
-            Text = "🔁 Auto Switch Showcase",
-            Tooltip = "If selected showcase pet is missing/sold out, HOLY selects another pet automatically.",
+            Text = "🔄 Auto Switch If Sold",
+            Tooltip = "If current showcase pet is missing/sold, HOLY skips to another valid listed pet.",
             Default = true,
         }
     )
@@ -34812,74 +35423,207 @@ AutoSwitchShowcaseToggle:OnChanged(function(enabled)
 end)
 
 BoothCustomizationBox:AddDropdown(
-    "ShowcaseAutoSwitchMode",
+    "ShowcaseMode",
     {
-        Text = "Switch Mode",
+        Text = "Showcase Mode",
 
         Values = {
+            "Selected Listed Rotation",
             "Highest Weight Listed Pet",
             "Random Listed Pet",
+            "Selected Only",
         },
 
         Default =
-            BoothPetState.AutoSwitchMode
-            or "Highest Weight Listed Pet",
+            BoothPetState.ShowcaseMode
+            or "Selected Listed Rotation",
 
         Multi = false,
+        Searchable = false,
 
-        Tooltip = "Controls which listed booth pet HOLY selects when the current showcase pet is gone.",
+        Tooltip = "Controls how HOLY chooses pets while Rotation is enabled.",
     }
 ):OnChanged(function(value)
 
-    value =
-        tostring(value or "Highest Weight Listed Pet")
+    BoothPetState.ShowcaseMode =
+        NormalizeShowcaseMode(value)
 
-    -- Backwards compatibility for old saved configs.
-    if value == "Highest Weight" then
-        value =
-            "Highest Weight Listed Pet"
-    elseif value == "Random Pet" then
-        value =
-            "Random Listed Pet"
-    end
-
-    BoothPetState.AutoSwitchMode =
-        value
+    BoothPetState.LastRotationEquipAt =
+        0
 
     MarkConfigDirty()
 end)
 
-RefreshDynamicPetList()
+BuildShowcasePetChoiceMaps()
 
 local ShowcaseDropdown =
     BoothCustomizationBox:AddDropdown(
         "ShowcasePetSelect",
         {
             Text = "Showcase Pets",
-            Values = PetList,
-            Default = "",
+            Values =
+                (function()
+                    local choices =
+                        BuildShowcasePetChoiceMaps()
+
+                    return choices
+                end)(),
+
+            Default =
+                BoothPetState.SelectedShowcasePetLabels
+                or {},
+
+            Multi = true,
             Searchable = true,
+            MaxVisibleDropdownItems = 8,
+
+            Tooltip = "Select one or more listed pets from Backpack/Character to use for booth showcase rotation.",
         }
     )
 
-    ShowcaseDropdownRef =
+ShowcaseDropdownRef =
     ShowcaseDropdown
 
 ShowcaseDropdown:OnChanged(function(value)
 
-    BoothPetState.SelectedPetType = value
+    local selectedMap, selectedLabels =
+        ResolveShowcaseSelectedMapFromDropdown(
+            value
+        )
+
+    BoothPetState.SelectedShowcasePets =
+        selectedMap
+
+    BoothPetState.SelectedShowcasePetLabels =
+        selectedLabels
+
+    BoothPetState.RotationIndex =
+        1
 
     BoothPetState.LastEquippedUID =
-    nil
+        nil
 
-BoothPetState.LockedShowcaseUID =
-    nil
+    BoothPetState.LockedShowcaseUID =
+        nil
 
-BoothPetState.LastMissingPet =
-    nil
+    BoothPetState.LastMissingPet =
+        nil
 
-BoothPetState.LastMissingWarnAt =
-    0
+    BoothPetState.LastMissingWarnAt =
+        0
+
+    -- If the user selected at least one pet and no active showcase target exists,
+    -- immediately select the first valid candidate.
+    if not BoothPetState.SelectedPetType
+    or BoothPetState.SelectedPetType == "" then
+
+        local candidate =
+            ChooseShowcaseCandidate(
+                BuildAvailableShowcasePets(),
+                "Selected Listed Rotation",
+                nil
+            )
+
+        if candidate
+        and candidate.PetName then
+            SetShowcasePetSelection(
+                candidate.PetName
+            )
+        end
+    end
+
+    MarkConfigDirty()
+end)
+
+BoothCustomizationBox:AddButton({
+    Text = "Refresh Pets",
+    Tooltip = "Refreshes listed showcase pets from Backpack/Character and your booth.",
+    Func = function()
+
+        if type(RefreshLatestBoothDataNow) == "function" then
+            pcall(function()
+                RefreshLatestBoothDataNow(
+                    "showcase refresh"
+                )
+            end)
+        end
+
+        if type(RefreshOwnBoothSnapshot) == "function" then
+            pcall(function()
+                RefreshOwnBoothSnapshot()
+            end)
+        end
+
+        local choices =
+            RefreshShowcasePetDropdown(false)
+
+        HolyNotify(
+            "Showcase Pets Refreshed",
+            tostring(#choices)
+                .. " listed pet(s) available.",
+            "refresh-cw",
+            3
+        )
+    end,
+})
+
+BoothCustomizationBox:AddInput(
+    "ShowcaseEquipInterval",
+    {
+        Text = "Equip Interval (sec)",
+        Default =
+            tostring(
+                BoothPetState.EquipInterval
+                or 10
+            ),
+        Numeric = true,
+        Finished = true,
+    }
+):OnChanged(function(value)
+
+    local seconds =
+        tonumber(value)
+
+    if not seconds then
+        return
+    end
+
+    BoothPetState.EquipInterval =
+        math.clamp(
+            math.floor(seconds),
+            2,
+            300
+        )
+
+    MarkConfigDirty()
+end)
+
+BoothCustomizationBox:AddDropdown(
+    "ShowcaseAutoSwitchMode",
+    {
+        Text = "Switch Mode",
+
+        Values = {
+            "Next Selected Listed Pet",
+            "Highest Weight Listed Pet",
+            "Random Listed Pet",
+        },
+
+        Default =
+            NormalizeShowcaseSwitchMode(
+                BoothPetState.AutoSwitchMode
+                or "Next Selected Listed Pet"
+            ),
+
+        Multi = false,
+        Searchable = false,
+
+        Tooltip = "Controls fallback when the current showcase pet is sold or missing.",
+    }
+):OnChanged(function(value)
+
+    BoothPetState.AutoSwitchMode =
+        NormalizeShowcaseSwitchMode(value)
 
     MarkConfigDirty()
 end)
@@ -46254,14 +46998,6 @@ function EquipShowcasePet(force)
         return
     end
 
-    local targetPet =
-        BoothPetState.SelectedPetType
-
-    if not targetPet
-    or targetPet == "" then
-        return
-    end
-
     local now =
         os.clock()
 
@@ -46281,6 +47017,66 @@ function EquipShowcasePet(force)
     BoothPetState.LastEquipAttemptAt =
         now
 
+    local targetPet =
+        BoothPetState.SelectedPetType
+
+    --==================================================
+    -- ROTATION MODE
+    -- Chooses the next selected listed pet every interval.
+    --==================================================
+
+    if BoothPetState.RotationEnabled == true then
+
+        local interval =
+            math.clamp(
+                math.floor(
+                    SafeNumber(
+                        BoothPetState.EquipInterval,
+                        10
+                    )
+                ),
+                2,
+                300
+            )
+
+        local rotationDue =
+            force == true
+            or targetPet == nil
+            or targetPet == ""
+            or now - SafeNumber(BoothPetState.LastRotationEquipAt, 0) >= interval
+
+        if rotationDue then
+
+            local rotationMode =
+                NormalizeShowcaseMode(
+                    BoothPetState.ShowcaseMode
+                )
+
+            local nextPet =
+                ChooseShowcaseCandidate(
+                    BuildAvailableShowcasePets(),
+                    rotationMode,
+                    nil
+                )
+
+            if nextPet
+            and nextPet.PetName then
+
+                SetShowcasePetSelection(
+                    nextPet.PetName
+                )
+
+                targetPet =
+                    BoothPetState.SelectedPetType
+            end
+        end
+    end
+
+    if not targetPet
+    or targetPet == "" then
+        return
+    end
+
     local bestPet =
         ResolveBestPet(targetPet)
 
@@ -46293,7 +47089,7 @@ function EquipShowcasePet(force)
             nil
 
         -- If the selected showcase pet was sold out / missing,
-        -- automatically switch to another available pet.
+        -- automatically switch to another available listed pet.
         if TryAutoSwitchShowcasePet(targetPet) then
 
             local switchedTarget =
@@ -46312,7 +47108,7 @@ function EquipShowcasePet(force)
 
             if ShouldWarnMissingShowcasePet(targetPet) then
                 warn(
-                    "[BoothPet] No matching pet:",
+                    "[BoothPet] No matching listed showcase pet:",
                     targetPet
                 )
             end
@@ -46367,6 +47163,9 @@ function EquipShowcasePet(force)
 
     BoothPetState.LockedShowcaseUID =
         bestPet.UID
+
+    BoothPetState.LastRotationEquipAt =
+        now
 
     print(
         string.format(
@@ -47196,7 +47995,62 @@ end
         -- Do not auto re-equip showcase pet during post-snipe delay window
 if not ShowcaseEquipState.ReequipPending
 and not ShowcaseEquipState.Attempting then
-    pcall(EquipShowcasePet)
+
+    pcall(function()
+
+        -- Force=false normally, but if the locked showcase UID no longer exists,
+        -- force one check so Auto Switch can react quickly after a sale.
+        local forceCheck =
+            false
+
+        local lockedUID =
+            tostring(
+                BoothPetState.LockedShowcaseUID
+                or ""
+            )
+
+        if lockedUID ~= "" then
+
+            local stillExists =
+                false
+
+            local player =
+                Players.LocalPlayer
+
+            local containers = {
+                player and player.Character,
+                player and player:FindFirstChild("Backpack"),
+            }
+
+            for _, container in ipairs(containers) do
+
+                if container then
+
+                    for _, child in ipairs(container:GetChildren()) do
+
+                        if child:IsA("Tool")
+                        and tostring(ResolvePetToolStableUID(child)) == lockedUID then
+                            stillExists =
+                                true
+
+                            break
+                        end
+                    end
+                end
+
+                if stillExists then
+                    break
+                end
+            end
+
+            if stillExists ~= true then
+                forceCheck =
+                    true
+            end
+        end
+
+        EquipShowcasePet(forceCheck)
+    end)
 end
 
         --==================================================
