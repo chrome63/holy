@@ -3475,8 +3475,16 @@ BoothPetState = {
     -- [stableKey] = true
     SelectedShowcasePets = {},
 
-    -- dropdown display values, used only for UI restore/sync
+    -- dropdown display values, used only for UI display/sync
     SelectedShowcasePetLabels = {},
+
+    -- Persistent restore data.
+    -- Save pet identity, not only dropdown label.
+    SavedShowcaseSelections = {},
+    ShowcaseSaveLoaded = false,
+    ShowcaseRestorePending = false,
+    ShowcaseSaveQueued = false,
+    LastShowcaseSaveAt = 0,
 
     RotationIndex = 1,
 
@@ -5308,6 +5316,571 @@ function BuildShowcasePetChoiceMaps()
     return choices, choiceToKey, keyToPet
 end
 
+--==================================================
+-- SHOWCASE SELECTION PERSISTENCE
+-- Saves selected showcase pets by identity, not only
+-- by dropdown label, so it survives rejoin/teleport.
+--==================================================
+
+SHOWCASE_SAVE_FOLDER =
+    "HolyV2"
+
+SHOWCASE_SAVE_FILE =
+    "HolyV2/ShowcasePets.json"
+
+function CanUseShowcaseFileIO()
+
+    return type(writefile) == "function"
+        and type(readfile) == "function"
+        and type(isfile) == "function"
+end
+
+function EnsureShowcaseSaveFolder()
+
+    if type(makefolder) ~= "function"
+    or type(isfolder) ~= "function" then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            if not isfolder(SHOWCASE_SAVE_FOLDER) then
+                makefolder(SHOWCASE_SAVE_FOLDER)
+            end
+        end)
+
+    return ok == true
+end
+
+function BuildShowcaseIdentityFromPet(pet)
+
+    if type(pet) ~= "table" then
+        return nil
+    end
+
+    local tool =
+        pet.Tool
+
+    return {
+        PetName =
+            NormalizeShowcasePetName(
+                pet.PetName
+            ),
+
+        ListedPetName =
+            NormalizeShowcasePetName(
+                pet.ListedPetName
+            ),
+
+        ToolName =
+            tool
+            and tostring(tool.Name or "")
+            or "",
+
+        UID =
+            tostring(pet.UID or ""),
+
+        StableKey =
+            tostring(pet.StableKey or ""),
+
+        Weight =
+            tonumber(pet.Weight)
+            or 0,
+
+        SavedAt =
+            os.time(),
+    }
+end
+
+function BuildCurrentShowcaseSelectionIdentities()
+
+    local pets =
+        BuildAvailableShowcasePets()
+
+    local byStableKey = {}
+
+    for _, pet in ipairs(pets) do
+
+        local stableKey =
+            tostring(
+                pet.StableKey
+                or pet.UID
+                or ""
+            )
+
+        if stableKey ~= "" then
+            byStableKey[stableKey] =
+                pet
+        end
+    end
+
+    local output = {}
+
+    for stableKey, selected in pairs(BoothPetState.SelectedShowcasePets or {}) do
+
+        if selected == true then
+
+            local pet =
+                byStableKey[tostring(stableKey)]
+
+            local identity =
+                BuildShowcaseIdentityFromPet(pet)
+
+            if identity then
+                table.insert(
+                    output,
+                    identity
+                )
+            end
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        local aName =
+            tostring(a.PetName or ""):lower()
+
+        local bName =
+            tostring(b.PetName or ""):lower()
+
+        if aName ~= bName then
+            return aName < bName
+        end
+
+        return tostring(a.StableKey or "")
+            < tostring(b.StableKey or "")
+    end)
+
+    return output
+end
+
+function BuildShowcaseSavePayload()
+
+    return {
+        Format = "HOLY_SHOWCASE_PETS",
+        Version = 1,
+        SavedAt = os.time(),
+
+        Enabled =
+            BoothPetState.Enabled == true,
+
+        RotationEnabled =
+            BoothPetState.RotationEnabled == true,
+
+        ShowcaseMode =
+            NormalizeShowcaseMode(
+                BoothPetState.ShowcaseMode
+            ),
+
+        AutoSwitchWhenMissing =
+            BoothPetState.AutoSwitchWhenMissing == true,
+
+        AutoSwitchMode =
+            NormalizeShowcaseSwitchMode(
+                BoothPetState.AutoSwitchMode
+            ),
+
+        EquipInterval =
+            math.clamp(
+                math.floor(
+                    SafeNumber(
+                        BoothPetState.EquipInterval,
+                        10
+                    )
+                ),
+                2,
+                300
+            ),
+
+        SelectedPetType =
+            NormalizeShowcasePetName(
+                BoothPetState.SelectedPetType
+            ),
+
+        Selections =
+            BuildCurrentShowcaseSelectionIdentities(),
+    }
+end
+
+function SaveShowcaseSelectionConfigNow(reason)
+
+    if not CanUseShowcaseFileIO() then
+        return false
+    end
+
+    EnsureShowcaseSaveFolder()
+
+    local payload =
+        BuildShowcaseSavePayload()
+
+    local ok, encoded =
+        pcall(function()
+            return HttpService:JSONEncode(payload)
+        end)
+
+    if not ok
+    or type(encoded) ~= "string"
+    or encoded == "" then
+
+        warn(
+            "[SHOWCASE SAVE] Encode failed:",
+            tostring(encoded)
+        )
+
+        return false
+    end
+
+    local writeOk, writeErr =
+        pcall(function()
+            writefile(
+                SHOWCASE_SAVE_FILE,
+                encoded
+            )
+        end)
+
+    if not writeOk then
+
+        warn(
+            "[SHOWCASE SAVE] Write failed:",
+            tostring(writeErr)
+        )
+
+        return false
+    end
+
+    BoothPetState.LastShowcaseSaveAt =
+        os.clock()
+
+    print(
+        "[SHOWCASE SAVE] Saved",
+        tostring(#(payload.Selections or {})),
+        "selected pet(s)",
+        "|",
+        tostring(reason or "manual")
+    )
+
+    return true
+end
+
+function QueueShowcaseSelectionSave(reason, immediate)
+
+    if immediate == true then
+
+        BoothPetState.ShowcaseSaveQueued =
+            false
+
+        return SaveShowcaseSelectionConfigNow(
+            reason
+        )
+    end
+
+    if BoothPetState.ShowcaseSaveQueued == true then
+        return
+    end
+
+    BoothPetState.ShowcaseSaveQueued =
+        true
+
+    task.delay(0.35, function()
+
+        if not IsCurrentRun() then
+            return
+        end
+
+        BoothPetState.ShowcaseSaveQueued =
+            false
+
+        SaveShowcaseSelectionConfigNow(
+            reason
+        )
+    end)
+end
+
+function LoadShowcaseSelectionConfigNow()
+
+    if BoothPetState.ShowcaseSaveLoaded == true then
+        return true
+    end
+
+    BoothPetState.ShowcaseSaveLoaded =
+        true
+
+    if not CanUseShowcaseFileIO() then
+        return false
+    end
+
+    local exists =
+        false
+
+    local ok =
+        pcall(function()
+            exists =
+                isfile(SHOWCASE_SAVE_FILE)
+        end)
+
+    if not ok
+    or exists ~= true then
+        return false
+    end
+
+    local readOk, raw =
+        pcall(function()
+            return readfile(SHOWCASE_SAVE_FILE)
+        end)
+
+    if not readOk
+    or type(raw) ~= "string"
+    or raw == "" then
+        return false
+    end
+
+    local decodeOk, payload =
+        pcall(function()
+            return HttpService:JSONDecode(raw)
+        end)
+
+    if not decodeOk
+    or type(payload) ~= "table"
+    or payload.Format ~= "HOLY_SHOWCASE_PETS" then
+        return false
+    end
+
+    BoothPetState.Enabled =
+        payload.Enabled == true
+
+    BoothPetState.RotationEnabled =
+        payload.RotationEnabled == true
+
+    BoothPetState.ShowcaseMode =
+        NormalizeShowcaseMode(
+            payload.ShowcaseMode
+        )
+
+    BoothPetState.AutoSwitchWhenMissing =
+        payload.AutoSwitchWhenMissing ~= false
+
+    BoothPetState.AutoSwitchMode =
+        NormalizeShowcaseSwitchMode(
+            payload.AutoSwitchMode
+        )
+
+    BoothPetState.EquipInterval =
+        math.clamp(
+            math.floor(
+                SafeNumber(
+                    payload.EquipInterval,
+                    10
+                )
+            ),
+            2,
+            300
+        )
+
+    BoothPetState.SelectedPetType =
+        NormalizeShowcasePetName(
+            payload.SelectedPetType
+        )
+
+    BoothPetState.SavedShowcaseSelections =
+        type(payload.Selections) == "table"
+        and payload.Selections
+        or {}
+
+    BoothPetState.ShowcaseRestorePending =
+        #(BoothPetState.SavedShowcaseSelections or {}) > 0
+
+    print(
+        "[SHOWCASE SAVE] Loaded",
+        tostring(#(BoothPetState.SavedShowcaseSelections or {})),
+        "saved pet selection(s)"
+    )
+
+    return true
+end
+
+function ShowcaseSavedIdentityMatchesPet(identity, pet)
+
+    if type(identity) ~= "table"
+    or type(pet) ~= "table" then
+        return false
+    end
+
+    local savedStableKey =
+        tostring(identity.StableKey or "")
+
+    local currentStableKey =
+        tostring(pet.StableKey or "")
+
+    if savedStableKey ~= ""
+    and currentStableKey ~= ""
+    and savedStableKey == currentStableKey then
+        return true
+    end
+
+    local savedUID =
+        tostring(identity.UID or "")
+
+    local currentUID =
+        tostring(pet.UID or "")
+
+    if savedUID ~= ""
+    and currentUID ~= ""
+    and savedUID == currentUID then
+        return true
+    end
+
+    local savedToolName =
+        tostring(identity.ToolName or "")
+
+    local currentToolName =
+        pet.Tool
+        and tostring(pet.Tool.Name or "")
+        or ""
+
+    if savedToolName ~= ""
+    and currentToolName ~= ""
+    and savedToolName == currentToolName then
+        return true
+    end
+
+    local savedPetName =
+        NormalizeShowcasePetName(
+            identity.PetName
+        )
+
+    local currentPetName =
+        NormalizeShowcasePetName(
+            pet.PetName
+        )
+
+    if savedPetName == ""
+    or currentPetName == "" then
+        return false
+    end
+
+    if savedPetName:lower() ~= currentPetName:lower() then
+        return false
+    end
+
+    local savedWeight =
+        tonumber(identity.Weight)
+
+    local currentWeight =
+        tonumber(pet.Weight)
+
+    if savedWeight
+    and currentWeight
+    and math.abs(savedWeight - currentWeight) <= 0.01 then
+        return true
+    end
+
+    -- Last fallback:
+    -- same pet name. This keeps restore working if the game changes UUID/tool metadata.
+    return true
+end
+
+function RestoreShowcaseSelectionsFromSaved()
+
+    local savedSelections =
+        BoothPetState.SavedShowcaseSelections
+
+    if type(savedSelections) ~= "table"
+    or #savedSelections <= 0 then
+        return false
+    end
+
+    local pets =
+        BuildAvailableShowcasePets()
+
+    if #pets <= 0 then
+        return false
+    end
+
+    local selectedMap = {}
+    local labels = {}
+    local restored = 0
+
+    for _, identity in ipairs(savedSelections) do
+
+        for _, pet in ipairs(pets) do
+
+            local stableKey =
+                tostring(
+                    pet.StableKey
+                    or pet.UID
+                    or ""
+                )
+
+            if stableKey ~= ""
+            and not selectedMap[stableKey]
+            and ShowcaseSavedIdentityMatchesPet(identity, pet) then
+
+                selectedMap[stableKey] =
+                    true
+
+                local label =
+                    ShowcaseStableKeyToChoice
+                    and ShowcaseStableKeyToChoice[stableKey]
+
+                if label then
+                    table.insert(
+                        labels,
+                        label
+                    )
+                end
+
+                restored =
+                    restored + 1
+
+                break
+            end
+        end
+    end
+
+    if restored <= 0 then
+        return false
+    end
+
+    table.sort(labels)
+
+    BoothPetState.SelectedShowcasePets =
+        selectedMap
+
+    BoothPetState.SelectedShowcasePetLabels =
+        labels
+
+    BoothPetState.ShowcaseRestorePending =
+        false
+
+    if not BoothPetState.SelectedPetType
+    or BoothPetState.SelectedPetType == "" then
+
+        local candidate =
+            ChooseShowcaseCandidate(
+                pets,
+                "Selected Listed Rotation",
+                nil
+            )
+
+        if candidate
+        and candidate.PetName then
+            BoothPetState.SelectedPetType =
+                NormalizeShowcasePetName(
+                    candidate.PetName
+                )
+        end
+    end
+
+    print(
+        "[SHOWCASE SAVE] Restored",
+        tostring(restored),
+        "selected showcase pet(s)"
+    )
+
+    return true
+end
+
 function SyncShowcaseSelectedLabelsFromKeys()
 
     local labels = {}
@@ -5413,6 +5986,12 @@ function RefreshShowcasePetDropdown(clearSelection)
         BoothPetState.SelectedShowcasePetLabels =
             {}
 
+        BoothPetState.SavedShowcaseSelections =
+            {}
+
+        BoothPetState.ShowcaseRestorePending =
+            false
+
         BoothPetState.SelectedPetType =
             nil
 
@@ -5427,16 +6006,25 @@ function RefreshShowcasePetDropdown(clearSelection)
             ShowcaseDropdownRef:SetValue({})
         end
 
+        QueueShowcaseSelectionSave(
+            "clear showcase selection",
+            true
+        )
+
     else
 
-        local labels =
+        if BoothPetState.ShowcaseRestorePending == true then
+            RestoreShowcaseSelectionsFromSaved()
+        else
             SyncShowcaseSelectedLabelsFromKeys()
+        end
 
         if ShowcaseDropdownRef
         and type(ShowcaseDropdownRef.SetValue) == "function" then
 
             ShowcaseDropdownRef:SetValue(
-                labels
+                BoothPetState.SelectedShowcasePetLabels
+                or {}
             )
         end
     end
@@ -35308,13 +35896,29 @@ BoothBox:AddDropdown(
     MarkConfigDirty()
 end)
 
+LoadShowcaseSelectionConfigNow()
+
+if type(RefreshLatestBoothDataNow) == "function" then
+    pcall(function()
+        RefreshLatestBoothDataNow(
+            "showcase ui restore"
+        )
+    end)
+end
+
+if type(RefreshOwnBoothSnapshot) == "function" then
+    pcall(function()
+        RefreshOwnBoothSnapshot()
+    end)
+end
+
 local EquipPetToggle =
     BoothCustomizationBox:AddToggle(
         "EquipPet",
         {
             Text = "🐶 Equip Pet",
             Tooltip = "Allows HOLY to equip/showcase booth pets.",
-            Default = false,
+            Default = BoothPetState.Enabled == true,
         }
     )
 
@@ -35346,6 +35950,10 @@ EquipPetToggle:OnChanged(function(enabled)
 
     MarkConfigDirty()
 
+    QueueShowcaseSelectionSave(
+        "equip toggle"
+    )
+
     if enabled == true then
 
         task.spawn(function()
@@ -35369,7 +35977,7 @@ local ShowcaseRotationToggle =
         {
             Text = "🔁 Rotation",
             Tooltip = "Rotates through selected listed pets using the Equip Interval.",
-            Default = false,
+            Default = BoothPetState.RotationEnabled == true,
         }
     )
 
@@ -35388,6 +35996,10 @@ ShowcaseRotationToggle:OnChanged(function(enabled)
         nil
 
     MarkConfigDirty()
+
+    QueueShowcaseSelectionSave(
+        "rotation toggle"
+    )
 
     if BoothPetState.Enabled == true
     and enabled == true then
@@ -35410,7 +36022,7 @@ local AutoSwitchShowcaseToggle =
         {
             Text = "🔄 Auto Switch If Sold",
             Tooltip = "If current showcase pet is missing/sold, HOLY skips to another valid listed pet.",
-            Default = true,
+            Default = BoothPetState.AutoSwitchWhenMissing ~= false,
         }
     )
 
@@ -35420,6 +36032,9 @@ AutoSwitchShowcaseToggle:OnChanged(function(enabled)
         enabled == true
 
     MarkConfigDirty()
+    QueueShowcaseSelectionSave(
+        "auto switch toggle"
+    )
 end)
 
 BoothCustomizationBox:AddDropdown(
@@ -35452,6 +36067,10 @@ BoothCustomizationBox:AddDropdown(
         0
 
     MarkConfigDirty()
+
+    QueueShowcaseSelectionSave(
+        "showcase mode"
+    )
 end)
 
 BuildShowcasePetChoiceMaps()
@@ -35497,6 +36116,9 @@ ShowcaseDropdown:OnChanged(function(value)
     BoothPetState.SelectedShowcasePetLabels =
         selectedLabels
 
+    BoothPetState.ShowcaseRestorePending =
+        false
+
     BoothPetState.RotationIndex =
         1
 
@@ -35512,27 +36134,35 @@ ShowcaseDropdown:OnChanged(function(value)
     BoothPetState.LastMissingWarnAt =
         0
 
-    -- If the user selected at least one pet and no active showcase target exists,
-    -- immediately select the first valid candidate.
-    if not BoothPetState.SelectedPetType
-    or BoothPetState.SelectedPetType == "" then
+    local candidate =
+        ChooseShowcaseCandidate(
+            BuildAvailableShowcasePets(),
+            "Selected Listed Rotation",
+            nil
+        )
 
-        local candidate =
-            ChooseShowcaseCandidate(
-                BuildAvailableShowcasePets(),
-                "Selected Listed Rotation",
-                nil
-            )
+    if candidate
+    and candidate.PetName then
 
-        if candidate
-        and candidate.PetName then
-            SetShowcasePetSelection(
-                candidate.PetName
-            )
-        end
+        SetShowcasePetSelection(
+            candidate.PetName
+        )
+
+    elseif next(selectedMap) == nil then
+
+        BoothPetState.SelectedPetType =
+            nil
     end
 
+    BoothPetState.SavedShowcaseSelections =
+        BuildCurrentShowcaseSelectionIdentities()
+
     MarkConfigDirty()
+
+    QueueShowcaseSelectionSave(
+        "showcase pets selected",
+        true
+    )
 end)
 
 BoothCustomizationBox:AddButton({
@@ -35553,6 +36183,10 @@ BoothCustomizationBox:AddButton({
                 RefreshOwnBoothSnapshot()
             end)
         end
+
+        BoothPetState.ShowcaseRestorePending =
+            #(BoothPetState.SavedShowcaseSelections or {}) > 0
+            and next(BoothPetState.SelectedShowcasePets or {}) == nil
 
         local choices =
             RefreshShowcasePetDropdown(false)
@@ -35596,6 +36230,10 @@ BoothCustomizationBox:AddInput(
         )
 
     MarkConfigDirty()
+
+    QueueShowcaseSelectionSave(
+        "equip interval"
+    )
 end)
 
 BoothCustomizationBox:AddDropdown(
@@ -35626,6 +36264,10 @@ BoothCustomizationBox:AddDropdown(
         NormalizeShowcaseSwitchMode(value)
 
     MarkConfigDirty()
+
+    QueueShowcaseSelectionSave(
+        "switch mode"
+    )
 end)
 
 RefreshBoothSkinList()
