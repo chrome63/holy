@@ -5418,7 +5418,11 @@ function BuildCurrentShowcaseSelectionIdentities()
 
     local output = {}
 
-    for stableKey, selected in pairs(BoothPetState.SelectedShowcasePets or {}) do
+    BoothPetState.SelectedShowcasePets =
+        BoothPetState.SelectedShowcasePets
+        or {}
+
+    for stableKey, selected in pairs(BoothPetState.SelectedShowcasePets) do
 
         if selected == true then
 
@@ -5429,10 +5433,72 @@ function BuildCurrentShowcaseSelectionIdentities()
                 BuildShowcaseIdentityFromPet(pet)
 
             if identity then
+
                 table.insert(
                     output,
                     identity
                 )
+
+            else
+
+                table.insert(output, {
+                    PetName = "",
+                    ListedPetName = "",
+                    ToolName = "",
+                    UID = "",
+                    StableKey = tostring(stableKey),
+                    Weight = 0,
+                    SavedAt = os.time(),
+                })
+            end
+        end
+    end
+
+    for _, label in ipairs(BoothPetState.SelectedShowcasePetLabels or {}) do
+
+        local stableKey =
+            ShowcaseChoiceToStableKey
+            and ShowcaseChoiceToStableKey[tostring(label)]
+
+        if stableKey then
+
+            local alreadySaved =
+                false
+
+            for _, entry in ipairs(output) do
+
+                if tostring(entry.StableKey or "") == tostring(stableKey) then
+                    alreadySaved =
+                        true
+
+                    break
+                end
+            end
+
+            if not alreadySaved then
+
+                local pet =
+                    byStableKey[tostring(stableKey)]
+
+                local identity =
+                    BuildShowcaseIdentityFromPet(pet)
+
+                if identity then
+                    table.insert(
+                        output,
+                        identity
+                    )
+                else
+                    table.insert(output, {
+                        PetName = "",
+                        ListedPetName = "",
+                        ToolName = "",
+                        UID = "",
+                        StableKey = tostring(stableKey),
+                        Weight = 0,
+                        SavedAt = os.time(),
+                    })
+                end
             end
         end
     end
@@ -5791,6 +5857,8 @@ function RestoreShowcaseSelectionsFromSaved()
         return false
     end
 
+    BuildShowcasePetChoiceMaps()
+
     local pets =
         BuildAvailableShowcasePets()
 
@@ -5854,23 +5922,19 @@ function RestoreShowcaseSelectionsFromSaved()
     BoothPetState.ShowcaseRestorePending =
         false
 
-    if not BoothPetState.SelectedPetType
-    or BoothPetState.SelectedPetType == "" then
+    local candidate =
+        ChooseShowcaseCandidate(
+            pets,
+            "Selected Listed Rotation",
+            nil
+        )
 
-        local candidate =
-            ChooseShowcaseCandidate(
-                pets,
-                "Selected Listed Rotation",
-                nil
-            )
+    if candidate
+    and candidate.PetName then
 
-        if candidate
-        and candidate.PetName then
-            BoothPetState.SelectedPetType =
-                NormalizeShowcasePetName(
-                    candidate.PetName
-                )
-        end
+        SetShowcasePetSelection(
+            candidate
+        )
     end
 
     print(
@@ -36508,6 +36572,28 @@ local ShowcaseDropdown =
 ShowcaseDropdownRef =
     ShowcaseDropdown
 
+BuildShowcasePetChoiceMaps()
+
+if BoothPetState.ShowcaseRestorePending == true then
+
+    RestoreShowcaseSelectionsFromSaved()
+
+    if ShowcaseDropdownRef
+    and type(ShowcaseDropdownRef.SetValue) == "function" then
+
+        ShowcaseDropdownSyncing =
+            true
+
+        ShowcaseDropdownRef:SetValue(
+            BoothPetState.SelectedShowcasePetLabels
+            or {}
+        )
+
+        ShowcaseDropdownSyncing =
+            false
+    end
+end
+
 task.spawn(function()
 
     task.wait(0.25)
@@ -36539,6 +36625,26 @@ task.spawn(function()
     end
 
     RefreshShowcasePetDropdown(false)
+
+        if BoothPetState.ShowcaseRestorePending == true then
+
+        RestoreShowcaseSelectionsFromSaved()
+
+        if ShowcaseDropdownRef
+        and type(ShowcaseDropdownRef.SetValue) == "function" then
+
+            ShowcaseDropdownSyncing =
+                true
+
+            ShowcaseDropdownRef:SetValue(
+                BoothPetState.SelectedShowcasePetLabels
+                or {}
+            )
+
+            ShowcaseDropdownSyncing =
+                false
+        end
+    end
 end)
 
 do
@@ -36630,8 +36736,8 @@ ShowcaseDropdown:OnChanged(function(value)
     if candidate
     and candidate.PetName then
 
-        SetShowcasePetSelection(
-            candidate.PetName
+                SetShowcasePetSelection(
+            candidate
         )
 
     elseif next(selectedMap) == nil then
