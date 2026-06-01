@@ -54245,4 +54245,8 @@ or UIState.PendingAutoClose == true then
     end)
 end
 
+print("[HOLY BUILD CHECK] reached bottom before MainLoop")
+
 task.spawn(MainLoop)
+
+print("[HOLY BUILD CHECK] script fully parsed")
