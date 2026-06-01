@@ -50622,33 +50622,6 @@ function OpenAgeBreakerSubmitConfirmDialog()
         )
 end
 
-function SetAgeBreakerAutoTradeWorldToggleVisual(value)
-
-    if not AgeBreakerAutoTradeWorldToggleRef
-    or type(AgeBreakerAutoTradeWorldToggleRef.SetValue) ~= "function" then
-        return false
-    end
-
-    local desired =
-        value == true
-
-    if AgeBreakerAutoTradeWorldToggleRef.Value == desired then
-        return true
-    end
-
-    AgeBreakerAutoTradeWorldToggleSyncing =
-        true
-
-    AgeBreakerAutoTradeWorldToggleRef:SetValue(
-        desired
-    )
-
-    AgeBreakerAutoTradeWorldToggleSyncing =
-        false
-
-    return true
-end
-
 function BuildAgeBreakerTab()
 
     if not Tabs
@@ -50656,8 +50629,8 @@ function BuildAgeBreakerTab()
         return
     end
 
-    -- Load saved queue/pool before building labels.
-    LoadAgeBreakerConfig()
+-- Load saved queue/pool/automation before building labels.
+LoadAgeBreakerConfig()
 
     local SetupBox =
         Tabs.AgeBreaker:AddLeftGroupbox(
@@ -50832,39 +50805,14 @@ and type(AgeBreakerAutoStep) == "function" then
 end
     end)
 
-AgeBreakerAutoTradeWorldToggleRef =
-    SetupBox:AddToggle(
-        "AgeBreakerTradeWorldOnStartStandalone",
-        {
-            Text = "🌐 Auto Teleport to Trade World",
-            Tooltip = "Automatically teleport to the Trade World when the Age Breaker machine starts.",
-            Default = AgeBreakerState.AutoTeleportToTradeWorldOnMachineStart == true,
-        }
-    )
-
-AgeBreakerAutoTradeWorldToggleRef:OnChanged(function(value)
-
-    -- Ignore programmatic visual syncs.
-    if AgeBreakerAutoTradeWorldToggleSyncing == true then
-        return
-    end
-
-    -- Ignore Obsidian/SaveManager hydration trying to restore an old false.
-    -- Age Breaker uses its own standalone save file for this setting.
-    if ConfigState
-    and ConfigState.IsHydrating == true then
-
-        task.defer(function()
-
-            task.wait(0.25)
-
-            SetAgeBreakerAutoTradeWorldToggleVisual(
-                AgeBreakerState.AutoTeleportToTradeWorldOnMachineStart == true
-            )
-        end)
-
-        return
-    end
+SetupBox:AddToggle(
+    "AgeBreakerAutoTradeWorldWhenMachineStarts",
+    {
+        Text = "🌐 Auto Teleport to Trade World",
+        Tooltip = "Automatically teleport to the Trade World when the Age Breaker machine starts.",
+        Default = AgeBreakerState.AutoTeleportToTradeWorldOnMachineStart == true,
+    }
+):OnChanged(function(value)
 
     AgeBreakerState.AutoTeleportToTradeWorldOnMachineStart =
         value == true
@@ -50875,8 +50823,6 @@ AgeBreakerAutoTradeWorldToggleRef:OnChanged(function(value)
 
     RefreshAgeBreakerUI()
 
-    -- If user enables this while already in Normal World and the machine is running,
-    -- react immediately instead of waiting for the next worker tick.
     if AgeBreakerState.AutoTeleportToTradeWorldOnMachineStart == true
     and AgeBreakerState.Enabled == true
     and type(RequestAgeBreakerTradeWorldTeleportAfterMachineStart) == "function" then
@@ -50900,15 +50846,6 @@ AgeBreakerAutoTradeWorldToggleRef:OnChanged(function(value)
             end)
         end)
     end
-end)
-
-task.defer(function()
-
-    task.wait(0.25)
-
-    SetAgeBreakerAutoTradeWorldToggleVisual(
-        AgeBreakerState.AutoTeleportToTradeWorldOnMachineStart == true
-    )
 end)
 
     SetupBox:AddDivider({
