@@ -37,6 +37,8 @@ local HOLY_LOADER_KEY_STATE = {
         ["HOLY-ISAGI-454363"] = "Isagi",
         ["HOLY-1lab-4363"] = "1lab",
         ["HOLY-Semilore-46423"] = "Semilore",
+        ["HOLY-Jeff-3534"] = "Jeff",
+        ["HOLY-GoL-33534"] = "GoL",
     },
 
     Accepted = false,
