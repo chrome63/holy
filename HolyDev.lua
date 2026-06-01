@@ -2358,8 +2358,14 @@ end
 
 function BuildEggImportFilterFromState()
 
+    if type(EggImportState) ~= "table" then
+        return nil, "Egg Import state is missing."
+    end
+
     local eggName =
         tostring(EggImportState.EggName or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
 
     if eggName == "" then
         return nil, "Choose an egg first."
@@ -2380,25 +2386,22 @@ function BuildEggImportFilterFromState()
         )
 
     local selectedMap =
-        {}
-
-    if type(CloneSniperMutationMap) == "function" then
-        selectedMap =
-            CloneSniperMutationMap(
-                EggImportState.SelectedMutationSelection
-            )
-    end
+        CloneSniperMutationMap(
+            EggImportState.SelectedMutationSelection
+        )
 
     if mutationMode == "Specific Mutations"
-    and type(SniperMutationMapIsEmpty) == "function"
     and SniperMutationMapIsEmpty(selectedMap) then
         return nil, "Select mutations or set Mutation to Off."
     end
 
     local filter = {
         MinWeight =
-            tonumber(EggImportState.MinWeight)
-            or 0,
+            math.max(
+                0,
+                tonumber(EggImportState.MinWeight)
+                or 0
+            ),
 
         MaxPrice =
             math.floor(maxPrice),
@@ -2435,12 +2438,16 @@ function BuildEggImportFilterFromState()
     if mutationMode == "Specific Mutations" then
 
         filter.SpecificMutations =
-            CloneSniperMutationMap(selectedMap)
+            CloneSniperMutationMap(
+                selectedMap
+            )
 
     elseif mutationMode == "Exclude Mutations" then
 
         filter.ExcludedMutations =
-            CloneSniperMutationMap(selectedMap)
+            CloneSniperMutationMap(
+                selectedMap
+            )
     end
 
     return filter, nil
@@ -2448,10 +2455,13 @@ end
 
 function PreviewEggImport()
 
+    if type(EggImportState) ~= "table" then
+        return "Preview\nEgg Import state missing."
+    end
+
     local eggName =
         tostring(
-            EggImportState
-            and EggImportState.EggName
+            EggImportState.EggName
             or ""
         )
 
@@ -2460,7 +2470,17 @@ function PreviewEggImport()
     end
 
     local pets =
-        GetEggFocusPets(eggName)
+        {}
+
+    if type(GetEggFocusPets) == "function" then
+        pets =
+            GetEggFocusPets(eggName)
+    end
+
+    if type(pets) ~= "table" then
+        pets =
+            {}
+    end
 
     local watchlistId =
         NormalizeWatchlistId(
@@ -2478,32 +2498,50 @@ function PreviewEggImport()
 
     for _, petName in ipairs(pets) do
 
-        if filters[petName] then
-            updates = updates + 1
-        else
-            adds = adds + 1
+        petName =
+            tostring(petName or "")
+
+        if petName ~= "" then
+
+            if filters[petName] then
+                updates = updates + 1
+            else
+                adds = adds + 1
+            end
         end
+    end
+
+    local previewPets = {}
+
+    for index, petName in ipairs(pets) do
+
+        if index <= 8 then
+            table.insert(
+                previewPets,
+                tostring(petName)
+            )
+        end
+    end
+
+    if #pets > 8 then
+        table.insert(
+            previewPets,
+            "+"
+                .. tostring(#pets - 8)
+                .. " more"
+        )
     end
 
     local petPreview =
         table.concat(
-            (function()
-                local output = {}
-
-                for index, petName in ipairs(pets) do
-                    if index <= 8 then
-                        table.insert(output, tostring(petName))
-                    end
-                end
-
-                if #pets > 8 then
-                    table.insert(output, "+" .. tostring(#pets - 8) .. " more")
-                end
-
-                return output
-            end)(),
+            previewPets,
             ", "
         )
+
+    if petPreview == "" then
+        petPreview =
+            "None"
+    end
 
     return "Preview\n"
         .. tostring(eggName)
@@ -2518,7 +2556,62 @@ function PreviewEggImport()
         .. " • Updates: "
         .. tostring(updates)
         .. "\nPets: "
-        .. tostring(petPreview ~= "" and petPreview or "None")
+        .. petPreview
+end
+
+function CloneEggImportSniperFilter(filter)
+
+    if type(filter) ~= "table" then
+        return nil
+    end
+
+    return {
+        MaxPrice =
+            filter.MaxPrice == math.huge
+            and math.huge
+            or tonumber(filter.MaxPrice)
+            or math.huge,
+
+        MinWeight =
+            tonumber(filter.MinWeight)
+            or 0,
+
+        WeightMode =
+            NormalizeWeightMode(
+                filter.WeightMode
+            ),
+
+        Priority =
+            ClampSniperPriority(
+                filter.Priority
+            ),
+
+        Mutation =
+            NormalizeSniperFilterMutation(
+                filter.Mutation
+                or "Off"
+            ),
+
+        SpecificMutations =
+            CloneSniperMutationMap(
+                filter.SpecificMutations
+            ),
+
+        ExcludedMutations =
+            CloneSniperMutationMap(
+                filter.ExcludedMutations
+            ),
+
+        Source =
+            tostring(filter.Source or "Egg Import"),
+
+        SourceEgg =
+            tostring(filter.SourceEgg or ""),
+
+        ImportedAt =
+            tonumber(filter.ImportedAt)
+            or os.time(),
+    }
 end
 
 function ImportEggToWatchlist()
@@ -2587,19 +2680,22 @@ function ImportEggToWatchlist()
             end
 
             local copied =
-                ClonePendingSniperFilter(filter)
+                CloneEggImportSniperFilter(filter)
 
-            copied.Source =
-                "Egg Import"
+            if copied then
 
-            copied.SourceEgg =
-                eggName
+                copied.Source =
+                    "Egg Import"
 
-            copied.ImportedAt =
-                os.time()
+                copied.SourceEgg =
+                    eggName
 
-            filters[petName] =
-                copied
+                copied.ImportedAt =
+                    os.time()
+
+                filters[petName] =
+                    copied
+            end
         end
     end
 
