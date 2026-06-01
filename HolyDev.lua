@@ -695,6 +695,11 @@ SniperFilterUIState = {
     WeightMode = "DisplayWeight",
     Priority = 5,
 
+    -- Manual sniper filter input state.
+    -- These must exist before BuildPendingSniperFilterFromUI reads them.
+    MinWeight = 0,
+    MaxPrice = math.huge,
+
     -- Sniper filter setup UI.
 -- OFF = one pet only.
 -- ON  = multiple pets get the same price/weight/mutation setup.
@@ -42181,8 +42186,39 @@ local MinWeightInput =
         {
             Text = "Min Weight",
             Placeholder = "Display KG or BaseWeight",
+            Default = "",
+            Numeric = true,
+            Finished = true,
+            ClearTextOnFocus = false,
         }
     )
+
+MinWeightInput:OnChanged(function(value)
+
+    local text =
+        tostring(value or "")
+            :gsub(",", "")
+            :gsub("%s+", "")
+
+    local number =
+        tonumber(text)
+
+    if not number
+    or number < 0 then
+
+        SniperFilterUIState.MinWeight =
+            0
+
+        MarkConfigDirty()
+
+        return
+    end
+
+    SniperFilterUIState.MinWeight =
+        number
+
+    MarkConfigDirty()
+end)
 
 local MaxPriceInput =
     SniperFilterBox:AddInput(
@@ -42190,8 +42226,40 @@ local MaxPriceInput =
         {
             Text = "Max Price",
             Placeholder = "empty = inf",
+            Default = "",
+            Numeric = true,
+            Finished = true,
+            ClearTextOnFocus = false,
         }
     )
+
+MaxPriceInput:OnChanged(function(value)
+
+    local text =
+        tostring(value or "")
+            :gsub(",", "")
+            :gsub("%s+", "")
+
+    local number =
+        tonumber(text)
+
+    if text == ""
+    or not number
+    or number <= 0 then
+
+        SniperFilterUIState.MaxPrice =
+            math.huge
+
+        MarkConfigDirty()
+
+        return
+    end
+
+    SniperFilterUIState.MaxPrice =
+        math.floor(number)
+
+    MarkConfigDirty()
+end)
 
 local PriorityInput =
     SniperFilterBox:AddInput(
@@ -44193,16 +44261,11 @@ end
 
 local function BuildPendingSniperFilterFromUI()
 
-    local pets =
-    GetSelectedSniperPetsFromDropdown(
-        ResolveActiveSniperPetDropdownValue()
-    )
-
-    if #pets <= 0 then
+    if type(SniperFilterUIState) ~= "table" then
 
         HolyNotify(
-            "No Pets Selected",
-            "Choose one or more pets before adding sniper filters.",
+            "Filter Error",
+            "Sniper filter UI state is missing.",
             "triangle-alert",
             4
         )
@@ -44210,137 +44273,152 @@ local function BuildPendingSniperFilterFromUI()
         return nil
     end
 
-    local saveTarget =
+    local selectedPets =
+        ResolveSelectedSniperFilterPets()
+
+    if type(selectedPets) ~= "table"
+    or #selectedPets <= 0 then
+
+        HolyNotify(
+            "No Pets Selected",
+            "Select at least one pet before adding a sniper filter.",
+            "triangle-alert",
+            4
+        )
+
+        return nil
+    end
+
+    local watchlistId =
         NormalizeWatchlistId(
             SniperFilterUIState.SaveTarget
         )
 
-    local filters =
-        GetSniperFilterSet(saveTarget)
+    local maxPrice =
+        SniperFilterUIState.MaxPrice
 
-    local minWeight =
-        tonumber(MinWeightInput.Value)
-        or 0
+    if maxPrice == nil then
+        maxPrice = math.huge
+    end
 
-    local maxPrice
-
-    if MaxPriceInput.Value == "" then
+    if maxPrice ~= math.huge then
 
         maxPrice =
-            math.huge
+            tonumber(maxPrice)
 
-    else
-
-        maxPrice =
-            tonumber(MaxPriceInput.Value)
-
-        if not maxPrice then
+        if not maxPrice
+        or maxPrice <= 0 then
 
             HolyNotify(
                 "Invalid Max Price",
-                "Max Price must be empty or a valid number.",
+                "Enter a valid max price, or leave it empty for infinite.",
                 "triangle-alert",
                 4
             )
 
             return nil
         end
+
+        maxPrice =
+            math.floor(maxPrice)
     end
 
-    local weightMode =
-        NormalizeWeightMode(
-            SniperFilterUIState.WeightMode
+    local minWeight =
+        tonumber(
+            SniperFilterUIState.MinWeight
+        )
+        or 0
+
+    minWeight =
+        math.max(
+            0,
+            minWeight
         )
 
-    local priority =
-        ClampSniperPriority(
-            PriorityInput.Value
-            or SniperFilterUIState.Priority
-            or 5
+    local mutationMode =
+        NormalizeSniperFilterMutation(
+            SniperFilterUIState.SelectedMutation
+            or "Off"
         )
 
-local mutationMode =
-    type(NormalizeSniperFilterMutation) == "function"
-    and NormalizeSniperFilterMutation(
-        SniperFilterUIState.SelectedMutation
-    )
-    or "Off"
-
-local selectedMutationMap =
-    {}
-
-if type(CloneSniperMutationMap) == "function" then
-
-    selectedMutationMap =
+    local selectedMutationMap =
         CloneSniperMutationMap(
             SniperFilterUIState.SelectedMutationSelection
         )
-end
 
-if mutationMode == "Specific Mutations"
-and type(SniperMutationMapIsEmpty) == "function"
-and SniperMutationMapIsEmpty(
-    selectedMutationMap
-) then
+    local specificMutations =
+        {}
 
-    HolyNotify(
-        "No Mutations Selected",
-        "Select at least one mutation, or turn Mutation Filter Off.",
-        "triangle-alert",
-        4
-    )
-
-    return nil
-end
-
-    local filter = {
-        MinWeight =
-            minWeight,
-
-        MaxPrice =
-            maxPrice,
-
-        WeightMode =
-            weightMode,
-
-        Priority =
-            priority,
-    }
-
-if type(CloneSniperMutationMap) == "function" then
-
-    filter.Mutation =
-        mutationMode
+    local excludedMutations =
+        {}
 
     if mutationMode == "Specific Mutations" then
 
-        filter.SpecificMutations =
+        if SniperMutationMapIsEmpty(selectedMutationMap) then
+
+            HolyNotify(
+                "No Mutations Selected",
+                "Select mutations or set Mutation Filter to Off.",
+                "triangle-alert",
+                4
+            )
+
+            return nil
+        end
+
+        specificMutations =
             CloneSniperMutationMap(
                 selectedMutationMap
             )
-
-        filter.ExcludedMutations =
-            {}
 
     elseif mutationMode == "Exclude Mutations" then
 
-        filter.SpecificMutations =
-            {}
-
-        filter.ExcludedMutations =
+        excludedMutations =
             CloneSniperMutationMap(
                 selectedMutationMap
             )
-
-    else
-
-        filter.SpecificMutations =
-            {}
-
-        filter.ExcludedMutations =
-            {}
     end
-end
+
+    local filter = {
+        MaxPrice =
+            maxPrice,
+
+        MinWeight =
+            minWeight,
+
+        WeightMode =
+            NormalizeWeightMode(
+                SniperFilterUIState.WeightMode
+            ),
+
+        Priority =
+            ClampSniperPriority(
+                SniperFilterUIState.Priority
+            ),
+
+        Mutation =
+            mutationMode,
+
+        SpecificMutations =
+            specificMutations,
+
+        ExcludedMutations =
+            excludedMutations,
+
+        Source =
+            "Manual",
+
+        SourceEgg =
+            "",
+
+        ImportedAt =
+            os.time(),
+    }
+
+    local filters =
+        GetSniperFilterSet(
+            watchlistId
+        )
 
     local addCount =
         0
@@ -44348,25 +44426,29 @@ end
     local updateCount =
         0
 
-    for _, pet in ipairs(pets) do
+    for _, petName in ipairs(selectedPets) do
 
-        if filters[pet] ~= nil then
-            updateCount = updateCount + 1
-        else
-            addCount = addCount + 1
+        petName =
+            tostring(petName or "")
+                :gsub("^%s+", "")
+                :gsub("%s+$", "")
+
+        if petName ~= "" then
+
+            if filters[petName] then
+                updateCount = updateCount + 1
+            else
+                addCount = addCount + 1
+            end
         end
     end
 
     return {
         Pets =
-            pets,
-
-        -- Compatibility fallback for old prints/debug paths.
-        Pet =
-            pets[1],
+            selectedPets,
 
         WatchlistId =
-            saveTarget,
+            watchlistId,
 
         Filter =
             filter,
