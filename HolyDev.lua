@@ -696,7 +696,7 @@ SniperFilterUIState = {
     Priority = 5,
 
     -- Manual sniper filter input state.
-    -- These must exist before BuildPendingSniperFilterFromUI reads them.
+    -- Keep these defined so confirmation/import code never reads nil.
     MinWeight = 0,
     MaxPrice = math.huge,
 
@@ -1985,44 +1985,15 @@ function CountAllSniperFilters()
 end
 
 --==================================================
--- WATCHLIST MANAGER / EGG IMPORT HELPERS
--- Egg Import writes normal sniper filters.
--- Scanner only checks SniperFilterSets.
+-- EGG IMPORT / WATCHLIST DISPLAY HELPERS
+-- Egg Import writes normal SniperFilterSets entries.
+-- The sniper scanner does not read EggFocusFilterSets anymore.
 --==================================================
 
-function NormalizeWatchlistSourceMode(value)
-
-    value =
-        tostring(value or "All Sources")
-
-    if value == "Manual Only"
-    or value == "Egg Imports Only"
-    or value == "All Sources" then
-        return value
-    end
-
-    return "All Sources"
-end
-
-function NormalizeWatchlistSortMode(value)
-
-    value =
-        tostring(value or "Priority")
-
-    if value == "Priority"
-    or value == "Name"
-    or value == "Max Price"
-    or value == "Recently Added" then
-        return value
-    end
-
-    return "Priority"
-end
-
-function FormatSniperCompactPrice(value)
+function FormatCompactWatchlistPrice(value)
 
     if value == math.huge then
-        return "∞"
+        return "inf"
     end
 
     local number =
@@ -2046,7 +2017,7 @@ function FormatSniperCompactPrice(value)
     return tostring(number)
 end
 
-function TruncateWatchlistText(text, maxLength)
+function ShortenWatchlistText(text, maxLength)
 
     text =
         tostring(text or "")
@@ -2059,10 +2030,10 @@ function TruncateWatchlistText(text, maxLength)
         return text
     end
 
-    return text:sub(1, maxLength - 1) .. "…"
+    return text:sub(1, maxLength - 3) .. "..."
 end
 
-function ResolveSniperFilterSource(filter)
+function ResolveWatchlistFilterSource(filter)
 
     if type(filter) ~= "table" then
         return "Manual", ""
@@ -2082,278 +2053,62 @@ function ResolveSniperFilterSource(filter)
     return "Manual", ""
 end
 
-function BuildWatchlistManagerEntries(watchlistId)
+function CloneEggImportSniperFilter(filter)
 
-    local filters =
-        GetSniperFilterSet(watchlistId)
-
-    local entries = {}
-
-    for petName, filter in pairs(filters) do
-
-        if type(filter) == "table" then
-
-            local source, sourceEgg =
-                ResolveSniperFilterSource(filter)
-
-            table.insert(entries, {
-                Pet = tostring(petName),
-                Filter = filter,
-
-                MaxPrice =
-                    filter.MaxPrice,
-
-                MinWeight =
-                    tonumber(filter.MinWeight)
-                    or 0,
-
-                WeightMode =
-                    NormalizeWeightMode(filter.WeightMode),
-
-                Priority =
-                    ResolveSniperFilterPriority(filter),
-
-                Mutation =
-                    FormatSniperMutationFilter(filter),
-
-                Source =
-                    source,
-
-                SourceEgg =
-                    sourceEgg,
-
-                ImportedAt =
-                    tonumber(filter.ImportedAt)
-                    or 0,
-            })
-        end
+    if type(filter) ~= "table" then
+        return nil
     end
 
-    return entries
-end
-
-function FilterWatchlistManagerEntries(entries)
-
-    entries =
-        type(entries) == "table"
-        and entries
-        or {}
-
-    local searchText =
-        tostring(
-            WatchlistUIState
-            and WatchlistUIState.SearchText
-            or ""
-        ):lower()
-
-    local sourceMode =
-        NormalizeWatchlistSourceMode(
-            WatchlistUIState
-            and WatchlistUIState.SourceMode
-            or "All Sources"
-        )
-
-    local output = {}
-
-    for _, entry in ipairs(entries) do
-
-        local include =
-            true
-
-        if sourceMode == "Manual Only"
-        and entry.Source == "Egg Import" then
-            include = false
-        end
-
-        if sourceMode == "Egg Imports Only"
-        and entry.Source ~= "Egg Import" then
-            include = false
-        end
-
-        if include
-        and searchText ~= "" then
-
-            local haystack =
-                (
-                    tostring(entry.Pet or "")
-                    .. " "
-                    .. tostring(entry.SourceEgg or "")
-                    .. " "
-                    .. tostring(entry.Mutation or "")
-                    .. " "
-                    .. tostring(entry.Source or "")
-                ):lower()
-
-            if not haystack:find(searchText, 1, true) then
-                include = false
-            end
-        end
-
-        if include then
-            table.insert(output, entry)
-        end
-    end
-
-    return output
-end
-
-function SortWatchlistManagerEntries(entries)
-
-    entries =
-        type(entries) == "table"
-        and entries
-        or {}
-
-    local sortMode =
-        NormalizeWatchlistSortMode(
-            WatchlistUIState
-            and WatchlistUIState.SortMode
-            or "Priority"
-        )
-
-    table.sort(entries, function(a, b)
-
-        if sortMode == "Name" then
-            return tostring(a.Pet or ""):lower()
-                < tostring(b.Pet or ""):lower()
-        end
-
-        if sortMode == "Max Price" then
-
-            local aPrice =
-                a.MaxPrice == math.huge
-                and math.huge
-                or tonumber(a.MaxPrice)
-                or 0
-
-            local bPrice =
-                b.MaxPrice == math.huge
-                and math.huge
-                or tonumber(b.MaxPrice)
-                or 0
-
-            if aPrice ~= bPrice then
-                return aPrice > bPrice
-            end
-
-            return tostring(a.Pet or ""):lower()
-                < tostring(b.Pet or ""):lower()
-        end
-
-        if sortMode == "Recently Added" then
-
-            local aTime =
-                tonumber(a.ImportedAt)
-                or 0
-
-            local bTime =
-                tonumber(b.ImportedAt)
-                or 0
-
-            if aTime ~= bTime then
-                return aTime > bTime
-            end
-
-            return tostring(a.Pet or ""):lower()
-                < tostring(b.Pet or ""):lower()
-        end
-
-        -- Default: Priority
-        if tonumber(a.Priority) ~= tonumber(b.Priority) then
-            return tonumber(a.Priority) > tonumber(b.Priority)
-        end
-
-        local aPrice =
-            a.MaxPrice == math.huge
+    return {
+        MaxPrice =
+            filter.MaxPrice == math.huge
             and math.huge
-            or tonumber(a.MaxPrice)
-            or 0
+            or tonumber(filter.MaxPrice)
+            or math.huge,
 
-        local bPrice =
-            b.MaxPrice == math.huge
-            and math.huge
-            or tonumber(b.MaxPrice)
-            or 0
+        MinWeight =
+            math.max(
+                0,
+                tonumber(filter.MinWeight)
+                or 0
+            ),
 
-        if aPrice ~= bPrice then
-            return aPrice > bPrice
-        end
+        WeightMode =
+            NormalizeWeightMode(
+                filter.WeightMode
+            ),
 
-        return tostring(a.Pet or ""):lower()
-            < tostring(b.Pet or ""):lower()
-    end)
+        Priority =
+            ClampSniperPriority(
+                filter.Priority
+            ),
 
-    return entries
-end
+        Mutation =
+            NormalizeSniperFilterMutation(
+                filter.Mutation
+                or "Off"
+            ),
 
-function FormatWatchlistManagerRow(entry, index)
+        SpecificMutations =
+            CloneSniperMutationMap(
+                filter.SpecificMutations
+            ),
 
-    if type(entry) ~= "table" then
-        return " "
-    end
+        ExcludedMutations =
+            CloneSniperMutationMap(
+                filter.ExcludedMutations
+            ),
 
-    local priorityText =
-        "P"
-        .. tostring(
-            ClampSniperPriority(entry.Priority)
-        )
+        Source =
+            tostring(filter.Source or "Egg Import"),
 
-    local nameText
+        SourceEgg =
+            tostring(filter.SourceEgg or ""),
 
-    if entry.Source == "Egg Import" then
-
-        local egg =
-            tostring(entry.SourceEgg or "Egg")
-
-        nameText =
-            "🥚 "
-            .. egg
-            .. " • "
-            .. tostring(entry.Pet or "")
-
-    else
-
-        local marker =
-            tonumber(index) <= 2
-            and "★ "
-            or "• "
-
-        nameText =
-            marker
-            .. tostring(entry.Pet or "")
-    end
-
-    nameText =
-        TruncateWatchlistText(
-            nameText,
-            29
-        )
-
-    local priceText =
-        "≤"
-        .. FormatSniperCompactPrice(entry.MaxPrice)
-
-    local weightText =
-        "≥"
-        .. FormatFilterWeight(
-            entry.MinWeight,
-            entry.WeightMode
-        )
-
-    local mutationText =
-        TruncateWatchlistText(
-            tostring(entry.Mutation or "Off"),
-            15
-        )
-
-    return string.format(
-        "%-3s  %-29s  %-8s  %-8s  %s",
-        priorityText,
-        nameText,
-        priceText,
-        weightText,
-        mutationText
-    )
+        ImportedAt =
+            tonumber(filter.ImportedAt)
+            or os.time(),
+    }
 end
 
 function BuildEggImportFilterFromState()
@@ -2396,15 +2151,15 @@ function BuildEggImportFilterFromState()
     end
 
     local filter = {
+        MaxPrice =
+            math.floor(maxPrice),
+
         MinWeight =
             math.max(
                 0,
                 tonumber(EggImportState.MinWeight)
                 or 0
             ),
-
-        MaxPrice =
-            math.floor(maxPrice),
 
         WeightMode =
             NormalizeWeightMode(
@@ -2438,48 +2193,35 @@ function BuildEggImportFilterFromState()
     if mutationMode == "Specific Mutations" then
 
         filter.SpecificMutations =
-            CloneSniperMutationMap(
-                selectedMap
-            )
+            CloneSniperMutationMap(selectedMap)
 
     elseif mutationMode == "Exclude Mutations" then
 
         filter.ExcludedMutations =
-            CloneSniperMutationMap(
-                selectedMap
-            )
+            CloneSniperMutationMap(selectedMap)
     end
 
     return filter, nil
 end
 
-function PreviewEggImport()
+function BuildEggImportPreviewText()
 
     if type(EggImportState) ~= "table" then
         return "Preview\nEgg Import state missing."
     end
 
     local eggName =
-        tostring(
-            EggImportState.EggName
-            or ""
-        )
+        tostring(EggImportState.EggName or "")
 
     if eggName == "" then
         return "Preview\nChoose an egg."
     end
 
     local pets =
-        {}
-
-    if type(GetEggFocusPets) == "function" then
-        pets =
-            GetEggFocusPets(eggName)
-    end
+        GetEggFocusPets(eggName)
 
     if type(pets) ~= "table" then
-        pets =
-            {}
+        pets = {}
     end
 
     local watchlistId =
@@ -2490,11 +2232,8 @@ function PreviewEggImport()
     local filters =
         GetSniperFilterSet(watchlistId)
 
-    local adds =
-        0
-
-    local updates =
-        0
+    local adds = 0
+    local updates = 0
 
     for _, petName in ipairs(pets) do
 
@@ -2533,85 +2272,26 @@ function PreviewEggImport()
     end
 
     local petPreview =
-        table.concat(
-            previewPets,
-            ", "
-        )
+        table.concat(previewPets, ", ")
 
     if petPreview == "" then
-        petPreview =
-            "None"
+        petPreview = "None"
     end
 
     return "Preview\n"
         .. tostring(eggName)
-        .. " • "
+        .. " | "
         .. tostring(#pets)
         .. " pets\n"
         .. "Target: W"
         .. tostring(watchlistId)
-        .. " • Add / Update normal watchlist filters\n"
+        .. " | normal watchlist filters\n"
         .. "Adds: "
         .. tostring(adds)
-        .. " • Updates: "
+        .. " | Updates: "
         .. tostring(updates)
         .. "\nPets: "
         .. petPreview
-end
-
-function CloneEggImportSniperFilter(filter)
-
-    if type(filter) ~= "table" then
-        return nil
-    end
-
-    return {
-        MaxPrice =
-            filter.MaxPrice == math.huge
-            and math.huge
-            or tonumber(filter.MaxPrice)
-            or math.huge,
-
-        MinWeight =
-            tonumber(filter.MinWeight)
-            or 0,
-
-        WeightMode =
-            NormalizeWeightMode(
-                filter.WeightMode
-            ),
-
-        Priority =
-            ClampSniperPriority(
-                filter.Priority
-            ),
-
-        Mutation =
-            NormalizeSniperFilterMutation(
-                filter.Mutation
-                or "Off"
-            ),
-
-        SpecificMutations =
-            CloneSniperMutationMap(
-                filter.SpecificMutations
-            ),
-
-        ExcludedMutations =
-            CloneSniperMutationMap(
-                filter.ExcludedMutations
-            ),
-
-        Source =
-            tostring(filter.Source or "Egg Import"),
-
-        SourceEgg =
-            tostring(filter.SourceEgg or ""),
-
-        ImportedAt =
-            tonumber(filter.ImportedAt)
-            or os.time(),
-    }
 end
 
 function ImportEggToWatchlist()
@@ -2637,7 +2317,8 @@ function ImportEggToWatchlist()
     local pets =
         GetEggFocusPets(eggName)
 
-    if #pets <= 0 then
+    if type(pets) ~= "table"
+    or #pets <= 0 then
 
         HolyNotify(
             "Egg Has No Pets",
@@ -2658,11 +2339,8 @@ function ImportEggToWatchlist()
     local filters =
         GetSniperFilterSet(watchlistId)
 
-    local adds =
-        0
-
-    local updates =
-        0
+    local adds = 0
+    local updates = 0
 
     for _, petName in ipairs(pets) do
 
@@ -2722,7 +2400,7 @@ function ImportEggToWatchlist()
     HolyNotify(
         "Egg Imported",
         tostring(eggName)
-            .. " → W"
+            .. " -> W"
             .. tostring(watchlistId)
             .. " | "
             .. tostring(adds)
@@ -2735,6 +2413,7 @@ function ImportEggToWatchlist()
 
     return true
 end
+
 --==================================================
 -- WATCHLIST EXPORT / IMPORT
 -- Portable watchlist transfer between devices.
@@ -2845,11 +2524,6 @@ function BuildWatchlistExportPayload()
                     NormalizeSniperFilterMutation(mutationMode),
                     SerializeSniperMutationMap(specificMutations),
                     SerializeSniperMutationMap(filter.ExcludedMutations),
-
-                    -- v3 metadata; old importers safely ignore extra fields.
-                    tostring(filter.Source or "Manual"),
-                    tostring(filter.SourceEgg or ""),
-                    tonumber(filter.ImportedAt) or 0,
                 })
             end
         end
@@ -3083,16 +2757,6 @@ function NormalizeImportedWatchlistFilter(filter)
 
         ExcludedMutations =
             excludedMutations,
-
-        Source =
-            tostring(filter.Source or "Manual"),
-
-        SourceEgg =
-            tostring(filter.SourceEgg or ""),
-
-        ImportedAt =
-            tonumber(filter.ImportedAt)
-            or os.time(),
     }
 end
 
@@ -3183,16 +2847,6 @@ function NormalizeImportedCompactWatchlistRow(row)
 
         ExcludedMutations =
             excludedMutations,
-
-        Source =
-            tostring(row[9] or "Manual"),
-
-        SourceEgg =
-            tostring(row[10] or ""),
-
-        ImportedAt =
-            tonumber(row[11])
-            or os.time(),
     }
 end
 
@@ -8019,8 +7673,8 @@ function ListingMatchesFilter(listing)
 
     --==================================================
     -- NORMAL PET WATCHLIST FILTERS ONLY
-    -- Egg Import now writes into SniperFilterSets.
-    -- No live Egg Focus loop here.
+    -- Egg Import writes egg pets into SniperFilterSets.
+    -- No live Egg Focus loop in the hot scan path.
     --==================================================
 
     for watchlistId = 1, 2 do
@@ -41249,28 +40903,19 @@ end
 
 WatchlistLabels = {}
 
--- Old dropdown refs kept nil for compatibility.
+-- Legacy refs kept nil so old save/config paths do not break.
 WatchlistDropdown = nil
 WatchlistSaveDropdown = nil
 
--- Watchlist manager refs/state.
-WatchlistSelectorInfoLabel = nil
+-- Watchlist manager display refs.
+WatchlistViewLabel = nil
 WatchlistInfoLabel = nil
-WatchlistSearchInput = nil
-WatchlistSortDropdown = nil
-WatchlistSourceDropdown = nil
-
-WatchlistUIState = {
-    SearchText = "",
-    SortMode = "Priority",
-    SourceMode = "All Sources",
-}
 
 -- Egg Focus is now Egg Import.
 EggFocusLabels = {}
 EggFocusInfoLabel = nil
-EggImportPreviewLabel = nil
 EggImportTargetLabel = nil
+EggImportPreviewLabel = nil
 RefreshEggFocus = nil
 
 EggImportState = {
@@ -41782,7 +41427,7 @@ SniperWatchlistBox =
 
 EggFocusBox =
     Tabs.Sniper:AddRightGroupbox(
-        "Egg Import",
+        "Egg Focus",
         "egg"
     )
 
@@ -42299,19 +41944,11 @@ MinWeightInput:OnChanged(function(value)
     local number =
         tonumber(text)
 
-    if not number
-    or number < 0 then
-
-        SniperFilterUIState.MinWeight =
-            0
-
-        MarkConfigDirty()
-
-        return
-    end
-
     SniperFilterUIState.MinWeight =
-        number
+        math.max(
+            0,
+            number or 0
+        )
 
     MarkConfigDirty()
 end)
@@ -42346,13 +41983,11 @@ MaxPriceInput:OnChanged(function(value)
         SniperFilterUIState.MaxPrice =
             math.huge
 
-        MarkConfigDirty()
+    else
 
-        return
+        SniperFilterUIState.MaxPrice =
+            math.floor(number)
     end
-
-    SniperFilterUIState.MaxPrice =
-        math.floor(number)
 
     MarkConfigDirty()
 end)
@@ -42545,20 +42180,20 @@ ApplySniperMutationSelectionToState()
 RefreshSniperMutationSelectionVisibility()
 
 --==================================================
--- WATCHLIST MANAGER HEADER
+-- WATCHLIST VIEW SELECTOR
 -- Both watchlists are active for sniping; this only changes display/manage.
 -- Dropdown replaced with direct W1/W2 buttons.
 --==================================================
 
-WatchlistSelectorInfoLabel =
+WatchlistViewLabel =
     SniperWatchlistBox:AddLabel(
-        "View: ● W1 Main / ○ W2 Alt",
+        "View: [W1 Main] / W2 Alt",
         false
     )
 
-local WatchlistSwitchButton =
+local WatchlistViewButton =
     SniperWatchlistBox:AddButton({
-        Text = "● W1 Main",
+        Text = "W1 Main",
 
         Tooltip = "View and manage Watchlist 1.",
 
@@ -42578,8 +42213,8 @@ local WatchlistSwitchButton =
         end,
     })
 
-WatchlistSwitchButton:AddButton({
-    Text = "○ W2 Alt",
+WatchlistViewButton:AddButton({
+    Text = "W2 Alt",
 
     Tooltip = "View and manage Watchlist 2.",
 
@@ -42599,101 +42234,13 @@ WatchlistSwitchButton:AddButton({
     end,
 })
 
-WatchlistSearchInput =
-    SniperWatchlistBox:AddInput(
-        "WatchlistManagerSearch",
-        {
-            Text = "Search",
-            Tooltip = "Search by pet, egg name, mutation, or source.",
-            Placeholder = "Search pet / egg / mutation...",
-            Numeric = false,
-            Finished = false,
-            ClearTextOnFocus = false,
-        }
-    )
-
-WatchlistSearchInput:OnChanged(function(value)
-
-    WatchlistUIState.SearchText =
-        tostring(value or "")
-
-    WatchlistPage =
-        1
-
-    if type(RefreshWatchlist) == "function" then
-        RefreshWatchlist()
-    end
-end)
-
-WatchlistSortDropdown =
-    SniperWatchlistBox:AddDropdown(
-        "WatchlistManagerSort",
-        {
-            Text = "Sort",
-            Values = {
-                "Priority",
-                "Name",
-                "Max Price",
-                "Recently Added",
-            },
-            Default = "Priority",
-            Searchable = false,
-        }
-    )
-
-WatchlistSortDropdown:OnChanged(function(value)
-
-    WatchlistUIState.SortMode =
-        NormalizeWatchlistSortMode(value)
-
-    WatchlistPage =
-        1
-
-    if type(RefreshWatchlist) == "function" then
-        RefreshWatchlist()
-    end
-
-    MarkConfigDirty()
-end)
-
-WatchlistSourceDropdown =
-    SniperWatchlistBox:AddDropdown(
-        "WatchlistManagerSource",
-        {
-            Text = "Show",
-            Values = {
-                "All Sources",
-                "Manual Only",
-                "Egg Imports Only",
-            },
-            Default = "All Sources",
-            Searchable = false,
-        }
-    )
-
-WatchlistSourceDropdown:OnChanged(function(value)
-
-    WatchlistUIState.SourceMode =
-        NormalizeWatchlistSourceMode(value)
-
-    WatchlistPage =
-        1
-
-    if type(RefreshWatchlist) == "function" then
-        RefreshWatchlist()
-    end
-
-    MarkConfigDirty()
-end)
-
 --==================================================
 -- WATCHLIST LABEL POOL
--- Clean compact rows with aligned columns.
 --==================================================
 
 WatchlistInfoLabel =
     SniperWatchlistBox:AddLabel(
-        "W1 • 0 filters • Page 1/1",
+        "Watchlist 1 • 0 filters • Page 1/1",
         false
     )
 
@@ -42737,19 +42284,15 @@ PageButton:AddButton({
 
     Func = function()
 
-        local entries =
-            SortWatchlistManagerEntries(
-                FilterWatchlistManagerEntries(
-                    BuildWatchlistManagerEntries(
-                        SniperFilterUIState.ViewTarget
-                    )
-                )
+        local total =
+            CountSniperFilterSet(
+                SniperFilterUIState.ViewTarget
             )
 
         local maxPages =
             math.max(
                 1,
-                math.ceil(#entries / ITEMS_PER_PAGE)
+                math.ceil(total / ITEMS_PER_PAGE)
             )
 
         if WatchlistPage < maxPages then
@@ -43268,13 +42811,13 @@ local EggFocusNames =
 
 EggImportTargetLabel =
     EggFocusBox:AddLabel(
-        "Import To: ● W1 Main / ○ W2 Alt",
+        "Import To: [W1 Main] / W2 Alt",
         false
     )
 
 local EggImportTargetButton =
     EggFocusBox:AddButton({
-        Text = "● W1 Main",
+        Text = "W1 Main",
 
         Tooltip = "Import egg pets into Watchlist 1.",
 
@@ -43292,7 +42835,7 @@ local EggImportTargetButton =
     })
 
 EggImportTargetButton:AddButton({
-    Text = "○ W2 Alt",
+    Text = "W2 Alt",
 
     Tooltip = "Import egg pets into Watchlist 2.",
 
@@ -43301,12 +42844,11 @@ EggImportTargetButton:AddButton({
         EggImportState.SaveTarget =
             2
 
-            if type(RefreshEggFocus) == "function" then
-                RefreshEggFocus()
-            end
+        if type(RefreshEggFocus) == "function" then
+            RefreshEggFocus()
+        end
 
-            MarkConfigDirty()
-        end,
+        MarkConfigDirty()
     end,
 })
 
@@ -43340,17 +42882,19 @@ local EggFocusMaxPriceInput =
             Default = "10",
             Numeric = true,
             Finished = true,
+            ClearTextOnFocus = false,
         }
     )
 
 EggFocusMaxPriceInput:OnChanged(function(value)
 
+    local text =
+        tostring(value or "")
+            :gsub(",", "")
+            :gsub("%s+", "")
+
     EggImportState.MaxPrice =
-        tonumber(
-            tostring(value or "")
-                :gsub(",", "")
-                :gsub("%s+", "")
-        )
+        tonumber(text)
         or 0
 
     if type(RefreshEggFocus) == "function" then
@@ -43367,18 +42911,23 @@ local EggImportMinWeightInput =
             Default = "0",
             Numeric = true,
             Finished = true,
+            ClearTextOnFocus = false,
         }
     )
 
 EggImportMinWeightInput:OnChanged(function(value)
 
+    local text =
+        tostring(value or "")
+            :gsub(",", "")
+            :gsub("%s+", "")
+
     EggImportState.MinWeight =
-        tonumber(
-            tostring(value or "")
-                :gsub(",", "")
-                :gsub("%s+", "")
+        math.max(
+            0,
+            tonumber(text)
+            or 0
         )
-        or 0
 
     if type(RefreshEggFocus) == "function" then
         RefreshEggFocus()
@@ -43420,6 +42969,7 @@ local EggImportPriorityInput =
             Default = "5",
             Numeric = true,
             Finished = true,
+            ClearTextOnFocus = false,
         }
     )
 
@@ -43440,7 +42990,7 @@ local EggImportMutationDropdown =
         "EggImportMutationMode",
         {
             Text = "Mutation",
-            Tooltip = "Off = no mutation rule. Specific/Exclude use the Select Mutations box.",
+            Tooltip = "Off = no mutation rule. Specific/Exclude use Select Mutations.",
             Values = SniperMutationModeList,
             Default = "Off",
             Searchable = false,
@@ -43503,7 +43053,7 @@ EggFocusBox:AddButton({
 })
 
 EggFocusBox:AddButton({
-    Text = "➕ Add Egg Pets to Watchlist",
+    Text = "Add Egg Pets to Watchlist",
     Tooltip = "Adds or updates every pet from this egg as normal sniper filters.",
 
     Func = function()
@@ -43896,16 +43446,24 @@ RefreshEggFocus = function()
 
         EggImportTargetLabel:SetText(
             target == 1
-            and "Import To: ● W1 Main / ○ W2 Alt"
-            or "Import To: ○ W1 Main / ● W2 Alt"
+            and "Import To: [W1 Main] / W2 Alt"
+            or "Import To: W1 Main / [W2 Alt]"
         )
     end
 
     if EggImportPreviewLabel then
 
         EggImportPreviewLabel:SetText(
-            PreviewEggImport()
+            BuildEggImportPreviewText()
         )
+    end
+
+    for i = 1, #EggFocusLabels do
+        EggFocusLabels[i]:SetVisible(false)
+    end
+
+    if EggFocusInfoLabel then
+        EggFocusInfoLabel:SetText("Egg Import")
     end
 end
 
@@ -43924,23 +43482,61 @@ RefreshWatchlist = function()
             SniperFilterUIState.ViewTarget
         )
 
-    local allEntries =
-        BuildWatchlistManagerEntries(
-            viewTarget
-        )
+    local filters =
+        GetSniperFilterSet(viewTarget)
 
-    local entries =
-        SortWatchlistManagerEntries(
-            FilterWatchlistManagerEntries(
-                allEntries
-            )
-        )
+    local entries = {}
+
+    for pet, data in pairs(filters) do
+
+        if type(data) == "table" then
+
+            local source, sourceEgg =
+                ResolveWatchlistFilterSource(data)
+
+            table.insert(entries, {
+                Pet = tostring(pet),
+                Filter = data,
+                MaxPrice = data.MaxPrice,
+                MinWeight = tonumber(data.MinWeight) or 0,
+                WeightMode = NormalizeWeightMode(data.WeightMode),
+                Priority = ResolveSniperFilterPriority(data),
+                Mutation = FormatSniperMutationFilter(data),
+                Source = source,
+                SourceEgg = sourceEgg,
+                ImportedAt = tonumber(data.ImportedAt) or 0,
+            })
+        end
+    end
+
+    table.sort(entries, function(a, b)
+
+        if tonumber(a.Priority) ~= tonumber(b.Priority) then
+            return tonumber(a.Priority) > tonumber(b.Priority)
+        end
+
+        local aPrice =
+            a.MaxPrice == math.huge
+            and math.huge
+            or tonumber(a.MaxPrice)
+            or 0
+
+        local bPrice =
+            b.MaxPrice == math.huge
+            and math.huge
+            or tonumber(b.MaxPrice)
+            or 0
+
+        if aPrice ~= bPrice then
+            return aPrice > bPrice
+        end
+
+        return tostring(a.Pet):lower()
+            < tostring(b.Pet):lower()
+    end)
 
     local total =
         #entries
-
-    local allTotal =
-        #allEntries
 
     local maxPages =
         math.max(
@@ -43955,54 +43551,23 @@ RefreshWatchlist = function()
             maxPages
         )
 
-    if WatchlistSelectorInfoLabel then
+    if WatchlistViewLabel then
 
-        WatchlistSelectorInfoLabel:SetText(
+        WatchlistViewLabel:SetText(
             viewTarget == 1
-            and "View: ● W1 Main / ○ W2 Alt"
-            or "View: ○ W1 Main / ● W2 Alt"
+            and "View: [W1 Main] / W2 Alt"
+            or "View: W1 Main / [W2 Alt]"
         )
     end
 
     if WatchlistInfoLabel then
 
-        local sourceMode =
-            NormalizeWatchlistSourceMode(
-                WatchlistUIState.SourceMode
-            )
-
-        local searchText =
-            tostring(
-                WatchlistUIState.SearchText
-                or ""
-            )
-
-        local prefix =
-            "W"
-            .. tostring(viewTarget)
-            .. " • "
-
-        if searchText ~= ""
-        or sourceMode ~= "All Sources" then
-
-            prefix =
-                prefix
-                .. "Showing "
-                .. tostring(total)
-                .. " / "
-                .. tostring(allTotal)
-
-        else
-
-            prefix =
-                prefix
-                .. tostring(total)
-                .. " filters"
-        end
-
         WatchlistInfoLabel:SetText(
-            prefix
-                .. " • Page "
+            "W"
+                .. tostring(viewTarget)
+                .. " • "
+                .. tostring(total)
+                .. " filters • Page "
                 .. tostring(WatchlistPage)
                 .. "/"
                 .. tostring(maxPages)
@@ -44025,12 +43590,31 @@ RefreshWatchlist = function()
 
         if entry then
 
-            label:SetText(
-                FormatWatchlistManagerRow(
-                    entry,
-                    startIndex + i
-                )
-            )
+            local nameText =
+                tostring(entry.Pet)
+
+            if entry.Source == "Egg Import" then
+
+                nameText =
+                    "[Egg] "
+                    .. tostring(entry.SourceEgg ~= "" and entry.SourceEgg or "Egg")
+                    .. " - "
+                    .. tostring(entry.Pet)
+            end
+
+            local row =
+                "P"
+                .. tostring(ClampSniperPriority(entry.Priority))
+                .. "  "
+                .. ShortenWatchlistText(nameText, 28)
+                .. "  <= "
+                .. FormatCompactWatchlistPrice(entry.MaxPrice)
+                .. "  >= "
+                .. FormatFilterWeight(entry.MinWeight, entry.WeightMode)
+                .. "  "
+                .. ShortenWatchlistText(entry.Mutation, 14)
+
+            label:SetText(row)
 
             label:SetVisible(true)
 
@@ -44040,6 +43624,7 @@ RefreshWatchlist = function()
         end
     end
 end
+
 --==================================================
 -- ADD / UPDATE FILTER CONFIRMATION
 -- The main button only builds a pending filter.
@@ -44199,23 +43784,10 @@ local function SaveConfirmedSniperFilter(pending)
 
         if pet ~= "" then
 
-            local savedFilter =
+            filters[pet] =
                 ClonePendingSniperFilter(
                     pending.Filter
                 )
-
-            savedFilter.Source =
-                "Manual"
-
-            savedFilter.SourceEgg =
-                nil
-
-            savedFilter.ImportedAt =
-                tonumber(savedFilter.ImportedAt)
-                or os.time()
-
-            filters[pet] =
-                savedFilter
 
             savedCount = savedCount + 1
         end
@@ -44357,27 +43929,17 @@ end
 
 local function BuildPendingSniperFilterFromUI()
 
-    if type(SniperFilterUIState) ~= "table" then
-
-        HolyNotify(
-            "Filter Error",
-            "Sniper filter UI state is missing.",
-            "triangle-alert",
-            4
+    local pets =
+        GetSelectedSniperPetsFromDropdown(
+            ResolveActiveSniperPetDropdownValue()
         )
 
-        return nil
-    end
-
-    local selectedPets =
-        ResolveSelectedSniperFilterPets()
-
-    if type(selectedPets) ~= "table"
-    or #selectedPets <= 0 then
+    if type(pets) ~= "table"
+    or #pets <= 0 then
 
         HolyNotify(
             "No Pets Selected",
-            "Select at least one pet before adding a sniper filter.",
+            "Choose one or more pets before adding sniper filters.",
             "triangle-alert",
             4
         )
@@ -44385,9 +43947,19 @@ local function BuildPendingSniperFilterFromUI()
         return nil
     end
 
-    local watchlistId =
+    local saveTarget =
         NormalizeWatchlistId(
             SniperFilterUIState.SaveTarget
+        )
+
+    local filters =
+        GetSniperFilterSet(saveTarget)
+
+    local minWeight =
+        math.max(
+            0,
+            tonumber(SniperFilterUIState.MinWeight)
+            or 0
         )
 
     local maxPrice =
@@ -44407,7 +43979,7 @@ local function BuildPendingSniperFilterFromUI()
 
             HolyNotify(
                 "Invalid Max Price",
-                "Enter a valid max price, or leave it empty for infinite.",
+                "Max Price must be empty or a valid number.",
                 "triangle-alert",
                 4
             )
@@ -44419,16 +43991,15 @@ local function BuildPendingSniperFilterFromUI()
             math.floor(maxPrice)
     end
 
-    local minWeight =
-        tonumber(
-            SniperFilterUIState.MinWeight
+    local weightMode =
+        NormalizeWeightMode(
+            SniperFilterUIState.WeightMode
         )
-        or 0
 
-    minWeight =
-        math.max(
-            0,
-            minWeight
+    local priority =
+        ClampSniperPriority(
+            SniperFilterUIState.Priority
+            or 5
         )
 
     local mutationMode =
@@ -44442,64 +44013,40 @@ local function BuildPendingSniperFilterFromUI()
             SniperFilterUIState.SelectedMutationSelection
         )
 
-    local specificMutations =
-        {}
+    if mutationMode == "Specific Mutations"
+    and SniperMutationMapIsEmpty(selectedMutationMap) then
 
-    local excludedMutations =
-        {}
+        HolyNotify(
+            "No Mutations Selected",
+            "Select at least one mutation, or turn Mutation Filter Off.",
+            "triangle-alert",
+            4
+        )
 
-    if mutationMode == "Specific Mutations" then
-
-        if SniperMutationMapIsEmpty(selectedMutationMap) then
-
-            HolyNotify(
-                "No Mutations Selected",
-                "Select mutations or set Mutation Filter to Off.",
-                "triangle-alert",
-                4
-            )
-
-            return nil
-        end
-
-        specificMutations =
-            CloneSniperMutationMap(
-                selectedMutationMap
-            )
-
-    elseif mutationMode == "Exclude Mutations" then
-
-        excludedMutations =
-            CloneSniperMutationMap(
-                selectedMutationMap
-            )
+        return nil
     end
 
     local filter = {
-        MaxPrice =
-            maxPrice,
-
         MinWeight =
             minWeight,
 
+        MaxPrice =
+            maxPrice,
+
         WeightMode =
-            NormalizeWeightMode(
-                SniperFilterUIState.WeightMode
-            ),
+            weightMode,
 
         Priority =
-            ClampSniperPriority(
-                SniperFilterUIState.Priority
-            ),
+            priority,
 
         Mutation =
             mutationMode,
 
         SpecificMutations =
-            specificMutations,
+            {},
 
         ExcludedMutations =
-            excludedMutations,
+            {},
 
         Source =
             "Manual",
@@ -44511,27 +44058,34 @@ local function BuildPendingSniperFilterFromUI()
             os.time(),
     }
 
-    local filters =
-        GetSniperFilterSet(
-            watchlistId
-        )
+    if mutationMode == "Specific Mutations" then
 
-    local addCount =
-        0
+        filter.SpecificMutations =
+            CloneSniperMutationMap(
+                selectedMutationMap
+            )
 
-    local updateCount =
-        0
+    elseif mutationMode == "Exclude Mutations" then
 
-    for _, petName in ipairs(selectedPets) do
+        filter.ExcludedMutations =
+            CloneSniperMutationMap(
+                selectedMutationMap
+            )
+    end
 
-        petName =
-            tostring(petName or "")
+    local addCount = 0
+    local updateCount = 0
+
+    for _, pet in ipairs(pets) do
+
+        pet =
+            tostring(pet or "")
                 :gsub("^%s+", "")
                 :gsub("%s+$", "")
 
-        if petName ~= "" then
+        if pet ~= "" then
 
-            if filters[petName] then
+            if filters[pet] ~= nil then
                 updateCount = updateCount + 1
             else
                 addCount = addCount + 1
@@ -44541,10 +44095,13 @@ local function BuildPendingSniperFilterFromUI()
 
     return {
         Pets =
-            selectedPets,
+            pets,
+
+        Pet =
+            pets[1],
 
         WatchlistId =
-            watchlistId,
+            saveTarget,
 
         Filter =
             filter,
@@ -54341,8 +53898,4 @@ or UIState.PendingAutoClose == true then
     end)
 end
 
-print("[HOLY BUILD CHECK] reached bottom before MainLoop")
-
 task.spawn(MainLoop)
-
-print("[HOLY BUILD CHECK] script fully parsed")
