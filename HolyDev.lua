@@ -2033,6 +2033,169 @@ function ShortenWatchlistText(text, maxLength)
     return text:sub(1, maxLength - 3) .. "..."
 end
 
+function FormatWatchlistRulePrice(value)
+
+    if value == math.huge then
+        return "No limit"
+    end
+
+    local compact =
+        FormatCompactWatchlistPrice(value)
+
+    if compact == "inf" then
+        return "No limit"
+    end
+
+    return "Max "
+        .. tostring(compact)
+end
+
+function FormatWatchlistRuleWeight(value, weightMode)
+
+    local number =
+        tonumber(value)
+        or 0
+
+    if number <= 0 then
+        return nil
+    end
+
+    weightMode =
+        NormalizeWeightMode(weightMode)
+
+    if weightMode == "BaseWeight" then
+        return "Min "
+            .. tostring(number)
+            .. "bw"
+    end
+
+    return "Min "
+        .. tostring(number)
+        .. "kg"
+end
+
+function FormatWatchlistRuleMutation(mutationText)
+
+    mutationText =
+        tostring(mutationText or "Off")
+
+    if mutationText == ""
+    or mutationText == "Off" then
+        return nil
+    end
+
+    mutationText =
+        mutationText:gsub("Specific:%s*", "")
+        mutationText:gsub("Exclude:%s*", "Exclude ")
+
+    return mutationText
+end
+
+function BuildCompactWatchlistRow(entry, absoluteIndex)
+
+    if type(entry) ~= "table" then
+        return " "
+    end
+
+    local priority =
+        ClampSniperPriority(
+            entry.Priority
+        )
+
+    local petName =
+        tostring(entry.Pet or "Unknown")
+
+    local nameText =
+        petName
+
+    if entry.Source == "Egg Import" then
+
+        local eggName =
+            tostring(entry.SourceEgg or "")
+
+        if eggName == "" then
+            eggName =
+                "Egg"
+        end
+
+        nameText =
+            "[Egg] "
+            .. eggName
+            .. " -> "
+            .. petName
+
+    else
+
+        local marker =
+            absoluteIndex <= 3
+            and "* "
+            or "- "
+
+        nameText =
+            marker
+            .. petName
+    end
+
+    nameText =
+        ShortenWatchlistText(
+            nameText,
+            34
+        )
+
+    local parts = {}
+
+    table.insert(
+        parts,
+        nameText
+    )
+
+    table.insert(
+        parts,
+        FormatWatchlistRulePrice(
+            entry.MaxPrice
+        )
+    )
+
+    local weightText =
+        FormatWatchlistRuleWeight(
+            entry.MinWeight,
+            entry.WeightMode
+        )
+
+    if weightText then
+        table.insert(
+            parts,
+            weightText
+        )
+    end
+
+    local mutationText =
+        FormatWatchlistRuleMutation(
+            entry.Mutation
+        )
+
+    if mutationText then
+        table.insert(
+            parts,
+            ShortenWatchlistText(
+                mutationText,
+                18
+            )
+        )
+    end
+
+    table.insert(
+        parts,
+        "P"
+            .. tostring(priority)
+    )
+
+    return table.concat(
+        parts,
+        "  |  "
+    )
+end
+
 function ResolveWatchlistFilterSource(filter)
 
     if type(filter) ~= "table" then
@@ -43553,28 +43716,30 @@ RefreshWatchlist = function()
 
     if WatchlistViewLabel then
 
-        WatchlistViewLabel:SetText(
-            viewTarget == 1
-            and "View: [W1 Main] / W2 Alt"
-            or "View: W1 Main / [W2 Alt]"
-        )
-    end
+    WatchlistViewLabel:SetText(
+        viewTarget == 1
+        and "Viewing: W1 Main"
+        or "Viewing: W2 Alt"
+    )
+end
 
     if WatchlistInfoLabel then
 
-        WatchlistInfoLabel:SetText(
-            "W"
-                .. tostring(viewTarget)
-                .. " • "
-                .. tostring(total)
-                .. " filters • Page "
-                .. tostring(WatchlistPage)
-                .. "/"
-                .. tostring(maxPages)
-                .. " • Total active: "
-                .. tostring(CountAllSniperFilters())
-        )
-    end
+    local watchlistName =
+        viewTarget == 1
+        and "W1 Main"
+        or "W2 Alt"
+
+    WatchlistInfoLabel:SetText(
+        watchlistName
+            .. " • "
+            .. tostring(total)
+            .. " filters • Page "
+            .. tostring(WatchlistPage)
+            .. "/"
+            .. tostring(maxPages)
+    )
+end
 
     local startIndex =
         (WatchlistPage - 1)
@@ -43588,33 +43753,14 @@ RefreshWatchlist = function()
         local entry =
             entries[startIndex + i]
 
-        if entry then
+                if entry then
 
-            local nameText =
-                tostring(entry.Pet)
-
-            if entry.Source == "Egg Import" then
-
-                nameText =
-                    "[Egg] "
-                    .. tostring(entry.SourceEgg ~= "" and entry.SourceEgg or "Egg")
-                    .. " - "
-                    .. tostring(entry.Pet)
-            end
-
-            local row =
-                "P"
-                .. tostring(ClampSniperPriority(entry.Priority))
-                .. "  "
-                .. ShortenWatchlistText(nameText, 28)
-                .. "  <= "
-                .. FormatCompactWatchlistPrice(entry.MaxPrice)
-                .. "  >= "
-                .. FormatFilterWeight(entry.MinWeight, entry.WeightMode)
-                .. "  "
-                .. ShortenWatchlistText(entry.Mutation, 14)
-
-            label:SetText(row)
+            label:SetText(
+                BuildCompactWatchlistRow(
+                    entry,
+                    startIndex + i
+                )
+            )
 
             label:SetVisible(true)
 
