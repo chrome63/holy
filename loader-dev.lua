@@ -42,7 +42,7 @@ local HOLY_LOADER_KEY_STATE = {
 
     -- Paste your NEW auth Google Apps Script Web App URL here.
     -- This is NOT the usage tracker URL.
-    AuthURL = "PASTE_YOUR_AUTH_WEB_APP_URL_HERE",
+    AuthURL = "https://script.google.com/macros/s/AKfycbwDyMHRqXbLhE0Qqop22PNDa93uDtbGvpbhRlIfsyjUrTqibLK0mR_Fi9huzefykrCu/exec",
 
     -- Must match the secret inside your auth Apps Script.
     Secret = "HOLY-AUTH-BEN-CHANGE-THIS",
