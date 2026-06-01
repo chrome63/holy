@@ -50421,6 +50421,8 @@ end
 
 AgeBreakerTargetDropdown = nil
 AgeBreakerSacrificeDropdown = nil
+AgeBreakerAutoTradeWorldToggleRef = nil
+AgeBreakerAutoTradeWorldToggleSyncing = false
 
 AgeBreakerQueuePoolLabel = nil
 
@@ -50620,6 +50622,33 @@ function OpenAgeBreakerSubmitConfirmDialog()
         )
 end
 
+function SetAgeBreakerAutoTradeWorldToggleVisual(value)
+
+    if not AgeBreakerAutoTradeWorldToggleRef
+    or type(AgeBreakerAutoTradeWorldToggleRef.SetValue) ~= "function" then
+        return false
+    end
+
+    local desired =
+        value == true
+
+    if AgeBreakerAutoTradeWorldToggleRef.Value == desired then
+        return true
+    end
+
+    AgeBreakerAutoTradeWorldToggleSyncing =
+        true
+
+    AgeBreakerAutoTradeWorldToggleRef:SetValue(
+        desired
+    )
+
+    AgeBreakerAutoTradeWorldToggleSyncing =
+        false
+
+    return true
+end
+
 function BuildAgeBreakerTab()
 
     if not Tabs
@@ -50803,41 +50832,84 @@ and type(AgeBreakerAutoStep) == "function" then
 end
     end)
 
-        SetupBox:AddToggle(
-        "AgeBreakerAutoTradeWorldWhenMachineStarts",
+AgeBreakerAutoTradeWorldToggleRef =
+    SetupBox:AddToggle(
+        "AgeBreakerTradeWorldOnStartStandalone",
         {
             Text = "🌐 Auto Teleport to Trade World",
             Tooltip = "Automatically teleport to the Trade World when the Age Breaker machine starts.",
             Default = AgeBreakerState.AutoTeleportToTradeWorldOnMachineStart == true,
         }
-    ):OnChanged(function(value)
+    )
 
-        AgeBreakerState.AutoTeleportToTradeWorldOnMachineStart =
-            value == true
+AgeBreakerAutoTradeWorldToggleRef:OnChanged(function(value)
 
-        SaveAgeBreakerSettingChanged(
-            "auto trade world on machine start changed"
-        )
+    -- Ignore programmatic visual syncs.
+    if AgeBreakerAutoTradeWorldToggleSyncing == true then
+        return
+    end
 
-        RefreshAgeBreakerUI()
+    -- Ignore Obsidian/SaveManager hydration trying to restore an old false.
+    -- Age Breaker uses its own standalone save file for this setting.
+    if ConfigState
+    and ConfigState.IsHydrating == true then
 
-        -- If user enables this while already in Normal World and the machine is running,
-        -- react immediately instead of waiting for the next worker tick.
-        if AgeBreakerState.AutoTeleportToTradeWorldOnMachineStart == true
-        and AgeBreakerState.Enabled == true
-        and type(RequestAgeBreakerTradeWorldTeleportAfterMachineStart) == "function" then
+        task.defer(function()
 
-            task.defer(function()
+            task.wait(0.25)
+
+            SetAgeBreakerAutoTradeWorldToggleVisual(
+                AgeBreakerState.AutoTeleportToTradeWorldOnMachineStart == true
+            )
+        end)
+
+        return
+    end
+
+    AgeBreakerState.AutoTeleportToTradeWorldOnMachineStart =
+        value == true
+
+    SaveAgeBreakerSettingChanged(
+        "auto trade world on machine start changed"
+    )
+
+    RefreshAgeBreakerUI()
+
+    -- If user enables this while already in Normal World and the machine is running,
+    -- react immediately instead of waiting for the next worker tick.
+    if AgeBreakerState.AutoTeleportToTradeWorldOnMachineStart == true
+    and AgeBreakerState.Enabled == true
+    and type(RequestAgeBreakerTradeWorldTeleportAfterMachineStart) == "function" then
+
+        task.defer(function()
+
+            if not IsCurrentRun() then
+                return
+            end
+
+            if type(RefreshAgeBreakerMachineState) == "function" then
                 pcall(function()
                     RefreshAgeBreakerMachineState()
-
-                    RequestAgeBreakerTradeWorldTeleportAfterMachineStart(
-                        "Machine is already running."
-                    )
                 end)
+            end
+
+            pcall(function()
+                RequestAgeBreakerTradeWorldTeleportAfterMachineStart(
+                    "Machine is already running."
+                )
             end)
-        end
-    end)
+        end)
+    end
+end)
+
+task.defer(function()
+
+    task.wait(0.25)
+
+    SetAgeBreakerAutoTradeWorldToggleVisual(
+        AgeBreakerState.AutoTeleportToTradeWorldOnMachineStart == true
+    )
+end)
 
     SetupBox:AddDivider({
         Text = "Targets",
