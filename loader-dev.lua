@@ -28,7 +28,7 @@ local LocalPlayer =
 --==================================================
 
 local MAIN_URL =
-    "https://raw.githubusercontent.com/bencapalot041/holy/main/HolyV3.lua?v="
+    "https://raw.githubusercontent.com/bencapalot041/holy/main/HolyDev.lua?v="
     .. tostring(os.time())
 
 --==================================================
