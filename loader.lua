@@ -1,6 +1,7 @@
 --==================================================
 -- HOLY LOADER
 -- Key gate runs before HolyV3.lua is fetched/executed.
+-- Includes Google Sheets usage tracker.
 --==================================================
 
 local HttpService =
@@ -46,6 +47,10 @@ local HOLY_LOADER_KEY_STATE = {
 
     Accepted = false,
     Owner = "Unknown",
+
+    -- The exact key used by the player.
+    -- Used only for the usage tracker.
+    CurrentKey = "",
 }
 
 local function NormalizeHolyAccessKey(value)
@@ -137,6 +142,9 @@ local function ValidateHolyAccessKey(key)
 
     HOLY_LOADER_KEY_STATE.Owner =
         tostring(owner)
+
+    HOLY_LOADER_KEY_STATE.CurrentKey =
+        key
 
     SaveHolyAccessKey(key)
 
@@ -633,10 +641,173 @@ root.HOLY_LOADER_AUTHORIZED =
 root.HOLY_LOADER_OWNER =
     HOLY_LOADER_KEY_STATE.Owner
 
+root.HOLY_LOADER_KEY =
+    HOLY_LOADER_KEY_STATE.CurrentKey
+
 print(
     "[HOLY LOADER] Access granted:",
     tostring(HOLY_LOADER_KEY_STATE.Owner)
 )
+
+--==================================================
+-- HOLY USAGE TRACKER
+-- Tracks validated loader users through Google Apps Script.
+--==================================================
+
+local HOLY_USAGE_TRACKER = {
+    Enabled = true,
+
+    -- IMPORTANT:
+    -- Replace this with your Google Apps Script Web App URL.
+    URL = "https://script.google.com/macros/s/AKfycbz_Vz9IPWZ0xJxn-LIPeyWEzT896aDhEE4XxWcGXKFRBFnIrM59JleiV41BZ0kL8EOp/exec",
+
+    -- Must match the SECRET in Google Apps Script.
+    Secret = "HOLY-TRACK-BEN-94582",
+
+    Version = "v3.4.5",
+
+    SessionId =
+        tostring(game.PlaceId)
+        .. "_"
+        .. tostring(game.JobId)
+        .. "_"
+        .. tostring(LocalPlayer.UserId)
+        .. "_"
+        .. tostring(os.time())
+        .. "_"
+        .. tostring(math.random(100000, 999999)),
+
+    HeartbeatInterval = 45,
+}
+
+local function ResolveHolyRequestFunction()
+
+    return
+        (
+            syn
+            and syn.request
+        )
+        or http_request
+        or request
+end
+
+local function SendHolyUsageHeartbeat(action)
+
+    if HOLY_USAGE_TRACKER.Enabled ~= true then
+        return false
+    end
+
+    local url =
+        tostring(HOLY_USAGE_TRACKER.URL or "")
+
+    if url == ""
+    or url == "PASTE_YOUR_WEB_APP_URL_HERE" then
+
+        warn("[HOLY TRACKER] Missing tracker URL")
+
+        return false
+    end
+
+    local requestFunction =
+        ResolveHolyRequestFunction()
+
+    if type(requestFunction) ~= "function" then
+
+        warn("[HOLY TRACKER] No HTTP request function found")
+
+        return false
+    end
+
+    local payload = {
+        secret =
+            tostring(HOLY_USAGE_TRACKER.Secret),
+
+        action =
+            tostring(action or "heartbeat"),
+
+        sessionId =
+            tostring(HOLY_USAGE_TRACKER.SessionId),
+
+        userId =
+            tostring(LocalPlayer.UserId),
+
+        username =
+            tostring(LocalPlayer.Name),
+
+        owner =
+            tostring(HOLY_LOADER_KEY_STATE.Owner or "Unknown"),
+
+        key =
+            tostring(HOLY_LOADER_KEY_STATE.CurrentKey or ""),
+
+        version =
+            tostring(HOLY_USAGE_TRACKER.Version),
+
+        placeId =
+            tostring(game.PlaceId),
+
+        jobId =
+            tostring(game.JobId),
+    }
+
+    local encoded =
+        HttpService:JSONEncode(payload)
+
+    local ok, result =
+        pcall(function()
+
+            return requestFunction({
+                Url = url,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                },
+                Body = encoded,
+            })
+        end)
+
+    if not ok then
+
+        warn(
+            "[HOLY TRACKER] Heartbeat failed:",
+            tostring(result)
+        )
+
+        return false
+    end
+
+    print(
+        "[HOLY TRACKER] Sent:",
+        tostring(action or "heartbeat")
+    )
+
+    return true
+end
+
+local function StartHolyUsageTracker()
+
+    task.spawn(function()
+
+        task.wait(2)
+
+        SendHolyUsageHeartbeat("start")
+
+        while true do
+
+            task.wait(
+                math.max(
+                    15,
+                    tonumber(HOLY_USAGE_TRACKER.HeartbeatInterval)
+                    or 45
+                )
+            )
+
+            SendHolyUsageHeartbeat("heartbeat")
+        end
+    end)
+end
+
+StartHolyUsageTracker()
 
 print("[HOLY LOADER] Fetching:", MAIN_URL)
 
