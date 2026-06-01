@@ -3556,10 +3556,12 @@ WebhookState = {
 
     NotifySuccessfulSnipe = true,
     NotifyBoothSales = true,
+    NotifyAgeBreaks = true,
     NotifyErrors = true,
 
     PingSuccessfulSnipes = "",
     PingBoothSales = "",
+    PingAgeBreaks = "",
     PingErrors = "",
 
     URL = "",
@@ -3819,6 +3821,11 @@ LastMachineStartTradeTeleportKey = "",
 PersistenceLoaded = false,
 SaveQueued = false,
 LastPersistentSaveAt = 0,
+
+-- Personal webhook runtime dedupe.
+-- Not saved; only prevents duplicate sends during this execution.
+WebhookSentKeys = {},
+LastWebhookSendAt = 0,
 }
 
 CreateListingRemote = nil
@@ -10105,6 +10112,391 @@ function BuildAgeBreakerPetSnapshot(pet)
     }
 end
 
+--==================================================
+-- AGE BREAKER PERSONAL WEBHOOK
+-- Sends only after claim is requested and inventory has had time to refresh.
+-- Uses the existing personal webhook URL + queue.
+--==================================================
+
+function FormatAgeBreakerWebhookAge(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "Unknown"
+    end
+
+    return tostring(math.floor(number))
+end
+
+function FormatAgeBreakerWebhookWeight(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "Unknown"
+    end
+
+    return string.format("%.2f KG", number)
+end
+
+function ResolveAgeBreakerWebhookDisplayWeight(snapshot, fallbackAge)
+
+    if type(snapshot) ~= "table" then
+        return nil
+    end
+
+    local displayWeight =
+        tonumber(snapshot.DisplayWeight)
+
+    if displayWeight
+    and displayWeight > 0 then
+        return displayWeight
+    end
+
+    local baseWeight =
+        tonumber(snapshot.BaseWeight)
+
+    local age =
+        tonumber(snapshot.Age)
+        or tonumber(fallbackAge)
+
+    if baseWeight
+    and age
+    and type(ResolveDisplayWeightFromBaseAge) == "function" then
+
+        return ResolveDisplayWeightFromBaseAge(
+            baseWeight,
+            age
+        )
+    end
+
+    return nil
+end
+
+function ResolveAgeBreakerWebhookPetTitle(snapshot, afterPet)
+
+    snapshot =
+        type(snapshot) == "table"
+        and snapshot
+        or {}
+
+    afterPet =
+        type(afterPet) == "table"
+        and afterPet
+        or {}
+
+    local petName =
+        tostring(
+            afterPet.PetName
+            or snapshot.PetName
+            or "Unknown"
+        )
+
+    local mutationText =
+        tostring(
+            afterPet.MutationText
+            or snapshot.MutationText
+            or "Normal"
+        )
+
+    return FormatAgeBreakerMutationPrefix(mutationText)
+        .. petName
+end
+
+function ResolveAgeBreakerWebhookSacrificeText()
+
+    local sacrifice =
+        AgeBreakerState
+        and AgeBreakerState.SacrificePet
+
+    if type(sacrifice) ~= "table" then
+        return "Unavailable after teleport/rejoin"
+    end
+
+    return tostring(
+            FormatAgeBreakerMutationPrefix(
+                sacrifice.MutationText
+                or "Normal"
+            )
+        )
+        .. tostring(sacrifice.PetName or "Unknown")
+        .. " | Age "
+        .. FormatAgeBreakerWebhookAge(sacrifice.Age)
+        .. " | "
+        .. FormatWebhookBaseWeight(sacrifice.BaseWeight)
+        .. " BW"
+end
+
+function CreateAgeBreakerClaimEmbed(beforeSnapshot, afterPet, reason)
+
+    beforeSnapshot =
+        type(beforeSnapshot) == "table"
+        and beforeSnapshot
+        or {}
+
+    afterPet =
+        type(afterPet) == "table"
+        and afterPet
+        or {}
+
+    local petTitle =
+        ResolveAgeBreakerWebhookPetTitle(
+            beforeSnapshot,
+            afterPet
+        )
+
+    local beforeAge =
+        tonumber(beforeSnapshot.Age)
+
+    local afterAge =
+        tonumber(afterPet.Age)
+        or SafeNumber(
+            AgeBreakerState.DefaultGoalLevel,
+            125
+        )
+
+    local beforeWeight =
+        ResolveAgeBreakerWebhookDisplayWeight(
+            beforeSnapshot,
+            beforeAge
+        )
+
+    local afterWeight =
+        tonumber(afterPet.DisplayWeight)
+        or ResolveAgeBreakerWebhookDisplayWeight(
+            {
+                BaseWeight =
+                    beforeSnapshot.BaseWeight,
+
+                Age =
+                    afterAge,
+            },
+            afterAge
+        )
+
+    local baseWeight =
+        tonumber(afterPet.BaseWeight)
+        or tonumber(beforeSnapshot.BaseWeight)
+
+    local payload = {
+        embeds = {{
+            title =
+                "🌟 Age Break Complete • "
+                .. tostring(petTitle)
+                .. " ["
+                .. FormatAgeBreakerWebhookAge(beforeAge)
+                .. " → "
+                .. FormatAgeBreakerWebhookAge(afterAge)
+                .. "]",
+
+            description =
+                "Age Break By: ||"
+                .. tostring(
+                    Players.LocalPlayer
+                    and Players.LocalPlayer.Name
+                    or "Unknown"
+                )
+                .. "||",
+
+            color = 0xEAF3FF,
+
+            fields = {
+
+                {
+                    name = "🎯 Target",
+                    value = tostring(petTitle),
+                    inline = false,
+                },
+
+                {
+                    name = "📈 Age",
+                    value =
+                        FormatAgeBreakerWebhookAge(beforeAge)
+                        .. " → "
+                        .. FormatAgeBreakerWebhookAge(afterAge),
+                    inline = true,
+                },
+
+                {
+                    name = "⚖️ Weight",
+                    value =
+                        FormatAgeBreakerWebhookWeight(beforeWeight)
+                        .. " → "
+                        .. FormatAgeBreakerWebhookWeight(afterWeight),
+                    inline = true,
+                },
+
+                {
+                    name = "🧬 Mutation",
+                    value =
+                        tostring(
+                            afterPet.MutationText
+                            or beforeSnapshot.MutationText
+                            or "Normal"
+                        ),
+                    inline = true,
+                },
+
+                {
+                    name = "BaseWeight",
+                    value =
+                        FormatWebhookBaseWeight(baseWeight),
+                    inline = true,
+                },
+
+                {
+                    name = "🎚️ Goal Level",
+                    value =
+                        tostring(
+                            math.floor(
+                                SafeNumber(
+                                    AgeBreakerState.DefaultGoalLevel,
+                                    125
+                                )
+                            )
+                        ),
+                    inline = true,
+                },
+
+                {
+                    name = "🧪 Sacrifice Used",
+                    value =
+                        ResolveAgeBreakerWebhookSacrificeText(),
+                    inline = false,
+                },
+
+                {
+                    name = "🎒 Pet Inventory",
+                    value =
+                        type(FormatPersonalWebhookPetInventoryText) == "function"
+                        and FormatPersonalWebhookPetInventoryText()
+                        or "Unavailable",
+                    inline = true,
+                },
+
+                {
+                    name = "🌍 Server",
+                    value =
+                        "```lua\n"
+                        .. tostring(game.PlaceId)
+                        .. ":"
+                        .. tostring(game.JobId)
+                        .. "\n```",
+                    inline = false,
+                },
+            },
+
+            footer = {
+                text =
+                    tostring(reason or "Holy Age Breaker")
+            },
+
+            timestamp =
+                DateTime.now():ToIsoDate(),
+        }}
+    }
+
+    ApplyPetThumbnailToEmbed(
+        payload.embeds[1],
+        tostring(
+            afterPet.PetName
+            or beforeSnapshot.PetName
+            or ""
+        )
+    )
+
+    return payload
+end
+
+function SendAgeBreakerClaimWebhook(beforeSnapshot, afterPet, reason)
+
+    if not WebhookState
+    or WebhookState.Enabled ~= true
+    or WebhookState.NotifyAgeBreaks ~= true then
+        return false
+    end
+
+    if type(QueueWebhook) ~= "function"
+    or type(ApplyWebhookPing) ~= "function" then
+        return false
+    end
+
+    beforeSnapshot =
+        type(beforeSnapshot) == "table"
+        and beforeSnapshot
+        or {}
+
+    afterPet =
+        type(afterPet) == "table"
+        and afterPet
+        or {}
+
+    local uuid =
+        AgeBreakerNormalizeUUID(
+            afterPet.UUID
+            or beforeSnapshot.UUID
+            or ""
+        )
+
+    local afterAge =
+        tonumber(afterPet.Age)
+        or SafeNumber(
+            AgeBreakerState.DefaultGoalLevel,
+            125
+        )
+
+    local beforeAge =
+        tonumber(beforeSnapshot.Age)
+        or 0
+
+    local dedupeKey =
+        tostring(uuid ~= "" and uuid or beforeSnapshot.PetName or "unknown")
+        .. ":"
+        .. tostring(beforeAge)
+        .. ">"
+        .. tostring(afterAge)
+
+    AgeBreakerState.WebhookSentKeys =
+        AgeBreakerState.WebhookSentKeys
+        or {}
+
+    if AgeBreakerState.WebhookSentKeys[dedupeKey] == true then
+        return false
+    end
+
+    -- Tiny throttle only for duplicate claim paths; does not affect gameplay.
+    if SafeElapsed(AgeBreakerState.LastWebhookSendAt) < 0.75 then
+        return false
+    end
+
+    AgeBreakerState.WebhookSentKeys[dedupeKey] =
+        true
+
+    AgeBreakerState.LastWebhookSendAt =
+        os.clock()
+
+    QueueWebhook(
+        ApplyWebhookPing(
+            CreateAgeBreakerClaimEmbed(
+                beforeSnapshot,
+                afterPet,
+                reason
+            ),
+            WebhookState.PingAgeBreaks
+        )
+    )
+
+    print(
+        "[AGE BREAKER WEBHOOK] Queued:",
+        tostring(dedupeKey)
+    )
+
+    return true
+end
+
 function MarkAgeBreakerTargetLoaded(target)
 
     if type(target) ~= "table" then
@@ -13025,22 +13417,75 @@ AgeBreakerState.Status =
 AgeBreakerState.NextAction =
     "Refresh inventory"
 
--- Machine target will return to inventory after claim.
--- Clear running lock after a short delay so inventory can update.
-task.delay(3, function()
-
-    AgeBreakerState.MachineRunning =
-    false
-
-AgeBreakerState.MachineTargetUUID =
-    ""
-
-AgeBreakerState.MachineTargetSnapshot =
+local claimedSnapshot =
     nil
 
-ClearAgeBreakerTargetLoadedState(
-    "claimed age break"
-)
+if type(CloneAgeBreakerMachineSnapshot) == "function" then
+
+    claimedSnapshot =
+        CloneAgeBreakerMachineSnapshot(
+            AgeBreakerState.MachineTargetSnapshot
+            or AgeBreakerState.LoadedTargetSnapshot
+        )
+end
+
+if not claimedSnapshot then
+
+    claimedSnapshot =
+        BuildAgeBreakerPetSnapshot(
+            AgeBreakerState.TargetPet
+        )
+end
+
+local claimedUUID =
+    AgeBreakerNormalizeUUID(
+        claimedSnapshot
+        and claimedSnapshot.UUID
+        or AgeBreakerState.MachineTargetUUID
+        or AgeBreakerState.LoadedTargetUUID
+        or ""
+    )
+
+-- Machine target will return to inventory after claim.
+-- Wait shortly, resolve the returned pet, send webhook once, then clear locks.
+task.delay(3, function()
+
+    local returnedPet =
+        nil
+
+    if claimedUUID ~= "" then
+
+        returnedPet =
+            ResolveAgeBreakerFreshPetByUUID(
+                claimedUUID,
+                10,
+                0.35
+            )
+    end
+
+    if type(SendAgeBreakerClaimWebhook) == "function" then
+
+        pcall(function()
+            SendAgeBreakerClaimWebhook(
+                claimedSnapshot,
+                returnedPet,
+                "Holy Age Breaker"
+            )
+        end)
+    end
+
+    AgeBreakerState.MachineRunning =
+        false
+
+    AgeBreakerState.MachineTargetUUID =
+        ""
+
+    AgeBreakerState.MachineTargetSnapshot =
+        nil
+
+    ClearAgeBreakerTargetLoadedState(
+        "claimed age break"
+    )
 
     if type(RefreshAgeBreakerInventoryDropdowns) == "function" then
         pcall(function()
@@ -13073,6 +13518,7 @@ end
 -- 1. Auto teleport to Normal World when ready
 -- 2. Auto claim when ready
 -- 3. Auto re-submit next pair after claim / idle
+-- 4. Optional teleport back to Trade World when the machine starts
 --==================================================
 
 function IsGrowGardenNormalWorld()
@@ -47160,6 +47606,23 @@ function BuildWebhookTab()
         MarkConfigDirty()
     end)
 
+    local AgeBreaksToggle =
+        WebhookDependencyBox:AddToggle(
+            "WebhookAgeBreaks",
+            {
+                Text = "🌟 Age Breaks",
+                Tooltip = "Send a webhook when Holy claims an Age Breaker pet.",
+                Default = true,
+            }
+        )
+
+    AgeBreaksToggle:OnChanged(function(v)
+
+        WebhookState.NotifyAgeBreaks = v
+
+        MarkConfigDirty()
+    end)
+
     local ErrorToggle =
         WebhookDependencyBox:AddToggle(
             "WebhookErrors",
@@ -47220,6 +47683,25 @@ function BuildWebhookTab()
     PingBoothSalesInput:OnChanged(function(v)
 
         WebhookState.PingBoothSales =
+            tostring(v or "")
+
+        MarkConfigDirty()
+    end)
+
+    local PingAgeBreaksInput =
+        WebhookDependencyBox:AddInput(
+            "WebhookPingAgeBreaks",
+            {
+                Text = "🌟 Age Break Ping",
+                Placeholder = "@everyone | @here | <@userid> | empty = no ping",
+                Numeric = false,
+                Finished = false,
+            }
+        )
+
+    PingAgeBreaksInput:OnChanged(function(v)
+
+        WebhookState.PingAgeBreaks =
             tostring(v or "")
 
         MarkConfigDirty()
@@ -48782,6 +49264,7 @@ SaveManager:SetIgnoreIndexes({
     "AgeBreakerAutoTeleportWhenReady",
     "AgeBreakerAutoClaimWhenReady",
     "AgeBreakerAutoResubmitAfterClaim",
+    "AgeBreakerAutoTradeWorldWhenMachineStarts",
 
     "AgeBreakerTargetMulti",
     "AgeBreakerSacrificeMulti",
