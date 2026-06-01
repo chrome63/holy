@@ -13419,8 +13419,8 @@ AgeBreakerState.LastSacrificeRetryAt =
 AgeBreakerState.Status =
     "Submitted sacrifice"
 
-    AgeBreakerState.NextAction =
-        "Waiting for machine"
+AgeBreakerState.NextAction =
+    "Checking machine"
 
     HolyNotify(
         "Age Breaker",
@@ -14494,35 +14494,163 @@ function AgeBreakerAutoSubmitNextPair()
     return submitted == true
 end
 
+--==================================================
+-- AGE BREAKER IDLE RECOVERY
+-- Prevents stale "Wait for timer" when the machine did not actually start.
+--==================================================
+
+function AgeBreakerHasActiveMachineTimer()
+
+    if type(AgeBreakerState) ~= "table" then
+        return false
+    end
+
+    local timerSeconds =
+        tonumber(AgeBreakerState.TimerSeconds)
+
+    return timerSeconds ~= nil
+        and timerSeconds > 0
+end
+
+function AgeBreakerHasPreparedTarget()
+
+    if type(AgeBreakerState) ~= "table" then
+        return false
+    end
+
+    if type(AgeBreakerState.TargetPet) == "table" then
+        return true
+    end
+
+    if type(AgeBreakerState.MachineTargetSnapshot) == "table" then
+        return true
+    end
+
+    if type(AgeBreakerState.LoadedTargetSnapshot) == "table" then
+        return true
+    end
+
+    local queue =
+        AgeBreakerState.TargetQueue
+
+    if type(queue) == "table"
+    and #queue > 0 then
+        return true
+    end
+
+    return false
+end
+
+function NormalizeAgeBreakerIdleActionState(reason)
+
+    if type(AgeBreakerState) ~= "table" then
+        return false
+    end
+
+    -- Never override real claim/timer states.
+    if AgeBreakerState.ClaimReady == true then
+        return false
+    end
+
+    if AgeBreakerHasActiveMachineTimer() then
+        return false
+    end
+
+    -- If the timer disappeared / never started, the machine is not running.
+    AgeBreakerState.MachineRunning =
+        false
+
+    local currentAction =
+        tostring(AgeBreakerState.NextAction or "")
+
+    local staleWait =
+        currentAction == ""
+        or currentAction == "Waiting for machine"
+        or currentAction == "Wait for timer"
+        or currentAction == "Waiting"
+        or currentAction == "Machine running"
+
+    if AgeBreakerState.TargetLoadedWaitingSacrifice == true then
+
+        AgeBreakerState.Status =
+            "Waiting for sacrifice"
+
+        AgeBreakerState.NextAction =
+            "Submit sacrifice"
+
+        return true
+    end
+
+    if AgeBreakerHasPreparedTarget() then
+
+        if staleWait then
+
+            AgeBreakerState.Status =
+                "Machine idle"
+
+            AgeBreakerState.NextAction =
+                "Submit pair"
+        end
+
+        return true
+    end
+
+    if staleWait then
+
+        AgeBreakerState.Status =
+            "Idle"
+
+        AgeBreakerState.NextAction =
+            "Prepare pair"
+    end
+
+    return true
+end
+
 function AgeBreakerAutoStep()
 
-    if AgeBreakerState.Enabled ~= true then
+    if type(AgeBreakerState) ~= "table"
+    or AgeBreakerState.Enabled ~= true then
         return
     end
 
-    RefreshAgeBreakerMachineState()
+    if type(RefreshAgeBreakerMachineState) == "function" then
+        pcall(function()
+            RefreshAgeBreakerMachineState()
+        end)
+    end
 
--- Priority 0:
--- If a target is already uploaded but the timer has not started,
--- retry only the sacrifice/copy. Never upload another target here.
-if AgeBreakerState.TargetLoadedWaitingSacrifice == true
-and AgeBreakerState.ClaimReady ~= true
-and not (
-    AgeBreakerState.TimerSeconds ~= nil
-    and AgeBreakerState.TimerSeconds > 0
-) then
+    NormalizeAgeBreakerIdleActionState(
+        "auto step"
+    )
 
-    AgeBreakerState.NextAction =
-        "Submit sacrifice"
+    --==================================================
+    -- Priority 0:
+    -- If a target is already uploaded but the timer has not started,
+    -- retry only the sacrifice/copy. Never upload another target here.
+    --==================================================
 
-    SubmitAgeBreakerSacrificeForLoadedTarget()
+    if AgeBreakerState.TargetLoadedWaitingSacrifice == true
+    and AgeBreakerState.ClaimReady ~= true
+    and not AgeBreakerHasActiveMachineTimer() then
 
-    return
-end
+        AgeBreakerState.Status =
+            "Waiting for sacrifice"
 
--- Priority 1:
--- If ready, teleport/claim before doing anything else.
-if AgeBreakerState.ClaimReady == true then
+        AgeBreakerState.NextAction =
+            "Submit sacrifice"
+
+        SubmitAgeBreakerSacrificeForLoadedTarget()
+
+        return
+    end
+
+    --==================================================
+    -- Priority 1:
+    -- If ready, teleport/claim before doing anything else.
+    --==================================================
+
+    if AgeBreakerState.ClaimReady == true then
 
         AgeBreakerState.NextAction =
             IsTradeWorld()
@@ -14534,37 +14662,48 @@ if AgeBreakerState.ClaimReady == true then
         return
     end
 
--- Priority 2:
--- If machine is running, wait.
--- Optional: if enabled and still in Normal World, return to Trade World.
-if AgeBreakerState.TimerSeconds ~= nil
-and AgeBreakerState.TimerSeconds > 0 then
+    --==================================================
+    -- Priority 2:
+    -- If machine is really running, wait.
+    -- Optional: if enabled and still in Normal World, return to Trade World.
+    --==================================================
 
-    AgeBreakerState.MachineRunning =
-        true
+    if AgeBreakerHasActiveMachineTimer() then
 
-    AgeBreakerState.Status =
-        "Machine running"
+        AgeBreakerState.MachineRunning =
+            true
 
-    AgeBreakerState.NextAction =
-        AgeBreakerState.AutoTeleportToTradeWorldOnMachineStart == true
-        and IsGrowGardenNormalWorld()
-        and "Teleport to Trade World"
-        or "Wait for timer"
+        AgeBreakerState.Status =
+            "Machine running"
 
-    if AgeBreakerState.TargetLoadedWaitingSacrifice ~= true
-    and type(RequestAgeBreakerTradeWorldTeleportAfterMachineStart) == "function" then
+        AgeBreakerState.NextAction =
+            AgeBreakerState.AutoTeleportToTradeWorldOnMachineStart == true
+            and IsGrowGardenNormalWorld()
+            and "Teleport to Trade World"
+            or "Wait for timer"
 
-        RequestAgeBreakerTradeWorldTeleportAfterMachineStart(
-            "Machine timer is running."
-        )
+        if AgeBreakerState.TargetLoadedWaitingSacrifice ~= true
+        and type(RequestAgeBreakerTradeWorldTeleportAfterMachineStart) == "function" then
+
+            RequestAgeBreakerTradeWorldTeleportAfterMachineStart(
+                "Machine timer is running."
+            )
+        end
+
+        return
     end
 
-    return
-end
-
+    --==================================================
     -- Priority 3:
-    -- If automation is enabled and machine is idle, submit next pair.
+    -- Machine is idle/no timer. Submit or retry the active pair.
+    --==================================================
+
+    AgeBreakerState.MachineRunning =
+        false
+
+    AgeBreakerState.NextAction =
+        "Submit pair"
+
     AgeBreakerAutoSubmitNextPair()
 end
 
@@ -25858,11 +25997,30 @@ function ResolveAgeBreakerHUDNextText()
                 "Claim pet"
         end
 
-    elseif AgeBreakerState.TimerSeconds ~= nil
-    and tonumber(AgeBreakerState.TimerSeconds) > 0 then
+    elseif AgeBreakerHasActiveMachineTimer()
+    and AgeBreakerState.TargetLoadedWaitingSacrifice ~= true then
 
         nextAction =
             "Wait for timer"
+
+    elseif AgeBreakerState.TargetLoadedWaitingSacrifice == true then
+
+        nextAction =
+            "Submit sacrifice"
+
+    elseif nextAction == "Wait for timer"
+    or nextAction == "Waiting for machine"
+    or nextAction == "Machine running" then
+
+        -- HUD safety:
+        -- If there is no active timer, never show stale wait state.
+        if AgeBreakerHasPreparedTarget() then
+            nextAction =
+                "Submit pair"
+        else
+            nextAction =
+                "Prepare pair"
+        end
     end
 
     if nextAction == "" then
