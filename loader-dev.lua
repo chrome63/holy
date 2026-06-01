@@ -1,7 +1,12 @@
 --==================================================
--- HOLY LOADER
--- Key gate runs before HolyV3.lua is fetched/executed.
--- Includes Google Sheets usage tracker.
+-- HOLY LOADER v2
+-- Server-auth key gate runs before HolyV3.lua is fetched/executed.
+-- Supports:
+-- - Backend key verification
+-- - 10-account key plans
+-- - Saved key autoload
+-- - Feature flags
+-- - Usage tracker heartbeat
 --==================================================
 
 local HttpService =
@@ -18,40 +23,40 @@ local LocalPlayer =
     Players.LocalPlayer
     or Players.PlayerAdded:Wait()
 
+--==================================================
+-- MAIN SCRIPT URL
+--==================================================
+
 local MAIN_URL =
     "https://raw.githubusercontent.com/bencapalot041/holy/main/HolyV3.lua?v="
     .. tostring(os.time())
+
+--==================================================
+-- LOADER AUTH CONFIG
+--==================================================
 
 local HOLY_LOADER_KEY_STATE = {
     Enabled = true,
 
     SaveFile = "HolyV2/holy_access_key.txt",
 
-    Keys = {
-        ["HOLY-BEN-123"] = "Ben",
-        ["HOLY-TEST-456"] = "Tester",
-        ["HOLY-CL-353"] = "CL",
-        ["HOLY-NOMO-342"] = "Nomo",
-        ["HOLY-ROOF-645"] = "Roof",
-        ["HOLY-KYOYA-45736"] = "KYOYA",
-        ["HOLY-Tricl-43756"] = "Triclrl",
-        ["HOLY-ISAGI-454363"] = "Isagi",
-        ["HOLY-1lab-4363"] = "1lab",
-        ["HOLY-Semilore-46423"] = "Semilore",
-        ["HOLY-Jeff-3534"] = "Jeff",
-        ["HOLY-GoL-33534"] = "GoL",
-        ["HOLY-Ronnzz-343"] = "RonZz",
-        ["HOLY-Sudarshan-343"] = "Shudar",
-        ["HOLY-Fitoria-343"] = "Fitoria",
-    },
+    -- Paste your NEW auth Google Apps Script Web App URL here.
+    -- This is NOT the usage tracker URL.
+    AuthURL = "PASTE_YOUR_AUTH_WEB_APP_URL_HERE",
+
+    -- Must match the secret inside your auth Apps Script.
+    Secret = "HOLY-AUTH-BEN-CHANGE-THIS",
 
     Accepted = false,
     Owner = "Unknown",
-
-    -- The exact key used by the player.
-    -- Used only for the usage tracker.
     CurrentKey = "",
+
+    LastAuth = nil,
 }
+
+--==================================================
+-- SMALL HELPERS
+--==================================================
 
 local function NormalizeHolyAccessKey(value)
 
@@ -121,7 +126,42 @@ local function ReadSavedHolyAccessKey()
     return NormalizeHolyAccessKey(result)
 end
 
-local function ValidateHolyAccessKey(key)
+local function ResolveHolyRequestFunction()
+
+    return
+        (
+            syn
+            and syn.request
+        )
+        or http_request
+        or request
+end
+
+local function DecodeHolyJson(body)
+
+    if type(body) ~= "string"
+    or body == "" then
+        return nil, "Empty response."
+    end
+
+    local ok, decoded =
+        pcall(function()
+            return HttpService:JSONDecode(body)
+        end)
+
+    if not ok
+    or type(decoded) ~= "table" then
+        return nil, "Invalid JSON response."
+    end
+
+    return decoded, nil
+end
+
+--==================================================
+-- SERVER AUTH REQUEST
+--==================================================
+
+local function RequestHolyKeyAuth(key)
 
     key =
         NormalizeHolyAccessKey(key)
@@ -130,26 +170,158 @@ local function ValidateHolyAccessKey(key)
         return false, "Enter a key."
     end
 
-    local owner =
-        HOLY_LOADER_KEY_STATE.Keys[key]
+    local authURL =
+        tostring(HOLY_LOADER_KEY_STATE.AuthURL or "")
 
-    if not owner then
-        return false, "Invalid key."
+    if authURL == ""
+    or authURL == "PASTE_YOUR_AUTH_WEB_APP_URL_HERE" then
+        return false, "Auth URL is not configured."
     end
+
+    local requestFunction =
+        ResolveHolyRequestFunction()
+
+    if type(requestFunction) ~= "function" then
+        return false, "Executor HTTP request is not supported."
+    end
+
+    local payload = {
+        secret =
+            tostring(HOLY_LOADER_KEY_STATE.Secret or ""),
+
+        action =
+            "verify",
+
+        key =
+            key,
+
+        userId =
+            tostring(LocalPlayer.UserId),
+
+        username =
+            tostring(LocalPlayer.Name),
+
+        displayName =
+            tostring(LocalPlayer.DisplayName),
+
+        placeId =
+            tostring(game.PlaceId),
+
+        jobId =
+            tostring(game.JobId),
+
+        version =
+            "holy-loader-v2",
+    }
+
+    local encoded =
+        HttpService:JSONEncode(payload)
+
+    local ok, result =
+        pcall(function()
+
+            return requestFunction({
+                Url = authURL,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                },
+                Body = encoded,
+            })
+        end)
+
+    if not ok then
+        return false, "Auth request failed: " .. tostring(result)
+    end
+
+    local statusCode =
+        result
+        and (
+            result.StatusCode
+            or result.status_code
+            or result.Status
+        )
+
+    local body =
+        result
+        and (
+            result.Body
+            or result.body
+            or result.ResponseBody
+        )
+
+    if tonumber(statusCode)
+    and tonumber(statusCode) >= 400 then
+        return false, "Auth server error: " .. tostring(statusCode)
+    end
+
+    local decoded, decodeErr =
+        DecodeHolyJson(body)
+
+    if not decoded then
+        return false, decodeErr
+    end
+
+    if decoded.allowed ~= true then
+
+        return false,
+            tostring(
+                decoded.message
+                or decoded.reason
+                or decoded.error
+                or "Access denied."
+            )
+    end
+
+    HOLY_LOADER_KEY_STATE.LastAuth =
+        decoded
+
+    return true, decoded
+end
+
+local function ValidateHolyAccessKey(key)
+
+    key =
+        NormalizeHolyAccessKey(key)
+
+    local allowed, result =
+        RequestHolyKeyAuth(key)
+
+    if allowed ~= true then
+        return false, tostring(result or "Invalid key.")
+    end
+
+    local auth =
+        result
+
+    local owner =
+        tostring(
+            auth.owner
+            or auth.discord
+            or auth.username
+            or "Premium User"
+        )
 
     HOLY_LOADER_KEY_STATE.Accepted =
         true
 
     HOLY_LOADER_KEY_STATE.Owner =
-        tostring(owner)
+        owner
 
     HOLY_LOADER_KEY_STATE.CurrentKey =
         key
 
+    HOLY_LOADER_KEY_STATE.LastAuth =
+        auth
+
     SaveHolyAccessKey(key)
 
-    return true, tostring(owner)
+    return true, owner
 end
+
+--==================================================
+-- KEY UI
+--==================================================
 
 local function ResolveHolyUIParent()
 
@@ -240,7 +412,7 @@ local function CreateHolyLoaderKeyUI()
         UDim2.fromScale(0.5, 0.5)
 
     frame.Size =
-        UDim2.fromOffset(330, 205)
+        UDim2.fromOffset(350, 225)
 
     frame.BackgroundColor3 =
         Color3.fromRGB(12, 12, 18)
@@ -264,13 +436,13 @@ local function CreateHolyLoaderKeyUI()
         Instance.new("UIStroke")
 
     stroke.Color =
-        Color3.fromRGB(80, 80, 105)
+        Color3.fromRGB(110, 80, 180)
 
     stroke.Thickness =
         1
 
     stroke.Transparency =
-        0.15
+        0.1
 
     stroke.Parent =
         frame
@@ -285,10 +457,10 @@ local function CreateHolyLoaderKeyUI()
         1
 
     title.Position =
-        UDim2.fromOffset(0, 16)
+        UDim2.fromOffset(0, 15)
 
     title.Size =
-        UDim2.new(1, 0, 0, 28)
+        UDim2.new(1, 0, 0, 30)
 
     title.Font =
         Enum.Font.GothamBlack
@@ -300,7 +472,7 @@ local function CreateHolyLoaderKeyUI()
         Color3.fromRGB(255, 235, 170)
 
     title.TextSize =
-        22
+        23
 
     title.TextStrokeTransparency =
         0.65
@@ -321,7 +493,7 @@ local function CreateHolyLoaderKeyUI()
         UDim2.fromOffset(0, 46)
 
     subtitle.Size =
-        UDim2.new(1, 0, 0, 20)
+        UDim2.new(1, 0, 0, 22)
 
     subtitle.Font =
         Enum.Font.Gotham
@@ -330,7 +502,7 @@ local function CreateHolyLoaderKeyUI()
         "Enter your access key"
 
     subtitle.TextColor3 =
-        Color3.fromRGB(190, 190, 205)
+        Color3.fromRGB(195, 190, 215)
 
     subtitle.TextSize =
         13
@@ -345,10 +517,10 @@ local function CreateHolyLoaderKeyUI()
         "KeyInput"
 
     input.Position =
-        UDim2.fromOffset(30, 82)
+        UDim2.fromOffset(30, 84)
 
     input.Size =
-        UDim2.new(1, -60, 0, 34)
+        UDim2.new(1, -60, 0, 36)
 
     input.BackgroundColor3 =
         Color3.fromRGB(22, 22, 32)
@@ -363,7 +535,7 @@ local function CreateHolyLoaderKeyUI()
         Enum.Font.Gotham
 
     input.PlaceholderText =
-        "Access key"
+        "HOLY-XXXX-XXXX"
 
     input.PlaceholderColor3 =
         Color3.fromRGB(110, 110, 130)
@@ -393,7 +565,7 @@ local function CreateHolyLoaderKeyUI()
         Instance.new("UIStroke")
 
     inputStroke.Color =
-        Color3.fromRGB(55, 55, 75)
+        Color3.fromRGB(65, 55, 95)
 
     inputStroke.Thickness =
         1
@@ -411,10 +583,10 @@ local function CreateHolyLoaderKeyUI()
         1
 
     status.Position =
-        UDim2.fromOffset(30, 120)
+        UDim2.fromOffset(30, 126)
 
     status.Size =
-        UDim2.new(1, -60, 0, 20)
+        UDim2.new(1, -60, 0, 34)
 
     status.Font =
         Enum.Font.Gotham
@@ -428,8 +600,14 @@ local function CreateHolyLoaderKeyUI()
     status.TextSize =
         12
 
+    status.TextWrapped =
+        true
+
     status.TextXAlignment =
         Enum.TextXAlignment.Left
+
+    status.TextYAlignment =
+        Enum.TextYAlignment.Top
 
     status.Parent =
         frame
@@ -441,13 +619,13 @@ local function CreateHolyLoaderKeyUI()
         "Verify"
 
     verify.Position =
-        UDim2.fromOffset(30, 145)
+        UDim2.fromOffset(30, 170)
 
     verify.Size =
         UDim2.new(0.5, -35, 0, 34)
 
     verify.BackgroundColor3 =
-        Color3.fromRGB(35, 25, 55)
+        Color3.fromRGB(75, 45, 135)
 
     verify.BorderSizePixel =
         0
@@ -486,7 +664,7 @@ local function CreateHolyLoaderKeyUI()
         "Close"
 
     close.Position =
-        UDim2.new(0.5, 5, 0, 145)
+        UDim2.new(0.5, 5, 0, 170)
 
     close.Size =
         UDim2.new(0.5, -35, 0, 34)
@@ -507,7 +685,7 @@ local function CreateHolyLoaderKeyUI()
         "Close UI"
 
     close.TextColor3 =
-        Color3.fromRGB(180, 180, 195)
+        Color3.fromRGB(185, 185, 205)
 
     close.TextSize =
         14
@@ -530,7 +708,26 @@ local function CreateHolyLoaderKeyUI()
     local accepted =
         false
 
+    local verifying =
+        false
+
     local function TryVerify()
+
+        if verifying then
+            return
+        end
+
+        verifying =
+            true
+
+        verify.Text =
+            "Checking..."
+
+        status.Text =
+            "Checking key..."
+
+        status.TextColor3 =
+            Color3.fromRGB(235, 215, 120)
 
         local ok, result =
             ValidateHolyAccessKey(
@@ -539,9 +736,23 @@ local function CreateHolyLoaderKeyUI()
 
         if ok then
 
+            local auth =
+                HOLY_LOADER_KEY_STATE.LastAuth
+                or {}
+
+            local slotsText =
+                tostring(auth.slotsUsed or "?")
+                .. "/"
+                .. tostring(auth.maxAccounts or "?")
+
             status.Text =
                 "Access granted • "
                 .. tostring(result)
+                .. " • "
+                .. tostring(auth.plan or "premium")
+                .. " • "
+                .. slotsText
+                .. " slots"
 
             status.TextColor3 =
                 Color3.fromRGB(90, 255, 150)
@@ -549,7 +760,7 @@ local function CreateHolyLoaderKeyUI()
             accepted =
                 true
 
-            task.wait(0.25)
+            task.wait(0.35)
 
             finished =
                 true
@@ -564,6 +775,12 @@ local function CreateHolyLoaderKeyUI()
 
         status.TextColor3 =
             Color3.fromRGB(255, 95, 120)
+
+        verify.Text =
+            "Verify"
+
+        verifying =
+            false
     end
 
     verify.MouseButton1Click:Connect(TryVerify)
@@ -595,6 +812,10 @@ local function CreateHolyLoaderKeyUI()
     return accepted
 end
 
+--==================================================
+-- KEY GATE
+--==================================================
+
 local function RunHolyLoaderKeyGate()
 
     if HOLY_LOADER_KEY_STATE.Enabled ~= true then
@@ -613,9 +834,19 @@ local function RunHolyLoaderKeyGate()
 
         if valid then
 
+            local auth =
+                HOLY_LOADER_KEY_STATE.LastAuth
+                or {}
+
             print(
                 "[HOLY LOADER] Saved key accepted:",
-                tostring(owner)
+                tostring(owner),
+                "| Plan:",
+                tostring(auth.plan or "unknown"),
+                "| Slots:",
+                tostring(auth.slotsUsed or "?")
+                    .. "/"
+                    .. tostring(auth.maxAccounts or "?")
             )
 
             return true
@@ -630,10 +861,18 @@ if not RunHolyLoaderKeyGate() then
     return
 end
 
+--==================================================
+-- EXPORT AUTH TO MAIN SCRIPT
+--==================================================
+
 local root =
     type(getgenv) == "function"
     and getgenv()
     or _G
+
+local auth =
+    HOLY_LOADER_KEY_STATE.LastAuth
+    or {}
 
 root.HOLY_LOADER_AUTHORIZED =
     true
@@ -644,9 +883,38 @@ root.HOLY_LOADER_OWNER =
 root.HOLY_LOADER_KEY =
     HOLY_LOADER_KEY_STATE.CurrentKey
 
+root.HOLY_LOADER_PLAN =
+    tostring(auth.plan or "premium_30d")
+
+root.HOLY_LOADER_EXPIRES_AT =
+    tonumber(auth.expiresAt) or 0
+
+root.HOLY_LOADER_MAX_ACCOUNTS =
+    tonumber(auth.maxAccounts) or 1
+
+root.HOLY_LOADER_SLOTS_USED =
+    tonumber(auth.slotsUsed) or 1
+
+root.HOLY_LOADER_FEATURES =
+    type(auth.features) == "table"
+    and auth.features
+    or {
+        sniper = true,
+        marketTracker = true,
+        ageBreaker = true,
+        webhooks = true,
+        boothTools = true,
+    }
+
 print(
     "[HOLY LOADER] Access granted:",
-    tostring(HOLY_LOADER_KEY_STATE.Owner)
+    tostring(HOLY_LOADER_KEY_STATE.Owner),
+    "| Plan:",
+    tostring(root.HOLY_LOADER_PLAN),
+    "| Slots:",
+    tostring(root.HOLY_LOADER_SLOTS_USED)
+        .. "/"
+        .. tostring(root.HOLY_LOADER_MAX_ACCOUNTS)
 )
 
 --==================================================
@@ -659,7 +927,7 @@ local HOLY_USAGE_TRACKER = {
 
     URL = "https://script.google.com/macros/s/AKfycbz_Vz9IPWZ0xJxn-LIPeyWEzT896aDhEE4XxWcGXKFRBFnIrM59JleiV41BZ0kL8EOp/exec",
 
-    -- Must match the SECRET in Google Apps Script.
+    -- Must match the SECRET in your usage tracker Apps Script.
     Secret = "HOLY-TRACK-BEN-94582",
 
     Version = "v3.4.5",
@@ -677,17 +945,6 @@ local HOLY_USAGE_TRACKER = {
 
     HeartbeatInterval = 45,
 }
-
-local function ResolveHolyRequestFunction()
-
-    return
-        (
-            syn
-            and syn.request
-        )
-        or http_request
-        or request
-end
 
 local function SendHolyUsageHeartbeat(action)
 
@@ -732,11 +989,23 @@ local function SendHolyUsageHeartbeat(action)
         username =
             tostring(LocalPlayer.Name),
 
+        displayName =
+            tostring(LocalPlayer.DisplayName),
+
         owner =
             tostring(HOLY_LOADER_KEY_STATE.Owner or "Unknown"),
 
         key =
             tostring(HOLY_LOADER_KEY_STATE.CurrentKey or ""),
+
+        plan =
+            tostring(root.HOLY_LOADER_PLAN or "unknown"),
+
+        slotsUsed =
+            tostring(root.HOLY_LOADER_SLOTS_USED or ""),
+
+        maxAccounts =
+            tostring(root.HOLY_LOADER_MAX_ACCOUNTS or ""),
 
         version =
             tostring(HOLY_USAGE_TRACKER.Version),
@@ -826,6 +1095,10 @@ local function StartHolyUsageTracker()
 end
 
 StartHolyUsageTracker()
+
+--==================================================
+-- FETCH + RUN MAIN SCRIPT
+--==================================================
 
 print("[HOLY LOADER] Fetching:", MAIN_URL)
 
