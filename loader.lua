@@ -41,6 +41,7 @@ local HOLY_LOADER_KEY_STATE = {
         ["HOLY-GoL-33534"] = "GoL",
         ["HOLY-Ronnzz-343"] = "RonZz",
         ["HOLY-Sudarshan-343"] = "Shudar",
+        ["HOLY-Fitoria-343"] = "Fitoria",
     },
 
     Accepted = false,
