@@ -161,6 +161,22 @@ end
 -- SERVER AUTH REQUEST
 --==================================================
 
+local function UrlEncode(value)
+
+    value =
+        tostring(value or "")
+
+    return value:gsub(
+        "([^%w%-%_%.%~])",
+        function(char)
+            return string.format(
+                "%%%02X",
+                string.byte(char)
+            )
+        end
+    )
+end
+
 local function RequestHolyKeyAuth(key)
 
     key =
@@ -178,88 +194,44 @@ local function RequestHolyKeyAuth(key)
         return false, "Auth URL is not configured."
     end
 
-    local requestFunction =
-        ResolveHolyRequestFunction()
-
-    if type(requestFunction) ~= "function" then
-        return false, "Executor HTTP request is not supported."
-    end
-
-    local payload = {
-        secret =
-            tostring(HOLY_LOADER_KEY_STATE.Secret or ""),
-
-        action =
-            "verify",
-
-        key =
-            key,
-
-        userId =
-            tostring(LocalPlayer.UserId),
-
-        username =
-            tostring(LocalPlayer.Name),
-
-        displayName =
-            tostring(LocalPlayer.DisplayName),
-
-        placeId =
-            tostring(game.PlaceId),
-
-        jobId =
-            tostring(game.JobId),
-
-        version =
-            "holy-loader-v2",
+    local params = {
+        "secret=" .. UrlEncode(HOLY_LOADER_KEY_STATE.Secret),
+        "action=verify",
+        "key=" .. UrlEncode(key),
+        "userId=" .. UrlEncode(LocalPlayer.UserId),
+        "username=" .. UrlEncode(LocalPlayer.Name),
+        "displayName=" .. UrlEncode(LocalPlayer.DisplayName),
+        "placeId=" .. UrlEncode(game.PlaceId),
+        "jobId=" .. UrlEncode(game.JobId),
+        "version=holy-loader-v2-get",
     }
 
-    local encoded =
-        HttpService:JSONEncode(payload)
+    local separator =
+        authURL:find("?", 1, true)
+        and "&"
+        or "?"
 
-    local ok, result =
+    local finalURL =
+        authURL
+        .. separator
+        .. table.concat(params, "&")
+
+    local ok, body =
         pcall(function()
-
-            return requestFunction({
-                Url = authURL,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                },
-                Body = encoded,
-            })
+            return game:HttpGet(finalURL, true)
         end)
 
     if not ok then
-        return false, "Auth request failed: " .. tostring(result)
-    end
-
-    local statusCode =
-        result
-        and (
-            result.StatusCode
-            or result.status_code
-            or result.Status
-        )
-
-    local body =
-        result
-        and (
-            result.Body
-            or result.body
-            or result.ResponseBody
-        )
-
-    if tonumber(statusCode)
-    and tonumber(statusCode) >= 400 then
-        return false, "Auth server error: " .. tostring(statusCode)
+        return false, "Auth GET failed: " .. tostring(body)
     end
 
     local decoded, decodeErr =
         DecodeHolyJson(body)
 
     if not decoded then
-        return false, decodeErr
+        return false, tostring(decodeErr)
+            .. " | Body: "
+            .. tostring(body):sub(1, 150)
     end
 
     if decoded.allowed ~= true then
