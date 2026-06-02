@@ -5977,6 +5977,143 @@ function BuildShowcasePetChoiceMaps()
     return choices, choiceToKey, keyToPet
 end
 
+function FormatSavedShowcaseChoiceLabel(identity)
+
+    if type(identity) ~= "table" then
+        return nil
+    end
+
+    local petName =
+        NormalizeShowcasePetName(
+            identity.PetName
+            or identity.ListedPetName
+        )
+
+    if petName == "" then
+        petName =
+            "Saved Pet"
+    end
+
+    local weight =
+        tonumber(identity.Weight)
+        or 0
+
+    local uid =
+        tostring(
+            identity.UID
+            or identity.StableKey
+            or ""
+        )
+
+    local label =
+        petName
+
+    if weight > 0 then
+        label =
+            label
+            .. " | "
+            .. string.format("%.2f KG", weight)
+    end
+
+    if uid ~= "" then
+        label =
+            label
+            .. " | #"
+            .. FormatShowcaseShortUID(uid)
+    end
+
+    return label
+end
+
+function BuildSavedShowcaseChoiceLabels()
+
+    local labels =
+        {}
+
+    if type(BoothPetState.SelectedShowcasePetLabels) == "table" then
+
+        for _, label in ipairs(BoothPetState.SelectedShowcasePetLabels) do
+
+            label =
+                tostring(label or "")
+
+            if label ~= "" then
+                table.insert(
+                    labels,
+                    label
+                )
+            end
+        end
+    end
+
+    if #labels > 0 then
+        table.sort(labels)
+
+        return labels
+    end
+
+    if type(BoothPetState.SavedShowcaseSelections) == "table" then
+
+        for _, identity in ipairs(BoothPetState.SavedShowcaseSelections) do
+
+            local label =
+                FormatSavedShowcaseChoiceLabel(identity)
+
+            if label
+            and label ~= "" then
+
+                table.insert(
+                    labels,
+                    label
+                )
+            end
+        end
+    end
+
+    table.sort(labels)
+
+    return labels
+end
+
+function MergeSavedShowcaseLabelsIntoChoices(choices)
+
+    choices =
+        type(choices) == "table"
+        and choices
+        or {}
+
+    local existing =
+        {}
+
+    for _, choice in ipairs(choices) do
+        existing[tostring(choice)] =
+            true
+    end
+
+    local savedLabels =
+        BuildSavedShowcaseChoiceLabels()
+
+    for _, label in ipairs(savedLabels) do
+
+        label =
+            tostring(label or "")
+
+        if label ~= ""
+        and not existing[label] then
+
+            table.insert(
+                choices,
+                label
+            )
+
+            existing[label] =
+                true
+        end
+    end
+
+    return choices
+end
+
 --==================================================
 -- SHOWCASE SELECTION PERSISTENCE
 -- Saves selected showcase pets by identity, not only
@@ -6225,6 +6362,10 @@ function BuildShowcaseSavePayload()
                 BoothPetState.SelectedPetType
             ),
 
+        SelectedLabels =
+            BoothPetState.SelectedShowcasePetLabels
+            or {},
+
         Selections =
             BuildCurrentShowcaseSelectionIdentities(),
     }
@@ -6416,8 +6557,14 @@ function LoadShowcaseSelectionConfigNow()
         and payload.Selections
         or {}
 
+    BoothPetState.SelectedShowcasePetLabels =
+        type(payload.SelectedLabels) == "table"
+        and payload.SelectedLabels
+        or BuildSavedShowcaseChoiceLabels()
+
     BoothPetState.ShowcaseRestorePending =
         #(BoothPetState.SavedShowcaseSelections or {}) > 0
+        or #(BoothPetState.SelectedShowcasePetLabels or {}) > 0
 
     print(
         "[SHOWCASE SAVE] Loaded",
@@ -6516,6 +6663,10 @@ function RestoreShowcaseSelectionsFromSaved()
 
     if type(savedSelections) ~= "table"
     or #savedSelections <= 0 then
+
+        BoothPetState.SelectedShowcasePetLabels =
+            BuildSavedShowcaseChoiceLabels()
+
         return false
     end
 
@@ -6525,6 +6676,15 @@ function RestoreShowcaseSelectionsFromSaved()
         BuildAvailableShowcasePets()
 
     if #pets <= 0 then
+
+        -- Real listed pets are not loaded yet.
+        -- Keep saved labels visible in the dropdown and retry later.
+        BoothPetState.SelectedShowcasePetLabels =
+            BuildSavedShowcaseChoiceLabels()
+
+        BoothPetState.ShowcaseRestorePending =
+            true
+
         return false
     end
 
@@ -6697,14 +6857,6 @@ function RefreshShowcasePetDropdown(clearSelection)
     local choices =
         BuildShowcasePetChoiceMaps()
 
-    if ShowcaseDropdownRef
-    and type(ShowcaseDropdownRef.SetValues) == "function" then
-
-        ShowcaseDropdownRef:SetValues(
-            choices
-        )
-    end
-
     if clearSelection == true then
 
         BoothPetState.SelectedShowcasePets =
@@ -6729,6 +6881,14 @@ function RefreshShowcasePetDropdown(clearSelection)
             nil
 
         if ShowcaseDropdownRef
+        and type(ShowcaseDropdownRef.SetValues) == "function" then
+
+            ShowcaseDropdownRef:SetValues(
+                choices
+            )
+        end
+
+        if ShowcaseDropdownRef
         and type(ShowcaseDropdownRef.SetValue) == "function" then
 
             ShowcaseDropdownSyncing =
@@ -6745,28 +6905,49 @@ function RefreshShowcasePetDropdown(clearSelection)
             true
         )
 
-    else
+        return choices
+    end
 
-        if BoothPetState.ShowcaseRestorePending == true then
+    local restored =
+        false
+
+    if BoothPetState.ShowcaseRestorePending == true then
+        restored =
             RestoreShowcaseSelectionsFromSaved()
-        else
-            SyncShowcaseSelectedLabelsFromKeys()
-        end
+    end
 
-        if ShowcaseDropdownRef
-        and type(ShowcaseDropdownRef.SetValue) == "function" then
+    if restored ~= true then
+        SyncShowcaseSelectedLabelsFromKeys()
+    end
 
-            ShowcaseDropdownSyncing =
-                true
+    -- Critical:
+    -- if real listed choices are not ready yet, keep saved labels visible.
+    choices =
+        MergeSavedShowcaseLabelsIntoChoices(
+            choices
+        )
 
-            ShowcaseDropdownRef:SetValue(
-                BoothPetState.SelectedShowcasePetLabels
-                or {}
-            )
+    if ShowcaseDropdownRef
+    and type(ShowcaseDropdownRef.SetValues) == "function" then
 
-            ShowcaseDropdownSyncing =
-                false
-        end
+        ShowcaseDropdownRef:SetValues(
+            choices
+        )
+    end
+
+    if ShowcaseDropdownRef
+    and type(ShowcaseDropdownRef.SetValue) == "function" then
+
+        ShowcaseDropdownSyncing =
+            true
+
+        ShowcaseDropdownRef:SetValue(
+            BoothPetState.SelectedShowcasePetLabels
+            or {}
+        )
+
+        ShowcaseDropdownSyncing =
+            false
     end
 
     return choices
@@ -6844,51 +7025,37 @@ function ChooseShowcaseCandidate(pets, mode, missingPetName)
         NormalizeShowcasePetName(missingPetName)
 
     local candidates =
-        {}
+        BuildSelectedShowcaseCandidateList(
+            pets,
+            true
+        )
 
-    --==================================================
-    -- SIMPLE SHOWCASE RULE
-    -- Only use pets selected in the dropdown.
-    -- Never random, never highest weight, never fallback
-    -- to unselected pets.
-    --==================================================
+    if #candidates <= 0 then
+        return nil
+    end
 
-    for _, pet in ipairs(pets) do
+    if missingPetName ~= "" then
 
-        if type(pet) ~= "table" then
-            continue
+        local filtered =
+            {}
+
+        for _, pet in ipairs(candidates) do
+
+            local petName =
+                NormalizeShowcasePetName(
+                    pet.PetName
+                )
+
+            if petName:lower() ~= missingPetName:lower() then
+                table.insert(
+                    filtered,
+                    pet
+                )
+            end
         end
 
-        local petName =
-            NormalizeShowcasePetName(
-                pet.PetName
-            )
-
-        local stableKey =
-            tostring(
-                pet.StableKey
-                or pet.UID
-                or ""
-            )
-
-        if petName == ""
-        or stableKey == "" then
-            continue
-        end
-
-        if missingPetName ~= ""
-        and petName:lower() == missingPetName:lower() then
-            continue
-        end
-
-        if BoothPetState.SelectedShowcasePets
-        and BoothPetState.SelectedShowcasePets[stableKey] == true then
-
-            table.insert(
-                candidates,
-                pet
-            )
-        end
+        candidates =
+            filtered
     end
 
     if #candidates <= 0 then
@@ -39548,8 +39715,7 @@ local ShowcaseDropdown =
                 end)(),
 
             Default =
-                BoothPetState.SelectedShowcasePetLabels
-                or {},
+            BuildSavedShowcaseChoiceLabels(),
 
             Multi = true,
             Searchable = true,
@@ -39565,9 +39731,9 @@ ShowcaseDropdownRef =
 task.spawn(function()
 
     -- Rejoin restore:
-    -- listed pets can appear late because booth/listing data loads after UI.
-    -- Retry for a short window instead of restoring once too early.
-    for attempt = 1, 15 do
+    -- Obsidian dropdown can display saved labels immediately,
+    -- then HOLY resolves them into real listed pets when booth/listing data loads.
+    for attempt = 1, 30 do
 
         task.wait(
             attempt == 1
@@ -39600,11 +39766,18 @@ task.spawn(function()
             0
 
         for _, selected in pairs(BoothPetState.SelectedShowcasePets or {}) do
+
             if selected == true then
                 selectedCount =
                     selectedCount + 1
             end
         end
+
+        local savedCount =
+            #(BoothPetState.SavedShowcaseSelections or {})
+
+        local labelCount =
+            #(BoothPetState.SelectedShowcasePetLabels or {})
 
         if selectedCount > 0 then
 
@@ -39622,14 +39795,17 @@ task.spawn(function()
             return
         end
 
-        if BoothPetState.ShowcaseRestorePending ~= true
-        and #(BoothPetState.SavedShowcaseSelections or {}) <= 0 then
+        -- Keep retrying if we have saved selections/labels,
+        -- even if real choices are not available yet.
+        if savedCount <= 0
+        and labelCount <= 0
+        and BoothPetState.ShowcaseRestorePending ~= true then
             return
         end
     end
 
     warn(
-        "[SHOWCASE SAVE] Restore timed out; press Refresh Listed Pets after listings load."
+        "[SHOWCASE SAVE] Restore still pending; listed pets were not ready yet."
     )
 end)
 
@@ -39717,6 +39893,7 @@ BoothCustomizationBox:AddButton({
 
         BoothPetState.ShowcaseRestorePending =
             #(BoothPetState.SavedShowcaseSelections or {}) > 0
+            or #(BoothPetState.SelectedShowcasePetLabels or {}) > 0
 
         local choices =
             RefreshShowcasePetDropdown(false)
