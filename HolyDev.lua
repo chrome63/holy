@@ -40641,7 +40641,7 @@ BoothPromoteBox:AddDropdown(
 
         Multi = false,
 
-        Tooltip = "Controls which live booth listing is used for %pet%, %kg%, and %price%.",
+        Tooltip = "Controls which live booth listing is used for %pet%, %mut%, %kg%, and %price%.",
     }
 ):OnChanged(function(value)
 
@@ -40745,8 +40745,8 @@ CustomPromoteInputs =
 
 local DEFAULT_CUSTOM_PROMOTE_MESSAGES = {
     [1] = "huge %pet% %kg% listed rn",
-    [2] = "selling %pet%, check booth",
-    [3] = "%pet% for %price% tokens",
+    [2] = "selling %mut% %pet%, check booth",
+    [3] = "%mut% %pet% for %price% tokens",
     [4] = "good pets listed, check fast",
     [5] = "rare pets in booth rn",
     [6] = "%pet% listed now",
@@ -40802,7 +40802,7 @@ for index = 1, 10 do
                 Default = tostring(defaultMessage or ""),
                 Finished = true,
                 ClearTextOnFocus = false,
-                Tooltip = "Placeholders: %pet%, %kg%, %price%.",
+                Tooltip = "Placeholders: %pet%, %mut%, %kg%, %price%.",
             }
         )
 
@@ -40819,7 +40819,7 @@ for index = 1, 10 do
 end
 
 BoothPromoteBox:AddLabel(
-    "Placeholders: %pet%  %kg%  %price%"
+    "Placeholders: %pet%  %mut%  %kg%  %price%"
 )
 
 RefreshCustomPromoteMessageInputs()
@@ -41307,6 +41307,41 @@ function PickPromoteTemplate()
     return template
 end
 
+function ResolvePromoteMutationText(listing)
+
+    if type(listing) ~= "table" then
+        return ""
+    end
+
+    local mutation =
+        listing.MutationText
+        or listing.Mutation
+        or listing.MutationType
+        or (
+            type(listing.PetData) == "table"
+            and (
+                listing.PetData.MutationType
+                or listing.PetData.Mutation
+            )
+        )
+        or ""
+
+    mutation =
+        tostring(mutation or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if mutation == ""
+    or mutation == "---"
+    or mutation == "Normal"
+    or mutation == "Unknown"
+    or mutation == "None" then
+        return ""
+    end
+
+    return mutation
+end
+
 function ApplyPromotePlaceholders(template, listing)
 
     local text =
@@ -41330,6 +41365,11 @@ function ApplyPromotePlaceholders(template, listing)
         )
         or nil
 
+    local mutation =
+        ResolvePromoteMutationText(
+            listing
+        )
+
     text =
         text:gsub(
             "%%pet%%",
@@ -41346,6 +41386,12 @@ function ApplyPromotePlaceholders(template, listing)
         text:gsub(
             "%%kg%%",
             weight and FormatPromoteWeight(weight) or "?"
+        )
+
+        text =
+        text:gsub(
+            "%%mut%%",
+            mutation ~= "" and mutation or ""
         )
 
     -- Backwards compatibility with old %s templates.
