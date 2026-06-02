@@ -6111,6 +6111,35 @@ function MergeSavedShowcaseLabelsIntoChoices(choices)
         end
     end
 
+    -- Give saved labels a temporary stable-key mapping.
+    -- This prevents Obsidian multi-select from becoming visually selected
+    -- but internally unmapped while booth/listing data is still loading.
+    for _, identity in ipairs(BoothPetState.SavedShowcaseSelections or {}) do
+
+        local label =
+            FormatSavedShowcaseChoiceLabel(identity)
+
+        local stableKey =
+            tostring(
+                identity.StableKey
+                or identity.UID
+                or ""
+            )
+
+        if label
+        and label ~= ""
+        and stableKey ~= "" then
+
+            ShowcaseChoiceToStableKey[label] =
+                ShowcaseChoiceToStableKey[label]
+                or stableKey
+
+            ShowcaseStableKeyToChoice[stableKey] =
+                ShowcaseStableKeyToChoice[stableKey]
+                or label
+        end
+    end
+
     return choices
 end
 
@@ -6908,15 +6937,37 @@ function RefreshShowcasePetDropdown(clearSelection)
         return choices
     end
 
+    local hadRestoreData =
+        BoothPetState.ShowcaseRestorePending == true
+        or #(BoothPetState.SavedShowcaseSelections or {}) > 0
+        or #(BoothPetState.SelectedShowcasePetLabels or {}) > 0
+
     local restored =
         false
 
-    if BoothPetState.ShowcaseRestorePending == true then
+    if BoothPetState.ShowcaseRestorePending == true
+    or #(BoothPetState.SavedShowcaseSelections or {}) > 0 then
+
         restored =
             RestoreShowcaseSelectionsFromSaved()
     end
 
-    if restored ~= true then
+    if restored == true then
+
+        -- Real listed pets were found.
+        -- Labels now point to real current dropdown rows.
+        SyncShowcaseSelectedLabelsFromKeys()
+
+    elseif hadRestoreData == true then
+
+        -- Real listed pets are not ready yet.
+        -- Keep saved labels visible instead of wiping the dropdown.
+        BoothPetState.SelectedShowcasePetLabels =
+            BuildSavedShowcaseChoiceLabels()
+
+    else
+
+        -- Normal refresh with no pending save data.
         SyncShowcaseSelectedLabelsFromKeys()
     end
 
@@ -39730,6 +39781,10 @@ ShowcaseDropdownRef =
 
 task.spawn(function()
 
+    -- Immediate UI restore:
+    -- show saved labels as soon as the dropdown exists.
+    RefreshShowcasePetDropdown(false)
+
     -- Rejoin restore:
     -- Obsidian dropdown can display saved labels immediately,
     -- then HOLY resolves them into real listed pets when booth/listing data loads.
@@ -39795,8 +39850,6 @@ task.spawn(function()
             return
         end
 
-        -- Keep retrying if we have saved selections/labels,
-        -- even if real choices are not available yet.
         if savedCount <= 0
         and labelCount <= 0
         and BoothPetState.ShowcaseRestorePending ~= true then
@@ -39808,7 +39861,6 @@ task.spawn(function()
         "[SHOWCASE SAVE] Restore still pending; listed pets were not ready yet."
     )
 end)
-
 ShowcaseDropdown:OnChanged(function(value)
 
     if ShowcaseDropdownSyncing == true then
