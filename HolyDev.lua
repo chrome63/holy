@@ -4429,11 +4429,10 @@ ClaimReady = false,
 -- AUTO AGE BREAKER
 -- Automation only runs when Enabled is ON.
 --==================================================
-AutoTeleportOnEnable = true,
-
 AutoTeleportWhenReady = false,
 AutoClaimWhenReady = false,
 AutoResubmitAfterClaim = false,
+
 -- Normal World -> Trade World after the Age Break machine starts.
 -- Separate from AutoTeleportWhenReady, which is Trade World -> Normal World for claiming.
 AutoTeleportToTradeWorldOnMachineStart = false,
@@ -12669,9 +12668,6 @@ function BuildAgeBreakerSavePayload()
     ),
 
 Automation = {
-    AutoTeleportOnEnable =
-        AgeBreakerState.AutoTeleportOnEnable == true,
-
     AutoTeleportWhenReady =
         AgeBreakerState.AutoTeleportWhenReady == true,
 
@@ -12903,9 +12899,6 @@ function ApplyAgeBreakerLoadedPayload(payload)
     type(payload.Automation) == "table"
     and payload.Automation
     or {}
-
-AgeBreakerState.AutoTeleportOnEnable =
-    automation.AutoTeleportOnEnable ~= false
 
 AgeBreakerState.AutoTeleportWhenReady =
     automation.AutoTeleportWhenReady == true
@@ -14343,37 +14336,9 @@ function RequestAgeBreakerTradeWorldTeleportAfterMachineStart(reason)
     return true, "Trade World teleport requested"
 end
 
-function RequestAgeBreakerTeleportOnEnable()
+function RequestAgeBreakerNormalWorldTeleport(reason)
 
-    if AgeBreakerState.Enabled ~= true then
-        return false, "Age Breaker disabled"
-    end
-
-    if AgeBreakerState.AutoTeleportOnEnable ~= true then
-        return false, "Teleport on enable disabled"
-    end
-
-    if IsGrowGardenNormalWorld() then
-
-        AgeBreakerState.Status =
-            "Ready"
-
-        AgeBreakerState.NextAction =
-            "Prepare pair"
-
-        return false, "Already in Normal Garden"
-    end
-
-    return RequestAgeBreakerNormalWorldTeleport(
-        "Age Breaker enabled outside Normal Garden. Teleporting there first.",
-        true
-    )
-end
-
-function RequestAgeBreakerNormalWorldTeleport(reason, bypassReadyToggle)
-
-    if bypassReadyToggle ~= true
-    and AgeBreakerState.AutoTeleportWhenReady ~= true then
+    if AgeBreakerState.AutoTeleportWhenReady ~= true then
         return false, "Auto teleport disabled"
     end
 
@@ -14402,16 +14367,16 @@ function RequestAgeBreakerNormalWorldTeleport(reason, bypassReadyToggle)
         "Teleporting to Normal World"
 
     AgeBreakerState.NextAction =
-        "Wait for Normal Garden"
+        "Claim age break"
 
     QueueAgeBreakerSave(
-        "age breaker normal world teleport",
-        true
-    )
+    "auto teleport normal world",
+    true
+)
 
     HolyNotify(
         "Age Breaker",
-        tostring(reason or "Teleporting to Normal Garden."),
+        tostring(reason or "Age break is ready. Teleporting to Normal World."),
         "send",
         4
     )
@@ -52920,53 +52885,37 @@ LoadAgeBreakerConfig()
             "eye"
         )
 
-SetupBox:AddToggle(
-    "AgeBreakerEnabled",
-    {
-        Text = "🧬 Enable Age Breaker",
-        Tooltip = "Enables Age Breaker queue/pool helper.",
-        Default = AgeBreakerState.Enabled == true,
-    }
-):OnChanged(function(value)
+    SetupBox:AddToggle(
+        "AgeBreakerEnabled",
+        {
+            Text = "🧬 Enable Age Breaker",
+            Tooltip = "Enables Age Breaker queue/pool helper.",
+            Default = AgeBreakerState.Enabled == true,
+        }
+    ):OnChanged(function(value)
 
-    AgeBreakerState.Enabled =
-        value == true
+        AgeBreakerState.Enabled =
+            value == true
 
-    AgeBreakerState.Status =
-        AgeBreakerState.Enabled
-        and "Enabled"
-        or "Disabled"
+        AgeBreakerState.Status =
+            AgeBreakerState.Enabled
+            and "Enabled"
+            or "Disabled"
 
     SaveAgeBreakerSettingChanged(
-        "enabled changed"
-    )
+    "enabled changed"
+)
 
-    RefreshAgeBreakerUI()
+RefreshAgeBreakerUI()
 
-    if AgeBreakerState.Enabled == true then
+if AgeBreakerState.Enabled == true
+and type(AgeBreakerAutoStep) == "function" then
+    task.defer(function()
+        pcall(AgeBreakerAutoStep)
+    end)
+end
+    end)
 
-        task.defer(function()
-
-            if not IsCurrentRun() then
-                return
-            end
-
-            -- If enabled outside Normal Garden, teleport there first.
-            if type(RequestAgeBreakerTeleportOnEnable) == "function" then
-                pcall(RequestAgeBreakerTeleportOnEnable)
-            end
-
-            -- Keep existing auto-step behavior.
-            if type(AgeBreakerAutoStep) == "function" then
-                pcall(AgeBreakerAutoStep)
-            end
-
-            if type(RefreshAgeBreakerUI) == "function" then
-                pcall(RefreshAgeBreakerUI)
-            end
-        end)
-    end
-end)
     SetupBox:AddInput(
         "AgeBreakerGoalLevel",
         {
@@ -53004,39 +52953,6 @@ RefreshAgeBreakerUI()
         MarginTop = 8,
         MarginBottom = 8,
     })
-
-QueueSetupBox:AddToggle("AgeBreakerAutoTeleportOnEnable", {
-    Text = "🌱 Teleport to Garden On Enable",
-    Default = AgeBreakerState.AutoTeleportOnEnable == true,
-
-    Tooltip = "When Age Breaker is enabled outside Normal Garden, HOLY teleports there first so the machine can be used.",
-
-    Callback = function(value)
-
-        AgeBreakerState.AutoTeleportOnEnable =
-            value == true
-
-        QueueAgeBreakerSave(
-            "auto teleport on enable",
-            true
-        )
-
-        if AgeBreakerState.Enabled == true then
-            task.defer(function()
-
-                if not IsCurrentRun() then
-                    return
-                end
-
-                RequestAgeBreakerTeleportOnEnable()
-
-                if type(RefreshAgeBreakerUI) == "function" then
-                    pcall(RefreshAgeBreakerUI)
-                end
-            end)
-        end
-    end,
-})
 
     SetupBox:AddToggle(
         "AgeBreakerAutoTeleportWhenReady",
