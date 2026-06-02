@@ -1,5 +1,5 @@
 --==================================================
--- HOLY v3.3.7 — OBSIDIAN FOUNDATION GROW A GARDEN TRADE MARKET SCRIPT
+-- HOLY v3.3.7 — OBSIDIAN FOUNDATION GROW A GARDEN TRADE MARKET CODING
 -- Purpose: Deterministic, modular base (no features)
 --==================================================
 
@@ -1469,6 +1469,344 @@ function GetSniperFilterSet(watchlistId)
     end
 
     return SniperFilterSets[watchlistId]
+end
+
+--==================================================
+-- FILTERED PET SCANNER INDEX
+-- Fast pre-filter for ExtractListings().
+-- This avoids building full listing objects for pets
+-- that are not in W1/W2/W3.
+--==================================================
+
+SniperPetFilterIndex =
+    SniperPetFilterIndex
+    or {
+        Exact = {},
+        Lower = {},
+        Count = 0,
+        Version = 0,
+        LastBuiltAt = 0,
+    }
+
+SniperFavoriteWatchCache =
+    SniperFavoriteWatchCache
+    or {
+        Listings = {},
+        LastCleanupAt = 0,
+        StaleAfter = 30,
+    }
+
+FilteredPetScannerStats =
+    FilteredPetScannerStats
+    or {
+        LastSkippedNonWatchlist = 0,
+        LastFavoriteWatched = 0,
+        TotalSkippedNonWatchlist = 0,
+        TotalFavoriteWatched = 0,
+    }
+
+function NormalizeSniperPetNameKey(value)
+
+    return tostring(value or "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+function RebuildSniperPetFilterIndex(reason)
+
+    SniperPetFilterIndex =
+        SniperPetFilterIndex
+        or {}
+
+    SniperPetFilterIndex.Exact = {}
+    SniperPetFilterIndex.Lower = {}
+
+    local count = 0
+
+    for watchlistId = 1, 3 do
+
+        local filters =
+            GetSniperFilterSet(watchlistId)
+
+        if type(filters) == "table" then
+
+            for petName, filter in pairs(filters) do
+
+                petName =
+                    NormalizeSniperPetNameKey(petName)
+
+                if petName ~= ""
+                and type(filter) == "table" then
+
+                    if SniperPetFilterIndex.Exact[petName] ~= true then
+                        count = count + 1
+                    end
+
+                    SniperPetFilterIndex.Exact[petName] =
+                        true
+
+                    SniperPetFilterIndex.Lower[petName:lower()] =
+                        petName
+                end
+            end
+        end
+    end
+
+    SniperPetFilterIndex.Count =
+        count
+
+    SniperPetFilterIndex.Version =
+        SafeNumber(
+            SniperPetFilterIndex.Version,
+            0
+        ) + 1
+
+    SniperPetFilterIndex.LastBuiltAt =
+        os.clock()
+
+    if SniperState
+    and (
+        SniperState.DebugSmartScanner == true
+        or SniperState.DebugClassicScanner == true
+    ) then
+
+        print(
+            "[FILTERED SCANNER] Rebuilt index:",
+            tostring(count),
+            "pets |",
+            tostring(reason or "unknown")
+        )
+    end
+
+    return count
+end
+
+function EnsureSniperPetFilterIndex()
+
+    if type(SniperPetFilterIndex) ~= "table"
+    or type(SniperPetFilterIndex.Exact) ~= "table"
+    or type(SniperPetFilterIndex.Lower) ~= "table" then
+
+        RebuildSniperPetFilterIndex(
+            "missing index"
+        )
+    end
+
+    return SniperPetFilterIndex
+end
+
+function ShouldUseFilteredPetScanner()
+
+    return SniperState
+        and SniperState.FilteredPetScanner == true
+end
+
+function ResolveIndexedSniperPetName(petName)
+
+    petName =
+        NormalizeSniperPetNameKey(petName)
+
+    if petName == "" then
+        return nil
+    end
+
+    local index =
+        EnsureSniperPetFilterIndex()
+
+    if index.Exact[petName] == true then
+        return petName
+    end
+
+    local lowerMatch =
+        index.Lower[petName:lower()]
+
+    if lowerMatch then
+        return lowerMatch
+    end
+
+    return nil
+end
+
+function IsPetNameInSniperFilterIndex(petName)
+
+    return ResolveIndexedSniperPetName(petName) ~= nil
+end
+
+function ResetFilteredPetScannerPassStats()
+
+    FilteredPetScannerStats =
+        FilteredPetScannerStats
+        or {}
+
+    FilteredPetScannerStats.LastSkippedNonWatchlist =
+        0
+
+    FilteredPetScannerStats.LastFavoriteWatched =
+        0
+end
+
+function AddFilteredPetScannerSkipped(amount)
+
+    amount =
+        tonumber(amount)
+        or 1
+
+    FilteredPetScannerStats =
+        FilteredPetScannerStats
+        or {}
+
+    FilteredPetScannerStats.LastSkippedNonWatchlist =
+        SafeNumber(
+            FilteredPetScannerStats.LastSkippedNonWatchlist,
+            0
+        ) + amount
+
+    FilteredPetScannerStats.TotalSkippedNonWatchlist =
+        SafeNumber(
+            FilteredPetScannerStats.TotalSkippedNonWatchlist,
+            0
+        ) + amount
+end
+
+function AddFilteredFavoriteWatched(amount)
+
+    amount =
+        tonumber(amount)
+        or 1
+
+    FilteredPetScannerStats =
+        FilteredPetScannerStats
+        or {}
+
+    FilteredPetScannerStats.LastFavoriteWatched =
+        SafeNumber(
+            FilteredPetScannerStats.LastFavoriteWatched,
+            0
+        ) + amount
+
+    FilteredPetScannerStats.TotalFavoriteWatched =
+        SafeNumber(
+            FilteredPetScannerStats.TotalFavoriteWatched,
+            0
+        ) + amount
+end
+
+function CleanupSniperFavoriteWatchCache()
+
+    if type(SniperFavoriteWatchCache) ~= "table" then
+        return 0
+    end
+
+    SniperFavoriteWatchCache.Listings =
+        SniperFavoriteWatchCache.Listings
+        or {}
+
+    local now =
+        os.clock()
+
+    if now - SafeNumber(SniperFavoriteWatchCache.LastCleanupAt, 0) < 5 then
+        return 0
+    end
+
+    SniperFavoriteWatchCache.LastCleanupAt =
+        now
+
+    local staleAfter =
+        math.clamp(
+            SafeNumber(
+                SniperFavoriteWatchCache.StaleAfter,
+                30
+            ),
+            5,
+            120
+        )
+
+    local removed = 0
+
+    for listingKey, info in pairs(SniperFavoriteWatchCache.Listings) do
+
+        local lastSeen =
+            type(info) == "table"
+            and SafeNumber(info.LastSeenAt, 0)
+            or 0
+
+        if now - lastSeen >= staleAfter then
+
+            SniperFavoriteWatchCache.Listings[listingKey] =
+                nil
+
+            removed =
+                removed + 1
+        end
+    end
+
+    return removed
+end
+
+function RegisterWatchedFavoriteSniperListing(listing)
+
+    if SniperState
+    and SniperState.WatchFavoritedFilterMatches ~= true then
+        return false
+    end
+
+    if type(listing) ~= "table"
+    or listing.IsFavorite ~= true then
+        return false
+    end
+
+    if not IsPetNameInSniperFilterIndex(listing.PetName) then
+        return false
+    end
+
+    -- Full filter match check:
+    -- price, weight mode, min weight, mutation, priority.
+    local matched =
+        ListingMatchesFilter(listing)
+
+    if not matched then
+        return false
+    end
+
+    local listingKey =
+        type(GetListingKey) == "function"
+        and GetListingKey(listing)
+        or (
+            tostring(listing.BoothId or "")
+            .. "_"
+            .. tostring(listing.UID or "")
+        )
+
+    if listingKey == "" then
+        return false
+    end
+
+    SniperFavoriteWatchCache =
+        SniperFavoriteWatchCache
+        or {
+            Listings = {},
+            LastCleanupAt = 0,
+            StaleAfter = 30,
+        }
+
+    SniperFavoriteWatchCache.Listings =
+        SniperFavoriteWatchCache.Listings
+        or {}
+
+    SniperFavoriteWatchCache.Listings[listingKey] = {
+        PetName = tostring(listing.PetName or ""),
+        Price = tonumber(listing.Price) or 0,
+        SellerUserId = tonumber(listing.SellerUserId) or 0,
+        FirstSeenAt =
+            SniperFavoriteWatchCache.Listings[listingKey]
+            and SniperFavoriteWatchCache.Listings[listingKey].FirstSeenAt
+            or os.clock(),
+        LastSeenAt = os.clock(),
+    }
+
+    AddFilteredFavoriteWatched(1)
+
+    return true
 end
 
 PetRegistry =
@@ -3719,6 +4057,17 @@ ScanSpeedMode = "Fast",
 -- ON  = faster optimized scanner path.
 SmartScannerEnabled = false,
 SmartScannerMode = "Classic",
+
+-- Filtered Pet Scanner:
+-- ON = ExtractListings skips pets whose base pet name is not in W1/W2/W3.
+-- This reduces lag in servers with hundreds of irrelevant pets.
+FilteredPetScanner = true,
+
+-- Favorite Watch:
+-- ON = favorited pets that match a sniper pet name are still extracted,
+-- matched, and watched. They are NOT bought while favorite is true.
+-- If the seller unfavorites the same listing later, Smart Scanner can process it.
+WatchFavoritedFilterMatches = true,
 
 -- Debug prints in scanner hot path.
 -- Keep false on cloud phones / low FPS devices.
@@ -8255,13 +8604,44 @@ for uid, listingData in pairs(listingsTable) do
         continue
     end
 
-if petData.IsFavorite then
-    continue
-end
-
 local petName =
     itemData.PetType
     or "Unknown"
+
+petName =
+    NormalizeSniperPetNameKey(petName)
+
+if petName == ""
+or petName == "Unknown" then
+    continue
+end
+
+-- Fast path:
+-- If Filtered Pet Scanner is ON, skip pets that are not in W1/W2/W3
+-- before doing weight, age, mutation, webhook, or listing-object work.
+if ShouldUseFilteredPetScanner()
+and not IsPetNameInSniperFilterIndex(petName) then
+
+    AddFilteredPetScannerSkipped(1)
+
+    continue
+end
+
+local isFavorite =
+    petData.IsFavorite == true
+
+-- Classic safety:
+-- Do not include favorites unless the favorite-watch system is enabled.
+-- Favorites are only kept when they already passed the fast watchlist-name filter.
+if isFavorite
+and not (
+    SniperState
+    and SniperState.WatchFavoritedFilterMatches == true
+    and ShouldUseFilteredPetScanner()
+) then
+
+    continue
+end
 
 local price =
     tonumber(listingData.Price)
@@ -8423,7 +8803,7 @@ MutationText = mutationText,
     -- Confirmation only.
     -- Favorite pets are already skipped above, so this should normally be false.
     IsFavorite =
-        petData.IsFavorite == true,
+        isFavorite,
 
     HatchedFrom = hatchedFrom,
     SourceEgg = hatchedFrom,
@@ -21686,12 +22066,13 @@ end
 -- - reduce repeated unchanged listing work
 -- - keep buy invoke path fast
 -- - buy best candidate first
--- - never hard-lock favorited listings
+-- - never buy favorited listings
 --
 -- Important:
--- ExtractListings() already skips petData.IsFavorite.
--- If a favorited listing later becomes unfavorited, it can
--- reappear and Smart Scanner will evaluate it again.
+-- ExtractListings() skips irrelevant pet names early when
+-- Filtered Pet Scanner is enabled.
+-- Favorited matching pets may still be extracted for watch-only logic.
+-- They are never bought while IsFavorite == true.
 --==================================================
 
 SmartSniperCache =
@@ -21720,6 +22101,8 @@ SmartSniperCache =
             LastCandidates = 0,
             LastSkippedUnchanged = 0,
             LastFavoriteSkipped = 0,
+            LastFavoriteWatched = 0,
+            LastFilteredSkipped = 0,
 
             LastMatches = 0,
             LastDispatched = 0,
@@ -22067,6 +22450,9 @@ if game.PlaceId == TRADING_WORLD_PLACE_ID then
     end
 end
 
+            ResetFilteredPetScannerPassStats()
+            EnsureSniperPetFilterIndex()
+
             local listings, scannedCount =
                 ExtractListings()
 
@@ -22106,6 +22492,17 @@ end
             local favoriteSkipped =
                 0
 
+            local favoriteWatched =
+                0
+
+            local filteredSkipped =
+                FilteredPetScannerStats
+                and SafeNumber(
+                    FilteredPetScannerStats.LastSkippedNonWatchlist,
+                    0
+                )
+                or 0
+
             local matches =
                 0
 
@@ -22119,7 +22516,13 @@ end
                 end
 
                 if listing.IsFavorite == true then
-                    favoriteSkipped = favoriteSkipped + 1
+
+                    if RegisterWatchedFavoriteSniperListing(listing) then
+                        favoriteWatched = favoriteWatched + 1
+                    else
+                        favoriteSkipped = favoriteSkipped + 1
+                    end
+
                     continue
                 end
 
@@ -22301,6 +22704,7 @@ end
             end
 
             CleanupSmartSniperCache()
+            CleanupSniperFavoriteWatchCache()
 
             SmartSniperCache.Stats.LastRunMs =
                 (os.clock() - runStartedAt) * 1000
@@ -22319,6 +22723,12 @@ end
 
             SmartSniperCache.Stats.LastFavoriteSkipped =
                 favoriteSkipped
+
+            SmartSniperCache.Stats.LastFavoriteWatched =
+                favoriteWatched
+
+            SmartSniperCache.Stats.LastFilteredSkipped =
+                filteredSkipped
 
             SmartSniperCache.Stats.LastMatches =
                 matches
@@ -22348,6 +22758,38 @@ function RunSmartSniperSelfTest()
     print("Mode:", tostring(SniperState.SmartScannerMode))
     print("Cache entries:", tostring(CountSmartSniperCache()))
 
+    local index =
+        EnsureSniperPetFilterIndex()
+
+    print("Filtered Scanner:", tostring(SniperState.FilteredPetScanner == true))
+    print("Watch Favorites:", tostring(SniperState.WatchFavoritedFilterMatches == true))
+    print("Indexed Pets:", tostring(index.Count or 0))
+
+    if FilteredPetScannerStats then
+
+        print(
+            "Last Filtered Skips:",
+            tostring(FilteredPetScannerStats.LastSkippedNonWatchlist or 0)
+        )
+
+        print(
+            "Last Favorite Watched:",
+            tostring(FilteredPetScannerStats.LastFavoriteWatched or 0)
+        )
+    end
+
+    if SniperFavoriteWatchCache
+    and SniperFavoriteWatchCache.Listings then
+
+        local watched = 0
+
+        for _ in pairs(SniperFavoriteWatchCache.Listings) do
+            watched = watched + 1
+        end
+
+        print("Favorite Watch Cache:", tostring(watched))
+    end
+
     if SmartSniperCache
     and SmartSniperCache.Stats then
 
@@ -22358,6 +22800,8 @@ function RunSmartSniperSelfTest()
         print("LastCandidates:", tostring(SmartSniperCache.Stats.LastCandidates or 0))
         print("LastSkippedUnchanged:", tostring(SmartSniperCache.Stats.LastSkippedUnchanged or 0))
         print("LastFavoriteSkipped:", tostring(SmartSniperCache.Stats.LastFavoriteSkipped or 0))
+        print("LastFavoriteWatched:", tostring(SmartSniperCache.Stats.LastFavoriteWatched or 0))
+        print("LastFilteredSkipped:", tostring(SmartSniperCache.Stats.LastFilteredSkipped or 0))
         print("LastMatches:", tostring(SmartSniperCache.Stats.LastMatches or 0))
         print("LastDispatched:", tostring(SmartSniperCache.Stats.LastDispatched or 0))
     end
@@ -22409,6 +22853,9 @@ end
                     )
                 end
             end
+
+            ResetFilteredPetScannerPassStats()
+            EnsureSniperPetFilterIndex()
 
             local listings, scannedCount =
                 ExtractListings()
@@ -22479,6 +22926,13 @@ end
                         listings[i]
 
                     if type(listing) ~= "table" then
+                        continue
+                    end
+
+                    if listing.IsFavorite == true then
+
+                        RegisterWatchedFavoriteSniperListing(listing)
+
                         continue
                     end
 
@@ -25304,6 +25758,10 @@ function SaveSniperFilters()
         return false
     end
 
+    RebuildSniperPetFilterIndex(
+        "filters saved"
+    )
+
     print("[Filters] Saved")
 
     return true
@@ -25431,6 +25889,10 @@ function LoadSniperFilters()
                 or {}
         )
 
+        RebuildSniperPetFilterIndex(
+            "filters loaded"
+        )
+
         print("[Filters] Loaded three watchlists")
         return
     end
@@ -25439,6 +25901,10 @@ function LoadSniperFilters()
     LoadFilterSetFromTable(
         GetSniperFilterSet(1),
         decoded
+    )
+
+    RebuildSniperPetFilterIndex(
+        "legacy filters loaded"
     )
 
     print("[Filters] Loaded legacy watchlist into W1 Main")
@@ -31455,6 +31921,79 @@ SmartScannerToggle:OnChanged(function(v)
     )
 end)
 
+local FilteredPetScannerToggle =
+    HomeBox:AddToggle(
+        "FilteredPetScanner",
+        {
+            Text = "⚡ Filtered Pet Scanner",
+            Default = SniperState.FilteredPetScanner == true,
+            Tooltip = "Skips booth pets whose base pet name is not in your sniper watchlists. Best for laggy 500-700 pet servers.",
+        }
+    )
+
+FilteredPetScannerToggle:OnChanged(function(v)
+
+    SniperState.FilteredPetScanner =
+        v == true
+
+    RebuildSniperPetFilterIndex(
+        "filtered scanner toggle"
+    )
+
+    if type(ResetSmartSniperCache) == "function" then
+        ResetSmartSniperCache(
+            "filtered scanner changed"
+        )
+    end
+
+    MarkConfigDirty()
+
+    HolyNotify(
+        v == true
+            and "Filtered Scanner Enabled"
+            or "Filtered Scanner Disabled",
+        v == true
+            and "Holy will skip non-watchlist pet names before expensive scanning."
+            or "Holy will scan every visible booth pet again.",
+        v == true and "zap" or "scan",
+        3
+    )
+end)
+
+local FavoriteWatchToggle =
+    HomeBox:AddToggle(
+        "WatchFavoritedFilterMatches",
+        {
+            Text = "⭐ Watch Favorited Matches",
+            Default = SniperState.WatchFavoritedFilterMatches == true,
+            Tooltip = "Watches favorited pets that match your sniper filters. If seller unfavorites later, Holy can snipe it.",
+        }
+    )
+
+FavoriteWatchToggle:OnChanged(function(v)
+
+    SniperState.WatchFavoritedFilterMatches =
+        v == true
+
+    if type(ResetSmartSniperCache) == "function" then
+        ResetSmartSniperCache(
+            "favorite watch changed"
+        )
+    end
+
+    MarkConfigDirty()
+
+    HolyNotify(
+        v == true
+            and "Favorite Watch Enabled"
+            or "Favorite Watch Disabled",
+        v == true
+            and "Favorited matching pets will be watched until they become buyable."
+            or "Favorited pets will be skipped normally.",
+        v == true and "star" or "star-off",
+        3
+    )
+end)
 --==================================================
 -- HUNTING TAB: TARGET PETS HOP UI
 -- Target pet hunting is separated from Home/Sniper
