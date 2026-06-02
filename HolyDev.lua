@@ -1500,8 +1500,11 @@ FilteredPetScannerStats =
     FilteredPetScannerStats
     or {
         LastSkippedNonWatchlist = 0,
+        LastSkippedExactFilter = 0,
         LastFavoriteWatched = 0,
+
         TotalSkippedNonWatchlist = 0,
+        TotalSkippedExactFilter = 0,
         TotalFavoriteWatched = 0,
     }
 
@@ -1632,6 +1635,83 @@ function IsPetNameInSniperFilterIndex(petName)
     return ResolveIndexedSniperPetName(petName) ~= nil
 end
 
+function ShouldUseExactFilterScanner()
+
+    return SniperState
+        and SniperState.ExactFilterScanner == true
+end
+
+function ListingPassesAnySniperPriceWeightFilter(
+    petName,
+    price,
+    baseWeight,
+    displayWeight,
+    weightSource
+)
+
+    petName =
+        NormalizeSniperPetNameKey(petName)
+
+    if petName == "" then
+        return false
+    end
+
+    price =
+        tonumber(price)
+        or math.huge
+
+    baseWeight =
+        tonumber(baseWeight)
+        or 0
+
+    displayWeight =
+        tonumber(displayWeight)
+        or baseWeight
+        or 0
+
+    for watchlistId = 1, 3 do
+
+        local filters =
+            GetSniperFilterSet(watchlistId)
+
+        local filter =
+            filters[petName]
+
+        if type(filter) == "table" then
+
+            local maxPrice =
+                tonumber(filter.MaxPrice)
+                or math.huge
+
+            if price <= maxPrice then
+
+                local weightMode =
+                    NormalizeWeightMode(
+                        filter.WeightMode
+                    )
+
+                local minWeight =
+                    tonumber(filter.MinWeight)
+                    or 0
+
+                local testWeight =
+                    displayWeight
+
+                if weightMode == "BaseWeight" then
+                    testWeight =
+                        baseWeight
+                end
+
+                if testWeight >= minWeight then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
 function ResetFilteredPetScannerPassStats()
 
     FilteredPetScannerStats =
@@ -1639,6 +1719,9 @@ function ResetFilteredPetScannerPassStats()
         or {}
 
     FilteredPetScannerStats.LastSkippedNonWatchlist =
+        0
+
+    FilteredPetScannerStats.LastSkippedExactFilter =
         0
 
     FilteredPetScannerStats.LastFavoriteWatched =
@@ -1664,6 +1747,29 @@ function AddFilteredPetScannerSkipped(amount)
     FilteredPetScannerStats.TotalSkippedNonWatchlist =
         SafeNumber(
             FilteredPetScannerStats.TotalSkippedNonWatchlist,
+            0
+        ) + amount
+end
+
+function AddExactFilterScannerSkipped(amount)
+
+    amount =
+        tonumber(amount)
+        or 1
+
+    FilteredPetScannerStats =
+        FilteredPetScannerStats
+        or {}
+
+    FilteredPetScannerStats.LastSkippedExactFilter =
+        SafeNumber(
+            FilteredPetScannerStats.LastSkippedExactFilter,
+            0
+        ) + amount
+
+    FilteredPetScannerStats.TotalSkippedExactFilter =
+        SafeNumber(
+            FilteredPetScannerStats.TotalSkippedExactFilter,
             0
         ) + amount
 end
@@ -4062,6 +4168,12 @@ SmartScannerMode = "Classic",
 -- ON = ExtractListings skips pets whose base pet name is not in W1/W2/W3.
 -- This reduces lag in servers with hundreds of irrelevant pets.
 FilteredPetScanner = true,
+
+-- Exact Filter Scanner:
+-- ON = after pet-name match, ExtractListings also skips listings that do
+-- not pass sniper price + weight rules.
+-- This keeps the scan list small in servers with many same-name bad listings.
+ExactFilterScanner = true,
 
 -- Favorite Watch:
 -- ON = favorited pets that match a sniper pet name are still extracted,
@@ -8632,7 +8744,8 @@ local isFavorite =
 
 -- Classic safety:
 -- Do not include favorites unless the favorite-watch system is enabled.
--- Favorites are only kept when they already passed the fast watchlist-name filter.
+-- Favorites are only kept when they passed the watchlist-name filter.
+-- If Exact Filter Scanner is ON, they must also pass price + weight.
 if isFavorite
 and not (
     SniperState
@@ -8677,6 +8790,20 @@ local displayWeight, weightSource =
         listingData,
         age
     )
+
+if ShouldUseExactFilterScanner()
+and not ListingPassesAnySniperPriceWeightFilter(
+    petName,
+    price,
+    baseWeight,
+    displayWeight,
+    weightSource
+) then
+
+    AddExactFilterScannerSkipped(1)
+
+    continue
+end
 
 -- Do not infer Age from BaseWeight/DisplayWeight.
 -- Display KG caps around BaseWeight × 11, while broken Age can go above 100
@@ -22762,20 +22889,26 @@ function RunSmartSniperSelfTest()
         EnsureSniperPetFilterIndex()
 
     print("Filtered Scanner:", tostring(SniperState.FilteredPetScanner == true))
+    print("Exact Filter Scanner:", tostring(SniperState.ExactFilterScanner == true))
     print("Watch Favorites:", tostring(SniperState.WatchFavoritedFilterMatches == true))
     print("Indexed Pets:", tostring(index.Count or 0))
 
     if FilteredPetScannerStats then
 
         print(
-            "Last Filtered Skips:",
-            tostring(FilteredPetScannerStats.LastSkippedNonWatchlist or 0)
-        )
+    "Last Name Skips:",
+    tostring(FilteredPetScannerStats.LastSkippedNonWatchlist or 0)
+)
 
-        print(
-            "Last Favorite Watched:",
-            tostring(FilteredPetScannerStats.LastFavoriteWatched or 0)
-        )
+print(
+    "Last Exact Skips:",
+    tostring(FilteredPetScannerStats.LastSkippedExactFilter or 0)
+)
+
+print(
+    "Last Favorite Watched:",
+    tostring(FilteredPetScannerStats.LastFavoriteWatched or 0)
+)
     end
 
     if SniperFavoriteWatchCache
@@ -31967,6 +32100,41 @@ FilteredPetScannerToggle:OnChanged(function(v)
             and "Holy will skip non-watchlist pet names before expensive scanning."
             or "Holy will scan every visible booth pet again.",
         v == true and "zap" or "scan",
+        3
+    )
+end)
+
+local ExactFilterScannerToggle =
+    HomeBox:AddToggle(
+        "ExactFilterScanner",
+        {
+            Text = "🎯 Exact Filter Scanner",
+            Default = SniperState.ExactFilterScanner == true,
+            Tooltip = "Only keeps listings that pass sniper pet name, max price, and min weight rules before deeper scanning.",
+        }
+    )
+
+ExactFilterScannerToggle:OnChanged(function(v)
+
+    SniperState.ExactFilterScanner =
+        v == true
+
+    if type(ResetSmartSniperCache) == "function" then
+        ResetSmartSniperCache(
+            "exact filter scanner changed"
+        )
+    end
+
+    MarkConfigDirty()
+
+    HolyNotify(
+        v == true
+            and "Exact Filter Scanner Enabled"
+            or "Exact Filter Scanner Disabled",
+        v == true
+            and "HOLY will skip listings that fail price/weight before deeper scanning."
+            or "HOLY will only pre-filter by pet name.",
+        v == true and "target" or "scan",
         3
     )
 end)
