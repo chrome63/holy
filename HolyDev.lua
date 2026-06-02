@@ -40625,7 +40625,7 @@ end)
 BoothPromoteBox:AddDropdown(
     "PromoteSource",
     {
-        Text = "Promote Source",
+        Text = "🎯 Promote Source",
 
         Values = {
             "Best Listed Pet",
@@ -40654,7 +40654,7 @@ end)
 BoothPromoteBox:AddDropdown(
     "PromoteMode",
     {
-        Text = "Promote Mode",
+        Text = "🔁 Promote Mode",
 
         Values = {
             "Built-in Rotation",
@@ -40680,7 +40680,7 @@ end)
 BoothPromoteBox:AddInput(
     "PromoteInterval",
     {
-        Text = "Promote Delay",
+        Text = "⏱️ Promote Delay",
         Default = tostring(BoothAuto.PromoteInterval or 40),
         Numeric = true,
         Finished = true,
@@ -40709,7 +40709,7 @@ end)
 BoothPromoteBox:AddInput(
     "CustomPromoteCount",
     {
-        Text = "Custom Message Count",
+        Text = "💬 Message Count",
         Default = tostring(BoothAuto.CustomPromoteCount or 4),
         Numeric = true,
         Finished = true,
@@ -40749,10 +40749,10 @@ local DEFAULT_CUSTOM_PROMOTE_MESSAGES = {
     [3] = "%mut% %pet% for %price% tokens",
     [4] = "good pets listed, check fast",
     [5] = "rare pets in booth rn",
-    [6] = "%pet% listed now",
+    [6] = "%mut%%pet% listed now",
     [7] = "check booth for %pet%",
     [8] = "%pet% up for %price%",
-    [9] = "big %pet% %kg% in booth",
+    [9] = "big %mut%%pet% %kg% in booth",
     [10] = "booth open, good pets listed",
 }
 
@@ -40798,7 +40798,7 @@ for index = 1, 10 do
         BoothPromoteBox:AddInput(
             "CustomPromoteMessage" .. tostring(index),
             {
-                Text = "Custom Message " .. tostring(index),
+                Text = "💬 Custom Message " .. tostring(index),
                 Default = tostring(defaultMessage or ""),
                 Finished = true,
                 ClearTextOnFocus = false,
@@ -40819,7 +40819,7 @@ for index = 1, 10 do
 end
 
 BoothPromoteBox:AddLabel(
-    "Placeholders: %pet%  %mut%  %kg%  %price%"
+    "✨ Placeholders: %pet%  %mut%  %kg%  %price%"
 )
 
 RefreshCustomPromoteMessageInputs()
