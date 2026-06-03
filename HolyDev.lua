@@ -8590,7 +8590,9 @@ end
 function TransferBuildPetList()
 
     if type(RefreshDynamicPetList) == "function" then
-        RefreshDynamicPetList()
+        pcall(function()
+            RefreshDynamicPetList()
+        end)
     end
 
     local source =
@@ -8666,8 +8668,15 @@ end
 function TransferBuildMutationOnlyList()
 
     if type(RefreshListingMutationList) == "function" then
-        RefreshListingMutationList()
+        pcall(function()
+            RefreshListingMutationList()
+        end)
     end
+
+    ListingMutationList =
+        type(ListingMutationList) == "table"
+        and ListingMutationList
+        or {}
 
     local choices = {}
     local seen = {}
@@ -28253,9 +28262,29 @@ TransferStatusBox = nil
 
 if Tabs.Transfer then
 
-    -- Same preload style as Listings.
-    RefreshDynamicPetList()
-    RefreshListingMutationList()
+    -- Dynamic list functions are defined later in this build,
+    -- so never call them directly here without guards.
+    if type(RefreshDynamicPetList) == "function" then
+        pcall(function()
+            RefreshDynamicPetList()
+        end)
+    end
+
+    if type(RefreshListingMutationList) == "function" then
+        pcall(function()
+            RefreshListingMutationList()
+        end)
+    end
+
+    PetList =
+        type(PetList) == "table"
+        and PetList
+        or {}
+
+    ListingMutationList =
+        type(ListingMutationList) == "table"
+        and ListingMutationList
+        or {}
 
     TransferPetFiltersBox =
         Tabs.Transfer:AddLeftGroupbox(
