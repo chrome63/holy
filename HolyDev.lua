@@ -26061,7 +26061,8 @@ function RunAutoAscensionHardFreezeSpam(
     -- TRUE FAST HARD-FREEZE LOOP
     -- No task.wait().
     -- Fires as fast as Lua can run.
-    -- Stops immediately when target attempts are reached.
+    -- Stops immediately when target attempts are reached,
+    -- or when Freeze Time safety limit is reached.
     --==================================================
 
     while attempt < amount do
@@ -26070,92 +26071,7 @@ function RunAutoAscensionHardFreezeSpam(
             break
         end
 
-        -- Freeze safety timeout.
-        -- If something goes wrong, it will not hard-lock forever.
         if os.clock() >= deadline then
-            break
-        end
-
-        attempt =
-            attempt + 1
-
-        buyRebirthRemote:FireServer()
-
-        if rememberUnlockageRemote then
-            rememberUnlockageRemote:FireServer()
-        end
-
-        AutoAscensionState.AttemptsDone =
-            attempt
-    end
-
-    AutoAscensionState.Frozen =
-        false
-
-    return attempt
-end
-
-    amount =
-        ClampAutoAscensionSpamAmount(amount)
-
-    freezeSeconds =
-        ClampAutoAscensionFreezeSeconds(freezeSeconds)
-
-    AutoAscensionState.Frozen =
-        true
-
-    AutoAscensionState.AttemptsDone =
-        0
-
-    AutoAscensionState.Status =
-        "Hard freezing"
-
-    RefreshAutoAscensionStatus()
-
-    local startedAt =
-        os.clock()
-
-    local deadline =
-        startedAt + freezeSeconds
-
-    local attempt =
-        0
-
-    --==================================================
-    -- REAL HARD FREEZE LOOP
-    -- No task.wait().
-    -- No RunService wait.
-    -- This intentionally stalls the client like lag,
-    -- while still running this Lua loop.
-    --==================================================
-
-    while os.clock() < deadline do
-
-        if AutoAscensionState.Running ~= true then
-            break
-        end
-
-        if attempt < amount then
-
-            attempt =
-                attempt + 1
-
-            buyRebirthRemote:FireServer()
-
-            if rememberUnlockageRemote then
-                rememberUnlockageRemote:FireServer()
-            end
-
-            AutoAscensionState.AttemptsDone =
-                attempt
-        end
-    end
-
-    -- If freeze time was extremely short, still finish the requested amount.
-    -- This part can also hard-stall briefly because it has no wait.
-    while attempt < amount do
-
-        if AutoAscensionState.Running ~= true then
             break
         end
 
@@ -26233,23 +26149,23 @@ function StartAutoAscensionSpam()
         GetRememberUnlockageRemote()
 
     local amount =
-    ResolveAutoAscensionAttemptAmount()
+        ResolveAutoAscensionAttemptAmount()
 
     local freezeSeconds =
         ClampAutoAscensionFreezeSeconds(
             AutoAscensionState.FreezeSeconds
         )
 
-local actualFreezeSeconds =
-    freezeSeconds
+    local actualFreezeSeconds =
+        freezeSeconds
 
     AutoAscensionState.Running =
         true
 
     AutoAscensionState.TargetGardenCoins =
-    ClampAutoAscensionTargetGardenCoins(
-        AutoAscensionState.TargetGardenCoins
-    )
+        ClampAutoAscensionTargetGardenCoins(
+            AutoAscensionState.TargetGardenCoins
+        )
 
     AutoAscensionState.FreezeSeconds =
         freezeSeconds
@@ -26264,19 +26180,19 @@ local actualFreezeSeconds =
 
     task.spawn(function()
 
-    local ok, err =
-        pcall(function()
+        local ok, err =
+            pcall(function()
 
-            RunAutoAscensionHardFreezeSpam(
-                buyRebirthRemote,
-                rememberUnlockageRemote,
-                amount,
-                actualFreezeSeconds
-            )
-        end)
+                RunAutoAscensionHardFreezeSpam(
+                    buyRebirthRemote,
+                    rememberUnlockageRemote,
+                    amount,
+                    actualFreezeSeconds
+                )
+            end)
 
-    AutoAscensionState.Frozen =
-        false
+        AutoAscensionState.Frozen =
+            false
 
         if not ok then
 
@@ -26290,7 +26206,7 @@ local actualFreezeSeconds =
 
             HolyNotify(
                 "Auto Ascension Error",
-                "Worker errored. Game was unfrozen safely.",
+                "Worker errored. Hard-freeze loop ended safely.",
                 "triangle-alert",
                 5
             )
