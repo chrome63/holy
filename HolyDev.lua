@@ -15,6 +15,9 @@ VirtualUser =
 UserInputService =
     game:GetService("UserInputService")
 
+RunService =
+    game:GetService("RunService")
+
 --==================================================
 -- HOLY ACCESS KEY GATE
 -- Main script only runs when started by official loader.
@@ -25781,7 +25784,8 @@ AutoAscensionState = {
     Running = false,
 
     SpamAmount = 50,
-    SpamDelay = 0.03,
+    SpamDelay = 0.005,
+    SpamBurstSize = 15,
 
     FreezeSeconds = 2,
 
@@ -26061,8 +26065,20 @@ function StartAutoAscensionSpam()
             0.25
         )
 
-    local minimumFreezeSeconds =
-        amount * spamDelay
+    local burstSize =
+    math.clamp(
+        math.floor(
+            SafeNumber(
+                AutoAscensionState.SpamBurstSize,
+                5
+            )
+        ),
+        1,
+        25
+    )
+
+local minimumFreezeSeconds =
+    math.ceil(amount / burstSize) * spamDelay
 
     local actualFreezeSeconds =
         math.max(
@@ -26097,26 +26113,51 @@ function StartAutoAscensionSpam()
 
                 SetAutoAscensionFrozen(true)
 
-                for attempt = 1, amount do
+                local burstSize =
+    math.clamp(
+        math.floor(
+            SafeNumber(
+                AutoAscensionState.SpamBurstSize,
+                5
+            )
+        ),
+        1,
+        25
+    )
 
-                    if not IsCurrentRun()
-                    or AutoAscensionState.Running ~= true then
-                        break
-                    end
+local attempt =
+    0
 
-                    buyRebirthRemote:FireServer()
+while attempt < amount do
 
-                    if rememberUnlockageRemote then
-                        rememberUnlockageRemote:FireServer()
-                    end
+    if not IsCurrentRun()
+    or AutoAscensionState.Running ~= true then
+        break
+    end
 
-                    AutoAscensionState.AttemptsDone =
-                        attempt
+    for burst = 1, burstSize do
 
-                    RefreshAutoAscensionStatus()
+        if attempt >= amount then
+            break
+        end
 
-                    task.wait(spamDelay)
-                end
+        attempt =
+            attempt + 1
+
+        buyRebirthRemote:FireServer()
+
+        if rememberUnlockageRemote then
+            rememberUnlockageRemote:FireServer()
+        end
+
+        AutoAscensionState.AttemptsDone =
+            attempt
+    end
+
+    RefreshAutoAscensionStatus()
+
+    task.wait(spamDelay)
+end
 
                 while IsCurrentRun()
                 and AutoAscensionState.Running == true
