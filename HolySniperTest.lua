@@ -10,7 +10,7 @@
 --==================================================
 
 local CONFIG = {
-    Enabled = true,
+    Enabled = false,
 
     Debug = true,
     DebugListings = false,
@@ -40,7 +40,7 @@ local CONFIG = {
     -- ExcludedMutations = { ["Shocked"] = true }
     Watchlist = {
         ["Seal"] = {
-            MaxPrice = 20,
+            MaxPrice = 100000,
             MinBaseWeight = 0,
             MinDisplayWeight = 0,
             WeightMode = "BaseWeight",
@@ -51,7 +51,7 @@ local CONFIG = {
         },
 
         ["Toucan"] = {
-            MaxPrice = 20,
+            MaxPrice = 100000,
             MinBaseWeight = 0,
             MinDisplayWeight = 0,
             WeightMode = "BaseWeight",
