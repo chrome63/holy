@@ -4230,19 +4230,19 @@ SmartScannerMode = "Classic",
 -- Filtered Pet Scanner:
 -- ON = ExtractListings skips pets whose base pet name is not in W1/W2/W3.
 -- This reduces lag in servers with hundreds of irrelevant pets.
-FilteredPetScanner = true,
+FilteredPetScanner = false,
 
 -- Exact Filter Scanner:
 -- ON = after pet-name match, ExtractListings also skips listings that do
 -- not pass sniper price + weight rules.
 -- This keeps the scan list small in servers with many same-name bad listings.
-ExactFilterScanner = true,
+ExactFilterScanner = false,
 
 -- Favorite Watch:
 -- ON = favorited pets that match a sniper pet name are still extracted,
 -- matched, and watched. They are NOT bought while favorite is true.
 -- If the seller unfavorites the same listing later, Smart Scanner can process it.
-WatchFavoritedFilterMatches = true,
+WatchFavoritedFilterMatches = false,
 
 -- Debug prints in scanner hot path.
 -- Keep false on cloud phones / low FPS devices.
@@ -34086,7 +34086,7 @@ local FilteredPetScannerToggle =
         "FilteredPetScanner",
         {
             Text = "🔍 Filtered Pet Scanner",
-            Default = SniperState.FilteredPetScanner == true,
+            Default = SniperState.FilteredPetScanner == false,
             Tooltip = "Skips booth pets whose base pet name is not in your sniper watchlists. Best for laggy 500-700 pet servers.",
         }
     )
@@ -34139,7 +34139,7 @@ local ExactFilterScannerToggle =
         "ExactFilterScanner",
         {
             Text = "💎 Exact Filter Scanner",
-            Default = SniperState.ExactFilterScanner == true,
+            Default = SniperState.ExactFilterScanner == false,
             Tooltip = "Only keeps listings that pass sniper pet name, max price, and min weight rules before deeper scanning.",
         }
     )
@@ -34186,7 +34186,7 @@ local FavoriteWatchToggle =
         "WatchFavoritedFilterMatches",
         {
             Text = "❤️ Watch Favorited Matches",
-            Default = SniperState.WatchFavoritedFilterMatches == true,
+            Default = SniperState.WatchFavoritedFilterMatches == false,
             Tooltip = "Watches favorited pets that match your sniper filters. If seller unfavorites later, HOLY can snipe it.",
         }
     )
