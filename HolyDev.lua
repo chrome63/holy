@@ -25783,11 +25783,13 @@ BeeEggAuto = {
 AutoAscensionState = {
     Running = false,
 
-    SpamAmount = 50,
-    SpamDelay = 0.005,
-    SpamBurstSize = 15,
+TargetGardenCoins = 5000,
 
-    FreezeSeconds = 2,
+-- 1 ascend = 10 Garden Coins.
+CoinsPerAscension = 10,
+
+-- Max safety time. The hard freeze stops earlier if target attempts are reached.
+FreezeSeconds = 2,
 
     AttemptsDone = 0,
     Status = "Idle",
@@ -25802,22 +25804,48 @@ AutoAscensionState = {
     Frozen = false,
 }
 
-function ClampAutoAscensionSpamAmount(value)
+function ClampAutoAscensionTargetGardenCoins(value)
 
-    local amount =
+    local coins =
         tonumber(value)
 
-    if not amount then
-        amount =
+    if not coins then
+
+        coins =
             AutoAscensionState
-            and AutoAscensionState.SpamAmount
-            or 50
+            and AutoAscensionState.TargetGardenCoins
+            or 5000
     end
 
     return math.clamp(
-        math.floor(amount),
+        math.floor(coins),
+        10,
+        100000
+    )
+end
+
+function ResolveAutoAscensionAttemptAmount()
+
+    local targetCoins =
+        ClampAutoAscensionTargetGardenCoins(
+            AutoAscensionState.TargetGardenCoins
+        )
+
+    local coinsPerAscension =
+        math.max(
+            1,
+            math.floor(
+                SafeNumber(
+                    AutoAscensionState.CoinsPerAscension,
+                    10
+                )
+            )
+        )
+
+    return math.clamp(
+        math.ceil(targetCoins / coinsPerAscension),
         1,
-        250
+        10000
     )
 end
 
@@ -25894,9 +25922,8 @@ function RefreshAutoAscensionStatus()
             )
             .. " / "
             .. tostring(
-                AutoAscensionState.SpamAmount
-                or 0
-            )
+    ResolveAutoAscensionAttemptAmount()
+)
     end
 
     if AutoAscensionState.StatusLabel
@@ -25991,6 +26018,166 @@ function StopAutoAscension(reason)
     RefreshAutoAscensionStatus()
 end
 
+function RunAutoAscensionHardFreezeSpam(
+    buyRebirthRemote,
+    rememberUnlockageRemote,
+    amount,
+    freezeSeconds
+)
+
+    amount =
+        math.clamp(
+            math.floor(
+                tonumber(amount)
+                or 1
+            ),
+            1,
+            10000
+        )
+
+    freezeSeconds =
+        ClampAutoAscensionFreezeSeconds(
+            freezeSeconds
+        )
+
+    AutoAscensionState.Frozen =
+        true
+
+    AutoAscensionState.AttemptsDone =
+        0
+
+    AutoAscensionState.Status =
+        "Hard freezing"
+
+    RefreshAutoAscensionStatus()
+
+    local deadline =
+        os.clock() + freezeSeconds
+
+    local attempt =
+        0
+
+    --==================================================
+    -- TRUE FAST HARD-FREEZE LOOP
+    -- No task.wait().
+    -- Fires as fast as Lua can run.
+    -- Stops immediately when target attempts are reached.
+    --==================================================
+
+    while attempt < amount do
+
+        if AutoAscensionState.Running ~= true then
+            break
+        end
+
+        -- Freeze safety timeout.
+        -- If something goes wrong, it will not hard-lock forever.
+        if os.clock() >= deadline then
+            break
+        end
+
+        attempt =
+            attempt + 1
+
+        buyRebirthRemote:FireServer()
+
+        if rememberUnlockageRemote then
+            rememberUnlockageRemote:FireServer()
+        end
+
+        AutoAscensionState.AttemptsDone =
+            attempt
+    end
+
+    AutoAscensionState.Frozen =
+        false
+
+    return attempt
+end
+
+    amount =
+        ClampAutoAscensionSpamAmount(amount)
+
+    freezeSeconds =
+        ClampAutoAscensionFreezeSeconds(freezeSeconds)
+
+    AutoAscensionState.Frozen =
+        true
+
+    AutoAscensionState.AttemptsDone =
+        0
+
+    AutoAscensionState.Status =
+        "Hard freezing"
+
+    RefreshAutoAscensionStatus()
+
+    local startedAt =
+        os.clock()
+
+    local deadline =
+        startedAt + freezeSeconds
+
+    local attempt =
+        0
+
+    --==================================================
+    -- REAL HARD FREEZE LOOP
+    -- No task.wait().
+    -- No RunService wait.
+    -- This intentionally stalls the client like lag,
+    -- while still running this Lua loop.
+    --==================================================
+
+    while os.clock() < deadline do
+
+        if AutoAscensionState.Running ~= true then
+            break
+        end
+
+        if attempt < amount then
+
+            attempt =
+                attempt + 1
+
+            buyRebirthRemote:FireServer()
+
+            if rememberUnlockageRemote then
+                rememberUnlockageRemote:FireServer()
+            end
+
+            AutoAscensionState.AttemptsDone =
+                attempt
+        end
+    end
+
+    -- If freeze time was extremely short, still finish the requested amount.
+    -- This part can also hard-stall briefly because it has no wait.
+    while attempt < amount do
+
+        if AutoAscensionState.Running ~= true then
+            break
+        end
+
+        attempt =
+            attempt + 1
+
+        buyRebirthRemote:FireServer()
+
+        if rememberUnlockageRemote then
+            rememberUnlockageRemote:FireServer()
+        end
+
+        AutoAscensionState.AttemptsDone =
+            attempt
+    end
+
+    AutoAscensionState.Frozen =
+        false
+
+    return attempt
+end
+
 function StartAutoAscensionSpam()
 
     if AutoAscensionState.Running == true then
@@ -26046,51 +26233,23 @@ function StartAutoAscensionSpam()
         GetRememberUnlockageRemote()
 
     local amount =
-        ClampAutoAscensionSpamAmount(
-            AutoAscensionState.SpamAmount
-        )
+    ResolveAutoAscensionAttemptAmount()
 
     local freezeSeconds =
         ClampAutoAscensionFreezeSeconds(
             AutoAscensionState.FreezeSeconds
         )
 
-    local spamDelay =
-        math.clamp(
-            SafeNumber(
-                AutoAscensionState.SpamDelay,
-                0.03
-            ),
-            0.01,
-            0.25
-        )
-
-    local burstSize =
-    math.clamp(
-        math.floor(
-            SafeNumber(
-                AutoAscensionState.SpamBurstSize,
-                5
-            )
-        ),
-        1,
-        25
-    )
-
-local minimumFreezeSeconds =
-    math.ceil(amount / burstSize) * spamDelay
-
-    local actualFreezeSeconds =
-        math.max(
-            freezeSeconds,
-            minimumFreezeSeconds
-        )
+local actualFreezeSeconds =
+    freezeSeconds
 
     AutoAscensionState.Running =
         true
 
-    AutoAscensionState.SpamAmount =
-        amount
+    AutoAscensionState.TargetGardenCoins =
+    ClampAutoAscensionTargetGardenCoins(
+        AutoAscensionState.TargetGardenCoins
+    )
 
     AutoAscensionState.FreezeSeconds =
         freezeSeconds
@@ -26105,69 +26264,19 @@ local minimumFreezeSeconds =
 
     task.spawn(function()
 
-        local freezeStartedAt =
-            os.clock()
+    local ok, err =
+        pcall(function()
 
-        local ok, err =
-            pcall(function()
-
-                SetAutoAscensionFrozen(true)
-
-                local burstSize =
-    math.clamp(
-        math.floor(
-            SafeNumber(
-                AutoAscensionState.SpamBurstSize,
-                5
+            RunAutoAscensionHardFreezeSpam(
+                buyRebirthRemote,
+                rememberUnlockageRemote,
+                amount,
+                actualFreezeSeconds
             )
-        ),
-        1,
-        25
-    )
+        end)
 
-local attempt =
-    0
-
-while attempt < amount do
-
-    if not IsCurrentRun()
-    or AutoAscensionState.Running ~= true then
-        break
-    end
-
-    for burst = 1, burstSize do
-
-        if attempt >= amount then
-            break
-        end
-
-        attempt =
-            attempt + 1
-
-        buyRebirthRemote:FireServer()
-
-        if rememberUnlockageRemote then
-            rememberUnlockageRemote:FireServer()
-        end
-
-        AutoAscensionState.AttemptsDone =
-            attempt
-    end
-
-    RefreshAutoAscensionStatus()
-
-    task.wait(spamDelay)
-end
-
-                while IsCurrentRun()
-                and AutoAscensionState.Running == true
-                and os.clock() - freezeStartedAt < actualFreezeSeconds do
-
-                    task.wait(0.03)
-                end
-            end)
-
-        SetAutoAscensionFrozen(false)
+    AutoAscensionState.Frozen =
+        false
 
         if not ok then
 
@@ -27660,27 +27769,28 @@ if IsGardenWorld() then
             )
     end
 
-    AutoAscensionBox:AddInput(
-        "AutoAscensionSpamAmount",
-        {
-            Text = "Spam Amount",
-            Default = tostring(
-                AutoAscensionState.SpamAmount
-            ),
-            Numeric = true,
-            Finished = true,
-            ClearTextOnFocus = false,
-            Tooltip = "How many ascension attempts to fire. Default: 50. Max: 250.",
-        }
-    ):OnChanged(function(value)
+AutoAscensionBox:AddInput(
+    "AutoAscensionTargetGardenCoins",
+    {
+        Text = "Target Garden Coins",
+        Default = tostring(
+            AutoAscensionState.TargetGardenCoins
+            or 5000
+        ),
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Tooltip = "Target Garden Coins. 1 ascension gives 10 coins, so 5000 = 500 attempts.",
+    }
+):OnChanged(function(value)
 
-        AutoAscensionState.SpamAmount =
-            ClampAutoAscensionSpamAmount(value)
+    AutoAscensionState.TargetGardenCoins =
+        ClampAutoAscensionTargetGardenCoins(value)
 
-        MarkConfigDirty()
+    MarkConfigDirty()
 
-        RefreshAutoAscensionStatus()
-    end)
+    RefreshAutoAscensionStatus()
+end)
 
     AutoAscensionBox:AddInput(
         "AutoAscensionFreezeTime",
