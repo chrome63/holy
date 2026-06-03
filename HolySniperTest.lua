@@ -51,7 +51,7 @@ local CONFIG = {
         },
 
         ["Toucan"] = {
-            MaxPrice = 9,
+            MaxPrice = 20,
             MinBaseWeight = 0,
             MinDisplayWeight = 0,
             WeightMode = "BaseWeight",
