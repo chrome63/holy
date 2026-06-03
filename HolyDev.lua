@@ -4386,15 +4386,11 @@ TargetPetsHopPlayerActivity = {}
 --==================================================
 -- TRANSFER STATE
 -- Garden + Trade World.
--- Moves filtered pets to selected target players through
--- TradeEvents remotes when available.
+-- Uses Backpack/Character pet tools and TradeEvents remotes when available.
 --==================================================
 
 TransferState = {
-    Enabled = false,
     Busy = false,
-
-    -- Safety default.
     DryRun = true,
 
     SelectedPets = {},
@@ -4404,7 +4400,7 @@ TransferState = {
     MaxLevel = 100,
 
     MinBaseWeight = 0,
-    MaxBaseWeight = math.huge,
+    MaxBaseWeight = 999,
 
     MaxPetsPerTrade = 6,
 
@@ -4412,8 +4408,6 @@ TransferState = {
     TargetUserId = 0,
 
     SkipFavorites = true,
-    AutoUnfavorite = false,
-
     AutoConfirmAccept = false,
 
     MatchedPets = {},
@@ -4427,10 +4421,11 @@ TransferState = {
     TargetDropdownRef = nil,
 
     StatusLabel = nil,
-    MatchedLabel = nil,
     TargetLabel = nil,
+    MatchedLabel = nil,
     LastResultLabel = nil,
 }
+
 --==================================================
 -- ANTI ALT / AVOID USERS STATE
 -- Detects blocked users after joining a server.
@@ -8543,7 +8538,8 @@ end
 
 --==================================================
 -- TRANSFER HELPERS
--- V1: filtered trade request + add pet + optional accept/confirm.
+-- Compile-safe V1.
+-- No generic vararg wrapper. No Trade World-only gate.
 --==================================================
 
 function TransferCleanText(value)
@@ -8561,9 +8557,9 @@ function TransferCloneSelectedMap(source)
         return output
     end
 
-    for key, value in pairs(source) do
+    for key, selected in pairs(source) do
 
-        if value == true then
+        if selected == true then
 
             key =
                 TransferCleanText(key)
@@ -8604,7 +8600,6 @@ function TransferFormatTradeUUID(uuid)
         return nil
     end
 
-    -- Must look like a real UUID, not GetDebugId fallback.
     if not uuid:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") then
         return nil
     end
@@ -8823,27 +8818,13 @@ function TransferResolveToolMetadata(tool)
     return {
         Tool = tool,
         UUID = uuid,
-
-        PetName =
-            TransferCleanText(parsed.PetName),
-
+        PetName = TransferCleanText(parsed.PetName),
         Level = level,
-
-        DisplayWeight =
-            displayWeight,
-
-        BaseWeight =
-            tonumber(baseWeight)
-            or 0,
-
-        Mutation =
-            mutation,
-
-        IsFavorite =
-            favorite,
-
-        ToolName =
-            tostring(tool.Name),
+        DisplayWeight = displayWeight,
+        BaseWeight = tonumber(baseWeight) or 0,
+        Mutation = mutation,
+        IsFavorite = favorite,
+        ToolName = tostring(tool.Name),
     }
 end
 
@@ -8972,7 +8953,6 @@ function TransferResolveTargetPlayer()
 
         if player.Name == targetName
         or player.DisplayName == targetName then
-
             return player
         end
     end
@@ -8990,8 +8970,7 @@ function TransferPetMatchesFilters(pet)
         TransferState.SelectedPets
         or {}
 
-    -- Safety:
-    -- No selected pets = send nothing.
+    -- Safety: no selected pets means send nothing.
     if TransferMapIsEmpty(selectedPets) then
         return false
     end
@@ -9030,7 +9009,7 @@ function TransferPetMatchesFilters(pet)
         return false
     end
 
-    if level > SafeNumber(TransferState.MaxLevel, 10000) then
+    if level > SafeNumber(TransferState.MaxLevel, 100) then
         return false
     end
 
@@ -9042,12 +9021,7 @@ function TransferPetMatchesFilters(pet)
         return false
     end
 
-    local maxBaseWeight =
-        tonumber(TransferState.MaxBaseWeight)
-
-    if maxBaseWeight
-    and maxBaseWeight ~= math.huge
-    and baseWeight > maxBaseWeight then
+    if baseWeight > SafeNumber(TransferState.MaxBaseWeight, 999) then
         return false
     end
 
@@ -9089,31 +9063,146 @@ function TransferBuildMatchingPets(limit)
     return matches
 end
 
-function TransferRefreshStatus()
+function TransferGetTradeRemote(remoteName)
 
-    local status =
-        tostring(
-            TransferState.Status
-            or "Idle"
-        )
+    local gameEvents =
+        ReplicatedStorage
+        and ReplicatedStorage:FindFirstChild("GameEvents")
+
+    local tradeEvents =
+        gameEvents
+        and gameEvents:FindFirstChild("TradeEvents")
+
+    if not tradeEvents then
+        return nil
+    end
+
+    return tradeEvents:FindFirstChild(remoteName)
+end
+
+function TransferSendRequest(targetPlayer)
+
+    local remote =
+        TransferGetTradeRemote("SendRequest")
+
+    if not remote
+    or not targetPlayer then
+        return false
+    end
+
+    local ok, err =
+        pcall(function()
+            remote:FireServer(targetPlayer)
+        end)
+
+    if not ok then
+        warn("[TRANSFER] SendRequest failed:", tostring(err))
+        return false
+    end
+
+    return true
+end
+
+function TransferAddPet(uuid)
+
+    local remote =
+        TransferGetTradeRemote("AddItem")
+
+    uuid =
+        TransferFormatTradeUUID(uuid)
+
+    if not remote
+    or not uuid then
+        return false
+    end
+
+    local ok, err =
+        pcall(function()
+            remote:FireServer("Pet", uuid)
+        end)
+
+    if not ok then
+        warn("[TRANSFER] AddItem failed:", tostring(err))
+        return false
+    end
+
+    return true
+end
+
+function TransferAccept()
+
+    local remote =
+        TransferGetTradeRemote("Accept")
+
+    if not remote then
+        return false
+    end
+
+    local ok, err =
+        pcall(function()
+            remote:FireServer()
+        end)
+
+    if not ok then
+        warn("[TRANSFER] Accept failed:", tostring(err))
+        return false
+    end
+
+    return true
+end
+
+function TransferConfirm()
+
+    local remote =
+        TransferGetTradeRemote("Confirm")
+
+    if not remote then
+        return false
+    end
+
+    local ok, err =
+        pcall(function()
+            remote:FireServer()
+        end)
+
+    if not ok then
+        warn("[TRANSFER] Confirm failed:", tostring(err))
+        return false
+    end
+
+    return true
+end
+
+function TransferDecline()
+
+    local remote =
+        TransferGetTradeRemote("Decline")
+
+    if not remote then
+        return false
+    end
+
+    local ok, err =
+        pcall(function()
+            remote:FireServer()
+        end)
+
+    if not ok then
+        warn("[TRANSFER] Decline failed:", tostring(err))
+        return false
+    end
+
+    return true
+end
+
+function TransferRefreshStatus()
 
     if TransferState.StatusLabel
     and type(TransferState.StatusLabel.SetText) == "function" then
 
         TransferState.StatusLabel:SetText(
             "Mode: "
-                .. status
-        )
-    end
-
-    if TransferState.MatchedLabel
-    and type(TransferState.MatchedLabel.SetText) == "function" then
-
-        TransferState.MatchedLabel:SetText(
-            "Matched Pets: "
-                .. tostring(
-                    #(TransferState.MatchedPets or {})
-                )
+                .. tostring(TransferState.Status or "Idle")
         )
     end
 
@@ -9130,20 +9219,23 @@ function TransferRefreshStatus()
         )
     end
 
+    if TransferState.MatchedLabel
+    and type(TransferState.MatchedLabel.SetText) == "function" then
+
+        TransferState.MatchedLabel:SetText(
+            "Matched Pets: "
+                .. tostring(#(TransferState.MatchedPets or {}))
+        )
+    end
+
     if TransferState.LastResultLabel
     and type(TransferState.LastResultLabel.SetText) == "function" then
 
         TransferState.LastResultLabel:SetText(
             "Last Result: "
-                .. tostring(
-                    TransferState.LastResult
-                    or "None"
-                )
+                .. tostring(TransferState.LastResult or "None")
                 .. " | Sent: "
-                .. tostring(
-                    TransferState.SentThisSession
-                    or 0
-                )
+                .. tostring(TransferState.SentThisSession or 0)
         )
     end
 end
@@ -9171,116 +9263,6 @@ function TransferRefreshDropdowns()
     )
 
     TransferRefreshStatus()
-end
-
-function TransferGetTradeRemote(remoteName)
-
-    local gameEvents =
-        ReplicatedStorage
-        and ReplicatedStorage:FindFirstChild("GameEvents")
-
-    local tradeEvents =
-        gameEvents
-        and gameEvents:FindFirstChild("TradeEvents")
-
-    if not tradeEvents then
-        return nil
-    end
-
-    return tradeEvents:FindFirstChild(remoteName)
-end
-
-function TransferFireTradeRemote(remoteName, ...)
-
-    local remote =
-        TransferGetTradeRemote(remoteName)
-
-    if not remote then
-
-        warn(
-            "[TRANSFER] Missing TradeEvents remote:",
-            tostring(remoteName)
-        )
-
-        return false
-    end
-
-    local args =
-        table.pack(...)
-
-    local ok, err =
-        pcall(function()
-
-            remote:FireServer(
-                table.unpack(
-                    args,
-                    1,
-                    args.n
-                )
-            )
-        end)
-
-    if not ok then
-
-        warn(
-            "[TRANSFER] Remote failed:",
-            tostring(remoteName),
-            tostring(err)
-        )
-
-        return false
-    end
-
-    return true
-end
-
-function TransferSendRequest(targetPlayer)
-
-    if not targetPlayer then
-        return false
-    end
-
-    return TransferFireTradeRemote(
-        "SendRequest",
-        targetPlayer
-    )
-end
-
-function TransferAddPet(uuid)
-
-    uuid =
-        TransferFormatTradeUUID(uuid)
-
-    if not uuid then
-        return false
-    end
-
-    return TransferFireTradeRemote(
-        "AddItem",
-        "Pet",
-        uuid
-    )
-end
-
-function TransferAccept()
-
-    return TransferFireTradeRemote(
-        "Accept"
-    )
-end
-
-function TransferConfirm()
-
-    return TransferFireTradeRemote(
-        "Confirm"
-    )
-end
-
-function TransferDecline()
-
-    return TransferFireTradeRemote(
-        "Decline"
-    )
 end
 
 function TransferPreview()
@@ -9322,13 +9304,15 @@ function TransferPreview()
 
     TransferRefreshStatus()
 
-    HolyNotify(
-        "Transfer Preview",
-        tostring(#matches)
-            .. " matching pet(s). Check console for details.",
-        "search",
-        4
-    )
+    if type(HolyNotify) == "function" then
+        HolyNotify(
+            "Transfer Preview",
+            tostring(#matches)
+                .. " matching pet(s). Check console.",
+            "search",
+            4
+        )
+    end
 
     return matches
 end
@@ -9349,12 +9333,14 @@ function TransferRunFilteredTrade()
 
         TransferRefreshStatus()
 
-        HolyNotify(
-            "Transfer",
-            "Transfer only works in Garden or Trade World.",
-            "triangle-alert",
-            4
-        )
+        if type(HolyNotify) == "function" then
+            HolyNotify(
+                "Transfer",
+                "Transfer only works in Garden or Trade World.",
+                "triangle-alert",
+                4
+            )
+        end
 
         return false
     end
@@ -9366,16 +9352,18 @@ function TransferRunFilteredTrade()
             "Trade remotes missing"
 
         TransferState.LastResult =
-            "Trade remotes are not available in this world yet."
+            "TradeEvents remotes are missing in this world."
 
         TransferRefreshStatus()
 
-        HolyNotify(
-            "Transfer",
-            "Trade remotes are not available here. Try Trade World, or spy Garden trade remotes.",
-            "triangle-alert",
-            5
-        )
+        if type(HolyNotify) == "function" then
+            HolyNotify(
+                "Transfer",
+                "Trade remotes are missing here. Need Garden trade remote spy if this happens.",
+                "triangle-alert",
+                5
+            )
+        end
 
         return false
     end
@@ -9389,16 +9377,18 @@ function TransferRunFilteredTrade()
             "No target"
 
         TransferState.LastResult =
-            "Choose a valid target player."
+            "Choose a target player."
 
         TransferRefreshStatus()
 
-        HolyNotify(
-            "Transfer Failed",
-            "Choose a target player first.",
-            "triangle-alert",
-            4
-        )
+        if type(HolyNotify) == "function" then
+            HolyNotify(
+                "Transfer Failed",
+                "Choose a target player first.",
+                "triangle-alert",
+                4
+            )
+        end
 
         return false
     end
@@ -9418,12 +9408,14 @@ function TransferRunFilteredTrade()
 
         TransferRefreshStatus()
 
-        HolyNotify(
-            "Transfer",
-            "No matching pets found.",
-            "search",
-            4
-        )
+        if type(HolyNotify) == "function" then
+            HolyNotify(
+                "Transfer",
+                "No matching pets found.",
+                "search",
+                4
+            )
+        end
 
         return false
     end
@@ -9440,12 +9432,14 @@ function TransferRunFilteredTrade()
 
         TransferRefreshStatus()
 
-        HolyNotify(
-            "Dry Run",
-            "Dry Run is ON. No trade was sent.",
-            "shield-check",
-            4
-        )
+        if type(HolyNotify) == "function" then
+            HolyNotify(
+                "Dry Run",
+                "Dry Run is ON. No trade was sent.",
+                "shield-check",
+                4
+            )
+        end
 
         return true
     end
@@ -9477,8 +9471,7 @@ function TransferRunFilteredTrade()
 
                 TransferRefreshStatus()
 
-                local added =
-                    0
+                local added = 0
 
                 for _, pet in ipairs(matches) do
 
@@ -9494,55 +9487,44 @@ function TransferRunFilteredTrade()
                     task.wait(0.15)
                 end
 
-                TransferState.Status =
-                    "Added "
-                    .. tostring(added)
-                    .. " pet(s)"
-
-                TransferState.LastResult =
-                    "Added "
-                    .. tostring(added)
-                    .. " / "
-                    .. tostring(#matches)
-
-                TransferRefreshStatus()
-
-                if TransferState.AutoConfirmAccept == true then
-
-                    task.wait(0.35)
-
-                    TransferAccept()
-
-                    task.wait(0.60)
-
-                    TransferConfirm()
-
-                    TransferState.Status =
-                        "Confirmed"
-
-                    TransferState.LastResult =
-                        "Accept + Confirm fired."
-                else
-
-                    TransferState.Status =
-                        "Manual confirm"
-
-                    TransferState.LastResult =
-                        "Pets added. Confirm manually."
-                end
-
                 TransferState.SentThisSession =
                     SafeNumber(
                         TransferState.SentThisSession,
                         0
                     )
                     + added
+
+                if TransferState.AutoConfirmAccept == true then
+
+                    task.wait(0.35)
+                    TransferAccept()
+
+                    task.wait(0.60)
+                    TransferConfirm()
+
+                    TransferState.Status =
+                        "Confirmed"
+
+                    TransferState.LastResult =
+                        "Added "
+                            .. tostring(added)
+                            .. " pet(s), Accept + Confirm fired."
+                else
+
+                    TransferState.Status =
+                        "Manual confirm"
+
+                    TransferState.LastResult =
+                        "Added "
+                            .. tostring(added)
+                            .. " pet(s). Confirm manually."
+                end
             end)
 
         if not ok then
 
             warn(
-                "[TRANSFER] Trade worker error:",
+                "[TRANSFER] Worker error:",
                 tostring(err)
             )
 
@@ -9552,12 +9534,14 @@ function TransferRunFilteredTrade()
             TransferState.LastResult =
                 tostring(err)
 
-            HolyNotify(
-                "Transfer Error",
-                tostring(err),
-                "triangle-alert",
-                5
-            )
+            if type(HolyNotify) == "function" then
+                HolyNotify(
+                    "Transfer Error",
+                    tostring(err),
+                    "triangle-alert",
+                    5
+                )
+            end
         end
 
         TransferState.Busy =
@@ -28714,8 +28698,7 @@ HolyLoading:SetDescription("Building tabs...")
 --==================================================
 -- TRANSFER TAB UI
 -- Garden + Trade World.
--- Transfer uses player inventory + TradeEvents remotes.
--- If remotes are unavailable in a world, actions fail safely.
+-- No Trade World-only wrapper.
 --==================================================
 
 TransferPetFiltersBox = nil
@@ -28724,7 +28707,7 @@ TransferTargetBox = nil
 TransferActionsBox = nil
 TransferStatusBox = nil
 
-if IsHolyAllowedJoinPlace(game.PlaceId) then
+if Tabs.Transfer then
 
     TransferPetFiltersBox =
         Tabs.Transfer:AddLeftGroupbox(
@@ -28761,7 +28744,7 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
             "TransferPetSelect",
             {
                 Text = "Pets",
-                Tooltip = "Select pets allowed to be transferred. No selected pets = sends nothing.",
+                Tooltip = "Select pets allowed to transfer. Empty = sends nothing.",
                 Values = TransferBuildPetChoices(),
                 Default = {},
                 Searchable = true,
@@ -28782,7 +28765,10 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
         )
 
         TransferRefreshStatus()
-        MarkConfigDirty()
+
+        if type(MarkConfigDirty) == "function" then
+            MarkConfigDirty()
+        end
     end)
 
     TransferPetFiltersBox:AddButton({
@@ -28792,12 +28778,14 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
 
             TransferRefreshDropdowns()
 
-            HolyNotify(
-                "Transfer",
-                "Pet list refreshed.",
-                "refresh-cw",
-                3
-            )
+            if type(HolyNotify) == "function" then
+                HolyNotify(
+                    "Transfer",
+                    "Pet list refreshed.",
+                    "refresh-cw",
+                    3
+                )
+            end
         end,
     })
 
@@ -28820,7 +28808,10 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
             )
 
             TransferRefreshStatus()
-            MarkConfigDirty()
+
+            if type(MarkConfigDirty) == "function" then
+                MarkConfigDirty()
+            end
         end,
     })
 
@@ -28829,7 +28820,7 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
             "TransferMutationSelect",
             {
                 Text = "Mutations",
-                Tooltip = "Optional. If empty, any mutation passes.",
+                Tooltip = "Optional. Empty = any mutation.",
                 Values = {
                     "Normal",
                     "Rainbow",
@@ -28868,7 +28859,10 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
         )
 
         TransferRefreshStatus()
-        MarkConfigDirty()
+
+        if type(MarkConfigDirty) == "function" then
+            MarkConfigDirty()
+        end
     end)
 
     TransferPetFiltersBox:AddInput(
@@ -28896,7 +28890,6 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
         )
 
         TransferRefreshStatus()
-        MarkConfigDirty()
     end)
 
     TransferPetFiltersBox:AddInput(
@@ -28924,7 +28917,6 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
         )
 
         TransferRefreshStatus()
-        MarkConfigDirty()
     end)
 
     TransferPetFiltersBox:AddInput(
@@ -28950,7 +28942,6 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
         )
 
         TransferRefreshStatus()
-        MarkConfigDirty()
     end)
 
     TransferPetFiltersBox:AddInput(
@@ -28964,27 +28955,25 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
         }
     ):OnChanged(function(value)
 
-        local number =
-            tonumber(value)
-
         TransferState.MaxBaseWeight =
-            number
-            and math.max(number, 0)
-            or math.huge
+            math.max(
+                0,
+                tonumber(value)
+                or 999
+            )
 
         TransferBuildMatchingPets(
             TransferState.MaxPetsPerTrade
         )
 
         TransferRefreshStatus()
-        MarkConfigDirty()
     end)
 
     TransferSafetyBox:AddToggle(
         "TransferDryRun",
         {
             Text = "Dry Run / Preview",
-            Tooltip = "ON = preview only. No trade request or item add will be fired.",
+            Tooltip = "ON = preview only. No trade request or AddItem fires.",
             Default = true,
         }
     ):OnChanged(function(value)
@@ -28993,14 +28982,13 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
             value == true
 
         TransferRefreshStatus()
-        MarkConfigDirty()
     end)
 
     TransferSafetyBox:AddToggle(
         "TransferSkipFavorites",
         {
             Text = "Skip Favorites",
-            Tooltip = "Recommended ON. Favorited pets are skipped.",
+            Tooltip = "Recommended ON.",
             Default = true,
         }
     ):OnChanged(function(value)
@@ -29013,22 +29001,6 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
         )
 
         TransferRefreshStatus()
-        MarkConfigDirty()
-    end)
-
-    TransferSafetyBox:AddToggle(
-        "TransferAutoUnfavorite",
-        {
-            Text = "Auto Unfavorite",
-            Tooltip = "Reserved for V2. Currently only saved as a setting.",
-            Default = false,
-        }
-    ):OnChanged(function(value)
-
-        TransferState.AutoUnfavorite =
-            value == true
-
-        MarkConfigDirty()
     end)
 
     TransferSafetyBox:AddInput(
@@ -29057,7 +29029,6 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
         )
 
         TransferRefreshStatus()
-        MarkConfigDirty()
     end)
 
     local TransferTargetDropdown =
@@ -29078,11 +29049,8 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
 
     TransferTargetDropdown:OnChanged(function(value)
 
-        local targetName =
-            TransferCleanText(value)
-
         TransferState.TargetPlayerName =
-            targetName
+            TransferCleanText(value)
 
         local targetPlayer =
             TransferResolveTargetPlayer()
@@ -29093,22 +29061,23 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
             or 0
 
         TransferRefreshStatus()
-        MarkConfigDirty()
     end)
 
     TransferTargetBox:AddButton({
         Text = "🔄 Reload Players",
-        Tooltip = "Refresh the target player dropdown.",
+        Tooltip = "Refresh target player dropdown.",
         Func = function()
 
             TransferRefreshDropdowns()
 
-            HolyNotify(
-                "Transfer",
-                "Player list refreshed.",
-                "refresh-cw",
-                3
-            )
+            if type(HolyNotify) == "function" then
+                HolyNotify(
+                    "Transfer",
+                    "Player list refreshed.",
+                    "refresh-cw",
+                    3
+                )
+            end
         end,
     })
 
@@ -29123,24 +29092,20 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
 
         TransferState.AutoConfirmAccept =
             value == true
-
-        MarkConfigDirty()
     end)
 
     TransferActionsBox:AddButton({
         Text = "🔍 Preview Matches",
         Tooltip = "Print matching pets to console without sending a trade.",
         Func = function()
-
             TransferPreview()
         end,
     })
 
     TransferActionsBox:AddButton({
         Text = "🎁 Send Filtered Trade",
-        Tooltip = "Sends request, adds matching pets, and optionally accept/confirms.",
+        Tooltip = "Sends request, adds matching pets, then optionally accept/confirms.",
         Func = function()
-
             TransferRunFilteredTrade()
         end,
     })
@@ -29191,8 +29156,8 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
 end
 --==================================================
 -- EVENTS TAB
--- Trade World event systems only.
--- Garden World Auto Ascension is built below.
+-- Trade World only.
+-- Garden Mode gets a placeholder from BuildGardenModeTradeTabs().
 --==================================================
 
 EventsBox = nil
