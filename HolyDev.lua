@@ -185,6 +185,11 @@ TRADING_WORLD_PLACE_ID = 129954712878723
 
 GROW_A_GARDEN_PLACE_ID = 126884695634066
 
+function IsGardenWorld()
+
+    return game.PlaceId == GROW_A_GARDEN_PLACE_ID
+end
+
 HOLY_ALLOWED_JOIN_PLACES = {
     [GROW_A_GARDEN_PLACE_ID] = "Grow a Garden",
     [TRADING_WORLD_PLACE_ID] = "Trade World",
@@ -25764,6 +25769,411 @@ BeeEggAuto = {
     LastAttempt = 0,
     BuyInterval = 1.5,
 }
+
+--==================================================
+-- AUTO ASCENSION STATE
+-- Garden World only.
+-- Freezes the 3D client view while firing a controlled
+-- amount of ascension attempts.
+--==================================================
+
+AutoAscensionState = {
+    Running = false,
+
+    SpamAmount = 50,
+    SpamDelay = 0.03,
+
+    FreezeSeconds = 2,
+
+    AttemptsDone = 0,
+    Status = "Idle",
+
+    BuyRebirthRemote = nil,
+    RememberUnlockageRemote = nil,
+
+    ToggleRef = nil,
+    StatusLabel = nil,
+
+    ToggleSyncing = false,
+    Frozen = false,
+}
+
+function ClampAutoAscensionSpamAmount(value)
+
+    local amount =
+        tonumber(value)
+
+    if not amount then
+        amount =
+            AutoAscensionState
+            and AutoAscensionState.SpamAmount
+            or 50
+    end
+
+    return math.clamp(
+        math.floor(amount),
+        1,
+        250
+    )
+end
+
+function ClampAutoAscensionFreezeSeconds(value)
+
+    local seconds =
+        tonumber(value)
+
+    if not seconds then
+        seconds =
+            AutoAscensionState
+            and AutoAscensionState.FreezeSeconds
+            or 2
+    end
+
+    return math.clamp(
+        seconds,
+        0.5,
+        10
+    )
+end
+
+function SetAutoAscensionFrozen(frozen)
+
+    frozen =
+        frozen == true
+
+    AutoAscensionState.Frozen =
+        frozen
+
+    local ok, err =
+        pcall(function()
+
+            if RunService
+            and type(RunService.Set3dRenderingEnabled) == "function" then
+
+                RunService:Set3dRenderingEnabled(
+                    not frozen
+                )
+            end
+        end)
+
+    if not ok then
+        warn(
+            "[AUTO ASCENSION] Freeze failed:",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    return true
+end
+
+function RefreshAutoAscensionStatus()
+
+    if not AutoAscensionState then
+        return
+    end
+
+    local statusText =
+        tostring(
+            AutoAscensionState.Status
+            or "Idle"
+        )
+
+    if AutoAscensionState.Running == true then
+
+        statusText =
+            "Running: "
+            .. tostring(
+                AutoAscensionState.AttemptsDone
+                or 0
+            )
+            .. " / "
+            .. tostring(
+                AutoAscensionState.SpamAmount
+                or 0
+            )
+    end
+
+    if AutoAscensionState.StatusLabel
+    and type(AutoAscensionState.StatusLabel.SetText) == "function" then
+
+        AutoAscensionState.StatusLabel:SetText(
+            "Status: " .. statusText
+        )
+    end
+end
+
+function GetBuyRebirthRemote()
+
+    if AutoAscensionState.BuyRebirthRemote then
+        return AutoAscensionState.BuyRebirthRemote
+    end
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    local remote =
+        gameEvents
+        and gameEvents:FindFirstChild("BuyRebirth")
+
+    if remote
+    and remote:IsA("RemoteEvent") then
+
+        AutoAscensionState.BuyRebirthRemote =
+            remote
+
+        return remote
+    end
+
+    return nil
+end
+
+function GetRememberUnlockageRemote()
+
+    if AutoAscensionState.RememberUnlockageRemote then
+        return AutoAscensionState.RememberUnlockageRemote
+    end
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    local saveSlotService =
+        gameEvents
+        and gameEvents:FindFirstChild("SaveSlotService")
+
+    local remote =
+        saveSlotService
+        and saveSlotService:FindFirstChild("RememberUnlockage")
+
+    if remote
+    and remote:IsA("RemoteEvent") then
+
+        AutoAscensionState.RememberUnlockageRemote =
+            remote
+
+        return remote
+    end
+
+    return nil
+end
+
+function StopAutoAscension(reason)
+
+    if not AutoAscensionState then
+        return
+    end
+
+    AutoAscensionState.Running =
+        false
+
+    SetAutoAscensionFrozen(false)
+
+    AutoAscensionState.Status =
+        tostring(reason or "Stopped")
+
+    if AutoAscensionState.ToggleRef
+    and type(AutoAscensionState.ToggleRef.SetValue) == "function" then
+
+        AutoAscensionState.ToggleSyncing =
+            true
+
+        AutoAscensionState.ToggleRef:SetValue(false)
+
+        AutoAscensionState.ToggleSyncing =
+            false
+    end
+
+    RefreshAutoAscensionStatus()
+end
+
+function StartAutoAscensionSpam()
+
+    if AutoAscensionState.Running == true then
+        return false
+    end
+
+    if not IsGardenWorld() then
+
+        AutoAscensionState.Status =
+            "Garden World only"
+
+        RefreshAutoAscensionStatus()
+
+        HolyNotify(
+            "Auto Ascension",
+            "Spam Ascension only works in Garden World.",
+            "triangle-alert",
+            4
+        )
+
+        StopAutoAscension(
+            "Garden World only"
+        )
+
+        return false
+    end
+
+    local buyRebirthRemote =
+        GetBuyRebirthRemote()
+
+    if not buyRebirthRemote then
+
+        AutoAscensionState.Status =
+            "BuyRebirth missing"
+
+        RefreshAutoAscensionStatus()
+
+        HolyNotify(
+            "Auto Ascension Failed",
+            "BuyRebirth remote was not found.",
+            "triangle-alert",
+            4
+        )
+
+        StopAutoAscension(
+            "Remote missing"
+        )
+
+        return false
+    end
+
+    local rememberUnlockageRemote =
+        GetRememberUnlockageRemote()
+
+    local amount =
+        ClampAutoAscensionSpamAmount(
+            AutoAscensionState.SpamAmount
+        )
+
+    local freezeSeconds =
+        ClampAutoAscensionFreezeSeconds(
+            AutoAscensionState.FreezeSeconds
+        )
+
+    local spamDelay =
+        math.clamp(
+            SafeNumber(
+                AutoAscensionState.SpamDelay,
+                0.03
+            ),
+            0.01,
+            0.25
+        )
+
+    local minimumFreezeSeconds =
+        amount * spamDelay
+
+    local actualFreezeSeconds =
+        math.max(
+            freezeSeconds,
+            minimumFreezeSeconds
+        )
+
+    AutoAscensionState.Running =
+        true
+
+    AutoAscensionState.SpamAmount =
+        amount
+
+    AutoAscensionState.FreezeSeconds =
+        freezeSeconds
+
+    AutoAscensionState.AttemptsDone =
+        0
+
+    AutoAscensionState.Status =
+        "Running"
+
+    RefreshAutoAscensionStatus()
+
+    task.spawn(function()
+
+        local freezeStartedAt =
+            os.clock()
+
+        local ok, err =
+            pcall(function()
+
+                SetAutoAscensionFrozen(true)
+
+                for attempt = 1, amount do
+
+                    if not IsCurrentRun()
+                    or AutoAscensionState.Running ~= true then
+                        break
+                    end
+
+                    buyRebirthRemote:FireServer()
+
+                    if rememberUnlockageRemote then
+                        rememberUnlockageRemote:FireServer()
+                    end
+
+                    AutoAscensionState.AttemptsDone =
+                        attempt
+
+                    RefreshAutoAscensionStatus()
+
+                    task.wait(spamDelay)
+                end
+
+                while IsCurrentRun()
+                and AutoAscensionState.Running == true
+                and os.clock() - freezeStartedAt < actualFreezeSeconds do
+
+                    task.wait(0.03)
+                end
+            end)
+
+        SetAutoAscensionFrozen(false)
+
+        if not ok then
+
+            warn(
+                "[AUTO ASCENSION] Worker error:",
+                tostring(err)
+            )
+
+            AutoAscensionState.Status =
+                "Error"
+
+            HolyNotify(
+                "Auto Ascension Error",
+                "Worker errored. Game was unfrozen safely.",
+                "triangle-alert",
+                5
+            )
+
+        else
+
+            AutoAscensionState.Status =
+                "Done: "
+                .. tostring(AutoAscensionState.AttemptsDone)
+                .. " / "
+                .. tostring(amount)
+        end
+
+        AutoAscensionState.Running =
+            false
+
+        if AutoAscensionState.ToggleRef
+        and type(AutoAscensionState.ToggleRef.SetValue) == "function" then
+
+            AutoAscensionState.ToggleSyncing =
+                true
+
+            AutoAscensionState.ToggleRef:SetValue(false)
+
+            AutoAscensionState.ToggleSyncing =
+                false
+        end
+
+        RefreshAutoAscensionStatus()
+    end)
+
+    return true
+end
 --==================================================
 -- CONFIG AUTOSAVE (DEBOUNCED)
 --==================================================
@@ -27180,6 +27590,122 @@ if IsTradeWorld() then
                 "calendar"
             )
     end
+end
+
+--==================================================
+-- AUTO ASCENSION UI
+-- Garden World only.
+--==================================================
+
+AutoAscensionBox = nil
+
+if IsGardenWorld() then
+
+    if type(Tabs.Events.AddLeftCollapsibleGroupbox) == "function" then
+
+        AutoAscensionBox =
+            Tabs.Events:AddLeftCollapsibleGroupbox(
+                "🌱 Auto Ascension",
+                "sparkles",
+                true
+            )
+
+    else
+
+        AutoAscensionBox =
+            Tabs.Events:AddLeftGroupbox(
+                "🌱 Auto Ascension",
+                "sparkles"
+            )
+    end
+
+    AutoAscensionBox:AddInput(
+        "AutoAscensionSpamAmount",
+        {
+            Text = "Spam Amount",
+            Default = tostring(
+                AutoAscensionState.SpamAmount
+            ),
+            Numeric = true,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Tooltip = "How many ascension attempts to fire. Default: 50. Max: 250.",
+        }
+    ):OnChanged(function(value)
+
+        AutoAscensionState.SpamAmount =
+            ClampAutoAscensionSpamAmount(value)
+
+        MarkConfigDirty()
+
+        RefreshAutoAscensionStatus()
+    end)
+
+    AutoAscensionBox:AddInput(
+        "AutoAscensionFreezeTime",
+        {
+            Text = "Freeze Time",
+            Default = tostring(
+                AutoAscensionState.FreezeSeconds
+            ),
+            Numeric = true,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Tooltip = "How long the 3D game view stays frozen. Min 0.5s, max 10s.",
+        }
+    ):OnChanged(function(value)
+
+        AutoAscensionState.FreezeSeconds =
+            ClampAutoAscensionFreezeSeconds(value)
+
+        MarkConfigDirty()
+
+        RefreshAutoAscensionStatus()
+    end)
+
+    local SpamAscensionToggle =
+        AutoAscensionBox:AddToggle(
+            "SpamAscension",
+            {
+                Text = "🔴 Spam Ascension",
+                Tooltip = "Freezes the 3D game view, fires ascension attempts, then auto-unfreezes when done.",
+                Default = false,
+            }
+        )
+
+    AutoAscensionState.ToggleRef =
+        SpamAscensionToggle
+
+    SpamAscensionToggle:OnChanged(function(enabled)
+
+        if AutoAscensionState.ToggleSyncing == true then
+            return
+        end
+
+        if enabled == true then
+
+            StartAutoAscensionSpam()
+
+        else
+
+            if AutoAscensionState.Running == true then
+
+                StopAutoAscension(
+                    "Stopped"
+                )
+            end
+        end
+
+        MarkConfigDirty()
+    end)
+
+    AutoAscensionState.StatusLabel =
+        AutoAscensionBox:AddLabel(
+            "Status: Idle",
+            true
+        )
+
+    RefreshAutoAscensionStatus()
 end
 --==================================================
 -- VISUAL TAB
