@@ -4386,7 +4386,8 @@ TargetPetsHopPlayerActivity = {}
 --==================================================
 -- TRANSFER STATE
 -- Garden + Trade World.
--- Uses Backpack/Character pet tools and TradeEvents remotes when available.
+-- Uses dynamic game pet list + dynamic mutation list.
+-- Actual sending uses inventory-owned matches only.
 --==================================================
 
 TransferState = {
@@ -8537,9 +8538,8 @@ petName =
 end
 
 --==================================================
--- TRANSFER HELPERS
--- Compile-safe V1.
--- No generic vararg wrapper. No Trade World-only gate.
+-- TRANSFER LIST HELPERS
+-- Reuses existing dynamic PetList + ListingMutationList.
 --==================================================
 
 function TransferCleanText(value)
@@ -8587,367 +8587,107 @@ function TransferMapIsEmpty(map)
     return true
 end
 
-function TransferFormatTradeUUID(uuid)
+function TransferBuildPetList()
 
-    uuid =
-        tostring(uuid or "")
-            :gsub("{", "")
-            :gsub("}", "")
-            :gsub("^%s+", "")
-            :gsub("%s+$", "")
-
-    if uuid == "" then
-        return nil
-    end
-
-    if not uuid:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") then
-        return nil
-    end
-
-    return "{"
-        .. uuid
-        .. "}"
-end
-
-function TransferResolvePetUUID(tool)
-
-    if not tool then
-        return nil
-    end
-
-    local candidates = {
-        tool:GetAttribute("PET_UUID"),
-        tool:GetAttribute("UUID"),
-        tool:GetAttribute("ItemUUID"),
-        tool:GetAttribute("ItemId"),
-        tool:GetAttribute("PetUUID"),
-    }
-
-    for _, value in ipairs(candidates) do
-
-        local formatted =
-            TransferFormatTradeUUID(value)
-
-        if formatted then
-            return formatted
-        end
-    end
-
-    return nil
-end
-
-function TransferReadNumberAttribute(tool, names, fallback)
-
-    if not tool then
-        return fallback
-    end
-
-    for _, name in ipairs(names) do
-
-        local value =
-            tonumber(
-                tool:GetAttribute(name)
-            )
-
-        if value then
-            return value
-        end
-    end
-
-    return fallback
-end
-
-function TransferReadTextAttribute(tool, names, fallback)
-
-    if not tool then
-        return fallback
-    end
-
-    for _, name in ipairs(names) do
-
-        local value =
-            tool:GetAttribute(name)
-
-        if value ~= nil then
-
-            value =
-                TransferCleanText(value)
-
-            if value ~= "" then
-                return value
-            end
-        end
-    end
-
-    return fallback
-end
-
-function TransferInferLevelFromToolName(toolName)
-
-    toolName =
-        tostring(toolName or "")
-
-    local age =
-        toolName:match("%[Age%s*(%d+)%]")
-
-    return tonumber(age)
-end
-
-function TransferInferBaseWeight(displayWeight, level)
-
-    displayWeight =
-        tonumber(displayWeight)
-
-    level =
-        tonumber(level)
-
-    if not displayWeight
-    or displayWeight <= 0 then
-        return 0
-    end
-
-    if not level
-    or level < 0 then
-        return 0
-    end
-
-    local divisor =
-        1 + (0.1 * level)
-
-    if divisor <= 0 then
-        return 0
-    end
-
-    return math.floor((displayWeight / divisor) * 100 + 0.5) / 100
-end
-
-function TransferResolveToolMetadata(tool)
-
-    if not tool
-    or not tool:IsA("Tool") then
-        return nil
-    end
-
-    local parsed =
-        ParsePetTool(tool)
-
-    if not parsed
-    or not parsed.PetName then
-        return nil
-    end
-
-    local uuid =
-        TransferResolvePetUUID(tool)
-
-    if not uuid then
-        return nil
-    end
-
-    local level =
-        TransferReadNumberAttribute(
-            tool,
-            {
-                "Level",
-                "Age",
-                "PetLevel",
-                "PetAge",
-            },
-            nil
-        )
-
-    if not level then
-        level =
-            TransferInferLevelFromToolName(tool.Name)
-            or 1
-    end
-
-    level =
-        math.floor(
-            math.clamp(
-                tonumber(level) or 1,
-                1,
-                10000
-            )
-        )
-
-    local displayWeight =
-        tonumber(parsed.Weight)
-        or 0
-
-    local baseWeight =
-        TransferReadNumberAttribute(
-            tool,
-            {
-                "BaseWeight",
-                "baseWeight",
-                "Age0Weight",
-                "OriginalWeight",
-            },
-            nil
-        )
-
-    if not baseWeight then
-        baseWeight =
-            TransferInferBaseWeight(
-                displayWeight,
-                level
-            )
-    end
-
-    local mutation =
-        TransferReadTextAttribute(
-            tool,
-            {
-                "MutationType",
-                "Mutation",
-                "PetMutation",
-            },
-            "Normal"
-        )
-
-    if mutation == "" then
-        mutation =
-            "Normal"
-    end
-
-    local favorite =
-        tool:GetAttribute("IsFavorite") == true
-        or tool:GetAttribute("Favorite") == true
-        or tool:GetAttribute("Favorited") == true
-
-    return {
-        Tool = tool,
-        UUID = uuid,
-        PetName = TransferCleanText(parsed.PetName),
-        Level = level,
-        DisplayWeight = displayWeight,
-        BaseWeight = tonumber(baseWeight) or 0,
-        Mutation = mutation,
-        IsFavorite = favorite,
-        ToolName = tostring(tool.Name),
-    }
-end
-
-function TransferBuildInventoryPets()
-
-    local player =
-        Players.LocalPlayer
-
-    if not player then
-        return {}
-    end
-
-    local containers = {
-        player.Character,
-        player:FindFirstChild("Backpack"),
-    }
-
-    local pets = {}
-
-    for _, container in ipairs(containers) do
-
-        if container then
-
-            for _, child in ipairs(container:GetChildren()) do
-
-                if child:IsA("Tool") then
-
-                    local pet =
-                        TransferResolveToolMetadata(child)
-
-                    if pet then
-                        table.insert(
-                            pets,
-                            pet
-                        )
-                    end
-                end
-            end
-        end
-    end
-
-    table.sort(pets, function(a, b)
-
-        local aName =
-            tostring(a.PetName or ""):lower()
-
-        local bName =
-            tostring(b.PetName or ""):lower()
-
-        if aName ~= bName then
-            return aName < bName
-        end
-
-        return tostring(a.UUID or "")
-            < tostring(b.UUID or "")
-    end)
-
-    return pets
-end
-
-function TransferBuildPetChoices()
-
-    -- Try the existing dynamic list first.
     if type(RefreshDynamicPetList) == "function" then
-        pcall(function()
-            RefreshDynamicPetList()
-        end)
+        RefreshDynamicPetList()
     end
 
     local source =
         type(PetList) == "table"
-        and #PetList > 0
         and PetList
-        or nil
+        or {}
 
     local choices = {}
     local seen = {}
 
-    local function AddPetName(petName)
+    for _, petName in ipairs(source) do
 
         petName =
             TransferCleanText(petName)
 
-        if petName == ""
-        or seen[petName] == true then
+        if petName ~= ""
+        and seen[petName] ~= true then
+
+            seen[petName] =
+                true
+
+            table.insert(
+                choices,
+                petName
+            )
+        end
+    end
+
+    table.sort(choices)
+
+    return choices
+end
+
+function TransferBuildMutationModeList()
+
+    if type(RefreshListingMutationList) == "function" then
+        RefreshListingMutationList()
+    end
+
+    local choices = {}
+    local seen = {}
+
+    local function AddMutationChoice(value)
+
+        value =
+            TransferCleanText(value)
+
+        if value == ""
+        or seen[value] == true then
             return
         end
 
-        seen[petName] =
+        seen[value] =
             true
 
         table.insert(
             choices,
-            petName
+            value
         )
     end
 
-    if type(source) == "table" then
+    AddMutationChoice("---")
+    AddMutationChoice("All")
+    AddMutationChoice("All Except")
 
-        for _, petName in ipairs(source) do
-            AddPetName(petName)
-        end
+    for _, mutationName in ipairs(ListingMutationList or {}) do
+        AddMutationChoice(mutationName)
     end
 
-    -- Fallback:
-    -- If PetList is still empty during early Transfer UI build,
-    -- pull directly from PetRegistry.PetList.
-    if #choices <= 0
-    and type(GetPetRegistry) == "function" then
+    return choices
+end
 
-        local registry =
-            GetPetRegistry()
+function TransferBuildMutationOnlyList()
 
-        local petListTable =
-            type(registry) == "table"
-            and rawget(registry, "PetList")
-            or nil
+    if type(RefreshListingMutationList) == "function" then
+        RefreshListingMutationList()
+    end
 
-        if type(petListTable) == "table" then
+    local choices = {}
+    local seen = {}
 
-            for petName in pairs(petListTable) do
-                AddPetName(petName)
-            end
+    for _, mutationName in ipairs(ListingMutationList or {}) do
+
+        mutationName =
+            TransferCleanText(mutationName)
+
+        if mutationName ~= ""
+        and mutationName ~= "---"
+        and seen[mutationName] ~= true then
+
+            seen[mutationName] =
+                true
+
+            table.insert(
+                choices,
+                mutationName
+            )
         end
     end
 
@@ -9000,6 +8740,141 @@ function TransferResolveTargetPlayer()
     return nil
 end
 
+function TransferResolvePetUUID(tool)
+
+    if not tool then
+        return nil
+    end
+
+    local candidates = {
+        tool:GetAttribute("PET_UUID"),
+        tool:GetAttribute("UUID"),
+        tool:GetAttribute("ItemUUID"),
+        tool:GetAttribute("ItemId"),
+        tool:GetAttribute("PetUUID"),
+    }
+
+    for _, value in ipairs(candidates) do
+
+        value =
+            tostring(value or "")
+                :gsub("{", "")
+                :gsub("}", "")
+                :gsub("^%s+", "")
+                :gsub("%s+$", "")
+
+        if value:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") then
+            return "{"
+                .. value
+                .. "}"
+        end
+    end
+
+    return nil
+end
+
+function TransferParseInventoryPet(tool)
+
+    if not tool
+    or not tool:IsA("Tool") then
+        return nil
+    end
+
+    local parsed =
+        ParsePetTool(tool)
+
+    if not parsed
+    or not parsed.PetName then
+        return nil
+    end
+
+    local uuid =
+        TransferResolvePetUUID(tool)
+
+    if not uuid then
+        return nil
+    end
+
+    local level =
+        tonumber(tool:GetAttribute("Level"))
+        or tonumber(tool:GetAttribute("Age"))
+        or tonumber(tostring(tool.Name):match("%[Age%s*(%d+)%]"))
+        or 1
+
+    local baseWeight =
+        tonumber(tool:GetAttribute("BaseWeight"))
+        or tonumber(tool:GetAttribute("baseWeight"))
+        or 0
+
+    local mutation =
+        "---"
+
+    if type(ResolveListingPetMutation) == "function" then
+        mutation =
+            ResolveListingPetMutation(
+                tool.Name,
+                parsed.PetName
+            )
+    end
+
+    local favorite =
+        tool:GetAttribute("IsFavorite") == true
+        or tool:GetAttribute("Favorite") == true
+        or tool:GetAttribute("Favorited") == true
+
+    return {
+        Tool = tool,
+        UUID = uuid,
+        PetName = TransferCleanText(parsed.PetName),
+        Mutation = TransferCleanText(mutation),
+        Level = math.floor(tonumber(level) or 1),
+        BaseWeight = tonumber(baseWeight) or 0,
+        DisplayWeight = tonumber(parsed.Weight) or 0,
+        IsFavorite = favorite,
+    }
+end
+
+function TransferBuildInventoryPets()
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return {}
+    end
+
+    local containers = {
+        player.Character,
+        player:FindFirstChild("Backpack"),
+    }
+
+    local pets = {}
+
+    for _, container in ipairs(containers) do
+
+        if container then
+
+            for _, child in ipairs(container:GetChildren()) do
+
+                if child:IsA("Tool") then
+
+                    local pet =
+                        TransferParseInventoryPet(child)
+
+                    if pet then
+                        table.insert(
+                            pets,
+                            pet
+                        )
+                    end
+                end
+            end
+        end
+    end
+
+    return pets
+end
+
 function TransferPetMatchesFilters(pet)
 
     if type(pet) ~= "table" then
@@ -9010,7 +8885,6 @@ function TransferPetMatchesFilters(pet)
         TransferState.SelectedPets
         or {}
 
-    -- Safety: no selected pets means send nothing.
     if TransferMapIsEmpty(selectedPets) then
         return false
     end
@@ -9033,7 +8907,7 @@ function TransferPetMatchesFilters(pet)
         local mutation =
             TransferCleanText(
                 pet.Mutation
-                or "Normal"
+                or "---"
             )
 
         if selectedMutations[mutation] ~= true then
@@ -9103,138 +8977,6 @@ function TransferBuildMatchingPets(limit)
     return matches
 end
 
-function TransferGetTradeRemote(remoteName)
-
-    local gameEvents =
-        ReplicatedStorage
-        and ReplicatedStorage:FindFirstChild("GameEvents")
-
-    local tradeEvents =
-        gameEvents
-        and gameEvents:FindFirstChild("TradeEvents")
-
-    if not tradeEvents then
-        return nil
-    end
-
-    return tradeEvents:FindFirstChild(remoteName)
-end
-
-function TransferSendRequest(targetPlayer)
-
-    local remote =
-        TransferGetTradeRemote("SendRequest")
-
-    if not remote
-    or not targetPlayer then
-        return false
-    end
-
-    local ok, err =
-        pcall(function()
-            remote:FireServer(targetPlayer)
-        end)
-
-    if not ok then
-        warn("[TRANSFER] SendRequest failed:", tostring(err))
-        return false
-    end
-
-    return true
-end
-
-function TransferAddPet(uuid)
-
-    local remote =
-        TransferGetTradeRemote("AddItem")
-
-    uuid =
-        TransferFormatTradeUUID(uuid)
-
-    if not remote
-    or not uuid then
-        return false
-    end
-
-    local ok, err =
-        pcall(function()
-            remote:FireServer("Pet", uuid)
-        end)
-
-    if not ok then
-        warn("[TRANSFER] AddItem failed:", tostring(err))
-        return false
-    end
-
-    return true
-end
-
-function TransferAccept()
-
-    local remote =
-        TransferGetTradeRemote("Accept")
-
-    if not remote then
-        return false
-    end
-
-    local ok, err =
-        pcall(function()
-            remote:FireServer()
-        end)
-
-    if not ok then
-        warn("[TRANSFER] Accept failed:", tostring(err))
-        return false
-    end
-
-    return true
-end
-
-function TransferConfirm()
-
-    local remote =
-        TransferGetTradeRemote("Confirm")
-
-    if not remote then
-        return false
-    end
-
-    local ok, err =
-        pcall(function()
-            remote:FireServer()
-        end)
-
-    if not ok then
-        warn("[TRANSFER] Confirm failed:", tostring(err))
-        return false
-    end
-
-    return true
-end
-
-function TransferDecline()
-
-    local remote =
-        TransferGetTradeRemote("Decline")
-
-    if not remote then
-        return false
-    end
-
-    local ok, err =
-        pcall(function()
-            remote:FireServer()
-        end)
-
-    if not ok then
-        warn("[TRANSFER] Decline failed:", tostring(err))
-        return false
-    end
-
-    return true
-end
-
 function TransferRefreshStatus()
 
     if TransferState.StatusLabel
@@ -9286,7 +9028,15 @@ function TransferRefreshDropdowns()
     and type(TransferState.PetDropdownRef.SetValues) == "function" then
 
         TransferState.PetDropdownRef:SetValues(
-            TransferBuildPetChoices()
+            TransferBuildPetList()
+        )
+    end
+
+    if TransferState.MutationDropdownRef
+    and type(TransferState.MutationDropdownRef.SetValues) == "function" then
+
+        TransferState.MutationDropdownRef:SetValues(
+            TransferBuildMutationOnlyList()
         )
     end
 
@@ -9344,253 +9094,7 @@ function TransferPreview()
 
     TransferRefreshStatus()
 
-    if type(HolyNotify) == "function" then
-        HolyNotify(
-            "Transfer Preview",
-            tostring(#matches)
-                .. " matching pet(s). Check console.",
-            "search",
-            4
-        )
-    end
-
     return matches
-end
-
-function TransferRunFilteredTrade()
-
-    if TransferState.Busy == true then
-        return false
-    end
-
-    if not IsHolyAllowedJoinPlace(game.PlaceId) then
-
-        TransferState.Status =
-            "Unsupported world"
-
-        TransferState.LastResult =
-            "Transfer only works in Garden or Trade World."
-
-        TransferRefreshStatus()
-
-        if type(HolyNotify) == "function" then
-            HolyNotify(
-                "Transfer",
-                "Transfer only works in Garden or Trade World.",
-                "triangle-alert",
-                4
-            )
-        end
-
-        return false
-    end
-
-    if not TransferGetTradeRemote("SendRequest")
-    or not TransferGetTradeRemote("AddItem") then
-
-        TransferState.Status =
-            "Trade remotes missing"
-
-        TransferState.LastResult =
-            "TradeEvents remotes are missing in this world."
-
-        TransferRefreshStatus()
-
-        if type(HolyNotify) == "function" then
-            HolyNotify(
-                "Transfer",
-                "Trade remotes are missing here. Need Garden trade remote spy if this happens.",
-                "triangle-alert",
-                5
-            )
-        end
-
-        return false
-    end
-
-    local targetPlayer =
-        TransferResolveTargetPlayer()
-
-    if not targetPlayer then
-
-        TransferState.Status =
-            "No target"
-
-        TransferState.LastResult =
-            "Choose a target player."
-
-        TransferRefreshStatus()
-
-        if type(HolyNotify) == "function" then
-            HolyNotify(
-                "Transfer Failed",
-                "Choose a target player first.",
-                "triangle-alert",
-                4
-            )
-        end
-
-        return false
-    end
-
-    local matches =
-        TransferBuildMatchingPets(
-            TransferState.MaxPetsPerTrade
-        )
-
-    if #matches <= 0 then
-
-        TransferState.Status =
-            "No matches"
-
-        TransferState.LastResult =
-            "No matching pets found."
-
-        TransferRefreshStatus()
-
-        if type(HolyNotify) == "function" then
-            HolyNotify(
-                "Transfer",
-                "No matching pets found.",
-                "search",
-                4
-            )
-        end
-
-        return false
-    end
-
-    if TransferState.DryRun == true then
-
-        TransferPreview()
-
-        TransferState.Status =
-            "Dry Run"
-
-        TransferState.LastResult =
-            "Dry Run blocked real trade."
-
-        TransferRefreshStatus()
-
-        if type(HolyNotify) == "function" then
-            HolyNotify(
-                "Dry Run",
-                "Dry Run is ON. No trade was sent.",
-                "shield-check",
-                4
-            )
-        end
-
-        return true
-    end
-
-    TransferState.Busy =
-        true
-
-    TransferState.Status =
-        "Sending request"
-
-    TransferState.LastResult =
-        "Starting trade..."
-
-    TransferRefreshStatus()
-
-    task.spawn(function()
-
-        local ok, err =
-            pcall(function()
-
-                if not TransferSendRequest(targetPlayer) then
-                    error("SendRequest failed")
-                end
-
-                task.wait(0.75)
-
-                TransferState.Status =
-                    "Adding pets"
-
-                TransferRefreshStatus()
-
-                local added = 0
-
-                for _, pet in ipairs(matches) do
-
-                    if TransferState.Busy ~= true then
-                        break
-                    end
-
-                    if TransferAddPet(pet.UUID) then
-                        added =
-                            added + 1
-                    end
-
-                    task.wait(0.15)
-                end
-
-                TransferState.SentThisSession =
-                    SafeNumber(
-                        TransferState.SentThisSession,
-                        0
-                    )
-                    + added
-
-                if TransferState.AutoConfirmAccept == true then
-
-                    task.wait(0.35)
-                    TransferAccept()
-
-                    task.wait(0.60)
-                    TransferConfirm()
-
-                    TransferState.Status =
-                        "Confirmed"
-
-                    TransferState.LastResult =
-                        "Added "
-                            .. tostring(added)
-                            .. " pet(s), Accept + Confirm fired."
-                else
-
-                    TransferState.Status =
-                        "Manual confirm"
-
-                    TransferState.LastResult =
-                        "Added "
-                            .. tostring(added)
-                            .. " pet(s). Confirm manually."
-                end
-            end)
-
-        if not ok then
-
-            warn(
-                "[TRANSFER] Worker error:",
-                tostring(err)
-            )
-
-            TransferState.Status =
-                "Error"
-
-            TransferState.LastResult =
-                tostring(err)
-
-            if type(HolyNotify) == "function" then
-                HolyNotify(
-                    "Transfer Error",
-                    tostring(err),
-                    "triangle-alert",
-                    5
-                )
-            end
-        end
-
-        TransferState.Busy =
-            false
-
-        TransferRefreshStatus()
-    end)
-
-    return true
 end
 
 function ResolveBestPet(targetPet)
@@ -28738,7 +28242,7 @@ HolyLoading:SetDescription("Building tabs...")
 --==================================================
 -- TRANSFER TAB UI
 -- Garden + Trade World.
--- No Trade World-only wrapper.
+-- Uses existing dynamic pet and mutation sources.
 --==================================================
 
 TransferPetFiltersBox = nil
@@ -28748,6 +28252,10 @@ TransferActionsBox = nil
 TransferStatusBox = nil
 
 if Tabs.Transfer then
+
+    -- Same preload style as Listings.
+    RefreshDynamicPetList()
+    RefreshListingMutationList()
 
     TransferPetFiltersBox =
         Tabs.Transfer:AddLeftGroupbox(
@@ -28779,67 +28287,21 @@ if Tabs.Transfer then
             "activity"
         )
 
-if type(RefreshDynamicPetList) == "function" then
-    pcall(function()
-        RefreshDynamicPetList()
-    end)
-end
-
-PetList =
-    PetList
-    or {}
-
-local TransferPetDropdown =
-    TransferPetFiltersBox:AddDropdown(
-        "TransferPetSelect",
-        {
-            Text = "Pets",
-            Tooltip = "Select game pets allowed to transfer. Empty = sends nothing.",
-            Values = TransferBuildPetChoices(),
-            Default = {},
-            Searchable = true,
-            Multi = true,
-        }
-    )
+    local TransferPetDropdown =
+        TransferPetFiltersBox:AddDropdown(
+            "TransferPetSelect",
+            {
+                Text = "Pets",
+                Tooltip = "Dynamic full game pet list. Empty = sends nothing.",
+                Values = TransferBuildPetList(),
+                Default = {},
+                Searchable = true,
+                Multi = true,
+            }
+        )
 
     TransferState.PetDropdownRef =
-    TransferPetDropdown
-
-task.spawn(function()
-
-    for attempt = 1, 20 do
-
-        if not IsCurrentRun() then
-            return
-        end
-
-        local choices =
-            TransferBuildPetChoices()
-
-        if #choices > 0 then
-
-            if TransferState.PetDropdownRef
-            and type(TransferState.PetDropdownRef.SetValues) == "function" then
-
-                TransferState.PetDropdownRef:SetValues(
-                    choices
-                )
-            end
-
-            print(
-                "[TRANSFER] Loaded pet dropdown:",
-                tostring(#choices),
-                "pets"
-            )
-
-            break
-        end
-
-        task.wait(0.25)
-    end
-end)
-
-TransferPetDropdown:OnChanged(function(value)
+        TransferPetDropdown
 
     TransferPetDropdown:OnChanged(function(value)
 
@@ -28856,7 +28318,6 @@ TransferPetDropdown:OnChanged(function(value)
             MarkConfigDirty()
         end
     end)
-
 
     TransferPetFiltersBox:AddButton({
         Text = "Remove All Pets",
@@ -28877,10 +28338,6 @@ TransferPetDropdown:OnChanged(function(value)
             )
 
             TransferRefreshStatus()
-
-            if type(MarkConfigDirty) == "function" then
-                MarkConfigDirty()
-            end
         end,
     })
 
@@ -28889,26 +28346,8 @@ TransferPetDropdown:OnChanged(function(value)
             "TransferMutationSelect",
             {
                 Text = "Mutations",
-                Tooltip = "Optional. Empty = any mutation.",
-                Values = {
-                    "Normal",
-                    "Rainbow",
-                    "Golden",
-                    "Shiny",
-                    "Windy",
-                    "Frozen",
-                    "Mega",
-                    "Tiny",
-                    "IronSkin",
-                    "Radiant",
-                    "Ascended",
-                    "Tranquil",
-                    "Corrupted",
-                    "Aromatic",
-                    "Shocked",
-                    "Nightmare",
-                    "Venom",
-                },
+                Tooltip = "Dynamic mutation list from Listings. Empty = any mutation.",
+                Values = TransferBuildMutationOnlyList(),
                 Default = {},
                 Searchable = true,
                 Multi = true,
@@ -29042,7 +28481,7 @@ TransferPetDropdown:OnChanged(function(value)
         "TransferDryRun",
         {
             Text = "Dry Run / Preview",
-            Tooltip = "ON = preview only. No trade request or AddItem fires.",
+            Tooltip = "ON = preview only. No real trade sending.",
             Default = true,
         }
     ):OnChanged(function(value)
@@ -29138,15 +28577,6 @@ TransferPetDropdown:OnChanged(function(value)
         Func = function()
 
             TransferRefreshDropdowns()
-
-            if type(HolyNotify) == "function" then
-                HolyNotify(
-                    "Transfer",
-                    "Player list refreshed.",
-                    "refresh-cw",
-                    3
-                )
-            end
         end,
     })
 
@@ -29154,7 +28584,7 @@ TransferPetDropdown:OnChanged(function(value)
         "TransferAutoConfirmAccept",
         {
             Text = "Auto Confirm / Accept",
-            Tooltip = "After adding pets, fires Accept and Confirm. Keep OFF while testing.",
+            Tooltip = "Reserved for trade worker. Keep OFF while testing.",
             Default = false,
         }
     ):OnChanged(function(value)
@@ -29165,36 +28595,48 @@ TransferPetDropdown:OnChanged(function(value)
 
     TransferActionsBox:AddButton({
         Text = "🔍 Preview Matches",
-        Tooltip = "Print matching pets to console without sending a trade.",
+        Tooltip = "Print matching owned pets to console.",
         Func = function()
+
             TransferPreview()
         end,
     })
 
     TransferActionsBox:AddButton({
         Text = "🎁 Send Filtered Trade",
-        Tooltip = "Sends request, adds matching pets, then optionally accept/confirms.",
-        Func = function()
-            TransferRunFilteredTrade()
-        end,
-    })
-
-    TransferActionsBox:AddButton({
-        Text = "❌ Decline Trade",
-        Tooltip = "Fires TradeEvents.Decline.",
+        Tooltip = "Next step: connect this to trade worker after preview is verified.",
         Func = function()
 
-            TransferDecline()
+            TransferPreview()
 
             TransferState.Status =
-                "Declined"
+                "Preview only"
 
             TransferState.LastResult =
-                "Decline fired."
+                "Trade worker not connected yet."
 
             TransferRefreshStatus()
+
+            if type(HolyNotify) == "function" then
+                HolyNotify(
+                    "Transfer",
+                    "Preview works. Trade worker comes next after filters are confirmed.",
+                    "search",
+                    4
+                )
+            end
         end,
     })
+
+    TransferStatusBox:AddLabel(
+        "Dynamic sources:",
+        false
+    )
+
+    TransferStatusBox:AddLabel(
+        "Pets: PetList • Mutations: ListingMutationList",
+        true
+    )
 
     TransferState.StatusLabel =
         TransferStatusBox:AddLabel(
@@ -29220,7 +28662,10 @@ TransferPetDropdown:OnChanged(function(value)
             true
         )
 
-    TransferRefreshDropdowns()
+    TransferBuildMatchingPets(
+        TransferState.MaxPetsPerTrade
+    )
+
     TransferRefreshStatus()
 end
 --==================================================
