@@ -8887,10 +8887,14 @@ end
 
 function TransferBuildPetChoices()
 
-    if type(RefreshDynamicPetList) == "function" then
-        pcall(function()
-            RefreshDynamicPetList()
-        end)
+    if type(PetList) ~= "table"
+    or #PetList <= 0 then
+
+        if type(RefreshDynamicPetList) == "function" then
+            pcall(function()
+                RefreshDynamicPetList()
+            end)
+        end
     end
 
     local source =
@@ -28747,18 +28751,28 @@ if Tabs.Transfer then
             "activity"
         )
 
-    local TransferPetDropdown =
-        TransferPetFiltersBox:AddDropdown(
-            "TransferPetSelect",
-            {
-                Text = "Pets",
-                Tooltip = "Select game pets allowed to transfer. Empty = sends nothing.",
-                Values = TransferBuildPetChoices(),
-                Default = {},
-                Searchable = true,
-                Multi = true,
-            }
-        )
+if type(RefreshDynamicPetList) == "function" then
+    pcall(function()
+        RefreshDynamicPetList()
+    end)
+end
+
+PetList =
+    PetList
+    or {}
+
+local TransferPetDropdown =
+    TransferPetFiltersBox:AddDropdown(
+        "TransferPetSelect",
+        {
+            Text = "Pets",
+            Tooltip = "Select game pets allowed to transfer. Empty = sends nothing.",
+            Values = TransferBuildPetChoices(),
+            Default = {},
+            Searchable = true,
+            Multi = true,
+        }
+    )
 
     TransferState.PetDropdownRef =
         TransferPetDropdown
@@ -28779,39 +28793,6 @@ if Tabs.Transfer then
         end
     end)
 
-TransferPetFiltersBox:AddButton({
-    Text = "🔄 Refresh Pets",
-    Tooltip = "Refreshes the full game pet dropdown.",
-    Func = function()
-
-        if type(RefreshDynamicPetList) == "function" then
-            RefreshDynamicPetList()
-        end
-
-        if TransferState.PetDropdownRef
-        and type(TransferState.PetDropdownRef.SetValues) == "function" then
-
-            TransferState.PetDropdownRef:SetValues(
-                TransferBuildPetChoices()
-            )
-        end
-
-        TransferBuildMatchingPets(
-            TransferState.MaxPetsPerTrade
-        )
-
-        TransferRefreshStatus()
-
-        if type(HolyNotify) == "function" then
-            HolyNotify(
-                "Transfer Pets Refreshed",
-                "Transfer pet dropdown refreshed from full game pet list.",
-                "dna",
-                3
-            )
-        end
-    end,
-})
 
     TransferPetFiltersBox:AddButton({
         Text = "Remove All Pets",
