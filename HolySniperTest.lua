@@ -10,7 +10,8 @@
 --==================================================
 
 local CONFIG = {
-    Enabled = false,
+    Enabled = true,
+    DryRun = true,
 
     Debug = true,
     DebugListings = false,
@@ -1751,13 +1752,26 @@ local function RunSniperPass()
         )
     )
 
-    if CONFIG.Enabled ~= true then
+if CONFIG.DryRun == true then
 
-        SniperStats.LastStatus =
-            "Matched but disabled"
+    SniperStats.LastStatus =
+        "Dry run match"
 
-        return false
-    end
+    print(
+        string.format(
+            "[SNIPER TEST] [DRY RUN] Would buy: P%s %s | %sT | BW %.2f | KG %.2f | Age %s | Mut %s",
+            tostring(best.MatchedPriority or 5),
+            tostring(best.PetName),
+            tostring(best.Price),
+            tonumber(best.BaseWeight) or 0,
+            tonumber(best.DisplayWeight) or 0,
+            tostring(best.Age or "?"),
+            tostring(best.MutationText or "Normal")
+        )
+    )
+
+    return false
+end
 
     if PurchaseState.Busy == true
     and CONFIG.QueueWhileBuying ~= true then
