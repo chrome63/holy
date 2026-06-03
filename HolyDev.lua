@@ -9324,6 +9324,12 @@ function TransferPreview()
     return matches
 end
 
+function TransferRunFilteredTrade()
+
+    if TransferState.Busy == true then
+        return false
+    end
+
     if not IsHolyAllowedJoinPlace(game.PlaceId) then
 
         TransferState.Status =
