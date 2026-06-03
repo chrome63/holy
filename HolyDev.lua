@@ -1,5 +1,5 @@
 --==================================================
--- HOLY v3.3.7 — OBSIDIAN FOUNDATION GROW A GARDEN TRADE MARKET SCRIPT
+-- HOLY v3.3.7 — OBSIDIAN FOUNDATION GROW A GARDEN TRADE MARKET CODING
 -- Purpose: Deterministic, modular base (no features)
 --==================================================
 
@@ -14,6 +14,9 @@ VirtualUser =
 
 UserInputService =
     game:GetService("UserInputService")
+
+RunService =
+    game:GetService("RunService")
 
 --==================================================
 -- HOLY ACCESS KEY GATE
@@ -184,6 +187,11 @@ end
 TRADING_WORLD_PLACE_ID = 129954712878723
 
 GROW_A_GARDEN_PLACE_ID = 126884695634066
+
+function IsGardenWorld()
+
+    return game.PlaceId == GROW_A_GARDEN_PLACE_ID
+end
 
 HOLY_ALLOWED_JOIN_PLACES = {
     [GROW_A_GARDEN_PLACE_ID] = "Grow a Garden",
@@ -1471,6 +1479,465 @@ function GetSniperFilterSet(watchlistId)
     return SniperFilterSets[watchlistId]
 end
 
+--==================================================
+-- FILTERED PET SCANNER INDEX
+-- Fast pre-filter for ExtractListings().
+-- This avoids building full listing objects for pets
+-- that are not in W1/W2/W3.
+--==================================================
+
+SniperPetFilterIndex =
+    SniperPetFilterIndex
+    or {
+        Exact = {},
+        Lower = {},
+        Count = 0,
+        Version = 0,
+        LastBuiltAt = 0,
+    }
+
+SniperFavoriteWatchCache =
+    SniperFavoriteWatchCache
+    or {
+        Listings = {},
+        LastCleanupAt = 0,
+        StaleAfter = 30,
+    }
+
+FilteredPetScannerStats =
+    FilteredPetScannerStats
+    or {
+        LastSkippedNonWatchlist = 0,
+        LastSkippedExactFilter = 0,
+        LastFavoriteWatched = 0,
+
+        TotalSkippedNonWatchlist = 0,
+        TotalSkippedExactFilter = 0,
+        TotalFavoriteWatched = 0,
+    }
+
+function NormalizeSniperPetNameKey(value)
+
+    return tostring(value or "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+function RebuildSniperPetFilterIndex(reason)
+
+    SniperPetFilterIndex =
+        SniperPetFilterIndex
+        or {}
+
+    SniperPetFilterIndex.Exact = {}
+    SniperPetFilterIndex.Lower = {}
+
+    local count = 0
+
+    for watchlistId = 1, 3 do
+
+        local filters =
+            GetSniperFilterSet(watchlistId)
+
+        if type(filters) == "table" then
+
+            for petName, filter in pairs(filters) do
+
+                petName =
+                    NormalizeSniperPetNameKey(petName)
+
+                if petName ~= ""
+                and type(filter) == "table" then
+
+                    if SniperPetFilterIndex.Exact[petName] ~= true then
+                        count = count + 1
+                    end
+
+                    SniperPetFilterIndex.Exact[petName] =
+                        true
+
+                    SniperPetFilterIndex.Lower[petName:lower()] =
+                        petName
+                end
+            end
+        end
+    end
+
+    SniperPetFilterIndex.Count =
+        count
+
+    SniperPetFilterIndex.Version =
+        SafeNumber(
+            SniperPetFilterIndex.Version,
+            0
+        ) + 1
+
+    SniperPetFilterIndex.LastBuiltAt =
+        os.clock()
+
+    if SniperState
+    and (
+        SniperState.DebugSmartScanner == true
+        or SniperState.DebugClassicScanner == true
+    ) then
+
+        print(
+            "[FILTERED SCANNER] Rebuilt index:",
+            tostring(count),
+            "pets |",
+            tostring(reason or "unknown")
+        )
+    end
+
+    return count
+end
+
+function EnsureSniperPetFilterIndex()
+
+    local needsRebuild =
+        false
+
+    if type(SniperPetFilterIndex) ~= "table"
+    or type(SniperPetFilterIndex.Exact) ~= "table"
+    or type(SniperPetFilterIndex.Lower) ~= "table" then
+
+        needsRebuild =
+            true
+
+    elseif SafeNumber(SniperPetFilterIndex.Count, 0) <= 0
+    and CountAllSniperFilters() > 0 then
+
+        needsRebuild =
+            true
+    end
+
+    if needsRebuild then
+
+        RebuildSniperPetFilterIndex(
+            "ensure index"
+        )
+    end
+
+    return SniperPetFilterIndex
+end
+
+function ShouldUseFilteredPetScanner()
+
+    return SniperState
+        and SniperState.FilteredPetScanner == true
+end
+
+function ResolveIndexedSniperPetName(petName)
+
+    petName =
+        NormalizeSniperPetNameKey(petName)
+
+    if petName == "" then
+        return nil
+    end
+
+    local index =
+        EnsureSniperPetFilterIndex()
+
+    if index.Exact[petName] == true then
+        return petName
+    end
+
+    local lowerMatch =
+        index.Lower[petName:lower()]
+
+    if lowerMatch then
+        return lowerMatch
+    end
+
+    return nil
+end
+
+function IsPetNameInSniperFilterIndex(petName)
+
+    return ResolveIndexedSniperPetName(petName) ~= nil
+end
+
+function ShouldUseExactFilterScanner()
+
+    return SniperState
+        and SniperState.ExactFilterScanner == true
+end
+
+function ListingPassesAnySniperPriceWeightFilter(
+    petName,
+    price,
+    baseWeight,
+    displayWeight,
+    weightSource
+)
+
+    petName =
+        NormalizeSniperPetNameKey(petName)
+
+    if petName == "" then
+        return false
+    end
+
+    price =
+        tonumber(price)
+        or math.huge
+
+    baseWeight =
+        tonumber(baseWeight)
+        or 0
+
+    displayWeight =
+        tonumber(displayWeight)
+        or baseWeight
+        or 0
+
+    for watchlistId = 1, 3 do
+
+        local filters =
+            GetSniperFilterSet(watchlistId)
+
+        local filter =
+            filters[petName]
+
+        if type(filter) == "table" then
+
+            local maxPrice =
+                tonumber(filter.MaxPrice)
+                or math.huge
+
+            if price <= maxPrice then
+
+                local weightMode =
+                    NormalizeWeightMode(
+                        filter.WeightMode
+                    )
+
+                local minWeight =
+                    tonumber(filter.MinWeight)
+                    or 0
+
+                local testWeight =
+                    displayWeight
+
+                if weightMode == "BaseWeight" then
+                    testWeight =
+                        baseWeight
+                end
+
+                if testWeight >= minWeight then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+function ResetFilteredPetScannerPassStats()
+
+    FilteredPetScannerStats =
+        FilteredPetScannerStats
+        or {}
+
+    FilteredPetScannerStats.LastSkippedNonWatchlist =
+        0
+
+    FilteredPetScannerStats.LastSkippedExactFilter =
+        0
+
+    FilteredPetScannerStats.LastFavoriteWatched =
+        0
+end
+
+function AddFilteredPetScannerSkipped(amount)
+
+    amount =
+        tonumber(amount)
+        or 1
+
+    FilteredPetScannerStats =
+        FilteredPetScannerStats
+        or {}
+
+    FilteredPetScannerStats.LastSkippedNonWatchlist =
+        SafeNumber(
+            FilteredPetScannerStats.LastSkippedNonWatchlist,
+            0
+        ) + amount
+
+    FilteredPetScannerStats.TotalSkippedNonWatchlist =
+        SafeNumber(
+            FilteredPetScannerStats.TotalSkippedNonWatchlist,
+            0
+        ) + amount
+end
+
+function AddExactFilterScannerSkipped(amount)
+
+    amount =
+        tonumber(amount)
+        or 1
+
+    FilteredPetScannerStats =
+        FilteredPetScannerStats
+        or {}
+
+    FilteredPetScannerStats.LastSkippedExactFilter =
+        SafeNumber(
+            FilteredPetScannerStats.LastSkippedExactFilter,
+            0
+        ) + amount
+
+    FilteredPetScannerStats.TotalSkippedExactFilter =
+        SafeNumber(
+            FilteredPetScannerStats.TotalSkippedExactFilter,
+            0
+        ) + amount
+end
+
+function AddFilteredFavoriteWatched(amount)
+
+    amount =
+        tonumber(amount)
+        or 1
+
+    FilteredPetScannerStats =
+        FilteredPetScannerStats
+        or {}
+
+    FilteredPetScannerStats.LastFavoriteWatched =
+        SafeNumber(
+            FilteredPetScannerStats.LastFavoriteWatched,
+            0
+        ) + amount
+
+    FilteredPetScannerStats.TotalFavoriteWatched =
+        SafeNumber(
+            FilteredPetScannerStats.TotalFavoriteWatched,
+            0
+        ) + amount
+end
+
+function CleanupSniperFavoriteWatchCache()
+
+    if type(SniperFavoriteWatchCache) ~= "table" then
+        return 0
+    end
+
+    SniperFavoriteWatchCache.Listings =
+        SniperFavoriteWatchCache.Listings
+        or {}
+
+    local now =
+        os.clock()
+
+    if now - SafeNumber(SniperFavoriteWatchCache.LastCleanupAt, 0) < 5 then
+        return 0
+    end
+
+    SniperFavoriteWatchCache.LastCleanupAt =
+        now
+
+    local staleAfter =
+        math.clamp(
+            SafeNumber(
+                SniperFavoriteWatchCache.StaleAfter,
+                30
+            ),
+            5,
+            120
+        )
+
+    local removed = 0
+
+    for listingKey, info in pairs(SniperFavoriteWatchCache.Listings) do
+
+        local lastSeen =
+            type(info) == "table"
+            and SafeNumber(info.LastSeenAt, 0)
+            or 0
+
+        if now - lastSeen >= staleAfter then
+
+            SniperFavoriteWatchCache.Listings[listingKey] =
+                nil
+
+            removed =
+                removed + 1
+        end
+    end
+
+    return removed
+end
+
+function RegisterWatchedFavoriteSniperListing(listing)
+
+    if SniperState
+    and SniperState.WatchFavoritedFilterMatches ~= true then
+        return false
+    end
+
+    if type(listing) ~= "table"
+    or listing.IsFavorite ~= true then
+        return false
+    end
+
+    if not IsPetNameInSniperFilterIndex(listing.PetName) then
+        return false
+    end
+
+    -- Full filter match check:
+    -- price, weight mode, min weight, mutation, priority.
+    local matched =
+        ListingMatchesFilter(listing)
+
+    if not matched then
+        return false
+    end
+
+    local listingKey =
+        type(GetListingKey) == "function"
+        and GetListingKey(listing)
+        or (
+            tostring(listing.BoothId or "")
+            .. "_"
+            .. tostring(listing.UID or "")
+        )
+
+    if listingKey == "" then
+        return false
+    end
+
+    SniperFavoriteWatchCache =
+        SniperFavoriteWatchCache
+        or {
+            Listings = {},
+            LastCleanupAt = 0,
+            StaleAfter = 30,
+        }
+
+    SniperFavoriteWatchCache.Listings =
+        SniperFavoriteWatchCache.Listings
+        or {}
+
+    SniperFavoriteWatchCache.Listings[listingKey] = {
+        PetName = tostring(listing.PetName or ""),
+        Price = tonumber(listing.Price) or 0,
+        SellerUserId = tonumber(listing.SellerUserId) or 0,
+        FirstSeenAt =
+            SniperFavoriteWatchCache.Listings[listingKey]
+            and SniperFavoriteWatchCache.Listings[listingKey].FirstSeenAt
+            or os.clock(),
+        LastSeenAt = os.clock(),
+    }
+
+    AddFilteredFavoriteWatched(1)
+
+    return true
+end
+
 PetRegistry =
     PetRegistry
     or nil
@@ -1750,6 +2217,38 @@ MarketTrackerPetImageOverrides = {
 
     ["Elephant"] =
         "https://static.wikia.nocookie.net/growagarden/images/6/60/Elephant.png/revision/latest?cb=20251101072634",
+    
+    ["Hedgehog"] =
+        "https://static.wikia.nocookie.net/growagarden/images/2/26/HedgehogRender.png/revision/latest?cb=20250806124408",
+
+    ["Mole"] =
+        "https://static.wikia.nocookie.net/growagarden/images/9/94/MoleRender.png/revision/latest?cb=20250806124338",
+
+    ["Frog"] =
+        "https://static.wikia.nocookie.net/growagarden/images/c/c8/FrogRender.png/revision/latest?cb=20250806124301",
+
+    ["Echo Frog"] =
+        "https://static.wikia.nocookie.net/growagarden/images/5/5c/EchoFrogRender.png/revision/latest?cb=20250806124229",
+
+    ["Night Owl"] =
+        "https://static.wikia.nocookie.net/growagarden/images/d/de/NightOwlRender.png/revision/latest?cb=20250806124107",
+
+    ["Flamingo"] =
+        "https://static.wikia.nocookie.net/growagarden/images/e/ec/FlamingoIcon.webp/revision/latest?cb=20250621135449",
+
+    ["Toucan"] =
+        "https://static.wikia.nocookie.net/growagarden/images/1/10/ToucanIcon.webp/revision/latest?cb=20250621135448",
+
+    ["Sea Turtle"] =
+    "https://static.wikia.nocookie.net/growagarden/images/a/ad/SeaTurtleIcon.webp/revision/latest?cb=20250621135447",
+
+    ["Rainbow Spinosaurus"] =
+        "https://static.wikia.nocookie.net/growagarden/images/e/e7/RainbowSpinosaurusIcon.png/revision/latest?cb=20250806131216",
+
+    ["Spinosaurus"] =
+        "https://static.wikia.nocookie.net/growagarden/images/2/24/Spinosaurus.png/revision/latest?cb=20250712071322",
+
+    
 }
 
 function ResolvePetIconThumbnailUrl(petName)
@@ -3694,10 +4193,18 @@ ServerBlockState = {
 
 SniperState = {
 
-    -- runtime
+-- runtime
 Scanning = false,
 Buying = false,
 Hopping = false,
+
+-- Test mode:
+-- ON = HOLY scans/matches and prints what it would buy,
+-- but never calls BuyListing.
+DryRun = false,
+LastDryRunPrintAt = 0,
+LastDryRunKey = "",
+
 HoppingStartedAt = 0,
 HoppingMaxSeconds = 15,
 
@@ -3719,6 +4226,23 @@ ScanSpeedMode = "Fast",
 -- ON  = faster optimized scanner path.
 SmartScannerEnabled = false,
 SmartScannerMode = "Classic",
+
+-- Filtered Pet Scanner:
+-- ON = ExtractListings skips pets whose base pet name is not in W1/W2/W3.
+-- This reduces lag in servers with hundreds of irrelevant pets.
+FilteredPetScanner = true,
+
+-- Exact Filter Scanner:
+-- ON = after pet-name match, ExtractListings also skips listings that do
+-- not pass sniper price + weight rules.
+-- This keeps the scan list small in servers with many same-name bad listings.
+ExactFilterScanner = true,
+
+-- Favorite Watch:
+-- ON = favorited pets that match a sniper pet name are still extracted,
+-- matched, and watched. They are NOT bought while favorite is true.
+-- If the seller unfavorites the same listing later, Smart Scanner can process it.
+WatchFavoritedFilterMatches = true,
 
 -- Debug prints in scanner hot path.
 -- Keep false on cloud phones / low FPS devices.
@@ -3858,6 +4382,51 @@ ShowcaseDropdownSyncing = false
 ShowcaseDebugPrints = false
 
 TargetPetsHopPlayerActivity = {}
+
+--==================================================
+-- TRANSFER STATE
+-- Garden + Trade World.
+-- Uses dynamic game pet list + dynamic mutation list.
+-- Actual sending uses inventory-owned matches only.
+--==================================================
+
+TransferState = {
+    Busy = false,
+    DryRun = true,
+
+    SelectedPets = {},
+    SelectedMutations = {},
+
+    MinLevel = 1,
+    MaxLevel = 100,
+
+    MinBaseWeight = 0,
+    MaxBaseWeight = 999,
+
+    MaxPetsPerTrade = 6,
+
+    TargetPlayerName = "",
+    TargetUserId = 0,
+
+    SkipFavorites = true,
+    AutoConfirmAccept = false,
+
+    MatchedPets = {},
+    SentThisSession = 0,
+
+    Status = "Idle",
+    LastResult = "None",
+
+    PetDropdownRef = nil,
+    MutationDropdownRef = nil,
+    TargetDropdownRef = nil,
+
+    StatusLabel = nil,
+    TargetLabel = nil,
+    MatchedLabel = nil,
+    LastResultLabel = nil,
+}
+
 --==================================================
 -- ANTI ALT / AVOID USERS STATE
 -- Detects blocked users after joining a server.
@@ -4835,10 +5404,10 @@ MarketTrackerTargets = {
         Type = "Rare",
         Emoji = "🐘",
 
-        MaxPrice = 500000,
-        GoodPrice = 250000,
-        SnipePrice = 100000,
-        PingBelow = 100000,
+        MaxPrice = 2000000,
+        GoodPrice = 500000,
+        SnipePrice = 250000,
+        PingBelow = 00000,
 
         MinWeight = 0,
     },
@@ -4956,29 +5525,6 @@ MarketTrackerTargets = {
         MinWeight = 100,
     },
 
-        ["Kitsune"] = {
-        Type = "Weight",
-        Emoji = "🦊",
-
-        MaxPrice = 1500,
-        GoodPrice = 1000,
-        SnipePrice = 1000,
-        PingBelow = 500,
-
-        MinWeight = 60,
-    },
-
-        ["Raccoon"] = {
-        Type = "Weight",
-        Emoji = "🦝",
-
-        MaxPrice = 1500,
-        GoodPrice = 1000,
-        SnipePrice = 1000,
-        PingBelow = 500,
-
-        MinWeight = 60,
-    },
 }
 --==================================================
 -- TOKEN FAILURE + BOOTH SALE DETECTION
@@ -7991,6 +8537,575 @@ petName =
 }
 end
 
+--==================================================
+-- TRANSFER LIST HELPERS
+-- Reuses existing dynamic PetList + ListingMutationList.
+--==================================================
+
+function TransferCleanText(value)
+
+    return tostring(value or "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+function TransferCloneSelectedMap(source)
+
+    local output = {}
+
+    if type(source) ~= "table" then
+        return output
+    end
+
+    for key, selected in pairs(source) do
+
+        if selected == true then
+
+            key =
+                TransferCleanText(key)
+
+            if key ~= "" then
+                output[key] =
+                    true
+            end
+        end
+    end
+
+    return output
+end
+
+function TransferMapIsEmpty(map)
+
+    if type(map) ~= "table" then
+        return true
+    end
+
+    for _ in pairs(map) do
+        return false
+    end
+
+    return true
+end
+
+function TransferBuildPetList()
+
+    if type(RefreshDynamicPetList) == "function" then
+        pcall(function()
+            RefreshDynamicPetList()
+        end)
+    end
+
+    local source =
+        type(PetList) == "table"
+        and PetList
+        or {}
+
+    local choices = {}
+    local seen = {}
+
+    for _, petName in ipairs(source) do
+
+        petName =
+            TransferCleanText(petName)
+
+        if petName ~= ""
+        and seen[petName] ~= true then
+
+            seen[petName] =
+                true
+
+            table.insert(
+                choices,
+                petName
+            )
+        end
+    end
+
+    table.sort(choices)
+
+    return choices
+end
+
+function TransferBuildMutationModeList()
+
+    if type(RefreshListingMutationList) == "function" then
+        RefreshListingMutationList()
+    end
+
+    local choices = {}
+    local seen = {}
+
+    local function AddMutationChoice(value)
+
+        value =
+            TransferCleanText(value)
+
+        if value == ""
+        or seen[value] == true then
+            return
+        end
+
+        seen[value] =
+            true
+
+        table.insert(
+            choices,
+            value
+        )
+    end
+
+    AddMutationChoice("---")
+    AddMutationChoice("All")
+    AddMutationChoice("All Except")
+
+    for _, mutationName in ipairs(ListingMutationList or {}) do
+        AddMutationChoice(mutationName)
+    end
+
+    return choices
+end
+
+function TransferBuildMutationOnlyList()
+
+    if type(RefreshListingMutationList) == "function" then
+        pcall(function()
+            RefreshListingMutationList()
+        end)
+    end
+
+    ListingMutationList =
+        type(ListingMutationList) == "table"
+        and ListingMutationList
+        or {}
+
+    local choices = {}
+    local seen = {}
+
+    for _, mutationName in ipairs(ListingMutationList or {}) do
+
+        mutationName =
+            TransferCleanText(mutationName)
+
+        if mutationName ~= ""
+        and mutationName ~= "---"
+        and seen[mutationName] ~= true then
+
+            seen[mutationName] =
+                true
+
+            table.insert(
+                choices,
+                mutationName
+            )
+        end
+    end
+
+    table.sort(choices)
+
+    return choices
+end
+
+function TransferBuildPlayerChoices()
+
+    local choices = {}
+
+    local localPlayer =
+        Players.LocalPlayer
+
+    for _, player in ipairs(Players:GetPlayers()) do
+
+        if player ~= localPlayer then
+            table.insert(
+                choices,
+                player.Name
+            )
+        end
+    end
+
+    table.sort(choices)
+
+    return choices
+end
+
+function TransferResolveTargetPlayer()
+
+    local targetName =
+        TransferCleanText(
+            TransferState.TargetPlayerName
+        )
+
+    if targetName == "" then
+        return nil
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+
+        if player.Name == targetName
+        or player.DisplayName == targetName then
+            return player
+        end
+    end
+
+    return nil
+end
+
+function TransferResolvePetUUID(tool)
+
+    if not tool then
+        return nil
+    end
+
+    local candidates = {
+        tool:GetAttribute("PET_UUID"),
+        tool:GetAttribute("UUID"),
+        tool:GetAttribute("ItemUUID"),
+        tool:GetAttribute("ItemId"),
+        tool:GetAttribute("PetUUID"),
+    }
+
+    for _, value in ipairs(candidates) do
+
+        value =
+            tostring(value or "")
+                :gsub("{", "")
+                :gsub("}", "")
+                :gsub("^%s+", "")
+                :gsub("%s+$", "")
+
+        if value:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") then
+            return "{"
+                .. value
+                .. "}"
+        end
+    end
+
+    return nil
+end
+
+function TransferParseInventoryPet(tool)
+
+    if not tool
+    or not tool:IsA("Tool") then
+        return nil
+    end
+
+    local parsed =
+        ParsePetTool(tool)
+
+    if not parsed
+    or not parsed.PetName then
+        return nil
+    end
+
+    local uuid =
+        TransferResolvePetUUID(tool)
+
+    if not uuid then
+        return nil
+    end
+
+    local level =
+        tonumber(tool:GetAttribute("Level"))
+        or tonumber(tool:GetAttribute("Age"))
+        or tonumber(tostring(tool.Name):match("%[Age%s*(%d+)%]"))
+        or 1
+
+    local baseWeight =
+        tonumber(tool:GetAttribute("BaseWeight"))
+        or tonumber(tool:GetAttribute("baseWeight"))
+        or 0
+
+    local mutation =
+        "---"
+
+    if type(ResolveListingPetMutation) == "function" then
+        mutation =
+            ResolveListingPetMutation(
+                tool.Name,
+                parsed.PetName
+            )
+    end
+
+    local favorite =
+        tool:GetAttribute("IsFavorite") == true
+        or tool:GetAttribute("Favorite") == true
+        or tool:GetAttribute("Favorited") == true
+
+    return {
+        Tool = tool,
+        UUID = uuid,
+        PetName = TransferCleanText(parsed.PetName),
+        Mutation = TransferCleanText(mutation),
+        Level = math.floor(tonumber(level) or 1),
+        BaseWeight = tonumber(baseWeight) or 0,
+        DisplayWeight = tonumber(parsed.Weight) or 0,
+        IsFavorite = favorite,
+    }
+end
+
+function TransferBuildInventoryPets()
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return {}
+    end
+
+    local containers = {
+        player.Character,
+        player:FindFirstChild("Backpack"),
+    }
+
+    local pets = {}
+
+    for _, container in ipairs(containers) do
+
+        if container then
+
+            for _, child in ipairs(container:GetChildren()) do
+
+                if child:IsA("Tool") then
+
+                    local pet =
+                        TransferParseInventoryPet(child)
+
+                    if pet then
+                        table.insert(
+                            pets,
+                            pet
+                        )
+                    end
+                end
+            end
+        end
+    end
+
+    return pets
+end
+
+function TransferPetMatchesFilters(pet)
+
+    if type(pet) ~= "table" then
+        return false
+    end
+
+    local selectedPets =
+        TransferState.SelectedPets
+        or {}
+
+    if TransferMapIsEmpty(selectedPets) then
+        return false
+    end
+
+    if selectedPets[pet.PetName] ~= true then
+        return false
+    end
+
+    if TransferState.SkipFavorites == true
+    and pet.IsFavorite == true then
+        return false
+    end
+
+    local selectedMutations =
+        TransferState.SelectedMutations
+        or {}
+
+    if not TransferMapIsEmpty(selectedMutations) then
+
+        local mutation =
+            TransferCleanText(
+                pet.Mutation
+                or "---"
+            )
+
+        if selectedMutations[mutation] ~= true then
+            return false
+        end
+    end
+
+    local level =
+        tonumber(pet.Level)
+        or 1
+
+    if level < SafeNumber(TransferState.MinLevel, 1) then
+        return false
+    end
+
+    if level > SafeNumber(TransferState.MaxLevel, 100) then
+        return false
+    end
+
+    local baseWeight =
+        tonumber(pet.BaseWeight)
+        or 0
+
+    if baseWeight < SafeNumber(TransferState.MinBaseWeight, 0) then
+        return false
+    end
+
+    if baseWeight > SafeNumber(TransferState.MaxBaseWeight, 999) then
+        return false
+    end
+
+    return true
+end
+
+function TransferBuildMatchingPets(limit)
+
+    limit =
+        math.clamp(
+            math.floor(
+                tonumber(limit)
+                or SafeNumber(TransferState.MaxPetsPerTrade, 6)
+            ),
+            1,
+            50
+        )
+
+    local matches = {}
+
+    for _, pet in ipairs(TransferBuildInventoryPets()) do
+
+        if TransferPetMatchesFilters(pet) then
+
+            table.insert(
+                matches,
+                pet
+            )
+
+            if #matches >= limit then
+                break
+            end
+        end
+    end
+
+    TransferState.MatchedPets =
+        matches
+
+    return matches
+end
+
+function TransferRefreshStatus()
+
+    if TransferState.StatusLabel
+    and type(TransferState.StatusLabel.SetText) == "function" then
+
+        TransferState.StatusLabel:SetText(
+            "Mode: "
+                .. tostring(TransferState.Status or "Idle")
+        )
+    end
+
+    if TransferState.TargetLabel
+    and type(TransferState.TargetLabel.SetText) == "function" then
+
+        TransferState.TargetLabel:SetText(
+            "Target: "
+                .. (
+                    TransferState.TargetPlayerName ~= ""
+                    and TransferState.TargetPlayerName
+                    or "None"
+                )
+        )
+    end
+
+    if TransferState.MatchedLabel
+    and type(TransferState.MatchedLabel.SetText) == "function" then
+
+        TransferState.MatchedLabel:SetText(
+            "Matched Pets: "
+                .. tostring(#(TransferState.MatchedPets or {}))
+        )
+    end
+
+    if TransferState.LastResultLabel
+    and type(TransferState.LastResultLabel.SetText) == "function" then
+
+        TransferState.LastResultLabel:SetText(
+            "Last Result: "
+                .. tostring(TransferState.LastResult or "None")
+                .. " | Sent: "
+                .. tostring(TransferState.SentThisSession or 0)
+        )
+    end
+end
+
+function TransferRefreshDropdowns()
+
+    if TransferState.PetDropdownRef
+    and type(TransferState.PetDropdownRef.SetValues) == "function" then
+
+        TransferState.PetDropdownRef:SetValues(
+            TransferBuildPetList()
+        )
+    end
+
+    if TransferState.MutationDropdownRef
+    and type(TransferState.MutationDropdownRef.SetValues) == "function" then
+
+        TransferState.MutationDropdownRef:SetValues(
+            TransferBuildMutationOnlyList()
+        )
+    end
+
+    if TransferState.TargetDropdownRef
+    and type(TransferState.TargetDropdownRef.SetValues) == "function" then
+
+        TransferState.TargetDropdownRef:SetValues(
+            TransferBuildPlayerChoices()
+        )
+    end
+
+    TransferBuildMatchingPets(
+        TransferState.MaxPetsPerTrade
+    )
+
+    TransferRefreshStatus()
+end
+
+function TransferPreview()
+
+    local matches =
+        TransferBuildMatchingPets(
+            TransferState.MaxPetsPerTrade
+        )
+
+    TransferState.Status =
+        "Preview"
+
+    TransferState.LastResult =
+        tostring(#matches)
+            .. " matching pet(s)."
+
+    print("========== HOLY TRANSFER PREVIEW ==========")
+
+    for index, pet in ipairs(matches) do
+
+        print(
+            "#"
+                .. tostring(index),
+            tostring(pet.PetName),
+            "| Level",
+            tostring(pet.Level),
+            "| BW",
+            tostring(pet.BaseWeight),
+            "| KG",
+            tostring(pet.DisplayWeight),
+            "| Mut",
+            tostring(pet.Mutation),
+            "| UUID",
+            tostring(pet.UUID)
+        )
+    end
+
+    print("===========================================")
+
+    TransferRefreshStatus()
+
+    return matches
+end
+
 function ResolveBestPet(targetPet)
 
     local player =
@@ -8182,7 +9297,15 @@ end
 --==================================================
 -- NORMALIZED LISTING EXTRACTION
 --==================================================
-function ExtractListings()
+function ExtractListings(options)
+
+    options =
+        type(options) == "table"
+        and options
+        or {}
+
+    local forSniper =
+        options.ForSniper == true
 
     local data = LatestBoothData
 
@@ -8255,13 +9378,47 @@ for uid, listingData in pairs(listingsTable) do
         continue
     end
 
-if petData.IsFavorite then
-    continue
-end
-
 local petName =
     itemData.PetType
     or "Unknown"
+
+petName =
+    NormalizeSniperPetNameKey(petName)
+
+if petName == ""
+or petName == "Unknown" then
+    continue
+end
+
+-- Fast path:
+-- If Filtered Pet Scanner is ON, skip pets that are not in W1/W2/W3
+-- before doing weight, age, mutation, webhook, or listing-object work.
+if forSniper
+and ShouldUseFilteredPetScanner()
+and not IsPetNameInSniperFilterIndex(petName) then
+
+    AddFilteredPetScannerSkipped(1)
+
+    continue
+end
+
+local isFavorite =
+    petData.IsFavorite == true
+
+-- Classic safety:
+-- Do not include favorites unless the favorite-watch system is enabled.
+-- Favorites are only kept when they passed the watchlist-name filter.
+-- If Exact Filter Scanner is ON, they must also pass price + weight.
+if forSniper
+and isFavorite
+and not (
+    SniperState
+    and SniperState.WatchFavoritedFilterMatches == true
+    and ShouldUseFilteredPetScanner()
+) then
+
+    continue
+end
 
 local price =
     tonumber(listingData.Price)
@@ -8297,6 +9454,21 @@ local displayWeight, weightSource =
         listingData,
         age
     )
+
+if forSniper
+and ShouldUseExactFilterScanner()
+and not ListingPassesAnySniperPriceWeightFilter(
+    petName,
+    price,
+    baseWeight,
+    displayWeight,
+    weightSource
+) then
+
+    AddExactFilterScannerSkipped(1)
+
+    continue
+end
 
 -- Do not infer Age from BaseWeight/DisplayWeight.
 -- Display KG caps around BaseWeight × 11, while broken Age can go above 100
@@ -8423,7 +9595,7 @@ MutationText = mutationText,
     -- Confirmation only.
     -- Favorite pets are already skipped above, so this should normally be false.
     IsFavorite =
-        petData.IsFavorite == true,
+        isFavorite,
 
     HatchedFrom = hatchedFrom,
     SourceEgg = hatchedFrom,
@@ -9229,6 +10401,65 @@ function CanBoothRepositionNow()
     return true, "OK"
 end
 
+function ShouldSniperDryRunBlockPurchase(listing)
+
+    if not SniperState
+    or SniperState.DryRun ~= true then
+        return false
+    end
+
+    if type(listing) ~= "table" then
+        return true
+    end
+
+    local listingKey =
+        GetListingKey(listing)
+
+    local now =
+        os.clock()
+
+    local shouldPrint =
+        listingKey ~= tostring(SniperState.LastDryRunKey or "")
+        or now - SafeNumber(SniperState.LastDryRunPrintAt, 0) >= 2
+
+    if shouldPrint then
+
+        SniperState.LastDryRunKey =
+            listingKey
+
+        SniperState.LastDryRunPrintAt =
+            now
+
+        print(
+            string.format(
+                "[SNIPER DRY RUN] Would buy: P%s W%s %s | %s tokens | %s %.2f | KG %.2f | Age %s | Mut %s",
+                tostring(
+                    ClampSniperPriority(
+                        listing.MatchedPriority
+                        or listing.Priority
+                        or 5
+                    )
+                ),
+                tostring(listing.MatchedWatchlistId or "?"),
+                tostring(listing.PetName or "Unknown"),
+                tostring(listing.Price or "?"),
+                tostring(listing.MatchedWeightMode or "Weight"),
+                tonumber(listing.MatchedWeight)
+                    or tonumber(listing.BaseWeight)
+                    or tonumber(listing.Weight)
+                    or 0,
+                tonumber(listing.DisplayWeight)
+                    or tonumber(listing.Weight)
+                    or 0,
+                tostring(listing.Age or "?"),
+                tostring(listing.MutationText or "Normal")
+            )
+        )
+    end
+
+    return true
+end
+
 function DispatchPurchase(listing)
 
     if not listing then
@@ -9256,6 +10487,17 @@ function DispatchPurchase(listing)
 
     if FailedListings[listingKey] then
         return false
+    end
+
+    --==================================================
+    -- DRY RUN GUARD
+    -- Safe test mode. Blocks every scanner path before
+    -- PurchaseState.Busy, QueuePurchase, TryPurchaseListing,
+    -- inventory waiters, or BuyListing can start.
+    --==================================================
+
+    if ShouldSniperDryRunBlockPurchase(listing) then
+        return true
     end
 
     --==================================================
@@ -21686,12 +22928,13 @@ end
 -- - reduce repeated unchanged listing work
 -- - keep buy invoke path fast
 -- - buy best candidate first
--- - never hard-lock favorited listings
+-- - never buy favorited listings
 --
 -- Important:
--- ExtractListings() already skips petData.IsFavorite.
--- If a favorited listing later becomes unfavorited, it can
--- reappear and Smart Scanner will evaluate it again.
+-- ExtractListings() skips irrelevant pet names early when
+-- Filtered Pet Scanner is enabled.
+-- Favorited matching pets may still be extracted for watch-only logic.
+-- They are never bought while IsFavorite == true.
 --==================================================
 
 SmartSniperCache =
@@ -21720,6 +22963,8 @@ SmartSniperCache =
             LastCandidates = 0,
             LastSkippedUnchanged = 0,
             LastFavoriteSkipped = 0,
+            LastFavoriteWatched = 0,
+            LastFilteredSkipped = 0,
 
             LastMatches = 0,
             LastDispatched = 0,
@@ -21754,6 +22999,43 @@ function ResetSmartSniperCache(reason)
     print(
         "[SMART SNIPER] Cache reset:",
         tostring(reason or "manual")
+    )
+
+    return true
+end
+
+function ResetSniperListingCaches(reason)
+
+    reason =
+        tostring(reason or "scanner state changed")
+
+    if type(SeenListings) == "table" then
+        table.clear(SeenListings)
+    end
+
+    if type(MarketCache) == "table" then
+        table.clear(MarketCache)
+    end
+
+    if type(ClaimedListings) == "table" then
+        table.clear(ClaimedListings)
+    end
+
+    if type(ResetFilteredPetScannerPassStats) == "function" then
+        ResetFilteredPetScannerPassStats()
+    end
+
+    if type(ResetSmartSniperCache) == "function" then
+        ResetSmartSniperCache(reason)
+    end
+
+    if SniperState then
+        SniperState.LastScan = 0
+    end
+
+    print(
+        "[SNIPER CACHE] Reset listing caches:",
+        reason
     )
 
     return true
@@ -22067,8 +23349,13 @@ if game.PlaceId == TRADING_WORLD_PLACE_ID then
     end
 end
 
+            ResetFilteredPetScannerPassStats()
+            EnsureSniperPetFilterIndex()
+
             local listings, scannedCount =
-                ExtractListings()
+                ExtractListings({
+                    ForSniper = true,
+                })
 
             listings =
                 type(listings) == "table"
@@ -22106,6 +23393,17 @@ end
             local favoriteSkipped =
                 0
 
+            local favoriteWatched =
+                0
+
+            local filteredSkipped =
+                FilteredPetScannerStats
+                and SafeNumber(
+                    FilteredPetScannerStats.LastSkippedNonWatchlist,
+                    0
+                )
+                or 0
+
             local matches =
                 0
 
@@ -22119,7 +23417,13 @@ end
                 end
 
                 if listing.IsFavorite == true then
-                    favoriteSkipped = favoriteSkipped + 1
+
+                    if RegisterWatchedFavoriteSniperListing(listing) then
+                        favoriteWatched = favoriteWatched + 1
+                    else
+                        favoriteSkipped = favoriteSkipped + 1
+                    end
+
                     continue
                 end
 
@@ -22273,16 +23577,48 @@ end
                 end
             end
 
-            --==================================================
-            -- MARKET TRACKER AFTER SMART BUY-CRITICAL PATH
-            -- Important:
-            -- This must run AFTER smart scanner matching + buy dispatch.
-            -- It should never delay DispatchPurchase().
-            --==================================================
+--==================================================
+-- MARKET TRACKER AFTER SMART BUY-CRITICAL PATH
+-- Important:
+-- This must run AFTER smart scanner matching + buy dispatch.
+-- It should never delay DispatchPurchase().
+--
+-- Sniper uses filtered ExtractListings({ ForSniper = true }).
+-- Market Tracker must use unfiltered ExtractListings({ ForSniper = false }),
+-- otherwise Exact Filter Scanner hides most market listings.
+--==================================================
 
-            if type(ScheduleMarketTrackerListings) == "function" then
-                ScheduleMarketTrackerListings(listings)
-            end
+if type(ScheduleMarketTrackerListings) == "function" then
+
+    task.spawn(function()
+
+        local marketListings =
+            nil
+
+        local okMarket, result =
+            pcall(function()
+                return ExtractListings({
+                    ForSniper = false,
+                })
+            end)
+
+        if okMarket
+        and type(result) == "table" then
+
+            marketListings =
+                result
+
+        else
+
+            marketListings =
+                listings
+        end
+
+        ScheduleMarketTrackerListings(
+            marketListings
+        )
+    end)
+end
 
             if matches <= 0 then
                 HandleSmartSniperNoMatchesAutoHop()
@@ -22301,6 +23637,7 @@ end
             end
 
             CleanupSmartSniperCache()
+            CleanupSniperFavoriteWatchCache()
 
             SmartSniperCache.Stats.LastRunMs =
                 (os.clock() - runStartedAt) * 1000
@@ -22319,6 +23656,12 @@ end
 
             SmartSniperCache.Stats.LastFavoriteSkipped =
                 favoriteSkipped
+
+            SmartSniperCache.Stats.LastFavoriteWatched =
+                favoriteWatched
+
+            SmartSniperCache.Stats.LastFilteredSkipped =
+                filteredSkipped
 
             SmartSniperCache.Stats.LastMatches =
                 matches
@@ -22348,6 +23691,44 @@ function RunSmartSniperSelfTest()
     print("Mode:", tostring(SniperState.SmartScannerMode))
     print("Cache entries:", tostring(CountSmartSniperCache()))
 
+    local index =
+        EnsureSniperPetFilterIndex()
+
+    print("Filtered Scanner:", tostring(SniperState.FilteredPetScanner == true))
+    print("Exact Filter Scanner:", tostring(SniperState.ExactFilterScanner == true))
+    print("Watch Favorites:", tostring(SniperState.WatchFavoritedFilterMatches == true))
+    print("Indexed Pets:", tostring(index.Count or 0))
+
+    if FilteredPetScannerStats then
+
+        print(
+    "Last Name Skips:",
+    tostring(FilteredPetScannerStats.LastSkippedNonWatchlist or 0)
+)
+
+print(
+    "Last Exact Skips:",
+    tostring(FilteredPetScannerStats.LastSkippedExactFilter or 0)
+)
+
+print(
+    "Last Favorite Watched:",
+    tostring(FilteredPetScannerStats.LastFavoriteWatched or 0)
+)
+    end
+
+    if SniperFavoriteWatchCache
+    and SniperFavoriteWatchCache.Listings then
+
+        local watched = 0
+
+        for _ in pairs(SniperFavoriteWatchCache.Listings) do
+            watched = watched + 1
+        end
+
+        print("Favorite Watch Cache:", tostring(watched))
+    end
+
     if SmartSniperCache
     and SmartSniperCache.Stats then
 
@@ -22358,6 +23739,8 @@ function RunSmartSniperSelfTest()
         print("LastCandidates:", tostring(SmartSniperCache.Stats.LastCandidates or 0))
         print("LastSkippedUnchanged:", tostring(SmartSniperCache.Stats.LastSkippedUnchanged or 0))
         print("LastFavoriteSkipped:", tostring(SmartSniperCache.Stats.LastFavoriteSkipped or 0))
+        print("LastFavoriteWatched:", tostring(SmartSniperCache.Stats.LastFavoriteWatched or 0))
+        print("LastFilteredSkipped:", tostring(SmartSniperCache.Stats.LastFilteredSkipped or 0))
         print("LastMatches:", tostring(SmartSniperCache.Stats.LastMatches or 0))
         print("LastDispatched:", tostring(SmartSniperCache.Stats.LastDispatched or 0))
     end
@@ -22410,8 +23793,13 @@ end
                 end
             end
 
+            ResetFilteredPetScannerPassStats()
+            EnsureSniperPetFilterIndex()
+
             local listings, scannedCount =
-                ExtractListings()
+                ExtractListings({
+                    ForSniper = true,
+                })
 
             listings =
                 type(listings) == "table"
@@ -22479,6 +23867,13 @@ end
                         listings[i]
 
                     if type(listing) ~= "table" then
+                        continue
+                    end
+
+                    if listing.IsFavorite == true then
+
+                        RegisterWatchedFavoriteSniperListing(listing)
+
                         continue
                     end
 
@@ -22594,15 +23989,47 @@ end
             end
 
             --==================================================
-            -- MARKET TRACKER AFTER BUY-CRITICAL PATH
-            -- Important:
-            -- This must run AFTER sniper matching + buy dispatch.
-            -- It should never delay DispatchPurchase().
-            --==================================================
+-- MARKET TRACKER AFTER BUY-CRITICAL PATH
+-- Important:
+-- This must run AFTER sniper matching + buy dispatch.
+-- It should never delay DispatchPurchase().
+--
+-- Sniper uses filtered ExtractListings({ ForSniper = true }).
+-- Market Tracker must use unfiltered ExtractListings({ ForSniper = false }),
+-- otherwise Exact Filter Scanner hides most market listings.
+--==================================================
 
-            if type(ScheduleMarketTrackerListings) == "function" then
-                ScheduleMarketTrackerListings(listings)
-            end
+if type(ScheduleMarketTrackerListings) == "function" then
+
+    task.spawn(function()
+
+        local marketListings =
+            nil
+
+        local okMarket, result =
+            pcall(function()
+                return ExtractListings({
+                    ForSniper = false,
+                })
+            end)
+
+        if okMarket
+        and type(result) == "table" then
+
+            marketListings =
+                result
+
+        else
+
+            marketListings =
+                listings
+        end
+
+        ScheduleMarketTrackerListings(
+            marketListings
+        )
+    end)
+end
 
             if matches > 0 then
 
@@ -23788,6 +25215,17 @@ BoothAuto = {
     -- First Available / Nearest Middle / Nearest Player
     ClaimMode = "Nearest Middle",
 
+    -- If HOLY claims a booth that is too far from middle,
+    -- it can unclaim and reclaim a better free booth.
+    SmartReclaimCloserBooth = true,
+
+    -- If claimed booth is farther than this from middle,
+    -- HOLY checks if a better booth is available.
+    SmartReclaimMaxMiddleDistance = 75,
+
+    -- Better booth must be at least this many studs closer.
+    SmartReclaimMinImprovement = 8,
+
     -- Auto Teleport = soft return mode.
     AutoTeleport = false,
 
@@ -24948,6 +26386,474 @@ BeeEggAuto = {
     LastAttempt = 0,
     BuyInterval = 1.5,
 }
+
+--==================================================
+-- AUTO ASCENSION STATE
+-- Garden World only.
+-- Freezes the 3D client view while firing a controlled
+-- amount of ascension attempts.
+--==================================================
+
+AutoAscensionState = {
+    Running = false,
+
+TargetGardenCoins = 5000,
+
+-- 1 ascend = 10 Garden Coins.
+CoinsPerAscension = 10,
+
+-- Max safety time. The hard freeze stops earlier if target attempts are reached.
+FreezeSeconds = 2,
+
+    AttemptsDone = 0,
+    Status = "Idle",
+
+    BuyRebirthRemote = nil,
+    RememberUnlockageRemote = nil,
+
+    ToggleRef = nil,
+    StatusLabel = nil,
+
+    ToggleSyncing = false,
+    Frozen = false,
+}
+
+function ClampAutoAscensionTargetGardenCoins(value)
+
+    local coins =
+        tonumber(value)
+
+    if not coins then
+
+        coins =
+            AutoAscensionState
+            and AutoAscensionState.TargetGardenCoins
+            or 5000
+    end
+
+    return math.clamp(
+        math.floor(coins),
+        10,
+        100000
+    )
+end
+
+function ResolveAutoAscensionAttemptAmount()
+
+    local targetCoins =
+        ClampAutoAscensionTargetGardenCoins(
+            AutoAscensionState.TargetGardenCoins
+        )
+
+    local coinsPerAscension =
+        math.max(
+            1,
+            math.floor(
+                SafeNumber(
+                    AutoAscensionState.CoinsPerAscension,
+                    10
+                )
+            )
+        )
+
+    return math.clamp(
+        math.ceil(targetCoins / coinsPerAscension),
+        1,
+        10000
+    )
+end
+
+function ClampAutoAscensionFreezeSeconds(value)
+
+    local seconds =
+        tonumber(value)
+
+    if not seconds then
+        seconds =
+            AutoAscensionState
+            and AutoAscensionState.FreezeSeconds
+            or 2
+    end
+
+    return math.clamp(
+        seconds,
+        0.5,
+        10
+    )
+end
+
+function SetAutoAscensionFrozen(frozen)
+
+    frozen =
+        frozen == true
+
+    AutoAscensionState.Frozen =
+        frozen
+
+    local ok, err =
+        pcall(function()
+
+            if RunService
+            and type(RunService.Set3dRenderingEnabled) == "function" then
+
+                RunService:Set3dRenderingEnabled(
+                    not frozen
+                )
+            end
+        end)
+
+    if not ok then
+        warn(
+            "[AUTO ASCENSION] Freeze failed:",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    return true
+end
+
+function RefreshAutoAscensionStatus()
+
+    if not AutoAscensionState then
+        return
+    end
+
+    local statusText =
+        tostring(
+            AutoAscensionState.Status
+            or "Idle"
+        )
+
+    if AutoAscensionState.Running == true then
+
+        statusText =
+            "Running: "
+            .. tostring(
+                AutoAscensionState.AttemptsDone
+                or 0
+            )
+            .. " / "
+            .. tostring(
+    ResolveAutoAscensionAttemptAmount()
+)
+    end
+
+    if AutoAscensionState.StatusLabel
+    and type(AutoAscensionState.StatusLabel.SetText) == "function" then
+
+        AutoAscensionState.StatusLabel:SetText(
+            "Status: " .. statusText
+        )
+    end
+end
+
+function GetBuyRebirthRemote()
+
+    if AutoAscensionState.BuyRebirthRemote then
+        return AutoAscensionState.BuyRebirthRemote
+    end
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    local remote =
+        gameEvents
+        and gameEvents:FindFirstChild("BuyRebirth")
+
+    if remote
+    and remote:IsA("RemoteEvent") then
+
+        AutoAscensionState.BuyRebirthRemote =
+            remote
+
+        return remote
+    end
+
+    return nil
+end
+
+function GetRememberUnlockageRemote()
+
+    if AutoAscensionState.RememberUnlockageRemote then
+        return AutoAscensionState.RememberUnlockageRemote
+    end
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    local saveSlotService =
+        gameEvents
+        and gameEvents:FindFirstChild("SaveSlotService")
+
+    local remote =
+        saveSlotService
+        and saveSlotService:FindFirstChild("RememberUnlockage")
+
+    if remote
+    and remote:IsA("RemoteEvent") then
+
+        AutoAscensionState.RememberUnlockageRemote =
+            remote
+
+        return remote
+    end
+
+    return nil
+end
+
+function StopAutoAscension(reason)
+
+    if not AutoAscensionState then
+        return
+    end
+
+    AutoAscensionState.Running =
+        false
+
+    SetAutoAscensionFrozen(false)
+
+    AutoAscensionState.Status =
+        tostring(reason or "Stopped")
+
+    if AutoAscensionState.ToggleRef
+    and type(AutoAscensionState.ToggleRef.SetValue) == "function" then
+
+        AutoAscensionState.ToggleSyncing =
+            true
+
+        AutoAscensionState.ToggleRef:SetValue(false)
+
+        AutoAscensionState.ToggleSyncing =
+            false
+    end
+
+    RefreshAutoAscensionStatus()
+end
+
+function RunAutoAscensionHardFreezeSpam(
+    buyRebirthRemote,
+    rememberUnlockageRemote,
+    amount,
+    freezeSeconds
+)
+
+    amount =
+        math.clamp(
+            math.floor(
+                tonumber(amount)
+                or 1
+            ),
+            1,
+            10000
+        )
+
+    freezeSeconds =
+        ClampAutoAscensionFreezeSeconds(
+            freezeSeconds
+        )
+
+    AutoAscensionState.Frozen =
+        true
+
+    AutoAscensionState.AttemptsDone =
+        0
+
+    AutoAscensionState.Status =
+        "Hard freezing"
+
+    RefreshAutoAscensionStatus()
+
+    local deadline =
+        os.clock() + freezeSeconds
+
+    local attempt =
+        0
+
+    --==================================================
+    -- TRUE FAST HARD-FREEZE LOOP
+    -- No task.wait().
+    -- Fires as fast as Lua can run.
+    -- Stops immediately when target attempts are reached,
+    -- or when Freeze Time safety limit is reached.
+    --==================================================
+
+    while attempt < amount do
+
+        if AutoAscensionState.Running ~= true then
+            break
+        end
+
+        if os.clock() >= deadline then
+            break
+        end
+
+        attempt =
+            attempt + 1
+
+        buyRebirthRemote:FireServer()
+
+        if rememberUnlockageRemote then
+            rememberUnlockageRemote:FireServer()
+        end
+
+        AutoAscensionState.AttemptsDone =
+            attempt
+    end
+
+    AutoAscensionState.Frozen =
+        false
+
+    return attempt
+end
+
+function StartAutoAscensionSpam()
+
+    if AutoAscensionState.Running == true then
+        return false
+    end
+
+    if not IsGardenWorld() then
+
+        AutoAscensionState.Status =
+            "Garden World only"
+
+        RefreshAutoAscensionStatus()
+
+        HolyNotify(
+            "Auto Ascension",
+            "Spam Ascension only works in Garden World.",
+            "triangle-alert",
+            4
+        )
+
+        StopAutoAscension(
+            "Garden World only"
+        )
+
+        return false
+    end
+
+    local buyRebirthRemote =
+        GetBuyRebirthRemote()
+
+    if not buyRebirthRemote then
+
+        AutoAscensionState.Status =
+            "BuyRebirth missing"
+
+        RefreshAutoAscensionStatus()
+
+        HolyNotify(
+            "Auto Ascension Failed",
+            "BuyRebirth remote was not found.",
+            "triangle-alert",
+            4
+        )
+
+        StopAutoAscension(
+            "Remote missing"
+        )
+
+        return false
+    end
+
+    local rememberUnlockageRemote =
+        GetRememberUnlockageRemote()
+
+    local amount =
+        ResolveAutoAscensionAttemptAmount()
+
+    local freezeSeconds =
+        ClampAutoAscensionFreezeSeconds(
+            AutoAscensionState.FreezeSeconds
+        )
+
+    local actualFreezeSeconds =
+        freezeSeconds
+
+    AutoAscensionState.Running =
+        true
+
+    AutoAscensionState.TargetGardenCoins =
+        ClampAutoAscensionTargetGardenCoins(
+            AutoAscensionState.TargetGardenCoins
+        )
+
+    AutoAscensionState.FreezeSeconds =
+        freezeSeconds
+
+    AutoAscensionState.AttemptsDone =
+        0
+
+    AutoAscensionState.Status =
+        "Running"
+
+    RefreshAutoAscensionStatus()
+
+    task.spawn(function()
+
+        local ok, err =
+            pcall(function()
+
+                RunAutoAscensionHardFreezeSpam(
+                    buyRebirthRemote,
+                    rememberUnlockageRemote,
+                    amount,
+                    actualFreezeSeconds
+                )
+            end)
+
+        AutoAscensionState.Frozen =
+            false
+
+        if not ok then
+
+            warn(
+                "[AUTO ASCENSION] Worker error:",
+                tostring(err)
+            )
+
+            AutoAscensionState.Status =
+                "Error"
+
+            HolyNotify(
+                "Auto Ascension Error",
+                "Worker errored. Hard-freeze loop ended safely.",
+                "triangle-alert",
+                5
+            )
+
+        else
+
+            AutoAscensionState.Status =
+                "Done: "
+                .. tostring(AutoAscensionState.AttemptsDone)
+                .. " / "
+                .. tostring(amount)
+        end
+
+        AutoAscensionState.Running =
+            false
+
+        if AutoAscensionState.ToggleRef
+        and type(AutoAscensionState.ToggleRef.SetValue) == "function" then
+
+            AutoAscensionState.ToggleSyncing =
+                true
+
+            AutoAscensionState.ToggleRef:SetValue(false)
+
+            AutoAscensionState.ToggleSyncing =
+                false
+        end
+
+        RefreshAutoAscensionStatus()
+    end)
+
+    return true
+end
 --==================================================
 -- CONFIG AUTOSAVE (DEBOUNCED)
 --==================================================
@@ -25304,6 +27210,10 @@ function SaveSniperFilters()
         return false
     end
 
+    RebuildSniperPetFilterIndex(
+        "filters saved"
+    )
+
     print("[Filters] Saved")
 
     return true
@@ -25431,6 +27341,10 @@ function LoadSniperFilters()
                 or {}
         )
 
+        RebuildSniperPetFilterIndex(
+            "filters loaded"
+        )
+
         print("[Filters] Loaded three watchlists")
         return
     end
@@ -25439,6 +27353,10 @@ function LoadSniperFilters()
     LoadFilterSetFromTable(
         GetSniperFilterSet(1),
         decoded
+    )
+
+    RebuildSniperPetFilterIndex(
+        "legacy filters loaded"
     )
 
     print("[Filters] Loaded legacy watchlist into W1 Main")
@@ -26099,6 +28017,12 @@ Tabs = {
         Description = "Auto-list inventory pets with price, mutation, and weight filters.",
     }),
 
+    Transfer = Window:AddTab({
+        Name = "Transfer",
+        Icon = "gift",
+        Description = "Move filtered pets to alts using trade automation.",
+    }),
+
     AgeBreaker = Window:AddTab({
         Name = "Age Break",
         Icon = "dna",
@@ -26138,6 +28062,93 @@ print(
     tostring(type(Tabs.Visuals.AddLeftCollapsibleGroupbox))
 )
 
+--==================================================
+-- WORLD TAB VISIBILITY
+-- Hide Trade World-only tabs while in Normal Garden.
+-- Keep tab objects created so internal references stay safe.
+--==================================================
+
+HOLY_TRADE_WORLD_ONLY_TABS = {
+    "Sniper",
+    "Hunting",
+    "Server",
+    "Booth",
+    "Listings",
+}
+
+function SetHolyTabVisible(tabName, visible)
+
+    tabName =
+        tostring(tabName or "")
+
+    if tabName == "" then
+        return false
+    end
+
+    local tab =
+        Tabs
+        and Tabs[tabName]
+
+    if not tab then
+        return false
+    end
+
+    if type(tab.SetVisible) == "function" then
+
+        local ok, err =
+            pcall(function()
+                tab:SetVisible(visible == true)
+            end)
+
+        if not ok then
+            warn(
+                "[TAB VISIBILITY] Failed:",
+                tabName,
+                tostring(err)
+            )
+
+            return false
+        end
+
+        return true
+    end
+
+    warn(
+        "[TAB VISIBILITY] Tab has no SetVisible:",
+        tabName
+    )
+
+    return false
+end
+
+function ApplyHolyWorldTabVisibility(reason)
+
+    local inTradeWorld =
+        IsTradeWorld()
+
+    for _, tabName in ipairs(HOLY_TRADE_WORLD_ONLY_TABS) do
+
+        SetHolyTabVisible(
+            tabName,
+            inTradeWorld
+        )
+    end
+
+    print(
+        "[TAB VISIBILITY]",
+        inTradeWorld
+            and "Trade World tabs visible"
+            or "Garden mode: Trade World tabs hidden",
+        "|",
+        tostring(reason or "apply")
+    )
+
+    return true
+end
+
+ApplyHolyWorldTabVisibility(
+    "after tab creation"
+)
 --==================================================
 -- GARDEN MODE PLACEHOLDERS
 -- Tabs stay visible and in the original order.
@@ -26236,6 +28247,456 @@ end
 
 HolyLoading:SetCurrentStep(3)
 HolyLoading:SetDescription("Building tabs...")
+
+--==================================================
+-- TRANSFER TAB UI
+-- Garden + Trade World.
+-- Uses existing dynamic pet and mutation sources.
+--==================================================
+
+TransferPetFiltersBox = nil
+TransferSafetyBox = nil
+TransferTargetBox = nil
+TransferActionsBox = nil
+TransferStatusBox = nil
+
+if Tabs.Transfer then
+
+    -- Dynamic list functions are defined later in this build,
+    -- so never call them directly here without guards.
+    if type(RefreshDynamicPetList) == "function" then
+        pcall(function()
+            RefreshDynamicPetList()
+        end)
+    end
+
+    if type(RefreshListingMutationList) == "function" then
+        pcall(function()
+            RefreshListingMutationList()
+        end)
+    end
+
+    PetList =
+        type(PetList) == "table"
+        and PetList
+        or {}
+
+    ListingMutationList =
+        type(ListingMutationList) == "table"
+        and ListingMutationList
+        or {}
+
+    TransferPetFiltersBox =
+        Tabs.Transfer:AddLeftGroupbox(
+            "🐾 Pet Filters",
+            "paw-print"
+        )
+
+    TransferSafetyBox =
+        Tabs.Transfer:AddLeftGroupbox(
+            "🛡️ Safety",
+            "shield-check"
+        )
+
+    TransferTargetBox =
+        Tabs.Transfer:AddRightGroupbox(
+            "🎯 Target Player",
+            "user"
+        )
+
+    TransferActionsBox =
+        Tabs.Transfer:AddRightGroupbox(
+            "🎁 Trade Actions",
+            "gift"
+        )
+
+    TransferStatusBox =
+        Tabs.Transfer:AddRightGroupbox(
+            "📊 Transfer Status",
+            "activity"
+        )
+
+    local TransferPetDropdown =
+        TransferPetFiltersBox:AddDropdown(
+            "TransferPetSelect",
+            {
+                Text = "Pets",
+                Tooltip = "Dynamic full game pet list. Empty = sends nothing.",
+                Values = TransferBuildPetList(),
+                Default = {},
+                Searchable = true,
+                Multi = true,
+            }
+        )
+
+    TransferState.PetDropdownRef =
+        TransferPetDropdown
+
+    TransferPetDropdown:OnChanged(function(value)
+
+        TransferState.SelectedPets =
+            TransferCloneSelectedMap(value)
+
+        TransferBuildMatchingPets(
+            TransferState.MaxPetsPerTrade
+        )
+
+        TransferRefreshStatus()
+
+        if type(MarkConfigDirty) == "function" then
+            MarkConfigDirty()
+        end
+    end)
+
+    TransferPetFiltersBox:AddButton({
+        Text = "Remove All Pets",
+        Tooltip = "Clear selected transfer pets.",
+        Func = function()
+
+            TransferState.SelectedPets =
+                {}
+
+            if TransferState.PetDropdownRef
+            and type(TransferState.PetDropdownRef.SetValue) == "function" then
+
+                TransferState.PetDropdownRef:SetValue({})
+            end
+
+            TransferBuildMatchingPets(
+                TransferState.MaxPetsPerTrade
+            )
+
+            TransferRefreshStatus()
+        end,
+    })
+
+    local TransferMutationDropdown =
+        TransferPetFiltersBox:AddDropdown(
+            "TransferMutationSelect",
+            {
+                Text = "Mutations",
+                Tooltip = "Dynamic mutation list from Listings. Empty = any mutation.",
+                Values = TransferBuildMutationOnlyList(),
+                Default = {},
+                Searchable = true,
+                Multi = true,
+            }
+        )
+
+    TransferState.MutationDropdownRef =
+        TransferMutationDropdown
+
+    TransferMutationDropdown:OnChanged(function(value)
+
+        TransferState.SelectedMutations =
+            TransferCloneSelectedMap(value)
+
+        TransferBuildMatchingPets(
+            TransferState.MaxPetsPerTrade
+        )
+
+        TransferRefreshStatus()
+
+        if type(MarkConfigDirty) == "function" then
+            MarkConfigDirty()
+        end
+    end)
+
+    TransferPetFiltersBox:AddInput(
+        "TransferMinLevel",
+        {
+            Text = "Min Level",
+            Default = "1",
+            Numeric = true,
+            Finished = true,
+            ClearTextOnFocus = false,
+        }
+    ):OnChanged(function(value)
+
+        TransferState.MinLevel =
+            math.max(
+                1,
+                math.floor(
+                    tonumber(value)
+                    or 1
+                )
+            )
+
+        TransferBuildMatchingPets(
+            TransferState.MaxPetsPerTrade
+        )
+
+        TransferRefreshStatus()
+    end)
+
+    TransferPetFiltersBox:AddInput(
+        "TransferMaxLevel",
+        {
+            Text = "Max Level",
+            Default = "100",
+            Numeric = true,
+            Finished = true,
+            ClearTextOnFocus = false,
+        }
+    ):OnChanged(function(value)
+
+        TransferState.MaxLevel =
+            math.max(
+                TransferState.MinLevel or 1,
+                math.floor(
+                    tonumber(value)
+                    or 100
+                )
+            )
+
+        TransferBuildMatchingPets(
+            TransferState.MaxPetsPerTrade
+        )
+
+        TransferRefreshStatus()
+    end)
+
+    TransferPetFiltersBox:AddInput(
+        "TransferMinBaseWeight",
+        {
+            Text = "Min BaseWeight",
+            Default = "0",
+            Numeric = true,
+            Finished = true,
+            ClearTextOnFocus = false,
+        }
+    ):OnChanged(function(value)
+
+        TransferState.MinBaseWeight =
+            math.max(
+                0,
+                tonumber(value)
+                or 0
+            )
+
+        TransferBuildMatchingPets(
+            TransferState.MaxPetsPerTrade
+        )
+
+        TransferRefreshStatus()
+    end)
+
+    TransferPetFiltersBox:AddInput(
+        "TransferMaxBaseWeight",
+        {
+            Text = "Max BaseWeight",
+            Default = "999",
+            Numeric = true,
+            Finished = true,
+            ClearTextOnFocus = false,
+        }
+    ):OnChanged(function(value)
+
+        TransferState.MaxBaseWeight =
+            math.max(
+                0,
+                tonumber(value)
+                or 999
+            )
+
+        TransferBuildMatchingPets(
+            TransferState.MaxPetsPerTrade
+        )
+
+        TransferRefreshStatus()
+    end)
+
+    TransferSafetyBox:AddToggle(
+        "TransferDryRun",
+        {
+            Text = "Dry Run / Preview",
+            Tooltip = "ON = preview only. No real trade sending.",
+            Default = true,
+        }
+    ):OnChanged(function(value)
+
+        TransferState.DryRun =
+            value == true
+
+        TransferRefreshStatus()
+    end)
+
+    TransferSafetyBox:AddToggle(
+        "TransferSkipFavorites",
+        {
+            Text = "Skip Favorites",
+            Tooltip = "Recommended ON.",
+            Default = true,
+        }
+    ):OnChanged(function(value)
+
+        TransferState.SkipFavorites =
+            value == true
+
+        TransferBuildMatchingPets(
+            TransferState.MaxPetsPerTrade
+        )
+
+        TransferRefreshStatus()
+    end)
+
+    TransferSafetyBox:AddInput(
+        "TransferMaxPetsPerTrade",
+        {
+            Text = "Max Pets Per Trade",
+            Default = "6",
+            Numeric = true,
+            Finished = true,
+            ClearTextOnFocus = false,
+        }
+    ):OnChanged(function(value)
+
+        TransferState.MaxPetsPerTrade =
+            math.clamp(
+                math.floor(
+                    tonumber(value)
+                    or 6
+                ),
+                1,
+                50
+            )
+
+        TransferBuildMatchingPets(
+            TransferState.MaxPetsPerTrade
+        )
+
+        TransferRefreshStatus()
+    end)
+
+    local TransferTargetDropdown =
+        TransferTargetBox:AddDropdown(
+            "TransferTargetPlayer",
+            {
+                Text = "Target Player",
+                Tooltip = "Choose the alt/player to trade to.",
+                Values = TransferBuildPlayerChoices(),
+                Default = nil,
+                Searchable = true,
+                Multi = false,
+            }
+        )
+
+    TransferState.TargetDropdownRef =
+        TransferTargetDropdown
+
+    TransferTargetDropdown:OnChanged(function(value)
+
+        TransferState.TargetPlayerName =
+            TransferCleanText(value)
+
+        local targetPlayer =
+            TransferResolveTargetPlayer()
+
+        TransferState.TargetUserId =
+            targetPlayer
+            and targetPlayer.UserId
+            or 0
+
+        TransferRefreshStatus()
+    end)
+
+    TransferTargetBox:AddButton({
+        Text = "🔄 Reload Players",
+        Tooltip = "Refresh target player dropdown.",
+        Func = function()
+
+            TransferRefreshDropdowns()
+        end,
+    })
+
+    TransferActionsBox:AddToggle(
+        "TransferAutoConfirmAccept",
+        {
+            Text = "Auto Confirm / Accept",
+            Tooltip = "Reserved for trade worker. Keep OFF while testing.",
+            Default = false,
+        }
+    ):OnChanged(function(value)
+
+        TransferState.AutoConfirmAccept =
+            value == true
+    end)
+
+    TransferActionsBox:AddButton({
+        Text = "🔍 Preview Matches",
+        Tooltip = "Print matching owned pets to console.",
+        Func = function()
+
+            TransferPreview()
+        end,
+    })
+
+    TransferActionsBox:AddButton({
+        Text = "🎁 Send Filtered Trade",
+        Tooltip = "Next step: connect this to trade worker after preview is verified.",
+        Func = function()
+
+            TransferPreview()
+
+            TransferState.Status =
+                "Preview only"
+
+            TransferState.LastResult =
+                "Trade worker not connected yet."
+
+            TransferRefreshStatus()
+
+            if type(HolyNotify) == "function" then
+                HolyNotify(
+                    "Transfer",
+                    "Preview works. Trade worker comes next after filters are confirmed.",
+                    "search",
+                    4
+                )
+            end
+        end,
+    })
+
+    TransferStatusBox:AddLabel(
+        "Dynamic sources:",
+        false
+    )
+
+    TransferStatusBox:AddLabel(
+        "Pets: PetList • Mutations: ListingMutationList",
+        true
+    )
+
+    TransferState.StatusLabel =
+        TransferStatusBox:AddLabel(
+            "Mode: Idle",
+            true
+        )
+
+    TransferState.TargetLabel =
+        TransferStatusBox:AddLabel(
+            "Target: None",
+            true
+        )
+
+    TransferState.MatchedLabel =
+        TransferStatusBox:AddLabel(
+            "Matched Pets: 0",
+            true
+        )
+
+    TransferState.LastResultLabel =
+        TransferStatusBox:AddLabel(
+            "Last Result: None | Sent: 0",
+            true
+        )
+
+    TransferBuildMatchingPets(
+        TransferState.MaxPetsPerTrade
+    )
+
+    TransferRefreshStatus()
+end
 --==================================================
 -- EVENTS TAB
 -- Trade World only.
@@ -26265,6 +28726,123 @@ if IsTradeWorld() then
                 "calendar"
             )
     end
+end
+
+--==================================================
+-- AUTO ASCENSION UI
+-- Garden World only.
+--==================================================
+
+AutoAscensionBox = nil
+
+if IsGardenWorld() then
+
+    if type(Tabs.Events.AddLeftCollapsibleGroupbox) == "function" then
+
+        AutoAscensionBox =
+            Tabs.Events:AddLeftCollapsibleGroupbox(
+                "🌱 Auto Ascension",
+                "sparkles",
+                true
+            )
+
+    else
+
+        AutoAscensionBox =
+            Tabs.Events:AddLeftGroupbox(
+                "🌱 Auto Ascension",
+                "sparkles"
+            )
+    end
+
+AutoAscensionBox:AddInput(
+    "AutoAscensionTargetGardenCoins",
+    {
+        Text = "Target Garden Coins",
+        Default = tostring(
+            AutoAscensionState.TargetGardenCoins
+            or 5000
+        ),
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Tooltip = "Target Garden Coins. 1 ascension gives 10 coins, so 5000 = 500 attempts.",
+    }
+):OnChanged(function(value)
+
+    AutoAscensionState.TargetGardenCoins =
+        ClampAutoAscensionTargetGardenCoins(value)
+
+    MarkConfigDirty()
+
+    RefreshAutoAscensionStatus()
+end)
+
+    AutoAscensionBox:AddInput(
+        "AutoAscensionFreezeTime",
+        {
+            Text = "Freeze Time",
+            Default = tostring(
+                AutoAscensionState.FreezeSeconds
+            ),
+            Numeric = true,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Tooltip = "How long the 3D game view stays frozen. Min 0.5s, max 10s.",
+        }
+    ):OnChanged(function(value)
+
+        AutoAscensionState.FreezeSeconds =
+            ClampAutoAscensionFreezeSeconds(value)
+
+        MarkConfigDirty()
+
+        RefreshAutoAscensionStatus()
+    end)
+
+    local SpamAscensionToggle =
+        AutoAscensionBox:AddToggle(
+            "SpamAscension",
+            {
+                Text = "🔴 Spam Ascension",
+                Tooltip = "Freezes the 3D game view, fires ascension attempts, then auto-unfreezes when done.",
+                Default = false,
+            }
+        )
+
+    AutoAscensionState.ToggleRef =
+        SpamAscensionToggle
+
+    SpamAscensionToggle:OnChanged(function(enabled)
+
+        if AutoAscensionState.ToggleSyncing == true then
+            return
+        end
+
+        if enabled == true then
+
+            StartAutoAscensionSpam()
+
+        else
+
+            if AutoAscensionState.Running == true then
+
+                StopAutoAscension(
+                    "Stopped"
+                )
+            end
+        end
+
+        MarkConfigDirty()
+    end)
+
+    AutoAscensionState.StatusLabel =
+        AutoAscensionBox:AddLabel(
+            "Status: Idle",
+            true
+        )
+
+    RefreshAutoAscensionStatus()
 end
 --==================================================
 -- VISUAL TAB
@@ -31341,6 +33919,54 @@ end
     MarkConfigDirty()
 end)
 
+local SniperDryRunToggle =
+    HomeBox:AddToggle(
+        "SniperDryRun",
+        {
+            Text = "🧪 Dry Run",
+            Tooltip = "Test mode. HOLY scans and prints matching pets, but will not buy anything.",
+            Default = SniperState.DryRun == true,
+        }
+    )
+
+SniperDryRunToggle:OnChanged(function(value)
+
+    SniperState.DryRun =
+        value == true
+
+    SniperState.LastDryRunPrintAt =
+        0
+
+    SniperState.LastDryRunKey =
+        ""
+
+    MarkConfigDirty()
+
+    if ConfigState
+    and ConfigState.IsHydrating then
+        return
+    end
+
+    if SniperState.DryRun == true then
+
+        HolyNotify(
+            "Sniper Dry Run",
+            "Enabled. HOLY will scan and show matches, but will not buy.",
+            "flask-conical",
+            5
+        )
+
+    else
+
+        HolyNotify(
+            "Sniper Dry Run",
+            "Disabled. Sniper can buy matching pets again.",
+            "target",
+            4
+        )
+    end
+end)
+
 local SniperAutoHopToggle =
     HomeBox:AddToggle(
         "SniperAutoHop",
@@ -31455,6 +34081,140 @@ SmartScannerToggle:OnChanged(function(v)
     )
 end)
 
+local FilteredPetScannerToggle =
+    HomeBox:AddToggle(
+        "FilteredPetScanner",
+        {
+            Text = "🔍 Filtered Pet Scanner",
+            Default = SniperState.FilteredPetScanner == true,
+            Tooltip = "Skips booth pets whose base pet name is not in your sniper watchlists. Best for laggy 500-700 pet servers.",
+        }
+    )
+
+FilteredPetScannerToggle:OnChanged(function(v)
+
+    SniperState.FilteredPetScanner =
+        v == true
+
+    if type(RebuildSniperPetFilterIndex) == "function" then
+        RebuildSniperPetFilterIndex(
+            "filtered scanner toggle"
+        )
+    end
+
+    if type(ResetSniperListingCaches) == "function" then
+        ResetSniperListingCaches(
+            "filtered scanner changed"
+        )
+    elseif type(ResetSmartSniperCache) == "function" then
+        ResetSmartSniperCache(
+            "filtered scanner changed"
+        )
+    end
+
+    SniperState.LastScan =
+        0
+
+    MarkConfigDirty()
+
+    if ConfigState
+    and ConfigState.IsHydrating then
+        return
+    end
+
+    HolyNotify(
+        v == true
+            and "Filtered Scanner Enabled"
+            or "Filtered Scanner Disabled",
+        v == true
+            and "HOLY will skip non-watchlist pet names before expensive scanning."
+            or "HOLY will scan every visible booth pet again.",
+        v == true and "zap" or "scan",
+        3
+    )
+end)
+
+local ExactFilterScannerToggle =
+    HomeBox:AddToggle(
+        "ExactFilterScanner",
+        {
+            Text = "💎 Exact Filter Scanner",
+            Default = SniperState.ExactFilterScanner == true,
+            Tooltip = "Only keeps listings that pass sniper pet name, max price, and min weight rules before deeper scanning.",
+        }
+    )
+
+ExactFilterScannerToggle:OnChanged(function(v)
+
+    SniperState.ExactFilterScanner =
+        v == true
+
+    if type(ResetSniperListingCaches) == "function" then
+        ResetSniperListingCaches(
+            "exact filter scanner changed"
+        )
+    elseif type(ResetSmartSniperCache) == "function" then
+        ResetSmartSniperCache(
+            "exact filter scanner changed"
+        )
+    end
+
+    SniperState.LastScan =
+        0
+
+    MarkConfigDirty()
+
+    if ConfigState
+    and ConfigState.IsHydrating then
+        return
+    end
+
+    HolyNotify(
+        v == true
+            and "Exact Filter Scanner Enabled"
+            or "Exact Filter Scanner Disabled",
+        v == true
+            and "HOLY will skip listings that fail price/weight before deeper scanning."
+            or "HOLY will only pre-filter by pet name.",
+        v == true and "target" or "scan",
+        3
+    )
+end)
+
+local FavoriteWatchToggle =
+    HomeBox:AddToggle(
+        "WatchFavoritedFilterMatches",
+        {
+            Text = "❤️ Watch Favorited Matches",
+            Default = SniperState.WatchFavoritedFilterMatches == true,
+            Tooltip = "Watches favorited pets that match your sniper filters. If seller unfavorites later, HOLY can snipe it.",
+        }
+    )
+
+FavoriteWatchToggle:OnChanged(function(v)
+
+    SniperState.WatchFavoritedFilterMatches =
+        v == true
+
+    if type(ResetSmartSniperCache) == "function" then
+        ResetSmartSniperCache(
+            "favorite watch changed"
+        )
+    end
+
+    MarkConfigDirty()
+
+    HolyNotify(
+        v == true
+            and "Favorite Watch Enabled"
+            or "Favorite Watch Disabled",
+        v == true
+            and "Favorited matching pets will be watched until they become buyable."
+            or "Favorited pets will be skipped normally.",
+        v == true and "star" or "star-off",
+        3
+    )
+end)
 --==================================================
 -- HUNTING TAB: TARGET PETS HOP UI
 -- Target pet hunting is separated from Home/Sniper
@@ -34123,6 +36883,10 @@ function ExecuteBoothClaim()
         boothsEvents
         and boothsEvents:FindFirstChild("ClaimBooth")
 
+    local RemoveBooth =
+        boothsEvents
+        and boothsEvents:FindFirstChild("RemoveBooth")
+
     local skinService =
         GameEvents:FindFirstChild("TradeBoothSkinService")
 
@@ -34131,9 +36895,10 @@ function ExecuteBoothClaim()
         and skinService:FindFirstChild("Equip")
 
     if not ClaimBooth
+    or not RemoveBooth
     or not EquipSkin then
 
-        warn("[Booth] ClaimBooth or EquipSkin remote missing")
+        warn("[Booth] ClaimBooth, RemoveBooth, or EquipSkin remote missing")
 
         BoothAuto.Enabled =
             false
@@ -34545,6 +37310,215 @@ function ExecuteBoothClaim()
     end
 
     --==================================================
+    -- SMART RECLAIM CLOSER BOOTH
+    -- If current claimed booth is too far from middle,
+    -- unclaim it and claim a better free booth.
+    --==================================================
+
+    local function BuildMiddlePriorityCandidates(excludedBooths)
+
+        excludedBooths =
+            excludedBooths
+            or {}
+
+        local oldClaimMode =
+            BoothAuto.ClaimMode
+
+        BoothAuto.ClaimMode =
+            "Nearest Middle"
+
+        local candidates =
+            BuildFreeBoothCandidates(
+                excludedBooths
+            )
+
+        BoothAuto.ClaimMode =
+            oldClaimMode
+
+        return candidates
+    end
+
+    local function TrySmartReclaimCloserBooth(currentCandidate, currentSkin)
+
+        if BoothAuto.SmartReclaimCloserBooth ~= true then
+            return false, nil
+        end
+
+        if type(currentCandidate) ~= "table" then
+            return false, nil
+        end
+
+        local currentBoothId =
+            tostring(
+                currentCandidate.BoothId
+                or ""
+            )
+
+        if currentBoothId == "" then
+            return false, nil
+        end
+
+        local currentDistance =
+            tonumber(currentCandidate.Distance)
+            or math.huge
+
+        if currentDistance == math.huge then
+            return false, nil
+        end
+
+        local maxAllowedDistance =
+            math.clamp(
+                SafeNumber(
+                    BoothAuto.SmartReclaimMaxMiddleDistance,
+                    75
+                ),
+                10,
+                500
+            )
+
+        if currentDistance <= maxAllowedDistance then
+            return false, nil
+        end
+
+        local minImprovement =
+            math.clamp(
+                SafeNumber(
+                    BoothAuto.SmartReclaimMinImprovement,
+                    8
+                ),
+                1,
+                100
+            )
+
+        local middleCandidates =
+            BuildMiddlePriorityCandidates({})
+
+        if type(middleCandidates) ~= "table"
+        or #middleCandidates <= 0 then
+            return false, nil
+        end
+
+        local betterCandidate =
+            middleCandidates[1]
+
+        if type(betterCandidate) ~= "table"
+        or not betterCandidate.Model then
+            return false, nil
+        end
+
+        local betterDistance =
+            tonumber(betterCandidate.Distance)
+            or math.huge
+
+        local betterBoothId =
+            tostring(
+                betterCandidate.BoothId
+                or ""
+            )
+
+        if betterBoothId == ""
+        or betterBoothId == currentBoothId then
+            return false, nil
+        end
+
+        if betterDistance == math.huge then
+            return false, nil
+        end
+
+        if betterDistance > currentDistance - minImprovement then
+            return false, nil
+        end
+
+        print(
+            "[Booth] Smart reclaim found better booth:",
+            tostring(currentBoothId),
+            "(" .. tostring(math.floor(currentDistance)) .. ")",
+            "->",
+            tostring(betterBoothId),
+            "(" .. tostring(math.floor(betterDistance)) .. ")"
+        )
+
+        pcall(function()
+            RemoveBooth:FireServer()
+        end)
+
+        task.wait(0.35)
+
+        currentSkin =
+            tostring(
+                currentSkin
+                or ResolveSelectedBoothSkin()
+            )
+
+        pcall(function()
+            EquipSkin:FireServer(currentSkin)
+        end)
+
+        task.wait(0.15)
+
+        pcall(function()
+            ClaimBooth:FireServer(
+                betterCandidate.Model
+            )
+        end)
+
+        task.wait(0.20)
+
+        pcall(function()
+            EquipSkin:FireServer(currentSkin)
+        end)
+
+        local upgraded =
+            WaitForBoothOwnership(
+                betterBoothId,
+                verifyTimeout
+            )
+
+        if upgraded then
+
+            print(
+                "[Booth] Smart reclaim success:",
+                tostring(betterBoothId)
+            )
+
+            return true, betterBoothId
+        end
+
+        warn(
+            "[Booth] Smart reclaim failed, trying to reclaim old booth:",
+            tostring(currentBoothId)
+        )
+
+        if currentCandidate.Model then
+
+            pcall(function()
+                EquipSkin:FireServer(currentSkin)
+            end)
+
+            task.wait(0.15)
+
+            pcall(function()
+                ClaimBooth:FireServer(
+                    currentCandidate.Model
+                )
+            end)
+
+            task.wait(0.20)
+
+            pcall(function()
+                EquipSkin:FireServer(currentSkin)
+            end)
+
+            WaitForBoothOwnership(
+                currentBoothId,
+                verifyTimeout
+            )
+        end
+
+        return false, nil
+    end
+
+    --==================================================
     -- CLAIM SESSION CONFIG
     --==================================================
 
@@ -34672,6 +37646,24 @@ function ExecuteBoothClaim()
                 "[Booth] Ownership confirmed:",
                 tostring(boothId)
             )
+
+            local upgraded, upgradedBoothId =
+                TrySmartReclaimCloserBooth(
+                    candidate,
+                    selectedSkin
+                )
+
+            if upgraded
+            and upgradedBoothId then
+
+                boothId =
+                    upgradedBoothId
+
+                print(
+                    "[Booth] Final booth after smart reclaim:",
+                    tostring(boothId)
+                )
+            end
 
             if BoothAuto.AutoTeleport then
 
@@ -40056,6 +43048,63 @@ if enabled then
 end
 end)
 
+local SmartReclaimToggle =
+    BoothBox:AddToggle(
+        "SmartReclaimCloserBooth",
+        {
+            Text = "🎯 Smart Reclaim Better Booth",
+            Tooltip = "If HOLY claims a booth too far from middle, it unclaims and claims a closer free booth if available.",
+            Default = BoothAuto.SmartReclaimCloserBooth == true,
+        }
+    )
+
+SmartReclaimToggle:OnChanged(function(enabled)
+
+    BoothAuto.SmartReclaimCloserBooth =
+        enabled == true
+
+    MarkConfigDirty()
+
+    if not ConfigState.IsHydrating then
+
+        HolyNotify(
+            enabled == true
+                and "Smart Reclaim Enabled"
+                or "Smart Reclaim Disabled",
+            enabled == true
+                and "HOLY can swap to a closer booth after claiming."
+                or "HOLY will keep the first verified booth.",
+            enabled == true and "target" or "circle-off",
+            3
+        )
+    end
+end)
+
+local SmartReclaimDistanceSlider =
+    BoothBox:AddSlider(
+        "SmartReclaimMaxMiddleDistance",
+        {
+            Text = "Max Middle Distance",
+            Default = BoothAuto.SmartReclaimMaxMiddleDistance or 75,
+            Min = 20,
+            Max = 200,
+            Rounding = 0,
+            Compact = false,
+        }
+    )
+
+SmartReclaimDistanceSlider:OnChanged(function(value)
+
+    BoothAuto.SmartReclaimMaxMiddleDistance =
+        math.clamp(
+            SafeNumber(value, 75),
+            20,
+            200
+        )
+
+    MarkConfigDirty()
+end)
+
 BoothBox:AddDropdown(
     "BoothClaimMode",
     {
@@ -40625,7 +43674,7 @@ end)
 BoothPromoteBox:AddDropdown(
     "PromoteSource",
     {
-        Text = "Promote Source",
+        Text = "🎯 Promote Source",
 
         Values = {
             "Best Listed Pet",
@@ -40641,7 +43690,7 @@ BoothPromoteBox:AddDropdown(
 
         Multi = false,
 
-        Tooltip = "Controls which live booth listing is used for %pet%, %kg%, and %price%.",
+        Tooltip = "Controls which live booth listing is used for %pet%, %mut%, %kg%, and %price%.",
     }
 ):OnChanged(function(value)
 
@@ -40654,7 +43703,7 @@ end)
 BoothPromoteBox:AddDropdown(
     "PromoteMode",
     {
-        Text = "Promote Mode",
+        Text = "🔁 Promote Mode",
 
         Values = {
             "Built-in Rotation",
@@ -40680,7 +43729,7 @@ end)
 BoothPromoteBox:AddInput(
     "PromoteInterval",
     {
-        Text = "Promote Delay",
+        Text = "⏱️ Promote Delay",
         Default = tostring(BoothAuto.PromoteInterval or 40),
         Numeric = true,
         Finished = true,
@@ -40709,7 +43758,7 @@ end)
 BoothPromoteBox:AddInput(
     "CustomPromoteCount",
     {
-        Text = "Custom Message Count",
+        Text = "💬 Message Count",
         Default = tostring(BoothAuto.CustomPromoteCount or 4),
         Numeric = true,
         Finished = true,
@@ -40745,14 +43794,14 @@ CustomPromoteInputs =
 
 local DEFAULT_CUSTOM_PROMOTE_MESSAGES = {
     [1] = "huge %pet% %kg% listed rn",
-    [2] = "selling %pet%, check booth",
-    [3] = "%pet% for %price% tokens",
+    [2] = "selling %mut% %pet%, check booth",
+    [3] = "%mut% %pet% for %price% tokens",
     [4] = "good pets listed, check fast",
     [5] = "rare pets in booth rn",
-    [6] = "%pet% listed now",
+    [6] = "%mut%%pet% listed now",
     [7] = "check booth for %pet%",
     [8] = "%pet% up for %price%",
-    [9] = "big %pet% %kg% in booth",
+    [9] = "big %mut%%pet% %kg% in booth",
     [10] = "booth open, good pets listed",
 }
 
@@ -40798,11 +43847,11 @@ for index = 1, 10 do
         BoothPromoteBox:AddInput(
             "CustomPromoteMessage" .. tostring(index),
             {
-                Text = "Custom Message " .. tostring(index),
+                Text = "💬 Custom Message " .. tostring(index),
                 Default = tostring(defaultMessage or ""),
                 Finished = true,
                 ClearTextOnFocus = false,
-                Tooltip = "Placeholders: %pet%, %kg%, %price%.",
+                Tooltip = "Placeholders: %pet%, %mut%, %kg%, %price%.",
             }
         )
 
@@ -40819,7 +43868,7 @@ for index = 1, 10 do
 end
 
 BoothPromoteBox:AddLabel(
-    "Placeholders: %pet%  %kg%  %price%"
+    "✨ Placeholders: %pet%  %mut%  %kg%  %price%"
 )
 
 RefreshCustomPromoteMessageInputs()
@@ -41307,6 +44356,41 @@ function PickPromoteTemplate()
     return template
 end
 
+function ResolvePromoteMutationText(listing)
+
+    if type(listing) ~= "table" then
+        return ""
+    end
+
+    local mutation =
+        listing.MutationText
+        or listing.Mutation
+        or listing.MutationType
+        or (
+            type(listing.PetData) == "table"
+            and (
+                listing.PetData.MutationType
+                or listing.PetData.Mutation
+            )
+        )
+        or ""
+
+    mutation =
+        tostring(mutation or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if mutation == ""
+    or mutation == "---"
+    or mutation == "Normal"
+    or mutation == "Unknown"
+    or mutation == "None" then
+        return ""
+    end
+
+    return mutation
+end
+
 function ApplyPromotePlaceholders(template, listing)
 
     local text =
@@ -41330,6 +44414,11 @@ function ApplyPromotePlaceholders(template, listing)
         )
         or nil
 
+    local mutation =
+        ResolvePromoteMutationText(
+            listing
+        )
+
     text =
         text:gsub(
             "%%pet%%",
@@ -41346,6 +44435,12 @@ function ApplyPromotePlaceholders(template, listing)
         text:gsub(
             "%%kg%%",
             weight and FormatPromoteWeight(weight) or "?"
+        )
+
+        text =
+        text:gsub(
+            "%%mut%%",
+            mutation ~= "" and mutation or ""
         )
 
     -- Backwards compatibility with old %s templates.
@@ -51754,6 +54849,22 @@ end
 
 LoadSniperFilters()
 
+if type(RebuildSniperPetFilterIndex) == "function" then
+    RebuildSniperPetFilterIndex(
+        "after LoadSniperFilters"
+    )
+end
+
+if type(ResetSniperListingCaches) == "function" then
+    ResetSniperListingCaches(
+        "after LoadSniperFilters"
+    )
+elseif type(ResetSmartSniperCache) == "function" then
+    ResetSmartSniperCache(
+        "after LoadSniperFilters"
+    )
+end
+
 if type(LoadListingFilters) == "function" then
     LoadListingFilters()
 end
@@ -54097,8 +57208,8 @@ if IsTradeWorld() then
 else
 
     BuildHolyTabStep(
-        "GardenModeTradeTabs",
-        BuildGardenModeTradeTabs
+        "GardenModeTabVisibility",
+        ApplyHolyWorldTabVisibility
     )
 
     RuntimeState.Started =
