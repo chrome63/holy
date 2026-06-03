@@ -1592,6 +1592,32 @@ function RebuildSniperPetFilterIndex(reason)
     return count
 end
 
+function RefreshSniperPetFilterIndex(reason)
+
+    if type(RebuildSniperPetFilterIndex) ~= "function" then
+        return false
+    end
+
+    local ok, result =
+        pcall(function()
+            return RebuildSniperPetFilterIndex(
+                tostring(reason or "watchlist changed")
+            )
+        end)
+
+    if not ok then
+
+        warn(
+            "[FILTERED SCANNER] Index rebuild failed:",
+            tostring(result)
+        )
+
+        return false
+    end
+
+    return true
+end
+
 function EnsureSniperPetFilterIndex()
 
     local needsRebuild =
@@ -3028,6 +3054,10 @@ function ImportEggToWatchlist()
         end
     end
 
+    RefreshSniperPetFilterIndex(
+        "egg import watchlist changed"
+    )
+
     SniperFilterUIState.ViewTarget =
         watchlistId
 
@@ -3639,6 +3669,10 @@ and (
 
     WatchlistPage =
         1
+
+    RefreshSniperPetFilterIndex(
+        "watchlist import applied"
+    )
 
     if type(RefreshWatchlist) == "function" then
         RefreshWatchlist()
@@ -27210,7 +27244,7 @@ function SaveSniperFilters()
         return false
     end
 
-    RebuildSniperPetFilterIndex(
+    RefreshSniperPetFilterIndex(
         "filters saved"
     )
 
@@ -27341,8 +27375,8 @@ function LoadSniperFilters()
                 or {}
         )
 
-        RebuildSniperPetFilterIndex(
-            "filters loaded"
+        RefreshSniperPetFilterIndex(
+            "sniper filters loaded"
         )
 
         print("[Filters] Loaded three watchlists")
@@ -27355,13 +27389,12 @@ function LoadSniperFilters()
         decoded
     )
 
-    RebuildSniperPetFilterIndex(
-        "legacy filters loaded"
+    RefreshSniperPetFilterIndex(
+        "legacy sniper filters loaded"
     )
 
     print("[Filters] Loaded legacy watchlist into W1 Main")
 end
-
 --==================================================
 -- LISTINGS: FILTER PERSISTENCE
 -- Keeps AutoList filter presets after rejoin.
@@ -46571,14 +46604,18 @@ end
                                     return
                                 end
 
-                                filters[selectedPet] = nil
+                            filters[selectedPet] = nil
+
+                            RefreshSniperPetFilterIndex(
+                                "sniper filter removed"
+                                )
 
                                 WatchlistPage = 1
 
                                 if IsTradeWorld()
-                            and type(RefreshWatchlist) == "function" then
-                                RefreshWatchlist()
-                            end
+                                and type(RefreshWatchlist) == "function" then
+                                    RefreshWatchlist()
+                                end
 
                                 MarkConfigDirty()
 
@@ -46863,18 +46900,22 @@ SniperWatchlistBox:AddButton({
 
                             Callback = function()
 
-                                table.clear(filters)
+                            table.clear(filters)
 
-                                WatchlistPage = 1
+                            RefreshSniperPetFilterIndex(
+                                "sniper watchlist cleared"
+                )   
 
-                                if IsTradeWorld()
-and type(RefreshWatchlist) == "function" then
-    RefreshWatchlist()
-end
+                            WatchlistPage = 1
 
-                                MarkConfigDirty()
+                            if IsTradeWorld()
+                            and type(RefreshWatchlist) == "function" then
+                               RefreshWatchlist()
+                            end
 
-                                SaveSniperFilters()
+                            MarkConfigDirty()
+
+                            SaveSniperFilters()
 
                                 HolyNotify(
                                     "Watchlist Cleared",
@@ -47851,6 +47892,10 @@ local function SaveConfirmedSniperFilter(pending)
 
     WatchlistPage =
         1
+
+    RefreshSniperPetFilterIndex(
+        "manual sniper filter saved"
+    )
 
     if IsTradeWorld()
     and type(RefreshWatchlist) == "function" then
