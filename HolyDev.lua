@@ -4294,8 +4294,9 @@ LostRaceCount = 0,
 FastBuyAttempts = 0,
 FastBuySuccess = 0,
 
--- Smart scanner runs faster than classic because it skips unchanged listings.
-SmartScanInterval = 0.01,
+-- Smart scanner is experimental.
+-- Keep this slower because 0.01 can lag cloud phones / MuMu.
+SmartScanInterval = 0.04,
 
     -- booth-data refresh timing
     -- Controls how often LatestBoothData is refreshed from TradeBoothController data.
@@ -4574,10 +4575,10 @@ function ResolveEffectiveSniperScanInterval()
         return math.clamp(
             SafeNumber(
                 SniperState.SmartScanInterval,
-                0.005
+                0.04
             ),
-            0.003,
-            0.05
+            0.03,
+            0.12
         )
     end
 
@@ -4587,7 +4588,7 @@ function ResolveEffectiveSniperScanInterval()
             and SniperState.ScanInterval,
             0.02
         ),
-        0.005,
+        0.01,
         0.25
     )
 end
@@ -4600,7 +4601,7 @@ function ResolveMainLoopSleep()
     and RuntimeState.Started == true
     and game.PlaceId == TRADING_WORLD_PLACE_ID then
 
-        return 0.01
+        return 0.04
     end
 
     return 0.1
@@ -55071,137 +55072,152 @@ end
 -- [9] RUNTIME LOOP (EMPTY, DETERMINISTIC)
 --==================================================
 function MainLoop()
+
     while IsCurrentRun() do
+
         task.wait(
             type(ResolveMainLoopSleep) == "function"
             and ResolveMainLoopSleep()
             or 0.1
         )
 
-        if ScriptState.ForceStopped then
+        if ScriptState
+        and ScriptState.ForceStopped then
             continue
         end
 
         --==================================================
--- LISTINGS LOOP
--- Independent from sniper activation.
--- Controlled only by EnableAutoList.
---==================================================
+        -- SNIPER PRIORITY PASS
+        -- This must run before AutoList / showcase / other automation.
+        -- Activate Sniper is the most important runtime system.
+        --==================================================
 
-if ListingsState
-and ListingsState.Enabled then
+        if RuntimeState
+        and RuntimeState.Started == true then
 
-    if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+            --==================================================
+            -- SNIPER HOP LOCK RECOVERY
+            -- Prevents sniper from getting permanently paused if a hop
+            -- sets SniperState.Hopping = true but teleport fails/stalls.
+            --==================================================
 
-        ListingsState.Status =
-            "Not in Trade World"
+            if SniperState
+            and SniperState.Hopping == true then
 
-    else
+                local hopAge =
+                    SafeElapsed(
+                        SniperState.HoppingStartedAt
+                    )
 
-        local now =
-            os.clock()
+                if hopAge > SafeNumber(SniperState.HoppingMaxSeconds, 15) then
 
-        ListingsState.NoWorkSleepUntil =
-            SafeNumber(
-                ListingsState.NoWorkSleepUntil,
-                0
-            )
+                    warn("[SniperHop] Released stale hopping lock")
 
-        ListingsState.LastScan =
-            SafeNumber(
-                ListingsState.LastScan,
-                0
-            )
+                    SniperState.Hopping =
+                        false
 
-        ListingsState.ScanInterval =
-            SafeNumber(
-                ListingsState.ScanInterval,
-                6
-            )
+                    SniperState.HoppingStartedAt =
+                        0
+                end
+            end
 
-        if now >= ListingsState.NoWorkSleepUntil then
+            --==================================================
+            -- SNIPER SCAN
+            -- Runs before every other optional system.
+            --==================================================
 
-            local elapsed =
-                now - ListingsState.LastScan
+            if game.PlaceId == TRADING_WORLD_PLACE_ID
+            and SniperState then
 
-            if elapsed >= ListingsState.ScanInterval then
+                SniperState.LastScan =
+                    SafeNumber(
+                        SniperState.LastScan,
+                        0
+                    )
 
-                ListingsState.LastScan =
+                local elapsed =
+                    SafeElapsed(
+                        SniperState.LastScan
+                    )
+
+                local effectiveScanInterval =
+                    type(ResolveEffectiveSniperScanInterval) == "function"
+                    and ResolveEffectiveSniperScanInterval()
+                    or SafeNumber(SniperState.ScanInterval, 0.02)
+
+                if elapsed >= effectiveScanInterval then
+
+                    -- prevent overlapping scans
+                    if SniperState.Scanning ~= true
+                    and SniperState.Hopping ~= true then
+
+                        RunSniperScan()
+                    end
+                end
+            end
+        end
+
+        --==================================================
+        -- LISTINGS LOOP
+        -- Lower priority than sniper.
+        -- Independent from sniper activation.
+        -- Controlled only by EnableAutoList.
+        --==================================================
+
+        if ListingsState
+        and ListingsState.Enabled then
+
+            if game.PlaceId ~= TRADING_WORLD_PLACE_ID then
+
+                ListingsState.Status =
+                    "Not in Trade World"
+
+            else
+
+                local now =
                     os.clock()
 
-                pcall(function()
-                    RunAutoListingPass()
-                end)
+                ListingsState.NoWorkSleepUntil =
+                    SafeNumber(
+                        ListingsState.NoWorkSleepUntil,
+                        0
+                    )
 
-                if type(ListingsStatusRefresh) == "function" then
-                    pcall(ListingsStatusRefresh)
+                ListingsState.LastScan =
+                    SafeNumber(
+                        ListingsState.LastScan,
+                        0
+                    )
+
+                ListingsState.ScanInterval =
+                    SafeNumber(
+                        ListingsState.ScanInterval,
+                        6
+                    )
+
+                if now >= ListingsState.NoWorkSleepUntil then
+
+                    local elapsed =
+                        now - ListingsState.LastScan
+
+                    if elapsed >= ListingsState.ScanInterval then
+
+                        ListingsState.LastScan =
+                            os.clock()
+
+                        pcall(function()
+                            RunAutoListingPass()
+                        end)
+
+                        if type(ListingsStatusRefresh) == "function" then
+                            pcall(ListingsStatusRefresh)
+                        end
+                    end
                 end
             end
         end
     end
 end
-
-        if not RuntimeState.Started then
-            continue
-        end
-
---==================================================
--- SNIPER HOP LOCK RECOVERY
--- Prevents sniper from getting permanently paused if a hop
--- sets SniperState.Hopping = true but teleport fails/stalls.
---==================================================
-
-if SniperState
-and SniperState.Hopping == true then
-
-    local hopAge =
-        SafeElapsed(
-            SniperState.HoppingStartedAt
-        )
-
-    if hopAge > SafeNumber(SniperState.HoppingMaxSeconds, 15) then
-
-        warn("[SniperHop] Released stale hopping lock")
-
-        SniperState.Hopping =
-            false
-
-        SniperState.HoppingStartedAt =
-            0
-    end
-end
-
---==================================================
--- SNIPER SCAN
---==================================================
-
-if game.PlaceId == TRADING_WORLD_PLACE_ID then
-
-    SniperState.LastScan =
-        SafeNumber(SniperState.LastScan, 0)
-
-    local elapsed =
-        SafeElapsed(SniperState.LastScan)
-
-    local effectiveScanInterval =
-        type(ResolveEffectiveSniperScanInterval) == "function"
-        and ResolveEffectiveSniperScanInterval()
-        or SafeNumber(SniperState.ScanInterval, 0.02)
-
-    if elapsed >= effectiveScanInterval then
-
-        -- prevent overlapping scans
-        if not SniperState.Scanning
-        and not SniperState.Hopping then
-
-            RunSniperScan()
-        end
-    end
-end
-
-    end
-end
-
 --==================================================
 -- ANTI AFK
 --==================================================
