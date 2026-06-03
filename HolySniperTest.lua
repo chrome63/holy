@@ -4170,17 +4170,10 @@ ServerBlockState = {
 
 SniperState = {
 
--- runtime
+    -- runtime
 Scanning = false,
 Buying = false,
 Hopping = false,
-
--- Test mode:
--- ON = scan, match, sort, and print what HOLY would buy,
--- but never calls DispatchPurchase / BuyListing.
-DryRun = false,
-LastDryRunPrintAt = 0,
-LastDryRunKey = "",
 HoppingStartedAt = 0,
 HoppingMaxSeconds = 15,
 
@@ -5338,7 +5331,7 @@ MarketTrackerTargets = {
         MaxPrice = 2000000,
         GoodPrice = 500000,
         SnipePrice = 250000,
-        PingBelow = 200000,
+        PingBelow = 00000,
 
         MinWeight = 0,
     },
@@ -9761,65 +9754,6 @@ function CanBoothRepositionNow()
     end
 
     return true, "OK"
-end
-
-function ShouldSniperDryRunBlockPurchase(listing)
-
-    if not SniperState
-    or SniperState.DryRun ~= true then
-        return false
-    end
-
-    if type(listing) ~= "table" then
-        return true
-    end
-
-    local listingKey =
-        GetListingKey(listing)
-
-    local now =
-        os.clock()
-
-    local shouldPrint =
-        listingKey ~= tostring(SniperState.LastDryRunKey or "")
-        or now - SafeNumber(SniperState.LastDryRunPrintAt, 0) >= 2
-
-    if shouldPrint then
-
-        SniperState.LastDryRunKey =
-            listingKey
-
-        SniperState.LastDryRunPrintAt =
-            now
-
-        print(
-            string.format(
-                "[SNIPER DRY RUN] Would buy: P%s W%s %s | %s tokens | %s %.2f | KG %.2f | Age %s | Mut %s",
-                tostring(
-                    ClampSniperPriority(
-                        listing.MatchedPriority
-                        or listing.Priority
-                        or 5
-                    )
-                ),
-                tostring(listing.MatchedWatchlistId or "?"),
-                tostring(listing.PetName or "Unknown"),
-                tostring(listing.Price or "?"),
-                tostring(listing.MatchedWeightMode or "Weight"),
-                tonumber(listing.MatchedWeight)
-                    or tonumber(listing.BaseWeight)
-                    or tonumber(listing.Weight)
-                    or 0,
-                tonumber(listing.DisplayWeight)
-                    or tonumber(listing.Weight)
-                    or 0,
-                tostring(listing.Age or "?"),
-                tostring(listing.MutationText or "Normal")
-            )
-        )
-    end
-
-    return true
 end
 
 function DispatchPurchase(listing)
@@ -22866,41 +22800,27 @@ end
                         end
 
                         local didDispatch =
-    false
+                            DispatchPurchase(listing)
 
-if ShouldSniperDryRunBlockPurchase(listing) then
+                        if didDispatch then
 
-    didDispatch =
-        true
+                            dispatched =
+                                dispatched + 1
 
-else
+                            task.delay(15, function()
 
-    didDispatch =
-        DispatchPurchase(listing)
-end
+                                ClaimedListings[listingKey] =
+                                    nil
+                            end)
 
-if didDispatch then
+                            -- Best-candidate-only mode.
+                            break
 
-    dispatched =
-        dispatched + 1
+                        else
 
-    task.delay(
-        SniperState.DryRun == true and 2 or 15,
-        function()
-
-            ClaimedListings[listingKey] =
-                nil
-        end
-    )
-
-    -- Best-candidate-only mode.
-    break
-
-else
-
-    ClaimedListings[listingKey] =
-        nil
-end
+                            ClaimedListings[listingKey] =
+                                nil
+                        end
                     end
                 end
             end
@@ -23291,43 +23211,31 @@ end
                     )
                 end
 
-local didDispatch =
-    false
+                local didDispatch =
+                    DispatchPurchase(listing)
 
-if ShouldSniperDryRunBlockPurchase(listing) then
+                if didDispatch then
 
-    didDispatch =
-        true
+                    dispatched =
+                        dispatched + 1
 
-else
+                    task.delay(15, function()
 
-    didDispatch =
-        DispatchPurchase(listing)
-end
+                        ClaimedListings[listingKey] =
+                            nil
+                    end)
 
-if didDispatch then
+                    -- Best-candidate-only mode.
+                    -- Prevents queue clutter while first buy is confirming.
+                    break
 
-    dispatched =
-        dispatched + 1
+                else
 
-    task.delay(
-        SniperState.DryRun == true and 2 or 15,
-        function()
+                    ClaimedListings[listingKey] =
+                        nil
+                end
+            end
 
-            ClaimedListings[listingKey] =
-                nil
-        end
-    )
-
-    -- Best-candidate-only mode.
-    -- Prevents queue clutter while first buy is confirming.
-    break
-
-else
-
-    ClaimedListings[listingKey] =
-        nil
-end
             --==================================================
 -- MARKET TRACKER AFTER BUY-CRITICAL PATH
 -- Important:
@@ -32352,54 +32260,6 @@ FavoriteWatchToggle:OnChanged(function(v)
         v == true and "star" or "star-off",
         3
     )
-end)
-
-local SniperDryRunToggle =
-    HomeBox:AddToggle(
-        "SniperDryRun",
-        {
-            Text = "🧪 Dry Run",
-            Tooltip = "Test mode. HOLY scans and prints matching pets, but will not buy anything.",
-            Default = SniperState.DryRun == true,
-        }
-    )
-
-SniperDryRunToggle:OnChanged(function(value)
-
-    SniperState.DryRun =
-        value == true
-
-    SniperState.LastDryRunPrintAt =
-        0
-
-    SniperState.LastDryRunKey =
-        ""
-
-    MarkConfigDirty()
-
-    if ConfigState
-    and ConfigState.IsHydrating then
-        return
-    end
-
-    if SniperState.DryRun == true then
-
-        HolyNotify(
-            "Sniper Dry Run",
-            "Enabled. HOLY will scan and show matches, but will not buy.",
-            "flask-conical",
-            5
-        )
-
-    else
-
-        HolyNotify(
-            "Sniper Dry Run",
-            "Disabled. Sniper can buy matching pets again.",
-            "target",
-            4
-        )
-    end
 end)
 --==================================================
 -- HUNTING TAB: TARGET PETS HOP UI
