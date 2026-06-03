@@ -4170,10 +4170,18 @@ ServerBlockState = {
 
 SniperState = {
 
-    -- runtime
+-- runtime
 Scanning = false,
 Buying = false,
 Hopping = false,
+
+-- Test mode:
+-- ON = HOLY scans/matches and prints what it would buy,
+-- but never calls BuyListing.
+DryRun = false,
+LastDryRunPrintAt = 0,
+LastDryRunKey = "",
+
 HoppingStartedAt = 0,
 HoppingMaxSeconds = 15,
 
@@ -9756,6 +9764,65 @@ function CanBoothRepositionNow()
     return true, "OK"
 end
 
+function ShouldSniperDryRunBlockPurchase(listing)
+
+    if not SniperState
+    or SniperState.DryRun ~= true then
+        return false
+    end
+
+    if type(listing) ~= "table" then
+        return true
+    end
+
+    local listingKey =
+        GetListingKey(listing)
+
+    local now =
+        os.clock()
+
+    local shouldPrint =
+        listingKey ~= tostring(SniperState.LastDryRunKey or "")
+        or now - SafeNumber(SniperState.LastDryRunPrintAt, 0) >= 2
+
+    if shouldPrint then
+
+        SniperState.LastDryRunKey =
+            listingKey
+
+        SniperState.LastDryRunPrintAt =
+            now
+
+        print(
+            string.format(
+                "[SNIPER DRY RUN] Would buy: P%s W%s %s | %s tokens | %s %.2f | KG %.2f | Age %s | Mut %s",
+                tostring(
+                    ClampSniperPriority(
+                        listing.MatchedPriority
+                        or listing.Priority
+                        or 5
+                    )
+                ),
+                tostring(listing.MatchedWatchlistId or "?"),
+                tostring(listing.PetName or "Unknown"),
+                tostring(listing.Price or "?"),
+                tostring(listing.MatchedWeightMode or "Weight"),
+                tonumber(listing.MatchedWeight)
+                    or tonumber(listing.BaseWeight)
+                    or tonumber(listing.Weight)
+                    or 0,
+                tonumber(listing.DisplayWeight)
+                    or tonumber(listing.Weight)
+                    or 0,
+                tostring(listing.Age or "?"),
+                tostring(listing.MutationText or "Normal")
+            )
+        )
+    end
+
+    return true
+end
+
 function DispatchPurchase(listing)
 
     if not listing then
@@ -9783,6 +9850,17 @@ function DispatchPurchase(listing)
 
     if FailedListings[listingKey] then
         return false
+    end
+
+    --==================================================
+    -- DRY RUN GUARD
+    -- Safe test mode. Blocks every scanner path before
+    -- PurchaseState.Busy, QueuePurchase, TryPurchaseListing,
+    -- inventory waiters, or BuyListing can start.
+    --==================================================
+
+    if ShouldSniperDryRunBlockPurchase(listing) then
+        return true
     end
 
     --==================================================
@@ -32037,6 +32115,54 @@ else
 end
 
     MarkConfigDirty()
+end)
+
+local SniperDryRunToggle =
+    HomeBox:AddToggle(
+        "SniperDryRun",
+        {
+            Text = "🧪 Dry Run",
+            Tooltip = "Test mode. HOLY scans and prints matching pets, but will not buy anything.",
+            Default = SniperState.DryRun == true,
+        }
+    )
+
+SniperDryRunToggle:OnChanged(function(value)
+
+    SniperState.DryRun =
+        value == true
+
+    SniperState.LastDryRunPrintAt =
+        0
+
+    SniperState.LastDryRunKey =
+        ""
+
+    MarkConfigDirty()
+
+    if ConfigState
+    and ConfigState.IsHydrating then
+        return
+    end
+
+    if SniperState.DryRun == true then
+
+        HolyNotify(
+            "Sniper Dry Run",
+            "Enabled. HOLY will scan and show matches, but will not buy.",
+            "flask-conical",
+            5
+        )
+
+    else
+
+        HolyNotify(
+            "Sniper Dry Run",
+            "Disabled. Sniper can buy matching pets again.",
+            "target",
+            4
+        )
+    end
 end)
 
 local SniperAutoHopToggle =
