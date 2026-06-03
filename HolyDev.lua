@@ -34076,7 +34076,7 @@ local SmartScannerToggle =
         "SmartScannerEnabled",
         {
             Text = "🧠 Smart Scanner",
-            Default = false,
+            Default = SniperState.SmartScannerEnabled == true,
             Tooltip = "Experimental efficient scanner. Skips repeated unchanged listings, focuses new/changed listings, and buys the best match first. OFF = classic stable scanner.",
         }
     )
@@ -34103,6 +34103,11 @@ SmartScannerToggle:OnChanged(function(v)
         )
     end
 
+    if ConfigState
+    and ConfigState.IsHydrating then
+        return
+    end
+
     MarkConfigDirty()
 
     HolyNotify(
@@ -34120,7 +34125,7 @@ local FilteredPetScannerToggle =
         "FilteredPetScanner",
         {
             Text = "🔍 Filtered Pet Scanner",
-            Default = SniperState.FilteredPetScanner == false,
+            Default = SniperState.FilteredPetScanner == true,
             Tooltip = "Skips booth pets whose base pet name is not in your sniper watchlists. Best for laggy 500-700 pet servers.",
         }
     )
@@ -34130,11 +34135,15 @@ FilteredPetScannerToggle:OnChanged(function(v)
     SniperState.FilteredPetScanner =
         v == true
 
-    if type(RebuildSniperPetFilterIndex) == "function" then
-        RebuildSniperPetFilterIndex(
-            "filtered scanner toggle"
-        )
-    end
+    if type(RefreshSniperPetFilterIndex) == "function" then
+    RefreshSniperPetFilterIndex(
+        "filtered scanner toggle"
+    )
+elseif type(RebuildSniperPetFilterIndex) == "function" then
+    RebuildSniperPetFilterIndex(
+        "filtered scanner toggle"
+    )
+end
 
     if type(ResetSniperListingCaches) == "function" then
         ResetSniperListingCaches(
@@ -34149,12 +34158,12 @@ FilteredPetScannerToggle:OnChanged(function(v)
     SniperState.LastScan =
         0
 
-    MarkConfigDirty()
-
     if ConfigState
     and ConfigState.IsHydrating then
         return
     end
+
+    MarkConfigDirty()
 
     HolyNotify(
         v == true
@@ -34173,7 +34182,7 @@ local ExactFilterScannerToggle =
         "ExactFilterScanner",
         {
             Text = "💎 Exact Filter Scanner",
-            Default = SniperState.ExactFilterScanner == false,
+            Default = SniperState.ExactFilterScanner == true,
             Tooltip = "Only keeps listings that pass sniper pet name, max price, and min weight rules before deeper scanning.",
         }
     )
@@ -34196,12 +34205,12 @@ ExactFilterScannerToggle:OnChanged(function(v)
     SniperState.LastScan =
         0
 
-    MarkConfigDirty()
-
     if ConfigState
     and ConfigState.IsHydrating then
         return
     end
+
+    MarkConfigDirty()
 
     HolyNotify(
         v == true
@@ -34220,7 +34229,7 @@ local FavoriteWatchToggle =
         "WatchFavoritedFilterMatches",
         {
             Text = "❤️ Watch Favorited Matches",
-            Default = SniperState.WatchFavoritedFilterMatches == false,
+            Default = SniperState.WatchFavoritedFilterMatches == true,
             Tooltip = "Watches favorited pets that match your sniper filters. If seller unfavorites later, HOLY can snipe it.",
         }
     )
@@ -34234,6 +34243,11 @@ FavoriteWatchToggle:OnChanged(function(v)
         ResetSmartSniperCache(
             "favorite watch changed"
         )
+    end
+
+    if ConfigState
+    and ConfigState.IsHydrating then
+        return
     end
 
     MarkConfigDirty()
@@ -54813,6 +54827,80 @@ local ok, err = pcall(function()
     SaveManager:Load(ConfigState.AutosaveName)
 end)
 
+--==================================================
+-- SCANNER CONFIG RUNTIME SYNC
+-- SaveManager restores UI Options, but sniper runtime
+-- must also be forced to match those saved toggle values.
+-- This prevents scanner toggles from visually loading ON
+-- while SniperState still has the default OFF value.
+--==================================================
+
+local function ReadSavedToggleValue(optionIndex, fallback)
+
+    if type(Options) == "table" then
+
+        local option =
+            Options[optionIndex]
+
+        if type(option) == "table"
+        and option.Value ~= nil then
+            return option.Value == true
+        end
+    end
+
+    return fallback == true
+end
+
+if SniperState then
+
+    SniperState.SmartScannerEnabled =
+        ReadSavedToggleValue(
+            "SmartScannerEnabled",
+            SniperState.SmartScannerEnabled
+        )
+
+    SniperState.SmartScannerMode =
+        SniperState.SmartScannerEnabled == true
+        and "Smart Experimental"
+        or "Classic"
+
+    SniperState.FilteredPetScanner =
+        ReadSavedToggleValue(
+            "FilteredPetScanner",
+            SniperState.FilteredPetScanner
+        )
+
+    SniperState.ExactFilterScanner =
+        ReadSavedToggleValue(
+            "ExactFilterScanner",
+            SniperState.ExactFilterScanner
+        )
+
+    SniperState.WatchFavoritedFilterMatches =
+        ReadSavedToggleValue(
+            "WatchFavoritedFilterMatches",
+            SniperState.WatchFavoritedFilterMatches
+        )
+
+    SniperState.LastScan =
+        0
+end
+
+if type(RefreshSniperPetFilterIndex) == "function" then
+    RefreshSniperPetFilterIndex(
+        "scanner config loaded"
+    )
+end
+
+if type(ResetSniperListingCaches) == "function" then
+    ResetSniperListingCaches(
+        "scanner config loaded"
+    )
+elseif type(ResetSmartSniperCache) == "function" then
+    ResetSmartSniperCache(
+        "scanner config loaded"
+    )
+end
 --==================================================
 -- BOOTH SHOWCASE AUTOSWITCH MODE MIGRATION
 -- Converts old saved values to the new listed-pet modes.
