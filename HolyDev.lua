@@ -9205,11 +9205,20 @@ function TransferFireTradeRemote(remoteName, ...)
         return false
     end
 
-    local ok, err =
-        pcall(function(...)
+    local args =
+        table.pack(...)
 
-            remote:FireServer(...)
-        end, ...)
+    local ok, err =
+        pcall(function()
+
+            remote:FireServer(
+                table.unpack(
+                    args,
+                    1,
+                    args.n
+                )
+            )
+        end)
 
     if not ok then
 
