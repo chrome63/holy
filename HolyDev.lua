@@ -1586,12 +1586,27 @@ end
 
 function EnsureSniperPetFilterIndex()
 
+    local needsRebuild =
+        false
+
     if type(SniperPetFilterIndex) ~= "table"
     or type(SniperPetFilterIndex.Exact) ~= "table"
     or type(SniperPetFilterIndex.Lower) ~= "table" then
 
+        needsRebuild =
+            true
+
+    elseif SafeNumber(SniperPetFilterIndex.Count, 0) <= 0
+    and CountAllSniperFilters() > 0 then
+
+        needsRebuild =
+            true
+    end
+
+    if needsRebuild then
+
         RebuildSniperPetFilterIndex(
-            "missing index"
+            "ensure index"
         )
     end
 
@@ -22367,6 +22382,43 @@ function ResetSmartSniperCache(reason)
     return true
 end
 
+function ResetSniperListingCaches(reason)
+
+    reason =
+        tostring(reason or "scanner state changed")
+
+    if type(SeenListings) == "table" then
+        table.clear(SeenListings)
+    end
+
+    if type(MarketCache) == "table" then
+        table.clear(MarketCache)
+    end
+
+    if type(ClaimedListings) == "table" then
+        table.clear(ClaimedListings)
+    end
+
+    if type(ResetFilteredPetScannerPassStats) == "function" then
+        ResetFilteredPetScannerPassStats()
+    end
+
+    if type(ResetSmartSniperCache) == "function" then
+        ResetSmartSniperCache(reason)
+    end
+
+    if SniperState then
+        SniperState.LastScan = 0
+    end
+
+    print(
+        "[SNIPER CACHE] Reset listing caches:",
+        reason
+    )
+
+    return true
+end
+
 function BuildSmartListingSignature(listing)
 
     if type(listing) ~= "table" then
@@ -32284,7 +32336,7 @@ local FilteredPetScannerToggle =
         "FilteredPetScanner",
         {
             Text = "🔍 Filtered Pet Scanner",
-            Default = SniperState.FilteredPetScanner == false,
+            Default = SniperState.FilteredPetScanner == true,
             Tooltip = "Skips booth pets whose base pet name is not in your sniper watchlists. Best for laggy 500-700 pet servers.",
         }
     )
@@ -32294,25 +32346,39 @@ FilteredPetScannerToggle:OnChanged(function(v)
     SniperState.FilteredPetScanner =
         v == true
 
-    RebuildSniperPetFilterIndex(
-        "filtered scanner toggle"
-    )
+    if type(RebuildSniperPetFilterIndex) == "function" then
+        RebuildSniperPetFilterIndex(
+            "filtered scanner toggle"
+        )
+    end
 
-    if type(ResetSmartSniperCache) == "function" then
+    if type(ResetSniperListingCaches) == "function" then
+        ResetSniperListingCaches(
+            "filtered scanner changed"
+        )
+    elseif type(ResetSmartSniperCache) == "function" then
         ResetSmartSniperCache(
             "filtered scanner changed"
         )
     end
 
+    SniperState.LastScan =
+        0
+
     MarkConfigDirty()
+
+    if ConfigState
+    and ConfigState.IsHydrating then
+        return
+    end
 
     HolyNotify(
         v == true
             and "Filtered Scanner Enabled"
             or "Filtered Scanner Disabled",
         v == true
-            and "Holy will skip non-watchlist pet names before expensive scanning."
-            or "Holy will scan every visible booth pet again.",
+            and "HOLY will skip non-watchlist pet names before expensive scanning."
+            or "HOLY will scan every visible booth pet again.",
         v == true and "zap" or "scan",
         3
     )
@@ -32323,7 +32389,7 @@ local ExactFilterScannerToggle =
         "ExactFilterScanner",
         {
             Text = "💎 Exact Filter Scanner",
-            Default = SniperState.ExactFilterScanner == false,
+            Default = SniperState.ExactFilterScanner == true,
             Tooltip = "Only keeps listings that pass sniper pet name, max price, and min weight rules before deeper scanning.",
         }
     )
@@ -32333,13 +32399,25 @@ ExactFilterScannerToggle:OnChanged(function(v)
     SniperState.ExactFilterScanner =
         v == true
 
-    if type(ResetSmartSniperCache) == "function" then
+    if type(ResetSniperListingCaches) == "function" then
+        ResetSniperListingCaches(
+            "exact filter scanner changed"
+        )
+    elseif type(ResetSmartSniperCache) == "function" then
         ResetSmartSniperCache(
             "exact filter scanner changed"
         )
     end
 
+    SniperState.LastScan =
+        0
+
     MarkConfigDirty()
+
+    if ConfigState
+    and ConfigState.IsHydrating then
+        return
+    end
 
     HolyNotify(
         v == true
@@ -32358,8 +32436,8 @@ local FavoriteWatchToggle =
         "WatchFavoritedFilterMatches",
         {
             Text = "❤️ Watch Favorited Matches",
-            Default = SniperState.WatchFavoritedFilterMatches == false,
-            Tooltip = "Watches favorited pets that match your sniper filters. If seller unfavorites later, Holy can snipe it.",
+            Default = SniperState.WatchFavoritedFilterMatches == true,
+            Tooltip = "Watches favorited pets that match your sniper filters. If seller unfavorites later, HOLY can snipe it.",
         }
     )
 
@@ -53020,6 +53098,22 @@ else
 end
 
 LoadSniperFilters()
+
+if type(RebuildSniperPetFilterIndex) == "function" then
+    RebuildSniperPetFilterIndex(
+        "after LoadSniperFilters"
+    )
+end
+
+if type(ResetSniperListingCaches) == "function" then
+    ResetSniperListingCaches(
+        "after LoadSniperFilters"
+    )
+elseif type(ResetSmartSniperCache) == "function" then
+    ResetSmartSniperCache(
+        "after LoadSniperFilters"
+    )
+end
 
 if type(LoadListingFilters) == "function" then
     LoadListingFilters()
