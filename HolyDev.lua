@@ -29191,12 +29191,13 @@ if IsHolyAllowedJoinPlace(game.PlaceId) then
 end
 --==================================================
 -- EVENTS TAB
--- Trade World only.
--- Garden Mode gets a placeholder from BuildGardenModeTradeTabs().
+-- Trade World event systems only.
+-- Garden World Auto Ascension is built below.
 --==================================================
 
 EventsBox = nil
 
+if IsTradeWorld() then
 
     if type(Tabs.Events.AddLeftCollapsibleGroupbox) == "function" then
 
