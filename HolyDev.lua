@@ -8887,39 +8887,67 @@ end
 
 function TransferBuildPetChoices()
 
-    if type(PetList) ~= "table"
-    or #PetList <= 0 then
-
-        if type(RefreshDynamicPetList) == "function" then
-            pcall(function()
-                RefreshDynamicPetList()
-            end)
-        end
+    -- Try the existing dynamic list first.
+    if type(RefreshDynamicPetList) == "function" then
+        pcall(function()
+            RefreshDynamicPetList()
+        end)
     end
 
     local source =
         type(PetList) == "table"
+        and #PetList > 0
         and PetList
-        or {}
+        or nil
 
-    local seen = {}
     local choices = {}
+    local seen = {}
 
-    for _, petName in ipairs(source) do
+    local function AddPetName(petName)
 
         petName =
             TransferCleanText(petName)
 
-        if petName ~= ""
-        and not seen[petName] then
+        if petName == ""
+        or seen[petName] == true then
+            return
+        end
 
-            seen[petName] =
-                true
+        seen[petName] =
+            true
 
-            table.insert(
-                choices,
-                petName
-            )
+        table.insert(
+            choices,
+            petName
+        )
+    end
+
+    if type(source) == "table" then
+
+        for _, petName in ipairs(source) do
+            AddPetName(petName)
+        end
+    end
+
+    -- Fallback:
+    -- If PetList is still empty during early Transfer UI build,
+    -- pull directly from PetRegistry.PetList.
+    if #choices <= 0
+    and type(GetPetRegistry) == "function" then
+
+        local registry =
+            GetPetRegistry()
+
+        local petListTable =
+            type(registry) == "table"
+            and rawget(registry, "PetList")
+            or nil
+
+        if type(petListTable) == "table" then
+
+            for petName in pairs(petListTable) do
+                AddPetName(petName)
+            end
         end
     end
 
@@ -28775,7 +28803,43 @@ local TransferPetDropdown =
     )
 
     TransferState.PetDropdownRef =
-        TransferPetDropdown
+    TransferPetDropdown
+
+task.spawn(function()
+
+    for attempt = 1, 20 do
+
+        if not IsCurrentRun() then
+            return
+        end
+
+        local choices =
+            TransferBuildPetChoices()
+
+        if #choices > 0 then
+
+            if TransferState.PetDropdownRef
+            and type(TransferState.PetDropdownRef.SetValues) == "function" then
+
+                TransferState.PetDropdownRef:SetValues(
+                    choices
+                )
+            end
+
+            print(
+                "[TRANSFER] Loaded pet dropdown:",
+                tostring(#choices),
+                "pets"
+            )
+
+            break
+        end
+
+        task.wait(0.25)
+    end
+end)
+
+TransferPetDropdown:OnChanged(function(value)
 
     TransferPetDropdown:OnChanged(function(value)
 
