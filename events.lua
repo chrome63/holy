@@ -18,6 +18,9 @@ local ReplicatedStorage =
 local TeleportService =
     game:GetService("TeleportService")
 
+local HttpService =
+    game:GetService("HttpService")
+
 --==================================================
 -- [0.1] PLACE IDS
 --==================================================
@@ -260,6 +263,10 @@ local State = {
         [3] = "",
     },
 
+    CosmeticMaterialTokens = {
+        ["Gold Ingot"] = "Cosmetic:huUCI",
+    },
+
     TimerSpeed = 5,
     TimerProbeRunning = false,
 
@@ -267,6 +274,19 @@ local State = {
     AutoSubmitDelay = 2.5,
     AutoSubmitEmberCap = 78000,
     AutoSubmitBusy = false,
+
+    AutoCollectFruits = false,
+    AutoCollectDelay = 0.35,
+    AutoCollectBatchSize = 25,
+    AutoCollectMaxToolCount = 1300,
+    AutoCollectBusy = false,
+    CachedOwnFarm = nil,
+    CachedOwnPlantsPhysical = nil,
+    LastOwnFarmResolveAt = 0,
+    CollectPlantNames = {},
+    CollectPlantNameList = {
+        "Alien Apple",
+    },
 
     CachedEmberTextObject = nil,
     CachedEmberCurrent = nil,
@@ -286,6 +306,393 @@ local State = {
 
     UIScalePercent = 100,
 }
+
+
+local ConfigState = {
+    AutosaveName = "autosave_v1",
+    Dirty = false,
+    Loading = true,
+
+    Folder = "HolyEvents",
+    CustomFile = "HolyEvents/autosave_v1_custom.json",
+    LastSavedSnapshot = "",
+}
+
+local function MarkConfigDirty()
+
+    if ConfigState.Loading == true then
+        return
+    end
+
+    ConfigState.Dirty =
+        true
+end
+
+local function CanUseHolyEventsFileIO()
+
+    return type(writefile) == "function"
+        and type(readfile) == "function"
+        and type(isfile) == "function"
+end
+
+local function EnsureHolyEventsFolder()
+
+    if type(makefolder) ~= "function"
+    or type(isfolder) ~= "function" then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            if not isfolder(ConfigState.Folder) then
+                makefolder(ConfigState.Folder)
+            end
+        end)
+
+    return ok == true
+end
+
+local function CopyEnabledMap(source)
+
+    local output = {}
+
+    if type(source) ~= "table" then
+        return output
+    end
+
+    for key, value in pairs(source) do
+
+        if value == true then
+            output[tostring(key)] = true
+        end
+    end
+
+    return output
+end
+
+local function BuildHolyEventsCustomSavePayload()
+
+    return {
+        Format = "HOLY_EVENTS_AUTOSAVE",
+        Version = 1,
+        SavedAt = os.time(),
+
+        State = {
+            AutoClaim =
+                State.AutoClaim == true,
+
+            AutoClaimDelay =
+                tonumber(State.AutoClaimDelay) or 1.5,
+
+            AutoStart =
+                State.AutoStart == true,
+
+            AutoStartDelay =
+                tonumber(State.AutoStartDelay) or 5,
+
+            SlotRecipes = {
+                [1] = CleanText(State.SlotRecipes[1]),
+                [2] = CleanText(State.SlotRecipes[2]),
+                [3] = CleanText(State.SlotRecipes[3]),
+            },
+
+            TimerSpeed =
+                tonumber(State.TimerSpeed) or 5,
+
+            AutoSubmitFire =
+                State.AutoSubmitFire == true,
+
+            AutoSubmitDelay =
+                tonumber(State.AutoSubmitDelay) or 2.5,
+
+            AutoSubmitEmberCap =
+                tonumber(State.AutoSubmitEmberCap) or 78000,
+
+            SubmitPlantNames =
+                CopyEnabledMap(State.SubmitPlantNames),
+
+            AutoCollectFruits =
+                State.AutoCollectFruits == true,
+
+            AutoCollectDelay =
+                tonumber(State.AutoCollectDelay) or 0.35,
+
+            AutoCollectBatchSize =
+                tonumber(State.AutoCollectBatchSize) or 25,
+
+            AutoCollectMaxToolCount =
+                tonumber(State.AutoCollectMaxToolCount) or 1300,
+
+            CollectPlantNames =
+                CopyEnabledMap(State.CollectPlantNames),
+
+            UIScalePercent =
+                tonumber(State.UIScalePercent) or 100,
+        },
+    }
+end
+
+local function ApplyHolyEventsCustomSavePayload(payload)
+
+    if type(payload) ~= "table"
+    or payload.Format ~= "HOLY_EVENTS_AUTOSAVE"
+    or type(payload.State) ~= "table" then
+        return false
+    end
+
+    local saved =
+        payload.State
+
+    if type(saved.AutoClaim) == "boolean" then
+        State.AutoClaim =
+            saved.AutoClaim
+    end
+
+    if tonumber(saved.AutoClaimDelay) then
+        State.AutoClaimDelay =
+            math.clamp(
+                tonumber(saved.AutoClaimDelay),
+                0.5,
+                30
+            )
+    end
+
+    if type(saved.AutoStart) == "boolean" then
+        State.AutoStart =
+            saved.AutoStart
+    end
+
+    if tonumber(saved.AutoStartDelay) then
+        State.AutoStartDelay =
+            math.clamp(
+                tonumber(saved.AutoStartDelay),
+                1,
+                60
+            )
+    end
+
+    if type(saved.SlotRecipes) == "table" then
+
+        for slot = 1, 3 do
+
+            local recipeName =
+                CleanText(
+                    saved.SlotRecipes[tostring(slot)]
+                    or saved.SlotRecipes[slot]
+                )
+
+            if recipeName ~= "" then
+                State.SlotRecipes[slot] =
+                    recipeName
+            end
+        end
+    end
+
+    if tonumber(saved.TimerSpeed) then
+        State.TimerSpeed =
+            math.max(
+                0.01,
+                tonumber(saved.TimerSpeed)
+            )
+    end
+
+    if type(saved.AutoSubmitFire) == "boolean" then
+        State.AutoSubmitFire =
+            saved.AutoSubmitFire
+    end
+
+    if tonumber(saved.AutoSubmitDelay) then
+        State.AutoSubmitDelay =
+            math.clamp(
+                tonumber(saved.AutoSubmitDelay),
+                1.5,
+                15
+            )
+    end
+
+    if tonumber(saved.AutoSubmitEmberCap) then
+        State.AutoSubmitEmberCap =
+            math.clamp(
+                tonumber(saved.AutoSubmitEmberCap),
+                0,
+                80000
+            )
+    end
+
+    if type(saved.SubmitPlantNames) == "table" then
+        State.SubmitPlantNames =
+            CopyEnabledMap(saved.SubmitPlantNames)
+    end
+
+    if type(saved.AutoCollectFruits) == "boolean" then
+        State.AutoCollectFruits =
+            saved.AutoCollectFruits
+    end
+
+    if tonumber(saved.AutoCollectDelay) then
+        State.AutoCollectDelay =
+            math.clamp(
+                tonumber(saved.AutoCollectDelay),
+                0.25,
+                10
+            )
+    end
+
+    if tonumber(saved.AutoCollectBatchSize) then
+        State.AutoCollectBatchSize =
+            math.clamp(
+                tonumber(saved.AutoCollectBatchSize),
+                1,
+                100
+            )
+    end
+
+    if tonumber(saved.AutoCollectMaxToolCount) then
+        State.AutoCollectMaxToolCount =
+            math.clamp(
+                tonumber(saved.AutoCollectMaxToolCount),
+                0,
+                5000
+            )
+    end
+
+    if type(saved.CollectPlantNames) == "table" then
+        State.CollectPlantNames =
+            CopyEnabledMap(saved.CollectPlantNames)
+    end
+
+    if tonumber(saved.UIScalePercent) then
+        State.UIScalePercent =
+            math.clamp(
+                math.floor(tonumber(saved.UIScalePercent)),
+                50,
+                100
+            )
+    end
+
+    return true
+end
+
+local function EncodeHolyEventsCustomSavePayload()
+
+    local ok, encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                BuildHolyEventsCustomSavePayload()
+            )
+        end)
+
+    if ok ~= true
+    or type(encoded) ~= "string" then
+        return ""
+    end
+
+    return encoded
+end
+
+local function LoadHolyEventsCustomConfigNow()
+
+    if not CanUseHolyEventsFileIO() then
+        return false
+    end
+
+    local exists =
+        false
+
+    local existsOk =
+        pcall(function()
+            exists =
+                isfile(ConfigState.CustomFile)
+        end)
+
+    if existsOk ~= true
+    or exists ~= true then
+        return false
+    end
+
+    local readOk, raw =
+        pcall(function()
+            return readfile(ConfigState.CustomFile)
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+        return false
+    end
+
+    local decodeOk, payload =
+        pcall(function()
+            return HttpService:JSONDecode(raw)
+        end)
+
+    if decodeOk ~= true
+    or type(payload) ~= "table" then
+        return false
+    end
+
+    local applied =
+        ApplyHolyEventsCustomSavePayload(payload)
+
+    if applied == true then
+
+        ConfigState.LastSavedSnapshot =
+            EncodeHolyEventsCustomSavePayload()
+
+        print("[HOLY EVENTS] Custom autosave loaded.")
+    end
+
+    return applied
+end
+
+local function SaveHolyEventsCustomConfigNow(reason)
+
+    if not CanUseHolyEventsFileIO() then
+        return false
+    end
+
+    EnsureHolyEventsFolder()
+
+    local encoded =
+        EncodeHolyEventsCustomSavePayload()
+
+    if encoded == "" then
+        return false
+    end
+
+    local writeOk, writeErr =
+        pcall(function()
+
+            writefile(
+                ConfigState.CustomFile,
+                encoded
+            )
+        end)
+
+    if writeOk ~= true then
+
+        warn(
+            "[HOLY EVENTS] Custom autosave failed:",
+            tostring(writeErr)
+        )
+
+        return false
+    end
+
+    ConfigState.LastSavedSnapshot =
+        encoded
+
+    print(
+        "[HOLY EVENTS] Custom autosaved:",
+        tostring(reason or "auto")
+    )
+
+    return true
+end
+
+LoadHolyEventsCustomConfigNow()
 
 --==================================================
 -- [7] INVENTORY HELPERS
@@ -1159,6 +1566,514 @@ local function GetSelectedSubmitPlantText()
 end
 
 --==================================================
+-- [7.6] OWN FARM AUTO COLLECT
+--==================================================
+
+local function GetNotificationText()
+
+    local playerGui =
+        LocalPlayer
+        and LocalPlayer:FindFirstChild("PlayerGui")
+
+    local notification =
+        playerGui
+        and playerGui:FindFirstChild("x_NotificationGui")
+        and playerGui.x_NotificationGui:FindFirstChild("NotificationDisplay")
+
+    if notification
+    and notification:IsA("TextLabel") then
+        return CleanText(notification.Text)
+    end
+
+    return ""
+end
+
+local function IsBackpackFullFromNotification()
+
+    local text =
+        GetNotificationText():lower()
+
+    return text:find("max backpack space", 1, true) ~= nil
+        or text:find("go sell", 1, true) ~= nil
+end
+
+local function GetCurrentToolCount()
+
+    local count = 0
+
+    local containers = {
+        LocalPlayer:FindFirstChild("Backpack"),
+        LocalPlayer.Character,
+    }
+
+    for _, container in ipairs(containers) do
+
+        if container then
+
+            for _, item in ipairs(container:GetChildren()) do
+
+                if item:IsA("Tool") then
+                    count += 1
+                end
+            end
+        end
+    end
+
+    return count
+end
+
+local function GetOwnFarm()
+
+    local now =
+        os.clock()
+
+    if State.CachedOwnFarm
+    and State.CachedOwnFarm.Parent
+    and State.CachedOwnPlantsPhysical
+    and State.CachedOwnPlantsPhysical.Parent then
+
+        return State.CachedOwnFarm
+    end
+
+    -- Do not scan workspace every collect tick.
+    -- Cache miss / invalid cache only.
+    if now - (State.LastOwnFarmResolveAt or 0) < 2 then
+        return State.CachedOwnFarm
+    end
+
+    State.LastOwnFarmResolveAt =
+        now
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+
+        if obj:IsA("Folder")
+        or obj:IsA("Model") then
+
+            local important =
+                obj:FindFirstChild("Important")
+
+            local data =
+                important
+                and important:FindFirstChild("Data")
+
+            local owner =
+                data
+                and data:FindFirstChild("Owner")
+
+            local plants =
+                important
+                and important:FindFirstChild("Plants_Physical")
+
+            if owner
+            and owner:IsA("StringValue")
+            and owner.Value == LocalPlayer.Name
+            and plants then
+
+                State.CachedOwnFarm =
+                    obj
+
+                State.CachedOwnPlantsPhysical =
+                    plants
+
+                print(
+                    "[HOLY EVENTS] Own farm cached:",
+                    obj:GetFullName()
+                )
+
+                return obj
+            end
+        end
+    end
+
+    State.CachedOwnFarm =
+        nil
+
+    State.CachedOwnPlantsPhysical =
+        nil
+
+    return nil
+end
+
+local function GetOwnPlantsPhysical()
+
+    if State.CachedOwnPlantsPhysical
+    and State.CachedOwnPlantsPhysical.Parent
+    and State.CachedOwnFarm
+    and State.CachedOwnFarm.Parent then
+
+        return State.CachedOwnPlantsPhysical, State.CachedOwnFarm
+    end
+
+    local ownFarm =
+        GetOwnFarm()
+
+    local important =
+        ownFarm
+        and ownFarm:FindFirstChild("Important")
+
+    local plants =
+        important
+        and important:FindFirstChild("Plants_Physical")
+
+    State.CachedOwnFarm =
+        ownFarm
+
+    State.CachedOwnPlantsPhysical =
+        plants
+
+    return plants, ownFarm
+end
+
+local function RefreshCollectPlantListFromOwnFarm()
+
+    local plants =
+        GetOwnPlantsPhysical()
+
+    local found = {}
+
+    if plants then
+
+        for _, plant in ipairs(plants:GetChildren()) do
+
+            local fruits =
+                plant:FindFirstChild("Fruits")
+
+            if fruits
+            and #fruits:GetChildren() > 0 then
+
+                found[plant.Name] =
+                    true
+            end
+        end
+    end
+
+    local list = {}
+
+    for plantName in pairs(found) do
+        table.insert(list, plantName)
+    end
+
+    table.sort(list)
+
+    if #list <= 0 then
+
+        list = {
+            "Alien Apple",
+        }
+    end
+
+    State.CollectPlantNameList =
+        list
+
+    State.Status =
+        "Collect plants found: "
+        .. tostring(#list)
+
+    State.LastAction =
+        "Own farm collect list refreshed"
+
+    print(
+        "[HOLY EVENTS] Own farm collect plants:",
+        table.concat(list, ", ")
+    )
+
+    return list
+end
+
+local function GetSelectedCollectPlantText()
+
+    local selected = {}
+
+    for plantName, enabled in pairs(State.CollectPlantNames) do
+
+        if enabled == true then
+            table.insert(selected, plantName)
+        end
+    end
+
+    table.sort(selected)
+
+    if #selected <= 0 then
+        return "none"
+    end
+
+    return table.concat(selected, ", ")
+end
+
+local function IsAutoCollectSafetyBlocked()
+
+    if not IsGardenWorld() then
+
+        State.Status =
+            "Normal Garden only"
+
+        State.LastAction =
+            "Auto collect blocked: wrong world"
+
+        return true
+    end
+
+    if IsBackpackFullFromNotification() then
+
+        State.AutoCollectFruits =
+            false
+
+        State.Status =
+            "Backpack full"
+
+        State.LastAction =
+            "Auto collect stopped: backpack full"
+
+        return true
+    end
+
+    local maxToolCount =
+        tonumber(State.AutoCollectMaxToolCount)
+        or 0
+
+    if maxToolCount > 0
+    and GetCurrentToolCount() >= maxToolCount then
+
+        State.AutoCollectFruits =
+            false
+
+        State.Status =
+            "Tool cap reached"
+
+        State.LastAction =
+            "Auto collect stopped at tool cap"
+
+        return true
+    end
+
+    return false
+end
+
+local function GetOwnFarmFruitBatch()
+
+    local requestedBatchSize =
+        math.clamp(
+            tonumber(State.AutoCollectBatchSize) or 25,
+            1,
+            100
+        )
+
+    local maxToolCount =
+        tonumber(State.AutoCollectMaxToolCount)
+        or 0
+
+    if maxToolCount > 0 then
+
+        local currentTools =
+            GetCurrentToolCount()
+
+        local remaining =
+            maxToolCount - currentTools
+
+        if remaining <= 0 then
+
+            State.AutoCollectFruits =
+                false
+
+            State.Status =
+                "Tool cap reached"
+
+            State.LastAction =
+                "Auto collect stopped before batch"
+
+            return {}
+        end
+
+        requestedBatchSize =
+            math.min(
+                requestedBatchSize,
+                remaining
+            )
+    end
+
+    local plants =
+        GetOwnPlantsPhysical()
+
+    if not plants then
+
+        State.Status =
+            "Own farm not found"
+
+        State.LastAction =
+            "Auto collect blocked: own farm missing"
+
+        return {}
+    end
+
+    local batch = {}
+    local used = {}
+
+    local selectedPlants = {}
+
+    for plantName, enabled in pairs(State.CollectPlantNames) do
+
+        if enabled == true then
+            table.insert(selectedPlants, plantName)
+        end
+    end
+
+    table.sort(selectedPlants)
+
+    for _, plantName in ipairs(selectedPlants) do
+
+        local plant =
+            plants:FindFirstChild(plantName)
+
+        local fruits =
+            plant
+            and plant:FindFirstChild("Fruits")
+
+        if fruits then
+
+            for _, fruit in ipairs(fruits:GetChildren()) do
+
+                if #batch >= requestedBatchSize then
+                    return batch
+                end
+
+                if fruit:IsA("Model")
+                and fruit:IsDescendantOf(plants)
+                and not used[fruit] then
+
+                    used[fruit] =
+                        true
+
+                    table.insert(batch, fruit)
+                end
+            end
+        end
+    end
+
+    return batch
+end
+
+local function CollectOwnFarmBatchOnce()
+
+    if State.AutoCollectBusy == true then
+        return false
+    end
+
+    State.AutoCollectBusy =
+        true
+
+    local function finish(result)
+
+        State.AutoCollectBusy =
+            false
+
+        return result
+    end
+
+    if IsAutoCollectSafetyBlocked() then
+        return finish(false)
+    end
+
+    local batch =
+        GetOwnFarmFruitBatch()
+
+    if #batch <= 0 then
+
+        State.Status =
+            "No selected fruits ready"
+
+        State.LastAction =
+            "No own farm selected fruits found"
+
+        return finish(false)
+    end
+
+    local remote =
+        ReplicatedStorage
+            :FindFirstChild("GameEvents")
+            and ReplicatedStorage.GameEvents:FindFirstChild("Crops")
+            and ReplicatedStorage.GameEvents.Crops:FindFirstChild("Collect")
+
+    if not remote
+    or not remote:IsA("RemoteEvent") then
+
+        State.Status =
+            "Crops.Collect missing"
+
+        State.LastAction =
+            "Collect remote missing"
+
+        return finish(false)
+    end
+
+    local beforeCount =
+        GetCurrentToolCount()
+
+    local ok, err =
+        pcall(function()
+
+            remote:FireServer(batch)
+        end)
+
+    if ok ~= true then
+
+        State.Status =
+            "Collect failed"
+
+        State.LastAction =
+            "Collect failed: "
+            .. tostring(err)
+
+        warn(
+            "[HOLY EVENTS] Collect failed:",
+            tostring(err)
+        )
+
+        return finish(false)
+    end
+
+    task.wait(0.15)
+
+    if IsBackpackFullFromNotification() then
+
+        State.AutoCollectFruits =
+            false
+
+        State.Status =
+            "Backpack full"
+
+        State.LastAction =
+            "Auto collect stopped after full warning"
+
+        return finish(false)
+    end
+
+    local afterCount =
+        GetCurrentToolCount()
+
+    State.Status =
+        "Collected "
+        .. tostring(#batch)
+        .. " fruit(s)"
+
+    State.LastAction =
+        "Tools: "
+        .. tostring(beforeCount)
+        .. " -> "
+        .. tostring(afterCount)
+
+    print(
+        "[HOLY EVENTS] Collected own farm batch:",
+        tostring(#batch),
+        "tools:",
+        tostring(beforeCount),
+        "->",
+        tostring(afterCount)
+    )
+
+    return finish(true)
+end
+
+--==================================================
 -- [8] SUMMER CRAFTING
 --==================================================
 
@@ -1454,6 +2369,28 @@ local function RefreshSummerRecipeDatabase()
     return true
 end
 
+
+local function GetCosmeticMaterialToken(materialName)
+
+    materialName =
+        CleanText(materialName)
+
+    if materialName == "" then
+        return ""
+    end
+
+    local tokens =
+        State.CosmeticMaterialTokens
+
+    if type(tokens) ~= "table" then
+        return ""
+    end
+
+    return CleanText(
+        tokens[materialName]
+    )
+end
+
 local function BuildRecipePayload(recipe)
 
     if not recipe then
@@ -1464,35 +2401,43 @@ local function BuildRecipePayload(recipe)
 
     for groupIndex, material in ipairs(recipe.Materials) do
 
-        local uuids =
-            FindInventoryUUIDsForItem(
-                material.Name,
-                material.Amount
-            )
-
-        if #uuids <= 0 then
-
-            return nil,
-                "Missing "
-                .. tostring(material.Name)
-        end
-
         payload[groupIndex] =
             {}
 
-        -- Most stacked items only need one live UUID.
-        -- For non-stacked tools, multiple UUIDs can be included when present.
-        if #uuids >= material.Amount then
+        if material.Type == "Cosmetic" then
 
-            for _, uuid in ipairs(uuids) do
-
-                table.insert(
-                    payload[groupIndex],
-                    uuid
+            local cosmeticToken =
+                GetCosmeticMaterialToken(
+                    material.Name
                 )
+
+            if cosmeticToken == "" then
+
+                return nil,
+                    "Missing cosmetic token for "
+                    .. tostring(material.Name)
             end
+
+            payload[groupIndex][1] =
+                cosmeticToken
         else
 
+            local uuids =
+                FindInventoryUUIDsForItem(
+                    material.Name,
+                    material.Amount
+                )
+
+            if #uuids <= 0 then
+
+                return nil,
+                    "Missing "
+                    .. tostring(material.Name)
+            end
+
+            -- Manual spy shows stacked requirements only send one stack UUID.
+            -- Example: Paradise Egg needs Mythical Egg x2 and Grandmaster Sprinkler x3,
+            -- but the real StartCraft call sends one UUID per material group.
             payload[groupIndex][1] =
                 uuids[1]
         end
@@ -1521,26 +2466,50 @@ local function GetRecipeMaterialSummary(recipeName)
 
     for _, material in ipairs(recipe.Materials) do
 
-        local count =
-            CountExactInventoryItem(
-                material.Name
+        if material.Type == "Cosmetic" then
+
+            local cosmeticToken =
+                GetCosmeticMaterialToken(
+                    material.Name
+                )
+
+            local marker =
+                cosmeticToken ~= ""
+                and "✓"
+                or "✗"
+
+            table.insert(
+                lines,
+                marker
+                    .. " "
+                    .. material.Name
+                    .. " x"
+                    .. tostring(material.Amount)
+                    .. " / cosmetic"
             )
+        else
 
-        local marker =
-            count >= material.Amount
-            and "✓"
-            or "✗"
+            local count =
+                CountExactInventoryItem(
+                    material.Name
+                )
 
-        table.insert(
-            lines,
-            marker
-                .. " "
-                .. material.Name
-                .. " x"
-                .. tostring(material.Amount)
-                .. " / have "
-                .. tostring(count)
-        )
+            local marker =
+                count >= material.Amount
+                and "✓"
+                or "✗"
+
+            table.insert(
+                lines,
+                marker
+                    .. " "
+                    .. material.Name
+                    .. " x"
+                    .. tostring(material.Amount)
+                    .. " / have "
+                    .. tostring(count)
+            )
+        end
     end
 
     for _, currency in ipairs(recipe.Currency) do
@@ -2550,6 +3519,8 @@ local function ApplyUIScalePercent(percent)
     State.UIScalePercent =
         percent
 
+    MarkConfigDirty()
+
     local scale =
         percent / 100
 
@@ -3109,6 +4080,116 @@ ActionButton:AddButton({
 })
 
 
+ActionButton:AddButton({
+    Text = "Debug Selected Slots",
+    Tooltip = "Prints exact recipe requirements and payload status for Slot 1, 2, and 3.",
+    Func = function()
+
+        print("========== HOLY SLOT RECIPE DEBUG ==========")
+
+        for slot = 1, 3 do
+
+            local recipeName =
+                CleanText(
+                    State.SlotRecipes[slot]
+                )
+
+            local recipe =
+                State.Recipes[recipeName]
+
+            print("------------------------------------------")
+            print("Slot:", slot)
+            print("Selected:", recipeName)
+            print("Slot UI:", GetSummerCraftSlotTimeText(slot))
+            print("Available:", IsSummerCraftSlotAvailableForStart(slot))
+            print("Reserved:", IsSlotReserved(slot))
+
+            if not recipe then
+
+                print("ERROR: Recipe not found in database.")
+                continue
+            end
+
+            print("CraftId:", recipe.CraftId)
+
+            for _, material in ipairs(recipe.Materials) do
+
+                if material.Type == "Cosmetic" then
+
+                    local cosmeticToken =
+                        GetCosmeticMaterialToken(
+                            material.Name
+                        )
+
+                    print(
+                        "Material:",
+                        material.Type,
+                        material.Name,
+                        "x" .. tostring(material.Amount),
+                        "| Token:",
+                        cosmeticToken ~= "" and cosmeticToken or "MISSING"
+                    )
+                else
+
+                    local count =
+                        CountExactInventoryItem(material.Name)
+
+                    local uuids =
+                        FindInventoryUUIDsForItem(
+                            material.Name,
+                            material.Amount
+                        )
+
+                    print(
+                        "Material:",
+                        material.Type,
+                        material.Name,
+                        "x" .. tostring(material.Amount),
+                        "| Count:",
+                        tostring(count),
+                        "| UUIDs:",
+                        tostring(#uuids)
+                    )
+
+                    if #uuids > 0 then
+                        print("First UUID:", uuids[1])
+                    end
+                end
+            end
+
+            for _, currency in ipairs(recipe.Currency) do
+
+                print(
+                    "Currency:",
+                    currency.Name,
+                    tostring(currency.Amount)
+                )
+            end
+
+            local payload, payloadError =
+                BuildRecipePayload(recipe)
+
+            if payload then
+
+                print("Payload: OK")
+
+                for groupIndex, group in pairs(payload) do
+                    print(
+                        "Payload group",
+                        tostring(groupIndex),
+                        table.concat(group, ", ")
+                    )
+                end
+            else
+
+                print("Payload ERROR:", tostring(payloadError))
+            end
+        end
+
+        print("============================================")
+    end,
+})
+
 EventBox:AddDivider()
 
 EventBox:AddLabel({
@@ -3266,6 +4347,192 @@ SubmitButton:AddButton({
     end,
 })
 
+
+EventBox:AddDivider()
+
+EventBox:AddLabel({
+    Text = '<font color="rgb(132,204,22)"><b>AUTO COLLECT FRUITS</b></font>',
+    DoesWrap = false,
+    Size = 14,
+})
+
+EventBox:AddToggle(
+    "HolyEventsAutoCollectFruits",
+    {
+        Text = "Enable Auto Collect",
+        Default = false,
+        Tooltip = "Collects selected fruits from your own garden only.",
+    }
+):OnChanged(function(value)
+
+    State.AutoCollectFruits =
+        value == true
+
+    State.AutoCollectBusy =
+        false
+
+    State.Status =
+        State.AutoCollectFruits and "Auto collect on" or "Auto collect off"
+
+    State.LastAction =
+        State.Status
+end)
+
+EventBox:AddInput(
+    "HolyEventsAutoCollectDelay",
+    {
+        Text = "Collect Delay",
+        Default = tostring(State.AutoCollectDelay),
+        Placeholder = "0.35",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        ClearTextOnBlur = false,
+        AllowEmpty = false,
+        EmptyReset = "0.35",
+        Tooltip = "Seconds between collect batches.",
+    }
+):OnChanged(function(value)
+
+    State.AutoCollectDelay =
+        math.clamp(
+            tonumber(value) or 0.35,
+            0.25,
+            10
+        )
+
+    if tonumber(value) ~= State.AutoCollectDelay then
+
+        State.Status =
+            "Collect delay clamped"
+
+        State.LastAction =
+            "Collect delay set to "
+            .. tostring(State.AutoCollectDelay)
+    end
+end)
+
+EventBox:AddInput(
+    "HolyEventsAutoCollectBatchSize",
+    {
+        Text = "Batch Size",
+        Default = tostring(State.AutoCollectBatchSize),
+        Placeholder = "25",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        ClearTextOnBlur = false,
+        AllowEmpty = false,
+        EmptyReset = "25",
+        Tooltip = "How many unique fruits to collect per batch.",
+    }
+):OnChanged(function(value)
+
+    State.AutoCollectBatchSize =
+        math.clamp(
+            tonumber(value) or 25,
+            1,
+            100
+        )
+
+    if tonumber(value) ~= State.AutoCollectBatchSize then
+
+        State.Status =
+            "Batch size clamped"
+
+        State.LastAction =
+            "Batch size set to "
+            .. tostring(State.AutoCollectBatchSize)
+    end
+end)
+
+EventBox:AddInput(
+    "HolyEventsAutoCollectMaxTools",
+    {
+        Text = "Max Tool Count",
+        Default = tostring(State.AutoCollectMaxToolCount),
+        Placeholder = "1300",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        ClearTextOnBlur = false,
+        AllowEmpty = false,
+        EmptyReset = "1300",
+        Tooltip = "Extra safety cap. Auto collect stops if Backpack + Character tools reaches this. Use 0 to disable.",
+    }
+):OnChanged(function(value)
+
+    State.AutoCollectMaxToolCount =
+        math.clamp(
+            tonumber(value) or 1300,
+            0,
+            5000
+        )
+end)
+
+RefreshCollectPlantListFromOwnFarm()
+
+EventBox:AddDropdown(
+    "HolyEventsCollectPlants",
+    {
+        Text = "Collect Plants",
+        Values = State.CollectPlantNameList,
+        Default = State.CollectPlantNameList,
+        Multi = true,
+        Tooltip = "Only these plants from your own garden will be collected.",
+    }
+):OnChanged(function(value)
+
+    State.CollectPlantNames =
+        {}
+
+    if type(value) == "table" then
+
+        for plantName, enabled in pairs(value) do
+
+            if enabled == true then
+
+                State.CollectPlantNames[
+                    CleanText(plantName)
+                ] = true
+            end
+        end
+    elseif type(value) == "string" then
+
+        local plantName =
+            CleanText(value)
+
+        if plantName ~= "" then
+            State.CollectPlantNames[plantName] = true
+        end
+    end
+
+    State.Status =
+        "Collect plants updated"
+
+    State.LastAction =
+        GetSelectedCollectPlantText()
+end)
+
+local CollectButton =
+    EventBox:AddButton({
+        Text = "Collect Once",
+        Tooltip = "Collects one safe batch from your own farm.",
+        Func = function()
+
+            CollectOwnFarmBatchOnce()
+        end,
+    })
+
+CollectButton:AddButton({
+    Text = "Refresh Collect Plants",
+    Tooltip = "Refreshes the own-farm plant dropdown.",
+    Func = function()
+
+        RefreshCollectPlantListFromOwnFarm()
+    end,
+})
+
 EventBox:AddDivider()
 
 EventBox:AddLabel({
@@ -3398,6 +4665,13 @@ local FireSubmitLabel =
         Size = 13,
     })
 
+
+local AutoCollectLabel =
+    EventStatusBox:AddLabel({
+        Text = "Auto Collect: checking...",
+        DoesWrap = true,
+        Size = 13,
+    })
 --==================================================
 -- [15] SETTINGS TAB
 --==================================================
@@ -3670,6 +4944,42 @@ task.spawn(function()
                 .. "\n"
                 .. GetSummerEmberStatusText()
         )
+
+    
+        SetControlText(
+            AutoCollectLabel,
+            "Auto Collect: "
+                .. tostring(State.AutoCollectFruits)
+                .. "\nSelected: "
+                .. GetSelectedCollectPlantText()
+                .. "\nTools: "
+                .. tostring(GetCurrentToolCount())
+                .. " / "
+                .. tostring(State.AutoCollectMaxToolCount)
+                .. "\nBackpack Full: "
+                .. tostring(IsBackpackFullFromNotification())
+        )
+    end
+end)
+
+
+task.spawn(function()
+
+    while IsCurrentRun() do
+
+        task.wait(
+            math.clamp(
+                tonumber(State.AutoCollectDelay) or 0.35,
+                0.25,
+                10
+            )
+        )
+
+        if State.AutoCollectFruits == true
+        and State.AutoCollectBusy ~= true then
+
+            CollectOwnFarmBatchOnce()
+        end
     end
 end)
 
@@ -3807,6 +5117,7 @@ end)
 
 --==================================================
 -- [17] SAVE/THEME
+-- Silent autosave.
 --==================================================
 
 pcall(function()
@@ -3817,13 +5128,54 @@ pcall(function()
     SaveManager:IgnoreThemeSettings()
 
     ThemeManager:SetFolder("HolyEvents")
-    SaveManager:SetFolder("HolyEvents/settings")
+    SaveManager:SetFolder("HolyEvents")
 
-    ThemeManager:ApplyToTab(Tabs.Settings)
-    SaveManager:BuildConfigSection(Tabs.Settings)
+    ThemeManager:ApplyTheme("Dark")
+
+    SaveManager:Load(
+        ConfigState.AutosaveName
+    )
 end)
 
+ConfigState.Loading =
+    false
+
 RefreshSummerRecipeDatabase()
+
+task.spawn(function()
+
+    while IsCurrentRun() do
+
+        task.wait(1)
+
+        local snapshot =
+            EncodeHolyEventsCustomSavePayload()
+
+        if snapshot ~= ""
+        and snapshot ~= ConfigState.LastSavedSnapshot then
+
+            ConfigState.Dirty =
+                true
+        end
+
+        if ConfigState.Dirty == true then
+
+            ConfigState.Dirty =
+                false
+
+            pcall(function()
+
+                SaveManager:Save(
+                    ConfigState.AutosaveName
+                )
+            end)
+
+            SaveHolyEventsCustomConfigNow(
+                "auto"
+            )
+        end
+    end
+end)
 
 task.defer(function()
 
