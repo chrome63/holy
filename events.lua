@@ -21,6 +21,9 @@ local TeleportService =
 local HttpService =
     game:GetService("HttpService")
 
+local RunService =
+    game:GetService("RunService")
+
 --==================================================
 -- [0.1] PLACE IDS
 --==================================================
@@ -246,6 +249,12 @@ local State = {
     AutoClaim = false,
     AutoClaimDelay = 1.5,
 
+    FreezeClaimMode = false,
+    FreezeClaimRunning = false,
+    FreezeClaimAttempts = 6,
+    FreezeClaimSeconds = 1.25,
+    FreezeClaimDone = 0,
+
     AutoStart = false,
     AutoStartDelay = 5,
     AutoStartCooldown = false,
@@ -304,7 +313,9 @@ local State = {
         "Alien Apple",
     },
 
-    UIScalePercent = 100,
+    DPIScalePercent = 100,
+
+    ShowStatusHud = true,
 }
 
 
@@ -385,6 +396,15 @@ local function BuildHolyEventsCustomSavePayload()
             AutoClaimDelay =
                 tonumber(State.AutoClaimDelay) or 1.5,
 
+            FreezeClaimMode =
+                State.FreezeClaimMode == true,
+
+            FreezeClaimAttempts =
+                tonumber(State.FreezeClaimAttempts) or 90,
+
+            FreezeClaimSeconds =
+                tonumber(State.FreezeClaimSeconds) or 1.25,
+
             AutoStart =
                 State.AutoStart == true,
 
@@ -427,8 +447,11 @@ local function BuildHolyEventsCustomSavePayload()
             CollectPlantNames =
                 CopyEnabledMap(State.CollectPlantNames),
 
-            UIScalePercent =
-                tonumber(State.UIScalePercent) or 100,
+            DPIScalePercent =
+                tonumber(State.DPIScalePercent) or 100,
+
+            ShowStatusHud =
+                State.ShowStatusHud == true,
         },
     }
 end
@@ -455,6 +478,29 @@ local function ApplyHolyEventsCustomSavePayload(payload)
                 tonumber(saved.AutoClaimDelay),
                 0.5,
                 30
+            )
+    end
+
+    if type(saved.FreezeClaimMode) == "boolean" then
+        State.FreezeClaimMode =
+            saved.FreezeClaimMode
+    end
+
+    if tonumber(saved.FreezeClaimAttempts) then
+        State.FreezeClaimAttempts =
+            math.clamp(
+                math.floor(tonumber(saved.FreezeClaimAttempts)),
+                1,
+                30
+            )
+    end
+
+    if tonumber(saved.FreezeClaimSeconds) then
+        State.FreezeClaimSeconds =
+            math.clamp(
+                tonumber(saved.FreezeClaimSeconds),
+                0.25,
+                5
             )
     end
 
@@ -562,13 +608,21 @@ local function ApplyHolyEventsCustomSavePayload(payload)
             CopyEnabledMap(saved.CollectPlantNames)
     end
 
-    if tonumber(saved.UIScalePercent) then
-        State.UIScalePercent =
+    if tonumber(saved.DPIScalePercent or saved.UIScalePercent) then
+
+        State.DPIScalePercent =
             math.clamp(
-                math.floor(tonumber(saved.UIScalePercent)),
-                50,
-                100
+                math.floor(
+                    tonumber(saved.DPIScalePercent or saved.UIScalePercent)
+                ),
+                30,
+                110
             )
+    end
+
+    if type(saved.ShowStatusHud) == "boolean" then
+        State.ShowStatusHud =
+            saved.ShowStatusHud
     end
 
     return true
@@ -3381,6 +3435,236 @@ local function ClaimAllCampfireSlots()
     return claimedAny
 end
 
+
+local function SetFreezeClaimRenderingFrozen(frozen)
+
+    frozen =
+        frozen == true
+
+    local ok, err =
+        pcall(function()
+
+            if RunService
+            and type(RunService.Set3dRenderingEnabled) == "function" then
+
+                RunService:Set3dRenderingEnabled(
+                    not frozen
+                )
+            end
+        end)
+
+    if ok ~= true then
+
+        warn(
+            "[HOLY EVENTS] Freeze claim render toggle failed:",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    return true
+end
+
+local function GetReadySummerClaimSlots()
+
+    local slots = {}
+
+    for slot = 1, 3 do
+
+        if IsSummerCraftSlotReady(slot) then
+
+            table.insert(
+                slots,
+                slot
+            )
+        end
+    end
+
+    return slots
+end
+
+local function RunFreezeClaimReadySlots()
+
+    if State.FreezeClaimRunning == true then
+        return false
+    end
+
+    if not IsGardenWorld() then
+
+        State.Status =
+            "Normal Garden only"
+
+        State.LastAction =
+            "Freeze claim blocked: wrong world"
+
+        return false
+    end
+
+    local readySlots =
+        GetReadySummerClaimSlots()
+
+    if #readySlots <= 0 then
+
+        State.Status =
+            "No ready claim slots"
+
+        State.LastAction =
+            "Freeze claim skipped: no CLAIM slots"
+
+        return false
+    end
+
+    local remote =
+        GetClaimCraftRemote()
+
+    if not remote then
+
+        State.Status =
+            "ClaimCraft missing"
+
+        State.LastAction =
+            "Freeze claim blocked: remote missing"
+
+        return false
+    end
+
+    local targetAttempts =
+        math.clamp(
+            math.floor(
+                tonumber(State.FreezeClaimAttempts) or 6
+            ),
+            1,
+            30
+        )
+
+    local freezeSeconds =
+        math.clamp(
+            tonumber(State.FreezeClaimSeconds) or 0.45,
+            0.15,
+            2
+        )
+
+    State.FreezeClaimRunning =
+        true
+
+    State.FreezeClaimDone =
+        0
+
+    State.Status =
+        "Freeze claim micro-burst"
+
+    State.LastAction =
+        "Freeze claim ready slots: "
+        .. table.concat(readySlots, ", ")
+
+    task.spawn(function()
+
+        SetFreezeClaimRenderingFrozen(true)
+
+        local ok, err =
+            pcall(function()
+
+                local deadline =
+                    os.clock() + freezeSeconds
+
+                local attemptsLeft =
+                    targetAttempts
+
+                -- Re-check each slot right before firing.
+                -- Stop hitting a slot once the UI no longer says CLAIM.
+                for _, slot in ipairs(readySlots) do
+
+                    if attemptsLeft <= 0 then
+                        break
+                    end
+
+                    if State.FreezeClaimRunning ~= true
+                    or IsCurrentRun() ~= true
+                    or os.clock() >= deadline then
+                        break
+                    end
+
+                    local perSlotAttempts =
+                        math.min(
+                            3,
+                            attemptsLeft
+                        )
+
+                    for _ = 1, perSlotAttempts do
+
+                        if State.FreezeClaimRunning ~= true
+                        or IsCurrentRun() ~= true
+                        or os.clock() >= deadline then
+                            break
+                        end
+
+                        -- Important:
+                        -- after the first accepted claim, the slot becomes empty.
+                        -- Re-check so we do not spam "This crafting slot is empty."
+                        if IsSummerCraftSlotReady(slot) ~= true then
+                            break
+                        end
+
+                        remote:FireServer(
+                            slot
+                        )
+
+                        State.FreezeClaimDone =
+                            State.FreezeClaimDone + 1
+
+                        attemptsLeft =
+                            attemptsLeft - 1
+
+                        if attemptsLeft <= 0 then
+                            break
+                        end
+
+                        task.wait(0.03)
+                    end
+                end
+            end)
+
+        SetFreezeClaimRenderingFrozen(false)
+
+        State.FreezeClaimRunning =
+            false
+
+        if ok ~= true then
+
+            State.Status =
+                "Freeze claim error"
+
+            State.LastAction =
+                "Freeze claim error: "
+                .. tostring(err)
+
+            warn(
+                "[HOLY EVENTS] Freeze claim error:",
+                tostring(err)
+            )
+
+            return
+        end
+
+        State.Status =
+            "Freeze claim done"
+
+        State.LastAction =
+            "Freeze claim fired "
+            .. tostring(State.FreezeClaimDone)
+            .. " attempt(s)"
+
+        print(
+            "[HOLY EVENTS] Freeze claim done:",
+            tostring(State.FreezeClaimDone),
+            "attempts"
+        )
+    end)
+
+    return true
+end
+
 local function BuildRecipeDump()
 
     RefreshSummerRecipeDatabase()
@@ -3452,12 +3736,123 @@ local function BuildRecipeDump()
 
     return output
 end
+
+
+
 --==================================================
--- [9] UI SCALE
--- Fixed percent scaling: 100% to 50%.
+-- [8.5] SIMPLE STATUS HUD
+-- Text-only overlay. No background.
 --==================================================
 
-local function FindHolyEventsScreenGui()
+local StatusHudGui =
+    nil
+
+local StatusHudLabel =
+    nil
+
+local function FormatHudNumber(value)
+
+    value =
+        tonumber(value)
+
+    if not value then
+        return "?"
+    end
+
+    if value >= 1000000 then
+
+        return string.format(
+            "%.1fm",
+            value / 1000000
+        )
+    end
+
+    if value >= 1000 then
+
+        return string.format(
+            "%.1fk",
+            value / 1000
+        )
+    end
+
+    return tostring(
+        math.floor(value)
+    )
+end
+
+local function FormatHudToggle(value)
+
+    return value == true
+        and "✓"
+        or "✗"
+end
+
+local function GetHudEmberLine()
+
+    local current, max =
+        GetSummerEmberAmount()
+
+    local capReached =
+        IsSummerEmberCapReached()
+
+    if current == nil then
+
+        return "Embers: unknown"
+    end
+
+    local line =
+        "Embers: "
+        .. FormatHudNumber(current)
+        .. " / "
+        .. FormatHudNumber(max)
+
+    if capReached then
+        line =
+            line
+            .. "  CAP HIT"
+    end
+
+    return line
+end
+
+local function GetHudSlotsLine()
+
+    return "Slots: "
+        .. GetSummerCraftSlotRealEta(1)
+        .. " | "
+        .. GetSummerCraftSlotRealEta(2)
+        .. " | "
+        .. GetSummerCraftSlotRealEta(3)
+end
+
+local function GetHudToolsLine()
+
+    return "Tools: "
+        .. tostring(GetCurrentToolCount())
+        .. " / "
+        .. tostring(State.AutoCollectMaxToolCount)
+end
+
+local function BuildStatusHudText()
+
+    return "Holy Events"
+        .. "\nAuto: Start "
+        .. FormatHudToggle(State.AutoStart)
+        .. "  Claim "
+        .. FormatHudToggle(State.AutoClaim)
+        .. "  Submit "
+        .. FormatHudToggle(State.AutoSubmitFire)
+        .. "  Collect "
+        .. FormatHudToggle(State.AutoCollectFruits)
+        .. "\n"
+        .. GetHudSlotsLine()
+        .. "\n"
+        .. GetHudEmberLine()
+        .. "\n"
+        .. GetHudToolsLine()
+end
+
+local function CreateStatusHud()
 
     local playerGui =
         LocalPlayer:FindFirstChild("PlayerGui")
@@ -3466,116 +3861,182 @@ local function FindHolyEventsScreenGui()
         return nil
     end
 
-    for _, gui in ipairs(playerGui:GetChildren()) do
-
-        if gui:IsA("ScreenGui") then
-
-            local guiName =
-                tostring(gui.Name or ""):lower()
-
-            if guiName:find("obsidian", 1, true)
-            or guiName:find("holy", 1, true)
-            or guiName:find("events", 1, true) then
-
-                return gui
-            end
-
-            for _, obj in ipairs(gui:GetDescendants()) do
-
-                if obj:IsA("TextLabel")
-                or obj:IsA("TextButton") then
-
-                    local text =
-                        tostring(obj.Text or ""):lower()
-
-                    if text:find("holy", 1, true)
-                    or text:find("events", 1, true)
-                    or text:find("campfire", 1, true) then
-
-                        return gui
-                    end
-                end
-            end
-        end
+    if StatusHudGui
+    and StatusHudGui.Parent then
+        return StatusHudGui
     end
 
-    return nil
+    local oldGui =
+        playerGui:FindFirstChild("HolyEventsStatusHud")
+
+    if oldGui then
+        oldGui:Destroy()
+    end
+
+    local gui =
+        Instance.new("ScreenGui")
+
+    gui.Name =
+        "HolyEventsStatusHud"
+
+    gui.ResetOnSpawn =
+        false
+
+    gui.IgnoreGuiInset =
+        true
+
+    gui.ZIndexBehavior =
+        Enum.ZIndexBehavior.Sibling
+
+    gui.Parent =
+        playerGui
+
+    local label =
+        Instance.new("TextLabel")
+
+    label.Name =
+        "StatusText"
+
+    label.BackgroundTransparency =
+        1
+
+    label.BorderSizePixel =
+        0
+
+    label.AnchorPoint =
+        Vector2.new(0, 0)
+
+    label.Position =
+        UDim2.fromOffset(12, 88)
+
+    label.Size =
+        UDim2.fromOffset(520, 110)
+
+    label.Font =
+        Enum.Font.GothamBold
+
+    label.TextSize =
+        17
+
+    label.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    label.TextYAlignment =
+        Enum.TextYAlignment.Top
+
+    label.TextColor3 =
+        Color3.fromRGB(255, 255, 255)
+
+    label.TextStrokeTransparency =
+        0.25
+
+    label.TextStrokeColor3 =
+        Color3.fromRGB(0, 0, 0)
+
+    label.RichText =
+        false
+
+    label.Text =
+        "Holy Events"
+
+    label.Parent =
+        gui
+
+    StatusHudGui =
+        gui
+
+    StatusHudLabel =
+        label
+
+    return gui
 end
 
-local function ApplyUIScalePercent(percent)
+local function SetStatusHudVisible(visible)
 
-    percent =
-        tonumber(percent)
-        or State.UIScalePercent
-        or 100
+    State.ShowStatusHud =
+        visible == true
 
-    percent =
+    local gui =
+        CreateStatusHud()
+
+    if gui then
+        gui.Enabled =
+            State.ShowStatusHud == true
+    end
+end
+
+local function UpdateStatusHud()
+
+    if State.ShowStatusHud ~= true then
+
+        if StatusHudGui then
+            StatusHudGui.Enabled =
+                false
+        end
+
+        return
+    end
+
+    local gui =
+        CreateStatusHud()
+
+    if not gui
+    or not StatusHudLabel then
+        return
+    end
+
+    gui.Enabled =
+        true
+
+    StatusHudLabel.Text =
+        BuildStatusHudText()
+end
+--==================================================
+-- [9] UI SCALE
+-- Obsidian DPI scaling.
+--==================================================
+
+local function ApplyEventsDPIScale(value)
+
+    local rawValue =
+        tostring(value or "100%")
+
+    local cleanedValue =
+        rawValue:gsub("%%", "")
+
+    local scale =
+        tonumber(cleanedValue)
+
+    if not scale then
+        scale =
+            tonumber(State.DPIScalePercent)
+            or 100
+    end
+
+    scale =
         math.clamp(
-            math.floor(percent),
-            50,
-            100
+            math.floor(scale + 0.5),
+            30,
+            110
         )
 
-    State.UIScalePercent =
-        percent
+    State.DPIScalePercent =
+        scale
+
+    if Library
+    and type(Library.SetDPIScale) == "function" then
+
+        pcall(function()
+            Library:SetDPIScale(scale)
+        end)
+    end
 
     MarkConfigDirty()
 
-    local scale =
-        percent / 100
-
-    local gui =
-        FindHolyEventsScreenGui()
-
-    if not gui then
-
-        State.Status =
-            "UI scale stored"
-
-        State.LastAction =
-            "UI scale stored: "
-            .. tostring(percent)
-            .. "%"
-
-        warn("[HOLY EVENTS] Could not find Holy Events ScreenGui yet.")
-
-        return false
-    end
-
-    local uiScale =
-        gui:FindFirstChild("HolyEventsUIScale")
-
-    if not uiScale then
-
-        uiScale =
-            Instance.new("UIScale")
-
-        uiScale.Name =
-            "HolyEventsUIScale"
-
-        uiScale.Parent =
-            gui
-    end
-
-    uiScale.Scale =
-        scale
-
-    State.Status =
-        "UI scale "
-        .. tostring(percent)
-        .. "%"
-
-    State.LastAction =
-        "UI scale set to "
-        .. tostring(percent)
-        .. "%"
-
     print(
-        "[HOLY EVENTS] UI scale set:",
-        tostring(percent) .. "%"
+        "[HOLY EVENTS] UI Scale:",
+        tostring(scale) .. "%"
     )
-
-    return true
 end
 
 --==================================================
@@ -4597,6 +5058,80 @@ EventBox:AddToggle(
         State.Status
 end)
 
+
+EventBox:AddToggle(
+    "HolyEventsFreezeClaimMode",
+    {
+        Text = "Use Freeze Claim Mode",
+        Default = State.FreezeClaimMode == true,
+        Tooltip = "Optional test mode. When Auto Claim sees CLAIM, it freezes rendering and spams ClaimCraft for ready slots only.",
+    }
+):OnChanged(function(value)
+
+    State.FreezeClaimMode =
+        value == true
+
+    State.Status =
+        State.FreezeClaimMode and "Freeze claim mode on" or "Freeze claim mode off"
+
+    State.LastAction =
+        State.Status
+
+    MarkConfigDirty()
+end)
+
+EventBox:AddInput(
+    "HolyEventsFreezeClaimAttempts",
+    {
+        Text = "Freeze Claim Attempts",
+        Default = tostring(State.FreezeClaimAttempts),
+        Placeholder = "6",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        ClearTextOnBlur = false,
+        AllowEmpty = false,
+        EmptyReset = "6",
+        Tooltip = "How many ClaimCraft attempts to fire during freeze mode.",
+    }
+):OnChanged(function(value)
+
+    State.FreezeClaimAttempts =
+        math.clamp(
+            math.floor(tonumber(value) or 6),
+            1,
+            30
+        )
+
+    MarkConfigDirty()
+end)
+
+EventBox:AddInput(
+    "HolyEventsFreezeClaimSeconds",
+    {
+        Text = "Freeze Claim Time",
+        Default = tostring(State.FreezeClaimSeconds),
+        Placeholder = "0.45",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        ClearTextOnBlur = false,
+        AllowEmpty = false,
+        EmptyReset = "0.45",
+        Tooltip = "Maximum seconds to freeze/spam claim. Keep low while testing.",
+    }
+):OnChanged(function(value)
+
+    State.FreezeClaimSeconds =
+        math.clamp(
+            tonumber(value) or 0.45,
+            0.15,
+            2
+        )
+
+    MarkConfigDirty()
+end)
+
 EventBox:AddInput(
     "AutoClaimDelayInput",
     {
@@ -4650,6 +5185,13 @@ local ClaimReadyLabel =
     })
 
 
+local FreezeClaimLabel =
+    EventStatusBox:AddLabel({
+        Text = "Freeze Claim: checking...",
+        DoesWrap = true,
+        Size = 13,
+    })
+
 local TimerEtaLabel =
     EventStatusBox:AddLabel({
         Text = "Timer ETA: checking...",
@@ -4697,57 +5239,63 @@ SettingsBox:AddLabel({
 })
 
 SettingsBox:AddLabel({
-    Text = "Choose a fixed scale. 100% is default. 50% is smallest.",
+    Text = "Choose the Holy Events UI scale.",
     DoesWrap = true,
     Size = 12,
 })
 
-local ScaleButton =
-    SettingsBox:AddButton({
-        Text = "Scale 100%",
-        Tooltip = "Default UI size.",
-        Func = function()
+SettingsBox:AddDropdown(
+    "HolyEventsDPIScale",
+    {
+        Text = "UI Scale",
+        Values = {
+            "30%",
+            "40%",
+            "50%",
+            "60%",
+            "70%",
+            "80%",
+            "90%",
+            "100%",
+            "110%",
+        },
+        Default =
+            tostring(
+                tonumber(State.DPIScalePercent)
+                or 100
+            ) .. "%",
+        Searchable = false,
+        MaxVisibleDropdownItems = 9,
+        Tooltip = "Changes the size of the Holy Events interface.",
+    }
+):OnChanged(function(value)
 
-            ApplyUIScalePercent(100)
-        end,
-    })
+    ApplyEventsDPIScale(value)
+end)
 
-ScaleButton:AddButton({
-    Text = "90%",
-    Tooltip = "Slightly smaller UI.",
-    Func = function()
+SettingsBox:AddDivider()
 
-        ApplyUIScalePercent(90)
-    end,
-})
+SettingsBox:AddToggle(
+    "HolyEventsShowStatusHud",
+    {
+        Text = "Show Status HUD",
+        Default = State.ShowStatusHud == true,
+        Tooltip = "Shows the simple text-only Holy Events status HUD.",
+    }
+):OnChanged(function(value)
 
-ScaleButton:AddButton({
-    Text = "80%",
-    Tooltip = "Compact UI.",
-    Func = function()
+    SetStatusHudVisible(
+        value == true
+    )
 
-        ApplyUIScalePercent(80)
-    end,
-})
+    State.Status =
+        State.ShowStatusHud and "Status HUD on" or "Status HUD off"
 
-ScaleButton:AddButton({
-    Text = "70%",
-    Tooltip = "Small UI.",
-    Func = function()
+    State.LastAction =
+        State.Status
 
-        ApplyUIScalePercent(70)
-    end,
-})
-
-ScaleButton:AddButton({
-    Text = "60%",
-    Tooltip = "Very small UI.",
-    Func = function()
-
-        ApplyUIScalePercent(60)
-    end,
-})
-
+    MarkConfigDirty()
+end)
 
 SettingsBox:AddDivider()
 
@@ -4788,15 +5336,6 @@ SettingsBox:AddLabel({
     Size = 12,
 })
 
-ScaleButton:AddButton({
-    Text = "50%",
-    Tooltip = "Smallest UI scale.",
-    Func = function()
-
-        ApplyUIScalePercent(50)
-    end,
-})
-
 SettingsBox:AddButton({
     Text = "Stop Runtime",
     Tooltip = "Stops loops for this script run.",
@@ -4810,6 +5349,11 @@ SettingsBox:AddButton({
 
         State.AutoClaim =
             false
+
+        State.FreezeClaimRunning =
+            false
+
+        SetFreezeClaimRenderingFrozen(false)
 
         State.Status =
             "Runtime stopped"
@@ -4836,6 +5380,17 @@ SettingsInfoBox:AddLabel({
 --==================================================
 -- [16] LOOPS
 --==================================================
+
+
+task.spawn(function()
+
+    while IsCurrentRun() do
+
+        task.wait(1)
+
+        UpdateStatusHud()
+    end
+end)
 
 task.spawn(function()
 
@@ -4927,6 +5482,22 @@ task.spawn(function()
             ClaimReadyLabel,
             "Claim Ready: "
                 .. tostring(IsSummerCraftClaimReady())
+        )
+
+
+        SetControlText(
+            FreezeClaimLabel,
+            "Freeze Claim: "
+                .. tostring(State.FreezeClaimMode)
+                .. "\nRunning: "
+                .. tostring(State.FreezeClaimRunning)
+                .. "\nAttempts: "
+                .. tostring(State.FreezeClaimDone)
+                .. " / "
+                .. tostring(State.FreezeClaimAttempts)
+                .. "\nTime: "
+                .. tostring(State.FreezeClaimSeconds)
+                .. "s"
         )
 
         SetControlText(
@@ -5094,18 +5665,53 @@ task.spawn(function()
 
         if State.AutoClaim == true then
 
-            local claimed =
-                ClaimAllCampfireSlots()
+            if IsSummerCraftClaimReady() then
 
-            if claimed then
+                if State.FreezeClaimMode == true then
 
-                State.Status =
-                    "Auto claimed ready slot"
+                    local started =
+                        RunFreezeClaimReadySlots()
 
-                State.LastAction =
-                    "Auto claimed ready slot"
+                    if started then
 
-                task.wait(3)
+                        State.Status =
+                            "Freeze auto claim started"
+
+                        State.LastAction =
+                            "Freeze auto claim started"
+
+                        task.wait(
+                            math.max(
+                                1.5,
+                                tonumber(State.FreezeClaimSeconds) or 1.25
+                            ) + 1
+                        )
+                    else
+
+                        State.Status =
+                            "Freeze claim skipped"
+
+                        State.LastAction =
+                            "Freeze claim could not start"
+
+                        task.wait(1)
+                    end
+                else
+
+                    local claimed =
+                        ClaimAllCampfireSlots()
+
+                    if claimed then
+
+                        State.Status =
+                            "Auto claimed ready slot"
+
+                        State.LastAction =
+                            "Auto claimed ready slot"
+
+                        task.wait(3)
+                    end
+                end
             else
 
                 State.Status =
@@ -5181,9 +5787,18 @@ task.defer(function()
 
     task.wait(0.5)
 
-    ApplyUIScalePercent(
-        State.UIScalePercent
+    ApplyEventsDPIScale(
+        tostring(
+            tonumber(State.DPIScalePercent)
+            or 100
+        ) .. "%"
     )
+
+    SetStatusHudVisible(
+        State.ShowStatusHud == true
+    )
+
+    UpdateStatusHud()
 end)
 
 print("[HOLY EVENTS] v0.2 dynamic recipes loaded in", GetWorldName())
