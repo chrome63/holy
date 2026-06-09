@@ -8632,33 +8632,117 @@ function TransferBuildPetList()
         end)
     end
 
-    local source =
-        type(PetList) == "table"
-        and PetList
-        or {}
-
     local choices = {}
     local seen = {}
 
-    for _, petName in ipairs(source) do
+    local function AddPetName(value)
 
-        petName =
-            TransferCleanText(petName)
+        value =
+            TransferCleanText(value)
 
-        if petName ~= ""
-        and seen[petName] ~= true then
+        if value == ""
+        or seen[value] == true then
+            return
+        end
 
-            seen[petName] =
-                true
+        seen[value] =
+            true
 
-            table.insert(
-                choices,
-                petName
-            )
+        table.insert(
+            choices,
+            value
+        )
+    end
+
+    -- Source 1:
+    -- Normal dynamic list, same as Listings/Sniper when already loaded.
+    if type(PetList) == "table" then
+
+        for _, petName in ipairs(PetList) do
+            AddPetName(petName)
+        end
+    end
+
+    -- Source 2:
+    -- Direct PetRegistry fallback.
+    -- This is the important Transfer fix because Transfer UI builds before
+    -- RefreshDynamicPetList can exist in some builds.
+    if #choices <= 0
+    and type(GetPetRegistry) == "function" then
+
+        local registry =
+            nil
+
+        pcall(function()
+            registry =
+                GetPetRegistry()
+        end)
+
+        local petList =
+            type(registry) == "table"
+            and rawget(registry, "PetList")
+            or nil
+
+        if type(petList) == "table" then
+
+            for petName, petData in pairs(petList) do
+
+                if type(petName) == "string" then
+                    AddPetName(petName)
+
+                elseif type(petData) == "table" then
+
+                    AddPetName(
+                        rawget(petData, "Name")
+                        or rawget(petData, "PetName")
+                        or rawget(petData, "PetType")
+                    )
+
+                elseif type(petData) == "string" then
+                    AddPetName(petData)
+                end
+            end
+        end
+    end
+
+    -- Source 3:
+    -- Last-resort inventory fallback so the dropdown is not dead if registry
+    -- changes or fails to require.
+    if #choices <= 0 then
+
+        local player =
+            Players.LocalPlayer
+
+        local containers = {
+            player and player:FindFirstChild("Backpack"),
+            player and player.Character,
+        }
+
+        for _, container in ipairs(containers) do
+
+            if container then
+
+                for _, child in ipairs(container:GetChildren()) do
+
+                    if child:IsA("Tool") then
+
+                        local parsed =
+                            ParsePetTool(child)
+
+                        if parsed
+                        and parsed.PetName then
+                            AddPetName(parsed.PetName)
+                        end
+                    end
+                end
+            end
         end
     end
 
     table.sort(choices)
+
+    PetList =
+        choices
 
     return choices
 end
@@ -8710,34 +8794,211 @@ function TransferBuildMutationOnlyList()
         end)
     end
 
-    ListingMutationList =
-        type(ListingMutationList) == "table"
-        and ListingMutationList
-        or {}
-
     local choices = {}
     local seen = {}
 
-    for _, mutationName in ipairs(ListingMutationList or {}) do
+    local function AddMutationName(value)
 
-        mutationName =
-            TransferCleanText(mutationName)
+        value =
+            TransferCleanText(value)
 
-        if mutationName ~= ""
-        and mutationName ~= "---"
-        and seen[mutationName] ~= true then
+        if value == ""
+        or value == "---"
+        or value == "Normal"
+        or value == "Unknown"
+        or seen[value] == true then
+            return
+        end
 
-            seen[mutationName] =
-                true
+        seen[value] =
+            true
 
-            table.insert(
-                choices,
-                mutationName
-            )
+        table.insert(
+            choices,
+            value
+        )
+    end
+
+    -- Source 1:
+    -- Normal Listings mutation list.
+    if type(ListingMutationList) == "table" then
+
+        for _, mutationName in ipairs(ListingMutationList) do
+            AddMutationName(mutationName)
+        end
+    end
+
+    -- Source 2:
+    -- Direct registry fallback.
+    -- Same registry family used by Listings mutation refresh.
+    if #choices <= 0
+    and type(GetPetRegistry) == "function" then
+
+        local registry =
+            nil
+
+        pcall(function()
+            registry =
+                GetPetRegistry()
+        end)
+
+        local mutationRoot =
+            type(registry) == "table"
+            and rawget(registry, "PetMutationRegistry")
+            or nil
+
+        if type(mutationRoot) ~= "table"
+        and type(registry) == "table" then
+            mutationRoot =
+                registry
+        end
+
+        if type(mutationRoot) == "table" then
+
+            local enumToPetMutation =
+                rawget(mutationRoot, "EnumToPetMutation")
+
+            if type(enumToPetMutation) == "table" then
+
+                for _, mutationName in pairs(enumToPetMutation) do
+                    AddMutationName(mutationName)
+                end
+            end
+
+            local petMutationToEnum =
+                rawget(mutationRoot, "PetMutationToEnum")
+
+            if type(petMutationToEnum) == "table" then
+
+                for mutationName, _ in pairs(petMutationToEnum) do
+                    AddMutationName(mutationName)
+                end
+            end
+
+            local petMutationRegistry =
+                rawget(mutationRoot, "PetMutationRegistry")
+
+            if type(petMutationRegistry) == "table" then
+
+                for mutationName, mutationData in pairs(petMutationRegistry) do
+
+                    AddMutationName(mutationName)
+
+                    if type(mutationData) == "table" then
+                        AddMutationName(
+                            rawget(mutationData, "Name")
+                            or rawget(mutationData, "Mutation")
+                            or rawget(mutationData, "DisplayName")
+                        )
+
+                    elseif type(mutationData) == "string" then
+                        AddMutationName(mutationData)
+                    end
+                end
+            end
+
+            local machineMutationTypes =
+                rawget(mutationRoot, "MachineMutationTypes")
+
+            if type(machineMutationTypes) == "table" then
+
+                for mutationName, mutationData in pairs(machineMutationTypes) do
+
+                    AddMutationName(mutationName)
+
+                    if type(mutationData) == "table" then
+                        AddMutationName(
+                            rawget(mutationData, "Name")
+                            or rawget(mutationData, "Mutation")
+                            or rawget(mutationData, "DisplayName")
+                        )
+
+                    elseif type(mutationData) == "string" then
+                        AddMutationName(mutationData)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Source 3:
+    -- Inventory visible-prefix fallback.
+    if #choices <= 0 then
+
+        local player =
+            Players.LocalPlayer
+
+        local containers = {
+            player and player:FindFirstChild("Backpack"),
+            player and player.Character,
+        }
+
+        for _, container in ipairs(containers) do
+
+            if container then
+
+                for _, child in ipairs(container:GetChildren()) do
+
+                    if child:IsA("Tool") then
+
+                        local parsed =
+                            ParsePetTool(child)
+
+                        if parsed
+                        and parsed.PetName then
+
+                            local mutation =
+                                "---"
+
+                            if type(ResolveListingPetMutation) == "function" then
+
+                                mutation =
+                                    ResolveListingPetMutation(
+                                        child.Name,
+                                        parsed.PetName
+                                    )
+
+                            else
+
+                                local displayName =
+                                    TransferCleanText(
+                                        tostring(child.Name or "")
+                                            :gsub("%b[]", "")
+                                            :gsub("%s+", " ")
+                                    )
+
+                                local suffixStart =
+                                    displayName:find(parsed.PetName, 1, true)
+
+                                if suffixStart then
+                                    mutation =
+                                        TransferCleanText(
+                                            displayName:sub(1, suffixStart - 1)
+                                        )
+                                end
+                            end
+
+                            AddMutationName(mutation)
+                        end
+                    end
+                end
+            end
         end
     end
 
     table.sort(choices)
+
+    ListingMutationList =
+        {
+            "---",
+        }
+
+    for _, mutationName in ipairs(choices) do
+        table.insert(
+            ListingMutationList,
+            mutationName
+        )
+    end
 
     return choices
 end
@@ -9070,11 +9331,20 @@ end
 
 function TransferRefreshDropdowns()
 
+    local petChoices =
+        TransferBuildPetList()
+
+    local mutationChoices =
+        TransferBuildMutationOnlyList()
+
+    local targetChoices =
+        TransferBuildPlayerChoices()
+
     if TransferState.PetDropdownRef
     and type(TransferState.PetDropdownRef.SetValues) == "function" then
 
         TransferState.PetDropdownRef:SetValues(
-            TransferBuildPetList()
+            petChoices
         )
     end
 
@@ -9082,7 +9352,7 @@ function TransferRefreshDropdowns()
     and type(TransferState.MutationDropdownRef.SetValues) == "function" then
 
         TransferState.MutationDropdownRef:SetValues(
-            TransferBuildMutationOnlyList()
+            mutationChoices
         )
     end
 
@@ -9090,15 +9360,27 @@ function TransferRefreshDropdowns()
     and type(TransferState.TargetDropdownRef.SetValues) == "function" then
 
         TransferState.TargetDropdownRef:SetValues(
-            TransferBuildPlayerChoices()
+            targetChoices
         )
     end
+
+    print(
+        "[TRANSFER DROPDOWNS]",
+        "pets:",
+        tostring(#petChoices),
+        "| mutations:",
+        tostring(#mutationChoices),
+        "| targets:",
+        tostring(#targetChoices)
+    )
 
     TransferBuildMatchingPets(
         TransferState.MaxPetsPerTrade
     )
 
     TransferRefreshStatus()
+
+    return petChoices, mutationChoices, targetChoices
 end
 
 --==================================================
@@ -29327,6 +29609,24 @@ and IsGardenWorld() then
         end,
     })
 
+    TransferPetFiltersBox:AddButton({
+        Text = "🔄 Reload Pets / Mutations",
+        Tooltip = "Force-refresh Transfer pet and mutation dropdowns.",
+        Func = function()
+
+            TransferRefreshDropdowns()
+
+            if type(HolyNotify) == "function" then
+                HolyNotify(
+                    "Transfer Lists Reloaded",
+                    "Pet and mutation dropdowns refreshed.",
+                    "refresh-cw",
+                    3
+                )
+            end
+        end,
+    })
+
     local TransferMutationDropdown =
         TransferPetFiltersBox:AddDropdown(
             "TransferMutationSelect",
@@ -29681,6 +29981,42 @@ and IsGardenWorld() then
     )
 
     TransferRefreshStatus()
+
+    task.spawn(function()
+
+        if not IsGardenWorld() then
+            return
+        end
+
+        for attempt = 1, 25 do
+
+            if not IsCurrentRun() then
+                return
+            end
+
+            local petChoices, mutationChoices, targetChoices =
+                TransferRefreshDropdowns()
+
+            print(
+                "[TRANSFER LOAD]",
+                "attempt:",
+                tostring(attempt),
+                "| pets:",
+                tostring(#petChoices),
+                "| mutations:",
+                tostring(#mutationChoices),
+                "| targets:",
+                tostring(#targetChoices)
+            )
+
+            if #petChoices > 0
+            and #mutationChoices > 0 then
+                break
+            end
+
+            task.wait(0.4)
+        end
+    end)
 end
 --==================================================
 -- EVENTS TAB
