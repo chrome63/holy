@@ -4463,7 +4463,6 @@ TransferState = {
     MatchedLabel = nil,
     LastResultLabel = nil,
 }
-
 --==================================================
 -- ANTI ALT / AVOID USERS STATE
 -- Detects blocked users after joining a server.
@@ -8572,6 +8571,2839 @@ petName =
         .. "|"
         .. tostring(tool.Name),
 }
+end
+
+--==================================================
+-- HF TRANSFER SYSTEM
+-- Isolated Holy Fresh transfer module.
+-- Does NOT touch the old Transfer tab/state/functions.
+--==================================================
+
+HFTransfer =
+    HFTransfer
+    or {}
+
+HFTransfer.State = {
+    SelectedPets = {},
+    SelectedMutations = {},
+
+    Mode = "Sender",
+    TargetPlayerName = "",
+
+    TransferEnabled = false,
+    KeepGoing = false,
+    IsTransferRunning = false,
+
+    MaxPetsPerTrade = 12,
+    AddPetDelay = 0.5,
+    AddBurstCount = 1,
+    NextTicketDelay = 0,
+
+    AutoAcceptTicket = true,
+    AutoConfirm = true,
+    AutoAcceptGift = false,
+    AutoAcceptGiftResponseValue = true,
+
+    Batch = 0,
+    AddedThisBatch = 0,
+
+    MinLevel = 1,
+    MaxLevel = 100,
+
+    MinBaseWeight = 0,
+    MaxBaseWeight = 999,
+
+    AutoUnfavorite = true,
+
+    MatchedPets = {},
+    Sent = 0,
+
+    AllPetChoices = {},
+    AllMutationChoices = {},
+
+    Status = "Idle",
+    LastResult = "None",
+
+    ModeDropdown = nil,
+    PetDropdown = nil,
+    MutationDropdown = nil,
+    TargetDropdown = nil,
+
+    TransferEnabledToggle = nil,
+    AutoUnfavoriteToggle = nil,
+    KeepGoingToggle = nil,
+    MaxPetsInput = nil,
+    AddPetDelayInput = nil,
+    AddBurstInput = nil,
+    NextTicketDelayInput = nil,
+    AutoAcceptTicketToggle = nil,
+    AutoConfirmToggle = nil,
+    AutoAcceptGiftToggle = nil,
+
+    SourceLabel = nil,
+    StatusLabel = nil,
+    TargetLabel = nil,
+    MatchLabel = nil,
+    ResultLabel = nil,
+
+    LastSourceRefresh = 0,
+    CachedSourceText = "Inventory Parsed: ...",
+    IsAddingPets = false,
+
+    TradeOpen = false,
+    TradeId = "",
+    TradePlayers = {},
+    TradeStates = {},
+    TradeOfferCounts = {},
+    LocalTradeSide = nil,
+    OtherTradeSide = nil,
+    TradeOwnItemCount = 0,
+    TradeOtherItemCount = 0,
+    TradeCompleted = false,
+    TradeResult = "",
+    TradeDeclined = false,
+    TradeDeclineReason = "",
+
+    RequestBlocked = false,
+    RequestBlockedReason = "",
+
+    IncomingRequestId = "",
+    IncomingRequestPlayerName = "",
+    IncomingRequestAt = 0,
+    IncomingRequestHandled = {},
+
+    IncomingGiftHandled = {},
+    LastGiftId = "",
+    LastGiftPetName = "",
+    LastGiftSenderName = "",
+
+    LastTradeUpdate = 0,
+    TradeWatchConnected = false,
+
+    DebugPrints = false,
+    Timing = {},
+}
+
+HFTransfer.DataService = nil
+HFTransfer.TradeData = nil
+HFTransfer.PetRegistry = nil
+HFTransfer.FavoriteRemote = nil
+
+function HFTransfer.CleanText(value)
+
+    return tostring(value or "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+function HFTransfer.SetControlText(control, text)
+
+    if not control then
+        return
+    end
+
+    if type(control.SetText) == "function" then
+
+        pcall(function()
+            control:SetText(tostring(text or ""))
+        end)
+
+        return
+    end
+
+    if type(control.SetName) == "function" then
+
+        pcall(function()
+            control:SetName(tostring(text or ""))
+        end)
+
+        return
+    end
+
+    pcall(function()
+        control.Text =
+            tostring(text or "")
+    end)
+end
+
+function HFTransfer.SetControlVisible(control, visible)
+
+    if not control then
+        return
+    end
+
+    visible =
+        visible == true
+
+    if type(control.SetVisible) == "function" then
+
+        pcall(function()
+            control:SetVisible(visible)
+        end)
+
+        return
+    end
+
+    if type(control.SetVisibility) == "function" then
+
+        pcall(function()
+            control:SetVisibility(visible)
+        end)
+
+        return
+    end
+
+    pcall(function()
+        control.Visible =
+            visible
+    end)
+end
+
+function HFTransfer.CopyToClipboard(text)
+
+    local clipboard =
+        setclipboard
+        or toclipboard
+        or set_clipboard
+
+    if type(clipboard) ~= "function" then
+        warn("[HF TRANSFER] Clipboard unsupported.")
+        return false
+    end
+
+    local ok =
+        pcall(function()
+            clipboard(tostring(text or ""))
+        end)
+
+    return ok == true
+end
+
+function HFTransfer.AddLeftBox(tab, title, icon)
+
+    if not tab then
+        return nil
+    end
+
+    if type(tab.AddLeftCollapsibleGroupbox) == "function" then
+
+        return tab:AddLeftCollapsibleGroupbox(
+            title,
+            icon,
+            true
+        )
+    end
+
+    return tab:AddLeftGroupbox(
+        title,
+        icon
+    )
+end
+
+function HFTransfer.AddRightBox(tab, title, icon)
+
+    if not tab then
+        return nil
+    end
+
+    if type(tab.AddRightCollapsibleGroupbox) == "function" then
+
+        return tab:AddRightCollapsibleGroupbox(
+            title,
+            icon,
+            true
+        )
+    end
+
+    return tab:AddRightGroupbox(
+        title,
+        icon
+    )
+end
+
+function HFTransfer.DebugPrint(...)
+
+    if HFTransfer.State.DebugPrints == true then
+        print("[HF TRANSFER]", ...)
+    end
+end
+
+function HFTransfer.ToNumber(value, fallback)
+
+    local text =
+        tostring(value or "")
+
+    text =
+        text:gsub(",", "")
+
+    text =
+        text:gsub("%s+", "")
+
+    local number =
+        tonumber(text)
+
+    if number == nil then
+        return fallback or 0
+    end
+
+    return number
+end
+
+function HFTransfer.FormatNumber(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "?"
+    end
+
+    if number % 1 == 0 then
+        return tostring(math.floor(number))
+    end
+
+    return string.format("%.4f", number)
+end
+
+function HFTransfer.MapIsEmpty(map)
+
+    if type(map) ~= "table" then
+        return true
+    end
+
+    for _ in pairs(map) do
+        return false
+    end
+
+    return true
+end
+
+function HFTransfer.BuildMapFromDropdown(value)
+
+    local output = {}
+
+    if type(value) == "table" then
+
+        for key, selected in pairs(value) do
+
+            if selected == true then
+
+                key =
+                    HFTransfer.CleanText(key)
+
+                if key ~= "" then
+                    output[key] =
+                        true
+                end
+            end
+        end
+
+    elseif type(value) == "string" then
+
+        value =
+            HFTransfer.CleanText(value)
+
+        if value ~= "" then
+            output[value] =
+                true
+        end
+    end
+
+    return output
+end
+
+function HFTransfer.SetStatus(status, result, forceSourceRefresh)
+
+    local state =
+        HFTransfer.State
+
+    state.Status =
+        tostring(status or "Idle")
+
+    state.LastResult =
+        tostring(result or "None")
+
+    if state.StatusLabel then
+        HFTransfer.SetControlText(
+            state.StatusLabel,
+            "Mode: " .. state.Status
+        )
+    end
+
+    if state.TargetLabel then
+        HFTransfer.SetControlText(
+            state.TargetLabel,
+            "Player: "
+                .. (
+                    state.TargetPlayerName ~= ""
+                    and state.TargetPlayerName
+                    or "None"
+                )
+        )
+    end
+
+    if state.MatchLabel then
+        HFTransfer.SetControlText(
+            state.MatchLabel,
+            "Matched: "
+                .. tostring(#(state.MatchedPets or {}))
+                .. " | Added: "
+                .. tostring(state.AddedThisBatch or 0)
+        )
+    end
+
+    if state.ResultLabel then
+        HFTransfer.SetControlText(
+            state.ResultLabel,
+            "Batch: "
+                .. tostring(state.Batch or 0)
+                .. " | Sent: "
+                .. tostring(state.Sent or 0)
+                .. " | Result: "
+                .. tostring(state.LastResult)
+        )
+    end
+end
+
+function HFTransfer.GetPetRegistry()
+
+    if type(HFTransfer.PetRegistry) == "table" then
+        return HFTransfer.PetRegistry
+    end
+
+    if type(GetPetRegistry) == "function" then
+
+        local ok, result =
+            pcall(function()
+                return GetPetRegistry()
+            end)
+
+        if ok
+        and type(result) == "table" then
+            HFTransfer.PetRegistry =
+                result
+
+            return result
+        end
+    end
+
+    local ok, result =
+        pcall(function()
+            return require(
+                ReplicatedStorage
+                    :WaitForChild("Data")
+                    :WaitForChild("PetRegistry")
+            )
+        end)
+
+    if ok
+    and type(result) == "table" then
+        HFTransfer.PetRegistry =
+            result
+
+        return result
+    end
+
+    return nil
+end
+
+function HFTransfer.BuildPetChoices()
+
+    local state =
+        HFTransfer.State
+
+    local choices = {}
+    local seen = {}
+
+    local function AddPetName(value)
+
+        value =
+            HFTransfer.CleanText(value)
+
+        if value == ""
+        or seen[value] == true then
+            return
+        end
+
+        seen[value] =
+            true
+
+        table.insert(
+            choices,
+            value
+        )
+    end
+
+    if type(RefreshDynamicPetList) == "function" then
+        pcall(function()
+            RefreshDynamicPetList()
+        end)
+    end
+
+    if type(PetList) == "table" then
+
+        for _, petName in ipairs(PetList) do
+            AddPetName(petName)
+        end
+    end
+
+    local registry =
+        HFTransfer.GetPetRegistry()
+
+    local petList =
+        type(registry) == "table"
+        and rawget(registry, "PetList")
+        or nil
+
+    if type(petList) == "table" then
+
+        for petName, petData in pairs(petList) do
+
+            if type(petName) == "string" then
+                AddPetName(petName)
+
+            elseif type(petData) == "table" then
+
+                AddPetName(
+                    rawget(petData, "Name")
+                    or rawget(petData, "PetName")
+                    or rawget(petData, "PetType")
+                )
+
+            elseif type(petData) == "string" then
+                AddPetName(petData)
+            end
+        end
+    end
+
+    local player =
+        Players.LocalPlayer
+
+    local containers = {
+        player and player:FindFirstChild("Backpack"),
+        player and player.Character,
+    }
+
+    for _, container in ipairs(containers) do
+
+        if container then
+
+            for _, child in ipairs(container:GetChildren()) do
+
+                if child:IsA("Tool") then
+
+                    local parsed =
+                        ParsePetTool(child)
+
+                    if parsed
+                    and parsed.PetName then
+                        AddPetName(parsed.PetName)
+                    end
+                end
+            end
+        end
+    end
+
+    table.sort(choices)
+
+    state.AllPetChoices =
+        choices
+
+    if state.PetDropdown
+    and type(state.PetDropdown.SetValues) == "function" then
+
+        state.PetDropdown:SetValues(
+            choices
+        )
+    end
+
+    return choices
+end
+
+function HFTransfer.BuildMutationChoices()
+
+    local state =
+        HFTransfer.State
+
+    local choices = {}
+    local seen = {}
+
+    local function AddMutationName(value)
+
+        value =
+            HFTransfer.CleanText(value)
+
+        if value == ""
+        or value == "---"
+        or value == "Normal"
+        or value == "Unknown"
+        or seen[value] == true then
+            return
+        end
+
+        seen[value] =
+            true
+
+        table.insert(
+            choices,
+            value
+        )
+    end
+
+    if type(RefreshListingMutationList) == "function" then
+        pcall(function()
+            RefreshListingMutationList()
+        end)
+    end
+
+    if type(ListingMutationList) == "table" then
+
+        for _, mutationName in ipairs(ListingMutationList) do
+            AddMutationName(mutationName)
+        end
+    end
+
+    local registry =
+        HFTransfer.GetPetRegistry()
+
+    local mutationRoot =
+        type(registry) == "table"
+        and rawget(registry, "PetMutationRegistry")
+        or nil
+
+    if type(mutationRoot) ~= "table"
+    and type(registry) == "table" then
+        mutationRoot =
+            registry
+    end
+
+    if type(mutationRoot) == "table" then
+
+        local enumToPetMutation =
+            rawget(mutationRoot, "EnumToPetMutation")
+
+        if type(enumToPetMutation) == "table" then
+
+            for _, mutationName in pairs(enumToPetMutation) do
+                AddMutationName(mutationName)
+            end
+        end
+
+        local petMutationToEnum =
+            rawget(mutationRoot, "PetMutationToEnum")
+
+        if type(petMutationToEnum) == "table" then
+
+            for mutationName in pairs(petMutationToEnum) do
+                AddMutationName(mutationName)
+            end
+        end
+
+        local petMutationRegistry =
+            rawget(mutationRoot, "PetMutationRegistry")
+
+        if type(petMutationRegistry) == "table" then
+
+            for mutationName, mutationData in pairs(petMutationRegistry) do
+
+                AddMutationName(mutationName)
+
+                if type(mutationData) == "table" then
+
+                    AddMutationName(
+                        rawget(mutationData, "Name")
+                        or rawget(mutationData, "Mutation")
+                        or rawget(mutationData, "DisplayName")
+                    )
+
+                elseif type(mutationData) == "string" then
+                    AddMutationName(mutationData)
+                end
+            end
+        end
+    end
+
+    table.sort(choices)
+
+    state.AllMutationChoices =
+        choices
+
+    if state.MutationDropdown
+    and type(state.MutationDropdown.SetValues) == "function" then
+
+        state.MutationDropdown:SetValues(
+            choices
+        )
+    end
+
+    return choices
+end
+
+function HFTransfer.BuildTargetChoices()
+
+    local choices = {}
+
+    local localPlayer =
+        Players.LocalPlayer
+
+    for _, player in ipairs(Players:GetPlayers()) do
+
+        if player ~= localPlayer then
+            table.insert(
+                choices,
+                player.Name
+            )
+        end
+    end
+
+    table.sort(choices)
+
+    if HFTransfer.State.TargetDropdown
+    and type(HFTransfer.State.TargetDropdown.SetValues) == "function" then
+
+        HFTransfer.State.TargetDropdown:SetValues(
+            choices
+        )
+    end
+
+    return choices
+end
+
+function HFTransfer.ResolveTargetPlayer()
+
+    local targetName =
+        HFTransfer.CleanText(
+            HFTransfer.State.TargetPlayerName
+        )
+
+    if targetName == "" then
+        return nil
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+
+        if player.Name == targetName
+        or player.DisplayName == targetName then
+            return player
+        end
+    end
+
+    return nil
+end
+
+function HFTransfer.ResolvePetUUIDFromTool(tool)
+
+    if not tool then
+        return ""
+    end
+
+    local candidates = {
+        tool:GetAttribute("PET_UUID"),
+        tool:GetAttribute("UUID"),
+        tool:GetAttribute("ItemUUID"),
+        tool:GetAttribute("ItemId"),
+        tool:GetAttribute("PetUUID"),
+    }
+
+    for _, value in ipairs(candidates) do
+
+        value =
+            tostring(value or "")
+                :gsub("{", "")
+                :gsub("}", "")
+                :gsub("^%s+", "")
+                :gsub("%s+$", "")
+
+        if value:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") then
+            return "{"
+                .. value
+                .. "}"
+        end
+    end
+
+    return ""
+end
+
+function HFTransfer.ResolvePetMutation(tool, petName)
+
+    local mutation =
+        "---"
+
+    if type(ResolveListingPetMutation) == "function" then
+
+        local ok, result =
+            pcall(function()
+                return ResolveListingPetMutation(
+                    tool.Name,
+                    petName
+                )
+            end)
+
+        if ok then
+            mutation =
+                tostring(result or "---")
+        end
+    end
+
+    mutation =
+        HFTransfer.CleanText(mutation)
+
+    if mutation == "" then
+        mutation =
+            "---"
+    end
+
+    return mutation
+end
+
+function HFTransfer.ParseInventoryPet(tool)
+
+    if not tool
+    or not tool:IsA("Tool") then
+        return nil
+    end
+
+    local parsed =
+        ParsePetTool(tool)
+
+    if not parsed
+    or not parsed.PetName then
+        return nil
+    end
+
+    local uuid =
+        HFTransfer.ResolvePetUUIDFromTool(tool)
+
+    if uuid == "" then
+        return nil
+    end
+
+    local level =
+        tonumber(tool:GetAttribute("Level"))
+        or tonumber(tool:GetAttribute("Age"))
+        or tonumber(tostring(tool.Name):match("%[Age%s*(%d+)%]"))
+        or 1
+
+    local baseWeight =
+        tonumber(tool:GetAttribute("BaseWeight"))
+        or tonumber(tool:GetAttribute("baseWeight"))
+        or 0
+
+    local petName =
+        HFTransfer.CleanText(parsed.PetName)
+
+    local favorite =
+        tool:GetAttribute("IsFavorite") == true
+        or tool:GetAttribute("Favorite") == true
+        or tool:GetAttribute("Favorited") == true
+
+    return {
+        Tool = tool,
+        UUID = uuid,
+
+        PetName = petName,
+        Mutation =
+            HFTransfer.ResolvePetMutation(
+                tool,
+                petName
+            ),
+
+        Level =
+            math.floor(
+                tonumber(level)
+                or 1
+            ),
+
+        BaseWeight =
+            tonumber(baseWeight)
+            or 0,
+
+        DisplayWeight =
+            tonumber(parsed.Weight)
+            or 0,
+
+        IsFavorite =
+            favorite,
+    }
+end
+
+function HFTransfer.BuildInventoryPets()
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return {}
+    end
+
+    local containers = {
+        player.Character,
+        player:FindFirstChild("Backpack"),
+    }
+
+    local pets = {}
+
+    for _, container in ipairs(containers) do
+
+        if container then
+
+            for _, child in ipairs(container:GetChildren()) do
+
+                if child:IsA("Tool") then
+
+                    local pet =
+                        HFTransfer.ParseInventoryPet(child)
+
+                    if pet then
+                        table.insert(
+                            pets,
+                            pet
+                        )
+                    end
+                end
+            end
+        end
+    end
+
+    return pets
+end
+
+function HFTransfer.PetMatchesFilters(pet)
+
+    local state =
+        HFTransfer.State
+
+    if type(pet) ~= "table" then
+        return false
+    end
+
+    if HFTransfer.MapIsEmpty(state.SelectedPets) then
+        return false
+    end
+
+    if state.SelectedPets[pet.PetName] ~= true then
+        return false
+    end
+
+    if state.AutoUnfavorite ~= true
+    and pet.IsFavorite == true then
+        return false
+    end
+
+    if not HFTransfer.MapIsEmpty(state.SelectedMutations) then
+
+        local mutation =
+            HFTransfer.CleanText(
+                pet.Mutation
+                or "---"
+            )
+
+        if state.SelectedMutations[mutation] ~= true then
+            return false
+        end
+    end
+
+    local level =
+        tonumber(pet.Level)
+        or 1
+
+    if level < HFTransfer.ToNumber(state.MinLevel, 1) then
+        return false
+    end
+
+    if level > HFTransfer.ToNumber(state.MaxLevel, 100) then
+        return false
+    end
+
+    local baseWeight =
+        tonumber(pet.BaseWeight)
+        or 0
+
+    if baseWeight < HFTransfer.ToNumber(state.MinBaseWeight, 0) then
+        return false
+    end
+
+    if baseWeight > HFTransfer.ToNumber(state.MaxBaseWeight, 999) then
+        return false
+    end
+
+    return true
+end
+
+function HFTransfer.BuildMatches(limit)
+
+    local state =
+        HFTransfer.State
+
+    limit =
+        math.clamp(
+            math.floor(
+                tonumber(limit)
+                or HFTransfer.ToNumber(state.MaxPetsPerTrade, 12)
+            ),
+            1,
+            50
+        )
+
+    local matches = {}
+
+    for _, pet in ipairs(HFTransfer.BuildInventoryPets()) do
+
+        if HFTransfer.PetMatchesFilters(pet) then
+
+            table.insert(
+                matches,
+                pet
+            )
+
+            if #matches >= limit then
+                break
+            end
+        end
+    end
+
+    state.MatchedPets =
+        matches
+
+    HFTransfer.SetStatus(
+        state.Status,
+        state.LastResult
+    )
+
+    return matches
+end
+
+--==================================================
+-- HF TRANSFER TRADE REMOTES + WATCHERS
+-- Isolated from old Transfer tab.
+--==================================================
+
+function HFTransfer.GetTradeEventsFolder()
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    if not gameEvents then
+        return nil
+    end
+
+    local tradeEvents =
+        gameEvents:FindFirstChild("TradeEvents")
+
+    if not tradeEvents then
+        return nil
+    end
+
+    return tradeEvents
+end
+
+function HFTransfer.GetTradeRemote(remoteName)
+
+    remoteName =
+        tostring(remoteName or "")
+
+    if remoteName == "" then
+        return nil
+    end
+
+    local tradeEvents =
+        HFTransfer.GetTradeEventsFolder()
+
+    if not tradeEvents then
+        warn("[HF TRANSFER] TradeEvents folder missing.")
+        return nil
+    end
+
+    local remote =
+        tradeEvents:FindFirstChild(remoteName)
+
+    if not remote then
+        warn("[HF TRANSFER] Missing trade remote:", remoteName)
+        return nil
+    end
+
+    return remote
+end
+
+function HFTransfer.FireTradeRemote(remoteName, ...)
+
+    local remote =
+        HFTransfer.GetTradeRemote(remoteName)
+
+    if not remote then
+        return false, "Remote missing: " .. tostring(remoteName)
+    end
+
+    if not remote:IsA("RemoteEvent") then
+        return false, "Remote is not RemoteEvent: " .. tostring(remoteName)
+    end
+
+    local args =
+        { ... }
+
+    local ok, err =
+        pcall(function()
+            remote:FireServer(table.unpack(args))
+        end)
+
+    if not ok then
+        return false, tostring(err)
+    end
+
+    return true, nil
+end
+
+function HFTransfer.SendTicket()
+
+    if not IsGardenWorld() then
+
+        HFTransfer.SetStatus(
+            "Blocked",
+            "HF Transfer only works in Garden World."
+        )
+
+        return false
+    end
+
+    local targetPlayer =
+        HFTransfer.ResolveTargetPlayer()
+
+    if not targetPlayer then
+
+        HFTransfer.SetStatus(
+            "No Target",
+            "Choose a valid target player first."
+        )
+
+        return false
+    end
+
+    local ok, err =
+        HFTransfer.FireTradeRemote(
+            "SendRequest",
+            targetPlayer
+        )
+
+    if not ok then
+
+        HFTransfer.SetStatus(
+            "Ticket Failed",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    HFTransfer.SetStatus(
+        "Ticket Sent",
+        "Sent request to " .. tostring(targetPlayer.Name)
+    )
+
+    print(
+        "[HF TRANSFER]",
+        "SendRequest ->",
+        tostring(targetPlayer.Name),
+        tostring(targetPlayer.UserId)
+    )
+
+    return true
+end
+
+function HFTransfer.RespondRequest(accept)
+
+    local requestId =
+        tostring(HFTransfer.State.IncomingRequestId or "")
+
+    if requestId == "" then
+
+        HFTransfer.SetStatus(
+            "No Request",
+            "No incoming trade request id."
+        )
+
+        return false
+    end
+
+    -- Grow a Garden trade request logic:
+    -- false = accept
+    -- true  = decline
+    local responseValue =
+        accept == true
+        and false
+        or true
+
+    local ok, err =
+        HFTransfer.FireTradeRemote(
+            "RespondRequest",
+            requestId,
+            responseValue
+        )
+
+    if not ok then
+
+        HFTransfer.SetStatus(
+            "Request Failed",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    HFTransfer.State.IncomingRequestHandled[requestId] =
+        true
+
+    HFTransfer.SetStatus(
+        accept == true and "Ticket Accepted" or "Ticket Declined",
+        tostring(HFTransfer.State.IncomingRequestPlayerName or "Unknown")
+    )
+
+    print(
+        "[HF TRANSFER]",
+        "RespondRequest ->",
+        tostring(requestId),
+        "| accept:",
+        tostring(accept)
+    )
+
+    return true
+end
+
+function HFTransfer.AcceptTrade()
+
+    local ok, err =
+        HFTransfer.FireTradeRemote("Accept")
+
+    if not ok then
+
+        HFTransfer.SetStatus(
+            "Accept Failed",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    HFTransfer.SetStatus(
+        "Accept Fired",
+        "Accept remote fired."
+    )
+
+    return true
+end
+
+function HFTransfer.ConfirmTrade()
+
+    local ok, err =
+        HFTransfer.FireTradeRemote("Confirm")
+
+    if not ok then
+
+        HFTransfer.SetStatus(
+            "Confirm Failed",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    HFTransfer.SetStatus(
+        "Confirm Fired",
+        "Confirm remote fired."
+    )
+
+    return true
+end
+
+function HFTransfer.DeclineTrade()
+
+    local ok, err =
+        HFTransfer.FireTradeRemote("Decline")
+
+    if not ok then
+
+        HFTransfer.SetStatus(
+            "Decline Failed",
+            tostring(err)
+        )
+
+        return false
+    end
+
+    HFTransfer.SetStatus(
+        "Decline Fired",
+        "Decline remote fired."
+    )
+
+    return true
+end
+
+function HFTransfer.AddPetToTrade(pet)
+
+    if type(pet) ~= "table" then
+        return false, "Pet missing."
+    end
+
+    local uuid =
+        tostring(pet.UUID or "")
+
+    if uuid == "" then
+        return false, "Pet UUID missing."
+    end
+
+    local ok, err =
+        HFTransfer.FireTradeRemote(
+            "AddItem",
+            "Pet",
+            uuid
+        )
+
+    if not ok then
+        return false, tostring(err)
+    end
+
+    HFTransfer.State.AddedThisBatch =
+        HFTransfer.ToNumber(
+            HFTransfer.State.AddedThisBatch,
+            0
+        ) + 1
+
+    HFTransfer.SetStatus(
+        "Added Pet",
+        tostring(pet.PetName)
+    )
+
+    print(
+        "[HF TRANSFER]",
+        "AddItem ->",
+        tostring(pet.PetName),
+        "|",
+        tostring(uuid)
+    )
+
+    return true
+end
+
+function HFTransfer.GetFavoriteRemote()
+
+    if HFTransfer.FavoriteRemote then
+        return HFTransfer.FavoriteRemote
+    end
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    if not gameEvents then
+        return nil
+    end
+
+    local remote =
+        gameEvents:FindFirstChild("Favorite_Item")
+
+    if remote
+    and remote:IsA("RemoteEvent") then
+
+        HFTransfer.FavoriteRemote =
+            remote
+
+        return remote
+    end
+
+    return nil
+end
+
+function HFTransfer.UnfavoritePetIfNeeded(pet)
+
+    if HFTransfer.State.AutoUnfavorite ~= true then
+        return true, "Auto Unfavorite OFF"
+    end
+
+    if type(pet) ~= "table"
+    or not pet.Tool
+    or not pet.Tool:IsA("Tool") then
+        return false, "Pet tool missing"
+    end
+
+    local isFavorite =
+        pet.Tool:GetAttribute("d") == true
+        or pet.IsFavorite == true
+
+    if isFavorite ~= true then
+        return true, "Not favorite"
+    end
+
+    local remote =
+        HFTransfer.GetFavoriteRemote()
+
+    if not remote then
+        return false, "Favorite_Item remote missing"
+    end
+
+    HFTransfer.SetStatus(
+        "Unfavoriting",
+        tostring(pet.PetName)
+    )
+
+    local ok, err =
+        pcall(function()
+            remote:FireServer(pet.Tool)
+        end)
+
+    if not ok then
+        return false, tostring(err)
+    end
+
+    local started =
+        os.clock()
+
+    while os.clock() - started < 3 do
+
+        if not IsCurrentRun() then
+            return false, "Runtime stopped"
+        end
+
+        if pet.Tool:GetAttribute("d") == false then
+
+            pet.IsFavorite =
+                false
+
+            return true, "Unfavorited"
+        end
+
+        task.wait(0.1)
+    end
+
+    return false, "Unfavorite timeout"
+end
+
+function HFTransfer.UnfavoriteMatches(matches)
+
+    if HFTransfer.State.AutoUnfavorite ~= true then
+        return true, "Auto Unfavorite OFF"
+    end
+
+    if type(matches) ~= "table"
+    or #matches <= 0 then
+        return true, "No matches"
+    end
+
+    for index, pet in ipairs(matches) do
+
+        if not IsCurrentRun() then
+            return false, "Runtime stopped"
+        end
+
+        if pet.IsFavorite == true then
+
+            HFTransfer.SetStatus(
+                "Unfavoriting",
+                tostring(index)
+                    .. "/"
+                    .. tostring(#matches)
+                    .. " "
+                    .. tostring(pet.PetName)
+            )
+
+            local ok, err =
+                HFTransfer.UnfavoritePetIfNeeded(pet)
+
+            if not ok then
+                return false, tostring(err)
+            end
+
+            task.wait(0.05)
+        end
+    end
+
+    task.wait(0.35)
+
+    return true, "Unfavorite done"
+end
+
+function HFTransfer.MarkTradeDeclined(reason)
+
+    local state =
+        HFTransfer.State
+
+    state.TradeDeclined =
+        true
+
+    state.TradeDeclineReason =
+        tostring(reason or "Declined")
+
+    state.TradeOpen =
+        false
+
+    HFTransfer.SetStatus(
+        "Trade Declined",
+        state.TradeDeclineReason
+    )
+end
+
+function HFTransfer.ResetTradeTracker(reason)
+
+    local state =
+        HFTransfer.State
+
+    state.TradeOpen =
+        false
+
+    state.TradeId =
+        ""
+
+    state.TradePlayers =
+        {}
+
+    state.TradeStates =
+        {}
+
+    state.TradeOfferCounts =
+        {}
+
+    state.LocalTradeSide =
+        nil
+
+    state.OtherTradeSide =
+        nil
+
+    state.TradeOwnItemCount =
+        0
+
+    state.TradeOtherItemCount =
+        0
+
+    state.TradeCompleted =
+        false
+
+    state.TradeResult =
+        ""
+
+    state.TradeDeclined =
+        false
+
+    state.TradeDeclineReason =
+        ""
+
+    state.LastTradeUpdate =
+        os.clock()
+
+    HFTransfer.DebugPrint(
+        "Trade tracker reset:",
+        tostring(reason or "reset")
+    )
+end
+
+function HFTransfer.UpdateTradeTrackerFromPayload(payload)
+
+    if type(payload) ~= "table" then
+        return false
+    end
+
+    local state =
+        HFTransfer.State
+
+    local localPlayer =
+        Players.LocalPlayer
+
+    state.LastTradeUpdate =
+        os.clock()
+
+    state.TradeOpen =
+        true
+
+    state.TradeDeclined =
+        false
+
+    state.TradeDeclineReason =
+        ""
+
+    local tradeId =
+        payload.Id
+        or payload.id
+        or payload.TradeId
+        or payload.tradeId
+
+    if tradeId ~= nil then
+        state.TradeId =
+            tostring(tradeId)
+    end
+
+    local players =
+        payload.Players
+        or payload.players
+
+    if type(players) == "table" then
+
+        state.TradePlayers =
+            players
+
+        for side, playerValue in pairs(players) do
+
+            local playerName =
+                ""
+
+            local userId =
+                nil
+
+            if typeof(playerValue) == "Instance"
+            and playerValue:IsA("Player") then
+
+                playerName =
+                    playerValue.Name
+
+                userId =
+                    playerValue.UserId
+
+            elseif type(playerValue) == "table" then
+
+                playerName =
+                    tostring(
+                        playerValue.Name
+                        or playerValue.Username
+                        or playerValue.DisplayName
+                        or ""
+                    )
+
+                userId =
+                    tonumber(
+                        playerValue.UserId
+                        or playerValue.UserID
+                        or playerValue.userId
+                    )
+
+            else
+
+                playerName =
+                    tostring(playerValue or "")
+            end
+
+            local isLocal =
+                localPlayer
+                and (
+                    playerValue == localPlayer
+                    or userId == localPlayer.UserId
+                    or playerName == localPlayer.Name
+                )
+
+            if isLocal then
+
+                state.LocalTradeSide =
+                    tostring(side)
+
+            else
+
+                state.OtherTradeSide =
+                    tostring(side)
+            end
+        end
+    end
+
+    local states =
+        payload.States
+        or payload.states
+
+    if type(states) == "table" then
+        state.TradeStates =
+            states
+    end
+
+    local offers =
+        payload.Offers
+        or payload.offers
+
+    if type(offers) == "table" then
+
+        state.TradeOfferCounts =
+            {}
+
+        for side, offerData in pairs(offers) do
+
+            local count =
+                0
+
+            local items =
+                type(offerData) == "table"
+                and (
+                    offerData.Items
+                    or offerData.items
+                    or offerData
+                )
+                or nil
+
+            if type(items) == "table" then
+
+                for _ in pairs(items) do
+                    count += 1
+                end
+            end
+
+            state.TradeOfferCounts[tostring(side)] =
+                count
+        end
+    end
+
+    if state.LocalTradeSide then
+
+        state.TradeOwnItemCount =
+            tonumber(
+                state.TradeOfferCounts[tostring(state.LocalTradeSide)]
+            )
+            or state.TradeOwnItemCount
+            or 0
+    end
+
+    if state.OtherTradeSide then
+
+        state.TradeOtherItemCount =
+            tonumber(
+                state.TradeOfferCounts[tostring(state.OtherTradeSide)]
+            )
+            or state.TradeOtherItemCount
+            or 0
+    end
+
+    local status =
+        payload.Status
+        or payload.status
+
+    local result =
+        type(status) == "table"
+        and (
+            status.Result
+            or status.result
+            or status.State
+            or status.state
+        )
+        or status
+
+    if result ~= nil then
+
+        state.TradeResult =
+            tostring(result)
+
+        local lower =
+            tostring(result):lower()
+
+        if lower:find("complete", 1, true)
+        or lower:find("success", 1, true)
+        or lower:find("finish", 1, true) then
+
+            state.TradeCompleted =
+                true
+
+            state.TradeOpen =
+                false
+
+            HFTransfer.SetStatus(
+                "Trade Completed",
+                tostring(result)
+            )
+        end
+    end
+
+    return true
+end
+
+function HFTransfer.GetTradeState(side)
+
+    side =
+        tostring(side or "")
+
+    if side == "" then
+        return ""
+    end
+
+    local states =
+        HFTransfer.State.TradeStates
+
+    if type(states) ~= "table" then
+        return ""
+    end
+
+    local value =
+        states[side]
+        or states[tonumber(side)]
+
+    return tostring(value or "")
+end
+
+function HFTransfer.GetLocalTradeState()
+
+    return HFTransfer.GetTradeState(
+        HFTransfer.State.LocalTradeSide
+    )
+end
+
+function HFTransfer.GetOtherTradeState()
+
+    return HFTransfer.GetTradeState(
+        HFTransfer.State.OtherTradeSide
+    )
+end
+
+function HFTransfer.TradeStateIsAcceptedLike(state)
+
+    state =
+        tostring(state or "")
+
+    return state == "Accepted"
+        or state == "Confirmed"
+        or state == "Processing"
+end
+
+function HFTransfer.SenderReadyForReceiverAccept()
+
+    local state =
+        HFTransfer.State
+
+    if state.Mode ~= "Receiver" then
+        return true
+    end
+
+    if HFTransfer.ToNumber(state.TradeOtherItemCount, 0) <= 0 then
+        return false
+    end
+
+    return HFTransfer.TradeStateIsAcceptedLike(
+        HFTransfer.GetOtherTradeState()
+    )
+end
+
+function HFTransfer.AcceptPetGift(giftId, petName, senderName)
+
+    local state =
+        HFTransfer.State
+
+    giftId =
+        tostring(giftId or "")
+
+    petName =
+        HFTransfer.CleanText(petName)
+
+    senderName =
+        HFTransfer.CleanText(senderName)
+
+    if giftId == "" then
+        return false, "Gift id missing"
+    end
+
+    if state.AutoAcceptGift ~= true then
+        return false, "Auto Accept Gift OFF"
+    end
+
+    if state.IncomingGiftHandled[giftId] == true then
+        return false, "Gift already handled"
+    end
+
+    local trusted =
+        HFTransfer.CleanText(state.TargetPlayerName)
+
+    if trusted ~= ""
+    and senderName ~= trusted then
+
+        print(
+            "[HF TRANSFER GIFT]",
+            "Ignored untrusted gift from:",
+            tostring(senderName),
+            "| wanted:",
+            tostring(trusted)
+        )
+
+        return false, "Untrusted sender"
+    end
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    local remote =
+        gameEvents
+        and gameEvents:FindFirstChild("AcceptPetGift")
+
+    if not remote
+    or not remote:IsA("RemoteEvent") then
+        return false, "AcceptPetGift remote missing"
+    end
+
+    local responseValue =
+        state.AutoAcceptGiftResponseValue == true
+
+    local ok, err =
+        pcall(function()
+            remote:FireServer(
+                responseValue,
+                giftId
+            )
+        end)
+
+    if not ok then
+        return false, tostring(err)
+    end
+
+    state.IncomingGiftHandled[giftId] =
+        true
+
+    state.LastGiftId =
+        giftId
+
+    state.LastGiftPetName =
+        petName
+
+    state.LastGiftSenderName =
+        senderName
+
+    HFTransfer.SetStatus(
+        "Gift Accepted",
+        tostring(petName)
+            .. " from "
+            .. tostring(senderName)
+    )
+
+    print(
+        "[HF TRANSFER GIFT]",
+        "AcceptPetGift ->",
+        tostring(responseValue),
+        tostring(giftId),
+        tostring(petName),
+        tostring(senderName)
+    )
+
+    return true
+end
+
+function HFTransfer.StartTradeWatchers()
+
+    local state =
+        HFTransfer.State
+
+    if state.TradeWatchConnected == true then
+        return true
+    end
+
+    state.TradeWatchConnected =
+        true
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    if not gameEvents then
+        warn("[HF TRANSFER] GameEvents missing for watchers.")
+        return false
+    end
+
+    local dataStream =
+        gameEvents:FindFirstChild("DataStream2")
+
+    if dataStream
+    and dataStream:IsA("RemoteEvent") then
+
+        dataStream.OnClientEvent:Connect(function(action, tradeId, payload)
+
+            if action == "InitData"
+            or action == "UpdateData" then
+
+                if type(payload) == "table" then
+                    HFTransfer.UpdateTradeTrackerFromPayload(payload)
+                end
+            end
+        end)
+    end
+
+    local tradeEvents =
+        gameEvents:FindFirstChild("TradeEvents")
+
+    if tradeEvents then
+
+        local sendRequest =
+            tradeEvents:FindFirstChild("SendRequest")
+
+        if sendRequest
+        and sendRequest:IsA("RemoteEvent") then
+
+            sendRequest.OnClientEvent:Connect(function(requestId, playerName)
+
+                requestId =
+                    tostring(requestId or "")
+
+                playerName =
+                    HFTransfer.CleanText(playerName)
+
+                if requestId == "" then
+                    return
+                end
+
+                state.IncomingRequestId =
+                    requestId
+
+                state.IncomingRequestPlayerName =
+                    playerName
+
+                state.IncomingRequestAt =
+                    os.clock()
+
+                HFTransfer.SetStatus(
+                    "Incoming Ticket",
+                    tostring(playerName)
+                )
+
+                print(
+                    "[HF TRANSFER]",
+                    "Incoming request:",
+                    tostring(requestId),
+                    tostring(playerName)
+                )
+
+                if state.Mode == "Receiver"
+                and state.AutoAcceptTicket == true
+                and state.TransferEnabled == true
+                and state.IncomingRequestHandled[requestId] ~= true then
+
+                    task.defer(function()
+                        HFTransfer.RespondRequest(true)
+                    end)
+                end
+            end)
+        end
+
+        local updateTradeState =
+            tradeEvents:FindFirstChild("UpdateTradeState")
+
+        if updateTradeState
+        and updateTradeState:IsA("RemoteEvent") then
+
+            updateTradeState.OnClientEvent:Connect(function(value)
+
+                if value == nil
+                and state.TradeOpen == true
+                and state.TradeCompleted ~= true then
+
+                    HFTransfer.MarkTradeDeclined(
+                        "UpdateTradeState nil"
+                    )
+                end
+            end)
+        end
+
+        local addToHistory =
+            tradeEvents:FindFirstChild("AddToHistory")
+
+        if addToHistory
+        and addToHistory:IsA("RemoteEvent") then
+
+            addToHistory.OnClientEvent:Connect(function(...)
+
+                state.TradeCompleted =
+                    true
+
+                state.TradeOpen =
+                    false
+
+                HFTransfer.SetStatus(
+                    "Trade Completed",
+                    "AddToHistory fired"
+                )
+            end)
+        end
+    end
+
+    local giftPet =
+        gameEvents:FindFirstChild("GiftPet")
+
+    if giftPet
+    and giftPet:IsA("RemoteEvent") then
+
+        giftPet.OnClientEvent:Connect(function(giftId, petName, senderName)
+
+            state.LastGiftId =
+                tostring(giftId or "")
+
+            state.LastGiftPetName =
+                tostring(petName or "")
+
+            state.LastGiftSenderName =
+                tostring(senderName or "")
+
+            if state.AutoAcceptGift == true then
+
+                task.defer(function()
+
+                    HFTransfer.AcceptPetGift(
+                        giftId,
+                        petName,
+                        senderName
+                    )
+                end)
+            end
+        end)
+    end
+
+    local notification =
+        gameEvents:FindFirstChild("Notification")
+
+    if notification
+    and notification:IsA("RemoteEvent") then
+
+        notification.OnClientEvent:Connect(function(message)
+
+            message =
+                tostring(message or "")
+
+            local lower =
+                message:lower()
+
+            if lower:find("declined the trade", 1, true)
+            or lower:find("declined trade", 1, true) then
+
+                HFTransfer.MarkTradeDeclined(
+                    message
+                )
+            end
+
+            if lower:find("cannot send a trade request while in a trade", 1, true)
+            or lower:find("can't send a trade request while in a trade", 1, true)
+            or lower:find("cant send a trade request while in a trade", 1, true) then
+
+                state.RequestBlocked =
+                    true
+
+                state.RequestBlockedReason =
+                    message
+
+                HFTransfer.SetStatus(
+                    "Request Blocked",
+                    message
+                )
+            end
+        end)
+    end
+
+    print("[HF TRANSFER] Watchers connected.")
+
+    return true
+end
+
+function HFTransfer.RefreshDropdowns()
+
+    HFTransfer.BuildPetChoices()
+    HFTransfer.BuildMutationChoices()
+    HFTransfer.BuildTargetChoices()
+    HFTransfer.BuildMatches()
+
+    HFTransfer.SetStatus(
+        HFTransfer.State.Status,
+        HFTransfer.State.LastResult,
+        true
+    )
+end
+
+--==================================================
+-- HF TRANSFER WORKER LOOP
+-- Sender / Receiver automation for isolated HF tab.
+--==================================================
+
+function HFTransfer.GetMaxPetsPerTrade()
+
+    local state =
+        HFTransfer.State
+
+    local limit =
+        tonumber(state.MaxPetsPerTrade)
+        or 12
+
+    return math.clamp(
+        math.floor(limit),
+        1,
+        50
+    )
+end
+
+function HFTransfer.GetAddPetDelay()
+
+    local delay =
+        tonumber(HFTransfer.State.AddPetDelay)
+        or 0.5
+
+    return math.clamp(
+        delay,
+        0.01,
+        3
+    )
+end
+
+function HFTransfer.GetAddBurstCount()
+
+    local burst =
+        tonumber(HFTransfer.State.AddBurstCount)
+        or 1
+
+    return math.clamp(
+        math.floor(burst),
+        1,
+        HFTransfer.GetMaxPetsPerTrade()
+    )
+end
+
+function HFTransfer.GetNextTicketDelay()
+
+    local delay =
+        tonumber(HFTransfer.State.NextTicketDelay)
+        or 0
+
+    return math.clamp(
+        delay,
+        0,
+        60
+    )
+end
+
+function HFTransfer.WaitBeforeNextTicket()
+
+    local delay =
+        HFTransfer.GetNextTicketDelay()
+
+    if delay <= 0 then
+        return true
+    end
+
+    local started =
+        os.clock()
+
+    while IsCurrentRun()
+    and HFTransfer.State.TransferEnabled == true
+    and os.clock() - started < delay do
+
+        local remaining =
+            math.max(
+                0,
+                delay - (os.clock() - started)
+            )
+
+        HFTransfer.SetStatus(
+            "Ticket Delay",
+            "Next ticket in "
+                .. string.format("%.1f", remaining)
+                .. "s"
+        )
+
+        task.wait(0.1)
+    end
+
+    return HFTransfer.State.TransferEnabled == true
+end
+
+function HFTransfer.FindTradeTicketTool()
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return nil, false
+    end
+
+    local function scan(container)
+
+        if not container then
+            return nil
+        end
+
+        for _, child in ipairs(container:GetChildren()) do
+
+            if child:IsA("Tool") then
+
+                local name =
+                    tostring(child.Name or ""):lower()
+
+                local isTicket =
+                    name:find("trading ticket", 1, true)
+                    or (
+                        name:find("trade", 1, true)
+                        and name:find("ticket", 1, true)
+                    )
+                    or (
+                        name:find("trading", 1, true)
+                        and name:find("ticket", 1, true)
+                    )
+
+                if isTicket then
+                    return child
+                end
+            end
+        end
+
+        return nil
+    end
+
+    local character =
+        player.Character
+
+    local equipped =
+        scan(character)
+
+    if equipped then
+        return equipped, true
+    end
+
+    return scan(
+        player:FindFirstChild("Backpack")
+    ), false
+end
+
+function HFTransfer.EquipTradeTicket()
+
+    local player =
+        Players.LocalPlayer
+
+    if not player then
+        return false, "LocalPlayer missing"
+    end
+
+    local tool, alreadyEquipped =
+        HFTransfer.FindTradeTicketTool()
+
+    if not tool then
+
+        HFTransfer.SetStatus(
+            "No Ticket",
+            "No Trading Ticket found."
+        )
+
+        return false, "No Trading Ticket"
+    end
+
+    if alreadyEquipped == true then
+        return true, "Already equipped"
+    end
+
+    local character =
+        player.Character
+
+    local humanoid =
+        character
+        and character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid then
+
+        HFTransfer.SetStatus(
+            "Equip Failed",
+            "Humanoid missing."
+        )
+
+        return false, "Humanoid missing"
+    end
+
+    HFTransfer.SetStatus(
+        "Equipping Ticket",
+        tostring(tool.Name)
+    )
+
+    local ok, err =
+        pcall(function()
+            humanoid:EquipTool(tool)
+        end)
+
+    if not ok then
+        return false, tostring(err)
+    end
+
+    local started =
+        os.clock()
+
+    while os.clock() - started < 0.8 do
+
+        if tool.Parent == character then
+            return true, "Equipped"
+        end
+
+        task.wait()
+    end
+
+    return false, "Ticket equip timeout"
+end
+
+function HFTransfer.WaitForCondition(label, timeout, predicate)
+
+    timeout =
+        tonumber(timeout)
+        or 10
+
+    local started =
+        os.clock()
+
+    while IsCurrentRun()
+    and HFTransfer.State.TransferEnabled == true
+    and os.clock() - started < timeout do
+
+        local ok, result =
+            pcall(predicate)
+
+        if ok == true
+        and result == true then
+            return true
+        end
+
+        HFTransfer.SetStatus(
+            tostring(label or "Waiting"),
+            string.format(
+                "%.1fs",
+                math.max(0, timeout - (os.clock() - started))
+            )
+        )
+
+        task.wait(0.08)
+    end
+
+    return false
+end
+
+function HFTransfer.WaitForTradeOpen(timeout)
+
+    return HFTransfer.WaitForCondition(
+        "Waiting Trade",
+        timeout or 15,
+        function()
+
+            return HFTransfer.State.TradeOpen == true
+                and HFTransfer.State.TradeDeclined ~= true
+        end
+    )
+end
+
+function HFTransfer.WaitForTradeClosed(timeout)
+
+    return HFTransfer.WaitForCondition(
+        "Waiting Close",
+        timeout or 20,
+        function()
+
+            return HFTransfer.State.TradeCompleted == true
+                or HFTransfer.State.TradeOpen ~= true
+                or HFTransfer.State.TradeDeclined == true
+        end
+    )
+end
+
+function HFTransfer.WaitForOtherAccepted(timeout)
+
+    return HFTransfer.WaitForCondition(
+        "Waiting Other Accept",
+        timeout or 20,
+        function()
+
+            if HFTransfer.State.TradeCompleted == true then
+                return true
+            end
+
+            return HFTransfer.TradeStateIsAcceptedLike(
+                HFTransfer.GetOtherTradeState()
+            )
+        end
+    )
+end
+
+function HFTransfer.WaitForSenderReady(timeout)
+
+    return HFTransfer.WaitForCondition(
+        "Waiting Sender",
+        timeout or 60,
+        function()
+
+            if HFTransfer.State.TradeCompleted == true then
+                return true
+            end
+
+            return HFTransfer.SenderReadyForReceiverAccept()
+        end
+    )
+end
+
+function HFTransfer.AddPetsToOpenTrade(matches)
+
+    if type(matches) ~= "table"
+    or #matches <= 0 then
+        return false, "No pets to add"
+    end
+
+    local state =
+        HFTransfer.State
+
+    state.IsAddingPets =
+        true
+
+    state.AddedThisBatch =
+        0
+
+    local addDelay =
+        HFTransfer.GetAddPetDelay()
+
+    local burstCount =
+        HFTransfer.GetAddBurstCount()
+
+    for index, pet in ipairs(matches) do
+
+        if not IsCurrentRun()
+        or state.TransferEnabled ~= true then
+
+            state.IsAddingPets =
+                false
+
+            return false, "Stopped"
+        end
+
+        if state.TradeDeclined == true then
+
+            state.IsAddingPets =
+                false
+
+            return false, state.TradeDeclineReason
+        end
+
+        local ok, err =
+            HFTransfer.AddPetToTrade(pet)
+
+        if not ok then
+
+            state.IsAddingPets =
+                false
+
+            return false, tostring(err)
+        end
+
+        if index % burstCount == 0 then
+            task.wait(addDelay)
+        else
+            task.wait(0.03)
+        end
+    end
+
+    state.IsAddingPets =
+        false
+
+    HFTransfer.SetStatus(
+        "Pets Added",
+        tostring(state.AddedThisBatch)
+            .. "/"
+            .. tostring(#matches)
+    )
+
+    return true, "Pets added"
+end
+
+function HFTransfer.RunSenderBatch()
+
+    local state =
+        HFTransfer.State
+
+    state.Batch =
+        HFTransfer.ToNumber(state.Batch, 0) + 1
+
+    state.AddedThisBatch =
+        0
+
+    state.RequestBlocked =
+        false
+
+    state.RequestBlockedReason =
+        ""
+
+    HFTransfer.ResetTradeTracker(
+        "sender batch"
+    )
+
+    HFTransfer.SetStatus(
+        "Scanning Pets",
+        "Building sender match list."
+    )
+
+    local matches =
+        HFTransfer.BuildMatches(
+            HFTransfer.GetMaxPetsPerTrade()
+        )
+
+    if #matches <= 0 then
+
+        HFTransfer.SetStatus(
+            "Done",
+            "No matching pets."
+        )
+
+        return false, "No matches"
+    end
+
+    local unfavOk, unfavErr =
+        HFTransfer.UnfavoriteMatches(matches)
+
+    if not unfavOk then
+
+        HFTransfer.SetStatus(
+            "Unfavorite Failed",
+            tostring(unfavErr)
+        )
+
+        return false, tostring(unfavErr)
+    end
+
+    -- Rebuild after unfavorite so favorite state and Backpack state are fresh.
+    matches =
+        HFTransfer.BuildMatches(
+            HFTransfer.GetMaxPetsPerTrade()
+        )
+
+    if #matches <= 0 then
+
+        HFTransfer.SetStatus(
+            "Done",
+            "No matching pets after refresh."
+        )
+
+        return false, "No matches"
+    end
+
+    local equipOk, equipErr =
+        HFTransfer.EquipTradeTicket()
+
+    if not equipOk then
+
+        HFTransfer.SetStatus(
+            "Ticket Failed",
+            tostring(equipErr)
+        )
+
+        return false, tostring(equipErr)
+    end
+
+    local sent =
+        HFTransfer.SendTicket()
+
+    if sent ~= true then
+        return false, "Ticket failed"
+    end
+
+    local opened =
+        HFTransfer.WaitForTradeOpen(20)
+
+    if opened ~= true then
+
+        HFTransfer.SetStatus(
+            "Open Timeout",
+            "Trade did not open."
+        )
+
+        return false, "Trade open timeout"
+    end
+
+    local addedOk, addedErr =
+        HFTransfer.AddPetsToOpenTrade(matches)
+
+    if not addedOk then
+
+        HFTransfer.SetStatus(
+            "Add Failed",
+            tostring(addedErr)
+        )
+
+        return false, tostring(addedErr)
+    end
+
+    HFTransfer.AcceptTrade()
+
+    HFTransfer.WaitForOtherAccepted(25)
+
+    if state.AutoConfirm == true then
+        HFTransfer.ConfirmTrade()
+    end
+
+    HFTransfer.WaitForTradeClosed(25)
+
+    if state.TradeCompleted == true then
+
+        state.Sent =
+            HFTransfer.ToNumber(state.Sent, 0)
+            + HFTransfer.ToNumber(state.AddedThisBatch, 0)
+
+        HFTransfer.SetStatus(
+            "Batch Complete",
+            "Sent "
+                .. tostring(state.AddedThisBatch)
+                .. " pet(s)."
+        )
+
+        return true, "Completed"
+    end
+
+    if state.TradeDeclined == true then
+        return false, state.TradeDeclineReason
+    end
+
+    return false, "Trade not completed"
+end
+
+function HFTransfer.RunReceiverBatch()
+
+    local state =
+        HFTransfer.State
+
+    state.Batch =
+        HFTransfer.ToNumber(state.Batch, 0) + 1
+
+    state.RequestBlocked =
+        false
+
+    state.RequestBlockedReason =
+        ""
+
+    HFTransfer.ResetTradeTracker(
+        "receiver batch"
+    )
+
+    HFTransfer.SetStatus(
+        "Receiver Ready",
+        "Waiting for incoming ticket."
+    )
+
+    local opened =
+        HFTransfer.WaitForTradeOpen(120)
+
+    if opened ~= true then
+
+        HFTransfer.SetStatus(
+            "Receiver Timeout",
+            "No trade opened."
+        )
+
+        return false, "Receiver timeout"
+    end
+
+    if state.AutoConfirm ~= true then
+
+        HFTransfer.SetStatus(
+            "Manual Mode",
+            "Auto Confirm is OFF."
+        )
+
+        return false, "Auto Confirm OFF"
+    end
+
+    local senderReady =
+        HFTransfer.WaitForSenderReady(120)
+
+    if senderReady ~= true then
+
+        HFTransfer.SetStatus(
+            "Sender Timeout",
+            "Sender did not accept/add pets."
+        )
+
+        return false, "Sender timeout"
+    end
+
+    HFTransfer.AcceptTrade()
+
+    task.wait(0.35)
+
+    HFTransfer.ConfirmTrade()
+
+    HFTransfer.WaitForTradeClosed(30)
+
+    if state.TradeCompleted == true then
+
+        HFTransfer.SetStatus(
+            "Received",
+            "Trade completed."
+        )
+
+        return true, "Completed"
+    end
+
+    if state.TradeDeclined == true then
+        return false, state.TradeDeclineReason
+    end
+
+    return false, "Trade not completed"
+end
+
+function HFTransfer.WorkerLoop()
+
+    local state =
+        HFTransfer.State
+
+    if state.IsTransferRunning == true then
+        return false
+    end
+
+    state.IsTransferRunning =
+        true
+
+    HFTransfer.StartTradeWatchers()
+
+    task.spawn(function()
+
+        local ok, err =
+            pcall(function()
+
+                while IsCurrentRun()
+                and state.TransferEnabled == true do
+
+                    if state.Mode == "Receiver" then
+
+                        HFTransfer.RunReceiverBatch()
+
+                    else
+
+                        local batchOk =
+                            HFTransfer.RunSenderBatch()
+
+                        if batchOk ~= true then
+                            break
+                        end
+                    end
+
+                    if state.KeepGoing ~= true then
+                        break
+                    end
+
+                    local waitOk =
+                        HFTransfer.WaitBeforeNextTicket()
+
+                    if waitOk ~= true then
+                        break
+                    end
+
+                    task.wait(0.15)
+                end
+            end)
+
+        if not ok then
+
+            warn(
+                "[HF TRANSFER] Worker error:",
+                tostring(err)
+            )
+
+            HFTransfer.SetStatus(
+                "Worker Error",
+                tostring(err)
+            )
+        end
+
+        state.TransferEnabled =
+            false
+
+        state.IsTransferRunning =
+            false
+
+        if state.TransferEnabledToggle
+        and type(state.TransferEnabledToggle.SetValue) == "function" then
+
+            pcall(function()
+                state.TransferEnabledToggle:SetValue(false)
+            end)
+        end
+
+        HFTransfer.SetStatus(
+            "Stopped",
+            state.LastResult
+        )
+    end)
+
+    return true
 end
 
 --==================================================
@@ -29248,6 +32080,12 @@ Tabs = {
         Description = "Move filtered pets to alts using trade automation.",
     }),
 
+    HolyFreshTransfer = Window:AddTab({
+        Name = "HF Transfer",
+        Icon = "gift",
+        Description = "Holy Fresh transfer system.",
+    }),
+
     AgeBreaker = Window:AddTab({
         Name = "Age Break",
         Icon = "dna",
@@ -29303,6 +32141,7 @@ HOLY_TRADE_WORLD_ONLY_TABS = {
 
 HOLY_GARDEN_WORLD_ONLY_TABS = {
     "Transfer",
+    "HolyFreshTransfer",
 }
 
 function SetHolyTabVisible(tabName, visible)
@@ -29484,6 +32323,753 @@ end
 
 HolyLoading:SetCurrentStep(3)
 HolyLoading:SetDescription("Building tabs...")
+
+--==================================================
+-- HF TRANSFER TAB UI
+-- Separate isolated UI. Does not touch old Transfer tab.
+--==================================================
+
+function HFTransfer.ApplyModeUI()
+
+    local state =
+        HFTransfer.State
+
+    local isReceiver =
+        state.Mode == "Receiver"
+
+    HFTransfer.SetControlVisible(
+        state.AutoUnfavoriteToggle,
+        not isReceiver
+    )
+
+    HFTransfer.SetControlVisible(
+        state.MaxPetsInput,
+        not isReceiver
+    )
+
+    HFTransfer.SetControlVisible(
+        state.AddPetDelayInput,
+        not isReceiver
+    )
+
+    HFTransfer.SetControlVisible(
+        state.AddBurstInput,
+        not isReceiver
+    )
+
+    HFTransfer.SetControlVisible(
+        state.NextTicketDelayInput,
+        not isReceiver
+    )
+
+    HFTransfer.SetControlVisible(
+        state.AutoAcceptTicketToggle,
+        isReceiver
+    )
+
+    HFTransfer.SetControlVisible(
+        state.AutoConfirmToggle,
+        true
+    )
+
+    HFTransfer.SetControlVisible(
+        state.AutoAcceptGiftToggle,
+        true
+    )
+
+    HFTransfer.SetControlVisible(
+        state.KeepGoingToggle,
+        true
+    )
+end
+
+if Tabs.HolyFreshTransfer then
+
+    local HFState =
+        HFTransfer.State
+
+    local HFTransferPetBox =
+        HFTransfer.AddLeftBox(
+            Tabs.HolyFreshTransfer,
+            "Pet Filters",
+            "sliders-horizontal"
+        )
+
+    local HFTransferSafetyBox =
+        HFTransfer.AddLeftBox(
+            Tabs.HolyFreshTransfer,
+            "Safety",
+            "shield"
+        )
+
+    local HFTransferTargetBox =
+        HFTransfer.AddRightBox(
+            Tabs.HolyFreshTransfer,
+            "Target Player",
+            "users"
+        )
+
+    local HFTransferActionsBox =
+        HFTransfer.AddRightBox(
+            Tabs.HolyFreshTransfer,
+            "Trade Actions",
+            "gift"
+        )
+
+    local HFTransferStatusBox =
+        HFTransfer.AddRightBox(
+            Tabs.HolyFreshTransfer,
+            "Status",
+            "activity"
+        )
+
+    HFState.SourceLabel =
+        HFTransferStatusBox:AddLabel({
+            Text = "HF Transfer loaded.",
+            DoesWrap = true,
+            Size = 12,
+        })
+
+    HFState.StatusLabel =
+        HFTransferStatusBox:AddLabel({
+            Text = "Mode: Idle",
+            DoesWrap = true,
+            Size = 12,
+        })
+
+    HFState.TargetLabel =
+        HFTransferStatusBox:AddLabel({
+            Text = "Player: None",
+            DoesWrap = true,
+            Size = 12,
+        })
+
+    HFState.MatchLabel =
+        HFTransferStatusBox:AddLabel({
+            Text = "Matched: 0 | Added: 0",
+            DoesWrap = true,
+            Size = 12,
+        })
+
+    HFState.ResultLabel =
+        HFTransferStatusBox:AddLabel({
+            Text = "Batch: 0 | Sent: 0 | Result: None",
+            DoesWrap = true,
+            Size = 12,
+        })
+
+    HFState.ModeDropdown =
+        HFTransferTargetBox:AddDropdown(
+            "HFTransferMode",
+            {
+                Text = "Mode",
+                Values = {
+                    "Sender",
+                    "Receiver",
+                },
+                Default = "Sender",
+                Searchable = false,
+                Multi = false,
+            }
+        )
+
+    HFState.ModeDropdown:OnChanged(function(value)
+
+        value =
+            HFTransfer.CleanText(value)
+
+        if value ~= "Receiver" then
+            value =
+                "Sender"
+        end
+
+        HFState.Mode =
+            value
+
+        HFTransfer.ApplyModeUI()
+
+        HFTransfer.SetStatus(
+            "Mode Updated",
+            "Mode = " .. tostring(HFState.Mode)
+        )
+    end)
+
+    HFState.TargetDropdown =
+        HFTransferTargetBox:AddDropdown(
+            "HFTransferTargetPlayer",
+            {
+                Text = "Target Player",
+                Values = HFTransfer.BuildTargetChoices(),
+                Default = "",
+                Searchable = true,
+                Multi = false,
+            }
+        )
+
+    HFState.TargetDropdown:OnChanged(function(value)
+
+        HFState.TargetPlayerName =
+            HFTransfer.CleanText(value)
+
+        HFTransfer.SetStatus(
+            "Target Updated",
+            HFState.TargetPlayerName ~= ""
+                and HFState.TargetPlayerName
+                or "None"
+        )
+    end)
+
+    HFTransferTargetBox:AddButton({
+        Text = "Refresh Players",
+        Tooltip = "Refresh target player dropdown.",
+        Func = function()
+
+            HFTransfer.BuildTargetChoices()
+
+            HFTransfer.SetStatus(
+                "Players Refreshed",
+                "Target list updated."
+            )
+        end,
+    })
+
+    HFState.PetDropdown =
+        HFTransferPetBox:AddDropdown(
+            "HFTransferPets",
+            {
+                Text = "Pets",
+                Values = HFTransfer.BuildPetChoices(),
+                Default = {},
+                Searchable = true,
+                Multi = true,
+            }
+        )
+
+    HFState.PetDropdown:OnChanged(function(value)
+
+        HFState.SelectedPets =
+            HFTransfer.BuildMapFromDropdown(value)
+
+        HFTransfer.BuildMatches()
+
+        HFTransfer.SetStatus(
+            "Filter Updated",
+            "Selected pets updated."
+        )
+    end)
+
+    HFTransferPetBox:AddButton({
+        Text = "Remove All Pets",
+        Tooltip = "Clear selected HF transfer pets.",
+        Func = function()
+
+            HFState.SelectedPets =
+                {}
+
+            if HFState.PetDropdown
+            and type(HFState.PetDropdown.SetValue) == "function" then
+
+                HFState.PetDropdown:SetValue({})
+            end
+
+            HFTransfer.BuildMatches()
+
+            HFTransfer.SetStatus(
+                "Filter Cleared",
+                "Selected pets cleared."
+            )
+        end,
+    })
+
+    HFState.MutationDropdown =
+        HFTransferPetBox:AddDropdown(
+            "HFTransferMutations",
+            {
+                Text = "Mutations",
+                Values = HFTransfer.BuildMutationChoices(),
+                Default = {},
+                Searchable = true,
+                Multi = true,
+            }
+        )
+
+    HFState.MutationDropdown:OnChanged(function(value)
+
+        HFState.SelectedMutations =
+            HFTransfer.BuildMapFromDropdown(value)
+
+        HFTransfer.BuildMatches()
+
+        HFTransfer.SetStatus(
+            "Filter Updated",
+            "Selected mutations updated."
+        )
+    end)
+
+    HFTransferPetBox:AddInput(
+        "HFTransferMinLevel",
+        {
+            Text = "Min Level",
+            Default = "1",
+            Numeric = false,
+            Finished = false,
+            ClearTextOnFocus = false,
+        }
+    ):OnChanged(function(value)
+
+        HFState.MinLevel =
+            math.max(
+                1,
+                math.floor(
+                    HFTransfer.ToNumber(value, 1)
+                )
+            )
+
+        HFTransfer.BuildMatches()
+
+        HFTransfer.SetStatus(
+            "Filter Updated",
+            "Min Level = "
+                .. tostring(HFState.MinLevel)
+        )
+    end)
+
+    HFTransferPetBox:AddInput(
+        "HFTransferMaxLevel",
+        {
+            Text = "Max Level",
+            Default = "100",
+            Numeric = false,
+            Finished = false,
+            ClearTextOnFocus = false,
+        }
+    ):OnChanged(function(value)
+
+        HFState.MaxLevel =
+            math.max(
+                HFState.MinLevel,
+                math.floor(
+                    HFTransfer.ToNumber(value, 100)
+                )
+            )
+
+        HFTransfer.BuildMatches()
+
+        HFTransfer.SetStatus(
+            "Filter Updated",
+            "Max Level = "
+                .. tostring(HFState.MaxLevel)
+        )
+    end)
+
+    HFTransferPetBox:AddInput(
+        "HFTransferMinBaseWeight",
+        {
+            Text = "Min BaseWeight",
+            Default = "0",
+            Numeric = false,
+            Finished = false,
+            ClearTextOnFocus = false,
+        }
+    ):OnChanged(function(value)
+
+        HFState.MinBaseWeight =
+            math.max(
+                0,
+                HFTransfer.ToNumber(value, 0)
+            )
+
+        HFTransfer.BuildMatches()
+
+        HFTransfer.SetStatus(
+            "Filter Updated",
+            "Min BaseWeight = "
+                .. tostring(HFState.MinBaseWeight)
+        )
+    end)
+
+    HFTransferPetBox:AddInput(
+        "HFTransferMaxBaseWeight",
+        {
+            Text = "Max BaseWeight",
+            Default = "999",
+            Numeric = false,
+            Finished = false,
+            ClearTextOnFocus = false,
+        }
+    ):OnChanged(function(value)
+
+        HFState.MaxBaseWeight =
+            math.max(
+                0,
+                HFTransfer.ToNumber(value, 999)
+            )
+
+        HFTransfer.BuildMatches()
+
+        HFTransfer.SetStatus(
+            "Filter Updated",
+            "Max BaseWeight = "
+                .. tostring(HFState.MaxBaseWeight)
+        )
+    end)
+
+    HFTransferPetBox:AddButton({
+        Text = "Reload Pets / Mutations",
+        Tooltip = "Refresh pet, mutation, target, and match data.",
+        Func = function()
+
+            HFTransfer.RefreshDropdowns()
+        end,
+    })
+
+    HFState.AutoUnfavoriteToggle =
+        HFTransferSafetyBox:AddToggle(
+            "HFTransferAutoUnfavorite",
+            {
+                Text = "Auto Unfavorite",
+                Default = true,
+                Tooltip = "Sender mode: unfavorites matching pets before adding them to trade.",
+            }
+        )
+
+    HFState.AutoUnfavoriteToggle:OnChanged(function(value)
+
+        HFState.AutoUnfavorite =
+            value == true
+
+        HFTransfer.SetStatus(
+            "Option Updated",
+            "Auto Unfavorite = "
+                .. tostring(HFState.AutoUnfavorite)
+        )
+    end)
+
+    HFState.AutoAcceptGiftToggle =
+        HFTransferSafetyBox:AddToggle(
+            "HFTransferAutoAcceptGift",
+            {
+                Text = "Auto Accept Gift",
+                Default = false,
+                Tooltip = "Automatically accepts incoming pet gifts. If target player is set, only accepts from that player.",
+            }
+        )
+
+    HFState.AutoAcceptGiftToggle:OnChanged(function(value)
+
+        HFState.AutoAcceptGift =
+            value == true
+
+        HFTransfer.StartTradeWatchers()
+
+        HFTransfer.SetStatus(
+            "Option Updated",
+            "Auto Accept Gift = "
+                .. tostring(HFState.AutoAcceptGift)
+        )
+    end)
+
+    HFTransferSafetyBox:AddToggle(
+        "HFTransferDebugPrints",
+        {
+            Text = "Debug Prints",
+            Default = false,
+            Tooltip = "Only enable while testing.",
+        }
+    ):OnChanged(function(value)
+
+        HFState.DebugPrints =
+            value == true
+
+        HFTransfer.SetStatus(
+            "Option Updated",
+            "Debug Prints = "
+                .. tostring(HFState.DebugPrints)
+        )
+    end)
+
+    HFState.TransferEnabledToggle =
+        HFTransferActionsBox:AddToggle(
+            "HFTransferEnabled",
+            {
+                Text = "Transfer Enabled",
+                Default = false,
+                Tooltip = "Starts or stops the HF transfer worker.",
+            }
+        )
+
+    HFState.TransferEnabledToggle:OnChanged(function(value)
+
+        HFState.TransferEnabled =
+            value == true
+
+        if HFState.TransferEnabled == true then
+
+            HFTransfer.WorkerLoop()
+
+        else
+
+            HFTransfer.SetStatus(
+                "Disabled",
+                "Transfer stopped."
+            )
+        end
+    end)
+
+    HFState.KeepGoingToggle =
+        HFTransferActionsBox:AddToggle(
+            "HFTransferKeepGoing",
+            {
+                Text = "Keep Going",
+                Default = false,
+                Tooltip = "Sender: keep sending batches. Receiver: keep accepting next tickets.",
+            }
+        )
+
+    HFState.KeepGoingToggle:OnChanged(function(value)
+
+        HFState.KeepGoing =
+            value == true
+
+        HFTransfer.SetStatus(
+            "Option Updated",
+            "Keep Going = "
+                .. tostring(HFState.KeepGoing)
+        )
+    end)
+
+    HFState.AutoAcceptTicketToggle =
+        HFTransferActionsBox:AddToggle(
+            "HFTransferAutoAcceptTicket",
+            {
+                Text = "Auto Accept Ticket",
+                Default = true,
+                Tooltip = "Receiver mode: accepts incoming trade ticket.",
+            }
+        )
+
+    HFState.AutoAcceptTicketToggle:OnChanged(function(value)
+
+        HFState.AutoAcceptTicket =
+            value == true
+
+        HFTransfer.SetStatus(
+            "Option Updated",
+            "Auto Accept Ticket = "
+                .. tostring(HFState.AutoAcceptTicket)
+        )
+    end)
+
+    HFState.AutoConfirmToggle =
+        HFTransferActionsBox:AddToggle(
+            "HFTransferAutoConfirm",
+            {
+                Text = "Auto Confirm",
+                Default = true,
+                Tooltip = "Sender/Receiver: fires final confirm after accept flow.",
+            }
+        )
+
+    HFState.AutoConfirmToggle:OnChanged(function(value)
+
+        HFState.AutoConfirm =
+            value == true
+
+        HFTransfer.SetStatus(
+            "Option Updated",
+            "Auto Confirm = "
+                .. tostring(HFState.AutoConfirm)
+        )
+    end)
+
+    HFState.MaxPetsInput =
+        HFTransferActionsBox:AddInput(
+            "HFTransferMaxPets",
+            {
+                Text = "Max Pets",
+                Default = "12",
+                Numeric = false,
+                Finished = false,
+                ClearTextOnFocus = false,
+                Tooltip = "Sender mode: maximum matched pets to add per trade.",
+            }
+        )
+
+    HFState.MaxPetsInput:OnChanged(function(value)
+
+        HFState.MaxPetsPerTrade =
+            math.clamp(
+                math.floor(
+                    HFTransfer.ToNumber(value, 12)
+                ),
+                1,
+                50
+            )
+
+        HFTransfer.BuildMatches()
+
+        HFTransfer.SetStatus(
+            "Option Updated",
+            "Max Pets = "
+                .. tostring(HFState.MaxPetsPerTrade)
+        )
+    end)
+
+    HFState.AddPetDelayInput =
+        HFTransferActionsBox:AddInput(
+            "HFTransferAddPetDelay",
+            {
+                Text = "Add Delay",
+                Default = "0.5",
+                Numeric = false,
+                Finished = false,
+                ClearTextOnFocus = false,
+                Tooltip = "Sender mode: seconds to wait between add bursts.",
+            }
+        )
+
+    HFState.AddPetDelayInput:OnChanged(function(value)
+
+        HFState.AddPetDelay =
+            math.clamp(
+                HFTransfer.ToNumber(value, 0.5),
+                0.01,
+                3
+            )
+
+        HFTransfer.SetStatus(
+            "Option Updated",
+            "Add Delay = "
+                .. string.format("%.2f", HFState.AddPetDelay)
+                .. "s"
+        )
+    end)
+
+    HFState.AddBurstInput =
+        HFTransferActionsBox:AddInput(
+            "HFTransferAddBurst",
+            {
+                Text = "Add Burst",
+                Default = "1",
+                Numeric = false,
+                Finished = false,
+                ClearTextOnFocus = false,
+                Tooltip = "Sender mode: pets to add before waiting.",
+            }
+        )
+
+    HFState.AddBurstInput:OnChanged(function(value)
+
+        HFState.AddBurstCount =
+            math.clamp(
+                math.floor(
+                    HFTransfer.ToNumber(value, 1)
+                ),
+                1,
+                HFTransfer.GetMaxPetsPerTrade()
+            )
+
+        HFTransfer.SetStatus(
+            "Option Updated",
+            "Add Burst = "
+                .. tostring(HFState.AddBurstCount)
+        )
+    end)
+
+    HFState.NextTicketDelayInput =
+        HFTransferActionsBox:AddInput(
+            "HFTransferNextTicketDelay",
+            {
+                Text = "Next Ticket Delay",
+                Default = "0",
+                Numeric = false,
+                Finished = false,
+                ClearTextOnFocus = false,
+                Tooltip = "Seconds to wait before next ticket when Keep Going is ON.",
+            }
+        )
+
+    HFState.NextTicketDelayInput:OnChanged(function(value)
+
+        HFState.NextTicketDelay =
+            math.clamp(
+                HFTransfer.ToNumber(value, 0),
+                0,
+                60
+            )
+
+        HFTransfer.SetStatus(
+            "Option Updated",
+            "Next Ticket Delay = "
+                .. string.format("%.1f", HFState.NextTicketDelay)
+                .. "s"
+        )
+    end)
+
+    local HFManualButton =
+        HFTransferActionsBox:AddButton({
+            Text = "Send Ticket",
+            Tooltip = "Manual sender request test.",
+            Func = function()
+
+                HFTransfer.StartTradeWatchers()
+                HFTransfer.EquipTradeTicket()
+                HFTransfer.SendTicket()
+            end,
+        })
+
+    HFManualButton:AddButton({
+        Text = "Accept",
+        Tooltip = "Manual accept current trade/request.",
+        Func = function()
+
+            if HFState.IncomingRequestId ~= ""
+            and HFState.TradeOpen ~= true then
+
+                HFTransfer.RespondRequest(true)
+
+            else
+
+                HFTransfer.AcceptTrade()
+            end
+        end,
+    })
+
+    local HFConfirmButton =
+        HFTransferActionsBox:AddButton({
+            Text = "Confirm",
+            Tooltip = "Manual final confirm.",
+            Func = function()
+
+                HFTransfer.ConfirmTrade()
+            end,
+        })
+
+    HFConfirmButton:AddButton({
+        Text = "Decline",
+        Tooltip = "Manual decline current trade.",
+        Func = function()
+
+            HFTransfer.DeclineTrade()
+        end,
+    })
+
+    task.defer(function()
+
+        if not IsCurrentRun() then
+            return
+        end
+
+        HFTransfer.StartTradeWatchers()
+        HFTransfer.RefreshDropdowns()
+        HFTransfer.ApplyModeUI()
+
+        HFTransfer.SetStatus(
+            "Ready",
+            "HF Transfer UI loaded."
+        )
+    end)
+end
 
 --==================================================
 -- TRANSFER TAB UI
