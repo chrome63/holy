@@ -8595,8 +8595,8 @@ HFTransfer.State = {
     IsTransferRunning = false,
 
     MaxPetsPerTrade = 12,
-    AddPetDelay = 0.5,
-    AddBurstCount = 1,
+    AddPetDelay = 0.05,
+    AddBurstCount = 12,
     NextTicketDelay = 0,
 
     AutoAcceptTicket = true,
@@ -10947,7 +10947,7 @@ function HFTransfer.WaitForCondition(label, timeout, predicate)
             )
         )
 
-        task.wait(0.08)
+        task.wait(0.03)
     end
 
     return false
@@ -11012,6 +11012,224 @@ function HFTransfer.WaitForSenderReady(timeout)
             return HFTransfer.SenderReadyForReceiverAccept()
         end
     )
+end
+
+function HFTransfer.StartFastAcceptPump(label, maxDuration)
+
+    local state =
+        HFTransfer.State
+
+    label =
+        tostring(label or "Fast Accept")
+
+    maxDuration =
+        tonumber(maxDuration)
+        or 12
+
+    state.FastAcceptPumpToken =
+        HFTransfer.ToNumber(
+            state.FastAcceptPumpToken,
+            0
+        ) + 1
+
+    local token =
+        state.FastAcceptPumpToken
+
+    task.spawn(function()
+
+        local started =
+            os.clock()
+
+        local lastFireAt =
+            0
+
+        while IsCurrentRun()
+        and state.TransferEnabled == true
+        and token == state.FastAcceptPumpToken
+        and os.clock() - started < maxDuration do
+
+            if state.TradeDeclined == true
+            or state.TradeCompleted == true then
+                break
+            end
+
+            local localState =
+                HFTransfer.GetLocalTradeState()
+
+            if HFTransfer.TradeStateIsAcceptedLike(localState)
+            or localState == "Processing" then
+                break
+            end
+
+            if os.clock() - lastFireAt >= 0.015 then
+
+                lastFireAt =
+                    os.clock()
+
+                HFTransfer.FireTradeRemote("Accept")
+            end
+
+            task.wait()
+        end
+
+        HFTransfer.DebugPrint(
+            "Fast accept pump stopped:",
+            tostring(label)
+        )
+    end)
+end
+
+function HFTransfer.WaitForLocalAccepted(timeout)
+
+    local state =
+        HFTransfer.State
+
+    timeout =
+        tonumber(timeout)
+        or 12
+
+    local started =
+        os.clock()
+
+    local lastAcceptAt =
+        0
+
+    while IsCurrentRun()
+    and state.TransferEnabled == true
+    and os.clock() - started < timeout do
+
+        if state.TradeDeclined == true then
+            return false
+        end
+
+        if state.TradeCompleted == true then
+            return true
+        end
+
+        local localState =
+            HFTransfer.GetLocalTradeState()
+
+        if HFTransfer.TradeStateIsAcceptedLike(localState)
+        or localState == "Processing" then
+            return true
+        end
+
+        if os.clock() - lastAcceptAt >= 0.12 then
+
+            lastAcceptAt =
+                os.clock()
+
+            HFTransfer.FireTradeRemote("Accept")
+        end
+
+        HFTransfer.SetStatus(
+            "Accepting",
+            "Locking local accept..."
+        )
+
+        task.wait(0.03)
+    end
+
+    return false
+end
+
+function HFTransfer.WaitForOtherAcceptedFast(timeout)
+
+    local state =
+        HFTransfer.State
+
+    timeout =
+        tonumber(timeout)
+        or 25
+
+    local started =
+        os.clock()
+
+    while IsCurrentRun()
+    and state.TransferEnabled == true
+    and os.clock() - started < timeout do
+
+        if state.TradeDeclined == true then
+            return false
+        end
+
+        if state.TradeCompleted == true then
+            return true
+        end
+
+        if HFTransfer.TradeStateIsAcceptedLike(
+            HFTransfer.GetOtherTradeState()
+        ) then
+            return true
+        end
+
+        task.wait(0.03)
+    end
+
+    return false
+end
+
+function HFTransfer.ConfirmUntilClosed(timeout)
+
+    local state =
+        HFTransfer.State
+
+    timeout =
+        tonumber(timeout)
+        or 25
+
+    local started =
+        os.clock()
+
+    local lastConfirmAt =
+        0
+
+    local attempts =
+        0
+
+    while IsCurrentRun()
+    and state.TransferEnabled == true
+    and os.clock() - started < timeout do
+
+        if state.TradeDeclined == true then
+            return false
+        end
+
+        if state.TradeCompleted == true then
+            return true
+        end
+
+        local localState =
+            HFTransfer.GetLocalTradeState()
+
+        local otherState =
+            HFTransfer.GetOtherTradeState()
+
+        if localState == "Processing"
+        or otherState == "Processing" then
+            return true
+        end
+
+        if os.clock() - lastConfirmAt >= 0.18 then
+
+            lastConfirmAt =
+                os.clock()
+
+            attempts += 1
+
+            HFTransfer.SetStatus(
+                "Confirming",
+                "Confirm attempt "
+                    .. tostring(attempts)
+            )
+
+            HFTransfer.FireTradeRemote("Confirm")
+        end
+
+        task.wait(0.03)
+    end
+
+    return state.TradeCompleted == true
 end
 
 function HFTransfer.AddPetsToOpenTrade(matches)
@@ -11140,7 +11358,6 @@ function HFTransfer.RunSenderBatch()
         return false, tostring(unfavErr)
     end
 
-    -- Rebuild after unfavorite so favorite state and Backpack state are fresh.
     matches =
         HFTransfer.BuildMatches(
             HFTransfer.GetMaxPetsPerTrade()
@@ -11176,10 +11393,25 @@ function HFTransfer.RunSenderBatch()
         return false, "Ticket failed"
     end
 
+    -- Holy Fresh speed path:
+    -- start accept pumping before trade fully opens.
+    HFTransfer.StartFastAcceptPump(
+        "Sender PreOpen",
+        30
+    )
+
     local opened =
         HFTransfer.WaitForTradeOpen(20)
 
     if opened ~= true then
+
+        if state.TradeDeclined == true then
+            return false, state.TradeDeclineReason
+        end
+
+        if state.RequestBlocked == true then
+            return false, "Request blocked"
+        end
 
         HFTransfer.SetStatus(
             "Open Timeout",
@@ -11188,6 +11420,11 @@ function HFTransfer.RunSenderBatch()
 
         return false, "Trade open timeout"
     end
+
+    HFTransfer.SetStatus(
+        "Trade Open",
+        "Adding pets + pre-accepting."
+    )
 
     local addedOk, addedErr =
         HFTransfer.AddPetsToOpenTrade(matches)
@@ -11202,37 +11439,83 @@ function HFTransfer.RunSenderBatch()
         return false, tostring(addedErr)
     end
 
-    HFTransfer.AcceptTrade()
+    HFTransfer.SetStatus(
+        "Accepting",
+        "Pets added. Fast accepting."
+    )
 
-    HFTransfer.WaitForOtherAccepted(25)
+    HFTransfer.StartFastAcceptPump(
+        "Sender Added",
+        14
+    )
 
-    if state.AutoConfirm == true then
-        HFTransfer.ConfirmTrade()
-    end
+    local acceptOk =
+        HFTransfer.WaitForLocalAccepted(14)
 
-    HFTransfer.WaitForTradeClosed(25)
-
-    if state.TradeCompleted == true then
-
-        state.Sent =
-            HFTransfer.ToNumber(state.Sent, 0)
-            + HFTransfer.ToNumber(state.AddedThisBatch, 0)
+    if acceptOk ~= true then
 
         HFTransfer.SetStatus(
-            "Batch Complete",
-            "Sent "
-                .. tostring(state.AddedThisBatch)
-                .. " pet(s)."
+            "Accept Failed",
+            "Accept did not lock in."
         )
 
-        return true, "Completed"
+        return false, "Accept failed"
     end
 
-    if state.TradeDeclined == true then
-        return false, state.TradeDeclineReason
+    HFTransfer.SetStatus(
+        "Waiting Receiver",
+        "Waiting receiver to accept."
+    )
+
+    local receiverAccepted =
+        HFTransfer.WaitForOtherAcceptedFast(45)
+
+    if receiverAccepted ~= true then
+
+        if state.TradeDeclined == true then
+            return false, state.TradeDeclineReason
+        end
+
+        HFTransfer.SetStatus(
+            "Receiver Timeout",
+            "Receiver did not accept."
+        )
+
+        return false, "Receiver accept timeout"
     end
 
-    return false, "Trade not completed"
+    if state.AutoConfirm == true then
+
+        local completed =
+            HFTransfer.ConfirmUntilClosed(30)
+
+        if completed ~= true then
+
+            if state.TradeDeclined == true then
+                return false, state.TradeDeclineReason
+            end
+
+            HFTransfer.SetStatus(
+                "Complete Timeout",
+                "Trade did not complete."
+            )
+
+            return false, "Complete timeout"
+        end
+    end
+
+    state.Sent =
+        HFTransfer.ToNumber(state.Sent, 0)
+        + HFTransfer.ToNumber(state.AddedThisBatch, 0)
+
+    HFTransfer.SetStatus(
+        "Batch Complete",
+        "Sent "
+            .. tostring(state.AddedThisBatch)
+            .. " pet(s)."
+    )
+
+    return true, "Completed"
 end
 
 function HFTransfer.RunReceiverBatch()
@@ -11258,6 +11541,11 @@ function HFTransfer.RunReceiverBatch()
         "Waiting for incoming ticket."
     )
 
+    HFTransfer.StartFastAcceptPump(
+        "Receiver PreOpen",
+        120
+    )
+
     local opened =
         HFTransfer.WaitForTradeOpen(120)
 
@@ -11269,16 +11557,6 @@ function HFTransfer.RunReceiverBatch()
         )
 
         return false, "Receiver timeout"
-    end
-
-    if state.AutoConfirm ~= true then
-
-        HFTransfer.SetStatus(
-            "Manual Mode",
-            "Auto Confirm is OFF."
-        )
-
-        return false, "Auto Confirm OFF"
     end
 
     local senderReady =
@@ -11294,29 +11572,55 @@ function HFTransfer.RunReceiverBatch()
         return false, "Sender timeout"
     end
 
-    HFTransfer.AcceptTrade()
+    HFTransfer.SetStatus(
+        "Accepting",
+        "Fast accepting receiver side."
+    )
 
-    task.wait(0.35)
+    HFTransfer.StartFastAcceptPump(
+        "Receiver Accept",
+        14
+    )
 
-    HFTransfer.ConfirmTrade()
+    local acceptOk =
+        HFTransfer.WaitForLocalAccepted(14)
 
-    HFTransfer.WaitForTradeClosed(30)
-
-    if state.TradeCompleted == true then
+    if acceptOk ~= true then
 
         HFTransfer.SetStatus(
-            "Received",
-            "Trade completed."
+            "Accept Failed",
+            "Receiver accept did not lock."
         )
 
-        return true, "Completed"
+        return false, "Accept failed"
     end
 
-    if state.TradeDeclined == true then
-        return false, state.TradeDeclineReason
+    if state.AutoConfirm == true then
+
+        local completed =
+            HFTransfer.ConfirmUntilClosed(30)
+
+        if completed ~= true then
+
+            if state.TradeDeclined == true then
+                return false, state.TradeDeclineReason
+            end
+
+            HFTransfer.SetStatus(
+                "Complete Timeout",
+                "Receiver trade did not complete."
+            )
+
+            return false, "Complete timeout"
+        end
     end
 
-    return false, "Trade not completed"
+    HFTransfer.SetStatus(
+        "Received",
+        "Trade completed."
+    )
+
+    return true, "Completed"
 end
 
 function HFTransfer.WorkerLoop()
@@ -32920,7 +33224,7 @@ if Tabs.HolyFreshTransfer then
             "HFTransferAddPetDelay",
             {
                 Text = "Add Delay",
-                Default = "0.5",
+                Default = "0.05",
                 Numeric = false,
                 Finished = false,
                 ClearTextOnFocus = false,
@@ -32950,7 +33254,7 @@ if Tabs.HolyFreshTransfer then
             "HFTransferAddBurst",
             {
                 Text = "Add Burst",
-                Default = "1",
+                Default = "12",
                 Numeric = false,
                 Finished = false,
                 ClearTextOnFocus = false,
