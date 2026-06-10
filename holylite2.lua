@@ -5789,11 +5789,10 @@ function TransferStartTradeWatchers()
 
                 if TransferState.TradeCompleted == true
                 or TransferState.TradeResult == "Completed"
-                or TransferGetLocalTradeState() == "Processing"
-                or TransferGetOtherTradeState() == "Processing" then
+                or TransferGetLocalTradeState() == "Processing" then
 
                     TransferMarkTradeCompleted(
-                        "UpdateTradeState closed after processing."
+                        "UpdateTradeState closed after local processing."
                     )
 
                     return
@@ -8193,8 +8192,7 @@ function TransferWaitForReceiverOfferReady(timeout)
 
         if TransferState.TradeCompleted == true
         or TransferState.TradeResult == "Completed"
-        or TransferGetLocalTradeState() == "Processing"
-        or TransferGetOtherTradeState() == "Processing" then
+        or TransferGetLocalTradeState() == "Processing" then
             return true
         end
 
