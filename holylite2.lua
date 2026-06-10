@@ -6169,6 +6169,49 @@ function TransferGuiPlayerHasAccepted(playerName)
     return false
 end
 
+function TransferGuiPlayerHasConfirmed(playerName)
+
+    playerName =
+        CleanText(playerName)
+
+    if playerName == "" then
+        return false
+    end
+
+    local lowerName =
+        playerName:lower()
+
+    local playerGui =
+        LocalPlayer:FindFirstChild("PlayerGui")
+
+    local tradingUI =
+        playerGui
+        and playerGui:FindFirstChild("TradingUI")
+
+    if not tradingUI then
+        return false
+    end
+
+    for _, obj in ipairs(tradingUI:GetDescendants()) do
+
+        if obj:IsA("TextLabel")
+        or obj:IsA("TextButton")
+        or obj:IsA("TextBox") then
+
+            local text =
+                tostring(obj.Text or "")
+                    :lower()
+
+            if text:find(lowerName, 1, true)
+            and text:find("confirmed", 1, true) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
 function TransferGetReadyLabelText(sideName)
 
     sideName =
@@ -6287,6 +6330,25 @@ function TransferIsConfirmPhase()
     return false
 end
 
+function TransferOtherFinalConfirmedLike()
+
+    local otherState =
+        TransferGetOtherTradeState()
+
+    if otherState == "Confirmed"
+    or otherState == "Processing" then
+        return true
+    end
+
+    if TransferGuiPlayerHasConfirmed(
+        TransferState.TargetPlayerName
+    ) then
+        return true
+    end
+
+    return false
+end
+
 function TransferConfirmWindowReady()
 
     local buttonText =
@@ -6303,6 +6365,11 @@ function TransferConfirmWindowReady()
     if TransferIsConfirmPhase() == true
     and seconds ~= nil
     and seconds <= 0.20 then
+        return true
+    end
+
+    if TransferLocalAcceptLocked() == true
+    and TransferOtherFinalConfirmedLike() == true then
         return true
     end
 
@@ -8074,7 +8141,17 @@ function TransferConfirmAndWait(label, timeout)
         local confirmWindowReady =
             TransferConfirmWindowReady()
 
-        if confirmWindowReady == true then
+        local otherFinalConfirmed =
+            TransferOtherFinalConfirmedLike()
+
+        local localAccepted =
+            TransferLocalAcceptLocked()
+
+        if confirmWindowReady == true
+        or (
+            otherFinalConfirmed == true
+            and localAccepted == true
+        ) then
             TransferTimingMark("ConfirmSeenAt")
         end
 
@@ -8087,7 +8164,13 @@ function TransferConfirmAndWait(label, timeout)
 
             task.wait(0.15)
 
-        elseif confirmWindowReady == true
+        elseif (
+            confirmWindowReady == true
+            or (
+                otherFinalConfirmed == true
+                and localAccepted == true
+            )
+        )
         and (
             attempts == 0
             or os.clock() >= nextRetryAt
