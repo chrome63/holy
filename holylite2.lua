@@ -5683,9 +5683,9 @@ function TransferStartTradeWatchers()
             TransferState.TradeId =
                 tostring(tradeId)
 
-            TransferState.TradeOpen =
-                true
-
+            -- Do NOT mark TradeOpen from tradeId alone.
+            -- The request popup can exist before LiveTrade/DataStream offer data is ready.
+            -- TradeOpen is set only by TransferWaitForTradeOpen() after real UI/data appears.
             TransferState.LastTradeUpdate =
                 os.clock()
         end)
@@ -5753,12 +5753,16 @@ function TransferWaitForTradeOpen(timeout)
     local started =
         os.clock()
 
+    local lastStatusAt =
+        0
+
     TransferSetStatus(
         "Waiting Trade",
-        "Waiting for target to accept/open trade."
+        "Waiting for real trade UI/data."
     )
 
-    while IsHolyLiteCurrentRun() do
+    while IsHolyLiteCurrentRun()
+    and TransferState.TransferEnabled == true do
 
         if TransferState.TradeDeclined == true then
             return false
@@ -5768,12 +5772,48 @@ function TransferWaitForTradeOpen(timeout)
             return false
         end
 
-        if TransferState.TradeOpen == true then
+        local actualOpen, reason =
+            TransferActualTradeOpen()
+
+        if actualOpen == true then
+
+            TransferState.TradeOpen =
+                true
+
+            TransferState.LastTradeUpdate =
+                os.clock()
+
+            print(
+                "[TRANSFER OPEN]",
+                "Real trade detected:",
+                tostring(reason),
+                "| tradeId:",
+                tostring(TransferState.TradeId),
+                "| localSide:",
+                tostring(TransferState.LocalTradeSide),
+                "| otherSide:",
+                tostring(TransferState.OtherTradeSide),
+                "| button:",
+                tostring(TransferGetTradeButtonText())
+            )
+
             return true
         end
 
         if os.clock() - started >= timeout then
             return false
+        end
+
+        if os.clock() - lastStatusAt >= 0.35 then
+
+            lastStatusAt =
+                os.clock()
+
+            TransferSetStatus(
+                "Waiting Trade",
+                "Waiting real trade. "
+                    .. tostring(reason)
+            )
         end
 
         task.wait(0.03)
@@ -7376,7 +7416,155 @@ end
 
 function TransferAcceptIncomingRequest()
 
-    return TransferRespondRequest(true)
+    local requestId =
+        CleanText(TransferState.IncomingRequestId)
+
+    local senderName =
+        CleanText(TransferState.IncomingRequestPlayerName)
+
+    if requestId == "" then
+
+        TransferSetStatus(
+            "Request Failed",
+            "Missing incoming request id."
+        )
+
+        return false
+    end
+
+    local remote =
+        TransferGetTradeRemote("RespondRequest")
+
+    if not remote
+    or not remote:IsA("RemoteEvent") then
+
+        TransferSetStatus(
+            "Request Failed",
+            "Missing RespondRequest remote."
+        )
+
+        return false
+    end
+
+    local started =
+        os.clock()
+
+    local lastFireAt =
+        0
+
+    local attempts =
+        0
+
+    while IsHolyLiteCurrentRun()
+    and TransferState.TransferEnabled == true
+    and os.clock() - started < 4 do
+
+        local actualOpen =
+            TransferActualTradeOpen()
+
+        if actualOpen == true then
+
+            TransferState.IncomingRequestHandled[requestId] =
+                true
+
+            TransferHideTradeRequestPopup(
+                senderName
+            )
+
+            TransferState.IncomingRequestId =
+                ""
+
+            TransferState.IncomingRequestPlayerName =
+                ""
+
+            TransferState.IncomingRequestAt =
+                0
+
+            TransferSetStatus(
+                "Request Accepted",
+                "Trade opened from "
+                    .. tostring(senderName)
+            )
+
+            return true
+        end
+
+        if os.clock() - lastFireAt >= 0.15 then
+
+            lastFireAt =
+                os.clock()
+
+            attempts =
+                attempts + 1
+
+            local ok, err =
+                pcall(function()
+
+                    -- Grow a Garden uses false for accepting the request.
+                    remote:FireServer(
+                        requestId,
+                        false
+                    )
+                end)
+
+            print(
+                "[TRANSFER REQUEST ACCEPT]",
+                "attempt:",
+                tostring(attempts),
+                "| ok:",
+                tostring(ok),
+                "| err:",
+                tostring(err),
+                "| requestId:",
+                tostring(requestId),
+                "| sender:",
+                tostring(senderName)
+            )
+
+            TransferSetStatus(
+                "Accepting Ticket",
+                "Accept attempt "
+                    .. tostring(attempts)
+                    .. " from "
+                    .. tostring(senderName)
+            )
+        end
+
+        task.wait(0.03)
+    end
+
+    local finalOpen =
+        TransferActualTradeOpen()
+
+    if finalOpen == true then
+
+        TransferState.IncomingRequestHandled[requestId] =
+            true
+
+        TransferHideTradeRequestPopup(
+            senderName
+        )
+
+        TransferState.IncomingRequestId =
+            ""
+
+        TransferState.IncomingRequestPlayerName =
+            ""
+
+        TransferState.IncomingRequestAt =
+            0
+
+        return true
+    end
+
+    TransferSetStatus(
+        "Request Failed",
+        "Request did not open real trade after "
+            .. tostring(attempts)
+            .. " accept attempts."
+    )
+
+    return false
 end
 
 function TransferDeclineIncomingRequest()
@@ -7593,6 +7781,43 @@ function TransferGetLiveTradeFrame()
 
     return tradingUI
         and tradingUI:FindFirstChild("LiveTrade")
+end
+
+function TransferActualTradeOpen()
+
+    local liveTrade =
+        TransferGetLiveTradeFrame()
+
+    if liveTrade then
+
+        if not liveTrade:IsA("GuiObject")
+        or liveTrade.Visible == true then
+            return true, "LiveTrade"
+        end
+    end
+
+    local hasSides =
+        TransferState.LocalTradeSide ~= nil
+        and TransferState.OtherTradeSide ~= nil
+
+    if hasSides == true then
+        return true, "TradeSides"
+    end
+
+    local ownCount =
+        tonumber(TransferState.TradeOwnItemCount)
+        or 0
+
+    local otherCount =
+        tonumber(TransferState.TradeOtherItemCount)
+        or 0
+
+    if ownCount > 0
+    or otherCount > 0 then
+        return true, "OfferCounts"
+    end
+
+    return false, "No real trade UI/data yet"
 end
 
 function TransferGetTradeSideFrame(sideName)
