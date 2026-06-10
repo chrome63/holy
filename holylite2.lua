@@ -5518,9 +5518,25 @@ function TransferUpdateTradeTrackerFromPayload(payload)
                 
                 if tostring(value) == "Processing" then
 
-                    TransferMarkTradeCompleted(
-                        "DataStream state Processing."
-                    )
+                    local localSideText =
+                        tostring(TransferState.LocalTradeSide or "")
+
+                    -- Only our own side Processing means this client is done.
+                    -- Other side Processing means the other player confirmed,
+                    -- but we may still need to press Confirm locally.
+                    if localSideText ~= ""
+                    and tostring(stateSide) == localSideText then
+
+                        TransferMarkTradeCompleted(
+                            "Local DataStream state Processing."
+                        )
+
+                    elseif TransferGetLocalTradeState() == "Processing" then
+
+                        TransferMarkTradeCompleted(
+                            "Local state Processing."
+                        )
+                    end
                 end
 
                 if tostring(oldState) ~= tostring(value) then
@@ -6052,8 +6068,7 @@ function TransferWaitForTradeCompleted(timeout)
 
         if TransferState.TradeCompleted == true
         or TransferState.TradeResult == "Completed"
-        or TransferGetLocalTradeState() == "Processing"
-        or TransferGetOtherTradeState() == "Processing" then
+        or TransferGetLocalTradeState() == "Processing" then
             return true
         end
 
@@ -6140,8 +6155,7 @@ function TransferIsLiveTradeOpen()
     -- Do not block the next batch forever on stale UI.
     if TransferState.TradeCompleted == true
     or TransferState.TradeResult == "Completed"
-    or TransferGetLocalTradeState() == "Processing"
-    or TransferGetOtherTradeState() == "Processing" then
+    or TransferGetLocalTradeState() == "Processing" then
         return false
     end
 
@@ -7077,8 +7091,7 @@ function TransferTryInstantFinalConfirm(reason)
 
         if TransferState.TradeCompleted == true
         or TransferState.TradeResult == "Completed"
-        or TransferGetLocalTradeState() == "Processing"
-        or TransferGetOtherTradeState() == "Processing" then
+        or TransferGetLocalTradeState() == "Processing" then
 
             TransferTimingMark(
                 "CompletedAt"
@@ -7122,7 +7135,6 @@ function TransferTryInstantFinalConfirm(reason)
     return TransferState.TradeCompleted == true
         or TransferState.TradeResult == "Completed"
         or TransferGetLocalTradeState() == "Processing"
-        or TransferGetOtherTradeState() == "Processing"
 end
 
 
@@ -7199,9 +7211,18 @@ function TransferWaitForConfirmReady(timeout)
 
             if TransferState.AutoConfirm == true then
 
-                TransferTryInstantFinalConfirm(
-                    "Confirm window became ready."
-                )
+                local instantConfirmed =
+                    TransferTryInstantFinalConfirm(
+                        "Confirm window became ready."
+                    )
+
+                if instantConfirmed == true then
+                    return true
+                end
+
+                -- Even if the first instant confirm did not complete yet,
+                -- return true so TransferConfirmAndWait starts hammering Confirm now.
+                return true
             end
 
             return true
@@ -9256,8 +9277,7 @@ function TransferConfirmAndWait(label, timeout)
 
         if TransferState.TradeCompleted == true
         or TransferState.TradeResult == "Completed"
-        or TransferGetLocalTradeState() == "Processing"
-        or TransferGetOtherTradeState() == "Processing" then
+        or TransferGetLocalTradeState() == "Processing" then
 
             TransferTimingMark("CompletedAt")
             TransferTimingReport("completed")
@@ -9939,6 +9959,13 @@ function TransferRunSenderBatch()
         "Waiting Confirm",
         "Waiting final confirm button."
     )
+
+    if TransferState.AutoConfirm == true then
+
+        TransferTryInstantFinalConfirm(
+            "Receiver pre-check before confirm wait."
+        )
+    end
 
     local confirmReady =
         TransferWaitForConfirmReady(45)
@@ -11149,6 +11176,10 @@ and IsGardenWorld() then
 
         TransferBuildMatches()
 
+        QueueSaveTransferSettings(
+            "max pets changed"
+        )
+
         TransferSetStatus(
             "Option Updated",
             "Max Pets = "
@@ -11177,6 +11208,10 @@ and IsGardenWorld() then
                 0.01,
                 3
             )
+
+        QueueSaveTransferSettings(
+            "add delay changed"
+        )
 
         TransferSetStatus(
             "Option Updated",
@@ -11210,6 +11245,10 @@ and IsGardenWorld() then
                 TransferGetMaxPetsPerTrade()
             )
 
+        QueueSaveTransferSettings(
+            "add burst changed"
+        )
+
         TransferSetStatus(
             "Option Updated",
             "Add Burst = "
@@ -11239,6 +11278,10 @@ and IsGardenWorld() then
                 60
             )
 
+        QueueSaveTransferSettings(
+            "next ticket delay changed"
+        )
+
         TransferSetStatus(
             "Option Updated",
             "Next Ticket Delay = "
@@ -11248,6 +11291,9 @@ and IsGardenWorld() then
     end)
 
     TransferApplyModeUI()
+
+    TransferConfigState.Loading =
+        false
 
     local TransferDeclineButton =
         TransferActionsBox:AddButton({
