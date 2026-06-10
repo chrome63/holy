@@ -40,7 +40,7 @@ local SAVE_MANAGER_URL =
     .. tostring(os.time())
 
 local SAVE_FOLDER =
-    "HolyFresh"
+    "HolyFresh22"
 
 local UI_SETTINGS_FILE =
     SAVE_FOLDER .. "/UISettings.json"
