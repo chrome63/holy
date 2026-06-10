@@ -12,7 +12,7 @@ local ReplicatedStorage =
     game:GetService("ReplicatedStorage")
 
 --==================================================
--- [1] CONSTANTS / LOADER GATE
+-- [1] CONSTANTS
 --==================================================
 
 local GROW_A_GARDEN_PLACE_ID =
@@ -21,39 +21,23 @@ local GROW_A_GARDEN_PLACE_ID =
 local TRADING_WORLD_PLACE_ID =
     129954712878723
 
-local FreshRoot =
-    type(getgenv) == "function"
-    and getgenv()
-    or _G
-
-if FreshRoot.HOLY_FRESH_AUTHORIZED ~= true then
-    warn("[HOLY FRESH] Unauthorized load. Use official loader.")
-    return
-end
-
-local LoaderSalt =
-    tostring(FreshRoot.HOLY_FRESH_SALT or "")
-
-if LoaderSalt == "" then
-    warn("[HOLY FRESH] Loader salt missing.")
-    return
-end
+local REPO_URL =
+    "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local OBSIDIAN_URL =
-    tostring(FreshRoot.HOLY_FRESH_OBSIDIAN_URL or "")
+    REPO_URL
+    .. "librarylite.lua?v="
+    .. tostring(os.time())
 
 local THEME_MANAGER_URL =
-    tostring(FreshRoot.HOLY_FRESH_THEME_MANAGER_URL or "")
+    REPO_URL
+    .. "addons/ThemeManager.lua?v="
+    .. tostring(os.time())
 
 local SAVE_MANAGER_URL =
-    tostring(FreshRoot.HOLY_FRESH_SAVE_MANAGER_URL or "")
-
-if OBSIDIAN_URL == ""
-or THEME_MANAGER_URL == ""
-or SAVE_MANAGER_URL == "" then
-    warn("[HOLY FRESH] Loader URLs missing.")
-    return
-end
+    REPO_URL
+    .. "addons/SaveManager.lua?v="
+    .. tostring(os.time())
 
 local SAVE_FOLDER =
     "HolyFresh"
