@@ -2040,6 +2040,9 @@ if IsGardenWorld() ~= true then
     warn("[HOLY LITE TRANSFER] Transfer system skipped: Garden World only.")
 end
 
+local TransferState =
+    nil
+
 local TransferConfigState = {
     Loading = true,
     Dirty = false,
@@ -2390,7 +2393,7 @@ function EnsureTransferDropdownChoice(choices, value)
     return choices
 end
 
-local TransferState = {
+TransferState = {
     SelectedPets = {},
     SelectedMutations = {},
 
@@ -9355,7 +9358,7 @@ and IsGardenWorld() then
         "HolyFreshTransferMinBaseWeight",
         {
             Text = "Min BaseWeight",
-            Default = tostring(TransferState.MaxBaseWeight),
+            Default = tostring(TransferState.MinBaseWeight),
             Numeric = false,
             Finished = false,
             ClearTextOnFocus = false,
@@ -9563,7 +9566,7 @@ and IsGardenWorld() then
         TransferState.TransferEnabled =
             value == true
 
-        SaveTransferSettingsNow(
+        QueueSaveTransferSettings(
             "transfer enabled changed"
         )
 
