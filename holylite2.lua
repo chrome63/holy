@@ -5208,11 +5208,49 @@ function TransferMarkTradeDeclined(reason)
     reason =
         tostring(reason or "Trade declined.")
 
+    if TransferState.TradeCompleted == true
+    or TransferState.TradeResult == "Completed" then
+
+        print(
+            "[TRANSFER] Ignored late decline after completed trade:",
+            reason
+        )
+
+        return
+    end
+
     TransferState.TradeDeclined =
         true
 
     TransferState.TradeDeclineReason =
         reason
+
+    TransferState.TradeOpen =
+        false
+
+    TransferState.TradeId =
+        ""
+
+    TransferState.TradePlayers =
+        {}
+
+    TransferState.TradeStates =
+        {}
+
+    TransferState.TradeOfferCounts =
+        {}
+
+    TransferState.LocalTradeSide =
+        nil
+
+    TransferState.OtherTradeSide =
+        nil
+
+    TransferState.TradeOwnItemCount =
+        0
+
+    TransferState.TradeOtherItemCount =
+        0
 
     TransferState.LastTradeUpdate =
         os.clock()
@@ -5261,16 +5299,24 @@ function TransferMarkRequestExpired(reason)
     local expiredRequestId =
         CleanText(TransferState.IncomingRequestId)
 
+    if expiredRequestId == "" then
+
+        print(
+            "[TRANSFER] Ignored request expired with no active request:",
+            reason
+        )
+
+        return
+    end
+
     TransferState.RequestExpired =
         true
 
     TransferState.RequestExpiredReason =
         reason
 
-    if expiredRequestId ~= "" then
-        TransferState.IncomingRequestHandled[expiredRequestId] =
-            nil
-    end
+    TransferState.IncomingRequestHandled[expiredRequestId] =
+        nil
 
     TransferState.IncomingRequestId =
         ""
@@ -8050,6 +8096,15 @@ function TransferReceiverHasRecoverableLiveTrade()
         return false
     end
 
+    if TransferState.TradeDeclined == true then
+        return false
+    end
+
+    if TransferState.TradeCompleted == true
+    or TransferState.TradeResult == "Completed" then
+        return false
+    end
+
     local liveTrade =
         TransferGetLiveTradeFrame()
 
@@ -9988,7 +10043,10 @@ function TransferWorkerLoop()
                 if TransferState.KeepGoing == true
                 and TransferState.Mode == "Receiver" then
 
-                    if TransferReceiverHasRecoverableLiveTrade() == true then
+                    if TransferState.TradeDeclined ~= true
+                    and TransferState.TradeCompleted ~= true
+                    and TransferState.TradeResult ~= "Completed"
+                    and TransferReceiverHasRecoverableLiveTrade() == true then
 
                         TransferSetStatus(
                             "Recovering",
@@ -10002,22 +10060,13 @@ function TransferWorkerLoop()
 
                     TransferResetTradeRuntime()
 
-                    TransferState.IncomingRequestId =
-                        ""
-
-                    TransferState.IncomingRequestPlayerName =
-                        ""
-
-                    TransferState.IncomingRequestAt =
-                        0
-
                     TransferSetStatus(
                         "Waiting",
                         "Ready for next ticket. Last: "
                             .. tostring(msg)
                     )
 
-                    task.wait(0.75)
+                    task.wait(0.35)
 
                     continue
                 end
