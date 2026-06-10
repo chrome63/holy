@@ -7540,6 +7540,40 @@ end
 
 function TransferSendTicket()
 
+    if TransferIsLiveTradeOpen() == true then
+
+        TransferSetStatus(
+            "Existing Trade",
+            "LiveTrade still open before sending ticket."
+        )
+
+        if TransferConfirmWindowReady() == true
+        or TransferGetTradeButtonText() == "Confirm"
+        or TransferGetTradeButtonText() == "Confirmed" then
+
+            TransferTryInstantFinalConfirm(
+                "Sender found existing confirm-stage trade before sending ticket."
+            )
+
+            TransferConfirmAndWait(
+                "Existing Confirm",
+                10
+            )
+        end
+
+        TransferWaitForLiveTradeClosed(5)
+
+        if TransferIsLiveTradeOpen() == true then
+
+            TransferSetStatus(
+                "Ticket Blocked",
+                "Still in old trade. Not sending a new request."
+            )
+
+            return false
+        end
+    end
+
     local target =
         TransferResolveTargetPlayer()
 
@@ -9725,6 +9759,38 @@ function TransferRunSenderBatch()
         return false, "Trade timeout"
     end
 
+    local openedButtonText =
+        TransferGetTradeButtonText()
+
+    if openedButtonText == "Confirm"
+    or openedButtonText == "Confirmed"
+    or TransferConfirmWindowReady() == true then
+
+        TransferUpdateTradeStatusText(
+            "Recover Confirm",
+            "Trade opened already in confirm phase. Confirming before adding pets."
+        )
+
+        TransferTryInstantFinalConfirm(
+            "Sender opened already-confirm-stage trade."
+        )
+
+        local recoveredCompleted =
+            TransferConfirmAndWait(
+                "Recover Confirm",
+                12
+            )
+
+        if recoveredCompleted == true then
+
+            TransferWaitForLiveTradeClosed(5)
+
+            return true, "Recovered pending confirm"
+        end
+
+        return false, "Complete timeout"
+    end
+
     TransferState.Batch =
         TransferState.Batch + 1
 
@@ -10222,11 +10288,17 @@ function TransferWorkerLoop()
                                 break
                             end
 
-                            if TransferConfirmWindowReady() == true then
+                            if TransferConfirmWindowReady() == true
+                            or TransferGetTradeButtonText() == "Confirm"
+                            or TransferGetTradeButtonText() == "Confirmed" then
+
+                                TransferTryInstantFinalConfirm(
+                                    "Request blocked while confirm was ready."
+                                )
 
                                 TransferConfirmAndWait(
                                     "Blocked Confirm Recovery",
-                                    8
+                                    10
                                 )
 
                                 break
