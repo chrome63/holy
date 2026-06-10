@@ -630,6 +630,49 @@ else
         )
 end
 
+--==================================================
+-- SANCTUM: GARDEN WORLD ACTION
+-- Only visible in Garden World.
+--==================================================
+
+if IsGardenWorld() then
+
+    HomeLeftBox:AddButton({
+        Text = "Garden",
+        Tooltip = "Teleport to normal Grow a Garden.",
+        Func = function()
+
+            local player =
+                LocalPlayer
+                or Players.LocalPlayer
+
+            if not player then
+                warn("[HOLY SNIPER LITE] Garden teleport failed: LocalPlayer missing.")
+                return
+            end
+
+            print("[HOLY SNIPER LITE] Teleporting to Garden World...")
+
+            local ok, err =
+                pcall(function()
+
+                    TeleportService:Teleport(
+                        GROW_A_GARDEN_PLACE_ID,
+                        player
+                    )
+                end)
+
+            if ok ~= true then
+
+                warn(
+                    "[HOLY SNIPER LITE] Garden teleport failed:",
+                    tostring(err)
+                )
+            end
+        end,
+    })
+end
+
 local PresenceStateLabel =
     HomeRightBox:AddLabel({
         Text = '<font color="rgb(103,232,249)"><b>● IDLE</b></font>',
@@ -5989,17 +6032,9 @@ function TransferIsInTradeHard()
         return true, "LiveTrade open"
     end
 
-    if TransferState.TradeDeclined == true then
-        return false, "Trade declined"
-    end
-
     if TransferState.TradeCompleted == true
     or TransferState.TradeResult == "Completed" then
         return false, "Completed"
-    end
-
-    if TransferState.TradeOpen == true then
-        return true, "TradeOpen true"
     end
 
     local localState =
@@ -6014,6 +6049,43 @@ function TransferIsInTradeHard()
 
     if TransferStateIsInTradeLike(otherState) then
         return true, "Other state " .. tostring(otherState)
+    end
+
+    if TransferState.TradeOpen == true then
+
+        if TransferState.TradeDeclined == true then
+
+            local age =
+                os.clock()
+                - (
+                    tonumber(TransferState.LastTradeUpdate)
+                    or os.clock()
+                )
+
+            if age >= 0.75 then
+                return false, "Declined settled"
+            end
+
+            return true, "Decline settling"
+        end
+
+        return true, "TradeOpen true"
+    end
+
+    if TransferState.TradeDeclined == true then
+
+        local age =
+            os.clock()
+            - (
+                tonumber(TransferState.LastTradeUpdate)
+                or os.clock()
+            )
+
+        if age < 0.75 then
+            return true, "Decline settling"
+        end
+
+        return false, "Declined settled"
     end
 
     return false, "Safe"
@@ -7278,21 +7350,48 @@ end
 
 function TransferDeclineTrade()
 
-    local ok, msg =
+    local firstOk, firstMsg =
         TransferFireTradeRemote("Decline")
+
+    task.wait(0.08)
+
+    local secondOk, secondMsg =
+        TransferFireTradeRemote("Decline")
+
+    local ok =
+        firstOk == true
+        or secondOk == true
+
+    local msg =
+        "First: "
+        .. tostring(firstMsg)
+        .. " | Second: "
+        .. tostring(secondMsg)
 
     TransferSetStatus(
         ok and "Declined" or "Decline Failed",
         msg
     )
 
-    print("[TRANSFER] Decline:", tostring(ok), tostring(msg))
+    print(
+        "[TRANSFER] Decline:",
+        tostring(ok),
+        "| first:",
+        tostring(firstOk),
+        tostring(firstMsg),
+        "| second:",
+        tostring(secondOk),
+        tostring(secondMsg)
+    )
 
     if ok == true then
 
         TransferMarkTradeDeclined(
             "Local decline requested."
         )
+
+        -- Give Roblox/server time to actually clear the old trade.
+        TransferWaitForLiveTradeClosed(3)
     end
 
     return ok
@@ -9314,7 +9413,13 @@ function TransferWorkerLoop()
 
                     if retryMsg == "Trade declined" then
 
-                        TransferWaitForLiveTradeClosed(0.75)
+                        -- Force cleanup because one decline can leave server/UI briefly stuck.
+                        TransferFireTradeRemote("Decline")
+                        task.wait(0.08)
+                        TransferFireTradeRemote("Decline")
+
+                        TransferWaitForLiveTradeClosed(3)
+                        TransferWaitUntilSafeToSendTicket(12)
 
                     elseif retryMsg == "Request blocked" then
 
