@@ -1148,6 +1148,9 @@ local SNIPER_FILTER_SAVE_FOLDER =
 local SNIPER_FILTER_SAVE_FILE =
     "HolySniperLite/SniperFilters.json"
 
+local TRANSFER_SETTINGS_SAVE_FILE =
+    "HolySniperLite/TransferSettings.json"
+
 local SaveSniperFiltersNow =
     nil
 
@@ -2037,6 +2040,356 @@ if IsGardenWorld() ~= true then
     warn("[HOLY LITE TRANSFER] Transfer system skipped: Garden World only.")
 end
 
+local TransferConfigState = {
+    Loading = true,
+    Dirty = false,
+    SaveQueued = false,
+}
+
+function CopyTransferBoolMap(source)
+
+    local output = {}
+
+    if type(source) ~= "table" then
+        return output
+    end
+
+    for key, value in pairs(source) do
+
+        if value == true then
+            output[tostring(key)] =
+                true
+        end
+    end
+
+    return output
+end
+
+function CanUseTransferSettingsFile()
+
+    return type(writefile) == "function"
+        and type(readfile) == "function"
+        and type(isfile) == "function"
+end
+
+function EnsureTransferSettingsFolder()
+
+    if type(makefolder) ~= "function"
+    or type(isfolder) ~= "function" then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            if not isfolder("HolySniperLite") then
+                makefolder("HolySniperLite")
+            end
+        end)
+
+    return ok == true
+end
+
+function SaveTransferSettingsNow(reason)
+
+    if CanUseTransferSettingsFile() ~= true then
+        return false
+    end
+
+    EnsureTransferSettingsFolder()
+
+    local payload = {
+        Mode =
+            tostring(TransferState.Mode or "Sender"),
+
+        TargetPlayerName =
+            tostring(TransferState.TargetPlayerName or ""),
+
+        SelectedPets =
+            CopyTransferBoolMap(TransferState.SelectedPets),
+
+        SelectedMutations =
+            CopyTransferBoolMap(TransferState.SelectedMutations),
+
+        MaxPetsPerTrade =
+            tonumber(TransferState.MaxPetsPerTrade) or 12,
+
+        AddPetDelay =
+            tonumber(TransferState.AddPetDelay) or 0.5,
+
+        AddBurstCount =
+            tonumber(TransferState.AddBurstCount) or 1,
+
+        NextTicketDelay =
+            tonumber(TransferState.NextTicketDelay) or 0,
+
+        AutoAcceptTicket =
+            TransferState.AutoAcceptTicket == true,
+
+        AutoConfirm =
+            TransferState.AutoConfirm == true,
+
+        AutoAcceptGift =
+            TransferState.AutoAcceptGift == true,
+
+        AutoUnfavorite =
+            TransferState.AutoUnfavorite == true,
+
+        KeepGoing =
+            TransferState.KeepGoing == true,
+
+        DebugPrints =
+            TransferState.DebugPrints == true,
+
+        MinLevel =
+            tonumber(TransferState.MinLevel) or 1,
+
+        MaxLevel =
+            tonumber(TransferState.MaxLevel) or 100,
+
+        MinBaseWeight =
+            tonumber(TransferState.MinBaseWeight) or 0,
+
+        MaxBaseWeight =
+            tonumber(TransferState.MaxBaseWeight) or 999,
+
+        SavedAt =
+            os.time(),
+
+        Reason =
+            tostring(reason or "manual"),
+    }
+
+    local ok, encoded =
+        pcall(function()
+            return HttpService:JSONEncode(payload)
+        end)
+
+    if ok ~= true
+    or type(encoded) ~= "string" then
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                TRANSFER_SETTINGS_SAVE_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function QueueSaveTransferSettings(reason)
+
+    if TransferConfigState.Loading == true then
+        return
+    end
+
+    TransferConfigState.Dirty =
+        true
+
+    if TransferConfigState.SaveQueued == true then
+        return
+    end
+
+    TransferConfigState.SaveQueued =
+        true
+
+    task.delay(0.35, function()
+
+        TransferConfigState.SaveQueued =
+            false
+
+        if TransferConfigState.Dirty ~= true then
+            return
+        end
+
+        TransferConfigState.Dirty =
+            false
+
+        SaveTransferSettingsNow(
+            reason or "autosave"
+        )
+    end)
+end
+
+function LoadTransferSettingsIntoState()
+
+    if CanUseTransferSettingsFile() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    local existsOk =
+        pcall(function()
+            exists =
+                isfile(TRANSFER_SETTINGS_SAVE_FILE)
+        end)
+
+    if existsOk ~= true
+    or exists ~= true then
+        return false
+    end
+
+    local readOk, raw =
+        pcall(function()
+            return readfile(TRANSFER_SETTINGS_SAVE_FILE)
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+        return false
+    end
+
+    local decodeOk, payload =
+        pcall(function()
+            return HttpService:JSONDecode(raw)
+        end)
+
+    if decodeOk ~= true
+    or type(payload) ~= "table" then
+        return false
+    end
+
+    if payload.Mode == "Receiver" then
+        TransferState.Mode =
+            "Receiver"
+    else
+        TransferState.Mode =
+            "Sender"
+    end
+
+    TransferState.TargetPlayerName =
+        CleanText(payload.TargetPlayerName)
+
+    if type(payload.SelectedPets) == "table" then
+        TransferState.SelectedPets =
+            CopyTransferBoolMap(payload.SelectedPets)
+    end
+
+    if type(payload.SelectedMutations) == "table" then
+        TransferState.SelectedMutations =
+            CopyTransferBoolMap(payload.SelectedMutations)
+    end
+
+    TransferState.MaxPetsPerTrade =
+        math.clamp(
+            math.floor(tonumber(payload.MaxPetsPerTrade) or 12),
+            1,
+            50
+        )
+
+    TransferState.AddPetDelay =
+        math.clamp(
+            tonumber(payload.AddPetDelay) or 0.5,
+            0.01,
+            3
+        )
+
+    TransferState.AddBurstCount =
+        math.clamp(
+            math.floor(tonumber(payload.AddBurstCount) or 1),
+            1,
+            50
+        )
+
+    TransferState.NextTicketDelay =
+        math.clamp(
+            tonumber(payload.NextTicketDelay) or 0,
+            0,
+            60
+        )
+
+    TransferState.AutoAcceptTicket =
+        payload.AutoAcceptTicket ~= false
+
+    TransferState.AutoConfirm =
+        payload.AutoConfirm ~= false
+
+    TransferState.AutoAcceptGift =
+        payload.AutoAcceptGift == true
+
+    TransferState.AutoUnfavorite =
+        payload.AutoUnfavorite ~= false
+
+    TransferState.KeepGoing =
+        payload.KeepGoing == true
+
+    TransferState.DebugPrints =
+        payload.DebugPrints == true
+
+    TransferState.MinLevel =
+        math.max(
+            1,
+            math.floor(tonumber(payload.MinLevel) or 1)
+        )
+
+    TransferState.MaxLevel =
+        math.max(
+            TransferState.MinLevel,
+            math.floor(tonumber(payload.MaxLevel) or 100)
+        )
+
+    TransferState.MinBaseWeight =
+        math.max(
+            0,
+            tonumber(payload.MinBaseWeight) or 0
+        )
+
+    TransferState.MaxBaseWeight =
+        math.max(
+            0,
+            tonumber(payload.MaxBaseWeight) or 999
+        )
+
+    return true
+end
+
+function MapHasTransferValue(map, value)
+
+    value =
+        CleanText(value)
+
+    if value == "" then
+        return false
+    end
+
+    return type(map) == "table"
+        and map[value] == true
+end
+
+function EnsureTransferDropdownChoice(choices, value)
+
+    value =
+        CleanText(value)
+
+    if value == "" then
+        return choices
+    end
+
+    for _, existing in ipairs(choices) do
+
+        if existing == value then
+            return choices
+        end
+    end
+
+    table.insert(
+        choices,
+        value
+    )
+
+    table.sort(choices)
+
+    return choices
+end
+
 local TransferState = {
     SelectedPets = {},
     SelectedMutations = {},
@@ -2138,6 +2491,8 @@ local TransferState = {
     DebugPrints = false,
     Timing = {},
 }
+
+LoadTransferSettingsIntoState()
 
 function TransferDebugPrint(...)
 
@@ -8800,6 +9155,11 @@ and IsGardenWorld() then
     local InitialTransferTargetChoices =
         TransferBuildTargetChoices()
 
+        EnsureTransferDropdownChoice(
+        InitialTransferTargetChoices,
+        TransferState.TargetPlayerName
+    )
+
     local TransferPetBox =
         AddTransferLeftBox(
             Tabs.Transfer,
@@ -8869,7 +9229,7 @@ and IsGardenWorld() then
             {
                 Text = "Pets",
                 Values = InitialTransferPetChoices,
-                Default = {},
+                Default = CopyTransferBoolMap(TransferState.SelectedPets),
                 Searchable = true,
                 Multi = true,
             }
@@ -8916,7 +9276,7 @@ and IsGardenWorld() then
             {
                 Text = "Mutations",
                 Values = InitialTransferMutationChoices,
-                Default = {},
+                Default = CopyTransferBoolMap(TransferState.SelectedMutations),
                 Searchable = true,
                 Multi = true,
             }
@@ -8939,7 +9299,7 @@ and IsGardenWorld() then
         "HolyFreshTransferMinLevel",
         {
             Text = "Min Level",
-            Default = "1",
+            Default = tostring(TransferState.MinLevel),
             Numeric = false,
             Finished = false,
             ClearTextOnFocus = false,
@@ -8967,7 +9327,7 @@ and IsGardenWorld() then
         "HolyFreshTransferMaxLevel",
         {
             Text = "Max Level",
-            Default = "100",
+            Default = tostring(TransferState.MaxLevel),
             Numeric = false,
             Finished = false,
             ClearTextOnFocus = false,
@@ -8995,7 +9355,7 @@ and IsGardenWorld() then
         "HolyFreshTransferMinBaseWeight",
         {
             Text = "Min BaseWeight",
-            Default = "0",
+            Default = tostring(TransferState.MaxBaseWeight),
             Numeric = false,
             Finished = false,
             ClearTextOnFocus = false,
@@ -9021,7 +9381,7 @@ and IsGardenWorld() then
         "HolyFreshTransferMaxBaseWeight",
         {
             Text = "Max BaseWeight",
-            Default = "999",
+            Default = tostring(TransferState.MaxBaseWeight),
             Numeric = false,
             Finished = false,
             ClearTextOnFocus = false,
@@ -9067,7 +9427,7 @@ and IsGardenWorld() then
                     "Sender",
                     "Receiver",
                 },
-                Default = "Sender",
+                Default = TransferState.Mode,
                 Searchable = false,
             }
         )
@@ -9112,7 +9472,7 @@ and IsGardenWorld() then
             {
                 Text = "Player",
                 Values = InitialTransferTargetChoices,
-                Default = "",
+                Default = TransferState.TargetPlayerName,
                 Searchable = true,
             }
         )
@@ -9203,6 +9563,10 @@ and IsGardenWorld() then
         TransferState.TransferEnabled =
             value == true
 
+        SaveTransferSettingsNow(
+            "transfer enabled changed"
+        )
+
         if TransferState.TransferEnabled == true then
 
             TransferWorkerLoop()
@@ -9221,7 +9585,7 @@ and IsGardenWorld() then
             "HolyFreshTransferAutoAcceptTicket",
             {
                 Text = "Auto Accept Ticket",
-                Default = true,
+                Default = TransferState.AutoAcceptTicket == true,
                 Tooltip = "Receiver mode: automatically accepts incoming trade tickets from the selected player.",
             }
         )
@@ -9243,7 +9607,7 @@ and IsGardenWorld() then
             "HolyFreshTransferAutoConfirm",
             {
                 Text = "Auto Confirm",
-                Default = true,
+                Default = TransferState.AutoConfirm == true,
                 Tooltip = "Receiver mode: automatically accepts the trade and final confirms.",
             }
         )
@@ -9265,7 +9629,7 @@ and IsGardenWorld() then
             "HolyFreshTransferAutoAcceptGift",
             {
                 Text = "Auto Accept Gift",
-                Default = false,
+                Default = TransferState.AutoAcceptGift == true,
                 Tooltip = "Automatically accepts incoming pet gifts. If a player is selected, only accepts gifts from that player.",
             }
         )
@@ -9287,7 +9651,7 @@ and IsGardenWorld() then
             "HolyFreshTransferAutoUnfavorite",
             {
                 Text = "Auto Unfavorite",
-                Default = true,
+                Default = TransferState.AutoUnfavorite == true,
                 Tooltip = "Sender mode: unfavorites matching pets before adding them to trade.",
             }
         )
@@ -9309,7 +9673,7 @@ and IsGardenWorld() then
             "HolyFreshTransferKeepGoing",
             {
                 Text = "Keep Going",
-                Default = false,
+                Default = TransferState.KeepGoing == true,
                 Tooltip = "Sender: keep sending batches. Receiver: keep accepting next tickets.",
             }
         )
@@ -9330,7 +9694,7 @@ and IsGardenWorld() then
         "HolyFreshTransferDebugPrints",
         {
             Text = "Debug Prints",
-            Default = false,
+            Default = TransferState.DebugPrints == true,
             Tooltip = "Only enable while testing. OFF removes console spam for faster transfer.",
         }
     ):OnChanged(function(value)
@@ -9350,7 +9714,7 @@ and IsGardenWorld() then
             "HolyFreshTransferMaxPets",
             {
                 Text = "Max Pets",
-                Default = "12",
+                Default = tostring(TransferState.MaxPetsPerTrade),
                 Numeric = false,
                 Finished = false,
                 ClearTextOnFocus = false,
@@ -9386,7 +9750,7 @@ and IsGardenWorld() then
             "HolyFreshTransferAddPetDelay",
             {
                 Text = "Add Delay",
-                Default = "0.5",
+                Default = tostring(TransferState.AddPetDelay),
                 Numeric = false,
                 Finished = false,
                 ClearTextOnFocus = false,
@@ -9416,7 +9780,7 @@ and IsGardenWorld() then
             "HolyFreshTransferAddBurst",
             {
                 Text = "Add Burst",
-                Default = "1",
+                Default = tostring(TransferState.AddBurstCount),
                 Numeric = false,
                 Finished = false,
                 ClearTextOnFocus = false,
@@ -9447,7 +9811,7 @@ and IsGardenWorld() then
             "HolyFreshTransferNextTicketDelay",
             {
                 Text = "Next Ticket Delay",
-                Default = "0",
+                Default = tostring(TransferState.NextTicketDelay),
                 Numeric = false,
                 Finished = false,
                 ClearTextOnFocus = false,
