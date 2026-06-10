@@ -1,5 +1,5 @@
 --==================================================
--- HOLY v3.3.7 — OBSIDIAN FOUNDATION GROW A GARDEN TRADE MARKET CODING
+-- HOLY v3.3.7 â€” OBSIDIAN FOUNDATION GROW A GARDEN TRADE MARKET CODING
 -- Purpose: Deterministic, modular base (no features)
 --==================================================
 
@@ -3738,7 +3738,7 @@ function ImportWatchlistsFromText(rawText, mode)
 end
 
 --==================================================
--- LISTING → SNIPER PRICE SYNC
+-- LISTING â†’ SNIPER PRICE SYNC
 -- Uses listing filter prices to update sniper MaxPrice.
 -- Exact pet names only. No prefix/suffix/fuzzy matching.
 --==================================================
@@ -3791,7 +3791,7 @@ function FormatPriceSyncNumber(value)
     end
 
     if number == math.huge then
-        return "∞"
+        return "âˆž"
     end
 
     number =
@@ -4027,7 +4027,7 @@ function BuildSniperPriceSyncPreview(percent)
     local lines = {
         "Price Sync Preview",
         "Percent: " .. tostring(percent) .. "%",
-        "Formula: sniper price = listing price × percent",
+        "Formula: sniper price = listing price Ã— percent",
         "",
     }
 
@@ -4073,7 +4073,7 @@ function BuildSniperPriceSyncPreview(percent)
                     .. tostring(change.PetName)
                     .. ": "
                     .. FormatPriceSyncNumber(change.OldPrice)
-                    .. " → "
+                    .. " â†’ "
                     .. FormatPriceSyncNumber(change.NewPrice)
                     .. " | listing "
                     .. FormatPriceSyncNumber(change.ListingPrice)
@@ -4084,7 +4084,7 @@ function BuildSniperPriceSyncPreview(percent)
 
             table.insert(
                 lines,
-                "… +"
+                "â€¦ +"
                     .. tostring(#changes - maxRows)
                     .. " more changes"
             )
@@ -4419,50 +4419,6 @@ ShowcaseDropdownSyncing = false
 ShowcaseDebugPrints = false
 
 TargetPetsHopPlayerActivity = {}
-
---==================================================
--- TRANSFER STATE
--- Garden + Trade World.
--- Uses dynamic game pet list + dynamic mutation list.
--- Actual sending uses inventory-owned matches only.
---==================================================
-
-TransferState = {
-    Busy = false,
-    DryRun = true,
-
-    SelectedPets = {},
-    SelectedMutations = {},
-
-    MinLevel = 1,
-    MaxLevel = 100,
-
-    MinBaseWeight = 0,
-    MaxBaseWeight = 999,
-
-    MaxPetsPerTrade = 6,
-
-    TargetPlayerName = "",
-    TargetUserId = 0,
-
-    SkipFavorites = true,
-    AutoConfirmAccept = false,
-
-    MatchedPets = {},
-    SentThisSession = 0,
-
-    Status = "Idle",
-    LastResult = "None",
-
-    PetDropdownRef = nil,
-    MutationDropdownRef = nil,
-    TargetDropdownRef = nil,
-
-    StatusLabel = nil,
-    TargetLabel = nil,
-    MatchedLabel = nil,
-    LastResultLabel = nil,
-}
 --==================================================
 -- ANTI ALT / AVOID USERS STATE
 -- Detects blocked users after joining a server.
@@ -5204,7 +5160,7 @@ GlobalSnipeWebhook = {
 HolySnipesWebhook = {
     Enabled = true,
 
-    -- Put the 👑｜holy-snipes webhook URL here.
+    -- Put the ðŸ‘‘ï½œholy-snipes webhook URL here.
     URL = "https://discord.com/api/webhooks/1507833079388176404/Y4nv0rlSnyWGnJAnc9TSTq_EpcC72_Qw6vkv_kiE8jSRFyGZpoFInJqn7tnC3Knh4mmy",
 
     -- Icy holy white / angel-blue embed strip.
@@ -5422,12 +5378,12 @@ MarketTrackerTargets = {
 
     ["Ghostly Spider"] = {
         Type = "Rare",
-        Emoji = "🕷️",
+        Emoji = "ðŸ•·ï¸",
 
-        -- <= SnipePrice  = 🔥 Snipe / bright green / role ping
-        -- <= GoodPrice   = ✅ Good / green
-        -- <= MaxPrice    = ⚖️ Fair / yellow
-        -- > MaxPrice     = ❌ Overpriced / red
+        -- <= SnipePrice  = ðŸ”¥ Snipe / bright green / role ping
+        -- <= GoodPrice   = âœ… Good / green
+        -- <= MaxPrice    = âš–ï¸ Fair / yellow
+        -- > MaxPrice     = âŒ Overpriced / red
         MaxPrice = 50000,
         GoodPrice = 30000,
         SnipePrice = 15000,
@@ -5438,7 +5394,7 @@ MarketTrackerTargets = {
 
     ["Rainbow Elephant"] = {
         Type = "Rare",
-        Emoji = "🐘",
+        Emoji = "ðŸ˜",
 
         MaxPrice = 2000000,
         GoodPrice = 500000,
@@ -5450,7 +5406,7 @@ MarketTrackerTargets = {
 
     ["Rainbow Birb"] = {
         Type = "Rare",
-        Emoji = "🐦",
+        Emoji = "ðŸ¦",
 
         MaxPrice = 50000,
         GoodPrice = 40000,
@@ -5462,7 +5418,7 @@ MarketTrackerTargets = {
 
     ["Rainbow Dilophosaurus"] = {
         Type = "Rare",
-        Emoji = "🦖",
+        Emoji = "ðŸ¦–",
 
         MaxPrice = 60000,
         GoodPrice = 30000,
@@ -5474,7 +5430,7 @@ MarketTrackerTargets = {
 
     ["Blue Whale"] = {
         Type = "Rare",
-        Emoji = "🐋",
+        Emoji = "ðŸ‹",
 
         MaxPrice = 50000,
         GoodPrice = 20000,
@@ -5486,7 +5442,7 @@ MarketTrackerTargets = {
 
     ["Albino Peacock"] = {
         Type = "Rare",
-        Emoji = "🦚",
+        Emoji = "ðŸ¦š",
 
         MaxPrice = 50000,
         GoodPrice = 20000,
@@ -5498,7 +5454,7 @@ MarketTrackerTargets = {
 
     ["Giant Scorpion"] = {
         Type = "Rare",
-        Emoji = "🦂",
+        Emoji = "ðŸ¦‚",
 
         MaxPrice = 70000,
         GoodPrice = 50000,
@@ -5510,7 +5466,7 @@ MarketTrackerTargets = {
 
         ["Ghostly Headless Horseman"] = {
         Type = "Rare",
-        Emoji = "🎃",
+        Emoji = "ðŸŽƒ",
 
         MaxPrice = 30000,
         GoodPrice = 20000,
@@ -5522,7 +5478,7 @@ MarketTrackerTargets = {
 
         ["Rainbow Hotdog Daschund"] = {
         Type = "Rare",
-        Emoji = "🐕",
+        Emoji = "ðŸ•",
 
         MaxPrice = 30000,
         GoodPrice = 15000,
@@ -5539,7 +5495,7 @@ MarketTrackerTargets = {
 
     ["Seal"] = {
         Type = "Weight",
-        Emoji = "🦭",
+        Emoji = "ðŸ¦­",
 
         MaxPrice = 25000,
         GoodPrice = 20000,
@@ -5551,7 +5507,7 @@ MarketTrackerTargets = {
 
     ["Mimic Octopus"] = {
         Type = "Weight",
-        Emoji = "🐙",
+        Emoji = "ðŸ™",
 
         MaxPrice = 10000,
         GoodPrice = 6000,
@@ -8406,7 +8362,7 @@ function TryAutoSwitchShowcasePet(missingPetName)
     print(
         "[BoothPet] Auto switched showcase:",
         tostring(oldPet),
-        "→",
+        "â†’",
         tostring(newPet),
         "| listed as:",
         tostring(fallback.ListedPetName or newPet)
@@ -8572,18 +8528,278 @@ petName =
         .. tostring(tool.Name),
 }
 end
+--==================================================
+-- HOLY FRESH TRANSFER COMPAT HELPERS
+--==================================================
+local function CleanText(value)
+
+    return tostring(value or "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+local function GetWorldName()
+
+    if game.PlaceId == GROW_A_GARDEN_PLACE_ID then
+        return "Garden World"
+    end
+
+    if game.PlaceId == TRADING_WORLD_PLACE_ID then
+        return "Trade World"
+    end
+
+    return "Unknown Place"
+end
+
+local function CanUseFiles()
+
+    return type(writefile) == "function"
+        and type(readfile) == "function"
+        and type(isfile) == "function"
+end
+
+local function EnsureFolder()
+
+    if type(makefolder) ~= "function"
+    or type(isfolder) ~= "function" then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            if not isfolder(SAVE_FOLDER) then
+                makefolder(SAVE_FOLDER)
+            end
+        end)
+
+    return ok == true
+end
+
+local function SaveUISettings()
+
+    if not CanUseFiles() then
+        return false
+    end
+
+    EnsureFolder()
+
+    local payload = {
+        UIScalePercent =
+            tonumber(State.UIScalePercent)
+            or 100,
+
+        ShowUIOnLoad =
+            State.ShowUIOnLoad == true,
+    }
+
+    local ok, encoded =
+        pcall(function()
+            return HttpService:JSONEncode(payload)
+        end)
+
+    if ok ~= true
+    or type(encoded) ~= "string" then
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                UI_SETTINGS_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+local function LoadUISettings()
+
+    if not CanUseFiles() then
+        return false
+    end
+
+    local exists =
+        false
+
+    local existsOk =
+        pcall(function()
+            exists =
+                isfile(UI_SETTINGS_FILE)
+        end)
+
+    if existsOk ~= true
+    or exists ~= true then
+        return false
+    end
+
+    local readOk, raw =
+        pcall(function()
+            return readfile(UI_SETTINGS_FILE)
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+        return false
+    end
+
+    local decodeOk, payload =
+        pcall(function()
+            return HttpService:JSONDecode(raw)
+        end)
+
+    if decodeOk ~= true
+    or type(payload) ~= "table" then
+        return false
+    end
+
+    if tonumber(payload.UIScalePercent) then
+
+        State.UIScalePercent =
+            math.clamp(
+                math.floor(tonumber(payload.UIScalePercent)),
+                30,
+                110
+            )
+    end
+
+    if type(payload.ShowUIOnLoad) == "boolean" then
+        State.ShowUIOnLoad =
+            payload.ShowUIOnLoad
+    end
+
+    return true
+end
+
+local function CopyToClipboard(text)
+
+    local clipboard =
+        setclipboard
+        or toclipboard
+        or set_clipboard
+
+    if type(clipboard) ~= "function" then
+        warn("[HOLY FRESH] Clipboard unsupported.")
+        return false
+    end
+
+    pcall(function()
+        clipboard(tostring(text or ""))
+    end)
+
+    return true
+end
+
+local function SetControlText(control, text)
+
+    if not control then
+        return
+    end
+
+    if type(control.SetText) == "function" then
+
+        pcall(function()
+            control:SetText(tostring(text or ""))
+        end)
+
+        return
+    end
+
+    if type(control.SetName) == "function" then
+
+        pcall(function()
+            control:SetName(tostring(text or ""))
+        end)
+
+        return
+    end
+
+    pcall(function()
+        control.Text =
+            tostring(text or "")
+    end)
+end
+
+local function SetControlVisible(control, visible)
+
+    if not control then
+        return
+    end
+
+    visible =
+        visible == true
+
+    if type(control.SetVisible) == "function" then
+
+        pcall(function()
+            control:SetVisible(visible)
+        end)
+
+        return
+    end
+
+    if type(control.SetVisibility) == "function" then
+
+        pcall(function()
+            control:SetVisibility(visible)
+        end)
+
+        return
+    end
+
+    pcall(function()
+        control.Visible =
+            visible
+    end)
+end
+
+local function AddLeftBox(tab, title, icon)
+
+    if type(tab.AddLeftCollapsibleGroupbox) == "function" then
+
+        return tab:AddLeftCollapsibleGroupbox(
+            title,
+            icon,
+            true
+        )
+    end
+
+    return tab:AddLeftGroupbox(
+        title,
+        icon
+    )
+end
+
+local function AddRightBox(tab, title, icon)
+
+    if type(tab.AddRightCollapsibleGroupbox) == "function" then
+
+        return tab:AddRightCollapsibleGroupbox(
+            title,
+            icon,
+            true
+        )
+    end
+
+    return tab:AddRightGroupbox(
+        title,
+        icon
+    )
+end
 
 --==================================================
--- HF TRANSFER SYSTEM
--- Isolated Holy Fresh transfer module.
--- Does NOT touch the old Transfer tab/state/functions.
+
+
+--==================================================
+-- [12.5] TRANSFER SYSTEM
+-- Garden World only.
+-- Uses DataService PetData.BaseWeight, not visible KG.
 --==================================================
 
-HFTransfer =
-    HFTransfer
-    or {}
-
-HFTransfer.State = {
+local TransferState = {
     SelectedPets = {},
     SelectedMutations = {},
 
@@ -8595,8 +8811,8 @@ HFTransfer.State = {
     IsTransferRunning = false,
 
     MaxPetsPerTrade = 12,
-    AddPetDelay = 0.05,
-    AddBurstCount = 12,
+    AddPetDelay = 0.5,
+    AddBurstCount = 1,
     NextTicketDelay = 0,
 
     AutoAcceptTicket = true,
@@ -8619,6 +8835,7 @@ HFTransfer.State = {
     Sent = 0,
 
     AllPetChoices = {},
+
     AllMutationChoices = {},
 
     Status = "Idle",
@@ -8684,151 +8901,282 @@ HFTransfer.State = {
     Timing = {},
 }
 
-HFTransfer.DataService = nil
-HFTransfer.TradeData = nil
-HFTransfer.PetRegistry = nil
-HFTransfer.FavoriteRemote = nil
+local function TransferDebugPrint(...)
 
-function HFTransfer.CleanText(value)
-
-    return tostring(value or "")
-        :gsub("^%s+", "")
-        :gsub("%s+$", "")
+    if TransferState.DebugPrints == true then
+        print(...)
+    end
 end
 
-function HFTransfer.SetControlText(control, text)
+local function TransferTimingReset(label)
 
-    if not control then
-        return
-    end
+    TransferState.Timing = {
+        Label = tostring(label or "Trade"),
+        Started = os.clock(),
 
-    if type(control.SetText) == "function" then
+        ValueSeenAt = nil,
+        FirstAcceptAt = nil,
+        AcceptLockedAt = nil,
+        ConfirmSeenAt = nil,
+        CompletedAt = nil,
 
-        pcall(function()
-            control:SetText(tostring(text or ""))
-        end)
-
-        return
-    end
-
-    if type(control.SetName) == "function" then
-
-        pcall(function()
-            control:SetName(tostring(text or ""))
-        end)
-
-        return
-    end
-
-    pcall(function()
-        control.Text =
-            tostring(text or "")
-    end)
+        Attempts = 0,
+        LastValue = 0,
+        FirstButton = "",
+        LastButton = "",
+        Reported = false,
+    }
 end
 
-function HFTransfer.SetControlVisible(control, visible)
+local function TransferTimingMark(key)
 
-    if not control then
+    local timing =
+        TransferState.Timing
+
+    if type(timing) ~= "table"
+    or not timing.Started then
         return
     end
 
-    visible =
-        visible == true
-
-    if type(control.SetVisible) == "function" then
-
-        pcall(function()
-            control:SetVisible(visible)
-        end)
-
-        return
+    if timing[key] == nil then
+        timing[key] =
+            os.clock() - timing.Started
     end
-
-    if type(control.SetVisibility) == "function" then
-
-        pcall(function()
-            control:SetVisibility(visible)
-        end)
-
-        return
-    end
-
-    pcall(function()
-        control.Visible =
-            visible
-    end)
 end
 
-function HFTransfer.CopyToClipboard(text)
+local function TransferTimingSet(key, value)
 
-    local clipboard =
-        setclipboard
-        or toclipboard
-        or set_clipboard
+    local timing =
+        TransferState.Timing
 
-    if type(clipboard) ~= "function" then
-        warn("[HF TRANSFER] Clipboard unsupported.")
-        return false
+    if type(timing) ~= "table" then
+        return
     end
 
-    local ok =
-        pcall(function()
-            clipboard(tostring(text or ""))
-        end)
-
-    return ok == true
+    timing[key] =
+        value
 end
 
-function HFTransfer.AddLeftBox(tab, title, icon)
+local function TransferTimingBumpAttempts(count)
 
-    if not tab then
-        return nil
+    local timing =
+        TransferState.Timing
+
+    if type(timing) ~= "table" then
+        return
     end
 
-    if type(tab.AddLeftCollapsibleGroupbox) == "function" then
+    timing.Attempts =
+        (tonumber(timing.Attempts) or 0)
+        + (tonumber(count) or 1)
+end
 
-        return tab:AddLeftCollapsibleGroupbox(
-            title,
-            icon,
-            true
-        )
+local function TransferTimingFormat(value)
+
+    value =
+        tonumber(value)
+
+    if not value then
+        return "-"
     end
 
-    return tab:AddLeftGroupbox(
-        title,
-        icon
+    return string.format("%.3fs", value)
+end
+
+local function TransferTimingReport(reason)
+
+    local timing =
+        TransferState.Timing
+
+    if type(timing) ~= "table"
+    or timing.Reported == true then
+        return
+    end
+
+    timing.Reported =
+        true
+
+    print(
+        "[TRANSFER TIMING]",
+        tostring(timing.Label or "Trade"),
+        "| reason:",
+        tostring(reason or "done"),
+        "| value:",
+        TransferTimingFormat(timing.ValueSeenAt),
+        "| firstAccept:",
+        TransferTimingFormat(timing.FirstAcceptAt),
+        "| locked:",
+        TransferTimingFormat(timing.AcceptLockedAt),
+        "| confirm:",
+        TransferTimingFormat(timing.ConfirmSeenAt),
+        "| completed:",
+        TransferTimingFormat(timing.CompletedAt),
+        "| attempts:",
+        tostring(timing.Attempts or 0),
+        "| lastValue:",
+        tostring(timing.LastValue or 0),
+        "| firstButton:",
+        tostring(timing.FirstButton or ""),
+        "| lastButton:",
+        tostring(timing.LastButton or "")
     )
 end
 
-function HFTransfer.AddRightBox(tab, title, icon)
+local TransferSetStatus =
+    nil
 
-    if not tab then
+local TransferAcceptPetGift =
+    nil
+
+local TransferDataService =
+    nil
+
+local TransferTradeData =
+    nil
+
+local TransferPetRegistry =
+    nil
+
+local function TransferGetTradeData()
+
+    if TransferTradeData then
+        return TransferTradeData
+    end
+
+    local dataFolder =
+        ReplicatedStorage:FindFirstChild("Data")
+
+    local tradeDataModule =
+        dataFolder
+        and dataFolder:FindFirstChild("TradeData")
+
+    if not tradeDataModule
+    or not tradeDataModule:IsA("ModuleScript") then
         return nil
     end
 
-    if type(tab.AddRightCollapsibleGroupbox) == "function" then
+    local ok, result =
+        pcall(function()
+            return require(tradeDataModule)
+        end)
 
-        return tab:AddRightCollapsibleGroupbox(
-            title,
-            icon,
-            true
-        )
+    if ok
+    and type(result) == "table" then
+
+        TransferTradeData =
+            result
+
+        return TransferTradeData
     end
 
-    return tab:AddRightGroupbox(
-        title,
-        icon
+    return nil
+end
+
+local function TransferGetTradeItemLimit()
+
+    local tradeData =
+        TransferGetTradeData()
+
+    local limit =
+        tradeData
+        and tonumber(tradeData.ItemLimit)
+
+    return math.clamp(
+        math.floor(limit or 12),
+        1,
+        50
     )
 end
 
-function HFTransfer.DebugPrint(...)
+local function TransferGetMaxPetsPerTrade()
 
-    if HFTransfer.State.DebugPrints == true then
-        print("[HF TRANSFER]", ...)
+    local tradeLimit =
+        TransferGetTradeItemLimit()
+
+    local userLimit =
+        tonumber(TransferState.MaxPetsPerTrade)
+        or tradeLimit
+
+    return math.clamp(
+        math.floor(userLimit),
+        1,
+        tradeLimit
+    )
+end
+
+local function TransferGetAddPetDelay()
+
+    local delay =
+        tonumber(TransferState.AddPetDelay)
+        or 0.5
+
+    return math.clamp(
+        delay,
+        0.01,
+        3
+    )
+end
+
+local function TransferGetAddBurstCount()
+
+    local burst =
+        tonumber(TransferState.AddBurstCount)
+        or 1
+
+    return math.clamp(
+        math.floor(burst),
+        1,
+        TransferGetMaxPetsPerTrade()
+    )
+end
+
+local function TransferGetNextTicketDelay()
+
+    local delay =
+        tonumber(TransferState.NextTicketDelay)
+        or 0
+
+    return math.clamp(
+        delay,
+        0,
+        60
+    )
+end
+
+local function TransferWaitBeforeNextTicket()
+
+    local delay =
+        TransferGetNextTicketDelay()
+
+    if delay <= 0 then
+        return
+    end
+
+    local started =
+        os.clock()
+
+    while IsCurrentRun()
+    and TransferState.TransferEnabled == true
+    and os.clock() - started < delay do
+
+        local remaining =
+            math.max(
+                0,
+                delay - (os.clock() - started)
+            )
+
+        TransferSetStatus(
+            "Ticket Delay",
+            "Next trade request in "
+                .. string.format("%.1f", remaining)
+                .. "s"
+        )
+
+        task.wait(0.1)
     end
 end
 
-function HFTransfer.ToNumber(value, fallback)
+local function TransferToNumber(value, fallback)
 
     local text =
         tostring(value or "")
@@ -8849,7 +9197,7 @@ function HFTransfer.ToNumber(value, fallback)
     return number
 end
 
-function HFTransfer.FormatNumber(value)
+local function TransferFormatNumber(value)
 
     local number =
         tonumber(value)
@@ -8865,7 +9213,39 @@ function HFTransfer.FormatNumber(value)
     return string.format("%.4f", number)
 end
 
-function HFTransfer.MapIsEmpty(map)
+local function TransferUnpack(list)
+
+    if type(table.unpack) == "function" then
+        return table.unpack(list)
+    end
+
+    if type(unpack) == "function" then
+        return unpack(list)
+    end
+
+    if type(list) ~= "table" then
+        return nil
+    end
+
+    local count =
+        #list
+
+    if count == 1 then
+        return list[1]
+    end
+
+    if count == 2 then
+        return list[1], list[2]
+    end
+
+    if count == 3 then
+        return list[1], list[2], list[3]
+    end
+
+    return nil
+end
+
+local function TransferMapIsEmpty(map)
 
     if type(map) ~= "table" then
         return true
@@ -8878,7 +9258,7 @@ function HFTransfer.MapIsEmpty(map)
     return true
 end
 
-function HFTransfer.BuildMapFromDropdown(value)
+local function TransferBuildMapFromDropdown(value)
 
     local output = {}
 
@@ -8889,7 +9269,7 @@ function HFTransfer.BuildMapFromDropdown(value)
             if selected == true then
 
                 key =
-                    HFTransfer.CleanText(key)
+                    CleanText(key)
 
                 if key ~= "" then
                     output[key] =
@@ -8901,7 +9281,7 @@ function HFTransfer.BuildMapFromDropdown(value)
     elseif type(value) == "string" then
 
         value =
-            HFTransfer.CleanText(value)
+            CleanText(value)
 
         if value ~= "" then
             output[value] =
@@ -8912,176 +9292,604 @@ function HFTransfer.BuildMapFromDropdown(value)
     return output
 end
 
-function HFTransfer.SetStatus(status, result, forceSourceRefresh)
+local function TransferNormalizeUUID(value)
 
-    local state =
-        HFTransfer.State
+    value =
+        tostring(value or "")
+            :gsub("{", "")
+            :gsub("}", "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
 
-    state.Status =
-        tostring(status or "Idle")
-
-    state.LastResult =
-        tostring(result or "None")
-
-    if state.StatusLabel then
-        HFTransfer.SetControlText(
-            state.StatusLabel,
-            "Mode: " .. state.Status
-        )
+    if not value:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") then
+        return ""
     end
 
-    if state.TargetLabel then
-        HFTransfer.SetControlText(
-            state.TargetLabel,
-            "Player: "
-                .. (
-                    state.TargetPlayerName ~= ""
-                    and state.TargetPlayerName
-                    or "None"
-                )
-        )
-    end
-
-    if state.MatchLabel then
-        HFTransfer.SetControlText(
-            state.MatchLabel,
-            "Matched: "
-                .. tostring(#(state.MatchedPets or {}))
-                .. " | Added: "
-                .. tostring(state.AddedThisBatch or 0)
-        )
-    end
-
-    if state.ResultLabel then
-        HFTransfer.SetControlText(
-            state.ResultLabel,
-            "Batch: "
-                .. tostring(state.Batch or 0)
-                .. " | Sent: "
-                .. tostring(state.Sent or 0)
-                .. " | Result: "
-                .. tostring(state.LastResult)
-        )
-    end
+    return "{" .. value .. "}"
 end
 
-function HFTransfer.GetPetRegistry()
+local function TransferNormalizeUUIDNoBraces(value)
 
-    if type(HFTransfer.PetRegistry) == "table" then
-        return HFTransfer.PetRegistry
+    return tostring(TransferNormalizeUUID(value))
+        :gsub("{", "")
+        :gsub("}", "")
+end
+
+local function TransferGetDataService()
+
+    if TransferDataService then
+        return TransferDataService
     end
 
-    if type(GetPetRegistry) == "function" then
+    local modules =
+        ReplicatedStorage:FindFirstChild("Modules")
 
-        local ok, result =
-            pcall(function()
-                return GetPetRegistry()
-            end)
+    if not modules then
+        return nil
+    end
 
-        if ok
-        and type(result) == "table" then
-            HFTransfer.PetRegistry =
-                result
+    local dataServiceModule =
+        modules:FindFirstChild("DataService")
 
-            return result
-        end
+    if not dataServiceModule then
+        return nil
     end
 
     local ok, result =
         pcall(function()
-            return require(
-                ReplicatedStorage
-                    :WaitForChild("Data")
-                    :WaitForChild("PetRegistry")
-            )
+            return require(dataServiceModule)
         end)
 
     if ok
-    and type(result) == "table" then
-        HFTransfer.PetRegistry =
+    and result then
+
+        TransferDataService =
             result
 
-        return result
+        return TransferDataService
     end
 
     return nil
 end
 
-function HFTransfer.BuildPetChoices()
+local function TransferGetDataServiceData()
 
-    local state =
-        HFTransfer.State
+    local dataService =
+        TransferGetDataService()
 
-    local choices = {}
-    local seen = {}
-
-    local function AddPetName(value)
-
-        value =
-            HFTransfer.CleanText(value)
-
-        if value == ""
-        or seen[value] == true then
-            return
-        end
-
-        seen[value] =
-            true
-
-        table.insert(
-            choices,
-            value
-        )
+    if not dataService then
+        return nil
     end
 
-    if type(RefreshDynamicPetList) == "function" then
+    local ok, data =
         pcall(function()
-            RefreshDynamicPetList()
+            return dataService:GetData()
         end)
+
+    if ok
+    and type(data) == "table" then
+        return data
     end
 
-    if type(PetList) == "table" then
+    ok, data =
+        pcall(function()
+            return dataService.GetData()
+        end)
 
-        for _, petName in ipairs(PetList) do
-            AddPetName(petName)
-        end
+    if ok
+    and type(data) == "table" then
+        return data
     end
 
-    local registry =
-        HFTransfer.GetPetRegistry()
+    return nil
+end
 
-    local petList =
-        type(registry) == "table"
-        and rawget(registry, "PetList")
+local function TransferGetInventoryData()
+
+    local data =
+        TransferGetDataServiceData()
+
+    if type(data) ~= "table" then
+        return nil
+    end
+
+    local petsData =
+        rawget(data, "PetsData")
+
+    local petInventory =
+        type(petsData) == "table"
+        and rawget(petsData, "PetInventory")
         or nil
 
-    if type(petList) == "table" then
+    local inventoryData =
+        type(petInventory) == "table"
+        and rawget(petInventory, "Data")
+        or nil
 
-        for petName, petData in pairs(petList) do
+    if type(inventoryData) ~= "table" then
+        return nil
+    end
 
-            if type(petName) == "string" then
-                AddPetName(petName)
+    return inventoryData
+end
 
-            elseif type(petData) == "table" then
+local function TransferGetInventoryPetDataByUUID(uuid)
 
-                AddPetName(
-                    rawget(petData, "Name")
-                    or rawget(petData, "PetName")
-                    or rawget(petData, "PetType")
-                )
+    local inventoryData =
+        TransferGetInventoryData()
 
-            elseif type(petData) == "string" then
-                AddPetName(petData)
+    if type(inventoryData) ~= "table" then
+        return nil, nil
+    end
+
+    local noBraces =
+        TransferNormalizeUUIDNoBraces(uuid)
+
+    local withBraces =
+        TransferNormalizeUUID(uuid)
+
+    local item =
+        inventoryData[withBraces]
+        or inventoryData[noBraces]
+
+    if type(item) ~= "table" then
+        return nil, nil
+    end
+
+    local petData =
+        rawget(item, "PetData")
+
+    if type(petData) == "table" then
+        return petData, item
+    end
+
+    return item, item
+end
+
+local function TransferResolveRawBaseWeight(petData, itemData, tool)
+
+    local sources = {
+        petData,
+        itemData,
+    }
+
+    for _, source in ipairs(sources) do
+
+        if type(source) == "table" then
+
+            local candidates = {
+                rawget(source, "BaseWeight"),
+                rawget(source, "baseWeight"),
+                rawget(source, "Base_Weight"),
+                rawget(source, "BaseKg"),
+                rawget(source, "BaseKG"),
+                rawget(source, "Base"),
+            }
+
+            for _, value in ipairs(candidates) do
+
+                local number =
+                    tonumber(value)
+
+                if number then
+                    return number, "PetData"
+                end
             end
         end
     end
 
-    local player =
-        Players.LocalPlayer
+    if tool then
+
+        local attrs = {
+            "BaseWeight",
+            "baseWeight",
+            "Base_Weight",
+            "BaseKg",
+            "BaseKG",
+            "Base",
+        }
+
+        for _, attr in ipairs(attrs) do
+
+            local number =
+                tonumber(
+                    tool:GetAttribute(attr)
+                )
+
+            if number then
+                return number, "ToolAttribute:" .. attr
+            end
+        end
+    end
+
+    return nil, "Missing"
+end
+
+local function TransferResolveRawLevel(petData, itemData, tool, fallbackAge)
+
+    local sources = {
+        petData,
+        itemData,
+    }
+
+    for _, source in ipairs(sources) do
+
+        if type(source) == "table" then
+
+            local candidates = {
+                rawget(source, "Level"),
+                rawget(source, "level"),
+                rawget(source, "Age"),
+                rawget(source, "age"),
+                rawget(source, "PetLevel"),
+                rawget(source, "PetAge"),
+            }
+
+            for _, value in ipairs(candidates) do
+
+                local number =
+                    tonumber(value)
+
+                if number then
+                    return math.floor(number), "PetData"
+                end
+            end
+        end
+    end
+
+    if tool then
+
+        local attrs = {
+            "Level",
+            "level",
+            "Age",
+            "age",
+        }
+
+        for _, attr in ipairs(attrs) do
+
+            local number =
+                tonumber(
+                    tool:GetAttribute(attr)
+                )
+
+            if number then
+                return math.floor(number), "ToolAttribute:" .. attr
+            end
+        end
+    end
+
+    local fallback =
+        tonumber(fallbackAge)
+
+    if fallback then
+        return math.floor(fallback), "ToolName"
+    end
+
+    return 1, "Fallback"
+end
+
+local function TransferResolvePetName(petData, itemData, tool, fallbackName)
+
+    local candidates = {
+        tool and tool:GetAttribute("f"),
+        tool and tool:GetAttribute("PetType"),
+        tool and tool:GetAttribute("PetName"),
+
+        itemData and rawget(itemData, "PetType"),
+        itemData and rawget(itemData, "PetName"),
+        itemData and rawget(itemData, "Name"),
+
+        petData and rawget(petData, "PetType"),
+        petData and rawget(petData, "PetName"),
+        petData and rawget(petData, "Name"),
+
+        fallbackName,
+    }
+
+    for _, value in ipairs(candidates) do
+
+        value =
+            CleanText(value)
+
+        if value ~= "" then
+            return value
+        end
+    end
+
+    return ""
+end
+
+local function TransferResolveFavorite(tool, petData, itemData)
+
+    if tool then
+
+        if tool:GetAttribute("d") == true
+        or tool:GetAttribute("IsFavorite") == true
+        or tool:GetAttribute("Favorite") == true
+        or tool:GetAttribute("Favorited") == true then
+            return true
+        end
+    end
+
+    for _, source in ipairs({ petData, itemData }) do
+
+        if type(source) == "table" then
+
+            if rawget(source, "d") == true
+            or rawget(source, "IsFavorite") == true
+            or rawget(source, "Favorite") == true
+            or rawget(source, "Favorited") == true
+            or rawget(source, "Favourited") == true then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function TransferResolveMutation(toolName, basePetName, petData, itemData)
+
+    local function CleanMutation(value)
+
+        value =
+            CleanText(value)
+
+        if value == ""
+        or value == "---"
+        or value == "Normal"
+        or value == "Unknown" then
+            return nil
+        end
+
+        return value
+    end
+
+    for _, source in ipairs({ petData, itemData }) do
+
+        if type(source) == "table" then
+
+            local direct = {
+                rawget(source, "Mutation"),
+                rawget(source, "MutationType"),
+                rawget(source, "PetMutation"),
+                rawget(source, "Variant"),
+            }
+
+            for _, value in ipairs(direct) do
+
+                local cleaned =
+                    CleanMutation(value)
+
+                if cleaned then
+                    return cleaned
+                end
+            end
+
+            for _, key in ipairs({
+                "Mutations",
+                "MutationData",
+                "MutationTraits",
+                "Traits",
+            }) do
+
+                local container =
+                    rawget(source, key)
+
+                if type(container) == "table" then
+
+                    for k, v in pairs(container) do
+
+                        if v == true then
+
+                            local cleaned =
+                                CleanMutation(k)
+
+                            if cleaned then
+                                return cleaned
+                            end
+
+                        elseif type(v) == "string"
+                        or type(v) == "number" then
+
+                            local cleaned =
+                                CleanMutation(v)
+
+                            if cleaned then
+                                return cleaned
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local displayName =
+        CleanText(
+            tostring(toolName or "")
+                :gsub("%b[]", "")
+                :gsub("%s+", " ")
+        )
+
+    basePetName =
+        CleanText(basePetName)
+
+    if displayName == ""
+    or basePetName == ""
+    or displayName == basePetName then
+        return "---"
+    end
+
+    local suffixStart =
+        displayName:find(basePetName, 1, true)
+
+    if not suffixStart then
+        return "---"
+    end
+
+    local mutation =
+        CleanText(
+            displayName:sub(1, suffixStart - 1)
+        )
+
+    if mutation == "" then
+        return "---"
+    end
+
+    return mutation
+end
+
+local function TransferParseDisplayWeight(toolName)
+
+    return tonumber(
+        tostring(toolName or "")
+            :match("%[([%d%.]+)%s*KG%]")
+    )
+end
+
+local function TransferParseDisplayAge(toolName)
+
+    return tonumber(
+        tostring(toolName or "")
+            :match("%[Age%s*(%d+)%]")
+    )
+end
+
+local function TransferResolveToolUUID(tool)
+
+    if not tool
+    or not tool:IsA("Tool") then
+        return ""
+    end
+
+    local candidates = {
+        tool:GetAttribute("PET_UUID"),
+        tool:GetAttribute("UUID"),
+        tool:GetAttribute("ItemUUID"),
+        tool:GetAttribute("ItemId"),
+        tool:GetAttribute("PetUUID"),
+    }
+
+    for _, value in ipairs(candidates) do
+
+        local uuid =
+            TransferNormalizeUUID(value)
+
+        if uuid ~= "" then
+            return uuid
+        end
+    end
+
+    return ""
+end
+
+local function TransferParseInventoryTool(tool)
+
+    if not tool
+    or not tool:IsA("Tool") then
+        return nil
+    end
+
+    local displayWeight =
+        TransferParseDisplayWeight(tool.Name)
+
+    if not displayWeight then
+        return nil
+    end
+
+    local uuid =
+        TransferResolveToolUUID(tool)
+
+    if uuid == "" then
+        return nil
+    end
+
+    local petData, itemData =
+        TransferGetInventoryPetDataByUUID(uuid)
+
+    local nameFromTool =
+        CleanText(
+            tostring(tool.Name or "")
+                :gsub("%b[]", "")
+                :gsub("%s+", " ")
+        )
+
+    local petName =
+        TransferResolvePetName(
+            petData,
+            itemData,
+            tool,
+            nameFromTool
+        )
+
+    if petName == "" then
+        return nil
+    end
+
+    local displayAge =
+        TransferParseDisplayAge(tool.Name)
+
+    local baseWeight, baseWeightSource =
+        TransferResolveRawBaseWeight(
+            petData,
+            itemData,
+            tool
+        )
+
+    local level, levelSource =
+        TransferResolveRawLevel(
+            petData,
+            itemData,
+            tool,
+            displayAge
+        )
+
+    return {
+        Tool = tool,
+        ToolName = tool.Name,
+
+        UUID = uuid,
+
+        PetName = petName,
+
+        Mutation =
+            TransferResolveMutation(
+                tool.Name,
+                petName,
+                petData,
+                itemData
+            ),
+
+        Level = level,
+        LevelSource = levelSource,
+
+        BaseWeight = baseWeight,
+        BaseWeightSource = baseWeightSource,
+
+        DisplayWeight = displayWeight,
+
+        IsFavorite =
+            TransferResolveFavorite(
+                tool,
+                petData,
+                itemData
+            ),
+
+        ValidForSend =
+            baseWeight ~= nil,
+    }
+end
+
+local function TransferBuildInventoryPets()
+
+    local pets = {}
+    local seen = {}
 
     local containers = {
-        player and player:FindFirstChild("Backpack"),
-        player and player.Character,
+        LocalPlayer:FindFirstChild("Backpack"),
+        LocalPlayer.Character,
     }
 
     for _, container in ipairs(containers) do
@@ -9090,165 +9898,409 @@ function HFTransfer.BuildPetChoices()
 
             for _, child in ipairs(container:GetChildren()) do
 
-                if child:IsA("Tool") then
+                local pet =
+                    TransferParseInventoryTool(child)
 
-                    local parsed =
-                        ParsePetTool(child)
+                if pet
+                and pet.UUID ~= ""
+                and not seen[pet.UUID] then
 
-                    if parsed
-                    and parsed.PetName then
-                        AddPetName(parsed.PetName)
-                    end
+                    seen[pet.UUID] =
+                        true
+
+                    table.insert(
+                        pets,
+                        pet
+                    )
                 end
             end
         end
     end
 
-    table.sort(choices)
+    table.sort(pets, function(a, b)
 
-    state.AllPetChoices =
-        choices
+        local aName =
+            tostring(a.PetName or ""):lower()
 
-    if state.PetDropdown
-    and type(state.PetDropdown.SetValues) == "function" then
+        local bName =
+            tostring(b.PetName or ""):lower()
 
-        state.PetDropdown:SetValues(
-            choices
-        )
-    end
+        if aName ~= bName then
+            return aName < bName
+        end
 
-    return choices
+        local aBase =
+            tonumber(a.BaseWeight)
+            or -1
+
+        local bBase =
+            tonumber(b.BaseWeight)
+            or -1
+
+        if aBase ~= bBase then
+            return aBase > bBase
+        end
+
+        return tostring(a.UUID) < tostring(b.UUID)
+    end)
+
+    return pets
 end
 
-function HFTransfer.BuildMutationChoices()
+local function TransferAddUniquePetName(target, seen, value)
 
-    local state =
-        HFTransfer.State
+    local name =
+        CleanText(value)
+
+    if name == "" then
+        return false
+    end
+
+    if name == "None"
+    or name == "---"
+    or name == "Normal"
+    or name == "Unknown" then
+        return false
+    end
+
+    -- Do not pollute normal pet dropdown with egg pseudo-items.
+    if name:sub(1, 4) == "Egg/" then
+        return false
+    end
+
+    if seen[name] == true then
+        return false
+    end
+
+    seen[name] =
+        true
+
+    table.insert(
+        target,
+        name
+    )
+
+    return true
+end
+
+local function TransferGetPetRegistry()
+
+    if type(TransferPetRegistry) == "table" then
+        return TransferPetRegistry
+    end
+
+    local ok, result =
+        pcall(function()
+
+            local dataFolder =
+                ReplicatedStorage:FindFirstChild("Data")
+                or ReplicatedStorage:WaitForChild("Data", 5)
+
+            if not dataFolder then
+                return nil
+            end
+
+            local petRegistryModule =
+                dataFolder:FindFirstChild("PetRegistry")
+                or dataFolder:WaitForChild("PetRegistry", 5)
+
+            if not petRegistryModule then
+                return nil
+            end
+
+            return require(petRegistryModule)
+        end)
+
+    if ok == true
+    and type(result) == "table" then
+
+        TransferPetRegistry =
+            result
+
+        return TransferPetRegistry
+    end
+
+    return nil
+end
+
+local function TransferBuildAllGamePetChoices()
+
+    if type(TransferState.AllPetChoices) == "table"
+    and #TransferState.AllPetChoices > 0 then
+        return TransferState.AllPetChoices
+    end
 
     local choices = {}
     local seen = {}
 
-    local function AddMutationName(value)
+    local registry =
+        TransferGetPetRegistry()
 
-        value =
-            HFTransfer.CleanText(value)
+    if type(registry) == "table"
+    and type(registry.PetList) == "table" then
 
-        if value == ""
-        or value == "---"
-        or value == "Normal"
-        or value == "Unknown"
-        or seen[value] == true then
-            return
-        end
+        for petName, petData in pairs(registry.PetList) do
 
-        seen[value] =
-            true
+            if type(petName) == "string"
+            and type(petData) == "table" then
 
-        table.insert(
-            choices,
-            value
-        )
-    end
-
-    if type(RefreshListingMutationList) == "function" then
-        pcall(function()
-            RefreshListingMutationList()
-        end)
-    end
-
-    if type(ListingMutationList) == "table" then
-
-        for _, mutationName in ipairs(ListingMutationList) do
-            AddMutationName(mutationName)
+                TransferAddUniquePetName(
+                    choices,
+                    seen,
+                    petName
+                )
+            end
         end
     end
+
+    -- Fallback only. This should only run if PetRegistry.PetList fails.
+    if #choices <= 0 then
+
+        for _, pet in ipairs(TransferBuildInventoryPets()) do
+
+            TransferAddUniquePetName(
+                choices,
+                seen,
+                pet.PetName
+            )
+        end
+    end
+
+    table.sort(choices)
+
+    TransferState.AllPetChoices =
+        choices
+
+    print(
+        "[TRANSFER PET LIST]",
+        "PetRegistry pets:",
+        tostring(#choices)
+    )
+
+    return choices
+end
+
+local function TransferBuildPetChoices()
+
+    return TransferBuildAllGamePetChoices()
+end
+
+local function TransferAddUniqueMutationName(target, seen, value)
+
+    local name =
+        CleanText(value)
+
+    if name == "" then
+        return false
+    end
+
+    if name == "---"
+    or name == "Normal"
+    or name == "Unknown" then
+        return false
+    end
+
+    if name == "EnumToPetMutation"
+    or name == "PetMutationToEnum"
+    or name == "PetMutationRegistry"
+    or name == "MachineMutationTypes"
+    or name == "RollRandomMutation" then
+        return false
+    end
+
+    if seen[name] == true then
+        return false
+    end
+
+    seen[name] =
+        true
+
+    table.insert(
+        target,
+        name
+    )
+
+    return true
+end
+
+local function TransferBuildMutationChoices()
+
+    if type(TransferState.AllMutationChoices) == "table"
+    and #TransferState.AllMutationChoices > 0 then
+        return TransferState.AllMutationChoices
+    end
+
+    local choices = {}
+    local seen = {}
 
     local registry =
-        HFTransfer.GetPetRegistry()
+        TransferGetPetRegistry()
 
     local mutationRoot =
         type(registry) == "table"
         and rawget(registry, "PetMutationRegistry")
         or nil
 
-    if type(mutationRoot) ~= "table"
-    and type(registry) == "table" then
-        mutationRoot =
-            registry
+    local petMutationRegistry =
+        type(mutationRoot) == "table"
+        and rawget(mutationRoot, "PetMutationRegistry")
+        or nil
+
+    if type(petMutationRegistry) == "table" then
+
+        for mutationName, mutationData in pairs(petMutationRegistry) do
+
+            TransferAddUniqueMutationName(
+                choices,
+                seen,
+                mutationName
+            )
+
+            if type(mutationData) == "table" then
+
+                TransferAddUniqueMutationName(
+                    choices,
+                    seen,
+                    rawget(mutationData, "Name")
+                )
+
+                TransferAddUniqueMutationName(
+                    choices,
+                    seen,
+                    rawget(mutationData, "Mutation")
+                )
+
+                TransferAddUniqueMutationName(
+                    choices,
+                    seen,
+                    rawget(mutationData, "DisplayName")
+                )
+
+            elseif type(mutationData) == "string" then
+
+                TransferAddUniqueMutationName(
+                    choices,
+                    seen,
+                    mutationData
+                )
+            end
+        end
     end
 
-    if type(mutationRoot) == "table" then
+    local machineMutationTypes =
+        type(mutationRoot) == "table"
+        and rawget(mutationRoot, "MachineMutationTypes")
+        or nil
 
-        local enumToPetMutation =
-            rawget(mutationRoot, "EnumToPetMutation")
+    if type(machineMutationTypes) == "table" then
 
-        if type(enumToPetMutation) == "table" then
+        for mutationName, mutationData in pairs(machineMutationTypes) do
 
-            for _, mutationName in pairs(enumToPetMutation) do
-                AddMutationName(mutationName)
+            TransferAddUniqueMutationName(
+                choices,
+                seen,
+                mutationName
+            )
+
+            if type(mutationData) == "table" then
+
+                TransferAddUniqueMutationName(
+                    choices,
+                    seen,
+                    rawget(mutationData, "Name")
+                )
+
+                TransferAddUniqueMutationName(
+                    choices,
+                    seen,
+                    rawget(mutationData, "Mutation")
+                )
+
+                TransferAddUniqueMutationName(
+                    choices,
+                    seen,
+                    rawget(mutationData, "DisplayName")
+                )
+
+            elseif type(mutationData) == "string" then
+
+                TransferAddUniqueMutationName(
+                    choices,
+                    seen,
+                    mutationData
+                )
             end
         end
+    end
 
-        local petMutationToEnum =
-            rawget(mutationRoot, "PetMutationToEnum")
+    local enumToPetMutation =
+        type(mutationRoot) == "table"
+        and rawget(mutationRoot, "EnumToPetMutation")
+        or nil
 
-        if type(petMutationToEnum) == "table" then
+    if type(enumToPetMutation) == "table" then
 
-            for mutationName in pairs(petMutationToEnum) do
-                AddMutationName(mutationName)
-            end
+        for _, mutationName in pairs(enumToPetMutation) do
+
+            TransferAddUniqueMutationName(
+                choices,
+                seen,
+                mutationName
+            )
         end
+    end
 
-        local petMutationRegistry =
-            rawget(mutationRoot, "PetMutationRegistry")
+    local petMutationToEnum =
+        type(mutationRoot) == "table"
+        and rawget(mutationRoot, "PetMutationToEnum")
+        or nil
 
-        if type(petMutationRegistry) == "table" then
+    if type(petMutationToEnum) == "table" then
 
-            for mutationName, mutationData in pairs(petMutationRegistry) do
+        for mutationName, _ in pairs(petMutationToEnum) do
 
-                AddMutationName(mutationName)
+            TransferAddUniqueMutationName(
+                choices,
+                seen,
+                mutationName
+            )
+        end
+    end
 
-                if type(mutationData) == "table" then
+    -- Fallback only if the registry shape changes.
+    if #choices <= 0 then
 
-                    AddMutationName(
-                        rawget(mutationData, "Name")
-                        or rawget(mutationData, "Mutation")
-                        or rawget(mutationData, "DisplayName")
-                    )
+        for _, pet in ipairs(TransferBuildInventoryPets()) do
 
-                elseif type(mutationData) == "string" then
-                    AddMutationName(mutationData)
-                end
-            end
+            TransferAddUniqueMutationName(
+                choices,
+                seen,
+                pet.Mutation
+            )
         end
     end
 
     table.sort(choices)
 
-    state.AllMutationChoices =
+    TransferState.AllMutationChoices =
         choices
 
-    if state.MutationDropdown
-    and type(state.MutationDropdown.SetValues) == "function" then
-
-        state.MutationDropdown:SetValues(
-            choices
-        )
-    end
+    print(
+        "[TRANSFER MUTATION LIST]",
+        "PetRegistry mutations:",
+        tostring(#choices)
+    )
 
     return choices
 end
 
-function HFTransfer.BuildTargetChoices()
+local function TransferBuildTargetChoices()
 
     local choices = {}
 
-    local localPlayer =
-        Players.LocalPlayer
-
     for _, player in ipairs(Players:GetPlayers()) do
 
-        if player ~= localPlayer then
+        if player ~= LocalPlayer then
             table.insert(
                 choices,
                 player.Name
@@ -9258,23 +10310,13 @@ function HFTransfer.BuildTargetChoices()
 
     table.sort(choices)
 
-    if HFTransfer.State.TargetDropdown
-    and type(HFTransfer.State.TargetDropdown.SetValues) == "function" then
-
-        HFTransfer.State.TargetDropdown:SetValues(
-            choices
-        )
-    end
-
     return choices
 end
 
-function HFTransfer.ResolveTargetPlayer()
+local function TransferResolveTargetPlayer()
 
     local targetName =
-        HFTransfer.CleanText(
-            HFTransfer.State.TargetPlayerName
-        )
+        CleanText(TransferState.TargetPlayerName)
 
     if targetName == "" then
         return nil
@@ -9291,214 +10333,27 @@ function HFTransfer.ResolveTargetPlayer()
     return nil
 end
 
-function HFTransfer.ResolvePetUUIDFromTool(tool)
-
-    if not tool then
-        return ""
-    end
-
-    local candidates = {
-        tool:GetAttribute("PET_UUID"),
-        tool:GetAttribute("UUID"),
-        tool:GetAttribute("ItemUUID"),
-        tool:GetAttribute("ItemId"),
-        tool:GetAttribute("PetUUID"),
-    }
-
-    for _, value in ipairs(candidates) do
-
-        value =
-            tostring(value or "")
-                :gsub("{", "")
-                :gsub("}", "")
-                :gsub("^%s+", "")
-                :gsub("%s+$", "")
-
-        if value:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") then
-            return "{"
-                .. value
-                .. "}"
-        end
-    end
-
-    return ""
-end
-
-function HFTransfer.ResolvePetMutation(tool, petName)
-
-    local mutation =
-        "---"
-
-    if type(ResolveListingPetMutation) == "function" then
-
-        local ok, result =
-            pcall(function()
-                return ResolveListingPetMutation(
-                    tool.Name,
-                    petName
-                )
-            end)
-
-        if ok then
-            mutation =
-                tostring(result or "---")
-        end
-    end
-
-    mutation =
-        HFTransfer.CleanText(mutation)
-
-    if mutation == "" then
-        mutation =
-            "---"
-    end
-
-    return mutation
-end
-
-function HFTransfer.ParseInventoryPet(tool)
-
-    if not tool
-    or not tool:IsA("Tool") then
-        return nil
-    end
-
-    local parsed =
-        ParsePetTool(tool)
-
-    if not parsed
-    or not parsed.PetName then
-        return nil
-    end
-
-    local uuid =
-        HFTransfer.ResolvePetUUIDFromTool(tool)
-
-    if uuid == "" then
-        return nil
-    end
-
-    local level =
-        tonumber(tool:GetAttribute("Level"))
-        or tonumber(tool:GetAttribute("Age"))
-        or tonumber(tostring(tool.Name):match("%[Age%s*(%d+)%]"))
-        or 1
-
-    local baseWeight =
-        tonumber(tool:GetAttribute("BaseWeight"))
-        or tonumber(tool:GetAttribute("baseWeight"))
-        or 0
-
-    local petName =
-        HFTransfer.CleanText(parsed.PetName)
-
-    local favorite =
-        tool:GetAttribute("IsFavorite") == true
-        or tool:GetAttribute("Favorite") == true
-        or tool:GetAttribute("Favorited") == true
-
-    return {
-        Tool = tool,
-        UUID = uuid,
-
-        PetName = petName,
-        Mutation =
-            HFTransfer.ResolvePetMutation(
-                tool,
-                petName
-            ),
-
-        Level =
-            math.floor(
-                tonumber(level)
-                or 1
-            ),
-
-        BaseWeight =
-            tonumber(baseWeight)
-            or 0,
-
-        DisplayWeight =
-            tonumber(parsed.Weight)
-            or 0,
-
-        IsFavorite =
-            favorite,
-    }
-end
-
-function HFTransfer.BuildInventoryPets()
-
-    local player =
-        Players.LocalPlayer
-
-    if not player then
-        return {}
-    end
-
-    local containers = {
-        player.Character,
-        player:FindFirstChild("Backpack"),
-    }
-
-    local pets = {}
-
-    for _, container in ipairs(containers) do
-
-        if container then
-
-            for _, child in ipairs(container:GetChildren()) do
-
-                if child:IsA("Tool") then
-
-                    local pet =
-                        HFTransfer.ParseInventoryPet(child)
-
-                    if pet then
-                        table.insert(
-                            pets,
-                            pet
-                        )
-                    end
-                end
-            end
-        end
-    end
-
-    return pets
-end
-
-function HFTransfer.PetMatchesFilters(pet)
-
-    local state =
-        HFTransfer.State
+local function TransferPetPassesFilters(pet)
 
     if type(pet) ~= "table" then
         return false
     end
 
-    if HFTransfer.MapIsEmpty(state.SelectedPets) then
+    if pet.ValidForSend ~= true then
         return false
     end
 
-    if state.SelectedPets[pet.PetName] ~= true then
+    if TransferMapIsEmpty(TransferState.SelectedPets) then
         return false
     end
 
-    if state.AutoUnfavorite ~= true
-    and pet.IsFavorite == true then
+    if TransferState.SelectedPets[pet.PetName] ~= true then
         return false
     end
 
-    if not HFTransfer.MapIsEmpty(state.SelectedMutations) then
+    if not TransferMapIsEmpty(TransferState.SelectedMutations) then
 
-        local mutation =
-            HFTransfer.CleanText(
-                pet.Mutation
-                or "---"
-            )
-
-        if state.SelectedMutations[mutation] ~= true then
+        if TransferState.SelectedMutations[pet.Mutation] ~= true then
             return false
         end
     end
@@ -9507,386 +10362,344 @@ function HFTransfer.PetMatchesFilters(pet)
         tonumber(pet.Level)
         or 1
 
-    if level < HFTransfer.ToNumber(state.MinLevel, 1) then
+    if level < TransferState.MinLevel then
         return false
     end
 
-    if level > HFTransfer.ToNumber(state.MaxLevel, 100) then
+    if level > TransferState.MaxLevel then
         return false
     end
 
     local baseWeight =
         tonumber(pet.BaseWeight)
-        or 0
 
-    if baseWeight < HFTransfer.ToNumber(state.MinBaseWeight, 0) then
+    if not baseWeight then
         return false
     end
 
-    if baseWeight > HFTransfer.ToNumber(state.MaxBaseWeight, 999) then
+    if baseWeight < TransferState.MinBaseWeight then
+        return false
+    end
+
+    if baseWeight > TransferState.MaxBaseWeight then
         return false
     end
 
     return true
 end
 
-function HFTransfer.BuildMatches(limit)
-
-    local state =
-        HFTransfer.State
-
-    limit =
-        math.clamp(
-            math.floor(
-                tonumber(limit)
-                or HFTransfer.ToNumber(state.MaxPetsPerTrade, 12)
-            ),
-            1,
-            50
-        )
+local function TransferBuildMatches()
 
     local matches = {}
 
-    for _, pet in ipairs(HFTransfer.BuildInventoryPets()) do
+    for _, pet in ipairs(TransferBuildInventoryPets()) do
 
-        if HFTransfer.PetMatchesFilters(pet) then
+        if TransferPetPassesFilters(pet) then
 
             table.insert(
                 matches,
                 pet
             )
 
-            if #matches >= limit then
+            if #matches >= TransferGetMaxPetsPerTrade() then
                 break
             end
         end
     end
 
-    state.MatchedPets =
+    TransferState.MatchedPets =
         matches
-
-    HFTransfer.SetStatus(
-        state.Status,
-        state.LastResult
-    )
 
     return matches
 end
 
---==================================================
--- HF TRANSFER TRADE REMOTES + WATCHERS
--- Isolated from old Transfer tab.
---==================================================
+TransferSetStatus = function(status, result, forceSourceRefresh)
 
-function HFTransfer.GetTradeEventsFolder()
+    TransferState.Status =
+        tostring(status or "Idle")
 
-    local gameEvents =
-        ReplicatedStorage:FindFirstChild("GameEvents")
+    TransferState.LastResult =
+        tostring(result or "None")
 
-    if not gameEvents then
-        return nil
+    if TransferState.StatusLabel then
+        SetControlText(
+            TransferState.StatusLabel,
+            "Mode: " .. TransferState.Status
+        )
     end
 
-    local tradeEvents =
-        gameEvents:FindFirstChild("TradeEvents")
-
-    if not tradeEvents then
-        return nil
+    if TransferState.TargetLabel then
+        SetControlText(
+            TransferState.TargetLabel,
+            "Player: "
+                .. (
+                    TransferState.TargetPlayerName ~= ""
+                    and TransferState.TargetPlayerName
+                    or "None"
+                )
+        )
     end
 
-    return tradeEvents
+    if TransferState.MatchLabel then
+        SetControlText(
+            TransferState.MatchLabel,
+            "Matched: "
+                .. tostring(#(TransferState.MatchedPets or {}))
+                .. " | Added: "
+                .. tostring(TransferState.AddedThisBatch or 0)
+        )
+    end
+
+    if TransferState.ResultLabel then
+        SetControlText(
+            TransferState.ResultLabel,
+            "Batch: "
+                .. tostring(TransferState.Batch or 0)
+                .. " | Sent: "
+                .. tostring(TransferState.Sent)
+                .. " | Result: "
+                .. tostring(TransferState.LastResult)
+        )
+    end
+
+    if TransferState.SourceLabel then
+
+        local now =
+            os.clock()
+
+        local shouldRefreshSource =
+            forceSourceRefresh == true
+            or TransferState.LastSourceRefresh <= 0
+            or (
+                TransferState.IsAddingPets ~= true
+                and now - TransferState.LastSourceRefresh >= 2
+            )
+
+        if shouldRefreshSource then
+
+            TransferState.LastSourceRefresh =
+                now
+
+            local valid = 0
+            local missingBase = 0
+
+            for _, pet in ipairs(TransferBuildInventoryPets()) do
+
+                if pet.ValidForSend then
+                    valid += 1
+                else
+                    missingBase += 1
+                end
+            end
+
+            TransferState.CachedSourceText =
+                "Inventory Parsed: "
+                    .. tostring(valid + missingBase)
+                    .. " | Valid BaseWeight: "
+                    .. tostring(valid)
+                    .. " | Missing BaseWeight: "
+                    .. tostring(missingBase)
+        end
+
+        SetControlText(
+            TransferState.SourceLabel,
+            TransferState.CachedSourceText
+        )
+    end
 end
 
-function HFTransfer.GetTradeRemote(remoteName)
+local function TransferApplyModeUI()
 
-    remoteName =
-        tostring(remoteName or "")
+    local isReceiver =
+        TransferState.Mode == "Receiver"
 
-    if remoteName == "" then
-        return nil
-    end
+    -- Always visible. Both sender and receiver need a start/stop switch.
+    SetControlVisible(
+        TransferState.TransferEnabledToggle,
+        true
+    )
 
-    local tradeEvents =
-        HFTransfer.GetTradeEventsFolder()
+    -- Sender-only controls.
+    SetControlVisible(
+        TransferState.AutoUnfavoriteToggle,
+        not isReceiver
+    )
 
-    if not tradeEvents then
-        warn("[HF TRANSFER] TradeEvents folder missing.")
-        return nil
-    end
+    SetControlVisible(
+        TransferState.MaxPetsInput,
+        not isReceiver
+    )
 
-    local remote =
-        tradeEvents:FindFirstChild(remoteName)
+    SetControlVisible(
+        TransferState.AddPetDelayInput,
+        not isReceiver
+    )
 
-    if not remote then
-        warn("[HF TRANSFER] Missing trade remote:", remoteName)
-        return nil
-    end
+    SetControlVisible(
+        TransferState.AddBurstInput,
+        not isReceiver
+    )
 
-    return remote
+    SetControlVisible(
+        TransferState.NextTicketDelayInput,
+        not isReceiver
+    )
+
+    -- Receiver controls.
+    SetControlVisible(
+        TransferState.AutoAcceptTicketToggle,
+        isReceiver
+    )
+
+    SetControlVisible(
+        TransferState.AutoConfirmToggle,
+        isReceiver
+    )
+
+    -- Keep Going is useful for both:
+    -- Sender = keep sending batches.
+    -- Receiver = keep accepting next tickets.
+    SetControlVisible(
+        TransferState.KeepGoingToggle,
+        true
+    )
 end
 
-function HFTransfer.FireTradeRemote(remoteName, ...)
+local function TransferFindTradeTicketTool()
 
-    local remote =
-        HFTransfer.GetTradeRemote(remoteName)
+    local function scan(container)
 
-    if not remote then
-        return false, "Remote missing: " .. tostring(remoteName)
+        if not container then
+            return nil
+        end
+
+        for _, child in ipairs(container:GetChildren()) do
+
+            if child:IsA("Tool") then
+
+                local name =
+                    tostring(child.Name or ""):lower()
+
+                local isTradeTicket =
+                    name:find("trading ticket", 1, true)
+                    or (
+                        name:find("trade", 1, true)
+                        and name:find("ticket", 1, true)
+                    )
+                    or (
+                        name:find("trading", 1, true)
+                        and name:find("ticket", 1, true)
+                    )
+
+                if isTradeTicket then
+                    return child
+                end
+            end
+        end
+
+        return nil
     end
 
-    if not remote:IsA("RemoteEvent") then
-        return false, "Remote is not RemoteEvent: " .. tostring(remoteName)
+    local character =
+        LocalPlayer.Character
+
+    local equipped =
+        scan(character)
+
+    if equipped then
+        return equipped, true
     end
 
-    local args =
-        { ... }
+    local backpack =
+        LocalPlayer:FindFirstChild("Backpack")
+
+    return scan(backpack), false
+end
+
+local function TransferEquipTradeTicket()
+
+    local tool, alreadyEquipped =
+        TransferFindTradeTicketTool()
+
+    if not tool then
+
+        TransferSetStatus(
+            "No Ticket",
+            "No Trading Ticket found in Backpack."
+        )
+
+        return false
+    end
+
+    if alreadyEquipped == true then
+        return true
+    end
+
+    local character =
+        LocalPlayer.Character
+
+    local humanoid =
+        character
+        and character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid then
+
+        TransferSetStatus(
+            "Equip Failed",
+            "Humanoid missing. Cannot equip Trading Ticket."
+        )
+
+        return false
+    end
+
+    TransferSetStatus(
+        "Equipping Ticket",
+        "Equipping "
+            .. tostring(tool.Name)
+    )
 
     local ok, err =
         pcall(function()
-            remote:FireServer(table.unpack(args))
+            humanoid:EquipTool(tool)
         end)
 
     if not ok then
-        return false, tostring(err)
-    end
 
-    return true, nil
-end
-
-function HFTransfer.SendTicket()
-
-    if not IsGardenWorld() then
-
-        HFTransfer.SetStatus(
-            "Blocked",
-            "HF Transfer only works in Garden World."
-        )
-
-        return false
-    end
-
-    local targetPlayer =
-        HFTransfer.ResolveTargetPlayer()
-
-    if not targetPlayer then
-
-        HFTransfer.SetStatus(
-            "No Target",
-            "Choose a valid target player first."
-        )
-
-        return false
-    end
-
-    local ok, err =
-        HFTransfer.FireTradeRemote(
-            "SendRequest",
-            targetPlayer
-        )
-
-    if not ok then
-
-        HFTransfer.SetStatus(
-            "Ticket Failed",
+        TransferSetStatus(
+            "Equip Failed",
             tostring(err)
         )
 
         return false
     end
 
-    HFTransfer.SetStatus(
-        "Ticket Sent",
-        "Sent request to " .. tostring(targetPlayer.Name)
+    local equipStarted =
+        os.clock()
+
+    while os.clock() - equipStarted < 0.6 do
+
+        if tool.Parent == character then
+            return true
+        end
+
+        task.wait()
+    end
+
+    TransferSetStatus(
+        "Equip Failed",
+        "Trading Ticket did not equip."
     )
 
-    print(
-        "[HF TRANSFER]",
-        "SendRequest ->",
-        tostring(targetPlayer.Name),
-        tostring(targetPlayer.UserId)
-    )
-
-    return true
+    return false
 end
 
-function HFTransfer.RespondRequest(accept)
+local TransferFavoriteRemote =
+    nil
 
-    local requestId =
-        tostring(HFTransfer.State.IncomingRequestId or "")
+local function TransferGetFavoriteRemote()
 
-    if requestId == "" then
-
-        HFTransfer.SetStatus(
-            "No Request",
-            "No incoming trade request id."
-        )
-
-        return false
-    end
-
-    -- Grow a Garden trade request logic:
-    -- false = accept
-    -- true  = decline
-    local responseValue =
-        accept == true
-        and false
-        or true
-
-    local ok, err =
-        HFTransfer.FireTradeRemote(
-            "RespondRequest",
-            requestId,
-            responseValue
-        )
-
-    if not ok then
-
-        HFTransfer.SetStatus(
-            "Request Failed",
-            tostring(err)
-        )
-
-        return false
-    end
-
-    HFTransfer.State.IncomingRequestHandled[requestId] =
-        true
-
-    HFTransfer.SetStatus(
-        accept == true and "Ticket Accepted" or "Ticket Declined",
-        tostring(HFTransfer.State.IncomingRequestPlayerName or "Unknown")
-    )
-
-    print(
-        "[HF TRANSFER]",
-        "RespondRequest ->",
-        tostring(requestId),
-        "| accept:",
-        tostring(accept)
-    )
-
-    return true
-end
-
-function HFTransfer.AcceptTrade()
-
-    local ok, err =
-        HFTransfer.FireTradeRemote("Accept")
-
-    if not ok then
-
-        HFTransfer.SetStatus(
-            "Accept Failed",
-            tostring(err)
-        )
-
-        return false
-    end
-
-    HFTransfer.SetStatus(
-        "Accept Fired",
-        "Accept remote fired."
-    )
-
-    return true
-end
-
-function HFTransfer.ConfirmTrade()
-
-    local ok, err =
-        HFTransfer.FireTradeRemote("Confirm")
-
-    if not ok then
-
-        HFTransfer.SetStatus(
-            "Confirm Failed",
-            tostring(err)
-        )
-
-        return false
-    end
-
-    HFTransfer.SetStatus(
-        "Confirm Fired",
-        "Confirm remote fired."
-    )
-
-    return true
-end
-
-function HFTransfer.DeclineTrade()
-
-    local ok, err =
-        HFTransfer.FireTradeRemote("Decline")
-
-    if not ok then
-
-        HFTransfer.SetStatus(
-            "Decline Failed",
-            tostring(err)
-        )
-
-        return false
-    end
-
-    HFTransfer.SetStatus(
-        "Decline Fired",
-        "Decline remote fired."
-    )
-
-    return true
-end
-
-function HFTransfer.AddPetToTrade(pet)
-
-    if type(pet) ~= "table" then
-        return false, "Pet missing."
-    end
-
-    local uuid =
-        tostring(pet.UUID or "")
-
-    if uuid == "" then
-        return false, "Pet UUID missing."
-    end
-
-    local ok, err =
-        HFTransfer.FireTradeRemote(
-            "AddItem",
-            "Pet",
-            uuid
-        )
-
-    if not ok then
-        return false, tostring(err)
-    end
-
-    HFTransfer.State.AddedThisBatch =
-        HFTransfer.ToNumber(
-            HFTransfer.State.AddedThisBatch,
-            0
-        ) + 1
-
-    HFTransfer.SetStatus(
-        "Added Pet",
-        tostring(pet.PetName)
-    )
-
-    print(
-        "[HF TRANSFER]",
-        "AddItem ->",
-        tostring(pet.PetName),
-        "|",
-        tostring(uuid)
-    )
-
-    return true
-end
-
-function HFTransfer.GetFavoriteRemote()
-
-    if HFTransfer.FavoriteRemote then
-        return HFTransfer.FavoriteRemote
+    if TransferFavoriteRemote then
+        return TransferFavoriteRemote
     end
 
     local gameEvents =
@@ -9902,45 +10715,47 @@ function HFTransfer.GetFavoriteRemote()
     if remote
     and remote:IsA("RemoteEvent") then
 
-        HFTransfer.FavoriteRemote =
+        TransferFavoriteRemote =
             remote
 
-        return remote
+        return TransferFavoriteRemote
     end
 
     return nil
 end
 
-function HFTransfer.UnfavoritePetIfNeeded(pet)
+local function TransferUnfavoritePetIfNeeded(pet)
 
-    if HFTransfer.State.AutoUnfavorite ~= true then
+    if TransferState.AutoUnfavorite ~= true then
         return true, "Auto Unfavorite OFF"
     end
 
-    if type(pet) ~= "table"
-    or not pet.Tool
+    if type(pet) ~= "table" then
+        return false, "Invalid pet"
+    end
+
+    if not pet.Tool
     or not pet.Tool:IsA("Tool") then
         return false, "Pet tool missing"
     end
 
-    local isFavorite =
-        pet.Tool:GetAttribute("d") == true
-        or pet.IsFavorite == true
-
-    if isFavorite ~= true then
+    if pet.Tool:GetAttribute("d") ~= true
+    and pet.IsFavorite ~= true then
         return true, "Not favorite"
     end
 
     local remote =
-        HFTransfer.GetFavoriteRemote()
+        TransferGetFavoriteRemote()
 
     if not remote then
         return false, "Favorite_Item remote missing"
     end
 
-    HFTransfer.SetStatus(
+    TransferSetStatus(
         "Unfavoriting",
-        tostring(pet.PetName)
+        "Unfavoriting "
+            .. tostring(pet.PetName)
+            .. " before sending."
     )
 
     local ok, err =
@@ -9952,19 +10767,27 @@ function HFTransfer.UnfavoritePetIfNeeded(pet)
         return false, tostring(err)
     end
 
-    local started =
-        os.clock()
+    local timeout =
+        os.clock() + 3
 
-    while os.clock() - started < 3 do
+    while os.clock() < timeout do
 
         if not IsCurrentRun() then
             return false, "Runtime stopped"
         end
 
-        if pet.Tool:GetAttribute("d") == false then
+        local favoriteState =
+            pet.Tool:GetAttribute("d")
+
+        if favoriteState == false then
 
             pet.IsFavorite =
                 false
+
+            print(
+                "[TRANSFER] Unfavorite confirmed:",
+                tostring(pet.ToolName or pet.PetName)
+            )
 
             return true, "Unfavorited"
         end
@@ -9975,9 +10798,9 @@ function HFTransfer.UnfavoritePetIfNeeded(pet)
     return false, "Unfavorite timeout"
 end
 
-function HFTransfer.UnfavoriteMatches(matches)
+local function TransferUnfavoriteMatchingPetsBeforeTrade(matches)
 
-    if HFTransfer.State.AutoUnfavorite ~= true then
+    if TransferState.AutoUnfavorite ~= true then
         return true, "Auto Unfavorite OFF"
     end
 
@@ -9986,426 +10809,455 @@ function HFTransfer.UnfavoriteMatches(matches)
         return true, "No matches"
     end
 
+    local totalFavorites = 0
+    local unfavorited = 0
+    local failed = 0
+    local lastError = ""
+
     for index, pet in ipairs(matches) do
 
         if not IsCurrentRun() then
             return false, "Runtime stopped"
         end
 
-        if pet.IsFavorite == true then
+        if type(pet) == "table"
+        and pet.IsFavorite == true then
 
-            HFTransfer.SetStatus(
+            totalFavorites += 1
+
+            TransferSetStatus(
                 "Unfavoriting",
-                tostring(index)
+                "Preparing "
+                    .. tostring(index)
                     .. "/"
                     .. tostring(#matches)
-                    .. " "
+                    .. ": "
                     .. tostring(pet.PetName)
             )
 
-            local ok, err =
-                HFTransfer.UnfavoritePetIfNeeded(pet)
+            local ok, msg =
+                TransferUnfavoritePetIfNeeded(pet)
 
-            if not ok then
-                return false, tostring(err)
+            if ok then
+                unfavorited += 1
+            else
+
+                failed += 1
+
+                lastError =
+                    tostring(msg)
             end
 
-            task.wait(0.05)
+            task.wait(0.03)
         end
     end
 
-    task.wait(0.35)
-
-    return true, "Unfavorite done"
-end
-
-function HFTransfer.MarkTradeDeclined(reason)
-
-    local state =
-        HFTransfer.State
-
-    state.TradeDeclined =
-        true
-
-    state.TradeDeclineReason =
-        tostring(reason or "Declined")
-
-    state.TradeOpen =
-        false
-
-    HFTransfer.SetStatus(
-        "Trade Declined",
-        state.TradeDeclineReason
-    )
-end
-
-function HFTransfer.ResetTradeTracker(reason)
-
-    local state =
-        HFTransfer.State
-
-    state.TradeOpen =
-        false
-
-    state.TradeId =
-        ""
-
-    state.TradePlayers =
-        {}
-
-    state.TradeStates =
-        {}
-
-    state.TradeOfferCounts =
-        {}
-
-    state.LocalTradeSide =
-        nil
-
-    state.OtherTradeSide =
-        nil
-
-    state.TradeOwnItemCount =
-        0
-
-    state.TradeOtherItemCount =
-        0
-
-    state.TradeCompleted =
-        false
-
-    state.TradeResult =
-        ""
-
-    state.TradeDeclined =
-        false
-
-    state.TradeDeclineReason =
-        ""
-
-    state.LastTradeUpdate =
-        os.clock()
-
-    HFTransfer.DebugPrint(
-        "Trade tracker reset:",
-        tostring(reason or "reset")
-    )
-end
-
-function HFTransfer.UpdateTradeTrackerFromPayload(payload)
-
-    if type(payload) ~= "table" then
-        return false
+    if totalFavorites <= 0 then
+        return true, "No favorited matches"
     end
 
-    local state =
-        HFTransfer.State
+    task.wait(0.75)
 
-    local localPlayer =
-        Players.LocalPlayer
+    TransferSetStatus(
+        "Unfavorite Done",
+        tostring(unfavorited)
+            .. "/"
+            .. tostring(totalFavorites)
+            .. " unfavorited"
+            .. (
+                failed > 0
+                and (", " .. tostring(failed) .. " failed")
+                or ""
+            )
+    )
 
-    state.LastTradeUpdate =
-        os.clock()
-
-    state.TradeOpen =
-        true
-
-    state.TradeDeclined =
-        false
-
-    state.TradeDeclineReason =
-        ""
-
-    local tradeId =
-        payload.Id
-        or payload.id
-        or payload.TradeId
-        or payload.tradeId
-
-    if tradeId ~= nil then
-        state.TradeId =
-            tostring(tradeId)
+    if failed > 0 then
+        return false, lastError
     end
 
-    local players =
-        payload.Players
-        or payload.players
+    return true, "Unfavorited matching pets"
+end
 
-    if type(players) == "table" then
+local function TransferRefreshDropdowns()
 
-        state.TradePlayers =
-            players
+    local petChoices =
+        TransferBuildPetChoices()
 
-        for side, playerValue in pairs(players) do
+    local mutationChoices =
+        TransferBuildMutationChoices()
 
-            local playerName =
-                ""
+    local targetChoices =
+        TransferBuildTargetChoices()
 
-            local userId =
-                nil
+    if TransferState.PetDropdown
+    and type(TransferState.PetDropdown.SetValues) == "function" then
 
-            if typeof(playerValue) == "Instance"
-            and playerValue:IsA("Player") then
+        TransferState.PetDropdown:SetValues(
+            petChoices
+        )
+    end
 
-                playerName =
-                    playerValue.Name
+    if TransferState.MutationDropdown
+    and type(TransferState.MutationDropdown.SetValues) == "function" then
 
-                userId =
-                    playerValue.UserId
+        TransferState.MutationDropdown:SetValues(
+            mutationChoices
+        )
+    end
 
-            elseif type(playerValue) == "table" then
+    if TransferState.TargetDropdown
+    and type(TransferState.TargetDropdown.SetValues) == "function" then
 
-                playerName =
-                    tostring(
-                        playerValue.Name
-                        or playerValue.Username
-                        or playerValue.DisplayName
-                        or ""
-                    )
+        TransferState.TargetDropdown:SetValues(
+            targetChoices
+        )
+    end
 
-                userId =
-                    tonumber(
-                        playerValue.UserId
-                        or playerValue.UserID
-                        or playerValue.userId
-                    )
+    TransferBuildMatches()
 
-            else
+    print(
+        "[TRANSFER LISTS]",
+        "pets:",
+        tostring(#petChoices),
+        "| mutations:",
+        tostring(#mutationChoices),
+        "| targets:",
+        tostring(#targetChoices)
+    )
 
-                playerName =
-                    tostring(playerValue or "")
-            end
+    TransferSetStatus(
+        TransferState.Status,
+        TransferState.LastResult
+    )
 
-            local isLocal =
-                localPlayer
-                and (
-                    playerValue == localPlayer
-                    or userId == localPlayer.UserId
-                    or playerName == localPlayer.Name
-                )
+    return petChoices, mutationChoices, targetChoices
+end
 
-            if isLocal then
+local function TransferSafeFullName(instance)
 
-                state.LocalTradeSide =
-                    tostring(side)
+    if not instance then
+        return "nil"
+    end
 
-            else
+    local ok, result =
+        pcall(function()
+            return instance:GetFullName()
+        end)
 
-                state.OtherTradeSide =
-                    tostring(side)
-            end
+    if ok == true then
+        return tostring(result)
+    end
+
+    return tostring(instance)
+end
+
+local function TransferCompactValue(value, depth)
+
+    depth =
+        tonumber(depth)
+        or 0
+
+    if depth >= 3 then
+        return tostring(value)
+    end
+
+    local valueType =
+        typeof(value)
+
+    if valueType == "Instance" then
+        return TransferSafeFullName(value)
+    end
+
+    if type(value) ~= "table" then
+        return tostring(value)
+    end
+
+    local parts = {}
+
+    local count =
+        0
+
+    for key, child in pairs(value) do
+
+        count += 1
+
+        if count > 40 then
+            table.insert(parts, "...more")
+            break
         end
+
+        table.insert(
+            parts,
+            tostring(key)
+                .. "="
+                .. TransferCompactValue(child, depth + 1)
+        )
     end
 
-    local states =
-        payload.States
-        or payload.states
+    return "{"
+        .. table.concat(parts, ", ")
+        .. "}"
+end
 
-    if type(states) == "table" then
-        state.TradeStates =
-            states
+local function TransferBuildTradeDebugDump()
+
+    local lines = {}
+
+    table.insert(lines, "========== HOLY FRESH TRADE DEBUG DUMP ==========")
+    table.insert(lines, "Time: " .. tostring(os.date("%Y-%m-%d %H:%M:%S")))
+    table.insert(lines, "Player: " .. tostring(LocalPlayer.Name) .. " / " .. tostring(LocalPlayer.UserId))
+    table.insert(lines, "PlaceId: " .. tostring(game.PlaceId))
+    table.insert(lines, "JobId: " .. tostring(game.JobId))
+    table.insert(lines, "")
+
+    table.insert(lines, "---- TRANSFER STATE ----")
+    table.insert(lines, "Mode: " .. tostring(TransferState.Mode))
+    table.insert(lines, "TargetPlayerName: " .. tostring(TransferState.TargetPlayerName))
+    table.insert(lines, "TransferEnabled: " .. tostring(TransferState.TransferEnabled))
+    table.insert(lines, "TradeOpen: " .. tostring(TransferState.TradeOpen))
+    table.insert(lines, "TradeId: " .. tostring(TransferState.TradeId))
+    table.insert(lines, "LocalTradeSide: " .. tostring(TransferState.LocalTradeSide))
+    table.insert(lines, "OtherTradeSide: " .. tostring(TransferState.OtherTradeSide))
+    table.insert(lines, "LocalState: " .. tostring(TransferGetLocalTradeState()))
+    table.insert(lines, "OtherState: " .. tostring(TransferGetOtherTradeState()))
+    table.insert(lines, "OwnItemCount: " .. tostring(TransferState.TradeOwnItemCount))
+    table.insert(lines, "OtherItemCount: " .. tostring(TransferState.TradeOtherItemCount))
+    table.insert(lines, "TradeCompleted: " .. tostring(TransferState.TradeCompleted))
+    table.insert(lines, "TradeResult: " .. tostring(TransferState.TradeResult))
+    table.insert(lines, "TradeDeclined: " .. tostring(TransferState.TradeDeclined))
+    table.insert(lines, "TradeDeclineReason: " .. tostring(TransferState.TradeDeclineReason))
+    table.insert(lines, "LastTradeUpdateAgo: " .. string.format("%.3f", os.clock() - (tonumber(TransferState.LastTradeUpdate) or os.clock())))
+    table.insert(lines, "")
+
+    table.insert(lines, "---- TIMING ----")
+    table.insert(lines, TransferCompactValue(TransferState.Timing))
+    table.insert(lines, "")
+
+    table.insert(lines, "---- TRADE DATA MODULE ----")
+
+    local tradeData =
+        TransferGetTradeData()
+
+    if type(tradeData) == "table" then
+
+        for key, value in pairs(tradeData) do
+
+            table.insert(
+                lines,
+                tostring(key)
+                    .. " = "
+                    .. TransferCompactValue(value)
+            )
+        end
+
+    else
+
+        table.insert(lines, "TradeData missing/unreadable.")
     end
 
-    local offers =
-        payload.Offers
-        or payload.offers
+    table.insert(lines, "")
 
-    if type(offers) == "table" then
+    table.insert(lines, "---- TRADE EVENTS ----")
 
-        state.TradeOfferCounts =
-            {}
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
 
-        for side, offerData in pairs(offers) do
+    local tradeEvents =
+        gameEvents
+        and gameEvents:FindFirstChild("TradeEvents")
 
-            local count =
-                0
+    if tradeEvents then
 
-            local items =
-                type(offerData) == "table"
-                and (
-                    offerData.Items
-                    or offerData.items
-                    or offerData
-                )
-                or nil
+        for _, child in ipairs(tradeEvents:GetChildren()) do
 
-            if type(items) == "table" then
+            table.insert(
+                lines,
+                child.Name
+                    .. " | "
+                    .. child.ClassName
+                    .. " | "
+                    .. TransferSafeFullName(child)
+            )
+        end
 
-                for _ in pairs(items) do
-                    count += 1
+    else
+
+        table.insert(lines, "TradeEvents missing.")
+    end
+
+    table.insert(lines, "")
+
+    table.insert(lines, "---- BUTTON / VALUE CHECKS ----")
+    table.insert(lines, "TradeButtonText: " .. tostring(TransferGetTradeButtonText()))
+    table.insert(lines, "ParsedCooldown: " .. tostring(TransferParseCooldownText(TransferGetTradeButtonText())))
+
+    local hasValue, value =
+        TransferGuiHasPositiveTradeValue()
+
+    table.insert(lines, "GuiHasPositiveValue: " .. tostring(hasValue) .. " / " .. tostring(value))
+    table.insert(lines, "WaitingForTarget: " .. tostring(TransferGuiWaitingForSpecificPlayer()))
+    table.insert(lines, "LocalAcceptLocked: " .. tostring(TransferLocalAcceptLocked()))
+    table.insert(lines, "LikelyLocked: " .. tostring(TransferAcceptLikelyLockedFromButtonPhase()))
+    table.insert(lines, "ReceiverAcceptedAfterLocal: " .. tostring(TransferReceiverAcceptedAfterLocal()))
+    table.insert(lines, "")
+
+    table.insert(lines, "---- TRADING UI TEXT OBJECTS ----")
+
+    local playerGui =
+        LocalPlayer:FindFirstChild("PlayerGui")
+
+    local tradingUI =
+        playerGui
+        and playerGui:FindFirstChild("TradingUI")
+
+    if tradingUI then
+
+        for _, obj in ipairs(tradingUI:GetDescendants()) do
+
+            if obj:IsA("TextLabel")
+            or obj:IsA("TextButton")
+            or obj:IsA("TextBox") then
+
+                local visible =
+                    TransferIsGuiObjectVisible(obj)
+
+                local text =
+                    CleanText(obj.Text)
+
+                if text ~= "" then
+
+                    table.insert(
+                        lines,
+                        "[" .. tostring(visible) .. "] "
+                            .. TransferSafeFullName(obj)
+                            .. " | Name="
+                            .. tostring(obj.Name)
+                            .. " | Class="
+                            .. tostring(obj.ClassName)
+                            .. " | Text="
+                            .. text
+                    )
                 end
             end
+        end
 
-            state.TradeOfferCounts[tostring(side)] =
-                count
+    else
+
+        table.insert(lines, "TradingUI missing.")
+    end
+
+    table.insert(lines, "")
+
+    table.insert(lines, "---- TRADING UI GUI OBJECTS ----")
+
+    if tradingUI then
+
+        for _, obj in ipairs(tradingUI:GetDescendants()) do
+
+            if obj:IsA("GuiObject") then
+
+                table.insert(
+                    lines,
+                    TransferSafeFullName(obj)
+                        .. " | Class="
+                        .. tostring(obj.ClassName)
+                        .. " | Visible="
+                        .. tostring(obj.Visible)
+                        .. " | Name="
+                        .. tostring(obj.Name)
+                )
+            end
         end
     end
 
-    if state.LocalTradeSide then
+    table.insert(lines, "=================================================")
 
-        state.TradeOwnItemCount =
-            tonumber(
-                state.TradeOfferCounts[tostring(state.LocalTradeSide)]
+    return table.concat(lines, "\n")
+end
+
+local function TransferGetTradeRemote(name)
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    local tradeEvents =
+        gameEvents
+        and gameEvents:FindFirstChild("TradeEvents")
+
+    if not tradeEvents then
+        return nil
+    end
+
+    return tradeEvents:FindFirstChild(name)
+end
+
+local function TransferFireTradeRemote(name, ...)
+
+    name =
+        tostring(name or "")
+
+    local remote =
+        TransferGetTradeRemote(name)
+
+    if not remote
+    or not remote:IsA("RemoteEvent") then
+        return false, "Missing RemoteEvent: " .. tostring(name)
+    end
+
+    local args =
+        { ... }
+
+    local ok, err =
+        pcall(function()
+            remote:FireServer(
+                TransferUnpack(args)
             )
-            or state.TradeOwnItemCount
-            or 0
+        end)
+
+    if not ok then
+        return false, tostring(err)
     end
 
-    if state.OtherTradeSide then
-
-        state.TradeOtherItemCount =
-            tonumber(
-                state.TradeOfferCounts[tostring(state.OtherTradeSide)]
-            )
-            or state.TradeOtherItemCount
-            or 0
-    end
-
-    local status =
-        payload.Status
-        or payload.status
-
-    local result =
-        type(status) == "table"
-        and (
-            status.Result
-            or status.result
-            or status.State
-            or status.state
-        )
-        or status
-
-    if result ~= nil then
-
-        state.TradeResult =
-            tostring(result)
-
-        local lower =
-            tostring(result):lower()
-
-        if lower:find("complete", 1, true)
-        or lower:find("success", 1, true)
-        or lower:find("finish", 1, true) then
-
-            state.TradeCompleted =
-                true
-
-            state.TradeOpen =
-                false
-
-            HFTransfer.SetStatus(
-                "Trade Completed",
-                tostring(result)
-            )
-        end
-    end
-
-    return true
+    return true, "Fired " .. tostring(name)
 end
 
-function HFTransfer.GetTradeState(side)
-
-    side =
-        tostring(side or "")
-
-    if side == "" then
-        return ""
-    end
-
-    local states =
-        HFTransfer.State.TradeStates
-
-    if type(states) ~= "table" then
-        return ""
-    end
-
-    local value =
-        states[side]
-        or states[tonumber(side)]
-
-    return tostring(value or "")
-end
-
-function HFTransfer.GetLocalTradeState()
-
-    return HFTransfer.GetTradeState(
-        HFTransfer.State.LocalTradeSide
-    )
-end
-
-function HFTransfer.GetOtherTradeState()
-
-    return HFTransfer.GetTradeState(
-        HFTransfer.State.OtherTradeSide
-    )
-end
-
-function HFTransfer.TradeStateIsAcceptedLike(state)
-
-    state =
-        tostring(state or "")
-
-    return state == "Accepted"
-        or state == "Confirmed"
-        or state == "Processing"
-end
-
-function HFTransfer.SenderReadyForReceiverAccept()
-
-    local state =
-        HFTransfer.State
-
-    if state.Mode ~= "Receiver" then
-        return true
-    end
-
-    if HFTransfer.ToNumber(state.TradeOtherItemCount, 0) <= 0 then
-        return false
-    end
-
-    return HFTransfer.TradeStateIsAcceptedLike(
-        HFTransfer.GetOtherTradeState()
-    )
-end
-
-function HFTransfer.AcceptPetGift(giftId, petName, senderName)
-
-    local state =
-        HFTransfer.State
+TransferAcceptPetGift = function(giftId, petName, senderName)
 
     giftId =
-        tostring(giftId or "")
+        CleanText(giftId)
 
     petName =
-        HFTransfer.CleanText(petName)
+        CleanText(petName)
 
     senderName =
-        HFTransfer.CleanText(senderName)
+        CleanText(senderName)
 
     if giftId == "" then
-        return false, "Gift id missing"
+        return false, "Missing gift id"
     end
 
-    if state.AutoAcceptGift ~= true then
+    if TransferState.AutoAcceptGift ~= true then
         return false, "Auto Accept Gift OFF"
     end
 
-    if state.IncomingGiftHandled[giftId] == true then
-        return false, "Gift already handled"
+    if TransferState.IncomingGiftHandled[giftId] == true then
+        return true, "Gift already handled"
     end
 
     local trusted =
-        HFTransfer.CleanText(state.TargetPlayerName)
+        CleanText(TransferState.TargetPlayerName)
 
     if trusted ~= ""
     and senderName ~= trusted then
 
         print(
-            "[HF TRANSFER GIFT]",
-            "Ignored untrusted gift from:",
+            "[TRANSFER GIFT]",
+            "Ignored gift from untrusted sender:",
             tostring(senderName),
             "| wanted:",
-            tostring(trusted)
+            tostring(trusted),
+            "| pet:",
+            tostring(petName)
         )
 
         return false, "Untrusted sender"
@@ -10424,85 +11276,594 @@ function HFTransfer.AcceptPetGift(giftId, petName, senderName)
     end
 
     local responseValue =
-        state.AutoAcceptGiftResponseValue == true
+        TransferState.AutoAcceptGiftResponseValue == true
 
     local ok, err =
         pcall(function()
+
             remote:FireServer(
                 responseValue,
                 giftId
             )
         end)
 
-    if not ok then
-        return false, tostring(err)
+    if ok == true then
+
+        TransferState.IncomingGiftHandled[giftId] =
+            true
+
+        TransferState.LastGiftId =
+            giftId
+
+        TransferState.LastGiftPetName =
+            petName
+
+        TransferState.LastGiftSenderName =
+            senderName
+
+        TransferSetStatus(
+            "Gift Accepted",
+            tostring(senderName)
+                .. " -> "
+                .. tostring(petName)
+        )
+
+        print(
+            "[TRANSFER GIFT]",
+            "Auto accepted gift:",
+            "| ok:",
+            tostring(ok),
+            "| value:",
+            tostring(responseValue),
+            "| id:",
+            tostring(giftId),
+            "| pet:",
+            tostring(petName),
+            "| sender:",
+            tostring(senderName)
+        )
+
+        return true, "Accepted gift"
     end
 
-    state.IncomingGiftHandled[giftId] =
-        true
-
-    state.LastGiftId =
-        giftId
-
-    state.LastGiftPetName =
-        petName
-
-    state.LastGiftSenderName =
-        senderName
-
-    HFTransfer.SetStatus(
-        "Gift Accepted",
-        tostring(petName)
-            .. " from "
-            .. tostring(senderName)
-    )
-
     print(
-        "[HF TRANSFER GIFT]",
-        "AcceptPetGift ->",
-        tostring(responseValue),
+        "[TRANSFER GIFT]",
+        "AcceptPetGift failed:",
+        tostring(err),
+        "| id:",
         tostring(giftId),
+        "| pet:",
         tostring(petName),
+        "| sender:",
         tostring(senderName)
     )
 
-    return true
+    return false, tostring(err)
 end
 
-function HFTransfer.StartTradeWatchers()
+local function TransferReadOfferCountFromOffers(offers, side)
 
-    local state =
-        HFTransfer.State
-
-    if state.TradeWatchConnected == true then
-        return true
+    if type(offers) ~= "table" then
+        return nil
     end
 
-    state.TradeWatchConnected =
+    local function CountOfferItems(offer)
+
+        if type(offer) ~= "table" then
+            return nil
+        end
+
+        local items =
+            rawget(offer, "items")
+            or rawget(offer, "Items")
+
+        local count =
+            0
+
+        if type(items) == "table" then
+
+            for _ in pairs(items) do
+                count += 1
+            end
+        end
+
+        return count
+    end
+
+    if side ~= nil then
+
+        local offer =
+            offers[side]
+            or offers[tostring(side)]
+
+        local count =
+            CountOfferItems(offer)
+
+        if count ~= nil then
+            return count
+        end
+    end
+
+    local bestCount =
+        nil
+
+    for _, offerKey in ipairs({
+        0,
+        "0",
+        1,
+        "1",
+        2,
+        "2",
+    }) do
+
+        local count =
+            CountOfferItems(
+                offers[offerKey]
+            )
+
+        if count ~= nil then
+
+            if bestCount == nil
+            or count > bestCount then
+                bestCount =
+                    count
+            end
+        end
+    end
+
+    return bestCount
+end
+
+local function TransferResolveTradeSidesFromPlayers(playersTable)
+
+    if type(playersTable) ~= "table" then
+        return
+    end
+
+    TransferState.TradePlayers =
+        playersTable
+
+    TransferState.LocalTradeSide =
+        nil
+
+    TransferState.OtherTradeSide =
+        nil
+
+    for side, player in pairs(playersTable) do
+
+        if player == LocalPlayer then
+
+            TransferState.LocalTradeSide =
+                side
+
+        elseif typeof(player) == "Instance"
+        and player:IsA("Player") then
+
+            TransferState.OtherTradeSide =
+                side
+        end
+    end
+end
+
+local function TransferGetTradeState(side)
+
+    if side == nil then
+        return "None"
+    end
+
+    return tostring(
+        TransferState.TradeStates[side]
+            or TransferState.TradeStates[tostring(side)]
+            or "None"
+    )
+end
+
+local function TransferGetLocalTradeState()
+
+    return TransferGetTradeState(
+        TransferState.LocalTradeSide
+    )
+end
+
+local function TransferGetOtherTradeState()
+
+    return TransferGetTradeState(
+        TransferState.OtherTradeSide
+    )
+end
+
+local function TransferResetTradeRuntime()
+
+    TransferState.TradeOpen =
+        false
+
+    TransferState.TradeId =
+        ""
+
+    TransferState.TradePlayers =
+        {}
+
+    TransferState.TradeStates =
+        {}
+
+    TransferState.TradeOfferCounts =
+        {}
+
+    TransferState.LocalTradeSide =
+        nil
+
+    TransferState.OtherTradeSide =
+        nil
+
+    TransferState.TradeOwnItemCount =
+        0
+
+    TransferState.TradeOtherItemCount =
+        0
+
+    TransferState.TradeCompleted =
+        false
+
+    TransferState.TradeResult =
+        ""
+
+    TransferState.TradeDeclined =
+        false
+
+    TransferState.TradeDeclineReason =
+        ""
+
+    TransferState.RequestBlocked =
+        false
+
+    TransferState.RequestBlockedReason =
+        ""
+
+    TransferState.LastTradeUpdate =
+        0
+end
+
+local function TransferUpdateTradeStatusText(status, result)
+
+    local localState =
+        TransferGetLocalTradeState()
+
+    local otherState =
+        TransferGetOtherTradeState()
+
+    TransferSetStatus(
+        status,
+        tostring(result or "None")
+            .. " | "
+            .. tostring(localState)
+            .. "/"
+            .. tostring(otherState)
+    )
+end
+
+local function TransferMarkTradeDeclined(reason)
+
+    reason =
+        tostring(reason or "Trade declined.")
+
+    TransferState.TradeDeclined =
+        true
+
+    TransferState.TradeDeclineReason =
+        reason
+
+    TransferState.LastTradeUpdate =
+        os.clock()
+
+    TransferSetStatus(
+        "Trade Declined",
+        reason
+    )
+
+    print(
+        "[TRANSFER] Trade declined:",
+        reason
+    )
+end
+
+local function TransferMarkRequestBlocked(reason)
+
+    reason =
+        tostring(reason or "Request blocked.")
+
+    TransferState.RequestBlocked =
+        true
+
+    TransferState.RequestBlockedReason =
+        reason
+
+    TransferState.LastTradeUpdate =
+        os.clock()
+
+    TransferSetStatus(
+        "Request Blocked",
+        reason
+    )
+
+    print(
+        "[TRANSFER] Request blocked:",
+        reason
+    )
+end
+
+local function TransferUpdateTradeTrackerFromPayload(payload)
+
+    if type(payload) ~= "table" then
+        return
+    end
+
+    local directId =
+        rawget(payload, "id")
+
+    if directId ~= nil then
+        TransferState.TradeId =
+            tostring(directId)
+    end
+
+    local playersTable =
+        rawget(payload, "players")
+        or rawget(payload, "Players")
+
+    if type(playersTable) == "table" then
+        TransferResolveTradeSidesFromPlayers(playersTable)
+    end
+
+    local statesTable =
+        rawget(payload, "states")
+        or rawget(payload, "States")
+
+    if type(statesTable) == "table" then
+
+        for side, state in pairs(statesTable) do
+            TransferState.TradeStates[side] =
+                tostring(state)
+        end
+    end
+
+    local directOffers =
+        rawget(payload, "offers")
+        or rawget(payload, "Offers")
+
+    if type(directOffers) == "table" then
+
+        TransferState.TradeOpen =
+            true
+
+        for side, offer in pairs(directOffers) do
+
+            if type(offer) == "table" then
+
+                local count =
+                    TransferReadOfferCountFromOffers(
+                        directOffers,
+                        side
+                    )
+
+                if count ~= nil then
+                    TransferState.TradeOfferCounts[side] =
+                        count
+                end
+            end
+        end
+
+        local ownCount =
+            TransferReadOfferCountFromOffers(
+                directOffers,
+                TransferState.LocalTradeSide
+            )
+
+        if ownCount ~= nil then
+            TransferState.TradeOwnItemCount =
+                ownCount
+        end
+
+        local otherCount =
+            TransferReadOfferCountFromOffers(
+                directOffers,
+                TransferState.OtherTradeSide
+            )
+
+        if otherCount ~= nil then
+            TransferState.TradeOtherItemCount =
+                otherCount
+        end
+
+        if ownCount == nil then
+
+            local bestCount =
+                TransferReadOfferCountFromOffers(directOffers)
+
+            if bestCount ~= nil then
+                TransferState.TradeOwnItemCount =
+                    bestCount
+            end
+        end
+
+        TransferState.LastTradeUpdate =
+            os.clock()
+    end
+
+    local status =
+        rawget(payload, "status")
+        or rawget(payload, "Status")
+
+    if type(status) == "table" then
+
+        local result =
+            rawget(status, "result")
+            or rawget(status, "Result")
+
+        if result ~= nil then
+
+            TransferState.TradeResult =
+                tostring(result)
+
+            if tostring(result) == "Completed" then
+                TransferState.TradeCompleted =
+                    true
+            end
+        end
+    end
+
+    for _, row in pairs(payload) do
+
+        if type(row) == "table" then
+
+            local path =
+                tostring(row[1] or "")
+
+            local value =
+                row[2]
+
+            local stateSide =
+                path:match("^ROOT/states/([^/]+)$")
+
+            if stateSide then
+
+                TransferState.TradeOpen =
+                    true
+
+                local oldState =
+                    TransferState.TradeStates[stateSide]
+
+                TransferState.TradeStates[stateSide] =
+                    tostring(value)
+
+                TransferState.LastTradeUpdate =
+                    os.clock()
+
+                if tostring(oldState) ~= tostring(value) then
+
+                    print(
+                        "[TRANSFER DATA]",
+                        "StateChanged",
+                        "| side:",
+                        tostring(stateSide),
+                        "| old:",
+                        tostring(oldState),
+                        "| new:",
+                        tostring(value),
+                        "| localSide:",
+                        tostring(TransferState.LocalTradeSide),
+                        "| otherSide:",
+                        tostring(TransferState.OtherTradeSide),
+                        "| localState:",
+                        tostring(TransferGetLocalTradeState()),
+                        "| otherState:",
+                        tostring(TransferGetOtherTradeState()),
+                        "| otherItems:",
+                        tostring(TransferState.TradeOtherItemCount),
+                        "| button:",
+                        tostring(TransferGetTradeButtonText())
+                    )
+                end
+            end
+
+            local offerSide, indexText =
+                path:match("^ROOT/offers/([^/]+)/items/(%d+)")
+
+            if offerSide
+            and indexText then
+
+                local index =
+                    tonumber(indexText)
+
+                if index then
+
+                    local count =
+                        index
+
+                    TransferState.TradeOpen =
+                        true
+
+                    TransferState.TradeOfferCounts[offerSide] =
+                        math.max(
+                            tonumber(TransferState.TradeOfferCounts[offerSide]) or 0,
+                            count
+                        )
+
+                    if tostring(offerSide) == tostring(TransferState.LocalTradeSide) then
+
+                        TransferState.TradeOwnItemCount =
+                            math.max(
+                                tonumber(TransferState.TradeOwnItemCount) or 0,
+                                count
+                            )
+
+                    elseif tostring(offerSide) == tostring(TransferState.OtherTradeSide) then
+
+                        TransferState.TradeOtherItemCount =
+                            math.max(
+                                tonumber(TransferState.TradeOtherItemCount) or 0,
+                                count
+                            )
+
+                    elseif TransferState.LocalTradeSide == nil then
+
+                        TransferState.TradeOwnItemCount =
+                            math.max(
+                                tonumber(TransferState.TradeOwnItemCount) or 0,
+                                count
+                            )
+                    end
+
+                    TransferState.LastTradeUpdate =
+                        os.clock()
+                end
+            end
+
+            if type(value) == "table" then
+                TransferUpdateTradeTrackerFromPayload(value)
+            end
+        end
+    end
+end
+
+local function TransferStartTradeWatchers()
+
+    if TransferState.TradeWatchConnected == true then
+        return
+    end
+
+    TransferState.TradeWatchConnected =
         true
 
     local gameEvents =
         ReplicatedStorage:FindFirstChild("GameEvents")
 
     if not gameEvents then
-        warn("[HF TRANSFER] GameEvents missing for watchers.")
-        return false
+        return
     end
 
-    local dataStream =
+    local dataStream2 =
         gameEvents:FindFirstChild("DataStream2")
 
-    if dataStream
-    and dataStream:IsA("RemoteEvent") then
+    if dataStream2
+    and dataStream2:IsA("RemoteEvent") then
 
-        dataStream.OnClientEvent:Connect(function(action, tradeId, payload)
+        dataStream2.OnClientEvent:Connect(function(...)
 
-            if action == "InitData"
-            or action == "UpdateData" then
+            local args =
+                { ... }
 
-                if type(payload) == "table" then
-                    HFTransfer.UpdateTradeTrackerFromPayload(payload)
-                end
+            if args[1] == "InitData"
+            and type(args[3]) == "table" then
+
+                TransferUpdateTradeTrackerFromPayload(
+                    args[3]
+                )
+
+            elseif args[1] == "UpdateData"
+            and type(args[3]) == "table" then
+
+                TransferUpdateTradeTrackerFromPayload(
+                    args[3]
+                )
             end
         end)
     end
@@ -10510,98 +11871,45 @@ function HFTransfer.StartTradeWatchers()
     local tradeEvents =
         gameEvents:FindFirstChild("TradeEvents")
 
-    if tradeEvents then
+    if not tradeEvents then
+        return
+    end
 
-        local sendRequest =
-            tradeEvents:FindFirstChild("SendRequest")
+    local sendRequest =
+        tradeEvents:FindFirstChild("SendRequest")
 
-        if sendRequest
-        and sendRequest:IsA("RemoteEvent") then
+    if sendRequest
+    and sendRequest:IsA("RemoteEvent") then
 
-            sendRequest.OnClientEvent:Connect(function(requestId, playerName)
+        sendRequest.OnClientEvent:Connect(function(requestId, senderPlayer)
 
-                requestId =
-                    tostring(requestId or "")
+            local requestText =
+                tostring(requestId or "")
 
-                playerName =
-                    HFTransfer.CleanText(playerName)
+            if requestText ~= ""
+            and TransferState.IncomingRequestHandled[requestText] == true then
+                return
+            end
 
-                if requestId == "" then
-                    return
-                end
+            if typeof(senderPlayer) == "Instance"
+            and senderPlayer:IsA("Player") then
 
-                state.IncomingRequestId =
-                    requestId
+                TransferState.IncomingRequestId =
+                    requestText
 
-                state.IncomingRequestPlayerName =
-                    playerName
+                TransferState.IncomingRequestPlayerName =
+                    tostring(senderPlayer.Name)
 
-                state.IncomingRequestAt =
+                TransferState.IncomingRequestAt =
                     os.clock()
 
-                HFTransfer.SetStatus(
-                    "Incoming Ticket",
-                    tostring(playerName)
-                )
-
                 print(
-                    "[HF TRANSFER]",
-                    "Incoming request:",
-                    tostring(requestId),
-                    tostring(playerName)
+                    "[TRANSFER] Incoming request:",
+                    tostring(senderPlayer.Name),
+                    tostring(requestId)
                 )
-
-                if state.Mode == "Receiver"
-                and state.AutoAcceptTicket == true
-                and state.TransferEnabled == true
-                and state.IncomingRequestHandled[requestId] ~= true then
-
-                    task.defer(function()
-                        HFTransfer.RespondRequest(true)
-                    end)
-                end
-            end)
-        end
-
-        local updateTradeState =
-            tradeEvents:FindFirstChild("UpdateTradeState")
-
-        if updateTradeState
-        and updateTradeState:IsA("RemoteEvent") then
-
-            updateTradeState.OnClientEvent:Connect(function(value)
-
-                if value == nil
-                and state.TradeOpen == true
-                and state.TradeCompleted ~= true then
-
-                    HFTransfer.MarkTradeDeclined(
-                        "UpdateTradeState nil"
-                    )
-                end
-            end)
-        end
-
-        local addToHistory =
-            tradeEvents:FindFirstChild("AddToHistory")
-
-        if addToHistory
-        and addToHistory:IsA("RemoteEvent") then
-
-            addToHistory.OnClientEvent:Connect(function(...)
-
-                state.TradeCompleted =
-                    true
-
-                state.TradeOpen =
-                    false
-
-                HFTransfer.SetStatus(
-                    "Trade Completed",
-                    "AddToHistory fired"
-                )
-            end)
-        end
+            end
+        end)
     end
 
     local giftPet =
@@ -10612,26 +11920,99 @@ function HFTransfer.StartTradeWatchers()
 
         giftPet.OnClientEvent:Connect(function(giftId, petName, senderName)
 
-            state.LastGiftId =
-                tostring(giftId or "")
+            giftId =
+                CleanText(giftId)
 
-            state.LastGiftPetName =
-                tostring(petName or "")
+            petName =
+                CleanText(petName)
 
-            state.LastGiftSenderName =
-                tostring(senderName or "")
+            senderName =
+                CleanText(senderName)
 
-            if state.AutoAcceptGift == true then
+            if giftId == "" then
+                return
+            end
+
+            TransferState.LastGiftId =
+                giftId
+
+            TransferState.LastGiftPetName =
+                petName
+
+            TransferState.LastGiftSenderName =
+                senderName
+
+            print(
+                "[TRANSFER GIFT]",
+                "Incoming gift:",
+                "| id:",
+                tostring(giftId),
+                "| pet:",
+                tostring(petName),
+                "| sender:",
+                tostring(senderName),
+                "| auto:",
+                tostring(TransferState.AutoAcceptGift)
+            )
+
+            if TransferState.AutoAcceptGift == true then
 
                 task.defer(function()
 
-                    HFTransfer.AcceptPetGift(
+                    TransferAcceptPetGift(
                         giftId,
                         petName,
                         senderName
                     )
                 end)
             end
+        end)
+    end
+
+    local updateTradeState =
+        tradeEvents:FindFirstChild("UpdateTradeState")
+
+    if updateTradeState
+    and updateTradeState:IsA("RemoteEvent") then
+
+        updateTradeState.OnClientEvent:Connect(function(tradeId)
+
+            if tradeId == nil then
+
+                if TransferState.TradeOpen == true
+                and TransferState.TradeCompleted ~= true
+                and TransferState.TradeResult ~= "Completed" then
+
+                    TransferMarkTradeDeclined(
+                        "Trade closed before completion."
+                    )
+                end
+
+                return
+            end
+
+            TransferState.TradeId =
+                tostring(tradeId)
+
+            TransferState.TradeOpen =
+                true
+
+            TransferState.LastTradeUpdate =
+                os.clock()
+        end)
+    end
+
+    local addToHistory =
+        tradeEvents:FindFirstChild("AddToHistory")
+
+    if addToHistory
+    and addToHistory:IsA("RemoteEvent") then
+
+        addToHistory.OnClientEvent:Connect(function(payload)
+
+            TransferUpdateTradeTrackerFromPayload(
+                payload
+            )
         end)
     end
 
@@ -10643,282 +12024,1561 @@ function HFTransfer.StartTradeWatchers()
 
         notification.OnClientEvent:Connect(function(message)
 
-            message =
+            local text =
                 tostring(message or "")
 
             local lower =
-                message:lower()
+                text:lower()
 
             if lower:find("declined the trade", 1, true)
             or lower:find("declined trade", 1, true) then
 
-                HFTransfer.MarkTradeDeclined(
-                    message
+                TransferMarkTradeDeclined(
+                    text
                 )
-            end
 
-            if lower:find("cannot send a trade request while in a trade", 1, true)
-            or lower:find("can't send a trade request while in a trade", 1, true)
-            or lower:find("cant send a trade request while in a trade", 1, true) then
+            elseif lower:find("can't send a trade request while in a trade", 1, true)
+            or lower:find("cant send a trade request while in a trade", 1, true)
+            or lower:find("cannot send a trade request while in a trade", 1, true) then
 
-                state.RequestBlocked =
-                    true
-
-                state.RequestBlockedReason =
-                    message
-
-                HFTransfer.SetStatus(
-                    "Request Blocked",
-                    message
+                TransferMarkRequestBlocked(
+                    text
                 )
             end
         end)
     end
-
-    print("[HF TRANSFER] Watchers connected.")
-
-    return true
 end
 
-function HFTransfer.RefreshDropdowns()
+local function TransferWaitForTradeOpen(timeout)
 
-    HFTransfer.BuildPetChoices()
-    HFTransfer.BuildMutationChoices()
-    HFTransfer.BuildTargetChoices()
-    HFTransfer.BuildMatches()
+    timeout =
+        tonumber(timeout)
+        or 20
 
-    HFTransfer.SetStatus(
-        HFTransfer.State.Status,
-        HFTransfer.State.LastResult,
-        true
+    local started =
+        os.clock()
+
+    TransferSetStatus(
+        "Waiting Trade",
+        "Waiting for target to accept/open trade."
     )
+
+    while IsCurrentRun() do
+
+        if TransferState.TradeDeclined == true then
+            return false
+        end
+
+        if TransferState.RequestBlocked == true then
+            return false
+        end
+
+        if TransferState.TradeOpen == true then
+            return true
+        end
+
+        if os.clock() - started >= timeout then
+            return false
+        end
+
+        task.wait(0.03)
+    end
+
+    return false
 end
 
---==================================================
--- HF TRANSFER WORKER LOOP
--- Sender / Receiver automation for isolated HF tab.
---==================================================
+local function TransferWaitForOwnOfferCountAtLeast(expectedCount, timeout)
 
-function HFTransfer.GetMaxPetsPerTrade()
-
-    local state =
-        HFTransfer.State
-
-    local limit =
-        tonumber(state.MaxPetsPerTrade)
-        or 12
-
-    return math.clamp(
-        math.floor(limit),
-        1,
-        50
-    )
-end
-
-function HFTransfer.GetAddPetDelay()
-
-    local delay =
-        tonumber(HFTransfer.State.AddPetDelay)
-        or 0.5
-
-    return math.clamp(
-        delay,
-        0.01,
-        3
-    )
-end
-
-function HFTransfer.GetAddBurstCount()
-
-    local burst =
-        tonumber(HFTransfer.State.AddBurstCount)
-        or 1
-
-    return math.clamp(
-        math.floor(burst),
-        1,
-        HFTransfer.GetMaxPetsPerTrade()
-    )
-end
-
-function HFTransfer.GetNextTicketDelay()
-
-    local delay =
-        tonumber(HFTransfer.State.NextTicketDelay)
+    expectedCount =
+        tonumber(expectedCount)
         or 0
 
-    return math.clamp(
-        delay,
-        0,
-        60
-    )
-end
-
-function HFTransfer.WaitBeforeNextTicket()
-
-    local delay =
-        HFTransfer.GetNextTicketDelay()
-
-    if delay <= 0 then
-        return true
-    end
+    timeout =
+        tonumber(timeout)
+        or 4
 
     local started =
         os.clock()
 
     while IsCurrentRun()
-    and HFTransfer.State.TransferEnabled == true
-    and os.clock() - started < delay do
+    and TransferState.TransferEnabled == true do
 
-        local remaining =
-            math.max(
-                0,
-                delay - (os.clock() - started)
-            )
+        local currentCount =
+            tonumber(TransferState.TradeOwnItemCount)
+            or 0
 
-        HFTransfer.SetStatus(
-            "Ticket Delay",
-            "Next ticket in "
-                .. string.format("%.1f", remaining)
-                .. "s"
-        )
+        if currentCount >= expectedCount then
+            return true
+        end
+
+        if os.clock() - started >= timeout then
+            return false
+        end
 
         task.wait(0.1)
     end
 
-    return HFTransfer.State.TransferEnabled == true
+    return false
 end
 
-function HFTransfer.FindTradeTicketTool()
+local function TransferWaitForOwnOfferCountAtLeastOrSettled(startingCount, expectedCount, timeout, settleWindow)
 
-    local player =
-        Players.LocalPlayer
+    startingCount =
+        tonumber(startingCount)
+        or 0
 
-    if not player then
-        return nil, false
-    end
+    expectedCount =
+        tonumber(expectedCount)
+        or startingCount
 
-    local function scan(container)
+    timeout =
+        tonumber(timeout)
+        or 2
 
-        if not container then
-            return nil
-        end
-
-        for _, child in ipairs(container:GetChildren()) do
-
-            if child:IsA("Tool") then
-
-                local name =
-                    tostring(child.Name or ""):lower()
-
-                local isTicket =
-                    name:find("trading ticket", 1, true)
-                    or (
-                        name:find("trade", 1, true)
-                        and name:find("ticket", 1, true)
-                    )
-                    or (
-                        name:find("trading", 1, true)
-                        and name:find("ticket", 1, true)
-                    )
-
-                if isTicket then
-                    return child
-                end
-            end
-        end
-
-        return nil
-    end
-
-    local character =
-        player.Character
-
-    local equipped =
-        scan(character)
-
-    if equipped then
-        return equipped, true
-    end
-
-    return scan(
-        player:FindFirstChild("Backpack")
-    ), false
-end
-
-function HFTransfer.EquipTradeTicket()
-
-    local player =
-        Players.LocalPlayer
-
-    if not player then
-        return false, "LocalPlayer missing"
-    end
-
-    local tool, alreadyEquipped =
-        HFTransfer.FindTradeTicketTool()
-
-    if not tool then
-
-        HFTransfer.SetStatus(
-            "No Ticket",
-            "No Trading Ticket found."
-        )
-
-        return false, "No Trading Ticket"
-    end
-
-    if alreadyEquipped == true then
-        return true, "Already equipped"
-    end
-
-    local character =
-        player.Character
-
-    local humanoid =
-        character
-        and character:FindFirstChildOfClass("Humanoid")
-
-    if not humanoid then
-
-        HFTransfer.SetStatus(
-            "Equip Failed",
-            "Humanoid missing."
-        )
-
-        return false, "Humanoid missing"
-    end
-
-    HFTransfer.SetStatus(
-        "Equipping Ticket",
-        tostring(tool.Name)
-    )
-
-    local ok, err =
-        pcall(function()
-            humanoid:EquipTool(tool)
-        end)
-
-    if not ok then
-        return false, tostring(err)
-    end
+    settleWindow =
+        tonumber(settleWindow)
+        or 0.35
 
     local started =
         os.clock()
 
-    while os.clock() - started < 0.8 do
+    local lastSeen =
+        tonumber(TransferState.TradeOwnItemCount)
+        or startingCount
 
-        if tool.Parent == character then
-            return true, "Equipped"
+    local lastChanged =
+        os.clock()
+
+    while IsCurrentRun()
+    and TransferState.TransferEnabled == true do
+
+        local currentCount =
+            tonumber(TransferState.TradeOwnItemCount)
+            or 0
+
+        if currentCount >= expectedCount then
+            return currentCount, true
         end
 
-        task.wait()
+        if currentCount ~= lastSeen then
+
+            lastSeen =
+                currentCount
+
+            lastChanged =
+                os.clock()
+        end
+
+        if currentCount > startingCount
+        and os.clock() - lastChanged >= settleWindow then
+            return currentCount, false
+        end
+
+        if os.clock() - started >= timeout then
+            return currentCount, false
+        end
+
+        task.wait(0.05)
     end
 
-    return false, "Ticket equip timeout"
+    return tonumber(TransferState.TradeOwnItemCount) or startingCount, false
 end
 
-function HFTransfer.WaitForCondition(label, timeout, predicate)
+local function TransferWaitForTradeCompleted(timeout)
+
+    timeout =
+        tonumber(timeout)
+        or 25
+
+    local started =
+        os.clock()
+
+    while IsCurrentRun()
+    and TransferState.TransferEnabled == true do
+
+        if TransferState.TradeCompleted == true
+        or TransferState.TradeResult == "Completed"
+        or TransferGetLocalTradeState() == "Processing"
+        or TransferGetOtherTradeState() == "Processing" then
+            return true
+        end
+
+        if os.clock() - started >= timeout then
+            return false
+        end
+
+        task.wait(0.2)
+    end
+
+    return false
+end
+
+local TransferParseCooldownText
+local TransferGuiHasPositiveTradeValue
+local TransferGetTradeButtonText
+local TransferGuiWaitingForSpecificPlayer
+local TransferLocalAcceptLocked
+local TransferAcceptLikelyLockedFromButtonPhase
+local TransferReceiverAcceptedAfterLocal
+local TransferIsGuiObjectVisible
+
+TransferGetTradeButtonText = function()
+
+    local playerGui =
+        LocalPlayer:FindFirstChild("PlayerGui")
+
+    local label =
+        playerGui
+        and playerGui:FindFirstChild("TradingUI")
+        and playerGui.TradingUI:FindFirstChild("LiveTrade")
+        and playerGui.TradingUI.LiveTrade:FindFirstChild("Options")
+        and playerGui.TradingUI.LiveTrade.Options:FindFirstChild("Accept")
+        and playerGui.TradingUI.LiveTrade.Options.Accept:FindFirstChild("Label")
+
+    if label
+    and label:IsA("TextLabel") then
+        return CleanText(label.Text)
+    end
+
+    return ""
+end
+
+local function TransferIsLiveTradeOpen()
+
+    local playerGui =
+        LocalPlayer:FindFirstChild("PlayerGui")
+
+    local tradingUI =
+        playerGui
+        and playerGui:FindFirstChild("TradingUI")
+
+    local liveTrade =
+        tradingUI
+        and tradingUI:FindFirstChild("LiveTrade")
+
+    if not liveTrade then
+        return false
+    end
+
+    if liveTrade:IsA("GuiObject")
+    and liveTrade.Visible ~= true then
+        return false
+    end
+
+    local buttonText =
+        TransferGetTradeButtonText()
+
+    -- Completed/processing means the trade is already finishing.
+    -- Do not block the next batch forever on stale UI.
+    if TransferState.TradeCompleted == true
+    or TransferState.TradeResult == "Completed"
+    or TransferGetLocalTradeState() == "Processing"
+    or TransferGetOtherTradeState() == "Processing" then
+        return false
+    end
+
+    -- Only treat it as active if the trade button still has active trade text.
+    if buttonText == "Accept"
+    or buttonText == "Accepted"
+    or buttonText == "Confirm"
+    or buttonText == "Confirmed"
+    or TransferParseCooldownText(buttonText) ~= nil then
+        return true
+    end
+
+    return false
+end
+
+local function TransferMarkClosedIfLiveTradeGone(reason)
+
+    if TransferState.TradeOpen ~= true then
+        return false
+    end
+
+    if TransferState.TradeCompleted == true
+    or TransferState.TradeResult == "Completed" then
+        return false
+    end
+
+    if TransferState.TradeDeclined == true then
+        return true
+    end
+
+    if TransferIsLiveTradeOpen() == true then
+        return false
+    end
+
+    TransferMarkTradeDeclined(
+        tostring(reason or "LiveTrade closed.")
+    )
+
+    print(
+        "[TRANSFER SEND TIMING]",
+        "Detected trade closed locally",
+        "| reason:",
+        tostring(reason),
+        "| tradeId:",
+        tostring(TransferState.TradeId)
+    )
+
+    return true
+end
+
+local function TransferWaitForLiveTradeClosed(timeout)
+
+    timeout =
+        tonumber(timeout)
+        or 4
+
+    local started =
+        os.clock()
+
+    while IsCurrentRun()
+    and TransferState.TransferEnabled == true do
+
+        if TransferIsLiveTradeOpen() ~= true then
+            return true
+        end
+
+        if os.clock() - started >= timeout then
+            return false
+        end
+
+        TransferSetStatus(
+            "Waiting Close",
+            "Waiting old trade to close."
+        )
+
+        task.wait(0.15)
+    end
+
+    return false
+end
+
+local function TransferHideTradeRequestPopup(playerName)
+
+    playerName =
+        CleanText(playerName)
+
+    if playerName == "" then
+        return false
+    end
+
+    local lowerName =
+        playerName:lower()
+
+    local playerGui =
+        LocalPlayer:FindFirstChild("PlayerGui")
+
+    if not playerGui then
+        return false
+    end
+
+    local hidden =
+        0
+
+    for _, obj in ipairs(playerGui:GetDescendants()) do
+
+        if obj:IsA("TextLabel")
+        or obj:IsA("TextButton")
+        or obj:IsA("TextBox") then
+
+            local text =
+                tostring(obj.Text or "")
+                    :lower()
+
+            if text:find(lowerName, 1, true)
+            and text:find("trade request", 1, true) then
+
+                local container =
+                    obj
+
+                for _ = 1, 6 do
+
+                    if not container
+                    or container == playerGui then
+                        break
+                    end
+
+                    local hasAccept =
+                        false
+
+                    local hasDecline =
+                        false
+
+                    for _, child in ipairs(container:GetDescendants()) do
+
+                        if child:IsA("TextLabel")
+                        or child:IsA("TextButton")
+                        or child:IsA("TextBox") then
+
+                            local childText =
+                                tostring(child.Text or "")
+                                    :lower()
+
+                            if childText == "accept" then
+                                hasAccept =
+                                    true
+                            end
+
+                            if childText == "decline" then
+                                hasDecline =
+                                    true
+                            end
+                        end
+                    end
+
+                    if hasAccept == true
+                    and hasDecline == true
+                    and container:IsA("GuiObject") then
+
+                        pcall(function()
+                            container.Visible =
+                                false
+                        end)
+
+                        hidden += 1
+
+                        break
+                    end
+
+                    container =
+                        container.Parent
+                end
+            end
+        end
+    end
+
+    if hidden > 0 then
+
+        print(
+            "[TRANSFER] Hid stale request popup:",
+            tostring(playerName),
+            "| count:",
+            tostring(hidden)
+        )
+
+        return true
+    end
+
+    return false
+end
+
+TransferGuiWaitingForSpecificPlayer = function()
+
+    local targetName =
+        CleanText(TransferState.TargetPlayerName)
+
+    if targetName == "" then
+        return false
+    end
+
+    local lowerTarget =
+        targetName:lower()
+
+    local playerGui =
+        LocalPlayer:FindFirstChild("PlayerGui")
+
+    local tradingUI =
+        playerGui
+        and playerGui:FindFirstChild("TradingUI")
+
+    if not tradingUI then
+        return false
+    end
+
+    for _, obj in ipairs(tradingUI:GetDescendants()) do
+
+        if obj:IsA("TextLabel")
+        or obj:IsA("TextButton")
+        or obj:IsA("TextBox") then
+
+            local text =
+                tostring(obj.Text or "")
+                    :lower()
+
+            if text:find("waiting for", 1, true)
+            and text:find(lowerTarget, 1, true) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function TransferGuiPlayerHasAccepted(playerName)
+
+    playerName =
+        CleanText(playerName)
+
+    if playerName == "" then
+        return false
+    end
+
+    local lowerName =
+        playerName:lower()
+
+    local playerGui =
+        LocalPlayer:FindFirstChild("PlayerGui")
+
+    local tradingUI =
+        playerGui
+        and playerGui:FindFirstChild("TradingUI")
+
+    if not tradingUI then
+        return false
+    end
+
+    for _, obj in ipairs(tradingUI:GetDescendants()) do
+
+        if obj:IsA("TextLabel")
+        or obj:IsA("TextButton")
+        or obj:IsA("TextBox") then
+
+            local text =
+                tostring(obj.Text or "")
+                    :lower()
+
+            if text:find(lowerName, 1, true)
+            and text:find("has accepted", 1, true) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function TransferGetReadyLabelText(sideName)
+
+    sideName =
+        tostring(sideName or "")
+
+    local playerGui =
+        LocalPlayer:FindFirstChild("PlayerGui")
+
+    local liveTrade =
+        playerGui
+        and playerGui:FindFirstChild("TradingUI")
+        and playerGui.TradingUI:FindFirstChild("LiveTrade")
+
+    local label =
+        liveTrade
+        and liveTrade:FindFirstChild(sideName)
+        and liveTrade[sideName]:FindFirstChild("Ready")
+        and liveTrade[sideName].Ready:FindFirstChild("Label")
+
+    if label
+    and label:IsA("TextLabel") then
+        return CleanText(label.Text)
+    end
+
+    return ""
+end
+
+local function TransferReadyLabelIsAccepted(sideName)
+
+    local text =
+        TransferGetReadyLabelText(sideName)
+
+    return text == "Accepted"
+        or text == "Confirmed"
+        or text == "Processing"
+end
+
+local function TransferCountStatesWithValue(wantedState)
+
+    wantedState =
+        tostring(wantedState or "")
+
+    local count =
+        0
+
+    for _, state in pairs(TransferState.TradeStates or {}) do
+
+        if tostring(state) == wantedState then
+            count += 1
+        end
+    end
+
+    return count
+end
+
+local function TransferBothPlayersAccepted()
+
+    if TransferCountStatesWithValue("Accepted") >= 2 then
+        return true
+    end
+
+    if TransferGetLocalTradeState() == "Accepted"
+    and TransferGetOtherTradeState() == "Accepted" then
+        return true
+    end
+
+    local buttonText =
+        TransferGetTradeButtonText()
+
+    if buttonText == "Confirm"
+    or buttonText == "Confirmed" then
+        return true
+    end
+
+    return false
+end
+
+local function TransferGetTradeStatusText()
+
+    local playerGui =
+        LocalPlayer:FindFirstChild("PlayerGui")
+
+    local statusLabel =
+        playerGui
+        and playerGui:FindFirstChild("TradingUI")
+        and playerGui.TradingUI:FindFirstChild("LiveTrade")
+        and playerGui.TradingUI.LiveTrade:FindFirstChild("Status")
+
+    if statusLabel
+    and statusLabel:IsA("TextLabel") then
+        return CleanText(statusLabel.Text)
+    end
+
+    return ""
+end
+
+local function TransferIsConfirmPhase()
+
+    if TransferBothPlayersAccepted() == true then
+        return true
+    end
+
+    if TransferReadyLabelIsAccepted("MyPlr") == true
+    and TransferReadyLabelIsAccepted("OtherPlr") == true then
+        return true
+    end
+
+    local statusText =
+        TransferGetTradeStatusText():lower()
+
+    if statusText:find("confirm", 1, true) then
+        return true
+    end
+
+    return false
+end
+
+local function TransferConfirmWindowReady()
+
+    local buttonText =
+        TransferGetTradeButtonText()
+
+    if buttonText == "Confirm"
+    or buttonText == "Confirmed" then
+        return true
+    end
+
+    local seconds =
+        TransferParseCooldownText(buttonText)
+
+    if TransferIsConfirmPhase() == true
+    and seconds ~= nil
+    and seconds <= 0.20 then
+        return true
+    end
+
+    return false
+end
+
+local function TransferTradeStateIsAcceptedLike(state)
+
+    state =
+        tostring(state or "")
+
+    return state == "Accepted"
+        or state == "Confirmed"
+        or state == "Processing"
+end
+
+TransferLocalAcceptLocked = function()
+
+    local buttonText =
+        TransferGetTradeButtonText()
+
+    if buttonText == "Accepted"
+    or buttonText == "Confirm"
+    or buttonText == "Confirmed" then
+        return true
+    end
+
+    if TransferReadyLabelIsAccepted("MyPlr") == true then
+        return true
+    end
+
+    if TransferTradeStateIsAcceptedLike(
+        TransferGetLocalTradeState()
+    ) then
+        return true
+    end
+
+    return false
+end
+
+TransferAcceptLikelyLockedFromButtonPhase = function()
+
+    if TransferLocalAcceptLocked() == true then
+
+        TransferTimingMark(
+            "AcceptLockedAt"
+        )
+
+        return true
+    end
+
+    local timing =
+        TransferState.Timing
+
+    if type(timing) ~= "table" then
+        return false
+    end
+
+    if timing.FirstAcceptAt == nil then
+        return false
+    end
+
+    if tonumber(timing.Attempts) == nil
+    or tonumber(timing.Attempts) < 3 then
+        return false
+    end
+
+    local buttonText =
+        TransferGetTradeButtonText()
+
+    -- Do NOT trust plain countdown text here.
+    -- The same countdown also appears before Accept is actually locked.
+    if buttonText == "Accepted"
+    or buttonText == "Confirm"
+    or buttonText == "Confirmed" then
+
+        TransferTimingMark(
+            "AcceptLockedAt"
+        )
+
+        return true
+    end
+
+    if TransferTradeStateIsAcceptedLike(
+        TransferGetLocalTradeState()
+    ) then
+
+        TransferTimingMark(
+            "AcceptLockedAt"
+        )
+
+        return true
+    end
+
+    -- GUI fallback only if the UI explicitly says our own player accepted.
+    if TransferGuiPlayerHasAccepted(
+        LocalPlayer.Name
+    ) then
+
+        TransferTimingMark(
+            "AcceptLockedAt"
+        )
+
+        return true
+    end
+
+    return false
+end
+
+TransferReceiverAcceptedAfterLocal = function()
+
+    local buttonText =
+        TransferGetTradeButtonText()
+
+    -- If Confirm is visible, both players have passed accept.
+    if buttonText == "Confirm"
+    or buttonText == "Confirmed" then
+        return true
+    end
+
+    if TransferReadyLabelIsAccepted("OtherPlr") == true then
+        return true
+    end
+
+    -- Real state from DataStream2.
+    if TransferTradeStateIsAcceptedLike(
+        TransferGetOtherTradeState()
+    ) then
+        return true
+    end
+
+    -- If both states are accepted, receiver accepted.
+    if TransferBothPlayersAccepted() == true then
+        return true
+    end
+
+    -- Do NOT trust plain cooldown text.
+    -- The dump proved cooldown is also shown before Accept is actually locked.
+    return false
+end
+
+local function TransferWaitForReceiverAccepted(timeout)
+
+    timeout =
+        tonumber(timeout)
+        or 45
+
+    local started =
+        os.clock()
+
+    while IsCurrentRun()
+    and TransferState.TransferEnabled == true do
+
+        if TransferState.TradeDeclined == true
+        or TransferMarkClosedIfLiveTradeGone("Trade UI closed while waiting receiver.") == true then
+            return false
+        end
+
+        if TransferReceiverAcceptedAfterLocal() then
+            return true
+        end
+
+        TransferUpdateTradeStatusText(
+            "Waiting Receiver",
+            "Waiting receiver to accept."
+        )
+
+        if os.clock() - started >= timeout then
+            return false
+        end
+
+        task.wait(0.2)
+    end
+
+    return false
+end
+
+local function TransferSenderReadyForReceiverAccept()
+
+    local otherState =
+        TransferGetOtherTradeState()
+
+    -- Strict rule:
+    -- Receiver may only accept after sender has accepted/confirmed/processing.
+    -- Added items alone are NOT enough, because sender may still be adding pets.
+    if TransferTradeStateIsAcceptedLike(otherState) then
+        return true
+    end
+
+    -- GUI fallback:
+    -- Only trust visible "@Sender has accepted" text.
+    if TransferGuiPlayerHasAccepted(
+        TransferState.TargetPlayerName
+    ) then
+        return true
+    end
+
+    return false
+end
+
+local function TransferWaitForSenderReadyForReceiverAccept(timeout)
+
+    timeout =
+        tonumber(timeout)
+        or 120
+
+    local started =
+        os.clock()
+
+    while IsCurrentRun()
+    and TransferState.TransferEnabled == true do
+
+        if TransferState.TradeDeclined == true then
+            return false
+        end
+
+        if TransferSenderReadyForReceiverAccept() then
+            return true
+        end
+
+        TransferUpdateTradeStatusText(
+            "Waiting Sender",
+            "Waiting sender to accept."
+        )
+
+        if os.clock() - started >= timeout then
+            return false
+        end
+
+        task.wait(0.2)
+    end
+
+    return false
+end
+
+local function TransferWaitForConfirmReady(timeout)
+
+    timeout =
+        tonumber(timeout)
+        or 8
+
+    local started =
+        os.clock()
+
+    while IsCurrentRun()
+    and TransferState.TransferEnabled == true do
+
+        if TransferState.TradeDeclined == true
+        or TransferMarkClosedIfLiveTradeGone("Trade UI closed while waiting confirm.") == true then
+            return false
+        end
+
+        local text =
+            TransferGetTradeButtonText()
+
+        local seconds =
+            TransferParseCooldownText(text)
+
+        if TransferConfirmWindowReady() == true then
+
+            TransferTimingMark(
+                "ConfirmSeenAt"
+            )
+
+            return true
+        end
+
+        if TransferIsConfirmPhase() == true then
+
+            TransferUpdateTradeStatusText(
+                "Waiting Confirm",
+                seconds
+                    and (
+                        "Confirm cooldown "
+                        .. string.format("%.1f", seconds)
+                        .. "s"
+                    )
+                    or (
+                        "Confirm phase. Button="
+                        .. tostring(text)
+                    )
+            )
+
+        else
+
+            TransferUpdateTradeStatusText(
+                "Waiting Accept",
+                "Waiting states before confirm. Button="
+                    .. tostring(text)
+                    .. " | Status="
+                    .. tostring(TransferGetTradeStatusText())
+            )
+        end
+
+        if os.clock() - started >= timeout then
+            return false
+        end
+
+        task.wait(0.03)
+    end
+
+    return false
+end
+
+local function TransferWaitForTrustedIncomingRequest(timeout)
+
+    timeout =
+        tonumber(timeout)
+        or 60
+
+    local started =
+        os.clock()
+
+    while IsCurrentRun()
+    and TransferState.TransferEnabled == true do
+
+        local trusted =
+            CleanText(TransferState.TargetPlayerName)
+
+        if trusted ~= ""
+        and TransferState.IncomingRequestPlayerName == trusted
+        and os.clock() - TransferState.IncomingRequestAt <= 30 then
+            return true
+        end
+
+        TransferSetStatus(
+            "Waiting Request",
+            trusted ~= ""
+                and ("Waiting for " .. trusted)
+                or "Choose a player."
+        )
+
+        if os.clock() - started >= timeout then
+            return false
+        end
+
+        task.wait(0.05)
+    end
+
+    return false
+end
+
+local function TransferStopWorker(reason)
+
+    TransferState.TransferEnabled =
+        false
+
+    TransferState.IsTransferRunning =
+        false
+
+    if TransferState.TransferEnabledToggle
+    and type(TransferState.TransferEnabledToggle.SetValue) == "function" then
+
+        pcall(function()
+            TransferState.TransferEnabledToggle:SetValue(false)
+        end)
+    end
+
+    TransferSetStatus(
+        "Stopped",
+        tostring(reason or "Transfer stopped.")
+    )
+end
+
+local function TransferResetWorkerForModeSwitch(newMode)
+
+    TransferState.TransferEnabled =
+        false
+
+    TransferState.IsTransferRunning =
+        false
+
+    TransferState.IsAddingPets =
+        false
+
+    TransferState.TradeOpen =
+        false
+
+    TransferState.TradeId =
+        ""
+
+    TransferState.TradePlayers =
+        {}
+
+    TransferState.TradeStates =
+        {}
+
+    TransferState.TradeOfferCounts =
+        {}
+
+    TransferState.LocalTradeSide =
+        nil
+
+    TransferState.OtherTradeSide =
+        nil
+
+    TransferState.TradeOwnItemCount =
+        0
+
+    TransferState.TradeOtherItemCount =
+        0
+
+    TransferState.TradeCompleted =
+        false
+
+    TransferState.TradeResult =
+        ""
+
+    TransferState.TradeDeclined =
+        false
+
+    TransferState.TradeDeclineReason =
+        ""
+
+    TransferState.RequestBlocked =
+        false
+
+    TransferState.RequestBlockedReason =
+        ""
+
+    TransferState.IncomingRequestId =
+        ""
+
+    TransferState.IncomingRequestPlayerName =
+        ""
+
+    TransferState.IncomingRequestAt =
+        0
+
+    TransferState.LastTradeUpdate =
+        0
+
+    if TransferState.TransferEnabledToggle
+    and type(TransferState.TransferEnabledToggle.SetValue) == "function" then
+
+        pcall(function()
+            TransferState.TransferEnabledToggle:SetValue(false)
+        end)
+    end
+
+    TransferSetStatus(
+        "Mode Switched",
+        "Switched to "
+            .. tostring(newMode)
+            .. ". Enable transfer again."
+    )
+end
+
+local function TransferTryAddPetToTrade(pet)
+
+    if type(pet) ~= "table" then
+        return false, "Invalid pet"
+    end
+
+    local attempts = {}
+
+    if tostring(pet.UUID or "") ~= "" then
+
+        table.insert(attempts, {
+            Label = "UUIDWithBraces",
+            Args = {
+                "Pet",
+                pet.UUID,
+            },
+        })
+
+        table.insert(attempts, {
+            Label = "UUIDNoBraces",
+            Args = {
+                "Pet",
+                TransferNormalizeUUIDNoBraces(pet.UUID),
+            },
+        })
+    end
+
+    if pet.Tool
+    and pet.Tool:IsA("Tool") then
+
+        table.insert(attempts, {
+            Label = "ToolWithType",
+            Args = {
+                "Pet",
+                pet.Tool,
+            },
+        })
+
+        table.insert(attempts, {
+            Label = "ToolOnly",
+            Args = {
+                pet.Tool,
+            },
+        })
+    end
+
+    local lastError =
+        "No AddItem attempts available"
+
+    for _, attempt in ipairs(attempts) do
+
+        if not IsCurrentRun() then
+            return false, "Runtime stopped"
+        end
+
+        local beforeCount =
+            tonumber(TransferState.TradeOwnItemCount)
+            or 0
+
+        local expectedCount =
+            beforeCount + 1
+
+        print(
+            "[TRANSFER] Trying AddItem:",
+            tostring(attempt.Label),
+            "| Before:",
+            tostring(beforeCount),
+            "| Pet:",
+            tostring(pet.PetName),
+            tostring(pet.UUID)
+        )
+
+        local fired, msg =
+            TransferFireTradeRemote(
+                "AddItem",
+                TransferUnpack(attempt.Args)
+            )
+
+        if fired == true then
+
+            local confirmed =
+                TransferWaitForOwnOfferCountAtLeast(
+                    expectedCount,
+                    3.5
+                )
+
+            if confirmed == true then
+
+                return true,
+                    "Confirmed via "
+                        .. tostring(attempt.Label)
+            end
+
+            lastError =
+                "Fired "
+                    .. tostring(attempt.Label)
+                    .. " but offer count did not increase."
+
+        else
+
+            lastError =
+                tostring(msg)
+        end
+
+        task.wait(0.2)
+    end
+
+    return false, lastError
+end
+
+local function TransferFirePetAddNoWait(pet)
+
+    if type(pet) ~= "table" then
+        return false, "Invalid pet"
+    end
+
+    if tostring(pet.UUID or "") ~= "" then
+
+        local ok, msg =
+            TransferFireTradeRemote(
+                "AddItem",
+                "Pet",
+                pet.UUID
+            )
+
+        return ok,
+            ok == true
+            and "Fired UUIDWithBraces"
+            or tostring(msg)
+    end
+
+    if pet.Tool
+    and pet.Tool:IsA("Tool") then
+
+        local ok, msg =
+            TransferFireTradeRemote(
+                "AddItem",
+                "Pet",
+                pet.Tool
+            )
+
+        return ok,
+            ok == true
+            and "Fired ToolWithType"
+            or tostring(msg)
+    end
+
+    return false, "Missing UUID/tool"
+end
+
+local function TransferSendTicket()
+
+    local target =
+        TransferResolveTargetPlayer()
+
+    if not target then
+
+        TransferSetStatus(
+            "No Target",
+            "Choose a target player."
+        )
+
+        return false
+    end
+
+    local equipped =
+        TransferEquipTradeTicket()
+
+    if equipped ~= true then
+        return false
+    end
+
+    task.wait(0.15)
+
+    local ok, msg =
+        TransferFireTradeRemote(
+            "SendRequest",
+            target
+        )
+
+    TransferSetStatus(
+        ok and "Ticket Sent" or "Ticket Failed",
+        msg .. " -> " .. tostring(target.Name)
+    )
+
+    print(
+        "[TRANSFER] SendRequest:",
+        tostring(ok),
+        tostring(msg),
+        tostring(target.Name)
+    )
+
+    return ok
+end
+
+local function TransferRespondRequest(accept)
+
+    local requestId =
+        CleanText(TransferState.IncomingRequestId)
+
+    if requestId == "" then
+
+        TransferSetStatus(
+            "Request Failed",
+            "Missing incoming request id."
+        )
+
+        return false
+    end
+
+    local remote =
+        TransferGetTradeRemote("RespondRequest")
+
+    if not remote
+    or not remote:IsA("RemoteEvent") then
+
+        TransferSetStatus(
+            "Request Failed",
+            "Missing RespondRequest remote."
+        )
+
+        return false
+    end
+
+    -- Grow a Garden uses false for accepting the ticket request.
+    -- Remote spy:
+    -- RespondRequest:FireServer(requestId, false)
+    local responseValue =
+        accept == true
+        and false
+        or true
+
+    local ok, err =
+        pcall(function()
+
+            remote:FireServer(
+                requestId,
+                responseValue
+            )
+        end)
+
+    if ok == true then
+
+        TransferState.IncomingRequestHandled[requestId] =
+            true
+
+        if accept == true then
+
+            TransferHideTradeRequestPopup(
+                TransferState.IncomingRequestPlayerName
+            )
+        end
+
+        TransferState.IncomingRequestId =
+            ""
+
+        TransferState.IncomingRequestPlayerName =
+            ""
+
+        TransferState.IncomingRequestAt =
+            0
+    end
+
+    local msg =
+        ok
+        and (
+            accept == true
+            and "Accepted request"
+            or "Declined request"
+        )
+        or tostring(err)
+
+    TransferSetStatus(
+        ok
+            and (
+                accept == true
+                and "Request Accepted"
+                or "Request Declined"
+            )
+            or "Request Failed",
+        msg
+    )
+
+    print(
+        "[TRANSFER] RespondRequest:",
+        tostring(ok),
+        "| accept:",
+        tostring(accept),
+        "| requestId:",
+        tostring(requestId),
+        "| value:",
+        tostring(responseValue),
+        "|",
+        tostring(msg)
+    )
+
+    return ok
+end
+
+local function TransferAcceptIncomingRequest()
+
+    return TransferRespondRequest(true)
+end
+
+local function TransferDeclineIncomingRequest()
+
+    return TransferRespondRequest(false)
+end
+
+local function TransferDeclineTrade()
+
+    local ok, msg =
+        TransferFireTradeRemote("Decline")
+
+    TransferSetStatus(
+        ok and "Declined" or "Decline Failed",
+        msg
+    )
+
+    print("[TRANSFER] Decline:", tostring(ok), tostring(msg))
+
+    if ok == true then
+
+        TransferMarkTradeDeclined(
+            "Local decline requested."
+        )
+    end
+
+    return ok
+end
+
+local function TransferConfirmTrade()
+
+    local ok, msg =
+        TransferFireTradeRemote("Confirm")
+
+    TransferSetStatus(
+        ok and "Confirmed" or "Confirm Failed",
+        msg
+    )
+
+    print("[TRANSFER] Confirm:", tostring(ok), tostring(msg))
+
+    return ok
+end
+
+TransferIsGuiObjectVisible = function(obj)
+
+    local current =
+        obj
+
+    while current
+    and current ~= LocalPlayer:FindFirstChild("PlayerGui") do
+
+        if current:IsA("GuiObject")
+        and current.Visible == false then
+            return false
+        end
+
+        current =
+            current.Parent
+    end
+
+    return true
+end
+
+local function TransferExtractPositiveTradeValueFromText(text)
+
+    text =
+        CleanText(text)
+
+    if text == "" then
+        return nil
+    end
+
+    local lower =
+        text:lower()
+
+    -- Ignore cooldowns/timers/buttons/non-value labels.
+    if lower:match("^%d+%.?%d*s$")
+    or lower:find("Â¢", 1, true)
+    or lower:find("add", 1, true)
+    or lower:find("accept", 1, true)
+    or lower:find("confirm", 1, true)
+    or lower:find("decline", 1, true)
+    or lower:find("waiting", 1, true)
+    or lower:find("trade", 1, true)
+    or lower:find("token", 1, true) == nil and lower:find("value", 1, true) == nil and not lower:match("^%d+[,%d]*$")
+    or text:find(":", 1, true) then
+        return nil
+    end
+
+    local numberText =
+        text:gsub(",", ""):match("(%d+%.?%d*)")
+
+    local number =
+        tonumber(numberText)
+
+    if not number
+    or number <= 0 then
+        return nil
+    end
+
+    return number
+end
+
+TransferGuiHasPositiveTradeValue = function()
+
+    local playerGui =
+        LocalPlayer:FindFirstChild("PlayerGui")
+
+    local tradingUI =
+        playerGui
+        and playerGui:FindFirstChild("TradingUI")
+
+    if not tradingUI then
+        return false, 0
+    end
+
+    local bestValue =
+        0
+
+    for _, obj in ipairs(tradingUI:GetDescendants()) do
+
+        if obj:IsA("TextLabel")
+        or obj:IsA("TextButton")
+        or obj:IsA("TextBox") then
+
+            if TransferIsGuiObjectVisible(obj) then
+
+                local value =
+                    TransferExtractPositiveTradeValueFromText(obj.Text)
+
+                if value
+                and value > bestValue then
+
+                    bestValue =
+                        value
+                end
+            end
+        end
+    end
+
+    return bestValue > 0,
+        bestValue
+end
+
+local function TransferWaitForVisibleTradeValue(timeout)
 
     timeout =
         tonumber(timeout)
@@ -10928,444 +13588,1331 @@ function HFTransfer.WaitForCondition(label, timeout, predicate)
         os.clock()
 
     while IsCurrentRun()
-    and HFTransfer.State.TransferEnabled == true
-    and os.clock() - started < timeout do
+    and TransferState.TransferEnabled == true do
 
-        local ok, result =
-            pcall(predicate)
+        if TransferState.TradeDeclined == true then
+            return false
+        end
 
-        if ok == true
-        and result == true then
+        local hasValue =
+            TransferGuiHasPositiveTradeValue()
+
+        if hasValue == true then
             return true
         end
 
-        HFTransfer.SetStatus(
-            tostring(label or "Waiting"),
-            string.format(
-                "%.1fs",
-                math.max(0, timeout - (os.clock() - started))
-            )
-        )
+        if os.clock() - started >= timeout then
+            return false
+        end
 
-        task.wait(0.03)
+        task.wait()
     end
 
     return false
 end
 
-function HFTransfer.WaitForTradeOpen(timeout)
+TransferParseCooldownText = function(text)
 
-    return HFTransfer.WaitForCondition(
-        "Waiting Trade",
-        timeout or 15,
-        function()
+    text =
+        tostring(text or "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+            :lower()
 
-            return HFTransfer.State.TradeOpen == true
-                and HFTransfer.State.TradeDeclined ~= true
-        end
-    )
+    local numberText =
+        text:match("^(%d+%.?%d*)s$")
+
+    if not numberText then
+        return nil
+    end
+
+    local seconds =
+        tonumber(numberText)
+
+    if not seconds then
+        return nil
+    end
+
+    -- Trade add-item cooldown is around 5 seconds.
+    -- Ignore unrelated long timers.
+    if seconds < 0
+    or seconds > 6.5 then
+        return nil
+    end
+
+    return seconds
 end
 
-function HFTransfer.WaitForTradeClosed(timeout)
+local function TransferCanUseTradeValueForAccept()
 
-    return HFTransfer.WaitForCondition(
-        "Waiting Close",
-        timeout or 20,
-        function()
+    if TransferState.TradeOpen ~= true then
+        return false
+    end
 
-            return HFTransfer.State.TradeCompleted == true
-                or HFTransfer.State.TradeOpen ~= true
-                or HFTransfer.State.TradeDeclined == true
-        end
-    )
+    if TransferState.TradeDeclined == true then
+        return false
+    end
+
+    if TransferState.TradeCompleted == true
+    or TransferState.TradeResult == "Completed" then
+        return false
+    end
+
+    local buttonText =
+        TransferGetTradeButtonText()
+
+    if buttonText == "" then
+        return false
+    end
+
+    if buttonText == "Confirm"
+    or buttonText == "Confirmed" then
+        return true
+    end
+
+    if buttonText == "Accept"
+    or TransferParseCooldownText(buttonText) ~= nil then
+        return true
+    end
+
+    return false
 end
 
-function HFTransfer.WaitForOtherAccepted(timeout)
-
-    return HFTransfer.WaitForCondition(
-        "Waiting Other Accept",
-        timeout or 20,
-        function()
-
-            if HFTransfer.State.TradeCompleted == true then
-                return true
-            end
-
-            return HFTransfer.TradeStateIsAcceptedLike(
-                HFTransfer.GetOtherTradeState()
-            )
-        end
-    )
-end
-
-function HFTransfer.WaitForSenderReady(timeout)
-
-    return HFTransfer.WaitForCondition(
-        "Waiting Sender",
-        timeout or 60,
-        function()
-
-            if HFTransfer.State.TradeCompleted == true then
-                return true
-            end
-
-            return HFTransfer.SenderReadyForReceiverAccept()
-        end
-    )
-end
-
-function HFTransfer.StartFastAcceptPump(label, maxDuration)
-
-    local state =
-        HFTransfer.State
+local function TransferStartFastAcceptPump(label, requiredOwnCount, requiredOtherCount, maxDuration)
 
     label =
-        tostring(label or "Fast Accept")
+        tostring(label or "Value Accept")
 
     maxDuration =
         tonumber(maxDuration)
         or 12
-
-    state.FastAcceptPumpToken =
-        HFTransfer.ToNumber(
-            state.FastAcceptPumpToken,
-            0
-        ) + 1
-
-    local token =
-        state.FastAcceptPumpToken
 
     task.spawn(function()
 
         local started =
             os.clock()
 
+        local connections = {}
+
+        local stopped =
+            false
+
+        local valueDetected =
+            false
+
         local lastFireAt =
             0
 
-        while IsCurrentRun()
-        and state.TransferEnabled == true
-        and token == state.FastAcceptPumpToken
-        and os.clock() - started < maxDuration do
+        local nextCooldownPulseAt =
+            0
 
-            if state.TradeDeclined == true
-            or state.TradeCompleted == true then
-                break
+        local lastStatusAt =
+            0
+
+        local function ShouldStop()
+
+            if stopped == true then
+                return true
             end
 
-            local localState =
-                HFTransfer.GetLocalTradeState()
-
-            if HFTransfer.TradeStateIsAcceptedLike(localState)
-            or localState == "Processing" then
-                break
+            if not IsCurrentRun()
+            or TransferState.TransferEnabled ~= true then
+                return true
             end
 
-            if os.clock() - lastFireAt >= 0.015 then
+            if TransferState.TradeDeclined == true then
+                return true
+            end
 
-                lastFireAt =
-                    os.clock()
+            if TransferState.TradeCompleted == true
+            or TransferState.TradeResult == "Completed" then
 
-                HFTransfer.FireTradeRemote("Accept")
+                TransferTimingMark("CompletedAt")
+                return true
+            end
+
+            if TransferGetTradeButtonText() == "Confirm" then
+
+                TransferTimingMark("ConfirmSeenAt")
+                return true
+            end
+
+            if os.clock() - started >= maxDuration then
+                return true
+            end
+
+            return false
+        end
+
+        local function Cleanup(reason)
+
+            if stopped == true then
+                return
+            end
+
+            stopped =
+                true
+
+            for _, connection in ipairs(connections) do
+
+                pcall(function()
+                    connection:Disconnect()
+                end)
+            end
+
+            table.clear(connections)
+
+            TransferTimingReport(
+                reason or label
+            )
+        end
+
+        local function FireAcceptBurst(reason, value, count)
+
+            if ShouldStop() then
+                Cleanup(reason)
+                return
+            end
+
+            if TransferAcceptLikelyLockedFromButtonPhase() == true then
+
+                TransferTimingMark("AcceptLockedAt")
+                Cleanup("accept locked")
+                return
+            end
+
+            count =
+                math.clamp(
+                    math.floor(tonumber(count) or 1),
+                    1,
+                    8
+                )
+
+            local now =
+                os.clock()
+
+            if now - lastFireAt < 0.006 then
+                return
+            end
+
+            lastFireAt =
+                now
+
+            if TransferState.Timing.FirstAcceptAt == nil then
+                TransferTimingMark("FirstAcceptAt")
+            end
+
+            local buttonText =
+                TransferGetTradeButtonText()
+
+            if TransferState.Timing.FirstButton == "" then
+                TransferTimingSet("FirstButton", buttonText)
+            end
+
+            TransferTimingSet("LastButton", buttonText)
+            TransferTimingSet("LastValue", value or 0)
+
+            for _ = 1, count do
+
+                if ShouldStop()
+                or TransferAcceptLikelyLockedFromButtonPhase() == true then
+                    break
+                end
+
+                TransferFireTradeRemote("Accept")
+
+                TransferTimingBumpAttempts(1)
+
+                task.wait()
+            end
+
+            TransferDebugPrint(
+                "[TRANSFER DEBUG] Accept burst:",
+                tostring(label),
+                "| reason:",
+                tostring(reason),
+                "| count:",
+                tostring(count),
+                "| value:",
+                tostring(value),
+                "| button:",
+                tostring(buttonText)
+            )
+        end
+
+        local function OnValueSeen(reason, value)
+
+            if ShouldStop() then
+                Cleanup(reason)
+                return
+            end
+
+            value =
+                tonumber(value)
+                or 0
+
+            if value <= 0 then
+                return
+            end
+
+            if TransferCanUseTradeValueForAccept() ~= true then
+                return
+            end
+
+            if valueDetected ~= true then
+
+                valueDetected =
+                    true
+
+                TransferTimingMark("ValueSeenAt")
+                TransferTimingSet("LastValue", value)
+
+                TransferSetStatus(
+                    "Value Detected",
+                    tostring(label)
+                        .. " value "
+                        .. tostring(value)
+                )
+
+                -- First instant fire as soon as value appears.
+                FireAcceptBurst(
+                    reason .. "_first_value",
+                    value,
+                    2
+                )
+            end
+        end
+
+        local function CheckTextObject(obj, reason)
+
+            if ShouldStop() then
+                Cleanup(reason)
+                return
+            end
+
+            if not obj
+            or not obj.Parent then
+                return
+            end
+
+            if not TransferIsGuiObjectVisible(obj) then
+                return
+            end
+
+            local value =
+                TransferExtractPositiveTradeValueFromText(obj.Text)
+
+            if value then
+                OnValueSeen(reason, value)
+            end
+        end
+
+        local function AttachTextObject(obj)
+
+            if not obj
+            or not obj.Parent then
+                return
+            end
+
+            if not (
+                obj:IsA("TextLabel")
+                or obj:IsA("TextButton")
+                or obj:IsA("TextBox")
+            ) then
+                return
+            end
+
+            CheckTextObject(
+                obj,
+                "initial"
+            )
+
+            local ok, connection =
+                pcall(function()
+
+                    return obj:GetPropertyChangedSignal("Text"):Connect(function()
+
+                        CheckTextObject(
+                            obj,
+                            "text_changed"
+                        )
+                    end)
+                end)
+
+            if ok == true
+            and connection then
+
+                table.insert(
+                    connections,
+                    connection
+                )
+            end
+        end
+
+        local playerGui =
+            LocalPlayer:FindFirstChild("PlayerGui")
+
+        local tradingUI =
+            playerGui
+            and playerGui:FindFirstChild("TradingUI")
+
+        if tradingUI then
+
+            for _, obj in ipairs(tradingUI:GetDescendants()) do
+                AttachTextObject(obj)
+            end
+
+            local okDesc, descConnection =
+                pcall(function()
+
+                    return tradingUI.DescendantAdded:Connect(function(obj)
+
+                        task.defer(function()
+                            AttachTextObject(obj)
+                        end)
+                    end)
+                end)
+
+            if okDesc == true
+            and descConnection then
+
+                table.insert(
+                    connections,
+                    descConnection
+                )
+            end
+        end
+
+        while ShouldStop() ~= true do
+
+            local hasValue, value =
+                TransferGuiHasPositiveTradeValue()
+
+            if hasValue == true
+            and TransferCanUseTradeValueForAccept() == true then
+                OnValueSeen("frame_scan", value)
+            end
+
+            if valueDetected == true then
+
+                local buttonText =
+                    TransferGetTradeButtonText()
+
+                local seconds =
+                    TransferParseCooldownText(buttonText)
+
+                TransferTimingSet("LastButton", buttonText)
+
+                if TransferAcceptLikelyLockedFromButtonPhase() == true then
+
+                    TransferTimingMark("AcceptLockedAt")
+                    Cleanup("accept locked")
+                    return
+
+                elseif buttonText == "Accept"
+                or buttonText == "" then
+
+                    -- No visible cooldown. Burst hard.
+                    FireAcceptBurst(
+                        "button_ready",
+                        value,
+                        4
+                    )
+
+                elseif seconds ~= nil then
+
+                    if seconds <= 0.25 then
+
+                        -- Only fire at the real useful server-ready window.
+                        FireAcceptBurst(
+                            "cooldown_final",
+                            value,
+                            8
+                        )
+
+                    elseif os.clock() - lastStatusAt >= 0.35 then
+
+                        TransferSetStatus(
+                            "Accept Cooldown",
+                            "Value="
+                                .. tostring(value)
+                                .. " | Ready in "
+                                .. string.format("%.1f", seconds)
+                                .. "s"
+                        )
+                    end
+                end
+
+                if os.clock() - lastStatusAt >= 0.35 then
+
+                    lastStatusAt =
+                        os.clock()
+
+                    TransferSetStatus(
+                        "Fast Accept",
+                        "Value="
+                            .. tostring(value)
+                            .. " | Button="
+                            .. tostring(buttonText)
+                    )
+                end
             end
 
             task.wait()
         end
 
-        HFTransfer.DebugPrint(
-            "Fast accept pump stopped:",
-            tostring(label)
-        )
+        Cleanup("pump ended")
     end)
 end
 
-function HFTransfer.WaitForLocalAccepted(timeout)
+local function TransferAcceptAndWait(label, timeout, requiredOwnCount, requiredOtherCount)
 
-    local state =
-        HFTransfer.State
+    label =
+        tostring(label or "Accepting")
 
     timeout =
         tonumber(timeout)
-        or 12
+        or 14
+
+    requiredOwnCount =
+        tonumber(requiredOwnCount)
+        or 0
+
+    requiredOtherCount =
+        tonumber(requiredOtherCount)
+        or 0
 
     local started =
         os.clock()
 
-    local lastAcceptAt =
+    local lastFireAt =
         0
 
-    while IsCurrentRun()
-    and state.TransferEnabled == true
-    and os.clock() - started < timeout do
+    local nextCooldownPulseAt =
+        0
 
-        if state.TradeDeclined == true then
+    local lastStatusAt =
+        0
+
+    local function FireAcceptBurst(reason, value, count)
+
+        if TransferAcceptLikelyLockedFromButtonPhase() == true then
+            TransferTimingMark("AcceptLockedAt")
+            return true
+        end
+
+        count =
+            math.clamp(
+                math.floor(tonumber(count) or 1),
+                1,
+                8
+            )
+
+        if os.clock() - lastFireAt < 0.006 then
             return false
         end
 
-        if state.TradeCompleted == true then
-            return true
+        lastFireAt =
+            os.clock()
+
+        if TransferState.Timing.FirstAcceptAt == nil then
+            TransferTimingMark("FirstAcceptAt")
         end
 
-        local localState =
-            HFTransfer.GetLocalTradeState()
+        for _ = 1, count do
 
-        if HFTransfer.TradeStateIsAcceptedLike(localState)
-        or localState == "Processing" then
-            return true
+            if TransferAcceptLikelyLockedFromButtonPhase() == true then
+                TransferTimingMark("AcceptLockedAt")
+                return true
+            end
+
+            TransferFireTradeRemote("Accept")
+
+            TransferTimingBumpAttempts(1)
+
+            task.wait()
         end
 
-        if os.clock() - lastAcceptAt >= 0.12 then
-
-            lastAcceptAt =
-                os.clock()
-
-            HFTransfer.FireTradeRemote("Accept")
-        end
-
-        HFTransfer.SetStatus(
-            "Accepting",
-            "Locking local accept..."
+        TransferDebugPrint(
+            "[TRANSFER DEBUG] Fallback accept burst:",
+            tostring(label),
+            "| reason:",
+            tostring(reason),
+            "| count:",
+            tostring(count),
+            "| value:",
+            tostring(value),
+            "| button:",
+            tostring(TransferGetTradeButtonText())
         )
 
-        task.wait(0.03)
+        return TransferAcceptLikelyLockedFromButtonPhase()
     end
 
-    return false
-end
-
-function HFTransfer.WaitForOtherAcceptedFast(timeout)
-
-    local state =
-        HFTransfer.State
-
-    timeout =
-        tonumber(timeout)
-        or 25
-
-    local started =
-        os.clock()
-
     while IsCurrentRun()
-    and state.TransferEnabled == true
-    and os.clock() - started < timeout do
+    and TransferState.TransferEnabled == true do
 
-        if state.TradeDeclined == true then
+        if TransferState.TradeDeclined == true then
+            TransferTimingReport("declined during accept")
             return false
         end
 
-        if state.TradeCompleted == true then
+        if TransferAcceptLikelyLockedFromButtonPhase() then
+            TransferTimingMark("AcceptLockedAt")
             return true
         end
 
-        if HFTransfer.TradeStateIsAcceptedLike(
-            HFTransfer.GetOtherTradeState()
-        ) then
-            return true
+        if os.clock() - started >= timeout then
+            TransferTimingReport("accept timeout")
+            return false
         end
 
-        task.wait(0.03)
+        local hasValue, value =
+            TransferGuiHasPositiveTradeValue()
+
+        local buttonText =
+            TransferGetTradeButtonText()
+
+        local seconds =
+            TransferParseCooldownText(buttonText)
+
+        local ownCount =
+            tonumber(TransferState.TradeOwnItemCount)
+            or 0
+
+        local otherCount =
+            tonumber(TransferState.TradeOtherItemCount)
+            or 0
+
+        local countReady =
+            (
+                requiredOwnCount > 0
+                or requiredOtherCount > 0
+            )
+            and ownCount >= requiredOwnCount
+            and otherCount >= requiredOtherCount
+
+        local senderAcceptedReady =
+            false
+
+        if TransferState.Mode == "Receiver" then
+
+            local senderAccepted =
+                TransferTradeStateIsAcceptedLike(
+                    TransferGetOtherTradeState()
+                )
+                or TransferGuiPlayerHasAccepted(
+                    TransferState.TargetPlayerName
+                )
+
+            senderAcceptedReady =
+                senderAccepted == true
+                and (
+                    otherCount > 0
+                    or hasValue == true
+                )
+        end
+
+        local ready =
+            hasValue == true
+            or countReady == true
+            or senderAcceptedReady == true
+
+        TransferTimingSet("LastButton", buttonText)
+
+        if ready == true then
+
+            if hasValue == true
+            and TransferState.Timing.ValueSeenAt == nil then
+                TransferTimingMark("ValueSeenAt")
+            end
+
+            TransferTimingSet("LastValue", value or 0)
+
+            local acceptReason =
+                senderAcceptedReady == true
+                and "sender_accepted_ready"
+                or (
+                    countReady == true
+                    and "count_ready"
+                    or "value_ready"
+                )
+
+            if buttonText == "Accept"
+            or buttonText == "" then
+
+                print(
+                    "[TRANSFER] Receiver/Sender Accept Attempt:",
+                    tostring(acceptReason),
+                    "| hasValue:",
+                    tostring(hasValue),
+                    "| value:",
+                    tostring(value),
+                    "| countReady:",
+                    tostring(countReady),
+                    "| senderAcceptedReady:",
+                    tostring(senderAcceptedReady),
+                    "| Own:",
+                    tostring(ownCount),
+                    "/",
+                    tostring(requiredOwnCount),
+                    "| Other:",
+                    tostring(otherCount),
+                    "/",
+                    tostring(requiredOtherCount),
+                    "| Button:",
+                    tostring(buttonText),
+                    "| Local:",
+                    TransferGetLocalTradeState(),
+                    "| OtherState:",
+                    TransferGetOtherTradeState()
+                )
+
+                if FireAcceptBurst(
+                    "fallback_" .. tostring(acceptReason),
+                    value,
+                    8
+                ) then
+                    return true
+                end
+
+            elseif seconds ~= nil then
+
+                if seconds <= 0.25 then
+
+                    print(
+                        "[TRANSFER] Receiver/Sender Accept Attempt:",
+                        tostring(acceptReason),
+                        "| hasValue:",
+                        tostring(hasValue),
+                        "| value:",
+                        tostring(value),
+                        "| countReady:",
+                        tostring(countReady),
+                        "| senderAcceptedReady:",
+                        tostring(senderAcceptedReady),
+                        "| Own:",
+                        tostring(ownCount),
+                        "/",
+                        tostring(requiredOwnCount),
+                        "| Other:",
+                        tostring(otherCount),
+                        "/",
+                        tostring(requiredOtherCount),
+                        "| Button:",
+                        tostring(buttonText),
+                        "| Local:",
+                        TransferGetLocalTradeState(),
+                        "| OtherState:",
+                        TransferGetOtherTradeState()
+                    )
+
+                    if FireAcceptBurst(
+                        "fallback_cooldown_" .. tostring(acceptReason),
+                        value,
+                        8
+                    ) then
+                        return true
+                    end
+
+                elseif os.clock() >= nextCooldownPulseAt then
+
+                    nextCooldownPulseAt =
+                        os.clock() + 0.35
+
+                    TransferUpdateTradeStatusText(
+                        label,
+                        "Accept cooldown "
+                            .. string.format("%.1f", seconds)
+                            .. "s | "
+                            .. tostring(acceptReason)
+                    )
+                end
+
+            else
+
+                if FireAcceptBurst(
+                    "fallback_unknown_" .. tostring(acceptReason),
+                    value,
+                    2
+                ) then
+                    return true
+                end
+            end
+
+            if os.clock() - lastStatusAt >= 0.35 then
+
+                lastStatusAt =
+                    os.clock()
+
+                TransferUpdateTradeStatusText(
+                    label,
+                    "Fast accept | Reason="
+                        .. tostring(acceptReason)
+                        .. " | Value="
+                        .. tostring(value)
+                        .. " | Button="
+                        .. tostring(buttonText)
+                )
+            end
+
+        else
+
+            if os.clock() - lastStatusAt >= 0.45 then
+
+                lastStatusAt =
+                    os.clock()
+
+                TransferUpdateTradeStatusText(
+                    label,
+                    "Waiting accept trigger. Button="
+                        .. tostring(buttonText)
+                        .. " | OtherState="
+                        .. tostring(TransferGetOtherTradeState())
+                        .. " | OtherItems="
+                        .. tostring(otherCount)
+                )
+            end
+        end
+
+        task.wait()
     end
+
+    TransferTimingReport("accept stopped")
 
     return false
 end
 
-function HFTransfer.ConfirmUntilClosed(timeout)
+local function TransferConfirmAndWait(label, timeout)
 
-    local state =
-        HFTransfer.State
+    label =
+        tostring(label or "Confirming")
 
     timeout =
         tonumber(timeout)
-        or 25
+        or 30
 
     local started =
         os.clock()
-
-    local lastConfirmAt =
-        0
 
     local attempts =
         0
 
-    while IsCurrentRun()
-    and state.TransferEnabled == true
-    and os.clock() - started < timeout do
+    local nextRetryAt =
+        0
 
-        if state.TradeDeclined == true then
+    while IsCurrentRun()
+    and TransferState.TransferEnabled == true do
+
+        if TransferState.TradeDeclined == true
+        or TransferMarkClosedIfLiveTradeGone("Trade UI closed while confirming.") == true then
             return false
         end
 
-        if state.TradeCompleted == true then
+        if TransferState.TradeCompleted == true
+        or TransferState.TradeResult == "Completed"
+        or TransferGetLocalTradeState() == "Processing"
+        or TransferGetOtherTradeState() == "Processing" then
+
+            TransferTimingMark("CompletedAt")
+            TransferTimingReport("completed")
+
             return true
         end
 
-        local localState =
-            HFTransfer.GetLocalTradeState()
-
-        local otherState =
-            HFTransfer.GetOtherTradeState()
-
-        if localState == "Processing"
-        or otherState == "Processing" then
-            return true
+        if os.clock() - started >= timeout then
+            return false
         end
 
-        if os.clock() - lastConfirmAt >= 0.18 then
+        local buttonText =
+            TransferGetTradeButtonText()
 
-            lastConfirmAt =
-                os.clock()
+        local confirmWindowReady =
+            TransferConfirmWindowReady()
+
+        if confirmWindowReady == true then
+            TransferTimingMark("ConfirmSeenAt")
+        end
+
+        if buttonText == "Confirmed" then
+
+            TransferUpdateTradeStatusText(
+                label,
+                "Waiting other final confirm."
+            )
+
+            task.wait(0.15)
+
+        elseif confirmWindowReady == true
+        and (
+            attempts == 0
+            or os.clock() >= nextRetryAt
+        ) then
 
             attempts += 1
 
-            HFTransfer.SetStatus(
-                "Confirming",
-                "Confirm attempt "
+            nextRetryAt =
+                os.clock() + 0.18
+
+            TransferUpdateTradeStatusText(
+                label,
+                "Final confirm attempt "
                     .. tostring(attempts)
             )
 
-            HFTransfer.FireTradeRemote("Confirm")
-        end
+            local ok, msg =
+                TransferFireTradeRemote("Confirm")
 
-        task.wait(0.03)
-    end
+            print(
+                "[TRANSFER] Auto Confirm Attempt:",
+                tostring(attempts),
+                tostring(ok),
+                tostring(msg),
+                "| Button:",
+                tostring(buttonText),
+                "| Local:",
+                TransferGetLocalTradeState(),
+                "| Other:",
+                TransferGetOtherTradeState()
+            )
 
-    return state.TradeCompleted == true
-end
+            task.wait(0.05)
 
-function HFTransfer.AddPetsToOpenTrade(matches)
-
-    if type(matches) ~= "table"
-    or #matches <= 0 then
-        return false, "No pets to add"
-    end
-
-    local state =
-        HFTransfer.State
-
-    state.IsAddingPets =
-        true
-
-    state.AddedThisBatch =
-        0
-
-    local addDelay =
-        HFTransfer.GetAddPetDelay()
-
-    local burstCount =
-        HFTransfer.GetAddBurstCount()
-
-    for index, pet in ipairs(matches) do
-
-        if not IsCurrentRun()
-        or state.TransferEnabled ~= true then
-
-            state.IsAddingPets =
-                false
-
-            return false, "Stopped"
-        end
-
-        if state.TradeDeclined == true then
-
-            state.IsAddingPets =
-                false
-
-            return false, state.TradeDeclineReason
-        end
-
-        local ok, err =
-            HFTransfer.AddPetToTrade(pet)
-
-        if not ok then
-
-            state.IsAddingPets =
-                false
-
-            return false, tostring(err)
-        end
-
-        if index % burstCount == 0 then
-            task.wait(addDelay)
         else
-            task.wait(0.03)
+
+            TransferUpdateTradeStatusText(
+                label,
+                "Waiting final confirm result. Button="
+                    .. tostring(buttonText)
+            )
+
+            task.wait(0.15)
         end
     end
 
-    state.IsAddingPets =
-        false
-
-    HFTransfer.SetStatus(
-        "Pets Added",
-        tostring(state.AddedThisBatch)
-            .. "/"
-            .. tostring(#matches)
-    )
-
-    return true, "Pets added"
+    return false
 end
 
-function HFTransfer.RunSenderBatch()
-
-    local state =
-        HFTransfer.State
-
-    state.Batch =
-        HFTransfer.ToNumber(state.Batch, 0) + 1
-
-    state.AddedThisBatch =
-        0
-
-    state.RequestBlocked =
-        false
-
-    state.RequestBlockedReason =
-        ""
-
-    HFTransfer.ResetTradeTracker(
-        "sender batch"
-    )
-
-    HFTransfer.SetStatus(
-        "Scanning Pets",
-        "Building sender match list."
-    )
+local function TransferSendFilteredPets()
 
     local matches =
-        HFTransfer.BuildMatches(
-            HFTransfer.GetMaxPetsPerTrade()
+        TransferBuildMatches()
+
+    local limit =
+        TransferGetMaxPetsPerTrade()
+
+    local sendCount =
+        math.min(
+            #matches,
+            limit
         )
+
+    if sendCount <= 0 then
+
+        TransferSetStatus(
+            "No Matches",
+            "No pets matched your current filters."
+        )
+
+        return false, 0
+    end
+
+    TransferState.IsAddingPets =
+        true
+
+    TransferState.AddedThisBatch =
+        0
+
+    TransferSetStatus(
+        "Sending Pets",
+        "Adding "
+            .. tostring(sendCount)
+            .. "/"
+            .. tostring(#matches)
+            .. " matching pets.",
+        true
+    )
+
+    local added = 0
+    local failed = 0
+    local lastError = ""
+
+    local burstCount =
+        TransferGetAddBurstCount()
+
+    if burstCount <= 1 then
+
+        for index, pet in ipairs(matches) do
+
+            if not IsCurrentRun()
+            or TransferState.TransferEnabled ~= true then
+
+                TransferState.IsAddingPets =
+                    false
+
+                return false, added
+            end
+
+            if index > sendCount then
+                break
+            end
+
+            TransferSetStatus(
+                "Sending Pets",
+                "Adding "
+                    .. tostring(index)
+                    .. "/"
+                    .. tostring(sendCount)
+                    .. ": "
+                    .. tostring(pet.PetName)
+                    .. " "
+                    .. tostring(TransferFormatNumber(pet.DisplayWeight))
+                    .. " KG"
+            )
+
+            local beforeCount =
+                tonumber(TransferState.TradeOwnItemCount)
+                or 0
+
+            local confirmed, msg =
+                TransferTryAddPetToTrade(pet)
+
+            if confirmed == true then
+
+                added += 1
+
+                TransferState.AddedThisBatch =
+                    added
+
+                print(
+                    "[TRANSFER] AddItem confirmed:",
+                    tostring(added)
+                        .. "/"
+                        .. tostring(sendCount),
+                    tostring(pet.PetName),
+                    tostring(pet.UUID),
+                    "BaseWeight:",
+                    tostring(pet.BaseWeight),
+                    "KG:",
+                    tostring(pet.DisplayWeight),
+                    "| OfferCount:",
+                    tostring(TransferState.TradeOwnItemCount),
+                    "|",
+                    tostring(msg)
+                )
+
+            else
+
+                failed += 1
+
+                lastError =
+                    tostring(msg)
+
+                warn(
+                    "[TRANSFER] AddItem rejected/unconfirmed:",
+                    tostring(index)
+                        .. "/"
+                        .. tostring(sendCount),
+                    tostring(pet.PetName),
+                    tostring(pet.UUID),
+                    tostring(lastError),
+                    "| Before:",
+                    tostring(beforeCount),
+                    "| Current:",
+                    tostring(TransferState.TradeOwnItemCount)
+                )
+
+                TransferSetStatus(
+                    "Add Failed",
+                    tostring(pet.PetName)
+                        .. " was not accepted by trade."
+                )
+
+                break
+            end
+
+            TransferState.Sent += confirmed and 1 or 0
+
+            if index < sendCount then
+
+                local addDelay =
+                    TransferGetAddPetDelay()
+
+                TransferSetStatus(
+                    "Adding Next",
+                    tostring(added)
+                        .. " added | next pet in "
+                        .. string.format("%.2f", addDelay)
+                        .. "s"
+                )
+
+                task.wait(addDelay)
+            end
+        end
+
+    else
+
+        local index =
+            1
+
+        local stuckRounds =
+            0
+
+        while index <= sendCount do
+
+            if not IsCurrentRun()
+            or TransferState.TransferEnabled ~= true then
+
+                TransferState.IsAddingPets =
+                    false
+
+                return false, added
+            end
+
+            local burstEnd =
+                math.min(
+                    index + burstCount - 1,
+                    sendCount
+                )
+
+            local beforeCount =
+                tonumber(TransferState.TradeOwnItemCount)
+                or 0
+
+            local firedCount =
+                0
+
+            TransferSetStatus(
+                "Burst Adding",
+                "Firing "
+                    .. tostring(index)
+                    .. "-"
+                    .. tostring(burstEnd)
+                    .. "/"
+                    .. tostring(sendCount)
+                    .. " all at once"
+            )
+
+            for burstIndex = index, burstEnd do
+
+                local pet =
+                    matches[burstIndex]
+
+                local fired, msg =
+                    TransferFirePetAddNoWait(pet)
+
+                if fired == true then
+
+                    firedCount += 1
+
+                    TransferDebugPrint(
+                        "[TRANSFER DEBUG] Burst AddItem fired:",
+                        tostring(burstIndex)
+                            .. "/"
+                            .. tostring(sendCount),
+                        tostring(pet.PetName),
+                        tostring(pet.UUID),
+                        "|",
+                        tostring(msg)
+                    )
+
+                else
+
+                    failed += 1
+
+                    lastError =
+                        tostring(msg)
+
+                    warn(
+                        "[TRANSFER] Burst AddItem failed to fire:",
+                        tostring(burstIndex)
+                            .. "/"
+                            .. tostring(sendCount),
+                        tostring(pet and pet.PetName),
+                        tostring(lastError)
+                    )
+                end
+            end
+
+            if firedCount <= 0 then
+
+                stuckRounds += 1
+
+                if stuckRounds >= 3 then
+                    break
+                end
+
+                task.wait(0.25)
+
+                continue
+            end
+
+            local expectedCount =
+                beforeCount + firedCount
+
+            local afterCount =
+                TransferWaitForOwnOfferCountAtLeastOrSettled(
+                    beforeCount,
+                    expectedCount,
+                    math.max(
+                        1.5,
+                        0.45 + firedCount * 0.18
+                    ),
+                    0.28
+                )
+
+            local gained =
+                math.clamp(
+                    afterCount - beforeCount,
+                    0,
+                    firedCount
+                )
+
+            if gained > 0 then
+
+                added += gained
+
+                TransferState.Sent += gained
+
+                TransferState.AddedThisBatch =
+                    added
+
+                stuckRounds =
+                    0
+
+                TransferDebugPrint(
+                    "[TRANSFER DEBUG] Burst accepted:",
+                    tostring(gained)
+                        .. "/"
+                        .. tostring(firedCount),
+                    "| Added:",
+                    tostring(added)
+                        .. "/"
+                        .. tostring(sendCount),
+                    "| OfferCount:",
+                    tostring(TransferState.TradeOwnItemCount)
+                )
+
+                index += gained
+
+            else
+
+                stuckRounds += 1
+
+                lastError =
+                    "Burst fired but offer count did not increase."
+
+                warn(
+                    "[TRANSFER] Burst stalled:",
+                    tostring(lastError),
+                    "| Before:",
+                    tostring(beforeCount),
+                    "| After:",
+                    tostring(afterCount),
+                    "| Fired:",
+                    tostring(firedCount)
+                )
+
+                if stuckRounds >= 3 then
+                    break
+                end
+
+                task.wait(0.25)
+            end
+
+            if index <= sendCount then
+
+                local addDelay =
+                    TransferGetAddPetDelay()
+
+                TransferSetStatus(
+                    "Adding Next",
+                    tostring(added)
+                        .. " added | next instant burst in "
+                        .. string.format("%.2f", addDelay)
+                        .. "s"
+                )
+
+                task.wait(addDelay)
+            end
+        end
+    end
+
+    TransferState.IsAddingPets =
+        false
+
+    TransferSetStatus(
+        "Pets Added",
+        tostring(added)
+            .. "/"
+            .. tostring(sendCount)
+            .. " added"
+            .. (
+                failed > 0
+                and (", " .. tostring(failed) .. " failed")
+                or ""
+            )
+            .. (
+                lastError ~= ""
+                and (" | " .. lastError)
+                or ""
+            ),
+        true
+    )
+
+    return added > 0, added
+end
+
+local function TransferRunSenderBatch()
+
+    TransferResetTradeRuntime()
+
+    TransferTimingReset("Sender Batch")
+
+    local matches =
+        TransferBuildMatches()
 
     if #matches <= 0 then
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Done",
-            "No matching pets."
+            "No matching pets left."
         )
 
         return false, "No matches"
     end
 
-    local unfavOk, unfavErr =
-        HFTransfer.UnfavoriteMatches(matches)
+    TransferState.Batch += 1
 
-    if not unfavOk then
+    TransferSetStatus(
+        "Batch "
+            .. tostring(TransferState.Batch),
+        "Preparing "
+            .. tostring(math.min(#matches, TransferGetMaxPetsPerTrade()))
+            .. " pets."
+    )
 
-        HFTransfer.SetStatus(
+    local unfavoriteOk, unfavoriteMsg =
+        TransferUnfavoriteMatchingPetsBeforeTrade(matches)
+
+    if unfavoriteOk ~= true then
+
+        TransferSetStatus(
             "Unfavorite Failed",
-            tostring(unfavErr)
+            tostring(unfavoriteMsg)
         )
 
-        return false, tostring(unfavErr)
+        return false, tostring(unfavoriteMsg)
     end
 
+    TransferRefreshDropdowns()
+
     matches =
-        HFTransfer.BuildMatches(
-            HFTransfer.GetMaxPetsPerTrade()
-        )
+        TransferBuildMatches()
 
     if #matches <= 0 then
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Done",
             "No matching pets after refresh."
         )
@@ -11373,88 +14920,78 @@ function HFTransfer.RunSenderBatch()
         return false, "No matches"
     end
 
-    local equipOk, equipErr =
-        HFTransfer.EquipTradeTicket()
-
-    if not equipOk then
-
-        HFTransfer.SetStatus(
-            "Ticket Failed",
-            tostring(equipErr)
-        )
-
-        return false, tostring(equipErr)
+    -- Optional user delay before sending the next trade request.
+    -- Batch 1 sends immediately; later batches/retries respect this delay.
+    if tonumber(TransferState.Batch) > 1 then
+        TransferWaitBeforeNextTicket()
     end
 
-    local sent =
-        HFTransfer.SendTicket()
+    local ticketOk =
+        TransferSendTicket()
 
-    if sent ~= true then
+    if not ticketOk then
         return false, "Ticket failed"
     end
 
-    -- Holy Fresh speed path:
-    -- start accept pumping before trade fully opens.
-    HFTransfer.StartFastAcceptPump(
+    TransferStartFastAcceptPump(
         "Sender PreOpen",
+        0,
+        0,
         30
     )
 
-    local opened =
-        HFTransfer.WaitForTradeOpen(20)
+    local tradeOpen =
+        TransferWaitForTradeOpen(25)
 
-    if opened ~= true then
+    if tradeOpen ~= true then
 
-        if state.TradeDeclined == true then
-            return false, state.TradeDeclineReason
+        if TransferState.TradeDeclined == true then
+            return false, "Trade declined"
         end
 
-        if state.RequestBlocked == true then
+        if TransferState.RequestBlocked == true then
             return false, "Request blocked"
         end
 
-        HFTransfer.SetStatus(
-            "Open Timeout",
-            "Trade did not open."
+        TransferSetStatus(
+            "Trade Timeout",
+            "Target did not accept/open trade in time."
         )
 
-        return false, "Trade open timeout"
+        return false, "Trade timeout"
     end
 
-    HFTransfer.SetStatus(
+    TransferUpdateTradeStatusText(
         "Trade Open",
         "Adding pets + pre-accepting."
     )
 
-    local addedOk, addedErr =
-        HFTransfer.AddPetsToOpenTrade(matches)
+    -- Sender PreOpen pump is already watching the value label.
 
-    if not addedOk then
+    local sentPets, added =
+        TransferSendFilteredPets()
 
-        HFTransfer.SetStatus(
-            "Add Failed",
-            tostring(addedErr)
-        )
-
-        return false, tostring(addedErr)
+    if sentPets ~= true
+    or added <= 0 then
+        return false, "No pets added"
     end
 
-    HFTransfer.SetStatus(
+    TransferUpdateTradeStatusText(
         "Accepting",
-        "Pets added. Fast accepting."
-    )
-
-    HFTransfer.StartFastAcceptPump(
-        "Sender Added",
-        14
+        "Pets added. Instant accepting trade."
     )
 
     local acceptOk =
-        HFTransfer.WaitForLocalAccepted(14)
+        TransferAcceptAndWait(
+            "Accepting",
+            14,
+            0,
+            0
+        )
 
     if acceptOk ~= true then
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Accept Failed",
             "Accept did not lock in."
         )
@@ -11462,21 +14999,21 @@ function HFTransfer.RunSenderBatch()
         return false, "Accept failed"
     end
 
-    HFTransfer.SetStatus(
+    TransferUpdateTradeStatusText(
         "Waiting Receiver",
         "Waiting receiver to accept."
     )
 
     local receiverAccepted =
-        HFTransfer.WaitForOtherAcceptedFast(45)
+        TransferWaitForReceiverAccepted(45)
 
     if receiverAccepted ~= true then
 
-        if state.TradeDeclined == true then
-            return false, state.TradeDeclineReason
+        if TransferState.TradeDeclined == true then
+            return false, "Trade declined"
         end
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Receiver Timeout",
             "Receiver did not accept."
         )
@@ -11484,1673 +15021,492 @@ function HFTransfer.RunSenderBatch()
         return false, "Receiver accept timeout"
     end
 
-    if state.AutoConfirm == true then
+    TransferUpdateTradeStatusText(
+        "Waiting Confirm",
+        "Waiting final confirm button."
+    )
 
-        local completed =
-            HFTransfer.ConfirmUntilClosed(30)
+    local confirmReady =
+        TransferWaitForConfirmReady(45)
 
-        if completed ~= true then
+    if confirmReady ~= true then
 
-            if state.TradeDeclined == true then
-                return false, state.TradeDeclineReason
-            end
-
-            HFTransfer.SetStatus(
-                "Complete Timeout",
-                "Trade did not complete."
-            )
-
-            return false, "Complete timeout"
+        if TransferState.TradeDeclined == true then
+            return false, "Trade declined"
         end
+
+        TransferSetStatus(
+            "Confirm Timeout",
+            "Final confirm button was not ready."
+        )
+
+        return false, "Confirm timeout"
     end
 
-    state.Sent =
-        HFTransfer.ToNumber(state.Sent, 0)
-        + HFTransfer.ToNumber(state.AddedThisBatch, 0)
-
-    HFTransfer.SetStatus(
-        "Batch Complete",
-        "Sent "
-            .. tostring(state.AddedThisBatch)
-            .. " pet(s)."
+    TransferUpdateTradeStatusText(
+        "Confirming",
+        "Final confirm."
     )
 
-    return true, "Completed"
+    local completed =
+        TransferConfirmAndWait(
+            "Confirming",
+            30
+        )
+
+    if completed ~= true then
+
+        if TransferState.TradeDeclined == true then
+            return false, "Trade declined"
+        end
+
+        TransferSetStatus(
+            "Complete Timeout",
+            "Trade did not complete in time."
+        )
+
+        return false, "Complete timeout"
+    end
+
+    TransferSetStatus(
+        "Trade Done",
+        "Batch "
+            .. tostring(TransferState.Batch)
+            .. " sent "
+            .. tostring(added)
+            .. " pets."
+    )
+
+    return true, "Batch completed"
 end
 
-function HFTransfer.RunReceiverBatch()
+local function TransferRunReceiverBatch()
 
-    local state =
-        HFTransfer.State
+    TransferResetTradeRuntime()
 
-    state.Batch =
-        HFTransfer.ToNumber(state.Batch, 0) + 1
+    TransferTimingReset("Receiver Batch")
 
-    state.RequestBlocked =
-        false
+    local requestOk =
+        TransferWaitForTrustedIncomingRequest(90)
 
-    state.RequestBlockedReason =
-        ""
+    if requestOk ~= true then
+        return false, "No trusted request"
+    end
 
-    HFTransfer.ResetTradeTracker(
-        "receiver batch"
+    TransferSetStatus(
+        "Ticket Found",
+        "Incoming from "
+            .. tostring(TransferState.IncomingRequestPlayerName)
     )
 
-    HFTransfer.SetStatus(
-        "Receiver Ready",
-        "Waiting for incoming ticket."
-    )
+    if TransferState.AutoAcceptTicket == true then
 
-    HFTransfer.StartFastAcceptPump(
+        TransferSetStatus(
+            "Accepting Ticket",
+            "Accepting "
+                .. tostring(TransferState.IncomingRequestPlayerName)
+        )
+
+        local acceptRequestOk =
+            TransferAcceptIncomingRequest()
+
+        if acceptRequestOk ~= true then
+            return false, "Request accept failed"
+        end
+
+    else
+
+        TransferSetStatus(
+            "Manual Ticket",
+            "Waiting for you to accept the ticket."
+        )
+    end
+
+    TransferStartFastAcceptPump(
         "Receiver PreOpen",
+        0,
+        0,
         120
     )
 
-    local opened =
-        HFTransfer.WaitForTradeOpen(120)
-
-    if opened ~= true then
-
-        HFTransfer.SetStatus(
-            "Receiver Timeout",
-            "No trade opened."
+    local tradeOpen =
+        TransferWaitForTradeOpen(
+            TransferState.AutoAcceptTicket == true
+                and 25
+                or 90
         )
 
-        return false, "Receiver timeout"
+    if tradeOpen ~= true then
+
+        if TransferState.TradeDeclined == true then
+            return false, "Trade declined"
+        end
+
+        return false, "Trade did not open"
     end
 
-    local senderReady =
-        HFTransfer.WaitForSenderReady(120)
+    TransferUpdateTradeStatusText(
+        "Waiting Sender",
+        "Waiting sender items/value."
+    )
 
-    if senderReady ~= true then
+    local valueVisible =
+        TransferWaitForVisibleTradeValue(120)
 
-        HFTransfer.SetStatus(
+    if valueVisible ~= true then
+
+        if TransferState.TradeDeclined == true then
+            return false, "Trade declined"
+        end
+
+        TransferSetStatus(
+            "Value Timeout",
+            "Sender value never became visible."
+        )
+
+        return false, "No sender items"
+    end
+
+    if tonumber(TransferState.TradeOtherItemCount) <= 0
+    and TransferGuiHasPositiveTradeValue() ~= true then
+
+        TransferSetStatus(
+            "No Items",
+            "Sender accepted with no visible value/items."
+        )
+
+        return false, "No sender items"
+    end
+
+    local senderAccepted =
+        TransferWaitForSenderReadyForReceiverAccept(120)
+
+    if senderAccepted ~= true then
+
+        if TransferState.TradeDeclined == true then
+            return false, "Trade declined"
+        end
+
+        TransferSetStatus(
             "Sender Timeout",
-            "Sender did not accept/add pets."
+            "Sender never reached Accepted state."
         )
 
-        return false, "Sender timeout"
+        return false, "Sender did not accept"
     end
 
-    HFTransfer.SetStatus(
-        "Accepting",
-        "Fast accepting receiver side."
+    print(
+        "[TRANSFER] Sender accepted detected:",
+        "| OtherState:",
+        tostring(TransferGetOtherTradeState()),
+        "| OtherItems:",
+        tostring(TransferState.TradeOtherItemCount),
+        "| Button:",
+        tostring(TransferGetTradeButtonText())
     )
 
-    HFTransfer.StartFastAcceptPump(
-        "Receiver Accept",
-        14
-    )
+    if TransferState.AutoConfirm == true then
 
-    local acceptOk =
-        HFTransfer.WaitForLocalAccepted(14)
-
-    if acceptOk ~= true then
-
-        HFTransfer.SetStatus(
-            "Accept Failed",
-            "Receiver accept did not lock."
+        TransferUpdateTradeStatusText(
+            "Accepting",
+            "Sender accepted. Receiver accepting trade."
         )
 
-        return false, "Accept failed"
+        local acceptOk =
+            TransferAcceptAndWait(
+                "Accepting",
+                20,
+                0,
+                1
+            )
+
+        if acceptOk ~= true then
+            return false, "Accept failed"
+        end
+
+    else
+
+        TransferUpdateTradeStatusText(
+            "Manual Accept",
+            "Waiting for you to press Accept."
+        )
     end
 
-    if state.AutoConfirm == true then
+    local confirmReady =
+        TransferWaitForConfirmReady(45)
+
+    if confirmReady ~= true then
+
+        if TransferState.TradeDeclined == true then
+            return false, "Trade declined"
+        end
+
+        return false, "Confirm not ready"
+    end
+
+    if TransferState.AutoConfirm == true then
+
+        TransferUpdateTradeStatusText(
+            "Confirming",
+            "Final confirm."
+        )
 
         local completed =
-            HFTransfer.ConfirmUntilClosed(30)
+            TransferConfirmAndWait(
+                "Confirming",
+                30
+            )
 
         if completed ~= true then
 
-            if state.TradeDeclined == true then
-                return false, state.TradeDeclineReason
+            if TransferState.TradeDeclined == true then
+                return false, "Trade declined"
             end
 
-            HFTransfer.SetStatus(
-                "Complete Timeout",
-                "Receiver trade did not complete."
-            )
+            return false, "Trade did not complete"
+        end
 
-            return false, "Complete timeout"
+    else
+
+        TransferUpdateTradeStatusText(
+            "Manual Confirm",
+            "Waiting for you to press Confirm."
+        )
+
+        local completed =
+            TransferWaitForTradeCompleted(90)
+
+        if completed ~= true then
+
+            if TransferState.TradeDeclined == true then
+                return false, "Trade declined"
+            end
+
+            return false, "Manual confirm timeout"
         end
     end
 
-    HFTransfer.SetStatus(
-        "Received",
-        "Trade completed."
+    TransferState.Batch += 1
+
+    TransferSetStatus(
+        "Trade Done",
+        "Received batch "
+            .. tostring(TransferState.Batch)
+            .. "."
     )
 
-    return true, "Completed"
+    return true, "Received batch"
 end
 
-function HFTransfer.WorkerLoop()
+local function TransferSenderCanRetryAfterFailure(message)
 
-    local state =
-        HFTransfer.State
+    message =
+        tostring(message or "")
 
-    if state.IsTransferRunning == true then
-        return false
+    return message == "Trade declined"
+        or message == "Trade timeout"
+        or message == "Receiver accept timeout"
+        or message == "Confirm timeout"
+        or message == "Complete timeout"
+        or message == "Accept failed"
+        or message == "No pets added"
+        or message == "Still in trade"
+        or message == "Ticket failed"
+        or message == "Request blocked"
+end
+
+local function TransferWorkerLoop()
+
+    if TransferState.IsTransferRunning == true then
+
+        if TransferState.TransferEnabled ~= true then
+
+            TransferState.IsTransferRunning =
+                false
+
+        else
+
+            TransferSetStatus(
+                "Already Running",
+                "Transfer worker is already active."
+            )
+
+            return
+        end
     end
 
-    state.IsTransferRunning =
+    TransferState.IsTransferRunning =
         true
 
-    HFTransfer.StartTradeWatchers()
+    TransferState.Batch =
+        0
+
+    TransferSetStatus(
+        "Enabled",
+        "Transfer started."
+    )
 
     task.spawn(function()
 
-        local ok, err =
-            pcall(function()
+        while IsCurrentRun()
+        and TransferState.TransferEnabled == true do
 
-                while IsCurrentRun()
-                and state.TransferEnabled == true do
+            local ok, msg
 
-                    if state.Mode == "Receiver" then
+            if TransferState.Mode == "Receiver" then
 
-                        HFTransfer.RunReceiverBatch()
+                ok, msg =
+                    TransferRunReceiverBatch()
+
+            else
+
+                ok, msg =
+                    TransferRunSenderBatch()
+            end
+
+            if ok ~= true then
+
+                if tostring(msg) == "No matches" then
+
+                    TransferStopWorker(
+                        "No matching pets left."
+                    )
+
+                    break
+                end
+
+                if TransferState.KeepGoing == true
+                and TransferState.Mode == "Receiver" then
+
+                    TransferResetTradeRuntime()
+
+                    TransferState.IncomingRequestId =
+                        ""
+
+                    TransferState.IncomingRequestPlayerName =
+                        ""
+
+                    TransferState.IncomingRequestAt =
+                        0
+
+                    TransferSetStatus(
+                        "Waiting",
+                        "Ready for next ticket. Last: "
+                            .. tostring(msg)
+                    )
+
+                    task.wait(0.75)
+
+                    continue
+                end
+
+                if TransferState.KeepGoing == true
+                and TransferState.Mode == "Sender"
+                and TransferSenderCanRetryAfterFailure(msg) == true then
+
+                    TransferSetStatus(
+                        "Retrying",
+                        "Preparing next ticket. Last: "
+                            .. tostring(msg)
+                    )
+
+                    local retryStarted =
+                        os.clock()
+
+                    local retryMsg =
+                        tostring(msg)
+
+                    if retryMsg == "Trade declined" then
+
+                        TransferWaitForLiveTradeClosed(0.75)
+
+                    elseif retryMsg == "Request blocked" then
+
+                        task.wait(0.85)
 
                     else
 
-                        local batchOk =
-                            HFTransfer.RunSenderBatch()
-
-                        if batchOk ~= true then
-                            break
-                        end
+                        task.wait(0.18)
                     end
 
-                    if state.KeepGoing ~= true then
-                        break
-                    end
+                    TransferResetTradeRuntime()
 
-                    local waitOk =
-                        HFTransfer.WaitBeforeNextTicket()
-
-                    if waitOk ~= true then
-                        break
-                    end
-
-                    task.wait(0.15)
-                end
-            end)
-
-        if not ok then
-
-            warn(
-                "[HF TRANSFER] Worker error:",
-                tostring(err)
-            )
-
-            HFTransfer.SetStatus(
-                "Worker Error",
-                tostring(err)
-            )
-        end
-
-        state.TransferEnabled =
-            false
-
-        state.IsTransferRunning =
-            false
-
-        if state.TransferEnabledToggle
-        and type(state.TransferEnabledToggle.SetValue) == "function" then
-
-            pcall(function()
-                state.TransferEnabledToggle:SetValue(false)
-            end)
-        end
-
-        HFTransfer.SetStatus(
-            "Stopped",
-            state.LastResult
-        )
-    end)
-
-    return true
-end
-
---==================================================
--- TRANSFER LIST HELPERS
--- Reuses existing dynamic PetList + ListingMutationList.
---==================================================
-
-function TransferCleanText(value)
-
-    return tostring(value or "")
-        :gsub("^%s+", "")
-        :gsub("%s+$", "")
-end
-
-function TransferCloneSelectedMap(source)
-
-    local output = {}
-
-    if type(source) ~= "table" then
-        return output
-    end
-
-    for key, selected in pairs(source) do
-
-        if selected == true then
-
-            key =
-                TransferCleanText(key)
-
-            if key ~= "" then
-                output[key] =
-                    true
-            end
-        end
-    end
-
-    return output
-end
-
-function TransferMapIsEmpty(map)
-
-    if type(map) ~= "table" then
-        return true
-    end
-
-    for _ in pairs(map) do
-        return false
-    end
-
-    return true
-end
-
-function TransferBuildPetList()
-
-    if type(RefreshDynamicPetList) == "function" then
-        pcall(function()
-            RefreshDynamicPetList()
-        end)
-    end
-
-    local choices = {}
-    local seen = {}
-
-    local function AddPetName(value)
-
-        value =
-            TransferCleanText(value)
-
-        if value == ""
-        or seen[value] == true then
-            return
-        end
-
-        seen[value] =
-            true
-
-        table.insert(
-            choices,
-            value
-        )
-    end
-
-    -- Source 1:
-    -- Normal dynamic list, same as Listings/Sniper when already loaded.
-    if type(PetList) == "table" then
-
-        for _, petName in ipairs(PetList) do
-            AddPetName(petName)
-        end
-    end
-
-    -- Source 2:
-    -- Direct PetRegistry fallback.
-    -- This is the important Transfer fix because Transfer UI builds before
-    -- RefreshDynamicPetList can exist in some builds.
-    if #choices <= 0
-    and type(GetPetRegistry) == "function" then
-
-        local registry =
-            nil
-
-        pcall(function()
-            registry =
-                GetPetRegistry()
-        end)
-
-        local petList =
-            type(registry) == "table"
-            and rawget(registry, "PetList")
-            or nil
-
-        if type(petList) == "table" then
-
-            for petName, petData in pairs(petList) do
-
-                if type(petName) == "string" then
-                    AddPetName(petName)
-
-                elseif type(petData) == "table" then
-
-                    AddPetName(
-                        rawget(petData, "Name")
-                        or rawget(petData, "PetName")
-                        or rawget(petData, "PetType")
+                    print(
+                        "[TRANSFER SEND TIMING]",
+                        "Retry ready",
+                        "| last:",
+                        tostring(retryMsg),
+                        "| waited:",
+                        string.format("%.3fs", os.clock() - retryStarted),
+                        "| liveOpen:",
+                        tostring(TransferIsLiveTradeOpen())
                     )
 
-                elseif type(petData) == "string" then
-                    AddPetName(petData)
-                end
-            end
-        end
-    end
+                    if #TransferBuildMatches() <= 0 then
 
-    -- Source 3:
-    -- Last-resort inventory fallback so the dropdown is not dead if registry
-    -- changes or fails to require.
-    if #choices <= 0 then
-
-        local player =
-            Players.LocalPlayer
-
-        local containers = {
-            player and player:FindFirstChild("Backpack"),
-            player and player.Character,
-        }
-
-        for _, container in ipairs(containers) do
-
-            if container then
-
-                for _, child in ipairs(container:GetChildren()) do
-
-                    if child:IsA("Tool") then
-
-                        local parsed =
-                            ParsePetTool(child)
-
-                        if parsed
-                        and parsed.PetName then
-                            AddPetName(parsed.PetName)
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    table.sort(choices)
-
-    PetList =
-        choices
-
-    return choices
-end
-
-function TransferBuildMutationModeList()
-
-    if type(RefreshListingMutationList) == "function" then
-        RefreshListingMutationList()
-    end
-
-    local choices = {}
-    local seen = {}
-
-    local function AddMutationChoice(value)
-
-        value =
-            TransferCleanText(value)
-
-        if value == ""
-        or seen[value] == true then
-            return
-        end
-
-        seen[value] =
-            true
-
-        table.insert(
-            choices,
-            value
-        )
-    end
-
-    AddMutationChoice("---")
-    AddMutationChoice("All")
-    AddMutationChoice("All Except")
-
-    for _, mutationName in ipairs(ListingMutationList or {}) do
-        AddMutationChoice(mutationName)
-    end
-
-    return choices
-end
-
-function TransferBuildMutationOnlyList()
-
-    if type(RefreshListingMutationList) == "function" then
-        pcall(function()
-            RefreshListingMutationList()
-        end)
-    end
-
-    local choices = {}
-    local seen = {}
-
-    local function AddMutationName(value)
-
-        value =
-            TransferCleanText(value)
-
-        if value == ""
-        or value == "---"
-        or value == "Normal"
-        or value == "Unknown"
-        or seen[value] == true then
-            return
-        end
-
-        seen[value] =
-            true
-
-        table.insert(
-            choices,
-            value
-        )
-    end
-
-    -- Source 1:
-    -- Normal Listings mutation list.
-    if type(ListingMutationList) == "table" then
-
-        for _, mutationName in ipairs(ListingMutationList) do
-            AddMutationName(mutationName)
-        end
-    end
-
-    -- Source 2:
-    -- Direct registry fallback.
-    -- Same registry family used by Listings mutation refresh.
-    if #choices <= 0
-    and type(GetPetRegistry) == "function" then
-
-        local registry =
-            nil
-
-        pcall(function()
-            registry =
-                GetPetRegistry()
-        end)
-
-        local mutationRoot =
-            type(registry) == "table"
-            and rawget(registry, "PetMutationRegistry")
-            or nil
-
-        if type(mutationRoot) ~= "table"
-        and type(registry) == "table" then
-            mutationRoot =
-                registry
-        end
-
-        if type(mutationRoot) == "table" then
-
-            local enumToPetMutation =
-                rawget(mutationRoot, "EnumToPetMutation")
-
-            if type(enumToPetMutation) == "table" then
-
-                for _, mutationName in pairs(enumToPetMutation) do
-                    AddMutationName(mutationName)
-                end
-            end
-
-            local petMutationToEnum =
-                rawget(mutationRoot, "PetMutationToEnum")
-
-            if type(petMutationToEnum) == "table" then
-
-                for mutationName, _ in pairs(petMutationToEnum) do
-                    AddMutationName(mutationName)
-                end
-            end
-
-            local petMutationRegistry =
-                rawget(mutationRoot, "PetMutationRegistry")
-
-            if type(petMutationRegistry) == "table" then
-
-                for mutationName, mutationData in pairs(petMutationRegistry) do
-
-                    AddMutationName(mutationName)
-
-                    if type(mutationData) == "table" then
-                        AddMutationName(
-                            rawget(mutationData, "Name")
-                            or rawget(mutationData, "Mutation")
-                            or rawget(mutationData, "DisplayName")
+                        TransferStopWorker(
+                            "No matching pets left."
                         )
 
-                    elseif type(mutationData) == "string" then
-                        AddMutationName(mutationData)
+                        break
                     end
+
+                    TransferSetStatus(
+                        "Retrying",
+                        "Sending new ticket."
+                    )
+
+                    continue
                 end
-            end
 
-            local machineMutationTypes =
-                rawget(mutationRoot, "MachineMutationTypes")
+                TransferStopWorker(
+                    tostring(msg)
+                )
 
-            if type(machineMutationTypes) == "table" then
-
-                for mutationName, mutationData in pairs(machineMutationTypes) do
-
-                    AddMutationName(mutationName)
-
-                    if type(mutationData) == "table" then
-                        AddMutationName(
-                            rawget(mutationData, "Name")
-                            or rawget(mutationData, "Mutation")
-                            or rawget(mutationData, "DisplayName")
-                        )
-
-                    elseif type(mutationData) == "string" then
-                        AddMutationName(mutationData)
-                    end
-                end
-            end
-        end
-    end
-
-    -- Source 3:
-    -- Inventory visible-prefix fallback.
-    if #choices <= 0 then
-
-        local player =
-            Players.LocalPlayer
-
-        local containers = {
-            player and player:FindFirstChild("Backpack"),
-            player and player.Character,
-        }
-
-        for _, container in ipairs(containers) do
-
-            if container then
-
-                for _, child in ipairs(container:GetChildren()) do
-
-                    if child:IsA("Tool") then
-
-                        local parsed =
-                            ParsePetTool(child)
-
-                        if parsed
-                        and parsed.PetName then
-
-                            local mutation =
-                                "---"
-
-                            if type(ResolveListingPetMutation) == "function" then
-
-                                mutation =
-                                    ResolveListingPetMutation(
-                                        child.Name,
-                                        parsed.PetName
-                                    )
-
-                            else
-
-                                local displayName =
-                                    TransferCleanText(
-                                        tostring(child.Name or "")
-                                            :gsub("%b[]", "")
-                                            :gsub("%s+", " ")
-                                    )
-
-                                local suffixStart =
-                                    displayName:find(parsed.PetName, 1, true)
-
-                                if suffixStart then
-                                    mutation =
-                                        TransferCleanText(
-                                            displayName:sub(1, suffixStart - 1)
-                                        )
-                                end
-                            end
-
-                            AddMutationName(mutation)
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    table.sort(choices)
-
-    ListingMutationList =
-        {
-            "---",
-        }
-
-    for _, mutationName in ipairs(choices) do
-        table.insert(
-            ListingMutationList,
-            mutationName
-        )
-    end
-
-    return choices
-end
-
-function TransferBuildPlayerChoices()
-
-    local choices = {}
-
-    local localPlayer =
-        Players.LocalPlayer
-
-    for _, player in ipairs(Players:GetPlayers()) do
-
-        if player ~= localPlayer then
-            table.insert(
-                choices,
-                player.Name
-            )
-        end
-    end
-
-    table.sort(choices)
-
-    return choices
-end
-
-function TransferResolveTargetPlayer()
-
-    local targetName =
-        TransferCleanText(
-            TransferState.TargetPlayerName
-        )
-
-    if targetName == "" then
-        return nil
-    end
-
-    for _, player in ipairs(Players:GetPlayers()) do
-
-        if player.Name == targetName
-        or player.DisplayName == targetName then
-            return player
-        end
-    end
-
-    return nil
-end
-
-function TransferResolvePetUUID(tool)
-
-    if not tool then
-        return nil
-    end
-
-    local candidates = {
-        tool:GetAttribute("PET_UUID"),
-        tool:GetAttribute("UUID"),
-        tool:GetAttribute("ItemUUID"),
-        tool:GetAttribute("ItemId"),
-        tool:GetAttribute("PetUUID"),
-    }
-
-    for _, value in ipairs(candidates) do
-
-        value =
-            tostring(value or "")
-                :gsub("{", "")
-                :gsub("}", "")
-                :gsub("^%s+", "")
-                :gsub("%s+$", "")
-
-        if value:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") then
-            return "{"
-                .. value
-                .. "}"
-        end
-    end
-
-    return nil
-end
-
-function TransferParseInventoryPet(tool)
-
-    if not tool
-    or not tool:IsA("Tool") then
-        return nil
-    end
-
-    local parsed =
-        ParsePetTool(tool)
-
-    if not parsed
-    or not parsed.PetName then
-        return nil
-    end
-
-    local uuid =
-        TransferResolvePetUUID(tool)
-
-    if not uuid then
-        return nil
-    end
-
-    local level =
-        tonumber(tool:GetAttribute("Level"))
-        or tonumber(tool:GetAttribute("Age"))
-        or tonumber(tostring(tool.Name):match("%[Age%s*(%d+)%]"))
-        or 1
-
-    local baseWeight =
-        tonumber(tool:GetAttribute("BaseWeight"))
-        or tonumber(tool:GetAttribute("baseWeight"))
-        or 0
-
-    local mutation =
-        "---"
-
-    if type(ResolveListingPetMutation) == "function" then
-        mutation =
-            ResolveListingPetMutation(
-                tool.Name,
-                parsed.PetName
-            )
-    end
-
-    local favorite =
-        tool:GetAttribute("IsFavorite") == true
-        or tool:GetAttribute("Favorite") == true
-        or tool:GetAttribute("Favorited") == true
-
-    return {
-        Tool = tool,
-        UUID = uuid,
-        PetName = TransferCleanText(parsed.PetName),
-        Mutation = TransferCleanText(mutation),
-        Level = math.floor(tonumber(level) or 1),
-        BaseWeight = tonumber(baseWeight) or 0,
-        DisplayWeight = tonumber(parsed.Weight) or 0,
-        IsFavorite = favorite,
-    }
-end
-
-function TransferBuildInventoryPets()
-
-    local player =
-        Players.LocalPlayer
-
-    if not player then
-        return {}
-    end
-
-    local containers = {
-        player.Character,
-        player:FindFirstChild("Backpack"),
-    }
-
-    local pets = {}
-
-    for _, container in ipairs(containers) do
-
-        if container then
-
-            for _, child in ipairs(container:GetChildren()) do
-
-                if child:IsA("Tool") then
-
-                    local pet =
-                        TransferParseInventoryPet(child)
-
-                    if pet then
-                        table.insert(
-                            pets,
-                            pet
-                        )
-                    end
-                end
-            end
-        end
-    end
-
-    return pets
-end
-
-function TransferPetMatchesFilters(pet)
-
-    if type(pet) ~= "table" then
-        return false
-    end
-
-    local selectedPets =
-        TransferState.SelectedPets
-        or {}
-
-    if TransferMapIsEmpty(selectedPets) then
-        return false
-    end
-
-    if selectedPets[pet.PetName] ~= true then
-        return false
-    end
-
-    if TransferState.SkipFavorites == true
-    and pet.IsFavorite == true then
-        return false
-    end
-
-    local selectedMutations =
-        TransferState.SelectedMutations
-        or {}
-
-    if not TransferMapIsEmpty(selectedMutations) then
-
-        local mutation =
-            TransferCleanText(
-                pet.Mutation
-                or "---"
-            )
-
-        if selectedMutations[mutation] ~= true then
-            return false
-        end
-    end
-
-    local level =
-        tonumber(pet.Level)
-        or 1
-
-    if level < SafeNumber(TransferState.MinLevel, 1) then
-        return false
-    end
-
-    if level > SafeNumber(TransferState.MaxLevel, 100) then
-        return false
-    end
-
-    local baseWeight =
-        tonumber(pet.BaseWeight)
-        or 0
-
-    if baseWeight < SafeNumber(TransferState.MinBaseWeight, 0) then
-        return false
-    end
-
-    if baseWeight > SafeNumber(TransferState.MaxBaseWeight, 999) then
-        return false
-    end
-
-    return true
-end
-
-function TransferBuildMatchingPets(limit)
-
-    limit =
-        math.clamp(
-            math.floor(
-                tonumber(limit)
-                or SafeNumber(TransferState.MaxPetsPerTrade, 6)
-            ),
-            1,
-            50
-        )
-
-    local matches = {}
-
-    for _, pet in ipairs(TransferBuildInventoryPets()) do
-
-        if TransferPetMatchesFilters(pet) then
-
-            table.insert(
-                matches,
-                pet
-            )
-
-            if #matches >= limit then
                 break
             end
-        end
-    end
 
-    TransferState.MatchedPets =
-        matches
+            if TransferState.KeepGoing ~= true then
 
-    return matches
-end
-
-function TransferRefreshStatus()
-
-    if TransferState.StatusLabel
-    and type(TransferState.StatusLabel.SetText) == "function" then
-
-        TransferState.StatusLabel:SetText(
-            "Mode: "
-                .. tostring(TransferState.Status or "Idle")
-        )
-    end
-
-    if TransferState.TargetLabel
-    and type(TransferState.TargetLabel.SetText) == "function" then
-
-        TransferState.TargetLabel:SetText(
-            "Target: "
-                .. (
-                    TransferState.TargetPlayerName ~= ""
-                    and TransferState.TargetPlayerName
-                    or "None"
+                TransferStopWorker(
+                    "Finished one trade."
                 )
-        )
-    end
 
-    if TransferState.MatchedLabel
-    and type(TransferState.MatchedLabel.SetText) == "function" then
+                break
+            end
 
-        TransferState.MatchedLabel:SetText(
-            "Matched Pets: "
-                .. tostring(#(TransferState.MatchedPets or {}))
-        )
-    end
+            TransferSetStatus(
+                "Waiting",
+                "Next batch soon."
+            )
 
-    if TransferState.LastResultLabel
-    and type(TransferState.LastResultLabel.SetText) == "function" then
+            if TransferState.Mode == "Sender" then
 
-        TransferState.LastResultLabel:SetText(
-            "Last Result: "
-                .. tostring(TransferState.LastResult or "None")
-                .. " | Sent: "
-                .. tostring(TransferState.SentThisSession or 0)
-        )
-    end
-end
+                TransferWaitForLiveTradeClosed(4)
 
-function TransferRefreshDropdowns()
+                task.wait(0.35)
 
-    local petChoices =
-        TransferBuildPetList()
+                if #TransferBuildMatches() <= 0 then
 
-    local mutationChoices =
-        TransferBuildMutationOnlyList()
+                    TransferStopWorker(
+                        "No matching pets left."
+                    )
 
-    local targetChoices =
-        TransferBuildPlayerChoices()
+                    break
+                end
 
-    if TransferState.PetDropdownRef
-    and type(TransferState.PetDropdownRef.SetValues) == "function" then
+            else
 
-        TransferState.PetDropdownRef:SetValues(
-            petChoices
-        )
-    end
+                task.wait(0.75)
+            end
+        end
 
-    if TransferState.MutationDropdownRef
-    and type(TransferState.MutationDropdownRef.SetValues) == "function" then
-
-        TransferState.MutationDropdownRef:SetValues(
-            mutationChoices
-        )
-    end
-
-    if TransferState.TargetDropdownRef
-    and type(TransferState.TargetDropdownRef.SetValues) == "function" then
-
-        TransferState.TargetDropdownRef:SetValues(
-            targetChoices
-        )
-    end
-
-    print(
-        "[TRANSFER DROPDOWNS]",
-        "pets:",
-        tostring(#petChoices),
-        "| mutations:",
-        tostring(#mutationChoices),
-        "| targets:",
-        tostring(#targetChoices)
-    )
-
-    TransferBuildMatchingPets(
-        TransferState.MaxPetsPerTrade
-    )
-
-    TransferRefreshStatus()
-
-    return petChoices, mutationChoices, targetChoices
+        TransferState.IsTransferRunning =
+            false
+    end)
 end
 
 --==================================================
--- TRANSFER TRADE TICKET REMOTES
--- Manual test buttons first.
--- Confirmed from Remote Spy:
--- SendRequest(targetPlayer)
--- Accept()
--- AddItem("Pet", uuid)
--- Confirm()
--- Decline()
---==================================================
-
-function GetTransferTradeEventsFolder()
-
-    local gameEvents =
-        ReplicatedStorage:FindFirstChild("GameEvents")
-
-    if not gameEvents then
-        return nil
-    end
-
-    local tradeEvents =
-        gameEvents:FindFirstChild("TradeEvents")
-
-    if not tradeEvents then
-        return nil
-    end
-
-    return tradeEvents
-end
-
-function GetTransferTradeRemote(remoteName, expectedClass)
-
-    remoteName =
-        tostring(remoteName or "")
-
-    if remoteName == "" then
-        return nil
-    end
-
-    local tradeEvents =
-        GetTransferTradeEventsFolder()
-
-    if not tradeEvents then
-        warn("[TRANSFER] TradeEvents folder missing")
-        return nil
-    end
-
-    local remote =
-        tradeEvents:FindFirstChild(remoteName)
-
-    if not remote then
-        warn("[TRANSFER] Remote missing:", remoteName)
-        return nil
-    end
-
-    expectedClass =
-        tostring(expectedClass or "")
-
-    if expectedClass ~= ""
-    and not remote:IsA(expectedClass) then
-
-        warn(
-            "[TRANSFER] Remote wrong class:",
-            remoteName,
-            "expected",
-            expectedClass,
-            "got",
-            remote.ClassName
-        )
-
-        return nil
-    end
-
-    return remote
-end
-
-function TransferSetResult(statusText, resultText)
-
-    TransferState.Status =
-        tostring(statusText or "Idle")
-
-    TransferState.LastResult =
-        tostring(resultText or "None")
-
-    TransferRefreshStatus()
-end
-
-function TransferNotify(title, message, icon)
-
-    if type(HolyNotify) == "function" then
-
-        HolyNotify(
-            tostring(title or "Transfer"),
-            tostring(message or ""),
-            tostring(icon or "gift"),
-            4
-        )
-    end
-end
-
-function TransferSendTicket()
-
-    if not IsGardenWorld() then
-
-        TransferSetResult(
-            "Blocked",
-            "Transfer only works in Garden World."
-        )
-
-        TransferNotify(
-            "Transfer Blocked",
-            "Join Garden World to use Transfer.",
-            "triangle-alert"
-        )
-
-        return false
-    end
-
-    local targetPlayer =
-        TransferResolveTargetPlayer()
-
-    if not targetPlayer then
-
-        TransferSetResult(
-            "No Target",
-            "Choose a valid target player first."
-        )
-
-        TransferNotify(
-            "No Target",
-            "Choose a target player first.",
-            "triangle-alert"
-        )
-
-        return false
-    end
-
-    local remote =
-        GetTransferTradeRemote(
-            "SendRequest",
-            "RemoteEvent"
-        )
-
-    if not remote then
-
-        TransferSetResult(
-            "Remote Missing",
-            "SendRequest remote missing."
-        )
-
-        return false
-    end
-
-    local ok, err =
-        pcall(function()
-            remote:FireServer(targetPlayer)
-        end)
-
-    if not ok then
-
-        TransferSetResult(
-            "Send Failed",
-            tostring(err)
-        )
-
-        warn(
-            "[TRANSFER] SendRequest failed:",
-            tostring(err)
-        )
-
-        return false
-    end
-
-    TransferSetResult(
-        "Ticket Sent",
-        "Sent ticket to "
-            .. tostring(targetPlayer.Name)
-    )
-
-    TransferNotify(
-        "Trade Ticket Sent",
-        "Sent request to "
-            .. tostring(targetPlayer.Name)
-            .. ".",
-        "send"
-    )
-
-    print(
-        "[TRANSFER]",
-        "SendRequest ->",
-        tostring(targetPlayer.Name),
-        tostring(targetPlayer.UserId)
-    )
-
-    return true
-end
-
-function TransferAcceptTicket()
-
-    if not IsGardenWorld() then
-
-        TransferSetResult(
-            "Blocked",
-            "Transfer only works in Garden World."
-        )
-
-        return false
-    end
-
-    local remote =
-        GetTransferTradeRemote(
-            "Accept",
-            "RemoteEvent"
-        )
-
-    if not remote then
-
-        TransferSetResult(
-            "Remote Missing",
-            "Accept remote missing."
-        )
-
-        return false
-    end
-
-    local ok, err =
-        pcall(function()
-            remote:FireServer()
-        end)
-
-    if not ok then
-
-        TransferSetResult(
-            "Accept Failed",
-            tostring(err)
-        )
-
-        warn(
-            "[TRANSFER] Accept failed:",
-            tostring(err)
-        )
-
-        return false
-    end
-
-    TransferSetResult(
-        "Accepted",
-        "Accept fired."
-    )
-
-    print("[TRANSFER] Accept fired")
-
-    return true
-end
-
-function TransferDeclineTrade()
-
-    if not IsGardenWorld() then
-
-        TransferSetResult(
-            "Blocked",
-            "Transfer only works in Garden World."
-        )
-
-        return false
-    end
-
-    local remote =
-        GetTransferTradeRemote(
-            "Decline",
-            "RemoteEvent"
-        )
-
-    if not remote then
-
-        TransferSetResult(
-            "Remote Missing",
-            "Decline remote missing."
-        )
-
-        return false
-    end
-
-    local ok, err =
-        pcall(function()
-            remote:FireServer()
-        end)
-
-    if not ok then
-
-        TransferSetResult(
-            "Decline Failed",
-            tostring(err)
-        )
-
-        warn(
-            "[TRANSFER] Decline failed:",
-            tostring(err)
-        )
-
-        return false
-    end
-
-    TransferSetResult(
-        "Declined",
-        "Decline fired."
-    )
-
-    print("[TRANSFER] Decline fired")
-
-    return true
-end
-
-function TransferConfirmTrade()
-
-    if not IsGardenWorld() then
-
-        TransferSetResult(
-            "Blocked",
-            "Transfer only works in Garden World."
-        )
-
-        return false
-    end
-
-    local remote =
-        GetTransferTradeRemote(
-            "Confirm",
-            "RemoteEvent"
-        )
-
-    if not remote then
-
-        TransferSetResult(
-            "Remote Missing",
-            "Confirm remote missing."
-        )
-
-        return false
-    end
-
-    local ok, err =
-        pcall(function()
-            remote:FireServer()
-        end)
-
-    if not ok then
-
-        TransferSetResult(
-            "Confirm Failed",
-            tostring(err)
-        )
-
-        warn(
-            "[TRANSFER] Confirm failed:",
-            tostring(err)
-        )
-
-        return false
-    end
-
-    TransferSetResult(
-        "Confirmed",
-        "Confirm fired."
-    )
-
-    print("[TRANSFER] Confirm fired")
-
-    return true
-end
-
-function TransferAddPetToTrade(pet)
-
-    if type(pet) ~= "table" then
-        return false, "Pet data missing."
-    end
-
-    local uuid =
-        tostring(pet.UUID or "")
-
-    if uuid == "" then
-        return false, "Pet UUID missing."
-    end
-
-    local remote =
-        GetTransferTradeRemote(
-            "AddItem",
-            "RemoteEvent"
-        )
-
-    if not remote then
-        return false, "AddItem remote missing."
-    end
-
-    local ok, err =
-        pcall(function()
-            remote:FireServer(
-                "Pet",
-                uuid
-            )
-        end)
-
-    if not ok then
-        return false, tostring(err)
-    end
-
-    print(
-        "[TRANSFER]",
-        "AddItem ->",
-        tostring(pet.PetName),
-        "|",
-        tostring(uuid)
-    )
-
-    return true, nil
-end
-
-function TransferAddPreviewPets()
-
-    if not IsGardenWorld() then
-
-        TransferSetResult(
-            "Blocked",
-            "Transfer only works in Garden World."
-        )
-
-        return false
-    end
-
-    local matches =
-        TransferBuildMatchingPets(
-            TransferState.MaxPetsPerTrade
-        )
-
-    if #matches <= 0 then
-
-        TransferSetResult(
-            "No Matches",
-            "Preview found 0 matching pets."
-        )
-
-        TransferNotify(
-            "No Matching Pets",
-            "Select pets / filters first, then preview again.",
-            "triangle-alert"
-        )
-
-        return false
-    end
-
-    if TransferState.DryRun == true then
-
-        TransferPreview()
-
-        TransferSetResult(
-            "Dry Run",
-            "Dry Run ON. AddItem was not fired."
-        )
-
-        TransferNotify(
-            "Dry Run ON",
-            "Turn Dry Run OFF to add preview pets.",
-            "search"
-        )
-
-        return false
-    end
-
-    local added = 0
-    local failed = 0
-    local lastError = ""
-
-    for _, pet in ipairs(matches) do
-
-        local ok, err =
-            TransferAddPetToTrade(pet)
-
-        if ok then
-            added =
-                added + 1
-        else
-            failed =
-                failed + 1
-
-            lastError =
-                tostring(err or "unknown")
-        end
-
-        task.wait(0.12)
-    end
-
-    TransferState.SentThisSession =
-        SafeNumber(
-            TransferState.SentThisSession,
-            0
-        ) + added
-
-    TransferSetResult(
-        "Added Pets",
-        tostring(added)
-            .. " added, "
-            .. tostring(failed)
-            .. " failed"
-            .. (
-                lastError ~= ""
-                and (" | " .. lastError)
-                or ""
-            )
-    )
-
-    TransferNotify(
-        "Transfer AddItem",
-        tostring(added)
-            .. " pet(s) added to trade.",
-        added > 0 and "plus" or "triangle-alert"
-    )
-
-    return added > 0
-end
-
-function TransferSendFilteredTradeTest()
-
-    if TransferState.Busy == true then
-
-        TransferSetResult(
-            "Busy",
-            "Transfer is already running."
-        )
-
-        return false
-    end
-
-    TransferState.Busy =
-        true
-
-    local ok, err =
-        pcall(function()
-
-            TransferPreview()
-
-            if TransferState.DryRun == true then
-
-                TransferSetResult(
-                    "Dry Run",
-                    "Dry Run ON. Ticket/AddItem not fired."
-                )
-
-                return
-            end
-
-            local sent =
-                TransferSendTicket()
-
-            if not sent then
-                return
-            end
-
-            task.wait(1.25)
-
-            TransferAddPreviewPets()
-
-            if TransferState.AutoConfirmAccept == true then
-
-                task.wait(0.5)
-
-                TransferConfirmTrade()
-            end
-        end)
-
-    TransferState.Busy =
-        false
-
-    if not ok then
-
-        TransferSetResult(
-            "Failed",
-            tostring(err)
-        )
-
-        warn(
-            "[TRANSFER] Send filtered trade test failed:",
-            tostring(err)
-        )
-
-        return false
-    end
-
-    return true
-end
-
-function TransferPreview()
-
-    local matches =
-        TransferBuildMatchingPets(
-            TransferState.MaxPetsPerTrade
-        )
-
-    TransferState.Status =
-        "Preview"
-
-    TransferState.LastResult =
-        tostring(#matches)
-            .. " matching pet(s)."
-
-    print("========== HOLY TRANSFER PREVIEW ==========")
-
-    for index, pet in ipairs(matches) do
-
-        print(
-            "#"
-                .. tostring(index),
-            tostring(pet.PetName),
-            "| Level",
-            tostring(pet.Level),
-            "| BW",
-            tostring(pet.BaseWeight),
-            "| KG",
-            tostring(pet.DisplayWeight),
-            "| Mut",
-            tostring(pet.Mutation),
-            "| UUID",
-            tostring(pet.UUID)
-        )
-    end
-
-    print("===========================================")
-
-    TransferRefreshStatus()
-
-    return matches
-end
-
 function ResolveBestPet(targetPet)
 
     local player =
@@ -13516,7 +15872,7 @@ and not ListingPassesAnySniperPriceWeightFilter(
 end
 
 -- Do not infer Age from BaseWeight/DisplayWeight.
--- Display KG caps around BaseWeight × 11, while broken Age can go above 100
+-- Display KG caps around BaseWeight Ã— 11, while broken Age can go above 100
 -- without adding extra BaseWeight. Trust booth petData Level/Age instead.
 
 
@@ -14109,7 +16465,7 @@ function FormatLatencyGuardPingText()
 
     return "Ping: "
         .. tostring(math.floor(ping + 0.5))
-        .. "ms • "
+        .. "ms â€¢ "
         .. ResolveLatencyGuardPingLabel(ping)
 end
 
@@ -14305,7 +16661,7 @@ function QueuePurchase(listing)
 
         print(
         string.format(
-            "[QUEUE] Added → P%s %s | Queue: %s",
+            "[QUEUE] Added â†’ P%s %s | Queue: %s",
             tostring(
                 ClampSniperPriority(
                     listing.MatchedPriority
@@ -14353,7 +16709,7 @@ function StartPurchaseWorker()
 
             print(
                 string.format(
-                    "[QUEUE] Processing → %s | Remaining: %s",
+                    "[QUEUE] Processing â†’ %s | Remaining: %s",
                     tostring(listing.PetName),
                     tostring(#PurchaseQueue)
                 )
@@ -14375,7 +16731,7 @@ function StartPurchaseWorker()
 
                 warn(
                     string.format(
-                        "[QUEUE] Pending lock → requeue %s",
+                        "[QUEUE] Pending lock â†’ requeue %s",
                         tostring(listing.PetName)
                     )
                 )
@@ -14626,7 +16982,7 @@ function DispatchPurchase(listing)
         if result == "PENDING" then
 
             warn(
-                "[BUY FAST] Pending lock → retry once:",
+                "[BUY FAST] Pending lock â†’ retry once:",
                 tostring(listing.PetName)
             )
 
@@ -15953,7 +18309,7 @@ function ResolveAgeBreakerCurrentDisplayWeight(baseWeight, age, parsedWeight)
         tonumber(parsedWeight)
 
     -- Age Breaker display must show the pet's current visible KG,
-    -- not BaseWeight × 11.
+    -- not BaseWeight Ã— 11.
     if baseWeight
     and age
     and age > 0 then
@@ -16190,7 +18546,7 @@ function BuildAgeBreakerInventoryPets()
 
             -- IMPORTANT:
             -- Do not use ResolveRawPetDataDisplayWeight here.
-            -- That can fall back to BaseWeight × 11.
+            -- That can fall back to BaseWeight Ã— 11.
             -- Age Breaker needs actual current age KG.
             local displayWeight =
                 ResolveAgeBreakerCurrentDisplayWeight(
@@ -16826,11 +19182,11 @@ function CreateAgeBreakerClaimEmbed(beforeSnapshot, afterPet, reason)
     local payload = {
         embeds = {{
             title =
-                "🌟 Age Break Complete • "
+                "ðŸŒŸ Age Break Complete â€¢ "
                 .. tostring(petTitle)
                 .. " ["
                 .. FormatAgeBreakerWebhookAge(beforeAge)
-                .. " → "
+                .. " â†’ "
                 .. FormatAgeBreakerWebhookAge(afterAge)
                 .. "]",
 
@@ -16848,31 +19204,31 @@ function CreateAgeBreakerClaimEmbed(beforeSnapshot, afterPet, reason)
             fields = {
 
                 {
-                    name = "🎯 Target",
+                    name = "ðŸŽ¯ Target",
                     value = tostring(petTitle),
                     inline = false,
                 },
 
                 {
-                    name = "📈 Age",
+                    name = "ðŸ“ˆ Age",
                     value =
                         FormatAgeBreakerWebhookAge(beforeAge)
-                        .. " → "
+                        .. " â†’ "
                         .. FormatAgeBreakerWebhookAge(afterAge),
                     inline = true,
                 },
 
                 {
-                    name = "⚖️ Weight",
+                    name = "âš–ï¸ Weight",
                     value =
                         FormatAgeBreakerWebhookWeight(beforeWeight)
-                        .. " → "
+                        .. " â†’ "
                         .. FormatAgeBreakerWebhookWeight(afterWeight),
                     inline = true,
                 },
 
                 {
-                    name = "🧬 Mutation",
+                    name = "ðŸ§¬ Mutation",
                     value =
                         tostring(
                             afterPet.MutationText
@@ -16890,7 +19246,7 @@ function CreateAgeBreakerClaimEmbed(beforeSnapshot, afterPet, reason)
                 },
 
                 {
-                    name = "🎚️ Goal Level",
+                    name = "ðŸŽšï¸ Goal Level",
                     value =
                         tostring(
                             math.floor(
@@ -16904,14 +19260,14 @@ function CreateAgeBreakerClaimEmbed(beforeSnapshot, afterPet, reason)
                 },
 
                 {
-                    name = "🧪 Sacrifice Used",
+                    name = "ðŸ§ª Sacrifice Used",
                     value =
                         ResolveAgeBreakerWebhookSacrificeText(),
                     inline = false,
                 },
 
                 {
-                    name = "🎒 Pet Inventory",
+                    name = "ðŸŽ’ Pet Inventory",
                     value =
                         type(FormatPersonalWebhookPetInventoryText) == "function"
                         and FormatPersonalWebhookPetInventoryText()
@@ -16920,7 +19276,7 @@ function CreateAgeBreakerClaimEmbed(beforeSnapshot, afterPet, reason)
                 },
 
                 {
-                    name = "🌍 Server",
+                    name = "ðŸŒ Server",
                     value =
                         "```lua\n"
                         .. tostring(game.PlaceId)
@@ -18061,7 +20417,7 @@ function FormatAgeBreakerQueueText()
 
             table.insert(
                 lines,
-                "… +"
+                "â€¦ +"
                     .. tostring(#queue - 5)
                     .. " more"
             )
@@ -18187,7 +20543,7 @@ function FormatAgeBreakerSacrificePoolText()
 
             table.insert(
                 lines,
-                "… +"
+                "â€¦ +"
                     .. tostring(#pool - 5)
                     .. " more"
             )
@@ -18320,7 +20676,7 @@ function FormatAgeBreakerQueuePoolSummary()
         "Sacrifices: "
             .. tostring(poolCount)
             .. " pooled"
-            .. " • "
+            .. " â€¢ "
             .. tostring(matchingCount)
             .. " match active target",
 
@@ -21034,7 +23390,7 @@ function SendGlobalBoothSaleWebhookNow(sale)
                 fields = {
 
                     {
-                        name = "💰 Sold For",
+                        name = "ðŸ’° Sold For",
                         value = string.format(
                             "%s Tokens",
                             tostring(
@@ -21070,7 +23426,7 @@ function SendGlobalBoothSaleWebhookNow(sale)
                     },
 
                     {
-                        name = "✨ Token Balance",
+                        name = "âœ¨ Token Balance",
                         value = string.format(
                             "%s Tokens",
                             tostring(GetTokenBalance())
@@ -21287,7 +23643,7 @@ function GetMarketTrackerTargetConfig(petName)
 
         return {
             Type = "Rare",
-            Emoji = "🔎",
+            Emoji = "ðŸ”Ž",
 
             MaxPrice = nil,
             GoodPrice = nil,
@@ -21559,7 +23915,7 @@ function ResolveMarketTrackerDeal(config, price)
     if type(config) ~= "table" then
 
         return {
-            Text = "🔎 Found",
+            Text = "ðŸ”Ž Found",
             Color = 0x5865F2,
             ShouldPing = false,
         }
@@ -21585,7 +23941,7 @@ function ResolveMarketTrackerDeal(config, price)
     and price <= snipePrice then
 
         return {
-            Text = "🔥 Snipe",
+            Text = "ðŸ”¥ Snipe",
             Color = 0x22C55E,
             ShouldPing = shouldPing,
         }
@@ -21595,7 +23951,7 @@ function ResolveMarketTrackerDeal(config, price)
     and price <= goodPrice then
 
         return {
-            Text = "✅ Good",
+            Text = "âœ… Good",
             Color = 0x16A34A,
             ShouldPing = shouldPing,
         }
@@ -21605,7 +23961,7 @@ function ResolveMarketTrackerDeal(config, price)
     and price <= maxPrice then
 
         return {
-            Text = "⚖️ Fair",
+            Text = "âš–ï¸ Fair",
             Color = 0xFACC15,
             ShouldPing = shouldPing,
         }
@@ -21614,14 +23970,14 @@ function ResolveMarketTrackerDeal(config, price)
     if maxPrice then
 
         return {
-            Text = "❌ Overpriced",
+            Text = "âŒ Overpriced",
             Color = 0xEF4444,
             ShouldPing = shouldPing,
         }
     end
 
     return {
-        Text = "🔎 Found",
+        Text = "ðŸ”Ž Found",
         Color = 0x5865F2,
         ShouldPing = shouldPing,
     }
@@ -22210,7 +24566,7 @@ end
 -- GLOBAL HOLY SNIPES WEBHOOK SEND
 -- Premium public flex card.
 -- Title uses confirmed display Tool data:
--- HOLY SNIPED • Pet [Age X] [Y KG]
+-- HOLY SNIPED â€¢ Pet [Age X] [Y KG]
 --==================================================
 
 function SendHolySnipesWebhookNow(listing, toolName, confirmedPetName, confirmedAge, confirmedWeight, mutationText)
@@ -22241,7 +24597,7 @@ function SendHolySnipesWebhookNow(listing, toolName, confirmedPetName, confirmed
 
     local title =
         string.format(
-            "👑 HOLY SNIPED • %s [Age %s] [%s]",
+            "ðŸ‘‘ HOLY SNIPED â€¢ %s [Age %s] [%s]",
             tostring(confirmedPetName or listing.PetName or "Unknown"),
             tostring(confirmedAge or "Unknown"),
             FormatWebhookWeightKG(confirmedWeight)
@@ -22264,7 +24620,7 @@ function SendHolySnipesWebhookNow(listing, toolName, confirmedPetName, confirmed
     )
 
     local payload = {
-        username = "👑 HOLY",
+        username = "ðŸ‘‘ HOLY",
 
         embeds = {{
 
@@ -22279,7 +24635,7 @@ function SendHolySnipesWebhookNow(listing, toolName, confirmedPetName, confirmed
             fields = {
 
                 {
-                    name = "💰 Bought For",
+                    name = "ðŸ’° Bought For",
                     value =
                         tostring(listing.Price or 0)
                         .. " Tokens",
@@ -22287,14 +24643,14 @@ function SendHolySnipesWebhookNow(listing, toolName, confirmedPetName, confirmed
                 },
 
                 {
-                    name = "🧬 Mutation",
+                    name = "ðŸ§¬ Mutation",
                     value =
                         mutationText,
                     inline = true,
                 },
 
                 {
-                    name = "⚖️ BaseWeight",
+                    name = "âš–ï¸ BaseWeight",
                     value =
                         FormatWebhookBaseWeight(
                             listing.BaseWeight
@@ -22763,7 +25119,7 @@ end
 
         warn(
             string.format(
-                "[BUY FAILED] Insufficient tokens → %s",
+                "[BUY FAILED] Insufficient tokens â†’ %s",
                 tostring(listing.PetName)
             )
         )
@@ -22807,7 +25163,7 @@ end
 
             warn(
                 string.format(
-                    "[BUY PENDING] %s → will retry",
+                    "[BUY PENDING] %s â†’ will retry",
                     tostring(listing.PetName)
                 )
             )
@@ -22837,7 +25193,7 @@ end
 
     print(
         string.format(
-            "[BUY ACCEPTED] Waiting for inventory → %s",
+            "[BUY ACCEPTED] Waiting for inventory â†’ %s",
             tostring(listing.PetName)
         )
     )
@@ -23057,7 +25413,7 @@ else
 
     warn(
         string.format(
-            "[BUY WARNING] Inventory confirmation timeout → %s",
+            "[BUY WARNING] Inventory confirmation timeout â†’ %s",
             tostring(listing.PetName)
         )
     )
@@ -23673,7 +26029,7 @@ end
 
     local selectedServerMessage =
         string.format(
-            "%s/%s players • max %s • %s",
+            "%s/%s players â€¢ max %s â€¢ %s",
             tostring(selected.Playing),
             tostring(selected.MaxPlayers),
             tostring(maxAllowedPlayers),
@@ -25012,38 +27368,38 @@ function FormatHuntingTargetRow(hit)
     end
 
     local icon =
-        "🎯"
+        "ðŸŽ¯"
 
     local status =
         tostring(hit.Status or hit.Source or "Target")
 
     if status == "Good Listing" then
-        icon = "✅"
+        icon = "âœ…"
     elseif status == "Over Filter" then
-        icon = "⚠️"
+        icon = "âš ï¸"
     elseif status == "Backpack" then
-        icon = "🎒"
+        icon = "ðŸŽ’"
     elseif status == "Character" then
-        icon = "🧍"
+        icon = "ðŸ§"
     end
 
     local text =
         icon
         .. " "
         .. ShortenHuntingText(hit.PetName, 18)
-        .. " • "
+        .. " â€¢ "
         .. ShortenHuntingText(hit.OwnerName, 12)
 
     if hit.Price then
         text =
             text
-            .. " • "
+            .. " â€¢ "
             .. FormatTargetPetsHopListingPrice(hit.Listing or hit)
             .. "T"
     else
         text =
             text
-            .. " • "
+            .. " â€¢ "
             .. status
     end
 
@@ -26160,7 +28516,7 @@ for index, row in ipairs(rows) do
 
         table.insert(
             lines,
-            "• "
+            "â€¢ "
                 .. tostring(row.Name)
                 .. " | "
                 .. tostring(row.UserId)
@@ -26170,7 +28526,7 @@ for index, row in ipairs(rows) do
 
         table.insert(
             lines,
-            "… +"
+            "â€¦ +"
                 .. tostring(#rows - maxRows)
                 .. " more"
         )
@@ -26937,7 +29293,7 @@ end
 function CreatePersonalWebhookPetInventoryField()
 
     return {
-        name = "🎒 Pet Inventory",
+        name = "ðŸŽ’ Pet Inventory",
         value = FormatPersonalWebhookPetInventoryText(),
         inline = true,
     }
@@ -29187,7 +31543,7 @@ function StartWorker(name, fn)
 
     print(
         string.format(
-            "[WORKER] Started → %s",
+            "[WORKER] Started â†’ %s",
             tostring(name)
         )
     )
@@ -29942,9 +32298,9 @@ function RefreshAutoFriendHomeLabel()
         or "OFF"
 
     HomeFriendsLabel:SetText(
-        "🤝 Friends: "
+        "ðŸ¤ Friends: "
             .. status
-            .. " • "
+            .. " â€¢ "
             .. tostring(
                 AutoFriendState
                 and AutoFriendState.AcceptedThisSession
@@ -32066,7 +34422,7 @@ LoadAntiAltAvoidList()
 --==================================================
 Window = Library:CreateWindow({
     Title = "HOLY",
-    Footer = "private build • made by ben",
+    Footer = "private build â€¢ made by ben",
     Center = true,
     AutoShow = true,
     ToggleKeybind = Enum.KeyCode.LeftAlt,
@@ -32383,13 +34739,6 @@ Tabs = {
         Icon = "gift",
         Description = "Move filtered pets to alts using trade automation.",
     }),
-
-    HolyFreshTransfer = Window:AddTab({
-        Name = "HF Transfer",
-        Icon = "gift",
-        Description = "Holy Fresh transfer system.",
-    }),
-
     AgeBreaker = Window:AddTab({
         Name = "Age Break",
         Icon = "dna",
@@ -32445,7 +34794,6 @@ HOLY_TRADE_WORLD_ONLY_TABS = {
 
 HOLY_GARDEN_WORLD_ONLY_TABS = {
     "Transfer",
-    "HolyFreshTransfer",
 }
 
 function SetHolyTabVisible(tabName, visible)
@@ -32562,7 +34910,7 @@ function AddGardenModePlaceholder(tab, title, icon)
     end
 
     box:AddLabel(
-        "🌱 Garden Mode",
+        "ðŸŒ± Garden Mode",
         false
     )
 
@@ -32572,7 +34920,7 @@ function AddGardenModePlaceholder(tab, title, icon)
     )
 
     box:AddButton({
-        Text = "🌐 Join Trade World",
+        Text = "ðŸŒ Join Trade World",
         Tooltip = "Teleport to Grow a Garden Trade World.",
         Func = function()
 
@@ -32629,289 +34977,159 @@ HolyLoading:SetCurrentStep(3)
 HolyLoading:SetDescription("Building tabs...")
 
 --==================================================
--- HF TRANSFER TAB UI
--- Separate isolated UI. Does not touch old Transfer tab.
+-- [14.5] TRANSFER TAB
 --==================================================
 
-function HFTransfer.ApplyModeUI()
+if Tabs.Transfer and IsGardenWorld() then
 
-    local state =
-        HFTransfer.State
+    TransferStartTradeWatchers()
 
-    local isReceiver =
-        state.Mode == "Receiver"
+    local InitialTransferPetChoices =
+        TransferBuildPetChoices()
 
-    HFTransfer.SetControlVisible(
-        state.AutoUnfavoriteToggle,
-        not isReceiver
-    )
+    local InitialTransferMutationChoices =
+        TransferBuildMutationChoices()
 
-    HFTransfer.SetControlVisible(
-        state.MaxPetsInput,
-        not isReceiver
-    )
+    local InitialTransferTargetChoices =
+        TransferBuildTargetChoices()
 
-    HFTransfer.SetControlVisible(
-        state.AddPetDelayInput,
-        not isReceiver
-    )
-
-    HFTransfer.SetControlVisible(
-        state.AddBurstInput,
-        not isReceiver
-    )
-
-    HFTransfer.SetControlVisible(
-        state.NextTicketDelayInput,
-        not isReceiver
-    )
-
-    HFTransfer.SetControlVisible(
-        state.AutoAcceptTicketToggle,
-        isReceiver
-    )
-
-    HFTransfer.SetControlVisible(
-        state.AutoConfirmToggle,
-        true
-    )
-
-    HFTransfer.SetControlVisible(
-        state.AutoAcceptGiftToggle,
-        true
-    )
-
-    HFTransfer.SetControlVisible(
-        state.KeepGoingToggle,
-        true
-    )
-end
-
-if Tabs.HolyFreshTransfer then
-
-    local HFState =
-        HFTransfer.State
-
-    local HFTransferPetBox =
-        HFTransfer.AddLeftBox(
-            Tabs.HolyFreshTransfer,
+    local TransferPetBox =
+        AddLeftBox(
+            Tabs.Transfer,
             "Pet Filters",
             "sliders-horizontal"
         )
 
-    local HFTransferSafetyBox =
-        HFTransfer.AddLeftBox(
-            Tabs.HolyFreshTransfer,
-            "Safety",
-            "shield"
-        )
-
-    local HFTransferTargetBox =
-        HFTransfer.AddRightBox(
-            Tabs.HolyFreshTransfer,
-            "Target Player",
+    local TransferTargetBox =
+        AddRightBox(
+            Tabs.Transfer,
+            "Trade Setup",
             "users"
         )
 
-    local HFTransferActionsBox =
-        HFTransfer.AddRightBox(
-            Tabs.HolyFreshTransfer,
-            "Trade Actions",
+    local TransferActionsBox =
+        AddRightBox(
+            Tabs.Transfer,
+            "Automation",
             "gift"
         )
 
-    local HFTransferStatusBox =
-        HFTransfer.AddRightBox(
-            Tabs.HolyFreshTransfer,
+    local TransferStatusBox =
+        AddRightBox(
+            Tabs.Transfer,
             "Status",
             "activity"
         )
 
-    HFState.SourceLabel =
-        HFTransferStatusBox:AddLabel({
-            Text = "HF Transfer loaded.",
+    TransferState.SourceLabel =
+        TransferStatusBox:AddLabel({
+            Text = "Inventory Parsed: ...",
             DoesWrap = true,
             Size = 12,
         })
 
-    HFState.StatusLabel =
-        HFTransferStatusBox:AddLabel({
+    TransferState.StatusLabel =
+        TransferStatusBox:AddLabel({
             Text = "Mode: Idle",
             DoesWrap = true,
             Size = 12,
         })
 
-    HFState.TargetLabel =
-        HFTransferStatusBox:AddLabel({
+    TransferState.TargetLabel =
+        TransferStatusBox:AddLabel({
             Text = "Player: None",
             DoesWrap = true,
             Size = 12,
         })
 
-    HFState.MatchLabel =
-        HFTransferStatusBox:AddLabel({
+    TransferState.MatchLabel =
+        TransferStatusBox:AddLabel({
             Text = "Matched: 0 | Added: 0",
             DoesWrap = true,
             Size = 12,
         })
 
-    HFState.ResultLabel =
-        HFTransferStatusBox:AddLabel({
+    TransferState.ResultLabel =
+        TransferStatusBox:AddLabel({
             Text = "Batch: 0 | Sent: 0 | Result: None",
             DoesWrap = true,
             Size = 12,
         })
 
-    HFState.ModeDropdown =
-        HFTransferTargetBox:AddDropdown(
-            "HFTransferMode",
-            {
-                Text = "Mode",
-                Values = {
-                    "Sender",
-                    "Receiver",
-                },
-                Default = "Sender",
-                Searchable = false,
-                Multi = false,
-            }
-        )
-
-    HFState.ModeDropdown:OnChanged(function(value)
-
-        value =
-            HFTransfer.CleanText(value)
-
-        if value ~= "Receiver" then
-            value =
-                "Sender"
-        end
-
-        HFState.Mode =
-            value
-
-        HFTransfer.ApplyModeUI()
-
-        HFTransfer.SetStatus(
-            "Mode Updated",
-            "Mode = " .. tostring(HFState.Mode)
-        )
-    end)
-
-    HFState.TargetDropdown =
-        HFTransferTargetBox:AddDropdown(
-            "HFTransferTargetPlayer",
-            {
-                Text = "Target Player",
-                Values = HFTransfer.BuildTargetChoices(),
-                Default = "",
-                Searchable = true,
-                Multi = false,
-            }
-        )
-
-    HFState.TargetDropdown:OnChanged(function(value)
-
-        HFState.TargetPlayerName =
-            HFTransfer.CleanText(value)
-
-        HFTransfer.SetStatus(
-            "Target Updated",
-            HFState.TargetPlayerName ~= ""
-                and HFState.TargetPlayerName
-                or "None"
-        )
-    end)
-
-    HFTransferTargetBox:AddButton({
-        Text = "Refresh Players",
-        Tooltip = "Refresh target player dropdown.",
-        Func = function()
-
-            HFTransfer.BuildTargetChoices()
-
-            HFTransfer.SetStatus(
-                "Players Refreshed",
-                "Target list updated."
-            )
-        end,
-    })
-
-    HFState.PetDropdown =
-        HFTransferPetBox:AddDropdown(
-            "HFTransferPets",
+    TransferState.PetDropdown =
+        TransferPetBox:AddDropdown(
+            "HolyFreshTransferPets",
             {
                 Text = "Pets",
-                Values = HFTransfer.BuildPetChoices(),
+                Values = InitialTransferPetChoices,
                 Default = {},
                 Searchable = true,
                 Multi = true,
             }
         )
 
-    HFState.PetDropdown:OnChanged(function(value)
+    TransferState.PetDropdown:OnChanged(function(value)
 
-        HFState.SelectedPets =
-            HFTransfer.BuildMapFromDropdown(value)
+        TransferState.SelectedPets =
+            TransferBuildMapFromDropdown(value)
 
-        HFTransfer.BuildMatches()
+        TransferBuildMatches()
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Filter Updated",
             "Selected pets updated."
         )
     end)
 
-    HFTransferPetBox:AddButton({
+    TransferPetBox:AddButton({
         Text = "Remove All Pets",
-        Tooltip = "Clear selected HF transfer pets.",
+        Tooltip = "Clear selected transfer pets.",
         Func = function()
 
-            HFState.SelectedPets =
+            TransferState.SelectedPets =
                 {}
 
-            if HFState.PetDropdown
-            and type(HFState.PetDropdown.SetValue) == "function" then
-
-                HFState.PetDropdown:SetValue({})
+            if TransferState.PetDropdown
+            and type(TransferState.PetDropdown.SetValue) == "function" then
+                TransferState.PetDropdown:SetValue({})
             end
 
-            HFTransfer.BuildMatches()
+            TransferBuildMatches()
 
-            HFTransfer.SetStatus(
+            TransferSetStatus(
                 "Filter Cleared",
                 "Selected pets cleared."
             )
         end,
     })
 
-    HFState.MutationDropdown =
-        HFTransferPetBox:AddDropdown(
-            "HFTransferMutations",
+    TransferState.MutationDropdown =
+        TransferPetBox:AddDropdown(
+            "HolyFreshTransferMutations",
             {
                 Text = "Mutations",
-                Values = HFTransfer.BuildMutationChoices(),
+                Values = InitialTransferMutationChoices,
                 Default = {},
                 Searchable = true,
                 Multi = true,
             }
         )
 
-    HFState.MutationDropdown:OnChanged(function(value)
+    TransferState.MutationDropdown:OnChanged(function(value)
 
-        HFState.SelectedMutations =
-            HFTransfer.BuildMapFromDropdown(value)
+        TransferState.SelectedMutations =
+            TransferBuildMapFromDropdown(value)
 
-        HFTransfer.BuildMatches()
+        TransferBuildMatches()
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Filter Updated",
             "Selected mutations updated."
         )
     end)
 
-    HFTransferPetBox:AddInput(
-        "HFTransferMinLevel",
+    TransferPetBox:AddInput(
+        "HolyFreshTransferMinLevel",
         {
             Text = "Min Level",
             Default = "1",
@@ -32921,25 +35139,25 @@ if Tabs.HolyFreshTransfer then
         }
     ):OnChanged(function(value)
 
-        HFState.MinLevel =
+        TransferState.MinLevel =
             math.max(
                 1,
                 math.floor(
-                    HFTransfer.ToNumber(value, 1)
+                    TransferToNumber(value, 1)
                 )
             )
 
-        HFTransfer.BuildMatches()
+        TransferBuildMatches()
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Filter Updated",
             "Min Level = "
-                .. tostring(HFState.MinLevel)
+                .. tostring(TransferState.MinLevel)
         )
     end)
 
-    HFTransferPetBox:AddInput(
-        "HFTransferMaxLevel",
+    TransferPetBox:AddInput(
+        "HolyFreshTransferMaxLevel",
         {
             Text = "Max Level",
             Default = "100",
@@ -32949,25 +35167,25 @@ if Tabs.HolyFreshTransfer then
         }
     ):OnChanged(function(value)
 
-        HFState.MaxLevel =
+        TransferState.MaxLevel =
             math.max(
-                HFState.MinLevel,
+                TransferState.MinLevel,
                 math.floor(
-                    HFTransfer.ToNumber(value, 100)
+                    TransferToNumber(value, 100)
                 )
             )
 
-        HFTransfer.BuildMatches()
+        TransferBuildMatches()
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Filter Updated",
             "Max Level = "
-                .. tostring(HFState.MaxLevel)
+                .. tostring(TransferState.MaxLevel)
         )
     end)
 
-    HFTransferPetBox:AddInput(
-        "HFTransferMinBaseWeight",
+    TransferPetBox:AddInput(
+        "HolyFreshTransferMinBaseWeight",
         {
             Text = "Min BaseWeight",
             Default = "0",
@@ -32977,23 +35195,23 @@ if Tabs.HolyFreshTransfer then
         }
     ):OnChanged(function(value)
 
-        HFState.MinBaseWeight =
+        TransferState.MinBaseWeight =
             math.max(
                 0,
-                HFTransfer.ToNumber(value, 0)
+                TransferToNumber(value, 0)
             )
 
-        HFTransfer.BuildMatches()
+        TransferBuildMatches()
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Filter Updated",
             "Min BaseWeight = "
-                .. tostring(HFState.MinBaseWeight)
+                .. tostring(TransferState.MinBaseWeight)
         )
     end)
 
-    HFTransferPetBox:AddInput(
-        "HFTransferMaxBaseWeight",
+    TransferPetBox:AddInput(
+        "HolyFreshTransferMaxBaseWeight",
         {
             Text = "Max BaseWeight",
             Default = "999",
@@ -33003,33 +35221,263 @@ if Tabs.HolyFreshTransfer then
         }
     ):OnChanged(function(value)
 
-        HFState.MaxBaseWeight =
+        TransferState.MaxBaseWeight =
             math.max(
                 0,
-                HFTransfer.ToNumber(value, 999)
+                TransferToNumber(value, 999)
             )
 
-        HFTransfer.BuildMatches()
+        TransferBuildMatches()
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Filter Updated",
             "Max BaseWeight = "
-                .. tostring(HFState.MaxBaseWeight)
+                .. tostring(TransferState.MaxBaseWeight)
         )
     end)
 
-    HFTransferPetBox:AddButton({
+    TransferPetBox:AddButton({
         Text = "Reload Pets / Mutations",
-        Tooltip = "Refresh pet, mutation, target, and match data.",
+        Tooltip = "Refresh full pet and mutation dropdowns.",
         Func = function()
 
-            HFTransfer.RefreshDropdowns()
+            TransferState.AllPetChoices =
+                {}
+
+            TransferState.AllMutationChoices =
+                {}
+
+            TransferRefreshDropdowns()
         end,
     })
 
-    HFState.AutoUnfavoriteToggle =
-        HFTransferSafetyBox:AddToggle(
-            "HFTransferAutoUnfavorite",
+    TransferState.ModeDropdown =
+        TransferTargetBox:AddDropdown(
+            "HolyFreshTransferMode",
+            {
+                Text = "Mode",
+                Values = {
+                    "Sender",
+                    "Receiver",
+                },
+                Default = "Sender",
+                Searchable = false,
+            }
+        )
+
+    TransferState.ModeDropdown:OnChanged(function(value)
+
+        value =
+            CleanText(value)
+
+        if value ~= "Receiver" then
+            value =
+                "Sender"
+        end
+
+        local oldMode =
+            tostring(TransferState.Mode or "Sender")
+
+        TransferState.Mode =
+            value
+
+        TransferApplyModeUI()
+
+        if oldMode ~= value then
+
+            TransferResetWorkerForModeSwitch(
+                value
+            )
+
+            return
+        end
+
+        TransferSetStatus(
+            "Mode Updated",
+            "Mode = "
+                .. tostring(TransferState.Mode)
+        )
+    end)
+
+    TransferState.TargetDropdown =
+        TransferTargetBox:AddDropdown(
+            "HolyFreshTransferTarget",
+            {
+                Text = "Player",
+                Values = InitialTransferTargetChoices,
+                Default = "",
+                Searchable = true,
+            }
+        )
+
+    TransferState.TargetDropdown:OnChanged(function(value)
+
+        TransferState.TargetPlayerName =
+            CleanText(value)
+
+        TransferSetStatus(
+            "Player Updated",
+            TransferState.TargetPlayerName ~= ""
+                and ("Player = " .. TransferState.TargetPlayerName)
+                or "Player cleared."
+        )
+    end)
+
+    TransferTargetBox:AddButton({
+        Text = "Reload Players",
+        Func = function()
+
+            local targetChoices =
+                TransferBuildTargetChoices()
+
+            if TransferState.TargetDropdown
+            and type(TransferState.TargetDropdown.SetValues) == "function" then
+
+                TransferState.TargetDropdown:SetValues(
+                    targetChoices
+                )
+            end
+
+            print(
+                "[TRANSFER TARGETS]",
+                "targets:",
+                tostring(#targetChoices)
+            )
+
+            TransferSetStatus(
+                TransferState.Status,
+                TransferState.LastResult
+            )
+        end,
+    })
+
+    TransferTargetBox:AddButton({
+        Text = "Copy Trade Debug",
+        Tooltip = "Copies live trade UI/remotes/state debug info to clipboard.",
+        Func = function()
+
+            local dump =
+                TransferBuildTradeDebugDump()
+
+            if CopyToClipboard(dump) then
+
+                TransferSetStatus(
+                    "Debug Copied",
+                    "Trade debug dump copied to clipboard."
+                )
+
+                print(
+                    "[TRANSFER DEBUG] Trade dump copied. Length:",
+                    tostring(#dump)
+                )
+
+            else
+
+                TransferSetStatus(
+                    "Debug Failed",
+                    "Clipboard unsupported."
+                )
+            end
+        end,
+    })
+
+    TransferState.TransferEnabledToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshTransferEnabled",
+            {
+                Text = "Transfer Enabled",
+                Default = false,
+                Tooltip = "Starts or stops the transfer worker.",
+            }
+        )
+
+    TransferState.TransferEnabledToggle:OnChanged(function(value)
+
+        TransferState.TransferEnabled =
+            value == true
+
+        if TransferState.TransferEnabled == true then
+
+            TransferWorkerLoop()
+
+        else
+
+            TransferSetStatus(
+                "Disabled",
+                "Transfer stopped."
+            )
+        end
+    end)
+
+    TransferState.AutoAcceptTicketToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshTransferAutoAcceptTicket",
+            {
+                Text = "Auto Accept Ticket",
+                Default = true,
+                Tooltip = "Receiver mode: automatically accepts incoming trade tickets from the selected player.",
+            }
+        )
+
+    TransferState.AutoAcceptTicketToggle:OnChanged(function(value)
+
+        TransferState.AutoAcceptTicket =
+            value == true
+
+        TransferSetStatus(
+            "Option Updated",
+            "Auto Accept Ticket = "
+                .. tostring(TransferState.AutoAcceptTicket)
+        )
+    end)
+
+    TransferState.AutoConfirmToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshTransferAutoConfirm",
+            {
+                Text = "Auto Confirm",
+                Default = true,
+                Tooltip = "Receiver mode: automatically accepts the trade and final confirms.",
+            }
+        )
+
+    TransferState.AutoConfirmToggle:OnChanged(function(value)
+
+        TransferState.AutoConfirm =
+            value == true
+
+        TransferSetStatus(
+            "Option Updated",
+            "Auto Confirm = "
+                .. tostring(TransferState.AutoConfirm)
+        )
+    end)
+
+    TransferState.AutoAcceptGiftToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshTransferAutoAcceptGift",
+            {
+                Text = "Auto Accept Gift",
+                Default = false,
+                Tooltip = "Automatically accepts incoming pet gifts. If a player is selected, only accepts gifts from that player.",
+            }
+        )
+
+    TransferState.AutoAcceptGiftToggle:OnChanged(function(value)
+
+        TransferState.AutoAcceptGift =
+            value == true
+
+        TransferSetStatus(
+            "Option Updated",
+            "Auto Accept Gift = "
+                .. tostring(TransferState.AutoAcceptGift)
+        )
+    end)
+
+    TransferState.AutoUnfavoriteToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshTransferAutoUnfavorite",
             {
                 Text = "Auto Unfavorite",
                 Default = true,
@@ -33037,92 +35485,21 @@ if Tabs.HolyFreshTransfer then
             }
         )
 
-    HFState.AutoUnfavoriteToggle:OnChanged(function(value)
+    TransferState.AutoUnfavoriteToggle:OnChanged(function(value)
 
-        HFState.AutoUnfavorite =
+        TransferState.AutoUnfavorite =
             value == true
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Option Updated",
             "Auto Unfavorite = "
-                .. tostring(HFState.AutoUnfavorite)
+                .. tostring(TransferState.AutoUnfavorite)
         )
     end)
 
-    HFState.AutoAcceptGiftToggle =
-        HFTransferSafetyBox:AddToggle(
-            "HFTransferAutoAcceptGift",
-            {
-                Text = "Auto Accept Gift",
-                Default = false,
-                Tooltip = "Automatically accepts incoming pet gifts. If target player is set, only accepts from that player.",
-            }
-        )
-
-    HFState.AutoAcceptGiftToggle:OnChanged(function(value)
-
-        HFState.AutoAcceptGift =
-            value == true
-
-        HFTransfer.StartTradeWatchers()
-
-        HFTransfer.SetStatus(
-            "Option Updated",
-            "Auto Accept Gift = "
-                .. tostring(HFState.AutoAcceptGift)
-        )
-    end)
-
-    HFTransferSafetyBox:AddToggle(
-        "HFTransferDebugPrints",
-        {
-            Text = "Debug Prints",
-            Default = false,
-            Tooltip = "Only enable while testing.",
-        }
-    ):OnChanged(function(value)
-
-        HFState.DebugPrints =
-            value == true
-
-        HFTransfer.SetStatus(
-            "Option Updated",
-            "Debug Prints = "
-                .. tostring(HFState.DebugPrints)
-        )
-    end)
-
-    HFState.TransferEnabledToggle =
-        HFTransferActionsBox:AddToggle(
-            "HFTransferEnabled",
-            {
-                Text = "Transfer Enabled",
-                Default = false,
-                Tooltip = "Starts or stops the HF transfer worker.",
-            }
-        )
-
-    HFState.TransferEnabledToggle:OnChanged(function(value)
-
-        HFState.TransferEnabled =
-            value == true
-
-        if HFState.TransferEnabled == true then
-
-            HFTransfer.WorkerLoop()
-
-        else
-
-            HFTransfer.SetStatus(
-                "Disabled",
-                "Transfer stopped."
-            )
-        end
-    end)
-
-    HFState.KeepGoingToggle =
-        HFTransferActionsBox:AddToggle(
-            "HFTransferKeepGoing",
+    TransferState.KeepGoingToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshTransferKeepGoing",
             {
                 Text = "Keep Going",
                 Default = false,
@@ -33130,231 +35507,191 @@ if Tabs.HolyFreshTransfer then
             }
         )
 
-    HFState.KeepGoingToggle:OnChanged(function(value)
+    TransferState.KeepGoingToggle:OnChanged(function(value)
 
-        HFState.KeepGoing =
+        TransferState.KeepGoing =
             value == true
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Option Updated",
             "Keep Going = "
-                .. tostring(HFState.KeepGoing)
+                .. tostring(TransferState.KeepGoing)
         )
     end)
 
-    HFState.AutoAcceptTicketToggle =
-        HFTransferActionsBox:AddToggle(
-            "HFTransferAutoAcceptTicket",
-            {
-                Text = "Auto Accept Ticket",
-                Default = true,
-                Tooltip = "Receiver mode: accepts incoming trade ticket.",
-            }
-        )
+    TransferActionsBox:AddToggle(
+        "HolyFreshTransferDebugPrints",
+        {
+            Text = "Debug Prints",
+            Default = false,
+            Tooltip = "Only enable while testing. OFF removes console spam for faster transfer.",
+        }
+    ):OnChanged(function(value)
 
-    HFState.AutoAcceptTicketToggle:OnChanged(function(value)
-
-        HFState.AutoAcceptTicket =
+        TransferState.DebugPrints =
             value == true
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Option Updated",
-            "Auto Accept Ticket = "
-                .. tostring(HFState.AutoAcceptTicket)
+            "Debug Prints = "
+                .. tostring(TransferState.DebugPrints)
         )
     end)
 
-    HFState.AutoConfirmToggle =
-        HFTransferActionsBox:AddToggle(
-            "HFTransferAutoConfirm",
-            {
-                Text = "Auto Confirm",
-                Default = true,
-                Tooltip = "Sender/Receiver: fires final confirm after accept flow.",
-            }
-        )
-
-    HFState.AutoConfirmToggle:OnChanged(function(value)
-
-        HFState.AutoConfirm =
-            value == true
-
-        HFTransfer.SetStatus(
-            "Option Updated",
-            "Auto Confirm = "
-                .. tostring(HFState.AutoConfirm)
-        )
-    end)
-
-    HFState.MaxPetsInput =
-        HFTransferActionsBox:AddInput(
-            "HFTransferMaxPets",
+    TransferState.MaxPetsInput =
+        TransferActionsBox:AddInput(
+            "HolyFreshTransferMaxPets",
             {
                 Text = "Max Pets",
                 Default = "12",
                 Numeric = false,
                 Finished = false,
                 ClearTextOnFocus = false,
-                Tooltip = "Sender mode: maximum matched pets to add per trade.",
+                Tooltip = "Sender mode: maximum matched pets to add per trade ticket.",
             }
         )
 
-    HFState.MaxPetsInput:OnChanged(function(value)
+    TransferState.MaxPetsInput:OnChanged(function(value)
 
-        HFState.MaxPetsPerTrade =
+        local tradeLimit =
+            TransferGetTradeItemLimit()
+
+        TransferState.MaxPetsPerTrade =
             math.clamp(
                 math.floor(
-                    HFTransfer.ToNumber(value, 12)
+                    TransferToNumber(value, 12)
                 ),
                 1,
-                50
+                tradeLimit
             )
 
-        HFTransfer.BuildMatches()
+        TransferBuildMatches()
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Option Updated",
             "Max Pets = "
-                .. tostring(HFState.MaxPetsPerTrade)
+                .. tostring(TransferState.MaxPetsPerTrade)
         )
     end)
 
-    HFState.AddPetDelayInput =
-        HFTransferActionsBox:AddInput(
-            "HFTransferAddPetDelay",
+    TransferState.AddPetDelayInput =
+        TransferActionsBox:AddInput(
+            "HolyFreshTransferAddPetDelay",
             {
                 Text = "Add Delay",
-                Default = "0.05",
+                Default = "0.5",
                 Numeric = false,
                 Finished = false,
                 ClearTextOnFocus = false,
-                Tooltip = "Sender mode: seconds to wait between add bursts.",
+                Tooltip = "Sender mode: seconds to wait before adding the next pet.",
             }
         )
 
-    HFState.AddPetDelayInput:OnChanged(function(value)
+    TransferState.AddPetDelayInput:OnChanged(function(value)
 
-        HFState.AddPetDelay =
+        TransferState.AddPetDelay =
             math.clamp(
-                HFTransfer.ToNumber(value, 0.5),
+                TransferToNumber(value, 0.5),
                 0.01,
                 3
             )
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Option Updated",
             "Add Delay = "
-                .. string.format("%.2f", HFState.AddPetDelay)
+                .. string.format("%.2f", TransferState.AddPetDelay)
                 .. "s"
         )
     end)
 
-    HFState.AddBurstInput =
-        HFTransferActionsBox:AddInput(
-            "HFTransferAddBurst",
+    TransferState.AddBurstInput =
+        TransferActionsBox:AddInput(
+            "HolyFreshTransferAddBurst",
             {
                 Text = "Add Burst",
-                Default = "12",
+                Default = "1",
                 Numeric = false,
                 Finished = false,
                 ClearTextOnFocus = false,
-                Tooltip = "Sender mode: pets to add before waiting.",
+                Tooltip = "Sender mode: how many pets to fire into the trade before waiting for confirmation.",
             }
         )
 
-    HFState.AddBurstInput:OnChanged(function(value)
+    TransferState.AddBurstInput:OnChanged(function(value)
 
-        HFState.AddBurstCount =
+        TransferState.AddBurstCount =
             math.clamp(
                 math.floor(
-                    HFTransfer.ToNumber(value, 1)
+                    TransferToNumber(value, 1)
                 ),
                 1,
-                HFTransfer.GetMaxPetsPerTrade()
+                TransferGetMaxPetsPerTrade()
             )
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Option Updated",
             "Add Burst = "
-                .. tostring(HFState.AddBurstCount)
+                .. tostring(TransferState.AddBurstCount)
         )
     end)
 
-    HFState.NextTicketDelayInput =
-        HFTransferActionsBox:AddInput(
-            "HFTransferNextTicketDelay",
+    TransferState.NextTicketDelayInput =
+        TransferActionsBox:AddInput(
+            "HolyFreshTransferNextTicketDelay",
             {
                 Text = "Next Ticket Delay",
                 Default = "0",
                 Numeric = false,
                 Finished = false,
                 ClearTextOnFocus = false,
-                Tooltip = "Seconds to wait before next ticket when Keep Going is ON.",
+                Tooltip = "Sender mode: seconds to wait before sending the next trade request. 0 = instant.",
             }
         )
 
-    HFState.NextTicketDelayInput:OnChanged(function(value)
+    TransferState.NextTicketDelayInput:OnChanged(function(value)
 
-        HFState.NextTicketDelay =
+        TransferState.NextTicketDelay =
             math.clamp(
-                HFTransfer.ToNumber(value, 0),
+                TransferToNumber(value, 0),
                 0,
                 60
             )
 
-        HFTransfer.SetStatus(
+        TransferSetStatus(
             "Option Updated",
             "Next Ticket Delay = "
-                .. string.format("%.1f", HFState.NextTicketDelay)
+                .. string.format("%.2f", TransferState.NextTicketDelay)
                 .. "s"
         )
     end)
 
-    local HFManualButton =
-        HFTransferActionsBox:AddButton({
-            Text = "Send Ticket",
-            Tooltip = "Manual sender request test.",
+    TransferApplyModeUI()
+
+    local TransferDeclineButton =
+        TransferActionsBox:AddButton({
+            Text = "Decline",
+            Tooltip = "Decline the current trade or pending request.",
             Func = function()
 
-                HFTransfer.StartTradeWatchers()
-                HFTransfer.EquipTradeTicket()
-                HFTransfer.SendTicket()
+                if TransferState.Mode == "Receiver"
+                and CleanText(TransferState.IncomingRequestId) ~= ""
+                and TransferState.TradeOpen ~= true then
+
+                    TransferDeclineIncomingRequest()
+
+                else
+
+                    TransferDeclineTrade()
+                end
             end,
         })
 
-    HFManualButton:AddButton({
-        Text = "Accept",
-        Tooltip = "Manual accept current trade/request.",
+    TransferDeclineButton:AddButton({
+        Text = "Confirm",
+        Tooltip = "Manual final confirm.",
         Func = function()
 
-            if HFState.IncomingRequestId ~= ""
-            and HFState.TradeOpen ~= true then
-
-                HFTransfer.RespondRequest(true)
-
-            else
-
-                HFTransfer.AcceptTrade()
-            end
-        end,
-    })
-
-    local HFConfirmButton =
-        HFTransferActionsBox:AddButton({
-            Text = "Confirm",
-            Tooltip = "Manual final confirm.",
-            Func = function()
-
-                HFTransfer.ConfirmTrade()
-            end,
-        })
-
-    HFConfirmButton:AddButton({
-        Text = "Decline",
-        Tooltip = "Manual decline current trade.",
-        Func = function()
-
-            HFTransfer.DeclineTrade()
+            TransferConfirmTrade()
         end,
     })
 
@@ -33364,550 +35701,34 @@ if Tabs.HolyFreshTransfer then
             return
         end
 
-        HFTransfer.StartTradeWatchers()
-        HFTransfer.RefreshDropdowns()
-        HFTransfer.ApplyModeUI()
+        TransferBuildMatches()
 
-        HFTransfer.SetStatus(
-            "Ready",
-            "HF Transfer UI loaded."
+        TransferSetStatus(
+            TransferState.Status,
+            TransferState.LastResult,
+            true
         )
+    end)
+
+    Players.PlayerAdded:Connect(function()
+
+        task.wait(0.05)
+
+        if IsCurrentRun() then
+            TransferRefreshDropdowns()
+        end
+    end)
+
+    Players.PlayerRemoving:Connect(function()
+
+        task.wait(0.03)
+
+        if IsCurrentRun() then
+            TransferRefreshDropdowns()
+        end
     end)
 end
 
---==================================================
--- TRANSFER TAB UI
--- Garden World only.
--- Uses existing dynamic pet and mutation sources.
--- Trade World hides this tab completely.
---==================================================
-
-TransferPetFiltersBox = nil
-TransferSafetyBox = nil
-TransferTargetBox = nil
-TransferActionsBox = nil
-TransferStatusBox = nil
-
-if Tabs.Transfer
-and IsGardenWorld() then
-
-    -- Dynamic list functions are defined later in this build,
-    -- so never call them directly here without guards.
-    if type(RefreshDynamicPetList) == "function" then
-        pcall(function()
-            RefreshDynamicPetList()
-        end)
-    end
-
-    if type(RefreshListingMutationList) == "function" then
-        pcall(function()
-            RefreshListingMutationList()
-        end)
-    end
-
-    PetList =
-        type(PetList) == "table"
-        and PetList
-        or {}
-
-    ListingMutationList =
-        type(ListingMutationList) == "table"
-        and ListingMutationList
-        or {}
-
-    TransferPetFiltersBox =
-        Tabs.Transfer:AddLeftGroupbox(
-            "🐾 Pet Filters",
-            "paw-print"
-        )
-
-    TransferSafetyBox =
-        Tabs.Transfer:AddLeftGroupbox(
-            "🛡️ Safety",
-            "shield-check"
-        )
-
-    TransferTargetBox =
-        Tabs.Transfer:AddRightGroupbox(
-            "🎯 Target Player",
-            "user"
-        )
-
-    TransferActionsBox =
-        Tabs.Transfer:AddRightGroupbox(
-            "🎁 Trade Actions",
-            "gift"
-        )
-
-    TransferStatusBox =
-        Tabs.Transfer:AddRightGroupbox(
-            "📊 Transfer Status",
-            "activity"
-        )
-
-    local TransferPetDropdown =
-        TransferPetFiltersBox:AddDropdown(
-            "TransferPetSelect",
-            {
-                Text = "Pets",
-                Tooltip = "Dynamic full game pet list. Empty = sends nothing.",
-                Values = TransferBuildPetList(),
-                Default = {},
-                Searchable = true,
-                Multi = true,
-            }
-        )
-
-    TransferState.PetDropdownRef =
-        TransferPetDropdown
-
-    TransferPetDropdown:OnChanged(function(value)
-
-        TransferState.SelectedPets =
-            TransferCloneSelectedMap(value)
-
-        TransferBuildMatchingPets(
-            TransferState.MaxPetsPerTrade
-        )
-
-        TransferRefreshStatus()
-
-        if type(MarkConfigDirty) == "function" then
-            MarkConfigDirty()
-        end
-    end)
-
-    TransferPetFiltersBox:AddButton({
-        Text = "Remove All Pets",
-        Tooltip = "Clear selected transfer pets.",
-        Func = function()
-
-            TransferState.SelectedPets =
-                {}
-
-            if TransferState.PetDropdownRef
-            and type(TransferState.PetDropdownRef.SetValue) == "function" then
-
-                TransferState.PetDropdownRef:SetValue({})
-            end
-
-            TransferBuildMatchingPets(
-                TransferState.MaxPetsPerTrade
-            )
-
-            TransferRefreshStatus()
-        end,
-    })
-
-    TransferPetFiltersBox:AddButton({
-        Text = "🔄 Reload Pets / Mutations",
-        Tooltip = "Force-refresh Transfer pet and mutation dropdowns.",
-        Func = function()
-
-            TransferRefreshDropdowns()
-
-            if type(HolyNotify) == "function" then
-                HolyNotify(
-                    "Transfer Lists Reloaded",
-                    "Pet and mutation dropdowns refreshed.",
-                    "refresh-cw",
-                    3
-                )
-            end
-        end,
-    })
-
-    local TransferMutationDropdown =
-        TransferPetFiltersBox:AddDropdown(
-            "TransferMutationSelect",
-            {
-                Text = "Mutations",
-                Tooltip = "Dynamic mutation list from Listings. Empty = any mutation.",
-                Values = TransferBuildMutationOnlyList(),
-                Default = {},
-                Searchable = true,
-                Multi = true,
-            }
-        )
-
-    TransferState.MutationDropdownRef =
-        TransferMutationDropdown
-
-    TransferMutationDropdown:OnChanged(function(value)
-
-        TransferState.SelectedMutations =
-            TransferCloneSelectedMap(value)
-
-        TransferBuildMatchingPets(
-            TransferState.MaxPetsPerTrade
-        )
-
-        TransferRefreshStatus()
-
-        if type(MarkConfigDirty) == "function" then
-            MarkConfigDirty()
-        end
-    end)
-
-    TransferPetFiltersBox:AddInput(
-        "TransferMinLevel",
-        {
-            Text = "Min Level",
-            Default = "1",
-            Numeric = true,
-            Finished = true,
-            ClearTextOnFocus = false,
-        }
-    ):OnChanged(function(value)
-
-        TransferState.MinLevel =
-            math.max(
-                1,
-                math.floor(
-                    tonumber(value)
-                    or 1
-                )
-            )
-
-        TransferBuildMatchingPets(
-            TransferState.MaxPetsPerTrade
-        )
-
-        TransferRefreshStatus()
-    end)
-
-    TransferPetFiltersBox:AddInput(
-        "TransferMaxLevel",
-        {
-            Text = "Max Level",
-            Default = "100",
-            Numeric = true,
-            Finished = true,
-            ClearTextOnFocus = false,
-        }
-    ):OnChanged(function(value)
-
-        TransferState.MaxLevel =
-            math.max(
-                TransferState.MinLevel or 1,
-                math.floor(
-                    tonumber(value)
-                    or 100
-                )
-            )
-
-        TransferBuildMatchingPets(
-            TransferState.MaxPetsPerTrade
-        )
-
-        TransferRefreshStatus()
-    end)
-
-    TransferPetFiltersBox:AddInput(
-        "TransferMinBaseWeight",
-        {
-            Text = "Min BaseWeight",
-            Default = "0",
-            Numeric = true,
-            Finished = true,
-            ClearTextOnFocus = false,
-        }
-    ):OnChanged(function(value)
-
-        TransferState.MinBaseWeight =
-            math.max(
-                0,
-                tonumber(value)
-                or 0
-            )
-
-        TransferBuildMatchingPets(
-            TransferState.MaxPetsPerTrade
-        )
-
-        TransferRefreshStatus()
-    end)
-
-    TransferPetFiltersBox:AddInput(
-        "TransferMaxBaseWeight",
-        {
-            Text = "Max BaseWeight",
-            Default = "999",
-            Numeric = true,
-            Finished = true,
-            ClearTextOnFocus = false,
-        }
-    ):OnChanged(function(value)
-
-        TransferState.MaxBaseWeight =
-            math.max(
-                0,
-                tonumber(value)
-                or 999
-            )
-
-        TransferBuildMatchingPets(
-            TransferState.MaxPetsPerTrade
-        )
-
-        TransferRefreshStatus()
-    end)
-
-    TransferSafetyBox:AddToggle(
-        "TransferDryRun",
-        {
-            Text = "Dry Run / Preview",
-            Tooltip = "ON = preview only. No real trade sending.",
-            Default = true,
-        }
-    ):OnChanged(function(value)
-
-        TransferState.DryRun =
-            value == true
-
-        TransferRefreshStatus()
-    end)
-
-    TransferSafetyBox:AddToggle(
-        "TransferSkipFavorites",
-        {
-            Text = "Skip Favorites",
-            Tooltip = "Recommended ON.",
-            Default = true,
-        }
-    ):OnChanged(function(value)
-
-        TransferState.SkipFavorites =
-            value == true
-
-        TransferBuildMatchingPets(
-            TransferState.MaxPetsPerTrade
-        )
-
-        TransferRefreshStatus()
-    end)
-
-    TransferSafetyBox:AddInput(
-        "TransferMaxPetsPerTrade",
-        {
-            Text = "Max Pets Per Trade",
-            Default = "6",
-            Numeric = true,
-            Finished = true,
-            ClearTextOnFocus = false,
-        }
-    ):OnChanged(function(value)
-
-        TransferState.MaxPetsPerTrade =
-            math.clamp(
-                math.floor(
-                    tonumber(value)
-                    or 6
-                ),
-                1,
-                50
-            )
-
-        TransferBuildMatchingPets(
-            TransferState.MaxPetsPerTrade
-        )
-
-        TransferRefreshStatus()
-    end)
-
-    local TransferTargetDropdown =
-        TransferTargetBox:AddDropdown(
-            "TransferTargetPlayer",
-            {
-                Text = "Target Player",
-                Tooltip = "Choose the alt/player to trade to.",
-                Values = TransferBuildPlayerChoices(),
-                Default = nil,
-                Searchable = true,
-                Multi = false,
-            }
-        )
-
-    TransferState.TargetDropdownRef =
-        TransferTargetDropdown
-
-    TransferTargetDropdown:OnChanged(function(value)
-
-        TransferState.TargetPlayerName =
-            TransferCleanText(value)
-
-        local targetPlayer =
-            TransferResolveTargetPlayer()
-
-        TransferState.TargetUserId =
-            targetPlayer
-            and targetPlayer.UserId
-            or 0
-
-        TransferRefreshStatus()
-    end)
-
-    TransferTargetBox:AddButton({
-        Text = "🔄 Reload Players",
-        Tooltip = "Refresh target player dropdown.",
-        Func = function()
-
-            TransferRefreshDropdowns()
-        end,
-    })
-
-    TransferTargetBox:AddButton({
-        Text = "📨 Send Ticket",
-        Tooltip = "Manual test: SendRequest target player.",
-        Func = function()
-
-            TransferSendTicket()
-        end,
-    })
-
-    TransferTargetBox:AddButton({
-        Text = "✅ Accept Ticket",
-        Tooltip = "Manual test: Accept current incoming trade ticket.",
-        Func = function()
-
-            TransferAcceptTicket()
-        end,
-    })
-
-    TransferTargetBox:AddButton({
-        Text = "❌ Decline Trade",
-        Tooltip = "Manual test: Decline current trade.",
-        Func = function()
-
-            TransferDeclineTrade()
-        end,
-    })
-
-    TransferActionsBox:AddToggle(
-        "TransferAutoConfirmAccept",
-        {
-            Text = "Auto Confirm / Accept",
-            Tooltip = "Reserved for trade worker. Keep OFF while testing.",
-            Default = false,
-        }
-    ):OnChanged(function(value)
-
-        TransferState.AutoConfirmAccept =
-            value == true
-    end)
-
-    TransferActionsBox:AddButton({
-        Text = "🔍 Preview Matches",
-        Tooltip = "Print matching owned pets to console.",
-        Func = function()
-
-            TransferPreview()
-        end,
-    })
-
-    TransferActionsBox:AddButton({
-        Text = "➕ Add Preview Pets",
-        Tooltip = "Manual test: fires AddItem for pets shown by Preview. Requires Dry Run OFF.",
-        Func = function()
-
-            TransferAddPreviewPets()
-        end,
-    })
-
-    TransferActionsBox:AddButton({
-        Text = "✅ Confirm Trade",
-        Tooltip = "Manual test: fires Confirm.",
-        Func = function()
-
-            TransferConfirmTrade()
-        end,
-    })
-
-    TransferActionsBox:AddButton({
-        Text = "🎁 Send Filtered Trade",
-        Tooltip = "Test flow: Preview -> Send Ticket -> Add Preview Pets. Confirm only if Auto Confirm / Accept is ON.",
-        Func = function()
-
-            TransferSendFilteredTradeTest()
-        end,
-    })
-
-    TransferStatusBox:AddLabel(
-        "Dynamic sources:",
-        false
-    )
-
-    TransferStatusBox:AddLabel(
-        "Pets: PetList • Mutations: ListingMutationList",
-        true
-    )
-
-    TransferState.StatusLabel =
-        TransferStatusBox:AddLabel(
-            "Mode: Idle",
-            true
-        )
-
-    TransferState.TargetLabel =
-        TransferStatusBox:AddLabel(
-            "Target: None",
-            true
-        )
-
-    TransferState.MatchedLabel =
-        TransferStatusBox:AddLabel(
-            "Matched Pets: 0",
-            true
-        )
-
-    TransferState.LastResultLabel =
-        TransferStatusBox:AddLabel(
-            "Last Result: None | Sent: 0",
-            true
-        )
-
-    TransferBuildMatchingPets(
-        TransferState.MaxPetsPerTrade
-    )
-
-    TransferRefreshStatus()
-
-    task.spawn(function()
-
-        if not IsGardenWorld() then
-            return
-        end
-
-        for attempt = 1, 25 do
-
-            if not IsCurrentRun() then
-                return
-            end
-
-            local petChoices, mutationChoices, targetChoices =
-                TransferRefreshDropdowns()
-
-            print(
-                "[TRANSFER LOAD]",
-                "attempt:",
-                tostring(attempt),
-                "| pets:",
-                tostring(#petChoices),
-                "| mutations:",
-                tostring(#mutationChoices),
-                "| targets:",
-                tostring(#targetChoices)
-            )
-
-            if #petChoices > 0
-            and #mutationChoices > 0 then
-                break
-            end
-
-            task.wait(0.4)
-        end
-    end)
-end
 --==================================================
 -- EVENTS TAB
 -- Trade World only.
@@ -33952,7 +35773,7 @@ if IsGardenWorld() then
 
         AutoAscensionBox =
             Tabs.Events:AddLeftCollapsibleGroupbox(
-                "🌱 Auto Ascension",
+                "ðŸŒ± Auto Ascension",
                 "sparkles",
                 true
             )
@@ -33961,7 +35782,7 @@ if IsGardenWorld() then
 
         AutoAscensionBox =
             Tabs.Events:AddLeftGroupbox(
-                "🌱 Auto Ascension",
+                "ðŸŒ± Auto Ascension",
                 "sparkles"
             )
     end
@@ -34015,7 +35836,7 @@ end)
         AutoAscensionBox:AddToggle(
             "SpamAscension",
             {
-                Text = "🔴 Spam Ascension",
+                Text = "ðŸ”´ Spam Ascension",
                 Tooltip = "Freezes the 3D game view, fires ascension attempts, then auto-unfreezes when done.",
                 Default = false,
             }
@@ -34142,7 +35963,7 @@ function TruncateAgeBreakerHUDText(text, maxLength)
         return text
     end
 
-    return text:sub(1, maxLength - 1) .. "…"
+    return text:sub(1, maxLength - 1) .. "â€¦"
 end
 
 function FormatAgeBreakerHUDTimer(seconds)
@@ -34382,7 +36203,7 @@ function ResolveAgeBreakerHUDTargetInfo()
     end
 
     if petName == "" then
-        return "No active target", "Age -- → " .. tostring(goalAge or "?")
+        return "No active target", "Age -- â†’ " .. tostring(goalAge or "?")
     end
 
     local targetName =
@@ -34392,7 +36213,7 @@ function ResolveAgeBreakerHUDTargetInfo()
     local ageLine =
         "Age "
         .. tostring(currentAge or "?")
-        .. " → "
+        .. " â†’ "
         .. tostring(goalAge or "?")
 
     return TruncateAgeBreakerHUDText(
@@ -34971,7 +36792,7 @@ function CreateAgeBreakerHUD()
         Enum.Font.GothamBold
 
     title.Text =
-        "⠿ 🧬 Age Breaker"
+        "â ¿ ðŸ§¬ Age Breaker"
 
     title.TextColor3 =
         Color3.fromRGB(245, 240, 255)
@@ -35204,7 +37025,7 @@ function CreateAgeBreakerHUD()
         Enum.Font.GothamBold
 
     targetTitle.Text =
-        "🎯 Target"
+        "ðŸŽ¯ Target"
 
     targetTitle.TextColor3 =
         Color3.fromRGB(180, 190, 255)
@@ -35279,7 +37100,7 @@ function CreateAgeBreakerHUD()
         Enum.Font.GothamMedium
 
     targetAge.Text =
-        "Age -- → ?"
+        "Age -- â†’ ?"
 
     targetAge.TextColor3 =
         Color3.fromRGB(170, 174, 192)
@@ -35319,7 +37140,7 @@ function CreateAgeBreakerHUD()
         Enum.Font.GothamSemibold
 
     pool.Text =
-        "🧪 Pool: 0"
+        "ðŸ§ª Pool: 0"
 
     pool.TextColor3 =
         Color3.fromRGB(215, 218, 230)
@@ -35358,7 +37179,7 @@ function CreateAgeBreakerHUD()
         Enum.Font.GothamSemibold
 
     nextLabel.Text =
-        "🌍 Next: Waiting"
+        "ðŸŒ Next: Waiting"
 
     nextLabel.TextColor3 =
         Color3.fromRGB(215, 218, 230)
@@ -35472,12 +37293,12 @@ function RefreshAgeBreakerHUD()
 
     SetAgeBreakerHUDLabel(
         AgeBreakerHUDPoolLabel,
-        "🧪 Pool: " .. tostring(sacrifices) .. " left"
+        "ðŸ§ª Pool: " .. tostring(sacrifices) .. " left"
     )
 
     SetAgeBreakerHUDLabel(
         AgeBreakerHUDNextLabel,
-        "🌍 Next: " .. ResolveAgeBreakerHUDNextText()
+        "ðŸŒ Next: " .. ResolveAgeBreakerHUDNextText()
     )
 end
 
@@ -35510,7 +37331,7 @@ local ManualJoinHUDToggle =
     VisualBox:AddToggle(
         "ManualJoinHUD",
         {
-            Text = "🧭 Manual Join HUD",
+            Text = "ðŸ§­ Manual Join HUD",
             Default = false,
             Tooltip = "Shows a small floating join box for Grow a Garden or Trade World servers.",
         }
@@ -35564,7 +37385,7 @@ local WatchlistHUDToggle =
     VisualBox:AddToggle(
         "WatchlistHUD",
         {
-            Text = "🔫 Sniper Watchlist HUD",
+            Text = "ðŸ”« Sniper Watchlist HUD",
             Default = false,
         }
     )
@@ -35641,7 +37462,7 @@ local ServerInfoHUDToggle =
     VisualBox:AddToggle(
         "ServerInfoHUD",
         {
-            Text = "🖥️ Server Info HUD",
+            Text = "ðŸ–¥ï¸ Server Info HUD",
             Default = false,
         }
     )
@@ -35673,7 +37494,7 @@ local SniperMonitorHUDToggle =
     VisualBox:AddToggle(
         "SniperMonitorHUD",
         {
-            Text = "🎯 Sniper Monitor HUD",
+            Text = "ðŸŽ¯ Sniper Monitor HUD",
             Default = false,
         }
     )
@@ -35707,7 +37528,7 @@ local AgeBreakerHUDToggle =
     VisualBox:AddToggle(
         "AgeBreakerHUD",
         {
-            Text = "🧬 Age Breaker HUD",
+            Text = "ðŸ§¬ Age Breaker HUD",
             Default = false,
             Tooltip = "Shows Age Breaker timer, target progress, sacrifices left, and next action on-screen.",
         }
@@ -35873,7 +37694,7 @@ CreateWatchlistHUD = function()
         Enum.Font.GothamBold
 
     underline.Text =
-        "━━━━━━━━━━━━━━━━━━━━"
+        "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”"
 
     underline.TextSize =
         9
@@ -36332,7 +38153,7 @@ if ServerInfoPlayersLabel then
     ServerInfoPlayersLabel.Text =
         "Players: "
         .. ResolveServerPlayersText()
-        .. " • JobId: "
+        .. " â€¢ JobId: "
         .. ResolveShortJobId()
 end
 
@@ -36838,7 +38659,7 @@ RefreshSniperMonitorHUD = function()
                 tostring(ResolveAdaptiveBuyWait()) .. "s",
                 "#FFFFFF"
             )
-            .. " • "
+            .. " â€¢ "
             .. ColorText(
                 modeText,
                 LatencyGuard
@@ -36919,43 +38740,43 @@ end
 
 HomePetInventoryLabel =
     DetailsBox:AddLabel(
-        "📦 Pet Inventory: checking...",
+        "ðŸ“¦ Pet Inventory: checking...",
         false
     )
 
 HomeSnipesSessionLabel =
     DetailsBox:AddLabel(
-        "🎯 Snipes This Session: 0",
+        "ðŸŽ¯ Snipes This Session: 0",
         false
     )
 
 HomePlayersLabel =
     DetailsBox:AddLabel(
-        "👥 Players: checking...",
+        "ðŸ‘¥ Players: checking...",
         false
     )
 
 HomeActiveBoothsLabel =
     DetailsBox:AddLabel(
-        "🏪 Active Booths: checking...",
+        "ðŸª Active Booths: checking...",
         false
     )
 
 HomeSessionLabel =
     DetailsBox:AddLabel(
-        "⏱️ Session: 0m 00s",
+        "â±ï¸ Session: 0m 00s",
         false
     )
 
 HomeInventorySafetyLabel =
     DetailsBox:AddLabel(
-        "🛡️ Inventory Safety: checking...",
+        "ðŸ›¡ï¸ Inventory Safety: checking...",
         false
     )
 
 HomeFriendsLabel =
     DetailsBox:AddLabel(
-        "🤝 Friends: OFF • 0 accepted",
+        "ðŸ¤ Friends: OFF â€¢ 0 accepted",
         false
     )
 
@@ -37033,14 +38854,14 @@ RefreshHomeDetails = function()
 
     if HomePetInventoryLabel then
         HomePetInventoryLabel:SetText(
-            "📦 Pet Inventory: "
+            "ðŸ“¦ Pet Inventory: "
             .. tostring(currentPets)
         )
     end
 
     if HomeSnipesSessionLabel then
         HomeSnipesSessionLabel:SetText(
-            "🎯 Snipes This Session: "
+            "ðŸŽ¯ Snipes This Session: "
             .. tostring(
                 math.floor(
                     SafeNumber(
@@ -37063,7 +38884,7 @@ RefreshHomeDetails = function()
             or 0
 
         local playersText =
-            "👥 Players: "
+            "ðŸ‘¥ Players: "
             .. tostring(currentPlayers)
 
         if maxPlayers > 0 then
@@ -37080,14 +38901,14 @@ RefreshHomeDetails = function()
 
     if HomeActiveBoothsLabel then
         HomeActiveBoothsLabel:SetText(
-            "🏪 Active Booths: "
+            "ðŸª Active Booths: "
             .. tostring(CountHomeActiveBooths())
         )
     end
 
     if HomeSessionLabel then
         HomeSessionLabel:SetText(
-            "⏱️ Session: "
+            "â±ï¸ Session: "
             .. FormatHomeSessionDuration(
                 SafeElapsed(ServerInfoStartedAt)
             )
@@ -37126,7 +38947,7 @@ RefreshHomeDetails = function()
                 or 0
 
             local safetyText =
-                "🛡️ Inventory Safety: "
+                "ðŸ›¡ï¸ Inventory Safety: "
 
             if maxPets <= 0 then
 
@@ -37145,7 +38966,7 @@ RefreshHomeDetails = function()
 
                 safetyText =
                     safetyText
-                    .. "Safe • "
+                    .. "Safe â€¢ "
                     .. tostring(remaining)
                     .. " slots left"
             end
@@ -37223,12 +39044,12 @@ end
 --==================================================
 
 local GatewayStatus = GatewayBox:AddLabel(
-    "Gateway • Idle"
+    "Gateway â€¢ Idle"
 )
 
 local function SetGatewayStatus(text)
     GatewayStatus:SetText(
-        "Gateway • " .. tostring(text)
+        "Gateway â€¢ " .. tostring(text)
     )
 end
 
@@ -37478,7 +39299,7 @@ GatewayInput:OnChanged(function(text)
     if parsed.Mode == "PrivateLink" then
 
         SetGatewayStatus(
-            "Private link detected • "
+            "Private link detected â€¢ "
             .. tostring(placeName)
         )
 
@@ -37488,7 +39309,7 @@ GatewayInput:OnChanged(function(text)
     if parsed.Mode == "PublicInstance" then
 
         SetGatewayStatus(
-            "Valid server • "
+            "Valid server â€¢ "
             .. tostring(placeName)
         )
 
@@ -37675,7 +39496,7 @@ local function JoinParsedServer(parsed)
             parsed.Code
 
         SetGatewayStatus(
-            "Private link copied • "
+            "Private link copied â€¢ "
             .. tostring(placeName)
         )
 
@@ -37962,7 +39783,7 @@ local function RefreshManualJoinHUDValidation()
     if parsed.Mode == "PrivateLink" then
 
         SetManualJoinHUDStatus(
-            "Private link detected • "
+            "Private link detected â€¢ "
             .. tostring(placeName),
             "Warn"
         )
@@ -37973,7 +39794,7 @@ local function RefreshManualJoinHUDValidation()
     if parsed.Mode == "PublicInstance" then
 
         SetManualJoinHUDStatus(
-            "Ready • "
+            "Ready â€¢ "
             .. tostring(placeName),
             "Good"
         )
@@ -38144,7 +39965,7 @@ local function CreateManualJoinHUD()
         Enum.Font.GothamBold
 
     title.Text =
-        "🧭 Manual Join"
+        "ðŸ§­ Manual Join"
 
     title.TextColor3 =
         Color3.fromRGB(255, 235, 170)
@@ -38592,7 +40413,7 @@ end
 --==================================================
 
 GatewayBox:AddButton({
-    Text = "📎 Copy Current Server",
+    Text = "ðŸ“Ž Copy Current Server",
     Func = function()
         if ScriptState.ForceStopped then
             SetGatewayStatus(
@@ -38624,7 +40445,7 @@ GatewayBox:AddButton({
 })
 
 GatewayBox:AddButton({
-    Text = "↺ Reconnect Last Server",
+    Text = "â†º Reconnect Last Server",
     Func = function()
         if ScriptState.ForceStopped then
             SetGatewayStatus(
@@ -38652,7 +40473,7 @@ end
 })
 
 GatewayBox:AddButton({
-    Text = "🚪 Connect",
+    Text = "ðŸšª Connect",
     Tooltip = "Join target server instance",
     Func = function()
         if ScriptState.ForceStopped then
@@ -38758,9 +40579,9 @@ local function RefreshAntiAltStatusLabel()
             and "enabled"
             or "disabled"
         )
-        .. " • users "
+        .. " â€¢ users "
         .. tostring(userCount)
-        .. " • blocked servers "
+        .. " â€¢ blocked servers "
         .. tostring(serverCount)
 
     if lastName
@@ -38813,7 +40634,7 @@ local AntiAltToggle =
     AntiAltBox:AddToggle(
         "AntiAltEnabled",
         {
-            Text = "🛡️ Enable Anti Alt",
+            Text = "ðŸ›¡ï¸ Enable Anti Alt",
             Default = false,
             Tooltip = "Checks the current server for avoided users and hops away when detected.",
         }
@@ -38847,7 +40668,7 @@ local AntiAltImmediateHopToggle =
     AntiAltBox:AddToggle(
         "AntiAltImmediateHop",
         {
-            Text = "🚀 Hop If Detected",
+            Text = "ðŸš€ Hop If Detected",
             Default = true,
             Tooltip = "If an avoided user is in the server, HOLY will hop when no buy is active.",
         }
@@ -38866,7 +40687,7 @@ AntiAltImmediateHopToggle:OnChanged(function(v)
 end)
 
 AntiAltBox:AddButton({
-    Text = "➕ Add To Avoid List",
+    Text = "âž• Add To Avoid List",
     Tooltip = "Adds the typed UserId/username to the saved avoid-list. Usernames are converted to UserIds once.",
 
     Func = function()
@@ -38917,7 +40738,7 @@ AntiAltBox:AddButton({
 })
 
 AntiAltBox:AddButton({
-    Text = "➖ Remove Typed User",
+    Text = "âž– Remove Typed User",
     Tooltip = "Removes the typed UserId/username from the saved avoid-list.",
 
     Func = function()
@@ -38962,7 +40783,7 @@ AntiAltBox:AddButton({
 })
 
 AntiAltBox:AddButton({
-    Text = "🧪 Check Current Server",
+    Text = "ðŸ§ª Check Current Server",
     Tooltip = "Manually checks if an avoided user is in this server.",
 
     Func = function()
@@ -39009,7 +40830,7 @@ AntiAltBox:AddButton({
 })
 
 AntiAltBox:AddButton({
-    Text = "🧹 Clear Avoid List",
+    Text = "ðŸ§¹ Clear Avoid List",
     Tooltip = "Clears all saved avoided users. This does not clear blocked server JobIds.",
 
     Func = function()
@@ -39028,7 +40849,7 @@ AntiAltBox:AddButton({
 })
 
 AntiAltBox:AddButton({
-    Text = "🧹 Clear Blocked Servers",
+    Text = "ðŸ§¹ Clear Blocked Servers",
     Tooltip = "Clears JobIds that were blocked after detecting avoided users.",
 
     Func = function()
@@ -39066,12 +40887,12 @@ if not IsTradeWorld() then
     })
 
     HomeBox:AddLabel(
-        "🌱 Trade World automation is disabled here.",
+        "ðŸŒ± Trade World automation is disabled here.",
         true
     )
 
     HomeBox:AddButton({
-        Text = "🌐 Join Trade World",
+        Text = "ðŸŒ Join Trade World",
         Tooltip = "Teleport to Grow a Garden Trade World.",
         Func = function()
 
@@ -39091,7 +40912,7 @@ local StartToggle =
     HomeBox:AddToggle(
         "StartSystem",
         {
-            Text = "⚡ Activate Sniper",
+            Text = "âš¡ Activate Sniper",
             Default = false,
         }
     )
@@ -39144,7 +40965,7 @@ local SniperDryRunToggle =
     HomeBox:AddToggle(
         "SniperDryRun",
         {
-            Text = "🧪 Dry Run",
+            Text = "ðŸ§ª Dry Run",
             Tooltip = "Test mode. HOLY scans and prints matching pets, but will not buy anything.",
             Default = SniperState.DryRun == true,
         }
@@ -39192,7 +41013,7 @@ local SniperAutoHopToggle =
     HomeBox:AddToggle(
         "SniperAutoHop",
         {
-            Text = "🚀 Sniper Auto Hop",
+            Text = "ðŸš€ Sniper Auto Hop",
             Default = false,
         }
     )
@@ -39262,7 +41083,7 @@ local SmartScannerToggle =
     HomeBox:AddToggle(
         "SmartScannerEnabled",
         {
-            Text = "🧠 Smart Scanner",
+            Text = "ðŸ§  Smart Scanner",
             Default = SniperState.SmartScannerEnabled == true,
             Tooltip = "Experimental efficient scanner. Skips repeated unchanged listings, focuses new/changed listings, and buys the best match first. OFF = classic stable scanner.",
         }
@@ -39311,7 +41132,7 @@ local FilteredPetScannerToggle =
     HomeBox:AddToggle(
         "FilteredPetScanner",
         {
-            Text = "🔍 Filtered Pet Scanner",
+            Text = "ðŸ” Filtered Pet Scanner",
             Default = SniperState.FilteredPetScanner == true,
             Tooltip = "Skips booth pets whose base pet name is not in your sniper watchlists. Best for laggy 500-700 pet servers.",
         }
@@ -39368,7 +41189,7 @@ local ExactFilterScannerToggle =
     HomeBox:AddToggle(
         "ExactFilterScanner",
         {
-            Text = "💎 Exact Filter Scanner",
+            Text = "ðŸ’Ž Exact Filter Scanner",
             Default = SniperState.ExactFilterScanner == true,
             Tooltip = "Only keeps listings that pass sniper pet name, max price, and min weight rules before deeper scanning.",
         }
@@ -39415,7 +41236,7 @@ local FavoriteWatchToggle =
     HomeBox:AddToggle(
         "WatchFavoritedFilterMatches",
         {
-            Text = "❤️ Watch Favorited Matches",
+            Text = "â¤ï¸ Watch Favorited Matches",
             Default = SniperState.WatchFavoritedFilterMatches == true,
             Tooltip = "Watches favorited pets that match your sniper filters. If seller unfavorites later, HOLY can snipe it.",
         }
@@ -39591,15 +41412,15 @@ for index = 1, 5 do
 
                 local detail =
                     tostring(hit.PetName or "Unknown")
-                    .. " • "
+                    .. " â€¢ "
                     .. tostring(hit.OwnerName or "Unknown")
-                    .. " • "
+                    .. " â€¢ "
                     .. tostring(hit.Status or hit.Source or "Target")
 
                 if hit.Price then
                     detail =
                         detail
-                        .. " • "
+                        .. " â€¢ "
                         .. FormatTargetPetsHopListingPrice(hit.Listing or hit)
                         .. "T"
                 end
@@ -39858,7 +41679,7 @@ function RefreshHuntingStatusPanel()
 
         selectedText =
             selectedText
-            .. " • "
+            .. " â€¢ "
             .. table.concat(preview, ", ")
 
         if #targets > 2 then
@@ -39885,9 +41706,9 @@ function RefreshHuntingStatusPanel()
         foundCount > 0
         and (
             tostring(SafeNumber(state.LastBackpackCount, 0))
-            .. " backpack • "
+            .. " backpack â€¢ "
             .. tostring(SafeNumber(state.LastGoodListingCount, 0))
-            .. " good • "
+            .. " good â€¢ "
             .. tostring(SafeNumber(state.LastBadListingCount, 0))
             .. " bad"
         )
@@ -39917,7 +41738,7 @@ function RefreshHuntingStatusPanel()
     if state.SellerAfkCheck == true then
 
         afkText =
-            "On • "
+            "On â€¢ "
             .. tostring(
                 math.floor(
                     SafeNumber(
@@ -39933,7 +41754,7 @@ function RefreshHuntingStatusPanel()
 
             afkText =
                 afkText
-                .. " • skipped "
+                .. " â€¢ skipped "
                 .. tostring(state.LastAfkSkippedPlayer)
         end
     else
@@ -40013,7 +41834,7 @@ local TargetPetsHopToggle =
     HuntingTargetBox:AddToggle(
         "TargetPetsHop",
         {
-            Text = "⚡ Target Pets Hop",
+            Text = "âš¡ Target Pets Hop",
             Default =
                 TargetPetsHopState
                 and TargetPetsHopState.Enabled == true
@@ -41676,7 +43497,7 @@ function TeleportToOwnedBooth()
         if data and data.Booths then
             for _, booth in pairs(data.Booths) do
                 if booth.Owner and tostring(booth.Owner):find(playerId) then
-                    print("[Booth] Ownership confirmed → teleporting")
+                    print("[Booth] Ownership confirmed â†’ teleporting")
 
 
 
@@ -44308,8 +46129,8 @@ function FormatOwnBoothListedPetLine(index, item)
     local icon =
         age
         and age >= 100
-        and "★"
-        or "•"
+        and "â˜…"
+        or "â€¢"
 
     return string.format(
     "%s %-30s %9s %7s",
@@ -46375,10 +48196,10 @@ function FormatListingMutationDisplay(value)
         )
 
     if mutation == "---" then
-        return "🧬 Any"
+        return "ðŸ§¬ Any"
     end
 
-    return "🧬 " .. tostring(mutation)
+    return "ðŸ§¬ " .. tostring(mutation)
 end
 
 function FormatListingFilterLine(index, filter)
@@ -46449,7 +48270,7 @@ function FormatListingFilterLine(index, filter)
             return text
         end
 
-        return text:sub(1, maxLength - 1) .. "…"
+        return text:sub(1, maxLength - 1) .. "â€¦"
     end
 
     local mutation =
@@ -47237,7 +49058,7 @@ function QueueListingPet(pet, filter)
 
     print(
         string.format(
-            "[LISTINGS QUEUE] Added → %s | %s tokens | Queue: %s",
+            "[LISTINGS QUEUE] Added â†’ %s | %s tokens | Queue: %s",
             tostring(pet.ToolName),
             tostring(pet.ListingPrice),
             tostring(#ListingsState.ListingQueue)
@@ -48173,7 +49994,7 @@ ListingsState.PreserveVisualTagsOnNextDisable =
     end
 end
 --==================================================
--- BOOTH TAB → AUTOMATION (UI ONLY)
+-- BOOTH TAB â†’ AUTOMATION (UI ONLY)
 --==================================================
 function BuildBoothTab()
 
@@ -48194,14 +50015,14 @@ if canLeftCollapse then
 
     BoothBox =
         Tabs.Booth:AddLeftCollapsibleGroupbox(
-            "⚡ Booth Automation",
+            "âš¡ Booth Automation",
             "zap",
             true
         )
 
     BoothServerBox =
         Tabs.Booth:AddLeftCollapsibleGroupbox(
-            "🌍 Server Cycle",
+            "ðŸŒ Server Cycle",
             "server",
             false
         )
@@ -48212,13 +50033,13 @@ else
 
     BoothBox =
         Tabs.Booth:AddLeftGroupbox(
-            "⚡ Booth Automation",
+            "âš¡ Booth Automation",
             "zap"
         )
 
     BoothServerBox =
         Tabs.Booth:AddLeftGroupbox(
-            "🌍 Server Cycle",
+            "ðŸŒ Server Cycle",
             "server"
         )
 end
@@ -48227,14 +50048,14 @@ if canRightCollapse then
 
     BoothCustomizationBox =
         Tabs.Booth:AddRightCollapsibleGroupbox(
-            "🎨 Booth Showcase",
+            "ðŸŽ¨ Booth Showcase",
             "wand",
             true
         )
 
     BoothPromoteBox =
         Tabs.Booth:AddRightCollapsibleGroupbox(
-            "💬 Booth Promote",
+            "ðŸ’¬ Booth Promote",
             "message-circle",
             false
         )
@@ -48245,19 +50066,19 @@ else
 
     BoothCustomizationBox =
         Tabs.Booth:AddRightGroupbox(
-            "🎨 Booth Showcase",
+            "ðŸŽ¨ Booth Showcase",
             "wand"
         )
 
     BoothPromoteBox =
         Tabs.Booth:AddRightGroupbox(
-            "💬 Booth Promote",
+            "ðŸ’¬ Booth Promote",
             "message-circle"
         )
 end
 
 local AutoClaimToggle = BoothBox:AddToggle("AutoClaimBooth", {
-    Text = "🎪 Auto Claim Booth",
+    Text = "ðŸŽª Auto Claim Booth",
     Default = false,
 })
 
@@ -48287,7 +50108,7 @@ local SmartReclaimToggle =
     BoothBox:AddToggle(
         "SmartReclaimCloserBooth",
         {
-            Text = "🎯 Smart Reclaim Better Booth",
+            Text = "ðŸŽ¯ Smart Reclaim Better Booth",
             Tooltip = "If HOLY claims a booth too far from middle, it unclaims and claims a closer free booth if available.",
             Default = BoothAuto.SmartReclaimCloserBooth == true,
         }
@@ -48387,7 +50208,7 @@ local EquipPetToggle =
     BoothCustomizationBox:AddToggle(
         "EquipPet",
         {
-            Text = "🎭 Enable Showcase",
+            Text = "ðŸŽ­ Enable Showcase",
             Tooltip = "Equips only the listed pets you selected below.",
             Default = BoothPetState.Enabled == true,
         }
@@ -48453,7 +50274,7 @@ local ShowcaseRotationToggle =
     BoothCustomizationBox:AddToggle(
         "ShowcaseRotationEnabled",
         {
-            Text = "🔁 Rotate Pets",
+            Text = "ðŸ” Rotate Pets",
             Tooltip = "Rotates only between the pets selected in the dropdown.",
             Default = BoothPetState.RotationEnabled == true,
         }
@@ -48759,7 +50580,7 @@ BoothSkinDropdown:OnChanged(function(value)
 end)
 
 local AutoTpToggle = BoothBox:AddToggle("AutoTpBooth", {
-    Text = "📍 Auto Teleport Booth",
+    Text = "ðŸ“ Auto Teleport Booth",
     Tooltip = "Teleports back only after you move too far from your booth.",
     Default = false,
 })
@@ -48800,7 +50621,7 @@ AutoTpToggle:OnChanged(function(enabled)
 end)
 
 local LockBehindBoothToggle = BoothBox:AddToggle("LockBehindBooth", {
-    Text = "🔒 Lock Behind Booth",
+    Text = "ðŸ”’ Lock Behind Booth",
     Tooltip = "Hard-locks your character behind your booth. Requires Auto Teleport Booth.",
     Default = false,
 })
@@ -48909,7 +50730,7 @@ end)
 BoothPromoteBox:AddDropdown(
     "PromoteSource",
     {
-        Text = "🎯 Promote Source",
+        Text = "ðŸŽ¯ Promote Source",
 
         Values = {
             "Best Listed Pet",
@@ -48938,7 +50759,7 @@ end)
 BoothPromoteBox:AddDropdown(
     "PromoteMode",
     {
-        Text = "🔁 Promote Mode",
+        Text = "ðŸ” Promote Mode",
 
         Values = {
             "Built-in Rotation",
@@ -48964,7 +50785,7 @@ end)
 BoothPromoteBox:AddInput(
     "PromoteInterval",
     {
-        Text = "⏱️ Promote Delay",
+        Text = "â±ï¸ Promote Delay",
         Default = tostring(BoothAuto.PromoteInterval or 40),
         Numeric = true,
         Finished = true,
@@ -48993,7 +50814,7 @@ end)
 BoothPromoteBox:AddInput(
     "CustomPromoteCount",
     {
-        Text = "💬 Message Count",
+        Text = "ðŸ’¬ Message Count",
         Default = tostring(BoothAuto.CustomPromoteCount or 4),
         Numeric = true,
         Finished = true,
@@ -49082,7 +50903,7 @@ for index = 1, 10 do
         BoothPromoteBox:AddInput(
             "CustomPromoteMessage" .. tostring(index),
             {
-                Text = "💬 Custom Message " .. tostring(index),
+                Text = "ðŸ’¬ Custom Message " .. tostring(index),
                 Default = tostring(defaultMessage or ""),
                 Finished = true,
                 ClearTextOnFocus = false,
@@ -49103,7 +50924,7 @@ for index = 1, 10 do
 end
 
 BoothPromoteBox:AddLabel(
-    "✨ Placeholders: %pet%  %mut%  %kg%  %price%"
+    "âœ¨ Placeholders: %pet%  %mut%  %kg%  %price%"
 )
 
 RefreshCustomPromoteMessageInputs()
@@ -49161,7 +50982,7 @@ do
     EventsBox:AddToggle(
         "AutoBuyBeeEgg",
         {
-            Text = "🐝 Auto Buy Bee Eggs",
+            Text = "ðŸ Auto Buy Bee Eggs",
             Tooltip = "Buys selected Bee Eggs from Trade World",
             Default = false,
         }
@@ -50021,7 +51842,7 @@ end
 
 --------------------------------------------------
 local AutoHopToggle = BoothServerBox:AddToggle("AutoServerHop", {
-    Text = "🌍 Join New Server",
+    Text = "ðŸŒ Join New Server",
     Tooltip = "Joins new server every X min",
     Default = false,
 })
@@ -50037,7 +51858,7 @@ AutoHopToggle:OnChanged(function(enabled)
 end)
 
 local HopMinutesInput = BoothServerBox:AddInput("HopMinutes", {
-    Text = "⌛ Minutes",
+    Text = "âŒ› Minutes",
     Default = "10",
     Numeric = true,
     Finished = true,
@@ -50061,7 +51882,7 @@ local AddHopTimeAfterSaleToggle =
     BoothServerBox:AddToggle(
         "AddHopTimeAfterSale",
         {
-            Text = "⏱️ Add Hop Time After Sale",
+            Text = "â±ï¸ Add Hop Time After Sale",
             Tooltip = "Adds extra time before server hopping when someone buys from your booth.",
             Default = true,
         }
@@ -50089,7 +51910,7 @@ local HopTimeAfterSaleInput =
     BoothServerBox:AddInput(
         "HopTimeAfterSaleMinutes",
         {
-            Text = "⏳ Extra Sale Minutes",
+            Text = "â³ Extra Sale Minutes",
             Default = "1",
             Numeric = true,
             Finished = true,
@@ -50128,7 +51949,7 @@ local StackSaleTimeToggle =
     BoothServerBox:AddToggle(
         "StackSaleTime",
         {
-            Text = "➕ Stack Sale Time",
+            Text = "âž• Stack Sale Time",
             Tooltip = "If enabled, every sale adds more time. If disabled, each sale refreshes the timer.",
             Default = false,
         }
@@ -50248,7 +52069,7 @@ RefreshWatchlist = nil
 --==================================================
 -- SERVER TAB
 -- Server selection, hop behavior, and bad-server memory.
--- This replaces the old Sniper → Server sub-tab.
+-- This replaces the old Sniper â†’ Server sub-tab.
 --==================================================
 
 function BuildServerTab()
@@ -50261,14 +52082,14 @@ function BuildServerTab()
 
         ServerSelectionBox =
             Tabs.Server:AddLeftCollapsibleGroupbox(
-                "🌐 Server Selection",
+                "ðŸŒ Server Selection",
                 "server",
                 true
             )
 
         ServerMemoryBox =
             Tabs.Server:AddLeftCollapsibleGroupbox(
-                "🧠 Server Memory",
+                "ðŸ§  Server Memory",
                 "brain",
                 true
             )
@@ -50277,13 +52098,13 @@ function BuildServerTab()
 
         ServerSelectionBox =
             Tabs.Server:AddLeftGroupbox(
-                "🌐 Server Selection",
+                "ðŸŒ Server Selection",
                 "server"
             )
 
         ServerMemoryBox =
             Tabs.Server:AddLeftGroupbox(
-                "🧠 Server Memory",
+                "ðŸ§  Server Memory",
                 "brain"
             )
     end
@@ -50292,7 +52113,7 @@ function BuildServerTab()
 
         ServerInfoBox =
             Tabs.Server:AddRightCollapsibleGroupbox(
-                "📡 Current Server",
+                "ðŸ“¡ Current Server",
                 "info",
                 true
             )
@@ -50301,7 +52122,7 @@ function BuildServerTab()
 
         ServerInfoBox =
             Tabs.Server:AddRightGroupbox(
-                "📡 Current Server",
+                "ðŸ“¡ Current Server",
                 "info"
             )
     end
@@ -50316,7 +52137,7 @@ function BuildServerTab()
         ServerSelectionBox:AddInput(
             "SniperMaxServerPlayers",
             {
-                Text = "👥 Max Server Players",
+                Text = "ðŸ‘¥ Max Server Players",
                 Default = tostring(SniperState.MaxServerPlayers),
                 Numeric = true,
                 Finished = true,
@@ -50351,7 +52172,7 @@ function BuildServerTab()
         ServerSelectionBox:AddDropdown(
             "SniperServerHopMode",
             {
-                Text = "⇄ Server Hop Mode",
+                Text = "â‡„ Server Hop Mode",
                 Values = {
                     "Fullest Under Max",
                     "Balanced",
@@ -50379,7 +52200,7 @@ function BuildServerTab()
         ServerSelectionBox:AddInput(
             "SniperServerHopPages",
             {
-                Text = "📄 Server Hop Pages",
+                Text = "ðŸ“„ Server Hop Pages",
                 Tooltip = "How many Roblox server-list pages to fetch. 1 is fastest; higher gives better server selection but slower hops.",
                 Default = tostring(SniperState.ServerHopPages or 1),
                 Numeric = true,
@@ -50635,11 +52456,11 @@ end
 
 function BuildSniperTab()
 --==================================================
--- SNIPER TAB → UI
+-- SNIPER TAB â†’ UI
 --==================================================
 
 --==================================================
--- SNIPER TAB → CLEAN TABBOX LAYOUT
+-- SNIPER TAB â†’ CLEAN TABBOX LAYOUT
 -- Left side: Configuration + Add Filter
 -- Right side: Watchlist + Egg Focus
 --==================================================
@@ -50763,7 +52584,7 @@ local ScanSpeedDropdown =
     SniperConfigBox:AddDropdown(
         "SniperScanSpeedMode",
         {
-            Text = "⚡ Scan Speed",
+            Text = "âš¡ Scan Speed",
             Tooltip = "Lower delay scans faster but can cause Server Shutdowns. Fast is recommended.",
             Values = {
                 "Max Speed",
@@ -50791,7 +52612,7 @@ ScanSpeedDropdown:OnChanged(function(value)
     HolyNotify(
         "Scan Speed Updated",
         tostring(SniperState.ScanSpeedMode)
-            .. " • "
+            .. " â€¢ "
             .. tostring(interval)
             .. "s interval",
         "zap",
@@ -50803,7 +52624,7 @@ local BoothDataRefreshDropdown =
     SniperConfigBox:AddDropdown(
         "BoothDataRefreshMode",
         {
-            Text = "📡 Booth Data Refresh",
+            Text = "ðŸ“¡ Booth Data Refresh",
             Tooltip = "How fast HOLY refreshes booth listings. Faster can snipe sooner but may cause lag. Recommended: Fast.",
             Values = {
                 "Aggressive",
@@ -50831,7 +52652,7 @@ BoothDataRefreshDropdown:OnChanged(function(value)
     HolyNotify(
         "Booth Data Refresh Updated",
         tostring(SniperState.BoothDataRefreshMode)
-            .. " • "
+            .. " â€¢ "
             .. tostring(interval)
             .. "s interval",
         "radio",
@@ -50850,7 +52671,7 @@ local StayAfterSnipeToggle =
     SniperConfigBox:AddToggle(
         "StayAfterSnipe",
         {
-            Text = "⏱️ Stay After Snipe",
+            Text = "â±ï¸ Stay After Snipe",
             Tooltip = "Stay in the server a little longer after Holy snipes a pet.",
             Default = SniperState.StayAfterSnipe == true,
         }
@@ -50939,7 +52760,7 @@ local InventoryLimitToggle =
     SniperConfigBox:AddToggle(
         "StopAtPetInventoryLimit",
         {
-            Text = "📦 Stop At Pet Limit",
+            Text = "ðŸ“¦ Stop At Pet Limit",
             Tooltip = "Stops Holy from buying when your visible pet inventory reaches the selected limit.",
             Default = SniperState.StopAtPetInventoryLimit == false,
         }
@@ -51571,7 +53392,7 @@ WatchlistViewButton:AddButton({
 
 WatchlistInfoLabel =
     SniperWatchlistBox:AddLabel(
-        "Watchlist 1 • 0 filters • Page 1/1",
+        "Watchlist 1 â€¢ 0 filters â€¢ Page 1/1",
         false
     )
 
@@ -51594,7 +53415,7 @@ end
 
 local PageButton =
     SniperWatchlistBox:AddButton({
-        Text = "‹ Prev",
+        Text = "â€¹ Prev",
 
         Func = function()
 
@@ -51611,7 +53432,7 @@ local PageButton =
     })
 
 PageButton:AddButton({
-    Text = "Next ›",
+    Text = "Next â€º",
 
     Func = function()
 
@@ -51924,7 +53745,7 @@ WatchlistImportButton:AddButton({
 
 --==================================================
 -- PRICE SYNC TAB
--- Listing Filters → Sniper Watchlist MaxPrice.
+-- Listing Filters â†’ Sniper Watchlist MaxPrice.
 -- Exact pet names only.
 --==================================================
 
@@ -52028,7 +53849,7 @@ end
 --==================================================
 
 SniperWatchlistBox:AddButton({
-    Text = "🗑 Clear Watchlist",
+    Text = "ðŸ—‘ Clear Watchlist",
     Tooltip = "Clear the currently viewed watchlist only.",
 
     Func = function()
@@ -52398,7 +54219,7 @@ RefreshWatchlistHUD = function()
     local function FormatCompactPrice(value)
 
         if value == math.huge then
-            return "∞"
+            return "âˆž"
         end
 
         local number =
@@ -52454,7 +54275,7 @@ RefreshWatchlistHUD = function()
                 string.format("%.1f", number)
         end
 
-        return "≥"
+        return "â‰¥"
             .. text
             .. suffix
     end
@@ -52678,7 +54499,7 @@ RefreshWatchlistHUD = function()
 
     RenderSection(
         1,
-        "Ⅰ  WATCHLIST 1"
+        "â…   WATCHLIST 1"
     )
 
     if visibleRows > 0
@@ -52700,7 +54521,7 @@ RefreshWatchlistHUD = function()
 
     RenderSection(
         2,
-        "Ⅱ  WATCHLIST 2"
+        "â…¡  WATCHLIST 2"
     )
 
     if visibleRows <= 0 then
@@ -52878,9 +54699,9 @@ local watchlistName =
 
     WatchlistInfoLabel:SetText(
         watchlistName
-            .. " • "
+            .. " â€¢ "
             .. tostring(total)
-            .. " filters • Page "
+            .. " filters â€¢ Page "
             .. tostring(WatchlistPage)
             .. "/"
             .. tostring(maxPages)
@@ -52986,7 +54807,7 @@ end
 local function FormatSniperConfirmMutation(filter)
 
     if type(filter) ~= "table" then
-        return "Off — buys normal and mutated pets"
+        return "Off â€” buys normal and mutated pets"
     end
 
     local mutationText =
@@ -52995,11 +54816,11 @@ local function FormatSniperConfirmMutation(filter)
         or tostring(filter.Mutation or "Off")
 
     if mutationText == "Off" then
-        return "Off — buys normal and mutated pets"
+        return "Off â€” buys normal and mutated pets"
     end
 
     if mutationText == "Mutated" then
-        return "Mutated Only — skips normal pets"
+        return "Mutated Only â€” skips normal pets"
     end
 
     return mutationText
@@ -53593,7 +55414,7 @@ SniperFilterBox:AddButton({
 
 end
 --==================================================
--- WEBHOOK TAB → CONFIGURATION (UI ONLY)
+-- WEBHOOK TAB â†’ CONFIGURATION (UI ONLY)
 --==================================================
 local WebhookBox
 
@@ -54037,7 +55858,7 @@ CreateSuccessEmbed = function(listing, toolName, source)
 
 local title =
     string.format(
-        "⚡ SNIPED • %s [Age %s] [%s]",
+        "âš¡ SNIPED â€¢ %s [Age %s] [%s]",
         tostring(confirmedPetName),
         tostring(confirmedAge or "Unknown"),
         FormatWebhookWeightKG(confirmedWeight)
@@ -54059,7 +55880,7 @@ local title =
 
 
                 {
-                    name = "💰 Bought For",
+                    name = "ðŸ’° Bought For",
                     value =
                     tostring(listing.Price or 0)
                     .. " Tokens",
@@ -54067,14 +55888,14 @@ local title =
                 },
 
                 {
-                    name = "🧬 Mutation",
+                    name = "ðŸ§¬ Mutation",
                     value =
                         tostring(mutationText or "Unknown"),
                     inline = true,
                 },
 
                 {
-                    name = "⚖️ BaseWeight",
+                    name = "âš–ï¸ BaseWeight",
                     value =
                         FormatWebhookBaseWeight(
                             listing.BaseWeight
@@ -54083,14 +55904,14 @@ local title =
                 },
 
                 {
-                    name = "👤 Seller",
+                    name = "ðŸ‘¤ Seller",
                     value =
                         tostring(sellerName),
                     inline = true,
                 },
 
                 {
-    name = "🎒 Pet Inventory",
+    name = "ðŸŽ’ Pet Inventory",
     value =
         type(FormatPersonalWebhookPetInventoryText) == "function"
         and FormatPersonalWebhookPetInventoryText()
@@ -54099,7 +55920,7 @@ local title =
 },
 
                 {
-                    name = "🌍 Server",
+                    name = "ðŸŒ Server",
                     value =
                         "```lua\n"
                         .. tostring(game.PlaceId)
@@ -54153,7 +55974,7 @@ CreateBoothSaleEmbed = function(sale)
             fields = {
 
                 {
-                    name = "💰 Sold For",
+                    name = "ðŸ’° Sold For",
                     value = string.format(
                         "%s Tokens",
                         tostring(
@@ -54189,7 +56010,7 @@ CreateBoothSaleEmbed = function(sale)
                 },
 
                 {
-                    name = "✨ Token Balance",
+                    name = "âœ¨ Token Balance",
                     value = string.format(
                         "%s Tokens",
                         tostring(GetTokenBalance())
@@ -54198,7 +56019,7 @@ CreateBoothSaleEmbed = function(sale)
                 },
 
                 {
-                    name = "🎒 Pet Inventory",
+                    name = "ðŸŽ’ Pet Inventory",
                     value =
                         type(FormatPersonalWebhookPetInventoryText) == "function"
                         and FormatPersonalWebhookPetInventoryText()
@@ -55086,7 +56907,7 @@ function BuildListingsTab()
     --==================================================
 
     ListingSetupBox:AddLabel(
-    "⚠️ Review Preview before adding.",
+    "âš ï¸ Review Preview before adding.",
     false
 )
 
@@ -55293,7 +57114,7 @@ local function RefreshListingSetupInputLabels()
 
     if ListingPriceInput then
         ListingPriceInput:SetText(
-            "🟢 Tokens  "
+            "ðŸŸ¢ Tokens  "
             .. FormatListingSetupValue(
                 ListingsState.Price,
                 "-"
@@ -55525,7 +57346,7 @@ end)
     ListingSetupBox:AddInput(
             "ListingPrice",
             {
-                Text = "🟢 Tokens",
+                Text = "ðŸŸ¢ Tokens",
                 Placeholder = "required",
                 Default = "",
                 Numeric = true,
@@ -55633,7 +57454,7 @@ print(
         ListingSafetyBox:AddToggle(
             "ListingAllowLowPrice",
             {
-                Text = "⚠️ Allow Low Price",
+                Text = "âš ï¸ Allow Low Price",
                 Tooltip = "Required before Holy can list pets below 100 tokens.",
                 Default = false,
             }
@@ -55657,7 +57478,7 @@ print(
         ListingSafetyBox:AddToggle(
             "ListingAutoUnfavorite",
             {
-                Text = "❤️ Auto Unfavorite",
+                Text = "â¤ï¸ Auto Unfavorite",
                 Default = false,
             }
         )
@@ -55679,7 +57500,7 @@ local StopAtFullBoothToggle =
     ListingSafetyBox:AddToggle(
         "ListingStopAtFullBooth",
         {
-            Text = "🛑 Stop at Full Booth",
+            Text = "ðŸ›‘ Stop at Full Booth",
             Tooltip = "Stops AutoList when your booth is 50/50 and resumes when a slot opens.",
             Default = true,
         }
@@ -55714,7 +57535,7 @@ local KeepRunningToggle =
     ListingSafetyBox:AddToggle(
         "ListingKeepRunning",
         {
-            Text = "♾️ Keep Running",
+            Text = "â™¾ï¸ Keep Running",
             Tooltip = "ON = AutoList keeps watching. OFF = AutoList stops when all current matching pets are handled.",
             Default = false,
         }
@@ -55759,7 +57580,7 @@ end)
         ListingActionsBox:AddDropdown(
             "ListingSpeedMode",
             {
-                Text = "⚡ Listing Speed",
+                Text = "âš¡ Listing Speed",
                 Tooltip = "Controls AutoList scan and CreateListing cooldown.",
                 Values = {
                 "Adaptive",
@@ -55790,7 +57611,7 @@ end)
         HolyNotify(
             "Listing Speed Updated",
             tostring(ListingsState.ListingSpeedMode)
-                .. " • cooldown "
+                .. " â€¢ cooldown "
                 .. tostring(ResolveListingCreateCooldown())
                 .. "s",
             "zap",
@@ -55849,7 +57670,7 @@ end)
         ListingActionsBox:AddToggle(
             "EnableAutoList",
             {
-                Text = "⚡ Start AutoList",
+                Text = "âš¡ Start AutoList",
                 Default = false,
             }
         )
@@ -56214,7 +58035,7 @@ ListingsState.Status =
 
     local BoothListedHeaderLabel =
         ListingBoothBox:AddLabel(
-            "0 listings • Page 1/1 • Not synced",
+            "0 listings â€¢ Page 1/1 â€¢ Not synced",
             false
         )
 
@@ -56515,7 +58336,7 @@ local function CreateBoothTableRow(rowIndex)
             row,
             UDim2.fromOffset(10, 0),
             UDim2.new(1, -178, 1, 0),
-            "• -",
+            "â€¢ -",
             Enum.TextXAlignment.Left
         )
 
@@ -56545,7 +58366,7 @@ local function CreateBoothTableRow(rowIndex)
             row,
             UDim2.new(1, -35, 0, 0),
             UDim2.fromOffset(30, 20),
-            "×",
+            "Ã—",
             Enum.TextXAlignment.Center
         )
 
@@ -56718,8 +58539,8 @@ local function RenderBoothListedTable()
 
             local prefix =
                 item.Favorite
-                and "★ "
-                or "• "
+                and "â˜… "
+                or "â€¢ "
 
             row.Pet.Text =
                 prefix
@@ -56736,7 +58557,7 @@ local function RenderBoothListedTable()
     )
 
             row.Remove.Text =
-                "×"
+                "Ã—"
 
             row.Button.Active =
                 true
@@ -56765,7 +58586,7 @@ local function RenderBoothListedTable()
         else
 
             row.Pet.Text =
-                "• -"
+                "â€¢ -"
 
             row.Price.Text =
                 "-"
@@ -56802,7 +58623,7 @@ end
 
     local BoothListedPageButton =
         ListingBoothBox:AddButton({
-            Text = "‹ Prev",
+            Text = "â€¹ Prev",
             Tooltip = "Previous booth listing page.",
             Func = function()
 
@@ -56822,7 +58643,7 @@ end
         })
 
     BoothListedPageButton:AddButton({
-        Text = "Next ›",
+        Text = "Next â€º",
         Tooltip = "Next booth listing page.",
         Func = function()
 
@@ -57011,7 +58832,7 @@ end
 --==================================================
 
 local PreviewVerdictLabel =
-    ListingPreviewBox:AddLabel("⚠️ Not Ready", false)
+    ListingPreviewBox:AddLabel("âš ï¸ Not Ready", false)
 
 local PreviewFilterLabel =
     ListingPreviewBox:AddLabel("Pet: -", false)
@@ -57302,7 +59123,7 @@ local FilterHelpLabel =
             FilterHeaderLabel:SetText(
     "Active Filters: "
     .. tostring(#filters)
-    .. "  •  Page "
+    .. "  â€¢  Page "
     .. tostring(page)
     .. "/"
     .. tostring(maxPage)
@@ -57475,7 +59296,7 @@ local FilterHelpLabel =
             if ListingsState.StopAtFullBooth == true
             and listedCount >= boothCapacity then
                 boothText =
-                    boothText .. " • FULL"
+                    boothText .. " â€¢ FULL"
             else
                 boothText =
                     boothText .. " | " .. boothStatus
@@ -57519,11 +59340,11 @@ local FilterHelpLabel =
             BoothListedHeaderLabel:SetText(
                 tostring(total)
                 .. " listings"
-                .. " • Page "
+                .. " â€¢ Page "
                 .. tostring(page)
                 .. "/"
                 .. tostring(maxPage)
-                .. " • "
+                .. " â€¢ "
                 .. boothStatus
             )
         end
@@ -57690,7 +59511,7 @@ local setupAllowed =
     and levelAllowed
 
 local verdictText =
-    "⚠️ Not Ready"
+    "âš ï¸ Not Ready"
 
 local resultText =
     "Fix required fields before adding this filter."
@@ -57700,7 +59521,7 @@ if setupAllowed then
     if readyCount > 0 then
 
         verdictText =
-            "✅ Ready To List"
+            "âœ… Ready To List"
 
         resultText =
             "AutoList can queue "
@@ -57716,7 +59537,7 @@ if setupAllowed then
     and alreadyListed >= matchingCount then
 
         verdictText =
-            "✅ Already Handled"
+            "âœ… Already Handled"
 
         resultText =
             "All matching pets are already listed in your booth."
@@ -57724,7 +59545,7 @@ if setupAllowed then
     elseif matchingCount > 0 then
 
         verdictText =
-            "✅ Filter Valid"
+            "âœ… Filter Valid"
 
         resultText =
             "Filter is valid, but no new pets are ready right now."
@@ -57732,7 +59553,7 @@ if setupAllowed then
     else
 
         verdictText =
-            "✅ Filter Valid"
+            "âœ… Filter Valid"
 
         resultText =
             "No inventory pets currently match this setup."
@@ -57929,7 +59750,7 @@ function BuildWebhookTab()
         WebhookBox:AddToggle(
             "EnableWebhook",
             {
-                Text = "🔗 Enable Webhook",
+                Text = "ðŸ”— Enable Webhook",
                 Tooltip = "Master switch for all personal webhook notifications.",
                 Default = WebhookState.Enabled == true,
             }
@@ -57972,7 +59793,7 @@ function BuildWebhookTab()
         WebhookDependencyBox:AddToggle(
             "WebhookSuccessfulSnipes",
             {
-                Text = "⚡ Successful Snipes",
+                Text = "âš¡ Successful Snipes",
                 Tooltip = "Send a webhook when Holy successfully snipes a pet.",
                 Default = WebhookState.NotifySuccessfulSnipe == true,
             }
@@ -57990,7 +59811,7 @@ function BuildWebhookTab()
         WebhookDependencyBox:AddToggle(
             "WebhookBoothSales",
             {
-                Text = "💰 Booth Sales",
+                Text = "ðŸ’° Booth Sales",
                 Tooltip = "Send a webhook when one of your booth pets sells.",
                 Default = WebhookState.NotifyBoothSales == true,
             }
@@ -58008,7 +59829,7 @@ function BuildWebhookTab()
         WebhookDependencyBox:AddToggle(
             "WebhookAgeBreaks",
             {
-                Text = "🌟 Age Breaks",
+                Text = "ðŸŒŸ Age Breaks",
                 Tooltip = "Send a webhook when Holy claims an Age Breaker pet.",
                 Default = WebhookState.NotifyAgeBreaks == true,
             }
@@ -58026,7 +59847,7 @@ function BuildWebhookTab()
         WebhookDependencyBox:AddToggle(
             "WebhookErrors",
             {
-                Text = "⚠️ Game Errors",
+                Text = "âš ï¸ Game Errors",
                 Tooltip = "Send a webhook when Holy detects an error, disconnect, or teleport issue.",
                 Default = WebhookState.NotifyErrors == true,
             }
@@ -58054,7 +59875,7 @@ function BuildWebhookTab()
         WebhookDependencyBox:AddInput(
             "WebhookPingSuccessfulSnipes",
             {
-                Text = "📣 Snipe Ping",
+                Text = "ðŸ“£ Snipe Ping",
                 Placeholder = "@everyone | @here | <@userid> | empty = no ping",
                 Numeric = false,
                 Finished = false,
@@ -58073,7 +59894,7 @@ function BuildWebhookTab()
         WebhookDependencyBox:AddInput(
             "WebhookPingBoothSales",
             {
-                Text = "🛒 Booth Sale Ping",
+                Text = "ðŸ›’ Booth Sale Ping",
                 Placeholder = "@everyone | @here | <@userid> | empty = no ping",
                 Numeric = false,
                 Finished = false,
@@ -58092,7 +59913,7 @@ function BuildWebhookTab()
         WebhookDependencyBox:AddInput(
             "WebhookPingAgeBreaks",
             {
-                Text = "🌟 Age Break Ping",
+                Text = "ðŸŒŸ Age Break Ping",
                 Placeholder = "@everyone | @here | <@userid> | empty = no ping",
                 Numeric = false,
                 Finished = false,
@@ -58111,7 +59932,7 @@ function BuildWebhookTab()
         WebhookDependencyBox:AddInput(
             "WebhookPingErrors",
             {
-                Text = "🚨 Error Ping",
+                Text = "ðŸš¨ Error Ping",
                 Placeholder = "@everyone | @here | <@userid> | empty = no ping",
                 Numeric = false,
                 Finished = false,
@@ -58140,7 +59961,7 @@ function BuildWebhookTab()
         WebhookDependencyBox:AddInput(
             "WebhookURL",
             {
-                Text = "🌐 Main Webhook URL",
+                Text = "ðŸŒ Main Webhook URL",
                 Placeholder = "Default Discord webhook URL",
                 Numeric = false,
                 Finished = true,
@@ -58159,7 +59980,7 @@ function BuildWebhookTab()
         WebhookDependencyBox:AddInput(
             "WebhookSecondaryURL",
             {
-                Text = "🌐 Secondary Webhook URL",
+                Text = "ðŸŒ Secondary Webhook URL",
                 Placeholder = "Optional second Discord webhook URL",
                 Numeric = false,
                 Finished = true,
@@ -58193,7 +60014,7 @@ function BuildWebhookTab()
         WebhookDependencyBox:AddDropdown(
             "WebhookSuccessfulSnipeRoute",
             {
-                Text = "⚡ Snipe Route",
+                Text = "âš¡ Snipe Route",
                 Tooltip = "Choose which webhook URL successful snipes use.",
                 Values = WebhookRouteOptions,
                 Default =
@@ -58218,7 +60039,7 @@ function BuildWebhookTab()
         WebhookDependencyBox:AddDropdown(
             "WebhookBoothSalesRoute",
             {
-                Text = "💰 Booth Sale Route",
+                Text = "ðŸ’° Booth Sale Route",
                 Tooltip = "Choose which webhook URL booth sale logs use.",
                 Values = WebhookRouteOptions,
                 Default =
@@ -58243,7 +60064,7 @@ function BuildWebhookTab()
         WebhookDependencyBox:AddDropdown(
             "WebhookAgeBreaksRoute",
             {
-                Text = "🌟 Age Break Route",
+                Text = "ðŸŒŸ Age Break Route",
                 Tooltip = "Choose which webhook URL Age Break logs use.",
                 Values = WebhookRouteOptions,
                 Default =
@@ -58268,7 +60089,7 @@ function BuildWebhookTab()
         WebhookDependencyBox:AddDropdown(
             "WebhookErrorsRoute",
             {
-                Text = "🚨 Error Route",
+                Text = "ðŸš¨ Error Route",
                 Tooltip = "Choose which webhook URL errors/disconnect logs use.",
                 Values = WebhookRouteOptions,
                 Default =
@@ -58301,7 +60122,7 @@ function BuildWebhookTab()
 
     WebhookDependencyBox:AddButton({
 
-        Text = "🧪 Test Main Webhook",
+        Text = "ðŸ§ª Test Main Webhook",
 
         Func = function()
 
@@ -58326,7 +60147,7 @@ function BuildWebhookTab()
                 ApplyWebhookPing(
                     {
                         embeds = {{
-                            title = "⚡ Holy Main Webhook Connected",
+                            title = "âš¡ Holy Main Webhook Connected",
 
                             description =
                                 "Main webhook delivery is working.",
@@ -58354,7 +60175,7 @@ function BuildWebhookTab()
                                 },
 
                                 {
-                                    name = "🎒 Pet Inventory",
+                                    name = "ðŸŽ’ Pet Inventory",
                                     value =
                                         type(FormatPersonalWebhookPetInventoryText) == "function"
                                         and FormatPersonalWebhookPetInventoryText()
@@ -58418,7 +60239,7 @@ function BuildWebhookTab()
 
     WebhookDependencyBox:AddButton({
 
-        Text = "🧪 Test Secondary Webhook",
+        Text = "ðŸ§ª Test Secondary Webhook",
 
         Func = function()
 
@@ -58445,7 +60266,7 @@ function BuildWebhookTab()
             local payload =
                 {
                     embeds = {{
-                        title = "🌐 Holy Secondary Webhook Connected",
+                        title = "ðŸŒ Holy Secondary Webhook Connected",
 
                         description =
                             "Secondary webhook delivery is working.",
@@ -58473,7 +60294,7 @@ function BuildWebhookTab()
                             },
 
                             {
-                                name = "🎒 Pet Inventory",
+                                name = "ðŸŽ’ Pet Inventory",
                                 value =
                                     type(FormatPersonalWebhookPetInventoryText) == "function"
                                     and FormatPersonalWebhookPetInventoryText()
@@ -58685,7 +60506,7 @@ function GetFreshRetryServer(placeId)
     end
 
     if #candidates <= 0 then
-        warn("[TeleportRetry] Server pool exhausted → clearing blacklist")
+        warn("[TeleportRetry] Server pool exhausted â†’ clearing blacklist")
 
         table.clear(TeleportRetryState.BlockedServers)
 
@@ -58770,7 +60591,7 @@ function ForceRetryTeleport(reason)
 
             print(
                 string.format(
-                    "[TeleportRetry] Attempt %s/%s → %s | %s",
+                    "[TeleportRetry] Attempt %s/%s â†’ %s | %s",
                     tostring(TeleportRetryState.Attempt),
                     tostring(TeleportRetryState.MaxAttempts),
                     tostring(target),
@@ -58819,7 +60640,7 @@ TeleportService.TeleportInitFailed:Connect(function(
 
     warn(
         string.format(
-            "[Teleport] Failed → %s | %s",
+            "[Teleport] Failed â†’ %s | %s",
             tostring(resultName),
             tostring(errorMessage)
         )
@@ -58856,7 +60677,7 @@ end)
 function ForceReconnectFromTerminalPrompt(reason)
 
     print(
-        "[AutoReconnect] Terminal prompt → immediate server retry:",
+        "[AutoReconnect] Terminal prompt â†’ immediate server retry:",
         tostring(reason)
     )
 
@@ -60758,7 +62579,7 @@ function EquipShowcasePet(force)
 
     -- print(
     --     string.format(
-    --         "[BoothPet] Equipping → %s | %.2f KG | UID %s",
+    --         "[BoothPet] Equipping â†’ %s | %.2f KG | UID %s",
     --         tostring(bestPet.PetName),
     --         tonumber(bestPet.Weight) or 0,
     --         tostring(bestPet.UID)
@@ -60802,7 +62623,7 @@ AutoServerHopWorker = function()
 
         --==================================================
         -- ADD HOP TIME AFTER SALE
-        -- Delays Booth → Server Cycle → Join New Server.
+        -- Delays Booth â†’ Server Cycle â†’ Join New Server.
         --==================================================
 
         if type(ShouldBlockHopForBoothSale) == "function"
@@ -61689,7 +63510,7 @@ end
 
             print(
                 string.format(
-                    "[BoothPet] Post-snipe re-equip → %s",
+                    "[BoothPet] Post-snipe re-equip â†’ %s",
                     tostring(targetPet)
                 )
             )
@@ -61781,7 +63602,7 @@ function RefreshAgeBreakerUI()
 
     if AgeBreakerTargetLabel then
         AgeBreakerTargetLabel:SetText(
-            "Target: 🔒 "
+            "Target: ðŸ”’ "
             .. FormatAgeBreakerPetLine(
                 AgeBreakerState.TargetPet
             )
@@ -61790,7 +63611,7 @@ function RefreshAgeBreakerUI()
 
     if AgeBreakerSacrificeLabel then
         AgeBreakerSacrificeLabel:SetText(
-            "Sacrifice: 🧪 "
+            "Sacrifice: ðŸ§ª "
             .. FormatAgeBreakerPetLine(
                 AgeBreakerState.SacrificePet
             )
@@ -61816,8 +63637,8 @@ function RefreshAgeBreakerUI()
 
         local worldText =
             IsTradeWorld()
-            and "Trade World ⚠️"
-            or "Normal World ✅"
+            and "Trade World âš ï¸"
+            or "Normal World âœ…"
 
         local machineText =
     "World: "
@@ -61964,26 +63785,26 @@ LoadAgeBreakerConfig()
 
     local SetupBox =
         Tabs.AgeBreaker:AddLeftGroupbox(
-            "🧬 Queue Setup",
+            "ðŸ§¬ Queue Setup",
             "dna"
         )
 
     local QueuePoolBox =
         Tabs.AgeBreaker:AddLeftGroupbox(
-            "📋 Queue & Pool",
+            "ðŸ“‹ Queue & Pool",
             "list"
         )
 
     local StatusBox =
         Tabs.AgeBreaker:AddRightGroupbox(
-            "👁️ Status",
+            "ðŸ‘ï¸ Status",
             "eye"
         )
 
     SetupBox:AddToggle(
         "AgeBreakerEnabled",
         {
-            Text = "🧬 Enable Age Breaker",
+            Text = "ðŸ§¬ Enable Age Breaker",
             Tooltip = "Enables Age Breaker queue/pool helper.",
             Default = AgeBreakerState.Enabled == true,
         }
@@ -62052,7 +63873,7 @@ RefreshAgeBreakerUI()
     SetupBox:AddToggle(
         "AgeBreakerAutoTeleportWhenReady",
         {
-            Text = "🌍 Auto Teleport When Ready",
+            Text = "ðŸŒ Auto Teleport When Ready",
             Tooltip = "When the machine is ready and you are in Trade World, teleport to Normal World.",
             Default = AgeBreakerState.AutoTeleportWhenReady == true,
         }
@@ -62082,7 +63903,7 @@ end
     SetupBox:AddToggle(
         "AgeBreakerAutoClaimWhenReady",
         {
-            Text = "🎁 Auto Claim When Ready",
+            Text = "ðŸŽ Auto Claim When Ready",
             Tooltip = "Claims the Age Break reward automatically in Normal World when the timer is ready.",
             Default = AgeBreakerState.AutoClaimWhenReady == true,
         }
@@ -62110,7 +63931,7 @@ end
     SetupBox:AddToggle(
         "AgeBreakerAutoResubmitAfterClaim",
         {
-            Text = "🔁 Auto Re-Submit After Claim",
+            Text = "ðŸ” Auto Re-Submit After Claim",
             Tooltip = "After claiming, uses the next sacrifice from the pool and submits the active target again.",
             Default = AgeBreakerState.AutoResubmitAfterClaim == true,
         }
@@ -62138,7 +63959,7 @@ end
 SetupBox:AddToggle(
     "AgeBreakerAutoTradeWorldWhenMachineStarts",
     {
-        Text = "🌐 Auto Teleport to Trade World",
+        Text = "ðŸŒ Auto Teleport to Trade World",
         Tooltip = "Automatically teleport to the Trade World when the Age Breaker machine starts.",
         Default = AgeBreakerState.AutoTeleportToTradeWorldOnMachineStart == true,
     }
@@ -62209,7 +64030,7 @@ end)
     end)
 
     SetupBox:AddButton({
-        Text = "➕ Add Targets",
+        Text = "âž• Add Targets",
         Tooltip = "Adds selected target pets to the queue.",
         Func = function()
 
@@ -62237,7 +64058,7 @@ end)
         SetupBox:AddDropdown(
             "AgeBreakerSacrificeMulti",
             {
-                Text = "🧪 Sacrifice Pets",
+                Text = "ðŸ§ª Sacrifice Pets",
                 Tooltip = "Select trash pets HOLY is allowed to consume.",
                 Values = {},
                 Default = {},
@@ -62258,7 +64079,7 @@ end)
     end)
 
     SetupBox:AddButton({
-        Text = "➕ Add Sacrifices",
+        Text = "âž• Add Sacrifices",
         Tooltip = "Adds selected sacrifice pets to the sacrifice pool.",
         Func = function()
 
@@ -62277,7 +64098,7 @@ end)
     })
 
     SetupBox:AddButton({
-        Text = "⚡ Add All Safe Matching",
+        Text = "âš¡ Add All Safe Matching",
         Tooltip = "Adds all safe sacrifices matching the active target.",
         Func = function()
 
@@ -62296,7 +64117,7 @@ end)
     })
 
     SetupBox:AddButton({
-        Text = "🔄 Refresh Inventory",
+        Text = "ðŸ”„ Refresh Inventory",
         Tooltip = "Refreshes target/sacrifice dropdowns from Backpack/Character.",
         Func = function()
 
@@ -62330,7 +64151,7 @@ end)
         )
 
     QueuePoolBox:AddButton({
-        Text = "🧹 Clear Targets",
+        Text = "ðŸ§¹ Clear Targets",
         Tooltip = "Clears the saved target queue.",
         Risky = true,
         DoubleClick = true,
@@ -62351,7 +64172,7 @@ end)
     })
 
     QueuePoolBox:AddButton({
-        Text = "🧹 Clear Sacrifices",
+        Text = "ðŸ§¹ Clear Sacrifices",
         Tooltip = "Clears the saved sacrifice pool.",
         Risky = true,
         DoubleClick = true,
@@ -62409,7 +64230,7 @@ end)
         )
 
     StatusBox:AddButton({
-        Text = "🔎 Prepare Pair",
+        Text = "ðŸ”Ž Prepare Pair",
         Tooltip = "Finds the active target and next valid sacrifice from the pool.",
         Func = function()
 
@@ -62428,7 +64249,7 @@ end)
     })
 
     StatusBox:AddButton({
-        Text = "🧬 Submit Next Pair",
+        Text = "ðŸ§¬ Submit Next Pair",
         Tooltip = "Submits active target + next sacrifice from the pool. Only works in Normal World.",
         Func = function()
 
@@ -62454,7 +64275,7 @@ end)
     })
 
     StatusBox:AddButton({
-        Text = "🎁 Claim Age Break",
+        Text = "ðŸŽ Claim Age Break",
         Tooltip = "Claims only when the machine timer says it is ready.",
         Func = function()
 
@@ -62477,7 +64298,7 @@ end)
     })
 
     StatusBox:AddButton({
-        Text = "🔄 Refresh Machine",
+        Text = "ðŸ”„ Refresh Machine",
         Tooltip = "Refreshes the machine timer/status.",
         Func = function()
 
