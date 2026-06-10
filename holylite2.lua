@@ -7831,6 +7831,144 @@ function TransferWaitForReceiverOfferReady(timeout)
     return false
 end
 
+function TransferReceiverHasRecoverableLiveTrade()
+
+    if TransferState.Mode ~= "Receiver" then
+        return false
+    end
+
+    local liveTrade =
+        TransferGetLiveTradeFrame()
+
+    if not liveTrade then
+        return false
+    end
+
+    local buttonText =
+        TransferGetTradeButtonText()
+
+    local cooldown =
+        TransferParseCooldownText(buttonText)
+
+    local statusText =
+        tostring(
+            TransferGetTradeStatusText()
+            or ""
+        ):lower()
+
+    local otherItems =
+        TransferGuiCountVisibleSideItems("OtherPlr")
+
+    local otherValue =
+        TransferGuiGetSidePriceAmount("OtherPlr")
+
+    local otherReady =
+        TransferReadyLabelIsAccepted("OtherPlr")
+
+    local activeButton =
+        buttonText == "Accept"
+        or buttonText == "Accepted"
+        or buttonText == "Confirm"
+        or buttonText == "Confirmed"
+        or cooldown ~= nil
+
+    local hasSenderOffer =
+        otherItems > 0
+        or otherValue > 0
+
+    local hasTradeStatus =
+        statusText:find("accepted", 1, true) ~= nil
+        or statusText:find("waiting", 1, true) ~= nil
+        or statusText:find("confirm", 1, true) ~= nil
+
+    return activeButton == true
+        and (
+            hasSenderOffer == true
+            or otherReady == true
+            or hasTradeStatus == true
+        )
+end
+
+function TransferReattachReceiverLiveTrade(reason)
+
+    TransferState.TradeOpen =
+        true
+
+    TransferState.TradeCompleted =
+        false
+
+    TransferState.TradeResult =
+        ""
+
+    TransferState.TradeDeclined =
+        false
+
+    TransferState.TradeDeclineReason =
+        ""
+
+    TransferState.RequestBlocked =
+        false
+
+    TransferState.RequestBlockedReason =
+        ""
+
+    TransferState.IncomingRequestId =
+        ""
+
+    TransferState.IncomingRequestPlayerName =
+        ""
+
+    TransferState.IncomingRequestAt =
+        0
+
+    TransferState.TradeOtherItemCount =
+        math.max(
+            tonumber(TransferState.TradeOtherItemCount) or 0,
+            TransferGuiCountVisibleSideItems("OtherPlr")
+        )
+
+    TransferState.TradeOwnItemCount =
+        math.max(
+            tonumber(TransferState.TradeOwnItemCount) or 0,
+            TransferGuiCountVisibleSideItems("MyPlr")
+        )
+
+    TransferState.LastTradeUpdate =
+        os.clock()
+
+    TransferSetStatus(
+        "Reattached",
+        tostring(reason or "Recovered active LiveTrade.")
+            .. " | Button="
+            .. tostring(TransferGetTradeButtonText())
+            .. " | OtherItems="
+            .. tostring(TransferState.TradeOtherItemCount)
+            .. " | OtherValue="
+            .. tostring(TransferGuiGetSidePriceAmount("OtherPlr"))
+    )
+
+    print(
+        "[TRANSFER RECOVERY]",
+        "Receiver reattached to active LiveTrade.",
+        "| reason:",
+        tostring(reason),
+        "| button:",
+        tostring(TransferGetTradeButtonText()),
+        "| status:",
+        tostring(TransferGetTradeStatusText()),
+        "| myReady:",
+        tostring(TransferGetReadyLabelText("MyPlr")),
+        "| otherReady:",
+        tostring(TransferGetReadyLabelText("OtherPlr")),
+        "| otherItems:",
+        tostring(TransferGuiCountVisibleSideItems("OtherPlr")),
+        "| otherValue:",
+        tostring(TransferGuiGetSidePriceAmount("OtherPlr"))
+    )
+
+    return true
+end
+
 TransferParseCooldownText = function(text)
 
     text =
@@ -9146,12 +9284,8 @@ function TransferRunSenderBatch()
         return false, "No matches"
     end
 
-    TransferState.Batch =
-        TransferState.Batch + 1
-
     TransferSetStatus(
-        "Batch "
-            .. tostring(TransferState.Batch),
+        "Preparing",
         "Preparing "
             .. tostring(math.min(#matches, TransferGetMaxPetsPerTrade()))
             .. " pets."
@@ -9204,7 +9338,7 @@ function TransferRunSenderBatch()
         0,
         30
     )
-
+    -- Do not count a batch until the trade actually opens.
     local tradeOpen =
         TransferWaitForTradeOpen(25)
 
@@ -9226,9 +9360,14 @@ function TransferRunSenderBatch()
         return false, "Trade timeout"
     end
 
+    TransferState.Batch =
+        TransferState.Batch + 1
+
     TransferUpdateTradeStatusText(
         "Trade Open",
-        "Adding pets + pre-accepting."
+        "Batch "
+            .. tostring(TransferState.Batch)
+            .. " opened. Adding pets + pre-accepting."
     )
 
     -- Sender PreOpen pump is already watching the value label.
@@ -9354,67 +9493,81 @@ end
 
 function TransferRunReceiverBatch()
 
-    TransferResetTradeRuntime()
+    local recoveredLiveTrade =
+        TransferReceiverHasRecoverableLiveTrade()
 
-    TransferTimingReset("Receiver Batch")
+    if recoveredLiveTrade == true then
 
-    local requestOk =
-        TransferWaitForTrustedIncomingRequest(90)
-
-    if requestOk ~= true then
-        return false, "No trusted request"
-    end
-
-    TransferSetStatus(
-        "Ticket Found",
-        "Incoming from "
-            .. tostring(TransferState.IncomingRequestPlayerName)
-    )
-
-    if TransferState.AutoAcceptTicket == true then
-
-        TransferSetStatus(
-            "Accepting Ticket",
-            "Accepting "
-                .. tostring(TransferState.IncomingRequestPlayerName)
+        TransferReattachReceiverLiveTrade(
+            "Receiver worker found already-open trade."
         )
 
-        local acceptRequestOk =
-            TransferAcceptIncomingRequest()
-
-        if acceptRequestOk ~= true then
-            return false, "Request accept failed"
-        end
+        TransferTimingReset("Receiver Reattach")
 
     else
 
-        TransferSetStatus(
-            "Manual Ticket",
-            "Waiting for you to accept the ticket."
-        )
-    end
+        TransferResetTradeRuntime()
 
-    TransferStartFastAcceptPump(
-        "Receiver PreOpen",
-        0,
-        0,
-        120
-    )
+        TransferTimingReset("Receiver Batch")
 
-    local tradeOpen =
-        TransferWaitForTradeOpen(
-            TransferState.AutoAcceptTicket == true
-                and 25
-                or 90
-        )
+        local requestOk =
+            TransferWaitForTrustedIncomingRequest(90)
 
-    if tradeOpen ~= true then
-
-        if TransferState.TradeDeclined == true then
-            return false, "Trade declined"
+        if requestOk ~= true then
+            return false, "No trusted request"
         end
 
-        return false, "Trade did not open"
+        TransferSetStatus(
+            "Ticket Found",
+            "Incoming from "
+                .. tostring(TransferState.IncomingRequestPlayerName)
+        )
+
+        if TransferState.AutoAcceptTicket == true then
+
+            TransferSetStatus(
+                "Accepting Ticket",
+                "Accepting "
+                    .. tostring(TransferState.IncomingRequestPlayerName)
+            )
+
+            local acceptRequestOk =
+                TransferAcceptIncomingRequest()
+
+            if acceptRequestOk ~= true then
+                return false, "Request accept failed"
+            end
+
+        else
+
+            TransferSetStatus(
+                "Manual Ticket",
+                "Waiting for you to accept the ticket."
+            )
+        end
+
+        TransferStartFastAcceptPump(
+            "Receiver PreOpen",
+            0,
+            0,
+            120
+        )
+
+        local tradeOpen =
+            TransferWaitForTradeOpen(
+                TransferState.AutoAcceptTicket == true
+                    and 25
+                    or 90
+            )
+
+        if tradeOpen ~= true then
+
+            if TransferState.TradeDeclined == true then
+                return false, "Trade declined"
+            end
+
+            return false, "Trade did not open"
+        end
     end
 
     TransferUpdateTradeStatusText(
@@ -9625,6 +9778,18 @@ function TransferWorkerLoop()
                 if TransferState.KeepGoing == true
                 and TransferState.Mode == "Receiver" then
 
+                    if TransferReceiverHasRecoverableLiveTrade() == true then
+
+                        TransferSetStatus(
+                            "Recovering",
+                            "Active trade still open. Reattaching instead of waiting for new ticket."
+                        )
+
+                        task.wait(0.15)
+
+                        continue
+                    end
+
                     TransferResetTradeRuntime()
 
                     TransferState.IncomingRequestId =
@@ -9675,7 +9840,57 @@ function TransferWorkerLoop()
 
                     elseif retryMsg == "Request blocked" then
 
-                        task.wait(0.85)
+                        TransferSetStatus(
+                            "Blocked",
+                            "Still inside previous trade. Waiting for cleanup instead of spamming tickets."
+                        )
+
+                        local blockedStarted =
+                            os.clock()
+
+                        while IsHolyLiteCurrentRun()
+                        and TransferState.TransferEnabled == true
+                        and os.clock() - blockedStarted < 12 do
+
+                            if TransferState.TradeCompleted == true
+                            or TransferState.TradeResult == "Completed"
+                            or TransferGetLocalTradeState() == "Processing"
+                            or TransferGetOtherTradeState() == "Processing" then
+                                break
+                            end
+
+                            if TransferConfirmWindowReady() == true then
+
+                                TransferConfirmAndWait(
+                                    "Blocked Confirm Recovery",
+                                    8
+                                )
+
+                                break
+                            end
+
+                            if TransferGetTradeButtonText() == "Accept" then
+
+                                TransferAcceptAndWait(
+                                    "Blocked Accept Recovery",
+                                    8,
+                                    TransferState.AddedThisBatch,
+                                    0
+                                )
+                            end
+
+                            TransferSetStatus(
+                                "Blocked",
+                                "Waiting previous trade. Button="
+                                    .. tostring(TransferGetTradeButtonText())
+                            )
+
+                            task.wait(0.25)
+                        end
+
+                        TransferWaitForLiveTradeClosed(4)
+
+                        task.wait(1.0)
 
                     else
 
