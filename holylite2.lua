@@ -5238,6 +5238,31 @@ function TransferMarkRequestBlocked(reason)
     )
 end
 
+function TransferMarkTradeCompleted(reason)
+
+    TransferState.TradeCompleted =
+        true
+
+    TransferState.TradeResult =
+        "Completed"
+
+    TransferState.TradeOpen =
+        false
+
+    TransferState.LastTradeUpdate =
+        os.clock()
+
+    TransferSetStatus(
+        "Trade Completed",
+        tostring(reason or "Completed")
+    )
+
+    print(
+        "[TRANSFER] Trade completed:",
+        tostring(reason or "Completed")
+    )
+end
+
 function TransferUpdateTradeTrackerFromPayload(payload)
 
     if type(payload) ~= "table" then
@@ -5383,6 +5408,13 @@ function TransferUpdateTradeTrackerFromPayload(payload)
 
                 TransferState.LastTradeUpdate =
                     os.clock()
+                
+                if tostring(value) == "Processing" then
+
+                    TransferMarkTradeCompleted(
+                        "DataStream state Processing."
+                    )
+                end
 
                 if tostring(oldState) ~= tostring(value) then
 
@@ -5626,9 +5658,19 @@ function TransferStartTradeWatchers()
 
             if tradeId == nil then
 
-                if TransferState.TradeOpen == true
-                and TransferState.TradeCompleted ~= true
-                and TransferState.TradeResult ~= "Completed" then
+                if TransferState.TradeCompleted == true
+                or TransferState.TradeResult == "Completed"
+                or TransferGetLocalTradeState() == "Processing"
+                or TransferGetOtherTradeState() == "Processing" then
+
+                    TransferMarkTradeCompleted(
+                        "UpdateTradeState closed after processing."
+                    )
+
+                    return
+                end
+
+                if TransferState.TradeOpen == true then
 
                     TransferMarkTradeDeclined(
                         "Trade closed before completion."
@@ -5677,7 +5719,13 @@ function TransferStartTradeWatchers()
             local lower =
                 text:lower()
 
-            if lower:find("declined the trade", 1, true)
+            if lower:find("trade completed", 1, true) then
+
+                TransferMarkTradeCompleted(
+                    text
+                )
+
+            elseif lower:find("declined the trade", 1, true)
             or lower:find("declined trade", 1, true) then
 
                 TransferMarkTradeDeclined(
@@ -7179,19 +7227,6 @@ end
 
 function TransferSendTicket()
 
-    local safeToSend, safeReason =
-        TransferWaitUntilSafeToSendTicket(12)
-
-    if safeToSend ~= true then
-
-        TransferSetStatus(
-            "Still In Trade",
-            "Not sending ticket: " .. tostring(safeReason)
-        )
-
-        return false, "Still in trade"
-    end
-
     local target =
         TransferResolveTargetPlayer()
 
@@ -7542,6 +7577,255 @@ function TransferWaitForVisibleTradeValue(timeout)
         end
 
         task.wait()
+    end
+
+    return false
+end
+
+function TransferGetLiveTradeFrame()
+
+    local playerGui =
+        LocalPlayer:FindFirstChild("PlayerGui")
+
+    local tradingUI =
+        playerGui
+        and playerGui:FindFirstChild("TradingUI")
+
+    return tradingUI
+        and tradingUI:FindFirstChild("LiveTrade")
+end
+
+function TransferGetTradeSideFrame(sideName)
+
+    sideName =
+        tostring(sideName or "")
+
+    local liveTrade =
+        TransferGetLiveTradeFrame()
+
+    return liveTrade
+        and liveTrade:FindFirstChild(sideName)
+end
+
+function TransferGuiGetSidePriceAmount(sideName)
+
+    local sideFrame =
+        TransferGetTradeSideFrame(sideName)
+
+    local amountLabel =
+        sideFrame
+        and sideFrame:FindFirstChild("Price")
+        and sideFrame.Price:FindFirstChild("Amount")
+
+    if amountLabel
+    and amountLabel:IsA("TextLabel")
+    and TransferIsGuiObjectVisible(amountLabel) then
+
+        return TransferToNumber(
+            amountLabel.Text,
+            0
+        )
+    end
+
+    return 0
+end
+
+function TransferGuiCountVisibleSideItems(sideName)
+
+    local sideFrame =
+        TransferGetTradeSideFrame(sideName)
+
+    local scrollingFrame =
+        sideFrame
+        and sideFrame:FindFirstChild("ScrollingFrame")
+
+    if not scrollingFrame then
+        return 0
+    end
+
+    local count =
+        0
+
+    for _, child in ipairs(scrollingFrame:GetChildren()) do
+
+        if child:IsA("GuiObject")
+        and child.Visible == true
+        and TransferIsGuiObjectVisible(child) then
+
+            local childName =
+                tostring(child.Name or "")
+
+            if childName ~= "AddItemButtom"
+            and childName ~= "HoverDelTemplate"
+            and childName ~= "Template" then
+
+                local title =
+                    child:FindFirstChild("Title", true)
+
+                local titleText =
+                    title
+                    and title:IsA("TextLabel")
+                    and CleanText(title.Text)
+                    or ""
+
+                if titleText ~= "" then
+                    count =
+                        count + 1
+                end
+            end
+        end
+    end
+
+    return count
+end
+
+function TransferSideOfferReady(sideName, requiredCount, dataCount)
+
+    requiredCount =
+        math.max(
+            1,
+            math.floor(
+                tonumber(requiredCount)
+                or 1
+            )
+        )
+
+    dataCount =
+        tonumber(dataCount)
+        or 0
+
+    local guiItemCount =
+        TransferGuiCountVisibleSideItems(sideName)
+
+    local guiValue =
+        TransferGuiGetSidePriceAmount(sideName)
+
+    if dataCount >= requiredCount then
+        return true, "data_count", dataCount
+    end
+
+    if guiItemCount >= requiredCount then
+        return true, "gui_items", guiItemCount
+    end
+
+    if guiValue > 0 then
+        return true, "gui_value", guiValue
+    end
+
+    return false,
+        "waiting_"
+            .. tostring(sideName)
+            .. "_offer"
+            .. " data="
+            .. tostring(dataCount)
+            .. " guiItems="
+            .. tostring(guiItemCount)
+            .. " guiValue="
+            .. tostring(guiValue),
+        0
+end
+
+function TransferOfferReadyForAccept(requiredOwnCount, requiredOtherCount)
+
+    requiredOwnCount =
+        tonumber(requiredOwnCount)
+        or 0
+
+    requiredOtherCount =
+        tonumber(requiredOtherCount)
+        or 0
+
+    local ownCount =
+        tonumber(TransferState.TradeOwnItemCount)
+        or 0
+
+    local otherCount =
+        tonumber(TransferState.TradeOtherItemCount)
+        or 0
+
+    if TransferState.Mode == "Receiver" then
+
+        return TransferSideOfferReady(
+            "OtherPlr",
+            math.max(1, requiredOtherCount),
+            otherCount
+        )
+    end
+
+    return TransferSideOfferReady(
+        "MyPlr",
+        math.max(1, requiredOwnCount),
+        ownCount
+    )
+end
+
+function TransferWaitForReceiverOfferReady(timeout)
+
+    timeout =
+        tonumber(timeout)
+        or 120
+
+    local started =
+        os.clock()
+
+    local lastStatusAt =
+        0
+
+    while IsHolyLiteCurrentRun()
+    and TransferState.TransferEnabled == true do
+
+        if TransferState.TradeDeclined == true then
+            return false
+        end
+
+        if TransferState.TradeCompleted == true
+        or TransferState.TradeResult == "Completed"
+        or TransferGetLocalTradeState() == "Processing"
+        or TransferGetOtherTradeState() == "Processing" then
+            return true
+        end
+
+        local ready, reason, metric =
+            TransferSideOfferReady(
+                "OtherPlr",
+                1,
+                TransferState.TradeOtherItemCount
+            )
+
+        if ready == true then
+
+            print(
+                "[TRANSFER] Receiver offer ready:",
+                tostring(reason),
+                "| metric:",
+                tostring(metric),
+                "| OtherItems:",
+                tostring(TransferState.TradeOtherItemCount),
+                "| OtherValue:",
+                tostring(TransferGuiGetSidePriceAmount("OtherPlr")),
+                "| OtherGuiItems:",
+                tostring(TransferGuiCountVisibleSideItems("OtherPlr"))
+            )
+
+            return true
+        end
+
+        if os.clock() - started >= timeout then
+            return false
+        end
+
+        if os.clock() - lastStatusAt >= 0.35 then
+
+            lastStatusAt =
+                os.clock()
+
+            TransferUpdateTradeStatusText(
+                "Waiting Sender",
+                tostring(reason)
+            )
+        end
+
+        task.wait(0.05)
     end
 
     return false
@@ -7937,19 +8221,17 @@ function TransferStartFastAcceptPump(label, requiredOwnCount, requiredOtherCount
                 tonumber(TransferState.TradeOtherItemCount)
                 or 0
 
-            local countReady =
-                (
-                    tonumber(requiredOwnCount) or 0
-                ) > 0
-                and ownCount >= (
-                    tonumber(requiredOwnCount) or 0
-                )
-                and otherCount >= (
-                    tonumber(requiredOtherCount) or 0
+            local offerReady, offerReason, offerMetric =
+                TransferOfferReadyForAccept(
+                    requiredOwnCount,
+                    requiredOtherCount
                 )
 
+            local countReady =
+                offerReady == true
+
             if valueDetected == true
-            or countReady == true then
+            or offerReady == true then
 
                 local buttonText =
                     TransferGetTradeButtonText()
@@ -8010,8 +8292,10 @@ function TransferStartFastAcceptPump(label, requiredOwnCount, requiredOtherCount
 
                     TransferSetStatus(
                         "Fast Accept",
-                        "Value="
-                            .. tostring(value)
+                        "Reason="
+                            .. tostring(offerReason)
+                            .. " | Metric="
+                            .. tostring(offerMetric or value)
                             .. " | Button="
                             .. tostring(buttonText)
                     )
@@ -8144,13 +8428,14 @@ function TransferAcceptAndWait(label, timeout, requiredOwnCount, requiredOtherCo
             tonumber(TransferState.TradeOtherItemCount)
             or 0
 
-        local countReady =
-            (
-                requiredOwnCount > 0
-                or requiredOtherCount > 0
+        local offerReady, offerReason, offerMetric =
+            TransferOfferReadyForAccept(
+                requiredOwnCount,
+                requiredOtherCount
             )
-            and ownCount >= requiredOwnCount
-            and otherCount >= requiredOtherCount
+
+        local countReady =
+            offerReady == true
 
         local senderAcceptedReady =
             false
@@ -8167,15 +8452,11 @@ function TransferAcceptAndWait(label, timeout, requiredOwnCount, requiredOtherCo
 
             senderAcceptedReady =
                 senderAccepted == true
-                and (
-                    otherCount > 0
-                    or hasValue == true
-                )
+                and offerReady == true
         end
 
         local ready =
-            hasValue == true
-            or countReady == true
+            offerReady == true
             or senderAcceptedReady == true
 
         TransferTimingSet("LastButton", buttonText)
@@ -8192,11 +8473,7 @@ function TransferAcceptAndWait(label, timeout, requiredOwnCount, requiredOtherCo
             local acceptReason =
                 senderAcceptedReady == true
                 and "sender_accepted_ready"
-                or (
-                    countReady == true
-                    and "count_ready"
-                    or "value_ready"
-                )
+                or tostring(offerReason or "offer_ready")
 
             if buttonText == "Accept"
             or buttonText == "" then
@@ -8230,7 +8507,7 @@ function TransferAcceptAndWait(label, timeout, requiredOwnCount, requiredOtherCo
 
                 if FireAcceptBurst(
                     "fallback_" .. tostring(acceptReason),
-                    value,
+                    offerMetric or value,
                     8
                 ) then
                     return true
@@ -8269,7 +8546,7 @@ function TransferAcceptAndWait(label, timeout, requiredOwnCount, requiredOtherCo
 
                     if FireAcceptBurst(
                         "fallback_cooldown_" .. tostring(acceptReason),
-                        value,
+                        offerMetric or value,
                         8
                     ) then
                         return true
@@ -8293,7 +8570,7 @@ function TransferAcceptAndWait(label, timeout, requiredOwnCount, requiredOtherCo
 
                 if FireAcceptBurst(
                     "fallback_unknown_" .. tostring(acceptReason),
-                    value,
+                    offerMetric or value,
                     2
                 ) then
                     return true
@@ -8309,8 +8586,8 @@ function TransferAcceptAndWait(label, timeout, requiredOwnCount, requiredOtherCo
                     label,
                     "Fast accept | Reason="
                         .. tostring(acceptReason)
-                        .. " | Value="
-                        .. tostring(value)
+                        .. " | Metric="
+                        .. tostring(offerMetric or value)
                         .. " | Button="
                         .. tostring(buttonText)
                 )
@@ -9142,56 +9419,28 @@ function TransferRunReceiverBatch()
 
     TransferUpdateTradeStatusText(
         "Waiting Sender",
-        "Waiting sender items/value."
+        "Waiting sender OtherPlr items/value."
     )
 
-    local valueVisible =
-        TransferWaitForVisibleTradeValue(120)
+    local offerReady =
+        TransferWaitForReceiverOfferReady(120)
 
-    if valueVisible ~= true then
-
-        if TransferState.TradeDeclined == true then
-            return false, "Trade declined"
-        end
-
-        TransferSetStatus(
-            "Value Timeout",
-            "Sender value never became visible."
-        )
-
-        return false, "No sender items"
-    end
-
-    if tonumber(TransferState.TradeOtherItemCount) <= 0
-    and TransferGuiHasPositiveTradeValue() ~= true then
-
-        TransferSetStatus(
-            "No Items",
-            "Sender accepted with no visible value/items."
-        )
-
-        return false, "No sender items"
-    end
-
-    local senderAccepted =
-        TransferWaitForSenderReadyForReceiverAccept(120)
-
-    if senderAccepted ~= true then
+    if offerReady ~= true then
 
         if TransferState.TradeDeclined == true then
             return false, "Trade declined"
         end
 
         TransferSetStatus(
-            "Sender Timeout",
-            "Sender never reached Accepted state."
+            "Offer Timeout",
+            "Sender offer never appeared on OtherPlr."
         )
 
-        return false, "Sender did not accept"
+        return false, "No sender items"
     end
 
     print(
-        "[TRANSFER] Sender accepted detected:",
+        "[TRANSFER] Sender value/items detected:",
         "| OtherState:",
         tostring(TransferGetOtherTradeState()),
         "| OtherItems:",
@@ -9204,7 +9453,14 @@ function TransferRunReceiverBatch()
 
         TransferUpdateTradeStatusText(
             "Accepting",
-            "Sender accepted. Receiver accepting trade."
+            "Sender items detected. Receiver accepting trade."
+        )
+
+        TransferStartFastAcceptPump(
+            "Receiver Items Ready",
+            0,
+            1,
+            20
         )
 
         local acceptOk =
@@ -9306,7 +9562,6 @@ function TransferSenderCanRetryAfterFailure(message)
         or message == "Complete timeout"
         or message == "Accept failed"
         or message == "No pets added"
-        or message == "Still in trade"
         or message == "Ticket failed"
         or message == "Request blocked"
 end
@@ -9420,11 +9675,7 @@ function TransferWorkerLoop()
 
                     elseif retryMsg == "Request blocked" then
 
-                        TransferWaitUntilSafeToSendTicket(12)
-
-                    elseif retryMsg == "Still in trade" then
-
-                        TransferWaitUntilSafeToSendTicket(12)
+                        task.wait(0.85)
 
                     else
 
@@ -9486,9 +9737,9 @@ function TransferWorkerLoop()
 
             if TransferState.Mode == "Sender" then
 
-                TransferWaitForLiveTradeClosed(6)
+                TransferWaitForLiveTradeClosed(4)
 
-                TransferWaitUntilSafeToSendTicket(12)
+                task.wait(0.35)
 
                 if #TransferBuildMatches() <= 0 then
 
