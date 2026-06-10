@@ -5974,19 +5974,18 @@ TransferIsGuiObjectVisible =
 
 TransferGetTradeButtonText = function()
 
-    local playerGui =
-        LocalPlayer:FindFirstChild("PlayerGui")
+    local liveTrade =
+        TransferGetLiveTradeFrame()
 
     local label =
-        playerGui
-        and playerGui:FindFirstChild("TradingUI")
-        and playerGui.TradingUI:FindFirstChild("LiveTrade")
-        and playerGui.TradingUI.LiveTrade:FindFirstChild("Options")
-        and playerGui.TradingUI.LiveTrade.Options:FindFirstChild("Accept")
-        and playerGui.TradingUI.LiveTrade.Options.Accept:FindFirstChild("Label")
+        liveTrade
+        and liveTrade:FindFirstChild("Options")
+        and liveTrade.Options:FindFirstChild("Accept")
+        and liveTrade.Options.Accept:FindFirstChild("Label")
 
     if label
-    and label:IsA("TextLabel") then
+    and label:IsA("TextLabel")
+    and TransferIsGuiObjectVisible(label) == true then
         return CleanText(label.Text)
     end
 
@@ -6514,13 +6513,8 @@ function TransferGetReadyLabelText(sideName)
     sideName =
         tostring(sideName or "")
 
-    local playerGui =
-        LocalPlayer:FindFirstChild("PlayerGui")
-
     local liveTrade =
-        playerGui
-        and playerGui:FindFirstChild("TradingUI")
-        and playerGui.TradingUI:FindFirstChild("LiveTrade")
+        TransferGetLiveTradeFrame()
 
     local label =
         liveTrade
@@ -6529,7 +6523,8 @@ function TransferGetReadyLabelText(sideName)
         and liveTrade[sideName].Ready:FindFirstChild("Label")
 
     if label
-    and label:IsA("TextLabel") then
+    and label:IsA("TextLabel")
+    and TransferIsGuiObjectVisible(label) == true then
         return CleanText(label.Text)
     end
 
@@ -6589,17 +6584,16 @@ end
 
 function TransferGetTradeStatusText()
 
-    local playerGui =
-        LocalPlayer:FindFirstChild("PlayerGui")
+    local liveTrade =
+        TransferGetLiveTradeFrame()
 
     local statusLabel =
-        playerGui
-        and playerGui:FindFirstChild("TradingUI")
-        and playerGui.TradingUI:FindFirstChild("LiveTrade")
-        and playerGui.TradingUI.LiveTrade:FindFirstChild("Status")
+        liveTrade
+        and liveTrade:FindFirstChild("Status")
 
     if statusLabel
-    and statusLabel:IsA("TextLabel") then
+    and statusLabel:IsA("TextLabel")
+    and TransferIsGuiObjectVisible(statusLabel) == true then
         return CleanText(statusLabel.Text)
     end
 
@@ -7779,8 +7773,20 @@ function TransferGetLiveTradeFrame()
         playerGui
         and playerGui:FindFirstChild("TradingUI")
 
-    return tradingUI
+    local liveTrade =
+        tradingUI
         and tradingUI:FindFirstChild("LiveTrade")
+
+    if not liveTrade then
+        return nil
+    end
+
+    if liveTrade:IsA("GuiObject")
+    and liveTrade.Visible ~= true then
+        return nil
+    end
+
+    return liveTrade
 end
 
 function TransferActualTradeOpen()
@@ -7789,11 +7795,7 @@ function TransferActualTradeOpen()
         TransferGetLiveTradeFrame()
 
     if liveTrade then
-
-        if not liveTrade:IsA("GuiObject")
-        or liveTrade.Visible == true then
-            return true, "LiveTrade"
-        end
+        return true, "Visible LiveTrade"
     end
 
     local hasSides =
@@ -8066,6 +8068,11 @@ function TransferReceiverHasRecoverableLiveTrade()
         TransferGetLiveTradeFrame()
 
     if not liveTrade then
+        return false
+    end
+
+    if liveTrade:IsA("GuiObject")
+    and liveTrade.Visible ~= true then
         return false
     end
 
