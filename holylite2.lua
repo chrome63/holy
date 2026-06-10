@@ -7294,6 +7294,149 @@ function TransferWaitForConfirmReady(timeout)
     return false
 end
 
+function TransferReceiverDrainOpenTrade(timeout)
+
+    timeout =
+        tonumber(timeout)
+        or 25
+
+    if TransferState.Mode ~= "Receiver" then
+        return true
+    end
+
+    local started =
+        os.clock()
+
+    local lastAcceptAt =
+        0
+
+    local lastConfirmAt =
+        0
+
+    while IsHolyLiteCurrentRun()
+    and TransferState.TransferEnabled == true do
+
+        if TransferState.TradeDeclined == true then
+            return false
+        end
+
+        if TransferState.TradeCompleted == true
+        or TransferState.TradeResult == "Completed"
+        or TransferGetLocalTradeState() == "Processing" then
+            return true
+        end
+
+        if TransferIsLiveTradeOpen() ~= true then
+            return true
+        end
+
+        if os.clock() - started >= timeout then
+
+            TransferSetStatus(
+                "Drain Timeout",
+                "Receiver still has open trade UI."
+            )
+
+            return false
+        end
+
+        local buttonText =
+            TransferGetTradeButtonText()
+
+        local otherItems =
+            TransferGuiCountVisibleSideItems("OtherPlr")
+
+        local otherValue =
+            TransferGuiGetSidePriceAmount("OtherPlr")
+
+        local otherReady =
+            TransferReadyLabelIsAccepted("OtherPlr")
+
+        local senderReady =
+            TransferSenderReadyForReceiverAccept()
+
+        local otherFinal =
+            TransferOtherFinalConfirmedLike()
+
+        if buttonText == "Confirm"
+        or buttonText == "Confirmed"
+        or otherFinal == true
+        or TransferConfirmWindowReady() == true then
+
+            if os.clock() - lastConfirmAt >= 0.10 then
+
+                lastConfirmAt =
+                    os.clock()
+
+                TransferSetStatus(
+                    "Drain Confirm",
+                    "Open trade still active. Confirming now."
+                )
+
+                TransferTryInstantFinalConfirm(
+                    "Receiver drain found open confirm-stage trade."
+                )
+
+                TransferConfirmAndWait(
+                    "Drain Confirm",
+                    6
+                )
+            end
+
+        elseif buttonText == "Accept"
+        and senderReady == true
+        and (
+            otherItems > 0
+            or otherValue > 0
+            or otherReady == true
+        ) then
+
+            if os.clock() - lastAcceptAt >= 0.10 then
+
+                lastAcceptAt =
+                    os.clock()
+
+                TransferSetStatus(
+                    "Drain Accept",
+                    "Open trade still active. Accepting now."
+                )
+
+                for _ = 1, 8 do
+
+                    if TransferLocalAcceptLocked() == true then
+                        break
+                    end
+
+                    TransferFireTradeRemote("Accept")
+
+                    TransferTimingBumpAttempts(1)
+
+                    task.wait()
+                end
+            end
+
+        else
+
+            TransferSetStatus(
+                "Drain Trade",
+                "Finishing open trade before waiting request. Button="
+                    .. tostring(buttonText)
+                    .. " | OtherItems="
+                    .. tostring(otherItems)
+                    .. " | OtherValue="
+                    .. tostring(otherValue)
+                    .. " | SenderReady="
+                    .. tostring(senderReady)
+            )
+        end
+
+        task.wait(0.05)
+    end
+
+    return false
+end
+
+
 function TransferWaitForTrustedIncomingRequest(timeout)
 
     timeout =
@@ -7305,6 +7448,14 @@ function TransferWaitForTrustedIncomingRequest(timeout)
 
     while IsHolyLiteCurrentRun()
     and TransferState.TransferEnabled == true do
+
+        if TransferState.Mode == "Receiver"
+        and TransferIsLiveTradeOpen() == true then
+
+            TransferReceiverDrainOpenTrade(
+                25
+            )
+        end
 
         local trusted =
             CleanText(TransferState.TargetPlayerName)
@@ -10399,6 +10550,13 @@ function TransferWorkerLoop()
                 if TransferState.KeepGoing == true
                 and TransferState.Mode == "Receiver" then
 
+                    if TransferIsLiveTradeOpen() == true then
+
+                        TransferReceiverDrainOpenTrade(
+                            25
+                        )
+                    end
+
                     if TransferState.TradeDeclined ~= true
                     and TransferState.TradeCompleted ~= true
                     and TransferState.TradeResult ~= "Completed"
@@ -10570,6 +10728,13 @@ function TransferWorkerLoop()
                 "Waiting",
                 "Next batch soon."
             )
+
+            if TransferState.Mode == "Receiver" then
+
+                TransferReceiverDrainOpenTrade(
+                    25
+                )
+            end
 
             if TransferState.Mode == "Sender" then
 
