@@ -6673,6 +6673,15 @@ function TransferReadyLabelIsAccepted(sideName)
         or text == "Processing"
 end
 
+function TransferReadyLabelIsConfirmed(sideName)
+
+    local text =
+        TransferGetReadyLabelText(sideName)
+
+    return text == "Confirmed"
+        or text == "Processing"
+end
+
 function TransferCountStatesWithValue(wantedState)
 
     wantedState =
@@ -6763,9 +6772,30 @@ function TransferOtherFinalConfirmedLike()
         return true
     end
 
+    if TransferReadyLabelIsConfirmed("OtherPlr") == true then
+        return true
+    end
+
     if TransferGuiPlayerHasConfirmed(
         TransferState.TargetPlayerName
     ) then
+        return true
+    end
+
+    local statusText =
+        tostring(
+            TransferGetTradeStatusText()
+            or ""
+        ):lower()
+
+    local targetName =
+        CleanText(
+            TransferState.TargetPlayerName
+        ):lower()
+
+    if targetName ~= ""
+    and statusText:find(targetName, 1, true)
+    and statusText:find("confirmed", 1, true) then
         return true
     end
 
@@ -9265,6 +9295,9 @@ function TransferConfirmAndWait(label, timeout)
     local nextRetryAt =
         0
 
+    local bothConfirmedSince =
+        nil
+
     while IsHolyLiteCurrentRun()
     and TransferState.TransferEnabled == true do
 
@@ -9299,22 +9332,60 @@ function TransferConfirmAndWait(label, timeout)
         local localAccepted =
             TransferLocalAcceptLocked()
 
+        local localFinalConfirmed =
+            buttonText == "Confirmed"
+            or TransferReadyLabelIsConfirmed("MyPlr") == true
+            or TransferGetLocalTradeState() == "Confirmed"
+
+        local bothGuiConfirmed =
+            localFinalConfirmed == true
+            and otherFinalConfirmed == true
+
         if confirmWindowReady == true
-        or (
-            otherFinalConfirmed == true
-            and localAccepted == true
-        ) then
-            TransferTimingMark("ConfirmSeenAt")
+        or otherFinalConfirmed == true
+        or bothGuiConfirmed == true then
+
+            TransferTimingMark(
+                "ConfirmSeenAt"
+            )
         end
 
-        if buttonText == "Confirmed" then
+        if bothGuiConfirmed == true then
+
+            if bothConfirmedSince == nil then
+                bothConfirmedSince =
+                    os.clock()
+            end
 
             TransferUpdateTradeStatusText(
                 label,
-                "Waiting other final confirm."
+                "Both sides confirmed. Waiting server completion."
             )
 
-            task.wait(0.15)
+            -- If both visible sides are confirmed but the server is slow to close UI,
+            -- treat it as completed after a short settle window.
+            if os.clock() - bothConfirmedSince >= 0.65 then
+
+                TransferMarkTradeCompleted(
+                    "Both visible trade sides confirmed."
+                )
+
+                TransferTimingMark("CompletedAt")
+                TransferTimingReport("both confirmed")
+
+                return true
+            end
+
+            task.wait(0.05)
+
+        elseif buttonText == "Confirmed" then
+
+            TransferUpdateTradeStatusText(
+                label,
+                "Local confirmed. Waiting other final confirm."
+            )
+
+            task.wait(0.08)
 
         elseif (
             buttonText == "Confirm"
@@ -9333,7 +9404,7 @@ function TransferConfirmAndWait(label, timeout)
                 attempts + 1
 
             nextRetryAt =
-                os.clock() + 0.18
+                os.clock() + 0.10
 
             TransferUpdateTradeStatusText(
                 label,
@@ -9352,12 +9423,18 @@ function TransferConfirmAndWait(label, timeout)
                 "| Button:",
                 tostring(buttonText),
                 "| Local:",
-                TransferGetLocalTradeState(),
+                tostring(TransferGetLocalTradeState()),
                 "| Other:",
-                TransferGetOtherTradeState()
+                tostring(TransferGetOtherTradeState()),
+                "| MyReady:",
+                tostring(TransferGetReadyLabelText("MyPlr")),
+                "| OtherReady:",
+                tostring(TransferGetReadyLabelText("OtherPlr")),
+                "| Status:",
+                tostring(TransferGetTradeStatusText())
             )
 
-            task.wait(0.05)
+            task.wait(0.04)
 
         else
 
@@ -9365,9 +9442,15 @@ function TransferConfirmAndWait(label, timeout)
                 label,
                 "Waiting final confirm result. Button="
                     .. tostring(buttonText)
+                    .. " | OtherFinal="
+                    .. tostring(otherFinalConfirmed)
+                    .. " | MyReady="
+                    .. tostring(TransferGetReadyLabelText("MyPlr"))
+                    .. " | OtherReady="
+                    .. tostring(TransferGetReadyLabelText("OtherPlr"))
             )
 
-            task.wait(0.15)
+            task.wait(0.08)
         end
     end
 
@@ -9958,13 +10041,6 @@ function TransferRunSenderBatch()
         "Waiting final confirm button."
     )
 
-    if TransferState.AutoConfirm == true then
-
-        TransferTryInstantFinalConfirm(
-            "Receiver pre-check before confirm wait."
-        )
-    end
-
     local confirmReady =
         TransferWaitForConfirmReady(45)
 
@@ -10167,6 +10243,13 @@ function TransferRunReceiverBatch()
         TransferUpdateTradeStatusText(
             "Manual Accept",
             "Waiting for you to press Accept."
+        )
+    end
+
+    if TransferState.AutoConfirm == true then
+
+        TransferTryInstantFinalConfirm(
+            "Receiver pre-check before confirm wait."
         )
     end
 
