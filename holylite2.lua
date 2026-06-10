@@ -638,7 +638,7 @@ end
 if IsGardenWorld() then
 
     HomeLeftBox:AddButton({
-        Text = "Garden",
+        Text = "Rejoin",
         Tooltip = "Teleport to normal Grow a Garden.",
         Func = function()
 
@@ -2446,6 +2446,7 @@ TransferState = {
     TransferEnabled = false,
     KeepGoing = false,
     IsTransferRunning = false,
+    WorkerToken = 0,
 
     MaxPetsPerTrade = 12,
     AddPetDelay = 0.5,
@@ -9312,23 +9313,15 @@ end
 
 function TransferWorkerLoop()
 
-    if TransferState.IsTransferRunning == true then
+    TransferState.WorkerToken =
+        (
+            tonumber(TransferState.WorkerToken)
+            or 0
+        )
+        + 1
 
-        if TransferState.TransferEnabled ~= true then
-
-            TransferState.IsTransferRunning =
-                false
-
-        else
-
-            TransferSetStatus(
-                "Already Running",
-                "Transfer worker is already active."
-            )
-
-            return
-        end
-    end
+    local workerToken =
+        TransferState.WorkerToken
 
     TransferState.IsTransferRunning =
         true
@@ -9336,15 +9329,19 @@ function TransferWorkerLoop()
     TransferState.Batch =
         0
 
+    TransferState.AddedThisBatch =
+        0
+
     TransferSetStatus(
         "Enabled",
-        "Transfer started."
+        "Transfer worker restarted."
     )
 
     task.spawn(function()
 
         while IsHolyLiteCurrentRun()
-        and TransferState.TransferEnabled == true do
+        and TransferState.TransferEnabled == true
+        and TransferState.WorkerToken == workerToken do
 
             local ok, msg
 
@@ -9508,8 +9505,11 @@ function TransferWorkerLoop()
             end
         end
 
-        TransferState.IsTransferRunning =
-            false
+        if TransferState.WorkerToken == workerToken then
+
+            TransferState.IsTransferRunning =
+                false
+        end
     end)
 end
 ---12.6 Transfer end--
@@ -9937,24 +9937,79 @@ and IsGardenWorld() then
 
     TransferState.TransferEnabledToggle:OnChanged(function(value)
 
-        TransferState.TransferEnabled =
+        local wantsEnabled =
             value == true
 
-        QueueSaveTransferSettings(
-            "transfer enabled changed"
-        )
+        -- Always invalidate the old worker first.
+        TransferState.WorkerToken =
+            (
+                tonumber(TransferState.WorkerToken)
+                or 0
+            )
+            + 1
 
-        if TransferState.TransferEnabled == true then
+        local restartToken =
+            TransferState.WorkerToken
 
-            TransferWorkerLoop()
+        TransferState.TransferEnabled =
+            false
 
-        else
+        TransferState.IsTransferRunning =
+            false
+
+        TransferState.IsAddingPets =
+            false
+
+        TransferResetTradeRuntime()
+
+        if wantsEnabled ~= true then
+
+            QueueSaveTransferSettings(
+                "transfer disabled"
+            )
 
             TransferSetStatus(
                 "Disabled",
-                "Transfer stopped."
+                "Transfer stopped and runtime reset."
             )
+
+            return
         end
+
+        TransferSetStatus(
+            "Restarting",
+            "Resetting old transfer worker..."
+        )
+
+        task.spawn(function()
+
+            task.wait(0.20)
+
+            if not IsHolyLiteCurrentRun() then
+                return
+            end
+
+            if TransferState.WorkerToken ~= restartToken then
+                return
+            end
+
+            TransferResetTradeRuntime()
+
+            TransferState.Batch =
+                0
+
+            TransferState.AddedThisBatch =
+                0
+
+            TransferState.TransferEnabled =
+                true
+
+            QueueSaveTransferSettings(
+                "transfer restarted"
+            )
+
+            TransferWorkerLoop()
+        end)
     end)
 
     TransferState.AutoAcceptTicketToggle =
