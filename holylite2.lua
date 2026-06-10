@@ -7613,7 +7613,27 @@ function TransferStartFastAcceptPump(label, requiredOwnCount, requiredOtherCount
                 OnValueSeen("frame_scan", value)
             end
 
-            if valueDetected == true then
+            local ownCount =
+                tonumber(TransferState.TradeOwnItemCount)
+                or 0
+
+            local otherCount =
+                tonumber(TransferState.TradeOtherItemCount)
+                or 0
+
+            local countReady =
+                (
+                    tonumber(requiredOwnCount) or 0
+                ) > 0
+                and ownCount >= (
+                    tonumber(requiredOwnCount) or 0
+                )
+                and otherCount >= (
+                    tonumber(requiredOtherCount) or 0
+                )
+
+            if valueDetected == true
+            or countReady == true then
 
                 local buttonText =
                     TransferGetTradeButtonText()
@@ -7634,8 +7654,10 @@ function TransferStartFastAcceptPump(label, requiredOwnCount, requiredOtherCount
 
                     -- No visible cooldown. Burst hard.
                     FireAcceptBurst(
-                        "button_ready",
-                        value,
+                        countReady == true
+                            and "count_ready"
+                            or "button_ready",
+                        value or ownCount,
                         4
                     )
 
@@ -7645,8 +7667,10 @@ function TransferStartFastAcceptPump(label, requiredOwnCount, requiredOtherCount
 
                         -- Only fire at the real useful server-ready window.
                         FireAcceptBurst(
-                            "cooldown_final",
-                            value,
+                            countReady == true
+                                and "count_ready_cooldown_final"
+                                or "cooldown_final",
+                            value or ownCount,
                             8
                         )
 
@@ -8613,11 +8637,18 @@ function TransferRunSenderBatch()
         "Pets added. Instant accepting trade."
     )
 
+    TransferStartFastAcceptPump(
+        "Sender Added",
+        added,
+        0,
+        14
+    )
+
     local acceptOk =
         TransferAcceptAndWait(
             "Accepting",
             14,
-            0,
+            added,
             0
         )
 
