@@ -7034,6 +7034,98 @@ function TransferWaitForSenderReadyForReceiverAccept(timeout)
     return false
 end
 
+function TransferTryInstantFinalConfirm(reason)
+
+    if TransferState.AutoConfirm ~= true then
+        return false
+    end
+
+    if TransferState.TradeDeclined == true then
+        return false
+    end
+
+    if TransferState.TradeCompleted == true
+    or TransferState.TradeResult == "Completed" then
+        return true
+    end
+
+    local buttonText =
+        TransferGetTradeButtonText()
+
+    local ready =
+        buttonText == "Confirm"
+        or buttonText == "Confirmed"
+        or TransferOtherFinalConfirmedLike() == true
+        or TransferConfirmWindowReady() == true
+
+    if ready ~= true then
+        return false
+    end
+
+    TransferTimingMark(
+        "ConfirmSeenAt"
+    )
+
+    TransferUpdateTradeStatusText(
+        "Instant Confirm",
+        tostring(reason or "Confirm ready.")
+            .. " | Button="
+            .. tostring(buttonText)
+    )
+
+    for attempt = 1, 10 do
+
+        if TransferState.TradeCompleted == true
+        or TransferState.TradeResult == "Completed"
+        or TransferGetLocalTradeState() == "Processing"
+        or TransferGetOtherTradeState() == "Processing" then
+
+            TransferTimingMark(
+                "CompletedAt"
+            )
+
+            return true
+        end
+
+        local currentButton =
+            TransferGetTradeButtonText()
+
+        if currentButton ~= "Confirm"
+        and currentButton ~= "Confirmed"
+        and TransferOtherFinalConfirmedLike() ~= true then
+            break
+        end
+
+        local ok, msg =
+            TransferFireTradeRemote("Confirm")
+
+        print(
+            "[TRANSFER] Instant Confirm:",
+            tostring(attempt),
+            tostring(ok),
+            tostring(msg),
+            "| reason:",
+            tostring(reason),
+            "| button:",
+            tostring(currentButton),
+            "| local:",
+            tostring(TransferGetLocalTradeState()),
+            "| other:",
+            tostring(TransferGetOtherTradeState()),
+            "| status:",
+            tostring(TransferGetTradeStatusText())
+        )
+
+        task.wait(0.08)
+    end
+
+    return TransferState.TradeCompleted == true
+        or TransferState.TradeResult == "Completed"
+        or TransferGetLocalTradeState() == "Processing"
+        or TransferGetOtherTradeState() == "Processing"
+end
+
+
 function TransferWaitForConfirmReady(timeout)
 
     timeout =
@@ -7104,6 +7196,13 @@ function TransferWaitForConfirmReady(timeout)
             TransferTimingMark(
                 "ConfirmSeenAt"
             )
+
+            if TransferState.AutoConfirm == true then
+
+                TransferTryInstantFinalConfirm(
+                    "Confirm window became ready."
+                )
+            end
 
             return true
         end
@@ -9094,7 +9193,8 @@ function TransferConfirmAndWait(label, timeout)
             task.wait(0.15)
 
         elseif (
-            confirmWindowReady == true
+            buttonText == "Confirm"
+            or confirmWindowReady == true
             or (
                 otherFinalConfirmed == true
                 and localAccepted == true
@@ -9918,6 +10018,10 @@ function TransferRunReceiverBatch()
         TransferUpdateTradeStatusText(
             "Confirming",
             "Final confirm."
+        )
+
+        TransferTryInstantFinalConfirm(
+            "Receiver reached final confirm stage."
         )
 
         local completed =
