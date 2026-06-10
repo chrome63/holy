@@ -2525,6 +2525,9 @@ TransferState = {
     RequestExpired = false,
     RequestExpiredReason = "",
 
+    RequestAcceptValue = nil,
+    LastRequestAcceptValue = "unknown",
+
     IncomingRequestId = "",
     IncomingRequestPlayerName = "",
     IncomingRequestAt = 0,
@@ -5175,6 +5178,9 @@ function TransferResetTradeRuntime()
     TransferState.RequestExpiredReason =
         ""
 
+    TransferState.LastRequestAcceptValue =
+        "unknown"
+
     TransferState.LastTradeUpdate =
         0
 end
@@ -5252,11 +5258,19 @@ function TransferMarkRequestExpired(reason)
     reason =
         tostring(reason or "Request expired.")
 
+    local expiredRequestId =
+        CleanText(TransferState.IncomingRequestId)
+
     TransferState.RequestExpired =
         true
 
     TransferState.RequestExpiredReason =
         reason
+
+    if expiredRequestId ~= "" then
+        TransferState.IncomingRequestHandled[expiredRequestId] =
+            nil
+    end
 
     TransferState.IncomingRequestId =
         ""
@@ -5277,7 +5291,11 @@ function TransferMarkRequestExpired(reason)
 
     print(
         "[TRANSFER] Request expired:",
-        reason
+        reason,
+        "| requestId:",
+        tostring(expiredRequestId),
+        "| lastAcceptValue:",
+        tostring(TransferState.LastRequestAcceptValue)
     )
 end
 
@@ -7501,117 +7519,35 @@ function TransferAcceptIncomingRequest()
     TransferState.RequestExpiredReason =
         ""
 
-    local attempts =
-        0
-
-    local function fireAccept(reason)
-
-        attempts =
-            attempts + 1
-
-        local ok, err =
-            pcall(function()
-
-                -- Grow a Garden uses false for accepting the request.
-                remote:FireServer(
-                    requestId,
-                    false
-                )
-            end)
-
-        print(
-            "[TRANSFER REQUEST ACCEPT]",
-            tostring(reason),
-            "| attempt:",
-            tostring(attempts),
-            "| ok:",
-            tostring(ok),
-            "| err:",
-            tostring(err),
-            "| requestId:",
-            tostring(requestId),
-            "| sender:",
-            tostring(senderName)
-        )
-
-        TransferSetStatus(
-            "Accepting Ticket",
-            "Accept fired "
-                .. tostring(attempts)
-                .. "x from "
-                .. tostring(senderName)
-        )
-
-        return ok == true
-    end
-
-    -- Fire once immediately.
-    fireAccept("initial")
-
-    local started =
-        os.clock()
-
-    local backupFired =
-        false
-
-    while IsHolyLiteCurrentRun()
-    and TransferState.TransferEnabled == true
-    and os.clock() - started < 8 do
-
-        if TransferState.RequestExpired == true then
-
-            TransferSetStatus(
-                "Request Expired",
-                tostring(TransferState.RequestExpiredReason)
-            )
-
-            return false
-        end
+    local function tradeOpened()
 
         local actualOpen =
             TransferActualTradeOpen()
 
         if actualOpen == true then
-
-            TransferState.IncomingRequestHandled[requestId] =
-                true
-
-            TransferHideTradeRequestPopup(
-                senderName
-            )
-
-            TransferState.IncomingRequestId =
-                ""
-
-            TransferState.IncomingRequestPlayerName =
-                ""
-
-            TransferState.IncomingRequestAt =
-                0
-
-            TransferSetStatus(
-                "Request Accepted",
-                "Real trade opened from "
-                    .. tostring(senderName)
-            )
-
             return true
         end
 
-        -- One backup pulse only. Do not spam 20+ times.
-        if backupFired ~= true
-        and os.clock() - started >= 0.45 then
-
-            backupFired =
-                true
-
-            fireAccept("backup")
+        if TransferState.TradeOpen == true
+        and (
+            TransferState.LocalTradeSide ~= nil
+            or TransferState.OtherTradeSide ~= nil
+            or tonumber(TransferState.TradeOwnItemCount) > 0
+            or tonumber(TransferState.TradeOtherItemCount) > 0
+        ) then
+            return true
         end
 
-        task.wait(0.05)
+        return false
     end
 
-    if TransferActualTradeOpen() == true then
+    local function finishAccepted(valueUsed)
+
+        TransferState.RequestAcceptValue =
+            valueUsed
+
+        TransferState.LastRequestAcceptValue =
+            tostring(valueUsed)
 
         TransferState.IncomingRequestHandled[requestId] =
             true
@@ -7629,13 +7565,166 @@ function TransferAcceptIncomingRequest()
         TransferState.IncomingRequestAt =
             0
 
+        TransferSetStatus(
+            "Request Accepted",
+            "Trade opened from "
+                .. tostring(senderName)
+                .. " | value="
+                .. tostring(valueUsed)
+        )
+
+        print(
+            "[TRANSFER REQUEST ACCEPT]",
+            "SUCCESS",
+            "| value:",
+            tostring(valueUsed),
+            "| requestId:",
+            tostring(requestId),
+            "| sender:",
+            tostring(senderName)
+        )
+
         return true
+    end
+
+    local function fireRespond(valueUsed, label)
+
+        TransferState.LastRequestAcceptValue =
+            tostring(valueUsed)
+
+        local ok, err =
+            pcall(function()
+
+                remote:FireServer(
+                    requestId,
+                    valueUsed
+                )
+            end)
+
+        print(
+            "[TRANSFER REQUEST ACCEPT]",
+            tostring(label),
+            "| value:",
+            tostring(valueUsed),
+            "| ok:",
+            tostring(ok),
+            "| err:",
+            tostring(err),
+            "| requestId:",
+            tostring(requestId),
+            "| sender:",
+            tostring(senderName)
+        )
+
+        TransferSetStatus(
+            "Accepting Ticket",
+            "Respond "
+                .. tostring(label)
+                .. " value="
+                .. tostring(valueUsed)
+                .. " from "
+                .. tostring(senderName)
+        )
+
+        return ok == true
+    end
+
+    local function waitForOpen(timeout)
+
+        timeout =
+            tonumber(timeout)
+            or 1
+
+        local started =
+            os.clock()
+
+        while IsHolyLiteCurrentRun()
+        and TransferState.TransferEnabled == true
+        and os.clock() - started < timeout do
+
+            if TransferState.RequestExpired == true then
+                return false, "expired"
+            end
+
+            if tradeOpened() == true then
+                return true, "opened"
+            end
+
+            task.wait(0.03)
+        end
+
+        if tradeOpened() == true then
+            return true, "opened"
+        end
+
+        return false, "timeout"
+    end
+
+    local candidates = {}
+
+    if TransferState.RequestAcceptValue ~= nil then
+
+        table.insert(
+            candidates,
+            TransferState.RequestAcceptValue
+        )
+
+        table.insert(
+            candidates,
+            TransferState.RequestAcceptValue == true
+                and false
+                or true
+        )
+
+    else
+
+        -- Old spy said false, but current logs show false can expire.
+        -- Try false first, then true once if no real trade opens.
+        table.insert(candidates, false)
+        table.insert(candidates, true)
+    end
+
+    local seen = {}
+
+    for index, valueUsed in ipairs(candidates) do
+
+        if seen[tostring(valueUsed)] ~= true then
+
+            seen[tostring(valueUsed)] =
+                true
+
+            fireRespond(
+                valueUsed,
+                index == 1 and "primary" or "fallback"
+            )
+
+            local opened, waitReason =
+                waitForOpen(
+                    index == 1
+                    and 1.15
+                    or 6.0
+                )
+
+            if opened == true then
+                return finishAccepted(valueUsed)
+            end
+
+            if waitReason == "expired" then
+
+                TransferSetStatus(
+                    "Request Expired",
+                    tostring(TransferState.RequestExpiredReason)
+                )
+
+                return false
+            end
+        end
     end
 
     TransferSetStatus(
         "Request Failed",
-        "Accepted request did not open real trade. Attempts="
-            .. tostring(attempts)
+        "No response value opened trade. Last value="
+            .. tostring(TransferState.LastRequestAcceptValue)
     )
 
     return false
