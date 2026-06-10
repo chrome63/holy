@@ -8223,9 +8223,44 @@ function TransferWaitForReceiverOfferReady(timeout)
     return false
 end
 
+function TransferHasTrustedIncomingRequest()
+
+    local trusted =
+        CleanText(TransferState.TargetPlayerName)
+
+    if trusted == "" then
+        return false
+    end
+
+    if CleanText(TransferState.IncomingRequestId) == "" then
+        return false
+    end
+
+    if TransferState.IncomingRequestPlayerName ~= trusted then
+        return false
+    end
+
+    local requestAge =
+        os.clock()
+        - (
+            tonumber(TransferState.IncomingRequestAt)
+            or 0
+        )
+
+    return requestAge >= 0
+        and requestAge <= 30
+end
+
+
 function TransferReceiverHasRecoverableLiveTrade()
 
     if TransferState.Mode ~= "Receiver" then
+        return false
+    end
+
+    -- Incoming request has priority over stale LiveTrade recovery.
+    -- Do not reattach if a fresh trusted request is waiting.
+    if TransferHasTrustedIncomingRequest() == true then
         return false
     end
 
@@ -8268,31 +8303,68 @@ function TransferReceiverHasRecoverableLiveTrade()
     local otherValue =
         TransferGuiGetSidePriceAmount("OtherPlr")
 
+    local myReady =
+        TransferReadyLabelIsAccepted("MyPlr")
+
     local otherReady =
         TransferReadyLabelIsAccepted("OtherPlr")
-
-    local activeButton =
-        buttonText == "Accept"
-        or buttonText == "Accepted"
-        or buttonText == "Confirm"
-        or buttonText == "Confirmed"
-        or cooldown ~= nil
 
     local hasSenderOffer =
         otherItems > 0
         or otherValue > 0
 
-    local hasTradeStatus =
-        statusText:find("accepted", 1, true) ~= nil
-        or statusText:find("waiting", 1, true) ~= nil
+    local hasAcceptedOrConfirmStatus =
+        statusText:find("has accepted", 1, true) ~= nil
+        or statusText:find("has confirmed", 1, true) ~= nil
         or statusText:find("confirm", 1, true) ~= nil
 
-    return activeButton == true
-        and (
-            hasSenderOffer == true
-            or otherReady == true
-            or hasTradeStatus == true
+    -- This is the stale state from your screenshot:
+    -- button countdown + "Waiting for both players to accept" + no items/value/ready labels.
+    -- Never recover/reattach to this.
+    if cooldown ~= nil
+    and hasSenderOffer ~= true
+    and myReady ~= true
+    and otherReady ~= true
+    and hasAcceptedOrConfirmStatus ~= true then
+
+        print(
+            "[TRANSFER RECOVERY]",
+            "Rejected stale empty LiveTrade.",
+            "| button:",
+            tostring(buttonText),
+            "| status:",
+            tostring(TransferGetTradeStatusText()),
+            "| myReady:",
+            tostring(TransferGetReadyLabelText("MyPlr")),
+            "| otherReady:",
+            tostring(TransferGetReadyLabelText("OtherPlr")),
+            "| otherItems:",
+            tostring(otherItems),
+            "| otherValue:",
+            tostring(otherValue)
         )
+
+        return false
+    end
+
+    if buttonText == "Confirm"
+    or buttonText == "Confirmed" then
+        return true
+    end
+
+    if hasSenderOffer == true then
+        return true
+    end
+
+    if otherReady == true then
+        return true
+    end
+
+    if hasAcceptedOrConfirmStatus == true then
+        return true
+    end
+
+    return false
 end
 
 function TransferReattachReceiverLiveTrade(reason)
@@ -9925,7 +9997,13 @@ end
 function TransferRunReceiverBatch()
 
     local recoveredLiveTrade =
-        TransferReceiverHasRecoverableLiveTrade()
+        false
+
+    if TransferHasTrustedIncomingRequest() ~= true then
+
+        recoveredLiveTrade =
+            TransferReceiverHasRecoverableLiveTrade()
+    end
 
     if recoveredLiveTrade == true then
 
