@@ -2522,6 +2522,9 @@ TransferState = {
     RequestBlocked = false,
     RequestBlockedReason = "",
 
+    RequestExpired = false,
+    RequestExpiredReason = "",
+
     IncomingRequestId = "",
     IncomingRequestPlayerName = "",
     IncomingRequestAt = 0,
@@ -5166,6 +5169,12 @@ function TransferResetTradeRuntime()
     TransferState.RequestBlockedReason =
         ""
 
+    TransferState.RequestExpired =
+        false
+
+    TransferState.RequestExpiredReason =
+        ""
+
     TransferState.LastTradeUpdate =
         0
 end
@@ -5234,6 +5243,40 @@ function TransferMarkRequestBlocked(reason)
 
     print(
         "[TRANSFER] Request blocked:",
+        reason
+    )
+end
+
+function TransferMarkRequestExpired(reason)
+
+    reason =
+        tostring(reason or "Request expired.")
+
+    TransferState.RequestExpired =
+        true
+
+    TransferState.RequestExpiredReason =
+        reason
+
+    TransferState.IncomingRequestId =
+        ""
+
+    TransferState.IncomingRequestPlayerName =
+        ""
+
+    TransferState.IncomingRequestAt =
+        0
+
+    TransferState.LastTradeUpdate =
+        os.clock()
+
+    TransferSetStatus(
+        "Request Expired",
+        reason
+    )
+
+    print(
+        "[TRANSFER] Request expired:",
         reason
     )
 end
@@ -5573,6 +5616,12 @@ function TransferStartTradeWatchers()
             if typeof(senderPlayer) == "Instance"
             and senderPlayer:IsA("Player") then
 
+                TransferState.RequestExpired =
+                    false
+
+                TransferState.RequestExpiredReason =
+                    ""
+
                 TransferState.IncomingRequestId =
                     requestText
 
@@ -5719,7 +5768,13 @@ function TransferStartTradeWatchers()
             local lower =
                 text:lower()
 
-            if lower:find("trade completed", 1, true) then
+            if lower:find("request expired", 1, true) then
+
+                TransferMarkRequestExpired(
+                    text
+                )
+
+            elseif lower:find("trade completed", 1, true) then
 
                 TransferMarkTradeCompleted(
                     text
@@ -7440,18 +7495,78 @@ function TransferAcceptIncomingRequest()
         return false
     end
 
-    local started =
-        os.clock()
+    TransferState.RequestExpired =
+        false
 
-    local lastFireAt =
-        0
+    TransferState.RequestExpiredReason =
+        ""
 
     local attempts =
         0
 
+    local function fireAccept(reason)
+
+        attempts =
+            attempts + 1
+
+        local ok, err =
+            pcall(function()
+
+                -- Grow a Garden uses false for accepting the request.
+                remote:FireServer(
+                    requestId,
+                    false
+                )
+            end)
+
+        print(
+            "[TRANSFER REQUEST ACCEPT]",
+            tostring(reason),
+            "| attempt:",
+            tostring(attempts),
+            "| ok:",
+            tostring(ok),
+            "| err:",
+            tostring(err),
+            "| requestId:",
+            tostring(requestId),
+            "| sender:",
+            tostring(senderName)
+        )
+
+        TransferSetStatus(
+            "Accepting Ticket",
+            "Accept fired "
+                .. tostring(attempts)
+                .. "x from "
+                .. tostring(senderName)
+        )
+
+        return ok == true
+    end
+
+    -- Fire once immediately.
+    fireAccept("initial")
+
+    local started =
+        os.clock()
+
+    local backupFired =
+        false
+
     while IsHolyLiteCurrentRun()
     and TransferState.TransferEnabled == true
-    and os.clock() - started < 4 do
+    and os.clock() - started < 8 do
+
+        if TransferState.RequestExpired == true then
+
+            TransferSetStatus(
+                "Request Expired",
+                tostring(TransferState.RequestExpiredReason)
+            )
+
+            return false
+        end
 
         local actualOpen =
             TransferActualTradeOpen()
@@ -7476,61 +7591,27 @@ function TransferAcceptIncomingRequest()
 
             TransferSetStatus(
                 "Request Accepted",
-                "Trade opened from "
+                "Real trade opened from "
                     .. tostring(senderName)
             )
 
             return true
         end
 
-        if os.clock() - lastFireAt >= 0.15 then
+        -- One backup pulse only. Do not spam 20+ times.
+        if backupFired ~= true
+        and os.clock() - started >= 0.45 then
 
-            lastFireAt =
-                os.clock()
+            backupFired =
+                true
 
-            attempts =
-                attempts + 1
-
-            local ok, err =
-                pcall(function()
-
-                    -- Grow a Garden uses false for accepting the request.
-                    remote:FireServer(
-                        requestId,
-                        false
-                    )
-                end)
-
-            print(
-                "[TRANSFER REQUEST ACCEPT]",
-                "attempt:",
-                tostring(attempts),
-                "| ok:",
-                tostring(ok),
-                "| err:",
-                tostring(err),
-                "| requestId:",
-                tostring(requestId),
-                "| sender:",
-                tostring(senderName)
-            )
-
-            TransferSetStatus(
-                "Accepting Ticket",
-                "Accept attempt "
-                    .. tostring(attempts)
-                    .. " from "
-                    .. tostring(senderName)
-            )
+            fireAccept("backup")
         end
 
-        task.wait(0.03)
+        task.wait(0.05)
     end
 
-    local finalOpen =
-        TransferActualTradeOpen()
-
-    if finalOpen == true then
+    if TransferActualTradeOpen() == true then
 
         TransferState.IncomingRequestHandled[requestId] =
             true
@@ -7553,9 +7634,8 @@ function TransferAcceptIncomingRequest()
 
     TransferSetStatus(
         "Request Failed",
-        "Request did not open real trade after "
+        "Accepted request did not open real trade. Attempts="
             .. tostring(attempts)
-            .. " accept attempts."
     )
 
     return false
