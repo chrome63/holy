@@ -5973,6 +5973,142 @@ function TransferWaitForLiveTradeClosed(timeout)
     return false
 end
 
+function TransferStateIsInTradeLike(state)
+
+    state =
+        tostring(state or "")
+
+    return state == "Accepted"
+        or state == "Confirmed"
+        or state == "Processing"
+end
+
+function TransferIsInTradeHard()
+
+    if TransferIsLiveTradeOpen() == true then
+        return true, "LiveTrade open"
+    end
+
+    if TransferState.TradeDeclined == true then
+        return false, "Trade declined"
+    end
+
+    if TransferState.TradeCompleted == true
+    or TransferState.TradeResult == "Completed" then
+        return false, "Completed"
+    end
+
+    if TransferState.TradeOpen == true then
+        return true, "TradeOpen true"
+    end
+
+    local localState =
+        TransferGetLocalTradeState()
+
+    local otherState =
+        TransferGetOtherTradeState()
+
+    if TransferStateIsInTradeLike(localState) then
+        return true, "Local state " .. tostring(localState)
+    end
+
+    if TransferStateIsInTradeLike(otherState) then
+        return true, "Other state " .. tostring(otherState)
+    end
+
+    return false, "Safe"
+end
+
+function TransferWaitUntilSafeToSendTicket(timeout)
+
+    timeout =
+        tonumber(timeout)
+        or 10
+
+    local started =
+        os.clock()
+
+    local lastStatusAt =
+        0
+
+    while IsHolyLiteCurrentRun()
+    and TransferState.TransferEnabled == true do
+
+        local inTrade, reason =
+            TransferIsInTradeHard()
+
+        if inTrade ~= true then
+
+            -- Small settle window so Roblox/server finishes clearing the old trade.
+            task.wait(0.25)
+
+            local stillInTrade, secondReason =
+                TransferIsInTradeHard()
+
+            if stillInTrade ~= true then
+
+                print(
+                    "[TRANSFER SEND GATE]",
+                    "Safe to send ticket.",
+                    "| waited:",
+                    string.format("%.3fs", os.clock() - started),
+                    "| reason:",
+                    tostring(reason),
+                    "| second:",
+                    tostring(secondReason)
+                )
+
+                return true
+            end
+
+            reason =
+                secondReason
+        end
+
+        if os.clock() - started >= timeout then
+
+            TransferSetStatus(
+                "Still In Trade",
+                tostring(reason)
+            )
+
+            print(
+                "[TRANSFER SEND GATE]",
+                "Blocked send ticket.",
+                "| timeout:",
+                tostring(timeout),
+                "| reason:",
+                tostring(reason),
+                "| liveOpen:",
+                tostring(TransferIsLiveTradeOpen()),
+                "| tradeOpen:",
+                tostring(TransferState.TradeOpen),
+                "| local:",
+                tostring(TransferGetLocalTradeState()),
+                "| other:",
+                tostring(TransferGetOtherTradeState())
+            )
+
+            return false, tostring(reason)
+        end
+
+        if os.clock() - lastStatusAt >= 0.35 then
+
+            lastStatusAt =
+                os.clock()
+
+            TransferSetStatus(
+                "Waiting Safe",
+                "Still in trade: " .. tostring(reason)
+            )
+        end
+
+        task.wait(0.1)
+    end
+
+    return false, "Transfer disabled"
+end
+
 function TransferHideTradeRequestPopup(playerName)
 
     playerName =
@@ -6969,6 +7105,19 @@ function TransferFirePetAddNoWait(pet)
 end
 
 function TransferSendTicket()
+
+    local safeToSend, safeReason =
+        TransferWaitUntilSafeToSendTicket(12)
+
+    if safeToSend ~= true then
+
+        TransferSetStatus(
+            "Still In Trade",
+            "Not sending ticket: " .. tostring(safeReason)
+        )
+
+        return false, "Still in trade"
+    end
 
     local target =
         TransferResolveTargetPlayer()
@@ -9169,14 +9318,20 @@ function TransferWorkerLoop()
 
                     elseif retryMsg == "Request blocked" then
 
-                        task.wait(0.85)
+                        TransferWaitUntilSafeToSendTicket(12)
+
+                    elseif retryMsg == "Still in trade" then
+
+                        TransferWaitUntilSafeToSendTicket(12)
 
                     else
 
                         task.wait(0.18)
                     end
 
-                    TransferResetTradeRuntime()
+                    if TransferIsInTradeHard() ~= true then
+                        TransferResetTradeRuntime()
+                    end
 
                     print(
                         "[TRANSFER SEND TIMING]",
@@ -9229,9 +9384,9 @@ function TransferWorkerLoop()
 
             if TransferState.Mode == "Sender" then
 
-                TransferWaitForLiveTradeClosed(4)
+                TransferWaitForLiveTradeClosed(6)
 
-                task.wait(0.35)
+                TransferWaitUntilSafeToSendTicket(12)
 
                 if #TransferBuildMatches() <= 0 then
 
