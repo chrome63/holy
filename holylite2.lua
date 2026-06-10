@@ -6916,18 +6916,37 @@ function TransferSenderReadyForReceiverAccept()
     local otherState =
         TransferGetOtherTradeState()
 
-    -- Strict rule:
-    -- Receiver may only accept after sender has accepted/confirmed/processing.
-    -- Added items alone are NOT enough, because sender may still be adding pets.
+    -- DataStream state.
     if TransferTradeStateIsAcceptedLike(otherState) then
         return true
     end
 
-    -- GUI fallback:
-    -- Only trust visible "@Sender has accepted" text.
+    -- Visible side label. Receiver sees sender on OtherPlr.
+    if TransferReadyLabelIsAccepted("OtherPlr") == true then
+        return true
+    end
+
+    -- Visible status text fallback: "@Sender has accepted".
     if TransferGuiPlayerHasAccepted(
         TransferState.TargetPlayerName
     ) then
+        return true
+    end
+
+    local statusText =
+        tostring(
+            TransferGetTradeStatusText()
+            or ""
+        ):lower()
+
+    local targetName =
+        CleanText(
+            TransferState.TargetPlayerName
+        ):lower()
+
+    if targetName ~= ""
+    and statusText:find(targetName, 1, true)
+    and statusText:find("has accepted", 1, true) then
         return true
     end
 
@@ -6991,6 +7010,48 @@ function TransferWaitForConfirmReady(timeout)
 
         local seconds =
             TransferParseCooldownText(text)
+
+        if TransferState.Mode == "Receiver"
+        and text == "Accept"
+        and TransferSenderReadyForReceiverAccept() == true then
+
+            local receiverOfferReady =
+                TransferSideOfferReady(
+                    "OtherPlr",
+                    1,
+                    TransferState.TradeOtherItemCount
+                )
+
+            if receiverOfferReady == true then
+
+                TransferUpdateTradeStatusText(
+                    "Instant Accept",
+                    "Sender accepted. Receiver firing Accept now."
+                )
+
+                for _ = 1, 8 do
+
+                    if TransferLocalAcceptLocked() == true then
+                        break
+                    end
+
+                    TransferFireTradeRemote("Accept")
+
+                    TransferTimingBumpAttempts(1)
+
+                    task.wait()
+                end
+
+                task.wait(0.04)
+
+                if TransferLocalAcceptLocked() == true then
+
+                    TransferTimingMark(
+                        "AcceptLockedAt"
+                    )
+                end
+            end
+        end
 
         if TransferConfirmWindowReady() == true then
 
@@ -8737,16 +8798,8 @@ function TransferAcceptAndWait(label, timeout, requiredOwnCount, requiredOtherCo
 
         if TransferState.Mode == "Receiver" then
 
-            local senderAccepted =
-                TransferTradeStateIsAcceptedLike(
-                    TransferGetOtherTradeState()
-                )
-                or TransferGuiPlayerHasAccepted(
-                    TransferState.TargetPlayerName
-                )
-
             senderAcceptedReady =
-                senderAccepted == true
+                TransferSenderReadyForReceiverAccept() == true
                 and offerReady == true
         end
 
