@@ -244,6 +244,7 @@ local LITE_UI_SETTINGS_FILE =
 local LiteUIState = {
     ShowUIOnLoad = true,
     AutoTeleportTradeWorld = false,
+    AutoReconnectGarden = false,
 }
 
 function CanUseLiteUISettingsFile()
@@ -322,6 +323,11 @@ function LoadLiteUISettingsEarly()
             payload.AutoTeleportTradeWorld
     end
 
+    if type(payload.AutoReconnectGarden) == "boolean" then
+        LiteUIState.AutoReconnectGarden =
+            payload.AutoReconnectGarden
+    end
+
     return true
 end
 
@@ -340,6 +346,9 @@ function SaveLiteUISettingsNow()
         AutoTeleportTradeWorld =
             LiteUIState.AutoTeleportTradeWorld == true,
     }
+
+            AutoReconnectGarden =
+            LiteUIState.AutoReconnectGarden == true,
 
     local ok, encoded =
         pcall(function()
@@ -479,6 +488,404 @@ function CancelLiteTradeWorldTeleportCountdown()
 
     print("[HOLY SNIPER LITE] Auto Trade World teleport countdown cancelled.")
 end
+
+local LiteGardenReconnectState = {
+    Token = 0,
+    Active = false,
+    Attempts = 0,
+    MaxAttempts = 30,
+    Status = "Idle",
+    LastReason = "None",
+    LastAttemptAt = 0,
+}
+
+function RequestLiteGardenReconnect(reason, delaySeconds)
+
+    if IsGardenWorld() ~= true then
+        return false
+    end
+
+    if LiteUIState.AutoReconnectGarden ~= true then
+        return false
+    end
+
+    local player =
+        LocalPlayer
+        or Players.LocalPlayer
+
+    if not player then
+
+        LiteGardenReconnectState.Status =
+            "LocalPlayer missing"
+
+        warn("[HOLY SNIPER LITE] Garden reconnect failed: LocalPlayer missing.")
+
+        return false
+    end
+
+    LiteGardenReconnectState.Token =
+        LiteGardenReconnectState.Token + 1
+
+    local token =
+        LiteGardenReconnectState.Token
+
+    LiteGardenReconnectState.Active =
+        true
+
+    LiteGardenReconnectState.Attempts =
+        0
+
+    LiteGardenReconnectState.LastReason =
+        tostring(reason or "Reconnect requested")
+
+    delaySeconds =
+        tonumber(delaySeconds)
+        or 1.5
+
+    LiteGardenReconnectState.Status =
+        "Reconnect armed"
+
+    print(
+        "[HOLY SNIPER LITE] Garden auto reconnect armed:",
+        tostring(LiteGardenReconnectState.LastReason),
+        "| delay:",
+        tostring(delaySeconds)
+    )
+
+    task.spawn(function()
+
+        task.wait(delaySeconds)
+
+        while IsHolyLiteCurrentRun()
+        and IsGardenWorld() == true
+        and LiteUIState.AutoReconnectGarden == true
+        and token == LiteGardenReconnectState.Token
+        and LiteGardenReconnectState.Attempts < LiteGardenReconnectState.MaxAttempts do
+
+            LiteGardenReconnectState.Attempts =
+                LiteGardenReconnectState.Attempts + 1
+
+            LiteGardenReconnectState.LastAttemptAt =
+                os.clock()
+
+            LiteGardenReconnectState.Status =
+                "Reconnecting "
+                    .. tostring(LiteGardenReconnectState.Attempts)
+                    .. "/"
+                    .. tostring(LiteGardenReconnectState.MaxAttempts)
+
+            print(
+                "[HOLY SNIPER LITE] Garden reconnect attempt:",
+                tostring(LiteGardenReconnectState.Attempts),
+                "| reason:",
+                tostring(LiteGardenReconnectState.LastReason)
+            )
+
+            local ok, err =
+                pcall(function()
+
+                    TeleportService:Teleport(
+                        GROW_A_GARDEN_PLACE_ID,
+                        player
+                    )
+                end)
+
+            if ok ~= true then
+
+                LiteGardenReconnectState.Status =
+                    "Reconnect call failed"
+
+                warn(
+                    "[HOLY SNIPER LITE] Garden reconnect Teleport failed:",
+                    tostring(err)
+                )
+            end
+
+            task.wait(5)
+        end
+
+        LiteGardenReconnectState.Active =
+            false
+
+        if LiteGardenReconnectState.Attempts >= LiteGardenReconnectState.MaxAttempts then
+
+            LiteGardenReconnectState.Status =
+                "Reconnect max attempts"
+
+            warn("[HOLY SNIPER LITE] Garden reconnect max attempts reached.")
+        end
+    end)
+
+    return true
+end
+
+function CancelLiteGardenReconnect(reason)
+
+    LiteGardenReconnectState.Token =
+        LiteGardenReconnectState.Token + 1
+
+    LiteGardenReconnectState.Active =
+        false
+
+    LiteGardenReconnectState.Status =
+        "Cancelled"
+
+    LiteGardenReconnectState.LastReason =
+        tostring(reason or "Cancelled")
+
+    print(
+        "[HOLY SNIPER LITE] Garden auto reconnect cancelled:",
+        tostring(LiteGardenReconnectState.LastReason)
+    )
+end
+
+function LiteReconnectTextFound(rootObject)
+
+    if not rootObject then
+        return false
+    end
+
+    local function checkTextObject(obj)
+
+        if not obj then
+            return false
+        end
+
+        if obj:IsA("TextLabel")
+        or obj:IsA("TextButton")
+        or obj:IsA("TextBox") then
+
+            local text =
+                ""
+
+            pcall(function()
+                text =
+                    tostring(obj.Text or "")
+            end)
+
+            text =
+                text:lower()
+
+            if text:find("reconnect", 1, true)
+            or text:find("disconnected", 1, true)
+            or text:find("lost connection", 1, true)
+            or text:find("connection lost", 1, true) then
+                return true
+            end
+        end
+
+        return false
+    end
+
+    if checkTextObject(rootObject) == true then
+        return true
+    end
+
+    for _, obj in ipairs(rootObject:GetDescendants()) do
+
+        if checkTextObject(obj) == true then
+            return true
+        end
+    end
+
+    return false
+end
+
+function LiteTryClickReconnectButton(rootObject)
+
+    if not rootObject then
+        return false
+    end
+
+    local function activateButton(button)
+
+        if not button
+        or not button:IsA("GuiButton") then
+            return false
+        end
+
+        pcall(function()
+            button:Activate()
+        end)
+
+        if type(firesignal) == "function" then
+
+            pcall(function()
+                firesignal(button.MouseButton1Click)
+            end)
+        end
+
+        print(
+            "[HOLY SNIPER LITE] Clicked reconnect button:",
+            tostring(button:GetFullName())
+        )
+
+        return true
+    end
+
+    local function buttonLooksReconnect(button)
+
+        if not button
+        or not button:IsA("GuiButton") then
+            return false
+        end
+
+        local text =
+            tostring(button.Name or "")
+
+        pcall(function()
+            text =
+                text .. " " .. tostring(button.Text or "")
+        end)
+
+        text =
+            text:lower()
+
+        return text:find("reconnect", 1, true) ~= nil
+            or text:find("rejoin", 1, true) ~= nil
+    end
+
+    if buttonLooksReconnect(rootObject) == true then
+        return activateButton(rootObject)
+    end
+
+    for _, obj in ipairs(rootObject:GetDescendants()) do
+
+        if buttonLooksReconnect(obj) == true then
+            return activateButton(obj)
+        end
+    end
+
+    for _, obj in ipairs(rootObject:GetDescendants()) do
+
+        if obj:IsA("TextLabel")
+        or obj:IsA("TextButton")
+        or obj:IsA("TextBox") then
+
+            local text =
+                ""
+
+            pcall(function()
+                text =
+                    tostring(obj.Text or "")
+            end)
+
+            text =
+                text:lower()
+
+            if text:find("reconnect", 1, true) then
+
+                local parent =
+                    obj.Parent
+
+                for _ = 1, 6 do
+
+                    if not parent then
+                        break
+                    end
+
+                    if parent:IsA("GuiButton") then
+                        return activateButton(parent)
+                    end
+
+                    parent =
+                        parent.Parent
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+function StartLiteGardenReconnectPromptWatcher()
+
+    local root =
+        type(getgenv) == "function"
+        and getgenv()
+        or _G
+
+    if type(root.HOLY_LITE_GARDEN_RECONNECT_CONNECTIONS) == "table" then
+
+        for _, connection in ipairs(root.HOLY_LITE_GARDEN_RECONNECT_CONNECTIONS) do
+
+            pcall(function()
+                connection:Disconnect()
+            end)
+        end
+    end
+
+    root.HOLY_LITE_GARDEN_RECONNECT_CONNECTIONS =
+        {}
+
+    local function rememberConnection(connection)
+
+        table.insert(
+            root.HOLY_LITE_GARDEN_RECONNECT_CONNECTIONS,
+            connection
+        )
+    end
+
+    local function handlePromptRoot(promptRoot)
+
+        if not promptRoot then
+            return
+        end
+
+        local function inspect()
+
+            if IsGardenWorld() ~= true then
+                return
+            end
+
+            if LiteUIState.AutoReconnectGarden ~= true then
+                return
+            end
+
+            if LiteReconnectTextFound(promptRoot) ~= true then
+                return
+            end
+
+            local clicked =
+                LiteTryClickReconnectButton(promptRoot)
+
+            if clicked ~= true then
+
+                RequestLiteGardenReconnect(
+                    "Roblox reconnect prompt fallback",
+                    2
+                )
+            end
+        end
+
+        task.defer(inspect)
+
+        rememberConnection(
+            promptRoot.DescendantAdded:Connect(function()
+
+                task.defer(inspect)
+            end)
+        )
+    end
+
+    local existingPromptGui =
+        CoreGui:FindFirstChild("RobloxPromptGui")
+
+    if existingPromptGui then
+        handlePromptRoot(existingPromptGui)
+    end
+
+    rememberConnection(
+        CoreGui.ChildAdded:Connect(function(child)
+
+            if child.Name == "RobloxPromptGui" then
+                handlePromptRoot(child)
+            end
+        end)
+    )
+end
+
+StartLiteGardenReconnectPromptWatcher()
 
 --==================================================
 -- [4] WINDOW
@@ -24821,6 +25228,25 @@ do
                 )
             )
 
+            if IsGardenWorld() == true
+            and LiteUIState.AutoReconnectGarden == true then
+
+                LiteGardenReconnectState.Status =
+                    "Teleport failed"
+
+                LiteGardenReconnectState.LastReason =
+                    tostring(resultName)
+                        .. " | "
+                        .. tostring(errorMessage)
+
+                RequestLiteGardenReconnect(
+                    "Teleport failed: " .. tostring(resultName),
+                    2
+                )
+
+                return
+            end
+
             ServerState.IsHopping =
                 false
 
@@ -31120,6 +31546,42 @@ if SettingsInterfaceBox then
         )
     end)
 
+        if IsGardenWorld() then
+
+        SettingsInterfaceBox:AddToggle(
+            "LiteAutoReconnectGarden",
+            {
+                Text = "Auto Reconnect Garden",
+                Default = LiteUIState.AutoReconnectGarden == true,
+                Tooltip = "Automatically tries to reconnect/rejoin Garden World if Roblox shows a reconnect prompt or a Garden teleport fails.",
+            }
+        ):OnChanged(function(value)
+
+            LiteUIState.AutoReconnectGarden =
+                value == true
+
+            SaveLiteUISettingsNow()
+
+            MarkConfigDirty()
+
+            if LiteUIState.AutoReconnectGarden == true then
+
+                StartLiteGardenReconnectPromptWatcher()
+
+            else
+
+                CancelLiteGardenReconnect(
+                    "settings toggle off"
+                )
+            end
+
+            print(
+                "[HOLY SNIPER LITE] Auto Reconnect Garden:",
+                tostring(LiteUIState.AutoReconnectGarden)
+            )
+        end)
+    end
+
     SettingsInterfaceBox:AddDropdown(
         "LiteDPIScale",
         {
@@ -31249,6 +31711,7 @@ if IsGardenWorld() == true then
                     -- Saved separately in HolySniperLite/UISettings.json.
                     "LiteShowUIOnLoad",
                     "LiteAutoTeleportTradeWorld",
+                    "LiteAutoReconnectGarden",
                     "LiteDPIScale",
 
                     -- Runtime-only. Never autoload this as ON.
