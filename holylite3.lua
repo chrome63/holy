@@ -2149,6 +2149,27 @@ function SaveTransferSettingsNow(reason)
 
     EnsureTransferSettingsFolder()
 
+    if TransferConfigState.Loading ~= true then
+
+        if TransferState.PetDropdown ~= nil then
+
+            TransferState.SelectedPets =
+                TransferReadDropdownSelectedMap(
+                    TransferState.PetDropdown,
+                    TransferState.SelectedPets
+                )
+        end
+
+        if TransferState.MutationDropdown ~= nil then
+
+            TransferState.SelectedMutations =
+                TransferReadDropdownSelectedMap(
+                    TransferState.MutationDropdown,
+                    TransferState.SelectedMutations
+                )
+        end
+    end
+
     local payload = {
         Mode =
             tostring(TransferState.Mode or "Sender"),
@@ -3523,7 +3544,23 @@ end
 
 function TransferBuildMapFromDropdown(value)
 
-    local output = {}
+    local output =
+        {}
+
+    local function addChoice(choice)
+
+        choice =
+            CleanText(choice)
+
+        if choice == ""
+        or choice == "None"
+        or choice == "---" then
+            return
+        end
+
+        output[choice] =
+            true
+    end
 
     if type(value) == "table" then
 
@@ -3531,25 +3568,111 @@ function TransferBuildMapFromDropdown(value)
 
             if selected == true then
 
-                key =
-                    CleanText(key)
+                addChoice(
+                    key
+                )
 
-                if key ~= "" then
-                    output[key] =
-                        true
+            elseif type(selected) == "string"
+            or type(selected) == "number" then
+
+                addChoice(
+                    selected
+                )
+
+            elseif type(selected) == "table" then
+
+                local name =
+                    rawget(selected, "Text")
+                    or rawget(selected, "Name")
+                    or rawget(selected, "Value")
+                    or rawget(selected, "Title")
+                    or rawget(selected, 1)
+
+                local isSelected =
+                    rawget(selected, "Selected") == true
+                    or rawget(selected, "selected") == true
+                    or rawget(selected, "Checked") == true
+                    or rawget(selected, "checked") == true
+                    or rawget(selected, "Enabled") == true
+                    or rawget(selected, "enabled") == true
+
+                if isSelected == true then
+
+                    addChoice(
+                        name
+                    )
                 end
             end
         end
 
-    elseif type(value) == "string" then
+    elseif type(value) == "string"
+    or type(value) == "number" then
 
-        value =
-            CleanText(value)
+        addChoice(
+            value
+        )
+    end
 
-        if value ~= "" then
-            output[value] =
-                true
+    return output
+end
+
+function TransferReadDropdownSelectedMap(control, fallback)
+
+    local output =
+        {}
+
+    local function mergeMap(source)
+
+        local map =
+            TransferBuildMapFromDropdown(source)
+
+        for key, value in pairs(map) do
+
+            if value == true then
+                output[key] =
+                    true
+            end
         end
+    end
+
+    if control then
+
+        if type(control.GetValue) == "function" then
+
+            local ok, result =
+                pcall(function()
+                    return control:GetValue()
+                end)
+
+            if ok == true then
+                mergeMap(result)
+            end
+        end
+
+        pcall(function()
+            mergeMap(control.Value)
+        end)
+
+        pcall(function()
+            mergeMap(control.Selected)
+        end)
+
+        pcall(function()
+            mergeMap(control.SelectedValues)
+        end)
+
+        pcall(function()
+            mergeMap(control.CurrentValue)
+        end)
+    end
+
+    if TransferMapIsEmpty(output) == true
+    and type(fallback) == "table" then
+
+        output =
+            CopyTransferBoolMap(
+                fallback
+            )
     end
 
     return output
@@ -13900,7 +14023,10 @@ and IsGardenWorld() then
     TransferState.PetDropdown:OnChanged(function(value)
 
         TransferState.SelectedPets =
-            TransferBuildMapFromDropdown(value)
+            TransferReadDropdownSelectedMap(
+                TransferState.PetDropdown,
+                TransferBuildMapFromDropdown(value)
+            )
 
         TransferBuildMatches()
 
@@ -13955,7 +14081,10 @@ and IsGardenWorld() then
     TransferState.MutationDropdown:OnChanged(function(value)
 
         TransferState.SelectedMutations =
-            TransferBuildMapFromDropdown(value)
+            TransferReadDropdownSelectedMap(
+                TransferState.MutationDropdown,
+                TransferBuildMapFromDropdown(value)
+            )
 
         TransferBuildMatches()
 
