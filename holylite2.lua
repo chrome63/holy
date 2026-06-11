@@ -24,6 +24,9 @@ local CoreGui =
 
 local VirtualUser =
     game:GetService("VirtualUser")
+
+local UserInputService =
+    game:GetService("UserInputService")
 --==================================================
 -- [0.1] PLACE CONSTANTS
 --==================================================
@@ -2187,6 +2190,15 @@ function SaveTransferSettingsNow(reason)
         DebugPrints =
             TransferState.DebugPrints == true,
 
+        HudEnabled =
+            TransferState.HudEnabled == true,
+
+        HudX =
+            tonumber(TransferState.HudX) or 260,
+
+        HudY =
+            tonumber(TransferState.HudY) or 180,
+
         MinLevel =
             tonumber(TransferState.MinLevel) or 1,
 
@@ -2370,6 +2382,19 @@ function LoadTransferSettingsIntoState()
     TransferState.DebugPrints =
         payload.DebugPrints == true
 
+    TransferState.HudEnabled =
+        payload.HudEnabled ~= false
+
+    TransferState.HudX =
+        math.floor(
+            tonumber(payload.HudX) or 260
+        )
+
+    TransferState.HudY =
+        math.floor(
+            tonumber(payload.HudY) or 180
+        )
+
     TransferState.MinLevel =
         math.max(
             1,
@@ -2547,6 +2572,24 @@ TransferState = {
     TradeWatchConnected = false,
 
     DebugPrints = false,
+
+    HudEnabled = true,
+    HudGui = nil,
+    HudRoot = nil,
+    HudLabel = nil,
+    HudX = 260,
+    HudY = 180,
+    HudDragging = false,
+
+    LockStats = {
+        Matched = 0,
+        Sendable = 0,
+        TempLocked = 0,
+        Listed = 0,
+        Other = 0,
+        NextUnlock = 0,
+    },
+
     Timing = {},
 }
 
@@ -4039,6 +4082,425 @@ function TransferPetPassesFilters(pet)
     return true
 end
 
+function TransferFormatHudTradeState(state)
+
+    state =
+        tostring(state or "None")
+
+    if state == ""
+    or state == "None" then
+        return "Waiting"
+    end
+
+    if state == "Processing" then
+        return "Done"
+    end
+
+    return state
+end
+
+function TransferBuildHudText()
+
+    local lines =
+        {}
+
+    table.insert(
+        lines,
+        "TRANSFER"
+    )
+
+    local target =
+        CleanText(TransferState.TargetPlayerName)
+
+    if target == "" then
+        target =
+            "None"
+    end
+
+    if TransferState.Mode == "Receiver" then
+
+        table.insert(
+            lines,
+            "Receiver <- " .. target
+        )
+
+    else
+
+        table.insert(
+            lines,
+            "Sender -> " .. target
+        )
+    end
+
+    table.insert(
+        lines,
+        tostring(TransferState.Status or "Idle")
+    )
+
+    local lockStats =
+        TransferState.LockStats
+        or {}
+
+    local sendable =
+        tonumber(lockStats.Sendable)
+        or 0
+
+    local matched =
+        tonumber(lockStats.Matched)
+        or #(TransferState.MatchedPets or {})
+
+    local added =
+        tonumber(TransferState.AddedThisBatch)
+        or 0
+
+    if TransferState.Mode == "Sender" then
+
+        table.insert(
+            lines,
+            "Queue: "
+                .. tostring(added)
+                .. "/"
+                .. tostring(math.max(sendable, matched))
+        )
+
+    else
+
+        table.insert(
+            lines,
+            "Received: "
+                .. tostring(TransferState.TradeOtherItemCount or 0)
+        )
+    end
+
+    local tempLocked =
+        tonumber(lockStats.TempLocked)
+        or 0
+
+    local listed =
+        tonumber(lockStats.Listed)
+        or 0
+
+    if tempLocked > 0
+    or listed > 0 then
+
+        table.insert(
+            lines,
+            "Locked: "
+                .. tostring(tempLocked)
+                .. " temp / "
+                .. tostring(listed)
+                .. " listed"
+        )
+    end
+
+    local localState =
+        TransferFormatHudTradeState(
+            TransferGetLocalTradeState()
+        )
+
+    local otherState =
+        TransferFormatHudTradeState(
+            TransferGetOtherTradeState()
+        )
+
+    if TransferState.TradeOpen == true
+    or CleanText(TransferState.TradeId) ~= ""
+    or localState ~= "Waiting"
+    or otherState ~= "Waiting" then
+
+        table.insert(
+            lines,
+            "Trade: "
+                .. tostring(localState)
+                .. " / "
+                .. tostring(otherState)
+        )
+
+    else
+
+        table.insert(
+            lines,
+            "Trade: Idle"
+        )
+    end
+
+    return table.concat(
+        lines,
+        "\n"
+    )
+end
+
+function TransferUpdateHud()
+
+    if TransferState.HudEnabled ~= true then
+
+        if TransferState.HudGui then
+            TransferState.HudGui.Enabled =
+                false
+        end
+
+        return
+    end
+
+    TransferCreateHud()
+
+    if not TransferState.HudGui
+    or not TransferState.HudLabel then
+        return
+    end
+
+    TransferState.HudGui.Enabled =
+        true
+
+    TransferState.HudLabel.Text =
+        TransferBuildHudText()
+end
+
+function TransferSetHudVisible(visible)
+
+    TransferState.HudEnabled =
+        visible == true
+
+    if TransferState.HudGui then
+        TransferState.HudGui.Enabled =
+            TransferState.HudEnabled == true
+    end
+
+    if TransferState.HudEnabled == true then
+        TransferUpdateHud()
+    end
+end
+
+function TransferCreateHud()
+
+    if TransferState.HudGui
+    and TransferState.HudGui.Parent then
+        return
+    end
+
+    local old =
+        CoreGui:FindFirstChild("HolyTransferHud")
+
+    if old then
+        old:Destroy()
+    end
+
+    local gui =
+        Instance.new("ScreenGui")
+
+    gui.Name =
+        "HolyTransferHud"
+
+    gui.ResetOnSpawn =
+        false
+
+    gui.IgnoreGuiInset =
+        true
+
+    gui.DisplayOrder =
+        1000000
+
+    gui.ZIndexBehavior =
+        Enum.ZIndexBehavior.Global
+
+    gui.Enabled =
+        TransferState.HudEnabled == true
+
+    gui.Parent =
+        CoreGui
+
+    local root =
+        Instance.new("TextButton")
+
+    root.Name =
+        "Drag"
+
+    root.BackgroundTransparency =
+        1
+
+    root.BorderSizePixel =
+        0
+
+    root.AutoButtonColor =
+        false
+
+    root.Text =
+        ""
+
+    root.Active =
+        true
+
+    root.Selectable =
+        false
+
+    root.Size =
+        UDim2.fromOffset(250, 120)
+
+    root.Position =
+        UDim2.fromOffset(
+            tonumber(TransferState.HudX) or 260,
+            tonumber(TransferState.HudY) or 180
+        )
+
+    root.ZIndex =
+        1000000
+
+    root.Parent =
+        gui
+
+    local label =
+        Instance.new("TextLabel")
+
+    label.Name =
+        "Text"
+
+    label.BackgroundTransparency =
+        1
+
+    label.BorderSizePixel =
+        0
+
+    label.Position =
+        UDim2.fromOffset(0, 0)
+
+    label.Size =
+        UDim2.fromScale(1, 1)
+
+    label.Font =
+        Enum.Font.GothamBold
+
+    label.TextSize =
+        15
+
+    label.TextColor3 =
+        Color3.fromRGB(255, 255, 255)
+
+    label.TextStrokeColor3 =
+        Color3.fromRGB(0, 0, 0)
+
+    label.TextStrokeTransparency =
+        0.22
+
+    label.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    label.TextYAlignment =
+        Enum.TextYAlignment.Top
+
+    label.TextWrapped =
+        false
+
+    label.RichText =
+        false
+
+    label.ZIndex =
+        1000001
+
+    label.Text =
+        "TRANSFER\nIdle"
+
+    label.Parent =
+        root
+
+    local dragging =
+        false
+
+    local dragInput =
+        nil
+
+    local dragStart =
+        nil
+
+    local startPosition =
+        nil
+
+    local function UpdateDrag(input)
+
+        local delta =
+            input.Position - dragStart
+
+        local newX =
+            startPosition.X.Offset + delta.X
+
+        local newY =
+            startPosition.Y.Offset + delta.Y
+
+        root.Position =
+            UDim2.fromOffset(
+                newX,
+                newY
+            )
+
+        TransferState.HudX =
+            newX
+
+        TransferState.HudY =
+            newY
+    end
+
+    root.InputBegan:Connect(function(input)
+
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+        and input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+
+        dragging =
+            true
+
+        dragStart =
+            input.Position
+
+        startPosition =
+            root.Position
+
+        input.Changed:Connect(function()
+
+            if input.UserInputState == Enum.UserInputState.End then
+
+                dragging =
+                    false
+
+                QueueSaveTransferSettings(
+                    "transfer hud moved"
+                )
+            end
+        end)
+    end)
+
+    root.InputChanged:Connect(function(input)
+
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput =
+                input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+
+        if dragging ~= true then
+            return
+        end
+
+        if input ~= dragInput then
+            return
+        end
+
+        UpdateDrag(input)
+    end)
+
+    TransferState.HudGui =
+        gui
+
+    TransferState.HudRoot =
+        root
+
+    TransferState.HudLabel =
+        label
+end
+
+
 function TransferBuildMatches()
 
     local matches = {}
@@ -4159,6 +4621,8 @@ TransferSetStatus = function(status, result, forceSourceRefresh)
             TransferState.CachedSourceText
         )
     end
+
+    TransferUpdateHud()
 end
 
 function TransferApplyModeUI()
@@ -9898,10 +10362,278 @@ function TransferConfirmAndWait(label, timeout)
     return false
 end
 
+function TransferNormalizeLockUUID(value)
+
+    local uuid =
+        tostring(value or "")
+            :gsub("{", "")
+            :gsub("}", "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if uuid:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") then
+        return uuid
+    end
+
+    return ""
+end
+
+function TransferGetTradeLockMap()
+
+    local data =
+        nil
+
+    if type(TransferGetDataServiceData) == "function" then
+
+        local ok, result =
+            pcall(TransferGetDataServiceData)
+
+        if ok == true
+        and type(result) == "table" then
+            data =
+                result
+        end
+    end
+
+    if type(data) ~= "table" then
+
+        local modules =
+            ReplicatedStorage
+            and ReplicatedStorage:FindFirstChild("Modules")
+
+        local dataServiceModule =
+            modules
+            and modules:FindFirstChild("DataService")
+
+        if dataServiceModule then
+
+            local ok, dataService =
+                pcall(function()
+                    return require(dataServiceModule)
+                end)
+
+            if ok == true
+            and dataService then
+
+                local readOk, result =
+                    pcall(function()
+                        return dataService:GetData()
+                    end)
+
+                if readOk == true
+                and type(result) == "table" then
+                    data =
+                        result
+                end
+            end
+        end
+    end
+
+    return data
+        and data.TradeData
+        and data.TradeData.TradeLocks
+        and data.TradeData.TradeLocks.Pet
+end
+
+function TransferGetPetTradeLockEntry(uuid)
+
+    uuid =
+        TransferNormalizeLockUUID(uuid)
+
+    if uuid == "" then
+        return nil
+    end
+
+    local lockMap =
+        TransferGetTradeLockMap()
+
+    if type(lockMap) ~= "table" then
+        return nil
+    end
+
+    return lockMap[uuid]
+        or lockMap["{" .. uuid .. "}"]
+end
+
+function TransferGetPetTradeLockStatus(uuid)
+
+    uuid =
+        TransferNormalizeLockUUID(uuid)
+
+    if uuid == "" then
+        return false, "No UUID", 0
+    end
+
+    local entry =
+        TransferGetPetTradeLockEntry(uuid)
+
+    if type(entry) ~= "table" then
+        return false, "No trade lock", 0
+    end
+
+    local lockType =
+        tostring(
+            entry.Type
+            or entry.type
+            or ""
+        )
+
+    local value =
+        entry.Value
+        or entry.value
+
+    if lockType == "Date" then
+
+        local unlockAt =
+            tonumber(value)
+            or 0
+
+        local remaining =
+            unlockAt - os.time()
+
+        if remaining > 0 then
+
+            return true,
+                "Trade cooldown "
+                    .. tostring(math.ceil(remaining))
+                    .. "s",
+                remaining
+        end
+
+        return false, "Expired trade cooldown", 0
+    end
+
+    if lockType == "Listing" then
+
+        return true,
+            "Locked by listing",
+            math.huge
+    end
+
+    if lockType ~= "" then
+
+        return true,
+            "Trade locked: "
+                .. tostring(lockType),
+            0
+    end
+
+    return false, "Unknown lock entry", 0
+end
+
+function TransferFilterUnlockedTradePets(matches)
+
+    local filtered =
+        {}
+
+    local stats = {
+        Matched = #(matches or {}),
+        Sendable = 0,
+        TempLocked = 0,
+        Listed = 0,
+        Other = 0,
+        NextUnlock = 0,
+    }
+
+    local skipped =
+        0
+
+    for _, pet in ipairs(matches or {}) do
+
+        local locked, reason, remaining =
+            TransferGetPetTradeLockStatus(
+                pet and pet.UUID
+            )
+
+        if locked == true then
+
+            skipped =
+                skipped + 1
+
+            local reasonText =
+                tostring(reason or "")
+
+            if reasonText:lower():find("cooldown", 1, true) then
+
+                stats.TempLocked =
+                    stats.TempLocked + 1
+
+                local remainingNumber =
+                    tonumber(remaining)
+                    or 0
+
+                if remainingNumber > 0
+                and (
+                    stats.NextUnlock <= 0
+                    or remainingNumber < stats.NextUnlock
+                ) then
+
+                    stats.NextUnlock =
+                        remainingNumber
+                end
+
+            elseif reasonText:lower():find("listing", 1, true) then
+
+                stats.Listed =
+                    stats.Listed + 1
+
+            else
+
+                stats.Other =
+                    stats.Other + 1
+            end
+
+            print(
+                "[TRANSFER LOCK]",
+                "Skipping locked pet:",
+                tostring(pet and pet.PetName),
+                tostring(pet and pet.UUID),
+                "|",
+                tostring(reason),
+                "| remaining:",
+                tostring(remaining)
+            )
+
+        else
+
+            table.insert(
+                filtered,
+                pet
+            )
+        end
+    end
+
+    stats.Sendable =
+        #filtered
+
+    TransferState.LockStats =
+        stats
+
+    if skipped > 0 then
+
+        TransferSetStatus(
+            "Locked Pets",
+            "Skipped "
+                .. tostring(skipped)
+                .. " locked pets."
+        )
+
+    else
+
+        TransferUpdateHud()
+    end
+
+    return filtered
+end
+
+
 function TransferSendFilteredPets()
 
-    local matches =
+    local rawMatches =
         TransferBuildMatches()
+
+    local matches =
+        TransferFilterUnlockedTradePets(rawMatches)
 
     local limit =
         TransferGetMaxPetsPerTrade()
@@ -9915,8 +10647,8 @@ function TransferSendFilteredPets()
     if sendCount <= 0 then
 
         TransferSetStatus(
-            "No Matches",
-            "No pets matched your current filters."
+            "No Sendable Pets",
+            "No unlocked pets matched your filters. Cooldown/listed pets were skipped."
         )
 
         return false, 0
@@ -11594,6 +12326,25 @@ and IsGardenWorld() then
         end,
     })
 
+    TransferActionsBox:AddToggle(
+        "HolyFreshTransferHud",
+        {
+            Text = "Transfer HUD",
+            Default = TransferState.HudEnabled == true,
+            Tooltip = "Shows a small draggable transfer HUD above the game UI.",
+        }
+    ):OnChanged(function(value)
+
+        TransferSetHudVisible(
+            value == true
+        )
+
+        QueueSaveTransferSettings(
+            "transfer hud changed"
+        )
+    end)
+
+
     TransferState.TransferEnabledToggle =
         TransferActionsBox:AddToggle(
             "HolyFreshTransferEnabled",
@@ -11986,13 +12737,16 @@ and IsGardenWorld() then
         end,
     })
 
-    task.defer(function()
+        task.defer(function()
 
-        if not IsHolyLiteCurrentRun() then
+        if not IsCurrentRun() then
             return
         end
 
         TransferBuildMatches()
+
+        TransferCreateHud()
+        TransferUpdateHud()
 
         TransferSetStatus(
             TransferState.Status,
