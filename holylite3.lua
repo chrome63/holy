@@ -2093,8 +2093,6 @@ local TransferState =
 
 local TransferConfigState = {
     Loading = true,
-    Dirty = false,
-    SaveQueued = false,
 }
 
 function CopyTransferBoolMap(source)
@@ -2272,34 +2270,32 @@ function QueueSaveTransferSettings(reason)
         return false
     end
 
-    TransferConfigState.Dirty =
-        true
-
-    TransferConfigState.SaveQueued =
-        false
+    reason =
+        tostring(reason or "autosave")
 
     local saveOk =
         SaveTransferSettingsNow(
-            reason or "autosave"
+            reason
         )
 
-    TransferConfigState.Dirty =
-        false
+    if TransferState.DebugPrints == true
+    and reason ~= "transfer hud moved" then
 
-    print(
-        "[TRANSFER SAVE]",
-        tostring(saveOk),
-        "| reason:",
-        tostring(reason or "autosave"),
-        "| pets:",
-        tostring(TransferCompactValue(TransferState.SelectedPets)),
-        "| mutations:",
-        tostring(TransferCompactValue(TransferState.SelectedMutations)),
-        "| minBW:",
-        tostring(TransferState.MinBaseWeight),
-        "| maxBW:",
-        tostring(TransferState.MaxBaseWeight)
-    )
+        print(
+            "[TRANSFER SAVE]",
+            tostring(saveOk),
+            "| reason:",
+            tostring(reason),
+            "| pets:",
+            tostring(TransferCompactValue(TransferState.SelectedPets)),
+            "| mutations:",
+            tostring(TransferCompactValue(TransferState.SelectedMutations)),
+            "| minBW:",
+            tostring(TransferState.MinBaseWeight),
+            "| maxBW:",
+            tostring(TransferState.MaxBaseWeight)
+        )
+    end
 
     return saveOk
 end
@@ -2455,25 +2451,7 @@ function LoadTransferSettingsIntoState()
     return true
 end
 
-function MapHasTransferValue(map, value)
-
-    value =
-        CleanText(value)
-
-    if value == "" then
-        return false
-    end
-
-    return type(map) == "table"
-        and map[value] == true
-end
-
 function EnsureTransferDropdownChoice(choices, value)
-
-    if type(choices) ~= "table" then
-        choices =
-            {}
-    end
 
     value =
         CleanText(value)
@@ -2613,6 +2591,9 @@ TransferState = {
     Status = "Idle",
     LastResult = "None",
 
+    Step = "Idle",
+    StepDetail = "Ready.",
+
     ModeDropdown = nil,
     PetDropdown = nil,
     MutationDropdown = nil,
@@ -2655,8 +2636,6 @@ TransferState = {
     TradeDeclined = false,
     TradeDeclineReason = "",
 
-    LastCompletedTradeId = "",
-    LastCompletedAt = 0,
     DataReadyForNextAt = 0,
     CompletedTradeIds = {},
 
@@ -2666,7 +2645,6 @@ TransferState = {
     RequestExpired = false,
     RequestExpiredReason = "",
 
-    RequestAcceptValue = nil,
     LastRequestAcceptValue = "unknown",
 
     IncomingRequestId = "",
@@ -2684,11 +2662,8 @@ TransferState = {
     TradeEpoch = 0,
     SessionTradeId = "",
     SessionActive = false,
-    SessionStartedAt = 0,
-    SessionClosedAt = 0,
+    SessionOpenedAt = 0,
     SessionLastDataAt = 0,
-    SessionCloseReason = "",
-    SessionResult = "",
     SessionPlayers = {},
     SessionStates = {},
     SessionOfferItems = {},
@@ -2702,11 +2677,9 @@ TransferState = {
 
     HudEnabled = true,
     HudGui = nil,
-    HudRoot = nil,
     HudLabel = nil,
     HudX = 260,
     HudY = 180,
-    HudDragging = false,
 
     SkipLockedPets = true,
     SkipLockedPetsToggle = nil,
@@ -2783,20 +2756,11 @@ function TransferStartTradeSession(tradeId, source)
     TransferState.SessionActive =
         true
 
-    TransferState.SessionStartedAt =
+    TransferState.SessionOpenedAt =
         now
-
-    TransferState.SessionClosedAt =
-        0
 
     TransferState.SessionLastDataAt =
         now
-
-    TransferState.SessionCloseReason =
-        ""
-
-    TransferState.SessionResult =
-        ""
 
     TransferSessionClearMaps()
 
@@ -2868,17 +2832,11 @@ function TransferCloseTradeSession(reason, result)
     TransferState.SessionActive =
         false
 
-    TransferState.SessionClosedAt =
-        now
+    TransferState.SessionOpenedAt =
+        0
 
     TransferState.SessionLastDataAt =
         now
-
-    TransferState.SessionCloseReason =
-        reason
-
-    TransferState.SessionResult =
-        result
 
     TransferState.TradeOpen =
         false
@@ -2899,15 +2857,9 @@ function TransferCloseTradeSession(reason, result)
 
         if closingId ~= "" then
 
-            TransferState.LastCompletedTradeId =
-                closingId
-
             TransferState.CompletedTradeIds[closingId] =
                 now
         end
-
-        TransferState.LastCompletedAt =
-            now
 
     elseif result == "Declined" then
 
@@ -3026,6 +2978,11 @@ function TransferSessionSetState(side, state, source)
     TransferState.TradeStates[side] =
         state
 
+    TransferInferMissingTradeSide(
+        "state "
+            .. tostring(source)
+    )
+
     TransferState.TradeOpen =
         true
 
@@ -3089,6 +3046,11 @@ function TransferSessionRememberOfferItem(side, indexText, source)
 
     TransferState.TradeOfferCounts[side] =
         count
+
+    TransferInferMissingTradeSide(
+        "offer "
+            .. tostring(source)
+    )
 
     if tostring(side) == tostring(TransferState.LocalTradeSide) then
 
@@ -3193,7 +3155,7 @@ function TransferDataTradeIsActive()
                 or os.clock()
             )
 
-        if age < 0.75 then
+        if age < 0.30 then
             return true, "Decline settling"
         end
 
@@ -4866,42 +4828,336 @@ function TransferFormatHudTradeState(state)
     return state
 end
 
+function TransferHudEscape(value)
+
+    if value == nil then
+        value =
+            ""
+    end
+
+    value =
+        tostring(value)
+
+    value =
+        value:gsub("&", "&amp;")
+            :gsub("<", "&lt;")
+            :gsub(">", "&gt;")
+
+    return value
+end
+
+function TransferHudColor(value, color, bold)
+
+    value =
+        TransferHudEscape(value)
+
+    color =
+        tostring(color or "255,255,255")
+
+    if bold == true then
+
+        return '<font color="rgb('
+            .. color
+            .. ')"><b>'
+            .. value
+            .. '</b></font>'
+    end
+
+    return '<font color="rgb('
+        .. color
+        .. ')">'
+        .. value
+        .. '</font>'
+end
+
+function TransferHudShortText(value, maxLength)
+
+    value =
+        CleanText(value)
+
+    maxLength =
+        tonumber(maxLength)
+        or 42
+
+    if value == "" then
+        return "-"
+    end
+
+    if #value <= maxLength then
+        return value
+    end
+
+    return value:sub(1, maxLength - 3)
+        .. "..."
+end
+
+function TransferHudModeColor()
+
+    if TransferState.Mode == "Receiver" then
+        return "96,165,250" -- blue = incoming / receiving
+    end
+
+    return "250,204,21" -- gold = outgoing / sending
+end
+
+function TransferHudStateColor(value)
+
+    local text =
+        tostring(value or ""):lower()
+
+    if text == ""
+    or text == "-"
+    or text == "none"
+    or text == "idle"
+    or text == "stopped" then
+        return "203,213,225"
+    end
+
+    if text:find("declin", 1, true)
+    or text:find("failed", 1, true)
+    or text:find("fail", 1, true)
+    or text:find("blocked", 1, true)
+    or text:find("missing", 1, true)
+    or text:find("timeout", 1, true)
+    or text:find("no ticket", 1, true)
+    or text:find("no target", 1, true) then
+        return "248,113,113"
+    end
+
+    if text:find("waiting", 1, true)
+    or text:find("cooldown", 1, true)
+    or text:find("delay", 1, true)
+    or text:find("settling", 1, true)
+    or text:find("no matching", 1, true) then
+        return "250,204,21"
+    end
+
+    if text:find("accepted", 1, true)
+    or text:find("confirmed", 1, true)
+    or text:find("completed", 1, true)
+    or text:find("done", 1, true)
+    or text:find("success", 1, true)
+    or text:find("ready", 1, true)
+    or text:find("safe", 1, true) then
+        return "74,222,128"
+    end
+
+    if text:find("adding", 1, true)
+    or text:find("ticket", 1, true)
+    or text:find("accept", 1, true)
+    or text:find("confirm", 1, true)
+    or text:find("processing", 1, true)
+    or text:find("drain", 1, true)
+    or text:find("equip", 1, true)
+    or text:find("unfavorite", 1, true) then
+        return "34,211,238"
+    end
+
+    return "255,255,255"
+end
+
+function TransferHudButtonColor(value)
+
+    value =
+        CleanText(value)
+
+    local lower =
+        value:lower()
+
+    if value == ""
+    or value == "-" then
+        return "148,163,184"
+    end
+
+    if lower:match("^%d+%.?%d*s$") then
+        return "250,204,21"
+    end
+
+    if lower == "confirm"
+    or lower == "confirmed"
+    or lower == "accepted" then
+        return "134,239,172"
+    end
+
+    if lower == "accept" then
+        return "103,232,249"
+    end
+
+    if lower:find("declin", 1, true)
+    or lower:find("fail", 1, true)
+    or lower:find("block", 1, true) then
+        return "248,113,113"
+    end
+
+    return "255,255,255"
+end
+
+function TransferHudGetButtonText()
+
+    if type(TransferGetTradeButtonText) ~= "function" then
+        return "-"
+    end
+
+    local ok, result =
+        pcall(function()
+            return TransferGetTradeButtonText()
+        end)
+
+    if ok ~= true then
+        return "-"
+    end
+
+    result =
+        CleanText(result)
+
+    if result == "" then
+        return "-"
+    end
+
+    return result
+end
+
+function TransferHudGetTradeValue()
+
+    if type(TransferGuiHasPositiveTradeValue) ~= "function" then
+        return "-"
+    end
+
+    local ok, hasValue, value =
+        pcall(function()
+            return TransferGuiHasPositiveTradeValue()
+        end)
+
+    if ok ~= true
+    or hasValue ~= true then
+        return "-"
+    end
+
+    value =
+        tonumber(value)
+        or 0
+
+    if value <= 0 then
+        return "-"
+    end
+
+    return TransferFormatNumber(value)
+end
+
+function TransferHudGetReceiverCount()
+
+    local count =
+        tonumber(TransferState.TradeOtherItemCount)
+        or 0
+
+    if type(TransferGuiCountVisibleSideItems) == "function" then
+
+        local ok, result =
+            pcall(function()
+                return TransferGuiCountVisibleSideItems("OtherPlr")
+            end)
+
+        if ok == true then
+            count =
+                math.max(
+                    count,
+                    tonumber(result) or 0
+                )
+        end
+    end
+
+    return count
+end
+
 function TransferBuildHudText()
 
     local lines =
         {}
 
-    table.insert(
-        lines,
-        "TRANSFER"
-    )
-
     local target =
-        CleanText(TransferState.TargetPlayerName)
+        TransferHudShortText(
+            TransferState.TargetPlayerName,
+            20
+        )
 
     if target == "" then
         target =
             "None"
     end
 
-    if TransferState.Mode == "Receiver" then
+    local isReceiver =
+        TransferState.Mode == "Receiver"
 
-        table.insert(
-            lines,
-            "Receiver <- " .. target
+    local modeText =
+        isReceiver == true
+        and "Receiver"
+        or "Sender"
+
+    local arrow =
+        isReceiver == true
+        and " <- "
+        or " -> "
+
+    local rawStep =
+        CleanText(
+            TransferState.Step
+                or TransferState.Status
+                or "Idle"
         )
 
-    else
+    local stepAliases = {
+        ["Waiting Data Close"] = "Closing",
+        ["Waiting Confirm"] = "Confirming",
+        ["Waiting Accept"] = "Accepting",
+        ["Waiting Receiver"] = "Waiting",
+        ["Waiting Trade"] = "Opening",
+        ["Waiting Safe"] = "Settling",
+        ["Ticket Sent"] = "Ticket",
+        ["Ticket Found"] = "Ticket Found",
+        ["Request Accepted"] = "Accepted",
+        ["Request Declined"] = "Declined",
+        ["Instant Confirm"] = "Confirming",
+        ["Instant Accept"] = "Accepting",
+        ["Drain Confirm"] = "Confirming",
+        ["Drain Accept"] = "Accepting",
+        ["Drain Trade"] = "Finishing",
+        ["Trade Completed"] = "Completed",
+        ["Trade Declined"] = "Declined",
+        ["No Target"] = "No Target",
+        ["No Ticket"] = "No Ticket",
+        ["Unfavoriting"] = "Preparing",
+        ["Unfavorite Done"] = "Prepared",
+        ["Equipping Ticket"] = "Equipping",
+        ["Ticket Delay"] = "Waiting",
+        ["Processing"] = "Processing",
+        ["Stopped"] = "Stopped",
+        ["Idle"] = "Idle",
+    }
 
-        table.insert(
-            lines,
-            "Sender -> " .. target
+    local step =
+        stepAliases[rawStep]
+        or TransferHudShortText(
+            rawStep,
+            16
         )
-    end
 
     table.insert(
         lines,
-        tostring(TransferState.Status or "Idle")
+        TransferHudColor(
+            modeText,
+            TransferHudModeColor(),
+            true
+        )
+            .. TransferHudColor(
+                arrow,
+                "203,213,225",
+                false
+            )
+            .. TransferHudColor(
+                target,
+                "255,255,255",
+                true
+            )
     )
 
     local lockStats =
@@ -4910,53 +5166,77 @@ function TransferBuildHudText()
 
     local sendable =
         tonumber(lockStats.Sendable)
-        or 0
-
-    local matched =
-        tonumber(lockStats.Matched)
         or #(TransferState.MatchedPets or {})
 
     local added =
         tonumber(TransferState.AddedThisBatch)
         or 0
 
-    if TransferState.Mode == "Sender" then
+    if isReceiver == true then
 
         table.insert(
             lines,
-            "Queue: "
-                .. tostring(added)
-                .. "/"
-                .. tostring(sendable)
+            TransferHudColor(
+                step,
+                TransferHudStateColor(step),
+                true
+            )
+                .. TransferHudColor(
+                    " | R ",
+                    "203,213,225",
+                    false
+                )
+                .. TransferHudColor(
+                    tostring(TransferHudGetReceiverCount()),
+                    "255,255,255",
+                    true
+                )
         )
 
     else
 
         table.insert(
             lines,
-            "Received: "
-                .. tostring(TransferState.TradeOtherItemCount or 0)
-        )
-    end
-
-    local tempLocked =
-        tonumber(lockStats.TempLocked)
-        or 0
-
-    local listed =
-        tonumber(lockStats.Listed)
-        or 0
-
-    if tempLocked > 0
-    or listed > 0 then
-
-        table.insert(
-            lines,
-            "Locked: "
-                .. tostring(tempLocked)
-                .. " temp / "
-                .. tostring(listed)
-                .. " listed"
+            TransferHudColor(
+                step,
+                TransferHudStateColor(step),
+                true
+            )
+                .. TransferHudColor(
+                    " | Q ",
+                    "203,213,225",
+                    false
+                )
+                .. TransferHudColor(
+                    tostring(added)
+                        .. "/"
+                        .. tostring(sendable),
+                    added >= sendable
+                    and sendable > 0
+                    and "74,222,128"
+                    or "255,255,255",
+                    true
+                )
+                .. TransferHudColor(
+                    " | B",
+                    "203,213,225",
+                    false
+                )
+                .. TransferHudColor(
+                    tostring(TransferState.Batch or 0),
+                    "255,255,255",
+                    true
+                )
+                .. TransferHudColor(
+                    " | S",
+                    "203,213,225",
+                    false
+                )
+                .. TransferHudColor(
+                    tostring(TransferState.Sent or 0),
+                    "74,222,128",
+                    true
+                )
         )
     end
 
@@ -4970,26 +5250,69 @@ function TransferBuildHudText()
             TransferGetOtherTradeState()
         )
 
+    local tradeText =
+        "Idle"
+
+    local tradeColor =
+        "203,213,225"
+
     if TransferState.TradeOpen == true
     or CleanText(TransferState.TradeId) ~= ""
     or localState ~= "Waiting"
     or otherState ~= "Waiting" then
 
-        table.insert(
-            lines,
-            "Trade: "
-                .. tostring(localState)
-                .. " / "
+        tradeText =
+            tostring(localState)
+                .. "/"
                 .. tostring(otherState)
-        )
 
-    else
-
-        table.insert(
-            lines,
-            "Trade: Idle"
-        )
+        tradeColor =
+            TransferHudStateColor(
+                tostring(localState)
+                    .. " "
+                    .. tostring(otherState)
+            )
     end
+
+    local buttonText =
+        TransferHudShortText(
+            TransferHudGetButtonText(),
+            9
+        )
+
+    local valueText =
+        TransferHudGetTradeValue()
+
+    table.insert(
+        lines,
+        TransferHudColor(
+            tradeText,
+            tradeColor,
+            true
+        )
+            .. TransferHudColor(
+                " | ",
+                "203,213,225",
+                false
+            )
+            .. TransferHudColor(
+                buttonText,
+                TransferHudButtonColor(buttonText),
+                true
+            )
+            .. TransferHudColor(
+                " | V",
+                "203,213,225",
+                false
+            )
+            .. TransferHudColor(
+                valueText,
+                valueText ~= "-"
+                and "74,222,128"
+                or "203,213,225",
+                true
+            )
+    )
 
     return table.concat(
         lines,
@@ -5133,13 +5456,16 @@ function TransferCreateHud()
         UDim2.fromOffset(0, 0)
 
     label.Size =
-        UDim2.fromScale(1, 1)
+        UDim2.fromOffset(350, 58)
 
     label.Font =
-        Enum.Font.GothamBold
+        Enum.Font.GothamMedium
 
     label.TextSize =
-        15
+        13
+
+    label.LineHeight =
+        1.08
 
     label.TextColor3 =
         Color3.fromRGB(255, 255, 255)
@@ -5148,7 +5474,7 @@ function TransferCreateHud()
         Color3.fromRGB(0, 0, 0)
 
     label.TextStrokeTransparency =
-        0.22
+        0.42
 
     label.TextXAlignment =
         Enum.TextXAlignment.Left
@@ -5160,7 +5486,7 @@ function TransferCreateHud()
         false
 
     label.RichText =
-        false
+        true
 
     label.Active =
         false
@@ -5169,7 +5495,7 @@ function TransferCreateHud()
         1000001
 
     label.Text =
-        "TRANSFER\nIdle"
+        '<font color="rgb(255, 242, 61)"><b>Sender</b></font><font color="rgb(203,213,225)"> -> </font><font color="rgb(255,255,255)"><b>None</b></font>\n<font color="rgb(203,213,225)">Idle | Q </font><font color="rgb(255,255,255)"><b>0/0</b></font><font color="rgb(203,213,225)"> | B</font><font color="rgb(255,255,255)"><b>0</b></font><font color="rgb(203,213,225)"> | S</font><font color="rgb(58, 255, 117)"><b>0</b></font>'
 
     label.Parent =
         root
@@ -5265,9 +5591,6 @@ function TransferCreateHud()
     TransferState.HudGui =
         gui
 
-    TransferState.HudRoot =
-        root
-
     TransferState.HudLabel =
         label
 end
@@ -5304,6 +5627,12 @@ TransferSetStatus = function(status, result, forceSourceRefresh)
         tostring(status or "Idle")
 
     TransferState.LastResult =
+        tostring(result or "None")
+
+    TransferState.Step =
+        tostring(status or "Idle")
+
+    TransferState.StepDetail =
         tostring(result or "None")
 
     if TransferState.StatusLabel then
@@ -5828,7 +6157,9 @@ function TransferRefreshDropdowns()
         )
     end
 
-    TransferApplySavedFilterDropdownValues()
+    if type(TransferApplySavedFilterDropdownValues) == "function" then
+        TransferApplySavedFilterDropdownValues()
+    end
 
     if TransferState.TargetDropdown
     and type(TransferState.TargetDropdown.SetValues) == "function" then
@@ -5838,7 +6169,9 @@ function TransferRefreshDropdowns()
         )
     end
 
-    TransferBuildMatches()
+    if type(TransferBuildMatches) == "function" then
+        TransferBuildMatches()
+    end
 
     if TransferState.DebugPrints == true then
 
@@ -6424,6 +6757,10 @@ function TransferResolveTradeSidesFromPlayers(playersTable)
         end
     end
 
+    TransferInferMissingTradeSide(
+        "players"
+    )
+
     TransferSessionDebug(
         "[TRANSFER SESSION]",
         "Players",
@@ -6434,6 +6771,62 @@ function TransferResolveTradeSidesFromPlayers(playersTable)
         "| otherSide:",
         tostring(TransferState.OtherTradeSide)
     )
+end
+
+function TransferInferMissingTradeSide(source)
+
+    if TransferState.OtherTradeSide ~= nil then
+        return false
+    end
+
+    if TransferState.LocalTradeSide == nil then
+        return false
+    end
+
+    local localSideText =
+        tostring(TransferState.LocalTradeSide)
+
+    local maps = {
+        TransferState.TradeStates,
+        TransferState.SessionStates,
+        TransferState.TradeOfferCounts,
+        TransferState.SessionOfferCounts,
+        TransferState.SessionOfferItems,
+        TransferState.TradePlayers,
+        TransferState.SessionPlayers,
+    }
+
+    for _, map in ipairs(maps) do
+
+        if type(map) == "table" then
+
+            for side in pairs(map) do
+
+                if tostring(side) ~= localSideText then
+
+                    TransferState.OtherTradeSide =
+                        side
+
+                    TransferSessionDebug(
+                        "[TRANSFER SESSION]",
+                        "Inferred other side",
+                        "| epoch:",
+                        tostring(TransferState.TradeEpoch),
+                        "| localSide:",
+                        tostring(TransferState.LocalTradeSide),
+                        "| otherSide:",
+                        tostring(TransferState.OtherTradeSide),
+                        "| source:",
+                        tostring(source)
+                    )
+
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
 end
 
 function TransferGetTradeState(side)
@@ -6583,9 +6976,6 @@ function TransferHardResetRun(reason)
 
     TransferState.IncomingRequestHandled =
         {}
-
-    TransferState.RequestAcceptValue =
-        nil
 
     TransferState.LastRequestAcceptValue =
         "unknown"
@@ -6761,7 +7151,7 @@ function TransferMarkTradeDeclined(reason)
         {}
 
     TransferState.DataReadyForNextAt =
-        now + 0.35
+        now + 0.15
 
     TransferState.LastTradeUpdate =
         now
@@ -6983,15 +7373,9 @@ function TransferMarkTradeCompleted(reason)
 
     if completedTradeId ~= "" then
 
-        TransferState.LastCompletedTradeId =
-            completedTradeId
-
         TransferState.CompletedTradeIds[completedTradeId] =
             now
     end
-
-    TransferState.LastCompletedAt =
-        now
 
     -- Longer settle after Processing so SendRequest does not fire while server is still closing.
     TransferState.DataReadyForNextAt =
@@ -7367,6 +7751,134 @@ function TransferUpdateTradeTrackerFromPayload(payload)
     end
 end
 
+function TransferShouldIgnoreEarlyNilClose(source)
+
+    source =
+        tostring(source or "nil close")
+
+    if TransferState.TradeCompleted == true
+    or TransferState.TradeResult == "Completed"
+    or TransferState.TradeProcessing == true
+    or TransferState.TradeDeclined == true then
+        return false
+    end
+
+    local openedAt =
+        tonumber(TransferState.SessionOpenedAt)
+        or 0
+
+    if openedAt <= 0 then
+        return false
+    end
+
+    local age =
+        os.clock() - openedAt
+
+    if age > 1.35 then
+        return false
+    end
+
+    local localState =
+        tostring(TransferGetLocalTradeState() or "None")
+
+    local otherState =
+        tostring(TransferGetOtherTradeState() or "None")
+
+    if localState ~= "None"
+    or otherState ~= "None" then
+        return false
+    end
+
+    local ownItems =
+        tonumber(TransferState.TradeOwnItemCount)
+        or 0
+
+    local otherItems =
+        tonumber(TransferState.TradeOtherItemCount)
+        or 0
+
+    if ownItems > 0
+    or otherItems > 0 then
+        return false
+    end
+
+    local guiOwnItems =
+        0
+
+    local guiOtherItems =
+        0
+
+    local guiOwnValue =
+        0
+
+    local guiOtherValue =
+        0
+
+    if type(TransferGuiCountVisibleSideItems) == "function" then
+
+        pcall(function()
+            guiOwnItems =
+                tonumber(
+                    TransferGuiCountVisibleSideItems("MyPlr")
+                )
+                or 0
+        end)
+
+        pcall(function()
+            guiOtherItems =
+                tonumber(
+                    TransferGuiCountVisibleSideItems("OtherPlr")
+                )
+                or 0
+        end)
+    end
+
+    if type(TransferGuiGetSidePriceAmount) == "function" then
+
+        pcall(function()
+            guiOwnValue =
+                tonumber(
+                    TransferGuiGetSidePriceAmount("MyPlr")
+                )
+                or 0
+        end)
+
+        pcall(function()
+            guiOtherValue =
+                tonumber(
+                    TransferGuiGetSidePriceAmount("OtherPlr")
+                )
+                or 0
+        end)
+    end
+
+    if guiOwnItems > 0
+    or guiOtherItems > 0
+    or guiOwnValue > 0
+    or guiOtherValue > 0 then
+        return false
+    end
+
+    print(
+        "[TRANSFER NIL CLOSE IGNORED]",
+        "Ignored early nil close from fresh empty trade.",
+        "| source:",
+        tostring(source),
+        "| age:",
+        string.format("%.3fs", age),
+        "| tradeId:",
+        tostring(TransferState.TradeId),
+        "| sessionId:",
+        tostring(TransferState.SessionTradeId),
+        "| local:",
+        tostring(localState),
+        "| other:",
+        tostring(otherState)
+    )
+
+    return true
+end
+
 function TransferStartTradeWatchers()
 
     if TransferState.TradeWatchConnected == true then
@@ -7533,6 +8045,12 @@ function TransferStartTradeWatchers()
 
                 local otherState =
                     TransferGetOtherTradeState()
+
+                if TransferShouldIgnoreEarlyNilClose(
+                    "UpdateTradeState nil"
+                ) == true then
+                    return
+                end
 
                 if TransferState.TradeCompleted == true
                 or TransferState.TradeResult == "Completed"
@@ -8382,44 +8900,6 @@ function TransferIsLiveTradeOpen()
     return false
 end
 
-function TransferMarkClosedIfLiveTradeGone(reason)
-
-    -- Data-authoritative transfer:
-    -- UI disappearing/flickering must NOT mark a trade declined.
-    -- Actual decline is handled by Notification / UpdateTradeState nil / manual Decline.
-
-    if TransferState.TradeDeclined == true then
-        return true
-    end
-
-    if TransferState.TradeCompleted == true
-    or TransferState.TradeResult == "Completed" then
-        return false
-    end
-
-    if CleanText(TransferState.TradeId) ~= "" then
-
-        print(
-            "[TRANSFER UI CLOSE IGNORED]",
-            tostring(reason or "LiveTrade closed/flickered."),
-            "| tradeId:",
-            tostring(TransferState.TradeId),
-            "| local:",
-            tostring(TransferGetLocalTradeState()),
-            "| other:",
-            tostring(TransferGetOtherTradeState()),
-            "| ownItems:",
-            tostring(TransferState.TradeOwnItemCount),
-            "| otherItems:",
-            tostring(TransferState.TradeOtherItemCount)
-        )
-
-        return false
-    end
-
-    return false
-end
-
 function TransferWaitForLiveTradeClosed(timeout)
 
     timeout =
@@ -8487,16 +8967,6 @@ function TransferWaitForLiveTradeClosed(timeout)
     end
 
     return false
-end
-
-function TransferStateIsInTradeLike(state)
-
-    state =
-        tostring(state or "")
-
-    return state == "Accepted"
-        or state == "Confirmed"
-        or state == "Processing"
 end
 
 function TransferIsInTradeHard()
@@ -8983,12 +9453,29 @@ function TransferUiStillFirstAcceptPhase()
             or ""
         ):lower()
 
-    return buttonText == "Accept"
-        and statusText:find(
+    local cooldown =
+        TransferParseCooldownText(
+            buttonText
+        )
+
+    local waitingAccept =
+        statusText:find(
             "waiting for both players to accept",
             1,
             true
         ) ~= nil
+
+    if waitingAccept ~= true then
+        return false
+    end
+
+    if buttonText == "Accept"
+    or buttonText == ""
+    or cooldown ~= nil then
+        return true
+    end
+
+    return false
 end
 
 function TransferIsConfirmPhase()
@@ -9079,40 +9566,10 @@ function TransferConfirmWindowReady()
     return false
 end
 
-function TransferTradeStateIsFinalLike(state)
-
-    state =
-        tostring(state or "")
-
-    return state == "Confirmed"
-        or state == "Processing"
-end
-
-function TransferLocalAcceptedData()
-
-    return TransferTradeStateIsAcceptedLike(
-        TransferGetLocalTradeState()
-    )
-end
-
-function TransferOtherAcceptedData()
-
-    return TransferTradeStateIsAcceptedLike(
-        TransferGetOtherTradeState()
-    )
-end
-
 function TransferLocalProcessingData()
 
     return TransferGetLocalTradeState() == "Processing"
 end
-
-function TransferBothProcessingData()
-
-    return TransferGetLocalTradeState() == "Processing"
-        and TransferGetOtherTradeState() == "Processing"
-end
-
 
 function TransferTradeStateIsAcceptedLike(state)
 
@@ -9135,6 +9592,10 @@ TransferLocalAcceptLocked = function()
         return true
     end
 
+    if TransferUiStillFirstAcceptPhase() == true then
+        return false
+    end
+
     local timing =
         TransferState.Timing
 
@@ -9149,7 +9610,6 @@ TransferLocalAcceptLocked = function()
 
     -- Critical:
     -- If we have not fired Accept yet, stale data/ready labels are not proof.
-    -- This fixes firstAccept=- | attempts=0 | reason=accept locked.
     if attempts <= 0 then
 
         if buttonText == "Accept"
@@ -9197,6 +9657,10 @@ TransferAcceptLikelyLockedFromButtonPhase = function()
 
     local buttonText =
         TransferGetTradeButtonText()
+
+    if TransferUiStillFirstAcceptPhase() == true then
+        return false
+    end
 
     -- Strong visible proof.
     if buttonText == "Accepted"
@@ -9415,41 +9879,6 @@ function TransferSenderReadyForReceiverAccept()
     and statusText:find(targetName, 1, true)
     and statusText:find("has accepted", 1, true) then
         return true
-    end
-
-    return false
-end
-
-function TransferWaitForSenderReadyForReceiverAccept(timeout)
-
-    timeout =
-        tonumber(timeout)
-        or 120
-
-    local started =
-        os.clock()
-
-    while IsHolyLiteCurrentRun()
-    and TransferState.TransferEnabled == true do
-
-        if TransferState.TradeDeclined == true then
-            return false
-        end
-
-        if TransferSenderReadyForReceiverAccept() then
-            return true
-        end
-
-        TransferUpdateTradeStatusText(
-            "Waiting Sender",
-            "Waiting sender to accept."
-        )
-
-        if os.clock() - started >= timeout then
-            return false
-        end
-
-        task.wait(0.2)
     end
 
     return false
@@ -10311,13 +10740,10 @@ function TransferRespondRequest(accept)
         return false
     end
 
-    -- Grow a Garden uses false for accepting the ticket request.
-    -- Remote spy:
-    -- RespondRequest:FireServer(requestId, false)
+    -- Grow a Garden accepts the ticket request with true.
+    -- Decline uses false.
     local responseValue =
         accept == true
-        and false
-        or true
 
     local ok, err =
         pcall(function()
@@ -10392,6 +10818,13 @@ function TransferAcceptIncomingRequest()
 end
 
 function TransferDeclineIncomingRequest()
+
+    local requestId =
+        CleanText(TransferState.IncomingRequestId)
+
+    if requestId == "" then
+        return false
+    end
 
     return TransferRespondRequest(false)
 end
@@ -10561,39 +10994,6 @@ TransferGuiHasPositiveTradeValue = function()
         bestValue
 end
 
-function TransferWaitForVisibleTradeValue(timeout)
-
-    timeout =
-        tonumber(timeout)
-        or 10
-
-    local started =
-        os.clock()
-
-    while IsHolyLiteCurrentRun()
-    and TransferState.TransferEnabled == true do
-
-        if TransferState.TradeDeclined == true then
-            return false
-        end
-
-        local hasValue =
-            TransferGuiHasPositiveTradeValue()
-
-        if hasValue == true then
-            return true
-        end
-
-        if os.clock() - started >= timeout then
-            return false
-        end
-
-        task.wait()
-    end
-
-    return false
-end
-
 function TransferGetLiveTradeFrame()
 
     local playerGui =
@@ -10619,12 +11019,6 @@ function TransferGetLiveTradeFrame()
     return liveTrade
 end
 
-function TransferRawLiveTradeVisible()
-
-    return TransferGetLiveTradeFrame() ~= nil
-end
-
-
 function TransferActualTradeOpen()
 
     local active, reason =
@@ -10648,6 +11042,10 @@ function TransferActualTradeOpen()
     if TransferState.CompletedTradeIds[tradeId] ~= nil then
         return false, "Trade id already completed"
     end
+
+    TransferInferMissingTradeSide(
+        "actual open"
+    )
 
     local localState =
         TransferGetLocalTradeState()
@@ -11307,8 +11705,15 @@ function TransferCanUseTradeValueForAccept()
         return true
     end
 
-    if buttonText == "Accept"
-    or TransferParseCooldownText(buttonText) ~= nil then
+    if buttonText == "Accept" then
+        return true
+    end
+
+    local cooldown =
+        TransferParseCooldownText(buttonText)
+
+    if cooldown ~= nil
+    and cooldown <= 0.25 then
         return true
     end
 
@@ -12929,14 +13334,14 @@ function TransferRunSenderBatch()
     and activeOpen ~= true then
 
         TransferSetStatus(
-            "Waiting Trade",
-            "Current trade still open: "
+            "Waiting Safe",
+            "Previous trade settling: "
                 .. tostring(hardTradeReason)
         )
 
         print(
             "[TRANSFER SEND GATE]",
-            "Sender batch held because trade is still open.",
+            "Sender waiting inside batch instead of backing off.",
             "| reason:",
             tostring(hardTradeReason),
             "| liveOpen:",
@@ -12955,7 +13360,30 @@ function TransferRunSenderBatch()
             tostring(TransferGetOtherTradeState())
         )
 
-        return false, "Request blocked"
+        local safeToSend =
+            TransferWaitUntilSafeToSendTicket(
+                2.25
+            )
+
+        if safeToSend ~= true then
+
+            TransferSetStatus(
+                "Blocked",
+                "Waiting previous trade. "
+                    .. tostring(hardTradeReason)
+            )
+
+            return false, "Request blocked"
+        end
+
+        hardInTrade =
+            false
+
+        activeOpen =
+            false
+
+        activeReason =
+            "Safe after settling"
     end
 
     if activeOpen == true then
@@ -14073,28 +14501,28 @@ and IsGardenWorld() then
     local TransferPetBox =
         AddTransferLeftBox(
             Tabs.Transfer,
-            "Pet Filters",
+            "🎯 Pet Filters",
             "sliders-horizontal"
         )
 
     local TransferTargetBox =
         AddTransferRightBox(
             Tabs.Transfer,
-            "Trade Setup",
+            "👥 Trade Setup",
             "users"
         )
 
     local TransferActionsBox =
         AddTransferRightBox(
             Tabs.Transfer,
-            "Automation",
-            "gift"
+            "⚡ Automation",
+            "zap"
         )
 
     local TransferStatusBox =
         AddTransferRightBox(
             Tabs.Transfer,
-            "Status",
+            "📊 Status",
             "activity"
         )
 
@@ -14147,11 +14575,25 @@ and IsGardenWorld() then
 
     TransferState.PetDropdown:OnChanged(function(value)
 
-        TransferState.SelectedPets =
+        local oldPets =
+            CopyTransferBoolMap(
+                TransferState.SelectedPets
+            )
+
+        local nextPets =
             TransferReadDropdownSelectedMap(
                 TransferState.PetDropdown,
-                TransferBuildMapFromDropdown(value)
+                oldPets
             )
+
+        if TransferConfigState.Loading == true
+        and TransferMapIsEmpty(nextPets) == true
+        and TransferMapIsEmpty(oldPets) ~= true then
+            return
+        end
+
+        TransferState.SelectedPets =
+            nextPets
 
         TransferBuildMatches()
 
@@ -14205,11 +14647,25 @@ and IsGardenWorld() then
 
     TransferState.MutationDropdown:OnChanged(function(value)
 
-        TransferState.SelectedMutations =
+        local oldMutations =
+            CopyTransferBoolMap(
+                TransferState.SelectedMutations
+            )
+
+        local nextMutations =
             TransferReadDropdownSelectedMap(
                 TransferState.MutationDropdown,
-                TransferBuildMapFromDropdown(value)
+                oldMutations
             )
+
+        if TransferConfigState.Loading == true
+        and TransferMapIsEmpty(nextMutations) == true
+        and TransferMapIsEmpty(oldMutations) ~= true then
+            return
+        end
+
+        TransferState.SelectedMutations =
+            nextMutations
 
         TransferBuildMatches()
 
@@ -14506,58 +14962,17 @@ and IsGardenWorld() then
         end,
     })
 
-    TransferActionsBox:AddToggle(
-        "HolyFreshTransferHud",
-        {
-            Text = "Transfer HUD",
-            Default = TransferState.HudEnabled == true,
-            Tooltip = "Shows a small draggable transfer HUD above the game UI.",
-        }
-    ):OnChanged(function(value)
-
-        TransferSetHudVisible(
-            value == true
-        )
-
-        QueueSaveTransferSettings(
-            "transfer hud changed"
-        )
-    end)
-
-    TransferState.SkipLockedPetsToggle =
-        TransferActionsBox:AddToggle(
-            "HolyFreshSkipLockedPets",
-            {
-                Text = "Skip Locked Pets",
-                Default = TransferState.SkipLockedPets ~= false,
-                Tooltip = "Skips pets that cannot be traded right now.",
-            }
-        )
-
-    TransferState.SkipLockedPetsToggle:OnChanged(function(value)
-
-        TransferState.SkipLockedPets =
-            value == true
-
-        TransferBuildMatches()
-
-        TransferSetStatus(
-            TransferState.Status,
-            TransferState.LastResult,
-            true
-        )
-
-        QueueSaveTransferSettings(
-            "skip locked pets changed"
-        )
-    end)
-
+    TransferActionsBox:AddDivider({
+        Text = "Run",
+        MarginTop = 4,
+        MarginBottom = 6,
+    })
 
     TransferState.TransferEnabledToggle =
         TransferActionsBox:AddToggle(
             "HolyFreshTransferEnabled",
             {
-                Text = "Transfer Enabled",
+                Text = "⚡ Transfer Enabled",
                 Default = false,
                 Tooltip = "Starts or stops the transfer worker.",
             }
@@ -14627,91 +15042,21 @@ and IsGardenWorld() then
         end)
     end)
 
-    TransferState.AutoAcceptTicketToggle =
-        TransferActionsBox:AddToggle(
-            "HolyFreshTransferAutoAcceptTicket",
-            {
-                Text = "Auto Accept Ticket",
-                Default = TransferState.AutoAcceptTicket == true,
-                Tooltip = "Receiver mode: automatically accepts incoming trade tickets from the selected player.",
-            }
-        )
+    TransferActionsBox:AddToggle(
+        "HolyFreshTransferHud",
+        {
+            Text = "🖥 Transfer HUD",
+            Default = TransferState.HudEnabled == true,
+            Tooltip = "Shows a small draggable transfer HUD above the game UI.",
+        }
+    ):OnChanged(function(value)
 
-    TransferState.AutoAcceptTicketToggle:OnChanged(function(value)
-
-        TransferState.AutoAcceptTicket =
+        TransferSetHudVisible(
             value == true
-
-        TransferSetStatus(
-            "Option Updated",
-            "Auto Accept Ticket = "
-                .. tostring(TransferState.AutoAcceptTicket)
-        )
-    end)
-
-    TransferState.AutoConfirmToggle =
-        TransferActionsBox:AddToggle(
-            "HolyFreshTransferAutoConfirm",
-            {
-                Text = "Auto Confirm",
-                Default = TransferState.AutoConfirm == true,
-                Tooltip = "Receiver mode: automatically accepts the trade and final confirms.",
-            }
         )
 
-    TransferState.AutoConfirmToggle:OnChanged(function(value)
-
-        TransferState.AutoConfirm =
-            value == true
-
-        TransferSetStatus(
-            "Option Updated",
-            "Auto Confirm = "
-                .. tostring(TransferState.AutoConfirm)
-        )
-    end)
-
-    TransferState.AutoAcceptGiftToggle =
-        TransferActionsBox:AddToggle(
-            "HolyFreshTransferAutoAcceptGift",
-            {
-                Text = "Auto Accept Gift",
-                Default = TransferState.AutoAcceptGift == true,
-                Tooltip = "Automatically accepts incoming pet gifts. If a player is selected, only accepts gifts from that player.",
-            }
-        )
-
-    TransferState.AutoAcceptGiftToggle:OnChanged(function(value)
-
-        TransferState.AutoAcceptGift =
-            value == true
-
-        TransferSetStatus(
-            "Option Updated",
-            "Auto Accept Gift = "
-                .. tostring(TransferState.AutoAcceptGift)
-        )
-    end)
-
-    TransferState.AutoUnfavoriteToggle =
-        TransferActionsBox:AddToggle(
-            "HolyFreshTransferAutoUnfavorite",
-            {
-                Text = "Auto Unfavorite",
-                Default = TransferState.AutoUnfavorite == true,
-                Tooltip = "Sender mode: unfavorites matching pets before adding them to trade.",
-            }
-        )
-
-    TransferState.AutoUnfavoriteToggle:OnChanged(function(value)
-
-        TransferState.AutoUnfavorite =
-            value == true
-
-        TransferSetStatus(
-            "Option Updated",
-            "Auto Unfavorite = "
-                .. tostring(TransferState.AutoUnfavorite)
+        QueueSaveTransferSettings(
+            "transfer hud changed"
         )
     end)
 
@@ -14719,7 +15064,7 @@ and IsGardenWorld() then
         TransferActionsBox:AddToggle(
             "HolyFreshTransferKeepGoing",
             {
-                Text = "Keep Going",
+                Text = "🔁 Keep Going",
                 Default = TransferState.KeepGoing == true,
                 Tooltip = "Sender: keep sending batches. Receiver: keep accepting next tickets.",
             }
@@ -14730,6 +15075,10 @@ and IsGardenWorld() then
         TransferState.KeepGoing =
             value == true
 
+        QueueSaveTransferSettings(
+            "keep going changed"
+        )
+
         TransferSetStatus(
             "Option Updated",
             "Keep Going = "
@@ -14737,22 +15086,63 @@ and IsGardenWorld() then
         )
     end)
 
-    TransferActionsBox:AddToggle(
-        "HolyFreshTransferDebugPrints",
-        {
-            Text = "Debug Prints",
-            Default = TransferState.DebugPrints == true,
-            Tooltip = "Only enable while testing. OFF removes console spam for faster transfer.",
-        }
-    ):OnChanged(function(value)
+    TransferActionsBox:AddDivider({
+        Text = "Sender",
+        MarginTop = 8,
+        MarginBottom = 6,
+    })
 
-        TransferState.DebugPrints =
+    TransferState.SkipLockedPetsToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshSkipLockedPets",
+            {
+                Text = "🔒 Skip Locked",
+                Default = TransferState.SkipLockedPets ~= false,
+                Tooltip = "Skips pets that cannot be traded right now.",
+            }
+        )
+
+    TransferState.SkipLockedPetsToggle:OnChanged(function(value)
+
+        TransferState.SkipLockedPets =
             value == true
+
+        TransferBuildMatches()
+
+        TransferSetStatus(
+            TransferState.Status,
+            TransferState.LastResult,
+            true
+        )
+
+        QueueSaveTransferSettings(
+            "skip locked pets changed"
+        )
+    end)
+
+    TransferState.AutoUnfavoriteToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshTransferAutoUnfavorite",
+            {
+                Text = "❤️ Auto Unfavorite",
+                Default = TransferState.AutoUnfavorite == true,
+                Tooltip = "Sender mode: unfavorites matching pets before adding them to trade.",
+            }
+        )
+
+    TransferState.AutoUnfavoriteToggle:OnChanged(function(value)
+
+        TransferState.AutoUnfavorite =
+            value == true
+
+        QueueSaveTransferSettings(
+            "auto unfavorite changed"
+        )
 
         TransferSetStatus(
             "Option Updated",
-            "Debug Prints = "
-                .. tostring(TransferState.DebugPrints)
+            "Auto Unfavorite = "
+                .. tostring(TransferState.AutoUnfavorite)
         )
     end)
 
@@ -14760,7 +15150,7 @@ and IsGardenWorld() then
         TransferActionsBox:AddInput(
             "HolyFreshTransferMaxPets",
             {
-                Text = "Max Pets",
+                Text = "📦 Max Pets",
                 Default = tostring(TransferState.MaxPetsPerTrade),
                 Numeric = false,
                 Finished = true,
@@ -14796,45 +15186,11 @@ and IsGardenWorld() then
         )
     end)
 
-    TransferState.AddPetDelayInput =
-        TransferActionsBox:AddInput(
-            "HolyFreshTransferAddPetDelay",
-            {
-                Text = "Add Delay",
-                Default = tostring(TransferState.AddPetDelay),
-                Numeric = false,
-                Finished = true,
-                ClearTextOnFocus = false,
-                Tooltip = "Sender mode: seconds to wait before adding the next pet.",
-            }
-        )
-
-    TransferState.AddPetDelayInput:OnChanged(function(value)
-
-        TransferState.AddPetDelay =
-            math.clamp(
-                TransferToNumber(value, 0.5),
-                0.01,
-                3
-            )
-
-        QueueSaveTransferSettings(
-            "add delay changed"
-        )
-
-        TransferSetStatus(
-            "Option Updated",
-            "Add Delay = "
-                .. string.format("%.2f", TransferState.AddPetDelay)
-                .. "s"
-        )
-    end)
-
     TransferState.AddBurstInput =
         TransferActionsBox:AddInput(
             "HolyFreshTransferAddBurst",
             {
-                Text = "Add Burst",
+                Text = "⚡ Add Burst",
                 Default = tostring(TransferState.AddBurstCount),
                 Numeric = false,
                 Finished = true,
@@ -14865,11 +15221,45 @@ and IsGardenWorld() then
         )
     end)
 
+    TransferState.AddPetDelayInput =
+        TransferActionsBox:AddInput(
+            "HolyFreshTransferAddPetDelay",
+            {
+                Text = "⏱ Add Delay",
+                Default = tostring(TransferState.AddPetDelay),
+                Numeric = false,
+                Finished = true,
+                ClearTextOnFocus = false,
+                Tooltip = "Sender mode: seconds to wait before adding the next pet.",
+            }
+        )
+
+    TransferState.AddPetDelayInput:OnChanged(function(value)
+
+        TransferState.AddPetDelay =
+            math.clamp(
+                TransferToNumber(value, 0.5),
+                0.01,
+                3
+            )
+
+        QueueSaveTransferSettings(
+            "add delay changed"
+        )
+
+        TransferSetStatus(
+            "Option Updated",
+            "Add Delay = "
+                .. string.format("%.2f", TransferState.AddPetDelay)
+                .. "s"
+        )
+    end)
+
     TransferState.NextTicketDelayInput =
         TransferActionsBox:AddInput(
             "HolyFreshTransferNextTicketDelay",
             {
-                Text = "Next Ticket Delay",
+                Text = "🎟 Ticket Delay",
                 Default = tostring(TransferState.NextTicketDelay),
                 Numeric = false,
                 Finished = true,
@@ -14893,22 +15283,166 @@ and IsGardenWorld() then
 
         TransferSetStatus(
             "Option Updated",
-            "Next Ticket Delay = "
+            "Ticket Delay = "
                 .. string.format("%.2f", TransferState.NextTicketDelay)
                 .. "s"
         )
     end)
 
-    TransferApplyModeUI()
+    TransferActionsBox:AddDivider({
+        Text = "Receiver",
+        MarginTop = 8,
+        MarginBottom = 6,
+    })
 
-    TransferApplySavedFilterDropdownValues()
+    TransferState.AutoAcceptTicketToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshTransferAutoAcceptTicket",
+            {
+                Text = "🎫 Auto Accept Ticket",
+                Default = TransferState.AutoAcceptTicket == true,
+                Tooltip = "Receiver mode: automatically accepts incoming trade tickets from the selected player.",
+            }
+        )
+
+    TransferState.AutoAcceptTicketToggle:OnChanged(function(value)
+
+        TransferState.AutoAcceptTicket =
+            value == true
+
+        QueueSaveTransferSettings(
+            "auto accept ticket changed"
+        )
+
+        TransferSetStatus(
+            "Option Updated",
+            "Auto Accept Ticket = "
+                .. tostring(TransferState.AutoAcceptTicket)
+        )
+    end)
+
+    TransferState.AutoConfirmToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshTransferAutoConfirm",
+            {
+                Text = "✅ Auto Confirm",
+                Default = TransferState.AutoConfirm == true,
+                Tooltip = "Receiver mode: automatically accepts the trade and final confirms.",
+            }
+        )
+
+    TransferState.AutoConfirmToggle:OnChanged(function(value)
+
+        TransferState.AutoConfirm =
+            value == true
+
+        QueueSaveTransferSettings(
+            "auto confirm changed"
+        )
+
+        TransferSetStatus(
+            "Option Updated",
+            "Auto Confirm = "
+                .. tostring(TransferState.AutoConfirm)
+        )
+    end)
+
+    TransferState.AutoAcceptGiftToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshTransferAutoAcceptGift",
+            {
+                Text = "🎁 Auto Accept Gift",
+                Default = TransferState.AutoAcceptGift == true,
+                Tooltip = "Automatically accepts incoming pet gifts. If a player is selected, only accepts gifts from that player.",
+            }
+        )
+
+    TransferState.AutoAcceptGiftToggle:OnChanged(function(value)
+
+        TransferState.AutoAcceptGift =
+            value == true
+
+        QueueSaveTransferSettings(
+            "auto accept gift changed"
+        )
+
+        TransferSetStatus(
+            "Option Updated",
+            "Auto Accept Gift = "
+                .. tostring(TransferState.AutoAcceptGift)
+        )
+    end)
+
+    TransferActionsBox:AddDivider({
+        Text = "Tools",
+        MarginTop = 8,
+        MarginBottom = 6,
+    })
+
+    TransferActionsBox:AddToggle(
+        "HolyFreshTransferDebugPrints",
+        {
+            Text = "🧪 Debug Prints",
+            Default = TransferState.DebugPrints == true,
+            Tooltip = "Only enable while testing. OFF removes console spam for faster transfer.",
+        }
+    ):OnChanged(function(value)
+
+        TransferState.DebugPrints =
+            value == true
+
+        QueueSaveTransferSettings(
+            "debug prints changed"
+        )
+
+        TransferSetStatus(
+            "Option Updated",
+            "Debug Prints = "
+                .. tostring(TransferState.DebugPrints)
+        )
+    end)
+
+    if type(TransferApplySavedFilterDropdownValues) == "function" then
+
+        TransferApplySavedFilterDropdownValues()
+
+    else
+
+        if TransferState.PetDropdown
+        and type(TransferState.PetDropdown.SetValue) == "function" then
+
+            pcall(function()
+                TransferState.PetDropdown:SetValue(
+                    CopyTransferBoolMap(
+                        TransferState.SelectedPets
+                    )
+                )
+            end)
+        end
+
+        if TransferState.MutationDropdown
+        and type(TransferState.MutationDropdown.SetValue) == "function" then
+
+            pcall(function()
+                TransferState.MutationDropdown:SetValue(
+                    CopyTransferBoolMap(
+                        TransferState.SelectedMutations
+                    )
+                )
+            end)
+        end
+    end
+
+    if type(TransferBuildMatches) == "function" then
+        TransferBuildMatches()
+    end
 
     TransferConfigState.Loading =
         false
 
     local TransferDeclineButton =
         TransferActionsBox:AddButton({
-            Text = "Decline",
+            Text = "🛑 Decline",
             Tooltip = "Decline the current trade or pending request.",
             Func = function()
 
@@ -14926,7 +15460,7 @@ and IsGardenWorld() then
         })
 
     TransferDeclineButton:AddButton({
-        Text = "Confirm",
+        Text = "✅ Confirm",
         Tooltip = "Manual final confirm.",
         Func = function()
 
