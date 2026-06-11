@@ -10182,9 +10182,45 @@ end
 
 function TransferRunSenderBatch()
 
-    TransferResetTradeRuntime()
+    local alreadyInTrade =
+        false
 
-    TransferTimingReset("Sender Batch")
+    local activeOpen, activeReason =
+        TransferActualTradeOpen()
+
+    if activeOpen == true then
+
+        alreadyInTrade =
+            true
+
+        TransferTimingReset(
+            "Sender Reattach"
+        )
+
+        TransferSetStatus(
+            "Reattached Trade",
+            "Using already-open trade data: "
+                .. tostring(activeReason)
+        )
+
+    else
+
+        if TransferState.TradeCompleted == true
+        or TransferState.TradeResult == "Completed"
+        or CleanText(TransferState.TradeId) ~= "" then
+
+            TransferWaitForLiveTradeClosed(4)
+            TransferResetTradeRuntime()
+
+        else
+
+            TransferResetTradeRuntime()
+        end
+
+        TransferTimingReset(
+            "Sender Batch"
+        )
+    end
 
     local matches =
         TransferBuildMatches()
@@ -10200,7 +10236,9 @@ function TransferRunSenderBatch()
     end
 
     TransferSetStatus(
-        "Preparing",
+        alreadyInTrade == true
+            and "Preparing Reattach"
+            or "Preparing",
         "Preparing "
             .. tostring(math.min(#matches, TransferGetMaxPetsPerTrade()))
             .. " pets."
@@ -10234,45 +10272,58 @@ function TransferRunSenderBatch()
         return false, "No matches"
     end
 
-    -- Optional user delay before sending the next trade request.
-    -- Batch 1 sends immediately; later batches/retries respect this delay.
-    if tonumber(TransferState.Batch) > 1 then
-        TransferWaitBeforeNextTicket()
-    end
+    if alreadyInTrade ~= true then
 
-    local ticketOk =
-        TransferSendTicket()
-
-    if not ticketOk then
-        return false, "Ticket failed"
-    end
-
-    TransferStartFastAcceptPump(
-        "Sender PreOpen",
-        0,
-        0,
-        30
-    )
-    -- Do not count a batch until the trade actually opens.
-    local tradeOpen =
-        TransferWaitForTradeOpen(25)
-
-    if tradeOpen ~= true then
-
-        if TransferState.TradeDeclined == true then
-            return false, "Trade declined"
+        -- Optional user delay before sending the next trade request.
+        -- Batch 1 sends immediately; later batches/retries respect this delay.
+        if tonumber(TransferState.Batch) > 1 then
+            TransferWaitBeforeNextTicket()
         end
 
-        if TransferState.RequestBlocked == true then
-            return false, "Request blocked"
+        local ticketOk =
+            TransferSendTicket()
+
+        if not ticketOk then
+            return false, "Ticket failed"
         end
 
-        TransferSetStatus(
-            "Trade Timeout",
-            "Target did not accept/open trade in time."
+        TransferStartFastAcceptPump(
+            "Sender PreOpen",
+            0,
+            0,
+            30
         )
 
-        return false, "Trade timeout"
+        -- Do not count a batch until the trade actually opens.
+        local tradeOpen =
+            TransferWaitForTradeOpen(25)
+
+        if tradeOpen ~= true then
+
+            if TransferState.TradeDeclined == true then
+                return false, "Trade declined"
+            end
+
+            if TransferState.RequestBlocked == true then
+                return false, "Request blocked"
+            end
+
+            TransferSetStatus(
+                "Trade Timeout",
+                "Target did not accept/open trade in time."
+            )
+
+            return false, "Trade timeout"
+        end
+
+    else
+
+        TransferStartFastAcceptPump(
+            "Sender Reattached",
+            0,
+            0,
+            30
+        )
     end
 
     local openedButtonText =
@@ -10854,6 +10905,39 @@ function TransferWorkerLoop()
                             end
 
                             if TransferGetTradeButtonText() == "Accept" then
+
+                                local activeOpen, activeReason =
+                                    TransferActualTradeOpen()
+
+                                local ownItems =
+                                    tonumber(TransferState.TradeOwnItemCount)
+                                    or 0
+
+                                if activeOpen == true
+                                and ownItems <= 0 then
+
+                                    TransferSetStatus(
+                                        "Blocked Empty Trade",
+                                        "Active trade has no sender items yet. Reattaching instead of accepting."
+                                    )
+
+                                    print(
+                                        "[TRANSFER BLOCKED RECOVERY]",
+                                        "Empty active trade found.",
+                                        "| reason:",
+                                        tostring(activeReason),
+                                        "| tradeId:",
+                                        tostring(TransferState.TradeId),
+                                        "| localSide:",
+                                        tostring(TransferState.LocalTradeSide),
+                                        "| otherSide:",
+                                        tostring(TransferState.OtherTradeSide),
+                                        "| ownItems:",
+                                        tostring(ownItems)
+                                    )
+
+                                    break
+                                end
 
                                 TransferAcceptAndWait(
                                     "Blocked Accept Recovery",
