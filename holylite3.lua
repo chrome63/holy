@@ -2582,6 +2582,7 @@ TransferState = {
     TradeEpoch = 0,
     SessionTradeId = "",
     SessionActive = false,
+    SessionOpenedAt = 0,
     SessionLastDataAt = 0,
     SessionPlayers = {},
     SessionStates = {},
@@ -2675,6 +2676,9 @@ function TransferStartTradeSession(tradeId, source)
     TransferState.SessionActive =
         true
 
+    TransferState.SessionOpenedAt =
+        now
+
     TransferState.SessionLastDataAt =
         now
 
@@ -2747,6 +2751,9 @@ function TransferCloseTradeSession(reason, result)
 
     TransferState.SessionActive =
         false
+
+    TransferState.SessionOpenedAt =
+        0
 
     TransferState.SessionLastDataAt =
         now
@@ -7250,6 +7257,134 @@ function TransferUpdateTradeTrackerFromPayload(payload)
     end
 end
 
+function TransferShouldIgnoreEarlyNilClose(source)
+
+    source =
+        tostring(source or "nil close")
+
+    if TransferState.TradeCompleted == true
+    or TransferState.TradeResult == "Completed"
+    or TransferState.TradeProcessing == true
+    or TransferState.TradeDeclined == true then
+        return false
+    end
+
+    local openedAt =
+        tonumber(TransferState.SessionOpenedAt)
+        or 0
+
+    if openedAt <= 0 then
+        return false
+    end
+
+    local age =
+        os.clock() - openedAt
+
+    if age > 1.35 then
+        return false
+    end
+
+    local localState =
+        tostring(TransferGetLocalTradeState() or "None")
+
+    local otherState =
+        tostring(TransferGetOtherTradeState() or "None")
+
+    if localState ~= "None"
+    or otherState ~= "None" then
+        return false
+    end
+
+    local ownItems =
+        tonumber(TransferState.TradeOwnItemCount)
+        or 0
+
+    local otherItems =
+        tonumber(TransferState.TradeOtherItemCount)
+        or 0
+
+    if ownItems > 0
+    or otherItems > 0 then
+        return false
+    end
+
+    local guiOwnItems =
+        0
+
+    local guiOtherItems =
+        0
+
+    local guiOwnValue =
+        0
+
+    local guiOtherValue =
+        0
+
+    if type(TransferGuiCountVisibleSideItems) == "function" then
+
+        pcall(function()
+            guiOwnItems =
+                tonumber(
+                    TransferGuiCountVisibleSideItems("MyPlr")
+                )
+                or 0
+        end)
+
+        pcall(function()
+            guiOtherItems =
+                tonumber(
+                    TransferGuiCountVisibleSideItems("OtherPlr")
+                )
+                or 0
+        end)
+    end
+
+    if type(TransferGuiGetSidePriceAmount) == "function" then
+
+        pcall(function()
+            guiOwnValue =
+                tonumber(
+                    TransferGuiGetSidePriceAmount("MyPlr")
+                )
+                or 0
+        end)
+
+        pcall(function()
+            guiOtherValue =
+                tonumber(
+                    TransferGuiGetSidePriceAmount("OtherPlr")
+                )
+                or 0
+        end)
+    end
+
+    if guiOwnItems > 0
+    or guiOtherItems > 0
+    or guiOwnValue > 0
+    or guiOtherValue > 0 then
+        return false
+    end
+
+    print(
+        "[TRANSFER NIL CLOSE IGNORED]",
+        "Ignored early nil close from fresh empty trade.",
+        "| source:",
+        tostring(source),
+        "| age:",
+        string.format("%.3fs", age),
+        "| tradeId:",
+        tostring(TransferState.TradeId),
+        "| sessionId:",
+        tostring(TransferState.SessionTradeId),
+        "| local:",
+        tostring(localState),
+        "| other:",
+        tostring(otherState)
+    )
+
+    return true
+end
+
 function TransferStartTradeWatchers()
 
     if TransferState.TradeWatchConnected == true then
@@ -7416,6 +7551,12 @@ function TransferStartTradeWatchers()
 
                 local otherState =
                     TransferGetOtherTradeState()
+
+                if TransferShouldIgnoreEarlyNilClose(
+                    "UpdateTradeState nil"
+                ) == true then
+                    return
+                end
 
                 if TransferState.TradeCompleted == true
                 or TransferState.TradeResult == "Completed"
