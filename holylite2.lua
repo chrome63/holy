@@ -5864,9 +5864,48 @@ function TransferStartTradeWatchers()
 
                 if TransferState.TradeOpen == true then
 
-                    TransferMarkTradeDeclined(
-                        "Trade closed before completion."
-                    )
+                    local localState =
+                        TransferGetLocalTradeState()
+
+                    local otherState =
+                        TransferGetOtherTradeState()
+
+                    local ownItems =
+                        tonumber(TransferState.TradeOwnItemCount)
+                        or 0
+
+                    local otherItems =
+                        tonumber(TransferState.TradeOtherItemCount)
+                        or 0
+
+                    -- If the UI/session closes before any meaningful trade data,
+                    -- it is likely a real cancelled/declined trade.
+                    if localState == "None"
+                    and otherState == "None"
+                    and ownItems <= 0
+                    and otherItems <= 0 then
+
+                        TransferMarkTradeDeclined(
+                            "Trade closed before any offer/state data."
+                        )
+
+                    else
+
+                        print(
+                            "[TRANSFER DATA CLOSE]",
+                            "UpdateTradeState nil ignored; waiting for data result.",
+                            "| tradeId:",
+                            tostring(TransferState.TradeId),
+                            "| local:",
+                            tostring(localState),
+                            "| other:",
+                            tostring(otherState),
+                            "| ownItems:",
+                            tostring(ownItems),
+                            "| otherItems:",
+                            tostring(otherItems)
+                        )
+                    end
                 end
 
                 return
@@ -6268,8 +6307,12 @@ end
 
 function TransferMarkClosedIfLiveTradeGone(reason)
 
-    if TransferState.TradeOpen ~= true then
-        return false
+    -- Data-authoritative transfer:
+    -- UI disappearing/flickering must NOT mark a trade declined.
+    -- Actual decline is handled by Notification / UpdateTradeState nil / manual Decline.
+
+    if TransferState.TradeDeclined == true then
+        return true
     end
 
     if TransferState.TradeCompleted == true
@@ -6277,28 +6320,27 @@ function TransferMarkClosedIfLiveTradeGone(reason)
         return false
     end
 
-    if TransferState.TradeDeclined == true then
-        return true
-    end
+    if CleanText(TransferState.TradeId) ~= "" then
 
-    if TransferIsLiveTradeOpen() == true then
+        print(
+            "[TRANSFER UI CLOSE IGNORED]",
+            tostring(reason or "LiveTrade closed/flickered."),
+            "| tradeId:",
+            tostring(TransferState.TradeId),
+            "| local:",
+            tostring(TransferGetLocalTradeState()),
+            "| other:",
+            tostring(TransferGetOtherTradeState()),
+            "| ownItems:",
+            tostring(TransferState.TradeOwnItemCount),
+            "| otherItems:",
+            tostring(TransferState.TradeOtherItemCount)
+        )
+
         return false
     end
 
-    TransferMarkTradeDeclined(
-        tostring(reason or "LiveTrade closed.")
-    )
-
-    print(
-        "[TRANSFER SEND TIMING]",
-        "Detected trade closed locally",
-        "| reason:",
-        tostring(reason),
-        "| tradeId:",
-        tostring(TransferState.TradeId)
-    )
-
-    return true
+    return false
 end
 
 function TransferWaitForLiveTradeClosed(timeout)
@@ -6963,6 +7005,41 @@ function TransferConfirmWindowReady()
     return false
 end
 
+function TransferTradeStateIsFinalLike(state)
+
+    state =
+        tostring(state or "")
+
+    return state == "Confirmed"
+        or state == "Processing"
+end
+
+function TransferLocalAcceptedData()
+
+    return TransferTradeStateIsAcceptedLike(
+        TransferGetLocalTradeState()
+    )
+end
+
+function TransferOtherAcceptedData()
+
+    return TransferTradeStateIsAcceptedLike(
+        TransferGetOtherTradeState()
+    )
+end
+
+function TransferLocalProcessingData()
+
+    return TransferGetLocalTradeState() == "Processing"
+end
+
+function TransferBothProcessingData()
+
+    return TransferGetLocalTradeState() == "Processing"
+        and TransferGetOtherTradeState() == "Processing"
+end
+
+
 function TransferTradeStateIsAcceptedLike(state)
 
     state =
@@ -7107,28 +7184,51 @@ function TransferWaitForReceiverAccepted(timeout)
     local started =
         os.clock()
 
+    local lastStatusAt =
+        0
+
     while IsHolyLiteCurrentRun()
     and TransferState.TransferEnabled == true do
 
-        if TransferState.TradeDeclined == true
-        or TransferMarkClosedIfLiveTradeGone("Trade UI closed while waiting receiver.") == true then
+        if TransferState.TradeDeclined == true then
             return false
         end
 
-        if TransferReceiverAcceptedAfterLocal() then
+        if TransferState.TradeCompleted == true
+        or TransferState.TradeResult == "Completed"
+        or TransferLocalProcessingData() == true then
             return true
         end
 
-        TransferUpdateTradeStatusText(
-            "Waiting Receiver",
-            "Waiting receiver to accept."
-        )
+        if TransferOtherAcceptedData() == true then
+            return true
+        end
+
+        if TransferReceiverAcceptedAfterLocal() == true then
+            return true
+        end
 
         if os.clock() - started >= timeout then
             return false
         end
 
-        task.wait(0.2)
+        if os.clock() - lastStatusAt >= 0.35 then
+
+            lastStatusAt =
+                os.clock()
+
+            TransferUpdateTradeStatusText(
+                "Waiting Receiver",
+                "Waiting receiver data accepted. Button="
+                    .. tostring(TransferGetTradeButtonText())
+                    .. " | OwnItems="
+                    .. tostring(TransferState.TradeOwnItemCount)
+                    .. " | OtherItems="
+                    .. tostring(TransferState.TradeOtherItemCount)
+            )
+        end
+
+        task.wait(0.05)
     end
 
     return false
@@ -7313,8 +7413,7 @@ function TransferWaitForConfirmReady(timeout)
     while IsHolyLiteCurrentRun()
     and TransferState.TransferEnabled == true do
 
-        if TransferState.TradeDeclined == true
-        or TransferMarkClosedIfLiveTradeGone("Trade UI closed while waiting confirm.") == true then
+        if TransferState.TradeDeclined == true then
             return false
         end
 
@@ -9644,8 +9743,7 @@ function TransferConfirmAndWait(label, timeout)
     while IsHolyLiteCurrentRun()
     and TransferState.TransferEnabled == true do
 
-        if TransferState.TradeDeclined == true
-        or TransferMarkClosedIfLiveTradeGone("Trade UI closed while confirming.") == true then
+        if TransferState.TradeDeclined == true then
             return false
         end
 
