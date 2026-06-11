@@ -2470,6 +2470,11 @@ end
 
 function EnsureTransferDropdownChoice(choices, value)
 
+    if type(choices) ~= "table" then
+        choices =
+            {}
+    end
+
     value =
         CleanText(value)
 
@@ -2492,6 +2497,76 @@ function EnsureTransferDropdownChoice(choices, value)
     table.sort(choices)
 
     return choices
+end
+
+function EnsureTransferDropdownChoicesFromMap(choices, map)
+
+    if type(choices) ~= "table" then
+        choices =
+            {}
+    end
+
+    if type(map) ~= "table" then
+        return choices
+    end
+
+    for value, selected in pairs(map) do
+
+        if selected == true then
+
+            EnsureTransferDropdownChoice(
+                choices,
+                value
+            )
+        end
+    end
+
+    return choices
+end
+
+function TransferApplySavedFilterDropdownValues()
+
+    local savedPets =
+        CopyTransferBoolMap(
+            TransferState.SelectedPets
+        )
+
+    local savedMutations =
+        CopyTransferBoolMap(
+            TransferState.SelectedMutations
+        )
+
+    if TransferState.PetDropdown
+    and type(TransferState.PetDropdown.SetValue) == "function" then
+
+        pcall(function()
+            TransferState.PetDropdown:SetValue(
+                savedPets
+            )
+        end)
+    end
+
+    if TransferState.MutationDropdown
+    and type(TransferState.MutationDropdown.SetValue) == "function" then
+
+        pcall(function()
+            TransferState.MutationDropdown:SetValue(
+                savedMutations
+            )
+        end)
+    end
+
+    TransferState.SelectedPets =
+        savedPets
+
+    TransferState.SelectedMutations =
+        savedMutations
+
+    if type(TransferBuildMatches) == "function" then
+        TransferBuildMatches()
+    end
+
+    return true
 end
 
 TransferState = {
