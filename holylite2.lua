@@ -218,6 +218,9 @@ local SaveManager =
         game:HttpGet(SAVE_MANAGER_URL)
     )()
 
+local TransferSaveManager =
+    nil
+
 --==================================================
 -- [3.1] DEVICE HELPERS
 --==================================================
@@ -2093,6 +2096,12 @@ local TransferState =
 
 local TransferConfigState = {
     Loading = true,
+    Dirty = false,
+    LastDirtyAt = 0,
+    LastSaveAt = 0,
+    LastSaveReason = "startup",
+    SaveManagerReady = false,
+    AutosaveName = "transfer_autosave",
 }
 
 function CopyTransferBoolMap(source)
@@ -2147,26 +2156,15 @@ function SaveTransferSettingsNow(reason)
 
     EnsureTransferSettingsFolder()
 
-    if TransferConfigState.Loading ~= true then
+    local savedPets =
+        CopyTransferBoolMap(
+            TransferState.SelectedPets
+        )
 
-        if TransferState.PetDropdown ~= nil then
-
-            TransferState.SelectedPets =
-                TransferReadDropdownSelectedMap(
-                    TransferState.PetDropdown,
-                    TransferState.SelectedPets
-                )
-        end
-
-        if TransferState.MutationDropdown ~= nil then
-
-            TransferState.SelectedMutations =
-                TransferReadDropdownSelectedMap(
-                    TransferState.MutationDropdown,
-                    TransferState.SelectedMutations
-                )
-        end
-    end
+    local savedMutations =
+        CopyTransferBoolMap(
+            TransferState.SelectedMutations
+        )
 
     local payload = {
         Mode =
@@ -2176,10 +2174,10 @@ function SaveTransferSettingsNow(reason)
             tostring(TransferState.TargetPlayerName or ""),
 
         SelectedPets =
-            CopyTransferBoolMap(TransferState.SelectedPets),
+            savedPets,
 
         SelectedMutations =
-            CopyTransferBoolMap(TransferState.SelectedMutations),
+            savedMutations,
 
         MaxPetsPerTrade =
             tonumber(TransferState.MaxPetsPerTrade) or 12,
@@ -2249,10 +2247,18 @@ function SaveTransferSettingsNow(reason)
 
     if ok ~= true
     or type(encoded) ~= "string" then
+
+        warn(
+            "[TRANSFER SAVE]",
+            "JSON encode failed.",
+            "| reason:",
+            tostring(reason or "manual")
+        )
+
         return false
     end
 
-    local writeOk =
+    local writeOk, writeErr =
         pcall(function()
 
             writefile(
@@ -2261,7 +2267,24 @@ function SaveTransferSettingsNow(reason)
             )
         end)
 
-    return writeOk == true
+    if writeOk ~= true then
+
+        warn(
+            "[TRANSFER SAVE]",
+            "Write failed.",
+            "| file:",
+            tostring(TRANSFER_SETTINGS_SAVE_FILE),
+            "| error:",
+            tostring(writeErr)
+        )
+
+        return false
+    end
+
+    TransferConfigState.LastSaveAt =
+        os.clock()
+
+    return true
 end
 
 function QueueSaveTransferSettings(reason)
@@ -2270,27 +2293,35 @@ function QueueSaveTransferSettings(reason)
         return false
     end
 
-    local saveOk =
-        SaveTransferSettingsNow(
-            reason or "autosave"
+    TransferConfigState.Dirty =
+        true
+
+    TransferConfigState.LastDirtyAt =
+        os.clock()
+
+    TransferConfigState.LastSaveReason =
+        tostring(reason or "autosave")
+
+    if TransferState
+    and TransferState.DebugPrints == true
+    and tostring(reason or "") ~= "transfer hud moved" then
+
+        print(
+            "[TRANSFER QUEUE SAVE]",
+            "| reason:",
+            tostring(TransferConfigState.LastSaveReason),
+            "| pets:",
+            tostring(TransferCompactValue(TransferState.SelectedPets)),
+            "| mutations:",
+            tostring(TransferCompactValue(TransferState.SelectedMutations)),
+            "| minBW:",
+            tostring(TransferState.MinBaseWeight),
+            "| maxBW:",
+            tostring(TransferState.MaxBaseWeight)
         )
+    end
 
-    print(
-        "[TRANSFER SAVE]",
-        tostring(saveOk),
-        "| reason:",
-        tostring(reason or "autosave"),
-        "| pets:",
-        tostring(TransferCompactValue(TransferState.SelectedPets)),
-        "| mutations:",
-        tostring(TransferCompactValue(TransferState.SelectedMutations)),
-        "| minBW:",
-        tostring(TransferState.MinBaseWeight),
-        "| maxBW:",
-        tostring(TransferState.MaxBaseWeight)
-    )
-
-    return saveOk
+    return true
 end
 
 function LoadTransferSettingsIntoState()
@@ -2468,6 +2499,76 @@ function EnsureTransferDropdownChoice(choices, value)
     table.sort(choices)
 
     return choices
+end
+
+function EnsureTransferDropdownChoicesFromMap(choices, map)
+
+    if type(choices) ~= "table" then
+        choices =
+            {}
+    end
+
+    if type(map) ~= "table" then
+        return choices
+    end
+
+    for value, selected in pairs(map) do
+
+        if selected == true then
+
+            EnsureTransferDropdownChoice(
+                choices,
+                value
+            )
+        end
+    end
+
+    return choices
+end
+
+function TransferApplySavedFilterDropdownValues()
+
+    local savedPets =
+        CopyTransferBoolMap(
+            TransferState.SelectedPets
+        )
+
+    local savedMutations =
+        CopyTransferBoolMap(
+            TransferState.SelectedMutations
+        )
+
+    if TransferState.PetDropdown
+    and type(TransferState.PetDropdown.SetValue) == "function" then
+
+        pcall(function()
+            TransferState.PetDropdown:SetValue(
+                savedPets
+            )
+        end)
+    end
+
+    if TransferState.MutationDropdown
+    and type(TransferState.MutationDropdown.SetValue) == "function" then
+
+        pcall(function()
+            TransferState.MutationDropdown:SetValue(
+                savedMutations
+            )
+        end)
+    end
+
+    TransferState.SelectedPets =
+        savedPets
+
+    TransferState.SelectedMutations =
+        savedMutations
+
+    if type(TransferBuildMatches) == "function" then
+        TransferBuildMatches()
+    end
+
+    return true
 end
 
 TransferState = {
@@ -3636,6 +3737,69 @@ function TransferReadDropdownSelectedMap(control, fallback)
     end
 
     return output
+end
+
+function TransferSyncRuntimeStateFromControls(reason)
+
+    if not TransferState then
+        return false
+    end
+
+    if TransferState.PetDropdown ~= nil then
+
+        TransferState.SelectedPets =
+            TransferReadDropdownSelectedMap(
+                TransferState.PetDropdown,
+                TransferState.SelectedPets
+            )
+    end
+
+    if TransferState.MutationDropdown ~= nil then
+
+        TransferState.SelectedMutations =
+            TransferReadDropdownSelectedMap(
+                TransferState.MutationDropdown,
+                TransferState.SelectedMutations
+            )
+    end
+
+    if TransferState.TargetDropdown ~= nil
+    and type(TransferState.TargetDropdown.GetValue) == "function" then
+
+        local ok, value =
+            pcall(function()
+                return TransferState.TargetDropdown:GetValue()
+            end)
+
+        if ok == true then
+
+            value =
+                CleanText(value)
+
+            if value ~= "" then
+                TransferState.TargetPlayerName =
+                    value
+            end
+        end
+    end
+
+    TransferBuildMatches()
+
+    if TransferState.DebugPrints == true then
+
+        print(
+            "[TRANSFER SYNC]",
+            tostring(reason or "sync"),
+            "| pets:",
+            tostring(TransferCompactValue(TransferState.SelectedPets)),
+            "| mutations:",
+            tostring(TransferCompactValue(TransferState.SelectedMutations)),
+            "| target:",
+            tostring(TransferState.TargetPlayerName)
+        )
+    end
+
+    return true
 end
 
 function TransferNormalizeUUID(value)
@@ -6024,6 +6188,16 @@ end
 
 function TransferRefreshDropdowns()
 
+    local savedPets =
+        CopyTransferBoolMap(
+            TransferState.SelectedPets
+        )
+
+    local savedMutations =
+        CopyTransferBoolMap(
+            TransferState.SelectedMutations
+        )
+
     local petChoices =
         TransferBuildPetChoices()
 
@@ -6032,6 +6206,27 @@ function TransferRefreshDropdowns()
 
     local targetChoices =
         TransferBuildTargetChoices()
+
+    EnsureTransferDropdownChoicesFromMap(
+        petChoices,
+        savedPets
+    )
+
+    EnsureTransferDropdownChoicesFromMap(
+        mutationChoices,
+        savedMutations
+    )
+
+    EnsureTransferDropdownChoice(
+        targetChoices,
+        TransferState.TargetPlayerName
+    )
+
+    TransferState.SelectedPets =
+        savedPets
+
+    TransferState.SelectedMutations =
+        savedMutations
 
     if TransferState.PetDropdown
     and type(TransferState.PetDropdown.SetValues) == "function" then
@@ -6049,6 +6244,10 @@ function TransferRefreshDropdowns()
         )
     end
 
+    if type(TransferApplySavedFilterDropdownValues) == "function" then
+        TransferApplySavedFilterDropdownValues()
+    end
+
     if TransferState.TargetDropdown
     and type(TransferState.TargetDropdown.SetValues) == "function" then
 
@@ -6057,17 +6256,26 @@ function TransferRefreshDropdowns()
         )
     end
 
-    TransferBuildMatches()
+    if type(TransferBuildMatches) == "function" then
+        TransferBuildMatches()
+    end
 
-    print(
-        "[TRANSFER LISTS]",
-        "pets:",
-        tostring(#petChoices),
-        "| mutations:",
-        tostring(#mutationChoices),
-        "| targets:",
-        tostring(#targetChoices)
-    )
+    if TransferState.DebugPrints == true then
+
+        print(
+            "[TRANSFER LISTS]",
+            "pets:",
+            tostring(#petChoices),
+            "| mutations:",
+            tostring(#mutationChoices),
+            "| targets:",
+            tostring(#targetChoices),
+            "| selectedPets:",
+            tostring(TransferCompactValue(TransferState.SelectedPets)),
+            "| selectedMutations:",
+            tostring(TransferCompactValue(TransferState.SelectedMutations))
+        )
+    end
 
     TransferSetStatus(
         TransferState.Status,
@@ -14362,7 +14570,17 @@ and IsGardenWorld() then
     local InitialTransferTargetChoices =
         TransferBuildTargetChoices()
 
-        EnsureTransferDropdownChoice(
+    EnsureTransferDropdownChoicesFromMap(
+        InitialTransferPetChoices,
+        TransferState.SelectedPets
+    )
+
+    EnsureTransferDropdownChoicesFromMap(
+        InitialTransferMutationChoices,
+        TransferState.SelectedMutations
+    )
+
+    EnsureTransferDropdownChoice(
         InitialTransferTargetChoices,
         TransferState.TargetPlayerName
     )
@@ -14370,28 +14588,28 @@ and IsGardenWorld() then
     local TransferPetBox =
         AddTransferLeftBox(
             Tabs.Transfer,
-            "Pet Filters",
+            "🎯 Pet Filters",
             "sliders-horizontal"
         )
 
     local TransferTargetBox =
         AddTransferRightBox(
             Tabs.Transfer,
-            "Trade Setup",
+            "👥 Trade Setup",
             "users"
         )
 
     local TransferActionsBox =
         AddTransferRightBox(
             Tabs.Transfer,
-            "Automation",
-            "gift"
+            "⚡ Automation",
+            "zap"
         )
 
     local TransferStatusBox =
         AddTransferRightBox(
             Tabs.Transfer,
-            "Status",
+            "📊 Status",
             "activity"
         )
 
@@ -14444,11 +14662,25 @@ and IsGardenWorld() then
 
     TransferState.PetDropdown:OnChanged(function(value)
 
-        TransferState.SelectedPets =
+        local oldPets =
+            CopyTransferBoolMap(
+                TransferState.SelectedPets
+            )
+
+        local nextPets =
             TransferReadDropdownSelectedMap(
                 TransferState.PetDropdown,
-                TransferBuildMapFromDropdown(value)
+                oldPets
             )
+
+        if TransferConfigState.Loading == true
+        and TransferMapIsEmpty(nextPets) == true
+        and TransferMapIsEmpty(oldPets) ~= true then
+            return
+        end
+
+        TransferState.SelectedPets =
+            nextPets
 
         TransferBuildMatches()
 
@@ -14502,11 +14734,25 @@ and IsGardenWorld() then
 
     TransferState.MutationDropdown:OnChanged(function(value)
 
-        TransferState.SelectedMutations =
+        local oldMutations =
+            CopyTransferBoolMap(
+                TransferState.SelectedMutations
+            )
+
+        local nextMutations =
             TransferReadDropdownSelectedMap(
                 TransferState.MutationDropdown,
-                TransferBuildMapFromDropdown(value)
+                oldMutations
             )
+
+        if TransferConfigState.Loading == true
+        and TransferMapIsEmpty(nextMutations) == true
+        and TransferMapIsEmpty(oldMutations) ~= true then
+            return
+        end
+
+        TransferState.SelectedMutations =
+            nextMutations
 
         TransferBuildMatches()
 
@@ -14803,58 +15049,17 @@ and IsGardenWorld() then
         end,
     })
 
-    TransferActionsBox:AddToggle(
-        "HolyFreshTransferHud",
-        {
-            Text = "Transfer HUD",
-            Default = TransferState.HudEnabled == true,
-            Tooltip = "Shows a small draggable transfer HUD above the game UI.",
-        }
-    ):OnChanged(function(value)
-
-        TransferSetHudVisible(
-            value == true
-        )
-
-        QueueSaveTransferSettings(
-            "transfer hud changed"
-        )
-    end)
-
-    TransferState.SkipLockedPetsToggle =
-        TransferActionsBox:AddToggle(
-            "HolyFreshSkipLockedPets",
-            {
-                Text = "Skip Locked Pets",
-                Default = TransferState.SkipLockedPets ~= false,
-                Tooltip = "Skips pets that cannot be traded right now.",
-            }
-        )
-
-    TransferState.SkipLockedPetsToggle:OnChanged(function(value)
-
-        TransferState.SkipLockedPets =
-            value == true
-
-        TransferBuildMatches()
-
-        TransferSetStatus(
-            TransferState.Status,
-            TransferState.LastResult,
-            true
-        )
-
-        QueueSaveTransferSettings(
-            "skip locked pets changed"
-        )
-    end)
-
+    TransferActionsBox:AddDivider({
+        Text = "Run",
+        MarginTop = 4,
+        MarginBottom = 6,
+    })
 
     TransferState.TransferEnabledToggle =
         TransferActionsBox:AddToggle(
             "HolyFreshTransferEnabled",
             {
-                Text = "Transfer Enabled",
+                Text = "⚡ Transfer Enabled",
                 Default = false,
                 Tooltip = "Starts or stops the transfer worker.",
             }
@@ -14924,91 +15129,21 @@ and IsGardenWorld() then
         end)
     end)
 
-    TransferState.AutoAcceptTicketToggle =
-        TransferActionsBox:AddToggle(
-            "HolyFreshTransferAutoAcceptTicket",
-            {
-                Text = "Auto Accept Ticket",
-                Default = TransferState.AutoAcceptTicket == true,
-                Tooltip = "Receiver mode: automatically accepts incoming trade tickets from the selected player.",
-            }
-        )
+    TransferActionsBox:AddToggle(
+        "HolyFreshTransferHud",
+        {
+            Text = "🖥 Transfer HUD",
+            Default = TransferState.HudEnabled == true,
+            Tooltip = "Shows a small draggable transfer HUD above the game UI.",
+        }
+    ):OnChanged(function(value)
 
-    TransferState.AutoAcceptTicketToggle:OnChanged(function(value)
-
-        TransferState.AutoAcceptTicket =
+        TransferSetHudVisible(
             value == true
-
-        TransferSetStatus(
-            "Option Updated",
-            "Auto Accept Ticket = "
-                .. tostring(TransferState.AutoAcceptTicket)
-        )
-    end)
-
-    TransferState.AutoConfirmToggle =
-        TransferActionsBox:AddToggle(
-            "HolyFreshTransferAutoConfirm",
-            {
-                Text = "Auto Confirm",
-                Default = TransferState.AutoConfirm == true,
-                Tooltip = "Receiver mode: automatically accepts the trade and final confirms.",
-            }
         )
 
-    TransferState.AutoConfirmToggle:OnChanged(function(value)
-
-        TransferState.AutoConfirm =
-            value == true
-
-        TransferSetStatus(
-            "Option Updated",
-            "Auto Confirm = "
-                .. tostring(TransferState.AutoConfirm)
-        )
-    end)
-
-    TransferState.AutoAcceptGiftToggle =
-        TransferActionsBox:AddToggle(
-            "HolyFreshTransferAutoAcceptGift",
-            {
-                Text = "Auto Accept Gift",
-                Default = TransferState.AutoAcceptGift == true,
-                Tooltip = "Automatically accepts incoming pet gifts. If a player is selected, only accepts gifts from that player.",
-            }
-        )
-
-    TransferState.AutoAcceptGiftToggle:OnChanged(function(value)
-
-        TransferState.AutoAcceptGift =
-            value == true
-
-        TransferSetStatus(
-            "Option Updated",
-            "Auto Accept Gift = "
-                .. tostring(TransferState.AutoAcceptGift)
-        )
-    end)
-
-    TransferState.AutoUnfavoriteToggle =
-        TransferActionsBox:AddToggle(
-            "HolyFreshTransferAutoUnfavorite",
-            {
-                Text = "Auto Unfavorite",
-                Default = TransferState.AutoUnfavorite == true,
-                Tooltip = "Sender mode: unfavorites matching pets before adding them to trade.",
-            }
-        )
-
-    TransferState.AutoUnfavoriteToggle:OnChanged(function(value)
-
-        TransferState.AutoUnfavorite =
-            value == true
-
-        TransferSetStatus(
-            "Option Updated",
-            "Auto Unfavorite = "
-                .. tostring(TransferState.AutoUnfavorite)
+        QueueSaveTransferSettings(
+            "transfer hud changed"
         )
     end)
 
@@ -15016,7 +15151,7 @@ and IsGardenWorld() then
         TransferActionsBox:AddToggle(
             "HolyFreshTransferKeepGoing",
             {
-                Text = "Keep Going",
+                Text = "🔁 Keep Going",
                 Default = TransferState.KeepGoing == true,
                 Tooltip = "Sender: keep sending batches. Receiver: keep accepting next tickets.",
             }
@@ -15027,6 +15162,10 @@ and IsGardenWorld() then
         TransferState.KeepGoing =
             value == true
 
+        QueueSaveTransferSettings(
+            "keep going changed"
+        )
+
         TransferSetStatus(
             "Option Updated",
             "Keep Going = "
@@ -15034,22 +15173,63 @@ and IsGardenWorld() then
         )
     end)
 
-    TransferActionsBox:AddToggle(
-        "HolyFreshTransferDebugPrints",
-        {
-            Text = "Debug Prints",
-            Default = TransferState.DebugPrints == true,
-            Tooltip = "Only enable while testing. OFF removes console spam for faster transfer.",
-        }
-    ):OnChanged(function(value)
+    TransferActionsBox:AddDivider({
+        Text = "Sender",
+        MarginTop = 8,
+        MarginBottom = 6,
+    })
 
-        TransferState.DebugPrints =
+    TransferState.SkipLockedPetsToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshSkipLockedPets",
+            {
+                Text = "🔒 Skip Locked",
+                Default = TransferState.SkipLockedPets ~= false,
+                Tooltip = "Skips pets that cannot be traded right now.",
+            }
+        )
+
+    TransferState.SkipLockedPetsToggle:OnChanged(function(value)
+
+        TransferState.SkipLockedPets =
             value == true
+
+        TransferBuildMatches()
+
+        TransferSetStatus(
+            TransferState.Status,
+            TransferState.LastResult,
+            true
+        )
+
+        QueueSaveTransferSettings(
+            "skip locked pets changed"
+        )
+    end)
+
+    TransferState.AutoUnfavoriteToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshTransferAutoUnfavorite",
+            {
+                Text = "❤️ Auto Unfavorite",
+                Default = TransferState.AutoUnfavorite == true,
+                Tooltip = "Sender mode: unfavorites matching pets before adding them to trade.",
+            }
+        )
+
+    TransferState.AutoUnfavoriteToggle:OnChanged(function(value)
+
+        TransferState.AutoUnfavorite =
+            value == true
+
+        QueueSaveTransferSettings(
+            "auto unfavorite changed"
+        )
 
         TransferSetStatus(
             "Option Updated",
-            "Debug Prints = "
-                .. tostring(TransferState.DebugPrints)
+            "Auto Unfavorite = "
+                .. tostring(TransferState.AutoUnfavorite)
         )
     end)
 
@@ -15057,7 +15237,7 @@ and IsGardenWorld() then
         TransferActionsBox:AddInput(
             "HolyFreshTransferMaxPets",
             {
-                Text = "Max Pets",
+                Text = "📦 Max Pets",
                 Default = tostring(TransferState.MaxPetsPerTrade),
                 Numeric = false,
                 Finished = true,
@@ -15093,45 +15273,11 @@ and IsGardenWorld() then
         )
     end)
 
-    TransferState.AddPetDelayInput =
-        TransferActionsBox:AddInput(
-            "HolyFreshTransferAddPetDelay",
-            {
-                Text = "Add Delay",
-                Default = tostring(TransferState.AddPetDelay),
-                Numeric = false,
-                Finished = true,
-                ClearTextOnFocus = false,
-                Tooltip = "Sender mode: seconds to wait before adding the next pet.",
-            }
-        )
-
-    TransferState.AddPetDelayInput:OnChanged(function(value)
-
-        TransferState.AddPetDelay =
-            math.clamp(
-                TransferToNumber(value, 0.5),
-                0.01,
-                3
-            )
-
-        QueueSaveTransferSettings(
-            "add delay changed"
-        )
-
-        TransferSetStatus(
-            "Option Updated",
-            "Add Delay = "
-                .. string.format("%.2f", TransferState.AddPetDelay)
-                .. "s"
-        )
-    end)
-
     TransferState.AddBurstInput =
         TransferActionsBox:AddInput(
             "HolyFreshTransferAddBurst",
             {
-                Text = "Add Burst",
+                Text = "⚡ Add Burst",
                 Default = tostring(TransferState.AddBurstCount),
                 Numeric = false,
                 Finished = true,
@@ -15162,11 +15308,45 @@ and IsGardenWorld() then
         )
     end)
 
+    TransferState.AddPetDelayInput =
+        TransferActionsBox:AddInput(
+            "HolyFreshTransferAddPetDelay",
+            {
+                Text = "⏱ Add Delay",
+                Default = tostring(TransferState.AddPetDelay),
+                Numeric = false,
+                Finished = true,
+                ClearTextOnFocus = false,
+                Tooltip = "Sender mode: seconds to wait before adding the next pet.",
+            }
+        )
+
+    TransferState.AddPetDelayInput:OnChanged(function(value)
+
+        TransferState.AddPetDelay =
+            math.clamp(
+                TransferToNumber(value, 0.5),
+                0.01,
+                3
+            )
+
+        QueueSaveTransferSettings(
+            "add delay changed"
+        )
+
+        TransferSetStatus(
+            "Option Updated",
+            "Add Delay = "
+                .. string.format("%.2f", TransferState.AddPetDelay)
+                .. "s"
+        )
+    end)
+
     TransferState.NextTicketDelayInput =
         TransferActionsBox:AddInput(
             "HolyFreshTransferNextTicketDelay",
             {
-                Text = "Next Ticket Delay",
+                Text = "🎟 Ticket Delay",
                 Default = tostring(TransferState.NextTicketDelay),
                 Numeric = false,
                 Finished = true,
@@ -15190,42 +15370,166 @@ and IsGardenWorld() then
 
         TransferSetStatus(
             "Option Updated",
-            "Next Ticket Delay = "
+            "Ticket Delay = "
                 .. string.format("%.2f", TransferState.NextTicketDelay)
                 .. "s"
         )
     end)
 
-    TransferApplyModeUI()
+    TransferActionsBox:AddDivider({
+        Text = "Receiver",
+        MarginTop = 8,
+        MarginBottom = 6,
+    })
 
-    if TransferState.PetDropdown
-    and type(TransferState.PetDropdown.SetValue) == "function" then
+    TransferState.AutoAcceptTicketToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshTransferAutoAcceptTicket",
+            {
+                Text = "🎫 Auto Accept Ticket",
+                Default = TransferState.AutoAcceptTicket == true,
+                Tooltip = "Receiver mode: automatically accepts incoming trade tickets from the selected player.",
+            }
+        )
 
-        pcall(function()
-            TransferState.PetDropdown:SetValue(
-                CopyTransferBoolMap(TransferState.SelectedPets)
-            )
-        end)
+    TransferState.AutoAcceptTicketToggle:OnChanged(function(value)
+
+        TransferState.AutoAcceptTicket =
+            value == true
+
+        QueueSaveTransferSettings(
+            "auto accept ticket changed"
+        )
+
+        TransferSetStatus(
+            "Option Updated",
+            "Auto Accept Ticket = "
+                .. tostring(TransferState.AutoAcceptTicket)
+        )
+    end)
+
+    TransferState.AutoConfirmToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshTransferAutoConfirm",
+            {
+                Text = "✅ Auto Confirm",
+                Default = TransferState.AutoConfirm == true,
+                Tooltip = "Receiver mode: automatically accepts the trade and final confirms.",
+            }
+        )
+
+    TransferState.AutoConfirmToggle:OnChanged(function(value)
+
+        TransferState.AutoConfirm =
+            value == true
+
+        QueueSaveTransferSettings(
+            "auto confirm changed"
+        )
+
+        TransferSetStatus(
+            "Option Updated",
+            "Auto Confirm = "
+                .. tostring(TransferState.AutoConfirm)
+        )
+    end)
+
+    TransferState.AutoAcceptGiftToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshTransferAutoAcceptGift",
+            {
+                Text = "🎁 Auto Accept Gift",
+                Default = TransferState.AutoAcceptGift == true,
+                Tooltip = "Automatically accepts incoming pet gifts. If a player is selected, only accepts gifts from that player.",
+            }
+        )
+
+    TransferState.AutoAcceptGiftToggle:OnChanged(function(value)
+
+        TransferState.AutoAcceptGift =
+            value == true
+
+        QueueSaveTransferSettings(
+            "auto accept gift changed"
+        )
+
+        TransferSetStatus(
+            "Option Updated",
+            "Auto Accept Gift = "
+                .. tostring(TransferState.AutoAcceptGift)
+        )
+    end)
+
+    TransferActionsBox:AddDivider({
+        Text = "Tools",
+        MarginTop = 8,
+        MarginBottom = 6,
+    })
+
+    TransferActionsBox:AddToggle(
+        "HolyFreshTransferDebugPrints",
+        {
+            Text = "🧪 Debug Prints",
+            Default = TransferState.DebugPrints == false,
+            Tooltip = "Only enable while testing. OFF removes console spam for faster transfer.",
+        }
+    ):OnChanged(function(value)
+
+        TransferState.DebugPrints =
+            value == true
+
+        QueueSaveTransferSettings(
+            "debug prints changed"
+        )
+
+        TransferSetStatus(
+            "Option Updated",
+            "Debug Prints = "
+                .. tostring(TransferState.DebugPrints)
+        )
+    end)
+
+    if type(TransferApplySavedFilterDropdownValues) == "function" then
+
+        TransferApplySavedFilterDropdownValues()
+
+    else
+
+        if TransferState.PetDropdown
+        and type(TransferState.PetDropdown.SetValue) == "function" then
+
+            pcall(function()
+                TransferState.PetDropdown:SetValue(
+                    CopyTransferBoolMap(
+                        TransferState.SelectedPets
+                    )
+                )
+            end)
+        end
+
+        if TransferState.MutationDropdown
+        and type(TransferState.MutationDropdown.SetValue) == "function" then
+
+            pcall(function()
+                TransferState.MutationDropdown:SetValue(
+                    CopyTransferBoolMap(
+                        TransferState.SelectedMutations
+                    )
+                )
+            end)
+        end
     end
 
-    if TransferState.MutationDropdown
-    and type(TransferState.MutationDropdown.SetValue) == "function" then
-
-        pcall(function()
-            TransferState.MutationDropdown:SetValue(
-                CopyTransferBoolMap(TransferState.SelectedMutations)
-            )
-        end)
+    if type(TransferBuildMatches) == "function" then
+        TransferBuildMatches()
     end
-
-    TransferBuildMatches()
 
     TransferConfigState.Loading =
         false
 
     local TransferDeclineButton =
         TransferActionsBox:AddButton({
-            Text = "Decline",
+            Text = "🛑 Decline",
             Tooltip = "Decline the current trade or pending request.",
             Func = function()
 
@@ -15243,7 +15547,7 @@ and IsGardenWorld() then
         })
 
     TransferDeclineButton:AddButton({
-        Text = "Confirm",
+        Text = "✅ Confirm",
         Tooltip = "Manual final confirm.",
         Func = function()
 
@@ -30890,9 +31194,142 @@ SaveManager:SetFolder("HolySniperLite")
 SaveManager:IgnoreThemeSettings()
 ThemeManager:ApplyTheme("Dark")
 
+local oldTransferLoadingForMainLoad =
+    nil
+
+if IsGardenWorld() == true
+and TransferConfigState ~= nil then
+
+    oldTransferLoadingForMainLoad =
+        TransferConfigState.Loading
+
+    TransferConfigState.Loading =
+        true
+end
+
 pcall(function()
-    SaveManager:Load(ConfigState.AutosaveName)
+    SaveManager:Load(
+        ConfigState.AutosaveName
+    )
 end)
+
+if oldTransferLoadingForMainLoad ~= nil
+and TransferConfigState ~= nil then
+
+    TransferConfigState.Loading =
+        oldTransferLoadingForMainLoad
+end
+
+if IsGardenWorld() == true then
+
+    local transferSaveOk, transferSaveResult =
+        pcall(function()
+
+            local manager =
+                loadstring(
+                    game:HttpGet(SAVE_MANAGER_URL)
+                )()
+
+            manager:SetLibrary(Library)
+            manager:IgnoreThemeSettings()
+            manager:SetFolder("HolySniperLite")
+
+            if type(manager.SetSubFolder) == "function" then
+
+                manager:SetSubFolder(
+                    "GardenTransfer"
+                )
+            end
+
+            if type(manager.SetIgnoreIndexes) == "function" then
+
+                manager:SetIgnoreIndexes({
+                    "MenuKeybind",
+
+                    -- Saved separately in HolySniperLite/UISettings.json.
+                    "LiteShowUIOnLoad",
+                    "LiteAutoTeleportTradeWorld",
+                    "LiteDPIScale",
+
+                    -- Runtime-only. Never autoload this as ON.
+                    "HolyFreshTransferEnabled",
+                })
+            end
+
+            return manager
+        end)
+
+    if transferSaveOk == true
+    and type(transferSaveResult) == "table" then
+
+        TransferSaveManager =
+            transferSaveResult
+
+        local oldTransferLoading =
+            TransferConfigState.Loading
+
+        TransferConfigState.Loading =
+            true
+
+        pcall(function()
+            TransferSaveManager:Load(
+                TransferConfigState.AutosaveName
+            )
+        end)
+
+        TransferState.TransferEnabled =
+            false
+
+        TransferState.IsTransferRunning =
+            false
+
+        if TransferState.TransferEnabledToggle
+        and type(TransferState.TransferEnabledToggle.SetValue) == "function" then
+
+            pcall(function()
+                TransferState.TransferEnabledToggle:SetValue(
+                    false
+                )
+            end)
+        end
+
+        TransferConfigState.Loading =
+            oldTransferLoading
+
+        if type(TransferSyncRuntimeStateFromControls) == "function" then
+
+            TransferSyncRuntimeStateFromControls(
+                "transfer savemanager load"
+            )
+        end
+
+        TransferConfigState.SaveManagerReady =
+            true
+
+        TransferConfigState.Dirty =
+            true
+
+        TransferConfigState.LastDirtyAt =
+            os.clock()
+
+        TransferConfigState.LastSaveReason =
+            "transfer savemanager startup"
+
+        print(
+            "[TRANSFER SAVE MANAGER]",
+            "Ready:",
+            tostring(TransferConfigState.AutosaveName)
+        )
+
+    else
+
+        warn(
+            "[TRANSFER SAVE MANAGER]",
+            "Failed to create Garden Transfer SaveManager:",
+            tostring(transferSaveResult)
+        )
+    end
+end
 
 if type(ResetLiteGatewayTransientInputAfterLoad) == "function" then
 
@@ -30922,17 +31359,113 @@ task.spawn(function()
         RefreshLiteServerLabels()
         RefreshLitePresenceLabels()
 
-        if ConfigState.Dirty == true then
+        if IsTradeWorld() == true
+        and ConfigState.Dirty == true then
 
             ConfigState.Dirty =
                 false
 
             pcall(function()
-                SaveManager:Save(ConfigState.AutosaveName)
+                SaveManager:Save(
+                    ConfigState.AutosaveName
+                )
             end)
         end
     end
 end)
+
+task.spawn(function()
+
+    while IsHolyLiteCurrentRun() do
+
+        task.wait(0.25)
+
+        if IsGardenWorld() ~= true then
+            continue
+        end
+
+        if TransferConfigState.Loading == true then
+            continue
+        end
+
+        if TransferConfigState.Dirty ~= true then
+            continue
+        end
+
+        local dirtyAge =
+            os.clock()
+            - (
+                tonumber(TransferConfigState.LastDirtyAt)
+                or os.clock()
+            )
+
+        if dirtyAge < 0.45 then
+            continue
+        end
+
+        TransferConfigState.Dirty =
+            false
+
+        local reason =
+            tostring(
+                TransferConfigState.LastSaveReason
+                or "transfer autosave loop"
+            )
+
+        if type(TransferSyncRuntimeStateFromControls) == "function" then
+
+            TransferSyncRuntimeStateFromControls(
+                reason
+            )
+        end
+
+        local uiSaveOk =
+            false
+
+        local uiSaveErr =
+            nil
+
+        if TransferSaveManager ~= nil
+        and TransferConfigState.SaveManagerReady == true then
+
+            uiSaveOk, uiSaveErr =
+                pcall(function()
+                    TransferSaveManager:Save(
+                        TransferConfigState.AutosaveName
+                    )
+                end)
+        end
+
+        local runtimeSaveOk =
+            false
+
+        if type(SaveTransferSettingsNow) == "function" then
+
+            runtimeSaveOk =
+                SaveTransferSettingsNow(
+                    reason
+                )
+        end
+
+        if TransferState
+        and TransferState.DebugPrints == true then
+
+            print(
+                "[TRANSFER AUTOSAVE]",
+                "| ui:",
+                tostring(uiSaveOk),
+                "| runtime:",
+                tostring(runtimeSaveOk),
+                "| reason:",
+                tostring(reason),
+                "| err:",
+                tostring(uiSaveErr)
+            )
+        end
+    end
+end)
+
+
 print("[HOLY SNIPER LITE] Filter storage ready.")
 print("[HOLY SNIPER LITE] Reset command: HOLY_LITE_RESET()")
 print("[HOLY SNIPER LITE] UI shell loaded.")
