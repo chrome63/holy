@@ -8160,6 +8160,26 @@ function TransferWaitForTrustedIncomingRequest(timeout)
     while IsHolyLiteCurrentRun()
     and TransferState.TransferEnabled == true do
 
+        local trusted =
+            CleanText(TransferState.TargetPlayerName)
+
+        local hasFreshTrustedRequest =
+            trusted ~= ""
+            and TransferState.IncomingRequestPlayerName == trusted
+            and CleanText(TransferState.IncomingRequestId) ~= ""
+            and os.clock() - TransferState.IncomingRequestAt <= 30
+
+        if hasFreshTrustedRequest == true then
+
+            TransferSetStatus(
+                "Ticket Found",
+                "Fresh request from "
+                    .. tostring(TransferState.IncomingRequestPlayerName)
+            )
+
+            return true
+        end
+
         if TransferState.Mode == "Receiver" then
 
             local activeOpen =
@@ -8167,31 +8187,42 @@ function TransferWaitForTrustedIncomingRequest(timeout)
 
             if activeOpen == true then
 
+                local stillFreshAfterDrain =
+                    trusted ~= ""
+                    and TransferState.IncomingRequestPlayerName == trusted
+                    and CleanText(TransferState.IncomingRequestId) ~= ""
+                    and os.clock() - TransferState.IncomingRequestAt <= 30
+
+                if stillFreshAfterDrain == true then
+                    return true
+                end
+
                 TransferReceiverDrainOpenTrade(
-                    25
+                    8
                 )
 
             elseif TransferState.TradeCompleted == true
             or TransferState.TradeResult == "Completed"
             or CleanText(TransferState.TradeId) ~= "" then
 
+                local stillFreshBeforeReset =
+                    trusted ~= ""
+                    and TransferState.IncomingRequestPlayerName == trusted
+                    and CleanText(TransferState.IncomingRequestId) ~= ""
+                    and os.clock() - TransferState.IncomingRequestAt <= 30
+
+                if stillFreshBeforeReset == true then
+                    return true
+                end
+
                 TransferSetStatus(
                     "Waiting Data Close",
                     "Old trade data settling before next request."
                 )
 
-                TransferWaitForLiveTradeClosed(4)
+                TransferWaitForLiveTradeClosed(2)
                 TransferResetTradeRuntime()
             end
-        end
-
-        local trusted =
-            CleanText(TransferState.TargetPlayerName)
-
-        if trusted ~= ""
-        and TransferState.IncomingRequestPlayerName == trusted
-        and os.clock() - TransferState.IncomingRequestAt <= 30 then
-            return true
         end
 
         TransferSetStatus(
@@ -11154,6 +11185,45 @@ function TransferRunSenderBatch()
 
         return false, "No matches"
     end
+
+    local sendableMatches =
+        TransferFilterUnlockedTradePets(
+            matches
+        )
+
+    if #sendableMatches <= 0 then
+
+        TransferSetStatus(
+            "No Sendable Pets",
+            "All matching pets are locked/listed. Not opening empty trade."
+        )
+
+        print(
+            "[TRANSFER SEND GATE]",
+            "No sendable pets before ticket.",
+            "| matched:",
+            tostring(#matches),
+            "| sendable:",
+            tostring(#sendableMatches),
+            "| tempLocked:",
+            tostring(
+                TransferState.LockStats
+                and TransferState.LockStats.TempLocked
+                or 0
+            ),
+            "| listed:",
+            tostring(
+                TransferState.LockStats
+                and TransferState.LockStats.Listed
+                or 0
+            )
+        )
+
+        return false, "No sendable pets"
+    end
+
+    matches =
+        sendableMatches
 
     if alreadyInTrade ~= true then
 
