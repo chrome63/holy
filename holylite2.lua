@@ -5830,6 +5830,77 @@ end
 
 function TransferMarkTradeCompleted(reason)
 
+    reason =
+        tostring(reason or "Completed")
+
+    local liveTrade =
+        nil
+
+    if type(TransferGetLiveTradeFrame) == "function" then
+        liveTrade =
+            TransferGetLiveTradeFrame()
+    end
+
+    local buttonText =
+        type(TransferGetTradeButtonText) == "function"
+        and TransferGetTradeButtonText()
+        or ""
+
+    local localState =
+        type(TransferGetLocalTradeState) == "function"
+        and TransferGetLocalTradeState()
+        or "None"
+
+    local otherState =
+        type(TransferGetOtherTradeState) == "function"
+        and TransferGetOtherTradeState()
+        or "None"
+
+    local localProcessing =
+        tostring(localState) == "Processing"
+
+    local otherProcessing =
+        tostring(otherState) == "Processing"
+
+    local finalButton =
+        buttonText == "Confirmed"
+        or buttonText == ""
+
+    local manualVisibleConfirm =
+        reason:find("Both visible trade sides confirmed", 1, true) ~= nil
+
+    if liveTrade ~= nil
+    and localProcessing ~= true
+    and otherProcessing ~= true
+    and finalButton ~= true
+    and manualVisibleConfirm ~= true then
+
+        TransferState.TradeCompleted =
+            false
+
+        if TransferState.TradeResult == "Completed" then
+            TransferState.TradeResult =
+                ""
+        end
+
+        print(
+            "[TRANSFER COMPLETE IGNORED]",
+            "Ignored stale completed event while a new trade is open.",
+            "| reason:",
+            tostring(reason),
+            "| button:",
+            tostring(buttonText),
+            "| local:",
+            tostring(localState),
+            "| other:",
+            tostring(otherState),
+            "| tradeId:",
+            tostring(TransferState.TradeId)
+        )
+
+        return
+    end
+
     local completedTradeId =
         CleanText(TransferState.TradeId)
 
@@ -6517,6 +6588,35 @@ function TransferWaitForTradeOpen(timeout)
 
         if TransferState.RequestBlocked == true then
             return false
+        end
+
+        if (
+            TransferState.TradeCompleted == true
+            or TransferState.TradeResult == "Completed"
+        )
+        and type(TransferGetLiveTradeFrame) == "function"
+        and TransferGetLiveTradeFrame() ~= nil then
+
+            print(
+                "[TRANSFER OPEN RECOVERY]",
+                "Clearing stale completed state while waiting for new trade.",
+                "| button:",
+                tostring(TransferGetTradeButtonText()),
+                "| tradeId:",
+                tostring(TransferState.TradeId),
+                "| local:",
+                tostring(TransferGetLocalTradeState()),
+                "| other:",
+                tostring(TransferGetOtherTradeState())
+            )
+
+            TransferState.TradeCompleted =
+                false
+
+            if TransferState.TradeResult == "Completed" then
+                TransferState.TradeResult =
+                    ""
+            end
         end
 
         local actualOpen, reason =
