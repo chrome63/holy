@@ -1195,7 +1195,9 @@ local SNIPER_FILTER_SAVE_FILE =
     "HolySniperLite/SniperFilters.json"
 
 local TRANSFER_SETTINGS_SAVE_FILE =
-    "HolySniperLite/TransferSettings.json"
+    "HolySniperLite/TransferSettings_"
+    .. tostring(LocalPlayer.UserId)
+    .. ".json"
 
 local SaveSniperFiltersNow =
     nil
@@ -13973,7 +13975,7 @@ and IsGardenWorld() then
             Text = "Min Level",
             Default = tostring(TransferState.MinLevel),
             Numeric = false,
-            Finished = false,
+            Finished = true,
             ClearTextOnFocus = false,
         }
     ):OnChanged(function(value)
@@ -14010,7 +14012,7 @@ and IsGardenWorld() then
             Text = "Max Level",
             Default = tostring(TransferState.MaxLevel),
             Numeric = false,
-            Finished = false,
+            Finished = true,
             ClearTextOnFocus = false,
         }
     ):OnChanged(function(value)
@@ -14042,7 +14044,7 @@ and IsGardenWorld() then
             Text = "Min BaseWeight",
             Default = tostring(TransferState.MinBaseWeight),
             Numeric = false,
-            Finished = false,
+            Finished = true,
             ClearTextOnFocus = false,
         }
     ):OnChanged(function(value)
@@ -14077,7 +14079,7 @@ and IsGardenWorld() then
             Text = "Max BaseWeight",
             Default = tostring(TransferState.MaxBaseWeight),
             Numeric = false,
-            Finished = false,
+            Finished = true,
             ClearTextOnFocus = false,
         }
     ):OnChanged(function(value)
@@ -14507,7 +14509,7 @@ and IsGardenWorld() then
                 Text = "Max Pets",
                 Default = tostring(TransferState.MaxPetsPerTrade),
                 Numeric = false,
-                Finished = false,
+                Finished = true,
                 ClearTextOnFocus = false,
                 Tooltip = "Sender mode: maximum matched pets to add per trade ticket.",
             }
@@ -14547,7 +14549,7 @@ and IsGardenWorld() then
                 Text = "Add Delay",
                 Default = tostring(TransferState.AddPetDelay),
                 Numeric = false,
-                Finished = false,
+                Finished = true,
                 ClearTextOnFocus = false,
                 Tooltip = "Sender mode: seconds to wait before adding the next pet.",
             }
@@ -14581,7 +14583,7 @@ and IsGardenWorld() then
                 Text = "Add Burst",
                 Default = tostring(TransferState.AddBurstCount),
                 Numeric = false,
-                Finished = false,
+                Finished = true,
                 ClearTextOnFocus = false,
                 Tooltip = "Sender mode: how many pets to fire into the trade before waiting for confirmation.",
             }
@@ -14616,7 +14618,7 @@ and IsGardenWorld() then
                 Text = "Next Ticket Delay",
                 Default = tostring(TransferState.NextTicketDelay),
                 Numeric = false,
-                Finished = false,
+                Finished = true,
                 ClearTextOnFocus = false,
                 Tooltip = "Sender mode: seconds to wait before sending the next trade request. 0 = instant.",
             }
