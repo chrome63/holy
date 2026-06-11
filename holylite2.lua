@@ -2491,6 +2491,7 @@ TransferState = {
 
     Batch = 0,
     AddedThisBatch = 0,
+    ExpectedThisBatch = 0,
 
     MinLevel = 1,
     MaxLevel = 100,
@@ -6794,6 +6795,52 @@ function TransferWaitForOwnOfferCountAtLeastOrSettled(startingCount, expectedCou
             return currentCount, true
         end
 
+        local ownValue =
+            0
+
+        if type(TransferGuiGetSidePriceAmount) == "function" then
+
+            local ok, result =
+                pcall(function()
+                    return TransferGuiGetSidePriceAmount("MyPlr")
+                end)
+
+            if ok == true then
+                ownValue =
+                    tonumber(result)
+                    or 0
+            end
+        end
+
+        if ownValue > 0
+        and expectedCount > startingCount
+        and TransferState.IsAddingPets == true then
+
+            local fallbackCount =
+                expectedCount
+
+            TransferState.TradeOwnItemCount =
+                math.max(
+                    tonumber(TransferState.TradeOwnItemCount) or 0,
+                    fallbackCount
+                )
+
+            print(
+                "[TRANSFER ADD FALLBACK]",
+                "Own value detected but count was stale. Trusting fired batch.",
+                "| value:",
+                tostring(ownValue),
+                "| starting:",
+                tostring(startingCount),
+                "| expected:",
+                tostring(expectedCount),
+                "| current:",
+                tostring(currentCount)
+            )
+
+            return fallbackCount, true
+        end
+
         if currentCount ~= lastSeen then
 
             lastSeen =
@@ -9449,20 +9496,66 @@ function TransferGuiCountVisibleSideItems(sideName)
             local childName =
                 tostring(child.Name or "")
 
-            if childName ~= "AddItemButtom"
-            and childName ~= "HoverDelTemplate"
-            and childName ~= "Template" then
+            local lowerName =
+                childName:lower()
 
-                local title =
-                    child:FindFirstChild("Title", true)
+            local blockedName =
+                lowerName == "additembuttom"
+                or lowerName == "additembutton"
+                or lowerName == "hoverdeltemplate"
+                or lowerName == "template"
+                or lowerName:find("layout", 1, true) ~= nil
+                or lowerName:find("padding", 1, true) ~= nil
 
-                local titleText =
-                    title
-                    and title:IsA("TextLabel")
-                    and CleanText(title.Text)
-                    or ""
+            if blockedName ~= true then
 
-                if titleText ~= "" then
+                local hasPetText =
+                    false
+
+                local hasImage =
+                    false
+
+                for _, descendant in ipairs(child:GetDescendants()) do
+
+                    if descendant:IsA("ImageLabel")
+                    or descendant:IsA("ImageButton") then
+
+                        if TransferIsGuiObjectVisible(descendant) == true then
+                            hasImage =
+                                true
+                        end
+
+                    elseif descendant:IsA("TextLabel")
+                    or descendant:IsA("TextButton")
+                    or descendant:IsA("TextBox") then
+
+                        if TransferIsGuiObjectVisible(descendant) == true then
+
+                            local text =
+                                CleanText(descendant.Text)
+
+                            local lowerText =
+                                text:lower()
+
+                            if text ~= ""
+                            and lowerText ~= "add item"
+                            and lowerText ~= "accept"
+                            and lowerText ~= "decline"
+                            and lowerText ~= "confirm"
+                            and lowerText:find("your value", 1, true) == nil
+                            and lowerText:find("value", 1, true) == nil
+                            and lowerText:find("waiting", 1, true) == nil then
+
+                                hasPetText =
+                                    true
+                            end
+                        end
+                    end
+                end
+
+                if hasPetText == true
+                or hasImage == true then
+
                     count =
                         count + 1
                 end
@@ -11113,6 +11206,9 @@ function TransferSendFilteredPets()
     TransferState.AddedThisBatch =
         0
 
+    TransferState.ExpectedThisBatch =
+        sendCount
+
     TransferSetStatus(
         "Sending Pets",
         "Adding "
@@ -11161,8 +11257,7 @@ function TransferSendFilteredPets()
             )
 
             local beforeCount =
-                tonumber(TransferState.TradeOwnItemCount)
-                or 0
+                TransferGetSenderOfferCountReliable()
 
             local confirmed, msg =
                 TransferTryAddPetToTrade(pet)
@@ -11269,8 +11364,7 @@ function TransferSendFilteredPets()
                 )
 
             local beforeCount =
-                tonumber(TransferState.TradeOwnItemCount)
-                or 0
+                TransferGetSenderOfferCountReliable()
 
             local firedCount =
                 0
