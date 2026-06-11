@@ -6557,10 +6557,116 @@ function TransferUpdateTradeTrackerFromPayload(payload)
 
     if directId ~= nil then
 
-        TransferStartTradeSession(
-            tostring(directId),
-            "payload id"
-        )
+        local directText =
+            CleanText(directId)
+
+        local directStatus =
+            rawget(payload, "status")
+            or rawget(payload, "Status")
+
+        local directResult =
+            type(directStatus) == "table"
+            and (
+                rawget(directStatus, "result")
+                or rawget(directStatus, "Result")
+            )
+            or nil
+
+        if directText ~= ""
+        and tostring(directResult) ~= "Completed" then
+
+            if TransferState.SessionActive == true then
+
+                if TransferState.SessionTradeId == "" then
+
+                    TransferState.SessionTradeId =
+                        directText
+
+                    TransferState.TradeId =
+                        directText
+
+                    TransferState.SessionLastDataAt =
+                        os.clock()
+
+                    TransferState.LastTradeUpdate =
+                        os.clock()
+
+                elseif TransferState.SessionTradeId == directText then
+
+                    TransferState.TradeId =
+                        directText
+
+                    TransferState.SessionLastDataAt =
+                        os.clock()
+
+                    TransferState.LastTradeUpdate =
+                        os.clock()
+
+                else
+
+                    local sessionOfferCount =
+                        0
+
+                    for _, offerMap in pairs(TransferState.SessionOfferItems or {}) do
+
+                        if type(offerMap) == "table" then
+
+                            for _ in pairs(offerMap) do
+                                sessionOfferCount =
+                                    sessionOfferCount + 1
+                            end
+                        end
+                    end
+
+                    local sessionHasEvidence =
+                        TransferState.LocalTradeSide ~= nil
+                        or TransferState.OtherTradeSide ~= nil
+                        or sessionOfferCount > 0
+                        or (
+                            tonumber(TransferState.TradeOwnItemCount)
+                            or 0
+                        ) > 0
+                        or (
+                            tonumber(TransferState.TradeOtherItemCount)
+                            or 0
+                        ) > 0
+
+                    if sessionHasEvidence == true then
+
+                        TransferSessionDebug(
+                            "[TRANSFER SESSION]",
+                            "Ignored payload id because active session already has evidence.",
+                            "| epoch:",
+                            tostring(TransferState.TradeEpoch),
+                            "| activeId:",
+                            tostring(TransferState.SessionTradeId),
+                            "| payloadId:",
+                            tostring(directText),
+                            "| offers:",
+                            tostring(sessionOfferCount),
+                            "| own:",
+                            tostring(TransferState.TradeOwnItemCount),
+                            "| other:",
+                            tostring(TransferState.TradeOtherItemCount)
+                        )
+
+                    else
+
+                        TransferStartTradeSession(
+                            directText,
+                            "payload id no evidence"
+                        )
+                    end
+                end
+
+            else
+
+                TransferStartTradeSession(
+                    directText,
+                    "payload id"
+                )
+            end
+        end
     end
 
     local playersTable =
@@ -8492,14 +8598,47 @@ TransferLocalAcceptLocked = function()
         return true
     end
 
-    if TransferReadyLabelIsAccepted("MyPlr") == true then
-        return true
+    local timing =
+        TransferState.Timing
+
+    local attempts =
+        type(timing) == "table"
+        and tonumber(timing.Attempts)
+        or 0
+
+    attempts =
+        attempts
+        or 0
+
+    -- Critical:
+    -- If we have not fired Accept yet, stale data/ready labels are not proof.
+    -- This fixes firstAccept=- | attempts=0 | reason=accept locked.
+    if attempts <= 0 then
+
+        if buttonText == "Accept"
+        or buttonText == ""
+        or TransferParseCooldownText(buttonText) ~= nil then
+            return false
+        end
     end
 
-    if TransferTradeStateIsAcceptedLike(
-        TransferGetLocalTradeState()
-    ) then
-        return true
+    if attempts > 0 then
+
+        if TransferReadyLabelIsAccepted("MyPlr") == true then
+            return true
+        end
+
+        if TransferTradeStateIsAcceptedLike(
+            TransferGetLocalTradeState()
+        ) then
+            return true
+        end
+
+        if TransferGuiPlayerHasAccepted(
+            LocalPlayer.Name
+        ) == true then
+            return true
+        end
     end
 
     return false
@@ -8507,36 +8646,22 @@ end
 
 TransferAcceptLikelyLockedFromButtonPhase = function()
 
-    if TransferLocalAcceptLocked() == true then
-
-        TransferTimingMark(
-            "AcceptLockedAt"
-        )
-
-        return true
-    end
-
     local timing =
         TransferState.Timing
 
-    if type(timing) ~= "table" then
-        return false
-    end
+    local attempts =
+        type(timing) == "table"
+        and tonumber(timing.Attempts)
+        or 0
 
-    if timing.FirstAcceptAt == nil then
-        return false
-    end
-
-    if tonumber(timing.Attempts) == nil
-    or tonumber(timing.Attempts) < 3 then
-        return false
-    end
+    attempts =
+        attempts
+        or 0
 
     local buttonText =
         TransferGetTradeButtonText()
 
-    -- Do NOT trust plain countdown text here.
-    -- The same countdown also appears before Accept is actually locked.
+    -- Strong visible proof.
     if buttonText == "Accepted"
     or buttonText == "Confirm"
     or buttonText == "Confirmed" then
@@ -8548,6 +8673,28 @@ TransferAcceptLikelyLockedFromButtonPhase = function()
         return true
     end
 
+    -- Critical:
+    -- Never allow stale state/data to claim Accept is locked before
+    -- this client has fired at least one Accept attempt.
+    if attempts <= 0 then
+        return false
+    end
+
+    if TransferLocalAcceptLocked() == true then
+
+        TransferTimingMark(
+            "AcceptLockedAt"
+        )
+
+        return true
+    end
+
+    if attempts < 3 then
+        return false
+    end
+
+    -- Do NOT trust plain countdown text here.
+    -- The same countdown also appears before Accept is actually locked.
     if TransferTradeStateIsAcceptedLike(
         TransferGetLocalTradeState()
     ) then
@@ -12514,6 +12661,103 @@ function TransferRunSenderBatch()
         "Accepting",
         "Pets added. Instant accepting trade."
     )
+
+    local recoveryButtonText =
+        TransferGetTradeButtonText()
+
+    local recoveryCooldown =
+        TransferParseCooldownText(
+            recoveryButtonText
+        )
+
+    local recoveryOwnCount =
+        TransferGetSenderOfferCountReliable()
+
+    if TransferAcceptLikelyLockedFromButtonPhase() ~= true
+    and recoveryOwnCount >= math.max(1, tonumber(added) or 1)
+    and (
+        recoveryButtonText == "Accept"
+        or recoveryButtonText == ""
+        or (
+            recoveryCooldown ~= nil
+            and recoveryCooldown <= 0.25
+        )
+    ) then
+
+        TransferUpdateTradeStatusText(
+            "Accept Recovery",
+            "Pets are added but Accept is not locked. Forcing Accept now."
+        )
+
+        print(
+            "[TRANSFER ACCEPT RECOVERY]",
+            "Forcing sender Accept after pets added.",
+            "| added:",
+            tostring(added),
+            "| ownCount:",
+            tostring(recoveryOwnCount),
+            "| button:",
+            tostring(recoveryButtonText),
+            "| cooldown:",
+            tostring(recoveryCooldown),
+            "| attempts:",
+            tostring(
+                TransferState.Timing
+                and TransferState.Timing.Attempts
+                or 0
+            ),
+            "| tradeId:",
+            tostring(TransferState.TradeId),
+            "| sessionId:",
+            tostring(TransferState.SessionTradeId),
+            "| epoch:",
+            tostring(TransferState.TradeEpoch)
+        )
+
+        for _ = 1, 10 do
+
+            if TransferAcceptLikelyLockedFromButtonPhase() == true then
+                break
+            end
+
+            local currentButton =
+                TransferGetTradeButtonText()
+
+            local currentCooldown =
+                TransferParseCooldownText(
+                    currentButton
+                )
+
+            if currentButton ~= "Accept"
+            and currentButton ~= ""
+            and not (
+                currentCooldown ~= nil
+                and currentCooldown <= 0.25
+            ) then
+                break
+            end
+
+            if type(TransferState.Timing) == "table"
+            and TransferState.Timing.FirstAcceptAt == nil then
+
+                TransferTimingMark(
+                    "FirstAcceptAt"
+                )
+            end
+
+            TransferFireTradeRemote(
+                "Accept"
+            )
+
+            TransferTimingBumpAttempts(
+                1
+            )
+
+            task.wait()
+        end
+
+        task.wait(0.05)
+    end
 
     TransferStartFastAcceptPump(
         "Sender Added",
