@@ -218,6 +218,9 @@ local SaveManager =
         game:HttpGet(SAVE_MANAGER_URL)
     )()
 
+local TransferSaveManager =
+    nil
+
 --==================================================
 -- [3.1] DEVICE HELPERS
 --==================================================
@@ -2093,6 +2096,12 @@ local TransferState =
 
 local TransferConfigState = {
     Loading = true,
+    Dirty = false,
+    LastDirtyAt = 0,
+    LastSaveAt = 0,
+    LastSaveReason = "startup",
+    SaveManagerReady = false,
+    AutosaveName = "transfer_autosave",
 }
 
 function CopyTransferBoolMap(source)
@@ -2147,26 +2156,15 @@ function SaveTransferSettingsNow(reason)
 
     EnsureTransferSettingsFolder()
 
-    if TransferConfigState.Loading ~= true then
+    local savedPets =
+        CopyTransferBoolMap(
+            TransferState.SelectedPets
+        )
 
-        if TransferState.PetDropdown ~= nil then
-
-            TransferState.SelectedPets =
-                TransferReadDropdownSelectedMap(
-                    TransferState.PetDropdown,
-                    TransferState.SelectedPets
-                )
-        end
-
-        if TransferState.MutationDropdown ~= nil then
-
-            TransferState.SelectedMutations =
-                TransferReadDropdownSelectedMap(
-                    TransferState.MutationDropdown,
-                    TransferState.SelectedMutations
-                )
-        end
-    end
+    local savedMutations =
+        CopyTransferBoolMap(
+            TransferState.SelectedMutations
+        )
 
     local payload = {
         Mode =
@@ -2176,10 +2174,10 @@ function SaveTransferSettingsNow(reason)
             tostring(TransferState.TargetPlayerName or ""),
 
         SelectedPets =
-            CopyTransferBoolMap(TransferState.SelectedPets),
+            savedPets,
 
         SelectedMutations =
-            CopyTransferBoolMap(TransferState.SelectedMutations),
+            savedMutations,
 
         MaxPetsPerTrade =
             tonumber(TransferState.MaxPetsPerTrade) or 12,
@@ -2249,10 +2247,18 @@ function SaveTransferSettingsNow(reason)
 
     if ok ~= true
     or type(encoded) ~= "string" then
+
+        warn(
+            "[TRANSFER SAVE]",
+            "JSON encode failed.",
+            "| reason:",
+            tostring(reason or "manual")
+        )
+
         return false
     end
 
-    local writeOk =
+    local writeOk, writeErr =
         pcall(function()
 
             writefile(
@@ -2261,7 +2267,24 @@ function SaveTransferSettingsNow(reason)
             )
         end)
 
-    return writeOk == true
+    if writeOk ~= true then
+
+        warn(
+            "[TRANSFER SAVE]",
+            "Write failed.",
+            "| file:",
+            tostring(TRANSFER_SETTINGS_SAVE_FILE),
+            "| error:",
+            tostring(writeErr)
+        )
+
+        return false
+    end
+
+    TransferConfigState.LastSaveAt =
+        os.clock()
+
+    return true
 end
 
 function QueueSaveTransferSettings(reason)
@@ -2270,22 +2293,23 @@ function QueueSaveTransferSettings(reason)
         return false
     end
 
-    reason =
+    TransferConfigState.Dirty =
+        true
+
+    TransferConfigState.LastDirtyAt =
+        os.clock()
+
+    TransferConfigState.LastSaveReason =
         tostring(reason or "autosave")
 
-    local saveOk =
-        SaveTransferSettingsNow(
-            reason
-        )
-
-    if TransferState.DebugPrints == true
-    and reason ~= "transfer hud moved" then
+    if TransferState
+    and TransferState.DebugPrints == true
+    and tostring(reason or "") ~= "transfer hud moved" then
 
         print(
-            "[TRANSFER SAVE]",
-            tostring(saveOk),
+            "[TRANSFER QUEUE SAVE]",
             "| reason:",
-            tostring(reason),
+            tostring(TransferConfigState.LastSaveReason),
             "| pets:",
             tostring(TransferCompactValue(TransferState.SelectedPets)),
             "| mutations:",
@@ -2297,7 +2321,7 @@ function QueueSaveTransferSettings(reason)
         )
     end
 
-    return saveOk
+    return true
 end
 
 function LoadTransferSettingsIntoState()
@@ -3713,6 +3737,69 @@ function TransferReadDropdownSelectedMap(control, fallback)
     end
 
     return output
+end
+
+function TransferSyncRuntimeStateFromControls(reason)
+
+    if not TransferState then
+        return false
+    end
+
+    if TransferState.PetDropdown ~= nil then
+
+        TransferState.SelectedPets =
+            TransferReadDropdownSelectedMap(
+                TransferState.PetDropdown,
+                TransferState.SelectedPets
+            )
+    end
+
+    if TransferState.MutationDropdown ~= nil then
+
+        TransferState.SelectedMutations =
+            TransferReadDropdownSelectedMap(
+                TransferState.MutationDropdown,
+                TransferState.SelectedMutations
+            )
+    end
+
+    if TransferState.TargetDropdown ~= nil
+    and type(TransferState.TargetDropdown.GetValue) == "function" then
+
+        local ok, value =
+            pcall(function()
+                return TransferState.TargetDropdown:GetValue()
+            end)
+
+        if ok == true then
+
+            value =
+                CleanText(value)
+
+            if value ~= "" then
+                TransferState.TargetPlayerName =
+                    value
+            end
+        end
+    end
+
+    TransferBuildMatches()
+
+    if TransferState.DebugPrints == true then
+
+        print(
+            "[TRANSFER SYNC]",
+            tostring(reason or "sync"),
+            "| pets:",
+            tostring(TransferCompactValue(TransferState.SelectedPets)),
+            "| mutations:",
+            tostring(TransferCompactValue(TransferState.SelectedMutations)),
+            "| target:",
+            tostring(TransferState.TargetPlayerName)
+        )
+    end
+
+    return true
 end
 
 function TransferNormalizeUUID(value)
@@ -15383,7 +15470,7 @@ and IsGardenWorld() then
         "HolyFreshTransferDebugPrints",
         {
             Text = "🧪 Debug Prints",
-            Default = TransferState.DebugPrints == true,
+            Default = TransferState.DebugPrints == false,
             Tooltip = "Only enable while testing. OFF removes console spam for faster transfer.",
         }
     ):OnChanged(function(value)
@@ -31093,38 +31180,114 @@ if SettingsInterfaceBox then
 end
 
 --==================================================
--- [10] THEME / SAVE MANAGER
--- Silent autosave only.
--- No visible Configuration groupbox.
+-- [11] AUTOSAVE WORKER
 --==================================================
 
-ThemeManager:SetLibrary(Library)
-SaveManager:SetLibrary(Library)
+task.spawn(function()
 
-ThemeManager:SetFolder("HolySniperLite")
-SaveManager:SetFolder("HolySniperLite")
+    while IsHolyLiteCurrentRun() do
 
-SaveManager:IgnoreThemeSettings()
-ThemeManager:ApplyTheme("Dark")
+        task.wait(1)
 
-pcall(function()
-    SaveManager:Load(ConfigState.AutosaveName)
+        RefreshLiteServerLabels()
+        RefreshLitePresenceLabels()
+
+        if ConfigState.Dirty == true then
+
+            ConfigState.Dirty =
+                false
+
+            pcall(function()
+                SaveManager:Save(ConfigState.AutosaveName)
+            end)
+        end
+    end
 end)
 
-if type(ResetLiteGatewayTransientInputAfterLoad) == "function" then
+task.spawn(function()
 
-    ResetLiteGatewayTransientInputAfterLoad()
-end
+    while IsHolyLiteCurrentRun() do
 
-ConfigState.Loading =
-    false
+        task.wait(0.25)
 
-RefreshLitePresenceLabels()
+        if IsGardenWorld() ~= true then
+            continue
+        end
 
-if CanRunTradeSniper() then
+        if TransferConfigState.Loading == true then
+            continue
+        end
 
-    StartLiteMarketTrackerWorker()
-end
+        if TransferConfigState.Dirty ~= true then
+            continue
+        end
+
+        local dirtyAge =
+            os.clock()
+            - (
+                tonumber(TransferConfigState.LastDirtyAt)
+                or os.clock()
+            )
+
+        if dirtyAge < 0.45 then
+            continue
+        end
+
+        TransferConfigState.Dirty =
+            false
+
+        local reason =
+            tostring(
+                TransferConfigState.LastSaveReason
+                or "transfer autosave loop"
+            )
+
+        if type(TransferSyncRuntimeStateFromControls) == "function" then
+
+            TransferSyncRuntimeStateFromControls(
+                reason
+            )
+        end
+
+        local uiSaveOk =
+            false
+
+        local uiSaveErr =
+            nil
+
+        if TransferSaveManager ~= nil
+        and TransferConfigState.SaveManagerReady == true then
+
+            uiSaveOk, uiSaveErr =
+                pcall(function()
+                    TransferSaveManager:Save(
+                        TransferConfigState.AutosaveName
+                    )
+                end)
+        end
+
+        local runtimeSaveOk =
+            SaveTransferSettingsNow(
+                reason
+            )
+
+        if TransferState
+        and TransferState.DebugPrints == true then
+
+            print(
+                "[TRANSFER AUTOSAVE]",
+                "| ui:",
+                tostring(uiSaveOk),
+                "| runtime:",
+                tostring(runtimeSaveOk),
+                "| reason:",
+                tostring(reason),
+                "| err:",
+                tostring(uiSaveErr)
+            )
+        end
+    end
+end)
 
 --==================================================
 -- [11] AUTOSAVE WORKER
