@@ -2575,6 +2575,8 @@ TransferState = {
     LastGiftSenderName = "",
 
     LastTradeUpdate = 0,
+    LiveTradeEmptySince = 0,
+    LastLiveTradeStalePrintAt = 0,
     TradeWatchConnected = false,
 
     DebugPrints = false,
@@ -5666,6 +5668,12 @@ function TransferResetTradeRuntime()
 
     TransferState.LastTradeUpdate =
         0
+
+    TransferState.LiveTradeEmptySince =
+        0
+
+    TransferState.LastLiveTradeStalePrintAt =
+        0
 end
 
 function TransferUpdateTradeStatusText(status, result)
@@ -6896,11 +6904,19 @@ function TransferIsLiveTradeOpen()
         and tradingUI:FindFirstChild("LiveTrade")
 
     if not liveTrade then
+
+        TransferState.LiveTradeEmptySince =
+            0
+
         return false
     end
 
     if liveTrade:IsA("GuiObject")
     and liveTrade.Visible ~= true then
+
+        TransferState.LiveTradeEmptySince =
+            0
+
         return false
     end
 
@@ -6911,17 +6927,258 @@ function TransferIsLiveTradeOpen()
     -- Do not block the next batch forever on stale UI.
     if TransferState.TradeCompleted == true
     or TransferState.TradeResult == "Completed"
-    or TransferGetLocalTradeState() == "Processing" then
+    or TransferGetLocalTradeState() == "Processing"
+    or TransferGetOtherTradeState() == "Processing" then
+
+        TransferState.LiveTradeEmptySince =
+            0
+
         return false
     end
 
-    -- Only treat it as active if the trade button still has active trade text.
-    if buttonText == "Accept"
-    or buttonText == "Accepted"
-    or buttonText == "Confirm"
-    or buttonText == "Confirmed"
-    or TransferParseCooldownText(buttonText) ~= nil then
+    local buttonLooksActive =
+        buttonText == "Accept"
+        or buttonText == "Accepted"
+        or buttonText == "Confirm"
+        or buttonText == "Confirmed"
+        or TransferParseCooldownText(buttonText) ~= nil
+
+    if buttonLooksActive ~= true then
+
+        TransferState.LiveTradeEmptySince =
+            0
+
+        return false
+    end
+
+    local ownItems =
+        tonumber(TransferState.TradeOwnItemCount)
+        or 0
+
+    local otherItems =
+        tonumber(TransferState.TradeOtherItemCount)
+        or 0
+
+    local guiOwnItems =
+        0
+
+    local guiOtherItems =
+        0
+
+    if type(TransferGuiCountVisibleSideItems) == "function" then
+
+        pcall(function()
+            guiOwnItems =
+                tonumber(
+                    TransferGuiCountVisibleSideItems("MyPlr")
+                )
+                or 0
+        end)
+
+        pcall(function()
+            guiOtherItems =
+                tonumber(
+                    TransferGuiCountVisibleSideItems("OtherPlr")
+                )
+                or 0
+        end)
+    end
+
+    local guiOwnValue =
+        0
+
+    local guiOtherValue =
+        0
+
+    if type(TransferGuiGetSidePriceAmount) == "function" then
+
+        pcall(function()
+            guiOwnValue =
+                tonumber(
+                    TransferGuiGetSidePriceAmount("MyPlr")
+                )
+                or 0
+        end)
+
+        pcall(function()
+            guiOtherValue =
+                tonumber(
+                    TransferGuiGetSidePriceAmount("OtherPlr")
+                )
+                or 0
+        end)
+    end
+
+    local myReadyText =
+        ""
+
+    local otherReadyText =
+        ""
+
+    if type(TransferGetReadyLabelText) == "function" then
+
+        pcall(function()
+            myReadyText =
+                CleanText(
+                    TransferGetReadyLabelText("MyPlr")
+                )
+        end)
+
+        pcall(function()
+            otherReadyText =
+                CleanText(
+                    TransferGetReadyLabelText("OtherPlr")
+                )
+        end)
+    end
+
+    local statusText =
+        ""
+
+    if type(TransferGetTradeStatusText) == "function" then
+
+        pcall(function()
+            statusText =
+                CleanText(
+                    TransferGetTradeStatusText()
+                )
+        end)
+    end
+
+    local hasPlayerName =
+        false
+
+    local localName =
+        CleanText(LocalPlayer and LocalPlayer.Name):lower()
+
+    local localDisplay =
+        CleanText(LocalPlayer and LocalPlayer.DisplayName):lower()
+
+    local targetName =
+        CleanText(TransferState.TargetPlayerName):lower()
+
+    for _, obj in ipairs(liveTrade:GetDescendants()) do
+
+        if obj:IsA("TextLabel")
+        or obj:IsA("TextButton")
+        or obj:IsA("TextBox") then
+
+            if TransferIsGuiObjectVisible(obj) == true then
+
+                local text =
+                    CleanText(obj.Text):lower()
+
+                if text ~= ""
+                and (
+                    (
+                        localName ~= ""
+                        and text:find(localName, 1, true)
+                    )
+                    or (
+                        localDisplay ~= ""
+                        and text:find(localDisplay, 1, true)
+                    )
+                    or (
+                        targetName ~= ""
+                        and text:find(targetName, 1, true)
+                    )
+                ) then
+
+                    hasPlayerName =
+                        true
+
+                    break
+                end
+            end
+        end
+    end
+
+    local localState =
+        TransferGetLocalTradeState()
+
+    local otherState =
+        TransferGetOtherTradeState()
+
+    local hasRealTradeEvidence =
+        CleanText(TransferState.TradeId) ~= ""
+        or TransferState.TradeOpen == true
+        or TransferState.LocalTradeSide ~= nil
+        or TransferState.OtherTradeSide ~= nil
+        or ownItems > 0
+        or otherItems > 0
+        or guiOwnItems > 0
+        or guiOtherItems > 0
+        or guiOwnValue > 0
+        or guiOtherValue > 0
+        or myReadyText ~= ""
+        or otherReadyText ~= ""
+        or hasPlayerName == true
+        or localState == "Accepted"
+        or localState == "Confirmed"
+        or otherState == "Accepted"
+        or otherState == "Confirmed"
+        or statusText:lower():find("accepted", 1, true) ~= nil
+        or statusText:lower():find("confirmed", 1, true) ~= nil
+        or statusText:lower():find("waiting for both players", 1, true) ~= nil
+
+    if hasRealTradeEvidence == true then
+
+        TransferState.LiveTradeEmptySince =
+            0
+
         return true
+    end
+
+    local now =
+        os.clock()
+
+    if tonumber(TransferState.LiveTradeEmptySince) == nil
+    or TransferState.LiveTradeEmptySince <= 0 then
+
+        TransferState.LiveTradeEmptySince =
+            now
+    end
+
+    local emptyAge =
+        now - TransferState.LiveTradeEmptySince
+
+    -- Allow a brand-new empty LiveTrade a tiny opening window.
+    -- If it stays empty after that, it is stale UI and must not block new tickets.
+    if emptyAge <= 2.0 then
+        return true
+    end
+
+    if now - (tonumber(TransferState.LastLiveTradeStalePrintAt) or 0) >= 2 then
+
+        TransferState.LastLiveTradeStalePrintAt =
+            now
+
+        print(
+            "[TRANSFER LIVE CHECK]",
+            "Ignoring stale empty LiveTrade.",
+            "| age:",
+            string.format("%.2fs", emptyAge),
+            "| button:",
+            tostring(buttonText),
+            "| tradeOpen:",
+            tostring(TransferState.TradeOpen),
+            "| tradeId:",
+            tostring(TransferState.TradeId),
+            "| local:",
+            tostring(localState),
+            "| other:",
+            tostring(otherState),
+            "| ownItems:",
+            tostring(ownItems),
+            "| otherItems:",
+            tostring(otherItems),
+            "| guiOwn:",
+            tostring(guiOwnItems),
+            "| guiOther:",
+            tostring(guiOtherItems),
+            "| status:",
+            tostring(statusText)
+        )
     end
 
     return false
