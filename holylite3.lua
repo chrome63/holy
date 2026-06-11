@@ -28635,6 +28635,43 @@ function BuyLiteCandidateQuiet(candidate, options)
             string.format("%.2fms", elapsedMs)
         )
 
+        if type(_G.HOLY_LITE_SEND_SNIPE_WEBHOOK) == "function" then
+
+            task.spawn(function()
+
+                local okPersonal, personalResult =
+                    pcall(function()
+                        return _G.HOLY_LITE_SEND_SNIPE_WEBHOOK(candidate)
+                    end)
+
+                if okPersonal ~= true then
+
+                    warn(
+                        "[HOLY SNIPER LITE] Personal webhook crashed:",
+                        tostring(personalResult)
+                    )
+
+                elseif personalResult ~= true then
+
+                    warn(
+                        "[HOLY SNIPER LITE] Personal webhook did not send:",
+                        tostring(personalResult)
+                    )
+
+                else
+
+                    print(
+                        "[HOLY SNIPER LITE] Personal webhook confirmed:",
+                        tostring(listing.PetName or "Unknown")
+                    )
+                end
+            end)
+
+        else
+
+            warn("[HOLY SNIPER LITE] Personal webhook function missing.")
+        end
+
         local isTopSnipe =
             type(IsLiteTopSnipesTarget) == "function"
             and IsLiteTopSnipesTarget(listing) == true
