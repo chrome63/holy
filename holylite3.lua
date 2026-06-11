@@ -10246,13 +10246,10 @@ function TransferRespondRequest(accept)
         return false
     end
 
-    -- Grow a Garden uses false for accepting the ticket request.
-    -- Remote spy:
-    -- RespondRequest:FireServer(requestId, false)
+    -- Grow a Garden accepts the ticket request with true.
+    -- Decline uses false.
     local responseValue =
         accept == true
-        and false
-        or true
 
     local ok, err =
         pcall(function()
@@ -10327,6 +10324,13 @@ function TransferAcceptIncomingRequest()
 end
 
 function TransferDeclineIncomingRequest()
+
+    local requestId =
+        CleanText(TransferState.IncomingRequestId)
+
+    if requestId == "" then
+        return false
+    end
 
     return TransferRespondRequest(false)
 end
