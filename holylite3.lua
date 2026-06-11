@@ -6290,6 +6290,133 @@ function TransferResetTradeRuntime()
         0
 end
 
+function TransferHardResetRun(reason)
+
+    reason =
+        tostring(reason or "manual reset")
+
+    TransferState.WorkerToken =
+        (
+            tonumber(TransferState.WorkerToken)
+            or 0
+        )
+        + 1
+
+    TransferState.IsTransferRunning =
+        false
+
+    TransferState.IsAddingPets =
+        false
+
+    TransferResetTradeRuntime()
+
+    TransferState.Batch =
+        0
+
+    TransferState.AddedThisBatch =
+        0
+
+    TransferState.ExpectedThisBatch =
+        0
+
+    TransferState.Sent =
+        0
+
+    TransferState.MatchedPets =
+        {}
+
+    TransferState.Timing =
+        {}
+
+    TransferState.IncomingRequestId =
+        ""
+
+    TransferState.IncomingRequestPlayerName =
+        ""
+
+    TransferState.IncomingRequestAt =
+        0
+
+    TransferState.IncomingRequestHandled =
+        {}
+
+    TransferState.RequestAcceptValue =
+        nil
+
+    TransferState.LastRequestAcceptValue =
+        "unknown"
+
+    TransferState.RequestBlocked =
+        false
+
+    TransferState.RequestBlockedReason =
+        ""
+
+    TransferState.RequestExpired =
+        false
+
+    TransferState.RequestExpiredReason =
+        ""
+
+    TransferState.IncomingGiftHandled =
+        {}
+
+    TransferState.LastGiftId =
+        ""
+
+    TransferState.LastGiftPetName =
+        ""
+
+    TransferState.LastGiftSenderName =
+        ""
+
+    TransferState.LockStats =
+        {
+            Matched = 0,
+            Sendable = 0,
+            TempLocked = 0,
+            Listed = 0,
+            Other = 0,
+            NextUnlock = 0,
+        }
+
+    local matches =
+        {}
+
+    if type(TransferBuildMatches) == "function" then
+
+        matches =
+            TransferBuildMatches()
+            or {}
+    end
+
+    TransferState.LockStats.Matched =
+        #matches
+
+    TransferState.LockStats.Sendable =
+        #matches
+
+    TransferSetStatus(
+        "Idle",
+        "Transfer run reset: "
+            .. tostring(reason),
+        true
+    )
+
+    print(
+        "[TRANSFER RESET]",
+        "Hard reset run.",
+        "| reason:",
+        tostring(reason),
+        "| matches:",
+        tostring(#matches),
+        "| workerToken:",
+        tostring(TransferState.WorkerToken)
+    )
+
+    TransferUpdateHud()
+end
+
 function TransferUpdateTradeStatusText(status, result)
 
     local localState =
@@ -13771,6 +13898,10 @@ and IsGardenWorld() then
 
         TransferBuildMatches()
 
+        QueueSaveTransferSettings(
+            "selected pets changed"
+        )
+
         TransferSetStatus(
             "Filter Updated",
             "Selected pets updated."
@@ -13791,6 +13922,10 @@ and IsGardenWorld() then
             end
 
             TransferBuildMatches()
+
+            QueueSaveTransferSettings(
+                "selected pets cleared"
+            )
 
             TransferSetStatus(
                 "Filter Cleared",
@@ -13818,6 +13953,10 @@ and IsGardenWorld() then
 
         TransferBuildMatches()
 
+        QueueSaveTransferSettings(
+            "selected mutations changed"
+        )
+
         TransferSetStatus(
             "Filter Updated",
             "Selected mutations updated."
@@ -13843,7 +13982,16 @@ and IsGardenWorld() then
                 )
             )
 
+        if TransferState.MaxLevel < TransferState.MinLevel then
+            TransferState.MaxLevel =
+                TransferState.MinLevel
+        end
+
         TransferBuildMatches()
+
+        QueueSaveTransferSettings(
+            "min level changed"
+        )
 
         TransferSetStatus(
             "Filter Updated",
@@ -13873,6 +14021,10 @@ and IsGardenWorld() then
 
         TransferBuildMatches()
 
+        QueueSaveTransferSettings(
+            "max level changed"
+        )
+
         TransferSetStatus(
             "Filter Updated",
             "Max Level = "
@@ -13897,7 +14049,16 @@ and IsGardenWorld() then
                 TransferToNumber(value, 0)
             )
 
+        if TransferState.MaxBaseWeight < TransferState.MinBaseWeight then
+            TransferState.MaxBaseWeight =
+                TransferState.MinBaseWeight
+        end
+
         TransferBuildMatches()
+
+        QueueSaveTransferSettings(
+            "min baseweight changed"
+        )
 
         TransferSetStatus(
             "Filter Updated",
@@ -13919,11 +14080,15 @@ and IsGardenWorld() then
 
         TransferState.MaxBaseWeight =
             math.max(
-                0,
+                TransferState.MinBaseWeight,
                 TransferToNumber(value, 999)
             )
 
         TransferBuildMatches()
+
+        QueueSaveTransferSettings(
+            "max baseweight changed"
+        )
 
         TransferSetStatus(
             "Filter Updated",
@@ -14010,6 +14175,10 @@ and IsGardenWorld() then
 
         TransferState.TargetPlayerName =
             CleanText(value)
+
+        QueueSaveTransferSettings(
+            "target player changed"
+        )
 
         TransferSetStatus(
             "Player Updated",
@@ -14139,27 +14308,14 @@ and IsGardenWorld() then
         local wantsEnabled =
             value == true
 
-        -- Always invalidate the old worker first.
-        TransferState.WorkerToken =
-            (
-                tonumber(TransferState.WorkerToken)
-                or 0
-            )
-            + 1
-
-        local restartToken =
-            TransferState.WorkerToken
-
         TransferState.TransferEnabled =
             false
 
-        TransferState.IsTransferRunning =
-            false
-
-        TransferState.IsAddingPets =
-            false
-
-        TransferResetTradeRuntime()
+        TransferHardResetRun(
+            wantsEnabled == true
+            and "enabled toggle restart"
+            or "disabled toggle"
+        )
 
         if wantsEnabled ~= true then
 
@@ -14175,9 +14331,12 @@ and IsGardenWorld() then
             return
         end
 
+        local restartToken =
+            TransferState.WorkerToken
+
         TransferSetStatus(
             "Restarting",
-            "Resetting old transfer worker..."
+            "Fresh transfer run starting..."
         )
 
         task.spawn(function()
@@ -14192,19 +14351,16 @@ and IsGardenWorld() then
                 return
             end
 
-            TransferResetTradeRuntime()
-
-            TransferState.Batch =
-                0
-
-            TransferState.AddedThisBatch =
-                0
-
             TransferState.TransferEnabled =
                 true
 
             QueueSaveTransferSettings(
                 "transfer restarted"
+            )
+
+            TransferSetStatus(
+                "Enabled",
+                "Fresh transfer run started."
             )
 
             TransferWorkerLoop()
