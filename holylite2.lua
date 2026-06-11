@@ -6669,6 +6669,35 @@ function TransferWaitForTradeOpen(timeout)
     return false
 end
 
+function TransferGetSenderOfferCountReliable()
+
+    local dataCount =
+        tonumber(TransferState.TradeOwnItemCount)
+        or 0
+
+    local guiCount =
+        0
+
+    if type(TransferGuiCountVisibleSideItems) == "function" then
+
+        local ok, result =
+            pcall(function()
+                return TransferGuiCountVisibleSideItems("MyPlr")
+            end)
+
+        if ok == true then
+            guiCount =
+                tonumber(result)
+                or 0
+        end
+    end
+
+    return math.max(
+        dataCount,
+        guiCount
+    )
+end
+
 function TransferWaitForOwnOfferCountAtLeast(expectedCount, timeout)
 
     expectedCount =
@@ -6686,10 +6715,16 @@ function TransferWaitForOwnOfferCountAtLeast(expectedCount, timeout)
     and TransferState.TransferEnabled == true do
 
         local currentCount =
-            tonumber(TransferState.TradeOwnItemCount)
-            or 0
+            TransferGetSenderOfferCountReliable()
 
         if currentCount >= expectedCount then
+
+            TransferState.TradeOwnItemCount =
+                math.max(
+                    tonumber(TransferState.TradeOwnItemCount) or 0,
+                    currentCount
+                )
+
             return true
         end
 
@@ -6697,7 +6732,7 @@ function TransferWaitForOwnOfferCountAtLeast(expectedCount, timeout)
             return false
         end
 
-        task.wait(0.1)
+        task.wait(0.05)
     end
 
     return false
@@ -6725,8 +6760,12 @@ function TransferWaitForOwnOfferCountAtLeastOrSettled(startingCount, expectedCou
         os.clock()
 
     local lastSeen =
-        tonumber(TransferState.TradeOwnItemCount)
-        or startingCount
+        TransferGetSenderOfferCountReliable()
+
+    if lastSeen < startingCount then
+        lastSeen =
+            startingCount
+    end
 
     local lastChanged =
         os.clock()
@@ -6735,8 +6774,13 @@ function TransferWaitForOwnOfferCountAtLeastOrSettled(startingCount, expectedCou
     and TransferState.TransferEnabled == true do
 
         local currentCount =
-            tonumber(TransferState.TradeOwnItemCount)
-            or 0
+            TransferGetSenderOfferCountReliable()
+
+        if currentCount > tonumber(TransferState.TradeOwnItemCount or 0) then
+
+            TransferState.TradeOwnItemCount =
+                currentCount
+        end
 
         if currentCount >= expectedCount then
             return currentCount, true
@@ -6760,10 +6804,10 @@ function TransferWaitForOwnOfferCountAtLeastOrSettled(startingCount, expectedCou
             return currentCount, false
         end
 
-        task.wait(0.05)
+        task.wait(0.03)
     end
 
-    return tonumber(TransferState.TradeOwnItemCount) or startingCount, false
+    return TransferGetSenderOfferCountReliable(), false
 end
 
 function TransferWaitForTradeCompleted(timeout)
