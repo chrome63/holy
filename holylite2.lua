@@ -7805,6 +7805,10 @@ end
 
 function TransferBothPlayersAccepted()
 
+    if TransferUiStillFirstAcceptPhase() == true then
+        return false
+    end
+
     if TransferCountStatesWithValue("Accepted") >= 2 then
         return true
     end
@@ -7841,6 +7845,25 @@ function TransferGetTradeStatusText()
     end
 
     return ""
+end
+
+function TransferUiStillFirstAcceptPhase()
+
+    local buttonText =
+        TransferGetTradeButtonText()
+
+    local statusText =
+        tostring(
+            TransferGetTradeStatusText()
+            or ""
+        ):lower()
+
+    return buttonText == "Accept"
+        and statusText:find(
+            "waiting for both players to accept",
+            1,
+            true
+        ) ~= nil
 end
 
 function TransferIsConfirmPhase()
@@ -8074,30 +8097,63 @@ TransferReceiverAcceptedAfterLocal = function()
     local buttonText =
         TransferGetTradeButtonText()
 
+    local statusText =
+        tostring(
+            TransferGetTradeStatusText()
+            or ""
+        ):lower()
+
+    local targetName =
+        CleanText(
+            TransferState.TargetPlayerName
+        ):lower()
+
+    -- If current visible trade is still in first accept phase,
+    -- never trust stale DataStream accepted states from the previous trade.
+    if TransferUiStillFirstAcceptPhase() == true then
+        return false
+    end
+
     -- If Confirm is visible, both players have passed accept.
     if buttonText == "Confirm"
     or buttonText == "Confirmed" then
         return true
     end
 
+    -- Best visible proof: receiver side ready label.
     if TransferReadyLabelIsAccepted("OtherPlr") == true then
         return true
     end
 
-    -- Real state from DataStream2.
+    -- Visible status proof: target accepted in the current UI.
+    if targetName ~= ""
+    and statusText:find(targetName, 1, true)
+    and statusText:find("has accepted", 1, true) then
+        return true
+    end
+
+    if TransferGuiPlayerHasAccepted(
+        TransferState.TargetPlayerName
+    ) == true then
+        return true
+    end
+
+    -- Confirm phase text means both players accepted.
+    if statusText:find("waiting for both players to confirm", 1, true) then
+        return true
+    end
+
+    -- Data fallback only after visible UI is not clearly first accept phase.
     if TransferTradeStateIsAcceptedLike(
         TransferGetOtherTradeState()
     ) then
         return true
     end
 
-    -- If both states are accepted, receiver accepted.
     if TransferBothPlayersAccepted() == true then
         return true
     end
 
-    -- Do NOT trust plain cooldown text.
-    -- The dump proved cooldown is also shown before Accept is actually locked.
     return false
 end
 
@@ -8123,10 +8179,6 @@ function TransferWaitForReceiverAccepted(timeout)
         if TransferState.TradeCompleted == true
         or TransferState.TradeResult == "Completed"
         or TransferLocalProcessingData() == true then
-            return true
-        end
-
-        if TransferOtherAcceptedData() == true then
             return true
         end
 
@@ -8389,6 +8441,21 @@ function TransferWaitForConfirmReady(timeout)
                     )
                 end
             end
+        end
+
+        if TransferUiStillFirstAcceptPhase() == true then
+
+            TransferUpdateTradeStatusText(
+                "Waiting Accept",
+                "Current trade is still in accept phase. Not confirming yet. Button="
+                    .. tostring(text)
+                    .. " | Status="
+                    .. tostring(TransferGetTradeStatusText())
+            )
+
+            task.wait(0.05)
+
+            continue
         end
 
         if TransferConfirmWindowReady() == true then
@@ -10766,6 +10833,56 @@ function TransferConfirmAndWait(label, timeout)
 
         local buttonText =
             TransferGetTradeButtonText()
+
+        if TransferUiStillFirstAcceptPhase() == true then
+
+            TransferUpdateTradeStatusText(
+                "Accept Recovery",
+                "Confirming entered too early. Current trade is still accepting."
+            )
+
+            print(
+                "[TRANSFER CONFIRM RECOVERY]",
+                "Second-trade stale state detected. Confirming was entered while current UI is still first accept phase.",
+                "| button:",
+                tostring(buttonText),
+                "| status:",
+                tostring(TransferGetTradeStatusText()),
+                "| local:",
+                tostring(TransferGetLocalTradeState()),
+                "| other:",
+                tostring(TransferGetOtherTradeState()),
+                "| myReady:",
+                tostring(TransferGetReadyLabelText("MyPlr")),
+                "| otherReady:",
+                tostring(TransferGetReadyLabelText("OtherPlr"))
+            )
+
+            if TransferLocalAcceptLocked() ~= true then
+
+                TransferAcceptAndWait(
+                    "Accept Recovery",
+                    8,
+                    math.max(
+                        1,
+                        tonumber(TransferState.AddedThisBatch)
+                            or tonumber(TransferState.ExpectedThisBatch)
+                            or 1
+                    ),
+                    0
+                )
+
+            else
+
+                TransferWaitForReceiverAccepted(
+                    8
+                )
+            end
+
+            task.wait(0.05)
+
+            continue
+        end
 
         local confirmWindowReady =
             TransferConfirmWindowReady()
