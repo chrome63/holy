@@ -2514,6 +2514,9 @@ TransferState = {
     Status = "Idle",
     LastResult = "None",
 
+    Step = "Idle",
+    StepDetail = "Ready.",
+
     ModeDropdown = nil,
     PetDropdown = nil,
     MutationDropdown = nil,
@@ -4748,42 +4751,336 @@ function TransferFormatHudTradeState(state)
     return state
 end
 
+function TransferHudEscape(value)
+
+    if value == nil then
+        value =
+            ""
+    end
+
+    value =
+        tostring(value)
+
+    value =
+        value:gsub("&", "&amp;")
+            :gsub("<", "&lt;")
+            :gsub(">", "&gt;")
+
+    return value
+end
+
+function TransferHudColor(value, color, bold)
+
+    value =
+        TransferHudEscape(value)
+
+    color =
+        tostring(color or "255,255,255")
+
+    if bold == true then
+
+        return '<font color="rgb('
+            .. color
+            .. ')"><b>'
+            .. value
+            .. '</b></font>'
+    end
+
+    return '<font color="rgb('
+        .. color
+        .. ')">'
+        .. value
+        .. '</font>'
+end
+
+function TransferHudShortText(value, maxLength)
+
+    value =
+        CleanText(value)
+
+    maxLength =
+        tonumber(maxLength)
+        or 42
+
+    if value == "" then
+        return "-"
+    end
+
+    if #value <= maxLength then
+        return value
+    end
+
+    return value:sub(1, maxLength - 3)
+        .. "..."
+end
+
+function TransferHudModeColor()
+
+    if TransferState.Mode == "Receiver" then
+        return "96,165,250" -- blue = incoming / receiving
+    end
+
+    return "250,204,21" -- gold = outgoing / sending
+end
+
+function TransferHudStateColor(value)
+
+    local text =
+        tostring(value or ""):lower()
+
+    if text == ""
+    or text == "-"
+    or text == "none"
+    or text == "idle"
+    or text == "stopped" then
+        return "203,213,225"
+    end
+
+    if text:find("declin", 1, true)
+    or text:find("failed", 1, true)
+    or text:find("fail", 1, true)
+    or text:find("blocked", 1, true)
+    or text:find("missing", 1, true)
+    or text:find("timeout", 1, true)
+    or text:find("no ticket", 1, true)
+    or text:find("no target", 1, true) then
+        return "248,113,113"
+    end
+
+    if text:find("waiting", 1, true)
+    or text:find("cooldown", 1, true)
+    or text:find("delay", 1, true)
+    or text:find("settling", 1, true)
+    or text:find("no matching", 1, true) then
+        return "250,204,21"
+    end
+
+    if text:find("accepted", 1, true)
+    or text:find("confirmed", 1, true)
+    or text:find("completed", 1, true)
+    or text:find("done", 1, true)
+    or text:find("success", 1, true)
+    or text:find("ready", 1, true)
+    or text:find("safe", 1, true) then
+        return "74,222,128"
+    end
+
+    if text:find("adding", 1, true)
+    or text:find("ticket", 1, true)
+    or text:find("accept", 1, true)
+    or text:find("confirm", 1, true)
+    or text:find("processing", 1, true)
+    or text:find("drain", 1, true)
+    or text:find("equip", 1, true)
+    or text:find("unfavorite", 1, true) then
+        return "34,211,238"
+    end
+
+    return "255,255,255"
+end
+
+function TransferHudButtonColor(value)
+
+    value =
+        CleanText(value)
+
+    local lower =
+        value:lower()
+
+    if value == ""
+    or value == "-" then
+        return "148,163,184"
+    end
+
+    if lower:match("^%d+%.?%d*s$") then
+        return "250,204,21"
+    end
+
+    if lower == "confirm"
+    or lower == "confirmed"
+    or lower == "accepted" then
+        return "134,239,172"
+    end
+
+    if lower == "accept" then
+        return "103,232,249"
+    end
+
+    if lower:find("declin", 1, true)
+    or lower:find("fail", 1, true)
+    or lower:find("block", 1, true) then
+        return "248,113,113"
+    end
+
+    return "255,255,255"
+end
+
+function TransferHudGetButtonText()
+
+    if type(TransferGetTradeButtonText) ~= "function" then
+        return "-"
+    end
+
+    local ok, result =
+        pcall(function()
+            return TransferGetTradeButtonText()
+        end)
+
+    if ok ~= true then
+        return "-"
+    end
+
+    result =
+        CleanText(result)
+
+    if result == "" then
+        return "-"
+    end
+
+    return result
+end
+
+function TransferHudGetTradeValue()
+
+    if type(TransferGuiHasPositiveTradeValue) ~= "function" then
+        return "-"
+    end
+
+    local ok, hasValue, value =
+        pcall(function()
+            return TransferGuiHasPositiveTradeValue()
+        end)
+
+    if ok ~= true
+    or hasValue ~= true then
+        return "-"
+    end
+
+    value =
+        tonumber(value)
+        or 0
+
+    if value <= 0 then
+        return "-"
+    end
+
+    return TransferFormatNumber(value)
+end
+
+function TransferHudGetReceiverCount()
+
+    local count =
+        tonumber(TransferState.TradeOtherItemCount)
+        or 0
+
+    if type(TransferGuiCountVisibleSideItems) == "function" then
+
+        local ok, result =
+            pcall(function()
+                return TransferGuiCountVisibleSideItems("OtherPlr")
+            end)
+
+        if ok == true then
+            count =
+                math.max(
+                    count,
+                    tonumber(result) or 0
+                )
+        end
+    end
+
+    return count
+end
+
 function TransferBuildHudText()
 
     local lines =
         {}
 
-    table.insert(
-        lines,
-        "TRANSFER"
-    )
-
     local target =
-        CleanText(TransferState.TargetPlayerName)
+        TransferHudShortText(
+            TransferState.TargetPlayerName,
+            20
+        )
 
     if target == "" then
         target =
             "None"
     end
 
-    if TransferState.Mode == "Receiver" then
+    local isReceiver =
+        TransferState.Mode == "Receiver"
 
-        table.insert(
-            lines,
-            "Receiver <- " .. target
+    local modeText =
+        isReceiver == true
+        and "Receiver"
+        or "Sender"
+
+    local arrow =
+        isReceiver == true
+        and " <- "
+        or " -> "
+
+    local rawStep =
+        CleanText(
+            TransferState.Step
+                or TransferState.Status
+                or "Idle"
         )
 
-    else
+    local stepAliases = {
+        ["Waiting Data Close"] = "Closing",
+        ["Waiting Confirm"] = "Confirming",
+        ["Waiting Accept"] = "Accepting",
+        ["Waiting Receiver"] = "Waiting",
+        ["Waiting Trade"] = "Opening",
+        ["Waiting Safe"] = "Settling",
+        ["Ticket Sent"] = "Ticket",
+        ["Ticket Found"] = "Ticket Found",
+        ["Request Accepted"] = "Accepted",
+        ["Request Declined"] = "Declined",
+        ["Instant Confirm"] = "Confirming",
+        ["Instant Accept"] = "Accepting",
+        ["Drain Confirm"] = "Confirming",
+        ["Drain Accept"] = "Accepting",
+        ["Drain Trade"] = "Finishing",
+        ["Trade Completed"] = "Completed",
+        ["Trade Declined"] = "Declined",
+        ["No Target"] = "No Target",
+        ["No Ticket"] = "No Ticket",
+        ["Unfavoriting"] = "Preparing",
+        ["Unfavorite Done"] = "Prepared",
+        ["Equipping Ticket"] = "Equipping",
+        ["Ticket Delay"] = "Waiting",
+        ["Processing"] = "Processing",
+        ["Stopped"] = "Stopped",
+        ["Idle"] = "Idle",
+    }
 
-        table.insert(
-            lines,
-            "Sender -> " .. target
+    local step =
+        stepAliases[rawStep]
+        or TransferHudShortText(
+            rawStep,
+            16
         )
-    end
 
     table.insert(
         lines,
-        tostring(TransferState.Status or "Idle")
+        TransferHudColor(
+            modeText,
+            TransferHudModeColor(),
+            true
+        )
+            .. TransferHudColor(
+                arrow,
+                "203,213,225",
+                false
+            )
+            .. TransferHudColor(
+                target,
+                "255,255,255",
+                true
+            )
     )
 
     local lockStats =
@@ -4792,53 +5089,77 @@ function TransferBuildHudText()
 
     local sendable =
         tonumber(lockStats.Sendable)
-        or 0
-
-    local matched =
-        tonumber(lockStats.Matched)
         or #(TransferState.MatchedPets or {})
 
     local added =
         tonumber(TransferState.AddedThisBatch)
         or 0
 
-    if TransferState.Mode == "Sender" then
+    if isReceiver == true then
 
         table.insert(
             lines,
-            "Queue: "
-                .. tostring(added)
-                .. "/"
-                .. tostring(sendable)
+            TransferHudColor(
+                step,
+                TransferHudStateColor(step),
+                true
+            )
+                .. TransferHudColor(
+                    " | R ",
+                    "203,213,225",
+                    false
+                )
+                .. TransferHudColor(
+                    tostring(TransferHudGetReceiverCount()),
+                    "255,255,255",
+                    true
+                )
         )
 
     else
 
         table.insert(
             lines,
-            "Received: "
-                .. tostring(TransferState.TradeOtherItemCount or 0)
-        )
-    end
-
-    local tempLocked =
-        tonumber(lockStats.TempLocked)
-        or 0
-
-    local listed =
-        tonumber(lockStats.Listed)
-        or 0
-
-    if tempLocked > 0
-    or listed > 0 then
-
-        table.insert(
-            lines,
-            "Locked: "
-                .. tostring(tempLocked)
-                .. " temp / "
-                .. tostring(listed)
-                .. " listed"
+            TransferHudColor(
+                step,
+                TransferHudStateColor(step),
+                true
+            )
+                .. TransferHudColor(
+                    " | Q ",
+                    "203,213,225",
+                    false
+                )
+                .. TransferHudColor(
+                    tostring(added)
+                        .. "/"
+                        .. tostring(sendable),
+                    added >= sendable
+                    and sendable > 0
+                    and "74,222,128"
+                    or "255,255,255",
+                    true
+                )
+                .. TransferHudColor(
+                    " | B",
+                    "203,213,225",
+                    false
+                )
+                .. TransferHudColor(
+                    tostring(TransferState.Batch or 0),
+                    "255,255,255",
+                    true
+                )
+                .. TransferHudColor(
+                    " | S",
+                    "203,213,225",
+                    false
+                )
+                .. TransferHudColor(
+                    tostring(TransferState.Sent or 0),
+                    "74,222,128",
+                    true
+                )
         )
     end
 
@@ -4852,26 +5173,69 @@ function TransferBuildHudText()
             TransferGetOtherTradeState()
         )
 
+    local tradeText =
+        "Idle"
+
+    local tradeColor =
+        "203,213,225"
+
     if TransferState.TradeOpen == true
     or CleanText(TransferState.TradeId) ~= ""
     or localState ~= "Waiting"
     or otherState ~= "Waiting" then
 
-        table.insert(
-            lines,
-            "Trade: "
-                .. tostring(localState)
-                .. " / "
+        tradeText =
+            tostring(localState)
+                .. "/"
                 .. tostring(otherState)
-        )
 
-    else
-
-        table.insert(
-            lines,
-            "Trade: Idle"
-        )
+        tradeColor =
+            TransferHudStateColor(
+                tostring(localState)
+                    .. " "
+                    .. tostring(otherState)
+            )
     end
+
+    local buttonText =
+        TransferHudShortText(
+            TransferHudGetButtonText(),
+            9
+        )
+
+    local valueText =
+        TransferHudGetTradeValue()
+
+    table.insert(
+        lines,
+        TransferHudColor(
+            tradeText,
+            tradeColor,
+            true
+        )
+            .. TransferHudColor(
+                " | ",
+                "203,213,225",
+                false
+            )
+            .. TransferHudColor(
+                buttonText,
+                TransferHudButtonColor(buttonText),
+                true
+            )
+            .. TransferHudColor(
+                " | V",
+                "203,213,225",
+                false
+            )
+            .. TransferHudColor(
+                valueText,
+                valueText ~= "-"
+                and "74,222,128"
+                or "203,213,225",
+                true
+            )
+    )
 
     return table.concat(
         lines,
@@ -5015,13 +5379,16 @@ function TransferCreateHud()
         UDim2.fromOffset(0, 0)
 
     label.Size =
-        UDim2.fromScale(1, 1)
+        UDim2.fromOffset(350, 58)
 
     label.Font =
-        Enum.Font.GothamBold
+        Enum.Font.GothamMedium
 
     label.TextSize =
-        15
+        13
+
+    label.LineHeight =
+        1.08
 
     label.TextColor3 =
         Color3.fromRGB(255, 255, 255)
@@ -5030,7 +5397,7 @@ function TransferCreateHud()
         Color3.fromRGB(0, 0, 0)
 
     label.TextStrokeTransparency =
-        0.22
+        0.42
 
     label.TextXAlignment =
         Enum.TextXAlignment.Left
@@ -5042,7 +5409,7 @@ function TransferCreateHud()
         false
 
     label.RichText =
-        false
+        true
 
     label.Active =
         false
@@ -5051,7 +5418,7 @@ function TransferCreateHud()
         1000001
 
     label.Text =
-        "TRANSFER\nIdle"
+        '<font color="rgb(255, 242, 61)"><b>Sender</b></font><font color="rgb(203,213,225)"> -> </font><font color="rgb(255,255,255)"><b>None</b></font>\n<font color="rgb(203,213,225)">Idle | Q </font><font color="rgb(255,255,255)"><b>0/0</b></font><font color="rgb(203,213,225)"> | B</font><font color="rgb(255,255,255)"><b>0</b></font><font color="rgb(203,213,225)"> | S</font><font color="rgb(58, 255, 117)"><b>0</b></font>'
 
     label.Parent =
         root
@@ -5183,6 +5550,12 @@ TransferSetStatus = function(status, result, forceSourceRefresh)
         tostring(status or "Idle")
 
     TransferState.LastResult =
+        tostring(result or "None")
+
+    TransferState.Step =
+        tostring(status or "Idle")
+
+    TransferState.StepDetail =
         tostring(result or "None")
 
     if TransferState.StatusLabel then
