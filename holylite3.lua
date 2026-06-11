@@ -5021,12 +5021,47 @@ function TransferBuildHudText()
         and " <- "
         or " -> "
 
-    local step =
-        TransferHudShortText(
+    local rawStep =
+        CleanText(
             TransferState.Step
                 or TransferState.Status
-                or "Idle",
-            22
+                or "Idle"
+        )
+
+    local stepAliases = {
+        ["Waiting Data Close"] = "Closing",
+        ["Waiting Confirm"] = "Confirming",
+        ["Waiting Accept"] = "Accepting",
+        ["Waiting Receiver"] = "Waiting",
+        ["Waiting Trade"] = "Opening",
+        ["Waiting Safe"] = "Settling",
+        ["Ticket Sent"] = "Ticket",
+        ["Ticket Found"] = "Ticket Found",
+        ["Request Accepted"] = "Accepted",
+        ["Request Declined"] = "Declined",
+        ["Instant Confirm"] = "Confirming",
+        ["Instant Accept"] = "Accepting",
+        ["Drain Confirm"] = "Confirming",
+        ["Drain Accept"] = "Accepting",
+        ["Drain Trade"] = "Finishing",
+        ["Trade Completed"] = "Completed",
+        ["Trade Declined"] = "Declined",
+        ["No Target"] = "No Target",
+        ["No Ticket"] = "No Ticket",
+        ["Unfavoriting"] = "Preparing",
+        ["Unfavorite Done"] = "Prepared",
+        ["Equipping Ticket"] = "Equipping",
+        ["Ticket Delay"] = "Waiting",
+        ["Processing"] = "Processing",
+        ["Stopped"] = "Stopped",
+        ["Idle"] = "Idle",
+    }
+
+    local step =
+        stepAliases[rawStep]
+        or TransferHudShortText(
+            rawStep,
+            16
         )
 
     table.insert(
@@ -5070,45 +5105,13 @@ function TransferBuildHudText()
                 true
             )
                 .. TransferHudColor(
-                    " | Received: ",
+                    " | R ",
                     "203,213,225",
                     false
                 )
                 .. TransferHudColor(
                     tostring(TransferHudGetReceiverCount()),
                     "255,255,255",
-                    true
-                )
-        )
-
-        table.insert(
-            lines,
-            TransferHudColor(
-                "Ticket: ",
-                "203,213,225",
-                false
-            )
-                .. TransferHudColor(
-                    TransferState.AutoAcceptTicket == true
-                    and "ON"
-                    or "OFF",
-                    TransferState.AutoAcceptTicket == true
-                    and "74,222,128"
-                    or "248,113,113",
-                    true
-                )
-                .. TransferHudColor(
-                    " | Confirm: ",
-                    "203,213,225",
-                    false
-                )
-                .. TransferHudColor(
-                    TransferState.AutoConfirm == true
-                    and "ON"
-                    or "OFF",
-                    TransferState.AutoConfirm == true
-                    and "74,222,128"
-                    or "248,113,113",
                     true
                 )
         )
@@ -5123,7 +5126,7 @@ function TransferBuildHudText()
                 true
             )
                 .. TransferHudColor(
-                    " | Queue: ",
+                    " | Q ",
                     "203,213,225",
                     false
                 )
@@ -5137,22 +5140,18 @@ function TransferBuildHudText()
                     or "255,255,255",
                     true
                 )
-        )
-
-        table.insert(
-            lines,
-            TransferHudColor(
-                "Batch: ",
-                "203,213,225",
-                false
-            )
+                .. TransferHudColor(
+                    " | B",
+                    "203,213,225",
+                    false
+                )
                 .. TransferHudColor(
                     tostring(TransferState.Batch or 0),
                     "255,255,255",
                     true
                 )
                 .. TransferHudColor(
-                    " | Sent: ",
+                    " | S",
                     "203,213,225",
                     false
                 )
@@ -5199,7 +5198,10 @@ function TransferBuildHudText()
     end
 
     local buttonText =
-        TransferHudGetButtonText()
+        TransferHudShortText(
+            TransferHudGetButtonText(),
+            9
+        )
 
     local valueText =
         TransferHudGetTradeValue()
@@ -5207,17 +5209,12 @@ function TransferBuildHudText()
     table.insert(
         lines,
         TransferHudColor(
-            "Trade: ",
-            "203,213,225",
-            false
+            tradeText,
+            tradeColor,
+            true
         )
             .. TransferHudColor(
-                tradeText,
-                tradeColor,
-                true
-            )
-            .. TransferHudColor(
-                " | Button: ",
+                " | ",
                 "203,213,225",
                 false
             )
@@ -5227,7 +5224,7 @@ function TransferBuildHudText()
                 true
             )
             .. TransferHudColor(
-                " | Value: ",
+                " | V",
                 "203,213,225",
                 false
             )
@@ -5236,28 +5233,6 @@ function TransferBuildHudText()
                 valueText ~= "-"
                 and "74,222,128"
                 or "203,213,225",
-                true
-            )
-    )
-
-    local lastText =
-        TransferHudShortText(
-            TransferState.StepDetail
-                or TransferState.LastResult
-                or "None",
-            38
-        )
-
-    table.insert(
-        lines,
-        TransferHudColor(
-            "Last: ",
-            "203,213,225",
-            false
-        )
-            .. TransferHudColor(
-                lastText,
-                TransferHudStateColor(lastText),
                 true
             )
     )
@@ -5404,7 +5379,7 @@ function TransferCreateHud()
         UDim2.fromOffset(0, 0)
 
     label.Size =
-        UDim2.fromOffset(365, 98)
+        UDim2.fromOffset(350, 58)
 
     label.Font =
         Enum.Font.GothamMedium
@@ -5422,7 +5397,7 @@ function TransferCreateHud()
         Color3.fromRGB(0, 0, 0)
 
     label.TextStrokeTransparency =
-        0.38
+        0.42
 
     label.TextXAlignment =
         Enum.TextXAlignment.Left
@@ -5443,7 +5418,7 @@ function TransferCreateHud()
         1000001
 
     label.Text =
-        '<font color="rgb(250,204,21)"><b>Sender</b></font><font color="rgb(203,213,225)"> -> </font><font color="rgb(255,255,255)"><b>None</b></font>\n<font color="rgb(203,213,225)">Idle | Queue: </font><font color="rgb(255,255,255)"><b>0/0</b></font>'
+        '<font color="rgb(250,204,21)"><b>Sender</b></font><font color="rgb(203,213,225)"> -> </font><font color="rgb(255,255,255)"><b>None</b></font>\n<font color="rgb(203,213,225)">Idle | Q </font><font color="rgb(255,255,255)"><b>0/0</b></font><font color="rgb(203,213,225)"> | B</font><font color="rgb(255,255,255)"><b>0</b></font><font color="rgb(203,213,225)"> | S</font><font color="rgb(74,222,128)"><b>0</b></font>'
 
     label.Parent =
         root
