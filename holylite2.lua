@@ -11036,8 +11036,40 @@ function TransferRunSenderBatch()
     local alreadyInTrade =
         false
 
+    local hardInTrade, hardTradeReason =
+        TransferIsInTradeHard()
+
     local activeOpen, activeReason =
         TransferActualTradeOpen()
+
+    if hardInTrade == true
+    and activeOpen ~= true then
+
+        TransferSetStatus(
+            "Waiting Trade",
+            "Current trade still open: "
+                .. tostring(hardTradeReason)
+        )
+
+        print(
+            "[TRANSFER SEND GATE]",
+            "Sender batch held because trade is still open.",
+            "| reason:",
+            tostring(hardTradeReason),
+            "| liveOpen:",
+            tostring(TransferIsLiveTradeOpen()),
+            "| tradeOpen:",
+            tostring(TransferState.TradeOpen),
+            "| tradeId:",
+            tostring(TransferState.TradeId),
+            "| local:",
+            tostring(TransferGetLocalTradeState()),
+            "| other:",
+            tostring(TransferGetOtherTradeState())
+        )
+
+        return false, "Request blocked"
+    end
 
     if activeOpen == true then
 
@@ -11832,9 +11864,44 @@ function TransferWorkerLoop()
                         task.wait(0.18)
                     end
 
-                    if TransferIsInTradeHard() ~= true then
-                        TransferResetTradeRuntime()
+                    local stillInTrade, stillTradeReason =
+                        TransferIsInTradeHard()
+
+                    if stillInTrade == true then
+
+                        TransferSetStatus(
+                            "Waiting Trade",
+                            "Still inside current trade: "
+                                .. tostring(stillTradeReason)
+                        )
+
+                        print(
+                            "[TRANSFER SEND TIMING]",
+                            "Retry held",
+                            "| last:",
+                            tostring(retryMsg),
+                            "| waited:",
+                            string.format("%.3fs", os.clock() - retryStarted),
+                            "| reason:",
+                            tostring(stillTradeReason),
+                            "| liveOpen:",
+                            tostring(TransferIsLiveTradeOpen()),
+                            "| tradeOpen:",
+                            tostring(TransferState.TradeOpen),
+                            "| tradeId:",
+                            tostring(TransferState.TradeId),
+                            "| local:",
+                            tostring(TransferGetLocalTradeState()),
+                            "| other:",
+                            tostring(TransferGetOtherTradeState())
+                        )
+
+                        task.wait(0.35)
+
+                        continue
                     end
+
+                    TransferResetTradeRuntime()
 
                     print(
                         "[TRANSFER SEND TIMING]",
