@@ -2519,6 +2519,11 @@ TransferState = {
     TradeDeclined = false,
     TradeDeclineReason = "",
 
+    LastCompletedTradeId = "",
+    LastCompletedAt = 0,
+    DataReadyForNextAt = 0,
+    CompletedTradeIds = {},
+
     RequestBlocked = false,
     RequestBlockedReason = "",
 
@@ -5347,6 +5352,12 @@ end
 
 function TransferMarkTradeCompleted(reason)
 
+    local completedTradeId =
+        CleanText(TransferState.TradeId)
+
+    local now =
+        os.clock()
+
     TransferState.TradeCompleted =
         true
 
@@ -5356,17 +5367,70 @@ function TransferMarkTradeCompleted(reason)
     TransferState.TradeOpen =
         false
 
+    if completedTradeId ~= "" then
+
+        TransferState.LastCompletedTradeId =
+            completedTradeId
+
+        TransferState.CompletedTradeIds[completedTradeId] =
+            now
+    end
+
+    TransferState.LastCompletedAt =
+        now
+
+    -- Data is authoritative. Once completed, do not let stale UI/state
+    -- make the next batch attach to the old trade.
+    TransferState.DataReadyForNextAt =
+        now + 0.35
+
+    TransferState.TradeId =
+        ""
+
+    TransferState.TradePlayers =
+        {}
+
+    TransferState.TradeStates =
+        {}
+
+    TransferState.TradeOfferCounts =
+        {}
+
+    TransferState.LocalTradeSide =
+        nil
+
+    TransferState.OtherTradeSide =
+        nil
+
+    TransferState.TradeOwnItemCount =
+        0
+
+    TransferState.TradeOtherItemCount =
+        0
+
+    TransferState.TradeDeclined =
+        false
+
+    TransferState.TradeDeclineReason =
+        ""
+
     TransferState.LastTradeUpdate =
-        os.clock()
+        now
 
     TransferSetStatus(
         "Trade Completed",
         tostring(reason or "Completed")
+            .. " | id="
+            .. tostring(completedTradeId)
     )
 
     print(
         "[TRANSFER] Trade completed:",
-        tostring(reason or "Completed")
+        tostring(reason or "Completed"),
+        "| id:",
+        tostring(completedTradeId),
+        "| nextReadyIn:",
+        "0.35s"
     )
 end
 
@@ -5830,6 +5894,38 @@ function TransferStartTradeWatchers()
             TransferUpdateTradeTrackerFromPayload(
                 payload
             )
+
+            if type(payload) == "table" then
+
+                local status =
+                    rawget(payload, "status")
+                    or rawget(payload, "Status")
+
+                local result =
+                    type(status) == "table"
+                    and (
+                        rawget(status, "result")
+                        or rawget(status, "Result")
+                    )
+                    or nil
+
+                local historyId =
+                    CleanText(
+                        rawget(payload, "id")
+                    )
+
+                if tostring(result) == "Completed" then
+
+                    if historyId ~= "" then
+                        TransferState.TradeId =
+                            historyId
+                    end
+
+                    TransferMarkTradeCompleted(
+                        "AddToHistory Completed."
+                    )
+                end
+            end
         end)
     end
 
@@ -6217,39 +6313,58 @@ function TransferWaitForLiveTradeClosed(timeout)
     while IsHolyLiteCurrentRun()
     and TransferState.TransferEnabled == true do
 
-        if TransferRawLiveTradeVisible() ~= true then
-            return true
+        local now =
+            os.clock()
+
+        if TransferState.TradeOpen ~= true
+        and CleanText(TransferState.TradeId) == "" then
+
+            if now >= (tonumber(TransferState.DataReadyForNextAt) or 0) then
+                return true
+            end
+        end
+
+        if TransferState.TradeCompleted == true
+        or TransferState.TradeResult == "Completed" then
+
+            if now >= (tonumber(TransferState.DataReadyForNextAt) or 0) then
+                return true
+            end
         end
 
         if os.clock() - started >= timeout then
 
             print(
-                "[TRANSFER CLOSE]",
-                "LiveTrade still visibly open after timeout.",
-                "| timeout:",
-                tostring(timeout),
-                "| button:",
-                tostring(TransferGetTradeButtonText()),
-                "| local:",
-                tostring(TransferGetLocalTradeState()),
-                "| other:",
-                tostring(TransferGetOtherTradeState()),
+                "[TRANSFER DATA CLOSE]",
+                "Timeout, allowing next loop based on data.",
+                "| tradeOpen:",
+                tostring(TransferState.TradeOpen),
+                "| tradeId:",
+                tostring(TransferState.TradeId),
                 "| completed:",
                 tostring(TransferState.TradeCompleted),
                 "| result:",
-                tostring(TransferState.TradeResult)
+                tostring(TransferState.TradeResult),
+                "| local:",
+                tostring(TransferGetLocalTradeState()),
+                "| other:",
+                tostring(TransferGetOtherTradeState())
             )
 
-            return false
+            return true
         end
 
         TransferSetStatus(
-            "Waiting Close",
-            "Waiting visible old trade UI to close. Button="
-                .. tostring(TransferGetTradeButtonText())
+            "Waiting Data Close",
+            "Waiting trade data settle. id="
+                .. tostring(TransferState.TradeId)
+                .. " | "
+                .. tostring(TransferGetLocalTradeState())
+                .. "/"
+                .. tostring(TransferGetOtherTradeState())
         )
 
-        task.wait(0.10)
+        task.wait(0.05)
     end
 
     return false
@@ -7468,29 +7583,28 @@ function TransferWaitForTrustedIncomingRequest(timeout)
     while IsHolyLiteCurrentRun()
     and TransferState.TransferEnabled == true do
 
-        if TransferState.Mode == "Receiver"
-        and TransferRawLiveTradeVisible() == true then
+        if TransferState.Mode == "Receiver" then
 
-            if TransferState.TradeCompleted == true
-            or TransferState.TradeResult == "Completed"
-            or TransferGetLocalTradeState() == "Processing" then
+            local activeOpen =
+                TransferActualTradeOpen()
 
-                TransferSetStatus(
-                    "Waiting Close",
-                    "Old completed trade UI still closing before next request."
-                )
-
-                TransferWaitForLiveTradeClosed(8)
-
-                if TransferRawLiveTradeVisible() ~= true then
-                    TransferResetTradeRuntime()
-                end
-
-            else
+            if activeOpen == true then
 
                 TransferReceiverDrainOpenTrade(
                     25
                 )
+
+            elseif TransferState.TradeCompleted == true
+            or TransferState.TradeResult == "Completed"
+            or CleanText(TransferState.TradeId) ~= "" then
+
+                TransferSetStatus(
+                    "Waiting Data Close",
+                    "Old trade data settling before next request."
+                )
+
+                TransferWaitForLiveTradeClosed(4)
+                TransferResetTradeRuntime()
             end
         end
 
@@ -7778,24 +7892,23 @@ end
 
 function TransferSendTicket()
 
-    if TransferRawLiveTradeVisible() == true then
+    local activeOpen, activeReason =
+        TransferActualTradeOpen()
+
+    if activeOpen == true then
 
         TransferSetStatus(
             "Existing Trade",
-            "Visible LiveTrade still open before sending ticket."
+            "Active trade data still open: "
+                .. tostring(activeReason)
         )
 
-        if TransferState.TradeCompleted ~= true
-        and TransferState.TradeResult ~= "Completed"
-        and TransferGetLocalTradeState() ~= "Processing"
-        and (
-            TransferConfirmWindowReady() == true
-            or TransferGetTradeButtonText() == "Confirm"
-            or TransferGetTradeButtonText() == "Confirmed"
-        ) then
+        if TransferConfirmWindowReady() == true
+        or TransferGetTradeButtonText() == "Confirm"
+        or TransferGetTradeButtonText() == "Confirmed" then
 
             TransferTryInstantFinalConfirm(
-                "Sender found existing confirm-stage trade before sending ticket."
+                "Sender found active confirm-stage trade before sending ticket."
             )
 
             TransferConfirmAndWait(
@@ -7806,16 +7919,25 @@ function TransferSendTicket()
 
         TransferWaitForLiveTradeClosed(8)
 
-        if TransferRawLiveTradeVisible() == true then
+        local stillOpen =
+            TransferActualTradeOpen()
+
+        if stillOpen == true then
 
             TransferSetStatus(
                 "Ticket Blocked",
-                "Old visible trade UI still open. Not sending a new request."
+                "Trade data still active. Not sending a new request."
             )
 
             return false
         end
+    end
 
+    if TransferState.TradeCompleted == true
+    or TransferState.TradeResult == "Completed"
+    or CleanText(TransferState.TradeId) ~= "" then
+
+        TransferWaitForLiveTradeClosed(4)
         TransferResetTradeRuntime()
     end
 
@@ -8207,19 +8329,31 @@ end
 
 function TransferActualTradeOpen()
 
-    local liveTrade =
-        TransferGetLiveTradeFrame()
+    local tradeId =
+        CleanText(TransferState.TradeId)
 
-    if liveTrade then
+    if tradeId == "" then
+        return false, "No DataStream trade id"
+    end
 
-        if TransferState.TradeCompleted == true
-        or TransferState.TradeResult == "Completed"
-        or TransferGetLocalTradeState() == "Processing" then
+    if TransferState.CompletedTradeIds[tradeId] ~= nil then
+        return false, "Trade id already completed"
+    end
 
-            return false, "Completed LiveTrade still closing"
-        end
+    if TransferState.TradeCompleted == true
+    or TransferState.TradeResult == "Completed" then
+        return false, "Trade already completed"
+    end
 
-        return true, "Visible LiveTrade"
+    local localState =
+        TransferGetLocalTradeState()
+
+    local otherState =
+        TransferGetOtherTradeState()
+
+    if localState == "Processing"
+    and otherState == "Processing" then
+        return false, "Both sides processing"
     end
 
     local hasSides =
@@ -8227,7 +8361,7 @@ function TransferActualTradeOpen()
         and TransferState.OtherTradeSide ~= nil
 
     if hasSides == true then
-        return true, "TradeSides"
+        return true, "DataStream trade sides"
     end
 
     local ownCount =
@@ -8240,10 +8374,10 @@ function TransferActualTradeOpen()
 
     if ownCount > 0
     or otherCount > 0 then
-        return true, "OfferCounts"
+        return true, "DataStream offer counts"
     end
 
-    return false, "No real trade UI/data yet"
+    return false, "Waiting DataStream trade data"
 end
 
 function TransferGetTradeSideFrame(sideName)
@@ -10336,23 +10470,17 @@ function TransferRunReceiverBatch()
             return false, "No trusted request"
         end
 
-        if TransferRawLiveTradeVisible() == true
-        and (
-            TransferState.TradeCompleted == true
-            or TransferState.TradeResult == "Completed"
-            or TransferGetLocalTradeState() == "Processing"
-        ) then
+        if TransferState.TradeCompleted == true
+        or TransferState.TradeResult == "Completed"
+        or CleanText(TransferState.TradeId) ~= "" then
 
             TransferSetStatus(
-                "Waiting Close",
-                "Incoming request found, but old completed trade UI is still closing."
+                "Waiting Data Close",
+                "Incoming request found. Clearing old trade data before accepting."
             )
 
-            TransferWaitForLiveTradeClosed(8)
-
-            if TransferRawLiveTradeVisible() ~= true then
-                TransferResetTradeRuntime()
-            end
+            TransferWaitForLiveTradeClosed(4)
+            TransferResetTradeRuntime()
         end
 
         TransferSetStatus(
@@ -10808,20 +10936,30 @@ function TransferWorkerLoop()
 
             if TransferState.Mode == "Receiver" then
 
-                TransferReceiverDrainOpenTrade(
-                    25
-                )
+                local activeOpen =
+                    TransferActualTradeOpen()
+
+                if activeOpen == true then
+
+                    TransferReceiverDrainOpenTrade(
+                        25
+                    )
+                end
+
+                if TransferState.TradeCompleted == true
+                or TransferState.TradeResult == "Completed" then
+
+                    TransferWaitForLiveTradeClosed(4)
+                    TransferResetTradeRuntime()
+                end
             end
 
             if TransferState.Mode == "Sender" then
 
-                TransferWaitForLiveTradeClosed(8)
+                TransferWaitForLiveTradeClosed(4)
+                TransferResetTradeRuntime()
 
-                if TransferRawLiveTradeVisible() ~= true then
-                    TransferResetTradeRuntime()
-                end
-
-                task.wait(0.35)
+                task.wait(0.20)
 
                 if #TransferBuildMatches() <= 0 then
 
