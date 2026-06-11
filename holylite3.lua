@@ -4753,8 +4753,13 @@ end
 
 function TransferHudEscape(value)
 
+    if value == nil then
+        value =
+            ""
+    end
+
     value =
-        CleanText(value)
+        tostring(value)
 
     value =
         value:gsub("&", "&amp;")
@@ -4812,10 +4817,10 @@ end
 function TransferHudModeColor()
 
     if TransferState.Mode == "Receiver" then
-        return "56,189,248" -- cyan/blue = incoming
+        return "96,165,250" -- blue = incoming / receiving
     end
 
-    return "245,158,11" -- amber/orange = outgoing
+    return "250,204,21" -- gold = outgoing / sending
 end
 
 function TransferHudStateColor(value)
@@ -4826,8 +4831,9 @@ function TransferHudStateColor(value)
     if text == ""
     or text == "-"
     or text == "none"
-    or text == "idle" then
-        return "148,163,184"
+    or text == "idle"
+    or text == "stopped" then
+        return "203,213,225"
     end
 
     if text:find("declin", 1, true)
@@ -4845,7 +4851,7 @@ function TransferHudStateColor(value)
     or text:find("cooldown", 1, true)
     or text:find("delay", 1, true)
     or text:find("settling", 1, true)
-    or text:find("safe", 1, true) then
+    or text:find("no matching", 1, true) then
         return "250,204,21"
     end
 
@@ -4854,8 +4860,9 @@ function TransferHudStateColor(value)
     or text:find("completed", 1, true)
     or text:find("done", 1, true)
     or text:find("success", 1, true)
-    or text:find("ready", 1, true) then
-        return "134,239,172"
+    or text:find("ready", 1, true)
+    or text:find("safe", 1, true) then
+        return "74,222,128"
     end
 
     if text:find("adding", 1, true)
@@ -4866,7 +4873,7 @@ function TransferHudStateColor(value)
     or text:find("drain", 1, true)
     or text:find("equip", 1, true)
     or text:find("unfavorite", 1, true) then
-        return "103,232,249"
+        return "34,211,238"
     end
 
     return "255,255,255"
@@ -4991,22 +4998,36 @@ function TransferBuildHudText()
         {}
 
     local target =
-        CleanText(TransferState.TargetPlayerName)
+        TransferHudShortText(
+            TransferState.TargetPlayerName,
+            20
+        )
 
     if target == "" then
         target =
             "None"
     end
 
-    local modeText =
+    local isReceiver =
         TransferState.Mode == "Receiver"
-        and "RECEIVER"
-        or "SENDER"
+
+    local modeText =
+        isReceiver == true
+        and "Receiver"
+        or "Sender"
 
     local arrow =
-        TransferState.Mode == "Receiver"
+        isReceiver == true
         and " <- "
         or " -> "
+
+    local step =
+        TransferHudShortText(
+            TransferState.Step
+                or TransferState.Status
+                or "Idle",
+            22
+        )
 
     table.insert(
         lines,
@@ -5017,13 +5038,13 @@ function TransferBuildHudText()
         )
             .. TransferHudColor(
                 arrow,
-                "148,163,184",
+                "203,213,225",
                 false
             )
             .. TransferHudColor(
                 target,
                 "255,255,255",
-                false
+                true
             )
     )
 
@@ -5039,15 +5060,7 @@ function TransferBuildHudText()
         tonumber(TransferState.AddedThisBatch)
         or 0
 
-    local step =
-        TransferHudShortText(
-            TransferState.Step
-                or TransferState.Status
-                or "Idle",
-            24
-        )
-
-    if TransferState.Mode == "Receiver" then
+    if isReceiver == true then
 
         table.insert(
             lines,
@@ -5057,8 +5070,8 @@ function TransferBuildHudText()
                 true
             )
                 .. TransferHudColor(
-                    " · Received ",
-                    "148,163,184",
+                    " | Received: ",
+                    "203,213,225",
                     false
                 )
                 .. TransferHudColor(
@@ -5071,8 +5084,8 @@ function TransferBuildHudText()
         table.insert(
             lines,
             TransferHudColor(
-                "Ticket ",
-                "148,163,184",
+                "Ticket: ",
+                "203,213,225",
                 false
             )
                 .. TransferHudColor(
@@ -5080,13 +5093,13 @@ function TransferBuildHudText()
                     and "ON"
                     or "OFF",
                     TransferState.AutoAcceptTicket == true
-                    and "134,239,172"
+                    and "74,222,128"
                     or "248,113,113",
                     true
                 )
                 .. TransferHudColor(
-                    " · Confirm ",
-                    "148,163,184",
+                    " | Confirm: ",
+                    "203,213,225",
                     false
                 )
                 .. TransferHudColor(
@@ -5094,7 +5107,7 @@ function TransferBuildHudText()
                     and "ON"
                     or "OFF",
                     TransferState.AutoConfirm == true
-                    and "134,239,172"
+                    and "74,222,128"
                     or "248,113,113",
                     true
                 )
@@ -5110,8 +5123,8 @@ function TransferBuildHudText()
                 true
             )
                 .. TransferHudColor(
-                    " · Queue ",
-                    "148,163,184",
+                    " | Queue: ",
+                    "203,213,225",
                     false
                 )
                 .. TransferHudColor(
@@ -5120,16 +5133,17 @@ function TransferBuildHudText()
                         .. tostring(sendable),
                     added >= sendable
                     and sendable > 0
-                    and "134,239,172"
+                    and "74,222,128"
                     or "255,255,255",
                     true
                 )
         )
 
-        local batchLine =
+        table.insert(
+            lines,
             TransferHudColor(
-                "Batch ",
-                "148,163,184",
+                "Batch: ",
+                "203,213,225",
                 false
             )
                 .. TransferHudColor(
@@ -5138,46 +5152,15 @@ function TransferBuildHudText()
                     true
                 )
                 .. TransferHudColor(
-                    " · Sent ",
-                    "148,163,184",
+                    " | Sent: ",
+                    "203,213,225",
                     false
                 )
                 .. TransferHudColor(
                     tostring(TransferState.Sent or 0),
-                    "134,239,172",
+                    "74,222,128",
                     true
                 )
-
-        local tempLocked =
-            tonumber(lockStats.TempLocked)
-            or 0
-
-        local listed =
-            tonumber(lockStats.Listed)
-            or 0
-
-        if tempLocked > 0
-        or listed > 0 then
-
-            batchLine =
-                batchLine
-                .. TransferHudColor(
-                    " · Lock ",
-                    "148,163,184",
-                    false
-                )
-                .. TransferHudColor(
-                    tostring(tempLocked)
-                        .. "/"
-                        .. tostring(listed),
-                    "250,204,21",
-                    true
-                )
-        end
-
-        table.insert(
-            lines,
-            batchLine
         )
     end
 
@@ -5191,50 +5174,28 @@ function TransferBuildHudText()
             TransferGetOtherTradeState()
         )
 
+    local tradeText =
+        "Idle"
+
+    local tradeColor =
+        "203,213,225"
+
     if TransferState.TradeOpen == true
     or CleanText(TransferState.TradeId) ~= ""
     or localState ~= "Waiting"
     or otherState ~= "Waiting" then
 
-        table.insert(
-            lines,
-            TransferHudColor(
-                "Trade ",
-                "148,163,184",
-                false
-            )
-                .. TransferHudColor(
-                    tostring(localState),
-                    TransferHudStateColor(localState),
-                    true
-                )
-                .. TransferHudColor(
-                    " / ",
-                    "148,163,184",
-                    false
-                )
-                .. TransferHudColor(
-                    tostring(otherState),
-                    TransferHudStateColor(otherState),
-                    true
-                )
-        )
+        tradeText =
+            tostring(localState)
+                .. "/"
+                .. tostring(otherState)
 
-    else
-
-        table.insert(
-            lines,
-            TransferHudColor(
-                "Trade ",
-                "148,163,184",
-                false
+        tradeColor =
+            TransferHudStateColor(
+                tostring(localState)
+                    .. " "
+                    .. tostring(otherState)
             )
-                .. TransferHudColor(
-                    "Idle",
-                    "148,163,184",
-                    true
-                )
-        )
     end
 
     local buttonText =
@@ -5246,25 +5207,35 @@ function TransferBuildHudText()
     table.insert(
         lines,
         TransferHudColor(
-            "Button ",
-            "148,163,184",
+            "Trade: ",
+            "203,213,225",
             false
         )
+            .. TransferHudColor(
+                tradeText,
+                tradeColor,
+                true
+            )
+            .. TransferHudColor(
+                " | Button: ",
+                "203,213,225",
+                false
+            )
             .. TransferHudColor(
                 buttonText,
                 TransferHudButtonColor(buttonText),
                 true
             )
             .. TransferHudColor(
-                " · Value ",
-                "148,163,184",
+                " | Value: ",
+                "203,213,225",
                 false
             )
             .. TransferHudColor(
                 valueText,
                 valueText ~= "-"
-                and "134,239,172"
-                or "148,163,184",
+                and "74,222,128"
+                or "203,213,225",
                 true
             )
     )
@@ -5274,20 +5245,20 @@ function TransferBuildHudText()
             TransferState.StepDetail
                 or TransferState.LastResult
                 or "None",
-            46
+            38
         )
 
     table.insert(
         lines,
         TransferHudColor(
-            "Last ",
-            "148,163,184",
+            "Last: ",
+            "203,213,225",
             false
         )
             .. TransferHudColor(
                 lastText,
                 TransferHudStateColor(lastText),
-                false
+                true
             )
     )
 
@@ -5433,13 +5404,16 @@ function TransferCreateHud()
         UDim2.fromOffset(0, 0)
 
     label.Size =
-        UDim2.fromOffset(330, 120)
+        UDim2.fromOffset(365, 98)
 
     label.Font =
-        Enum.Font.GothamBold
+        Enum.Font.GothamMedium
 
     label.TextSize =
-        14
+        13
+
+    label.LineHeight =
+        1.08
 
     label.TextColor3 =
         Color3.fromRGB(255, 255, 255)
@@ -5448,7 +5422,7 @@ function TransferCreateHud()
         Color3.fromRGB(0, 0, 0)
 
     label.TextStrokeTransparency =
-        0.22
+        0.38
 
     label.TextXAlignment =
         Enum.TextXAlignment.Left
@@ -5469,7 +5443,7 @@ function TransferCreateHud()
         1000001
 
     label.Text =
-        '<font color="rgb(245,158,11)"><b>SENDER</b></font><font color="rgb(148,163,184)"> -> </font><font color="rgb(255,255,255)">None</font>\n<font color="rgb(148,163,184)">Idle · Queue 0/0</font>'
+        '<font color="rgb(250,204,21)"><b>Sender</b></font><font color="rgb(203,213,225)"> -> </font><font color="rgb(255,255,255)"><b>None</b></font>\n<font color="rgb(203,213,225)">Idle | Queue: </font><font color="rgb(255,255,255)"><b>0/0</b></font>'
 
     label.Parent =
         root
