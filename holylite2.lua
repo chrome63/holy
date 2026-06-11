@@ -10355,8 +10355,8 @@ function TransferRunSenderBatch()
         return false, tostring(unfavoriteMsg)
     end
 
-    TransferRefreshDropdowns()
-
+    -- Do not refresh UI dropdowns during active transfer loop.
+    -- It is slow and delays the next trade. Only rebuild inventory matches.
     matches =
         TransferBuildMatches()
 
@@ -10385,14 +10385,8 @@ function TransferRunSenderBatch()
             return false, "Ticket failed"
         end
 
-        TransferStartFastAcceptPump(
-            "Sender PreOpen",
-            0,
-            0,
-            30
-        )
-
-        -- Do not count a batch until the trade actually opens.
+        -- Do not accept before pets are added.
+        -- Sender must only open trade, then add pets, then accept.
         local tradeOpen =
             TransferWaitForTradeOpen(25)
 
@@ -10416,28 +10410,33 @@ function TransferRunSenderBatch()
 
     else
 
-        TransferStartFastAcceptPump(
+        TransferSetStatus(
             "Sender Reattached",
-            0,
-            0,
-            30
+            "Trade already open. Adding pets immediately."
         )
     end
 
     local openedButtonText =
         TransferGetTradeButtonText()
 
-    if openedButtonText == "Confirm"
-    or openedButtonText == "Confirmed"
-    or TransferConfirmWindowReady() == true then
+    local openedOwnItems =
+        tonumber(TransferState.TradeOwnItemCount)
+        or 0
+
+    if (
+        openedButtonText == "Confirm"
+        or openedButtonText == "Confirmed"
+        or TransferConfirmWindowReady() == true
+    )
+    and openedOwnItems > 0 then
 
         TransferUpdateTradeStatusText(
             "Recover Confirm",
-            "Trade opened already in confirm phase. Confirming before adding pets."
+            "Existing trade already has sender items. Finishing it before next batch."
         )
 
         TransferTryInstantFinalConfirm(
-            "Sender opened already-confirm-stage trade."
+            "Sender found existing confirm-stage trade with items."
         )
 
         local recoveredCompleted =
@@ -10456,6 +10455,25 @@ function TransferRunSenderBatch()
         return false, "Complete timeout"
     end
 
+    if (
+        openedButtonText == "Confirm"
+        or openedButtonText == "Confirmed"
+        or TransferConfirmWindowReady() == true
+    )
+    and openedOwnItems <= 0 then
+
+        print(
+            "[TRANSFER SEND]",
+            "Ignoring early confirm-stage UI before adding pets.",
+            "| button:",
+            tostring(openedButtonText),
+            "| ownItems:",
+            tostring(openedOwnItems),
+            "| tradeId:",
+            tostring(TransferState.TradeId)
+        )
+    end
+
     TransferState.Batch =
         TransferState.Batch + 1
 
@@ -10463,10 +10481,8 @@ function TransferRunSenderBatch()
         "Trade Open",
         "Batch "
             .. tostring(TransferState.Batch)
-            .. " opened. Adding pets + pre-accepting."
+            .. " opened. Adding pets now."
     )
-
-    -- Sender PreOpen pump is already watching the value label.
 
     local sentPets, added =
         TransferSendFilteredPets()
