@@ -6223,11 +6223,25 @@ function TransferMarkTradeDeclined(reason)
         return
     end
 
+    TransferCloseTradeSession(
+        reason,
+        "Declined"
+    )
+
+    local now =
+        os.clock()
+
     TransferState.TradeDeclined =
         true
 
     TransferState.TradeDeclineReason =
         reason
+
+    TransferState.TradeCompleted =
+        false
+
+    TransferState.TradeResult =
+        ""
 
     TransferState.TradeOpen =
         false
@@ -6256,8 +6270,35 @@ function TransferMarkTradeDeclined(reason)
     TransferState.TradeOtherItemCount =
         0
 
+    TransferState.SessionActive =
+        false
+
+    TransferState.SessionTradeId =
+        ""
+
+    TransferState.SessionPlayers =
+        {}
+
+    TransferState.SessionStates =
+        {}
+
+    TransferState.SessionOfferItems =
+        {}
+
+    TransferState.SessionOfferCounts =
+        {}
+
+    TransferState.DataReadyForNextAt =
+        now + 0.35
+
     TransferState.LastTradeUpdate =
-        os.clock()
+        now
+
+    TransferState.LiveTradeEmptySince =
+        0
+
+    TransferState.LastLiveTradeStalePrintAt =
+        0
 
     TransferSetStatus(
         "Trade Declined",
@@ -6266,7 +6307,8 @@ function TransferMarkTradeDeclined(reason)
 
     print(
         "[TRANSFER] Trade declined:",
-        reason
+        reason,
+        "| session cleared"
     )
 end
 
@@ -10248,18 +10290,84 @@ function TransferReceiverHasRecoverableLiveTrade()
         return false
     end
 
-    -- Incoming request has priority over stale LiveTrade recovery.
-    -- Do not reattach if a fresh trusted request is waiting.
+    -- Incoming request has priority. Never reattach old GUI over a fresh ticket.
     if TransferHasTrustedIncomingRequest() == true then
         return false
     end
 
+    -- Decline/completed states are terminal. Stale GUI must not recover them.
     if TransferState.TradeDeclined == true then
+
+        print(
+            "[TRANSFER RECOVERY]",
+            "Rejected LiveTrade recovery because trade is declined.",
+            "| reason:",
+            tostring(TransferState.TradeDeclineReason)
+        )
+
         return false
     end
 
     if TransferState.TradeCompleted == true
     or TransferState.TradeResult == "Completed" then
+
+        print(
+            "[TRANSFER RECOVERY]",
+            "Rejected LiveTrade recovery because trade is completed."
+        )
+
+        return false
+    end
+
+    local activeOpen, activeReason =
+        TransferActualTradeOpen()
+
+    if activeOpen ~= true then
+
+        local liveTrade =
+            TransferGetLiveTradeFrame()
+
+        if liveTrade ~= nil then
+
+            print(
+                "[TRANSFER RECOVERY]",
+                "Rejected stale LiveTrade because data is inactive.",
+                "| reason:",
+                tostring(activeReason),
+                "| button:",
+                tostring(TransferGetTradeButtonText()),
+                "| status:",
+                tostring(TransferGetTradeStatusText()),
+                "| otherItems:",
+                tostring(TransferGuiCountVisibleSideItems("OtherPlr")),
+                "| otherValue:",
+                tostring(TransferGuiGetSidePriceAmount("OtherPlr")),
+                "| sessionId:",
+                tostring(TransferState.SessionTradeId),
+                "| tradeId:",
+                tostring(TransferState.TradeId)
+            )
+        end
+
+        return false
+    end
+
+    local activeTradeId =
+        CleanText(
+            TransferState.SessionTradeId ~= ""
+            and TransferState.SessionTradeId
+            or TransferState.TradeId
+        )
+
+    if activeTradeId == "" then
+
+        print(
+            "[TRANSFER RECOVERY]",
+            "Rejected LiveTrade recovery because active data has no trade id.",
+            "| reason:",
+            tostring(activeReason)
+        )
+
         return false
     end
 
@@ -10299,60 +10407,70 @@ function TransferReceiverHasRecoverableLiveTrade()
     local otherReady =
         TransferReadyLabelIsAccepted("OtherPlr")
 
+    local activeButton =
+        buttonText == "Accept"
+        or buttonText == "Accepted"
+        or buttonText == "Confirm"
+        or buttonText == "Confirmed"
+        or cooldown ~= nil
+
+    if activeButton ~= true then
+        return false
+    end
+
     local hasSenderOffer =
         otherItems > 0
         or otherValue > 0
+        or tonumber(TransferState.TradeOtherItemCount) ~= nil
+            and tonumber(TransferState.TradeOtherItemCount) > 0
 
     local hasAcceptedOrConfirmStatus =
         statusText:find("has accepted", 1, true) ~= nil
         or statusText:find("has confirmed", 1, true) ~= nil
+        or statusText:find("waiting for both players to confirm", 1, true) ~= nil
         or statusText:find("confirm", 1, true) ~= nil
 
-    -- This is the stale state from your screenshot:
-    -- button countdown + "Waiting for both players to accept" + no items/value/ready labels.
-    -- Never recover/reattach to this.
-    if cooldown ~= nil
-    and hasSenderOffer ~= true
-    and myReady ~= true
-    and otherReady ~= true
-    and hasAcceptedOrConfirmStatus ~= true then
+    -- Stale declined GUI often leaves value/cooldown behind.
+    -- Recovery is only allowed when real data is active AND current UI has useful proof.
+    if hasSenderOffer == true
+    or myReady == true
+    or otherReady == true
+    or hasAcceptedOrConfirmStatus == true
+    or buttonText == "Confirm"
+    or buttonText == "Confirmed" then
 
         print(
             "[TRANSFER RECOVERY]",
-            "Rejected stale empty LiveTrade.",
+            "Recoverable active trade confirmed by data.",
+            "| reason:",
+            tostring(activeReason),
+            "| id:",
+            tostring(activeTradeId),
             "| button:",
             tostring(buttonText),
-            "| status:",
-            tostring(TransferGetTradeStatusText()),
-            "| myReady:",
-            tostring(TransferGetReadyLabelText("MyPlr")),
-            "| otherReady:",
-            tostring(TransferGetReadyLabelText("OtherPlr")),
             "| otherItems:",
             tostring(otherItems),
             "| otherValue:",
-            tostring(otherValue)
+            tostring(otherValue),
+            "| dataOtherItems:",
+            tostring(TransferState.TradeOtherItemCount)
         )
 
-        return false
-    end
-
-    if buttonText == "Confirm"
-    or buttonText == "Confirmed" then
         return true
     end
 
-    if hasSenderOffer == true then
-        return true
-    end
-
-    if otherReady == true then
-        return true
-    end
-
-    if hasAcceptedOrConfirmStatus == true then
-        return true
-    end
+    print(
+        "[TRANSFER RECOVERY]",
+        "Rejected active trade recovery because UI has no useful proof.",
+        "| reason:",
+        tostring(activeReason),
+        "| id:",
+        tostring(activeTradeId),
+        "| button:",
+        tostring(buttonText),
+        "| status:",
+        tostring(TransferGetTradeStatusText())
+    )
 
     return false
 end
@@ -12510,8 +12628,19 @@ function TransferRunReceiverBatch()
 
     if TransferHasTrustedIncomingRequest() ~= true then
 
-        recoveredLiveTrade =
-            TransferReceiverHasRecoverableLiveTrade()
+        local activeOpen =
+            TransferActualTradeOpen()
+
+        if activeOpen == true then
+
+            recoveredLiveTrade =
+                TransferReceiverHasRecoverableLiveTrade()
+
+        else
+
+            recoveredLiveTrade =
+                false
+        end
     end
 
     if recoveredLiveTrade == true then
