@@ -2891,6 +2891,11 @@ function TransferSessionSetState(side, state, source)
     TransferState.TradeStates[side] =
         state
 
+    TransferInferMissingTradeSide(
+        "state "
+            .. tostring(source)
+    )
+
     TransferState.TradeOpen =
         true
 
@@ -2954,6 +2959,11 @@ function TransferSessionRememberOfferItem(side, indexText, source)
 
     TransferState.TradeOfferCounts[side] =
         count
+
+    TransferInferMissingTradeSide(
+        "offer "
+            .. tostring(source)
+    )
 
     if tostring(side) == tostring(TransferState.LocalTradeSide) then
 
@@ -6246,6 +6256,10 @@ function TransferResolveTradeSidesFromPlayers(playersTable)
         end
     end
 
+    TransferInferMissingTradeSide(
+        "players"
+    )
+
     TransferSessionDebug(
         "[TRANSFER SESSION]",
         "Players",
@@ -6256,6 +6270,62 @@ function TransferResolveTradeSidesFromPlayers(playersTable)
         "| otherSide:",
         tostring(TransferState.OtherTradeSide)
     )
+end
+
+function TransferInferMissingTradeSide(source)
+
+    if TransferState.OtherTradeSide ~= nil then
+        return false
+    end
+
+    if TransferState.LocalTradeSide == nil then
+        return false
+    end
+
+    local localSideText =
+        tostring(TransferState.LocalTradeSide)
+
+    local maps = {
+        TransferState.TradeStates,
+        TransferState.SessionStates,
+        TransferState.TradeOfferCounts,
+        TransferState.SessionOfferCounts,
+        TransferState.SessionOfferItems,
+        TransferState.TradePlayers,
+        TransferState.SessionPlayers,
+    }
+
+    for _, map in ipairs(maps) do
+
+        if type(map) == "table" then
+
+            for side in pairs(map) do
+
+                if tostring(side) ~= localSideText then
+
+                    TransferState.OtherTradeSide =
+                        side
+
+                    TransferSessionDebug(
+                        "[TRANSFER SESSION]",
+                        "Inferred other side",
+                        "| epoch:",
+                        tostring(TransferState.TradeEpoch),
+                        "| localSide:",
+                        tostring(TransferState.LocalTradeSide),
+                        "| otherSide:",
+                        tostring(TransferState.OtherTradeSide),
+                        "| source:",
+                        tostring(source)
+                    )
+
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
 end
 
 function TransferGetTradeState(side)
@@ -10309,6 +10379,10 @@ function TransferActualTradeOpen()
     if TransferState.CompletedTradeIds[tradeId] ~= nil then
         return false, "Trade id already completed"
     end
+
+    TransferInferMissingTradeSide(
+        "actual open"
+    )
 
     local localState =
         TransferGetLocalTradeState()
