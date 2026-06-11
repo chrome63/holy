@@ -345,10 +345,10 @@ function SaveLiteUISettingsNow()
 
         AutoTeleportTradeWorld =
             LiteUIState.AutoTeleportTradeWorld == true,
-    }
 
-            AutoReconnectGarden =
+        AutoReconnectGarden =
             LiteUIState.AutoReconnectGarden == true,
+    }
 
     local ok, encoded =
         pcall(function()
@@ -31546,7 +31546,7 @@ if SettingsInterfaceBox then
         )
     end)
 
-        if IsGardenWorld() then
+    if IsGardenWorld() then
 
         SettingsInterfaceBox:AddToggle(
             "LiteAutoReconnectGarden",
