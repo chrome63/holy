@@ -8959,12 +8959,29 @@ function TransferUiStillFirstAcceptPhase()
             or ""
         ):lower()
 
-    return buttonText == "Accept"
-        and statusText:find(
+    local cooldown =
+        TransferParseCooldownText(
+            buttonText
+        )
+
+    local waitingAccept =
+        statusText:find(
             "waiting for both players to accept",
             1,
             true
         ) ~= nil
+
+    if waitingAccept ~= true then
+        return false
+    end
+
+    if buttonText == "Accept"
+    or buttonText == ""
+    or cooldown ~= nil then
+        return true
+    end
+
+    return false
 end
 
 function TransferIsConfirmPhase()
@@ -9081,6 +9098,10 @@ TransferLocalAcceptLocked = function()
         return true
     end
 
+    if TransferUiStillFirstAcceptPhase() == true then
+        return false
+    end
+
     local timing =
         TransferState.Timing
 
@@ -9095,7 +9116,6 @@ TransferLocalAcceptLocked = function()
 
     -- Critical:
     -- If we have not fired Accept yet, stale data/ready labels are not proof.
-    -- This fixes firstAccept=- | attempts=0 | reason=accept locked.
     if attempts <= 0 then
 
         if buttonText == "Accept"
@@ -9143,6 +9163,10 @@ TransferAcceptLikelyLockedFromButtonPhase = function()
 
     local buttonText =
         TransferGetTradeButtonText()
+
+    if TransferUiStillFirstAcceptPhase() == true then
+        return false
+    end
 
     -- Strong visible proof.
     if buttonText == "Accepted"
@@ -11183,8 +11207,15 @@ function TransferCanUseTradeValueForAccept()
         return true
     end
 
-    if buttonText == "Accept"
-    or TransferParseCooldownText(buttonText) ~= nil then
+    if buttonText == "Accept" then
+        return true
+    end
+
+    local cooldown =
+        TransferParseCooldownText(buttonText)
+
+    if cooldown ~= nil
+    and cooldown <= 0.25 then
         return true
     end
 
