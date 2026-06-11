@@ -3075,7 +3075,7 @@ function TransferDataTradeIsActive()
                 or os.clock()
             )
 
-        if age < 0.75 then
+        if age < 0.30 then
             return true, "Decline settling"
         end
 
@@ -6657,7 +6657,7 @@ function TransferMarkTradeDeclined(reason)
         {}
 
     TransferState.DataReadyForNextAt =
-        now + 0.35
+        now + 0.15
 
     TransferState.LastTradeUpdate =
         now
@@ -12840,14 +12840,14 @@ function TransferRunSenderBatch()
     and activeOpen ~= true then
 
         TransferSetStatus(
-            "Waiting Trade",
-            "Current trade still open: "
+            "Waiting Safe",
+            "Previous trade settling: "
                 .. tostring(hardTradeReason)
         )
 
         print(
             "[TRANSFER SEND GATE]",
-            "Sender batch held because trade is still open.",
+            "Sender waiting inside batch instead of backing off.",
             "| reason:",
             tostring(hardTradeReason),
             "| liveOpen:",
@@ -12866,7 +12866,30 @@ function TransferRunSenderBatch()
             tostring(TransferGetOtherTradeState())
         )
 
-        return false, "Request blocked"
+        local safeToSend =
+            TransferWaitUntilSafeToSendTicket(
+                2.25
+            )
+
+        if safeToSend ~= true then
+
+            TransferSetStatus(
+                "Blocked",
+                "Waiting previous trade. "
+                    .. tostring(hardTradeReason)
+            )
+
+            return false, "Request blocked"
+        end
+
+        hardInTrade =
+            false
+
+        activeOpen =
+            false
+
+        activeReason =
+            "Safe after settling"
     end
 
     if activeOpen == true then
