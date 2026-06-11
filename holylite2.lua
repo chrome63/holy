@@ -2199,6 +2199,9 @@ function SaveTransferSettingsNow(reason)
         HudY =
             tonumber(TransferState.HudY) or 180,
 
+        SkipLockedPets =
+            TransferState.SkipLockedPets ~= false,
+
         MinLevel =
             tonumber(TransferState.MinLevel) or 1,
 
@@ -2395,6 +2398,9 @@ function LoadTransferSettingsIntoState()
             tonumber(payload.HudY) or 180
         )
 
+    TransferState.SkipLockedPets =
+        payload.SkipLockedPets ~= false
+
     TransferState.MinLevel =
         math.max(
             1,
@@ -2580,6 +2586,9 @@ TransferState = {
     HudX = 260,
     HudY = 180,
     HudDragging = false,
+
+    SkipLockedPets = true,
+    SkipLockedPetsToggle = nil,
 
     LockStats = {
         Matched = 0,
@@ -4160,7 +4169,7 @@ function TransferBuildHudText()
             "Queue: "
                 .. tostring(added)
                 .. "/"
-                .. tostring(math.max(sendable, matched))
+                .. tostring(sendable)
         )
 
     else
@@ -4333,8 +4342,10 @@ function TransferCreateHud()
     root.Selectable =
         false
 
+    -- Only this small invisible strip catches input for dragging.
+    -- The text can visually extend below it without blocking clicks behind the HUD.
     root.Size =
-        UDim2.fromOffset(250, 120)
+        UDim2.fromOffset(125, 22)
 
     root.Position =
         UDim2.fromOffset(
@@ -4391,6 +4402,9 @@ function TransferCreateHud()
         false
 
     label.RichText =
+        false
+
+    label.Active =
         false
 
     label.ZIndex =
@@ -10545,7 +10559,8 @@ function TransferFilterUnlockedTradePets(matches)
                 pet and pet.UUID
             )
 
-        if locked == true then
+        if locked == true
+        and TransferState.SkipLockedPets ~= false then
 
             skipped =
                 skipped + 1
@@ -10601,6 +10616,12 @@ function TransferFilterUnlockedTradePets(matches)
                 pet
             )
         end
+    end
+
+    if TransferState.SkipLockedPets == false then
+
+        filtered =
+            matches or {}
     end
 
     stats.Sendable =
@@ -12341,6 +12362,34 @@ and IsGardenWorld() then
 
         QueueSaveTransferSettings(
             "transfer hud changed"
+        )
+    end)
+
+    TransferState.SkipLockedPetsToggle =
+        TransferActionsBox:AddToggle(
+            "HolyFreshSkipLockedPets",
+            {
+                Text = "Skip Locked Pets",
+                Default = TransferState.SkipLockedPets ~= false,
+                Tooltip = "Skips pets that cannot be traded right now.",
+            }
+        )
+
+    TransferState.SkipLockedPetsToggle:OnChanged(function(value)
+
+        TransferState.SkipLockedPets =
+            value == true
+
+        TransferBuildMatches()
+
+        TransferSetStatus(
+            TransferState.Status,
+            TransferState.LastResult,
+            true
+        )
+
+        QueueSaveTransferSettings(
+            "skip locked pets changed"
         )
     end)
 
