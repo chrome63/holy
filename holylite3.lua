@@ -31180,6 +31180,173 @@ if SettingsInterfaceBox then
 end
 
 --==================================================
+-- [10] THEME / SAVE MANAGER
+-- Silent autosave only.
+-- No visible Configuration groupbox.
+--==================================================
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+
+ThemeManager:SetFolder("HolySniperLite")
+SaveManager:SetFolder("HolySniperLite")
+
+SaveManager:IgnoreThemeSettings()
+ThemeManager:ApplyTheme("Dark")
+
+local oldTransferLoadingForMainLoad =
+    nil
+
+if IsGardenWorld() == true
+and TransferConfigState ~= nil then
+
+    oldTransferLoadingForMainLoad =
+        TransferConfigState.Loading
+
+    TransferConfigState.Loading =
+        true
+end
+
+pcall(function()
+    SaveManager:Load(
+        ConfigState.AutosaveName
+    )
+end)
+
+if oldTransferLoadingForMainLoad ~= nil
+and TransferConfigState ~= nil then
+
+    TransferConfigState.Loading =
+        oldTransferLoadingForMainLoad
+end
+
+if IsGardenWorld() == true then
+
+    local transferSaveOk, transferSaveResult =
+        pcall(function()
+
+            local manager =
+                loadstring(
+                    game:HttpGet(SAVE_MANAGER_URL)
+                )()
+
+            manager:SetLibrary(Library)
+            manager:IgnoreThemeSettings()
+            manager:SetFolder("HolySniperLite")
+
+            if type(manager.SetSubFolder) == "function" then
+
+                manager:SetSubFolder(
+                    "GardenTransfer"
+                )
+            end
+
+            if type(manager.SetIgnoreIndexes) == "function" then
+
+                manager:SetIgnoreIndexes({
+                    "MenuKeybind",
+
+                    -- Saved separately in HolySniperLite/UISettings.json.
+                    "LiteShowUIOnLoad",
+                    "LiteAutoTeleportTradeWorld",
+                    "LiteDPIScale",
+
+                    -- Runtime-only. Never autoload this as ON.
+                    "HolyFreshTransferEnabled",
+                })
+            end
+
+            return manager
+        end)
+
+    if transferSaveOk == true
+    and type(transferSaveResult) == "table" then
+
+        TransferSaveManager =
+            transferSaveResult
+
+        local oldTransferLoading =
+            TransferConfigState.Loading
+
+        TransferConfigState.Loading =
+            true
+
+        pcall(function()
+            TransferSaveManager:Load(
+                TransferConfigState.AutosaveName
+            )
+        end)
+
+        TransferState.TransferEnabled =
+            false
+
+        TransferState.IsTransferRunning =
+            false
+
+        if TransferState.TransferEnabledToggle
+        and type(TransferState.TransferEnabledToggle.SetValue) == "function" then
+
+            pcall(function()
+                TransferState.TransferEnabledToggle:SetValue(
+                    false
+                )
+            end)
+        end
+
+        TransferConfigState.Loading =
+            oldTransferLoading
+
+        if type(TransferSyncRuntimeStateFromControls) == "function" then
+
+            TransferSyncRuntimeStateFromControls(
+                "transfer savemanager load"
+            )
+        end
+
+        TransferConfigState.SaveManagerReady =
+            true
+
+        TransferConfigState.Dirty =
+            true
+
+        TransferConfigState.LastDirtyAt =
+            os.clock()
+
+        TransferConfigState.LastSaveReason =
+            "transfer savemanager startup"
+
+        print(
+            "[TRANSFER SAVE MANAGER]",
+            "Ready:",
+            tostring(TransferConfigState.AutosaveName)
+        )
+
+    else
+
+        warn(
+            "[TRANSFER SAVE MANAGER]",
+            "Failed to create Garden Transfer SaveManager:",
+            tostring(transferSaveResult)
+        )
+    end
+end
+
+if type(ResetLiteGatewayTransientInputAfterLoad) == "function" then
+
+    ResetLiteGatewayTransientInputAfterLoad()
+end
+
+ConfigState.Loading =
+    false
+
+RefreshLitePresenceLabels()
+
+if CanRunTradeSniper() then
+
+    StartLiteMarketTrackerWorker()
+end
+
+--==================================================
 -- [11] AUTOSAVE WORKER
 --==================================================
 
@@ -31297,6 +31464,7 @@ task.spawn(function()
         end
     end
 end)
+
 
 print("[HOLY SNIPER LITE] Filter storage ready.")
 print("[HOLY SNIPER LITE] Reset command: HOLY_LITE_RESET()")
