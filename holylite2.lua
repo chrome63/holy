@@ -7146,7 +7146,10 @@ function TransferIsLiveTradeOpen()
     local otherState =
         TransferGetOtherTradeState()
 
-    local hasRealTradeEvidence =
+    local lowerStatusText =
+        tostring(statusText or ""):lower()
+
+    local hasStrongTradeEvidence =
         CleanText(TransferState.TradeId) ~= ""
         or TransferState.TradeOpen == true
         or TransferState.LocalTradeSide ~= nil
@@ -7159,16 +7162,17 @@ function TransferIsLiveTradeOpen()
         or guiOtherValue > 0
         or myReadyText ~= ""
         or otherReadyText ~= ""
-        or hasPlayerName == true
         or localState == "Accepted"
         or localState == "Confirmed"
         or otherState == "Accepted"
         or otherState == "Confirmed"
-        or statusText:lower():find("accepted", 1, true) ~= nil
-        or statusText:lower():find("confirmed", 1, true) ~= nil
-        or statusText:lower():find("waiting for both players", 1, true) ~= nil
+        or buttonText == "Confirm"
+        or buttonText == "Confirmed"
+        or lowerStatusText:find("has accepted", 1, true) ~= nil
+        or lowerStatusText:find("has confirmed", 1, true) ~= nil
+        or lowerStatusText:find("waiting for both players to confirm", 1, true) ~= nil
 
-    if hasRealTradeEvidence == true then
+    if hasStrongTradeEvidence == true then
 
         TransferState.LiveTradeEmptySince =
             0
@@ -7441,9 +7445,11 @@ function TransferWaitUntilSafeToSendTicket(timeout)
 
             if stillInTrade ~= true then
 
+                TransferResetTradeRuntime()
+
                 print(
                     "[TRANSFER SEND GATE]",
-                    "Safe to send ticket.",
+                    "Safe to send ticket. Cleared stale trade runtime.",
                     "| waited:",
                     string.format("%.3fs", os.clock() - started),
                     "| reason:",
