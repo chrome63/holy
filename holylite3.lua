@@ -2246,35 +2246,39 @@ end
 function QueueSaveTransferSettings(reason)
 
     if TransferConfigState.Loading == true then
-        return
+        return false
     end
 
     TransferConfigState.Dirty =
         true
 
-    if TransferConfigState.SaveQueued == true then
-        return
-    end
-
     TransferConfigState.SaveQueued =
-        true
+        false
 
-    task.delay(0.35, function()
-
-        TransferConfigState.SaveQueued =
-            false
-
-        if TransferConfigState.Dirty ~= true then
-            return
-        end
-
-        TransferConfigState.Dirty =
-            false
-
+    local saveOk =
         SaveTransferSettingsNow(
             reason or "autosave"
         )
-    end)
+
+    TransferConfigState.Dirty =
+        false
+
+    print(
+        "[TRANSFER SAVE]",
+        tostring(saveOk),
+        "| reason:",
+        tostring(reason or "autosave"),
+        "| pets:",
+        tostring(TransferCompactValue(TransferState.SelectedPets)),
+        "| mutations:",
+        tostring(TransferCompactValue(TransferState.SelectedMutations)),
+        "| minBW:",
+        tostring(TransferState.MinBaseWeight),
+        "| maxBW:",
+        tostring(TransferState.MaxBaseWeight)
+    )
+
+    return saveOk
 end
 
 function LoadTransferSettingsIntoState()
@@ -14640,6 +14644,28 @@ and IsGardenWorld() then
     end)
 
     TransferApplyModeUI()
+
+    if TransferState.PetDropdown
+    and type(TransferState.PetDropdown.SetValue) == "function" then
+
+        pcall(function()
+            TransferState.PetDropdown:SetValue(
+                CopyTransferBoolMap(TransferState.SelectedPets)
+            )
+        end)
+    end
+
+    if TransferState.MutationDropdown
+    and type(TransferState.MutationDropdown.SetValue) == "function" then
+
+        pcall(function()
+            TransferState.MutationDropdown:SetValue(
+                CopyTransferBoolMap(TransferState.SelectedMutations)
+            )
+        end)
+    end
+
+    TransferBuildMatches()
 
     TransferConfigState.Loading =
         false
