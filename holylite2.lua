@@ -1195,7 +1195,9 @@ local SNIPER_FILTER_SAVE_FILE =
     "HolySniperLite/SniperFilters.json"
 
 local TRANSFER_SETTINGS_SAVE_FILE =
-    "HolySniperLite/TransferSettings.json"
+    "HolySniperLite/TransferSettings_"
+    .. tostring(LocalPlayer.UserId)
+    .. ".json"
 
 local SaveSniperFiltersNow =
     nil
@@ -2091,8 +2093,6 @@ local TransferState =
 
 local TransferConfigState = {
     Loading = true,
-    Dirty = false,
-    SaveQueued = false,
 }
 
 function CopyTransferBoolMap(source)
@@ -2146,6 +2146,27 @@ function SaveTransferSettingsNow(reason)
     end
 
     EnsureTransferSettingsFolder()
+
+    if TransferConfigState.Loading ~= true then
+
+        if TransferState.PetDropdown ~= nil then
+
+            TransferState.SelectedPets =
+                TransferReadDropdownSelectedMap(
+                    TransferState.PetDropdown,
+                    TransferState.SelectedPets
+                )
+        end
+
+        if TransferState.MutationDropdown ~= nil then
+
+            TransferState.SelectedMutations =
+                TransferReadDropdownSelectedMap(
+                    TransferState.MutationDropdown,
+                    TransferState.SelectedMutations
+                )
+        end
+    end
 
     local payload = {
         Mode =
@@ -2246,35 +2267,30 @@ end
 function QueueSaveTransferSettings(reason)
 
     if TransferConfigState.Loading == true then
-        return
+        return false
     end
 
-    TransferConfigState.Dirty =
-        true
-
-    if TransferConfigState.SaveQueued == true then
-        return
-    end
-
-    TransferConfigState.SaveQueued =
-        true
-
-    task.delay(0.35, function()
-
-        TransferConfigState.SaveQueued =
-            false
-
-        if TransferConfigState.Dirty ~= true then
-            return
-        end
-
-        TransferConfigState.Dirty =
-            false
-
+    local saveOk =
         SaveTransferSettingsNow(
             reason or "autosave"
         )
-    end)
+
+    print(
+        "[TRANSFER SAVE]",
+        tostring(saveOk),
+        "| reason:",
+        tostring(reason or "autosave"),
+        "| pets:",
+        tostring(TransferCompactValue(TransferState.SelectedPets)),
+        "| mutations:",
+        tostring(TransferCompactValue(TransferState.SelectedMutations)),
+        "| minBW:",
+        tostring(TransferState.MinBaseWeight),
+        "| maxBW:",
+        tostring(TransferState.MaxBaseWeight)
+    )
+
+    return saveOk
 end
 
 function LoadTransferSettingsIntoState()
@@ -2428,19 +2444,6 @@ function LoadTransferSettingsIntoState()
     return true
 end
 
-function MapHasTransferValue(map, value)
-
-    value =
-        CleanText(value)
-
-    if value == "" then
-        return false
-    end
-
-    return type(map) == "table"
-        and map[value] == true
-end
-
 function EnsureTransferDropdownChoice(choices, value)
 
     value =
@@ -2548,11 +2551,11 @@ TransferState = {
     TradeOtherItemCount = 0,
     TradeCompleted = false,
     TradeResult = "",
+    TradeProcessing = false,
+    TradeProcessingStartedAt = 0,
     TradeDeclined = false,
     TradeDeclineReason = "",
 
-    LastCompletedTradeId = "",
-    LastCompletedAt = 0,
     DataReadyForNextAt = 0,
     CompletedTradeIds = {},
 
@@ -2562,7 +2565,6 @@ TransferState = {
     RequestExpired = false,
     RequestExpiredReason = "",
 
-    RequestAcceptValue = nil,
     LastRequestAcceptValue = "unknown",
 
     IncomingRequestId = "",
@@ -2576,6 +2578,17 @@ TransferState = {
     LastGiftSenderName = "",
 
     LastTradeUpdate = 0,
+
+    TradeEpoch = 0,
+    SessionTradeId = "",
+    SessionActive = false,
+    SessionOpenedAt = 0,
+    SessionLastDataAt = 0,
+    SessionPlayers = {},
+    SessionStates = {},
+    SessionOfferItems = {},
+    SessionOfferCounts = {},
+
     LiveTradeEmptySince = 0,
     LastLiveTradeStalePrintAt = 0,
     TradeWatchConnected = false,
@@ -2584,11 +2597,9 @@ TransferState = {
 
     HudEnabled = true,
     HudGui = nil,
-    HudRoot = nil,
     HudLabel = nil,
     HudX = 260,
     HudY = 180,
-    HudDragging = false,
 
     SkipLockedPets = true,
     SkipLockedPetsToggle = nil,
@@ -2606,6 +2617,530 @@ TransferState = {
 }
 
 LoadTransferSettingsIntoState()
+
+function TransferSessionDebug(...)
+
+    if TransferState.DebugPrints == true then
+        print(...)
+    end
+end
+
+function TransferSessionClearMaps()
+
+    TransferState.SessionPlayers =
+        {}
+
+    TransferState.SessionStates =
+        {}
+
+    TransferState.SessionOfferItems =
+        {}
+
+    TransferState.SessionOfferCounts =
+        {}
+end
+
+function TransferStartTradeSession(tradeId, source)
+
+    tradeId =
+        CleanText(tradeId)
+
+    if tradeId == "" then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    if TransferState.SessionActive == true
+    and TransferState.SessionTradeId == tradeId then
+
+        TransferState.SessionLastDataAt =
+            now
+
+        TransferState.LastTradeUpdate =
+            now
+
+        TransferState.TradeId =
+            tradeId
+
+        return true
+    end
+
+    TransferState.TradeEpoch =
+        (tonumber(TransferState.TradeEpoch) or 0) + 1
+
+    TransferState.SessionTradeId =
+        tradeId
+
+    TransferState.SessionActive =
+        true
+
+    TransferState.SessionOpenedAt =
+        now
+
+    TransferState.SessionLastDataAt =
+        now
+
+    TransferSessionClearMaps()
+
+    TransferState.TradeId =
+        tradeId
+
+    TransferState.TradeOpen =
+        true
+
+    TransferState.TradeCompleted =
+        false
+
+    TransferState.TradeResult =
+        ""
+
+    TransferState.TradeProcessing =
+        false
+
+    TransferState.TradeProcessingStartedAt =
+        0
+
+    TransferState.TradeDeclined =
+        false
+
+    TransferState.TradeDeclineReason =
+        ""
+
+    TransferState.RequestBlocked =
+        false
+
+    TransferState.RequestBlockedReason =
+        ""
+
+    TransferState.LastTradeUpdate =
+        now
+
+    TransferSessionDebug(
+        "[TRANSFER SESSION]",
+        "Start",
+        "| epoch:",
+        tostring(TransferState.TradeEpoch),
+        "| id:",
+        tostring(tradeId),
+        "| source:",
+        tostring(source)
+    )
+
+    return true
+end
+
+function TransferCloseTradeSession(reason, result)
+
+    reason =
+        tostring(reason or "Closed")
+
+    result =
+        tostring(result or "")
+
+    local now =
+        os.clock()
+
+    local closingId =
+        CleanText(
+            TransferState.SessionTradeId ~= ""
+            and TransferState.SessionTradeId
+            or TransferState.TradeId
+        )
+
+    TransferState.SessionActive =
+        false
+
+    TransferState.SessionOpenedAt =
+        0
+
+    TransferState.SessionLastDataAt =
+        now
+
+    TransferState.TradeOpen =
+        false
+
+    TransferState.TradeProcessing =
+        false
+
+    TransferState.TradeProcessingStartedAt =
+        0
+
+    if result == "Completed" then
+
+        TransferState.TradeCompleted =
+            true
+
+        TransferState.TradeResult =
+            "Completed"
+
+        if closingId ~= "" then
+
+            TransferState.CompletedTradeIds[closingId] =
+                now
+        end
+
+    elseif result == "Declined" then
+
+        TransferState.TradeDeclined =
+            true
+
+        TransferState.TradeDeclineReason =
+            reason
+
+    elseif result == "Reset" then
+
+        TransferState.TradeCompleted =
+            false
+
+        TransferState.TradeResult =
+            ""
+
+        TransferState.TradeDeclined =
+            false
+
+        TransferState.TradeDeclineReason =
+            ""
+    end
+
+    TransferState.DataReadyForNextAt =
+        now + 0.25
+
+    TransferState.TradeId =
+        ""
+
+    TransferState.TradePlayers =
+        {}
+
+    TransferState.TradeStates =
+        {}
+
+    TransferState.TradeOfferCounts =
+        {}
+
+    TransferState.LocalTradeSide =
+        nil
+
+    TransferState.OtherTradeSide =
+        nil
+
+    TransferState.TradeOwnItemCount =
+        0
+
+    TransferState.TradeOtherItemCount =
+        0
+
+    TransferState.LastTradeUpdate =
+        now
+
+    TransferSessionClearMaps()
+
+    TransferSessionDebug(
+        "[TRANSFER SESSION]",
+        "Close",
+        "| epoch:",
+        tostring(TransferState.TradeEpoch),
+        "| id:",
+        tostring(closingId),
+        "| result:",
+        tostring(result),
+        "| reason:",
+        tostring(reason)
+    )
+
+    return true
+end
+
+function TransferTouchTradeSession(source)
+
+    local now =
+        os.clock()
+
+    TransferState.SessionLastDataAt =
+        now
+
+    TransferState.LastTradeUpdate =
+        now
+
+    if TransferState.SessionActive ~= true
+    and CleanText(TransferState.TradeId) ~= "" then
+
+        TransferStartTradeSession(
+            TransferState.TradeId,
+            source or "touch"
+        )
+    end
+end
+
+function TransferSessionSetState(side, state, source)
+
+    if side == nil then
+        return
+    end
+
+    side =
+        tostring(side)
+
+    state =
+        tostring(state or "None")
+
+    TransferTouchTradeSession(
+        source or "state"
+    )
+
+    local oldState =
+        TransferState.SessionStates[side]
+
+    TransferState.SessionStates[side] =
+        state
+
+    TransferState.TradeStates[side] =
+        state
+
+    TransferInferMissingTradeSide(
+        "state "
+            .. tostring(source)
+    )
+
+    TransferState.TradeOpen =
+        true
+
+    TransferState.LastTradeUpdate =
+        os.clock()
+
+    if tostring(oldState) ~= tostring(state) then
+
+        TransferSessionDebug(
+            "[TRANSFER SESSION]",
+            "State",
+            "| epoch:",
+            tostring(TransferState.TradeEpoch),
+            "| side:",
+            tostring(side),
+            "| old:",
+            tostring(oldState),
+            "| new:",
+            tostring(state),
+            "| source:",
+            tostring(source)
+        )
+    end
+end
+
+function TransferSessionRememberOfferItem(side, indexText, source)
+
+    if side == nil
+    or indexText == nil then
+        return 0
+    end
+
+    side =
+        tostring(side)
+
+    indexText =
+        tostring(indexText)
+
+    TransferTouchTradeSession(
+        source or "offer"
+    )
+
+    if type(TransferState.SessionOfferItems[side]) ~= "table" then
+        TransferState.SessionOfferItems[side] =
+            {}
+    end
+
+    TransferState.SessionOfferItems[side][indexText] =
+        true
+
+    local count =
+        0
+
+    for _ in pairs(TransferState.SessionOfferItems[side]) do
+        count =
+            count + 1
+    end
+
+    TransferState.SessionOfferCounts[side] =
+        count
+
+    TransferState.TradeOfferCounts[side] =
+        count
+
+    TransferInferMissingTradeSide(
+        "offer "
+            .. tostring(source)
+    )
+
+    if tostring(side) == tostring(TransferState.LocalTradeSide) then
+
+        TransferState.TradeOwnItemCount =
+            math.max(
+                tonumber(TransferState.TradeOwnItemCount) or 0,
+                count
+            )
+
+    elseif tostring(side) == tostring(TransferState.OtherTradeSide) then
+
+        TransferState.TradeOtherItemCount =
+            math.max(
+                tonumber(TransferState.TradeOtherItemCount) or 0,
+                count
+            )
+
+    elseif TransferState.LocalTradeSide == nil then
+
+        TransferState.TradeOwnItemCount =
+            math.max(
+                tonumber(TransferState.TradeOwnItemCount) or 0,
+                count
+            )
+    end
+
+    TransferState.TradeOpen =
+        true
+
+    TransferState.LastTradeUpdate =
+        os.clock()
+
+    TransferSessionDebug(
+        "[TRANSFER SESSION]",
+        "Offer",
+        "| epoch:",
+        tostring(TransferState.TradeEpoch),
+        "| side:",
+        tostring(side),
+        "| count:",
+        tostring(count),
+        "| source:",
+        tostring(source)
+    )
+
+    return count
+end
+
+function TransferDataTradeIsActive()
+
+    if TransferState.TradeCompleted == true
+    or TransferState.TradeResult == "Completed" then
+
+        local readyAt =
+            tonumber(TransferState.DataReadyForNextAt)
+            or 0
+
+        if os.clock() < readyAt then
+            return true, "Completed settling"
+        end
+
+        return false, "Completed"
+    end
+
+    if TransferState.TradeProcessing == true then
+
+        local startedAt =
+            tonumber(TransferState.TradeProcessingStartedAt)
+            or os.clock()
+
+        local age =
+            os.clock() - startedAt
+
+        if age < 18 then
+            return true, "Processing"
+        end
+
+        print(
+            "[TRANSFER PROCESSING]",
+            "Processing timed out, allowing recovery.",
+            "| age:",
+            string.format("%.2fs", age),
+            "| tradeId:",
+            tostring(TransferState.TradeId),
+            "| sessionId:",
+            tostring(TransferState.SessionTradeId),
+            "| local:",
+            tostring(TransferGetLocalTradeState()),
+            "| other:",
+            tostring(TransferGetOtherTradeState())
+        )
+
+        return false, "Processing timeout"
+    end
+
+    if TransferState.TradeDeclined == true then
+
+        local age =
+            os.clock()
+            - (
+                tonumber(TransferState.LastTradeUpdate)
+                or os.clock()
+            )
+
+        if age < 0.30 then
+            return true, "Decline settling"
+        end
+
+        return false, "Declined settled"
+    end
+
+    if TransferState.SessionActive == true
+    and CleanText(TransferState.SessionTradeId) ~= "" then
+        return true, "Session active"
+    end
+
+    if TransferState.TradeOpen == true
+    and CleanText(TransferState.TradeId) ~= "" then
+        return true, "Trade data active"
+    end
+
+    return false, "No active trade data"
+end
+
+function TransferMarkTradeProcessing(reason)
+
+    reason =
+        tostring(reason or "Trade processing.")
+
+    if TransferState.TradeCompleted == true
+    or TransferState.TradeResult == "Completed"
+    or TransferState.TradeDeclined == true then
+        return false
+    end
+
+    if TransferState.TradeProcessing ~= true then
+
+        TransferState.TradeProcessing =
+            true
+
+        TransferState.TradeProcessingStartedAt =
+            os.clock()
+    end
+
+    TransferState.LastTradeUpdate =
+        os.clock()
+
+    TransferSetStatus(
+        "Processing",
+        reason
+            .. " Waiting for server close/result."
+    )
+
+    print(
+        "[TRANSFER PROCESSING]",
+        reason,
+        "| tradeId:",
+        tostring(TransferState.TradeId),
+        "| sessionId:",
+        tostring(TransferState.SessionTradeId),
+        "| local:",
+        tostring(TransferGetLocalTradeState()),
+        "| other:",
+        tostring(TransferGetOtherTradeState()),
+        "| button:",
+        tostring(TransferGetTradeButtonText())
+    )
+
+    return true
+end
 
 function TransferDebugPrint(...)
 
@@ -2966,7 +3501,23 @@ end
 
 function TransferBuildMapFromDropdown(value)
 
-    local output = {}
+    local output =
+        {}
+
+    local function addChoice(choice)
+
+        choice =
+            CleanText(choice)
+
+        if choice == ""
+        or choice == "None"
+        or choice == "---" then
+            return
+        end
+
+        output[choice] =
+            true
+    end
 
     if type(value) == "table" then
 
@@ -2974,25 +3525,111 @@ function TransferBuildMapFromDropdown(value)
 
             if selected == true then
 
-                key =
-                    CleanText(key)
+                addChoice(
+                    key
+                )
 
-                if key ~= "" then
-                    output[key] =
-                        true
+            elseif type(selected) == "string"
+            or type(selected) == "number" then
+
+                addChoice(
+                    selected
+                )
+
+            elseif type(selected) == "table" then
+
+                local name =
+                    rawget(selected, "Text")
+                    or rawget(selected, "Name")
+                    or rawget(selected, "Value")
+                    or rawget(selected, "Title")
+                    or rawget(selected, 1)
+
+                local isSelected =
+                    rawget(selected, "Selected") == true
+                    or rawget(selected, "selected") == true
+                    or rawget(selected, "Checked") == true
+                    or rawget(selected, "checked") == true
+                    or rawget(selected, "Enabled") == true
+                    or rawget(selected, "enabled") == true
+
+                if isSelected == true then
+
+                    addChoice(
+                        name
+                    )
                 end
             end
         end
 
-    elseif type(value) == "string" then
+    elseif type(value) == "string"
+    or type(value) == "number" then
 
-        value =
-            CleanText(value)
+        addChoice(
+            value
+        )
+    end
 
-        if value ~= "" then
-            output[value] =
-                true
+    return output
+end
+
+function TransferReadDropdownSelectedMap(control, fallback)
+
+    local output =
+        {}
+
+    local function mergeMap(source)
+
+        local map =
+            TransferBuildMapFromDropdown(source)
+
+        for key, value in pairs(map) do
+
+            if value == true then
+                output[key] =
+                    true
+            end
         end
+    end
+
+    if control then
+
+        if type(control.GetValue) == "function" then
+
+            local ok, result =
+                pcall(function()
+                    return control:GetValue()
+                end)
+
+            if ok == true then
+                mergeMap(result)
+            end
+        end
+
+        pcall(function()
+            mergeMap(control.Value)
+        end)
+
+        pcall(function()
+            mergeMap(control.Selected)
+        end)
+
+        pcall(function()
+            mergeMap(control.SelectedValues)
+        end)
+
+        pcall(function()
+            mergeMap(control.CurrentValue)
+        end)
+    end
+
+    if TransferMapIsEmpty(output) == true
+    and type(fallback) == "table" then
+
+        output =
+            CopyTransferBoolMap(
+                fallback
+            )
     end
 
     return output
@@ -4510,9 +5147,6 @@ function TransferCreateHud()
     TransferState.HudGui =
         gui
 
-    TransferState.HudRoot =
-        root
-
     TransferState.HudLabel =
         label
 end
@@ -5559,7 +6193,14 @@ function TransferResolveTradeSidesFromPlayers(playersTable)
         return
     end
 
+    TransferTouchTradeSession(
+        "players"
+    )
+
     TransferState.TradePlayers =
+        playersTable
+
+    TransferState.SessionPlayers =
         playersTable
 
     TransferState.LocalTradeSide =
@@ -5568,20 +6209,130 @@ function TransferResolveTradeSidesFromPlayers(playersTable)
     TransferState.OtherTradeSide =
         nil
 
+    local localName =
+        CleanText(LocalPlayer and LocalPlayer.Name)
+
+    local localDisplay =
+        CleanText(LocalPlayer and LocalPlayer.DisplayName)
+
+    local localUserId =
+        tostring(LocalPlayer and LocalPlayer.UserId or "")
+
     for side, player in pairs(playersTable) do
 
+        local isLocal =
+            false
+
         if player == LocalPlayer then
+
+            isLocal =
+                true
+
+        elseif typeof(player) == "Instance"
+        and player:IsA("Player") then
+
+            isLocal =
+                player == LocalPlayer
+                or player.Name == localName
+                or player.DisplayName == localDisplay
+                or tostring(player.UserId) == localUserId
+
+        elseif type(player) == "table" then
+
+            isLocal =
+                CleanText(rawget(player, "Name")) == localName
+                or CleanText(rawget(player, "DisplayName")) == localDisplay
+                or tostring(rawget(player, "UserId") or rawget(player, "userId") or "") == localUserId
+
+        elseif type(player) == "string" then
+
+            isLocal =
+                CleanText(player) == localName
+                or CleanText(player) == localDisplay
+        end
+
+        if isLocal == true then
 
             TransferState.LocalTradeSide =
                 side
 
-        elseif typeof(player) == "Instance"
-        and player:IsA("Player") then
+        else
 
             TransferState.OtherTradeSide =
                 side
         end
     end
+
+    TransferInferMissingTradeSide(
+        "players"
+    )
+
+    TransferSessionDebug(
+        "[TRANSFER SESSION]",
+        "Players",
+        "| epoch:",
+        tostring(TransferState.TradeEpoch),
+        "| localSide:",
+        tostring(TransferState.LocalTradeSide),
+        "| otherSide:",
+        tostring(TransferState.OtherTradeSide)
+    )
+end
+
+function TransferInferMissingTradeSide(source)
+
+    if TransferState.OtherTradeSide ~= nil then
+        return false
+    end
+
+    if TransferState.LocalTradeSide == nil then
+        return false
+    end
+
+    local localSideText =
+        tostring(TransferState.LocalTradeSide)
+
+    local maps = {
+        TransferState.TradeStates,
+        TransferState.SessionStates,
+        TransferState.TradeOfferCounts,
+        TransferState.SessionOfferCounts,
+        TransferState.SessionOfferItems,
+        TransferState.TradePlayers,
+        TransferState.SessionPlayers,
+    }
+
+    for _, map in ipairs(maps) do
+
+        if type(map) == "table" then
+
+            for side in pairs(map) do
+
+                if tostring(side) ~= localSideText then
+
+                    TransferState.OtherTradeSide =
+                        side
+
+                    TransferSessionDebug(
+                        "[TRANSFER SESSION]",
+                        "Inferred other side",
+                        "| epoch:",
+                        tostring(TransferState.TradeEpoch),
+                        "| localSide:",
+                        tostring(TransferState.LocalTradeSide),
+                        "| otherSide:",
+                        tostring(TransferState.OtherTradeSide),
+                        "| source:",
+                        tostring(source)
+                    )
+
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
 end
 
 function TransferGetTradeState(side)
@@ -5612,6 +6363,11 @@ function TransferGetOtherTradeState()
 end
 
 function TransferResetTradeRuntime()
+
+    TransferCloseTradeSession(
+        "Runtime reset",
+        "Reset"
+    )
 
     TransferState.TradeOpen =
         false
@@ -5677,6 +6433,130 @@ function TransferResetTradeRuntime()
         0
 end
 
+function TransferHardResetRun(reason)
+
+    reason =
+        tostring(reason or "manual reset")
+
+    TransferState.WorkerToken =
+        (
+            tonumber(TransferState.WorkerToken)
+            or 0
+        )
+        + 1
+
+    TransferState.IsTransferRunning =
+        false
+
+    TransferState.IsAddingPets =
+        false
+
+    TransferResetTradeRuntime()
+
+    TransferState.Batch =
+        0
+
+    TransferState.AddedThisBatch =
+        0
+
+    TransferState.ExpectedThisBatch =
+        0
+
+    TransferState.Sent =
+        0
+
+    TransferState.MatchedPets =
+        {}
+
+    TransferState.Timing =
+        {}
+
+    TransferState.IncomingRequestId =
+        ""
+
+    TransferState.IncomingRequestPlayerName =
+        ""
+
+    TransferState.IncomingRequestAt =
+        0
+
+    TransferState.IncomingRequestHandled =
+        {}
+
+    TransferState.LastRequestAcceptValue =
+        "unknown"
+
+    TransferState.RequestBlocked =
+        false
+
+    TransferState.RequestBlockedReason =
+        ""
+
+    TransferState.RequestExpired =
+        false
+
+    TransferState.RequestExpiredReason =
+        ""
+
+    TransferState.IncomingGiftHandled =
+        {}
+
+    TransferState.LastGiftId =
+        ""
+
+    TransferState.LastGiftPetName =
+        ""
+
+    TransferState.LastGiftSenderName =
+        ""
+
+    TransferState.LockStats =
+        {
+            Matched = 0,
+            Sendable = 0,
+            TempLocked = 0,
+            Listed = 0,
+            Other = 0,
+            NextUnlock = 0,
+        }
+
+    local matches =
+        {}
+
+    if type(TransferBuildMatches) == "function" then
+
+        matches =
+            TransferBuildMatches()
+            or {}
+    end
+
+    TransferState.LockStats.Matched =
+        #matches
+
+    TransferState.LockStats.Sendable =
+        #matches
+
+    TransferSetStatus(
+        "Idle",
+        "Transfer run reset: "
+            .. tostring(reason),
+        true
+    )
+
+    print(
+        "[TRANSFER RESET]",
+        "Hard reset run.",
+        "| reason:",
+        tostring(reason),
+        "| matches:",
+        tostring(#matches),
+        "| workerToken:",
+        tostring(TransferState.WorkerToken)
+    )
+
+    TransferUpdateHud()
+end
+
 function TransferUpdateTradeStatusText(status, result)
 
     local localState =
@@ -5711,11 +6591,25 @@ function TransferMarkTradeDeclined(reason)
         return
     end
 
+    TransferCloseTradeSession(
+        reason,
+        "Declined"
+    )
+
+    local now =
+        os.clock()
+
     TransferState.TradeDeclined =
         true
 
     TransferState.TradeDeclineReason =
         reason
+
+    TransferState.TradeCompleted =
+        false
+
+    TransferState.TradeResult =
+        ""
 
     TransferState.TradeOpen =
         false
@@ -5744,8 +6638,35 @@ function TransferMarkTradeDeclined(reason)
     TransferState.TradeOtherItemCount =
         0
 
+    TransferState.SessionActive =
+        false
+
+    TransferState.SessionTradeId =
+        ""
+
+    TransferState.SessionPlayers =
+        {}
+
+    TransferState.SessionStates =
+        {}
+
+    TransferState.SessionOfferItems =
+        {}
+
+    TransferState.SessionOfferCounts =
+        {}
+
+    TransferState.DataReadyForNextAt =
+        now + 0.15
+
     TransferState.LastTradeUpdate =
-        os.clock()
+        now
+
+    TransferState.LiveTradeEmptySince =
+        0
+
+    TransferState.LastLiveTradeStalePrintAt =
+        0
 
     TransferSetStatus(
         "Trade Declined",
@@ -5754,7 +6675,8 @@ function TransferMarkTradeDeclined(reason)
 
     print(
         "[TRANSFER] Trade declined:",
-        reason
+        reason,
+        "| session cleared"
     )
 end
 
@@ -5842,6 +6764,9 @@ function TransferMarkTradeCompleted(reason)
     reason =
         tostring(reason or "Completed")
 
+    local reasonLower =
+        reason:lower()
+
     local liveTrade =
         nil
 
@@ -5854,6 +6779,9 @@ function TransferMarkTradeCompleted(reason)
         type(TransferGetTradeButtonText) == "function"
         and TransferGetTradeButtonText()
         or ""
+
+    local buttonLower =
+        tostring(buttonText or ""):lower()
 
     local localState =
         type(TransferGetLocalTradeState) == "function"
@@ -5871,14 +6799,21 @@ function TransferMarkTradeCompleted(reason)
     local otherProcessing =
         tostring(otherState) == "Processing"
 
+    local authoritativeCompletion =
+        reason:find("AddToHistory Completed", 1, true) ~= nil
+        or reason:find("UpdateTradeState closed after processing", 1, true) ~= nil
+        or reasonLower:find("trade completed", 1, true) ~= nil
+
     local finalButton =
         buttonText == "Confirmed"
         or buttonText == ""
+        or buttonLower:find("processing", 1, true) ~= nil
 
     local manualVisibleConfirm =
         reason:find("Both visible trade sides confirmed", 1, true) ~= nil
 
     if liveTrade ~= nil
+    and authoritativeCompletion ~= true
     and localProcessing ~= true
     and otherProcessing ~= true
     and finalButton ~= true
@@ -5904,17 +6839,28 @@ function TransferMarkTradeCompleted(reason)
             "| other:",
             tostring(otherState),
             "| tradeId:",
-            tostring(TransferState.TradeId)
+            tostring(TransferState.TradeId),
+            "| sessionId:",
+            tostring(TransferState.SessionTradeId)
         )
 
         return
     end
 
     local completedTradeId =
-        CleanText(TransferState.TradeId)
+        CleanText(
+            TransferState.TradeId ~= ""
+            and TransferState.TradeId
+            or TransferState.SessionTradeId
+        )
 
     local now =
         os.clock()
+
+    TransferCloseTradeSession(
+        reason,
+        "Completed"
+    )
 
     TransferState.TradeCompleted =
         true
@@ -5922,25 +6868,24 @@ function TransferMarkTradeCompleted(reason)
     TransferState.TradeResult =
         "Completed"
 
+    TransferState.TradeProcessing =
+        false
+
+    TransferState.TradeProcessingStartedAt =
+        0
+
     TransferState.TradeOpen =
         false
 
     if completedTradeId ~= "" then
 
-        TransferState.LastCompletedTradeId =
-            completedTradeId
-
         TransferState.CompletedTradeIds[completedTradeId] =
             now
     end
 
-    TransferState.LastCompletedAt =
-        now
-
-    -- Data is authoritative. Once completed, do not let stale UI/state
-    -- make the next batch attach to the old trade.
+    -- Longer settle after Processing so SendRequest does not fire while server is still closing.
     TransferState.DataReadyForNextAt =
-        now + 0.35
+        now + 1.25
 
     TransferState.TradeId =
         ""
@@ -5977,18 +6922,18 @@ function TransferMarkTradeCompleted(reason)
 
     TransferSetStatus(
         "Trade Completed",
-        tostring(reason or "Completed")
+        tostring(reason)
             .. " | id="
             .. tostring(completedTradeId)
     )
 
     print(
         "[TRANSFER] Trade completed:",
-        tostring(reason or "Completed"),
+        tostring(reason),
         "| id:",
         tostring(completedTradeId),
         "| nextReadyIn:",
-        "0.35s"
+        "1.25s"
     )
 end
 
@@ -6002,8 +6947,117 @@ function TransferUpdateTradeTrackerFromPayload(payload)
         rawget(payload, "id")
 
     if directId ~= nil then
-        TransferState.TradeId =
-            tostring(directId)
+
+        local directText =
+            CleanText(directId)
+
+        local directStatus =
+            rawget(payload, "status")
+            or rawget(payload, "Status")
+
+        local directResult =
+            type(directStatus) == "table"
+            and (
+                rawget(directStatus, "result")
+                or rawget(directStatus, "Result")
+            )
+            or nil
+
+        if directText ~= ""
+        and tostring(directResult) ~= "Completed" then
+
+            if TransferState.SessionActive == true then
+
+                if TransferState.SessionTradeId == "" then
+
+                    TransferState.SessionTradeId =
+                        directText
+
+                    TransferState.TradeId =
+                        directText
+
+                    TransferState.SessionLastDataAt =
+                        os.clock()
+
+                    TransferState.LastTradeUpdate =
+                        os.clock()
+
+                elseif TransferState.SessionTradeId == directText then
+
+                    TransferState.TradeId =
+                        directText
+
+                    TransferState.SessionLastDataAt =
+                        os.clock()
+
+                    TransferState.LastTradeUpdate =
+                        os.clock()
+
+                else
+
+                    local sessionOfferCount =
+                        0
+
+                    for _, offerMap in pairs(TransferState.SessionOfferItems or {}) do
+
+                        if type(offerMap) == "table" then
+
+                            for _ in pairs(offerMap) do
+                                sessionOfferCount =
+                                    sessionOfferCount + 1
+                            end
+                        end
+                    end
+
+                    local sessionHasEvidence =
+                        TransferState.LocalTradeSide ~= nil
+                        or TransferState.OtherTradeSide ~= nil
+                        or sessionOfferCount > 0
+                        or (
+                            tonumber(TransferState.TradeOwnItemCount)
+                            or 0
+                        ) > 0
+                        or (
+                            tonumber(TransferState.TradeOtherItemCount)
+                            or 0
+                        ) > 0
+
+                    if sessionHasEvidence == true then
+
+                        TransferSessionDebug(
+                            "[TRANSFER SESSION]",
+                            "Ignored payload id because active session already has evidence.",
+                            "| epoch:",
+                            tostring(TransferState.TradeEpoch),
+                            "| activeId:",
+                            tostring(TransferState.SessionTradeId),
+                            "| payloadId:",
+                            tostring(directText),
+                            "| offers:",
+                            tostring(sessionOfferCount),
+                            "| own:",
+                            tostring(TransferState.TradeOwnItemCount),
+                            "| other:",
+                            tostring(TransferState.TradeOtherItemCount)
+                        )
+
+                    else
+
+                        TransferStartTradeSession(
+                            directText,
+                            "payload id no evidence"
+                        )
+                    end
+                end
+
+            else
+
+                TransferStartTradeSession(
+                    directText,
+                    "payload id"
+                )
+            end
+        end
     end
 
     local playersTable =
@@ -6021,8 +7075,12 @@ function TransferUpdateTradeTrackerFromPayload(payload)
     if type(statesTable) == "table" then
 
         for side, state in pairs(statesTable) do
-            TransferState.TradeStates[side] =
-                tostring(state)
+
+            TransferSessionSetState(
+                side,
+                state,
+                "payload states"
+            )
         end
     end
 
@@ -6031,6 +7089,10 @@ function TransferUpdateTradeTrackerFromPayload(payload)
         or rawget(payload, "Offers")
 
     if type(directOffers) == "table" then
+
+        TransferTouchTradeSession(
+            "payload offers"
+        )
 
         TransferState.TradeOpen =
             true
@@ -6132,33 +7194,17 @@ function TransferUpdateTradeTrackerFromPayload(payload)
                 local oldState =
                     TransferState.TradeStates[stateSide]
 
-                TransferState.TradeStates[stateSide] =
-                    tostring(value)
-
-                TransferState.LastTradeUpdate =
-                    os.clock()
+                TransferSessionSetState(
+                    stateSide,
+                    value,
+                    "row state"
+                )
                 
                 if tostring(value) == "Processing" then
 
-                    local localSideText =
-                        tostring(TransferState.LocalTradeSide or "")
-
-                    -- Only our own side Processing means this client is done.
-                    -- Other side Processing means the other player confirmed,
-                    -- but we may still need to press Confirm locally.
-                    if localSideText ~= ""
-                    and tostring(stateSide) == localSideText then
-
-                        TransferMarkTradeCompleted(
-                            "Local DataStream state Processing."
-                        )
-
-                    elseif TransferGetLocalTradeState() == "Processing" then
-
-                        TransferMarkTradeCompleted(
-                            "Local state Processing."
-                        )
-                    end
+                    TransferMarkTradeProcessing(
+                        "DataStream state Processing."
+                    )
                 end
 
                 if tostring(oldState) ~= tostring(value) then
@@ -6194,51 +7240,14 @@ function TransferUpdateTradeTrackerFromPayload(payload)
             if offerSide
             and indexText then
 
-                local index =
-                    tonumber(indexText)
+                TransferState.TradeOpen =
+                    true
 
-                if index then
-
-                    local count =
-                        index
-
-                    TransferState.TradeOpen =
-                        true
-
-                    TransferState.TradeOfferCounts[offerSide] =
-                        math.max(
-                            tonumber(TransferState.TradeOfferCounts[offerSide]) or 0,
-                            count
-                        )
-
-                    if tostring(offerSide) == tostring(TransferState.LocalTradeSide) then
-
-                        TransferState.TradeOwnItemCount =
-                            math.max(
-                                tonumber(TransferState.TradeOwnItemCount) or 0,
-                                count
-                            )
-
-                    elseif tostring(offerSide) == tostring(TransferState.OtherTradeSide) then
-
-                        TransferState.TradeOtherItemCount =
-                            math.max(
-                                tonumber(TransferState.TradeOtherItemCount) or 0,
-                                count
-                            )
-
-                    elseif TransferState.LocalTradeSide == nil then
-
-                        TransferState.TradeOwnItemCount =
-                            math.max(
-                                tonumber(TransferState.TradeOwnItemCount) or 0,
-                                count
-                            )
-                    end
-
-                    TransferState.LastTradeUpdate =
-                        os.clock()
-                end
+                TransferSessionRememberOfferItem(
+                    offerSide,
+                    indexText,
+                    "row offer"
+                )
             end
 
             if type(value) == "table" then
@@ -6246,6 +7255,134 @@ function TransferUpdateTradeTrackerFromPayload(payload)
             end
         end
     end
+end
+
+function TransferShouldIgnoreEarlyNilClose(source)
+
+    source =
+        tostring(source or "nil close")
+
+    if TransferState.TradeCompleted == true
+    or TransferState.TradeResult == "Completed"
+    or TransferState.TradeProcessing == true
+    or TransferState.TradeDeclined == true then
+        return false
+    end
+
+    local openedAt =
+        tonumber(TransferState.SessionOpenedAt)
+        or 0
+
+    if openedAt <= 0 then
+        return false
+    end
+
+    local age =
+        os.clock() - openedAt
+
+    if age > 1.35 then
+        return false
+    end
+
+    local localState =
+        tostring(TransferGetLocalTradeState() or "None")
+
+    local otherState =
+        tostring(TransferGetOtherTradeState() or "None")
+
+    if localState ~= "None"
+    or otherState ~= "None" then
+        return false
+    end
+
+    local ownItems =
+        tonumber(TransferState.TradeOwnItemCount)
+        or 0
+
+    local otherItems =
+        tonumber(TransferState.TradeOtherItemCount)
+        or 0
+
+    if ownItems > 0
+    or otherItems > 0 then
+        return false
+    end
+
+    local guiOwnItems =
+        0
+
+    local guiOtherItems =
+        0
+
+    local guiOwnValue =
+        0
+
+    local guiOtherValue =
+        0
+
+    if type(TransferGuiCountVisibleSideItems) == "function" then
+
+        pcall(function()
+            guiOwnItems =
+                tonumber(
+                    TransferGuiCountVisibleSideItems("MyPlr")
+                )
+                or 0
+        end)
+
+        pcall(function()
+            guiOtherItems =
+                tonumber(
+                    TransferGuiCountVisibleSideItems("OtherPlr")
+                )
+                or 0
+        end)
+    end
+
+    if type(TransferGuiGetSidePriceAmount) == "function" then
+
+        pcall(function()
+            guiOwnValue =
+                tonumber(
+                    TransferGuiGetSidePriceAmount("MyPlr")
+                )
+                or 0
+        end)
+
+        pcall(function()
+            guiOtherValue =
+                tonumber(
+                    TransferGuiGetSidePriceAmount("OtherPlr")
+                )
+                or 0
+        end)
+    end
+
+    if guiOwnItems > 0
+    or guiOtherItems > 0
+    or guiOwnValue > 0
+    or guiOtherValue > 0 then
+        return false
+    end
+
+    print(
+        "[TRANSFER NIL CLOSE IGNORED]",
+        "Ignored early nil close from fresh empty trade.",
+        "| source:",
+        tostring(source),
+        "| age:",
+        string.format("%.3fs", age),
+        "| tradeId:",
+        tostring(TransferState.TradeId),
+        "| sessionId:",
+        tostring(TransferState.SessionTradeId),
+        "| local:",
+        tostring(localState),
+        "| other:",
+        tostring(otherState)
+    )
+
+    return true
 end
 
 function TransferStartTradeWatchers()
@@ -6409,74 +7546,56 @@ function TransferStartTradeWatchers()
 
             if tradeId == nil then
 
+                local localState =
+                    TransferGetLocalTradeState()
+
+                local otherState =
+                    TransferGetOtherTradeState()
+
+                if TransferShouldIgnoreEarlyNilClose(
+                    "UpdateTradeState nil"
+                ) == true then
+                    return
+                end
+
                 if TransferState.TradeCompleted == true
                 or TransferState.TradeResult == "Completed"
-                or TransferGetLocalTradeState() == "Processing" then
+                or localState == "Processing"
+                or otherState == "Processing" then
+
+                    TransferCloseTradeSession(
+                        "UpdateTradeState nil after processing.",
+                        "Completed"
+                    )
 
                     TransferMarkTradeCompleted(
-                        "UpdateTradeState closed after local processing."
+                        "UpdateTradeState closed after processing."
                     )
 
                     return
                 end
 
-                if TransferState.TradeOpen == true then
+                if TransferState.SessionActive == true
+                or TransferState.TradeOpen == true
+                or CleanText(TransferState.TradeId) ~= "" then
 
-                    local localState =
-                        TransferGetLocalTradeState()
+                    TransferCloseTradeSession(
+                        "UpdateTradeState nil.",
+                        "Declined"
+                    )
 
-                    local otherState =
-                        TransferGetOtherTradeState()
-
-                    local ownItems =
-                        tonumber(TransferState.TradeOwnItemCount)
-                        or 0
-
-                    local otherItems =
-                        tonumber(TransferState.TradeOtherItemCount)
-                        or 0
-
-                    -- If the UI/session closes before any meaningful trade data,
-                    -- it is likely a real cancelled/declined trade.
-                    if localState == "None"
-                    and otherState == "None"
-                    and ownItems <= 0
-                    and otherItems <= 0 then
-
-                        TransferMarkTradeDeclined(
-                            "Trade closed before any offer/state data."
-                        )
-
-                    else
-
-                        print(
-                            "[TRANSFER DATA CLOSE]",
-                            "UpdateTradeState nil ignored; waiting for data result.",
-                            "| tradeId:",
-                            tostring(TransferState.TradeId),
-                            "| local:",
-                            tostring(localState),
-                            "| other:",
-                            tostring(otherState),
-                            "| ownItems:",
-                            tostring(ownItems),
-                            "| otherItems:",
-                            tostring(otherItems)
-                        )
-                    end
+                    TransferMarkTradeDeclined(
+                        "Trade closed by UpdateTradeState nil."
+                    )
                 end
 
                 return
             end
 
-            TransferState.TradeId =
-                tostring(tradeId)
-
-            -- Do NOT mark TradeOpen from tradeId alone.
-            -- The request popup can exist before LiveTrade/DataStream offer data is ready.
-            -- TradeOpen is set only by TransferWaitForTradeOpen() after real UI/data appears.
-            TransferState.LastTradeUpdate =
-                os.clock()
+            TransferStartTradeSession(
+                tostring(tradeId),
+                "UpdateTradeState"
+            )
         end)
     end
 
@@ -6874,20 +7993,72 @@ function TransferWaitForTradeCompleted(timeout)
     local started =
         os.clock()
 
+    local lastStatusAt =
+        0
+
     while IsHolyLiteCurrentRun()
     and TransferState.TransferEnabled == true do
 
         if TransferState.TradeCompleted == true
-        or TransferState.TradeResult == "Completed"
-        or TransferGetLocalTradeState() == "Processing" then
-            return true
+        or TransferState.TradeResult == "Completed" then
+
+            local readyAt =
+                tonumber(TransferState.DataReadyForNextAt)
+                or 0
+
+            if os.clock() >= readyAt then
+                return true
+            end
+
+            TransferSetStatus(
+                "Waiting Data Close",
+                "Completed. Waiting server settle before next ticket."
+            )
+
+            task.wait(0.05)
+
+            continue
+        end
+
+        local buttonText =
+            tostring(
+                TransferGetTradeButtonText()
+                or ""
+            )
+
+        local buttonLower =
+            buttonText:lower()
+
+        local isProcessing =
+            TransferGetLocalTradeState() == "Processing"
+            or TransferGetOtherTradeState() == "Processing"
+            or buttonLower:find("processing", 1, true) ~= nil
+            or TransferState.TradeProcessing == true
+
+        if isProcessing == true then
+
+            TransferMarkTradeProcessing(
+                "Waiting for Processing to finish."
+            )
+
+            if os.clock() - lastStatusAt >= 0.35 then
+
+                lastStatusAt =
+                    os.clock()
+
+                TransferSetStatus(
+                    "Processing",
+                    "Waiting for AddToHistory / UpdateTradeState close. Button="
+                        .. tostring(buttonText)
+                )
+            end
         end
 
         if os.clock() - started >= timeout then
             return false
         end
 
-        task.wait(0.2)
+        task.wait(0.1)
     end
 
     return false
@@ -7235,44 +8406,6 @@ function TransferIsLiveTradeOpen()
     return false
 end
 
-function TransferMarkClosedIfLiveTradeGone(reason)
-
-    -- Data-authoritative transfer:
-    -- UI disappearing/flickering must NOT mark a trade declined.
-    -- Actual decline is handled by Notification / UpdateTradeState nil / manual Decline.
-
-    if TransferState.TradeDeclined == true then
-        return true
-    end
-
-    if TransferState.TradeCompleted == true
-    or TransferState.TradeResult == "Completed" then
-        return false
-    end
-
-    if CleanText(TransferState.TradeId) ~= "" then
-
-        print(
-            "[TRANSFER UI CLOSE IGNORED]",
-            tostring(reason or "LiveTrade closed/flickered."),
-            "| tradeId:",
-            tostring(TransferState.TradeId),
-            "| local:",
-            tostring(TransferGetLocalTradeState()),
-            "| other:",
-            tostring(TransferGetOtherTradeState()),
-            "| ownItems:",
-            tostring(TransferState.TradeOwnItemCount),
-            "| otherItems:",
-            tostring(TransferState.TradeOtherItemCount)
-        )
-
-        return false
-    end
-
-    return false
-end
-
 function TransferWaitForLiveTradeClosed(timeout)
 
     timeout =
@@ -7342,79 +8475,41 @@ function TransferWaitForLiveTradeClosed(timeout)
     return false
 end
 
-function TransferStateIsInTradeLike(state)
-
-    state =
-        tostring(state or "")
-
-    return state == "Accepted"
-        or state == "Confirmed"
-        or state == "Processing"
-end
-
 function TransferIsInTradeHard()
 
+    local active, reason =
+        TransferDataTradeIsActive()
+
+    if active == true then
+        return true, tostring(reason)
+    end
+
+    -- Data-authoritative mode:
+    -- stale TradingUI.LiveTrade is not allowed to block new tickets.
     if TransferIsLiveTradeOpen() == true then
-        return true, "LiveTrade open"
+
+        TransferSessionDebug(
+            "[TRANSFER SESSION]",
+            "Ignoring LiveTrade because data says inactive.",
+            "| liveOpen:",
+            tostring(TransferIsLiveTradeOpen()),
+            "| reason:",
+            tostring(reason),
+            "| tradeOpen:",
+            tostring(TransferState.TradeOpen),
+            "| tradeId:",
+            tostring(TransferState.TradeId),
+            "| sessionId:",
+            tostring(TransferState.SessionTradeId),
+            "| local:",
+            tostring(TransferGetLocalTradeState()),
+            "| other:",
+            tostring(TransferGetOtherTradeState())
+        )
     end
 
-    if TransferState.TradeCompleted == true
-    or TransferState.TradeResult == "Completed" then
-        return false, "Completed"
-    end
-
-    local localState =
-        TransferGetLocalTradeState()
-
-    local otherState =
-        TransferGetOtherTradeState()
-
-    if TransferStateIsInTradeLike(localState) then
-        return true, "Local state " .. tostring(localState)
-    end
-
-    if TransferStateIsInTradeLike(otherState) then
-        return true, "Other state " .. tostring(otherState)
-    end
-
-    if TransferState.TradeOpen == true then
-
-        if TransferState.TradeDeclined == true then
-
-            local age =
-                os.clock()
-                - (
-                    tonumber(TransferState.LastTradeUpdate)
-                    or os.clock()
-                )
-
-            if age >= 0.75 then
-                return false, "Declined settled"
-            end
-
-            return true, "Decline settling"
-        end
-
-        return true, "TradeOpen true"
-    end
-
-    if TransferState.TradeDeclined == true then
-
-        local age =
-            os.clock()
-            - (
-                tonumber(TransferState.LastTradeUpdate)
-                or os.clock()
-            )
-
-        if age < 0.75 then
-            return true, "Decline settling"
-        end
-
-        return false, "Declined settled"
-    end
-
-    return false, "Safe"
+    return false,
+        tostring(reason or "Safe")
 end
 
 function TransferWaitUntilSafeToSendTicket(timeout)
@@ -7864,12 +8959,29 @@ function TransferUiStillFirstAcceptPhase()
             or ""
         ):lower()
 
-    return buttonText == "Accept"
-        and statusText:find(
+    local cooldown =
+        TransferParseCooldownText(
+            buttonText
+        )
+
+    local waitingAccept =
+        statusText:find(
             "waiting for both players to accept",
             1,
             true
         ) ~= nil
+
+    if waitingAccept ~= true then
+        return false
+    end
+
+    if buttonText == "Accept"
+    or buttonText == ""
+    or cooldown ~= nil then
+        return true
+    end
+
+    return false
 end
 
 function TransferIsConfirmPhase()
@@ -7960,40 +9072,10 @@ function TransferConfirmWindowReady()
     return false
 end
 
-function TransferTradeStateIsFinalLike(state)
-
-    state =
-        tostring(state or "")
-
-    return state == "Confirmed"
-        or state == "Processing"
-end
-
-function TransferLocalAcceptedData()
-
-    return TransferTradeStateIsAcceptedLike(
-        TransferGetLocalTradeState()
-    )
-end
-
-function TransferOtherAcceptedData()
-
-    return TransferTradeStateIsAcceptedLike(
-        TransferGetOtherTradeState()
-    )
-end
-
 function TransferLocalProcessingData()
 
     return TransferGetLocalTradeState() == "Processing"
 end
-
-function TransferBothProcessingData()
-
-    return TransferGetLocalTradeState() == "Processing"
-        and TransferGetOtherTradeState() == "Processing"
-end
-
 
 function TransferTradeStateIsAcceptedLike(state)
 
@@ -8016,14 +9098,50 @@ TransferLocalAcceptLocked = function()
         return true
     end
 
-    if TransferReadyLabelIsAccepted("MyPlr") == true then
-        return true
+    if TransferUiStillFirstAcceptPhase() == true then
+        return false
     end
 
-    if TransferTradeStateIsAcceptedLike(
-        TransferGetLocalTradeState()
-    ) then
-        return true
+    local timing =
+        TransferState.Timing
+
+    local attempts =
+        type(timing) == "table"
+        and tonumber(timing.Attempts)
+        or 0
+
+    attempts =
+        attempts
+        or 0
+
+    -- Critical:
+    -- If we have not fired Accept yet, stale data/ready labels are not proof.
+    if attempts <= 0 then
+
+        if buttonText == "Accept"
+        or buttonText == ""
+        or TransferParseCooldownText(buttonText) ~= nil then
+            return false
+        end
+    end
+
+    if attempts > 0 then
+
+        if TransferReadyLabelIsAccepted("MyPlr") == true then
+            return true
+        end
+
+        if TransferTradeStateIsAcceptedLike(
+            TransferGetLocalTradeState()
+        ) then
+            return true
+        end
+
+        if TransferGuiPlayerHasAccepted(
+            LocalPlayer.Name
+        ) == true then
+            return true
+        end
     end
 
     return false
@@ -8031,36 +9149,26 @@ end
 
 TransferAcceptLikelyLockedFromButtonPhase = function()
 
-    if TransferLocalAcceptLocked() == true then
-
-        TransferTimingMark(
-            "AcceptLockedAt"
-        )
-
-        return true
-    end
-
     local timing =
         TransferState.Timing
 
-    if type(timing) ~= "table" then
-        return false
-    end
+    local attempts =
+        type(timing) == "table"
+        and tonumber(timing.Attempts)
+        or 0
 
-    if timing.FirstAcceptAt == nil then
-        return false
-    end
-
-    if tonumber(timing.Attempts) == nil
-    or tonumber(timing.Attempts) < 3 then
-        return false
-    end
+    attempts =
+        attempts
+        or 0
 
     local buttonText =
         TransferGetTradeButtonText()
 
-    -- Do NOT trust plain countdown text here.
-    -- The same countdown also appears before Accept is actually locked.
+    if TransferUiStillFirstAcceptPhase() == true then
+        return false
+    end
+
+    -- Strong visible proof.
     if buttonText == "Accepted"
     or buttonText == "Confirm"
     or buttonText == "Confirmed" then
@@ -8072,6 +9180,28 @@ TransferAcceptLikelyLockedFromButtonPhase = function()
         return true
     end
 
+    -- Critical:
+    -- Never allow stale state/data to claim Accept is locked before
+    -- this client has fired at least one Accept attempt.
+    if attempts <= 0 then
+        return false
+    end
+
+    if TransferLocalAcceptLocked() == true then
+
+        TransferTimingMark(
+            "AcceptLockedAt"
+        )
+
+        return true
+    end
+
+    if attempts < 3 then
+        return false
+    end
+
+    -- Do NOT trust plain countdown text here.
+    -- The same countdown also appears before Accept is actually locked.
     if TransferTradeStateIsAcceptedLike(
         TransferGetLocalTradeState()
     ) then
@@ -8260,41 +9390,6 @@ function TransferSenderReadyForReceiverAccept()
     return false
 end
 
-function TransferWaitForSenderReadyForReceiverAccept(timeout)
-
-    timeout =
-        tonumber(timeout)
-        or 120
-
-    local started =
-        os.clock()
-
-    while IsHolyLiteCurrentRun()
-    and TransferState.TransferEnabled == true do
-
-        if TransferState.TradeDeclined == true then
-            return false
-        end
-
-        if TransferSenderReadyForReceiverAccept() then
-            return true
-        end
-
-        TransferUpdateTradeStatusText(
-            "Waiting Sender",
-            "Waiting sender to accept."
-        )
-
-        if os.clock() - started >= timeout then
-            return false
-        end
-
-        task.wait(0.2)
-    end
-
-    return false
-end
-
 function TransferTryInstantFinalConfirm(reason)
 
     if TransferState.AutoConfirm ~= true then
@@ -8337,14 +9432,24 @@ function TransferTryInstantFinalConfirm(reason)
     for attempt = 1, 10 do
 
         if TransferState.TradeCompleted == true
-        or TransferState.TradeResult == "Completed"
-        or TransferGetLocalTradeState() == "Processing" then
+        or TransferState.TradeResult == "Completed" then
 
             TransferTimingMark(
                 "CompletedAt"
             )
 
             return true
+        end
+
+        if TransferGetLocalTradeState() == "Processing"
+        or TransferGetOtherTradeState() == "Processing"
+        or tostring(TransferGetTradeButtonText() or ""):lower():find("processing", 1, true) ~= nil then
+
+            TransferMarkTradeProcessing(
+                "Instant confirm saw Processing."
+            )
+
+            break
         end
 
         local currentButton =
@@ -8381,7 +9486,6 @@ function TransferTryInstantFinalConfirm(reason)
 
     return TransferState.TradeCompleted == true
         or TransferState.TradeResult == "Completed"
-        or TransferGetLocalTradeState() == "Processing"
 end
 
 
@@ -9142,13 +10246,10 @@ function TransferRespondRequest(accept)
         return false
     end
 
-    -- Grow a Garden uses false for accepting the ticket request.
-    -- Remote spy:
-    -- RespondRequest:FireServer(requestId, false)
+    -- Grow a Garden accepts the ticket request with true.
+    -- Decline uses false.
     local responseValue =
         accept == true
-        and false
-        or true
 
     local ok, err =
         pcall(function()
@@ -9223,6 +10324,13 @@ function TransferAcceptIncomingRequest()
 end
 
 function TransferDeclineIncomingRequest()
+
+    local requestId =
+        CleanText(TransferState.IncomingRequestId)
+
+    if requestId == "" then
+        return false
+    end
 
     return TransferRespondRequest(false)
 end
@@ -9392,39 +10500,6 @@ TransferGuiHasPositiveTradeValue = function()
         bestValue
 end
 
-function TransferWaitForVisibleTradeValue(timeout)
-
-    timeout =
-        tonumber(timeout)
-        or 10
-
-    local started =
-        os.clock()
-
-    while IsHolyLiteCurrentRun()
-    and TransferState.TransferEnabled == true do
-
-        if TransferState.TradeDeclined == true then
-            return false
-        end
-
-        local hasValue =
-            TransferGuiHasPositiveTradeValue()
-
-        if hasValue == true then
-            return true
-        end
-
-        if os.clock() - started >= timeout then
-            return false
-        end
-
-        task.wait()
-    end
-
-    return false
-end
-
 function TransferGetLiveTradeFrame()
 
     local playerGui =
@@ -9450,29 +10525,33 @@ function TransferGetLiveTradeFrame()
     return liveTrade
 end
 
-function TransferRawLiveTradeVisible()
-
-    return TransferGetLiveTradeFrame() ~= nil
-end
-
-
 function TransferActualTradeOpen()
 
+    local active, reason =
+        TransferDataTradeIsActive()
+
+    if active ~= true then
+        return false, tostring(reason)
+    end
+
     local tradeId =
-        CleanText(TransferState.TradeId)
+        CleanText(
+            TransferState.SessionTradeId ~= ""
+            and TransferState.SessionTradeId
+            or TransferState.TradeId
+        )
 
     if tradeId == "" then
-        return false, "No DataStream trade id"
+        return false, "No active trade id"
     end
 
     if TransferState.CompletedTradeIds[tradeId] ~= nil then
         return false, "Trade id already completed"
     end
 
-    if TransferState.TradeCompleted == true
-    or TransferState.TradeResult == "Completed" then
-        return false, "Trade already completed"
-    end
+    TransferInferMissingTradeSide(
+        "actual open"
+    )
 
     local localState =
         TransferGetLocalTradeState()
@@ -9485,28 +10564,11 @@ function TransferActualTradeOpen()
         return false, "Both sides processing"
     end
 
-    local hasSides =
-        TransferState.LocalTradeSide ~= nil
-        and TransferState.OtherTradeSide ~= nil
-
-    if hasSides == true then
-        return true, "DataStream trade sides"
-    end
-
-    local ownCount =
-        tonumber(TransferState.TradeOwnItemCount)
-        or 0
-
-    local otherCount =
-        tonumber(TransferState.TradeOtherItemCount)
-        or 0
-
-    if ownCount > 0
-    or otherCount > 0 then
-        return true, "DataStream offer counts"
-    end
-
-    return false, "Waiting DataStream trade data"
+    return true,
+        "Data session active: "
+            .. tostring(reason)
+            .. " | epoch="
+            .. tostring(TransferState.TradeEpoch)
 end
 
 function TransferGetTradeSideFrame(sideName)
@@ -9825,18 +10887,84 @@ function TransferReceiverHasRecoverableLiveTrade()
         return false
     end
 
-    -- Incoming request has priority over stale LiveTrade recovery.
-    -- Do not reattach if a fresh trusted request is waiting.
+    -- Incoming request has priority. Never reattach old GUI over a fresh ticket.
     if TransferHasTrustedIncomingRequest() == true then
         return false
     end
 
+    -- Decline/completed states are terminal. Stale GUI must not recover them.
     if TransferState.TradeDeclined == true then
+
+        print(
+            "[TRANSFER RECOVERY]",
+            "Rejected LiveTrade recovery because trade is declined.",
+            "| reason:",
+            tostring(TransferState.TradeDeclineReason)
+        )
+
         return false
     end
 
     if TransferState.TradeCompleted == true
     or TransferState.TradeResult == "Completed" then
+
+        print(
+            "[TRANSFER RECOVERY]",
+            "Rejected LiveTrade recovery because trade is completed."
+        )
+
+        return false
+    end
+
+    local activeOpen, activeReason =
+        TransferActualTradeOpen()
+
+    if activeOpen ~= true then
+
+        local liveTrade =
+            TransferGetLiveTradeFrame()
+
+        if liveTrade ~= nil then
+
+            print(
+                "[TRANSFER RECOVERY]",
+                "Rejected stale LiveTrade because data is inactive.",
+                "| reason:",
+                tostring(activeReason),
+                "| button:",
+                tostring(TransferGetTradeButtonText()),
+                "| status:",
+                tostring(TransferGetTradeStatusText()),
+                "| otherItems:",
+                tostring(TransferGuiCountVisibleSideItems("OtherPlr")),
+                "| otherValue:",
+                tostring(TransferGuiGetSidePriceAmount("OtherPlr")),
+                "| sessionId:",
+                tostring(TransferState.SessionTradeId),
+                "| tradeId:",
+                tostring(TransferState.TradeId)
+            )
+        end
+
+        return false
+    end
+
+    local activeTradeId =
+        CleanText(
+            TransferState.SessionTradeId ~= ""
+            and TransferState.SessionTradeId
+            or TransferState.TradeId
+        )
+
+    if activeTradeId == "" then
+
+        print(
+            "[TRANSFER RECOVERY]",
+            "Rejected LiveTrade recovery because active data has no trade id.",
+            "| reason:",
+            tostring(activeReason)
+        )
+
         return false
     end
 
@@ -9876,60 +11004,70 @@ function TransferReceiverHasRecoverableLiveTrade()
     local otherReady =
         TransferReadyLabelIsAccepted("OtherPlr")
 
+    local activeButton =
+        buttonText == "Accept"
+        or buttonText == "Accepted"
+        or buttonText == "Confirm"
+        or buttonText == "Confirmed"
+        or cooldown ~= nil
+
+    if activeButton ~= true then
+        return false
+    end
+
     local hasSenderOffer =
         otherItems > 0
         or otherValue > 0
+        or tonumber(TransferState.TradeOtherItemCount) ~= nil
+            and tonumber(TransferState.TradeOtherItemCount) > 0
 
     local hasAcceptedOrConfirmStatus =
         statusText:find("has accepted", 1, true) ~= nil
         or statusText:find("has confirmed", 1, true) ~= nil
+        or statusText:find("waiting for both players to confirm", 1, true) ~= nil
         or statusText:find("confirm", 1, true) ~= nil
 
-    -- This is the stale state from your screenshot:
-    -- button countdown + "Waiting for both players to accept" + no items/value/ready labels.
-    -- Never recover/reattach to this.
-    if cooldown ~= nil
-    and hasSenderOffer ~= true
-    and myReady ~= true
-    and otherReady ~= true
-    and hasAcceptedOrConfirmStatus ~= true then
+    -- Stale declined GUI often leaves value/cooldown behind.
+    -- Recovery is only allowed when real data is active AND current UI has useful proof.
+    if hasSenderOffer == true
+    or myReady == true
+    or otherReady == true
+    or hasAcceptedOrConfirmStatus == true
+    or buttonText == "Confirm"
+    or buttonText == "Confirmed" then
 
         print(
             "[TRANSFER RECOVERY]",
-            "Rejected stale empty LiveTrade.",
+            "Recoverable active trade confirmed by data.",
+            "| reason:",
+            tostring(activeReason),
+            "| id:",
+            tostring(activeTradeId),
             "| button:",
             tostring(buttonText),
-            "| status:",
-            tostring(TransferGetTradeStatusText()),
-            "| myReady:",
-            tostring(TransferGetReadyLabelText("MyPlr")),
-            "| otherReady:",
-            tostring(TransferGetReadyLabelText("OtherPlr")),
             "| otherItems:",
             tostring(otherItems),
             "| otherValue:",
-            tostring(otherValue)
+            tostring(otherValue),
+            "| dataOtherItems:",
+            tostring(TransferState.TradeOtherItemCount)
         )
 
-        return false
-    end
-
-    if buttonText == "Confirm"
-    or buttonText == "Confirmed" then
         return true
     end
 
-    if hasSenderOffer == true then
-        return true
-    end
-
-    if otherReady == true then
-        return true
-    end
-
-    if hasAcceptedOrConfirmStatus == true then
-        return true
-    end
+    print(
+        "[TRANSFER RECOVERY]",
+        "Rejected active trade recovery because UI has no useful proof.",
+        "| reason:",
+        tostring(activeReason),
+        "| id:",
+        tostring(activeTradeId),
+        "| button:",
+        tostring(buttonText),
+        "| status:",
+        tostring(TransferGetTradeStatusText())
+    )
 
     return false
 end
@@ -10073,8 +11211,15 @@ function TransferCanUseTradeValueForAccept()
         return true
     end
 
-    if buttonText == "Accept"
-    or TransferParseCooldownText(buttonText) ~= nil then
+    if buttonText == "Accept" then
+        return true
+    end
+
+    local cooldown =
+        TransferParseCooldownText(buttonText)
+
+    if cooldown ~= nil
+    and cooldown <= 0.25 then
         return true
     end
 
@@ -11695,14 +12840,14 @@ function TransferRunSenderBatch()
     and activeOpen ~= true then
 
         TransferSetStatus(
-            "Waiting Trade",
-            "Current trade still open: "
+            "Waiting Safe",
+            "Previous trade settling: "
                 .. tostring(hardTradeReason)
         )
 
         print(
             "[TRANSFER SEND GATE]",
-            "Sender batch held because trade is still open.",
+            "Sender waiting inside batch instead of backing off.",
             "| reason:",
             tostring(hardTradeReason),
             "| liveOpen:",
@@ -11711,13 +12856,40 @@ function TransferRunSenderBatch()
             tostring(TransferState.TradeOpen),
             "| tradeId:",
             tostring(TransferState.TradeId),
+            "| sessionId:",
+            tostring(TransferState.SessionTradeId),
+            "| epoch:",
+            tostring(TransferState.TradeEpoch),
             "| local:",
             tostring(TransferGetLocalTradeState()),
             "| other:",
             tostring(TransferGetOtherTradeState())
         )
 
-        return false, "Request blocked"
+        local safeToSend =
+            TransferWaitUntilSafeToSendTicket(
+                2.25
+            )
+
+        if safeToSend ~= true then
+
+            TransferSetStatus(
+                "Blocked",
+                "Waiting previous trade. "
+                    .. tostring(hardTradeReason)
+            )
+
+            return false, "Request blocked"
+        end
+
+        hardInTrade =
+            false
+
+        activeOpen =
+            false
+
+        activeReason =
+            "Safe after settling"
     end
 
     if activeOpen == true then
@@ -11970,6 +13142,103 @@ function TransferRunSenderBatch()
         "Pets added. Instant accepting trade."
     )
 
+    local recoveryButtonText =
+        TransferGetTradeButtonText()
+
+    local recoveryCooldown =
+        TransferParseCooldownText(
+            recoveryButtonText
+        )
+
+    local recoveryOwnCount =
+        TransferGetSenderOfferCountReliable()
+
+    if TransferAcceptLikelyLockedFromButtonPhase() ~= true
+    and recoveryOwnCount >= math.max(1, tonumber(added) or 1)
+    and (
+        recoveryButtonText == "Accept"
+        or recoveryButtonText == ""
+        or (
+            recoveryCooldown ~= nil
+            and recoveryCooldown <= 0.25
+        )
+    ) then
+
+        TransferUpdateTradeStatusText(
+            "Accept Recovery",
+            "Pets are added but Accept is not locked. Forcing Accept now."
+        )
+
+        print(
+            "[TRANSFER ACCEPT RECOVERY]",
+            "Forcing sender Accept after pets added.",
+            "| added:",
+            tostring(added),
+            "| ownCount:",
+            tostring(recoveryOwnCount),
+            "| button:",
+            tostring(recoveryButtonText),
+            "| cooldown:",
+            tostring(recoveryCooldown),
+            "| attempts:",
+            tostring(
+                TransferState.Timing
+                and TransferState.Timing.Attempts
+                or 0
+            ),
+            "| tradeId:",
+            tostring(TransferState.TradeId),
+            "| sessionId:",
+            tostring(TransferState.SessionTradeId),
+            "| epoch:",
+            tostring(TransferState.TradeEpoch)
+        )
+
+        for _ = 1, 10 do
+
+            if TransferAcceptLikelyLockedFromButtonPhase() == true then
+                break
+            end
+
+            local currentButton =
+                TransferGetTradeButtonText()
+
+            local currentCooldown =
+                TransferParseCooldownText(
+                    currentButton
+                )
+
+            if currentButton ~= "Accept"
+            and currentButton ~= ""
+            and not (
+                currentCooldown ~= nil
+                and currentCooldown <= 0.25
+            ) then
+                break
+            end
+
+            if type(TransferState.Timing) == "table"
+            and TransferState.Timing.FirstAcceptAt == nil then
+
+                TransferTimingMark(
+                    "FirstAcceptAt"
+                )
+            end
+
+            TransferFireTradeRemote(
+                "Accept"
+            )
+
+            TransferTimingBumpAttempts(
+                1
+            )
+
+            task.wait()
+        end
+
+        task.wait(0.05)
+    end
+
     TransferStartFastAcceptPump(
         "Sender Added",
         added,
@@ -12083,8 +13352,19 @@ function TransferRunReceiverBatch()
 
     if TransferHasTrustedIncomingRequest() ~= true then
 
-        recoveredLiveTrade =
-            TransferReceiverHasRecoverableLiveTrade()
+        local activeOpen =
+            TransferActualTradeOpen()
+
+        if activeOpen == true then
+
+            recoveredLiveTrade =
+                TransferReceiverHasRecoverableLiveTrade()
+
+        else
+
+            recoveredLiveTrade =
+                false
+        end
     end
 
     if recoveredLiveTrade == true then
@@ -12792,9 +14072,16 @@ and IsGardenWorld() then
     TransferState.PetDropdown:OnChanged(function(value)
 
         TransferState.SelectedPets =
-            TransferBuildMapFromDropdown(value)
+            TransferReadDropdownSelectedMap(
+                TransferState.PetDropdown,
+                TransferBuildMapFromDropdown(value)
+            )
 
         TransferBuildMatches()
+
+        QueueSaveTransferSettings(
+            "selected pets changed"
+        )
 
         TransferSetStatus(
             "Filter Updated",
@@ -12816,6 +14103,10 @@ and IsGardenWorld() then
             end
 
             TransferBuildMatches()
+
+            QueueSaveTransferSettings(
+                "selected pets cleared"
+            )
 
             TransferSetStatus(
                 "Filter Cleared",
@@ -12839,9 +14130,16 @@ and IsGardenWorld() then
     TransferState.MutationDropdown:OnChanged(function(value)
 
         TransferState.SelectedMutations =
-            TransferBuildMapFromDropdown(value)
+            TransferReadDropdownSelectedMap(
+                TransferState.MutationDropdown,
+                TransferBuildMapFromDropdown(value)
+            )
 
         TransferBuildMatches()
+
+        QueueSaveTransferSettings(
+            "selected mutations changed"
+        )
 
         TransferSetStatus(
             "Filter Updated",
@@ -12855,7 +14153,7 @@ and IsGardenWorld() then
             Text = "Min Level",
             Default = tostring(TransferState.MinLevel),
             Numeric = false,
-            Finished = false,
+            Finished = true,
             ClearTextOnFocus = false,
         }
     ):OnChanged(function(value)
@@ -12868,7 +14166,16 @@ and IsGardenWorld() then
                 )
             )
 
+        if TransferState.MaxLevel < TransferState.MinLevel then
+            TransferState.MaxLevel =
+                TransferState.MinLevel
+        end
+
         TransferBuildMatches()
+
+        QueueSaveTransferSettings(
+            "min level changed"
+        )
 
         TransferSetStatus(
             "Filter Updated",
@@ -12883,7 +14190,7 @@ and IsGardenWorld() then
             Text = "Max Level",
             Default = tostring(TransferState.MaxLevel),
             Numeric = false,
-            Finished = false,
+            Finished = true,
             ClearTextOnFocus = false,
         }
     ):OnChanged(function(value)
@@ -12898,6 +14205,10 @@ and IsGardenWorld() then
 
         TransferBuildMatches()
 
+        QueueSaveTransferSettings(
+            "max level changed"
+        )
+
         TransferSetStatus(
             "Filter Updated",
             "Max Level = "
@@ -12911,7 +14222,7 @@ and IsGardenWorld() then
             Text = "Min BaseWeight",
             Default = tostring(TransferState.MinBaseWeight),
             Numeric = false,
-            Finished = false,
+            Finished = true,
             ClearTextOnFocus = false,
         }
     ):OnChanged(function(value)
@@ -12922,7 +14233,16 @@ and IsGardenWorld() then
                 TransferToNumber(value, 0)
             )
 
+        if TransferState.MaxBaseWeight < TransferState.MinBaseWeight then
+            TransferState.MaxBaseWeight =
+                TransferState.MinBaseWeight
+        end
+
         TransferBuildMatches()
+
+        QueueSaveTransferSettings(
+            "min baseweight changed"
+        )
 
         TransferSetStatus(
             "Filter Updated",
@@ -12937,18 +14257,22 @@ and IsGardenWorld() then
             Text = "Max BaseWeight",
             Default = tostring(TransferState.MaxBaseWeight),
             Numeric = false,
-            Finished = false,
+            Finished = true,
             ClearTextOnFocus = false,
         }
     ):OnChanged(function(value)
 
         TransferState.MaxBaseWeight =
             math.max(
-                0,
+                TransferState.MinBaseWeight,
                 TransferToNumber(value, 999)
             )
 
         TransferBuildMatches()
+
+        QueueSaveTransferSettings(
+            "max baseweight changed"
+        )
 
         TransferSetStatus(
             "Filter Updated",
@@ -13035,6 +14359,10 @@ and IsGardenWorld() then
 
         TransferState.TargetPlayerName =
             CleanText(value)
+
+        QueueSaveTransferSettings(
+            "target player changed"
+        )
 
         TransferSetStatus(
             "Player Updated",
@@ -13164,27 +14492,14 @@ and IsGardenWorld() then
         local wantsEnabled =
             value == true
 
-        -- Always invalidate the old worker first.
-        TransferState.WorkerToken =
-            (
-                tonumber(TransferState.WorkerToken)
-                or 0
-            )
-            + 1
-
-        local restartToken =
-            TransferState.WorkerToken
-
         TransferState.TransferEnabled =
             false
 
-        TransferState.IsTransferRunning =
-            false
-
-        TransferState.IsAddingPets =
-            false
-
-        TransferResetTradeRuntime()
+        TransferHardResetRun(
+            wantsEnabled == true
+            and "enabled toggle restart"
+            or "disabled toggle"
+        )
 
         if wantsEnabled ~= true then
 
@@ -13200,9 +14515,12 @@ and IsGardenWorld() then
             return
         end
 
+        local restartToken =
+            TransferState.WorkerToken
+
         TransferSetStatus(
             "Restarting",
-            "Resetting old transfer worker..."
+            "Fresh transfer run starting..."
         )
 
         task.spawn(function()
@@ -13217,19 +14535,16 @@ and IsGardenWorld() then
                 return
             end
 
-            TransferResetTradeRuntime()
-
-            TransferState.Batch =
-                0
-
-            TransferState.AddedThisBatch =
-                0
-
             TransferState.TransferEnabled =
                 true
 
             QueueSaveTransferSettings(
                 "transfer restarted"
+            )
+
+            TransferSetStatus(
+                "Enabled",
+                "Fresh transfer run started."
             )
 
             TransferWorkerLoop()
@@ -13372,7 +14687,7 @@ and IsGardenWorld() then
                 Text = "Max Pets",
                 Default = tostring(TransferState.MaxPetsPerTrade),
                 Numeric = false,
-                Finished = false,
+                Finished = true,
                 ClearTextOnFocus = false,
                 Tooltip = "Sender mode: maximum matched pets to add per trade ticket.",
             }
@@ -13412,7 +14727,7 @@ and IsGardenWorld() then
                 Text = "Add Delay",
                 Default = tostring(TransferState.AddPetDelay),
                 Numeric = false,
-                Finished = false,
+                Finished = true,
                 ClearTextOnFocus = false,
                 Tooltip = "Sender mode: seconds to wait before adding the next pet.",
             }
@@ -13446,7 +14761,7 @@ and IsGardenWorld() then
                 Text = "Add Burst",
                 Default = tostring(TransferState.AddBurstCount),
                 Numeric = false,
-                Finished = false,
+                Finished = true,
                 ClearTextOnFocus = false,
                 Tooltip = "Sender mode: how many pets to fire into the trade before waiting for confirmation.",
             }
@@ -13481,7 +14796,7 @@ and IsGardenWorld() then
                 Text = "Next Ticket Delay",
                 Default = tostring(TransferState.NextTicketDelay),
                 Numeric = false,
-                Finished = false,
+                Finished = true,
                 ClearTextOnFocus = false,
                 Tooltip = "Sender mode: seconds to wait before sending the next trade request. 0 = instant.",
             }
@@ -13509,6 +14824,28 @@ and IsGardenWorld() then
     end)
 
     TransferApplyModeUI()
+
+    if TransferState.PetDropdown
+    and type(TransferState.PetDropdown.SetValue) == "function" then
+
+        pcall(function()
+            TransferState.PetDropdown:SetValue(
+                CopyTransferBoolMap(TransferState.SelectedPets)
+            )
+        end)
+    end
+
+    if TransferState.MutationDropdown
+    and type(TransferState.MutationDropdown.SetValue) == "function" then
+
+        pcall(function()
+            TransferState.MutationDropdown:SetValue(
+                CopyTransferBoolMap(TransferState.SelectedMutations)
+            )
+        end)
+    end
+
+    TransferBuildMatches()
 
     TransferConfigState.Loading =
         false
@@ -13541,9 +14878,9 @@ and IsGardenWorld() then
         end,
     })
 
-        task.defer(function()
+    task.defer(function()
 
-        if not IsCurrentRun() then
+        if not IsHolyLiteCurrentRun() then
             return
         end
 
