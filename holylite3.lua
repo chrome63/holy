@@ -14672,9 +14672,9 @@ and IsGardenWorld() then
         end,
     })
 
-        task.defer(function()
+    task.defer(function()
 
-        if not IsCurrentRun() then
+        if not IsHolyLiteCurrentRun() then
             return
         end
 
