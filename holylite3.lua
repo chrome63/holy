@@ -31192,13 +31192,16 @@ task.spawn(function()
         RefreshLiteServerLabels()
         RefreshLitePresenceLabels()
 
-        if ConfigState.Dirty == true then
+        if IsTradeWorld() == true
+        and ConfigState.Dirty == true then
 
             ConfigState.Dirty =
                 false
 
             pcall(function()
-                SaveManager:Save(ConfigState.AutosaveName)
+                SaveManager:Save(
+                    ConfigState.AutosaveName
+                )
             end)
         end
     end
@@ -31267,9 +31270,15 @@ task.spawn(function()
         end
 
         local runtimeSaveOk =
-            SaveTransferSettingsNow(
-                reason
-            )
+            false
+
+        if type(SaveTransferSettingsNow) == "function" then
+
+            runtimeSaveOk =
+                SaveTransferSettingsNow(
+                    reason
+                )
+        end
 
         if TransferState
         and TransferState.DebugPrints == true then
@@ -31289,30 +31298,6 @@ task.spawn(function()
     end
 end)
 
---==================================================
--- [11] AUTOSAVE WORKER
---==================================================
-
-task.spawn(function()
-
-    while IsHolyLiteCurrentRun() do
-
-        task.wait(1)
-
-        RefreshLiteServerLabels()
-        RefreshLitePresenceLabels()
-
-        if ConfigState.Dirty == true then
-
-            ConfigState.Dirty =
-                false
-
-            pcall(function()
-                SaveManager:Save(ConfigState.AutosaveName)
-            end)
-        end
-    end
-end)
 print("[HOLY SNIPER LITE] Filter storage ready.")
 print("[HOLY SNIPER LITE] Reset command: HOLY_LITE_RESET()")
 print("[HOLY SNIPER LITE] UI shell loaded.")
