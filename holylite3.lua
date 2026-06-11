@@ -2093,8 +2093,6 @@ local TransferState =
 
 local TransferConfigState = {
     Loading = true,
-    Dirty = false,
-    SaveQueued = false,
 }
 
 function CopyTransferBoolMap(source)
@@ -2272,19 +2270,10 @@ function QueueSaveTransferSettings(reason)
         return false
     end
 
-    TransferConfigState.Dirty =
-        true
-
-    TransferConfigState.SaveQueued =
-        false
-
     local saveOk =
         SaveTransferSettingsNow(
             reason or "autosave"
         )
-
-    TransferConfigState.Dirty =
-        false
 
     print(
         "[TRANSFER SAVE]",
@@ -2455,19 +2444,6 @@ function LoadTransferSettingsIntoState()
     return true
 end
 
-function MapHasTransferValue(map, value)
-
-    value =
-        CleanText(value)
-
-    if value == "" then
-        return false
-    end
-
-    return type(map) == "table"
-        and map[value] == true
-end
-
 function EnsureTransferDropdownChoice(choices, value)
 
     value =
@@ -2591,7 +2567,6 @@ TransferState = {
     RequestExpired = false,
     RequestExpiredReason = "",
 
-    RequestAcceptValue = nil,
     LastRequestAcceptValue = "unknown",
 
     IncomingRequestId = "",
@@ -2631,7 +2606,6 @@ TransferState = {
     HudLabel = nil,
     HudX = 260,
     HudY = 180,
-    HudDragging = false,
 
     SkipLockedPets = true,
     SkipLockedPetsToggle = nil,
@@ -6469,9 +6443,6 @@ function TransferHardResetRun(reason)
     TransferState.IncomingRequestHandled =
         {}
 
-    TransferState.RequestAcceptValue =
-        nil
-
     TransferState.LastRequestAcceptValue =
         "unknown"
 
@@ -8267,44 +8238,6 @@ function TransferIsLiveTradeOpen()
     return false
 end
 
-function TransferMarkClosedIfLiveTradeGone(reason)
-
-    -- Data-authoritative transfer:
-    -- UI disappearing/flickering must NOT mark a trade declined.
-    -- Actual decline is handled by Notification / UpdateTradeState nil / manual Decline.
-
-    if TransferState.TradeDeclined == true then
-        return true
-    end
-
-    if TransferState.TradeCompleted == true
-    or TransferState.TradeResult == "Completed" then
-        return false
-    end
-
-    if CleanText(TransferState.TradeId) ~= "" then
-
-        print(
-            "[TRANSFER UI CLOSE IGNORED]",
-            tostring(reason or "LiveTrade closed/flickered."),
-            "| tradeId:",
-            tostring(TransferState.TradeId),
-            "| local:",
-            tostring(TransferGetLocalTradeState()),
-            "| other:",
-            tostring(TransferGetOtherTradeState()),
-            "| ownItems:",
-            tostring(TransferState.TradeOwnItemCount),
-            "| otherItems:",
-            tostring(TransferState.TradeOtherItemCount)
-        )
-
-        return false
-    end
-
-    return false
-end
-
 function TransferWaitForLiveTradeClosed(timeout)
 
     timeout =
@@ -8372,16 +8305,6 @@ function TransferWaitForLiveTradeClosed(timeout)
     end
 
     return false
-end
-
-function TransferStateIsInTradeLike(state)
-
-    state =
-        tostring(state or "")
-
-    return state == "Accepted"
-        or state == "Confirmed"
-        or state == "Processing"
 end
 
 function TransferIsInTradeHard()
@@ -8964,40 +8887,10 @@ function TransferConfirmWindowReady()
     return false
 end
 
-function TransferTradeStateIsFinalLike(state)
-
-    state =
-        tostring(state or "")
-
-    return state == "Confirmed"
-        or state == "Processing"
-end
-
-function TransferLocalAcceptedData()
-
-    return TransferTradeStateIsAcceptedLike(
-        TransferGetLocalTradeState()
-    )
-end
-
-function TransferOtherAcceptedData()
-
-    return TransferTradeStateIsAcceptedLike(
-        TransferGetOtherTradeState()
-    )
-end
-
 function TransferLocalProcessingData()
 
     return TransferGetLocalTradeState() == "Processing"
 end
-
-function TransferBothProcessingData()
-
-    return TransferGetLocalTradeState() == "Processing"
-        and TransferGetOtherTradeState() == "Processing"
-end
-
 
 function TransferTradeStateIsAcceptedLike(state)
 
@@ -9300,41 +9193,6 @@ function TransferSenderReadyForReceiverAccept()
     and statusText:find(targetName, 1, true)
     and statusText:find("has accepted", 1, true) then
         return true
-    end
-
-    return false
-end
-
-function TransferWaitForSenderReadyForReceiverAccept(timeout)
-
-    timeout =
-        tonumber(timeout)
-        or 120
-
-    local started =
-        os.clock()
-
-    while IsHolyLiteCurrentRun()
-    and TransferState.TransferEnabled == true do
-
-        if TransferState.TradeDeclined == true then
-            return false
-        end
-
-        if TransferSenderReadyForReceiverAccept() then
-            return true
-        end
-
-        TransferUpdateTradeStatusText(
-            "Waiting Sender",
-            "Waiting sender to accept."
-        )
-
-        if os.clock() - started >= timeout then
-            return false
-        end
-
-        task.wait(0.2)
     end
 
     return false
@@ -10446,39 +10304,6 @@ TransferGuiHasPositiveTradeValue = function()
         bestValue
 end
 
-function TransferWaitForVisibleTradeValue(timeout)
-
-    timeout =
-        tonumber(timeout)
-        or 10
-
-    local started =
-        os.clock()
-
-    while IsHolyLiteCurrentRun()
-    and TransferState.TransferEnabled == true do
-
-        if TransferState.TradeDeclined == true then
-            return false
-        end
-
-        local hasValue =
-            TransferGuiHasPositiveTradeValue()
-
-        if hasValue == true then
-            return true
-        end
-
-        if os.clock() - started >= timeout then
-            return false
-        end
-
-        task.wait()
-    end
-
-    return false
-end
-
 function TransferGetLiveTradeFrame()
 
     local playerGui =
@@ -10503,12 +10328,6 @@ function TransferGetLiveTradeFrame()
 
     return liveTrade
 end
-
-function TransferRawLiveTradeVisible()
-
-    return TransferGetLiveTradeFrame() ~= nil
-end
-
 
 function TransferActualTradeOpen()
 
