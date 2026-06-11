@@ -2548,6 +2548,8 @@ TransferState = {
     TradeOtherItemCount = 0,
     TradeCompleted = false,
     TradeResult = "",
+    TradeProcessing = false,
+    TradeProcessingStartedAt = 0,
     TradeDeclined = false,
     TradeDeclineReason = "",
 
@@ -2708,6 +2710,12 @@ function TransferStartTradeSession(tradeId, source)
     TransferState.TradeResult =
         ""
 
+    TransferState.TradeProcessing =
+        false
+
+    TransferState.TradeProcessingStartedAt =
+        0
+
     TransferState.TradeDeclined =
         false
 
@@ -2772,6 +2780,12 @@ function TransferCloseTradeSession(reason, result)
 
     TransferState.TradeOpen =
         false
+
+    TransferState.TradeProcessing =
+        false
+
+    TransferState.TradeProcessingStartedAt =
+        0
 
     if result == "Completed" then
 
@@ -3025,7 +3039,47 @@ function TransferDataTradeIsActive()
 
     if TransferState.TradeCompleted == true
     or TransferState.TradeResult == "Completed" then
+
+        local readyAt =
+            tonumber(TransferState.DataReadyForNextAt)
+            or 0
+
+        if os.clock() < readyAt then
+            return true, "Completed settling"
+        end
+
         return false, "Completed"
+    end
+
+    if TransferState.TradeProcessing == true then
+
+        local startedAt =
+            tonumber(TransferState.TradeProcessingStartedAt)
+            or os.clock()
+
+        local age =
+            os.clock() - startedAt
+
+        if age < 18 then
+            return true, "Processing"
+        end
+
+        print(
+            "[TRANSFER PROCESSING]",
+            "Processing timed out, allowing recovery.",
+            "| age:",
+            string.format("%.2fs", age),
+            "| tradeId:",
+            tostring(TransferState.TradeId),
+            "| sessionId:",
+            tostring(TransferState.SessionTradeId),
+            "| local:",
+            tostring(TransferGetLocalTradeState()),
+            "| other:",
+            tostring(TransferGetOtherTradeState())
+        )
+
+        return false, "Processing timeout"
     end
 
     if TransferState.TradeDeclined == true then
@@ -3055,6 +3109,53 @@ function TransferDataTradeIsActive()
     end
 
     return false, "No active trade data"
+end
+
+function TransferMarkTradeProcessing(reason)
+
+    reason =
+        tostring(reason or "Trade processing.")
+
+    if TransferState.TradeCompleted == true
+    or TransferState.TradeResult == "Completed"
+    or TransferState.TradeDeclined == true then
+        return false
+    end
+
+    if TransferState.TradeProcessing ~= true then
+
+        TransferState.TradeProcessing =
+            true
+
+        TransferState.TradeProcessingStartedAt =
+            os.clock()
+    end
+
+    TransferState.LastTradeUpdate =
+        os.clock()
+
+    TransferSetStatus(
+        "Processing",
+        reason
+            .. " Waiting for server close/result."
+    )
+
+    print(
+        "[TRANSFER PROCESSING]",
+        reason,
+        "| tradeId:",
+        tostring(TransferState.TradeId),
+        "| sessionId:",
+        tostring(TransferState.SessionTradeId),
+        "| local:",
+        tostring(TransferGetLocalTradeState()),
+        "| other:",
+        tostring(TransferGetOtherTradeState()),
+        "| button:",
+        tostring(TransferGetTradeButtonText())
+    )
+
+    return true
 end
 
 function TransferDebugPrint(...)
@@ -6396,6 +6497,9 @@ function TransferMarkTradeCompleted(reason)
     reason =
         tostring(reason or "Completed")
 
+    local reasonLower =
+        reason:lower()
+
     local liveTrade =
         nil
 
@@ -6408,6 +6512,9 @@ function TransferMarkTradeCompleted(reason)
         type(TransferGetTradeButtonText) == "function"
         and TransferGetTradeButtonText()
         or ""
+
+    local buttonLower =
+        tostring(buttonText or ""):lower()
 
     local localState =
         type(TransferGetLocalTradeState) == "function"
@@ -6425,14 +6532,21 @@ function TransferMarkTradeCompleted(reason)
     local otherProcessing =
         tostring(otherState) == "Processing"
 
+    local authoritativeCompletion =
+        reason:find("AddToHistory Completed", 1, true) ~= nil
+        or reason:find("UpdateTradeState closed after processing", 1, true) ~= nil
+        or reasonLower:find("trade completed", 1, true) ~= nil
+
     local finalButton =
         buttonText == "Confirmed"
         or buttonText == ""
+        or buttonLower:find("processing", 1, true) ~= nil
 
     local manualVisibleConfirm =
         reason:find("Both visible trade sides confirmed", 1, true) ~= nil
 
     if liveTrade ~= nil
+    and authoritativeCompletion ~= true
     and localProcessing ~= true
     and otherProcessing ~= true
     and finalButton ~= true
@@ -6458,23 +6572,40 @@ function TransferMarkTradeCompleted(reason)
             "| other:",
             tostring(otherState),
             "| tradeId:",
-            tostring(TransferState.TradeId)
+            tostring(TransferState.TradeId),
+            "| sessionId:",
+            tostring(TransferState.SessionTradeId)
         )
 
         return
     end
 
     local completedTradeId =
-        CleanText(TransferState.TradeId)
+        CleanText(
+            TransferState.TradeId ~= ""
+            and TransferState.TradeId
+            or TransferState.SessionTradeId
+        )
 
     local now =
         os.clock()
+
+    TransferCloseTradeSession(
+        reason,
+        "Completed"
+    )
 
     TransferState.TradeCompleted =
         true
 
     TransferState.TradeResult =
         "Completed"
+
+    TransferState.TradeProcessing =
+        false
+
+    TransferState.TradeProcessingStartedAt =
+        0
 
     TransferState.TradeOpen =
         false
@@ -6491,10 +6622,9 @@ function TransferMarkTradeCompleted(reason)
     TransferState.LastCompletedAt =
         now
 
-    -- Data is authoritative. Once completed, do not let stale UI/state
-    -- make the next batch attach to the old trade.
+    -- Longer settle after Processing so SendRequest does not fire while server is still closing.
     TransferState.DataReadyForNextAt =
-        now + 0.35
+        now + 1.25
 
     TransferState.TradeId =
         ""
@@ -6531,18 +6661,18 @@ function TransferMarkTradeCompleted(reason)
 
     TransferSetStatus(
         "Trade Completed",
-        tostring(reason or "Completed")
+        tostring(reason)
             .. " | id="
             .. tostring(completedTradeId)
     )
 
     print(
         "[TRANSFER] Trade completed:",
-        tostring(reason or "Completed"),
+        tostring(reason),
         "| id:",
         tostring(completedTradeId),
         "| nextReadyIn:",
-        "0.35s"
+        "1.25s"
     )
 end
 
@@ -6811,25 +6941,9 @@ function TransferUpdateTradeTrackerFromPayload(payload)
                 
                 if tostring(value) == "Processing" then
 
-                    local localSideText =
-                        tostring(TransferState.LocalTradeSide or "")
-
-                    -- Only our own side Processing means this client is done.
-                    -- Other side Processing means the other player confirmed,
-                    -- but we may still need to press Confirm locally.
-                    if localSideText ~= ""
-                    and tostring(stateSide) == localSideText then
-
-                        TransferMarkTradeCompleted(
-                            "Local DataStream state Processing."
-                        )
-
-                    elseif TransferGetLocalTradeState() == "Processing" then
-
-                        TransferMarkTradeCompleted(
-                            "Local state Processing."
-                        )
-                    end
+                    TransferMarkTradeProcessing(
+                        "DataStream state Processing."
+                    )
                 end
 
                 if tostring(oldState) ~= tostring(value) then
@@ -7484,20 +7598,72 @@ function TransferWaitForTradeCompleted(timeout)
     local started =
         os.clock()
 
+    local lastStatusAt =
+        0
+
     while IsHolyLiteCurrentRun()
     and TransferState.TransferEnabled == true do
 
         if TransferState.TradeCompleted == true
-        or TransferState.TradeResult == "Completed"
-        or TransferGetLocalTradeState() == "Processing" then
-            return true
+        or TransferState.TradeResult == "Completed" then
+
+            local readyAt =
+                tonumber(TransferState.DataReadyForNextAt)
+                or 0
+
+            if os.clock() >= readyAt then
+                return true
+            end
+
+            TransferSetStatus(
+                "Waiting Data Close",
+                "Completed. Waiting server settle before next ticket."
+            )
+
+            task.wait(0.05)
+
+            continue
+        end
+
+        local buttonText =
+            tostring(
+                TransferGetTradeButtonText()
+                or ""
+            )
+
+        local buttonLower =
+            buttonText:lower()
+
+        local isProcessing =
+            TransferGetLocalTradeState() == "Processing"
+            or TransferGetOtherTradeState() == "Processing"
+            or buttonLower:find("processing", 1, true) ~= nil
+            or TransferState.TradeProcessing == true
+
+        if isProcessing == true then
+
+            TransferMarkTradeProcessing(
+                "Waiting for Processing to finish."
+            )
+
+            if os.clock() - lastStatusAt >= 0.35 then
+
+                lastStatusAt =
+                    os.clock()
+
+                TransferSetStatus(
+                    "Processing",
+                    "Waiting for AddToHistory / UpdateTradeState close. Button="
+                        .. tostring(buttonText)
+                )
+            end
         end
 
         if os.clock() - started >= timeout then
             return false
         end
 
-        task.wait(0.2)
+        task.wait(0.1)
     end
 
     return false
@@ -8960,14 +9126,24 @@ function TransferTryInstantFinalConfirm(reason)
     for attempt = 1, 10 do
 
         if TransferState.TradeCompleted == true
-        or TransferState.TradeResult == "Completed"
-        or TransferGetLocalTradeState() == "Processing" then
+        or TransferState.TradeResult == "Completed" then
 
             TransferTimingMark(
                 "CompletedAt"
             )
 
             return true
+        end
+
+        if TransferGetLocalTradeState() == "Processing"
+        or TransferGetOtherTradeState() == "Processing"
+        or tostring(TransferGetTradeButtonText() or ""):lower():find("processing", 1, true) ~= nil then
+
+            TransferMarkTradeProcessing(
+                "Instant confirm saw Processing."
+            )
+
+            break
         end
 
         local currentButton =
@@ -9004,7 +9180,6 @@ function TransferTryInstantFinalConfirm(reason)
 
     return TransferState.TradeCompleted == true
         or TransferState.TradeResult == "Completed"
-        or TransferGetLocalTradeState() == "Processing"
 end
 
 
