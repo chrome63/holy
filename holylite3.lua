@@ -2556,8 +2556,6 @@ TransferState = {
     TradeDeclined = false,
     TradeDeclineReason = "",
 
-    LastCompletedTradeId = "",
-    LastCompletedAt = 0,
     DataReadyForNextAt = 0,
     CompletedTradeIds = {},
 
@@ -2584,11 +2582,7 @@ TransferState = {
     TradeEpoch = 0,
     SessionTradeId = "",
     SessionActive = false,
-    SessionStartedAt = 0,
-    SessionClosedAt = 0,
     SessionLastDataAt = 0,
-    SessionCloseReason = "",
-    SessionResult = "",
     SessionPlayers = {},
     SessionStates = {},
     SessionOfferItems = {},
@@ -2602,7 +2596,6 @@ TransferState = {
 
     HudEnabled = true,
     HudGui = nil,
-    HudRoot = nil,
     HudLabel = nil,
     HudX = 260,
     HudY = 180,
@@ -2682,20 +2675,8 @@ function TransferStartTradeSession(tradeId, source)
     TransferState.SessionActive =
         true
 
-    TransferState.SessionStartedAt =
-        now
-
-    TransferState.SessionClosedAt =
-        0
-
     TransferState.SessionLastDataAt =
         now
-
-    TransferState.SessionCloseReason =
-        ""
-
-    TransferState.SessionResult =
-        ""
 
     TransferSessionClearMaps()
 
@@ -2767,17 +2748,8 @@ function TransferCloseTradeSession(reason, result)
     TransferState.SessionActive =
         false
 
-    TransferState.SessionClosedAt =
-        now
-
     TransferState.SessionLastDataAt =
         now
-
-    TransferState.SessionCloseReason =
-        reason
-
-    TransferState.SessionResult =
-        result
 
     TransferState.TradeOpen =
         false
@@ -2798,15 +2770,9 @@ function TransferCloseTradeSession(reason, result)
 
         if closingId ~= "" then
 
-            TransferState.LastCompletedTradeId =
-                closingId
-
             TransferState.CompletedTradeIds[closingId] =
                 now
         end
-
-        TransferState.LastCompletedAt =
-            now
 
     elseif result == "Declined" then
 
@@ -5164,9 +5130,6 @@ function TransferCreateHud()
     TransferState.HudGui =
         gui
 
-    TransferState.HudRoot =
-        root
-
     TransferState.HudLabel =
         label
 end
@@ -6839,15 +6802,9 @@ function TransferMarkTradeCompleted(reason)
 
     if completedTradeId ~= "" then
 
-        TransferState.LastCompletedTradeId =
-            completedTradeId
-
         TransferState.CompletedTradeIds[completedTradeId] =
             now
     end
-
-    TransferState.LastCompletedAt =
-        now
 
     -- Longer settle after Processing so SendRequest does not fire while server is still closing.
     TransferState.DataReadyForNextAt =
