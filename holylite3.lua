@@ -5418,7 +5418,7 @@ function TransferCreateHud()
         1000001
 
     label.Text =
-        '<font color="rgb(250,204,21)"><b>Sender</b></font><font color="rgb(203,213,225)"> -> </font><font color="rgb(255,255,255)"><b>None</b></font>\n<font color="rgb(203,213,225)">Idle | Q </font><font color="rgb(255,255,255)"><b>0/0</b></font><font color="rgb(203,213,225)"> | B</font><font color="rgb(255,255,255)"><b>0</b></font><font color="rgb(203,213,225)"> | S</font><font color="rgb(74,222,128)"><b>0</b></font>'
+        '<font color="rgb(255, 242, 61)"><b>Sender</b></font><font color="rgb(203,213,225)"> -> </font><font color="rgb(255,255,255)"><b>None</b></font>\n<font color="rgb(203,213,225)">Idle | Q </font><font color="rgb(255,255,255)"><b>0/0</b></font><font color="rgb(203,213,225)"> | B</font><font color="rgb(255,255,255)"><b>0</b></font><font color="rgb(203,213,225)"> | S</font><font color="rgb(58, 255, 117)"><b>0</b></font>'
 
     label.Parent =
         root
