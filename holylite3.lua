@@ -16041,6 +16041,7 @@ local AgeBreakState = {
 
     StatusLabel = nil,
     TargetPreviewLabel = nil,
+    SacrificePoolLabel = nil,
     SacrificeQueueLabel = nil,
     MachineLabel = nil,
 
@@ -16781,41 +16782,58 @@ function AgeBreakBuildPetTypeChoices()
 
     local choices = {}
 
-    if type(TransferBuildPetChoices) == "function" then
-        choices =
-            TransferBuildPetChoices()
-            or {}
-    elseif type(DynamicPetList) == "table" then
-        choices =
-            DynamicPetList
-    end
-
-    local filtered = {}
     local seen = {}
 
-    for _, value in ipairs(choices) do
+    local function addChoice(value)
 
         local name =
             CleanText(value)
 
-        if name ~= ""
-        and name ~= "None"
-        and name ~= "---"
-        and seen[name] ~= true then
+        if name == ""
+        or name == "None"
+        or name == "---"
+        or name == "Normal"
+        or name == "Unknown" then
+            return false
+        end
 
-            seen[name] =
-                true
+        if seen[name] == true then
+            return false
+        end
 
-            table.insert(
-                filtered,
-                name
+        seen[name] =
+            true
+
+        table.insert(
+            choices,
+            name
+        )
+
+        return true
+    end
+
+    -- Inventory-only sacrifice picker.
+    -- Saved selections are added after, so Trade World can still display/edit saved rules.
+    for _, pet in ipairs(AgeBreakBuildInventoryPets()) do
+
+        addChoice(
+            pet.PetName
+        )
+    end
+
+    for petName, selected in pairs(AgeBreakState.SelectedSacrificeTypes or {}) do
+
+        if selected == true then
+
+            addChoice(
+                petName
             )
         end
     end
 
-    table.sort(filtered)
+    table.sort(choices)
 
-    return filtered
+    return choices
 end
 
 function AgeBreakGetSelectedTargets()
@@ -17480,6 +17498,418 @@ function AgeBreakBuildTargetsText()
         "\n"
     )
 end
+
+function AgeBreakBuildSacrificePoolText()
+
+    local function richEscape(value)
+
+        value =
+            tostring(value or "")
+
+        value =
+            value:gsub("&", "&amp;")
+                :gsub("<", "&lt;")
+                :gsub(">", "&gt;")
+
+        return value
+    end
+
+    local function richColor(value, color, bold)
+
+        value =
+            richEscape(value)
+
+        color =
+            tostring(color or "255,255,255")
+
+        if bold == true then
+
+            return '<font color="rgb('
+                .. color
+                .. ')"><b>'
+                .. value
+                .. '</b></font>'
+        end
+
+        return '<font color="rgb('
+            .. color
+            .. ')">'
+            .. value
+            .. '</font>'
+    end
+
+    local selectedTypes =
+        {}
+
+    for petName, selected in pairs(AgeBreakState.SelectedSacrificeTypes or {}) do
+
+        petName =
+            CleanText(petName)
+
+        if selected == true
+        and petName ~= "" then
+
+            table.insert(
+                selectedTypes,
+                petName
+            )
+        end
+    end
+
+    table.sort(selectedTypes)
+
+    local queue =
+        {}
+
+    local blocked =
+        {}
+
+    local buildOk =
+        pcall(function()
+
+            queue, blocked =
+                AgeBreakBuildSacrificeQueue()
+        end)
+
+    if buildOk ~= true then
+
+        queue =
+            AgeBreakState.SacrificeQueue
+            or {}
+
+        blocked =
+            AgeBreakState.BlockedSacrifices
+            or {}
+    end
+
+    queue =
+        queue
+        or {}
+
+    blocked =
+        blocked
+        or {}
+
+    local safeByType =
+        {}
+
+    local blockedByType =
+        {}
+
+    local ownedByType =
+        {}
+
+    for _, pet in ipairs(AgeBreakState.InventoryPets or AgeBreakBuildInventoryPets()) do
+
+        local petName =
+            CleanText(pet.PetName)
+
+        if petName ~= ""
+        and AgeBreakState.SelectedSacrificeTypes[petName] == true then
+
+            ownedByType[petName] =
+                (ownedByType[petName] or 0) + 1
+        end
+    end
+
+    for _, pet in ipairs(queue) do
+
+        local petName =
+            CleanText(pet.PetName)
+
+        if petName ~= "" then
+
+            if type(safeByType[petName]) ~= "table" then
+                safeByType[petName] =
+                    {}
+            end
+
+            table.insert(
+                safeByType[petName],
+                pet
+            )
+        end
+    end
+
+    for _, row in ipairs(blocked) do
+
+        local pet =
+            type(row) == "table"
+            and row.Pet
+            or nil
+
+        local petName =
+            pet
+            and CleanText(pet.PetName)
+            or ""
+
+        if petName ~= "" then
+
+            if type(blockedByType[petName]) ~= "table" then
+                blockedByType[petName] =
+                    {}
+            end
+
+            table.insert(
+                blockedByType[petName],
+                row
+            )
+        end
+    end
+
+    local lines =
+        {}
+
+    table.insert(
+        lines,
+        richColor(
+            "SACRIFICE POOL",
+            "196,181,253",
+            true
+        )
+    )
+
+    table.insert(
+        lines,
+        richColor(
+            "Types "
+                .. tostring(#selectedTypes)
+                .. " · Safe "
+                .. tostring(#queue)
+                .. " · Blocked "
+                .. tostring(#blocked),
+            "203,213,225",
+            false
+        )
+    )
+
+    table.insert(
+        lines,
+        richColor(
+            "Rule: Age <= "
+                .. tostring(AgeBreakState.MaxSacrificeAge)
+                .. " · BW <= "
+                .. AgeBreakFormatNumber(
+                    AgeBreakState.MaxSacrificeBaseWeight,
+                    4
+                ),
+            "148,163,184",
+            false
+        )
+    )
+
+    table.insert(
+        lines,
+        ""
+    )
+
+    if #selectedTypes <= 0 then
+
+        table.insert(
+            lines,
+            richColor(
+                "No sacrifice types selected.",
+                "148,163,184",
+                false
+            )
+        )
+
+        table.insert(
+            lines,
+            richColor(
+                "Use the inventory picker above to add sacrifice pet types.",
+                "148,163,184",
+                false
+            )
+        )
+
+        return table.concat(
+            lines,
+            "\n"
+        )
+    end
+
+    for typeIndex, petName in ipairs(selectedTypes) do
+
+        if typeIndex > 5 then
+            break
+        end
+
+        local safeList =
+            safeByType[petName]
+            or {}
+
+        local blockedList =
+            blockedByType[petName]
+            or {}
+
+        local ownedCount =
+            ownedByType[petName]
+            or (#safeList + #blockedList)
+
+        local color =
+            #safeList > 0
+            and "74,222,128"
+            or (
+                #blockedList > 0
+                and "250,204,21"
+                or "248,113,113"
+            )
+
+        table.insert(
+            lines,
+            richColor(
+                petName,
+                "255,255,255",
+                true
+            )
+                .. richColor(
+                    "   SAFE "
+                        .. tostring(#safeList)
+                        .. " · BLOCKED "
+                        .. tostring(#blockedList),
+                    color,
+                    true
+                )
+        )
+
+        table.insert(
+            lines,
+            richColor(
+                "Owned here: "
+                    .. tostring(ownedCount),
+                "148,163,184",
+                false
+            )
+        )
+
+        if #safeList > 0 then
+
+            for index = 1, math.min(#safeList, 3) do
+
+                local pet =
+                    safeList[index]
+
+                table.insert(
+                    lines,
+                    richColor(
+                        "#"
+                            .. tostring(index)
+                            .. " SAFE",
+                        "74,222,128",
+                        true
+                    )
+                )
+
+                table.insert(
+                    lines,
+                    richColor(
+                        "Age "
+                            .. tostring(pet.Level or "?")
+                            .. " · "
+                            .. AgeBreakFormatNumber(pet.DisplayWeight, 2)
+                            .. " KG"
+                            .. " · "
+                            .. AgeBreakFormatNumber(pet.BaseWeight, 4)
+                            .. " BW"
+                            .. " · #"
+                            .. AgeBreakShortUUID(pet.UUID),
+                        "203,213,225",
+                        false
+                    )
+                )
+            end
+
+            if #safeList > 3 then
+
+                table.insert(
+                    lines,
+                    richColor(
+                        "+"
+                            .. tostring(#safeList - 3)
+                            .. " more safe sacrifices",
+                        "148,163,184",
+                        false
+                    )
+                )
+            end
+
+        elseif #blockedList > 0 then
+
+            local firstBlocked =
+                blockedList[1]
+
+            local firstPet =
+                firstBlocked
+                and firstBlocked.Pet
+                or {}
+
+            table.insert(
+                lines,
+                richColor(
+                    "No safe pets. First block: "
+                        .. tostring(firstBlocked and firstBlocked.Reason or "Blocked"),
+                    "250,204,21",
+                    false
+                )
+            )
+
+            table.insert(
+                lines,
+                richColor(
+                    "Age "
+                        .. tostring(firstPet.Level or "?")
+                        .. " · "
+                        .. AgeBreakFormatNumber(firstPet.DisplayWeight, 2)
+                        .. " KG"
+                        .. " · "
+                        .. AgeBreakFormatNumber(firstPet.BaseWeight, 4)
+                        .. " BW"
+                        .. " · #"
+                        .. AgeBreakShortUUID(firstPet.UUID),
+                    "148,163,184",
+                    false
+                )
+            )
+
+        else
+
+            table.insert(
+                lines,
+                richColor(
+                    "No owned pets of this type found in this world.",
+                    "148,163,184",
+                    false
+                )
+            )
+        end
+
+        table.insert(
+            lines,
+            ""
+        )
+    end
+
+    if #selectedTypes > 5 then
+
+        table.insert(
+            lines,
+            richColor(
+                "+"
+                    .. tostring(#selectedTypes - 5)
+                    .. " more sacrifice types",
+                "148,163,184",
+                false
+            )
+        )
+    end
+
+    return table.concat(
+        lines,
+        "\n"
+    )
+end
+
 
 function AgeBreakBuildQueueText()
 
@@ -20070,6 +20500,14 @@ function AgeBreakRefreshUI()
         )
     end
 
+    if AgeBreakState.SacrificePoolLabel then
+
+        SetControlText(
+            AgeBreakState.SacrificePoolLabel,
+            AgeBreakBuildSacrificePoolText()
+        )
+    end
+
     if AgeBreakState.SacrificeQueueLabel then
 
         SetControlText(
@@ -20520,6 +20958,7 @@ if Tabs.AgeBreak then
         Text = "Build Queue",
         Func = function()
 
+            AgeBreakRefreshSacrificeTypesDropdown()
             AgeBreakBuildSacrificeQueue()
             AgeBreakPreviewPair()
 
@@ -20557,6 +20996,13 @@ if Tabs.AgeBreak then
             AgeBreakPreviewPair()
         end,
     })
+
+    AgeBreakState.SacrificePoolLabel =
+        AgeBreakBuilderBox:AddLabel({
+            Text = AgeBreakBuildSacrificePoolText(),
+            DoesWrap = true,
+            Size = 12,
+        })
 
     AgeBreakState.MachineLabel =
         AgeBreakMachineBox:AddLabel({
