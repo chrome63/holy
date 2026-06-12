@@ -18305,6 +18305,13 @@ function AgeBreakFireSubmitUUID(uuid, role)
         return false, "PetAgeLimitBreak_Submit remote missing"
     end
 
+    print(
+        "[AGE BREAK]",
+        "Fire submit UUID:",
+        tostring(role or "pet"),
+        tostring(submitUUID)
+    )
+
     local ok, err =
         pcall(function()
 
@@ -18320,7 +18327,7 @@ function AgeBreakFireSubmitUUID(uuid, role)
     return true, "Submitted " .. tostring(role or "pet")
 end
 
-function AgeBreakFireSubmitHeldFallback(pet, role)
+function AgeBreakFireSubmitHeldFallback(role)
 
     if IsGardenWorld() ~= true then
         return false, "SubmitHeld blocked outside Garden World"
@@ -18333,13 +18340,6 @@ function AgeBreakFireSubmitHeldFallback(pet, role)
         return false, "PetAgeLimitBreak_SubmitHeld remote missing"
     end
 
-    local equipOk, equipReason =
-        AgeBreakEquipPetTool(pet)
-
-    if equipOk ~= true then
-        return false, tostring(equipReason)
-    end
-
     local ok, err =
         pcall(function()
 
@@ -18350,14 +18350,46 @@ function AgeBreakFireSubmitHeldFallback(pet, role)
         return false, tostring(err)
     end
 
-    return true, "Submitted held " .. tostring(role or "pet")
+    print(
+        "[AGE BREAK]",
+        "Fire SubmitHeld fallback:",
+        tostring(role or "pet")
+    )
+
+    return true, "SubmitHeld fired"
 end
 
 function AgeBreakSubmitPet(pet, role)
 
+    role =
+        tostring(role or "pet")
+
     if type(pet) ~= "table" then
-        return false, "Invalid " .. tostring(role or "pet")
+        return false, "Invalid " .. role
     end
+
+    if IsGardenWorld() ~= true then
+        return false, "Submit blocked outside Garden World"
+    end
+
+    AgeBreakSetStatus(
+        "Equipping",
+        "Equipping " .. role .. "..."
+    )
+
+    local equipOk, equipReason =
+        AgeBreakEquipPetTool(
+            pet
+        )
+
+    if equipOk ~= true then
+        return false, tostring(equipReason)
+    end
+
+    AgeBreakSetStatus(
+        "Submitting",
+        "Submitting " .. role .. "..."
+    )
 
     local directOk, directReason =
         AgeBreakFireSubmitUUID(
@@ -18365,135 +18397,83 @@ function AgeBreakSubmitPet(pet, role)
             role
         )
 
-    if directOk == true then
-        return true, directReason
+    if directOk ~= true then
+        return false, tostring(directReason)
     end
 
-    -- Fallback is only used if direct UUID submit is unavailable/fails.
+    -- Main script does this too:
+    -- direct UUID submit first, then SubmitHeld shortly after.
+    task.wait(0.20)
+
     local heldOk, heldReason =
         AgeBreakFireSubmitHeldFallback(
-            pet,
             role
         )
 
-    if heldOk == true then
-        return true, heldReason
+    if heldOk ~= true then
+
+        print(
+            "[AGE BREAK]",
+            "SubmitHeld fallback failed:",
+            tostring(role),
+            tostring(heldReason)
+        )
+
+        -- Do not fail the whole submit if UUID submit already fired.
+        return true,
+            tostring(directReason)
+                .. " | SubmitHeld fallback failed: "
+                .. tostring(heldReason)
     end
 
-    return false,
+    return true,
         tostring(directReason)
-        .. " | fallback: "
-        .. tostring(heldReason)
+            .. " + SubmitHeld"
 end
 
-function AgeBreakClearMachineStartWait(reason)
+function AgeBreakUUIDNoBraces(uuid)
 
-    AgeBreakState.WaitingForMachineStart =
-        false
-
-    AgeBreakState.MachineStartWaitStartedAt =
-        0
-
-    AgeBreakState.MachineStartWaitUntil =
-        0
-
-    AgeBreakState.LastMachineStartResult =
-        tostring(reason or "Cleared")
-
-    return true
+    return tostring(uuid or "")
+        :gsub("{", "")
+        :gsub("}", "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
 end
 
-function AgeBreakArmMachineStartWait(pairKey)
+function AgeBreakFindFreshPetByUUID(uuid, timeout, interval)
 
-    pairKey =
-        CleanText(pairKey)
+    local wanted =
+        AgeBreakUUIDNoBraces(uuid)
 
-    AgeBreakState.WaitingForMachineStart =
-        true
+    if wanted == "" then
+        return nil
+    end
 
-    AgeBreakState.MachineStartWaitStartedAt =
+    timeout =
+        tonumber(timeout)
+        or 5
+
+    interval =
+        tonumber(interval)
+        or 0.25
+
+    local started =
         os.clock()
 
-    AgeBreakState.MachineStartWaitUntil =
-        os.clock()
-        + (
-            tonumber(AgeBreakState.MachineStartConfirmSeconds)
-            or 22
-        )
+    while IsHolyLiteCurrentRun()
+    and os.clock() - started <= timeout do
 
-    AgeBreakState.LastSubmittedPairKey =
-        pairKey
+        for _, pet in ipairs(AgeBreakBuildInventoryPets()) do
 
-    AgeBreakState.LastMachineStartResult =
-        "Waiting for machine timer confirmation."
+            if AgeBreakUUIDNoBraces(pet.UUID) == wanted then
+                return pet
+            end
+        end
 
-    return true
-end
-
-function AgeBreakGetMachineStartWaitRemaining()
-
-    if AgeBreakState.WaitingForMachineStart ~= true then
-        return 0
+        task.wait(interval)
     end
 
-    return math.max(
-        0,
-        (tonumber(AgeBreakState.MachineStartWaitUntil) or 0)
-            - os.clock()
-    )
-end
-
-function AgeBreakCheckMachineStartWait()
-
-    if AgeBreakState.WaitingForMachineStart ~= true then
-        return false, "No pending submit"
-    end
-
-    AgeBreakRefreshMachineState()
-
-    if AgeBreakMachineIsRunning() == true then
-
-        AgeBreakClearMachineStartWait(
-            "Machine timer confirmed."
-        )
-
-        AgeBreakSaveSettingsNow(
-            "machine start confirmed"
-        )
-
-        return false, "Machine timer confirmed"
-    end
-
-    local remaining =
-        AgeBreakGetMachineStartWaitRemaining()
-
-    if remaining > 0 then
-
-        AgeBreakState.Status =
-            "Waiting Timer"
-
-        AgeBreakState.LastResult =
-            "Submit fired. Waiting for machine timer confirmation: "
-                .. string.format("%.1fs", remaining)
-
-        return true, "Waiting for machine timer"
-    end
-
-    AgeBreakClearMachineStartWait(
-        "Machine timer confirmation timed out."
-    )
-
-    AgeBreakState.Status =
-        "Timer Missing"
-
-    AgeBreakState.LastResult =
-        "Submit fired, but machine timer was not confirmed. Auto submit can retry after cooldown."
-
-    AgeBreakSaveSettingsNow(
-        "machine start timeout"
-    )
-
-    return false, "Machine timer confirmation timed out"
+    return nil
 end
 
 function AgeBreakSubmitBestPair(reason)
@@ -18646,7 +18626,17 @@ function AgeBreakSubmitBestPair(reason)
         return false, tostring(targetReason)
     end
 
-    task.wait(0.35)
+    AgeBreakState.LastSubmitResult =
+        "Target submitted. Waiting for sacrifice slot..."
+
+    AgeBreakSetStatus(
+        "Target Submitted",
+        "Waiting for machine to switch to sacrifice slot..."
+    )
+
+    -- Main waits 2 seconds here. 0.35 is too fast and can make
+    -- the sacrifice submit fire before the machine is ready for it.
+    task.wait(2.00)
 
     if not IsHolyLiteCurrentRun() then
 
@@ -18654,6 +18644,24 @@ function AgeBreakSubmitBestPair(reason)
             false
 
         return false, "Runtime stopped"
+    end
+
+    local freshSacrifice =
+        AgeBreakFindFreshPetByUUID(
+            pair.Sacrifice.UUID,
+            5,
+            0.25
+        )
+
+    if freshSacrifice then
+
+        pair.Sacrifice =
+            freshSacrifice
+
+        if AgeBreakState.LastPair then
+            AgeBreakState.LastPair.Sacrifice =
+                freshSacrifice
+        end
     end
 
     AgeBreakSetStatus(
@@ -18814,6 +18822,259 @@ function AgeBreakOpenSubmitDialog(reason)
     )
 
     return false
+end
+
+function AgeBreakBoolText(value)
+
+    return value == true
+        and "true"
+        or "false"
+end
+
+function AgeBreakSafeFullName(instance)
+
+    if not instance then
+        return "nil"
+    end
+
+    local ok, result =
+        pcall(function()
+            return instance:GetFullName()
+        end)
+
+    if ok == true then
+        return tostring(result)
+    end
+
+    return tostring(instance)
+end
+
+function AgeBreakSelectedKeys(map, limit)
+
+    local keys = {}
+
+    if type(map) == "table" then
+
+        for key, selected in pairs(map) do
+
+            if selected == true then
+
+                table.insert(
+                    keys,
+                    tostring(key)
+                )
+            end
+        end
+    end
+
+    table.sort(keys)
+
+    limit =
+        tonumber(limit)
+        or #keys
+
+    local shown = {}
+
+    for index = 1, math.min(#keys, limit) do
+
+        table.insert(
+            shown,
+            keys[index]
+        )
+    end
+
+    if #keys > limit then
+
+        table.insert(
+            shown,
+            "+"
+                .. tostring(#keys - limit)
+                .. " more"
+        )
+    end
+
+    return keys, table.concat(shown, ", ")
+end
+
+function AgeBreakDescribeRemote(remote)
+
+    if not remote then
+        return "missing"
+    end
+
+    return tostring(remote.ClassName)
+        .. " | "
+        .. AgeBreakSafeFullName(remote)
+end
+
+function AgeBreakBuildDebugDump()
+
+    AgeBreakRefreshMachineState()
+
+    local selectedTargets, selectedTargetText =
+        AgeBreakSelectedKeys(
+            AgeBreakState.SelectedTargetUUIDs,
+            12
+        )
+
+    local selectedSacrificeTypes, selectedSacrificeText =
+        AgeBreakSelectedKeys(
+            AgeBreakState.SelectedSacrificeTypes,
+            20
+        )
+
+    local pair =
+        nil
+
+    local pairReason =
+        "Not checked"
+
+    local buildOk, buildErr =
+        pcall(function()
+
+            AgeBreakBuildSacrificeQueue()
+
+            pair, pairReason =
+                AgeBreakFindBestPair()
+        end)
+
+    if buildOk ~= true then
+        pairReason =
+            tostring(buildErr)
+    end
+
+    local submitRemote =
+        type(AgeBreakGetSubmitRemote) == "function"
+        and AgeBreakGetSubmitRemote()
+        or nil
+
+    local submitHeldRemote =
+        type(AgeBreakGetSubmitHeldRemote) == "function"
+        and AgeBreakGetSubmitHeldRemote()
+        or nil
+
+    local claimRemote =
+        type(AgeBreakGetClaimRemote) == "function"
+        and AgeBreakGetClaimRemote()
+        or nil
+
+    local timerLabel =
+        type(AgeBreakResolveTimerLabel) == "function"
+        and AgeBreakResolveTimerLabel()
+        or nil
+
+    local lines = {}
+
+    table.insert(lines, "========== HOLY LITE AGE BREAK DEBUG ==========")
+    table.insert(lines, "Time: " .. tostring(os.date("%Y-%m-%d %H:%M:%S")))
+    table.insert(lines, "Player: " .. tostring(LocalPlayer.Name) .. " / " .. tostring(LocalPlayer.UserId))
+    table.insert(lines, "PlaceId: " .. tostring(game.PlaceId))
+    table.insert(lines, "JobId: " .. tostring(game.JobId))
+    table.insert(lines, "World: " .. (IsGardenWorld() and "Garden" or (IsTradeWorld() and "Trade" or "Other")))
+    table.insert(lines, "")
+
+    table.insert(lines, "---- MACHINE ----")
+    table.insert(lines, "MachineSeen: " .. AgeBreakBoolText(AgeBreakState.MachineSeen))
+    table.insert(lines, "MachineSource: " .. tostring(AgeBreakState.MachineSource))
+    table.insert(lines, "TimerText: " .. tostring(AgeBreakState.TimerText))
+    table.insert(lines, "TimerSeconds: " .. tostring(AgeBreakState.TimerSeconds))
+    table.insert(lines, "ClaimReady: " .. AgeBreakBoolText(AgeBreakState.ClaimReady))
+    table.insert(lines, "MachineTimerEndsAt: " .. tostring(AgeBreakState.MachineTimerEndsAt))
+    table.insert(lines, "TimerLabel: " .. AgeBreakDescribeRemote(timerLabel))
+    table.insert(lines, "")
+
+    table.insert(lines, "---- AUTOMATION ----")
+    table.insert(lines, "AutomationEnabled: " .. AgeBreakBoolText(AgeBreakState.AutomationEnabled))
+    table.insert(lines, "AutoTeleportWhenReady: " .. AgeBreakBoolText(AgeBreakState.AutoTeleportWhenReady))
+    table.insert(lines, "AutoClaim: " .. AgeBreakBoolText(AgeBreakState.AutoClaim))
+    table.insert(lines, "AutoSubmitNext: " .. AgeBreakBoolText(AgeBreakState.AutoSubmitNext))
+    table.insert(lines, "AutoTradeWorldWhenMachineStarts: " .. AgeBreakBoolText(AgeBreakState.AutoTradeWorldWhenMachineStarts))
+    table.insert(lines, "")
+
+    table.insert(lines, "---- SUBMIT / CLAIM ----")
+    table.insert(lines, "SubmitInFlight: " .. AgeBreakBoolText(AgeBreakState.SubmitInFlight))
+    table.insert(lines, "LastSubmitAt: " .. tostring(AgeBreakState.LastSubmitAt))
+    table.insert(lines, "LastSubmitResult: " .. tostring(AgeBreakState.LastSubmitResult))
+    table.insert(lines, "LastSubmittedPairKey: " .. tostring(AgeBreakState.LastSubmittedPairKey))
+    table.insert(lines, "WaitingForMachineStart: " .. AgeBreakBoolText(AgeBreakState.WaitingForMachineStart))
+    table.insert(lines, "MachineStartWaitRemaining: " .. string.format("%.2f", AgeBreakGetMachineStartWaitRemaining()))
+    table.insert(lines, "LastMachineStartResult: " .. tostring(AgeBreakState.LastMachineStartResult))
+    table.insert(lines, "ClaimInFlight: " .. AgeBreakBoolText(AgeBreakState.ClaimInFlight))
+    table.insert(lines, "LastClaimAt: " .. tostring(AgeBreakState.LastClaimAt))
+    table.insert(lines, "LastClaimResult: " .. tostring(AgeBreakState.LastClaimResult))
+    table.insert(lines, "")
+
+    table.insert(lines, "---- REMOTES ----")
+    table.insert(lines, "PetAgeLimitBreak_Submit: " .. AgeBreakDescribeRemote(submitRemote))
+    table.insert(lines, "PetAgeLimitBreak_SubmitHeld: " .. AgeBreakDescribeRemote(submitHeldRemote))
+    table.insert(lines, "PetAgeLimitBreak_Claim: " .. AgeBreakDescribeRemote(claimRemote))
+    table.insert(lines, "")
+
+    table.insert(lines, "---- TARGETS / SACRIFICES ----")
+    table.insert(lines, "SelectedTargetsCount: " .. tostring(#selectedTargets))
+    table.insert(lines, "SelectedTargets: " .. tostring(selectedTargetText ~= "" and selectedTargetText or "None"))
+    table.insert(lines, "SelectedSacrificeTypesCount: " .. tostring(#selectedSacrificeTypes))
+    table.insert(lines, "SelectedSacrificeTypes: " .. tostring(selectedSacrificeText ~= "" and selectedSacrificeText or "None"))
+    table.insert(lines, "SacrificeQueueCount: " .. tostring(#(AgeBreakState.SacrificeQueue or {})))
+    table.insert(lines, "BlockedSacrificeCount: " .. tostring(#(AgeBreakState.BlockedSacrifices or {})))
+    table.insert(lines, "PairReason: " .. tostring(pairReason))
+    table.insert(lines, "")
+
+    if type(pair) == "table"
+    and pair.Target
+    and pair.Sacrifice then
+
+        table.insert(lines, "---- NEXT PAIR ----")
+        table.insert(lines, "Target: " .. AgeBreakFormatPetLine(pair.Target, false))
+        table.insert(lines, "Sacrifice: " .. AgeBreakFormatPetLine(pair.Sacrifice, false))
+        table.insert(lines, "")
+    end
+
+    table.insert(lines, "---- SAFETY ----")
+    table.insert(lines, "SkipFavorites: " .. AgeBreakBoolText(AgeBreakState.SkipFavorites))
+    table.insert(lines, "BlockAge100Sacrifices: " .. AgeBreakBoolText(AgeBreakState.BlockAge100Sacrifices))
+    table.insert(lines, "SacrificeLowerAge: " .. AgeBreakBoolText(AgeBreakState.SacrificeLowerAge))
+    table.insert(lines, "SacrificeLowerBaseWeight: " .. AgeBreakBoolText(AgeBreakState.SacrificeLowerBaseWeight))
+    table.insert(lines, "NeverTargetAsSacrifice: " .. AgeBreakBoolText(AgeBreakState.NeverTargetAsSacrifice))
+    table.insert(lines, "MaxSacrificeAge: " .. tostring(AgeBreakState.MaxSacrificeAge))
+    table.insert(lines, "MaxSacrificeBaseWeight: " .. tostring(AgeBreakState.MaxSacrificeBaseWeight))
+    table.insert(lines, "")
+    table.insert(lines, "================================================")
+
+    return table.concat(lines, "\n")
+end
+
+function AgeBreakCopyDebugDump()
+
+    local dump =
+        AgeBreakBuildDebugDump()
+
+    local copied =
+        false
+
+    if type(CopyLiteTransferText) == "function" then
+        copied =
+            CopyLiteTransferText(dump)
+    end
+
+    if copied == true then
+
+        AgeBreakSetStatus(
+            "Debug Copied",
+            "Age Break debug dump copied to clipboard."
+        )
+
+    else
+
+        print(dump)
+
+        AgeBreakSetStatus(
+            "Debug Printed",
+            "Clipboard unavailable. Debug dump printed to console."
+        )
+    end
+
+    return dump
 end
 
 function AgeBreakAutoStep()
@@ -19441,6 +19702,15 @@ if Tabs.AgeBreak then
         Func = function()
 
             AgeBreakPreviewPair()
+        end,
+    })
+
+    AgeBreakMachineBox:AddButton({
+        Text = "Copy Debug",
+        Tooltip = "Copies Age Break timer, queue, remotes, submit, and claim state.",
+        Func = function()
+
+            AgeBreakCopyDebugDump()
         end,
     })
 
