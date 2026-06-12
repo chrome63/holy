@@ -18442,6 +18442,167 @@ function AgeBreakSubmitPetMainStyle(pet, role)
     return true, tostring(submitReason)
 end
 
+function AgeBreakUUIDNoBraces(uuid)
+
+    return tostring(uuid or "")
+        :gsub("{", "")
+        :gsub("}", "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+function AgeBreakFindFreshPetByUUID(uuid, timeout, interval)
+
+    local wanted =
+        AgeBreakUUIDNoBraces(uuid)
+
+    if wanted == "" then
+        return nil
+    end
+
+    timeout =
+        tonumber(timeout)
+        or 5
+
+    interval =
+        tonumber(interval)
+        or 0.25
+
+    local started =
+        os.clock()
+
+    while IsHolyLiteCurrentRun()
+    and os.clock() - started <= timeout do
+
+        local pets =
+            AgeBreakBuildInventoryPets()
+
+        for _, pet in ipairs(pets or {}) do
+
+            if AgeBreakUUIDNoBraces(pet.UUID) == wanted then
+                return pet
+            end
+        end
+
+        task.wait(interval)
+    end
+
+    return nil
+end
+
+function AgeBreakClearMachineStartWait(reason)
+
+    AgeBreakState.WaitingForMachineStart =
+        false
+
+    AgeBreakState.MachineStartWaitStartedAt =
+        0
+
+    AgeBreakState.MachineStartWaitUntil =
+        0
+
+    AgeBreakState.LastMachineStartResult =
+        tostring(reason or "Cleared")
+
+    return true
+end
+
+function AgeBreakArmMachineStartWait(pairKey)
+
+    pairKey =
+        CleanText(pairKey)
+
+    AgeBreakState.WaitingForMachineStart =
+        true
+
+    AgeBreakState.MachineStartWaitStartedAt =
+        os.clock()
+
+    AgeBreakState.MachineStartWaitUntil =
+        os.clock()
+        + (
+            tonumber(AgeBreakState.MachineStartConfirmSeconds)
+            or 22
+        )
+
+    AgeBreakState.LastSubmittedPairKey =
+        pairKey
+
+    AgeBreakState.LastMachineStartResult =
+        "Waiting for machine timer confirmation."
+
+    return true
+end
+
+function AgeBreakGetMachineStartWaitRemaining()
+
+    if AgeBreakState.WaitingForMachineStart ~= true then
+        return 0
+    end
+
+    return math.max(
+        0,
+        (
+            tonumber(AgeBreakState.MachineStartWaitUntil)
+            or 0
+        )
+            - os.clock()
+    )
+end
+
+function AgeBreakCheckMachineStartWait()
+
+    if AgeBreakState.WaitingForMachineStart ~= true then
+        return false, "No pending submit"
+    end
+
+    AgeBreakRefreshMachineState()
+
+    if AgeBreakMachineIsRunning() == true then
+
+        AgeBreakClearMachineStartWait(
+            "Machine timer confirmed."
+        )
+
+        AgeBreakSaveSettingsNow(
+            "machine start confirmed"
+        )
+
+        return false, "Machine timer confirmed"
+    end
+
+    local remaining =
+        AgeBreakGetMachineStartWaitRemaining()
+
+    if remaining > 0 then
+
+        AgeBreakState.Status =
+            "Waiting Timer"
+
+        AgeBreakState.LastResult =
+            "Submit fired. Waiting for machine timer confirmation: "
+                .. string.format("%.1fs", remaining)
+
+        return true, "Waiting for machine timer"
+    end
+
+    AgeBreakClearMachineStartWait(
+        "Machine timer confirmation timed out."
+    )
+
+    AgeBreakState.Status =
+        "Timer Missing"
+
+    AgeBreakState.LastResult =
+        "Submit fired, but machine timer was not confirmed. Auto submit can retry after cooldown."
+
+    AgeBreakSaveSettingsNow(
+        "machine start timeout"
+    )
+
+    return false, "Machine timer confirmation timed out"
+end
+
 function AgeBreakRemoveSacrificeRuntimeUUID(uuid)
 
     local wanted =
@@ -19301,8 +19462,26 @@ end
 
 function AgeBreakCopyDebugDump()
 
-    local dump =
-        AgeBreakBuildDebugDump()
+    local ok, dump =
+        pcall(function()
+
+            return AgeBreakBuildDebugDump()
+        end)
+
+    if ok ~= true then
+
+        AgeBreakSetStatus(
+            "Debug Error",
+            tostring(dump)
+        )
+
+        warn(
+            "[AGE BREAK DEBUG ERROR]",
+            tostring(dump)
+        )
+
+        return tostring(dump)
+    end
 
     local copied =
         false
@@ -20492,9 +20671,28 @@ if Tabs.AgeBreak then
 
                 task.wait(1)
 
-                AgeBreakRefreshMachineState()
-                AgeBreakAutoStep()
-                AgeBreakRefreshUI()
+                local ageLoopOk, ageLoopErr =
+                    pcall(function()
+
+                        AgeBreakRefreshMachineState()
+                        AgeBreakAutoStep()
+                        AgeBreakRefreshUI()
+                    end)
+
+                if ageLoopOk ~= true then
+
+                    AgeBreakSetStatus(
+                        "Loop Error",
+                        tostring(ageLoopErr)
+                    )
+
+                    warn(
+                        "[AGE BREAK LOOP ERROR]",
+                        tostring(ageLoopErr)
+                    )
+
+                    task.wait(1)
+                end
             end
         end)
     end)
