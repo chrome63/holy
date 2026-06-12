@@ -16052,6 +16052,10 @@ local AgeBreakState = {
     MachineTimerEndsAt = 0,
     LastTimerSaveAt = 0,
 
+    ClaimInFlight = false,
+    LastClaimAt = 0,
+    LastClaimResult = "None",
+
     MaxSacrificeAge = 99,
     MaxSacrificeBaseWeight = 999,
 
@@ -17936,6 +17940,181 @@ function AgeBreakTeleportToTradeWorld(reason, force)
     return true, "Trade teleport requested"
 end
 
+function AgeBreakGetGameEvents()
+
+    return ReplicatedStorage:FindFirstChild("GameEvents")
+end
+
+function AgeBreakGetClaimRemote()
+
+    local gameEvents =
+        AgeBreakGetGameEvents()
+
+    if not gameEvents then
+        return nil
+    end
+
+    local remote =
+        gameEvents:FindFirstChild("PetAgeLimitBreak_Claim")
+
+    if remote
+    and (
+        remote:IsA("RemoteEvent")
+        or remote:IsA("RemoteFunction")
+    ) then
+        return remote
+    end
+
+    return nil
+end
+
+function AgeBreakClaimIfReady(reason)
+
+    reason =
+        tostring(reason or "manual")
+
+    if IsGardenWorld() ~= true then
+
+        AgeBreakSetStatus(
+            "Claim Blocked",
+            "Claim can only run in Garden World."
+        )
+
+        return false, "Not in Garden World"
+    end
+
+    if AgeBreakState.ClaimInFlight == true then
+        return false, "Claim already in flight"
+    end
+
+    if AgeBreakElapsed(AgeBreakState.LastClaimAt) < 8 then
+
+        AgeBreakSetStatus(
+            "Claim Cooldown",
+            "Waiting before another claim attempt."
+        )
+
+        return false, "Claim cooldown"
+    end
+
+    AgeBreakRefreshMachineState()
+
+    if AgeBreakState.ClaimReady ~= true then
+
+        AgeBreakSetStatus(
+            "Not Ready",
+            "Machine is not ready to claim."
+        )
+
+        return false, "Not ready"
+    end
+
+    local remote =
+        AgeBreakGetClaimRemote()
+
+    if not remote then
+
+        AgeBreakSetStatus(
+            "Claim Failed",
+            "PetAgeLimitBreak_Claim remote missing."
+        )
+
+        return false, "Claim remote missing"
+    end
+
+    AgeBreakState.ClaimInFlight =
+        true
+
+    AgeBreakState.LastClaimAt =
+        os.clock()
+
+    AgeBreakState.LastAutoActionAt =
+        os.clock()
+
+    AgeBreakSetStatus(
+        "Claiming",
+        "Firing Garden-only claim..."
+    )
+
+    local ok, result =
+        pcall(function()
+
+            if remote:IsA("RemoteEvent") then
+
+                remote:FireServer()
+
+                return true
+            end
+
+            if remote:IsA("RemoteFunction") then
+
+                return remote:InvokeServer()
+            end
+
+            return false
+        end)
+
+    AgeBreakState.ClaimInFlight =
+        false
+
+    if ok ~= true then
+
+        AgeBreakState.LastClaimResult =
+            tostring(result)
+
+        AgeBreakSetStatus(
+            "Claim Failed",
+            tostring(result)
+        )
+
+        return false, tostring(result)
+    end
+
+    AgeBreakState.LastClaimResult =
+        "Claim fired"
+
+    AgeBreakState.ClaimReady =
+        false
+
+    AgeBreakState.TimerText =
+        "--"
+
+    AgeBreakState.TimerSeconds =
+        nil
+
+    AgeBreakState.MachineTimerEndsAt =
+        0
+
+    AgeBreakSaveSettingsNow(
+        "claim fired"
+    )
+
+    AgeBreakSetStatus(
+        "Claim Fired",
+        "Claim remote fired in Garden World."
+    )
+
+    task.delay(0.75, function()
+
+        if IsHolyLiteCurrentRun() then
+
+            AgeBreakRefreshMachineState()
+            AgeBreakRefreshUI()
+        end
+    end)
+
+    task.delay(2.0, function()
+
+        if IsHolyLiteCurrentRun() then
+
+            AgeBreakRefreshMachineState()
+            AgeBreakRefreshUI()
+        end
+    end)
+
+    return true, "Claim fired"
+end
+
 function AgeBreakAutoStep()
 
     if not IsHolyLiteCurrentRun() then
@@ -18007,12 +18186,22 @@ function AgeBreakAutoStep()
 
             if AgeBreakState.AutoClaim == true then
 
-                AgeBreakState.Status =
-                    "Claim Ready"
+                local canAct =
+                    AgeBreakCanAutoRoute(1.5)
 
-                AgeBreakState.LastResult =
-                    "Auto Claim is enabled, but claim remote is not added yet."
+                if canAct == true then
+
+                    return AgeBreakClaimIfReady(
+                        "auto claim"
+                    )
+                end
             end
+
+            AgeBreakState.Status =
+                "Claim Ready"
+
+            AgeBreakState.LastResult =
+                "Machine is ready. Auto Claim is off, or claim is cooling down."
 
             return false, "Claim ready"
         end
@@ -18548,24 +18737,11 @@ if Tabs.AgeBreak then
             end,
         }):AddButton({
             Text = "Claim Ready",
-            Tooltip = "Garden World only. Later this claims if the machine timer is ready.",
+            Tooltip = "Garden World only. Claims the Age Break machine if ready.",
             Func = function()
 
-                AgeBreakRefreshMachineState()
-
-                if AgeBreakState.ClaimReady ~= true then
-
-                    AgeBreakSetStatus(
-                        "Not Ready",
-                        "Machine is not ready to claim."
-                    )
-
-                    return
-                end
-
-                AgeBreakSetStatus(
-                    "Claim Locked",
-                    "Claim remote is still disabled. Next patch adds Garden-only claim."
+                AgeBreakClaimIfReady(
+                    "manual claim"
                 )
             end,
         })
