@@ -16082,6 +16082,10 @@ local AgeBreakState = {
     SacrificeLowerBaseWeight = true,
     NeverTargetAsSacrifice = true,
 
+    AutoUnfavoriteTargets = true,
+    LastTargetUnfavoriteAt = 0,
+    LastTargetUnfavoriteResult = "None",
+
     AutomationEnabled = false,
     AutoTeleportWhenReady = false,
 
@@ -16200,6 +16204,9 @@ function AgeBreakSaveSettingsNow(reason)
 
         NeverTargetAsSacrifice =
             AgeBreakState.NeverTargetAsSacrifice == true,
+
+        AutoUnfavoriteTargets =
+            AgeBreakState.AutoUnfavoriteTargets ~= false,
 
         AutomationEnabled =
             AgeBreakState.AutomationEnabled == true,
@@ -16387,6 +16394,11 @@ function AgeBreakLoadSettingsIntoState()
     if type(payload.NeverTargetAsSacrifice) == "boolean" then
         AgeBreakState.NeverTargetAsSacrifice =
             payload.NeverTargetAsSacrifice
+    end
+
+    if type(payload.AutoUnfavoriteTargets) == "boolean" then
+        AgeBreakState.AutoUnfavoriteTargets =
+            payload.AutoUnfavoriteTargets
     end
 
     if type(payload.AutomationEnabled) == "boolean" then
@@ -18603,6 +18615,170 @@ function AgeBreakCheckMachineStartWait()
     return false, "Machine timer confirmation timed out"
 end
 
+AgeBreakFavoriteRemote =
+    AgeBreakFavoriteRemote
+    or nil
+
+function AgeBreakGetFavoriteRemote()
+
+    if AgeBreakFavoriteRemote then
+        return AgeBreakFavoriteRemote
+    end
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    if not gameEvents then
+        return nil
+    end
+
+    local remote =
+        gameEvents:FindFirstChild("Favorite_Item")
+
+    if remote
+    and remote:IsA("RemoteEvent") then
+
+        AgeBreakFavoriteRemote =
+            remote
+
+        return AgeBreakFavoriteRemote
+    end
+
+    return nil
+end
+
+function AgeBreakPetLooksFavorite(pet)
+
+    if type(pet) ~= "table" then
+        return false
+    end
+
+    if pet.IsFavorite == true then
+        return true
+    end
+
+    local tool =
+        pet.Tool
+
+    if tool
+    and tool:IsA("Tool") then
+
+        if tool:GetAttribute("d") == true
+        or tool:GetAttribute("IsFavorite") == true
+        or tool:GetAttribute("Favorite") == true
+        or tool:GetAttribute("Favorited") == true then
+            return true
+        end
+    end
+
+    return false
+end
+
+function AgeBreakUnfavoritePetForSubmit(pet, role)
+
+    role =
+        tostring(role or "target")
+
+    if AgeBreakState.AutoUnfavoriteTargets ~= true then
+        return true, "Auto unfavorite targets OFF"
+    end
+
+    if type(pet) ~= "table" then
+        return false, "Invalid " .. role
+    end
+
+    if not pet.Tool
+    or not pet.Tool:IsA("Tool") then
+        return false, role .. " tool missing"
+    end
+
+    if AgeBreakPetLooksFavorite(pet) ~= true then
+        return true, role .. " not favorite"
+    end
+
+    local remote =
+        AgeBreakGetFavoriteRemote()
+
+    if not remote then
+        return false, "Favorite_Item remote missing"
+    end
+
+    AgeBreakState.LastTargetUnfavoriteAt =
+        os.clock()
+
+    AgeBreakSetStatus(
+        "Unfavoriting",
+        "Unfavoriting "
+            .. tostring(role)
+            .. ": "
+            .. tostring(pet.PetName or pet.ToolName or "pet")
+    )
+
+    local ok, err =
+        pcall(function()
+
+            remote:FireServer(
+                pet.Tool
+            )
+        end)
+
+    if ok ~= true then
+
+        AgeBreakState.LastTargetUnfavoriteResult =
+            tostring(err)
+
+        return false, tostring(err)
+    end
+
+    local timeoutAt =
+        os.clock()
+        + 4
+
+    while IsHolyLiteCurrentRun()
+    and os.clock() < timeoutAt do
+
+        local fresh =
+            AgeBreakFindFreshPetByUUID(
+                pet.UUID,
+                0.05,
+                0.05
+            )
+
+        if fresh
+        and fresh.Tool
+        and fresh.Tool:IsA("Tool") then
+            pet =
+                fresh
+        end
+
+        if AgeBreakPetLooksFavorite(pet) ~= true then
+
+            pet.IsFavorite =
+                false
+
+            AgeBreakState.LastTargetUnfavoriteResult =
+                "Unfavorited "
+                    .. tostring(role)
+
+            print(
+                "[AGE BREAK]",
+                "Unfavorited",
+                tostring(role),
+                tostring(pet.ToolName or pet.PetName or pet.UUID)
+            )
+
+            return true, "Unfavorited"
+        end
+
+        task.wait(0.1)
+    end
+
+    AgeBreakState.LastTargetUnfavoriteResult =
+        "Unfavorite timeout"
+
+    return false, "Unfavorite timeout"
+end
+
 function AgeBreakRemoveSacrificeRuntimeUUID(uuid)
 
     local wanted =
@@ -19028,6 +19204,48 @@ function AgeBreakSubmitBestPair(reason)
 
     AgeBreakState.LastPair =
         pair
+
+    local unfavoriteOk, unfavoriteReason =
+        AgeBreakUnfavoritePetForSubmit(
+            target,
+            "target"
+        )
+
+    if unfavoriteOk ~= true then
+
+        AgeBreakState.SubmitInFlight =
+            false
+
+        AgeBreakState.LastSubmitResult =
+            tostring(unfavoriteReason)
+
+        AgeBreakSetStatus(
+            "Target Favorite",
+            "Could not unfavorite target: "
+                .. tostring(unfavoriteReason)
+        )
+
+        return false, tostring(unfavoriteReason)
+    end
+
+    local refreshedTarget =
+        AgeBreakFindFreshPetByUUID(
+            target.UUID,
+            2,
+            0.15
+        )
+
+    if refreshedTarget then
+
+        target =
+            refreshedTarget
+
+        pair.Target =
+            refreshedTarget
+
+        AgeBreakState.LastPair =
+            pair
+    end
 
     AgeBreakSetStatus(
         "Equipping",
@@ -20456,6 +20674,30 @@ if Tabs.AgeBreak then
         )
 
         AgeBreakPreviewPair()
+    end)
+
+        AgeBreakSafetyBox:AddToggle(
+        "HolyLiteAgeBreakAutoUnfavoriteTargets",
+        {
+            Text = "Auto Unfavorite Targets",
+            Default = AgeBreakState.AutoUnfavoriteTargets ~= false,
+            Tooltip = "Before submitting, unfavorites the selected target pet so the Age Break machine accepts it.",
+        }
+    ):OnChanged(function(value)
+
+        AgeBreakState.AutoUnfavoriteTargets =
+            value == true
+
+        AgeBreakQueueSave(
+            "auto unfavorite targets changed"
+        )
+
+        AgeBreakSetStatus(
+            "Safety",
+            AgeBreakState.AutoUnfavoriteTargets == true
+            and "Selected targets will be unfavorited before submit."
+            or "Target unfavorite disabled."
+        )
     end)
 
     AgeBreakSafetyBox:AddLabel({
