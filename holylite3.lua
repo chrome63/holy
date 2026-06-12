@@ -16036,6 +16036,9 @@ local AgeBreakState = {
     TargetDropdown = nil,
     SacrificeTypesDropdown = nil,
 
+    TargetDropdownHydrating = false,
+    SacrificeTypesDropdownHydrating = false,
+
     StatusLabel = nil,
     TargetPreviewLabel = nil,
     SacrificeQueueLabel = nil,
@@ -16530,33 +16533,95 @@ function AgeBreakBuildTargetChoices()
         {}
 
     local choices = {}
+    local seenUUIDs = {}
+    local seenChoices = {}
+
+    local function addChoice(choice, uuid)
+
+        choice =
+            tostring(choice or "")
+
+        uuid =
+            CleanText(uuid)
+
+        if choice == ""
+        or uuid == "" then
+            return false
+        end
+
+        local baseChoice =
+            choice
+
+        local suffix =
+            2
+
+        while seenChoices[choice] == true do
+
+            choice =
+                baseChoice
+                .. " · "
+                .. tostring(suffix)
+
+            suffix =
+                suffix + 1
+        end
+
+        seenChoices[choice] =
+            true
+
+        AgeBreakState.ChoiceToUUID[choice] =
+            uuid
+
+        AgeBreakState.UUIDToChoice[uuid] =
+            choice
+
+        table.insert(
+            choices,
+            choice
+        )
+
+        return true
+    end
 
     for _, pet in ipairs(AgeBreakBuildInventoryPets()) do
 
         local uuid =
             CleanText(pet.UUID)
 
-        if uuid ~= "" then
+        if uuid ~= ""
+        and seenUUIDs[uuid] ~= true then
 
-            local choice =
-                AgeBreakFormatTargetChoice(pet)
+            seenUUIDs[uuid] =
+                true
 
-            if AgeBreakState.ChoiceToUUID[choice] then
-                choice =
-                    choice
-                    .. " · "
-                    .. tostring(#choices + 1)
-            end
-
-            AgeBreakState.ChoiceToUUID[choice] =
+            addChoice(
+                AgeBreakFormatTargetChoice(pet),
                 uuid
+            )
+        end
+    end
 
-            AgeBreakState.UUIDToChoice[uuid] =
-                choice
+    -- Important:
+    -- In Trade World, exact inventory details may not be available.
+    -- Keep saved UUID targets visible/editable instead of making the
+    -- dropdown look empty and risking the saved map being wiped.
+    for uuid, selected in pairs(AgeBreakState.SelectedTargetUUIDs or {}) do
 
-            table.insert(
-                choices,
-                choice
+        uuid =
+            CleanText(uuid)
+
+        if selected == true
+        and uuid ~= ""
+        and seenUUIDs[uuid] ~= true then
+
+            seenUUIDs[uuid] =
+                true
+
+            addChoice(
+                "Saved Target #"
+                    .. AgeBreakShortUUID(uuid)
+                    .. " · details reload in Garden World",
+                uuid
             )
         end
     end
@@ -16997,36 +17062,92 @@ function AgeBreakBuildTargetsText()
     local targets =
         AgeBreakGetSelectedTargets()
 
+    local savedUUIDs = {}
+
+    for uuid, selected in pairs(AgeBreakState.SelectedTargetUUIDs or {}) do
+
+        uuid =
+            CleanText(uuid)
+
+        if selected == true
+        and uuid ~= "" then
+
+            table.insert(
+                savedUUIDs,
+                uuid
+            )
+        end
+    end
+
+    table.sort(savedUUIDs)
+
     table.insert(
         lines,
         "Selected Targets: "
+            .. tostring(#savedUUIDs)
+    )
+
+    table.insert(
+        lines,
+        "Available Here: "
             .. tostring(#targets)
     )
 
+    if #savedUUIDs <= 0 then
+
+        table.insert(
+            lines,
+            "None selected."
+        )
+
+        return table.concat(lines, "\n")
+    end
+
     if #targets <= 0 then
 
-        local savedCount = 0
-
-        for _, selected in pairs(AgeBreakState.SelectedTargetUUIDs or {}) do
-
-            if selected == true then
-                savedCount =
-                    savedCount + 1
-            end
-        end
-
-        if savedCount > 0 then
+        if IsTradeWorld() then
 
             table.insert(
                 lines,
-                "Saved targets exist, but they are not in current inventory."
+                "Saved targets are editable here."
+            )
+
+            table.insert(
+                lines,
+                "Exact pet details reload in Garden World."
             )
 
         else
 
             table.insert(
                 lines,
-                "None selected."
+                "Saved targets exist, but they are not in current inventory."
+            )
+        end
+
+        local shownSaved =
+            math.min(
+                #savedUUIDs,
+                8
+            )
+
+        for index = 1, shownSaved do
+
+            table.insert(
+                lines,
+                tostring(index)
+                    .. ". Saved Target #"
+                    .. AgeBreakShortUUID(savedUUIDs[index])
+            )
+        end
+
+        if #savedUUIDs > shownSaved then
+
+            table.insert(
+                lines,
+                "+"
+                    .. tostring(#savedUUIDs - shownSaved)
+                    .. " more saved targets"
             )
         end
 
@@ -17058,7 +17179,19 @@ function AgeBreakBuildTargetsText()
             lines,
             "+"
                 .. tostring(#targets - shown)
-                .. " more targets"
+                .. " more available targets"
+        )
+    end
+
+    local missingCount =
+        #savedUUIDs - #targets
+
+    if missingCount > 0 then
+
+        table.insert(
+            lines,
+            tostring(missingCount)
+                .. " saved target(s) not available in this world."
         )
     end
 
@@ -17074,6 +17207,25 @@ function AgeBreakBuildQueueText()
     local blocked =
         AgeBreakState.BlockedSacrifices
         or {}
+
+    local selectedTypes = {}
+
+    for petName, selected in pairs(AgeBreakState.SelectedSacrificeTypes or {}) do
+
+        petName =
+            CleanText(petName)
+
+        if selected == true
+        and petName ~= "" then
+
+            table.insert(
+                selectedTypes,
+                petName
+            )
+        end
+    end
+
+    table.sort(selectedTypes)
 
     local maxPage =
         math.max(
@@ -17091,6 +17243,13 @@ function AgeBreakBuildQueueText()
         )
 
     local lines = {}
+
+    table.insert(
+        lines,
+        "Rules: "
+            .. tostring(#selectedTypes)
+            .. " sacrifice type(s)"
+    )
 
     table.insert(
         lines,
@@ -17114,6 +17273,30 @@ function AgeBreakBuildQueueText()
             .. tostring(maxPage)
     )
 
+    if #selectedTypes > 0 then
+
+        local shownTypes = {}
+
+        for index = 1, math.min(#selectedTypes, 6) do
+
+            table.insert(
+                shownTypes,
+                selectedTypes[index]
+            )
+        end
+
+        table.insert(
+            lines,
+            "Types: "
+                .. table.concat(shownTypes, ", ")
+                .. (
+                    #selectedTypes > #shownTypes
+                    and (" +" .. tostring(#selectedTypes - #shownTypes))
+                    or ""
+                )
+        )
+    end
+
     table.insert(
         lines,
         ""
@@ -17121,10 +17304,32 @@ function AgeBreakBuildQueueText()
 
     if #queue <= 0 then
 
-        table.insert(
-            lines,
-            "No sacrifices queued yet."
-        )
+        if #selectedTypes <= 0 then
+
+            table.insert(
+                lines,
+                "No sacrifice rules selected."
+            )
+
+        elseif IsTradeWorld() then
+
+            table.insert(
+                lines,
+                "Sacrifice rules are saved/editable here."
+            )
+
+            table.insert(
+                lines,
+                "Exact safe queue builds in Garden World."
+            )
+
+        else
+
+            table.insert(
+                lines,
+                "No safe sacrifices found in current inventory."
+            )
+        end
 
         return table.concat(lines, "\n")
     end
@@ -17549,21 +17754,80 @@ function AgeBreakRefreshTargetDropdown()
     local choices =
         AgeBreakBuildTargetChoices()
 
+    AgeBreakState.TargetDropdownHydrating =
+        true
+
     if AgeBreakState.TargetDropdown
     and type(AgeBreakState.TargetDropdown.SetValues) == "function" then
 
-        AgeBreakState.TargetDropdown:SetValues(
-            choices
-        )
+        pcall(function()
+
+            AgeBreakState.TargetDropdown:SetValues(
+                choices
+            )
+        end)
     end
 
     if AgeBreakState.TargetDropdown
     and type(AgeBreakState.TargetDropdown.SetValue) == "function" then
 
-        AgeBreakState.TargetDropdown:SetValue(
-            AgeBreakDropdownDefaultsFromTargetUUIDs()
-        )
+        pcall(function()
+
+            AgeBreakState.TargetDropdown:SetValue(
+                AgeBreakDropdownDefaultsFromTargetUUIDs()
+            )
+        end)
     end
+
+    AgeBreakState.TargetDropdownHydrating =
+        false
+
+    return choices
+end
+
+function AgeBreakRefreshSacrificeTypesDropdown()
+
+    local choices =
+        AgeBreakBuildPetTypeChoices()
+
+    if type(EnsureTransferDropdownChoicesFromMap) == "function" then
+
+        choices =
+            EnsureTransferDropdownChoicesFromMap(
+                choices,
+                AgeBreakState.SelectedSacrificeTypes
+            )
+    end
+
+    AgeBreakState.SacrificeTypesDropdownHydrating =
+        true
+
+    if AgeBreakState.SacrificeTypesDropdown
+    and type(AgeBreakState.SacrificeTypesDropdown.SetValues) == "function" then
+
+        pcall(function()
+
+            AgeBreakState.SacrificeTypesDropdown:SetValues(
+                choices
+            )
+        end)
+    end
+
+    if AgeBreakState.SacrificeTypesDropdown
+    and type(AgeBreakState.SacrificeTypesDropdown.SetValue) == "function" then
+
+        pcall(function()
+
+            AgeBreakState.SacrificeTypesDropdown:SetValue(
+                AgeBreakCopyBoolMap(
+                    AgeBreakState.SelectedSacrificeTypes
+                )
+            )
+        end)
+    end
+
+    AgeBreakState.SacrificeTypesDropdownHydrating =
+        false
 
     return choices
 end
@@ -17707,6 +17971,10 @@ if Tabs.AgeBreak then
 
     AgeBreakState.TargetDropdown:OnChanged(function(value)
 
+        if AgeBreakState.TargetDropdownHydrating == true then
+            return
+        end
+
         AgeBreakState.SelectedTargetUUIDs =
             AgeBreakReadTargetDropdownMap(value)
 
@@ -17782,6 +18050,10 @@ if Tabs.AgeBreak then
         )
 
     AgeBreakState.SacrificeTypesDropdown:OnChanged(function(value)
+
+        if AgeBreakState.SacrificeTypesDropdownHydrating == true then
+            return
+        end
 
         AgeBreakState.SelectedSacrificeTypes =
             TransferBuildMapFromDropdown(value)
@@ -18289,6 +18561,7 @@ if Tabs.AgeBreak then
         end
 
         AgeBreakRefreshTargetDropdown()
+        AgeBreakRefreshSacrificeTypesDropdown()
         AgeBreakBuildSacrificeQueue()
         AgeBreakRefreshMachineState()
         AgeBreakPreviewPair()
