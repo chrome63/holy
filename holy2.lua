@@ -1983,6 +1983,9 @@ local FarmConfig = {
             {}
         ),
 
+    CollectDebug =
+        false,
+
     SelectedSeed =
         CleanText(UIState.FarmSelectedSeed) ~= ""
         and CleanText(UIState.FarmSelectedSeed)
@@ -2538,7 +2541,16 @@ local function FarmRefreshPositionLabel()
             .. tostring(FarmConfig.CollectDelay)
             .. 's'
             .. '\nCollect Plants: '
-            .. FarmSelectedCollectPlantsText()
+            .. (
+                type(FarmSelectedCollectPlantsText) == "function"
+                and FarmSelectedCollectPlantsText()
+                or (
+                    type(FarmConfig.CollectPlants) == "table"
+                    and #FarmConfig.CollectPlants > 0
+                    and table.concat(FarmConfig.CollectPlants, ", ")
+                    or "all plants"
+                )
+            )
             .. '\nLast Collect: '
             .. tostring(FarmAutomationState.LastCollectCount or 0)
             .. ' via '
@@ -3178,6 +3190,97 @@ local function FarmRefreshCollectPlantsDropdown()
     FarmRefreshPositionLabel()
 end
 
+local function FarmCollectDebugPrint(...)
+
+    if FarmConfig.CollectDebug ~= true then
+        return
+    end
+
+    print(
+        "[HOLY GAG2 COLLECT]",
+        ...
+    )
+end
+
+local function FarmCollectAddCandidate(candidates, value)
+
+    local text =
+        FarmNormalizeCollectPlantName(value)
+
+    if text == "" then
+        return
+    end
+
+    if table.find(candidates, text) ~= nil then
+        return
+    end
+
+    table.insert(
+        candidates,
+        text
+    )
+end
+
+local function FarmCollectAddInstanceCandidates(candidates, instance)
+
+    if typeof(instance) ~= "Instance" then
+        return
+    end
+
+    FarmCollectAddCandidate(
+        candidates,
+        instance.Name
+    )
+
+    local attributeNames = {
+        "PlantName",
+        "SeedName",
+        "CropName",
+        "ItemName",
+        "FruitName",
+        "CollectName",
+        "DisplayName",
+    }
+
+    for _, attributeName in ipairs(attributeNames) do
+
+        local ok, value =
+            pcall(function()
+                return instance:GetAttribute(attributeName)
+            end)
+
+        if ok == true then
+
+            FarmCollectAddCandidate(
+                candidates,
+                value
+            )
+        end
+    end
+
+    if instance:IsA("TextLabel")
+    or instance:IsA("TextButton") then
+
+        FarmCollectAddCandidate(
+            candidates,
+            FarmStripRichText(instance.Text)
+        )
+    end
+
+    if instance:IsA("ProximityPrompt") then
+
+        FarmCollectAddCandidate(
+            candidates,
+            instance.ActionText
+        )
+
+        FarmCollectAddCandidate(
+            candidates,
+            instance.ObjectText
+        )
+    end
+end
+
 local function FarmFindCollectPlantModel(instance, collectRoot, ownPlot)
 
     if typeof(instance) ~= "Instance" then
@@ -3187,7 +3290,10 @@ local function FarmFindCollectPlantModel(instance, collectRoot, ownPlot)
     local current =
         instance
 
-    local best =
+    local topChild =
+        nil
+
+    local bestModel =
         nil
 
     while current
@@ -3196,12 +3302,13 @@ local function FarmFindCollectPlantModel(instance, collectRoot, ownPlot)
     and current ~= workspace do
 
         if current.Parent == collectRoot then
-            return current
+            topChild =
+                current
         end
 
         if current:IsA("Model")
         or current:IsA("Folder") then
-            best =
+            bestModel =
                 current
         end
 
@@ -3209,10 +3316,36 @@ local function FarmFindCollectPlantModel(instance, collectRoot, ownPlot)
             current.Parent
     end
 
-    return best
+    return topChild
+        or bestModel
 end
 
-local function FarmGetCollectPlantName(instance, collectRoot, ownPlot)
+local function FarmGetCollectPlantNameCandidates(instance, collectRoot, ownPlot)
+
+    local candidates =
+        {}
+
+    FarmCollectAddCandidate(
+        candidates,
+        FarmPathOf(instance)
+    )
+
+    local current =
+        instance
+
+    while current
+    and current ~= collectRoot
+    and current ~= ownPlot
+    and current ~= workspace do
+
+        FarmCollectAddInstanceCandidates(
+            candidates,
+            current
+        )
+
+        current =
+            current.Parent
+    end
 
     local plantModel =
         FarmFindCollectPlantModel(
@@ -3221,29 +3354,45 @@ local function FarmGetCollectPlantName(instance, collectRoot, ownPlot)
             ownPlot
         )
 
-    if not plantModel then
-        return ""
-    end
+    if plantModel then
 
-    local candidates = {
-        plantModel:GetAttribute("PlantName"),
-        plantModel:GetAttribute("SeedName"),
-        plantModel:GetAttribute("CropName"),
-        plantModel:GetAttribute("ItemName"),
-        plantModel.Name,
-    }
+        FarmCollectAddInstanceCandidates(
+            candidates,
+            plantModel
+        )
 
-    for _, candidate in ipairs(candidates) do
+        local scanned =
+            0
 
-        local plantName =
-            FarmNormalizeCollectPlantName(candidate)
+        for _, descendant in ipairs(plantModel:GetDescendants()) do
 
-        if plantName ~= "" then
-            return plantName
+            scanned += 1
+
+            if scanned > 120 then
+                break
+            end
+
+            FarmCollectAddInstanceCandidates(
+                candidates,
+                descendant
+            )
         end
     end
 
-    return ""
+    return candidates
+end
+
+local function FarmGetCollectPlantName(instance, collectRoot, ownPlot)
+
+    local candidates =
+        FarmGetCollectPlantNameCandidates(
+            instance,
+            collectRoot,
+            ownPlot
+        )
+
+    return candidates[1]
+        or ""
 end
 
 local function FarmCollectPlantMatchesFilter(instance, collectRoot, ownPlot)
@@ -3255,37 +3404,43 @@ local function FarmCollectPlantMatchesFilter(instance, collectRoot, ownPlot)
         return true, "all plants"
     end
 
-    local plantName =
-        FarmGetCollectPlantName(
+    local candidates =
+        FarmGetCollectPlantNameCandidates(
             instance,
             collectRoot,
             ownPlot
         )
 
-    local plantKey =
-        FarmCollectPlantKey(plantName)
-
-    if plantKey == "" then
-        return false, "unknown plant"
-    end
+    local fallbackName =
+        candidates[1]
+        or "unknown plant"
 
     for _, selectedPlant in ipairs(selectedPlants) do
 
         local selectedKey =
             FarmCollectPlantKey(selectedPlant)
 
-        if selectedKey ~= ""
-        and (
-            plantKey == selectedKey
-            or plantKey:find(selectedKey, 1, true) ~= nil
-            or selectedKey:find(plantKey, 1, true) ~= nil
-        ) then
+        if selectedKey ~= "" then
 
-            return true, plantName
+            for _, candidate in ipairs(candidates) do
+
+                local candidateKey =
+                    FarmCollectPlantKey(candidate)
+
+                if candidateKey ~= ""
+                and (
+                    candidateKey == selectedKey
+                    or candidateKey:find(selectedKey, 1, true) ~= nil
+                    or selectedKey:find(candidateKey, 1, true) ~= nil
+                ) then
+
+                    return true, candidate
+                end
+            end
         end
     end
 
-    return false, plantName
+    return false, fallbackName
 end
 
 local function FarmCanCollectInstance(instance, ownPlot)
@@ -3421,7 +3576,13 @@ local function FarmTryFireTouchTransmitter(touchTransmitter, ownPlot)
     return ok == true
 end
 
-local function FarmCollectOnce()
+local function FarmCollectOnce(forceCollect, debugScan)
+
+    forceCollect =
+        forceCollect == true
+
+    debugScan =
+        debugScan == true
 
     local ownPlot, plotReason =
         FarmResolveOwnPlot()
@@ -3466,84 +3627,181 @@ local function FarmCollectOnce()
         return 0
     end
 
+    local selectedText =
+        FarmSelectedCollectPlantsText()
+
+    local debugEnabled =
+        debugScan == true
+        or FarmConfig.CollectDebug == true
+
+    if debugEnabled == true then
+
+        print(
+            "[HOLY GAG2 COLLECT]",
+            "SCAN START",
+            "| force:",
+            tostring(forceCollect),
+            "| selected:",
+            tostring(selectedText),
+            "| plot:",
+            FarmPathOf(ownPlot),
+            "| root:",
+            FarmPathOf(collectRoot)
+        )
+    end
+
     local collected =
         0
 
     local source =
         "none"
 
+    local targetSeen =
+        0
+
+    local targetAllowed =
+        0
+
+    local targetDenied =
+        0
+
     for _, descendant in ipairs(collectRoot:GetDescendants()) do
 
-        if FarmConfig.AutoCollect ~= true then
+        if FarmConfig.AutoCollect ~= true
+        and forceCollect ~= true then
             break
         end
 
-        local allowedPlant, plantName =
-            FarmCollectPlantMatchesFilter(
-                descendant,
-                collectRoot,
-                ownPlot
-            )
+        local isTarget =
+            descendant:IsA("ProximityPrompt")
+            or descendant:IsA("ClickDetector")
+            or descendant:IsA("TouchTransmitter")
 
-        if allowedPlant == true then
+        if isTarget == true then
 
-            local didCollect =
-                false
+            targetSeen += 1
 
-            if descendant:IsA("ProximityPrompt") then
+            local allowedPlant, plantName =
+                FarmCollectPlantMatchesFilter(
+                    descendant,
+                    collectRoot,
+                    ownPlot
+                )
 
-                didCollect =
-                    FarmTryFireProximityPrompt(
-                        descendant,
-                        ownPlot
-                    )
-
-                if didCollect == true then
-                    source = "ProximityPrompt"
-                end
-
-            elseif descendant:IsA("ClickDetector") then
-
-                didCollect =
-                    FarmTryFireClickDetector(
-                        descendant,
-                        ownPlot
-                    )
-
-                if didCollect == true then
-                    source = "ClickDetector"
-                end
-
-            elseif descendant:IsA("TouchTransmitter") then
-
-                didCollect =
-                    FarmTryFireTouchTransmitter(
-                        descendant,
-                        ownPlot
-                    )
-
-                if didCollect == true then
-                    source = "TouchTransmitter"
-                end
+            if allowedPlant == true then
+                targetAllowed += 1
+            else
+                targetDenied += 1
             end
 
-            if didCollect == true then
+            if debugEnabled == true then
 
-                collected += 1
+                local extra =
+                    ""
 
-                if CleanText(plantName) ~= "" then
+                if descendant:IsA("ProximityPrompt") then
 
-                    source =
-                        source
-                        .. " / "
-                        .. tostring(plantName)
+                    extra =
+                        " | enabled="
+                        .. tostring(descendant.Enabled)
+                        .. " | action="
+                        .. tostring(descendant.ActionText)
+                        .. " | object="
+                        .. tostring(descendant.ObjectText)
                 end
 
-                if collected >= 40 then
-                    break
+                print(
+                    "[HOLY GAG2 COLLECT]",
+                    "TARGET",
+                    tostring(targetSeen),
+                    "| class:",
+                    descendant.ClassName,
+                    "| allowed:",
+                    tostring(allowedPlant),
+                    "| resolved:",
+                    tostring(plantName),
+                    "| selected:",
+                    tostring(selectedText),
+                    extra,
+                    "| path:",
+                    FarmPathOf(descendant)
+                )
+            end
+
+            if allowedPlant == true then
+
+                local didCollect =
+                    false
+
+                if descendant:IsA("ProximityPrompt") then
+
+                    didCollect =
+                        FarmTryFireProximityPrompt(
+                            descendant,
+                            ownPlot
+                        )
+
+                    if didCollect == true then
+                        source = "ProximityPrompt"
+                    end
+
+                elseif descendant:IsA("ClickDetector") then
+
+                    didCollect =
+                        FarmTryFireClickDetector(
+                            descendant,
+                            ownPlot
+                        )
+
+                    if didCollect == true then
+                        source = "ClickDetector"
+                    end
+
+                elseif descendant:IsA("TouchTransmitter") then
+
+                    didCollect =
+                        FarmTryFireTouchTransmitter(
+                            descendant,
+                            ownPlot
+                        )
+
+                    if didCollect == true then
+                        source = "TouchTransmitter"
+                    end
                 end
 
-                task.wait(0.03)
+                if debugEnabled == true then
+
+                    print(
+                        "[HOLY GAG2 COLLECT]",
+                        "FIRE RESULT",
+                        "| success:",
+                        tostring(didCollect),
+                        "| class:",
+                        descendant.ClassName,
+                        "| resolved:",
+                        tostring(plantName)
+                    )
+                end
+
+                if didCollect == true then
+
+                    collected += 1
+
+                    if CleanText(plantName) ~= "" then
+
+                        source =
+                            source
+                            .. " / "
+                            .. tostring(plantName)
+                    end
+
+                    if collected >= 40 then
+                        break
+                    end
+
+                    task.wait(0.03)
+                end
             end
         end
     end
@@ -3553,6 +3811,30 @@ local function FarmCollectOnce()
 
     FarmAutomationState.LastCollectSource =
         source
+        .. " | seen "
+        .. tostring(targetSeen)
+        .. " allowed "
+        .. tostring(targetAllowed)
+        .. " denied "
+        .. tostring(targetDenied)
+
+    if debugEnabled == true then
+
+        print(
+            "[HOLY GAG2 COLLECT]",
+            "SCAN END",
+            "| collected:",
+            tostring(collected),
+            "| seen:",
+            tostring(targetSeen),
+            "| allowed:",
+            tostring(targetAllowed),
+            "| denied:",
+            tostring(targetDenied),
+            "| source:",
+            tostring(source)
+        )
+    end
 
     if collected > 0 then
 
@@ -3565,7 +3847,13 @@ local function FarmCollectOnce()
     else
 
         FarmSetStatus(
-            "No collect targets found."
+            "No collect targets found. Seen "
+            .. tostring(targetSeen)
+            .. ", allowed "
+            .. tostring(targetAllowed)
+            .. ", denied "
+            .. tostring(targetDenied)
+            .. "."
         )
     end
 
@@ -3589,7 +3877,10 @@ local function FarmStartCollectLoop()
 
         while FarmConfig.AutoCollect == true do
 
-            FarmCollectOnce()
+            FarmCollectOnce(
+                false,
+                false
+            )
 
             task.wait(
                 SettingsNormalizeNumber(
@@ -5112,6 +5403,32 @@ and type(FarmCollectPlantsDropdown.OnChanged) == "function" then
     end)
 end
 
+local FarmCollectDebugToggle =
+    FarmSettingsBox:AddToggle(
+        "HolyGAG2CollectDebug",
+        {
+            Text = "Collect Debug",
+            Default = false,
+            Tooltip = "Prints collect target paths, resolved plant names, and fire results to console.",
+        }
+    )
+
+if FarmCollectDebugToggle
+and type(FarmCollectDebugToggle.OnChanged) == "function" then
+
+    FarmCollectDebugToggle:OnChanged(function(value)
+
+        FarmConfig.CollectDebug =
+            value == true
+
+        FarmSetStatus(
+            FarmConfig.CollectDebug == true
+            and "Collect debug enabled."
+            or "Collect debug disabled."
+        )
+    end)
+end
+
 if type(FarmSettingsBox.AddInput) == "function" then
 
     local PlantDelayInput =
@@ -5176,10 +5493,13 @@ FarmSettingsBox:AddButton({
 
 FarmSettingsBox:AddButton({
     Text = "Collect Once",
-    Tooltip = "Runs one collect scan inside your current garden.",
+    Tooltip = "Runs one forced debug collect scan inside your current garden.",
     Func = function()
 
-        FarmCollectOnce()
+        FarmCollectOnce(
+            true,
+            true
+        )
     end,
 }):AddButton({
     Text = "Stop Auto Collect",
