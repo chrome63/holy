@@ -143,6 +143,12 @@ local UIState = {
     ShopMaxBuysPerRestock = 1,
 
     FarmAutoPlant = false,
+    FarmAutoCollect = false,
+    FarmCollectDelay = 0.5,
+
+    -- Empty = collect every plant.
+    -- Selected values = only collect matching plant names.
+    FarmCollectPlants = {},
 
     -- Legacy single seed field, kept for older saves/status fallback.
     FarmSelectedSeed = "Carrot",
@@ -341,6 +347,25 @@ local function LoadUISettings()
             payload.FarmAutoPlant == true
     end
 
+    if payload.FarmAutoCollect ~= nil then
+        UIState.FarmAutoCollect =
+            payload.FarmAutoCollect == true
+    end
+
+    UIState.FarmCollectDelay =
+        SettingsNormalizeNumber(
+            payload.FarmCollectDelay,
+            0.5,
+            0.1,
+            10
+        )
+
+    UIState.FarmCollectPlants =
+        SettingsNormalizeStringList(
+            payload.FarmCollectPlants,
+            {}
+        )
+
     local farmSeed =
         CleanText(payload.FarmSelectedSeed)
 
@@ -471,6 +496,23 @@ local function SaveUISettings(reason)
 
         FarmAutoPlant =
             UIState.FarmAutoPlant == true,
+
+        FarmAutoCollect =
+            UIState.FarmAutoCollect == true,
+
+        FarmCollectDelay =
+            SettingsNormalizeNumber(
+                UIState.FarmCollectDelay,
+                0.5,
+                0.1,
+                10
+            ),
+
+        FarmCollectPlants =
+            SettingsNormalizeStringList(
+                UIState.FarmCollectPlants,
+                {}
+            ),
 
         FarmSelectedSeed =
             CleanText(UIState.FarmSelectedSeed) ~= ""
@@ -1856,6 +1898,12 @@ local FarmPositionLabel =
 local FarmAutomationToggle =
     nil
 
+local FarmCollectToggle =
+    nil
+
+local FarmCollectPlantsDropdown =
+    nil
+
 local FarmSeedDropdown =
     nil
 
@@ -1864,8 +1912,11 @@ local FarmPositionPickerConnection =
 
 local FarmAutomationState = {
     Running = false,
+    CollectRunning = false,
     PlantSeedPacket = nil,
     PacketSource = "not loaded",
+    LastCollectCount = 0,
+    LastCollectSource = "not started",
 }
 
 local function FarmVectorFromPayload(payload)
@@ -1914,6 +1965,23 @@ end
 local FarmConfig = {
     AutoPlant =
         UIState.FarmAutoPlant == true,
+
+    AutoCollect =
+        UIState.FarmAutoCollect == true,
+
+    CollectDelay =
+        SettingsNormalizeNumber(
+            UIState.FarmCollectDelay,
+            0.5,
+            0.1,
+            10
+        ),
+
+    CollectPlants =
+        SettingsNormalizeStringList(
+            UIState.FarmCollectPlants,
+            {}
+        ),
 
     SelectedSeed =
         CleanText(UIState.FarmSelectedSeed) ~= ""
@@ -2461,9 +2529,20 @@ local function FarmRefreshPositionLabel()
             '<font color="rgb(196,181,253)"><b>Farm Settings</b></font>'
             .. '\nSeeds: '
             .. FarmSelectedSeedsText()
-            .. '\nDelay: '
+            .. '\nPlant Delay: '
             .. tostring(FarmConfig.PlantDelay)
             .. 's'
+            .. '\nAuto Collect: '
+            .. tostring(FarmConfig.AutoCollect == true and "ON" or "OFF")
+            .. '\nCollect Delay: '
+            .. tostring(FarmConfig.CollectDelay)
+            .. 's'
+            .. '\nCollect Plants: '
+            .. FarmSelectedCollectPlantsText()
+            .. '\nLast Collect: '
+            .. tostring(FarmAutomationState.LastCollectCount or 0)
+            .. ' via '
+            .. tostring(FarmAutomationState.LastCollectSource or "none")
             .. '\nRandom Position: '
             .. tostring(FarmConfig.RandomPosition == true and "ON" or "OFF")
             .. '\nRelative Offset: '
@@ -2895,6 +2974,659 @@ local function FarmSetPlantDelay(value)
     )
 
     FarmRefreshPositionLabel()
+end
+
+local function FarmSetCollectDelay(value)
+
+    FarmConfig.CollectDelay =
+        SettingsNormalizeNumber(
+            value,
+            0.5,
+            0.1,
+            10
+        )
+
+    UIState.FarmCollectDelay =
+        FarmConfig.CollectDelay
+
+    SaveUISettings(
+        "farm collect delay changed"
+    )
+
+    FarmRefreshPositionLabel()
+end
+
+local function FarmGetCollectRoot(ownPlot)
+
+    if not ownPlot then
+        return nil
+    end
+
+    local plantsFolder =
+        ownPlot:FindFirstChild("Plants")
+
+    if plantsFolder then
+        return plantsFolder
+    end
+
+    return ownPlot
+end
+
+local function FarmNormalizeCollectPlantName(value)
+
+    local text =
+        CleanText(value)
+
+    text =
+        text:gsub("%s+[Ss]eed$", "")
+
+    text =
+        text:gsub("%s+", " ")
+
+    return CleanText(text)
+end
+
+local function FarmCollectPlantKey(value)
+
+    return FarmNormalizeCollectPlantName(value)
+        :lower()
+        :gsub("%s+", "")
+        :gsub("[^%w_]", "")
+end
+
+local function FarmGetSelectedCollectPlants()
+
+    FarmConfig.CollectPlants =
+        SettingsNormalizeStringList(
+            FarmConfig.CollectPlants,
+            {}
+        )
+
+    return FarmConfig.CollectPlants
+end
+
+local function FarmSelectedCollectPlantsText()
+
+    local plants =
+        FarmGetSelectedCollectPlants()
+
+    if #plants <= 0 then
+        return "all plants"
+    end
+
+    return table.concat(
+        plants,
+        ", "
+    )
+end
+
+local function FarmSetCollectPlants(value)
+
+    local plants =
+        SettingsNormalizeStringList(
+            value,
+            {}
+        )
+
+    FarmConfig.CollectPlants =
+        plants
+
+    UIState.FarmCollectPlants =
+        plants
+
+    SaveUISettings(
+        "farm collect plants changed"
+    )
+
+    FarmRefreshPositionLabel()
+end
+
+local function FarmAddUniqueCollectPlantName(names, plantName)
+
+    plantName =
+        FarmNormalizeCollectPlantName(plantName)
+
+    if plantName == "" then
+        return
+    end
+
+    if table.find(names, plantName) ~= nil then
+        return
+    end
+
+    table.insert(
+        names,
+        plantName
+    )
+end
+
+local function FarmGetCollectPlantNames()
+
+    local names =
+        {}
+
+    -- Main full-list source: seed shop names usually match plant/crop names.
+    for _, seedName in ipairs(FarmGetOwnedSeedNames()) do
+
+        FarmAddUniqueCollectPlantName(
+            names,
+            seedName
+        )
+    end
+
+    local ownPlot =
+        FarmResolveOwnPlot()
+
+    local collectRoot =
+        FarmGetCollectRoot(
+            ownPlot
+        )
+
+    if collectRoot then
+
+        for _, child in ipairs(collectRoot:GetChildren()) do
+
+            FarmAddUniqueCollectPlantName(
+                names,
+                child:GetAttribute("PlantName")
+                    or child:GetAttribute("SeedName")
+                    or child:GetAttribute("CropName")
+                    or child:GetAttribute("ItemName")
+                    or child.Name
+            )
+        end
+    end
+
+    -- Preserve saved selected filters even if the plot has not loaded yet.
+    for _, selectedPlant in ipairs(FarmGetSelectedCollectPlants()) do
+
+        FarmAddUniqueCollectPlantName(
+            names,
+            selectedPlant
+        )
+    end
+
+    table.sort(names)
+
+    return names
+end
+
+local function FarmRefreshCollectPlantsDropdown()
+
+    local names =
+        FarmGetCollectPlantNames()
+
+    if FarmCollectPlantsDropdown then
+
+        if type(FarmCollectPlantsDropdown.SetValues) == "function" then
+
+            FarmCollectPlantsDropdown:SetValues(names)
+
+        elseif type(FarmCollectPlantsDropdown.SetItems) == "function" then
+
+            FarmCollectPlantsDropdown:SetItems(names)
+        end
+
+        if type(FarmCollectPlantsDropdown.SetValue) == "function" then
+
+            FarmCollectPlantsDropdown:SetValue(
+                FarmGetSelectedCollectPlants()
+            )
+        end
+    end
+
+    FarmRefreshPositionLabel()
+end
+
+local function FarmFindCollectPlantModel(instance, collectRoot, ownPlot)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    local current =
+        instance
+
+    local best =
+        nil
+
+    while current
+    and current ~= collectRoot
+    and current ~= ownPlot
+    and current ~= workspace do
+
+        if current.Parent == collectRoot then
+            return current
+        end
+
+        if current:IsA("Model")
+        or current:IsA("Folder") then
+            best =
+                current
+        end
+
+        current =
+            current.Parent
+    end
+
+    return best
+end
+
+local function FarmGetCollectPlantName(instance, collectRoot, ownPlot)
+
+    local plantModel =
+        FarmFindCollectPlantModel(
+            instance,
+            collectRoot,
+            ownPlot
+        )
+
+    if not plantModel then
+        return ""
+    end
+
+    local candidates = {
+        plantModel:GetAttribute("PlantName"),
+        plantModel:GetAttribute("SeedName"),
+        plantModel:GetAttribute("CropName"),
+        plantModel:GetAttribute("ItemName"),
+        plantModel.Name,
+    }
+
+    for _, candidate in ipairs(candidates) do
+
+        local plantName =
+            FarmNormalizeCollectPlantName(candidate)
+
+        if plantName ~= "" then
+            return plantName
+        end
+    end
+
+    return ""
+end
+
+local function FarmCollectPlantMatchesFilter(instance, collectRoot, ownPlot)
+
+    local selectedPlants =
+        FarmGetSelectedCollectPlants()
+
+    if #selectedPlants <= 0 then
+        return true, "all plants"
+    end
+
+    local plantName =
+        FarmGetCollectPlantName(
+            instance,
+            collectRoot,
+            ownPlot
+        )
+
+    local plantKey =
+        FarmCollectPlantKey(plantName)
+
+    if plantKey == "" then
+        return false, "unknown plant"
+    end
+
+    for _, selectedPlant in ipairs(selectedPlants) do
+
+        local selectedKey =
+            FarmCollectPlantKey(selectedPlant)
+
+        if selectedKey ~= ""
+        and (
+            plantKey == selectedKey
+            or plantKey:find(selectedKey, 1, true) ~= nil
+            or selectedKey:find(plantKey, 1, true) ~= nil
+        ) then
+
+            return true, plantName
+        end
+    end
+
+    return false, plantName
+end
+
+local function FarmCanCollectInstance(instance, ownPlot)
+
+    if typeof(instance) ~= "Instance"
+    or not ownPlot then
+        return false
+    end
+
+    if instance:IsDescendantOf(ownPlot) ~= true then
+        return false
+    end
+
+    local path =
+        FarmPathOf(instance)
+
+    if path:find("GardenZonePart", 1, true) then
+        return false
+    end
+
+    if path:find("Workspace.Map.", 1, true) then
+        return false
+    end
+
+    return true
+end
+
+local function FarmTryFireProximityPrompt(prompt, ownPlot)
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true then
+        return false
+    end
+
+    if FarmCanCollectInstance(prompt, ownPlot) ~= true then
+        return false
+    end
+
+    if prompt.Enabled == false then
+        return false
+    end
+
+    if type(fireproximityprompt) ~= "function" then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            fireproximityprompt(
+                prompt
+            )
+        end)
+
+    return ok == true
+end
+
+local function FarmTryFireClickDetector(clickDetector, ownPlot)
+
+    if typeof(clickDetector) ~= "Instance"
+    or clickDetector:IsA("ClickDetector") ~= true then
+        return false
+    end
+
+    if FarmCanCollectInstance(clickDetector, ownPlot) ~= true then
+        return false
+    end
+
+    if type(fireclickdetector) ~= "function" then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            fireclickdetector(
+                clickDetector
+            )
+        end)
+
+    return ok == true
+end
+
+local function FarmTryFireTouchTransmitter(touchTransmitter, ownPlot)
+
+    if typeof(touchTransmitter) ~= "Instance"
+    or touchTransmitter:IsA("TouchTransmitter") ~= true then
+        return false
+    end
+
+    if FarmCanCollectInstance(touchTransmitter, ownPlot) ~= true then
+        return false
+    end
+
+    if type(firetouchinterest) ~= "function" then
+        return false
+    end
+
+    local character =
+        LOCAL_PLAYER.Character
+
+    local rootPart =
+        character
+        and character:FindFirstChild("HumanoidRootPart")
+
+    local touchPart =
+        touchTransmitter.Parent
+
+    if not rootPart
+    or not touchPart
+    or touchPart:IsA("BasePart") ~= true then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            firetouchinterest(
+                rootPart,
+                touchPart,
+                0
+            )
+
+            task.wait()
+
+            firetouchinterest(
+                rootPart,
+                touchPart,
+                1
+            )
+        end)
+
+    return ok == true
+end
+
+local function FarmCollectOnce()
+
+    local ownPlot, plotReason =
+        FarmResolveOwnPlot()
+
+    if not ownPlot then
+
+        FarmAutomationState.LastCollectCount =
+            0
+
+        FarmAutomationState.LastCollectSource =
+            "no plot: " .. tostring(plotReason)
+
+        FarmSetStatus(
+            "Collect failed: "
+            .. tostring(plotReason)
+        )
+
+        FarmRefreshPositionLabel()
+
+        return 0
+    end
+
+    local collectRoot =
+        FarmGetCollectRoot(
+            ownPlot
+        )
+
+    if not collectRoot then
+
+        FarmAutomationState.LastCollectCount =
+            0
+
+        FarmAutomationState.LastCollectSource =
+            "no collect root"
+
+        FarmSetStatus(
+            "Collect failed: no Plants/root folder."
+        )
+
+        FarmRefreshPositionLabel()
+
+        return 0
+    end
+
+    local collected =
+        0
+
+    local source =
+        "none"
+
+    for _, descendant in ipairs(collectRoot:GetDescendants()) do
+
+        if FarmConfig.AutoCollect ~= true then
+            break
+        end
+
+        local allowedPlant, plantName =
+            FarmCollectPlantMatchesFilter(
+                descendant,
+                collectRoot,
+                ownPlot
+            )
+
+        if allowedPlant == true then
+
+            local didCollect =
+                false
+
+            if descendant:IsA("ProximityPrompt") then
+
+                didCollect =
+                    FarmTryFireProximityPrompt(
+                        descendant,
+                        ownPlot
+                    )
+
+                if didCollect == true then
+                    source = "ProximityPrompt"
+                end
+
+            elseif descendant:IsA("ClickDetector") then
+
+                didCollect =
+                    FarmTryFireClickDetector(
+                        descendant,
+                        ownPlot
+                    )
+
+                if didCollect == true then
+                    source = "ClickDetector"
+                end
+
+            elseif descendant:IsA("TouchTransmitter") then
+
+                didCollect =
+                    FarmTryFireTouchTransmitter(
+                        descendant,
+                        ownPlot
+                    )
+
+                if didCollect == true then
+                    source = "TouchTransmitter"
+                end
+            end
+
+            if didCollect == true then
+
+                collected += 1
+
+                if CleanText(plantName) ~= "" then
+
+                    source =
+                        source
+                        .. " / "
+                        .. tostring(plantName)
+                end
+
+                if collected >= 40 then
+                    break
+                end
+
+                task.wait(0.03)
+            end
+        end
+    end
+
+    FarmAutomationState.LastCollectCount =
+        collected
+
+    FarmAutomationState.LastCollectSource =
+        source
+
+    if collected > 0 then
+
+        FarmSetStatus(
+            "Auto collected "
+            .. tostring(collected)
+            .. " target(s)."
+        )
+
+    else
+
+        FarmSetStatus(
+            "No collect targets found."
+        )
+    end
+
+    FarmRefreshPositionLabel()
+
+    return collected
+end
+
+local function FarmStartCollectLoop()
+
+    if FarmAutomationState.CollectRunning == true then
+        return
+    end
+
+    FarmAutomationState.CollectRunning =
+        true
+
+    task.spawn(function()
+
+        FarmSetStatus("Auto collect loop started.")
+
+        while FarmConfig.AutoCollect == true do
+
+            FarmCollectOnce()
+
+            task.wait(
+                SettingsNormalizeNumber(
+                    FarmConfig.CollectDelay,
+                    0.5,
+                    0.1,
+                    10
+                )
+            )
+        end
+
+        FarmAutomationState.CollectRunning =
+            false
+
+        FarmSetStatus("Auto collect stopped.")
+    end)
+end
+
+local function FarmStopCollect()
+
+    FarmConfig.AutoCollect =
+        false
+
+    UIState.FarmAutoCollect =
+        false
+
+    SaveUISettings(
+        "farm auto collect stopped"
+    )
+
+    if FarmCollectToggle
+    and type(FarmCollectToggle.SetValue) == "function" then
+
+        FarmCollectToggle:SetValue(false)
+    end
+
+    FarmSetStatus("Auto collect stopped.")
 end
 
 local function FarmStopAutomation()
@@ -4319,6 +5051,67 @@ and type(FarmAutomationToggle.OnChanged) == "function" then
     end)
 end
 
+FarmCollectToggle =
+    FarmSettingsBox:AddToggle(
+        "HolyGAG2AutoCollect",
+        {
+            Text = "Auto Collect",
+            Default = FarmConfig.AutoCollect == true,
+            Tooltip = "Automatically collects harvest prompts/clicks/touch targets inside your current garden.",
+        }
+    )
+
+if FarmCollectToggle
+and type(FarmCollectToggle.OnChanged) == "function" then
+
+    FarmCollectToggle:OnChanged(function(value)
+
+        FarmConfig.AutoCollect =
+            value == true
+
+        UIState.FarmAutoCollect =
+            FarmConfig.AutoCollect == true
+
+        SaveUISettings(
+            "farm auto collect changed"
+        )
+
+        if FarmConfig.AutoCollect == true then
+            FarmStartCollectLoop()
+        else
+            FarmSetStatus("Auto collect disabled.")
+        end
+
+        FarmRefreshPositionLabel()
+    end)
+end
+
+FarmCollectPlantsDropdown =
+    FarmSettingsBox:AddDropdown(
+        "HolyGAG2CollectPlants",
+        {
+            Text = "Collect Plants",
+            Values = FarmGetCollectPlantNames(),
+            Default = FarmGetSelectedCollectPlants(),
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Plants to collect. Empty selection means collect all plants.",
+        }
+    )
+
+if FarmCollectPlantsDropdown
+and type(FarmCollectPlantsDropdown.OnChanged) == "function" then
+
+    FarmCollectPlantsDropdown:OnChanged(function(value)
+
+        FarmSetCollectPlants(
+            value
+        )
+    end)
+end
+
 if type(FarmSettingsBox.AddInput) == "function" then
 
     local PlantDelayInput =
@@ -4343,7 +5136,60 @@ if type(FarmSettingsBox.AddInput) == "function" then
             )
         end)
     end
+
+    local CollectDelayInput =
+        FarmSettingsBox:AddInput(
+            "HolyGAG2CollectDelay",
+            {
+                Text = "Collect Delay",
+                Default = tostring(FarmConfig.CollectDelay),
+                Numeric = true,
+                Finished = true,
+                Tooltip = "Seconds between collect scans. Minimum 0.1.",
+            }
+        )
+
+    if CollectDelayInput
+    and type(CollectDelayInput.OnChanged) == "function" then
+
+        CollectDelayInput:OnChanged(function(value)
+
+            FarmSetCollectDelay(
+                value
+            )
+        end)
+    end
 end
+
+FarmSettingsBox:AddButton({
+    Text = "Refresh Collect Plants",
+    Tooltip = "Refresh collect plant filter list from Seed Shop and your current garden.",
+    Func = function()
+
+        FarmRefreshCollectPlantsDropdown()
+
+        FarmSetStatus(
+            "Collect plant list refreshed."
+        )
+    end,
+})
+
+FarmSettingsBox:AddButton({
+    Text = "Collect Once",
+    Tooltip = "Runs one collect scan inside your current garden.",
+    Func = function()
+
+        FarmCollectOnce()
+    end,
+}):AddButton({
+    Text = "Stop Auto Collect",
+    Risky = true,
+    Tooltip = "Turns off Auto Collect.",
+    Func = function()
+
+        FarmStopCollect()
+    end,
+})
 
 FarmSettingsBox:AddButton({
     Text = "Stop Auto Plant",
@@ -4390,6 +5236,15 @@ if FarmConfig.AutoPlant == true then
 
     FarmSetStatus(
         "Auto plant restored from saved settings."
+    )
+end
+
+if FarmConfig.AutoCollect == true then
+
+    FarmStartCollectLoop()
+
+    FarmSetStatus(
+        "Auto collect restored from saved settings."
     )
 end
 
