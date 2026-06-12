@@ -16075,7 +16075,7 @@ local AgeBreakState = {
     LastMachineStartResult = "None",
 
     MaxSacrificeAge = 99,
-    MaxSacrificeBaseWeight = 999,
+    MaxSacrificeBaseWeight = 3,
 
     SkipFavorites = true,
     BlockAge100Sacrifices = true,
@@ -16196,7 +16196,7 @@ function AgeBreakSaveSettingsNow(reason)
             tonumber(AgeBreakState.MaxSacrificeAge) or 99,
 
         MaxSacrificeBaseWeight =
-            tonumber(AgeBreakState.MaxSacrificeBaseWeight) or 999,
+            tonumber(AgeBreakState.MaxSacrificeBaseWeight) or 3,
 
         SkipFavorites =
             AgeBreakState.SkipFavorites == true,
@@ -16375,14 +16375,14 @@ function AgeBreakLoadSettingsIntoState()
                 or 99
             ),
             1,
-            999
+            3
         )
 
     AgeBreakState.MaxSacrificeBaseWeight =
         math.max(
             0,
             tonumber(payload.MaxSacrificeBaseWeight)
-            or 999
+            or 3
         )
 
     if type(payload.SkipFavorites) == "boolean" then
@@ -21168,7 +21168,7 @@ if Tabs.AgeBreak then
                     )
                 ),
                 1,
-                999
+                3
             )
 
         AgeBreakQueueSave(
@@ -21194,7 +21194,7 @@ if Tabs.AgeBreak then
                 0,
                 ParseNumberInput(
                     value,
-                    999
+                    3
                 )
             )
 
@@ -21736,7 +21736,7 @@ if Tabs.AgeBreak then
         Size = 11,
     })
 
-    
+
     AgeBreakConfigState.Loading =
         false
 
