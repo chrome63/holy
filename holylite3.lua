@@ -17685,6 +17685,23 @@ function AgeBreakBuildMachineText()
         "",
     }
 
+    if AgeBreakState.WaitingForMachineStart == true then
+
+        table.insert(
+            lines,
+            "Submit: Waiting timer confirm "
+                .. string.format(
+                    "%.1fs",
+                    AgeBreakGetMachineStartWaitRemaining()
+                )
+        )
+
+        table.insert(
+            lines,
+            ""
+        )
+    end
+
     if IsTradeWorld() then
 
         table.insert(
@@ -19460,23 +19477,6 @@ if Tabs.AgeBreak then
         })
     end
 
-    if AgeBreakState.WaitingForMachineStart == true then
-
-        table.insert(
-            lines,
-            "Submit: Waiting timer confirm "
-                .. string.format(
-                    "%.1fs",
-                    AgeBreakGetMachineStartWaitRemaining()
-                )
-        )
-
-        table.insert(
-            lines,
-            ""
-        )
-    end
-
     if IsTradeWorld() then
 
         AgeBreakMachineBox:AddButton({
@@ -19800,7 +19800,7 @@ if Tabs.AgeBreak then
         {
             Text = "Auto Claim",
             Default = AgeBreakState.AutoClaim == true,
-            Tooltip = "Garden World only. Claim remote is added next patch.",
+            Tooltip = "Garden World only. Claims when the machine is ready.",
         }
     ):OnChanged(function(value)
 
@@ -19813,8 +19813,21 @@ if Tabs.AgeBreak then
 
         AgeBreakSetStatus(
             "Automation",
-            "Auto Claim saved. Claim remote is still locked until next patch."
+            AgeBreakState.AutoClaim == true
+            and "Auto Claim enabled. Garden World only."
+            or "Auto Claim disabled."
         )
+
+        if AgeBreakState.AutoClaim == true then
+
+            task.defer(function()
+
+                if IsHolyLiteCurrentRun()
+                and type(AgeBreakAutoStep) == "function" then
+                    pcall(AgeBreakAutoStep)
+                end
+            end)
+        end
     end)
 
     AgeBreakSafetyBox:AddToggle(
