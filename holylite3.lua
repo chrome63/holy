@@ -16061,9 +16061,21 @@ local AgeBreakState = {
     SacrificeLowerBaseWeight = true,
     NeverTargetAsSacrifice = true,
 
+    AutomationEnabled = false,
+    AutoTeleportWhenReady = false,
+
     AutoClaim = false,
     AutoSubmitNext = false,
+
+    AutoTradeWorldWhenMachineStarts = false,
+
+    -- Backwards compatibility with the old visual setting name.
     TeleportTradeAfterSubmit = false,
+
+    LastAutoActionAt = 0,
+    LastGardenTeleportAt = 0,
+    LastTradeTeleportAt = 0,
+    LastMachineStartTradeTeleportKey = "",
 
     InventoryPets = {},
     SacrificeQueue = {},
@@ -16168,14 +16180,25 @@ function AgeBreakSaveSettingsNow(reason)
         NeverTargetAsSacrifice =
             AgeBreakState.NeverTargetAsSacrifice == true,
 
+        AutomationEnabled =
+            AgeBreakState.AutomationEnabled == true,
+
+        AutoTeleportWhenReady =
+            AgeBreakState.AutoTeleportWhenReady == true,
+
         AutoClaim =
             AgeBreakState.AutoClaim == true,
 
         AutoSubmitNext =
             AgeBreakState.AutoSubmitNext == true,
 
+        AutoTradeWorldWhenMachineStarts =
+            AgeBreakState.AutoTradeWorldWhenMachineStarts == true,
+
+        -- Keep old key saved too so old configs do not break.
         TeleportTradeAfterSubmit =
-            AgeBreakState.TeleportTradeAfterSubmit == true,
+            AgeBreakState.AutoTradeWorldWhenMachineStarts == true
+            or AgeBreakState.TeleportTradeAfterSubmit == true,
 
         MachineTimerEndsAt =
             tonumber(AgeBreakState.MachineTimerEndsAt) or 0,
@@ -16345,6 +16368,16 @@ function AgeBreakLoadSettingsIntoState()
             payload.NeverTargetAsSacrifice
     end
 
+    if type(payload.AutomationEnabled) == "boolean" then
+        AgeBreakState.AutomationEnabled =
+            payload.AutomationEnabled
+    end
+
+    if type(payload.AutoTeleportWhenReady) == "boolean" then
+        AgeBreakState.AutoTeleportWhenReady =
+            payload.AutoTeleportWhenReady
+    end
+
     if type(payload.AutoClaim) == "boolean" then
         AgeBreakState.AutoClaim =
             payload.AutoClaim
@@ -16355,9 +16388,25 @@ function AgeBreakLoadSettingsIntoState()
             payload.AutoSubmitNext
     end
 
-    if type(payload.TeleportTradeAfterSubmit) == "boolean" then
-        AgeBreakState.TeleportTradeAfterSubmit =
+    local savedTradeTeleport =
+        nil
+
+    if type(payload.AutoTradeWorldWhenMachineStarts) == "boolean" then
+        savedTradeTeleport =
+            payload.AutoTradeWorldWhenMachineStarts
+
+    elseif type(payload.TeleportTradeAfterSubmit) == "boolean" then
+        savedTradeTeleport =
             payload.TeleportTradeAfterSubmit
+    end
+
+    if savedTradeTeleport ~= nil then
+
+        AgeBreakState.AutoTradeWorldWhenMachineStarts =
+            savedTradeTeleport == true
+
+        AgeBreakState.TeleportTradeAfterSubmit =
+            savedTradeTeleport == true
     end
 
     AgeBreakState.MachineTimerEndsAt =
@@ -17675,6 +17724,305 @@ function AgeBreakBuildMachineText()
     return table.concat(lines, "\n")
 end
 
+function AgeBreakElapsed(lastTime)
+
+    return os.clock()
+        - (
+            tonumber(lastTime)
+            or 0
+        )
+end
+
+function AgeBreakMachineIsRunning()
+
+    local seconds =
+        tonumber(AgeBreakState.TimerSeconds)
+
+    return seconds ~= nil
+        and seconds > 0
+        and AgeBreakState.ClaimReady ~= true
+end
+
+function AgeBreakBuildMachineStartTeleportKey()
+
+    local endsAt =
+        tonumber(AgeBreakState.MachineTimerEndsAt)
+        or 0
+
+    if endsAt > 0 then
+        return "timer:"
+            .. tostring(math.floor(endsAt))
+    end
+
+    local pair =
+        AgeBreakState.LastPair
+
+    local targetUUID =
+        pair
+        and pair.Target
+        and pair.Target.UUID
+
+    targetUUID =
+        CleanText(targetUUID)
+
+    if targetUUID ~= "" then
+        return "target:"
+            .. targetUUID
+    end
+
+    return "timerText:"
+        .. tostring(AgeBreakState.TimerText or "--")
+end
+
+function AgeBreakCanAutoRoute(cooldown)
+
+    if AgeBreakState.AutomationEnabled ~= true then
+        return false, "Automation disabled"
+    end
+
+    cooldown =
+        tonumber(cooldown)
+        or 1.5
+
+    if AgeBreakElapsed(AgeBreakState.LastAutoActionAt) < cooldown then
+        return false, "Cooldown"
+    end
+
+    return true, "OK"
+end
+
+function AgeBreakTeleportToGardenWorld(reason, force)
+
+    if force ~= true
+    and AgeBreakState.AutoTeleportWhenReady ~= true then
+        return false, "Auto teleport when ready is OFF"
+    end
+
+    if IsGardenWorld() then
+        return false, "Already in Garden World"
+    end
+
+    if force ~= true
+    and AgeBreakElapsed(AgeBreakState.LastGardenTeleportAt) < 12 then
+        return false, "Garden teleport cooldown"
+    end
+
+    local player =
+        LocalPlayer
+        or Players.LocalPlayer
+
+    if not player then
+        return false, "LocalPlayer missing"
+    end
+
+    AgeBreakState.LastGardenTeleportAt =
+        os.clock()
+
+    AgeBreakState.LastAutoActionAt =
+        os.clock()
+
+    AgeBreakSetStatus(
+        "Teleporting",
+        tostring(reason or "Age Break ready. Joining Garden World.")
+    )
+
+    AgeBreakSaveSettingsNow(
+        "auto teleport garden world"
+    )
+
+    local ok, err =
+        pcall(function()
+
+            TeleportService:Teleport(
+                GROW_A_GARDEN_PLACE_ID,
+                player
+            )
+        end)
+
+    if ok ~= true then
+
+        AgeBreakSetStatus(
+            "Teleport Failed",
+            tostring(err)
+        )
+
+        return false, tostring(err)
+    end
+
+    return true, "Garden teleport requested"
+end
+
+function AgeBreakTeleportToTradeWorld(reason, force)
+
+    if force ~= true
+    and AgeBreakState.AutoTradeWorldWhenMachineStarts ~= true then
+        return false, "Auto Trade World after machine start is OFF"
+    end
+
+    if IsTradeWorld() then
+        return false, "Already in Trade World"
+    end
+
+    if not IsGardenWorld() then
+        return false, "Not in Garden World"
+    end
+
+    if force ~= true
+    and AgeBreakMachineIsRunning() ~= true then
+        return false, "Machine timer is not running"
+    end
+
+    if force ~= true
+    and AgeBreakElapsed(AgeBreakState.LastTradeTeleportAt) < 12 then
+        return false, "Trade teleport cooldown"
+    end
+
+    if force ~= true then
+
+        local teleportKey =
+            AgeBreakBuildMachineStartTeleportKey()
+
+        if teleportKey ~= ""
+        and AgeBreakState.LastMachineStartTradeTeleportKey == teleportKey then
+            return false, "Already teleported for this machine start"
+        end
+
+        AgeBreakState.LastMachineStartTradeTeleportKey =
+            teleportKey
+    end
+
+    local player =
+        LocalPlayer
+        or Players.LocalPlayer
+
+    if not player then
+        return false, "LocalPlayer missing"
+    end
+
+    AgeBreakState.LastTradeTeleportAt =
+        os.clock()
+
+    AgeBreakState.LastAutoActionAt =
+        os.clock()
+
+    AgeBreakSetStatus(
+        "Teleporting",
+        tostring(reason or "Machine started. Joining Trade World.")
+    )
+
+    AgeBreakSaveSettingsNow(
+        "auto teleport trade world"
+    )
+
+    local ok, err =
+        pcall(function()
+
+            TeleportService:Teleport(
+                TRADING_WORLD_PLACE_ID,
+                player
+            )
+        end)
+
+    if ok ~= true then
+
+        AgeBreakSetStatus(
+            "Trade Teleport Failed",
+            tostring(err)
+        )
+
+        return false, tostring(err)
+    end
+
+    return true, "Trade teleport requested"
+end
+
+function AgeBreakAutoStep()
+
+    if not IsHolyLiteCurrentRun() then
+        return false, "Old run"
+    end
+
+    if Tabs.AgeBreak == nil then
+        return false, "Age Break tab missing"
+    end
+
+    if AgeBreakState.AutomationEnabled ~= true then
+        return false, "Automation disabled"
+    end
+
+    AgeBreakRefreshMachineState()
+
+    if IsTradeWorld() then
+
+        if AgeBreakState.ClaimReady == true then
+
+            if AgeBreakState.AutoTeleportWhenReady == true then
+
+                local canAct =
+                    AgeBreakCanAutoRoute(1.5)
+
+                if canAct == true then
+
+                    return AgeBreakTeleportToGardenWorld(
+                        "Age break is ready to claim. Joining Garden World.",
+                        false
+                    )
+                end
+            end
+
+            AgeBreakState.Status =
+                "Ready in Trade World"
+
+            AgeBreakState.LastResult =
+                "Enable Auto Teleport When Ready or press Join Garden World."
+
+            return false, "Ready in Trade World"
+        end
+
+        return false, "Monitoring in Trade World"
+    end
+
+    if IsGardenWorld() then
+
+        if AgeBreakMachineIsRunning() == true then
+
+            if AgeBreakState.AutoTradeWorldWhenMachineStarts == true then
+
+                local canAct =
+                    AgeBreakCanAutoRoute(1.5)
+
+                if canAct == true then
+
+                    return AgeBreakTeleportToTradeWorld(
+                        "Age Break machine started. Joining Trade World while timer runs.",
+                        false
+                    )
+                end
+            end
+
+            return false, "Machine running"
+        end
+
+        if AgeBreakState.ClaimReady == true then
+
+            if AgeBreakState.AutoClaim == true then
+
+                AgeBreakState.Status =
+                    "Claim Ready"
+
+                AgeBreakState.LastResult =
+                    "Auto Claim is enabled, but claim remote is not added yet."
+            end
+
+            return false, "Claim ready"
+        end
+
+        return false, "Garden automation idle"
+    end
+
+    return false, "Unsupported world"
+end
+
 function AgeBreakRefreshUI()
 
     if AgeBreakState.TargetPreviewLabel then
@@ -18284,13 +18632,9 @@ if Tabs.AgeBreak then
             Text = "Join Trade World",
             Func = function()
 
-                RequestLiteTradeWorldTeleportCountdown(
-                    "age break manual"
-                )
-
-                AgeBreakSetStatus(
-                    "Trade Teleport",
-                    "Trade World teleport countdown requested."
+                AgeBreakTeleportToTradeWorld(
+                    "Manual Age Break Trade World join.",
+                    true
                 )
             end,
         })
@@ -18480,17 +18824,87 @@ if Tabs.AgeBreak then
     end)
 
     AgeBreakSafetyBox:AddLabel({
-        Text = "Advanced",
+        Text = "Automation",
         DoesWrap = true,
         Size = 13,
     })
+
+    AgeBreakSafetyBox:AddToggle(
+        "HolyLiteAgeBreakAutomationEnabled",
+        {
+            Text = "Enable Age Break Automation",
+            Default = AgeBreakState.AutomationEnabled == true,
+            Tooltip = "Master switch for Age Break routing. Trade World remains monitor/edit-only.",
+        }
+    ):OnChanged(function(value)
+
+        AgeBreakState.AutomationEnabled =
+            value == true
+
+        AgeBreakQueueSave(
+            "automation enabled changed"
+        )
+
+        AgeBreakSetStatus(
+            "Automation",
+            AgeBreakState.AutomationEnabled == true
+            and "Automation enabled."
+            or "Automation disabled."
+        )
+
+        if AgeBreakState.AutomationEnabled == true then
+
+            task.defer(function()
+
+                if IsHolyLiteCurrentRun()
+                and type(AgeBreakAutoStep) == "function" then
+                    pcall(AgeBreakAutoStep)
+                end
+            end)
+        end
+    end)
+
+    AgeBreakSafetyBox:AddToggle(
+        "HolyLiteAgeBreakAutoTeleportWhenReady",
+        {
+            Text = "Auto Teleport When Ready",
+            Default = AgeBreakState.AutoTeleportWhenReady == true,
+            Tooltip = "Trade World monitor: when timer is ready, auto join Garden World. Does not submit or claim in Trade World.",
+        }
+    ):OnChanged(function(value)
+
+        AgeBreakState.AutoTeleportWhenReady =
+            value == true
+
+        AgeBreakQueueSave(
+            "auto teleport when ready changed"
+        )
+
+        AgeBreakSetStatus(
+            "Automation",
+            AgeBreakState.AutoTeleportWhenReady == true
+            and "Ready timer will auto route to Garden World."
+            or "Ready timer auto route disabled."
+        )
+
+        if AgeBreakState.AutoTeleportWhenReady == true then
+
+            task.defer(function()
+
+                if IsHolyLiteCurrentRun()
+                and type(AgeBreakAutoStep) == "function" then
+                    pcall(AgeBreakAutoStep)
+                end
+            end)
+        end
+    end)
 
     AgeBreakSafetyBox:AddToggle(
         "HolyLiteAgeBreakAutoClaim",
         {
             Text = "Auto Claim",
             Default = AgeBreakState.AutoClaim == true,
-            Tooltip = "Visual/saved for now. Automation comes after machine detection.",
+            Tooltip = "Garden World only. Claim remote is added next patch.",
         }
     ):OnChanged(function(value)
 
@@ -18502,8 +18916,8 @@ if Tabs.AgeBreak then
         )
 
         AgeBreakSetStatus(
-            "Advanced",
-            "Auto Claim saved. Machine logic not added yet."
+            "Automation",
+            "Auto Claim saved. Claim remote is still locked until next patch."
         )
     end)
 
@@ -18512,7 +18926,7 @@ if Tabs.AgeBreak then
         {
             Text = "Auto Submit Next Pair",
             Default = AgeBreakState.AutoSubmitNext == true,
-            Tooltip = "Visual/saved for now. Automation comes after submit confirmation.",
+            Tooltip = "Garden World only. Submit remote is added next patch.",
         }
     ):OnChanged(function(value)
 
@@ -18524,31 +18938,47 @@ if Tabs.AgeBreak then
         )
 
         AgeBreakSetStatus(
-            "Advanced",
-            "Auto Submit saved. Submit logic not added yet."
+            "Automation",
+            "Auto Submit saved. Submit remote is still locked until next patch."
         )
     end)
 
     AgeBreakSafetyBox:AddToggle(
-        "HolyLiteAgeBreakTeleportTrade",
+        "HolyLiteAgeBreakAutoTradeWorldWhenStarted",
         {
-            Text = "Teleport Trade After Submit",
-            Default = AgeBreakState.TeleportTradeAfterSubmit == true,
-            Tooltip = "Saved now. Real trigger comes after Submit Pair is added.",
+            Text = "Auto Trade World When Machine Starts",
+            Default = AgeBreakState.AutoTradeWorldWhenMachineStarts == true,
+            Tooltip = "Garden World: when the machine timer starts, auto join Trade World while it runs.",
         }
     ):OnChanged(function(value)
+
+        AgeBreakState.AutoTradeWorldWhenMachineStarts =
+            value == true
 
         AgeBreakState.TeleportTradeAfterSubmit =
             value == true
 
         AgeBreakQueueSave(
-            "teleport trade after submit changed"
+            "auto trade world when machine starts changed"
         )
 
         AgeBreakSetStatus(
-            "Advanced",
-            "Trade teleport setting saved."
+            "Automation",
+            AgeBreakState.AutoTradeWorldWhenMachineStarts == true
+            and "Will join Trade World after a running timer is confirmed."
+            or "Auto Trade World after machine start disabled."
         )
+
+        if AgeBreakState.AutoTradeWorldWhenMachineStarts == true then
+
+            task.defer(function()
+
+                if IsHolyLiteCurrentRun()
+                and type(AgeBreakAutoStep) == "function" then
+                    pcall(AgeBreakAutoStep)
+                end
+            end)
+        end
     end)
 
     AgeBreakConfigState.Loading =
@@ -18581,6 +19011,7 @@ if Tabs.AgeBreak then
                 task.wait(1)
 
                 AgeBreakRefreshMachineState()
+                AgeBreakAutoStep()
                 AgeBreakRefreshUI()
             end
         end)
