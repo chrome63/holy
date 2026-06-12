@@ -17565,113 +17565,14 @@ end
 
 function AgeBreakRefreshMachineState()
 
-    local now =
-        os.time()
-
     AgeBreakState.MachineSeen =
         false
 
-    if IsGardenWorld() then
-
-        local label =
-            AgeBreakResolveTimerLabel()
-
-        if not label then
-
-            AgeBreakState.MachineSource =
-                "Garden World"
-
-            AgeBreakState.TimerText =
-                "--"
-
-            AgeBreakState.TimerSeconds =
-                nil
-
-            AgeBreakState.ClaimReady =
-                false
-
-            return false
-        end
-
-        local text =
-            tostring(label.Text or "")
-
-        local seconds =
-            AgeBreakParseTimerSeconds(text)
-
-        local lower =
-            text:lower()
-
-        AgeBreakState.MachineSeen =
-            true
+    if IsGardenWorld() ~= true
+    and IsTradeWorld() ~= true then
 
         AgeBreakState.MachineSource =
-            "Garden Machine"
-
-        AgeBreakState.TimerText =
-            text ~= ""
-            and text
-            or "--"
-
-        AgeBreakState.TimerSeconds =
-            seconds
-
-        AgeBreakState.ClaimReady =
-            (
-                seconds ~= nil
-                and seconds <= 0
-            )
-            or lower:find("ready", 1, true) ~= nil
-            or lower:find("claim", 1, true) ~= nil
-            or lower:find("complete", 1, true) ~= nil
-
-        if seconds ~= nil
-        and seconds > 0 then
-
-            AgeBreakState.MachineTimerEndsAt =
-                now + seconds
-
-            if now - (tonumber(AgeBreakState.LastTimerSaveAt) or 0) >= 10 then
-
-                AgeBreakState.LastTimerSaveAt =
-                    now
-
-                AgeBreakSaveSettingsNow(
-                    "machine timer refresh"
-                )
-            end
-        end
-
-        return true
-    end
-
-    if IsTradeWorld() then
-
-        local endsAt =
-            tonumber(AgeBreakState.MachineTimerEndsAt)
-            or 0
-
-        local remaining =
-            endsAt - now
-
-        AgeBreakState.MachineSource =
-            "Saved Timer Estimate"
-
-        if endsAt > 0 then
-
-            AgeBreakState.TimerSeconds =
-                remaining
-
-            AgeBreakState.TimerText =
-                remaining > 0
-                and AgeBreakFormatTimerSeconds(remaining)
-                or "Ready"
-
-            AgeBreakState.ClaimReady =
-                remaining <= 0
-
-            return true
-        end
+            "Unsupported World"
 
         AgeBreakState.TimerText =
             "--"
@@ -17682,22 +17583,78 @@ function AgeBreakRefreshMachineState()
         AgeBreakState.ClaimReady =
             false
 
+        AgeBreakState.MachineTimerEndsAt =
+            0
+
         return false
     end
 
+    local label =
+        AgeBreakResolveTimerLabel()
+
+    if not label then
+
+        AgeBreakState.MachineSource =
+            IsTradeWorld()
+            and "Trade Machine Missing"
+            or "Garden Machine Missing"
+
+        AgeBreakState.TimerText =
+            "--"
+
+        AgeBreakState.TimerSeconds =
+            nil
+
+        AgeBreakState.ClaimReady =
+            false
+
+        AgeBreakState.MachineTimerEndsAt =
+            0
+
+        return false
+    end
+
+    local text =
+        tostring(label.Text or "")
+
+    local seconds =
+        AgeBreakParseTimerSeconds(text)
+
+    local lower =
+        text:lower()
+
+    AgeBreakState.MachineSeen =
+        true
+
     AgeBreakState.MachineSource =
-        "Unsupported World"
+        IsTradeWorld()
+        and "Trade Machine"
+        or "Garden Machine"
 
     AgeBreakState.TimerText =
-        "--"
+        text ~= ""
+        and text
+        or "--"
 
     AgeBreakState.TimerSeconds =
-        nil
+        seconds
 
     AgeBreakState.ClaimReady =
-        false
+        (
+            seconds ~= nil
+            and seconds <= 0
+        )
+        or lower:find("ready", 1, true) ~= nil
+        or lower:find("claim", 1, true) ~= nil
+        or lower:find("complete", 1, true) ~= nil
 
-    return false
+    -- Important:
+    -- Trade World has the real machine timer too.
+    -- Do not use saved countdown math anymore.
+    AgeBreakState.MachineTimerEndsAt =
+        0
+
+    return true
 end
 
 function AgeBreakBuildMachineText()
@@ -17729,14 +17686,11 @@ function AgeBreakBuildMachineText()
             ),
     }
 
-    if IsTradeWorld() then
+        if IsTradeWorld() then
 
         table.insert(
             lines,
-            "Saved Until: "
-                .. AgeBreakFormatSavedUntil(
-                    AgeBreakState.MachineTimerEndsAt
-                )
+            "Timer Mode: Real Trade Machine"
         )
     end
 
@@ -17837,13 +17791,28 @@ end
 
 function AgeBreakBuildMachineStartTeleportKey()
 
-    local endsAt =
-        tonumber(AgeBreakState.MachineTimerEndsAt)
-        or 0
+    local label =
+        AgeBreakResolveTimerLabel()
 
-    if endsAt > 0 then
-        return "timer:"
-            .. tostring(math.floor(endsAt))
+    local liveText =
+        ""
+
+    if label then
+
+        pcall(function()
+            liveText =
+                tostring(label.Text or "")
+        end)
+    end
+
+    liveText =
+        CleanText(liveText)
+
+    if liveText ~= ""
+    and liveText ~= "--" then
+
+        return "liveTimer:"
+            .. liveText
     end
 
     local pair =
@@ -17863,7 +17832,7 @@ function AgeBreakBuildMachineStartTeleportKey()
     end
 
     return "timerText:"
-        .. tostring(AgeBreakState.TimerText or "--")
+        .. tostring(AgeBreakState.TimerText or "")
 end
 
 function AgeBreakCanAutoRoute(cooldown)
@@ -17998,17 +17967,6 @@ function AgeBreakTeleportToTradeWorld(reason, force)
         os.clock()
 
     AgeBreakRefreshMachineState()
-
-    if force ~= true
-    and AgeBreakMachineIsRunning() == true then
-
-        AgeBreakState.LastTimerSaveAt =
-            os.time()
-
-        AgeBreakSaveSettingsNow(
-            "pre trade teleport timer capture"
-        )
-    end
 
     AgeBreakSetStatus(
         "Teleporting",
