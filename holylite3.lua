@@ -16087,6 +16087,13 @@ local AgeBreakState = {
     LastTargetUnfavoriteAt = 0,
     LastTargetUnfavoriteResult = "None",
 
+    RunMode = "Off",
+    RouteMode = "Stay Garden",
+
+    RunModeDropdown = nil,
+    RouteModeDropdown = nil,
+    AutoUnfavoriteTargetsToggle = nil,
+
     AutomationEnabled = false,
     AutoTeleportWhenReady = false,
 
@@ -16208,6 +16215,12 @@ function AgeBreakSaveSettingsNow(reason)
 
         AutoUnfavoriteTargets =
             AgeBreakState.AutoUnfavoriteTargets ~= false,
+
+        RunMode =
+            tostring(AgeBreakState.RunMode or "Off"),
+
+        RouteMode =
+            tostring(AgeBreakState.RouteMode or "Stay Garden"),
 
         AutomationEnabled =
             AgeBreakState.AutomationEnabled == true,
@@ -16452,7 +16465,245 @@ function AgeBreakLoadSettingsIntoState()
             payload.TimerText
     end
 
+    if type(payload.RunMode) == "string" then
+        AgeBreakState.RunMode =
+            AgeBreakNormalizeRunMode(
+                payload.RunMode
+            )
+    else
+        AgeBreakState.RunMode =
+            AgeBreakInferRunModeFromState()
+    end
+
+    if type(payload.RouteMode) == "string" then
+        AgeBreakState.RouteMode =
+            AgeBreakNormalizeRouteMode(
+                payload.RouteMode
+            )
+    else
+        AgeBreakState.RouteMode =
+            AgeBreakInferRouteModeFromState()
+    end
+
+    AgeBreakApplyRunMode(
+        AgeBreakState.RunMode,
+        "load",
+        true
+    )
+
+    AgeBreakApplyRouteMode(
+        AgeBreakState.RouteMode,
+        "load",
+        true
+    )
+
     return true
+end
+
+function AgeBreakNormalizeRunMode(value)
+
+    value =
+        CleanText(value)
+
+    if value == "Manual Assist" then
+        return "Manual Assist"
+    end
+
+    if value == "Full Auto" then
+        return "Full Auto"
+    end
+
+    return "Off"
+end
+
+function AgeBreakNormalizeRouteMode(value)
+
+    value =
+        CleanText(value)
+
+    if value == "Trade While Waiting" then
+        return "Trade While Waiting"
+    end
+
+    return "Stay Garden"
+end
+
+function AgeBreakReadSingleDropdownValue(value, fallback)
+
+    if type(value) == "table" then
+
+        for key, selected in pairs(value) do
+
+            if selected == true then
+                return CleanText(key)
+            end
+        end
+
+        local direct =
+            rawget(value, "Value")
+            or rawget(value, "Text")
+            or rawget(value, "Name")
+            or rawget(value, 1)
+
+        if direct ~= nil then
+            return CleanText(direct)
+        end
+    end
+
+    value =
+        CleanText(value)
+
+    if value ~= "" then
+        return value
+    end
+
+    return CleanText(fallback)
+end
+
+function AgeBreakInferRunModeFromState()
+
+    if AgeBreakState.AutomationEnabled == true
+    or AgeBreakState.AutoClaim == true
+    or AgeBreakState.AutoSubmitNext == true then
+        return "Full Auto"
+    end
+
+    return "Off"
+end
+
+function AgeBreakInferRouteModeFromState()
+
+    if AgeBreakState.AutoTeleportWhenReady == true
+    or AgeBreakState.AutoTradeWorldWhenMachineStarts == true
+    or AgeBreakState.TeleportTradeAfterSubmit == true then
+        return "Trade While Waiting"
+    end
+
+    return "Stay Garden"
+end
+
+function AgeBreakKickAutoStep()
+
+    task.defer(function()
+
+        if IsHolyLiteCurrentRun()
+        and type(AgeBreakAutoStep) == "function" then
+
+            pcall(
+                AgeBreakAutoStep
+            )
+        end
+    end)
+end
+
+function AgeBreakApplyRunMode(mode, reason, silent)
+
+    mode =
+        AgeBreakNormalizeRunMode(mode)
+
+    AgeBreakState.RunMode =
+        mode
+
+    if mode == "Full Auto" then
+
+        AgeBreakState.AutomationEnabled =
+            true
+
+        AgeBreakState.AutoClaim =
+            true
+
+        AgeBreakState.AutoSubmitNext =
+            true
+
+    else
+
+        AgeBreakState.AutomationEnabled =
+            false
+
+        AgeBreakState.AutoClaim =
+            false
+
+        AgeBreakState.AutoSubmitNext =
+            false
+    end
+
+    if silent == true then
+        return mode
+    end
+
+    AgeBreakQueueSave(
+        reason or "run mode changed"
+    )
+
+    AgeBreakSetStatus(
+        "Automation",
+        mode == "Full Auto"
+        and "Full Auto enabled. Claim + submit automation are active."
+        or (
+            mode == "Manual Assist"
+            and "Manual Assist enabled. Preview and manual submit stay available."
+            or "Age Break automation disabled."
+        )
+    )
+
+    if mode == "Full Auto" then
+        AgeBreakKickAutoStep()
+    end
+
+    return mode
+end
+
+function AgeBreakApplyRouteMode(mode, reason, silent)
+
+    mode =
+        AgeBreakNormalizeRouteMode(mode)
+
+    AgeBreakState.RouteMode =
+        mode
+
+    if mode == "Trade While Waiting" then
+
+        AgeBreakState.AutoTeleportWhenReady =
+            true
+
+        AgeBreakState.AutoTradeWorldWhenMachineStarts =
+            true
+
+        AgeBreakState.TeleportTradeAfterSubmit =
+            true
+
+    else
+
+        AgeBreakState.AutoTeleportWhenReady =
+            false
+
+        AgeBreakState.AutoTradeWorldWhenMachineStarts =
+            false
+
+        AgeBreakState.TeleportTradeAfterSubmit =
+            false
+    end
+
+    if silent == true then
+        return mode
+    end
+
+    AgeBreakQueueSave(
+        reason or "route mode changed"
+    )
+
+    AgeBreakSetStatus(
+        "Route",
+        mode == "Trade While Waiting"
+        and "Will use Trade World as monitor while timer runs, then Garden when ready."
+        or "Will stay in Garden World. Trade routing disabled."
+    )
+
+    if AgeBreakState.RunMode == "Full Auto" then
+        AgeBreakKickAutoStep()
+    end
+
+    return mode
 end
 
 function AgeBreakShortUUID(uuid)
@@ -21370,189 +21621,122 @@ if Tabs.AgeBreak then
     end)
 
     AgeBreakSafetyBox:AddLabel({
-        Text = "Automation",
+        Text =
+            '<font color="rgb(196,181,253)"><b>Automation</b></font>'
+            .. '\nSimple mode controls. Advanced booleans are handled behind the scenes.',
         DoesWrap = true,
-        Size = 13,
+        Size = 12,
     })
 
-    AgeBreakSafetyBox:AddToggle(
-        "HolyLiteAgeBreakAutomationEnabled",
-        {
-            Text = "Enable Age Break Automation",
-            Default = AgeBreakState.AutomationEnabled == true,
-            Tooltip = "Master switch for Age Break routing. Trade World remains monitor/edit-only.",
-        }
-    ):OnChanged(function(value)
+    AgeBreakState.RunModeDropdown =
+        AgeBreakSafetyBox:AddDropdown(
+            "HolyLiteAgeBreakRunMode",
+            {
+                Text = "Run Mode",
+                Values = {
+                    "Off",
+                    "Manual Assist",
+                    "Full Auto",
+                },
+                Default = AgeBreakNormalizeRunMode(
+                    AgeBreakState.RunMode
+                ),
+                Searchable = false,
+                Multi = false,
+                AllowNull = false,
+                MaxVisibleDropdownItems = 3,
+                Tooltip = "Off = no automation. Manual Assist = helper UI/manual submit. Full Auto = submit/claim loop.",
+            }
+        )
 
-        AgeBreakState.AutomationEnabled =
+    AgeBreakState.RunModeDropdown:OnChanged(function(value)
+
+        local mode =
+            AgeBreakReadSingleDropdownValue(
+                value,
+                AgeBreakState.RunMode
+            )
+
+        AgeBreakApplyRunMode(
+            mode,
+            "run mode changed",
+            false
+        )
+    end)
+
+    AgeBreakState.RouteModeDropdown =
+        AgeBreakSafetyBox:AddDropdown(
+            "HolyLiteAgeBreakRouteMode",
+            {
+                Text = "Route Mode",
+                Values = {
+                    "Stay Garden",
+                    "Trade While Waiting",
+                },
+                Default = AgeBreakNormalizeRouteMode(
+                    AgeBreakState.RouteMode
+                ),
+                Searchable = false,
+                Multi = false,
+                AllowNull = false,
+                MaxVisibleDropdownItems = 2,
+                Tooltip = "Stay Garden = no route hopping. Trade While Waiting = Trade monitor while timer runs, Garden when ready.",
+            }
+        )
+
+    AgeBreakState.RouteModeDropdown:OnChanged(function(value)
+
+        local mode =
+            AgeBreakReadSingleDropdownValue(
+                value,
+                AgeBreakState.RouteMode
+            )
+
+        AgeBreakApplyRouteMode(
+            mode,
+            "route mode changed",
+            false
+        )
+    end)
+
+    AgeBreakState.AutoUnfavoriteTargetsToggle =
+        AgeBreakSafetyBox:AddToggle(
+            "HolyLiteAgeBreakAutoUnfavoriteTargets",
+            {
+                Text = "Auto Unfavorite Targets",
+                Default = AgeBreakState.AutoUnfavoriteTargets ~= false,
+                Tooltip = "Before submitting, unfavorites the selected target pet so the Age Break machine accepts it.",
+            }
+        )
+
+    AgeBreakState.AutoUnfavoriteTargetsToggle:OnChanged(function(value)
+
+        AgeBreakState.AutoUnfavoriteTargets =
             value == true
 
         AgeBreakQueueSave(
-            "automation enabled changed"
+            "auto unfavorite targets changed"
         )
 
         AgeBreakSetStatus(
-            "Automation",
-            AgeBreakState.AutomationEnabled == true
-            and "Automation enabled."
-            or "Automation disabled."
+            "Safety",
+            AgeBreakState.AutoUnfavoriteTargets == true
+            and "Selected targets will be unfavorited before submit."
+            or "Target unfavorite disabled."
         )
-
-        if AgeBreakState.AutomationEnabled == true then
-
-            task.defer(function()
-
-                if IsHolyLiteCurrentRun()
-                and type(AgeBreakAutoStep) == "function" then
-                    pcall(AgeBreakAutoStep)
-                end
-            end)
-        end
     end)
 
-    AgeBreakSafetyBox:AddToggle(
-        "HolyLiteAgeBreakAutoTeleportWhenReady",
-        {
-            Text = "Auto Teleport When Ready",
-            Default = AgeBreakState.AutoTeleportWhenReady == true,
-            Tooltip = "Trade World monitor: when timer is ready, auto join Garden World. Does not submit or claim in Trade World.",
-        }
-    ):OnChanged(function(value)
+    AgeBreakSafetyBox:AddLabel({
+        Text =
+            '<font color="rgb(148,163,184)"><b>Mode mapping</b></font>'
+            .. '\nFull Auto: Auto Claim + Auto Submit Next Pair.'
+            .. '\nTrade While Waiting: joins Trade World while timer runs, then Garden when ready.'
+            .. '\nTrade World remains monitor/edit-only.',
+        DoesWrap = true,
+        Size = 11,
+    })
 
-        AgeBreakState.AutoTeleportWhenReady =
-            value == true
-
-        AgeBreakQueueSave(
-            "auto teleport when ready changed"
-        )
-
-        AgeBreakSetStatus(
-            "Automation",
-            AgeBreakState.AutoTeleportWhenReady == true
-            and "Ready timer will auto route to Garden World."
-            or "Ready timer auto route disabled."
-        )
-
-        if AgeBreakState.AutoTeleportWhenReady == true then
-
-            task.defer(function()
-
-                if IsHolyLiteCurrentRun()
-                and type(AgeBreakAutoStep) == "function" then
-                    pcall(AgeBreakAutoStep)
-                end
-            end)
-        end
-    end)
-
-    AgeBreakSafetyBox:AddToggle(
-        "HolyLiteAgeBreakAutoClaim",
-        {
-            Text = "Auto Claim",
-            Default = AgeBreakState.AutoClaim == true,
-            Tooltip = "Garden World only. Claims when the machine is ready.",
-        }
-    ):OnChanged(function(value)
-
-        AgeBreakState.AutoClaim =
-            value == true
-
-        AgeBreakQueueSave(
-            "auto claim changed"
-        )
-
-        AgeBreakSetStatus(
-            "Automation",
-            AgeBreakState.AutoClaim == true
-            and "Auto Claim enabled. Garden World only."
-            or "Auto Claim disabled."
-        )
-
-        if AgeBreakState.AutoClaim == true then
-
-            task.defer(function()
-
-                if IsHolyLiteCurrentRun()
-                and type(AgeBreakAutoStep) == "function" then
-                    pcall(AgeBreakAutoStep)
-                end
-            end)
-        end
-    end)
-
-    AgeBreakSafetyBox:AddToggle(
-        "HolyLiteAgeBreakAutoSubmitNext",
-        {
-            Text = "Auto Submit Next Pair",
-            Default = AgeBreakState.AutoSubmitNext == true,
-            Tooltip = "Garden World only. When the machine is idle, submits the next safe pair.",
-        }
-    ):OnChanged(function(value)
-
-        AgeBreakState.AutoSubmitNext =
-            value == true
-
-        AgeBreakQueueSave(
-            "auto submit next changed"
-        )
-
-        AgeBreakSetStatus(
-            "Automation",
-            AgeBreakState.AutoSubmitNext == true
-            and "Auto Submit enabled. Garden World only."
-            or "Auto Submit disabled."
-        )
-
-        if AgeBreakState.AutoSubmitNext == true then
-
-            task.defer(function()
-
-                if IsHolyLiteCurrentRun()
-                and type(AgeBreakAutoStep) == "function" then
-                    pcall(AgeBreakAutoStep)
-                end
-            end)
-        end
-    end)
-
-    AgeBreakSafetyBox:AddToggle(
-        "HolyLiteAgeBreakAutoTradeWorldWhenStarted",
-        {
-            Text = "Auto Trade World When Machine Starts",
-            Default = AgeBreakState.AutoTradeWorldWhenMachineStarts == true,
-            Tooltip = "Garden World: when the machine timer starts, auto join Trade World while it runs.",
-        }
-    ):OnChanged(function(value)
-
-        AgeBreakState.AutoTradeWorldWhenMachineStarts =
-            value == true
-
-        AgeBreakState.TeleportTradeAfterSubmit =
-            value == true
-
-        AgeBreakQueueSave(
-            "auto trade world when machine starts changed"
-        )
-
-        AgeBreakSetStatus(
-            "Automation",
-            AgeBreakState.AutoTradeWorldWhenMachineStarts == true
-            and "Will join Trade World after a running timer is confirmed."
-            or "Auto Trade World after machine start disabled."
-        )
-
-        if AgeBreakState.AutoTradeWorldWhenMachineStarts == true then
-
-            task.defer(function()
-
-                if IsHolyLiteCurrentRun()
-                and type(AgeBreakAutoStep) == "function" then
-                    pcall(AgeBreakAutoStep)
-                end
-            end)
-        end
-    end)
-
+    
     AgeBreakConfigState.Loading =
         false
 
