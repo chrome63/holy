@@ -16094,6 +16094,11 @@ local AgeBreakState = {
     RouteModeDropdown = nil,
     AutoUnfavoriteTargetsToggle = nil,
 
+    MaxSacrificeAgeInput = nil,
+    MaxSacrificeBaseWeightInput = nil,
+
+    UIHydrating = false,
+
     AutomationEnabled = false,
     AutoTeleportWhenReady = false,
 
@@ -20906,6 +20911,91 @@ function AgeBreakRefreshSacrificeTypesDropdown()
     return choices
 end
 
+function AgeBreakApplySavedUIValues(reason)
+
+    reason =
+        tostring(reason or "startup")
+
+    AgeBreakState.UIHydrating =
+        true
+
+    AgeBreakApplyRunMode(
+        AgeBreakState.RunMode,
+        "hydrate run mode",
+        true
+    )
+
+    AgeBreakApplyRouteMode(
+        AgeBreakState.RouteMode,
+        "hydrate route mode",
+        true
+    )
+
+    SetControlValue(
+        AgeBreakState.RunModeDropdown,
+        AgeBreakNormalizeRunMode(
+            AgeBreakState.RunMode
+        )
+    )
+
+    SetControlValue(
+        AgeBreakState.RouteModeDropdown,
+        AgeBreakNormalizeRouteMode(
+            AgeBreakState.RouteMode
+        )
+    )
+
+    SetControlValue(
+        AgeBreakState.AutoUnfavoriteTargetsToggle,
+        AgeBreakState.AutoUnfavoriteTargets ~= false
+    )
+
+    SetControlValue(
+        AgeBreakState.MaxSacrificeAgeInput,
+        tostring(
+            tonumber(AgeBreakState.MaxSacrificeAge)
+            or 99
+        )
+    )
+
+    SetControlValue(
+        AgeBreakState.MaxSacrificeBaseWeightInput,
+        tostring(
+            tonumber(AgeBreakState.MaxSacrificeBaseWeight)
+            or 3
+        )
+    )
+
+    AgeBreakRefreshTargetDropdown()
+    AgeBreakRefreshSacrificeTypesDropdown()
+    AgeBreakBuildSacrificeQueue()
+    AgeBreakRefreshMachineState()
+    AgeBreakRefreshUI()
+
+    AgeBreakState.UIHydrating =
+        false
+
+    AgeBreakPreviewPair()
+
+    print(
+        "[AGE BREAK]",
+        "Applied saved UI values.",
+        "| reason:",
+        tostring(reason),
+        "| run:",
+        tostring(AgeBreakState.RunMode),
+        "| route:",
+        tostring(AgeBreakState.RouteMode),
+        "| maxAge:",
+        tostring(AgeBreakState.MaxSacrificeAge),
+        "| maxBW:",
+        tostring(AgeBreakState.MaxSacrificeBaseWeight)
+    )
+
+    return true
+end
+
+
 function AgeBreakOpenListDialog(title, rows)
 
     rows =
@@ -21148,16 +21238,23 @@ if Tabs.AgeBreak then
         AgeBreakPreviewPair()
     end)
 
-    AgeBreakBuilderBox:AddInput(
-        "HolyLiteAgeBreakMaxSacAge",
-        {
-            Text = "Max Sacrifice Age",
-            Default = tostring(AgeBreakState.MaxSacrificeAge),
-            Numeric = true,
-            Finished = true,
-            ClearTextOnFocus = false,
-        }
-    ):OnChanged(function(value)
+    AgeBreakState.MaxSacrificeAgeInput =
+        AgeBreakBuilderBox:AddInput(
+            "HolyLiteAgeBreakMaxSacAge",
+            {
+                Text = "Max Sacrifice Age",
+                Default = tostring(AgeBreakState.MaxSacrificeAge),
+                Numeric = true,
+                Finished = true,
+                ClearTextOnFocus = false,
+            }
+        )
+
+    AgeBreakState.MaxSacrificeAgeInput:OnChanged(function(value)
+
+        if AgeBreakState.UIHydrating == true then
+            return
+        end
 
         AgeBreakState.MaxSacrificeAge =
             math.clamp(
@@ -21168,7 +21265,7 @@ if Tabs.AgeBreak then
                     )
                 ),
                 1,
-                3
+                999
             )
 
         AgeBreakQueueSave(
@@ -21178,16 +21275,23 @@ if Tabs.AgeBreak then
         AgeBreakPreviewPair()
     end)
 
-    AgeBreakBuilderBox:AddInput(
-        "HolyLiteAgeBreakMaxSacBW",
-        {
-            Text = "Max BaseWeight",
-            Default = tostring(AgeBreakState.MaxSacrificeBaseWeight),
-            Numeric = true,
-            Finished = true,
-            ClearTextOnFocus = false,
-        }
-    ):OnChanged(function(value)
+    AgeBreakState.MaxSacrificeBaseWeightInput =
+        AgeBreakBuilderBox:AddInput(
+            "HolyLiteAgeBreakMaxSacBW",
+            {
+                Text = "Max BaseWeight",
+                Default = tostring(AgeBreakState.MaxSacrificeBaseWeight),
+                Numeric = true,
+                Finished = true,
+                ClearTextOnFocus = false,
+            }
+        )
+
+    AgeBreakState.MaxSacrificeBaseWeightInput:OnChanged(function(value)
+
+        if AgeBreakState.UIHydrating == true then
+            return
+        end
 
         AgeBreakState.MaxSacrificeBaseWeight =
             math.max(
@@ -21596,30 +21700,6 @@ if Tabs.AgeBreak then
         AgeBreakPreviewPair()
     end)
 
-        AgeBreakSafetyBox:AddToggle(
-        "HolyLiteAgeBreakAutoUnfavoriteTargets",
-        {
-            Text = "Auto Unfavorite Targets",
-            Default = AgeBreakState.AutoUnfavoriteTargets ~= false,
-            Tooltip = "Before submitting, unfavorites the selected target pet so the Age Break machine accepts it.",
-        }
-    ):OnChanged(function(value)
-
-        AgeBreakState.AutoUnfavoriteTargets =
-            value == true
-
-        AgeBreakQueueSave(
-            "auto unfavorite targets changed"
-        )
-
-        AgeBreakSetStatus(
-            "Safety",
-            AgeBreakState.AutoUnfavoriteTargets == true
-            and "Selected targets will be unfavorited before submit."
-            or "Target unfavorite disabled."
-        )
-    end)
-
     AgeBreakSafetyBox:AddLabel({
         Text =
             '<font color="rgb(196,181,253)"><b>Automation</b></font>'
@@ -21650,6 +21730,10 @@ if Tabs.AgeBreak then
         )
 
     AgeBreakState.RunModeDropdown:OnChanged(function(value)
+
+        if AgeBreakState.UIHydrating == true then
+            return
+        end
 
         local mode =
             AgeBreakReadSingleDropdownValue(
@@ -21686,6 +21770,10 @@ if Tabs.AgeBreak then
 
     AgeBreakState.RouteModeDropdown:OnChanged(function(value)
 
+        if AgeBreakState.UIHydrating == true then
+            return
+        end
+
         local mode =
             AgeBreakReadSingleDropdownValue(
                 value,
@@ -21710,6 +21798,10 @@ if Tabs.AgeBreak then
         )
 
     AgeBreakState.AutoUnfavoriteTargetsToggle:OnChanged(function(value)
+
+        if AgeBreakState.UIHydrating == true then
+            return
+        end
 
         AgeBreakState.AutoUnfavoriteTargets =
             value == true
@@ -21737,6 +21829,10 @@ if Tabs.AgeBreak then
     })
 
 
+    AgeBreakApplySavedUIValues(
+        "startup"
+    )
+
     AgeBreakConfigState.Loading =
         false
 
@@ -21746,11 +21842,8 @@ if Tabs.AgeBreak then
             return
         end
 
-        AgeBreakRefreshTargetDropdown()
-        AgeBreakRefreshSacrificeTypesDropdown()
-        AgeBreakBuildSacrificeQueue()
         AgeBreakRefreshMachineState()
-        AgeBreakPreviewPair()
+        AgeBreakRefreshUI()
 
         AgeBreakSetStatus(
             "Ready",
