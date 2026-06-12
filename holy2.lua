@@ -127,7 +127,118 @@ end
 
 local UIState = {
     DPIScale = 100,
+
+    ShopAutoBuySeeds = false,
+    ShopAutoBuyGear = false,
+    ShopAutoBuyCrates = false,
+
+    ShopSeeds = {
+        "Carrot",
+    },
+
+    ShopGear = {},
+    ShopCrates = {},
+
+    ShopBuyDelay = 0.35,
+    ShopMaxBuysPerRestock = 1,
+
+    FarmAutoPlant = false,
+
+    -- Legacy single seed field, kept for older saves/status fallback.
+    FarmSelectedSeed = "Carrot",
+
+    -- Real multi-select Farm seed list.
+    FarmSelectedSeeds = {
+        "Carrot",
+    },
+
+    FarmPlantDelay = 0.35,
+    FarmRandomPosition = true,
+
+    -- Saved relative to the current "Your Garden" plot.
+    -- This is NOT a world position, so it still works after rejoin/new farm.
+    FarmPlantLocalOffset = nil,
 }
+
+local function SettingsNormalizeStringList(value, fallback)
+
+    local result =
+        {}
+
+    local function AddItem(itemName)
+
+        itemName =
+            CleanText(itemName)
+
+        if itemName == "" then
+            return
+        end
+
+        if table.find(result, itemName) ~= nil then
+            return
+        end
+
+        table.insert(
+            result,
+            itemName
+        )
+    end
+
+    if type(value) == "table" then
+
+        for _, itemName in ipairs(value) do
+
+            AddItem(
+                itemName
+            )
+        end
+
+        for itemName, enabled in pairs(value) do
+
+            if enabled == true then
+
+                AddItem(
+                    itemName
+                )
+            end
+        end
+
+    elseif type(value) == "string" then
+
+        AddItem(
+            value
+        )
+    end
+
+    if #result <= 0
+    and type(fallback) == "table" then
+
+        for _, itemName in ipairs(fallback) do
+
+            AddItem(
+                itemName
+            )
+        end
+    end
+
+    table.sort(result)
+
+    return result
+end
+
+local function SettingsNormalizeNumber(value, defaultValue, minValue, maxValue)
+
+    local number =
+        tonumber(value)
+        or tonumber(defaultValue)
+        or 0
+
+    return math.clamp(
+        number,
+        tonumber(minValue) or number,
+        tonumber(maxValue) or number
+    )
+end
 
 local function LoadUISettings()
 
@@ -178,6 +289,123 @@ local function LoadUISettings()
             125
         )
 
+    UIState.ShopAutoBuySeeds =
+        payload.ShopAutoBuySeeds == true
+
+    UIState.ShopAutoBuyGear =
+        payload.ShopAutoBuyGear == true
+
+    UIState.ShopAutoBuyCrates =
+        payload.ShopAutoBuyCrates == true
+
+    UIState.ShopSeeds =
+        SettingsNormalizeStringList(
+            payload.ShopSeeds,
+            {
+                "Carrot",
+            }
+        )
+
+    UIState.ShopGear =
+        SettingsNormalizeStringList(
+            payload.ShopGear,
+            {}
+        )
+
+    UIState.ShopCrates =
+        SettingsNormalizeStringList(
+            payload.ShopCrates,
+            {}
+        )
+
+    UIState.ShopBuyDelay =
+        SettingsNormalizeNumber(
+            payload.ShopBuyDelay,
+            0.35,
+            0.1,
+            10
+        )
+
+    UIState.ShopMaxBuysPerRestock =
+        math.floor(
+            SettingsNormalizeNumber(
+                payload.ShopMaxBuysPerRestock,
+                1,
+                1,
+                999
+            )
+        )
+
+    if payload.FarmAutoPlant ~= nil then
+        UIState.FarmAutoPlant =
+            payload.FarmAutoPlant == true
+    end
+
+    local farmSeed =
+        CleanText(payload.FarmSelectedSeed)
+
+    if farmSeed ~= "" then
+        UIState.FarmSelectedSeed =
+            farmSeed
+    end
+
+    UIState.FarmSelectedSeeds =
+        SettingsNormalizeStringList(
+            payload.FarmSelectedSeeds,
+            {
+                CleanText(UIState.FarmSelectedSeed) ~= ""
+                and CleanText(UIState.FarmSelectedSeed)
+                or "Carrot",
+            }
+        )
+
+    if #UIState.FarmSelectedSeeds > 0 then
+
+        UIState.FarmSelectedSeed =
+            UIState.FarmSelectedSeeds[1]
+    end
+
+    UIState.FarmPlantDelay =
+        math.clamp(
+            tonumber(payload.FarmPlantDelay)
+            or tonumber(UIState.FarmPlantDelay)
+            or 0.35,
+            0.1,
+            10
+        )
+
+    if payload.FarmRandomPosition ~= nil then
+        UIState.FarmRandomPosition =
+            payload.FarmRandomPosition == true
+    end
+
+    if type(payload.FarmPlantLocalOffset) == "table" then
+
+        local x =
+            tonumber(payload.FarmPlantLocalOffset.X)
+            or tonumber(payload.FarmPlantLocalOffset.x)
+            or tonumber(payload.FarmPlantLocalOffset[1])
+
+        local y =
+            tonumber(payload.FarmPlantLocalOffset.Y)
+            or tonumber(payload.FarmPlantLocalOffset.y)
+            or tonumber(payload.FarmPlantLocalOffset[2])
+
+        local z =
+            tonumber(payload.FarmPlantLocalOffset.Z)
+            or tonumber(payload.FarmPlantLocalOffset.z)
+            or tonumber(payload.FarmPlantLocalOffset[3])
+
+        if x and y and z then
+
+            UIState.FarmPlantLocalOffset = {
+                X = x,
+                Y = y,
+                Z = z,
+            }
+        end
+    end
+
     return true
 end
 
@@ -193,6 +421,87 @@ local function SaveUISettings(reason)
         DPIScale =
             tonumber(UIState.DPIScale)
             or 100,
+
+        ShopAutoBuySeeds =
+            UIState.ShopAutoBuySeeds == true,
+
+        ShopAutoBuyGear =
+            UIState.ShopAutoBuyGear == true,
+
+        ShopAutoBuyCrates =
+            UIState.ShopAutoBuyCrates == true,
+
+        ShopSeeds =
+            SettingsNormalizeStringList(
+                UIState.ShopSeeds,
+                {
+                    "Carrot",
+                }
+            ),
+
+        ShopGear =
+            SettingsNormalizeStringList(
+                UIState.ShopGear,
+                {}
+            ),
+
+        ShopCrates =
+            SettingsNormalizeStringList(
+                UIState.ShopCrates,
+                {}
+            ),
+
+        ShopBuyDelay =
+            SettingsNormalizeNumber(
+                UIState.ShopBuyDelay,
+                0.35,
+                0.1,
+                10
+            ),
+
+        ShopMaxBuysPerRestock =
+            math.floor(
+                SettingsNormalizeNumber(
+                    UIState.ShopMaxBuysPerRestock,
+                    1,
+                    1,
+                    999
+                )
+            ),
+
+        FarmAutoPlant =
+            UIState.FarmAutoPlant == true,
+
+        FarmSelectedSeed =
+            CleanText(UIState.FarmSelectedSeed) ~= ""
+            and CleanText(UIState.FarmSelectedSeed)
+            or "Carrot",
+
+        FarmSelectedSeeds =
+            SettingsNormalizeStringList(
+                UIState.FarmSelectedSeeds,
+                {
+                    CleanText(UIState.FarmSelectedSeed) ~= ""
+                    and CleanText(UIState.FarmSelectedSeed)
+                    or "Carrot",
+                }
+            ),
+
+        FarmPlantDelay =
+            math.clamp(
+                tonumber(UIState.FarmPlantDelay)
+                or 0.35,
+                0.1,
+                10
+            ),
+
+        FarmRandomPosition =
+            UIState.FarmRandomPosition == true,
+
+        FarmPlantLocalOffset =
+            type(UIState.FarmPlantLocalOffset) == "table"
+            and UIState.FarmPlantLocalOffset
+            or nil,
 
         SavedAt =
             os.time(),
@@ -573,19 +882,52 @@ local ShopStockLabel =
     nil
 
 local ShopConfig = {
-    AutoBuySeeds = false,
-    AutoBuyGear = false,
-    AutoBuyCrates = false,
+    AutoBuySeeds =
+        UIState.ShopAutoBuySeeds == true,
 
-    Seeds = {
-        "Carrot",
-    },
+    AutoBuyGear =
+        UIState.ShopAutoBuyGear == true,
 
-    Gear = {},
-    Crates = {},
+    AutoBuyCrates =
+        UIState.ShopAutoBuyCrates == true,
 
-    BuyDelay = 0.35,
-    MaxBuysPerRestock = 1,
+    Seeds =
+        SettingsNormalizeStringList(
+            UIState.ShopSeeds,
+            {
+                "Carrot",
+            }
+        ),
+
+    Gear =
+        SettingsNormalizeStringList(
+            UIState.ShopGear,
+            {}
+        ),
+
+    Crates =
+        SettingsNormalizeStringList(
+            UIState.ShopCrates,
+            {}
+        ),
+
+    BuyDelay =
+        SettingsNormalizeNumber(
+            UIState.ShopBuyDelay,
+            0.35,
+            0.1,
+            10
+        ),
+
+    MaxBuysPerRestock =
+        math.floor(
+            SettingsNormalizeNumber(
+                UIState.ShopMaxBuysPerRestock,
+                1,
+                1,
+                999
+            )
+        ),
 }
 
 local ShopAutomationState = {
@@ -1411,6 +1753,19 @@ local function StopAllShopAutomation(seedToggle, gearToggle, crateToggle)
     ShopConfig.AutoBuyCrates =
         false
 
+    UIState.ShopAutoBuySeeds =
+        false
+
+    UIState.ShopAutoBuyGear =
+        false
+
+    UIState.ShopAutoBuyCrates =
+        false
+
+    SaveUISettings(
+        "shop automation stopped"
+    )
+
     local toggles = {
         seedToggle,
         gearToggle,
@@ -1487,6 +1842,1556 @@ local function ConnectShopReplicaWatcher()
 end
 
 ConnectShopReplicaWatcher()
+
+--==================================================
+-- [5.6] FARM AUTOMATION HELPERS
+--==================================================
+
+local FarmStatusLabel =
+    nil
+
+local FarmPositionLabel =
+    nil
+
+local FarmAutomationToggle =
+    nil
+
+local FarmSeedDropdown =
+    nil
+
+local FarmPositionPickerConnection =
+    nil
+
+local FarmAutomationState = {
+    Running = false,
+    PlantSeedPacket = nil,
+    PacketSource = "not loaded",
+}
+
+local function FarmVectorFromPayload(payload)
+
+    if type(payload) ~= "table" then
+        return nil
+    end
+
+    local x =
+        tonumber(payload.X)
+        or tonumber(payload.x)
+        or tonumber(payload[1])
+
+    local y =
+        tonumber(payload.Y)
+        or tonumber(payload.y)
+        or tonumber(payload[2])
+
+    local z =
+        tonumber(payload.Z)
+        or tonumber(payload.z)
+        or tonumber(payload[3])
+
+    if not x
+    or not y
+    or not z then
+        return nil
+    end
+
+    return Vector3.new(
+        x,
+        y,
+        z
+    )
+end
+
+local function FarmVectorToPayload(vector)
+
+    return {
+        X = vector.X,
+        Y = vector.Y,
+        Z = vector.Z,
+    }
+end
+
+local FarmConfig = {
+    AutoPlant =
+        UIState.FarmAutoPlant == true,
+
+    SelectedSeed =
+        CleanText(UIState.FarmSelectedSeed) ~= ""
+        and CleanText(UIState.FarmSelectedSeed)
+        or "Carrot",
+
+    SelectedSeeds =
+        SettingsNormalizeStringList(
+            UIState.FarmSelectedSeeds,
+            {
+                CleanText(UIState.FarmSelectedSeed) ~= ""
+                and CleanText(UIState.FarmSelectedSeed)
+                or "Carrot",
+            }
+        ),
+
+    PlantDelay =
+        math.clamp(
+            tonumber(UIState.FarmPlantDelay)
+            or 0.35,
+            0.1,
+            10
+        ),
+
+    RandomPosition =
+        UIState.FarmRandomPosition == true,
+
+    PlantLocalOffset =
+        FarmVectorFromPayload(
+            UIState.FarmPlantLocalOffset
+        ),
+}
+
+local function FarmPathOf(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return tostring(instance)
+    end
+
+    local ok, result =
+        pcall(function()
+            return instance:GetFullName()
+        end)
+
+    return ok and result or tostring(instance)
+end
+
+local function FarmStripRichText(value)
+
+    return tostring(value or "")
+        :gsub("<[^>]->", "")
+        :gsub("<.->", "")
+end
+
+local function FarmSafeRawGet(value, key)
+
+    if type(value) ~= "table" then
+        return nil
+    end
+
+    local ok, result =
+        pcall(function()
+            return rawget(value, key)
+        end)
+
+    if ok == true then
+        return result
+    end
+
+    return nil
+end
+
+local function FarmVectorText(vector)
+
+    if typeof(vector) ~= "Vector3" then
+        return "not set"
+    end
+
+    return string.format(
+        "Vector3.new(%.3f, %.3f, %.3f)",
+        vector.X,
+        vector.Y,
+        vector.Z
+    )
+end
+
+local function FarmGetSelectedSeeds()
+
+    FarmConfig.SelectedSeeds =
+        SettingsNormalizeStringList(
+            FarmConfig.SelectedSeeds,
+            {
+                CleanText(FarmConfig.SelectedSeed) ~= ""
+                and CleanText(FarmConfig.SelectedSeed)
+                or "Carrot",
+            }
+        )
+
+    if #FarmConfig.SelectedSeeds > 0 then
+
+        FarmConfig.SelectedSeed =
+            FarmConfig.SelectedSeeds[1]
+    end
+
+    return FarmConfig.SelectedSeeds
+end
+
+local function FarmSelectedSeedsText()
+
+    local seeds =
+        FarmGetSelectedSeeds()
+
+    if #seeds <= 0 then
+        return "none selected"
+    end
+
+    return table.concat(
+        seeds,
+        ", "
+    )
+end
+
+local function FarmSetStatus(text)
+
+    local status =
+        tostring(text or "Ready")
+
+    if FarmStatusLabel
+    and type(FarmStatusLabel.SetText) == "function" then
+
+        FarmStatusLabel:SetText(
+            '<font color="rgb(196,181,253)"><b>Farm Status:</b></font> '
+            .. status
+        )
+    end
+end
+
+local function FarmResolveOwnPlot()
+
+    local gardens =
+        workspace:FindFirstChild("Gardens")
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+
+    if not gardens
+    or not playerGui then
+        return nil, "missing Gardens or PlayerGui"
+    end
+
+    for _, gui in ipairs(playerGui:GetChildren()) do
+
+        if gui:IsA("BillboardGui")
+        and tostring(gui.Name):match("^Plot%d+$") then
+
+            for _, descendant in ipairs(gui:GetDescendants()) do
+
+                if descendant:IsA("TextLabel")
+                or descendant:IsA("TextButton") then
+
+                    local text =
+                        FarmStripRichText(
+                            descendant.Text
+                        ):lower()
+
+                    if text:find("your garden", 1, true) then
+
+                        local plot =
+                            gardens:FindFirstChild(gui.Name)
+
+                        if plot then
+                            return plot, "billboard: " .. gui.Name
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return nil, "no Your Garden billboard found"
+end
+
+local function FarmGetPlotFrame(plot)
+
+    if not plot
+    or not plot:IsA("Model") then
+        return nil
+    end
+
+    local ok, cf =
+        pcall(function()
+            return plot:GetBoundingBox()
+        end)
+
+    if ok == true
+    and typeof(cf) == "CFrame" then
+        return cf
+    end
+
+    return nil
+end
+
+local function FarmGetWorldPlantPosition()
+
+    if typeof(FarmConfig.PlantLocalOffset) ~= "Vector3" then
+        return nil, nil, "plant position not selected"
+    end
+
+    local ownPlot, plotReason =
+        FarmResolveOwnPlot()
+
+    if not ownPlot then
+        return nil, nil, plotReason
+    end
+
+    local plotFrame =
+        FarmGetPlotFrame(ownPlot)
+
+    if not plotFrame then
+        return nil, ownPlot, "could not get plot frame"
+    end
+
+    return plotFrame:PointToWorldSpace(
+        FarmConfig.PlantLocalOffset
+    ),
+    ownPlot,
+    "resolved in " .. FarmPathOf(ownPlot)
+end
+
+local function FarmRaycastPlantPosition(position)
+
+    if typeof(position) ~= "Vector3" then
+        return nil
+    end
+
+    local params =
+        RaycastParams.new()
+
+    params.FilterType =
+        Enum.RaycastFilterType.Exclude
+
+    params.FilterDescendantsInstances =
+        {
+            LOCAL_PLAYER.Character,
+        }
+
+    params.IgnoreWater =
+        true
+
+    return workspace:Raycast(
+        position + Vector3.new(0, 15, 0),
+        Vector3.new(0, -60, 0),
+        params
+    )
+end
+
+local function FarmValidateRayHit(rayResult, ownPlot)
+
+    if not rayResult
+    or not rayResult.Instance
+    or not ownPlot then
+        return false, "missing ray hit or own plot"
+    end
+
+    if rayResult.Instance:IsDescendantOf(ownPlot) ~= true then
+        return false, "point is not inside your current garden"
+    end
+
+    local hitPath =
+        FarmPathOf(rayResult.Instance)
+
+    if hitPath:find(".Plants.", 1, true) then
+        return false, "clicked existing plant, not soil"
+    end
+
+    if hitPath:find("GardenZonePart", 1, true) then
+        return false, "clicked garden wall/zone"
+    end
+
+    if hitPath:find("PlantArea", 1, true)
+    or hitPath:find("BedSection", 1, true) then
+        return true, "valid plant area"
+    end
+
+    return false, "inside garden but not recognized plant bed"
+end
+
+local function FarmValidateCurrentPlantPoint()
+
+    local worldPosition, ownPlot, reason =
+        FarmGetWorldPlantPosition()
+
+    if not worldPosition then
+        return false, reason
+    end
+
+    local rayResult =
+        FarmRaycastPlantPosition(
+            worldPosition
+        )
+
+    local valid, validReason =
+        FarmValidateRayHit(
+            rayResult,
+            ownPlot
+        )
+
+    if valid ~= true then
+        return false, validReason
+    end
+
+    return true,
+        "valid: "
+        .. FarmPathOf(rayResult.Instance),
+        worldPosition
+end
+
+local function FarmIsPlantAreaPart(part)
+
+    if not part
+    or not part:IsA("BasePart") then
+        return false
+    end
+
+    local fullPath =
+        FarmPathOf(part)
+
+    if fullPath:find("GardenZonePart", 1, true) then
+        return false
+    end
+
+    if fullPath:find(".Plants.", 1, true) then
+        return false
+    end
+
+    return fullPath:find("PlantArea", 1, true) ~= nil
+        or fullPath:find("BedSection", 1, true) ~= nil
+end
+
+local function FarmGetPlantAreaParts(ownPlot)
+
+    local parts =
+        {}
+
+    if not ownPlot then
+        return parts
+    end
+
+    for _, descendant in ipairs(ownPlot:GetDescendants()) do
+
+        if FarmIsPlantAreaPart(descendant) == true then
+
+            table.insert(
+                parts,
+                descendant
+            )
+        end
+    end
+
+    return parts
+end
+
+local function FarmRaycastRandomPlantPosition(position, ownPlot)
+
+    if typeof(position) ~= "Vector3" then
+        return nil
+    end
+
+    local ignoreList = {
+        LOCAL_PLAYER.Character,
+    }
+
+    if ownPlot then
+
+        local plantsFolder =
+            ownPlot:FindFirstChild("Plants")
+
+        if plantsFolder then
+
+            table.insert(
+                ignoreList,
+                plantsFolder
+            )
+        end
+    end
+
+    local params =
+        RaycastParams.new()
+
+    params.FilterType =
+        Enum.RaycastFilterType.Exclude
+
+    params.FilterDescendantsInstances =
+        ignoreList
+
+    params.IgnoreWater =
+        true
+
+    return workspace:Raycast(
+        position + Vector3.new(0, 25, 0),
+        Vector3.new(0, -80, 0),
+        params
+    )
+end
+
+local function FarmRandomPointOnPart(part)
+
+    local size =
+        part.Size
+
+    local marginX =
+        math.min(
+            size.X * 0.2,
+            1.5
+        )
+
+    local marginZ =
+        math.min(
+            size.Z * 0.2,
+            1.5
+        )
+
+    local halfX =
+        math.max(
+            0.05,
+            (size.X * 0.5) - marginX
+        )
+
+    local halfZ =
+        math.max(
+            0.05,
+            (size.Z * 0.5) - marginZ
+        )
+
+    local localPoint =
+        Vector3.new(
+            (math.random() * 2 - 1) * halfX,
+            (size.Y * 0.5) + 0.05,
+            (math.random() * 2 - 1) * halfZ
+        )
+
+    return part.CFrame:PointToWorldSpace(
+        localPoint
+    )
+end
+
+local function FarmGetRandomPlantPosition()
+
+    local ownPlot, plotReason =
+        FarmResolveOwnPlot()
+
+    if not ownPlot then
+        return nil, "no own plot: " .. tostring(plotReason)
+    end
+
+    local plantParts =
+        FarmGetPlantAreaParts(
+            ownPlot
+        )
+
+    if #plantParts <= 0 then
+        return nil, "no plant area parts found"
+    end
+
+    local lastReason =
+        "no valid random point found"
+
+    for _ = 1, 60 do
+
+        local part =
+            plantParts[
+                math.random(1, #plantParts)
+            ]
+
+        local candidate =
+            FarmRandomPointOnPart(
+                part
+            )
+
+        local rayResult =
+            FarmRaycastRandomPlantPosition(
+                candidate,
+                ownPlot
+            )
+
+        local valid, reason =
+            FarmValidateRayHit(
+                rayResult,
+                ownPlot
+            )
+
+        if valid == true then
+
+            return rayResult.Position,
+                "random: " .. FarmPathOf(rayResult.Instance)
+        end
+
+        lastReason =
+            reason
+    end
+
+    return nil, lastReason
+end
+
+local function FarmRefreshPositionLabel()
+
+    if FarmPositionLabel
+    and type(FarmPositionLabel.SetText) == "function" then
+
+        local valid =
+            false
+
+        local reason =
+            "not checked"
+
+        local worldPosition =
+            nil
+
+        if FarmConfig.RandomPosition == true then
+
+            worldPosition, reason =
+                FarmGetRandomPlantPosition()
+
+            valid =
+                worldPosition ~= nil
+
+        else
+
+            valid, reason, worldPosition =
+                FarmValidateCurrentPlantPoint()
+        end
+
+        local offsetText =
+            FarmConfig.PlantLocalOffset
+            and FarmVectorText(FarmConfig.PlantLocalOffset)
+            or "not set"
+
+        local worldText =
+            worldPosition
+            and FarmVectorText(worldPosition)
+            or "not resolved"
+
+        FarmPositionLabel:SetText(
+            '<font color="rgb(196,181,253)"><b>Farm Settings</b></font>'
+            .. '\nSeeds: '
+            .. FarmSelectedSeedsText()
+            .. '\nDelay: '
+            .. tostring(FarmConfig.PlantDelay)
+            .. 's'
+            .. '\nRandom Position: '
+            .. tostring(FarmConfig.RandomPosition == true and "ON" or "OFF")
+            .. '\nRelative Offset: '
+            .. offsetText
+            .. '\nCurrent World Point: '
+            .. worldText
+            .. '\nPosition: '
+            .. (valid == true and "VALID" or "INVALID")
+            .. ' | '
+            .. tostring(reason)
+            .. '\nPacket: '
+            .. tostring(FarmAutomationState.PacketSource)
+        )
+    end
+end
+
+local function FarmGetOwnedSeedTools()
+
+    local results =
+        {}
+
+    local containers = {
+        LOCAL_PLAYER and LOCAL_PLAYER:FindFirstChildOfClass("Backpack"),
+        LOCAL_PLAYER and LOCAL_PLAYER.Character,
+    }
+
+    for _, container in ipairs(containers) do
+
+        if container then
+
+            for _, child in ipairs(container:GetChildren()) do
+
+                if child:IsA("Tool")
+                and child:GetAttribute("SeedTool") then
+
+                    table.insert(
+                        results,
+                        child
+                    )
+                end
+            end
+        end
+    end
+
+    return results
+end
+
+local function FarmGetOwnedSeedNames()
+
+    local names =
+        {}
+
+    local function AddSeedName(seedName)
+
+        seedName =
+            CleanText(seedName)
+
+        if seedName == "" then
+            return
+        end
+
+        if table.find(names, seedName) ~= nil then
+            return
+        end
+
+        table.insert(
+            names,
+            seedName
+        )
+    end
+
+    -- Main source: full seed shop item list.
+    -- This lets you select seeds before you own them,
+    -- so Auto Plant can wait until Auto Buy gives you the tool.
+    for _, seedName in ipairs(GetShopItemNames("SeedShop")) do
+
+        AddSeedName(
+            seedName
+        )
+    end
+
+    -- Backup/extra source: actual owned seed tools.
+    -- Keeps event/special seeds visible if they are not inside StockValues.
+    for _, tool in ipairs(FarmGetOwnedSeedTools()) do
+
+        AddSeedName(
+            tool:GetAttribute("SeedTool")
+        )
+    end
+
+    -- Preserve saved selected seeds even if the game has not loaded StockValues yet.
+    for _, selectedSeed in ipairs(FarmGetSelectedSeeds()) do
+
+        AddSeedName(
+            selectedSeed
+        )
+    end
+
+    if #names <= 0 then
+
+        AddSeedName(
+            "Carrot"
+        )
+    end
+
+    table.sort(names)
+
+    return names
+end
+
+local function FarmFindSeedTool(seedName)
+
+    seedName =
+        CleanText(seedName)
+
+    if seedName == "" then
+        return nil
+    end
+
+    for _, tool in ipairs(FarmGetOwnedSeedTools()) do
+
+        if CleanText(tool:GetAttribute("SeedTool")) == seedName then
+            return tool
+        end
+    end
+
+    return nil
+end
+
+local function FarmGetSeedCount(seedName)
+
+    local tool =
+        FarmFindSeedTool(seedName)
+
+    if not tool then
+        return 0
+    end
+
+    return tonumber(tool:GetAttribute("Count"))
+        or 1
+end
+
+local function FarmEquipSeedTool(seedName)
+
+    local tool =
+        FarmFindSeedTool(seedName)
+
+    if not tool then
+        return false, "seed tool missing"
+    end
+
+    local character =
+        LOCAL_PLAYER.Character
+
+    local humanoid =
+        character
+        and character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid then
+        return false, "humanoid missing"
+    end
+
+    local ok, err =
+        pcall(function()
+            humanoid:EquipTool(tool)
+        end)
+
+    if ok ~= true then
+        return false, tostring(err)
+    end
+
+    task.wait(0.15)
+
+    return true, FarmPathOf(tool)
+end
+
+local function FarmFindPlantSeedPacket()
+
+    if FarmAutomationState.PlantSeedPacket
+    and type(FarmAutomationState.PlantSeedPacket.Fire) == "function" then
+        return FarmAutomationState.PlantSeedPacket
+    end
+
+    local playerScripts =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChild("PlayerScripts")
+
+    local controller =
+        playerScripts
+        and playerScripts:FindFirstChild("Controllers")
+        and playerScripts.Controllers:FindFirstChild("PlantController")
+
+    if not controller then
+
+        FarmAutomationState.PacketSource =
+            "PlantController missing"
+
+        return nil
+    end
+
+    local okRequire, plantController =
+        pcall(function()
+            return require(controller)
+        end)
+
+    if okRequire ~= true
+    or type(plantController) ~= "table" then
+
+        FarmAutomationState.PacketSource =
+            "PlantController require failed"
+
+        return nil
+    end
+
+    local tryPlant =
+        plantController.TryPlantWithRay
+
+    if type(tryPlant) ~= "function" then
+
+        FarmAutomationState.PacketSource =
+            "TryPlantWithRay missing"
+
+        return nil
+    end
+
+    if type(debug) ~= "table"
+    or type(debug.getupvalues) ~= "function" then
+
+        FarmAutomationState.PacketSource =
+            "debug.getupvalues unsupported"
+
+        return nil
+    end
+
+    local okUpvalues, upvalues =
+        pcall(function()
+            return debug.getupvalues(tryPlant)
+        end)
+
+    if okUpvalues ~= true
+    or type(upvalues) ~= "table" then
+
+        FarmAutomationState.PacketSource =
+            "getupvalues failed"
+
+        return nil
+    end
+
+    for index, value in pairs(upvalues) do
+
+        if type(value) == "table" then
+
+            local plantGroup =
+                FarmSafeRawGet(
+                    value,
+                    "Plant"
+                )
+
+            local plantSeed =
+                plantGroup
+                and FarmSafeRawGet(
+                    plantGroup,
+                    "PlantSeed"
+                )
+
+            if type(plantSeed) == "table"
+            and FarmSafeRawGet(plantSeed, "Name") == "PlantSeed"
+            and type(plantSeed.Fire) == "function" then
+
+                FarmAutomationState.PlantSeedPacket =
+                    plantSeed
+
+                FarmAutomationState.PacketSource =
+                    "PlantController.TryPlantWithRay upvalue #"
+                    .. tostring(index)
+
+                FarmRefreshPositionLabel()
+
+                return plantSeed
+            end
+        end
+    end
+
+    FarmAutomationState.PacketSource =
+        "PlantSeed packet not found"
+
+    FarmRefreshPositionLabel()
+
+    return nil
+end
+
+local function FarmFirePlant(seedName, worldPosition)
+
+    local packet =
+        FarmFindPlantSeedPacket()
+
+    if not packet then
+        return false, FarmAutomationState.PacketSource
+    end
+
+    seedName =
+        CleanText(seedName)
+
+    if seedName == "" then
+        return false, "missing seed name"
+    end
+
+    if typeof(worldPosition) ~= "Vector3" then
+        return false, "missing world position"
+    end
+
+    local ok, err =
+        pcall(function()
+
+            packet:Fire(
+                worldPosition,
+                seedName,
+                Enum.NormalId.Top.Value
+            )
+        end)
+
+    if ok ~= true then
+        return false, tostring(err)
+    end
+
+    return true, "fired"
+end
+
+local function FarmSetSelectedSeed(value)
+
+    local selectedSeeds =
+        SettingsNormalizeStringList(
+            value,
+            {}
+        )
+
+    FarmConfig.SelectedSeeds =
+        selectedSeeds
+
+    if #selectedSeeds > 0 then
+
+        FarmConfig.SelectedSeed =
+            selectedSeeds[1]
+
+        UIState.FarmSelectedSeed =
+            selectedSeeds[1]
+
+    else
+
+        FarmConfig.SelectedSeed =
+            ""
+
+        UIState.FarmSelectedSeed =
+            ""
+    end
+
+    UIState.FarmSelectedSeeds =
+        selectedSeeds
+
+    SaveUISettings(
+        "farm seeds changed"
+    )
+
+    FarmRefreshPositionLabel()
+end
+
+local function FarmSetPlantLocalOffset(localOffset)
+
+    if typeof(localOffset) ~= "Vector3" then
+        return
+    end
+
+    FarmConfig.PlantLocalOffset =
+        localOffset
+
+    UIState.FarmPlantLocalOffset =
+        FarmVectorToPayload(localOffset)
+
+    SaveUISettings(
+        "farm position changed"
+    )
+
+    FarmRefreshPositionLabel()
+end
+
+local function FarmSetRandomPosition(value)
+
+    FarmConfig.RandomPosition =
+        value == true
+
+    UIState.FarmRandomPosition =
+        FarmConfig.RandomPosition
+
+    SaveUISettings(
+        "farm random position changed"
+    )
+
+    FarmRefreshPositionLabel()
+
+    if FarmConfig.RandomPosition == true then
+
+        FarmSetStatus(
+            "Random plant position enabled."
+        )
+
+    else
+
+        FarmSetStatus(
+            "Random plant position disabled."
+        )
+    end
+end
+
+local function FarmSetPlantDelay(value)
+
+    FarmConfig.PlantDelay =
+        math.clamp(
+            tonumber(value)
+            or 0.35,
+            0.1,
+            10
+        )
+
+    UIState.FarmPlantDelay =
+        FarmConfig.PlantDelay
+
+    SaveUISettings(
+        "farm delay changed"
+    )
+
+    FarmRefreshPositionLabel()
+end
+
+local function FarmStopAutomation()
+
+    FarmConfig.AutoPlant =
+        false
+
+    UIState.FarmAutoPlant =
+        false
+
+    SaveUISettings(
+        "farm auto plant stopped"
+    )
+
+    if FarmAutomationToggle
+    and type(FarmAutomationToggle.SetValue) == "function" then
+
+        FarmAutomationToggle:SetValue(false)
+    end
+
+    FarmSetStatus("Auto plant stopped.")
+end
+
+local function FarmStartAutomationLoop()
+
+    if FarmAutomationState.Running == true then
+        return
+    end
+
+    FarmAutomationState.Running =
+        true
+
+    task.spawn(function()
+
+        FarmSetStatus("Auto plant loop started.")
+
+        while FarmConfig.AutoPlant == true do
+
+            local selectedSeeds =
+                FarmGetSelectedSeeds()
+
+            if #selectedSeeds <= 0 then
+
+                FarmSetStatus("Select at least one seed first.")
+                task.wait(1)
+
+            else
+
+                local plantedAny =
+                    false
+
+                for _, seedName in ipairs(selectedSeeds) do
+
+                    if FarmConfig.AutoPlant ~= true then
+                        break
+                    end
+
+                    seedName =
+                        CleanText(seedName)
+
+                    local validPoint =
+                        false
+
+                    local pointReason =
+                        "not checked"
+
+                    local worldPosition =
+                        nil
+
+                    if FarmConfig.RandomPosition == true then
+
+                        worldPosition, pointReason =
+                            FarmGetRandomPlantPosition()
+
+                        validPoint =
+                            worldPosition ~= nil
+
+                    else
+
+                        validPoint, pointReason, worldPosition =
+                            FarmValidateCurrentPlantPoint()
+                    end
+
+                    if seedName == "" then
+
+                        FarmSetStatus("Skipped blank seed selection.")
+
+                    elseif validPoint ~= true then
+
+                        FarmSetStatus(
+                            "Invalid plant point for "
+                            .. seedName
+                            .. ": "
+                            .. tostring(pointReason)
+                        )
+
+                    elseif FarmGetSeedCount(seedName) <= 0 then
+
+                        FarmSetStatus(
+                            "Waiting for "
+                            .. seedName
+                            .. " seed tool from Backpack/auto-buy..."
+                        )
+
+                        FarmRefreshPositionLabel()
+
+                    else
+
+                        local equipOk, equipInfo =
+                            FarmEquipSeedTool(seedName)
+
+                        if equipOk ~= true then
+
+                            FarmSetStatus(
+                                "Equip failed for "
+                                .. seedName
+                                .. ": "
+                                .. tostring(equipInfo)
+                            )
+
+                        else
+
+                            local okPlant, plantInfo =
+                                FarmFirePlant(
+                                    seedName,
+                                    worldPosition
+                                )
+
+                            if okPlant == true then
+
+                                plantedAny =
+                                    true
+
+                                FarmSetStatus(
+                                    "Planted "
+                                    .. seedName
+                                    .. (
+                                        FarmConfig.RandomPosition == true
+                                        and " at random garden point."
+                                        or " at saved garden point."
+                                    )
+                                )
+
+                            else
+
+                                FarmSetStatus(
+                                    "Plant failed for "
+                                    .. seedName
+                                    .. ": "
+                                    .. tostring(plantInfo)
+                                )
+                            end
+
+                            FarmRefreshPositionLabel()
+
+                            task.wait(
+                                math.clamp(
+                                    tonumber(FarmConfig.PlantDelay)
+                                    or 0.35,
+                                    0.1,
+                                    10
+                                )
+                            )
+                        end
+                    end
+
+                    if plantedAny ~= true then
+
+                        task.wait(0.25)
+                    end
+                end
+            end
+
+            task.wait(0.05)
+        end
+
+        FarmAutomationState.Running =
+            false
+
+        FarmSetStatus("Auto plant stopped.")
+    end)
+end
+
+local function FarmRaycastFromMouse()
+
+    local camera =
+        workspace.CurrentCamera
+
+    if not camera then
+        return nil
+    end
+
+    local mouse =
+        LOCAL_PLAYER:GetMouse()
+
+    local unitRay =
+        camera:ScreenPointToRay(
+            mouse.X,
+            mouse.Y
+        )
+
+    local params =
+        RaycastParams.new()
+
+    params.FilterType =
+        Enum.RaycastFilterType.Exclude
+
+    params.FilterDescendantsInstances =
+        {
+            LOCAL_PLAYER.Character,
+        }
+
+    params.IgnoreWater =
+        true
+
+    return workspace:Raycast(
+        unitRay.Origin,
+        unitRay.Direction * 500,
+        params
+    )
+end
+
+local function FarmStartPositionPicker()
+
+    if FarmPositionPickerConnection then
+
+        FarmPositionPickerConnection:Disconnect()
+
+        FarmPositionPickerConnection =
+            nil
+    end
+
+    FarmSetStatus("Position picker active. Click your plant bed.")
+
+    Notify(
+        "Farm Settings",
+        "Click a valid plant bed inside your current garden.",
+        4
+    )
+
+    FarmPositionPickerConnection =
+        UserInputService.InputBegan:Connect(function(input, gameProcessed)
+
+            if gameProcessed == true then
+                return
+            end
+
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+                return
+            end
+
+            local ownPlot, plotReason =
+                FarmResolveOwnPlot()
+
+            if not ownPlot then
+
+                FarmSetStatus(
+                    "Could not resolve own plot: "
+                    .. tostring(plotReason)
+                )
+
+                return
+            end
+
+            local rayResult =
+                FarmRaycastFromMouse()
+
+            local valid, reason =
+                FarmValidateRayHit(
+                    rayResult,
+                    ownPlot
+                )
+
+            if valid ~= true then
+
+                FarmSetStatus(
+                    "Rejected position: "
+                    .. tostring(reason)
+                )
+
+                Notify(
+                    "Farm Settings",
+                    "Rejected: " .. tostring(reason),
+                    4
+                )
+
+                return
+            end
+
+            local plotFrame =
+                FarmGetPlotFrame(ownPlot)
+
+            if not plotFrame then
+
+                FarmSetStatus("Could not get plot frame.")
+                return
+            end
+
+            local localOffset =
+                plotFrame:PointToObjectSpace(
+                    rayResult.Position
+                )
+
+            FarmSetPlantLocalOffset(
+                localOffset
+            )
+
+            FarmSetStatus(
+                "Saved relative plant position for future farms."
+            )
+
+            Notify(
+                "Farm Settings",
+                "Plant position saved relative to your garden.",
+                3
+            )
+
+            if FarmPositionPickerConnection then
+
+                FarmPositionPickerConnection:Disconnect()
+
+                FarmPositionPickerConnection =
+                    nil
+            end
+        end)
+end
+
+local function FarmAutoPickPlantArea()
+
+    local ownPlot, plotReason =
+        FarmResolveOwnPlot()
+
+    if not ownPlot then
+
+        FarmSetStatus(
+            "Auto pick failed: "
+            .. tostring(plotReason)
+        )
+
+        return false
+    end
+
+    local plotFrame =
+        FarmGetPlotFrame(ownPlot)
+
+    if not plotFrame then
+
+        FarmSetStatus("Auto pick failed: no plot frame.")
+        return false
+    end
+
+    local bestPart =
+        nil
+
+    for _, descendant in ipairs(ownPlot:GetDescendants()) do
+
+        if descendant:IsA("BasePart") then
+
+            local fullPath =
+                FarmPathOf(descendant)
+
+            if not fullPath:find("GardenZonePart", 1, true)
+            and (
+                fullPath:find("PlantAreaColumn1", 1, true)
+                or fullPath:find("PlantArea", 1, true)
+                or fullPath:find("BedSection", 1, true)
+            ) then
+
+                bestPart =
+                    descendant
+
+                break
+            end
+        end
+    end
+
+    if not bestPart then
+
+        FarmSetStatus("Auto pick failed: no plant area found.")
+        return false
+    end
+
+    local worldPosition =
+        bestPart.Position
+
+    local localOffset =
+        plotFrame:PointToObjectSpace(
+            worldPosition
+        )
+
+    FarmSetPlantLocalOffset(
+        localOffset
+    )
+
+    FarmSetStatus(
+        "Auto picked plant area: "
+        .. bestPart.Name
+    )
+
+    return true
+end
+
+local function FarmRefreshSeedDropdown()
+
+    local names =
+        FarmGetOwnedSeedNames()
+
+    if FarmSeedDropdown then
+
+        if type(FarmSeedDropdown.SetValues) == "function" then
+
+            FarmSeedDropdown:SetValues(names)
+
+        elseif type(FarmSeedDropdown.SetItems) == "function" then
+
+            FarmSeedDropdown:SetItems(names)
+        end
+
+        local selectedSeeds =
+            {}
+
+        for _, seedName in ipairs(FarmGetSelectedSeeds()) do
+
+            if table.find(names, seedName) ~= nil then
+
+                table.insert(
+                    selectedSeeds,
+                    seedName
+                )
+            end
+        end
+
+        if #selectedSeeds <= 0
+        and #names > 0 then
+
+            selectedSeeds = {
+                names[1],
+            }
+
+            FarmSetSelectedSeed(
+                selectedSeeds
+            )
+        end
+
+        if type(FarmSeedDropdown.SetValue) == "function" then
+
+            FarmSeedDropdown:SetValue(
+                selectedSeeds
+            )
+        end
+    end
+
+    FarmRefreshPositionLabel()
+end
+
+local function FarmConnectReplicaWatcher()
+
+    local remoteEvents =
+        ReplicatedStorage:FindFirstChild("RemoteEvents")
+
+    local replicaSet =
+        remoteEvents
+        and remoteEvents:FindFirstChild("ReplicaSet")
+
+    if not replicaSet
+    or not replicaSet:IsA("RemoteEvent") then
+        return
+    end
+
+    replicaSet.OnClientEvent:Connect(function(_, pathArray, value)
+
+        if type(pathArray) ~= "table" then
+            return
+        end
+
+        if pathArray[1] == "Inventory"
+        and pathArray[2] == "Seeds" then
+
+            local seedName =
+                tostring(pathArray[3] or "")
+
+            if table.find(FarmGetSelectedSeeds(), seedName) ~= nil then
+
+                FarmSetStatus(
+                    "Seed count update: "
+                    .. seedName
+                    .. " = "
+                    .. tostring(value)
+                )
+
+                FarmRefreshPositionLabel()
+            end
+        end
+    end)
+end
+
+FarmConnectReplicaWatcher()
 
 --==================================================
 -- [6] UI HELPERS
@@ -1936,11 +3841,34 @@ local function BindShopDropdown(dropdown, key)
 
         dropdown:OnChanged(function(value)
 
-            ShopConfig[key] =
+            local normalized =
                 NormalizeShopList(
                     value,
                     {}
                 )
+
+            ShopConfig[key] =
+                normalized
+
+            if key == "Seeds" then
+
+                UIState.ShopSeeds =
+                    normalized
+
+            elseif key == "Gear" then
+
+                UIState.ShopGear =
+                    normalized
+
+            elseif key == "Crates" then
+
+                UIState.ShopCrates =
+                    normalized
+            end
+
+            SaveUISettings(
+                "shop " .. tostring(key) .. " changed"
+            )
 
             RefreshShopStockPreview()
         end)
@@ -1971,7 +3899,7 @@ local SeedToggle =
         "HolyGAG2AutoBuySeeds",
         {
             Text = "Auto Buy Seeds",
-            Default = false,
+            Default = ShopConfig.AutoBuySeeds == true,
             Tooltip = "Automatically buys selected seeds when stock is available.",
         }
     )
@@ -1981,7 +3909,7 @@ local GearToggle =
         "HolyGAG2AutoBuyGear",
         {
             Text = "Auto Buy Gear",
-            Default = false,
+            Default = ShopConfig.AutoBuyGear == true,
             Tooltip = "Automatically buys selected gear when stock is available.",
         }
     )
@@ -1991,7 +3919,7 @@ local CrateToggle =
         "HolyGAG2AutoBuyCrates",
         {
             Text = "Auto Buy Crates",
-            Default = false,
+            Default = ShopConfig.AutoBuyCrates == true,
             Tooltip = "Automatically buys selected crates when stock is available.",
         }
     )
@@ -2003,10 +3931,33 @@ local function BindShopToggle(toggle, key)
 
         toggle:OnChanged(function(value)
 
-            ShopConfig[key] =
+            local enabled =
                 value == true
 
-            if value == true then
+            ShopConfig[key] =
+                enabled
+
+            if key == "AutoBuySeeds" then
+
+                UIState.ShopAutoBuySeeds =
+                    enabled
+
+            elseif key == "AutoBuyGear" then
+
+                UIState.ShopAutoBuyGear =
+                    enabled
+
+            elseif key == "AutoBuyCrates" then
+
+                UIState.ShopAutoBuyCrates =
+                    enabled
+            end
+
+            SaveUISettings(
+                "shop " .. tostring(key) .. " changed"
+            )
+
+            if enabled == true then
                 StartShopAutomationLoop()
             end
 
@@ -2056,6 +4007,13 @@ if type(ShopsMainBox.AddInput) == "function" then
                     0.1,
                     10
                 )
+
+            UIState.ShopBuyDelay =
+                ShopConfig.BuyDelay
+
+            SaveUISettings(
+                "shop buy delay changed"
+            )
         end)
     end
 
@@ -2085,6 +4043,13 @@ if type(ShopsMainBox.AddInput) == "function" then
                         999
                     )
                 )
+
+            UIState.ShopMaxBuysPerRestock =
+                ShopConfig.MaxBuysPerRestock
+
+            SaveUISettings(
+                "shop max buys changed"
+            )
         end)
     end
 end
@@ -2144,15 +4109,24 @@ ShopStockLabel =
 FindHolyGAG2Packets()
 RefreshShopStockPreview()
 
+if AnyShopAutomationEnabled() == true then
+
+    StartShopAutomationLoop()
+
+    SetShopStatus(
+        "Auto-buy restored from saved settings."
+    )
+end
+
 --==================================================
 -- [11] FARM TAB
 --==================================================
 
-local FarmMainBox =
+local FarmSettingsBox =
     AddLeftBox(
         Tabs.Farm,
-        "Farm Controls",
-        "sprout"
+        "Farm Settings",
+        "sliders-horizontal"
     )
 
 local FarmStatusBox =
@@ -2162,41 +4136,262 @@ local FarmStatusBox =
         "activity"
     )
 
-FarmMainBox:AddLabel({
+FarmSettingsBox:AddLabel({
     Text =
-        '<font color="rgb(196,181,253)"><b>Farm</b></font>'
-        .. '\nPlaceholder tab for planting, collecting, and farm helpers.',
+        '<font color="rgb(196,181,253)"><b>Auto Plant</b></font>'
+        .. '\nSaves plant position relative to your current garden.'
+        .. '\nOn rejoin, it scans your new "Your Garden" plot and plants at the same relative spot.',
     DoesWrap = true,
     Size = 13,
 })
 
-FarmMainBox:AddToggle(
-    "HolyGAG2AutoCollect",
-    {
-        Text = "Auto Collect",
-        Default = false,
-        Disabled = true,
-        Tooltip = "Coming later after we inspect Grow a Garden 2 farm systems.",
-    }
+FarmSettingsBox:AddDivider(
+    "Seed"
 )
 
-FarmMainBox:AddToggle(
-    "HolyGAG2AutoPlant",
-    {
-        Text = "Auto Plant",
-        Default = false,
-        Disabled = true,
-        Tooltip = "Coming later after we inspect Grow a Garden 2 farm systems.",
-    }
+FarmSeedDropdown =
+    FarmSettingsBox:AddDropdown(
+        "HolyGAG2FarmSeed",
+        {
+            Text = "Seeds",
+            Values = FarmGetOwnedSeedNames(),
+            Default = FarmGetSelectedSeeds(),
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Seeds to plant. Multi-select, deselect, and search are enabled. Auto Plant waits until each seed tool exists.",
+        }
+    )
+
+if FarmSeedDropdown
+and type(FarmSeedDropdown.OnChanged) == "function" then
+
+    FarmSeedDropdown:OnChanged(function(value)
+
+        FarmSetSelectedSeed(
+            value
+        )
+    end)
+end
+
+FarmSettingsBox:AddButton({
+    Text = "Refresh Seeds",
+    Tooltip = "Refresh full seed list from Seed Shop plus owned Backpack/Character seed tools.",
+    Func = function()
+
+        FarmRefreshSeedDropdown()
+
+        FarmSetStatus(
+            "Full seed list refreshed."
+        )
+    end,
+})
+
+FarmSettingsBox:AddDivider(
+    "Plant Position"
 )
+
+FarmSettingsBox:AddButton({
+    Text = "Pick Position",
+    Tooltip = "Click this, then click a valid plant bed in your current garden.",
+    Func = function()
+
+        FarmStartPositionPicker()
+    end,
+}):AddButton({
+    Text = "Auto Pick",
+    Tooltip = "Automatically choose a plant area inside your current garden.",
+    Func = function()
+
+        if FarmAutoPickPlantArea() == true then
+
+            Notify(
+                "Farm Settings",
+                "Auto picked a valid plant position.",
+                3
+            )
+        else
+
+            Notify(
+                "Farm Settings",
+                "Could not auto pick a plant position.",
+                4
+            )
+        end
+    end,
+})
+
+FarmSettingsBox:AddButton({
+    Text = "Validate Position",
+    Tooltip = "Checks saved relative position against your current garden.",
+    Func = function()
+
+        local valid, reason =
+            FarmValidateCurrentPlantPoint()
+
+        if valid == true then
+
+            FarmSetStatus(
+                "Position valid: "
+                .. tostring(reason)
+            )
+
+            Notify(
+                "Farm Settings",
+                "Plant position is valid for this farm.",
+                3
+            )
+
+        else
+
+            FarmSetStatus(
+                "Position invalid: "
+                .. tostring(reason)
+            )
+
+            Notify(
+                "Farm Settings",
+                "Position invalid: " .. tostring(reason),
+                4
+            )
+        end
+
+                FarmRefreshPositionLabel()
+    end,
+})
+
+local FarmRandomPositionToggle =
+    FarmSettingsBox:AddToggle(
+        "HolyGAG2FarmRandomPosition",
+        {
+            Text = "Random Position",
+            Default = FarmConfig.RandomPosition == true,
+            Tooltip = "Randomly picks a valid plant bed point inside your current garden every plant.",
+        }
+    )
+
+if FarmRandomPositionToggle
+and type(FarmRandomPositionToggle.OnChanged) == "function" then
+
+    FarmRandomPositionToggle:OnChanged(function(value)
+
+        FarmSetRandomPosition(
+            value == true
+        )
+    end)
+end
+
+FarmSettingsBox:AddDivider(
+    "Automation"
+)
+
+FarmAutomationToggle =
+    FarmSettingsBox:AddToggle(
+        "HolyGAG2AutoPlant",
+        {
+            Text = "Auto Plant",
+            Default = FarmConfig.AutoPlant == true,
+            Tooltip = "Automatically plants selected seed at saved relative garden position.",
+        }
+    )
+
+if FarmAutomationToggle
+and type(FarmAutomationToggle.OnChanged) == "function" then
+
+    FarmAutomationToggle:OnChanged(function(value)
+
+        FarmConfig.AutoPlant =
+            value == true
+
+        UIState.FarmAutoPlant =
+            FarmConfig.AutoPlant == true
+
+        SaveUISettings(
+            "farm auto plant changed"
+        )
+
+        if FarmConfig.AutoPlant == true then
+            FarmStartAutomationLoop()
+        else
+            FarmSetStatus("Auto plant disabled.")
+        end
+    end)
+end
+
+if type(FarmSettingsBox.AddInput) == "function" then
+
+    local PlantDelayInput =
+        FarmSettingsBox:AddInput(
+            "HolyGAG2PlantDelay",
+            {
+                Text = "Plant Delay",
+                Default = tostring(FarmConfig.PlantDelay),
+                Numeric = true,
+                Finished = true,
+                Tooltip = "Seconds between plant packet fires. Minimum 0.1.",
+            }
+        )
+
+    if PlantDelayInput
+    and type(PlantDelayInput.OnChanged) == "function" then
+
+        PlantDelayInput:OnChanged(function(value)
+
+            FarmSetPlantDelay(
+                value
+            )
+        end)
+    end
+end
+
+FarmSettingsBox:AddButton({
+    Text = "Stop Auto Plant",
+    Risky = true,
+    Tooltip = "Turns off Auto Plant.",
+    Func = function()
+
+        FarmStopAutomation()
+    end,
+})
 
 FarmStatusBox:AddLabel({
     Text =
-        "No farm logic is connected yet."
-        .. "\nThis is only the clean UI shell.",
+        '<font color="rgb(148,163,184)"><b>Dynamic Farm Logic</b></font>'
+        .. '\nThe saved position is relative, not world-based.'
+        .. '\nEvery rejoin it scans PlayerGui plot billboards for "Your Garden", resolves Workspace.Gardens.Plot#, then converts the saved offset into the new farm.',
     DoesWrap = true,
     Size = 12,
 })
+
+FarmStatusLabel =
+    FarmStatusBox:AddLabel({
+        Text =
+            '<font color="rgb(196,181,253)"><b>Farm Status:</b></font> Ready',
+        DoesWrap = true,
+        Size = 12,
+    })
+
+FarmPositionLabel =
+    FarmStatusBox:AddLabel({
+        Text =
+            '<font color="rgb(196,181,253)"><b>Farm Settings</b></font>',
+        DoesWrap = true,
+        Size = 12,
+    })
+
+FarmFindPlantSeedPacket()
+FarmRefreshSeedDropdown()
+FarmRefreshPositionLabel()
+
+if FarmConfig.AutoPlant == true then
+
+    FarmStartAutomationLoop()
+
+    FarmSetStatus(
+        "Auto plant restored from saved settings."
+    )
+end
 
 --==================================================
 -- [12] SETTINGS TAB
