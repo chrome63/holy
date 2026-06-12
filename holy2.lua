@@ -142,6 +142,10 @@ local UIState = {
     ShopBuyDelay = 0.35,
     ShopMaxBuysPerRestock = 1,
 
+    SellAutoMaxBackpack = false,
+    SellDelay = 0.5,
+    SellDebug = false,
+
     FarmAutoPlant = false,
     FarmAutoCollect = false,
     FarmCollectDelay = 0.5,
@@ -342,6 +346,24 @@ local function LoadUISettings()
             )
         )
 
+    if payload.SellAutoMaxBackpack ~= nil then
+        UIState.SellAutoMaxBackpack =
+            payload.SellAutoMaxBackpack == true
+    end
+
+    UIState.SellDelay =
+        SettingsNormalizeNumber(
+            payload.SellDelay,
+            0.5,
+            0.1,
+            10
+        )
+
+    if payload.SellDebug ~= nil then
+        UIState.SellDebug =
+            payload.SellDebug == true
+    end
+
     if payload.FarmAutoPlant ~= nil then
         UIState.FarmAutoPlant =
             payload.FarmAutoPlant == true
@@ -493,6 +515,20 @@ local function SaveUISettings(reason)
                     999
                 )
             ),
+
+        SellAutoMaxBackpack =
+            UIState.SellAutoMaxBackpack == true,
+
+        SellDelay =
+            SettingsNormalizeNumber(
+                UIState.SellDelay,
+                0.5,
+                0.1,
+                10
+            ),
+
+        SellDebug =
+            UIState.SellDebug == true,
 
         FarmAutoPlant =
             UIState.FarmAutoPlant == true,
@@ -1884,6 +1920,706 @@ local function ConnectShopReplicaWatcher()
 end
 
 ConnectShopReplicaWatcher()
+
+--==================================================
+-- [5.55] SELL AUTOMATION HELPERS
+--==================================================
+
+local SellStatusLabel =
+    nil
+
+local SellInfoLabel =
+    nil
+
+local SellAutoToggle =
+    nil
+
+local SellConfig = {
+    AutoMaxBackpack =
+        UIState.SellAutoMaxBackpack == true,
+
+    Delay =
+        SettingsNormalizeNumber(
+            UIState.SellDelay,
+            0.5,
+            0.1,
+            10
+        ),
+
+    Debug =
+        UIState.SellDebug == true,
+}
+
+local SellState = {
+    Running = false,
+    SellPacket = nil,
+    PacketSource = "not loaded",
+    LastFullInventoryAt = 0,
+    LastSellAt = 0,
+    LastSellResult = "not started",
+    LastSheckles = nil,
+    WatchedTextObjects = {},
+}
+
+local function SellPathOf(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return tostring(instance)
+    end
+
+    local ok, result =
+        pcall(function()
+            return instance:GetFullName()
+        end)
+
+    if ok == true
+    and type(result) == "string" then
+        return result
+    end
+
+    return tostring(instance)
+end
+
+local function SellDebugPrint(...)
+
+    if SellConfig.Debug ~= true then
+        return
+    end
+
+    print(
+        "[HOLY GAG2 SELL]",
+        ...
+    )
+end
+
+local function SetSellStatus(text)
+
+    SellState.LastSellResult =
+        tostring(text or "Ready")
+
+    if SellStatusLabel
+    and type(SellStatusLabel.SetText) == "function" then
+
+        SellStatusLabel:SetText(
+            '<font color="rgb(196,181,253)"><b>Sell Status:</b></font> '
+            .. SellState.LastSellResult
+        )
+    end
+end
+
+local function BuildSellInfoText()
+
+    local fullAgo =
+        "never"
+
+    if tonumber(SellState.LastFullInventoryAt) ~= nil
+    and SellState.LastFullInventoryAt > 0 then
+
+        fullAgo =
+            string.format(
+                "%.1fs ago",
+                os.clock() - SellState.LastFullInventoryAt
+            )
+    end
+
+    local lastSellAgo =
+        "never"
+
+    if tonumber(SellState.LastSellAt) ~= nil
+    and SellState.LastSellAt > 0 then
+
+        lastSellAgo =
+            string.format(
+                "%.1fs ago",
+                os.clock() - SellState.LastSellAt
+            )
+    end
+
+    return
+        '<font color="rgb(196,181,253)"><b>Sell Info</b></font>'
+        .. '\nAuto Sell Max Backpack: '
+        .. tostring(SellConfig.AutoMaxBackpack == true and "ON" or "OFF")
+        .. '\nDelay: '
+        .. tostring(SellConfig.Delay)
+        .. 's'
+        .. '\nPacket: '
+        .. tostring(SellState.PacketSource)
+        .. '\nLast Full Inventory: '
+        .. tostring(fullAgo)
+        .. '\nLast Sell: '
+        .. tostring(lastSellAgo)
+        .. '\nLast Result: '
+        .. tostring(SellState.LastSellResult)
+        .. (
+            SellState.LastSheckles ~= nil
+            and (
+                '\nSheckles: '
+                .. tostring(SellState.LastSheckles)
+            )
+            or ""
+        )
+end
+
+local function RefreshSellInfo()
+
+    if SellInfoLabel
+    and type(SellInfoLabel.SetText) == "function" then
+
+        SellInfoLabel:SetText(
+            BuildSellInfoText()
+        )
+    end
+end
+
+local function SellTextIndicatesFullInventory(text)
+
+    text =
+        tostring(text or "")
+            :lower()
+
+    return text:find("inventory is full", 1, true) ~= nil
+        or text:find("your inventory is full", 1, true) ~= nil
+        or text:find("backpack is full", 1, true) ~= nil
+end
+
+local function SellMarkFullInventory(source)
+
+    SellState.LastFullInventoryAt =
+        os.clock()
+
+    SellDebugPrint(
+        "Full inventory detected",
+        "| source:",
+        tostring(source),
+        "| time:",
+        tostring(SellState.LastFullInventoryAt)
+    )
+
+    SetSellStatus(
+        "Detected max backpack."
+    )
+
+    RefreshSellInfo()
+end
+
+local function SellWatchTextObject(object)
+
+    if typeof(object) ~= "Instance" then
+        return
+    end
+
+    if object:IsA("TextLabel") ~= true
+    and object:IsA("TextButton") ~= true
+    and object:IsA("TextBox") ~= true then
+        return
+    end
+
+    if SellState.WatchedTextObjects[object] == true then
+        return
+    end
+
+    SellState.WatchedTextObjects[object] =
+        true
+
+    local function CheckText()
+
+        local ok, text =
+            pcall(function()
+                return object.Text
+            end)
+
+        if ok == true
+        and SellTextIndicatesFullInventory(text) == true then
+
+            SellMarkFullInventory(
+                SellPathOf(object)
+            )
+        end
+    end
+
+    CheckText()
+
+    pcall(function()
+
+        object:GetPropertyChangedSignal("Text"):Connect(function()
+
+            CheckText()
+        end)
+    end)
+end
+
+local function SellConnectInventoryFullWatcher()
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+
+    if not playerGui then
+        return
+    end
+
+    for _, descendant in ipairs(playerGui:GetDescendants()) do
+
+        SellWatchTextObject(
+            descendant
+        )
+    end
+
+    playerGui.DescendantAdded:Connect(function(descendant)
+
+        task.defer(function()
+
+            SellWatchTextObject(
+                descendant
+            )
+        end)
+    end)
+end
+
+local function SellScanInventoryFullText()
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+
+    if not playerGui then
+        return false
+    end
+
+    for _, descendant in ipairs(playerGui:GetDescendants()) do
+
+        if descendant:IsA("TextLabel")
+        or descendant:IsA("TextButton")
+        or descendant:IsA("TextBox") then
+
+            local ok, text =
+                pcall(function()
+                    return descendant.Text
+                end)
+
+            if ok == true
+            and SellTextIndicatesFullInventory(text) == true then
+
+                SellMarkFullInventory(
+                    SellPathOf(descendant)
+                )
+
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function SellInventoryIsFull()
+
+    SellScanInventoryFullText()
+
+    return SellState.LastFullInventoryAt > 0
+        and (os.clock() - SellState.LastFullInventoryAt) <= 8
+end
+
+local function SellPacketScore(packetName)
+
+    packetName =
+        tostring(packetName or "")
+            :lower()
+
+    local score =
+        0
+
+    if packetName:find("sellall", 1, true) then
+        score += 100
+    end
+
+    if packetName:find("sellinventory", 1, true) then
+        score += 90
+    end
+
+    if packetName:find("sellfruit", 1, true) then
+        score += 80
+    end
+
+    if packetName:find("sellfruits", 1, true) then
+        score += 80
+    end
+
+    if packetName:find("sell", 1, true) then
+        score += 60
+    end
+
+    if packetName:find("fruit", 1, true) then
+        score += 10
+    end
+
+    if packetName:find("shop", 1, true) then
+        score -= 15
+    end
+
+    if packetName:find("purchase", 1, true) then
+        score -= 30
+    end
+
+    return score
+end
+
+local function SellSearchPacketCandidates(candidate, seen, depth, path, results)
+
+    if type(candidate) ~= "table" then
+        return
+    end
+
+    if depth > 8 then
+        return
+    end
+
+    if seen[candidate] == true then
+        return
+    end
+
+    seen[candidate] =
+        true
+
+    if IsPacketObject(candidate) == true then
+
+        local packetName =
+            tostring(SafeRawGet(candidate, "Name") or "")
+
+        local score =
+            SellPacketScore(packetName)
+
+        if score > 0 then
+
+            table.insert(results, {
+                Packet = candidate,
+                Name = packetName,
+                Path = path,
+                Score = score,
+            })
+        end
+    end
+
+    for _, row in ipairs(SafePairsSnapshot(candidate)) do
+
+        if type(row.Value) == "table" then
+
+            SellSearchPacketCandidates(
+                row.Value,
+                seen,
+                depth + 1,
+                path .. "." .. tostring(row.Key),
+                results
+            )
+        end
+    end
+end
+
+local function FindSellPacket()
+
+    if SellState.SellPacket
+    and type(SellState.SellPacket.Fire) == "function" then
+        return SellState.SellPacket
+    end
+
+    local packets =
+        FindHolyGAG2Packets()
+
+    if not packets then
+
+        SellState.PacketSource =
+            "packet table missing: "
+            .. tostring(ShopAutomationState.PacketSource)
+
+        RefreshSellInfo()
+
+        return nil
+    end
+
+    local results =
+        {}
+
+    SellSearchPacketCandidates(
+        packets,
+        {},
+        0,
+        "Packets",
+        results
+    )
+
+    table.sort(results, function(a, b)
+
+        return tonumber(a.Score or 0) > tonumber(b.Score or 0)
+    end)
+
+    if #results <= 0 then
+
+        SellState.PacketSource =
+            "no sell packet candidate found"
+
+        SellDebugPrint(
+            "No sell packet candidates found."
+        )
+
+        RefreshSellInfo()
+
+        return nil
+    end
+
+    local best =
+        results[1]
+
+    SellState.SellPacket =
+        best.Packet
+
+    SellState.PacketSource =
+        tostring(best.Name)
+        .. " @ "
+        .. tostring(best.Path)
+
+    SellDebugPrint(
+        "Selected sell packet:",
+        SellState.PacketSource,
+        "score:",
+        tostring(best.Score)
+    )
+
+    if SellConfig.Debug == true then
+
+        for index, row in ipairs(results) do
+
+            print(
+                "[HOLY GAG2 SELL]",
+                "candidate",
+                tostring(index),
+                "name:",
+                tostring(row.Name),
+                "score:",
+                tostring(row.Score),
+                "path:",
+                tostring(row.Path)
+            )
+
+            if index >= 15 then
+                break
+            end
+        end
+    end
+
+    RefreshSellInfo()
+
+    return SellState.SellPacket
+end
+
+local function FireSellPacket()
+
+    local packet =
+        FindSellPacket()
+
+    if not packet then
+        return false, SellState.PacketSource
+    end
+
+    local okFireLookup, fireFunction =
+        pcall(function()
+            return packet.Fire
+        end)
+
+    if okFireLookup ~= true
+    or type(fireFunction) ~= "function" then
+        return false, "packet.Fire missing"
+    end
+
+    SellDebugPrint(
+        "Firing sell packet",
+        tostring(SellState.PacketSource)
+    )
+
+    local okFire, err =
+        pcall(function()
+
+            fireFunction(
+                packet
+            )
+        end)
+
+    if okFire ~= true then
+
+        SellDebugPrint(
+            "Sell packet failed",
+            tostring(err)
+        )
+
+        return false, tostring(err)
+    end
+
+    SellState.LastSellAt =
+        os.clock()
+
+    SellDebugPrint(
+        "Sell packet fired OK",
+        tostring(SellState.PacketSource)
+    )
+
+    return true, "fired " .. tostring(SellState.PacketSource)
+end
+
+local function SellOnce(reason)
+
+    reason =
+        tostring(reason or "manual")
+
+    local ok, info =
+        FireSellPacket()
+
+    if ok == true then
+
+        SetSellStatus(
+            "Sell fired: "
+            .. reason
+        )
+
+    else
+
+        SetSellStatus(
+            "Sell failed: "
+            .. tostring(info)
+        )
+    end
+
+    SellDebugPrint(
+        "SellOnce",
+        "reason:",
+        reason,
+        "ok:",
+        tostring(ok),
+        "info:",
+        tostring(info)
+    )
+
+    RefreshSellInfo()
+
+    return ok
+end
+
+local function StartSellAutomationLoop()
+
+    if SellState.Running == true then
+        return
+    end
+
+    SellState.Running =
+        true
+
+    task.spawn(function()
+
+        SetSellStatus("Auto sell loop started.")
+
+        while SellConfig.AutoMaxBackpack == true do
+
+            local full =
+                SellInventoryIsFull()
+
+            if full == true then
+
+                local sinceLastSell =
+                    os.clock() - tonumber(SellState.LastSellAt or 0)
+
+                if sinceLastSell >= 2 then
+
+                    SellOnce(
+                        "max backpack"
+                    )
+
+                    task.wait(1.25)
+
+                else
+
+                    SetSellStatus(
+                        "Inventory full, waiting sell cooldown..."
+                    )
+                end
+
+            else
+
+                SetSellStatus(
+                    "Waiting for max backpack..."
+                )
+            end
+
+            RefreshSellInfo()
+
+            task.wait(
+                SettingsNormalizeNumber(
+                    SellConfig.Delay,
+                    0.5,
+                    0.1,
+                    10
+                )
+            )
+        end
+
+        SellState.Running =
+            false
+
+        SetSellStatus("Auto sell stopped.")
+    end)
+end
+
+local function StopSellAutomation()
+
+    SellConfig.AutoMaxBackpack =
+        false
+
+    UIState.SellAutoMaxBackpack =
+        false
+
+    SaveUISettings(
+        "sell auto max backpack stopped"
+    )
+
+    if SellAutoToggle
+    and type(SellAutoToggle.SetValue) == "function" then
+
+        SellAutoToggle:SetValue(false)
+    end
+
+    SetSellStatus("Auto sell stopped.")
+    RefreshSellInfo()
+end
+
+local function SellConnectReplicaWatcher()
+
+    local remoteEvents =
+        ReplicatedStorage:FindFirstChild("RemoteEvents")
+
+    local replicaSet =
+        remoteEvents
+        and remoteEvents:FindFirstChild("ReplicaSet")
+
+    if not replicaSet
+    or not replicaSet:IsA("RemoteEvent") then
+        return
+    end
+
+    replicaSet.OnClientEvent:Connect(function(_, pathArray, value)
+
+        if type(pathArray) ~= "table" then
+            return
+        end
+
+        if pathArray[1] == "Sheckles" then
+
+            SellState.LastSheckles =
+                value
+
+            RefreshSellInfo()
+        end
+    end)
+end
+
+SellConnectInventoryFullWatcher()
+SellConnectReplicaWatcher()
 
 --==================================================
 -- [5.6] FARM AUTOMATION HELPERS
@@ -4667,6 +5403,13 @@ local Tabs = {
             Description = "Shop tools.",
         }),
 
+    Sell =
+        Window:AddTab({
+            Name = "Sell",
+            Icon = "coins",
+            Description = "Fruit selling tools.",
+        }),
+
     Farm =
         Window:AddTab({
             Name = "Farm",
@@ -5138,6 +5881,245 @@ if AnyShopAutomationEnabled() == true then
 
     SetShopStatus(
         "Auto-buy restored from saved settings."
+    )
+end
+
+--==================================================
+-- [10.5] SELL TAB
+--==================================================
+
+local SellMainBox =
+    AddLeftBox(
+        Tabs.Sell,
+        "Sell Controls",
+        "coins"
+    )
+
+local SellStatusBox =
+    AddRightBox(
+        Tabs.Sell,
+        "Sell Status",
+        "activity"
+    )
+
+SellMainBox:AddLabel({
+    Text =
+        '<font color="rgb(196,181,253)"><b>Auto Sell</b></font>'
+        .. '\nAuto Sell Max Backpack waits until the game shows "Your inventory is full", then fires the discovered sell packet.',
+    DoesWrap = true,
+    Size = 13,
+})
+
+SellMainBox:AddDivider(
+    "Automation"
+)
+
+SellAutoToggle =
+    SellMainBox:AddToggle(
+        "HolyGAG2SellAutoMaxBackpack",
+        {
+            Text = "Auto Sell Max Backpack",
+            Default = SellConfig.AutoMaxBackpack == true,
+            Tooltip = "Only sells after the game says your inventory/backpack is full.",
+        }
+    )
+
+if SellAutoToggle
+and type(SellAutoToggle.OnChanged) == "function" then
+
+    SellAutoToggle:OnChanged(function(value)
+
+        SellConfig.AutoMaxBackpack =
+            value == true
+
+        UIState.SellAutoMaxBackpack =
+            SellConfig.AutoMaxBackpack == true
+
+        SaveUISettings(
+            "sell auto max backpack changed"
+        )
+
+        if SellConfig.AutoMaxBackpack == true then
+            StartSellAutomationLoop()
+        else
+            SetSellStatus("Auto sell disabled.")
+        end
+
+        RefreshSellInfo()
+    end)
+end
+
+local SellDebugToggle =
+    SellMainBox:AddToggle(
+        "HolyGAG2SellDebug",
+        {
+            Text = "Sell Debug",
+            Default = SellConfig.Debug == true,
+            Tooltip = "Prints sell packet candidates and sell attempts to console.",
+        }
+    )
+
+if SellDebugToggle
+and type(SellDebugToggle.OnChanged) == "function" then
+
+    SellDebugToggle:OnChanged(function(value)
+
+        SellConfig.Debug =
+            value == true
+
+        UIState.SellDebug =
+            SellConfig.Debug == true
+
+        SaveUISettings(
+            "sell debug changed"
+        )
+
+        SetSellStatus(
+            SellConfig.Debug == true
+            and "Sell debug enabled."
+            or "Sell debug disabled."
+        )
+
+        RefreshSellInfo()
+    end)
+end
+
+if type(SellMainBox.AddInput) == "function" then
+
+    local SellDelayInput =
+        SellMainBox:AddInput(
+            "HolyGAG2SellDelay",
+            {
+                Text = "Sell Delay",
+                Default = tostring(SellConfig.Delay),
+                Numeric = true,
+                Finished = true,
+                Tooltip = "Seconds between max-backpack checks. Minimum 0.1.",
+            }
+        )
+
+    if SellDelayInput
+    and type(SellDelayInput.OnChanged) == "function" then
+
+        SellDelayInput:OnChanged(function(value)
+
+            SellConfig.Delay =
+                SettingsNormalizeNumber(
+                    value,
+                    0.5,
+                    0.1,
+                    10
+                )
+
+            UIState.SellDelay =
+                SellConfig.Delay
+
+            SaveUISettings(
+                "sell delay changed"
+            )
+
+            RefreshSellInfo()
+        end)
+    end
+end
+
+SellMainBox:AddDivider(
+    "Actions"
+)
+
+SellMainBox:AddButton({
+    Text = "Find Sell Packet",
+    Tooltip = "Find the best sell packet candidate from the loaded packet table.",
+    Func = function()
+
+        SellState.SellPacket =
+            nil
+
+        local packet =
+            FindSellPacket()
+
+        if packet then
+
+            SetSellStatus(
+                "Found sell packet."
+            )
+
+            Notify(
+                "Sell",
+                "Found: " .. tostring(SellState.PacketSource),
+                4
+            )
+
+        else
+
+            SetSellStatus(
+                "Sell packet not found."
+            )
+
+            Notify(
+                "Sell",
+                tostring(SellState.PacketSource),
+                5
+            )
+        end
+
+        RefreshSellInfo()
+    end,
+}):AddButton({
+    Text = "Sell Once",
+    Tooltip = "Fire the sell packet once for testing.",
+    Func = function()
+
+        SellOnce(
+            "manual"
+        )
+    end,
+})
+
+SellMainBox:AddButton({
+    Text = "Stop Auto Sell",
+    Risky = true,
+    Tooltip = "Turns off Auto Sell Max Backpack.",
+    Func = function()
+
+        StopSellAutomation()
+    end,
+})
+
+SellStatusBox:AddLabel({
+    Text =
+        '<font color="rgb(148,163,184)"><b>How It Works</b></font>'
+        .. '\n1. Watches PlayerGui text for "Your inventory is full".'
+        .. '\n2. Finds a sell packet from the packet table.'
+        .. '\n3. Fires sell only when max backpack was detected recently.',
+    DoesWrap = true,
+    Size = 12,
+})
+
+SellStatusLabel =
+    SellStatusBox:AddLabel({
+        Text =
+            '<font color="rgb(196,181,253)"><b>Sell Status:</b></font> Ready',
+        DoesWrap = true,
+        Size = 12,
+    })
+
+SellInfoLabel =
+    SellStatusBox:AddLabel({
+        Text = BuildSellInfoText(),
+        DoesWrap = true,
+        Size = 12,
+    })
+
+FindSellPacket()
+RefreshSellInfo()
+
+if SellConfig.AutoMaxBackpack == true then
+
+    StartSellAutomationLoop()
+
+    SetSellStatus(
+        "Auto sell restored from saved settings."
     )
 end
 
