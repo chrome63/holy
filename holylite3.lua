@@ -17140,11 +17140,45 @@ end
 
 function AgeBreakBuildTargetsText()
 
-    local lines = {}
-    local targets =
-        AgeBreakGetSelectedTargets()
+    local function richEscape(value)
 
-    local savedUUIDs = {}
+        value =
+            tostring(value or "")
+
+        value =
+            value:gsub("&", "&amp;")
+                :gsub("<", "&lt;")
+                :gsub(">", "&gt;")
+
+        return value
+    end
+
+    local function richColor(value, color, bold)
+
+        value =
+            richEscape(value)
+
+        color =
+            tostring(color or "255,255,255")
+
+        if bold == true then
+
+            return '<font color="rgb('
+                .. color
+                .. ')"><b>'
+                .. value
+                .. '</b></font>'
+        end
+
+        return '<font color="rgb('
+            .. color
+            .. ')">'
+            .. value
+            .. '</font>'
+    end
+
+    local savedUUIDs =
+        {}
 
     for uuid, selected in pairs(AgeBreakState.SelectedTargetUUIDs or {}) do
 
@@ -17163,121 +17197,288 @@ function AgeBreakBuildTargetsText()
 
     table.sort(savedUUIDs)
 
+    local inventoryPets =
+        AgeBreakBuildInventoryPets()
+
+    local petsByUUID =
+        {}
+
+    local petsByCleanUUID =
+        {}
+
+    for _, pet in ipairs(inventoryPets or {}) do
+
+        local rawUUID =
+            CleanText(pet.UUID)
+
+        local cleanUUID =
+            AgeBreakUUIDNoBraces(rawUUID)
+
+        if rawUUID ~= "" then
+            petsByUUID[rawUUID] =
+                pet
+        end
+
+        if cleanUUID ~= "" then
+            petsByCleanUUID[cleanUUID] =
+                pet
+        end
+    end
+
+    local nextUUID =
+        ""
+
+    if type(AgeBreakState.LastPair) == "table"
+    and type(AgeBreakState.LastPair.Target) == "table" then
+
+        nextUUID =
+            AgeBreakUUIDNoBraces(
+                AgeBreakState.LastPair.Target.UUID
+            )
+    end
+
+    local availableCount =
+        0
+
+    local missingCount =
+        0
+
+    local cards =
+        {}
+
+    for index, uuid in ipairs(savedUUIDs) do
+
+        local cleanUUID =
+            AgeBreakUUIDNoBraces(uuid)
+
+        local pet =
+            petsByUUID[uuid]
+            or petsByCleanUUID[cleanUUID]
+
+        local available =
+            pet ~= nil
+
+        if available == true then
+            availableCount =
+                availableCount + 1
+        else
+            missingCount =
+                missingCount + 1
+        end
+
+        if index <= 6 then
+
+            local isNext =
+                available == true
+                and (
+                    (
+                        nextUUID ~= ""
+                        and cleanUUID == nextUUID
+                    )
+                    or (
+                        nextUUID == ""
+                        and index == 1
+                    )
+                )
+
+            local badge =
+                available == true
+                and (
+                    isNext == true
+                    and "READY · NEXT"
+                    or "READY"
+                )
+                or "MISSING"
+
+            local badgeColor =
+                available == true
+                and "74,222,128"
+                or "248,113,113"
+
+            table.insert(
+                cards,
+                richColor(
+                    "#"
+                        .. tostring(index)
+                        .. "   "
+                        .. badge,
+                    badgeColor,
+                    true
+                )
+            )
+
+            if pet then
+
+                local nameLine =
+                    tostring(pet.PetName or "Unknown")
+
+                local mutation =
+                    CleanText(
+                        pet.Mutation
+                        or "---"
+                    )
+
+                if mutation ~= ""
+                and mutation ~= "---"
+                and mutation ~= "Normal" then
+
+                    nameLine =
+                        nameLine
+                        .. " · "
+                        .. mutation
+                end
+
+                table.insert(
+                    cards,
+                    richColor(
+                        nameLine,
+                        "255,255,255",
+                        true
+                    )
+                )
+
+                table.insert(
+                    cards,
+                    richColor(
+                        "Age "
+                            .. tostring(pet.Level or "?")
+                            .. " · "
+                            .. AgeBreakFormatNumber(pet.DisplayWeight, 2)
+                            .. " KG"
+                            .. " · "
+                            .. AgeBreakFormatNumber(pet.BaseWeight, 4)
+                            .. " BW"
+                            .. " · #"
+                            .. AgeBreakShortUUID(pet.UUID),
+                        "203,213,225",
+                        false
+                    )
+                )
+
+                if pet.IsFavorite == true then
+
+                    table.insert(
+                        cards,
+                        richColor(
+                            "Favorited · Auto Unfavorite will handle this before submit.",
+                            "250,204,21",
+                            false
+                        )
+                    )
+                end
+
+            else
+
+                table.insert(
+                    cards,
+                    richColor(
+                        "Saved target not available in this world.",
+                        "203,213,225",
+                        false
+                    )
+                )
+
+                table.insert(
+                    cards,
+                    richColor(
+                        "UUID #"
+                            .. AgeBreakShortUUID(uuid),
+                        "148,163,184",
+                        false
+                    )
+                )
+            end
+
+            table.insert(
+                cards,
+                ""
+            )
+        end
+    end
+
+    local lines =
+        {}
+
     table.insert(
         lines,
-        "Selected Targets: "
-            .. tostring(#savedUUIDs)
+        richColor(
+            "TARGET WATCHLIST",
+            "196,181,253",
+            true
+        )
     )
 
     table.insert(
         lines,
-        "Available Here: "
-            .. tostring(#targets)
+        richColor(
+            "Saved "
+                .. tostring(#savedUUIDs)
+                .. " · Available "
+                .. tostring(availableCount)
+                .. " · Missing "
+                .. tostring(missingCount),
+            "203,213,225",
+            false
+        )
+    )
+
+    table.insert(
+        lines,
+        ""
     )
 
     if #savedUUIDs <= 0 then
 
         table.insert(
             lines,
-            "None selected."
+            richColor(
+                "No targets selected.",
+                "148,163,184",
+                false
+            )
         )
 
-        return table.concat(lines, "\n")
+        table.insert(
+            lines,
+            richColor(
+                "Use the picker above to add exact target pets.",
+                "148,163,184",
+                false
+            )
+        )
+
+        return table.concat(
+            lines,
+            "\n"
+        )
     end
 
-    if #targets <= 0 then
+    for _, cardLine in ipairs(cards) do
 
-        if IsTradeWorld() then
+        table.insert(
+            lines,
+            cardLine
+        )
+    end
 
-            table.insert(
-                lines,
-                "Saved targets are editable here."
-            )
+    if #savedUUIDs > 6 then
 
-            table.insert(
-                lines,
-                "Exact pet details reload in Garden World."
-            )
-
-        else
-
-            table.insert(
-                lines,
-                "Saved targets exist, but they are not in current inventory."
-            )
-        end
-
-        local shownSaved =
-            math.min(
-                #savedUUIDs,
-                8
-            )
-
-        for index = 1, shownSaved do
-
-            table.insert(
-                lines,
-                tostring(index)
-                    .. ". Saved Target #"
-                    .. AgeBreakShortUUID(savedUUIDs[index])
-            )
-        end
-
-        if #savedUUIDs > shownSaved then
-
-            table.insert(
-                lines,
+        table.insert(
+            lines,
+            richColor(
                 "+"
-                    .. tostring(#savedUUIDs - shownSaved)
-                    .. " more saved targets"
+                    .. tostring(#savedUUIDs - 6)
+                    .. " more saved targets",
+                "148,163,184",
+                false
             )
-        end
-
-        return table.concat(lines, "\n")
-    end
-
-    local shown =
-        math.min(
-            #targets,
-            6
-        )
-
-    for index = 1, shown do
-
-        table.insert(
-            lines,
-            tostring(index)
-                .. ". "
-                .. AgeBreakFormatPetLine(
-                    targets[index],
-                    false
-                )
         )
     end
 
-    if #targets > shown then
-
-        table.insert(
-            lines,
-            "+"
-                .. tostring(#targets - shown)
-                .. " more available targets"
-        )
-    end
-
-    local missingCount =
-        #savedUUIDs - #targets
-
-    if missingCount > 0 then
-
-        table.insert(
-            lines,
-            tostring(missingCount)
-                .. " saved target(s) not available in this world."
-        )
-    end
-
-    return table.concat(lines, "\n")
+    return table.concat(
+        lines,
+        "\n"
+    )
 end
 
 function AgeBreakBuildQueueText()
@@ -20095,25 +20296,38 @@ AgeBreakLoadSettingsIntoState()
 
 if Tabs.AgeBreak then
 
-    local AgeBreakTargetsBox =
+    --==================================================
+    -- AGE BREAK v2 LAYOUT
+    -- LEFT: machine, automation, safety.
+    -- RIGHT: target watchlist, sacrifice pool, queue.
+    --==================================================
+
+    local AgeBreakMachineBox =
         AddTransferLeftBox(
             Tabs.AgeBreak,
-            "Targets",
+            "Machine Status",
+            "activity"
+        )
+
+    local AgeBreakSafetyBox =
+        AddTransferLeftBox(
+            Tabs.AgeBreak,
+            "Automation",
+            "zap"
+        )
+
+    local AgeBreakTargetsBox =
+        AddTransferRightBox(
+            Tabs.AgeBreak,
+            "Target Watchlist",
             "star"
         )
 
     local AgeBreakBuilderBox =
-        AddTransferLeftBox(
-            Tabs.AgeBreak,
-            "Sacrifice Builder",
-            "filter"
-        )
-
-    local AgeBreakMachineBox =
         AddTransferRightBox(
             Tabs.AgeBreak,
-            "Machine",
-            "activity"
+            "Sacrifice Pool",
+            "shield"
         )
 
     local AgeBreakQueueBox =
@@ -20123,27 +20337,23 @@ if Tabs.AgeBreak then
             "list"
         )
 
-    local AgeBreakSafetyBox =
-        AddTransferRightBox(
-            Tabs.AgeBreak,
-            "Safety",
-            "shield"
-        )
-
     local InitialAgeBreakTargetChoices =
         AgeBreakBuildTargetChoices()
 
     AgeBreakTargetsBox:AddLabel({
-        Text = "Target Pets",
+        Text =
+            '<font color="rgb(196,181,253)"><b>Saved targets</b></font>'
+            .. ' · exact UUID watchlist'
+            .. '\nAdd valuable pets here. Trade World can edit this list, but only Garden World submits.',
         DoesWrap = true,
-        Size = 13,
+        Size = 12,
     })
 
     AgeBreakState.TargetDropdown =
         AgeBreakTargetsBox:AddDropdown(
             "HolyLiteAgeBreakTargets",
             {
-                Text = "Select Targets",
+                Text = "Inventory Target Picker",
                 Values = InitialAgeBreakTargetChoices,
                 Default = AgeBreakDropdownDefaultsFromTargetUUIDs(),
                 Searchable = true,
@@ -20171,13 +20381,13 @@ if Tabs.AgeBreak then
 
     AgeBreakState.TargetPreviewLabel =
         AgeBreakTargetsBox:AddLabel({
-            Text = "Selected Targets: 0\nNone selected.",
+            Text = AgeBreakBuildTargetsText(),
             DoesWrap = true,
             Size = 12,
         })
 
     AgeBreakTargetsBox:AddButton({
-        Text = "Refresh",
+        Text = "Refresh List",
         Func = function()
 
             AgeBreakRefreshTargetDropdown()
@@ -20189,7 +20399,7 @@ if Tabs.AgeBreak then
             )
         end,
     }):AddButton({
-        Text = "Clear",
+        Text = "Clear Targets",
         Func = function()
 
             AgeBreakState.SelectedTargetUUIDs =
@@ -20211,8 +20421,8 @@ if Tabs.AgeBreak then
 
     AgeBreakBuilderBox:AddLabel({
         Text =
-            "Sacrifices are built in bulk from pet types and rules.\n"
-            .. "This is meant for 50+ sacrifice pets.",
+            '<font color="rgb(196,181,253)"><b>Inventory sacrifice pool</b></font>'
+            .. '\nChoose pet types you actually own, then build a safe queue from your rules.',
         DoesWrap = true,
         Size = 12,
     })
@@ -20221,7 +20431,7 @@ if Tabs.AgeBreak then
         AgeBreakBuilderBox:AddDropdown(
             "HolyLiteAgeBreakSacrificeTypes",
             {
-                Text = "Sacrifice Types",
+                Text = "Inventory Sacrifice Type",
                 Values = AgeBreakBuildPetTypeChoices(),
                 Default = AgeBreakCopyBoolMap(
                     AgeBreakState.SelectedSacrificeTypes
@@ -20319,7 +20529,7 @@ if Tabs.AgeBreak then
             )
         end,
     }):AddButton({
-        Text = "Clear Sacrifices",
+        Text = "Clear Pool",
         Func = function()
 
             AgeBreakState.SelectedSacrificeTypes =
