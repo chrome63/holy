@@ -16061,6 +16061,12 @@ local AgeBreakState = {
     LastSubmitResult = "None",
     LastSubmittedPairKey = "",
 
+    TargetLoadedWaitingSacrifice = false,
+    LoadedTargetUUID = "",
+    LoadedTargetSnapshot = nil,
+    LastLoadedTargetAt = 0,
+    LastSacrificeRetryAt = 0,
+
     WaitingForMachineStart = false,
     MachineStartWaitStartedAt = 0,
     MachineStartWaitUntil = 0,
@@ -18285,7 +18291,58 @@ function AgeBreakEquipPetTool(pet)
     return false, "Tool did not equip"
 end
 
-function AgeBreakFireSubmitUUID(uuid, role)
+function AgeBreakClonePetSnapshot(pet)
+
+    if type(pet) ~= "table" then
+        return nil
+    end
+
+    return {
+        Tool = pet.Tool,
+        ToolName = tostring(pet.ToolName or ""),
+        UUID = tostring(pet.UUID or ""),
+        PetName = tostring(pet.PetName or ""),
+        Mutation = tostring(pet.Mutation or "---"),
+        Level = tonumber(pet.Level) or 1,
+        BaseWeight = tonumber(pet.BaseWeight) or 0,
+        DisplayWeight = tonumber(pet.DisplayWeight) or 0,
+        IsFavorite = pet.IsFavorite == true,
+    }
+end
+
+function AgeBreakFireSubmitHeldFallback(role)
+
+    if IsGardenWorld() ~= true then
+        return false, "SubmitHeld blocked outside Garden World"
+    end
+
+    local remote =
+        AgeBreakGetSubmitHeldRemote()
+
+    if not remote then
+        return false, "PetAgeLimitBreak_SubmitHeld remote missing"
+    end
+
+    local ok, err =
+        pcall(function()
+
+            remote:FireServer()
+        end)
+
+    if ok ~= true then
+        return false, tostring(err)
+    end
+
+    print(
+        "[AGE BREAK]",
+        "Fire SubmitHeld fallback:",
+        tostring(role or "pet")
+    )
+
+    return true, "SubmitHeld fired"
+end
+
+function AgeBreakFireSubmitUUID(uuid, role, useHeldFallback)
 
     if IsGardenWorld() ~= true then
         return false, "Submit blocked outside Garden World"
@@ -18324,42 +18381,22 @@ function AgeBreakFireSubmitUUID(uuid, role)
         return false, tostring(err)
     end
 
+    if useHeldFallback == true then
+
+        task.wait(0.20)
+
+        pcall(function()
+
+            AgeBreakFireSubmitHeldFallback(
+                role
+            )
+        end)
+    end
+
     return true, "Submitted " .. tostring(role or "pet")
 end
 
-function AgeBreakFireSubmitHeldFallback(role)
-
-    if IsGardenWorld() ~= true then
-        return false, "SubmitHeld blocked outside Garden World"
-    end
-
-    local remote =
-        AgeBreakGetSubmitHeldRemote()
-
-    if not remote then
-        return false, "PetAgeLimitBreak_SubmitHeld remote missing"
-    end
-
-    local ok, err =
-        pcall(function()
-
-            remote:FireServer()
-        end)
-
-    if ok ~= true then
-        return false, tostring(err)
-    end
-
-    print(
-        "[AGE BREAK]",
-        "Fire SubmitHeld fallback:",
-        tostring(role or "pet")
-    )
-
-    return true, "SubmitHeld fired"
-end
-
-function AgeBreakSubmitPet(pet, role)
+function AgeBreakSubmitPetMainStyle(pet, role)
 
     role =
         tostring(role or "pet")
@@ -18391,89 +18428,286 @@ function AgeBreakSubmitPet(pet, role)
         "Submitting " .. role .. "..."
     )
 
-    local directOk, directReason =
+    local submitOk, submitReason =
         AgeBreakFireSubmitUUID(
             pet.UUID,
-            role
+            role,
+            true
         )
 
-    if directOk ~= true then
-        return false, tostring(directReason)
+    if submitOk ~= true then
+        return false, tostring(submitReason)
     end
 
-    -- Main script does this too:
-    -- direct UUID submit first, then SubmitHeld shortly after.
-    task.wait(0.20)
-
-    local heldOk, heldReason =
-        AgeBreakFireSubmitHeldFallback(
-            role
-        )
-
-    if heldOk ~= true then
-
-        print(
-            "[AGE BREAK]",
-            "SubmitHeld fallback failed:",
-            tostring(role),
-            tostring(heldReason)
-        )
-
-        -- Do not fail the whole submit if UUID submit already fired.
-        return true,
-            tostring(directReason)
-                .. " | SubmitHeld fallback failed: "
-                .. tostring(heldReason)
-    end
-
-    return true,
-        tostring(directReason)
-            .. " + SubmitHeld"
+    return true, tostring(submitReason)
 end
 
-function AgeBreakUUIDNoBraces(uuid)
-
-    return tostring(uuid or "")
-        :gsub("{", "")
-        :gsub("}", "")
-        :gsub("^%s+", "")
-        :gsub("%s+$", "")
-end
-
-function AgeBreakFindFreshPetByUUID(uuid, timeout, interval)
+function AgeBreakRemoveSacrificeRuntimeUUID(uuid)
 
     local wanted =
         AgeBreakUUIDNoBraces(uuid)
 
     if wanted == "" then
-        return nil
+        return false
     end
 
-    timeout =
-        tonumber(timeout)
-        or 5
+    local queue =
+        AgeBreakState.SacrificeQueue
 
-    interval =
-        tonumber(interval)
-        or 0.25
+    if type(queue) ~= "table" then
+        return false
+    end
 
-    local started =
+    for index = #queue, 1, -1 do
+
+        local pet =
+            queue[index]
+
+        if type(pet) == "table"
+        and AgeBreakUUIDNoBraces(pet.UUID) == wanted then
+
+            table.remove(
+                queue,
+                index
+            )
+        end
+    end
+
+    return true
+end
+
+function AgeBreakResolveSacrificeForLoadedTarget(targetSnapshot)
+
+    if type(targetSnapshot) ~= "table" then
+        return nil, "Loaded target snapshot missing"
+    end
+
+    local currentPair =
+        AgeBreakState.LastPair
+
+    local currentSacrifice =
+        currentPair
+        and currentPair.Sacrifice
+
+    if type(currentSacrifice) == "table" then
+
+        local allowed =
+            AgeBreakPairAllowed(
+                targetSnapshot,
+                currentSacrifice
+            )
+
+        if allowed == true then
+            return currentSacrifice, "Using prepared sacrifice"
+        end
+    end
+
+    AgeBreakBuildSacrificeQueue()
+
+    for _, sacrifice in ipairs(AgeBreakState.SacrificeQueue or {}) do
+
+        local allowed =
+            AgeBreakPairAllowed(
+                targetSnapshot,
+                sacrifice
+            )
+
+        if allowed == true then
+            return sacrifice, "Resolved fresh sacrifice"
+        end
+    end
+
+    return nil, "No safe sacrifice for loaded target"
+end
+
+function AgeBreakSubmitLoadedSacrifice(reason)
+
+    reason =
+        tostring(reason or "loaded sacrifice")
+
+    if IsGardenWorld() ~= true then
+
+        AgeBreakSetStatus(
+            "Submit Blocked",
+            "Sacrifice submit can only run in Garden World."
+        )
+
+        return false, "Not in Garden World"
+    end
+
+    if AgeBreakState.TargetLoadedWaitingSacrifice ~= true then
+        return false, "No loaded target waiting for sacrifice"
+    end
+
+    if AgeBreakElapsed(AgeBreakState.LastSacrificeRetryAt) < 2.5 then
+
+        AgeBreakSetStatus(
+            "Sacrifice Cooldown",
+            "Waiting before sacrifice retry."
+        )
+
+        return false, "Sacrifice retry cooldown"
+    end
+
+    AgeBreakState.LastSacrificeRetryAt =
         os.clock()
 
-    while IsHolyLiteCurrentRun()
-    and os.clock() - started <= timeout do
+    local targetSnapshot =
+        AgeBreakState.LoadedTargetSnapshot
 
-        for _, pet in ipairs(AgeBreakBuildInventoryPets()) do
+    if type(targetSnapshot) ~= "table" then
 
-            if AgeBreakUUIDNoBraces(pet.UUID) == wanted then
-                return pet
-            end
-        end
+        AgeBreakSetStatus(
+            "Submit Failed",
+            "Loaded target snapshot missing."
+        )
 
-        task.wait(interval)
+        return false, "Loaded target snapshot missing"
     end
 
-    return nil
+    local sacrifice, sacrificeReason =
+        AgeBreakResolveSacrificeForLoadedTarget(
+            targetSnapshot
+        )
+
+    if not sacrifice then
+
+        AgeBreakSetStatus(
+            "No Sacrifice",
+            tostring(sacrificeReason)
+        )
+
+        return false, tostring(sacrificeReason)
+    end
+
+    local freshSacrifice =
+        AgeBreakFindFreshPetByUUID(
+            sacrifice.UUID,
+            5,
+            0.25
+        )
+
+    if freshSacrifice then
+        sacrifice =
+            freshSacrifice
+    end
+
+    AgeBreakState.LastPair =
+        AgeBreakState.LastPair
+        or {}
+
+    AgeBreakState.LastPair.Target =
+        targetSnapshot
+
+    AgeBreakState.LastPair.Sacrifice =
+        sacrifice
+
+    AgeBreakSetStatus(
+        "Equipping",
+        "Equipping sacrifice..."
+    )
+
+    local equippedSacrifice, equipSacrificeReason =
+        AgeBreakEquipPetTool(
+            sacrifice
+        )
+
+    if equippedSacrifice ~= true then
+
+        AgeBreakSetStatus(
+            "Sacrifice Equip Failed",
+            tostring(equipSacrificeReason)
+        )
+
+        return false, tostring(equipSacrificeReason)
+    end
+
+    AgeBreakSetStatus(
+        "Submitting",
+        "Submitting sacrifice..."
+    )
+
+    local okSacrifice, sacrificeSubmitReason =
+        AgeBreakFireSubmitUUID(
+            sacrifice.UUID,
+            "sacrifice",
+            true
+        )
+
+    if okSacrifice ~= true then
+
+        AgeBreakSetStatus(
+            "Sacrifice Submit Failed",
+            tostring(sacrificeSubmitReason)
+        )
+
+        return false, tostring(sacrificeSubmitReason)
+    end
+
+    AgeBreakRemoveSacrificeRuntimeUUID(
+        sacrifice.UUID
+    )
+
+    AgeBreakState.TargetLoadedWaitingSacrifice =
+        false
+
+    AgeBreakState.LoadedTargetUUID =
+        ""
+
+    AgeBreakState.LoadedTargetSnapshot =
+        nil
+
+    AgeBreakState.LastLoadedTargetAt =
+        0
+
+    AgeBreakState.LastSacrificeRetryAt =
+        0
+
+    AgeBreakState.LastSubmitResult =
+        "Sacrifice submitted"
+
+    AgeBreakArmMachineStartWait(
+        AgeBreakState.LastSubmittedPairKey
+    )
+
+    AgeBreakSaveSettingsNow(
+        "sacrifice submitted waiting timer"
+    )
+
+    AgeBreakSetStatus(
+        "Pair Submitted",
+        "Submitted sacrifice. Waiting for machine timer confirmation..."
+    )
+
+    task.delay(0.75, function()
+
+        if IsHolyLiteCurrentRun() then
+
+            AgeBreakRefreshMachineState()
+            AgeBreakCheckMachineStartWait()
+            AgeBreakRefreshUI()
+        end
+    end)
+
+    task.delay(2.0, function()
+
+        if IsHolyLiteCurrentRun() then
+
+            AgeBreakRefreshMachineState()
+            AgeBreakCheckMachineStartWait()
+            AgeBreakRefreshUI()
+
+            if AgeBreakMachineIsRunning() == true
+            and AgeBreakState.AutoTradeWorldWhenMachineStarts == true then
+
+                pcall(function()
+                    AgeBreakAutoStep()
+                end)
+            end
+        end
+    end)
+
+    return true, "Sacrifice submitted"
 end
 
 function AgeBreakSubmitBestPair(reason)
@@ -18495,7 +18729,22 @@ function AgeBreakSubmitBestPair(reason)
         return false, "Submit already in flight"
     end
 
-    if AgeBreakElapsed(AgeBreakState.LastSubmitAt) < 5 then
+    -- Main-style recovery:
+    -- If the target already got uploaded into the machine, do NOT submit
+    -- another target. Only retry/submit the sacrifice side.
+    if AgeBreakState.TargetLoadedWaitingSacrifice == true then
+
+        AgeBreakSetStatus(
+            "Recovering",
+            "Target is already loaded. Submitting sacrifice only..."
+        )
+
+        return AgeBreakSubmitLoadedSacrifice(
+            "loaded target recovery"
+        )
+    end
+
+    if AgeBreakElapsed(AgeBreakState.LastSubmitAt) < 3 then
 
         AgeBreakSetStatus(
             "Submit Cooldown",
@@ -18598,18 +18847,66 @@ function AgeBreakSubmitBestPair(reason)
     AgeBreakState.LastSubmittedPairKey =
         pairKey
 
+    local target =
+        pair.Target
+
+    local freshTarget =
+        AgeBreakFindFreshPetByUUID(
+            target.UUID,
+            2,
+            0.15
+        )
+
+    if freshTarget then
+        target =
+            freshTarget
+
+        pair.Target =
+            freshTarget
+    end
+
+    AgeBreakState.LastPair =
+        pair
+
+    AgeBreakSetStatus(
+        "Equipping",
+        "Equipping target..."
+    )
+
+    local equippedTarget, equipTargetReason =
+        AgeBreakEquipPetTool(
+            target
+        )
+
+    if equippedTarget ~= true then
+
+        AgeBreakState.SubmitInFlight =
+            false
+
+        AgeBreakState.LastSubmitResult =
+            tostring(equipTargetReason)
+
+        AgeBreakSetStatus(
+            "Target Equip Failed",
+            tostring(equipTargetReason)
+        )
+
+        return false, tostring(equipTargetReason)
+    end
+
     AgeBreakSetStatus(
         "Submitting",
         "Submitting target..."
     )
 
-    local targetOk, targetReason =
-        AgeBreakSubmitPet(
-            pair.Target,
-            "target"
+    local okTarget, targetReason =
+        AgeBreakFireSubmitUUID(
+            target.UUID,
+            "target",
+            true
         )
 
-    if targetOk ~= true then
+    if okTarget ~= true then
 
         AgeBreakState.SubmitInFlight =
             false
@@ -18618,24 +18915,42 @@ function AgeBreakSubmitBestPair(reason)
             tostring(targetReason)
 
         AgeBreakSetStatus(
-            "Submit Failed",
-            "Target submit failed: "
-                .. tostring(targetReason)
+            "Target Submit Failed",
+            tostring(targetReason)
         )
 
         return false, tostring(targetReason)
     end
 
+    -- Critical main-script behavior:
+    -- Target is now considered uploaded. If sacrifice fails, later runs
+    -- must retry sacrifice only, not upload another target.
+    AgeBreakState.TargetLoadedWaitingSacrifice =
+        true
+
+    AgeBreakState.LoadedTargetUUID =
+        CleanText(target.UUID)
+
+    AgeBreakState.LoadedTargetSnapshot =
+        AgeBreakClonePetSnapshot(
+            target
+        )
+
+    AgeBreakState.LastLoadedTargetAt =
+        os.clock()
+
     AgeBreakState.LastSubmitResult =
-        "Target submitted. Waiting for sacrifice slot..."
+        "Target submitted. Waiting for sacrifice slot."
+
+    AgeBreakSaveSettingsNow(
+        "target submitted waiting sacrifice"
+    )
 
     AgeBreakSetStatus(
         "Target Submitted",
         "Waiting for machine to switch to sacrifice slot..."
     )
 
-    -- Main waits 2 seconds here. 0.35 is too fast and can make
-    -- the sacrifice submit fire before the machine is ready for it.
     task.wait(2.00)
 
     if not IsHolyLiteCurrentRun() then
@@ -18646,33 +18961,9 @@ function AgeBreakSubmitBestPair(reason)
         return false, "Runtime stopped"
     end
 
-    local freshSacrifice =
-        AgeBreakFindFreshPetByUUID(
-            pair.Sacrifice.UUID,
-            5,
-            0.25
-        )
-
-    if freshSacrifice then
-
-        pair.Sacrifice =
-            freshSacrifice
-
-        if AgeBreakState.LastPair then
-            AgeBreakState.LastPair.Sacrifice =
-                freshSacrifice
-        end
-    end
-
-    AgeBreakSetStatus(
-        "Submitting",
-        "Submitting sacrifice..."
-    )
-
     local sacrificeOk, sacrificeReason =
-        AgeBreakSubmitPet(
-            pair.Sacrifice,
-            "sacrifice"
+        AgeBreakSubmitLoadedSacrifice(
+            reason
         )
 
     AgeBreakState.SubmitInFlight =
@@ -18684,57 +18975,17 @@ function AgeBreakSubmitBestPair(reason)
             tostring(sacrificeReason)
 
         AgeBreakSetStatus(
-            "Submit Failed",
-            "Sacrifice submit failed: "
+            "Submit Paused",
+            "Target loaded. Sacrifice needs retry: "
                 .. tostring(sacrificeReason)
+        )
+
+        AgeBreakSaveSettingsNow(
+            "target loaded sacrifice retry needed"
         )
 
         return false, tostring(sacrificeReason)
     end
-
-    AgeBreakState.LastSubmitResult =
-        "Pair submitted"
-
-    AgeBreakArmMachineStartWait(
-        pairKey
-    )
-
-    AgeBreakSaveSettingsNow(
-        "pair submitted waiting timer"
-    )
-
-    AgeBreakSetStatus(
-        "Pair Submitted",
-        "Submitted target + sacrifice. Waiting for machine timer confirmation..."
-    )
-
-    task.delay(0.75, function()
-
-        if IsHolyLiteCurrentRun() then
-
-            AgeBreakRefreshMachineState()
-            AgeBreakCheckMachineStartWait()
-            AgeBreakRefreshUI()
-        end
-    end)
-
-    task.delay(2.0, function()
-
-        if IsHolyLiteCurrentRun() then
-
-            AgeBreakRefreshMachineState()
-            AgeBreakCheckMachineStartWait()
-            AgeBreakRefreshUI()
-
-            if AgeBreakMachineIsRunning() == true
-            and AgeBreakState.AutoTradeWorldWhenMachineStarts == true then
-
-                pcall(function()
-                    AgeBreakAutoStep()
-                end)
-            end
-        end
-    end)
 
     return true, "Pair submitted"
 end
@@ -18996,6 +19247,10 @@ function AgeBreakBuildDebugDump()
     table.insert(lines, "LastSubmitAt: " .. tostring(AgeBreakState.LastSubmitAt))
     table.insert(lines, "LastSubmitResult: " .. tostring(AgeBreakState.LastSubmitResult))
     table.insert(lines, "LastSubmittedPairKey: " .. tostring(AgeBreakState.LastSubmittedPairKey))
+    table.insert(lines, "TargetLoadedWaitingSacrifice: " .. AgeBreakBoolText(AgeBreakState.TargetLoadedWaitingSacrifice))
+    table.insert(lines, "LoadedTargetUUID: " .. tostring(AgeBreakState.LoadedTargetUUID))
+    table.insert(lines, "LastLoadedTargetAt: " .. tostring(AgeBreakState.LastLoadedTargetAt))
+    table.insert(lines, "LastSacrificeRetryAt: " .. tostring(AgeBreakState.LastSacrificeRetryAt))
     table.insert(lines, "WaitingForMachineStart: " .. AgeBreakBoolText(AgeBreakState.WaitingForMachineStart))
     table.insert(lines, "MachineStartWaitRemaining: " .. string.format("%.2f", AgeBreakGetMachineStartWaitRemaining()))
     table.insert(lines, "LastMachineStartResult: " .. tostring(AgeBreakState.LastMachineStartResult))
@@ -19718,12 +19973,47 @@ if Tabs.AgeBreak then
 
         AgeBreakMachineBox:AddButton({
             Text = "Submit Pair",
-            Tooltip = "Garden World only. Opens confirm dialog before submitting target + sacrifice.",
+            Tooltip = "Garden World only. Directly submits the next safe target + sacrifice pair.",
             Func = function()
 
-                AgeBreakOpenSubmitDialog(
-                    "manual submit"
-                )
+                task.spawn(function()
+
+                    local ok, result, submitReason =
+                        pcall(function()
+
+                            return AgeBreakSubmitBestPair(
+                                "manual submit button"
+                            )
+                        end)
+
+                    if ok ~= true then
+
+                        AgeBreakSetStatus(
+                            "Submit Error",
+                            tostring(result)
+                        )
+
+                        warn(
+                            "[AGE BREAK SUBMIT ERROR]",
+                            tostring(result)
+                        )
+
+                        return
+                    end
+
+                    if result ~= true then
+
+                        AgeBreakSetStatus(
+                            "Submit Failed",
+                            tostring(submitReason or "Submit returned false.")
+                        )
+
+                        warn(
+                            "[AGE BREAK SUBMIT FAILED]",
+                            tostring(submitReason)
+                        )
+                    end
+                end)
             end,
         }):AddButton({
             Text = "Claim Ready",
