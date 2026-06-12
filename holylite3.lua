@@ -16056,6 +16056,17 @@ local AgeBreakState = {
     LastClaimAt = 0,
     LastClaimResult = "None",
 
+    SubmitInFlight = false,
+    LastSubmitAt = 0,
+    LastSubmitResult = "None",
+    LastSubmittedPairKey = "",
+
+    WaitingForMachineStart = false,
+    MachineStartWaitStartedAt = 0,
+    MachineStartWaitUntil = 0,
+    MachineStartConfirmSeconds = 22,
+    LastMachineStartResult = "None",
+
     MaxSacrificeAge = 99,
     MaxSacrificeBaseWeight = 999,
 
@@ -18115,6 +18126,679 @@ function AgeBreakClaimIfReady(reason)
     return true, "Claim fired"
 end
 
+function AgeBreakGetSubmitRemote()
+
+    local gameEvents =
+        AgeBreakGetGameEvents()
+
+    if not gameEvents then
+        return nil
+    end
+
+    local remote =
+        gameEvents:FindFirstChild("PetAgeLimitBreak_Submit")
+
+    if remote
+    and remote:IsA("RemoteEvent") then
+        return remote
+    end
+
+    return nil
+end
+
+function AgeBreakGetSubmitHeldRemote()
+
+    local gameEvents =
+        AgeBreakGetGameEvents()
+
+    if not gameEvents then
+        return nil
+    end
+
+    local remote =
+        gameEvents:FindFirstChild("PetAgeLimitBreak_SubmitHeld")
+
+    if remote
+    and remote:IsA("RemoteEvent") then
+        return remote
+    end
+
+    return nil
+end
+
+function AgeBreakNormalizeSubmitUUID(uuid)
+
+    uuid =
+        tostring(uuid or "")
+            :gsub("{", "")
+            :gsub("}", "")
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    if uuid == "" then
+        return ""
+    end
+
+    return "{"
+        .. uuid
+        .. "}"
+end
+
+function AgeBreakBuildPairKey(pair)
+
+    if type(pair) ~= "table" then
+        return ""
+    end
+
+    local targetUUID =
+        pair.Target
+        and pair.Target.UUID
+
+    local sacrificeUUID =
+        pair.Sacrifice
+        and pair.Sacrifice.UUID
+
+    targetUUID =
+        CleanText(targetUUID)
+
+    sacrificeUUID =
+        CleanText(sacrificeUUID)
+
+    if targetUUID == ""
+    or sacrificeUUID == "" then
+        return ""
+    end
+
+    return targetUUID
+        .. "->"
+        .. sacrificeUUID
+end
+
+function AgeBreakEquipPetTool(pet)
+
+    if type(pet) ~= "table"
+    or not pet.Tool
+    or not pet.Tool:IsA("Tool") then
+        return false, "Pet tool missing"
+    end
+
+    local character =
+        LocalPlayer
+        and LocalPlayer.Character
+
+    if not character then
+        return false, "Character missing"
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid then
+        return false, "Humanoid missing"
+    end
+
+    local ok, err =
+        pcall(function()
+
+            humanoid:UnequipTools()
+
+            task.wait(0.12)
+
+            humanoid:EquipTool(
+                pet.Tool
+            )
+        end)
+
+    if ok ~= true then
+        return false, tostring(err)
+    end
+
+    local started =
+        os.clock()
+
+    while os.clock() - started < 1.25 do
+
+        if pet.Tool.Parent == character then
+            return true, "Equipped"
+        end
+
+        task.wait(0.05)
+    end
+
+    return false, "Tool did not equip"
+end
+
+function AgeBreakFireSubmitUUID(uuid, role)
+
+    if IsGardenWorld() ~= true then
+        return false, "Submit blocked outside Garden World"
+    end
+
+    local submitUUID =
+        AgeBreakNormalizeSubmitUUID(uuid)
+
+    if submitUUID == "" then
+        return false, "Invalid " .. tostring(role or "pet") .. " UUID"
+    end
+
+    local remote =
+        AgeBreakGetSubmitRemote()
+
+    if not remote then
+        return false, "PetAgeLimitBreak_Submit remote missing"
+    end
+
+    local ok, err =
+        pcall(function()
+
+            remote:FireServer({
+                [1] = submitUUID,
+            })
+        end)
+
+    if ok ~= true then
+        return false, tostring(err)
+    end
+
+    return true, "Submitted " .. tostring(role or "pet")
+end
+
+function AgeBreakFireSubmitHeldFallback(pet, role)
+
+    if IsGardenWorld() ~= true then
+        return false, "SubmitHeld blocked outside Garden World"
+    end
+
+    local remote =
+        AgeBreakGetSubmitHeldRemote()
+
+    if not remote then
+        return false, "PetAgeLimitBreak_SubmitHeld remote missing"
+    end
+
+    local equipOk, equipReason =
+        AgeBreakEquipPetTool(pet)
+
+    if equipOk ~= true then
+        return false, tostring(equipReason)
+    end
+
+    local ok, err =
+        pcall(function()
+
+            remote:FireServer()
+        end)
+
+    if ok ~= true then
+        return false, tostring(err)
+    end
+
+    return true, "Submitted held " .. tostring(role or "pet")
+end
+
+function AgeBreakSubmitPet(pet, role)
+
+    if type(pet) ~= "table" then
+        return false, "Invalid " .. tostring(role or "pet")
+    end
+
+    local directOk, directReason =
+        AgeBreakFireSubmitUUID(
+            pet.UUID,
+            role
+        )
+
+    if directOk == true then
+        return true, directReason
+    end
+
+    -- Fallback is only used if direct UUID submit is unavailable/fails.
+    local heldOk, heldReason =
+        AgeBreakFireSubmitHeldFallback(
+            pet,
+            role
+        )
+
+    if heldOk == true then
+        return true, heldReason
+    end
+
+    return false,
+        tostring(directReason)
+        .. " | fallback: "
+        .. tostring(heldReason)
+end
+
+function AgeBreakClearMachineStartWait(reason)
+
+    AgeBreakState.WaitingForMachineStart =
+        false
+
+    AgeBreakState.MachineStartWaitStartedAt =
+        0
+
+    AgeBreakState.MachineStartWaitUntil =
+        0
+
+    AgeBreakState.LastMachineStartResult =
+        tostring(reason or "Cleared")
+
+    return true
+end
+
+function AgeBreakArmMachineStartWait(pairKey)
+
+    pairKey =
+        CleanText(pairKey)
+
+    AgeBreakState.WaitingForMachineStart =
+        true
+
+    AgeBreakState.MachineStartWaitStartedAt =
+        os.clock()
+
+    AgeBreakState.MachineStartWaitUntil =
+        os.clock()
+        + (
+            tonumber(AgeBreakState.MachineStartConfirmSeconds)
+            or 22
+        )
+
+    AgeBreakState.LastSubmittedPairKey =
+        pairKey
+
+    AgeBreakState.LastMachineStartResult =
+        "Waiting for machine timer confirmation."
+
+    return true
+end
+
+function AgeBreakGetMachineStartWaitRemaining()
+
+    if AgeBreakState.WaitingForMachineStart ~= true then
+        return 0
+    end
+
+    return math.max(
+        0,
+        (tonumber(AgeBreakState.MachineStartWaitUntil) or 0)
+            - os.clock()
+    )
+end
+
+function AgeBreakCheckMachineStartWait()
+
+    if AgeBreakState.WaitingForMachineStart ~= true then
+        return false, "No pending submit"
+    end
+
+    AgeBreakRefreshMachineState()
+
+    if AgeBreakMachineIsRunning() == true then
+
+        AgeBreakClearMachineStartWait(
+            "Machine timer confirmed."
+        )
+
+        AgeBreakSaveSettingsNow(
+            "machine start confirmed"
+        )
+
+        return false, "Machine timer confirmed"
+    end
+
+    local remaining =
+        AgeBreakGetMachineStartWaitRemaining()
+
+    if remaining > 0 then
+
+        AgeBreakState.Status =
+            "Waiting Timer"
+
+        AgeBreakState.LastResult =
+            "Submit fired. Waiting for machine timer confirmation: "
+                .. string.format("%.1fs", remaining)
+
+        return true, "Waiting for machine timer"
+    end
+
+    AgeBreakClearMachineStartWait(
+        "Machine timer confirmation timed out."
+    )
+
+    AgeBreakState.Status =
+        "Timer Missing"
+
+    AgeBreakState.LastResult =
+        "Submit fired, but machine timer was not confirmed. Auto submit can retry after cooldown."
+
+    AgeBreakSaveSettingsNow(
+        "machine start timeout"
+    )
+
+    return false, "Machine timer confirmation timed out"
+end
+
+function AgeBreakSubmitBestPair(reason)
+
+    reason =
+        tostring(reason or "manual")
+
+    if IsGardenWorld() ~= true then
+
+        AgeBreakSetStatus(
+            "Submit Blocked",
+            "Submit can only run in Garden World."
+        )
+
+        return false, "Not in Garden World"
+    end
+
+    if AgeBreakState.SubmitInFlight == true then
+        return false, "Submit already in flight"
+    end
+
+    if AgeBreakElapsed(AgeBreakState.LastSubmitAt) < 5 then
+
+        AgeBreakSetStatus(
+            "Submit Cooldown",
+            "Waiting before another submit attempt."
+        )
+
+        return false, "Submit cooldown"
+    end
+
+    AgeBreakRefreshMachineState()
+
+    if AgeBreakMachineIsRunning() == true then
+
+        AgeBreakSetStatus(
+            "Submit Blocked",
+            "Machine timer is already running."
+        )
+
+        return false, "Machine running"
+    end
+
+    if AgeBreakState.ClaimReady == true then
+
+        AgeBreakSetStatus(
+            "Submit Blocked",
+            "Machine is claim-ready. Claim before submitting another pair."
+        )
+
+        return false, "Claim ready"
+    end
+
+    AgeBreakBuildSacrificeQueue()
+
+    local pair, pairReason =
+        AgeBreakFindBestPair()
+
+    if not pair
+    or not pair.Target
+    or not pair.Sacrifice then
+
+        AgeBreakSetStatus(
+            "No Pair",
+            tostring(pairReason or "No safe pair found.")
+        )
+
+        return false, tostring(pairReason or "No safe pair")
+    end
+
+    local allowed, blockReason =
+        AgeBreakPairAllowed(
+            pair.Target,
+            pair.Sacrifice
+        )
+
+    if allowed ~= true then
+
+        AgeBreakSetStatus(
+            "Submit Blocked",
+            tostring(blockReason or "Pair failed safety check.")
+        )
+
+        return false, tostring(blockReason or "Pair blocked")
+    end
+
+    local pairKey =
+        AgeBreakBuildPairKey(pair)
+
+    if pairKey == "" then
+
+        AgeBreakSetStatus(
+            "Submit Blocked",
+            "Pair UUID data missing."
+        )
+
+        return false, "Pair UUID missing"
+    end
+
+    local waitingForStart, waitReason =
+        AgeBreakCheckMachineStartWait()
+
+    if waitingForStart == true then
+
+        AgeBreakSetStatus(
+            "Waiting Timer",
+            tostring(waitReason)
+        )
+
+        return false, tostring(waitReason)
+    end
+
+    AgeBreakState.SubmitInFlight =
+        true
+
+    AgeBreakState.LastSubmitAt =
+        os.clock()
+
+    AgeBreakState.LastAutoActionAt =
+        os.clock()
+
+    AgeBreakState.LastSubmittedPairKey =
+        pairKey
+
+    AgeBreakSetStatus(
+        "Submitting",
+        "Submitting target..."
+    )
+
+    local targetOk, targetReason =
+        AgeBreakSubmitPet(
+            pair.Target,
+            "target"
+        )
+
+    if targetOk ~= true then
+
+        AgeBreakState.SubmitInFlight =
+            false
+
+        AgeBreakState.LastSubmitResult =
+            tostring(targetReason)
+
+        AgeBreakSetStatus(
+            "Submit Failed",
+            "Target submit failed: "
+                .. tostring(targetReason)
+        )
+
+        return false, tostring(targetReason)
+    end
+
+    task.wait(0.35)
+
+    if not IsHolyLiteCurrentRun() then
+
+        AgeBreakState.SubmitInFlight =
+            false
+
+        return false, "Runtime stopped"
+    end
+
+    AgeBreakSetStatus(
+        "Submitting",
+        "Submitting sacrifice..."
+    )
+
+    local sacrificeOk, sacrificeReason =
+        AgeBreakSubmitPet(
+            pair.Sacrifice,
+            "sacrifice"
+        )
+
+    AgeBreakState.SubmitInFlight =
+        false
+
+    if sacrificeOk ~= true then
+
+        AgeBreakState.LastSubmitResult =
+            tostring(sacrificeReason)
+
+        AgeBreakSetStatus(
+            "Submit Failed",
+            "Sacrifice submit failed: "
+                .. tostring(sacrificeReason)
+        )
+
+        return false, tostring(sacrificeReason)
+    end
+
+    AgeBreakState.LastSubmitResult =
+        "Pair submitted"
+
+    AgeBreakArmMachineStartWait(
+        pairKey
+    )
+
+    AgeBreakSaveSettingsNow(
+        "pair submitted waiting timer"
+    )
+
+    AgeBreakSetStatus(
+        "Pair Submitted",
+        "Submitted target + sacrifice. Waiting for machine timer confirmation..."
+    )
+
+    task.delay(0.75, function()
+
+        if IsHolyLiteCurrentRun() then
+
+            AgeBreakRefreshMachineState()
+            AgeBreakCheckMachineStartWait()
+            AgeBreakRefreshUI()
+        end
+    end)
+
+    task.delay(2.0, function()
+
+        if IsHolyLiteCurrentRun() then
+
+            AgeBreakRefreshMachineState()
+            AgeBreakCheckMachineStartWait()
+            AgeBreakRefreshUI()
+
+            if AgeBreakMachineIsRunning() == true
+            and AgeBreakState.AutoTradeWorldWhenMachineStarts == true then
+
+                pcall(function()
+                    AgeBreakAutoStep()
+                end)
+            end
+        end
+    end)
+
+    return true, "Pair submitted"
+end
+
+function AgeBreakOpenSubmitDialog(reason)
+
+    reason =
+        tostring(reason or "manual")
+
+    if IsGardenWorld() ~= true then
+
+        AgeBreakSetStatus(
+            "Submit Blocked",
+            "Submit can only run in Garden World."
+        )
+
+        return false
+    end
+
+    AgeBreakBuildSacrificeQueue()
+
+    local pair, pairReason =
+        AgeBreakFindBestPair()
+
+    if not pair
+    or not pair.Target
+    or not pair.Sacrifice then
+
+        AgeBreakSetStatus(
+            "No Pair",
+            tostring(pairReason or "No safe pair found.")
+        )
+
+        return false
+    end
+
+    local description =
+        "Submit this Age Break pair?\n\n"
+        .. "TARGET:\n"
+        .. AgeBreakFormatPetLine(pair.Target, false)
+        .. "\n\nSACRIFICE:\n"
+        .. AgeBreakFormatPetLine(pair.Sacrifice, false)
+        .. "\n\nThis can only run in Garden World."
+
+    if Window
+    and type(Window.AddDialog) == "function" then
+
+        Window:AddDialog(
+            "HolyLiteAgeBreakSubmitDialog",
+            {
+                Title = "Confirm Age Break Submit",
+                Description = description,
+                AutoDismiss = true,
+                OutsideClickDismiss = true,
+                FooterButtons = {
+                    Cancel = {
+                        Title = "Cancel",
+                        Variant = "Secondary",
+                        Order = 1,
+                        Callback = function()
+                        end,
+                    },
+
+                    Submit = {
+                        Title = "Submit Pair",
+                        Variant = "Primary",
+                        Order = 2,
+                        Callback = function()
+
+                            AgeBreakSubmitBestPair(
+                                reason
+                            )
+                        end,
+                    },
+                },
+            }
+        )
+
+        return true
+    end
+
+    AgeBreakSetStatus(
+        "Confirm Missing",
+        "Dialog unsupported. Pair previewed only; no submit fired."
+    )
+
+    return false
+end
+
 function AgeBreakAutoStep()
 
     if not IsHolyLiteCurrentRun() then
@@ -18204,6 +18888,26 @@ function AgeBreakAutoStep()
                 "Machine is ready. Auto Claim is off, or claim is cooling down."
 
             return false, "Claim ready"
+        end
+
+        local waitingForStart, waitReason =
+            AgeBreakCheckMachineStartWait()
+
+        if waitingForStart == true then
+            return false, tostring(waitReason)
+        end
+
+        if AgeBreakState.AutoSubmitNext == true then
+
+            local canAct =
+                AgeBreakCanAutoRoute(1.5)
+
+            if canAct == true then
+
+                return AgeBreakSubmitBestPair(
+                    "auto submit"
+                )
+            end
         end
 
         return false, "Garden automation idle"
@@ -18727,12 +19431,11 @@ if Tabs.AgeBreak then
 
         AgeBreakMachineBox:AddButton({
             Text = "Submit Pair",
-            Tooltip = "Garden World only. Later this opens a confirm dialog before submitting.",
+            Tooltip = "Garden World only. Opens confirm dialog before submitting target + sacrifice.",
             Func = function()
 
-                AgeBreakSetStatus(
-                    "Submit Locked",
-                    "Submit remotes are still disabled. Next patch adds Garden-only confirm submit."
+                AgeBreakOpenSubmitDialog(
+                    "manual submit"
                 )
             end,
         }):AddButton({
@@ -18755,6 +19458,23 @@ if Tabs.AgeBreak then
             DoesWrap = true,
             Size = 12,
         })
+    end
+
+    if AgeBreakState.WaitingForMachineStart == true then
+
+        table.insert(
+            lines,
+            "Submit: Waiting timer confirm "
+                .. string.format(
+                    "%.1fs",
+                    AgeBreakGetMachineStartWaitRemaining()
+                )
+        )
+
+        table.insert(
+            lines,
+            ""
+        )
     end
 
     if IsTradeWorld() then
@@ -19102,7 +19822,7 @@ if Tabs.AgeBreak then
         {
             Text = "Auto Submit Next Pair",
             Default = AgeBreakState.AutoSubmitNext == true,
-            Tooltip = "Garden World only. Submit remote is added next patch.",
+            Tooltip = "Garden World only. When the machine is idle, submits the next safe pair.",
         }
     ):OnChanged(function(value)
 
@@ -19115,8 +19835,21 @@ if Tabs.AgeBreak then
 
         AgeBreakSetStatus(
             "Automation",
-            "Auto Submit saved. Submit remote is still locked until next patch."
+            AgeBreakState.AutoSubmitNext == true
+            and "Auto Submit enabled. Garden World only."
+            or "Auto Submit disabled."
         )
+
+        if AgeBreakState.AutoSubmitNext == true then
+
+            task.defer(function()
+
+                if IsHolyLiteCurrentRun()
+                and type(AgeBreakAutoStep) == "function" then
+                    pcall(AgeBreakAutoStep)
+                end
+            end)
+        end
     end)
 
     AgeBreakSafetyBox:AddToggle(
