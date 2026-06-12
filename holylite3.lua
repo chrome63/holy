@@ -16041,6 +16041,14 @@ local AgeBreakState = {
     SacrificeQueueLabel = nil,
     MachineLabel = nil,
 
+    MachineSeen = false,
+    MachineSource = "Unknown",
+    TimerText = "--",
+    TimerSeconds = nil,
+    ClaimReady = false,
+    MachineTimerEndsAt = 0,
+    LastTimerSaveAt = 0,
+
     MaxSacrificeAge = 99,
     MaxSacrificeBaseWeight = 999,
 
@@ -16165,6 +16173,12 @@ function AgeBreakSaveSettingsNow(reason)
 
         TeleportTradeAfterSubmit =
             AgeBreakState.TeleportTradeAfterSubmit == true,
+
+        MachineTimerEndsAt =
+            tonumber(AgeBreakState.MachineTimerEndsAt) or 0,
+
+        TimerText =
+            tostring(AgeBreakState.TimerText or "--"),
 
         SavedAt =
             os.time(),
@@ -16341,6 +16355,15 @@ function AgeBreakLoadSettingsIntoState()
     if type(payload.TeleportTradeAfterSubmit) == "boolean" then
         AgeBreakState.TeleportTradeAfterSubmit =
             payload.TeleportTradeAfterSubmit
+    end
+
+    AgeBreakState.MachineTimerEndsAt =
+        tonumber(payload.MachineTimerEndsAt)
+        or 0
+
+    if type(payload.TimerText) == "string" then
+        AgeBreakState.TimerText =
+            payload.TimerText
     end
 
     return true
@@ -17131,7 +17154,241 @@ function AgeBreakBuildQueueText()
     return table.concat(lines, "\n")
 end
 
+function AgeBreakParseTimerSeconds(text)
+
+    text =
+        CleanText(text)
+
+    local h, m, s =
+        text:match("^(%d+):(%d%d):(%d%d)$")
+
+    if h and m and s then
+        return tonumber(h) * 3600
+            + tonumber(m) * 60
+            + tonumber(s)
+    end
+
+    local mm, ss =
+        text:match("^(%d+):(%d%d)$")
+
+    if mm and ss then
+        return tonumber(mm) * 60
+            + tonumber(ss)
+    end
+
+    return nil
+end
+
+function AgeBreakFormatTimerSeconds(seconds)
+
+    seconds =
+        math.max(
+            0,
+            math.floor(
+                tonumber(seconds)
+                or 0
+            )
+        )
+
+    local hours =
+        math.floor(seconds / 3600)
+
+    local minutes =
+        math.floor((seconds % 3600) / 60)
+
+    local secs =
+        seconds % 60
+
+    if hours > 0 then
+
+        return string.format(
+            "%d:%02d:%02d",
+            hours,
+            minutes,
+            secs
+        )
+    end
+
+    return string.format(
+        "%d:%02d",
+        minutes,
+        secs
+    )
+end
+
+function AgeBreakResolveTimerLabel()
+
+    local machine =
+        workspace:FindFirstChild("PetAgeMachine")
+
+    local part6 =
+        machine
+        and machine:FindFirstChild("Part6")
+
+    local billboardPart =
+        part6
+        and part6:FindFirstChild("BillboardPart")
+
+    local billboardGui =
+        billboardPart
+        and billboardPart:FindFirstChild("BillboardGui")
+
+    local timerLabel =
+        billboardGui
+        and billboardGui:FindFirstChild("TimerTextLabel")
+
+    if timerLabel
+    and (
+        timerLabel:IsA("TextLabel")
+        or timerLabel:IsA("TextButton")
+        or timerLabel:IsA("TextBox")
+    ) then
+        return timerLabel
+    end
+
+    return nil
+end
+
+function AgeBreakRefreshMachineState()
+
+    local now =
+        os.time()
+
+    AgeBreakState.MachineSeen =
+        false
+
+    if IsGardenWorld() then
+
+        local label =
+            AgeBreakResolveTimerLabel()
+
+        if not label then
+
+            AgeBreakState.MachineSource =
+                "Garden World"
+
+            AgeBreakState.TimerText =
+                "--"
+
+            AgeBreakState.TimerSeconds =
+                nil
+
+            AgeBreakState.ClaimReady =
+                false
+
+            return false
+        end
+
+        local text =
+            tostring(label.Text or "")
+
+        local seconds =
+            AgeBreakParseTimerSeconds(text)
+
+        local lower =
+            text:lower()
+
+        AgeBreakState.MachineSeen =
+            true
+
+        AgeBreakState.MachineSource =
+            "Garden Machine"
+
+        AgeBreakState.TimerText =
+            text ~= ""
+            and text
+            or "--"
+
+        AgeBreakState.TimerSeconds =
+            seconds
+
+        AgeBreakState.ClaimReady =
+            (
+                seconds ~= nil
+                and seconds <= 0
+            )
+            or lower:find("ready", 1, true) ~= nil
+            or lower:find("claim", 1, true) ~= nil
+            or lower:find("complete", 1, true) ~= nil
+
+        if seconds ~= nil
+        and seconds > 0 then
+
+            AgeBreakState.MachineTimerEndsAt =
+                now + seconds
+
+            if now - (tonumber(AgeBreakState.LastTimerSaveAt) or 0) >= 10 then
+
+                AgeBreakState.LastTimerSaveAt =
+                    now
+
+                AgeBreakSaveSettingsNow(
+                    "machine timer refresh"
+                )
+            end
+        end
+
+        return true
+    end
+
+    if IsTradeWorld() then
+
+        local endsAt =
+            tonumber(AgeBreakState.MachineTimerEndsAt)
+            or 0
+
+        local remaining =
+            endsAt - now
+
+        AgeBreakState.MachineSource =
+            "Saved Timer"
+
+        if endsAt > 0 then
+
+            AgeBreakState.TimerSeconds =
+                remaining
+
+            AgeBreakState.TimerText =
+                remaining > 0
+                and AgeBreakFormatTimerSeconds(remaining)
+                or "Ready"
+
+            AgeBreakState.ClaimReady =
+                remaining <= 0
+
+            return true
+        end
+
+        AgeBreakState.TimerText =
+            "--"
+
+        AgeBreakState.TimerSeconds =
+            nil
+
+        AgeBreakState.ClaimReady =
+            false
+
+        return false
+    end
+
+    AgeBreakState.MachineSource =
+        "Unsupported World"
+
+    AgeBreakState.TimerText =
+        "--"
+
+    AgeBreakState.TimerSeconds =
+        nil
+
+    AgeBreakState.ClaimReady =
+        false
+
+    return false
+end
+
 function AgeBreakBuildMachineText()
+
+    AgeBreakRefreshMachineState()
 
     local pair =
         AgeBreakState.LastPair
@@ -17141,19 +17398,45 @@ function AgeBreakBuildMachineText()
         and "Garden Mode"
         or "Trade World Monitor"
 
+    local timerStatus =
+        AgeBreakState.ClaimReady == true
+        and "Ready"
+        or tostring(AgeBreakState.TimerText or "--")
+
     local lines = {
         "Machine: " .. mode,
-        "Timer: --",
-        "Loaded: None",
+        "Source: " .. tostring(AgeBreakState.MachineSource or "Unknown"),
+        "Timer: " .. timerStatus,
+        "Claim: "
+            .. (
+                AgeBreakState.ClaimReady == true
+                and "Ready"
+                or "Not Ready"
+            ),
         "",
     }
 
-    if type(pair) == "table" then
+    if IsTradeWorld() then
 
         table.insert(
             lines,
-            "Next Target:"
+            "Trade World is monitor only."
         )
+
+        table.insert(
+            lines,
+            "Submit/claim must be done in Garden World."
+        )
+
+        table.insert(
+            lines,
+            ""
+        )
+    end
+
+    if type(pair) == "table" then
+
+        table.insert(lines, "Next Target:")
 
         table.insert(
             lines,
@@ -17163,15 +17446,9 @@ function AgeBreakBuildMachineText()
             )
         )
 
-        table.insert(
-            lines,
-            ""
-        )
+        table.insert(lines, "")
 
-        table.insert(
-            lines,
-            "Next Sacrifice:"
-        )
+        table.insert(lines, "Next Sacrifice:")
 
         table.insert(
             lines,
@@ -17183,30 +17460,11 @@ function AgeBreakBuildMachineText()
 
     else
 
-        table.insert(
-            lines,
-            "Next Target:"
-        )
-
-        table.insert(
-            lines,
-            "None"
-        )
-
-        table.insert(
-            lines,
-            ""
-        )
-
-        table.insert(
-            lines,
-            "Next Sacrifice:"
-        )
-
-        table.insert(
-            lines,
-            "None"
-        )
+        table.insert(lines, "Next Target:")
+        table.insert(lines, "None")
+        table.insert(lines, "")
+        table.insert(lines, "Next Sacrifice:")
+        table.insert(lines, "None")
     end
 
     return table.concat(lines, "\n")
@@ -17656,27 +17914,52 @@ if Tabs.AgeBreak then
         end,
     })
 
-    AgeBreakMachineBox:AddButton({
-        Text = "Submit Pair",
-        Tooltip = "Disabled until submit dialog + remotes are added.",
-        Func = function()
+    if IsGardenWorld() then
 
-            AgeBreakSetStatus(
-                "Submit Locked",
-                "Submit gets added after planner testing."
-            )
-        end,
-    }):AddButton({
-        Text = "Claim Ready",
-        Tooltip = "Disabled until machine timer/claim detection is added.",
-        Func = function()
+        AgeBreakMachineBox:AddButton({
+            Text = "Submit Pair",
+            Tooltip = "Garden World only. Later this opens a confirm dialog before submitting.",
+            Func = function()
 
-            AgeBreakSetStatus(
-                "Claim Locked",
-                "Claim gets added after machine detection."
-            )
-        end,
-    })
+                AgeBreakSetStatus(
+                    "Submit Locked",
+                    "Submit remotes are still disabled. Next patch adds Garden-only confirm submit."
+                )
+            end,
+        }):AddButton({
+            Text = "Claim Ready",
+            Tooltip = "Garden World only. Later this claims if the machine timer is ready.",
+            Func = function()
+
+                AgeBreakRefreshMachineState()
+
+                if AgeBreakState.ClaimReady ~= true then
+
+                    AgeBreakSetStatus(
+                        "Not Ready",
+                        "Machine is not ready to claim."
+                    )
+
+                    return
+                end
+
+                AgeBreakSetStatus(
+                    "Claim Locked",
+                    "Claim remote is still disabled. Next patch adds Garden-only claim."
+                )
+            end,
+        })
+
+    else
+
+        AgeBreakMachineBox:AddLabel({
+            Text =
+                "Trade World monitor only.\n"
+                .. "Use Garden World to submit or claim.",
+            DoesWrap = true,
+            Size = 12,
+        })
+    end
 
     if IsTradeWorld() then
 
@@ -18007,14 +18290,27 @@ if Tabs.AgeBreak then
 
         AgeBreakRefreshTargetDropdown()
         AgeBreakBuildSacrificeQueue()
+        AgeBreakRefreshMachineState()
         AgeBreakPreviewPair()
 
         AgeBreakSetStatus(
             "Ready",
             IsGardenWorld()
-            and "Garden planner ready. Submit/claim comes next."
-            or "Trade monitor ready. Use Join Garden World for machine actions."
+            and "Garden planner ready. Submit/claim will be Garden-only."
+            or "Trade monitor ready. Submit/claim disabled here."
         )
+
+        task.spawn(function()
+
+            while IsHolyLiteCurrentRun()
+            and Tabs.AgeBreak do
+
+                task.wait(1)
+
+                AgeBreakRefreshMachineState()
+                AgeBreakRefreshUI()
+            end
+        end)
     end)
 end
 
