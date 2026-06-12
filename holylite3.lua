@@ -20982,14 +20982,6 @@ end
 
 function IsLiteTopSnipesTarget(listing)
 
-    if LITE_TOP_SNIPES_WEBHOOK_ENABLED ~= true then
-        return false
-    end
-
-    if type(LiteTopSnipesTargets) ~= "table" then
-        return false
-    end
-
     if type(listing) ~= "table" then
         return false
     end
@@ -21003,7 +20995,20 @@ function IsLiteTopSnipesTarget(listing)
         return false
     end
 
-    return LiteTopSnipesTargets[petName] == true
+    local topTargets = {
+        ["Rainbow Elephant"] = true,
+        ["Rainbow Dilophosaurus"] = true,
+        ["Rainbow Birb"] = true,
+        ["Rainbow Hotdog Daschund"] = true,
+        ["Ghostly Spider"] = true,
+        ["Albino Peacock"] = true,
+        ["Giant Scorpion"] = true,
+        ["Blue Whale"] = true,
+        ["Ghostly Headless Horseman"] = true,
+        ["Rainbow Fire Wisp"] = true,
+    }
+
+    return topTargets[petName] == true
 end
 
 function BuildLiteMatchRow(match)
@@ -28675,6 +28680,17 @@ function BuyLiteCandidateQuiet(candidate, options)
         local isTopSnipe =
             type(IsLiteTopSnipesTarget) == "function"
             and IsLiteTopSnipesTarget(listing) == true
+
+        print(
+            "[HOLY SNIPER LITE] Top Snipes decision:",
+            tostring(isTopSnipe),
+            "| pet:",
+            tostring(listing.PetName or "Unknown"),
+            "| mutation:",
+            tostring(listing.MutationText or "Unknown"),
+            "| price:",
+            tostring(listing.Price or 0)
+        )
 
         if isTopSnipe == true then
 
