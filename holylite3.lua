@@ -945,6 +945,13 @@ if CanRunTradeSniper() then
             Description = "Server selection and hop memory.",
         })
 
+    Tabs.AgeBreak =
+        Window:AddTab({
+            Name = "Age Break",
+            Icon = "hourglass",
+            Description = "Age Break queue, machine status, and automation.",
+        })
+
     Tabs.Webhook =
         Window:AddTab({
             Name = "Webhook",
@@ -960,6 +967,13 @@ if IsGardenWorld() then
             Name = "Transfer",
             Icon = "gift",
             Description = "Move filtered pets to alts using safe trade automation.",
+        })
+
+    Tabs.AgeBreak =
+        Window:AddTab({
+            Name = "Age Break",
+            Icon = "hourglass",
+            Description = "Age Break queue, machine status, and automation.",
         })
 end
 
@@ -15997,6 +16011,508 @@ and IsGardenWorld() then
             TransferRefreshDropdowns()
         end
     end)
+end
+
+
+--==================================================
+-- [14.6] AGE BREAK TAB
+-- Garden + Trade World shell.
+-- Phase 1: visual layout only, no machine remotes yet.
+--==================================================
+
+local AgeBreakState = {
+    StatusLabel = nil,
+    TargetPreviewLabel = nil,
+    SacrificeQueueLabel = nil,
+    MachineLabel = nil,
+    SafetyLabel = nil,
+
+    Status = "Idle",
+    LastResult = "Age Break shell ready.",
+}
+
+function AgeBreakSetStatus(status, result)
+
+    AgeBreakState.Status =
+        tostring(status or "Idle")
+
+    AgeBreakState.LastResult =
+        tostring(result or "Ready.")
+
+    if AgeBreakState.StatusLabel then
+
+        SetControlText(
+            AgeBreakState.StatusLabel,
+            "Status: "
+                .. AgeBreakState.Status
+                .. "\n"
+                .. AgeBreakState.LastResult
+        )
+    end
+end
+
+if Tabs.AgeBreak then
+
+    local AgeBreakTargetsBox =
+        AddTransferLeftBox(
+            Tabs.AgeBreak,
+            "Targets",
+            "star"
+        )
+
+    local AgeBreakBuilderBox =
+        AddTransferLeftBox(
+            Tabs.AgeBreak,
+            "Sacrifice Builder",
+            "filter"
+        )
+
+    local AgeBreakMachineBox =
+        AddTransferRightBox(
+            Tabs.AgeBreak,
+            "Machine",
+            "activity"
+        )
+
+    local AgeBreakQueueBox =
+        AddTransferRightBox(
+            Tabs.AgeBreak,
+            "Sacrifice Queue",
+            "list"
+        )
+
+    local AgeBreakSafetyBox =
+        AddTransferRightBox(
+            Tabs.AgeBreak,
+            "Safety",
+            "shield"
+        )
+
+    AgeBreakTargetsBox:AddLabel({
+        Text =
+            "Target Pets\n"
+            .. "Use this for valuable pets you want to age break.\n"
+            .. "Exact UUID target selection gets added next.",
+        DoesWrap = true,
+        Size = 12,
+    })
+
+    AgeBreakState.TargetPreviewLabel =
+        AgeBreakTargetsBox:AddLabel({
+            Text =
+                "Selected Targets: 0\n"
+                .. "None selected.",
+            DoesWrap = true,
+            Size = 12,
+        })
+
+    AgeBreakTargetsBox:AddButton({
+        Text = "Refresh Targets",
+        Tooltip = "Will refresh exact target pet choices after the planner engine is added.",
+        Func = function()
+
+            AgeBreakSetStatus(
+                "Targets",
+                "Target refresh will be enabled in the next patch."
+            )
+        end,
+    })
+
+    AgeBreakTargetsBox:AddButton({
+        Text = "Clear Targets",
+        Tooltip = "Will clear selected target pets after the planner engine is added.",
+        Func = function()
+
+            AgeBreakSetStatus(
+                "Targets",
+                "Target queue clear will be enabled in the next patch."
+            )
+        end,
+    })
+
+    AgeBreakBuilderBox:AddLabel({
+        Text =
+            "Sacrifice Types\n"
+            .. "Sacrifices will be built in bulk from rules, not picked one by one.\n"
+            .. "This is better for 50+ sacrifice pets.",
+        DoesWrap = true,
+        Size = 12,
+    })
+
+    AgeBreakBuilderBox:AddDropdown(
+        "HolyLiteAgeBreakSacrificeTypes",
+        {
+            Text = "Sacrifice Types",
+            Values = DynamicPetList or { "None" },
+            Default = {},
+            Searchable = true,
+            Multi = true,
+            MaxVisibleDropdownItems = 8,
+            Tooltip = "Choose pet types allowed for the sacrifice queue.",
+        }
+    ):OnChanged(function()
+
+        AgeBreakSetStatus(
+            "Builder",
+            "Sacrifice type selection saved visually. Queue builder comes next."
+        )
+    end)
+
+    AgeBreakBuilderBox:AddInput(
+        "HolyLiteAgeBreakMaxSacAge",
+        {
+            Text = "Max Sacrifice Age",
+            Default = "99",
+            Numeric = true,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Tooltip = "Default keeps age 100+ pets protected.",
+        }
+    )
+
+    AgeBreakBuilderBox:AddInput(
+        "HolyLiteAgeBreakMaxSacBW",
+        {
+            Text = "Max BaseWeight",
+            Default = "999",
+            Numeric = true,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Tooltip = "Optional cap for sacrifice BaseWeight.",
+        }
+    )
+
+    AgeBreakBuilderBox:AddButton({
+        Text = "Build Queue",
+        Tooltip = "Will scan inventory and build the sacrifice queue in the next patch.",
+        Func = function()
+
+            AgeBreakSetStatus(
+                "Builder",
+                "Sacrifice queue builder will be enabled in the next patch."
+            )
+        end,
+    })
+
+    AgeBreakBuilderBox:AddButton({
+        Text = "Clear Sacrifices",
+        Tooltip = "Will clear sacrifice queue after queue storage is added.",
+        Func = function()
+
+            AgeBreakSetStatus(
+                "Builder",
+                "Sacrifice queue clear will be enabled in the next patch."
+            )
+        end,
+    })
+
+    AgeBreakState.MachineLabel =
+        AgeBreakMachineBox:AddLabel({
+            Text =
+                "Machine: "
+                .. (
+                    IsGardenWorld()
+                    and "Garden Mode"
+                    or "Trade World Monitor"
+                )
+                .. "\nTimer: --\nLoaded: None\n\n"
+                .. "Next Target:\nNone\n\n"
+                .. "Next Sacrifice:\nNone",
+            DoesWrap = true,
+            Size = 12,
+        })
+
+    AgeBreakState.StatusLabel =
+        AgeBreakMachineBox:AddLabel({
+            Text = "Status: Idle\nAge Break shell ready.",
+            DoesWrap = true,
+            Size = 12,
+        })
+
+    AgeBreakMachineBox:AddButton({
+        Text = "Preview Pair",
+        Tooltip = "Will preview the next safe target + sacrifice pair.",
+        Func = function()
+
+            AgeBreakSetStatus(
+                "Preview",
+                "Pair preview will be enabled after the planner engine is added."
+            )
+        end,
+    })
+
+    AgeBreakMachineBox:AddButton({
+        Text = "Submit Pair",
+        Tooltip = "Later this will open a confirmation dialog before submitting to the machine.",
+        Func = function()
+
+            AgeBreakSetStatus(
+                "Submit Locked",
+                "Submit is disabled until the safe planner is added."
+            )
+        end,
+    })
+
+    AgeBreakMachineBox:AddButton({
+        Text = "Claim Ready",
+        Tooltip = "Later this will claim the Age Break machine if ready.",
+        Func = function()
+
+            AgeBreakSetStatus(
+                "Claim Locked",
+                "Claim is disabled until machine detection is added."
+            )
+        end,
+    })
+
+    if IsTradeWorld() then
+
+        AgeBreakMachineBox:AddButton({
+            Text = "Join Garden World",
+            Tooltip = "Teleport to normal Grow a Garden for Age Break machine actions.",
+            Func = function()
+
+                local player =
+                    LocalPlayer
+                    or Players.LocalPlayer
+
+                if not player then
+
+                    AgeBreakSetStatus(
+                        "Teleport Failed",
+                        "LocalPlayer missing."
+                    )
+
+                    return
+                end
+
+                AgeBreakSetStatus(
+                    "Teleporting",
+                    "Joining Garden World..."
+                )
+
+                local ok, err =
+                    pcall(function()
+
+                        TeleportService:Teleport(
+                            GROW_A_GARDEN_PLACE_ID,
+                            player
+                        )
+                    end)
+
+                if ok ~= true then
+
+                    AgeBreakSetStatus(
+                        "Teleport Failed",
+                        tostring(err)
+                    )
+                end
+            end,
+        })
+    end
+
+    if IsGardenWorld() then
+
+        AgeBreakMachineBox:AddButton({
+            Text = "Join Trade World",
+            Tooltip = "Teleport to Trade World after starting an Age Break cycle.",
+            Func = function()
+
+                RequestLiteTradeWorldTeleportCountdown(
+                    "age break manual"
+                )
+
+                AgeBreakSetStatus(
+                    "Trade Teleport",
+                    "Trade World teleport countdown requested."
+                )
+            end,
+        })
+    end
+
+    AgeBreakState.SacrificeQueueLabel =
+        AgeBreakQueueBox:AddLabel({
+            Text =
+                "Queued: 0\n"
+                .. "Safe: 0 · Blocked: 0\n"
+                .. "Page 1 / 1\n\n"
+                .. "No sacrifices queued yet.",
+            DoesWrap = true,
+            Size = 12,
+        })
+
+    AgeBreakQueueBox:AddButton({
+        Text = "Prev",
+        Tooltip = "Previous sacrifice queue page.",
+        Func = function()
+
+            AgeBreakSetStatus(
+                "Queue",
+                "Sacrifice queue pages will be enabled next."
+            )
+        end,
+    }):AddButton({
+        Text = "Next",
+        Tooltip = "Next sacrifice queue page.",
+        Func = function()
+
+            AgeBreakSetStatus(
+                "Queue",
+                "Sacrifice queue pages will be enabled next."
+            )
+        end,
+    })
+
+    AgeBreakQueueBox:AddButton({
+        Text = "Full List",
+        Tooltip = "Later this opens a dialog with all queued sacrifices.",
+        Func = function()
+
+            AgeBreakSetStatus(
+                "Queue",
+                "Full sacrifice list dialog will be enabled next."
+            )
+        end,
+    }):AddButton({
+        Text = "Blocked",
+        Tooltip = "Later this opens blocked sacrifices with reasons.",
+        Func = function()
+
+            AgeBreakSetStatus(
+                "Queue",
+                "Blocked sacrifice dialog will be enabled next."
+            )
+        end,
+    })
+
+    AgeBreakSafetyBox:AddToggle(
+        "HolyLiteAgeBreakSkipFavorites",
+        {
+            Text = "Skip Favorites",
+            Default = true,
+            Tooltip = "Never use favorited pets as sacrifices.",
+        }
+    ):OnChanged(function()
+
+        AgeBreakSetStatus(
+            "Safety",
+            "Skip Favorites updated."
+        )
+    end)
+
+    AgeBreakSafetyBox:AddToggle(
+        "HolyLiteAgeBreakBlockAge100",
+        {
+            Text = "Block Age 100+ Sacrifices",
+            Default = true,
+            Tooltip = "Prevents valuable age 100+ pets from being consumed.",
+        }
+    ):OnChanged(function()
+
+        AgeBreakSetStatus(
+            "Safety",
+            "Age 100+ sacrifice protection updated."
+        )
+    end)
+
+    AgeBreakSafetyBox:AddToggle(
+        "HolyLiteAgeBreakLowerAge",
+        {
+            Text = "Sacrifice Lower Age",
+            Default = true,
+            Tooltip = "Sacrifice must be lower age than the target.",
+        }
+    ):OnChanged(function()
+
+        AgeBreakSetStatus(
+            "Safety",
+            "Lower age safety updated."
+        )
+    end)
+
+    AgeBreakSafetyBox:AddToggle(
+        "HolyLiteAgeBreakLowerBW",
+        {
+            Text = "Sacrifice Lower BaseWeight",
+            Default = true,
+            Tooltip = "Sacrifice must be lower BaseWeight than the target.",
+        }
+    ):OnChanged(function()
+
+        AgeBreakSetStatus(
+            "Safety",
+            "Lower BaseWeight safety updated."
+        )
+    end)
+
+    AgeBreakSafetyBox:AddToggle(
+        "HolyLiteAgeBreakNeverTargetAsSac",
+        {
+            Text = "Never Use Target As Sacrifice",
+            Default = true,
+            Tooltip = "Prevents target pets from entering the sacrifice queue.",
+        }
+    ):OnChanged(function()
+
+        AgeBreakSetStatus(
+            "Safety",
+            "Target protection updated."
+        )
+    end)
+
+    AgeBreakSafetyBox:AddDivider()
+
+    AgeBreakSafetyBox:AddToggle(
+        "HolyLiteAgeBreakAutoClaim",
+        {
+            Text = "Auto Claim",
+            Default = false,
+            Tooltip = "Disabled until machine detection is added.",
+        }
+    ):OnChanged(function()
+
+        AgeBreakSetStatus(
+            "Advanced",
+            "Auto Claim is visual only for now."
+        )
+    end)
+
+    AgeBreakSafetyBox:AddToggle(
+        "HolyLiteAgeBreakAutoSubmitNext",
+        {
+            Text = "Auto Submit Next Pair",
+            Default = false,
+            Tooltip = "Disabled until safe queue automation is added.",
+        }
+    ):OnChanged(function()
+
+        AgeBreakSetStatus(
+            "Advanced",
+            "Auto Submit is visual only for now."
+        )
+    end)
+
+    AgeBreakSafetyBox:AddToggle(
+        "HolyLiteAgeBreakTeleportTrade",
+        {
+            Text = "Teleport Trade After Submit",
+            Default = false,
+            Tooltip = "Later this will teleport to Trade World after starting the machine.",
+        }
+    ):OnChanged(function()
+
+        AgeBreakSetStatus(
+            "Advanced",
+            "Trade teleport setting is visual only for now."
+        )
+    end)
+
+    AgeBreakSetStatus(
+        "Ready",
+        IsGardenWorld()
+        and "Garden mode: target/sacrifice planner will run here."
+        or "Trade mode: monitor + return-to-garden controls will run here."
+    )
 end
 
 
