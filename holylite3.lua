@@ -17503,6 +17503,33 @@ function AgeBreakFormatTimerSeconds(seconds)
     )
 end
 
+function AgeBreakFormatSavedUntil(timestamp)
+
+    timestamp =
+        tonumber(timestamp)
+        or 0
+
+    if timestamp <= 0 then
+        return "--"
+    end
+
+    local ok, result =
+        pcall(function()
+
+            return os.date(
+                "%H:%M:%S",
+                timestamp
+            )
+        end)
+
+    if ok == true
+    and result then
+        return tostring(result)
+    end
+
+    return tostring(timestamp)
+end
+
 function AgeBreakResolveTimerLabel()
 
     local machine =
@@ -17628,7 +17655,7 @@ function AgeBreakRefreshMachineState()
             endsAt - now
 
         AgeBreakState.MachineSource =
-            "Saved Timer"
+            "Saved Timer Estimate"
 
         if endsAt > 0 then
 
@@ -17700,8 +17727,23 @@ function AgeBreakBuildMachineText()
                 and "Ready"
                 or "Not Ready"
             ),
-        "",
     }
+
+    if IsTradeWorld() then
+
+        table.insert(
+            lines,
+            "Saved Until: "
+                .. AgeBreakFormatSavedUntil(
+                    AgeBreakState.MachineTimerEndsAt
+                )
+        )
+    end
+
+    table.insert(
+        lines,
+        ""
+    )
 
     if AgeBreakState.WaitingForMachineStart == true then
 
@@ -17954,6 +17996,19 @@ function AgeBreakTeleportToTradeWorld(reason, force)
 
     AgeBreakState.LastAutoActionAt =
         os.clock()
+
+    AgeBreakRefreshMachineState()
+
+    if force ~= true
+    and AgeBreakMachineIsRunning() == true then
+
+        AgeBreakState.LastTimerSaveAt =
+            os.time()
+
+        AgeBreakSaveSettingsNow(
+            "pre trade teleport timer capture"
+        )
+    end
 
     AgeBreakSetStatus(
         "Teleporting",
