@@ -16033,6 +16033,9 @@ local AgeBreakState = {
     ChoiceToUUID = {},
     UUIDToChoice = {},
 
+    SacrificeChoiceToType = {},
+    SacrificeTypeToChoice = {},
+
     TargetDropdown = nil,
     SacrificeTypesDropdown = nil,
 
@@ -16087,12 +16090,17 @@ local AgeBreakState = {
     LastTargetUnfavoriteAt = 0,
     LastTargetUnfavoriteResult = "None",
 
+    AutoUnfavoriteSacrifices = true,
+    LastSacrificeUnfavoriteAt = 0,
+    LastSacrificeUnfavoriteResult = "None",
+
     RunMode = "Off",
     RouteMode = "Stay Garden",
 
     RunModeDropdown = nil,
     RouteModeDropdown = nil,
     AutoUnfavoriteTargetsToggle = nil,
+    AutoUnfavoriteSacrificesToggle = nil,
 
     MaxSacrificeAgeInput = nil,
     MaxSacrificeBaseWeightInput = nil,
@@ -16220,6 +16228,9 @@ function AgeBreakSaveSettingsNow(reason)
 
         AutoUnfavoriteTargets =
             AgeBreakState.AutoUnfavoriteTargets ~= false,
+
+        AutoUnfavoriteSacrifices =
+            AgeBreakState.AutoUnfavoriteSacrifices ~= false,
 
         RunMode =
             tostring(AgeBreakState.RunMode or "Off"),
@@ -16380,7 +16391,7 @@ function AgeBreakLoadSettingsIntoState()
                 or 99
             ),
             1,
-            3
+            999
         )
 
     AgeBreakState.MaxSacrificeBaseWeight =
@@ -16418,6 +16429,11 @@ function AgeBreakLoadSettingsIntoState()
     if type(payload.AutoUnfavoriteTargets) == "boolean" then
         AgeBreakState.AutoUnfavoriteTargets =
             payload.AutoUnfavoriteTargets
+    end
+
+    if type(payload.AutoUnfavoriteSacrifices) == "boolean" then
+        AgeBreakState.AutoUnfavoriteSacrifices =
+            payload.AutoUnfavoriteSacrifices
     end
 
     if type(payload.AutomationEnabled) == "boolean" then
@@ -17037,10 +17053,17 @@ end
 function AgeBreakBuildPetTypeChoices()
 
     local choices = {}
+    local counts = {}
+    local rows = {}
+    local seenChoices = {}
 
-    local seen = {}
+    AgeBreakState.SacrificeChoiceToType =
+        {}
 
-    local function addChoice(value)
+    AgeBreakState.SacrificeTypeToChoice =
+        {}
+
+    local function cleanPetType(value)
 
         local name =
             CleanText(value)
@@ -17050,47 +17073,209 @@ function AgeBreakBuildPetTypeChoices()
         or name == "---"
         or name == "Normal"
         or name == "Unknown" then
-            return false
+            return ""
         end
 
-        if seen[name] == true then
-            return false
-        end
-
-        seen[name] =
-            true
-
-        table.insert(
-            choices,
-            name
-        )
-
-        return true
+        return name
     end
 
-    -- Inventory-only sacrifice picker.
-    -- Saved selections are added after, so Trade World can still display/edit saved rules.
     for _, pet in ipairs(AgeBreakBuildInventoryPets()) do
 
-        addChoice(
-            pet.PetName
+        local petName =
+            cleanPetType(pet.PetName)
+
+        if petName ~= "" then
+
+            counts[petName] =
+                (counts[petName] or 0) + 1
+        end
+    end
+
+    for petName, ownedCount in pairs(counts) do
+
+        table.insert(
+            rows,
+            {
+                PetName = petName,
+                Owned = ownedCount,
+                SavedOnly = false,
+            }
         )
     end
 
     for petName, selected in pairs(AgeBreakState.SelectedSacrificeTypes or {}) do
 
-        if selected == true then
+        petName =
+            cleanPetType(petName)
 
-            addChoice(
-                petName
+        if selected == true
+        and petName ~= ""
+        and counts[petName] == nil then
+
+            table.insert(
+                rows,
+                {
+                    PetName = petName,
+                    Owned = 0,
+                    SavedOnly = true,
+                }
             )
         end
     end
 
-    table.sort(choices)
+    table.sort(rows, function(a, b)
+
+        return tostring(a.PetName or ""):lower()
+            < tostring(b.PetName or ""):lower()
+    end)
+
+    for _, row in ipairs(rows) do
+
+        local petName =
+            cleanPetType(row.PetName)
+
+        if petName ~= "" then
+
+            local choice
+
+            if row.SavedOnly == true then
+
+                choice =
+                    petName
+                    .. " · saved · not in inventory"
+
+            else
+
+                choice =
+                    petName
+                    .. " · owned "
+                    .. tostring(row.Owned or 0)
+            end
+
+            local baseChoice =
+                choice
+
+            local suffix =
+                2
+
+            while seenChoices[choice] == true do
+
+                choice =
+                    baseChoice
+                    .. " · "
+                    .. tostring(suffix)
+
+                suffix =
+                    suffix + 1
+            end
+
+            seenChoices[choice] =
+                true
+
+            AgeBreakState.SacrificeChoiceToType[choice] =
+                petName
+
+            AgeBreakState.SacrificeTypeToChoice[petName] =
+                choice
+
+            table.insert(
+                choices,
+                choice
+            )
+        end
+    end
 
     return choices
 end
+
+function AgeBreakDropdownDefaultsFromSacrificeTypes()
+
+    local defaults = {}
+
+    for petName, selected in pairs(AgeBreakState.SelectedSacrificeTypes or {}) do
+
+        petName =
+            CleanText(petName)
+
+        if selected == true
+        and petName ~= "" then
+
+            local choice =
+                AgeBreakState.SacrificeTypeToChoice[petName]
+                or petName
+
+            defaults[choice] =
+                true
+        end
+    end
+
+    return defaults
+end
+
+function AgeBreakReadSacrificeTypeDropdownMap(value)
+
+    local output = {}
+
+    local function addChoice(choice)
+
+        choice =
+            tostring(choice or "")
+
+        local petName =
+            AgeBreakState.SacrificeChoiceToType[choice]
+
+        if petName == nil then
+
+            petName =
+                CleanText(
+                    choice:gsub("%s+·.*$", "")
+                )
+        end
+
+        petName =
+            CleanText(petName)
+
+        if petName ~= ""
+        and petName ~= "None"
+        and petName ~= "---"
+        and petName ~= "Normal"
+        and petName ~= "Unknown" then
+
+            output[petName] =
+                true
+        end
+    end
+
+    if type(value) == "table" then
+
+        for key, selected in pairs(value) do
+
+            if selected == true then
+
+                addChoice(
+                    key
+                )
+
+            elseif type(selected) == "string"
+            or type(selected) == "number" then
+
+                addChoice(
+                    selected
+                )
+            end
+        end
+
+    elseif type(value) == "string"
+    or type(value) == "number" then
+
+        addChoice(
+            value
+        )
+    end
+
+    return output
+end
+
 
 function AgeBreakGetSelectedTargets()
 
@@ -17159,7 +17344,8 @@ function AgeBreakSacrificeBlockedReason(pet)
     end
 
     if AgeBreakState.SkipFavorites == true
-    and pet.IsFavorite == true then
+    and AgeBreakPetLooksFavorite(pet) == true
+    and AgeBreakState.AutoUnfavoriteSacrifices ~= true then
         return "Favorited"
     end
 
@@ -19579,8 +19765,24 @@ function AgeBreakUnfavoritePetForSubmit(pet, role)
     role =
         tostring(role or "target")
 
-    if AgeBreakState.AutoUnfavoriteTargets ~= true then
-        return true, "Auto unfavorite targets OFF"
+    local roleLower =
+        role:lower()
+
+    local isSacrifice =
+        roleLower:find("sacrifice", 1, true) ~= nil
+        or roleLower:find("sac", 1, true) ~= nil
+
+    if isSacrifice == true then
+
+        if AgeBreakState.AutoUnfavoriteSacrifices ~= true then
+            return true, "Auto unfavorite sacrifices OFF"
+        end
+
+    else
+
+        if AgeBreakState.AutoUnfavoriteTargets ~= true then
+            return true, "Auto unfavorite targets OFF"
+        end
     end
 
     if type(pet) ~= "table" then
@@ -19603,8 +19805,16 @@ function AgeBreakUnfavoritePetForSubmit(pet, role)
         return false, "Favorite_Item remote missing"
     end
 
-    AgeBreakState.LastTargetUnfavoriteAt =
-        os.clock()
+    if isSacrifice == true then
+
+        AgeBreakState.LastSacrificeUnfavoriteAt =
+            os.clock()
+
+    else
+
+        AgeBreakState.LastTargetUnfavoriteAt =
+            os.clock()
+    end
 
     AgeBreakSetStatus(
         "Unfavoriting",
@@ -19624,8 +19834,16 @@ function AgeBreakUnfavoritePetForSubmit(pet, role)
 
     if ok ~= true then
 
-        AgeBreakState.LastTargetUnfavoriteResult =
-            tostring(err)
+        if isSacrifice == true then
+
+            AgeBreakState.LastSacrificeUnfavoriteResult =
+                tostring(err)
+
+        else
+
+            AgeBreakState.LastTargetUnfavoriteResult =
+                tostring(err)
+        end
 
         return false, tostring(err)
     end
@@ -19656,9 +19874,16 @@ function AgeBreakUnfavoritePetForSubmit(pet, role)
             pet.IsFavorite =
                 false
 
-            AgeBreakState.LastTargetUnfavoriteResult =
-                "Unfavorited "
-                    .. tostring(role)
+            if isSacrifice == true then
+
+                AgeBreakState.LastSacrificeUnfavoriteResult =
+                    "Unfavorited sacrifice"
+
+            else
+
+                AgeBreakState.LastTargetUnfavoriteResult =
+                    "Unfavorited target"
+            end
 
             print(
                 "[AGE BREAK]",
@@ -19673,11 +19898,20 @@ function AgeBreakUnfavoritePetForSubmit(pet, role)
         task.wait(0.1)
     end
 
-    AgeBreakState.LastTargetUnfavoriteResult =
-        "Unfavorite timeout"
+    if isSacrifice == true then
+
+        AgeBreakState.LastSacrificeUnfavoriteResult =
+            "Unfavorite timeout"
+
+    else
+
+        AgeBreakState.LastTargetUnfavoriteResult =
+            "Unfavorite timeout"
+    end
 
     return false, "Unfavorite timeout"
 end
+
 
 function AgeBreakRemoveSacrificeRuntimeUUID(uuid)
 
@@ -19822,6 +20056,35 @@ function AgeBreakSubmitLoadedSacrifice(reason)
             sacrifice.UUID,
             5,
             0.25
+        )
+
+    if freshSacrifice then
+        sacrifice =
+            freshSacrifice
+    end
+
+    local unfavoriteSacrificeOk, unfavoriteSacrificeReason =
+        AgeBreakUnfavoritePetForSubmit(
+            sacrifice,
+            "sacrifice"
+        )
+
+    if unfavoriteSacrificeOk ~= true then
+
+        AgeBreakSetStatus(
+            "Sacrifice Favorite",
+            "Could not unfavorite sacrifice: "
+                .. tostring(unfavoriteSacrificeReason)
+        )
+
+        return false, tostring(unfavoriteSacrificeReason)
+    end
+
+    freshSacrifice =
+        AgeBreakFindFreshPetByUUID(
+            sacrifice.UUID,
+            2,
+            0.15
         )
 
     if freshSacrifice then
@@ -20869,15 +21132,6 @@ function AgeBreakRefreshSacrificeTypesDropdown()
     local choices =
         AgeBreakBuildPetTypeChoices()
 
-    if type(EnsureTransferDropdownChoicesFromMap) == "function" then
-
-        choices =
-            EnsureTransferDropdownChoicesFromMap(
-                choices,
-                AgeBreakState.SelectedSacrificeTypes
-            )
-    end
-
     AgeBreakState.SacrificeTypesDropdownHydrating =
         true
 
@@ -20898,9 +21152,7 @@ function AgeBreakRefreshSacrificeTypesDropdown()
         pcall(function()
 
             AgeBreakState.SacrificeTypesDropdown:SetValue(
-                AgeBreakCopyBoolMap(
-                    AgeBreakState.SelectedSacrificeTypes
-                )
+                AgeBreakDropdownDefaultsFromSacrificeTypes()
             )
         end)
     end
@@ -20910,6 +21162,7 @@ function AgeBreakRefreshSacrificeTypesDropdown()
 
     return choices
 end
+
 
 function AgeBreakApplySavedUIValues(reason)
 
@@ -20948,6 +21201,11 @@ function AgeBreakApplySavedUIValues(reason)
     SetControlValue(
         AgeBreakState.AutoUnfavoriteTargetsToggle,
         AgeBreakState.AutoUnfavoriteTargets ~= false
+    )
+
+    SetControlValue(
+        AgeBreakState.AutoUnfavoriteSacrificesToggle,
+        AgeBreakState.AutoUnfavoriteSacrifices ~= false
     )
 
     SetControlValue(
@@ -21212,13 +21470,11 @@ if Tabs.AgeBreak then
             {
                 Text = "Inventory Sacrifice Type",
                 Values = AgeBreakBuildPetTypeChoices(),
-                Default = AgeBreakCopyBoolMap(
-                    AgeBreakState.SelectedSacrificeTypes
-                ),
+                Default = AgeBreakDropdownDefaultsFromSacrificeTypes(),
                 Searchable = true,
                 Multi = true,
                 MaxVisibleDropdownItems = 8,
-                Tooltip = "Choose pet types allowed for the sacrifice queue.",
+                Tooltip = "Inventory-owned sacrifice pet types. Saved types stay visible if inventory is not loaded.",
             }
         )
 
@@ -21229,7 +21485,7 @@ if Tabs.AgeBreak then
         end
 
         AgeBreakState.SelectedSacrificeTypes =
-            TransferBuildMapFromDropdown(value)
+            AgeBreakReadSacrificeTypeDropdownMap(value)
 
         AgeBreakQueueSave(
             "sacrifice types changed"
@@ -21815,6 +22071,39 @@ if Tabs.AgeBreak then
             AgeBreakState.AutoUnfavoriteTargets == true
             and "Selected targets will be unfavorited before submit."
             or "Target unfavorite disabled."
+        )
+    end)
+
+    AgeBreakState.AutoUnfavoriteSacrificesToggle =
+        AgeBreakSafetyBox:AddToggle(
+            "HolyLiteAgeBreakAutoUnfavoriteSacrifices",
+            {
+                Text = "Auto Unfavorite Sacrifices",
+                Default = AgeBreakState.AutoUnfavoriteSacrifices ~= false,
+                Tooltip = "Before submitting, unfavorites sacrifice pets so the Age Break machine accepts them.",
+            }
+        )
+
+    AgeBreakState.AutoUnfavoriteSacrificesToggle:OnChanged(function(value)
+
+        if AgeBreakState.UIHydrating == true then
+            return
+        end
+
+        AgeBreakState.AutoUnfavoriteSacrifices =
+            value == true
+
+        AgeBreakQueueSave(
+            "auto unfavorite sacrifices changed"
+        )
+
+        AgeBreakPreviewPair()
+
+        AgeBreakSetStatus(
+            "Safety",
+            AgeBreakState.AutoUnfavoriteSacrifices == true
+            and "Sacrifice pets will be unfavorited before submit."
+            or "Sacrifice unfavorite disabled."
         )
     end)
 
