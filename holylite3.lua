@@ -1623,6 +1623,11 @@ local TRANSFER_SETTINGS_SAVE_FILE =
     .. tostring(LocalPlayer.UserId)
     .. ".json"
 
+local AGE_BREAK_SETTINGS_SAVE_FILE =
+    "HolySniperLite/AgeBreakSettings_"
+    .. tostring(LocalPlayer.UserId)
+    .. ".json"
+
 local SaveSniperFiltersNow =
     nil
 
@@ -16016,20 +16021,1234 @@ end
 
 --==================================================
 -- [14.6] AGE BREAK TAB
--- Garden + Trade World shell.
--- Phase 1: visual layout only, no machine remotes yet.
+-- Garden + Trade World planner.
+-- Phase 2: exact targets + bulk sacrifice queue.
+-- No submit/claim remotes yet.
 --==================================================
 
 local AgeBreakState = {
+    SelectedTargetUUIDs = {},
+    SelectedSacrificeTypes = {},
+
+    ChoiceToUUID = {},
+    UUIDToChoice = {},
+
+    TargetDropdown = nil,
+    SacrificeTypesDropdown = nil,
+
     StatusLabel = nil,
     TargetPreviewLabel = nil,
     SacrificeQueueLabel = nil,
     MachineLabel = nil,
-    SafetyLabel = nil,
+
+    MaxSacrificeAge = 99,
+    MaxSacrificeBaseWeight = 999,
+
+    SkipFavorites = true,
+    BlockAge100Sacrifices = true,
+    SacrificeLowerAge = true,
+    SacrificeLowerBaseWeight = true,
+    NeverTargetAsSacrifice = true,
+
+    AutoClaim = false,
+    AutoSubmitNext = false,
+    TeleportTradeAfterSubmit = false,
+
+    InventoryPets = {},
+    SacrificeQueue = {},
+    BlockedSacrifices = {},
+
+    QueuePage = 1,
+    QueuePerPage = 8,
+
+    LastPair = nil,
 
     Status = "Idle",
-    LastResult = "Age Break shell ready.",
+    LastResult = "Age Break planner ready.",
 }
+
+local AgeBreakConfigState = {
+    Loading = true,
+    Dirty = false,
+    SaveQueued = false,
+}
+
+function AgeBreakCanUseFiles()
+
+    return type(writefile) == "function"
+        and type(readfile) == "function"
+        and type(isfile) == "function"
+end
+
+function AgeBreakEnsureFolder()
+
+    if type(makefolder) ~= "function"
+    or type(isfolder) ~= "function" then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            if not isfolder("HolySniperLite") then
+                makefolder("HolySniperLite")
+            end
+        end)
+
+    return ok == true
+end
+
+function AgeBreakCopyBoolMap(source)
+
+    local output = {}
+
+    if type(source) ~= "table" then
+        return output
+    end
+
+    for key, value in pairs(source) do
+
+        if value == true then
+            output[tostring(key)] =
+                true
+        end
+    end
+
+    return output
+end
+
+function AgeBreakSaveSettingsNow(reason)
+
+    if AgeBreakCanUseFiles() ~= true then
+        return false
+    end
+
+    AgeBreakEnsureFolder()
+
+    local payload = {
+        SelectedTargetUUIDs =
+            AgeBreakCopyBoolMap(
+                AgeBreakState.SelectedTargetUUIDs
+            ),
+
+        SelectedSacrificeTypes =
+            AgeBreakCopyBoolMap(
+                AgeBreakState.SelectedSacrificeTypes
+            ),
+
+        MaxSacrificeAge =
+            tonumber(AgeBreakState.MaxSacrificeAge) or 99,
+
+        MaxSacrificeBaseWeight =
+            tonumber(AgeBreakState.MaxSacrificeBaseWeight) or 999,
+
+        SkipFavorites =
+            AgeBreakState.SkipFavorites == true,
+
+        BlockAge100Sacrifices =
+            AgeBreakState.BlockAge100Sacrifices == true,
+
+        SacrificeLowerAge =
+            AgeBreakState.SacrificeLowerAge == true,
+
+        SacrificeLowerBaseWeight =
+            AgeBreakState.SacrificeLowerBaseWeight == true,
+
+        NeverTargetAsSacrifice =
+            AgeBreakState.NeverTargetAsSacrifice == true,
+
+        AutoClaim =
+            AgeBreakState.AutoClaim == true,
+
+        AutoSubmitNext =
+            AgeBreakState.AutoSubmitNext == true,
+
+        TeleportTradeAfterSubmit =
+            AgeBreakState.TeleportTradeAfterSubmit == true,
+
+        SavedAt =
+            os.time(),
+
+        Reason =
+            tostring(reason or "manual"),
+    }
+
+    local ok, encoded =
+        pcall(function()
+            return HttpService:JSONEncode(payload)
+        end)
+
+    if ok ~= true
+    or type(encoded) ~= "string" then
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                AGE_BREAK_SETTINGS_SAVE_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function AgeBreakQueueSave(reason)
+
+    if AgeBreakConfigState.Loading == true then
+        return false
+    end
+
+    AgeBreakConfigState.Dirty =
+        true
+
+    if AgeBreakConfigState.SaveQueued == true then
+        return true
+    end
+
+    AgeBreakConfigState.SaveQueued =
+        true
+
+    task.delay(0.45, function()
+
+        AgeBreakConfigState.SaveQueued =
+            false
+
+        if AgeBreakConfigState.Dirty ~= true then
+            return
+        end
+
+        AgeBreakConfigState.Dirty =
+            false
+
+        AgeBreakSaveSettingsNow(
+            reason or "autosave"
+        )
+    end)
+
+    return true
+end
+
+function AgeBreakLoadSettingsIntoState()
+
+    if AgeBreakCanUseFiles() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    local existsOk =
+        pcall(function()
+            exists =
+                isfile(AGE_BREAK_SETTINGS_SAVE_FILE)
+        end)
+
+    if existsOk ~= true
+    or exists ~= true then
+        return false
+    end
+
+    local readOk, raw =
+        pcall(function()
+            return readfile(AGE_BREAK_SETTINGS_SAVE_FILE)
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+        return false
+    end
+
+    local decodeOk, payload =
+        pcall(function()
+            return HttpService:JSONDecode(raw)
+        end)
+
+    if decodeOk ~= true
+    or type(payload) ~= "table" then
+        return false
+    end
+
+    if type(payload.SelectedTargetUUIDs) == "table" then
+        AgeBreakState.SelectedTargetUUIDs =
+            AgeBreakCopyBoolMap(
+                payload.SelectedTargetUUIDs
+            )
+    end
+
+    if type(payload.SelectedSacrificeTypes) == "table" then
+        AgeBreakState.SelectedSacrificeTypes =
+            AgeBreakCopyBoolMap(
+                payload.SelectedSacrificeTypes
+            )
+    end
+
+    AgeBreakState.MaxSacrificeAge =
+        math.clamp(
+            math.floor(
+                tonumber(payload.MaxSacrificeAge)
+                or 99
+            ),
+            1,
+            999
+        )
+
+    AgeBreakState.MaxSacrificeBaseWeight =
+        math.max(
+            0,
+            tonumber(payload.MaxSacrificeBaseWeight)
+            or 999
+        )
+
+    if type(payload.SkipFavorites) == "boolean" then
+        AgeBreakState.SkipFavorites =
+            payload.SkipFavorites
+    end
+
+    if type(payload.BlockAge100Sacrifices) == "boolean" then
+        AgeBreakState.BlockAge100Sacrifices =
+            payload.BlockAge100Sacrifices
+    end
+
+    if type(payload.SacrificeLowerAge) == "boolean" then
+        AgeBreakState.SacrificeLowerAge =
+            payload.SacrificeLowerAge
+    end
+
+    if type(payload.SacrificeLowerBaseWeight) == "boolean" then
+        AgeBreakState.SacrificeLowerBaseWeight =
+            payload.SacrificeLowerBaseWeight
+    end
+
+    if type(payload.NeverTargetAsSacrifice) == "boolean" then
+        AgeBreakState.NeverTargetAsSacrifice =
+            payload.NeverTargetAsSacrifice
+    end
+
+    if type(payload.AutoClaim) == "boolean" then
+        AgeBreakState.AutoClaim =
+            payload.AutoClaim
+    end
+
+    if type(payload.AutoSubmitNext) == "boolean" then
+        AgeBreakState.AutoSubmitNext =
+            payload.AutoSubmitNext
+    end
+
+    if type(payload.TeleportTradeAfterSubmit) == "boolean" then
+        AgeBreakState.TeleportTradeAfterSubmit =
+            payload.TeleportTradeAfterSubmit
+    end
+
+    return true
+end
+
+function AgeBreakShortUUID(uuid)
+
+    uuid =
+        tostring(uuid or "")
+            :gsub("{", "")
+            :gsub("}", "")
+
+    if #uuid <= 4 then
+        return uuid
+    end
+
+    return uuid:sub(#uuid - 3)
+end
+
+function AgeBreakFormatNumber(value, decimals)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "?"
+    end
+
+    decimals =
+        tonumber(decimals)
+        or 2
+
+    if decimals <= 0 then
+        return tostring(math.floor(number + 0.5))
+    end
+
+    return string.format(
+        "%."
+            .. tostring(decimals)
+            .. "f",
+        number
+    )
+end
+
+function AgeBreakFormatPetLine(pet, compact)
+
+    if type(pet) ~= "table" then
+        return "None"
+    end
+
+    local mutation =
+        CleanText(
+            pet.Mutation
+            or "---"
+        )
+
+    local mutationText =
+        ""
+
+    if mutation ~= ""
+    and mutation ~= "---"
+    and mutation ~= "Normal" then
+        mutationText =
+            " · " .. mutation
+    end
+
+    if compact == true then
+
+        return tostring(pet.PetName or "Unknown")
+            .. mutationText
+            .. " · Age "
+            .. tostring(pet.Level or "?")
+            .. " · "
+            .. AgeBreakFormatNumber(pet.DisplayWeight, 2)
+            .. " KG"
+            .. " · #"
+            .. AgeBreakShortUUID(pet.UUID)
+    end
+
+    return tostring(pet.PetName or "Unknown")
+        .. mutationText
+        .. "\n   Age "
+        .. tostring(pet.Level or "?")
+        .. " · "
+        .. AgeBreakFormatNumber(pet.DisplayWeight, 2)
+        .. " KG"
+        .. " · "
+        .. AgeBreakFormatNumber(pet.BaseWeight, 4)
+        .. " BW"
+        .. " · #"
+        .. AgeBreakShortUUID(pet.UUID)
+end
+
+function AgeBreakBuildInventoryPets()
+
+    local pets = {}
+
+    if type(TransferBuildInventoryPets) ~= "function" then
+        return pets
+    end
+
+    for _, pet in ipairs(TransferBuildInventoryPets()) do
+
+        if type(pet) == "table"
+        and CleanText(pet.UUID) ~= ""
+        and CleanText(pet.PetName) ~= "" then
+
+            table.insert(
+                pets,
+                pet
+            )
+        end
+    end
+
+    AgeBreakState.InventoryPets =
+        pets
+
+    return pets
+end
+
+function AgeBreakFindPetByUUID(uuid)
+
+    uuid =
+        CleanText(uuid)
+
+    if uuid == "" then
+        return nil
+    end
+
+    for _, pet in ipairs(AgeBreakState.InventoryPets or {}) do
+
+        if CleanText(pet.UUID) == uuid then
+            return pet
+        end
+    end
+
+    for _, pet in ipairs(AgeBreakBuildInventoryPets()) do
+
+        if CleanText(pet.UUID) == uuid then
+            return pet
+        end
+    end
+
+    return nil
+end
+
+function AgeBreakFormatTargetChoice(pet)
+
+    return AgeBreakFormatPetLine(
+        pet,
+        true
+    )
+        .. " · "
+        .. AgeBreakFormatNumber(pet.BaseWeight, 4)
+        .. " BW"
+end
+
+function AgeBreakBuildTargetChoices()
+
+    AgeBreakState.ChoiceToUUID =
+        {}
+
+    AgeBreakState.UUIDToChoice =
+        {}
+
+    local choices = {}
+
+    for _, pet in ipairs(AgeBreakBuildInventoryPets()) do
+
+        local uuid =
+            CleanText(pet.UUID)
+
+        if uuid ~= "" then
+
+            local choice =
+                AgeBreakFormatTargetChoice(pet)
+
+            if AgeBreakState.ChoiceToUUID[choice] then
+                choice =
+                    choice
+                    .. " · "
+                    .. tostring(#choices + 1)
+            end
+
+            AgeBreakState.ChoiceToUUID[choice] =
+                uuid
+
+            AgeBreakState.UUIDToChoice[uuid] =
+                choice
+
+            table.insert(
+                choices,
+                choice
+            )
+        end
+    end
+
+    table.sort(choices)
+
+    return choices
+end
+
+function AgeBreakDropdownDefaultsFromTargetUUIDs()
+
+    local defaults = {}
+
+    for uuid, selected in pairs(AgeBreakState.SelectedTargetUUIDs or {}) do
+
+        if selected == true then
+
+            local choice =
+                AgeBreakState.UUIDToChoice[uuid]
+
+            if choice then
+                defaults[choice] =
+                    true
+            end
+        end
+    end
+
+    return defaults
+end
+
+function AgeBreakReadTargetDropdownMap(value)
+
+    local output = {}
+
+    local function addChoice(choice)
+
+        choice =
+            tostring(choice or "")
+
+        local uuid =
+            AgeBreakState.ChoiceToUUID[choice]
+
+        uuid =
+            CleanText(uuid)
+
+        if uuid ~= "" then
+            output[uuid] =
+                true
+        end
+    end
+
+    if type(value) == "table" then
+
+        for key, selected in pairs(value) do
+
+            if selected == true then
+                addChoice(key)
+
+            elseif type(selected) == "string"
+            or type(selected) == "number" then
+                addChoice(selected)
+            end
+        end
+
+    elseif type(value) == "string"
+    or type(value) == "number" then
+
+        addChoice(value)
+    end
+
+    return output
+end
+
+function AgeBreakBuildPetTypeChoices()
+
+    local choices = {}
+
+    if type(TransferBuildPetChoices) == "function" then
+        choices =
+            TransferBuildPetChoices()
+            or {}
+    elseif type(DynamicPetList) == "table" then
+        choices =
+            DynamicPetList
+    end
+
+    local filtered = {}
+    local seen = {}
+
+    for _, value in ipairs(choices) do
+
+        local name =
+            CleanText(value)
+
+        if name ~= ""
+        and name ~= "None"
+        and name ~= "---"
+        and seen[name] ~= true then
+
+            seen[name] =
+                true
+
+            table.insert(
+                filtered,
+                name
+            )
+        end
+    end
+
+    table.sort(filtered)
+
+    return filtered
+end
+
+function AgeBreakGetSelectedTargets()
+
+    local targets = {}
+
+    for uuid, selected in pairs(AgeBreakState.SelectedTargetUUIDs or {}) do
+
+        if selected == true then
+
+            local pet =
+                AgeBreakFindPetByUUID(uuid)
+
+            if pet then
+                table.insert(
+                    targets,
+                    pet
+                )
+            end
+        end
+    end
+
+    table.sort(targets, function(a, b)
+
+        local aAge =
+            tonumber(a.Level)
+            or 0
+
+        local bAge =
+            tonumber(b.Level)
+            or 0
+
+        if aAge ~= bAge then
+            return aAge > bAge
+        end
+
+        local aBase =
+            tonumber(a.BaseWeight)
+            or 0
+
+        local bBase =
+            tonumber(b.BaseWeight)
+            or 0
+
+        if aBase ~= bBase then
+            return aBase > bBase
+        end
+
+        return tostring(a.UUID or "") < tostring(b.UUID or "")
+    end)
+
+    return targets
+end
+
+function AgeBreakSacrificeBlockedReason(pet)
+
+    if type(pet) ~= "table" then
+        return "Invalid pet"
+    end
+
+    if pet.ValidForSend ~= true then
+        return "Missing BaseWeight"
+    end
+
+    if AgeBreakState.SelectedSacrificeTypes[CleanText(pet.PetName)] ~= true then
+        return "Type not selected"
+    end
+
+    if AgeBreakState.SkipFavorites == true
+    and pet.IsFavorite == true then
+        return "Favorited"
+    end
+
+    local age =
+        tonumber(pet.Level)
+        or 0
+
+    if AgeBreakState.BlockAge100Sacrifices == true
+    and age >= 100 then
+        return "Age 100+"
+    end
+
+    if age > AgeBreakState.MaxSacrificeAge then
+        return "Age above max"
+    end
+
+    local baseWeight =
+        tonumber(pet.BaseWeight)
+
+    if not baseWeight then
+        return "Missing BaseWeight"
+    end
+
+    if baseWeight > AgeBreakState.MaxSacrificeBaseWeight then
+        return "BaseWeight above max"
+    end
+
+    if AgeBreakState.NeverTargetAsSacrifice == true
+    and AgeBreakState.SelectedTargetUUIDs[CleanText(pet.UUID)] == true then
+        return "Selected as target"
+    end
+
+    return nil
+end
+
+function AgeBreakBuildSacrificeQueue()
+
+    local queue = {}
+    local blocked = {}
+
+    local selectedTypeCount = 0
+
+    for _, selected in pairs(AgeBreakState.SelectedSacrificeTypes or {}) do
+
+        if selected == true then
+            selectedTypeCount =
+                selectedTypeCount + 1
+        end
+    end
+
+    if selectedTypeCount <= 0 then
+
+        AgeBreakState.SacrificeQueue =
+            {}
+
+        AgeBreakState.BlockedSacrifices =
+            {}
+
+        AgeBreakState.QueuePage =
+            1
+
+        return queue, blocked
+    end
+
+    for _, pet in ipairs(AgeBreakBuildInventoryPets()) do
+
+        if AgeBreakState.SelectedSacrificeTypes[CleanText(pet.PetName)] == true then
+
+            local reason =
+                AgeBreakSacrificeBlockedReason(pet)
+
+            if reason then
+
+                table.insert(
+                    blocked,
+                    {
+                        Pet = pet,
+                        Reason = reason,
+                    }
+                )
+
+            else
+
+                table.insert(
+                    queue,
+                    pet
+                )
+            end
+        end
+    end
+
+    table.sort(queue, function(a, b)
+
+        local aAge =
+            tonumber(a.Level)
+            or math.huge
+
+        local bAge =
+            tonumber(b.Level)
+            or math.huge
+
+        if aAge ~= bAge then
+            return aAge < bAge
+        end
+
+        local aBase =
+            tonumber(a.BaseWeight)
+            or math.huge
+
+        local bBase =
+            tonumber(b.BaseWeight)
+            or math.huge
+
+        if aBase ~= bBase then
+            return aBase < bBase
+        end
+
+        return tostring(a.UUID or "") < tostring(b.UUID or "")
+    end)
+
+    table.sort(blocked, function(a, b)
+
+        local aPet =
+            a.Pet
+            or {}
+
+        local bPet =
+            b.Pet
+            or {}
+
+        return tostring(aPet.PetName or "") < tostring(bPet.PetName or "")
+    end)
+
+    AgeBreakState.SacrificeQueue =
+        queue
+
+    AgeBreakState.BlockedSacrifices =
+        blocked
+
+    local maxPage =
+        math.max(
+            1,
+            math.ceil(
+                #queue / AgeBreakState.QueuePerPage
+            )
+        )
+
+    AgeBreakState.QueuePage =
+        math.clamp(
+            tonumber(AgeBreakState.QueuePage) or 1,
+            1,
+            maxPage
+        )
+
+    return queue, blocked
+end
+
+function AgeBreakPairAllowed(target, sacrifice)
+
+    if type(target) ~= "table" then
+        return false, "No target selected"
+    end
+
+    if type(sacrifice) ~= "table" then
+        return false, "No sacrifice queued"
+    end
+
+    if CleanText(target.UUID) == CleanText(sacrifice.UUID) then
+        return false, "Target and sacrifice are same pet"
+    end
+
+    local targetAge =
+        tonumber(target.Level)
+        or 0
+
+    local sacrificeAge =
+        tonumber(sacrifice.Level)
+        or 0
+
+    if AgeBreakState.SacrificeLowerAge == true
+    and sacrificeAge >= targetAge then
+        return false, "Sacrifice age is not lower"
+    end
+
+    local targetBase =
+        tonumber(target.BaseWeight)
+        or 0
+
+    local sacrificeBase =
+        tonumber(sacrifice.BaseWeight)
+        or 0
+
+    if AgeBreakState.SacrificeLowerBaseWeight == true
+    and sacrificeBase >= targetBase then
+        return false, "Sacrifice BaseWeight is not lower"
+    end
+
+    return true, "Pair ready"
+end
+
+function AgeBreakFindBestPair()
+
+    local targets =
+        AgeBreakGetSelectedTargets()
+
+    local queue =
+        AgeBreakState.SacrificeQueue
+
+    if type(queue) ~= "table"
+    or #queue <= 0 then
+
+        AgeBreakBuildSacrificeQueue()
+
+        queue =
+            AgeBreakState.SacrificeQueue
+    end
+
+    local lastReason =
+        "No valid pair"
+
+    for _, target in ipairs(targets) do
+
+        for _, sacrifice in ipairs(queue or {}) do
+
+            local ok, reason =
+                AgeBreakPairAllowed(
+                    target,
+                    sacrifice
+                )
+
+            if ok == true then
+
+                AgeBreakState.LastPair =
+                    {
+                        Target = target,
+                        Sacrifice = sacrifice,
+                    }
+
+                return AgeBreakState.LastPair, reason
+            end
+
+            lastReason =
+                reason
+        end
+    end
+
+    AgeBreakState.LastPair =
+        nil
+
+    return nil, lastReason
+end
+
+function AgeBreakBuildTargetsText()
+
+    local lines = {}
+    local targets =
+        AgeBreakGetSelectedTargets()
+
+    table.insert(
+        lines,
+        "Selected Targets: "
+            .. tostring(#targets)
+    )
+
+    if #targets <= 0 then
+
+        local savedCount = 0
+
+        for _, selected in pairs(AgeBreakState.SelectedTargetUUIDs or {}) do
+
+            if selected == true then
+                savedCount =
+                    savedCount + 1
+            end
+        end
+
+        if savedCount > 0 then
+
+            table.insert(
+                lines,
+                "Saved targets exist, but they are not in current inventory."
+            )
+
+        else
+
+            table.insert(
+                lines,
+                "None selected."
+            )
+        end
+
+        return table.concat(lines, "\n")
+    end
+
+    local shown =
+        math.min(
+            #targets,
+            6
+        )
+
+    for index = 1, shown do
+
+        table.insert(
+            lines,
+            tostring(index)
+                .. ". "
+                .. AgeBreakFormatPetLine(
+                    targets[index],
+                    false
+                )
+        )
+    end
+
+    if #targets > shown then
+
+        table.insert(
+            lines,
+            "+"
+                .. tostring(#targets - shown)
+                .. " more targets"
+        )
+    end
+
+    return table.concat(lines, "\n")
+end
+
+function AgeBreakBuildQueueText()
+
+    local queue =
+        AgeBreakState.SacrificeQueue
+        or {}
+
+    local blocked =
+        AgeBreakState.BlockedSacrifices
+        or {}
+
+    local maxPage =
+        math.max(
+            1,
+            math.ceil(
+                #queue / AgeBreakState.QueuePerPage
+            )
+        )
+
+    AgeBreakState.QueuePage =
+        math.clamp(
+            tonumber(AgeBreakState.QueuePage) or 1,
+            1,
+            maxPage
+        )
+
+    local lines = {}
+
+    table.insert(
+        lines,
+        "Queued: "
+            .. tostring(#queue)
+    )
+
+    table.insert(
+        lines,
+        "Safe: "
+            .. tostring(#queue)
+            .. " · Blocked: "
+            .. tostring(#blocked)
+    )
+
+    table.insert(
+        lines,
+        "Page "
+            .. tostring(AgeBreakState.QueuePage)
+            .. " / "
+            .. tostring(maxPage)
+    )
+
+    table.insert(
+        lines,
+        ""
+    )
+
+    if #queue <= 0 then
+
+        table.insert(
+            lines,
+            "No sacrifices queued yet."
+        )
+
+        return table.concat(lines, "\n")
+    end
+
+    local startIndex =
+        ((AgeBreakState.QueuePage - 1) * AgeBreakState.QueuePerPage) + 1
+
+    local endIndex =
+        math.min(
+            #queue,
+            startIndex + AgeBreakState.QueuePerPage - 1
+        )
+
+    for index = startIndex, endIndex do
+
+        table.insert(
+            lines,
+            tostring(index)
+                .. ". "
+                .. AgeBreakFormatPetLine(
+                    queue[index],
+                    true
+                )
+        )
+    end
+
+    return table.concat(lines, "\n")
+end
+
+function AgeBreakBuildMachineText()
+
+    local pair =
+        AgeBreakState.LastPair
+
+    local mode =
+        IsGardenWorld()
+        and "Garden Mode"
+        or "Trade World Monitor"
+
+    local lines = {
+        "Machine: " .. mode,
+        "Timer: --",
+        "Loaded: None",
+        "",
+    }
+
+    if type(pair) == "table" then
+
+        table.insert(
+            lines,
+            "Next Target:"
+        )
+
+        table.insert(
+            lines,
+            AgeBreakFormatPetLine(
+                pair.Target,
+                false
+            )
+        )
+
+        table.insert(
+            lines,
+            ""
+        )
+
+        table.insert(
+            lines,
+            "Next Sacrifice:"
+        )
+
+        table.insert(
+            lines,
+            AgeBreakFormatPetLine(
+                pair.Sacrifice,
+                false
+            )
+        )
+
+    else
+
+        table.insert(
+            lines,
+            "Next Target:"
+        )
+
+        table.insert(
+            lines,
+            "None"
+        )
+
+        table.insert(
+            lines,
+            ""
+        )
+
+        table.insert(
+            lines,
+            "Next Sacrifice:"
+        )
+
+        table.insert(
+            lines,
+            "None"
+        )
+    end
+
+    return table.concat(lines, "\n")
+end
+
+function AgeBreakRefreshUI()
+
+    if AgeBreakState.TargetPreviewLabel then
+
+        SetControlText(
+            AgeBreakState.TargetPreviewLabel,
+            AgeBreakBuildTargetsText()
+        )
+    end
+
+    if AgeBreakState.SacrificeQueueLabel then
+
+        SetControlText(
+            AgeBreakState.SacrificeQueueLabel,
+            AgeBreakBuildQueueText()
+        )
+    end
+
+    if AgeBreakState.MachineLabel then
+
+        SetControlText(
+            AgeBreakState.MachineLabel,
+            AgeBreakBuildMachineText()
+        )
+    end
+
+    if AgeBreakState.StatusLabel then
+
+        SetControlText(
+            AgeBreakState.StatusLabel,
+            "Status: "
+                .. tostring(AgeBreakState.Status)
+                .. "\n"
+                .. tostring(AgeBreakState.LastResult)
+        )
+    end
+end
 
 function AgeBreakSetStatus(status, result)
 
@@ -16039,17 +17258,134 @@ function AgeBreakSetStatus(status, result)
     AgeBreakState.LastResult =
         tostring(result or "Ready.")
 
-    if AgeBreakState.StatusLabel then
+    AgeBreakRefreshUI()
+end
 
-        SetControlText(
-            AgeBreakState.StatusLabel,
-            "Status: "
-                .. AgeBreakState.Status
-                .. "\n"
-                .. AgeBreakState.LastResult
+function AgeBreakPreviewPair()
+
+    AgeBreakBuildSacrificeQueue()
+
+    local pair, reason =
+        AgeBreakFindBestPair()
+
+    if pair then
+
+        AgeBreakSetStatus(
+            "Pair Ready",
+            tostring(reason)
+        )
+
+        return true
+    end
+
+    AgeBreakSetStatus(
+        "No Pair",
+        tostring(reason)
+    )
+
+    return false
+end
+
+function AgeBreakRefreshTargetDropdown()
+
+    local choices =
+        AgeBreakBuildTargetChoices()
+
+    if AgeBreakState.TargetDropdown
+    and type(AgeBreakState.TargetDropdown.SetValues) == "function" then
+
+        AgeBreakState.TargetDropdown:SetValues(
+            choices
         )
     end
+
+    if AgeBreakState.TargetDropdown
+    and type(AgeBreakState.TargetDropdown.SetValue) == "function" then
+
+        AgeBreakState.TargetDropdown:SetValue(
+            AgeBreakDropdownDefaultsFromTargetUUIDs()
+        )
+    end
+
+    return choices
 end
+
+function AgeBreakOpenListDialog(title, rows)
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    local textRows = {}
+
+    for index, row in ipairs(rows) do
+
+        if index > 40 then
+
+            table.insert(
+                textRows,
+                "+"
+                    .. tostring(#rows - 40)
+                    .. " more not shown"
+            )
+
+            break
+        end
+
+        table.insert(
+            textRows,
+            tostring(index)
+                .. ". "
+                .. tostring(row)
+        )
+    end
+
+    if #textRows <= 0 then
+        table.insert(textRows, "None")
+    end
+
+    local description =
+        table.concat(
+            textRows,
+            "\n"
+        )
+
+    if Window
+    and type(Window.AddDialog) == "function" then
+
+        local dialog =
+            Window:AddDialog(
+                "HolyLiteAgeBreakListDialog",
+                {
+                    Title = tostring(title or "Age Break List"),
+                    Description = description,
+                    AutoDismiss = true,
+                    OutsideClickDismiss = true,
+                    FooterButtons = {
+                        Close = {
+                            Title = "Close",
+                            Variant = "Primary",
+                            Order = 1,
+                            Callback = function()
+                            end,
+                        },
+                    },
+                }
+            )
+
+        return dialog
+    end
+
+    AgeBreakSetStatus(
+        tostring(title or "List"),
+        description
+    )
+
+    return nil
+end
+
+AgeBreakLoadSettingsIntoState()
 
 if Tabs.AgeBreak then
 
@@ -16088,179 +17424,256 @@ if Tabs.AgeBreak then
             "shield"
         )
 
+    local InitialAgeBreakTargetChoices =
+        AgeBreakBuildTargetChoices()
+
     AgeBreakTargetsBox:AddLabel({
-        Text =
-            "Target Pets\n"
-            .. "Use this for valuable pets you want to age break.\n"
-            .. "Exact UUID target selection gets added next.",
+        Text = "Target Pets",
         DoesWrap = true,
-        Size = 12,
+        Size = 13,
     })
+
+    AgeBreakState.TargetDropdown =
+        AgeBreakTargetsBox:AddDropdown(
+            "HolyLiteAgeBreakTargets",
+            {
+                Text = "Select Targets",
+                Values = InitialAgeBreakTargetChoices,
+                Default = AgeBreakDropdownDefaultsFromTargetUUIDs(),
+                Searchable = true,
+                Multi = true,
+                MaxVisibleDropdownItems = 8,
+                Tooltip = "Exact valuable pets to age break. Uses UUID identity.",
+            }
+        )
+
+    AgeBreakState.TargetDropdown:OnChanged(function(value)
+
+        AgeBreakState.SelectedTargetUUIDs =
+            AgeBreakReadTargetDropdownMap(value)
+
+        AgeBreakQueueSave(
+            "targets changed"
+        )
+
+        AgeBreakPreviewPair()
+    end)
 
     AgeBreakState.TargetPreviewLabel =
         AgeBreakTargetsBox:AddLabel({
-            Text =
-                "Selected Targets: 0\n"
-                .. "None selected.",
+            Text = "Selected Targets: 0\nNone selected.",
             DoesWrap = true,
             Size = 12,
         })
 
     AgeBreakTargetsBox:AddButton({
-        Text = "Refresh Targets",
-        Tooltip = "Will refresh exact target pet choices after the planner engine is added.",
+        Text = "Refresh",
         Func = function()
 
+            AgeBreakRefreshTargetDropdown()
+            AgeBreakPreviewPair()
+
             AgeBreakSetStatus(
-                "Targets",
-                "Target refresh will be enabled in the next patch."
+                "Refreshed",
+                "Target inventory refreshed."
             )
         end,
-    })
-
-    AgeBreakTargetsBox:AddButton({
-        Text = "Clear Targets",
-        Tooltip = "Will clear selected target pets after the planner engine is added.",
+    }):AddButton({
+        Text = "Clear",
         Func = function()
 
-            AgeBreakSetStatus(
-                "Targets",
-                "Target queue clear will be enabled in the next patch."
+            AgeBreakState.SelectedTargetUUIDs =
+                {}
+
+            if AgeBreakState.TargetDropdown
+            and type(AgeBreakState.TargetDropdown.SetValue) == "function" then
+
+                AgeBreakState.TargetDropdown:SetValue({})
+            end
+
+            AgeBreakQueueSave(
+                "targets cleared"
             )
+
+            AgeBreakPreviewPair()
         end,
     })
 
     AgeBreakBuilderBox:AddLabel({
         Text =
-            "Sacrifice Types\n"
-            .. "Sacrifices will be built in bulk from rules, not picked one by one.\n"
-            .. "This is better for 50+ sacrifice pets.",
+            "Sacrifices are built in bulk from pet types and rules.\n"
+            .. "This is meant for 50+ sacrifice pets.",
         DoesWrap = true,
         Size = 12,
     })
 
-    AgeBreakBuilderBox:AddDropdown(
-        "HolyLiteAgeBreakSacrificeTypes",
-        {
-            Text = "Sacrifice Types",
-            Values = DynamicPetList or { "None" },
-            Default = {},
-            Searchable = true,
-            Multi = true,
-            MaxVisibleDropdownItems = 8,
-            Tooltip = "Choose pet types allowed for the sacrifice queue.",
-        }
-    ):OnChanged(function()
-
-        AgeBreakSetStatus(
-            "Builder",
-            "Sacrifice type selection saved visually. Queue builder comes next."
+    AgeBreakState.SacrificeTypesDropdown =
+        AgeBreakBuilderBox:AddDropdown(
+            "HolyLiteAgeBreakSacrificeTypes",
+            {
+                Text = "Sacrifice Types",
+                Values = AgeBreakBuildPetTypeChoices(),
+                Default = AgeBreakCopyBoolMap(
+                    AgeBreakState.SelectedSacrificeTypes
+                ),
+                Searchable = true,
+                Multi = true,
+                MaxVisibleDropdownItems = 8,
+                Tooltip = "Choose pet types allowed for the sacrifice queue.",
+            }
         )
+
+    AgeBreakState.SacrificeTypesDropdown:OnChanged(function(value)
+
+        AgeBreakState.SelectedSacrificeTypes =
+            TransferBuildMapFromDropdown(value)
+
+        AgeBreakQueueSave(
+            "sacrifice types changed"
+        )
+
+        AgeBreakPreviewPair()
     end)
 
     AgeBreakBuilderBox:AddInput(
         "HolyLiteAgeBreakMaxSacAge",
         {
             Text = "Max Sacrifice Age",
-            Default = "99",
+            Default = tostring(AgeBreakState.MaxSacrificeAge),
             Numeric = true,
             Finished = true,
             ClearTextOnFocus = false,
-            Tooltip = "Default keeps age 100+ pets protected.",
         }
-    )
+    ):OnChanged(function(value)
+
+        AgeBreakState.MaxSacrificeAge =
+            math.clamp(
+                math.floor(
+                    ParseNumberInput(
+                        value,
+                        99
+                    )
+                ),
+                1,
+                999
+            )
+
+        AgeBreakQueueSave(
+            "max sacrifice age changed"
+        )
+
+        AgeBreakPreviewPair()
+    end)
 
     AgeBreakBuilderBox:AddInput(
         "HolyLiteAgeBreakMaxSacBW",
         {
             Text = "Max BaseWeight",
-            Default = "999",
+            Default = tostring(AgeBreakState.MaxSacrificeBaseWeight),
             Numeric = true,
             Finished = true,
             ClearTextOnFocus = false,
-            Tooltip = "Optional cap for sacrifice BaseWeight.",
         }
-    )
+    ):OnChanged(function(value)
+
+        AgeBreakState.MaxSacrificeBaseWeight =
+            math.max(
+                0,
+                ParseNumberInput(
+                    value,
+                    999
+                )
+            )
+
+        AgeBreakQueueSave(
+            "max sacrifice baseweight changed"
+        )
+
+        AgeBreakPreviewPair()
+    end)
 
     AgeBreakBuilderBox:AddButton({
         Text = "Build Queue",
-        Tooltip = "Will scan inventory and build the sacrifice queue in the next patch.",
         Func = function()
 
+            AgeBreakBuildSacrificeQueue()
+            AgeBreakPreviewPair()
+
             AgeBreakSetStatus(
-                "Builder",
-                "Sacrifice queue builder will be enabled in the next patch."
+                "Queue Built",
+                "Sacrifice queue rebuilt from inventory."
             )
         end,
-    })
-
-    AgeBreakBuilderBox:AddButton({
+    }):AddButton({
         Text = "Clear Sacrifices",
-        Tooltip = "Will clear sacrifice queue after queue storage is added.",
         Func = function()
 
-            AgeBreakSetStatus(
-                "Builder",
-                "Sacrifice queue clear will be enabled in the next patch."
+            AgeBreakState.SelectedSacrificeTypes =
+                {}
+
+            AgeBreakState.SacrificeQueue =
+                {}
+
+            AgeBreakState.BlockedSacrifices =
+                {}
+
+            AgeBreakState.QueuePage =
+                1
+
+            if AgeBreakState.SacrificeTypesDropdown
+            and type(AgeBreakState.SacrificeTypesDropdown.SetValue) == "function" then
+
+                AgeBreakState.SacrificeTypesDropdown:SetValue({})
+            end
+
+            AgeBreakQueueSave(
+                "sacrifices cleared"
             )
+
+            AgeBreakPreviewPair()
         end,
     })
 
     AgeBreakState.MachineLabel =
         AgeBreakMachineBox:AddLabel({
-            Text =
-                "Machine: "
-                .. (
-                    IsGardenWorld()
-                    and "Garden Mode"
-                    or "Trade World Monitor"
-                )
-                .. "\nTimer: --\nLoaded: None\n\n"
-                .. "Next Target:\nNone\n\n"
-                .. "Next Sacrifice:\nNone",
+            Text = AgeBreakBuildMachineText(),
             DoesWrap = true,
             Size = 12,
         })
 
     AgeBreakState.StatusLabel =
         AgeBreakMachineBox:AddLabel({
-            Text = "Status: Idle\nAge Break shell ready.",
+            Text = "Status: Idle\nAge Break planner ready.",
             DoesWrap = true,
             Size = 12,
         })
 
     AgeBreakMachineBox:AddButton({
         Text = "Preview Pair",
-        Tooltip = "Will preview the next safe target + sacrifice pair.",
         Func = function()
 
-            AgeBreakSetStatus(
-                "Preview",
-                "Pair preview will be enabled after the planner engine is added."
-            )
+            AgeBreakPreviewPair()
         end,
     })
 
     AgeBreakMachineBox:AddButton({
         Text = "Submit Pair",
-        Tooltip = "Later this will open a confirmation dialog before submitting to the machine.",
+        Tooltip = "Disabled until submit dialog + remotes are added.",
         Func = function()
 
             AgeBreakSetStatus(
                 "Submit Locked",
-                "Submit is disabled until the safe planner is added."
+                "Submit gets added after planner testing."
             )
         end,
-    })
-
-    AgeBreakMachineBox:AddButton({
+    }):AddButton({
         Text = "Claim Ready",
-        Tooltip = "Later this will claim the Age Break machine if ready.",
+        Tooltip = "Disabled until machine timer/claim detection is added.",
         Func = function()
 
             AgeBreakSetStatus(
                 "Claim Locked",
-                "Claim is disabled until machine detection is added."
+                "Claim gets added after machine detection."
             )
         end,
     })
@@ -16269,7 +17682,6 @@ if Tabs.AgeBreak then
 
         AgeBreakMachineBox:AddButton({
             Text = "Join Garden World",
-            Tooltip = "Teleport to normal Grow a Garden for Age Break machine actions.",
             Func = function()
 
                 local player =
@@ -16315,7 +17727,6 @@ if Tabs.AgeBreak then
 
         AgeBreakMachineBox:AddButton({
             Text = "Join Trade World",
-            Tooltip = "Teleport to Trade World after starting an Age Break cycle.",
             Func = function()
 
                 RequestLiteTradeWorldTeleportCountdown(
@@ -16332,55 +17743,93 @@ if Tabs.AgeBreak then
 
     AgeBreakState.SacrificeQueueLabel =
         AgeBreakQueueBox:AddLabel({
-            Text =
-                "Queued: 0\n"
-                .. "Safe: 0 · Blocked: 0\n"
-                .. "Page 1 / 1\n\n"
-                .. "No sacrifices queued yet.",
+            Text = "Queued: 0\nSafe: 0 · Blocked: 0\nPage 1 / 1\n\nNo sacrifices queued yet.",
             DoesWrap = true,
             Size = 12,
         })
 
     AgeBreakQueueBox:AddButton({
         Text = "Prev",
-        Tooltip = "Previous sacrifice queue page.",
         Func = function()
 
-            AgeBreakSetStatus(
-                "Queue",
-                "Sacrifice queue pages will be enabled next."
-            )
+            AgeBreakState.QueuePage =
+                math.max(
+                    1,
+                    (tonumber(AgeBreakState.QueuePage) or 1) - 1
+                )
+
+            AgeBreakRefreshUI()
         end,
     }):AddButton({
         Text = "Next",
-        Tooltip = "Next sacrifice queue page.",
         Func = function()
 
-            AgeBreakSetStatus(
-                "Queue",
-                "Sacrifice queue pages will be enabled next."
-            )
+            local queue =
+                AgeBreakState.SacrificeQueue
+                or {}
+
+            local maxPage =
+                math.max(
+                    1,
+                    math.ceil(
+                        #queue / AgeBreakState.QueuePerPage
+                    )
+                )
+
+            AgeBreakState.QueuePage =
+                math.min(
+                    maxPage,
+                    (tonumber(AgeBreakState.QueuePage) or 1) + 1
+                )
+
+            AgeBreakRefreshUI()
         end,
     })
 
     AgeBreakQueueBox:AddButton({
         Text = "Full List",
-        Tooltip = "Later this opens a dialog with all queued sacrifices.",
         Func = function()
 
-            AgeBreakSetStatus(
-                "Queue",
-                "Full sacrifice list dialog will be enabled next."
+            local rows = {}
+
+            for _, pet in ipairs(AgeBreakState.SacrificeQueue or {}) do
+
+                table.insert(
+                    rows,
+                    AgeBreakFormatPetLine(
+                        pet,
+                        true
+                    )
+                )
+            end
+
+            AgeBreakOpenListDialog(
+                "Sacrifice Queue",
+                rows
             )
         end,
     }):AddButton({
         Text = "Blocked",
-        Tooltip = "Later this opens blocked sacrifices with reasons.",
         Func = function()
 
-            AgeBreakSetStatus(
-                "Queue",
-                "Blocked sacrifice dialog will be enabled next."
+            local rows = {}
+
+            for _, row in ipairs(AgeBreakState.BlockedSacrifices or {}) do
+
+                table.insert(
+                    rows,
+                    AgeBreakFormatPetLine(
+                        row.Pet,
+                        true
+                    )
+                        .. " · blocked: "
+                        .. tostring(row.Reason or "Unknown")
+                )
+            end
+
+            AgeBreakOpenListDialog(
+                "Blocked Sacrifices",
+                rows
             )
         end,
     })
@@ -16389,91 +17838,117 @@ if Tabs.AgeBreak then
         "HolyLiteAgeBreakSkipFavorites",
         {
             Text = "Skip Favorites",
-            Default = true,
-            Tooltip = "Never use favorited pets as sacrifices.",
+            Default = AgeBreakState.SkipFavorites == true,
         }
-    ):OnChanged(function()
+    ):OnChanged(function(value)
 
-        AgeBreakSetStatus(
-            "Safety",
-            "Skip Favorites updated."
+        AgeBreakState.SkipFavorites =
+            value == true
+
+        AgeBreakQueueSave(
+            "skip favorites changed"
         )
+
+        AgeBreakPreviewPair()
     end)
 
     AgeBreakSafetyBox:AddToggle(
         "HolyLiteAgeBreakBlockAge100",
         {
             Text = "Block Age 100+ Sacrifices",
-            Default = true,
-            Tooltip = "Prevents valuable age 100+ pets from being consumed.",
+            Default = AgeBreakState.BlockAge100Sacrifices == true,
         }
-    ):OnChanged(function()
+    ):OnChanged(function(value)
 
-        AgeBreakSetStatus(
-            "Safety",
-            "Age 100+ sacrifice protection updated."
+        AgeBreakState.BlockAge100Sacrifices =
+            value == true
+
+        AgeBreakQueueSave(
+            "block age 100 changed"
         )
+
+        AgeBreakPreviewPair()
     end)
 
     AgeBreakSafetyBox:AddToggle(
         "HolyLiteAgeBreakLowerAge",
         {
             Text = "Sacrifice Lower Age",
-            Default = true,
-            Tooltip = "Sacrifice must be lower age than the target.",
+            Default = AgeBreakState.SacrificeLowerAge == true,
         }
-    ):OnChanged(function()
+    ):OnChanged(function(value)
 
-        AgeBreakSetStatus(
-            "Safety",
-            "Lower age safety updated."
+        AgeBreakState.SacrificeLowerAge =
+            value == true
+
+        AgeBreakQueueSave(
+            "lower age changed"
         )
+
+        AgeBreakPreviewPair()
     end)
 
     AgeBreakSafetyBox:AddToggle(
         "HolyLiteAgeBreakLowerBW",
         {
             Text = "Sacrifice Lower BaseWeight",
-            Default = true,
-            Tooltip = "Sacrifice must be lower BaseWeight than the target.",
+            Default = AgeBreakState.SacrificeLowerBaseWeight == true,
         }
-    ):OnChanged(function()
+    ):OnChanged(function(value)
 
-        AgeBreakSetStatus(
-            "Safety",
-            "Lower BaseWeight safety updated."
+        AgeBreakState.SacrificeLowerBaseWeight =
+            value == true
+
+        AgeBreakQueueSave(
+            "lower baseweight changed"
         )
+
+        AgeBreakPreviewPair()
     end)
 
     AgeBreakSafetyBox:AddToggle(
         "HolyLiteAgeBreakNeverTargetAsSac",
         {
             Text = "Never Use Target As Sacrifice",
-            Default = true,
-            Tooltip = "Prevents target pets from entering the sacrifice queue.",
+            Default = AgeBreakState.NeverTargetAsSacrifice == true,
         }
-    ):OnChanged(function()
+    ):OnChanged(function(value)
 
-        AgeBreakSetStatus(
-            "Safety",
-            "Target protection updated."
+        AgeBreakState.NeverTargetAsSacrifice =
+            value == true
+
+        AgeBreakQueueSave(
+            "never target as sacrifice changed"
         )
+
+        AgeBreakPreviewPair()
     end)
 
-    AgeBreakSafetyBox:AddDivider()
+    AgeBreakSafetyBox:AddLabel({
+        Text = "Advanced",
+        DoesWrap = true,
+        Size = 13,
+    })
 
     AgeBreakSafetyBox:AddToggle(
         "HolyLiteAgeBreakAutoClaim",
         {
             Text = "Auto Claim",
-            Default = false,
-            Tooltip = "Disabled until machine detection is added.",
+            Default = AgeBreakState.AutoClaim == true,
+            Tooltip = "Visual/saved for now. Automation comes after machine detection.",
         }
-    ):OnChanged(function()
+    ):OnChanged(function(value)
+
+        AgeBreakState.AutoClaim =
+            value == true
+
+        AgeBreakQueueSave(
+            "auto claim changed"
+        )
 
         AgeBreakSetStatus(
             "Advanced",
-            "Auto Claim is visual only for now."
+            "Auto Claim saved. Machine logic not added yet."
         )
     end)
 
@@ -16481,14 +17956,21 @@ if Tabs.AgeBreak then
         "HolyLiteAgeBreakAutoSubmitNext",
         {
             Text = "Auto Submit Next Pair",
-            Default = false,
-            Tooltip = "Disabled until safe queue automation is added.",
+            Default = AgeBreakState.AutoSubmitNext == true,
+            Tooltip = "Visual/saved for now. Automation comes after submit confirmation.",
         }
-    ):OnChanged(function()
+    ):OnChanged(function(value)
+
+        AgeBreakState.AutoSubmitNext =
+            value == true
+
+        AgeBreakQueueSave(
+            "auto submit next changed"
+        )
 
         AgeBreakSetStatus(
             "Advanced",
-            "Auto Submit is visual only for now."
+            "Auto Submit saved. Submit logic not added yet."
         )
     end)
 
@@ -16496,25 +17978,45 @@ if Tabs.AgeBreak then
         "HolyLiteAgeBreakTeleportTrade",
         {
             Text = "Teleport Trade After Submit",
-            Default = false,
-            Tooltip = "Later this will teleport to Trade World after starting the machine.",
+            Default = AgeBreakState.TeleportTradeAfterSubmit == true,
+            Tooltip = "Saved now. Real trigger comes after Submit Pair is added.",
         }
-    ):OnChanged(function()
+    ):OnChanged(function(value)
+
+        AgeBreakState.TeleportTradeAfterSubmit =
+            value == true
+
+        AgeBreakQueueSave(
+            "teleport trade after submit changed"
+        )
 
         AgeBreakSetStatus(
             "Advanced",
-            "Trade teleport setting is visual only for now."
+            "Trade teleport setting saved."
         )
     end)
 
-    AgeBreakSetStatus(
-        "Ready",
-        IsGardenWorld()
-        and "Garden mode: target/sacrifice planner will run here."
-        or "Trade mode: monitor + return-to-garden controls will run here."
-    )
-end
+    AgeBreakConfigState.Loading =
+        false
 
+    task.defer(function()
+
+        if not IsHolyLiteCurrentRun() then
+            return
+        end
+
+        AgeBreakRefreshTargetDropdown()
+        AgeBreakBuildSacrificeQueue()
+        AgeBreakPreviewPair()
+
+        AgeBreakSetStatus(
+            "Ready",
+            IsGardenWorld()
+            and "Garden planner ready. Submit/claim comes next."
+            or "Trade monitor ready. Use Join Garden World for machine actions."
+        )
+    end)
+end
 
 function ClearLiteTable(source)
 
