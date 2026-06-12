@@ -22579,23 +22579,23 @@ end
 _G.HOLY_LITE_SEND_REJECT_WEBHOOK = function(candidate, reason, rawResult, notificationMessage)
 
     if RuntimeState.WebhookEnabled ~= true then
-        return false
+        return false, "Enable Webhook is OFF"
     end
 
     if RuntimeState.WebhookRejectedBuys ~= true then
-        return false
+        return false, "Rejected Buys toggle is OFF"
     end
 
     local webhookUrl =
         CleanText(RuntimeState.WebhookURL)
 
     if webhookUrl == "" then
-        return false
+        return false, "Main Webhook URL is empty"
     end
 
     if type(candidate) ~= "table"
     or type(candidate.Listing) ~= "table" then
-        return false
+        return false, "Invalid rejected candidate"
     end
 
     local listing =
@@ -22621,7 +22621,7 @@ _G.HOLY_LITE_SEND_REJECT_WEBHOOK = function(candidate, reason, rawResult, notifi
 
         warn("[HOLY SNIPER LITE] Reject webhook failed: request function unsupported.")
 
-        return false
+        return false, "request/http_request unsupported"
     end
 
     local petName =
@@ -22809,7 +22809,7 @@ _G.HOLY_LITE_SEND_REJECT_WEBHOOK = function(candidate, reason, rawResult, notifi
             tostring(response)
         )
 
-        return false
+        return false, tostring(response)
     end
 
     if type(response) == "table" then
@@ -22830,7 +22830,11 @@ _G.HOLY_LITE_SEND_REJECT_WEBHOOK = function(candidate, reason, rawResult, notifi
                 tostring(response.Body or response.body or "")
             )
 
-            return false
+            return false,
+                "bad status "
+                    .. tostring(statusCode)
+                    .. " "
+                    .. tostring(response.Body or response.body or "")
         end
     end
 
@@ -22839,7 +22843,7 @@ _G.HOLY_LITE_SEND_REJECT_WEBHOOK = function(candidate, reason, rawResult, notifi
         reasonText
     )
 
-    return true
+    return true, "sent"
 end
 
 _G.HOLY_LITE_SEND_MARKET_SNIPE_WEBHOOK = function(candidate)
@@ -28588,6 +28592,23 @@ function BuyLiteCandidateQuiet(candidate, options)
     local elapsedMs =
         (os.clock() - startedAt) * 1000
 
+    local modeConfig =
+        GetLiteSniperModeConfig()
+
+    local timingPath =
+        tostring(
+            options.Path
+            or candidate.Reason
+            or "Unknown"
+        )
+
+    local cycleStartedAt =
+        tonumber(options.CycleStartedAt)
+        or startedAt
+
+    local cycleMs =
+        (os.clock() - cycleStartedAt) * 1000
+
     if ok == true
     and result == true then
 
@@ -28847,13 +28868,45 @@ function BuyLiteCandidateQuiet(candidate, options)
 
         task.spawn(function()
 
-            _G.HOLY_LITE_SEND_REJECT_WEBHOOK(
-                candidate,
-                rejectReason,
-                result,
-                rejectMessage
-            )
+            local okRejectWebhook, rejectWebhookResult, rejectWebhookReason =
+                pcall(function()
+
+                    return _G.HOLY_LITE_SEND_REJECT_WEBHOOK(
+                        candidate,
+                        rejectReason,
+                        result,
+                        rejectMessage
+                    )
+                end)
+
+            if okRejectWebhook ~= true then
+
+                warn(
+                    "[HOLY SNIPER LITE] Rejected buy webhook crashed:",
+                    tostring(rejectWebhookResult)
+                )
+
+            elseif rejectWebhookResult ~= true then
+
+                warn(
+                    "[HOLY SNIPER LITE] Rejected buy webhook did not send:",
+                    tostring(rejectWebhookReason or rejectWebhookResult)
+                )
+
+            else
+
+                print(
+                    "[HOLY SNIPER LITE] Rejected buy webhook confirmed:",
+                    tostring(listing.PetName or "Unknown"),
+                    "| reason:",
+                    tostring(rejectReason)
+                )
+            end
         end)
+
+    else
+
+        warn("[HOLY SNIPER LITE] Rejected buy webhook function missing.")
     end
 
     QueueLiteTimingDebugWebhook(
