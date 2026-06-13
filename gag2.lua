@@ -20,6 +20,15 @@ local HttpService =
 local ReplicatedStorage =
     game:GetService("ReplicatedStorage")
 
+local VirtualInputManager =
+    nil
+
+pcall(function()
+
+    VirtualInputManager =
+        game:GetService("VirtualInputManager")
+end)
+
 --==================================================
 -- [1] CONSTANTS
 --==================================================
@@ -67,6 +76,24 @@ GAG2_RARE_PET_WEBHOOK_TARGETS = {
     raccoon = true,
     goldendragonfly = true,
     unicorn = true,
+    bee = true,
+}
+
+GAG2_RARE_PET_WEBHOOK_IMAGES = {
+    raccoon =
+        "https://static.wikia.nocookie.net/growagarden27847/images/7/7c/Raccoon.png/revision/latest?cb=20260612232005",
+
+    unicorn =
+        "https://static.wikia.nocookie.net/growagarden27847/images/7/7e/Unicorn.png/revision/latest?cb=20260612212539",
+
+    goldendragonfly =
+        "https://static.wikia.nocookie.net/growagarden27847/images/e/ee/GoldenDragonfly.png/revision/latest?cb=20260612231815",
+
+    monkey =
+        "https://static.wikia.nocookie.net/growagarden27847/images/2/27/Monkey.png/revision/latest?cb=20260612231816",
+
+    iceserpent =
+        "https://static.wikia.nocookie.net/growagarden27847/images/5/51/IceSerpent.png/revision/latest?cb=20260612231814",
 }
 
 GAG2_RARE_PET_WEBHOOK_SENT =
@@ -78,6 +105,14 @@ GAG2_SERVER_HOP_RETRYING =
 GAG2_SERVER_HOP_ATTEMPT =
     0
 
+GAG2_SNIPER_TOGGLE_CONTROL =
+    nil
+
+GAG2_SNIPER_KEYBIND_CONTROL =
+    nil
+
+GAG2_SNIPER_STOPPING =
+    false
 --==================================================
 -- [2] BASIC HELPERS
 --==================================================
@@ -638,6 +673,10 @@ function HopServerOnce()
                 continue
             end
 
+            if GAG2_SERVER_HOP_RETRYING ~= true then
+                return
+            end
+
             table.sort(servers, function(a, b)
 
                 return tonumber(a.FreeSlots or 0)
@@ -659,6 +698,10 @@ function HopServerOnce()
                 .. tostring(target.maxPlayers)
                 .. " server..."
             )
+
+                        if GAG2_SERVER_HOP_RETRYING ~= true then
+                return
+            end
 
             local ok, err =
                 pcall(function()
@@ -964,6 +1007,8 @@ local SniperState = {
     },
     KnownPetNames = {},
     AutoHop = false,
+    InstantFirstHop = true,
+    FirstHopUsed = false,
     ReturnAfterTame = true,
 
     Taming = false,
@@ -972,9 +1017,16 @@ local SniperState = {
     HandledWildPets = {},
     PendingWildPets = {},
 
+    ConfirmingBuy = false,
+    ConfirmingBuyKey = "",
+
     BuyValidationHoldDelay = 1.65,
     StartupBuyDelay = 8,
     StartedAt = os.clock(),
+
+    LastPlayScreenPressAt = 0,
+    PlayScreenClearAt = 0,
+    PlayScreenClearGrace = 1.25,
 
     WaitingForClaim = false,
     WaitingForClaimKey = "",
@@ -1170,6 +1222,23 @@ local function SniperIsValidRegistryPetName(name)
     end
 
     return true
+end
+
+function GAG2CancelServerHop(reason)
+
+    GAG2_SERVER_HOP_RETRYING =
+        false
+
+    GAG2_SERVER_HOP_ATTEMPT =
+        0
+
+    if reason ~= nil
+    and tostring(reason) ~= "" then
+
+        SetStatus(
+            tostring(reason)
+        )
+    end
 end
 
 local function SniperGetPetModulesRoot()
@@ -2340,6 +2409,282 @@ local function SniperGetCharacterRoot()
     return character, root
 end
 
+function GAG2GuiObjectVisible(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return false
+    end
+
+    local current =
+        instance
+
+    while current
+    and current ~= game do
+
+        if current:IsA("ScreenGui") then
+
+            local enabled =
+                true
+
+            local ok =
+                pcall(function()
+
+                    enabled =
+                        current.Enabled == true
+                end)
+
+            if ok == true
+            and enabled ~= true then
+                return false
+            end
+        end
+
+        if current:IsA("GuiObject") then
+
+            local visible =
+                true
+
+            local ok =
+                pcall(function()
+
+                    visible =
+                        current.Visible == true
+                end)
+
+            if ok == true
+            and visible ~= true then
+                return false
+            end
+        end
+
+        current =
+            current.Parent
+    end
+
+    return true
+end
+
+function GAG2GetPlayScreenTextObject()
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+
+    if not playerGui then
+        return nil, ""
+    end
+
+    local scanned =
+        0
+
+    for _, descendant in ipairs(playerGui:GetDescendants()) do
+
+        scanned =
+            scanned + 1
+
+        if scanned > 5000 then
+            break
+        end
+
+        if descendant:IsA("TextLabel")
+        or descendant:IsA("TextButton")
+        or descendant:IsA("TextBox") then
+
+            local ok, text =
+                pcall(function()
+
+                    return descendant.Text
+                end)
+
+            text =
+                ok == true
+                and CleanText(text)
+                or ""
+
+            local lowerText =
+                text:lower()
+
+            if text ~= ""
+            and GAG2GuiObjectVisible(descendant) == true then
+
+                if (
+                    lowerText:find("press", 1, true)
+                    and lowerText:find("play", 1, true)
+                )
+                or lowerText:find("press any key", 1, true) then
+
+                    return descendant, text
+                end
+            end
+        end
+    end
+
+    return nil, ""
+end
+
+function GAG2IsPlayScreenBlocking()
+
+    local object, text =
+        GAG2GetPlayScreenTextObject()
+
+    if object then
+        return true, text, object
+    end
+
+    return false, "", nil
+end
+
+function GAG2PressPlayScreen()
+
+    local now =
+        os.clock()
+
+    if now - tonumber(SniperState.LastPlayScreenPressAt or 0) < 1 then
+        return false
+    end
+
+    SniperState.LastPlayScreenPressAt =
+        now
+
+    local camera =
+        workspace.CurrentCamera
+
+    local viewport =
+        camera
+        and camera.ViewportSize
+        or Vector2.new(
+            1280,
+            720
+        )
+
+    local x =
+        math.floor(viewport.X / 2)
+
+    local y =
+        math.floor(viewport.Y / 2)
+
+    local didPress =
+        false
+
+    if VirtualInputManager then
+
+        pcall(function()
+
+            VirtualInputManager:SendKeyEvent(
+                true,
+                Enum.KeyCode.Space,
+                false,
+                game
+            )
+
+            task.wait(
+                0.03
+            )
+
+            VirtualInputManager:SendKeyEvent(
+                false,
+                Enum.KeyCode.Space,
+                false,
+                game
+            )
+
+            didPress =
+                true
+        end)
+
+        pcall(function()
+
+            VirtualInputManager:SendMouseButtonEvent(
+                x,
+                y,
+                0,
+                true,
+                game,
+                0
+            )
+
+            task.wait(
+                0.03
+            )
+
+            VirtualInputManager:SendMouseButtonEvent(
+                x,
+                y,
+                0,
+                false,
+                game,
+                0
+            )
+
+            didPress =
+                true
+        end)
+    end
+
+    print(
+        "[HOLY GAG2]",
+        "Pressed play screen",
+        "| virtual input:",
+        didPress == true
+        and "yes"
+        or "no"
+    )
+
+    return didPress
+end
+
+function GAG2ClientReadyForBuy()
+
+    local blocking, text =
+        GAG2IsPlayScreenBlocking()
+
+    if blocking == true then
+
+        SniperState.PlayScreenClearAt =
+            0
+
+        GAG2PressPlayScreen()
+
+        return false,
+            "Starting game..."
+    end
+
+    if tonumber(SniperState.PlayScreenClearAt or 0) <= 0 then
+
+        SniperState.PlayScreenClearAt =
+            os.clock()
+
+        return false,
+            "Starting game..."
+    end
+
+    local grace =
+        tonumber(SniperState.PlayScreenClearGrace)
+        or 1.25
+
+    if os.clock() - SniperState.PlayScreenClearAt < grace then
+
+        return false,
+            "Starting game..."
+    end
+
+    return true,
+        "Ready."
+end
+
+local function SniperReadyToHop()
+
+    if not SniperGetSpawnsFolder()
+    or not SniperGetRefFolder() then
+
+        return false,
+            "Waiting for pets..."
+    end
+
+    return true,
+        "Ready."
+end
+
 local function SniperReadyToBuy()
 
     local elapsed =
@@ -2355,8 +2700,19 @@ local function SniperReadyToBuy()
 
     if elapsed < startupDelay then
 
+        GAG2PressPlayScreen()
+
         return false,
             "Starting..."
+    end
+
+    local clientReady, clientText =
+        GAG2ClientReadyForBuy()
+
+    if clientReady ~= true then
+
+        return false,
+            clientText
     end
 
     local _, root =
@@ -2979,6 +3335,16 @@ local function SniperStartBuyConfirmation(entry)
     SniperState.PendingWildPets[key] =
         true
 
+    SniperState.ConfirmingBuy =
+        true
+
+    SniperState.ConfirmingBuyKey =
+        key
+
+    GAG2CancelServerHop(
+        nil
+    )
+
     task.spawn(function()
 
         local confirmed =
@@ -2988,6 +3354,15 @@ local function SniperStartBuyConfirmation(entry)
 
         SniperState.PendingWildPets[key] =
             nil
+
+        if SniperState.ConfirmingBuyKey == key then
+
+            SniperState.ConfirmingBuy =
+                false
+
+            SniperState.ConfirmingBuyKey =
+                ""
+        end
 
         if confirmed == true then
 
@@ -4078,7 +4453,24 @@ function SniperScan(allowAutoHop)
             ""
     end
 
+    if SniperState.ConfirmingBuy == true then
+
+        GAG2CancelServerHop(
+            nil
+        )
+
+        SetSniperStatus(
+            "Confirming buy..."
+        )
+
+        return matches
+    end
+
     if #matches > 0 then
+
+        GAG2CancelServerHop(
+            nil
+        )
 
         SetSniperStatus(
             "Found: "
@@ -4131,19 +4523,31 @@ function SniperScan(allowAutoHop)
     and SniperState.AutoHop == true
     and SniperState.Enabled == true
     and SniperState.Taming ~= true
+    and SniperState.ConfirmingBuy ~= true
     and hasHandledActiveTarget ~= true
-    and SniperReadyToBuy() == true then
+    and SniperReadyToHop() == true then
 
         local sinceHop =
             os.clock() - tonumber(SniperState.LastHopAt or 0)
 
-        if sinceHop >= SniperState.HopDelay then
+        local shouldInstantHop =
+            SniperState.InstantFirstHop == true
+            and SniperState.FirstHopUsed ~= true
+            and SniperState.LastHopAt <= 0
+
+        if shouldInstantHop == true
+        or sinceHop >= SniperState.HopDelay then
+
+            SniperState.FirstHopUsed =
+                true
 
             SniperState.LastHopAt =
                 os.clock()
 
             SetSniperStatus(
-                "Hopping..."
+                shouldInstantHop == true
+                and "Instant hopping..."
+                or "Hopping..."
             )
 
             HopServerOnce()
@@ -4200,6 +4604,15 @@ function SniperSetEnabled(value)
 
     if SniperState.Enabled == true then
 
+        GAG2_SERVER_HOP_RETRYING =
+            false
+
+        GAG2_SERVER_HOP_ATTEMPT =
+            0
+
+        SniperState.FirstHopUsed =
+            false
+
         SniperScan(
             false
         )
@@ -4210,10 +4623,99 @@ function SniperSetEnabled(value)
 
     else
 
+        GAG2_SERVER_HOP_RETRYING =
+            false
+
+        GAG2_SERVER_HOP_ATTEMPT =
+            0
+
+        SniperState.FirstHopUsed =
+            false
+
         SetSniperStatus(
             "Sniper disabled."
         )
+
+        MarkConfigDirty()
     end
+end
+
+function GAG2SetSniperToggleValue(value)
+
+    if GAG2_SNIPER_TOGGLE_CONTROL
+    and type(GAG2_SNIPER_TOGGLE_CONTROL.SetValue) == "function" then
+
+        pcall(function()
+
+            GAG2_SNIPER_TOGGLE_CONTROL:SetValue(
+                value == true
+            )
+        end)
+
+        return
+    end
+
+    if Toggles.HolyGAG2SniperEnabled
+    and type(Toggles.HolyGAG2SniperEnabled.SetValue) == "function" then
+
+        pcall(function()
+
+            Toggles.HolyGAG2SniperEnabled:SetValue(
+                value == true
+            )
+        end)
+
+        return
+    end
+
+    SniperSetEnabled(
+        value == true
+    )
+end
+
+function StopGAG2SniperNow(reason)
+
+    if GAG2_SNIPER_STOPPING == true then
+        return
+    end
+
+    GAG2_SNIPER_STOPPING =
+        true
+
+    GAG2_SERVER_HOP_RETRYING =
+        false
+
+    GAG2_SERVER_HOP_ATTEMPT =
+        0
+
+    SniperState.Enabled =
+        false
+
+    SniperState.Running =
+        false
+
+    SniperState.FirstHopUsed =
+        false
+
+    SetSniperStatus(
+        tostring(reason or "Sniper stopped.")
+    )
+
+    GAG2SetSniperToggleValue(
+        false
+    )
+
+    MarkConfigDirty()
+
+    GAG2_SNIPER_STOPPING =
+        false
+end
+
+getgenv().HOLY_GAG2_STOP_SNIPER =
+    StopGAG2SniperNow
+
+function StartGAG2SniperHotkey()
+    return
 end
 
 function RestoreSniperAutosaveState()
@@ -4231,8 +4733,22 @@ function RestoreSniperAutosaveState()
         local returnAfterTame =
             Toggles.HolyGAG2SniperReturnAfterTame
 
+        local instantFirstHop =
+            Toggles.HolyGAG2SniperInstantFirstHop
+
         SniperState.AutoHop =
             autoHop == true
+
+        if instantFirstHop then
+
+            SniperState.InstantFirstHop =
+                instantFirstHop.Value == true
+
+        else
+
+            SniperState.InstantFirstHop =
+                true
+        end
 
         if returnAfterTame then
 
@@ -4773,6 +5289,22 @@ function GAG2RareWebhookGetEntryKey(entry)
     )
 end
 
+function GAG2RareWebhookGetImageUrl(entry)
+
+    if type(entry) ~= "table" then
+        return ""
+    end
+
+    local petKey =
+        GAG2RareWebhookPetKey(
+            entry.Name
+        )
+
+    return CleanText(
+        GAG2_RARE_PET_WEBHOOK_IMAGES[petKey]
+    )
+end
+
 function GAG2RareWebhookGetRequestFunction()
 
     return request
@@ -4843,14 +5375,16 @@ function GAG2RareWebhookSend(entry)
         distanceText = "?"
     end
 
+    local imageUrl =
+        GAG2RareWebhookGetImageUrl(
+            entry
+        )
+
     local embed = {
 
         title =
-            "🌟 GAG2 Rare Wild Pet Found • "
+            "🌟 Rare Pet Found • "
             .. petName,
-
-        description =
-            "A target wild pet is active in this server.",
 
         color =
             0xC4B5FD,
@@ -4912,6 +5446,13 @@ function GAG2RareWebhookSend(entry)
         timestamp =
             DateTime.now():ToIsoDate(),
     }
+
+    if imageUrl ~= "" then
+
+        embed.image = {
+            url = imageUrl,
+        }
+    end
 
     local payload = {
         username =
@@ -5032,6 +5573,8 @@ end
 --==================================================
 -- [5] WINDOW
 --==================================================
+
+
 
 local Window =
     Library:CreateWindow({
@@ -5611,19 +6154,39 @@ SniperMainBox:AddButton({
 
 SniperMainBox:AddDivider()
 
-SniperMainBox:AddToggle("HolyGAG2SniperEnabled", {
-    Text = "Activate Sniper",
-    Default = false,
-    Tooltip = "Start looking for selected pets.",
-    Callback = function(value)
+GAG2_SNIPER_TOGGLE_CONTROL =
+    SniperMainBox:AddToggle("HolyGAG2SniperEnabled", {
+        Text = "Activate Sniper",
+        Default = false,
+        Tooltip = "Start looking for selected pets. Hotkey: F.",
+        Callback = function(value)
 
-        SniperSetEnabled(
-            value == true
+            if GAG2_SNIPER_STOPPING == true then
+                return
+            end
+
+            SniperSetEnabled(
+                value == true
+            )
+
+            MarkConfigDirty()
+        end,
+    })
+
+if GAG2_SNIPER_TOGGLE_CONTROL
+and type(GAG2_SNIPER_TOGGLE_CONTROL.AddKeyPicker) == "function" then
+
+    GAG2_SNIPER_KEYBIND_CONTROL =
+        GAG2_SNIPER_TOGGLE_CONTROL:AddKeyPicker(
+            "HolyGAG2SniperHotkey",
+            {
+                Text = "Sniper Key",
+                Default = "F",
+                Mode = "Toggle",
+                SyncToggleState = true,
+            }
         )
-
-        MarkConfigDirty()
-    end,
-})
+end
 
 SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
     Text = "Auto Hop If No Match",
@@ -5639,6 +6202,19 @@ SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
             and "Auto hop enabled."
             or "Auto hop disabled."
         )
+
+        MarkConfigDirty()
+    end,
+})
+
+SniperMainBox:AddToggle("HolyGAG2SniperInstantFirstHop", {
+    Text = "Instant Hop On Join",
+    Default = SniperState.InstantFirstHop == false,
+    Tooltip = "If no selected pet is found after loading, hop immediately instead of waiting Hop Delay.",
+    Callback = function(value)
+
+        SniperState.InstantFirstHop =
+            value == true
 
         MarkConfigDirty()
     end,
@@ -5988,9 +6564,29 @@ pcall(function()
     end)
 end)
 
+task.spawn(function()
+
+    for _ = 1, 12 do
+
+        local blocking =
+            GAG2IsPlayScreenBlocking()
+
+        if blocking ~= true then
+            break
+        end
+
+        GAG2PressPlayScreen()
+
+        task.wait(
+            1
+        )
+    end
+end)
+
 RefreshServerInfo()
 RefreshHomeActivePets()
 StartHomeActivePetsLoop()
+StartGAG2SniperHotkey()
 SetStatus("Ready")
 
 Library:OnUnload(function()
