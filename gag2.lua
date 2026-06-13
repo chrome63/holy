@@ -20,6 +20,9 @@ local HttpService =
 local ReplicatedStorage =
     game:GetService("ReplicatedStorage")
 
+local CoreGui =
+    game:GetService("CoreGui")
+
 local VirtualInputManager =
     nil
 
@@ -113,6 +116,30 @@ GAG2_SNIPER_KEYBIND_CONTROL =
 
 GAG2_SNIPER_STOPPING =
     false
+
+GAG2_MANUAL_JOIN_STATE = {
+    HudEnabled = false,
+    TargetText = "",
+    LastTargetText = "",
+    StatusText = "Paste JobId.",
+    PreviewText = "Paste JobId.",
+    Refreshing = false,
+}
+
+GAG2_MANUAL_JOIN_INPUT_CONTROL =
+    nil
+
+GAG2_MANUAL_JOIN_HUD_TOGGLE =
+    nil
+
+GAG2_MANUAL_JOIN_HUD_GUI =
+    nil
+
+GAG2_MANUAL_JOIN_HUD_INPUT =
+    nil
+
+GAG2_MANUAL_JOIN_HUD_STATUS =
+    nil
 --==================================================
 -- [2] BASIC HELPERS
 --==================================================
@@ -508,6 +535,825 @@ local function RejoinServer()
             5
         )
     end
+end
+
+function GAG2ParseManualJoinTarget(text)
+
+    text =
+        tostring(text or "")
+            :gsub("`", "")
+            :gsub("\n", " ")
+            :gsub("\r", " ")
+
+    text =
+        CleanText(
+            text
+        )
+
+    if text == "" then
+        return nil, "Paste JobId."
+    end
+
+    local placeFromPair, jobFromPair =
+        text:match("(%d+)%s*[:|,]%s*([%w%-]+)")
+
+    local placeId =
+        tonumber(placeFromPair)
+
+    if not placeId then
+
+        placeId =
+            tonumber(
+                text:match("[Pp]lace[Ii]d[%s=:]+(%d+)")
+            )
+    end
+
+    if not placeId then
+
+        placeId =
+            tonumber(
+                text:match("placeId=(%d+)")
+            )
+    end
+
+    if not placeId
+    or placeId <= 0 then
+
+        placeId =
+            GROW_A_GARDEN_2_PLACE_ID
+    end
+
+    local jobId =
+        jobFromPair
+
+    if not jobId
+    or jobId == "" then
+
+        jobId =
+            text:match("[Gg]ame[Ii]nstance[Ii]d[%s=:/]+([%w%-]+)")
+            or text:match("gameInstanceId=([%w%-]+)")
+            or text:match("[Jj]ob[Ii]d[%s=:/]+([%w%-]+)")
+            or text:match("jobId=([%w%-]+)")
+            or text:match("([%w]+%-%w+%-%w+%-%w+%-%w+)")
+            or ""
+    end
+
+    jobId =
+        CleanText(jobId)
+            :gsub("[^%w%-]", "")
+
+    if jobId == ""
+    or #jobId < 10 then
+        return nil, "Invalid JobId."
+    end
+
+    return {
+        PlaceId = placeId,
+        JobId = jobId,
+        JoinCode =
+            tostring(placeId)
+            .. ":"
+            .. tostring(jobId),
+    },
+    nil
+end
+
+function GAG2SetManualJoinStatus(text)
+
+    GAG2_MANUAL_JOIN_STATE.StatusText =
+        tostring(text or "Ready.")
+
+    GAG2RefreshManualJoinVisuals()
+end
+
+function GAG2SetManualJoinTargetText(text)
+
+    GAG2_MANUAL_JOIN_STATE.TargetText =
+        tostring(text or "")
+
+    local parsed, errorText =
+        GAG2ParseManualJoinTarget(
+            GAG2_MANUAL_JOIN_STATE.TargetText
+        )
+
+    if parsed then
+
+        GAG2_MANUAL_JOIN_STATE.PreviewText =
+            "Ready: "
+            .. tostring(parsed.JobId)
+
+        GAG2_MANUAL_JOIN_STATE.StatusText =
+            "Ready."
+
+    else
+
+        GAG2_MANUAL_JOIN_STATE.PreviewText =
+            tostring(errorText or "Invalid input.")
+
+        if CleanText(GAG2_MANUAL_JOIN_STATE.TargetText) == "" then
+
+            GAG2_MANUAL_JOIN_STATE.StatusText =
+                "Paste JobId."
+
+        else
+
+            GAG2_MANUAL_JOIN_STATE.StatusText =
+                tostring(errorText or "Invalid input.")
+        end
+    end
+
+    GAG2RefreshManualJoinVisuals()
+end
+
+function GAG2CopyCurrentJoinCode()
+
+    local payload =
+        tostring(game.PlaceId)
+        .. ":"
+        .. tostring(game.JobId)
+
+    if CopyText(payload) == true then
+
+        GAG2_MANUAL_JOIN_STATE.LastTargetText =
+            payload
+
+        GAG2SetManualJoinStatus(
+            "Copied current server."
+        )
+
+        Notify(
+            "Copied",
+            "Join code copied.",
+            3
+        )
+
+        return true
+    end
+
+    GAG2SetManualJoinStatus(
+        "Clipboard unsupported."
+    )
+
+    Notify(
+        "Clipboard",
+        "Clipboard unsupported.",
+        4
+    )
+
+    return false
+end
+
+function GAG2ManualJoinServer()
+
+    local parsed, errorText =
+        GAG2ParseManualJoinTarget(
+            GAG2_MANUAL_JOIN_STATE.TargetText
+        )
+
+    if not parsed then
+
+        GAG2SetManualJoinStatus(
+            tostring(errorText or "Invalid input.")
+        )
+
+        Notify(
+            "Join Server",
+            tostring(errorText or "Invalid input."),
+            4
+        )
+
+        return false
+    end
+
+    if tostring(parsed.JobId) == tostring(game.JobId) then
+
+        GAG2SetManualJoinStatus(
+            "Already in this server."
+        )
+
+        Notify(
+            "Join Server",
+            "Already in this server.",
+            3
+        )
+
+        return false
+    end
+
+    if type(GAG2CancelServerHop) == "function" then
+
+        GAG2CancelServerHop(
+            nil
+        )
+
+    else
+
+        GAG2_SERVER_HOP_RETRYING =
+            false
+
+        GAG2_SERVER_HOP_ATTEMPT =
+            0
+    end
+
+    GAG2_MANUAL_JOIN_STATE.LastTargetText =
+        parsed.JoinCode
+
+    GAG2SetManualJoinStatus(
+        "Joining server..."
+    )
+
+    SetStatus(
+        "Joining manual server..."
+    )
+
+    local ok, err =
+        pcall(function()
+
+            TeleportService:TeleportToPlaceInstance(
+                parsed.PlaceId,
+                parsed.JobId,
+                LOCAL_PLAYER
+            )
+        end)
+
+    if ok ~= true then
+
+        GAG2SetManualJoinStatus(
+            "Join failed."
+        )
+
+        SetStatus(
+            "Join failed: "
+            .. tostring(err)
+        )
+
+        Notify(
+            "Join Failed",
+            tostring(err),
+            5
+        )
+
+        return false
+    end
+
+    return true
+end
+
+function GAG2GetManualJoinHudParent()
+
+    local ok =
+        pcall(function()
+
+            if CoreGui then
+                return CoreGui.Name
+            end
+        end)
+
+    if ok == true
+    and CoreGui then
+        return CoreGui
+    end
+
+    return LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+        or nil
+end
+
+function GAG2DestroyManualJoinHud()
+
+    if GAG2_MANUAL_JOIN_HUD_GUI then
+
+        pcall(function()
+
+            GAG2_MANUAL_JOIN_HUD_GUI:Destroy()
+        end)
+    end
+
+    GAG2_MANUAL_JOIN_HUD_GUI =
+        nil
+
+    GAG2_MANUAL_JOIN_HUD_INPUT =
+        nil
+
+    GAG2_MANUAL_JOIN_HUD_STATUS =
+        nil
+end
+
+function GAG2StyleManualJoinButton(button)
+
+    if typeof(button) ~= "Instance" then
+        return
+    end
+
+    button.BackgroundColor3 =
+        Color3.fromRGB(24, 18, 38)
+
+    button.BorderSizePixel =
+        0
+
+    button.Font =
+        Enum.Font.Code
+
+    button.TextSize =
+        12
+
+    button.TextColor3 =
+        Color3.fromRGB(232, 230, 240)
+
+    local corner =
+        Instance.new("UICorner")
+
+    corner.CornerRadius =
+        UDim.new(0, 5)
+
+    corner.Parent =
+        button
+end
+
+function GAG2CreateManualJoinHud()
+
+    if GAG2_MANUAL_JOIN_HUD_GUI then
+        return GAG2_MANUAL_JOIN_HUD_GUI
+    end
+
+    local parent =
+        GAG2GetManualJoinHudParent()
+
+    if not parent then
+
+        GAG2SetManualJoinStatus(
+            "HUD parent missing."
+        )
+
+        return nil
+    end
+
+    local gui =
+        Instance.new("ScreenGui")
+
+    gui.Name =
+        "HolyGAG2ManualJoinHud"
+
+    gui.ResetOnSpawn =
+        false
+
+    gui.IgnoreGuiInset =
+        true
+
+    gui.ZIndexBehavior =
+        Enum.ZIndexBehavior.Sibling
+
+    gui.Parent =
+        parent
+
+    local frame =
+        Instance.new("Frame")
+
+    frame.Name =
+        "Frame"
+
+    frame.Position =
+        UDim2.new(
+            1,
+            -318,
+            0,
+            130
+        )
+
+    frame.Size =
+        UDim2.fromOffset(
+            300,
+            130
+        )
+
+    frame.BackgroundColor3 =
+        Color3.fromRGB(9, 7, 15)
+
+    frame.BorderSizePixel =
+        0
+
+    frame.Active =
+        true
+
+    frame.Draggable =
+        true
+
+    frame.Parent =
+        gui
+
+    local frameCorner =
+        Instance.new("UICorner")
+
+    frameCorner.CornerRadius =
+        UDim.new(0, 8)
+
+    frameCorner.Parent =
+        frame
+
+    local stroke =
+        Instance.new("UIStroke")
+
+    stroke.Color =
+        Color3.fromRGB(88, 64, 145)
+
+    stroke.Thickness =
+        1
+
+    stroke.Transparency =
+        0.15
+
+    stroke.Parent =
+        frame
+
+    local title =
+        Instance.new("TextLabel")
+
+    title.Name =
+        "Title"
+
+    title.BackgroundTransparency =
+        1
+
+    title.Position =
+        UDim2.fromOffset(
+            10,
+            5
+        )
+
+    title.Size =
+        UDim2.fromOffset(
+            245,
+            22
+        )
+
+    title.Font =
+        Enum.Font.Code
+
+    title.TextSize =
+        14
+
+    title.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    title.TextColor3 =
+        Color3.fromRGB(232, 230, 240)
+
+    title.Text =
+        "Holy GAG2 Joiner"
+
+    title.Parent =
+        frame
+
+    local close =
+        Instance.new("TextButton")
+
+    close.Name =
+        "Close"
+
+    close.BackgroundTransparency =
+        1
+
+    close.Position =
+        UDim2.fromOffset(
+            265,
+            4
+        )
+
+    close.Size =
+        UDim2.fromOffset(
+            28,
+            22
+        )
+
+    close.Font =
+        Enum.Font.Code
+
+    close.TextSize =
+        16
+
+    close.TextColor3 =
+        Color3.fromRGB(196, 181, 253)
+
+    close.Text =
+        "×"
+
+    close.Parent =
+        frame
+
+    close.MouseButton1Click:Connect(function()
+
+        GAG2_MANUAL_JOIN_STATE.HudEnabled =
+            false
+
+        if GAG2_MANUAL_JOIN_HUD_TOGGLE
+        and type(GAG2_MANUAL_JOIN_HUD_TOGGLE.SetValue) == "function" then
+
+            pcall(function()
+
+                GAG2_MANUAL_JOIN_HUD_TOGGLE:SetValue(
+                    false
+                )
+            end)
+        end
+
+        GAG2DestroyManualJoinHud()
+
+        MarkConfigDirty()
+    end)
+
+    local input =
+        Instance.new("TextBox")
+
+    input.Name =
+        "Target"
+
+    input.Position =
+        UDim2.fromOffset(
+            10,
+            32
+        )
+
+    input.Size =
+        UDim2.fromOffset(
+            280,
+            26
+        )
+
+    input.BackgroundColor3 =
+        Color3.fromRGB(15, 12, 24)
+
+    input.BorderSizePixel =
+        0
+
+    input.ClearTextOnFocus =
+        false
+
+    input.Font =
+        Enum.Font.Code
+
+    input.TextSize =
+        12
+
+    input.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    input.TextColor3 =
+        Color3.fromRGB(232, 230, 240)
+
+    input.PlaceholderColor3 =
+        Color3.fromRGB(125, 116, 145)
+
+    input.PlaceholderText =
+        "JobId or placeId:JobId..."
+
+    input.Text =
+        GAG2_MANUAL_JOIN_STATE.TargetText
+
+    input.Parent =
+        frame
+
+    local inputCorner =
+        Instance.new("UICorner")
+
+    inputCorner.CornerRadius =
+        UDim.new(0, 5)
+
+    inputCorner.Parent =
+        input
+
+    input.FocusLost:Connect(function()
+
+        GAG2SetManualJoinTargetText(
+            input.Text
+        )
+    end)
+
+    local status =
+        Instance.new("TextLabel")
+
+    status.Name =
+        "Status"
+
+    status.BackgroundTransparency =
+        1
+
+    status.Position =
+        UDim2.fromOffset(
+            10,
+            62
+        )
+
+    status.Size =
+        UDim2.fromOffset(
+            280,
+            18
+        )
+
+    status.Font =
+        Enum.Font.Code
+
+    status.TextSize =
+        12
+
+    status.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    status.TextColor3 =
+        Color3.fromRGB(196, 181, 253)
+
+    status.Text =
+        GAG2_MANUAL_JOIN_STATE.StatusText
+
+    status.Parent =
+        frame
+
+    local join =
+        Instance.new("TextButton")
+
+    join.Name =
+        "Join"
+
+    join.Position =
+        UDim2.fromOffset(
+            10,
+            88
+        )
+
+    join.Size =
+        UDim2.fromOffset(
+            82,
+            24
+        )
+
+    join.Text =
+        "Join"
+
+    join.Parent =
+        frame
+
+    GAG2StyleManualJoinButton(
+        join
+    )
+
+    join.MouseButton1Click:Connect(function()
+
+        GAG2SetManualJoinTargetText(
+            input.Text
+        )
+
+        GAG2ManualJoinServer()
+    end)
+
+    local copy =
+        Instance.new("TextButton")
+
+    copy.Name =
+        "CopyCurrent"
+
+    copy.Position =
+        UDim2.fromOffset(
+            101,
+            88
+        )
+
+    copy.Size =
+        UDim2.fromOffset(
+            88,
+            24
+        )
+
+    copy.Text =
+        "Copy"
+
+    copy.Parent =
+        frame
+
+    GAG2StyleManualJoinButton(
+        copy
+    )
+
+    copy.MouseButton1Click:Connect(function()
+
+        GAG2CopyCurrentJoinCode()
+    end)
+
+    local rejoin =
+        Instance.new("TextButton")
+
+    rejoin.Name =
+        "Rejoin"
+
+    rejoin.Position =
+        UDim2.fromOffset(
+            198,
+            88
+        )
+
+    rejoin.Size =
+        UDim2.fromOffset(
+            92,
+            24
+        )
+
+    rejoin.Text =
+        "Rejoin"
+
+    rejoin.Parent =
+        frame
+
+    GAG2StyleManualJoinButton(
+        rejoin
+    )
+
+    rejoin.MouseButton1Click:Connect(function()
+
+        GAG2SetManualJoinTargetText(
+            tostring(game.PlaceId)
+            .. ":"
+            .. tostring(game.JobId)
+        )
+
+        GAG2ManualJoinServer()
+    end)
+
+    GAG2_MANUAL_JOIN_HUD_GUI =
+        gui
+
+    GAG2_MANUAL_JOIN_HUD_INPUT =
+        input
+
+    GAG2_MANUAL_JOIN_HUD_STATUS =
+        status
+
+    GAG2RefreshManualJoinVisuals()
+
+    return gui
+end
+
+function GAG2SetManualJoinHudEnabled(value)
+
+    GAG2_MANUAL_JOIN_STATE.HudEnabled =
+        value == true
+
+    if GAG2_MANUAL_JOIN_STATE.HudEnabled == true then
+
+        GAG2CreateManualJoinHud()
+
+    else
+
+        GAG2DestroyManualJoinHud()
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2RefreshManualJoinVisuals()
+
+    if type(GAG2_MANUAL_JOIN_STATE) ~= "table" then
+        return
+    end
+
+    if GAG2_MANUAL_JOIN_STATE.Refreshing == true then
+        return
+    end
+
+    GAG2_MANUAL_JOIN_STATE.Refreshing =
+        true
+
+    if GAG2_MANUAL_JOIN_INPUT_CONTROL
+    and type(GAG2_MANUAL_JOIN_INPUT_CONTROL.SetValue) == "function" then
+
+        pcall(function()
+
+            GAG2_MANUAL_JOIN_INPUT_CONTROL:SetValue(
+                GAG2_MANUAL_JOIN_STATE.TargetText
+            )
+        end)
+    end
+
+    if GAG2_MANUAL_JOIN_HUD_INPUT
+    and GAG2_MANUAL_JOIN_HUD_INPUT.Text ~= GAG2_MANUAL_JOIN_STATE.TargetText then
+
+        pcall(function()
+
+            GAG2_MANUAL_JOIN_HUD_INPUT.Text =
+                GAG2_MANUAL_JOIN_STATE.TargetText
+        end)
+    end
+
+    if GAG2_MANUAL_JOIN_HUD_STATUS then
+
+        pcall(function()
+
+            GAG2_MANUAL_JOIN_HUD_STATUS.Text =
+                GAG2_MANUAL_JOIN_STATE.StatusText
+                or GAG2_MANUAL_JOIN_STATE.PreviewText
+                or "Ready."
+        end)
+    end
+
+    GAG2_MANUAL_JOIN_STATE.Refreshing =
+        false
 end
 
 local function GetHttp(url)
@@ -5855,6 +6701,65 @@ HomeMainBox:AddButton({
     end,
 })
 
+HomeMainBox:AddDivider()
+
+HomeMainBox:AddLabel({
+    Text =
+        '<font color="rgb(196,181,253)"><b>Manual Server Joiner</b></font>',
+    DoesWrap = true,
+    Size = 13,
+})
+
+GAG2_MANUAL_JOIN_INPUT_CONTROL =
+    HomeMainBox:AddInput("HolyGAG2ManualJoinTarget", {
+        Text = "JobId / Join Code",
+        Default = "",
+        Numeric = false,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "JobId or placeId:JobId",
+        Tooltip = "Paste a JobId, placeId:JobId, or Roblox server link.",
+        Callback = function(value)
+
+            if GAG2_MANUAL_JOIN_STATE.Refreshing == true then
+                return
+            end
+
+            GAG2SetManualJoinTargetText(
+                value
+            )
+        end,
+    })
+
+HomeMainBox:AddButton({
+    Text = "Join Server",
+    Tooltip = "Join the pasted server JobId.",
+    Func = function()
+
+        GAG2ManualJoinServer()
+    end,
+}):AddButton({
+    Text = "Copy Join Code",
+    Tooltip = "Copy current placeId:JobId.",
+    Func = function()
+
+        GAG2CopyCurrentJoinCode()
+    end,
+})
+
+GAG2_MANUAL_JOIN_HUD_TOGGLE =
+    HomeMainBox:AddToggle("HolyGAG2ManualJoinHud", {
+        Text = "Pop Out Join HUD",
+        Default = false,
+        Tooltip = "Show a small draggable server join HUD.",
+        Callback = function(value)
+
+            GAG2SetManualJoinHudEnabled(
+                value == true
+            )
+        end,
+    })
+
 HomeMainBox:AddLabel("HolyGAG2Status", {
     Text =
         '<font color="rgb(196,181,253)"><b>Status:</b></font> Ready',
@@ -6495,6 +7400,7 @@ if type(SaveManager.SetIgnoreIndexes) == "function" then
     SaveManager:SetIgnoreIndexes({
         "HolyGAG2AutoCloseUI",
         "HolyGAG2DPI",
+        "HolyGAG2ManualJoinTarget",
     })
 end
 
