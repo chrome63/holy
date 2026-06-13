@@ -20,6 +20,9 @@ local HttpService =
 local UserInputService =
     game:GetService("UserInputService")
 
+local RunService =
+    game:GetService("RunService")
+
 local ReplicatedStorage =
     game:GetService("ReplicatedStorage")
 
@@ -145,6 +148,12 @@ local UIState = {
     SellAutoMaxBackpack = false,
     SellDelay = 0.5,
     SellDebug = false,
+
+    VisualWildPetHUD = false,
+    VisualWildPetWorldLabels = false,
+    VisualWildPetRefreshDelay = 0.5,
+    VisualWildPetDebug = false,
+    VisualWildPetPopupPosition = nil,
 
     FarmAutoPlant = false,
     FarmAutoCollect = false,
@@ -364,6 +373,69 @@ local function LoadUISettings()
             payload.SellDebug == true
     end
 
+    if payload.VisualWildPetHUD ~= nil then
+
+        UIState.VisualWildPetHUD =
+            payload.VisualWildPetHUD == true
+
+    else
+
+        UIState.VisualWildPetHUD =
+            false
+    end
+
+    UIState.VisualWildPetWorldLabels =
+        false
+
+    UIState.VisualWildPetRefreshDelay =
+        SettingsNormalizeNumber(
+            payload.VisualWildPetRefreshDelay,
+            0.5,
+            0.2,
+            5
+        )
+
+    if payload.VisualWildPetDebug ~= nil then
+        UIState.VisualWildPetDebug =
+            payload.VisualWildPetDebug == true
+    end
+
+    if type(payload.VisualWildPetPopupPosition) == "table" then
+
+        local xScale =
+            tonumber(payload.VisualWildPetPopupPosition.XScale)
+            or tonumber(payload.VisualWildPetPopupPosition.xScale)
+            or tonumber(payload.VisualWildPetPopupPosition[1])
+
+        local xOffset =
+            tonumber(payload.VisualWildPetPopupPosition.XOffset)
+            or tonumber(payload.VisualWildPetPopupPosition.xOffset)
+            or tonumber(payload.VisualWildPetPopupPosition[2])
+
+        local yScale =
+            tonumber(payload.VisualWildPetPopupPosition.YScale)
+            or tonumber(payload.VisualWildPetPopupPosition.yScale)
+            or tonumber(payload.VisualWildPetPopupPosition[3])
+
+        local yOffset =
+            tonumber(payload.VisualWildPetPopupPosition.YOffset)
+            or tonumber(payload.VisualWildPetPopupPosition.yOffset)
+            or tonumber(payload.VisualWildPetPopupPosition[4])
+
+        if xScale
+        and xOffset
+        and yScale
+        and yOffset then
+
+            UIState.VisualWildPetPopupPosition = {
+                XScale = xScale,
+                XOffset = xOffset,
+                YScale = yScale,
+                YOffset = yOffset,
+            }
+        end
+    end
+
     if payload.FarmAutoPlant ~= nil then
         UIState.FarmAutoPlant =
             payload.FarmAutoPlant == true
@@ -529,6 +601,28 @@ local function SaveUISettings(reason)
 
         SellDebug =
             UIState.SellDebug == true,
+
+        VisualWildPetHUD =
+            UIState.VisualWildPetHUD == true,
+
+        VisualWildPetWorldLabels =
+            UIState.VisualWildPetWorldLabels == true,
+
+        VisualWildPetRefreshDelay =
+            SettingsNormalizeNumber(
+                UIState.VisualWildPetRefreshDelay,
+                0.5,
+                0.2,
+                5
+            ),
+
+        VisualWildPetDebug =
+            UIState.VisualWildPetDebug == true,
+
+        VisualWildPetPopupPosition =
+            type(UIState.VisualWildPetPopupPosition) == "table"
+            and UIState.VisualWildPetPopupPosition
+            or nil,
 
         FarmAutoPlant =
             UIState.FarmAutoPlant == true,
@@ -2618,8 +2712,2074 @@ local function SellConnectReplicaWatcher()
     end)
 end
 
-SellConnectInventoryFullWatcher()
-SellConnectReplicaWatcher()
+-- Sell watchers are connected after the Sell UI is built.
+
+--==================================================
+-- [5.57] ACTIVE WILD PET VISUAL HELPERS
+--==================================================
+
+local WildPetVisual = {
+    Enabled = false,
+    Running = false,
+    Debug = UIState.VisualWildPetDebug == true,
+    RefreshDelay =
+        SettingsNormalizeNumber(
+            UIState.VisualWildPetRefreshDelay,
+            0.5,
+            0.2,
+            5
+        ),
+    LastCount = 0,
+    LastStatus = "not started",
+    StatusLabel = nil,
+    InfoLabel = nil,
+
+    PopupGui = nil,
+    PopupFrame = nil,
+    PopupStatusLabel = nil,
+    PopupRowsFrame = nil,
+    PopupDragConnections = {},
+
+    BuyPacket = nil,
+    BuyPacketSource = "not found",
+    LastBuyAt = 0,
+}
+
+function WildPetVisual.Print(...)
+
+    if WildPetVisual.Debug ~= true then
+        return
+    end
+
+    print(
+        "[HOLY GAG2 WILD PET HUD]",
+        ...
+    )
+end
+
+function WildPetVisual.PathOf(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return tostring(instance)
+    end
+
+    local ok, result =
+        pcall(function()
+            return instance:GetFullName()
+        end)
+
+    if ok == true
+    and type(result) == "string" then
+        return result
+    end
+
+    return tostring(instance)
+end
+
+function WildPetVisual.Clean(value)
+
+    return CleanText(
+        tostring(value or "")
+            :gsub("<[^>]->", "")
+            :gsub("<.->", "")
+    )
+end
+
+function WildPetVisual.SetStatus(text)
+
+    WildPetVisual.LastStatus =
+        tostring(text or "Ready")
+
+    if WildPetVisual.StatusLabel
+    and type(WildPetVisual.StatusLabel.SetText) == "function" then
+
+        WildPetVisual.StatusLabel:SetText(
+            '<font color="rgb(196,181,253)"><b>Wild Pet HUD:</b></font> '
+            .. WildPetVisual.LastStatus
+        )
+    end
+end
+
+function WildPetVisual.GetSpawnsFolder()
+
+    local map =
+        workspace:FindFirstChild("Map")
+
+    return map
+        and map:FindFirstChild("WildPetSpawns")
+end
+
+function WildPetVisual.GetRefFolder()
+
+    local map =
+        workspace:FindFirstChild("Map")
+
+    return map
+        and map:FindFirstChild("WildPetRef")
+end
+
+function WildPetVisual.GetUuid(spawnName)
+
+    spawnName =
+        WildPetVisual.Clean(spawnName)
+
+    return spawnName:match("_WildPet_([%w%-]+)$")
+        or spawnName:match("WildPet_([%w%-]+)$")
+        or ""
+end
+
+function WildPetVisual.GetName(spawn)
+
+    if typeof(spawn) ~= "Instance" then
+        return "Unknown"
+    end
+
+    local attrNames = {
+        "PetName",
+        "WildPetName",
+        "AnimalName",
+        "DisplayName",
+        "Name",
+    }
+
+    for _, attrName in ipairs(attrNames) do
+
+        local ok, value =
+            pcall(function()
+                return spawn:GetAttribute(attrName)
+            end)
+
+        value =
+            ok == true
+            and WildPetVisual.Clean(value)
+            or ""
+
+        if value ~= "" then
+            return value
+        end
+    end
+
+    local fromName =
+        WildPetVisual.Clean(spawn.Name):match("^WildPet_(.-)_WildPet_")
+
+    if fromName
+    and fromName ~= "" then
+        return fromName:gsub("_", " ")
+    end
+
+    return WildPetVisual.Clean(spawn.Name):gsub("_", " ")
+end
+
+function WildPetVisual.FindRef(uuid)
+
+    uuid =
+        WildPetVisual.Clean(uuid)
+
+    if uuid == "" then
+        return nil
+    end
+
+    local refFolder =
+        WildPetVisual.GetRefFolder()
+
+    if not refFolder then
+        return nil
+    end
+
+    return refFolder:FindFirstChild(
+        "WildPet_" .. uuid
+    )
+end
+
+function WildPetVisual.GetPosition(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    if instance:IsA("BasePart") then
+        return instance.Position
+    end
+
+    if instance:IsA("Model") then
+
+        if instance.PrimaryPart then
+            return instance.PrimaryPart.Position
+        end
+
+        local ok, cf =
+            pcall(function()
+                return instance:GetBoundingBox()
+            end)
+
+        if ok == true
+        and typeof(cf) == "CFrame" then
+            return cf.Position
+        end
+    end
+
+    for _, descendant in ipairs(instance:GetDescendants()) do
+
+        if descendant:IsA("BasePart") then
+            return descendant.Position
+        end
+    end
+
+    return nil
+end
+
+function WildPetVisual.DistanceText(position)
+
+    if typeof(position) ~= "Vector3" then
+        return "? studs"
+    end
+
+    local character =
+        LOCAL_PLAYER.Character
+
+    local root =
+        character
+        and character:FindFirstChild("HumanoidRootPart")
+
+    if not root then
+        return "? studs"
+    end
+
+    return tostring(
+        math.floor(
+            (root.Position - position).Magnitude + 0.5
+        )
+    )
+    .. " studs"
+end
+
+function WildPetVisual.GetTextRows(root)
+
+    local rows =
+        {}
+
+    if typeof(root) ~= "Instance" then
+        return rows
+    end
+
+    for _, descendant in ipairs(root:GetDescendants()) do
+
+        if descendant:IsA("TextLabel")
+        or descendant:IsA("TextButton")
+        or descendant:IsA("TextBox") then
+
+            local ok, text =
+                pcall(function()
+                    return descendant.Text
+                end)
+
+            text =
+                ok == true
+                and WildPetVisual.Clean(text)
+                or ""
+
+            if text ~= "" then
+
+                table.insert(rows, {
+                    Text = text,
+                    Path = WildPetVisual.PathOf(descendant),
+                })
+            end
+        end
+    end
+
+    return rows
+end
+
+function WildPetVisual.ReadAttributeAny(instance, attrNames)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    for _, attrName in ipairs(attrNames) do
+
+        local ok, value =
+            pcall(function()
+                return instance:GetAttribute(attrName)
+            end)
+
+        if ok == true
+        and value ~= nil then
+            return value
+        end
+    end
+
+    return nil
+end
+
+function WildPetVisual.FormatSeconds(seconds)
+
+    seconds =
+        math.max(
+            0,
+            math.floor(
+                tonumber(seconds)
+                or 0
+            )
+        )
+
+    local minutes =
+        math.floor(seconds / 60)
+
+    local remain =
+        seconds % 60
+
+    if minutes > 0 then
+        return tostring(minutes) .. "m " .. tostring(remain) .. "s"
+    end
+
+    return tostring(remain) .. "s"
+end
+
+function WildPetVisual.FormatMoney(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+
+        value =
+            WildPetVisual.Clean(value)
+
+        if value == "" then
+            return "?"
+        end
+
+        return value
+    end
+
+    local text =
+        tostring(
+            math.floor(number + 0.5)
+        )
+
+    text =
+        text:reverse()
+            :gsub("(%d%d%d)", "%1,")
+            :reverse()
+            :gsub("^,", "")
+
+    return "¢" .. text
+end
+
+function WildPetVisual.ExtractTimer(textRows)
+
+    for _, row in ipairs(textRows) do
+
+        local text =
+            tostring(row.Text or "")
+
+        local timer =
+            text:match("(%d+%s*m%s*%d+%s*s)")
+            or text:match("(%d+%s*:%s*%d+)")
+            or text:match("(%d+%s*s)")
+
+        if timer then
+            return timer:gsub("%s+", " ")
+        end
+    end
+
+    return "?"
+end
+
+function WildPetVisual.ExtractPrice(textRows)
+
+    for _, row in ipairs(textRows) do
+
+        local text =
+            tostring(row.Text or "")
+
+        if text:find("¢", 1, true)
+        or text:find("$", 1, true)
+        or text:lower():find("sheckle", 1, true) then
+
+            return WildPetVisual.Clean(
+                text:match("¢%s*[%d,%.]+")
+                or text:match("%$%s*[%d,%.]+")
+                or text:match("[%d,%.]+%s*[Ss]heckles?")
+                or text
+            )
+        end
+    end
+
+    return "?"
+end
+
+function WildPetVisual.GetTimer(spawn, ref, textRows)
+
+    local value =
+        WildPetVisual.ReadAttributeAny(
+            spawn,
+            {
+                "TimeLeft",
+                "Timer",
+                "Remaining",
+                "RemainingTime",
+                "DespawnTime",
+                "ExpiresAt",
+                "EndTime",
+            }
+        )
+
+    if value == nil
+    and ref then
+
+        value =
+            WildPetVisual.ReadAttributeAny(
+                ref,
+                {
+                    "TimeLeft",
+                    "Timer",
+                    "Remaining",
+                    "RemainingTime",
+                    "DespawnTime",
+                    "ExpiresAt",
+                    "EndTime",
+                }
+            )
+    end
+
+    if typeof(value) == "number"
+    or tonumber(value) ~= nil then
+
+        local number =
+            tonumber(value)
+
+        if number > os.time() then
+            return WildPetVisual.FormatSeconds(number - os.time())
+        end
+
+        return WildPetVisual.FormatSeconds(number)
+    end
+
+    if value ~= nil then
+        return WildPetVisual.Clean(value)
+    end
+
+    return WildPetVisual.ExtractTimer(textRows)
+end
+
+function WildPetVisual.GetPrice(spawn, ref, textRows)
+
+    local value =
+        WildPetVisual.ReadAttributeAny(
+            spawn,
+            {
+                "Price",
+                "Cost",
+                "Sheckles",
+                "BuyPrice",
+                "PurchasePrice",
+            }
+        )
+
+    if value == nil
+    and ref then
+
+        value =
+            WildPetVisual.ReadAttributeAny(
+                ref,
+                {
+                    "Price",
+                    "Cost",
+                    "Sheckles",
+                    "BuyPrice",
+                    "PurchasePrice",
+                }
+            )
+    end
+
+    if value ~= nil then
+        return WildPetVisual.FormatMoney(value)
+    end
+
+    return WildPetVisual.ExtractPrice(textRows)
+end
+
+function WildPetVisual.BuildEntry(spawn)
+
+    if typeof(spawn) ~= "Instance" then
+        return nil
+    end
+
+    local position =
+        WildPetVisual.GetPosition(spawn)
+
+    if not position then
+        return nil
+    end
+
+    local uuid =
+        WildPetVisual.GetUuid(spawn.Name)
+
+    local ref =
+        WildPetVisual.FindRef(uuid)
+
+    local textRows =
+        {}
+
+    for _, row in ipairs(WildPetVisual.GetTextRows(spawn)) do
+        table.insert(textRows, row)
+    end
+
+    if ref then
+
+        for _, row in ipairs(WildPetVisual.GetTextRows(ref)) do
+            table.insert(textRows, row)
+        end
+    end
+
+    local entry = {
+        Instance = spawn,
+        Name = WildPetVisual.GetName(spawn),
+        UUID = uuid,
+        Ref = ref,
+        Position = position,
+        Distance = WildPetVisual.DistanceText(position),
+        Timer = WildPetVisual.GetTimer(spawn, ref, textRows),
+        Price = WildPetVisual.GetPrice(spawn, ref, textRows),
+        Path = WildPetVisual.PathOf(spawn),
+    }
+
+    WildPetVisual.Print(
+        "ENTRY",
+        "| name:",
+        entry.Name,
+        "| timer:",
+        entry.Timer,
+        "| price:",
+        entry.Price,
+        "| distance:",
+        entry.Distance,
+        "| path:",
+        entry.Path
+    )
+
+    return entry
+end
+
+function WildPetVisual.GetActiveEntries()
+
+    local folder =
+        WildPetVisual.GetSpawnsFolder()
+
+    local entries =
+        {}
+
+    if not folder then
+        return entries, "missing workspace.Map.WildPetSpawns"
+    end
+
+    for _, child in ipairs(folder:GetChildren()) do
+
+        if child.Name:find("WildPet_", 1, true) then
+
+            local entry =
+                WildPetVisual.BuildEntry(child)
+
+            if entry then
+                table.insert(entries, entry)
+            end
+        end
+    end
+
+    table.sort(entries, function(a, b)
+
+        local root =
+            LOCAL_PLAYER.Character
+            and LOCAL_PLAYER.Character:FindFirstChild("HumanoidRootPart")
+
+        if root then
+
+            return (a.Position - root.Position).Magnitude
+                < (b.Position - root.Position).Magnitude
+        end
+
+        return tostring(a.Name) < tostring(b.Name)
+    end)
+
+    return entries, "ok"
+end
+
+function WildPetVisual.BuildHudText(entries, reason)
+
+    local lines = {
+        '<font color="rgb(196,181,253)"><b>Active Wild Pets</b></font>',
+        "Source: workspace.Map.WildPetSpawns",
+        "Status: " .. tostring(reason or "ok"),
+        "Count: " .. tostring(#entries),
+    }
+
+    if #entries <= 0 then
+
+        table.insert(
+            lines,
+            "\nNo active wild pets found."
+        )
+
+        return table.concat(lines, "\n")
+    end
+
+    for index, entry in ipairs(entries) do
+
+        if index > 8 then
+
+            table.insert(
+                lines,
+                "\n+" .. tostring(#entries - 8) .. " more..."
+            )
+
+            break
+        end
+
+        table.insert(
+            lines,
+            "\n"
+            .. tostring(index)
+            .. ". "
+            .. tostring(entry.Name)
+            .. " | "
+            .. tostring(entry.Distance)
+            .. "\n   Timer: "
+            .. tostring(entry.Timer)
+            .. " | Price: "
+            .. tostring(entry.Price)
+        )
+    end
+
+    return table.concat(lines, "\n")
+end
+
+function WildPetVisual.DestroyPopup()
+
+    if type(WildPetVisual.PopupDragConnections) == "table" then
+
+        for _, connection in ipairs(WildPetVisual.PopupDragConnections) do
+
+            pcall(function()
+
+                if connection
+                and type(connection.Disconnect) == "function" then
+
+                    connection:Disconnect()
+                end
+            end)
+        end
+    end
+
+    WildPetVisual.PopupDragConnections =
+        {}
+
+    if WildPetVisual.PopupGui then
+
+        pcall(function()
+            WildPetVisual.PopupGui:Destroy()
+        end)
+    end
+
+    WildPetVisual.PopupGui =
+        nil
+
+    WildPetVisual.PopupFrame =
+        nil
+
+    WildPetVisual.PopupStatusLabel =
+        nil
+
+    WildPetVisual.PopupRowsFrame =
+        nil
+end
+
+function WildPetVisual.GetSavedPopupPosition()
+
+    local position =
+        UIState.VisualWildPetPopupPosition
+
+    if type(position) ~= "table" then
+
+        return UDim2.new(
+            1,
+            -305,
+            0,
+            95
+        )
+    end
+
+    local xScale =
+        tonumber(position.XScale)
+
+    local xOffset =
+        tonumber(position.XOffset)
+
+    local yScale =
+        tonumber(position.YScale)
+
+    local yOffset =
+        tonumber(position.YOffset)
+
+    if not xScale
+    or not xOffset
+    or not yScale
+    or not yOffset then
+
+        return UDim2.new(
+            1,
+            -305,
+            0,
+            95
+        )
+    end
+
+    return UDim2.new(
+        xScale,
+        xOffset,
+        yScale,
+        yOffset
+    )
+end
+
+function WildPetVisual.SavePopupPosition(frame)
+
+    if typeof(frame) ~= "Instance" then
+        return
+    end
+
+    local position =
+        frame.Position
+
+    if typeof(position) ~= "UDim2" then
+        return
+    end
+
+    UIState.VisualWildPetPopupPosition = {
+        XScale = position.X.Scale,
+        XOffset = position.X.Offset,
+        YScale = position.Y.Scale,
+        YOffset = position.Y.Offset,
+    }
+
+    SaveUISettings(
+        "wild pet hud position changed"
+    )
+end
+
+function WildPetVisual.MakePopupDraggable(frame, handle)
+
+    if typeof(frame) ~= "Instance"
+    or typeof(handle) ~= "Instance" then
+        return
+    end
+
+    local dragging =
+        false
+
+    local dragInput =
+        nil
+
+    local dragStart =
+        nil
+
+    local startPosition =
+        nil
+
+    handle.Active =
+        true
+
+    local beganConnection =
+        handle.InputBegan:Connect(function(input)
+
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch then
+                return
+            end
+
+            dragging =
+                true
+
+            dragStart =
+                input.Position
+
+            startPosition =
+                frame.Position
+
+            local changedConnection =
+                nil
+
+            changedConnection =
+                input.Changed:Connect(function()
+
+                    if input.UserInputState == Enum.UserInputState.End then
+
+                        dragging =
+                            false
+
+                        WildPetVisual.SavePopupPosition(
+                            frame
+                        )
+
+                        if changedConnection then
+                            changedConnection:Disconnect()
+                        end
+                    end
+                end)
+        end)
+
+    local inputConnection =
+        handle.InputChanged:Connect(function(input)
+
+            if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then
+
+                dragInput =
+                    input
+            end
+        end)
+
+    local moveConnection =
+        UserInputService.InputChanged:Connect(function(input)
+
+            if dragging ~= true then
+                return
+            end
+
+            if input ~= dragInput then
+                return
+            end
+
+            if not dragStart
+            or not startPosition then
+                return
+            end
+
+            local delta =
+                input.Position - dragStart
+
+            frame.Position =
+                UDim2.new(
+                    startPosition.X.Scale,
+                    startPosition.X.Offset + delta.X,
+                    startPosition.Y.Scale,
+                    startPosition.Y.Offset + delta.Y
+                )
+        end)
+
+    table.insert(
+        WildPetVisual.PopupDragConnections,
+        beganConnection
+    )
+
+    table.insert(
+        WildPetVisual.PopupDragConnections,
+        inputConnection
+    )
+
+    table.insert(
+        WildPetVisual.PopupDragConnections,
+        moveConnection
+    )
+end
+
+function WildPetVisual.PacketScore(packetName, path)
+
+    local text =
+        (
+            tostring(packetName or "")
+            .. " "
+            .. tostring(path or "")
+        ):lower()
+
+    -- HARD SAFETY:
+    -- Do not allow generic Pet/Purchase/Buy packets.
+    -- The correct packet must mention Wild somewhere in its name/path.
+    if text:find("wild", 1, true) == nil then
+        return 0
+    end
+
+    local score =
+        0
+
+    if text:find("wild", 1, true) then
+        score += 300
+    end
+
+    if text:find("wildpet", 1, true) then
+        score += 250
+    end
+
+    if text:find("wild_pet", 1, true) then
+        score += 250
+    end
+
+    if text:find("pet", 1, true) then
+        score += 70
+    end
+
+    if text:find("buy", 1, true) then
+        score += 120
+    end
+
+    if text:find("purchase", 1, true) then
+        score += 120
+    end
+
+    if text:find("adopt", 1, true) then
+        score += 80
+    end
+
+    if text:find("claim", 1, true) then
+        score += 20
+    end
+
+    if text:find("seed", 1, true) then
+        score -= 500
+    end
+
+    if text:find("gear", 1, true) then
+        score -= 500
+    end
+
+    if text:find("crate", 1, true) then
+        score -= 500
+    end
+
+    if text:find("sell", 1, true) then
+        score -= 500
+    end
+
+    if text:find("trade", 1, true) then
+        score -= 500
+    end
+
+    if text:find("plant", 1, true) then
+        score -= 500
+    end
+
+    if text:find("inventory", 1, true) then
+        score -= 250
+    end
+
+    if text:find("equip", 1, true) then
+        score -= 250
+    end
+
+    return score
+end
+
+function WildPetVisual.SearchBuyPackets(candidate, seen, depth, path, results)
+
+    if type(candidate) ~= "table" then
+        return
+    end
+
+    if depth > 9 then
+        return
+    end
+
+    if seen[candidate] == true then
+        return
+    end
+
+    seen[candidate] =
+        true
+
+    if IsPacketObject(candidate) == true then
+
+        local packetName =
+            tostring(SafeRawGet(candidate, "Name") or "")
+
+        local score =
+            WildPetVisual.PacketScore(
+                packetName,
+                path
+            )
+
+        if score >= 300 then
+
+            table.insert(results, {
+                Packet = candidate,
+                Name = packetName,
+                Path = path,
+                Score = score,
+            })
+        end
+    end
+
+    for _, row in ipairs(SafePairsSnapshot(candidate)) do
+
+        if type(row.Value) == "table" then
+
+            WildPetVisual.SearchBuyPackets(
+                row.Value,
+                seen,
+                depth + 1,
+                path .. "." .. tostring(row.Key),
+                results
+            )
+        end
+    end
+end
+
+function WildPetVisual.FindBuyPacket()
+
+    if WildPetVisual.BuyPacket then
+
+        local okFireLookup, fireFunction =
+            pcall(function()
+                return WildPetVisual.BuyPacket.Fire
+            end)
+
+        if okFireLookup == true
+        and type(fireFunction) == "function" then
+            return WildPetVisual.BuyPacket
+        end
+    end
+
+    local packets =
+        FindHolyGAG2Packets()
+
+    if not packets then
+
+        WildPetVisual.BuyPacketSource =
+            "packet table missing: "
+            .. tostring(ShopAutomationState.PacketSource)
+
+        return nil
+    end
+
+    local results =
+        {}
+
+    WildPetVisual.SearchBuyPackets(
+        packets,
+        {},
+        0,
+        "Packets",
+        results
+    )
+
+    table.sort(results, function(a, b)
+
+        return tonumber(a.Score or 0) > tonumber(b.Score or 0)
+    end)
+
+    if WildPetVisual.Debug == true then
+
+        print(
+            "[HOLY GAG2 WILD PET HUD]",
+            "BUY PACKET CANDIDATES"
+        )
+
+        for index, row in ipairs(results) do
+
+            print(
+                "[HOLY GAG2 WILD PET HUD]",
+                "candidate",
+                tostring(index),
+                "| name:",
+                tostring(row.Name),
+                "| score:",
+                tostring(row.Score),
+                "| path:",
+                tostring(row.Path)
+            )
+
+            if index >= 15 then
+                break
+            end
+        end
+    end
+
+    if #results <= 0 then
+
+        WildPetVisual.BuyPacket =
+            nil
+
+        WildPetVisual.BuyPacketSource =
+            "no wild pet buy packet candidate found"
+
+        return nil
+    end
+
+    local best =
+        results[1]
+
+    WildPetVisual.BuyPacket =
+        best.Packet
+
+    WildPetVisual.BuyPacketSource =
+        tostring(best.Name)
+        .. " @ "
+        .. tostring(best.Path)
+        .. " | score "
+        .. tostring(best.Score)
+
+    return WildPetVisual.BuyPacket
+end
+
+function WildPetVisual.FireBuyPacket(entry)
+
+    if type(entry) ~= "table" then
+        return false, "missing entry"
+    end
+
+    local uuid =
+        CleanText(entry.UUID)
+
+    if uuid == "" then
+        return false, "missing wild pet uuid"
+    end
+
+    local ref =
+        entry.Ref
+
+    if typeof(ref) ~= "Instance"
+    or ref.Parent == nil then
+
+        ref =
+            WildPetVisual.FindRef(
+                uuid
+            )
+    end
+
+    if typeof(ref) ~= "Instance"
+    or ref.Parent == nil then
+
+        return false,
+            "missing WildPetRef instance for "
+            .. tostring(uuid)
+    end
+
+    local packet =
+        WildPetVisual.FindBuyPacket()
+
+    if not packet then
+        return false, WildPetVisual.BuyPacketSource
+    end
+
+    local sourceText =
+        tostring(WildPetVisual.BuyPacketSource or ""):lower()
+
+    if sourceText:find("wild", 1, true) == nil then
+
+        WildPetVisual.BuyPacket =
+            nil
+
+        return false,
+            "blocked unsafe packet: "
+            .. tostring(WildPetVisual.BuyPacketSource)
+    end
+
+    local okFireLookup, fireFunction =
+        pcall(function()
+            return packet.Fire
+        end)
+
+    if okFireLookup ~= true
+    or type(fireFunction) ~= "function" then
+        return false, "packet.Fire missing"
+    end
+
+    local okFire, err =
+        pcall(function()
+
+            fireFunction(
+                packet,
+                ref
+            )
+        end)
+
+    if okFire ~= true then
+        return false, tostring(err)
+    end
+
+    return true,
+        "fired "
+        .. tostring(WildPetVisual.BuyPacketSource)
+        .. " with ref "
+        .. WildPetVisual.PathOf(ref)
+end
+
+function WildPetVisual.GetCharacterRoot()
+
+    local character =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character
+
+    local root =
+        character
+        and character:FindFirstChild("HumanoidRootPart")
+
+    if not character
+    or not root
+    or root:IsA("BasePart") ~= true then
+        return nil, nil
+    end
+
+    return character, root
+end
+
+function WildPetVisual.GetEntryTamePosition(entry)
+
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local ref =
+        entry.Ref
+
+    if typeof(ref) ~= "Instance"
+    or ref.Parent == nil then
+
+        local uuid =
+            CleanText(entry.UUID)
+
+        if uuid ~= "" then
+
+            ref =
+                WildPetVisual.FindRef(
+                    uuid
+                )
+        end
+    end
+
+    local refPosition =
+        WildPetVisual.GetPosition(
+            ref
+        )
+
+    if typeof(refPosition) == "Vector3" then
+        return refPosition
+    end
+
+    if typeof(entry.Position) == "Vector3" then
+        return entry.Position
+    end
+
+    return WildPetVisual.GetPosition(
+        entry.Instance
+    )
+end
+
+function WildPetVisual.MoveCloseForTame(entry)
+
+    local character, root =
+        WildPetVisual.GetCharacterRoot()
+
+    if not character
+    or not root then
+        return nil, "missing character root"
+    end
+
+    local targetPosition =
+        WildPetVisual.GetEntryTamePosition(
+            entry
+        )
+
+    if typeof(targetPosition) ~= "Vector3" then
+        return nil, "missing wild pet position"
+    end
+
+    local oldCFrame =
+        root.CFrame
+
+    local distance =
+        (root.Position - targetPosition).Magnitude
+
+    if distance <= 12 then
+
+        return {
+            Character = character,
+            Root = root,
+            OldCFrame = oldCFrame,
+            Moved = false,
+            Distance = distance,
+        },
+        "already close"
+    end
+
+    local closePosition =
+        targetPosition
+        + Vector3.new(
+            0,
+            3,
+            0
+        )
+
+    local closeCFrame =
+        CFrame.new(
+            closePosition,
+            targetPosition
+        )
+
+    local ok, err =
+        pcall(function()
+
+            character:PivotTo(
+                closeCFrame
+            )
+        end)
+
+    if ok ~= true then
+
+        ok, err =
+            pcall(function()
+
+                root.CFrame =
+                    closeCFrame
+            end)
+    end
+
+    if ok ~= true then
+        return nil, tostring(err)
+    end
+
+    task.wait(0.18)
+
+    return {
+        Character = character,
+        Root = root,
+        OldCFrame = oldCFrame,
+        Moved = true,
+        Distance = distance,
+    },
+    "moved close"
+end
+
+function WildPetVisual.RestoreAfterTame(moveState)
+
+    if type(moveState) ~= "table" then
+        return
+    end
+
+    if moveState.Moved ~= true then
+        return
+    end
+
+    local character =
+        moveState.Character
+
+    local oldCFrame =
+        moveState.OldCFrame
+
+    if typeof(oldCFrame) ~= "CFrame" then
+        return
+    end
+
+    task.wait(0.2)
+
+    pcall(function()
+
+        if typeof(character) == "Instance"
+        and character.Parent then
+
+            character:PivotTo(
+                oldCFrame
+            )
+        end
+    end)
+end
+
+function WildPetVisual.BuyEntry(entry)
+
+    if type(entry) ~= "table" then
+        return
+    end
+
+    if os.clock() - tonumber(WildPetVisual.LastBuyAt or 0) < 0.75 then
+        return
+    end
+
+    WildPetVisual.LastBuyAt =
+        os.clock()
+
+    WildPetVisual.SetStatus(
+        "Moving close to tame "
+        .. tostring(entry.Name)
+        .. "..."
+    )
+
+    local moveState, moveInfo =
+        WildPetVisual.MoveCloseForTame(
+            entry
+        )
+
+    if not moveState then
+
+        WildPetVisual.SetStatus(
+            "Move failed: "
+            .. tostring(moveInfo)
+        )
+
+        Notify(
+            "Wild Pet HUD",
+            "Move failed: " .. tostring(moveInfo),
+            4
+        )
+
+        return
+    end
+
+    local ok, info =
+        WildPetVisual.FireBuyPacket(
+            entry
+        )
+
+    WildPetVisual.RestoreAfterTame(
+        moveState
+    )
+
+    if ok == true then
+
+        WildPetVisual.SetStatus(
+            "Tame fired: "
+            .. tostring(entry.Name)
+        )
+
+        Notify(
+            "Wild Pet HUD",
+            "Tame fired: " .. tostring(entry.Name),
+            2
+        )
+
+        WildPetVisual.Print(
+            "TAME FIRED",
+            "| name:",
+            tostring(entry.Name),
+            "| uuid:",
+            tostring(entry.UUID),
+            "| move:",
+            tostring(moveInfo),
+            "| info:",
+            tostring(info)
+        )
+
+    else
+
+        WildPetVisual.SetStatus(
+            "Tame failed: "
+            .. tostring(info)
+        )
+
+        warn(
+            "[HOLY GAG2 WILD PET HUD]",
+            "Tame failed",
+            "| pet:",
+            tostring(entry.Name),
+            "| uuid:",
+            tostring(entry.UUID),
+            "| move:",
+            tostring(moveInfo),
+            "| info:",
+            tostring(info)
+        )
+
+        Notify(
+            "Wild Pet HUD",
+            "Tame failed: " .. tostring(info),
+            4
+        )
+    end
+end
+
+function WildPetVisual.EnsurePopup()
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+
+    if not playerGui then
+        return nil
+    end
+
+    if WildPetVisual.PopupGui
+    and WildPetVisual.PopupGui.Parent then
+
+        return WildPetVisual.PopupGui
+    end
+
+    local oldGui =
+        playerGui:FindFirstChild("HolyGAG2WildPetPopupHUD")
+
+    if oldGui then
+        oldGui:Destroy()
+    end
+
+    local gui =
+        Instance.new("ScreenGui")
+
+    gui.Name =
+        "HolyGAG2WildPetPopupHUD"
+
+    gui.ResetOnSpawn =
+        false
+
+    gui.IgnoreGuiInset =
+        true
+
+    gui.Parent =
+        playerGui
+
+    local frame =
+        Instance.new("Frame")
+
+    frame.Name =
+        "Main"
+
+    frame.Size =
+        UDim2.fromOffset(285, 310)
+
+    frame.Position =
+        WildPetVisual.GetSavedPopupPosition()
+
+    frame.BackgroundColor3 =
+        Color3.fromRGB(18, 18, 24)
+
+    frame.BorderSizePixel =
+        0
+
+    frame.Parent =
+        gui
+
+    local corner =
+        Instance.new("UICorner")
+
+    corner.CornerRadius =
+        UDim.new(0, 8)
+
+    corner.Parent =
+        frame
+
+    local stroke =
+        Instance.new("UIStroke")
+
+    stroke.Thickness =
+        1
+
+    stroke.Color =
+        Color3.fromRGB(196, 181, 253)
+
+    stroke.Transparency =
+        0.25
+
+    stroke.Parent =
+        frame
+
+    local padding =
+        Instance.new("UIPadding")
+
+    padding.PaddingTop =
+        UDim.new(0, 8)
+
+    padding.PaddingBottom =
+        UDim.new(0, 8)
+
+    padding.PaddingLeft =
+        UDim.new(0, 8)
+
+    padding.PaddingRight =
+        UDim.new(0, 8)
+
+    padding.Parent =
+        frame
+
+    local title =
+        Instance.new("TextLabel")
+
+    title.Name =
+        "Title"
+
+    title.Size =
+        UDim2.new(1, 0, 0, 24)
+
+    title.BackgroundTransparency =
+        1
+
+    title.Font =
+        Enum.Font.Code
+
+    title.TextSize =
+        15
+
+    title.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    title.TextColor3 =
+        Color3.fromRGB(232, 230, 240)
+
+    title.Text =
+        "Holy · Active Wild Pets  [drag]"
+
+    title.Parent =
+        frame
+
+    WildPetVisual.MakePopupDraggable(
+        frame,
+        title
+    )
+
+    local status =
+        Instance.new("TextLabel")
+
+    status.Name =
+        "Status"
+
+    status.Size =
+        UDim2.new(1, 0, 0, 22)
+
+    status.Position =
+        UDim2.fromOffset(0, 26)
+
+    status.BackgroundTransparency =
+        1
+
+    status.Font =
+        Enum.Font.Code
+
+    status.TextSize =
+        12
+
+    status.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    status.TextColor3 =
+        Color3.fromRGB(148, 163, 184)
+
+    status.Text =
+        "Waiting..."
+
+    status.Parent =
+        frame
+
+    local rows =
+        Instance.new("ScrollingFrame")
+
+    rows.Name =
+        "Rows"
+
+    rows.Size =
+        UDim2.new(1, 0, 1, -54)
+
+    rows.Position =
+        UDim2.fromOffset(0, 52)
+
+    rows.BackgroundTransparency =
+        1
+
+    rows.BorderSizePixel =
+        0
+
+    rows.ScrollBarThickness =
+        3
+
+    rows.CanvasSize =
+        UDim2.fromOffset(0, 0)
+
+    rows.Parent =
+        frame
+
+    local layout =
+        Instance.new("UIListLayout")
+
+    layout.Padding =
+        UDim.new(0, 6)
+
+    layout.SortOrder =
+        Enum.SortOrder.LayoutOrder
+
+    layout.Parent =
+        rows
+
+    WildPetVisual.PopupGui =
+        gui
+
+    WildPetVisual.PopupFrame =
+        frame
+
+    WildPetVisual.PopupStatusLabel =
+        status
+
+    WildPetVisual.PopupRowsFrame =
+        rows
+
+    return gui
+end
+
+function WildPetVisual.ClearPopupRows()
+
+    local rows =
+        WildPetVisual.PopupRowsFrame
+
+    if not rows then
+        return
+    end
+
+    for _, child in ipairs(rows:GetChildren()) do
+
+        if child:IsA("GuiObject") then
+            child:Destroy()
+        end
+    end
+end
+
+function WildPetVisual.AddPopupEmptyRow(text)
+
+    local rows =
+        WildPetVisual.PopupRowsFrame
+
+    if not rows then
+        return
+    end
+
+    local label =
+        Instance.new("TextLabel")
+
+    label.Name =
+        "Empty"
+
+    label.Size =
+        UDim2.new(1, -4, 0, 34)
+
+    label.BackgroundTransparency =
+        1
+
+    label.Font =
+        Enum.Font.Code
+
+    label.TextSize =
+        12
+
+    label.TextWrapped =
+        true
+
+    label.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    label.TextColor3 =
+        Color3.fromRGB(148, 163, 184)
+
+    label.Text =
+        tostring(text or "No active wild pets.")
+
+    label.Parent =
+        rows
+
+    rows.CanvasSize =
+        UDim2.fromOffset(0, 40)
+end
+
+function WildPetVisual.AddPopupEntryButton(entry, index)
+
+    local rows =
+        WildPetVisual.PopupRowsFrame
+
+    if not rows then
+        return
+    end
+
+    local button =
+        Instance.new("TextButton")
+
+    button.Name =
+        "WildPet_"
+        .. tostring(index)
+
+    button.Size =
+        UDim2.new(1, -4, 0, 58)
+
+    button.BackgroundColor3 =
+        Color3.fromRGB(28, 28, 38)
+
+    button.BorderSizePixel =
+        0
+
+    button.AutoButtonColor =
+        true
+
+    button.Font =
+        Enum.Font.Code
+
+    button.TextSize =
+        12
+
+    button.TextWrapped =
+        true
+
+    button.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    button.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    button.TextColor3 =
+        Color3.fromRGB(232, 230, 240)
+
+    button.Text =
+        tostring(index)
+        .. ". "
+        .. tostring(entry.Name)
+        .. "\nTime: "
+        .. tostring(entry.Timer)
+        .. " | Price: "
+        .. tostring(entry.Price)
+        .. " | "
+        .. tostring(entry.Distance)
+        .. "\nCLICK TO TAME"
+
+    button.Parent =
+        rows
+
+    local corner =
+        Instance.new("UICorner")
+
+    corner.CornerRadius =
+        UDim.new(0, 6)
+
+    corner.Parent =
+        button
+
+    local padding =
+        Instance.new("UIPadding")
+
+    padding.PaddingLeft =
+        UDim.new(0, 8)
+
+    padding.PaddingRight =
+        UDim.new(0, 8)
+
+    padding.Parent =
+        button
+
+    button.MouseButton1Click:Connect(function()
+
+        WildPetVisual.BuyEntry(
+            entry
+        )
+    end)
+end
+
+function WildPetVisual.RenderPopup(entries, reason)
+
+    if WildPetVisual.Enabled ~= true then
+        return
+    end
+
+    WildPetVisual.EnsurePopup()
+
+    if not WildPetVisual.PopupGui then
+        return
+    end
+
+    if WildPetVisual.PopupStatusLabel then
+
+        WildPetVisual.PopupStatusLabel.Text =
+            "Count: "
+            .. tostring(#entries)
+            .. " | Packet: "
+            .. tostring(WildPetVisual.BuyPacketSource)
+    end
+
+    WildPetVisual.ClearPopupRows()
+
+    if #entries <= 0 then
+
+        WildPetVisual.AddPopupEmptyRow(
+            "No active wild pets found."
+        )
+
+        return
+    end
+
+    local maxRows =
+        math.min(
+            #entries,
+            8
+        )
+
+    for index = 1, maxRows do
+
+        WildPetVisual.AddPopupEntryButton(
+            entries[index],
+            index
+        )
+    end
+
+    if #entries > maxRows then
+
+        WildPetVisual.AddPopupEmptyRow(
+            "+"
+            .. tostring(#entries - maxRows)
+            .. " more active wild pet(s)."
+        )
+    end
+
+    if WildPetVisual.PopupRowsFrame then
+
+        WildPetVisual.PopupRowsFrame.CanvasSize =
+            UDim2.fromOffset(
+                0,
+                (maxRows * 64) + (#entries > maxRows and 40 or 0)
+            )
+    end
+end
+
+function WildPetVisual.Refresh()
+
+    local entries, reason =
+        WildPetVisual.GetActiveEntries()
+
+    WildPetVisual.LastCount =
+        #entries
+
+    if reason ~= "ok" then
+
+        WildPetVisual.SetStatus(
+            tostring(reason)
+        )
+
+    else
+
+        WildPetVisual.SetStatus(
+            "Tracking "
+            .. tostring(#entries)
+            .. " active wild pet(s)."
+        )
+    end
+
+    if WildPetVisual.InfoLabel
+    and type(WildPetVisual.InfoLabel.SetText) == "function" then
+
+        WildPetVisual.InfoLabel:SetText(
+            WildPetVisual.BuildHudText(
+                entries,
+                reason
+            )
+        )
+    end
+
+    WildPetVisual.RenderPopup(
+        entries,
+        reason
+    )
+
+    return entries
+end
+
+function WildPetVisual.StartLoop()
+
+    if WildPetVisual.Running == true then
+        return
+    end
+
+    WildPetVisual.Running =
+        true
+
+    task.spawn(function()
+
+        WildPetVisual.SetStatus("HUD loop started.")
+
+        while WildPetVisual.Enabled == true do
+
+            WildPetVisual.Refresh()
+
+            task.wait(
+                SettingsNormalizeNumber(
+                    WildPetVisual.RefreshDelay,
+                    0.5,
+                    0.2,
+                    5
+                )
+            )
+        end
+
+        WildPetVisual.Running =
+            false
+
+        WildPetVisual.SetStatus("HUD loop stopped.")
+    end)
+end
+
+function WildPetVisual.SetEnabled(value)
+
+    WildPetVisual.Enabled =
+        value == true
+
+    UIState.VisualWildPetHUD =
+        WildPetVisual.Enabled == true
+
+    SaveUISettings(
+        "wild pet hud changed"
+    )
+
+    if WildPetVisual.Enabled == true then
+
+        WildPetVisual.EnsurePopup()
+        WildPetVisual.FindBuyPacket()
+        WildPetVisual.Refresh()
+        WildPetVisual.StartLoop()
+
+    else
+
+        WildPetVisual.DestroyPopup()
+
+        WildPetVisual.SetStatus("HUD disabled.")
+
+        if WildPetVisual.InfoLabel
+        and type(WildPetVisual.InfoLabel.SetText) == "function" then
+
+            WildPetVisual.InfoLabel:SetText(
+                WildPetVisual.BuildHudText(
+                    {},
+                    "disabled"
+                )
+            )
+        end
+    end
+end
+
+function WildPetVisual.SetDebug(value)
+
+    WildPetVisual.Debug =
+        value == true
+
+    UIState.VisualWildPetDebug =
+        WildPetVisual.Debug == true
+
+    SaveUISettings(
+        "wild pet debug changed"
+    )
+
+    WildPetVisual.SetStatus(
+        WildPetVisual.Debug == true
+        and "Debug enabled."
+        or "Debug disabled."
+    )
+end
+
+function WildPetVisual.SetDelay(value)
+
+    WildPetVisual.RefreshDelay =
+        SettingsNormalizeNumber(
+            value,
+            0.5,
+            0.2,
+            5
+        )
+
+    UIState.VisualWildPetRefreshDelay =
+        WildPetVisual.RefreshDelay
+
+    SaveUISettings(
+        "wild pet refresh delay changed"
+    )
+
+    WildPetVisual.Refresh()
+end
 
 --==================================================
 -- [5.6] FARM AUTOMATION HELPERS
@@ -5160,16 +7320,45 @@ local function AddLeftBox(tab, title, icon)
 
     if type(tab.AddLeftCollapsibleGroupbox) == "function" then
 
+        local ok, box =
+            pcall(function()
+
+                return tab:AddLeftCollapsibleGroupbox(
+                    title,
+                    icon,
+                    true
+                )
+            end)
+
+        if ok == true
+        and box then
+            return box
+        end
+
         return tab:AddLeftCollapsibleGroupbox(
             title,
-            icon,
+            "settings",
             true
         )
     end
 
+    local ok, box =
+        pcall(function()
+
+            return tab:AddLeftGroupbox(
+                title,
+                icon
+            )
+        end)
+
+    if ok == true
+    and box then
+        return box
+    end
+
     return tab:AddLeftGroupbox(
         title,
-        icon
+        "settings"
     )
 end
 
@@ -5177,16 +7366,45 @@ local function AddRightBox(tab, title, icon)
 
     if type(tab.AddRightCollapsibleGroupbox) == "function" then
 
+        local ok, box =
+            pcall(function()
+
+                return tab:AddRightCollapsibleGroupbox(
+                    title,
+                    icon,
+                    true
+                )
+            end)
+
+        if ok == true
+        and box then
+            return box
+        end
+
         return tab:AddRightCollapsibleGroupbox(
             title,
-            icon,
+            "settings",
             true
         )
     end
 
+    local ok, box =
+        pcall(function()
+
+            return tab:AddRightGroupbox(
+                title,
+                icon
+            )
+        end)
+
+    if ok == true
+    and box then
+        return box
+    end
+
     return tab:AddRightGroupbox(
         title,
-        icon
+        "settings"
     )
 end
 
@@ -5384,55 +7602,98 @@ Library:SetDPIScale(
     UIState.DPIScale
 )
 
+local function AddTabSafe(name, icon, description)
+
+    return Window:AddTab({
+        Name = tostring(name),
+        Icon = tostring(icon or "settings"),
+        Description = tostring(description or ""),
+    })
+end
+
 --==================================================
 -- [8] TABS
 --==================================================
 
 local Tabs = {
     Home =
-        Window:AddTab({
-            Name = "Home",
-            Icon = "home",
-            Description = "Main controls.",
-        }),
+        AddTabSafe(
+            "Home",
+            "home",
+            "Main controls."
+        ),
 
     Shops =
-        Window:AddTab({
-            Name = "Shops",
-            Icon = "shopping-bag",
-            Description = "Shop tools.",
-        }),
+        AddTabSafe(
+            "Shops",
+            "shopping-bag",
+            "Shop tools."
+        ),
 
     Sell =
-        Window:AddTab({
-            Name = "Sell",
-            Icon = "coins",
-            Description = "Fruit selling tools.",
-        }),
+        AddTabSafe(
+            "Sell",
+            "coins",
+            "Fruit selling tools."
+        ),
+
+    Visuals =
+        AddTabSafe(
+            "Visuals",
+            "settings",
+            "Research and visual tools."
+        ),
 
     Farm =
-        Window:AddTab({
-            Name = "Farm",
-            Icon = "sprout",
-            Description = "Farm tools.",
-        }),
+        AddTabSafe(
+            "Farm",
+            "sprout",
+            "Farm tools."
+        ),
 
     Settings =
-        Window:AddTab({
-            Name = "Settings",
-            Icon = "settings",
-            Description = "UI settings.",
-        }),
+        AddTabSafe(
+            "Settings",
+            "settings",
+            "UI settings."
+        ),
 }
 
 if IsHolyGAG2Developer() then
 
     Tabs.Dev =
-        Window:AddTab({
-            Name = "Dev",
-            Icon = "terminal",
-            Description = "Developer tools.",
-        })
+        AddTabSafe(
+            "Dev",
+            "terminal",
+            "Developer tools."
+        )
+end
+
+--==================================================
+-- [8.5] GAG2 CENTRAL GROUPBOXES
+--==================================================
+
+local WildPetVisualMainBox =
+    nil
+
+local WildPetVisualStatusBox =
+    nil
+
+if Tabs.Visuals then
+
+    WildPetVisualMainBox =
+        AddLeftBox(
+            Tabs.Visuals,
+            "Active Wild Pet HUD",
+            "settings"
+        )
+
+    WildPetVisualStatusBox =
+        AddRightBox(
+            Tabs.Visuals,
+            "Wild Pet Status",
+            "settings"
+        )
 end
 
 --==================================================
@@ -6111,7 +8372,9 @@ SellInfoLabel =
         Size = 12,
     })
 
-FindSellPacket()
+SellConnectInventoryFullWatcher()
+SellConnectReplicaWatcher()
+
 RefreshSellInfo()
 
 if SellConfig.AutoMaxBackpack == true then
@@ -6120,6 +8383,179 @@ if SellConfig.AutoMaxBackpack == true then
 
     SetSellStatus(
         "Auto sell restored from saved settings."
+    )
+end
+
+--==================================================
+-- [10.75] VISUALS TAB - ACTIVE WILD PET HUD
+--==================================================
+
+if WildPetVisualMainBox
+and WildPetVisualStatusBox then
+
+    WildPetVisualMainBox:AddLabel({
+        Text =
+            '<font color="rgb(196,181,253)"><b>Active Wild Pet HUD</b></font>'
+            .. '\nTracks active children inside workspace.Map.WildPetSpawns.'
+            .. '\nShows pet name, timer, price, and distance in a pop-out HUD.'
+            .. '\nClick a pet row to fire the wild pet buy packet.',
+        DoesWrap = true,
+        Size = 13,
+    })
+
+    WildPetVisualMainBox:AddDivider(
+        "HUD"
+    )
+
+    local WildPetHudToggle =
+        WildPetVisualMainBox:AddToggle(
+            "HolyGAG2ActiveWildPetHUD",
+            {
+                Text = "Active Wild Pet HUD",
+                Default = UIState.VisualWildPetHUD == true,
+                Tooltip = "Shows a small pop-out HUD. Click a pet row to fire the wild pet buy packet.",
+            }
+        )
+
+    if WildPetHudToggle
+    and type(WildPetHudToggle.OnChanged) == "function" then
+
+        WildPetHudToggle:OnChanged(function(value)
+
+            WildPetVisual.SetEnabled(
+                value == true
+            )
+        end)
+    end
+
+    local WildPetDebugToggle =
+        WildPetVisualMainBox:AddToggle(
+            "HolyGAG2WildPetDebug",
+            {
+                Text = "Wild Pet Debug",
+                Default = WildPetVisual.Debug == true,
+                Tooltip = "Prints active wild pet entries to console.",
+            }
+        )
+
+    if WildPetDebugToggle
+    and type(WildPetDebugToggle.OnChanged) == "function" then
+
+        WildPetDebugToggle:OnChanged(function(value)
+
+            WildPetVisual.SetDebug(
+                value == true
+            )
+        end)
+    end
+
+    if type(WildPetVisualMainBox.AddInput) == "function" then
+
+        local WildPetDelayInput =
+            WildPetVisualMainBox:AddInput(
+                "HolyGAG2WildPetRefreshDelay",
+                {
+                    Text = "Refresh Delay",
+                    Default = tostring(WildPetVisual.RefreshDelay),
+                    Numeric = true,
+                    Finished = true,
+                    Tooltip = "Seconds between active wild pet refreshes. Minimum 0.2.",
+                }
+            )
+
+        if WildPetDelayInput
+        and type(WildPetDelayInput.OnChanged) == "function" then
+
+            WildPetDelayInput:OnChanged(function(value)
+
+                WildPetVisual.SetDelay(
+                    value
+                )
+            end)
+        end
+    end
+
+    WildPetVisualMainBox:AddDivider(
+        "Actions"
+    )
+
+    WildPetVisualMainBox:AddButton({
+        Text = "Refresh Now",
+        Tooltip = "Refresh active wild pets once.",
+        Func = function()
+
+            WildPetVisual.Refresh()
+        end,
+    }):AddButton({
+        Text = "Print Buy Packets",
+        Tooltip = "Print safe wild pet buy packet candidates.",
+        Func = function()
+
+            WildPetVisual.BuyPacket =
+                nil
+
+            WildPetVisual.FindBuyPacket()
+
+            print(
+                "[HOLY GAG2 WILD PET HUD]",
+                "Selected buy packet:",
+                tostring(WildPetVisual.BuyPacketSource)
+            )
+
+            WildPetVisual.Refresh()
+        end,
+    })
+
+    WildPetVisualStatusBox:AddLabel({
+        Text =
+            '<font color="rgb(148,163,184)"><b>Source</b></font>'
+            .. '\nworkspace.Map.WildPetSpawns'
+            .. '\nOptional backup: workspace.Map.WildPetRef'
+            .. '\nIf timer/price shows ?, enable debug and press Refresh Now.',
+        DoesWrap = true,
+        Size = 12,
+    })
+
+    WildPetVisual.StatusLabel =
+        WildPetVisualStatusBox:AddLabel({
+            Text =
+                '<font color="rgb(196,181,253)"><b>Wild Pet HUD:</b></font> Ready',
+            DoesWrap = true,
+            Size = 12,
+        })
+
+    WildPetVisual.InfoLabel =
+        WildPetVisualStatusBox:AddLabel({
+            Text =
+                WildPetVisual.BuildHudText(
+                    {},
+                    "disabled"
+                ),
+            DoesWrap = true,
+            Size = 12,
+        })
+
+    WildPetVisual.SetStatus(
+        "Ready. Toggle HUD or press Refresh Now."
+    )
+
+    if UIState.VisualWildPetHUD == true then
+
+        task.defer(function()
+
+            if WildPetVisual.Enabled ~= true then
+
+                WildPetVisual.SetEnabled(
+                    true
+                )
+            end
+        end)
+    end
+
+else
+
+    warn(
+        "[HOLY GAG2 WILD PET HUD] Visuals groupboxes missing. UI skipped safely."
     )
 end
 
