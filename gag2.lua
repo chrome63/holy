@@ -72,6 +72,12 @@ GAG2_RARE_PET_WEBHOOK_TARGETS = {
 GAG2_RARE_PET_WEBHOOK_SENT =
     {}
 
+GAG2_SERVER_HOP_RETRYING =
+    false
+
+GAG2_SERVER_HOP_ATTEMPT =
+    0
+
 --==================================================
 -- [2] BASIC HELPERS
 --==================================================
@@ -512,122 +518,184 @@ local function GetHttp(url)
     return nil
 end
 
-local function HopServerOnce()
+function HopServerOnce()
 
-    SetStatus("Finding server...")
-
-    local url =
-        "https://games.roblox.com/v1/games/"
-        .. tostring(game.PlaceId)
-        .. "/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"
-
-    local body =
-        GetHttp(url)
-
-    if type(body) ~= "string"
-    or body == "" then
-
-        SetStatus("Server list request failed.")
-        return
-    end
-
-    local decodeOk, data =
-        pcall(function()
-
-            return HttpService:JSONDecode(
-                body
-            )
-        end)
-
-    if decodeOk ~= true
-    or type(data) ~= "table" then
-
-        SetStatus("Server list decode failed.")
-        return
-    end
-
-    local servers =
-        {}
-
-    for _, server in ipairs(data.data or {}) do
-
-        local serverId =
-            CleanText(server.id)
-
-        local playing =
-            tonumber(server.playing)
-            or 0
-
-        local maxPlayers =
-            tonumber(server.maxPlayers)
-            or 0
-
-        if serverId ~= ""
-        and serverId ~= game.JobId
-        and maxPlayers > 0
-        and playing < maxPlayers then
-
-            server.FreeSlots =
-                maxPlayers - playing
-
-            table.insert(
-                servers,
-                server
-            )
-        end
-    end
-
-    if #servers <= 0 then
-
-        SetStatus("No valid server found.")
-        return
-    end
-
-    table.sort(servers, function(a, b)
-
-        return tonumber(a.FreeSlots or 0)
-            > tonumber(b.FreeSlots or 0)
-    end)
-
-    local target =
-        servers[
-            math.random(
-                1,
-                math.min(#servers, 10)
-            )
-        ]
-
-    SetStatus(
-        "Hopping to "
-        .. tostring(target.playing)
-        .. "/"
-        .. tostring(target.maxPlayers)
-        .. " server..."
-    )
-
-    local ok, err =
-        pcall(function()
-
-            TeleportService:TeleportToPlaceInstance(
-                game.PlaceId,
-                target.id,
-                LOCAL_PLAYER
-            )
-        end)
-
-    if ok ~= true then
+    if GAG2_SERVER_HOP_RETRYING == true then
 
         SetStatus(
-            "Hop failed: "
-            .. tostring(err)
+            "Server hop already retrying..."
         )
 
-        Notify(
-            "Hop Failed",
-            tostring(err),
-            5
-        )
+        return false
     end
+
+    GAG2_SERVER_HOP_RETRYING =
+        true
+
+    task.spawn(function()
+
+        while GAG2_SERVER_HOP_RETRYING == true do
+
+            GAG2_SERVER_HOP_ATTEMPT =
+                tonumber(GAG2_SERVER_HOP_ATTEMPT)
+                or 0
+
+            GAG2_SERVER_HOP_ATTEMPT =
+                GAG2_SERVER_HOP_ATTEMPT
+                + 1
+
+            SetStatus(
+                "Finding server..."
+                .. " attempt "
+                .. tostring(GAG2_SERVER_HOP_ATTEMPT)
+            )
+
+            local url =
+                "https://games.roblox.com/v1/games/"
+                .. tostring(game.PlaceId)
+                .. "/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"
+
+            local body =
+                GetHttp(url)
+
+            if type(body) ~= "string"
+            or body == "" then
+
+                SetStatus(
+                    "Server list failed. Retrying..."
+                )
+
+                task.wait(
+                    2
+                )
+
+                continue
+            end
+
+            local decodeOk, data =
+                pcall(function()
+
+                    return HttpService:JSONDecode(
+                        body
+                    )
+                end)
+
+            if decodeOk ~= true
+            or type(data) ~= "table" then
+
+                SetStatus(
+                    "Server decode failed. Retrying..."
+                )
+
+                task.wait(
+                    2
+                )
+
+                continue
+            end
+
+            local servers =
+                {}
+
+            for _, server in ipairs(data.data or {}) do
+
+                local serverId =
+                    CleanText(server.id)
+
+                local playing =
+                    tonumber(server.playing)
+                    or 0
+
+                local maxPlayers =
+                    tonumber(server.maxPlayers)
+                    or 0
+
+                if serverId ~= ""
+                and serverId ~= game.JobId
+                and maxPlayers > 0
+                and playing < maxPlayers then
+
+                    server.FreeSlots =
+                        maxPlayers - playing
+
+                    table.insert(
+                        servers,
+                        server
+                    )
+                end
+            end
+
+            if #servers <= 0 then
+
+                SetStatus(
+                    "No valid server. Retrying..."
+                )
+
+                task.wait(
+                    2
+                )
+
+                continue
+            end
+
+            table.sort(servers, function(a, b)
+
+                return tonumber(a.FreeSlots or 0)
+                    > tonumber(b.FreeSlots or 0)
+            end)
+
+            local target =
+                servers[
+                    math.random(
+                        1,
+                        math.min(#servers, 10)
+                    )
+                ]
+
+            SetStatus(
+                "Hopping to "
+                .. tostring(target.playing)
+                .. "/"
+                .. tostring(target.maxPlayers)
+                .. " server..."
+            )
+
+            local ok, err =
+                pcall(function()
+
+                    TeleportService:TeleportToPlaceInstance(
+                        game.PlaceId,
+                        target.id,
+                        LOCAL_PLAYER
+                    )
+                end)
+
+            if ok == true then
+
+                SetStatus(
+                    "Teleport queued."
+                )
+
+                return
+            end
+
+            SetStatus(
+                "Hop failed. Retrying..."
+            )
+
+            warn(
+                "[HOLY GAG2]",
+                "server hop failed",
+                tostring(err)
+            )
+
+            task.wait(
+                1.5
+            )
+        end
+    end)
+
+    return true
 end
 
 local function BuildSnapshot()
@@ -4602,6 +4670,11 @@ local function BuildHomeActivePetsText()
             suffix = " | Sent"
         end
 
+        local distanceText =
+            tostring(entry.Distance or "?")
+                :gsub("%s*studs", "")
+                :gsub("%s+$", "")
+
         table.insert(
             lines,
             tostring(index)
@@ -4612,7 +4685,7 @@ local function BuildHomeActivePetsText()
             .. " | Price: "
             .. tostring(entry.Price or "?")
             .. " | "
-            .. tostring(entry.Distance)
+            .. distanceText
             .. suffix
         )
     end
@@ -5198,18 +5271,6 @@ end
 --==================================================
 -- [8] HOME TAB
 --==================================================
-
-HomeMainBox:AddLabel({
-    Text =
-        '<font color="rgb(196,181,253)"><b>Holy GAG 2</b></font>'
-        .. '\nClean LibraryLite shell.'
-        .. '\nNo old Shop/Sell/Farm/Sniper systems.'
-        .. '\nNext step is adding systems one by one after this loads stable.',
-    DoesWrap = true,
-    Size = 13,
-})
-
-HomeMainBox:AddDivider()
 
 HomeMainBox:AddButton({
     Text = "Rejoin",
@@ -5904,6 +5965,28 @@ end)
 --==================================================
 -- [12] FINISH
 --==================================================
+
+pcall(function()
+
+    TeleportService.TeleportInitFailed:Connect(function(player)
+
+        if player ~= LOCAL_PLAYER then
+            return
+        end
+
+        if GAG2_SERVER_HOP_RETRYING ~= true then
+            return
+        end
+
+        GAG2_SERVER_HOP_RETRYING =
+            false
+
+        task.delay(1, function()
+
+            HopServerOnce()
+        end)
+    end)
+end)
 
 RefreshServerInfo()
 RefreshHomeActivePets()
