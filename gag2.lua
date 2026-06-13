@@ -140,6 +140,15 @@ GAG2_MANUAL_JOIN_HUD_INPUT =
 
 GAG2_MANUAL_JOIN_HUD_STATUS =
     nil
+
+GAG2_PANIC_HUD_GUI =
+    nil
+
+GAG2_PANIC_HUD_STATUS =
+    nil
+
+GAG2_PANIC_HUD_CREATED =
+    false
 --==================================================
 -- [2] BASIC HELPERS
 --==================================================
@@ -1853,8 +1862,10 @@ local SniperState = {
     },
     KnownPetNames = {},
     AutoHop = false,
-    InstantFirstHop = true,
+    InstantFirstHop = false,
     FirstHopUsed = false,
+    EnabledAt = 0,
+    InstantHopGrace = 4,
     ReturnAfterTame = true,
 
     Taming = false,
@@ -5376,10 +5387,56 @@ function SniperScan(allowAutoHop)
         local sinceHop =
             os.clock() - tonumber(SniperState.LastHopAt or 0)
 
-        local shouldInstantHop =
+        local instantWanted =
             SniperState.InstantFirstHop == true
             and SniperState.FirstHopUsed ~= true
             and SniperState.LastHopAt <= 0
+
+        local enabledAt =
+            tonumber(SniperState.EnabledAt)
+            or tonumber(SniperState.StartedAt)
+            or os.clock()
+
+        local instantGrace =
+            math.clamp(
+                tonumber(SniperState.InstantHopGrace)
+                or 4,
+                2,
+                10
+            )
+
+        local instantElapsed =
+            os.clock() - enabledAt
+
+        local shouldInstantHop =
+            instantWanted == true
+            and instantElapsed >= instantGrace
+
+        if instantWanted == true
+        and shouldInstantHop ~= true then
+
+            local remaining =
+                math.max(
+                    1,
+                    math.ceil(
+                        instantGrace - instantElapsed
+                    )
+                )
+
+            SetSniperStatus(
+                "Instant hop in "
+                .. tostring(remaining)
+                .. "s"
+            )
+
+            GAG2SetPanicHudStatus(
+                "STOP? "
+                .. tostring(remaining)
+                .. "s"
+            )
+
+            return matches
+        end
 
         if shouldInstantHop == true
         or sinceHop >= SniperState.HopDelay then
@@ -5450,6 +5507,13 @@ function SniperSetEnabled(value)
 
     if SniperState.Enabled == true then
 
+        SniperState.EnabledAt =
+            os.clock()
+
+        GAG2SetPanicHudStatus(
+            "Sniper ON"
+        )
+
         GAG2_SERVER_HOP_RETRYING =
             false
 
@@ -5477,6 +5541,13 @@ function SniperSetEnabled(value)
 
         SniperState.FirstHopUsed =
             false
+
+        SniperState.EnabledAt =
+            0
+
+        GAG2SetPanicHudStatus(
+            "Sniper OFF"
+        )
 
         SetSniperStatus(
             "Sniper disabled."
@@ -5560,6 +5631,363 @@ end
 getgenv().HOLY_GAG2_STOP_SNIPER =
     StopGAG2SniperNow
 
+function GAG2SetPanicHudStatus(text)
+
+    if GAG2_PANIC_HUD_STATUS then
+
+        pcall(function()
+
+            GAG2_PANIC_HUD_STATUS.Text =
+                tostring(text or "Ready.")
+        end)
+    end
+end
+
+function GAG2PanicStopNow(reason)
+
+    GAG2_SERVER_HOP_RETRYING =
+        false
+
+    GAG2_SERVER_HOP_ATTEMPT =
+        0
+
+    if type(SniperState) == "table" then
+
+        SniperState.Enabled =
+            false
+
+        SniperState.Running =
+            false
+
+        SniperState.AutoHop =
+            false
+
+        SniperState.InstantFirstHop =
+            false
+
+        SniperState.FirstHopUsed =
+            false
+
+        SniperState.EnabledAt =
+            0
+
+        SniperState.Taming =
+            false
+
+        SniperState.ConfirmingBuy =
+            false
+
+        SniperState.ConfirmingBuyKey =
+            ""
+    end
+
+    if GAG2_SNIPER_TOGGLE_CONTROL
+    and type(GAG2_SNIPER_TOGGLE_CONTROL.SetValue) == "function" then
+
+        pcall(function()
+
+            GAG2_SNIPER_TOGGLE_CONTROL:SetValue(
+                false
+            )
+        end)
+    end
+
+    if Toggles.HolyGAG2SniperAutoHop
+    and type(Toggles.HolyGAG2SniperAutoHop.SetValue) == "function" then
+
+        pcall(function()
+
+            Toggles.HolyGAG2SniperAutoHop:SetValue(
+                false
+            )
+        end)
+    end
+
+    if Toggles.HolyGAG2SniperInstantFirstHop
+    and type(Toggles.HolyGAG2SniperInstantFirstHop.SetValue) == "function" then
+
+        pcall(function()
+
+            Toggles.HolyGAG2SniperInstantFirstHop:SetValue(
+                false
+            )
+        end)
+    end
+
+    SetSniperStatus(
+        tostring(reason or "Emergency stopped.")
+    )
+
+    SetStatus(
+        "Emergency stopped."
+    )
+
+    GAG2SetPanicHudStatus(
+        "STOPPED"
+    )
+
+    MarkConfigDirty()
+
+    pcall(function()
+
+        SaveManager:Save(
+            ConfigState.AutosaveName
+        )
+    end)
+end
+
+getgenv().HOLY_GAG2_PANIC_STOP =
+    GAG2PanicStopNow
+
+function GAG2CreatePanicHud()
+
+    if GAG2_PANIC_HUD_GUI then
+        return GAG2_PANIC_HUD_GUI
+    end
+
+    local parent =
+        CoreGui
+
+    if not parent then
+
+        parent =
+            LOCAL_PLAYER
+            and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+            or nil
+    end
+
+    if not parent then
+        return nil
+    end
+
+    local gui =
+        Instance.new("ScreenGui")
+
+    gui.Name =
+        "HolyGAG2PanicHud"
+
+    gui.ResetOnSpawn =
+        false
+
+    gui.IgnoreGuiInset =
+        true
+
+    gui.ZIndexBehavior =
+        Enum.ZIndexBehavior.Sibling
+
+    gui.Parent =
+        parent
+
+    local frame =
+        Instance.new("Frame")
+
+    frame.Name =
+        "Frame"
+
+    frame.Position =
+        UDim2.fromOffset(
+            14,
+            155
+        )
+
+    frame.Size =
+        UDim2.fromOffset(
+            174,
+            92
+        )
+
+    frame.BackgroundColor3 =
+        Color3.fromRGB(9, 7, 15)
+
+    frame.BorderSizePixel =
+        0
+
+    frame.Active =
+        true
+
+    frame.Draggable =
+        true
+
+    frame.Parent =
+        gui
+
+    local corner =
+        Instance.new("UICorner")
+
+    corner.CornerRadius =
+        UDim.new(0, 8)
+
+    corner.Parent =
+        frame
+
+    local stroke =
+        Instance.new("UIStroke")
+
+    stroke.Color =
+        Color3.fromRGB(248, 113, 113)
+
+    stroke.Thickness =
+        1
+
+    stroke.Transparency =
+        0.05
+
+    stroke.Parent =
+        frame
+
+    local title =
+        Instance.new("TextLabel")
+
+    title.Name =
+        "Title"
+
+    title.BackgroundTransparency =
+        1
+
+    title.Position =
+        UDim2.fromOffset(
+            8,
+            4
+        )
+
+    title.Size =
+        UDim2.fromOffset(
+            158,
+            18
+        )
+
+    title.Font =
+        Enum.Font.Code
+
+    title.TextSize =
+        12
+
+    title.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    title.TextColor3 =
+        Color3.fromRGB(232, 230, 240)
+
+    title.Text =
+        "GAG2 Safety"
+
+    title.Parent =
+        frame
+
+    local stop =
+        Instance.new("TextButton")
+
+    stop.Name =
+        "Stop"
+
+    stop.Position =
+        UDim2.fromOffset(
+            8,
+            26
+        )
+
+    stop.Size =
+        UDim2.fromOffset(
+            158,
+            32
+        )
+
+    stop.BackgroundColor3 =
+        Color3.fromRGB(127, 29, 29)
+
+    stop.BorderSizePixel =
+        0
+
+    stop.Font =
+        Enum.Font.Code
+
+    stop.TextSize =
+        18
+
+    stop.TextColor3 =
+        Color3.fromRGB(255, 255, 255)
+
+    stop.Text =
+        "STOP"
+
+    stop.Parent =
+        frame
+
+    local stopCorner =
+        Instance.new("UICorner")
+
+    stopCorner.CornerRadius =
+        UDim.new(0, 6)
+
+    stopCorner.Parent =
+        stop
+
+    stop.MouseButton1Click:Connect(function()
+
+        GAG2PanicStopNow(
+            "Emergency stopped."
+        )
+
+        Notify(
+            "Safety",
+            "Sniper and auto-hop stopped.",
+            3
+        )
+    end)
+
+    local status =
+        Instance.new("TextLabel")
+
+    status.Name =
+        "Status"
+
+    status.BackgroundTransparency =
+        1
+
+    status.Position =
+        UDim2.fromOffset(
+            8,
+            62
+        )
+
+    status.Size =
+        UDim2.fromOffset(
+            158,
+            20
+        )
+
+    status.Font =
+        Enum.Font.Code
+
+    status.TextSize =
+        11
+
+    status.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    status.TextColor3 =
+        Color3.fromRGB(196, 181, 253)
+
+    status.Text =
+        "Ready."
+
+    status.Parent =
+        frame
+
+    GAG2_PANIC_HUD_GUI =
+        gui
+
+    GAG2_PANIC_HUD_STATUS =
+        status
+
+    GAG2_PANIC_HUD_CREATED =
+        true
+
+    return gui
+end
+
+GAG2CreatePanicHud()
+
 function StartGAG2SniperHotkey()
     return
 end
@@ -5593,7 +6021,7 @@ function RestoreSniperAutosaveState()
         else
 
             SniperState.InstantFirstHop =
-                true
+                false
         end
 
         if returnAfterTame then
@@ -7114,8 +7542,8 @@ SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
 
 SniperMainBox:AddToggle("HolyGAG2SniperInstantFirstHop", {
     Text = "Instant Hop On Join",
-    Default = SniperState.InstantFirstHop == false,
-    Tooltip = "If no selected pet is found after loading, hop immediately instead of waiting Hop Delay.",
+    Default = SniperState.InstantFirstHop == true,
+    Tooltip = "Aggressive mode. Gives a short STOP countdown before first hop.",
     Callback = function(value)
 
         SniperState.InstantFirstHop =
