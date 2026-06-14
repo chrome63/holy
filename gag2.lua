@@ -23,6 +23,15 @@ local ReplicatedStorage =
 local CoreGui =
     game:GetService("CoreGui")
 
+local VirtualUser =
+    nil
+
+pcall(function()
+
+    VirtualUser =
+        game:GetService("VirtualUser")
+end)
+
 local VirtualInputManager =
     nil
 
@@ -75,11 +84,13 @@ local HOLY_GAG2_DEVELOPER_USER_IDS = {
 GAG2_RARE_PET_WEBHOOK_URL =
     "https://discord.com/api/webhooks/1515303541718253599/9YlEfcONg8Kkn4om9gZKL8HYYGYVeOeLKyaJJbQGd-grIqxme_2PH5QkmmKZZBI8ESjc"
 
+GAG2_RARE_PET_WEBHOOK_ROLE_ID =
+    "1515584233811345499"
+
 GAG2_RARE_PET_WEBHOOK_TARGETS = {
     raccoon = true,
     goldendragonfly = true,
     unicorn = true,
-    bee = true,
 }
 
 GAG2_RARE_PET_WEBHOOK_IMAGES = {
@@ -149,6 +160,16 @@ GAG2_PANIC_HUD_STATUS =
 
 GAG2_PANIC_HUD_CREATED =
     false
+
+GAG2_LOADING_GUI_CLEANER_RUNNING =
+    false
+
+GAG2_AUTO_PLAY_STATE = {
+    Started = false,
+    Finished = false,
+    LastClick = 0,
+    Attempts = 0,
+}
 --==================================================
 -- [2] BASIC HELPERS
 --==================================================
@@ -1877,13 +1898,19 @@ local SniperState = {
     ConfirmingBuy = false,
     ConfirmingBuyKey = "",
 
-    BuyValidationHoldDelay = 1.65,
+    BuyValidationHoldDelay = 0.25,
     StartupBuyDelay = 8,
     StartedAt = os.clock(),
 
     LastPlayScreenPressAt = 0,
+    PlayScreenClickAttempts = 0,
+    PlayScreenMaxClickAttempts = 80,
+    AutoPlayClickInterval = 0.18,
+    AutoPlayTimeout = 45,
     PlayScreenClearAt = 0,
-    PlayScreenClearGrace = 1.25,
+    PlayScreenClearGrace = 0.35,
+    LoadingGuiClearAt = 0,
+    LoadingGuiForceClear = true,
 
     WaitingForClaim = false,
     WaitingForClaimKey = "",
@@ -1897,7 +1924,7 @@ local SniperState = {
     BuyPacket = nil,
     BuyPacketSource = "not loaded",
 
-    ScanDelay = 0.5,
+    ScanDelay = 0.25,
     HopDelay = 20,
 
     LastHopAt = 0,
@@ -3391,17 +3418,7 @@ function GAG2IsPlayScreenBlocking()
     return false, "", nil
 end
 
-function GAG2PressPlayScreen()
-
-    local now =
-        os.clock()
-
-    if now - tonumber(SniperState.LastPlayScreenPressAt or 0) < 1 then
-        return false
-    end
-
-    SniperState.LastPlayScreenPressAt =
-        now
+function GAG2GetPlayScreenClickPoint(object)
 
     local camera =
         workspace.CurrentCamera
@@ -3420,8 +3437,529 @@ function GAG2PressPlayScreen()
     local y =
         math.floor(viewport.Y / 2)
 
+    if typeof(object) == "Instance"
+    and object:IsA("GuiObject") then
+
+        local ok =
+            pcall(function()
+
+                local position =
+                    object.AbsolutePosition
+
+                local size =
+                    object.AbsoluteSize
+
+                if typeof(position) == "Vector2"
+                and typeof(size) == "Vector2"
+                and size.X > 0
+                and size.Y > 0 then
+
+                    x =
+                        math.floor(
+                            position.X + (size.X / 2)
+                        )
+
+                    y =
+                        math.floor(
+                            position.Y + (size.Y / 2)
+                        )
+                end
+            end)
+
+        if ok ~= true then
+
+            x =
+                math.floor(viewport.X / 2)
+
+            y =
+                math.floor(viewport.Y * 0.70)
+        end
+    end
+
+    return x,
+        y
+end
+
+function GAG2PressPlayScreen()
+
+    local now =
+        os.clock()
+
+    if now - tonumber(SniperState.LastPlayScreenPressAt or 0) < 0.75 then
+        return false
+    end
+
+    local maxAttempts =
+        math.clamp(
+            tonumber(SniperState.PlayScreenMaxClickAttempts)
+            or 1,
+            1,
+            5
+        )
+
+    if tonumber(SniperState.PlayScreenClickAttempts or 0) >= maxAttempts then
+        return false
+    end
+
+    local object, text =
+        GAG2GetPlayScreenTextObject()
+
+    SniperState.LastPlayScreenPressAt =
+        now
+
+    SniperState.PlayScreenClickAttempts =
+        tonumber(SniperState.PlayScreenClickAttempts or 0)
+        + 1
+
+    local x, y =
+        GAG2GetPlayScreenClickPoint(
+            object
+        )
+
     local didPress =
         false
+
+    if VirtualInputManager then
+
+        pcall(function()
+
+            VirtualInputManager:SendMouseButtonEvent(
+                x,
+                y,
+                0,
+                true,
+                game,
+                0
+            )
+
+            task.wait(
+                0.06
+            )
+
+            VirtualInputManager:SendMouseButtonEvent(
+                x,
+                y,
+                0,
+                false,
+                game,
+                0
+            )
+
+            didPress =
+                true
+        end)
+
+        pcall(function()
+
+            VirtualInputManager:SendKeyEvent(
+                true,
+                Enum.KeyCode.Space,
+                false,
+                game
+            )
+
+            task.wait(
+                0.04
+            )
+
+            VirtualInputManager:SendKeyEvent(
+                false,
+                Enum.KeyCode.Space,
+                false,
+                game
+            )
+
+            didPress =
+                true
+        end)
+
+        pcall(function()
+
+            VirtualInputManager:SendKeyEvent(
+                true,
+                Enum.KeyCode.Return,
+                false,
+                game
+            )
+
+            task.wait(
+                0.04
+            )
+
+            VirtualInputManager:SendKeyEvent(
+                false,
+                Enum.KeyCode.Return,
+                false,
+                game
+            )
+
+            didPress =
+                true
+        end)
+
+        pcall(function()
+
+            VirtualInputManager:SendTouchEvent(
+                1,
+                Enum.UserInputState.Begin,
+                x,
+                y
+            )
+
+            task.wait(
+                0.05
+            )
+
+            VirtualInputManager:SendTouchEvent(
+                1,
+                Enum.UserInputState.End,
+                x,
+                y
+            )
+
+            didPress =
+                true
+        end)
+    end
+
+    if VirtualUser then
+
+        local camera =
+            workspace.CurrentCamera
+
+        local cameraFrame =
+            camera
+            and camera.CFrame
+            or CFrame.new()
+
+        pcall(function()
+
+            VirtualUser:Button1Down(
+                Vector2.new(
+                    x,
+                    y
+                ),
+                cameraFrame
+            )
+
+            task.wait(
+                0.06
+            )
+
+            VirtualUser:Button1Up(
+                Vector2.new(
+                    x,
+                    y
+                ),
+                cameraFrame
+            )
+
+            didPress =
+                true
+        end)
+
+        pcall(function()
+
+            VirtualUser:ClickButton1(
+                Vector2.new(
+                    x,
+                    y
+                )
+            )
+
+            didPress =
+                true
+        end)
+    end
+
+    print(
+        "[HOLY GAG2]",
+        "Play screen final click",
+        "| text:",
+        tostring(text),
+        "| x:",
+        tostring(x),
+        "| y:",
+        tostring(y),
+        "| input:",
+        didPress == true
+        and "yes"
+        or "no"
+    )
+
+    return didPress
+end
+
+function GAG2GetLoadingGui()
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+
+    if not playerGui then
+        return nil
+    end
+
+    return playerGui:FindFirstChild("LoadingGui")
+end
+
+function GAG2ReadLoadingAttributes()
+
+    local loadingActive =
+        false
+
+    local loadingDone =
+        false
+
+    pcall(function()
+
+        loadingActive =
+            LOCAL_PLAYER:GetAttribute("LoadingScreenActive") == true
+
+        loadingDone =
+            LOCAL_PLAYER:GetAttribute("LoadingScreenDone") == true
+    end)
+
+    return loadingActive,
+        loadingDone
+end
+
+function GAG2IsLoadingPlayScreenVisible()
+
+    -- Do not trust GAG2_AUTO_PLAY_STATE.Finished here.
+    -- The old version could mark Finished too early and stop clicking forever.
+
+    local blocking =
+        GAG2IsPlayScreenBlocking()
+
+    if blocking == true then
+        return true
+    end
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+
+    if playerGui then
+
+        local scanned =
+            0
+
+        for _, object in ipairs(playerGui:GetDescendants()) do
+
+            scanned += 1
+
+            if scanned > 8000 then
+                break
+            end
+
+            if object:IsA("TextLabel")
+            or object:IsA("TextButton")
+            or object:IsA("TextBox") then
+
+                local ok, rawText =
+                    pcall(function()
+
+                        return object.Text
+                    end)
+
+                local text =
+                    ok == true
+                    and tostring(rawText or ""):lower()
+                    or ""
+
+                if text ~= ""
+                and GAG2GuiObjectVisible(object) == true then
+
+                    if text:find("press any key", 1, true)
+                    or text:find("press any", 1, true)
+                    or text:find("tap anywhere", 1, true)
+                    or text:find("click anywhere", 1, true)
+                    or (
+                        text:find("press", 1, true)
+                        and text:find("play", 1, true)
+                    ) then
+
+                        return true
+                    end
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+function GAG2SendLoadingScreenClick()
+
+    local camera =
+        workspace.CurrentCamera
+
+    if not camera then
+        return false
+    end
+
+    local viewport =
+        camera.ViewportSize
+
+    if typeof(viewport) ~= "Vector2"
+    or viewport.X <= 0
+    or viewport.Y <= 0 then
+        return false
+    end
+
+    local textObject =
+        select(
+            3,
+            GAG2IsPlayScreenBlocking()
+        )
+
+    local points = {
+        {
+            math.floor(viewport.X * 0.50),
+            math.floor(viewport.Y * 0.55),
+        },
+        {
+            math.floor(viewport.X * 0.50),
+            math.floor(viewport.Y * 0.62),
+        },
+        {
+            math.floor(viewport.X * 0.50),
+            math.floor(viewport.Y * 0.48),
+        },
+    }
+
+    if typeof(textObject) == "Instance"
+    and textObject:IsA("GuiObject") then
+
+        pcall(function()
+
+            local position =
+                textObject.AbsolutePosition
+
+            local size =
+                textObject.AbsoluteSize
+
+            table.insert(points, 1, {
+                math.floor(position.X + (size.X / 2)),
+                math.floor(position.Y + (size.Y / 2)),
+            })
+        end)
+    end
+
+    local didClick =
+        false
+
+    local function clickPoint(x, y)
+
+        if VirtualInputManager then
+
+            pcall(function()
+
+                VirtualInputManager:SendMouseButtonEvent(
+                    x,
+                    y,
+                    0,
+                    true,
+                    game,
+                    0
+                )
+
+                task.wait(
+                    0.035
+                )
+
+                VirtualInputManager:SendMouseButtonEvent(
+                    x,
+                    y,
+                    0,
+                    false,
+                    game,
+                    0
+                )
+
+                didClick =
+                    true
+            end)
+
+            pcall(function()
+
+                VirtualInputManager:SendTouchEvent(
+                    1,
+                    Enum.UserInputState.Begin,
+                    x,
+                    y
+                )
+
+                task.wait(
+                    0.035
+                )
+
+                VirtualInputManager:SendTouchEvent(
+                    1,
+                    Enum.UserInputState.End,
+                    x,
+                    y
+                )
+
+                didClick =
+                    true
+            end)
+        end
+
+        if VirtualUser then
+
+            local cameraFrame =
+                camera.CFrame
+
+            pcall(function()
+
+                VirtualUser:Button1Down(
+                    Vector2.new(
+                        x,
+                        y
+                    ),
+                    cameraFrame
+                )
+
+                task.wait(
+                    0.035
+                )
+
+                VirtualUser:Button1Up(
+                    Vector2.new(
+                        x,
+                        y
+                    ),
+                    cameraFrame
+                )
+
+                didClick =
+                    true
+            end)
+
+            pcall(function()
+
+                VirtualUser:ClickButton1(
+                    Vector2.new(
+                        x,
+                        y
+                    )
+                )
+
+                didClick =
+                    true
+            end)
+        end
+    end
+
+    for _, point in ipairs(points) do
+
+        clickPoint(
+            point[1],
+            point[2]
+        )
+    end
 
     if VirtualInputManager then
 
@@ -3435,7 +3973,7 @@ function GAG2PressPlayScreen()
             )
 
             task.wait(
-                0.03
+                0.025
             )
 
             VirtualInputManager:SendKeyEvent(
@@ -3445,65 +3983,245 @@ function GAG2PressPlayScreen()
                 game
             )
 
-            didPress =
+            didClick =
                 true
         end)
 
         pcall(function()
 
-            VirtualInputManager:SendMouseButtonEvent(
-                x,
-                y,
-                0,
+            VirtualInputManager:SendKeyEvent(
                 true,
-                game,
-                0
+                Enum.KeyCode.Return,
+                false,
+                game
             )
 
             task.wait(
-                0.03
+                0.025
             )
 
-            VirtualInputManager:SendMouseButtonEvent(
-                x,
-                y,
-                0,
+            VirtualInputManager:SendKeyEvent(
                 false,
-                game,
-                0
+                Enum.KeyCode.Return,
+                false,
+                game
             )
 
-            didPress =
+            didClick =
                 true
         end)
     end
 
+    GAG2_AUTO_PLAY_STATE =
+        type(GAG2_AUTO_PLAY_STATE) == "table"
+        and GAG2_AUTO_PLAY_STATE
+        or {}
+
+    GAG2_AUTO_PLAY_STATE.Attempts =
+        tonumber(GAG2_AUTO_PLAY_STATE.Attempts)
+        or 0
+
     print(
         "[HOLY GAG2]",
-        "Pressed play screen",
-        "| virtual input:",
-        didPress == true
+        "Loading spam click",
+        "| attempt:",
+        tostring(GAG2_AUTO_PLAY_STATE.Attempts),
+        "| ok:",
+        didClick == true
         and "yes"
-        or "no"
+        or "no",
+        "| points:",
+        tostring(#points)
     )
 
-    return didPress
+    return didClick
+end
+
+function GAG2FireFinishLoadingRemoteSafe()
+
+    local gameEvents =
+        ReplicatedStorage:FindFirstChild("GameEvents")
+
+    if not gameEvents then
+        return false
+    end
+
+    local finishLoading =
+        gameEvents:FindFirstChild("Finish_Loading")
+
+    if not finishLoading
+    or finishLoading:IsA("RemoteEvent") ~= true then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            finishLoading:FireServer()
+        end)
+
+    if ok == true then
+
+        print(
+            "[HOLY GAG2]",
+            "Finish_Loading fired."
+        )
+    end
+
+    return ok == true
+end
+
+function GAG2RestoreCameraSoft()
+
+    local character =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character
+
+    if not character then
+        return false
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    local camera =
+        workspace.CurrentCamera
+
+    if not camera
+    or not humanoid then
+        return false
+    end
+
+    pcall(function()
+
+        camera.CameraType =
+            Enum.CameraType.Custom
+
+        camera.CameraSubject =
+            humanoid
+    end)
+
+    return true
+end
+
+function GAG2CleanupLoadingGuiVisualOnly()
+
+    local loadingGui =
+        GAG2GetLoadingGui()
+
+    if not loadingGui then
+        return true
+    end
+
+    pcall(function()
+
+        loadingGui.Enabled =
+            false
+    end)
+
+    SniperState.LoadingGuiClearAt =
+        os.clock()
+
+    print(
+        "[HOLY GAG2]",
+        "LoadingGui visual cleanup."
+    )
+
+    return true
+end
+
+function GAG2ForceClearLoadingGui()
+
+    return GAG2CleanupLoadingGuiVisualOnly()
+end
+
+function GAG2AutoPlayLoadingStep()
+
+    GAG2_AUTO_PLAY_STATE =
+        type(GAG2_AUTO_PLAY_STATE) == "table"
+        and GAG2_AUTO_PLAY_STATE
+        or {
+            Started = false,
+            Finished = false,
+            LastClick = 0,
+            Attempts = 0,
+        }
+
+    if GAG2_AUTO_PLAY_STATE.Finished == true then
+        return true
+    end
+
+    GAG2_AUTO_PLAY_STATE.Attempts =
+        tonumber(GAG2_AUTO_PLAY_STATE.Attempts)
+        or 0
+
+    local visible =
+        GAG2IsLoadingPlayScreenVisible()
+
+    local loadingActive, loadingDone =
+        GAG2ReadLoadingAttributes()
+
+    if visible == true then
+
+        GAG2_AUTO_PLAY_STATE.Attempts =
+            GAG2_AUTO_PLAY_STATE.Attempts
+            + 1
+
+        if GAG2_AUTO_PLAY_STATE.Attempts == 1
+        or GAG2_AUTO_PLAY_STATE.Attempts % 6 == 0 then
+
+            GAG2FireFinishLoadingRemoteSafe()
+        end
+
+        GAG2SendLoadingScreenClick()
+
+        GAG2_AUTO_PLAY_STATE.LastClick =
+            os.clock()
+
+        GAG2RestoreCameraSoft()
+
+        return false
+    end
+
+    if loadingDone == true
+    and loadingActive ~= true then
+
+        GAG2_AUTO_PLAY_STATE.Finished =
+            true
+
+        GAG2CleanupLoadingGuiVisualOnly()
+
+        print(
+            "[HOLY GAG2]",
+            "Loading auto-play finished",
+            "| attempts:",
+            tostring(GAG2_AUTO_PLAY_STATE.Attempts)
+        )
+
+        return true
+    end
+
+    return false
 end
 
 function GAG2ClientReadyForBuy()
 
-    local blocking, text =
-        GAG2IsPlayScreenBlocking()
+    if GAG2IsLoadingPlayScreenVisible() == true then
 
-    if blocking == true then
-
-        SniperState.PlayScreenClearAt =
-            0
-
-        GAG2PressPlayScreen()
+        GAG2StartLoadingGuiCleaner()
 
         return false,
-            "Starting game..."
+            "Clicking loading screen..."
+    end
+
+    local loadingActive, loadingDone =
+        GAG2ReadLoadingAttributes()
+
+    if loadingActive == true
+    or loadingDone ~= true then
+
+        return false,
+            "Loading..."
     end
 
     if tonumber(SniperState.PlayScreenClearAt or 0) <= 0 then
@@ -3517,7 +4235,7 @@ function GAG2ClientReadyForBuy()
 
     local grace =
         tonumber(SniperState.PlayScreenClearGrace)
-        or 1.25
+        or 0.35
 
     if os.clock() - SniperState.PlayScreenClearAt < grace then
 
@@ -3527,6 +4245,80 @@ function GAG2ClientReadyForBuy()
 
     return true,
         "Ready."
+end
+
+function GAG2StartLoadingGuiCleaner()
+
+    if GAG2_LOADING_GUI_CLEANER_RUNNING == true then
+        return
+    end
+
+    GAG2_LOADING_GUI_CLEANER_RUNNING =
+        true
+
+    task.spawn(function()
+
+        GAG2_AUTO_PLAY_STATE =
+            type(GAG2_AUTO_PLAY_STATE) == "table"
+            and GAG2_AUTO_PLAY_STATE
+            or {
+                Started = false,
+                Finished = false,
+                LastClick = 0,
+                Attempts = 0,
+            }
+
+        if GAG2_AUTO_PLAY_STATE.Started ~= true then
+
+            GAG2_AUTO_PLAY_STATE.Started =
+                true
+
+            task.wait(
+                0.75
+            )
+        end
+
+        local started =
+            os.clock()
+
+        local timeout =
+            math.clamp(
+                tonumber(SniperState.AutoPlayTimeout)
+                or 45,
+                10,
+                90
+            )
+
+        local interval =
+            math.clamp(
+                tonumber(SniperState.AutoPlayClickInterval)
+                or 0.18,
+                0.08,
+                0.5
+            )
+
+        while os.clock() - started < timeout do
+
+            if GAG2_AUTO_PLAY_STATE.Finished == true then
+                break
+            end
+
+            GAG2AutoPlayLoadingStep()
+
+            if GAG2_AUTO_PLAY_STATE.Finished == true then
+                break
+            end
+
+            task.wait(
+                interval
+            )
+        end
+
+        GAG2RestoreCameraSoft()
+
+        GAG2_LOADING_GUI_CLEANER_RUNNING =
+            false
+    end)
 end
 
 local function SniperReadyToHop()
@@ -3556,8 +4348,6 @@ local function SniperReadyToBuy()
         or 8
 
     if elapsed < startupDelay then
-
-        GAG2PressPlayScreen()
 
         return false,
             "Starting..."
@@ -3962,6 +4752,22 @@ local function SniperGetEntryKey(entry)
     return CleanText(entry.Name)
 end
 
+local function SniperHasPendingBuy()
+
+    if type(SniperState.PendingWildPets) ~= "table" then
+        return false
+    end
+
+    for _, value in pairs(SniperState.PendingWildPets) do
+
+        if value == true then
+            return true
+        end
+    end
+
+    return false
+end
+
 local function SniperIsEntryHandled(entry)
 
     local key =
@@ -4212,7 +5018,15 @@ local function SniperStartBuyConfirmation(entry)
         SniperState.PendingWildPets[key] =
             nil
 
-        if SniperState.ConfirmingBuyKey == key then
+        if SniperHasPendingBuy() == true then
+
+            SniperState.ConfirmingBuy =
+                true
+
+            SniperState.ConfirmingBuyKey =
+                ""
+
+        else
 
             SniperState.ConfirmingBuy =
                 false
@@ -4224,13 +5038,13 @@ local function SniperStartBuyConfirmation(entry)
         if confirmed == true then
 
             SetSniperStatus(
-                "Bought: "
+                "Confirmed: "
                 .. tostring(entry.Name)
             )
 
             Notify(
                 "Sniper",
-                "Bought "
+                "Confirmed "
                 .. tostring(entry.Name)
                 .. ".",
                 3
@@ -5310,17 +6124,11 @@ function SniperScan(allowAutoHop)
             ""
     end
 
-    if SniperState.ConfirmingBuy == true then
+    if SniperHasPendingBuy() == true then
 
         GAG2CancelServerHop(
             nil
         )
-
-        SetSniperStatus(
-            "Confirming buy..."
-        )
-
-        return matches
     end
 
     if #matches > 0 then
@@ -5380,7 +6188,7 @@ function SniperScan(allowAutoHop)
     and SniperState.AutoHop == true
     and SniperState.Enabled == true
     and SniperState.Taming ~= true
-    and SniperState.ConfirmingBuy ~= true
+    and SniperHasPendingBuy() ~= true
     and hasHandledActiveTarget ~= true
     and SniperReadyToHop() == true then
 
@@ -6728,14 +7536,43 @@ function GAG2RareWebhookSend(entry)
         }
     end
 
+    local roleId =
+        CleanText(
+            GAG2_RARE_PET_WEBHOOK_ROLE_ID
+        )
+
     local payload = {
         username =
             "Holy GAG2",
+
+        content =
+            roleId ~= ""
+            and (
+                "<@&"
+                .. roleId
+                .. ">"
+            )
+            or nil,
+
+        allowed_mentions = {
+            parse = {},
+            roles = {
+                roleId,
+            },
+        },
 
         embeds = {
             embed,
         },
     }
+
+    if roleId == "" then
+
+        payload.allowed_mentions =
+            {
+                parse = {},
+            }
+    end
 
     local ok, response =
         pcall(function()
@@ -7667,12 +8504,6 @@ RefreshSniperLabels()
 -- [10] SETTINGS TAB
 --==================================================
 
-SettingsUIBox:AddLabel({
-    Text = "Interface",
-    DoesWrap = true,
-    Size = 13,
-})
-
 SettingsUIBox:AddToggle(
     "HolyGAG2AutoCloseUI",
     {
@@ -7846,6 +8677,8 @@ pcall(function()
     )
 end)
 
+GAG2StartLoadingGuiCleaner()
+
 RestoreSniperAutosaveState()
 
 ConfigState.Loading =
@@ -7898,24 +8731,7 @@ pcall(function()
     end)
 end)
 
-task.spawn(function()
-
-    for _ = 1, 12 do
-
-        local blocking =
-            GAG2IsPlayScreenBlocking()
-
-        if blocking ~= true then
-            break
-        end
-
-        GAG2PressPlayScreen()
-
-        task.wait(
-            1
-        )
-    end
-end)
+GAG2StartLoadingGuiCleaner()
 
 RefreshServerInfo()
 RefreshHomeActivePets()
