@@ -52,6 +52,62 @@ local LOCAL_PLAYER =
 local GROW_A_GARDEN_2_PLACE_ID =
     97598239454123
 
+local GROW_A_GARDEN_2_KNOWN_PLACE_IDS = {
+    [97598239454123] = true,
+    [133438856880402] = true,
+}
+
+local function IsGAG2KnownPlace(placeId)
+
+    return GROW_A_GARDEN_2_KNOWN_PLACE_IDS[
+        tonumber(placeId)
+    ] == true
+end
+
+local function GAG2BuildJoinCode(placeId, jobId)
+
+    local resolvedPlaceId =
+        tonumber(placeId)
+        or tonumber(game.PlaceId)
+        or GROW_A_GARDEN_2_PLACE_ID
+
+    local resolvedJobId =
+        tostring(
+            jobId
+            or game.JobId
+            or ""
+        )
+            :gsub("^%s+", "")
+            :gsub("%s+$", "")
+
+    return tostring(resolvedPlaceId)
+        .. ":"
+        .. tostring(resolvedJobId)
+end
+
+local function GAG2KnownPlaceIdsText()
+
+    local ids =
+        {}
+
+    for placeId in pairs(GROW_A_GARDEN_2_KNOWN_PLACE_IDS) do
+
+        table.insert(
+            ids,
+            tostring(placeId)
+        )
+    end
+
+    table.sort(
+        ids
+    )
+
+    return table.concat(
+        ids,
+        ", "
+    )
+end
+
 local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
@@ -193,7 +249,9 @@ end
 
 local function IsGAG2World()
 
-    return game.PlaceId == GROW_A_GARDEN_2_PLACE_ID
+    return IsGAG2KnownPlace(
+        game.PlaceId
+    )
 end
 
 local function BoolText(value)
@@ -523,6 +581,11 @@ local function BuildServerInfoText()
         .. tostring(game.PlaceId)
         .. '\nJobId: '
         .. tostring(game.JobId)
+        .. '\nJoin Code: '
+        .. GAG2BuildJoinCode(
+            game.PlaceId,
+            game.JobId
+        )
         .. '\nPlayers: '
         .. tostring(#Players:GetPlayers())
         .. '\nGAG2 Place: '
@@ -574,6 +637,9 @@ function GAG2ParseManualJoinTarget(text)
             :gsub("`", "")
             :gsub("\n", " ")
             :gsub("\r", " ")
+            :gsub("−", "-")
+            :gsub("–", "-")
+            :gsub("—", "-")
 
     text =
         CleanText(
@@ -581,49 +647,55 @@ function GAG2ParseManualJoinTarget(text)
         )
 
     if text == "" then
-        return nil, "Paste JobId."
+        return nil, "Paste placeId:JobId."
     end
+
+    local placeId =
+        nil
+
+    local jobId =
+        nil
 
     local placeFromPair, jobFromPair =
         text:match("(%d+)%s*[:|,]%s*([%w%-]+)")
 
-    local placeId =
-        tonumber(placeFromPair)
-
-    if not placeId then
+    if placeFromPair
+    and jobFromPair then
 
         placeId =
-            tonumber(
-                text:match("[Pp]lace[Ii]d[%s=:]+(%d+)")
-            )
+            tonumber(placeFromPair)
+
+        jobId =
+            jobFromPair
     end
 
     if not placeId then
 
         placeId =
             tonumber(
+                text:match("[Pp]lace[Ii][Dd][%s:=]+(%d+)")
+            )
+            or tonumber(
+                text:match("[Pp]lace%s*[Ii][Dd][%s:=]+(%d+)")
+            )
+            or tonumber(
                 text:match("placeId=(%d+)")
             )
+            or tonumber(
+                text:match("PlaceId=(%d+)")
+            )
     end
-
-    if not placeId
-    or placeId <= 0 then
-
-        placeId =
-            GROW_A_GARDEN_2_PLACE_ID
-    end
-
-    local jobId =
-        jobFromPair
 
     if not jobId
     or jobId == "" then
 
         jobId =
-            text:match("[Gg]ame[Ii]nstance[Ii]d[%s=:/]+([%w%-]+)")
+            text:match("[Gg]ame[Ii]nstance[Ii][Dd][%s=:/]+([%w%-]+)")
             or text:match("gameInstanceId=([%w%-]+)")
-            or text:match("[Jj]ob[Ii]d[%s=:/]+([%w%-]+)")
+            or text:match("GameInstanceId=([%w%-]+)")
+            or text:match("[Jj]ob[Ii][Dd][%s=:/]+([%w%-]+)")
             or text:match("jobId=([%w%-]+)")
+            or text:match("JobId=([%w%-]+)")
             or text:match("([%w]+%-%w+%-%w+%-%w+%-%w+)")
             or ""
     end
@@ -637,13 +709,34 @@ function GAG2ParseManualJoinTarget(text)
         return nil, "Invalid JobId."
     end
 
+    local placeWasInferred =
+        false
+
+    if not placeId
+    or placeId <= 0 then
+
+        placeWasInferred =
+            true
+
+        placeId =
+            tonumber(game.PlaceId)
+            or GROW_A_GARDEN_2_PLACE_ID
+    end
+
     return {
         PlaceId = placeId,
         JobId = jobId,
         JoinCode =
-            tostring(placeId)
-            .. ":"
-            .. tostring(jobId),
+            GAG2BuildJoinCode(
+                placeId,
+                jobId
+            ),
+        PlaceWasInferred =
+            placeWasInferred,
+        KnownPlace =
+            IsGAG2KnownPlace(
+                placeId
+            ),
     },
     nil
 end
@@ -668,12 +761,29 @@ function GAG2SetManualJoinTargetText(text)
 
     if parsed then
 
-        GAG2_MANUAL_JOIN_STATE.PreviewText =
+        local previewText =
             "Ready: "
-            .. tostring(parsed.JobId)
+            .. tostring(parsed.JoinCode)
+
+        if parsed.PlaceWasInferred == true then
+
+            previewText =
+                previewText
+                .. " (current place inferred)"
+        end
+
+        if parsed.KnownPlace ~= true then
+
+            previewText =
+                previewText
+                .. " (unknown place)"
+        end
+
+        GAG2_MANUAL_JOIN_STATE.PreviewText =
+            previewText
 
         GAG2_MANUAL_JOIN_STATE.StatusText =
-            "Ready."
+            previewText
 
     else
 
@@ -755,7 +865,8 @@ function GAG2ManualJoinServer()
         return false
     end
 
-    if tostring(parsed.JobId) == tostring(game.JobId) then
+    if tonumber(parsed.PlaceId) == tonumber(game.PlaceId)
+    and tostring(parsed.JobId) == tostring(game.JobId) then
 
         GAG2SetManualJoinStatus(
             "Already in this server."
@@ -789,11 +900,13 @@ function GAG2ManualJoinServer()
         parsed.JoinCode
 
     GAG2SetManualJoinStatus(
-        "Joining server..."
+        "Joining: "
+        .. tostring(parsed.JoinCode)
     )
 
     SetStatus(
-        "Joining manual server..."
+        "Joining: "
+        .. tostring(parsed.JoinCode)
     )
 
     local ok, err =
@@ -1134,7 +1247,7 @@ function GAG2CreateManualJoinHud()
         Color3.fromRGB(125, 116, 145)
 
     input.PlaceholderText =
-        "JobId or placeId:JobId..."
+        "placeId:JobId recommended..."
 
     input.Text =
         GAG2_MANUAL_JOIN_STATE.TargetText
@@ -7462,6 +7575,12 @@ function GAG2RareWebhookSend(entry)
             entry
         )
 
+    local joinCode =
+        GAG2BuildJoinCode(
+            game.PlaceId,
+            game.JobId
+        )
+
     local embed = {
 
         title =
@@ -7512,6 +7631,15 @@ function GAG2RareWebhookSend(entry)
             },
 
             {
+                name = "Join Code",
+                value =
+                    "```"
+                    .. tostring(joinCode)
+                    .. "```",
+                inline = false,
+            },
+
+            {
                 name = "JobId",
                 value =
                     "```"
@@ -7549,11 +7677,17 @@ function GAG2RareWebhookSend(entry)
             .. "> 🌟 Rare pet found: **"
             .. petName
             .. "**"
+            .. "\n`"
+            .. tostring(joinCode)
+            .. "`"
         )
         or (
             "🌟 Rare pet found: **"
             .. petName
             .. "**"
+            .. "\n`"
+            .. tostring(joinCode)
+            .. "`"
         )
 
     local payload = {
@@ -7957,15 +8091,22 @@ HomeMainBox:AddButton({
 })
 
 HomeMainBox:AddButton({
-    Text = "Copy JobId",
-    Tooltip = "Copy current server JobId.",
+    Text = "Copy Join Code",
+    Tooltip = "Copy current placeId:JobId.",
+    Func = function()
+
+        GAG2CopyCurrentJoinCode()
+    end,
+}):AddButton({
+    Text = "Copy Raw JobId",
+    Tooltip = "Copy only the current server JobId.",
     Func = function()
 
         if CopyText(game.JobId) == true then
 
             Notify(
                 "Copied",
-                "JobId copied.",
+                "Raw JobId copied.",
                 3
             )
 
@@ -7991,13 +8132,13 @@ HomeMainBox:AddLabel({
 
 GAG2_MANUAL_JOIN_INPUT_CONTROL =
     HomeMainBox:AddInput("HolyGAG2ManualJoinTarget", {
-        Text = "JobId / Join Code",
+        Text = "Join Code",
         Default = "",
         Numeric = false,
         Finished = true,
         ClearTextOnFocus = false,
-        Placeholder = "JobId or placeId:JobId",
-        Tooltip = "Paste a JobId, placeId:JobId, or Roblox server link.",
+        Placeholder = "placeId:JobId recommended",
+        Tooltip = "Paste placeId:JobId from Discord. JobId-only uses your current place and can fail if the alert came from another GAG2 place.",
         Callback = function(value)
 
             if GAG2_MANUAL_JOIN_STATE.Refreshing == true then
@@ -8063,9 +8204,9 @@ if IsGAG2World() ~= true then
 
     HomeServerBox:AddLabel({
         Text =
-            '<font color="rgb(248,113,113)"><b>Wrong Place Warning</b></font>'
-            .. '\nExpected PlaceId: '
-            .. tostring(GROW_A_GARDEN_2_PLACE_ID)
+            '<font color="rgb(248,113,113)"><b>Unknown Place Warning</b></font>'
+            .. '\nKnown GAG2 PlaceIds: '
+            .. GAG2KnownPlaceIdsText()
             .. '\nCurrent PlaceId: '
             .. tostring(game.PlaceId),
         DoesWrap = true,
