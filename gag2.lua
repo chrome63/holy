@@ -7539,6 +7539,21 @@ function GAG2RareWebhookSend(entry)
     local roleId =
         CleanText(
             GAG2_RARE_PET_WEBHOOK_ROLE_ID
+        ):gsub("%D", "")
+
+    local pingContent =
+        roleId ~= ""
+        and (
+            "<@&"
+            .. roleId
+            .. "> 🌟 Rare pet found: **"
+            .. petName
+            .. "**"
+        )
+        or (
+            "🌟 Rare pet found: **"
+            .. petName
+            .. "**"
         )
 
     local payload = {
@@ -7546,33 +7561,23 @@ function GAG2RareWebhookSend(entry)
             "Holy GAG2",
 
         content =
-            roleId ~= ""
-            and (
-                "<@&"
-                .. roleId
-                .. ">"
-            )
-            or nil,
+            pingContent,
 
-        allowed_mentions = {
-            parse = {},
-            roles = {
-                roleId,
+        allowed_mentions =
+            roleId ~= ""
+            and {
+                parse = {
+                    "roles",
+                },
+            }
+            or {
+                parse = {},
             },
-        },
 
         embeds = {
             embed,
         },
     }
-
-    if roleId == "" then
-
-        payload.allowed_mentions =
-            {
-                parse = {},
-            }
-    end
 
     local ok, response =
         pcall(function()
@@ -7584,9 +7589,18 @@ function GAG2RareWebhookSend(entry)
                     ["Content-Type"] = "application/json",
                 },
                 Body =
-                    HttpService:JSONEncode(
-                        payload
-                    ),
+                    (function()
+
+                        print(
+                            "[HOLY GAG2 WEBHOOK]",
+                            "payload content:",
+                            tostring(payload.content)
+                        )
+
+                        return HttpService:JSONEncode(
+                            payload
+                        )
+                    end)(),
             })
         end)
 
