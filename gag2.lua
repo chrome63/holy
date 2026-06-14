@@ -1621,6 +1621,28 @@ function HopServerOnce()
             local servers =
                 {}
 
+            local minPlayers =
+                math.clamp(
+                    tonumber(SniperState.ServerMinPlayers)
+                    or 0,
+                    0,
+                    999
+                )
+
+            local maxPlayersWanted =
+                math.clamp(
+                    tonumber(SniperState.ServerMaxPlayers)
+                    or 999,
+                    0,
+                    999
+                )
+
+            if maxPlayersWanted < minPlayers then
+
+                maxPlayersWanted =
+                    minPlayers
+            end
+
             for _, server in ipairs(data.data or {}) do
 
                 local serverId =
@@ -1637,7 +1659,9 @@ function HopServerOnce()
                 if serverId ~= ""
                 and serverId ~= game.JobId
                 and maxPlayers > 0
-                and playing < maxPlayers then
+                and playing < maxPlayers
+                and playing >= minPlayers
+                and playing <= maxPlayersWanted then
 
                     server.FreeSlots =
                         maxPlayers - playing
@@ -1652,7 +1676,11 @@ function HopServerOnce()
             if #servers <= 0 then
 
                 SetStatus(
-                    "No valid server. Retrying..."
+                    "No server in range "
+                    .. tostring(minPlayers)
+                    .. "-"
+                    .. tostring(maxPlayersWanted)
+                    .. ". Retrying..."
                 )
 
                 task.wait(
@@ -1686,6 +1714,10 @@ function HopServerOnce()
                 .. "/"
                 .. tostring(target.maxPlayers)
                 .. " server..."
+                .. " range "
+                .. tostring(SniperState.ServerMinPlayers)
+                .. "-"
+                .. tostring(SniperState.ServerMaxPlayers)
             )
 
                         if GAG2_SERVER_HOP_RETRYING ~= true then
@@ -2039,6 +2071,9 @@ local SniperState = {
 
     ScanDelay = 0.25,
     HopDelay = 20,
+
+    ServerMinPlayers = 0,
+    ServerMaxPlayers = 999,
 
     LastHopAt = 0,
     LastScanAt = 0,
@@ -6980,6 +7015,38 @@ function RestoreSniperAutosaveState()
                 )
         end
 
+        if Options.HolyGAG2ServerMinPlayers
+        and Options.HolyGAG2ServerMinPlayers.Value ~= nil then
+
+            SniperState.ServerMinPlayers =
+                math.clamp(
+                    tonumber(Options.HolyGAG2ServerMinPlayers.Value)
+                    or SniperState.ServerMinPlayers
+                    or 0,
+                    0,
+                    999
+                )
+        end
+
+        if Options.HolyGAG2ServerMaxPlayers
+        and Options.HolyGAG2ServerMaxPlayers.Value ~= nil then
+
+            SniperState.ServerMaxPlayers =
+                math.clamp(
+                    tonumber(Options.HolyGAG2ServerMaxPlayers.Value)
+                    or SniperState.ServerMaxPlayers
+                    or 999,
+                    0,
+                    999
+                )
+        end
+
+        if SniperState.ServerMaxPlayers < SniperState.ServerMinPlayers then
+
+            SniperState.ServerMaxPlayers =
+                SniperState.ServerMinPlayers
+        end
+
         for priorityIndex = 1, 5 do
 
             local option =
@@ -8039,6 +8106,12 @@ local SniperMainBox =
         "settings"
     )
 
+local SniperServerBox =
+    Tabs.Sniper:AddRightGroupbox(
+        "Server Selection",
+        "settings"
+    )
+
 local SniperStatusBox =
     Tabs.Sniper:AddRightGroupbox(
         "Sniper Status",
@@ -8620,6 +8693,116 @@ SniperMainBox:AddButton({
                 4
             )
         end
+    end,
+})
+
+SniperServerBox:AddLabel({
+    Text =
+        '<font color="rgb(196,181,253)"><b>Server Selection</b></font>'
+        .. '\nSelects public servers by player count.'
+        .. '\nStill prefers emptier servers inside your range.',
+    DoesWrap = true,
+    Size = 13,
+})
+
+SniperServerBox:AddInput("HolyGAG2ServerMinPlayers", {
+    Text = "Min Players",
+    Default = tostring(SniperState.ServerMinPlayers),
+    Numeric = true,
+    Finished = true,
+    ClearTextOnFocus = false,
+    Placeholder = "0",
+    Tooltip = "Skip servers with fewer players than this.",
+    Callback = function(value)
+
+        SniperState.ServerMinPlayers =
+            math.clamp(
+                tonumber(value)
+                or 0,
+                0,
+                999
+            )
+
+        if SniperState.ServerMaxPlayers < SniperState.ServerMinPlayers then
+
+            SniperState.ServerMaxPlayers =
+                SniperState.ServerMinPlayers
+
+            if Options.HolyGAG2ServerMaxPlayers
+            and type(Options.HolyGAG2ServerMaxPlayers.SetValue) == "function" then
+
+                pcall(function()
+
+                    Options.HolyGAG2ServerMaxPlayers:SetValue(
+                        tostring(SniperState.ServerMaxPlayers)
+                    )
+                end)
+            end
+        end
+
+        SetSniperStatus(
+            "Server range: "
+            .. tostring(SniperState.ServerMinPlayers)
+            .. "-"
+            .. tostring(SniperState.ServerMaxPlayers)
+        )
+
+        MarkConfigDirty()
+    end,
+})
+
+SniperServerBox:AddInput("HolyGAG2ServerMaxPlayers", {
+    Text = "Max Players",
+    Default = tostring(SniperState.ServerMaxPlayers),
+    Numeric = true,
+    Finished = true,
+    ClearTextOnFocus = false,
+    Placeholder = "999",
+    Tooltip = "Skip servers with more players than this.",
+    Callback = function(value)
+
+        SniperState.ServerMaxPlayers =
+            math.clamp(
+                tonumber(value)
+                or 999,
+                0,
+                999
+            )
+
+        if SniperState.ServerMaxPlayers < SniperState.ServerMinPlayers then
+
+            SniperState.ServerMinPlayers =
+                SniperState.ServerMaxPlayers
+
+            if Options.HolyGAG2ServerMinPlayers
+            and type(Options.HolyGAG2ServerMinPlayers.SetValue) == "function" then
+
+                pcall(function()
+
+                    Options.HolyGAG2ServerMinPlayers:SetValue(
+                        tostring(SniperState.ServerMinPlayers)
+                    )
+                end)
+            end
+        end
+
+        SetSniperStatus(
+            "Server range: "
+            .. tostring(SniperState.ServerMinPlayers)
+            .. "-"
+            .. tostring(SniperState.ServerMaxPlayers)
+        )
+
+        MarkConfigDirty()
+    end,
+})
+
+SniperServerBox:AddButton({
+    Text = "Hop Now",
+    Tooltip = "Hop using the current min/max player range.",
+    Func = function()
+
+        HopServerOnce()
     end,
 })
 
