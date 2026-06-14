@@ -8058,6 +8058,7 @@ function GAG2ACFBuildEntry(plant, fruit)
         Fruit = fruit,
         Prompt = prompt,
         Key = key,
+        FruitId = fruitId,
 
         Name = name,
         Rarity = rarity,
@@ -8628,6 +8629,13 @@ function GAG2ACFCollectBatch()
 
                 state.LastFiredCount =
                     fired
+
+                if type(GAG2AutoSellHandleCollectedFruit) == "function" then
+
+                    GAG2AutoSellHandleCollectedFruit(
+                        entry
+                    )
+                end
             end
 
             if promptDelay > 0 then
@@ -8680,26 +8688,58 @@ function GAG2ACFStartLoop()
 
             if GAG2ACFBackpackLooksFull() == true then
 
-                state.Enabled =
-                    false
+                if type(GAG2AutoSellIsEnabled) == "function"
+                and GAG2AutoSellIsEnabled() == true then
 
-                if Toggles.HolyGAG2AutoCollectFruits
-                and type(Toggles.HolyGAG2AutoCollectFruits.SetValue) == "function" then
+                    if type(GAG2AutoSellScanExistingFruitTools) == "function" then
 
-                    pcall(function()
-
-                        Toggles.HolyGAG2AutoCollectFruits:SetValue(
-                            false
+                        GAG2AutoSellScanExistingFruitTools(
+                            "backpack full"
                         )
-                    end)
+                    end
+
+                    if type(GAG2AutoSellScheduleSellAll) == "function"
+                    and GAG2_AUTO_SELL_FRUIT_STATE
+                    and GAG2_AUTO_SELL_FRUIT_STATE.Method == "SellAll" then
+
+                        GAG2AutoSellScheduleSellAll(
+                            "backpack full"
+                        )
+                    end
+
+                    GAG2ACFSetStatus(
+                        '<font color="rgb(196,181,253)"><b>Auto Collect:</b></font>'
+                        .. '\nBackpack full/max detected.'
+                        .. '\nAuto Sell is ON, selling and continuing.'
+                    )
+
+                    task.wait(
+                        0.15
+                    )
+
+                else
+
+                    state.Enabled =
+                        false
+
+                    if Toggles.HolyGAG2AutoCollectFruits
+                    and type(Toggles.HolyGAG2AutoCollectFruits.SetValue) == "function" then
+
+                        pcall(function()
+
+                            Toggles.HolyGAG2AutoCollectFruits:SetValue(
+                                false
+                            )
+                        end)
+                    end
+
+                    GAG2ACFSetStatus(
+                        '<font color="rgb(248,113,113)"><b>Auto Collect stopped:</b></font>'
+                        .. '\nBackpack looks full/max.'
+                    )
+
+                    break
                 end
-
-                GAG2ACFSetStatus(
-                    '<font color="rgb(248,113,113)"><b>Auto Collect stopped:</b></font>'
-                    .. '\nBackpack looks full/max.'
-                )
-
-                break
             end
 
             local fired =
@@ -9469,6 +9509,1207 @@ function GAG2RestoreAutoCollectFruitState()
                     excludedCount,
                     "Ready."
                 )
+            )
+        end
+    end)
+end
+
+--==================================================
+-- [4.57] AUTO SELL FRUITS
+-- Event-based instant fruit selling.
+-- Packets confirmed:
+-- NPCS.SellAll:Fire()
+-- NPCS.SellFruit:Fire(fruitId)
+--==================================================
+
+GAG2_AUTO_SELL_FRUIT_STATE =
+    GAG2_AUTO_SELL_FRUIT_STATE
+    or {
+        Enabled = false,
+        Started = false,
+        Running = false,
+
+        Method = "SellAll",
+        Speed = "Fast",
+        RepeatCount = 1,
+
+        Queue = {},
+        QueueMap = {},
+        RecentFruitIds = {},
+
+        SellAllPending = false,
+        LastSellAllAt = 0,
+        LastSellFruitAt = 0,
+        LastTriggerAt = 0,
+
+        Packets = {},
+        Connections = {},
+
+        LastStatus = "Idle.",
+        LastMethod = "None",
+        LastFruitId = "",
+        LastFruitName = "",
+    }
+
+GAG2_AUTO_SELL_METHOD_VALUES = {
+    "SellAll",
+    "SellFruit",
+}
+
+GAG2_AUTO_SELL_SPEED_VALUES = {
+    "Normal",
+    "Fast",
+    "Ultra",
+}
+
+GAG2_AUTO_SELL_SPEED_PRESETS = {
+    Normal = {
+        SellAllDebounce = 0.18,
+        SellFruitBurst = 8,
+        SellFruitCycleWait = 0.04,
+        YieldEvery = 8,
+    },
+
+    Fast = {
+        SellAllDebounce = 0.07,
+        SellFruitBurst = 25,
+        SellFruitCycleWait = 0.015,
+        YieldEvery = 18,
+    },
+
+    Ultra = {
+        SellAllDebounce = 0.03,
+        SellFruitBurst = 60,
+        SellFruitCycleWait = 0,
+        YieldEvery = 45,
+    },
+}
+
+function GAG2AutoSellSetStatus(text)
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    state.LastStatus =
+        tostring(text or "Idle.")
+
+    if Options.HolyGAG2SellStatus then
+
+        Options.HolyGAG2SellStatus:SetText(
+            '<font color="rgb(196,181,253)"><b>Auto Sell</b></font>'
+            .. '\n'
+            .. state.LastStatus
+            .. '\nMethod: '
+            .. tostring(state.Method or "SellAll")
+            .. ' | Speed: '
+            .. tostring(state.Speed or "Fast")
+            .. ' | Repeat: '
+            .. tostring(state.RepeatCount or 1)
+        )
+    end
+end
+
+function GAG2AutoSellClean(value)
+
+    return CleanText(
+        tostring(value or "")
+            :gsub("<[^>]->", "")
+            :gsub("<.->", "")
+    )
+end
+
+function GAG2AutoSellGetPreset()
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    local speed =
+        GAG2AutoSellClean(
+            state.Speed
+        )
+
+    local preset =
+        GAG2_AUTO_SELL_SPEED_PRESETS[speed]
+        or GAG2_AUTO_SELL_SPEED_PRESETS.Fast
+
+    state.Speed =
+        speed ~= ""
+        and GAG2_AUTO_SELL_SPEED_PRESETS[speed] ~= nil
+        and speed
+        or "Fast"
+
+    return preset
+end
+
+function GAG2AutoSellGetRepeatCount()
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    local count =
+        math.floor(
+            tonumber(state.RepeatCount)
+            or 1
+        )
+
+    return math.clamp(
+        count,
+        1,
+        500
+    )
+end
+
+function GAG2AutoSellSetRepeatCount(value)
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    state.RepeatCount =
+        math.clamp(
+            math.floor(
+                tonumber(value)
+                or 1
+            ),
+            1,
+            500
+        )
+
+    GAG2AutoSellSetStatus(
+        "Repeat Count set: "
+        .. tostring(state.RepeatCount)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2AutoSellGetNPCSRoot()
+
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild("SharedModules")
+
+    local networking =
+        sharedModules
+        and sharedModules:FindFirstChild("Networking")
+
+    local npcs =
+        networking
+        and networking:FindFirstChild("NPCS")
+
+    return npcs
+end
+
+function GAG2AutoSellResolvePacket(packetName)
+
+    packetName =
+        GAG2AutoSellClean(packetName)
+
+    if packetName == "" then
+        return nil,
+            "missing packet name"
+    end
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    state.Packets =
+        type(state.Packets) == "table"
+        and state.Packets
+        or {}
+
+    if state.Packets[packetName] then
+        return state.Packets[packetName],
+            "cached"
+    end
+
+    -- Primary path:
+    -- Use the already-working packet table scanner from the shop/sniper systems.
+    local packets =
+        nil
+
+    if type(SniperFindPacketTable) == "function" then
+
+        packets =
+            SniperFindPacketTable()
+    end
+
+    if type(packets) == "table"
+    and type(SniperSafeRawGet) == "function" then
+
+        local npcs =
+            SniperSafeRawGet(
+                packets,
+                "NPCS"
+            )
+
+        if type(npcs) == "table" then
+
+            local packet =
+                SniperSafeRawGet(
+                    npcs,
+                    packetName
+                )
+
+            local okFire, fireFunction =
+                pcall(function()
+
+                    return packet.Fire
+                end)
+
+            if okFire == true
+            and type(fireFunction) == "function" then
+
+                state.Packets[packetName] =
+                    packet
+
+                return packet,
+                    "packet table NPCS."
+                    .. tostring(packetName)
+            end
+        end
+    end
+
+    -- Backup path:
+    -- Some sessions expose the module directly as a descendant, not direct NPCS child.
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild("SharedModules")
+
+    local module =
+        nil
+
+    if sharedModules then
+
+        for _, descendant in ipairs(sharedModules:GetDescendants()) do
+
+            if descendant:IsA("ModuleScript")
+            and descendant.Name == packetName
+            and PathOf(descendant):find("NPCS", 1, true) then
+
+                module =
+                    descendant
+
+                break
+            end
+        end
+    end
+
+    if not module then
+
+        return nil,
+            "NPCS packet not found: "
+            .. tostring(packetName)
+            .. " | source: "
+            .. tostring(
+                SniperState
+                and SniperState.PacketSource
+                or "no packet source"
+            )
+    end
+
+    local okRequire, packet =
+        pcall(function()
+
+            return require(
+                module
+            )
+        end)
+
+    if okRequire ~= true
+    or type(packet) ~= "table" then
+
+        return nil,
+            "packet require failed: "
+            .. PathOf(module)
+    end
+
+    local okFire, fireFunction =
+        pcall(function()
+
+            return packet.Fire
+        end)
+
+    if okFire ~= true
+    or type(fireFunction) ~= "function" then
+
+        return nil,
+            "packet Fire missing: "
+            .. PathOf(module)
+    end
+
+    state.Packets[packetName] =
+        packet
+
+    return packet,
+        "module descendant: "
+        .. PathOf(module)
+end
+
+function GAG2AutoSellFirePacket(packetName, ...)
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    local packet, reason =
+        GAG2AutoSellResolvePacket(
+            packetName
+        )
+
+    if not packet then
+
+        GAG2AutoSellSetStatus(
+            "Sell packet missing: "
+            .. tostring(reason)
+        )
+
+        warn(
+            "[HOLY GAG2 AUTO SELL]",
+            "packet missing",
+            tostring(packetName),
+            tostring(reason)
+        )
+
+        return false,
+            reason
+    end
+
+    local args =
+        {
+            ...
+        }
+
+    local repeatCount =
+        GAG2AutoSellGetRepeatCount()
+
+    local fired =
+        0
+
+    local lastError =
+        nil
+
+    for index = 1, repeatCount do
+
+        local ok, err =
+            pcall(function()
+
+                packet:Fire(
+                    table.unpack(args)
+                )
+            end)
+
+        if ok ~= true then
+
+            ok, err =
+                pcall(function()
+
+                    packet.Fire(
+                        packet,
+                        table.unpack(args)
+                    )
+                end)
+        end
+
+        if ok == true then
+
+            fired += 1
+
+        else
+
+            lastError =
+                err
+        end
+    end
+
+    if fired <= 0 then
+
+        GAG2AutoSellSetStatus(
+            "Sell failed: "
+            .. tostring(lastError)
+        )
+
+        warn(
+            "[HOLY GAG2 AUTO SELL]",
+            "fire failed",
+            tostring(packetName),
+            tostring(lastError)
+        )
+
+        return false,
+            tostring(lastError)
+    end
+
+    local now =
+        os.clock()
+
+    if packetName == "SellAll" then
+
+        state.LastSellAllAt =
+            now
+
+    elseif packetName == "SellFruit" then
+
+        state.LastSellFruitAt =
+            now
+    end
+
+    state.LastMethod =
+        tostring(packetName)
+        .. " x"
+        .. tostring(fired)
+
+    GAG2AutoSellSetStatus(
+        "Fired "
+        .. tostring(packetName)
+        .. " x"
+        .. tostring(fired)
+        .. " | "
+        .. tostring(reason)
+    )
+
+    return true,
+        "fired x"
+        .. tostring(fired)
+end
+
+function GAG2AutoSellIsFruitTool(tool)
+
+    if typeof(tool) ~= "Instance"
+    or tool:IsA("Tool") ~= true then
+        return false,
+            "",
+            ""
+    end
+
+    local harvested =
+        tool:GetAttribute("HarvestedFruit")
+
+    local fruitId =
+        GAG2AutoSellClean(
+            tool:GetAttribute("Id")
+        )
+
+    local fruitName =
+        GAG2AutoSellClean(
+            tool:GetAttribute("FruitName")
+            or tool:GetAttribute("Fruit")
+        )
+
+    if harvested == true
+    and fruitId ~= "" then
+
+        return true,
+            fruitId,
+            fruitName
+    end
+
+    return false,
+        "",
+        fruitName
+end
+
+function GAG2AutoSellScheduleSellAll(reason)
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    if state.Enabled ~= true then
+        return
+    end
+
+    if state.Method ~= "SellAll" then
+        return
+    end
+
+    if state.SellAllPending == true then
+        return
+    end
+
+    state.SellAllPending =
+        true
+
+    local preset =
+        GAG2AutoSellGetPreset()
+
+    local debounce =
+        math.clamp(
+            tonumber(preset.SellAllDebounce)
+            or 0.07,
+            0.01,
+            1
+        )
+
+    task.delay(debounce, function()
+
+        state.SellAllPending =
+            false
+
+        if state.Enabled ~= true then
+            return
+        end
+
+        if state.Method ~= "SellAll" then
+            return
+        end
+
+        GAG2AutoSellFirePacket(
+            "SellAll"
+        )
+    end)
+
+    GAG2AutoSellSetStatus(
+        "SellAll queued: "
+        .. tostring(reason or "fruit")
+    )
+end
+
+function GAG2AutoSellQueueFruitId(fruitId, fruitName)
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    fruitId =
+        GAG2AutoSellClean(fruitId)
+
+    fruitName =
+        GAG2AutoSellClean(fruitName)
+
+    if fruitId == "" then
+        return
+    end
+
+    state.Queue =
+        type(state.Queue) == "table"
+        and state.Queue
+        or {}
+
+    state.QueueMap =
+        type(state.QueueMap) == "table"
+        and state.QueueMap
+        or {}
+
+    if state.QueueMap[fruitId] == true then
+        return
+    end
+
+    state.QueueMap[fruitId] =
+        true
+
+    table.insert(state.Queue, {
+        Id = fruitId,
+        Name = fruitName,
+    })
+
+    state.LastFruitId =
+        fruitId
+
+    state.LastFruitName =
+        fruitName
+
+    GAG2AutoSellStartWorker()
+end
+
+function GAG2AutoSellStartWorker()
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    if state.Running == true then
+        return
+    end
+
+    state.Running =
+        true
+
+    task.spawn(function()
+
+        while state.Enabled == true
+        and state.Method == "SellFruit"
+        and type(state.Queue) == "table"
+        and #state.Queue > 0 do
+
+            local preset =
+                GAG2AutoSellGetPreset()
+
+            local burst =
+                math.clamp(
+                    math.floor(
+                        tonumber(preset.SellFruitBurst)
+                        or 25
+                    ),
+                    1,
+                    100
+                )
+
+            local yieldEvery =
+                math.max(
+                    1,
+                    math.floor(
+                        tonumber(preset.YieldEvery)
+                        or 18
+                    )
+                )
+
+            local fired =
+                0
+
+            while fired < burst
+            and #state.Queue > 0
+            and state.Enabled == true
+            and state.Method == "SellFruit" do
+
+                local item =
+                    table.remove(
+                        state.Queue,
+                        1
+                    )
+
+                if item
+                and item.Id then
+
+                    state.QueueMap[item.Id] =
+                        nil
+
+                    GAG2AutoSellFirePacket(
+                        "SellFruit",
+                        item.Id
+                    )
+
+                    state.LastFruitId =
+                        item.Id
+
+                    state.LastFruitName =
+                        tostring(item.Name or "")
+
+                    fired += 1
+
+                    if fired % yieldEvery == 0 then
+                        task.wait()
+                    end
+                end
+            end
+
+            local waitTime =
+                math.clamp(
+                    tonumber(preset.SellFruitCycleWait)
+                    or 0.015,
+                    0,
+                    1
+                )
+
+            if waitTime > 0 then
+
+                task.wait(
+                    waitTime
+                )
+
+            else
+
+                task.wait()
+            end
+        end
+
+        state.Running =
+            false
+    end)
+end
+
+function GAG2AutoSellHandleFruitTool(tool, reason)
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    if state.Enabled ~= true then
+        return false
+    end
+
+    local isFruit, fruitId, fruitName =
+        GAG2AutoSellIsFruitTool(
+            tool
+        )
+
+    if isFruit ~= true then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    local recent =
+        tonumber(
+            state.RecentFruitIds[fruitId]
+        )
+        or 0
+
+    if now - recent < 0.18 then
+        return false
+    end
+
+    state.RecentFruitIds[fruitId] =
+        now
+
+    state.LastTriggerAt =
+        now
+
+    state.LastFruitId =
+        fruitId
+
+    state.LastFruitName =
+        fruitName
+
+    if state.Method == "SellFruit" then
+
+        GAG2AutoSellQueueFruitId(
+            fruitId,
+            fruitName
+        )
+
+    else
+
+        GAG2AutoSellScheduleSellAll(
+            reason or fruitName or "fruit"
+        )
+    end
+
+    return true
+end
+
+function GAG2AutoSellScanExistingFruitTools(reason)
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    if state.Enabled ~= true then
+        return 0
+    end
+
+    local found =
+        0
+
+    local function scanContainer(container)
+
+        if typeof(container) ~= "Instance" then
+            return
+        end
+
+        for _, child in ipairs(container:GetChildren()) do
+
+            if child:IsA("Tool") then
+
+                if GAG2AutoSellHandleFruitTool(
+                    child,
+                    reason or "scan"
+                ) == true then
+
+                    found += 1
+                end
+            end
+        end
+    end
+
+    local backpack =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChild("Backpack")
+
+    scanContainer(
+        backpack
+    )
+
+    scanContainer(
+        LOCAL_PLAYER and LOCAL_PLAYER.Character
+    )
+
+    if found > 0 then
+
+        GAG2AutoSellSetStatus(
+            "Detected "
+            .. tostring(found)
+            .. " fruit tool(s)."
+        )
+    end
+
+    return found
+end
+
+function GAG2AutoSellHookCharacter(character)
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    if typeof(character) ~= "Instance" then
+        return
+    end
+
+    local connection =
+        character.ChildAdded:Connect(function(child)
+
+            if state.Enabled ~= true then
+                return
+            end
+
+            if child:IsA("Tool") then
+
+                task.defer(function()
+
+                    GAG2AutoSellHandleFruitTool(
+                        child,
+                        "character"
+                    )
+                end)
+            end
+        end)
+
+    table.insert(
+        state.Connections,
+        connection
+    )
+end
+
+function GAG2AutoSellStartWatcher()
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    if state.Started == true then
+        return
+    end
+
+    state.Started =
+        true
+
+    state.Connections =
+        type(state.Connections) == "table"
+        and state.Connections
+        or {}
+
+    local backpack =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChild("Backpack")
+        or LOCAL_PLAYER
+        and LOCAL_PLAYER:WaitForChild("Backpack", 10)
+
+    if backpack then
+
+        table.insert(
+            state.Connections,
+            backpack.ChildAdded:Connect(function(child)
+
+                if state.Enabled ~= true then
+                    return
+                end
+
+                if child:IsA("Tool") then
+
+                    task.defer(function()
+
+                        GAG2AutoSellHandleFruitTool(
+                            child,
+                            "backpack"
+                        )
+                    end)
+                end
+            end)
+        )
+    end
+
+    GAG2AutoSellHookCharacter(
+        LOCAL_PLAYER.Character
+    )
+
+    table.insert(
+        state.Connections,
+        LOCAL_PLAYER.CharacterAdded:Connect(function(character)
+
+            task.wait(
+                0.35
+            )
+
+            GAG2AutoSellHookCharacter(
+                character
+            )
+
+            if state.Enabled == true then
+
+                GAG2AutoSellScanExistingFruitTools(
+                    "respawn"
+                )
+            end
+        end)
+    )
+end
+
+function GAG2AutoSellSetEnabled(value)
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    state.Enabled =
+        value == true
+
+    GAG2AutoSellStartWatcher()
+
+    if state.Enabled == true then
+
+        GAG2AutoSellSetStatus(
+            "Auto Sell enabled."
+        )
+
+        task.defer(function()
+
+            GAG2AutoSellScanExistingFruitTools(
+                "enable"
+            )
+        end)
+
+    else
+
+        GAG2AutoSellSetStatus(
+            "Auto Sell disabled."
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2AutoSellSetMethod(value)
+
+    value =
+        GAG2AutoSellClean(value)
+
+    if table.find(GAG2_AUTO_SELL_METHOD_VALUES, value) == nil then
+        value =
+            "SellAll"
+    end
+
+    GAG2_AUTO_SELL_FRUIT_STATE.Method =
+        value
+
+    GAG2_AUTO_SELL_FRUIT_STATE.Queue =
+        {}
+
+    GAG2_AUTO_SELL_FRUIT_STATE.QueueMap =
+        {}
+
+    if GAG2_AUTO_SELL_FRUIT_STATE.Enabled == true then
+
+        task.defer(function()
+
+            GAG2AutoSellScanExistingFruitTools(
+                "method changed"
+            )
+        end)
+    end
+
+    GAG2AutoSellSetStatus(
+        "Method set: "
+        .. tostring(value)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2AutoSellSetSpeed(value)
+
+    value =
+        GAG2AutoSellClean(value)
+
+    if GAG2_AUTO_SELL_SPEED_PRESETS[value] == nil then
+        value =
+            "Fast"
+    end
+
+    GAG2_AUTO_SELL_FRUIT_STATE.Speed =
+        value
+
+    GAG2AutoSellSetStatus(
+        "Speed set: "
+        .. tostring(value)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2AutoSellStop()
+
+    GAG2_AUTO_SELL_FRUIT_STATE.Enabled =
+        false
+
+    GAG2_AUTO_SELL_FRUIT_STATE.Queue =
+        {}
+
+    GAG2_AUTO_SELL_FRUIT_STATE.QueueMap =
+        {}
+
+    if Toggles.HolyGAG2AutoSellFruits
+    and type(Toggles.HolyGAG2AutoSellFruits.SetValue) == "function" then
+
+        pcall(function()
+
+            Toggles.HolyGAG2AutoSellFruits:SetValue(
+                false
+            )
+        end)
+    end
+
+    GAG2AutoSellSetStatus(
+        "Auto Sell stopped."
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2AutoSellIsEnabled()
+
+    return type(GAG2_AUTO_SELL_FRUIT_STATE) == "table"
+        and GAG2_AUTO_SELL_FRUIT_STATE.Enabled == true
+end
+
+function GAG2AutoSellHandleCollectedFruit(entry)
+
+    if type(entry) ~= "table" then
+        return false
+    end
+
+    if type(GAG2AutoSellIsEnabled) ~= "function"
+    or GAG2AutoSellIsEnabled() ~= true then
+        return false
+    end
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    local method =
+        tostring(state.Method or "SellAll")
+
+    if method == "SellFruit" then
+
+        local fruitId =
+            GAG2AutoSellClean(
+                entry.FruitId
+                or entry.Key
+            )
+
+        if fruitId == ""
+        or fruitId:find("%.") then
+            return false
+        end
+
+        task.delay(0.05, function()
+
+            if GAG2AutoSellIsEnabled() == true
+            and GAG2_AUTO_SELL_FRUIT_STATE.Method == "SellFruit" then
+
+                GAG2AutoSellQueueFruitId(
+                    fruitId,
+                    tostring(entry.Name or "")
+                )
+            end
+        end)
+
+        return true
+    end
+
+    if method == "SellAll" then
+
+        GAG2AutoSellScheduleSellAll(
+            "collected "
+            .. tostring(entry.Name or "fruit")
+        )
+
+        return true
+    end
+
+    return false
+end
+
+function GAG2AutoSellExposeDebug()
+
+    getgenv().HOLY_GAG2_AUTO_SELL_STATE =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    getgenv().HOLY_GAG2_AUTO_SELL_FIRE_ALL =
+        function()
+
+            return GAG2AutoSellFirePacket(
+                "SellAll"
+            )
+        end
+
+    getgenv().HOLY_GAG2_AUTO_SELL_FIRE_FRUIT =
+        function(fruitId)
+
+            return GAG2AutoSellFirePacket(
+                "SellFruit",
+                fruitId
+            )
+        end
+
+    getgenv().HOLY_GAG2_AUTO_SELL_ENABLE =
+        function(value)
+
+            return GAG2AutoSellSetEnabled(
+                value ~= false
+            )
+        end
+
+    getgenv().HOLY_GAG2_AUTO_SELL_RESOLVE =
+        function(packetName)
+
+            return GAG2AutoSellResolvePacket(
+                packetName or "SellAll"
+            )
+        end
+end
+
+function GAG2RestoreAutoSellState()
+
+    task.defer(function()
+
+        local state =
+            GAG2_AUTO_SELL_FRUIT_STATE
+
+        GAG2AutoSellExposeDebug()
+
+        GAG2AutoSellStartWatcher()
+
+        if Options.HolyGAG2AutoSellMethod then
+
+            GAG2AutoSellSetMethod(
+                Options.HolyGAG2AutoSellMethod.Value
+            )
+        end
+
+        if Options.HolyGAG2AutoSellSpeed then
+
+            GAG2AutoSellSetSpeed(
+                Options.HolyGAG2AutoSellSpeed.Value
+            )
+        end
+
+        if Options.HolyGAG2AutoSellRepeatCount then
+
+            GAG2AutoSellSetRepeatCount(
+                Options.HolyGAG2AutoSellRepeatCount.Value
+            )
+        end
+
+        if Toggles.HolyGAG2AutoSellFruits then
+
+            state.Enabled =
+                Toggles.HolyGAG2AutoSellFruits.Value == true
+        end
+
+        if state.Enabled == true then
+
+            GAG2AutoSellSetStatus(
+                "Auto Sell restored."
+            )
+
+            GAG2AutoSellScanExistingFruitTools(
+                "restore"
+            )
+
+        else
+
+            GAG2AutoSellSetStatus(
+                "Idle."
             )
         end
     end)
@@ -13372,13 +14613,122 @@ end
 --==================================================
 
 SellMainBox:AddLabel({
-    Text = "Ready.",
+    Text =
+        '<font color="rgb(196,181,253)"><b>Auto Sell</b></font>'
+        .. '\nEvent-based fruit selling.'
+        .. '\nSellAll is best for pure grinding. SellFruit sells each detected fruit by Id.',
     DoesWrap = true,
     Size = 13,
 })
 
+GAG2_AUTO_SELL_FRUIT_CONTROLS =
+    GAG2_AUTO_SELL_FRUIT_CONTROLS
+    or {}
+
+GAG2_AUTO_SELL_FRUIT_CONTROLS.Method =
+    SellMainBox:AddDropdown(
+        "HolyGAG2AutoSellMethod",
+        {
+            Text = "Sell Method",
+            Values = GAG2_AUTO_SELL_METHOD_VALUES,
+            Default = "SellAll",
+            Multi = false,
+            Searchable = false,
+            MaxVisibleDropdownItems = 4,
+            Tooltip = "SellAll fires one packet for all current fruit. SellFruit sells each fruit Id.",
+        }
+    )
+
+if GAG2_AUTO_SELL_FRUIT_CONTROLS.Method
+and type(GAG2_AUTO_SELL_FRUIT_CONTROLS.Method.OnChanged) == "function" then
+
+    GAG2_AUTO_SELL_FRUIT_CONTROLS.Method:OnChanged(function(value)
+
+        GAG2AutoSellSetMethod(
+            value
+        )
+    end)
+end
+
+GAG2_AUTO_SELL_FRUIT_CONTROLS.Speed =
+    SellMainBox:AddDropdown(
+        "HolyGAG2AutoSellSpeed",
+        {
+            Text = "Sell Speed",
+            Values = GAG2_AUTO_SELL_SPEED_VALUES,
+            Default = "Fast",
+            Multi = false,
+            Searchable = false,
+            MaxVisibleDropdownItems = 4,
+            Tooltip = "Normal is lightest. Fast is recommended. Ultra is fastest with tiny debounce.",
+        }
+    )
+
+if GAG2_AUTO_SELL_FRUIT_CONTROLS.Speed
+and type(GAG2_AUTO_SELL_FRUIT_CONTROLS.Speed.OnChanged) == "function" then
+
+    GAG2_AUTO_SELL_FRUIT_CONTROLS.Speed:OnChanged(function(value)
+
+        GAG2AutoSellSetSpeed(
+            value
+        )
+    end)
+end
+
+GAG2_AUTO_SELL_FRUIT_CONTROLS.RepeatCount =
+    SellMainBox:AddInput("HolyGAG2AutoSellRepeatCount", {
+        Text = "Sell Repeat Count",
+        Default = "1",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "1 - 500",
+        Tooltip = "How many times to fire the sell packet per trigger. Example: 500 fires packet:Fire(...) 500 times.",
+        Callback = function(value)
+
+            GAG2AutoSellSetRepeatCount(
+                value
+            )
+        end,
+    })
+
+SellMainBox:AddToggle("HolyGAG2AutoSellFruits", {
+    Text = "Auto Sell Fruits",
+    Default = false,
+    Tooltip = "Sells harvested fruit as soon as it appears in Backpack/Character.",
+    Callback = function(value)
+
+        GAG2AutoSellSetEnabled(
+            value == true
+        )
+    end,
+})
+
+SellMainBox:AddDivider()
+
+SellMainBox:AddButton({
+    Text = "Sell All Now",
+    Tooltip = "Fires NPCS.SellAll once.",
+    Func = function()
+
+        GAG2AutoSellFirePacket(
+            "SellAll"
+        )
+    end,
+}):AddButton({
+    Text = "Stop Auto Sell",
+    Risky = true,
+    Tooltip = "Turns Auto Sell Fruits off.",
+    Func = function()
+
+        GAG2AutoSellStop()
+    end,
+})
+
 SellStatusBox:AddLabel("HolyGAG2SellStatus", {
-    Text = "Idle.",
+    Text =
+        '<font color="rgb(196,181,253)"><b>Auto Sell</b></font>'
+        .. '\nIdle.',
     DoesWrap = true,
 })
 
@@ -14546,6 +15896,7 @@ if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
 
     GAG2RestoreAutoTpMiddleFarmState()
     GAG2RestoreAutoCollectFruitState()
+    GAG2RestoreAutoSellState()
 end
 
 task.spawn(function()
