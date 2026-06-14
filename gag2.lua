@@ -7096,6 +7096,21 @@ GAG2_AUTO_COLLECT_FRUIT_STATE =
         StopIfFull = true,
         Delay = 0,
         BurstAmount = 8,
+        CollectionSpeed = "Normal",
+
+        PauseDuringWeather = false,
+        PauseWeatherMode = "Any Weather",
+        PauseWeathers = {
+            Rain = true,
+            Lightning = true,
+            Rainbow = true,
+            Snowfall = true,
+            Starfall = true,
+        },
+        ActiveWeather = "Day",
+        ActivePhase = "Day",
+        WeatherWatcherStarted = false,
+        WeatherConnections = {},
 
         CollectMode = "All",
 
@@ -7148,10 +7163,81 @@ GAG2_ACF_COLLECT_MODES = {
     "Only Selected",
 }
 
+GAG2_ACF_SPEED_VALUES = {
+    "Normal",
+    "Fast",
+    "Ultra",
+}
+
+GAG2_ACF_SPEED_PRESETS = {
+    Normal = {
+        Name = "Normal",
+        MinBurst = 1,
+        MaxBurst = 40,
+        RecentCooldown = 1.25,
+        PromptDelayOverride = nil,
+        YieldEvery = 6,
+        LoopWaitAfterFire = 0.03,
+        LoopWaitIdle = 0.35,
+    },
+
+    Fast = {
+        Name = "Fast",
+        MinBurst = 24,
+        MaxBurst = 90,
+        RecentCooldown = 0.25,
+        PromptDelayOverride = 0,
+        YieldEvery = 24,
+        LoopWaitAfterFire = 0.005,
+        LoopWaitIdle = 0.12,
+    },
+
+    Ultra = {
+        Name = "Ultra",
+        MinBurst = 60,
+        MaxBurst = 160,
+        RecentCooldown = 0.04,
+        PromptDelayOverride = 0,
+        YieldEvery = 60,
+        LoopWaitAfterFire = 0,
+        LoopWaitIdle = 0.025,
+    },
+}
+
 GAG2_ACF_SIZE_MODES = {
     "Off",
     "Above",
     "Below",
+}
+
+GAG2_ACF_WEATHER_MODE_VALUES = {
+    "Any Weather",
+    "Selected",
+}
+
+GAG2_ACF_WEATHER_VALUES = {
+    "Rain",
+    "Lightning",
+    "Rainbow",
+    "Snowfall",
+    "Starfall",
+}
+
+GAG2_ACF_REAL_WEATHER_SET = {
+    Rain = true,
+    Lightning = true,
+    Rainbow = true,
+    Snowfall = true,
+    Starfall = true,
+}
+
+GAG2_ACF_NORMAL_WEATHER_SET = {
+    Day = true,
+    Night = true,
+    Dawn = true,
+    Dusk = true,
+    Morning = true,
+    Evening = true,
 }
 
 GAG2_ACF_DEFAULT_RARITIES = {
@@ -7324,6 +7410,198 @@ function GAG2ACFSelectionHas(map, value)
 
     return type(map) == "table"
         and map[value] == true
+end
+
+function GAG2ACFGetActiveWeather()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    local weather =
+        GAG2ACFClean(
+            workspace:GetAttribute("ActiveWeather")
+        )
+
+    local phase =
+        GAG2ACFClean(
+            workspace:GetAttribute("ActivePhase")
+        )
+
+    if weather == "" then
+        weather =
+            "Day"
+    end
+
+    if phase == "" then
+        phase =
+            weather
+    end
+
+    state.ActiveWeather =
+        weather
+
+    state.ActivePhase =
+        phase
+
+    return weather,
+        phase
+end
+
+function GAG2ACFIsRealWeatherName(weather)
+
+    weather =
+        GAG2ACFClean(weather)
+
+    return GAG2_ACF_REAL_WEATHER_SET[weather] == true
+end
+
+function GAG2ACFShouldPauseForWeather()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    local weather =
+        GAG2ACFGetActiveWeather()
+
+    if state.PauseDuringWeather ~= true then
+        return false,
+            weather
+    end
+
+    if GAG2ACFIsRealWeatherName(weather) ~= true then
+        return false,
+            weather
+    end
+
+    if state.PauseWeatherMode == "Selected" then
+
+        return type(state.PauseWeathers) == "table"
+            and state.PauseWeathers[weather] == true,
+            weather
+    end
+
+    return true,
+        weather
+end
+
+function GAG2ACFWeatherStatusText()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    local weather, phase =
+        GAG2ACFGetActiveWeather()
+
+    local paused =
+        GAG2ACFShouldPauseForWeather()
+
+    local text =
+        tostring(weather)
+
+    if phase ~= ""
+    and phase ~= weather then
+
+        text =
+            text
+            .. " / "
+            .. tostring(phase)
+    end
+
+    if state.PauseDuringWeather == true then
+
+        text =
+            text
+            .. (
+                paused == true
+                and " | PAUSED"
+                or " | watching"
+            )
+
+    else
+
+        text =
+            text
+            .. " | ignore"
+    end
+
+    return text
+end
+
+function GAG2ACFStartWeatherWatcher()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    if state.WeatherWatcherStarted == true then
+        return
+    end
+
+    state.WeatherWatcherStarted =
+        true
+
+    state.WeatherConnections =
+        type(state.WeatherConnections) == "table"
+        and state.WeatherConnections
+        or {}
+
+    GAG2ACFGetActiveWeather()
+
+    local function connectAttribute(attributeName)
+
+        local ok, connection =
+            pcall(function()
+
+                return workspace:GetAttributeChangedSignal(attributeName):Connect(function()
+
+                    local weather =
+                        GAG2ACFGetActiveWeather()
+
+                    local paused =
+                        GAG2ACFShouldPauseForWeather()
+
+                    if GAG2_AUTO_COLLECT_FRUIT_STATE.Enabled == true then
+
+                        if paused == true then
+
+                            GAG2ACFSetStatus(
+                                GAG2ACFBuildStatusText(
+                                    {},
+                                    GAG2_AUTO_COLLECT_FRUIT_STATE.LastReadyCount or 0,
+                                    GAG2_AUTO_COLLECT_FRUIT_STATE.LastExcludedCount or 0,
+                                    "Paused for weather: "
+                                    .. tostring(weather)
+                                )
+                            )
+
+                        else
+
+                            GAG2ACFSetStatus(
+                                "Weather changed: "
+                                .. tostring(weather)
+                                .. ". Auto Collect can run."
+                            )
+                        end
+                    end
+                end)
+            end)
+
+        if ok == true
+        and connection then
+
+            table.insert(
+                state.WeatherConnections,
+                connection
+            )
+        end
+    end
+
+    connectAttribute(
+        "ActiveWeather"
+    )
+
+    connectAttribute(
+        "ActivePhase"
+    )
 end
 
 function GAG2ACFSafeRequire(moduleName)
@@ -8145,6 +8423,23 @@ function GAG2ACFBuildStatusText(queue, readyCount, excludedCount, note)
         .. tostring(state.Priority2)
         .. ' > '
         .. tostring(state.Priority3)
+        .. '\nSpeed: '
+        .. tostring(state.CollectionSpeed or "Normal")
+        .. ' | Burst: '
+        .. tostring(
+            type(GAG2ACFGetEffectiveBurstAmount) == "function"
+            and GAG2ACFGetEffectiveBurstAmount()
+            or state.BurstAmount
+        )
+        .. ' | Cooldown: '
+        .. tostring(
+            type(GAG2ACFGetEffectiveRecentCooldown) == "function"
+            and GAG2ACFGetEffectiveRecentCooldown()
+            or 1.25
+        )
+        .. 's'
+        .. '\nWeather: '
+        .. GAG2ACFWeatherStatusText()
         .. '\nNote: '
         .. tostring(note or "Weight uses SizeMulti until exact KG is found.")
 end
@@ -8237,6 +8532,24 @@ function GAG2ACFCollectBatch()
     local state =
         GAG2_AUTO_COLLECT_FRUIT_STATE
 
+    local pausedForWeather, weather =
+        GAG2ACFShouldPauseForWeather()
+
+    if pausedForWeather == true then
+
+        GAG2ACFSetStatus(
+            GAG2ACFBuildStatusText(
+                {},
+                state.LastReadyCount or 0,
+                state.LastExcludedCount or 0,
+                "Paused for weather: "
+                .. tostring(weather)
+            )
+        )
+
+        return -1
+    end
+
     local queue, readyCount, excludedCount, reason =
         GAG2ACFScanQueue()
 
@@ -8269,14 +8582,16 @@ function GAG2ACFCollectBatch()
     end
 
     local burstAmount =
-        math.clamp(
-            math.floor(
-                tonumber(state.BurstAmount)
-                or 8
-            ),
-            1,
-            40
-        )
+        GAG2ACFGetEffectiveBurstAmount()
+
+    local recentCooldown =
+        GAG2ACFGetEffectiveRecentCooldown()
+
+    local promptDelay =
+        GAG2ACFGetEffectivePromptDelay()
+
+    local yieldEvery =
+        GAG2ACFGetEffectiveYieldEvery()
 
     local fired =
         0
@@ -8297,7 +8612,7 @@ function GAG2ACFCollectBatch()
             )
             or 0
 
-        if os.clock() - recentAt >= 1.25 then
+        if os.clock() - recentAt >= recentCooldown then
 
             local ok =
                 GAG2ACFFirePrompt(
@@ -8315,21 +8630,14 @@ function GAG2ACFCollectBatch()
                     fired
             end
 
-            local delay =
-                tonumber(state.Delay)
-                or 0
-
-            if delay > 0 then
+            if promptDelay > 0 then
 
                 task.wait(
-                    math.clamp(
-                        delay,
-                        0,
-                        2
-                    )
+                    promptDelay
                 )
 
-            elseif fired % 6 == 0 then
+            elseif yieldEvery > 0
+            and fired % yieldEvery == 0 then
 
                 task.wait()
             end
@@ -8397,16 +8705,32 @@ function GAG2ACFStartLoop()
             local fired =
                 GAG2ACFCollectBatch()
 
-            if fired > 0 then
+            if fired == -1 then
 
                 task.wait(
-                    0.03
+                    0.75
                 )
+
+            elseif fired > 0 then
+
+                local fireWait =
+                    GAG2ACFGetLoopWaitAfterFire()
+
+                if fireWait > 0 then
+
+                    task.wait(
+                        fireWait
+                    )
+
+                else
+
+                    task.wait()
+                end
 
             else
 
                 task.wait(
-                    0.35
+                    GAG2ACFGetLoopWaitIdle()
                 )
             end
         end
@@ -8470,6 +8794,192 @@ function GAG2ACFSetStopIfFull(value)
     MarkConfigDirty()
 end
 
+function GAG2ACFGetSpeedPreset()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    local speed =
+        GAG2ACFClean(
+            state.CollectionSpeed
+        )
+
+    local preset =
+        GAG2_ACF_SPEED_PRESETS[speed]
+        or GAG2_ACF_SPEED_PRESETS.Normal
+
+    state.CollectionSpeed =
+        preset.Name
+
+    return preset
+end
+
+function GAG2ACFSetCollectionSpeed(value)
+
+    value =
+        GAG2ACFClean(value)
+
+    if GAG2_ACF_SPEED_PRESETS[value] == nil then
+        value =
+            "Normal"
+    end
+
+    GAG2_AUTO_COLLECT_FRUIT_STATE.CollectionSpeed =
+        value
+
+    MarkConfigDirty()
+end
+
+function GAG2ACFGetEffectiveBurstAmount()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    local preset =
+        GAG2ACFGetSpeedPreset()
+
+    local inputBurst =
+        math.clamp(
+            math.floor(
+                tonumber(state.BurstAmount)
+                or 8
+            ),
+            1,
+            160
+        )
+
+    return math.clamp(
+        math.max(
+            inputBurst,
+            tonumber(preset.MinBurst) or inputBurst
+        ),
+        1,
+        tonumber(preset.MaxBurst) or 160
+    )
+end
+
+function GAG2ACFGetEffectiveRecentCooldown()
+
+    local preset =
+        GAG2ACFGetSpeedPreset()
+
+    return math.clamp(
+        tonumber(preset.RecentCooldown)
+        or 1.25,
+        0,
+        2
+    )
+end
+
+function GAG2ACFGetEffectivePromptDelay()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    local preset =
+        GAG2ACFGetSpeedPreset()
+
+    if preset.PromptDelayOverride ~= nil then
+
+        return math.clamp(
+            tonumber(preset.PromptDelayOverride)
+            or 0,
+            0,
+            2
+        )
+    end
+
+    return math.clamp(
+        tonumber(state.Delay)
+        or 0,
+        0,
+        2
+    )
+end
+
+function GAG2ACFGetEffectiveYieldEvery()
+
+    local preset =
+        GAG2ACFGetSpeedPreset()
+
+    return math.max(
+        1,
+        math.floor(
+            tonumber(preset.YieldEvery)
+            or 6
+        )
+    )
+end
+
+function GAG2ACFGetLoopWaitAfterFire()
+
+    local preset =
+        GAG2ACFGetSpeedPreset()
+
+    return math.clamp(
+        tonumber(preset.LoopWaitAfterFire)
+        or 0.03,
+        0,
+        1
+    )
+end
+
+function GAG2ACFGetLoopWaitIdle()
+
+    local preset =
+        GAG2ACFGetSpeedPreset()
+
+    return math.clamp(
+        tonumber(preset.LoopWaitIdle)
+        or 0.35,
+        0.02,
+        2
+    )
+end
+
+function GAG2ACFSetPauseDuringWeather(value)
+
+    GAG2_AUTO_COLLECT_FRUIT_STATE.PauseDuringWeather =
+        value == true
+
+    GAG2ACFStartWeatherWatcher()
+
+    MarkConfigDirty()
+end
+
+function GAG2ACFSetPauseWeatherMode(value)
+
+    value =
+        GAG2ACFClean(value)
+
+    if value ~= "Selected" then
+        value =
+            "Any Weather"
+    end
+
+    GAG2_AUTO_COLLECT_FRUIT_STATE.PauseWeatherMode =
+        value
+
+    GAG2ACFStartWeatherWatcher()
+
+    MarkConfigDirty()
+end
+
+function GAG2ACFSetPauseWeathers(value)
+
+    local selected =
+        GAG2ACFNormalizeSelection(
+            value
+        )
+
+    GAG2_AUTO_COLLECT_FRUIT_STATE.PauseWeathers =
+        selected
+
+    GAG2ACFStartWeatherWatcher()
+
+    MarkConfigDirty()
+end
+
 function GAG2ACFSetDelay(value)
 
     GAG2_AUTO_COLLECT_FRUIT_STATE.Delay =
@@ -8492,7 +9002,7 @@ function GAG2ACFSetBurst(value)
                 or 8
             ),
             1,
-            40
+            160
         )
 
     MarkConfigDirty()
@@ -8806,10 +9316,39 @@ function GAG2RestoreAutoCollectFruitState()
                 Toggles.HolyGAG2AutoCollectFruits.Value == true
         end
 
+        GAG2ACFStartWeatherWatcher()
+
         if Toggles.HolyGAG2ACFStopIfFull then
 
             state.StopIfFull =
                 Toggles.HolyGAG2ACFStopIfFull.Value == true
+        end
+
+        if Toggles.HolyGAG2ACFPauseDuringWeather then
+
+            state.PauseDuringWeather =
+                Toggles.HolyGAG2ACFPauseDuringWeather.Value == true
+        end
+
+        if Options.HolyGAG2ACFPauseWeatherMode then
+
+            GAG2ACFSetPauseWeatherMode(
+                Options.HolyGAG2ACFPauseWeatherMode.Value
+            )
+        end
+
+        if Options.HolyGAG2ACFPauseWeathers then
+
+            GAG2ACFSetPauseWeathers(
+                Options.HolyGAG2ACFPauseWeathers.Value
+            )
+        end
+
+        if Options.HolyGAG2ACFCollectionSpeed then
+
+            GAG2ACFSetCollectionSpeed(
+                Options.HolyGAG2ACFCollectionSpeed.Value
+            )
         end
 
         if Options.HolyGAG2ACFDelay then
@@ -12871,6 +13410,33 @@ FarmMainBox:AddLabel({
     Size = 13,
 })
 
+GAG2_AUTO_COLLECT_FRUIT_CONTROLS.CollectionSpeed =
+    FarmMainBox:AddDropdown(
+        "HolyGAG2ACFCollectionSpeed",
+        {
+            Text = "Collection Speed",
+            Values = GAG2_ACF_SPEED_VALUES,
+            Default = "Normal",
+            Multi = false,
+            Searchable = false,
+            MaxVisibleDropdownItems = 4,
+            Tooltip = "Normal is safe. Fast and Ultra override old slow delay and fire bigger batches.",
+        }
+    )
+
+if GAG2_AUTO_COLLECT_FRUIT_CONTROLS.CollectionSpeed
+and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.CollectionSpeed.OnChanged) == "function" then
+
+    GAG2_AUTO_COLLECT_FRUIT_CONTROLS.CollectionSpeed:OnChanged(function(value)
+
+        GAG2ACFSetCollectionSpeed(
+            value
+        )
+    end)
+end
+
+FarmMainBox:AddDivider()
+
 GAG2_AUTO_COLLECT_FRUIT_CONTROLS.Toggle =
     FarmMainBox:AddToggle("HolyGAG2AutoCollectFruits", {
         Text = "Auto Collect Fruits",
@@ -12895,6 +13461,69 @@ FarmMainBox:AddToggle("HolyGAG2ACFStopIfFull", {
         )
     end,
 })
+
+FarmMainBox:AddToggle("HolyGAG2ACFPauseDuringWeather", {
+    Text = "Pause During Weather",
+    Default = false,
+    Tooltip = "Pauses Auto Collect during real weather events only. Day/Night will not pause.",
+    Callback = function(value)
+
+        GAG2ACFSetPauseDuringWeather(
+            value == true
+        )
+    end,
+})
+
+GAG2_AUTO_COLLECT_FRUIT_CONTROLS.PauseWeatherMode =
+    FarmMainBox:AddDropdown(
+        "HolyGAG2ACFPauseWeatherMode",
+        {
+            Text = "Pause Weather Mode",
+            Values = GAG2_ACF_WEATHER_MODE_VALUES,
+            Default = "Any Weather",
+            Multi = false,
+            Searchable = false,
+            MaxVisibleDropdownItems = 4,
+            Tooltip = "Any Weather pauses for all real weather. Selected pauses only chosen weather names.",
+        }
+    )
+
+if GAG2_AUTO_COLLECT_FRUIT_CONTROLS.PauseWeatherMode
+and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.PauseWeatherMode.OnChanged) == "function" then
+
+    GAG2_AUTO_COLLECT_FRUIT_CONTROLS.PauseWeatherMode:OnChanged(function(value)
+
+        GAG2ACFSetPauseWeatherMode(
+            value
+        )
+    end)
+end
+
+GAG2_AUTO_COLLECT_FRUIT_CONTROLS.PauseWeathers =
+    FarmMainBox:AddDropdown(
+        "HolyGAG2ACFPauseWeathers",
+        {
+            Text = "Pause Weathers",
+            Values = GAG2_ACF_WEATHER_VALUES,
+            Default = GAG2_ACF_WEATHER_VALUES,
+            Multi = true,
+            Searchable = false,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 6,
+            Tooltip = "Used only when Pause Weather Mode is Selected.",
+        }
+    )
+
+if GAG2_AUTO_COLLECT_FRUIT_CONTROLS.PauseWeathers
+and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.PauseWeathers.OnChanged) == "function" then
+
+    GAG2_AUTO_COLLECT_FRUIT_CONTROLS.PauseWeathers:OnChanged(function(value)
+
+        GAG2ACFSetPauseWeathers(
+            value
+        )
+    end)
+end
 
 if type(FarmMainBox.AddInput) == "function" then
 
@@ -12948,8 +13577,6 @@ if type(FarmMainBox.AddInput) == "function" then
         end)
     end
 end
-
-FarmMainBox:AddDivider()
 
 FarmMainBox:AddLabel({
     Text = '<font color="rgb(196,181,253)"><b>Collects</b></font>',
