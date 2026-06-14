@@ -7868,14 +7868,10 @@ function GAG2ACFReadMutation(fruit, plant)
             )
     end
 
-    if mutation == ""
-    and typeof(plant) == "Instance" then
-
-        mutation =
-            GAG2ACFClean(
-                plant:GetAttribute("Mutation")
-            )
-    end
+    -- Important:
+    -- Do NOT fall back to plant:GetAttribute("Mutation").
+    -- A Rainbow/Gold/etc plant can still grow normal fruits.
+    -- Exclude Mutations should only block the fruit's own mutation.
 
     return mutation
 end
@@ -14144,6 +14140,1474 @@ function GAG2RareWebhookScan()
 end
 
 --==================================================
+-- [4.58] MAILBOX
+-- Sends pet batches through Mailbox.SendBatch.
+-- Confirmed packet:
+-- MailboxSendBatch(targetUserId, {{ItemKey = petId, Count = amount, Category = "Pets"}}, message)
+--==================================================
+
+GAG2_MAILBOX_STATE =
+    GAG2_MAILBOX_STATE
+    or {
+        TargetText = "",
+        PetId = "",
+        PetChoice = "None",
+        Amount = 500,
+        Message = "",
+
+        PetChoices = {
+            "None",
+        },
+
+        ChoiceToPetId = {},
+        PetCache = {},
+        InventoryPets = {},
+
+        Packets = {},
+        LastStatus = "Idle.",
+        LastTargetUserId = nil,
+        LastPetId = "",
+        LastAmount = 0,
+    }
+
+GAG2_MAILBOX_CONTROLS =
+    GAG2_MAILBOX_CONTROLS
+    or {}
+
+function GAG2MailboxClean(value)
+
+    return CleanText(
+        tostring(value or "")
+            :gsub("<[^>]->", "")
+            :gsub("<.->", "")
+    )
+end
+
+function GAG2MailboxSetStatus(text)
+
+    local state =
+        GAG2_MAILBOX_STATE
+
+    state.LastStatus =
+        tostring(text or "Idle.")
+
+    if Options.HolyGAG2MailboxStatus then
+
+        Options.HolyGAG2MailboxStatus:SetText(
+            '<font color="rgb(196,181,253)"><b>Mailbox</b></font>'
+            .. '\n'
+            .. tostring(state.LastStatus)
+            .. '\nTarget: '
+            .. tostring(state.TargetText or "")
+            .. '\nAmount: '
+            .. tostring(state.Amount or 1)
+        )
+    end
+end
+
+function GAG2MailboxGetAmount()
+
+    local state =
+        GAG2_MAILBOX_STATE
+
+    local amount =
+        math.floor(
+            tonumber(state.Amount)
+            or 1
+        )
+
+    return math.clamp(
+        amount,
+        1,
+        500
+    )
+end
+
+function GAG2MailboxSetTarget(value)
+
+    GAG2_MAILBOX_STATE.TargetText =
+        GAG2MailboxClean(value)
+
+    MarkConfigDirty()
+end
+
+function GAG2MailboxSetPetId(value)
+
+    GAG2_MAILBOX_STATE.PetId =
+        GAG2MailboxClean(value)
+
+    MarkConfigDirty()
+end
+
+function GAG2MailboxSetAmount(value)
+
+    GAG2_MAILBOX_STATE.Amount =
+        math.clamp(
+            math.floor(
+                tonumber(value)
+                or 1
+            ),
+            1,
+            500
+        )
+
+    GAG2MailboxSetStatus(
+        "Send Amount set: "
+        .. tostring(GAG2_MAILBOX_STATE.Amount)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2MailboxSetMessage(value)
+
+    GAG2_MAILBOX_STATE.Message =
+        tostring(value or "")
+
+    MarkConfigDirty()
+end
+
+function GAG2MailboxSafeRawGet(tbl, key)
+
+    if type(tbl) ~= "table" then
+        return nil
+    end
+
+    local ok, result =
+        pcall(function()
+
+            return rawget(
+                tbl,
+                key
+            )
+        end)
+
+    if ok == true then
+        return result
+    end
+
+    return nil
+end
+
+function GAG2MailboxSafePairs(tbl)
+
+    if type(tbl) ~= "table" then
+        return {}
+    end
+
+    local ok, rows =
+        pcall(function()
+
+            local result =
+                {}
+
+            for key, value in pairs(tbl) do
+
+                table.insert(result, {
+                    Key = key,
+                    Value = value,
+                })
+            end
+
+            return result
+        end)
+
+    if ok == true
+    and type(rows) == "table" then
+
+        return rows
+    end
+
+    return {}
+end
+
+function GAG2MailboxIsUuid(value)
+
+    value =
+        GAG2MailboxClean(value):lower()
+
+    return value:match(
+        "^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$"
+    ) ~= nil
+end
+
+function GAG2MailboxShortUuid(value)
+
+    value =
+        GAG2MailboxClean(value)
+
+    if #value <= 8 then
+        return value
+    end
+
+    return value:sub(
+        1,
+        8
+    )
+end
+
+function GAG2MailboxReadPetName(petData, fallback)
+
+    fallback =
+        GAG2MailboxClean(fallback)
+
+    if type(petData) == "table" then
+
+        local keys = {
+            "Name",
+            "PetName",
+            "PetType",
+            "Type",
+            "f",
+        }
+
+        for _, key in ipairs(keys) do
+
+            local value =
+                GAG2MailboxClean(
+                    GAG2MailboxSafeRawGet(
+                        petData,
+                        key
+                    )
+                )
+
+            if value ~= "" then
+                return value
+            end
+        end
+    end
+
+    if fallback ~= "" then
+        return fallback
+    end
+
+    return "Unknown Pet"
+end
+
+function GAG2MailboxReadPetExtra(petData)
+
+    if type(petData) ~= "table" then
+        return ""
+    end
+
+    local parts =
+        {}
+
+    local mutation =
+        GAG2MailboxClean(
+            GAG2MailboxSafeRawGet(
+                petData,
+                "Mutation"
+            )
+        )
+
+    local level =
+        GAG2MailboxClean(
+            GAG2MailboxSafeRawGet(
+                petData,
+                "Level"
+            )
+            or GAG2MailboxSafeRawGet(
+                petData,
+                "Age"
+            )
+        )
+
+    local equipped =
+        GAG2MailboxSafeRawGet(
+            petData,
+            "Equipped"
+        )
+
+    if mutation ~= ""
+    and mutation ~= "None"
+    and mutation ~= "Normal" then
+
+        table.insert(
+            parts,
+            mutation
+        )
+    end
+
+    if level ~= "" then
+
+        table.insert(
+            parts,
+            "Age "
+            .. tostring(level)
+        )
+    end
+
+    if equipped == true then
+
+        table.insert(
+            parts,
+            "Equipped"
+        )
+    end
+
+    return table.concat(
+        parts,
+        " · "
+    )
+end
+
+function GAG2MailboxAddPetEntry(target, seen, uuid, petData, source)
+
+    uuid =
+        GAG2MailboxClean(uuid)
+
+    if GAG2MailboxIsUuid(uuid) ~= true then
+        return false
+    end
+
+    if seen[uuid] == true then
+        return false
+    end
+
+    seen[uuid] =
+        true
+
+    local name =
+        GAG2MailboxReadPetName(
+            petData,
+            "Unknown Pet"
+        )
+
+    local extra =
+        GAG2MailboxReadPetExtra(
+            petData
+        )
+
+    table.insert(target, {
+        Id = uuid,
+        Name = name,
+        Extra = extra,
+        Source = tostring(source or "unknown"),
+        Raw = petData,
+    })
+
+    return true
+end
+
+function GAG2MailboxScanPetTable(petsTable, target, seen, source)
+
+    if type(petsTable) ~= "table" then
+        return 0
+    end
+
+    local added =
+        0
+
+    local scanned =
+        0
+
+    for _, row in ipairs(GAG2MailboxSafePairs(petsTable)) do
+
+        scanned += 1
+
+        if scanned > 3000 then
+            break
+        end
+
+        local key =
+            GAG2MailboxClean(row.Key)
+
+        local value =
+            row.Value
+
+        local uuid =
+            ""
+
+        if GAG2MailboxIsUuid(key) == true then
+
+            uuid =
+                key
+
+        elseif type(value) == "table" then
+
+            uuid =
+                GAG2MailboxClean(
+                    GAG2MailboxSafeRawGet(value, "Id")
+                    or GAG2MailboxSafeRawGet(value, "UUID")
+                    or GAG2MailboxSafeRawGet(value, "Uuid")
+                    or GAG2MailboxSafeRawGet(value, "ItemKey")
+                )
+        end
+
+        if GAG2MailboxAddPetEntry(
+            target,
+            seen,
+            uuid,
+            value,
+            source
+        ) == true then
+
+            added += 1
+        end
+    end
+
+    return added
+end
+
+function GAG2MailboxScanGcInventoryPets(target, seen)
+
+    if type(getgc) ~= "function" then
+        return 0
+    end
+
+    local ok, gc =
+        pcall(function()
+
+            return getgc(true)
+        end)
+
+    if ok ~= true
+    or type(gc) ~= "table" then
+
+        return 0
+    end
+
+    local added =
+        0
+
+    local scanned =
+        0
+
+    for _, candidate in ipairs(gc) do
+
+        scanned += 1
+
+        if scanned > 30000 then
+            break
+        end
+
+        if type(candidate) == "table" then
+
+            local inventory =
+                GAG2MailboxSafeRawGet(
+                    candidate,
+                    "Inventory"
+                )
+
+            if type(inventory) == "table" then
+
+                local pets =
+                    GAG2MailboxSafeRawGet(
+                        inventory,
+                        "Pets"
+                    )
+
+                added +=
+                    GAG2MailboxScanPetTable(
+                        pets,
+                        target,
+                        seen,
+                        "Inventory.Pets"
+                    )
+            end
+
+            local directPets =
+                GAG2MailboxSafeRawGet(
+                    candidate,
+                    "Pets"
+                )
+
+            added +=
+                GAG2MailboxScanPetTable(
+                    directPets,
+                    target,
+                    seen,
+                    "Pets"
+                )
+        end
+    end
+
+    return added
+end
+
+function GAG2MailboxScanToolPets(target, seen)
+
+    local localPlayer =
+        LOCAL_PLAYER
+        or Players.LocalPlayer
+
+    if not localPlayer then
+        return 0
+    end
+
+    local containers = {
+        localPlayer:FindFirstChildOfClass("Backpack"),
+        localPlayer.Character,
+    }
+
+    local added =
+        0
+
+    for _, container in ipairs(containers) do
+
+        if container then
+
+            for _, child in ipairs(container:GetChildren()) do
+
+                if child:IsA("Tool") then
+
+                    local uuid =
+                        GAG2MailboxClean(
+                            child:GetAttribute("Id")
+                            or child:GetAttribute("UUID")
+                            or child:GetAttribute("Uuid")
+                            or child:GetAttribute("PetId")
+                            or child:GetAttribute("ItemKey")
+                        )
+
+                    local petName =
+                        GAG2MailboxClean(
+                            child:GetAttribute("Name")
+                            or child:GetAttribute("PetName")
+                            or child:GetAttribute("PetType")
+                            or child:GetAttribute("f")
+                            or child.Name
+                        )
+
+                    if GAG2MailboxAddPetEntry(
+                        target,
+                        seen,
+                        uuid,
+                        {
+                            Name = petName,
+                        },
+                        "Tool"
+                    ) == true then
+
+                        added += 1
+                    end
+                end
+            end
+        end
+    end
+
+    return added
+end
+
+function GAG2MailboxBuildInventoryPets()
+
+    local state =
+        GAG2_MAILBOX_STATE
+
+    local pets =
+        {}
+
+    local seen =
+        {}
+
+    if type(state.PetCache) == "table" then
+
+        for uuid, petData in pairs(state.PetCache) do
+
+            GAG2MailboxAddPetEntry(
+                pets,
+                seen,
+                uuid,
+                petData,
+                "ReplicaSet cache"
+            )
+        end
+    end
+
+    GAG2MailboxScanGcInventoryPets(
+        pets,
+        seen
+    )
+
+    GAG2MailboxScanToolPets(
+        pets,
+        seen
+    )
+
+    table.sort(pets, function(a, b)
+
+        local aName =
+            tostring(a.Name or "")
+
+        local bName =
+            tostring(b.Name or "")
+
+        if aName == bName then
+
+            return tostring(a.Id or "")
+                < tostring(b.Id or "")
+        end
+
+        return aName < bName
+    end)
+
+    state.InventoryPets =
+        pets
+
+    return pets
+end
+
+function GAG2MailboxBuildPetChoice(pet)
+
+    local name =
+        GAG2MailboxClean(
+            pet
+            and pet.Name
+            or "Unknown Pet"
+        )
+
+    local uuid =
+        GAG2MailboxClean(
+            pet
+            and pet.Id
+            or ""
+        )
+
+    local extra =
+        GAG2MailboxClean(
+            pet
+            and pet.Extra
+            or ""
+        )
+
+    local text =
+        name
+        .. " · #"
+        .. GAG2MailboxShortUuid(uuid)
+
+    if extra ~= "" then
+
+        text =
+            text
+            .. " · "
+            .. extra
+    end
+
+    return text
+end
+
+function GAG2MailboxSetPetChoice(value)
+
+    local state =
+        GAG2_MAILBOX_STATE
+
+    local choice =
+        GAG2MailboxClean(value)
+
+    if choice == "" then
+        choice = "None"
+    end
+
+    state.PetChoice =
+        choice
+
+    local petId =
+        state.ChoiceToPetId
+        and state.ChoiceToPetId[choice]
+        or ""
+
+    state.PetId =
+        GAG2MailboxClean(petId)
+
+    if state.PetId ~= "" then
+
+        GAG2MailboxSetStatus(
+            "Selected pet: "
+            .. tostring(choice)
+        )
+
+    else
+
+        GAG2MailboxSetStatus(
+            "No pet selected."
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2MailboxRefreshPetDropdown()
+
+    local state =
+        GAG2_MAILBOX_STATE
+
+    local dropdown =
+        GAG2_MAILBOX_CONTROLS
+        and GAG2_MAILBOX_CONTROLS.Pet
+
+    local pets =
+        GAG2MailboxBuildInventoryPets()
+
+    local values = {
+        "None",
+    }
+
+    local choiceToPetId =
+        {}
+
+    local usedChoices =
+        {
+            None = true,
+        }
+
+    local function addChoice(choice, uuid)
+
+        choice =
+            GAG2MailboxClean(choice)
+
+        uuid =
+            GAG2MailboxClean(uuid)
+
+        if choice == ""
+        or uuid == "" then
+            return
+        end
+
+        local baseChoice =
+            choice
+
+        local suffix =
+            2
+
+        while usedChoices[choice] == true do
+
+            choice =
+                baseChoice
+                .. " · "
+                .. tostring(suffix)
+
+            suffix += 1
+        end
+
+        usedChoices[choice] =
+            true
+
+        choiceToPetId[choice] =
+            uuid
+
+        table.insert(
+            values,
+            choice
+        )
+    end
+
+    for _, pet in ipairs(pets) do
+
+        addChoice(
+            GAG2MailboxBuildPetChoice(pet),
+            pet.Id
+        )
+    end
+
+    local savedPetId =
+        GAG2MailboxClean(
+            state.PetId
+        )
+
+    if savedPetId ~= ""
+    and GAG2MailboxIsUuid(savedPetId) == true then
+
+        local alreadyVisible =
+            false
+
+        for _, uuid in pairs(choiceToPetId) do
+
+            if uuid == savedPetId then
+                alreadyVisible =
+                    true
+                break
+            end
+        end
+
+        if alreadyVisible ~= true then
+
+            addChoice(
+                "Saved Pet"
+                .. " · #"
+                .. GAG2MailboxShortUuid(savedPetId),
+                savedPetId
+            )
+        end
+    end
+
+    state.PetChoices =
+        values
+
+    state.ChoiceToPetId =
+        choiceToPetId
+
+    if dropdown then
+
+        pcall(function()
+
+            if type(dropdown.SetValues) == "function" then
+
+                dropdown:SetValues(
+                    values
+                )
+
+            elseif type(dropdown.SetItems) == "function" then
+
+                dropdown:SetItems(
+                    values
+                )
+            end
+        end)
+
+        local selected =
+            GAG2MailboxClean(
+                state.PetChoice
+            )
+
+        if selected == ""
+        or selected == "None"
+        or choiceToPetId[selected] == nil then
+
+            selected =
+                "None"
+        end
+
+        pcall(function()
+
+            if type(dropdown.SetValue) == "function" then
+
+                dropdown:SetValue(
+                    selected
+                )
+            end
+        end)
+    end
+
+    GAG2MailboxSetStatus(
+        "Pets refreshed: "
+        .. tostring(#pets)
+    )
+
+    return pets
+end
+
+function GAG2MailboxStartReplicaWatcher()
+
+    local state =
+        GAG2_MAILBOX_STATE
+
+    if state.ReplicaWatching == true then
+        return
+    end
+
+    local remoteEvents =
+        ReplicatedStorage:FindFirstChild("RemoteEvents")
+
+    local replicaSet =
+        remoteEvents
+        and remoteEvents:FindFirstChild("ReplicaSet")
+
+    if not replicaSet then
+
+        GAG2MailboxSetStatus(
+            "ReplicaSet missing for pet cache."
+        )
+
+        return
+    end
+
+    state.ReplicaWatching =
+        true
+
+    replicaSet.OnClientEvent:Connect(function(_, path, value)
+
+        if type(path) ~= "table" then
+            return
+        end
+
+        if tostring(path[1]) ~= "Inventory" then
+            return
+        end
+
+        if tostring(path[2]) ~= "Pets" then
+            return
+        end
+
+        local uuid =
+            GAG2MailboxClean(
+                path[3]
+            )
+
+        if GAG2MailboxIsUuid(uuid) ~= true then
+            return
+        end
+
+        state.PetCache =
+            type(state.PetCache) == "table"
+            and state.PetCache
+            or {}
+
+        if type(value) == "table" then
+
+            state.PetCache[uuid] =
+                value
+
+        else
+
+            state.PetCache[uuid] =
+                nil
+        end
+
+        task.defer(function()
+
+            GAG2MailboxRefreshPetDropdown()
+        end)
+    end)
+end
+
+function GAG2MailboxResolveTargetUserId(targetText)
+
+    targetText =
+        GAG2MailboxClean(targetText)
+
+    if targetText == "" then
+        return nil,
+            "missing target"
+    end
+
+    local asNumber =
+        tonumber(targetText)
+
+    if asNumber
+    and asNumber > 0 then
+
+        return math.floor(asNumber),
+            "user id"
+    end
+
+    targetText =
+        targetText:gsub("^@", "")
+
+    local localPlayerMatch =
+        Players:FindFirstChild(targetText)
+
+    if localPlayerMatch then
+
+        return localPlayerMatch.UserId,
+            "server player"
+    end
+
+    local ok, userId =
+        pcall(function()
+
+            return Players:GetUserIdFromNameAsync(
+                targetText
+            )
+        end)
+
+    if ok == true
+    and tonumber(userId) then
+
+        return tonumber(userId),
+            "username lookup"
+    end
+
+    return nil,
+        "target lookup failed"
+end
+
+function GAG2MailboxPacketHasFire(packet)
+
+    if type(packet) ~= "table" then
+        return false
+    end
+
+    local ok, fireFunction =
+        pcall(function()
+
+            return packet.Fire
+        end)
+
+    return ok == true
+        and type(fireFunction) == "function"
+end
+
+function GAG2MailboxSearchPacketByName(candidate, packetName, seen, depth)
+
+    if type(candidate) ~= "table" then
+        return nil
+    end
+
+    if depth > 8 then
+        return nil
+    end
+
+    if seen[candidate] == true then
+        return nil
+    end
+
+    seen[candidate] =
+        true
+
+    if type(SniperSafeRawGet) == "function" then
+
+        local name =
+            SniperSafeRawGet(
+                candidate,
+                "Name"
+            )
+
+        if tostring(name) == tostring(packetName)
+        and GAG2MailboxPacketHasFire(candidate) == true then
+
+            return candidate
+        end
+    end
+
+    if type(SniperSafePairsSnapshot) == "function" then
+
+        for _, row in ipairs(SniperSafePairsSnapshot(candidate)) do
+
+            if type(row.Value) == "table" then
+
+                local found =
+                    GAG2MailboxSearchPacketByName(
+                        row.Value,
+                        packetName,
+                        seen,
+                        depth + 1
+                    )
+
+                if found then
+                    return found
+                end
+            end
+        end
+
+    else
+
+        for _, child in pairs(candidate) do
+
+            if type(child) == "table" then
+
+                local found =
+                    GAG2MailboxSearchPacketByName(
+                        child,
+                        packetName,
+                        seen,
+                        depth + 1
+                    )
+
+                if found then
+                    return found
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function GAG2MailboxResolvePacket(keyName, packetName)
+
+    keyName =
+        GAG2MailboxClean(keyName)
+
+    packetName =
+        GAG2MailboxClean(packetName)
+
+    if keyName == ""
+    or packetName == "" then
+
+        return nil,
+            "bad mailbox packet request"
+    end
+
+    local state =
+        GAG2_MAILBOX_STATE
+
+    state.Packets =
+        type(state.Packets) == "table"
+        and state.Packets
+        or {}
+
+    if state.Packets[keyName] then
+        return state.Packets[keyName],
+            "cached"
+    end
+
+    local packets =
+        nil
+
+    if type(SniperFindPacketTable) == "function" then
+
+        packets =
+            SniperFindPacketTable()
+    end
+
+    if type(packets) == "table"
+    and type(SniperSafeRawGet) == "function" then
+
+        local mailbox =
+            SniperSafeRawGet(
+                packets,
+                "Mailbox"
+            )
+
+        if type(mailbox) == "table" then
+
+            local packet =
+                SniperSafeRawGet(
+                    mailbox,
+                    keyName
+                )
+
+            if GAG2MailboxPacketHasFire(packet) == true then
+
+                state.Packets[keyName] =
+                    packet
+
+                return packet,
+                    "Mailbox."
+                    .. tostring(keyName)
+            end
+        end
+
+        local found =
+            GAG2MailboxSearchPacketByName(
+                packets,
+                packetName,
+                {},
+                0
+            )
+
+        if found then
+
+            state.Packets[keyName] =
+                found
+
+            return found,
+                "search:"
+                .. tostring(packetName)
+        end
+    end
+
+    return nil,
+        "packet not found: "
+        .. tostring(packetName)
+        .. " | source: "
+        .. tostring(
+            SniperState
+            and SniperState.PacketSource
+            or "no packet source"
+        )
+end
+
+function GAG2MailboxFirePacket(keyName, packetName, ...)
+
+    local packet, source =
+        GAG2MailboxResolvePacket(
+            keyName,
+            packetName
+        )
+
+    if not packet then
+
+        GAG2MailboxSetStatus(
+            "Packet missing: "
+            .. tostring(source)
+        )
+
+        warn(
+            "[HOLY GAG2 MAILBOX]",
+            "packet missing",
+            tostring(keyName),
+            tostring(packetName),
+            tostring(source)
+        )
+
+        return false,
+            source
+    end
+
+    local args =
+        {
+            ...
+        }
+
+    local ok, err =
+        pcall(function()
+
+            packet:Fire(
+                table.unpack(args)
+            )
+        end)
+
+    if ok ~= true then
+
+        ok, err =
+            pcall(function()
+
+                packet.Fire(
+                    packet,
+                    table.unpack(args)
+                )
+            end)
+    end
+
+    if ok ~= true then
+
+        GAG2MailboxSetStatus(
+            "Fire failed: "
+            .. tostring(err)
+        )
+
+        warn(
+            "[HOLY GAG2 MAILBOX]",
+            "fire failed",
+            tostring(packetName),
+            tostring(err)
+        )
+
+        return false,
+            tostring(err)
+    end
+
+    return true,
+        source
+end
+
+function GAG2MailboxOpenInbox()
+
+    local ok, source =
+        GAG2MailboxFirePacket(
+            "OpenInbox",
+            "MailboxOpenInbox"
+        )
+
+    if ok == true then
+
+        GAG2MailboxSetStatus(
+            "Opened inbox | "
+            .. tostring(source)
+        )
+    end
+
+    return ok,
+        source
+end
+
+function GAG2MailboxSendPetBatchNow()
+
+    local state =
+        GAG2_MAILBOX_STATE
+
+    local targetUserId, targetReason =
+        GAG2MailboxResolveTargetUserId(
+            state.TargetText
+        )
+
+    if not targetUserId then
+
+        GAG2MailboxSetStatus(
+            "Bad target: "
+            .. tostring(targetReason)
+        )
+
+        return false,
+            targetReason
+    end
+
+    local petId =
+        GAG2MailboxClean(
+            state.PetId
+        )
+
+    if petId == ""
+    and state.ChoiceToPetId
+    and state.PetChoice then
+
+        petId =
+            GAG2MailboxClean(
+                state.ChoiceToPetId[state.PetChoice]
+            )
+
+        state.PetId =
+            petId
+    end
+
+    if petId == "" then
+
+        GAG2MailboxSetStatus(
+            "Missing Pet UUID."
+        )
+
+        return false,
+            "missing pet id"
+    end
+
+    if petId:find("%.") then
+
+        GAG2MailboxSetStatus(
+            "Bad Pet UUID. Paste only the raw UUID."
+        )
+
+        return false,
+            "bad pet id"
+    end
+
+    local amount =
+        GAG2MailboxGetAmount()
+
+    local message =
+        tostring(state.Message or "")
+
+    local batch = {
+        {
+            ItemKey =
+                petId,
+
+            Count =
+                amount,
+
+            Category =
+                "Pets",
+        },
+    }
+
+    local ok, source =
+        GAG2MailboxFirePacket(
+            "SendBatch",
+            "MailboxSendBatch",
+            targetUserId,
+            batch,
+            message
+        )
+
+    if ok == true then
+
+        state.LastTargetUserId =
+            targetUserId
+
+        state.LastPetId =
+            petId
+
+        state.LastAmount =
+            amount
+
+        GAG2MailboxSetStatus(
+            "Sent pet batch."
+            .. "\nUserId: "
+            .. tostring(targetUserId)
+            .. " ("
+            .. tostring(targetReason)
+            .. ")"
+            .. "\nPet: "
+            .. tostring(petId)
+            .. "\nCount: "
+            .. tostring(amount)
+            .. "\nSource: "
+            .. tostring(source)
+        )
+
+        print(
+            "[HOLY GAG2 MAILBOX]",
+            "MailboxSendBatch fired",
+            "| userId:",
+            tostring(targetUserId),
+            "| petId:",
+            tostring(petId),
+            "| count:",
+            tostring(amount),
+            "| source:",
+            tostring(source)
+        )
+
+        return true,
+            source
+    end
+
+    return false,
+        source
+end
+
+function GAG2MailboxExposeDebug()
+
+    getgenv().HOLY_GAG2_MAILBOX_STATE =
+        GAG2_MAILBOX_STATE
+
+    getgenv().HOLY_GAG2_MAILBOX_SEND_PET_BATCH =
+        function(targetUserId, petId, amount, message)
+
+            GAG2_MAILBOX_STATE.TargetText =
+                tostring(targetUserId or "")
+
+            GAG2_MAILBOX_STATE.PetId =
+                tostring(petId or "")
+
+            GAG2_MAILBOX_STATE.Amount =
+                math.clamp(
+                    math.floor(
+                        tonumber(amount)
+                        or 1
+                    ),
+                    1,
+                    500
+                )
+
+            GAG2_MAILBOX_STATE.Message =
+                tostring(message or "")
+
+            return GAG2MailboxSendPetBatchNow()
+        end
+
+    getgenv().HOLY_GAG2_MAILBOX_OPEN_INBOX =
+        function()
+
+            return GAG2MailboxOpenInbox()
+        end
+end
+
+function GAG2RestoreMailboxState()
+
+    task.defer(function()
+
+        GAG2MailboxExposeDebug()
+        GAG2MailboxStartReplicaWatcher()
+
+        if Options.HolyGAG2MailboxTarget then
+
+            GAG2MailboxSetTarget(
+                Options.HolyGAG2MailboxTarget.Value
+            )
+        end
+
+        if Options.HolyGAG2MailboxPetChoice then
+
+            GAG2MailboxSetPetChoice(
+                Options.HolyGAG2MailboxPetChoice.Value
+            )
+        end
+
+        if Options.HolyGAG2MailboxAmount then
+
+            GAG2MailboxSetAmount(
+                Options.HolyGAG2MailboxAmount.Value
+            )
+        end
+
+        if Options.HolyGAG2MailboxMessage then
+
+            GAG2MailboxSetMessage(
+                Options.HolyGAG2MailboxMessage.Value
+            )
+        end
+
+        GAG2MailboxRefreshPetDropdown()
+
+        GAG2MailboxSetStatus(
+            "Ready."
+        )
+    end)
+end
+
+--==================================================
 -- [5] WINDOW
 --==================================================
 
@@ -14221,6 +15685,13 @@ local Tabs = {
             Name = "Sell",
             Icon = "coins",
             Description = "Sell systems.",
+        }),
+
+    Mailbox =
+        Window:AddTab({
+            Name = "Mailbox",
+            Icon = "mail",
+            Description = "Mailbox send and inbox tools.",
         }),
 
     Experiment =
@@ -14307,6 +15778,18 @@ local SellStatusBox =
     Tabs.Sell:AddRightGroupbox(
         "Status",
         "receipt"
+    )
+
+local MailboxMainBox =
+    Tabs.Mailbox:AddLeftGroupbox(
+        "Send Pet Batch",
+        "mail"
+    )
+
+local MailboxStatusBox =
+    Tabs.Mailbox:AddRightGroupbox(
+        "Status",
+        "inbox"
     )
 
 local ExperimentMainBox =
@@ -14729,6 +16212,138 @@ SellStatusBox:AddLabel("HolyGAG2SellStatus", {
     Text =
         '<font color="rgb(196,181,253)"><b>Auto Sell</b></font>'
         .. '\nIdle.',
+    DoesWrap = true,
+})
+
+--==================================================
+-- [8.6] MAILBOX TAB
+--==================================================
+
+MailboxMainBox:AddLabel({
+    Text =
+        '<font color="rgb(196,181,253)"><b>Mailbox Send Batch</b></font>'
+        .. '\nSends one selected pet UUID with a custom Count value.'
+        .. '\nConfirmed format: MailboxSendBatch(UserId, batch, message).',
+    DoesWrap = true,
+    Size = 13,
+})
+
+MailboxMainBox:AddDivider()
+
+GAG2_MAILBOX_CONTROLS.Target =
+    MailboxMainBox:AddInput("HolyGAG2MailboxTarget", {
+        Text = "Target UserId / Username",
+        Default = "",
+        Numeric = false,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "5227153614 or Username",
+        Tooltip = "Target mailbox recipient. UserId is fastest. Username lookup also works.",
+        Callback = function(value)
+
+            GAG2MailboxSetTarget(
+                value
+            )
+        end,
+    })
+
+GAG2_MAILBOX_CONTROLS.Pet =
+    MailboxMainBox:AddDropdown("HolyGAG2MailboxPetChoice", {
+        Text = "Inventory Pet",
+        Values = {
+            "None",
+        },
+        Default = "None",
+        Multi = false,
+        Tooltip = "Select a pet from your Inventory.Pets data. The UUID is handled internally.",
+    })
+
+if GAG2_MAILBOX_CONTROLS.Pet
+and type(GAG2_MAILBOX_CONTROLS.Pet.OnChanged) == "function" then
+
+    GAG2_MAILBOX_CONTROLS.Pet:OnChanged(function(value)
+
+        GAG2MailboxSetPetChoice(
+            value
+        )
+    end)
+end
+
+MailboxMainBox:AddButton({
+    Text = "Refresh Pets",
+    Tooltip = "Re-scans Inventory.Pets and refreshes the pet dropdown.",
+    Func = function()
+
+        GAG2MailboxRefreshPetDropdown()
+    end,
+})
+
+GAG2_MAILBOX_CONTROLS.Amount =
+    MailboxMainBox:AddInput("HolyGAG2MailboxAmount", {
+        Text = "Send Amount",
+        Default = "500",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "1 - 500",
+        Tooltip = "Sets batch Count. Example: 500 sends Count = 500 in one MailboxSendBatch call.",
+        Callback = function(value)
+
+            GAG2MailboxSetAmount(
+                value
+            )
+        end,
+    })
+
+GAG2_MAILBOX_CONTROLS.Message =
+    MailboxMainBox:AddInput("HolyGAG2MailboxMessage", {
+        Text = "Message",
+        Default = "",
+        Numeric = false,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "optional",
+        Tooltip = "Optional mailbox message. Blank is allowed.",
+        Callback = function(value)
+
+            GAG2MailboxSetMessage(
+                value
+            )
+        end,
+    })
+
+MailboxMainBox:AddDivider()
+
+MailboxMainBox:AddButton({
+    Text = "Send Pet Batch",
+    Tooltip = "Fires MailboxSendBatch once using the selected Count amount.",
+    Func = function()
+
+        GAG2MailboxSendPetBatchNow()
+    end,
+}):AddButton({
+    Text = "Open Inbox",
+    Tooltip = "Fires MailboxOpenInbox.",
+    Func = function()
+
+        GAG2MailboxOpenInbox()
+    end,
+})
+
+MailboxStatusBox:AddLabel("HolyGAG2MailboxStatus", {
+    Text =
+        '<font color="rgb(196,181,253)"><b>Mailbox</b></font>'
+        .. '\nIdle.',
+    DoesWrap = true,
+})
+
+MailboxStatusBox:AddLabel({
+    Text =
+        '<font color="rgb(148,163,184)"><b>Format</b></font>'
+        .. '\nBatch item:'
+        .. '\nCategory = Pets'
+        .. '\nItemKey = Pet UUID'
+        .. '\nCount = Send Amount',
     DoesWrap = true,
 })
 
@@ -15897,6 +17512,7 @@ if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
     GAG2RestoreAutoTpMiddleFarmState()
     GAG2RestoreAutoCollectFruitState()
     GAG2RestoreAutoSellState()
+    GAG2RestoreMailboxState()
 end
 
 task.spawn(function()
