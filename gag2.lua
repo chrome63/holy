@@ -1999,7 +1999,7 @@ local SniperState = {
     InstantFirstHop = false,
     FirstHopUsed = false,
     EnabledAt = 0,
-    InstantHopGrace = 4,
+    InstantHopGrace = 0,
     ReturnAfterTame = true,
 
     Taming = false,
@@ -6313,39 +6313,31 @@ function SniperScan(allowAutoHop)
             and SniperState.FirstHopUsed ~= true
             and SniperState.LastHopAt <= 0
 
-        local enabledAt =
-            tonumber(SniperState.EnabledAt)
-            or tonumber(SniperState.StartedAt)
-            or os.clock()
-
-        local instantGrace =
-            math.clamp(
-                tonumber(SniperState.InstantHopGrace)
-                or 4,
-                2,
-                10
-            )
-
-        local instantElapsed =
-            os.clock() - enabledAt
-
         local shouldInstantHop =
             instantWanted == true
-            and instantElapsed >= instantGrace
 
-        if instantWanted == true
-        and shouldInstantHop ~= true then
+        if shouldInstantHop == true then
+
+            SetSniperStatus(
+                "Instant hopping..."
+            )
+
+            GAG2SetPanicHudStatus(
+                "STOP / INSTANT HOP"
+            )
+
+        elseif sinceHop < SniperState.HopDelay then
 
             local remaining =
                 math.max(
                     1,
                     math.ceil(
-                        instantGrace - instantElapsed
+                        SniperState.HopDelay - sinceHop
                     )
                 )
 
             SetSniperStatus(
-                "Instant hop in "
+                "Hop in "
                 .. tostring(remaining)
                 .. "s"
             )
@@ -6431,9 +6423,19 @@ function SniperSetEnabled(value)
         SniperState.EnabledAt =
             os.clock()
 
-        GAG2SetPanicHudStatus(
-            "Sniper ON"
-        )
+        if SniperState.AutoHop == true
+        and SniperState.InstantFirstHop == true then
+
+            GAG2SetPanicHudStatus(
+                "STOP READY"
+            )
+
+        else
+
+            GAG2SetPanicHudStatus(
+                "Sniper ON"
+            )
+        end
 
         GAG2_SERVER_HOP_RETRYING =
             false
@@ -8535,7 +8537,7 @@ SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
 SniperMainBox:AddToggle("HolyGAG2SniperInstantFirstHop", {
     Text = "Instant Hop On Join",
     Default = SniperState.InstantFirstHop == true,
-    Tooltip = "Aggressive mode. Gives a short STOP countdown before first hop.",
+    Tooltip = "Aggressive mode. Hops immediately on first no-match while STOP HUD stays visible.",
     Callback = function(value)
 
         SniperState.InstantFirstHop =
