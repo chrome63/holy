@@ -114,7 +114,7 @@ local REPO_URL =
 
 local LIBRARY_URL =
     REPO_URL
-    .. "librarylite.lua?v="
+    .. "librarygag2.lua?v="
     .. tostring(os.time())
 
 local THEME_MANAGER_URL =
@@ -148,6 +148,7 @@ GAG2_RARE_PET_WEBHOOK_TARGETS = {
     raccoon = true,
     goldendragonfly = true,
     unicorn = true,
+
 }
 
 GAG2_RARE_PET_WEBHOOK_IMAGES = {
@@ -176,6 +177,16 @@ GAG2_SERVER_HOP_RETRYING =
 GAG2_SERVER_HOP_ATTEMPT =
     0
 
+GAG2_EXACT_JOIN_TARGET_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/ExactJoinTarget.json"
+
+GAG2_EXACT_JOIN_STATE = {
+    Retrying = false,
+    MaxAttempts = 3,
+    Target = nil,
+}
+
 GAG2_SNIPER_TOGGLE_CONTROL =
     nil
 
@@ -189,8 +200,8 @@ GAG2_MANUAL_JOIN_STATE = {
     HudEnabled = false,
     TargetText = "",
     LastTargetText = "",
-    StatusText = "Paste JobId.",
-    PreviewText = "Paste JobId.",
+    StatusText = "Paste full placeId:JobId.",
+    PreviewText = "Paste full placeId:JobId.",
     Refreshing = false,
 }
 
@@ -227,6 +238,14 @@ GAG2_AUTO_PLAY_STATE = {
     LastClick = 0,
     Attempts = 0,
 }
+
+GAG2_AUTO_TP_MIDDLE_FARM_STATE = {
+    Running = false,
+    CharacterConnection = nil,
+    LastTeleportAt = 0,
+    LastResult = "not started",
+}
+
 --==================================================
 -- [2] BASIC HELPERS
 --==================================================
@@ -576,21 +595,9 @@ end
 
 local function BuildServerInfoText()
 
-    return
-        '<font color="rgb(148,163,184)"><b>Current Server</b></font>'
-        .. '\nPlaceId: '
-        .. tostring(game.PlaceId)
-        .. '\nJobId: '
-        .. tostring(game.JobId)
-        .. '\nJoin Code: '
-        .. GAG2BuildJoinCode(
-            game.PlaceId,
-            game.JobId
-        )
-        .. '\nPlayers: '
+    return "Players: "
         .. tostring(#Players:GetPlayers())
-        .. '\nGAG2 Place: '
-        .. BoolText(IsGAG2World())
+        .. " | Code ready"
 end
 
 local function RefreshServerInfo()
@@ -601,6 +608,472 @@ local function RefreshServerInfo()
             BuildServerInfoText()
         )
     end
+end
+
+--==================================================
+-- [4.1] EXACT SERVER JOIN GUARD
+--==================================================
+
+function GAG2ClearExactJoinTarget(reason)
+
+    GAG2_EXACT_JOIN_STATE.Target =
+        nil
+
+    if type(isfile) == "function"
+    and type(delfile) == "function" then
+
+        pcall(function()
+
+            if isfile(GAG2_EXACT_JOIN_TARGET_FILE) then
+
+                delfile(
+                    GAG2_EXACT_JOIN_TARGET_FILE
+                )
+            end
+        end)
+    end
+
+    if reason then
+
+        print(
+            "[HOLY GAG2 EXACT JOIN]",
+            "cleared target:",
+            tostring(reason)
+        )
+    end
+end
+
+function GAG2SaveExactJoinTarget(placeId, jobId, attempts, reason)
+
+    local payload = {
+        PlaceId =
+            tonumber(placeId),
+
+        JobId =
+            CleanText(jobId),
+
+        Attempts =
+            math.max(
+                0,
+                math.floor(
+                    tonumber(attempts)
+                    or 0
+                )
+            ),
+
+        CreatedAt =
+            os.time(),
+
+        Reason =
+            tostring(reason or "manual"),
+    }
+
+    if not payload.PlaceId
+    or payload.PlaceId <= 0
+    or payload.JobId == "" then
+
+        return false
+    end
+
+    GAG2_EXACT_JOIN_STATE.Target =
+        payload
+
+    if CanUseUISettingsFile() ~= true then
+        return false
+    end
+
+    EnsureUISettingsFolder()
+
+    local ok, encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if ok ~= true
+    or type(encoded) ~= "string" then
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                GAG2_EXACT_JOIN_TARGET_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function GAG2ReadExactJoinTarget()
+
+    if type(GAG2_EXACT_JOIN_STATE) == "table"
+    and type(GAG2_EXACT_JOIN_STATE.Target) == "table" then
+
+        return GAG2_EXACT_JOIN_STATE.Target
+    end
+
+    if CanUseUISettingsFile() ~= true then
+        return nil
+    end
+
+    local exists =
+        false
+
+    local existsOk =
+        pcall(function()
+
+            exists =
+                isfile(
+                    GAG2_EXACT_JOIN_TARGET_FILE
+                )
+        end)
+
+    if existsOk ~= true
+    or exists ~= true then
+        return nil
+    end
+
+    local readOk, raw =
+        pcall(function()
+
+            return readfile(
+                GAG2_EXACT_JOIN_TARGET_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+        return nil
+    end
+
+    local decodeOk, payload =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(payload) ~= "table" then
+
+        GAG2ClearExactJoinTarget(
+            "bad json"
+        )
+
+        return nil
+    end
+
+    payload.PlaceId =
+        tonumber(payload.PlaceId)
+
+    payload.JobId =
+        CleanText(payload.JobId)
+
+    payload.Attempts =
+        math.max(
+            0,
+            math.floor(
+                tonumber(payload.Attempts)
+                or 0
+            )
+        )
+
+    payload.CreatedAt =
+        tonumber(payload.CreatedAt)
+        or os.time()
+
+    if not payload.PlaceId
+    or payload.PlaceId <= 0
+    or payload.JobId == "" then
+
+        GAG2ClearExactJoinTarget(
+            "bad target"
+        )
+
+        return nil
+    end
+
+    if os.time() - payload.CreatedAt > 180 then
+
+        GAG2ClearExactJoinTarget(
+            "expired"
+        )
+
+        return nil
+    end
+
+    GAG2_EXACT_JOIN_STATE.Target =
+        payload
+
+    return payload
+end
+
+function GAG2ExactJoinMatchesCurrent(target)
+
+    if type(target) ~= "table" then
+        return false
+    end
+
+    return tonumber(target.PlaceId) == tonumber(game.PlaceId)
+        and tostring(target.JobId) == tostring(game.JobId)
+end
+
+function GAG2QueueExactJoin(placeId, jobId, reason)
+
+    placeId =
+        tonumber(placeId)
+
+    jobId =
+        CleanText(jobId)
+
+    if not placeId
+    or placeId <= 0
+    or jobId == "" then
+        return false, "bad exact join target"
+    end
+
+    GAG2_SERVER_HOP_RETRYING =
+        false
+
+    GAG2_SERVER_HOP_ATTEMPT =
+        0
+
+    SetStatus(
+        "Exact joining: "
+        .. tostring(placeId)
+        .. ":"
+        .. tostring(jobId)
+    )
+
+    print(
+        "[HOLY GAG2 EXACT JOIN]",
+        "TeleportToPlaceInstance",
+        "| place:",
+        tostring(placeId),
+        "| job:",
+        tostring(jobId),
+        "| reason:",
+        tostring(reason or "manual")
+    )
+
+    local ok, err =
+        pcall(function()
+
+            TeleportService:TeleportToPlaceInstance(
+                placeId,
+                jobId,
+                LOCAL_PLAYER
+            )
+        end)
+
+    if ok ~= true then
+
+        SetStatus(
+            "Exact join failed: "
+            .. tostring(err)
+        )
+
+        warn(
+            "[HOLY GAG2 EXACT JOIN]",
+            "call failed:",
+            tostring(err)
+        )
+
+        return false,
+            tostring(err)
+    end
+
+    return true,
+        "queued"
+end
+
+function GAG2RetryExactJoinTarget(target, reason)
+
+    if type(target) ~= "table" then
+        return false
+    end
+
+    if GAG2_EXACT_JOIN_STATE.Retrying == true then
+        return true
+    end
+
+    local attempts =
+        math.max(
+            0,
+            math.floor(
+                tonumber(target.Attempts)
+                or 0
+            )
+        )
+
+    local maxAttempts =
+        math.max(
+            1,
+            math.floor(
+                tonumber(GAG2_EXACT_JOIN_STATE.MaxAttempts)
+                or 3
+            )
+        )
+
+    if attempts >= maxAttempts then
+
+        local wanted =
+            tostring(target.PlaceId)
+            .. ":"
+            .. tostring(target.JobId)
+
+        local current =
+            tostring(game.PlaceId)
+            .. ":"
+            .. tostring(game.JobId)
+
+        GAG2ClearExactJoinTarget(
+            "max attempts"
+        )
+
+        SetStatus(
+            "Exact join failed. Target closed/full?"
+        )
+
+        GAG2SetManualJoinStatus(
+            "Exact failed. Wanted "
+            .. wanted
+            .. " got "
+            .. current
+        )
+
+        warn(
+            "[HOLY GAG2 EXACT JOIN]",
+            "max attempts reached",
+            "| wanted:",
+            wanted,
+            "| current:",
+            current
+        )
+
+        return false
+    end
+
+    attempts += 1
+
+    target.Attempts =
+        attempts
+
+    GAG2SaveExactJoinTarget(
+        target.PlaceId,
+        target.JobId,
+        attempts,
+        reason or "retry"
+    )
+
+    GAG2_EXACT_JOIN_STATE.Retrying =
+        true
+
+    GAG2_SERVER_HOP_RETRYING =
+        false
+
+    GAG2_SERVER_HOP_ATTEMPT =
+        0
+
+    SetStatus(
+        "Wrong server. Retrying exact "
+        .. tostring(attempts)
+        .. "/"
+        .. tostring(maxAttempts)
+    )
+
+    GAG2SetManualJoinStatus(
+        "Retrying exact "
+        .. tostring(attempts)
+        .. "/"
+        .. tostring(maxAttempts)
+        .. ": "
+        .. tostring(target.PlaceId)
+        .. ":"
+        .. tostring(target.JobId)
+    )
+
+    task.delay(0.35, function()
+
+        GAG2QueueExactJoin(
+            target.PlaceId,
+            target.JobId,
+            reason or "exact retry"
+        )
+
+        task.delay(2, function()
+
+            GAG2_EXACT_JOIN_STATE.Retrying =
+                false
+        end)
+    end)
+
+    return true
+end
+
+function GAG2HandlePendingExactJoinOnLoad()
+
+    local target =
+        GAG2ReadExactJoinTarget()
+
+    if not target then
+        return false
+    end
+
+    if GAG2ExactJoinMatchesCurrent(target) == true then
+
+        GAG2ClearExactJoinTarget(
+            "verified"
+        )
+
+        SetStatus(
+            "Exact server verified."
+        )
+
+        GAG2SetManualJoinStatus(
+            "Exact server verified."
+        )
+
+        print(
+            "[HOLY GAG2 EXACT JOIN]",
+            "verified exact server:",
+            tostring(game.PlaceId),
+            tostring(game.JobId)
+        )
+
+        return false
+    end
+
+    local wanted =
+        tostring(target.PlaceId)
+        .. ":"
+        .. tostring(target.JobId)
+
+    local current =
+        tostring(game.PlaceId)
+        .. ":"
+        .. tostring(game.JobId)
+
+    warn(
+        "[HOLY GAG2 EXACT JOIN]",
+        "landed in wrong server",
+        "| wanted:",
+        wanted,
+        "| current:",
+        current
+    )
+
+    return GAG2RetryExactJoinTarget(
+        target,
+        "arrival mismatch"
+    )
 end
 
 local function RejoinServer()
@@ -648,7 +1121,7 @@ function GAG2ParseManualJoinTarget(text)
         )
 
     if text == "" then
-        return nil, "Paste placeId:JobId."
+        return nil, "Paste full placeId:JobId."
     end
 
     local placeId =
@@ -705,23 +1178,16 @@ function GAG2ParseManualJoinTarget(text)
         CleanText(jobId)
             :gsub("[^%w%-]", "")
 
-    if jobId == ""
-    or #jobId < 10 then
-        return nil, "Invalid JobId."
-    end
-
-    local placeWasInferred =
-        false
-
     if not placeId
     or placeId <= 0 then
 
-        placeWasInferred =
-            true
+        return nil,
+            "JobId-only blocked. Paste full placeId:JobId from Discord."
+    end
 
-        placeId =
-            tonumber(game.PlaceId)
-            or GROW_A_GARDEN_2_PLACE_ID
+    if jobId == ""
+    or #jobId < 10 then
+        return nil, "Invalid JobId."
     end
 
     return {
@@ -733,7 +1199,7 @@ function GAG2ParseManualJoinTarget(text)
                 jobId
             ),
         PlaceWasInferred =
-            placeWasInferred,
+            false,
         KnownPlace =
             IsGAG2KnownPlace(
                 placeId
@@ -794,7 +1260,7 @@ function GAG2SetManualJoinTargetText(text)
         if CleanText(GAG2_MANUAL_JOIN_STATE.TargetText) == "" then
 
             GAG2_MANUAL_JOIN_STATE.StatusText =
-                "Paste JobId."
+                "Paste full placeId:JobId."
 
         else
 
@@ -819,12 +1285,12 @@ function GAG2CopyCurrentJoinCode()
             payload
 
         GAG2SetManualJoinStatus(
-            "Copied current server."
+            "Copied current server code."
         )
 
         Notify(
             "Copied",
-            "Join code copied.",
+            "Current server code copied.",
             3
         )
 
@@ -866,6 +1332,22 @@ function GAG2ManualJoinServer()
         return false
     end
 
+    if parsed.KnownPlace ~= true then
+
+        GAG2SetManualJoinStatus(
+            "Unknown PlaceId: "
+            .. tostring(parsed.PlaceId)
+        )
+
+        Notify(
+            "Join Server",
+            "Unknown GAG2 PlaceId. Add it to known places first.",
+            5
+        )
+
+        return false
+    end
+
     if tonumber(parsed.PlaceId) == tonumber(game.PlaceId)
     and tostring(parsed.JobId) == tostring(game.JobId) then
 
@@ -900,34 +1382,42 @@ function GAG2ManualJoinServer()
     GAG2_MANUAL_JOIN_STATE.LastTargetText =
         parsed.JoinCode
 
+    GAG2SaveExactJoinTarget(
+        parsed.PlaceId,
+        parsed.JobId,
+        0,
+        "manual join"
+    )
+
     GAG2SetManualJoinStatus(
-        "Joining: "
+        "Exact joining: "
         .. tostring(parsed.JoinCode)
     )
 
     SetStatus(
-        "Joining: "
+        "Exact joining: "
         .. tostring(parsed.JoinCode)
     )
 
     local ok, err =
-        pcall(function()
-
-            TeleportService:TeleportToPlaceInstance(
-                parsed.PlaceId,
-                parsed.JobId,
-                LOCAL_PLAYER
-            )
-        end)
+        GAG2QueueExactJoin(
+            parsed.PlaceId,
+            parsed.JobId,
+            "manual join"
+        )
 
     if ok ~= true then
 
+        GAG2ClearExactJoinTarget(
+            "manual join call failed"
+        )
+
         GAG2SetManualJoinStatus(
-            "Join failed."
+            "Exact join failed."
         )
 
         SetStatus(
-            "Join failed: "
+            "Exact join failed: "
             .. tostring(err)
         )
 
@@ -1248,7 +1738,7 @@ function GAG2CreateManualJoinHud()
         Color3.fromRGB(125, 116, 145)
 
     input.PlaceholderText =
-        "placeId:JobId recommended..."
+        "required: placeId:JobId..."
 
     input.Text =
         GAG2_MANUAL_JOIN_STATE.TargetText
@@ -1367,7 +1857,7 @@ function GAG2CreateManualJoinHud()
         )
 
     copy.Text =
-        "Copy"
+        "Current"
 
     copy.Parent =
         frame
@@ -2019,7 +2509,7 @@ local SniperState = {
     LastPlayScreenPressAt = 0,
     PlayScreenClickAttempts = 0,
     PlayScreenMaxClickAttempts = 80,
-    AutoPlayClickInterval = 0.18,
+    AutoPlayClickInterval = 0.09,
     AutoPlayTimeout = 45,
     PlayScreenClearAt = 0,
     PlayScreenClearGrace = 0.35,
@@ -3314,6 +3804,1775 @@ local function SniperFindPacketTable()
     return nil
 end
 
+--==================================================
+-- [4.52] SHOP AUTO BUY
+--==================================================
+
+local GAG2_SHOP_CATEGORIES = {
+    Seeds = {
+        ShopName = "SeedShop",
+        ItemsFolderName = "Items",
+        PacketShop = "SeedShop",
+        PacketName = "PurchaseSeed",
+        DisplayName = "Seeds",
+    },
+
+    Gear = {
+        ShopName = "GearShop",
+        ItemsFolderName = "Items",
+        PacketShop = "GearShop",
+        PacketName = "PurchaseGear",
+        DisplayName = "Gear",
+    },
+
+    Crates = {
+        ShopName = "CrateShop",
+        ItemsFolderName = "Items",
+        PacketShop = "CrateShop",
+        PacketName = "PurchaseCrate",
+        DisplayName = "Crates",
+    },
+}
+
+local GAG2_SHOP_STATE = {
+    Started = false,
+    UiLoopRunning = false,
+    WorkerRunning = false,
+
+    Enabled = {
+        Seeds = false,
+        Gear = false,
+        Crates = false,
+    },
+
+    Selected = {
+        Seeds = {},
+        Gear = {},
+        Crates = {},
+    },
+
+    BurstAttempts = {
+        Seeds = {},
+        Gear = {},
+        Crates = {},
+    },
+
+    Queue = {},
+    QueuedKeys = {},
+
+    Connections = {},
+    ItemConnections = {},
+
+    PacketCache = {},
+    LastPacketResolveAt = {},
+
+    HiddenBurstDelay = 0,
+    HiddenMaxBurstFires = 120,
+
+    LastStockText = "Loading stock...",
+}
+
+local GAG2_SHOP_DROPDOWNS = {
+    Seeds = nil,
+    Gear = nil,
+    Crates = nil,
+}
+
+local function GAG2ShopGetStockRoot()
+
+    return ReplicatedStorage:FindFirstChild("StockValues")
+end
+
+local function GAG2ShopGetShopFolder(category)
+
+    local info =
+        GAG2_SHOP_CATEGORIES[category]
+
+    if not info then
+        return nil
+    end
+
+    local root =
+        GAG2ShopGetStockRoot()
+
+    return root
+        and root:FindFirstChild(info.ShopName)
+        or nil
+end
+
+local function GAG2ShopGetItemsFolder(category)
+
+    local info =
+        GAG2_SHOP_CATEGORIES[category]
+
+    local shop =
+        GAG2ShopGetShopFolder(category)
+
+    if not info
+    or not shop then
+        return nil
+    end
+
+    return shop:FindFirstChild(
+        info.ItemsFolderName
+    )
+end
+
+local function GAG2ShopCleanItemName(itemName)
+
+    itemName =
+        CleanText(itemName)
+
+    if itemName == ""
+    or itemName == "---" then
+        return ""
+    end
+
+    local beforePipe =
+        itemName:match("^(.-)%s+|%s+")
+
+    if beforePipe
+    and CleanText(beforePipe) ~= "" then
+
+        itemName =
+            CleanText(beforePipe)
+    end
+
+    return itemName
+end
+
+local function GAG2ShopGetStockValueObject(category, itemName)
+
+    local items =
+        GAG2ShopGetItemsFolder(category)
+
+    if not items then
+        return nil
+    end
+
+    itemName =
+        GAG2ShopCleanItemName(itemName)
+
+    if itemName == "" then
+        return nil
+    end
+
+    return items:FindFirstChild(itemName)
+end
+
+local function GAG2ShopReadStock(category, itemName)
+
+    local object =
+        GAG2ShopGetStockValueObject(
+            category,
+            itemName
+        )
+
+    if not object
+    or object:IsA("ValueBase") ~= true then
+
+        return nil
+    end
+
+    return tonumber(object.Value)
+end
+
+local function GAG2ShopGetRestockKey(category)
+
+    local shop =
+        GAG2ShopGetShopFolder(category)
+
+    if not shop then
+        return "0"
+    end
+
+    local nextRestock =
+        shop:FindFirstChild("UnixNextRestock")
+
+    local lastRestock =
+        shop:FindFirstChild("UnixLastRestock")
+
+    if nextRestock
+    and nextRestock:IsA("ValueBase") then
+
+        return tostring(nextRestock.Value)
+    end
+
+    if lastRestock
+    and lastRestock:IsA("ValueBase") then
+
+        return tostring(lastRestock.Value)
+    end
+
+    return "0"
+end
+
+local function GAG2ShopGetNextRestockTime()
+
+    local best =
+        nil
+
+    for category in pairs(GAG2_SHOP_CATEGORIES) do
+
+        local shop =
+            GAG2ShopGetShopFolder(category)
+
+        local nextRestock =
+            shop
+            and shop:FindFirstChild("UnixNextRestock")
+
+        if nextRestock
+        and nextRestock:IsA("ValueBase") then
+
+            local value =
+                tonumber(nextRestock.Value)
+
+            if value
+            and value > 0
+            and (
+                best == nil
+                or value < best
+            ) then
+
+                best =
+                    value
+            end
+        end
+    end
+
+    return best
+end
+
+local function GAG2ShopFormatRestockTime()
+
+    local nextRestock =
+        GAG2ShopGetNextRestockTime()
+
+    if not nextRestock then
+        return "?"
+    end
+
+    return SniperFormatSeconds(
+        math.max(
+            0,
+            nextRestock - os.time()
+        )
+    )
+end
+
+local function GAG2ShopNormalizeSelection(value)
+
+    local selected =
+        {}
+
+    local function add(itemName)
+
+        itemName =
+            GAG2ShopCleanItemName(itemName)
+
+        if itemName == "" then
+            return
+        end
+
+        selected[itemName] =
+            true
+    end
+
+    if type(value) == "table" then
+
+        for _, itemName in ipairs(value) do
+            add(itemName)
+        end
+
+        for itemName, enabled in pairs(value) do
+
+            if enabled == true then
+                add(itemName)
+            end
+        end
+
+    elseif type(value) == "string" then
+
+        add(value)
+    end
+
+    return selected
+end
+
+local GAG2_SHOP_PRICE_CACHE = {
+    Built = false,
+    LastGuiScanAt = 0,
+    Prices = {
+        Seeds = {},
+        Gear = {},
+        Crates = {},
+    },
+}
+
+local GAG2ShopReadPrice =
+    nil
+
+local function GAG2ShopGetSortScore(category, itemName)
+
+    if type(GAG2ShopReadPrice) ~= "function" then
+        return nil, false
+    end
+
+    local price =
+        GAG2ShopReadPrice(
+            category,
+            itemName
+        )
+
+    if price then
+
+        return tonumber(price),
+            true
+    end
+
+    return nil,
+        false
+end
+
+local function GAG2ShopParsePriceNumber(value)
+
+    local text =
+        CleanText(
+            tostring(value or "")
+                :gsub("<[^>]->", "")
+                :gsub("<.->", "")
+        )
+
+    if text == "" then
+        return nil
+    end
+
+    local lowerText =
+        text:lower()
+
+    if lowerText:find("robux", 1, true)
+    or lowerText:find("r$", 1, true) then
+        return nil
+    end
+
+    if not text:find("¢", 1, true)
+    and not lowerText:find("sheck", 1, true)
+    and not lowerText:find("cost", 1, true) then
+
+        return nil
+    end
+
+    local numberText =
+        text:match("([%d,%.]+)%s*¢")
+        or text:match("¢%s*([%d,%.]+)")
+        or text:match("([%d,%.]+)%s*[Ss]heckles?")
+        or text:match("[Cc]ost[%s:]+([%d,%.]+)")
+
+    if not numberText then
+        return nil
+    end
+
+    numberText =
+        tostring(numberText)
+            :gsub(",", "")
+            :gsub("%s+", "")
+
+    return tonumber(numberText)
+end
+
+local function GAG2ShopBuildNameToCategoryMap()
+
+    local map =
+        {}
+
+    for category in pairs(GAG2_SHOP_CATEGORIES) do
+
+        local items =
+            GAG2ShopGetItemsFolder(category)
+
+        if items then
+
+            for _, child in ipairs(items:GetChildren()) do
+
+                if child:IsA("ValueBase") then
+
+                    map[child.Name] =
+                        category
+                end
+            end
+        end
+    end
+
+    return map
+end
+
+local function GAG2ShopCachePrice(category, itemName, price)
+
+    category =
+        CleanText(category)
+
+    itemName =
+        GAG2ShopCleanItemName(itemName)
+
+    price =
+        tonumber(price)
+
+    if not GAG2_SHOP_CATEGORIES[category]
+    or itemName == ""
+    or not price
+    or price <= 0 then
+        return
+    end
+
+    GAG2_SHOP_PRICE_CACHE.Prices[category] =
+        GAG2_SHOP_PRICE_CACHE.Prices[category]
+        or {}
+
+    GAG2_SHOP_PRICE_CACHE.Prices[category][itemName] =
+        price
+end
+
+local function GAG2ShopSafePairs(value)
+
+    if type(value) ~= "table" then
+        return {}
+    end
+
+    local ok, rows =
+        pcall(function()
+
+            local result =
+                {}
+
+            for key, child in pairs(value) do
+
+                table.insert(result, {
+                    Key = key,
+                    Value = child,
+                })
+            end
+
+            return result
+        end)
+
+    if ok == true
+    and type(rows) == "table" then
+        return rows
+    end
+
+    return {}
+end
+
+local function GAG2ShopLooksLikePriceKey(key)
+
+    local lowerKey =
+        tostring(key or ""):lower()
+
+    if lowerKey:find("robux", 1, true) then
+        return false
+    end
+
+    return lowerKey == "cost"
+        or lowerKey == "price"
+        or lowerKey == "sheckles"
+        or lowerKey == "buyprice"
+        or lowerKey == "purchaseprice"
+        or lowerKey:find("cost", 1, true) ~= nil
+        or lowerKey:find("price", 1, true) ~= nil
+end
+
+local function GAG2ShopFindModulePrices(value, nameToCategory, depth, seen)
+
+    if type(value) ~= "table" then
+        return
+    end
+
+    if depth > 7 then
+        return
+    end
+
+    if seen[value] == true then
+        return
+    end
+
+    seen[value] =
+        true
+
+    local possibleName =
+        nil
+
+    for _, row in ipairs(GAG2ShopSafePairs(value)) do
+
+        if type(row.Key) == "string"
+        and (
+            row.Key == "Name"
+            or row.Key == "DisplayName"
+            or row.Key == "ItemName"
+            or row.Key == "SeedName"
+            or row.Key == "GearName"
+            or row.Key == "CrateName"
+            or row.Key == "PlantName"
+        )
+        and type(row.Value) == "string" then
+
+            possibleName =
+                CleanText(row.Value)
+        end
+    end
+
+    if possibleName
+    and nameToCategory[possibleName] then
+
+        for _, row in ipairs(GAG2ShopSafePairs(value)) do
+
+            if GAG2ShopLooksLikePriceKey(row.Key)
+            and tonumber(row.Value) then
+
+                GAG2ShopCachePrice(
+                    nameToCategory[possibleName],
+                    possibleName,
+                    row.Value
+                )
+            end
+        end
+    end
+
+    for _, row in ipairs(GAG2ShopSafePairs(value)) do
+
+        if type(row.Key) == "string"
+        and nameToCategory[row.Key]
+        and type(row.Value) == "table" then
+
+            for _, childRow in ipairs(GAG2ShopSafePairs(row.Value)) do
+
+                if GAG2ShopLooksLikePriceKey(childRow.Key)
+                and tonumber(childRow.Value) then
+
+                    GAG2ShopCachePrice(
+                        nameToCategory[row.Key],
+                        row.Key,
+                        childRow.Value
+                    )
+                end
+            end
+        end
+
+        if type(row.Value) == "table" then
+
+            GAG2ShopFindModulePrices(
+                row.Value,
+                nameToCategory,
+                depth + 1,
+                seen
+            )
+        end
+    end
+end
+
+local function GAG2ShopBuildModulePriceCache()
+
+    if GAG2_SHOP_PRICE_CACHE.Built == true then
+        return
+    end
+
+    GAG2_SHOP_PRICE_CACHE.Built =
+        true
+
+    local nameToCategory =
+        GAG2ShopBuildNameToCategoryMap()
+
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild("SharedModules")
+
+    if not sharedModules then
+        return
+    end
+
+    local preferredModules = {
+        "CrateData",
+        "GearShopData",
+        "SeedShopData",
+        "SeedData",
+        "SeedsData",
+        "PlantData",
+        "CropData",
+        "ShopData",
+        "ItemData",
+        "EconomyData",
+        "ProductData",
+        "StoreData",
+    }
+
+    local scanned =
+        {}
+
+    for _, moduleName in ipairs(preferredModules) do
+
+        local module =
+            sharedModules:FindFirstChild(
+                moduleName,
+                true
+            )
+
+        if module
+        and module:IsA("ModuleScript")
+        and scanned[module] ~= true then
+
+            scanned[module] =
+                true
+
+            local ok, result =
+                pcall(function()
+
+                    return require(module)
+                end)
+
+            if ok == true
+            and type(result) == "table" then
+
+                GAG2ShopFindModulePrices(
+                    result,
+                    nameToCategory,
+                    0,
+                    {}
+                )
+            end
+        end
+    end
+end
+
+local function GAG2ShopScanGuiPrices()
+
+    -- Disabled for performance.
+    -- Scanning PlayerGui descendants for prices causes client stutter on low-end/cloud devices.
+    -- Prices now come from replicated module data, attributes, or cached values only.
+
+    return
+end
+
+GAG2ShopReadPrice = function(category, itemName)
+
+    category =
+        CleanText(category)
+
+    itemName =
+        GAG2ShopCleanItemName(itemName)
+
+    if itemName == "" then
+        return nil
+    end
+
+    local cachedBucket =
+        GAG2_SHOP_PRICE_CACHE.Prices[category]
+
+    if cachedBucket
+    and tonumber(cachedBucket[itemName]) then
+
+        return tonumber(
+            cachedBucket[itemName]
+        )
+    end
+
+    local object =
+        GAG2ShopGetStockValueObject(
+            category,
+            itemName
+        )
+
+    if object then
+
+        local attrNames = {
+            "Price",
+            "Cost",
+            "Sheckles",
+            "BuyPrice",
+            "PurchasePrice",
+        }
+
+        for _, attrName in ipairs(attrNames) do
+
+            local ok, value =
+                pcall(function()
+
+                    return object:GetAttribute(attrName)
+                end)
+
+            if ok == true
+            and tonumber(value) then
+
+                GAG2ShopCachePrice(
+                    category,
+                    itemName,
+                    value
+                )
+
+                return tonumber(value)
+            end
+        end
+
+        for _, child in ipairs(object:GetChildren()) do
+
+            local childName =
+                tostring(child.Name):lower()
+
+            if child:IsA("ValueBase")
+            and not childName:find("robux", 1, true)
+            and (
+                childName:find("price", 1, true)
+                or childName:find("cost", 1, true)
+                or childName:find("sheckle", 1, true)
+            )
+            and tonumber(child.Value) then
+
+                GAG2ShopCachePrice(
+                    category,
+                    itemName,
+                    child.Value
+                )
+
+                return tonumber(child.Value)
+            end
+        end
+    end
+
+    GAG2ShopBuildModulePriceCache()
+
+    cachedBucket =
+        GAG2_SHOP_PRICE_CACHE.Prices[category]
+
+    return cachedBucket
+        and tonumber(cachedBucket[itemName])
+        or nil
+end
+
+local function GAG2ShopFormatPrice(category, itemName)
+
+    local price =
+        GAG2ShopReadPrice(
+            category,
+            itemName
+        )
+
+    if not price then
+        return "¢?"
+    end
+
+    return SniperFormatMoney(
+        price
+    )
+end
+
+local function GAG2ShopGetSortedItemRows(category)
+
+    local rows =
+        {}
+
+    local items =
+        GAG2ShopGetItemsFolder(category)
+
+    if not items then
+        return rows
+    end
+
+    for _, child in ipairs(items:GetChildren()) do
+
+        if child:IsA("ValueBase") then
+
+            local price =
+                GAG2ShopReadPrice(
+                    category,
+                    child.Name
+                )
+
+            table.insert(rows, {
+                Name = child.Name,
+                Price = price,
+            })
+        end
+    end
+
+    table.sort(rows, function(a, b)
+
+        local aPrice =
+            tonumber(a.Price)
+
+        local bPrice =
+            tonumber(b.Price)
+
+        if aPrice
+        and bPrice
+        and aPrice ~= bPrice then
+
+            return aPrice > bPrice
+        end
+
+        if aPrice
+        and not bPrice then
+            return true
+        end
+
+        if bPrice
+        and not aPrice then
+            return false
+        end
+
+        return tostring(a.Name)
+            < tostring(b.Name)
+    end)
+
+    return rows
+end
+
+local function GAG2ShopMakeDropdownDisplayName(category, itemName)
+
+    itemName =
+        GAG2ShopCleanItemName(itemName)
+
+    if itemName == "" then
+        return ""
+    end
+
+    return itemName
+        .. " | "
+        .. GAG2ShopFormatPrice(
+            category,
+            itemName
+        )
+end
+
+local function GAG2ShopGetItemNames(category)
+
+    local values =
+        {}
+
+    for _, row in ipairs(GAG2ShopGetSortedItemRows(category)) do
+
+        local displayName =
+            GAG2ShopMakeDropdownDisplayName(
+                category,
+                row.Name
+            )
+
+        if displayName ~= "" then
+
+            table.insert(
+                values,
+                displayName
+            )
+        end
+    end
+
+    return values
+end
+
+local function GAG2ShopBuildCurrentStockText()
+
+    local lines = {
+        '<font color="rgb(196,181,253)"><b>Current Stock</b></font>',
+        "Restock in: " .. GAG2ShopFormatRestockTime(),
+    }
+
+    for _, category in ipairs({
+        "Seeds",
+        "Gear",
+        "Crates",
+    }) do
+
+        local info =
+            GAG2_SHOP_CATEGORIES[category]
+
+        table.insert(lines, "")
+        table.insert(
+            lines,
+            '<font color="rgb(196,181,253)"><b>'
+            .. tostring(info.DisplayName)
+            .. '</b></font>'
+        )
+
+        local rows =
+            {}
+
+        local items =
+            GAG2ShopGetItemsFolder(category)
+
+        if items then
+
+            for _, child in ipairs(items:GetChildren()) do
+
+                if child:IsA("ValueBase") then
+
+                    local stock =
+                        tonumber(child.Value)
+                        or 0
+
+                    if stock > 0 then
+
+                        table.insert(rows, {
+                            Name = child.Name,
+                            Stock = stock,
+                            Price =
+                                GAG2ShopReadPrice(
+                                    category,
+                                    child.Name
+                                ),
+                        })
+                    end
+                end
+            end
+        end
+
+        table.sort(rows, function(a, b)
+
+            local aPrice =
+                tonumber(a.Price)
+
+            local bPrice =
+                tonumber(b.Price)
+
+            if aPrice
+            and bPrice
+            and aPrice ~= bPrice then
+
+                return aPrice > bPrice
+            end
+
+            if aPrice
+            and not bPrice then
+                return true
+            end
+
+            if bPrice
+            and not aPrice then
+                return false
+            end
+
+            return tostring(a.Name)
+                < tostring(b.Name)
+        end)
+
+        if #rows <= 0 then
+
+            table.insert(
+                lines,
+                "None"
+            )
+
+        else
+
+            for index, row in ipairs(rows) do
+
+                if index > 14 then
+
+                    table.insert(
+                        lines,
+                        "+ "
+                        .. tostring(#rows - 14)
+                        .. " more"
+                    )
+
+                    break
+                end
+
+                table.insert(
+                    lines,
+                    tostring(row.Name)
+                    .. " x"
+                    .. tostring(row.Stock)
+                    .. " | "
+                    .. (
+                        row.Price
+                        and SniperFormatMoney(
+                            row.Price
+                        )
+                        or "¢?"
+                    )
+                )
+            end
+        end
+    end
+
+    return table.concat(
+        lines,
+        "\n"
+    )
+end
+
+local function GAG2ShopRefreshStockLabel()
+
+    GAG2_SHOP_STATE.LastStockText =
+        GAG2ShopBuildCurrentStockText()
+
+    if Options.HolyGAG2ShopCurrentStock then
+
+        Options.HolyGAG2ShopCurrentStock:SetText(
+            GAG2_SHOP_STATE.LastStockText
+        )
+    end
+end
+
+local function GAG2ShopRefreshDropdown(category)
+
+    local dropdown =
+        GAG2_SHOP_DROPDOWNS[category]
+
+    if not dropdown then
+        return
+    end
+
+    local values =
+        GAG2ShopGetItemNames(category)
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+end
+
+local function GAG2ShopRefreshAllDropdowns()
+
+    for category in pairs(GAG2_SHOP_CATEGORIES) do
+
+        GAG2ShopRefreshDropdown(
+            category
+        )
+    end
+end
+
+local function GAG2ShopResolvePacket(category)
+
+    local cached =
+        GAG2_SHOP_STATE.PacketCache[category]
+
+    if cached ~= nil then
+        return cached
+    end
+
+    local lastResolve =
+        tonumber(
+            GAG2_SHOP_STATE.LastPacketResolveAt[category]
+        )
+        or 0
+
+    if os.clock() - lastResolve < 10 then
+        return nil
+    end
+
+    GAG2_SHOP_STATE.LastPacketResolveAt[category] =
+        os.clock()
+
+    local info =
+        GAG2_SHOP_CATEGORIES[category]
+
+    if not info then
+        return nil
+    end
+
+    local packets =
+        SniperFindPacketTable()
+
+    if type(packets) ~= "table" then
+        return nil
+    end
+
+    local shopTable =
+        SniperSafeRawGet(
+            packets,
+            info.PacketShop
+        )
+
+    if type(shopTable) ~= "table" then
+        return nil
+    end
+
+    local packet =
+        SniperSafeRawGet(
+            shopTable,
+            info.PacketName
+        )
+
+    local ok, fireFunction =
+        pcall(function()
+
+            return packet.Fire
+        end)
+
+    if ok == true
+    and type(fireFunction) == "function" then
+
+        GAG2_SHOP_STATE.PacketCache[category] =
+            packet
+
+        return packet
+    end
+
+    return nil
+end
+
+local function GAG2ShopFirePurchase(category, itemName)
+
+    itemName =
+        GAG2ShopCleanItemName(itemName)
+
+    if itemName == "" then
+        return false
+    end
+
+    local packet =
+        GAG2ShopResolvePacket(
+            category
+        )
+
+    if not packet then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            packet:Fire(
+                itemName
+            )
+        end)
+
+    if ok ~= true then
+
+        ok =
+            pcall(function()
+
+                packet.Fire(
+                    packet,
+                    itemName
+                )
+            end)
+    end
+
+    return ok == true
+end
+
+local function GAG2ShopGetBurstBucket(category)
+
+    GAG2_SHOP_STATE.BurstAttempts =
+        type(GAG2_SHOP_STATE.BurstAttempts) == "table"
+        and GAG2_SHOP_STATE.BurstAttempts
+        or {}
+
+    GAG2_SHOP_STATE.BurstAttempts[category] =
+        type(GAG2_SHOP_STATE.BurstAttempts[category]) == "table"
+        and GAG2_SHOP_STATE.BurstAttempts[category]
+        or {}
+
+    return GAG2_SHOP_STATE.BurstAttempts[category]
+end
+
+local function GAG2ShopGetBurstKey(category, itemName, stock)
+
+    return tostring(category)
+        .. ":"
+        .. CleanText(itemName)
+        .. ":"
+        .. tostring(GAG2ShopGetRestockKey(category))
+        .. ":stock:"
+        .. tostring(math.floor(tonumber(stock) or 0))
+end
+
+local function GAG2ShopBurstAlreadyAttempted(category, itemName, stock)
+
+    local bucket =
+        GAG2ShopGetBurstBucket(
+            category
+        )
+
+    local burstKey =
+        GAG2ShopGetBurstKey(
+            category,
+            itemName,
+            stock
+        )
+
+    return bucket[itemName] == burstKey
+end
+
+local function GAG2ShopMarkBurstAttempt(category, itemName, stock)
+
+    local bucket =
+        GAG2ShopGetBurstBucket(
+            category
+        )
+
+    bucket[itemName] =
+        GAG2ShopGetBurstKey(
+            category,
+            itemName,
+            stock
+        )
+end
+
+local function GAG2ShopClearBurstAttempt(category, itemName)
+
+    local bucket =
+        GAG2ShopGetBurstBucket(
+            category
+        )
+
+    if itemName then
+
+        bucket[itemName] =
+            nil
+
+    else
+
+        GAG2_SHOP_STATE.BurstAttempts[category] =
+            {}
+    end
+end
+
+local function GAG2ShopCanBuy(category, itemName)
+
+    if GAG2_SHOP_STATE.Enabled[category] ~= true then
+        return false
+    end
+
+    if type(GAG2_SHOP_STATE.Selected[category]) ~= "table"
+    or GAG2_SHOP_STATE.Selected[category][itemName] ~= true then
+        return false
+    end
+
+    local stock =
+        GAG2ShopReadStock(
+            category,
+            itemName
+        )
+
+    if stock == nil
+    or stock <= 0 then
+        return false
+    end
+
+    if GAG2ShopBurstAlreadyAttempted(
+        category,
+        itemName,
+        stock
+    ) == true then
+
+        return false
+    end
+
+    return true
+end
+
+local function GAG2ShopEnqueue(category, itemName)
+
+    itemName =
+        GAG2ShopCleanItemName(itemName)
+
+    if itemName == "" then
+        return
+    end
+
+    if GAG2ShopCanBuy(category, itemName) ~= true then
+        return
+    end
+
+    local key =
+        tostring(category)
+        .. ":"
+        .. itemName
+
+    if GAG2_SHOP_STATE.QueuedKeys[key] == true then
+        return
+    end
+
+    GAG2_SHOP_STATE.QueuedKeys[key] =
+        true
+
+    table.insert(GAG2_SHOP_STATE.Queue, {
+        Category = category,
+        ItemName = itemName,
+        Key = key,
+    })
+
+    GAG2ShopStartWorker()
+end
+
+function GAG2ShopStartWorker()
+
+    if GAG2_SHOP_STATE.WorkerRunning == true then
+        return
+    end
+
+    GAG2_SHOP_STATE.WorkerRunning =
+        true
+
+    task.spawn(function()
+
+        while #GAG2_SHOP_STATE.Queue > 0 do
+
+            local job =
+                table.remove(
+                    GAG2_SHOP_STATE.Queue,
+                    1
+                )
+
+            if job
+            and job.Key then
+
+                GAG2_SHOP_STATE.QueuedKeys[job.Key] =
+                    nil
+            end
+
+            if job
+            and GAG2ShopCanBuy(
+                job.Category,
+                job.ItemName
+            ) == true then
+
+                local stock =
+                    GAG2ShopReadStock(
+                        job.Category,
+                        job.ItemName
+                    )
+
+                stock =
+                    math.max(
+                        0,
+                        math.floor(
+                            tonumber(stock)
+                            or 0
+                        )
+                    )
+
+                if stock > 0 then
+
+                    GAG2ShopMarkBurstAttempt(
+                        job.Category,
+                        job.ItemName,
+                        stock
+                    )
+
+                    local fireCount =
+                        math.min(
+                            stock,
+                            math.floor(
+                                tonumber(GAG2_SHOP_STATE.HiddenMaxBurstFires)
+                                or 120
+                            )
+                        )
+
+                    for fireIndex = 1, fireCount do
+
+                        if GAG2_SHOP_STATE.Enabled[job.Category] ~= true then
+                            break
+                        end
+
+                        if type(GAG2_SHOP_STATE.Selected[job.Category]) ~= "table"
+                        or GAG2_SHOP_STATE.Selected[job.Category][job.ItemName] ~= true then
+                            break
+                        end
+
+                        GAG2ShopFirePurchase(
+                            job.Category,
+                            job.ItemName
+                        )
+
+                        local burstDelay =
+                            tonumber(GAG2_SHOP_STATE.HiddenBurstDelay)
+                            or 0
+
+                        if burstDelay > 0 then
+
+                            task.wait(
+                                burstDelay
+                            )
+
+                        elseif fireIndex % 24 == 0 then
+
+                            task.wait()
+                        end
+                    end
+
+                    GAG2ShopRefreshStockLabel()
+                end
+            end
+
+            task.wait(
+                0.01
+            )
+        end
+
+        GAG2_SHOP_STATE.WorkerRunning =
+            false
+    end)
+end
+
+local function GAG2ShopEnqueueSelectedInStock(category)
+
+    local selected =
+        GAG2_SHOP_STATE.Selected[category]
+
+    if type(selected) ~= "table" then
+        return
+    end
+
+    for itemName, enabled in pairs(selected) do
+
+        if enabled == true then
+
+            GAG2ShopEnqueue(
+                category,
+                itemName
+            )
+        end
+    end
+end
+
+local function GAG2ShopEnqueueAllSelectedInStock()
+
+    for category in pairs(GAG2_SHOP_CATEGORIES) do
+
+        GAG2ShopEnqueueSelectedInStock(
+            category
+        )
+    end
+end
+
+local function GAG2ShopClearRestockBuys(category)
+
+    if category then
+
+        GAG2_SHOP_STATE.BurstAttempts[category] =
+            {}
+
+        return
+    end
+
+    for key in pairs(GAG2_SHOP_CATEGORIES) do
+
+        GAG2_SHOP_STATE.BurstAttempts[key] =
+            {}
+    end
+end
+
+local function GAG2ShopTrackItem(category, itemObject)
+
+    if typeof(itemObject) ~= "Instance"
+    or itemObject:IsA("ValueBase") ~= true then
+        return
+    end
+
+    local itemKey =
+        tostring(category)
+        .. ":"
+        .. tostring(itemObject.Name)
+
+    if GAG2_SHOP_STATE.ItemConnections[itemKey] then
+        return
+    end
+
+    GAG2_SHOP_STATE.ItemConnections[itemKey] =
+        itemObject.Changed:Connect(function()
+
+            local itemName =
+                itemObject.Name
+
+            local currentStock =
+                tonumber(itemObject.Value)
+                or 0
+
+            GAG2ShopClearBurstAttempt(
+                category,
+                itemName
+            )
+
+            GAG2ShopRefreshStockLabel()
+
+            if currentStock > 0 then
+
+                GAG2ShopEnqueue(
+                    category,
+                    itemName
+                )
+            end
+        end)
+end
+
+local function GAG2ShopTrackCategory(category)
+
+    local shop =
+        GAG2ShopGetShopFolder(category)
+
+    local items =
+        GAG2ShopGetItemsFolder(category)
+
+    if not shop
+    or not items then
+        return
+    end
+
+    for _, child in ipairs(items:GetChildren()) do
+
+        GAG2ShopTrackItem(
+            category,
+            child
+        )
+    end
+
+    table.insert(
+        GAG2_SHOP_STATE.Connections,
+        items.ChildAdded:Connect(function(child)
+
+            task.wait(
+                0.05
+            )
+
+            GAG2ShopTrackItem(
+                category,
+                child
+            )
+
+            GAG2ShopRefreshDropdown(
+                category
+            )
+
+            GAG2ShopRefreshStockLabel()
+
+            GAG2ShopEnqueue(
+                category,
+                child.Name
+            )
+        end)
+    )
+
+    table.insert(
+        GAG2_SHOP_STATE.Connections,
+        items.ChildRemoved:Connect(function()
+
+            GAG2ShopRefreshDropdown(
+                category
+            )
+
+            GAG2ShopRefreshStockLabel()
+        end)
+    )
+
+    local lastRestock =
+        shop:FindFirstChild("UnixLastRestock")
+
+    if lastRestock
+    and lastRestock:IsA("ValueBase") then
+
+        table.insert(
+            GAG2_SHOP_STATE.Connections,
+            lastRestock.Changed:Connect(function()
+
+                GAG2ShopClearRestockBuys(
+                    category
+                )
+
+                task.wait(
+                    0.15
+                )
+
+                GAG2ShopRefreshStockLabel()
+
+                GAG2ShopEnqueueSelectedInStock(
+                    category
+                )
+            end)
+        )
+    end
+
+    local nextRestock =
+        shop:FindFirstChild("UnixNextRestock")
+
+    if nextRestock
+    and nextRestock:IsA("ValueBase") then
+
+        table.insert(
+            GAG2_SHOP_STATE.Connections,
+            nextRestock.Changed:Connect(function()
+
+                GAG2ShopClearRestockBuys(
+                    category
+                )
+
+                task.wait(
+                    0.15
+                )
+
+                GAG2ShopRefreshStockLabel()
+
+                GAG2ShopEnqueueSelectedInStock(
+                    category
+                )
+            end)
+        )
+    end
+end
+
+function GAG2ShopStartUiLoop()
+
+    if GAG2_SHOP_STATE.UiLoopRunning == true then
+        return
+    end
+
+    GAG2_SHOP_STATE.UiLoopRunning =
+        true
+
+    task.spawn(function()
+
+        local lastBackupScan =
+            0
+
+        while GAG2_SHOP_STATE.UiLoopRunning == true do
+
+            GAG2ShopRefreshStockLabel()
+
+            if os.clock() - lastBackupScan >= 45 then
+
+                lastBackupScan =
+                    os.clock()
+
+                GAG2ShopRefreshAllDropdowns()
+                GAG2ShopEnqueueAllSelectedInStock()
+            end
+
+            task.wait(
+                1
+            )
+        end
+    end)
+end
+
+function GAG2ShopStart()
+
+    if GAG2_SHOP_STATE.Started == true then
+
+        GAG2ShopRefreshStockLabel()
+
+        return
+    end
+
+    GAG2_SHOP_STATE.Started =
+        true
+
+    task.spawn(function()
+
+        local started =
+            os.clock()
+
+        while os.clock() - started < 12 do
+
+            local root =
+                GAG2ShopGetStockRoot()
+
+            if root then
+                break
+            end
+
+            task.wait(
+                0.25
+            )
+        end
+
+        for category in pairs(GAG2_SHOP_CATEGORIES) do
+
+            GAG2ShopTrackCategory(
+                category
+            )
+        end
+
+        GAG2ShopRefreshAllDropdowns()
+        GAG2ShopRefreshStockLabel()
+        GAG2ShopEnqueueAllSelectedInStock()
+        GAG2ShopStartUiLoop()
+    end)
+end
+
+function GAG2ShopSetSelected(category, value)
+
+    GAG2_SHOP_STATE.Selected[category] =
+        GAG2ShopNormalizeSelection(
+            value
+        )
+
+    GAG2ShopEnqueueSelectedInStock(
+        category
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2ShopSetEnabled(category, value)
+
+    GAG2_SHOP_STATE.Enabled[category] =
+        value == true
+
+    GAG2ShopStart()
+
+    if value == true then
+
+        GAG2ShopClearRestockBuys(
+            category
+        )
+
+        GAG2ShopEnqueueSelectedInStock(
+            category
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2RestoreShopAutosaveState()
+
+    task.defer(function()
+
+        for category in pairs(GAG2_SHOP_CATEGORIES) do
+
+            local toggleName =
+                "HolyGAG2AutoBuy"
+                .. tostring(category)
+
+            local dropdownName =
+                "HolyGAG2Shop"
+                .. tostring(category)
+
+            if Toggles[toggleName] then
+
+                GAG2_SHOP_STATE.Enabled[category] =
+                    Toggles[toggleName].Value == true
+            end
+
+            if Options[dropdownName] then
+
+                GAG2_SHOP_STATE.Selected[category] =
+                    GAG2ShopNormalizeSelection(
+                        Options[dropdownName].Value
+                    )
+            end
+        end
+
+        GAG2ShopStart()
+
+        task.wait(
+            0.5
+        )
+
+        GAG2ShopEnqueueAllSelectedInStock()
+    end)
+end
+
 local function SniperFindWildBuyPacket()
 
     if SniperState.BuyPacket then
@@ -3462,6 +5721,86 @@ function GAG2GuiObjectVisible(instance)
     return true
 end
 
+local function GAG2FindVisibleTextObjectByKeywords(keywords, maxScan)
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+
+    if not playerGui then
+        return nil, "", ""
+    end
+
+    local scanned =
+        0
+
+    for _, descendant in ipairs(playerGui:GetDescendants()) do
+
+        scanned += 1
+
+        if scanned > (
+            tonumber(maxScan)
+            or 9000
+        ) then
+            break
+        end
+
+        if descendant:IsA("TextLabel")
+        or descendant:IsA("TextButton")
+        or descendant:IsA("TextBox") then
+
+            local ok, rawText =
+                pcall(function()
+
+                    return descendant.Text
+                end)
+
+            local text =
+                ok == true
+                and CleanText(rawText)
+                or ""
+
+            local lowerText =
+                text:lower()
+
+            if text ~= ""
+            and GAG2GuiObjectVisible(descendant) == true then
+
+                for _, keyword in ipairs(keywords or {}) do
+
+                    local lowerKeyword =
+                        tostring(keyword or ""):lower()
+
+                    if lowerKeyword ~= ""
+                    and lowerText:find(lowerKeyword, 1, true) then
+
+                        return descendant,
+                            text,
+                            lowerText
+                    end
+                end
+            end
+        end
+    end
+
+    return nil, "", ""
+end
+
+local function GAG2IsFullyLoadedTextVisible()
+
+    local object, text =
+        GAG2FindVisibleTextObjectByKeywords(
+            {
+                "fully loaded",
+            },
+            9000
+        )
+
+    return object ~= nil,
+        text,
+        object
+end
+
 function GAG2GetPlayScreenTextObject()
 
     local playerGui =
@@ -3472,15 +5811,20 @@ function GAG2GetPlayScreenTextObject()
         return nil, ""
     end
 
+    local bestObject =
+        nil
+
+    local bestText =
+        ""
+
     local scanned =
         0
 
     for _, descendant in ipairs(playerGui:GetDescendants()) do
 
-        scanned =
-            scanned + 1
+        scanned += 1
 
-        if scanned > 5000 then
+        if scanned > 12000 then
             break
         end
 
@@ -3488,36 +5832,58 @@ function GAG2GetPlayScreenTextObject()
         or descendant:IsA("TextButton")
         or descendant:IsA("TextBox") then
 
-            local ok, text =
+            local ok, rawText =
                 pcall(function()
 
                     return descendant.Text
                 end)
 
-            text =
+            local textValue =
                 ok == true
-                and CleanText(text)
+                and CleanText(
+                    tostring(rawText or "")
+                        :gsub("<[^>]->", "")
+                        :gsub("<.->", "")
+                )
                 or ""
 
             local lowerText =
-                text:lower()
+                textValue:lower()
 
-            if text ~= ""
-            and GAG2GuiObjectVisible(descendant) == true then
+            if textValue ~= "" then
 
-                if (
-                    lowerText:find("press", 1, true)
-                    and lowerText:find("play", 1, true)
-                )
-                or lowerText:find("press any key", 1, true) then
+                local isLoadingText =
+                    lowerText:find("press any key", 1, true)
+                    or lowerText:find("key to play", 1, true)
+                    or lowerText:find("click to skip", 1, true)
+                    or lowerText:find("click to skip!", 1, true)
+                    or lowerText:find("fully loaded", 1, true)
+                    or lowerText:find("loading player data", 1, true)
+                    or (
+                        lowerText:find("press", 1, true)
+                        and lowerText:find("play", 1, true)
+                    )
 
-                    return descendant, text
+                if isLoadingText then
+
+                    bestObject =
+                        descendant
+
+                    bestText =
+                        textValue
+
+                    if GAG2GuiObjectVisible(descendant) == true then
+
+                        return descendant,
+                            textValue
+                    end
                 end
             end
         end
     end
 
-    return nil, ""
+    return bestObject,
+        bestText
 end
 
 function GAG2IsPlayScreenBlocking()
@@ -3596,212 +5962,16 @@ end
 
 function GAG2PressPlayScreen()
 
-    local now =
-        os.clock()
+    -- Disabled on purpose.
+    -- Physical key/mouse input is unsafe during GAG2 loading because it can hit
+    -- normal UI after the overlay changes.
 
-    if now - tonumber(SniperState.LastPlayScreenPressAt or 0) < 0.75 then
-        return false
+    if type(GAG2FireFinishLoadingRemoteSafe) == "function" then
+
+        return GAG2FireFinishLoadingRemoteSafe()
     end
 
-    local maxAttempts =
-        math.clamp(
-            tonumber(SniperState.PlayScreenMaxClickAttempts)
-            or 1,
-            1,
-            5
-        )
-
-    if tonumber(SniperState.PlayScreenClickAttempts or 0) >= maxAttempts then
-        return false
-    end
-
-    local object, text =
-        GAG2GetPlayScreenTextObject()
-
-    SniperState.LastPlayScreenPressAt =
-        now
-
-    SniperState.PlayScreenClickAttempts =
-        tonumber(SniperState.PlayScreenClickAttempts or 0)
-        + 1
-
-    local x, y =
-        GAG2GetPlayScreenClickPoint(
-            object
-        )
-
-    local didPress =
-        false
-
-    if VirtualInputManager then
-
-        pcall(function()
-
-            VirtualInputManager:SendMouseButtonEvent(
-                x,
-                y,
-                0,
-                true,
-                game,
-                0
-            )
-
-            task.wait(
-                0.06
-            )
-
-            VirtualInputManager:SendMouseButtonEvent(
-                x,
-                y,
-                0,
-                false,
-                game,
-                0
-            )
-
-            didPress =
-                true
-        end)
-
-        pcall(function()
-
-            VirtualInputManager:SendKeyEvent(
-                true,
-                Enum.KeyCode.Space,
-                false,
-                game
-            )
-
-            task.wait(
-                0.04
-            )
-
-            VirtualInputManager:SendKeyEvent(
-                false,
-                Enum.KeyCode.Space,
-                false,
-                game
-            )
-
-            didPress =
-                true
-        end)
-
-        pcall(function()
-
-            VirtualInputManager:SendKeyEvent(
-                true,
-                Enum.KeyCode.Return,
-                false,
-                game
-            )
-
-            task.wait(
-                0.04
-            )
-
-            VirtualInputManager:SendKeyEvent(
-                false,
-                Enum.KeyCode.Return,
-                false,
-                game
-            )
-
-            didPress =
-                true
-        end)
-
-        pcall(function()
-
-            VirtualInputManager:SendTouchEvent(
-                1,
-                Enum.UserInputState.Begin,
-                x,
-                y
-            )
-
-            task.wait(
-                0.05
-            )
-
-            VirtualInputManager:SendTouchEvent(
-                1,
-                Enum.UserInputState.End,
-                x,
-                y
-            )
-
-            didPress =
-                true
-        end)
-    end
-
-    if VirtualUser then
-
-        local camera =
-            workspace.CurrentCamera
-
-        local cameraFrame =
-            camera
-            and camera.CFrame
-            or CFrame.new()
-
-        pcall(function()
-
-            VirtualUser:Button1Down(
-                Vector2.new(
-                    x,
-                    y
-                ),
-                cameraFrame
-            )
-
-            task.wait(
-                0.06
-            )
-
-            VirtualUser:Button1Up(
-                Vector2.new(
-                    x,
-                    y
-                ),
-                cameraFrame
-            )
-
-            didPress =
-                true
-        end)
-
-        pcall(function()
-
-            VirtualUser:ClickButton1(
-                Vector2.new(
-                    x,
-                    y
-                )
-            )
-
-            didPress =
-                true
-        end)
-    end
-
-    print(
-        "[HOLY GAG2]",
-        "Play screen final click",
-        "| text:",
-        tostring(text),
-        "| x:",
-        tostring(x),
-        "| y:",
-        tostring(y),
-        "| input:",
-        didPress == true
-        and "yes"
-        or "no"
-    )
-
-    return didPress
+    return false
 end
 
 function GAG2GetLoadingGui()
@@ -3819,370 +5989,104 @@ end
 
 function GAG2ReadLoadingAttributes()
 
-    local loadingActive =
-        false
+    -- Loading-screen logic removed.
+    -- Never block sniper/shop/farm systems based on loading attributes.
 
-    local loadingDone =
-        false
-
-    pcall(function()
-
-        loadingActive =
-            LOCAL_PLAYER:GetAttribute("LoadingScreenActive") == true
-
-        loadingDone =
-            LOCAL_PLAYER:GetAttribute("LoadingScreenDone") == true
-    end)
-
-    return loadingActive,
-        loadingDone
+    return false,
+        true
 end
 
 function GAG2IsLoadingPlayScreenVisible()
 
-    -- Do not trust GAG2_AUTO_PLAY_STATE.Finished here.
-    -- The old version could mark Finished too early and stop clicking forever.
-
-    local blocking =
-        GAG2IsPlayScreenBlocking()
-
-    if blocking == true then
-        return true
-    end
-
-    local playerGui =
-        LOCAL_PLAYER
-        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
-
-    if playerGui then
-
-        local scanned =
-            0
-
-        for _, object in ipairs(playerGui:GetDescendants()) do
-
-            scanned += 1
-
-            if scanned > 8000 then
-                break
-            end
-
-            if object:IsA("TextLabel")
-            or object:IsA("TextButton")
-            or object:IsA("TextBox") then
-
-                local ok, rawText =
-                    pcall(function()
-
-                        return object.Text
-                    end)
-
-                local text =
-                    ok == true
-                    and tostring(rawText or ""):lower()
-                    or ""
-
-                if text ~= ""
-                and GAG2GuiObjectVisible(object) == true then
-
-                    if text:find("press any key", 1, true)
-                    or text:find("press any", 1, true)
-                    or text:find("tap anywhere", 1, true)
-                    or text:find("click anywhere", 1, true)
-                    or (
-                        text:find("press", 1, true)
-                        and text:find("play", 1, true)
-                    ) then
-
-                        return true
-                    end
-                end
-            end
-        end
-    end
+    -- Loading-screen logic removed.
+    -- Do not scan PlayerGui and do not block sniper buying.
 
     return false
 end
 
-function GAG2SendLoadingScreenClick()
+local function GAG2GetClickableGuiAncestor(object)
 
-    local camera =
-        workspace.CurrentCamera
+    local current =
+        object
 
-    if not camera then
-        return false
+    while typeof(current) == "Instance"
+    and current ~= game do
+
+        if current:IsA("TextButton")
+        or current:IsA("ImageButton") then
+
+            return current
+        end
+
+        current =
+            current.Parent
     end
 
-    local viewport =
-        camera.ViewportSize
+    return nil
+end
 
-    if typeof(viewport) ~= "Vector2"
-    or viewport.X <= 0
-    or viewport.Y <= 0 then
-        return false
-    end
+local function GAG2ActivateLoadingGuiObject(object)
 
-    local textObject =
-        select(
-            3,
-            GAG2IsPlayScreenBlocking()
+    local button =
+        GAG2GetClickableGuiAncestor(
+            object
         )
 
-    local points = {
-        {
-            math.floor(viewport.X * 0.50),
-            math.floor(viewport.Y * 0.55),
-        },
-        {
-            math.floor(viewport.X * 0.50),
-            math.floor(viewport.Y * 0.62),
-        },
-        {
-            math.floor(viewport.X * 0.50),
-            math.floor(viewport.Y * 0.48),
-        },
-    }
-
-    if typeof(textObject) == "Instance"
-    and textObject:IsA("GuiObject") then
-
-        pcall(function()
-
-            local position =
-                textObject.AbsolutePosition
-
-            local size =
-                textObject.AbsoluteSize
-
-            table.insert(points, 1, {
-                math.floor(position.X + (size.X / 2)),
-                math.floor(position.Y + (size.Y / 2)),
-            })
-        end)
+    if not button then
+        return false
     end
 
-    local didClick =
+    local activated =
         false
 
-    local function clickPoint(x, y)
+    pcall(function()
 
-        if VirtualInputManager then
+        button:Activate()
 
-            pcall(function()
+        activated =
+            true
+    end)
 
-                VirtualInputManager:SendMouseButtonEvent(
-                    x,
-                    y,
-                    0,
-                    true,
-                    game,
-                    0
-                )
-
-                task.wait(
-                    0.035
-                )
-
-                VirtualInputManager:SendMouseButtonEvent(
-                    x,
-                    y,
-                    0,
-                    false,
-                    game,
-                    0
-                )
-
-                didClick =
-                    true
-            end)
-
-            pcall(function()
-
-                VirtualInputManager:SendTouchEvent(
-                    1,
-                    Enum.UserInputState.Begin,
-                    x,
-                    y
-                )
-
-                task.wait(
-                    0.035
-                )
-
-                VirtualInputManager:SendTouchEvent(
-                    1,
-                    Enum.UserInputState.End,
-                    x,
-                    y
-                )
-
-                didClick =
-                    true
-            end)
-        end
-
-        if VirtualUser then
-
-            local cameraFrame =
-                camera.CFrame
-
-            pcall(function()
-
-                VirtualUser:Button1Down(
-                    Vector2.new(
-                        x,
-                        y
-                    ),
-                    cameraFrame
-                )
-
-                task.wait(
-                    0.035
-                )
-
-                VirtualUser:Button1Up(
-                    Vector2.new(
-                        x,
-                        y
-                    ),
-                    cameraFrame
-                )
-
-                didClick =
-                    true
-            end)
-
-            pcall(function()
-
-                VirtualUser:ClickButton1(
-                    Vector2.new(
-                        x,
-                        y
-                    )
-                )
-
-                didClick =
-                    true
-            end)
-        end
-    end
-
-    for _, point in ipairs(points) do
-
-        clickPoint(
-            point[1],
-            point[2]
-        )
-    end
-
-    if VirtualInputManager then
+    if type(firesignal) == "function" then
 
         pcall(function()
 
-            VirtualInputManager:SendKeyEvent(
-                true,
-                Enum.KeyCode.Space,
-                false,
-                game
+            firesignal(
+                button.MouseButton1Click
             )
 
-            task.wait(
-                0.025
-            )
-
-            VirtualInputManager:SendKeyEvent(
-                false,
-                Enum.KeyCode.Space,
-                false,
-                game
-            )
-
-            didClick =
+            activated =
                 true
         end)
 
         pcall(function()
 
-            VirtualInputManager:SendKeyEvent(
-                true,
-                Enum.KeyCode.Return,
-                false,
-                game
+            firesignal(
+                button.Activated
             )
 
-            task.wait(
-                0.025
-            )
-
-            VirtualInputManager:SendKeyEvent(
-                false,
-                Enum.KeyCode.Return,
-                false,
-                game
-            )
-
-            didClick =
+            activated =
                 true
         end)
     end
 
-    GAG2_AUTO_PLAY_STATE =
-        type(GAG2_AUTO_PLAY_STATE) == "table"
-        and GAG2_AUTO_PLAY_STATE
-        or {}
+    return activated
+end
 
-    GAG2_AUTO_PLAY_STATE.Attempts =
-        tonumber(GAG2_AUTO_PLAY_STATE.Attempts)
-        or 0
+function GAG2SendLoadingScreenClick()
 
-    print(
-        "[HOLY GAG2]",
-        "Loading spam click",
-        "| attempt:",
-        tostring(GAG2_AUTO_PLAY_STATE.Attempts),
-        "| ok:",
-        didClick == true
-        and "yes"
-        or "no",
-        "| points:",
-        tostring(#points)
-    )
+    -- Loading-screen automation removed.
+    -- Do not send input, do not click UI, do not touch camera.
 
-    return didClick
+    return false
 end
 
 function GAG2FireFinishLoadingRemoteSafe()
 
-    local gameEvents =
-        ReplicatedStorage:FindFirstChild("GameEvents")
+    -- Loading-screen automation removed.
+    -- Do not spoof Finish_Loading anymore.
 
-    if not gameEvents then
-        return false
-    end
-
-    local finishLoading =
-        gameEvents:FindFirstChild("Finish_Loading")
-
-    if not finishLoading
-    or finishLoading:IsA("RemoteEvent") ~= true then
-        return false
-    end
-
-    local ok =
-        pcall(function()
-
-            finishLoading:FireServer()
-        end)
-
-    if ok == true then
-
-        print(
-            "[HOLY GAG2]",
-            "Finish_Loading fired."
-        )
-    end
-
-    return ok == true
+    return false
 end
 
 function GAG2RestoreCameraSoft()
@@ -4220,219 +6124,107 @@ end
 
 function GAG2CleanupLoadingGuiVisualOnly()
 
-    local loadingGui =
-        GAG2GetLoadingGui()
+    -- Loading-screen cleanup removed.
+    -- Do not disable LoadingGui because it can desync camera/game state.
 
-    if not loadingGui then
-        return true
-    end
-
-    pcall(function()
-
-        loadingGui.Enabled =
-            false
-    end)
-
-    SniperState.LoadingGuiClearAt =
-        os.clock()
-
-    print(
-        "[HOLY GAG2]",
-        "LoadingGui visual cleanup."
-    )
-
-    return true
+    return false
 end
 
 function GAG2ForceClearLoadingGui()
 
-    return GAG2CleanupLoadingGuiVisualOnly()
+    -- Loading-screen cleanup removed.
+
+    return false
 end
 
-function GAG2AutoPlayLoadingStep()
+function GAG2HardFinishLoading(reason)
+
+    -- Loading-screen hard finish removed.
+    -- Do not set loading attributes, do not fire remotes, do not disable GUI.
 
     GAG2_AUTO_PLAY_STATE =
         type(GAG2_AUTO_PLAY_STATE) == "table"
         and GAG2_AUTO_PLAY_STATE
-        or {
-            Started = false,
-            Finished = false,
-            LastClick = 0,
-            Attempts = 0,
-        }
+        or {}
 
-    if GAG2_AUTO_PLAY_STATE.Finished == true then
-        return true
-    end
+    GAG2_AUTO_PLAY_STATE.Finished =
+        true
 
-    GAG2_AUTO_PLAY_STATE.Attempts =
-        tonumber(GAG2_AUTO_PLAY_STATE.Attempts)
-        or 0
+    GAG2_AUTO_PLAY_STATE.HardFinished =
+        true
 
-    local visible =
-        GAG2IsLoadingPlayScreenVisible()
+    if type(SniperState) == "table" then
 
-    local loadingActive, loadingDone =
-        GAG2ReadLoadingAttributes()
-
-    if visible == true then
-
-        GAG2_AUTO_PLAY_STATE.Attempts =
-            GAG2_AUTO_PLAY_STATE.Attempts
-            + 1
-
-        if GAG2_AUTO_PLAY_STATE.Attempts == 1
-        or GAG2_AUTO_PLAY_STATE.Attempts % 6 == 0 then
-
-            GAG2FireFinishLoadingRemoteSafe()
-        end
-
-        GAG2SendLoadingScreenClick()
-
-        GAG2_AUTO_PLAY_STATE.LastClick =
+        SniperState.PlayScreenClearAt =
             os.clock()
-
-        GAG2RestoreCameraSoft()
-
-        return false
-    end
-
-    if loadingDone == true
-    and loadingActive ~= true then
-
-        GAG2_AUTO_PLAY_STATE.Finished =
-            true
-
-        GAG2CleanupLoadingGuiVisualOnly()
-
-        print(
-            "[HOLY GAG2]",
-            "Loading auto-play finished",
-            "| attempts:",
-            tostring(GAG2_AUTO_PLAY_STATE.Attempts)
-        )
-
-        return true
     end
 
     return false
 end
 
-function GAG2ClientReadyForBuy()
+function GAG2AutoPlayLoadingStep()
 
-    if GAG2IsLoadingPlayScreenVisible() == true then
+    -- Loading-screen automation removed.
+    -- This function is kept only so old calls do not error.
 
-        GAG2StartLoadingGuiCleaner()
+    GAG2_AUTO_PLAY_STATE =
+        type(GAG2_AUTO_PLAY_STATE) == "table"
+        and GAG2_AUTO_PLAY_STATE
+        or {}
 
-        return false,
-            "Clicking loading screen..."
-    end
+    GAG2_AUTO_PLAY_STATE.Finished =
+        true
 
-    local loadingActive, loadingDone =
-        GAG2ReadLoadingAttributes()
-
-    if loadingActive == true
-    or loadingDone ~= true then
-
-        return false,
-            "Loading..."
-    end
-
-    if tonumber(SniperState.PlayScreenClearAt or 0) <= 0 then
+    if type(SniperState) == "table" then
 
         SniperState.PlayScreenClearAt =
             os.clock()
-
-        return false,
-            "Starting game..."
     end
 
-    local grace =
-        tonumber(SniperState.PlayScreenClearGrace)
-        or 0.35
+    return true
+end
 
-    if os.clock() - SniperState.PlayScreenClearAt < grace then
+function GAG2ClientReadyForBuy()
 
-        return false,
-            "Starting game..."
+    -- Loading-screen logic removed.
+    -- Sniper readiness is now based only on character + pet folders in SniperReadyToBuy().
+
+    if type(SniperState) == "table"
+    and tonumber(SniperState.PlayScreenClearAt or 0) <= 0 then
+
+        SniperState.PlayScreenClearAt =
+            os.clock()
     end
 
     return true,
         "Ready."
 end
 
-function GAG2StartLoadingGuiCleaner()
+function GAG2ReadyForFarmTeleport()
 
-    if GAG2_LOADING_GUI_CLEANER_RUNNING == true then
-        return
+    local character, root =
+        SniperGetCharacterRoot()
+
+    if not character
+    or not root then
+
+        return false,
+            "missing character"
     end
 
+    return true,
+        "character ready"
+end
+
+function GAG2StartLoadingGuiCleaner()
+
+    -- Loading-screen cleaner removed.
+    -- Do not run background loops, camera restores, GUI cleanup, or finish remotes.
+
     GAG2_LOADING_GUI_CLEANER_RUNNING =
-        true
+        false
 
-    task.spawn(function()
-
-        GAG2_AUTO_PLAY_STATE =
-            type(GAG2_AUTO_PLAY_STATE) == "table"
-            and GAG2_AUTO_PLAY_STATE
-            or {
-                Started = false,
-                Finished = false,
-                LastClick = 0,
-                Attempts = 0,
-            }
-
-        if GAG2_AUTO_PLAY_STATE.Started ~= true then
-
-            GAG2_AUTO_PLAY_STATE.Started =
-                true
-
-            task.wait(
-                0.75
-            )
-        end
-
-        local started =
-            os.clock()
-
-        local timeout =
-            math.clamp(
-                tonumber(SniperState.AutoPlayTimeout)
-                or 45,
-                10,
-                90
-            )
-
-        local interval =
-            math.clamp(
-                tonumber(SniperState.AutoPlayClickInterval)
-                or 0.18,
-                0.08,
-                0.5
-            )
-
-        while os.clock() - started < timeout do
-
-            if GAG2_AUTO_PLAY_STATE.Finished == true then
-                break
-            end
-
-            GAG2AutoPlayLoadingStep()
-
-            if GAG2_AUTO_PLAY_STATE.Finished == true then
-                break
-            end
-
-            task.wait(
-                interval
-            )
-        end
-
-        GAG2RestoreCameraSoft()
-
-        GAG2_LOADING_GUI_CLEANER_RUNNING =
-            false
-    end)
+    return false
 end
 
 local function SniperReadyToHop()
@@ -4465,15 +6257,6 @@ local function SniperReadyToBuy()
 
         return false,
             "Starting..."
-    end
-
-    local clientReady, clientText =
-        GAG2ClientReadyForBuy()
-
-    if clientReady ~= true then
-
-        return false,
-            clientText
     end
 
     local _, root =
@@ -4691,6 +6474,610 @@ local function SniperStopCharacterMotion(root)
 
         root.AssemblyAngularVelocity =
             Vector3.zero
+    end)
+end
+
+--==================================================
+-- [4.55] AUTO TP MIDDLE FARM
+--==================================================
+
+local function GAG2FarmStripRichText(value)
+
+    return CleanText(
+        tostring(value or "")
+            :gsub("<[^>]->", "")
+            :gsub("<.->", "")
+    )
+end
+
+local function GAG2ResolveOwnFarmPlot()
+
+    local gardens =
+        workspace:FindFirstChild("Gardens")
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+
+    if not gardens then
+        return nil, "workspace.Gardens missing"
+    end
+
+    if not playerGui then
+        return nil, "PlayerGui missing"
+    end
+
+    for _, gui in ipairs(playerGui:GetChildren()) do
+
+        if gui:IsA("BillboardGui")
+        and tostring(gui.Name):match("^Plot%d+$") then
+
+            for _, descendant in ipairs(gui:GetDescendants()) do
+
+                if descendant:IsA("TextLabel")
+                or descendant:IsA("TextButton") then
+
+                    local text =
+                        GAG2FarmStripRichText(
+                            descendant.Text
+                        ):lower()
+
+                    if text:find("your garden", 1, true) then
+
+                        local plot =
+                            gardens:FindFirstChild(
+                                gui.Name
+                            )
+
+                        if plot then
+
+                            return plot,
+                                "billboard: "
+                                .. tostring(gui.Name)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return nil, "own garden billboard not found"
+end
+
+local function GAG2IsMiddleFarmPart(part)
+
+    if typeof(part) ~= "Instance"
+    or part:IsA("BasePart") ~= true then
+        return false
+    end
+
+    local path =
+        PathOf(part)
+
+    if path:find("GardenZonePart", 1, true) then
+        return false
+    end
+
+    if path:find(".Plants.", 1, true) then
+        return false
+    end
+
+    if path:find("PlantAreaColumn", 1, true) then
+        return true
+    end
+
+    if path:find("PlantArea", 1, true) then
+        return true
+    end
+
+    if path:find("BedSection", 1, true) then
+        return true
+    end
+
+    return false
+end
+
+local function GAG2GetOwnFarmMiddlePosition()
+
+    local ownPlot, plotReason =
+        GAG2ResolveOwnFarmPlot()
+
+    if not ownPlot then
+        return nil, plotReason
+    end
+
+    local points =
+        {}
+
+    for _, descendant in ipairs(ownPlot:GetDescendants()) do
+
+        if GAG2IsMiddleFarmPart(descendant) == true then
+
+            table.insert(
+                points,
+                descendant.Position
+            )
+        end
+    end
+
+    local center =
+        nil
+
+    if #points > 0 then
+
+        local total =
+            Vector3.zero
+
+        for _, point in ipairs(points) do
+
+            total += point
+        end
+
+        center =
+            total / #points
+
+    else
+
+        local ok, cf =
+            pcall(function()
+
+                return ownPlot:GetBoundingBox()
+            end)
+
+        if ok == true
+        and typeof(cf) == "CFrame" then
+
+            center =
+                cf.Position
+
+        else
+
+            return nil, "farm middle failed"
+        end
+    end
+
+    local rayParams =
+        RaycastParams.new()
+
+    rayParams.FilterType =
+        Enum.RaycastFilterType.Exclude
+
+    rayParams.FilterDescendantsInstances = {
+        LOCAL_PLAYER.Character,
+    }
+
+    rayParams.IgnoreWater =
+        true
+
+    local rayResult =
+        workspace:Raycast(
+            center + Vector3.new(0, 80, 0),
+            Vector3.new(0, -180, 0),
+            rayParams
+        )
+
+    if rayResult
+    and rayResult.Position then
+
+        return rayResult.Position
+            + Vector3.new(0, 5, 0),
+            "middle: "
+            .. PathOf(ownPlot)
+    end
+
+    return center + Vector3.new(0, 7, 0),
+        "middle fallback: "
+        .. PathOf(ownPlot)
+end
+
+local function GAG2WaitForCharacterRoot(timeout)
+
+    local started =
+        os.clock()
+
+    timeout =
+        tonumber(timeout)
+        or 10
+
+    while os.clock() - started < timeout do
+
+        local character, root =
+            SniperGetCharacterRoot()
+
+        if character
+        and root then
+
+            return character,
+                root
+        end
+
+        task.wait(
+            0.15
+        )
+    end
+
+    return nil,
+        nil
+end
+
+function GAG2TeleportToMiddleFarmOnce(reason)
+
+    local character, root =
+        GAG2WaitForCharacterRoot(
+            12
+        )
+
+    if not character
+    or not root then
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
+            "missing character"
+
+        return false,
+            "missing character"
+    end
+
+    local position, positionReason =
+        GAG2GetOwnFarmMiddlePosition()
+
+    if typeof(position) ~= "Vector3" then
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
+            tostring(positionReason)
+
+        return false,
+            tostring(positionReason)
+    end
+
+    local lookVector =
+        root.CFrame.LookVector
+
+    if typeof(lookVector) ~= "Vector3"
+    or lookVector.Magnitude <= 0 then
+
+        lookVector =
+            Vector3.new(0, 0, -1)
+    end
+
+    local targetCFrame =
+        CFrame.new(
+            position,
+            position + lookVector
+        )
+
+    local ok, err =
+        pcall(function()
+
+            character:PivotTo(
+                targetCFrame
+            )
+        end)
+
+    if ok ~= true then
+
+        ok, err =
+            pcall(function()
+
+                root.CFrame =
+                    targetCFrame
+            end)
+    end
+
+    if ok ~= true then
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
+            "tp failed: "
+            .. tostring(err)
+
+        return false,
+            tostring(err)
+    end
+
+    task.wait(
+        0.05
+    )
+
+    local _, newRoot =
+        SniperGetCharacterRoot()
+
+    if newRoot then
+
+        SniperStopCharacterMotion(
+            newRoot
+        )
+    end
+
+    GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastTeleportAt =
+        os.clock()
+
+    GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
+        "teleported: "
+        .. tostring(positionReason)
+
+    print(
+        "[HOLY GAG2]",
+        "Auto TP Middle Farm",
+        "| reason:",
+        tostring(reason or "manual"),
+        "|",
+        tostring(positionReason)
+    )
+
+    return true,
+        positionReason
+end
+
+function GAG2StartAutoTpMiddleFarm(reason)
+
+    if GAG2_AUTO_TP_MIDDLE_FARM_STATE.Running == true then
+        return
+    end
+
+    GAG2_AUTO_TP_MIDDLE_FARM_STATE.Running =
+        true
+
+    task.spawn(function()
+
+        local started =
+            os.clock()
+
+        local position =
+            nil
+
+        local positionReason =
+            "not resolved"
+
+        local lastResolveAt =
+            0
+
+        task.wait(
+            0.05
+        )
+
+        while os.clock() - started < 18 do
+
+            if Toggles.HolyGAG2AutoTpMiddleFarm
+            and Toggles.HolyGAG2AutoTpMiddleFarm.Value ~= true then
+
+                GAG2_AUTO_TP_MIDDLE_FARM_STATE.Running =
+                    false
+
+                return
+            end
+
+            -- Loading-screen automation removed.
+            -- Do not call GAG2AutoPlayLoadingStep() from farm teleport.
+
+            if typeof(position) ~= "Vector3"
+            or os.clock() - lastResolveAt >= 0.75 then
+
+                lastResolveAt =
+                    os.clock()
+
+                local resolvedPosition, resolvedReason =
+                    GAG2GetOwnFarmMiddlePosition()
+
+                if typeof(resolvedPosition) == "Vector3" then
+
+                    position =
+                        resolvedPosition
+
+                    positionReason =
+                        tostring(resolvedReason)
+                end
+            end
+
+            local ready, readyReason =
+                GAG2ReadyForFarmTeleport()
+
+            GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
+                tostring(readyReason)
+
+            if typeof(position) == "Vector3"
+            and ready == true then
+
+                break
+            end
+
+            if typeof(position) == "Vector3"
+            and os.clock() - started >= 7 then
+
+                local loadingActive, loadingDone =
+                    GAG2ReadLoadingAttributes()
+
+                if loadingDone == true
+                and loadingActive ~= true then
+
+                    positionReason =
+                        tostring(positionReason)
+                        .. " | loading done fallback"
+
+                    break
+                end
+            end
+
+            task.wait(
+                0.08
+            )
+        end
+
+        if typeof(position) ~= "Vector3" then
+
+            local resolvedPosition, resolvedReason =
+                GAG2GetOwnFarmMiddlePosition()
+
+            position =
+                resolvedPosition
+
+            positionReason =
+                tostring(resolvedReason)
+        end
+
+        if typeof(position) ~= "Vector3" then
+
+            GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
+                tostring(positionReason)
+
+            GAG2_AUTO_TP_MIDDLE_FARM_STATE.Running =
+                false
+
+            return
+        end
+
+        local lockStarted =
+            os.clock()
+
+        local lockDuration =
+            3.0
+
+        local didTeleport =
+            false
+
+        while os.clock() - lockStarted < lockDuration do
+
+            if Toggles.HolyGAG2AutoTpMiddleFarm
+            and Toggles.HolyGAG2AutoTpMiddleFarm.Value ~= true then
+
+                break
+            end
+
+            local character, root =
+                SniperGetCharacterRoot()
+
+            if character
+            and root then
+
+                local distance =
+                    (root.Position - position).Magnitude
+
+                if didTeleport ~= true
+                or distance > 4 then
+
+                    local lookVector =
+                        root.CFrame.LookVector
+
+                    if typeof(lookVector) ~= "Vector3"
+                    or lookVector.Magnitude <= 0 then
+
+                        lookVector =
+                            Vector3.new(0, 0, -1)
+                    end
+
+                    local targetCFrame =
+                        CFrame.new(
+                            position,
+                            position + lookVector
+                        )
+
+                    local ok =
+                        pcall(function()
+
+                            character:PivotTo(
+                                targetCFrame
+                            )
+                        end)
+
+                    if ok ~= true then
+
+                        pcall(function()
+
+                            root.CFrame =
+                                targetCFrame
+                        end)
+                    end
+
+                    didTeleport =
+                        true
+
+                    GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastTeleportAt =
+                        os.clock()
+
+                    GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
+                        "locked: "
+                        .. tostring(positionReason)
+
+                    print(
+                        "[HOLY GAG2]",
+                        "Auto TP Middle Farm lock",
+                        "| reason:",
+                        tostring(reason or "auto"),
+                        "| distance:",
+                        tostring(math.floor(distance + 0.5)),
+                        "|",
+                        tostring(positionReason)
+                    )
+                end
+
+                SniperStopCharacterMotion(
+                    root
+                )
+            end
+
+            task.wait(
+                0.12
+            )
+        end
+
+        if didTeleport == true then
+
+            print(
+                "[HOLY GAG2]",
+                "Auto TP Middle Farm lock finished",
+                "|",
+                tostring(positionReason)
+            )
+        end
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.Running =
+            false
+    end)
+end
+
+function GAG2SetAutoTpMiddleFarmEnabled(value)
+
+    local enabled =
+        value == true
+
+    if enabled == true then
+
+        GAG2StartAutoTpMiddleFarm(
+            "toggle"
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2RestoreAutoTpMiddleFarmState()
+
+    if GAG2_AUTO_TP_MIDDLE_FARM_STATE.CharacterConnection == nil then
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.CharacterConnection =
+            LOCAL_PLAYER.CharacterAdded:Connect(function()
+
+                task.wait(
+                    0.65
+                )
+
+                if Toggles.HolyGAG2AutoTpMiddleFarm
+                and Toggles.HolyGAG2AutoTpMiddleFarm.Value == true then
+
+                    GAG2StartAutoTpMiddleFarm(
+                        "respawn"
+                    )
+                end
+            end)
+    end
+
+    task.defer(function()
+
+        if Toggles.HolyGAG2AutoTpMiddleFarm
+        and Toggles.HolyGAG2AutoTpMiddleFarm.Value == true then
+
+            GAG2StartAutoTpMiddleFarm(
+                "autosave"
+            )
+        end
     end)
 end
 
@@ -7316,115 +9703,402 @@ local function ActiveWildPetHudStartLoop()
     end)
 end
 
-local HomeActivePetsLabel =
+HomeLivePetsSummaryLabel =
     nil
 
-local HomeActivePetsLoopRunning =
+HomeActivePetsLoopRunning =
     false
 
-local function BuildHomeActivePetsText()
+HomeLivePetButtons =
+    {}
+
+HomeLivePetButtonEntries =
+    {}
+
+HomeLivePetsList =
+    nil
+
+HomeLivePetMaxButtons =
+    8
+
+RefreshHomeActivePets =
+    nil
+
+function GAG2HomeCompactDistanceText(value)
+
+    return tostring(value or "?")
+        :gsub("%s*studs", "")
+        :gsub("%s+$", "")
+end
+
+function GAG2HomeBuildPetButtonText(index, entry)
+
+    if type(entry) ~= "table" then
+        return "---"
+    end
+
+    local suffix =
+        ""
+
+    if SniperIsEntryHandled(entry) == true then
+        suffix = " | Sent"
+    end
+
+    return tostring(index)
+        .. ". "
+        .. tostring(entry.Name or "?")
+        .. " | "
+        .. tostring(entry.Timer or "?")
+        .. " | "
+        .. tostring(entry.Price or "?")
+        .. " | "
+        .. GAG2HomeCompactDistanceText(
+            entry.Distance
+        )
+        .. suffix
+end
+
+function GAG2HomeSetPetButtonText(button, text)
+
+    text =
+        tostring(text or "---")
+
+    if not button then
+        return
+    end
+
+    pcall(function()
+
+        if type(button.SetText) == "function" then
+
+            button:SetText(
+                text
+            )
+
+            return
+        end
+
+        if type(button.SetTitle) == "function" then
+
+            button:SetTitle(
+                text
+            )
+
+            return
+        end
+
+        if typeof(button) == "Instance"
+        and button:IsA("TextButton") then
+
+            button.Text =
+                text
+
+            return
+        end
+
+        if type(button) == "table" then
+
+            if typeof(button.Button) == "Instance"
+            and button.Button:IsA("TextButton") then
+
+                button.Button.Text =
+                    text
+
+                return
+            end
+
+            if typeof(button.Main) == "Instance" then
+
+                local textButton =
+                    button.Main:FindFirstChildWhichIsA(
+                        "TextButton",
+                        true
+                    )
+
+                if textButton then
+
+                    textButton.Text =
+                        text
+                    return
+                end
+
+                local textLabel =
+                    button.Main:FindFirstChildWhichIsA(
+                        "TextLabel",
+                        true
+                    )
+
+                if textLabel then
+
+                    textLabel.Text =
+                        text
+                    return
+                end
+            end
+        end
+    end)
+end
+
+function GAG2HomeFindFreshEntry(cachedEntry)
+
+    if type(cachedEntry) ~= "table" then
+        return nil
+    end
+
+    local wantedKey =
+        SniperGetEntryKey(
+            cachedEntry
+        )
+
+    if wantedKey == "" then
+        return cachedEntry
+    end
 
     local entries, reason =
         SniperGetActiveEntries()
 
-    local lines = {
-        '<font color="rgb(196,181,253)"><b>Active Pets</b></font>',
-    }
+    if reason ~= "ok" then
+        return cachedEntry
+    end
+
+    for _, entry in ipairs(entries) do
+
+        if SniperGetEntryKey(entry) == wantedKey then
+            return entry
+        end
+    end
+
+    return nil
+end
+
+function GAG2HomeManualBuyPetIndex(index)
+
+    index =
+        tonumber(index)
+
+    if not index then
+        return false
+    end
+
+    local cachedEntry =
+        HomeLivePetButtonEntries[index]
+
+    if type(cachedEntry) ~= "table" then
+
+        Notify(
+            "Live Pets",
+            "No pet on this row.",
+            3
+        )
+
+        return false
+    end
+
+    local entry =
+        GAG2HomeFindFreshEntry(
+            cachedEntry
+        )
+
+    if type(entry) ~= "table"
+    or SniperEntryStillActive(entry) ~= true then
+
+        Notify(
+            "Live Pets",
+            "That pet is no longer active.",
+            3
+        )
+
+        if type(RefreshHomeActivePets) == "function" then
+
+            RefreshHomeActivePets()
+        end
+
+        return false
+    end
+
+    if SniperState.Taming == true then
+
+        Notify(
+            "Live Pets",
+            "Already buying another pet.",
+            3
+        )
+
+        return false
+    end
+
+    if HomeLivePetsList
+    and type(HomeLivePetsList.SetState) == "function" then
+
+        HomeLivePetsList:SetState(
+            index,
+            "buying"
+        )
+    end
+
+    local started =
+        SniperAttemptBuyEntry(
+            entry
+        )
+
+    if started == true then
+
+        SetSniperStatus(
+            "Manual buy: "
+            .. tostring(entry.Name)
+        )
+
+        Notify(
+            "Live Pets",
+            "Buying "
+            .. tostring(entry.Name)
+            .. ".",
+            3
+        )
+
+        if type(RefreshHomeActivePets) == "function" then
+
+            RefreshHomeActivePets()
+        end
+
+        return true
+    end
+
+    if HomeLivePetsList
+    and type(HomeLivePetsList.SetState) == "function" then
+
+        HomeLivePetsList:SetState(
+            index,
+            "ready"
+        )
+    end
+
+    Notify(
+        "Live Pets",
+        "Could not start buy. It may already be handled.",
+        3
+    )
+
+    RefreshHomeActivePets()
+
+    return false
+end
+
+function BuildHomeActivePetsText()
+
+    local entries, reason =
+        SniperGetActiveEntries()
 
     if reason ~= "ok" then
 
-        table.insert(
-            lines,
-            "Loading..."
-        )
-
-        return table.concat(
-            lines,
-            "\n"
-        )
+        return '<font color="rgb(196,181,253)"><b>Live Pets</b></font>'
+            .. '\nLoading pet data...'
     end
 
     if #entries <= 0 then
 
-        table.insert(
-            lines,
-            "None"
-        )
-
-        return table.concat(
-            lines,
-            "\n"
-        )
+        return '<font color="rgb(196,181,253)"><b>Live Pets</b></font>'
+            .. '\nPlayers: '
+            .. tostring(#Players:GetPlayers())
+            .. ' | Pets: 0'
+            .. '\nNo active pets.'
     end
 
-    table.insert(
-        lines,
-        "Count: "
+    return '<font color="rgb(196,181,253)"><b>Live Pets</b></font>'
+        .. '\nPlayers: '
+        .. tostring(#Players:GetPlayers())
+        .. ' | Pets: '
         .. tostring(#entries)
-    )
+        .. '\nClick a row to buy.'
+end
+
+RefreshHomeActivePets = function()
+
+    local entries, reason =
+        SniperGetActiveEntries()
+
+    for key in pairs(HomeLivePetButtonEntries) do
+
+        HomeLivePetButtonEntries[key] =
+            nil
+    end
+
+    if not HomeLivePetsList
+    or type(HomeLivePetsList.SetRows) ~= "function" then
+        return
+    end
+
+    if reason ~= "ok" then
+
+        HomeLivePetsList:SetSummary(
+            '<font color="rgb(196,181,253)"><b>Live Pets</b></font>'
+            .. '\nLoading pet data...'
+        )
+
+        HomeLivePetsList:SetRows({})
+
+        return
+    end
+
+    local rows =
+        {}
+
+    local maxRows =
+        tonumber(HomeLivePetMaxButtons)
+        or 8
 
     for index, entry in ipairs(entries) do
 
-        if index > 14 then
-
-            table.insert(
-                lines,
-                "+ "
-                .. tostring(#entries - 14)
-                .. " more"
-            )
-
+        if index > maxRows then
             break
         end
 
-        local suffix =
-            ""
+        HomeLivePetButtonEntries[index] =
+            entry
+
+        local state =
+            "ready"
 
         if SniperIsEntryHandled(entry) == true then
-            suffix = " | Sent"
+            state =
+                "sent"
         end
 
-        local distanceText =
-            tostring(entry.Distance or "?")
-                :gsub("%s*studs", "")
-                :gsub("%s+$", "")
+        table.insert(rows, {
+            Pet =
+                tostring(entry.Name or "?"),
 
-        table.insert(
-            lines,
-            tostring(index)
-            .. ". "
-            .. tostring(entry.Name)
-            .. " | Time: "
-            .. tostring(entry.Timer or "?")
-            .. " | Price: "
-            .. tostring(entry.Price or "?")
-            .. " | "
-            .. distanceText
-            .. suffix
-        )
+            Timer =
+                tostring(entry.Timer or "?"),
+
+            Price =
+                tostring(entry.Price or "?"),
+
+            Distance =
+                GAG2HomeCompactDistanceText(
+                    entry.Distance
+                ),
+
+            State =
+                state,
+        })
     end
 
-    return table.concat(
-        lines,
-        "\n"
+    HomeLivePetsList:SetSummary(
+        '<font color="rgb(196,181,253)"><b>Live Pets</b></font>'
+        .. '\n'
+        .. tostring(#Players:GetPlayers())
+        .. ' players · '
+        .. tostring(#entries)
+        .. ' pets found'
+    )
+
+    HomeLivePetsList:SetRows(
+        rows
     )
 end
 
-local function RefreshHomeActivePets()
-
-    if HomeActivePetsLabel
-    and type(HomeActivePetsLabel.SetText) == "function" then
-
-        pcall(function()
-
-            HomeActivePetsLabel:SetText(
-                BuildHomeActivePetsText()
-            )
-        end)
-    end
-end
-
-local function StartHomeActivePetsLoop()
+function StartHomeActivePetsLoop()
 
     if HomeActivePetsLoopRunning == true then
         return
@@ -7437,7 +10111,10 @@ local function StartHomeActivePetsLoop()
 
         while HomeActivePetsLoopRunning == true do
 
+            if type(RefreshHomeActivePets) == "function" then
+
             RefreshHomeActivePets()
+        end
             GAG2RareWebhookScan()
 
             task.wait(
@@ -7894,56 +10571,56 @@ local Tabs = {
     Home =
         Window:AddTab({
             Name = "Home",
-            Icon = "settings",
+            Icon = "home",
             Description = "Main controls.",
         }),
 
     Shops =
         Window:AddTab({
             Name = "Shops",
-            Icon = "settings",
+            Icon = "shopping-bag",
             Description = "Shop systems.",
         }),
 
     Sell =
         Window:AddTab({
             Name = "Sell",
-            Icon = "settings",
+            Icon = "coins",
             Description = "Sell systems.",
         }),
 
     Experiment =
         Window:AddTab({
             Name = "Experiment",
-            Icon = "settings",
+            Icon = "flask-conical",
             Description = "Safe experiments.",
         }),
 
     Farm =
         Window:AddTab({
             Name = "Farm",
-            Icon = "settings",
+            Icon = "sprout",
             Description = "Farm systems.",
         }),
 
     Visuals =
         Window:AddTab({
             Name = "Visuals",
-            Icon = "settings",
+            Icon = "eye",
             Description = "GAG2 research and visual tools.",
         }),
 
     Sniper =
         Window:AddTab({
             Name = "Sniper",
-            Icon = "settings",
+            Icon = "crosshair",
             Description = "Wild pet sniper scanner.",
         }),
 
     Settings =
         Window:AddTab({
             Name = "Settings",
-            Icon = "settings",
+            Icon = "sliders-horizontal",
             Description = "UI settings.",
         }),
 }
@@ -7953,7 +10630,7 @@ if IsHolyGAG2Developer() then
     Tabs.Dev =
         Window:AddTab({
             Name = "Dev",
-            Icon = "settings",
+            Icon = "terminal",
             Description = "Developer tools.",
         })
 end
@@ -7964,92 +10641,92 @@ end
 
 local HomeMainBox =
     Tabs.Home:AddLeftGroupbox(
-        "Main",
-        "settings"
+        "Quick Actions",
+        "sparkles"
     )
 
 local HomeServerBox =
     Tabs.Home:AddRightGroupbox(
-        "Server",
-        "settings"
+        "Live Pets",
+        "radar"
     )
 
 local ShopsMainBox =
     Tabs.Shops:AddLeftGroupbox(
-        "Controls",
-        "settings"
+        "Shop Controls",
+        "shopping-cart"
     )
 
 local ShopsStatusBox =
     Tabs.Shops:AddRightGroupbox(
-        "Status",
-        "settings"
+        "Current Stock",
+        "activity"
     )
 
 local SellMainBox =
     Tabs.Sell:AddLeftGroupbox(
         "Controls",
-        "settings"
+        "coins"
     )
 
 local SellStatusBox =
     Tabs.Sell:AddRightGroupbox(
         "Status",
-        "settings"
+        "receipt"
     )
 
 local ExperimentMainBox =
     Tabs.Experiment:AddLeftGroupbox(
         "Controls",
-        "settings"
+        "flask-conical"
     )
 
 local ExperimentStatusBox =
     Tabs.Experiment:AddRightGroupbox(
         "Status",
-        "settings"
+        "activity"
     )
 
 local FarmMainBox =
     Tabs.Farm:AddLeftGroupbox(
         "Controls",
-        "settings"
+        "sprout"
     )
 
 local FarmStatusBox =
     Tabs.Farm:AddRightGroupbox(
         "Status",
-        "settings"
+        "leaf"
     )
 
 local VisualsMainBox =
     Tabs.Visuals:AddLeftGroupbox(
         "Research",
-        "settings"
+        "eye"
     )
 
 local VisualsStatusBox =
     Tabs.Visuals:AddRightGroupbox(
         "Status",
-        "settings"
+        "scan-eye"
     )
 
 local SniperMainBox =
     Tabs.Sniper:AddLeftGroupbox(
         "Wild Pet Sniper",
-        "settings"
+        "crosshair"
     )
 
 local SniperStatusBox =
     Tabs.Sniper:AddRightGroupbox(
         "Sniper Status",
-        "settings"
+        "radar"
     )
 
 local SettingsUIBox =
     Tabs.Settings:AddLeftGroupbox(
         "Interface",
-        "settings"
+        "sliders-horizontal"
     )
 
 local DevToolsBox =
@@ -8063,13 +10740,13 @@ if Tabs.Dev then
     DevToolsBox =
         Tabs.Dev:AddLeftGroupbox(
             "Tools",
-            "settings"
+            "terminal"
         )
 
     DevInfoBox =
         Tabs.Dev:AddRightGroupbox(
             "Info",
-            "settings"
+            "info"
         )
 end
 
@@ -8094,8 +10771,8 @@ HomeMainBox:AddButton({
 })
 
 HomeMainBox:AddButton({
-    Text = "Copy Join Code",
-    Tooltip = "Copy current placeId:JobId.",
+    Text = "Copy Current Code",
+    Tooltip = "Copy this server's current placeId:JobId.",
     Func = function()
 
         GAG2CopyCurrentJoinCode()
@@ -8126,50 +10803,6 @@ HomeMainBox:AddButton({
 
 HomeMainBox:AddDivider()
 
-HomeMainBox:AddLabel({
-    Text =
-        '<font color="rgb(196,181,253)"><b>Manual Server Joiner</b></font>',
-    DoesWrap = true,
-    Size = 13,
-})
-
-GAG2_MANUAL_JOIN_INPUT_CONTROL =
-    HomeMainBox:AddInput("HolyGAG2ManualJoinTarget", {
-        Text = "Join Code",
-        Default = "",
-        Numeric = false,
-        Finished = true,
-        ClearTextOnFocus = false,
-        Placeholder = "placeId:JobId recommended",
-        Tooltip = "Paste placeId:JobId from Discord. JobId-only uses your current place and can fail if the alert came from another GAG2 place.",
-        Callback = function(value)
-
-            if GAG2_MANUAL_JOIN_STATE.Refreshing == true then
-                return
-            end
-
-            GAG2SetManualJoinTargetText(
-                value
-            )
-        end,
-    })
-
-HomeMainBox:AddButton({
-    Text = "Join Server",
-    Tooltip = "Join the pasted server JobId.",
-    Func = function()
-
-        GAG2ManualJoinServer()
-    end,
-}):AddButton({
-    Text = "Copy Join Code",
-    Tooltip = "Copy current placeId:JobId.",
-    Func = function()
-
-        GAG2CopyCurrentJoinCode()
-    end,
-})
-
 GAG2_MANUAL_JOIN_HUD_TOGGLE =
     HomeMainBox:AddToggle("HolyGAG2ManualJoinHud", {
         Text = "Pop Out Join HUD",
@@ -8183,25 +10816,25 @@ GAG2_MANUAL_JOIN_HUD_TOGGLE =
         end,
     })
 
-HomeMainBox:AddLabel("HolyGAG2Status", {
-    Text =
-        '<font color="rgb(196,181,253)"><b>Status:</b></font> Ready',
-    DoesWrap = true,
-})
+HomeLivePetsList =
+    HomeServerBox:AddPetMarketList(
+        "HolyGAG2HomeLivePets",
+        {
+            Rows = 8,
+            RowHeight = 38,
+            EmptyText = "No active pets.",
+            Summary =
+                '<font color="rgb(196,181,253)"><b>Live Pets</b></font>'
+                .. '\nLoading...',
 
-HomeServerBox:AddLabel("HolyGAG2ServerInfo", {
-    Text =
-        BuildServerInfoText(),
-    DoesWrap = true,
-})
+            Callback = function(rowIndex, rowData)
 
-HomeActivePetsLabel =
-    HomeServerBox:AddLabel("HolyGAG2HomeActivePets", {
-        Text =
-            '<font color="rgb(196,181,253)"><b>Active Pets</b></font>'
-            .. '\nLoading...',
-        DoesWrap = true,
-    })
+                GAG2HomeManualBuyPetIndex(
+                    rowIndex
+                )
+            end,
+        }
+    )
 
 if IsGAG2World() ~= true then
 
@@ -8220,16 +10853,126 @@ end
 -- [8.25] SHOPS TAB
 --==================================================
 
-ShopsMainBox:AddLabel({
-    Text = "Ready.",
-    DoesWrap = true,
-    Size = 13,
+ShopsMainBox:AddToggle("HolyGAG2AutoBuySeeds", {
+    Text = "Auto Buy Seeds",
+    Default = false,
+    Tooltip = "Buys selected seeds only when they are actually in stock.",
+    Callback = function(value)
+
+        GAG2ShopSetEnabled(
+            "Seeds",
+            value == true
+        )
+    end,
 })
 
-ShopsStatusBox:AddLabel("HolyGAG2ShopsStatus", {
-    Text = "Idle.",
-    DoesWrap = true,
+GAG2_SHOP_DROPDOWNS.Seeds =
+    ShopsMainBox:AddDropdown(
+        "HolyGAG2ShopSeeds",
+        {
+            Text = "Seeds",
+            Values = GAG2ShopGetItemNames("Seeds"),
+            Default = {},
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Selected seeds are bought while real stock is above 0.",
+        }
+    )
+
+if GAG2_SHOP_DROPDOWNS.Seeds
+and type(GAG2_SHOP_DROPDOWNS.Seeds.OnChanged) == "function" then
+
+    GAG2_SHOP_DROPDOWNS.Seeds:OnChanged(function(value)
+
+        GAG2ShopSetSelected(
+            "Seeds",
+            value
+        )
+    end)
+end
+
+ShopsMainBox:AddToggle("HolyGAG2AutoBuyGear", {
+    Text = "Auto Buy Gear",
+    Default = false,
+    Tooltip = "Buys selected gear only when it is actually in stock.",
+    Callback = function(value)
+
+        GAG2ShopSetEnabled(
+            "Gear",
+            value == true
+        )
+    end,
 })
+
+GAG2_SHOP_DROPDOWNS.Gear =
+    ShopsMainBox:AddDropdown(
+        "HolyGAG2ShopGear",
+        {
+            Text = "Gear",
+            Values = GAG2ShopGetItemNames("Gear"),
+            Default = {},
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Selected gear is bought once per real restock when stock is above 0.",
+        }
+    )
+
+if GAG2_SHOP_DROPDOWNS.Gear
+and type(GAG2_SHOP_DROPDOWNS.Gear.OnChanged) == "function" then
+
+    GAG2_SHOP_DROPDOWNS.Gear:OnChanged(function(value)
+
+        GAG2ShopSetSelected(
+            "Gear",
+            value
+        )
+    end)
+end
+
+ShopsMainBox:AddToggle("HolyGAG2AutoBuyCrates", {
+    Text = "Auto Buy Crates",
+    Default = false,
+    Tooltip = "Buys selected crates only when they are actually in stock.",
+    Callback = function(value)
+
+        GAG2ShopSetEnabled(
+            "Crates",
+            value == true
+        )
+    end,
+})
+
+GAG2_SHOP_DROPDOWNS.Crates =
+    ShopsMainBox:AddDropdown(
+        "HolyGAG2ShopCrates",
+        {
+            Text = "Crates",
+            Values = GAG2ShopGetItemNames("Crates"),
+            Default = {},
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Selected crates are bought once per real restock when stock is above 0.",
+        }
+    )
+
+if GAG2_SHOP_DROPDOWNS.Crates
+and type(GAG2_SHOP_DROPDOWNS.Crates.OnChanged) == "function" then
+
+    GAG2_SHOP_DROPDOWNS.Crates:OnChanged(function(value)
+
+        GAG2ShopSetSelected(
+            "Crates",
+            value
+        )
+    end)
+end
+
 
 --==================================================
 -- [8.5] SELL TAB
@@ -8725,6 +11468,18 @@ SettingsUIBox:AddDropdown(
     MarkConfigDirty()
 end)
 
+SettingsUIBox:AddToggle("HolyGAG2AutoTpMiddleFarm", {
+    Text = "Auto TP Middle Farm",
+    Default = false,
+    Tooltip = "When enabled, teleports to the middle of your own farm after join/spawn.",
+    Callback = function(value)
+
+        GAG2SetAutoTpMiddleFarmEnabled(
+            value == true
+        )
+    end,
+})
+
 SettingsUIBox:AddDivider()
 
 SettingsUIBox:AddButton({
@@ -8837,10 +11592,22 @@ end)
 
 GAG2StartLoadingGuiCleaner()
 
-RestoreSniperAutosaveState()
+local GAG2_EXACT_JOIN_PENDING_ON_LOAD =
+    GAG2HandlePendingExactJoinOnLoad()
+
+if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
+
+    RestoreSniperAutosaveState()
+    GAG2RestoreShopAutosaveState()
+end
 
 ConfigState.Loading =
     false
+
+if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
+
+    GAG2RestoreAutoTpMiddleFarmState()
+end
 
 task.spawn(function()
 
@@ -8869,9 +11636,44 @@ end)
 
 pcall(function()
 
-    TeleportService.TeleportInitFailed:Connect(function(player)
+    TeleportService.TeleportInitFailed:Connect(function(
+        player,
+        teleportResult,
+        errorMessage,
+        placeId
+    )
 
         if player ~= LOCAL_PLAYER then
+            return
+        end
+
+        local resultName =
+            teleportResult
+            and teleportResult.Name
+            or "Unknown"
+
+        local exactTarget =
+            GAG2ReadExactJoinTarget()
+
+        if exactTarget then
+
+            warn(
+                "[HOLY GAG2 EXACT JOIN]",
+                "TeleportInitFailed",
+                "| result:",
+                tostring(resultName),
+                "| error:",
+                tostring(errorMessage),
+                "| place:",
+                tostring(placeId)
+            )
+
+            GAG2RetryExactJoinTarget(
+                exactTarget,
+                "TeleportInitFailed: "
+                .. tostring(resultName)
+            )
+
             return
         end
 
@@ -8891,6 +11693,7 @@ end)
 
 GAG2StartLoadingGuiCleaner()
 
+GAG2ShopStart()
 RefreshServerInfo()
 RefreshHomeActivePets()
 StartHomeActivePetsLoop()
