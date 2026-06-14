@@ -7081,6 +7081,1860 @@ function GAG2RestoreAutoTpMiddleFarmState()
     end)
 end
 
+--==================================================
+-- [4.56] AUTO COLLECT FRUITS
+-- Priority harvest queue using ready HarvestPrompt fruits.
+-- V1 note: Size/Weight uses SizeMulti because exact pre-harvest KG is not stored.
+--==================================================
+
+GAG2_AUTO_COLLECT_FRUIT_STATE =
+    GAG2_AUTO_COLLECT_FRUIT_STATE
+    or {
+        Enabled = false,
+        Running = false,
+
+        StopIfFull = true,
+        Delay = 0,
+        BurstAmount = 8,
+
+        CollectMode = "All",
+
+        SelectedFruits = {},
+        SelectedRarities = {},
+        SelectedMutations = {},
+
+        ExcludeFruits = {},
+        ExcludeRarities = {},
+        ExcludeMutations = {},
+
+        ExcludeSizeMode = "Off",
+        ExcludeSizeThreshold = 0,
+
+        Priority1 = "Rarity",
+        Priority2 = "Weight",
+        Priority3 = "Mutation",
+
+        Recent = {},
+        Modules = {},
+        SeedMap = {},
+        FruitNames = {},
+        RarityNames = {},
+        MutationNames = {},
+
+        LastStatus = "Idle.",
+        LastReadyCount = 0,
+        LastMatchingCount = 0,
+        LastExcludedCount = 0,
+        LastFiredCount = 0,
+        LastNextText = "None",
+        LastRefreshAt = 0,
+    }
+
+GAG2_AUTO_COLLECT_FRUIT_CONTROLS =
+    GAG2_AUTO_COLLECT_FRUIT_CONTROLS
+    or {}
+
+GAG2_ACF_PRIORITY_VALUES = {
+    "None",
+    "Rarity",
+    "Weight",
+    "Mutation",
+    "Sell Worth",
+    "Fruit",
+}
+
+GAG2_ACF_COLLECT_MODES = {
+    "All",
+    "Only Selected",
+}
+
+GAG2_ACF_SIZE_MODES = {
+    "Off",
+    "Above",
+    "Below",
+}
+
+GAG2_ACF_DEFAULT_RARITIES = {
+    "Common",
+    "Uncommon",
+    "Rare",
+    "Epic",
+    "Legendary",
+    "Mythic",
+    "Mythical",
+    "Super",
+    "Divine",
+    "Prismatic",
+}
+
+GAG2_ACF_DEFAULT_MUTATIONS = {
+    "None",
+    "Gold",
+    "Rainbow",
+    "Bloodlit",
+    "Starstruck",
+    "Electric",
+    "Frozen",
+    "Chained",
+    "Solarflare",
+    "Pizza",
+}
+
+GAG2_ACF_RARITY_SCORE = {
+    Common = 1,
+    Uncommon = 2,
+    Rare = 3,
+    Epic = 4,
+    Legendary = 5,
+    Mythic = 6,
+    Mythical = 6,
+    Super = 7,
+    Divine = 8,
+    Prismatic = 9,
+}
+
+function GAG2ACFSetStatus(text)
+
+    local statusText =
+        tostring(text or "Idle.")
+
+    GAG2_AUTO_COLLECT_FRUIT_STATE.LastStatus =
+        statusText
+
+    if Options.HolyGAG2FarmStatus then
+
+        Options.HolyGAG2FarmStatus:SetText(
+            statusText
+        )
+    end
+end
+
+function GAG2ACFFormatNumber(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "?"
+    end
+
+    local text =
+        tostring(
+            math.floor(number + 0.5)
+        )
+
+    text =
+        text:reverse()
+            :gsub("(%d%d%d)", "%1,")
+            :reverse()
+            :gsub("^,", "")
+
+    return text
+end
+
+function GAG2ACFFormatSize(value)
+
+    local number =
+        tonumber(value)
+        or 0
+
+    return string.format(
+        "%.2fx",
+        number
+    )
+end
+
+function GAG2ACFClean(value)
+
+    return CleanText(
+        tostring(value or "")
+            :gsub("<[^>]->", "")
+            :gsub("<.->", "")
+    )
+end
+
+function GAG2ACFTableCount(map)
+
+    if type(map) ~= "table" then
+        return 0
+    end
+
+    local count =
+        0
+
+    for _, enabled in pairs(map) do
+
+        if enabled == true then
+            count += 1
+        end
+    end
+
+    return count
+end
+
+function GAG2ACFNormalizeSelection(value)
+
+    local result =
+        {}
+
+    local function add(item)
+
+        item =
+            GAG2ACFClean(item)
+
+        if item == ""
+        or item == "Select Options" then
+            return
+        end
+
+        result[item] =
+            true
+    end
+
+    if type(value) == "table" then
+
+        for _, item in ipairs(value) do
+            add(item)
+        end
+
+        for item, enabled in pairs(value) do
+
+            if enabled == true then
+                add(item)
+            end
+        end
+
+    elseif type(value) == "string" then
+
+        add(value)
+    end
+
+    return result
+end
+
+function GAG2ACFSelectionHas(map, value)
+
+    value =
+        GAG2ACFClean(value)
+
+    if value == "" then
+        value =
+            "None"
+    end
+
+    return type(map) == "table"
+        and map[value] == true
+end
+
+function GAG2ACFSafeRequire(moduleName)
+
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild("SharedModules")
+
+    local module =
+        sharedModules
+        and sharedModules:FindFirstChild(
+            moduleName,
+            true
+        )
+
+    if not module
+    or module:IsA("ModuleScript") ~= true then
+        return nil
+    end
+
+    local ok, result =
+        pcall(function()
+
+            return require(
+                module
+            )
+        end)
+
+    if ok == true then
+        return result
+    end
+
+    return nil
+end
+
+function GAG2ACFRememberChoice(bucketName, value)
+
+    value =
+        GAG2ACFClean(value)
+
+    if value == "" then
+        return
+    end
+
+    local bucket =
+        GAG2_AUTO_COLLECT_FRUIT_STATE[bucketName]
+
+    if type(bucket) ~= "table" then
+
+        bucket = {}
+
+        GAG2_AUTO_COLLECT_FRUIT_STATE[bucketName] =
+            bucket
+    end
+
+    if table.find(bucket, value) ~= nil then
+        return
+    end
+
+    table.insert(
+        bucket,
+        value
+    )
+
+    table.sort(
+        bucket
+    )
+end
+
+function GAG2ACFEnsureModules()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    local now =
+        os.clock()
+
+    if tonumber(state.LastModuleRefreshAt)
+    and now - state.LastModuleRefreshAt < 5 then
+        return state.Modules
+    end
+
+    state.LastModuleRefreshAt =
+        now
+
+    state.Modules =
+        state.Modules
+        or {}
+
+    state.Modules.SeedData =
+        state.Modules.SeedData
+        or GAG2ACFSafeRequire("SeedData")
+
+    state.Modules.SellValueData =
+        state.Modules.SellValueData
+        or GAG2ACFSafeRequire("SellValueData")
+
+    state.Modules.MutationData =
+        state.Modules.MutationData
+        or GAG2ACFSafeRequire("MutationData")
+
+    state.Modules.FruitValueCalc =
+        state.Modules.FruitValueCalc
+        or GAG2ACFSafeRequire("FruitValueCalc")
+
+    state.SeedMap =
+        {}
+
+    if type(state.Modules.SeedData) == "table" then
+
+        for _, row in pairs(state.Modules.SeedData) do
+
+            if type(row) == "table"
+            and type(row.SeedName) == "string" then
+
+                state.SeedMap[row.SeedName] =
+                    row
+
+                GAG2ACFRememberChoice(
+                    "FruitNames",
+                    row.SeedName
+                )
+
+                if row.Rarity then
+
+                    GAG2ACFRememberChoice(
+                        "RarityNames",
+                        tostring(row.Rarity)
+                    )
+                end
+            end
+        end
+    end
+
+    for _, rarity in ipairs(GAG2_ACF_DEFAULT_RARITIES) do
+
+        GAG2ACFRememberChoice(
+            "RarityNames",
+            rarity
+        )
+    end
+
+    for _, mutation in ipairs(GAG2_ACF_DEFAULT_MUTATIONS) do
+
+        GAG2ACFRememberChoice(
+            "MutationNames",
+            mutation
+        )
+    end
+
+    return state.Modules
+end
+
+function GAG2ACFGetOwnGarden()
+
+    if type(GAG2ResolveOwnFarmPlot) == "function" then
+
+        local plot =
+            nil
+
+        pcall(function()
+
+            plot =
+                GAG2ResolveOwnFarmPlot()
+        end)
+
+        if typeof(plot) == "Instance" then
+            return plot
+        end
+    end
+
+    local gardens =
+        workspace:FindFirstChild("Gardens")
+
+    if not gardens then
+        return nil
+    end
+
+    local playerName =
+        tostring(LOCAL_PLAYER and LOCAL_PLAYER.Name or "")
+
+    local userId =
+        tostring(LOCAL_PLAYER and LOCAL_PLAYER.UserId or "")
+
+    for _, garden in ipairs(gardens:GetChildren()) do
+
+        local attrs =
+            garden:GetAttributes()
+
+        if tostring(attrs.Owner or "") == playerName
+        or tostring(attrs.OwnerUserId or "") == userId then
+            return garden
+        end
+    end
+
+    return nil
+end
+
+function GAG2ACFGetHarvestPrompt(fruit)
+
+    if typeof(fruit) ~= "Instance" then
+        return nil
+    end
+
+    local harvestPart =
+        fruit:FindFirstChild("HarvestPart")
+
+    local prompt =
+        harvestPart
+        and harvestPart:FindFirstChild("HarvestPrompt")
+
+    if prompt
+    and prompt:IsA("ProximityPrompt")
+    and prompt.Enabled == true then
+        return prompt
+    end
+
+    return nil
+end
+
+function GAG2ACFReadFruitName(fruit, plant)
+
+    local name =
+        ""
+
+    if typeof(fruit) == "Instance" then
+
+        name =
+            GAG2ACFClean(
+                fruit:GetAttribute("CorePartName")
+            )
+    end
+
+    if name == ""
+    and typeof(plant) == "Instance" then
+
+        name =
+            GAG2ACFClean(
+                plant:GetAttribute("SeedName")
+            )
+    end
+
+    if name == ""
+    and typeof(fruit) == "Instance" then
+
+        name =
+            GAG2ACFClean(
+                fruit.Name
+            )
+    end
+
+    return name
+end
+
+function GAG2ACFReadMutation(fruit, plant)
+
+    local mutation =
+        ""
+
+    if typeof(fruit) == "Instance" then
+
+        mutation =
+            GAG2ACFClean(
+                fruit:GetAttribute("Mutation")
+            )
+    end
+
+    if mutation == ""
+    and typeof(plant) == "Instance" then
+
+        mutation =
+            GAG2ACFClean(
+                plant:GetAttribute("Mutation")
+            )
+    end
+
+    return mutation
+end
+
+function GAG2ACFGetMutationScore(mutation)
+
+    mutation =
+        GAG2ACFClean(mutation)
+
+    if mutation == ""
+    or mutation == "None" then
+        return 1
+    end
+
+    local modules =
+        GAG2ACFEnsureModules()
+
+    local mutationData =
+        modules
+        and modules.MutationData
+
+    if type(mutationData) == "table"
+    and type(mutationData.ReturnPriceMultiplier) == "function" then
+
+        local ok, result =
+            pcall(
+                mutationData.ReturnPriceMultiplier,
+                mutation
+            )
+
+        if ok == true
+        and tonumber(result) then
+
+            return tonumber(result)
+        end
+    end
+
+    return 1
+end
+
+function GAG2ACFGetSellWorth(name, sizeMulti, mutation, fruit)
+
+    local modules =
+        GAG2ACFEnsureModules()
+
+    local fruitValueCalc =
+        modules
+        and modules.FruitValueCalc
+
+    if type(fruitValueCalc) == "function" then
+
+        local ok, result =
+            pcall(
+                fruitValueCalc,
+                name,
+                sizeMulti,
+                mutation,
+                fruit
+            )
+
+        if ok == true
+        and tonumber(result) then
+
+            return tonumber(result)
+        end
+    end
+
+    local base =
+        modules
+        and type(modules.SellValueData) == "table"
+        and tonumber(modules.SellValueData[name])
+        or 0
+
+    local mutationScore =
+        GAG2ACFGetMutationScore(
+            mutation
+        )
+
+    return math.floor(
+        base
+        * math.max(1, tonumber(sizeMulti) or 1)
+        * math.max(1, mutationScore)
+    )
+end
+
+function GAG2ACFBuildEntry(plant, fruit)
+
+    local prompt =
+        GAG2ACFGetHarvestPrompt(
+            fruit
+        )
+
+    if not prompt then
+        return nil
+    end
+
+    local name =
+        GAG2ACFReadFruitName(
+            fruit,
+            plant
+        )
+
+    if name == "" then
+        return nil
+    end
+
+    local mutation =
+        GAG2ACFReadMutation(
+            fruit,
+            plant
+        )
+
+    local sizeMulti =
+        tonumber(
+            fruit:GetAttribute("SizeMulti")
+        )
+        or 1
+
+    local modules =
+        GAG2ACFEnsureModules()
+
+    local seedRow =
+        GAG2_AUTO_COLLECT_FRUIT_STATE.SeedMap[name]
+
+    local rarity =
+        seedRow
+        and GAG2ACFClean(seedRow.Rarity)
+        or "?"
+
+    local rarityScore =
+        GAG2_ACF_RARITY_SCORE[rarity]
+        or 0
+
+    local mutationScore =
+        GAG2ACFGetMutationScore(
+            mutation
+        )
+
+    local sellWorth =
+        GAG2ACFGetSellWorth(
+            name,
+            sizeMulti,
+            mutation,
+            fruit
+        )
+
+    local fruitId =
+        GAG2ACFClean(
+            fruit:GetAttribute("FruitId")
+        )
+
+    local key =
+        fruitId ~= ""
+        and fruitId
+        or PathOf(fruit)
+
+    GAG2ACFRememberChoice(
+        "FruitNames",
+        name
+    )
+
+    if rarity ~= "?" then
+
+        GAG2ACFRememberChoice(
+            "RarityNames",
+            rarity
+        )
+    end
+
+    if mutation ~= "" then
+
+        GAG2ACFRememberChoice(
+            "MutationNames",
+            mutation
+        )
+    end
+
+    return {
+        Plant = plant,
+        Fruit = fruit,
+        Prompt = prompt,
+        Key = key,
+
+        Name = name,
+        Rarity = rarity,
+        RarityScore = rarityScore,
+
+        Mutation = mutation,
+        MutationLabel =
+            mutation ~= ""
+            and mutation
+            or "None",
+
+        MutationScore = mutationScore,
+        SizeMulti = sizeMulti,
+        SellWorth = sellWorth,
+    }
+end
+
+function GAG2ACFPassesCollectRules(entry)
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    if state.CollectMode == "Only Selected"
+    and GAG2ACFTableCount(state.SelectedFruits) > 0
+    and GAG2ACFSelectionHas(state.SelectedFruits, entry.Name) ~= true then
+
+        return false
+    end
+
+    if state.CollectMode == "Only Selected"
+    and GAG2ACFTableCount(state.SelectedFruits) <= 0 then
+
+        return false
+    end
+
+    if GAG2ACFTableCount(state.SelectedRarities) > 0
+    and GAG2ACFSelectionHas(state.SelectedRarities, entry.Rarity) ~= true then
+
+        return false
+    end
+
+    if GAG2ACFTableCount(state.SelectedMutations) > 0
+    and GAG2ACFSelectionHas(state.SelectedMutations, entry.MutationLabel) ~= true then
+
+        return false
+    end
+
+    return true
+end
+
+function GAG2ACFPassesExclusions(entry)
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    if GAG2ACFSelectionHas(state.ExcludeFruits, entry.Name) == true then
+        return false
+    end
+
+    if GAG2ACFSelectionHas(state.ExcludeRarities, entry.Rarity) == true then
+        return false
+    end
+
+    if GAG2ACFSelectionHas(state.ExcludeMutations, entry.MutationLabel) == true then
+        return false
+    end
+
+    local threshold =
+        tonumber(state.ExcludeSizeThreshold)
+        or 0
+
+    if threshold > 0 then
+
+        if state.ExcludeSizeMode == "Above"
+        and tonumber(entry.SizeMulti or 0) > threshold then
+            return false
+        end
+
+        if state.ExcludeSizeMode == "Below"
+        and tonumber(entry.SizeMulti or 0) < threshold then
+            return false
+        end
+    end
+
+    return true
+end
+
+function GAG2ACFEntryAllowed(entry)
+
+    if type(entry) ~= "table" then
+        return false
+    end
+
+    if GAG2ACFPassesCollectRules(entry) ~= true then
+        return false
+    end
+
+    if GAG2ACFPassesExclusions(entry) ~= true then
+        return false
+    end
+
+    return true
+end
+
+function GAG2ACFPriorityValue(entry, priorityName)
+
+    priorityName =
+        GAG2ACFClean(priorityName)
+
+    if priorityName == "Rarity" then
+        return tonumber(entry.RarityScore) or 0
+    end
+
+    if priorityName == "Weight" then
+        return tonumber(entry.SizeMulti) or 0
+    end
+
+    if priorityName == "Mutation" then
+        return tonumber(entry.MutationScore) or 1
+    end
+
+    if priorityName == "Sell Worth" then
+        return tonumber(entry.SellWorth) or 0
+    end
+
+    if priorityName == "Fruit" then
+        return tostring(entry.Name or "")
+    end
+
+    return nil
+end
+
+function GAG2ACFComparePriority(a, b, priorityName)
+
+    priorityName =
+        GAG2ACFClean(priorityName)
+
+    if priorityName == ""
+    or priorityName == "None" then
+        return nil
+    end
+
+    local aValue =
+        GAG2ACFPriorityValue(
+            a,
+            priorityName
+        )
+
+    local bValue =
+        GAG2ACFPriorityValue(
+            b,
+            priorityName
+        )
+
+    if aValue == nil
+    or bValue == nil
+    or aValue == bValue then
+        return nil
+    end
+
+    if priorityName == "Fruit" then
+        return tostring(aValue) < tostring(bValue)
+    end
+
+    return tonumber(aValue or 0) > tonumber(bValue or 0)
+end
+
+function GAG2ACFSortQueue(queue)
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    table.sort(queue, function(a, b)
+
+        local result =
+            GAG2ACFComparePriority(
+                a,
+                b,
+                state.Priority1
+            )
+
+        if result ~= nil then
+            return result
+        end
+
+        result =
+            GAG2ACFComparePriority(
+                a,
+                b,
+                state.Priority2
+            )
+
+        if result ~= nil then
+            return result
+        end
+
+        result =
+            GAG2ACFComparePriority(
+                a,
+                b,
+                state.Priority3
+            )
+
+        if result ~= nil then
+            return result
+        end
+
+        if tonumber(a.SellWorth or 0) ~= tonumber(b.SellWorth or 0) then
+
+            return tonumber(a.SellWorth or 0)
+                > tonumber(b.SellWorth or 0)
+        end
+
+        if tonumber(a.SizeMulti or 0) ~= tonumber(b.SizeMulti or 0) then
+
+            return tonumber(a.SizeMulti or 0)
+                > tonumber(b.SizeMulti or 0)
+        end
+
+        return tostring(a.Name or "")
+            < tostring(b.Name or "")
+    end)
+end
+
+function GAG2ACFScanQueue()
+
+    GAG2ACFEnsureModules()
+
+    local garden =
+        GAG2ACFGetOwnGarden()
+
+    local queue =
+        {}
+
+    local readyCount =
+        0
+
+    local excludedCount =
+        0
+
+    if not garden then
+
+        return queue,
+            0,
+            0,
+            "own garden missing"
+    end
+
+    local plants =
+        garden:FindFirstChild("Plants")
+
+    if not plants then
+
+        return queue,
+            0,
+            0,
+            "plants folder missing"
+    end
+
+    for _, plant in ipairs(plants:GetChildren()) do
+
+        local fruits =
+            plant:FindFirstChild("Fruits")
+
+        if fruits then
+
+            for _, fruit in ipairs(fruits:GetChildren()) do
+
+                if fruit:IsA("Model") then
+
+                    local entry =
+                        GAG2ACFBuildEntry(
+                            plant,
+                            fruit
+                        )
+
+                    if entry then
+
+                        readyCount += 1
+
+                        if GAG2ACFEntryAllowed(entry) == true then
+
+                            table.insert(
+                                queue,
+                                entry
+                            )
+
+                        else
+
+                            excludedCount += 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    GAG2ACFSortQueue(
+        queue
+    )
+
+    return queue,
+        readyCount,
+        excludedCount,
+        "ok"
+end
+
+function GAG2ACFBuildStatusText(queue, readyCount, excludedCount, note)
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    local matching =
+        #queue
+
+    local nextText =
+        "None"
+
+    if queue[1] then
+
+        nextText =
+            tostring(queue[1].Name)
+            .. " | "
+            .. tostring(queue[1].Rarity)
+            .. " | "
+            .. tostring(queue[1].MutationLabel)
+            .. " | size "
+            .. GAG2ACFFormatSize(queue[1].SizeMulti)
+            .. " | worth "
+            .. GAG2ACFFormatNumber(queue[1].SellWorth)
+    end
+
+    state.LastReadyCount =
+        readyCount
+
+    state.LastMatchingCount =
+        matching
+
+    state.LastExcludedCount =
+        excludedCount
+
+    state.LastNextText =
+        nextText
+
+    return '<font color="rgb(196,181,253)"><b>Auto Collect Fruits</b></font>'
+        .. '\nState: '
+        .. (
+            state.Enabled == true
+            and "ON"
+            or "OFF"
+        )
+        .. '\nReady: '
+        .. tostring(readyCount)
+        .. ' | Matching: '
+        .. tostring(matching)
+        .. ' | Excluded: '
+        .. tostring(excludedCount)
+        .. '\nNext: '
+        .. tostring(nextText)
+        .. '\nPriority: '
+        .. tostring(state.Priority1)
+        .. ' > '
+        .. tostring(state.Priority2)
+        .. ' > '
+        .. tostring(state.Priority3)
+        .. '\nNote: '
+        .. tostring(note or "Weight uses SizeMulti until exact KG is found.")
+end
+
+function GAG2ACFBackpackLooksFull()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    if state.StopIfFull ~= true then
+        return false
+    end
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+
+    local backpackGui =
+        playerGui
+        and playerGui:FindFirstChild("BackpackGui")
+
+    if not backpackGui then
+        return false
+    end
+
+    local scanned =
+        0
+
+    for _, descendant in ipairs(backpackGui:GetDescendants()) do
+
+        scanned += 1
+
+        if scanned > 2500 then
+            break
+        end
+
+        if descendant:IsA("TextLabel")
+        or descendant:IsA("TextButton")
+        or descendant:IsA("TextBox") then
+
+            local text =
+                GAG2ACFClean(
+                    descendant.Text
+                ):lower()
+
+            if text:find("backpack", 1, true)
+            and (
+                text:find("full", 1, true)
+                or text:find("max", 1, true)
+            ) then
+
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+function GAG2ACFFirePrompt(prompt)
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true then
+        return false, "bad prompt"
+    end
+
+    if prompt.Enabled ~= true then
+        return false, "prompt disabled"
+    end
+
+    if type(fireproximityprompt) ~= "function" then
+        return false, "fireproximityprompt unsupported"
+    end
+
+    local ok, err =
+        pcall(
+            fireproximityprompt,
+            prompt
+        )
+
+    if ok ~= true then
+        return false, tostring(err)
+    end
+
+    return true, "fired"
+end
+
+function GAG2ACFCollectBatch()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    local queue, readyCount, excludedCount, reason =
+        GAG2ACFScanQueue()
+
+    if reason ~= "ok" then
+
+        GAG2ACFSetStatus(
+            GAG2ACFBuildStatusText(
+                {},
+                readyCount,
+                excludedCount,
+                reason
+            )
+        )
+
+        return 0
+    end
+
+    if #queue <= 0 then
+
+        GAG2ACFSetStatus(
+            GAG2ACFBuildStatusText(
+                queue,
+                readyCount,
+                excludedCount,
+                "No matching fruit."
+            )
+        )
+
+        return 0
+    end
+
+    local burstAmount =
+        math.clamp(
+            math.floor(
+                tonumber(state.BurstAmount)
+                or 8
+            ),
+            1,
+            40
+        )
+
+    local fired =
+        0
+
+    for _, entry in ipairs(queue) do
+
+        if fired >= burstAmount then
+            break
+        end
+
+        if state.Enabled ~= true then
+            break
+        end
+
+        local recentAt =
+            tonumber(
+                state.Recent[entry.Key]
+            )
+            or 0
+
+        if os.clock() - recentAt >= 1.25 then
+
+            local ok =
+                GAG2ACFFirePrompt(
+                    entry.Prompt
+                )
+
+            state.Recent[entry.Key] =
+                os.clock()
+
+            if ok == true then
+
+                fired += 1
+
+                state.LastFiredCount =
+                    fired
+            end
+
+            local delay =
+                tonumber(state.Delay)
+                or 0
+
+            if delay > 0 then
+
+                task.wait(
+                    math.clamp(
+                        delay,
+                        0,
+                        2
+                    )
+                )
+
+            elseif fired % 6 == 0 then
+
+                task.wait()
+            end
+        end
+    end
+
+    GAG2ACFSetStatus(
+        GAG2ACFBuildStatusText(
+            queue,
+            readyCount,
+            excludedCount,
+            fired > 0
+            and (
+                "Collected "
+                .. tostring(fired)
+                .. " this batch."
+            )
+            or "No prompt fired."
+        )
+    )
+
+    return fired
+end
+
+function GAG2ACFStartLoop()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    if state.Running == true then
+        return
+    end
+
+    state.Running =
+        true
+
+    task.spawn(function()
+
+        while state.Enabled == true do
+
+            if GAG2ACFBackpackLooksFull() == true then
+
+                state.Enabled =
+                    false
+
+                if Toggles.HolyGAG2AutoCollectFruits
+                and type(Toggles.HolyGAG2AutoCollectFruits.SetValue) == "function" then
+
+                    pcall(function()
+
+                        Toggles.HolyGAG2AutoCollectFruits:SetValue(
+                            false
+                        )
+                    end)
+                end
+
+                GAG2ACFSetStatus(
+                    '<font color="rgb(248,113,113)"><b>Auto Collect stopped:</b></font>'
+                    .. '\nBackpack looks full/max.'
+                )
+
+                break
+            end
+
+            local fired =
+                GAG2ACFCollectBatch()
+
+            if fired > 0 then
+
+                task.wait(
+                    0.03
+                )
+
+            else
+
+                task.wait(
+                    0.35
+                )
+            end
+        end
+
+        state.Running =
+            false
+
+        if state.Enabled ~= true then
+
+            GAG2ACFSetStatus(
+                GAG2ACFBuildStatusText(
+                    {},
+                    state.LastReadyCount or 0,
+                    state.LastExcludedCount or 0,
+                    "Stopped."
+                )
+            )
+        end
+    end)
+end
+
+function GAG2ACFSetEnabled(value)
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    state.Enabled =
+        value == true
+
+    if state.Enabled == true then
+
+        GAG2ACFSetStatus(
+            "Auto Collect Fruits starting..."
+        )
+
+        if ConfigState.Loading ~= true then
+
+            GAG2ACFStartLoop()
+        end
+
+    else
+
+        GAG2ACFSetStatus(
+            GAG2ACFBuildStatusText(
+                {},
+                state.LastReadyCount or 0,
+                state.LastExcludedCount or 0,
+                "Stopped."
+            )
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2ACFSetStopIfFull(value)
+
+    GAG2_AUTO_COLLECT_FRUIT_STATE.StopIfFull =
+        value == true
+
+    MarkConfigDirty()
+end
+
+function GAG2ACFSetDelay(value)
+
+    GAG2_AUTO_COLLECT_FRUIT_STATE.Delay =
+        math.clamp(
+            tonumber(value)
+            or 0,
+            0,
+            2
+        )
+
+    MarkConfigDirty()
+end
+
+function GAG2ACFSetBurst(value)
+
+    GAG2_AUTO_COLLECT_FRUIT_STATE.BurstAmount =
+        math.clamp(
+            math.floor(
+                tonumber(value)
+                or 8
+            ),
+            1,
+            40
+        )
+
+    MarkConfigDirty()
+end
+
+function GAG2ACFSetCollectMode(value)
+
+    value =
+        GAG2ACFClean(value)
+
+    if value ~= "Only Selected" then
+        value =
+            "All"
+    end
+
+    GAG2_AUTO_COLLECT_FRUIT_STATE.CollectMode =
+        value
+
+    MarkConfigDirty()
+end
+
+function GAG2ACFSetDropdownMap(key, value)
+
+    GAG2_AUTO_COLLECT_FRUIT_STATE[key] =
+        GAG2ACFNormalizeSelection(
+            value
+        )
+
+    MarkConfigDirty()
+end
+
+function GAG2ACFSetExcludeSizeMode(value)
+
+    value =
+        GAG2ACFClean(value)
+
+    if value ~= "Above"
+    and value ~= "Below" then
+        value =
+            "Off"
+    end
+
+    GAG2_AUTO_COLLECT_FRUIT_STATE.ExcludeSizeMode =
+        value
+
+    MarkConfigDirty()
+end
+
+function GAG2ACFSetExcludeSizeThreshold(value)
+
+    GAG2_AUTO_COLLECT_FRUIT_STATE.ExcludeSizeThreshold =
+        math.max(
+            0,
+            tonumber(value)
+            or 0
+        )
+
+    MarkConfigDirty()
+end
+
+function GAG2ACFSetPriority(slot, value)
+
+    slot =
+        tonumber(slot)
+
+    if not slot
+    or slot < 1
+    or slot > 3 then
+        return
+    end
+
+    value =
+        GAG2ACFClean(value)
+
+    if table.find(GAG2_ACF_PRIORITY_VALUES, value) == nil then
+        value =
+            "None"
+    end
+
+    GAG2_AUTO_COLLECT_FRUIT_STATE[
+        "Priority"
+        .. tostring(slot)
+    ] =
+        value
+
+    MarkConfigDirty()
+end
+
+function GAG2ACFGetFruitDropdownValues()
+
+    GAG2ACFEnsureModules()
+
+    local names =
+        {}
+
+    local function add(name)
+
+        name =
+            GAG2ACFClean(name)
+
+        if name == "" then
+            return
+        end
+
+        if table.find(names, name) ~= nil then
+            return
+        end
+
+        table.insert(
+            names,
+            name
+        )
+    end
+
+    for _, name in ipairs(GAG2_AUTO_COLLECT_FRUIT_STATE.FruitNames or {}) do
+        add(name)
+    end
+
+    local garden =
+        GAG2ACFGetOwnGarden()
+
+    local plants =
+        garden
+        and garden:FindFirstChild("Plants")
+
+    if plants then
+
+        for _, plant in ipairs(plants:GetChildren()) do
+
+            add(
+                plant:GetAttribute("SeedName")
+            )
+
+            local fruits =
+                plant:FindFirstChild("Fruits")
+
+            if fruits then
+
+                for _, fruit in ipairs(fruits:GetChildren()) do
+
+                    add(
+                        fruit:GetAttribute("CorePartName")
+                    )
+                end
+            end
+        end
+    end
+
+    table.sort(
+        names
+    )
+
+    return names
+end
+
+function GAG2ACFGetRarityDropdownValues()
+
+    GAG2ACFEnsureModules()
+
+    local values =
+        {}
+
+    local function add(value)
+
+        value =
+            GAG2ACFClean(value)
+
+        if value == "" then
+            return
+        end
+
+        if table.find(values, value) ~= nil then
+            return
+        end
+
+        table.insert(
+            values,
+            value
+        )
+    end
+
+    for _, rarity in ipairs(GAG2_AUTO_COLLECT_FRUIT_STATE.RarityNames or {}) do
+        add(rarity)
+    end
+
+    table.sort(values, function(a, b)
+
+        return (GAG2_ACF_RARITY_SCORE[a] or 0)
+            > (GAG2_ACF_RARITY_SCORE[b] or 0)
+    end)
+
+    return values
+end
+
+function GAG2ACFGetMutationDropdownValues()
+
+    GAG2ACFEnsureModules()
+
+    local values =
+        {}
+
+    local function add(value)
+
+        value =
+            GAG2ACFClean(value)
+
+        if value == "" then
+            value =
+                "None"
+        end
+
+        if table.find(values, value) ~= nil then
+            return
+        end
+
+        table.insert(
+            values,
+            value
+        )
+    end
+
+    for _, mutation in ipairs(GAG2_AUTO_COLLECT_FRUIT_STATE.MutationNames or {}) do
+        add(mutation)
+    end
+
+    table.sort(values, function(a, b)
+
+        if a == "None" then
+            return true
+        end
+
+        if b == "None" then
+            return false
+        end
+
+        return tostring(a) < tostring(b)
+    end)
+
+    return values
+end
+
+function GAG2ACFRefreshOneDropdown(dropdown, values)
+
+    if not dropdown then
+        return
+    end
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+end
+
+function GAG2ACFRefreshDropdownValues()
+
+    local controls =
+        GAG2_AUTO_COLLECT_FRUIT_CONTROLS
+
+    GAG2ACFRefreshOneDropdown(
+        controls.SelectedFruits,
+        GAG2ACFGetFruitDropdownValues()
+    )
+
+    GAG2ACFRefreshOneDropdown(
+        controls.ExcludeFruits,
+        GAG2ACFGetFruitDropdownValues()
+    )
+
+    GAG2ACFRefreshOneDropdown(
+        controls.SelectedRarities,
+        GAG2ACFGetRarityDropdownValues()
+    )
+
+    GAG2ACFRefreshOneDropdown(
+        controls.ExcludeRarities,
+        GAG2ACFGetRarityDropdownValues()
+    )
+
+    GAG2ACFRefreshOneDropdown(
+        controls.SelectedMutations,
+        GAG2ACFGetMutationDropdownValues()
+    )
+
+    GAG2ACFRefreshOneDropdown(
+        controls.ExcludeMutations,
+        GAG2ACFGetMutationDropdownValues()
+    )
+end
+
+function GAG2RestoreAutoCollectFruitState()
+
+    task.defer(function()
+
+        local state =
+            GAG2_AUTO_COLLECT_FRUIT_STATE
+
+        if Toggles.HolyGAG2AutoCollectFruits then
+
+            state.Enabled =
+                Toggles.HolyGAG2AutoCollectFruits.Value == true
+        end
+
+        if Toggles.HolyGAG2ACFStopIfFull then
+
+            state.StopIfFull =
+                Toggles.HolyGAG2ACFStopIfFull.Value == true
+        end
+
+        if Options.HolyGAG2ACFDelay then
+
+            GAG2ACFSetDelay(
+                Options.HolyGAG2ACFDelay.Value
+            )
+        end
+
+        if Options.HolyGAG2ACFBurst then
+
+            GAG2ACFSetBurst(
+                Options.HolyGAG2ACFBurst.Value
+            )
+        end
+
+        if Options.HolyGAG2ACFCollectMode then
+
+            GAG2ACFSetCollectMode(
+                Options.HolyGAG2ACFCollectMode.Value
+            )
+        end
+
+        if Options.HolyGAG2ACFSelectedFruits then
+
+            GAG2ACFSetDropdownMap(
+                "SelectedFruits",
+                Options.HolyGAG2ACFSelectedFruits.Value
+            )
+        end
+
+        if Options.HolyGAG2ACFSelectedRarities then
+
+            GAG2ACFSetDropdownMap(
+                "SelectedRarities",
+                Options.HolyGAG2ACFSelectedRarities.Value
+            )
+        end
+
+        if Options.HolyGAG2ACFSelectedMutations then
+
+            GAG2ACFSetDropdownMap(
+                "SelectedMutations",
+                Options.HolyGAG2ACFSelectedMutations.Value
+            )
+        end
+
+        if Options.HolyGAG2ACFExcludeFruits then
+
+            GAG2ACFSetDropdownMap(
+                "ExcludeFruits",
+                Options.HolyGAG2ACFExcludeFruits.Value
+            )
+        end
+
+        if Options.HolyGAG2ACFExcludeRarities then
+
+            GAG2ACFSetDropdownMap(
+                "ExcludeRarities",
+                Options.HolyGAG2ACFExcludeRarities.Value
+            )
+        end
+
+        if Options.HolyGAG2ACFExcludeMutations then
+
+            GAG2ACFSetDropdownMap(
+                "ExcludeMutations",
+                Options.HolyGAG2ACFExcludeMutations.Value
+            )
+        end
+
+        if Options.HolyGAG2ACFExcludeSizeMode then
+
+            GAG2ACFSetExcludeSizeMode(
+                Options.HolyGAG2ACFExcludeSizeMode.Value
+            )
+        end
+
+        if Options.HolyGAG2ACFExcludeSizeThreshold then
+
+            GAG2ACFSetExcludeSizeThreshold(
+                Options.HolyGAG2ACFExcludeSizeThreshold.Value
+            )
+        end
+
+        for slot = 1, 3 do
+
+            local option =
+                Options[
+                    "HolyGAG2ACFPriority"
+                    .. tostring(slot)
+                ]
+
+            if option then
+
+                GAG2ACFSetPriority(
+                    slot,
+                    option.Value
+                )
+            end
+        end
+
+        GAG2ACFRefreshDropdownValues()
+
+        if state.Enabled == true then
+
+            GAG2ACFStartLoop()
+
+        else
+
+            local queue, readyCount, excludedCount =
+                GAG2ACFScanQueue()
+
+            GAG2ACFSetStatus(
+                GAG2ACFBuildStatusText(
+                    queue,
+                    readyCount,
+                    excludedCount,
+                    "Ready."
+                )
+            )
+        end
+    end)
+end
+
 local function SniperMoveCloseForTame(entry)
 
     local character, root =
@@ -11009,15 +12863,472 @@ ExperimentStatusBox:AddLabel("HolyGAG2ExperimentStatus", {
 --==================================================
 
 FarmMainBox:AddLabel({
-    Text = "Ready.",
+    Text =
+        '<font color="rgb(196,181,253)"><b>Auto Collect Fruits</b></font>'
+        .. '\nBuilds a ready-fruit queue, applies filters/exclusions, then collects by priority.'
+        .. '\nWeight currently uses SizeMulti because exact pre-harvest KG is not stored.',
     DoesWrap = true,
     Size = 13,
 })
 
+GAG2_AUTO_COLLECT_FRUIT_CONTROLS.Toggle =
+    FarmMainBox:AddToggle("HolyGAG2AutoCollectFruits", {
+        Text = "Auto Collect Fruits",
+        Default = false,
+        Tooltip = "Collects ready fruits from your own garden using HarvestPrompt.",
+        Callback = function(value)
+
+            GAG2ACFSetEnabled(
+                value == true
+            )
+        end,
+    })
+
+FarmMainBox:AddToggle("HolyGAG2ACFStopIfFull", {
+    Text = "Stop If Backpack Is Full Max",
+    Default = true,
+    Tooltip = "Stops auto collect if backpack UI looks full/max.",
+    Callback = function(value)
+
+        GAG2ACFSetStopIfFull(
+            value == true
+        )
+    end,
+})
+
+if type(FarmMainBox.AddInput) == "function" then
+
+    local CollectDelayInput =
+        FarmMainBox:AddInput(
+            "HolyGAG2ACFDelay",
+            {
+                Text = "Delay To Collect",
+                Default = "0",
+                Placeholder = "0",
+                Numeric = false,
+                Finished = false,
+                ClearTextOnFocus = false,
+                Tooltip = "Delay between prompt fires. 0 is fastest safe mode.",
+            }
+        )
+
+    if CollectDelayInput
+    and type(CollectDelayInput.OnChanged) == "function" then
+
+        CollectDelayInput:OnChanged(function(value)
+
+            GAG2ACFSetDelay(
+                value
+            )
+        end)
+    end
+
+    local BurstInput =
+        FarmMainBox:AddInput(
+            "HolyGAG2ACFBurst",
+            {
+                Text = "Collect Burst Amount",
+                Default = "8",
+                Placeholder = "8",
+                Numeric = false,
+                Finished = false,
+                ClearTextOnFocus = false,
+                Tooltip = "How many ready fruits to fire per scan cycle.",
+            }
+        )
+
+    if BurstInput
+    and type(BurstInput.OnChanged) == "function" then
+
+        BurstInput:OnChanged(function(value)
+
+            GAG2ACFSetBurst(
+                value
+            )
+        end)
+    end
+end
+
+FarmMainBox:AddDivider()
+
+FarmMainBox:AddLabel({
+    Text = '<font color="rgb(196,181,253)"><b>Collects</b></font>',
+    DoesWrap = true,
+    Size = 13,
+})
+
+GAG2_AUTO_COLLECT_FRUIT_CONTROLS.CollectMode =
+    FarmMainBox:AddDropdown(
+        "HolyGAG2ACFCollectMode",
+        {
+            Text = "Collect Mode",
+            Values = GAG2_ACF_COLLECT_MODES,
+            Default = "All",
+            Multi = false,
+            Searchable = false,
+            MaxVisibleDropdownItems = 4,
+            Tooltip = "All ignores selected fruits. Only Selected requires selected fruits.",
+        }
+    )
+
+if GAG2_AUTO_COLLECT_FRUIT_CONTROLS.CollectMode
+and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.CollectMode.OnChanged) == "function" then
+
+    GAG2_AUTO_COLLECT_FRUIT_CONTROLS.CollectMode:OnChanged(function(value)
+
+        GAG2ACFSetCollectMode(
+            value
+        )
+    end)
+end
+
+GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedFruits =
+    FarmMainBox:AddDropdown(
+        "HolyGAG2ACFSelectedFruits",
+        {
+            Text = "Select Fruit",
+            Values = GAG2ACFGetFruitDropdownValues(),
+            Default = {},
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Used when Collect Mode is Only Selected.",
+        }
+    )
+
+if GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedFruits
+and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedFruits.OnChanged) == "function" then
+
+    GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedFruits:OnChanged(function(value)
+
+        GAG2ACFSetDropdownMap(
+            "SelectedFruits",
+            value
+        )
+    end)
+end
+
+GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedRarities =
+    FarmMainBox:AddDropdown(
+        "HolyGAG2ACFSelectedRarities",
+        {
+            Text = "Select Rarity",
+            Values = GAG2ACFGetRarityDropdownValues(),
+            Default = {},
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Empty means any rarity.",
+        }
+    )
+
+if GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedRarities
+and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedRarities.OnChanged) == "function" then
+
+    GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedRarities:OnChanged(function(value)
+
+        GAG2ACFSetDropdownMap(
+            "SelectedRarities",
+            value
+        )
+    end)
+end
+
+GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedMutations =
+    FarmMainBox:AddDropdown(
+        "HolyGAG2ACFSelectedMutations",
+        {
+            Text = "Select Mutation",
+            Values = GAG2ACFGetMutationDropdownValues(),
+            Default = {},
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Empty means any mutation.",
+        }
+    )
+
+if GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedMutations
+and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedMutations.OnChanged) == "function" then
+
+    GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedMutations:OnChanged(function(value)
+
+        GAG2ACFSetDropdownMap(
+            "SelectedMutations",
+            value
+        )
+    end)
+end
+
+FarmMainBox:AddDivider()
+
+FarmMainBox:AddLabel({
+    Text = '<font color="rgb(196,181,253)"><b>Exclusions</b></font>',
+    DoesWrap = true,
+    Size = 13,
+})
+
+GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeFruits =
+    FarmMainBox:AddDropdown(
+        "HolyGAG2ACFExcludeFruits",
+        {
+            Text = "Exclude Fruits",
+            Values = GAG2ACFGetFruitDropdownValues(),
+            Default = {},
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Always skip these fruits.",
+        }
+    )
+
+if GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeFruits
+and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeFruits.OnChanged) == "function" then
+
+    GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeFruits:OnChanged(function(value)
+
+        GAG2ACFSetDropdownMap(
+            "ExcludeFruits",
+            value
+        )
+    end)
+end
+
+GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeRarities =
+    FarmMainBox:AddDropdown(
+        "HolyGAG2ACFExcludeRarities",
+        {
+            Text = "Exclude Rarities",
+            Values = GAG2ACFGetRarityDropdownValues(),
+            Default = {},
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Always skip these rarities.",
+        }
+    )
+
+if GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeRarities
+and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeRarities.OnChanged) == "function" then
+
+    GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeRarities:OnChanged(function(value)
+
+        GAG2ACFSetDropdownMap(
+            "ExcludeRarities",
+            value
+        )
+    end)
+end
+
+GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeMutations =
+    FarmMainBox:AddDropdown(
+        "HolyGAG2ACFExcludeMutations",
+        {
+            Text = "Exclude Mutations",
+            Values = GAG2ACFGetMutationDropdownValues(),
+            Default = {},
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Always skip these mutations.",
+        }
+    )
+
+if GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeMutations
+and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeMutations.OnChanged) == "function" then
+
+    GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeMutations:OnChanged(function(value)
+
+        GAG2ACFSetDropdownMap(
+            "ExcludeMutations",
+            value
+        )
+    end)
+end
+
+GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeSizeMode =
+    FarmMainBox:AddDropdown(
+        "HolyGAG2ACFExcludeSizeMode",
+        {
+            Text = "Exclude Size/Weight Mode",
+            Values = GAG2_ACF_SIZE_MODES,
+            Default = "Off",
+            Multi = false,
+            Searchable = false,
+            MaxVisibleDropdownItems = 4,
+            Tooltip = "Above 5 skips size above 5. Below 5 skips size below 5.",
+        }
+    )
+
+if GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeSizeMode
+and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeSizeMode.OnChanged) == "function" then
+
+    GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeSizeMode:OnChanged(function(value)
+
+        GAG2ACFSetExcludeSizeMode(
+            value
+        )
+    end)
+end
+
+if type(FarmMainBox.AddInput) == "function" then
+
+    local SizeThresholdInput =
+        FarmMainBox:AddInput(
+            "HolyGAG2ACFExcludeSizeThreshold",
+            {
+                Text = "Size/Weight Threshold",
+                Default = "0",
+                Placeholder = "Example: 5",
+                Numeric = false,
+                Finished = false,
+                ClearTextOnFocus = false,
+                Tooltip = "Uses SizeMulti in V1. 0 disables threshold.",
+            }
+        )
+
+    if SizeThresholdInput
+    and type(SizeThresholdInput.OnChanged) == "function" then
+
+        SizeThresholdInput:OnChanged(function(value)
+
+            GAG2ACFSetExcludeSizeThreshold(
+                value
+            )
+        end)
+    end
+end
+
+FarmMainBox:AddDivider()
+
+FarmMainBox:AddLabel({
+    Text = '<font color="rgb(196,181,253)"><b>Priority</b></font>',
+    DoesWrap = true,
+    Size = 13,
+})
+
+for priorityIndex = 1, 3 do
+
+    GAG2_AUTO_COLLECT_FRUIT_CONTROLS[
+        "Priority"
+        .. tostring(priorityIndex)
+    ] =
+        FarmMainBox:AddDropdown(
+            "HolyGAG2ACFPriority"
+            .. tostring(priorityIndex),
+            {
+                Text =
+                    tostring(priorityIndex)
+                    .. (
+                        priorityIndex == 1
+                        and "st Collect Priority"
+                        or priorityIndex == 2
+                        and "nd Collect Priority"
+                        or "rd Collect Priority"
+                    ),
+
+                Values = GAG2_ACF_PRIORITY_VALUES,
+
+                Default =
+                    priorityIndex == 1
+                    and "Rarity"
+                    or priorityIndex == 2
+                    and "Weight"
+                    or "Mutation",
+
+                Multi = false,
+                Searchable = false,
+                MaxVisibleDropdownItems = 8,
+                Tooltip = "Queue sorting order.",
+            }
+        )
+
+    if GAG2_AUTO_COLLECT_FRUIT_CONTROLS[
+        "Priority"
+        .. tostring(priorityIndex)
+    ]
+    and type(
+        GAG2_AUTO_COLLECT_FRUIT_CONTROLS[
+            "Priority"
+            .. tostring(priorityIndex)
+        ].OnChanged
+    ) == "function" then
+
+        GAG2_AUTO_COLLECT_FRUIT_CONTROLS[
+            "Priority"
+            .. tostring(priorityIndex)
+        ]:OnChanged(function(value)
+
+            GAG2ACFSetPriority(
+                priorityIndex,
+                value
+            )
+        end)
+    end
+end
+
+FarmMainBox:AddDivider()
+
+FarmMainBox:AddButton({
+    Text = "Refresh Lists",
+    Tooltip = "Refresh fruit, rarity, and mutation dropdown choices.",
+    Func = function()
+
+        GAG2ACFRefreshDropdownValues()
+
+        GAG2ACFSetStatus(
+            "Auto Collect fruit lists refreshed."
+        )
+    end,
+}):AddButton({
+    Text = "Collect Once",
+    Tooltip = "Runs one priority batch without enabling the loop.",
+    Func = function()
+
+        GAG2ACFCollectBatch()
+    end,
+})
+
+FarmMainBox:AddButton({
+    Text = "Stop Collect",
+    Risky = true,
+    Tooltip = "Turns Auto Collect Fruits off.",
+    Func = function()
+
+        GAG2ACFSetEnabled(
+            false
+        )
+
+        if Toggles.HolyGAG2AutoCollectFruits
+        and type(Toggles.HolyGAG2AutoCollectFruits.SetValue) == "function" then
+
+            pcall(function()
+
+                Toggles.HolyGAG2AutoCollectFruits:SetValue(
+                    false
+                )
+            end)
+        end
+    end,
+})
+
 FarmStatusBox:AddLabel("HolyGAG2FarmStatus", {
-    Text = "Idle.",
+    Text =
+        '<font color="rgb(196,181,253)"><b>Auto Collect Fruits</b></font>'
+        .. '\nIdle.',
     DoesWrap = true,
 })
+
+task.defer(function()
+
+    GAG2ACFRefreshDropdownValues()
+end)
 
 --==================================================
 -- [9] VISUALS TAB
@@ -11607,6 +13918,7 @@ ConfigState.Loading =
 if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
 
     GAG2RestoreAutoTpMiddleFarmState()
+    GAG2RestoreAutoCollectFruitState()
 end
 
 task.spawn(function()
