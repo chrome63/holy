@@ -21302,6 +21302,11 @@ GAG2_DROP_PICKUP_STATE =
         Mode = "All",
         CustomText = "",
 
+        TeleportPickup = false,
+        ReturnAfterTeleportPickup = true,
+        TeleportScanRadius = 650,
+        TeleportYOffset = 4.75,
+
         IgnoreOwnDropSeconds = 1.75,
         SelfDropIgnoreUntil = 0,
         LastSelfDropReason = "",
@@ -21351,6 +21356,12 @@ function GAG2DropPickupSetStatus(text)
             .. 's'
             .. '\nMode: '
             .. tostring(state.Mode or "All")
+            .. ' | TP: '
+            .. (
+                state.TeleportPickup == true
+                and "ON"
+                or "OFF"
+            )
             .. ' | Picked: '
             .. tostring(state.Picked or 0)
             .. ' | Found: '
@@ -21447,6 +21458,134 @@ function GAG2DropPickupGetPosition(instance)
     end
 
     return nil
+end
+
+function GAG2DropPickupPivotTo(targetCFrame)
+
+    if typeof(targetCFrame) ~= "CFrame" then
+        return false, "bad cframe"
+    end
+
+    local character, rootPart =
+        GAG2DropPickupGetCharacterRoot()
+
+    if not character
+    or not rootPart then
+
+        return false,
+            "missing character"
+    end
+
+    local oldCFrame =
+        rootPart.CFrame
+
+    local ok, err =
+        pcall(function()
+
+            character:PivotTo(
+                targetCFrame
+            )
+        end)
+
+    if ok ~= true then
+
+        ok, err =
+            pcall(function()
+
+                rootPart.CFrame =
+                    targetCFrame
+            end)
+    end
+
+    if ok ~= true then
+        return false, tostring(err)
+    end
+
+    if type(SniperStopCharacterMotion) == "function" then
+
+        SniperStopCharacterMotion(
+            rootPart
+        )
+
+    else
+
+        pcall(function()
+
+            rootPart.AssemblyLinearVelocity =
+                Vector3.zero
+
+            rootPart.AssemblyAngularVelocity =
+                Vector3.zero
+        end)
+    end
+
+    return true,
+        oldCFrame
+end
+
+function GAG2DropPickupBuildTeleportCFrame(itemPosition)
+
+    if typeof(itemPosition) ~= "Vector3" then
+        return nil
+    end
+
+    local state =
+        GAG2_DROP_PICKUP_STATE
+
+    local yOffset =
+        math.clamp(
+            tonumber(state.TeleportYOffset)
+            or 4.75,
+            2.5,
+            12
+        )
+
+    local targetPosition =
+        itemPosition
+        + Vector3.new(
+            0,
+            yOffset,
+            0
+        )
+
+    return CFrame.new(
+        targetPosition,
+        itemPosition
+    )
+end
+
+function GAG2DropPickupTeleportClose(itemPosition)
+
+    local targetCFrame =
+        GAG2DropPickupBuildTeleportCFrame(
+            itemPosition
+        )
+
+    if typeof(targetCFrame) ~= "CFrame" then
+        return false, "bad target"
+    end
+
+    return GAG2DropPickupPivotTo(
+        targetCFrame
+    )
+end
+
+function GAG2DropPickupReturnFromTeleport(oldCFrame)
+
+    local state =
+        GAG2_DROP_PICKUP_STATE
+
+    if state.ReturnAfterTeleportPickup ~= true then
+        return false
+    end
+
+    if typeof(oldCFrame) ~= "CFrame" then
+        return false
+    end
+
+    return GAG2DropPickupPivotTo(
+        oldCFrame
+    )
 end
 
 function GAG2DropPickupFindPrompt(item)
@@ -21762,32 +21901,6 @@ function GAG2DropPickupCanFire(item, prompt, rootPart)
         return false, "missing root"
     end
 
-    local position =
-        GAG2DropPickupGetPosition(
-            item
-        )
-
-    if typeof(position) ~= "Vector3" then
-
-        return false, "no position"
-    end
-
-    local radius =
-        math.clamp(
-            tonumber(state.Radius)
-            or 80,
-            5,
-            1000
-        )
-
-    local distance =
-        (rootPart.Position - position).Magnitude
-
-    if distance > radius then
-
-        return false, "too far"
-    end
-
     if GAG2DropPickupMatchesMode(
         item,
         prompt
@@ -21811,11 +21924,62 @@ function GAG2DropPickupCanFire(item, prompt, rootPart)
         return false, "recent"
     end
 
+    local position =
+        GAG2DropPickupGetPosition(
+            item
+        )
+
+    if typeof(position) ~= "Vector3" then
+
+        return false, "no position"
+    end
+
+    local pickupRadius =
+        math.clamp(
+            tonumber(state.Radius)
+            or 80,
+            5,
+            1000
+        )
+
+    local teleportScanRadius =
+        math.clamp(
+            tonumber(state.TeleportScanRadius)
+            or 650,
+            pickupRadius,
+            3000
+        )
+
+    local distance =
+        (rootPart.Position - position).Magnitude
+
+    if distance > pickupRadius then
+
+        if state.TeleportPickup ~= true then
+
+            return false,
+                "too far"
+        end
+
+        if distance > teleportScanRadius then
+
+            return false,
+                "outside tp scan"
+        end
+
+        return true,
+            key,
+            true,
+            position
+    end
+
     return true,
-        key
+        key,
+        false,
+        position
 end
 
-function GAG2DropPickupFirePrompt(item, prompt, key)
+function GAG2DropPickupFirePrompt(item, prompt, key, shouldTeleport, itemPosition)
 
     local state =
         GAG2_DROP_PICKUP_STATE
@@ -21827,6 +21991,40 @@ function GAG2DropPickupFirePrompt(item, prompt, key)
 
         return false,
             state.LastError
+    end
+
+    local oldCFrame =
+        nil
+
+    local didTeleport =
+        false
+
+    if shouldTeleport == true then
+
+        local moved, result =
+            GAG2DropPickupTeleportClose(
+                itemPosition
+            )
+
+        if moved ~= true then
+
+            state.LastError =
+                "tp failed: "
+                .. tostring(result)
+
+            return false,
+                state.LastError
+        end
+
+        oldCFrame =
+            result
+
+        didTeleport =
+            true
+
+        task.wait(
+            0.06
+        )
     end
 
     local ok, err =
@@ -21841,6 +22039,17 @@ function GAG2DropPickupFirePrompt(item, prompt, key)
 
         state.LastError =
             tostring(err)
+
+        if didTeleport == true then
+
+            task.wait(
+                0.04
+            )
+
+            GAG2DropPickupReturnFromTeleport(
+                oldCFrame
+            )
+        end
 
         return false,
             state.LastError
@@ -21860,6 +22069,17 @@ function GAG2DropPickupFirePrompt(item, prompt, key)
 
     state.LastError =
         ""
+
+    if didTeleport == true then
+
+        task.wait(
+            0.05
+        )
+
+        GAG2DropPickupReturnFromTeleport(
+            oldCFrame
+        )
+    end
 
     return true,
         "picked"
@@ -21933,7 +22153,7 @@ function GAG2DropPickupScanOnce(reason)
 
         if prompt then
 
-            local allowed, key =
+            local allowed, key, shouldTeleport, itemPosition =
                 GAG2DropPickupCanFire(
                     item,
                     prompt,
@@ -21948,7 +22168,9 @@ function GAG2DropPickupScanOnce(reason)
                     GAG2DropPickupFirePrompt(
                         item,
                         prompt,
-                        key
+                        key,
+                        shouldTeleport,
+                        itemPosition
                     )
 
                 if ok == true then
@@ -22131,6 +22353,74 @@ function GAG2DropPickupSetCustomText(value)
     MarkConfigDirty()
 end
 
+function GAG2DropPickupSetTeleportPickup(value)
+
+    GAG2_DROP_PICKUP_STATE.TeleportPickup =
+        value == true
+
+    GAG2DropPickupSetStatus(
+        "TP pickup "
+        .. (
+            value == true
+            and "enabled."
+            or "disabled."
+        )
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2DropPickupSetReturnAfterTeleport(value)
+
+    GAG2_DROP_PICKUP_STATE.ReturnAfterTeleportPickup =
+        value == true
+
+    GAG2DropPickupSetStatus(
+        "Return after TP "
+        .. (
+            value == true
+            and "enabled."
+            or "disabled."
+        )
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2DropPickupSetTeleportScanRadius(value)
+
+    GAG2_DROP_PICKUP_STATE.TeleportScanRadius =
+        math.clamp(
+            tonumber(value)
+            or 650,
+            5,
+            3000
+        )
+
+    GAG2DropPickupSetStatus(
+        "TP scan radius set."
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2DropPickupSetTeleportYOffset(value)
+
+    GAG2_DROP_PICKUP_STATE.TeleportYOffset =
+        math.clamp(
+            tonumber(value)
+            or 4.75,
+            2.5,
+            12
+        )
+
+    GAG2DropPickupSetStatus(
+        "TP height set."
+    )
+
+    MarkConfigDirty()
+end
+
 function GAG2DropPickupSetIgnoreOwnDropSeconds(value)
 
     GAG2_DROP_PICKUP_STATE.IgnoreOwnDropSeconds =
@@ -22232,6 +22522,42 @@ function GAG2RestoreDropPickupState()
                 )
         end
 
+        if Toggles.HolyGAG2PickupTeleport then
+
+            state.TeleportPickup =
+                Toggles.HolyGAG2PickupTeleport.Value == true
+        end
+
+        if Toggles.HolyGAG2PickupReturnAfterTeleport then
+
+            state.ReturnAfterTeleportPickup =
+                Toggles.HolyGAG2PickupReturnAfterTeleport.Value == true
+        end
+
+        if Options.HolyGAG2PickupTeleportScanRadius then
+
+            state.TeleportScanRadius =
+                math.clamp(
+                    tonumber(Options.HolyGAG2PickupTeleportScanRadius.Value)
+                    or state.TeleportScanRadius
+                    or 650,
+                    5,
+                    3000
+                )
+        end
+
+        if Options.HolyGAG2PickupTeleportYOffset then
+
+            state.TeleportYOffset =
+                math.clamp(
+                    tonumber(Options.HolyGAG2PickupTeleportYOffset.Value)
+                    or state.TeleportYOffset
+                    or 4.75,
+                    2.5,
+                    12
+                )
+        end
+
         if Options.HolyGAG2PickupIgnoreOwnDropSeconds then
 
             state.IgnoreOwnDropSeconds =
@@ -22266,6 +22592,7 @@ function GAG2RestoreDropPickupState()
         end
     end)
 end
+
 
 --==================================================
 -- [4.595] HOME AUTO HOP UNTIL SERVER VERSION
@@ -24254,6 +24581,60 @@ ExperimentMainBox:AddInput("HolyGAG2PickupCustomText", {
     end,
 })
 
+ExperimentMainBox:AddToggle("HolyGAG2PickupTeleport", {
+    Text = "Auto TP To Drops",
+    Default = false,
+    Tooltip = "If a matching drop is too far, briefly teleports to it, picks it up, then optionally returns.",
+}):OnChanged(function(value)
+
+    GAG2DropPickupSetTeleportPickup(
+        value == true
+    )
+end)
+
+ExperimentMainBox:AddToggle("HolyGAG2PickupReturnAfterTeleport", {
+    Text = "Return After Pickup TP",
+    Default = true,
+    Tooltip = "Returns to the old position after teleport-pickup.",
+}):OnChanged(function(value)
+
+    GAG2DropPickupSetReturnAfterTeleport(
+        value == true
+    )
+end)
+
+ExperimentMainBox:AddInput("HolyGAG2PickupTeleportScanRadius", {
+    Text = "TP Scan Radius",
+    Default = "650",
+    Numeric = true,
+    Finished = true,
+    ClearTextOnFocus = false,
+    Placeholder = "650",
+    Tooltip = "Maximum distance to teleport-pickup a dropped item.",
+    Callback = function(value)
+
+        GAG2DropPickupSetTeleportScanRadius(
+            value
+        )
+    end,
+})
+
+ExperimentMainBox:AddInput("HolyGAG2PickupTeleportYOffset", {
+    Text = "TP Height Offset",
+    Default = "4.75",
+    Numeric = false,
+    Finished = true,
+    ClearTextOnFocus = false,
+    Placeholder = "4.75",
+    Tooltip = "How high above the dropped item to stand before firing the prompt.",
+    Callback = function(value)
+
+        GAG2DropPickupSetTeleportYOffset(
+            value
+        )
+    end,
+})
+
 ExperimentMainBox:AddInput("HolyGAG2PickupIgnoreOwnDropSeconds", {
     Text = "Ignore Own Drop Seconds",
     Default = "1.75",
@@ -24407,7 +24788,7 @@ ExperimentStatusBox:AddLabel("HolyGAG2DropPickupStatus", {
         '<font color="rgb(196,181,253)"><b>Auto Pickup Drops</b></font>'
         .. '\nState: ON | Running: false'
         .. '\nRadius: 80 | Delay: 0.15s'
-        .. '\nMode: All | Picked: 0 | Found: 0'
+        .. '\nMode: All | TP: OFF | Picked: 0 | Found: 0'
         .. '\nLast: Ready.',
     DoesWrap = true,
 })
