@@ -21010,6 +21010,13 @@ task.wait(
 
         fired += 1
 
+        if type(GAG2DropPickupMarkSelfDrop) == "function" then
+
+            GAG2DropPickupMarkSelfDrop(
+                "auto drop seed"
+            )
+        end
+
         state.LastSeed =
             seedName
 
@@ -21265,6 +21272,997 @@ function GAG2RestoreSeedDropState()
         if state.Enabled == true then
 
             GAG2SeedDropStartLoop()
+        end
+    end)
+end
+
+--==================================================
+-- [4.591] EXPERIMENT AUTO PICKUP DROPS
+-- Prompt-only pickup for workspace.DroppedItems.
+-- No packet replay. No remotes. No console spam.
+--==================================================
+
+GAG2_DROP_PICKUP_MODES =
+    GAG2_DROP_PICKUP_MODES
+    or {
+        "All",
+        "Seeds Only",
+        "Pets Only",
+        "Custom Contains",
+    }
+
+GAG2_DROP_PICKUP_STATE =
+    GAG2_DROP_PICKUP_STATE
+    or {
+        Enabled = true,
+        Running = false,
+
+        Radius = 80,
+        Delay = 0.15,
+        Mode = "All",
+        CustomText = "",
+
+        IgnoreOwnDropSeconds = 1.75,
+        SelfDropIgnoreUntil = 0,
+        LastSelfDropReason = "",
+
+        Found = 0,
+        Picked = 0,
+        LastPicked = "",
+        LastStatus = "Ready.",
+        LastError = "",
+
+        Recent = {},
+    }
+
+function GAG2DropPickupClean(value)
+
+    return CleanText(
+        tostring(value or "")
+            :gsub("<[^>]->", "")
+            :gsub("<.->", "")
+    )
+end
+
+function GAG2DropPickupSetStatus(text)
+
+    local state =
+        GAG2_DROP_PICKUP_STATE
+
+    state.LastStatus =
+        tostring(text or "Ready.")
+
+    if Options.HolyGAG2DropPickupStatus then
+
+        Options.HolyGAG2DropPickupStatus:SetText(
+            '<font color="rgb(196,181,253)"><b>Auto Pickup Drops</b></font>'
+            .. '\nState: '
+            .. (
+                state.Enabled == true
+                and "ON"
+                or "OFF"
+            )
+            .. ' | Running: '
+            .. tostring(state.Running == true)
+            .. '\nRadius: '
+            .. tostring(state.Radius or 80)
+            .. ' | Delay: '
+            .. tostring(state.Delay or 0.15)
+            .. 's'
+            .. '\nMode: '
+            .. tostring(state.Mode or "All")
+            .. ' | Picked: '
+            .. tostring(state.Picked or 0)
+            .. ' | Found: '
+            .. tostring(state.Found or 0)
+            .. '\nLast: '
+            .. tostring(state.LastPicked ~= "" and state.LastPicked or state.LastStatus)
+        )
+    end
+end
+
+function GAG2DropPickupGetRoot()
+
+    return workspace:FindFirstChild(
+        "DroppedItems"
+    )
+end
+
+function GAG2DropPickupGetCharacterRoot()
+
+    if type(SniperGetCharacterRoot) == "function" then
+
+        local character, root =
+            SniperGetCharacterRoot()
+
+        if character
+        and root then
+
+            return character,
+                root
+        end
+    end
+
+    local character =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character
+
+    local root =
+        character
+        and character:FindFirstChild("HumanoidRootPart")
+
+    if character
+    and root
+    and root:IsA("BasePart") then
+
+        return character,
+            root
+    end
+
+    return nil,
+        nil
+end
+
+function GAG2DropPickupGetPosition(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    if instance:IsA("BasePart") then
+
+        return instance.Position
+    end
+
+    if instance:IsA("Model") then
+
+        local ok, cframe =
+            pcall(function()
+
+                return instance:GetBoundingBox()
+            end)
+
+        if ok == true
+        and typeof(cframe) == "CFrame" then
+
+            return cframe.Position
+        end
+    end
+
+    local scanned =
+        0
+
+    for _, descendant in ipairs(instance:GetDescendants()) do
+
+        scanned += 1
+
+        if scanned > 160 then
+            break
+        end
+
+        if descendant:IsA("BasePart") then
+
+            return descendant.Position
+        end
+    end
+
+    return nil
+end
+
+function GAG2DropPickupFindPrompt(item)
+
+    if typeof(item) ~= "Instance" then
+        return nil
+    end
+
+    if item:IsA("ProximityPrompt")
+    and item.Enabled == true then
+
+        return item
+    end
+
+    local scanned =
+        0
+
+    for _, descendant in ipairs(item:GetDescendants()) do
+
+        scanned += 1
+
+        if scanned > 220 then
+            break
+        end
+
+        if descendant:IsA("ProximityPrompt")
+        and descendant.Enabled == true then
+
+            return descendant
+        end
+    end
+
+    return nil
+end
+
+function GAG2DropPickupReadDescriptor(item, prompt)
+
+    local parts =
+        {}
+
+    local function add(value)
+
+        value =
+            GAG2DropPickupClean(value)
+
+        if value ~= "" then
+
+            table.insert(
+                parts,
+                value
+            )
+        end
+    end
+
+    if typeof(item) == "Instance" then
+
+        add(item.Name)
+
+        local ok, attrs =
+            pcall(function()
+
+                return item:GetAttributes()
+            end)
+
+        if ok == true
+        and type(attrs) == "table" then
+
+            for key, value in pairs(attrs) do
+
+                add(key)
+                add(value)
+            end
+        end
+    end
+
+    if typeof(prompt) == "Instance" then
+
+        add(prompt.Name)
+
+        pcall(function()
+            add(prompt.ActionText)
+            add(prompt.ObjectText)
+        end)
+    end
+
+    if typeof(item) == "Instance" then
+
+        local scanned =
+            0
+
+        for _, descendant in ipairs(item:GetDescendants()) do
+
+            scanned += 1
+
+            if scanned > 180 then
+                break
+            end
+
+            add(descendant.Name)
+
+            if descendant:IsA("TextLabel")
+            or descendant:IsA("TextButton")
+            or descendant:IsA("TextBox") then
+
+                pcall(function()
+
+                    add(descendant.Text)
+                end)
+            end
+
+            if descendant:IsA("ProximityPrompt") then
+
+                pcall(function()
+
+                    add(descendant.ActionText)
+                    add(descendant.ObjectText)
+                end)
+            end
+
+            local ok, attrs =
+                pcall(function()
+
+                    return descendant:GetAttributes()
+                end)
+
+            if ok == true
+            and type(attrs) == "table" then
+
+                for key, value in pairs(attrs) do
+
+                    add(key)
+                    add(value)
+                end
+            end
+        end
+    end
+
+    return table.concat(
+        parts,
+        " "
+    )
+end
+
+function GAG2DropPickupSeedNameMatches(descriptor)
+
+    descriptor =
+        tostring(descriptor or ""):lower()
+
+    if descriptor:find("seed", 1, true)
+    or descriptor:find("seeds", 1, true) then
+
+        return true
+    end
+
+    if type(GAG2SeedDropGetAllSeedValues) ~= "function" then
+        return false
+    end
+
+    local values =
+        GAG2SeedDropGetAllSeedValues()
+
+    if type(values) ~= "table" then
+        return false
+    end
+
+    for _, seedName in ipairs(values) do
+
+        seedName =
+            GAG2DropPickupClean(seedName)
+
+        local beforePipe =
+            seedName:match("^(.-)%s+|%s+")
+
+        if beforePipe
+        and GAG2DropPickupClean(beforePipe) ~= "" then
+
+            seedName =
+                GAG2DropPickupClean(beforePipe)
+        end
+
+        if seedName ~= ""
+        and descriptor:find(seedName:lower(), 1, true) then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function GAG2DropPickupMatchesMode(item, prompt)
+
+    local state =
+        GAG2_DROP_PICKUP_STATE
+
+    local mode =
+        GAG2DropPickupClean(
+            state.Mode
+        )
+
+    if mode == ""
+    or mode == "All" then
+
+        return true
+    end
+
+    local descriptor =
+        GAG2DropPickupReadDescriptor(
+            item,
+            prompt
+        )
+
+    local lower =
+        descriptor:lower()
+
+    if mode == "Seeds Only" then
+
+        return GAG2DropPickupSeedNameMatches(
+            descriptor
+        )
+    end
+
+    if mode == "Pets Only" then
+
+        return lower:find("pet", 1, true) ~= nil
+            or lower:find("pets", 1, true) ~= nil
+            or lower:find("animal", 1, true) ~= nil
+    end
+
+    if mode == "Custom Contains" then
+
+        local custom =
+            GAG2DropPickupClean(
+                state.CustomText
+            ):lower()
+
+        if custom == "" then
+            return false
+        end
+
+        return lower:find(
+            custom,
+            1,
+            true
+        ) ~= nil
+    end
+
+    return true
+end
+
+function GAG2DropPickupCleanupRecent()
+
+    local state =
+        GAG2_DROP_PICKUP_STATE
+
+    local now =
+        os.clock()
+
+    for key, seenAt in pairs(state.Recent) do
+
+        if now - tonumber(seenAt or 0) > 6 then
+
+            state.Recent[key] =
+                nil
+        end
+    end
+end
+
+function GAG2DropPickupPromptKey(item, prompt)
+
+    if typeof(prompt) == "Instance" then
+
+        return PathOf(prompt)
+    end
+
+    if typeof(item) == "Instance" then
+
+        return PathOf(item)
+    end
+
+    return tostring(item)
+end
+
+function GAG2DropPickupCanFire(item, prompt, rootPart)
+
+    local state =
+        GAG2_DROP_PICKUP_STATE
+
+    if state.Enabled ~= true then
+        return false, "disabled"
+    end
+
+    if os.clock() < tonumber(state.SelfDropIgnoreUntil or 0) then
+        return false, "self drop pause"
+    end
+
+    if typeof(item) ~= "Instance"
+    or item.Parent == nil then
+
+        return false, "bad item"
+    end
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true
+    or prompt.Enabled ~= true then
+
+        return false, "bad prompt"
+    end
+
+    if typeof(rootPart) ~= "Instance"
+    or rootPart:IsA("BasePart") ~= true then
+
+        return false, "missing root"
+    end
+
+    local position =
+        GAG2DropPickupGetPosition(
+            item
+        )
+
+    if typeof(position) ~= "Vector3" then
+
+        return false, "no position"
+    end
+
+    local radius =
+        math.clamp(
+            tonumber(state.Radius)
+            or 80,
+            5,
+            1000
+        )
+
+    local distance =
+        (rootPart.Position - position).Magnitude
+
+    if distance > radius then
+
+        return false, "too far"
+    end
+
+    if GAG2DropPickupMatchesMode(
+        item,
+        prompt
+    ) ~= true then
+
+        return false, "filtered"
+    end
+
+    local key =
+        GAG2DropPickupPromptKey(
+            item,
+            prompt
+        )
+
+    local last =
+        tonumber(state.Recent[key])
+        or 0
+
+    if os.clock() - last < 0.65 then
+
+        return false, "recent"
+    end
+
+    return true,
+        key
+end
+
+function GAG2DropPickupFirePrompt(item, prompt, key)
+
+    local state =
+        GAG2_DROP_PICKUP_STATE
+
+    if type(fireproximityprompt) ~= "function" then
+
+        state.LastError =
+            "fireproximityprompt unsupported"
+
+        return false,
+            state.LastError
+    end
+
+    local ok, err =
+        pcall(function()
+
+            fireproximityprompt(
+                prompt
+            )
+        end)
+
+    if ok ~= true then
+
+        state.LastError =
+            tostring(err)
+
+        return false,
+            state.LastError
+    end
+
+    state.Recent[key] =
+        os.clock()
+
+    state.Picked =
+        tonumber(state.Picked)
+        or 0
+
+    state.Picked += 1
+
+    state.LastPicked =
+        tostring(item.Name)
+
+    state.LastError =
+        ""
+
+    return true,
+        "picked"
+end
+
+function GAG2DropPickupScanOnce(reason)
+
+    local state =
+        GAG2_DROP_PICKUP_STATE
+
+    GAG2DropPickupCleanupRecent()
+
+    if state.Enabled ~= true
+    and reason ~= "manual" then
+
+        GAG2DropPickupSetStatus(
+            "Disabled."
+        )
+
+        return 0
+    end
+
+    if os.clock() < tonumber(state.SelfDropIgnoreUntil or 0) then
+
+        GAG2DropPickupSetStatus(
+            "Paused briefly after own drop."
+        )
+
+        return 0
+    end
+
+    local droppedRoot =
+        GAG2DropPickupGetRoot()
+
+    if not droppedRoot then
+
+        state.Found =
+            0
+
+        GAG2DropPickupSetStatus(
+            "workspace.DroppedItems missing."
+        )
+
+        return 0
+    end
+
+    local _, rootPart =
+        GAG2DropPickupGetCharacterRoot()
+
+    if not rootPart then
+
+        GAG2DropPickupSetStatus(
+            "Waiting for character."
+        )
+
+        return 0
+    end
+
+    local found =
+        0
+
+    local fired =
+        0
+
+    for _, item in ipairs(droppedRoot:GetChildren()) do
+
+        local prompt =
+            GAG2DropPickupFindPrompt(
+                item
+            )
+
+        if prompt then
+
+            local allowed, key =
+                GAG2DropPickupCanFire(
+                    item,
+                    prompt,
+                    rootPart
+                )
+
+            if allowed == true then
+
+                found += 1
+
+                local ok =
+                    GAG2DropPickupFirePrompt(
+                        item,
+                        prompt,
+                        key
+                    )
+
+                if ok == true then
+
+                    fired += 1
+                end
+
+                if fired % 10 == 0 then
+                    task.wait()
+                end
+            end
+        end
+    end
+
+    state.Found =
+        found
+
+    if fired > 0 then
+
+        GAG2DropPickupSetStatus(
+            "Picked "
+            .. tostring(fired)
+            .. " drop(s)."
+        )
+
+    else
+
+        GAG2DropPickupSetStatus(
+            "Watching for drops."
+        )
+    end
+
+    return fired
+end
+
+function GAG2DropPickupStartLoop()
+
+    local state =
+        GAG2_DROP_PICKUP_STATE
+
+    if state.Running == true then
+        return
+    end
+
+    state.Running =
+        true
+
+    task.spawn(function()
+
+        GAG2DropPickupSetStatus(
+            "Starting..."
+        )
+
+        while state.Enabled == true do
+
+            GAG2DropPickupScanOnce(
+                "loop"
+            )
+
+            local delaySeconds =
+                math.clamp(
+                    tonumber(state.Delay)
+                    or 0.15,
+                    0.03,
+                    5
+                )
+
+            task.wait(
+                delaySeconds
+            )
+        end
+
+        state.Running =
+            false
+
+        GAG2DropPickupSetStatus(
+            "Stopped."
+        )
+    end)
+end
+
+function GAG2DropPickupSetEnabled(value, skipDirty)
+
+    local state =
+        GAG2_DROP_PICKUP_STATE
+
+    state.Enabled =
+        value == true
+
+    if state.Enabled == true then
+
+        if ConfigState.Loading ~= true then
+
+            GAG2DropPickupStartLoop()
+        end
+
+    else
+
+        GAG2DropPickupSetStatus(
+            "Stopping..."
+        )
+    end
+
+    if skipDirty ~= true then
+
+        MarkConfigDirty()
+    end
+end
+
+function GAG2DropPickupSetRadius(value)
+
+    GAG2_DROP_PICKUP_STATE.Radius =
+        math.clamp(
+            tonumber(value)
+            or 80,
+            5,
+            1000
+        )
+
+    GAG2DropPickupSetStatus(
+        "Radius set."
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2DropPickupSetDelay(value)
+
+    GAG2_DROP_PICKUP_STATE.Delay =
+        math.clamp(
+            tonumber(value)
+            or 0.15,
+            0.03,
+            5
+        )
+
+    GAG2DropPickupSetStatus(
+        "Delay set."
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2DropPickupSetMode(value)
+
+    value =
+        GAG2DropPickupClean(value)
+
+    if table.find(
+        GAG2_DROP_PICKUP_MODES,
+        value
+    ) == nil then
+
+        value =
+            "All"
+    end
+
+    GAG2_DROP_PICKUP_STATE.Mode =
+        value
+
+    GAG2DropPickupSetStatus(
+        "Mode set: "
+        .. tostring(value)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2DropPickupSetCustomText(value)
+
+    GAG2_DROP_PICKUP_STATE.CustomText =
+        GAG2DropPickupClean(
+            value
+        )
+
+    GAG2DropPickupSetStatus(
+        "Custom filter set."
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2DropPickupSetIgnoreOwnDropSeconds(value)
+
+    GAG2_DROP_PICKUP_STATE.IgnoreOwnDropSeconds =
+        math.clamp(
+            tonumber(value)
+            or 1.75,
+            0,
+            10
+        )
+
+    GAG2DropPickupSetStatus(
+        "Self-drop pause set."
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2DropPickupMarkSelfDrop(reason)
+
+    local state =
+        GAG2_DROP_PICKUP_STATE
+
+    local seconds =
+        math.clamp(
+            tonumber(state.IgnoreOwnDropSeconds)
+            or 1.75,
+            0,
+            10
+        )
+
+    if seconds <= 0 then
+        return
+    end
+
+    state.SelfDropIgnoreUntil =
+        math.max(
+            tonumber(state.SelfDropIgnoreUntil)
+            or 0,
+            os.clock() + seconds
+        )
+
+    state.LastSelfDropReason =
+        tostring(reason or "own drop")
+end
+
+function GAG2RestoreDropPickupState()
+
+    task.defer(function()
+
+        local state =
+            GAG2_DROP_PICKUP_STATE
+
+        if Options.HolyGAG2PickupRadius then
+
+            state.Radius =
+                math.clamp(
+                    tonumber(Options.HolyGAG2PickupRadius.Value)
+                    or state.Radius
+                    or 80,
+                    5,
+                    1000
+                )
+        end
+
+        if Options.HolyGAG2PickupDelay then
+
+            state.Delay =
+                math.clamp(
+                    tonumber(Options.HolyGAG2PickupDelay.Value)
+                    or state.Delay
+                    or 0.15,
+                    0.03,
+                    5
+                )
+        end
+
+        if Options.HolyGAG2PickupMode then
+
+            local mode =
+                GAG2DropPickupClean(
+                    Options.HolyGAG2PickupMode.Value
+                )
+
+            if table.find(
+                GAG2_DROP_PICKUP_MODES,
+                mode
+            ) ~= nil then
+
+                state.Mode =
+                    mode
+            end
+        end
+
+        if Options.HolyGAG2PickupCustomText then
+
+            state.CustomText =
+                GAG2DropPickupClean(
+                    Options.HolyGAG2PickupCustomText.Value
+                )
+        end
+
+        if Options.HolyGAG2PickupIgnoreOwnDropSeconds then
+
+            state.IgnoreOwnDropSeconds =
+                math.clamp(
+                    tonumber(Options.HolyGAG2PickupIgnoreOwnDropSeconds.Value)
+                    or state.IgnoreOwnDropSeconds
+                    or 1.75,
+                    0,
+                    10
+                )
+        end
+
+        local enabled =
+            true
+
+        if Toggles.HolyGAG2AutoPickupDrops then
+
+            enabled =
+                Toggles.HolyGAG2AutoPickupDrops.Value == true
+        end
+
+        state.Enabled =
+            enabled
+
+        GAG2DropPickupSetStatus(
+            "Ready."
+        )
+
+        if state.Enabled == true then
+
+            GAG2DropPickupStartLoop()
         end
     end)
 end
@@ -22416,7 +23414,7 @@ local MailboxStatusBox =
 local ExperimentMainBox =
     AddLeftBox(
         Tabs.Experiment,
-        "Auto Drop Seed",
+        "Drops / Pickup",
         "flask-conical"
     )
 
@@ -23176,10 +24174,121 @@ MailboxStatusBox:AddLabel({
 
 ExperimentMainBox:AddLabel({
     Text =
+        '<font color="rgb(196,181,253)"><b>Dropped Items</b></font>'
+        .. '\nAuto Pickup uses workspace.DroppedItems ProximityPrompts.'
+        .. '\nDefault ON. Quiet, prompt-only, no packet replay.',
+    DoesWrap = true,
+    Size = 13,
+})
+
+ExperimentMainBox:AddToggle("HolyGAG2AutoPickupDrops", {
+    Text = "Auto Pickup Drops",
+    Default = true,
+    Tooltip = "Automatically picks up nearby dropped items using fireproximityprompt.",
+}):OnChanged(function(value)
+
+    GAG2DropPickupSetEnabled(
+        value == true
+    )
+end)
+
+ExperimentMainBox:AddInput("HolyGAG2PickupRadius", {
+    Text = "Pickup Radius",
+    Default = "80",
+    Numeric = true,
+    Finished = true,
+    ClearTextOnFocus = false,
+    Placeholder = "80",
+    Tooltip = "Maximum distance from your character to pickup dropped items.",
+    Callback = function(value)
+
+        GAG2DropPickupSetRadius(
+            value
+        )
+    end,
+})
+
+ExperimentMainBox:AddInput("HolyGAG2PickupDelay", {
+    Text = "Pickup Delay",
+    Default = "0.15",
+    Numeric = false,
+    Finished = true,
+    ClearTextOnFocus = false,
+    Placeholder = "0.15",
+    Tooltip = "Loop delay. Lower is faster but heavier.",
+    Callback = function(value)
+
+        GAG2DropPickupSetDelay(
+            value
+        )
+    end,
+})
+
+ExperimentMainBox:AddDropdown("HolyGAG2PickupMode", {
+    Text = "Pickup Mode",
+    Values = GAG2_DROP_PICKUP_MODES,
+    Default = GAG2_DROP_PICKUP_STATE.Mode or "All",
+    Multi = false,
+    Searchable = false,
+    Tooltip = "All is safest because some dropped models do not expose clean category text.",
+}):OnChanged(function(value)
+
+    GAG2DropPickupSetMode(
+        value
+    )
+end)
+
+ExperimentMainBox:AddInput("HolyGAG2PickupCustomText", {
+    Text = "Custom Contains",
+    Default = "",
+    Numeric = false,
+    Finished = true,
+    ClearTextOnFocus = false,
+    Placeholder = "strawberry / seed / pet...",
+    Tooltip = "Only used when Pickup Mode is Custom Contains.",
+    Callback = function(value)
+
+        GAG2DropPickupSetCustomText(
+            value
+        )
+    end,
+})
+
+ExperimentMainBox:AddInput("HolyGAG2PickupIgnoreOwnDropSeconds", {
+    Text = "Ignore Own Drop Seconds",
+    Default = "1.75",
+    Numeric = false,
+    Finished = true,
+    ClearTextOnFocus = false,
+    Placeholder = "1.75",
+    Tooltip = "Prevents this same account from instantly picking up its own auto-dropped seed.",
+    Callback = function(value)
+
+        GAG2DropPickupSetIgnoreOwnDropSeconds(
+            value
+        )
+    end,
+})
+
+ExperimentMainBox:AddButton({
+    Text = "Pickup Nearby Once",
+    Tooltip = "Runs one pickup scan without changing the toggle.",
+    Func = function()
+
+        GAG2DropPickupScanOnce(
+            "manual"
+        )
+    end,
+})
+
+ExperimentMainBox:AddDivider()
+
+ExperimentMainBox:AddLabel({
+    Text =
         '<font color="rgb(196,181,253)"><b>Auto Drop Seed</b></font>'
-        .. '\nExperimental seed dropper.'
-        .. '\nConfirmed seeds: Rainbow / Gold.'
-        .. '\nBurst fires multiple real drop packets per cycle.',
+        .. '\nExperimental real seed dropper.'
+        .. '\nUses the confirmed seed drop packet path.'
+        .. '\nAuto Pickup pauses briefly after your own drop to avoid same-account pickup loops.',
     DoesWrap = true,
     Size = 13,
 })
@@ -23209,6 +24318,15 @@ and type(GAG2_AUTO_DROP_SEED_CONTROLS.Seed.OnChanged) == "function" then
         )
     end)
 end
+
+ExperimentMainBox:AddButton({
+    Text = "Refresh Seed List",
+    Tooltip = "Reloads seed names from shop data, planting data, Backpack, and Character.",
+    Func = function()
+
+        GAG2SeedDropRefreshDropdown()
+    end,
+})
 
 GAG2_AUTO_DROP_SEED_CONTROLS.Amount =
     ExperimentMainBox:AddInput("HolyGAG2SeedDropAmount", {
@@ -23283,6 +24401,18 @@ ExperimentMainBox:AddButton({
         )
     end,
 })
+
+ExperimentStatusBox:AddLabel("HolyGAG2DropPickupStatus", {
+    Text =
+        '<font color="rgb(196,181,253)"><b>Auto Pickup Drops</b></font>'
+        .. '\nState: ON | Running: false'
+        .. '\nRadius: 80 | Delay: 0.15s'
+        .. '\nMode: All | Picked: 0 | Found: 0'
+        .. '\nLast: Ready.',
+    DoesWrap = true,
+})
+
+ExperimentStatusBox:AddDivider()
 
 ExperimentStatusBox:AddLabel("HolyGAG2ExperimentStatus", {
     Text =
@@ -24979,6 +26109,7 @@ if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
     GAG2RestoreAutoSellState()
     GAG2RestoreMailboxState()
     GAG2RestoreSeedDropState()
+    GAG2RestoreDropPickupState()
     GAG2RestoreServerSelectionState()
     GAG2RestoreVersionHopState()
 end
