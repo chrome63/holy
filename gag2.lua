@@ -242,8 +242,25 @@ GAG2_AUTO_PLAY_STATE = {
 GAG2_AUTO_TP_MIDDLE_FARM_STATE = {
     Running = false,
     CharacterConnection = nil,
+
     LastTeleportAt = 0,
     LastResult = "not started",
+    LastTarget = nil,
+    LastTargetReason = "not resolved",
+
+    SkipStarted = false,
+    SkipSucceeded = false,
+    SkipAttempts = 0,
+    SkipSuccessReason = "",
+
+    HoldingSkip = false,
+    HoldStartAt = 0,
+    HoldMaxSeconds = 0,
+    HoldX = 0,
+    HoldY = 0,
+
+    PostLoadRepairDistance = 25,
+    MaxRunSeconds = 18,
 }
 
 --==================================================
@@ -6478,10 +6495,11 @@ local function SniperStopCharacterMotion(root)
 end
 
 --==================================================
--- [4.55] AUTO TP MIDDLE FARM
+-- [4.55] AUTO SKIP LOADING + AUTO TP MIDDLE FARM
+-- Settings-tab controlled. No GUI scanning. No remote spoofing.
 --==================================================
 
-local function GAG2FarmStripRichText(value)
+function GAG2FarmStripRichText(value)
 
     return CleanText(
         tostring(value or "")
@@ -6490,7 +6508,21 @@ local function GAG2FarmStripRichText(value)
     )
 end
 
-local function GAG2ResolveOwnFarmPlot()
+function GAG2FarmVecText(position)
+
+    if typeof(position) ~= "Vector3" then
+        return "nil"
+    end
+
+    return string.format(
+        "%.1f, %.1f, %.1f",
+        position.X,
+        position.Y,
+        position.Z
+    )
+end
+
+function GAG2ResolveOwnFarmPlot()
 
     local gardens =
         workspace:FindFirstChild("Gardens")
@@ -6532,7 +6564,7 @@ local function GAG2ResolveOwnFarmPlot()
                         if plot then
 
                             return plot,
-                                "billboard: "
+                                "billboard "
                                 .. tostring(gui.Name)
                         end
                     end
@@ -6544,7 +6576,7 @@ local function GAG2ResolveOwnFarmPlot()
     return nil, "own garden billboard not found"
 end
 
-local function GAG2IsMiddleFarmPart(part)
+function GAG2IsMiddleFarmPart(part)
 
     if typeof(part) ~= "Instance"
     or part:IsA("BasePart") ~= true then
@@ -6577,7 +6609,34 @@ local function GAG2IsMiddleFarmPart(part)
     return false
 end
 
-local function GAG2GetOwnFarmMiddlePosition()
+function GAG2MiddleFarmGetStandOffset(root, humanoid)
+
+    local rootHalf =
+        1.0
+
+    if root
+    and root:IsA("BasePart") then
+
+        rootHalf =
+            math.max(
+                0.75,
+                root.Size.Y / 2
+            )
+    end
+
+    local hipHeight =
+        humanoid
+        and tonumber(humanoid.HipHeight)
+        or 0
+
+    return math.clamp(
+        rootHalf + math.max(hipHeight, 0) + 1.15,
+        2.35,
+        3.10
+    )
+end
+
+function GAG2GetOwnFarmMiddlePosition()
 
     local ownPlot, plotReason =
         GAG2ResolveOwnFarmPlot()
@@ -6585,6 +6644,19 @@ local function GAG2GetOwnFarmMiddlePosition()
     if not ownPlot then
         return nil, plotReason
     end
+
+    local character, root =
+        SniperGetCharacterRoot()
+
+    local humanoid =
+        character
+        and character:FindFirstChildOfClass("Humanoid")
+
+    local standOffset =
+        GAG2MiddleFarmGetStandOffset(
+            root,
+            humanoid
+        )
 
     local points =
         {}
@@ -6636,97 +6708,153 @@ local function GAG2GetOwnFarmMiddlePosition()
         end
     end
 
+    local excludeList =
+        {}
+
+    if character then
+
+        table.insert(
+            excludeList,
+            character
+        )
+    end
+
+    local plants =
+        ownPlot:FindFirstChild("Plants")
+
+    if plants then
+
+        table.insert(
+            excludeList,
+            plants
+        )
+    end
+
     local rayParams =
         RaycastParams.new()
 
     rayParams.FilterType =
         Enum.RaycastFilterType.Exclude
 
-    rayParams.FilterDescendantsInstances = {
-        LOCAL_PLAYER.Character,
-    }
+    rayParams.FilterDescendantsInstances =
+        excludeList
 
     rayParams.IgnoreWater =
         true
 
     local rayResult =
         workspace:Raycast(
-            center + Vector3.new(0, 80, 0),
-            Vector3.new(0, -180, 0),
+            center + Vector3.new(0, 90, 0),
+            Vector3.new(0, -220, 0),
             rayParams
         )
 
     if rayResult
-    and rayResult.Position then
+    and rayResult.Position
+    and typeof(rayResult.Instance) == "Instance"
+    and rayResult.Instance:IsDescendantOf(ownPlot) then
 
-        return rayResult.Position
-            + Vector3.new(0, 5, 0),
-            "middle: "
-            .. PathOf(ownPlot)
-    end
+        local hitPath =
+            PathOf(rayResult.Instance)
 
-    return center + Vector3.new(0, 7, 0),
-        "middle fallback: "
-        .. PathOf(ownPlot)
-end
+        if not hitPath:find(".Plants.", 1, true)
+        and not hitPath:find("GardenZonePart", 1, true) then
 
-local function GAG2WaitForCharacterRoot(timeout)
-
-    local started =
-        os.clock()
-
-    timeout =
-        tonumber(timeout)
-        or 10
-
-    while os.clock() - started < timeout do
-
-        local character, root =
-            SniperGetCharacterRoot()
-
-        if character
-        and root then
-
-            return character,
-                root
+            return rayResult.Position
+                + Vector3.new(0, standOffset, 0),
+                "ground | "
+                .. tostring(plotReason)
+                .. " | hit "
+                .. hitPath
         end
-
-        task.wait(
-            0.15
-        )
     end
 
-    return nil,
-        nil
+    return center + Vector3.new(0, standOffset, 0),
+        "fallback | "
+        .. tostring(plotReason)
 end
 
-function GAG2TeleportToMiddleFarmOnce(reason)
+function GAG2MiddleFarmLoadingSnapshot()
+
+    local active =
+        false
+
+    local done =
+        false
+
+    pcall(function()
+
+        active =
+            LOCAL_PLAYER:GetAttribute("LoadingScreenActive") == true
+
+        done =
+            LOCAL_PLAYER:GetAttribute("LoadingScreenDone") == true
+    end)
+
+    local camera =
+        workspace.CurrentCamera
+
+    local cameraType =
+        camera
+        and tostring(camera.CameraType)
+        or "nil"
+
+    local cameraScriptable =
+        camera
+        and camera.CameraType == Enum.CameraType.Scriptable
+
+    local cameraCustom =
+        camera
+        and camera.CameraType == Enum.CameraType.Custom
+
+    return {
+        Active = active,
+        Done = done,
+        CameraType = cameraType,
+        CameraScriptable = cameraScriptable,
+        CameraCustom = cameraCustom,
+    }
+end
+
+function GAG2AutoSkipLoadingEnabled()
+
+    if Toggles.HolyGAG2AutoSkipLoading then
+
+        return Toggles.HolyGAG2AutoSkipLoading.Value == true
+    end
+
+    -- Default ON before SaveManager/controls fully settle.
+    return true
+end
+
+function GAG2AutoTpMiddleFarmEnabled()
+
+    return Toggles.HolyGAG2AutoTpMiddleFarm
+        and Toggles.HolyGAG2AutoTpMiddleFarm.Value == true
+end
+
+function GAG2MiddleFarmWorkerShouldContinue(forceTp)
+
+    if forceTp == true then
+        return true
+    end
+
+    return GAG2AutoSkipLoadingEnabled() == true
+        or GAG2AutoTpMiddleFarmEnabled() == true
+end
+
+function GAG2MiddleFarmPivotTo(position)
 
     local character, root =
-        GAG2WaitForCharacterRoot(
-            12
-        )
+        SniperGetCharacterRoot()
 
     if not character
     or not root then
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
-            "missing character"
-
-        return false,
-            "missing character"
+        return false, "missing character/root"
     end
 
-    local position, positionReason =
-        GAG2GetOwnFarmMiddlePosition()
-
     if typeof(position) ~= "Vector3" then
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
-            tostring(positionReason)
-
-        return false,
-            tostring(positionReason)
+        return false, "bad target"
     end
 
     local lookVector =
@@ -6764,6 +6892,197 @@ function GAG2TeleportToMiddleFarmOnce(reason)
     end
 
     if ok ~= true then
+        return false, tostring(err)
+    end
+
+    SniperStopCharacterMotion(
+        root
+    )
+
+    return true, "teleported"
+end
+
+function GAG2MiddleFarmGetHoldPoint()
+
+    local camera =
+        workspace.CurrentCamera
+
+    local viewport =
+        camera
+        and camera.ViewportSize
+        or Vector2.new(1280, 720)
+
+    local x =
+        math.floor(viewport.X * 0.52)
+
+    local y =
+        math.floor(viewport.Y * 0.58)
+
+    return x,
+        y,
+        viewport
+end
+
+function GAG2MiddleFarmReleaseSkipHold(reason)
+
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    if state.HoldingSkip ~= true then
+        return
+    end
+
+    state.HoldingSkip =
+        false
+
+    if VirtualInputManager then
+
+        pcall(function()
+
+            VirtualInputManager:SendMouseButtonEvent(
+                tonumber(state.HoldX) or 0,
+                tonumber(state.HoldY) or 0,
+                0,
+                false,
+                game,
+                1
+            )
+        end)
+    end
+
+    print(
+        "[HOLY GAG2 LOADING]",
+        "mouse released",
+        "| reason:",
+        tostring(reason),
+        "| held:",
+        string.format(
+            "%.2fs",
+            os.clock() - tonumber(state.HoldStartAt or os.clock())
+        )
+    )
+end
+
+function GAG2MiddleFarmPressSkipHold()
+
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    if not VirtualInputManager then
+
+        state.LastResult =
+            "VirtualInputManager missing"
+
+        return false,
+            "VirtualInputManager missing"
+    end
+
+    if state.HoldingSkip == true then
+
+        return true,
+            "already holding"
+    end
+
+    local x, y, viewport =
+        GAG2MiddleFarmGetHoldPoint()
+
+    local ok, err =
+        pcall(function()
+
+            VirtualInputManager:SendMouseButtonEvent(
+                x,
+                y,
+                0,
+                true,
+                game,
+                1
+            )
+        end)
+
+    if ok ~= true then
+
+        return false,
+            tostring(err)
+    end
+
+    state.HoldingSkip =
+        true
+
+    state.HoldStartAt =
+        os.clock()
+
+    state.HoldX =
+        x
+
+    state.HoldY =
+        y
+
+    return true,
+        "mouse down at "
+        .. tostring(x)
+        .. ","
+        .. tostring(y)
+        .. " viewport "
+        .. tostring(math.floor(viewport.X))
+        .. "x"
+        .. tostring(math.floor(viewport.Y))
+end
+
+function GAG2TeleportToMiddleFarmOnce(reason)
+
+    local started =
+        os.clock()
+
+    local position =
+        nil
+
+    local positionReason =
+        "not resolved"
+
+    while os.clock() - started < 12 do
+
+        local character, root =
+            SniperGetCharacterRoot()
+
+        local resolvedPosition, resolvedReason =
+            GAG2GetOwnFarmMiddlePosition()
+
+        if character
+        and root
+        and typeof(resolvedPosition) == "Vector3" then
+
+            position =
+                resolvedPosition
+
+            positionReason =
+                tostring(resolvedReason)
+
+            break
+        end
+
+        positionReason =
+            tostring(resolvedReason)
+
+        task.wait(
+            0.08
+        )
+    end
+
+    if typeof(position) ~= "Vector3" then
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
+            tostring(positionReason)
+
+        return false,
+            tostring(positionReason)
+    end
+
+    local ok, err =
+        GAG2MiddleFarmPivotTo(
+            position
+        )
+
+    if ok ~= true then
 
         GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
             "tp failed: "
@@ -6773,22 +7092,14 @@ function GAG2TeleportToMiddleFarmOnce(reason)
             tostring(err)
     end
 
-    task.wait(
-        0.05
-    )
-
-    local _, newRoot =
-        SniperGetCharacterRoot()
-
-    if newRoot then
-
-        SniperStopCharacterMotion(
-            newRoot
-        )
-    end
-
     GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastTeleportAt =
         os.clock()
+
+    GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastTarget =
+        position
+
+    GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastTargetReason =
+        positionReason
 
     GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
         "teleported: "
@@ -6796,9 +7107,11 @@ function GAG2TeleportToMiddleFarmOnce(reason)
 
     print(
         "[HOLY GAG2]",
-        "Auto TP Middle Farm",
+        "TP Middle Farm",
         "| reason:",
         tostring(reason or "manual"),
+        "| target:",
+        GAG2FarmVecText(position),
         "|",
         tostring(positionReason)
     )
@@ -6807,13 +7120,20 @@ function GAG2TeleportToMiddleFarmOnce(reason)
         positionReason
 end
 
-function GAG2StartAutoTpMiddleFarm(reason)
+function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
 
-    if GAG2_AUTO_TP_MIDDLE_FARM_STATE.Running == true then
-        return
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    if state.Running == true then
+        return false
     end
 
-    GAG2_AUTO_TP_MIDDLE_FARM_STATE.Running =
+    if GAG2MiddleFarmWorkerShouldContinue(forceTp) ~= true then
+        return false
+    end
+
+    state.Running =
         true
 
     task.spawn(function()
@@ -6821,228 +7141,627 @@ function GAG2StartAutoTpMiddleFarm(reason)
         local started =
             os.clock()
 
-        local position =
+        local targetPosition =
             nil
 
-        local positionReason =
+        local targetReason =
             "not resolved"
 
-        local lastResolveAt =
+        local lastTargetRefresh =
             0
 
-        task.wait(
-            0.05
+        local didEarlyTeleport =
+            false
+
+        local didPostLoadRepair =
+            false
+
+        local postLoadSeenAt =
+            nil
+
+        state.SkipStarted =
+            false
+
+        state.SkipSucceeded =
+            false
+
+        state.SkipAttempts =
+            0
+
+        state.SkipSuccessReason =
+            ""
+
+        state.HoldingSkip =
+            false
+
+        state.HoldStartAt =
+            0
+
+        state.HoldMaxSeconds =
+            0
+
+        state.LastResult =
+            "worker started"
+
+        print(
+            "[HOLY GAG2 LOADING]",
+            "worker started",
+            "| reason:",
+            tostring(reason or "auto"),
+            "| forceTp:",
+            tostring(forceTp == true),
+            "| autoSkip:",
+            tostring(GAG2AutoSkipLoadingEnabled()),
+            "| autoTp:",
+            tostring(GAG2AutoTpMiddleFarmEnabled())
         )
 
-        while os.clock() - started < 18 do
+        local function resolveTargetStep()
 
-            if Toggles.HolyGAG2AutoTpMiddleFarm
-            and Toggles.HolyGAG2AutoTpMiddleFarm.Value ~= true then
+            if forceTp ~= true
+            and GAG2AutoTpMiddleFarmEnabled() ~= true then
+                return
+            end
 
-                GAG2_AUTO_TP_MIDDLE_FARM_STATE.Running =
+            local now =
+                os.clock()
+
+            if typeof(targetPosition) == "Vector3"
+            and now - lastTargetRefresh < 0.35 then
+                return
+            end
+
+            lastTargetRefresh =
+                now
+
+            local resolvedPosition, resolvedReason =
+                GAG2GetOwnFarmMiddlePosition()
+
+            if typeof(resolvedPosition) == "Vector3" then
+
+                if typeof(targetPosition) ~= "Vector3" then
+
+                    print(
+                        "[HOLY GAG2 MIDDLE]",
+                        "target resolved:",
+                        GAG2FarmVecText(resolvedPosition),
+                        "|",
+                        tostring(resolvedReason)
+                    )
+                end
+
+                targetPosition =
+                    resolvedPosition
+
+                targetReason =
+                    tostring(resolvedReason)
+
+                state.LastTarget =
+                    targetPosition
+
+                state.LastTargetReason =
+                    targetReason
+
+            else
+
+                targetReason =
+                    tostring(resolvedReason)
+
+                state.LastTargetReason =
+                    targetReason
+            end
+        end
+
+        local function earlyTpStep()
+
+            if didEarlyTeleport == true then
+                return
+            end
+
+            if forceTp ~= true
+            and GAG2AutoTpMiddleFarmEnabled() ~= true then
+                return
+            end
+
+            local _, root =
+                SniperGetCharacterRoot()
+
+            if not root
+            or typeof(targetPosition) ~= "Vector3" then
+                return
+            end
+
+            local distance =
+                (root.Position - targetPosition).Magnitude
+
+            local before =
+                root.Position
+
+            local ok, err =
+                GAG2MiddleFarmPivotTo(
+                    targetPosition
+                )
+
+            local _, newRoot =
+                SniperGetCharacterRoot()
+
+            if ok == true then
+
+                didEarlyTeleport =
+                    true
+
+                state.LastTeleportAt =
+                    os.clock()
+
+                state.LastResult =
+                    "early tp done"
+
+                print(
+                    "[HOLY GAG2 MIDDLE]",
+                    "early tp",
+                    "| distance:",
+                    tostring(math.floor(distance + 0.5)),
+                    "| from:",
+                    GAG2FarmVecText(before),
+                    "| to:",
+                    newRoot and GAG2FarmVecText(newRoot.Position) or "nil",
+                    "| target:",
+                    GAG2FarmVecText(targetPosition)
+                )
+
+            else
+
+                state.LastResult =
+                    "early tp failed: "
+                    .. tostring(err)
+
+                print(
+                    "[HOLY GAG2 MIDDLE]",
+                    "early tp failed:",
+                    tostring(err)
+                )
+            end
+        end
+
+        local function postLoadRepairStep(stepReason)
+
+            if didPostLoadRepair == true then
+                return
+            end
+
+            if forceTp ~= true
+            and GAG2AutoTpMiddleFarmEnabled() ~= true then
+                return
+            end
+
+            local snap =
+                GAG2MiddleFarmLoadingSnapshot()
+
+            if postLoadSeenAt == nil
+            and snap.Active ~= true
+            and (
+                snap.Done == true
+                or snap.CameraCustom == true
+            ) then
+
+                postLoadSeenAt =
+                    os.clock()
+
+                print(
+                    "[HOLY GAG2 MIDDLE]",
+                    "post-load detected",
+                    "| active:",
+                    tostring(snap.Active),
+                    "| done:",
+                    tostring(snap.Done),
+                    "| camera:",
+                    snap.CameraType
+                )
+            end
+
+            if not postLoadSeenAt then
+                return
+            end
+
+            local _, root =
+                SniperGetCharacterRoot()
+
+            if not root
+            or typeof(targetPosition) ~= "Vector3" then
+                return
+            end
+
+            local distance =
+                (root.Position - targetPosition).Magnitude
+
+            if distance < tonumber(state.PostLoadRepairDistance or 25) then
+
+                didPostLoadRepair =
+                    true
+
+                state.LastResult =
+                    "post-load near target"
+
+                print(
+                    "[HOLY GAG2 MIDDLE]",
+                    "post-load near target, no repair needed",
+                    "| distance:",
+                    tostring(math.floor(distance + 0.5)),
+                    "| reason:",
+                    tostring(stepReason or "normal")
+                )
+
+                return
+            end
+
+            local before =
+                root.Position
+
+            local ok, err =
+                GAG2MiddleFarmPivotTo(
+                    targetPosition
+                )
+
+            local _, newRoot =
+                SniperGetCharacterRoot()
+
+            if ok == true then
+
+                didPostLoadRepair =
+                    true
+
+                state.LastTeleportAt =
+                    os.clock()
+
+                state.LastResult =
+                    "post-load repair done"
+
+                print(
+                    "[HOLY GAG2 MIDDLE]",
+                    "POST-LOAD REPAIR TP",
+                    "| distance:",
+                    tostring(math.floor(distance + 0.5)),
+                    "| from:",
+                    GAG2FarmVecText(before),
+                    "| to:",
+                    newRoot and GAG2FarmVecText(newRoot.Position) or "nil",
+                    "| reason:",
+                    tostring(stepReason or "normal"),
+                    "| target:",
+                    GAG2FarmVecText(targetPosition)
+                )
+
+            else
+
+                state.LastResult =
+                    "post-load repair failed: "
+                    .. tostring(err)
+
+                print(
+                    "[HOLY GAG2 MIDDLE]",
+                    "post-load repair failed:",
+                    tostring(err)
+                )
+            end
+        end
+
+        local function detectSkipSuccessStep()
+
+            if state.SkipSucceeded == true then
+                return
+            end
+
+            local snap =
+                GAG2MiddleFarmLoadingSnapshot()
+
+            if snap.Active ~= true
+            and (
+                snap.Done == true
+                or snap.CameraCustom == true
+            ) then
+
+                state.SkipSucceeded =
+                    true
+
+                state.SkipSuccessReason =
+                    "loading cleared during monitored hold"
+
+                GAG2MiddleFarmReleaseSkipHold(
+                    "skip success"
+                )
+
+                state.LastResult =
+                    "skip success"
+
+                print(
+                    "[HOLY GAG2 LOADING]",
+                    "SKIP SUCCESS",
+                    "| attempts:",
+                    tostring(state.SkipAttempts),
+                    "| reason:",
+                    state.SkipSuccessReason,
+                    "| state:",
+                    "active="
+                    .. tostring(snap.Active)
+                    .. " done="
+                    .. tostring(snap.Done)
+                    .. " camera="
+                    .. tostring(snap.CameraType)
+                )
+
+                resolveTargetStep()
+
+                postLoadRepairStep(
+                    "same tick after skip success"
+                )
+            end
+        end
+
+        local function skipStep()
+
+            if GAG2AutoSkipLoadingEnabled() ~= true then
+                return
+            end
+
+            if state.SkipSucceeded == true then
+                return
+            end
+
+            local snap =
+                GAG2MiddleFarmLoadingSnapshot()
+
+            if snap.Active ~= true
+            or snap.Done == true
+            or snap.CameraScriptable ~= true then
+                return
+            end
+
+            if state.SkipAttempts >= 2 then
+                return
+            end
+
+            if state.HoldingSkip ~= true then
+
+                state.SkipStarted =
+                    true
+
+                state.SkipAttempts += 1
+
+                state.HoldMaxSeconds =
+                    state.SkipAttempts == 1
+                    and 3.60
+                    or 4.20
+
+                local ok, method =
+                    GAG2MiddleFarmPressSkipHold()
+
+                print(
+                    "[HOLY GAG2 LOADING]",
+                    "skip hold started",
+                    "| attempt:",
+                    tostring(state.SkipAttempts),
+                    "| maxHold:",
+                    tostring(state.HoldMaxSeconds),
+                    "| method:",
+                    tostring(method),
+                    "| active:",
+                    tostring(snap.Active),
+                    "| done:",
+                    tostring(snap.Done),
+                    "| camera:",
+                    snap.CameraType
+                )
+
+                if ok ~= true then
+
+                    state.LastResult =
+                        "skip hold failed: "
+                        .. tostring(method)
+                end
+
+                return
+            end
+
+            local heldFor =
+                os.clock() - tonumber(state.HoldStartAt or os.clock())
+
+            if heldFor >= tonumber(state.HoldMaxSeconds or 3.60) then
+
+                GAG2MiddleFarmReleaseSkipHold(
+                    "max hold reached"
+                )
+
+                print(
+                    "[HOLY GAG2 LOADING]",
+                    "skip not confirmed after hold",
+                    "| attempt:",
+                    tostring(state.SkipAttempts)
+                )
+            end
+        end
+
+        while os.clock() - started < tonumber(state.MaxRunSeconds or 18) do
+
+            if GAG2MiddleFarmWorkerShouldContinue(forceTp) ~= true then
+
+                GAG2MiddleFarmReleaseSkipHold(
+                    "disabled"
+                )
+
+                state.LastResult =
+                    "stopped: disabled"
+
+                state.Running =
                     false
 
                 return
             end
 
-            -- Loading-screen automation removed.
-            -- Do not call GAG2AutoPlayLoadingStep() from farm teleport.
+            resolveTargetStep()
+            earlyTpStep()
 
-            if typeof(position) ~= "Vector3"
-            or os.clock() - lastResolveAt >= 0.75 then
+            detectSkipSuccessStep()
+            postLoadRepairStep("normal loop")
+            skipStep()
 
-                lastResolveAt =
-                    os.clock()
+            local autoTpNeeded =
+                forceTp == true
+                or GAG2AutoTpMiddleFarmEnabled() == true
 
-                local resolvedPosition, resolvedReason =
-                    GAG2GetOwnFarmMiddlePosition()
+            local autoSkipNeeded =
+                GAG2AutoSkipLoadingEnabled() == true
 
-                if typeof(resolvedPosition) == "Vector3" then
+            local skipDone =
+                autoSkipNeeded ~= true
+                or state.SkipSucceeded == true
+                or state.SkipAttempts >= 2
+                or GAG2MiddleFarmLoadingSnapshot().Done == true
 
-                    position =
-                        resolvedPosition
-
-                    positionReason =
-                        tostring(resolvedReason)
-                end
-            end
-
-            local ready, readyReason =
-                GAG2ReadyForFarmTeleport()
-
-            GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
-                tostring(readyReason)
-
-            if typeof(position) == "Vector3"
-            and ready == true then
-
-                break
-            end
-
-            if typeof(position) == "Vector3"
-            and os.clock() - started >= 7 then
-
-                local loadingActive, loadingDone =
-                    GAG2ReadLoadingAttributes()
-
-                if loadingDone == true
-                and loadingActive ~= true then
-
-                    positionReason =
-                        tostring(positionReason)
-                        .. " | loading done fallback"
-
-                    break
-                end
-            end
-
-            task.wait(
-                0.08
-            )
-        end
-
-        if typeof(position) ~= "Vector3" then
-
-            local resolvedPosition, resolvedReason =
-                GAG2GetOwnFarmMiddlePosition()
-
-            position =
-                resolvedPosition
-
-            positionReason =
-                tostring(resolvedReason)
-        end
-
-        if typeof(position) ~= "Vector3" then
-
-            GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
-                tostring(positionReason)
-
-            GAG2_AUTO_TP_MIDDLE_FARM_STATE.Running =
-                false
-
-            return
-        end
-
-        local lockStarted =
-            os.clock()
-
-        local lockDuration =
-            3.0
-
-        local didTeleport =
-            false
-
-        while os.clock() - lockStarted < lockDuration do
-
-            if Toggles.HolyGAG2AutoTpMiddleFarm
-            and Toggles.HolyGAG2AutoTpMiddleFarm.Value ~= true then
-
-                break
-            end
-
-            local character, root =
-                SniperGetCharacterRoot()
-
-            if character
-            and root then
-
-                local distance =
-                    (root.Position - position).Magnitude
-
-                if didTeleport ~= true
-                or distance > 4 then
-
-                    local lookVector =
-                        root.CFrame.LookVector
-
-                    if typeof(lookVector) ~= "Vector3"
-                    or lookVector.Magnitude <= 0 then
-
-                        lookVector =
-                            Vector3.new(0, 0, -1)
-                    end
-
-                    local targetCFrame =
-                        CFrame.new(
-                            position,
-                            position + lookVector
-                        )
-
-                    local ok =
-                        pcall(function()
-
-                            character:PivotTo(
-                                targetCFrame
-                            )
-                        end)
-
-                    if ok ~= true then
-
-                        pcall(function()
-
-                            root.CFrame =
-                                targetCFrame
-                        end)
-                    end
-
-                    didTeleport =
-                        true
-
-                    GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastTeleportAt =
-                        os.clock()
-
-                    GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
-                        "locked: "
-                        .. tostring(positionReason)
-
-                    print(
-                        "[HOLY GAG2]",
-                        "Auto TP Middle Farm lock",
-                        "| reason:",
-                        tostring(reason or "auto"),
-                        "| distance:",
-                        tostring(math.floor(distance + 0.5)),
-                        "|",
-                        tostring(positionReason)
-                    )
-                end
-
-                SniperStopCharacterMotion(
-                    root
+            local tpDone =
+                autoTpNeeded ~= true
+                or (
+                    didEarlyTeleport == true
+                    and didPostLoadRepair == true
                 )
+
+            if skipDone == true
+            and tpDone == true then
+
+                GAG2MiddleFarmReleaseSkipHold(
+                    "done"
+                )
+
+                state.LastResult =
+                    "done"
+
+                print(
+                    "[HOLY GAG2 LOADING]",
+                    "worker finished",
+                    "| skip:",
+                    tostring(state.SkipSucceeded),
+                    "| attempts:",
+                    tostring(state.SkipAttempts),
+                    "| earlyTp:",
+                    tostring(didEarlyTeleport),
+                    "| repair:",
+                    tostring(didPostLoadRepair)
+                )
+
+                state.Running =
+                    false
+
+                return
             end
 
             task.wait(
-                0.12
+                0.02
             )
         end
 
-        if didTeleport == true then
+        GAG2MiddleFarmReleaseSkipHold(
+            "timeout"
+        )
 
-            print(
-                "[HOLY GAG2]",
-                "Auto TP Middle Farm lock finished",
-                "|",
-                tostring(positionReason)
-            )
-        end
+        state.LastResult =
+            "timeout"
 
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.Running =
+        print(
+            "[HOLY GAG2 LOADING]",
+            "worker timeout",
+            "| skip:",
+            tostring(state.SkipSucceeded),
+            "| attempts:",
+            tostring(state.SkipAttempts),
+            "| target:",
+            GAG2FarmVecText(targetPosition),
+            "| reason:",
+            tostring(targetReason)
+        )
+
+        state.Running =
             false
     end)
+
+    return true
+end
+
+function GAG2StartAutoTpMiddleFarm(reason)
+
+    return GAG2StartMiddleFarmLoadingWorker(
+        reason or "auto tp",
+        true
+    )
+end
+
+function GAG2StartAutoSkipLoading(reason)
+
+    return GAG2StartMiddleFarmLoadingWorker(
+        reason or "auto skip",
+        false
+    )
 end
 
 function GAG2SetAutoTpMiddleFarmEnabled(value)
+
+    if ConfigState.Loading == true then
+        return
+    end
 
     local enabled =
         value == true
 
     if enabled == true then
 
-        GAG2StartAutoTpMiddleFarm(
-            "toggle"
-        )
+        if type(GAG2StartAutoTpMiddleFarm) == "function" then
+
+            GAG2StartAutoTpMiddleFarm(
+                "toggle"
+            )
+        end
+    end
+
+    if enabled ~= true
+    and type(GAG2AutoSkipLoadingEnabled) == "function"
+    and GAG2AutoSkipLoadingEnabled() ~= true then
+
+        if type(GAG2MiddleFarmReleaseSkipHold) == "function" then
+
+            GAG2MiddleFarmReleaseSkipHold(
+                "auto tp off"
+            )
+        end
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2SetAutoSkipLoadingEnabled(value)
+
+    if ConfigState.Loading == true then
+        return
+    end
+
+    local enabled =
+        value == true
+
+    if enabled == true then
+
+        if type(GAG2StartAutoSkipLoading) == "function" then
+
+            GAG2StartAutoSkipLoading(
+                "toggle"
+            )
+        end
+
+    elseif type(GAG2AutoTpMiddleFarmEnabled) == "function"
+    and GAG2AutoTpMiddleFarmEnabled() ~= true then
+
+        if type(GAG2MiddleFarmReleaseSkipHold) == "function" then
+
+            GAG2MiddleFarmReleaseSkipHold(
+                "auto skip off"
+            )
+        end
     end
 
     MarkConfigDirty()
@@ -7056,14 +7775,15 @@ function GAG2RestoreAutoTpMiddleFarmState()
             LOCAL_PLAYER.CharacterAdded:Connect(function()
 
                 task.wait(
-                    0.65
+                    0.15
                 )
 
-                if Toggles.HolyGAG2AutoTpMiddleFarm
-                and Toggles.HolyGAG2AutoTpMiddleFarm.Value == true then
+                if GAG2AutoSkipLoadingEnabled() == true
+                or GAG2AutoTpMiddleFarmEnabled() == true then
 
-                    GAG2StartAutoTpMiddleFarm(
-                        "respawn"
+                    GAG2StartMiddleFarmLoadingWorker(
+                        "respawn",
+                        false
                     )
                 end
             end)
@@ -7071,11 +7791,12 @@ function GAG2RestoreAutoTpMiddleFarmState()
 
     task.defer(function()
 
-        if Toggles.HolyGAG2AutoTpMiddleFarm
-        and Toggles.HolyGAG2AutoTpMiddleFarm.Value == true then
+        if GAG2AutoSkipLoadingEnabled() == true
+        or GAG2AutoTpMiddleFarmEnabled() == true then
 
-            GAG2StartAutoTpMiddleFarm(
-                "autosave"
+            GAG2StartMiddleFarmLoadingWorker(
+                "autosave",
+                false
             )
         end
     end)
@@ -20233,27 +20954,51 @@ SettingsUIBox:AddDropdown(
     MarkConfigDirty()
 end)
 
-SettingsUIBox:AddToggle("HolyGAG2AutoTpMiddleFarm", {
-    Text = "Auto TP Middle Farm",
-    Default = false,
-    Tooltip = "When enabled, teleports to the middle of your own farm after join/spawn.",
-    Callback = function(value)
+SettingsUIBox:AddDivider()
+
+SettingsUIBox:AddToggle(
+    "HolyGAG2AutoSkipLoading",
+    {
+        Text = "Auto Skip Loading",
+        Default = true,
+        Tooltip = "Safe monitored screen-hold during GAG2 loading. No GUI scanning, no firesignal, no remote spoofing.",
+    }
+):OnChanged(function(value)
+
+    if ConfigState.Loading == true then
+        return
+    end
+
+    if type(GAG2SetAutoSkipLoadingEnabled) == "function" then
+
+        GAG2SetAutoSkipLoadingEnabled(
+            value == true
+        )
+    end
+end)
+
+SettingsUIBox:AddToggle(
+    "HolyGAG2AutoTpMiddleFarm",
+    {
+        Text = "Auto TP Middle Farm",
+        Default = false,
+        Tooltip = "Early TP once, then one post-load repair if GAG2 pulls you back.",
+    }
+):OnChanged(function(value)
+
+    if ConfigState.Loading == true then
+        return
+    end
+
+    if type(GAG2SetAutoTpMiddleFarmEnabled) == "function" then
 
         GAG2SetAutoTpMiddleFarmEnabled(
             value == true
         )
-    end,
-})
+    end
+end)
 
 SettingsUIBox:AddDivider()
-
-SettingsUIBox:AddLabel({
-    Text =
-        '<font color="rgb(196,181,253)"><b>Performance</b></font>'
-        .. '\nClient FPS helpers for public servers.',
-    DoesWrap = true,
-    Size = 13,
-})
 
 SettingsUIBox:AddToggle("HolyGAG2HideOtherGardens", {
     Text = "Hide Other Gardens",
@@ -20385,6 +21130,12 @@ if type(SaveManager.SetIgnoreIndexes) == "function" then
         "HolyGAG2AutoCloseUI",
         "HolyGAG2DPI",
         "HolyGAG2ManualJoinTarget",
+
+        -- Runtime loading helpers.
+        -- Keep these ignored so stale autosave values cannot crash UI loading.
+        -- Auto Skip still defaults ON from the toggle Default = true.
+        "HolyGAG2AutoSkipLoading",
+        "HolyGAG2AutoTpMiddleFarm",
     })
 end
 
@@ -20415,6 +21166,17 @@ end
 
 ConfigState.Loading =
     false
+
+if Toggles.HolyGAG2AutoSkipLoading
+and type(Toggles.HolyGAG2AutoSkipLoading.SetValue) == "function" then
+
+    pcall(function()
+
+        Toggles.HolyGAG2AutoSkipLoading:SetValue(
+            true
+        )
+    end)
+end
 
 if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
 
