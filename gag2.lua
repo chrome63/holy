@@ -18558,6 +18558,63 @@ GAG2_MAILBOX_STATE =
         LastAmount = 0,
     }
 
+
+function GAG2MailboxEnsureUniversalState()
+
+    local state =
+        GAG2_MAILBOX_STATE
+
+    state.SelectedCategory =
+        state.SelectedCategory
+        or "All"
+
+    state.ItemChoice =
+        state.ItemChoice
+        or "None"
+
+    state.CategoryChoices =
+        state.CategoryChoices
+        or {
+            "All",
+        }
+
+    state.ItemChoices =
+        state.ItemChoices
+        or {
+            "None",
+        }
+
+    state.ChoiceToSendable =
+        state.ChoiceToSendable
+        or {}
+
+    state.Sendables =
+        state.Sendables
+        or {}
+
+    state.LastCategory =
+        state.LastCategory
+        or ""
+
+    state.LastItemKey =
+        state.LastItemKey
+        or ""
+
+    state.LastSendCount =
+        tonumber(state.LastSendCount)
+        or 0
+
+    state.LastBatchRows =
+        tonumber(state.LastBatchRows)
+        or 0
+
+    state.MaxRowsPerMail =
+        tonumber(state.MaxRowsPerMail)
+        or 20
+end
+
+GAG2MailboxEnsureUniversalState()
+
 GAG2_MAILBOX_CONTROLS =
     GAG2_MAILBOX_CONTROLS
     or {}
@@ -18573,6 +18630,8 @@ end
 
 function GAG2MailboxSetStatus(text)
 
+    GAG2MailboxEnsureUniversalState()
+
     local state =
         GAG2_MAILBOX_STATE
 
@@ -18587,8 +18646,14 @@ function GAG2MailboxSetStatus(text)
             .. tostring(state.LastStatus)
             .. '\nTarget: '
             .. tostring(state.TargetText or "")
+            .. '\nCategory: '
+            .. tostring(state.SelectedCategory or "All")
+            .. '\nItem: '
+            .. tostring(state.ItemChoice or "None")
             .. '\nAmount: '
             .. tostring(state.Amount or 1)
+            .. ' | Max rows: '
+            .. tostring(state.MaxRowsPerMail or 20)
         )
     end
 end
@@ -18607,7 +18672,7 @@ function GAG2MailboxGetAmount()
     return math.clamp(
         amount,
         1,
-        500
+        999999
     )
 end
 
@@ -18636,7 +18701,7 @@ function GAG2MailboxSetAmount(value)
                 or 1
             ),
             1,
-            500
+            999999
         )
 
     GAG2MailboxSetStatus(
@@ -19375,6 +19440,740 @@ function GAG2MailboxRefreshPetDropdown()
     return pets
 end
 
+function GAG2MailboxGetPlayerGui()
+
+    return LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+        or nil
+end
+
+function GAG2MailboxFindInventoryFrame()
+
+    local playerGui =
+        GAG2MailboxGetPlayerGui()
+
+    local mailbox =
+        playerGui
+        and playerGui:FindFirstChild("MailboxUI")
+
+    if not mailbox then
+        return nil
+    end
+
+    local direct =
+        mailbox:FindFirstChild("InventoryFrame", true)
+
+    if direct
+    and direct:IsA("GuiObject") then
+
+        local path =
+            PathOf(direct)
+
+        if path:find("SendingFrame", 1, true)
+        and path:find("ItemSendFrame", 1, true) then
+
+            return direct
+        end
+    end
+
+    for _, descendant in ipairs(mailbox:GetDescendants()) do
+
+        if descendant.Name == "InventoryFrame"
+        and descendant:IsA("GuiObject") then
+
+            local path =
+                PathOf(descendant)
+
+            if path:find("SendingFrame", 1, true)
+            and path:find("ItemSendFrame", 1, true) then
+
+                return descendant
+            end
+        end
+    end
+
+    return nil
+end
+
+function GAG2MailboxReadSendableAmount(itemFrame, category)
+
+    category =
+        GAG2MailboxClean(category)
+
+    if category == "Pets" then
+        return 1
+    end
+
+    if typeof(itemFrame) ~= "Instance" then
+        return 0
+    end
+
+    local best =
+        0
+
+    local scanned =
+        0
+
+    for _, descendant in ipairs(itemFrame:GetDescendants()) do
+
+        scanned += 1
+
+        if scanned > 350 then
+            break
+        end
+
+        if descendant:IsA("TextLabel")
+        or descendant:IsA("TextButton")
+        or descendant:IsA("TextBox") then
+
+            local text =
+                ""
+
+            pcall(function()
+
+                text =
+                    GAG2MailboxClean(
+                        descendant.Text
+                    )
+            end)
+
+            if text ~= "" then
+
+                local amountText =
+                    text:match("[xX]%s*([%d,]+)")
+                    or text:match("([%d,]+)%s*[xX]")
+
+                if amountText then
+
+                    amountText =
+                        tostring(amountText)
+                            :gsub(",", "")
+
+                    local amount =
+                        tonumber(amountText)
+
+                    if amount
+                    and amount > best then
+
+                        best =
+                            amount
+                    end
+                end
+            end
+        end
+    end
+
+    return math.max(
+        0,
+        math.floor(best)
+    )
+end
+
+function GAG2MailboxShortItemKey(value)
+
+    value =
+        GAG2MailboxClean(value)
+
+    if #value <= 48 then
+        return value
+    end
+
+    return value:sub(1, 45)
+        .. "..."
+end
+
+function GAG2MailboxBuildSendableDisplay(sendable)
+
+    if type(sendable) ~= "table" then
+        return "None"
+    end
+
+    local amount =
+        tonumber(sendable.Amount)
+        or 0
+
+    local amountText =
+        amount > 0
+        and (
+            "x"
+            .. tostring(amount)
+        )
+        or "x?"
+
+    return tostring(sendable.Category)
+        .. " | "
+        .. GAG2MailboxShortItemKey(
+            sendable.ItemKey
+        )
+        .. " | "
+        .. amountText
+end
+
+function GAG2MailboxReadSendableFromFrame(itemFrame)
+
+    if typeof(itemFrame) ~= "Instance" then
+        return nil
+    end
+
+    local name =
+        tostring(itemFrame.Name or "")
+
+    local category, itemKey =
+        name:match("^Inv_([^:]+):(.+)$")
+
+    category =
+        GAG2MailboxClean(category)
+
+    itemKey =
+        GAG2MailboxClean(itemKey)
+
+    if category == ""
+    or itemKey == "" then
+        return nil
+    end
+
+    local amount =
+        GAG2MailboxReadSendableAmount(
+            itemFrame,
+            category
+        )
+
+    if category == "Pets" then
+        amount =
+            1
+    end
+
+    local sendable = {
+        Category =
+            category,
+
+        ItemKey =
+            itemKey,
+
+        Amount =
+            amount,
+
+        IsStackable =
+            category ~= "Pets",
+
+        Path =
+            PathOf(itemFrame),
+    }
+
+    sendable.Display =
+        GAG2MailboxBuildSendableDisplay(
+            sendable
+        )
+
+    return sendable
+end
+
+function GAG2MailboxBuildSendables()
+
+    GAG2MailboxEnsureUniversalState()
+
+    local state =
+        GAG2_MAILBOX_STATE
+
+    local inventoryFrame =
+        GAG2MailboxFindInventoryFrame()
+
+    local sendables =
+        {}
+
+    local seen =
+        {}
+
+    if inventoryFrame then
+
+        for _, child in ipairs(inventoryFrame:GetChildren()) do
+
+            local sendable =
+                GAG2MailboxReadSendableFromFrame(
+                    child
+                )
+
+            if sendable then
+
+                local key =
+                    tostring(sendable.Category)
+                    .. ":"
+                    .. tostring(sendable.ItemKey)
+
+                if seen[key] ~= true then
+
+                    seen[key] =
+                        true
+
+                    table.insert(
+                        sendables,
+                        sendable
+                    )
+                end
+            end
+        end
+    end
+
+    table.sort(sendables, function(a, b)
+
+        local categoryA =
+            tostring(a.Category or "")
+
+        local categoryB =
+            tostring(b.Category or "")
+
+        if categoryA ~= categoryB then
+            return categoryA < categoryB
+        end
+
+        return tostring(a.ItemKey or "")
+            < tostring(b.ItemKey or "")
+    end)
+
+    state.Sendables =
+        sendables
+
+    return sendables
+end
+
+function GAG2MailboxBuildCategoryChoices(sendables)
+
+    local categories = {
+        "All",
+    }
+
+    local seen = {
+        All = true,
+    }
+
+    for _, sendable in ipairs(sendables or {}) do
+
+        local category =
+            GAG2MailboxClean(
+                sendable.Category
+            )
+
+        if category ~= ""
+        and seen[category] ~= true then
+
+            seen[category] =
+                true
+
+            table.insert(
+                categories,
+                category
+            )
+        end
+    end
+
+    table.sort(categories, function(a, b)
+
+        if a == "All" then
+            return true
+        end
+
+        if b == "All" then
+            return false
+        end
+
+        return tostring(a) < tostring(b)
+    end)
+
+    return categories
+end
+
+function GAG2MailboxSetDropdownValues(dropdown, values)
+
+    if not dropdown then
+        return
+    end
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+end
+
+function GAG2MailboxSetDropdownValue(dropdown, value)
+
+    if not dropdown then
+        return
+    end
+
+    pcall(function()
+
+        if type(dropdown.SetValue) == "function" then
+
+            dropdown:SetValue(
+                value
+            )
+        end
+    end)
+end
+
+function GAG2MailboxRefreshCategoryDropdown()
+
+    GAG2MailboxEnsureUniversalState()
+
+    local state =
+        GAG2_MAILBOX_STATE
+
+    local sendables =
+        state.Sendables
+
+    if type(sendables) ~= "table" then
+        sendables =
+            {}
+    end
+
+    local values =
+        GAG2MailboxBuildCategoryChoices(
+            sendables
+        )
+
+    state.CategoryChoices =
+        values
+
+    local selected =
+        GAG2MailboxClean(
+            state.SelectedCategory
+        )
+
+    if selected == ""
+    or table.find(values, selected) == nil then
+
+        selected =
+            "All"
+    end
+
+    state.SelectedCategory =
+        selected
+
+    GAG2MailboxSetDropdownValues(
+        GAG2_MAILBOX_CONTROLS.Category,
+        values
+    )
+
+    GAG2MailboxSetDropdownValue(
+        GAG2_MAILBOX_CONTROLS.Category,
+        selected
+    )
+end
+
+function GAG2MailboxRefreshItemDropdown()
+
+    GAG2MailboxEnsureUniversalState()
+
+    local state =
+        GAG2_MAILBOX_STATE
+
+    local selectedCategory =
+        GAG2MailboxClean(
+            state.SelectedCategory
+        )
+
+    if selectedCategory == "" then
+        selectedCategory =
+            "All"
+    end
+
+    local values = {
+        "None",
+    }
+
+    local choiceToSendable =
+        {}
+
+    local usedChoices = {
+        None = true,
+    }
+
+    for _, sendable in ipairs(state.Sendables or {}) do
+
+        if selectedCategory == "All"
+        or sendable.Category == selectedCategory then
+
+            local choice =
+                GAG2MailboxBuildSendableDisplay(
+                    sendable
+                )
+
+            local baseChoice =
+                choice
+
+            local suffix =
+                2
+
+            while usedChoices[choice] == true do
+
+                choice =
+                    baseChoice
+                    .. " · "
+                    .. tostring(suffix)
+
+                suffix += 1
+            end
+
+            usedChoices[choice] =
+                true
+
+            choiceToSendable[choice] =
+                sendable
+
+            table.insert(
+                values,
+                choice
+            )
+        end
+    end
+
+    state.ItemChoices =
+        values
+
+    state.ChoiceToSendable =
+        choiceToSendable
+
+    local selected =
+        GAG2MailboxClean(
+            state.ItemChoice
+        )
+
+    if selected == ""
+    or selected == "None"
+    or choiceToSendable[selected] == nil then
+
+        selected =
+            "None"
+    end
+
+    state.ItemChoice =
+        selected
+
+    GAG2MailboxSetDropdownValues(
+        GAG2_MAILBOX_CONTROLS.Item,
+        values
+    )
+
+    GAG2MailboxSetDropdownValue(
+        GAG2_MAILBOX_CONTROLS.Item,
+        selected
+    )
+end
+
+function GAG2MailboxRefreshSendableDropdown()
+
+    local sendables =
+        GAG2MailboxBuildSendables()
+
+    GAG2MailboxRefreshCategoryDropdown()
+    GAG2MailboxRefreshItemDropdown()
+
+    GAG2MailboxSetStatus(
+        "Items refreshed: "
+        .. tostring(#sendables)
+        .. ". Open mailbox Send tab if this says 0."
+    )
+
+    return sendables
+end
+
+function GAG2MailboxSetCategoryChoice(value)
+
+    GAG2MailboxEnsureUniversalState()
+
+    local category =
+        GAG2MailboxClean(value)
+
+    if category == "" then
+        category =
+            "All"
+    end
+
+    GAG2_MAILBOX_STATE.SelectedCategory =
+        category
+
+    GAG2_MAILBOX_STATE.ItemChoice =
+        "None"
+
+    GAG2MailboxRefreshItemDropdown()
+
+    GAG2MailboxSetStatus(
+        "Category set: "
+        .. tostring(category)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2MailboxSetItemChoice(value)
+
+    GAG2MailboxEnsureUniversalState()
+
+    local choice =
+        GAG2MailboxClean(value)
+
+    if choice == "" then
+        choice =
+            "None"
+    end
+
+    GAG2_MAILBOX_STATE.ItemChoice =
+        choice
+
+    GAG2MailboxSetStatus(
+        choice ~= "None"
+        and (
+            "Selected item: "
+            .. tostring(choice)
+        )
+        or "No item selected."
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2MailboxSetMaxRowsPerMail(value)
+
+    GAG2MailboxEnsureUniversalState()
+
+    GAG2_MAILBOX_STATE.MaxRowsPerMail =
+        math.clamp(
+            math.floor(
+                tonumber(value)
+                or 20
+            ),
+            1,
+            20
+        )
+
+    GAG2MailboxSetStatus(
+        "Max rows per mail set: "
+        .. tostring(GAG2_MAILBOX_STATE.MaxRowsPerMail)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2MailboxGetSelectedSendable()
+
+    GAG2MailboxEnsureUniversalState()
+
+    local state =
+        GAG2_MAILBOX_STATE
+
+    local choice =
+        GAG2MailboxClean(
+            state.ItemChoice
+        )
+
+    if choice == ""
+    or choice == "None" then
+        return nil
+    end
+
+    local sendable =
+        state.ChoiceToSendable
+        and state.ChoiceToSendable[choice]
+
+    if type(sendable) == "table" then
+        return sendable
+    end
+
+    return nil
+end
+
+function GAG2MailboxGetSendCountForSendable(sendable)
+
+    local amount =
+        GAG2MailboxGetAmount()
+
+    if type(sendable) ~= "table" then
+        return amount
+    end
+
+    if sendable.Category == "Pets" then
+        return 1
+    end
+
+    local ownedAmount =
+        math.floor(
+            tonumber(sendable.Amount)
+            or 0
+        )
+
+    if ownedAmount > 0 then
+
+        amount =
+            math.min(
+                amount,
+                ownedAmount
+            )
+    end
+
+    return math.max(
+        1,
+        math.floor(amount)
+    )
+end
+
+function GAG2MailboxBuildBatchForSendable(sendable)
+
+    if type(sendable) ~= "table" then
+        return nil,
+            "missing item"
+    end
+
+    local category =
+        GAG2MailboxClean(
+            sendable.Category
+        )
+
+    local itemKey =
+        GAG2MailboxClean(
+            sendable.ItemKey
+        )
+
+    if category == ""
+    or itemKey == "" then
+
+        return nil,
+            "bad item"
+    end
+
+    local count =
+        GAG2MailboxGetSendCountForSendable(
+            sendable
+        )
+
+    local batch = {
+        {
+            Category =
+                category,
+
+            ItemKey =
+                itemKey,
+
+            Count =
+                count,
+        },
+    }
+
+    return batch,
+        nil,
+        count
+end
+
 function GAG2MailboxStartReplicaWatcher()
 
     local state =
@@ -19781,7 +20580,9 @@ function GAG2MailboxOpenInbox()
         source
 end
 
-function GAG2MailboxSendPetBatchNow()
+function GAG2MailboxSendSelectedBatchNow()
+
+    GAG2MailboxEnsureUniversalState()
 
     local state =
         GAG2_MAILBOX_STATE
@@ -19802,62 +20603,37 @@ function GAG2MailboxSendPetBatchNow()
             targetReason
     end
 
-    local petId =
-        GAG2MailboxClean(
-            state.PetId
-        )
+    local sendable =
+        GAG2MailboxGetSelectedSendable()
 
-    if petId == ""
-    and state.ChoiceToPetId
-    and state.PetChoice then
-
-        petId =
-            GAG2MailboxClean(
-                state.ChoiceToPetId[state.PetChoice]
-            )
-
-        state.PetId =
-            petId
-    end
-
-    if petId == "" then
+    if not sendable then
 
         GAG2MailboxSetStatus(
-            "Missing Pet UUID."
+            "No item selected. Open mailbox Send tab, then press Refresh Items."
         )
 
         return false,
-            "missing pet id"
+            "missing item"
     end
 
-    if petId:find("%.") then
+    local batch, buildError, count =
+        GAG2MailboxBuildBatchForSendable(
+            sendable
+        )
+
+    if not batch then
 
         GAG2MailboxSetStatus(
-            "Bad Pet UUID. Paste only the raw UUID."
+            "Bad batch: "
+            .. tostring(buildError)
         )
 
         return false,
-            "bad pet id"
+            tostring(buildError)
     end
-
-    local amount =
-        GAG2MailboxGetAmount()
 
     local message =
         tostring(state.Message or "")
-
-    local batch = {
-        {
-            ItemKey =
-                petId,
-
-            Count =
-                amount,
-
-            Category =
-                "Pets",
-        },
-    }
 
     local ok, source =
         GAG2MailboxFirePacket(
@@ -19873,23 +20649,41 @@ function GAG2MailboxSendPetBatchNow()
         state.LastTargetUserId =
             targetUserId
 
+        state.LastCategory =
+            sendable.Category
+
+        state.LastItemKey =
+            sendable.ItemKey
+
+        state.LastSendCount =
+            count
+
+        state.LastBatchRows =
+            #batch
+
         state.LastPetId =
-            petId
+            sendable.Category == "Pets"
+            and sendable.ItemKey
+            or ""
 
         state.LastAmount =
-            amount
+            count
 
         GAG2MailboxSetStatus(
-            "Sent pet batch."
+            "Sent mailbox batch."
             .. "\nUserId: "
             .. tostring(targetUserId)
             .. " ("
             .. tostring(targetReason)
             .. ")"
-            .. "\nPet: "
-            .. tostring(petId)
+            .. "\nCategory: "
+            .. tostring(sendable.Category)
+            .. "\nItemKey: "
+            .. tostring(sendable.ItemKey)
             .. "\nCount: "
-            .. tostring(amount)
+            .. tostring(count)
+            .. "\nRows: "
+            .. tostring(#batch)
             .. "\nSource: "
             .. tostring(source)
         )
@@ -19899,13 +20693,25 @@ function GAG2MailboxSendPetBatchNow()
             "MailboxSendBatch fired",
             "| userId:",
             tostring(targetUserId),
-            "| petId:",
-            tostring(petId),
+            "| category:",
+            tostring(sendable.Category),
+            "| itemKey:",
+            tostring(sendable.ItemKey),
             "| count:",
-            tostring(amount),
+            tostring(count),
+            "| rows:",
+            tostring(#batch),
             "| source:",
             tostring(source)
         )
+
+        task.delay(0.35, function()
+
+            if type(GAG2MailboxRefreshSendableDropdown) == "function" then
+
+                GAG2MailboxRefreshSendableDropdown()
+            end
+        end)
 
         return true,
             source
@@ -19915,10 +20721,36 @@ function GAG2MailboxSendPetBatchNow()
         source
 end
 
+function GAG2MailboxSendPetBatchNow()
+
+    return GAG2MailboxSendSelectedBatchNow()
+end
+
+
 function GAG2MailboxExposeDebug()
 
     getgenv().HOLY_GAG2_MAILBOX_STATE =
         GAG2_MAILBOX_STATE
+
+    getgenv().HOLY_GAG2_MAILBOX_REFRESH =
+        function()
+
+            return GAG2MailboxRefreshSendableDropdown()
+        end
+
+    getgenv().HOLY_GAG2_MAILBOX_GET_SENDABLES =
+        function()
+
+            GAG2MailboxRefreshSendableDropdown()
+
+            return GAG2_MAILBOX_STATE.Sendables
+        end
+
+    getgenv().HOLY_GAG2_MAILBOX_SEND_SELECTED =
+        function()
+
+            return GAG2MailboxSendSelectedBatchNow()
+        end
 
     getgenv().HOLY_GAG2_MAILBOX_SEND_PET_BATCH =
         function(targetUserId, petId, amount, message)
@@ -19926,8 +20758,24 @@ function GAG2MailboxExposeDebug()
             GAG2_MAILBOX_STATE.TargetText =
                 tostring(targetUserId or "")
 
-            GAG2_MAILBOX_STATE.PetId =
-                tostring(petId or "")
+            GAG2_MAILBOX_STATE.SelectedCategory =
+                "Pets"
+
+            GAG2_MAILBOX_STATE.ItemChoice =
+                "Direct Pet UUID"
+
+            GAG2_MAILBOX_STATE.ChoiceToSendable =
+                {
+                    ["Direct Pet UUID"] = {
+                        Category = "Pets",
+                        ItemKey = tostring(petId or ""),
+                        Amount = 1,
+                        IsStackable = false,
+                        Display = "Pets | "
+                            .. tostring(petId or "")
+                            .. " | x1",
+                    },
+                }
 
             GAG2_MAILBOX_STATE.Amount =
                 math.clamp(
@@ -19936,13 +20784,56 @@ function GAG2MailboxExposeDebug()
                         or 1
                     ),
                     1,
-                    500
+                    999999
                 )
 
             GAG2_MAILBOX_STATE.Message =
                 tostring(message or "")
 
-            return GAG2MailboxSendPetBatchNow()
+            return GAG2MailboxSendSelectedBatchNow()
+        end
+
+    getgenv().HOLY_GAG2_MAILBOX_SEND_ITEM =
+        function(targetUserId, category, itemKey, amount, message)
+
+            GAG2_MAILBOX_STATE.TargetText =
+                tostring(targetUserId or "")
+
+            GAG2_MAILBOX_STATE.SelectedCategory =
+                tostring(category or "All")
+
+            GAG2_MAILBOX_STATE.ItemChoice =
+                "Direct Item"
+
+            GAG2_MAILBOX_STATE.ChoiceToSendable =
+                {
+                    ["Direct Item"] = {
+                        Category = tostring(category or ""),
+                        ItemKey = tostring(itemKey or ""),
+                        Amount = tonumber(amount) or 1,
+                        IsStackable = tostring(category or "") ~= "Pets",
+                        Display = tostring(category or "")
+                            .. " | "
+                            .. tostring(itemKey or "")
+                            .. " | x"
+                            .. tostring(amount or 1),
+                    },
+                }
+
+            GAG2_MAILBOX_STATE.Amount =
+                math.clamp(
+                    math.floor(
+                        tonumber(amount)
+                        or 1
+                    ),
+                    1,
+                    999999
+                )
+
+            GAG2_MAILBOX_STATE.Message =
+                tostring(message or "")
+
+            return GAG2MailboxSendSelectedBatchNow()
         end
 
     getgenv().HOLY_GAG2_MAILBOX_OPEN_INBOX =
@@ -19956,6 +20847,7 @@ function GAG2RestoreMailboxState()
 
     task.defer(function()
 
+        GAG2MailboxEnsureUniversalState()
         GAG2MailboxExposeDebug()
         GAG2MailboxStartReplicaWatcher()
 
@@ -19966,17 +20858,45 @@ function GAG2RestoreMailboxState()
             )
         end
 
-        if Options.HolyGAG2MailboxPetChoice then
+        if Options.HolyGAG2MailboxCategoryChoice then
 
-            GAG2MailboxSetPetChoice(
-                Options.HolyGAG2MailboxPetChoice.Value
-            )
+            GAG2_MAILBOX_STATE.SelectedCategory =
+                GAG2MailboxClean(
+                    Options.HolyGAG2MailboxCategoryChoice.Value
+                )
+
+            if GAG2_MAILBOX_STATE.SelectedCategory == "" then
+
+                GAG2_MAILBOX_STATE.SelectedCategory =
+                    "All"
+            end
+        end
+
+        if Options.HolyGAG2MailboxItemChoice then
+
+            GAG2_MAILBOX_STATE.ItemChoice =
+                GAG2MailboxClean(
+                    Options.HolyGAG2MailboxItemChoice.Value
+                )
+
+            if GAG2_MAILBOX_STATE.ItemChoice == "" then
+
+                GAG2_MAILBOX_STATE.ItemChoice =
+                    "None"
+            end
         end
 
         if Options.HolyGAG2MailboxAmount then
 
             GAG2MailboxSetAmount(
                 Options.HolyGAG2MailboxAmount.Value
+            )
+        end
+
+        if Options.HolyGAG2MailboxMaxRowsPerMail then
+
+            GAG2MailboxSetMaxRowsPerMail(
+                Options.HolyGAG2MailboxMaxRowsPerMail.Value
             )
         end
 
@@ -19987,10 +20907,10 @@ function GAG2RestoreMailboxState()
             )
         end
 
-        GAG2MailboxRefreshPetDropdown()
+        GAG2MailboxRefreshSendableDropdown()
 
         GAG2MailboxSetStatus(
-            "Ready."
+            "Ready. Open mailbox Send tab, then Refresh Items."
         )
     end)
 end
@@ -24357,14 +25277,13 @@ SellStatusBox:AddLabel("HolyGAG2SellStatus", {
 
 MailboxMainBox:AddLabel({
     Text =
-        '<font color="rgb(196,181,253)"><b>Mailbox Send Batch</b></font>'
-        .. '\nSends one selected pet UUID with a custom Count value.'
-        .. '\nConfirmed format: MailboxSendBatch(UserId, batch, message).',
+        '<font color="rgb(196,181,253)"><b>Universal Mailbox Send</b></font>'
+        .. '\nSends mailbox-visible inventory items.'
+        .. '\nSupports Pets, Seeds, Props, Mushrooms, Gnomes, Sprinklers, Trowels, and WateringCans.'
+        .. '\nOpen the mailbox Send tab first, then press Refresh Items.',
     DoesWrap = true,
     Size = 13,
 })
-
-MailboxMainBox:AddDivider()
 
 GAG2_MAILBOX_CONTROLS.Target =
     MailboxMainBox:AddInput("HolyGAG2MailboxTarget", {
@@ -24373,8 +25292,8 @@ GAG2_MAILBOX_CONTROLS.Target =
         Numeric = false,
         Finished = true,
         ClearTextOnFocus = false,
-        Placeholder = "5227153614 or Username",
-        Tooltip = "Target mailbox recipient. UserId is fastest. Username lookup also works.",
+        Placeholder = "username or userId",
+        Tooltip = "UserId is fastest. Username lookup also works.",
         Callback = function(value)
 
             GAG2MailboxSetTarget(
@@ -24383,34 +25302,59 @@ GAG2_MAILBOX_CONTROLS.Target =
         end,
     })
 
-GAG2_MAILBOX_CONTROLS.Pet =
-    MailboxMainBox:AddDropdown("HolyGAG2MailboxPetChoice", {
-        Text = "Inventory Pet",
+GAG2_MAILBOX_CONTROLS.Category =
+    MailboxMainBox:AddDropdown("HolyGAG2MailboxCategoryChoice", {
+        Text = "Category",
+        Values = {
+            "All",
+        },
+        Default = "All",
+        Multi = false,
+        Searchable = false,
+        Tooltip = "Filter mailbox sendable items by category.",
+    })
+
+if GAG2_MAILBOX_CONTROLS.Category
+and type(GAG2_MAILBOX_CONTROLS.Category.OnChanged) == "function" then
+
+    GAG2_MAILBOX_CONTROLS.Category:OnChanged(function(value)
+
+        GAG2MailboxSetCategoryChoice(
+            value
+        )
+    end)
+end
+
+GAG2_MAILBOX_CONTROLS.Item =
+    MailboxMainBox:AddDropdown("HolyGAG2MailboxItemChoice", {
+        Text = "Inventory Item",
         Values = {
             "None",
         },
         Default = "None",
         Multi = false,
-        Tooltip = "Select a pet from your Inventory.Pets data. The UUID is handled internally.",
+        Searchable = true,
+        MaxVisibleDropdownItems = 12,
+        Tooltip = "Select a sendable mailbox item. Pets use Count 1; stackables use Send Amount.",
     })
 
-if GAG2_MAILBOX_CONTROLS.Pet
-and type(GAG2_MAILBOX_CONTROLS.Pet.OnChanged) == "function" then
+if GAG2_MAILBOX_CONTROLS.Item
+and type(GAG2_MAILBOX_CONTROLS.Item.OnChanged) == "function" then
 
-    GAG2_MAILBOX_CONTROLS.Pet:OnChanged(function(value)
+    GAG2_MAILBOX_CONTROLS.Item:OnChanged(function(value)
 
-        GAG2MailboxSetPetChoice(
+        GAG2MailboxSetItemChoice(
             value
         )
     end)
 end
 
 MailboxMainBox:AddButton({
-    Text = "Refresh Pets",
-    Tooltip = "Re-scans Inventory.Pets and refreshes the pet dropdown.",
+    Text = "Refresh Items",
+    Tooltip = "Scans MailboxUI Send inventory rows. Open the mailbox Send tab first.",
     Func = function()
 
-        GAG2MailboxRefreshPetDropdown()
+        GAG2MailboxRefreshSendableDropdown()
     end,
 })
 
@@ -24421,11 +25365,28 @@ GAG2_MAILBOX_CONTROLS.Amount =
         Numeric = true,
         Finished = true,
         ClearTextOnFocus = false,
-        Placeholder = "1 - 500",
-        Tooltip = "Sets batch Count. Example: 500 sends Count = 500 in one MailboxSendBatch call.",
+        Placeholder = "stack amount",
+        Tooltip = "Stackables use this Count. Pets always send Count = 1.",
         Callback = function(value)
 
             GAG2MailboxSetAmount(
+                value
+            )
+        end,
+    })
+
+GAG2_MAILBOX_CONTROLS.MaxRowsPerMail =
+    MailboxMainBox:AddInput("HolyGAG2MailboxMaxRowsPerMail", {
+        Text = "Max Rows Per Mail",
+        Default = "20",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "20",
+        Tooltip = "Kept capped at 20. One selected stackable item is one row.",
+        Callback = function(value)
+
+            GAG2MailboxSetMaxRowsPerMail(
                 value
             )
         end,
@@ -24451,11 +25412,11 @@ GAG2_MAILBOX_CONTROLS.Message =
 MailboxMainBox:AddDivider()
 
 MailboxMainBox:AddButton({
-    Text = "Send Pet Batch",
-    Tooltip = "Fires MailboxSendBatch once using the selected Count amount.",
+    Text = "Send Selected Item",
+    Tooltip = "Fires MailboxSendBatch once using selected Category, ItemKey, and Count.",
     Func = function()
 
-        GAG2MailboxSendPetBatchNow()
+        GAG2MailboxSendSelectedBatchNow()
     end,
 }):AddButton({
     Text = "Open Inbox",
@@ -24477,9 +25438,10 @@ MailboxStatusBox:AddLabel({
     Text =
         '<font color="rgb(148,163,184)"><b>Format</b></font>'
         .. '\nBatch item:'
-        .. '\nCategory = Pets'
-        .. '\nItemKey = Pet UUID'
-        .. '\nCount = Send Amount',
+        .. '\nCategory = selected category'
+        .. '\nItemKey = selected item key'
+        .. '\nCount = Send Amount'
+        .. '\nPets force Count = 1',
     DoesWrap = true,
 })
 
