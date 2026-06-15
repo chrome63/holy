@@ -8625,6 +8625,189 @@ function GAG2RestorePerformanceState()
 end
 
 --==================================================
+-- [4.559] ANTI AFK
+-- Silent Roblox idle-signal responder. No loops. No remotes. No console output.
+--==================================================
+
+if type(GAG2_ANTI_AFK_STATE) == "table"
+and GAG2_ANTI_AFK_STATE.Connection then
+
+    pcall(function()
+
+        GAG2_ANTI_AFK_STATE.Connection:Disconnect()
+    end)
+end
+
+GAG2_ANTI_AFK_STATE = {
+    Enabled = true,
+    Connection = nil,
+    LastActionAt = 0,
+    LastIdleSeconds = 0,
+    LastError = "",
+}
+
+function GAG2AntiAfkDisconnect()
+
+    local state =
+        GAG2_ANTI_AFK_STATE
+
+    if state.Connection then
+
+        pcall(function()
+
+            state.Connection:Disconnect()
+        end)
+    end
+
+    state.Connection =
+        nil
+end
+
+function GAG2AntiAfkPulse(idleSeconds)
+
+    local state =
+        GAG2_ANTI_AFK_STATE
+
+    if state.Enabled ~= true then
+        return
+    end
+
+    if VirtualUser == nil then
+
+        state.LastError =
+            "VirtualUser missing"
+
+        return
+    end
+
+    local now =
+        os.clock()
+
+    if now - tonumber(state.LastActionAt or 0) < 10 then
+        return
+    end
+
+    state.LastActionAt =
+        now
+
+    state.LastIdleSeconds =
+        tonumber(idleSeconds)
+        or 0
+
+    local ok, err =
+        pcall(function()
+
+            VirtualUser:CaptureController()
+
+            VirtualUser:ClickButton2(
+                Vector2.new(
+                    0,
+                    0
+                )
+            )
+        end)
+
+    if ok == true then
+
+        state.LastError =
+            ""
+
+    else
+
+        state.LastError =
+            tostring(err)
+    end
+end
+
+function GAG2AntiAfkConnect()
+
+    local state =
+        GAG2_ANTI_AFK_STATE
+
+    if state.Connection then
+        return
+    end
+
+    if not LOCAL_PLAYER
+    or not LOCAL_PLAYER.Idled then
+
+        state.LastError =
+            "LocalPlayer.Idled missing"
+
+        return
+    end
+
+    local ok, connection =
+        pcall(function()
+
+            return LOCAL_PLAYER.Idled:Connect(function(idleSeconds)
+
+                GAG2AntiAfkPulse(
+                    idleSeconds
+                )
+            end)
+        end)
+
+    if ok == true
+    and connection then
+
+        state.Connection =
+            connection
+
+        state.LastError =
+            ""
+
+    else
+
+        state.LastError =
+            tostring(connection)
+    end
+end
+
+function GAG2AntiAfkSetEnabled(value, skipDirty)
+
+    local state =
+        GAG2_ANTI_AFK_STATE
+
+    state.Enabled =
+        value == true
+
+    if state.Enabled == true then
+
+        GAG2AntiAfkConnect()
+
+    else
+
+        GAG2AntiAfkDisconnect()
+    end
+
+    if skipDirty ~= true then
+
+        MarkConfigDirty()
+    end
+end
+
+function GAG2RestoreAntiAfkState()
+
+    task.defer(function()
+
+        local enabled =
+            true
+
+        if Toggles.HolyGAG2AntiAfk then
+
+            enabled =
+                Toggles.HolyGAG2AntiAfk.Value ~= false
+        end
+
+        GAG2AntiAfkSetEnabled(
+            enabled,
+            true
+        )
+    end)
+end
+
+--==================================================
 -- [4.56] AUTO COLLECT FRUITS
 -- Priority harvest queue using ready HarvestPrompt fruits.
 -- V1 note: Size/Weight uses SizeMulti because exact pre-harvest KG is not stored.
@@ -12510,6 +12693,209 @@ function GAG2SeedPlantClean(value)
     )
 end
 
+function GAG2SeedPlantGetSeedData()
+
+    if type(GAG2ACFSafeRequire) == "function" then
+
+        local seedData =
+            GAG2ACFSafeRequire(
+                "SeedData"
+            )
+
+        if type(seedData) == "table" then
+            return seedData
+        end
+    end
+
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild(
+            "SharedModules"
+        )
+
+    local seedModule =
+        sharedModules
+        and sharedModules:FindFirstChild(
+            "SeedData",
+            true
+        )
+
+    if not seedModule
+    or seedModule:IsA("ModuleScript") ~= true then
+
+        return nil
+    end
+
+    local ok, result =
+        pcall(function()
+
+            return require(
+                seedModule
+            )
+        end)
+
+    if ok == true
+    and type(result) == "table" then
+
+        return result
+    end
+
+    return nil
+end
+
+function GAG2SeedPlantBuildValidSeedMap()
+
+    local seedMap =
+        {}
+
+    local lowerMap =
+        {}
+
+    local ordered =
+        {}
+
+    local seedData =
+        GAG2SeedPlantGetSeedData()
+
+    if type(seedData) ~= "table" then
+
+        return seedMap,
+            ordered,
+            lowerMap
+    end
+
+    for _, row in pairs(seedData) do
+
+        if type(row) == "table"
+        and type(row.SeedName) == "string" then
+
+            local seedName =
+                GAG2SeedPlantClean(
+                    row.SeedName
+                )
+
+            if seedName ~= ""
+            and seedMap[seedName] ~= true then
+
+                seedMap[seedName] =
+                    true
+
+                lowerMap[seedName:lower()] =
+                    seedName
+
+                table.insert(
+                    ordered,
+                    seedName
+                )
+            end
+        end
+    end
+
+    table.sort(
+        ordered,
+        function(a, b)
+
+            return tostring(a):lower()
+                < tostring(b):lower()
+        end
+    )
+
+    return seedMap,
+        ordered,
+        lowerMap
+end
+
+function GAG2SeedPlantResolveValidSeedName(seedName)
+
+    seedName =
+        GAG2ShopCleanItemName(
+            seedName
+        )
+
+    seedName =
+        GAG2SeedPlantClean(
+            seedName
+        )
+
+    if seedName == "" then
+        return ""
+    end
+
+    local seedMap, _, lowerMap =
+        GAG2SeedPlantBuildValidSeedMap()
+
+    if seedMap[seedName] == true then
+        return seedName
+    end
+
+    local resolved =
+        lowerMap[
+            seedName:lower()
+        ]
+
+    if resolved then
+        return resolved
+    end
+
+    return ""
+end
+
+function GAG2SeedPlantIsValidSeedName(seedName)
+
+    return GAG2SeedPlantResolveValidSeedName(
+        seedName
+    ) ~= ""
+end
+
+function GAG2SeedPlantReadRealSeedNameFromTool(tool)
+
+    if typeof(tool) ~= "Instance"
+    or tool:IsA("Tool") ~= true then
+
+        return ""
+    end
+
+    local mainCategory =
+        GAG2SeedPlantClean(
+            tool:GetAttribute("MainCategory")
+        )
+
+    if mainCategory:lower() ~= "seed" then
+        return ""
+    end
+
+    local seedTool =
+        GAG2SeedPlantClean(
+            tool:GetAttribute("SeedTool")
+        )
+
+    if seedTool == "" then
+        return ""
+    end
+
+    return GAG2SeedPlantResolveValidSeedName(
+        seedTool
+    )
+end
+
+function GAG2SeedPlantIsRealSeedTool(tool, seedName)
+
+    local wantedSeed =
+        GAG2SeedPlantResolveValidSeedName(
+            seedName
+        )
+
+    if wantedSeed == "" then
+        return false
+    end
+
+    local toolSeed =
+        GAG2SeedPlantReadRealSeedNameFromTool(
+            tool
+        )
+
+    return toolSeed == wantedSeed
+end
+
 function GAG2SeedPlantClampInt(value, defaultValue, minValue, maxValue)
 
     local number =
@@ -12595,6 +12981,172 @@ function GAG2SeedPlantSetStatus(text)
     end
 end
 
+function GAG2SeedPlantBuildValidSeedMap()
+
+    local seedMap =
+        {}
+
+    local ordered =
+        {}
+
+    local function add(seedName)
+
+        seedName =
+            GAG2SeedPlantClean(
+                seedName
+            )
+
+        if seedName == "" then
+            return
+        end
+
+        if seedMap[seedName] == true then
+            return
+        end
+
+        seedMap[seedName] =
+            true
+
+        table.insert(
+            ordered,
+            seedName
+        )
+    end
+
+    local seedData =
+        GAG2ACFSafeRequire
+        and GAG2ACFSafeRequire("SeedData")
+        or nil
+
+    if type(seedData) == "table" then
+
+        for _, row in pairs(seedData) do
+
+            if type(row) == "table"
+            and type(row.SeedName) == "string" then
+
+                add(
+                    row.SeedName
+                )
+            end
+        end
+    end
+
+    -- Safe fallback only. These are real seeds, not gear.
+    add("Carrot")
+    add("Strawberry")
+    add("Blueberry")
+    add("Tulip")
+    add("Tomato")
+    add("Apple")
+    add("Bamboo")
+    add("Corn")
+    add("Cactus")
+    add("Pineapple")
+    add("Mushroom")
+    add("Green Bean")
+    add("Banana")
+    add("Grape")
+    add("Coconut")
+    add("Mango")
+    add("Dragon Fruit")
+    add("Acorn")
+    add("Cherry")
+    add("Sunflower")
+    add("Venus Fly Trap")
+    add("Pomegranate")
+    add("Poison Apple")
+    add("Moon Bloom")
+    add("Dragon's Breath")
+    add("Ghost Pepper")
+    add("Poison Ivy")
+    add("Baby Cactus")
+    add("Glow Mushroom")
+    add("Romanesco")
+    add("Horned Melon")
+    add("Gold")
+    add("Rainbow")
+
+    table.sort(
+        ordered,
+        function(a, b)
+
+            return tostring(a):lower()
+                < tostring(b):lower()
+        end
+    )
+
+    return seedMap,
+        ordered
+end
+
+function GAG2SeedPlantIsValidSeedName(seedName)
+
+    seedName =
+        GAG2SeedPlantClean(
+            seedName
+        )
+
+    if seedName == "" then
+        return false
+    end
+
+    local seedMap =
+        GAG2SeedPlantBuildValidSeedMap()
+
+    return seedMap[seedName] == true
+end
+
+function GAG2SeedPlantReadRealSeedNameFromTool(tool)
+
+    if typeof(tool) ~= "Instance"
+    or tool:IsA("Tool") ~= true then
+
+        return ""
+    end
+
+    local mainCategory =
+        GAG2SeedPlantClean(
+            tool:GetAttribute("MainCategory")
+        )
+
+    local seedTool =
+        GAG2SeedPlantClean(
+            tool:GetAttribute("SeedTool")
+        )
+
+    -- Strict rule:
+    -- Real plantable seed tools must expose MainCategory = Seed and SeedTool.
+    -- This blocks Supersize Mushroom, Speed Mushroom, Gnome, Sprinklers, Trowel, etc.
+    if mainCategory:lower() ~= "seed" then
+        return ""
+    end
+
+    if seedTool == "" then
+        return ""
+    end
+
+    if GAG2SeedPlantIsValidSeedName(seedTool) ~= true then
+        return ""
+    end
+
+    return seedTool
+end
+
+function GAG2SeedPlantIsRealSeedTool(tool, seedName)
+
+    seedName =
+        GAG2SeedPlantClean(
+            seedName
+        )
+
+    if seedName == "" then
+        return false
+    end
+
+    return GAG2SeedPlantReadRealSeedNameFromTool(tool) == seedName
+end
+
 function GAG2SeedPlantNormalizeSelection(value)
 
     local result =
@@ -12602,27 +13154,22 @@ function GAG2SeedPlantNormalizeSelection(value)
 
     local function add(itemName)
 
-        itemName =
-            GAG2ShopCleanItemName(
+        local seedName =
+            GAG2SeedPlantResolveValidSeedName(
                 itemName
             )
 
-        itemName =
-            GAG2SeedPlantClean(
-                itemName
-            )
-
-        if itemName == "" then
+        if seedName == "" then
             return
         end
 
-        if table.find(result, itemName) ~= nil then
+        if table.find(result, seedName) ~= nil then
             return
         end
 
         table.insert(
             result,
-            itemName
+            seedName
         )
     end
 
@@ -12653,18 +13200,80 @@ end
 
 function GAG2SeedPlantGetSeedValues()
 
+    local seedMap, orderedSeeds =
+        GAG2SeedPlantBuildValidSeedMap()
+
     local values =
+        {}
+
+    local seen =
+        {}
+
+    local function addValue(seedName, displayName)
+
+        seedName =
+            GAG2SeedPlantResolveValidSeedName(
+                seedName
+            )
+
+        if seedName == "" then
+            return
+        end
+
+        if seedMap[seedName] ~= true then
+            return
+        end
+
+        if seen[seedName] == true then
+            return
+        end
+
+        seen[seedName] =
+            true
+
+        table.insert(
+            values,
+            tostring(displayName or seedName)
+        )
+    end
+
+    local shopSeedValues =
         GAG2ShopGetItemNames(
             "Seeds"
         )
 
-    if type(values) ~= "table"
-    or #values <= 0 then
+    if type(shopSeedValues) == "table" then
 
-        values = {
-            "Carrot",
-        }
+        for _, displayName in ipairs(shopSeedValues) do
+
+            local seedName =
+                GAG2ShopCleanItemName(
+                    displayName
+                )
+
+            addValue(
+                seedName,
+                displayName
+            )
+        end
     end
+
+    for _, seedName in ipairs(orderedSeeds or {}) do
+
+        addValue(
+            seedName,
+            seedName
+        )
+    end
+
+    table.sort(
+        values,
+        function(a, b)
+
+            return tostring(a):lower()
+                < tostring(b):lower()
+        end
+    )
 
     return values
 end
@@ -13627,13 +14236,13 @@ function GAG2SeedPlantFire(seedName, worldPosition)
     end
 
     seedName =
-        GAG2SeedPlantClean(
+        GAG2SeedPlantResolveValidSeedName(
             seedName
         )
 
     if seedName == "" then
         return false,
-            "missing seed name"
+            "blocked non-seed or missing SeedData entry"
     end
 
     if typeof(worldPosition) ~= "Vector3" then
@@ -13677,7 +14286,7 @@ end
 function GAG2SeedPlantFindSeedTool(seedName)
 
     seedName =
-        GAG2SeedPlantClean(
+        GAG2SeedPlantResolveValidSeedName(
             seedName
         )
 
@@ -13692,26 +14301,16 @@ function GAG2SeedPlantFindSeedTool(seedName)
 
     for _, container in ipairs(containers) do
 
-        if container then
+        if typeof(container) == "Instance" then
 
             for _, child in ipairs(container:GetChildren()) do
 
-                if child:IsA("Tool") then
+                if GAG2SeedPlantIsRealSeedTool(
+                    child,
+                    seedName
+                ) == true then
 
-                    local attrSeed =
-                        GAG2SeedPlantClean(
-                            child:GetAttribute("SeedTool")
-                        )
-
-                    if attrSeed == seedName then
-                        return child
-                    end
-
-                    if attrSeed == ""
-                    and GAG2SeedPlantClean(child.Name):find(seedName, 1, true) then
-
-                        return child
-                    end
+                    return child
                 end
             end
         end
@@ -22831,7 +23430,7 @@ GAG2_SEED_PLANTING_CONTROLS.Seeds =
             Searchable = true,
             AllowNull = true,
             MaxVisibleDropdownItems = 10,
-            Tooltip = "Selected seeds to plant. Empty selection falls back to Auto Buy Seeds selection.",
+            Tooltip = "Selected seeds to plant.",
         }
     )
 
@@ -24182,6 +24781,18 @@ SettingsUIBox:AddToggle("HolyGAG2HideOtherGardens", {
     end,
 })
 
+SettingsUIBox:AddToggle("HolyGAG2AntiAfk", {
+    Text = "Anti AFK",
+    Default = true,
+    Tooltip = "Default ON. Responds only when Roblox fires LocalPlayer.Idled. No remotes, no loop, no console output.",
+    Callback = function(value)
+
+        GAG2AntiAfkSetEnabled(
+            value == true
+        )
+    end,
+})
+
 SettingsUIBox:AddButton({
     Text = "Restore Gardens",
     Tooltip = "Restores gardens hidden by Hide Other Gardens.",
@@ -24360,6 +24971,7 @@ end
 
 if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
 
+    GAG2RestoreAntiAfkState()
     GAG2RestoreAutoTpMiddleFarmState()
     GAG2RestorePerformanceState()
     GAG2RestoreSeedPlantingState()
@@ -24463,6 +25075,14 @@ StartGAG2SniperHotkey()
 SetStatus("Ready")
 
 Library:OnUnload(function()
+
+    if type(GAG2AntiAfkSetEnabled) == "function" then
+
+        GAG2AntiAfkSetEnabled(
+            false,
+            true
+        )
+    end
 
     if type(GAG2PerformanceRestoreHiddenGardens) == "function" then
 
