@@ -134,6 +134,10 @@ local UI_SETTINGS_FILE =
     UI_SETTINGS_FOLDER
     .. "/UISettings.json"
 
+GAG2_GROUPBOX_ORDER_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/GroupboxOrder.json"
+
 local HOLY_GAG2_DEVELOPER_USER_IDS = {
     [78428093] = true,
 }
@@ -573,6 +577,108 @@ Library.ShowToggleFrameInKeybinds =
 
 getgenv().HOLY_GAG2_LIBRARY =
     Library
+
+function GAG2LoadGroupboxOrders()
+
+    if CanUseUISettingsFile() ~= true then
+        return {}
+    end
+
+    local exists =
+        false
+
+    local existsOk =
+        pcall(function()
+
+            exists =
+                isfile(
+                    GAG2_GROUPBOX_ORDER_FILE
+                )
+        end)
+
+    if existsOk ~= true
+    or exists ~= true then
+        return {}
+    end
+
+    local readOk, raw =
+        pcall(function()
+
+            return readfile(
+                GAG2_GROUPBOX_ORDER_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+        return {}
+    end
+
+    local decodeOk, payload =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk == true
+    and type(payload) == "table" then
+        return payload
+    end
+
+    return {}
+end
+
+function GAG2SaveGroupboxOrders(orderTable)
+
+    if CanUseUISettingsFile() ~= true then
+        return false
+    end
+
+    EnsureUISettingsFolder()
+
+    local encodeOk, encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                type(orderTable) == "table"
+                and orderTable
+                or {}
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                GAG2_GROUPBOX_ORDER_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+Library.GroupboxDragEnabled =
+    true
+
+Library.GroupboxOrders =
+    GAG2LoadGroupboxOrders()
+
+Library.GroupboxOrderChanged =
+    function(orderTable)
+
+        GAG2SaveGroupboxOrders(
+            orderTable
+        )
+    end
 
 local function Notify(title, description, duration)
 
@@ -1650,7 +1756,7 @@ function GAG2CreateManualJoinHud()
         Color3.fromRGB(232, 230, 240)
 
     title.Text =
-        "Holy GAG2 Joiner"
+        "Server Joiner"
 
     title.Parent =
         frame
@@ -6203,14 +6309,85 @@ end
 
 function GAG2ClientReadyForBuy()
 
-    -- Loading-screen logic removed.
-    -- Sniper readiness is now based only on character + pet folders in SniperReadyToBuy().
+    local loadingActive =
+        false
+
+    local loadingDone =
+        false
+
+    pcall(function()
+
+        loadingActive =
+            LOCAL_PLAYER:GetAttribute("LoadingScreenActive") == true
+
+        loadingDone =
+            LOCAL_PLAYER:GetAttribute("LoadingScreenDone") == true
+    end)
+
+    local camera =
+        workspace.CurrentCamera
+
+    local cameraCustom =
+        camera
+        and camera.CameraType == Enum.CameraType.Custom
+
+    local cameraScriptable =
+        camera
+        and camera.CameraType == Enum.CameraType.Scriptable
+
+    local loadingCleared =
+        loadingActive ~= true
+        and (
+            loadingDone == true
+            or cameraCustom == true
+        )
+
+    if loadingCleared ~= true then
+
+        if type(SniperState) == "table" then
+
+            SniperState.PlayScreenClearAt =
+                0
+        end
+
+        return false,
+            "Waiting for loading..."
+            .. " active="
+            .. tostring(loadingActive)
+            .. " done="
+            .. tostring(loadingDone)
+            .. " camera="
+            .. (
+                cameraScriptable == true
+                and "Scriptable"
+                or cameraCustom == true
+                and "Custom"
+                or "Other"
+            )
+    end
 
     if type(SniperState) == "table"
     and tonumber(SniperState.PlayScreenClearAt or 0) <= 0 then
 
         SniperState.PlayScreenClearAt =
             os.clock()
+
+        return false,
+            "Loading done. Settling..."
+    end
+
+    local grace =
+        tonumber(
+            SniperState
+            and SniperState.PlayScreenClearGrace
+            or 0.35
+        )
+        or 0.35
+
+    if os.clock() - tonumber(SniperState.PlayScreenClearAt or 0) < grace then
+
+        return false,
+            "Loading done. Settling..."
     end
 
     return true,
@@ -7733,6 +7910,24 @@ function GAG2SetAutoTpMiddleFarmEnabled(value)
     end
 
     MarkConfigDirty()
+
+    task.defer(function()
+
+        if ConfigState.Loading == true then
+            return
+        end
+
+        if SaveManager
+        and type(SaveManager.Save) == "function" then
+
+            pcall(function()
+
+                SaveManager:Save(
+                    ConfigState.AutosaveName
+                )
+            end)
+        end
+    end)
 end
 
 function GAG2SetAutoSkipLoadingEnabled(value)
@@ -14384,6 +14579,18 @@ local function SniperAttemptBuyEntry(entry)
     end
 
     if SniperState.Taming == true then
+        return false
+    end
+
+    local readyToBuy, readyText =
+        SniperReadyToBuy()
+
+    if readyToBuy ~= true then
+
+        SetSniperStatus(
+            readyText
+        )
+
         return false
     end
 
@@ -21131,11 +21338,9 @@ if type(SaveManager.SetIgnoreIndexes) == "function" then
         "HolyGAG2DPI",
         "HolyGAG2ManualJoinTarget",
 
-        -- Runtime loading helpers.
-        -- Keep these ignored so stale autosave values cannot crash UI loading.
-        -- Auto Skip still defaults ON from the toggle Default = true.
+        -- Runtime/default-on helper.
+        -- Auto Skip is intentionally ignored so it always defaults ON.
         "HolyGAG2AutoSkipLoading",
-        "HolyGAG2AutoTpMiddleFarm",
     })
 end
 
