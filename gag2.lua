@@ -21302,9 +21302,9 @@ GAG2_DROP_PICKUP_STATE =
         Mode = "All",
         CustomText = "",
 
-        TeleportPickup = false,
+        TeleportPickup = true,
         ReturnAfterTeleportPickup = true,
-        TeleportScanRadius = 650,
+        TeleportScanRadius = 999999,
         TeleportYOffset = 4.75,
 
         IgnoreOwnDropSeconds = 1.75,
@@ -21942,14 +21942,6 @@ function GAG2DropPickupCanFire(item, prompt, rootPart)
             1000
         )
 
-    local teleportScanRadius =
-        math.clamp(
-            tonumber(state.TeleportScanRadius)
-            or 650,
-            pickupRadius,
-            3000
-        )
-
     local distance =
         (rootPart.Position - position).Magnitude
 
@@ -21959,12 +21951,6 @@ function GAG2DropPickupCanFire(item, prompt, rootPart)
 
             return false,
                 "too far"
-        end
-
-        if distance > teleportScanRadius then
-
-            return false,
-                "outside tp scan"
         end
 
         return true,
@@ -21978,6 +21964,7 @@ function GAG2DropPickupCanFire(item, prompt, rootPart)
         false,
         position
 end
+
 
 function GAG2DropPickupFirePrompt(item, prompt, key, shouldTeleport, itemPosition)
 
@@ -22205,6 +22192,7 @@ function GAG2DropPickupScanOnce(reason)
 
     return fired
 end
+
 
 function GAG2DropPickupStartLoop()
 
@@ -24583,7 +24571,7 @@ ExperimentMainBox:AddInput("HolyGAG2PickupCustomText", {
 
 ExperimentMainBox:AddToggle("HolyGAG2PickupTeleport", {
     Text = "Auto TP To Drops",
-    Default = false,
+    Default = true,
     Tooltip = "If a matching drop is too far, briefly teleports to it, picks it up, then optionally returns.",
 }):OnChanged(function(value)
 
