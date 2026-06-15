@@ -2942,6 +2942,7 @@ local SniperState = {
     EnabledAt = 0,
     InstantHopGrace = 0,
     ReturnAfterTame = true,
+    NoTeleportPacketTest = false,
 
     Taming = false,
     LastTameAt = 0,
@@ -15750,15 +15751,80 @@ local function SniperAttemptBuyEntry(entry)
 
     task.spawn(function()
 
-        local moveState, moveInfo =
-            SniperMoveCloseForTame(
-                entry
+        local moveState =
+            nil
+
+        local moveInfo =
+            "not started"
+
+        local noTeleportTest =
+            SniperState.NoTeleportPacketTest == true
+
+        if noTeleportTest == true then
+
+            local character, root =
+                SniperGetCharacterRoot()
+
+            if not character
+            or not root then
+
+                SetSniperStatus(
+                    "No-TP test failed: missing character."
+                )
+
+                SniperState.Taming =
+                    false
+
+                return
+            end
+
+            local targetPosition =
+                SniperGetEntryTamePosition(
+                    entry
+                )
+
+            local distance =
+                typeof(targetPosition) == "Vector3"
+                and (root.Position - targetPosition).Magnitude
+                or -1
+
+            moveState = {
+                Character = character,
+                OldCFrame = root.CFrame,
+                ClosePosition = root.Position,
+                Moved = false,
+                NoTeleportPacketTest = true,
+                FiredDistance = distance,
+            }
+
+            moveInfo =
+                "no-tp packet test"
+
+            SetSniperStatus(
+                "No-TP packet test: "
+                .. tostring(entry.Name)
+                .. " | "
+                .. (
+                    distance >= 0
+                    and tostring(math.floor(distance + 0.5)) .. " studs"
+                    or "distance ?"
+                )
             )
+
+        else
+
+            moveState, moveInfo =
+                SniperMoveCloseForTame(
+                    entry
+                )
+        end
 
         if not moveState then
 
             SetSniperStatus(
-                "Move failed."
+                noTeleportTest == true
+                and "No-TP test failed."
+                or "Move failed."
             )
 
             SniperState.Taming =
@@ -15779,18 +15845,65 @@ local function SniperAttemptBuyEntry(entry)
                 SniperState.HandledPetCooldown
             )
 
-            SetSniperStatus(
-                "Buy sent: "
-                .. tostring(entry.Name)
-            )
+            if noTeleportTest == true then
 
-            SniperHoldCloseForServerValidation(
-                moveState
-            )
+                local distanceText =
+                    tonumber(moveState.FiredDistance)
+                    and tostring(
+                        math.floor(
+                            tonumber(moveState.FiredDistance)
+                            + 0.5
+                        )
+                    )
+                    or "?"
 
-            SniperRestoreAfterTame(
-                moveState
-            )
+                SetSniperStatus(
+                    "No-TP packet sent: "
+                    .. tostring(entry.Name)
+                    .. " | "
+                    .. tostring(distanceText)
+                    .. " studs"
+                )
+
+                local report =
+                    "========== HOLY GAG2 NO-TP PACKET TEST =========="
+                    .. "\nPet: "
+                    .. tostring(entry.Name)
+                    .. "\nUUID: "
+                    .. tostring(entry.UUID)
+                    .. "\nDistance: "
+                    .. tostring(distanceText)
+                    .. " studs"
+                    .. "\nMove skipped: YES"
+                    .. "\nPacket: "
+                    .. tostring(SniperState.BuyPacketSource)
+                    .. "\nResult: Packet fired. Waiting for normal confirmation."
+                    .. "\nIf pet disappears / confirms, no-TP works."
+                    .. "\nIf not confirmed, server distance-checks the packet."
+
+                CopyText(
+                    report
+                )
+
+                print(
+                    report
+                )
+
+            else
+
+                SetSniperStatus(
+                    "Buy sent: "
+                    .. tostring(entry.Name)
+                )
+
+                SniperHoldCloseForServerValidation(
+                    moveState
+                )
+
+                SniperRestoreAfterTame(
+                    moveState
+                )
+            end
 
             SniperStartBuyConfirmation(
                 entry
@@ -15798,21 +15911,30 @@ local function SniperAttemptBuyEntry(entry)
 
         else
 
-            SniperRestoreAfterTame(
-                moveState
-            )
+            if noTeleportTest ~= true then
+
+                SniperRestoreAfterTame(
+                    moveState
+                )
+            end
 
             SetSniperStatus(
-                "Buy failed."
+                noTeleportTest == true
+                and "No-TP packet failed."
+                or "Buy failed."
             )
 
             warn(
                 "[HOLY GAG2 SNIPER]",
-                "Buy failed",
+                noTeleportTest == true
+                and "No-TP packet failed"
+                or "Buy failed",
                 "| pet:",
                 tostring(entry.Name),
                 "| info:",
                 tostring(info),
+                "| move:",
+                tostring(moveInfo),
                 "| packet:",
                 tostring(SniperState.BuyPacketSource)
             )
@@ -17339,6 +17461,9 @@ function RestoreSniperAutosaveState()
         local instantFirstHop =
             Toggles.HolyGAG2SniperInstantFirstHop
 
+        local noTeleportPacketTest =
+            Toggles.HolyGAG2SniperNoTeleportPacketTest
+
         SniperState.AutoHop =
             autoHop == true
 
@@ -17362,6 +17487,18 @@ function RestoreSniperAutosaveState()
 
             SniperState.ReturnAfterTame =
                 true
+        end
+
+        
+        if noTeleportPacketTest then
+
+            SniperState.NoTeleportPacketTest =
+                noTeleportPacketTest.Value == true
+
+        else
+
+            SniperState.NoTeleportPacketTest =
+                false
         end
 
         if Options.HolyGAG2SniperTargetsList
@@ -27069,14 +27206,22 @@ SniperMainBox:AddToggle("HolyGAG2SniperInstantFirstHop", {
     end,
 })
 
-SniperMainBox:AddToggle("HolyGAG2SniperReturnAfterTame", {
-    Text = "Return After Buy",
-    Default = SniperState.ReturnAfterTame == true,
-    Tooltip = "Return to your saved position after buying.",
+
+SniperMainBox:AddToggle("HolyGAG2SniperNoTeleportPacketTest", {
+    Text = "No-TP Packet Test",
+    Default = SniperState.NoTeleportPacketTest == true,
+    Risky = true,
+    Tooltip = "Testing only. Fires the wild pet buy packet from your current position without teleporting close first.",
     Callback = function(value)
 
-        SniperState.ReturnAfterTame =
+        SniperState.NoTeleportPacketTest =
             value == true
+
+        SetSniperStatus(
+            SniperState.NoTeleportPacketTest == true
+            and "No-TP packet test enabled."
+            or "No-TP packet test disabled."
+        )
 
         MarkConfigDirty()
     end,
