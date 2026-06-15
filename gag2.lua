@@ -7082,6 +7082,306 @@ function GAG2RestoreAutoTpMiddleFarmState()
 end
 
 --==================================================
+-- [4.555] PERFORMANCE / HIDE OTHER GARDENS
+-- Client-side render reduction. Never hides own garden.
+--==================================================
+
+GAG2_PERFORMANCE_STATE =
+    GAG2_PERFORMANCE_STATE
+    or {
+        HideOtherGardens = false,
+        HiddenGardens = {},
+        Connections = {},
+        LastStatus = "Idle.",
+    }
+
+function GAG2PerformanceSetStatus(text)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    state.LastStatus =
+        tostring(text or "Idle.")
+
+    print(
+        "[HOLY GAG2 PERFORMANCE]",
+        state.LastStatus
+    )
+end
+
+function GAG2PerformanceGetGardensRoot()
+
+    return workspace:FindFirstChild(
+        "Gardens"
+    )
+end
+
+function GAG2PerformanceIsGardenPlot(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return false
+    end
+
+    if instance:IsA("Model") ~= true
+    and instance:IsA("Folder") ~= true then
+        return false
+    end
+
+    if tostring(instance.Name):match("^Plot%d+$") then
+        return true
+    end
+
+    return false
+end
+
+function GAG2PerformanceResolveOwnGarden()
+
+    if type(GAG2ResolveOwnFarmPlot) == "function" then
+
+        local ok, plot, reason =
+            pcall(
+                GAG2ResolveOwnFarmPlot
+            )
+
+        if ok == true
+        and typeof(plot) == "Instance" then
+
+            return plot,
+                tostring(reason or "resolved")
+        end
+
+        return nil,
+            tostring(plot or reason or "own garden unresolved")
+    end
+
+    return nil,
+        "GAG2ResolveOwnFarmPlot missing"
+end
+
+function GAG2PerformanceRestoreHiddenGardens(reason)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    local restored =
+        0
+
+    for garden, originalParent in pairs(state.HiddenGardens) do
+
+        if typeof(garden) == "Instance"
+        and garden.Parent == nil
+        and typeof(originalParent) == "Instance" then
+
+            local ok =
+                pcall(function()
+
+                    garden.Parent =
+                        originalParent
+                end)
+
+            if ok == true then
+                restored += 1
+            end
+        end
+
+        state.HiddenGardens[garden] =
+            nil
+    end
+
+    GAG2PerformanceSetStatus(
+        "Restored "
+        .. tostring(restored)
+        .. " hidden garden(s)."
+        .. (
+            reason
+            and " Reason: " .. tostring(reason)
+            or ""
+        )
+    )
+
+    return restored
+end
+
+function GAG2PerformanceHideGarden(garden, ownGarden, gardensRoot)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    if typeof(garden) ~= "Instance" then
+        return false
+    end
+
+    if typeof(gardensRoot) ~= "Instance" then
+        return false
+    end
+
+    if GAG2PerformanceIsGardenPlot(garden) ~= true then
+        return false
+    end
+
+    if typeof(ownGarden) == "Instance" then
+
+        if garden == ownGarden then
+            return false
+        end
+
+        if tostring(garden.Name) == tostring(ownGarden.Name) then
+            return false
+        end
+    end
+
+    if state.HiddenGardens[garden] ~= nil then
+        return false
+    end
+
+    state.HiddenGardens[garden] =
+        garden.Parent
+
+    local ok =
+        pcall(function()
+
+            garden.Parent =
+                nil
+        end)
+
+    if ok ~= true then
+
+        state.HiddenGardens[garden] =
+            nil
+
+        return false
+    end
+
+    return true
+end
+
+function GAG2PerformanceApplyHideOtherGardens(reason)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    local gardensRoot =
+        GAG2PerformanceGetGardensRoot()
+
+    if not gardensRoot then
+
+        GAG2PerformanceSetStatus(
+            "Workspace.Gardens missing."
+        )
+
+        return false
+    end
+
+    local ownGarden, ownReason =
+        GAG2PerformanceResolveOwnGarden()
+
+    if not ownGarden then
+
+        GAG2PerformanceSetStatus(
+            "Cannot hide gardens yet: "
+            .. tostring(ownReason)
+        )
+
+        return false
+    end
+
+    local hidden =
+        0
+
+    for _, garden in ipairs(gardensRoot:GetChildren()) do
+
+        if GAG2PerformanceHideGarden(
+            garden,
+            ownGarden,
+            gardensRoot
+        ) == true then
+
+            hidden += 1
+        end
+    end
+
+    if state.Connections.GardensChildAdded == nil then
+
+        state.Connections.GardensChildAdded =
+            gardensRoot.ChildAdded:Connect(function(child)
+
+                if GAG2_PERFORMANCE_STATE.HideOtherGardens ~= true then
+                    return
+                end
+
+                task.wait(
+                    0.25
+                )
+
+                GAG2PerformanceApplyHideOtherGardens(
+                    "garden added"
+                )
+            end)
+    end
+
+    GAG2PerformanceSetStatus(
+        "Hide Other Gardens ON. Hidden: "
+        .. tostring(hidden)
+        .. " | Own: "
+        .. tostring(ownGarden.Name)
+        .. (
+            reason
+            and " | " .. tostring(reason)
+            or ""
+        )
+    )
+
+    return true
+end
+
+function GAG2PerformanceSetHideOtherGardensEnabled(value)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    state.HideOtherGardens =
+        value == true
+
+    if state.HideOtherGardens == true then
+
+        GAG2PerformanceApplyHideOtherGardens(
+            "toggle"
+        )
+
+    else
+
+        GAG2PerformanceRestoreHiddenGardens(
+            "toggle off"
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2RestorePerformanceState()
+
+    task.defer(function()
+
+        if Toggles.HolyGAG2HideOtherGardens then
+
+            GAG2_PERFORMANCE_STATE.HideOtherGardens =
+                Toggles.HolyGAG2HideOtherGardens.Value == true
+        end
+
+        if GAG2_PERFORMANCE_STATE.HideOtherGardens == true then
+
+            task.wait(
+                0.75
+            )
+
+            GAG2PerformanceApplyHideOtherGardens(
+                "autosave"
+            )
+        end
+    end)
+end
+
+--==================================================
 -- [4.56] AUTO COLLECT FRUITS
 -- Priority harvest queue using ready HarvestPrompt fruits.
 -- V1 note: Size/Weight uses SizeMulti because exact pre-harvest KG is not stored.
@@ -10706,6 +11006,2053 @@ function GAG2RestoreAutoSellState()
 
             GAG2AutoSellSetStatus(
                 "Idle."
+            )
+        end
+    end)
+end
+
+--==================================================
+-- [4.58] SEED PLANTING
+-- Continuous stack/grid seed planting.
+--==================================================
+
+GAG2_SEED_PLANTING_STATE =
+    GAG2_SEED_PLANTING_STATE
+    or {
+        Enabled = false,
+        Running = false,
+
+        SelectedSeeds = {},
+
+        Layout = "Stack",
+        Direction = "Down",
+
+        Amount = 20,
+        LayerSpacing = 0.35,
+        PlantDelay = 0.1,
+
+        GridWidth = 5,
+        GridDepth = 4,
+        GridLayers = 1,
+        GridSpacing = 1.25,
+
+        CycleDelay = 0.1,
+
+        PlantLocalOffset = nil,
+        PointLoaded = false,
+
+        PlantSeedPacket = nil,
+        PacketSource = "not loaded",
+
+        LastStatus = "Idle.",
+        LastFired = 0,
+        LastSeed = "",
+        LastFailure = "",
+    }
+
+GAG2_SEED_PLANTING_CONTROLS =
+    GAG2_SEED_PLANTING_CONTROLS
+    or {}
+
+GAG2_SEED_PLANTING_POINT_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/SeedPlantPoint_"
+    .. tostring(LOCAL_PLAYER.UserId)
+    .. ".json"
+
+GAG2_SEED_PLANTING_LAYOUT_VALUES = {
+    "Stack",
+    "Grid",
+}
+
+GAG2_SEED_PLANTING_DIRECTION_VALUES = {
+    "Up",
+    "Down",
+    "Both",
+}
+
+function GAG2SeedPlantClean(value)
+
+    return CleanText(
+        tostring(value or "")
+            :gsub("<[^>]->", "")
+            :gsub("<.->", "")
+    )
+end
+
+function GAG2SeedPlantClampInt(value, defaultValue, minValue, maxValue)
+
+    local number =
+        math.floor(
+            tonumber(value)
+            or tonumber(defaultValue)
+            or 0
+        )
+
+    return math.clamp(
+        number,
+        tonumber(minValue) or number,
+        tonumber(maxValue) or number
+    )
+end
+
+function GAG2SeedPlantClampNumber(value, defaultValue, minValue, maxValue)
+
+    local number =
+        tonumber(value)
+        or tonumber(defaultValue)
+        or 0
+
+    return math.clamp(
+        number,
+        tonumber(minValue) or number,
+        tonumber(maxValue) or number
+    )
+end
+
+function GAG2SeedPlantSetStatus(text)
+
+    local state =
+        GAG2_SEED_PLANTING_STATE
+
+    state.LastStatus =
+        tostring(text or "Idle.")
+
+    local statusText =
+        '<font color="rgb(196,181,253)"><b>Status:</b></font> '
+        .. state.LastStatus
+        .. '\n'
+        .. '<font color="rgb(148,163,184)">'
+        .. tostring(state.Layout or "Stack")
+        .. ' / '
+        .. tostring(state.Direction or "Down")
+        .. ' | Amount: '
+        .. tostring(state.Amount or 20)
+        .. ' | Delay: '
+        .. tostring(state.PlantDelay or 0.1)
+        .. 's'
+        .. '</font>'
+
+    if GAG2_SEED_PLANTING_CONTROLS
+    and GAG2_SEED_PLANTING_CONTROLS.Status
+    and type(GAG2_SEED_PLANTING_CONTROLS.Status.SetText) == "function" then
+
+        GAG2_SEED_PLANTING_CONTROLS.Status:SetText(
+            statusText
+        )
+
+        return
+    end
+
+    if Options.HolyGAG2FarmStatus then
+
+        Options.HolyGAG2FarmStatus:SetText(
+            '<font color="rgb(196,181,253)"><b>Seed Planting</b></font>'
+            .. '\n'
+            .. state.LastStatus
+            .. '\nLayout: '
+            .. tostring(state.Layout)
+            .. ' | Direction: '
+            .. tostring(state.Direction)
+            .. ' | Amount/Cycle: '
+            .. tostring(state.Amount)
+            .. ' | Delay: '
+            .. tostring(state.PlantDelay or 0.1)
+            .. 's'
+            .. '\nPacket: '
+            .. tostring(state.PacketSource or "not loaded")
+        )
+    end
+end
+
+function GAG2SeedPlantNormalizeSelection(value)
+
+    local result =
+        {}
+
+    local function add(itemName)
+
+        itemName =
+            GAG2ShopCleanItemName(
+                itemName
+            )
+
+        itemName =
+            GAG2SeedPlantClean(
+                itemName
+            )
+
+        if itemName == "" then
+            return
+        end
+
+        if table.find(result, itemName) ~= nil then
+            return
+        end
+
+        table.insert(
+            result,
+            itemName
+        )
+    end
+
+    if type(value) == "table" then
+
+        for _, itemName in ipairs(value) do
+            add(itemName)
+        end
+
+        for itemName, enabled in pairs(value) do
+
+            if enabled == true then
+                add(itemName)
+            end
+        end
+
+    elseif type(value) == "string" then
+
+        add(value)
+    end
+
+    table.sort(
+        result
+    )
+
+    return result
+end
+
+function GAG2SeedPlantGetSeedValues()
+
+    local values =
+        GAG2ShopGetItemNames(
+            "Seeds"
+        )
+
+    if type(values) ~= "table"
+    or #values <= 0 then
+
+        values = {
+            "Carrot",
+        }
+    end
+
+    return values
+end
+
+function GAG2SeedPlantGetSelectedSeeds()
+
+    local state =
+        GAG2_SEED_PLANTING_STATE
+
+    local selected =
+        GAG2SeedPlantNormalizeSelection(
+            state.SelectedSeeds
+        )
+
+    if #selected > 0 then
+        return selected
+    end
+
+    local shopSelected =
+        GAG2_SHOP_STATE
+        and GAG2_SHOP_STATE.Selected
+        and GAG2_SHOP_STATE.Selected.Seeds
+
+    if type(shopSelected) == "table" then
+
+        selected =
+            GAG2SeedPlantNormalizeSelection(
+                shopSelected
+            )
+
+        if #selected > 0 then
+            return selected
+        end
+    end
+
+    return {}
+end
+
+function GAG2SeedPlantSetSelectedSeeds(value)
+
+    GAG2_SEED_PLANTING_STATE.SelectedSeeds =
+        GAG2SeedPlantNormalizeSelection(
+            value
+        )
+
+    GAG2SeedPlantSetStatus(
+        "Selected seeds: "
+        .. (
+            #GAG2_SEED_PLANTING_STATE.SelectedSeeds > 0
+            and table.concat(
+                GAG2_SEED_PLANTING_STATE.SelectedSeeds,
+                ", "
+            )
+            or "None"
+        )
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedPlantSetLayout(value)
+
+    value =
+        GAG2SeedPlantClean(
+            value
+        )
+
+    if table.find(GAG2_SEED_PLANTING_LAYOUT_VALUES, value) == nil then
+        value = "Stack"
+    end
+
+    GAG2_SEED_PLANTING_STATE.Layout =
+        value
+
+    GAG2SeedPlantSetStatus(
+        "Layout set: "
+        .. value
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedPlantSetDirection(value)
+
+    value =
+        GAG2SeedPlantClean(
+            value
+        )
+
+    if table.find(GAG2_SEED_PLANTING_DIRECTION_VALUES, value) == nil then
+        value = "Down"
+    end
+
+    GAG2_SEED_PLANTING_STATE.Direction =
+        value
+
+    GAG2SeedPlantSetStatus(
+        "Direction set: "
+        .. value
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedPlantSetAmount(value)
+
+    GAG2_SEED_PLANTING_STATE.Amount =
+        GAG2SeedPlantClampInt(
+            value,
+            20,
+            1,
+            500
+        )
+
+    GAG2SeedPlantSetStatus(
+        "Plant amount per cycle: "
+        .. tostring(GAG2_SEED_PLANTING_STATE.Amount)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedPlantSetLayerSpacing(value)
+
+    GAG2_SEED_PLANTING_STATE.LayerSpacing =
+        GAG2SeedPlantClampNumber(
+            value,
+            0.35,
+            0.01,
+            10
+        )
+
+    GAG2SeedPlantSetStatus(
+        "Layer spacing: "
+        .. tostring(GAG2_SEED_PLANTING_STATE.LayerSpacing)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedPlantSetPlantDelay(value)
+
+    GAG2_SEED_PLANTING_STATE.PlantDelay =
+        GAG2SeedPlantClampNumber(
+            value,
+            0.1,
+            0,
+            5
+        )
+
+    GAG2SeedPlantSetStatus(
+        "Plant delay: "
+        .. tostring(GAG2_SEED_PLANTING_STATE.PlantDelay)
+        .. "s"
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedPlantSetGridWidth(value)
+
+    GAG2_SEED_PLANTING_STATE.GridWidth =
+        GAG2SeedPlantClampInt(
+            value,
+            5,
+            1,
+            50
+        )
+
+    GAG2SeedPlantSetStatus(
+        "Grid width: "
+        .. tostring(GAG2_SEED_PLANTING_STATE.GridWidth)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedPlantSetGridDepth(value)
+
+    GAG2_SEED_PLANTING_STATE.GridDepth =
+        GAG2SeedPlantClampInt(
+            value,
+            4,
+            1,
+            50
+        )
+
+    GAG2SeedPlantSetStatus(
+        "Grid depth: "
+        .. tostring(GAG2_SEED_PLANTING_STATE.GridDepth)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedPlantSetGridLayers(value)
+
+    GAG2_SEED_PLANTING_STATE.GridLayers =
+        GAG2SeedPlantClampInt(
+            value,
+            1,
+            1,
+            100
+        )
+
+    GAG2SeedPlantSetStatus(
+        "Grid layers: "
+        .. tostring(GAG2_SEED_PLANTING_STATE.GridLayers)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedPlantSetGridSpacing(value)
+
+    GAG2_SEED_PLANTING_STATE.GridSpacing =
+        GAG2SeedPlantClampNumber(
+            value,
+            1.25,
+            0.1,
+            30
+        )
+
+    GAG2SeedPlantSetStatus(
+        "Grid spacing: "
+        .. tostring(GAG2_SEED_PLANTING_STATE.GridSpacing)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedPlantVectorToPayload(vector)
+
+    if typeof(vector) ~= "Vector3" then
+        return nil
+    end
+
+    return {
+        X = vector.X,
+        Y = vector.Y,
+        Z = vector.Z,
+    }
+end
+
+function GAG2SeedPlantVectorFromPayload(payload)
+
+    if type(payload) ~= "table" then
+        return nil
+    end
+
+    local x =
+        tonumber(payload.X)
+        or tonumber(payload.x)
+        or tonumber(payload[1])
+
+    local y =
+        tonumber(payload.Y)
+        or tonumber(payload.y)
+        or tonumber(payload[2])
+
+    local z =
+        tonumber(payload.Z)
+        or tonumber(payload.z)
+        or tonumber(payload[3])
+
+    if x
+    and y
+    and z then
+
+        return Vector3.new(
+            x,
+            y,
+            z
+        )
+    end
+
+    return nil
+end
+
+function GAG2SeedPlantSavePoint(localOffset)
+
+    if typeof(localOffset) ~= "Vector3" then
+        return false
+    end
+
+    GAG2_SEED_PLANTING_STATE.PlantLocalOffset =
+        localOffset
+
+    GAG2_SEED_PLANTING_STATE.PointLoaded =
+        true
+
+    if CanUseUISettingsFile() ~= true then
+        return false
+    end
+
+    EnsureUISettingsFolder()
+
+    local payload = {
+        LocalOffset =
+            GAG2SeedPlantVectorToPayload(
+                localOffset
+            ),
+
+        SavedAt =
+            os.time(),
+    }
+
+    local ok, encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if ok ~= true
+    or type(encoded) ~= "string" then
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                GAG2_SEED_PLANTING_POINT_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function GAG2SeedPlantLoadPoint()
+
+    local state =
+        GAG2_SEED_PLANTING_STATE
+
+    if state.PointLoaded == true then
+        return typeof(state.PlantLocalOffset) == "Vector3"
+    end
+
+    state.PointLoaded =
+        true
+
+    if CanUseUISettingsFile() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                GAG2_SEED_PLANTING_POINT_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return false
+    end
+
+    local readOk, raw =
+        pcall(function()
+
+            return readfile(
+                GAG2_SEED_PLANTING_POINT_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+        return false
+    end
+
+    local decodeOk, payload =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(payload) ~= "table" then
+        return false
+    end
+
+    local localOffset =
+        GAG2SeedPlantVectorFromPayload(
+            payload.LocalOffset
+        )
+
+    if typeof(localOffset) ~= "Vector3" then
+        return false
+    end
+
+    state.PlantLocalOffset =
+        localOffset
+
+    return true
+end
+
+function GAG2SeedPlantGetPlotFrame(plot)
+
+    if typeof(plot) ~= "Instance" then
+        return nil
+    end
+
+    local okPivot, pivot =
+        pcall(function()
+
+            return plot:GetPivot()
+        end)
+
+    if okPivot == true
+    and typeof(pivot) == "CFrame" then
+        return pivot
+    end
+
+    local okBox, cframe =
+        pcall(function()
+
+            return plot:GetBoundingBox()
+        end)
+
+    if okBox == true
+    and typeof(cframe) == "CFrame" then
+        return cframe
+    end
+
+    return nil
+end
+
+function GAG2SeedPlantBuildRaycastParams(ownPlot)
+
+    local filter =
+        {}
+
+    if LOCAL_PLAYER
+    and LOCAL_PLAYER.Character then
+
+        table.insert(
+            filter,
+            LOCAL_PLAYER.Character
+        )
+    end
+
+    local plantsFolder =
+        ownPlot
+        and ownPlot:FindFirstChild("Plants")
+
+    if plantsFolder then
+
+        table.insert(
+            filter,
+            plantsFolder
+        )
+    end
+
+    local params =
+        RaycastParams.new()
+
+    params.FilterType =
+        Enum.RaycastFilterType.Exclude
+
+    params.FilterDescendantsInstances =
+        filter
+
+    params.IgnoreWater =
+        true
+
+    return params
+end
+
+function GAG2SeedPlantIsValidPlotHit(result, ownPlot)
+
+    if typeof(result) ~= "RaycastResult" then
+        return false,
+            "no raycast result"
+    end
+
+    if typeof(ownPlot) ~= "Instance" then
+        return false,
+            "own plot missing"
+    end
+
+    local hit =
+        result.Instance
+
+    if typeof(hit) ~= "Instance" then
+        return false,
+            "hit missing"
+    end
+
+    if hit:IsDescendantOf(ownPlot) ~= true then
+
+        return false,
+            "outside own plot: "
+            .. PathOf(hit)
+    end
+
+    local path =
+        PathOf(hit)
+
+    if path:find("%.Plants%.") then
+
+        return false,
+            "hit plant: "
+            .. path
+    end
+
+    if hit.Name == "GardenZonePart" then
+        return false,
+            "GardenZonePart"
+    end
+
+    return true,
+        path
+end
+
+function GAG2SeedPlantRaycastGround(roughPosition, ownPlot)
+
+    if typeof(roughPosition) ~= "Vector3" then
+        return nil,
+            "missing rough position"
+    end
+
+    local result =
+        workspace:Raycast(
+            roughPosition + Vector3.new(0, 18, 0),
+            Vector3.new(0, -120, 0),
+            GAG2SeedPlantBuildRaycastParams(
+                ownPlot
+            )
+        )
+
+    local valid, reason =
+        GAG2SeedPlantIsValidPlotHit(
+            result,
+            ownPlot
+        )
+
+    if valid ~= true then
+        return nil,
+            reason
+    end
+
+    return result.Position,
+        reason
+end
+
+function GAG2SeedPlantSetPointFromCurrentPosition()
+
+    local ownPlot, plotReason =
+        GAG2ResolveOwnFarmPlot()
+
+    if not ownPlot then
+
+        GAG2SeedPlantSetStatus(
+            "Could not resolve own garden: "
+            .. tostring(plotReason)
+        )
+
+        Notify(
+            "Seed Planting",
+            "Could not resolve your garden.",
+            4
+        )
+
+        return false
+    end
+
+    local plotFrame =
+        GAG2SeedPlantGetPlotFrame(
+            ownPlot
+        )
+
+    if typeof(plotFrame) ~= "CFrame" then
+
+        GAG2SeedPlantSetStatus(
+            "Could not resolve plot frame."
+        )
+
+        Notify(
+            "Seed Planting",
+            "Could not resolve plot frame.",
+            4
+        )
+
+        return false
+    end
+
+    local _, root =
+        SniperGetCharacterRoot()
+
+    if not root then
+
+        GAG2SeedPlantSetStatus(
+            "Character root missing."
+        )
+
+        Notify(
+            "Seed Planting",
+            "Character root missing.",
+            4
+        )
+
+        return false
+    end
+
+    local groundPosition, groundReason =
+        GAG2SeedPlantRaycastGround(
+            root.Position,
+            ownPlot
+        )
+
+    if typeof(groundPosition) ~= "Vector3" then
+
+        GAG2SeedPlantSetStatus(
+            "Invalid plant point: "
+            .. tostring(groundReason)
+        )
+
+        Notify(
+            "Seed Planting",
+            "Stand inside your garden before setting point.",
+            4
+        )
+
+        return false
+    end
+
+    local localOffset =
+        plotFrame:PointToObjectSpace(
+            groundPosition
+        )
+
+    GAG2SeedPlantSavePoint(
+        localOffset
+    )
+
+    GAG2SeedPlantSetStatus(
+        "Plant point saved: "
+        .. tostring(groundReason)
+    )
+
+    Notify(
+        "Seed Planting",
+        "Plant point saved.",
+        3
+    )
+
+    return true
+end
+
+function GAG2SeedPlantGetBasePosition()
+
+    GAG2SeedPlantLoadPoint()
+
+    local localOffset =
+        GAG2_SEED_PLANTING_STATE.PlantLocalOffset
+
+    if typeof(localOffset) ~= "Vector3" then
+        return nil,
+            nil,
+            "Set Plant Point first."
+    end
+
+    local ownPlot, plotReason =
+        GAG2ResolveOwnFarmPlot()
+
+    if not ownPlot then
+        return nil,
+            nil,
+            tostring(plotReason)
+    end
+
+    local plotFrame =
+        GAG2SeedPlantGetPlotFrame(
+            ownPlot
+        )
+
+    if typeof(plotFrame) ~= "CFrame" then
+        return nil,
+            nil,
+            "plot frame missing"
+    end
+
+    return plotFrame:PointToWorldSpace(
+        localOffset
+    ),
+    ownPlot,
+    "ok"
+end
+
+function GAG2SeedPlantSearchPacket(candidate, seen, depth)
+
+    if type(candidate) ~= "table" then
+        return nil
+    end
+
+    if depth > 9 then
+        return nil
+    end
+
+    if seen[candidate] == true then
+        return nil
+    end
+
+    seen[candidate] =
+        true
+
+    local packetName =
+        tostring(
+            SniperSafeRawGet(candidate, "Name")
+            or ""
+        )
+
+    local okFire, fireFunction =
+        pcall(function()
+
+            return candidate.Fire
+        end)
+
+    if packetName == "PlantSeed"
+    and okFire == true
+    and type(fireFunction) == "function" then
+
+        return candidate
+    end
+
+    for _, row in ipairs(SniperSafePairsSnapshot(candidate)) do
+
+        if type(row.Value) == "table" then
+
+            local found =
+                GAG2SeedPlantSearchPacket(
+                    row.Value,
+                    seen,
+                    depth + 1
+                )
+
+            if found then
+                return found
+            end
+        end
+    end
+
+    return nil
+end
+
+function GAG2SeedPlantResolvePacketFromController()
+
+    local playerScripts =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChild("PlayerScripts")
+
+    local controller =
+        playerScripts
+        and playerScripts:FindFirstChild("Controllers")
+        and playerScripts.Controllers:FindFirstChild("PlantController")
+
+    if not controller then
+        return nil,
+            "PlantController missing"
+    end
+
+    local okRequire, plantController =
+        pcall(function()
+
+            return require(
+                controller
+            )
+        end)
+
+    if okRequire ~= true
+    or type(plantController) ~= "table" then
+
+        return nil,
+            "PlantController require failed"
+    end
+
+    local tryPlant =
+        plantController.TryPlantWithRay
+
+    if type(tryPlant) ~= "function" then
+        return nil,
+            "TryPlantWithRay missing"
+    end
+
+    if type(debug) ~= "table"
+    or type(debug.getupvalues) ~= "function" then
+
+        return nil,
+            "debug.getupvalues unsupported"
+    end
+
+    local okUpvalues, upvalues =
+        pcall(function()
+
+            return debug.getupvalues(
+                tryPlant
+            )
+        end)
+
+    if okUpvalues ~= true
+    or type(upvalues) ~= "table" then
+
+        return nil,
+            "getupvalues failed"
+    end
+
+    for index, value in pairs(upvalues) do
+
+        if type(value) == "table" then
+
+            local plantGroup =
+                SniperSafeRawGet(
+                    value,
+                    "Plant"
+                )
+
+            local plantSeed =
+                plantGroup
+                and SniperSafeRawGet(
+                    plantGroup,
+                    "PlantSeed"
+                )
+
+            local okFire, fireFunction =
+                pcall(function()
+
+                    return plantSeed.Fire
+                end)
+
+            if type(plantSeed) == "table"
+            and SniperSafeRawGet(plantSeed, "Name") == "PlantSeed"
+            and okFire == true
+            and type(fireFunction) == "function" then
+
+                return plantSeed,
+                    "PlantController.TryPlantWithRay upvalue #"
+                    .. tostring(index)
+            end
+        end
+    end
+
+    return nil,
+        "PlantSeed packet not found in controller"
+end
+
+function GAG2SeedPlantFindPacket()
+
+    local state =
+        GAG2_SEED_PLANTING_STATE
+
+    if type(state.PlantSeedPacket) == "table" then
+
+        local okFire, fireFunction =
+            pcall(function()
+
+                return state.PlantSeedPacket.Fire
+            end)
+
+        if okFire == true
+        and type(fireFunction) == "function" then
+
+            return state.PlantSeedPacket
+        end
+    end
+
+    local packets =
+        SniperFindPacketTable()
+
+    if type(packets) == "table" then
+
+        local plantGroup =
+            SniperSafeRawGet(
+                packets,
+                "Plant"
+            )
+
+        local plantSeed =
+            plantGroup
+            and SniperSafeRawGet(
+                plantGroup,
+                "PlantSeed"
+            )
+
+        local okFire, fireFunction =
+            pcall(function()
+
+                return plantSeed.Fire
+            end)
+
+        if type(plantSeed) == "table"
+        and SniperSafeRawGet(plantSeed, "Name") == "PlantSeed"
+        and okFire == true
+        and type(fireFunction) == "function" then
+
+            state.PlantSeedPacket =
+                plantSeed
+
+            state.PacketSource =
+                "packet table Plant.PlantSeed"
+
+            return plantSeed
+        end
+
+        local found =
+            GAG2SeedPlantSearchPacket(
+                packets,
+                {},
+                0
+            )
+
+        if found then
+
+            state.PlantSeedPacket =
+                found
+
+            state.PacketSource =
+                "packet table recursive PlantSeed"
+
+            return found
+        end
+    end
+
+    local controllerPacket, controllerSource =
+        GAG2SeedPlantResolvePacketFromController()
+
+    if controllerPacket then
+
+        state.PlantSeedPacket =
+            controllerPacket
+
+        state.PacketSource =
+            tostring(controllerSource)
+
+        return controllerPacket
+    end
+
+    state.PacketSource =
+        tostring(controllerSource or "PlantSeed packet missing")
+
+    return nil
+end
+
+function GAG2SeedPlantFire(seedName, worldPosition)
+
+    local packet =
+        GAG2SeedPlantFindPacket()
+
+    if not packet then
+        return false,
+            GAG2_SEED_PLANTING_STATE.PacketSource
+    end
+
+    seedName =
+        GAG2SeedPlantClean(
+            seedName
+        )
+
+    if seedName == "" then
+        return false,
+            "missing seed name"
+    end
+
+    if typeof(worldPosition) ~= "Vector3" then
+        return false,
+            "missing world position"
+    end
+
+    local ok, err =
+        pcall(function()
+
+            packet:Fire(
+                worldPosition,
+                seedName,
+                Enum.NormalId.Top.Value
+            )
+        end)
+
+    if ok ~= true then
+
+        ok, err =
+            pcall(function()
+
+                packet.Fire(
+                    packet,
+                    worldPosition,
+                    seedName,
+                    Enum.NormalId.Top.Value
+                )
+            end)
+    end
+
+    if ok ~= true then
+        return false,
+            tostring(err)
+    end
+
+    return true,
+        "fired"
+end
+
+function GAG2SeedPlantFindSeedTool(seedName)
+
+    seedName =
+        GAG2SeedPlantClean(
+            seedName
+        )
+
+    if seedName == "" then
+        return nil
+    end
+
+    local containers = {
+        LOCAL_PLAYER and LOCAL_PLAYER.Character,
+        LOCAL_PLAYER and LOCAL_PLAYER:FindFirstChildOfClass("Backpack"),
+    }
+
+    for _, container in ipairs(containers) do
+
+        if container then
+
+            for _, child in ipairs(container:GetChildren()) do
+
+                if child:IsA("Tool") then
+
+                    local attrSeed =
+                        GAG2SeedPlantClean(
+                            child:GetAttribute("SeedTool")
+                        )
+
+                    if attrSeed == seedName then
+                        return child
+                    end
+
+                    if attrSeed == ""
+                    and GAG2SeedPlantClean(child.Name):find(seedName, 1, true) then
+
+                        return child
+                    end
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function GAG2SeedPlantReadSeedCount(seedName)
+
+    local tool =
+        GAG2SeedPlantFindSeedTool(
+            seedName
+        )
+
+    if not tool then
+        return 0,
+            "tool missing"
+    end
+
+    local attrNames = {
+        "Count",
+        "Quantity",
+        "Amount",
+        "Stock",
+    }
+
+    for _, attrName in ipairs(attrNames) do
+
+        local value =
+            tonumber(
+                tool:GetAttribute(attrName)
+            )
+
+        if value then
+            return math.max(
+                0,
+                math.floor(value)
+            ),
+            PathOf(tool)
+        end
+    end
+
+    return 1,
+        PathOf(tool)
+end
+
+function GAG2SeedPlantEquip(seedName)
+
+    local tool =
+        GAG2SeedPlantFindSeedTool(
+            seedName
+        )
+
+    if not tool then
+        return false,
+            "seed tool missing"
+    end
+
+    local character =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character
+
+    local humanoid =
+        character
+        and character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid then
+        return false,
+            "humanoid missing"
+    end
+
+    local ok, err =
+        pcall(function()
+
+            humanoid:EquipTool(
+                tool
+            )
+        end)
+
+    if ok ~= true then
+        return false,
+            tostring(err)
+    end
+
+    task.wait(
+        0.05
+    )
+
+    return true,
+        PathOf(tool)
+end
+
+function GAG2SeedPlantBuildLayerOffsets(count, spacing, direction)
+
+    count =
+        GAG2SeedPlantClampInt(
+            count,
+            1,
+            1,
+            500
+        )
+
+    spacing =
+        GAG2SeedPlantClampNumber(
+            spacing,
+            0.35,
+            0.01,
+            10
+        )
+
+    direction =
+        GAG2SeedPlantClean(
+            direction
+        )
+
+    if table.find(GAG2_SEED_PLANTING_DIRECTION_VALUES, direction) == nil then
+        direction = "Down"
+    end
+
+    local offsets = {
+        0,
+    }
+
+    if count <= 1 then
+        return offsets
+    end
+
+    if direction == "Both" then
+
+        local step =
+            1
+
+        while #offsets < count do
+
+            table.insert(
+                offsets,
+                spacing * step
+            )
+
+            if #offsets >= count then
+                break
+            end
+
+            table.insert(
+                offsets,
+                -spacing * step
+            )
+
+            step += 1
+        end
+
+        return offsets
+    end
+
+    local sign =
+        direction == "Up"
+        and 1
+        or -1
+
+    for index = 1, count - 1 do
+
+        table.insert(
+            offsets,
+            spacing * index * sign
+        )
+    end
+
+    return offsets
+end
+
+function GAG2SeedPlantBuildStackPositions(basePosition)
+
+    local state =
+        GAG2_SEED_PLANTING_STATE
+
+    local amount =
+        GAG2SeedPlantClampInt(
+            state.Amount,
+            20,
+            1,
+            500
+        )
+
+    local offsets =
+        GAG2SeedPlantBuildLayerOffsets(
+            amount,
+            state.LayerSpacing,
+            state.Direction
+        )
+
+    local positions =
+        {}
+
+    for _, yOffset in ipairs(offsets) do
+
+        table.insert(
+            positions,
+            basePosition
+            + Vector3.new(
+                0,
+                yOffset,
+                0
+            )
+        )
+
+        if #positions >= amount then
+            break
+        end
+    end
+
+    return positions
+end
+
+function GAG2SeedPlantBuildGridPositions(basePosition, ownPlot)
+
+    local state =
+        GAG2_SEED_PLANTING_STATE
+
+    local amount =
+        GAG2SeedPlantClampInt(
+            state.Amount,
+            20,
+            1,
+            500
+        )
+
+    local width =
+        GAG2SeedPlantClampInt(
+            state.GridWidth,
+            5,
+            1,
+            50
+        )
+
+    local depth =
+        GAG2SeedPlantClampInt(
+            state.GridDepth,
+            4,
+            1,
+            50
+        )
+
+    local layers =
+        GAG2SeedPlantClampInt(
+            state.GridLayers,
+            1,
+            1,
+            100
+        )
+
+    local gridSpacing =
+        GAG2SeedPlantClampNumber(
+            state.GridSpacing,
+            1.25,
+            0.1,
+            30
+        )
+
+    local layerOffsets =
+        GAG2SeedPlantBuildLayerOffsets(
+            layers,
+            state.LayerSpacing,
+            state.Direction
+        )
+
+    local positions =
+        {}
+
+    local xStart =
+        -((width - 1) * gridSpacing) / 2
+
+    local zStart =
+        -((depth - 1) * gridSpacing) / 2
+
+    for _, layerOffset in ipairs(layerOffsets) do
+
+        for zIndex = 1, depth do
+
+            for xIndex = 1, width do
+
+                if #positions >= amount then
+                    return positions
+                end
+
+                local roughPosition =
+                    basePosition
+                    + Vector3.new(
+                        xStart + ((xIndex - 1) * gridSpacing),
+                        0,
+                        zStart + ((zIndex - 1) * gridSpacing)
+                    )
+
+                local groundPosition =
+                    GAG2SeedPlantRaycastGround(
+                        roughPosition,
+                        ownPlot
+                    )
+
+                if typeof(groundPosition) == "Vector3" then
+
+                    table.insert(
+                        positions,
+                        groundPosition
+                        + Vector3.new(
+                            0,
+                            layerOffset,
+                            0
+                        )
+                    )
+                end
+            end
+        end
+    end
+
+    return positions
+end
+
+function GAG2SeedPlantBuildPositions()
+
+    local state =
+        GAG2_SEED_PLANTING_STATE
+
+    local basePosition, ownPlot, reason =
+        GAG2SeedPlantGetBasePosition()
+
+    if typeof(basePosition) ~= "Vector3" then
+        return {},
+            tostring(reason)
+    end
+
+    if state.Layout == "Grid" then
+
+        local positions =
+            GAG2SeedPlantBuildGridPositions(
+                basePosition,
+                ownPlot
+            )
+
+        if #positions <= 0 then
+            return {},
+                "no valid grid positions"
+        end
+
+        return positions,
+            "grid"
+    end
+
+    return GAG2SeedPlantBuildStackPositions(
+        basePosition
+    ),
+    "stack"
+end
+
+function GAG2SeedPlantFireCycle()
+
+    local state =
+        GAG2_SEED_PLANTING_STATE
+
+    local selectedSeeds =
+        GAG2SeedPlantGetSelectedSeeds()
+
+    if #selectedSeeds <= 0 then
+
+        GAG2SeedPlantSetStatus(
+            "Select seeds to plant, or select Auto Buy seed items."
+        )
+
+        return 0
+    end
+
+    local positions, positionReason =
+        GAG2SeedPlantBuildPositions()
+
+    if #positions <= 0 then
+
+        GAG2SeedPlantSetStatus(
+            "No valid positions: "
+            .. tostring(positionReason)
+        )
+
+        return 0
+    end
+
+    local amount =
+        GAG2SeedPlantClampInt(
+            state.Amount,
+            20,
+            1,
+            500
+        )
+
+    local fired =
+        0
+
+    local waitingSeed =
+        ""
+
+    for _, seedName in ipairs(selectedSeeds) do
+
+        if state.Enabled ~= true then
+            break
+        end
+
+        if fired >= amount then
+            break
+        end
+
+        seedName =
+            GAG2SeedPlantClean(
+                seedName
+            )
+
+        if seedName ~= "" then
+
+            local count =
+                GAG2SeedPlantReadSeedCount(
+                    seedName
+                )
+
+            if count <= 0 then
+
+                if waitingSeed == "" then
+                    waitingSeed = seedName
+                end
+
+            else
+
+                local equipOk, equipInfo =
+                    GAG2SeedPlantEquip(
+                        seedName
+                    )
+
+                if equipOk ~= true then
+
+                    state.LastFailure =
+                        tostring(equipInfo)
+
+                    GAG2SeedPlantSetStatus(
+                        "Equip failed for "
+                        .. seedName
+                        .. ": "
+                        .. tostring(equipInfo)
+                    )
+
+                else
+
+                    for _, worldPosition in ipairs(positions) do
+
+                        if state.Enabled ~= true then
+                            break
+                        end
+
+                        if fired >= amount then
+                            break
+                        end
+
+                        local liveCount =
+                            GAG2SeedPlantReadSeedCount(
+                                seedName
+                            )
+
+                        if liveCount <= 0 then
+                            break
+                        end
+
+                        local okPlant, plantInfo =
+                            GAG2SeedPlantFire(
+                                seedName,
+                                worldPosition
+                            )
+
+                        if okPlant == true then
+
+                            fired += 1
+
+                            state.LastSeed =
+                                seedName
+
+                            state.LastFired =
+                                fired
+
+                            local plantDelay =
+                                GAG2SeedPlantClampNumber(
+                                    state.PlantDelay,
+                                    0.1,
+                                    0,
+                                    5
+                                )
+
+                            if plantDelay > 0 then
+
+                                task.wait(
+                                    plantDelay
+                                )
+
+                            elseif fired % 12 == 0 then
+
+                                task.wait()
+                            end
+
+                        else
+
+                            state.LastFailure =
+                                tostring(plantInfo)
+
+                            GAG2SeedPlantSetStatus(
+                                "Plant failed for "
+                                .. seedName
+                                .. ": "
+                                .. tostring(plantInfo)
+                            )
+
+                            task.wait(
+                                0.15
+                            )
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if fired > 0 then
+
+        GAG2SeedPlantSetStatus(
+            "Fired "
+            .. tostring(fired)
+            .. " plant packet(s). Waiting next cycle."
+        )
+
+    elseif waitingSeed ~= "" then
+
+        GAG2SeedPlantSetStatus(
+            "Waiting for "
+            .. waitingSeed
+            .. " seeds from Backpack / Auto Buy..."
+        )
+
+    else
+
+        GAG2SeedPlantSetStatus(
+            "No selected seed tools available."
+        )
+    end
+
+    return fired
+end
+
+function GAG2SeedPlantStartLoop()
+
+    local state =
+        GAG2_SEED_PLANTING_STATE
+
+    if state.Running == true then
+        return
+    end
+
+    state.Running =
+        true
+
+    task.spawn(function()
+
+        GAG2SeedPlantSetStatus(
+            "Loop started. Plant Amount is per cycle."
+        )
+
+        while state.Enabled == true do
+
+            local fired =
+                GAG2SeedPlantFireCycle()
+
+            if fired > 0 then
+
+                task.wait(
+                    GAG2SeedPlantClampNumber(
+                        state.CycleDelay,
+                        0.1,
+                        0.03,
+                        5
+                    )
+                )
+
+            else
+
+                task.wait(
+                    0.75
+                )
+            end
+        end
+
+        state.Running =
+            false
+
+        if state.Enabled ~= true then
+
+            GAG2SeedPlantSetStatus(
+                "Stopped."
+            )
+        end
+    end)
+end
+
+function GAG2SeedPlantSetEnabled(value)
+
+    local state =
+        GAG2_SEED_PLANTING_STATE
+
+    state.Enabled =
+        value == true
+
+    if state.Enabled == true then
+
+        if Toggles
+        and Toggles.HolyGAG2AutoPlant
+        and type(Toggles.HolyGAG2AutoPlant.SetValue) == "function"
+        and Toggles.HolyGAG2AutoPlant.Value == true then
+
+            pcall(function()
+
+                Toggles.HolyGAG2AutoPlant:SetValue(
+                    false
+                )
+            end)
+        end
+
+        GAG2SeedPlantSetStatus(
+            "Enabled. Plant Amount is per cycle."
+        )
+
+        if ConfigState.Loading ~= true then
+
+            GAG2SeedPlantStartLoop()
+        end
+
+    else
+
+        GAG2SeedPlantSetStatus(
+            "Disabled."
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedPlantRefreshDropdown()
+
+    local dropdown =
+        GAG2_SEED_PLANTING_CONTROLS.Seeds
+
+    if not dropdown then
+        return
+    end
+
+    local values =
+        GAG2SeedPlantGetSeedValues()
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+end
+
+function GAG2RestoreSeedPlantingState()
+
+    task.defer(function()
+
+        local state =
+            GAG2_SEED_PLANTING_STATE
+
+        GAG2SeedPlantLoadPoint()
+
+        if Options.HolyGAG2SeedPlantSeeds then
+
+            GAG2SeedPlantSetSelectedSeeds(
+                Options.HolyGAG2SeedPlantSeeds.Value
+            )
+        end
+
+        if Options.HolyGAG2SeedPlantLayout then
+
+            GAG2SeedPlantSetLayout(
+                Options.HolyGAG2SeedPlantLayout.Value
+            )
+        end
+
+        if Options.HolyGAG2SeedPlantDirection then
+
+            GAG2SeedPlantSetDirection(
+                Options.HolyGAG2SeedPlantDirection.Value
+            )
+        end
+
+        if Options.HolyGAG2SeedPlantAmount then
+
+            GAG2SeedPlantSetAmount(
+                Options.HolyGAG2SeedPlantAmount.Value
+            )
+        end
+
+        if Options.HolyGAG2SeedPlantDelay then
+
+            GAG2SeedPlantSetPlantDelay(
+                Options.HolyGAG2SeedPlantDelay.Value
+            )
+        end
+
+        if Options.HolyGAG2SeedPlantLayerSpacing then
+
+            GAG2SeedPlantSetLayerSpacing(
+                Options.HolyGAG2SeedPlantLayerSpacing.Value
+            )
+        end
+
+        if Options.HolyGAG2SeedPlantGridWidth then
+
+            GAG2SeedPlantSetGridWidth(
+                Options.HolyGAG2SeedPlantGridWidth.Value
+            )
+        end
+
+        if Options.HolyGAG2SeedPlantGridDepth then
+
+            GAG2SeedPlantSetGridDepth(
+                Options.HolyGAG2SeedPlantGridDepth.Value
+            )
+        end
+
+        if Options.HolyGAG2SeedPlantGridLayers then
+
+            GAG2SeedPlantSetGridLayers(
+                Options.HolyGAG2SeedPlantGridLayers.Value
+            )
+        end
+
+        if Options.HolyGAG2SeedPlantGridSpacing then
+
+            GAG2SeedPlantSetGridSpacing(
+                Options.HolyGAG2SeedPlantGridSpacing.Value
+            )
+        end
+
+        if Toggles.HolyGAG2SeedPlanting then
+
+            state.Enabled =
+                Toggles.HolyGAG2SeedPlanting.Value == true
+        end
+
+        GAG2SeedPlantRefreshDropdown()
+
+        if state.Enabled == true then
+
+            GAG2SeedPlantSetEnabled(
+                true
+            )
+
+        else
+
+            GAG2SeedPlantSetStatus(
+                "Ready."
             )
         end
     end)
@@ -15744,104 +18091,200 @@ end
 -- [7] GROUPBOXES
 --==================================================
 
+local function AddLeftBox(tab, title, icon)
+
+    if tab
+    and type(tab.AddLeftCollapsibleGroupbox) == "function" then
+
+        local ok, box =
+            pcall(function()
+
+                return tab:AddLeftCollapsibleGroupbox(
+                    title,
+                    icon,
+                    true
+                )
+            end)
+
+        if ok == true
+        and box ~= nil then
+            return box
+        end
+
+        return tab:AddLeftCollapsibleGroupbox(
+            title,
+            "settings",
+            true
+        )
+    end
+
+    return tab:AddLeftGroupbox(
+        title,
+        icon or "settings"
+    )
+end
+
+local function AddRightBox(tab, title, icon)
+
+    if tab
+    and type(tab.AddRightCollapsibleGroupbox) == "function" then
+
+        local ok, box =
+            pcall(function()
+
+                return tab:AddRightCollapsibleGroupbox(
+                    title,
+                    icon,
+                    true
+                )
+            end)
+
+        if ok == true
+        and box ~= nil then
+            return box
+        end
+
+        return tab:AddRightCollapsibleGroupbox(
+            title,
+            "settings",
+            true
+        )
+    end
+
+    return tab:AddRightGroupbox(
+        title,
+        icon or "settings"
+    )
+end
+
 local HomeMainBox =
-    Tabs.Home:AddLeftGroupbox(
+    AddLeftBox(
+        Tabs.Home,
         "Quick Actions",
         "sparkles"
     )
 
 local HomeServerBox =
-    Tabs.Home:AddRightGroupbox(
+    AddRightBox(
+        Tabs.Home,
         "Live Pets",
         "radar"
     )
 
 local ShopsMainBox =
-    Tabs.Shops:AddLeftGroupbox(
+    AddLeftBox(
+        Tabs.Shops,
         "Shop Controls",
         "shopping-cart"
     )
 
 local ShopsStatusBox =
-    Tabs.Shops:AddRightGroupbox(
+    AddRightBox(
+        Tabs.Shops,
         "Current Stock",
         "activity"
     )
 
 local SellMainBox =
-    Tabs.Sell:AddLeftGroupbox(
+    AddLeftBox(
+        Tabs.Sell,
         "Controls",
         "coins"
     )
 
 local SellStatusBox =
-    Tabs.Sell:AddRightGroupbox(
+    AddRightBox(
+        Tabs.Sell,
         "Status",
         "receipt"
     )
 
 local MailboxMainBox =
-    Tabs.Mailbox:AddLeftGroupbox(
+    AddLeftBox(
+        Tabs.Mailbox,
         "Send Pet Batch",
         "mail"
     )
 
 local MailboxStatusBox =
-    Tabs.Mailbox:AddRightGroupbox(
+    AddRightBox(
+        Tabs.Mailbox,
         "Status",
         "inbox"
     )
 
 local ExperimentMainBox =
-    Tabs.Experiment:AddLeftGroupbox(
+    AddLeftBox(
+        Tabs.Experiment,
         "Controls",
         "flask-conical"
     )
 
 local ExperimentStatusBox =
-    Tabs.Experiment:AddRightGroupbox(
+    AddRightBox(
+        Tabs.Experiment,
         "Status",
         "activity"
     )
 
-local FarmMainBox =
-    Tabs.Farm:AddLeftGroupbox(
-        "Controls",
+local FarmSeedPlantBox =
+    AddLeftBox(
+        Tabs.Farm,
+        "Seed Planting",
         "sprout"
     )
 
-local FarmStatusBox =
-    Tabs.Farm:AddRightGroupbox(
-        "Status",
+local FarmMainBox =
+    AddLeftBox(
+        Tabs.Farm,
+        "Farm Controls",
         "leaf"
     )
 
+local FarmStatusBox =
+    AddRightBox(
+        Tabs.Farm,
+        "Status",
+        "activity"
+    )
+
+if FarmSeedPlantBox == nil then
+
+    FarmSeedPlantBox =
+        FarmMainBox
+end
+
 local VisualsMainBox =
-    Tabs.Visuals:AddLeftGroupbox(
+    AddLeftBox(
+        Tabs.Visuals,
         "Research",
         "eye"
     )
 
 local VisualsStatusBox =
-    Tabs.Visuals:AddRightGroupbox(
+    AddRightBox(
+        Tabs.Visuals,
         "Status",
         "scan-eye"
     )
 
 local SniperMainBox =
-    Tabs.Sniper:AddLeftGroupbox(
+    AddLeftBox(
+        Tabs.Sniper,
         "Wild Pet Sniper",
         "crosshair"
     )
 
 local SniperStatusBox =
-    Tabs.Sniper:AddRightGroupbox(
+    AddRightBox(
+        Tabs.Sniper,
         "Sniper Status",
         "radar"
     )
 
 local SettingsUIBox =
-    Tabs.Settings:AddLeftGroupbox(
+    AddLeftBox(
+        Tabs.Settings,
         "Interface",
         "sliders-horizontal"
     )
@@ -15855,18 +18298,19 @@ local DevInfoBox =
 if Tabs.Dev then
 
     DevToolsBox =
-        Tabs.Dev:AddLeftGroupbox(
+        AddLeftBox(
+            Tabs.Dev,
             "Tools",
             "terminal"
         )
 
     DevInfoBox =
-        Tabs.Dev:AddRightGroupbox(
+        AddRightBox(
+            Tabs.Dev,
             "Info",
             "info"
         )
 end
-
 --==================================================
 -- [8] HOME TAB
 --==================================================
@@ -16365,6 +18809,424 @@ ExperimentStatusBox:AddLabel("HolyGAG2ExperimentStatus", {
 --==================================================
 -- [8.9] FARM TAB
 --==================================================
+
+if FarmSeedPlantBox == nil then
+
+    if type(AddLeftBox) == "function" then
+
+        FarmSeedPlantBox =
+            AddLeftBox(
+                Tabs.Farm,
+                "Seed Planting",
+                "sprout"
+            )
+    end
+end
+
+if FarmSeedPlantBox == nil then
+
+    FarmSeedPlantBox =
+        FarmMainBox
+end
+
+local FarmSeedAdvancedBox =
+    nil
+
+if Tabs.Farm
+and type(Tabs.Farm.AddLeftCollapsibleGroupbox) == "function" then
+
+    local okAdvanced, advancedBox =
+        pcall(function()
+
+            return Tabs.Farm:AddLeftCollapsibleGroupbox(
+                "Seed Advanced",
+                "sliders-horizontal",
+                false
+            )
+        end)
+
+    if okAdvanced == true
+    and advancedBox ~= nil then
+
+        FarmSeedAdvancedBox =
+            advancedBox
+    end
+end
+
+if FarmSeedAdvancedBox == nil then
+
+    FarmSeedAdvancedBox =
+        AddLeftBox(
+            Tabs.Farm,
+            "Seed Advanced",
+            "sliders-horizontal"
+        )
+end
+
+local function GAG2SeedPlantSetControlVisible(control, visible)
+
+    if control
+    and type(control.SetVisible) == "function" then
+
+        pcall(function()
+
+            control:SetVisible(
+                visible == true
+            )
+        end)
+    end
+end
+
+local function GAG2SeedPlantRefreshAdvancedVisibility()
+
+    local isGrid =
+        GAG2_SEED_PLANTING_STATE.Layout == "Grid"
+
+    GAG2SeedPlantSetControlVisible(
+        GAG2_SEED_PLANTING_CONTROLS.GridWidth,
+        isGrid
+    )
+
+    GAG2SeedPlantSetControlVisible(
+        GAG2_SEED_PLANTING_CONTROLS.GridDepth,
+        isGrid
+    )
+
+    GAG2SeedPlantSetControlVisible(
+        GAG2_SEED_PLANTING_CONTROLS.GridLayers,
+        isGrid
+    )
+
+    GAG2SeedPlantSetControlVisible(
+        GAG2_SEED_PLANTING_CONTROLS.GridSpacing,
+        isGrid
+    )
+end
+
+FarmSeedPlantBox:AddLabel({
+    Text =
+        '<font color="rgb(196,181,253)"><b>Seed Planting</b></font>'
+        .. '\nContinuous planting. Amount is per cycle.',
+    DoesWrap = true,
+    Size = 13,
+})
+
+FarmSeedPlantBox:AddButton({
+    Text = "Set Point",
+    Tooltip = "Stand inside your garden where planting should start, then click this.",
+    Func = function()
+
+        GAG2SeedPlantSetPointFromCurrentPosition()
+    end,
+}):AddButton({
+    Text = "Refresh",
+    Tooltip = "Refresh seed dropdown.",
+    Func = function()
+
+        GAG2SeedPlantRefreshDropdown()
+
+        GAG2SeedPlantSetStatus(
+            "Seed list refreshed."
+        )
+    end,
+})
+
+GAG2_SEED_PLANTING_CONTROLS.Seeds =
+    FarmSeedPlantBox:AddDropdown(
+        "HolyGAG2SeedPlantSeeds",
+        {
+            Text = "Seeds To Plant",
+            Values = GAG2SeedPlantGetSeedValues(),
+            Default = {},
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Selected seeds to plant. Empty selection falls back to Auto Buy Seeds selection.",
+        }
+    )
+
+if GAG2_SEED_PLANTING_CONTROLS.Seeds
+and type(GAG2_SEED_PLANTING_CONTROLS.Seeds.OnChanged) == "function" then
+
+    GAG2_SEED_PLANTING_CONTROLS.Seeds:OnChanged(function(value)
+
+        GAG2SeedPlantSetSelectedSeeds(
+            value
+        )
+    end)
+end
+
+GAG2_SEED_PLANTING_CONTROLS.Layout =
+    FarmSeedPlantBox:AddDropdown(
+        "HolyGAG2SeedPlantLayout",
+        {
+            Text = "Plant Layout",
+            Values = GAG2_SEED_PLANTING_LAYOUT_VALUES,
+            Default = GAG2_SEED_PLANTING_STATE.Layout or "Stack",
+            Multi = false,
+            Searchable = false,
+            MaxVisibleDropdownItems = 2,
+            Tooltip = "Stack plants vertically. Grid spreads around the plant point.",
+        }
+    )
+
+if GAG2_SEED_PLANTING_CONTROLS.Layout
+and type(GAG2_SEED_PLANTING_CONTROLS.Layout.OnChanged) == "function" then
+
+    GAG2_SEED_PLANTING_CONTROLS.Layout:OnChanged(function(value)
+
+        GAG2SeedPlantSetLayout(
+            value
+        )
+
+        GAG2SeedPlantRefreshAdvancedVisibility()
+    end)
+end
+
+GAG2_SEED_PLANTING_CONTROLS.Direction =
+    FarmSeedPlantBox:AddDropdown(
+        "HolyGAG2SeedPlantDirection",
+        {
+            Text = "Layer Direction",
+            Values = GAG2_SEED_PLANTING_DIRECTION_VALUES,
+            Default = GAG2_SEED_PLANTING_STATE.Direction or "Down",
+            Multi = false,
+            Searchable = false,
+            MaxVisibleDropdownItems = 3,
+            Tooltip = "Up, Down, or Both. Grid uses this when Grid Layers is above 1.",
+        }
+    )
+
+if GAG2_SEED_PLANTING_CONTROLS.Direction
+and type(GAG2_SEED_PLANTING_CONTROLS.Direction.OnChanged) == "function" then
+
+    GAG2_SEED_PLANTING_CONTROLS.Direction:OnChanged(function(value)
+
+        GAG2SeedPlantSetDirection(
+            value
+        )
+    end)
+end
+
+if type(FarmSeedPlantBox.AddInput) == "function" then
+
+    local SeedPlantAmountInput =
+        FarmSeedPlantBox:AddInput(
+            "HolyGAG2SeedPlantAmount",
+            {
+                Text = "Plant Amount",
+                Default = "20",
+                Placeholder = "20",
+                Numeric = false,
+                Finished = false,
+                ClearTextOnFocus = false,
+                Tooltip = "Max seeds to plant per cycle while Enable Seed Planting is ON.",
+            }
+        )
+
+    if SeedPlantAmountInput
+    and type(SeedPlantAmountInput.OnChanged) == "function" then
+
+        SeedPlantAmountInput:OnChanged(function(value)
+
+            GAG2SeedPlantSetAmount(
+                value
+            )
+        end)
+    end
+end
+
+GAG2_SEED_PLANTING_CONTROLS.Status =
+    FarmSeedPlantBox:AddLabel({
+        Text =
+            '<font color="rgb(196,181,253)"><b>Status:</b></font> Ready.',
+        DoesWrap = true,
+        Size = 12,
+    })
+
+GAG2_SEED_PLANTING_CONTROLS.Toggle =
+    FarmSeedPlantBox:AddToggle(
+        "HolyGAG2SeedPlanting",
+        {
+            Text = "Enable Seed Planting",
+            Default = false,
+            Tooltip = "Continuously plants selected seeds. If seeds run out, waits for Auto Buy or backpack refill.",
+            Callback = function(value)
+
+                GAG2SeedPlantSetEnabled(
+                    value == true
+                )
+            end,
+        }
+    )
+
+FarmSeedAdvancedBox:AddLabel({
+    Text =
+        '<font color="rgb(196,181,253)"><b>Advanced Seed Settings</b></font>'
+        .. '\nTiming, spacing, and grid tuning.',
+    DoesWrap = true,
+    Size = 13,
+})
+
+if type(FarmSeedAdvancedBox.AddInput) == "function" then
+
+    GAG2_SEED_PLANTING_CONTROLS.PlantDelay =
+        FarmSeedAdvancedBox:AddInput(
+            "HolyGAG2SeedPlantDelay",
+            {
+                Text = "Plant Delay",
+                Default = "0.1",
+                Placeholder = "0.1",
+                Numeric = false,
+                Finished = false,
+                ClearTextOnFocus = false,
+                Tooltip = "Delay after each seed fire. Default 0.1. Lower is faster, but too low can make stacking only plant once.",
+            }
+        )
+
+    if GAG2_SEED_PLANTING_CONTROLS.PlantDelay
+    and type(GAG2_SEED_PLANTING_CONTROLS.PlantDelay.OnChanged) == "function" then
+
+        GAG2_SEED_PLANTING_CONTROLS.PlantDelay:OnChanged(function(value)
+
+            GAG2SeedPlantSetPlantDelay(
+                value
+            )
+        end)
+    end
+
+    GAG2_SEED_PLANTING_CONTROLS.LayerSpacing =
+        FarmSeedAdvancedBox:AddInput(
+            "HolyGAG2SeedPlantLayerSpacing",
+            {
+                Text = "Layer Spacing",
+                Default = "0.35",
+                Placeholder = "0.35",
+                Numeric = false,
+                Finished = false,
+                ClearTextOnFocus = false,
+                Tooltip = "Vertical distance between stack/grid layers.",
+            }
+        )
+
+    if GAG2_SEED_PLANTING_CONTROLS.LayerSpacing
+    and type(GAG2_SEED_PLANTING_CONTROLS.LayerSpacing.OnChanged) == "function" then
+
+        GAG2_SEED_PLANTING_CONTROLS.LayerSpacing:OnChanged(function(value)
+
+            GAG2SeedPlantSetLayerSpacing(
+                value
+            )
+        end)
+    end
+
+    GAG2_SEED_PLANTING_CONTROLS.GridWidth =
+        FarmSeedAdvancedBox:AddInput(
+            "HolyGAG2SeedPlantGridWidth",
+            {
+                Text = "Grid Width",
+                Default = "5",
+                Placeholder = "5",
+                Numeric = false,
+                Finished = false,
+                ClearTextOnFocus = false,
+                Tooltip = "Grid columns. Used only in Grid layout.",
+            }
+        )
+
+    if GAG2_SEED_PLANTING_CONTROLS.GridWidth
+    and type(GAG2_SEED_PLANTING_CONTROLS.GridWidth.OnChanged) == "function" then
+
+        GAG2_SEED_PLANTING_CONTROLS.GridWidth:OnChanged(function(value)
+
+            GAG2SeedPlantSetGridWidth(
+                value
+            )
+        end)
+    end
+
+    GAG2_SEED_PLANTING_CONTROLS.GridDepth =
+        FarmSeedAdvancedBox:AddInput(
+            "HolyGAG2SeedPlantGridDepth",
+            {
+                Text = "Grid Depth",
+                Default = "4",
+                Placeholder = "4",
+                Numeric = false,
+                Finished = false,
+                ClearTextOnFocus = false,
+                Tooltip = "Grid rows. Used only in Grid layout.",
+            }
+        )
+
+    if GAG2_SEED_PLANTING_CONTROLS.GridDepth
+    and type(GAG2_SEED_PLANTING_CONTROLS.GridDepth.OnChanged) == "function" then
+
+        GAG2_SEED_PLANTING_CONTROLS.GridDepth:OnChanged(function(value)
+
+            GAG2SeedPlantSetGridDepth(
+                value
+            )
+        end)
+    end
+
+    GAG2_SEED_PLANTING_CONTROLS.GridLayers =
+        FarmSeedAdvancedBox:AddInput(
+            "HolyGAG2SeedPlantGridLayers",
+            {
+                Text = "Grid Layers",
+                Default = "1",
+                Placeholder = "1",
+                Numeric = false,
+                Finished = false,
+                ClearTextOnFocus = false,
+                Tooltip = "Vertical layers per grid point. Plant Amount still caps total per cycle.",
+            }
+        )
+
+    if GAG2_SEED_PLANTING_CONTROLS.GridLayers
+    and type(GAG2_SEED_PLANTING_CONTROLS.GridLayers.OnChanged) == "function" then
+
+        GAG2_SEED_PLANTING_CONTROLS.GridLayers:OnChanged(function(value)
+
+            GAG2SeedPlantSetGridLayers(
+                value
+            )
+        end)
+    end
+
+    GAG2_SEED_PLANTING_CONTROLS.GridSpacing =
+        FarmSeedAdvancedBox:AddInput(
+            "HolyGAG2SeedPlantGridSpacing",
+            {
+                Text = "Grid Spacing",
+                Default = "1.25",
+                Placeholder = "1.25",
+                Numeric = false,
+                Finished = false,
+                ClearTextOnFocus = false,
+                Tooltip = "Horizontal distance between grid points.",
+            }
+        )
+
+    if GAG2_SEED_PLANTING_CONTROLS.GridSpacing
+    and type(GAG2_SEED_PLANTING_CONTROLS.GridSpacing.OnChanged) == "function" then
+
+        GAG2_SEED_PLANTING_CONTROLS.GridSpacing:OnChanged(function(value)
+
+            GAG2SeedPlantSetGridSpacing(
+                value
+            )
+        end)
+    end
+end
+
+GAG2SeedPlantRefreshAdvancedVisibility()
+
+GAG2SeedPlantSetStatus(
+    "Ready."
+)
 
 FarmMainBox:AddLabel({
     Text =
@@ -17385,6 +20247,53 @@ SettingsUIBox:AddToggle("HolyGAG2AutoTpMiddleFarm", {
 
 SettingsUIBox:AddDivider()
 
+SettingsUIBox:AddLabel({
+    Text =
+        '<font color="rgb(196,181,253)"><b>Performance</b></font>'
+        .. '\nClient FPS helpers for public servers.',
+    DoesWrap = true,
+    Size = 13,
+})
+
+SettingsUIBox:AddToggle("HolyGAG2HideOtherGardens", {
+    Text = "Hide Other Gardens",
+    Default = false,
+    Tooltip = "Locally hides other players gardens. Your own garden stays visible. Turn OFF to restore.",
+    Callback = function(value)
+
+        GAG2PerformanceSetHideOtherGardensEnabled(
+            value == true
+        )
+    end,
+})
+
+SettingsUIBox:AddButton({
+    Text = "Restore Gardens",
+    Tooltip = "Restores gardens hidden by Hide Other Gardens.",
+    Func = function()
+
+        GAG2_PERFORMANCE_STATE.HideOtherGardens =
+            false
+
+        if Toggles.HolyGAG2HideOtherGardens
+        and type(Toggles.HolyGAG2HideOtherGardens.SetValue) == "function" then
+
+            pcall(function()
+
+                Toggles.HolyGAG2HideOtherGardens:SetValue(
+                    false
+                )
+            end)
+        end
+
+        GAG2PerformanceRestoreHiddenGardens(
+            "manual restore"
+        )
+    end,
+})
+
+SettingsUIBox:AddDivider()
+
 SettingsUIBox:AddButton({
     Text = "Unload UI",
     Risky = true,
@@ -17510,6 +20419,8 @@ ConfigState.Loading =
 if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
 
     GAG2RestoreAutoTpMiddleFarmState()
+    GAG2RestorePerformanceState()
+    GAG2RestoreSeedPlantingState()
     GAG2RestoreAutoCollectFruitState()
     GAG2RestoreAutoSellState()
     GAG2RestoreMailboxState()
@@ -17607,6 +20518,13 @@ StartGAG2SniperHotkey()
 SetStatus("Ready")
 
 Library:OnUnload(function()
+
+    if type(GAG2PerformanceRestoreHiddenGardens) == "function" then
+
+        GAG2PerformanceRestoreHiddenGardens(
+            "ui unload"
+        )
+    end
 
     print(
         "[HOLY GAG2]",
