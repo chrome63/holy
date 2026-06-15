@@ -718,9 +718,24 @@ end
 
 local function BuildServerInfoText()
 
-    return "Players: "
-        .. tostring(#Players:GetPlayers())
-        .. " | Code ready"
+    local lines = {
+        "Players: "
+            .. tostring(#Players:GetPlayers())
+            .. " | Code ready",
+    }
+
+    if type(GAG2VersionHopBuildHomeText) == "function" then
+
+        table.insert(
+            lines,
+            GAG2VersionHopBuildHomeText()
+        )
+    end
+
+    return table.concat(
+        lines,
+        "\n"
+    )
 end
 
 local function RefreshServerInfo()
@@ -2156,6 +2171,298 @@ local function GetHttp(url)
     return nil
 end
 
+--==================================================
+-- [4.12] SERVER SELECTION MODE
+-- Used by manual hop, version hopper, and sniper auto-hop.
+--==================================================
+
+GAG2_SERVER_SELECTION_MODES =
+    GAG2_SERVER_SELECTION_MODES
+    or {
+        "Most Empty",
+        "Random",
+        "Most Full",
+        "Balanced",
+    }
+
+GAG2_SERVER_SELECTION_STATE =
+    GAG2_SERVER_SELECTION_STATE
+    or {
+        Mode = "Most Empty",
+        LastStatus = "Ready.",
+        LastTarget = "",
+    }
+
+function GAG2ServerSelectionClean(value)
+
+    return CleanText(
+        tostring(value or "")
+            :gsub("<[^>]->", "")
+            :gsub("<.->", "")
+    )
+end
+
+function GAG2ServerSelectionModeValid(mode)
+
+    mode =
+        GAG2ServerSelectionClean(mode)
+
+    return table.find(
+        GAG2_SERVER_SELECTION_MODES,
+        mode
+    ) ~= nil
+end
+
+function GAG2ServerSelectionGetMode()
+
+    local state =
+        GAG2_SERVER_SELECTION_STATE
+
+    local mode =
+        GAG2ServerSelectionClean(
+            state.Mode
+        )
+
+    if GAG2ServerSelectionModeValid(mode) ~= true then
+        mode =
+            "Most Empty"
+    end
+
+    state.Mode =
+        mode
+
+    return mode
+end
+
+function GAG2ServerSelectionBuildStatus()
+
+    local state =
+        GAG2_SERVER_SELECTION_STATE
+
+    return '<font color="rgb(196,181,253)"><b>Server Selection</b></font>'
+        .. '\nMode: '
+        .. tostring(GAG2ServerSelectionGetMode())
+        .. '\nLast: '
+        .. tostring(state.LastStatus or "Ready.")
+        .. '\nTarget: '
+        .. tostring(state.LastTarget or "None")
+end
+
+function GAG2ServerSelectionRefreshStatus()
+
+    if Options.HolyGAG2ServerSelectionStatus then
+
+        Options.HolyGAG2ServerSelectionStatus:SetText(
+            GAG2ServerSelectionBuildStatus()
+        )
+    end
+end
+
+function GAG2ServerSelectionSetStatus(text)
+
+    GAG2_SERVER_SELECTION_STATE.LastStatus =
+        tostring(text or "Ready.")
+
+    GAG2ServerSelectionRefreshStatus()
+end
+
+function GAG2ServerSelectionSetMode(value)
+
+    local mode =
+        GAG2ServerSelectionClean(value)
+
+    if GAG2ServerSelectionModeValid(mode) ~= true then
+        mode =
+            "Most Empty"
+    end
+
+    GAG2_SERVER_SELECTION_STATE.Mode =
+        mode
+
+    GAG2ServerSelectionSetStatus(
+        "Mode set to "
+        .. tostring(mode)
+        .. "."
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2ServerSelectionGetOccupancy(server)
+
+    local playing =
+        tonumber(server and server.playing)
+        or 0
+
+    local maxPlayers =
+        tonumber(server and server.maxPlayers)
+        or 0
+
+    if maxPlayers <= 0 then
+        return 0
+    end
+
+    return playing / maxPlayers
+end
+
+function GAG2ServerSelectionPickFromTop(servers, limit)
+
+    limit =
+        math.min(
+            #servers,
+            math.max(
+                1,
+                math.floor(
+                    tonumber(limit)
+                    or 10
+                )
+            )
+        )
+
+    return servers[
+        math.random(
+            1,
+            limit
+        )
+    ]
+end
+
+function GAG2ServerSelectionPickTarget(servers)
+
+    if type(servers) ~= "table"
+    or #servers <= 0 then
+        return nil
+    end
+
+    local mode =
+        GAG2ServerSelectionGetMode()
+
+    if mode == "Random" then
+
+        return servers[
+            math.random(
+                1,
+                #servers
+            )
+        ]
+    end
+
+    if mode == "Most Full" then
+
+        table.sort(servers, function(a, b)
+
+            return tonumber(a.playing or 0)
+                > tonumber(b.playing or 0)
+        end)
+
+        return GAG2ServerSelectionPickFromTop(
+            servers,
+            10
+        )
+    end
+
+    if mode == "Balanced" then
+
+        local balanced =
+            {}
+
+        for _, server in ipairs(servers) do
+
+            local occupancy =
+                GAG2ServerSelectionGetOccupancy(
+                    server
+                )
+
+            if occupancy >= 0.25
+            and occupancy <= 0.85 then
+
+                table.insert(
+                    balanced,
+                    server
+                )
+            end
+        end
+
+        if #balanced <= 0 then
+            balanced = servers
+        end
+
+        table.sort(balanced, function(a, b)
+
+            local aDistance =
+                math.abs(
+                    GAG2ServerSelectionGetOccupancy(a) - 0.50
+                )
+
+            local bDistance =
+                math.abs(
+                    GAG2ServerSelectionGetOccupancy(b) - 0.50
+                )
+
+            return aDistance < bDistance
+        end)
+
+        return GAG2ServerSelectionPickFromTop(
+            balanced,
+            10
+        )
+    end
+
+    -- Default / old behavior: Most Empty.
+    table.sort(servers, function(a, b)
+
+        return tonumber(a.FreeSlots or 0)
+            > tonumber(b.FreeSlots or 0)
+    end)
+
+    return GAG2ServerSelectionPickFromTop(
+        servers,
+        10
+    )
+end
+
+function GAG2ServerSelectionRememberTarget(target)
+
+    if type(target) ~= "table" then
+        return
+    end
+
+    GAG2_SERVER_SELECTION_STATE.LastTarget =
+        tostring(target.playing)
+        .. "/"
+        .. tostring(target.maxPlayers)
+        .. " | "
+        .. tostring(target.id or "?")
+
+    GAG2ServerSelectionRefreshStatus()
+end
+
+function GAG2RestoreServerSelectionState()
+
+    task.defer(function()
+
+        if Options.HolyGAG2ServerSelectionMode then
+
+            GAG2_SERVER_SELECTION_STATE.Mode =
+                GAG2ServerSelectionClean(
+                    Options.HolyGAG2ServerSelectionMode.Value
+                )
+        end
+
+        if GAG2ServerSelectionModeValid(
+            GAG2_SERVER_SELECTION_STATE.Mode
+        ) ~= true then
+
+            GAG2_SERVER_SELECTION_STATE.Mode =
+                "Most Empty"
+        end
+
+        GAG2ServerSelectionSetStatus(
+            "Ready."
+        )
+    end)
+end
+
 function HopServerOnce()
 
     if GAG2_SERVER_HOP_RETRYING == true then
@@ -2280,26 +2587,46 @@ function HopServerOnce()
                 return
             end
 
-            table.sort(servers, function(a, b)
-
-                return tonumber(a.FreeSlots or 0)
-                    > tonumber(b.FreeSlots or 0)
-            end)
-
             local target =
-                servers[
-                    math.random(
-                        1,
-                        math.min(#servers, 10)
-                    )
-                ]
+                GAG2ServerSelectionPickTarget(
+                    servers
+                )
+
+            if not target then
+
+                SetStatus(
+                    "No server target selected. Retrying..."
+                )
+
+                GAG2ServerSelectionSetStatus(
+                    "No target selected."
+                )
+
+                task.wait(
+                    2
+                )
+
+                continue
+            end
+
+            GAG2ServerSelectionRememberTarget(
+                target
+            )
 
             SetStatus(
-                "Hopping to "
+                "Hopping "
+                .. tostring(GAG2ServerSelectionGetMode())
+                .. " to "
                 .. tostring(target.playing)
                 .. "/"
                 .. tostring(target.maxPlayers)
                 .. " server..."
+            )
+
+            GAG2ServerSelectionSetStatus(
+                "Teleporting using "
+                .. tostring(GAG2ServerSelectionGetMode())
+                .. "."
             )
 
                         if GAG2_SERVER_HOP_RETRYING ~= true then
@@ -9031,7 +9358,39 @@ function GAG2ACFGetHarvestPrompt(fruit)
     if prompt
     and prompt:IsA("ProximityPrompt")
     and prompt.Enabled == true then
+
         return prompt
+    end
+
+    local scanned =
+        0
+
+    for _, descendant in ipairs(fruit:GetDescendants()) do
+
+        scanned += 1
+
+        if scanned > 350 then
+            break
+        end
+
+        if descendant:IsA("ProximityPrompt")
+        and descendant.Enabled == true then
+
+            local promptName =
+                tostring(descendant.Name or ""):lower()
+
+            local parentName =
+                descendant.Parent
+                and tostring(descendant.Parent.Name or ""):lower()
+                or ""
+
+            if promptName == "harvestprompt"
+            or promptName:find("harvest", 1, true)
+            or parentName:find("harvest", 1, true) then
+
+                return descendant
+            end
+        end
     end
 
     return nil
@@ -9530,38 +9889,173 @@ function GAG2ACFScanQueue()
             "plants folder missing"
     end
 
+    local seenPrompts =
+        {}
+
+    local function resolveFruitFromPrompt(plant, prompt)
+
+        if typeof(plant) ~= "Instance"
+        or typeof(prompt) ~= "Instance" then
+
+            return nil
+        end
+
+        local current =
+            prompt.Parent
+
+        while typeof(current) == "Instance"
+        and current ~= plants
+        and current ~= garden
+        and current ~= game do
+
+            if current:IsA("Model") then
+
+                return current
+            end
+
+            if current == plant then
+                break
+            end
+
+            current =
+                current.Parent
+        end
+
+        if plant:IsA("Model") then
+
+            return plant
+        end
+
+        return nil
+    end
+
+    local function addPromptEntry(plant, prompt)
+
+        if typeof(prompt) ~= "Instance"
+        or prompt:IsA("ProximityPrompt") ~= true then
+
+            return
+        end
+
+        if prompt.Enabled ~= true then
+            return
+        end
+
+        if seenPrompts[prompt] == true then
+            return
+        end
+
+        seenPrompts[prompt] =
+            true
+
+        local fruit =
+            resolveFruitFromPrompt(
+                plant,
+                prompt
+            )
+
+        if typeof(fruit) ~= "Instance" then
+            return
+        end
+
+        local entry =
+            GAG2ACFBuildEntry(
+                plant,
+                fruit
+            )
+
+        if not entry then
+            return
+        end
+
+        entry.Prompt =
+            prompt
+
+        if entry.FruitId == "" then
+
+            entry.Key =
+                PathOf(prompt)
+        end
+
+        readyCount += 1
+
+        if GAG2ACFEntryAllowed(entry) == true then
+
+            table.insert(
+                queue,
+                entry
+            )
+
+        else
+
+            excludedCount += 1
+        end
+    end
+
     for _, plant in ipairs(plants:GetChildren()) do
 
-        local fruits =
-            plant:FindFirstChild("Fruits")
+        if plant:IsA("Model")
+        or plant:IsA("Folder") then
 
-        if fruits then
+            -- Old structure:
+            -- Plant -> Fruits -> FruitModel -> HarvestPart -> HarvestPrompt
+            local fruits =
+                plant:FindFirstChild("Fruits")
 
-            for _, fruit in ipairs(fruits:GetChildren()) do
+            if fruits then
 
-                if fruit:IsA("Model") then
+                for _, fruit in ipairs(fruits:GetChildren()) do
 
-                    local entry =
-                        GAG2ACFBuildEntry(
-                            plant,
-                            fruit
-                        )
+                    if fruit:IsA("Model") then
 
-                    if entry then
-
-                        readyCount += 1
-
-                        if GAG2ACFEntryAllowed(entry) == true then
-
-                            table.insert(
-                                queue,
-                                entry
+                        local prompt =
+                            GAG2ACFGetHarvestPrompt(
+                                fruit
                             )
 
-                        else
+                        if prompt then
 
-                            excludedCount += 1
+                            addPromptEntry(
+                                plant,
+                                prompt
+                            )
                         end
+                    end
+                end
+            end
+
+            -- New/fallback structure:
+            -- Plant can expose HarvestPrompt directly, or under a different descendant path.
+            local scanned =
+                0
+
+            for _, descendant in ipairs(plant:GetDescendants()) do
+
+                scanned += 1
+
+                if scanned > 1800 then
+                    break
+                end
+
+                if descendant:IsA("ProximityPrompt")
+                and descendant.Enabled == true then
+
+                    local promptName =
+                        tostring(descendant.Name or ""):lower()
+
+                    local parentName =
+                        descendant.Parent
+                        and tostring(descendant.Parent.Name or ""):lower()
+                        or ""
+
+                    if promptName == "harvestprompt"
+                    or promptName:find("harvest", 1, true)
+                    or parentName:find("harvest", 1, true) then
+
+                        addPromptEntry(
+                            plant,
+                            descendant
+                        )
                     end
                 end
             end
@@ -9571,6 +10065,26 @@ function GAG2ACFScanQueue()
     GAG2ACFSortQueue(
         queue
     )
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    local now =
+        os.clock()
+
+    if now - tonumber(state.LastRefreshAt or 0) >= 5 then
+
+        state.LastRefreshAt =
+            now
+
+        task.defer(function()
+
+            if type(GAG2ACFRefreshDropdownValues) == "function" then
+
+                GAG2ACFRefreshDropdownValues()
+            end
+        end)
+    end
 
     return queue,
         readyCount,
@@ -18883,6 +19397,2113 @@ function GAG2RestoreMailboxState()
 end
 
 --==================================================
+-- [4.59] EXPERIMENT AUTO DROP SEED
+-- Real seed drop packet path.
+-- Confirmed sequence:
+-- 1. Equip seed tool
+-- 2. 14 01 Seeds.<Seed>
+-- 3. Shovel:Shovel + Seed:<Seed>
+-- 4. 08 01 <uuid1> <uuid2> <position>
+--==================================================
+
+GAG2_AUTO_DROP_SEED_STATE =
+    GAG2_AUTO_DROP_SEED_STATE
+    or {
+        Enabled = false,
+        Running = false,
+
+        Seed = "Rainbow",
+        Amount = 1,
+        Delay = 0.35,
+        Burst = 1,
+
+        Dropped = 0,
+        LastStatus = "Idle.",
+        LastError = "",
+        LastSeed = "",
+        LastPosition = nil,
+
+        SeedSlots = {
+            Rainbow = 2,
+            Gold = 3,
+        },
+    }
+
+function GAG2SeedDropClean(value)
+
+    return CleanText(
+        tostring(value or "")
+            :gsub("<[^>]->", "")
+            :gsub("<.->", "")
+    )
+end
+
+function GAG2SeedDropSetStatus(text)
+
+    local state =
+        GAG2_AUTO_DROP_SEED_STATE
+
+    state.LastStatus =
+        tostring(text or "Idle.")
+
+    if Options.HolyGAG2ExperimentStatus then
+
+        Options.HolyGAG2ExperimentStatus:SetText(
+            '<font color="rgb(196,181,253)"><b>Auto Drop Seed</b></font>'
+            .. '\nState: '
+            .. (
+                state.Enabled == true
+                and "ON"
+                or "OFF"
+            )
+            .. ' | Running: '
+            .. tostring(state.Running == true)
+            .. '\nSeed: '
+            .. tostring(state.Seed or "Rainbow")
+            .. ' | Dropped: '
+            .. tostring(state.Dropped or 0)
+            .. '/'
+            .. tostring(state.Amount or 1)
+            .. '\nBurst: '
+            .. tostring(state.Burst or 1)
+            .. ' | Delay: '
+            .. tostring(state.Delay or 0.35)
+            .. 's'
+            .. '\n'
+            .. tostring(state.LastStatus)
+        )
+    end
+end
+
+function GAG2SeedDropWriteAscii(packet, offset, text)
+
+    text =
+        tostring(text or "")
+
+    for index = 1, #text do
+
+        buffer.writeu8(
+            packet,
+            offset + index - 1,
+            string.byte(text, index)
+        )
+    end
+end
+
+function GAG2SeedDropBufferToHex(packet)
+
+    local length =
+        buffer.len(packet)
+
+    local output =
+        table.create(length)
+
+    for index = 0, length - 1 do
+
+        output[#output + 1] =
+            string.format(
+                "%02X",
+                buffer.readu8(packet, index)
+            )
+    end
+
+    return table.concat(
+        output
+    )
+end
+
+function GAG2SeedDropGetRemote()
+
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild("SharedModules")
+
+    local packetFolder =
+        sharedModules
+        and sharedModules:FindFirstChild("Packet")
+
+    local remote =
+        packetFolder
+        and packetFolder:FindFirstChild("RemoteEvent")
+
+    if remote
+    and remote:IsA("RemoteEvent") then
+
+        return remote
+    end
+
+    return nil
+end
+
+function GAG2SeedDropBuildSelectPacket(seedName)
+
+    seedName =
+        tostring(seedName or "Rainbow")
+
+    local prefix =
+        "Seeds"
+
+    local packet =
+        buffer.create(
+            3
+            + #prefix
+            + 1
+            + #seedName
+        )
+
+    local offset =
+        0
+
+    buffer.writeu8(packet, offset, 0x14)
+    offset += 1
+
+    buffer.writeu8(packet, offset, 0x01)
+    offset += 1
+
+    buffer.writeu8(packet, offset, #prefix)
+    offset += 1
+
+    GAG2SeedDropWriteAscii(
+        packet,
+        offset,
+        prefix
+    )
+
+    offset += #prefix
+
+    buffer.writeu8(packet, offset, #seedName)
+    offset += 1
+
+    GAG2SeedDropWriteAscii(
+        packet,
+        offset,
+        seedName
+    )
+
+    return packet
+end
+
+function GAG2SeedDropBuildStatePacket(seedName, slotIndex)
+
+    seedName =
+        tostring(seedName or "Rainbow")
+
+    slotIndex =
+        tonumber(slotIndex)
+        or 2
+
+    local shovelText =
+        "Shovel:Shovel"
+
+    local seedText =
+        "Seed:" .. seedName
+
+    local packet =
+        buffer.create(
+            7
+            + #shovelText
+            + 4
+            + #seedText
+            + 1
+        )
+
+    local offset =
+        0
+
+    buffer.writeu8(packet, offset, 0x60)
+    offset += 1
+
+    buffer.writeu8(packet, offset, 0x00)
+    offset += 1
+
+    buffer.writeu8(packet, offset, 0x1C)
+    offset += 1
+
+    buffer.writeu8(packet, offset, 0x05)
+    offset += 1
+
+    buffer.writeu8(packet, offset, 0x01)
+    offset += 1
+
+    buffer.writeu8(packet, offset, 0x0B)
+    offset += 1
+
+    buffer.writeu8(packet, offset, #shovelText)
+    offset += 1
+
+    GAG2SeedDropWriteAscii(
+        packet,
+        offset,
+        shovelText
+    )
+
+    offset += #shovelText
+
+    buffer.writeu8(packet, offset, 0x05)
+    offset += 1
+
+    buffer.writeu8(packet, offset, slotIndex)
+    offset += 1
+
+    buffer.writeu8(packet, offset, 0x0B)
+    offset += 1
+
+    buffer.writeu8(packet, offset, #seedText)
+    offset += 1
+
+    GAG2SeedDropWriteAscii(
+        packet,
+        offset,
+        seedText
+    )
+
+    offset += #seedText
+
+    buffer.writeu8(packet, offset, 0x00)
+
+    return packet
+end
+
+function GAG2SeedDropBuildRealDropPacket(position)
+
+    if typeof(position) ~= "Vector3" then
+
+        position =
+            Vector3.zero
+    end
+
+    local uuid1 =
+        HttpService:GenerateGUID(false):lower()
+
+    local uuid2 =
+        HttpService:GenerateGUID(false):lower()
+
+    local packet =
+        buffer.create(88)
+
+    buffer.writeu8(packet, 0, 0x08)
+    buffer.writeu8(packet, 1, 0x01)
+
+    buffer.writeu8(packet, 2, 0x24)
+
+    GAG2SeedDropWriteAscii(
+        packet,
+        3,
+        uuid1
+    )
+
+    buffer.writeu8(packet, 39, 0x24)
+
+    GAG2SeedDropWriteAscii(
+        packet,
+        40,
+        uuid2
+    )
+
+    buffer.writef32(packet, 76, position.X)
+    buffer.writef32(packet, 80, position.Y)
+    buffer.writef32(packet, 84, position.Z)
+
+    return packet,
+        uuid1,
+        uuid2
+end
+
+function GAG2SeedDropGetCharacter()
+
+    return LOCAL_PLAYER.Character
+        or LOCAL_PLAYER.CharacterAdded:Wait()
+end
+
+function GAG2SeedDropGetBackpack()
+
+    return LOCAL_PLAYER:FindFirstChildOfClass("Backpack")
+        or LOCAL_PLAYER:WaitForChild("Backpack")
+end
+
+function GAG2SeedDropIsRealSeedTool(tool, seedName)
+
+    if typeof(tool) ~= "Instance"
+    or not tool:IsA("Tool") then
+
+        return false
+    end
+
+    seedName =
+        GAG2SeedDropClean(seedName):lower()
+
+    if seedName == "" then
+
+        return false
+    end
+
+    local toolName =
+        tostring(tool.Name or ""):lower()
+
+    local seedTool =
+        tostring(tool:GetAttribute("SeedTool") or ""):lower()
+
+    local mainCategory =
+        tostring(tool:GetAttribute("MainCategory") or ""):lower()
+
+    -- Real confirmed seed tools look like:
+    -- Name = Rainbow / Gold
+    -- SeedTool = Rainbow / Gold
+    -- MainCategory = Seed
+    if seedTool ~= "" then
+
+        return seedTool == seedName
+            and mainCategory == "seed"
+    end
+
+    -- Fallback for seed tools that only expose MainCategory.
+    if mainCategory == "seed"
+    and toolName == seedName then
+
+        return true
+    end
+
+    return false
+end
+
+function GAG2SeedDropFindTool(seedName)
+
+    seedName =
+        GAG2SeedDropClean(seedName)
+
+    local character =
+        GAG2SeedDropGetCharacter()
+
+    local backpack =
+        GAG2SeedDropGetBackpack()
+
+    for _, item in ipairs(character:GetChildren()) do
+
+        if GAG2SeedDropIsRealSeedTool(
+            item,
+            seedName
+        ) then
+
+            return item
+        end
+    end
+
+    for _, item in ipairs(backpack:GetChildren()) do
+
+        if GAG2SeedDropIsRealSeedTool(
+            item,
+            seedName
+        ) then
+
+            return item
+        end
+    end
+
+    return nil
+end
+
+function GAG2SeedDropCleanSeedName(value)
+
+    value =
+        GAG2SeedDropClean(value)
+
+    local beforePipe =
+        value:match("^(.-)%s+|%s+")
+
+    if beforePipe
+    and GAG2SeedDropClean(beforePipe) ~= "" then
+
+        value =
+            GAG2SeedDropClean(beforePipe)
+    end
+
+    return value
+end
+
+function GAG2SeedDropAddSeedValue(values, seen, seedName)
+
+    seedName =
+        GAG2SeedDropCleanSeedName(
+            seedName
+        )
+
+    if seedName == "" then
+        return
+    end
+
+    local key =
+        seedName:lower()
+
+    if seen[key] == true then
+        return
+    end
+
+    seen[key] =
+        true
+
+    values[#values + 1] =
+        seedName
+end
+
+function GAG2SeedDropReadSeedNameFromTool(tool)
+
+    if typeof(tool) ~= "Instance"
+    or tool:IsA("Tool") ~= true then
+
+        return ""
+    end
+
+    local mainCategory =
+        GAG2SeedDropClean(
+            tool:GetAttribute("MainCategory")
+        )
+
+    local seedTool =
+        GAG2SeedDropClean(
+            tool:GetAttribute("SeedTool")
+        )
+
+    if mainCategory:lower() ~= "seed" then
+        return ""
+    end
+
+    if seedTool ~= "" then
+        return seedTool
+    end
+
+    return GAG2SeedDropClean(
+        tool.Name
+    )
+end
+
+function GAG2SeedDropGetAllSeedValues()
+
+    local values =
+        {}
+
+    local seen =
+        {}
+
+    -- Main source: all known shop seed names.
+    if type(GAG2ShopGetItemNames) == "function" then
+
+        local shopSeeds =
+            GAG2ShopGetItemNames(
+                "Seeds"
+            )
+
+        if type(shopSeeds) == "table" then
+
+            for _, seedName in ipairs(shopSeeds) do
+
+                GAG2SeedDropAddSeedValue(
+                    values,
+                    seen,
+                    seedName
+                )
+            end
+        end
+    end
+
+    -- Backup source: Seed Planting list, if available.
+    if type(GAG2SeedPlantGetSeedValues) == "function" then
+
+        local plantSeeds =
+            GAG2SeedPlantGetSeedValues()
+
+        if type(plantSeeds) == "table" then
+
+            for _, seedName in ipairs(plantSeeds) do
+
+                GAG2SeedDropAddSeedValue(
+                    values,
+                    seen,
+                    seedName
+                )
+            end
+        end
+    end
+
+    -- Include current saved selection.
+    if GAG2_AUTO_DROP_SEED_STATE then
+
+        GAG2SeedDropAddSeedValue(
+            values,
+            seen,
+            GAG2_AUTO_DROP_SEED_STATE.Seed
+        )
+    end
+
+    -- Include currently owned real seed tools too.
+    local function scan(container)
+
+        if typeof(container) ~= "Instance" then
+            return
+        end
+
+        for _, child in ipairs(container:GetChildren()) do
+
+            local seedName =
+                GAG2SeedDropReadSeedNameFromTool(
+                    child
+                )
+
+            if seedName ~= "" then
+
+                GAG2SeedDropAddSeedValue(
+                    values,
+                    seen,
+                    seedName
+                )
+            end
+        end
+    end
+
+    scan(
+        LOCAL_PLAYER.Character
+    )
+
+    scan(
+        LOCAL_PLAYER:FindFirstChildOfClass("Backpack")
+    )
+
+    -- Confirmed manual-drop seed tools / fallback values.
+    GAG2SeedDropAddSeedValue(values, seen, "Rainbow")
+    GAG2SeedDropAddSeedValue(values, seen, "Gold")
+    GAG2SeedDropAddSeedValue(values, seen, "Carrot")
+
+    table.sort(
+        values,
+        function(a, b)
+
+            return tostring(a):lower()
+                < tostring(b):lower()
+        end
+    )
+
+    return values
+end
+
+function GAG2SeedDropRefreshDropdown()
+
+    local controls =
+        GAG2_AUTO_DROP_SEED_CONTROLS
+
+    local dropdown =
+        controls
+        and controls.Seed
+
+    if not dropdown then
+        return
+    end
+
+    local values =
+        GAG2SeedDropGetAllSeedValues()
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+
+    GAG2SeedDropSetStatus(
+        "Loaded "
+        .. tostring(#values)
+        .. " known seed type(s)."
+    )
+end
+
+function GAG2SeedDropEquipTool(seedName)
+
+    local character =
+        GAG2SeedDropGetCharacter()
+
+    local tool =
+        GAG2SeedDropFindTool(seedName)
+
+    if not tool then
+
+        return false,
+            "missing seed tool: " .. tostring(seedName)
+    end
+
+    if tool.Parent == character then
+
+        return true,
+            tool
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid then
+
+        return false,
+            "missing humanoid"
+    end
+
+    humanoid:EquipTool(
+        tool
+    )
+
+    task.wait(
+        0.22
+    )
+
+    if tool.Parent ~= character then
+
+        return false,
+            "equip failed: " .. tostring(tool.Name)
+    end
+
+    return true,
+        tool
+end
+
+function GAG2SeedDropGetPosition(burstIndex)
+
+    burstIndex =
+        math.max(
+            1,
+            math.floor(
+                tonumber(burstIndex)
+                or 1
+            )
+        )
+
+    local character =
+        GAG2SeedDropGetCharacter()
+
+    local root =
+        character
+        and character:FindFirstChild("HumanoidRootPart")
+
+    if not root then
+
+        return Vector3.zero
+    end
+
+    local row =
+        math.floor((burstIndex - 1) / 5)
+
+    local column =
+        (burstIndex - 1) % 5
+
+    local sideOffset =
+        (column - 2) * 0.65
+
+    local forwardOffset =
+        row * 0.65
+
+    local target =
+        root.Position
+        + (root.CFrame.LookVector * (5 + forwardOffset))
+        + (root.CFrame.RightVector * sideOffset)
+
+    local rayParams =
+        RaycastParams.new()
+
+    rayParams.FilterType =
+        Enum.RaycastFilterType.Exclude
+
+    rayParams.FilterDescendantsInstances =
+        {
+            character,
+        }
+
+    rayParams.IgnoreWater =
+        true
+
+    local result =
+        workspace:Raycast(
+            target + Vector3.new(0, 12, 0),
+            Vector3.new(0, -80, 0),
+            rayParams
+        )
+
+    if result
+    and typeof(result.Position) == "Vector3" then
+
+        return result.Position
+            + Vector3.new(0, 0.65, 0)
+    end
+
+    return target
+end
+
+function GAG2SeedDropFire(packet, label)
+
+    local remote =
+        GAG2SeedDropGetRemote()
+
+    if not remote then
+
+        return false,
+            "SharedModules.Packet.RemoteEvent missing"
+    end
+
+    local ok, err =
+        pcall(function()
+
+            remote:FireServer(
+                packet
+            )
+        end)
+
+    if ok ~= true then
+
+        return false,
+            tostring(err)
+    end
+
+    return true,
+        tostring(label or "fired")
+end
+
+function GAG2SeedDropSetSeed(value)
+
+    value =
+        GAG2SeedDropCleanSeedName(
+            value
+        )
+
+    if value == "" then
+
+        value =
+            "Rainbow"
+    end
+
+    GAG2_AUTO_DROP_SEED_STATE.Seed =
+        value
+
+    GAG2SeedDropSetStatus(
+        "Seed set: "
+        .. tostring(value)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedDropSetAmount(value)
+
+    local amount =
+        math.floor(
+            tonumber(value)
+            or 1
+        )
+
+    GAG2_AUTO_DROP_SEED_STATE.Amount =
+        math.max(
+            1,
+            amount
+        )
+
+    GAG2SeedDropSetStatus(
+        "Amount set: "
+        .. tostring(GAG2_AUTO_DROP_SEED_STATE.Amount)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedDropSetDelay(value)
+
+    local delaySeconds =
+        tonumber(value)
+        or 0.35
+
+    GAG2_AUTO_DROP_SEED_STATE.Delay =
+        math.clamp(
+            delaySeconds,
+            0,
+            10
+        )
+
+    GAG2SeedDropSetStatus(
+        "Delay set: "
+        .. tostring(GAG2_AUTO_DROP_SEED_STATE.Delay)
+        .. "s"
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedDropSetBurst(value)
+
+    local burst =
+        math.floor(
+            tonumber(value)
+            or 1
+        )
+
+    GAG2_AUTO_DROP_SEED_STATE.Burst =
+        math.clamp(
+            burst,
+            1,
+            250
+        )
+
+    GAG2SeedDropSetStatus(
+        "Burst set: "
+        .. tostring(GAG2_AUTO_DROP_SEED_STATE.Burst)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedDropOnce(seedName, burstCount)
+
+    local state =
+        GAG2_AUTO_DROP_SEED_STATE
+
+seedName =
+    GAG2SeedDropCleanSeedName(
+        seedName
+        or state.Seed
+        or "Rainbow"
+    )
+
+if seedName == "" then
+
+    seedName =
+        "Rainbow"
+end
+
+    burstCount =
+        math.clamp(
+            math.floor(
+                tonumber(burstCount)
+                or 1
+            ),
+            1,
+            250
+        )
+
+local slotIndex =
+    state.SeedSlots
+    and state.SeedSlots[seedName]
+
+    local equipped, toolOrReason =
+        GAG2SeedDropEquipTool(
+            seedName
+        )
+
+    if equipped ~= true then
+
+        state.LastError =
+            tostring(toolOrReason)
+
+        GAG2SeedDropSetStatus(
+            state.LastError
+        )
+
+        return 0,
+            state.LastError
+    end
+
+    local selectPacket =
+        GAG2SeedDropBuildSelectPacket(
+            seedName
+        )
+
+local statePacket =
+    nil
+
+if slotIndex then
+
+    statePacket =
+        GAG2SeedDropBuildStatePacket(
+            seedName,
+            slotIndex
+        )
+end
+
+    local okSelect, selectReason =
+        GAG2SeedDropFire(
+            selectPacket,
+            "select"
+        )
+
+    if okSelect ~= true then
+
+        state.LastError =
+            tostring(selectReason)
+
+        GAG2SeedDropSetStatus(
+            state.LastError
+        )
+
+        return 0,
+            state.LastError
+    end
+
+    task.wait(
+        0.06
+    )
+
+if statePacket then
+
+    local okState, stateReason =
+        GAG2SeedDropFire(
+            statePacket,
+            "state"
+        )
+
+    if okState ~= true then
+
+        state.LastError =
+            tostring(stateReason)
+
+        GAG2SeedDropSetStatus(
+            state.LastError
+        )
+
+        return 0,
+            state.LastError
+    end
+end
+
+task.wait(
+    0.04
+)
+
+    local fired =
+        0
+
+    for burstIndex = 1, burstCount do
+
+        local dropPosition =
+            GAG2SeedDropGetPosition(
+                burstIndex
+            )
+
+        local realDropPacket =
+            GAG2SeedDropBuildRealDropPacket(
+                dropPosition
+            )
+
+        local okDrop, dropReason =
+            GAG2SeedDropFire(
+                realDropPacket,
+                "real_drop"
+            )
+
+        if okDrop ~= true then
+
+            state.LastError =
+                tostring(dropReason)
+
+            GAG2SeedDropSetStatus(
+                state.LastError
+            )
+
+            break
+        end
+
+        fired += 1
+
+        state.LastSeed =
+            seedName
+
+        state.LastPosition =
+            dropPosition
+
+        if burstIndex % 10 == 0 then
+
+            task.wait()
+        end
+    end
+
+    state.LastError =
+        ""
+
+    GAG2SeedDropSetStatus(
+        "Fired "
+        .. tostring(fired)
+        .. " drop packet(s) for "
+        .. tostring(seedName)
+        .. "."
+    )
+
+    return fired,
+        "ok"
+end
+
+function GAG2SeedDropStartLoop()
+
+    local state =
+        GAG2_AUTO_DROP_SEED_STATE
+
+    if state.Running == true then
+        return
+    end
+
+    state.Running =
+        true
+
+    task.spawn(function()
+
+        state.Dropped =
+            0
+
+        GAG2SeedDropSetStatus(
+            "Starting..."
+        )
+
+        while state.Enabled == true do
+
+            local targetAmount =
+                math.max(
+                    1,
+                    math.floor(
+                        tonumber(state.Amount)
+                        or 1
+                    )
+                )
+
+            if state.Dropped >= targetAmount then
+
+                GAG2SeedDropSetStatus(
+                    "Target reached. Toggle stays ON. Waiting for picked-up seed cycle..."
+                )
+
+                while state.Enabled == true
+                and GAG2SeedDropFindTool(state.Seed) ~= nil do
+
+                    task.wait(
+                        0.25
+                    )
+                end
+
+                if state.Enabled ~= true then
+                    break
+                end
+
+                GAG2SeedDropSetStatus(
+                    "Seed left inventory. Waiting for it to return..."
+                )
+
+                while state.Enabled == true
+                and GAG2SeedDropFindTool(state.Seed) == nil do
+
+                    task.wait(
+                        0.25
+                    )
+                end
+
+                if state.Enabled ~= true then
+                    break
+                end
+
+                state.Dropped =
+                    0
+
+                GAG2SeedDropSetStatus(
+                    "Seed returned. Dropping again..."
+                )
+
+                task.wait(
+                    0.08
+                )
+
+            else
+
+                local remaining =
+                    targetAmount - state.Dropped
+
+                local burst =
+                    math.min(
+                        remaining,
+                        math.clamp(
+                            math.floor(
+                                tonumber(state.Burst)
+                                or 1
+                            ),
+                            1,
+                            250
+                        )
+                    )
+
+                local fired, reason =
+                    GAG2SeedDropOnce(
+                        state.Seed,
+                        burst
+                    )
+
+                fired =
+                    tonumber(fired)
+                    or 0
+
+                if fired <= 0 then
+
+                    GAG2SeedDropSetStatus(
+                        "Waiting: "
+                        .. tostring(reason)
+                    )
+
+                    task.wait(
+                        0.75
+                    )
+
+                else
+
+                    state.Dropped += fired
+
+                    GAG2SeedDropSetStatus(
+                        "Dropped "
+                        .. tostring(state.Dropped)
+                        .. "/"
+                        .. tostring(targetAmount)
+                        .. ". Toggle remains ON."
+                    )
+
+                    local delaySeconds =
+                        tonumber(state.Delay)
+                        or 0.35
+
+                    if delaySeconds > 0 then
+
+                        task.wait(
+                            delaySeconds
+                        )
+
+                    else
+
+                        task.wait()
+                    end
+                end
+            end
+        end
+
+        state.Running =
+            false
+
+        GAG2SeedDropSetStatus(
+            "Stopped."
+        )
+    end)
+end
+
+function GAG2SeedDropSetEnabled(value)
+
+    local state =
+        GAG2_AUTO_DROP_SEED_STATE
+
+    state.Enabled =
+        value == true
+
+    if state.Enabled == true then
+
+        if ConfigState.Loading ~= true then
+
+            GAG2SeedDropStartLoop()
+        end
+
+    else
+
+        GAG2SeedDropSetStatus(
+            "Stopping..."
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2RestoreSeedDropState()
+
+    task.defer(function()
+
+        local state =
+            GAG2_AUTO_DROP_SEED_STATE
+
+        if Options.HolyGAG2SeedDropSeed then
+
+            GAG2SeedDropSetSeed(
+                Options.HolyGAG2SeedDropSeed.Value
+            )
+        end
+
+        if Options.HolyGAG2SeedDropAmount then
+
+            GAG2SeedDropSetAmount(
+                Options.HolyGAG2SeedDropAmount.Value
+            )
+        end
+
+        if Options.HolyGAG2SeedDropDelay then
+
+            GAG2SeedDropSetDelay(
+                Options.HolyGAG2SeedDropDelay.Value
+            )
+        end
+
+        if Options.HolyGAG2SeedDropBurst then
+
+            GAG2SeedDropSetBurst(
+                Options.HolyGAG2SeedDropBurst.Value
+            )
+        end
+
+        if Toggles.HolyGAG2AutoDropSeed then
+
+            state.Enabled =
+                Toggles.HolyGAG2AutoDropSeed.Value == true
+        end
+
+        GAG2SeedDropSetStatus(
+            "Ready."
+        )
+
+        if state.Enabled == true then
+
+            GAG2SeedDropStartLoop()
+        end
+    end)
+end
+
+--==================================================
+-- [4.595] HOME AUTO HOP UNTIL SERVER VERSION
+-- Reads Settings.Frame.Header.VersionLabel.Text, then hops until target version.
+--==================================================
+
+GAG2_VERSION_HOP_STATE =
+    GAG2_VERSION_HOP_STATE
+    or {
+        Enabled = false,
+        Running = false,
+
+        TargetVersion = "v88",
+        CurrentVersion = "unknown",
+        HopDelay = 2,
+
+        LastStatus = "Idle.",
+        LastError = "",
+        LastCheckAt = 0,
+        LastHopAt = 0,
+    }
+
+function GAG2VersionHopClean(value)
+
+    return CleanText(
+        tostring(value or "")
+            :gsub("<[^>]->", "")
+            :gsub("<.->", "")
+    )
+end
+
+function GAG2VersionHopNormalizeVersion(value)
+
+    value =
+        GAG2VersionHopClean(value)
+            :lower()
+            :gsub("%s+", "")
+
+    if value == "" then
+        return ""
+    end
+
+    local number =
+        value:match("^v(%d+)$")
+        or value:match("^(%d+)$")
+        or value:match("v(%d+)")
+        or value:match("(%d+)")
+
+    if not number then
+        return ""
+    end
+
+    return "v" .. tostring(number)
+end
+
+function GAG2VersionHopGetLabelExact()
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+
+    local settingsGui =
+        playerGui
+        and playerGui:FindFirstChild("Settings")
+
+    local frame =
+        settingsGui
+        and settingsGui:FindFirstChild("Frame")
+
+    local header =
+        frame
+        and frame:FindFirstChild("Header")
+
+    local versionLabel =
+        header
+        and header:FindFirstChild("VersionLabel")
+
+    if versionLabel
+    and (
+        versionLabel:IsA("TextLabel")
+        or versionLabel:IsA("TextButton")
+        or versionLabel:IsA("TextBox")
+    ) then
+
+        return versionLabel
+    end
+
+    return nil
+end
+
+function GAG2VersionHopReadCurrentVersion()
+
+    local label =
+        GAG2VersionHopGetLabelExact()
+
+    if label then
+
+        local ok, text =
+            pcall(function()
+
+                return label.Text
+            end)
+
+        local version =
+            ok == true
+            and GAG2VersionHopNormalizeVersion(text)
+            or ""
+
+        if version ~= "" then
+
+            GAG2_VERSION_HOP_STATE.CurrentVersion =
+                version
+
+            return version,
+                "exact"
+        end
+    end
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+
+    if not playerGui then
+
+        return "",
+            "PlayerGui missing"
+    end
+
+    local scanned =
+        0
+
+    for _, descendant in ipairs(playerGui:GetDescendants()) do
+
+        scanned += 1
+
+        if scanned > 10000 then
+            break
+        end
+
+        if descendant.Name == "VersionLabel"
+        and (
+            descendant:IsA("TextLabel")
+            or descendant:IsA("TextButton")
+            or descendant:IsA("TextBox")
+        ) then
+
+            local ok, text =
+                pcall(function()
+
+                    return descendant.Text
+                end)
+
+            local version =
+                ok == true
+                and GAG2VersionHopNormalizeVersion(text)
+                or ""
+
+            if version ~= "" then
+
+                GAG2_VERSION_HOP_STATE.CurrentVersion =
+                    version
+
+                return version,
+                    "VersionLabel scan"
+            end
+        end
+    end
+
+    scanned =
+        0
+
+    for _, descendant in ipairs(playerGui:GetDescendants()) do
+
+        scanned += 1
+
+        if scanned > 10000 then
+            break
+        end
+
+        if descendant:IsA("TextLabel")
+        or descendant:IsA("TextButton")
+        or descendant:IsA("TextBox") then
+
+            local ok, text =
+                pcall(function()
+
+                    return descendant.Text
+                end)
+
+            local version =
+                ok == true
+                and GAG2VersionHopNormalizeVersion(text)
+                or ""
+
+            if version ~= "" then
+
+                GAG2_VERSION_HOP_STATE.CurrentVersion =
+                    version
+
+                return version,
+                    "text scan"
+            end
+        end
+    end
+
+    return "",
+        "version label not found"
+end
+
+function GAG2VersionHopGetTarget()
+
+    local state =
+        GAG2_VERSION_HOP_STATE
+
+    local target =
+        GAG2VersionHopNormalizeVersion(
+            state.TargetVersion
+        )
+
+    if target == "" then
+        target = "v88"
+    end
+
+    state.TargetVersion =
+        target
+
+    return target
+end
+
+function GAG2VersionHopGetDelay()
+
+    local state =
+        GAG2_VERSION_HOP_STATE
+
+    local delaySeconds =
+        tonumber(state.HopDelay)
+        or 2
+
+    delaySeconds =
+        math.clamp(
+            delaySeconds,
+            1,
+            60
+        )
+
+    state.HopDelay =
+        delaySeconds
+
+    return delaySeconds
+end
+
+function GAG2VersionHopBuildHomeText()
+
+    local state =
+        GAG2_VERSION_HOP_STATE
+
+    local current =
+        GAG2VersionHopNormalizeVersion(
+            state.CurrentVersion
+        )
+
+    if current == "" then
+
+        local readVersion =
+            GAG2VersionHopReadCurrentVersion()
+
+        current =
+            GAG2VersionHopNormalizeVersion(
+                readVersion
+            )
+    end
+
+    if current == "" then
+        return "Server loading..."
+    end
+
+    return "Server "
+        .. tostring(current)
+end
+
+function GAG2VersionHopBuildHomeHeaderText()
+
+    local text =
+        GAG2VersionHopBuildHomeText()
+
+    if text == "" then
+        text =
+            "Server loading..."
+    end
+
+    return text
+end
+
+function GAG2VersionHopTrySetHomeDescriptionMethod(text)
+
+    local tab =
+        GAG2_HOME_TAB_CONTROL
+
+    if type(tab) ~= "table" then
+        return false
+    end
+
+    local methodNames = {
+        "SetDescription",
+        "SetSubtitle",
+        "SetSubTitle",
+        "SetDesc",
+    }
+
+    for _, methodName in ipairs(methodNames) do
+
+        local method =
+            tab[methodName]
+
+        if type(method) == "function" then
+
+            local ok =
+                pcall(function()
+
+                    method(
+                        tab,
+                        text
+                    )
+                end)
+
+            if ok == true then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+function GAG2VersionHopRefreshHomeHeader()
+
+    local text =
+        GAG2VersionHopBuildHomeHeaderText()
+
+    if GAG2VersionHopTrySetHomeDescriptionMethod(text) == true then
+        return
+    end
+
+    local roots =
+        {}
+
+    if CoreGui then
+
+        table.insert(
+            roots,
+            CoreGui
+        )
+    end
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+
+    if playerGui then
+
+        table.insert(
+            roots,
+            playerGui
+        )
+    end
+
+    local replacements = {
+        ["Main controls."] = true,
+        ["Server loading..."] = true,
+    }
+
+    for _, root in ipairs(roots) do
+
+        local scanned =
+            0
+
+        for _, descendant in ipairs(root:GetDescendants()) do
+
+            scanned += 1
+
+            if scanned > 25000 then
+                break
+            end
+
+            if descendant:IsA("TextLabel")
+            or descendant:IsA("TextButton")
+            or descendant:IsA("TextBox") then
+
+                local ok, currentText =
+                    pcall(function()
+
+                        return descendant.Text
+                    end)
+
+                currentText =
+                    ok == true
+                    and tostring(currentText or "")
+                    or ""
+
+                local lowerText =
+                    currentText:lower()
+
+                if replacements[currentText] == true
+                or lowerText:match("^server%s+v%d+$") then
+
+                    pcall(function()
+
+                        descendant.Text =
+                            text
+                    end)
+
+                    return
+                end
+            end
+        end
+    end
+end
+
+function GAG2VersionHopStartHeaderLoop()
+
+    local state =
+        GAG2_VERSION_HOP_STATE
+
+    if state.HeaderLoopRunning == true then
+        return
+    end
+
+    state.HeaderLoopRunning =
+        true
+
+    task.spawn(function()
+
+        local started =
+            os.clock()
+
+        while os.clock() - started < 20 do
+
+            GAG2VersionHopReadCurrentVersion()
+            GAG2VersionHopRefreshHomeHeader()
+
+            task.wait(
+                1
+            )
+        end
+
+        state.HeaderLoopRunning =
+            false
+    end)
+end
+
+function GAG2VersionHopRefreshHome()
+
+    if type(RefreshServerInfo) == "function" then
+
+        RefreshServerInfo()
+    end
+
+    GAG2VersionHopRefreshHomeHeader()
+end
+
+function GAG2VersionHopSetStatus(text)
+
+    local state =
+        GAG2_VERSION_HOP_STATE
+
+    state.LastStatus =
+        tostring(text or "Idle.")
+
+    GAG2VersionHopRefreshHome()
+
+    print(
+        "[HOLY GAG2 VERSION HOP]",
+        state.LastStatus
+    )
+end
+
+function GAG2VersionHopSetTarget(value)
+
+    local state =
+        GAG2_VERSION_HOP_STATE
+
+    local version =
+        GAG2VersionHopNormalizeVersion(value)
+
+    if version == "" then
+        version = "v88"
+    end
+
+    state.TargetVersion =
+        version
+
+    GAG2VersionHopSetStatus(
+        "Target set to "
+        .. tostring(version)
+        .. "."
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2VersionHopSetDelay(value)
+
+    local state =
+        GAG2_VERSION_HOP_STATE
+
+    state.HopDelay =
+        math.clamp(
+            tonumber(value)
+            or 2,
+            1,
+            60
+        )
+
+    GAG2VersionHopSetStatus(
+        "Hop delay set to "
+        .. tostring(state.HopDelay)
+        .. "s."
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2VersionHopStop(reason)
+
+    local state =
+        GAG2_VERSION_HOP_STATE
+
+    state.Enabled =
+        false
+
+    state.Running =
+        false
+
+    GAG2_SERVER_HOP_RETRYING =
+        false
+
+    GAG2_SERVER_HOP_ATTEMPT =
+        0
+
+    GAG2VersionHopSetStatus(
+        tostring(reason or "Stopped.")
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2VersionHopTurnToggleOff()
+
+    if Toggles.HolyGAG2AutoHopUntilVersion
+    and type(Toggles.HolyGAG2AutoHopUntilVersion.SetValue) == "function" then
+
+        pcall(function()
+
+            Toggles.HolyGAG2AutoHopUntilVersion:SetValue(
+                false
+            )
+        end)
+    end
+end
+
+function GAG2VersionHopQueueHop()
+
+    local state =
+        GAG2_VERSION_HOP_STATE
+
+    state.LastHopAt =
+        os.clock()
+
+    GAG2_SERVER_HOP_RETRYING =
+        false
+
+    GAG2_SERVER_HOP_ATTEMPT =
+        0
+
+    if type(HopServerOnce) ~= "function" then
+
+        GAG2VersionHopSetStatus(
+            "HopServerOnce missing."
+        )
+
+        return false
+    end
+
+    GAG2VersionHopSetStatus(
+        "Wrong version. Hopping now..."
+    )
+
+    return HopServerOnce()
+end
+
+function GAG2VersionHopStartLoop()
+
+    local state =
+        GAG2_VERSION_HOP_STATE
+
+    if state.Running == true then
+        return
+    end
+
+    state.Running =
+        true
+
+    task.spawn(function()
+
+        task.wait(
+            0.75
+        )
+
+        while state.Enabled == true do
+
+            local target =
+                GAG2VersionHopGetTarget()
+
+            local current =
+                ""
+
+            local source =
+                ""
+
+            local started =
+                os.clock()
+
+            while state.Enabled == true
+            and current == ""
+            and os.clock() - started < 12 do
+
+                current,
+                source =
+                    GAG2VersionHopReadCurrentVersion()
+
+                if current == "" then
+
+                    GAG2VersionHopSetStatus(
+                        "Waiting for version label..."
+                    )
+
+                    task.wait(
+                        0.35
+                    )
+                end
+            end
+
+            if state.Enabled ~= true then
+                break
+            end
+
+            if current == "" then
+
+                GAG2VersionHopSetStatus(
+                    "Version missing. Waiting..."
+                )
+
+                task.wait(
+                    1
+                )
+
+                continue
+            end
+
+            state.CurrentVersion =
+                current
+
+            state.LastCheckAt =
+                os.clock()
+
+            if current == target then
+
+                GAG2VersionHopSetStatus(
+                    "Found target "
+                    .. tostring(target)
+                    .. " via "
+                    .. tostring(source)
+                    .. "."
+                )
+
+                state.Enabled =
+                    false
+
+                state.Running =
+                    false
+
+                GAG2VersionHopTurnToggleOff()
+
+                Notify(
+                    "Version Found",
+                    "Current server is "
+                    .. tostring(current)
+                    .. ".",
+                    4
+                )
+
+                MarkConfigDirty()
+
+                return
+            end
+
+            local delaySeconds =
+                GAG2VersionHopGetDelay()
+
+            GAG2VersionHopSetStatus(
+                "Current "
+                .. tostring(current)
+                .. " != target "
+                .. tostring(target)
+                .. ". Hopping in "
+                .. tostring(delaySeconds)
+                .. "s."
+            )
+
+            local waited =
+                0
+
+            while state.Enabled == true
+            and waited < delaySeconds do
+
+                task.wait(
+                    0.1
+                )
+
+                waited += 0.1
+            end
+
+            if state.Enabled ~= true then
+                break
+            end
+
+            GAG2VersionHopQueueHop()
+
+            -- Teleport should happen through HopServerOnce.
+            -- Stop this local loop so it does not double-hop in the same server.
+            break
+        end
+
+        state.Running =
+            false
+
+        if state.Enabled ~= true then
+
+            GAG2VersionHopRefreshHome()
+        end
+    end)
+end
+
+function GAG2VersionHopSetEnabled(value)
+
+    local state =
+        GAG2_VERSION_HOP_STATE
+
+    state.Enabled =
+        value == true
+
+    if state.Enabled == true then
+
+        GAG2VersionHopSetStatus(
+            "Checking version..."
+        )
+
+        if ConfigState.Loading ~= true then
+
+            GAG2VersionHopStartLoop()
+        end
+
+    else
+
+        GAG2VersionHopStop(
+            "Stopped."
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2RestoreVersionHopState()
+
+    task.defer(function()
+
+        local state =
+            GAG2_VERSION_HOP_STATE
+
+        if Options.HolyGAG2VersionHopTarget then
+
+            state.TargetVersion =
+                GAG2VersionHopNormalizeVersion(
+                    Options.HolyGAG2VersionHopTarget.Value
+                )
+
+            if state.TargetVersion == "" then
+
+                state.TargetVersion =
+                    "v88"
+            end
+        end
+
+        if Options.HolyGAG2VersionHopDelay then
+
+            state.HopDelay =
+                math.clamp(
+                    tonumber(Options.HolyGAG2VersionHopDelay.Value)
+                    or 2,
+                    1,
+                    60
+                )
+        end
+
+        if Toggles.HolyGAG2AutoHopUntilVersion then
+
+            state.Enabled =
+                Toggles.HolyGAG2AutoHopUntilVersion.Value == true
+        end
+
+        local current =
+            GAG2VersionHopReadCurrentVersion()
+
+        if current ~= "" then
+
+            state.CurrentVersion =
+                current
+        end
+
+        GAG2VersionHopSetStatus(
+            state.Enabled == true
+            and "Restored. Checking version..."
+            or "Ready."
+        )
+
+        GAG2VersionHopStartHeaderLoop()
+
+        if state.Enabled == true then
+
+            GAG2VersionHopStartLoop()
+        end
+    end)
+end
+
+--==================================================
 -- [5] WINDOW
 --==================================================
 
@@ -18945,7 +21566,21 @@ local Tabs = {
         Window:AddTab({
             Name = "Home",
             Icon = "home",
-            Description = "Main controls.",
+            Description = "Server loading...",
+        }),
+
+    Server =
+        Window:AddTab({
+            Name = "Server",
+            Icon = "server",
+            Description = "Server selection.",
+        }),
+
+    Combat =
+        Window:AddTab({
+            Name = "Combat",
+            Icon = "swords",
+            Description = "Combat and defense systems.",
         }),
 
     Shops =
@@ -19003,7 +21638,17 @@ local Tabs = {
             Icon = "sliders-horizontal",
             Description = "UI settings.",
         }),
+
+    Webhook =
+        Window:AddTab({
+            Name = "Webhook",
+            Icon = "webhook",
+            Description = "Webhook alerts and Discord reporting.",
+        }),
 }
+
+GAG2_HOME_TAB_CONTROL =
+    Tabs.Home
 
 if IsHolyGAG2Developer() then
 
@@ -19099,6 +21744,34 @@ local HomeServerBox =
         "radar"
     )
 
+local ServerMainBox =
+    AddLeftBox(
+        Tabs.Server,
+        "Server Selection",
+        "server"
+    )
+
+local ServerStatusBox =
+    AddRightBox(
+        Tabs.Server,
+        "Status",
+        "activity"
+    )
+
+CombatMainBox =
+    AddLeftBox(
+        Tabs.Combat,
+        "Combat Controls",
+        "swords"
+    )
+
+CombatStatusBox =
+    AddRightBox(
+        Tabs.Combat,
+        "Combat Status",
+        "shield"
+    )
+
 local ShopsMainBox =
     AddLeftBox(
         Tabs.Shops,
@@ -19144,7 +21817,7 @@ local MailboxStatusBox =
 local ExperimentMainBox =
     AddLeftBox(
         Tabs.Experiment,
-        "Controls",
+        "Auto Drop Seed",
         "flask-conical"
     )
 
@@ -19217,6 +21890,20 @@ local SettingsUIBox =
         "sliders-horizontal"
     )
 
+WebhookMainBox =
+    AddLeftBox(
+        Tabs.Webhook,
+        "Webhook Alerts",
+        "webhook"
+    )
+
+WebhookStatusBox =
+    AddRightBox(
+        Tabs.Webhook,
+        "Webhook Status",
+        "activity"
+    )
+
 local DevToolsBox =
     nil
 
@@ -19239,6 +21926,51 @@ if Tabs.Dev then
             "info"
         )
 end
+
+--==================================================
+-- [7.5] NEW TAB PLACEHOLDERS
+--==================================================
+
+if CombatMainBox then
+
+    CombatMainBox:AddLabel("HolyGAG2CombatInfo", {
+        Text =
+            '<font color="rgb(196,181,253)"><b>Combat</b></font>'
+            .. '\nCombat tools will be added here.',
+        DoesWrap = true,
+    })
+end
+
+if CombatStatusBox then
+
+    CombatStatusBox:AddLabel("HolyGAG2CombatStatus", {
+        Text =
+            '<font color="rgb(196,181,253)"><b>Status</b></font>'
+            .. '\nIdle.',
+        DoesWrap = true,
+    })
+end
+
+if WebhookMainBox then
+
+    WebhookMainBox:AddLabel("HolyGAG2WebhookInfo", {
+        Text =
+            '<font color="rgb(196,181,253)"><b>Webhook</b></font>'
+            .. '\nDiscord alert controls will be moved here.',
+        DoesWrap = true,
+    })
+end
+
+if WebhookStatusBox then
+
+    WebhookStatusBox:AddLabel("HolyGAG2WebhookStatus", {
+        Text =
+            '<font color="rgb(196,181,253)"><b>Status</b></font>'
+            .. '\nReady.',
+        DoesWrap = true,
+    })
+end
+
 --==================================================
 -- [8] HOME TAB
 --==================================================
@@ -19292,6 +22024,71 @@ HomeMainBox:AddButton({
 
 HomeMainBox:AddDivider()
 
+if type(HomeMainBox.AddInput) == "function" then
+
+    local VersionHopTargetInput =
+        HomeMainBox:AddInput(
+            "HolyGAG2VersionHopTarget",
+            {
+                Text = "Target Server Version",
+                Default = "v88",
+                Placeholder = "v88",
+                Numeric = false,
+                Finished = true,
+                ClearTextOnFocus = false,
+                Tooltip = "Accepts 88, v88, or V88. Exact normalized match only.",
+            }
+        )
+
+    if VersionHopTargetInput
+    and type(VersionHopTargetInput.OnChanged) == "function" then
+
+        VersionHopTargetInput:OnChanged(function(value)
+
+            GAG2VersionHopSetTarget(
+                value
+            )
+        end)
+    end
+
+    local VersionHopDelayInput =
+        HomeMainBox:AddInput(
+            "HolyGAG2VersionHopDelay",
+            {
+                Text = "Hop Delay",
+                Default = "2",
+                Placeholder = "2",
+                Numeric = false,
+                Finished = true,
+                ClearTextOnFocus = false,
+                Tooltip = "Seconds to wait before hopping when current version does not match target. Min 1.",
+            }
+        )
+
+    if VersionHopDelayInput
+    and type(VersionHopDelayInput.OnChanged) == "function" then
+
+        VersionHopDelayInput:OnChanged(function(value)
+
+            GAG2VersionHopSetDelay(
+                value
+            )
+        end)
+    end
+end
+
+HomeMainBox:AddToggle("HolyGAG2AutoHopUntilVersion", {
+    Text = "Auto Hop Until Server Version",
+    Default = false,
+    Tooltip = "Reads the current server version from Settings and hops until it matches the target.",
+    Callback = function(value)
+
+        GAG2VersionHopSetEnabled(
+            value == true
+        )
+    end,
+})
+
 GAG2_MANUAL_JOIN_HUD_TOGGLE =
     HomeMainBox:AddToggle("HolyGAG2ManualJoinHud", {
         Text = "Pop Out Join HUD",
@@ -19337,6 +22134,61 @@ if IsGAG2World() ~= true then
         DoesWrap = true,
     })
 end
+
+--==================================================
+-- [8.1] SERVER TAB
+--==================================================
+
+local ServerSelectionDropdown =
+    ServerMainBox:AddDropdown(
+        "HolyGAG2ServerSelectionMode",
+        {
+            Text = "Server Selection Mode",
+            Values = GAG2_SERVER_SELECTION_MODES,
+            Default = GAG2_SERVER_SELECTION_STATE.Mode or "Most Empty",
+            Multi = false,
+            Searchable = false,
+            Tooltip = "Controls every HopServerOnce call: manual hop, version hop, and sniper auto-hop.",
+        }
+    )
+
+if ServerSelectionDropdown
+and type(ServerSelectionDropdown.OnChanged) == "function" then
+
+    ServerSelectionDropdown:OnChanged(function(value)
+
+        GAG2ServerSelectionSetMode(
+            value
+        )
+    end)
+end
+
+ServerMainBox:AddButton({
+    Text = "Server Hop",
+    Tooltip = "Hop once using the selected server selection mode.",
+    Func = function()
+
+        HopServerOnce()
+    end,
+}):AddButton({
+    Text = "Stop Hop",
+    Tooltip = "Stop current server hop retry loop.",
+    Func = function()
+
+        GAG2CancelServerHop(
+            "Server hop stopped."
+        )
+
+        GAG2ServerSelectionSetStatus(
+            "Stopped."
+        )
+    end,
+})
+
+ServerStatusBox:AddLabel("HolyGAG2ServerSelectionStatus", {
+    Text = GAG2ServerSelectionBuildStatus(),
+    DoesWrap = true,
+})
 
 --==================================================
 -- [8.25] SHOPS TAB
@@ -19724,13 +22576,122 @@ MailboxStatusBox:AddLabel({
 --==================================================
 
 ExperimentMainBox:AddLabel({
-    Text = "Ready.",
+    Text =
+        '<font color="rgb(196,181,253)"><b>Auto Drop Seed</b></font>'
+        .. '\nExperimental seed dropper.'
+        .. '\nConfirmed seeds: Rainbow / Gold.'
+        .. '\nBurst fires multiple real drop packets per cycle.',
     DoesWrap = true,
     Size = 13,
 })
 
+GAG2_AUTO_DROP_SEED_CONTROLS =
+    GAG2_AUTO_DROP_SEED_CONTROLS
+    or {}
+
+GAG2_AUTO_DROP_SEED_CONTROLS.Seed =
+    ExperimentMainBox:AddDropdown("HolyGAG2SeedDropSeed", {
+        Text = "Seed",
+        Values = GAG2SeedDropGetAllSeedValues(),
+        Default = GAG2_AUTO_DROP_SEED_STATE.Seed or "Rainbow",
+        Multi = false,
+        Searchable = true,
+        MaxVisibleDropdownItems = 10,
+        Tooltip = "All known seed drop candidates. It waits until the selected seed tool exists in Backpack / Character.",
+    })
+
+if GAG2_AUTO_DROP_SEED_CONTROLS.Seed
+and type(GAG2_AUTO_DROP_SEED_CONTROLS.Seed.OnChanged) == "function" then
+
+    GAG2_AUTO_DROP_SEED_CONTROLS.Seed:OnChanged(function(value)
+
+        GAG2SeedDropSetSeed(
+            value
+        )
+    end)
+end
+
+GAG2_AUTO_DROP_SEED_CONTROLS.Amount =
+    ExperimentMainBox:AddInput("HolyGAG2SeedDropAmount", {
+        Text = "Drop Amount",
+        Default = "1",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "Any amount",
+        Tooltip = "Total amount to drop. Not limited to 10.",
+        Callback = function(value)
+
+            GAG2SeedDropSetAmount(
+                value
+            )
+        end,
+    })
+
+GAG2_AUTO_DROP_SEED_CONTROLS.Burst =
+    ExperimentMainBox:AddInput("HolyGAG2SeedDropBurst", {
+        Text = "Burst",
+        Default = "1",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "1 - 250",
+        Tooltip = "How many real drop packets to fire per cycle.",
+        Callback = function(value)
+
+            GAG2SeedDropSetBurst(
+                value
+            )
+        end,
+    })
+
+GAG2_AUTO_DROP_SEED_CONTROLS.Delay =
+    ExperimentMainBox:AddInput("HolyGAG2SeedDropDelay", {
+        Text = "Drop Delay",
+        Default = "0.35",
+        Numeric = false,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "0.35",
+        Tooltip = "Delay between burst cycles. Use 0 for fastest loop.",
+        Callback = function(value)
+
+            GAG2SeedDropSetDelay(
+                value
+            )
+        end,
+    })
+
+ExperimentMainBox:AddToggle("HolyGAG2AutoDropSeed", {
+    Text = "Auto Drop Seed",
+    Default = false,
+    Tooltip = "Toggle ON to start auto dropping. Toggle OFF to stop after the current cycle.",
+}):OnChanged(function(value)
+
+    GAG2SeedDropSetEnabled(
+        value == true
+    )
+end)
+
+ExperimentMainBox:AddButton({
+    Text = "Drop Once",
+    Tooltip = "Drops one burst cycle without enabling the toggle.",
+    Func = function()
+
+        GAG2SeedDropOnce(
+            GAG2_AUTO_DROP_SEED_STATE.Seed,
+            GAG2_AUTO_DROP_SEED_STATE.Burst
+        )
+    end,
+})
+
 ExperimentStatusBox:AddLabel("HolyGAG2ExperimentStatus", {
-    Text = "Idle.",
+    Text =
+        '<font color="rgb(196,181,253)"><b>Auto Drop Seed</b></font>'
+        .. '\nState: OFF | Running: false'
+        .. '\nSeed: Rainbow | Dropped: 0/1'
+        .. '\nBurst: 1 | Delay: 0.35s'
+        .. '\nReady.',
     DoesWrap = true,
 })
 
@@ -20152,7 +23113,9 @@ end
 
 GAG2SeedPlantRefreshAdvancedVisibility()
 
-GAG2SeedPlantSetStatus(
+GAG2SeedDropRefreshDropdown()
+
+GAG2SeedDropSetStatus(
     "Ready."
 )
 
@@ -21274,12 +24237,24 @@ and DevInfoBox then
 
     DevToolsBox:AddButton({
         Text = "Remote Spy",
-        Tooltip = "Open Remote Spy.",
+        Tooltip = "Open Utopia Remote Spy.",
         Func = function()
 
             LoadDevTool(
                 "https://raw.githubusercontent.com/Klinac/scripts/main/utopia_spy.lua",
                 "Remote Spy"
+            )
+        end,
+    })
+
+    DevToolsBox:AddButton({
+        Text = "Cobalt Spy",
+        Tooltip = "Open Cobalt Remote Spy. Better for incoming/outgoing network traffic research.",
+        Func = function()
+
+            LoadDevTool(
+                "https://github.com/notpoiu/cobalt/releases/latest/download/Cobalt.luau",
+                "Cobalt Spy"
             )
         end,
     })
@@ -21391,6 +24366,9 @@ if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
     GAG2RestoreAutoCollectFruitState()
     GAG2RestoreAutoSellState()
     GAG2RestoreMailboxState()
+    GAG2RestoreSeedDropState()
+    GAG2RestoreServerSelectionState()
+    GAG2RestoreVersionHopState()
 end
 
 task.spawn(function()
