@@ -18611,6 +18611,9 @@ function GAG2MailboxEnsureUniversalState()
     state.MaxRowsPerMail =
         tonumber(state.MaxRowsPerMail)
         or 20
+
+    state.AllowOvercountTest =
+        state.AllowOvercountTest == true
 end
 
 GAG2MailboxEnsureUniversalState()
@@ -18654,6 +18657,12 @@ function GAG2MailboxSetStatus(text)
             .. tostring(state.Amount or 1)
             .. ' | Max rows: '
             .. tostring(state.MaxRowsPerMail or 20)
+            .. '\nOvercount Test: '
+            .. (
+                state.AllowOvercountTest == true
+                and "ON"
+                or "OFF"
+            )
         )
     end
 end
@@ -20043,6 +20052,26 @@ function GAG2MailboxSetItemChoice(value)
     MarkConfigDirty()
 end
 
+function GAG2MailboxSetAllowOvercountTest(value)
+
+    GAG2MailboxEnsureUniversalState()
+
+    GAG2_MAILBOX_STATE.AllowOvercountTest =
+        value == true
+
+    GAG2MailboxSetStatus(
+        "Allow Overcount Test "
+        .. (
+            value == true
+            and "enabled. Requested Count will not clamp to scanned owned amount."
+            or "disabled. Requested Count clamps to scanned owned amount."
+        )
+    )
+
+    MarkConfigDirty()
+end
+
+
 function GAG2MailboxSetMaxRowsPerMail(value)
 
     GAG2MailboxEnsureUniversalState()
@@ -20095,15 +20124,30 @@ end
 
 function GAG2MailboxGetSendCountForSendable(sendable)
 
+    GAG2MailboxEnsureUniversalState()
+
+    local state =
+        GAG2_MAILBOX_STATE
+
     local amount =
         GAG2MailboxGetAmount()
 
     if type(sendable) ~= "table" then
+
         return amount
     end
 
     if sendable.Category == "Pets" then
+
         return 1
+    end
+
+    if state.AllowOvercountTest == true then
+
+        return math.max(
+            1,
+            math.floor(amount)
+        )
     end
 
     local ownedAmount =
@@ -20898,6 +20942,12 @@ function GAG2RestoreMailboxState()
             GAG2MailboxSetMaxRowsPerMail(
                 Options.HolyGAG2MailboxMaxRowsPerMail.Value
             )
+        end
+
+        if Toggles.HolyGAG2MailboxAllowOvercountTest then
+
+            GAG2_MAILBOX_STATE.AllowOvercountTest =
+                Toggles.HolyGAG2MailboxAllowOvercountTest.Value == true
         end
 
         if Options.HolyGAG2MailboxMessage then
@@ -25391,6 +25441,18 @@ GAG2_MAILBOX_CONTROLS.MaxRowsPerMail =
             )
         end,
     })
+
+MailboxMainBox:AddToggle("HolyGAG2MailboxAllowOvercountTest", {
+    Text = "Allow Overcount Test",
+    Default = false,
+    Risky = true,
+    Tooltip = "Testing only. Sends requested Count even if mailbox UI shows less owned. Server should clamp or reject.",
+}):OnChanged(function(value)
+
+    GAG2MailboxSetAllowOvercountTest(
+        value == true
+    )
+end)
 
 GAG2_MAILBOX_CONTROLS.Message =
     MailboxMainBox:AddInput("HolyGAG2MailboxMessage", {
