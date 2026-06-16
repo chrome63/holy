@@ -263,8 +263,13 @@ GAG2_AUTO_TP_MIDDLE_FARM_STATE = {
     HoldX = 0,
     HoldY = 0,
 
-    PostLoadRepairDistance = 25,
-    MaxRunSeconds = 18,
+    PostLoadRepairDistance = 18,
+    PostLoadFallbackSeconds = 7.25,
+    PostLoadRepairSettleSeconds = 0.35,
+    PostLoadRepairRetryInterval = 0.55,
+    PostLoadStableConfirmTime = 0.65,
+    PostLoadMaxRepairTries = 8,
+    MaxRunSeconds = 26,
 }
 
 --==================================================
@@ -7664,6 +7669,18 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
         local postLoadSeenAt =
             nil
 
+        local postLoadReason =
+            "not detected"
+
+        local postLoadRepairTries =
+            0
+
+        local postLoadLastRepairAt =
+            0
+
+        local postLoadStableSeenAt =
+            nil
+
         state.SkipStarted =
             false
 
@@ -7839,32 +7856,80 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
                 return
             end
 
+            local now =
+                os.clock()
+
             local snap =
                 GAG2MiddleFarmLoadingSnapshot()
 
-            if postLoadSeenAt == nil
-            and snap.Active ~= true
-            and (
-                snap.Done == true
-                or snap.CameraCustom == true
-            ) then
+            if postLoadSeenAt == nil then
 
-                postLoadSeenAt =
-                    os.clock()
+                local shouldStartRepair =
+                    false
 
-                print(
-                    "[HOLY GAG2 MIDDLE]",
-                    "post-load detected",
-                    "| active:",
-                    tostring(snap.Active),
-                    "| done:",
-                    tostring(snap.Done),
-                    "| camera:",
-                    snap.CameraType
-                )
+                local detectReason =
+                    ""
+
+                if snap.Active ~= true
+                and (
+                    snap.Done == true
+                    or snap.CameraCustom == true
+                ) then
+
+                    shouldStartRepair =
+                        true
+
+                    detectReason =
+                        "loading attributes/camera cleared"
+
+                elseif state.SkipAttempts >= 2
+                and state.HoldingSkip ~= true then
+
+                    shouldStartRepair =
+                        true
+
+                    detectReason =
+                        "skip attempts exhausted"
+
+                elseif now - started >= tonumber(state.PostLoadFallbackSeconds or 7.25) then
+
+                    shouldStartRepair =
+                        true
+
+                    detectReason =
+                        "fallback timer"
+                end
+
+                if shouldStartRepair == true then
+
+                    postLoadSeenAt =
+                        now
+
+                    postLoadReason =
+                        detectReason
+
+                    print(
+                        "[HOLY GAG2 MIDDLE]",
+                        "post-load repair armed",
+                        "| reason:",
+                        tostring(detectReason),
+                        "| active:",
+                        tostring(snap.Active),
+                        "| done:",
+                        tostring(snap.Done),
+                        "| camera:",
+                        snap.CameraType,
+                        "| attempts:",
+                        tostring(state.SkipAttempts)
+                    )
+                end
             end
 
             if not postLoadSeenAt then
+                return
+            end
+
+            if now - postLoadSeenAt < tonumber(state.PostLoadRepairSettleSeconds or 0.35) then
                 return
             end
 
@@ -7879,25 +7944,63 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
             local distance =
                 (root.Position - targetPosition).Magnitude
 
-            if distance < tonumber(state.PostLoadRepairDistance or 25) then
+            local repairDistance =
+                tonumber(state.PostLoadRepairDistance)
+                or 18
 
-                didPostLoadRepair =
-                    true
+            if distance <= repairDistance then
 
-                state.LastResult =
-                    "post-load near target"
+                if postLoadStableSeenAt == nil then
 
-                print(
-                    "[HOLY GAG2 MIDDLE]",
-                    "post-load near target, no repair needed",
-                    "| distance:",
-                    tostring(math.floor(distance + 0.5)),
-                    "| reason:",
-                    tostring(stepReason or "normal")
-                )
+                    postLoadStableSeenAt =
+                        now
+
+                    state.LastResult =
+                        "post-load near target, confirming"
+                end
+
+                if now - postLoadStableSeenAt >= tonumber(state.PostLoadStableConfirmTime or 0.65) then
+
+                    didPostLoadRepair =
+                        true
+
+                    state.LastResult =
+                        "post-load stable confirmed"
+
+                    print(
+                        "[HOLY GAG2 MIDDLE]",
+                        "post-load stable confirmed",
+                        "| distance:",
+                        tostring(math.floor(distance + 0.5)),
+                        "| reason:",
+                        tostring(postLoadReason),
+                        "| step:",
+                        tostring(stepReason or "normal")
+                    )
+                end
 
                 return
             end
+
+            postLoadStableSeenAt =
+                nil
+
+            if now - postLoadLastRepairAt < tonumber(state.PostLoadRepairRetryInterval or 0.55) then
+                return
+            end
+
+            if postLoadRepairTries >= tonumber(state.PostLoadMaxRepairTries or 8) then
+
+                state.LastResult =
+                    "post-load repair max tries"
+
+                return
+            end
+
+            postLoadLastRepairAt =
+                now
+
+            postLoadRepairTries += 1
 
             local before =
                 root.Position
@@ -7912,18 +8015,18 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
 
             if ok == true then
 
-                didPostLoadRepair =
-                    true
-
                 state.LastTeleportAt =
                     os.clock()
 
                 state.LastResult =
-                    "post-load repair done"
+                    "post-load repair try "
+                    .. tostring(postLoadRepairTries)
 
                 print(
                     "[HOLY GAG2 MIDDLE]",
                     "POST-LOAD REPAIR TP",
+                    "| try:",
+                    tostring(postLoadRepairTries),
                     "| distance:",
                     tostring(math.floor(distance + 0.5)),
                     "| from:",
@@ -7931,6 +8034,8 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
                     "| to:",
                     newRoot and GAG2FarmVecText(newRoot.Position) or "nil",
                     "| reason:",
+                    tostring(postLoadReason),
+                    "| step:",
                     tostring(stepReason or "normal"),
                     "| target:",
                     GAG2FarmVecText(targetPosition)
