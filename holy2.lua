@@ -746,7 +746,7 @@ GAG2_WILD_PET_NETWORK_ENDPOINT =
     "https://script.google.com/macros/s/AKfycbzG5g4bUWmvmCeYH3btJLKYht8jmrE17er0xNFk5kSNZCIl1kvyAbohbJMgpvcbekmu8w/exec"
 
 GAG2_WILD_PET_NETWORK_API_KEY =
-    "PASTE_CONFIG_B2_KEY_HERE"
+    "HOLY_WILDPETS_2026_8f4c92d1e7a63b50"
 
 if type(GAG2_WILD_PET_NETWORK_STATE) == "table"
 and type(GAG2_WILD_PET_NETWORK_STATE.Destroy) == "function" then
