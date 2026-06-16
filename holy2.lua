@@ -20331,23 +20331,27 @@ function GAG2MailboxEnsureUniversalState()
         or "None"
 
     state.CategoryChoices =
-        state.CategoryChoices
+        type(state.CategoryChoices) == "table"
+        and state.CategoryChoices
         or {
             "All",
         }
 
     state.ItemChoices =
-        state.ItemChoices
+        type(state.ItemChoices) == "table"
+        and state.ItemChoices
         or {
             "None",
         }
 
     state.ChoiceToSendable =
-        state.ChoiceToSendable
+        type(state.ChoiceToSendable) == "table"
+        and state.ChoiceToSendable
         or {}
 
     state.Sendables =
-        state.Sendables
+        type(state.Sendables) == "table"
+        and state.Sendables
         or {}
 
     state.LastCategory =
@@ -20367,11 +20371,218 @@ function GAG2MailboxEnsureUniversalState()
         or 0
 
     state.MaxRowsPerMail =
-        tonumber(state.MaxRowsPerMail)
-        or 20
+        math.clamp(
+            math.floor(
+                tonumber(state.MaxRowsPerMail)
+                or 20
+            ),
+            1,
+            20
+        )
 
-    state.AllowOvercountTest =
-        state.AllowOvercountTest == true
+    state.Auto =
+        type(state.Auto) == "table"
+        and state.Auto
+        or {}
+
+    local auto =
+        state.Auto
+
+    auto.Enabled =
+        auto.Enabled == true
+
+    auto.Running =
+        auto.Running == true
+
+    auto.Rules =
+        type(auto.Rules) == "table"
+        and auto.Rules
+        or {}
+
+    auto.Receipts =
+        type(auto.Receipts) == "table"
+        and auto.Receipts
+        or {}
+
+    auto.TargetCache =
+        type(auto.TargetCache) == "table"
+        and auto.TargetCache
+        or {}
+
+    auto.RuleChoiceMap =
+        type(auto.RuleChoiceMap) == "table"
+        and auto.RuleChoiceMap
+        or {}
+
+    auto.ReceiptChoiceMap =
+        type(auto.ReceiptChoiceMap) == "table"
+        and auto.ReceiptChoiceMap
+        or {}
+
+    auto.PetSnapshot =
+        type(auto.PetSnapshot) == "table"
+        and auto.PetSnapshot
+        or {}
+
+    auto.RecipientText =
+        tostring(
+            auto.RecipientText
+            or ""
+        )
+
+    auto.Category =
+        tostring(
+            auto.Category
+            or "None"
+        )
+
+    auto.ItemChoice =
+        tostring(
+            auto.ItemChoice
+            or "None"
+        )
+
+    auto.TriggerMode =
+        tostring(
+            auto.TriggerMode
+            or "At Least"
+        )
+
+    auto.TriggerAmount =
+        math.max(
+            1,
+            math.floor(
+                tonumber(auto.TriggerAmount)
+                or 5
+            )
+        )
+
+    auto.SendMode =
+        tostring(
+            auto.SendMode
+            or "Fixed Amount"
+        )
+
+    auto.SendAmount =
+        math.max(
+            1,
+            math.floor(
+                tonumber(auto.SendAmount)
+                or 5
+            )
+        )
+
+    auto.KeepAmount =
+        math.max(
+            0,
+            math.floor(
+                tonumber(auto.KeepAmount)
+                or 0
+            )
+        )
+
+    auto.PetVariant =
+        tostring(
+            auto.PetVariant
+            or "Any Variant"
+        )
+
+    auto.PetSize =
+        tostring(
+            auto.PetSize
+            or "Any Size"
+        )
+
+    auto.Message =
+        tostring(
+            auto.Message
+            or ""
+        )
+
+    auto.CheckInterval =
+        math.clamp(
+            tonumber(auto.CheckInterval)
+            or 3,
+            1,
+            30
+        )
+
+    auto.MailCooldown =
+        math.clamp(
+            tonumber(auto.MailCooldown)
+            or 3,
+            1,
+            30
+        )
+
+    if auto.StopAfterFailedSends == nil then
+
+        auto.StopAfterFailedSends =
+            true
+
+    else
+
+        auto.StopAfterFailedSends =
+            auto.StopAfterFailedSends == true
+    end
+
+    auto.ConsecutiveFailures =
+        tonumber(auto.ConsecutiveFailures)
+        or 0
+
+    auto.SessionMails =
+        tonumber(auto.SessionMails)
+        or 0
+
+    auto.SessionItems =
+        tonumber(auto.SessionItems)
+        or 0
+
+    auto.LastCheckAt =
+        tonumber(auto.LastCheckAt)
+        or 0
+
+    auto.LastPetRefreshAt =
+        tonumber(auto.LastPetRefreshAt)
+        or 0
+
+    auto.NextAllowedAt =
+        tonumber(auto.NextAllowedAt)
+        or 0
+
+    auto.LoopToken =
+        tonumber(auto.LoopToken)
+        or 0
+
+    auto.LastAction =
+        tostring(
+            auto.LastAction
+            or "Idle."
+        )
+
+    auto.LastRuleText =
+        tostring(
+            auto.LastRuleText
+            or "None"
+        )
+
+    auto.SelectedRuleChoice =
+        tostring(
+            auto.SelectedRuleChoice
+            or "None"
+        )
+
+    auto.SelectedReceiptChoice =
+        tostring(
+            auto.SelectedReceiptChoice
+            or "None"
+        )
+
+    auto.RefreshingControls =
+        auto.RefreshingControls == true
+
+    auto.RulesLoaded =
+        auto.RulesLoaded == true
 end
 
 GAG2MailboxEnsureUniversalState()
@@ -20396,6 +20607,9 @@ function GAG2MailboxSetStatus(text)
     local state =
         GAG2_MAILBOX_STATE
 
+    local auto =
+        state.Auto
+
     state.LastStatus =
         tostring(text or "Idle.")
 
@@ -20405,6 +20619,8 @@ function GAG2MailboxSetStatus(text)
             '<font color="rgb(196,181,253)"><b>Mailbox</b></font>'
             .. '\n'
             .. tostring(state.LastStatus)
+            .. '\n\n'
+            .. '<font color="rgb(148,163,184)"><b>Manual Send</b></font>'
             .. '\nTarget: '
             .. tostring(state.TargetText or "")
             .. '\nCategory: '
@@ -20415,12 +20631,31 @@ function GAG2MailboxSetStatus(text)
             .. tostring(state.Amount or 1)
             .. ' | Max rows: '
             .. tostring(state.MaxRowsPerMail or 20)
-            .. '\nOvercount Test: '
+            .. '\n\n'
+            .. '<font color="rgb(148,163,184)"><b>Automatic Send</b></font>'
+            .. '\nState: '
             .. (
-                state.AllowOvercountTest == true
-                and "ON"
-                or "OFF"
+                auto.Enabled == true
+                and (
+                    auto.Running == true
+                    and "Running"
+                    or "Starting"
+                )
+                or "Stopped"
             )
+            .. '\nRules: '
+            .. tostring(#auto.Rules)
+            .. ' | Failures: '
+            .. tostring(auto.ConsecutiveFailures)
+            .. '\nCurrent: '
+            .. tostring(auto.LastRuleText or "None")
+            .. '\nLast: '
+            .. tostring(auto.LastAction or "Idle.")
+            .. '\nSession: '
+            .. tostring(auto.SessionMails)
+            .. ' mail(s) | '
+            .. tostring(auto.SessionItems)
+            .. ' item(s)'
         )
     end
 end
@@ -21746,10 +21981,22 @@ function GAG2MailboxRefreshSendableDropdown()
     GAG2MailboxRefreshCategoryDropdown()
     GAG2MailboxRefreshItemDropdown()
 
+    if type(GAG2MailboxAutoRefreshDropdowns) == "function" then
+
+        GAG2MailboxAutoRefreshDropdowns(
+            true
+        )
+    end
+
+    if type(GAG2MailboxAutoRefreshQueueVisuals) == "function" then
+
+        GAG2MailboxAutoRefreshQueueVisuals()
+    end
+
     GAG2MailboxSetStatus(
         "Items refreshed: "
         .. tostring(#sendables)
-        .. ". Open mailbox Send tab if this says 0."
+        .. ". Open mailbox Send tab if stackable items are missing."
     )
 
     return sendables
@@ -21810,26 +22057,6 @@ function GAG2MailboxSetItemChoice(value)
     MarkConfigDirty()
 end
 
-function GAG2MailboxSetAllowOvercountTest(value)
-
-    GAG2MailboxEnsureUniversalState()
-
-    GAG2_MAILBOX_STATE.AllowOvercountTest =
-        value == true
-
-    GAG2MailboxSetStatus(
-        "Allow Overcount Test "
-        .. (
-            value == true
-            and "enabled. Requested Count will not clamp to scanned owned amount."
-            or "disabled. Requested Count clamps to scanned owned amount."
-        )
-    )
-
-    MarkConfigDirty()
-end
-
-
 function GAG2MailboxSetMaxRowsPerMail(value)
 
     GAG2MailboxEnsureUniversalState()
@@ -21884,54 +22111,46 @@ function GAG2MailboxGetSendCountForSendable(sendable)
 
     GAG2MailboxEnsureUniversalState()
 
-    local state =
-        GAG2_MAILBOX_STATE
-
     local amount =
         GAG2MailboxGetAmount()
 
     if type(sendable) ~= "table" then
-
-        return amount
-    end
-
-    if sendable.Category == "Pets" then
-
-        return 1
-    end
-
-    if state.AllowOvercountTest == true then
-
-        return math.max(
-            1,
-            math.floor(amount)
-        )
+        return 0
     end
 
     local ownedAmount =
-        math.floor(
-            tonumber(sendable.Amount)
-            or 0
+        math.max(
+            0,
+            math.floor(
+                tonumber(sendable.Amount)
+                or 0
+            )
         )
 
-    if ownedAmount > 0 then
+    if sendable.Category == "Pets" then
 
-        amount =
-            math.min(
-                amount,
-                ownedAmount
-            )
+        return ownedAmount > 0
+            and 1
+            or 0
+    end
+
+    if ownedAmount <= 0 then
+        return 0
     end
 
     return math.max(
-        1,
-        math.floor(amount)
+        0,
+        math.min(
+            math.floor(amount),
+            ownedAmount
+        )
     )
 end
 
 function GAG2MailboxBuildBatchForSendable(sendable)
 
     if type(sendable) ~= "table" then
+
         return nil,
             "missing item"
     end
@@ -21957,6 +22176,12 @@ function GAG2MailboxBuildBatchForSendable(sendable)
         GAG2MailboxGetSendCountForSendable(
             sendable
         )
+
+    if count <= 0 then
+
+        return nil,
+            "owned amount is zero or unavailable"
+    end
 
     local batch = {
         {
@@ -22528,6 +22753,2155 @@ function GAG2MailboxSendPetBatchNow()
     return GAG2MailboxSendSelectedBatchNow()
 end
 
+--==================================================
+-- [4.581] AUTOMATIC MAILBOX
+-- Persistent rule queue, trigger checks, receipts,
+-- inventory clamping, and controlled send cooldown.
+--==================================================
+
+GAG2_MAILBOX_AUTO_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/MailboxAutoRules.json"
+
+GAG2_MAILBOX_AUTO_CONTROLS =
+    GAG2_MAILBOX_AUTO_CONTROLS
+    or {}
+
+function GAG2MailboxAutoGetState()
+
+    GAG2MailboxEnsureUniversalState()
+
+    return GAG2_MAILBOX_STATE.Auto
+end
+
+function GAG2MailboxAutoNormalizeKey(value)
+
+    return GAG2MailboxClean(value)
+        :lower()
+        :gsub("%s+", " ")
+end
+
+function GAG2MailboxAutoSetStatus(text)
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    auto.LastAction =
+        tostring(text or "Idle.")
+
+    GAG2MailboxSetStatus(
+        auto.LastAction
+    )
+end
+
+function GAG2MailboxAutoSetDraft(key, value)
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    auto[key] =
+        value
+
+    MarkConfigDirty()
+end
+
+function GAG2MailboxAutoSetNumber(key, value, minimum, maximum, fallback)
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    auto[key] =
+        math.clamp(
+            tonumber(value)
+            or tonumber(fallback)
+            or minimum,
+            minimum,
+            maximum
+        )
+
+    MarkConfigDirty()
+end
+
+function GAG2MailboxAutoSaveRules()
+
+    if CanUseUISettingsFile() ~= true then
+        return false
+    end
+
+    EnsureUISettingsFolder()
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    local payload = {
+        Rules =
+            auto.Rules,
+    }
+
+    local encodeOk, encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                GAG2_MAILBOX_AUTO_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function GAG2MailboxAutoLoadRules()
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    if auto.RulesLoaded == true then
+        return auto.Rules
+    end
+
+    auto.RulesLoaded =
+        true
+
+    if CanUseUISettingsFile() ~= true then
+        return auto.Rules
+    end
+
+    local exists =
+        false
+
+    local existsOk =
+        pcall(function()
+
+            exists =
+                isfile(
+                    GAG2_MAILBOX_AUTO_FILE
+                )
+        end)
+
+    if existsOk ~= true
+    or exists ~= true then
+
+        return auto.Rules
+    end
+
+    local readOk, raw =
+        pcall(function()
+
+            return readfile(
+                GAG2_MAILBOX_AUTO_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        return auto.Rules
+    end
+
+    local decodeOk, payload =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(payload) ~= "table"
+    or type(payload.Rules) ~= "table" then
+
+        return auto.Rules
+    end
+
+    local validRules =
+        {}
+
+    for _, rule in ipairs(payload.Rules) do
+
+        if type(rule) == "table" then
+
+            local targetText =
+                GAG2MailboxClean(
+                    rule.TargetText
+                )
+
+            local category =
+                GAG2MailboxClean(
+                    rule.Category
+                )
+
+            local itemChoice =
+                GAG2MailboxClean(
+                    rule.ItemChoice
+                )
+
+            if targetText ~= ""
+            and category ~= ""
+            and category ~= "None"
+            and itemChoice ~= ""
+            and itemChoice ~= "None" then
+
+                rule.Id =
+                    GAG2MailboxClean(rule.Id) ~= ""
+                    and GAG2MailboxClean(rule.Id)
+                    or HttpService:GenerateGUID(false)
+
+                rule.Enabled =
+                    rule.Enabled ~= false
+
+                rule.TriggerMode =
+                    rule.TriggerMode == "Above"
+                    and "Above"
+                    or "At Least"
+
+                rule.TriggerAmount =
+                    math.max(
+                        1,
+                        math.floor(
+                            tonumber(rule.TriggerAmount)
+                            or 1
+                        )
+                    )
+
+                if rule.SendMode ~= "Send Excess"
+                and rule.SendMode ~= "Send All Available" then
+
+                    rule.SendMode =
+                        "Fixed Amount"
+                end
+
+                rule.SendAmount =
+                    math.max(
+                        1,
+                        math.floor(
+                            tonumber(rule.SendAmount)
+                            or 1
+                        )
+                    )
+
+                rule.KeepAmount =
+                    math.max(
+                        0,
+                        math.floor(
+                            tonumber(rule.KeepAmount)
+                            or 0
+                        )
+                    )
+
+                rule.PetVariant =
+                    tostring(
+                        rule.PetVariant
+                        or "Any Variant"
+                    )
+
+                rule.PetSize =
+                    tostring(
+                        rule.PetSize
+                        or "Any Size"
+                    )
+
+                rule.Message =
+                    tostring(
+                        rule.Message
+                        or ""
+                    )
+
+                table.insert(
+                    validRules,
+                    rule
+                )
+            end
+        end
+    end
+
+    auto.Rules =
+        validRules
+
+    return auto.Rules
+end
+
+function GAG2MailboxAutoGetPets(forceRefresh)
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    local now =
+        os.clock()
+
+    local shouldRefresh =
+        forceRefresh == true
+        or type(auto.PetSnapshot) ~= "table"
+        or #auto.PetSnapshot <= 0
+        or now - tonumber(auto.LastPetRefreshAt or 0) >= 5
+
+    if shouldRefresh == true then
+
+        local ok, pets =
+            pcall(function()
+
+                return GAG2MailboxBuildInventoryPets()
+            end)
+
+        if ok == true
+        and type(pets) == "table" then
+
+            auto.PetSnapshot =
+                pets
+
+            auto.LastPetRefreshAt =
+                now
+        end
+    end
+
+    return auto.PetSnapshot
+end
+
+function GAG2MailboxAutoBasePetName(value)
+
+    local name =
+        GAG2MailboxClean(value)
+
+    local lowerName =
+        name:lower()
+
+    local prefixes = {
+        "huge ",
+        "giant ",
+        "large ",
+        "big ",
+    }
+
+    for _, prefix in ipairs(prefixes) do
+
+        if lowerName:sub(1, #prefix) == prefix then
+
+            return GAG2MailboxClean(
+                name:sub(
+                    #prefix + 1
+                )
+            )
+        end
+    end
+
+    return name
+end
+
+function GAG2MailboxAutoReadPetVariant(pet)
+
+    local raw =
+        type(pet) == "table"
+        and pet.Raw
+        or nil
+
+    local mutation =
+        type(raw) == "table"
+        and GAG2MailboxClean(
+            GAG2MailboxSafeRawGet(
+                raw,
+                "Mutation"
+            )
+        )
+        or ""
+
+    if mutation == ""
+    or mutation == "None"
+    or mutation == "Normal" then
+
+        return "Normal"
+    end
+
+    return mutation
+end
+
+function GAG2MailboxAutoReadPetSize(pet)
+
+    if type(pet) ~= "table" then
+        return "Normal"
+    end
+
+    local raw =
+        pet.Raw
+
+    local pieces = {
+        tostring(pet.Name or ""),
+        tostring(pet.Extra or ""),
+    }
+
+    if type(raw) == "table" then
+
+        local keys = {
+            "SizeClass",
+            "PetSize",
+            "Size",
+            "SizeVariant",
+            "GrowthSize",
+            "Variant",
+        }
+
+        for _, key in ipairs(keys) do
+
+            local value =
+                GAG2MailboxSafeRawGet(
+                    raw,
+                    key
+                )
+
+            if value ~= nil then
+
+                table.insert(
+                    pieces,
+                    tostring(value)
+                )
+            end
+        end
+    end
+
+    local text =
+        table.concat(
+            pieces,
+            " "
+        ):lower()
+
+    if text:find("huge", 1, true) then
+        return "Huge"
+    end
+
+    if text:find("big", 1, true)
+    or text:find("giant", 1, true)
+    or text:find("large", 1, true) then
+
+        return "Big"
+    end
+
+    return "Normal"
+end
+
+function GAG2MailboxAutoPetMatchesRule(pet, rule)
+
+    if type(pet) ~= "table"
+    or type(rule) ~= "table" then
+
+        return false
+    end
+
+    local wantedName =
+        GAG2MailboxAutoNormalizeKey(
+            rule.ItemChoice
+        )
+
+    local petName =
+        GAG2MailboxAutoNormalizeKey(
+            GAG2MailboxAutoBasePetName(
+                pet.Name
+            )
+        )
+
+    if wantedName == ""
+    or petName ~= wantedName then
+        return false
+    end
+
+    local wantedVariant =
+        GAG2MailboxClean(
+            rule.PetVariant
+        )
+
+    local petVariant =
+        GAG2MailboxAutoReadPetVariant(
+            pet
+        )
+
+    if wantedVariant ~= ""
+    and wantedVariant ~= "Any Variant"
+    and wantedVariant ~= petVariant then
+
+        return false
+    end
+
+    local wantedSize =
+        GAG2MailboxClean(
+            rule.PetSize
+        )
+
+    local petSize =
+        GAG2MailboxAutoReadPetSize(
+            pet
+        )
+
+    if wantedSize == "Big+"
+    and petSize ~= "Big"
+    and petSize ~= "Huge" then
+
+        return false
+    end
+
+    if wantedSize == "Huge Only"
+    and petSize ~= "Huge" then
+
+        return false
+    end
+
+    return true
+end
+
+function GAG2MailboxAutoGetCategoryChoices()
+
+    local state =
+        GAG2_MAILBOX_STATE
+
+    local values = {
+        "None",
+    }
+
+    local seen = {
+        None = true,
+    }
+
+    local function add(category)
+
+        category =
+            GAG2MailboxClean(category)
+
+        if category == ""
+        or category == "All"
+        or category == "None"
+        or seen[category] == true then
+
+            return
+        end
+
+        seen[category] =
+            true
+
+        table.insert(
+            values,
+            category
+        )
+    end
+
+    for _, sendable in ipairs(state.Sendables or {}) do
+
+        add(
+            sendable.Category
+        )
+    end
+
+    local pets =
+        GAG2MailboxAutoGetPets(
+            false
+        )
+
+    if type(pets) == "table"
+    and #pets > 0 then
+
+        add(
+            "Pets"
+        )
+    end
+
+    table.sort(
+        values,
+        function(a, b)
+
+            if a == "None" then
+                return true
+            end
+
+            if b == "None" then
+                return false
+            end
+
+            return tostring(a)
+                < tostring(b)
+        end
+    )
+
+    return values
+end
+
+function GAG2MailboxAutoGetItemChoices(category)
+
+    category =
+        GAG2MailboxClean(category)
+
+    local values = {
+        "None",
+    }
+
+    local seen = {
+        None = true,
+    }
+
+    local function add(itemName)
+
+        itemName =
+            GAG2MailboxClean(itemName)
+
+        if itemName == ""
+        or itemName == "None"
+        or seen[itemName] == true then
+
+            return
+        end
+
+        seen[itemName] =
+            true
+
+        table.insert(
+            values,
+            itemName
+        )
+    end
+
+    if category == "Pets" then
+
+        for _, pet in ipairs(
+            GAG2MailboxAutoGetPets(
+                false
+            )
+        ) do
+
+            add(
+                GAG2MailboxAutoBasePetName(
+                    pet.Name
+                )
+            )
+        end
+
+    else
+
+        for _, sendable in ipairs(
+            GAG2_MAILBOX_STATE.Sendables
+            or {}
+        ) do
+
+            if GAG2MailboxClean(sendable.Category) == category then
+
+                add(
+                    sendable.ItemKey
+                )
+            end
+        end
+    end
+
+    table.sort(
+        values,
+        function(a, b)
+
+            if a == "None" then
+                return true
+            end
+
+            if b == "None" then
+                return false
+            end
+
+            return tostring(a)
+                < tostring(b)
+        end
+    )
+
+    return values
+end
+
+function GAG2MailboxAutoRefreshDropdowns(forcePetRefresh)
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    if forcePetRefresh == true then
+
+        auto.LastPetRefreshAt =
+            0
+
+        GAG2MailboxAutoGetPets(
+            true
+        )
+    end
+
+    auto.RefreshingControls =
+        true
+
+    local categoryValues =
+        GAG2MailboxAutoGetCategoryChoices()
+
+    if table.find(
+        categoryValues,
+        auto.Category
+    ) == nil then
+
+        auto.Category =
+            "None"
+    end
+
+    GAG2MailboxSetDropdownValues(
+        GAG2_MAILBOX_AUTO_CONTROLS.Category,
+        categoryValues
+    )
+
+    GAG2MailboxSetDropdownValue(
+        GAG2_MAILBOX_AUTO_CONTROLS.Category,
+        auto.Category
+    )
+
+    local itemValues =
+        GAG2MailboxAutoGetItemChoices(
+            auto.Category
+        )
+
+    if table.find(
+        itemValues,
+        auto.ItemChoice
+    ) == nil then
+
+        auto.ItemChoice =
+            "None"
+    end
+
+    GAG2MailboxSetDropdownValues(
+        GAG2_MAILBOX_AUTO_CONTROLS.Item,
+        itemValues
+    )
+
+    GAG2MailboxSetDropdownValue(
+        GAG2_MAILBOX_AUTO_CONTROLS.Item,
+        auto.ItemChoice
+    )
+
+    auto.RefreshingControls =
+        false
+end
+
+function GAG2MailboxAutoBuildRuleDisplay(rule, index)
+
+    local sendText =
+        ""
+
+    if rule.SendMode == "Send Excess" then
+
+        sendText =
+            "Send excess"
+
+    elseif rule.SendMode == "Send All Available" then
+
+        sendText =
+            "Send all"
+
+    else
+
+        sendText =
+            "Send "
+            .. tostring(rule.SendAmount)
+    end
+
+    local keepText =
+        ""
+
+    if rule.SendMode ~= "Send All Available"
+    and tonumber(rule.KeepAmount or 0) > 0 then
+
+        keepText =
+            " | Keep "
+            .. tostring(rule.KeepAmount)
+    end
+
+    local filterText =
+        ""
+
+    if rule.Category == "Pets" then
+
+        if rule.PetVariant ~= "Any Variant" then
+
+            filterText =
+                filterText
+                .. " | "
+                .. tostring(rule.PetVariant)
+        end
+
+        if rule.PetSize ~= "Any Size" then
+
+            filterText =
+                filterText
+                .. " | "
+                .. tostring(rule.PetSize)
+        end
+    end
+
+    return tostring(index)
+        .. ". "
+        .. tostring(rule.ItemChoice)
+        .. " | "
+        .. tostring(rule.TriggerMode)
+        .. " "
+        .. tostring(rule.TriggerAmount)
+        .. " -> "
+        .. sendText
+        .. keepText
+        .. filterText
+end
+
+function GAG2MailboxAutoRefreshQueueVisuals()
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    local values = {
+        "None",
+    }
+
+    local map =
+        {}
+
+    local lines = {
+        '<font color="rgb(196,181,253)"><b>Order Queue</b></font>',
+    }
+
+    if #auto.Rules <= 0 then
+
+        table.insert(
+            lines,
+            "No automatic rules saved."
+        )
+
+    else
+
+        for index, rule in ipairs(auto.Rules) do
+
+            local display =
+                GAG2MailboxAutoBuildRuleDisplay(
+                    rule,
+                    index
+                )
+
+            values[#values + 1] =
+                display
+
+            map[display] =
+                index
+
+            if index <= 12 then
+
+                table.insert(
+                    lines,
+                    display
+                )
+            end
+        end
+
+        if #auto.Rules > 12 then
+
+            table.insert(
+                lines,
+                "+"
+                .. tostring(#auto.Rules - 12)
+                .. " more"
+            )
+        end
+    end
+
+    auto.RuleChoiceMap =
+        map
+
+    if map[auto.SelectedRuleChoice] == nil then
+
+        auto.SelectedRuleChoice =
+            values[2]
+            or "None"
+    end
+
+    auto.RefreshingControls =
+        true
+
+    GAG2MailboxSetDropdownValues(
+        GAG2_MAILBOX_AUTO_CONTROLS.Rule,
+        values
+    )
+
+    GAG2MailboxSetDropdownValue(
+        GAG2_MAILBOX_AUTO_CONTROLS.Rule,
+        auto.SelectedRuleChoice
+    )
+
+    auto.RefreshingControls =
+        false
+
+    if Options.HolyGAG2MailboxAutoQueueStatus then
+
+        Options.HolyGAG2MailboxAutoQueueStatus:SetText(
+            table.concat(
+                lines,
+                "\n"
+            )
+        )
+    end
+end
+
+function GAG2MailboxAutoReceiptDisplay(receipt, index)
+
+    return tostring(index)
+        .. ". "
+        .. tostring(receipt.TimeText or "?")
+        .. " | "
+        .. tostring(receipt.Item or "?")
+        .. " x"
+        .. tostring(receipt.Count or 0)
+        .. " | "
+        .. tostring(receipt.Result or "?")
+end
+
+function GAG2MailboxAutoReceiptText(receipt)
+
+    if type(receipt) ~= "table" then
+        return "Receipt unavailable."
+    end
+
+    return "HOLY GAG2 MAILBOX RECEIPT"
+        .. "\nTime: "
+        .. tostring(receipt.TimeText or "?")
+        .. "\nRecipient: "
+        .. tostring(receipt.TargetText or "?")
+        .. "\nUserId: "
+        .. tostring(receipt.TargetUserId or "?")
+        .. "\nCategory: "
+        .. tostring(receipt.Category or "?")
+        .. "\nItem: "
+        .. tostring(receipt.Item or "?")
+        .. "\nRequested: "
+        .. tostring(receipt.Requested or 0)
+        .. "\nActual Sent: "
+        .. tostring(receipt.Count or 0)
+        .. "\nRows: "
+        .. tostring(receipt.Rows or 0)
+        .. "\nResult: "
+        .. tostring(receipt.Result or "?")
+        .. "\nDetails: "
+        .. tostring(receipt.Details or "")
+end
+
+function GAG2MailboxAutoRefreshReceiptVisuals()
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    local values = {
+        "None",
+    }
+
+    local map =
+        {}
+
+    local lines = {
+        '<font color="rgb(196,181,253)"><b>Receipts</b></font>',
+    }
+
+    if #auto.Receipts <= 0 then
+
+        table.insert(
+            lines,
+            "No receipts saved."
+        )
+
+    else
+
+        for index, receipt in ipairs(auto.Receipts) do
+
+            local display =
+                GAG2MailboxAutoReceiptDisplay(
+                    receipt,
+                    index
+                )
+
+            values[#values + 1] =
+                display
+
+            map[display] =
+                index
+
+            if index <= 6 then
+
+                table.insert(
+                    lines,
+                    display
+                )
+            end
+        end
+    end
+
+    auto.ReceiptChoiceMap =
+        map
+
+    if map[auto.SelectedReceiptChoice] == nil then
+
+        auto.SelectedReceiptChoice =
+            values[2]
+            or "None"
+    end
+
+    auto.RefreshingControls =
+        true
+
+    GAG2MailboxSetDropdownValues(
+        GAG2_MAILBOX_AUTO_CONTROLS.Receipt,
+        values
+    )
+
+    GAG2MailboxSetDropdownValue(
+        GAG2_MAILBOX_AUTO_CONTROLS.Receipt,
+        auto.SelectedReceiptChoice
+    )
+
+    auto.RefreshingControls =
+        false
+
+    if Options.HolyGAG2MailboxAutoReceiptStatus then
+
+        Options.HolyGAG2MailboxAutoReceiptStatus:SetText(
+            table.concat(
+                lines,
+                "\n"
+            )
+        )
+    end
+end
+
+function GAG2MailboxAutoAddReceipt(receipt)
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    receipt =
+        type(receipt) == "table"
+        and receipt
+        or {}
+
+    local timeText =
+        "?"
+
+    pcall(function()
+
+        timeText =
+            os.date(
+                "%H:%M:%S"
+            )
+    end)
+
+    receipt.Time =
+        os.time()
+
+    receipt.TimeText =
+        timeText
+
+    table.insert(
+        auto.Receipts,
+        1,
+        receipt
+    )
+
+    while #auto.Receipts > 50 do
+
+        table.remove(
+            auto.Receipts,
+            #auto.Receipts
+        )
+    end
+
+    GAG2MailboxAutoRefreshReceiptVisuals()
+end
+
+function GAG2MailboxAutoAddRule()
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    local targetText =
+        GAG2MailboxClean(
+            auto.RecipientText
+        )
+
+    local category =
+        GAG2MailboxClean(
+            auto.Category
+        )
+
+    local itemChoice =
+        GAG2MailboxClean(
+            auto.ItemChoice
+        )
+
+    if targetText == "" then
+
+        GAG2MailboxAutoSetStatus(
+            "Automatic rule needs a recipient."
+        )
+
+        return false
+    end
+
+    if category == ""
+    or category == "None" then
+
+        GAG2MailboxAutoSetStatus(
+            "Automatic rule needs a category."
+        )
+
+        return false
+    end
+
+    if itemChoice == ""
+    or itemChoice == "None" then
+
+        GAG2MailboxAutoSetStatus(
+            "Automatic rule needs an item."
+        )
+
+        return false
+    end
+
+    local rule = {
+        Id =
+            HttpService:GenerateGUID(false),
+
+        Enabled =
+            true,
+
+        TargetText =
+            targetText,
+
+        Category =
+            category,
+
+        ItemChoice =
+            itemChoice,
+
+        TriggerMode =
+            auto.TriggerMode == "Above"
+            and "Above"
+            or "At Least",
+
+        TriggerAmount =
+            math.max(
+                1,
+                math.floor(
+                    tonumber(auto.TriggerAmount)
+                    or 1
+                )
+            ),
+
+        SendMode =
+            auto.SendMode,
+
+        SendAmount =
+            math.max(
+                1,
+                math.floor(
+                    tonumber(auto.SendAmount)
+                    or 1
+                )
+            ),
+
+        KeepAmount =
+            math.max(
+                0,
+                math.floor(
+                    tonumber(auto.KeepAmount)
+                    or 0
+                )
+            ),
+
+        PetVariant =
+            tostring(
+                auto.PetVariant
+                or "Any Variant"
+            ),
+
+        PetSize =
+            tostring(
+                auto.PetSize
+                or "Any Size"
+            ),
+
+        Message =
+            tostring(
+                auto.Message
+                or ""
+            ),
+    }
+
+    table.insert(
+        auto.Rules,
+        rule
+    )
+
+    GAG2MailboxAutoSaveRules()
+    GAG2MailboxAutoRefreshQueueVisuals()
+
+    GAG2MailboxAutoSetStatus(
+        "Added automatic rule: "
+        .. tostring(itemChoice)
+    )
+
+    return true
+end
+
+function GAG2MailboxAutoRemoveSelectedRule()
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    local index =
+        auto.RuleChoiceMap[
+            auto.SelectedRuleChoice
+        ]
+
+    if not index
+    or not auto.Rules[index] then
+
+        GAG2MailboxAutoSetStatus(
+            "Select a rule to remove."
+        )
+
+        return false
+    end
+
+    local removed =
+        table.remove(
+            auto.Rules,
+            index
+        )
+
+    auto.SelectedRuleChoice =
+        "None"
+
+    GAG2MailboxAutoSaveRules()
+    GAG2MailboxAutoRefreshQueueVisuals()
+
+    GAG2MailboxAutoSetStatus(
+        "Removed rule: "
+        .. tostring(
+            removed
+            and removed.ItemChoice
+            or "unknown"
+        )
+    )
+
+    return true
+end
+
+function GAG2MailboxAutoClearRules()
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    auto.Rules =
+        {}
+
+    auto.SelectedRuleChoice =
+        "None"
+
+    GAG2MailboxAutoSaveRules()
+    GAG2MailboxAutoRefreshQueueVisuals()
+
+    GAG2MailboxAutoSetStatus(
+        "Automatic rules cleared."
+    )
+end
+
+function GAG2MailboxAutoCopySelectedReceipt()
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    local index =
+        auto.ReceiptChoiceMap[
+            auto.SelectedReceiptChoice
+        ]
+
+    local receipt =
+        index
+        and auto.Receipts[index]
+        or nil
+
+    if not receipt then
+
+        GAG2MailboxAutoSetStatus(
+            "Select a receipt first."
+        )
+
+        return false
+    end
+
+    local text =
+        GAG2MailboxAutoReceiptText(
+            receipt
+        )
+
+    local copied =
+        CopyText(
+            text
+        )
+
+    GAG2MailboxAutoSetStatus(
+        copied == true
+        and "Receipt copied."
+        or "Clipboard unavailable."
+    )
+
+    return copied
+end
+
+function GAG2MailboxAutoClearReceipts()
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    auto.Receipts =
+        {}
+
+    auto.SelectedReceiptChoice =
+        "None"
+
+    GAG2MailboxAutoRefreshReceiptVisuals()
+
+    GAG2MailboxAutoSetStatus(
+        "Receipts cleared."
+    )
+end
+
+function GAG2MailboxAutoTriggerPassed(ownedAmount, rule)
+
+    ownedAmount =
+        math.max(
+            0,
+            math.floor(
+                tonumber(ownedAmount)
+                or 0
+            )
+        )
+
+    local triggerAmount =
+        math.max(
+            1,
+            math.floor(
+                tonumber(rule.TriggerAmount)
+                or 1
+            )
+        )
+
+    if rule.TriggerMode == "Above" then
+
+        return ownedAmount
+            > triggerAmount
+    end
+
+    return ownedAmount
+        >= triggerAmount
+end
+
+function GAG2MailboxAutoComputeSendCount(ownedAmount, rule)
+
+    ownedAmount =
+        math.max(
+            0,
+            math.floor(
+                tonumber(ownedAmount)
+                or 0
+            )
+        )
+
+    local keepAmount =
+        math.max(
+            0,
+            math.floor(
+                tonumber(rule.KeepAmount)
+                or 0
+            )
+        )
+
+    if rule.SendMode == "Send All Available" then
+
+        return ownedAmount
+    end
+
+    local availableAfterKeep =
+        math.max(
+            0,
+            ownedAmount - keepAmount
+        )
+
+    if rule.SendMode == "Send Excess" then
+
+        return availableAfterKeep
+    end
+
+    local sendAmount =
+        math.max(
+            1,
+            math.floor(
+                tonumber(rule.SendAmount)
+                or 1
+            )
+        )
+
+    return math.min(
+        sendAmount,
+        availableAfterKeep
+    )
+end
+
+function GAG2MailboxAutoBuildPetMatches(rule)
+
+    local matches =
+        {}
+
+    for _, pet in ipairs(
+        GAG2MailboxAutoGetPets(
+            false
+        )
+    ) do
+
+        if GAG2MailboxAutoPetMatchesRule(
+            pet,
+            rule
+        ) == true then
+
+            table.insert(
+                matches,
+                pet
+            )
+        end
+    end
+
+    table.sort(
+        matches,
+        function(a, b)
+
+            return tostring(a.Id or "")
+                < tostring(b.Id or "")
+        end
+    )
+
+    return matches
+end
+
+function GAG2MailboxAutoFindStackable(rule)
+
+    local wantedCategory =
+        GAG2MailboxAutoNormalizeKey(
+            rule.Category
+        )
+
+    local wantedItem =
+        GAG2MailboxAutoNormalizeKey(
+            rule.ItemChoice
+        )
+
+    for _, sendable in ipairs(
+        GAG2_MAILBOX_STATE.Sendables
+        or {}
+    ) do
+
+        if GAG2MailboxAutoNormalizeKey(sendable.Category) == wantedCategory
+        and GAG2MailboxAutoNormalizeKey(sendable.ItemKey) == wantedItem then
+
+            return sendable
+        end
+    end
+
+    return nil
+end
+
+function GAG2MailboxAutoBuildBatch(rule)
+
+    if type(rule) ~= "table" then
+
+        return nil,
+            "bad rule"
+    end
+
+    if rule.Category == "Pets" then
+
+        local matches =
+            GAG2MailboxAutoBuildPetMatches(
+                rule
+            )
+
+        local ownedAmount =
+            #matches
+
+        if GAG2MailboxAutoTriggerPassed(
+            ownedAmount,
+            rule
+        ) ~= true then
+
+            return nil,
+                tostring(rule.ItemChoice)
+                .. ": "
+                .. tostring(ownedAmount)
+                .. "/"
+                .. tostring(rule.TriggerAmount)
+        end
+
+        local sendCount =
+            GAG2MailboxAutoComputeSendCount(
+                ownedAmount,
+                rule
+            )
+
+        sendCount =
+            math.min(
+                sendCount,
+                ownedAmount,
+                math.clamp(
+                    math.floor(
+                        tonumber(
+                            GAG2_MAILBOX_STATE.MaxRowsPerMail
+                        )
+                        or 20
+                    ),
+                    1,
+                    20
+                )
+            )
+
+        if sendCount <= 0 then
+
+            return nil,
+                tostring(rule.ItemChoice)
+                .. ": keep amount leaves nothing to send"
+        end
+
+        local batch =
+            {}
+
+        for index = 1, sendCount do
+
+            local pet =
+                matches[index]
+
+            if pet
+            and GAG2MailboxClean(pet.Id) ~= "" then
+
+                table.insert(
+                    batch,
+                    {
+                        Category =
+                            "Pets",
+
+                        ItemKey =
+                            pet.Id,
+
+                        Count =
+                            1,
+                    }
+                )
+            end
+        end
+
+        if #batch <= 0 then
+
+            return nil,
+                "no valid matching pet UUIDs"
+        end
+
+        return batch,
+            {
+                Owned =
+                    ownedAmount,
+
+                Count =
+                    #batch,
+
+                Requested =
+                    sendCount,
+
+                Item =
+                    rule.ItemChoice,
+
+                Category =
+                    "Pets",
+            }
+    end
+
+    local sendable =
+        GAG2MailboxAutoFindStackable(
+            rule
+        )
+
+    if not sendable then
+
+        return nil,
+            tostring(rule.ItemChoice)
+            .. ": item unavailable"
+    end
+
+    local ownedAmount =
+        math.max(
+            0,
+            math.floor(
+                tonumber(sendable.Amount)
+                or 0
+            )
+        )
+
+    if GAG2MailboxAutoTriggerPassed(
+        ownedAmount,
+        rule
+    ) ~= true then
+
+        return nil,
+            tostring(rule.ItemChoice)
+            .. ": "
+            .. tostring(ownedAmount)
+            .. "/"
+            .. tostring(rule.TriggerAmount)
+    end
+
+    local sendCount =
+        GAG2MailboxAutoComputeSendCount(
+            ownedAmount,
+            rule
+        )
+
+    sendCount =
+        math.min(
+            sendCount,
+            ownedAmount
+        )
+
+    if sendCount <= 0 then
+
+        return nil,
+            tostring(rule.ItemChoice)
+            .. ": keep amount leaves nothing to send"
+    end
+
+    local batch = {
+        {
+            Category =
+                sendable.Category,
+
+            ItemKey =
+                sendable.ItemKey,
+
+            Count =
+                sendCount,
+        },
+    }
+
+    return batch,
+        {
+            Owned =
+                ownedAmount,
+
+            Count =
+                sendCount,
+
+            Requested =
+                sendCount,
+
+            Item =
+                rule.ItemChoice,
+
+            Category =
+                sendable.Category,
+        }
+end
+
+function GAG2MailboxAutoResolveTarget(targetText)
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    local cacheKey =
+        GAG2MailboxAutoNormalizeKey(
+            targetText
+        )
+
+    local cached =
+        auto.TargetCache[cacheKey]
+
+    if type(cached) == "table"
+    and tonumber(cached.UserId)
+    and os.clock() - tonumber(cached.At or 0) < 600 then
+
+        return tonumber(cached.UserId),
+            "cached"
+    end
+
+    local userId, reason =
+        GAG2MailboxResolveTargetUserId(
+            targetText
+        )
+
+    if userId then
+
+        auto.TargetCache[cacheKey] = {
+            UserId =
+                userId,
+
+            At =
+                os.clock(),
+        }
+    end
+
+    return userId,
+        reason
+end
+
+function GAG2MailboxAutoProcessRule(rule, ruleIndex)
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    auto.LastRuleText =
+        GAG2MailboxAutoBuildRuleDisplay(
+            rule,
+            ruleIndex
+        )
+
+    local batch, info =
+        GAG2MailboxAutoBuildBatch(
+            rule
+        )
+
+    if not batch then
+
+        return false,
+            tostring(info),
+            false
+    end
+
+    local targetUserId, targetReason =
+        GAG2MailboxAutoResolveTarget(
+            rule.TargetText
+        )
+
+    if not targetUserId then
+
+        return false,
+            "Bad recipient: "
+            .. tostring(targetReason),
+            true
+    end
+
+    local ok, source =
+        GAG2MailboxFirePacket(
+            "SendBatch",
+            "MailboxSendBatch",
+            targetUserId,
+            batch,
+            tostring(rule.Message or "")
+        )
+
+    if ok ~= true then
+
+        GAG2MailboxAutoAddReceipt({
+            TargetText =
+                rule.TargetText,
+
+            TargetUserId =
+                targetUserId,
+
+            Category =
+                info.Category,
+
+            Item =
+                info.Item,
+
+            Requested =
+                info.Requested,
+
+            Count =
+                0,
+
+            Rows =
+                #batch,
+
+            Result =
+                "Failed",
+
+            Details =
+                tostring(source),
+        })
+
+        return false,
+            "Send failed: "
+            .. tostring(source),
+            true
+    end
+
+    auto.ConsecutiveFailures =
+        0
+
+    auto.SessionMails +=
+        1
+
+    auto.SessionItems +=
+        tonumber(info.Count)
+        or 0
+
+    auto.NextAllowedAt =
+        os.clock()
+        + math.clamp(
+            tonumber(auto.MailCooldown)
+            or 3,
+            1,
+            30
+        )
+
+    GAG2_MAILBOX_STATE.LastTargetUserId =
+        targetUserId
+
+    GAG2_MAILBOX_STATE.LastCategory =
+        info.Category
+
+    GAG2_MAILBOX_STATE.LastItemKey =
+        info.Item
+
+    GAG2_MAILBOX_STATE.LastSendCount =
+        info.Count
+
+    GAG2_MAILBOX_STATE.LastBatchRows =
+        #batch
+
+    GAG2MailboxAutoAddReceipt({
+        TargetText =
+            rule.TargetText,
+
+        TargetUserId =
+            targetUserId,
+
+        Category =
+            info.Category,
+
+        Item =
+            info.Item,
+
+        Requested =
+            info.Requested,
+
+        Count =
+            info.Count,
+
+        Rows =
+            #batch,
+
+        Result =
+            "Success",
+
+        Details =
+            tostring(source)
+            .. " | "
+            .. tostring(targetReason),
+    })
+
+    auto.LastPetRefreshAt =
+        0
+
+    task.delay(0.45, function()
+
+        pcall(
+            GAG2MailboxBuildSendables
+        )
+
+        GAG2MailboxAutoRefreshDropdowns(
+            true
+        )
+    end)
+
+    return true,
+        "Sent "
+        .. tostring(info.Item)
+        .. " x"
+        .. tostring(info.Count)
+        .. " to "
+        .. tostring(rule.TargetText),
+        false
+end
+
+function GAG2MailboxAutoStopWorker(reason)
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    auto.LoopToken +=
+        1
+
+    auto.Running =
+        false
+
+    if reason then
+
+        auto.LastAction =
+            tostring(reason)
+    end
+end
+
+function GAG2MailboxAutoStartWorker()
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    if auto.Enabled ~= true then
+        return false
+    end
+
+    if auto.Running == true then
+        return true
+    end
+
+    auto.LoopToken +=
+        1
+
+    local token =
+        auto.LoopToken
+
+    auto.Running =
+        true
+
+    task.spawn(function()
+
+        while auto.Enabled == true
+        and auto.LoopToken == token do
+
+            auto.LastCheckAt =
+                os.clock()
+
+            if #auto.Rules <= 0 then
+
+                GAG2MailboxAutoSetStatus(
+                    "Automatic Send is waiting for a rule."
+                )
+
+            elseif os.clock() < tonumber(auto.NextAllowedAt or 0) then
+
+                local remaining =
+                    math.max(
+                        0,
+                        math.ceil(
+                            tonumber(auto.NextAllowedAt)
+                            - os.clock()
+                        )
+                    )
+
+                GAG2MailboxAutoSetStatus(
+                    "Waiting "
+                    .. tostring(remaining)
+                    .. "s before the next mail."
+                )
+
+            else
+
+                pcall(
+                    GAG2MailboxBuildSendables
+                )
+
+                local sent =
+                    false
+
+                local lastWaitReason =
+                    "Waiting for a rule trigger."
+
+                for index, rule in ipairs(auto.Rules) do
+
+                    if auto.Enabled ~= true
+                    or auto.LoopToken ~= token then
+
+                        break
+                    end
+
+                    if rule.Enabled ~= false then
+
+                        local didSend, reason, hardFailure =
+                            GAG2MailboxAutoProcessRule(
+                                rule,
+                                index
+                            )
+
+                        if didSend == true then
+
+                            sent =
+                                true
+
+                            GAG2MailboxAutoSetStatus(
+                                reason
+                            )
+
+                            break
+                        end
+
+                        lastWaitReason =
+                            tostring(reason)
+
+                        if hardFailure == true then
+
+                            auto.ConsecutiveFailures +=
+                                1
+
+                            GAG2MailboxAutoSetStatus(
+                                reason
+                                .. " | Failure "
+                                .. tostring(auto.ConsecutiveFailures)
+                                .. "/3"
+                            )
+
+                            if auto.StopAfterFailedSends == true
+                            and auto.ConsecutiveFailures >= 3 then
+
+                                auto.Enabled =
+                                    false
+
+                                auto.LastAction =
+                                    "Stopped after three failed sends."
+
+                                if GAG2_MAILBOX_AUTO_CONTROLS.Enabled
+                                and type(
+                                    GAG2_MAILBOX_AUTO_CONTROLS.Enabled.SetValue
+                                ) == "function" then
+
+                                    pcall(function()
+
+                                        GAG2_MAILBOX_AUTO_CONTROLS.Enabled:SetValue(
+                                            false
+                                        )
+                                    end)
+                                end
+                            end
+
+                            break
+                        end
+                    end
+                end
+
+                if sent ~= true
+                and auto.Enabled == true
+                and auto.ConsecutiveFailures < 3 then
+
+                    GAG2MailboxAutoSetStatus(
+                        lastWaitReason
+                    )
+                end
+            end
+
+            GAG2MailboxAutoRefreshQueueVisuals()
+
+            task.wait(
+                math.clamp(
+                    tonumber(auto.CheckInterval)
+                    or 3,
+                    1,
+                    30
+                )
+            )
+        end
+
+        if auto.LoopToken == token then
+
+            auto.Running =
+                false
+        end
+
+        GAG2MailboxSetStatus(
+            auto.LastAction
+            or "Automatic Send stopped."
+        )
+    end)
+
+    return true
+end
+
+function GAG2MailboxAutoSetEnabled(value)
+
+    local auto =
+        GAG2MailboxAutoGetState()
+
+    auto.Enabled =
+        value == true
+
+    if auto.Enabled == true then
+
+        auto.ConsecutiveFailures =
+            0
+
+        GAG2MailboxAutoStartWorker()
+
+    else
+
+        GAG2MailboxAutoStopWorker(
+            "Automatic Send stopped."
+        )
+    end
+
+    MarkConfigDirty()
+
+    GAG2MailboxSetStatus(
+        auto.Enabled == true
+        and "Automatic Send started."
+        or "Automatic Send stopped."
+    )
+end
+
+function GAG2MailboxAutoStartFromButton()
+
+    local control =
+        GAG2_MAILBOX_AUTO_CONTROLS.Enabled
+
+    if control
+    and type(control.SetValue) == "function" then
+
+        control:SetValue(
+            true
+        )
+
+        return
+    end
+
+    GAG2MailboxAutoSetEnabled(
+        true
+    )
+end
+
+function GAG2MailboxAutoStopFromButton()
+
+    local control =
+        GAG2_MAILBOX_AUTO_CONTROLS.Enabled
+
+    if control
+    and type(control.SetValue) == "function" then
+
+        control:SetValue(
+            false
+        )
+
+        return
+    end
+
+    GAG2MailboxAutoSetEnabled(
+        false
+    )
+end
+
+getgenv().HOLY_GAG2_MAILBOX_AUTO_START =
+    GAG2MailboxAutoStartFromButton
+
+getgenv().HOLY_GAG2_MAILBOX_AUTO_STOP =
+    GAG2MailboxAutoStopFromButton
+
 
 function GAG2MailboxExposeDebug()
 
@@ -22652,6 +25026,10 @@ function GAG2RestoreMailboxState()
         GAG2MailboxEnsureUniversalState()
         GAG2MailboxExposeDebug()
         GAG2MailboxStartReplicaWatcher()
+        GAG2MailboxAutoLoadRules()
+
+        local auto =
+            GAG2MailboxAutoGetState()
 
         if Options.HolyGAG2MailboxTarget then
 
@@ -22702,12 +25080,6 @@ function GAG2RestoreMailboxState()
             )
         end
 
-        if Toggles.HolyGAG2MailboxAllowOvercountTest then
-
-            GAG2_MAILBOX_STATE.AllowOvercountTest =
-                Toggles.HolyGAG2MailboxAllowOvercountTest.Value == true
-        end
-
         if Options.HolyGAG2MailboxMessage then
 
             GAG2MailboxSetMessage(
@@ -22715,10 +25087,170 @@ function GAG2RestoreMailboxState()
             )
         end
 
+        if Options.HolyGAG2MailboxAutoRecipient then
+
+            auto.RecipientText =
+                tostring(
+                    Options.HolyGAG2MailboxAutoRecipient.Value
+                    or ""
+                )
+        end
+
+        if Options.HolyGAG2MailboxAutoCategory then
+
+            auto.Category =
+                GAG2MailboxClean(
+                    Options.HolyGAG2MailboxAutoCategory.Value
+                )
+        end
+
+        if Options.HolyGAG2MailboxAutoItem then
+
+            auto.ItemChoice =
+                GAG2MailboxClean(
+                    Options.HolyGAG2MailboxAutoItem.Value
+                )
+        end
+
+        if Options.HolyGAG2MailboxAutoTriggerMode then
+
+            auto.TriggerMode =
+                tostring(
+                    Options.HolyGAG2MailboxAutoTriggerMode.Value
+                    or "At Least"
+                )
+        end
+
+        if Options.HolyGAG2MailboxAutoTriggerAmount then
+
+            auto.TriggerAmount =
+                math.max(
+                    1,
+                    math.floor(
+                        tonumber(
+                            Options.HolyGAG2MailboxAutoTriggerAmount.Value
+                        )
+                        or 5
+                    )
+                )
+        end
+
+        if Options.HolyGAG2MailboxAutoSendMode then
+
+            auto.SendMode =
+                tostring(
+                    Options.HolyGAG2MailboxAutoSendMode.Value
+                    or "Fixed Amount"
+                )
+        end
+
+        if Options.HolyGAG2MailboxAutoSendAmount then
+
+            auto.SendAmount =
+                math.max(
+                    1,
+                    math.floor(
+                        tonumber(
+                            Options.HolyGAG2MailboxAutoSendAmount.Value
+                        )
+                        or 5
+                    )
+                )
+        end
+
+        if Options.HolyGAG2MailboxAutoKeepAmount then
+
+            auto.KeepAmount =
+                math.max(
+                    0,
+                    math.floor(
+                        tonumber(
+                            Options.HolyGAG2MailboxAutoKeepAmount.Value
+                        )
+                        or 0
+                    )
+                )
+        end
+
+        if Options.HolyGAG2MailboxAutoPetVariant then
+
+            auto.PetVariant =
+                tostring(
+                    Options.HolyGAG2MailboxAutoPetVariant.Value
+                    or "Any Variant"
+                )
+        end
+
+        if Options.HolyGAG2MailboxAutoPetSize then
+
+            auto.PetSize =
+                tostring(
+                    Options.HolyGAG2MailboxAutoPetSize.Value
+                    or "Any Size"
+                )
+        end
+
+        if Options.HolyGAG2MailboxAutoMessage then
+
+            auto.Message =
+                tostring(
+                    Options.HolyGAG2MailboxAutoMessage.Value
+                    or ""
+                )
+        end
+
+        if Options.HolyGAG2MailboxAutoCheckInterval then
+
+            auto.CheckInterval =
+                math.clamp(
+                    tonumber(
+                        Options.HolyGAG2MailboxAutoCheckInterval.Value
+                    )
+                    or 3,
+                    1,
+                    30
+                )
+        end
+
+        if Options.HolyGAG2MailboxAutoCooldown then
+
+            auto.MailCooldown =
+                math.clamp(
+                    tonumber(
+                        Options.HolyGAG2MailboxAutoCooldown.Value
+                    )
+                    or 3,
+                    1,
+                    30
+                )
+        end
+
+        if Toggles.HolyGAG2MailboxAutoStopOnFailures then
+
+            auto.StopAfterFailedSends =
+                Toggles.HolyGAG2MailboxAutoStopOnFailures.Value ~= false
+        end
+
+        if Toggles.HolyGAG2MailboxAutoEnabled then
+
+            auto.Enabled =
+                Toggles.HolyGAG2MailboxAutoEnabled.Value == true
+        end
+
         GAG2MailboxRefreshSendableDropdown()
+        GAG2MailboxAutoRefreshDropdowns(true)
+        GAG2MailboxAutoRefreshQueueVisuals()
+        GAG2MailboxAutoRefreshReceiptVisuals()
+
+        if auto.Enabled == true then
+
+            GAG2MailboxAutoStartWorker()
+        end
 
         GAG2MailboxSetStatus(
-            "Ready. Open mailbox Send tab, then Refresh Items."
+            auto.Enabled == true
+            and "Automatic Send restored."
+            or "Ready. Open mailbox Send tab, then Refresh Items."
         )
     end)
 end
@@ -26440,18 +28972,39 @@ local SellStatusBox =
         "receipt"
     )
 
-local MailboxMainBox =
+MailboxMainBox =
     AddLeftBox(
         Tabs.Mailbox,
-        "Send Pet Batch",
-        "mail"
+        "Manual Send",
+        "send"
     )
 
-local MailboxStatusBox =
+MailboxAutoBox =
+    AddLeftBox(
+        Tabs.Mailbox,
+        "Automatic Send",
+        "repeat-2"
+    )
+
+MailboxStatusBox =
     AddRightBox(
         Tabs.Mailbox,
         "Status",
-        "inbox"
+        "activity"
+    )
+
+MailboxQueueBox =
+    AddRightBox(
+        Tabs.Mailbox,
+        "Order Queue",
+        "list-ordered"
+    )
+
+MailboxReceiptsBox =
+    AddRightBox(
+        Tabs.Mailbox,
+        "Receipts",
+        "receipt"
     )
 
 local ExperimentMainBox =
@@ -27085,10 +29638,9 @@ SellStatusBox:AddLabel("HolyGAG2SellStatus", {
 
 MailboxMainBox:AddLabel({
     Text =
-        '<font color="rgb(196,181,253)"><b>Universal Mailbox Send</b></font>'
-        .. '\nSends mailbox-visible inventory items.'
-        .. '\nSupports Pets, Seeds, Props, Mushrooms, Gnomes, Sprinklers, Trowels, and WateringCans.'
-        .. '\nOpen the mailbox Send tab first, then press Refresh Items.',
+        '<font color="rgb(196,181,253)"><b>Manual Send</b></font>'
+        .. '\nSend one selected mailbox item.'
+        .. '\nRequested amounts always clamp to the amount currently owned.',
     DoesWrap = true,
     Size = 13,
 })
@@ -27119,7 +29671,7 @@ GAG2_MAILBOX_CONTROLS.Category =
         Default = "All",
         Multi = false,
         Searchable = false,
-        Tooltip = "Filter mailbox sendable items by category.",
+        Tooltip = "Filter sendable mailbox items by category.",
     })
 
 if GAG2_MAILBOX_CONTROLS.Category
@@ -27135,7 +29687,7 @@ end
 
 GAG2_MAILBOX_CONTROLS.Item =
     MailboxMainBox:AddDropdown("HolyGAG2MailboxItemChoice", {
-        Text = "Inventory Item",
+        Text = "Select Item",
         Values = {
             "None",
         },
@@ -27143,7 +29695,7 @@ GAG2_MAILBOX_CONTROLS.Item =
         Multi = false,
         Searchable = true,
         MaxVisibleDropdownItems = 12,
-        Tooltip = "Select a sendable mailbox item. Pets use Count 1; stackables use Send Amount.",
+        Tooltip = "Pets use Count 1. Stackables use Send Amount.",
     })
 
 if GAG2_MAILBOX_CONTROLS.Item
@@ -27159,7 +29711,7 @@ end
 
 MailboxMainBox:AddButton({
     Text = "Refresh Items",
-    Tooltip = "Scans MailboxUI Send inventory rows. Open the mailbox Send tab first.",
+    Tooltip = "Open the in-game mailbox Send tab first when stackable items are missing.",
     Func = function()
 
         GAG2MailboxRefreshSendableDropdown()
@@ -27174,7 +29726,7 @@ GAG2_MAILBOX_CONTROLS.Amount =
         Finished = true,
         ClearTextOnFocus = false,
         Placeholder = "stack amount",
-        Tooltip = "Stackables use this Count. Pets always send Count = 1.",
+        Tooltip = "Automatically clamps to the currently owned amount.",
         Callback = function(value)
 
             GAG2MailboxSetAmount(
@@ -27191,7 +29743,7 @@ GAG2_MAILBOX_CONTROLS.MaxRowsPerMail =
         Finished = true,
         ClearTextOnFocus = false,
         Placeholder = "20",
-        Tooltip = "Kept capped at 20. One selected stackable item is one row.",
+        Tooltip = "Maximum 20. Pet sends use one row per pet.",
         Callback = function(value)
 
             GAG2MailboxSetMaxRowsPerMail(
@@ -27199,18 +29751,6 @@ GAG2_MAILBOX_CONTROLS.MaxRowsPerMail =
             )
         end,
     })
-
-MailboxMainBox:AddToggle("HolyGAG2MailboxAllowOvercountTest", {
-    Text = "Allow Overcount Test",
-    Default = false,
-    Risky = true,
-    Tooltip = "Testing only. Sends requested Count even if mailbox UI shows less owned. Server should clamp or reject.",
-}):OnChanged(function(value)
-
-    GAG2MailboxSetAllowOvercountTest(
-        value == true
-    )
-end)
 
 GAG2_MAILBOX_CONTROLS.Message =
     MailboxMainBox:AddInput("HolyGAG2MailboxMessage", {
@@ -27220,7 +29760,7 @@ GAG2_MAILBOX_CONTROLS.Message =
         Finished = true,
         ClearTextOnFocus = false,
         Placeholder = "optional",
-        Tooltip = "Optional mailbox message. Blank is allowed.",
+        Tooltip = "Optional mailbox message.",
         Callback = function(value)
 
             GAG2MailboxSetMessage(
@@ -27233,17 +29773,449 @@ MailboxMainBox:AddDivider()
 
 MailboxMainBox:AddButton({
     Text = "Send Selected Item",
-    Tooltip = "Fires MailboxSendBatch once using selected Category, ItemKey, and Count.",
+    Tooltip = "Sends the selected item once.",
     Func = function()
 
         GAG2MailboxSendSelectedBatchNow()
     end,
 }):AddButton({
     Text = "Open Inbox",
-    Tooltip = "Fires MailboxOpenInbox.",
+    Tooltip = "Opens the mailbox inbox.",
     Func = function()
 
         GAG2MailboxOpenInbox()
+    end,
+})
+
+MailboxAutoBox:AddLabel({
+    Text =
+        '<font color="rgb(196,181,253)"><b>Automatic Rules</b></font>'
+        .. '\nSends when the matching inventory amount reaches the configured trigger.',
+    DoesWrap = true,
+    Size = 13,
+})
+
+GAG2_MAILBOX_AUTO_CONTROLS.Enabled =
+    MailboxAutoBox:AddToggle("HolyGAG2MailboxAutoEnabled", {
+        Text = "Enable Auto Mailbox",
+        Default = false,
+        Tooltip = "Continuously checks the saved rule queue.",
+    })
+
+if GAG2_MAILBOX_AUTO_CONTROLS.Enabled
+and type(GAG2_MAILBOX_AUTO_CONTROLS.Enabled.OnChanged) == "function" then
+
+    GAG2_MAILBOX_AUTO_CONTROLS.Enabled:OnChanged(function(value)
+
+        GAG2MailboxAutoSetEnabled(
+            value == true
+        )
+    end)
+end
+
+GAG2_MAILBOX_AUTO_CONTROLS.Recipient =
+    MailboxAutoBox:AddInput("HolyGAG2MailboxAutoRecipient", {
+        Text = "Recipient Username / UserId",
+        Default = "",
+        Numeric = false,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "Roblox username or userId",
+        Callback = function(value)
+
+            GAG2MailboxAutoSetDraft(
+                "RecipientText",
+                tostring(value or "")
+            )
+        end,
+    })
+
+GAG2_MAILBOX_AUTO_CONTROLS.Category =
+    MailboxAutoBox:AddDropdown("HolyGAG2MailboxAutoCategory", {
+        Text = "Item Category",
+        Values = {
+            "None",
+        },
+        Default = "None",
+        Multi = false,
+        Searchable = false,
+        MaxVisibleDropdownItems = 10,
+    })
+
+if GAG2_MAILBOX_AUTO_CONTROLS.Category
+and type(GAG2_MAILBOX_AUTO_CONTROLS.Category.OnChanged) == "function" then
+
+    GAG2_MAILBOX_AUTO_CONTROLS.Category:OnChanged(function(value)
+
+        local auto =
+            GAG2MailboxAutoGetState()
+
+        if auto.RefreshingControls == true then
+            return
+        end
+
+        auto.Category =
+            GAG2MailboxClean(
+                value
+            )
+
+        auto.ItemChoice =
+            "None"
+
+        GAG2MailboxAutoRefreshDropdowns(
+            false
+        )
+
+        MarkConfigDirty()
+    end)
+end
+
+GAG2_MAILBOX_AUTO_CONTROLS.Item =
+    MailboxAutoBox:AddDropdown("HolyGAG2MailboxAutoItem", {
+        Text = "Select Item",
+        Values = {
+            "None",
+        },
+        Default = "None",
+        Multi = false,
+        Searchable = true,
+        MaxVisibleDropdownItems = 12,
+    })
+
+if GAG2_MAILBOX_AUTO_CONTROLS.Item
+and type(GAG2_MAILBOX_AUTO_CONTROLS.Item.OnChanged) == "function" then
+
+    GAG2_MAILBOX_AUTO_CONTROLS.Item:OnChanged(function(value)
+
+        local auto =
+            GAG2MailboxAutoGetState()
+
+        if auto.RefreshingControls == true then
+            return
+        end
+
+        auto.ItemChoice =
+            GAG2MailboxClean(
+                value
+            )
+
+        MarkConfigDirty()
+    end)
+end
+
+MailboxAutoBox:AddButton({
+    Text = "Refresh Items",
+    Tooltip = "Refreshes automatic category, item, and pet lists.",
+    Func = function()
+
+        GAG2MailboxRefreshSendableDropdown()
+    end,
+})
+
+GAG2_MAILBOX_AUTO_CONTROLS.TriggerMode =
+    MailboxAutoBox:AddDropdown("HolyGAG2MailboxAutoTriggerMode", {
+        Text = "Trigger Mode",
+        Values = {
+            "At Least",
+            "Above",
+        },
+        Default = "At Least",
+        Multi = false,
+        Searchable = false,
+    })
+
+if GAG2_MAILBOX_AUTO_CONTROLS.TriggerMode
+and type(GAG2_MAILBOX_AUTO_CONTROLS.TriggerMode.OnChanged) == "function" then
+
+    GAG2_MAILBOX_AUTO_CONTROLS.TriggerMode:OnChanged(function(value)
+
+        local auto =
+            GAG2MailboxAutoGetState()
+
+        if auto.RefreshingControls == true then
+            return
+        end
+
+        auto.TriggerMode =
+            value == "Above"
+            and "Above"
+            or "At Least"
+
+        MarkConfigDirty()
+    end)
+end
+
+GAG2_MAILBOX_AUTO_CONTROLS.TriggerAmount =
+    MailboxAutoBox:AddInput("HolyGAG2MailboxAutoTriggerAmount", {
+        Text = "Trigger Amount",
+        Default = "5",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "5",
+        Callback = function(value)
+
+            GAG2MailboxAutoSetNumber(
+                "TriggerAmount",
+                value,
+                1,
+                999999,
+                5
+            )
+        end,
+    })
+
+GAG2_MAILBOX_AUTO_CONTROLS.SendMode =
+    MailboxAutoBox:AddDropdown("HolyGAG2MailboxAutoSendMode", {
+        Text = "Send Mode",
+        Values = {
+            "Fixed Amount",
+            "Send Excess",
+            "Send All Available",
+        },
+        Default = "Fixed Amount",
+        Multi = false,
+        Searchable = false,
+    })
+
+if GAG2_MAILBOX_AUTO_CONTROLS.SendMode
+and type(GAG2_MAILBOX_AUTO_CONTROLS.SendMode.OnChanged) == "function" then
+
+    GAG2_MAILBOX_AUTO_CONTROLS.SendMode:OnChanged(function(value)
+
+        local auto =
+            GAG2MailboxAutoGetState()
+
+        if auto.RefreshingControls == true then
+            return
+        end
+
+        if value ~= "Send Excess"
+        and value ~= "Send All Available" then
+
+            value =
+                "Fixed Amount"
+        end
+
+        auto.SendMode =
+            value
+
+        MarkConfigDirty()
+    end)
+end
+
+GAG2_MAILBOX_AUTO_CONTROLS.SendAmount =
+    MailboxAutoBox:AddInput("HolyGAG2MailboxAutoSendAmount", {
+        Text = "Send Amount",
+        Default = "5",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "5",
+        Tooltip = "Used by Fixed Amount mode.",
+        Callback = function(value)
+
+            GAG2MailboxAutoSetNumber(
+                "SendAmount",
+                value,
+                1,
+                999999,
+                5
+            )
+        end,
+    })
+
+GAG2_MAILBOX_AUTO_CONTROLS.KeepAmount =
+    MailboxAutoBox:AddInput("HolyGAG2MailboxAutoKeepAmount", {
+        Text = "Keep Amount",
+        Default = "0",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "0",
+        Tooltip = "Fixed Amount and Send Excess leave this amount behind.",
+        Callback = function(value)
+
+            GAG2MailboxAutoSetNumber(
+                "KeepAmount",
+                value,
+                0,
+                999999,
+                0
+            )
+        end,
+    })
+
+GAG2_MAILBOX_AUTO_CONTROLS.PetVariant =
+    MailboxAutoBox:AddDropdown("HolyGAG2MailboxAutoPetVariant", {
+        Text = "Pet Variant",
+        Values = {
+            "Any Variant",
+            "Normal",
+            "Gold",
+            "Rainbow",
+            "Bloodlit",
+            "Starstruck",
+            "Electric",
+            "Frozen",
+            "Chained",
+            "Solarflare",
+            "Pizza",
+        },
+        Default = "Any Variant",
+        Multi = false,
+        Searchable = true,
+        MaxVisibleDropdownItems = 10,
+        Tooltip = "Only used when Item Category is Pets.",
+    })
+
+if GAG2_MAILBOX_AUTO_CONTROLS.PetVariant
+and type(GAG2_MAILBOX_AUTO_CONTROLS.PetVariant.OnChanged) == "function" then
+
+    GAG2_MAILBOX_AUTO_CONTROLS.PetVariant:OnChanged(function(value)
+
+        local auto =
+            GAG2MailboxAutoGetState()
+
+        if auto.RefreshingControls == true then
+            return
+        end
+
+        auto.PetVariant =
+            tostring(
+                value
+                or "Any Variant"
+            )
+
+        MarkConfigDirty()
+    end)
+end
+
+GAG2_MAILBOX_AUTO_CONTROLS.PetSize =
+    MailboxAutoBox:AddDropdown("HolyGAG2MailboxAutoPetSize", {
+        Text = "Pet Size",
+        Values = {
+            "Any Size",
+            "Big+",
+            "Huge Only",
+        },
+        Default = "Any Size",
+        Multi = false,
+        Searchable = false,
+        Tooltip = "Only used when Item Category is Pets.",
+    })
+
+if GAG2_MAILBOX_AUTO_CONTROLS.PetSize
+and type(GAG2_MAILBOX_AUTO_CONTROLS.PetSize.OnChanged) == "function" then
+
+    GAG2_MAILBOX_AUTO_CONTROLS.PetSize:OnChanged(function(value)
+
+        local auto =
+            GAG2MailboxAutoGetState()
+
+        if auto.RefreshingControls == true then
+            return
+        end
+
+        auto.PetSize =
+            tostring(
+                value
+                or "Any Size"
+            )
+
+        MarkConfigDirty()
+    end)
+end
+
+GAG2_MAILBOX_AUTO_CONTROLS.Message =
+    MailboxAutoBox:AddInput("HolyGAG2MailboxAutoMessage", {
+        Text = "Message",
+        Default = "",
+        Numeric = false,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "optional",
+        Callback = function(value)
+
+            GAG2MailboxAutoSetDraft(
+                "Message",
+                tostring(value or "")
+            )
+        end,
+    })
+
+GAG2_MAILBOX_AUTO_CONTROLS.CheckInterval =
+    MailboxAutoBox:AddInput("HolyGAG2MailboxAutoCheckInterval", {
+        Text = "Check Interval",
+        Default = "3",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "seconds",
+        Tooltip = "How often the automatic queue checks inventory.",
+        Callback = function(value)
+
+            GAG2MailboxAutoSetNumber(
+                "CheckInterval",
+                value,
+                1,
+                30,
+                3
+            )
+        end,
+    })
+
+GAG2_MAILBOX_AUTO_CONTROLS.Cooldown =
+    MailboxAutoBox:AddInput("HolyGAG2MailboxAutoCooldown", {
+        Text = "Mail Cooldown",
+        Default = "3",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "seconds",
+        Tooltip = "Delay after a successful mail before another rule can send.",
+        Callback = function(value)
+
+            GAG2MailboxAutoSetNumber(
+                "MailCooldown",
+                value,
+                1,
+                30,
+                3
+            )
+        end,
+    })
+
+GAG2_MAILBOX_AUTO_CONTROLS.StopOnFailures =
+    MailboxAutoBox:AddToggle("HolyGAG2MailboxAutoStopOnFailures", {
+        Text = "Stop After Failed Sends",
+        Default = true,
+        Tooltip = "Stops Automatic Send after three consecutive packet failures.",
+    })
+
+if GAG2_MAILBOX_AUTO_CONTROLS.StopOnFailures
+and type(GAG2_MAILBOX_AUTO_CONTROLS.StopOnFailures.OnChanged) == "function" then
+
+    GAG2_MAILBOX_AUTO_CONTROLS.StopOnFailures:OnChanged(function(value)
+
+        local auto =
+            GAG2MailboxAutoGetState()
+
+        auto.StopAfterFailedSends =
+            value == true
+
+        MarkConfigDirty()
+    end)
+end
+
+MailboxAutoBox:AddDivider()
+
+MailboxAutoBox:AddButton({
+    Text = "Add Rule",
+    Tooltip = "Adds the current automatic configuration to the queue.",
+    Func = function()
+
+        GAG2MailboxAutoAddRule()
     end,
 })
 
@@ -27256,13 +30228,132 @@ MailboxStatusBox:AddLabel("HolyGAG2MailboxStatus", {
 
 MailboxStatusBox:AddLabel({
     Text =
-        '<font color="rgb(148,163,184)"><b>Format</b></font>'
-        .. '\nBatch item:'
-        .. '\nCategory = selected category'
-        .. '\nItemKey = selected item key'
-        .. '\nCount = Send Amount'
-        .. '\nPets force Count = 1',
+        '<font color="rgb(148,163,184)"><b>Safety</b></font>'
+        .. '\nAll stackable sends clamp to the currently owned amount.'
+        .. '\nPet sends use one UUID per row.'
+        .. '\nAutomatic sends stop after three failures when safety is enabled.',
     DoesWrap = true,
+})
+
+MailboxQueueBox:AddLabel("HolyGAG2MailboxAutoQueueStatus", {
+    Text =
+        '<font color="rgb(196,181,253)"><b>Order Queue</b></font>'
+        .. '\nNo automatic rules saved.',
+    DoesWrap = true,
+})
+
+GAG2_MAILBOX_AUTO_CONTROLS.Rule =
+    MailboxQueueBox:AddDropdown("HolyGAG2MailboxAutoRuleChoice", {
+        Text = "Select Rule",
+        Values = {
+            "None",
+        },
+        Default = "None",
+        Multi = false,
+        Searchable = true,
+        MaxVisibleDropdownItems = 10,
+    })
+
+if GAG2_MAILBOX_AUTO_CONTROLS.Rule
+and type(GAG2_MAILBOX_AUTO_CONTROLS.Rule.OnChanged) == "function" then
+
+    GAG2_MAILBOX_AUTO_CONTROLS.Rule:OnChanged(function(value)
+
+        local auto =
+            GAG2MailboxAutoGetState()
+
+        if auto.RefreshingControls == true then
+            return
+        end
+
+        auto.SelectedRuleChoice =
+            tostring(
+                value
+                or "None"
+            )
+    end)
+end
+
+MailboxQueueBox:AddButton({
+    Text = "Start Sending",
+    Func = function()
+
+        GAG2MailboxAutoStartFromButton()
+    end,
+}):AddButton({
+    Text = "Stop",
+    Func = function()
+
+        GAG2MailboxAutoStopFromButton()
+    end,
+})
+
+MailboxQueueBox:AddButton({
+    Text = "Remove Rule",
+    Func = function()
+
+        GAG2MailboxAutoRemoveSelectedRule()
+    end,
+}):AddButton({
+    Text = "Clear Rules",
+    Risky = true,
+    Func = function()
+
+        GAG2MailboxAutoClearRules()
+    end,
+})
+
+MailboxReceiptsBox:AddLabel("HolyGAG2MailboxAutoReceiptStatus", {
+    Text =
+        '<font color="rgb(196,181,253)"><b>Receipts</b></font>'
+        .. '\nNo receipts saved.',
+    DoesWrap = true,
+})
+
+GAG2_MAILBOX_AUTO_CONTROLS.Receipt =
+    MailboxReceiptsBox:AddDropdown("HolyGAG2MailboxAutoReceiptChoice", {
+        Text = "Select Receipt",
+        Values = {
+            "None",
+        },
+        Default = "None",
+        Multi = false,
+        Searchable = true,
+        MaxVisibleDropdownItems = 10,
+    })
+
+if GAG2_MAILBOX_AUTO_CONTROLS.Receipt
+and type(GAG2_MAILBOX_AUTO_CONTROLS.Receipt.OnChanged) == "function" then
+
+    GAG2_MAILBOX_AUTO_CONTROLS.Receipt:OnChanged(function(value)
+
+        local auto =
+            GAG2MailboxAutoGetState()
+
+        if auto.RefreshingControls == true then
+            return
+        end
+
+        auto.SelectedReceiptChoice =
+            tostring(
+                value
+                or "None"
+            )
+    end)
+end
+
+MailboxReceiptsBox:AddButton({
+    Text = "Copy Receipt",
+    Func = function()
+
+        GAG2MailboxAutoCopySelectedReceipt()
+    end,
+}):AddButton({
+    Text = "Clear Receipts",
+    Func = function()
+
+        GAG2MailboxAutoClearReceipts()
+    end,
 })
 
 --==================================================
