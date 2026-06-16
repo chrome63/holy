@@ -738,7 +738,66 @@ GAG2_EXACT_JOIN_TARGET_FILE =
     UI_SETTINGS_FOLDER
     .. "/ExactJoinTarget.json"
 
+GAG2_WILD_PET_SCOUT_ENDPOINT =
+    "https://script.google.com/macros/s/AKfycbzG5g4bUWmvmCeYH3btJLKYht8jmrE17er0xNFk5kSNZCIl1kvyAbohbJMgpvcbekmu8w/exec"
+
+GAG2_WILD_PET_SCOUT_KEY_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/WildPetScoutKey.txt"
+
+if type(GAG2_WILD_PET_SCOUT_STATE) == "table"
+and type(GAG2_WILD_PET_SCOUT_STATE.Stop) == "function" then
+
+    pcall(function()
+
+        GAG2_WILD_PET_SCOUT_STATE.Stop(
+            false
+        )
+    end)
+end
+
+GAG2_WILD_PET_SCOUT_API_KEY_INPUT =
+    nil
+
+GAG2_WILD_PET_SCOUT_STATE = {
+    Enabled = false,
+    Running = false,
+
+    Claiming = false,
+    Assigning = false,
+    Teleporting = false,
+
+    Sending = false,
+    PendingSend = false,
+    EventQueued = false,
+
+    SessionApiKey = "",
+    PendingApiKey = "",
+
+    CurrentClaimJobId = "",
+    PendingTargetJobId = "",
+
+    HeartbeatSeconds = 10,
+    EventDebounce = 0.75,
+    MaxClaimAttempts = 16,
+
+    LastHeartbeatAt = 0,
+    LastReportAt = 0,
+    LastPetCount = 0,
+    LastPetSummary = "None",
+    LastQueuedReason = "startup",
+    LastStatus = "Disabled.",
+
+    LoopToken = 0,
+
+    RefFolder = nil,
+    FolderConnections = {},
+    RefConnections = {},
+}
+
+
 GAG2_EXACT_JOIN_STATE = {
+
     Retrying = false,
     MaxAttempts = 3,
     Target = nil,
@@ -3542,6 +3601,1926 @@ function HopServerOnce()
 
     return true
 end
+
+--==================================================
+-- [4.125] WILD PET SCOUT NETWORK
+--
+-- Dedicated scout-alt system:
+-- - Keeps one scout claim per server through the HOLY Apps Script endpoint.
+-- - Reads the authoritative lightweight workspace.Map.WildPetRef folder.
+-- - Reports complete live-pet snapshots every 10 seconds.
+-- - Reports immediately after pets are added, removed, or change state.
+-- - Moves to an unclaimed public server only when this server is already
+--   covered, or when "Find New Scout Server" is pressed.
+--
+-- The API key is never stored in this source file or SaveManager.
+-- It is stored locally on each executor device in:
+-- HolyGAG2/WildPetScoutKey.txt
+--==================================================
+
+function GAG2ScoutDisconnect(connection)
+
+    if typeof(connection) ~= "RBXScriptConnection" then
+        return
+    end
+
+    pcall(function()
+
+        connection:Disconnect()
+    end)
+end
+
+function GAG2ScoutReadApiKey()
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    local sessionKey =
+        CleanText(
+            state.SessionApiKey
+        )
+
+    if sessionKey ~= "" then
+        return sessionKey
+    end
+
+    if type(readfile) ~= "function"
+    or type(isfile) ~= "function" then
+
+        return ""
+    end
+
+    local exists =
+        false
+
+    local existsOk =
+        pcall(function()
+
+            exists =
+                isfile(
+                    GAG2_WILD_PET_SCOUT_KEY_FILE
+                )
+        end)
+
+    if existsOk ~= true
+    or exists ~= true then
+
+        return ""
+    end
+
+    local readOk, value =
+        pcall(function()
+
+            return readfile(
+                GAG2_WILD_PET_SCOUT_KEY_FILE
+            )
+        end)
+
+    if readOk ~= true then
+        return ""
+    end
+
+    value =
+        CleanText(value)
+
+    if value == "" then
+        return ""
+    end
+
+    state.SessionApiKey =
+        value
+
+    return value
+end
+
+function GAG2ScoutHasApiKey()
+
+    return GAG2ScoutReadApiKey() ~= ""
+end
+
+function GAG2ScoutRefreshStatus()
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    local lastReportText =
+        "Never"
+
+    local lastReportAt =
+        tonumber(state.LastReportAt)
+        or 0
+
+    if lastReportAt > 0 then
+
+        lastReportText =
+            tostring(
+                math.max(
+                    0,
+                    os.time() - lastReportAt
+                )
+            )
+            .. "s ago"
+    end
+
+    local claimText =
+        CleanText(
+            state.CurrentClaimJobId
+        )
+
+    if claimText == "" then
+
+        claimText =
+            "None"
+
+    else
+
+        claimText =
+            claimText:sub(
+                1,
+                8
+            )
+    end
+
+    local pendingText =
+        CleanText(
+            state.PendingTargetJobId
+        )
+
+    if pendingText == "" then
+
+        pendingText =
+            "None"
+
+    else
+
+        pendingText =
+            pendingText:sub(
+                1,
+                8
+            )
+    end
+
+    local text =
+        '<font color="rgb(196,181,253)"><b>Wild Pet Scout</b></font>'
+        .. '\nEnabled: '
+        .. (
+            state.Enabled == true
+            and "YES"
+            or "NO"
+        )
+        .. ' | Key: '
+        .. (
+            GAG2ScoutHasApiKey() == true
+            and "Saved locally"
+            or "Missing"
+        )
+        .. '\nClaim: '
+        .. claimText
+        .. ' | Pending: '
+        .. pendingText
+        .. '\nLast report: '
+        .. lastReportText
+        .. ' | Pets: '
+        .. tostring(state.LastPetSummary or "None")
+        .. '\nStatus: '
+        .. tostring(state.LastStatus or "Idle.")
+
+    if Options.HolyGAG2WildPetScoutStatus then
+
+        Options.HolyGAG2WildPetScoutStatus:SetText(
+            text
+        )
+    end
+
+    return text
+end
+
+function GAG2ScoutSetStatus(text)
+
+    GAG2_WILD_PET_SCOUT_STATE.LastStatus =
+        tostring(text or "Idle.")
+
+    GAG2ScoutRefreshStatus()
+end
+
+function GAG2ScoutSaveApiKey(value)
+
+    value =
+        CleanText(value)
+
+    if #value < 16 then
+
+        return false,
+            "API key is too short."
+    end
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    state.SessionApiKey =
+        value
+
+    if type(writefile) ~= "function" then
+
+        GAG2ScoutSetStatus(
+            "Key saved for this session only."
+        )
+
+        return true,
+            "session"
+    end
+
+    EnsureUISettingsFolder()
+
+    local writeOk, writeError =
+        pcall(function()
+
+            writefile(
+                GAG2_WILD_PET_SCOUT_KEY_FILE,
+                value
+            )
+        end)
+
+    if writeOk ~= true then
+
+        state.SessionApiKey =
+            ""
+
+        return false,
+            tostring(writeError)
+    end
+
+    state.PendingApiKey =
+        ""
+
+    if GAG2_WILD_PET_SCOUT_API_KEY_INPUT
+    and type(GAG2_WILD_PET_SCOUT_API_KEY_INPUT.SetValue) == "function" then
+
+        pcall(function()
+
+            GAG2_WILD_PET_SCOUT_API_KEY_INPUT:SetValue(
+                ""
+            )
+        end)
+    end
+
+    GAG2ScoutSetStatus(
+        "API key saved locally."
+    )
+
+    return true,
+        "local file"
+end
+
+function GAG2ScoutDeleteApiKeyFile()
+
+    if type(isfile) ~= "function"
+    or type(delfile) ~= "function" then
+
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                GAG2_WILD_PET_SCOUT_KEY_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return true
+    end
+
+    local ok =
+        pcall(function()
+
+            delfile(
+                GAG2_WILD_PET_SCOUT_KEY_FILE
+            )
+        end)
+
+    return ok == true
+end
+
+function GAG2ScoutPost(action, payload, apiKeyOverride)
+
+    action =
+        CleanText(action)
+
+    if action == "" then
+
+        return nil,
+            "missing action"
+    end
+
+    local apiKey =
+        CleanText(
+            apiKeyOverride
+            or GAG2ScoutReadApiKey()
+        )
+
+    if apiKey == "" then
+
+        return nil,
+            "Scout API key is missing."
+    end
+
+    local requestFunction =
+        GAG2ExecutorGetRequestFunction()
+
+    if type(requestFunction) ~= "function" then
+
+        return nil,
+            "Executor HTTP request function is unavailable."
+    end
+
+    local bodyTable =
+        type(payload) == "table"
+        and payload
+        or {}
+
+    bodyTable.action =
+        action
+
+    bodyTable.apiKey =
+        apiKey
+
+    local encodeOk, encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                bodyTable
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+
+        return nil,
+            "Failed to encode scout request."
+    end
+
+    local requestOk, response =
+        pcall(function()
+
+            return requestFunction({
+                Url =
+                    GAG2_WILD_PET_SCOUT_ENDPOINT,
+
+                Method =
+                    "POST",
+
+                Headers = {
+                    ["Content-Type"] =
+                        "application/json",
+
+                    ["Accept"] =
+                        "application/json",
+                },
+
+                Body =
+                    encoded,
+
+                Redirect =
+                    true,
+            })
+        end)
+
+    if requestOk ~= true then
+
+        return nil,
+            tostring(response)
+    end
+
+    local responseBody =
+        ""
+
+    if type(response) == "string" then
+
+        responseBody =
+            response
+
+    elseif type(response) == "table" then
+
+        responseBody =
+            tostring(
+                response.Body
+                or response.body
+                or response.ResponseBody
+                or response.responseBody
+                or ""
+            )
+    end
+
+    if responseBody == "" then
+
+        return nil,
+            "Scout endpoint returned an empty response."
+    end
+
+    local decodeOk, decoded =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                responseBody
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(decoded) ~= "table" then
+
+        return nil,
+            "Scout endpoint returned invalid JSON."
+    end
+
+    if decoded.ok ~= true then
+
+        return nil,
+            tostring(
+                decoded.message
+                or decoded.error
+                or "Scout endpoint rejected the request."
+            )
+    end
+
+    return decoded,
+        nil
+end
+
+function GAG2ScoutGetRefFolder()
+
+    local map =
+        workspace:FindFirstChild(
+            "Map"
+        )
+
+    return map
+        and map:FindFirstChild(
+            "WildPetRef"
+        )
+        or nil
+end
+
+function GAG2ScoutReadPet(ref)
+
+    if typeof(ref) ~= "Instance" then
+        return nil
+    end
+
+    local petName =
+        CleanText(
+            ref:GetAttribute("PetName")
+        )
+
+    if petName == "" then
+        return nil
+    end
+
+    local stateName =
+        CleanText(
+            ref:GetAttribute("State")
+        ):lower()
+
+    local ownerUserId =
+        tonumber(
+            ref:GetAttribute("OwnerUserId")
+        )
+        or 0
+
+    local spawnedAt =
+        tonumber(
+            ref:GetAttribute("SpawnedAt")
+        )
+        or 0
+
+    local lifetime =
+        tonumber(
+            ref:GetAttribute("Lifetime")
+        )
+        or 0
+
+    local expiresAt =
+        spawnedAt + lifetime
+
+    local remaining =
+        expiresAt - os.time()
+
+    if stateName ~= "wandering" then
+        return nil
+    end
+
+    if ownerUserId ~= 0 then
+        return nil
+    end
+
+    if spawnedAt > 0
+    and lifetime > 0
+    and remaining <= 0 then
+
+        return nil
+    end
+
+    return {
+        id =
+            tostring(ref.Name),
+
+        petName =
+            petName,
+
+        rarity =
+            CleanText(
+                ref:GetAttribute("Rarity")
+            ),
+
+        price =
+            tonumber(
+                ref:GetAttribute("Price")
+            )
+            or 0,
+
+        state =
+            stateName,
+
+        ownerUserId =
+            ownerUserId,
+
+        ownerName =
+            CleanText(
+                ref:GetAttribute("OwnerName")
+            ),
+
+        spawnedAt =
+            spawnedAt,
+
+        lifetime =
+            lifetime,
+
+        expiresAt =
+            expiresAt,
+
+        remaining =
+            math.max(
+                0,
+                remaining
+            ),
+    }
+end
+
+function GAG2ScoutBuildPetSnapshot()
+
+    local pets =
+        {}
+
+    local folder =
+        GAG2ScoutGetRefFolder()
+
+    if not folder then
+        return pets
+    end
+
+    for _, ref in ipairs(folder:GetChildren()) do
+
+        local pet =
+            GAG2ScoutReadPet(
+                ref
+            )
+
+        if pet then
+
+            table.insert(
+                pets,
+                pet
+            )
+        end
+    end
+
+    table.sort(pets, function(a, b)
+
+        if tostring(a.petName) ~= tostring(b.petName) then
+
+            return tostring(a.petName)
+                < tostring(b.petName)
+        end
+
+        return tostring(a.id)
+            < tostring(b.id)
+    end)
+
+    return pets
+end
+
+function GAG2ScoutBuildPetSummary(pets)
+
+    local counts =
+        {}
+
+    for _, pet in ipairs(pets or {}) do
+
+        local petName =
+            CleanText(
+                pet.petName
+            )
+
+        if petName ~= "" then
+
+            counts[petName] =
+                (
+                    tonumber(counts[petName])
+                    or 0
+                )
+                + 1
+        end
+    end
+
+    local names =
+        {}
+
+    for petName in pairs(counts) do
+
+        table.insert(
+            names,
+            petName
+        )
+    end
+
+    table.sort(
+        names
+    )
+
+    local rows =
+        {}
+
+    for _, petName in ipairs(names) do
+
+        table.insert(
+            rows,
+            petName
+            .. " x"
+            .. tostring(counts[petName])
+        )
+    end
+
+    if #rows <= 0 then
+        return "None"
+    end
+
+    return table.concat(
+        rows,
+        ", "
+    )
+end
+
+function GAG2ScoutClearRefConnections(ref)
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    local connections =
+        state.RefConnections[ref]
+
+    if type(connections) ~= "table" then
+        return
+    end
+
+    for _, connection in ipairs(connections) do
+
+        GAG2ScoutDisconnect(
+            connection
+        )
+    end
+
+    state.RefConnections[ref] =
+        nil
+end
+
+function GAG2ScoutClearWatchers()
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    for _, connection in ipairs(state.FolderConnections) do
+
+        GAG2ScoutDisconnect(
+            connection
+        )
+    end
+
+    state.FolderConnections =
+        {}
+
+    local refs =
+        {}
+
+    for ref in pairs(state.RefConnections) do
+
+        table.insert(
+            refs,
+            ref
+        )
+    end
+
+    for _, ref in ipairs(refs) do
+
+        GAG2ScoutClearRefConnections(
+            ref
+        )
+    end
+
+    state.RefFolder =
+        nil
+end
+
+function GAG2ScoutQueueReport(reason)
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    if state.Enabled ~= true
+    or state.Running ~= true
+    or state.Teleporting == true then
+
+        return
+    end
+
+    state.LastQueuedReason =
+        tostring(reason or "change")
+
+    if state.EventQueued == true then
+        return
+    end
+
+    state.EventQueued =
+        true
+
+    task.delay(
+        tonumber(state.EventDebounce)
+        or 0.75,
+        function()
+
+            state.EventQueued =
+                false
+
+            if state.Enabled == true
+            and state.Running == true
+            and state.Teleporting ~= true then
+
+                GAG2ScoutSendReport(
+                    state.LastQueuedReason
+                )
+            end
+        end
+    )
+end
+
+function GAG2ScoutWatchRef(ref)
+
+    if typeof(ref) ~= "Instance" then
+        return
+    end
+
+    GAG2ScoutClearRefConnections(
+        ref
+    )
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    local connections =
+        {}
+
+    local attributes = {
+        "PetName",
+        "Rarity",
+        "Price",
+        "State",
+        "OwnerUserId",
+        "OwnerName",
+        "SpawnedAt",
+        "Lifetime",
+    }
+
+    for _, attributeName in ipairs(attributes) do
+
+        table.insert(
+            connections,
+            ref:GetAttributeChangedSignal(
+                attributeName
+            ):Connect(function()
+
+                GAG2ScoutQueueReport(
+                    "attribute:"
+                    .. tostring(attributeName)
+                )
+            end)
+        )
+    end
+
+    state.RefConnections[ref] =
+        connections
+end
+
+function GAG2ScoutAttachFolder(folder)
+
+    if typeof(folder) ~= "Instance" then
+        return false
+    end
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    if state.RefFolder == folder then
+        return true
+    end
+
+    GAG2ScoutClearWatchers()
+
+    state.RefFolder =
+        folder
+
+    for _, ref in ipairs(folder:GetChildren()) do
+
+        GAG2ScoutWatchRef(
+            ref
+        )
+    end
+
+    table.insert(
+        state.FolderConnections,
+        folder.ChildAdded:Connect(function(ref)
+
+            GAG2ScoutWatchRef(
+                ref
+            )
+
+            GAG2ScoutQueueReport(
+                "pet-added"
+            )
+        end)
+    )
+
+    table.insert(
+        state.FolderConnections,
+        folder.ChildRemoved:Connect(function(ref)
+
+            GAG2ScoutClearRefConnections(
+                ref
+            )
+
+            GAG2ScoutQueueReport(
+                "pet-removed"
+            )
+        end)
+    )
+
+    GAG2ScoutQueueReport(
+        "folder-attached"
+    )
+
+    return true
+end
+
+function GAG2ScoutSendReport(reason)
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    if state.Enabled ~= true
+    or state.Running ~= true
+    or state.Teleporting == true then
+
+        return false
+    end
+
+    if state.Sending == true then
+
+        state.PendingSend =
+            true
+
+        state.LastQueuedReason =
+            tostring(reason or "pending")
+
+        return false
+    end
+
+    state.Sending =
+        true
+
+    local pets =
+        GAG2ScoutBuildPetSnapshot()
+
+    local result, errorText =
+        GAG2ScoutPost(
+            "ReportWildPets",
+            {
+                placeId =
+                    game.PlaceId,
+
+                jobId =
+                    game.JobId,
+
+                scoutUserId =
+                    LOCAL_PLAYER.UserId,
+
+                scoutName =
+                    LOCAL_PLAYER.Name,
+
+                players =
+                    #Players:GetPlayers(),
+
+                maxPlayers =
+                    Players.MaxPlayers,
+
+                pets =
+                    pets,
+            }
+        )
+
+    if result then
+
+        state.LastReportAt =
+            tonumber(result.updatedAt)
+            or os.time()
+
+        state.LastPetCount =
+            #pets
+
+        state.LastPetSummary =
+            GAG2ScoutBuildPetSummary(
+                pets
+            )
+
+        state.CurrentClaimJobId =
+            tostring(game.JobId)
+
+        state.LastStatus =
+            "Reporting current server."
+
+    else
+
+        state.LastStatus =
+            "Report failed: "
+            .. tostring(errorText)
+    end
+
+    state.Sending =
+        false
+
+    GAG2ScoutRefreshStatus()
+
+    if state.PendingSend == true
+    and state.Enabled == true
+    and state.Running == true then
+
+        state.PendingSend =
+            false
+
+        task.delay(1, function()
+
+            GAG2ScoutSendReport(
+                state.LastQueuedReason
+            )
+        end)
+    end
+
+    return result ~= nil
+end
+
+function GAG2ScoutPauseMonitoring()
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    state.LoopToken =
+        tonumber(state.LoopToken)
+        or 0
+
+    state.LoopToken =
+        state.LoopToken + 1
+
+    state.Running =
+        false
+
+    state.EventQueued =
+        false
+
+    state.PendingSend =
+        false
+
+    GAG2ScoutClearWatchers()
+end
+
+function GAG2ScoutBeginMonitoring()
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    if state.Enabled ~= true then
+        return false
+    end
+
+    if state.Running == true then
+
+        GAG2ScoutQueueReport(
+            "monitor-refresh"
+        )
+
+        return true
+    end
+
+    state.LoopToken =
+        tonumber(state.LoopToken)
+        or 0
+
+    state.LoopToken =
+        state.LoopToken + 1
+
+    local token =
+        state.LoopToken
+
+    state.Running =
+        true
+
+    state.LastHeartbeatAt =
+        0
+
+    task.spawn(function()
+
+        while state.Enabled == true
+        and state.Running == true
+        and state.LoopToken == token do
+
+            local folder =
+                GAG2ScoutGetRefFolder()
+
+            if folder
+            and folder ~= state.RefFolder then
+
+                GAG2ScoutAttachFolder(
+                    folder
+                )
+
+                state.LastStatus =
+                    "WildPetRef connected."
+
+                GAG2ScoutRefreshStatus()
+
+            elseif not folder then
+
+                state.LastStatus =
+                    "Waiting for workspace.Map.WildPetRef..."
+
+                GAG2ScoutRefreshStatus()
+            end
+
+            local now =
+                os.clock()
+
+            local heartbeat =
+                math.clamp(
+                    tonumber(state.HeartbeatSeconds)
+                    or 10,
+                    5,
+                    20
+                )
+
+            if folder
+            and now - tonumber(state.LastHeartbeatAt or 0) >= heartbeat then
+
+                state.LastHeartbeatAt =
+                    now
+
+                GAG2ScoutSendReport(
+                    "heartbeat"
+                )
+            end
+
+            task.wait(1)
+        end
+    end)
+
+    return true
+end
+
+function GAG2ScoutClaimServer(jobId, placeId)
+
+    jobId =
+        CleanText(jobId)
+
+    placeId =
+        tonumber(placeId)
+
+    if jobId == ""
+    or not placeId
+    or placeId <= 0 then
+
+        return nil,
+            "Invalid scout claim target."
+    end
+
+    return GAG2ScoutPost(
+        "ClaimScoutServer",
+        {
+            jobId =
+                jobId,
+
+            placeId =
+                placeId,
+
+            scoutUserId =
+                LOCAL_PLAYER.UserId,
+
+            scoutName =
+                LOCAL_PLAYER.Name,
+        }
+    )
+end
+
+function GAG2ScoutReleaseServer(jobId, apiKeyOverride)
+
+    jobId =
+        CleanText(jobId)
+
+    if jobId == "" then
+        return true
+    end
+
+    local result =
+        GAG2ScoutPost(
+            "ReleaseScoutServer",
+            {
+                jobId =
+                    jobId,
+
+                scoutUserId =
+                    LOCAL_PLAYER.UserId,
+            },
+            apiKeyOverride
+        )
+
+    return result ~= nil
+end
+
+function GAG2ScoutGetPublicServers()
+
+    local url =
+        "https://games.roblox.com/v1/games/"
+        .. tostring(game.PlaceId)
+        .. "/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"
+
+    local body =
+        GetHttp(
+            url
+        )
+
+    if type(body) ~= "string"
+    or body == "" then
+
+        return nil,
+            "Public server list request failed."
+    end
+
+    local decodeOk, decoded =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                body
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(decoded) ~= "table" then
+
+        return nil,
+            "Public server list decode failed."
+    end
+
+    local servers =
+        {}
+
+    for _, server in ipairs(decoded.data or {}) do
+
+        local jobId =
+            CleanText(server.id)
+
+        local playing =
+            tonumber(server.playing)
+            or 0
+
+        local maxPlayers =
+            tonumber(server.maxPlayers)
+            or 0
+
+        if jobId ~= ""
+        and jobId ~= tostring(game.JobId)
+        and maxPlayers > 0
+        and playing < maxPlayers then
+
+            table.insert(
+                servers,
+                {
+                    id =
+                        jobId,
+
+                    playing =
+                        playing,
+
+                    maxPlayers =
+                        maxPlayers,
+                }
+            )
+        end
+    end
+
+    for index = #servers, 2, -1 do
+
+        local swapIndex =
+            math.random(
+                1,
+                index
+            )
+
+        servers[index],
+        servers[swapIndex] =
+            servers[swapIndex],
+            servers[index]
+    end
+
+    return servers,
+        nil
+end
+
+function GAG2ScoutFindAndJoinUnclaimedServer(reason)
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    if state.Enabled ~= true then
+        return false
+    end
+
+    if state.Assigning == true
+    or state.Teleporting == true then
+
+        return false
+    end
+
+    if GAG2ScoutHasApiKey() ~= true then
+
+        GAG2ScoutSetStatus(
+            "Save the Scout API key first."
+        )
+
+        return false
+    end
+
+    state.Assigning =
+        true
+
+    state.LastStatus =
+        "Finding an unclaimed server..."
+
+    GAG2ScoutRefreshStatus()
+
+    task.spawn(function()
+
+        local servers, listError =
+            GAG2ScoutGetPublicServers()
+
+        if type(servers) ~= "table"
+        or #servers <= 0 then
+
+            state.Assigning =
+                false
+
+            GAG2ScoutSetStatus(
+                tostring(
+                    listError
+                    or "No public servers were found."
+                )
+            )
+
+            task.delay(12, function()
+
+                if state.Enabled == true
+                and state.Running ~= true
+                and state.Teleporting ~= true then
+
+                    GAG2ScoutEnsureCurrentServer(
+                        "server-list retry"
+                    )
+                end
+            end)
+
+            return
+        end
+
+        local maxAttempts =
+            math.min(
+                #servers,
+                math.max(
+                    1,
+                    math.floor(
+                        tonumber(state.MaxClaimAttempts)
+                        or 16
+                    )
+                )
+            )
+
+        local claimedTarget =
+            nil
+
+        local lastError =
+            ""
+
+        for index = 1, maxAttempts do
+
+            if state.Enabled ~= true
+            or state.Teleporting == true then
+
+                break
+            end
+
+            local server =
+                servers[index]
+
+            local claimResult, claimError =
+                GAG2ScoutClaimServer(
+                    server.id,
+                    game.PlaceId
+                )
+
+            if claimResult
+            and claimResult.claimed == true then
+
+                claimedTarget =
+                    server
+
+                break
+            end
+
+            if claimError then
+
+                lastError =
+                    tostring(claimError)
+            end
+
+            task.wait(0.15)
+        end
+
+        state.Assigning =
+            false
+
+        if state.Enabled ~= true then
+
+            if claimedTarget then
+
+                GAG2ScoutReleaseServer(
+                    claimedTarget.id
+                )
+            end
+
+            return
+        end
+
+        if not claimedTarget then
+
+            GAG2ScoutSetStatus(
+                lastError ~= ""
+                and "No claim acquired: " .. lastError
+                or "All checked servers are already claimed."
+            )
+
+            task.delay(15, function()
+
+                if state.Enabled == true
+                and state.Running ~= true
+                and state.Teleporting ~= true then
+
+                    GAG2ScoutFindAndJoinUnclaimedServer(
+                        "claim retry"
+                    )
+                end
+            end)
+
+            return
+        end
+
+        local oldClaim =
+            CleanText(
+                state.CurrentClaimJobId
+            )
+
+        GAG2ScoutPauseMonitoring()
+
+        state.PendingTargetJobId =
+            tostring(claimedTarget.id)
+
+        state.Teleporting =
+            true
+
+        state.LastStatus =
+            "Joining scout server "
+            .. tostring(claimedTarget.playing)
+            .. "/"
+            .. tostring(claimedTarget.maxPlayers)
+            .. "..."
+
+        GAG2ScoutRefreshStatus()
+
+        if oldClaim ~= ""
+        and oldClaim ~= state.PendingTargetJobId then
+
+            GAG2ScoutReleaseServer(
+                oldClaim
+            )
+        end
+
+        local teleportOk, teleportError =
+            pcall(function()
+
+                TeleportService:TeleportToPlaceInstance(
+                    game.PlaceId,
+                    claimedTarget.id,
+                    LOCAL_PLAYER
+                )
+            end)
+
+        if teleportOk ~= true then
+
+            GAG2ScoutReleaseServer(
+                claimedTarget.id
+            )
+
+            state.PendingTargetJobId =
+                ""
+
+            state.Teleporting =
+                false
+
+            GAG2ScoutSetStatus(
+                "Scout teleport failed: "
+                .. tostring(teleportError)
+            )
+
+            task.delay(2, function()
+
+                if state.Enabled == true then
+
+                    GAG2ScoutEnsureCurrentServer(
+                        "teleport call failed"
+                    )
+                end
+            end)
+        end
+    end)
+
+    return true
+end
+
+function GAG2ScoutEnsureCurrentServer(reason)
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    if state.Enabled ~= true then
+        return false
+    end
+
+    if state.Claiming == true
+    or state.Assigning == true
+    or state.Teleporting == true then
+
+        return false
+    end
+
+    if GAG2ScoutHasApiKey() ~= true then
+
+        GAG2ScoutSetStatus(
+            "Save the Scout API key first."
+        )
+
+        return false
+    end
+
+    state.Claiming =
+        true
+
+    state.LastStatus =
+        "Claiming current server..."
+
+    GAG2ScoutRefreshStatus()
+
+    task.spawn(function()
+
+        local result, errorText =
+            GAG2ScoutClaimServer(
+                game.JobId,
+                game.PlaceId
+            )
+
+        state.Claiming =
+            false
+
+        if state.Enabled ~= true then
+
+            if result
+            and result.claimed == true then
+
+                GAG2ScoutReleaseServer(
+                    game.JobId
+                )
+            end
+
+            return
+        end
+
+        if not result then
+
+            GAG2ScoutSetStatus(
+                "Claim failed: "
+                .. tostring(errorText)
+            )
+
+            task.delay(10, function()
+
+                if state.Enabled == true
+                and state.Running ~= true
+                and state.Teleporting ~= true then
+
+                    GAG2ScoutEnsureCurrentServer(
+                        "claim retry"
+                    )
+                end
+            end)
+
+            return
+        end
+
+        if result.claimed == true then
+
+            state.CurrentClaimJobId =
+                tostring(game.JobId)
+
+            state.PendingTargetJobId =
+                ""
+
+            state.Teleporting =
+                false
+
+            state.LastStatus =
+                "Current server claimed."
+
+            GAG2ScoutRefreshStatus()
+
+            GAG2ScoutBeginMonitoring()
+
+            GAG2ScoutQueueReport(
+                tostring(reason or "claim")
+            )
+
+            return
+        end
+
+        state.CurrentClaimJobId =
+            ""
+
+        state.LastStatus =
+            "Current server covered by "
+            .. tostring(result.claimedByName or "another scout")
+            .. ". Finding another..."
+
+        GAG2ScoutRefreshStatus()
+
+        GAG2ScoutFindAndJoinUnclaimedServer(
+            "duplicate current server"
+        )
+    end)
+
+    return true
+end
+
+function GAG2ScoutStart(reason)
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    state.Enabled =
+        true
+
+    if GAG2ScoutHasApiKey() ~= true then
+
+        GAG2ScoutSetStatus(
+            "Save the Scout API key first."
+        )
+
+        return false
+    end
+
+    if type(GAG2CancelServerHop) == "function" then
+
+        GAG2CancelServerHop()
+    end
+
+    if state.Running == true then
+
+        GAG2ScoutQueueReport(
+            tostring(reason or "start refresh")
+        )
+
+        return true
+    end
+
+    return GAG2ScoutEnsureCurrentServer(
+        reason or "start"
+    )
+end
+
+function GAG2ScoutStop(releaseClaims, skipDirty)
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    local apiKey =
+        GAG2ScoutReadApiKey()
+
+    local currentClaim =
+        CleanText(
+            state.CurrentClaimJobId
+        )
+
+    local pendingClaim =
+        CleanText(
+            state.PendingTargetJobId
+        )
+
+    state.Enabled =
+        false
+
+    state.Claiming =
+        false
+
+    state.Assigning =
+        false
+
+    state.Teleporting =
+        false
+
+    GAG2ScoutPauseMonitoring()
+
+    state.CurrentClaimJobId =
+        ""
+
+    state.PendingTargetJobId =
+        ""
+
+    state.LastStatus =
+        "Disabled."
+
+    GAG2ScoutRefreshStatus()
+
+    if releaseClaims == true
+    and apiKey ~= "" then
+
+        task.spawn(function()
+
+            if currentClaim ~= "" then
+
+                GAG2ScoutReleaseServer(
+                    currentClaim,
+                    apiKey
+                )
+            end
+
+            if pendingClaim ~= ""
+            and pendingClaim ~= currentClaim then
+
+                GAG2ScoutReleaseServer(
+                    pendingClaim,
+                    apiKey
+                )
+            end
+        end)
+    end
+
+    if skipDirty ~= true then
+
+        MarkConfigDirty()
+    end
+end
+
+function GAG2ScoutSetEnabled(value)
+
+    local enabled =
+        value == true
+
+    GAG2_WILD_PET_SCOUT_STATE.Enabled =
+        enabled
+
+    if ConfigState.Loading == true then
+        return
+    end
+
+    if enabled == true then
+
+        GAG2ScoutStart(
+            "toggle"
+        )
+
+    else
+
+        GAG2ScoutStop(
+            true,
+            true
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2ScoutClearApiKey()
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    local oldKey =
+        GAG2ScoutReadApiKey()
+
+    local currentClaim =
+        CleanText(
+            state.CurrentClaimJobId
+        )
+
+    local pendingClaim =
+        CleanText(
+            state.PendingTargetJobId
+        )
+
+    GAG2ScoutStop(
+        false,
+        true
+    )
+
+    if oldKey ~= "" then
+
+        task.spawn(function()
+
+            if currentClaim ~= "" then
+
+                GAG2ScoutReleaseServer(
+                    currentClaim,
+                    oldKey
+                )
+            end
+
+            if pendingClaim ~= ""
+            and pendingClaim ~= currentClaim then
+
+                GAG2ScoutReleaseServer(
+                    pendingClaim,
+                    oldKey
+                )
+            end
+        end)
+    end
+
+    state.SessionApiKey =
+        ""
+
+    state.PendingApiKey =
+        ""
+
+    GAG2ScoutDeleteApiKeyFile()
+
+    if Toggles.HolyGAG2WildPetScoutMode
+    and type(Toggles.HolyGAG2WildPetScoutMode.SetValue) == "function" then
+
+        pcall(function()
+
+            Toggles.HolyGAG2WildPetScoutMode:SetValue(
+                false
+            )
+        end)
+    end
+
+    if GAG2_WILD_PET_SCOUT_API_KEY_INPUT
+    and type(GAG2_WILD_PET_SCOUT_API_KEY_INPUT.SetValue) == "function" then
+
+        pcall(function()
+
+            GAG2_WILD_PET_SCOUT_API_KEY_INPUT:SetValue(
+                ""
+            )
+        end)
+    end
+
+    GAG2ScoutSetStatus(
+        "Local API key cleared."
+    )
+end
+
+function GAG2ScoutHandleTeleportFailure(
+    teleportResult,
+    errorMessage,
+    placeId
+)
+
+    local state =
+        GAG2_WILD_PET_SCOUT_STATE
+
+    if state.Enabled ~= true
+    or state.Teleporting ~= true then
+
+        return false
+    end
+
+    local pendingTarget =
+        CleanText(
+            state.PendingTargetJobId
+        )
+
+    state.Teleporting =
+        false
+
+    state.PendingTargetJobId =
+        ""
+
+    if pendingTarget ~= "" then
+
+        task.spawn(function()
+
+            GAG2ScoutReleaseServer(
+                pendingTarget
+            )
+        end)
+    end
+
+    local resultName =
+        teleportResult
+        and teleportResult.Name
+        or "Unknown"
+
+    GAG2ScoutSetStatus(
+        "Scout teleport failed: "
+        .. tostring(resultName)
+        .. " | "
+        .. tostring(errorMessage or "no message")
+    )
+
+    task.delay(2, function()
+
+        if state.Enabled == true then
+
+            GAG2ScoutEnsureCurrentServer(
+                "TeleportInitFailed"
+            )
+        end
+    end)
+
+    return true
+end
+
+function GAG2RestoreWildPetScoutState()
+
+    task.defer(function()
+
+        local enabled =
+            false
+
+        if Toggles.HolyGAG2WildPetScoutMode then
+
+            enabled =
+                Toggles.HolyGAG2WildPetScoutMode.Value == true
+        end
+
+        GAG2_WILD_PET_SCOUT_STATE.Enabled =
+            enabled
+
+        if enabled == true then
+
+            GAG2ScoutStart(
+                "autosave"
+            )
+
+        else
+
+            GAG2ScoutRefreshStatus()
+        end
+    end)
+end
+
+GAG2_WILD_PET_SCOUT_STATE.Stop =
+    function(releaseClaims)
+
+        GAG2ScoutStop(
+            releaseClaims == true,
+            true
+        )
+    end
+
 
 local function BuildSnapshot()
 
@@ -32771,6 +34750,157 @@ ServerStatusBox:AddLabel("HolyGAG2ServerSelectionStatus", {
     DoesWrap = true,
 })
 
+ServerMainBox:AddDivider()
+
+ServerMainBox:AddToggle("HolyGAG2WildPetScoutMode", {
+    Text = "Wild Pet Scout Mode",
+    Default = false,
+    Tooltip = "Claim one server for this alt and publish its live WildPetRef snapshot to the HOLY tracker.",
+    Callback = function(value)
+
+        GAG2ScoutSetEnabled(
+            value == true
+        )
+    end,
+})
+
+if type(ServerMainBox.AddInput) == "function" then
+
+    GAG2_WILD_PET_SCOUT_API_KEY_INPUT =
+        ServerMainBox:AddInput(
+            "HolyGAG2ScoutApiKey",
+            {
+                Text = "Scout API Key",
+                Default = "",
+                Placeholder = "Paste Config B2 key, then press Save Key",
+                Numeric = false,
+                Finished = true,
+                ClearTextOnFocus = false,
+                Tooltip = "The key is stored only in HolyGAG2/WildPetScoutKey.txt on this device. It is ignored by SaveManager.",
+            }
+        )
+
+    if GAG2_WILD_PET_SCOUT_API_KEY_INPUT
+    and type(GAG2_WILD_PET_SCOUT_API_KEY_INPUT.OnChanged) == "function" then
+
+        GAG2_WILD_PET_SCOUT_API_KEY_INPUT:OnChanged(function(value)
+
+            GAG2_WILD_PET_SCOUT_STATE.PendingApiKey =
+                CleanText(value)
+        end)
+    end
+end
+
+ServerMainBox:AddButton({
+    Text = "Save Scout Key",
+    Tooltip = "Save the pasted Config B2 key locally on this executor device.",
+    Func = function()
+
+        local ok, result =
+            GAG2ScoutSaveApiKey(
+                GAG2_WILD_PET_SCOUT_STATE.PendingApiKey
+            )
+
+        if ok == true then
+
+            Notify(
+                "Scout Key",
+                "Saved locally. You can now enable Scout Mode.",
+                4
+            )
+
+            if Toggles.HolyGAG2WildPetScoutMode
+            and Toggles.HolyGAG2WildPetScoutMode.Value == true then
+
+                GAG2ScoutStart(
+                    "key saved"
+                )
+            end
+
+        else
+
+            Notify(
+                "Scout Key",
+                tostring(result),
+                5
+            )
+        end
+    end,
+}):AddButton({
+    Text = "Clear Scout Key",
+    Tooltip = "Disable Scout Mode and remove the locally saved key.",
+    Func = function()
+
+        GAG2ScoutClearApiKey()
+
+        Notify(
+            "Scout Key",
+            "Local key cleared.",
+            4
+        )
+    end,
+})
+
+ServerMainBox:AddButton({
+    Text = "Report Now",
+    Tooltip = "Immediately publish the current server's live wild pets.",
+    Func = function()
+
+        if GAG2_WILD_PET_SCOUT_STATE.Enabled ~= true then
+
+            Notify(
+                "Wild Pet Scout",
+                "Enable Scout Mode first.",
+                4
+            )
+
+            return
+        end
+
+        if GAG2_WILD_PET_SCOUT_STATE.Running == true then
+
+            task.spawn(function()
+
+                GAG2ScoutSendReport(
+                    "manual"
+                )
+            end)
+
+        else
+
+            GAG2ScoutEnsureCurrentServer(
+                "manual report"
+            )
+        end
+    end,
+}):AddButton({
+    Text = "Find New Scout Server",
+    Tooltip = "Claim and join another public server that is not covered by a different scout alt.",
+    Func = function()
+
+        if GAG2_WILD_PET_SCOUT_STATE.Enabled ~= true then
+
+            Notify(
+                "Wild Pet Scout",
+                "Enable Scout Mode first.",
+                4
+            )
+
+            return
+        end
+
+        GAG2ScoutFindAndJoinUnclaimedServer(
+            "manual rotate"
+        )
+    end,
+})
+
+ServerStatusBox:AddLabel("HolyGAG2WildPetScoutStatus", {
+    Text = GAG2ScoutRefreshStatus(),
+    DoesWrap = true,
+})
+
+
 --==================================================
 -- [8.25] SHOPS TAB
 --==================================================
@@ -36236,6 +38366,7 @@ if type(SaveManager.SetIgnoreIndexes) == "function" then
         "HolyGAG2AutoCloseUI",
         "HolyGAG2DPI",
         "HolyGAG2ManualJoinTarget",
+        "HolyGAG2ScoutApiKey",
 
         -- Runtime/default-on helper.
         -- Auto Skip is intentionally ignored so it always defaults ON.
@@ -36295,6 +38426,7 @@ if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
     GAG2RestoreDropPickupState()
     GAG2RestoreServerSelectionState()
     GAG2RestoreVersionHopState()
+    GAG2RestoreWildPetScoutState()
 end
 
 task.spawn(function()
@@ -36365,6 +38497,16 @@ pcall(function()
             return
         end
 
+        if type(GAG2ScoutHandleTeleportFailure) == "function"
+        and GAG2ScoutHandleTeleportFailure(
+            teleportResult,
+            errorMessage,
+            placeId
+        ) == true then
+
+            return
+        end
+
         if GAG2_SERVER_HOP_RETRYING ~= true then
             return
         end
@@ -36389,6 +38531,14 @@ StartGAG2SniperHotkey()
 SetStatus("Ready")
 
 Library:OnUnload(function()
+
+    if type(GAG2ScoutStop) == "function" then
+
+        GAG2ScoutStop(
+            true,
+            true
+        )
+    end
 
     if type(GAG2AntiAfkSetEnabled) == "function" then
 
