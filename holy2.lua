@@ -21584,10 +21584,158 @@ function GAG2MailboxShortItemKey(value)
         .. "..."
 end
 
+function GAG2MailboxFindInventoryPetById(uuid)
+
+    GAG2MailboxEnsureUniversalState()
+
+    uuid =
+        GAG2MailboxClean(
+            uuid
+        )
+
+    if uuid == "" then
+        return nil
+    end
+
+    local state =
+        GAG2_MAILBOX_STATE
+
+    local function findInList(pets)
+
+        if type(pets) ~= "table" then
+            return nil
+        end
+
+        for _, pet in ipairs(pets) do
+
+            if type(pet) == "table"
+            and GAG2MailboxClean(pet.Id) == uuid then
+
+                return pet
+            end
+        end
+
+        return nil
+    end
+
+    local pet =
+        findInList(
+            state.InventoryPets
+        )
+
+    if pet then
+        return pet
+    end
+
+    local auto =
+        state.Auto
+
+    pet =
+        findInList(
+            type(auto) == "table"
+            and auto.PetSnapshot
+            or nil
+        )
+
+    if pet then
+        return pet
+    end
+
+    local cachedPet =
+        type(state.PetCache) == "table"
+        and state.PetCache[uuid]
+        or nil
+
+    if type(cachedPet) == "table" then
+
+        return {
+            Id =
+                uuid,
+
+            Name =
+                GAG2MailboxReadPetName(
+                    cachedPet,
+                    "Unknown Pet"
+                ),
+
+            Extra =
+                GAG2MailboxReadPetExtra(
+                    cachedPet
+                ),
+
+            Raw =
+                cachedPet,
+
+            Source =
+                "PetCache",
+        }
+    end
+
+    return nil
+end
+
 function GAG2MailboxBuildSendableDisplay(sendable)
 
     if type(sendable) ~= "table" then
         return "None"
+    end
+
+    local category =
+        GAG2MailboxClean(
+            sendable.Category
+        )
+
+    local itemKey =
+        GAG2MailboxClean(
+            sendable.ItemKey
+        )
+
+    if category == "Pets" then
+
+        local pet =
+            GAG2MailboxFindInventoryPetById(
+                itemKey
+            )
+
+        if pet then
+
+            local petName =
+                GAG2MailboxClean(
+                    pet.Name
+                )
+
+            local petExtra =
+                GAG2MailboxClean(
+                    pet.Extra
+                )
+
+            if petName == ""
+            or petName == "Unknown Pet"
+            or GAG2MailboxIsUuid(petName) == true then
+
+                petName =
+                    "Unknown Pet"
+            end
+
+            local display =
+                petName
+
+            if petExtra ~= "" then
+
+                display =
+                    display
+                    .. " · "
+                    .. petExtra
+            end
+
+            return display
+        end
+
+        return "Unknown Pet"
+            .. " · #"
+            .. GAG2MailboxShortUuid(
+                itemKey
+            )
     end
 
     local amount =
@@ -21602,10 +21750,10 @@ function GAG2MailboxBuildSendableDisplay(sendable)
         )
         or "x?"
 
-    return tostring(sendable.Category)
+    return tostring(category)
         .. " | "
         .. GAG2MailboxShortItemKey(
-            sendable.ItemKey
+            itemKey
         )
         .. " | "
         .. amountText
@@ -21975,6 +22123,11 @@ end
 
 function GAG2MailboxRefreshSendableDropdown()
 
+    -- Resolve pet UUIDs into real inventory pet names
+    -- before creating the visible mailbox item choices.
+
+    GAG2MailboxBuildInventoryPets()
+
     local sendables =
         GAG2MailboxBuildSendables()
 
@@ -21984,7 +22137,7 @@ function GAG2MailboxRefreshSendableDropdown()
     if type(GAG2MailboxAutoRefreshDropdowns) == "function" then
 
         GAG2MailboxAutoRefreshDropdowns(
-            true
+            false
         )
     end
 
