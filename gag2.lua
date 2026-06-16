@@ -8627,23 +8627,49 @@ end
 
 --==================================================
 -- [4.559] ANTI AFK
--- Silent Roblox idle-signal responder. No loops. No remotes. No console output.
+-- Prevents GAG2 custom inactivity server-hop.
+-- Silent Idled responder + proactive low-rate activity pulse.
+-- No remotes. No console output.
 --==================================================
 
-if type(GAG2_ANTI_AFK_STATE) == "table"
-and GAG2_ANTI_AFK_STATE.Connection then
+if type(GAG2_ANTI_AFK_STATE) == "table" then
 
-    pcall(function()
+    GAG2_ANTI_AFK_STATE.Enabled =
+        false
 
-        GAG2_ANTI_AFK_STATE.Connection:Disconnect()
-    end)
+    GAG2_ANTI_AFK_STATE.LoopToken =
+        tonumber(GAG2_ANTI_AFK_STATE.LoopToken)
+        or 0
+
+    GAG2_ANTI_AFK_STATE.LoopToken += 1
+
+    if GAG2_ANTI_AFK_STATE.Connection then
+
+        pcall(function()
+
+            GAG2_ANTI_AFK_STATE.Connection:Disconnect()
+        end)
+    end
 end
 
 GAG2_ANTI_AFK_STATE = {
     Enabled = true,
     Connection = nil,
+
+    LoopRunning = false,
+    LoopToken = 0,
+
+    PulseInterval = 35,
+    MicroMoveInterval = 70,
+
     LastActionAt = 0,
+    LastMicroMoveAt = 0,
     LastIdleSeconds = 0,
+
+    PulseCount = 0,
+    MicroMoveFlip = false,
+
+    LastMethod = "none",
     LastError = "",
 }
 
@@ -8662,38 +8688,23 @@ function GAG2AntiAfkDisconnect()
 
     state.Connection =
         nil
+
+    state.LoopToken =
+        tonumber(state.LoopToken)
+        or 0
+
+    state.LoopToken += 1
+
+    state.LoopRunning =
+        false
 end
 
-function GAG2AntiAfkPulse(idleSeconds)
-
-    local state =
-        GAG2_ANTI_AFK_STATE
-
-    if state.Enabled ~= true then
-        return
-    end
+function GAG2AntiAfkTryVirtualUser()
 
     if VirtualUser == nil then
-
-        state.LastError =
+        return false,
             "VirtualUser missing"
-
-        return
     end
-
-    local now =
-        os.clock()
-
-    if now - tonumber(state.LastActionAt or 0) < 10 then
-        return
-    end
-
-    state.LastActionAt =
-        now
-
-    state.LastIdleSeconds =
-        tonumber(idleSeconds)
-        or 0
 
     local ok, err =
         pcall(function()
@@ -8709,15 +8720,311 @@ function GAG2AntiAfkPulse(idleSeconds)
         end)
 
     if ok == true then
+        return true,
+            "VirtualUser"
+    end
+
+    return false,
+        tostring(err)
+end
+
+function GAG2AntiAfkTryVirtualInput()
+
+    if VirtualInputManager == nil then
+        return false,
+            "VirtualInputManager missing"
+    end
+
+    local anyOk =
+        false
+
+    local firstError =
+        ""
+
+    local keyCode =
+        Enum.KeyCode.RightControl
+
+    local keyOk, keyErr =
+        pcall(function()
+
+            VirtualInputManager:SendKeyEvent(
+                true,
+                keyCode,
+                false,
+                game
+            )
+        end)
+
+    if keyOk == true then
+
+        anyOk =
+            true
+
+        task.delay(0.04, function()
+
+            pcall(function()
+
+                VirtualInputManager:SendKeyEvent(
+                    false,
+                    keyCode,
+                    false,
+                    game
+                )
+            end)
+        end)
+
+    else
+
+        firstError =
+            tostring(keyErr)
+    end
+
+    local camera =
+        workspace.CurrentCamera
+
+    local viewport =
+        camera
+        and camera.ViewportSize
+        or Vector2.new(
+            1280,
+            720
+        )
+
+    local mouseOk, mouseErr =
+        pcall(function()
+
+            VirtualInputManager:SendMouseMoveEvent(
+                math.floor(viewport.X / 2) + 1,
+                math.floor(viewport.Y / 2),
+                game
+            )
+        end)
+
+    if mouseOk == true then
+
+        anyOk =
+            true
+
+    elseif firstError == "" then
+
+        firstError =
+            tostring(mouseErr)
+    end
+
+    if anyOk == true then
+        return true,
+            "VirtualInputManager"
+    end
+
+    return false,
+        firstError ~= ""
+        and firstError
+        or "VirtualInputManager failed"
+end
+
+function GAG2AntiAfkTryMicroMove()
+
+    local state =
+        GAG2_ANTI_AFK_STATE
+
+    local character =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character
+
+    local humanoid =
+        character
+        and character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid
+    or humanoid.Health <= 0 then
+        return false,
+            "humanoid missing"
+    end
+
+    if humanoid.Sit == true then
+        return false,
+            "humanoid seated"
+    end
+
+    state.MicroMoveFlip =
+        state.MicroMoveFlip ~= true
+
+    local direction =
+        state.MicroMoveFlip == true
+        and 1
+        or -1
+
+    local ok, err =
+        pcall(function()
+
+            humanoid:Move(
+                Vector3.new(
+                    0.02 * direction,
+                    0,
+                    0
+                ),
+                false
+            )
+        end)
+
+    if ok ~= true then
+        return false,
+            tostring(err)
+    end
+
+    task.delay(0.06, function()
+
+        pcall(function()
+
+            local currentCharacter =
+                LOCAL_PLAYER
+                and LOCAL_PLAYER.Character
+
+            local currentHumanoid =
+                currentCharacter
+                and currentCharacter:FindFirstChildOfClass("Humanoid")
+
+            if currentHumanoid then
+
+                currentHumanoid:Move(
+                    Vector3.zero,
+                    false
+                )
+            end
+        end)
+    end)
+
+    state.LastMicroMoveAt =
+        os.clock()
+
+    return true,
+        "MicroMove"
+end
+
+function GAG2AntiAfkPulse(idleSeconds, reason)
+
+    local state =
+        GAG2_ANTI_AFK_STATE
+
+    if state.Enabled ~= true then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    if now - tonumber(state.LastActionAt or 0) < 8 then
+        return false
+    end
+
+    state.LastActionAt =
+        now
+
+    state.LastIdleSeconds =
+        tonumber(idleSeconds)
+        or 0
+
+    local methods =
+        {}
+
+    local errors =
+        {}
+
+    local vuOk, vuInfo =
+        GAG2AntiAfkTryVirtualUser()
+
+    if vuOk == true then
+
+        table.insert(
+            methods,
+            vuInfo
+        )
+
+    else
+
+        table.insert(
+            errors,
+            vuInfo
+        )
+    end
+
+    local viOk, viInfo =
+        GAG2AntiAfkTryVirtualInput()
+
+    if viOk == true then
+
+        table.insert(
+            methods,
+            viInfo
+        )
+
+    else
+
+        table.insert(
+            errors,
+            viInfo
+        )
+    end
+
+    local microInterval =
+        math.clamp(
+            tonumber(state.MicroMoveInterval)
+            or 70,
+            45,
+            240
+        )
+
+    if now - tonumber(state.LastMicroMoveAt or 0) >= microInterval then
+
+        local moveOk, moveInfo =
+            GAG2AntiAfkTryMicroMove()
+
+        if moveOk == true then
+
+            table.insert(
+                methods,
+                moveInfo
+            )
+
+        else
+
+            table.insert(
+                errors,
+                moveInfo
+            )
+        end
+    end
+
+    if #methods > 0 then
+
+        state.PulseCount =
+            tonumber(state.PulseCount)
+            or 0
+
+        state.PulseCount += 1
+
+        state.LastMethod =
+            table.concat(
+                methods,
+                " + "
+            )
 
         state.LastError =
             ""
 
-    else
-
-        state.LastError =
-            tostring(err)
+        return true
     end
+
+    state.LastMethod =
+        "none"
+
+    state.LastError =
+        table.concat(
+            errors,
+            " | "
+        )
+
+    return false
 end
 
 function GAG2AntiAfkConnect()
@@ -8744,7 +9051,8 @@ function GAG2AntiAfkConnect()
             return LOCAL_PLAYER.Idled:Connect(function(idleSeconds)
 
                 GAG2AntiAfkPulse(
-                    idleSeconds
+                    idleSeconds,
+                    "idled"
                 )
             end)
         end)
@@ -8765,6 +9073,65 @@ function GAG2AntiAfkConnect()
     end
 end
 
+function GAG2AntiAfkStartLoop()
+
+    local state =
+        GAG2_ANTI_AFK_STATE
+
+    if state.LoopRunning == true then
+        return
+    end
+
+    state.LoopToken =
+        tonumber(state.LoopToken)
+        or 0
+
+    state.LoopToken += 1
+
+    local token =
+        state.LoopToken
+
+    state.LoopRunning =
+        true
+
+    task.spawn(function()
+
+        task.wait(
+            6
+        )
+
+        while GAG2_ANTI_AFK_STATE.Enabled == true
+        and GAG2_ANTI_AFK_STATE.LoopToken == token do
+
+            local interval =
+                math.clamp(
+                    tonumber(GAG2_ANTI_AFK_STATE.PulseInterval)
+                    or 35,
+                    20,
+                    120
+                )
+
+            if os.clock() - tonumber(GAG2_ANTI_AFK_STATE.LastActionAt or 0) >= interval then
+
+                GAG2AntiAfkPulse(
+                    0,
+                    "proactive"
+                )
+            end
+
+            task.wait(
+                5
+            )
+        end
+
+        if GAG2_ANTI_AFK_STATE.LoopToken == token then
+
+            GAG2_ANTI_AFK_STATE.LoopRunning =
+                false
+        end
+    end)
+end
+
 function GAG2AntiAfkSetEnabled(value, skipDirty)
 
     local state =
@@ -8776,6 +9143,7 @@ function GAG2AntiAfkSetEnabled(value, skipDirty)
     if state.Enabled == true then
 
         GAG2AntiAfkConnect()
+        GAG2AntiAfkStartLoop()
 
     else
 
@@ -14635,35 +15003,130 @@ function GAG2SeedPlantBuildPositions()
     local state =
         GAG2_SEED_PLANTING_STATE
 
+    GAG2SeedPlantLoadPoint()
+
+    local localOffset =
+        state.PlantLocalOffset
+
+    local cacheKey =
+        tostring(state.Layout)
+        .. "|"
+        .. tostring(state.Direction)
+        .. "|"
+        .. tostring(state.Amount)
+        .. "|"
+        .. tostring(state.LayerSpacing)
+        .. "|"
+        .. tostring(state.GridWidth)
+        .. "|"
+        .. tostring(state.GridDepth)
+        .. "|"
+        .. tostring(state.GridLayers)
+        .. "|"
+        .. tostring(state.GridSpacing)
+        .. "|"
+        .. (
+            typeof(localOffset) == "Vector3"
+            and string.format(
+                "%.3f,%.3f,%.3f",
+                localOffset.X,
+                localOffset.Y,
+                localOffset.Z
+            )
+            or "no-point"
+        )
+
+    local now =
+        os.clock()
+
+    local cached =
+        state.PositionCache
+
+    if type(cached) == "table"
+    and cached.Key == cacheKey
+    and type(cached.Positions) == "table"
+    and now - tonumber(cached.At or 0) <= 1.25 then
+
+        local copied =
+            {}
+
+        for index, position in ipairs(cached.Positions) do
+
+            copied[index] =
+                position
+        end
+
+        return copied,
+            tostring(cached.Reason or "cached")
+    end
+
     local basePosition, ownPlot, reason =
         GAG2SeedPlantGetBasePosition()
 
     if typeof(basePosition) ~= "Vector3" then
+
+        state.PositionCache =
+            nil
+
         return {},
             tostring(reason)
     end
 
+    local positions =
+        {}
+
+    local positionReason =
+        "stack"
+
     if state.Layout == "Grid" then
 
-        local positions =
+        positions =
             GAG2SeedPlantBuildGridPositions(
                 basePosition,
                 ownPlot
             )
 
+        positionReason =
+            "grid"
+
         if #positions <= 0 then
+
+            state.PositionCache =
+                nil
+
             return {},
                 "no valid grid positions"
         end
 
-        return positions,
-            "grid"
+    else
+
+        positions =
+            GAG2SeedPlantBuildStackPositions(
+                basePosition
+            )
+
+        positionReason =
+            "stack"
     end
 
-    return GAG2SeedPlantBuildStackPositions(
-        basePosition
-    ),
-    "stack"
+    state.PositionCache = {
+        Key = cacheKey,
+        At = now,
+        Positions = positions,
+        Reason = positionReason,
+    }
+
+    local copied =
+        {}
+
+    for index, position in ipairs(positions) do
+
+        copied[index] =
+            position
+    end
+
+    return copied,
+        positionReason
 end
 
 function GAG2SeedPlantFireCycle()
@@ -27452,7 +27915,7 @@ SettingsUIBox:AddToggle("HolyGAG2HideOtherGardens", {
 SettingsUIBox:AddToggle("HolyGAG2AntiAfk", {
     Text = "Anti AFK",
     Default = true,
-    Tooltip = "Default ON. Responds only when Roblox fires LocalPlayer.Idled. No remotes, no loop, no console output.",
+    Tooltip = "Default ON. Prevents GAG2 custom 30min inactivity hop with quiet input pulses. No remotes, no console output.",
     Callback = function(value)
 
         GAG2AntiAfkSetEnabled(
