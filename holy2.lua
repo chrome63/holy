@@ -2941,6 +2941,8 @@ local SniperState = {
         "",
     },
     KnownPetNames = {},
+    SizeClass = "Any Size",
+    SizeBaselines = {},
     AutoHop = false,
     InstantFirstHop = false,
     FirstHopUsed = false,
@@ -17248,6 +17250,295 @@ function SniperGetEntryDistanceValue(entry)
     return (root.Position - position).Magnitude
 end
 
+GAG2_SNIPER_SIZE_CLASS_VALUES = {
+    "Any Size",
+    "Big+",
+    "Huge Only",
+}
+
+function SniperSizeClassValues()
+
+    return {
+        "Any Size",
+        "Big+",
+        "Huge Only",
+    }
+end
+
+function SniperCleanSizeClass(value)
+
+    value =
+        CleanText(value)
+
+    if value == "Big+" then
+        return "Big+"
+    end
+
+    if value == "Huge Only"
+    or value == "Huge" then
+        return "Huge Only"
+    end
+
+    return "Any Size"
+end
+
+function SniperSetSizeClass(value)
+
+    SniperState.SizeClass =
+        SniperCleanSizeClass(
+            value
+        )
+
+    MarkConfigDirty()
+end
+
+function SniperSizeClassText()
+
+    return SniperCleanSizeClass(
+        SniperState.SizeClass
+    )
+end
+
+function SniperReadSizeMetric(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return 0
+    end
+
+    if instance:IsA("Model") then
+
+        local ok, size =
+            pcall(function()
+
+                return instance:GetExtentsSize()
+            end)
+
+        if ok == true
+        and typeof(size) == "Vector3"
+        and size.Magnitude > 0 then
+
+            return size.Magnitude
+        end
+    end
+
+    if instance:IsA("BasePart") then
+
+        return instance.Size.Magnitude
+    end
+
+    local rootPart =
+        instance:FindFirstChild("RootPart", true)
+        or instance:FindFirstChildWhichIsA("BasePart", true)
+
+    if rootPart
+    and rootPart:IsA("BasePart") then
+
+        return rootPart.Size.Magnitude
+    end
+
+    return 0
+end
+
+function SniperSizeBaselineKey(petName)
+
+    return SniperNormalizeName(
+        petName
+    )
+end
+
+function SniperRefreshSizeBaselines(entries)
+
+    SniperState.SizeBaselines =
+        type(SniperState.SizeBaselines) == "table"
+        and SniperState.SizeBaselines
+        or {}
+
+    for _, entry in ipairs(entries or {}) do
+
+        local key =
+            SniperSizeBaselineKey(
+                entry and entry.Name
+            )
+
+        local metric =
+            tonumber(
+                entry and entry.SizeMetric
+            )
+            or 0
+
+        if key ~= ""
+        and metric > 0 then
+
+            local current =
+                tonumber(
+                    SniperState.SizeBaselines[key]
+                )
+
+            if not current
+            or current <= 0
+            or metric < current then
+
+                SniperState.SizeBaselines[key] =
+                    metric
+            end
+        end
+    end
+end
+
+function SniperApplyEntrySizeClass(entry)
+
+    if type(entry) ~= "table" then
+        return "Any Size", 1
+    end
+
+    local key =
+        SniperSizeBaselineKey(
+            entry.Name
+        )
+
+    local metric =
+        tonumber(entry.SizeMetric)
+        or 0
+
+    local baseline =
+        key ~= ""
+        and tonumber(
+            SniperState.SizeBaselines
+            and SniperState.SizeBaselines[key]
+        )
+        or nil
+
+    local ratio =
+        1
+
+    if metric > 0
+    and baseline
+    and baseline > 0 then
+
+        ratio =
+            metric / baseline
+    end
+
+    local label =
+        "Any Size"
+
+    local score =
+        1
+
+    if ratio >= 1.55 then
+
+        label =
+            "Huge"
+
+        score =
+            3
+
+    elseif ratio >= 1.25 then
+
+        label =
+            "Big+"
+
+        score =
+            2
+    end
+
+    entry.SizeClass =
+        label
+
+    entry.SizeScore =
+        score
+
+    return label,
+        score
+end
+
+function SniperEntryMatchesSizeClass(entry)
+
+    local wanted =
+        SniperSizeClassText()
+
+    if wanted == "Any Size" then
+        return true
+    end
+
+    if type(entry) ~= "table" then
+        return false
+    end
+
+    if entry.SizeClass == nil
+    or entry.SizeScore == nil then
+
+        SniperApplyEntrySizeClass(
+            entry
+        )
+    end
+
+    local score =
+        tonumber(entry.SizeScore)
+        or 1
+
+    if wanted == "Big+" then
+        return score >= 2
+    end
+
+    if wanted == "Huge Only" then
+        return score >= 3
+    end
+
+    return true
+end
+
+function SniperEntryDisplayName(entry)
+
+    if type(entry) ~= "table" then
+        return "Unknown"
+    end
+
+    local name =
+        CleanText(entry.Name)
+
+    if name == "" then
+        name =
+            "Unknown"
+    end
+
+    local score =
+        tonumber(entry.SizeScore)
+        or 1
+
+    if score >= 3 then
+
+        return "Huge "
+            .. name
+    end
+
+    if score >= 2 then
+
+        return "Big "
+            .. name
+    end
+
+    return name
+end
+
+function SniperEntrySizeText(entry)
+
+    if type(entry) ~= "table" then
+        return "Any Size"
+    end
+
+    if entry.SizeClass == nil then
+
+        SniperApplyEntrySizeClass(
+            entry
+        )
+    end
+
+    return CleanText(entry.SizeClass) ~= ""
+        and CleanText(entry.SizeClass)
+        or "Any Size"
+end
+
 function SniperSortMatches(matches)
 
     if type(matches) ~= "table" then
@@ -17503,6 +17794,11 @@ local function SniperGetActiveEntries()
             petName
         )
 
+        local sizeMetric =
+            SniperReadSizeMetric(
+                spawn or ref
+            )
+
         table.insert(entries, {
             Instance = spawn or ref,
             Spawn = spawn,
@@ -17514,6 +17810,9 @@ local function SniperGetActiveEntries()
             Distance = SniperDistanceText(position),
             Timer = timerText,
             Price = priceText,
+            SizeMetric = sizeMetric,
+            SizeClass = "Any Size",
+            SizeScore = 1,
             Path = PathOf(spawn or ref),
         })
     end
@@ -17570,6 +17869,17 @@ local function SniperGetActiveEntries()
                 )
             end
         end
+    end
+
+    SniperRefreshSizeBaselines(
+        entries
+    )
+
+    for _, entry in ipairs(entries) do
+
+        SniperApplyEntrySizeClass(
+            entry
+        )
     end
 
     table.sort(entries, function(a, b)
@@ -17652,6 +17962,9 @@ function SniperBuildMatchText(entries, matches, orderedTargets, reason)
         '<font color="rgb(196,181,253)"><b>Selected Targets</b></font>',
         SniperTargetsText(),
         "",
+        '<font color="rgb(196,181,253)"><b>Size Class</b></font>',
+        SniperSizeClassText(),
+        "",
         '<font color="rgb(196,181,253)"><b>Priority</b></font>',
         SniperPriorityText(),
         "",
@@ -17723,7 +18036,9 @@ function SniperBuildMatchText(entries, matches, orderedTargets, reason)
             lines,
             tostring(index)
             .. ". "
-            .. tostring(entry.Name)
+            .. SniperEntryDisplayName(entry)
+            .. " | "
+            .. SniperEntrySizeText(entry)
             .. " | Time: "
             .. tostring(entry.Timer or "?")
             .. " | Price: "
@@ -17756,7 +18071,8 @@ function SniperScan(allowAutoHop)
     for _, entry in ipairs(entries) do
 
         if SniperIsEntryHandled(entry) ~= true
-        and SniperEntryMatchesTargets(entry, targets) == true then
+        and SniperEntryMatchesTargets(entry, targets) == true
+        and SniperEntryMatchesSizeClass(entry) == true then
 
             table.insert(
                 matches,
@@ -17824,7 +18140,9 @@ function SniperScan(allowAutoHop)
 
         SetSniperStatus(
             "Found: "
-            .. tostring(matches[1].Name)
+            .. SniperEntryDisplayName(
+                matches[1]
+            )
         )
 
         if allowAutoHop == true
@@ -28059,24 +28377,28 @@ SniperTargetDropdown =
         }
     )
 
-if SniperTargetDropdown
-and type(SniperTargetDropdown.OnChanged) == "function" then
+SniperMainBox:AddDropdown(
+    "HolyGAG2SniperSizeClass",
+    {
+        Text = "Size Class",
+        Values = SniperSizeClassValues(),
+        Default = SniperSizeClassText(),
+        Multi = false,
+        Searchable = false,
+        AllowNull = false,
+        MaxVisibleDropdownItems = 3,
+        Tooltip = "Only buy pets matching this size class.",
+    }
+):OnChanged(function(value)
 
-    SniperTargetDropdown:OnChanged(function(value)
+    SniperSetSizeClass(
+        value
+    )
 
-        if SniperDropdownRefreshing == true then
-            return
-        end
-
-        SniperSetTargets(
-            value
-        )
-
-        SniperScan(
-            false
-        )
-    end)
-end
+    SniperScan(
+        false
+    )
+end)
 
 SniperMainBox:AddButton({
     Text = "Refresh List",
@@ -28344,6 +28666,9 @@ SniperStatusBox:AddLabel("HolyGAG2SniperMatches", {
     Text =
         '<font color="rgb(196,181,253)"><b>Selected Targets</b></font>'
         .. '\nNone'
+        .. '\n\n'
+        .. '<font color="rgb(196,181,253)"><b>Size Class</b></font>'
+        .. '\nAny Size'
         .. '\n\n'
         .. '<font color="rgb(196,181,253)"><b>Result</b></font>'
         .. '\nNo scan yet.',
