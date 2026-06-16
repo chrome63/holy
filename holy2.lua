@@ -1949,6 +1949,800 @@ function GAG2QueueExactJoin(placeId, jobId, reason)
         "queued"
 end
 
+function GAG2WildPetNetworkGetScoutUserId(rowData)
+
+    if type(rowData) ~= "table" then
+        return 0
+    end
+
+    local candidates = {
+        rowData.scoutUserId,
+        rowData.ScoutUserId,
+        rowData.scoutId,
+        rowData.ScoutId,
+        rowData.reporterUserId,
+        rowData.ReporterUserId,
+        rowData.playerUserId,
+        rowData.PlayerUserId,
+        rowData.userId,
+        rowData.UserId,
+    }
+
+    if type(rowData.scout) == "table" then
+
+        table.insert(
+            candidates,
+            rowData.scout.userId
+            or rowData.scout.UserId
+            or rowData.scout.id
+            or rowData.scout.Id
+        )
+    end
+
+    if type(rowData.reporter) == "table" then
+
+        table.insert(
+            candidates,
+            rowData.reporter.userId
+            or rowData.reporter.UserId
+            or rowData.reporter.id
+            or rowData.reporter.Id
+        )
+    end
+
+    for _, value in ipairs(candidates) do
+
+        local userId =
+            tonumber(value)
+
+        if userId
+        and userId > 0 then
+
+            return math.floor(
+                userId
+            )
+        end
+    end
+
+    return 0
+end
+
+function GAG2WildPetNetworkGetScoutName(rowData)
+
+    if type(rowData) ~= "table" then
+        return ""
+    end
+
+    local candidates = {
+        rowData.scoutName,
+        rowData.ScoutName,
+        rowData.reporterName,
+        rowData.ReporterName,
+        rowData.playerName,
+        rowData.PlayerName,
+        rowData.username,
+        rowData.Username,
+        rowData.name,
+        rowData.Name,
+    }
+
+    if type(rowData.scout) == "table" then
+
+        table.insert(
+            candidates,
+            rowData.scout.name
+            or rowData.scout.Name
+            or rowData.scout.username
+            or rowData.scout.Username
+        )
+    end
+
+    if type(rowData.reporter) == "table" then
+
+        table.insert(
+            candidates,
+            rowData.reporter.name
+            or rowData.reporter.Name
+            or rowData.reporter.username
+            or rowData.reporter.Username
+        )
+    end
+
+    for _, value in ipairs(candidates) do
+
+        local text =
+            CleanText(value)
+
+        if text ~= "" then
+            return text
+        end
+    end
+
+    return ""
+end
+
+function GAG2QueuePlayerIdJoin(
+    scoutUserId,
+    fallbackPlaceId,
+    fallbackJobId,
+    reason
+)
+
+    scoutUserId =
+        math.floor(
+            tonumber(scoutUserId)
+            or 0
+        )
+
+    fallbackPlaceId =
+        tonumber(fallbackPlaceId)
+
+    fallbackJobId =
+        CleanText(fallbackJobId)
+
+    reason =
+        tostring(reason or "player id join")
+
+    if scoutUserId <= 0 then
+
+        warn(
+            "[HOLY PLAYER JOIN]",
+            "missing scoutUserId, using fallback exact JobId"
+        )
+
+        if fallbackPlaceId
+        and fallbackPlaceId > 0
+        and fallbackJobId ~= "" then
+
+            GAG2SaveExactJoinTarget(
+                fallbackPlaceId,
+                fallbackJobId,
+                0,
+                reason .. " fallback no scoutUserId"
+            )
+
+            return GAG2QueueExactJoin(
+                fallbackPlaceId,
+                fallbackJobId,
+                reason .. " fallback no scoutUserId"
+            )
+        end
+
+        return false,
+            "missing scoutUserId and fallback JobId"
+    end
+
+    if LOCAL_PLAYER
+    and scoutUserId == LOCAL_PLAYER.UserId then
+
+        if fallbackPlaceId == tonumber(game.PlaceId)
+        and fallbackJobId == tostring(game.JobId) then
+
+            SetStatus(
+                "Scout is you. Already in this server."
+            )
+
+            if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+                GAG2WildPetNetworkSetStatus(
+                    "Already in scout server."
+                )
+            end
+
+            return false,
+                "already in scout server"
+        end
+    end
+
+    SetStatus(
+        "Resolving scout user "
+        .. tostring(scoutUserId)
+        .. "..."
+    )
+
+    if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+        GAG2WildPetNetworkSetStatus(
+            "Resolving scout "
+            .. tostring(scoutUserId)
+            .. "..."
+        )
+    end
+
+    print(
+        "[HOLY PLAYER JOIN]",
+        "GetPlayerPlaceInstanceAsync",
+        "| userId:",
+        tostring(scoutUserId),
+        "| fallback:",
+        tostring(fallbackPlaceId)
+        .. ":"
+        .. tostring(fallbackJobId),
+        "| reason:",
+        reason
+    )
+
+    local lookupOk,
+        currentInstance,
+        lookupError,
+        resolvedPlaceId,
+        resolvedJobId =
+        pcall(function()
+
+            return TeleportService:GetPlayerPlaceInstanceAsync(
+                scoutUserId
+            )
+        end)
+
+    if lookupOk ~= true then
+
+        warn(
+            "[HOLY PLAYER JOIN]",
+            "user lookup failed:",
+            tostring(currentInstance)
+        )
+
+        if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+            GAG2WildPetNetworkSetStatus(
+                "Player lookup failed. Fallback exact join..."
+            )
+        end
+
+        if fallbackPlaceId
+        and fallbackPlaceId > 0
+        and fallbackJobId ~= "" then
+
+            GAG2SaveExactJoinTarget(
+                fallbackPlaceId,
+                fallbackJobId,
+                0,
+                reason .. " fallback lookup failed"
+            )
+
+            return GAG2QueueExactJoin(
+                fallbackPlaceId,
+                fallbackJobId,
+                reason .. " fallback lookup failed"
+            )
+        end
+
+        return false,
+            tostring(currentInstance)
+    end
+
+    resolvedPlaceId =
+        tonumber(resolvedPlaceId)
+
+    resolvedJobId =
+        CleanText(resolvedJobId)
+
+    print(
+        "[HOLY PLAYER JOIN]",
+        "lookup returned",
+        "| currentInstance:",
+        tostring(currentInstance),
+        "| lookupError:",
+        tostring(lookupError),
+        "| placeId:",
+        tostring(resolvedPlaceId),
+        "| jobId:",
+        tostring(resolvedJobId)
+    )
+
+    if currentInstance == true then
+
+        SetStatus(
+            "Scout is already in this server."
+        )
+
+        if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+            GAG2WildPetNetworkSetStatus(
+                "Scout is already in this server."
+            )
+        end
+
+        return false,
+            "scout is current instance"
+    end
+
+    if not resolvedPlaceId
+    or resolvedPlaceId <= 0
+    or resolvedJobId == "" then
+
+        warn(
+            "[HOLY PLAYER JOIN]",
+            "lookup returned no usable JobId:",
+            tostring(lookupError)
+        )
+
+        if fallbackPlaceId
+        and fallbackPlaceId > 0
+        and fallbackJobId ~= "" then
+
+            if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+                GAG2WildPetNetworkSetStatus(
+                    "Player lookup empty. Fallback exact join..."
+                )
+            end
+
+            GAG2SaveExactJoinTarget(
+                fallbackPlaceId,
+                fallbackJobId,
+                0,
+                reason .. " fallback lookup empty"
+            )
+
+            return GAG2QueueExactJoin(
+                fallbackPlaceId,
+                fallbackJobId,
+                reason .. " fallback lookup empty"
+            )
+        end
+
+        return false,
+            tostring(lookupError or "lookup returned no JobId")
+    end
+
+    if resolvedPlaceId == tonumber(game.PlaceId)
+    and resolvedJobId == tostring(game.JobId) then
+
+        SetStatus(
+            "Already in resolved scout server."
+        )
+
+        if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+            GAG2WildPetNetworkSetStatus(
+                "Already in resolved scout server."
+            )
+        end
+
+        return false,
+            "already in resolved scout server"
+    end
+
+    GAG2ClearExactJoinTarget(
+        "new player-id resolved join"
+    )
+
+    GAG2_EXACT_JOIN_STATE.Retrying =
+        false
+
+    GAG2SaveExactJoinTarget(
+        resolvedPlaceId,
+        resolvedJobId,
+        0,
+        reason .. " resolved from scoutUserId"
+    )
+
+    if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+        GAG2WildPetNetworkSetStatus(
+            "Joining scout server "
+            .. tostring(resolvedJobId:sub(1, 8))
+            .. "..."
+        )
+    end
+
+    SetStatus(
+        "Joining resolved scout server..."
+    )
+
+    return GAG2QueueExactJoin(
+        resolvedPlaceId,
+        resolvedJobId,
+        reason .. " resolved from scoutUserId"
+    )
+end
+
+function GAG2WildPetNetworkGetScoutUserId(rowData)
+
+    if type(rowData) ~= "table" then
+        return 0
+    end
+
+    local candidates =
+        {}
+
+    local function add(value)
+
+        if value ~= nil then
+
+            table.insert(
+                candidates,
+                value
+            )
+        end
+    end
+
+    add(rowData.scoutUserId)
+    add(rowData.ScoutUserId)
+    add(rowData.bestScoutUserId)
+    add(rowData.BestScoutUserId)
+    add(rowData.reporterUserId)
+    add(rowData.ReporterUserId)
+    add(rowData.playerUserId)
+    add(rowData.PlayerUserId)
+    add(rowData.userId)
+    add(rowData.UserId)
+
+    if type(rowData.scout) == "table" then
+
+        add(rowData.scout.userId)
+        add(rowData.scout.UserId)
+        add(rowData.scout.id)
+        add(rowData.scout.Id)
+    end
+
+    if type(rowData.reporter) == "table" then
+
+        add(rowData.reporter.userId)
+        add(rowData.reporter.UserId)
+        add(rowData.reporter.id)
+        add(rowData.reporter.Id)
+    end
+
+    if type(rowData.scouts) == "table" then
+
+        for _, scout in ipairs(rowData.scouts) do
+
+            if type(scout) == "table" then
+
+                add(scout.userId)
+                add(scout.UserId)
+                add(scout.id)
+                add(scout.Id)
+
+            else
+
+                add(scout)
+            end
+        end
+    end
+
+    for _, value in ipairs(candidates) do
+
+        local userId =
+            tonumber(value)
+
+        if userId
+        and userId > 0 then
+
+            return math.floor(userId)
+        end
+    end
+
+    return 0
+end
+
+function GAG2WildPetNetworkGetScoutName(rowData)
+
+    if type(rowData) ~= "table" then
+        return ""
+    end
+
+    local candidates =
+        {}
+
+    local function add(value)
+
+        value =
+            CleanText(value)
+
+        if value ~= "" then
+
+            table.insert(
+                candidates,
+                value
+            )
+        end
+    end
+
+    add(rowData.scoutName)
+    add(rowData.ScoutName)
+    add(rowData.bestScoutName)
+    add(rowData.BestScoutName)
+    add(rowData.reporterName)
+    add(rowData.ReporterName)
+    add(rowData.playerName)
+    add(rowData.PlayerName)
+    add(rowData.username)
+    add(rowData.Username)
+    add(rowData.name)
+    add(rowData.Name)
+
+    if type(rowData.scout) == "table" then
+
+        add(rowData.scout.name)
+        add(rowData.scout.Name)
+        add(rowData.scout.username)
+        add(rowData.scout.Username)
+    end
+
+    if type(rowData.reporter) == "table" then
+
+        add(rowData.reporter.name)
+        add(rowData.reporter.Name)
+        add(rowData.reporter.username)
+        add(rowData.reporter.Username)
+    end
+
+    if type(rowData.scouts) == "table" then
+
+        for _, scout in ipairs(rowData.scouts) do
+
+            if type(scout) == "table" then
+
+                add(scout.name)
+                add(scout.Name)
+                add(scout.username)
+                add(scout.Username)
+            end
+        end
+    end
+
+    return candidates[1]
+        or ""
+end
+
+function GAG2QueuePlayerIdJoin(
+    scoutUserId,
+    fallbackPlaceId,
+    fallbackJobId,
+    reason
+)
+
+    scoutUserId =
+        math.floor(
+            tonumber(scoutUserId)
+            or 0
+        )
+
+    fallbackPlaceId =
+        tonumber(fallbackPlaceId)
+
+    fallbackJobId =
+        CleanText(fallbackJobId)
+
+    reason =
+        tostring(reason or "player-id join")
+
+    if scoutUserId <= 0 then
+
+        warn(
+            "[HOLY PLAYER JOIN]",
+            "missing scoutUserId; fallback exact join"
+        )
+
+        if fallbackPlaceId
+        and fallbackPlaceId > 0
+        and fallbackJobId ~= "" then
+
+            GAG2SaveExactJoinTarget(
+                fallbackPlaceId,
+                fallbackJobId,
+                0,
+                reason .. " fallback missing scoutUserId"
+            )
+
+            return GAG2QueueExactJoin(
+                fallbackPlaceId,
+                fallbackJobId,
+                reason .. " fallback missing scoutUserId"
+            )
+        end
+
+        return false,
+            "missing scoutUserId"
+    end
+
+    print(
+        "[HOLY PLAYER JOIN]",
+        "trying scout lookup",
+        "| userId:",
+        tostring(scoutUserId),
+        "| fallback:",
+        tostring(fallbackPlaceId)
+        .. ":"
+        .. tostring(fallbackJobId),
+        "| reason:",
+        reason
+    )
+
+    SetStatus(
+        "Resolving scout user "
+        .. tostring(scoutUserId)
+        .. "..."
+    )
+
+    if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+        GAG2WildPetNetworkSetStatus(
+            "Resolving scout user "
+            .. tostring(scoutUserId)
+            .. "..."
+        )
+    end
+
+    local lookupOk,
+        currentInstance,
+        lookupError,
+        resolvedPlaceId,
+        resolvedJobId =
+        pcall(function()
+
+            return TeleportService:GetPlayerPlaceInstanceAsync(
+                scoutUserId
+            )
+        end)
+
+    if lookupOk ~= true then
+
+        warn(
+            "[HOLY PLAYER JOIN]",
+            "scout lookup failed:",
+            tostring(currentInstance)
+        )
+
+        if fallbackPlaceId
+        and fallbackPlaceId > 0
+        and fallbackJobId ~= "" then
+
+            if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+                GAG2WildPetNetworkSetStatus(
+                    "Scout lookup failed. Fallback exact join..."
+                )
+            end
+
+            GAG2SaveExactJoinTarget(
+                fallbackPlaceId,
+                fallbackJobId,
+                0,
+                reason .. " fallback lookup failed"
+            )
+
+            return GAG2QueueExactJoin(
+                fallbackPlaceId,
+                fallbackJobId,
+                reason .. " fallback lookup failed"
+            )
+        end
+
+        return false,
+            tostring(currentInstance)
+    end
+
+    resolvedPlaceId =
+        tonumber(resolvedPlaceId)
+
+    resolvedJobId =
+        CleanText(resolvedJobId)
+
+    print(
+        "[HOLY PLAYER JOIN]",
+        "lookup returned",
+        "| currentInstance:",
+        tostring(currentInstance),
+        "| lookupError:",
+        tostring(lookupError),
+        "| placeId:",
+        tostring(resolvedPlaceId),
+        "| jobId:",
+        tostring(resolvedJobId)
+    )
+
+    if currentInstance == true then
+
+        SetStatus(
+            "Scout is already in this server."
+        )
+
+        if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+            GAG2WildPetNetworkSetStatus(
+                "Scout is already in this server."
+            )
+        end
+
+        return false,
+            "scout is already in this server"
+    end
+
+    if not resolvedPlaceId
+    or resolvedPlaceId <= 0
+    or resolvedJobId == "" then
+
+        warn(
+            "[HOLY PLAYER JOIN]",
+            "lookup returned no usable JobId:",
+            tostring(lookupError)
+        )
+
+        if fallbackPlaceId
+        and fallbackPlaceId > 0
+        and fallbackJobId ~= "" then
+
+            if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+                GAG2WildPetNetworkSetStatus(
+                    "Scout lookup empty. Fallback exact join..."
+                )
+            end
+
+            GAG2SaveExactJoinTarget(
+                fallbackPlaceId,
+                fallbackJobId,
+                0,
+                reason .. " fallback lookup empty"
+            )
+
+            return GAG2QueueExactJoin(
+                fallbackPlaceId,
+                fallbackJobId,
+                reason .. " fallback lookup empty"
+            )
+        end
+
+        return false,
+            tostring(lookupError or "scout lookup returned no JobId")
+    end
+
+    if resolvedPlaceId == tonumber(game.PlaceId)
+    and resolvedJobId == tostring(game.JobId) then
+
+        SetStatus(
+            "Already in resolved scout server."
+        )
+
+        if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+            GAG2WildPetNetworkSetStatus(
+                "Already in resolved scout server."
+            )
+        end
+
+        return false,
+            "already in resolved scout server"
+    end
+
+    GAG2ClearExactJoinTarget(
+        "new scout user-id resolved join"
+    )
+
+    GAG2_EXACT_JOIN_STATE.Retrying =
+        false
+
+    GAG2SaveExactJoinTarget(
+        resolvedPlaceId,
+        resolvedJobId,
+        0,
+        reason .. " resolved from scoutUserId"
+    )
+
+    SetStatus(
+        "Joining resolved scout server..."
+    )
+
+    if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+        GAG2WildPetNetworkSetStatus(
+            "Joining scout server "
+            .. tostring(resolvedJobId:sub(1, 8))
+            .. "..."
+        )
+    end
+
+    return GAG2QueueExactJoin(
+        resolvedPlaceId,
+        resolvedJobId,
+        reason .. " resolved from scoutUserId"
+    )
+end
+
 function GAG2RetryExactJoinTarget(target, reason)
 
     if type(target) ~= "table" then
@@ -4871,25 +5665,49 @@ function GAG2WildPetNetworkCreateServerRow(
 
     joinButton.MouseButton1Click:Connect(function()
 
-        GAG2WildPetNetworkJoinServer({
-            placeId =
-                placeId,
+        local joinPayload =
+            {}
 
-            jobId =
-                jobId,
+        if type(rowData) == "table" then
 
-            petName =
-                CleanText(
-                    rowData.petName
-                    or rowData.PetName
-                ),
+            for key, value in pairs(rowData) do
 
-            rarity =
-                CleanText(
-                    rowData.rarity
-                    or rowData.Rarity
-                ),
-        })
+                joinPayload[key] =
+                    value
+            end
+        end
+
+        joinPayload.placeId =
+            placeId
+
+        joinPayload.jobId =
+            jobId
+
+        joinPayload.petName =
+            CleanText(
+                rowData.petName
+                or rowData.PetName
+            )
+
+        joinPayload.rarity =
+            CleanText(
+                rowData.rarity
+                or rowData.Rarity
+            )
+
+        joinPayload.scoutUserId =
+            GAG2WildPetNetworkGetScoutUserId(
+                rowData
+            )
+
+        joinPayload.scoutName =
+            GAG2WildPetNetworkGetScoutName(
+                rowData
+            )
+
+        GAG2WildPetNetworkJoinServer(
+            joinPayload
+        )
     end)
 
     return row
@@ -5275,6 +6093,16 @@ function GAG2WildPetNetworkJoinServer(rowData)
             or rowData.JobId
         )
 
+    local scoutUserId =
+        GAG2WildPetNetworkGetScoutUserId(
+            rowData
+        )
+
+    local scoutName =
+        GAG2WildPetNetworkGetScoutName(
+            rowData
+        )
+
     if not placeId
     or placeId <= 0
     or jobId == "" then
@@ -5314,17 +6142,69 @@ function GAG2WildPetNetworkJoinServer(rowData)
     GAG2_EXACT_JOIN_STATE.Retrying =
         false
 
+    print(
+        "[HOLY WILD PET JOIN]",
+        "clicked row",
+        "| place:",
+        tostring(placeId),
+        "| job:",
+        tostring(jobId),
+        "| scoutUserId:",
+        tostring(scoutUserId),
+        "| scoutName:",
+        tostring(scoutName ~= "" and scoutName or "unknown")
+    )
+
+    if scoutUserId > 0 then
+
+        GAG2WildPetNetworkSetStatus(
+            "Trying player-id join via scout "
+            .. tostring(
+                scoutName ~= ""
+                and scoutName
+                or scoutUserId
+            )
+            .. "..."
+        )
+
+        local ok, errorText =
+            GAG2QueuePlayerIdJoin(
+                scoutUserId,
+                placeId,
+                jobId,
+                "live wild pet HUD scout lookup"
+            )
+
+        if ok ~= true then
+
+            GAG2WildPetNetworkSetStatus(
+                "Player-id join failed: "
+                .. tostring(errorText)
+            )
+
+            Notify(
+                "Join Failed",
+                tostring(errorText),
+                5
+            )
+
+            return false
+        end
+
+        return true
+    end
+
+    GAG2WildPetNetworkSetStatus(
+        "No scoutUserId. Exact joining "
+        .. tostring(jobId:sub(1, 8))
+        .. "..."
+    )
+
     GAG2SaveExactJoinTarget(
         placeId,
         jobId,
         0,
-        "live wild pet HUD"
-    )
-
-    GAG2WildPetNetworkSetStatus(
-        "Joining "
-        .. tostring(jobId:sub(1, 8))
-        .. "..."
+        "live wild pet HUD no scoutUserId"
     )
 
     SetStatus(
@@ -5335,7 +6215,7 @@ function GAG2WildPetNetworkJoinServer(rowData)
         GAG2QueueExactJoin(
             placeId,
             jobId,
-            "live wild pet HUD"
+            "live wild pet HUD no scoutUserId"
         )
 
     if ok ~= true then
