@@ -148,6 +148,81 @@ function GAG2ExecutorGetRequestFunction()
     return requestFunction
 end
 
+function GAG2ExecutorValidateLuaSource(body)
+
+    if type(body) ~= "string"
+    or body == "" then
+
+        return nil,
+            "empty response"
+    end
+
+    if body:sub(1, 3) == "\239\187\191" then
+
+        body =
+            body:sub(4)
+    end
+
+    local firstByte, secondByte =
+        string.byte(
+            body,
+            1,
+            2
+        )
+
+    if firstByte == 27 then
+
+        return nil,
+            "response starts with a Lua bytecode signature"
+    end
+
+    if firstByte == 31
+    and secondByte == 139 then
+
+        return nil,
+            "response is still gzip-compressed"
+    end
+
+    if body:find(
+        "\0",
+        1,
+        true
+    ) then
+
+        return nil,
+            "response contains binary null bytes"
+    end
+
+    local preview =
+        body:sub(
+            1,
+            240
+        ):lower()
+
+    if preview:find(
+        "<!doctype html",
+        1,
+        true
+    )
+    or preview:find(
+        "<html",
+        1,
+        true
+    )
+    or preview:find(
+        "rate limit exceeded",
+        1,
+        true
+    ) then
+
+        return nil,
+            "response is HTML or a rate-limit page"
+    end
+
+    return body,
+        nil
+end
+
 function GAG2ExecutorHttpGet(url)
 
     url =
@@ -159,20 +234,92 @@ function GAG2ExecutorHttpGet(url)
             "empty URL"
     end
 
+    local cleanUrl =
+        url:gsub(
+            "%?.*$",
+            ""
+        )
+
+    local failures =
+        {}
+
+    local function acceptBody(label, body)
+
+        local validated, validationError =
+            GAG2ExecutorValidateLuaSource(
+                body
+            )
+
+        if validated then
+
+            return validated
+        end
+
+        failures[#failures + 1] =
+            tostring(label)
+            .. ": "
+            .. tostring(validationError)
+
+        return nil
+    end
+
     local httpGetOk, httpGetResult =
         pcall(function()
 
             return game:HttpGet(
-                url
+                cleanUrl,
+                true
             )
         end)
 
-    if httpGetOk == true
-    and type(httpGetResult) == "string"
-    and httpGetResult ~= "" then
+    if httpGetOk == true then
 
-        return httpGetResult,
-            nil
+        local validated =
+            acceptBody(
+                "game:HttpGet clean URL",
+                httpGetResult
+            )
+
+        if validated then
+
+            return validated,
+                nil
+        end
+
+    else
+
+        failures[#failures + 1] =
+            "game:HttpGet clean URL failed: "
+            .. tostring(httpGetResult)
+    end
+
+    local secondHttpOk, secondHttpResult =
+        pcall(function()
+
+            return game:HttpGet(
+                cleanUrl
+            )
+        end)
+
+    if secondHttpOk == true then
+
+        local validated =
+            acceptBody(
+                "game:HttpGet one argument",
+                secondHttpResult
+            )
+
+        if validated then
+
+            return validated,
+                nil
+        end
+
+    else
+
+        failures[#failures + 1] =
+            "game:HttpGet one argument failed: "
+            .. tostring(secondHttpResult)
     end
 
     local requestFunction =
@@ -184,9 +331,12 @@ function GAG2ExecutorHttpGet(url)
             pcall(function()
 
                 return requestFunction({
-                    Url = url,
+                    Url = cleanUrl,
                     Method = "GET",
+
                     Headers = {
+                        ["Accept"] = "text/plain",
+                        ["Accept-Encoding"] = "identity",
                         ["Cache-Control"] = "no-cache",
                     },
                 })
@@ -194,67 +344,80 @@ function GAG2ExecutorHttpGet(url)
 
         if requestOk == true then
 
-            if type(response) == "string"
-            and response ~= "" then
+            local responseBody =
+                nil
 
-                return response,
-                    nil
-            end
+            if type(response) == "string" then
 
-            if type(response) == "table" then
+                responseBody =
+                    response
 
-                local body =
+            elseif type(response) == "table" then
+
+                responseBody =
                     response.Body
                     or response.body
                     or response.ResponseBody
                     or response.responseBody
-
-                local statusCode =
-                    tonumber(
-                        response.StatusCode
-                        or response.Status
-                        or response.status_code
-                    )
-
-                if type(body) == "string"
-                and body ~= ""
-                and (
-                    statusCode == nil
-                    or (
-                        statusCode >= 200
-                        and statusCode < 400
-                    )
-                ) then
-
-                    return body,
-                        nil
-                end
-
-                return nil,
-                    "request returned no usable body"
             end
+
+            local validated =
+                acceptBody(
+                    "request API",
+                    responseBody
+                )
+
+            if validated then
+
+                return validated,
+                    nil
+            end
+
+        else
+
+            failures[#failures + 1] =
+                "request API failed: "
+                .. tostring(response)
         end
     end
 
     local getAsyncOk, getAsyncResult =
         pcall(function()
 
-            return game:GetService("HttpService"):GetAsync(
-                url,
+            return game:GetService(
+                "HttpService"
+            ):GetAsync(
+                cleanUrl,
                 true
             )
         end)
 
-    if getAsyncOk == true
-    and type(getAsyncResult) == "string"
-    and getAsyncResult ~= "" then
+    if getAsyncOk == true then
 
-        return getAsyncResult,
-            nil
+        local validated =
+            acceptBody(
+                "HttpService:GetAsync",
+                getAsyncResult
+            )
+
+        if validated then
+
+            return validated,
+                nil
+        end
+
+    else
+
+        failures[#failures + 1] =
+            "HttpService:GetAsync failed: "
+            .. tostring(getAsyncResult)
     end
 
     return nil,
-        "game:HttpGet, request API and HttpService:GetAsync failed"
+        table.concat(
+            failures,
+            " | "
+        )
 end
 
 function GAG2ExecutorGetCompiler()
@@ -313,7 +476,10 @@ end
 function GAG2LoadRemoteModule(url, moduleName)
 
     moduleName =
-        tostring(moduleName or "remote module")
+        tostring(
+            moduleName
+            or "remote module"
+        )
 
     local source, downloadError =
         GAG2ExecutorHttpGet(
@@ -326,7 +492,7 @@ function GAG2LoadRemoteModule(url, moduleName)
         error(
             "[HOLY GAG2] Failed to download "
             .. moduleName
-            .. ": "
+            .. ":\n"
             .. tostring(downloadError),
             0
         )
@@ -338,9 +504,10 @@ function GAG2LoadRemoteModule(url, moduleName)
     if type(compiler) ~= "function" then
 
         error(
-            "[HOLY GAG2] Unsupported executor: loadstring/load is missing. "
+            "[HOLY GAG2] Unsupported executor: "
+            .. "loadstring/load is missing while loading "
             .. moduleName
-            .. " cannot be compiled.",
+            .. ".",
             0
         )
     end
@@ -348,8 +515,7 @@ function GAG2LoadRemoteModule(url, moduleName)
     local compileOk, chunk, compileError =
         pcall(
             compiler,
-            source,
-            "=" .. moduleName
+            source
         )
 
     if compileOk ~= true then
@@ -357,7 +523,7 @@ function GAG2LoadRemoteModule(url, moduleName)
         error(
             "[HOLY GAG2] "
             .. moduleName
-            .. " compiler call failed: "
+            .. " compiler call failed:\n"
             .. tostring(chunk),
             0
         )
@@ -365,36 +531,17 @@ function GAG2LoadRemoteModule(url, moduleName)
 
     if type(chunk) ~= "function" then
 
-        local secondCompileOk, secondChunk, secondCompileError =
-            pcall(
-                compiler,
-                source
-            )
-
-        if secondCompileOk == true
-        and type(secondChunk) == "function" then
-
-            chunk =
-                secondChunk
-
-            compileError =
-                nil
-
-        else
-
-            error(
-                "[HOLY GAG2] "
-                .. moduleName
-                .. " did not compile: "
-                .. tostring(
-                    compileError
-                    or secondCompileError
-                    or secondChunk
-                    or "compiler returned nil"
-                ),
-                0
-            )
-        end
+        error(
+            "[HOLY GAG2] "
+            .. moduleName
+            .. " did not compile:\n"
+            .. tostring(
+                compileError
+                or chunk
+                or "compiler returned nil"
+            ),
+            0
+        )
     end
 
     local runOk, result =
@@ -490,18 +637,15 @@ local REPO_URL =
 
 local LIBRARY_URL =
     REPO_URL
-    .. "librarygag2.lua?v="
-    .. tostring(os.time())
+    .. "librarygag2.lua"
 
 local THEME_MANAGER_URL =
     REPO_URL
-    .. "addons/ThemeManager.lua?v="
-    .. tostring(os.time())
+    .. "addons/ThemeManager.lua"
 
 local SAVE_MANAGER_URL =
     REPO_URL
-    .. "addons/SaveManager.lua?v="
-    .. tostring(os.time())
+    .. "addons/SaveManager.lua"
 
 local UI_SETTINGS_FOLDER =
     "HolyGAG2"
