@@ -783,6 +783,38 @@ GAG2_WILD_PET_NETWORK_STATE = {
     LastStatus = "Disabled.",
 }
 
+pcall(function()
+
+    local env =
+        type(getgenv) == "function"
+        and getgenv()
+        or _G
+
+    if type(env) == "table" then
+
+        env.GAG2_WILD_PET_NETWORK_STATE =
+            GAG2_WILD_PET_NETWORK_STATE
+
+        env.GAG2_WILD_PET_NETWORK_ENDPOINT =
+            GAG2_WILD_PET_NETWORK_ENDPOINT
+
+        env.GAG2_WILD_PET_NETWORK_API_KEY =
+            GAG2_WILD_PET_NETWORK_API_KEY
+    end
+
+    if type(GAG2_EXECUTOR_ENV) == "table" then
+
+        GAG2_EXECUTOR_ENV.GAG2_WILD_PET_NETWORK_STATE =
+            GAG2_WILD_PET_NETWORK_STATE
+
+        GAG2_EXECUTOR_ENV.GAG2_WILD_PET_NETWORK_ENDPOINT =
+            GAG2_WILD_PET_NETWORK_ENDPOINT
+
+        GAG2_EXECUTOR_ENV.GAG2_WILD_PET_NETWORK_API_KEY =
+            GAG2_WILD_PET_NETWORK_API_KEY
+    end
+end)
+
 GAG2_EXACT_JOIN_STATE = {
     Retrying = false,
     MaxAttempts = 3,
