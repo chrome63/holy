@@ -4406,64 +4406,6 @@ function GAG2WildPetNetworkGetRarityColor3(rarity)
         )
 end
 
-function GAG2WildPetNetworkCreateServerCell(
-    parent,
-    width,
-    text,
-    align,
-    color,
-    font
-)
-
-    local label =
-        Instance.new("TextLabel")
-
-    label.Name =
-        "Cell"
-
-    label.Size =
-        UDim2.new(
-            0,
-            tonumber(width)
-            or 80,
-            1,
-            0
-        )
-
-    label.BackgroundTransparency =
-        1
-
-    label.Font =
-        font
-        or Enum.Font.Code
-
-    label.Text =
-        tostring(text or "")
-
-    label.TextSize =
-        12
-
-    label.TextColor3 =
-        color
-        or Color3.fromRGB(
-            203,
-            213,
-            225
-        )
-
-    label.TextXAlignment =
-        align
-        or Enum.TextXAlignment.Left
-
-    label.TextYAlignment =
-        Enum.TextYAlignment.Center
-
-    label.Parent =
-        parent
-
-    return label
-end
-
 function GAG2WildPetNetworkCreateServerRow(
     parent,
     rowData
@@ -4538,18 +4480,18 @@ function GAG2WildPetNetworkCreateServerRow(
             1,
             0,
             0,
-            38
+            27
         )
 
     row.BackgroundColor3 =
         Color3.fromRGB(
-            14,
-            22,
-            34
+            12,
+            20,
+            31
         )
 
     row.BackgroundTransparency =
-        0.12
+        0.18
 
     row.BorderSizePixel =
         0
@@ -4559,7 +4501,7 @@ function GAG2WildPetNetworkCreateServerRow(
 
     GAG2WildPetNetworkAddCorner(
         row,
-        7
+        6
     )
 
     local rowStroke =
@@ -4567,108 +4509,203 @@ function GAG2WildPetNetworkCreateServerRow(
 
     rowStroke.Color =
         Color3.fromRGB(
-            44,
-            60,
-            84
+            35,
+            50,
+            72
         )
 
     rowStroke.Thickness =
         1
 
     rowStroke.Transparency =
-        0.45
+        0.58
 
     rowStroke.Parent =
         row
 
-    local left =
-        Instance.new("Frame")
+    local idLabel =
+        Instance.new("TextLabel")
 
-    left.Name =
-        "Left"
+    idLabel.Name =
+        "JobId"
 
-    left.Position =
-        UDim2.new(
-            0,
-            12,
-            0,
+    idLabel.Position =
+        UDim2.fromOffset(
+            10,
             0
         )
 
-    left.Size =
+    idLabel.Size =
         UDim2.new(
-            1,
-            -98,
+            0,
+            94,
             1,
             0
         )
 
-    left.BackgroundTransparency =
+    idLabel.BackgroundTransparency =
         1
 
-    left.Parent =
-        row
+    idLabel.Font =
+        Enum.Font.Code
 
-    local leftLayout =
-        Instance.new("UIListLayout")
+    idLabel.Text =
+        jobId:sub(1, 8)
 
-    leftLayout.FillDirection =
-        Enum.FillDirection.Horizontal
+    idLabel.TextSize =
+        11
 
-    leftLayout.HorizontalAlignment =
-        Enum.HorizontalAlignment.Left
-
-    leftLayout.VerticalAlignment =
-        Enum.VerticalAlignment.Center
-
-    leftLayout.Padding =
-        UDim.new(
-            0,
-            12
+    idLabel.TextColor3 =
+        Color3.fromRGB(
+            203,
+            213,
+            225
         )
 
-    leftLayout.Parent =
-        left
+    idLabel.TextXAlignment =
+        Enum.TextXAlignment.Left
 
-    GAG2WildPetNetworkCreateServerCell(
-        left,
-        175,
-        jobId:sub(1, 8),
-        Enum.TextXAlignment.Left,
-        Color3.fromRGB(226, 232, 240),
+    idLabel.Parent =
+        row
+
+    local playersLabel =
+        Instance.new("TextLabel")
+
+    playersLabel.Name =
+        "Players"
+
+    playersLabel.Position =
+        UDim2.fromOffset(
+            118,
+            0
+        )
+
+    playersLabel.Size =
+        UDim2.new(
+            0,
+            48,
+            1,
+            0
+        )
+
+    playersLabel.BackgroundTransparency =
+        1
+
+    playersLabel.Font =
         Enum.Font.Code
-    )
 
-    GAG2WildPetNetworkCreateServerCell(
-        left,
-        72,
+    playersLabel.Text =
         tostring(players)
         .. "/"
-        .. tostring(maxPlayers),
-        Enum.TextXAlignment.Left,
-        Color3.fromRGB(203, 213, 225),
-        Enum.Font.Code
-    )
+        .. tostring(maxPlayers)
 
-    GAG2WildPetNetworkCreateServerCell(
-        left,
-        58,
+    playersLabel.TextSize =
+        11
+
+    playersLabel.TextColor3 =
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+
+    playersLabel.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    playersLabel.Parent =
+        row
+
+    local ageLabel =
+        Instance.new("TextLabel")
+
+    ageLabel.Name =
+        "Age"
+
+    ageLabel.Position =
+        UDim2.fromOffset(
+            178,
+            0
+        )
+
+    ageLabel.Size =
+        UDim2.new(
+            0,
+            42,
+            1,
+            0
+        )
+
+    ageLabel.BackgroundTransparency =
+        1
+
+    ageLabel.Font =
+        Enum.Font.Code
+
+    ageLabel.Text =
         tostring(age)
-        .. "s",
-        Enum.TextXAlignment.Left,
-        Color3.fromRGB(203, 213, 225),
-        Enum.Font.Code
-    )
+        .. "s"
 
-    GAG2WildPetNetworkCreateServerCell(
-        left,
-        38,
-        "x"
-        .. tostring(count),
-        Enum.TextXAlignment.Left,
-        Color3.fromRGB(203, 213, 225),
+    ageLabel.TextSize =
+        11
+
+    ageLabel.TextColor3 =
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+
+    ageLabel.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    ageLabel.Parent =
+        row
+
+    local countLabel =
+        Instance.new("TextLabel")
+
+    countLabel.Name =
+        "Count"
+
+    countLabel.Position =
+        UDim2.fromOffset(
+            232,
+            0
+        )
+
+    countLabel.Size =
+        UDim2.new(
+            0,
+            36,
+            1,
+            0
+        )
+
+    countLabel.BackgroundTransparency =
+        1
+
+    countLabel.Font =
         Enum.Font.Code
-    )
+
+    countLabel.Text =
+        "x"
+        .. tostring(count)
+
+    countLabel.TextSize =
+        11
+
+    countLabel.TextColor3 =
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+
+    countLabel.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    countLabel.Parent =
+        row
 
     local joinButton =
         Instance.new("TextButton")
@@ -4685,23 +4722,26 @@ function GAG2WildPetNetworkCreateServerRow(
     joinButton.Position =
         UDim2.new(
             1,
-            -12,
+            -8,
             0.5,
             0
         )
 
     joinButton.Size =
         UDim2.fromOffset(
-            74,
-            24
+            55,
+            20
         )
 
     joinButton.BackgroundColor3 =
         Color3.fromRGB(
-            12,
-            42,
-            25
+            8,
+            53,
+            28
         )
+
+    joinButton.BackgroundTransparency =
+        0.06
 
     joinButton.BorderSizePixel =
         0
@@ -4716,7 +4756,7 @@ function GAG2WildPetNetworkCreateServerRow(
         "Join"
 
     joinButton.TextSize =
-        12
+        11
 
     joinButton.TextColor3 =
         Color3.fromRGB(
@@ -4730,7 +4770,7 @@ function GAG2WildPetNetworkCreateServerRow(
 
     GAG2WildPetNetworkAddCorner(
         joinButton,
-        7
+        6
     )
 
     local joinStroke =
@@ -4747,7 +4787,7 @@ function GAG2WildPetNetworkCreateServerRow(
         1
 
     joinStroke.Transparency =
-        0.15
+        0.25
 
     joinStroke.Parent =
         joinButton
@@ -4784,6 +4824,11 @@ function GAG2WildPetNetworkCreatePetSection(
     rarity,
     rows
 )
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
 
     local section =
         Instance.new("Frame")
@@ -4823,7 +4868,7 @@ function GAG2WildPetNetworkCreatePetSection(
     sectionLayout.Padding =
         UDim.new(
             0,
-            5
+            3
         )
 
     sectionLayout.Parent =
@@ -4840,7 +4885,7 @@ function GAG2WildPetNetworkCreatePetSection(
             1,
             0,
             0,
-            28
+            23
         )
 
     header.BackgroundTransparency =
@@ -4866,7 +4911,7 @@ function GAG2WildPetNetworkCreatePetSection(
             0,
             3,
             0,
-            18
+            13
         )
 
     accent.BackgroundColor3 =
@@ -4893,14 +4938,14 @@ function GAG2WildPetNetworkCreatePetSection(
 
     title.Position =
         UDim2.fromOffset(
-            12,
+            10,
             0
         )
 
     title.Size =
         UDim2.new(
             1,
-            -120,
+            -90,
             1,
             0
         )
@@ -4930,7 +4975,7 @@ function GAG2WildPetNetworkCreatePetSection(
         .. ']</font>'
 
     title.TextSize =
-        13
+        12
 
     title.TextColor3 =
         Color3.fromRGB(
@@ -4941,6 +4986,9 @@ function GAG2WildPetNetworkCreatePetSection(
 
     title.TextXAlignment =
         Enum.TextXAlignment.Left
+
+    title.TextYAlignment =
+        Enum.TextYAlignment.Center
 
     title.Parent =
         header
@@ -4968,7 +5016,7 @@ function GAG2WildPetNetworkCreatePetSection(
     resultCount.Size =
         UDim2.new(
             0,
-            110,
+            80,
             1,
             0
         )
@@ -4989,7 +5037,7 @@ function GAG2WildPetNetworkCreatePetSection(
         )
 
     resultCount.TextSize =
-        12
+        11
 
     resultCount.TextColor3 =
         Color3.fromRGB(
@@ -5000,6 +5048,9 @@ function GAG2WildPetNetworkCreatePetSection(
 
     resultCount.TextXAlignment =
         Enum.TextXAlignment.Right
+
+    resultCount.TextYAlignment =
+        Enum.TextYAlignment.Center
 
     resultCount.Parent =
         header
@@ -5017,7 +5068,7 @@ function GAG2WildPetNetworkCreatePetSection(
                 1,
                 0,
                 0,
-                24
+                20
             )
 
         empty.BackgroundTransparency =
@@ -5030,7 +5081,7 @@ function GAG2WildPetNetworkCreatePetSection(
             "(no server found)"
 
         empty.TextSize =
-            12
+            11
 
         empty.TextColor3 =
             Color3.fromRGB(
@@ -5084,7 +5135,7 @@ function GAG2WildPetNetworkClearRows()
     layout.Padding =
         UDim.new(
             0,
-            4
+            5
         )
 
     layout.SortOrder =
@@ -5099,25 +5150,25 @@ function GAG2WildPetNetworkClearRows()
     padding.PaddingLeft =
         UDim.new(
             0,
-            4
+            0
         )
 
     padding.PaddingRight =
         UDim.new(
             0,
-            4
+            0
         )
 
     padding.PaddingTop =
         UDim.new(
             0,
-            4
+            2
         )
 
     padding.PaddingBottom =
         UDim.new(
             0,
-            4
+            6
         )
 
     padding.Parent =
@@ -5601,6 +5652,159 @@ function GAG2WildPetNetworkDestroyHudOnly()
         nil
 end
 
+function GAG2WildPetNetworkGetHudSize(mode)
+
+    mode =
+        CleanText(mode)
+
+    if mode == "Medium" then
+
+        return 520,
+            390
+    end
+
+    if mode == "Large" then
+
+        return 680,
+            500
+    end
+
+    return 430,
+        315
+end
+
+function GAG2WildPetNetworkApplyHudLayout()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    local frame =
+        state.Frame
+
+    if not frame then
+        return
+    end
+
+    if CleanText(state.HudMode) ~= "Medium"
+    and CleanText(state.HudMode) ~= "Large" then
+
+        state.HudMode =
+            "Small"
+    end
+
+    local width, height =
+        GAG2WildPetNetworkGetHudSize(
+            state.HudMode
+        )
+
+    if state.HudMinimized == true then
+
+        frame.Size =
+            UDim2.fromOffset(
+                280,
+                44
+            )
+
+    else
+
+        frame.Size =
+            UDim2.fromOffset(
+                width,
+                height
+            )
+    end
+
+    local visible =
+        state.HudMinimized ~= true
+
+    local objects = {
+        state.SummaryLabel,
+        state.Scroll,
+        state.StatusLabel,
+        state.TopLine,
+        state.StatusLine,
+    }
+
+    for _, object in ipairs(objects) do
+
+        if object then
+
+            pcall(function()
+
+                object.Visible =
+                    visible
+            end)
+        end
+    end
+
+    if state.MinimizeButton then
+
+        state.MinimizeButton.Text =
+            state.HudMinimized == true
+            and "+"
+            or "−"
+    end
+
+    if state.SizeButton then
+
+        state.SizeButton.Visible =
+            visible
+
+        state.SizeButton.Text =
+            state.HudMode == "Large"
+            and "L"
+            or (
+                state.HudMode == "Medium"
+                and "M"
+                or "S"
+            )
+    end
+
+    if state.RefreshButton then
+
+        state.RefreshButton.Visible =
+            visible
+    end
+end
+
+function GAG2WildPetNetworkCycleHudSize()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    if state.HudMode == "Small" then
+
+        state.HudMode =
+            "Medium"
+
+    elseif state.HudMode == "Medium" then
+
+        state.HudMode =
+            "Large"
+
+    else
+
+        state.HudMode =
+            "Small"
+    end
+
+    state.HudMinimized =
+        false
+
+    GAG2WildPetNetworkApplyHudLayout()
+end
+
+function GAG2WildPetNetworkToggleMinimized()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.HudMinimized =
+        state.HudMinimized ~= true
+
+    GAG2WildPetNetworkApplyHudLayout()
+end
+
 function GAG2WildPetNetworkCreateHud()
 
     local state =
@@ -5637,6 +5841,14 @@ function GAG2WildPetNetworkCreateHud()
         end)
     end
 
+    state.HudMode =
+        CleanText(state.HudMode) ~= ""
+        and state.HudMode
+        or "Small"
+
+    state.HudMinimized =
+        state.HudMinimized == true
+
     local gui =
         Instance.new("ScreenGui")
 
@@ -5661,24 +5873,18 @@ function GAG2WildPetNetworkCreateHud()
     frame.Name =
         "Main"
 
-    frame.AnchorPoint =
-        Vector2.new(
-            0.5,
-            0.5
-        )
-
     frame.Position =
         UDim2.new(
-            0.5,
             0,
-            0.5,
-            0
+            18,
+            0,
+            92
         )
 
     frame.Size =
         UDim2.fromOffset(
-            700,
-            500
+            430,
+            315
         )
 
     frame.BackgroundColor3 =
@@ -5689,7 +5895,7 @@ function GAG2WildPetNetworkCreateHud()
         )
 
     frame.BackgroundTransparency =
-        0.14
+        0.24
 
     frame.BorderSizePixel =
         0
@@ -5705,7 +5911,7 @@ function GAG2WildPetNetworkCreateHud()
 
     GAG2WildPetNetworkAddCorner(
         frame,
-        12
+        10
     )
 
     local frameStroke =
@@ -5722,7 +5928,7 @@ function GAG2WildPetNetworkCreateHud()
         1
 
     frameStroke.Transparency =
-        0.35
+        0.45
 
     frameStroke.Parent =
         frame
@@ -5735,16 +5941,16 @@ function GAG2WildPetNetworkCreateHud()
 
     title.Position =
         UDim2.fromOffset(
-            18,
-            10
+            14,
+            7
         )
 
     title.Size =
         UDim2.new(
             1,
-            -120,
+            -125,
             0,
-            28
+            24
         )
 
     title.BackgroundTransparency =
@@ -5757,7 +5963,7 @@ function GAG2WildPetNetworkCreateHud()
         "HOLY • LIVE WILD PETS"
 
     title.TextSize =
-        16
+        13
 
     title.TextColor3 =
         Color3.fromRGB(
@@ -5772,88 +5978,73 @@ function GAG2WildPetNetworkCreateHud()
     title.Parent =
         frame
 
-    local summary =
-        Instance.new("TextLabel")
+    local sizeButton =
+        Instance.new("TextButton")
 
-    summary.Name =
-        "Summary"
+    sizeButton.Name =
+        "Size"
 
-    summary.Position =
-        UDim2.fromOffset(
-            18,
-            40
+    sizeButton.AnchorPoint =
+        Vector2.new(
+            1,
+            0
         )
 
-    summary.Size =
+    sizeButton.Position =
         UDim2.new(
             1,
-            -36,
+            -91,
             0,
+            8
+        )
+
+    sizeButton.Size =
+        UDim2.fromOffset(
+            24,
             22
         )
 
-    summary.BackgroundTransparency =
-        1
-
-    summary.Font =
-        Enum.Font.Code
-
-    summary.Text =
-        "Loading live servers..."
-
-    summary.TextSize =
-        12
-
-    summary.TextColor3 =
+    sizeButton.BackgroundColor3 =
         Color3.fromRGB(
-            148,
-            163,
-            184
+            12,
+            22,
+            35
         )
 
-    summary.TextXAlignment =
-        Enum.TextXAlignment.Left
+    sizeButton.BackgroundTransparency =
+        0.08
 
-    summary.Parent =
-        frame
-
-    local topLine =
-        Instance.new("Frame")
-
-    topLine.Name =
-        "TopLine"
-
-    topLine.Position =
-        UDim2.new(
-            0,
-            14,
-            0,
-            72
-        )
-
-    topLine.Size =
-        UDim2.new(
-            1,
-            -28,
-            0,
-            1
-        )
-
-    topLine.BackgroundColor3 =
-        Color3.fromRGB(
-            30,
-            41,
-            59
-        )
-
-    topLine.BackgroundTransparency =
-        0.3
-
-    topLine.BorderSizePixel =
+    sizeButton.BorderSizePixel =
         0
 
-    topLine.Parent =
+    sizeButton.Font =
+        Enum.Font.GothamBold
+
+    sizeButton.Text =
+        "S"
+
+    sizeButton.TextSize =
+        11
+
+    sizeButton.TextColor3 =
+        Color3.fromRGB(
+            96,
+            165,
+            250
+        )
+
+    sizeButton.Parent =
         frame
+
+    GAG2WildPetNetworkAddCorner(
+        sizeButton,
+        6
+    )
+
+    sizeButton.MouseButton1Click:Connect(function()
+
+        GAG2WildPetNetworkCycleHudSize()
+    end)
 
     local refreshButton =
         Instance.new("TextButton")
@@ -5870,15 +6061,15 @@ function GAG2WildPetNetworkCreateHud()
     refreshButton.Position =
         UDim2.new(
             1,
-            -58,
+            -62,
             0,
-            12
+            8
         )
 
     refreshButton.Size =
         UDim2.fromOffset(
-            34,
-            24
+            24,
+            22
         )
 
     refreshButton.BackgroundColor3 =
@@ -5901,7 +6092,7 @@ function GAG2WildPetNetworkCreateHud()
         "↻"
 
     refreshButton.TextSize =
-        14
+        13
 
     refreshButton.TextColor3 =
         Color3.fromRGB(
@@ -5915,33 +6106,67 @@ function GAG2WildPetNetworkCreateHud()
 
     GAG2WildPetNetworkAddCorner(
         refreshButton,
-        8
+        6
     )
-
-    local refreshStroke =
-        Instance.new("UIStroke")
-
-    refreshStroke.Color =
-        Color3.fromRGB(
-            51,
-            65,
-            85
-        )
-
-    refreshStroke.Thickness =
-        1
-
-    refreshStroke.Transparency =
-        0.25
-
-    refreshStroke.Parent =
-        refreshButton
 
     refreshButton.MouseButton1Click:Connect(function()
 
         GAG2WildPetNetworkRefresh(
             "manual"
         )
+    end)
+
+    local minimizeButton =
+        Instance.new("TextButton")
+
+    minimizeButton.Name =
+        "Minimize"
+
+    minimizeButton.AnchorPoint =
+        Vector2.new(
+            1,
+            0
+        )
+
+    minimizeButton.Position =
+        UDim2.new(
+            1,
+            -33,
+            0,
+            8
+        )
+
+    minimizeButton.Size =
+        UDim2.fromOffset(
+            24,
+            22
+        )
+
+    minimizeButton.BackgroundTransparency =
+        1
+
+    minimizeButton.Font =
+        Enum.Font.GothamBold
+
+    minimizeButton.Text =
+        "−"
+
+    minimizeButton.TextSize =
+        16
+
+    minimizeButton.TextColor3 =
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+
+    minimizeButton.Parent =
+        frame
+
+    minimizeButton.MouseButton1Click:Connect(function()
+
+        GAG2WildPetNetworkToggleMinimized()
     end)
 
     local closeButton =
@@ -5959,15 +6184,15 @@ function GAG2WildPetNetworkCreateHud()
     closeButton.Position =
         UDim2.new(
             1,
-            -18,
+            -8,
             0,
-            10
+            8
         )
 
     closeButton.Size =
         UDim2.fromOffset(
             24,
-            24
+            22
         )
 
     closeButton.BackgroundTransparency =
@@ -5980,7 +6205,7 @@ function GAG2WildPetNetworkCreateHud()
         "×"
 
     closeButton.TextSize =
-        20
+        16
 
     closeButton.TextColor3 =
         Color3.fromRGB(
@@ -6009,6 +6234,89 @@ function GAG2WildPetNetworkCreateHud()
         end
     end)
 
+    local summary =
+        Instance.new("TextLabel")
+
+    summary.Name =
+        "Summary"
+
+    summary.Position =
+        UDim2.fromOffset(
+            14,
+            32
+        )
+
+    summary.Size =
+        UDim2.new(
+            1,
+            -28,
+            0,
+            20
+        )
+
+    summary.BackgroundTransparency =
+        1
+
+    summary.Font =
+        Enum.Font.Code
+
+    summary.Text =
+        "Loading live servers..."
+
+    summary.TextSize =
+        11
+
+    summary.TextColor3 =
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+
+    summary.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    summary.Parent =
+        frame
+
+    local topLine =
+        Instance.new("Frame")
+
+    topLine.Name =
+        "TopLine"
+
+    topLine.Position =
+        UDim2.new(
+            0,
+            12,
+            0,
+            57
+        )
+
+    topLine.Size =
+        UDim2.new(
+            1,
+            -24,
+            0,
+            1
+        )
+
+    topLine.BackgroundColor3 =
+        Color3.fromRGB(
+            30,
+            41,
+            59
+        )
+
+    topLine.BackgroundTransparency =
+        0.38
+
+    topLine.BorderSizePixel =
+        0
+
+    topLine.Parent =
+        frame
+
     local scroll =
         Instance.new("ScrollingFrame")
 
@@ -6017,16 +6325,16 @@ function GAG2WildPetNetworkCreateHud()
 
     scroll.Position =
         UDim2.fromOffset(
-            18,
-            84
+            14,
+            64
         )
 
     scroll.Size =
         UDim2.new(
             1,
-            -36,
+            -28,
             1,
-            -126
+            -103
         )
 
     scroll.BackgroundTransparency =
@@ -6036,7 +6344,7 @@ function GAG2WildPetNetworkCreateHud()
         0
 
     scroll.ScrollBarThickness =
-        4
+        3
 
     scroll.ScrollBarImageColor3 =
         Color3.fromRGB(
@@ -6063,15 +6371,15 @@ function GAG2WildPetNetworkCreateHud()
     statusLine.Position =
         UDim2.new(
             0,
-            14,
+            12,
             1,
-            -40
+            -34
         )
 
     statusLine.Size =
         UDim2.new(
             1,
-            -28,
+            -24,
             0,
             1
         )
@@ -6084,7 +6392,7 @@ function GAG2WildPetNetworkCreateHud()
         )
 
     statusLine.BackgroundTransparency =
-        0.3
+        0.42
 
     statusLine.BorderSizePixel =
         0
@@ -6101,17 +6409,17 @@ function GAG2WildPetNetworkCreateHud()
     status.Position =
         UDim2.new(
             0,
-            18,
+            14,
             1,
-            -31
+            -28
         )
 
     status.Size =
         UDim2.new(
             1,
-            -36,
+            -28,
             0,
-            20
+            18
         )
 
     status.BackgroundTransparency =
@@ -6124,7 +6432,7 @@ function GAG2WildPetNetworkCreateHud()
         tostring(state.LastStatus or "Starting...")
 
     status.TextSize =
-        11
+        10
 
     status.TextColor3 =
         Color3.fromRGB(
@@ -6154,6 +6462,24 @@ function GAG2WildPetNetworkCreateHud()
     state.Scroll =
         scroll
 
+    state.TopLine =
+        topLine
+
+    state.StatusLine =
+        statusLine
+
+    state.SizeButton =
+        sizeButton
+
+    state.RefreshButton =
+        refreshButton
+
+    state.MinimizeButton =
+        minimizeButton
+
+    state.CloseButton =
+        closeButton
+
     if type(state.LastData) == "table" then
 
         GAG2WildPetNetworkRender(
@@ -6168,12 +6494,13 @@ function GAG2WildPetNetworkCreateHud()
             scroll,
             "Loading",
             "Loading network reports...",
-            30,
-            13,
+            28,
+            12,
             false
         )
     end
 
+    GAG2WildPetNetworkApplyHudLayout()
     GAG2WildPetNetworkRefreshStatus()
 
     return gui
