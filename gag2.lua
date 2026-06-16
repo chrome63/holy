@@ -6529,271 +6529,20 @@ local function GAG2ActivateLoadingGuiObject(object)
     return activated
 end
 
-function GAG2FindLoadingSkipBindable()
-
-    local candidateRoots = {
-        ReplicatedStorage,
-        LOCAL_PLAYER
-        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
-        or nil,
-    }
-
-    for _, root in ipairs(candidateRoots) do
-
-        if typeof(root) == "Instance" then
-
-            local scanned =
-                0
-
-            for _, descendant in ipairs(root:GetDescendants()) do
-
-                scanned += 1
-
-                if scanned > 6000 then
-                    break
-                end
-
-                if descendant:IsA("BindableEvent") then
-
-                    local name =
-                        tostring(descendant.Name or ""):lower()
-
-                    local path =
-                        PathOf(descendant):lower()
-
-                    local looksLikeSkip =
-                        (
-                            name:find("skip", 1, true)
-                            or path:find("skip", 1, true)
-                            or name:find("finish", 1, true)
-                            or path:find("finish", 1, true)
-                        )
-                        and (
-                            name:find("loading", 1, true)
-                            or path:find("loading", 1, true)
-                            or name:find("load", 1, true)
-                            or path:find("load", 1, true)
-                        )
-
-                    if looksLikeSkip then
-
-                        return descendant
-                    end
-                end
-            end
-        end
-    end
-
-    return nil
-end
-
-function GAG2FireLoadingSkipBindable(reason)
-
-    local bindable =
-        GAG2FindLoadingSkipBindable()
-
-    if not bindable then
-        return false,
-            "no loading skip bindable"
-    end
-
-    local ok, err =
-        pcall(function()
-
-            bindable:Fire(
-                tostring(reason or "HOLY_AUTO_SKIP")
-            )
-        end)
-
-    if ok == true then
-
-        return true,
-            "bindable: "
-            .. PathOf(bindable)
-    end
-
-    return false,
-        tostring(err)
-end
-
-function GAG2FindLoadingSkipGuiObject()
-
-    local playerGui =
-        LOCAL_PLAYER
-        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
-
-    if not playerGui then
-        return nil,
-            "PlayerGui missing"
-    end
-
-    local preferredRoots =
-        {}
-
-    local loadingGui =
-        playerGui:FindFirstChild("LoadingGui")
-
-    if loadingGui then
-
-        table.insert(
-            preferredRoots,
-            loadingGui
-        )
-    end
-
-    table.insert(
-        preferredRoots,
-        playerGui
-    )
-
-    local keywords = {
-        "skip",
-        "click to skip",
-        "click to skip!",
-        "fully loaded",
-        "press any key",
-        "key to play",
-        "play",
-        "start",
-        "continue",
-    }
-
-    for _, root in ipairs(preferredRoots) do
-
-        if typeof(root) == "Instance" then
-
-            local scanned =
-                0
-
-            for _, descendant in ipairs(root:GetDescendants()) do
-
-                scanned += 1
-
-                if scanned > 10000 then
-                    break
-                end
-
-                if descendant:IsA("TextButton")
-                or descendant:IsA("ImageButton")
-                or descendant:IsA("TextLabel")
-                or descendant:IsA("TextBox") then
-
-                    local rawText =
-                        ""
-
-                    pcall(function()
-
-                        rawText =
-                            tostring(descendant.Text or "")
-                    end)
-
-                    local text =
-                        CleanText(
-                            rawText
-                                :gsub("<[^>]->", "")
-                                :gsub("<.->", "")
-                        )
-
-                    local lowerText =
-                        text:lower()
-
-                    if GAG2GuiObjectVisible(descendant) == true then
-
-                        for _, keyword in ipairs(keywords) do
-
-                            if lowerText:find(
-                                tostring(keyword):lower(),
-                                1,
-                                true
-                            ) then
-
-                                return descendant,
-                                    "text: "
-                                    .. tostring(text)
-                                    .. " | "
-                                    .. PathOf(descendant)
-                            end
-                        end
-
-                        local lowerPath =
-                            PathOf(descendant):lower()
-
-                        if lowerPath:find("loading", 1, true)
-                        and (
-                            lowerPath:find("skip", 1, true)
-                            or lowerPath:find("play", 1, true)
-                            or lowerPath:find("continue", 1, true)
-                            or lowerPath:find("button", 1, true)
-                        ) then
-
-                            return descendant,
-                                "path: "
-                                .. PathOf(descendant)
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    return nil,
-        "no visible loading skip gui object"
-end
-
 function GAG2SendLoadingScreenClick()
 
-    local bindableOk, bindableInfo =
-        GAG2FireLoadingSkipBindable(
-            "HOLY_AUTO_SKIP"
-        )
+    -- Loading-screen automation removed.
+    -- Do not send input, do not click UI, do not touch camera.
 
-    if bindableOk == true then
-
-        return true,
-            tostring(bindableInfo)
-    end
-
-    local object, objectInfo =
-        GAG2FindLoadingSkipGuiObject()
-
-    if not object then
-
-        return false,
-            tostring(objectInfo)
-    end
-
-    local ok =
-        GAG2ActivateLoadingGuiObject(
-            object
-        )
-
-    if ok == true then
-
-        return true,
-            "direct gui: "
-            .. tostring(objectInfo)
-    end
-
-    return false,
-        "direct gui activation failed: "
-        .. tostring(objectInfo)
+    return false
 end
 
 function GAG2FireFinishLoadingRemoteSafe()
 
-    local ok, info =
-        GAG2FireLoadingSkipBindable(
-            "HOLY_FINISH_LOADING"
-        )
+    -- Loading-screen automation removed.
+    -- Do not spoof Finish_Loading anymore.
 
-    if ok == true then
-
-        return true,
-            tostring(info)
-    end
-
-    return false,
-        tostring(info)
+    return false
 end
 
 function GAG2RestoreCameraSoft()
@@ -7729,36 +7478,19 @@ function GAG2MiddleFarmPressSkipHold()
     local state =
         GAG2_AUTO_TP_MIDDLE_FARM_STATE
 
+    if not VirtualInputManager then
+
+        state.LastResult =
+            "VirtualInputManager missing"
+
+        return false,
+            "VirtualInputManager missing"
+    end
+
     if state.HoldingSkip == true then
 
         return true,
             "already holding"
-    end
-
-    local directOk, directInfo =
-        GAG2SendLoadingScreenClick()
-
-    if directOk == true then
-
-        state.LastResult =
-            "direct skip fired: "
-            .. tostring(directInfo)
-
-        return true,
-            "direct skip: "
-            .. tostring(directInfo)
-    end
-
-    if not VirtualInputManager then
-
-        state.LastResult =
-            "direct skip failed and VirtualInputManager missing: "
-            .. tostring(directInfo)
-
-        return false,
-            "direct failed: "
-            .. tostring(directInfo)
-            .. " | VirtualInputManager missing"
     end
 
     local x, y, viewport =
@@ -7780,10 +7512,7 @@ function GAG2MiddleFarmPressSkipHold()
     if ok ~= true then
 
         return false,
-            "direct failed: "
-            .. tostring(directInfo)
-            .. " | mouse failed: "
-            .. tostring(err)
+            tostring(err)
     end
 
     state.HoldingSkip =
@@ -7799,7 +7528,7 @@ function GAG2MiddleFarmPressSkipHold()
         y
 
     return true,
-        "mouse fallback at "
+        "mouse down at "
         .. tostring(x)
         .. ","
         .. tostring(y)
@@ -7807,8 +7536,6 @@ function GAG2MiddleFarmPressSkipHold()
         .. tostring(math.floor(viewport.X))
         .. "x"
         .. tostring(math.floor(viewport.Y))
-        .. " | direct failed: "
-        .. tostring(directInfo)
 end
 
 function GAG2TeleportToMiddleFarmOnce(reason)
@@ -8420,9 +8147,7 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
 
                 print(
                     "[HOLY GAG2 LOADING]",
-                    state.HoldingSkip == true
-                    and "skip hold started"
-                    or "direct skip attempted",
+                    "skip hold started",
                     "| attempt:",
                     tostring(state.SkipAttempts),
                     "| maxHold:",
