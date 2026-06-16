@@ -827,7 +827,7 @@ function GAG2ApplyMobilePromptCompatibility(prompt)
             tonumber(state.AppliedCount)
             or 0
 
-        state.AppliedCount += 1
+        state.AppliedCount = state.AppliedCount + 1
     end
 
     return true
@@ -846,7 +846,7 @@ function GAG2ApplyMobilePromptCompatibilityToRoot(root, yieldEvery)
 
         if GAG2ApplyMobilePromptCompatibility(root) == true then
 
-            applied += 1
+            applied = applied + 1
         end
     end
 
@@ -859,7 +859,7 @@ function GAG2ApplyMobilePromptCompatibilityToRoot(root, yieldEvery)
 
             if GAG2ApplyMobilePromptCompatibility(descendant) == true then
 
-                applied += 1
+                applied = applied + 1
             end
         end
 
@@ -1775,7 +1775,7 @@ function GAG2RetryExactJoinTarget(target, reason)
         return false
     end
 
-    attempts += 1
+    attempts = attempts + 1
 
     target.Attempts =
         attempts
@@ -4586,71 +4586,71 @@ function SniperWildPacketScore(packetName, path)
         0
 
     if text:find("wildpet", 1, true) then
-        score += 400
+        score = score + 400
     end
 
     if text:find("wild_pet", 1, true) then
-        score += 400
+        score = score + 400
     end
 
     if text:find("wild", 1, true) then
-        score += 250
+        score = score + 250
     end
 
     if text:find("pet", 1, true) then
-        score += 80
+        score = score + 80
     end
 
     if text:find("buy", 1, true) then
-        score += 120
+        score = score + 120
     end
 
     if text:find("purchase", 1, true) then
-        score += 120
+        score = score + 120
     end
 
     if text:find("tame", 1, true) then
-        score += 160
+        score = score + 160
     end
 
     if text:find("adopt", 1, true) then
-        score += 100
+        score = score + 100
     end
 
     if text:find("claim", 1, true) then
-        score += 30
+        score = score + 30
     end
 
     if text:find("seed", 1, true) then
-        score -= 500
+        score = score - 500
     end
 
     if text:find("gear", 1, true) then
-        score -= 500
+        score = score - 500
     end
 
     if text:find("crate", 1, true) then
-        score -= 500
+        score = score - 500
     end
 
     if text:find("sell", 1, true) then
-        score -= 500
+        score = score - 500
     end
 
     if text:find("trade", 1, true) then
-        score -= 500
+        score = score - 500
     end
 
     if text:find("plant", 1, true) then
-        score -= 500
+        score = score - 500
     end
 
     if text:find("inventory", 1, true) then
-        score -= 250
+        score = score - 250
     end
 
     if text:find("equip", 1, true) then
-        score -= 250
+        score = score - 250
     end
 
     return score
@@ -6865,7 +6865,7 @@ local function GAG2FindVisibleTextObjectByKeywords(keywords, maxScan)
 
     for _, descendant in ipairs(playerGui:GetDescendants()) do
 
-        scanned += 1
+        scanned = scanned + 1
 
         if scanned > (
             tonumber(maxScan)
@@ -6951,7 +6951,7 @@ function GAG2GetPlayScreenTextObject()
 
     for _, descendant in ipairs(playerGui:GetDescendants()) do
 
-        scanned += 1
+        scanned = scanned + 1
 
         if scanned > 12000 then
             break
@@ -7220,7 +7220,7 @@ function GAG2FindLoadingSkipBindable()
 
             for _, descendant in ipairs(root:GetDescendants()) do
 
-                scanned += 1
+                scanned = scanned + 1
 
                 if scanned > 6000 then
                     break
@@ -7340,7 +7340,7 @@ function GAG2FindLoadingSkipGuiObject()
 
             for _, descendant in ipairs(root:GetDescendants()) do
 
-                scanned += 1
+                scanned = scanned + 1
 
                 if scanned > 10000 then
                     break
@@ -7614,7 +7614,7 @@ function GAG2HardFinishLoading(reason)
 
                     if ok == true then
 
-                        hiddenGuiCount += 1
+                        hiddenGuiCount = hiddenGuiCount + 1
                     end
                 end
             end
@@ -8231,7 +8231,7 @@ function GAG2GetOwnFarmMiddlePosition()
 
         for _, point in ipairs(points) do
 
-            total += point
+            total = total + point
         end
 
         center =
@@ -9061,7 +9061,7 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
             postLoadLastRepairAt =
                 now
 
-            postLoadRepairTries += 1
+            postLoadRepairTries = postLoadRepairTries + 1
 
             local before =
                 root.Position
@@ -9253,7 +9253,7 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
                 state.SkipStarted =
                     true
 
-                state.SkipAttempts += 1
+                state.SkipAttempts = state.SkipAttempts + 1
 
                 state.HoldMaxSeconds =
                     state.SkipAttempts == 1
@@ -9678,7 +9678,7 @@ function GAG2PerformanceRestoreHiddenGardens(reason)
                 end)
 
             if ok == true then
-                restored += 1
+                restored = restored + 1
             end
         end
 
@@ -9794,7 +9794,7 @@ function GAG2PerformanceApplyHideOtherGardens(reason)
             gardensRoot
         ) == true then
 
-            hidden += 1
+            hidden = hidden + 1
         end
     end
 
@@ -9895,7 +9895,7 @@ if type(GAG2_ANTI_AFK_STATE) == "table" then
         tonumber(GAG2_ANTI_AFK_STATE.LoopToken)
         or 0
 
-    GAG2_ANTI_AFK_STATE.LoopToken += 1
+    GAG2_ANTI_AFK_STATE.LoopToken = GAG2_ANTI_AFK_STATE.LoopToken + 1
 
     if GAG2_ANTI_AFK_STATE.Connection then
 
@@ -9947,7 +9947,7 @@ function GAG2AntiAfkDisconnect()
         tonumber(state.LoopToken)
         or 0
 
-    state.LoopToken += 1
+    state.LoopToken = state.LoopToken + 1
 
     state.LoopRunning =
         false
@@ -10255,7 +10255,7 @@ function GAG2AntiAfkPulse(idleSeconds, reason)
             tonumber(state.PulseCount)
             or 0
 
-        state.PulseCount += 1
+        state.PulseCount = state.PulseCount + 1
 
         state.LastMethod =
             table.concat(
@@ -10340,7 +10340,7 @@ function GAG2AntiAfkStartLoop()
         tonumber(state.LoopToken)
         or 0
 
-    state.LoopToken += 1
+    state.LoopToken = state.LoopToken + 1
 
     local token =
         state.LoopToken
@@ -10700,7 +10700,7 @@ function GAG2ACFTableCount(map)
     for _, enabled in pairs(map) do
 
         if enabled == true then
-            count += 1
+            count = count + 1
         end
     end
 
@@ -11173,7 +11173,7 @@ function GAG2ACFGetHarvestPrompt(fruit)
 
     for _, descendant in ipairs(fruit:GetDescendants()) do
 
-        scanned += 1
+        scanned = scanned + 1
 
         if scanned > 350 then
             break
@@ -11783,7 +11783,7 @@ function GAG2ACFScanQueue()
                 PathOf(prompt)
         end
 
-        readyCount += 1
+        readyCount = readyCount + 1
 
         if GAG2ACFEntryAllowed(entry) == true then
 
@@ -11794,7 +11794,7 @@ function GAG2ACFScanQueue()
 
         else
 
-            excludedCount += 1
+            excludedCount = excludedCount + 1
         end
     end
 
@@ -11837,7 +11837,7 @@ function GAG2ACFScanQueue()
 
             for _, descendant in ipairs(plant:GetDescendants()) do
 
-                scanned += 1
+                scanned = scanned + 1
 
                 if scanned > 1800 then
                     break
@@ -12003,7 +12003,7 @@ function GAG2ACFBackpackLooksFull()
 
     for _, descendant in ipairs(backpackGui:GetDescendants()) do
 
-        scanned += 1
+        scanned = scanned + 1
 
         if scanned > 2500 then
             break
@@ -12157,7 +12157,7 @@ function GAG2ACFCollectBatch()
 
             if ok == true then
 
-                fired += 1
+                fired = fired + 1
 
                 state.LastFiredCount =
                     fired
@@ -13455,7 +13455,7 @@ function GAG2AutoSellFirePacket(packetName, ...)
 
         if ok == true then
 
-            fired += 1
+            fired = fired + 1
 
         else
 
@@ -13724,7 +13724,7 @@ function GAG2AutoSellStartWorker()
                     state.LastFruitName =
                         tostring(item.Name or "")
 
-                    fired += 1
+                    fired = fired + 1
 
                     if fired % yieldEvery == 0 then
                         task.wait()
@@ -13844,7 +13844,7 @@ function GAG2AutoSellScanExistingFruitTools(reason)
                     reason or "scan"
                 ) == true then
 
-                    found += 1
+                    found = found + 1
                 end
             end
         end
@@ -14842,10 +14842,10 @@ function GAG2AutoShovelScanPlants()
                     summary[seedName] = row
                 end
 
-                totalPlants += 1
-                row.Count += 1
-                row.Protected += protected and 1 or 0
-                row.Eligible += protected and 0 or 1
+                totalPlants = totalPlants + 1
+                row.Count = row.Count + 1
+                row.Protected = row.Protected + protected and 1 or 0
+                row.Eligible = row.Eligible + protected and 0 or 1
 
                 for mutation in pairs(mutations) do
 
@@ -14866,7 +14866,7 @@ function GAG2AutoShovelScanPlants()
 
     for _, row in pairs(summary) do
 
-        plantTypes += 1
+        plantTypes = plantTypes + 1
 
         table.sort(row.Models, function(a, b)
             return tostring(a.Name) < tostring(b.Name)
@@ -15684,7 +15684,7 @@ function GAG2AutoShovelStartWorker()
     state.RemovedThisRun = 0
     state.FailedThisRun = 0
     state.ProtectedSkipped = 0
-    state.WorkerGeneration += 1
+    state.WorkerGeneration = state.WorkerGeneration + 1
 
     local generation = state.WorkerGeneration
     local runQueue = {}
@@ -15781,14 +15781,14 @@ function GAG2AutoShovelStartWorker()
 
                     if success then
 
-                        removedForEntry += 1
-                        state.RemovedThisRun += 1
+                        removedForEntry = removedForEntry + 1
+                        state.RemovedThisRun = state.RemovedThisRun + 1
                         state.LastStatus = entry.Plant .. " removed and confirmed."
                         finishedTarget = true
 
                     elseif resultType == "protected" then
 
-                        state.ProtectedSkipped += 1
+                        state.ProtectedSkipped = state.ProtectedSkipped + 1
                         state.LastStatus = entry.Plant .. " skipped: " .. tostring(reason)
                         finishedTarget = true
 
@@ -15804,11 +15804,11 @@ function GAG2AutoShovelStartWorker()
 
                     else
 
-                        attempts += 1
+                        attempts = attempts + 1
 
                         if attempts >= 3 then
 
-                            state.FailedThisRun += 1
+                            state.FailedThisRun = state.FailedThisRun + 1
                             state.LastStatus =
                                 entry.Plant
                                 .. " failed after 3 tries: "
@@ -15905,7 +15905,7 @@ function GAG2AutoShovelSetEnabled(value)
 
     else
 
-        state.WorkerGeneration += 1
+        state.WorkerGeneration = state.WorkerGeneration + 1
         state.LastStatus = "Disabled."
     end
 
@@ -15917,7 +15917,7 @@ function GAG2AutoShovelStartMonitor()
 
     local state = GAG2_AUTO_SHOVEL_STATE
 
-    state.MonitorGeneration += 1
+    state.MonitorGeneration = state.MonitorGeneration + 1
 
     local generation = state.MonitorGeneration
 
@@ -16243,8 +16243,8 @@ function GAG2AutoShovelFruitScan()
                                     row
                             end
 
-                            total += 1
-                            row.Count += 1
+                            total = total + 1
+                            row.Count = row.Count + 1
 
                             row.MutationCounts[mutation] =
                                 (tonumber(row.MutationCounts[mutation]) or 0)
@@ -16252,13 +16252,13 @@ function GAG2AutoShovelFruitScan()
 
                             if isProtected then
 
-                                protectedCount += 1
-                                row.Protected += 1
+                                protectedCount = protectedCount + 1
+                                row.Protected = row.Protected + 1
 
                             elseif isSelected then
 
-                                eligible += 1
-                                row.Eligible += 1
+                                eligible = eligible + 1
+                                row.Eligible = row.Eligible + 1
                             end
 
                             table.insert(
@@ -16857,8 +16857,7 @@ function GAG2AutoShovelFruitStartWorker()
     state.ProtectedSkipped =
         0
 
-    state.WorkerGeneration +=
-        1
+    state.WorkerGeneration = state.WorkerGeneration + 1
 
     local generation =
         state.WorkerGeneration
@@ -16912,8 +16911,7 @@ function GAG2AutoShovelFruitStartWorker()
 
                     if success then
 
-                        state.RemovedThisRun +=
-                            1
+                        state.RemovedThisRun = state.RemovedThisRun + 1
 
                         state.LastStatus =
                             tostring(item.FruitName)
@@ -16921,8 +16919,7 @@ function GAG2AutoShovelFruitStartWorker()
 
                     elseif resultType == "protected" then
 
-                        state.ProtectedSkipped +=
-                            1
+                        state.ProtectedSkipped = state.ProtectedSkipped + 1
 
                         state.LastStatus =
                             tostring(reason)
@@ -16945,8 +16942,7 @@ function GAG2AutoShovelFruitStartWorker()
 
                     else
 
-                        state.FailedThisRun +=
-                            1
+                        state.FailedThisRun = state.FailedThisRun + 1
 
                         state.LastStatus =
                             tostring(item.FruitName)
@@ -17048,8 +17044,7 @@ function GAG2AutoShovelFruitSetEnabled(value)
 
     else
 
-        state.WorkerGeneration +=
-            1
+        state.WorkerGeneration = state.WorkerGeneration + 1
 
         state.Running =
             false
@@ -17070,8 +17065,7 @@ function GAG2AutoShovelFruitStartMonitor()
     local state =
         GAG2_AUTO_SHOVEL_FRUIT_STATE
 
-    state.MonitorGeneration +=
-        1
+    state.MonitorGeneration = state.MonitorGeneration + 1
 
     local generation =
         state.MonitorGeneration
@@ -18927,7 +18921,7 @@ function GAG2SeedPlantBuildLayerOffsets(count, spacing, direction)
                 -spacing * step
             )
 
-            step += 1
+            step = step + 1
         end
 
         return offsets
@@ -19347,7 +19341,7 @@ function GAG2SeedPlantFireCycle()
 
                         if okPlant == true then
 
-                            fired += 1
+                            fired = fired + 1
 
                             state.LastSeed =
                                 seedName
@@ -24215,7 +24209,7 @@ function GAG2MailboxScanPetTable(petsTable, target, seen, source)
 
     for _, row in ipairs(GAG2MailboxSafePairs(petsTable)) do
 
-        scanned += 1
+        scanned = scanned + 1
 
         if scanned > 3000 then
             break
@@ -24254,7 +24248,7 @@ function GAG2MailboxScanPetTable(petsTable, target, seen, source)
             source
         ) == true then
 
-            added += 1
+            added = added + 1
         end
     end
 
@@ -24287,7 +24281,7 @@ function GAG2MailboxScanGcInventoryPets(target, seen)
 
     for _, candidate in ipairs(gc) do
 
-        scanned += 1
+        scanned = scanned + 1
 
         if scanned > 30000 then
             break
@@ -24309,8 +24303,7 @@ function GAG2MailboxScanGcInventoryPets(target, seen)
                         "Pets"
                     )
 
-                added +=
-                    GAG2MailboxScanPetTable(
+                added = added + GAG2MailboxScanPetTable(
                         pets,
                         target,
                         seen,
@@ -24324,8 +24317,7 @@ function GAG2MailboxScanGcInventoryPets(target, seen)
                     "Pets"
                 )
 
-            added +=
-                GAG2MailboxScanPetTable(
+            added = added + GAG2MailboxScanPetTable(
                     directPets,
                     target,
                     seen,
@@ -24391,7 +24383,7 @@ function GAG2MailboxScanToolPets(target, seen)
                         "Tool"
                     ) == true then
 
-                        added += 1
+                        added = added + 1
                     end
                 end
             end
@@ -24588,7 +24580,7 @@ function GAG2MailboxRefreshPetDropdown()
                 .. " · "
                 .. tostring(suffix)
 
-            suffix += 1
+            suffix = suffix + 1
         end
 
         usedChoices[choice] =
@@ -24774,7 +24766,7 @@ function GAG2MailboxReadSendableAmount(itemFrame, category)
 
     for _, descendant in ipairs(itemFrame:GetDescendants()) do
 
-        scanned += 1
+        scanned = scanned + 1
 
         if scanned > 350 then
             break
@@ -25328,7 +25320,7 @@ function GAG2MailboxRefreshItemDropdown()
                     .. " · "
                     .. tostring(suffix)
 
-                suffix += 1
+                suffix = suffix + 1
             end
 
             usedChoices[choice] =
@@ -27957,11 +27949,9 @@ function GAG2MailboxAutoProcessRule(rule, ruleIndex)
     auto.ConsecutiveFailures =
         0
 
-    auto.SessionMails +=
-        1
+    auto.SessionMails = auto.SessionMails + 1
 
-    auto.SessionItems +=
-        tonumber(info.Count)
+    auto.SessionItems = auto.SessionItems + tonumber(info.Count)
         or 0
 
     auto.NextAllowedAt =
@@ -28048,8 +28038,7 @@ function GAG2MailboxAutoStopWorker(reason)
     local auto =
         GAG2MailboxAutoGetState()
 
-    auto.LoopToken +=
-        1
+    auto.LoopToken = auto.LoopToken + 1
 
     auto.Running =
         false
@@ -28074,8 +28063,7 @@ function GAG2MailboxAutoStartWorker()
         return true
     end
 
-    auto.LoopToken +=
-        1
+    auto.LoopToken = auto.LoopToken + 1
 
     local token =
         auto.LoopToken
@@ -28159,8 +28147,7 @@ function GAG2MailboxAutoStartWorker()
 
                         if hardFailure == true then
 
-                            auto.ConsecutiveFailures +=
-                                1
+                            auto.ConsecutiveFailures = auto.ConsecutiveFailures + 1
 
                             GAG2MailboxAutoSetStatus(
                                 reason
@@ -28822,13 +28809,13 @@ function GAG2SeedDropBuildSelectPacket(seedName)
         0
 
     buffer.writeu8(packet, offset, 0x14)
-    offset += 1
+    offset = offset + 1
 
     buffer.writeu8(packet, offset, 0x01)
-    offset += 1
+    offset = offset + 1
 
     buffer.writeu8(packet, offset, #prefix)
-    offset += 1
+    offset = offset + 1
 
     GAG2SeedDropWriteAscii(
         packet,
@@ -28836,10 +28823,10 @@ function GAG2SeedDropBuildSelectPacket(seedName)
         prefix
     )
 
-    offset += #prefix
+    offset = offset + #prefix
 
     buffer.writeu8(packet, offset, #seedName)
-    offset += 1
+    offset = offset + 1
 
     GAG2SeedDropWriteAscii(
         packet,
@@ -28878,25 +28865,25 @@ function GAG2SeedDropBuildStatePacket(seedName, slotIndex)
         0
 
     buffer.writeu8(packet, offset, 0x60)
-    offset += 1
+    offset = offset + 1
 
     buffer.writeu8(packet, offset, 0x00)
-    offset += 1
+    offset = offset + 1
 
     buffer.writeu8(packet, offset, 0x1C)
-    offset += 1
+    offset = offset + 1
 
     buffer.writeu8(packet, offset, 0x05)
-    offset += 1
+    offset = offset + 1
 
     buffer.writeu8(packet, offset, 0x01)
-    offset += 1
+    offset = offset + 1
 
     buffer.writeu8(packet, offset, 0x0B)
-    offset += 1
+    offset = offset + 1
 
     buffer.writeu8(packet, offset, #shovelText)
-    offset += 1
+    offset = offset + 1
 
     GAG2SeedDropWriteAscii(
         packet,
@@ -28904,19 +28891,19 @@ function GAG2SeedDropBuildStatePacket(seedName, slotIndex)
         shovelText
     )
 
-    offset += #shovelText
+    offset = offset + #shovelText
 
     buffer.writeu8(packet, offset, 0x05)
-    offset += 1
+    offset = offset + 1
 
     buffer.writeu8(packet, offset, slotIndex)
-    offset += 1
+    offset = offset + 1
 
     buffer.writeu8(packet, offset, 0x0B)
-    offset += 1
+    offset = offset + 1
 
     buffer.writeu8(packet, offset, #seedText)
-    offset += 1
+    offset = offset + 1
 
     GAG2SeedDropWriteAscii(
         packet,
@@ -28924,7 +28911,7 @@ function GAG2SeedDropBuildStatePacket(seedName, slotIndex)
         seedText
     )
 
-    offset += #seedText
+    offset = offset + #seedText
 
     buffer.writeu8(packet, offset, 0x00)
 
@@ -29677,7 +29664,7 @@ task.wait(
             break
         end
 
-        fired += 1
+        fired = fired + 1
 
         if type(GAG2DropPickupMarkSelfDrop) == "function" then
 
@@ -29831,7 +29818,7 @@ function GAG2SeedDropStartLoop()
 
                 else
 
-                    state.Dropped += fired
+                    state.Dropped = state.Dropped + fired
 
                     GAG2SeedDropSetStatus(
                         "Dropped "
@@ -30114,7 +30101,7 @@ function GAG2DropPickupGetPosition(instance)
 
     for _, descendant in ipairs(instance:GetDescendants()) do
 
-        scanned += 1
+        scanned = scanned + 1
 
         if scanned > 160 then
             break
@@ -30274,7 +30261,7 @@ function GAG2DropPickupFindPrompt(item)
 
     for _, descendant in ipairs(item:GetDescendants()) do
 
-        scanned += 1
+        scanned = scanned + 1
 
         if scanned > 220 then
             break
@@ -30347,7 +30334,7 @@ function GAG2DropPickupReadDescriptor(item, prompt)
 
         for _, descendant in ipairs(item:GetDescendants()) do
 
-            scanned += 1
+            scanned = scanned + 1
 
             if scanned > 180 then
                 break
@@ -30718,7 +30705,7 @@ function GAG2DropPickupFirePrompt(item, prompt, key, shouldTeleport, itemPositio
         tonumber(state.Picked)
         or 0
 
-    state.Picked += 1
+    state.Picked = state.Picked + 1
 
     state.LastPicked =
         tostring(item.Name)
@@ -30818,7 +30805,7 @@ function GAG2DropPickupScanOnce(reason)
 
             if allowed == true then
 
-                found += 1
+                found = found + 1
 
                 local ok =
                     GAG2DropPickupFirePrompt(
@@ -30831,7 +30818,7 @@ function GAG2DropPickupScanOnce(reason)
 
                 if ok == true then
 
-                    fired += 1
+                    fired = fired + 1
                 end
 
                 if fired % 10 == 0 then
@@ -31383,7 +31370,7 @@ function GAG2VersionHopReadCurrentVersion()
 
     for _, descendant in ipairs(playerGui:GetDescendants()) do
 
-        scanned += 1
+        scanned = scanned + 1
 
         if scanned > 10000 then
             break
@@ -31423,7 +31410,7 @@ function GAG2VersionHopReadCurrentVersion()
 
     for _, descendant in ipairs(playerGui:GetDescendants()) do
 
-        scanned += 1
+        scanned = scanned + 1
 
         if scanned > 10000 then
             break
@@ -31628,7 +31615,7 @@ function GAG2VersionHopRefreshHomeHeader()
 
         for _, descendant in ipairs(root:GetDescendants()) do
 
-            scanned += 1
+            scanned = scanned + 1
 
             if scanned > 25000 then
                 break
@@ -31969,7 +31956,7 @@ function GAG2VersionHopStartLoop()
                     0.1
                 )
 
-                waited += 0.1
+                waited = waited + 0.1
             end
 
             if state.Enabled ~= true then
