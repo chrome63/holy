@@ -48,6 +48,376 @@ pcall(function()
 end)
 
 --==================================================
+-- [0.1] EXECUTOR COMPATIBILITY
+-- Safe environment, HTTP and remote chunk loading.
+--==================================================
+
+GAG2_EXECUTOR_ENV =
+    _G
+
+do
+
+    local environmentOk, environment =
+        pcall(function()
+
+            if type(getgenv) == "function" then
+
+                local resolved =
+                    getgenv()
+
+                if type(resolved) == "table" then
+                    return resolved
+                end
+            end
+
+            if type(shared) == "table" then
+                return shared
+            end
+
+            return _G
+        end)
+
+    if environmentOk == true
+    and type(environment) == "table" then
+
+        GAG2_EXECUTOR_ENV =
+            environment
+    end
+end
+
+local getgenv =
+    type(getgenv) == "function"
+    and getgenv
+    or function()
+
+        return GAG2_EXECUTOR_ENV
+    end
+
+function GAG2ExecutorGetRequestFunction()
+
+    local environment =
+        GAG2_EXECUTOR_ENV
+
+    local requestFunction =
+        nil
+
+    if type(syn) == "table"
+    and type(syn.request) == "function" then
+
+        requestFunction =
+            syn.request
+    end
+
+    if type(requestFunction) ~= "function"
+    and type(http_request) == "function" then
+
+        requestFunction =
+            http_request
+    end
+
+    if type(requestFunction) ~= "function"
+    and type(request) == "function" then
+
+        requestFunction =
+            request
+    end
+
+    if type(requestFunction) ~= "function"
+    and type(fluxus) == "table"
+    and type(fluxus.request) == "function" then
+
+        requestFunction =
+            fluxus.request
+    end
+
+    if type(requestFunction) ~= "function"
+    and type(environment) == "table" then
+
+        if type(environment.request) == "function" then
+
+            requestFunction =
+                environment.request
+
+        elseif type(environment.http_request) == "function" then
+
+            requestFunction =
+                environment.http_request
+        end
+    end
+
+    return requestFunction
+end
+
+function GAG2ExecutorHttpGet(url)
+
+    url =
+        tostring(url or "")
+
+    if url == "" then
+
+        return nil,
+            "empty URL"
+    end
+
+    local httpGetOk, httpGetResult =
+        pcall(function()
+
+            return game:HttpGet(
+                url
+            )
+        end)
+
+    if httpGetOk == true
+    and type(httpGetResult) == "string"
+    and httpGetResult ~= "" then
+
+        return httpGetResult,
+            nil
+    end
+
+    local requestFunction =
+        GAG2ExecutorGetRequestFunction()
+
+    if type(requestFunction) == "function" then
+
+        local requestOk, response =
+            pcall(function()
+
+                return requestFunction({
+                    Url = url,
+                    Method = "GET",
+                    Headers = {
+                        ["Cache-Control"] = "no-cache",
+                    },
+                })
+            end)
+
+        if requestOk == true then
+
+            if type(response) == "string"
+            and response ~= "" then
+
+                return response,
+                    nil
+            end
+
+            if type(response) == "table" then
+
+                local body =
+                    response.Body
+                    or response.body
+                    or response.ResponseBody
+                    or response.responseBody
+
+                local statusCode =
+                    tonumber(
+                        response.StatusCode
+                        or response.Status
+                        or response.status_code
+                    )
+
+                if type(body) == "string"
+                and body ~= ""
+                and (
+                    statusCode == nil
+                    or (
+                        statusCode >= 200
+                        and statusCode < 400
+                    )
+                ) then
+
+                    return body,
+                        nil
+                end
+
+                return nil,
+                    "request returned no usable body"
+            end
+        end
+    end
+
+    local getAsyncOk, getAsyncResult =
+        pcall(function()
+
+            return game:GetService("HttpService"):GetAsync(
+                url,
+                true
+            )
+        end)
+
+    if getAsyncOk == true
+    and type(getAsyncResult) == "string"
+    and getAsyncResult ~= "" then
+
+        return getAsyncResult,
+            nil
+    end
+
+    return nil,
+        "game:HttpGet, request API and HttpService:GetAsync failed"
+end
+
+function GAG2ExecutorGetCompiler()
+
+    local environment =
+        GAG2_EXECUTOR_ENV
+
+    if type(loadstring) == "function" then
+        return loadstring
+    end
+
+    if type(load) == "function" then
+        return load
+    end
+
+    if type(environment) == "table" then
+
+        if type(environment.loadstring) == "function" then
+            return environment.loadstring
+        end
+
+        if type(environment.load) == "function" then
+            return environment.load
+        end
+    end
+
+    return nil
+end
+
+function GAG2ExecutorBuildTrace(errorValue)
+
+    local errorText =
+        tostring(errorValue or "unknown error")
+
+    if type(debug) == "table"
+    and type(debug.traceback) == "function" then
+
+        local traceOk, trace =
+            pcall(
+                debug.traceback,
+                errorText,
+                2
+            )
+
+        if traceOk == true
+        and type(trace) == "string"
+        and trace ~= "" then
+
+            return trace
+        end
+    end
+
+    return errorText
+end
+
+function GAG2LoadRemoteModule(url, moduleName)
+
+    moduleName =
+        tostring(moduleName or "remote module")
+
+    local source, downloadError =
+        GAG2ExecutorHttpGet(
+            url
+        )
+
+    if type(source) ~= "string"
+    or source == "" then
+
+        error(
+            "[HOLY GAG2] Failed to download "
+            .. moduleName
+            .. ": "
+            .. tostring(downloadError),
+            0
+        )
+    end
+
+    local compiler =
+        GAG2ExecutorGetCompiler()
+
+    if type(compiler) ~= "function" then
+
+        error(
+            "[HOLY GAG2] Unsupported executor: loadstring/load is missing. "
+            .. moduleName
+            .. " cannot be compiled.",
+            0
+        )
+    end
+
+    local compileOk, chunk, compileError =
+        pcall(
+            compiler,
+            source,
+            "=" .. moduleName
+        )
+
+    if compileOk ~= true then
+
+        error(
+            "[HOLY GAG2] "
+            .. moduleName
+            .. " compiler call failed: "
+            .. tostring(chunk),
+            0
+        )
+    end
+
+    if type(chunk) ~= "function" then
+
+        local secondCompileOk, secondChunk, secondCompileError =
+            pcall(
+                compiler,
+                source
+            )
+
+        if secondCompileOk == true
+        and type(secondChunk) == "function" then
+
+            chunk =
+                secondChunk
+
+            compileError =
+                nil
+
+        else
+
+            error(
+                "[HOLY GAG2] "
+                .. moduleName
+                .. " did not compile: "
+                .. tostring(
+                    compileError
+                    or secondCompileError
+                    or secondChunk
+                    or "compiler returned nil"
+                ),
+                0
+            )
+        end
+    end
+
+    local runOk, result =
+        xpcall(
+            chunk,
+            GAG2ExecutorBuildTrace
+        )
+
+    if runOk ~= true then
+
+        error(
+            "[HOLY GAG2] "
+            .. moduleName
+            .. " runtime failed:\n"
+            .. tostring(result),
+            0
+        )
+    end
+
+    return result
+end
+
+--==================================================
 -- [1] CONSTANTS
 --==================================================
 
@@ -813,19 +1183,52 @@ LoadUISettingsEarly()
 --==================================================
 
 local Library =
-    loadstring(
-        game:HttpGet(LIBRARY_URL)
-    )()
+    GAG2LoadRemoteModule(
+        LIBRARY_URL,
+        "librarygag2.lua"
+    )
+
+if type(Library) ~= "table" then
+
+    error(
+        "[HOLY GAG2] librarygag2.lua returned "
+        .. typeof(Library)
+        .. " instead of a table.",
+        0
+    )
+end
 
 local ThemeManager =
-    loadstring(
-        game:HttpGet(THEME_MANAGER_URL)
-    )()
+    GAG2LoadRemoteModule(
+        THEME_MANAGER_URL,
+        "ThemeManager.lua"
+    )
+
+if type(ThemeManager) ~= "table" then
+
+    error(
+        "[HOLY GAG2] ThemeManager.lua returned "
+        .. typeof(ThemeManager)
+        .. " instead of a table.",
+        0
+    )
+end
 
 local SaveManager =
-    loadstring(
-        game:HttpGet(SAVE_MANAGER_URL)
-    )()
+    GAG2LoadRemoteModule(
+        SAVE_MANAGER_URL,
+        "SaveManager.lua"
+    )
+
+if type(SaveManager) ~= "table" then
+
+    error(
+        "[HOLY GAG2] SaveManager.lua returned "
+        .. typeof(SaveManager)
+        .. " instead of a table.",
+        0
+    )
+end
 
 local Options =
     Library.Options
@@ -833,13 +1236,22 @@ local Options =
 local Toggles =
     Library.Toggles
 
+if type(Options) ~= "table"
+or type(Toggles) ~= "table" then
+
+    error(
+        "[HOLY GAG2] UI library loaded without valid Options/Toggles tables.",
+        0
+    )
+end
+
 Library.ForceCheckbox =
     false
 
 Library.ShowToggleFrameInKeybinds =
     true
 
-getgenv().HOLY_GAG2_LIBRARY =
+GAG2_EXECUTOR_ENV.HOLY_GAG2_LIBRARY =
     Library
 
 function GAG2LoadGroupboxOrders()
