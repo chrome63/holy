@@ -765,7 +765,7 @@ GAG2_WILD_PET_NETWORK_STATE = {
     Running = false,
     Refreshing = false,
 
-    RefreshSeconds = 3,
+    RefreshSeconds = 1,
     MaxRenderedRows = 80,
 
     LoopToken = 0,
@@ -4406,6 +4406,86 @@ function GAG2WildPetNetworkGetRarityColor3(rarity)
         )
 end
 
+function GAG2WildPetNetworkGetRowTimerSeconds(rowData)
+
+    if type(rowData) ~= "table" then
+        return 0
+    end
+
+    local now =
+        os.time()
+
+    local expiresAt =
+        tonumber(
+            rowData.bestExpiresAt
+            or rowData.expiresAt
+            or rowData.ExpiresAt
+            or rowData.endTime
+            or rowData.EndTime
+        )
+
+    if expiresAt
+    and expiresAt > 0 then
+
+        return math.max(
+            0,
+            math.floor(
+                expiresAt - now
+            )
+        )
+    end
+
+    local spawnedAt =
+        tonumber(
+            rowData.bestSpawnedAt
+            or rowData.spawnedAt
+            or rowData.SpawnedAt
+        )
+
+    local lifetime =
+        tonumber(
+            rowData.bestLifetime
+            or rowData.lifetime
+            or rowData.Lifetime
+        )
+
+    if spawnedAt
+    and lifetime
+    and spawnedAt > 0
+    and lifetime > 0 then
+
+        return math.max(
+            0,
+            math.floor(
+                spawnedAt + lifetime - now
+            )
+        )
+    end
+
+    local remaining =
+        tonumber(
+            rowData.bestRemaining
+            or rowData.remaining
+            or rowData.Remaining
+            or rowData.timeLeft
+            or rowData.TimeLeft
+            or rowData.timer
+            or rowData.Timer
+        )
+
+    if remaining then
+
+        return math.max(
+            0,
+            math.floor(
+                remaining
+            )
+        )
+    end
+
+    return 0
+end
+
 function GAG2WildPetNetworkCreateServerRow(
     parent,
     rowData
@@ -4451,13 +4531,9 @@ function GAG2WildPetNetworkCreateServerRow(
             )
         )
 
-    local age =
-        math.max(
-            0,
-            math.floor(
-                tonumber(rowData.ageSeconds)
-                or 0
-            )
+    local timerSeconds =
+        GAG2WildPetNetworkGetRowTimerSeconds(
+            rowData
         )
 
     local count =
@@ -4538,7 +4614,7 @@ function GAG2WildPetNetworkCreateServerRow(
     idLabel.Size =
         UDim2.new(
             0,
-            94,
+            88,
             1,
             0
         )
@@ -4576,14 +4652,14 @@ function GAG2WildPetNetworkCreateServerRow(
 
     playersLabel.Position =
         UDim2.fromOffset(
-            118,
+            110,
             0
         )
 
     playersLabel.Size =
         UDim2.new(
             0,
-            48,
+            46,
             1,
             0
         )
@@ -4615,50 +4691,51 @@ function GAG2WildPetNetworkCreateServerRow(
     playersLabel.Parent =
         row
 
-    local ageLabel =
+    local timerLabel =
         Instance.new("TextLabel")
 
-    ageLabel.Name =
-        "Age"
+    timerLabel.Name =
+        "Timer"
 
-    ageLabel.Position =
+    timerLabel.Position =
         UDim2.fromOffset(
-            178,
+            166,
             0
         )
 
-    ageLabel.Size =
+    timerLabel.Size =
         UDim2.new(
             0,
-            42,
+            68,
             1,
             0
         )
 
-    ageLabel.BackgroundTransparency =
+    timerLabel.BackgroundTransparency =
         1
 
-    ageLabel.Font =
+    timerLabel.Font =
         Enum.Font.Code
 
-    ageLabel.Text =
-        tostring(age)
-        .. "s"
-
-    ageLabel.TextSize =
-        11
-
-    ageLabel.TextColor3 =
-        Color3.fromRGB(
-            148,
-            163,
-            184
+    timerLabel.Text =
+        GAG2WildPetNetworkFormatSeconds(
+            timerSeconds
         )
 
-    ageLabel.TextXAlignment =
+    timerLabel.TextSize =
+        11
+
+    timerLabel.TextColor3 =
+        Color3.fromRGB(
+            203,
+            213,
+            225
+        )
+
+    timerLabel.TextXAlignment =
         Enum.TextXAlignment.Left
 
-    ageLabel.Parent =
+    timerLabel.Parent =
         row
 
     local countLabel =
@@ -4669,14 +4746,14 @@ function GAG2WildPetNetworkCreateServerRow(
 
     countLabel.Position =
         UDim2.fromOffset(
-            232,
+            244,
             0
         )
 
     countLabel.Size =
         UDim2.new(
             0,
-            36,
+            34,
             1,
             0
         )
@@ -6577,8 +6654,8 @@ function GAG2WildPetNetworkStart()
             task.wait(
                 math.clamp(
                     tonumber(state.RefreshSeconds)
-                    or 3,
-                    2,
+                    or 1,
+                    1,
                     30
                 )
             )
@@ -6711,8 +6788,8 @@ GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE =
         Pending = false,
 
         LoopToken = 0,
-        HeartbeatSeconds = 10,
-        ClaimRefreshSeconds = 20,
+        HeartbeatSeconds = 1,
+        ClaimRefreshSeconds = 5,
 
         LastReportAt = 0,
         LastClaimAt = 0,
@@ -7497,8 +7574,8 @@ function GAG2WildPetNetworkContributorStart()
             task.wait(
                 math.clamp(
                     tonumber(state.HeartbeatSeconds)
-                    or 10,
-                    5,
+                    or 1,
+                    1,
                     60
                 )
             )
