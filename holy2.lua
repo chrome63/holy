@@ -4381,11 +4381,683 @@ function GAG2WildPetNetworkCreateLabel(
     return label
 end
 
-function GAG2WildPetNetworkCreateServerButton(
+function GAG2WildPetNetworkGetRarityColor3(rarity)
+
+    local colors = {
+        Common = Color3.fromRGB(203, 213, 225),
+        Uncommon = Color3.fromRGB(74, 222, 128),
+        Rare = Color3.fromRGB(96, 165, 250),
+        Epic = Color3.fromRGB(192, 132, 252),
+        Legendary = Color3.fromRGB(250, 204, 21),
+        Mythic = Color3.fromRGB(248, 113, 113),
+        Mythical = Color3.fromRGB(248, 113, 113),
+        Super = Color3.fromRGB(34, 211, 238),
+        Divine = Color3.fromRGB(251, 146, 60),
+        Prismatic = Color3.fromRGB(244, 114, 182),
+    }
+
+    return colors[
+        CleanText(rarity)
+    ]
+        or Color3.fromRGB(
+            203,
+            213,
+            225
+        )
+end
+
+function GAG2WildPetNetworkCreateServerCell(
     parent,
+    width,
     text,
+    align,
+    color,
+    font
+)
+
+    local label =
+        Instance.new("TextLabel")
+
+    label.Name =
+        "Cell"
+
+    label.Size =
+        UDim2.new(
+            0,
+            tonumber(width)
+            or 80,
+            1,
+            0
+        )
+
+    label.BackgroundTransparency =
+        1
+
+    label.Font =
+        font
+        or Enum.Font.Code
+
+    label.Text =
+        tostring(text or "")
+
+    label.TextSize =
+        12
+
+    label.TextColor3 =
+        color
+        or Color3.fromRGB(
+            203,
+            213,
+            225
+        )
+
+    label.TextXAlignment =
+        align
+        or Enum.TextXAlignment.Left
+
+    label.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    label.Parent =
+        parent
+
+    return label
+end
+
+function GAG2WildPetNetworkCreateServerRow(
+    parent,
     rowData
 )
+
+    if type(rowData) ~= "table" then
+        return nil
+    end
+
+    local jobId =
+        CleanText(
+            rowData.jobId
+            or rowData.JobId
+        )
+
+    local placeId =
+        tonumber(
+            rowData.placeId
+            or rowData.PlaceId
+        )
+
+    if jobId == ""
+    or not placeId
+    or placeId <= 0 then
+        return nil
+    end
+
+    local players =
+        math.max(
+            0,
+            math.floor(
+                tonumber(rowData.players)
+                or 0
+            )
+        )
+
+    local maxPlayers =
+        math.max(
+            0,
+            math.floor(
+                tonumber(rowData.maxPlayers)
+                or 0
+            )
+        )
+
+    local age =
+        math.max(
+            0,
+            math.floor(
+                tonumber(rowData.ageSeconds)
+                or 0
+            )
+        )
+
+    local count =
+        math.max(
+            1,
+            math.floor(
+                tonumber(rowData.count)
+                or 1
+            )
+        )
+
+    local row =
+        Instance.new("Frame")
+
+    row.Name =
+        "ServerRow"
+
+    row.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            38
+        )
+
+    row.BackgroundColor3 =
+        Color3.fromRGB(
+            14,
+            22,
+            34
+        )
+
+    row.BackgroundTransparency =
+        0.12
+
+    row.BorderSizePixel =
+        0
+
+    row.Parent =
+        parent
+
+    GAG2WildPetNetworkAddCorner(
+        row,
+        7
+    )
+
+    local rowStroke =
+        Instance.new("UIStroke")
+
+    rowStroke.Color =
+        Color3.fromRGB(
+            44,
+            60,
+            84
+        )
+
+    rowStroke.Thickness =
+        1
+
+    rowStroke.Transparency =
+        0.45
+
+    rowStroke.Parent =
+        row
+
+    local left =
+        Instance.new("Frame")
+
+    left.Name =
+        "Left"
+
+    left.Position =
+        UDim2.new(
+            0,
+            12,
+            0,
+            0
+        )
+
+    left.Size =
+        UDim2.new(
+            1,
+            -98,
+            1,
+            0
+        )
+
+    left.BackgroundTransparency =
+        1
+
+    left.Parent =
+        row
+
+    local leftLayout =
+        Instance.new("UIListLayout")
+
+    leftLayout.FillDirection =
+        Enum.FillDirection.Horizontal
+
+    leftLayout.HorizontalAlignment =
+        Enum.HorizontalAlignment.Left
+
+    leftLayout.VerticalAlignment =
+        Enum.VerticalAlignment.Center
+
+    leftLayout.Padding =
+        UDim.new(
+            0,
+            12
+        )
+
+    leftLayout.Parent =
+        left
+
+    GAG2WildPetNetworkCreateServerCell(
+        left,
+        175,
+        jobId:sub(1, 8),
+        Enum.TextXAlignment.Left,
+        Color3.fromRGB(226, 232, 240),
+        Enum.Font.Code
+    )
+
+    GAG2WildPetNetworkCreateServerCell(
+        left,
+        72,
+        tostring(players)
+        .. "/"
+        .. tostring(maxPlayers),
+        Enum.TextXAlignment.Left,
+        Color3.fromRGB(203, 213, 225),
+        Enum.Font.Code
+    )
+
+    GAG2WildPetNetworkCreateServerCell(
+        left,
+        58,
+        tostring(age)
+        .. "s",
+        Enum.TextXAlignment.Left,
+        Color3.fromRGB(203, 213, 225),
+        Enum.Font.Code
+    )
+
+    GAG2WildPetNetworkCreateServerCell(
+        left,
+        38,
+        "x"
+        .. tostring(count),
+        Enum.TextXAlignment.Left,
+        Color3.fromRGB(203, 213, 225),
+        Enum.Font.Code
+    )
+
+    local joinButton =
+        Instance.new("TextButton")
+
+    joinButton.Name =
+        "Join"
+
+    joinButton.AnchorPoint =
+        Vector2.new(
+            1,
+            0.5
+        )
+
+    joinButton.Position =
+        UDim2.new(
+            1,
+            -12,
+            0.5,
+            0
+        )
+
+    joinButton.Size =
+        UDim2.fromOffset(
+            74,
+            24
+        )
+
+    joinButton.BackgroundColor3 =
+        Color3.fromRGB(
+            12,
+            42,
+            25
+        )
+
+    joinButton.BorderSizePixel =
+        0
+
+    joinButton.AutoButtonColor =
+        true
+
+    joinButton.Font =
+        Enum.Font.GothamBold
+
+    joinButton.Text =
+        "Join"
+
+    joinButton.TextSize =
+        12
+
+    joinButton.TextColor3 =
+        Color3.fromRGB(
+            74,
+            222,
+            128
+        )
+
+    joinButton.Parent =
+        row
+
+    GAG2WildPetNetworkAddCorner(
+        joinButton,
+        7
+    )
+
+    local joinStroke =
+        Instance.new("UIStroke")
+
+    joinStroke.Color =
+        Color3.fromRGB(
+            34,
+            197,
+            94
+        )
+
+    joinStroke.Thickness =
+        1
+
+    joinStroke.Transparency =
+        0.15
+
+    joinStroke.Parent =
+        joinButton
+
+    joinButton.MouseButton1Click:Connect(function()
+
+        GAG2WildPetNetworkJoinServer({
+            placeId =
+                placeId,
+
+            jobId =
+                jobId,
+
+            petName =
+                CleanText(
+                    rowData.petName
+                    or rowData.PetName
+                ),
+
+            rarity =
+                CleanText(
+                    rowData.rarity
+                    or rowData.Rarity
+                ),
+        })
+    end)
+
+    return row
+end
+
+function GAG2WildPetNetworkCreatePetSection(
+    parent,
+    petName,
+    rarity,
+    rows
+)
+
+    local section =
+        Instance.new("Frame")
+
+    section.Name =
+        "PetSection"
+
+    section.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            0
+        )
+
+    section.AutomaticSize =
+        Enum.AutomaticSize.Y
+
+    section.BackgroundTransparency =
+        1
+
+    section.Parent =
+        parent
+
+    local sectionLayout =
+        Instance.new("UIListLayout")
+
+    sectionLayout.FillDirection =
+        Enum.FillDirection.Vertical
+
+    sectionLayout.HorizontalAlignment =
+        Enum.HorizontalAlignment.Left
+
+    sectionLayout.SortOrder =
+        Enum.SortOrder.LayoutOrder
+
+    sectionLayout.Padding =
+        UDim.new(
+            0,
+            5
+        )
+
+    sectionLayout.Parent =
+        section
+
+    local header =
+        Instance.new("Frame")
+
+    header.Name =
+        "Header"
+
+    header.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            28
+        )
+
+    header.BackgroundTransparency =
+        1
+
+    header.Parent =
+        section
+
+    local accent =
+        Instance.new("Frame")
+
+    accent.Name =
+        "Accent"
+
+    accent.Position =
+        UDim2.fromOffset(
+            0,
+            5
+        )
+
+    accent.Size =
+        UDim2.new(
+            0,
+            3,
+            0,
+            18
+        )
+
+    accent.BackgroundColor3 =
+        GAG2WildPetNetworkGetRarityColor3(
+            rarity
+        )
+
+    accent.BorderSizePixel =
+        0
+
+    accent.Parent =
+        header
+
+    GAG2WildPetNetworkAddCorner(
+        accent,
+        3
+    )
+
+    local title =
+        Instance.new("TextLabel")
+
+    title.Name =
+        "Title"
+
+    title.Position =
+        UDim2.fromOffset(
+            12,
+            0
+        )
+
+    title.Size =
+        UDim2.new(
+            1,
+            -120,
+            1,
+            0
+        )
+
+    title.BackgroundTransparency =
+        1
+
+    title.Font =
+        Enum.Font.GothamBold
+
+    title.RichText =
+        true
+
+    title.Text =
+        '<b>'
+        .. GAG2WildPetNetworkCleanDisplay(
+            petName
+        )
+        .. '</b>  <font color="'
+        .. GAG2WildPetNetworkGetRarityColor(
+            rarity
+        )
+        .. '">['
+        .. GAG2WildPetNetworkCleanDisplay(
+            rarity
+        )
+        .. ']</font>'
+
+    title.TextSize =
+        13
+
+    title.TextColor3 =
+        Color3.fromRGB(
+            241,
+            245,
+            249
+        )
+
+    title.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    title.Parent =
+        header
+
+    local resultCount =
+        Instance.new("TextLabel")
+
+    resultCount.Name =
+        "ResultCount"
+
+    resultCount.AnchorPoint =
+        Vector2.new(
+            1,
+            0
+        )
+
+    resultCount.Position =
+        UDim2.new(
+            1,
+            0,
+            0,
+            0
+        )
+
+    resultCount.Size =
+        UDim2.new(
+            0,
+            110,
+            1,
+            0
+        )
+
+    resultCount.BackgroundTransparency =
+        1
+
+    resultCount.Font =
+        Enum.Font.Code
+
+    resultCount.Text =
+        tostring(#rows)
+        .. " "
+        .. (
+            #rows == 1
+            and "server"
+            or "servers"
+        )
+
+    resultCount.TextSize =
+        12
+
+    resultCount.TextColor3 =
+        Color3.fromRGB(
+            96,
+            165,
+            250
+        )
+
+    resultCount.TextXAlignment =
+        Enum.TextXAlignment.Right
+
+    resultCount.Parent =
+        header
+
+    if #rows <= 0 then
+
+        local empty =
+            Instance.new("TextLabel")
+
+        empty.Name =
+            "Empty"
+
+        empty.Size =
+            UDim2.new(
+                1,
+                0,
+                0,
+                24
+            )
+
+        empty.BackgroundTransparency =
+            1
+
+        empty.Font =
+            Enum.Font.Code
+
+        empty.Text =
+            "(no server found)"
+
+        empty.TextSize =
+            12
+
+        empty.TextColor3 =
+            Color3.fromRGB(
+                148,
+                163,
+                184
+            )
+
+        empty.TextXAlignment =
+            Enum.TextXAlignment.Left
+
+        empty.Parent =
+            section
+
+        return section
+    end
+
+    for _, rowData in ipairs(rows) do
+
+        GAG2WildPetNetworkCreateServerRow(
+            section,
+            rowData
+        )
+    end
+
+    return section
+end
 
     local button =
         Instance.new("TextButton")
@@ -4673,26 +5345,81 @@ function GAG2WildPetNetworkRender(data)
     local petGroups =
         {}
 
+    local totalResults =
+        0
+
     for petName, servers in pairs(grouped) do
 
-        if type(servers) == "table"
-        and #servers > 0 then
+        if type(servers) == "table" then
 
-            local firstServer =
-                servers[1]
+            local validRows =
+                {}
 
-            table.insert(petGroups, {
-                PetName =
-                    tostring(petName),
+            local rarity =
+                "Unknown"
 
-                Servers =
-                    servers,
+            for _, row in ipairs(servers) do
 
-                Rarity =
-                    type(firstServer) == "table"
-                    and tostring(firstServer.rarity or "")
-                    or "",
-            })
+                if type(row) == "table" then
+
+                    local jobId =
+                        CleanText(
+                            row.jobId
+                            or row.JobId
+                        )
+
+                    local placeId =
+                        tonumber(
+                            row.placeId
+                            or row.PlaceId
+                        )
+
+                    if jobId ~= ""
+                    and placeId
+                    and placeId > 0 then
+
+                        if CleanText(
+                            row.rarity
+                            or row.Rarity
+                        ) ~= "" then
+
+                            rarity =
+                                tostring(
+                                    row.rarity
+                                    or row.Rarity
+                                )
+                        end
+
+                        row.petName =
+                            tostring(petName)
+
+                        row.rarity =
+                            tostring(rarity)
+
+                        table.insert(
+                            validRows,
+                            row
+                        )
+                    end
+                end
+            end
+
+            if #validRows > 0 then
+
+                totalResults =
+                    totalResults + #validRows
+
+                table.insert(petGroups, {
+                    PetName =
+                        tostring(petName),
+
+                    Rarity =
+                        tostring(rarity),
+
+                    Rows =
+                        validRows,
+                })
+            end
         end
     end
 
@@ -4715,6 +5442,23 @@ function GAG2WildPetNetworkRender(data)
         return tostring(a.PetName)
             < tostring(b.PetName)
     end)
+
+    if state.SummaryLabel then
+
+        pcall(function()
+
+            state.SummaryLabel.Text =
+                tostring(
+                    state.LastServerCount
+                    or 0
+                )
+                .. " live server(s)  •  "
+                .. tostring(#petGroups)
+                .. " pet(s)  •  "
+                .. tostring(totalResults)
+                .. " results"
+        end)
+    end
 
     if #petGroups <= 0 then
 
@@ -4748,185 +5492,41 @@ function GAG2WildPetNetworkRender(data)
             break
         end
 
-        local petName =
-            GAG2WildPetNetworkCleanDisplay(
-                group.PetName
-            )
+        local limitedRows =
+            {}
 
-        local rarity =
-            GAG2WildPetNetworkCleanDisplay(
-                group.Rarity
-            )
-
-        if rarity == "" then
-            rarity =
-                "Unknown"
-        end
-
-        local header =
-            GAG2WildPetNetworkCreateLabel(
-                scroll,
-                "PetHeader",
-                '<b>'
-                .. petName
-                .. '</b>  <font color="'
-                .. GAG2WildPetNetworkGetRarityColor(rarity)
-                .. '">['
-                .. rarity
-                .. ']</font>',
-                26,
-                14,
-                true
-            )
-
-        header.LayoutOrder =
-            renderedRows
-
-        for _, row in ipairs(group.Servers) do
+        for _, row in ipairs(group.Rows) do
 
             if renderedRows >= maxRows then
                 break
             end
 
-            if type(row) == "table" then
-
-                local jobId =
-                    CleanText(
-                        row.jobId
-                        or row.JobId
-                    )
-
-                local placeId =
-                    tonumber(
-                        row.placeId
-                        or row.PlaceId
-                    )
-
-                if jobId ~= ""
-                and placeId
-                and placeId > 0 then
-
-                    local players =
-                        math.max(
-                            0,
-                            math.floor(
-                                tonumber(row.players)
-                                or 0
-                            )
-                        )
-
-                    local maxPlayers =
-                        math.max(
-                            0,
-                            math.floor(
-                                tonumber(row.maxPlayers)
-                                or 0
-                            )
-                        )
-
-                    local age =
-                        math.max(
-                            0,
-                            math.floor(
-                                tonumber(row.ageSeconds)
-                                or 0
-                            )
-                        )
-
-                    local count =
-                        math.max(
-                            1,
-                            math.floor(
-                                tonumber(row.count)
-                                or 1
-                            )
-                        )
-
-                    local remaining =
-                        math.max(
-                            0,
-                            math.floor(
-                                tonumber(row.bestRemaining)
-                                or 0
-                            )
-                        )
-
-                    local rowText =
-                        jobId:sub(1, 8)
-                        .. "   "
-                        .. tostring(players)
-                        .. "/"
-                        .. tostring(maxPlayers)
-                        .. "   "
-                        .. tostring(age)
-                        .. "s   x"
-                        .. tostring(count)
-
-                    if remaining > 0 then
-
-                        rowText =
-                            rowText
-                            .. "   "
-                            .. GAG2WildPetNetworkFormatSeconds(
-                                remaining
-                            )
-                            .. " left"
-                    end
-
-                    local button =
-                        GAG2WildPetNetworkCreateServerButton(
-                            scroll,
-                            rowText,
-                            {
-                                placeId = placeId,
-                                jobId = jobId,
-                                petName = petName,
-                                rarity = rarity,
-                            }
-                        )
-
-                    renderedRows =
-                        renderedRows + 1
-
-                    button.LayoutOrder =
-                        renderedRows
-                end
-            end
-        end
-
-        local spacer =
-            Instance.new("Frame")
-
-        spacer.Name =
-            "Spacer"
-
-        spacer.Size =
-            UDim2.new(
-                1,
-                -8,
-                0,
-                4
+            table.insert(
+                limitedRows,
+                row
             )
 
-        spacer.BackgroundTransparency =
-            1
+            renderedRows =
+                renderedRows + 1
+        end
 
-        spacer.LayoutOrder =
-            renderedRows + 1
-
-        spacer.Parent =
-            scroll
+        GAG2WildPetNetworkCreatePetSection(
+            scroll,
+            group.PetName,
+            group.Rarity,
+            limitedRows
+        )
     end
 
-    if renderedRows >= maxRows then
+    if totalResults > renderedRows then
 
         GAG2WildPetNetworkCreateLabel(
             scroll,
             "RowLimit",
             "Showing first "
-            .. tostring(maxRows)
-            .. " server rows.",
-            26,
+            .. tostring(renderedRows)
+            .. " rows.",
+            24,
             11,
             false
         )
@@ -5144,26 +5744,35 @@ function GAG2WildPetNetworkCreateHud()
     frame.Name =
         "Main"
 
+    frame.AnchorPoint =
+        Vector2.new(
+            0.5,
+            0.5
+        )
+
     frame.Position =
         UDim2.new(
-            0,
-            16,
             0.5,
-            -220
+            0,
+            0.5,
+            0
         )
 
     frame.Size =
         UDim2.fromOffset(
-            390,
-            440
+            700,
+            500
         )
 
     frame.BackgroundColor3 =
         Color3.fromRGB(
-            10,
-            14,
+            7,
+            13,
             22
         )
+
+    frame.BackgroundTransparency =
+        0.14
 
     frame.BorderSizePixel =
         0
@@ -5179,7 +5788,7 @@ function GAG2WildPetNetworkCreateHud()
 
     GAG2WildPetNetworkAddCorner(
         frame,
-        9
+        12
     )
 
     local frameStroke =
@@ -5187,8 +5796,8 @@ function GAG2WildPetNetworkCreateHud()
 
     frameStroke.Color =
         Color3.fromRGB(
-            139,
-            92,
+            59,
+            130,
             246
         )
 
@@ -5196,42 +5805,10 @@ function GAG2WildPetNetworkCreateHud()
         1
 
     frameStroke.Transparency =
-        0.15
+        0.35
 
     frameStroke.Parent =
         frame
-
-    local accent =
-        Instance.new("Frame")
-
-    accent.Name =
-        "Accent"
-
-    accent.Size =
-        UDim2.new(
-            0,
-            4,
-            1,
-            0
-        )
-
-    accent.BackgroundColor3 =
-        Color3.fromRGB(
-            110,
-            231,
-            183
-        )
-
-    accent.BorderSizePixel =
-        0
-
-    accent.Parent =
-        frame
-
-    GAG2WildPetNetworkAddCorner(
-        accent,
-        9
-    )
 
     local title =
         Instance.new("TextLabel")
@@ -5241,16 +5818,16 @@ function GAG2WildPetNetworkCreateHud()
 
     title.Position =
         UDim2.fromOffset(
-            14,
-            5
+            18,
+            10
         )
 
     title.Size =
         UDim2.new(
             1,
-            -100,
+            -120,
             0,
-            25
+            28
         )
 
     title.BackgroundTransparency =
@@ -5263,7 +5840,7 @@ function GAG2WildPetNetworkCreateHud()
         "HOLY • LIVE WILD PETS"
 
     title.TextSize =
-        14
+        16
 
     title.TextColor3 =
         Color3.fromRGB(
@@ -5278,126 +5855,6 @@ function GAG2WildPetNetworkCreateHud()
     title.Parent =
         frame
 
-    local refreshButton =
-        Instance.new("TextButton")
-
-    refreshButton.Name =
-        "Refresh"
-
-    refreshButton.Position =
-        UDim2.new(
-            1,
-            -72,
-            0,
-            5
-        )
-
-    refreshButton.Size =
-        UDim2.fromOffset(
-            40,
-            24
-        )
-
-    refreshButton.BackgroundColor3 =
-        Color3.fromRGB(
-            30,
-            41,
-            59
-        )
-
-    refreshButton.BorderSizePixel =
-        0
-
-    refreshButton.Font =
-        Enum.Font.GothamBold
-
-    refreshButton.Text =
-        "↻"
-
-    refreshButton.TextSize =
-        16
-
-    refreshButton.TextColor3 =
-        Color3.fromRGB(
-            196,
-            181,
-            253
-        )
-
-    refreshButton.Parent =
-        frame
-
-    GAG2WildPetNetworkAddCorner(
-        refreshButton,
-        5
-    )
-
-    refreshButton.MouseButton1Click:Connect(function()
-
-        GAG2WildPetNetworkRefresh(
-            "manual"
-        )
-    end)
-
-    local closeButton =
-        Instance.new("TextButton")
-
-    closeButton.Name =
-        "Close"
-
-    closeButton.Position =
-        UDim2.new(
-            1,
-            -29,
-            0,
-            5
-        )
-
-    closeButton.Size =
-        UDim2.fromOffset(
-            24,
-            24
-        )
-
-    closeButton.BackgroundTransparency =
-        1
-
-    closeButton.Font =
-        Enum.Font.GothamBold
-
-    closeButton.Text =
-        "×"
-
-    closeButton.TextSize =
-        18
-
-    closeButton.TextColor3 =
-        Color3.fromRGB(
-            248,
-            113,
-            113
-        )
-
-    closeButton.Parent =
-        frame
-
-    closeButton.MouseButton1Click:Connect(function()
-
-        if GAG2_WILD_PET_NETWORK_HUD_TOGGLE
-        and type(GAG2_WILD_PET_NETWORK_HUD_TOGGLE.SetValue) == "function" then
-
-            GAG2_WILD_PET_NETWORK_HUD_TOGGLE:SetValue(
-                false
-            )
-
-        else
-
-            GAG2WildPetNetworkSetEnabled(
-                false
-            )
-        end
-    end)
-
     local summary =
         Instance.new("TextLabel")
 
@@ -5406,16 +5863,16 @@ function GAG2WildPetNetworkCreateHud()
 
     summary.Position =
         UDim2.fromOffset(
-            14,
-            33
+            18,
+            40
         )
 
     summary.Size =
         UDim2.new(
             1,
-            -28,
+            -36,
             0,
-            31
+            22
         )
 
     summary.BackgroundTransparency =
@@ -5440,11 +5897,200 @@ function GAG2WildPetNetworkCreateHud()
     summary.TextXAlignment =
         Enum.TextXAlignment.Left
 
-    summary.TextYAlignment =
-        Enum.TextYAlignment.Top
-
     summary.Parent =
         frame
+
+    local topLine =
+        Instance.new("Frame")
+
+    topLine.Name =
+        "TopLine"
+
+    topLine.Position =
+        UDim2.new(
+            0,
+            14,
+            0,
+            72
+        )
+
+    topLine.Size =
+        UDim2.new(
+            1,
+            -28,
+            0,
+            1
+        )
+
+    topLine.BackgroundColor3 =
+        Color3.fromRGB(
+            30,
+            41,
+            59
+        )
+
+    topLine.BackgroundTransparency =
+        0.3
+
+    topLine.BorderSizePixel =
+        0
+
+    topLine.Parent =
+        frame
+
+    local refreshButton =
+        Instance.new("TextButton")
+
+    refreshButton.Name =
+        "Refresh"
+
+    refreshButton.AnchorPoint =
+        Vector2.new(
+            1,
+            0
+        )
+
+    refreshButton.Position =
+        UDim2.new(
+            1,
+            -58,
+            0,
+            12
+        )
+
+    refreshButton.Size =
+        UDim2.fromOffset(
+            34,
+            24
+        )
+
+    refreshButton.BackgroundColor3 =
+        Color3.fromRGB(
+            12,
+            22,
+            35
+        )
+
+    refreshButton.BackgroundTransparency =
+        0.08
+
+    refreshButton.BorderSizePixel =
+        0
+
+    refreshButton.Font =
+        Enum.Font.GothamBold
+
+    refreshButton.Text =
+        "↻"
+
+    refreshButton.TextSize =
+        14
+
+    refreshButton.TextColor3 =
+        Color3.fromRGB(
+            96,
+            165,
+            250
+        )
+
+    refreshButton.Parent =
+        frame
+
+    GAG2WildPetNetworkAddCorner(
+        refreshButton,
+        8
+    )
+
+    local refreshStroke =
+        Instance.new("UIStroke")
+
+    refreshStroke.Color =
+        Color3.fromRGB(
+            51,
+            65,
+            85
+        )
+
+    refreshStroke.Thickness =
+        1
+
+    refreshStroke.Transparency =
+        0.25
+
+    refreshStroke.Parent =
+        refreshButton
+
+    refreshButton.MouseButton1Click:Connect(function()
+
+        GAG2WildPetNetworkRefresh(
+            "manual"
+        )
+    end)
+
+    local closeButton =
+        Instance.new("TextButton")
+
+    closeButton.Name =
+        "Close"
+
+    closeButton.AnchorPoint =
+        Vector2.new(
+            1,
+            0
+        )
+
+    closeButton.Position =
+        UDim2.new(
+            1,
+            -18,
+            0,
+            10
+        )
+
+    closeButton.Size =
+        UDim2.fromOffset(
+            24,
+            24
+        )
+
+    closeButton.BackgroundTransparency =
+        1
+
+    closeButton.Font =
+        Enum.Font.GothamBold
+
+    closeButton.Text =
+        "×"
+
+    closeButton.TextSize =
+        20
+
+    closeButton.TextColor3 =
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+
+    closeButton.Parent =
+        frame
+
+    closeButton.MouseButton1Click:Connect(function()
+
+        if GAG2_WILD_PET_NETWORK_HUD_TOGGLE
+        and type(GAG2_WILD_PET_NETWORK_HUD_TOGGLE.SetValue) == "function" then
+
+            GAG2_WILD_PET_NETWORK_HUD_TOGGLE:SetValue(
+                false
+            )
+
+        else
+
+            GAG2WildPetNetworkSetEnabled(
+                false
+            )
+        end
+    end)
 
     local scroll =
         Instance.new("ScrollingFrame")
@@ -5454,24 +6100,20 @@ function GAG2WildPetNetworkCreateHud()
 
     scroll.Position =
         UDim2.fromOffset(
-            10,
-            66
+            18,
+            84
         )
 
     scroll.Size =
         UDim2.new(
             1,
-            -20,
+            -36,
             1,
-            -102
+            -126
         )
 
-    scroll.BackgroundColor3 =
-        Color3.fromRGB(
-            15,
-            21,
-            31
-        )
+    scroll.BackgroundTransparency =
+        1
 
     scroll.BorderSizePixel =
         0
@@ -5481,8 +6123,8 @@ function GAG2WildPetNetworkCreateHud()
 
     scroll.ScrollBarImageColor3 =
         Color3.fromRGB(
-            139,
-            92,
+            59,
+            130,
             246
         )
 
@@ -5495,10 +6137,43 @@ function GAG2WildPetNetworkCreateHud()
     scroll.Parent =
         frame
 
-    GAG2WildPetNetworkAddCorner(
-        scroll,
-        6
-    )
+    local statusLine =
+        Instance.new("Frame")
+
+    statusLine.Name =
+        "StatusLine"
+
+    statusLine.Position =
+        UDim2.new(
+            0,
+            14,
+            1,
+            -40
+        )
+
+    statusLine.Size =
+        UDim2.new(
+            1,
+            -28,
+            0,
+            1
+        )
+
+    statusLine.BackgroundColor3 =
+        Color3.fromRGB(
+            30,
+            41,
+            59
+        )
+
+    statusLine.BackgroundTransparency =
+        0.3
+
+    statusLine.BorderSizePixel =
+        0
+
+    statusLine.Parent =
+        frame
 
     local status =
         Instance.new("TextLabel")
@@ -5509,17 +6184,17 @@ function GAG2WildPetNetworkCreateHud()
     status.Position =
         UDim2.new(
             0,
-            14,
+            18,
             1,
-            -30
+            -31
         )
 
     status.Size =
         UDim2.new(
             1,
-            -28,
+            -36,
             0,
-            22
+            20
         )
 
     status.BackgroundTransparency =
@@ -5536,9 +6211,9 @@ function GAG2WildPetNetworkCreateHud()
 
     status.TextColor3 =
         Color3.fromRGB(
-            196,
-            181,
-            253
+            96,
+            165,
+            250
         )
 
     status.TextXAlignment =
