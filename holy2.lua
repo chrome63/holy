@@ -1,6 +1,5 @@
 --==================================================
--- HOLY | GROW A GARDEN 2
--- Clean LibraryLite Shell
+-- HOLY
 -- Game: https://www.roblox.com/games/97598239454123/Grow-a-Garden-2
 --==================================================
 
@@ -235,10 +234,7 @@ function GAG2ExecutorHttpGet(url)
     end
 
     local cleanUrl =
-        url:gsub(
-            "%?.*$",
-            ""
-        )
+        url
 
     local failures =
         {}
@@ -490,12 +486,43 @@ function GAG2LoadRemoteModule(url, moduleName)
     or source == "" then
 
         error(
-            "[HOLY GAG2] Failed to download "
+            "[HOLY] Failed to download "
             .. moduleName
             .. ":\n"
             .. tostring(downloadError),
             0
         )
+    end
+
+    if moduleName == "librarygag2.lua" then
+
+        local hasLibraryStart =
+            source:find(
+                "local cloneref",
+                1,
+                true
+            ) ~= nil
+
+        local hasLibraryReturn =
+            source:find(
+                "return Library",
+                1,
+                true
+            ) ~= nil
+
+        if hasLibraryStart ~= true
+        or hasLibraryReturn ~= true then
+
+            error(
+                "[HOLY] librarygag2.lua download is stale or invalid."
+                .. "\nSource size: "
+                .. tostring(#source)
+                .. " bytes"
+                .. "\nPreview: "
+                .. source:sub(1, 120),
+                0
+            )
+        end
     end
 
     local compiler =
@@ -504,7 +531,7 @@ function GAG2LoadRemoteModule(url, moduleName)
     if type(compiler) ~= "function" then
 
         error(
-            "[HOLY GAG2] Unsupported executor: "
+            "[HOLY] Unsupported executor: "
             .. "loadstring/load is missing while loading "
             .. moduleName
             .. ".",
@@ -521,7 +548,7 @@ function GAG2LoadRemoteModule(url, moduleName)
     if compileOk ~= true then
 
         error(
-            "[HOLY GAG2] "
+            "[HOLY] "
             .. moduleName
             .. " compiler call failed:\n"
             .. tostring(chunk),
@@ -532,7 +559,7 @@ function GAG2LoadRemoteModule(url, moduleName)
     if type(chunk) ~= "function" then
 
         error(
-            "[HOLY GAG2] "
+            "[HOLY] "
             .. moduleName
             .. " did not compile:\n"
             .. tostring(
@@ -553,7 +580,7 @@ function GAG2LoadRemoteModule(url, moduleName)
     if runOk ~= true then
 
         error(
-            "[HOLY GAG2] "
+            "[HOLY] "
             .. moduleName
             .. " runtime failed:\n"
             .. tostring(result),
@@ -635,17 +662,23 @@ end
 local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
+local REMOTE_SOURCE_VERSION =
+    "compat-20260616-2"
+
 local LIBRARY_URL =
     REPO_URL
-    .. "librarygag2.lua"
+    .. "librarygag2.lua?v="
+    .. REMOTE_SOURCE_VERSION
 
 local THEME_MANAGER_URL =
     REPO_URL
-    .. "addons/ThemeManager.lua"
+    .. "addons/ThemeManager.lua?v="
+    .. REMOTE_SOURCE_VERSION
 
 local SAVE_MANAGER_URL =
     REPO_URL
-    .. "addons/SaveManager.lua"
+    .. "addons/SaveManager.lua?v="
+    .. REMOTE_SOURCE_VERSION
 
 local UI_SETTINGS_FOLDER =
     "HolyGAG2"
@@ -772,6 +805,13 @@ GAG2_AUTO_TP_MIDDLE_FARM_STATE = {
     LastTarget = nil,
     LastTargetReason = "not resolved",
 
+    LoadingStartedAt = 0,
+    LoadingFinished = false,
+    LoadingFinishedAt = 0,
+    LoadingFinishReason = "waiting",
+    SawLoadingSignal = false,
+    FinishCandidateAt = 0,
+
     SkipStarted = false,
     SkipSucceeded = false,
     SkipAttempts = 0,
@@ -779,17 +819,29 @@ GAG2_AUTO_TP_MIDDLE_FARM_STATE = {
 
     HoldingSkip = false,
     HoldStartAt = 0,
-    HoldMaxSeconds = 0,
+    HoldMaxSeconds = 3.75,
     HoldX = 0,
     HoldY = 0,
 
-    PostLoadRepairDistance = 18,
-    PostLoadFallbackSeconds = 7.25,
-    PostLoadRepairSettleSeconds = 0.35,
-    PostLoadRepairRetryInterval = 0.55,
-    PostLoadStableConfirmTime = 0.65,
-    PostLoadMaxRepairTries = 8,
-    MaxRunSeconds = 26,
+    EarlyKeepDistance = 8,
+    PostLoadRepairDistance = 12,
+
+    LoadingStableSeconds = 0.75,
+    LateAttachStableSeconds = 2.50,
+
+    TargetRefreshInterval = 2.00,
+    TargetResolveRetryInterval = 0.35,
+    WorkerInterval = 0.20,
+
+    MaxSkipAttempts = 2,
+    SkipRetryDelay = 0.25,
+
+    PostLoadWatchSeconds = 10,
+    PostLoadRepairRetryInterval = 0.50,
+    PostLoadFinalSettleSeconds = 1.25,
+    PostLoadMaxRepairTries = 12,
+
+    MaxRunSeconds = 120,
 }
 
 --==================================================
@@ -1335,7 +1387,7 @@ local Library =
 if type(Library) ~= "table" then
 
     error(
-        "[HOLY GAG2] librarygag2.lua returned "
+        "[HOLY] librarygag2.lua returned "
         .. typeof(Library)
         .. " instead of a table.",
         0
@@ -1351,7 +1403,7 @@ local ThemeManager =
 if type(ThemeManager) ~= "table" then
 
     error(
-        "[HOLY GAG2] ThemeManager.lua returned "
+        "[HOLY] ThemeManager.lua returned "
         .. typeof(ThemeManager)
         .. " instead of a table.",
         0
@@ -1367,7 +1419,7 @@ local SaveManager =
 if type(SaveManager) ~= "table" then
 
     error(
-        "[HOLY GAG2] SaveManager.lua returned "
+        "[HOLY] SaveManager.lua returned "
         .. typeof(SaveManager)
         .. " instead of a table.",
         0
@@ -1384,7 +1436,7 @@ if type(Options) ~= "table"
 or type(Toggles) ~= "table" then
 
     error(
-        "[HOLY GAG2] UI library loaded without valid Options/Toggles tables.",
+        "[HOLY] UI library loaded without valid Options/Toggles tables.",
         0
     )
 end
@@ -1506,7 +1558,7 @@ local function Notify(title, description, duration)
     and type(Library.Notify) == "function" then
 
         Library:Notify({
-            Title = tostring(title or "Holy GAG2"),
+            Title = tostring(title or "HOLY"),
             Description = tostring(description or ""),
             Time = tonumber(duration) or 4,
         })
@@ -1515,7 +1567,7 @@ local function Notify(title, description, duration)
     end
 
     print(
-        "[HOLY GAG2]",
+        "[HOLY]",
         tostring(title),
         tostring(description)
     )
@@ -1594,7 +1646,7 @@ function GAG2ClearExactJoinTarget(reason)
     if reason then
 
         print(
-            "[HOLY GAG2 EXACT JOIN]",
+            "[HOLY EXACT JOIN]",
             "cleared target:",
             tostring(reason)
         )
@@ -1811,7 +1863,7 @@ function GAG2QueueExactJoin(placeId, jobId, reason)
     )
 
     print(
-        "[HOLY GAG2 EXACT JOIN]",
+        "[HOLY EXACT JOIN]",
         "TeleportToPlaceInstance",
         "| place:",
         tostring(placeId),
@@ -1839,7 +1891,7 @@ function GAG2QueueExactJoin(placeId, jobId, reason)
         )
 
         warn(
-            "[HOLY GAG2 EXACT JOIN]",
+            "[HOLY EXACT JOIN]",
             "call failed:",
             tostring(err)
         )
@@ -1908,7 +1960,7 @@ function GAG2RetryExactJoinTarget(target, reason)
         )
 
         warn(
-            "[HOLY GAG2 EXACT JOIN]",
+            "[HOLY EXACT JOIN]",
             "max attempts reached",
             "| wanted:",
             wanted,
@@ -2000,7 +2052,7 @@ function GAG2HandlePendingExactJoinOnLoad()
         )
 
         print(
-            "[HOLY GAG2 EXACT JOIN]",
+            "[HOLY EXACT JOIN]",
             "verified exact server:",
             tostring(game.PlaceId),
             tostring(game.JobId)
@@ -2020,7 +2072,7 @@ function GAG2HandlePendingExactJoinOnLoad()
         .. tostring(game.JobId)
 
     warn(
-        "[HOLY GAG2 EXACT JOIN]",
+        "[HOLY EXACT JOIN]",
         "landed in wrong server",
         "| wanted:",
         wanted,
@@ -3477,7 +3529,7 @@ function HopServerOnce()
             )
 
             warn(
-                "[HOLY GAG2]",
+                "[HOLY]",
                 "server hop failed",
                 tostring(err)
             )
@@ -3526,7 +3578,7 @@ local function BuildSnapshot()
         and packetFolder:FindFirstChild("RemoteEvent")
 
     local lines = {
-        "========== HOLY GAG2 SNAPSHOT ==========",
+        "========== HOLY SNAPSHOT ==========",
         "Player: " .. tostring(LOCAL_PLAYER.Name),
         "PlaceId: " .. tostring(game.PlaceId),
         "JobId: " .. tostring(game.JobId),
@@ -7598,30 +7650,11 @@ end
 
 function GAG2FireFinishLoadingRemoteSafe()
 
-    local bindableOk =
-        false
+    -- Forced loading completion is intentionally disabled.
+    -- HOLY now waits for genuine game/client readiness.
 
-    local bindableInfo =
-        "no bindable"
-
-    if type(GAG2FireLoadingSkipBindable) == "function" then
-
-        bindableOk, bindableInfo =
-            GAG2FireLoadingSkipBindable(
-                "HOLY_FINISH_LOADING"
-            )
-    end
-
-    if bindableOk == true then
-
-        return true,
-            tostring(bindableInfo)
-    end
-
-    return GAG2HardFinishLoading(
-        "finish fallback after "
-        .. tostring(bindableInfo)
-    )
+    return false,
+        "forced loading finish disabled"
 end
 
 function GAG2RestoreCameraSoft()
@@ -7674,131 +7707,18 @@ end
 
 function GAG2HardFinishLoading(reason)
 
-    GAG2_AUTO_PLAY_STATE =
-        type(GAG2_AUTO_PLAY_STATE) == "table"
-        and GAG2_AUTO_PLAY_STATE
-        or {}
-
-    GAG2_AUTO_PLAY_STATE.Finished =
-        true
-
-    GAG2_AUTO_PLAY_STATE.HardFinished =
-        true
-
-    local changedAttributes =
-        false
-
-    pcall(function()
-
-        LOCAL_PLAYER:SetAttribute(
-            "LoadingScreenActive",
-            false
-        )
-
-        LOCAL_PLAYER:SetAttribute(
-            "LoadingScreenDone",
-            true
-        )
-
-        changedAttributes =
-            true
-    end)
-
-    pcall(function()
-
-        LOCAL_PLAYER:SetAttribute(
-            "FinishedLoading",
-            true
-        )
-
-        LOCAL_PLAYER:SetAttribute(
-            "HasLoaded",
-            true
-        )
-
-        LOCAL_PLAYER:SetAttribute(
-            "ClientLoaded",
-            true
-        )
-    end)
-
-    local hiddenGuiCount =
-        0
-
-    local playerGui =
-        LOCAL_PLAYER
-        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
-
-    if playerGui then
-
-        for _, child in ipairs(playerGui:GetChildren()) do
-
-            if child:IsA("ScreenGui") then
-
-                local lowerName =
-                    tostring(child.Name or ""):lower()
-
-                local lowerPath =
-                    PathOf(child):lower()
-
-                local looksLikeLoading =
-                    lowerName:find("loading", 1, true)
-                    or lowerName:find("loadingscreen", 1, true)
-                    or lowerPath:find("loading", 1, true)
-                    or lowerPath:find("loadingscreen", 1, true)
-
-                if looksLikeLoading then
-
-                    local ok =
-                        pcall(function()
-
-                            child.Enabled =
-                                false
-                        end)
-
-                    if ok == true then
-
-                        hiddenGuiCount = hiddenGuiCount + 1
-                    end
-                end
-            end
-        end
-    end
-
-    GAG2RestoreCameraSoft()
-
-    if type(SniperState) == "table" then
-
-        SniperState.PlayScreenClearAt =
-            os.clock()
-    end
+    -- Never spoof loading attributes.
+    -- Never disable the game's LoadingGui.
+    -- Never force the camera to Custom as loading proof.
 
     if type(GAG2_AUTO_TP_MIDDLE_FARM_STATE) == "table" then
 
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.SkipSucceeded =
-            true
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.SkipSuccessReason =
-            "client-state finish fallback"
-
         GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
-            "hard finish loading: "
-            .. tostring(reason or "fallback")
+            "forced loading finish blocked"
     end
 
-    print(
-        "[HOLY GAG2 LOADING]",
-        "client-state finish fallback",
-        "| reason:",
-        tostring(reason or "manual"),
-        "| attributes:",
-        tostring(changedAttributes),
-        "| hiddenGui:",
-        tostring(hiddenGuiCount)
-    )
-
-    return true,
-        "client-state finish fallback"
+    return false,
+        "forced loading finish disabled"
 end
 
 function GAG2AutoPlayLoadingStep()
@@ -8467,7 +8387,7 @@ function GAG2GetOwnFarmMiddlePosition()
         .. tostring(plotReason)
 end
 
-function GAG2MiddleFarmLoadingSnapshot()
+function GAG2MiddleFarmLoadingSnapshot(requirePlot)
 
     local active =
         false
@@ -8483,6 +8403,61 @@ function GAG2MiddleFarmLoadingSnapshot()
         done =
             LOCAL_PLAYER:GetAttribute("LoadingScreenDone") == true
     end)
+
+    local character =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character
+
+    local humanoid =
+        character
+        and character:FindFirstChildOfClass("Humanoid")
+
+    local root =
+        character
+        and character:FindFirstChild("HumanoidRootPart")
+
+    local characterReady =
+        character ~= nil
+        and humanoid ~= nil
+        and humanoid.Health > 0
+        and root ~= nil
+        and root:IsA("BasePart")
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+
+    local loadingGui =
+        playerGui
+        and playerGui:FindFirstChild("LoadingGui")
+
+    local loadingGuiBlocking =
+        false
+
+    if loadingGui then
+
+        if loadingGui:IsA("ScreenGui") then
+
+            pcall(function()
+
+                loadingGuiBlocking =
+                    loadingGui.Enabled == true
+            end)
+
+        elseif loadingGui:IsA("GuiObject") then
+
+            pcall(function()
+
+                loadingGuiBlocking =
+                    loadingGui.Visible == true
+            end)
+
+        else
+
+            loadingGuiBlocking =
+                true
+        end
+    end
 
     local camera =
         workspace.CurrentCamera
@@ -8500,12 +8475,61 @@ function GAG2MiddleFarmLoadingSnapshot()
         camera
         and camera.CameraType == Enum.CameraType.Custom
 
+    local cameraSubject =
+        camera
+        and camera.CameraSubject
+
+    local cameraSubjectReady =
+        cameraCustom == true
+        and (
+            cameraSubject == humanoid
+            or cameraSubject == root
+            or cameraSubject == character
+        )
+
+    local plotReady =
+        requirePlot ~= true
+        or typeof(
+            GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastTarget
+        ) == "Vector3"
+
+    local loadingSignal =
+        active == true
+        or cameraScriptable == true
+        or (
+            loadingGuiBlocking == true
+            and done ~= true
+        )
+
+    local guiCleared =
+        loadingGuiBlocking ~= true
+        or done == true
+
+    local ready =
+        active ~= true
+        and guiCleared == true
+        and cameraCustom == true
+        and cameraSubjectReady == true
+        and characterReady == true
+        and plotReady == true
+
     return {
         Active = active,
         Done = done,
+
+        LoadingGui = loadingGui,
+        LoadingGuiBlocking = loadingGuiBlocking,
+
         CameraType = cameraType,
         CameraScriptable = cameraScriptable,
         CameraCustom = cameraCustom,
+        CameraSubjectReady = cameraSubjectReady,
+
+        CharacterReady = characterReady,
+        PlotReady = plotReady,
+
+        LoadingSignal = loadingSignal,
+        Ready = ready,
     }
 end
 
@@ -8642,18 +8666,6 @@ function GAG2MiddleFarmReleaseSkipHold(reason)
             )
         end)
     end
-
-    print(
-        "[HOLY GAG2 LOADING]",
-        "mouse released",
-        "| reason:",
-        tostring(reason),
-        "| held:",
-        string.format(
-            "%.2fs",
-            os.clock() - tonumber(state.HoldStartAt or os.clock())
-        )
-    )
 end
 
 function GAG2MiddleFarmPressSkipHold()
@@ -8667,33 +8679,16 @@ function GAG2MiddleFarmPressSkipHold()
             "already holding"
     end
 
-    local directOk, directInfo =
-        GAG2SendLoadingScreenClick()
-
-    if directOk == true then
-
-        state.LastResult =
-            "direct skip fired: "
-            .. tostring(directInfo)
-
-        return true,
-            "direct skip: "
-            .. tostring(directInfo)
-    end
-
     if not VirtualInputManager then
 
         state.LastResult =
-            "direct skip failed and VirtualInputManager missing: "
-            .. tostring(directInfo)
+            "VirtualInputManager missing"
 
         return false,
-            "direct failed: "
-            .. tostring(directInfo)
-            .. " | VirtualInputManager missing"
+            "VirtualInputManager missing"
     end
 
-    local x, y, viewport =
+    local x, y =
         GAG2MiddleFarmGetHoldPoint()
 
     local ok, err =
@@ -8711,11 +8706,12 @@ function GAG2MiddleFarmPressSkipHold()
 
     if ok ~= true then
 
-        return false,
-            "direct failed: "
-            .. tostring(directInfo)
-            .. " | mouse failed: "
+        state.LastResult =
+            "loading hold failed: "
             .. tostring(err)
+
+        return false,
+            tostring(err)
     end
 
     state.HoldingSkip =
@@ -8730,17 +8726,11 @@ function GAG2MiddleFarmPressSkipHold()
     state.HoldY =
         y
 
+    state.LastResult =
+        "loading hold active"
+
     return true,
-        "mouse fallback at "
-        .. tostring(x)
-        .. ","
-        .. tostring(y)
-        .. " viewport "
-        .. tostring(math.floor(viewport.X))
-        .. "x"
-        .. tostring(math.floor(viewport.Y))
-        .. " | direct failed: "
-        .. tostring(directInfo)
+        "mouse hold"
 end
 
 function GAG2TeleportToMiddleFarmOnce(reason)
@@ -8821,7 +8811,7 @@ function GAG2TeleportToMiddleFarmOnce(reason)
         .. tostring(positionReason)
 
     print(
-        "[HOLY GAG2]",
+        "[HOLY]",
         "TP Middle Farm",
         "| reason:",
         tostring(reason or "manual"),
@@ -8865,26 +8855,51 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
         local lastTargetRefresh =
             0
 
-        local didEarlyTeleport =
+        local earlyTeleportDone =
             false
 
-        local didPostLoadRepair =
+        local loadingFinished =
             false
 
-        local postLoadSeenAt =
-            nil
+        local finishCandidateAt =
+            0
 
-        local postLoadReason =
-            "not detected"
+        local postLoadWatchUntil =
+            0
+
+        local postLoadRepairUsed =
+            false
 
         local postLoadRepairTries =
             0
 
-        local postLoadLastRepairAt =
+        local lastPostLoadRepairAt =
             0
 
-        local postLoadStableSeenAt =
-            nil
+        local lastHoldReleasedAt =
+            0
+
+        local lastCharacter =
+            LOCAL_PLAYER
+            and LOCAL_PLAYER.Character
+
+        state.LoadingStartedAt =
+            started
+
+        state.LoadingFinished =
+            false
+
+        state.LoadingFinishedAt =
+            0
+
+        state.LoadingFinishReason =
+            "waiting"
+
+        state.SawLoadingSignal =
+            false
+
+        state.FinishCandidateAt =
+            0
 
         state.SkipStarted =
             false
@@ -8904,37 +8919,31 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
         state.HoldStartAt =
             0
 
-        state.HoldMaxSeconds =
-            0
-
         state.LastResult =
-            "worker started"
+            "loading worker active"
 
-        print(
-            "[HOLY GAG2 LOADING]",
-            "worker started",
-            "| reason:",
-            tostring(reason or "auto"),
-            "| forceTp:",
-            tostring(forceTp == true),
-            "| autoSkip:",
-            tostring(GAG2AutoSkipLoadingEnabled()),
-            "| autoTp:",
-            tostring(GAG2AutoTpMiddleFarmEnabled())
-        )
+        local function autoTpNeeded()
 
-        local function resolveTargetStep()
+            return forceTp == true
+                or GAG2AutoTpMiddleFarmEnabled() == true
+        end
 
-            if forceTp ~= true
-            and GAG2AutoTpMiddleFarmEnabled() ~= true then
+        local function resolveTarget(forceRefresh)
+
+            if autoTpNeeded() ~= true then
                 return
             end
 
             local now =
                 os.clock()
 
-            if typeof(targetPosition) == "Vector3"
-            and now - lastTargetRefresh < 0.35 then
+            local refreshInterval =
+                typeof(targetPosition) == "Vector3"
+                and tonumber(state.TargetRefreshInterval or 2)
+                or tonumber(state.TargetResolveRetryInterval or 0.35)
+
+            if forceRefresh ~= true
+            and now - lastTargetRefresh < refreshInterval then
                 return
             end
 
@@ -8946,22 +8955,11 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
 
             if typeof(resolvedPosition) == "Vector3" then
 
-                if typeof(targetPosition) ~= "Vector3" then
-
-                    print(
-                        "[HOLY GAG2 MIDDLE]",
-                        "target resolved:",
-                        GAG2FarmVecText(resolvedPosition),
-                        "|",
-                        tostring(resolvedReason)
-                    )
-                end
-
                 targetPosition =
                     resolvedPosition
 
                 targetReason =
-                    tostring(resolvedReason)
+                    tostring(resolvedReason or "resolved")
 
                 state.LastTarget =
                     targetPosition
@@ -8971,24 +8969,29 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
 
             else
 
+                targetPosition =
+                    nil
+
                 targetReason =
-                    tostring(resolvedReason)
+                    tostring(resolvedReason or "own farm unresolved")
+
+                state.LastTarget =
+                    nil
 
                 state.LastTargetReason =
                     targetReason
             end
         end
 
-        local function earlyTpStep()
+        local function keepMiddle(now, afterLoading)
 
-            if didEarlyTeleport == true then
+            if autoTpNeeded() ~= true then
                 return
             end
 
-            if forceTp ~= true
-            and GAG2AutoTpMiddleFarmEnabled() ~= true then
-                return
-            end
+            resolveTarget(
+                false
+            )
 
             local _, root =
                 SniperGetCharacterRoot()
@@ -9001,483 +9004,128 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
             local distance =
                 (root.Position - targetPosition).Magnitude
 
-            local before =
-                root.Position
+            local threshold =
+                afterLoading == true
+                and tonumber(state.PostLoadRepairDistance or 12)
+                or tonumber(state.EarlyKeepDistance or 8)
+
+            local shouldTeleport =
+                earlyTeleportDone ~= true
+                or distance > threshold
+
+            if shouldTeleport ~= true then
+                return
+            end
+
+            if afterLoading == true
+            and now - lastPostLoadRepairAt < tonumber(state.PostLoadRepairRetryInterval or 0.50) then
+
+                return
+            end
 
             local ok, err =
                 GAG2MiddleFarmPivotTo(
                     targetPosition
                 )
 
-            local _, newRoot =
-                SniperGetCharacterRoot()
-
             if ok == true then
 
-                didEarlyTeleport =
+                earlyTeleportDone =
                     true
 
                 state.LastTeleportAt =
-                    os.clock()
+                    now
 
                 state.LastResult =
-                    "early tp done"
+                    afterLoading == true
+                    and "post-load middle repair"
+                    or "holding middle during loading"
 
-                print(
-                    "[HOLY GAG2 MIDDLE]",
-                    "early tp",
-                    "| distance:",
-                    tostring(math.floor(distance + 0.5)),
-                    "| from:",
-                    GAG2FarmVecText(before),
-                    "| to:",
-                    newRoot and GAG2FarmVecText(newRoot.Position) or "nil",
-                    "| target:",
-                    GAG2FarmVecText(targetPosition)
-                )
+                if afterLoading == true then
+
+                    lastPostLoadRepairAt =
+                        now
+
+                    postLoadRepairUsed =
+                        true
+
+                    postLoadRepairTries =
+                        postLoadRepairTries + 1
+                end
 
             else
 
                 state.LastResult =
-                    "early tp failed: "
+                    "middle teleport failed: "
                     .. tostring(err)
-
-                print(
-                    "[HOLY GAG2 MIDDLE]",
-                    "early tp failed:",
-                    tostring(err)
-                )
             end
         end
 
-        local function postLoadRepairStep(stepReason)
-
-            if didPostLoadRepair == true then
-                return
-            end
-
-            if forceTp ~= true
-            and GAG2AutoTpMiddleFarmEnabled() ~= true then
-                return
-            end
-
-            local now =
-                os.clock()
-
-            local snap =
-                GAG2MiddleFarmLoadingSnapshot()
-
-            if postLoadSeenAt == nil then
-
-                local shouldStartRepair =
-                    false
-
-                local detectReason =
-                    ""
-
-                if snap.Active ~= true
-                and (
-                    snap.Done == true
-                    or snap.CameraCustom == true
-                ) then
-
-                    shouldStartRepair =
-                        true
-
-                    detectReason =
-                        "loading attributes/camera cleared"
-
-                elseif state.SkipAttempts >= 2
-                and state.HoldingSkip ~= true then
-
-                    shouldStartRepair =
-                        true
-
-                    detectReason =
-                        "skip attempts exhausted"
-
-                elseif now - started >= tonumber(state.PostLoadFallbackSeconds or 7.25) then
-
-                    shouldStartRepair =
-                        true
-
-                    detectReason =
-                        "fallback timer"
-                end
-
-                if shouldStartRepair == true then
-
-                    postLoadSeenAt =
-                        now
-
-                    postLoadReason =
-                        detectReason
-
-                    print(
-                        "[HOLY GAG2 MIDDLE]",
-                        "post-load repair armed",
-                        "| reason:",
-                        tostring(detectReason),
-                        "| active:",
-                        tostring(snap.Active),
-                        "| done:",
-                        tostring(snap.Done),
-                        "| camera:",
-                        snap.CameraType,
-                        "| attempts:",
-                        tostring(state.SkipAttempts)
-                    )
-                end
-            end
-
-            if not postLoadSeenAt then
-                return
-            end
-
-            if now - postLoadSeenAt < tonumber(state.PostLoadRepairSettleSeconds or 0.35) then
-                return
-            end
-
-            local _, root =
-                SniperGetCharacterRoot()
-
-            if not root
-            or typeof(targetPosition) ~= "Vector3" then
-                return
-            end
-
-            local distance =
-                (root.Position - targetPosition).Magnitude
-
-            local repairDistance =
-                tonumber(state.PostLoadRepairDistance)
-                or 18
-
-            if distance <= repairDistance then
-
-                if postLoadStableSeenAt == nil then
-
-                    postLoadStableSeenAt =
-                        now
-
-                    state.LastResult =
-                        "post-load near target, confirming"
-                end
-
-                if now - postLoadStableSeenAt >= tonumber(state.PostLoadStableConfirmTime or 0.65) then
-
-                    didPostLoadRepair =
-                        true
-
-                    state.LastResult =
-                        "post-load stable confirmed"
-
-                    print(
-                        "[HOLY GAG2 MIDDLE]",
-                        "post-load stable confirmed",
-                        "| distance:",
-                        tostring(math.floor(distance + 0.5)),
-                        "| reason:",
-                        tostring(postLoadReason),
-                        "| step:",
-                        tostring(stepReason or "normal")
-                    )
-                end
-
-                return
-            end
-
-            postLoadStableSeenAt =
-                nil
-
-            if now - postLoadLastRepairAt < tonumber(state.PostLoadRepairRetryInterval or 0.55) then
-                return
-            end
-
-            if postLoadRepairTries >= tonumber(state.PostLoadMaxRepairTries or 8) then
-
-                state.LastResult =
-                    "post-load repair max tries"
-
-                return
-            end
-
-            postLoadLastRepairAt =
-                now
-
-            postLoadRepairTries = postLoadRepairTries + 1
-
-            local before =
-                root.Position
-
-            local ok, err =
-                GAG2MiddleFarmPivotTo(
-                    targetPosition
-                )
-
-            local _, newRoot =
-                SniperGetCharacterRoot()
-
-            if ok == true then
-
-                state.LastTeleportAt =
-                    os.clock()
-
-                state.LastResult =
-                    "post-load repair try "
-                    .. tostring(postLoadRepairTries)
-
-                print(
-                    "[HOLY GAG2 MIDDLE]",
-                    "POST-LOAD REPAIR TP",
-                    "| try:",
-                    tostring(postLoadRepairTries),
-                    "| distance:",
-                    tostring(math.floor(distance + 0.5)),
-                    "| from:",
-                    GAG2FarmVecText(before),
-                    "| to:",
-                    newRoot and GAG2FarmVecText(newRoot.Position) or "nil",
-                    "| reason:",
-                    tostring(postLoadReason),
-                    "| step:",
-                    tostring(stepReason or "normal"),
-                    "| target:",
-                    GAG2FarmVecText(targetPosition)
-                )
-
-            else
-
-                state.LastResult =
-                    "post-load repair failed: "
-                    .. tostring(err)
-
-                print(
-                    "[HOLY GAG2 MIDDLE]",
-                    "post-load repair failed:",
-                    tostring(err)
-                )
-            end
-        end
-
-        local function detectSkipSuccessStep()
-
-            if state.SkipSucceeded == true then
-                return
-            end
-
-            local snap =
-                GAG2MiddleFarmLoadingSnapshot()
-
-            if snap.Active ~= true
-            and (
-                snap.Done == true
-                or snap.CameraCustom == true
-            ) then
-
-                state.SkipSucceeded =
-                    true
-
-                state.SkipSuccessReason =
-                    "loading cleared during monitored hold"
-
-                GAG2MiddleFarmReleaseSkipHold(
-                    "skip success"
-                )
-
-                state.LastResult =
-                    "skip success"
-
-                print(
-                    "[HOLY GAG2 LOADING]",
-                    "SKIP SUCCESS",
-                    "| attempts:",
-                    tostring(state.SkipAttempts),
-                    "| reason:",
-                    state.SkipSuccessReason,
-                    "| state:",
-                    "active="
-                    .. tostring(snap.Active)
-                    .. " done="
-                    .. tostring(snap.Done)
-                    .. " camera="
-                    .. tostring(snap.CameraType)
-                )
-
-                resolveTargetStep()
-
-                postLoadRepairStep(
-                    "same tick after skip success"
-                )
-            end
-        end
-
-        local function skipStep()
+        local function loadingHoldStep(now, snapshot)
 
             if GAG2AutoSkipLoadingEnabled() ~= true then
                 return
             end
 
-            if state.SkipSucceeded == true then
+            if loadingFinished == true then
                 return
             end
 
-            local snap =
-                GAG2MiddleFarmLoadingSnapshot()
-
-            if snap.Active ~= true
-            or snap.Done == true
-            or snap.CameraScriptable ~= true then
+            if snapshot.LoadingSignal ~= true then
                 return
             end
 
-            local function runFinishFallback(fallbackReason)
+            if state.HoldingSkip == true then
 
-                if state.SkipSucceeded == true then
-                    return
-                end
+                local heldFor =
+                    now - tonumber(state.HoldStartAt or now)
 
-                GAG2MiddleFarmReleaseSkipHold(
-                    "fallback"
-                )
+                if heldFor >= tonumber(state.HoldMaxSeconds or 3.75) then
 
-                local finishOk, finishInfo =
-                    GAG2FireFinishLoadingRemoteSafe()
-
-                if finishOk == true then
-
-                    state.SkipSucceeded =
-                        true
-
-                    state.SkipSuccessReason =
-                        tostring(finishInfo)
-
-                    state.LastResult =
-                        "skip fallback success: "
-                        .. tostring(finishInfo)
-
-                    print(
-                        "[HOLY GAG2 LOADING]",
-                        "SKIP FALLBACK SUCCESS",
-                        "| reason:",
-                        tostring(fallbackReason),
-                        "| method:",
-                        tostring(finishInfo)
+                    GAG2MiddleFarmReleaseSkipHold(
+                        "hold cycle complete"
                     )
 
-                else
-
-                    state.LastResult =
-                        "skip fallback failed: "
-                        .. tostring(finishInfo)
-
-                    print(
-                        "[HOLY GAG2 LOADING]",
-                        "skip fallback failed",
-                        "| reason:",
-                        tostring(fallbackReason),
-                        "| method:",
-                        tostring(finishInfo)
-                    )
-                end
-            end
-
-            if state.SkipAttempts >= 2
-            and state.HoldingSkip ~= true then
-
-                runFinishFallback(
-                    "attempt cap"
-                )
-
-                return
-            end
-
-            if state.HoldingSkip ~= true then
-
-                state.SkipStarted =
-                    true
-
-                state.SkipAttempts = state.SkipAttempts + 1
-
-                state.HoldMaxSeconds =
-                    state.SkipAttempts == 1
-                    and 2.25
-                    or 2.75
-
-                local ok, method =
-                    GAG2MiddleFarmPressSkipHold()
-
-                print(
-                    "[HOLY GAG2 LOADING]",
-                    state.HoldingSkip == true
-                    and "skip hold started"
-                    or "direct skip attempted",
-                    "| attempt:",
-                    tostring(state.SkipAttempts),
-                    "| maxHold:",
-                    tostring(state.HoldMaxSeconds),
-                    "| method:",
-                    tostring(method),
-                    "| active:",
-                    tostring(snap.Active),
-                    "| done:",
-                    tostring(snap.Done),
-                    "| camera:",
-                    snap.CameraType
-                )
-
-                if ok ~= true then
-
-                    state.LastResult =
-                        "skip hold failed: "
-                        .. tostring(method)
-
-                    if state.SkipAttempts >= 2 then
-
-                        runFinishFallback(
-                            "press failed"
-                        )
-                    end
-                end
-
-                if ok == true
-                and state.HoldingSkip ~= true
-                and state.SkipAttempts >= 2 then
-
-                    runFinishFallback(
-                        "direct attempts did not clear loading"
-                    )
+                    lastHoldReleasedAt =
+                        now
                 end
 
                 return
             end
 
-            local heldFor =
-                os.clock() - tonumber(state.HoldStartAt or os.clock())
+            if state.SkipAttempts >= tonumber(state.MaxSkipAttempts or 2) then
+                return
+            end
 
-            if heldFor >= tonumber(state.HoldMaxSeconds or 2.75) then
+            if now - lastHoldReleasedAt < tonumber(state.SkipRetryDelay or 0.25) then
+                return
+            end
 
-                GAG2MiddleFarmReleaseSkipHold(
-                    "max hold reached"
-                )
+            state.SkipStarted =
+                true
 
-                print(
-                    "[HOLY GAG2 LOADING]",
-                    "skip not confirmed after hold",
-                    "| attempt:",
-                    tostring(state.SkipAttempts)
-                )
+            state.SkipAttempts =
+                tonumber(state.SkipAttempts)
+                or 0
 
-                if state.SkipAttempts >= 2 then
+            state.SkipAttempts =
+                state.SkipAttempts + 1
 
-                    runFinishFallback(
-                        "max hold reached"
-                    )
-                end
+            local ok, holdInfo =
+                GAG2MiddleFarmPressSkipHold()
+
+            if ok ~= true then
+
+                lastHoldReleasedAt =
+                    now
+
+                state.LastResult =
+                    "loading hold failed: "
+                    .. tostring(holdInfo)
             end
         end
 
-        while os.clock() - started < tonumber(state.MaxRunSeconds or 18) do
+        while os.clock() - started < tonumber(state.MaxRunSeconds or 120) do
 
             if GAG2MiddleFarmWorkerShouldContinue(forceTp) ~= true then
 
@@ -9494,70 +9142,215 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
                 return
             end
 
-            resolveTargetStep()
-            earlyTpStep()
+            local now =
+                os.clock()
 
-            detectSkipSuccessStep()
-            postLoadRepairStep("normal loop")
-            skipStep()
+            if LOCAL_PLAYER
+            and LOCAL_PLAYER.Character ~= lastCharacter then
 
-            local autoTpNeeded =
-                forceTp == true
-                or GAG2AutoTpMiddleFarmEnabled() == true
+                lastCharacter =
+                    LOCAL_PLAYER.Character
 
-            local autoSkipNeeded =
-                GAG2AutoSkipLoadingEnabled() == true
-
-            local skipSnap =
-                GAG2MiddleFarmLoadingSnapshot()
-
-            local skipDone =
-                autoSkipNeeded ~= true
-                or state.SkipSucceeded == true
-                or skipSnap.Done == true
-                or (
-                    state.SkipAttempts >= 2
-                    and skipSnap.Active ~= true
-                )
-
-            local tpDone =
-                autoTpNeeded ~= true
-                or (
-                    didEarlyTeleport == true
-                    and didPostLoadRepair == true
-                )
-
-            if skipDone == true
-            and tpDone == true then
-
-                GAG2MiddleFarmReleaseSkipHold(
-                    "done"
-                )
-
-                state.LastResult =
-                    "done"
-
-                print(
-                    "[HOLY GAG2 LOADING]",
-                    "worker finished",
-                    "| skip:",
-                    tostring(state.SkipSucceeded),
-                    "| attempts:",
-                    tostring(state.SkipAttempts),
-                    "| earlyTp:",
-                    tostring(didEarlyTeleport),
-                    "| repair:",
-                    tostring(didPostLoadRepair)
-                )
-
-                state.Running =
+                earlyTeleportDone =
                     false
 
-                return
+                resolveTarget(
+                    true
+                )
+            end
+
+            resolveTarget(
+                false
+            )
+
+            local needsFarm =
+                autoTpNeeded()
+
+            local snapshot =
+                GAG2MiddleFarmLoadingSnapshot(
+                    needsFarm
+                )
+
+            if snapshot.LoadingSignal == true then
+
+                state.SawLoadingSignal =
+                    true
+            end
+
+            if loadingFinished ~= true then
+
+                keepMiddle(
+                    now,
+                    false
+                )
+
+                loadingHoldStep(
+                    now,
+                    snapshot
+                )
+
+                if snapshot.Ready == true then
+
+                    if finishCandidateAt <= 0 then
+
+                        finishCandidateAt =
+                            now
+
+                        state.FinishCandidateAt =
+                            now
+                    end
+
+                    local requiredStable =
+                        state.SawLoadingSignal == true
+                        and tonumber(state.LoadingStableSeconds or 0.75)
+                        or tonumber(state.LateAttachStableSeconds or 2.50)
+
+                    if now - finishCandidateAt >= requiredStable then
+
+                        loadingFinished =
+                            true
+
+                        state.LoadingFinished =
+                            true
+
+                        state.LoadingFinishedAt =
+                            now
+
+                        state.SkipSucceeded =
+                            true
+
+                        state.LoadingFinishReason =
+                            state.SawLoadingSignal == true
+                            and "loading signals cleared and client stable"
+                            or "client already stable"
+
+                        state.SkipSuccessReason =
+                            state.LoadingFinishReason
+
+                        state.LastResult =
+                            "loading finished"
+
+                        GAG2MiddleFarmReleaseSkipHold(
+                            "loading finished"
+                        )
+
+                        print(
+                            "[HOLY LOADING]",
+                            "Loading finished | "
+                            .. string.format(
+                                "%.2fs",
+                                now - started
+                            )
+                        )
+
+                        if needsFarm == true then
+
+                            resolveTarget(
+                                true
+                            )
+
+                            postLoadWatchUntil =
+                                now
+                                + tonumber(state.PostLoadWatchSeconds or 10)
+
+                        else
+
+                            state.Running =
+                                false
+
+                            return
+                        end
+                    end
+
+                else
+
+                    finishCandidateAt =
+                        0
+
+                    state.FinishCandidateAt =
+                        0
+                end
+
+            else
+
+                keepMiddle(
+                    now,
+                    true
+                )
+
+                if postLoadRepairTries >= tonumber(state.PostLoadMaxRepairTries or 12) then
+
+                    state.LastResult =
+                        "post-load repair max tries"
+
+                    warn(
+                        "[HOLY MIDDLE]",
+                        "Final repair failed."
+                    )
+
+                    state.Running =
+                        false
+
+                    return
+                end
+
+                if now >= postLoadWatchUntil then
+
+                    resolveTarget(
+                        true
+                    )
+
+                    local _, root =
+                        SniperGetCharacterRoot()
+
+                    if root
+                    and typeof(targetPosition) == "Vector3" then
+
+                        local distance =
+                            (root.Position - targetPosition).Magnitude
+
+                        if distance > tonumber(state.PostLoadRepairDistance or 12) then
+
+                            keepMiddle(
+                                now,
+                                true
+                            )
+
+                            postLoadWatchUntil =
+                                now
+                                + tonumber(state.PostLoadFinalSettleSeconds or 1.25)
+
+                        else
+
+                            state.LastResult =
+                                "done"
+
+                            if postLoadRepairUsed == true then
+
+                                print(
+                                    "[HOLY MIDDLE]",
+                                    "Final position secured."
+                                )
+                            end
+
+                            state.Running =
+                                false
+
+                            return
+                        end
+
+                    else
+
+                        postLoadWatchUntil =
+                            now
+                            + tonumber(state.PostLoadFinalSettleSeconds or 1.25)
+                    end
+                end
             end
 
             task.wait(
-                0.02
+                tonumber(state.WorkerInterval)
+                or 0.20
             )
         end
 
@@ -9565,21 +9358,26 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
             "timeout"
         )
 
-        state.LastResult =
-            "timeout"
+        if loadingFinished == true then
 
-        print(
-            "[HOLY GAG2 LOADING]",
-            "worker timeout",
-            "| skip:",
-            tostring(state.SkipSucceeded),
-            "| attempts:",
-            tostring(state.SkipAttempts),
-            "| target:",
-            GAG2FarmVecText(targetPosition),
-            "| reason:",
-            tostring(targetReason)
-        )
+            warn(
+                "[HOLY MIDDLE]",
+                "Final repair timed out."
+            )
+
+            state.LastResult =
+                "post-load repair timeout"
+
+        else
+
+            warn(
+                "[HOLY LOADING]",
+                "Loading detection timed out."
+            )
+
+            state.LastResult =
+                "loading detection timeout"
+        end
 
         state.Running =
             false
@@ -9746,7 +9544,7 @@ function GAG2PerformanceSetStatus(text)
         tostring(text or "Idle.")
 
     print(
-        "[HOLY GAG2 PERFORMANCE]",
+        "[HOLY PERFORMANCE]",
         state.LastStatus
     )
 end
@@ -13551,7 +13349,7 @@ function GAG2AutoSellFirePacket(packetName, ...)
         )
 
         warn(
-            "[HOLY GAG2 AUTO SELL]",
+            "[HOLY AUTO SELL]",
             "packet missing",
             tostring(packetName),
             tostring(reason)
@@ -13616,7 +13414,7 @@ function GAG2AutoSellFirePacket(packetName, ...)
         )
 
         warn(
-            "[HOLY GAG2 AUTO SELL]",
+            "[HOLY AUTO SELL]",
             "fire failed",
             tostring(packetName),
             tostring(lastError)
@@ -20267,7 +20065,7 @@ local function SniperStartBuyConfirmation(entry)
             )
 
             warn(
-                "[HOLY GAG2 SNIPER]",
+                "[HOLY SNIPER]",
                 "Buy was sent but not confirmed",
                 "| pet:",
                 tostring(entry.Name),
@@ -20352,7 +20150,7 @@ local function SniperFireWildBuyPacket(entry)
     if okFire ~= true then
 
         warn(
-            "[HOLY GAG2 SNIPER]",
+            "[HOLY SNIPER]",
             "buy fire failed",
             "| pet:",
             tostring(entry.Name),
@@ -20370,7 +20168,7 @@ local function SniperFireWildBuyPacket(entry)
     end
 
     print(
-        "[HOLY GAG2 SNIPER]",
+        "[HOLY SNIPER]",
         "buy fired",
         "| pet:",
         tostring(entry.Name),
@@ -20565,7 +20363,7 @@ local function SniperAttemptBuyEntry(entry)
                 )
 
                 local report =
-                    "========== HOLY GAG2 NO-TP PACKET TEST =========="
+                    "========== HOLY NO-TP PACKET TEST =========="
                     .. "\nPet: "
                     .. tostring(entry.Name)
                     .. "\nUUID: "
@@ -20624,7 +20422,7 @@ local function SniperAttemptBuyEntry(entry)
             )
 
             warn(
-                "[HOLY GAG2 SNIPER]",
+                "[HOLY SNIPER]",
                 noTeleportTest == true
                 and "No-TP packet failed"
                 or "Buy failed",
@@ -22590,7 +22388,7 @@ local function ActiveWildPetHudDebug(message)
     end
 
     ActiveWildPetHudLastDebug = tick()
-    print("[HOLY GAG2][Active Wild Pets] " .. tostring(message))
+    print("[HOLY][Active Wild Pets] " .. tostring(message))
 end
 
 local function ActiveWildPetHudGetRoot()
@@ -22847,7 +22645,7 @@ local function ActiveWildPetHudRefresh(forceDebug)
     end
 
     if forceDebug then
-        print("[HOLY GAG2][Active Wild Pets] Manual scan result:")
+        print("[HOLY][Active Wild Pets] Manual scan result:")
         print(text)
     end
 end
@@ -23389,7 +23187,7 @@ function GAG2RareWebhookSend(entry)
     if type(requestFunction) ~= "function" then
 
         warn(
-            "[HOLY GAG2 WEBHOOK]",
+            "[HOLY WEBHOOK]",
             "request function unsupported"
         )
 
@@ -23500,7 +23298,7 @@ function GAG2RareWebhookSend(entry)
         },
 
         footer = {
-            text = "Holy GAG2",
+            text = "HOLY",
         },
 
         timestamp =
@@ -23542,7 +23340,7 @@ function GAG2RareWebhookSend(entry)
 
     local payload = {
         username =
-            "Holy GAG2",
+            "HOLY",
 
         content =
             pingContent,
@@ -23576,7 +23374,7 @@ function GAG2RareWebhookSend(entry)
                     (function()
 
                         print(
-                            "[HOLY GAG2 WEBHOOK]",
+                            "[HOLY WEBHOOK]",
                             "payload content:",
                             tostring(payload.content)
                         )
@@ -23591,7 +23389,7 @@ function GAG2RareWebhookSend(entry)
     if ok ~= true then
 
         warn(
-            "[HOLY GAG2 WEBHOOK]",
+            "[HOLY WEBHOOK]",
             "send failed",
             tostring(response)
         )
@@ -23615,7 +23413,7 @@ function GAG2RareWebhookSend(entry)
     ) then
 
         warn(
-            "[HOLY GAG2 WEBHOOK]",
+            "[HOLY WEBHOOK]",
             "bad status",
             tostring(statusCode),
             tostring(
@@ -23629,7 +23427,7 @@ function GAG2RareWebhookSend(entry)
     end
 
     print(
-        "[HOLY GAG2 WEBHOOK]",
+        "[HOLY WEBHOOK]",
         "sent rare pet alert:",
         petName
     )
@@ -26074,7 +25872,7 @@ function GAG2MailboxFirePacket(keyName, packetName, ...)
         )
 
         warn(
-            "[HOLY GAG2 MAILBOX]",
+            "[HOLY MAILBOX]",
             "packet missing",
             tostring(keyName),
             tostring(packetName),
@@ -26118,7 +25916,7 @@ function GAG2MailboxFirePacket(keyName, packetName, ...)
         )
 
         warn(
-            "[HOLY GAG2 MAILBOX]",
+            "[HOLY MAILBOX]",
             "fire failed",
             tostring(packetName),
             tostring(err)
@@ -26261,7 +26059,7 @@ function GAG2MailboxSendSelectedBatchNow()
         )
 
         print(
-            "[HOLY GAG2 MAILBOX]",
+            "[HOLY MAILBOX]",
             "MailboxSendBatch fired",
             "| userId:",
             tostring(targetUserId),
@@ -27215,7 +27013,7 @@ function GAG2MailboxAutoReceiptText(receipt)
         return "Receipt unavailable."
     end
 
-    return "HOLY GAG2 MAILBOX RECEIPT"
+    return "HOLY MAILBOX RECEIPT"
         .. "\nTime: "
         .. tostring(receipt.TimeText or "?")
         .. "\nRecipient: "
@@ -31852,7 +31650,7 @@ function GAG2VersionHopSetStatus(text)
     GAG2VersionHopRefreshHome()
 
     print(
-        "[HOLY GAG2 VERSION HOP]",
+        "[HOLY VERSION HOP]",
         state.LastStatus
     )
 end
@@ -32224,11 +32022,10 @@ end
 local Window =
     Library:CreateWindow({
         Title =
-            '<font color="rgb(232,230,240)">Holy</font> '
-            .. '<font color="rgb(196,181,253)"><b>GAG 2</b></font>',
+            '<font color="rgb(196,181,253)"><b>HOLY</b></font>',
 
         Footer =
-            "holy · clean refresh",
+            "holy",
 
         ToggleKeybind =
             Enum.KeyCode.LeftAlt,
@@ -36246,7 +36043,7 @@ SettingsUIBox:AddToggle(
     {
         Text = "Auto Skip Loading",
         Default = true,
-        Tooltip = "Safe monitored screen-hold during GAG2 loading. No GUI scanning, no firesignal, no remote spoofing.",
+        Tooltip = "Uses a monitored loading hold. HOLY never fakes loading attributes, hides the loading screen, or forces the camera.",
     }
 ):OnChanged(function(value)
 
@@ -36267,7 +36064,7 @@ SettingsUIBox:AddToggle(
     {
         Text = "Auto TP Middle Farm",
         Default = false,
-        Tooltip = "Early TP once, then one post-load repair if GAG2 pulls you back.",
+        Tooltip = "Teleports to the farm middle early, keeps you there while loading, and watches for the game's final pullback after loading.",
     }
 ):OnChanged(function(value)
 
@@ -36340,7 +36137,7 @@ SettingsUIBox:AddButton({
     Text = "Unload UI",
     Risky = true,
     DoubleClick = true,
-    Tooltip = "Unload Holy GAG2 UI.",
+    Tooltip = "Unload HOLY UI.",
     Func = function()
 
         Library:Unload()
@@ -36549,7 +36346,7 @@ pcall(function()
         if exactTarget then
 
             warn(
-                "[HOLY GAG2 EXACT JOIN]",
+                "[HOLY EXACT JOIN]",
                 "TeleportInitFailed",
                 "| result:",
                 tostring(resultName),
@@ -36609,22 +36406,18 @@ Library:OnUnload(function()
     end
 
     print(
-        "[HOLY GAG2]",
+        "[HOLY]",
         "Unloaded."
     )
 end)
 
 Notify(
-    "Holy GAG2",
-    "Clean shell loaded. Toggle with LeftAlt.",
+    "HOLY",
+    "Script loaded. Toggle with LeftAlt.",
     4
 )
 
 print(
-    "[HOLY GAG2]",
-    "Clean shell loaded.",
-    "| place:",
-    tostring(game.PlaceId),
-    "| job:",
-    tostring(game.JobId)
+    "[HOLY]",
+    "Script loaded."
 )
