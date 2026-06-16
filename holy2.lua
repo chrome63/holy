@@ -23,6 +23,12 @@ local ReplicatedStorage =
 local CoreGui =
     game:GetService("CoreGui")
 
+GAG2_USER_INPUT_SERVICE =
+    game:GetService("UserInputService")
+
+GAG2_PROXIMITY_PROMPT_SERVICE =
+    game:GetService("ProximityPromptService")
+
 local VirtualUser =
     nil
 
@@ -346,6 +352,259 @@ local function CopyText(text)
 
     return ok == true
 end
+
+--==================================================
+-- [2.1] MOBILE / CLOUDPHONE PROMPT COMPATIBILITY
+-- Avoids the broken custom ProximityPromptController UI
+-- on Android, iOS, touch clients, and cloudphones.
+-- Prompt interaction behavior is preserved.
+--==================================================
+
+pcall(function()
+
+    if type(GAG2_MOBILE_PROMPT_COMPAT_STATE) ~= "table" then
+        return
+    end
+
+    if GAG2_MOBILE_PROMPT_COMPAT_STATE.DescendantAddedConnection then
+
+        GAG2_MOBILE_PROMPT_COMPAT_STATE.DescendantAddedConnection:Disconnect()
+    end
+
+    if GAG2_MOBILE_PROMPT_COMPAT_STATE.PromptShownConnection then
+
+        GAG2_MOBILE_PROMPT_COMPAT_STATE.PromptShownConnection:Disconnect()
+    end
+end)
+
+GAG2_MOBILE_PROMPT_COMPAT_STATE = {
+    Enabled = false,
+    Started = false,
+
+    DescendantAddedConnection = nil,
+    PromptShownConnection = nil,
+
+    AppliedCount = 0,
+}
+
+function GAG2IsMobilePromptEnvironment()
+
+    local touchEnabled =
+        false
+
+    local platform =
+        nil
+
+    pcall(function()
+
+        touchEnabled =
+            GAG2_USER_INPUT_SERVICE.TouchEnabled == true
+    end)
+
+    pcall(function()
+
+        platform =
+            GAG2_USER_INPUT_SERVICE:GetPlatform()
+    end)
+
+    return touchEnabled == true
+        or platform == Enum.Platform.Android
+        or platform == Enum.Platform.IOS
+end
+
+function GAG2ApplyMobilePromptCompatibility(prompt)
+
+    local state =
+        GAG2_MOBILE_PROMPT_COMPAT_STATE
+
+    if state.Enabled ~= true then
+        return false
+    end
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true then
+
+        return false
+    end
+
+    if prompt.Parent == nil then
+        return false
+    end
+
+    local changed =
+        false
+
+    local ok =
+        pcall(function()
+
+            if prompt.Style ~= Enum.ProximityPromptStyle.Default then
+
+                prompt.Style =
+                    Enum.ProximityPromptStyle.Default
+
+                changed =
+                    true
+            end
+        end)
+
+    if ok ~= true then
+        return false
+    end
+
+    if changed == true then
+
+        state.AppliedCount =
+            tonumber(state.AppliedCount)
+            or 0
+
+        state.AppliedCount += 1
+    end
+
+    return true
+end
+
+function GAG2ApplyMobilePromptCompatibilityToRoot(root, yieldEvery)
+
+    if typeof(root) ~= "Instance" then
+        return 0
+    end
+
+    local applied =
+        0
+
+    if root:IsA("ProximityPrompt") then
+
+        if GAG2ApplyMobilePromptCompatibility(root) == true then
+
+            applied += 1
+        end
+    end
+
+    local descendants =
+        root:GetDescendants()
+
+    for index, descendant in ipairs(descendants) do
+
+        if descendant:IsA("ProximityPrompt") then
+
+            if GAG2ApplyMobilePromptCompatibility(descendant) == true then
+
+                applied += 1
+            end
+        end
+
+        local yieldAmount =
+            tonumber(yieldEvery)
+            or 0
+
+        if yieldAmount > 0
+        and index % yieldAmount == 0 then
+
+            task.wait()
+        end
+    end
+
+    return applied
+end
+
+function GAG2StartMobilePromptCompatibility()
+
+    local state =
+        GAG2_MOBILE_PROMPT_COMPAT_STATE
+
+    state.Enabled =
+        GAG2IsMobilePromptEnvironment()
+
+    if state.Enabled ~= true then
+        return false
+    end
+
+    if state.Started == true then
+        return true
+    end
+
+    state.Started =
+        true
+
+    state.DescendantAddedConnection =
+        workspace.DescendantAdded:Connect(function(descendant)
+
+            if descendant:IsA("ProximityPrompt") ~= true then
+                return
+            end
+
+            GAG2ApplyMobilePromptCompatibility(
+                descendant
+            )
+
+            task.defer(function()
+
+                if descendant.Parent then
+
+                    GAG2ApplyMobilePromptCompatibility(
+                        descendant
+                    )
+                end
+            end)
+
+            task.delay(0.15, function()
+
+                if descendant.Parent then
+
+                    GAG2ApplyMobilePromptCompatibility(
+                        descendant
+                    )
+                end
+            end)
+        end)
+
+    if GAG2_PROXIMITY_PROMPT_SERVICE then
+
+        state.PromptShownConnection =
+            GAG2_PROXIMITY_PROMPT_SERVICE.PromptShown:Connect(function(prompt)
+
+                GAG2ApplyMobilePromptCompatibility(
+                    prompt
+                )
+            end)
+    end
+
+    -- Apply immediately to the prompt-heavy areas first.
+
+    GAG2ApplyMobilePromptCompatibilityToRoot(
+        workspace:FindFirstChild("Map"),
+        0
+    )
+
+    GAG2ApplyMobilePromptCompatibilityToRoot(
+        workspace:FindFirstChild("Gardens"),
+        0
+    )
+
+    GAG2ApplyMobilePromptCompatibilityToRoot(
+        workspace:FindFirstChild("NPCS"),
+        0
+    )
+
+    GAG2ApplyMobilePromptCompatibilityToRoot(
+        workspace:FindFirstChild("DroppedItems"),
+        0
+    )
+
+    -- Catch any remaining prompts without freezing weaker devices.
+
+    task.spawn(function()
+
+        GAG2ApplyMobilePromptCompatibilityToRoot(
+            workspace,
+            500
+        )
+    end)
+
+    return true
+end
+
+GAG2StartMobilePromptCompatibility()
 
 local UIState = {
     ShowUIOnLoad = true,
