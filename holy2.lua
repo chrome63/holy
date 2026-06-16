@@ -13836,6 +13836,1371 @@ function GAG2RestoreAutoSellState()
 end
 
 --==================================================
+-- [4.57] AUTO SHOVEL PLANTS
+-- Own-plot-only ordered plant deletion queue.
+--==================================================
+
+GAG2_AUTO_SHOVEL_COLLECTION_SERVICE =
+    game:GetService("CollectionService")
+
+if type(GAG2_AUTO_SHOVEL_STATE) == "table" then
+
+    GAG2_AUTO_SHOVEL_STATE.Enabled = false
+    GAG2_AUTO_SHOVEL_STATE.WorkerGeneration =
+        (tonumber(GAG2_AUTO_SHOVEL_STATE.WorkerGeneration) or 0) + 1
+
+    GAG2_AUTO_SHOVEL_STATE.MonitorGeneration =
+        (tonumber(GAG2_AUTO_SHOVEL_STATE.MonitorGeneration) or 0) + 1
+end
+
+GAG2_AUTO_SHOVEL_STATE = {
+    Enabled = false,
+    Running = false,
+    WorkerGeneration = 0,
+    MonitorGeneration = 0,
+
+    Queue = {},
+    SelectedPlant = "",
+    SelectedQueueIndex = 0,
+
+    Delay = 0.70,
+    ProtectGold = true,
+    ProtectRainbow = true,
+
+    UseShovelPacket = nil,
+    PacketSource = "not resolved",
+
+    OwnPlot = nil,
+    PlantsFolder = nil,
+    Summary = {},
+    TotalPlants = 0,
+    PlantTypes = 0,
+
+    PlantChoiceMap = {},
+    QueueChoiceMap = {},
+
+    RemovedThisRun = 0,
+    FailedThisRun = 0,
+    ProtectedSkipped = 0,
+
+    CurrentQueueIndex = 0,
+    CurrentQueueTotal = 0,
+    CurrentPlant = "",
+
+    LastSentAt = 0,
+    LastStatus = "Idle.",
+
+    UpdatingUI = false,
+    SavingQueueText = false,
+    RefreshScheduled = false,
+}
+
+GAG2_AUTO_SHOVEL_CONTROLS =
+    GAG2_AUTO_SHOVEL_CONTROLS or {}
+
+function GAG2AutoShovelClean(value)
+
+    return CleanText(
+        tostring(value or "")
+            :gsub("<[^>]->", "")
+            :gsub("<.->", "")
+    )
+end
+
+function GAG2AutoShovelClampLimit(value)
+
+    local number = tonumber(value) or 0
+
+    if number ~= number
+    or number == math.huge
+    or number == -math.huge then
+        number = 0
+    end
+
+    return math.clamp(math.floor(number), 0, 100000)
+end
+
+function GAG2AutoShovelSetDelay(value)
+
+    local number = tonumber(value) or 0.70
+
+    if number ~= number
+    or number == math.huge
+    or number == -math.huge then
+        number = 0.70
+    end
+
+    GAG2_AUTO_SHOVEL_STATE.Delay =
+        math.clamp(number, 0, 60)
+
+    MarkConfigDirty()
+    GAG2AutoShovelScheduleRefresh()
+end
+
+function GAG2AutoShovelGetEffectiveDelay()
+
+    return math.max(
+        tonumber(GAG2_AUTO_SHOVEL_STATE.Delay) or 0.70,
+        0.65
+    )
+end
+
+function GAG2AutoShovelSetDropdownValues(dropdown, values)
+
+    if not dropdown then
+        return
+    end
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+            dropdown:SetValues(values)
+        elseif type(dropdown.SetItems) == "function" then
+            dropdown:SetItems(values)
+        end
+    end)
+end
+
+function GAG2AutoShovelSetDropdownValue(dropdown, value)
+
+    if dropdown
+    and type(dropdown.SetValue) == "function" then
+        pcall(dropdown.SetValue, dropdown, value)
+    end
+end
+
+function GAG2AutoShovelSetStatusLabel(text)
+
+    local label =
+        GAG2_AUTO_SHOVEL_CONTROLS.StatusLabel
+
+    if not label then
+        return
+    end
+
+    pcall(function()
+
+        if type(label.SetText) == "function" then
+            label:SetText(tostring(text or ""))
+        else
+            label.Text = tostring(text or "")
+        end
+    end)
+end
+
+function GAG2AutoShovelSetStatus(text)
+
+    GAG2_AUTO_SHOVEL_STATE.LastStatus =
+        tostring(text or "Idle.")
+
+    GAG2AutoShovelScheduleRefresh()
+end
+
+function GAG2AutoShovelGetOwnPlantsFolder()
+
+    if type(GAG2ResolveOwnFarmPlot) ~= "function" then
+        return nil, nil, "GAG2ResolveOwnFarmPlot missing"
+    end
+
+    local ownPlot, plotReason =
+        GAG2ResolveOwnFarmPlot()
+
+    if not ownPlot then
+        return nil, nil, tostring(plotReason)
+    end
+
+    local plantsFolder =
+        ownPlot:FindFirstChild("Plants")
+
+    if not plantsFolder then
+        return ownPlot, nil, "Plants folder missing"
+    end
+
+    return ownPlot, plantsFolder, tostring(plotReason or "own plot")
+end
+
+function GAG2AutoShovelGetPlantSeedName(plant)
+
+    local seedName =
+        GAG2AutoShovelClean(
+            plant:GetAttribute("SeedName")
+        )
+
+    if seedName ~= "" then
+        return seedName
+    end
+
+    local fruitsFolder =
+        plant:FindFirstChild("Fruits")
+
+    if fruitsFolder then
+
+        for _, fruit in ipairs(fruitsFolder:GetChildren()) do
+
+            seedName =
+                GAG2AutoShovelClean(
+                    fruit:GetAttribute("CorePartName")
+                )
+
+            if seedName ~= "" then
+                return seedName
+            end
+        end
+    end
+
+    return "Unknown"
+end
+
+function GAG2AutoShovelInspectMutationNode(node)
+
+    local hasGold = false
+    local hasRainbow = false
+
+    if typeof(node) ~= "Instance" then
+        return hasGold, hasRainbow
+    end
+
+    local mutation =
+        GAG2AutoShovelClean(
+            node:GetAttribute("Mutation")
+        ):lower()
+
+    hasGold = mutation == "gold"
+    hasRainbow = mutation == "rainbow"
+
+    local nodeName = tostring(node.Name):lower()
+
+    if nodeName == "goldvfx" then
+        hasGold = true
+    elseif nodeName == "rainbowvfx" then
+        hasRainbow = true
+    end
+
+    pcall(function()
+
+        if GAG2_AUTO_SHOVEL_COLLECTION_SERVICE:HasTag(node, "Gold") then
+            hasGold = true
+        end
+
+        if GAG2_AUTO_SHOVEL_COLLECTION_SERVICE:HasTag(node, "Rainbow") then
+            hasRainbow = true
+        end
+    end)
+
+    return hasGold, hasRainbow
+end
+
+function GAG2AutoShovelClassifyPlant(plant, deepScan)
+
+    local hasGold, hasRainbow =
+        GAG2AutoShovelInspectMutationNode(plant)
+
+    local function inspect(node)
+
+        local nodeGold, nodeRainbow =
+            GAG2AutoShovelInspectMutationNode(node)
+
+        hasGold = hasGold or nodeGold
+        hasRainbow = hasRainbow or nodeRainbow
+    end
+
+    for _, child in ipairs(plant:GetChildren()) do
+        inspect(child)
+    end
+
+    local fruitsFolder =
+        plant:FindFirstChild("Fruits")
+
+    if fruitsFolder then
+
+        for _, fruit in ipairs(fruitsFolder:GetChildren()) do
+
+            inspect(fruit)
+
+            for _, fruitChild in ipairs(fruit:GetChildren()) do
+                inspect(fruitChild)
+            end
+        end
+    end
+
+    if deepScan == true
+    and not (hasGold and hasRainbow) then
+
+        for _, descendant in ipairs(plant:GetDescendants()) do
+
+            inspect(descendant)
+
+            if hasGold and hasRainbow then
+                break
+            end
+        end
+    end
+
+    return hasGold, hasRainbow
+end
+
+function GAG2AutoShovelIsProtected(plant, deepScan)
+
+    local hasGold, hasRainbow =
+        GAG2AutoShovelClassifyPlant(plant, deepScan == true)
+
+    local state =
+        GAG2_AUTO_SHOVEL_STATE
+
+    local protected =
+        (state.ProtectGold and hasGold)
+        or (state.ProtectRainbow and hasRainbow)
+
+    return protected, hasGold, hasRainbow
+end
+
+function GAG2AutoShovelScanPlants()
+
+    local state =
+        GAG2_AUTO_SHOVEL_STATE
+
+    local ownPlot, plantsFolder, reason =
+        GAG2AutoShovelGetOwnPlantsFolder()
+
+    state.OwnPlot = ownPlot
+    state.PlantsFolder = plantsFolder
+
+    local summary = {}
+    local totalPlants = 0
+
+    if plantsFolder then
+
+        for _, plant in ipairs(plantsFolder:GetChildren()) do
+
+            if plant:IsA("Model") then
+
+                local seedName =
+                    GAG2AutoShovelGetPlantSeedName(plant)
+
+                local protected, hasGold, hasRainbow =
+                    GAG2AutoShovelIsProtected(plant, false)
+
+                local row = summary[seedName]
+
+                if not row then
+
+                    row = {
+                        Name = seedName,
+                        Count = 0,
+                        Eligible = 0,
+                        Gold = 0,
+                        Rainbow = 0,
+                        Protected = 0,
+                        Models = {},
+                    }
+
+                    summary[seedName] = row
+                end
+
+                totalPlants += 1
+                row.Count += 1
+                row.Gold += hasGold and 1 or 0
+                row.Rainbow += hasRainbow and 1 or 0
+                row.Protected += protected and 1 or 0
+                row.Eligible += protected and 0 or 1
+
+                table.insert(row.Models, plant)
+            end
+        end
+    end
+
+    local plantTypes = 0
+
+    for _, row in pairs(summary) do
+
+        plantTypes += 1
+
+        table.sort(row.Models, function(a, b)
+            return tostring(a.Name) < tostring(b.Name)
+        end)
+    end
+
+    state.Summary = summary
+    state.TotalPlants = totalPlants
+    state.PlantTypes = plantTypes
+
+    return summary, ownPlot, plantsFolder, reason
+end
+
+function GAG2AutoShovelFindQueueIndexByPlant(plantName)
+
+    for index, entry in ipairs(GAG2_AUTO_SHOVEL_STATE.Queue) do
+
+        if entry.Plant == plantName then
+            return index
+        end
+    end
+
+    return nil
+end
+
+function GAG2AutoShovelBuildPlantChoices()
+
+    local state = GAG2_AUTO_SHOVEL_STATE
+    local rows = {}
+    local values = {}
+    local choiceMap = {}
+
+    for _, row in pairs(state.Summary) do
+        table.insert(rows, row)
+    end
+
+    table.sort(rows, function(a, b)
+
+        if a.Count ~= b.Count then
+            return a.Count > b.Count
+        end
+
+        return tostring(a.Name):lower() < tostring(b.Name):lower()
+    end)
+
+    for _, row in ipairs(rows) do
+
+        local display =
+            row.Name
+            .. " — "
+            .. tostring(row.Eligible)
+            .. " shovelable / "
+            .. tostring(row.Count)
+            .. " total"
+
+        table.insert(values, display)
+        choiceMap[display] = row.Name
+    end
+
+    if #values == 0 then
+        values = {"No planted plants"}
+    end
+
+    state.PlantChoiceMap = choiceMap
+
+    if state.SelectedPlant == ""
+    or not state.Summary[state.SelectedPlant] then
+        state.SelectedPlant = rows[1] and rows[1].Name or ""
+    end
+
+    return values
+end
+
+function GAG2AutoShovelBuildQueueChoices()
+
+    local state = GAG2_AUTO_SHOVEL_STATE
+    local values = {}
+    local choiceMap = {}
+
+    for index, entry in ipairs(state.Queue) do
+
+        local row = state.Summary[entry.Plant]
+        local eligible = row and row.Eligible or 0
+        local amountText = entry.Limit <= 0 and "All" or tostring(entry.Limit)
+
+        local display =
+            tostring(index)
+            .. ". "
+            .. entry.Plant
+            .. " — "
+            .. amountText
+            .. " / "
+            .. tostring(eligible)
+            .. " shovelable"
+
+        table.insert(values, display)
+        choiceMap[display] = index
+    end
+
+    if #values == 0 then
+
+        values = {"Queue empty"}
+        state.SelectedQueueIndex = 0
+
+    else
+
+        state.SelectedQueueIndex =
+            math.clamp(
+                tonumber(state.SelectedQueueIndex) or 1,
+                1,
+                #state.Queue
+            )
+    end
+
+    state.QueueChoiceMap = choiceMap
+
+    return values
+end
+
+function GAG2AutoShovelBuildStatusText()
+
+    local state = GAG2_AUTO_SHOVEL_STATE
+    local row = state.Summary[state.SelectedPlant]
+
+    local planted = row and row.Count or 0
+    local eligible = row and row.Eligible or 0
+    local gold = row and row.Gold or 0
+    local rainbow = row and row.Rainbow or 0
+    local uniqueProtected = row and row.Protected or 0
+
+    local queuedText = "Not queued"
+    local expectedDelete = 0
+    local queueIndex =
+        GAG2AutoShovelFindQueueIndexByPlant(state.SelectedPlant)
+
+    if queueIndex then
+
+        local entry = state.Queue[queueIndex]
+
+        expectedDelete =
+            entry.Limit <= 0
+            and eligible
+            or math.min(entry.Limit, eligible)
+
+        queuedText =
+            entry.Limit <= 0
+            and "All"
+            or tostring(entry.Limit)
+    end
+
+    return
+        '<font color="rgb(196,181,253)"><b>Planted Plants / Auto Shovel</b></font>'
+        .. "\nPlot: "
+        .. (state.OwnPlot and state.OwnPlot.Name or "not resolved")
+        .. " | Total: "
+        .. tostring(state.TotalPlants)
+        .. " | Types: "
+        .. tostring(state.PlantTypes)
+        .. "\nSelected: "
+        .. (state.SelectedPlant ~= "" and state.SelectedPlant or "none")
+        .. "\nPlanted: "
+        .. tostring(planted)
+        .. " | Shovelable: "
+        .. tostring(eligible)
+        .. " | Queued: "
+        .. queuedText
+        .. "\nProtected Gold: "
+        .. tostring(gold)
+        .. " | Rainbow: "
+        .. tostring(rainbow)
+        .. " | Unique: "
+        .. tostring(uniqueProtected)
+        .. "\nExpected Remaining: "
+        .. tostring(math.max(planted - expectedDelete, 0))
+        .. "\nState: "
+        .. (state.Enabled and "ON" or "OFF")
+        .. " | Running: "
+        .. tostring(state.Running)
+        .. " | Queue: "
+        .. tostring(state.CurrentQueueIndex)
+        .. "/"
+        .. tostring(state.CurrentQueueTotal)
+        .. "\nCurrent: "
+        .. (state.CurrentPlant ~= "" and state.CurrentPlant or "none")
+        .. " | Delay: "
+        .. string.format("%.2fs", GAG2AutoShovelGetEffectiveDelay())
+        .. "\nRemoved: "
+        .. tostring(state.RemovedThisRun)
+        .. " | Failed: "
+        .. tostring(state.FailedThisRun)
+        .. " | Protected skips: "
+        .. tostring(state.ProtectedSkipped)
+        .. "\nLast: "
+        .. tostring(state.LastStatus)
+end
+
+function GAG2AutoShovelRefreshUI()
+
+    local state = GAG2_AUTO_SHOVEL_STATE
+
+    if state.UpdatingUI then
+        return
+    end
+
+    state.UpdatingUI = true
+
+    local ok, err = pcall(function()
+
+        GAG2AutoShovelScanPlants()
+
+        local plantValues =
+            GAG2AutoShovelBuildPlantChoices()
+
+        GAG2AutoShovelSetDropdownValues(
+            GAG2_AUTO_SHOVEL_CONTROLS.Plant,
+            plantValues
+        )
+
+        for display, plantName in pairs(state.PlantChoiceMap) do
+
+            if plantName == state.SelectedPlant then
+
+                GAG2AutoShovelSetDropdownValue(
+                    GAG2_AUTO_SHOVEL_CONTROLS.Plant,
+                    display
+                )
+
+                break
+            end
+        end
+
+        local queueValues =
+            GAG2AutoShovelBuildQueueChoices()
+
+        GAG2AutoShovelSetDropdownValues(
+            GAG2_AUTO_SHOVEL_CONTROLS.Queue,
+            queueValues
+        )
+
+        for display, queueIndex in pairs(state.QueueChoiceMap) do
+
+            if queueIndex == state.SelectedQueueIndex then
+
+                GAG2AutoShovelSetDropdownValue(
+                    GAG2_AUTO_SHOVEL_CONTROLS.Queue,
+                    display
+                )
+
+                break
+            end
+        end
+
+        GAG2AutoShovelSetStatusLabel(
+            GAG2AutoShovelBuildStatusText()
+        )
+    end)
+
+    state.UpdatingUI = false
+
+    if not ok then
+        state.LastStatus = "UI refresh failed: " .. tostring(err)
+    end
+end
+
+function GAG2AutoShovelScheduleRefresh()
+
+    local state = GAG2_AUTO_SHOVEL_STATE
+
+    if state.RefreshScheduled then
+        return
+    end
+
+    state.RefreshScheduled = true
+
+    task.delay(0.15, function()
+
+        if GAG2_AUTO_SHOVEL_STATE ~= state then
+            return
+        end
+
+        state.RefreshScheduled = false
+        GAG2AutoShovelRefreshUI()
+    end)
+end
+
+function GAG2AutoShovelEncodeQueue()
+
+    local queue = {}
+
+    for _, entry in ipairs(GAG2_AUTO_SHOVEL_STATE.Queue) do
+
+        table.insert(queue, {
+            Plant = tostring(entry.Plant),
+            Limit = GAG2AutoShovelClampLimit(entry.Limit),
+        })
+    end
+
+    local ok, encoded = pcall(function()
+        return HttpService:JSONEncode(queue)
+    end)
+
+    return ok and encoded or "[]"
+end
+
+function GAG2AutoShovelLoadQueueFromText(text)
+
+    local decoded = nil
+    local ok = pcall(function()
+        decoded = HttpService:JSONDecode(tostring(text or "[]"))
+    end)
+
+    if not ok
+    or type(decoded) ~= "table" then
+        return false
+    end
+
+    local queue = {}
+    local seen = {}
+
+    for _, entry in ipairs(decoded) do
+
+        if type(entry) == "table" then
+
+            local plantName =
+                GAG2AutoShovelClean(entry.Plant)
+
+            if plantName ~= ""
+            and not seen[plantName] then
+
+                seen[plantName] = true
+
+                table.insert(queue, {
+                    Plant = plantName,
+                    Limit = GAG2AutoShovelClampLimit(entry.Limit),
+                })
+            end
+        end
+    end
+
+    local state = GAG2_AUTO_SHOVEL_STATE
+
+    state.Queue = queue
+    state.SelectedQueueIndex = #queue > 0 and 1 or 0
+
+    GAG2AutoShovelScheduleRefresh()
+
+    return true
+end
+
+function GAG2AutoShovelSaveQueue()
+
+    local state = GAG2_AUTO_SHOVEL_STATE
+    local control = GAG2_AUTO_SHOVEL_CONTROLS.QueueData
+
+    if control
+    and type(control.SetValue) == "function" then
+
+        state.SavingQueueText = true
+
+        pcall(function()
+            control:SetValue(GAG2AutoShovelEncodeQueue())
+        end)
+
+        state.SavingQueueText = false
+    end
+
+    MarkConfigDirty()
+    GAG2AutoShovelScheduleRefresh()
+end
+
+function GAG2AutoShovelAddOrUpdateQueue(plantName, limit)
+
+    plantName = GAG2AutoShovelClean(plantName)
+
+    if plantName == ""
+    or plantName == "No planted plants" then
+        return false
+    end
+
+    limit = GAG2AutoShovelClampLimit(limit)
+
+    local state = GAG2_AUTO_SHOVEL_STATE
+    local index = GAG2AutoShovelFindQueueIndexByPlant(plantName)
+
+    if index then
+
+        state.Queue[index].Limit = limit
+        state.SelectedQueueIndex = index
+
+    else
+
+        table.insert(state.Queue, {
+            Plant = plantName,
+            Limit = limit,
+        })
+
+        state.SelectedQueueIndex = #state.Queue
+    end
+
+    GAG2AutoShovelSaveQueue()
+
+    return true
+end
+
+function GAG2AutoShovelRemoveSelectedQueue()
+
+    local state = GAG2_AUTO_SHOVEL_STATE
+    local index = tonumber(state.SelectedQueueIndex) or 0
+
+    if index < 1
+    or index > #state.Queue then
+        return false
+    end
+
+    table.remove(state.Queue, index)
+
+    state.SelectedQueueIndex =
+        #state.Queue > 0
+        and math.clamp(index, 1, #state.Queue)
+        or 0
+
+    GAG2AutoShovelSaveQueue()
+
+    return true
+end
+
+function GAG2AutoShovelMoveSelectedQueue(direction)
+
+    local state = GAG2_AUTO_SHOVEL_STATE
+    local index = tonumber(state.SelectedQueueIndex) or 0
+    local targetIndex = index + (tonumber(direction) or 0)
+
+    if index < 1
+    or index > #state.Queue
+    or targetIndex < 1
+    or targetIndex > #state.Queue then
+        return false
+    end
+
+    state.Queue[index], state.Queue[targetIndex] =
+        state.Queue[targetIndex], state.Queue[index]
+
+    state.SelectedQueueIndex = targetIndex
+
+    GAG2AutoShovelSaveQueue()
+
+    return true
+end
+
+function GAG2AutoShovelClearQueue()
+
+    GAG2_AUTO_SHOVEL_STATE.Queue = {}
+    GAG2_AUTO_SHOVEL_STATE.SelectedQueueIndex = 0
+
+    GAG2AutoShovelSaveQueue()
+end
+
+function GAG2AutoShovelResolvePacket()
+
+    local state = GAG2_AUTO_SHOVEL_STATE
+
+    if type(state.UseShovelPacket) == "table"
+    and type(state.UseShovelPacket.Fire) == "function" then
+        return state.UseShovelPacket, state.PacketSource
+    end
+
+    local packets =
+        type(SniperFindPacketTable) == "function"
+        and SniperFindPacketTable()
+        or nil
+
+    if type(packets) ~= "table" then
+        return nil, "packet table unavailable"
+    end
+
+    local safeRawGet =
+        type(SniperSafeRawGet) == "function"
+        and SniperSafeRawGet
+        or function(container, key)
+            return type(container) == "table" and rawget(container, key) or nil
+        end
+
+    local shovelPackets = safeRawGet(packets, "Shovel")
+    local packet =
+        type(shovelPackets) == "table"
+        and safeRawGet(shovelPackets, "UseShovel")
+        or nil
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+        return nil, "Shovel.UseShovel packet unavailable"
+    end
+
+    state.UseShovelPacket = packet
+    state.PacketSource = "packet table Shovel.UseShovel"
+
+    return packet, state.PacketSource
+end
+
+function GAG2AutoShovelFindRealShovel()
+
+    local character = LOCAL_PLAYER.Character
+    local backpack = LOCAL_PLAYER:FindFirstChildOfClass("Backpack")
+
+    local function findIn(container)
+
+        if not container then
+            return nil
+        end
+
+        for _, child in ipairs(container:GetChildren()) do
+
+            if child:IsA("Tool")
+            and child:GetAttribute("Shovel") ~= nil then
+                return child, tostring(child:GetAttribute("Shovel"))
+            end
+        end
+
+        return nil
+    end
+
+    local tool, shovelValue = findIn(character)
+
+    if tool then
+        return tool, shovelValue
+    end
+
+    tool, shovelValue = findIn(backpack)
+
+    if not tool then
+        return nil, nil, "real Shovel tool missing"
+    end
+
+    local humanoid =
+        character and character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid then
+        return nil, nil, "Humanoid missing"
+    end
+
+    pcall(humanoid.EquipTool, humanoid, tool)
+    task.wait(0.15)
+
+    if tool.Parent ~= character then
+        return nil, nil, "Shovel could not equip"
+    end
+
+    return tool, shovelValue
+end
+
+function GAG2AutoShovelWorkerActive(generation)
+
+    local state = GAG2_AUTO_SHOVEL_STATE
+
+    return state.Enabled
+        and state.WorkerGeneration == generation
+end
+
+function GAG2AutoShovelWaitUntil(targetTime, generation)
+
+    while GAG2AutoShovelWorkerActive(generation) do
+
+        local remaining = targetTime - os.clock()
+
+        if remaining <= 0 then
+            return true
+        end
+
+        task.wait(math.min(remaining, 0.05))
+    end
+
+    return false
+end
+
+function GAG2AutoShovelTryDeletePlant(plant, plantsFolder, generation)
+
+    local state = GAG2_AUTO_SHOVEL_STATE
+
+    if typeof(plant) ~= "Instance"
+    or typeof(plantsFolder) ~= "Instance" then
+        return false, "target missing", "failed"
+    end
+
+    if plant.Parent ~= plantsFolder then
+        return true, "already removed", "removed"
+    end
+
+    if GAG2AutoShovelIsProtected(plant, true) then
+        return false, "protected Gold/Rainbow plant", "protected"
+    end
+
+    local packet, packetReason = GAG2AutoShovelResolvePacket()
+
+    if not packet then
+        return false, packetReason, "runtime"
+    end
+
+    local shovelTool, shovelValue, shovelReason =
+        GAG2AutoShovelFindRealShovel()
+
+    if not shovelTool
+    or GAG2AutoShovelClean(shovelValue) == "" then
+        return false, shovelReason or "Shovel attribute missing", "runtime"
+    end
+
+    local fireAt = math.max(
+        os.clock(),
+        state.LastSentAt + GAG2AutoShovelGetEffectiveDelay()
+    )
+
+    if not GAG2AutoShovelWaitUntil(fireAt, generation) then
+        return false, "stopped", "stopped"
+    end
+
+    if plant.Parent ~= plantsFolder then
+        return true, "removed before send", "removed"
+    end
+
+    if GAG2AutoShovelIsProtected(plant, true) then
+        return false, "became protected before send", "protected"
+    end
+
+    local plantName = tostring(plant.Name)
+    local removed = false
+
+    local connection = plantsFolder.ChildRemoved:Connect(function(child)
+
+        if child == plant
+        or tostring(child.Name) == plantName then
+            removed = true
+        end
+    end)
+
+    local okFire, fireError = pcall(function()
+
+        packet:Fire(
+            plantName,
+            "",
+            tostring(shovelValue),
+            shovelTool
+        )
+    end)
+
+    if not okFire then
+
+        okFire, fireError = pcall(function()
+
+            packet.Fire(
+                packet,
+                plantName,
+                "",
+                tostring(shovelValue),
+                shovelTool
+            )
+        end)
+    end
+
+    if not okFire then
+
+        connection:Disconnect()
+        return false, tostring(fireError), "failed"
+    end
+
+    state.LastSentAt = os.clock()
+
+    local deadline = os.clock() + 2.5
+
+    while GAG2AutoShovelWorkerActive(generation)
+    and os.clock() < deadline do
+
+        if removed
+        or plant.Parent ~= plantsFolder
+        or plantsFolder:FindFirstChild(plantName) ~= plant then
+
+            removed = true
+            break
+        end
+
+        task.wait(0.05)
+    end
+
+    connection:Disconnect()
+
+    if removed then
+        return true, "plant model removed", "removed"
+    end
+
+    return false, "confirmation timeout", "failed"
+end
+
+function GAG2AutoShovelBuildCandidateNames(plantName)
+
+    GAG2AutoShovelScanPlants()
+
+    local row =
+        GAG2_AUTO_SHOVEL_STATE.Summary[plantName]
+
+    local names = {}
+
+    if not row then
+        return names
+    end
+
+    for _, plant in ipairs(row.Models) do
+
+        if not GAG2AutoShovelIsProtected(plant, false) then
+            table.insert(names, tostring(plant.Name))
+        end
+    end
+
+    table.sort(names)
+
+    return names
+end
+
+function GAG2AutoShovelSetToggleOff()
+
+    local toggle =
+        Toggles and Toggles.HolyGAG2AutoShovelPlants
+
+    if toggle
+    and type(toggle.SetValue) == "function" then
+        pcall(toggle.SetValue, toggle, false)
+    end
+end
+
+function GAG2AutoShovelStartWorker()
+
+    local state = GAG2_AUTO_SHOVEL_STATE
+
+    if state.Running then
+        return
+    end
+
+    if #state.Queue == 0 then
+
+        state.Enabled = false
+        state.LastStatus = "Queue is empty."
+        GAG2AutoShovelSetToggleOff()
+
+        Notify(
+            "Auto Shovel",
+            "Add at least one crop to the queue.",
+            4
+        )
+
+        return
+    end
+
+    state.Running = true
+    state.RemovedThisRun = 0
+    state.FailedThisRun = 0
+    state.ProtectedSkipped = 0
+    state.WorkerGeneration += 1
+
+    local generation = state.WorkerGeneration
+    local runQueue = {}
+
+    for _, entry in ipairs(state.Queue) do
+
+        table.insert(runQueue, {
+            Plant = entry.Plant,
+            Limit = entry.Limit,
+        })
+    end
+
+    state.CurrentQueueIndex = 0
+    state.CurrentQueueTotal = #runQueue
+
+    task.spawn(function()
+
+        for queueIndex, entry in ipairs(runQueue) do
+
+            if not GAG2AutoShovelWorkerActive(generation) then
+                break
+            end
+
+            state.CurrentQueueIndex = queueIndex
+            state.CurrentPlant = entry.Plant
+            state.LastStatus = "Snapshotting " .. entry.Plant .. "."
+            GAG2AutoShovelScheduleRefresh()
+
+            local candidateNames =
+                GAG2AutoShovelBuildCandidateNames(entry.Plant)
+
+            local removedForEntry = 0
+
+            for _, plantName in ipairs(candidateNames) do
+
+                if not GAG2AutoShovelWorkerActive(generation) then
+                    break
+                end
+
+                if entry.Limit > 0
+                and removedForEntry >= entry.Limit then
+                    break
+                end
+
+                local ownPlot, plantsFolder =
+                    GAG2AutoShovelGetOwnPlantsFolder()
+
+                while not plantsFolder
+                and GAG2AutoShovelWorkerActive(generation) do
+
+                    state.LastStatus = "Waiting for own Plants folder."
+                    GAG2AutoShovelScheduleRefresh()
+                    task.wait(1)
+
+                    ownPlot, plantsFolder =
+                        GAG2AutoShovelGetOwnPlantsFolder()
+                end
+
+                if not GAG2AutoShovelWorkerActive(generation) then
+                    break
+                end
+
+                state.OwnPlot = ownPlot
+                state.PlantsFolder = plantsFolder
+
+                local plant = plantsFolder:FindFirstChild(plantName)
+
+                if not plant then
+                    continue
+                end
+
+                local attempts = 0
+                local finishedTarget = false
+
+                while attempts < 3
+                and not finishedTarget
+                and GAG2AutoShovelWorkerActive(generation) do
+
+                    state.LastStatus =
+                        "Shoveling "
+                        .. entry.Plant
+                        .. " | "
+                        .. tostring(removedForEntry + 1)
+                        .. (entry.Limit > 0 and "/" .. tostring(entry.Limit) or "/All")
+
+                    GAG2AutoShovelScheduleRefresh()
+
+                    local success, reason, resultType =
+                        GAG2AutoShovelTryDeletePlant(
+                            plant,
+                            plantsFolder,
+                            generation
+                        )
+
+                    if success then
+
+                        removedForEntry += 1
+                        state.RemovedThisRun += 1
+                        state.LastStatus = entry.Plant .. " removed and confirmed."
+                        finishedTarget = true
+
+                    elseif resultType == "protected" then
+
+                        state.ProtectedSkipped += 1
+                        state.LastStatus = entry.Plant .. " skipped: " .. tostring(reason)
+                        finishedTarget = true
+
+                    elseif resultType == "runtime" then
+
+                        state.LastStatus = "Waiting: " .. tostring(reason)
+                        GAG2AutoShovelScheduleRefresh()
+                        task.wait(1)
+
+                    elseif resultType == "stopped" then
+
+                        finishedTarget = true
+
+                    else
+
+                        attempts += 1
+
+                        if attempts >= 3 then
+
+                            state.FailedThisRun += 1
+                            state.LastStatus =
+                                entry.Plant
+                                .. " failed after 3 tries: "
+                                .. tostring(reason)
+
+                            finishedTarget = true
+
+                        else
+
+                            state.LastStatus =
+                                entry.Plant
+                                .. " retry "
+                                .. tostring(attempts + 1)
+                                .. "/3: "
+                                .. tostring(reason)
+
+                            task.wait(0.10)
+                        end
+                    end
+                end
+
+                GAG2AutoShovelScheduleRefresh()
+            end
+        end
+
+        local completed =
+            GAG2AutoShovelWorkerActive(generation)
+
+        state.Running = false
+        state.CurrentPlant = ""
+
+        if completed then
+
+            state.Enabled = false
+            state.LastStatus = "Queue complete."
+            GAG2AutoShovelSetToggleOff()
+
+        elseif not state.Enabled then
+
+            state.LastStatus = "Stopped."
+        end
+
+        GAG2AutoShovelScheduleRefresh()
+    end)
+end
+
+function GAG2AutoShovelSetEnabled(value)
+
+    local state = GAG2_AUTO_SHOVEL_STATE
+    local enabled = value == true
+
+    if enabled == state.Enabled
+    and (not enabled or state.Running) then
+        return
+    end
+
+    state.Enabled = enabled
+
+    if enabled then
+
+        if #state.Queue == 0 then
+
+            state.Enabled = false
+            state.LastStatus = "Queue is empty."
+            GAG2AutoShovelSetToggleOff()
+
+            Notify(
+                "Auto Shovel",
+                "Add at least one crop to the queue.",
+                4
+            )
+
+        elseif not ConfigState.Loading then
+
+            state.LastStatus = "Starting queue."
+            GAG2AutoShovelStartWorker()
+        end
+
+    else
+
+        state.WorkerGeneration += 1
+        state.LastStatus = "Disabled."
+    end
+
+    MarkConfigDirty()
+    GAG2AutoShovelScheduleRefresh()
+end
+
+function GAG2AutoShovelStartMonitor()
+
+    local state = GAG2_AUTO_SHOVEL_STATE
+
+    state.MonitorGeneration += 1
+
+    local generation = state.MonitorGeneration
+
+    task.spawn(function()
+
+        while GAG2_AUTO_SHOVEL_STATE == state
+        and state.MonitorGeneration == generation do
+
+            GAG2AutoShovelScheduleRefresh()
+            task.wait(3)
+        end
+    end)
+end
+
+
+--==================================================
 -- [4.58] SEED PLANTING
 -- Continuous stack/grid seed planting.
 --==================================================
@@ -29174,18 +30539,50 @@ local ExperimentStatusBox =
         "activity"
     )
 
-local FarmSeedPlantBox =
-    AddLeftBox(
+local function AddFarmLeftBoxClosed(title, icon)
+
+    if Tabs.Farm
+    and type(Tabs.Farm.AddLeftCollapsibleGroupbox) == "function" then
+
+        local ok, box =
+            pcall(function()
+
+                return Tabs.Farm:AddLeftCollapsibleGroupbox(
+                    title,
+                    icon,
+                    false
+                )
+            end)
+
+        if ok == true
+        and box ~= nil then
+            return box
+        end
+    end
+
+    return AddLeftBox(
         Tabs.Farm,
+        title,
+        icon
+    )
+end
+
+local FarmSeedPlantBox =
+    AddFarmLeftBoxClosed(
         "Seed Planting",
         "sprout"
     )
 
 local FarmMainBox =
-    AddLeftBox(
-        Tabs.Farm,
+    AddFarmLeftBoxClosed(
         "Farm Controls",
         "leaf"
+    )
+
+local FarmAutoShovelBox =
+    AddFarmLeftBoxClosed(
+        "Auto Shovel Plants",
+        "shovel"
     )
 
 local FarmStatusBox =
@@ -29200,6 +30597,13 @@ if FarmSeedPlantBox == nil then
     FarmSeedPlantBox =
         FarmMainBox
 end
+
+if FarmAutoShovelBox == nil then
+
+    FarmAutoShovelBox =
+        FarmMainBox
+end
+
 
 local VisualsMainBox =
     AddLeftBox(
@@ -31787,6 +33191,342 @@ FarmMainBox:AddButton({
     end,
 })
 
+FarmAutoShovelBox:AddLabel({
+    Text =
+        '<font color="rgb(196,181,253)"><b>Auto Shovel Plants</b></font>'
+        .. '\nDeletes queued plants from your own garden only.'
+        .. '\nAmount 0 means all currently eligible plants.',
+    DoesWrap = true,
+    Size = 13,
+})
+
+GAG2_AUTO_SHOVEL_CONTROLS.Enabled =
+    FarmAutoShovelBox:AddToggle(
+        "HolyGAG2AutoShovelPlants",
+        {
+            Text = "Auto Shovel Plants",
+            Default = false,
+            Tooltip = "Runs the ordered shovel queue. Requires a real Shovel tool.",
+        }
+    )
+
+GAG2_AUTO_SHOVEL_CONTROLS.Enabled:OnChanged(function(value)
+
+    GAG2AutoShovelSetEnabled(
+        value == true
+    )
+end)
+
+GAG2_AUTO_SHOVEL_CONTROLS.Plant =
+    FarmAutoShovelBox:AddDropdown(
+        "HolyGAG2AutoShovelPlant",
+        {
+            Text = "Plant",
+            Values = {"No planted plants"},
+            Default = "No planted plants",
+            Multi = false,
+            Searchable = true,
+            AllowNull = false,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Live plant types from your own Plants folder.",
+        }
+    )
+
+GAG2_AUTO_SHOVEL_CONTROLS.Plant:OnChanged(function(value)
+
+    local state =
+        GAG2_AUTO_SHOVEL_STATE
+
+    if state.UpdatingUI == true then
+        return
+    end
+
+    local plantName =
+        state.PlantChoiceMap[tostring(value)]
+
+    if plantName then
+
+        state.SelectedPlant =
+            plantName
+
+        GAG2AutoShovelScheduleRefresh()
+    end
+end)
+
+GAG2_AUTO_SHOVEL_CONTROLS.Amount =
+    FarmAutoShovelBox:AddInput(
+        "HolyGAG2AutoShovelAmount",
+        {
+            Text = "Amount",
+            Default = "0",
+            Numeric = true,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Placeholder = "0 = All",
+            Tooltip = "Maximum plants for this queue entry. 0 means all eligible plants in the entry snapshot.",
+        }
+    )
+
+FarmAutoShovelBox:AddButton({
+    Text = "Add / Update",
+    Tooltip = "Adds the selected crop or updates its existing queue amount.",
+    Func = function()
+
+        local amount =
+            GAG2_AUTO_SHOVEL_CONTROLS.Amount
+            and GAG2_AUTO_SHOVEL_CONTROLS.Amount.Value
+            or 0
+
+        local added =
+            GAG2AutoShovelAddOrUpdateQueue(
+                GAG2_AUTO_SHOVEL_STATE.SelectedPlant,
+                amount
+            )
+
+        if added ~= true then
+
+            Notify(
+                "Auto Shovel",
+                "Select a planted crop first.",
+                4
+            )
+        end
+    end,
+}):AddButton({
+    Text = "Queue All",
+    Tooltip = "Adds or updates the selected crop with Amount 0 / All.",
+    Func = function()
+
+        local added =
+            GAG2AutoShovelAddOrUpdateQueue(
+                GAG2_AUTO_SHOVEL_STATE.SelectedPlant,
+                0
+            )
+
+        if added ~= true then
+
+            Notify(
+                "Auto Shovel",
+                "Select a planted crop first.",
+                4
+            )
+        end
+    end,
+})
+
+GAG2_AUTO_SHOVEL_CONTROLS.Queue =
+    FarmAutoShovelBox:AddDropdown(
+        "HolyGAG2AutoShovelQueue",
+        {
+            Text = "Ordered Queue",
+            Values = {"Queue empty"},
+            Default = "Queue empty",
+            Multi = false,
+            Searchable = false,
+            AllowNull = false,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Queue order is processed from top to bottom.",
+        }
+    )
+
+GAG2_AUTO_SHOVEL_CONTROLS.Queue:OnChanged(function(value)
+
+    local state =
+        GAG2_AUTO_SHOVEL_STATE
+
+    if state.UpdatingUI == true then
+        return
+    end
+
+    local queueIndex =
+        state.QueueChoiceMap[tostring(value)]
+
+    if queueIndex then
+
+        state.SelectedQueueIndex =
+            queueIndex
+
+        local entry =
+            state.Queue[queueIndex]
+
+        if entry then
+
+            state.SelectedPlant =
+                entry.Plant
+
+            local amountControl =
+                GAG2_AUTO_SHOVEL_CONTROLS.Amount
+
+            if amountControl
+            and type(amountControl.SetValue) == "function" then
+
+                pcall(function()
+
+                    amountControl:SetValue(
+                        tostring(entry.Limit)
+                    )
+                end)
+            end
+        end
+
+        GAG2AutoShovelScheduleRefresh()
+    end
+end)
+
+FarmAutoShovelBox:AddButton({
+    Text = "Move Up",
+    Tooltip = "Moves the selected queue entry one position up.",
+    Func = function()
+
+        GAG2AutoShovelMoveSelectedQueue(
+            -1
+        )
+    end,
+}):AddButton({
+    Text = "Move Down",
+    Tooltip = "Moves the selected queue entry one position down.",
+    Func = function()
+
+        GAG2AutoShovelMoveSelectedQueue(
+            1
+        )
+    end,
+})
+
+FarmAutoShovelBox:AddButton({
+    Text = "Remove Entry",
+    Risky = true,
+    Tooltip = "Removes the selected queue entry.",
+    Func = function()
+
+        GAG2AutoShovelRemoveSelectedQueue()
+    end,
+}):AddButton({
+    Text = "Clear Queue",
+    Risky = true,
+    Tooltip = "Removes every Auto Shovel queue entry.",
+    Func = function()
+
+        GAG2AutoShovelClearQueue()
+    end,
+})
+
+FarmAutoShovelBox:AddDivider()
+
+GAG2_AUTO_SHOVEL_CONTROLS.ProtectGold =
+    FarmAutoShovelBox:AddToggle(
+        "HolyGAG2AutoShovelProtectGold",
+        {
+            Text = "Protect Gold Plants",
+            Default = true,
+            Tooltip = "Skips the full plant when Gold exists on the root plant or any fruit.",
+        }
+    )
+
+GAG2_AUTO_SHOVEL_CONTROLS.ProtectGold:OnChanged(function(value)
+
+    GAG2_AUTO_SHOVEL_STATE.ProtectGold =
+        value == true
+
+    MarkConfigDirty()
+    GAG2AutoShovelScheduleRefresh()
+end)
+
+GAG2_AUTO_SHOVEL_CONTROLS.ProtectRainbow =
+    FarmAutoShovelBox:AddToggle(
+        "HolyGAG2AutoShovelProtectRainbow",
+        {
+            Text = "Protect Rainbow Plants",
+            Default = true,
+            Tooltip = "Skips the full plant when Rainbow exists on the root plant or any fruit.",
+        }
+    )
+
+GAG2_AUTO_SHOVEL_CONTROLS.ProtectRainbow:OnChanged(function(value)
+
+    GAG2_AUTO_SHOVEL_STATE.ProtectRainbow =
+        value == true
+
+    MarkConfigDirty()
+    GAG2AutoShovelScheduleRefresh()
+end)
+
+GAG2_AUTO_SHOVEL_CONTROLS.Delay =
+    FarmAutoShovelBox:AddInput(
+        "HolyGAG2AutoShovelDelay",
+        {
+            Text = "Shovel Delay",
+            Default = "0.70",
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Placeholder = "0.70",
+            Tooltip = "Delay between accepted shovel requests. Values below 0.65 use an effective 0.65-second minimum.",
+            Callback = function(value)
+
+                GAG2AutoShovelSetDelay(
+                    value
+                )
+            end,
+        }
+    )
+
+FarmAutoShovelBox:AddButton({
+    Text = "Refresh Plants",
+    Tooltip = "Refreshes planted counts, protected counts, and dropdown values.",
+    Func = function()
+
+        GAG2AutoShovelRefreshUI()
+    end,
+}):AddButton({
+    Text = "Stop Shovel",
+    Risky = true,
+    Tooltip = "Stops Auto Shovel after the current packet confirmation check.",
+    Func = function()
+
+        GAG2AutoShovelSetEnabled(
+            false
+        )
+
+        GAG2AutoShovelSetToggleOff()
+    end,
+})
+
+GAG2_AUTO_SHOVEL_CONTROLS.QueueData =
+    FarmAutoShovelBox:AddInput(
+        "HolyGAG2AutoShovelQueueData",
+        {
+            Text = "Queue Data",
+            Default = "[]",
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Placeholder = "[]",
+            Tooltip = "Internal saved queue data.",
+            Callback = function(value)
+
+                if GAG2_AUTO_SHOVEL_STATE.SavingQueueText ~= true then
+
+                    GAG2AutoShovelLoadQueueFromText(
+                        value
+                    )
+                end
+            end,
+        }
+    )
+
+if GAG2_AUTO_SHOVEL_CONTROLS.QueueData
+and type(GAG2_AUTO_SHOVEL_CONTROLS.QueueData.SetVisible) == "function" then
+
+    pcall(function()
+
+        GAG2_AUTO_SHOVEL_CONTROLS.QueueData:SetVisible(
+            false
+        )
+    end)
+end
+
+
 FarmStatusBox:AddLabel("HolyGAG2FarmStatus", {
     Text =
         '<font color="rgb(196,181,253)"><b>Auto Collect Fruits</b></font>'
@@ -31794,9 +33534,37 @@ FarmStatusBox:AddLabel("HolyGAG2FarmStatus", {
     DoesWrap = true,
 })
 
+FarmStatusBox:AddDivider()
+
+GAG2_AUTO_SHOVEL_CONTROLS.StatusLabel =
+    FarmStatusBox:AddLabel(
+        "HolyGAG2AutoShovelStatus",
+        {
+            Text =
+                '<font color="rgb(196,181,253)"><b>Planted Plants / Auto Shovel</b></font>'
+                .. '\nLoading own garden plants...',
+            DoesWrap = true,
+        }
+    )
+
 task.defer(function()
 
     GAG2ACFRefreshDropdownValues()
+
+    GAG2AutoShovelStartMonitor()
+    GAG2AutoShovelRefreshUI()
+
+    task.delay(1.25, function()
+
+        if Toggles.HolyGAG2AutoShovelPlants
+        and Toggles.HolyGAG2AutoShovelPlants.Value == true
+        and ConfigState.Loading ~= true then
+
+            GAG2AutoShovelSetEnabled(
+                true
+            )
+        end
+    end)
 end)
 
 --==================================================
