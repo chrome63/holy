@@ -5307,6 +5307,13 @@ function GAG2WildPetNetworkJoinServer(rowData)
         GAG2CancelServerHop()
     end
 
+    GAG2ClearExactJoinTarget(
+        "new live wild pet HUD join"
+    )
+
+    GAG2_EXACT_JOIN_STATE.Retrying =
+        false
+
     GAG2SaveExactJoinTarget(
         placeId,
         jobId,
@@ -40537,7 +40544,8 @@ pcall(function()
         player,
         teleportResult,
         errorMessage,
-        placeId
+        placeId,
+        teleportOptions
     )
 
         if player ~= LOCAL_PLAYER then
@@ -40549,27 +40557,201 @@ pcall(function()
             and teleportResult.Name
             or "Unknown"
 
+        local failedServerInstanceId =
+            ""
+
+        pcall(function()
+
+            if teleportOptions then
+
+                failedServerInstanceId =
+                    CleanText(
+                        teleportOptions.ServerInstanceId
+                    )
+            end
+        end)
+
+        warn(
+            "[HOLY TELEPORT]",
+            "TeleportInitFailed",
+            "| result:",
+            tostring(resultName),
+            "| error:",
+            tostring(errorMessage),
+            "| place:",
+            tostring(placeId),
+            "| failed server:",
+            tostring(failedServerInstanceId)
+        )
+
         local exactTarget =
             GAG2ReadExactJoinTarget()
 
         if exactTarget then
 
+            local targetPlaceId =
+                tonumber(
+                    exactTarget.PlaceId
+                )
+
+            local targetJobId =
+                CleanText(
+                    exactTarget.JobId
+                )
+
+            local failedPlaceId =
+                tonumber(placeId)
+
+            local samePlace =
+                targetPlaceId ~= nil
+                and failedPlaceId ~= nil
+                and targetPlaceId == failedPlaceId
+
+            local sameServer =
+                failedServerInstanceId ~= ""
+                and targetJobId ~= ""
+                and failedServerInstanceId == targetJobId
+
+            if failedServerInstanceId ~= ""
+            and sameServer ~= true then
+
+                warn(
+                    "[HOLY EXACT JOIN]",
+                    "Ignoring stale exact target.",
+                    "| failed server:",
+                    tostring(failedServerInstanceId),
+                    "| saved target:",
+                    tostring(targetJobId)
+                )
+
+                GAG2ClearExactJoinTarget(
+                    "stale target mismatch"
+                )
+
+                GAG2_EXACT_JOIN_STATE.Retrying =
+                    false
+
+                if GAG2_SERVER_HOP_RETRYING == true then
+
+                    GAG2_SERVER_HOP_RETRYING =
+                        false
+
+                    task.delay(1, function()
+
+                        HopServerOnce()
+                    end)
+                end
+
+                return
+            end
+
+            local terminalFailure =
+                resultName == "Unauthorized"
+                or resultName == "GameFull"
+                or resultName == "GameEnded"
+                or resultName == "Flooded"
+                or tostring(errorMessage):lower():find(
+                    "private instance",
+                    1,
+                    true
+                ) ~= nil
+                or tostring(errorMessage):lower():find(
+                    "full",
+                    1,
+                    true
+                ) ~= nil
+
+            if terminalFailure == true then
+
+                warn(
+                    "[HOLY EXACT JOIN]",
+                    "Terminal exact join failure.",
+                    "| target:",
+                    tostring(targetPlaceId)
+                    .. ":"
+                    .. tostring(targetJobId),
+                    "| result:",
+                    tostring(resultName),
+                    "| error:",
+                    tostring(errorMessage)
+                )
+
+                GAG2ClearExactJoinTarget(
+                    "terminal TeleportInitFailed: "
+                    .. tostring(resultName)
+                )
+
+                GAG2_EXACT_JOIN_STATE.Retrying =
+                    false
+
+                SetStatus(
+                    "Exact join failed: "
+                    .. tostring(resultName)
+                )
+
+                if type(GAG2SetManualJoinStatus) == "function" then
+
+                    GAG2SetManualJoinStatus(
+                        "Exact join failed: "
+                        .. tostring(resultName)
+                    )
+                end
+
+                if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+                    GAG2WildPetNetworkSetStatus(
+                        "Join failed: "
+                        .. tostring(resultName)
+                    )
+                end
+
+                if type(GAG2WildPetNetworkRefresh) == "function" then
+
+                    task.delay(0.75, function()
+
+                        GAG2WildPetNetworkRefresh(
+                            "join failed"
+                        )
+                    end)
+                end
+
+                return
+            end
+
+            if samePlace == true
+            and (
+                sameServer == true
+                or failedServerInstanceId == ""
+            ) then
+
+                GAG2RetryExactJoinTarget(
+                    exactTarget,
+                    "TeleportInitFailed: "
+                    .. tostring(resultName)
+                )
+
+                return
+            end
+
             warn(
                 "[HOLY EXACT JOIN]",
-                "TeleportInitFailed",
-                "| result:",
-                tostring(resultName),
-                "| error:",
-                tostring(errorMessage),
-                "| place:",
-                tostring(placeId)
+                "Exact target did not match failed teleport. Clearing.",
+                "| target:",
+                tostring(targetPlaceId)
+                .. ":"
+                .. tostring(targetJobId),
+                "| failed place:",
+                tostring(placeId),
+                "| failed server:",
+                tostring(failedServerInstanceId)
             )
 
-            GAG2RetryExactJoinTarget(
-                exactTarget,
-                "TeleportInitFailed: "
-                .. tostring(resultName)
+            GAG2ClearExactJoinTarget(
+                "failed teleport mismatch"
             )
+
+            GAG2_EXACT_JOIN_STATE.Retrying =
+                false
 
             return
         end
