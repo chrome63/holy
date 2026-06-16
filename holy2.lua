@@ -3679,12 +3679,6 @@ function GAG2WildPetNetworkRequest(payload)
     local requestFunction =
         GAG2ExecutorGetRequestFunction()
 
-    if type(requestFunction) ~= "function" then
-
-        return nil,
-            "executor request function unavailable"
-    end
-
     local bodyTable =
         {}
 
@@ -3696,6 +3690,435 @@ function GAG2WildPetNetworkRequest(payload)
 
     bodyTable.apiKey =
         apiKey
+
+    local function encodeQueryValue(value)
+
+        local text =
+            tostring(value or "")
+
+        local ok, encoded =
+            pcall(function()
+
+                return HttpService:UrlEncode(
+                    text
+                )
+            end)
+
+        if ok == true
+        and type(encoded) == "string" then
+
+            return encoded
+        end
+
+        return text
+            :gsub("%%", "%%25")
+            :gsub(" ", "%%20")
+            :gsub("\n", "%%0A")
+            :gsub("\r", "%%0D")
+            :gsub("&", "%%26")
+            :gsub("=", "%%3D")
+            :gsub("?", "%%3F")
+    end
+
+    local function buildGetUrl()
+
+        local parts =
+            {}
+
+        for key, value in pairs(bodyTable) do
+
+            if type(value) ~= "table"
+            and type(value) ~= "function"
+            and type(value) ~= "thread"
+            and type(value) ~= "userdata" then
+
+                parts[#parts + 1] =
+                    encodeQueryValue(key)
+                    .. "="
+                    .. encodeQueryValue(value)
+            end
+        end
+
+        table.sort(
+            parts
+        )
+
+        local separator =
+            endpoint:find(
+                "?",
+                1,
+                true
+            )
+            and "&"
+            or "?"
+
+        return endpoint
+            .. separator
+            .. table.concat(
+                parts,
+                "&"
+            )
+    end
+
+    local function previewBody(body)
+
+        local text =
+            tostring(body or "")
+                :gsub("\r", " ")
+                :gsub("\n", " ")
+                :gsub("%s+", " ")
+
+        if #text > 220 then
+
+            text =
+                text:sub(
+                    1,
+                    220
+                )
+                .. "..."
+        end
+
+        if text == "" then
+            text =
+                "empty"
+        end
+
+        return text
+    end
+
+    local function decodeBody(body, label)
+
+        body =
+            tostring(body or "")
+
+        if body:sub(1, 3) == "\239\187\191" then
+
+            body =
+                body:sub(4)
+        end
+
+        local decodeOk, decoded =
+            pcall(function()
+
+                return HttpService:JSONDecode(
+                    body
+                )
+            end)
+
+        if decodeOk == true
+        and type(decoded) == "table" then
+
+            if decoded.ok ~= true then
+
+                return nil,
+                    tostring(
+                        decoded.message
+                        or decoded.error
+                        or "endpoint rejected request"
+                    )
+            end
+
+            return decoded,
+                nil
+        end
+
+        local firstBrace =
+            body:find(
+                "{",
+                1,
+                true
+            )
+
+        local lastBrace =
+            body:match("^.*()}")
+
+        if firstBrace
+        and lastBrace
+        and lastBrace >= firstBrace then
+
+            local sliced =
+                body:sub(
+                    firstBrace,
+                    lastBrace
+                )
+
+            local slicedOk, slicedDecoded =
+                pcall(function()
+
+                    return HttpService:JSONDecode(
+                        sliced
+                    )
+                end)
+
+            if slicedOk == true
+            and type(slicedDecoded) == "table" then
+
+                if slicedDecoded.ok ~= true then
+
+                    return nil,
+                        tostring(
+                            slicedDecoded.message
+                            or slicedDecoded.error
+                            or "endpoint rejected request"
+                        )
+                end
+
+                return slicedDecoded,
+                    nil
+            end
+        end
+
+        local lower =
+            body:sub(
+                1,
+                400
+            ):lower()
+
+        if lower:find("<!doctype html", 1, true)
+        or lower:find("<html", 1, true) then
+
+            return nil,
+                tostring(label or "request")
+                .. " returned HTML/redirect page. Preview: "
+                .. previewBody(body)
+        end
+
+        return nil,
+            tostring(label or "request")
+            .. " invalid JSON. Preview: "
+            .. previewBody(body)
+    end
+
+    local function getHeader(response, headerName)
+
+        if type(response) ~= "table" then
+            return nil
+        end
+
+        local headers =
+            response.Headers
+            or response.headers
+
+        if type(headers) ~= "table" then
+            return nil
+        end
+
+        return headers[headerName]
+            or headers[headerName:lower()]
+            or headers[headerName:upper()]
+    end
+
+    local function getResponseBody(response)
+
+        if type(response) == "string" then
+
+            return response
+        end
+
+        if type(response) ~= "table" then
+            return ""
+        end
+
+        return tostring(
+            response.Body
+            or response.body
+            or response.ResponseBody
+            or response.responseBody
+            or ""
+        )
+    end
+
+    local function tryRequest(method, url, encodedBody, label)
+
+        if type(requestFunction) ~= "function" then
+
+            return nil,
+                "executor request function unavailable"
+        end
+
+        local options = {
+            Url =
+                tostring(url),
+
+            Method =
+                tostring(method or "GET"),
+
+            Headers = {
+                ["Accept"] =
+                    "application/json",
+
+                ["Cache-Control"] =
+                    "no-cache",
+            },
+
+            Redirect =
+                true,
+        }
+
+        if encodedBody ~= nil then
+
+            options.Headers["Content-Type"] =
+                "application/json"
+
+            options.Body =
+                encodedBody
+        end
+
+        local ok, response =
+            pcall(
+                requestFunction,
+                options
+            )
+
+        if ok ~= true then
+
+            return nil,
+                tostring(response)
+        end
+
+        local body =
+            getResponseBody(
+                response
+            )
+
+        local decoded, decodeError =
+            decodeBody(
+                body,
+                label
+            )
+
+        if decoded then
+
+            return decoded,
+                nil
+        end
+
+        local location =
+            getHeader(
+                response,
+                "Location"
+            )
+
+        if type(location) == "string"
+        and location ~= ""
+        and location ~= url then
+
+            local followOk, followResponse =
+                pcall(
+                    requestFunction,
+                    {
+                        Url = location,
+                        Method = "GET",
+
+                        Headers = {
+                            ["Accept"] =
+                                "application/json",
+
+                            ["Cache-Control"] =
+                                "no-cache",
+                        },
+
+                        Redirect =
+                            true,
+                    }
+                )
+
+            if followOk == true then
+
+                local followBody =
+                    getResponseBody(
+                        followResponse
+                    )
+
+                local followDecoded, followError =
+                    decodeBody(
+                        followBody,
+                        tostring(label)
+                        .. " redirected"
+                    )
+
+                if followDecoded then
+
+                    return followDecoded,
+                        nil
+                end
+
+                return nil,
+                    tostring(followError)
+            end
+        end
+
+        return nil,
+            tostring(decodeError)
+    end
+
+    local action =
+        tostring(
+            bodyTable.action
+            or bodyTable.Action
+            or ""
+        )
+
+    local errors =
+        {}
+
+    -- Reader actions are safer as GET on Apps Script.
+    -- Some executors receive HTML on POST because Google redirects the /exec URL.
+
+    if action == "GetLiveWildPets"
+    or action == "ping" then
+
+        local getUrl =
+            buildGetUrl()
+
+        if type(GetHttp) == "function" then
+
+            local body =
+                GetHttp(
+                    getUrl
+                )
+
+            if type(body) == "string"
+            and body ~= "" then
+
+                local decoded, decodeError =
+                    decodeBody(
+                        body,
+                        "GET HttpGet"
+                    )
+
+                if decoded then
+
+                    return decoded,
+                        nil
+                end
+
+                errors[#errors + 1] =
+                    tostring(decodeError)
+            else
+
+                errors[#errors + 1] =
+                    "GET HttpGet returned no body"
+            end
+        end
+
+        local decoded, requestError =
+            tryRequest(
+                "GET",
+                getUrl,
+                nil,
+                "GET request"
+            )
+
+        if decoded then
+
+            return decoded,
+                nil
+        end
+
+        errors[#errors + 1] =
+            tostring(requestError)
+    end
 
     local encodeOk, encoded =
         pcall(function()
@@ -3712,76 +4135,28 @@ function GAG2WildPetNetworkRequest(payload)
             "failed to encode network request"
     end
 
-    local requestOk, response =
-        pcall(function()
-
-            return requestFunction({
-                Url =
-                    endpoint,
-
-                Method =
-                    "POST",
-
-                Headers = {
-                    ["Content-Type"] =
-                        "application/json",
-
-                    ["Accept"] =
-                        "application/json",
-                },
-
-                Body =
-                    encoded,
-
-                Redirect =
-                    true,
-            })
-        end)
-
-    if requestOk ~= true then
-
-        return nil,
-            tostring(response)
-    end
-
-    local responseBody =
-        GAG2WildPetNetworkGetResponseBody(
-            response
+    local decoded, postError =
+        tryRequest(
+            "POST",
+            endpoint,
+            encoded,
+            "POST request"
         )
 
-    if responseBody == "" then
+    if decoded then
 
-        return nil,
-            "endpoint returned an empty response"
+        return decoded,
+            nil
     end
 
-    local decodeOk, decoded =
-        pcall(function()
+    errors[#errors + 1] =
+        tostring(postError)
 
-            return HttpService:JSONDecode(
-                responseBody
-            )
-        end)
-
-    if decodeOk ~= true
-    or type(decoded) ~= "table" then
-
-        return nil,
-            "endpoint returned invalid JSON"
-    end
-
-    if decoded.ok ~= true then
-
-        return nil,
-            tostring(
-                decoded.message
-                or decoded.error
-                or "endpoint rejected request"
-            )
-    end
-
-    return decoded,
-        nil
+    return nil,
+        table.concat(
+            errors,
+            " | "
+        )
 end
 
 function GAG2WildPetNetworkGetRarityRank(rarity)
@@ -5396,6 +5771,890 @@ GAG2_WILD_PET_NETWORK_STATE.Destroy =
             true
         )
     end
+
+--==================================================
+-- [4.126] LIVE WILD PET NETWORK CONTRIBUTOR
+--
+-- Reports the current server's WildPetRef data.
+-- This is what makes normal users/scout alts feed the HUD.
+--==================================================
+
+GAG2_WILD_PET_NETWORK_CONTRIBUTE_TOGGLE =
+    GAG2_WILD_PET_NETWORK_CONTRIBUTE_TOGGLE
+    or nil
+
+GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE =
+    GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE
+    or {
+        Enabled = false,
+        Running = false,
+        Sending = false,
+        Pending = false,
+
+        LoopToken = 0,
+        HeartbeatSeconds = 10,
+        ClaimRefreshSeconds = 20,
+
+        LastReportAt = 0,
+        LastClaimAt = 0,
+        LastPetCount = 0,
+        LastPetSummary = "none",
+        LastStatus = "Disabled.",
+        LastClaimStatus = "not claimed",
+
+        Connections = {},
+        RefConnections = {},
+    }
+
+function GAG2WildPetNetworkContributorSetStatus(text)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE
+
+    state.LastStatus =
+        tostring(text or "Idle.")
+
+    if Options.HolyGAG2WildPetNetworkContributorStatus then
+
+        Options.HolyGAG2WildPetNetworkContributorStatus:SetText(
+            GAG2WildPetNetworkContributorBuildStatusText()
+        )
+    end
+end
+
+function GAG2WildPetNetworkContributorBuildStatusText()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE
+
+    local reportAge =
+        "Never"
+
+    if tonumber(state.LastReportAt or 0) > 0 then
+
+        reportAge =
+            tostring(
+                math.max(
+                    0,
+                    os.time()
+                    - tonumber(state.LastReportAt)
+                )
+            )
+            .. "s ago"
+    end
+
+    return '<font color="rgb(196,181,253)"><b>Network Contributor</b></font>'
+        .. '\nEnabled: '
+        .. (
+            state.Enabled == true
+            and "YES"
+            or "NO"
+        )
+        .. ' | Last report: '
+        .. reportAge
+        .. '\nCurrent pets: '
+        .. tostring(state.LastPetCount or 0)
+        .. ' | '
+        .. tostring(state.LastPetSummary or "none")
+        .. '\nClaim: '
+        .. tostring(state.LastClaimStatus or "not claimed")
+        .. '\nStatus: '
+        .. tostring(state.LastStatus or "Idle.")
+end
+
+function GAG2WildPetNetworkDisconnect(connection)
+
+    if connection then
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+end
+
+function GAG2WildPetNetworkGetWildPetRefFolder()
+
+    local map =
+        workspace:FindFirstChild(
+            "Map"
+        )
+
+    if not map then
+        return nil
+    end
+
+    return map:FindFirstChild(
+        "WildPetRef"
+    )
+end
+
+function GAG2WildPetNetworkReadRefPet(ref)
+
+    if typeof(ref) ~= "Instance" then
+        return nil
+    end
+
+    local petName =
+        CleanText(
+            ref:GetAttribute("PetName")
+        )
+
+    if petName == "" then
+        return nil
+    end
+
+    local state =
+        CleanText(
+            ref:GetAttribute("State")
+        ):lower()
+
+    local ownerUserId =
+        tonumber(
+            ref:GetAttribute("OwnerUserId")
+        )
+        or 0
+
+    local spawnedAt =
+        tonumber(
+            ref:GetAttribute("SpawnedAt")
+        )
+        or 0
+
+    local lifetime =
+        tonumber(
+            ref:GetAttribute("Lifetime")
+        )
+        or 0
+
+    local expiresAt =
+        spawnedAt + lifetime
+
+    local remaining =
+        expiresAt - os.time()
+
+    if state ~= "wandering" then
+        return nil
+    end
+
+    if ownerUserId ~= 0 then
+        return nil
+    end
+
+    if spawnedAt > 0
+    and lifetime > 0
+    and remaining <= 0 then
+
+        return nil
+    end
+
+    return {
+        id =
+            tostring(ref.Name),
+
+        petName =
+            petName,
+
+        rarity =
+            CleanText(
+                ref:GetAttribute("Rarity")
+            ),
+
+        price =
+            tonumber(
+                ref:GetAttribute("Price")
+            )
+            or 0,
+
+        state =
+            state,
+
+        ownerUserId =
+            ownerUserId,
+
+        ownerName =
+            CleanText(
+                ref:GetAttribute("OwnerName")
+            ),
+
+        spawnedAt =
+            spawnedAt,
+
+        lifetime =
+            lifetime,
+
+        expiresAt =
+            expiresAt,
+
+        remaining =
+            math.max(
+                0,
+                remaining
+            ),
+    }
+end
+
+function GAG2WildPetNetworkBuildPetSnapshot()
+
+    local folder =
+        GAG2WildPetNetworkGetWildPetRefFolder()
+
+    local pets =
+        {}
+
+    if not folder then
+        return pets
+    end
+
+    for _, ref in ipairs(folder:GetChildren()) do
+
+        local pet =
+            GAG2WildPetNetworkReadRefPet(
+                ref
+            )
+
+        if pet then
+
+            pets[#pets + 1] =
+                pet
+        end
+    end
+
+    table.sort(pets, function(a, b)
+
+        if tostring(a.petName) ~= tostring(b.petName) then
+
+            return tostring(a.petName)
+                < tostring(b.petName)
+        end
+
+        return tostring(a.id)
+            < tostring(b.id)
+    end)
+
+    return pets
+end
+
+function GAG2WildPetNetworkBuildPetSummary(pets)
+
+    local counts =
+        {}
+
+    for _, pet in ipairs(pets or {}) do
+
+        local petName =
+            tostring(pet.petName or "")
+
+        if petName ~= "" then
+
+            counts[petName] =
+                (
+                    counts[petName]
+                    or 0
+                )
+                + 1
+        end
+    end
+
+    local names =
+        {}
+
+    for petName in pairs(counts) do
+
+        names[#names + 1] =
+            petName
+    end
+
+    table.sort(
+        names
+    )
+
+    local rows =
+        {}
+
+    for _, petName in ipairs(names) do
+
+        rows[#rows + 1] =
+            petName
+            .. " x"
+            .. tostring(counts[petName])
+    end
+
+    if #rows <= 0 then
+        return "none"
+    end
+
+    return table.concat(
+        rows,
+        ", "
+    )
+end
+
+function GAG2WildPetNetworkClaimCurrentServer(force)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE
+
+    if state.Enabled ~= true then
+        return false
+    end
+
+    local now =
+        os.time()
+
+    if force ~= true
+    and now - tonumber(state.LastClaimAt or 0) < tonumber(state.ClaimRefreshSeconds or 20) then
+
+        return false
+    end
+
+    local data, errorText =
+        GAG2WildPetNetworkRequest({
+            action =
+                "ClaimScoutServer",
+
+            placeId =
+                tostring(game.PlaceId),
+
+            jobId =
+                tostring(game.JobId),
+
+            scoutUserId =
+                LOCAL_PLAYER
+                and LOCAL_PLAYER.UserId
+                or 0,
+
+            scoutName =
+                LOCAL_PLAYER
+                and LOCAL_PLAYER.Name
+                or "Unknown",
+
+            players =
+                #Players:GetPlayers(),
+
+            maxPlayers =
+                Players.MaxPlayers,
+        })
+
+    if data then
+
+        state.LastClaimAt =
+            now
+
+        state.LastClaimStatus =
+            "claimed"
+
+        return true
+    end
+
+    state.LastClaimStatus =
+        "claim failed: "
+        .. tostring(errorText)
+
+    return false
+end
+
+function GAG2WildPetNetworkReportCurrentServer(reason)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE
+
+    if state.Enabled ~= true then
+        return false
+    end
+
+    if state.Sending == true then
+
+        state.Pending =
+            true
+
+        state.PendingReason =
+            tostring(reason or "pending")
+
+        return false
+    end
+
+    state.Sending =
+        true
+
+    GAG2WildPetNetworkClaimCurrentServer(
+        false
+    )
+
+    local pets =
+        GAG2WildPetNetworkBuildPetSnapshot()
+
+    local data, errorText =
+        GAG2WildPetNetworkRequest({
+            action =
+                "ReportWildPets",
+
+            placeId =
+                tostring(game.PlaceId),
+
+            jobId =
+                tostring(game.JobId),
+
+            scoutUserId =
+                LOCAL_PLAYER
+                and LOCAL_PLAYER.UserId
+                or 0,
+
+            scoutName =
+                LOCAL_PLAYER
+                and LOCAL_PLAYER.Name
+                or "Unknown",
+
+            players =
+                #Players:GetPlayers(),
+
+            maxPlayers =
+                Players.MaxPlayers,
+
+            pets =
+                pets,
+        })
+
+    state.Sending =
+        false
+
+    if data then
+
+        state.LastReportAt =
+            os.time()
+
+        state.LastPetCount =
+            #pets
+
+        state.LastPetSummary =
+            GAG2WildPetNetworkBuildPetSummary(
+                pets
+            )
+
+        GAG2WildPetNetworkContributorSetStatus(
+            "Reported "
+            .. tostring(#pets)
+            .. " pet(s). "
+            .. tostring(reason or "")
+        )
+
+    else
+
+        GAG2WildPetNetworkContributorSetStatus(
+            "Report failed: "
+            .. tostring(errorText)
+        )
+    end
+
+    if state.Pending == true
+    and state.Enabled == true then
+
+        state.Pending =
+            false
+
+        local pendingReason =
+            tostring(
+                state.PendingReason
+                or "pending"
+            )
+
+        task.delay(0.75, function()
+
+            GAG2WildPetNetworkReportCurrentServer(
+                pendingReason
+            )
+        end)
+    end
+
+    return data ~= nil
+end
+
+function GAG2WildPetNetworkQueueCurrentReport(reason)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE
+
+    if state.Enabled ~= true then
+        return
+    end
+
+    state.PendingReason =
+        tostring(reason or "change")
+
+    if state.Pending == true then
+        return
+    end
+
+    state.Pending =
+        true
+
+    task.delay(0.75, function()
+
+        if state.Enabled ~= true then
+            return
+        end
+
+        state.Pending =
+            false
+
+        GAG2WildPetNetworkReportCurrentServer(
+            state.PendingReason
+            or "change"
+        )
+    end)
+end
+
+function GAG2WildPetNetworkClearRefWatch(ref)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE
+
+    local connections =
+        state.RefConnections[ref]
+
+    if type(connections) ~= "table" then
+        return
+    end
+
+    for _, connection in ipairs(connections) do
+
+        GAG2WildPetNetworkDisconnect(
+            connection
+        )
+    end
+
+    state.RefConnections[ref] =
+        nil
+end
+
+function GAG2WildPetNetworkWatchRef(ref)
+
+    if typeof(ref) ~= "Instance" then
+        return
+    end
+
+    GAG2WildPetNetworkClearRefWatch(
+        ref
+    )
+
+    local watchedAttributes = {
+        "PetName",
+        "Rarity",
+        "Price",
+        "State",
+        "OwnerUserId",
+        "OwnerName",
+        "SpawnedAt",
+        "Lifetime",
+    }
+
+    local connections =
+        {}
+
+    for _, attributeName in ipairs(watchedAttributes) do
+
+        connections[#connections + 1] =
+            ref:GetAttributeChangedSignal(
+                attributeName
+            ):Connect(function()
+
+                GAG2WildPetNetworkQueueCurrentReport(
+                    "attribute:"
+                    .. tostring(attributeName)
+                )
+            end)
+    end
+
+    GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE.RefConnections[ref] =
+        connections
+end
+
+function GAG2WildPetNetworkAttachRefFolder(folder)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE
+
+    for _, ref in ipairs(folder:GetChildren()) do
+
+        GAG2WildPetNetworkWatchRef(
+            ref
+        )
+    end
+
+    state.Connections[#state.Connections + 1] =
+        folder.ChildAdded:Connect(function(ref)
+
+            GAG2WildPetNetworkWatchRef(
+                ref
+            )
+
+            GAG2WildPetNetworkQueueCurrentReport(
+                "pet-added"
+            )
+        end)
+
+    state.Connections[#state.Connections + 1] =
+        folder.ChildRemoved:Connect(function(ref)
+
+            GAG2WildPetNetworkClearRefWatch(
+                ref
+            )
+
+            GAG2WildPetNetworkQueueCurrentReport(
+                "pet-removed"
+            )
+        end)
+end
+
+function GAG2WildPetNetworkContributorStop(skipDirty)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE
+
+    state.Enabled =
+        false
+
+    state.Running =
+        false
+
+    state.Sending =
+        false
+
+    state.Pending =
+        false
+
+    state.LoopToken =
+        tonumber(state.LoopToken)
+        or 0
+
+    state.LoopToken =
+        state.LoopToken + 1
+
+    for _, connection in ipairs(state.Connections) do
+
+        GAG2WildPetNetworkDisconnect(
+            connection
+        )
+    end
+
+    state.Connections =
+        {}
+
+    for ref in pairs(state.RefConnections) do
+
+        GAG2WildPetNetworkClearRefWatch(
+            ref
+        )
+    end
+
+    state.RefConnections =
+        {}
+
+    state.LastStatus =
+        "Disabled."
+
+    if Options.HolyGAG2WildPetNetworkContributorStatus then
+
+        Options.HolyGAG2WildPetNetworkContributorStatus:SetText(
+            GAG2WildPetNetworkContributorBuildStatusText()
+        )
+    end
+
+    if skipDirty ~= true then
+
+        MarkConfigDirty()
+    end
+end
+
+function GAG2WildPetNetworkContributorStart()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE
+
+    if CleanText(GAG2_WILD_PET_NETWORK_API_KEY) == ""
+    or CleanText(GAG2_WILD_PET_NETWORK_API_KEY) == "PASTE_CONFIG_B2_KEY_HERE" then
+
+        state.Enabled =
+            false
+
+        GAG2WildPetNetworkContributorSetStatus(
+            "Hard-coded API key missing."
+        )
+
+        return false
+    end
+
+    if state.Running == true then
+
+        GAG2WildPetNetworkQueueCurrentReport(
+            "already running"
+        )
+
+        return true
+    end
+
+    state.Enabled =
+        true
+
+    state.Running =
+        true
+
+    state.LoopToken =
+        tonumber(state.LoopToken)
+        or 0
+
+    state.LoopToken =
+        state.LoopToken + 1
+
+    local token =
+        state.LoopToken
+
+    GAG2WildPetNetworkContributorSetStatus(
+        "Starting..."
+    )
+
+    task.spawn(function()
+
+        local map =
+            workspace:WaitForChild(
+                "Map",
+                30
+            )
+
+        if state.Enabled ~= true
+        or state.LoopToken ~= token then
+            return
+        end
+
+        if not map then
+
+            GAG2WildPetNetworkContributorSetStatus(
+                "workspace.Map missing."
+            )
+
+            return
+        end
+
+        local folder =
+            map:WaitForChild(
+                "WildPetRef",
+                30
+            )
+
+        if state.Enabled ~= true
+        or state.LoopToken ~= token then
+            return
+        end
+
+        if not folder then
+
+            GAG2WildPetNetworkContributorSetStatus(
+                "WildPetRef missing."
+            )
+
+            return
+        end
+
+        GAG2WildPetNetworkAttachRefFolder(
+            folder
+        )
+
+        task.wait(
+            1
+        )
+
+        GAG2WildPetNetworkClaimCurrentServer(
+            true
+        )
+
+        GAG2WildPetNetworkReportCurrentServer(
+            "startup"
+        )
+
+        while state.Enabled == true
+        and state.Running == true
+        and state.LoopToken == token do
+
+            task.wait(
+                math.clamp(
+                    tonumber(state.HeartbeatSeconds)
+                    or 10,
+                    5,
+                    60
+                )
+            )
+
+            if state.Enabled == true
+            and state.Running == true
+            and state.LoopToken == token then
+
+                GAG2WildPetNetworkReportCurrentServer(
+                    "heartbeat"
+                )
+            end
+        end
+    end)
+
+    return true
+end
+
+function GAG2WildPetNetworkContributorSetEnabled(value)
+
+    local enabled =
+        value == true
+
+    GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE.Enabled =
+        enabled
+
+    if ConfigState.Loading == true then
+        return
+    end
+
+    if enabled == true then
+
+        GAG2WildPetNetworkContributorStart()
+
+    else
+
+        GAG2WildPetNetworkContributorStop(
+            true
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2RestoreWildPetNetworkContributorState()
+
+    task.defer(function()
+
+        local enabled =
+            true
+
+        if Toggles.HolyGAG2WildPetNetworkContribute then
+
+            enabled =
+                Toggles.HolyGAG2WildPetNetworkContribute.Value ~= false
+        end
+
+        GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE.Enabled =
+            enabled
+
+        if enabled == true then
+
+            GAG2WildPetNetworkContributorStart()
+
+        else
+
+            if Options.HolyGAG2WildPetNetworkContributorStatus then
+
+                Options.HolyGAG2WildPetNetworkContributorStatus:SetText(
+                    GAG2WildPetNetworkContributorBuildStatusText()
+                )
+            end
+        end
+    end)
+end
 
 local function BuildSnapshot()
 
@@ -23987,7 +25246,7 @@ function GAG2CreatePanicHud()
         Color3.fromRGB(232, 230, 240)
 
     title.Text =
-        "GAG2 Safety"
+        "Sniper"
 
     title.Parent =
         frame
@@ -34641,6 +35900,22 @@ GAG2_WILD_PET_NETWORK_HUD_TOGGLE =
         }
     )
 
+GAG2_WILD_PET_NETWORK_CONTRIBUTE_TOGGLE =
+    ServerMainBox:AddToggle(
+        "HolyGAG2WildPetNetworkContribute",
+        {
+            Text = "Contribute Current Server",
+            Default = true,
+            Tooltip = "Upload this server's live WildPetRef data so everyone using the HUD can see it.",
+            Callback = function(value)
+
+                GAG2WildPetNetworkContributorSetEnabled(
+                    value == true
+                )
+            end,
+        }
+    )
+
 ServerMainBox:AddButton({
     Text = "Refresh Wild Pet HUD",
     Tooltip = "Immediately refresh live wild pet server reports.",
@@ -34663,11 +35938,44 @@ ServerMainBox:AddButton({
     end,
 })
 
+ServerMainBox:AddButton({
+    Text = "Report Current Server",
+    Tooltip = "Immediately upload this server's current wild pet data.",
+    Func = function()
+
+        if GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE.Enabled ~= true then
+
+            Notify(
+                "Live Wild Pets",
+                "Enable Contribute Current Server first.",
+                4
+            )
+
+            return
+        end
+
+        GAG2WildPetNetworkReportCurrentServer(
+            "manual button"
+        )
+    end,
+})
+
 ServerStatusBox:AddLabel(
     "HolyGAG2WildPetNetworkStatus",
     {
         Text =
             GAG2WildPetNetworkBuildStatusText(),
+
+        DoesWrap =
+            true,
+    }
+)
+
+ServerStatusBox:AddLabel(
+    "HolyGAG2WildPetNetworkContributorStatus",
+    {
+        Text =
+            GAG2WildPetNetworkContributorBuildStatusText(),
 
         DoesWrap =
             true,
@@ -38198,6 +39506,7 @@ if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
     GAG2RestoreDropPickupState()
     GAG2RestoreServerSelectionState()
     GAG2RestoreWildPetNetworkState()
+    GAG2RestoreWildPetNetworkContributorState()
     GAG2RestoreVersionHopState()
 end
 
