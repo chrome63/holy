@@ -11917,8 +11917,22 @@ function GAG2ACFSetEnabled(value)
     local state =
         GAG2_AUTO_COLLECT_FRUIT_STATE
 
-    state.Enabled =
+    local enabled =
         value == true
+
+    if enabled
+    and GAG2_AUTO_SHOVEL_FRUIT_STATE
+    and GAG2_AUTO_SHOVEL_FRUIT_STATE.Enabled == true then
+
+        GAG2AutoShovelFruitSetEnabled(
+            false
+        )
+
+        GAG2AutoShovelFruitSetToggleOff()
+    end
+
+    state.Enabled =
+        enabled
 
     if state.Enabled == true then
 
@@ -13864,8 +13878,10 @@ GAG2_AUTO_SHOVEL_STATE = {
     SelectedQueueIndex = 0,
 
     Delay = 0.70,
-    ProtectGold = true,
-    ProtectRainbow = true,
+    ProtectedMutations = {
+        Gold = true,
+        Rainbow = true,
+    },
 
     UseShovelPacket = nil,
     PacketSource = "not resolved",
@@ -14051,107 +14067,320 @@ function GAG2AutoShovelGetPlantSeedName(plant)
     return "Unknown"
 end
 
-function GAG2AutoShovelInspectMutationNode(node)
+GAG2_AUTO_SHOVEL_MUTATION_VALUES_CACHE =
+    GAG2_AUTO_SHOVEL_MUTATION_VALUES_CACHE or nil
 
-    local hasGold = false
-    local hasRainbow = false
+GAG2_AUTO_SHOVEL_MUTATION_CANONICAL_CACHE =
+    GAG2_AUTO_SHOVEL_MUTATION_CANONICAL_CACHE or nil
 
-    if typeof(node) ~= "Instance" then
-        return hasGold, hasRainbow
+function GAG2AutoShovelGetMutationValues()
+
+    if type(GAG2_AUTO_SHOVEL_MUTATION_VALUES_CACHE) == "table" then
+
+        return table.clone(
+            GAG2_AUTO_SHOVEL_MUTATION_VALUES_CACHE
+        )
     end
 
-    local mutation =
-        GAG2AutoShovelClean(
-            node:GetAttribute("Mutation")
-        ):lower()
+    local values = {}
+    local seen = {}
 
-    hasGold = mutation == "gold"
-    hasRainbow = mutation == "rainbow"
+    local function remember(value)
 
-    local nodeName = tostring(node.Name):lower()
+        local mutation =
+            GAG2AutoShovelClean(value)
 
-    if nodeName == "goldvfx" then
-        hasGold = true
-    elseif nodeName == "rainbowvfx" then
-        hasRainbow = true
+        if mutation == "" then
+            return
+        end
+
+        local key = mutation:lower()
+
+        if seen[key] then
+            return
+        end
+
+        seen[key] = true
+        table.insert(values, mutation)
     end
+
+    if type(GAG2ACFGetMutationDropdownValues) == "function" then
+
+        local ok, result =
+            pcall(
+                GAG2ACFGetMutationDropdownValues
+            )
+
+        if ok == true
+        and type(result) == "table" then
+
+            for _, mutation in ipairs(result) do
+                remember(mutation)
+            end
+        end
+    end
+
+    for _, mutation in ipairs({
+        "None",
+        "Gold",
+        "Rainbow",
+        "Bloodlit",
+        "Starstruck",
+        "Electric",
+        "Frozen",
+        "Chained",
+        "Solarflare",
+        "Pizza",
+    }) do
+        remember(mutation)
+    end
+
+    table.sort(values, function(a, b)
+
+        if a == "None" then
+            return true
+        end
+
+        if b == "None" then
+            return false
+        end
+
+        return a:lower() < b:lower()
+    end)
+
+    GAG2_AUTO_SHOVEL_MUTATION_VALUES_CACHE =
+        table.clone(values)
+
+    GAG2_AUTO_SHOVEL_MUTATION_CANONICAL_CACHE =
+        {}
+
+    for _, mutation in ipairs(values) do
+
+        GAG2_AUTO_SHOVEL_MUTATION_CANONICAL_CACHE[mutation:lower()] =
+            mutation
+    end
+
+    return table.clone(values)
+end
+
+function GAG2AutoShovelCanonicalMutation(value, allowUnknown)
+
+    local cleaned =
+        GAG2AutoShovelClean(value)
+
+    if cleaned == "" then
+        return "None"
+    end
+
+    if type(GAG2_AUTO_SHOVEL_MUTATION_CANONICAL_CACHE) ~= "table" then
+        GAG2AutoShovelGetMutationValues()
+    end
+
+    local canonical =
+        GAG2_AUTO_SHOVEL_MUTATION_CANONICAL_CACHE[cleaned:lower()]
+
+    if canonical then
+        return canonical
+    end
+
+    if allowUnknown == true then
+        return cleaned
+    end
+
+    return nil
+end
+
+function GAG2AutoShovelNormalizeSelection(value)
+
+    local selected = {}
+
+    if type(value) ~= "table" then
+        return selected
+    end
+
+    for key, child in pairs(value) do
+
+        local mutation = nil
+        local enabled = false
+
+        if type(key) == "number" then
+
+            mutation = child
+            enabled = child ~= nil
+
+        else
+
+            mutation = key
+            enabled = child == true
+                or child == 1
+                or tostring(child):lower() == "true"
+        end
+
+        mutation =
+            GAG2AutoShovelCanonicalMutation(
+                mutation,
+                true
+            )
+
+        if enabled == true
+        and mutation ~= "" then
+
+            selected[mutation] = true
+        end
+    end
+
+    return selected
+end
+
+function GAG2AutoShovelSetProtectedMutations(value)
+
+    GAG2_AUTO_SHOVEL_STATE.ProtectedMutations =
+        GAG2AutoShovelNormalizeSelection(
+            value
+        )
+
+    MarkConfigDirty()
+    GAG2AutoShovelScheduleRefresh()
+end
+
+function GAG2AutoShovelSortedSelectionText(selection, emptyText)
+
+    local names = {}
+
+    for name, enabled in pairs(selection or {}) do
+
+        if enabled == true then
+            table.insert(names, tostring(name))
+        end
+    end
+
+    table.sort(names, function(a, b)
+        return a:lower() < b:lower()
+    end)
+
+    if #names == 0 then
+        return tostring(emptyText or "None")
+    end
+
+    return table.concat(names, ", ")
+end
+
+function GAG2AutoShovelGetPlantMutationSet(plant)
+
+    local mutations = {}
+
+    if typeof(plant) ~= "Instance" then
+        mutations.None = true
+        return mutations
+    end
+
+    local function remember(value, allowUnknown)
+
+        local cleaned =
+            GAG2AutoShovelClean(value)
+
+        if cleaned == "" then
+            return
+        end
+
+        local canonical =
+            GAG2AutoShovelCanonicalMutation(
+                cleaned,
+                allowUnknown == true
+            )
+
+        if canonical
+        and canonical ~= ""
+        and canonical ~= "None" then
+
+            mutations[canonical] = true
+        end
+    end
+
+    remember(
+        plant:GetAttribute("Mutation"),
+        true
+    )
 
     pcall(function()
 
-        if GAG2_AUTO_SHOVEL_COLLECTION_SERVICE:HasTag(node, "Gold") then
-            hasGold = true
-        end
+        for _, tag in ipairs(
+            GAG2_AUTO_SHOVEL_COLLECTION_SERVICE:GetTags(plant)
+        ) do
 
-        if GAG2_AUTO_SHOVEL_COLLECTION_SERVICE:HasTag(node, "Rainbow") then
-            hasRainbow = true
+            remember(tag, false)
         end
     end)
-
-    return hasGold, hasRainbow
-end
-
-function GAG2AutoShovelClassifyPlant(plant, deepScan)
-
-    local hasGold, hasRainbow =
-        GAG2AutoShovelInspectMutationNode(plant)
-
-    local function inspect(node)
-
-        local nodeGold, nodeRainbow =
-            GAG2AutoShovelInspectMutationNode(node)
-
-        hasGold = hasGold or nodeGold
-        hasRainbow = hasRainbow or nodeRainbow
-    end
-
-    for _, child in ipairs(plant:GetChildren()) do
-        inspect(child)
-    end
 
     local fruitsFolder =
         plant:FindFirstChild("Fruits")
 
-    if fruitsFolder then
+    for _, descendant in ipairs(plant:GetDescendants()) do
 
-        for _, fruit in ipairs(fruitsFolder:GetChildren()) do
-
-            inspect(fruit)
-
-            for _, fruitChild in ipairs(fruit:GetChildren()) do
-                inspect(fruitChild)
-            end
+        if fruitsFolder
+        and descendant:IsDescendantOf(fruitsFolder) then
+            continue
         end
+
+        remember(
+            descendant:GetAttribute("Mutation"),
+            true
+        )
+
+        local descendantName =
+            GAG2AutoShovelClean(descendant.Name)
+
+        local vfxMutation =
+            descendantName:match("^(.-)[Vv][Ff][Xx]$")
+
+        if vfxMutation then
+            remember(vfxMutation, false)
+        end
+
+        pcall(function()
+
+            for _, tag in ipairs(
+                GAG2_AUTO_SHOVEL_COLLECTION_SERVICE:GetTags(descendant)
+            ) do
+
+                remember(tag, false)
+            end
+        end)
     end
 
-    if deepScan == true
-    and not (hasGold and hasRainbow) then
-
-        for _, descendant in ipairs(plant:GetDescendants()) do
-
-            inspect(descendant)
-
-            if hasGold and hasRainbow then
-                break
-            end
-        end
+    if next(mutations) == nil then
+        mutations.None = true
     end
 
-    return hasGold, hasRainbow
+    return mutations
 end
 
-function GAG2AutoShovelIsProtected(plant, deepScan)
+function GAG2AutoShovelClassifyPlant(plant, _deepScan)
 
-    local hasGold, hasRainbow =
-        GAG2AutoShovelClassifyPlant(plant, deepScan == true)
+    return GAG2AutoShovelGetPlantMutationSet(
+        plant
+    )
+end
 
-    local state =
-        GAG2_AUTO_SHOVEL_STATE
+function GAG2AutoShovelIsProtected(plant, _deepScan)
 
-    local protected =
-        (state.ProtectGold and hasGold)
-        or (state.ProtectRainbow and hasRainbow)
+    local mutations =
+        GAG2AutoShovelGetPlantMutationSet(
+            plant
+        )
 
-    return protected, hasGold, hasRainbow
+    local protectedMutations =
+        GAG2_AUTO_SHOVEL_STATE.ProtectedMutations
+        or {}
+
+    for mutation in pairs(mutations) do
+
+        if protectedMutations[mutation] == true then
+            return true, mutations, mutation
+        end
+    end
+
+    return false, mutations, nil
 end
 
 function GAG2AutoShovelScanPlants()
@@ -14175,10 +14404,15 @@ function GAG2AutoShovelScanPlants()
             if plant:IsA("Model") then
 
                 local seedName =
-                    GAG2AutoShovelGetPlantSeedName(plant)
+                    GAG2AutoShovelGetPlantSeedName(
+                        plant
+                    )
 
-                local protected, hasGold, hasRainbow =
-                    GAG2AutoShovelIsProtected(plant, false)
+                local protected, mutations =
+                    GAG2AutoShovelIsProtected(
+                        plant,
+                        false
+                    )
 
                 local row = summary[seedName]
 
@@ -14188,9 +14422,8 @@ function GAG2AutoShovelScanPlants()
                         Name = seedName,
                         Count = 0,
                         Eligible = 0,
-                        Gold = 0,
-                        Rainbow = 0,
                         Protected = 0,
+                        MutationCounts = {},
                         Models = {},
                     }
 
@@ -14199,12 +14432,20 @@ function GAG2AutoShovelScanPlants()
 
                 totalPlants += 1
                 row.Count += 1
-                row.Gold += hasGold and 1 or 0
-                row.Rainbow += hasRainbow and 1 or 0
                 row.Protected += protected and 1 or 0
                 row.Eligible += protected and 0 or 1
 
-                table.insert(row.Models, plant)
+                for mutation in pairs(mutations) do
+
+                    row.MutationCounts[mutation] =
+                        (tonumber(row.MutationCounts[mutation]) or 0)
+                        + 1
+                end
+
+                table.insert(
+                    row.Models,
+                    plant
+                )
             end
         end
     end
@@ -14340,9 +14581,32 @@ function GAG2AutoShovelBuildStatusText()
 
     local planted = row and row.Count or 0
     local eligible = row and row.Eligible or 0
-    local gold = row and row.Gold or 0
-    local rainbow = row and row.Rainbow or 0
-    local uniqueProtected = row and row.Protected or 0
+    local protected = row and row.Protected or 0
+
+    local mutationRows = {}
+
+    if row
+    and type(row.MutationCounts) == "table" then
+
+        for mutation, count in pairs(row.MutationCounts) do
+
+            table.insert(
+                mutationRows,
+                tostring(mutation)
+                    .. " "
+                    .. tostring(count)
+            )
+        end
+    end
+
+    table.sort(mutationRows, function(a, b)
+        return a:lower() < b:lower()
+    end)
+
+    local mutationText =
+        #mutationRows > 0
+        and table.concat(mutationRows, " | ")
+        or "None"
 
     local queuedText = "Not queued"
     local expectedDelete = 0
@@ -14378,14 +14642,18 @@ function GAG2AutoShovelBuildStatusText()
         .. tostring(planted)
         .. " | Shovelable: "
         .. tostring(eligible)
+        .. " | Protected: "
+        .. tostring(protected)
         .. " | Queued: "
         .. queuedText
-        .. "\nProtected Gold: "
-        .. tostring(gold)
-        .. " | Rainbow: "
-        .. tostring(rainbow)
-        .. " | Unique: "
-        .. tostring(uniqueProtected)
+        .. "\nRoot mutations: "
+        .. mutationText
+        .. "\nProtecting root mutations: "
+        .. GAG2AutoShovelSortedSelectionText(
+            state.ProtectedMutations,
+            "Nothing"
+        )
+        .. "\nFruit mutations are ignored by Auto Shovel Plants."
         .. "\nExpected Remaining: "
         .. tostring(math.max(planted - expectedDelete, 0))
         .. "\nState: "
@@ -14801,8 +15069,19 @@ function GAG2AutoShovelTryDeletePlant(plant, plantsFolder, generation)
         return true, "already removed", "removed"
     end
 
-    if GAG2AutoShovelIsProtected(plant, true) then
-        return false, "protected Gold/Rainbow plant", "protected"
+    local isProtected, _, protectedMutation =
+        GAG2AutoShovelIsProtected(
+            plant,
+            true
+        )
+
+    if isProtected then
+
+        return false,
+            "protected "
+                .. tostring(protectedMutation or "selected")
+                .. " plant mutation",
+            "protected"
     end
 
     local packet, packetReason = GAG2AutoShovelResolvePacket()
@@ -14819,10 +15098,21 @@ function GAG2AutoShovelTryDeletePlant(plant, plantsFolder, generation)
         return false, shovelReason or "Shovel attribute missing", "runtime"
     end
 
-    local fireAt = math.max(
-        os.clock(),
-        state.LastSentAt + GAG2AutoShovelGetEffectiveDelay()
-    )
+    local effectiveDelay =
+        GAG2AutoShovelGetEffectiveDelay()
+
+    local sharedLastSentAt =
+        tonumber(
+            GAG2_AUTO_SHOVEL_SHARED_LAST_SENT_AT
+        )
+        or 0
+
+    local fireAt =
+        math.max(
+            os.clock(),
+            state.LastSentAt + effectiveDelay,
+            sharedLastSentAt + effectiveDelay
+        )
 
     if not GAG2AutoShovelWaitUntil(fireAt, generation) then
         return false, "stopped", "stopped"
@@ -14832,8 +15122,18 @@ function GAG2AutoShovelTryDeletePlant(plant, plantsFolder, generation)
         return true, "removed before send", "removed"
     end
 
-    if GAG2AutoShovelIsProtected(plant, true) then
-        return false, "became protected before send", "protected"
+    isProtected, _, protectedMutation =
+        GAG2AutoShovelIsProtected(
+            plant,
+            true
+        )
+
+    if isProtected then
+
+        return false,
+            "became protected before send: "
+                .. tostring(protectedMutation or "selected mutation"),
+            "protected"
     end
 
     local plantName = tostring(plant.Name)
@@ -14877,9 +15177,14 @@ function GAG2AutoShovelTryDeletePlant(plant, plantsFolder, generation)
         return false, tostring(fireError), "failed"
     end
 
-    state.LastSentAt = os.clock()
+    state.LastSentAt =
+        os.clock()
 
-    local deadline = os.clock() + 2.5
+    GAG2_AUTO_SHOVEL_SHARED_LAST_SENT_AT =
+        state.LastSentAt
+
+    local deadline =
+        os.clock() + 2.5
 
     while GAG2AutoShovelWorkerActive(generation)
     and os.clock() < deadline do
@@ -15148,6 +15453,22 @@ function GAG2AutoShovelSetEnabled(value)
         return
     end
 
+    if enabled then
+
+        if GAG2_AUTO_SHOVEL_FRUIT_STATE
+        and GAG2_AUTO_SHOVEL_FRUIT_STATE.Enabled == true
+        and type(GAG2AutoShovelFruitSetEnabled) == "function" then
+
+            GAG2AutoShovelFruitSetEnabled(
+                false
+            )
+
+            if type(GAG2AutoShovelFruitSetToggleOff) == "function" then
+                GAG2AutoShovelFruitSetToggleOff()
+            end
+        end
+    end
+
     state.Enabled = enabled
 
     if enabled then
@@ -15195,6 +15516,1164 @@ function GAG2AutoShovelStartMonitor()
 
             GAG2AutoShovelScheduleRefresh()
             task.wait(3)
+        end
+    end)
+end
+
+--==================================================
+-- [4.575] AUTO SHOVEL FRUITS
+-- Own-plot-only continuous fruit deletion.
+-- Uses fruit-only mutation protection.
+--==================================================
+
+if type(GAG2_AUTO_SHOVEL_FRUIT_STATE) == "table" then
+
+    GAG2_AUTO_SHOVEL_FRUIT_STATE.Enabled = false
+    GAG2_AUTO_SHOVEL_FRUIT_STATE.WorkerGeneration =
+        (tonumber(GAG2_AUTO_SHOVEL_FRUIT_STATE.WorkerGeneration) or 0) + 1
+
+    GAG2_AUTO_SHOVEL_FRUIT_STATE.MonitorGeneration =
+        (tonumber(GAG2_AUTO_SHOVEL_FRUIT_STATE.MonitorGeneration) or 0) + 1
+end
+
+GAG2_AUTO_SHOVEL_FRUIT_STATE = {
+    Enabled = false,
+    Running = false,
+    WorkerGeneration = 0,
+    MonitorGeneration = 0,
+
+    SelectedFruits = {},
+    ProtectedMutations = {
+        Gold = true,
+        Rainbow = true,
+    },
+
+    Delay = 0.70,
+    LastSentAt = 0,
+
+    OwnPlot = nil,
+    PlantsFolder = nil,
+    Summary = {},
+    TotalFruits = 0,
+    EligibleFruits = 0,
+    ProtectedFruits = 0,
+
+    RemovedThisRun = 0,
+    FailedThisRun = 0,
+    ProtectedSkipped = 0,
+    CurrentFruit = "",
+    LastStatus = "Idle.",
+
+    UpdatingUI = false,
+    RefreshScheduled = false,
+    FailureCooldowns = {},
+}
+
+GAG2_AUTO_SHOVEL_FRUIT_CONTROLS =
+    GAG2_AUTO_SHOVEL_FRUIT_CONTROLS or {}
+
+GAG2_AUTO_SHOVEL_SHARED_LAST_SENT_AT =
+    tonumber(GAG2_AUTO_SHOVEL_SHARED_LAST_SENT_AT)
+    or 0
+
+function GAG2AutoShovelFruitSetDelay(value)
+
+    local number = tonumber(value) or 0.70
+
+    if number ~= number
+    or number == math.huge
+    or number == -math.huge then
+        number = 0.70
+    end
+
+    GAG2_AUTO_SHOVEL_FRUIT_STATE.Delay =
+        math.clamp(number, 0, 60)
+
+    MarkConfigDirty()
+    GAG2AutoShovelFruitScheduleRefresh()
+end
+
+function GAG2AutoShovelFruitGetEffectiveDelay()
+
+    return math.max(
+        tonumber(GAG2_AUTO_SHOVEL_FRUIT_STATE.Delay) or 0.70,
+        0.65
+    )
+end
+
+function GAG2AutoShovelFruitNormalizeSelection(value)
+
+    local selected = {}
+
+    local function remember(name)
+
+        name =
+            GAG2AutoShovelClean(
+                name
+            )
+
+        if name == ""
+        or name == "No fruits found" then
+            return
+        end
+
+        selected[name] =
+            true
+    end
+
+    if type(value) == "table" then
+
+        for key, child in pairs(value) do
+
+            if type(key) == "number" then
+
+                remember(
+                    child
+                )
+
+            elseif child == true
+            or child == 1
+            or tostring(child):lower() == "true" then
+
+                remember(
+                    key
+                )
+            end
+        end
+
+    elseif type(value) == "string" then
+
+        remember(
+            value
+        )
+    end
+
+    return selected
+end
+
+function GAG2AutoShovelFruitSetSelectedFruits(value)
+
+    GAG2_AUTO_SHOVEL_FRUIT_STATE.SelectedFruits =
+        GAG2AutoShovelFruitNormalizeSelection(
+            value
+        )
+
+    MarkConfigDirty()
+    GAG2AutoShovelFruitScheduleRefresh()
+end
+
+function GAG2AutoShovelFruitSetProtectedMutations(value)
+
+    GAG2_AUTO_SHOVEL_FRUIT_STATE.ProtectedMutations =
+        GAG2AutoShovelNormalizeSelection(
+            value
+        )
+
+    MarkConfigDirty()
+    GAG2AutoShovelFruitScheduleRefresh()
+end
+
+function GAG2AutoShovelFruitReadName(fruit, plant)
+
+    local name = ""
+
+    if typeof(fruit) == "Instance" then
+
+        name =
+            GAG2AutoShovelClean(
+                fruit:GetAttribute("CorePartName")
+            )
+    end
+
+    if name == ""
+    and typeof(plant) == "Instance" then
+
+        name =
+            GAG2AutoShovelGetPlantSeedName(
+                plant
+            )
+    end
+
+    if name == ""
+    and typeof(fruit) == "Instance" then
+
+        name =
+            GAG2AutoShovelClean(
+                fruit.Name
+            )
+    end
+
+    return name ~= ""
+        and name
+        or "Unknown"
+end
+
+function GAG2AutoShovelFruitReadMutation(fruit)
+
+    if typeof(fruit) ~= "Instance" then
+        return "None"
+    end
+
+    local mutation =
+        GAG2AutoShovelClean(
+            fruit:GetAttribute("Mutation")
+        )
+
+    if mutation == "" then
+        return "None"
+    end
+
+    return GAG2AutoShovelCanonicalMutation(
+        mutation,
+        true
+    )
+end
+
+function GAG2AutoShovelFruitIsSelected(fruitName)
+
+    local selected =
+        GAG2_AUTO_SHOVEL_FRUIT_STATE.SelectedFruits
+        or {}
+
+    if next(selected) == nil then
+        return true
+    end
+
+    return selected[fruitName] == true
+end
+
+function GAG2AutoShovelFruitIsProtected(fruit)
+
+    local mutation =
+        GAG2AutoShovelFruitReadMutation(
+            fruit
+        )
+
+    local protected =
+        GAG2_AUTO_SHOVEL_FRUIT_STATE.ProtectedMutations
+        or {}
+
+    return protected[mutation] == true,
+        mutation
+end
+
+function GAG2AutoShovelFruitScan()
+
+    local state =
+        GAG2_AUTO_SHOVEL_FRUIT_STATE
+
+    local ownPlot, plantsFolder, reason =
+        GAG2AutoShovelGetOwnPlantsFolder()
+
+    state.OwnPlot =
+        ownPlot
+
+    state.PlantsFolder =
+        plantsFolder
+
+    local summary = {}
+    local total = 0
+    local eligible = 0
+    local protectedCount = 0
+
+    if plantsFolder then
+
+        for _, plant in ipairs(
+            plantsFolder:GetChildren()
+        ) do
+
+            if plant:IsA("Model") then
+
+                local fruitsFolder =
+                    plant:FindFirstChild(
+                        "Fruits"
+                    )
+
+                if fruitsFolder then
+
+                    for _, fruit in ipairs(
+                        fruitsFolder:GetChildren()
+                    ) do
+
+                        if fruit:IsA("Model") then
+
+                            local fruitName =
+                                GAG2AutoShovelFruitReadName(
+                                    fruit,
+                                    plant
+                                )
+
+                            local isProtected, mutation =
+                                GAG2AutoShovelFruitIsProtected(
+                                    fruit
+                                )
+
+                            local isSelected =
+                                GAG2AutoShovelFruitIsSelected(
+                                    fruitName
+                                )
+
+                            local row =
+                                summary[fruitName]
+
+                            if not row then
+
+                                row = {
+                                    Name = fruitName,
+                                    Count = 0,
+                                    Eligible = 0,
+                                    Protected = 0,
+                                    MutationCounts = {},
+                                    Items = {},
+                                }
+
+                                summary[fruitName] =
+                                    row
+                            end
+
+                            total += 1
+                            row.Count += 1
+
+                            row.MutationCounts[mutation] =
+                                (tonumber(row.MutationCounts[mutation]) or 0)
+                                + 1
+
+                            if isProtected then
+
+                                protectedCount += 1
+                                row.Protected += 1
+
+                            elseif isSelected then
+
+                                eligible += 1
+                                row.Eligible += 1
+                            end
+
+                            table.insert(
+                                row.Items,
+                                {
+                                    Plant = plant,
+                                    FruitsFolder = fruitsFolder,
+                                    Fruit = fruit,
+                                    FruitName = fruitName,
+                                    Mutation = mutation,
+                                }
+                            )
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    state.Summary =
+        summary
+
+    state.TotalFruits =
+        total
+
+    state.EligibleFruits =
+        eligible
+
+    state.ProtectedFruits =
+        protectedCount
+
+    return summary,
+        ownPlot,
+        plantsFolder,
+        reason
+end
+
+function GAG2AutoShovelFruitGetDropdownValues()
+
+    local state =
+        GAG2_AUTO_SHOVEL_FRUIT_STATE
+
+    local rows = {}
+
+    for _, row in pairs(state.Summary) do
+
+        table.insert(
+            rows,
+            row
+        )
+    end
+
+    table.sort(rows, function(left, right)
+
+        if left.Count ~= right.Count then
+
+            return left.Count
+                > right.Count
+        end
+
+        return tostring(left.Name):lower()
+            < tostring(right.Name):lower()
+    end)
+
+    local values = {}
+    local included = {}
+
+    for _, row in ipairs(rows) do
+
+        local fruitName =
+            tostring(row.Name)
+
+        table.insert(
+            values,
+            fruitName
+        )
+
+        included[fruitName] =
+            true
+    end
+
+    local missingSelected = {}
+
+    for fruitName, enabled in pairs(
+        state.SelectedFruits
+        or {}
+    ) do
+
+        if enabled == true
+        and included[fruitName] ~= true then
+
+            table.insert(
+                missingSelected,
+                tostring(fruitName)
+            )
+        end
+    end
+
+    table.sort(missingSelected, function(left, right)
+
+        return left:lower()
+            < right:lower()
+    end)
+
+    for _, fruitName in ipairs(missingSelected) do
+
+        table.insert(
+            values,
+            fruitName
+        )
+    end
+
+    if #values == 0 then
+
+        values = {
+            "No fruits found",
+        }
+    end
+
+    return values
+end
+
+function GAG2AutoShovelFruitBuildStatusText()
+
+    local state =
+        GAG2_AUTO_SHOVEL_FRUIT_STATE
+
+    return
+        '<font color="rgb(196,181,253)"><b>Auto Shovel Fruits</b></font>'
+        .. "\nPlot: "
+        .. (
+            state.OwnPlot
+            and state.OwnPlot.Name
+            or "not resolved"
+        )
+        .. "\nState: "
+        .. (
+            state.Enabled
+            and "ON"
+            or "OFF"
+        )
+        .. " | Running: "
+        .. tostring(state.Running)
+        .. " | Delay: "
+        .. string.format(
+            "%.2fs",
+            GAG2AutoShovelFruitGetEffectiveDelay()
+        )
+        .. "\nFruit Types: "
+        .. GAG2AutoShovelSortedSelectionText(
+            state.SelectedFruits,
+            "All"
+        )
+        .. "\nProtecting Fruit Mutations: "
+        .. GAG2AutoShovelSortedSelectionText(
+            state.ProtectedMutations,
+            "Nothing"
+        )
+        .. "\nTotal: "
+        .. tostring(state.TotalFruits)
+        .. " | Shovelable: "
+        .. tostring(state.EligibleFruits)
+        .. " | Protected: "
+        .. tostring(state.ProtectedFruits)
+        .. "\nRemoved: "
+        .. tostring(state.RemovedThisRun)
+        .. " | Failed: "
+        .. tostring(state.FailedThisRun)
+        .. " | Protected Skips: "
+        .. tostring(state.ProtectedSkipped)
+        .. "\nCurrent: "
+        .. (
+            state.CurrentFruit ~= ""
+            and state.CurrentFruit
+            or "none"
+        )
+        .. "\nLast: "
+        .. tostring(state.LastStatus)
+end
+
+function GAG2AutoShovelFruitRefreshUI()
+
+    local state =
+        GAG2_AUTO_SHOVEL_FRUIT_STATE
+
+    if state.UpdatingUI == true then
+        return
+    end
+
+    state.UpdatingUI =
+        true
+
+    local ok, err =
+        pcall(function()
+
+            GAG2AutoShovelFruitScan()
+
+            GAG2AutoShovelSetDropdownValues(
+                GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.Fruits,
+                GAG2AutoShovelFruitGetDropdownValues()
+            )
+
+            local statusLabel =
+                GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.StatusLabel
+
+            if statusLabel
+            and type(statusLabel.SetText) == "function" then
+
+                statusLabel:SetText(
+                    GAG2AutoShovelFruitBuildStatusText()
+                )
+            end
+        end)
+
+    state.UpdatingUI =
+        false
+
+    if ok ~= true then
+
+        state.LastStatus =
+            "UI refresh failed: "
+            .. tostring(err)
+    end
+end
+
+function GAG2AutoShovelFruitScheduleRefresh()
+
+    local state =
+        GAG2_AUTO_SHOVEL_FRUIT_STATE
+
+    if state.RefreshScheduled == true then
+        return
+    end
+
+    state.RefreshScheduled =
+        true
+
+    task.delay(0.15, function()
+
+        if GAG2_AUTO_SHOVEL_FRUIT_STATE ~= state then
+            return
+        end
+
+        state.RefreshScheduled =
+            false
+
+        GAG2AutoShovelFruitRefreshUI()
+    end)
+end
+
+function GAG2AutoShovelFruitWorkerActive(generation)
+
+    local state =
+        GAG2_AUTO_SHOVEL_FRUIT_STATE
+
+    return state.Enabled == true
+        and state.WorkerGeneration == generation
+end
+
+function GAG2AutoShovelFruitWaitUntil(targetTime, generation)
+
+    while GAG2AutoShovelFruitWorkerActive(generation) do
+
+        local remaining =
+            targetTime - os.clock()
+
+        if remaining <= 0 then
+            return true
+        end
+
+        task.wait(
+            math.min(
+                remaining,
+                0.05
+            )
+        )
+    end
+
+    return false
+end
+
+function GAG2AutoShovelFruitTryDelete(item, generation)
+
+    local state =
+        GAG2_AUTO_SHOVEL_FRUIT_STATE
+
+    local plant =
+        item
+        and item.Plant
+
+    local fruit =
+        item
+        and item.Fruit
+
+    local fruitsFolder =
+        item
+        and item.FruitsFolder
+
+    if typeof(plant) ~= "Instance"
+    or typeof(fruit) ~= "Instance"
+    or typeof(fruitsFolder) ~= "Instance" then
+
+        return false,
+            "target missing",
+            "failed"
+    end
+
+    if fruit.Parent ~= fruitsFolder then
+
+        return true,
+            "already removed",
+            "removed"
+    end
+
+    local isProtected, mutation =
+        GAG2AutoShovelFruitIsProtected(
+            fruit
+        )
+
+    if isProtected then
+
+        return false,
+            "protected "
+                .. tostring(mutation)
+                .. " fruit",
+            "protected"
+    end
+
+    local packet, packetReason =
+        GAG2AutoShovelResolvePacket()
+
+    if not packet then
+
+        return false,
+            packetReason,
+            "runtime"
+    end
+
+    local shovelTool, shovelValue, shovelReason =
+        GAG2AutoShovelFindRealShovel()
+
+    if not shovelTool
+    or GAG2AutoShovelClean(shovelValue) == "" then
+
+        return false,
+            shovelReason
+                or "Shovel attribute missing",
+            "runtime"
+    end
+
+    local effectiveDelay =
+        GAG2AutoShovelFruitGetEffectiveDelay()
+
+    local sharedLastSentAt =
+        tonumber(
+            GAG2_AUTO_SHOVEL_SHARED_LAST_SENT_AT
+        )
+        or 0
+
+    local fireAt =
+        math.max(
+            os.clock(),
+            state.LastSentAt + effectiveDelay,
+            sharedLastSentAt + effectiveDelay
+        )
+
+    if not GAG2AutoShovelFruitWaitUntil(
+        fireAt,
+        generation
+    ) then
+
+        return false,
+            "stopped",
+            "stopped"
+    end
+
+    if fruit.Parent ~= fruitsFolder then
+
+        return true,
+            "removed before send",
+            "removed"
+    end
+
+    isProtected, mutation =
+        GAG2AutoShovelFruitIsProtected(
+            fruit
+        )
+
+    if isProtected then
+
+        return false,
+            "became protected before send: "
+                .. tostring(mutation),
+            "protected"
+    end
+
+    local plantId =
+        tostring(plant.Name)
+
+    local fruitId =
+        tostring(fruit.Name)
+
+    local removed =
+        false
+
+    local connection =
+        fruitsFolder.ChildRemoved:Connect(function(child)
+
+            if child == fruit
+            or tostring(child.Name) == fruitId then
+
+                removed =
+                    true
+            end
+        end)
+
+    local okFire, fireError =
+        pcall(function()
+
+            packet:Fire(
+                plantId,
+                fruitId,
+                tostring(shovelValue),
+                shovelTool
+            )
+        end)
+
+    if okFire ~= true then
+
+        okFire, fireError =
+            pcall(function()
+
+                packet.Fire(
+                    packet,
+                    plantId,
+                    fruitId,
+                    tostring(shovelValue),
+                    shovelTool
+                )
+            end)
+    end
+
+    if okFire ~= true then
+
+        connection:Disconnect()
+
+        return false,
+            tostring(fireError),
+            "failed"
+    end
+
+    state.LastSentAt =
+        os.clock()
+
+    GAG2_AUTO_SHOVEL_SHARED_LAST_SENT_AT =
+        state.LastSentAt
+
+    local deadline =
+        os.clock() + 2.5
+
+    while GAG2AutoShovelFruitWorkerActive(generation)
+    and os.clock() < deadline do
+
+        if removed
+        or fruit.Parent ~= fruitsFolder
+        or fruitsFolder:FindFirstChild(fruitId) ~= fruit then
+
+            removed =
+                true
+
+            break
+        end
+
+        task.wait(
+            0.05
+        )
+    end
+
+    connection:Disconnect()
+
+    if removed then
+
+        return true,
+            "fruit model removed",
+            "removed"
+    end
+
+    return false,
+        "confirmation timeout",
+        "failed"
+end
+
+function GAG2AutoShovelFruitBuildCandidates()
+
+    GAG2AutoShovelFruitScan()
+
+    local state =
+        GAG2_AUTO_SHOVEL_FRUIT_STATE
+
+    local candidates = {}
+    local now = os.clock()
+
+    for fruitName, row in pairs(state.Summary) do
+
+        if GAG2AutoShovelFruitIsSelected(
+            fruitName
+        ) then
+
+            for _, item in ipairs(row.Items) do
+
+                local isProtected =
+                    GAG2AutoShovelFruitIsProtected(
+                        item.Fruit
+                    )
+
+                local key =
+                    tostring(item.Plant.Name)
+                    .. "/"
+                    .. tostring(item.Fruit.Name)
+
+                local blockedUntil =
+                    tonumber(
+                        state.FailureCooldowns[key]
+                    )
+                    or 0
+
+                if isProtected ~= true
+                and now >= blockedUntil then
+
+                    item.Key =
+                        key
+
+                    table.insert(
+                        candidates,
+                        item
+                    )
+                end
+            end
+        end
+    end
+
+    table.sort(candidates, function(left, right)
+
+        local leftKey =
+            tostring(left.Plant.Name)
+            .. "/"
+            .. tostring(left.Fruit.Name)
+
+        local rightKey =
+            tostring(right.Plant.Name)
+            .. "/"
+            .. tostring(right.Fruit.Name)
+
+        return leftKey
+            < rightKey
+    end)
+
+    return candidates
+end
+
+function GAG2AutoShovelFruitSetToggleOff()
+
+    local toggle =
+        Toggles
+        and Toggles.HolyGAG2AutoShovelFruits
+
+    if toggle
+    and type(toggle.SetValue) == "function" then
+
+        pcall(
+            toggle.SetValue,
+            toggle,
+            false
+        )
+    end
+end
+
+function GAG2AutoShovelFruitStartWorker()
+
+    local state =
+        GAG2_AUTO_SHOVEL_FRUIT_STATE
+
+    if state.Running == true then
+        return
+    end
+
+    state.Running =
+        true
+
+    state.RemovedThisRun =
+        0
+
+    state.FailedThisRun =
+        0
+
+    state.ProtectedSkipped =
+        0
+
+    state.WorkerGeneration +=
+        1
+
+    local generation =
+        state.WorkerGeneration
+
+    task.spawn(function()
+
+        while GAG2AutoShovelFruitWorkerActive(generation) do
+
+            local candidates =
+                GAG2AutoShovelFruitBuildCandidates()
+
+            if #candidates == 0 then
+
+                state.CurrentFruit =
+                    ""
+
+                state.LastStatus =
+                    "Waiting for shovelable fruits."
+
+                GAG2AutoShovelFruitScheduleRefresh()
+
+                task.wait(
+                    0.75
+                )
+
+            else
+
+                for _, item in ipairs(candidates) do
+
+                    if not GAG2AutoShovelFruitWorkerActive(generation) then
+                        break
+                    end
+
+                    state.CurrentFruit =
+                        tostring(item.FruitName)
+                        .. " ["
+                        .. tostring(item.Mutation)
+                        .. "]"
+
+                    state.LastStatus =
+                        "Shoveling "
+                        .. tostring(state.CurrentFruit)
+
+                    GAG2AutoShovelFruitScheduleRefresh()
+
+                    local success, reason, resultType =
+                        GAG2AutoShovelFruitTryDelete(
+                            item,
+                            generation
+                        )
+
+                    if success then
+
+                        state.RemovedThisRun +=
+                            1
+
+                        state.LastStatus =
+                            tostring(item.FruitName)
+                            .. " removed and confirmed."
+
+                    elseif resultType == "protected" then
+
+                        state.ProtectedSkipped +=
+                            1
+
+                        state.LastStatus =
+                            tostring(reason)
+
+                    elseif resultType == "runtime" then
+
+                        state.LastStatus =
+                            "Waiting: "
+                            .. tostring(reason)
+
+                        GAG2AutoShovelFruitScheduleRefresh()
+
+                        task.wait(
+                            1
+                        )
+
+                    elseif resultType == "stopped" then
+
+                        break
+
+                    else
+
+                        state.FailedThisRun +=
+                            1
+
+                        state.LastStatus =
+                            tostring(item.FruitName)
+                            .. " failed: "
+                            .. tostring(reason)
+
+                        state.FailureCooldowns[item.Key] =
+                            os.clock() + 3
+                    end
+
+                    GAG2AutoShovelFruitScheduleRefresh()
+                end
+            end
+        end
+
+        if GAG2_AUTO_SHOVEL_FRUIT_STATE == state
+        and state.WorkerGeneration == generation then
+
+            state.Running =
+                false
+
+            state.CurrentFruit =
+                ""
+
+            if state.Enabled ~= true then
+
+                state.LastStatus =
+                    "Disabled."
+            end
+
+            GAG2AutoShovelFruitScheduleRefresh()
+        end
+    end)
+end
+
+function GAG2AutoShovelFruitSetEnabled(value)
+
+    local state =
+        GAG2_AUTO_SHOVEL_FRUIT_STATE
+
+    local enabled =
+        value == true
+
+    if enabled == state.Enabled
+    and (
+        enabled ~= true
+        or state.Running == true
+    ) then
+        return
+    end
+
+    if enabled then
+
+        if GAG2_AUTO_SHOVEL_STATE
+        and GAG2_AUTO_SHOVEL_STATE.Enabled == true then
+
+            GAG2AutoShovelSetEnabled(
+                false
+            )
+
+            GAG2AutoShovelSetToggleOff()
+        end
+
+        if GAG2_AUTO_COLLECT_FRUIT_STATE
+        and GAG2_AUTO_COLLECT_FRUIT_STATE.Enabled == true then
+
+            GAG2ACFSetEnabled(
+                false
+            )
+
+            local collectToggle =
+                Toggles
+                and Toggles.HolyGAG2AutoCollectFruits
+
+            if collectToggle
+            and type(collectToggle.SetValue) == "function" then
+
+                pcall(
+                    collectToggle.SetValue,
+                    collectToggle,
+                    false
+                )
+            end
+        end
+    end
+
+    state.Enabled =
+        enabled
+
+    if enabled then
+
+        state.LastStatus =
+            "Starting fruit shovel."
+
+        if ConfigState.Loading ~= true then
+
+            GAG2AutoShovelFruitStartWorker()
+        end
+
+    else
+
+        state.WorkerGeneration +=
+            1
+
+        state.Running =
+            false
+
+        state.CurrentFruit =
+            ""
+
+        state.LastStatus =
+            "Disabled."
+    end
+
+    MarkConfigDirty()
+    GAG2AutoShovelFruitScheduleRefresh()
+end
+
+function GAG2AutoShovelFruitStartMonitor()
+
+    local state =
+        GAG2_AUTO_SHOVEL_FRUIT_STATE
+
+    state.MonitorGeneration +=
+        1
+
+    local generation =
+        state.MonitorGeneration
+
+    task.spawn(function()
+
+        while GAG2_AUTO_SHOVEL_FRUIT_STATE == state
+        and state.MonitorGeneration == generation do
+
+            GAG2AutoShovelFruitScheduleRefresh()
+
+            task.wait(
+                2
+            )
         end
     end)
 end
@@ -30585,6 +32064,12 @@ local FarmAutoShovelBox =
         "shovel"
     )
 
+FarmAutoShovelFruitBox =
+    AddFarmLeftBoxClosed(
+        "Auto Shovel Fruits",
+        "shovel"
+    )
+
 local FarmStatusBox =
     AddRightBox(
         Tabs.Farm,
@@ -30601,6 +32086,12 @@ end
 if FarmAutoShovelBox == nil then
 
     FarmAutoShovelBox =
+        FarmMainBox
+end
+
+if FarmAutoShovelFruitBox == nil then
+
+    FarmAutoShovelFruitBox =
         FarmMainBox
 end
 
@@ -33413,43 +34904,34 @@ FarmAutoShovelBox:AddButton({
 
 FarmAutoShovelBox:AddDivider()
 
-GAG2_AUTO_SHOVEL_CONTROLS.ProtectGold =
-    FarmAutoShovelBox:AddToggle(
-        "HolyGAG2AutoShovelProtectGold",
+GAG2_AUTO_SHOVEL_CONTROLS.ProtectedMutations =
+    FarmAutoShovelBox:AddDropdown(
+        "HolyGAG2AutoShovelProtectedMutations",
         {
-            Text = "Protect Gold Plants",
-            Default = true,
-            Tooltip = "Skips the full plant when Gold exists on the root plant or any fruit.",
+            Text = "Protect Plant Mutations",
+            Values = GAG2AutoShovelGetMutationValues(),
+            Default = {
+                Gold = true,
+                Rainbow = true,
+            },
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Protects only mutations on the plant itself. Mutations on its fruits are ignored.",
         }
     )
 
-GAG2_AUTO_SHOVEL_CONTROLS.ProtectGold:OnChanged(function(value)
+if GAG2_AUTO_SHOVEL_CONTROLS.ProtectedMutations
+and type(GAG2_AUTO_SHOVEL_CONTROLS.ProtectedMutations.OnChanged) == "function" then
 
-    GAG2_AUTO_SHOVEL_STATE.ProtectGold =
-        value == true
+    GAG2_AUTO_SHOVEL_CONTROLS.ProtectedMutations:OnChanged(function(value)
 
-    MarkConfigDirty()
-    GAG2AutoShovelScheduleRefresh()
-end)
-
-GAG2_AUTO_SHOVEL_CONTROLS.ProtectRainbow =
-    FarmAutoShovelBox:AddToggle(
-        "HolyGAG2AutoShovelProtectRainbow",
-        {
-            Text = "Protect Rainbow Plants",
-            Default = true,
-            Tooltip = "Skips the full plant when Rainbow exists on the root plant or any fruit.",
-        }
-    )
-
-GAG2_AUTO_SHOVEL_CONTROLS.ProtectRainbow:OnChanged(function(value)
-
-    GAG2_AUTO_SHOVEL_STATE.ProtectRainbow =
-        value == true
-
-    MarkConfigDirty()
-    GAG2AutoShovelScheduleRefresh()
-end)
+        GAG2AutoShovelSetProtectedMutations(
+            value
+        )
+    end)
+end
 
 GAG2_AUTO_SHOVEL_CONTROLS.Delay =
     FarmAutoShovelBox:AddInput(
@@ -33526,6 +35008,137 @@ and type(GAG2_AUTO_SHOVEL_CONTROLS.QueueData.SetVisible) == "function" then
     end)
 end
 
+--==================================================
+-- [8.85] FARM AUTO SHOVEL FRUITS
+--==================================================
+
+FarmAutoShovelFruitBox:AddLabel({
+    Text =
+        '<font color="rgb(196,181,253)"><b>Auto Shovel Fruits</b></font>'
+        .. '\nContinuously removes fruit Models from your own garden.'
+        .. '\nProtected mutations are checked on each fruit only.'
+        .. '\nPlant shovel and Auto Collect Fruits are stopped when this starts.',
+    DoesWrap = true,
+    Size = 13,
+})
+
+GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.Toggle =
+    FarmAutoShovelFruitBox:AddToggle(
+        "HolyGAG2AutoShovelFruits",
+        {
+            Text = "Auto Shovel Fruits",
+            Default = false,
+            Tooltip = "Continuously shovels matching fruits from your own Plants folder. Requires a real Shovel tool.",
+        }
+    )
+
+GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.Toggle:OnChanged(function(value)
+
+    GAG2AutoShovelFruitSetEnabled(
+        value == true
+    )
+end)
+
+GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.Fruits =
+    FarmAutoShovelFruitBox:AddDropdown(
+        "HolyGAG2AutoShovelFruitTypes",
+        {
+            Text = "Fruit Types",
+            Values = {
+                "No fruits found",
+            },
+            Default = {},
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Empty means every fruit type. Select one or more names to shovel only those fruits.",
+        }
+    )
+
+if GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.Fruits
+and type(GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.Fruits.OnChanged) == "function" then
+
+    GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.Fruits:OnChanged(function(value)
+
+        if GAG2_AUTO_SHOVEL_FRUIT_STATE.UpdatingUI ~= true then
+
+            GAG2AutoShovelFruitSetSelectedFruits(
+                value
+            )
+        end
+    end)
+end
+
+GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.ProtectedMutations =
+    FarmAutoShovelFruitBox:AddDropdown(
+        "HolyGAG2AutoShovelFruitProtectedMutations",
+        {
+            Text = "Protect Fruit Mutations",
+            Values = GAG2AutoShovelGetMutationValues(),
+            Default = {
+                Gold = true,
+                Rainbow = true,
+            },
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Fruits with a selected mutation are never shoveled. This does not inspect the parent plant mutation.",
+        }
+    )
+
+if GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.ProtectedMutations
+and type(GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.ProtectedMutations.OnChanged) == "function" then
+
+    GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.ProtectedMutations:OnChanged(function(value)
+
+        GAG2AutoShovelFruitSetProtectedMutations(
+            value
+        )
+    end)
+end
+
+GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.Delay =
+    FarmAutoShovelFruitBox:AddInput(
+        "HolyGAG2AutoShovelFruitDelay",
+        {
+            Text = "Shovel Delay",
+            Default = "0.70",
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Placeholder = "0.70",
+            Tooltip = "Delay between accepted fruit shovel requests. Values below 0.65 use an effective 0.65-second minimum.",
+            Callback = function(value)
+
+                GAG2AutoShovelFruitSetDelay(
+                    value
+                )
+            end,
+        }
+    )
+
+FarmAutoShovelFruitBox:AddButton({
+    Text = "Refresh Fruits",
+    Tooltip = "Refreshes fruit names and live mutation counts.",
+    Func = function()
+
+        GAG2AutoShovelFruitRefreshUI()
+    end,
+}):AddButton({
+    Text = "Stop Fruit Shovel",
+    Risky = true,
+    Tooltip = "Stops Auto Shovel Fruits after the current confirmation check.",
+    Func = function()
+
+        GAG2AutoShovelFruitSetEnabled(
+            false
+        )
+
+        GAG2AutoShovelFruitSetToggleOff()
+    end,
+})
 
 FarmStatusBox:AddLabel("HolyGAG2FarmStatus", {
     Text =
@@ -33547,6 +35160,19 @@ GAG2_AUTO_SHOVEL_CONTROLS.StatusLabel =
         }
     )
 
+FarmStatusBox:AddDivider()
+
+GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.StatusLabel =
+    FarmStatusBox:AddLabel(
+        "HolyGAG2AutoShovelFruitStatus",
+        {
+            Text =
+                '<font color="rgb(196,181,253)"><b>Auto Shovel Fruits</b></font>'
+                .. '\nLoading own garden fruits...',
+            DoesWrap = true,
+        }
+    )
+
 task.defer(function()
 
     GAG2ACFRefreshDropdownValues()
@@ -33561,6 +35187,45 @@ task.defer(function()
         and ConfigState.Loading ~= true then
 
             GAG2AutoShovelSetEnabled(
+                true
+            )
+        end
+    end)
+end)
+
+task.defer(function()
+
+    GAG2AutoShovelFruitStartMonitor()
+    GAG2AutoShovelFruitRefreshUI()
+
+    task.delay(1.35, function()
+
+        if Options.HolyGAG2AutoShovelFruitTypes then
+
+            GAG2AutoShovelFruitSetSelectedFruits(
+                Options.HolyGAG2AutoShovelFruitTypes.Value
+            )
+        end
+
+        if Options.HolyGAG2AutoShovelFruitProtectedMutations then
+
+            GAG2AutoShovelFruitSetProtectedMutations(
+                Options.HolyGAG2AutoShovelFruitProtectedMutations.Value
+            )
+        end
+
+        if Options.HolyGAG2AutoShovelFruitDelay then
+
+            GAG2AutoShovelFruitSetDelay(
+                Options.HolyGAG2AutoShovelFruitDelay.Value
+            )
+        end
+
+        if Toggles.HolyGAG2AutoShovelFruits
+        and Toggles.HolyGAG2AutoShovelFruits.Value == true
+        and ConfigState.Loading ~= true then
+
+            GAG2AutoShovelFruitSetEnabled(
                 true
             )
         end
