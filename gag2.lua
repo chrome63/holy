@@ -6529,20 +6529,282 @@ local function GAG2ActivateLoadingGuiObject(object)
     return activated
 end
 
+function GAG2FindLoadingSkipBindable()
+
+    local candidateRoots = {
+        ReplicatedStorage,
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+        or nil,
+    }
+
+    for _, root in ipairs(candidateRoots) do
+
+        if typeof(root) == "Instance" then
+
+            local scanned =
+                0
+
+            for _, descendant in ipairs(root:GetDescendants()) do
+
+                scanned += 1
+
+                if scanned > 6000 then
+                    break
+                end
+
+                if descendant:IsA("BindableEvent") then
+
+                    local name =
+                        tostring(descendant.Name or ""):lower()
+
+                    local path =
+                        PathOf(descendant):lower()
+
+                    local looksLikeSkip =
+                        (
+                            name:find("skip", 1, true)
+                            or path:find("skip", 1, true)
+                            or name:find("finish", 1, true)
+                            or path:find("finish", 1, true)
+                        )
+                        and (
+                            name:find("loading", 1, true)
+                            or path:find("loading", 1, true)
+                            or name:find("load", 1, true)
+                            or path:find("load", 1, true)
+                        )
+
+                    if looksLikeSkip then
+
+                        return descendant
+                    end
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function GAG2FireLoadingSkipBindable(reason)
+
+    local bindable =
+        GAG2FindLoadingSkipBindable()
+
+    if not bindable then
+        return false,
+            "no loading skip bindable"
+    end
+
+    local ok, err =
+        pcall(function()
+
+            bindable:Fire(
+                tostring(reason or "HOLY_AUTO_SKIP")
+            )
+        end)
+
+    if ok == true then
+
+        return true,
+            "bindable: "
+            .. PathOf(bindable)
+    end
+
+    return false,
+        tostring(err)
+end
+
+function GAG2FindLoadingSkipGuiObject()
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+
+    if not playerGui then
+        return nil,
+            "PlayerGui missing"
+    end
+
+    local preferredRoots =
+        {}
+
+    local loadingGui =
+        playerGui:FindFirstChild("LoadingGui")
+
+    if loadingGui then
+
+        table.insert(
+            preferredRoots,
+            loadingGui
+        )
+    end
+
+    table.insert(
+        preferredRoots,
+        playerGui
+    )
+
+    local keywords = {
+        "skip",
+        "click to skip",
+        "click to skip!",
+        "fully loaded",
+        "press any key",
+        "key to play",
+        "play",
+        "start",
+        "continue",
+    }
+
+    for _, root in ipairs(preferredRoots) do
+
+        if typeof(root) == "Instance" then
+
+            local scanned =
+                0
+
+            for _, descendant in ipairs(root:GetDescendants()) do
+
+                scanned += 1
+
+                if scanned > 10000 then
+                    break
+                end
+
+                if descendant:IsA("TextButton")
+                or descendant:IsA("ImageButton")
+                or descendant:IsA("TextLabel")
+                or descendant:IsA("TextBox") then
+
+                    local rawText =
+                        ""
+
+                    pcall(function()
+
+                        rawText =
+                            tostring(descendant.Text or "")
+                    end)
+
+                    local text =
+                        CleanText(
+                            rawText
+                                :gsub("<[^>]->", "")
+                                :gsub("<.->", "")
+                        )
+
+                    local lowerText =
+                        text:lower()
+
+                    if GAG2GuiObjectVisible(descendant) == true then
+
+                        for _, keyword in ipairs(keywords) do
+
+                            if lowerText:find(
+                                tostring(keyword):lower(),
+                                1,
+                                true
+                            ) then
+
+                                return descendant,
+                                    "text: "
+                                    .. tostring(text)
+                                    .. " | "
+                                    .. PathOf(descendant)
+                            end
+                        end
+
+                        local lowerPath =
+                            PathOf(descendant):lower()
+
+                        if lowerPath:find("loading", 1, true)
+                        and (
+                            lowerPath:find("skip", 1, true)
+                            or lowerPath:find("play", 1, true)
+                            or lowerPath:find("continue", 1, true)
+                            or lowerPath:find("button", 1, true)
+                        ) then
+
+                            return descendant,
+                                "path: "
+                                .. PathOf(descendant)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return nil,
+        "no visible loading skip gui object"
+end
+
 function GAG2SendLoadingScreenClick()
 
-    -- Loading-screen automation removed.
-    -- Do not send input, do not click UI, do not touch camera.
+    local bindableOk, bindableInfo =
+        GAG2FireLoadingSkipBindable(
+            "HOLY_AUTO_SKIP"
+        )
 
-    return false
+    if bindableOk == true then
+
+        return true,
+            tostring(bindableInfo)
+    end
+
+    local object, objectInfo =
+        GAG2FindLoadingSkipGuiObject()
+
+    if not object then
+
+        return false,
+            tostring(objectInfo)
+    end
+
+    local ok =
+        GAG2ActivateLoadingGuiObject(
+            object
+        )
+
+    if ok == true then
+
+        return true,
+            "direct gui: "
+            .. tostring(objectInfo)
+    end
+
+    return false,
+        "direct gui activation failed: "
+        .. tostring(objectInfo)
 end
 
 function GAG2FireFinishLoadingRemoteSafe()
 
-    -- Loading-screen automation removed.
-    -- Do not spoof Finish_Loading anymore.
+    local bindableOk =
+        false
 
-    return false
+    local bindableInfo =
+        "no bindable"
+
+    if type(GAG2FireLoadingSkipBindable) == "function" then
+
+        bindableOk, bindableInfo =
+            GAG2FireLoadingSkipBindable(
+                "HOLY_FINISH_LOADING"
+            )
+    end
+
+    if bindableOk == true then
+
+        return true,
+            tostring(bindableInfo)
+    end
+
+    return GAG2HardFinishLoading(
+        "finish fallback after "
+        .. tostring(bindableInfo)
+    )
 end
 
 function GAG2RestoreCameraSoft()
@@ -6595,9 +6857,6 @@ end
 
 function GAG2HardFinishLoading(reason)
 
-    -- Loading-screen hard finish removed.
-    -- Do not set loading attributes, do not fire remotes, do not disable GUI.
-
     GAG2_AUTO_PLAY_STATE =
         type(GAG2_AUTO_PLAY_STATE) == "table"
         and GAG2_AUTO_PLAY_STATE
@@ -6609,13 +6868,120 @@ function GAG2HardFinishLoading(reason)
     GAG2_AUTO_PLAY_STATE.HardFinished =
         true
 
+    local changedAttributes =
+        false
+
+    pcall(function()
+
+        LOCAL_PLAYER:SetAttribute(
+            "LoadingScreenActive",
+            false
+        )
+
+        LOCAL_PLAYER:SetAttribute(
+            "LoadingScreenDone",
+            true
+        )
+
+        changedAttributes =
+            true
+    end)
+
+    pcall(function()
+
+        LOCAL_PLAYER:SetAttribute(
+            "FinishedLoading",
+            true
+        )
+
+        LOCAL_PLAYER:SetAttribute(
+            "HasLoaded",
+            true
+        )
+
+        LOCAL_PLAYER:SetAttribute(
+            "ClientLoaded",
+            true
+        )
+    end)
+
+    local hiddenGuiCount =
+        0
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+
+    if playerGui then
+
+        for _, child in ipairs(playerGui:GetChildren()) do
+
+            if child:IsA("ScreenGui") then
+
+                local lowerName =
+                    tostring(child.Name or ""):lower()
+
+                local lowerPath =
+                    PathOf(child):lower()
+
+                local looksLikeLoading =
+                    lowerName:find("loading", 1, true)
+                    or lowerName:find("loadingscreen", 1, true)
+                    or lowerPath:find("loading", 1, true)
+                    or lowerPath:find("loadingscreen", 1, true)
+
+                if looksLikeLoading then
+
+                    local ok =
+                        pcall(function()
+
+                            child.Enabled =
+                                false
+                        end)
+
+                    if ok == true then
+
+                        hiddenGuiCount += 1
+                    end
+                end
+            end
+        end
+    end
+
+    GAG2RestoreCameraSoft()
+
     if type(SniperState) == "table" then
 
         SniperState.PlayScreenClearAt =
             os.clock()
     end
 
-    return false
+    if type(GAG2_AUTO_TP_MIDDLE_FARM_STATE) == "table" then
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.SkipSucceeded =
+            true
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.SkipSuccessReason =
+            "client-state finish fallback"
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
+            "hard finish loading: "
+            .. tostring(reason or "fallback")
+    end
+
+    print(
+        "[HOLY GAG2 LOADING]",
+        "client-state finish fallback",
+        "| reason:",
+        tostring(reason or "manual"),
+        "| attributes:",
+        tostring(changedAttributes),
+        "| hiddenGui:",
+        tostring(hiddenGuiCount)
+    )
+
+    return true,
+        "client-state finish fallback"
 end
 
 function GAG2AutoPlayLoadingStep()
@@ -7478,19 +7844,36 @@ function GAG2MiddleFarmPressSkipHold()
     local state =
         GAG2_AUTO_TP_MIDDLE_FARM_STATE
 
-    if not VirtualInputManager then
-
-        state.LastResult =
-            "VirtualInputManager missing"
-
-        return false,
-            "VirtualInputManager missing"
-    end
-
     if state.HoldingSkip == true then
 
         return true,
             "already holding"
+    end
+
+    local directOk, directInfo =
+        GAG2SendLoadingScreenClick()
+
+    if directOk == true then
+
+        state.LastResult =
+            "direct skip fired: "
+            .. tostring(directInfo)
+
+        return true,
+            "direct skip: "
+            .. tostring(directInfo)
+    end
+
+    if not VirtualInputManager then
+
+        state.LastResult =
+            "direct skip failed and VirtualInputManager missing: "
+            .. tostring(directInfo)
+
+        return false,
+            "direct failed: "
+            .. tostring(directInfo)
+            .. " | VirtualInputManager missing"
     end
 
     local x, y, viewport =
@@ -7512,7 +7895,10 @@ function GAG2MiddleFarmPressSkipHold()
     if ok ~= true then
 
         return false,
-            tostring(err)
+            "direct failed: "
+            .. tostring(directInfo)
+            .. " | mouse failed: "
+            .. tostring(err)
     end
 
     state.HoldingSkip =
@@ -7528,7 +7914,7 @@ function GAG2MiddleFarmPressSkipHold()
         y
 
     return true,
-        "mouse down at "
+        "mouse fallback at "
         .. tostring(x)
         .. ","
         .. tostring(y)
@@ -7536,6 +7922,8 @@ function GAG2MiddleFarmPressSkipHold()
         .. tostring(math.floor(viewport.X))
         .. "x"
         .. tostring(math.floor(viewport.Y))
+        .. " | direct failed: "
+        .. tostring(directInfo)
 end
 
 function GAG2TeleportToMiddleFarmOnce(reason)
@@ -8126,7 +8514,64 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
                 return
             end
 
-            if state.SkipAttempts >= 2 then
+            local function runFinishFallback(fallbackReason)
+
+                if state.SkipSucceeded == true then
+                    return
+                end
+
+                GAG2MiddleFarmReleaseSkipHold(
+                    "fallback"
+                )
+
+                local finishOk, finishInfo =
+                    GAG2FireFinishLoadingRemoteSafe()
+
+                if finishOk == true then
+
+                    state.SkipSucceeded =
+                        true
+
+                    state.SkipSuccessReason =
+                        tostring(finishInfo)
+
+                    state.LastResult =
+                        "skip fallback success: "
+                        .. tostring(finishInfo)
+
+                    print(
+                        "[HOLY GAG2 LOADING]",
+                        "SKIP FALLBACK SUCCESS",
+                        "| reason:",
+                        tostring(fallbackReason),
+                        "| method:",
+                        tostring(finishInfo)
+                    )
+
+                else
+
+                    state.LastResult =
+                        "skip fallback failed: "
+                        .. tostring(finishInfo)
+
+                    print(
+                        "[HOLY GAG2 LOADING]",
+                        "skip fallback failed",
+                        "| reason:",
+                        tostring(fallbackReason),
+                        "| method:",
+                        tostring(finishInfo)
+                    )
+                end
+            end
+
+            if state.SkipAttempts >= 2
+            and state.HoldingSkip ~= true then
+
+                runFinishFallback(
+                    "attempt cap"
+                )
+
                 return
             end
 
@@ -8139,15 +8584,17 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
 
                 state.HoldMaxSeconds =
                     state.SkipAttempts == 1
-                    and 3.60
-                    or 4.20
+                    and 2.25
+                    or 2.75
 
                 local ok, method =
                     GAG2MiddleFarmPressSkipHold()
 
                 print(
                     "[HOLY GAG2 LOADING]",
-                    "skip hold started",
+                    state.HoldingSkip == true
+                    and "skip hold started"
+                    or "direct skip attempted",
                     "| attempt:",
                     tostring(state.SkipAttempts),
                     "| maxHold:",
@@ -8167,6 +8614,22 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
                     state.LastResult =
                         "skip hold failed: "
                         .. tostring(method)
+
+                    if state.SkipAttempts >= 2 then
+
+                        runFinishFallback(
+                            "press failed"
+                        )
+                    end
+                end
+
+                if ok == true
+                and state.HoldingSkip ~= true
+                and state.SkipAttempts >= 2 then
+
+                    runFinishFallback(
+                        "direct attempts did not clear loading"
+                    )
                 end
 
                 return
@@ -8175,7 +8638,7 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
             local heldFor =
                 os.clock() - tonumber(state.HoldStartAt or os.clock())
 
-            if heldFor >= tonumber(state.HoldMaxSeconds or 3.60) then
+            if heldFor >= tonumber(state.HoldMaxSeconds or 2.75) then
 
                 GAG2MiddleFarmReleaseSkipHold(
                     "max hold reached"
@@ -8187,6 +8650,13 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
                     "| attempt:",
                     tostring(state.SkipAttempts)
                 )
+
+                if state.SkipAttempts >= 2 then
+
+                    runFinishFallback(
+                        "max hold reached"
+                    )
+                end
             end
         end
 
@@ -8221,11 +8691,17 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
             local autoSkipNeeded =
                 GAG2AutoSkipLoadingEnabled() == true
 
+            local skipSnap =
+                GAG2MiddleFarmLoadingSnapshot()
+
             local skipDone =
                 autoSkipNeeded ~= true
                 or state.SkipSucceeded == true
-                or state.SkipAttempts >= 2
-                or GAG2MiddleFarmLoadingSnapshot().Done == true
+                or skipSnap.Done == true
+                or (
+                    state.SkipAttempts >= 2
+                    and skipSnap.Active ~= true
+                )
 
             local tpDone =
                 autoTpNeeded ~= true
