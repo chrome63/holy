@@ -12013,7 +12013,7 @@ local function SniperFindWildBuyPacket()
     return SniperState.BuyPacket
 end
 
-local function SniperGetCharacterRoot()
+function SniperGetCharacterRoot()
 
     local character =
         LOCAL_PLAYER
@@ -12898,7 +12898,7 @@ function GAG2StartLoadingGuiCleaner()
     return false
 end
 
-local function SniperReadyToHop()
+function SniperReadyToHop()
 
     if not SniperGetSpawnsFolder()
     or not SniperGetRefFolder() then
@@ -12911,7 +12911,7 @@ local function SniperReadyToHop()
         "Ready."
 end
 
-local function SniperReadyToBuy()
+function SniperReadyToBuy()
 
     local elapsed =
         os.clock()
@@ -12950,7 +12950,7 @@ local function SniperReadyToBuy()
         "Ready."
 end
 
-local function SniperGetEntryTamePosition(entry)
+function SniperGetEntryTamePosition(entry)
 
     if type(entry) ~= "table" then
         return nil
@@ -13036,14 +13036,14 @@ local function SniperGetEntryTamePosition(entry)
     )
 end
 
-local function SniperGetCurrentEntryPosition(entry)
+function SniperGetCurrentEntryPosition(entry)
 
     return SniperGetEntryTamePosition(
         entry
     )
 end
 
-local function SniperBuildTameRayParams(entry)
+function SniperBuildTameRayParams(entry)
 
     local character =
         LOCAL_PLAYER
@@ -13116,7 +13116,7 @@ local function SniperBuildTameRayParams(entry)
     return rayParams
 end
 
-local function SniperGetSafeTameCFrame(entryOrPosition, fallbackPosition)
+function SniperGetSafeTameCFrame(entryOrPosition, fallbackPosition)
 
     local entry =
         type(entryOrPosition) == "table"
@@ -13275,7 +13275,7 @@ local function SniperGetSafeTameCFrame(entryOrPosition, fallbackPosition)
 end
 
 
-local function SniperStopCharacterMotion(root)
+function SniperStopCharacterMotion(root)
 
     if typeof(root) ~= "Instance" then
         return
@@ -24769,7 +24769,7 @@ function GAG2RestoreSeedPlantingState()
     end)
 end
 
-local function SniperMoveCloseForTame(entry)
+function SniperMoveCloseForTame(entry)
 
     local character, root =
         SniperGetCharacterRoot()
@@ -24869,7 +24869,7 @@ local function SniperMoveCloseForTame(entry)
     "moved"
 end
 
-local function SniperRestoreAfterTame(moveState)
+function SniperRestoreAfterTame(moveState)
 
     if SniperState.ReturnAfterTame ~= true then
         return
@@ -24926,7 +24926,7 @@ local function SniperRestoreAfterTame(moveState)
     end)
 end
 
-local function SniperGetEntryKey(entry)
+function SniperGetEntryKey(entry)
 
     if type(entry) ~= "table" then
         return ""
@@ -24942,7 +24942,7 @@ local function SniperGetEntryKey(entry)
     return CleanText(entry.Name)
 end
 
-local function SniperHasPendingBuy()
+function SniperHasPendingBuy()
 
     if type(SniperState.PendingWildPets) ~= "table" then
         return false
@@ -24958,7 +24958,7 @@ local function SniperHasPendingBuy()
     return false
 end
 
-local function SniperIsEntryHandled(entry)
+function SniperIsEntryHandled(entry)
 
     local key =
         SniperGetEntryKey(entry)
@@ -24988,7 +24988,7 @@ local function SniperIsEntryHandled(entry)
     return true
 end
 
-local function SniperMarkEntryHandled(entry, seconds)
+function SniperMarkEntryHandled(entry, seconds)
 
     local key =
         SniperGetEntryKey(entry)
@@ -25006,7 +25006,7 @@ local function SniperMarkEntryHandled(entry, seconds)
         )
 end
 
-local function SniperFindSpawnByUuid(uuid)
+function SniperFindSpawnByUuid(uuid)
 
     uuid =
         CleanText(uuid)
@@ -25037,7 +25037,7 @@ local function SniperFindSpawnByUuid(uuid)
     return nil
 end
 
-local function SniperEntryStillActive(entry)
+function SniperEntryStillActive(entry)
 
     if type(entry) ~= "table" then
         return false
@@ -25082,7 +25082,7 @@ local function SniperEntryStillActive(entry)
     return false
 end
 
-local function SniperWaitForClaimConfirmation(entry)
+function SniperWaitForClaimConfirmation(entry)
 
     local started =
         os.clock()
@@ -25134,7 +25134,7 @@ local function SniperWaitForClaimConfirmation(entry)
     return false
 end
 
-local function SniperHoldCloseForServerValidation(moveState)
+function SniperHoldCloseForServerValidation(moveState)
 
     local waitTime =
         math.clamp(
@@ -25170,7 +25170,7 @@ local function SniperHoldCloseForServerValidation(moveState)
     end
 end
 
-local function SniperStartBuyConfirmation(entry)
+function SniperStartBuyConfirmation(entry)
 
     local key =
         SniperGetEntryKey(
@@ -25261,7 +25261,7 @@ local function SniperStartBuyConfirmation(entry)
     end)
 end
 
-local function SniperFireWildBuyPacket(entry)
+function SniperFireWildBuyPacket(entry)
 
     if type(entry) ~= "table" then
         return false, "missing entry"
@@ -25368,7 +25368,7 @@ local function SniperFireWildBuyPacket(entry)
     return true, "fired"
 end
 
-local function SniperGetAttemptKey(entry)
+function SniperGetAttemptKey(entry)
 
     if type(entry) ~= "table" then
         return ""
@@ -25386,7 +25386,7 @@ local function SniperGetAttemptKey(entry)
     )
 end
 
-local function SniperGetAttemptCount(entry)
+function SniperGetAttemptCount(entry)
 
     local key =
         SniperGetAttemptKey(
@@ -25408,7 +25408,7 @@ local function SniperGetAttemptCount(entry)
     or 0
 end
 
-local function SniperCanAttemptEntry(entry)
+function SniperCanAttemptEntry(entry)
 
     local maxBuys =
         math.max(
@@ -25422,7 +25422,7 @@ local function SniperCanAttemptEntry(entry)
     return SniperGetAttemptCount(entry) < maxBuys
 end
 
-local function SniperRegisterAttempt(entry)
+function SniperRegisterAttempt(entry)
 
     local key =
         SniperGetAttemptKey(
@@ -25446,7 +25446,7 @@ local function SniperRegisterAttempt(entry)
         + 1
 end
 
-local function SniperEntryAvailableForBuy(entry)
+function SniperEntryAvailableForBuy(entry)
 
     if type(entry) ~= "table" then
         return false
@@ -25495,7 +25495,7 @@ local function SniperEntryAvailableForBuy(entry)
     return true
 end
 
-local function SniperLookAtEntry(entry)
+function SniperLookAtEntry(entry)
 
     local targetPosition =
         SniperGetCurrentEntryPosition(
@@ -25541,7 +25541,7 @@ local function SniperLookAtEntry(entry)
     return true
 end
 
-local function SniperFollowEntryForBuy(entry)
+function SniperFollowEntryForBuy(entry)
 
     if SniperState.FollowPet ~= true then
 
@@ -25639,7 +25639,7 @@ local function SniperFollowEntryForBuy(entry)
     )
 end
 
-local function SniperFindHoldPrompt(entry)
+function SniperFindHoldPrompt(entry)
 
     local bestPrompt =
         nil
@@ -25650,100 +25650,88 @@ local function SniperFindHoldPrompt(entry)
     local _, root =
         SniperGetCharacterRoot()
 
-    local function scanRoot(rootInstance)
+    local roots = {
+        entry and entry.Instance,
+        entry and entry.Spawn,
+        entry and entry.Ref,
+    }
 
-        if typeof(rootInstance) ~= "Instance" then
-            return
-        end
+    for _, rootInstance in ipairs(roots) do
 
-        if rootInstance:IsA("ProximityPrompt") then
+        if typeof(rootInstance) == "Instance" then
 
-            if rootInstance.Enabled ~= false then
+            if rootInstance:IsA("ProximityPrompt") then
 
-                local parent =
-                    rootInstance.Parent
+                if rootInstance.Enabled ~= false then
 
-                local promptPosition =
-                    SniperGetPosition(
-                        parent
-                    )
+                    local promptPosition =
+                        SniperGetPosition(
+                            rootInstance.Parent
+                        )
 
-                local distance =
-                    root
-                    and typeof(promptPosition) == "Vector3"
-                    and (root.Position - promptPosition).Magnitude
-                    or 0
+                    local distance =
+                        root
+                        and typeof(promptPosition) == "Vector3"
+                        and (root.Position - promptPosition).Magnitude
+                        or 0
 
-                if distance < bestDistance then
+                    if distance < bestDistance then
 
-                    bestDistance =
-                        distance
+                        bestDistance =
+                            distance
 
-                    bestPrompt =
-                        rootInstance
+                        bestPrompt =
+                            rootInstance
+                    end
                 end
-            end
 
-            return
-        end
+            else
 
-        local scanned =
-            0
+                local scanned =
+                    0
 
-        for _, descendant in ipairs(rootInstance:GetDescendants()) do
+                for _, descendant in ipairs(rootInstance:GetDescendants()) do
 
-            scanned =
-                scanned + 1
+                    scanned =
+                        scanned + 1
 
-            if scanned > 350 then
-                break
-            end
+                    if scanned > 350 then
+                        break
+                    end
 
-            if descendant:IsA("ProximityPrompt")
-            and descendant.Enabled ~= false then
+                    if descendant:IsA("ProximityPrompt")
+                    and descendant.Enabled ~= false then
 
-                local parent =
-                    descendant.Parent
+                        local promptPosition =
+                            SniperGetPosition(
+                                descendant.Parent
+                            )
 
-                local promptPosition =
-                    SniperGetPosition(
-                        parent
-                    )
+                        local distance =
+                            root
+                            and typeof(promptPosition) == "Vector3"
+                            and (root.Position - promptPosition).Magnitude
+                            or 0
 
-                local distance =
-                    root
-                    and typeof(promptPosition) == "Vector3"
-                    and (root.Position - promptPosition).Magnitude
-                    or 0
+                        if distance < bestDistance then
 
-                if distance < bestDistance then
+                            bestDistance =
+                                distance
 
-                    bestDistance =
-                        distance
-
-                    bestPrompt =
-                        descendant
+                            bestPrompt =
+                                descendant
+                        end
+                    end
                 end
             end
         end
     end
 
-    scanRoot(
-        entry.Instance
-    )
-
-    scanRoot(
-        entry.Spawn
-    )
-
-    scanRoot(
-        entry.Ref
-    )
-
     return bestPrompt
 end
 
-local function SniperFireHoldBuy(entry)
+
+function SniperFireHoldBuy(entry)
 
     SniperLookAtEntry(
         entry
@@ -25829,7 +25817,7 @@ local function SniperFireHoldBuy(entry)
         "hold fired"
 end
 
-local function SniperFireBuyByMode(entry)
+function SniperFireBuyByMode(entry)
 
     if SniperState.BuyMode == "Hold" then
 
@@ -25844,7 +25832,7 @@ local function SniperFireBuyByMode(entry)
 end
 
 
-local function SniperAttemptBuyEntry(entry)
+function SniperAttemptBuyEntry(entry)
 
     if type(entry) ~= "table" then
         return false
@@ -41711,34 +41699,40 @@ SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
     end,
 })
 
-SniperMainBox:AddDropdown("HolyGAG2SniperBuyMode", {
-    Text = "Buy Mode",
-    Values = {
-        "Instant",
-        "Hold",
-    },
-    Default = SniperState.BuyMode or "Instant",
-    Multi = false,
-    Searchable = false,
-    AllowNull = false,
-    Tooltip = "Instant fires the packet. Hold uses the pet's proximity prompt and waits for the hold.",
-}):OnChanged(function(value)
+GAG2_SNIPER_BUY_MODE_DROPDOWN =
+    SniperMainBox:AddDropdown("HolyGAG2SniperBuyMode", {
+        Text = "Buy Mode",
+        Values = {
+            "Instant",
+            "Hold",
+        },
+        Default = SniperState.BuyMode or "Instant",
+        Multi = false,
+        Searchable = false,
+        Tooltip = "Instant fires the packet. Hold uses the pet's proximity prompt and waits for the hold.",
+    })
 
-    local mode =
-        CleanText(value)
+if GAG2_SNIPER_BUY_MODE_DROPDOWN
+and type(GAG2_SNIPER_BUY_MODE_DROPDOWN.OnChanged) == "function" then
 
-    SniperState.BuyMode =
-        mode == "Hold"
-        and "Hold"
-        or "Instant"
+    GAG2_SNIPER_BUY_MODE_DROPDOWN:OnChanged(function(value)
 
-    SetSniperStatus(
-        "Buy mode: "
-        .. tostring(SniperState.BuyMode)
-    )
+        local mode =
+            CleanText(value)
 
-    MarkConfigDirty()
-end)
+        SniperState.BuyMode =
+            mode == "Hold"
+            and "Hold"
+            or "Instant"
+
+        SetSniperStatus(
+            "Buy mode: "
+            .. tostring(SniperState.BuyMode)
+        )
+
+        MarkConfigDirty()
+    end)
+end
 
 SniperMainBox:AddToggle("HolyGAG2SniperFollowPet", {
     Text = "Follow Pet While Buying",
