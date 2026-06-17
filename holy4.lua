@@ -8878,6 +8878,16 @@ local SniperState = {
     ClaimDisappearConfirmTime = 1.25,
     HandledPetCooldown = 120,
 
+    BuyMode = "Instant",
+    FollowPet = true,
+    MaxBuysPerPet = 1,
+    AttemptCounts = {},
+
+    TeleportGroundOffset = 3.25,
+    TeleportSideDistance = 5.25,
+    FollowRefreshDelay = 0.10,
+    FollowMaxSeconds = 3.25,
+
     PacketTable = nil,
     PacketSource = "not loaded",
 
@@ -12946,22 +12956,22 @@ local function SniperGetEntryTamePosition(entry)
         return nil
     end
 
+    local uuid =
+        CleanText(entry.UUID)
+
     local ref =
         entry.Ref
 
-    if typeof(ref) ~= "Instance"
-    or ref.Parent == nil then
+    if (typeof(ref) ~= "Instance" or ref.Parent == nil)
+    and uuid ~= "" then
 
-        local uuid =
-            CleanText(entry.UUID)
+        ref =
+            SniperFindRef(
+                uuid
+            )
 
-        if uuid ~= "" then
-
-            ref =
-                SniperFindRef(
-                    uuid
-                )
-        end
+        entry.Ref =
+            ref
     end
 
     local refPosition =
@@ -12970,26 +12980,55 @@ local function SniperGetEntryTamePosition(entry)
         )
 
     if typeof(refPosition) == "Vector3" then
-        return refPosition
-    end
 
-    if typeof(entry.Position) == "Vector3" then
-        return entry.Position
+        entry.Position =
+            refPosition
+
+        return refPosition
     end
 
     local spawn =
         entry.Spawn
 
-    if typeof(spawn) == "Instance" then
+    if (typeof(spawn) ~= "Instance" or spawn.Parent == nil)
+    and uuid ~= "" then
 
-        local spawnPosition =
-            SniperGetPosition(
-                spawn
-            )
+        local spawnFolder =
+            SniperGetSpawnsFolder()
 
-        if typeof(spawnPosition) == "Vector3" then
-            return spawnPosition
+        if spawnFolder then
+
+            for _, child in ipairs(spawnFolder:GetChildren()) do
+
+                if SniperGetUuid(child.Name) == uuid then
+
+                    spawn =
+                        child
+
+                    entry.Spawn =
+                        spawn
+
+                    break
+                end
+            end
         end
+    end
+
+    local spawnPosition =
+        SniperGetPosition(
+            spawn
+        )
+
+    if typeof(spawnPosition) == "Vector3" then
+
+        entry.Position =
+            spawnPosition
+
+        return spawnPosition
+    end
+
+    if typeof(entry.Position) == "Vector3" then
+        return entry.Position
     end
 
     return SniperGetPosition(
@@ -12997,22 +13036,68 @@ local function SniperGetEntryTamePosition(entry)
     )
 end
 
-local function SniperGetSafeTameCFrame(targetPosition)
+local function SniperGetCurrentEntryPosition(entry)
 
-    if typeof(targetPosition) ~= "Vector3" then
-        return nil
-    end
+    return SniperGetEntryTamePosition(
+        entry
+    )
+end
 
-    local character, root =
-        SniperGetCharacterRoot()
+local function SniperBuildTameRayParams(entry)
+
+    local character =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character
 
     local ignoreList =
         {}
 
-    if character then
+    local function addIgnore(instance)
+
+        if typeof(instance) ~= "Instance" then
+            return
+        end
+
+        if table.find(ignoreList, instance) ~= nil then
+            return
+        end
+
         table.insert(
             ignoreList,
-            character
+            instance
+        )
+    end
+
+    addIgnore(
+        character
+    )
+
+    if type(entry) == "table" then
+
+        addIgnore(
+            entry.Instance
+        )
+
+        addIgnore(
+            entry.Spawn
+        )
+
+        addIgnore(
+            entry.Ref
+        )
+    end
+
+    local map =
+        workspace:FindFirstChild("Map")
+
+    if map then
+
+        addIgnore(
+            map:FindFirstChild("WildPetSpawns")
+        )
+
+        addIgnore(
+            map:FindFirstChild("WildPetRef")
         )
     end
 
@@ -13028,16 +13113,96 @@ local function SniperGetSafeTameCFrame(targetPosition)
     rayParams.IgnoreWater =
         true
 
+    return rayParams
+end
+
+local function SniperGetSafeTameCFrame(entryOrPosition, fallbackPosition)
+
+    local entry =
+        type(entryOrPosition) == "table"
+        and entryOrPosition
+        or nil
+
+    local targetPosition =
+        typeof(fallbackPosition) == "Vector3"
+        and fallbackPosition
+        or (
+            typeof(entryOrPosition) == "Vector3"
+            and entryOrPosition
+            or nil
+        )
+
+    if typeof(targetPosition) ~= "Vector3"
+    and entry then
+
+        targetPosition =
+            SniperGetCurrentEntryPosition(
+                entry
+            )
+    end
+
+    if typeof(targetPosition) ~= "Vector3" then
+        return nil, nil
+    end
+
+    local _, root =
+        SniperGetCharacterRoot()
+
+    local rayParams =
+        SniperBuildTameRayParams(
+            entry
+        )
+
+    local sideDistance =
+        math.clamp(
+            tonumber(SniperState.TeleportSideDistance)
+            or 5.25,
+            3.5,
+            8
+        )
+
+    local groundOffset =
+        math.clamp(
+            tonumber(SniperState.TeleportGroundOffset)
+            or 3.25,
+            2.75,
+            5
+        )
+
+    local awayDirection =
+        Vector3.new(
+            1,
+            0,
+            0
+        )
+
+    if root then
+
+        local delta =
+            Vector3.new(
+                root.Position.X - targetPosition.X,
+                0,
+                root.Position.Z - targetPosition.Z
+            )
+
+        if delta.Magnitude > 0.25 then
+
+            awayDirection =
+                delta.Unit
+        end
+    end
+
     local offsets = {
-        Vector3.new(5, 0, 0),
-        Vector3.new(-5, 0, 0),
-        Vector3.new(0, 0, 5),
-        Vector3.new(0, 0, -5),
-        Vector3.new(7, 0, 7),
-        Vector3.new(-7, 0, 7),
-        Vector3.new(7, 0, -7),
-        Vector3.new(-7, 0, -7),
-        Vector3.new(0, 0, 0),
+        awayDirection * sideDistance,
+        -awayDirection * sideDistance,
+        Vector3.new(0, 0, sideDistance),
+        Vector3.new(0, 0, -sideDistance),
+        Vector3.new(sideDistance, 0, 0),
+        Vector3.new(-sideDistance, 0, 0),
+        Vector3.new(sideDistance * 0.75, 0, sideDistance * 0.75),
+        Vector3.new(-sideDistance * 0.75, 0, sideDistance * 0.75),
+        Vector3.new(sideDistance * 0.75, 0, -sideDistance * 0.75),
+        Vector3.new(-sideDistance * 0.75, 0, -sideDistance * 0.75),
     }
 
     local bestPosition =
@@ -13045,56 +13210,43 @@ local function SniperGetSafeTameCFrame(targetPosition)
 
     for _, offset in ipairs(offsets) do
 
-        local rayOrigin =
+        local samplePosition =
             targetPosition
             + offset
-            + Vector3.new(
-                0,
-                60,
-                0
-            )
 
-        local rayDirection =
+        local rayOrigin =
             Vector3.new(
-                0,
-                -140,
-                0
+                samplePosition.X,
+                targetPosition.Y + 90,
+                samplePosition.Z
             )
 
         local result =
             workspace:Raycast(
                 rayOrigin,
-                rayDirection,
+                Vector3.new(0, -260, 0),
                 rayParams
             )
 
         if result
-        and result.Position then
+        and typeof(result.Position) == "Vector3"
+        and result.Normal.Y >= 0.45
+        and result.Position.Y <= targetPosition.Y + 18 then
 
-            local candidatePosition =
+            bestPosition =
                 result.Position
                 + Vector3.new(
                     0,
-                    4.75,
+                    groundOffset,
                     0
                 )
-
-            bestPosition =
-                candidatePosition
 
             break
         end
     end
 
     if typeof(bestPosition) ~= "Vector3" then
-
-        bestPosition =
-            targetPosition
-            + Vector3.new(
-                0,
-                7,
-                0
-            )
+        return nil, nil
     end
 
     local lookTarget =
@@ -13121,6 +13273,7 @@ local function SniperGetSafeTameCFrame(targetPosition)
     ),
     bestPosition
 end
+
 
 local function SniperStopCharacterMotion(root)
 
@@ -24658,6 +24811,7 @@ local function SniperMoveCloseForTame(entry)
 
     local closeCFrame, closePosition =
         SniperGetSafeTameCFrame(
+            entry,
             targetPosition
         )
 
@@ -25214,6 +25368,482 @@ local function SniperFireWildBuyPacket(entry)
     return true, "fired"
 end
 
+local function SniperGetAttemptKey(entry)
+
+    if type(entry) ~= "table" then
+        return ""
+    end
+
+    local uuid =
+        CleanText(entry.UUID)
+
+    if uuid ~= "" then
+        return uuid
+    end
+
+    return SniperNormalizeName(
+        entry.Name
+    )
+end
+
+local function SniperGetAttemptCount(entry)
+
+    local key =
+        SniperGetAttemptKey(
+            entry
+        )
+
+    if key == "" then
+        return 0
+    end
+
+    SniperState.AttemptCounts =
+        type(SniperState.AttemptCounts) == "table"
+        and SniperState.AttemptCounts
+        or {}
+
+    return tonumber(
+        SniperState.AttemptCounts[key]
+    )
+    or 0
+end
+
+local function SniperCanAttemptEntry(entry)
+
+    local maxBuys =
+        math.max(
+            1,
+            math.floor(
+                tonumber(SniperState.MaxBuysPerPet)
+                or 1
+            )
+        )
+
+    return SniperGetAttemptCount(entry) < maxBuys
+end
+
+local function SniperRegisterAttempt(entry)
+
+    local key =
+        SniperGetAttemptKey(
+            entry
+        )
+
+    if key == "" then
+        return
+    end
+
+    SniperState.AttemptCounts =
+        type(SniperState.AttemptCounts) == "table"
+        and SniperState.AttemptCounts
+        or {}
+
+    SniperState.AttemptCounts[key] =
+        (
+            tonumber(SniperState.AttemptCounts[key])
+            or 0
+        )
+        + 1
+end
+
+local function SniperEntryAvailableForBuy(entry)
+
+    if type(entry) ~= "table" then
+        return false
+    end
+
+    local ref =
+        entry.Ref
+
+    if (typeof(ref) ~= "Instance" or ref.Parent == nil)
+    and CleanText(entry.UUID) ~= "" then
+
+        ref =
+            SniperFindRef(
+                entry.UUID
+            )
+
+        entry.Ref =
+            ref
+    end
+
+    if typeof(ref) == "Instance" then
+
+        local ownerUserId =
+            tonumber(
+                ref:GetAttribute("OwnerUserId")
+            )
+            or 0
+
+        if ownerUserId ~= 0 then
+            return false
+        end
+
+        local state =
+            CleanText(
+                ref:GetAttribute("State")
+            ):lower()
+
+        if state ~= ""
+        and state ~= "wandering"
+        and state ~= "wandering_walking" then
+
+            return false
+        end
+    end
+
+    return true
+end
+
+local function SniperLookAtEntry(entry)
+
+    local targetPosition =
+        SniperGetCurrentEntryPosition(
+            entry
+        )
+
+    if typeof(targetPosition) ~= "Vector3" then
+        return false
+    end
+
+    local character, root =
+        SniperGetCharacterRoot()
+
+    if not character
+    or not root then
+        return false
+    end
+
+    local lookTarget =
+        Vector3.new(
+            targetPosition.X,
+            root.Position.Y,
+            targetPosition.Z
+        )
+
+    if (root.Position - lookTarget).Magnitude < 0.1 then
+        return false
+    end
+
+    pcall(function()
+
+        root.CFrame =
+            CFrame.new(
+                root.Position,
+                lookTarget
+            )
+    end)
+
+    SniperStopCharacterMotion(
+        root
+    )
+
+    return true
+end
+
+local function SniperFollowEntryForBuy(entry)
+
+    if SniperState.FollowPet ~= true then
+
+        SniperLookAtEntry(
+            entry
+        )
+
+        return
+    end
+
+    local started =
+        os.clock()
+
+    local maxSeconds =
+        math.clamp(
+            tonumber(SniperState.FollowMaxSeconds)
+            or 3.25,
+            0.25,
+            8
+        )
+
+    local refreshDelay =
+        math.clamp(
+            tonumber(SniperState.FollowRefreshDelay)
+            or 0.10,
+            0.05,
+            0.50
+        )
+
+    while os.clock() - started < maxSeconds do
+
+        if SniperEntryAvailableForBuy(entry) ~= true then
+            return
+        end
+
+        local targetPosition =
+            SniperGetCurrentEntryPosition(
+                entry
+            )
+
+        if typeof(targetPosition) ~= "Vector3" then
+            return
+        end
+
+        local character, root =
+            SniperGetCharacterRoot()
+
+        if not character
+        or not root then
+            return
+        end
+
+        local distance =
+            (root.Position - targetPosition).Magnitude
+
+        if distance > 10 then
+
+            local closeCFrame =
+                SniperGetSafeTameCFrame(
+                    entry,
+                    targetPosition
+                )
+
+            if typeof(closeCFrame) ~= "CFrame" then
+                return
+            end
+
+            pcall(function()
+
+                character:PivotTo(
+                    closeCFrame
+                )
+            end)
+
+            SniperStopCharacterMotion(
+                root
+            )
+
+        else
+
+            SniperLookAtEntry(
+                entry
+            )
+
+            return
+        end
+
+        task.wait(
+            refreshDelay
+        )
+    end
+
+    SniperLookAtEntry(
+        entry
+    )
+end
+
+local function SniperFindHoldPrompt(entry)
+
+    local bestPrompt =
+        nil
+
+    local bestDistance =
+        math.huge
+
+    local _, root =
+        SniperGetCharacterRoot()
+
+    local function scanRoot(rootInstance)
+
+        if typeof(rootInstance) ~= "Instance" then
+            return
+        end
+
+        if rootInstance:IsA("ProximityPrompt") then
+
+            if rootInstance.Enabled ~= false then
+
+                local parent =
+                    rootInstance.Parent
+
+                local promptPosition =
+                    SniperGetPosition(
+                        parent
+                    )
+
+                local distance =
+                    root
+                    and typeof(promptPosition) == "Vector3"
+                    and (root.Position - promptPosition).Magnitude
+                    or 0
+
+                if distance < bestDistance then
+
+                    bestDistance =
+                        distance
+
+                    bestPrompt =
+                        rootInstance
+                end
+            end
+
+            return
+        end
+
+        local scanned =
+            0
+
+        for _, descendant in ipairs(rootInstance:GetDescendants()) do
+
+            scanned =
+                scanned + 1
+
+            if scanned > 350 then
+                break
+            end
+
+            if descendant:IsA("ProximityPrompt")
+            and descendant.Enabled ~= false then
+
+                local parent =
+                    descendant.Parent
+
+                local promptPosition =
+                    SniperGetPosition(
+                        parent
+                    )
+
+                local distance =
+                    root
+                    and typeof(promptPosition) == "Vector3"
+                    and (root.Position - promptPosition).Magnitude
+                    or 0
+
+                if distance < bestDistance then
+
+                    bestDistance =
+                        distance
+
+                    bestPrompt =
+                        descendant
+                end
+            end
+        end
+    end
+
+    scanRoot(
+        entry.Instance
+    )
+
+    scanRoot(
+        entry.Spawn
+    )
+
+    scanRoot(
+        entry.Ref
+    )
+
+    return bestPrompt
+end
+
+local function SniperFireHoldBuy(entry)
+
+    SniperLookAtEntry(
+        entry
+    )
+
+    task.wait(
+        0.05
+    )
+
+    local prompt =
+        SniperFindHoldPrompt(
+            entry
+        )
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true then
+
+        return false,
+            "hold prompt not found"
+    end
+
+    local holdDuration =
+        math.max(
+            tonumber(prompt.HoldDuration)
+            or 0,
+            0
+        )
+
+    local fired =
+        false
+
+    if type(fireproximityprompt) == "function" then
+
+        pcall(function()
+
+            fireproximityprompt(
+                prompt,
+                holdDuration + 0.15
+            )
+
+            fired =
+                true
+        end)
+
+        if fired ~= true then
+
+            pcall(function()
+
+                fireproximityprompt(
+                    prompt
+                )
+
+                fired =
+                    true
+            end)
+        end
+    end
+
+    if fired ~= true then
+
+        pcall(function()
+
+            prompt:InputHoldBegin()
+
+            task.wait(
+                holdDuration + 0.15
+            )
+
+            prompt:InputHoldEnd()
+
+            fired =
+                true
+        end)
+    end
+
+    if fired ~= true then
+
+        return false,
+            "hold fire failed"
+    end
+
+    return true,
+        "hold fired"
+end
+
+local function SniperFireBuyByMode(entry)
+
+    if SniperState.BuyMode == "Hold" then
+
+        return SniperFireHoldBuy(
+            entry
+        )
+    end
+
+    return SniperFireWildBuyPacket(
+        entry
+    )
+end
+
+
 local function SniperAttemptBuyEntry(entry)
 
     if type(entry) ~= "table" then
@@ -25231,6 +25861,26 @@ local function SniperAttemptBuyEntry(entry)
 
         SetSniperStatus(
             readyText
+        )
+
+        return false
+    end
+
+    if SniperEntryAvailableForBuy(entry) ~= true then
+
+        SniperMarkEntryHandled(
+            entry,
+            30
+        )
+
+        return false
+    end
+
+    if SniperCanAttemptEntry(entry) ~= true then
+
+        SniperMarkEntryHandled(
+            entry,
+            SniperState.HandledPetCooldown
         )
 
         return false
@@ -25272,7 +25922,11 @@ local function SniperAttemptBuyEntry(entry)
         os.clock()
 
     SetSniperStatus(
-        "Buying "
+        (
+            SniperState.BuyMode == "Hold"
+            and "Holding "
+            or "Buying "
+        )
         .. tostring(entry.Name)
         .. "..."
     )
@@ -25361,12 +26015,81 @@ local function SniperAttemptBuyEntry(entry)
             return
         end
 
-        local ok, info =
-            SniperFireWildBuyPacket(
+        if noTeleportTest ~= true then
+
+            SniperFollowEntryForBuy(
                 entry
             )
+        end
+
+        if SniperEntryAvailableForBuy(entry) ~= true then
+
+            SetSniperStatus(
+                "Skipped owned pet."
+            )
+
+            if noTeleportTest ~= true then
+
+                SniperRestoreAfterTame(
+                    moveState
+                )
+            end
+
+            SniperMarkEntryHandled(
+                entry,
+                30
+            )
+
+            SniperState.Taming =
+                false
+
+            return
+        end
+
+        if SniperCanAttemptEntry(entry) ~= true then
+
+            SetSniperStatus(
+                "Max buys reached: "
+                .. tostring(entry.Name)
+            )
+
+            if noTeleportTest ~= true then
+
+                SniperRestoreAfterTame(
+                    moveState
+                )
+            end
+
+            SniperState.Taming =
+                false
+
+            return
+        end
+
+        local ok, info =
+            nil,
+            nil
+
+        if noTeleportTest == true then
+
+            ok, info =
+                SniperFireWildBuyPacket(
+                    entry
+                )
+
+        else
+
+            ok, info =
+                SniperFireBuyByMode(
+                    entry
+                )
+        end
 
         if ok == true then
+
+            SniperRegisterAttempt(
+                entry
+            )
 
             SniperMarkEntryHandled(
                 entry,
@@ -25422,6 +26145,8 @@ local function SniperAttemptBuyEntry(entry)
                 SetSniperStatus(
                     "Buy sent: "
                     .. tostring(entry.Name)
+                    .. " | "
+                    .. tostring(SniperState.BuyMode)
                 )
 
                 SniperHoldCloseForServerValidation(
@@ -25463,6 +26188,8 @@ local function SniperAttemptBuyEntry(entry)
                 tostring(info),
                 "| move:",
                 tostring(moveInfo),
+                "| mode:",
+                tostring(SniperState.BuyMode),
                 "| packet:",
                 tostring(SniperState.BuyPacketSource)
             )
@@ -25474,6 +26201,7 @@ local function SniperAttemptBuyEntry(entry)
 
     return true
 end
+
 
 local function SniperGetDropdownPetNames()
 
@@ -26553,6 +27281,8 @@ function SniperScan(allowAutoHop)
     for _, entry in ipairs(entries) do
 
         if SniperIsEntryHandled(entry) ~= true
+        and SniperEntryAvailableForBuy(entry) == true
+        and SniperCanAttemptEntry(entry) == true
         and SniperEntryMatchesTargets(entry, targets) == true
         and SniperEntryMatchesSizeClass(entry) == true then
 
@@ -26677,34 +27407,26 @@ function SniperScan(allowAutoHop)
     and hasHandledActiveTarget ~= true
     and SniperReadyToHop() == true then
 
+        local hopDelay =
+            math.max(
+                1,
+                math.floor(
+                    tonumber(SniperState.HopDelay)
+                    or 20
+                )
+            )
+
         local sinceHop =
-            os.clock() - tonumber(SniperState.LastHopAt or 0)
+            os.clock()
+            - tonumber(SniperState.LastHopAt or 0)
 
-        local instantWanted =
-            SniperState.InstantFirstHop == true
-            and SniperState.FirstHopUsed ~= true
-            and SniperState.LastHopAt <= 0
-
-        local shouldInstantHop =
-            instantWanted == true
-
-        if shouldInstantHop == true then
-
-            SetSniperStatus(
-                "Instant hopping..."
-            )
-
-            GAG2SetPanicHudStatus(
-                "STOP / INSTANT HOP"
-            )
-
-        elseif sinceHop < SniperState.HopDelay then
+        if sinceHop < hopDelay then
 
             local remaining =
                 math.max(
                     1,
                     math.ceil(
-                        SniperState.HopDelay - sinceHop
+                        hopDelay - sinceHop
                     )
                 )
 
@@ -26723,27 +27445,19 @@ function SniperScan(allowAutoHop)
             return matches
         end
 
-        if shouldInstantHop == true
-        or sinceHop >= SniperState.HopDelay then
+        SniperState.LastHopAt =
+            os.clock()
 
-            SniperState.FirstHopUsed =
-                true
+        SetSniperStatus(
+            "Hopping..."
+        )
 
-            SniperState.LastHopAt =
-                os.clock()
+        GAG2SetPanicHudStatus(
+            "STOP / HOPPING"
+        )
 
-            SetSniperStatus(
-                shouldInstantHop == true
-                and "Instant hopping..."
-                or "Hopping..."
-            )
-
-            HopServerOnce()
-        end
+        HopServerOnce()
     end
-
-    return matches
-end
 
 function SniperStartLoop()
 
@@ -27302,8 +28016,8 @@ function RestoreSniperAutosaveState()
         local returnAfterTame =
             Toggles.HolyGAG2SniperReturnAfterTame
 
-        local instantFirstHop =
-            Toggles.HolyGAG2SniperInstantFirstHop
+        local followPet =
+            Toggles.HolyGAG2SniperFollowPet
 
         local noTeleportPacketTest =
             Toggles.HolyGAG2SniperNoTeleportPacketTest
@@ -27311,16 +28025,8 @@ function RestoreSniperAutosaveState()
         SniperState.AutoHop =
             autoHop == true
 
-        if instantFirstHop then
-
-            SniperState.InstantFirstHop =
-                instantFirstHop.Value == true
-
-        else
-
-            SniperState.InstantFirstHop =
-                false
-        end
+        SniperState.InstantFirstHop =
+            false
 
         if returnAfterTame then
 
@@ -27333,7 +28039,44 @@ function RestoreSniperAutosaveState()
                 true
         end
 
-        
+        if followPet then
+
+            SniperState.FollowPet =
+                followPet.Value == true
+
+        else
+
+            SniperState.FollowPet =
+                true
+        end
+
+        if Options.HolyGAG2SniperBuyMode
+        and Options.HolyGAG2SniperBuyMode.Value ~= nil then
+
+            local mode =
+                CleanText(
+                    Options.HolyGAG2SniperBuyMode.Value
+                )
+
+            SniperState.BuyMode =
+                mode == "Hold"
+                and "Hold"
+                or "Instant"
+        end
+
+        if Options.HolyGAG2SniperMaxBuysPerPet
+        and Options.HolyGAG2SniperMaxBuysPerPet.Value ~= nil then
+
+            SniperState.MaxBuysPerPet =
+                math.max(
+                    1,
+                    math.floor(
+                        tonumber(Options.HolyGAG2SniperMaxBuysPerPet.Value)
+                        or 1
+                    )
+                )
+        end
+
         if noTeleportPacketTest then
 
             SniperState.NoTeleportPacketTest =
@@ -27358,12 +28101,13 @@ function RestoreSniperAutosaveState()
         and Options.HolyGAG2SniperHopDelay.Value ~= nil then
 
             SniperState.HopDelay =
-                math.clamp(
-                    tonumber(Options.HolyGAG2SniperHopDelay.Value)
-                    or SniperState.HopDelay
-                    or 20,
-                    5,
-                    120
+                math.max(
+                    1,
+                    math.floor(
+                        tonumber(Options.HolyGAG2SniperHopDelay.Value)
+                        or SniperState.HopDelay
+                        or 20
+                    )
                 )
         end
 
@@ -40948,15 +41692,18 @@ end
 SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
     Text = "Auto Hop If No Match",
     Default = false,
-    Tooltip = "Hop when no selected pet is found.",
+    Tooltip = "If OFF, sniper will never auto-hop. If ON, it waits Hop Delay before hopping.",
     Callback = function(value)
 
         SniperState.AutoHop =
             value == true
 
+        SniperState.InstantFirstHop =
+            false
+
         SetSniperStatus(
             SniperState.AutoHop == true
-            and "Auto hop enabled."
+            and "Auto hop delay enabled."
             or "Auto hop disabled."
         )
 
@@ -40964,19 +41711,94 @@ SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
     end,
 })
 
-SniperMainBox:AddToggle("HolyGAG2SniperInstantFirstHop", {
-    Text = "Instant Hop On Join",
-    Default = SniperState.InstantFirstHop == true,
-    Tooltip = "Aggressive mode. Hops immediately on first no-match while STOP HUD stays visible.",
+SniperMainBox:AddDropdown("HolyGAG2SniperBuyMode", {
+    Text = "Buy Mode",
+    Values = {
+        "Instant",
+        "Hold",
+    },
+    Default = SniperState.BuyMode or "Instant",
+    Multi = false,
+    Searchable = false,
+    AllowNull = false,
+    Tooltip = "Instant fires the packet. Hold uses the pet's proximity prompt and waits for the hold.",
+}):OnChanged(function(value)
+
+    local mode =
+        CleanText(value)
+
+    SniperState.BuyMode =
+        mode == "Hold"
+        and "Hold"
+        or "Instant"
+
+    SetSniperStatus(
+        "Buy mode: "
+        .. tostring(SniperState.BuyMode)
+    )
+
+    MarkConfigDirty()
+end)
+
+SniperMainBox:AddToggle("HolyGAG2SniperFollowPet", {
+    Text = "Follow Pet While Buying",
+    Default = true,
+    Tooltip = "Keeps moving/looking at the pet before buying so far pets are less likely to fail.",
     Callback = function(value)
 
-        SniperState.InstantFirstHop =
+        SniperState.FollowPet =
+            value == true
+
+        SetSniperStatus(
+            SniperState.FollowPet == true
+            and "Follow pet enabled."
+            or "Follow pet disabled."
+        )
+
+        MarkConfigDirty()
+    end,
+})
+
+SniperMainBox:AddToggle("HolyGAG2SniperReturnAfterTame", {
+    Text = "Return After Buy TP",
+    Default = true,
+    Tooltip = "Returns to the old position after the buy is sent.",
+    Callback = function(value)
+
+        SniperState.ReturnAfterTame =
             value == true
 
         MarkConfigDirty()
     end,
 })
 
+SniperMainBox:AddInput("HolyGAG2SniperMaxBuysPerPet", {
+    Text = "Max Buys Per Pet",
+    Default = tostring(SniperState.MaxBuysPerPet or 1),
+    Numeric = true,
+    Finished = true,
+    ClearTextOnFocus = false,
+    Placeholder = "1",
+    Tooltip = "Per wild pet spawn. 1 prevents buying the same pet again if price doubles.",
+    Callback = function(value)
+
+        SniperState.MaxBuysPerPet =
+            math.max(
+                1,
+                math.floor(
+                    tonumber(value)
+                    or 1
+                )
+            )
+
+        SetSniperStatus(
+            "Max buys per pet: "
+            .. tostring(SniperState.MaxBuysPerPet)
+        )
+
+        MarkConfigDirty()
+    end,
+})
 
 SniperMainBox:AddToggle("HolyGAG2SniperNoTeleportPacketTest", {
     Text = "No-TP Packet Test",
@@ -41005,15 +41827,16 @@ SniperMainBox:AddInput("HolyGAG2SniperHopDelay", {
     Finished = true,
     ClearTextOnFocus = false,
     Placeholder = "20",
-    Tooltip = "Minimum seconds between hop attempts.",
+    Tooltip = "Seconds to wait before auto-hop. Minimum is 1. Auto Hop OFF means no hopping.",
     Callback = function(value)
 
         SniperState.HopDelay =
-            math.clamp(
-                tonumber(value)
-                or 20,
-                5,
-                120
+            math.max(
+                1,
+                math.floor(
+                    tonumber(value)
+                    or 20
+                )
             )
 
         SetSniperStatus(
@@ -41025,6 +41848,7 @@ SniperMainBox:AddInput("HolyGAG2SniperHopDelay", {
         MarkConfigDirty()
     end,
 })
+
 
 SniperMainBox:AddDivider()
 
