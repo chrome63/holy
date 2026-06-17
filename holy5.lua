@@ -8854,8 +8854,6 @@ local SniperState = {
 
     ConfirmingBuy = false,
     ConfirmingBuyKey = "",
-    BuyConfirmationHooksStarted = false,
-    PendingWildPets = {},
 
     BuyValidationHoldDelay = 0.25,
     StartupBuyDelay = 8,
@@ -24787,28 +24785,15 @@ local function SniperGetEntryKey(entry)
     return CleanText(entry.Name)
 end
 
-function SniperHasPendingBuy()
+local function SniperHasPendingBuy()
 
     if type(SniperState.PendingWildPets) ~= "table" then
         return false
     end
 
-    for key, record in pairs(SniperState.PendingWildPets) do
+    for _, value in pairs(SniperState.PendingWildPets) do
 
-        if type(record) == "table" then
-
-            if record.Confirmed == true then
-
-                SniperState.PendingWildPets[key] =
-                    nil
-
-            else
-
-                return true
-            end
-
-        elseif record == true then
-
+        if value == true then
             return true
         end
     end
@@ -24940,545 +24925,95 @@ local function SniperEntryStillActive(entry)
     return false
 end
 
-function SniperGetLeaderstatsSheckles()
+local function SniperWaitForClaimConfirmation(entry)
 
-    local leaderstats =
-        LOCAL_PLAYER
-        and LOCAL_PLAYER:FindFirstChild("leaderstats")
-
-    local sheckles =
-        leaderstats
-        and leaderstats:FindFirstChild("Sheckles")
-
-    if sheckles
-    and sheckles:IsA("ValueBase") then
-
-        return tonumber(
-            sheckles.Value
-        )
-    end
-
-    return nil
-end
-
-function SniperNormalizeConfirmPetName(value)
-
-    return CleanText(value)
-        :lower()
-        :gsub("%s+", " ")
-end
-
-function SniperPendingBuyCount()
-
-    local count =
-        0
-
-    if type(SniperState.PendingWildPets) ~= "table" then
-        return 0
-    end
-
-    for _, record in pairs(SniperState.PendingWildPets) do
-
-        if type(record) == "table"
-        and record.Confirmed ~= true then
-
-            count =
-                count + 1
-
-        elseif record == true then
-
-            count =
-                count + 1
-        end
-    end
-
-    return count
-end
-
-function SniperSetConfirmingFromPending()
-
-    local pendingCount =
-        SniperPendingBuyCount()
-
-    SniperState.ConfirmingBuy =
-        pendingCount > 0
-
-    if pendingCount <= 0 then
-
-        SniperState.ConfirmingBuyKey =
-            ""
-
-    elseif SniperState.ConfirmingBuyKey == nil then
-
-        SniperState.ConfirmingBuyKey =
-            ""
-    end
-end
-
-function SniperAcceptPendingBuy(key, reason)
-
-    key =
-        CleanText(key)
-
-    if key == "" then
-        return false
-    end
-
-    local record =
-        SniperState.PendingWildPets
-        and SniperState.PendingWildPets[key]
-
-    if type(record) ~= "table" then
-        return false
-    end
-
-    if record.Accepted == true then
-        return true
-    end
-
-    record.Accepted =
-        true
-
-    record.AcceptedAt =
+    local started =
         os.clock()
 
-    record.AcceptReason =
-        tostring(reason or "accepted")
-
-    SetSniperStatus(
-        "Accepted: "
-        .. tostring(record.PetName or "Pet")
-        .. " | waiting inventory"
-    )
-
-    print(
-        "[HOLY SNIPER]",
-        "buy accepted",
-        "| pet:",
-        tostring(record.PetName),
-        "| key:",
-        tostring(key),
-        "| reason:",
-        tostring(reason)
-    )
-
-    return true
-end
-
-function SniperConfirmPendingBuy(key, reason, petId)
-
-    key =
-        CleanText(key)
-
-    if key == "" then
-        return false
-    end
-
-    local record =
-        SniperState.PendingWildPets
-        and SniperState.PendingWildPets[key]
-
-    if type(record) ~= "table" then
-        return false
-    end
-
-    if record.Confirmed == true then
-        return true
-    end
-
-    record.Accepted =
-        true
-
-    record.Confirmed =
-        true
-
-    record.ConfirmedAt =
-        os.clock()
-
-    record.ConfirmReason =
-        tostring(reason or "confirmed")
-
-    record.PetId =
-        CleanText(petId)
-
-    SetSniperStatus(
-        "Confirmed: "
-        .. tostring(record.PetName or "Pet")
-    )
-
-    Notify(
-        "Sniper",
-        "Confirmed "
-        .. tostring(record.PetName or "pet")
-        .. ".",
-        3
-    )
-
-    print(
-        "[HOLY SNIPER]",
-        "buy confirmed",
-        "| pet:",
-        tostring(record.PetName),
-        "| key:",
-        tostring(key),
-        "| petId:",
-        tostring(record.PetId),
-        "| reason:",
-        tostring(reason)
-    )
-
-    task.delay(0.25, function()
-
-        if SniperState.PendingWildPets then
-
-            SniperState.PendingWildPets[key] =
-                nil
-        end
-
-        SniperSetConfirmingFromPending()
-    end)
-
-    return true
-end
-
-function SniperFindPendingBuyByPetName(petName)
-
-    local normalized =
-        SniperNormalizeConfirmPetName(
-            petName
-        )
-
-    if normalized == "" then
-        return nil
-    end
-
-    if type(SniperState.PendingWildPets) ~= "table" then
-        return nil
-    end
-
-    local bestKey =
+    local missingSince =
         nil
 
-    local bestStartedAt =
-        math.huge
+    local timeout =
+        math.clamp(
+            tonumber(SniperState.ClaimWaitTimeout)
+            or 90,
+            15,
+            180
+        )
 
-    for key, record in pairs(SniperState.PendingWildPets) do
+    local confirmTime =
+        math.clamp(
+            tonumber(SniperState.ClaimDisappearConfirmTime)
+            or 1.25,
+            0.5,
+            5
+        )
 
-        if type(record) == "table"
-        and record.Confirmed ~= true
-        and SniperNormalizeConfirmPetName(record.PetName) == normalized then
+    while os.clock() - started < timeout do
 
-            local startedAt =
-                tonumber(record.StartedAt)
-                or 0
+        if SniperEntryStillActive(entry) == true then
 
-            if startedAt < bestStartedAt then
+            missingSince =
+                nil
 
-                bestStartedAt =
-                    startedAt
+        else
 
-                bestKey =
-                    key
+            if missingSince == nil then
+
+                missingSince =
+                    os.clock()
+            end
+
+            if os.clock() - missingSince >= confirmTime then
+                return true
             end
         end
-    end
 
-    return bestKey
-end
-
-function SniperConfirmPendingBuyByPetName(petName, reason, petId)
-
-    local key =
-        SniperFindPendingBuyByPetName(
-            petName
-        )
-
-    if not key then
-        return false
-    end
-
-    return SniperConfirmPendingBuy(
-        key,
-        reason,
-        petId
-    )
-end
-
-function SniperReadToolPetName(tool)
-
-    if typeof(tool) ~= "Instance" then
-        return ""
-    end
-
-    local candidates = {
-        tool:GetAttribute("Pet"),
-        tool:GetAttribute("PetName"),
-        tool:GetAttribute("Name"),
-        tool:GetAttribute("DisplayName"),
-        tool.Name,
-    }
-
-    for _, value in ipairs(candidates) do
-
-        local text =
-            CleanText(value)
-
-        if text ~= "" then
-            return text
-        end
-    end
-
-    return ""
-end
-
-function SniperReadToolPetId(tool)
-
-    if typeof(tool) ~= "Instance" then
-        return ""
-    end
-
-    local candidates = {
-        tool:GetAttribute("PetId"),
-        tool:GetAttribute("Id"),
-        tool:GetAttribute("UUID"),
-        tool:GetAttribute("Uuid"),
-        tool:GetAttribute("ItemKey"),
-    }
-
-    for _, value in ipairs(candidates) do
-
-        local text =
-            CleanText(value)
-
-        if text ~= "" then
-            return text
-        end
-    end
-
-    return ""
-end
-
-function SniperHandleToolAddedForBuyConfirm(tool)
-
-    if typeof(tool) ~= "Instance" then
-        return
-    end
-
-    if tool:IsA("Tool") ~= true then
-        return
-    end
-
-    local petName =
-        SniperReadToolPetName(
-            tool
-        )
-
-    if petName == "" then
-        return
-    end
-
-    SniperConfirmPendingBuyByPetName(
-        petName,
-        "tool added",
-        SniperReadToolPetId(tool)
-    )
-end
-
-function SniperAttachBuyConfirmToolContainer(container)
-
-    if typeof(container) ~= "Instance" then
-        return
-    end
-
-    container.ChildAdded:Connect(function(child)
-
-        SniperHandleToolAddedForBuyConfirm(
-            child
-        )
-    end)
-end
-
-function SniperCheckRefAccepted(key, ref)
-
-    if typeof(ref) ~= "Instance" then
-        return false
-    end
-
-    local ownerUserId =
-        tonumber(
-            ref:GetAttribute("OwnerUserId")
-        )
-        or 0
-
-    local ownerName =
-        CleanText(
-            ref:GetAttribute("OwnerName")
-        )
-
-    local state =
-        CleanText(
-            ref:GetAttribute("State")
-        ):lower()
-
-    if ownerUserId == LOCAL_PLAYER.UserId then
-
-        return SniperAcceptPendingBuy(
-            key,
-            "owner user id"
-        )
-    end
-
-    if state == "walking_to_garden"
-    and ownerName ~= ""
-    and ownerName == LOCAL_PLAYER.Name then
-
-        return SniperAcceptPendingBuy(
-            key,
-            "walking to garden owner name"
+        task.wait(
+            0.35
         )
     end
 
     return false
 end
 
-function SniperWatchRefForBuyConfirm(key, ref)
+local function SniperHoldCloseForServerValidation(moveState)
 
-    if typeof(ref) ~= "Instance" then
-        return
-    end
-
-    local attributes = {
-        "OwnerUserId",
-        "OwnerName",
-        "State",
-        "Price",
-    }
-
-    for _, attributeName in ipairs(attributes) do
-
-        ref:GetAttributeChangedSignal(attributeName):Connect(function()
-
-            SniperCheckRefAccepted(
-                key,
-                ref
-            )
-        end)
-    end
-
-    SniperCheckRefAccepted(
-        key,
-        ref
-    )
-end
-
-function SniperHandleReplicaSetForBuyConfirm(path, value)
-
-    if type(path) ~= "table" then
-        return
-    end
-
-    if tostring(path[1]) ~= "Inventory" then
-        return
-    end
-
-    if tostring(path[2]) ~= "Pets" then
-        return
-    end
-
-    if type(value) ~= "table" then
-        return
-    end
-
-    local petName =
-        CleanText(
-            value.Name
-            or value.PetName
-            or value.DisplayName
+    local waitTime =
+        math.clamp(
+            tonumber(SniperState.BuyValidationHoldDelay)
+            or 0.85,
+            0.25,
+            2
         )
 
-    if petName == "" then
-        return
-    end
+    local started =
+        os.clock()
 
-    SniperConfirmPendingBuyByPetName(
-        petName,
-        "replica inventory pet",
-        CleanText(
-            value.Id
-            or path[3]
-        )
-    )
-end
+    while os.clock() - started < waitTime do
 
-function SniperEnsureBuyConfirmationHooks()
+        local _, root =
+            SniperGetCharacterRoot()
 
-    if SniperState.BuyConfirmationHooksStarted == true then
-        return
-    end
+        if root
+        and typeof(moveState) == "table"
+        and typeof(moveState.ClosePosition) == "Vector3" then
 
-    SniperState.BuyConfirmationHooksStarted =
-        true
+            local distanceFromBuyPoint =
+                (root.Position - moveState.ClosePosition).Magnitude
 
-    local remoteEvents =
-        ReplicatedStorage:FindFirstChild("RemoteEvents")
-
-    local replicaSet =
-        remoteEvents
-        and remoteEvents:FindFirstChild("ReplicaSet")
-
-    if replicaSet
-    and replicaSet:IsA("RemoteEvent") then
-
-        replicaSet.OnClientEvent:Connect(function(_, path, value)
-
-            SniperHandleReplicaSetForBuyConfirm(
-                path,
-                value
-            )
-        end)
-    end
-
-    local backpack =
-        LOCAL_PLAYER
-        and LOCAL_PLAYER:FindFirstChildOfClass("Backpack")
-
-    if backpack then
-
-        SniperAttachBuyConfirmToolContainer(
-            backpack
-        )
-    end
-
-    if LOCAL_PLAYER
-    and LOCAL_PLAYER.Character then
-
-        SniperAttachBuyConfirmToolContainer(
-            LOCAL_PLAYER.Character
-        )
-    end
-
-    if LOCAL_PLAYER then
-
-        LOCAL_PLAYER.CharacterAdded:Connect(function(character)
-
-            SniperAttachBuyConfirmToolContainer(
-                character
-            )
-        end)
-
-        LOCAL_PLAYER.ChildAdded:Connect(function(child)
-
-            if child:IsA("Backpack") then
-
-                SniperAttachBuyConfirmToolContainer(
-                    child
-                )
+            if distanceFromBuyPoint > 22 then
+                break
             end
-        end)
+        end
+
+        task.wait(
+            0.05
+        )
     end
 end
 
-function SniperStartBuyConfirmation(entry)
+local function SniperStartBuyConfirmation(entry)
 
     local key =
         SniperGetEntryKey(
@@ -25489,66 +25024,12 @@ function SniperStartBuyConfirmation(entry)
         return
     end
 
-    SniperEnsureBuyConfirmationHooks()
-
-    SniperState.PendingWildPets =
-        type(SniperState.PendingWildPets) == "table"
-        and SniperState.PendingWildPets
-        or {}
-
-    if type(SniperState.PendingWildPets[key]) == "table" then
+    if SniperState.PendingWildPets[key] == true then
         return
     end
 
-    local ref =
-        entry
-        and entry.Ref
-        or nil
-
-    if typeof(ref) ~= "Instance"
-    or ref.Parent == nil then
-
-        ref =
-            SniperFindRef(
-                entry
-                and entry.UUID
-                or ""
-            )
-    end
-
-    local record = {
-        Key =
-            key,
-
-        UUID =
-            CleanText(
-                entry
-                and entry.UUID
-                or ""
-            ),
-
-        PetName =
-            CleanText(
-                entry
-                and entry.Name
-                or "Unknown"
-            ),
-
-        StartedAt =
-            os.clock(),
-
-        StartedSheckles =
-            SniperGetLeaderstatsSheckles(),
-
-        Accepted =
-            false,
-
-        Confirmed =
-            false,
-    }
-
     SniperState.PendingWildPets[key] =
-        record
+        true
 
     SniperState.ConfirmingBuy =
         true
@@ -25560,66 +25041,46 @@ function SniperStartBuyConfirmation(entry)
         nil
     )
 
-    SniperWatchRefForBuyConfirm(
-        key,
-        ref
-    )
-
     task.spawn(function()
 
-        local timeout =
-            math.clamp(
-                tonumber(SniperState.ClaimWaitTimeout)
-                or 90,
-                20,
-                180
+        local confirmed =
+            SniperWaitForClaimConfirmation(
+                entry
             )
 
-        while os.clock() - record.StartedAt < timeout do
+        SniperState.PendingWildPets[key] =
+            nil
 
-            if record.Confirmed == true then
-                return
-            end
+        if SniperHasPendingBuy() == true then
 
-            if record.Accepted ~= true then
+            SniperState.ConfirmingBuy =
+                true
 
-                local currentSheckles =
-                    SniperGetLeaderstatsSheckles()
+            SniperState.ConfirmingBuyKey =
+                ""
 
-                if tonumber(record.StartedSheckles)
-                and tonumber(currentSheckles)
-                and currentSheckles < record.StartedSheckles then
+        else
 
-                    SniperAcceptPendingBuy(
-                        key,
-                        "sheckles decreased"
-                    )
-                end
-            end
+            SniperState.ConfirmingBuy =
+                false
 
-            task.wait(
-                0.25
-            )
+            SniperState.ConfirmingBuyKey =
+                ""
         end
 
-        if record.Confirmed == true then
-            return
-        end
-
-        if record.Accepted == true then
+        if confirmed == true then
 
             SetSniperStatus(
-                "Accepted but not inventory-confirmed: "
-                .. tostring(record.PetName)
+                "Confirmed: "
+                .. tostring(entry.Name)
             )
 
-            print(
-                "[HOLY SNIPER]",
-                "accepted but no final inventory confirm",
-                "| pet:",
-                tostring(record.PetName),
-                "| key:",
-                tostring(key)
+            Notify(
+                "Sniper",
+                "Confirmed "
+                .. tostring(entry.Name)
+                .. ".",
+                3
             )
 
         else
@@ -25628,33 +25089,131 @@ function SniperStartBuyConfirmation(entry)
                 nil
 
             SetSniperStatus(
-                "Buy not accepted."
+                "Buy not confirmed."
             )
 
             warn(
                 "[HOLY SNIPER]",
-                "Buy was sent but not accepted",
+                "Buy was sent but not confirmed",
                 "| pet:",
-                tostring(record.PetName),
+                tostring(entry.Name),
                 "| uuid:",
-                tostring(record.UUID)
+                tostring(entry.UUID)
             )
         end
-
-        SniperState.PendingWildPets[key] =
-            nil
-
-        SniperSetConfirmingFromPending()
     end)
 end
 
-local function SniperAttemptBuyEntry(entry)
+function SniperFireWildBuyPacket(entry)
 
     if type(entry) ~= "table" then
-        return false
+        return false, "missing entry"
     end
 
-    if SniperState.Taming == true then
+    local uuid =
+        CleanText(entry.UUID)
+
+    if uuid == "" then
+        return false, "missing pet id"
+    end
+
+    local ref =
+        entry.Ref
+
+    if typeof(ref) ~= "Instance"
+    or ref.Parent == nil then
+
+        ref =
+            SniperFindRef(
+                uuid
+            )
+    end
+
+    if typeof(ref) ~= "Instance"
+    or ref.Parent == nil then
+
+        return false,
+            "missing pet ref"
+    end
+
+    local packet =
+        SniperFindWildBuyPacket()
+
+    if not packet then
+        return false, SniperState.BuyPacketSource
+    end
+
+    local sourceText =
+        tostring(SniperState.BuyPacketSource or ""):lower()
+
+    if sourceText:find("wild", 1, true) == nil then
+
+        SniperState.BuyPacket =
+            nil
+
+        return false,
+            "blocked packet"
+    end
+
+    local okFire, err =
+        pcall(function()
+
+            packet:Fire(
+                ref
+            )
+        end)
+
+    if okFire ~= true then
+
+        okFire, err =
+            pcall(function()
+
+                packet.Fire(
+                    packet,
+                    ref
+                )
+            end)
+    end
+
+    if okFire ~= true then
+
+        warn(
+            "[HOLY SNIPER]",
+            "buy fire failed",
+            "| pet:",
+            tostring(entry.Name),
+            "| uuid:",
+            tostring(uuid),
+            "| ref:",
+            PathOf(ref),
+            "| packet:",
+            tostring(SniperState.BuyPacketSource),
+            "| err:",
+            tostring(err)
+        )
+
+        return false, tostring(err)
+    end
+
+    print(
+        "[HOLY SNIPER]",
+        "buy fired",
+        "| pet:",
+        tostring(entry.Name),
+        "| uuid:",
+        tostring(uuid),
+        "| ref:",
+        PathOf(ref),
+        "| packet:",
+        tostring(SniperState.BuyPacketSource)
+    )
+
+    return true, "fired"
+end
+
+function SniperAttemptBuyEntry(entry)
+
+    if type(entry) ~= "table" then
         return false
     end
 
@@ -25670,13 +25229,55 @@ local function SniperAttemptBuyEntry(entry)
         return false
     end
 
-    local uuid =
-        CleanText(entry.UUID)
-
     local attemptKey =
-        uuid ~= ""
-        and uuid
-        or tostring(entry.Name or "unknown")
+        ""
+
+    if type(SniperGetEntryKey) == "function" then
+
+        attemptKey =
+            SniperGetEntryKey(
+                entry
+            )
+    end
+
+    if attemptKey == "" then
+
+        attemptKey =
+            CleanText(entry.UUID)
+
+        if attemptKey == "" then
+
+            attemptKey =
+                tostring(entry.Name or "unknown")
+        end
+    end
+
+    if type(SniperState.PendingWildPets) == "table" then
+
+        local pending =
+            SniperState.PendingWildPets[attemptKey]
+
+        if type(pending) == "table"
+        and pending.Confirmed ~= true then
+
+            SetSniperStatus(
+                "Already pending: "
+                .. tostring(entry.Name)
+            )
+
+            return false
+        end
+
+        if pending == true then
+
+            SetSniperStatus(
+                "Already pending: "
+                .. tostring(entry.Name)
+            )
+
+            return false
+        end
+    end
 
     if SniperIsEntryHandled(entry) == true then
         return false
@@ -25688,16 +25289,9 @@ local function SniperAttemptBuyEntry(entry)
         )
         or 0
 
-    if os.clock() - lastAttempt < 8 then
+    if os.clock() - lastAttempt < 1.25 then
         return false
     end
-
-    if os.clock() - tonumber(SniperState.LastTameAt or 0) < 0.75 then
-        return false
-    end
-
-    SniperState.Taming =
-        true
 
     SniperState.LastTameAt =
         os.clock()
@@ -25713,201 +25307,237 @@ local function SniperAttemptBuyEntry(entry)
 
     task.spawn(function()
 
-        local moveState =
-            nil
+        local okTask, taskError =
+            xpcall(
+                function()
 
-        local moveInfo =
-            "not started"
+                    SniperState.Taming =
+                        true
 
-        local noTeleportTest =
-            SniperState.NoTeleportPacketTest == true
+                    local moveState =
+                        nil
 
-        if noTeleportTest == true then
+                    local moveInfo =
+                        "not started"
 
-            local character, root =
-                SniperGetCharacterRoot()
+                    local noTeleportTest =
+                        SniperState.NoTeleportPacketTest == true
 
-            if not character
-            or not root then
+                    if noTeleportTest == true then
 
-                SetSniperStatus(
-                    "No-TP test failed: missing character."
-                )
+                        local character, root =
+                            SniperGetCharacterRoot()
 
-                SniperState.Taming =
-                    false
+                        if not character
+                        or not root then
 
-                return
-            end
+                            SetSniperStatus(
+                                "No-TP test failed: missing character."
+                            )
 
-            local targetPosition =
-                SniperGetEntryTamePosition(
-                    entry
-                )
+                            return
+                        end
 
-            local distance =
-                typeof(targetPosition) == "Vector3"
-                and (root.Position - targetPosition).Magnitude
-                or -1
+                        local targetPosition =
+                            SniperGetEntryTamePosition(
+                                entry
+                            )
 
-            moveState = {
-                Character = character,
-                OldCFrame = root.CFrame,
-                ClosePosition = root.Position,
-                Moved = false,
-                NoTeleportPacketTest = true,
-                FiredDistance = distance,
-            }
+                        local distance =
+                            typeof(targetPosition) == "Vector3"
+                            and (root.Position - targetPosition).Magnitude
+                            or -1
 
-            moveInfo =
-                "no-tp packet test"
+                        moveState = {
+                            Character = character,
+                            OldCFrame = root.CFrame,
+                            ClosePosition = root.Position,
+                            Moved = false,
+                            NoTeleportPacketTest = true,
+                            FiredDistance = distance,
+                        }
 
-            SetSniperStatus(
-                "No-TP packet test: "
-                .. tostring(entry.Name)
-                .. " | "
-                .. (
-                    distance >= 0
-                    and tostring(math.floor(distance + 0.5)) .. " studs"
-                    or "distance ?"
-                )
-            )
+                        moveInfo =
+                            "no-tp packet test"
 
-        else
-
-            moveState, moveInfo =
-                SniperMoveCloseForTame(
-                    entry
-                )
-        end
-
-        if not moveState then
-
-            SetSniperStatus(
-                noTeleportTest == true
-                and "No-TP test failed."
-                or "Move failed."
-            )
-
-            SniperState.Taming =
-                false
-
-            return
-        end
-
-        local ok, info =
-            SniperFireWildBuyPacket(
-                entry
-            )
-
-        if ok == true then
-
-            SniperMarkEntryHandled(
-                entry,
-                SniperState.HandledPetCooldown
-            )
-
-            if noTeleportTest == true then
-
-                local distanceText =
-                    tonumber(moveState.FiredDistance)
-                    and tostring(
-                        math.floor(
-                            tonumber(moveState.FiredDistance)
-                            + 0.5
+                        SetSniperStatus(
+                            "No-TP packet test: "
+                            .. tostring(entry.Name)
+                            .. " | "
+                            .. (
+                                distance >= 0
+                                and tostring(math.floor(distance + 0.5)) .. " studs"
+                                or "distance ?"
+                            )
                         )
-                    )
-                    or "?"
 
-                SetSniperStatus(
-                    "No-TP packet sent: "
-                    .. tostring(entry.Name)
-                    .. " | "
-                    .. tostring(distanceText)
-                    .. " studs"
-                )
+                    else
 
-                local report =
-                    "========== HOLY NO-TP PACKET TEST =========="
-                    .. "\nPet: "
-                    .. tostring(entry.Name)
-                    .. "\nUUID: "
-                    .. tostring(entry.UUID)
-                    .. "\nDistance: "
-                    .. tostring(distanceText)
-                    .. " studs"
-                    .. "\nMove skipped: YES"
-                    .. "\nPacket: "
-                    .. tostring(SniperState.BuyPacketSource)
-                    .. "\nResult: Packet fired. Waiting for normal confirmation."
-                    .. "\nIf pet disappears / confirms, no-TP works."
-                    .. "\nIf not confirmed, server distance-checks the packet."
+                        moveState, moveInfo =
+                            SniperMoveCloseForTame(
+                                entry
+                            )
+                    end
 
-                CopyText(
-                    report
-                )
+                    if not moveState then
 
-                print(
-                    report
-                )
+                        SetSniperStatus(
+                            noTeleportTest == true
+                            and "No-TP test failed."
+                            or "Move failed."
+                        )
 
-            else
+                        return
+                    end
 
-                SetSniperStatus(
-                    "Buy sent: "
-                    .. tostring(entry.Name)
-                )
+                    local buyFunction =
+                        SniperFireWildBuyPacket
 
-                SniperHoldCloseForServerValidation(
-                    moveState
-                )
+                    if type(buyFunction) ~= "function" then
 
-                SniperRestoreAfterTame(
-                    moveState
-                )
-            end
+                        SetSniperStatus(
+                            "Buy function missing."
+                        )
 
-            SniperStartBuyConfirmation(
-                entry
+                        warn(
+                            "[HOLY SNIPER]",
+                            "SniperFireWildBuyPacket missing"
+                        )
+
+                        return
+                    end
+
+                    local okBuy, info =
+                        buyFunction(
+                            entry
+                        )
+
+                    if okBuy == true then
+
+                        SniperMarkEntryHandled(
+                            entry,
+                            SniperState.HandledPetCooldown
+                        )
+
+                        if noTeleportTest == true then
+
+                            local distanceText =
+                                tonumber(moveState.FiredDistance)
+                                and tostring(
+                                    math.floor(
+                                        tonumber(moveState.FiredDistance)
+                                        + 0.5
+                                    )
+                                )
+                                or "?"
+
+                            SetSniperStatus(
+                                "No-TP packet sent: "
+                                .. tostring(entry.Name)
+                                .. " | "
+                                .. tostring(distanceText)
+                                .. " studs"
+                            )
+
+                        else
+
+                            SetSniperStatus(
+                                "Buy sent: "
+                                .. tostring(entry.Name)
+                            )
+
+                            SniperHoldCloseForServerValidation(
+                                moveState
+                            )
+
+                            SniperRestoreAfterTame(
+                                moveState
+                            )
+                        end
+
+                        SniperStartBuyConfirmation(
+                            entry
+                        )
+
+                    else
+
+                        if noTeleportTest ~= true then
+
+                            SniperRestoreAfterTame(
+                                moveState
+                            )
+                        end
+
+                        SetSniperStatus(
+                            noTeleportTest == true
+                            and "No-TP packet failed."
+                            or "Buy failed."
+                        )
+
+                        warn(
+                            "[HOLY SNIPER]",
+                            noTeleportTest == true
+                            and "No-TP packet failed"
+                            or "Buy failed",
+                            "| pet:",
+                            tostring(entry.Name),
+                            "| info:",
+                            tostring(info),
+                            "| move:",
+                            tostring(moveInfo),
+                            "| packet:",
+                            tostring(SniperState.BuyPacketSource)
+                        )
+                    end
+                end,
+
+                function(errorValue)
+
+                    local errorText =
+                        tostring(errorValue or "unknown error")
+
+                    if type(debug) == "table"
+                    and type(debug.traceback) == "function" then
+
+                        local traceOk, trace =
+                            pcall(
+                                debug.traceback,
+                                errorText,
+                                2
+                            )
+
+                        if traceOk == true
+                        and type(trace) == "string"
+                        and trace ~= "" then
+
+                            return trace
+                        end
+                    end
+
+                    return errorText
+                end
             )
 
-        else
+        SniperState.Taming =
+            false
 
-            if noTeleportTest ~= true then
-
-                SniperRestoreAfterTame(
-                    moveState
-                )
-            end
+        if okTask ~= true then
 
             SetSniperStatus(
-                noTeleportTest == true
-                and "No-TP packet failed."
-                or "Buy failed."
+                "Buy task error. Check console."
             )
 
             warn(
                 "[HOLY SNIPER]",
-                noTeleportTest == true
-                and "No-TP packet failed"
-                or "Buy failed",
-                "| pet:",
-                tostring(entry.Name),
-                "| info:",
-                tostring(info),
-                "| move:",
-                tostring(moveInfo),
-                "| packet:",
-                tostring(SniperState.BuyPacketSource)
+                "buy task error",
+                tostring(taskError)
             )
         end
-
-        SniperState.Taming =
-            false
     end)
 
     return true
 end
+
 
 local function SniperGetDropdownPetNames()
 
@@ -27030,6 +26660,15 @@ function SniperScan(allowAutoHop)
         )
 
         return matches
+    end
+
+    if SniperState.WaitingForClaim == true then
+
+        SniperState.WaitingForClaim =
+            false
+
+        SniperState.WaitingForClaimKey =
+            ""
     end
 
     if SniperHasPendingBuy() == true then
@@ -28342,13 +27981,26 @@ function GAG2HomeManualBuyPetIndex(index)
 
     if SniperState.Taming == true then
 
-        Notify(
-            "Live Pets",
-            "Already buying another pet.",
-            3
-        )
+        local activeFor =
+            os.clock()
+            - (
+                tonumber(SniperState.LastTameAt)
+                or 0
+            )
 
-        return false
+        if activeFor < 2 then
+
+            Notify(
+                "Live Pets",
+                "Buying packet is still active.",
+                2
+            )
+
+            return false
+        end
+
+        SniperState.Taming =
+            false
     end
 
     if HomeLivePetsList
