@@ -8843,7 +8843,10 @@ local SniperState = {
     FirstHopUsed = false,
     EnabledAt = 0,
     InstantHopGrace = 0,
-    ReturnAfterTame = true,
+    ReturnAfterTame = false,
+    FollowPet = false,
+    FollowMaxSeconds = 3.4,
+    FollowRefreshDelay = 0.12,
     NoTeleportPacketTest = false,
     MovementMode = "Teleport",
     BuyMode = "Instant",
@@ -26903,8 +26906,13 @@ function SniperFollowCloseForBuy(entry, moveState, seconds)
             8
         )
 
-    local lastCorrection =
-        0
+    local refreshDelay =
+        math.clamp(
+            tonumber(SniperState.FollowRefreshDelay)
+            or 0.12,
+            0.08,
+            0.50
+        )
 
     while os.clock() - started < limit do
 
@@ -26917,9 +26925,18 @@ function SniperFollowCloseForBuy(entry, moveState, seconds)
                 entry
             )
 
-        if typeof(targetPosition) == "Vector3" then
+        if typeof(targetPosition) ~= "Vector3" then
 
-            local closeCFrame, closePosition =
+            task.wait(
+                refreshDelay
+            )
+
+            continue
+        end
+
+        if SniperState.FollowPet == true then
+
+            local _, closePosition =
                 SniperGetSafeTameCFrame(
                     targetPosition
                 )
@@ -26927,61 +26944,72 @@ function SniperFollowCloseForBuy(entry, moveState, seconds)
             local character, root =
                 SniperGetCharacterRoot()
 
-            if typeof(closeCFrame) == "CFrame"
-            and typeof(closePosition) == "Vector3"
-            and character
-            and root then
+            local humanoid =
+                character
+                and character:FindFirstChildOfClass("Humanoid")
 
-                local now =
-                    os.clock()
+            if typeof(closePosition) == "Vector3"
+            and root
+            and humanoid then
 
-                local distance =
+                local distanceToPet =
+                    (root.Position - targetPosition).Magnitude
+
+                local distanceToStand =
                     (root.Position - closePosition).Magnitude
 
-                if distance > 5
-                and now - lastCorrection >= 0.35 then
+                if distanceToPet > 9
+                and distanceToStand > 5 then
 
-                    lastCorrection =
-                        now
-
-                    pcall(function()
-
-                        character:PivotTo(
-                            closeCFrame
-                        )
-                    end)
+                    humanoid:MoveTo(
+                        closePosition
+                    )
 
                 else
 
-                    SniperAimAtPetPosition(
-                        targetPosition
+                    SniperStopCharacterMotion(
+                        root
                     )
                 end
 
                 if type(moveState) == "table" then
 
                     moveState.ClosePosition =
-                        closePosition
+                        root.Position
 
                     moveState.TargetPosition =
                         targetPosition
                 end
-
-                SniperStopCharacterMotion(
-                    root
-                )
             end
         end
 
-        task.wait(
-            0.08
+        SniperAimAtPetPosition(
+            targetPosition
         )
+
+        task.wait(
+            refreshDelay
+        )
+    end
+
+    if SniperState.FollowPet == true then
+
+        local _, root =
+            SniperGetCharacterRoot()
+
+        if root then
+
+            SniperStopCharacterMotion(
+                root
+            )
+        end
     end
 
     return SniperEntryAcceptedByLocal(
         entry
     )
 end
+
 
 function SniperHoldEntryBuyPrompt(entry, moveState)
 
@@ -29541,6 +29569,9 @@ function RestoreSniperAutosaveState()
         local returnAfterTame =
             Toggles.HolyGAG2SniperReturnAfterTame
 
+        local followPet =
+            Toggles.HolyGAG2SniperFollowPet
+
         local instantFirstHop =
             nil
 
@@ -29569,7 +29600,18 @@ function RestoreSniperAutosaveState()
         else
 
             SniperState.ReturnAfterTame =
-                true
+                false
+        end
+
+        if followPet then
+
+            SniperState.FollowPet =
+                followPet.Value == true
+
+        else
+
+            SniperState.FollowPet =
+                false
         end
 
         
@@ -43364,6 +43406,45 @@ and type(SniperBuyModeDropdown.OnChanged) == "function" then
         MarkConfigDirty()
     end)
 end
+
+SniperMainBox:AddToggle("HolyGAG2SniperFollowPet", {
+    Text = "Follow Pet",
+    Default = false,
+    Tooltip = "Walks toward the pet while holding BuyPrompt. Does not teleport-spam.",
+    Callback = function(value)
+
+        SniperState.FollowPet =
+            value == true
+
+        SetSniperStatus(
+            SniperState.FollowPet == true
+            and "Follow pet enabled."
+            or "Follow pet disabled."
+        )
+
+        MarkConfigDirty()
+    end,
+})
+
+SniperMainBox:AddToggle("HolyGAG2SniperReturnAfterTame", {
+    Text = "Return After Buy",
+    Default = false,
+    Tooltip = "Returns to your old position after the buy is sent.",
+    Callback = function(value)
+
+        SniperState.ReturnAfterTame =
+            value == true
+
+        SetSniperStatus(
+            SniperState.ReturnAfterTame == true
+            and "Return after buy enabled."
+            or "Return after buy disabled."
+        )
+
+        MarkConfigDirty()
+    end,
+})
+
 
 SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
     Text = "Auto Hop",
