@@ -765,10 +765,13 @@ GAG2_WILD_PET_NETWORK_STATE = {
     Running = false,
     Refreshing = false,
 
-    RefreshSeconds = 1,
+    RefreshSeconds = 8,
     MaxRenderedRows = 80,
 
     LoopToken = 0,
+    CountdownRunning = false,
+    CountdownToken = 0,
+    TimerRows = {},
 
     Gui = nil,
     Frame = nil,
@@ -899,6 +902,14 @@ GAG2_AUTO_TP_MIDDLE_FARM_STATE = {
     HoldMaxSeconds = 3.75,
     HoldX = 0,
     HoldY = 0,
+
+    MovementMode = "Teleport",
+    Moving = false,
+    MovedOnce = false,
+    MiddleReady = false,
+    LastMiddleReadyAt = 0,
+    LastSniperMiddleStartAt = 0,
+    SniperWaitActive = false,
 
     EarlyKeepDistance = 8,
     PostLoadRepairDistance = 12,
@@ -1212,35 +1223,19 @@ function GAG2StartMobilePromptCompatibility()
             end)
     end
 
-    -- Apply immediately to the prompt-heavy areas first.
+    -- Avoid startup freezes on cloud/mobile.
+    -- PromptShown + DescendantAdded handle prompts without scanning giant roots.
+    -- Do not full-scan workspace.Map or workspace.NPCS on load.
 
-    GAG2ApplyMobilePromptCompatibilityToRoot(
-        workspace:FindFirstChild("Map"),
-        0
-    )
+    task.defer(function()
 
-    GAG2ApplyMobilePromptCompatibilityToRoot(
-        workspace:FindFirstChild("Gardens"),
-        0
-    )
-
-    GAG2ApplyMobilePromptCompatibilityToRoot(
-        workspace:FindFirstChild("NPCS"),
-        0
-    )
-
-    GAG2ApplyMobilePromptCompatibilityToRoot(
-        workspace:FindFirstChild("DroppedItems"),
-        0
-    )
-
-    -- Catch any remaining prompts without freezing weaker devices.
-
-    task.spawn(function()
+        task.wait(
+            2
+        )
 
         GAG2ApplyMobilePromptCompatibilityToRoot(
-            workspace,
-            500
+            workspace:FindFirstChild("DroppedItems"),
+            250
         )
     end)
 
@@ -5232,14 +5227,11 @@ function GAG2WildPetNetworkGetRarityColor3(rarity)
         )
 end
 
-function GAG2WildPetNetworkGetRowTimerSeconds(rowData)
+function GAG2WildPetNetworkGetRowExpiresAt(rowData)
 
     if type(rowData) ~= "table" then
         return 0
     end
-
-    local now =
-        os.time()
 
     local expiresAt =
         tonumber(
@@ -5253,12 +5245,7 @@ function GAG2WildPetNetworkGetRowTimerSeconds(rowData)
     if expiresAt
     and expiresAt > 0 then
 
-        return math.max(
-            0,
-            math.floor(
-                expiresAt - now
-            )
-        )
+        return expiresAt
     end
 
     local spawnedAt =
@@ -5280,12 +5267,7 @@ function GAG2WildPetNetworkGetRowTimerSeconds(rowData)
     and spawnedAt > 0
     and lifetime > 0 then
 
-        return math.max(
-            0,
-            math.floor(
-                spawnedAt + lifetime - now
-            )
-        )
+        return spawnedAt + lifetime
     end
 
     local remaining =
@@ -5299,18 +5281,185 @@ function GAG2WildPetNetworkGetRowTimerSeconds(rowData)
             or rowData.Timer
         )
 
-    if remaining then
+    if remaining
+    and remaining > 0 then
 
-        return math.max(
-            0,
-            math.floor(
-                remaining
-            )
-        )
+        return os.time() + remaining
     end
 
     return 0
 end
+
+function GAG2WildPetNetworkGetRowTimerSeconds(rowData)
+
+    local expiresAt =
+        GAG2WildPetNetworkGetRowExpiresAt(
+            rowData
+        )
+
+    if not expiresAt
+    or expiresAt <= 0 then
+        return 0
+    end
+
+    return math.max(
+        0,
+        math.floor(
+            expiresAt - os.time()
+        )
+    )
+end
+
+function GAG2WildPetNetworkRegisterTimerRow(timerLabel, rowFrame, rowData)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.TimerRows =
+        type(state.TimerRows) == "table"
+        and state.TimerRows
+        or {}
+
+    if typeof(timerLabel) ~= "Instance"
+    or typeof(rowFrame) ~= "Instance" then
+
+        return false
+    end
+
+    local expiresAt =
+        GAG2WildPetNetworkGetRowExpiresAt(
+            rowData
+        )
+
+    if not expiresAt
+    or expiresAt <= 0 then
+        return false
+    end
+
+    state.TimerRows[timerLabel] = {
+        Label = timerLabel,
+        Row = rowFrame,
+        ExpiresAt = expiresAt,
+    }
+
+    return true
+end
+
+function GAG2WildPetNetworkUpdateLocalTimers()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.TimerRows =
+        type(state.TimerRows) == "table"
+        and state.TimerRows
+        or {}
+
+    local now =
+        os.time()
+
+    for timerLabel, record in pairs(state.TimerRows) do
+
+        local labelAlive =
+            typeof(timerLabel) == "Instance"
+            and timerLabel.Parent ~= nil
+
+        local row =
+            type(record) == "table"
+            and record.Row
+            or nil
+
+        local rowAlive =
+            typeof(row) == "Instance"
+            and row.Parent ~= nil
+
+        if labelAlive ~= true
+        or rowAlive ~= true then
+
+            state.TimerRows[timerLabel] =
+                nil
+
+            continue
+        end
+
+        local expiresAt =
+            tonumber(record.ExpiresAt)
+            or 0
+
+        local remaining =
+            math.max(
+                0,
+                math.floor(
+                    expiresAt - now
+                )
+            )
+
+        pcall(function()
+
+            timerLabel.Text =
+                GAG2WildPetNetworkFormatSeconds(
+                    remaining
+                )
+        end)
+
+        if remaining <= 0 then
+
+            state.TimerRows[timerLabel] =
+                nil
+
+            pcall(function()
+
+                row:Destroy()
+            end)
+        end
+    end
+end
+
+function GAG2WildPetNetworkStartCountdownLoop(token)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    token =
+        tonumber(token)
+        or tonumber(state.LoopToken)
+        or 0
+
+    if state.CountdownRunning == true
+    and tonumber(state.CountdownToken) == token then
+
+        return true
+    end
+
+    state.CountdownRunning =
+        true
+
+    state.CountdownToken =
+        token
+
+    task.spawn(function()
+
+        while state.Enabled == true
+        and state.Running == true
+        and tonumber(state.LoopToken) == token do
+
+            GAG2WildPetNetworkUpdateLocalTimers()
+
+            task.wait(
+                1
+            )
+        end
+
+        if tonumber(state.CountdownToken) == token then
+
+            state.CountdownRunning =
+                false
+        end
+    end)
+
+    return true
+end
+
 
 function GAG2WildPetNetworkCreateServerRow(
     parent,
@@ -5563,6 +5712,12 @@ function GAG2WildPetNetworkCreateServerRow(
 
     timerLabel.Parent =
         row
+
+    GAG2WildPetNetworkRegisterTimerRow(
+        timerLabel,
+        row,
+        rowData
+    )
 
     local countLabel =
         Instance.new("TextLabel")
@@ -6039,8 +6194,14 @@ end
 
 function GAG2WildPetNetworkClearRows()
 
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.TimerRows =
+        {}
+
     local scroll =
-        GAG2_WILD_PET_NETWORK_STATE.Scroll
+        state.Scroll
 
     if not scroll then
         return
@@ -6515,9 +6676,12 @@ function GAG2WildPetNetworkRefresh(reason)
     state.Refreshing =
         true
 
-    GAG2WildPetNetworkSetStatus(
-        "Refreshing..."
-    )
+    if tostring(reason or "") ~= "automatic" then
+
+        GAG2WildPetNetworkSetStatus(
+            "Refreshing..."
+        )
+    end
 
     task.spawn(function()
 
@@ -7556,12 +7720,24 @@ function GAG2WildPetNetworkStart()
     local token =
         state.LoopToken
 
+    state.RefreshSeconds =
+        math.clamp(
+            tonumber(state.RefreshSeconds)
+            or 8,
+            5,
+            30
+        )
+
     GAG2WildPetNetworkSetStatus(
         "Starting..."
     )
 
     GAG2WildPetNetworkRefresh(
         "startup"
+    )
+
+    GAG2WildPetNetworkStartCountdownLoop(
+        token
     )
 
     task.spawn(function()
@@ -7573,8 +7749,8 @@ function GAG2WildPetNetworkStart()
             task.wait(
                 math.clamp(
                     tonumber(state.RefreshSeconds)
-                    or 1,
-                    1,
+                    or 8,
+                    5,
                     30
                 )
             )
@@ -7606,6 +7782,15 @@ function GAG2WildPetNetworkStop(skipDirty)
 
     state.Refreshing =
         false
+
+    state.CountdownRunning =
+        false
+
+    state.CountdownToken =
+        0
+
+    state.TimerRows =
+        {}
 
     state.LoopToken =
         tonumber(state.LoopToken)
@@ -8844,6 +9029,7 @@ local SniperState = {
     EnabledAt = 0,
     InstantHopGrace = 0,
     ReturnAfterTame = false,
+    ReturnMovementMode = "Walk",
     FollowPet = false,
     FollowMaxSeconds = 3.4,
     FollowRefreshDelay = 0.12,
@@ -8861,6 +9047,7 @@ local SniperState = {
     ConfirmingBuyKey = "",
 
     BuyValidationHoldDelay = 0.25,
+    RequireShecklesDrop = true,
     StartupBuyDelay = 8,
     StartedAt = os.clock(),
 
@@ -14365,6 +14552,136 @@ function GAG2MiddleFarmPivotTo(position)
     return true, "teleported"
 end
 
+function GAG2MiddleFarmGetMovementMode()
+
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    local mode =
+        CleanText(
+            state.MovementMode
+        )
+
+    if Options.HolyGAG2AutoMiddleFarmMode
+    and Options.HolyGAG2AutoMiddleFarmMode.Value ~= nil then
+
+        mode =
+            CleanText(
+                Options.HolyGAG2AutoMiddleFarmMode.Value
+            )
+    end
+
+    if mode == "Walk" then
+
+        state.MovementMode =
+            "Walk"
+
+        return "Walk"
+    end
+
+    state.MovementMode =
+        "Teleport"
+
+    return "Teleport"
+end
+
+function GAG2MiddleFarmWalkTo(position)
+
+    if typeof(position) ~= "Vector3" then
+        return false, "bad target"
+    end
+
+    local character, root =
+        SniperGetCharacterRoot()
+
+    if not character
+    or not root then
+        return false, "missing character/root"
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid then
+        return false, "missing humanoid"
+    end
+
+    local started =
+        os.clock()
+
+    local lastMoveTo =
+        0
+
+    while os.clock() - started < 12 do
+
+        character, root =
+            SniperGetCharacterRoot()
+
+        if not character
+        or not root then
+            return false, "lost character/root"
+        end
+
+        humanoid =
+            character:FindFirstChildOfClass("Humanoid")
+
+        if not humanoid then
+            return false, "lost humanoid"
+        end
+
+        local distance =
+            (root.Position - position).Magnitude
+
+        if distance <= 7 then
+            break
+        end
+
+        if os.clock() - lastMoveTo >= 0.35 then
+
+            lastMoveTo =
+                os.clock()
+
+            humanoid:MoveTo(
+                position
+            )
+        end
+
+        task.wait(
+            0.12
+        )
+    end
+
+    local _, finalRoot =
+        SniperGetCharacterRoot()
+
+    if finalRoot then
+
+        SniperStopCharacterMotion(
+            finalRoot
+        )
+
+        if (finalRoot.Position - position).Magnitude <= 10 then
+            return true, "walked"
+        end
+    end
+
+    return false, "walk timeout"
+end
+
+function GAG2MiddleFarmMoveTo(position)
+
+    if GAG2MiddleFarmGetMovementMode() == "Walk" then
+
+        return GAG2MiddleFarmWalkTo(
+            position
+        )
+    end
+
+    return GAG2MiddleFarmPivotTo(
+        position
+    )
+end
+
 function GAG2MiddleFarmGetHoldPoint()
 
     local camera =
@@ -14528,15 +14845,18 @@ function GAG2TeleportToMiddleFarmOnce(reason)
             tostring(positionReason)
     end
 
+    local mode =
+        GAG2MiddleFarmGetMovementMode()
+
     local ok, err =
-        GAG2MiddleFarmPivotTo(
+        GAG2MiddleFarmMoveTo(
             position
         )
 
     if ok ~= true then
 
         GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
-            "tp failed: "
+            "middle move failed: "
             .. tostring(err)
 
         return false,
@@ -14553,12 +14873,16 @@ function GAG2TeleportToMiddleFarmOnce(reason)
         positionReason
 
     GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
-        "teleported: "
+        "moved by "
+        .. tostring(mode)
+        .. ": "
         .. tostring(positionReason)
 
     print(
         "[HOLY]",
-        "TP Middle Farm",
+        "Auto Middle Farm",
+        "| mode:",
+        tostring(mode),
         "| reason:",
         tostring(reason or "manual"),
         "| target:",
@@ -14671,7 +14995,6 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
         local function autoTpNeeded()
 
             return forceTp == true
-                or GAG2AutoTpMiddleFarmEnabled() == true
         end
 
         local function resolveTarget(forceRefresh)
@@ -15134,10 +15457,68 @@ end
 
 function GAG2StartAutoTpMiddleFarm(reason)
 
-    return GAG2StartMiddleFarmLoadingWorker(
-        reason or "auto tp",
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    if state.Moving == true then
+        return false
+    end
+
+    if state.MovedOnce == true then
+
+        state.MiddleReady =
+            true
+
+        state.LastResult =
+            "already moved once"
+
+        return false
+    end
+
+    state.Moving =
         true
-    )
+
+    state.MiddleReady =
+        false
+
+    task.spawn(function()
+
+        local ok =
+            false
+
+        local info =
+            "not started"
+
+        ok, info =
+            GAG2TeleportToMiddleFarmOnce(
+                reason or "auto middle"
+            )
+
+        if ok == true then
+
+            state.MovedOnce =
+                true
+
+            state.MiddleReady =
+                true
+
+            state.LastMiddleReadyAt =
+                os.clock()
+
+            state.SniperWaitActive =
+                false
+
+        else
+
+            state.MiddleReady =
+                false
+        end
+
+        state.Moving =
+            false
+    end)
+
+    return true
 end
 
 function GAG2StartAutoSkipLoading(reason)
@@ -15158,6 +15539,24 @@ function GAG2SetAutoTpMiddleFarmEnabled(value)
         value == true
 
     if enabled == true then
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovedOnce =
+            false
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.Moving =
+            false
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.MiddleReady =
+            false
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastMiddleReadyAt =
+            0
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastSniperMiddleStartAt =
+            0
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.SniperWaitActive =
+            false
 
         if type(GAG2StartAutoTpMiddleFarm) == "function" then
 
@@ -15243,12 +15642,24 @@ function GAG2RestoreAutoTpMiddleFarmState()
                     0.15
                 )
 
-                if GAG2AutoSkipLoadingEnabled() == true
-                or GAG2AutoTpMiddleFarmEnabled() == true then
+                GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovedOnce =
+                    false
+
+                GAG2_AUTO_TP_MIDDLE_FARM_STATE.Moving =
+                    false
+
+                if GAG2AutoSkipLoadingEnabled() == true then
 
                     GAG2StartMiddleFarmLoadingWorker(
                         "respawn",
                         false
+                    )
+                end
+
+                if GAG2AutoTpMiddleFarmEnabled() == true then
+
+                    GAG2StartAutoTpMiddleFarm(
+                        "respawn"
                     )
                 end
             end)
@@ -15256,12 +15667,33 @@ function GAG2RestoreAutoTpMiddleFarmState()
 
     task.defer(function()
 
-        if GAG2AutoSkipLoadingEnabled() == true
-        or GAG2AutoTpMiddleFarmEnabled() == true then
+        if Options.HolyGAG2AutoMiddleFarmMode
+        and Options.HolyGAG2AutoMiddleFarmMode.Value ~= nil then
+
+            GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovementMode =
+                CleanText(Options.HolyGAG2AutoMiddleFarmMode.Value) == "Walk"
+                and "Walk"
+                or "Teleport"
+        end
+
+        if GAG2AutoSkipLoadingEnabled() == true then
 
             GAG2StartMiddleFarmLoadingWorker(
                 "autosave",
                 false
+            )
+        end
+
+        if GAG2AutoTpMiddleFarmEnabled() == true then
+
+            GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovedOnce =
+                false
+
+            GAG2_AUTO_TP_MIDDLE_FARM_STATE.Moving =
+                false
+
+            GAG2StartAutoTpMiddleFarm(
+                "autosave"
             )
         end
     end)
@@ -15272,11 +15704,52 @@ end
 -- Client-side render reduction. Never hides own garden.
 --==================================================
 
+if type(GAG2_PERFORMANCE_STATE) == "table" then
+
+    if type(GAG2_PERFORMANCE_STATE.Connections) == "table" then
+
+        for key, connection in pairs(GAG2_PERFORMANCE_STATE.Connections) do
+
+            if connection then
+
+                pcall(function()
+
+                    connection:Disconnect()
+                end)
+            end
+
+            GAG2_PERFORMANCE_STATE.Connections[key] =
+                nil
+        end
+    end
+
+    if GAG2_PERFORMANCE_STATE.OwnGardenVisualConnection then
+
+        pcall(function()
+
+            GAG2_PERFORMANCE_STATE.OwnGardenVisualConnection:Disconnect()
+        end)
+
+        GAG2_PERFORMANCE_STATE.OwnGardenVisualConnection =
+            nil
+    end
+end
+
 GAG2_PERFORMANCE_STATE =
     GAG2_PERFORMANCE_STATE
     or {
         HideOtherGardens = false,
+        HideOwnGarden = false,
+        HideMapClutter = false,
+
+        MapClutterApplying = false,
+        MapClutterApplied = false,
+        LastMapClutterApplyAt = 0,
+
         HiddenGardens = {},
+        HiddenOwnGardenVisuals = {},
+        HiddenMapClutter = {},
+        OwnGardenVisualConnection = nil,
         Connections = {},
         LastStatus = "Idle.",
     }
@@ -15300,6 +15773,346 @@ function GAG2PerformanceGetGardensRoot()
     return workspace:FindFirstChild(
         "Gardens"
     )
+end
+
+function GAG2PerformanceGetMapClutterTargets()
+
+    local targets =
+        {}
+
+    local map =
+        workspace:FindFirstChild(
+            "Map"
+        )
+
+    if map then
+
+        local middle =
+            map:FindFirstChild(
+                "Middle"
+            )
+
+        if middle then
+
+            table.insert(
+                targets,
+                middle
+            )
+        end
+
+        local stands =
+            map:FindFirstChild(
+                "Stands"
+            )
+
+        if stands then
+
+            table.insert(
+                targets,
+                stands
+            )
+        end
+    end
+
+    local npcs =
+        workspace:FindFirstChild(
+            "NPCS"
+        )
+
+    if npcs then
+
+        table.insert(
+            targets,
+            npcs
+        )
+    end
+
+    return targets
+end
+
+function GAG2PerformanceHideMapClutterTarget(target)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    if typeof(target) ~= "Instance" then
+        return false
+    end
+
+    if state.HiddenMapClutter[target] ~= nil then
+        return false
+    end
+
+    local parent =
+        target.Parent
+
+    if typeof(parent) ~= "Instance" then
+        return false
+    end
+
+    state.HiddenMapClutter[target] =
+        parent
+
+    local ok =
+        pcall(function()
+
+            target.Parent =
+                nil
+        end)
+
+    if ok ~= true then
+
+        state.HiddenMapClutter[target] =
+            nil
+
+        return false
+    end
+
+    return true
+end
+
+function GAG2PerformanceRestoreMapClutter(reason)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    state.HiddenMapClutter =
+        type(state.HiddenMapClutter) == "table"
+        and state.HiddenMapClutter
+        or {}
+
+    local restored =
+        0
+
+    for target, originalParent in pairs(state.HiddenMapClutter) do
+
+        if typeof(target) == "Instance"
+        and target.Parent == nil
+        and typeof(originalParent) == "Instance" then
+
+            local ok =
+                pcall(function()
+
+                    target.Parent =
+                        originalParent
+                end)
+
+            if ok == true then
+
+                restored =
+                    restored + 1
+            end
+        end
+
+        state.HiddenMapClutter[target] =
+            nil
+    end
+
+    return restored
+end
+
+function GAG2PerformanceApplyHideMapClutter(reason)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    state.HiddenMapClutter =
+        type(state.HiddenMapClutter) == "table"
+        and state.HiddenMapClutter
+        or {}
+
+    if state.HideMapClutter ~= true then
+
+        local restored =
+            GAG2PerformanceRestoreMapClutter(
+                reason or "map clutter off"
+            )
+
+        state.MapClutterApplying =
+            false
+
+        state.MapClutterApplied =
+            false
+
+        GAG2PerformanceSetStatus(
+            "Map clutter restored: "
+            .. tostring(restored)
+        )
+
+        return true
+    end
+
+    local map =
+        workspace:FindFirstChild(
+            "Map"
+        )
+
+    if map
+    and state.Connections.MapChildAdded == nil then
+
+        state.Connections.MapChildAdded =
+            map.ChildAdded:Connect(function(child)
+
+                if GAG2_PERFORMANCE_STATE.HideMapClutter ~= true then
+                    return
+                end
+
+                if child.Name ~= "Middle"
+                and child.Name ~= "Stands" then
+                    return
+                end
+
+                task.wait(
+                    0.35
+                )
+
+                GAG2PerformanceApplyHideMapClutter(
+                    "map child added"
+                )
+            end)
+    end
+
+    if state.Connections.WorkspaceNpcAdded == nil then
+
+        state.Connections.WorkspaceNpcAdded =
+            workspace.ChildAdded:Connect(function(child)
+
+                if GAG2_PERFORMANCE_STATE.HideMapClutter ~= true then
+                    return
+                end
+
+                if child.Name ~= "NPCS" then
+                    return
+                end
+
+                task.wait(
+                    0.35
+                )
+
+                GAG2PerformanceApplyHideMapClutter(
+                    "npcs added"
+                )
+            end)
+    end
+
+    local targets =
+        GAG2PerformanceGetMapClutterTargets()
+
+    if #targets <= 0 then
+
+        state.MapClutterApplied =
+            true
+
+        return true
+    end
+
+    if state.MapClutterApplying == true then
+        return true
+    end
+
+    state.MapClutterApplying =
+        true
+
+    state.LastMapClutterApplyAt =
+        os.clock()
+
+    task.spawn(function()
+
+        local hidden =
+            0
+
+        for _, target in ipairs(targets) do
+
+            if GAG2_PERFORMANCE_STATE.HideMapClutter ~= true then
+                break
+            end
+
+            if GAG2PerformanceHideMapClutterTarget(
+                target
+            ) == true then
+
+                hidden =
+                    hidden + 1
+            end
+
+            task.wait(
+                0.15
+            )
+        end
+
+        state.MapClutterApplying =
+            false
+
+        state.MapClutterApplied =
+            true
+
+        GAG2PerformanceSetStatus(
+            "Map clutter hidden: "
+            .. tostring(hidden)
+            .. (
+                reason
+                and " | " .. tostring(reason)
+                or ""
+            )
+        )
+    end)
+
+    return true
+end
+
+function GAG2PerformanceSetHideMapClutterEnabled(value)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    state.HideMapClutter =
+        value == true
+
+    if state.HideMapClutter == true then
+
+        GAG2PerformanceApplyHideMapClutter(
+            "toggle"
+        )
+
+    else
+
+        state.MapClutterApplying =
+            false
+
+        state.MapClutterApplied =
+            false
+
+        GAG2PerformanceRestoreMapClutter(
+            "toggle off"
+        )
+
+        for _, key in ipairs({
+            "MapChildAdded",
+            "WorkspaceNpcAdded",
+        }) do
+
+            local connection =
+                state.Connections
+                and state.Connections[key]
+
+            if connection then
+
+                pcall(function()
+
+                    connection:Disconnect()
+                end)
+
+                state.Connections[key] =
+                    nil
+            end
+        end
+
+        GAG2PerformanceSetStatus(
+            "Map clutter restored."
+        )
+    end
+
+    MarkConfigDirty()
 end
 
 function GAG2PerformanceIsGardenPlot(instance)
@@ -15374,10 +16187,24 @@ function GAG2PerformanceRestoreHiddenGardens(reason)
             nil
     end
 
+    local visualRestored =
+        GAG2PerformanceRestoreOwnGardenVisuals(
+            reason
+        )
+
+    local clutterRestored =
+        GAG2PerformanceRestoreMapClutter(
+            reason
+        )
+
     GAG2PerformanceSetStatus(
         "Restored "
         .. tostring(restored)
         .. " hidden garden(s)."
+        .. " Visuals: "
+        .. tostring(visualRestored)
+        .. " Clutter: "
+        .. tostring(clutterRestored)
         .. (
             reason
             and " Reason: " .. tostring(reason)
@@ -15387,6 +16214,230 @@ function GAG2PerformanceRestoreHiddenGardens(reason)
 
     return restored
 end
+function GAG2PerformanceRememberVisual(object, propertyName)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    state.HiddenOwnGardenVisuals =
+        type(state.HiddenOwnGardenVisuals) == "table"
+        and state.HiddenOwnGardenVisuals
+        or {}
+
+    if typeof(object) ~= "Instance" then
+        return
+    end
+
+    local bucket =
+        state.HiddenOwnGardenVisuals[object]
+
+    if type(bucket) ~= "table" then
+
+        bucket =
+            {}
+
+        state.HiddenOwnGardenVisuals[object] =
+            bucket
+    end
+
+    if bucket[propertyName] ~= nil then
+        return
+    end
+
+    local ok, value =
+        pcall(function()
+
+            return object[propertyName]
+        end)
+
+    if ok == true then
+
+        bucket[propertyName] =
+            value
+    end
+end
+
+function GAG2PerformanceHideOwnGardenObject(object)
+
+    if typeof(object) ~= "Instance" then
+        return false
+    end
+
+    if object:IsA("BasePart") then
+
+        GAG2PerformanceRememberVisual(
+            object,
+            "LocalTransparencyModifier"
+        )
+
+        GAG2PerformanceRememberVisual(
+            object,
+            "CanCollide"
+        )
+
+        GAG2PerformanceRememberVisual(
+            object,
+            "CastShadow"
+        )
+
+        pcall(function()
+
+            object.LocalTransparencyModifier =
+                1
+
+            object.CanCollide =
+                false
+
+            object.CastShadow =
+                false
+        end)
+
+        return true
+    end
+
+    if object:IsA("Decal")
+    or object:IsA("Texture") then
+
+        GAG2PerformanceRememberVisual(
+            object,
+            "Transparency"
+        )
+
+        pcall(function()
+
+            object.Transparency =
+                1
+        end)
+
+        return true
+    end
+
+    if object:IsA("ParticleEmitter")
+    or object:IsA("Trail")
+    or object:IsA("Beam")
+    or object:IsA("BillboardGui")
+    or object:IsA("SurfaceGui") then
+
+        GAG2PerformanceRememberVisual(
+            object,
+            "Enabled"
+        )
+
+        pcall(function()
+
+            object.Enabled =
+                false
+        end)
+
+        return true
+    end
+
+    return false
+end
+
+function GAG2PerformanceHideOwnGardenVisuals(garden)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    if typeof(garden) ~= "Instance" then
+        return 0
+    end
+
+    local hidden =
+        0
+
+    if GAG2PerformanceHideOwnGardenObject(
+        garden
+    ) == true then
+
+        hidden =
+            hidden + 1
+    end
+
+    for _, descendant in ipairs(garden:GetDescendants()) do
+
+        if GAG2PerformanceHideOwnGardenObject(
+            descendant
+        ) == true then
+
+            hidden =
+                hidden + 1
+        end
+    end
+
+    if state.OwnGardenVisualConnection == nil then
+
+        state.OwnGardenVisualConnection =
+            garden.DescendantAdded:Connect(function(descendant)
+
+                if GAG2_PERFORMANCE_STATE.HideOwnGarden ~= true then
+                    return
+                end
+
+                task.defer(function()
+
+                    GAG2PerformanceHideOwnGardenObject(
+                        descendant
+                    )
+                end)
+            end)
+    end
+
+    return hidden
+end
+
+function GAG2PerformanceRestoreOwnGardenVisuals(reason)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    local restored =
+        0
+
+    if type(state.HiddenOwnGardenVisuals) == "table" then
+
+        for object, properties in pairs(state.HiddenOwnGardenVisuals) do
+
+            if typeof(object) == "Instance"
+            and type(properties) == "table" then
+
+                for propertyName, value in pairs(properties) do
+
+                    local ok =
+                        pcall(function()
+
+                            object[propertyName] =
+                                value
+                        end)
+
+                    if ok == true then
+
+                        restored =
+                            restored + 1
+                    end
+                end
+            end
+
+            state.HiddenOwnGardenVisuals[object] =
+                nil
+        end
+    end
+
+    if state.OwnGardenVisualConnection then
+
+        pcall(function()
+
+            state.OwnGardenVisualConnection:Disconnect()
+        end)
+
+        state.OwnGardenVisualConnection =
+            nil
+    end
+
+    return restored
+end
+
 
 function GAG2PerformanceHideGarden(garden, ownGarden, gardensRoot)
 
@@ -15405,15 +16456,38 @@ function GAG2PerformanceHideGarden(garden, ownGarden, gardensRoot)
         return false
     end
 
+    local isOwnGarden =
+        false
+
     if typeof(ownGarden) == "Instance" then
 
         if garden == ownGarden then
+
+            isOwnGarden =
+                true
+
+        elseif tostring(garden.Name) == tostring(ownGarden.Name) then
+
+            isOwnGarden =
+                true
+        end
+    end
+
+    if isOwnGarden == true then
+
+        if state.HideOwnGarden ~= true then
             return false
         end
 
-        if tostring(garden.Name) == tostring(ownGarden.Name) then
-            return false
-        end
+        GAG2PerformanceHideOwnGardenVisuals(
+            garden
+        )
+
+        return true
+    end
+
+    if state.HideOtherGardens ~= true then
+        return false
     end
 
     if state.HiddenGardens[garden] ~= nil then
@@ -15445,6 +16519,16 @@ function GAG2PerformanceApplyHideOtherGardens(reason)
 
     local state =
         GAG2_PERFORMANCE_STATE
+
+    if state.HideOtherGardens ~= true
+    and state.HideOwnGarden ~= true then
+
+        GAG2PerformanceRestoreHiddenGardens(
+            reason or "all garden hiding off"
+        )
+
+        return true
+    end
 
     local gardensRoot =
         GAG2PerformanceGetGardensRoot()
@@ -15491,7 +16575,9 @@ function GAG2PerformanceApplyHideOtherGardens(reason)
         state.Connections.GardensChildAdded =
             gardensRoot.ChildAdded:Connect(function(child)
 
-                if GAG2_PERFORMANCE_STATE.HideOtherGardens ~= true then
+                if GAG2_PERFORMANCE_STATE.HideOtherGardens ~= true
+                and GAG2_PERFORMANCE_STATE.HideOwnGarden ~= true then
+
                     return
                 end
 
@@ -15506,9 +16592,13 @@ function GAG2PerformanceApplyHideOtherGardens(reason)
     end
 
     GAG2PerformanceSetStatus(
-        "Hide Other Gardens ON. Hidden: "
+        "Garden hiding applied. Hidden now: "
         .. tostring(hidden)
+        .. " | Other: "
+        .. tostring(state.HideOtherGardens == true)
         .. " | Own: "
+        .. tostring(state.HideOwnGarden == true)
+        .. " | OwnPlot: "
         .. tostring(ownGarden.Name)
         .. (
             reason
@@ -15528,16 +16618,38 @@ function GAG2PerformanceSetHideOtherGardensEnabled(value)
     state.HideOtherGardens =
         value == true
 
-    if state.HideOtherGardens == true then
+    GAG2PerformanceRestoreHiddenGardens(
+        "refresh other gardens toggle"
+    )
+
+    if state.HideOtherGardens == true
+    or state.HideOwnGarden == true then
 
         GAG2PerformanceApplyHideOtherGardens(
             "toggle"
         )
+    end
 
-    else
+    MarkConfigDirty()
+end
 
-        GAG2PerformanceRestoreHiddenGardens(
-            "toggle off"
+function GAG2PerformanceSetHideOwnGardenEnabled(value)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    state.HideOwnGarden =
+        value == true
+
+    GAG2PerformanceRestoreHiddenGardens(
+        "refresh own garden toggle"
+    )
+
+    if state.HideOtherGardens == true
+    or state.HideOwnGarden == true then
+
+        GAG2PerformanceApplyHideOtherGardens(
+            "toggle"
         )
     end
 
@@ -15554,13 +16666,37 @@ function GAG2RestorePerformanceState()
                 Toggles.HolyGAG2HideOtherGardens.Value == true
         end
 
-        if GAG2_PERFORMANCE_STATE.HideOtherGardens == true then
+        if Toggles.HolyGAG2HideOwnGarden then
+
+            GAG2_PERFORMANCE_STATE.HideOwnGarden =
+                Toggles.HolyGAG2HideOwnGarden.Value == true
+        end
+
+        if Toggles.HolyGAG2HideMapClutter then
+
+            GAG2_PERFORMANCE_STATE.HideMapClutter =
+                Toggles.HolyGAG2HideMapClutter.Value == true
+        end
+
+        if GAG2_PERFORMANCE_STATE.HideOtherGardens == true
+        or GAG2_PERFORMANCE_STATE.HideOwnGarden == true then
 
             task.wait(
                 0.75
             )
 
             GAG2PerformanceApplyHideOtherGardens(
+                "autosave"
+            )
+        end
+
+        if GAG2_PERFORMANCE_STATE.HideMapClutter == true then
+
+            task.wait(
+                0.25
+            )
+
+            GAG2PerformanceApplyHideMapClutter(
                 "autosave"
             )
         end
@@ -25376,6 +26512,111 @@ function SniperGetBuyMode()
     return "Instant"
 end
 
+function SniperGetReturnMovementMode()
+
+    local mode =
+        CleanText(
+            SniperState.ReturnMovementMode
+        )
+
+    if mode == "Teleport" then
+        return "Teleport"
+    end
+
+    return "Walk"
+end
+
+function SniperWalkToSavedCFrame(savedCFrame)
+
+    if typeof(savedCFrame) ~= "CFrame" then
+        return false,
+            "bad saved position"
+    end
+
+    local character, root =
+        SniperGetCharacterRoot()
+
+    if not character
+    or not root then
+        return false,
+            "missing character"
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid then
+        return false,
+            "missing humanoid"
+    end
+
+    local targetPosition =
+        savedCFrame.Position
+
+    local started =
+        os.clock()
+
+    local lastMoveTo =
+        0
+
+    while os.clock() - started < 8 do
+
+        character, root =
+            SniperGetCharacterRoot()
+
+        if not character
+        or not root then
+            return false,
+                "lost character"
+        end
+
+        humanoid =
+            character:FindFirstChildOfClass("Humanoid")
+
+        if not humanoid then
+            return false,
+                "lost humanoid"
+        end
+
+        local distance =
+            (root.Position - targetPosition).Magnitude
+
+        if distance <= 5 then
+            break
+        end
+
+        if os.clock() - lastMoveTo >= 0.35 then
+
+            lastMoveTo =
+                os.clock()
+
+            humanoid:MoveTo(
+                targetPosition
+            )
+        end
+
+        task.wait(
+            0.12
+        )
+    end
+
+    local _, finalRoot =
+        SniperGetCharacterRoot()
+
+    if finalRoot then
+
+        SniperStopCharacterMotion(
+            finalRoot
+        )
+
+        return (finalRoot.Position - targetPosition).Magnitude <= 8,
+            "walked"
+    end
+
+    return false,
+        "missing final root"
+end
+
 function SniperWalkCloseForTame(entry)
 
     local character, root =
@@ -25775,9 +27016,6 @@ local function SniperRestoreAfterTame(moveState)
         return
     end
 
-    local character =
-        moveState.Character
-
     local oldCFrame =
         moveState.OldCFrame
 
@@ -25806,15 +27044,28 @@ local function SniperRestoreAfterTame(moveState)
         end
     end
 
+    if SniperGetReturnMovementMode() == "Walk" then
+
+        SetSniperStatus(
+            "Returning by walk..."
+        )
+
+        SniperWalkToSavedCFrame(
+            oldCFrame
+        )
+
+        return
+    end
+
+    SetSniperStatus(
+        "Returning by teleport..."
+    )
+
     pcall(function()
 
-        if typeof(character) == "Instance"
-        and character.Parent then
-
-            character:PivotTo(
-                oldCFrame
-            )
-        end
+        currentCharacter:PivotTo(
+            oldCFrame
+        )
     end)
 end
 
@@ -26116,6 +27367,40 @@ function SniperGetLeaderstatsSheckles()
     return nil
 end
 
+function SniperGetLeaderstatsShecklesObject()
+
+    local names = {
+        "Sheckles",
+        "Sheckle",
+        "Money",
+        "Cash",
+        "Coins",
+        "Currency",
+    }
+
+    local leaderstats =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChild("leaderstats")
+
+    if not leaderstats then
+        return nil
+    end
+
+    for _, name in ipairs(names) do
+
+        local valueObject =
+            leaderstats:FindFirstChild(name)
+
+        if valueObject
+        and valueObject:IsA("ValueBase") then
+
+            return valueObject
+        end
+    end
+
+    return nil
+end
+
 function SniperClearPendingBuyKey(key)
 
     key =
@@ -26146,6 +27431,18 @@ function SniperClearPendingBuyKey(key)
 
         record.RefConnections =
             {}
+    end
+
+    if type(record) == "table"
+    and record.ShecklesConnection then
+
+        pcall(function()
+
+            record.ShecklesConnection:Disconnect()
+        end)
+
+        record.ShecklesConnection =
+            nil
     end
 
     if type(SniperState.PendingWildPets) == "table" then
@@ -26229,13 +27526,23 @@ function SniperConfirmPendingBuyRecord(record, reason, petId)
     local key =
         CleanText(record.Key)
 
+    if key ~= "" then
+
+        SniperState.HandledWildPets[key] =
+            os.clock()
+            + (
+                tonumber(SniperState.HandledPetCooldown)
+                or 120
+            )
+    end
+
     SetSniperStatus(
         "Confirmed: "
         .. tostring(record.PetName)
     )
 
     Notify(
-        "Sniper",
+        "Snipe",
         "Confirmed "
         .. tostring(record.PetName)
         .. ".",
@@ -26285,7 +27592,6 @@ function SniperConfirmPendingBuyByPetName(petName, reason, petId)
 
         if type(record) == "table"
         and record.Confirmed ~= true
-        and record.Accepted == true
         and SniperNormalizeName(record.PetName) == wanted then
 
             if bestRecord == nil
@@ -26299,16 +27605,41 @@ function SniperConfirmPendingBuyByPetName(petName, reason, petId)
 
     if bestRecord then
 
-        return SniperConfirmPendingBuyRecord(
-            bestRecord,
-            reason,
-            petId
+        if bestRecord.Accepted == true then
+
+            return SniperConfirmPendingBuyRecord(
+                bestRecord,
+                reason,
+                petId
+            )
+        end
+
+        bestRecord.InventorySeen =
+            true
+
+        bestRecord.InventoryReason =
+            tostring(reason or "inventory seen")
+
+        bestRecord.InventoryPetId =
+            CleanText(petId)
+
+        print(
+            "[HOLY SNIPER]",
+            "inventory seen, waiting for fast accept",
+            "| pet:",
+            tostring(petName),
+            "| petId:",
+            tostring(petId),
+            "| reason:",
+            tostring(reason)
         )
+
+        return false
     end
 
     print(
         "[HOLY SNIPER]",
-        "ignored confirm without accepted pending buy",
+        "ignored confirm without pending buy",
         "| pet:",
         tostring(petName),
         "| petId:",
@@ -26320,6 +27651,136 @@ function SniperConfirmPendingBuyByPetName(petName, reason, petId)
     return false
 end
 
+
+function SniperTryAcceptPendingBuyRecord(record, reason)
+
+    if type(record) ~= "table" then
+        return false
+    end
+
+    if record.Confirmed == true
+    or record.Accepted == true then
+        return false
+    end
+
+    local hasShecklesDrop =
+        record.ShecklesDropSeen == true
+        or SniperState.RequireShecklesDrop ~= true
+
+    local hasRefAccept =
+        record.RefAcceptedSeen == true
+
+    if hasShecklesDrop ~= true
+    or hasRefAccept ~= true then
+
+        return false
+    end
+
+    record.Accepted =
+        true
+
+    record.AcceptReason =
+        tostring(reason or record.RefAcceptReason or record.ShecklesReason or "fast accepted")
+
+    local key =
+        CleanText(record.Key)
+
+    if key ~= "" then
+
+        SniperState.HandledWildPets[key] =
+            os.clock()
+            + (
+                tonumber(SniperState.HandledPetCooldown)
+                or 120
+            )
+    end
+
+    SetSniperStatus(
+        "Accepted: "
+        .. tostring(record.PetName)
+    )
+
+    print(
+        "[HOLY SNIPER]",
+        "buy fast accepted",
+        "| pet:",
+        tostring(record.PetName),
+        "| uuid:",
+        tostring(record.UUID),
+        "| reason:",
+        tostring(record.AcceptReason),
+        "| ref:",
+        tostring(record.RefAcceptReason),
+        "| sheckles:",
+        tostring(record.StartedSheckles),
+        "->",
+        tostring(record.LowestShecklesSeen)
+    )
+
+    if record.InventorySeen == true then
+
+        SniperConfirmPendingBuyRecord(
+            record,
+            record.InventoryReason or "inventory after fast accept",
+            record.InventoryPetId
+        )
+    end
+
+    return true
+end
+
+function SniperMarkPendingShecklesDropByKey(key, currentSheckles, reason)
+
+    key =
+        CleanText(key)
+
+    if key == ""
+    or type(SniperState.PendingWildPets) ~= "table" then
+
+        return false
+    end
+
+    local record =
+        SniperState.PendingWildPets[key]
+
+    if type(record) ~= "table"
+    or record.Confirmed == true then
+
+        return false
+    end
+
+    currentSheckles =
+        tonumber(currentSheckles)
+        or SniperGetLeaderstatsSheckles()
+
+    if not tonumber(record.StartedSheckles)
+    or not tonumber(currentSheckles) then
+
+        return false
+    end
+
+    record.LowestShecklesSeen =
+        math.min(
+            tonumber(record.LowestShecklesSeen)
+            or record.StartedSheckles,
+            currentSheckles
+        )
+
+    if currentSheckles >= record.StartedSheckles then
+        return false
+    end
+
+    record.ShecklesDropSeen =
+        true
+
+    record.ShecklesReason =
+        tostring(reason or "sheckles decreased")
+
+    return SniperTryAcceptPendingBuyRecord(
+        record,
+        "sheckles + ref"
+    )
+end
 
 function SniperMarkPendingAcceptedByKey(key, reason)
 
@@ -26336,35 +27797,21 @@ function SniperMarkPendingAcceptedByKey(key, reason)
         SniperState.PendingWildPets[key]
 
     if type(record) ~= "table"
-    or record.Confirmed == true
-    or record.Accepted == true then
+    or record.Confirmed == true then
 
         return false
     end
 
-    record.Accepted =
+    record.RefAcceptedSeen =
         true
 
-    record.AcceptReason =
-        tostring(reason or "accepted")
+    record.RefAcceptReason =
+        tostring(reason or "wildpetref accepted")
 
-    SetSniperStatus(
-        "Accepted: "
-        .. tostring(record.PetName)
+    return SniperTryAcceptPendingBuyRecord(
+        record,
+        "ref + sheckles"
     )
-
-    print(
-        "[HOLY SNIPER]",
-        "buy accepted",
-        "| pet:",
-        tostring(record.PetName),
-        "| uuid:",
-        tostring(record.UUID),
-        "| reason:",
-        tostring(record.AcceptReason)
-    )
-
-    return true
 end
 
 function SniperWatchRefForBuyConfirm(key, ref)
@@ -26410,12 +27857,17 @@ function SniperWatchRefForBuyConfirm(key, ref)
                 ref:GetAttribute("OwnerName")
             )
 
+        local state =
+            CleanText(
+                ref:GetAttribute("State")
+            ):lower()
+
         if LOCAL_PLAYER
         and ownerUserId == LOCAL_PLAYER.UserId then
 
             SniperMarkPendingAcceptedByKey(
                 key,
-                "ownerUserId"
+                "wildpetref ownerUserId"
             )
 
             return
@@ -26427,7 +27879,20 @@ function SniperWatchRefForBuyConfirm(key, ref)
 
             SniperMarkPendingAcceptedByKey(
                 key,
-                "ownerName"
+                "wildpetref ownerName"
+            )
+
+            return
+        end
+
+        if state == "walking_to_garden"
+        and LOCAL_PLAYER
+        and ownerName ~= ""
+        and ownerName == LOCAL_PLAYER.Name then
+
+            SniperMarkPendingAcceptedByKey(
+                key,
+                "wildpetref walking_to_garden"
             )
         end
     end
@@ -26741,50 +28206,6 @@ function SniperEntryAcceptedByLocal(entry)
         record.Accepted == true
         or record.Confirmed == true
     ) then
-
-        return true
-    end
-
-    local ref =
-        entry
-        and entry.Ref
-        or nil
-
-    if typeof(ref) ~= "Instance"
-    or ref.Parent == nil then
-
-        ref =
-            SniperFindRef(
-                entry
-                and entry.UUID
-                or ""
-            )
-    end
-
-    if typeof(ref) ~= "Instance" then
-        return false
-    end
-
-    local ownerUserId =
-        tonumber(
-            ref:GetAttribute("OwnerUserId")
-        )
-        or 0
-
-    local ownerName =
-        CleanText(
-            ref:GetAttribute("OwnerName")
-        )
-
-    if LOCAL_PLAYER
-    and ownerUserId == LOCAL_PLAYER.UserId then
-
-        return true
-    end
-
-    if LOCAL_PLAYER
-    and ownerName ~= ""
-    and ownerName == LOCAL_PLAYER.Name then
 
         return true
     end
@@ -27164,6 +28585,62 @@ function SniperWaitForBuyAccepted(entry, seconds)
     )
 end
 
+function SniperWatchShecklesForBuyConfirm(key)
+
+    key =
+        CleanText(key)
+
+    if key == ""
+    or type(SniperState.PendingWildPets) ~= "table" then
+
+        return false
+    end
+
+    local record =
+        SniperState.PendingWildPets[key]
+
+    if type(record) ~= "table" then
+        return false
+    end
+
+    local valueObject =
+        SniperGetLeaderstatsShecklesObject()
+
+    if not valueObject then
+        return false
+    end
+
+    local ok, connection =
+        pcall(function()
+
+            return valueObject:GetPropertyChangedSignal("Value"):Connect(function()
+
+                SniperMarkPendingShecklesDropByKey(
+                    key,
+                    SniperGetLeaderstatsSheckles(),
+                    "sheckles value changed"
+                )
+            end)
+        end)
+
+    if ok == true
+    and connection then
+
+        record.ShecklesConnection =
+            connection
+
+        SniperMarkPendingShecklesDropByKey(
+            key,
+            SniperGetLeaderstatsSheckles(),
+            "sheckles initial check"
+        )
+
+        return true
+    end
+
+    return false
+end
+
 
 function SniperStartBuyConfirmation(entry)
 
@@ -27227,7 +28704,30 @@ function SniperStartBuyConfirmation(entry)
             os.clock(),
 
         StartedSheckles =
-            SniperGetLeaderstatsSheckles(),
+            tonumber(
+                entry
+                and entry._HolySniperStartedSheckles
+            )
+            or SniperGetLeaderstatsSheckles(),
+
+        LowestShecklesSeen =
+            tonumber(
+                entry
+                and entry._HolySniperStartedSheckles
+            )
+            or SniperGetLeaderstatsSheckles(),
+
+        ShecklesDropSeen =
+            false,
+
+        ShecklesReason =
+            "",
+
+        RefAcceptedSeen =
+            false,
+
+        RefAcceptReason =
+            "",
 
         Accepted =
             false,
@@ -27257,6 +28757,10 @@ function SniperStartBuyConfirmation(entry)
         ref
     )
 
+    SniperWatchShecklesForBuyConfirm(
+        key
+    )
+
     task.spawn(function()
 
         local timeout =
@@ -27278,32 +28782,11 @@ function SniperStartBuyConfirmation(entry)
 
             if record.Accepted ~= true then
 
-                local currentSheckles =
-                    SniperGetLeaderstatsSheckles()
-
-                if tonumber(record.StartedSheckles)
-                and tonumber(currentSheckles)
-                and currentSheckles < record.StartedSheckles then
-
-                    record.Accepted =
-                        true
-
-                    record.AcceptReason =
-                        "sheckles decreased"
-
-                    print(
-                        "[HOLY SNIPER]",
-                        "buy accepted",
-                        "| pet:",
-                        tostring(record.PetName),
-                        "| uuid:",
-                        tostring(record.UUID),
-                        "| sheckles:",
-                        tostring(record.StartedSheckles),
-                        "->",
-                        tostring(currentSheckles)
-                    )
-                end
+                SniperMarkPendingShecklesDropByKey(
+                    key,
+                    SniperGetLeaderstatsSheckles(),
+                    "sheckles backup poll"
+                )
             end
 
             if record.Accepted == true
@@ -27319,7 +28802,9 @@ function SniperStartBuyConfirmation(entry)
             end
 
             task.wait(
-                0.25
+                os.clock() - record.StartedAt < 2
+                and 0.10
+                or 0.25
             )
         end
 
@@ -27614,6 +29099,12 @@ function SniperAttemptBuyEntry(entry)
                         0.08
                     )
 
+                    local startedSheckles =
+                        SniperGetLeaderstatsSheckles()
+
+                    entry._HolySniperStartedSheckles =
+                        startedSheckles
+
                     local okBuy =
                         false
 
@@ -27638,18 +29129,13 @@ function SniperAttemptBuyEntry(entry)
 
                     if okBuy == true then
 
-                        SniperMarkEntryHandled(
-                            entry,
-                            SniperState.HandledPetCooldown
+                        SetSniperStatus(
+                            "Buy request sent. Verifying Sheckles: "
+                            .. tostring(entry.Name)
                         )
 
-                        SetSniperStatus(
-                            "Buy sent: "
-                            .. tostring(entry.Name)
-                            .. " | "
-                            .. SniperGetMovementMode()
-                            .. " + "
-                            .. SniperGetBuyMode()
+                        SniperStartBuyConfirmation(
+                            entry
                         )
 
                         SniperHoldCloseForServerValidation(
@@ -27658,10 +29144,6 @@ function SniperAttemptBuyEntry(entry)
 
                         SniperRestoreAfterTame(
                             moveState
-                        )
-
-                        SniperStartBuyConfirmation(
-                            entry
                         )
 
                     else
@@ -28794,10 +30276,114 @@ function SniperBuildMatchText(entries, matches, orderedTargets, reason)
     )
 end
 
+function SniperShouldWaitForMiddleFarm()
+
+    local middleState =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    if type(middleState) ~= "table" then
+        return false
+    end
+
+    local autoMiddleEnabled =
+        false
+
+    if Toggles.HolyGAG2AutoTpMiddleFarm then
+
+        autoMiddleEnabled =
+            Toggles.HolyGAG2AutoTpMiddleFarm.Value == true
+    end
+
+    if autoMiddleEnabled ~= true then
+
+        middleState.SniperWaitActive =
+            false
+
+        return false
+    end
+
+    local mode =
+        "Teleport"
+
+    if type(GAG2MiddleFarmGetMovementMode) == "function" then
+
+        mode =
+            GAG2MiddleFarmGetMovementMode()
+
+    else
+
+        mode =
+            CleanText(
+                middleState.MovementMode
+            )
+    end
+
+    if mode ~= "Walk" then
+
+        middleState.SniperWaitActive =
+            false
+
+        return false
+    end
+
+    if middleState.MovedOnce == true
+    or middleState.MiddleReady == true then
+
+        middleState.MiddleReady =
+            true
+
+        middleState.SniperWaitActive =
+            false
+
+        return false
+    end
+
+    if middleState.Moving ~= true then
+
+        local now =
+            os.clock()
+
+        if now - tonumber(middleState.LastSniperMiddleStartAt or 0) >= 2 then
+
+            middleState.LastSniperMiddleStartAt =
+                now
+
+            if type(GAG2StartAutoTpMiddleFarm) == "function" then
+
+                GAG2StartAutoTpMiddleFarm(
+                    "sniper wait"
+                )
+            end
+        end
+    end
+
+    SniperState.LastHopAt =
+        os.clock()
+
+    middleState.SniperWaitActive =
+        true
+
+    SetSniperStatus(
+        "Waiting for Auto Middle Farm walk..."
+    )
+
+    GAG2SetPanicHudStatus(
+        "MIDDLE FARM"
+    )
+
+    return true
+end
+
+
 function SniperScan(allowAutoHop)
 
     SniperState.LastScanAt =
         os.clock()
+
+    if SniperShouldWaitForMiddleFarm() == true then
+
+        return {}
+    end
 
     local targets, orderedTargets =
         SniperBuildTargets()
@@ -29572,6 +31158,9 @@ function RestoreSniperAutosaveState()
         local followPet =
             Toggles.HolyGAG2SniperFollowPet
 
+        local returnMovementMode =
+            Options.HolyGAG2SniperReturnMode
+
         local instantFirstHop =
             nil
 
@@ -29612,6 +31201,20 @@ function RestoreSniperAutosaveState()
 
             SniperState.FollowPet =
                 false
+        end
+
+        if returnMovementMode
+        and returnMovementMode.Value ~= nil then
+
+            SniperState.ReturnMovementMode =
+                CleanText(returnMovementMode.Value) == "Teleport"
+                and "Teleport"
+                or "Walk"
+
+        else
+
+            SniperState.ReturnMovementMode =
+                "Walk"
         end
 
         
@@ -43445,6 +45048,43 @@ SniperMainBox:AddToggle("HolyGAG2SniperReturnAfterTame", {
     end,
 })
 
+SniperReturnModeDropdown =
+    SniperMainBox:AddDropdown(
+        "HolyGAG2SniperReturnMode",
+        {
+            Text = "Return Mode",
+            Values = {
+                "Walk",
+                "Teleport",
+            },
+            Default = SniperGetReturnMovementMode(),
+            Multi = false,
+            Searchable = false,
+            AllowNull = false,
+            MaxVisibleDropdownItems = 2,
+            Tooltip = "How Return After Buy moves back to the saved position.",
+        }
+    )
+
+if SniperReturnModeDropdown
+and type(SniperReturnModeDropdown.OnChanged) == "function" then
+
+    SniperReturnModeDropdown:OnChanged(function(value)
+
+        SniperState.ReturnMovementMode =
+            CleanText(value) == "Teleport"
+            and "Teleport"
+            or "Walk"
+
+        SetSniperStatus(
+            "Return mode: "
+            .. tostring(SniperState.ReturnMovementMode)
+        )
+
+        MarkConfigDirty()
+    end)
+end
+
 
 SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
     Text = "Auto Hop",
@@ -43692,9 +45332,9 @@ end)
 SettingsUIBox:AddToggle(
     "HolyGAG2AutoTpMiddleFarm",
     {
-        Text = "Auto TP Middle Farm",
+        Text = "Auto Middle Farm",
         Default = false,
-        Tooltip = "Teleports to the farm middle early, keeps you there while loading, and watches for the game's final pullback after loading.",
+        Tooltip = "Moves to your farm middle once. Does not keep pulling you back after you move.",
     }
 ):OnChanged(function(value)
 
@@ -43710,15 +45350,88 @@ SettingsUIBox:AddToggle(
     end
 end)
 
+SettingsUIBox:AddDropdown(
+    "HolyGAG2AutoMiddleFarmMode",
+    {
+        Text = "Middle Farm Mode",
+        Values = {
+            "Teleport",
+            "Walk",
+        },
+        Default =
+            GAG2MiddleFarmGetMovementMode(),
+        Multi = false,
+        Searchable = false,
+        MaxVisibleDropdownItems = 2,
+        Tooltip = "How Auto Middle Farm moves to the saved farm middle.",
+    }
+):OnChanged(function(value)
+
+    GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovementMode =
+        CleanText(value) == "Walk"
+        and "Walk"
+        or "Teleport"
+
+    if GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovementMode == "Walk"
+    and Toggles.HolyGAG2AutoTpMiddleFarm
+    and Toggles.HolyGAG2AutoTpMiddleFarm.Value == true then
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovedOnce =
+            false
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.MiddleReady =
+            false
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastMiddleReadyAt =
+            0
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastSniperMiddleStartAt =
+            0
+
+        if type(GAG2StartAutoTpMiddleFarm) == "function" then
+
+            GAG2StartAutoTpMiddleFarm(
+                "mode changed"
+            )
+        end
+    end
+
+    MarkConfigDirty()
+end)
+
 SettingsUIBox:AddDivider()
 
 SettingsUIBox:AddToggle("HolyGAG2HideOtherGardens", {
     Text = "Hide Other Gardens",
     Default = false,
-    Tooltip = "Locally hides other players gardens. Your own garden stays visible. Turn OFF to restore.",
+    Tooltip = "Locally hides other players gardens only.",
     Callback = function(value)
 
         GAG2PerformanceSetHideOtherGardensEnabled(
+            value == true
+        )
+    end,
+})
+
+SettingsUIBox:AddToggle("HolyGAG2HideOwnGarden", {
+    Text = "Hide Own Garden",
+    Default = false,
+    Tooltip = "Visual-hide only. Keeps your own garden in workspace so fruits can still be collected.",
+    Callback = function(value)
+
+        GAG2PerformanceSetHideOwnGardenEnabled(
+            value == true
+        )
+    end,
+})
+
+SettingsUIBox:AddToggle("HolyGAG2HideMapClutter", {
+    Text = "Hide Map Clutter",
+    Default = false,
+    Tooltip = "Locally removes workspace.Map.Middle, workspace.Map.Stands, and workspace.NPCS.",
+    Callback = function(value)
+
+        GAG2PerformanceSetHideMapClutterEnabled(
             value == true
         )
     end,
@@ -43744,12 +45457,40 @@ SettingsUIBox:AddButton({
         GAG2_PERFORMANCE_STATE.HideOtherGardens =
             false
 
+        GAG2_PERFORMANCE_STATE.HideOwnGarden =
+            false
+
+        GAG2_PERFORMANCE_STATE.HideMapClutter =
+            false
+
         if Toggles.HolyGAG2HideOtherGardens
         and type(Toggles.HolyGAG2HideOtherGardens.SetValue) == "function" then
 
             pcall(function()
 
                 Toggles.HolyGAG2HideOtherGardens:SetValue(
+                    false
+                )
+            end)
+        end
+
+        if Toggles.HolyGAG2HideOwnGarden
+        and type(Toggles.HolyGAG2HideOwnGarden.SetValue) == "function" then
+
+            pcall(function()
+
+                Toggles.HolyGAG2HideOwnGarden:SetValue(
+                    false
+                )
+            end)
+        end
+
+        if Toggles.HolyGAG2HideMapClutter
+        and type(Toggles.HolyGAG2HideMapClutter.SetValue) == "function" then
+
+            pcall(function()
+
+                Toggles.HolyGAG2HideMapClutter:SetValue(
                     false
                 )
             end)
