@@ -25832,6 +25832,82 @@ function SniperFireBuyByMode(entry)
 end
 
 
+function GAG2DebugTraceback(errorValue)
+
+    local errorText =
+        tostring(errorValue or "unknown error")
+
+    if type(debug) == "table"
+    and type(debug.traceback) == "function" then
+
+        local ok, trace =
+            pcall(
+                debug.traceback,
+                errorText,
+                2
+            )
+
+        if ok == true
+        and type(trace) == "string"
+        and trace ~= "" then
+
+            return trace
+        end
+    end
+
+    return errorText
+end
+
+function GAG2DebugCopyRuntimeError(label, trace)
+
+    local report =
+        "========== HOLY RUNTIME ERROR =========="
+        .. "\nLabel: "
+        .. tostring(label or "unknown")
+        .. "\nPlaceId: "
+        .. tostring(game.PlaceId)
+        .. "\nJobId: "
+        .. tostring(game.JobId)
+        .. "\n\n"
+        .. tostring(trace or "no trace")
+        .. "\n========================================"
+
+    warn(report)
+    print(report)
+
+    CopyText(
+        report
+    )
+
+    if type(SetSniperStatus) == "function" then
+
+        SetSniperStatus(
+            "Runtime error copied: "
+            .. tostring(label or "unknown")
+        )
+    end
+end
+
+function GAG2DebugSpawn(label, callback)
+
+    task.spawn(function()
+
+        local ok, trace =
+            xpcall(
+                callback,
+                GAG2DebugTraceback
+            )
+
+        if ok ~= true then
+
+            GAG2DebugCopyRuntimeError(
+                label,
+                trace
+            )
+        end
+    end)
+end
+
 function SniperAttemptBuyEntry(entry)
 
     if type(entry) ~= "table" then
@@ -25919,7 +25995,9 @@ function SniperAttemptBuyEntry(entry)
         .. "..."
     )
 
-    task.spawn(function()
+    GAG2DebugSpawn(
+        "SniperAttemptBuyEntry",
+        function()
 
         local moveState =
             nil
