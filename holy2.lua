@@ -8845,6 +8845,8 @@ local SniperState = {
     InstantHopGrace = 0,
     ReturnAfterTame = true,
     NoTeleportPacketTest = false,
+    MovementMode = "Teleport",
+    BuyMode = "Instant",
 
     Taming = false,
     LastTameAt = 0,
@@ -11887,6 +11889,665 @@ function GAG2ShopSetEnabled(category, value)
     MarkConfigDirty()
 end
 
+GAG2_AUTO_COLLECT_SEEDS_STATE =
+    GAG2_AUTO_COLLECT_SEEDS_STATE
+    or {
+        Enabled = false,
+        Running = false,
+        SeedType = "Gold",
+        MovementMode = "Teleport",
+        CollectMode = "Instant",
+        HoldDuration = 3.2,
+        LastStatus = "Idle.",
+        Recent = {},
+    }
+
+function GAG2SeedCollectSetStatus(text)
+
+    GAG2_AUTO_COLLECT_SEEDS_STATE.LastStatus =
+        tostring(text or "Idle.")
+
+    if Options.HolyGAG2SeedCollectStatus then
+
+        Options.HolyGAG2SeedCollectStatus:SetText(
+            GAG2_AUTO_COLLECT_SEEDS_STATE.LastStatus
+        )
+    end
+end
+
+function GAG2SeedCollectGetFolder()
+
+    local map =
+        workspace:FindFirstChild("Map")
+
+    return map
+        and map:FindFirstChild("SeedPackSpawnServerLocations")
+        or nil
+end
+
+function GAG2SeedCollectGetCharacterRoot()
+
+    local character =
+        LOCAL_PLAYER.Character
+
+    local root =
+        character
+        and character:FindFirstChild("HumanoidRootPart")
+
+    local humanoid =
+        character
+        and character:FindFirstChildOfClass("Humanoid")
+
+    if not character
+    or not root
+    or not humanoid then
+
+        return nil,
+            nil,
+            nil
+    end
+
+    return character,
+        root,
+        humanoid
+end
+
+function GAG2SeedCollectReadType(part)
+
+    if typeof(part) ~= "Instance" then
+        return ""
+    end
+
+    if part:GetAttribute("GoldSeed") == true then
+        return "Gold"
+    end
+
+    if part:GetAttribute("RainbowSeed") == true then
+        return "Rainbow"
+    end
+
+    local prompt =
+        part:FindFirstChildWhichIsA(
+            "ProximityPrompt",
+            true
+        )
+
+    if prompt then
+
+        local text =
+            CleanText(
+                tostring(prompt.ObjectText)
+            ):lower()
+
+        if text:find("gold", 1, true) then
+            return "Gold"
+        end
+
+        if text:find("rainbow", 1, true) then
+            return "Rainbow"
+        end
+    end
+
+    return ""
+end
+
+function GAG2SeedCollectTypeAllowed(seedType)
+
+    local selected =
+        CleanText(
+            GAG2_AUTO_COLLECT_SEEDS_STATE.SeedType
+        )
+
+    if selected == "Gold + Rainbow" then
+        return seedType == "Gold"
+            or seedType == "Rainbow"
+    end
+
+    return seedType == selected
+end
+
+function GAG2SeedCollectGetToolCount(seedType)
+
+    local count =
+        0
+
+    local backpack =
+        LOCAL_PLAYER:FindFirstChildOfClass("Backpack")
+
+    local character =
+        LOCAL_PLAYER.Character
+
+    local function scan(root)
+
+        if not root then
+            return
+        end
+
+        for _, child in ipairs(root:GetChildren()) do
+
+            if child:IsA("Tool")
+            and CleanText(child.Name) == seedType then
+
+                local stack =
+                    tonumber(child:GetAttribute("Count"))
+
+                if stack
+                and stack > 0 then
+
+                    count =
+                        count + stack
+
+                else
+
+                    count =
+                        count + 1
+                end
+            end
+        end
+    end
+
+    scan(backpack)
+    scan(character)
+
+    return count
+end
+
+function GAG2SeedCollectFindNearest()
+
+    local folder =
+        GAG2SeedCollectGetFolder()
+
+    local character, root =
+        GAG2SeedCollectGetCharacterRoot()
+
+    if not folder
+    or not root then
+
+        return nil,
+            "missing folder/root"
+    end
+
+    local best =
+        nil
+
+    local bestDistance =
+        math.huge
+
+    for _, child in ipairs(folder:GetChildren()) do
+
+        if child:IsA("BasePart") then
+
+            local prompt =
+                child:FindFirstChildWhichIsA(
+                    "ProximityPrompt",
+                    true
+                )
+
+            local seedType =
+                GAG2SeedCollectReadType(
+                    child
+                )
+
+            if prompt
+            and prompt.Enabled == true
+            and GAG2SeedCollectTypeAllowed(seedType) == true then
+
+                local key =
+                    tostring(child)
+
+                local recent =
+                    tonumber(
+                        GAG2_AUTO_COLLECT_SEEDS_STATE.Recent[key]
+                    )
+                    or 0
+
+                if os.clock() - recent >= 1.5 then
+
+                    local distance =
+                        (root.Position - child.Position).Magnitude
+
+                    if distance < bestDistance then
+
+                        bestDistance =
+                            distance
+
+                        best = {
+                            Part = child,
+                            Prompt = prompt,
+                            SeedType = seedType,
+                            Distance = distance,
+                            Key = key,
+                        }
+                    end
+                end
+            end
+        end
+    end
+
+    if not best then
+
+        return nil,
+            "no matching seed"
+    end
+
+    return best,
+        "ok"
+end
+
+function GAG2SeedCollectMoveTo(entry)
+
+    local character, root, humanoid =
+        GAG2SeedCollectGetCharacterRoot()
+
+    if not root
+    or not humanoid
+    or type(entry) ~= "table"
+    or typeof(entry.Part) ~= "Instance" then
+
+        return false,
+            "missing move data"
+    end
+
+    local targetPosition =
+        entry.Part.Position
+
+    local direction =
+        root.Position - targetPosition
+
+    if direction.Magnitude < 1 then
+
+        direction =
+            Vector3.new(1, 0, 0)
+    end
+
+    direction =
+        Vector3.new(
+            direction.X,
+            0,
+            direction.Z
+        )
+
+    if direction.Magnitude < 1 then
+
+        direction =
+            Vector3.new(1, 0, 0)
+    end
+
+    direction =
+        direction.Unit
+
+    local standPosition =
+        targetPosition
+        + direction * 4
+        + Vector3.new(0, 3, 0)
+
+    if GAG2_AUTO_COLLECT_SEEDS_STATE.MovementMode == "Walk" then
+
+        humanoid:MoveTo(
+            standPosition
+        )
+
+        local started =
+            os.clock()
+
+        while GAG2_AUTO_COLLECT_SEEDS_STATE.Enabled == true
+        and entry.Part.Parent
+        and os.clock() - started < 8 do
+
+            if (root.Position - targetPosition).Magnitude <= 9 then
+                break
+            end
+
+            task.wait(0.1)
+        end
+
+        return true,
+            "walk"
+    end
+
+    root.CFrame =
+        CFrame.lookAt(
+            standPosition,
+            targetPosition
+        )
+
+    task.wait(0.15)
+
+    return true,
+        "teleport"
+end
+
+function GAG2SeedCollectFirePrompt(prompt)
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true then
+
+        return false,
+            "bad prompt"
+    end
+
+    if type(fireproximityprompt) ~= "function" then
+
+        return false,
+            "fireproximityprompt unsupported"
+    end
+
+    local mode =
+        CleanText(
+            GAG2_AUTO_COLLECT_SEEDS_STATE.CollectMode
+        )
+
+    if mode == "Hold" then
+
+        local duration =
+            math.clamp(
+                tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.HoldDuration)
+                or 3.2,
+                3,
+                15
+            )
+
+        local ok =
+            pcall(function()
+
+                fireproximityprompt(
+                    prompt,
+                    duration
+                )
+            end)
+
+        if ok == true then
+            return true, "hold"
+        end
+    end
+
+    local ok, err =
+        pcall(function()
+
+            fireproximityprompt(
+                prompt
+            )
+        end)
+
+    if ok ~= true then
+
+        return false,
+            tostring(err)
+    end
+
+    return true,
+        "instant"
+end
+
+function GAG2SeedCollectWaitConfirm(entry, beforeCount)
+
+    local started =
+        os.clock()
+
+    while GAG2_AUTO_COLLECT_SEEDS_STATE.Enabled == true
+    and os.clock() - started < 5 do
+
+        if type(entry) == "table"
+        and typeof(entry.Part) == "Instance"
+        and entry.Part.Parent == nil then
+
+            return true,
+                "seed removed"
+        end
+
+        local nowCount =
+            GAG2SeedCollectGetToolCount(
+                entry.SeedType
+            )
+
+        if nowCount > beforeCount then
+
+            return true,
+                "backpack confirmed"
+        end
+
+        task.wait(0.1)
+    end
+
+    return false,
+        "confirmation timeout"
+end
+
+function GAG2SeedCollectCycle()
+
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
+
+    local entry, reason =
+        GAG2SeedCollectFindNearest()
+
+    if not entry then
+
+        GAG2SeedCollectSetStatus(
+            "Waiting: "
+            .. tostring(reason)
+        )
+
+        return
+    end
+
+    state.Recent[entry.Key] =
+        os.clock()
+
+    GAG2SeedCollectSetStatus(
+        "Collecting "
+        .. tostring(entry.SeedType)
+        .. " Seed | "
+        .. tostring(math.floor(entry.Distance + 0.5))
+        .. " studs"
+    )
+
+    local beforeCount =
+        GAG2SeedCollectGetToolCount(
+            entry.SeedType
+        )
+
+    local moved =
+        GAG2SeedCollectMoveTo(
+            entry
+        )
+
+    if moved ~= true then
+
+        GAG2SeedCollectSetStatus(
+            "Move failed."
+        )
+
+        return
+    end
+
+    local fired, fireInfo =
+        GAG2SeedCollectFirePrompt(
+            entry.Prompt
+        )
+
+    if fired ~= true then
+
+        GAG2SeedCollectSetStatus(
+            "Collect failed: "
+            .. tostring(fireInfo)
+        )
+
+        return
+    end
+
+    local confirmed, confirmInfo =
+        GAG2SeedCollectWaitConfirm(
+            entry,
+            beforeCount
+        )
+
+    if confirmed == true then
+
+        GAG2SeedCollectSetStatus(
+            "Collected "
+            .. tostring(entry.SeedType)
+            .. " Seed | "
+            .. tostring(confirmInfo)
+        )
+
+    else
+
+        GAG2SeedCollectSetStatus(
+            "Not confirmed: "
+            .. tostring(confirmInfo)
+        )
+    end
+end
+
+function GAG2SeedCollectStart()
+
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
+
+    if state.Running == true then
+        return
+    end
+
+    state.Running =
+        true
+
+    task.spawn(function()
+
+        while state.Enabled == true do
+
+            GAG2SeedCollectCycle()
+
+            task.wait(0.2)
+        end
+
+        state.Running =
+            false
+
+        GAG2SeedCollectSetStatus(
+            "Disabled."
+        )
+    end)
+end
+
+function GAG2SeedCollectSetEnabled(value)
+
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
+
+    state.Enabled =
+        value == true
+
+    if state.Enabled == true then
+
+        GAG2SeedCollectStart()
+
+    else
+
+        GAG2SeedCollectSetStatus(
+            "Disabled."
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedCollectSetSeedType(value)
+
+    GAG2_AUTO_COLLECT_SEEDS_STATE.SeedType =
+        CleanText(value)
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedCollectSetMovementMode(value)
+
+    GAG2_AUTO_COLLECT_SEEDS_STATE.MovementMode =
+        CleanText(value)
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedCollectSetCollectMode(value)
+
+    GAG2_AUTO_COLLECT_SEEDS_STATE.CollectMode =
+        CleanText(value)
+
+    MarkConfigDirty()
+end
+
+function GAG2SeedCollectSetHoldDuration(value)
+
+    GAG2_AUTO_COLLECT_SEEDS_STATE.HoldDuration =
+        math.clamp(
+            tonumber(value)
+            or 3.2,
+            3,
+            15
+        )
+
+    MarkConfigDirty()
+end
+
+function GAG2RestoreSeedCollectState()
+
+    task.defer(function()
+
+        local state =
+            GAG2_AUTO_COLLECT_SEEDS_STATE
+
+        if Toggles.HolyGAG2AutoCollectSeeds then
+
+            state.Enabled =
+                Toggles.HolyGAG2AutoCollectSeeds.Value == true
+        end
+
+        if Options.HolyGAG2SeedCollectType then
+
+            state.SeedType =
+                CleanText(
+                    Options.HolyGAG2SeedCollectType.Value
+                )
+        end
+
+        if Options.HolyGAG2SeedCollectMovement then
+
+            state.MovementMode =
+                CleanText(
+                    Options.HolyGAG2SeedCollectMovement.Value
+                )
+        end
+
+        if Options.HolyGAG2SeedCollectMode then
+
+            state.CollectMode =
+                CleanText(
+                    Options.HolyGAG2SeedCollectMode.Value
+                )
+        end
+
+        if Options.HolyGAG2SeedCollectHoldDuration then
+
+            state.HoldDuration =
+                tonumber(
+                    Options.HolyGAG2SeedCollectHoldDuration.Value
+                )
+                or state.HoldDuration
+        end
+
+        if state.Enabled == true then
+
+            GAG2SeedCollectStart()
+
+        else
+
+            GAG2SeedCollectSetStatus(
+                "Ready."
+            )
+        end
+    end)
+end
+
 function GAG2RestoreShopAutosaveState()
 
     task.defer(function()
@@ -12994,7 +13655,7 @@ local function SniperGetEntryTamePosition(entry)
     )
 end
 
-local function SniperGetSafeTameCFrame(targetPosition)
+function SniperGetSafeTameCFrame(targetPosition)
 
     if typeof(targetPosition) ~= "Vector3" then
         return nil
@@ -13007,6 +13668,7 @@ local function SniperGetSafeTameCFrame(targetPosition)
         {}
 
     if character then
+
         table.insert(
             ignoreList,
             character
@@ -13026,14 +13688,14 @@ local function SniperGetSafeTameCFrame(targetPosition)
         true
 
     local offsets = {
-        Vector3.new(5, 0, 0),
-        Vector3.new(-5, 0, 0),
-        Vector3.new(0, 0, 5),
-        Vector3.new(0, 0, -5),
-        Vector3.new(7, 0, 7),
-        Vector3.new(-7, 0, 7),
-        Vector3.new(7, 0, -7),
-        Vector3.new(-7, 0, -7),
+        Vector3.new(6, 0, 0),
+        Vector3.new(-6, 0, 0),
+        Vector3.new(0, 0, 6),
+        Vector3.new(0, 0, -6),
+        Vector3.new(4, 0, 4),
+        Vector3.new(-4, 0, 4),
+        Vector3.new(4, 0, -4),
+        Vector3.new(-4, 0, -4),
         Vector3.new(0, 0, 0),
     }
 
@@ -13047,51 +13709,47 @@ local function SniperGetSafeTameCFrame(targetPosition)
             + offset
             + Vector3.new(
                 0,
-                60,
-                0
-            )
-
-        local rayDirection =
-            Vector3.new(
-                0,
-                -140,
+                35,
                 0
             )
 
         local result =
             workspace:Raycast(
                 rayOrigin,
-                rayDirection,
+                Vector3.new(
+                    0,
+                    -90,
+                    0
+                ),
                 rayParams
             )
 
         if result
-        and result.Position then
+        and typeof(result.Position) == "Vector3" then
 
-            local candidatePosition =
-                result.Position
-                + Vector3.new(
-                    0,
-                    4.75,
-                    0
+            local verticalDifference =
+                math.abs(
+                    result.Position.Y - targetPosition.Y
                 )
 
-            bestPosition =
-                candidatePosition
+            if verticalDifference <= 18 then
 
-            break
+                bestPosition =
+                    result.Position
+                    + Vector3.new(
+                        0,
+                        3.25,
+                        0
+                    )
+
+                break
+            end
         end
     end
 
     if typeof(bestPosition) ~= "Vector3" then
 
-        bestPosition =
-            targetPosition
-            + Vector3.new(
-                0,
-                7,
-                0
-            )
+        return nil
     end
 
     local lookTarget =
@@ -13119,6 +13777,61 @@ local function SniperGetSafeTameCFrame(targetPosition)
     bestPosition
 end
 
+function SniperAimAtPetPosition(targetPosition)
+
+    if typeof(targetPosition) ~= "Vector3" then
+        return false
+    end
+
+    local character, root =
+        SniperGetCharacterRoot()
+
+    if not character
+    or not root then
+        return false
+    end
+
+    local lookTarget =
+        Vector3.new(
+            targetPosition.X,
+            root.Position.Y,
+            targetPosition.Z
+        )
+
+    if (root.Position - lookTarget).Magnitude <= 0.1 then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            character:PivotTo(
+                CFrame.new(
+                    root.Position,
+                    lookTarget
+                )
+            )
+        end)
+
+    local camera =
+        workspace.CurrentCamera
+
+    if camera then
+
+        pcall(function()
+
+            camera.CFrame =
+                CFrame.new(
+                    camera.CFrame.Position,
+                    targetPosition + Vector3.new(0, 1.75, 0)
+                )
+        end)
+    end
+
+    return ok == true
+end
+
+
 local function SniperStopCharacterMotion(root)
 
     if typeof(root) ~= "Instance" then
@@ -13134,6 +13847,8 @@ local function SniperStopCharacterMotion(root)
             Vector3.zero
     end)
 end
+
+
 
 --==================================================
 -- [4.55] AUTO SKIP LOADING + AUTO TP MIDDLE FARM
@@ -19812,10 +20527,22 @@ function GAG2AutoShovelScanPlants()
                     summary[seedName] = row
                 end
 
-                totalPlants = totalPlants + 1
-                row.Count = row.Count + 1
-                row.Protected = row.Protected + protected and 1 or 0
-                row.Eligible = row.Eligible + protected and 0 or 1
+                totalPlants =
+                    totalPlants + 1
+
+                row.Count =
+                    row.Count + 1
+
+                if protected == true then
+
+                    row.Protected =
+                        row.Protected + 1
+
+                else
+
+                    row.Eligible =
+                        row.Eligible + 1
+                end
 
                 for mutation in pairs(mutations) do
 
@@ -19886,11 +20613,11 @@ function GAG2AutoShovelBuildPlantChoices()
 
         local display =
             row.Name
-            .. " — "
-            .. tostring(row.Eligible)
-            .. " shovelable / "
+            .. " x"
             .. tostring(row.Count)
-            .. " total"
+            .. " | "
+            .. tostring(row.Eligible)
+            .. " shovelable"
 
         table.insert(values, display)
         choiceMap[display] = row.Name
@@ -19922,10 +20649,15 @@ function GAG2AutoShovelBuildQueueChoices()
         local eligible = row and row.Eligible or 0
         local amountText = entry.Limit <= 0 and "All" or tostring(entry.Limit)
 
+        local planted =
+            row and row.Count or 0
+
         local display =
             tostring(index)
             .. ". "
             .. entry.Plant
+            .. " x"
+            .. tostring(planted)
             .. " — "
             .. amountText
             .. " / "
@@ -24613,7 +25345,299 @@ function GAG2RestoreSeedPlantingState()
     end)
 end
 
-local function SniperMoveCloseForTame(entry)
+function SniperGetMovementMode()
+
+    local mode =
+        CleanText(
+            SniperState.MovementMode
+        )
+
+    if mode == "Walk" then
+        return "Walk"
+    end
+
+    return "Teleport"
+end
+
+function SniperGetBuyMode()
+
+    local mode =
+        CleanText(
+            SniperState.BuyMode
+        )
+
+    if mode == "Hold" then
+        return "Hold"
+    end
+
+    return "Instant"
+end
+
+function SniperWalkCloseForTame(entry)
+
+    local character, root =
+        SniperGetCharacterRoot()
+
+    if not character
+    or not root then
+        return nil, "missing character"
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid then
+        return nil, "missing humanoid"
+    end
+
+    local oldCFrame =
+        root.CFrame
+
+    local started =
+        os.clock()
+
+    local closePosition =
+        nil
+
+    local targetPosition =
+        nil
+
+    while os.clock() - started < 7 do
+
+        targetPosition =
+            SniperGetEntryTamePosition(
+                entry
+            )
+
+        if typeof(targetPosition) ~= "Vector3" then
+            return nil, "missing pet position"
+        end
+
+        local _, safePosition =
+            SniperGetSafeTameCFrame(
+                targetPosition
+            )
+
+        if typeof(safePosition) == "Vector3" then
+
+            closePosition =
+                safePosition
+
+                humanoid:MoveTo(
+                    closePosition
+                )
+
+            if (root.Position - closePosition).Magnitude <= 7 then
+                break
+            end
+        end
+
+        task.wait(
+            0.12
+        )
+    end
+
+    SniperStopCharacterMotion(
+        root
+    )
+
+    if typeof(targetPosition) == "Vector3" then
+
+        SniperAimAtPetPosition(
+            targetPosition
+        )
+
+        task.wait(
+            0.15
+        )
+    end
+
+    return {
+        Character = character,
+        OldCFrame = oldCFrame,
+        ClosePosition = root.Position,
+        TargetPosition = targetPosition,
+        Moved = true,
+        MovementMode = "Walk",
+    },
+    "walked"
+end
+
+function SniperMoveToBuyPosition(entry)
+
+    if SniperGetMovementMode() == "Walk" then
+
+        return SniperWalkCloseForTame(
+            entry
+        )
+    end
+
+    local moveState, moveInfo =
+        SniperMoveCloseForTame(
+            entry
+        )
+
+    if type(moveState) == "table" then
+        moveState.MovementMode = "Teleport"
+    end
+
+    return moveState,
+        moveInfo
+end
+
+function SniperFindEntryBuyPrompt(entry)
+
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local roots =
+        {}
+
+    local function addRoot(root)
+
+        if typeof(root) == "Instance"
+        and root.Parent ~= nil
+        and table.find(roots, root) == nil then
+
+            table.insert(
+                roots,
+                root
+            )
+        end
+    end
+
+    addRoot(entry.Spawn)
+    addRoot(entry.Instance)
+    addRoot(entry.Ref)
+
+    if CleanText(entry.UUID) ~= "" then
+
+        addRoot(
+            SniperFindSpawnByUuid(
+                entry.UUID
+            )
+        )
+
+        addRoot(
+            SniperFindRef(
+                entry.UUID
+            )
+        )
+    end
+
+    for _, root in ipairs(roots) do
+
+        if root:IsA("ProximityPrompt") then
+            return root
+        end
+
+        for _, descendant in ipairs(root:GetDescendants()) do
+
+            if descendant:IsA("ProximityPrompt") then
+
+                local text =
+                    (
+                        tostring(descendant.Name)
+                        .. " "
+                        .. tostring(descendant.ActionText)
+                        .. " "
+                        .. tostring(descendant.ObjectText)
+                    ):lower()
+
+                if text:find("buy", 1, true)
+                or text:find("tame", 1, true)
+                or text:find("adopt", 1, true) then
+
+                    return descendant
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function SniperHoldBuyPromptForEntry(entry)
+
+    local prompt =
+        SniperFindEntryBuyPrompt(
+            entry
+        )
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true then
+
+        return false,
+            "BuyPrompt missing"
+    end
+
+    local targetPosition =
+        SniperGetEntryTamePosition(
+            entry
+        )
+
+    if typeof(targetPosition) == "Vector3" then
+
+        SniperAimAtEntry(
+            entry,
+            targetPosition
+        )
+    end
+
+    local holdTime =
+        math.clamp(
+            tonumber(prompt.HoldDuration)
+            or 1,
+            0.25,
+            8
+        )
+        + 0.20
+
+    local fired =
+        false
+
+    if type(fireproximityprompt) == "function" then
+
+        local ok =
+            pcall(function()
+
+                fireproximityprompt(
+                    prompt,
+                    holdTime
+                )
+            end)
+
+        if ok == true then
+            fired = true
+        end
+    end
+
+    if fired ~= true then
+
+        pcall(function()
+
+            prompt:InputHoldBegin()
+        end)
+
+        task.wait(
+            holdTime
+        )
+
+        pcall(function()
+
+            prompt:InputHoldEnd()
+        end)
+
+        fired =
+            true
+    end
+
+    return fired,
+        "held"
+end
+
+function SniperMoveCloseForTame(entry)
 
     local character, root =
         SniperGetCharacterRoot()
@@ -24638,7 +25662,11 @@ local function SniperMoveCloseForTame(entry)
     local distance =
         (root.Position - targetPosition).Magnitude
 
-    if distance <= 10 then
+    if distance <= 8 then
+
+        SniperAimAtPetPosition(
+            targetPosition
+        )
 
         SniperStopCharacterMotion(
             root
@@ -24648,6 +25676,7 @@ local function SniperMoveCloseForTame(entry)
             Character = character,
             OldCFrame = oldCFrame,
             ClosePosition = root.Position,
+            TargetPosition = targetPosition,
             Moved = false,
         },
         "already close"
@@ -24660,7 +25689,7 @@ local function SniperMoveCloseForTame(entry)
 
     if typeof(closeCFrame) ~= "CFrame"
     or typeof(closePosition) ~= "Vector3" then
-        return nil, "safe position failed"
+        return nil, "safe ground position failed"
     end
 
     local ok, err =
@@ -24686,8 +25715,23 @@ local function SniperMoveCloseForTame(entry)
     end
 
     task.wait(
-        0.08
+        0.05
     )
+
+    local freshTargetPosition =
+        SniperGetEntryTamePosition(
+            entry
+        )
+
+    if typeof(freshTargetPosition) == "Vector3" then
+
+        targetPosition =
+            freshTargetPosition
+
+        SniperAimAtPetPosition(
+            targetPosition
+        )
+    end
 
     local _, newRoot =
         SniperGetCharacterRoot()
@@ -24700,17 +25744,19 @@ local function SniperMoveCloseForTame(entry)
     end
 
     task.wait(
-        0.18
+        0.08
     )
 
     return {
         Character = character,
         OldCFrame = oldCFrame,
         ClosePosition = closePosition,
+        TargetPosition = targetPosition,
         Moved = true,
     },
     "moved"
 end
+
 
 local function SniperRestoreAfterTame(moveState)
 
@@ -24785,7 +25831,7 @@ local function SniperGetEntryKey(entry)
     return CleanText(entry.Name)
 end
 
-local function SniperHasPendingBuy()
+function SniperHasPendingBuy()
 
     if type(SniperState.PendingWildPets) ~= "table" then
         return false
@@ -24794,6 +25840,35 @@ local function SniperHasPendingBuy()
     for _, value in pairs(SniperState.PendingWildPets) do
 
         if value == true then
+            return true
+        end
+
+        if type(value) == "table"
+        and value.Confirmed ~= true then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function SniperHasUnacceptedPendingBuy()
+
+    if type(SniperState.PendingWildPets) ~= "table" then
+        return false
+    end
+
+    for _, record in pairs(SniperState.PendingWildPets) do
+
+        if record == true then
+            return true
+        end
+
+        if type(record) == "table"
+        and record.Confirmed ~= true
+        and record.Accepted ~= true then
+
             return true
         end
     end
@@ -24925,56 +26000,671 @@ local function SniperEntryStillActive(entry)
     return false
 end
 
-local function SniperWaitForClaimConfirmation(entry)
+function SniperGetLeaderstatsSheckles()
 
-    local started =
-        os.clock()
+    local function parseNumber(value)
 
-    local missingSince =
-        nil
+        if type(value) == "number" then
+            return value
+        end
 
-    local timeout =
-        math.clamp(
-            tonumber(SniperState.ClaimWaitTimeout)
-            or 90,
-            15,
-            180
-        )
+        local text =
+            CleanText(value)
 
-    local confirmTime =
-        math.clamp(
-            tonumber(SniperState.ClaimDisappearConfirmTime)
-            or 1.25,
-            0.5,
-            5
-        )
+        if text == "" then
+            return nil
+        end
 
-    while os.clock() - started < timeout do
+        text =
+            text:gsub(",", "")
+                :gsub("¢", "")
+                :gsub("%$", "")
+                :gsub("%s+", "")
 
-        if SniperEntryStillActive(entry) == true then
+        local multiplier =
+            1
 
-            missingSince =
-                nil
+        local suffix =
+            text:sub(-1):lower()
 
-        else
+        if suffix == "k" then
 
-            if missingSince == nil then
+            multiplier =
+                1000
 
-                missingSince =
-                    os.clock()
+            text =
+                text:sub(1, -2)
+
+        elseif suffix == "m" then
+
+            multiplier =
+                1000000
+
+            text =
+                text:sub(1, -2)
+
+        elseif suffix == "b" then
+
+            multiplier =
+                1000000000
+
+            text =
+                text:sub(1, -2)
+        end
+
+        local number =
+            tonumber(text)
+
+        if not number then
+            return nil
+        end
+
+        return number * multiplier
+    end
+
+    local names = {
+        "Sheckles",
+        "Sheckle",
+        "Money",
+        "Cash",
+        "Coins",
+        "Currency",
+    }
+
+    local leaderstats =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChild("leaderstats")
+
+    if leaderstats then
+
+        for _, name in ipairs(names) do
+
+            local valueObject =
+                leaderstats:FindFirstChild(name)
+
+            if valueObject
+            and valueObject:IsA("ValueBase") then
+
+                local number =
+                    parseNumber(valueObject.Value)
+
+                if number ~= nil then
+                    return number
+                end
             end
+        end
+    end
 
-            if os.clock() - missingSince >= confirmTime then
-                return true
+    if LOCAL_PLAYER then
+
+        for _, name in ipairs(names) do
+
+            local number =
+                parseNumber(
+                    LOCAL_PLAYER:GetAttribute(name)
+                )
+
+            if number ~= nil then
+                return number
+            end
+        end
+    end
+
+    return nil
+end
+
+function SniperClearPendingBuyKey(key)
+
+    key =
+        CleanText(key)
+
+    if key == "" then
+        return
+    end
+
+    local record =
+        type(SniperState.PendingWildPets) == "table"
+        and SniperState.PendingWildPets[key]
+        or nil
+
+    if type(record) == "table"
+    and type(record.RefConnections) == "table" then
+
+        for _, connection in ipairs(record.RefConnections) do
+
+            if connection then
+
+                pcall(function()
+
+                    connection:Disconnect()
+                end)
             end
         end
 
-        task.wait(
-            0.35
+        record.RefConnections =
+            {}
+    end
+
+    if type(SniperState.PendingWildPets) == "table" then
+
+        SniperState.PendingWildPets[key] =
+            nil
+    end
+
+    if SniperHasPendingBuy() == true then
+
+        SniperState.ConfirmingBuy =
+            true
+
+        SniperState.ConfirmingBuyKey =
+            ""
+
+    else
+
+        SniperState.ConfirmingBuy =
+            false
+
+        SniperState.ConfirmingBuyKey =
+            ""
+    end
+end
+
+function SniperConfirmPendingBuyRecord(record, reason, petId)
+
+    if type(record) ~= "table" then
+        return false
+    end
+
+    if record.Confirmed == true then
+        return false
+    end
+
+    petId =
+        CleanText(petId)
+
+    if petId ~= "" then
+
+        SniperState.ConfirmedPetIds =
+            type(SniperState.ConfirmedPetIds) == "table"
+            and SniperState.ConfirmedPetIds
+            or {}
+
+        if SniperState.ConfirmedPetIds[petId] == true then
+
+            print(
+                "[HOLY SNIPER]",
+                "ignored duplicate petId confirm",
+                "| pet:",
+                tostring(record.PetName),
+                "| uuid:",
+                tostring(record.UUID),
+                "| petId:",
+                tostring(petId),
+                "| reason:",
+                tostring(reason)
+            )
+
+            return false
+        end
+
+        SniperState.ConfirmedPetIds[petId] =
+            true
+    end
+
+    record.Accepted =
+        true
+
+    record.Confirmed =
+        true
+
+    record.ConfirmReason =
+        tostring(reason or "confirmed")
+
+    record.PetId =
+        petId
+
+    local key =
+        CleanText(record.Key)
+
+    SetSniperStatus(
+        "Confirmed: "
+        .. tostring(record.PetName)
+    )
+
+    Notify(
+        "Sniper",
+        "Confirmed "
+        .. tostring(record.PetName)
+        .. ".",
+        3
+    )
+
+    print(
+        "[HOLY SNIPER]",
+        "buy confirmed",
+        "| pet:",
+        tostring(record.PetName),
+        "| uuid:",
+        tostring(record.UUID),
+        "| petId:",
+        tostring(record.PetId),
+        "| reason:",
+        tostring(record.ConfirmReason)
+    )
+
+    SniperClearPendingBuyKey(
+        key
+    )
+
+    return true
+end
+
+function SniperConfirmPendingBuyByPetName(petName, reason, petId)
+
+    petName =
+        CleanText(petName)
+
+    if petName == ""
+    or type(SniperState.PendingWildPets) ~= "table" then
+
+        return false
+    end
+
+    local wanted =
+        SniperNormalizeName(
+            petName
+        )
+
+    local bestRecord =
+        nil
+
+    for _, record in pairs(SniperState.PendingWildPets) do
+
+        if type(record) == "table"
+        and record.Confirmed ~= true
+        and record.Accepted == true
+        and SniperNormalizeName(record.PetName) == wanted then
+
+            if bestRecord == nil
+            or tonumber(record.StartedAt or 0) < tonumber(bestRecord.StartedAt or 0) then
+
+                bestRecord =
+                    record
+            end
+        end
+    end
+
+    if bestRecord then
+
+        return SniperConfirmPendingBuyRecord(
+            bestRecord,
+            reason,
+            petId
         )
     end
 
+    print(
+        "[HOLY SNIPER]",
+        "ignored confirm without accepted pending buy",
+        "| pet:",
+        tostring(petName),
+        "| petId:",
+        tostring(petId),
+        "| reason:",
+        tostring(reason)
+    )
+
     return false
+end
+
+
+function SniperMarkPendingAcceptedByKey(key, reason)
+
+    key =
+        CleanText(key)
+
+    if key == ""
+    or type(SniperState.PendingWildPets) ~= "table" then
+
+        return false
+    end
+
+    local record =
+        SniperState.PendingWildPets[key]
+
+    if type(record) ~= "table"
+    or record.Confirmed == true
+    or record.Accepted == true then
+
+        return false
+    end
+
+    record.Accepted =
+        true
+
+    record.AcceptReason =
+        tostring(reason or "accepted")
+
+    SetSniperStatus(
+        "Accepted: "
+        .. tostring(record.PetName)
+    )
+
+    print(
+        "[HOLY SNIPER]",
+        "buy accepted",
+        "| pet:",
+        tostring(record.PetName),
+        "| uuid:",
+        tostring(record.UUID),
+        "| reason:",
+        tostring(record.AcceptReason)
+    )
+
+    return true
+end
+
+function SniperWatchRefForBuyConfirm(key, ref)
+
+    key =
+        CleanText(key)
+
+    if key == ""
+    or typeof(ref) ~= "Instance"
+    or ref.Parent == nil
+    or type(SniperState.PendingWildPets) ~= "table" then
+
+        return false
+    end
+
+    local record =
+        SniperState.PendingWildPets[key]
+
+    if type(record) ~= "table" then
+        return false
+    end
+
+    record.RefConnections =
+        type(record.RefConnections) == "table"
+        and record.RefConnections
+        or {}
+
+    local function checkOwner()
+
+        if typeof(ref) ~= "Instance"
+        or ref.Parent == nil then
+            return
+        end
+
+        local ownerUserId =
+            tonumber(
+                ref:GetAttribute("OwnerUserId")
+            )
+            or 0
+
+        local ownerName =
+            CleanText(
+                ref:GetAttribute("OwnerName")
+            )
+
+        if LOCAL_PLAYER
+        and ownerUserId == LOCAL_PLAYER.UserId then
+
+            SniperMarkPendingAcceptedByKey(
+                key,
+                "ownerUserId"
+            )
+
+            return
+        end
+
+        if LOCAL_PLAYER
+        and ownerName ~= ""
+        and ownerName == LOCAL_PLAYER.Name then
+
+            SniperMarkPendingAcceptedByKey(
+                key,
+                "ownerName"
+            )
+        end
+    end
+
+    checkOwner()
+
+    for _, attrName in ipairs({
+        "OwnerUserId",
+        "OwnerName",
+        "State",
+    }) do
+
+        local ok, connection =
+            pcall(function()
+
+                return ref:GetAttributeChangedSignal(attrName):Connect(function()
+
+                    checkOwner()
+                end)
+            end)
+
+        if ok == true
+        and connection then
+
+            table.insert(
+                record.RefConnections,
+                connection
+            )
+        end
+    end
+
+    return true
+end
+
+function SniperGetToolPetName(tool)
+
+    if typeof(tool) ~= "Instance"
+    or tool:IsA("Tool") ~= true then
+
+        return ""
+    end
+
+    local attrNames = {
+        "Pet",
+        "PetName",
+        "Name",
+        "DisplayName",
+    }
+
+    for _, attrName in ipairs(attrNames) do
+
+        local value =
+            CleanText(
+                tool:GetAttribute(attrName)
+            )
+
+        if value ~= "" then
+            return value
+        end
+    end
+
+    return CleanText(
+        tool.Name
+    )
+end
+
+function SniperAttachBuyConfirmToolContainer(container)
+
+    if typeof(container) ~= "Instance" then
+        return false
+    end
+
+    SniperState.BuyToolContainers =
+        type(SniperState.BuyToolContainers) == "table"
+        and SniperState.BuyToolContainers
+        or {}
+
+    if SniperState.BuyToolContainers[container] == true then
+        return true
+    end
+
+    SniperState.BuyToolContainers[container] =
+        true
+
+    container.ChildAdded:Connect(function(child)
+
+        if child:IsA("Tool") ~= true then
+            return
+        end
+
+        local petName =
+            SniperGetToolPetName(
+                child
+            )
+
+        if petName == "" then
+            return
+        end
+
+        SniperConfirmPendingBuyByPetName(
+            petName,
+            "tool added",
+            CleanText(
+                child:GetAttribute("PetId")
+            )
+        )
+    end)
+
+    return true
+end
+
+function SniperHandleReplicaSetForBuyConfirm(...)
+
+    local args = {
+        ...
+    }
+
+    for index, value in ipairs(args) do
+
+        local path =
+            nil
+
+        local payload =
+            nil
+
+        if type(value) == "table" then
+
+            if tostring(value[1]) == "Inventory"
+            and tostring(value[2]) == "Pets" then
+
+                path =
+                    value
+
+                payload =
+                    args[index + 1]
+            end
+        end
+
+        if path then
+
+            local petName =
+                ""
+
+            if type(payload) == "table" then
+
+                petName =
+                    CleanText(
+                        payload.Name
+                        or payload.PetName
+                        or payload.DisplayName
+                    )
+            end
+
+            if petName ~= "" then
+
+                SniperConfirmPendingBuyByPetName(
+                    petName,
+                    "replica inventory pet",
+                    CleanText(
+                        type(payload) == "table"
+                        and (
+                            payload.Id
+                            or payload.ID
+                            or path[3]
+                        )
+                        or path[3]
+                    )
+                )
+            end
+        end
+    end
+end
+
+function SniperEnsureBuyConfirmationHooks()
+
+    SniperState.BuyConfirmationHooksStarted =
+        SniperState.BuyConfirmationHooksStarted == true
+
+    if SniperState.BuyConfirmationHooksStarted ~= true then
+
+        SniperState.BuyConfirmationHooksStarted =
+            true
+
+        local remoteEvents =
+            ReplicatedStorage:FindFirstChild("RemoteEvents")
+
+        local replicaSet =
+            remoteEvents
+            and remoteEvents:FindFirstChild("ReplicaSet")
+
+        if replicaSet
+        and replicaSet:IsA("RemoteEvent") then
+
+            replicaSet.OnClientEvent:Connect(function(...)
+
+                SniperHandleReplicaSetForBuyConfirm(
+                    ...
+                )
+            end)
+        end
+
+        if LOCAL_PLAYER then
+
+            LOCAL_PLAYER.CharacterAdded:Connect(function(character)
+
+                SniperAttachBuyConfirmToolContainer(
+                    character
+                )
+            end)
+
+            LOCAL_PLAYER.ChildAdded:Connect(function(child)
+
+                if child:IsA("Backpack") then
+
+                    SniperAttachBuyConfirmToolContainer(
+                        child
+                    )
+                end
+            end)
+        end
+    end
+
+    local backpack =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("Backpack")
+
+    if backpack then
+
+        SniperAttachBuyConfirmToolContainer(
+            backpack
+        )
+    end
+
+    if LOCAL_PLAYER
+    and LOCAL_PLAYER.Character then
+
+        SniperAttachBuyConfirmToolContainer(
+            LOCAL_PLAYER.Character
+        )
+    end
 end
 
 local function SniperHoldCloseForServerValidation(moveState)
@@ -25013,7 +26703,441 @@ local function SniperHoldCloseForServerValidation(moveState)
     end
 end
 
-local function SniperStartBuyConfirmation(entry)
+function SniperGetPendingBuyRecordForEntry(entry)
+
+    local key =
+        SniperGetEntryKey(
+            entry
+        )
+
+    if key == ""
+    or type(SniperState.PendingWildPets) ~= "table" then
+        return nil, key
+    end
+
+    local record =
+        SniperState.PendingWildPets[key]
+
+    if type(record) ~= "table" then
+        return nil, key
+    end
+
+    return record,
+        key
+end
+
+function SniperEntryAcceptedByLocal(entry)
+
+    local record =
+        SniperGetPendingBuyRecordForEntry(
+            entry
+        )
+
+    if type(record) == "table"
+    and (
+        record.Accepted == true
+        or record.Confirmed == true
+    ) then
+
+        return true
+    end
+
+    local ref =
+        entry
+        and entry.Ref
+        or nil
+
+    if typeof(ref) ~= "Instance"
+    or ref.Parent == nil then
+
+        ref =
+            SniperFindRef(
+                entry
+                and entry.UUID
+                or ""
+            )
+    end
+
+    if typeof(ref) ~= "Instance" then
+        return false
+    end
+
+    local ownerUserId =
+        tonumber(
+            ref:GetAttribute("OwnerUserId")
+        )
+        or 0
+
+    local ownerName =
+        CleanText(
+            ref:GetAttribute("OwnerName")
+        )
+
+    if LOCAL_PLAYER
+    and ownerUserId == LOCAL_PLAYER.UserId then
+
+        return true
+    end
+
+    if LOCAL_PLAYER
+    and ownerName ~= ""
+    and ownerName == LOCAL_PLAYER.Name then
+
+        return true
+    end
+
+    return false
+end
+
+function SniperFindEntryBuyPrompt(entry)
+
+    local roots =
+        {}
+
+    local function addRoot(root)
+
+        if typeof(root) == "Instance" then
+
+            table.insert(
+                roots,
+                root
+            )
+        end
+    end
+
+    addRoot(
+        entry
+        and entry.Spawn
+        or nil
+    )
+
+    addRoot(
+        entry
+        and entry.Instance
+        or nil
+    )
+
+    if entry
+    and CleanText(entry.UUID) ~= "" then
+
+        addRoot(
+            SniperFindSpawnByUuid(
+                entry.UUID
+            )
+        )
+
+        addRoot(
+            SniperFindRef(
+                entry.UUID
+            )
+        )
+    end
+
+    addRoot(
+        entry
+        and entry.Ref
+        or nil
+    )
+
+    for _, root in ipairs(roots) do
+
+        if root:IsA("ProximityPrompt") then
+            return root
+        end
+
+        local scanned =
+            0
+
+        for _, descendant in ipairs(root:GetDescendants()) do
+
+            scanned =
+                scanned + 1
+
+            if scanned > 400 then
+                break
+            end
+
+            if descendant:IsA("ProximityPrompt") then
+
+                local promptName =
+                    CleanText(descendant.Name):lower()
+
+                local actionText =
+                    ""
+
+                local objectText =
+                    ""
+
+                pcall(function()
+
+                    actionText =
+                        CleanText(descendant.ActionText):lower()
+
+                    objectText =
+                        CleanText(descendant.ObjectText):lower()
+                end)
+
+                if promptName:find("buy", 1, true)
+                or actionText:find("buy", 1, true)
+                or objectText:find("buy", 1, true) then
+
+                    return descendant
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function SniperFollowCloseForBuy(entry, moveState, seconds)
+
+    local started =
+        os.clock()
+
+    local limit =
+        math.clamp(
+            tonumber(seconds)
+            or 1.25,
+            0.15,
+            8
+        )
+
+    local lastCorrection =
+        0
+
+    while os.clock() - started < limit do
+
+        if SniperEntryAcceptedByLocal(entry) == true then
+            return true
+        end
+
+        local targetPosition =
+            SniperGetEntryTamePosition(
+                entry
+            )
+
+        if typeof(targetPosition) == "Vector3" then
+
+            local closeCFrame, closePosition =
+                SniperGetSafeTameCFrame(
+                    targetPosition
+                )
+
+            local character, root =
+                SniperGetCharacterRoot()
+
+            if typeof(closeCFrame) == "CFrame"
+            and typeof(closePosition) == "Vector3"
+            and character
+            and root then
+
+                local now =
+                    os.clock()
+
+                local distance =
+                    (root.Position - closePosition).Magnitude
+
+                if distance > 5
+                and now - lastCorrection >= 0.35 then
+
+                    lastCorrection =
+                        now
+
+                    pcall(function()
+
+                        character:PivotTo(
+                            closeCFrame
+                        )
+                    end)
+
+                else
+
+                    SniperAimAtPetPosition(
+                        targetPosition
+                    )
+                end
+
+                if type(moveState) == "table" then
+
+                    moveState.ClosePosition =
+                        closePosition
+
+                    moveState.TargetPosition =
+                        targetPosition
+                end
+
+                SniperStopCharacterMotion(
+                    root
+                )
+            end
+        end
+
+        task.wait(
+            0.08
+        )
+    end
+
+    return SniperEntryAcceptedByLocal(
+        entry
+    )
+end
+
+function SniperHoldEntryBuyPrompt(entry, moveState)
+
+    local prompt =
+        SniperFindEntryBuyPrompt(
+            entry
+        )
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true then
+
+        return false,
+            "BuyPrompt missing"
+    end
+
+    local enabled =
+        false
+
+    pcall(function()
+
+        enabled =
+            prompt.Enabled == true
+    end)
+
+    if enabled ~= true then
+
+        return false,
+            "BuyPrompt disabled"
+    end
+
+    local holdTime =
+        1.15
+
+    pcall(function()
+
+        holdTime =
+            math.max(
+                tonumber(prompt.HoldDuration)
+                or 0,
+                1
+            )
+            + 0.15
+    end)
+
+    SniperFollowCloseForBuy(
+        entry,
+        moveState,
+        0.20
+    )
+
+    local beginOk =
+        pcall(function()
+
+            prompt:InputHoldBegin()
+        end)
+
+    if beginOk == true then
+
+        local accepted =
+            SniperFollowCloseForBuy(
+                entry,
+                moveState,
+                holdTime
+            )
+
+        pcall(function()
+
+            prompt:InputHoldEnd()
+        end)
+
+        return true,
+            accepted == true
+            and "held BuyPrompt accepted"
+            or "held BuyPrompt"
+    end
+
+    local firePrompt =
+        fireproximityprompt
+        or (
+            type(GAG2_EXECUTOR_ENV) == "table"
+            and GAG2_EXECUTOR_ENV.fireproximityprompt
+        )
+
+    if type(firePrompt) == "function" then
+
+        local fireOk, fireErr =
+            pcall(function()
+
+                firePrompt(
+                    prompt,
+                    holdTime
+                )
+            end)
+
+        if fireOk ~= true then
+
+            fireOk, fireErr =
+                pcall(function()
+
+                    firePrompt(
+                        prompt
+                    )
+                end)
+        end
+
+        if fireOk == true then
+
+            SniperFollowCloseForBuy(
+                entry,
+                moveState,
+                0.35
+            )
+
+            return true,
+                "fireproximityprompt BuyPrompt"
+        end
+
+        return false,
+            tostring(fireErr)
+    end
+
+    return false,
+        "prompt hold unsupported"
+end
+
+function SniperWaitForBuyAccepted(entry, seconds)
+
+    local started =
+        os.clock()
+
+    local limit =
+        math.clamp(
+            tonumber(seconds)
+            or 3.5,
+            0.1,
+            10
+        )
+
+    while os.clock() - started < limit do
+
+        if SniperEntryAcceptedByLocal(entry) == true then
+            return true
+        end
+
+        task.wait(
+            0.08
+        )
+    end
+
+    return SniperEntryAcceptedByLocal(
+        entry
+    )
+end
+
+
+function SniperStartBuyConfirmation(entry)
 
     local key =
         SniperGetEntryKey(
@@ -25024,12 +27148,71 @@ local function SniperStartBuyConfirmation(entry)
         return
     end
 
-    if SniperState.PendingWildPets[key] == true then
+    SniperEnsureBuyConfirmationHooks()
+
+    SniperState.PendingWildPets =
+        type(SniperState.PendingWildPets) == "table"
+        and SniperState.PendingWildPets
+        or {}
+
+    if type(SniperState.PendingWildPets[key]) == "table"
+    and SniperState.PendingWildPets[key].Confirmed ~= true then
+
         return
     end
 
+    local ref =
+        entry
+        and entry.Ref
+        or nil
+
+    if typeof(ref) ~= "Instance"
+    or ref.Parent == nil then
+
+        ref =
+            SniperFindRef(
+                entry
+                and entry.UUID
+                or ""
+            )
+    end
+
+    local record = {
+        Key =
+            key,
+
+        UUID =
+            CleanText(
+                entry
+                and entry.UUID
+                or ""
+            ),
+
+        PetName =
+            CleanText(
+                entry
+                and entry.Name
+                or "Unknown"
+            ),
+
+        StartedAt =
+            os.clock(),
+
+        StartedSheckles =
+            SniperGetLeaderstatsSheckles(),
+
+        Accepted =
+            false,
+
+        Confirmed =
+            false,
+
+        RefConnections =
+            {},
+    }
+
     SniperState.PendingWildPets[key] =
-        true
+        record
 
     SniperState.ConfirmingBuy =
         true
@@ -25041,70 +27224,117 @@ local function SniperStartBuyConfirmation(entry)
         nil
     )
 
+    SniperWatchRefForBuyConfirm(
+        key,
+        ref
+    )
+
     task.spawn(function()
 
-        local confirmed =
-            SniperWaitForClaimConfirmation(
-                entry
+        local timeout =
+            math.clamp(
+                tonumber(SniperState.ClaimWaitTimeout)
+                or 90,
+                20,
+                180
             )
 
-        SniperState.PendingWildPets[key] =
+        local lastAcceptedStatusAt =
+            0
+
+        while os.clock() - record.StartedAt < timeout do
+
+            if record.Confirmed == true then
+                return
+            end
+
+            if record.Accepted ~= true then
+
+                local currentSheckles =
+                    SniperGetLeaderstatsSheckles()
+
+                if tonumber(record.StartedSheckles)
+                and tonumber(currentSheckles)
+                and currentSheckles < record.StartedSheckles then
+
+                    record.Accepted =
+                        true
+
+                    record.AcceptReason =
+                        "sheckles decreased"
+
+                    print(
+                        "[HOLY SNIPER]",
+                        "buy accepted",
+                        "| pet:",
+                        tostring(record.PetName),
+                        "| uuid:",
+                        tostring(record.UUID),
+                        "| sheckles:",
+                        tostring(record.StartedSheckles),
+                        "->",
+                        tostring(currentSheckles)
+                    )
+                end
+            end
+
+            if record.Accepted == true
+            and os.clock() - lastAcceptedStatusAt > 3 then
+
+                lastAcceptedStatusAt =
+                    os.clock()
+
+                SetSniperStatus(
+                    "Accepted, waiting inventory: "
+                    .. tostring(record.PetName)
+                )
+            end
+
+            task.wait(
+                0.25
+            )
+        end
+
+        if record.Confirmed == true then
+            return
+        end
+
+        SniperClearPendingBuyKey(
+            key
+        )
+
+        SniperState.HandledWildPets[key] =
             nil
 
-        if SniperHasPendingBuy() == true then
-
-            SniperState.ConfirmingBuy =
-                true
-
-            SniperState.ConfirmingBuyKey =
-                ""
-
-        else
-
-            SniperState.ConfirmingBuy =
-                false
-
-            SniperState.ConfirmingBuyKey =
-                ""
-        end
-
-        if confirmed == true then
+        if record.Accepted == true then
 
             SetSniperStatus(
-                "Confirmed: "
-                .. tostring(entry.Name)
-            )
-
-            Notify(
-                "Sniper",
-                "Confirmed "
-                .. tostring(entry.Name)
-                .. ".",
-                3
+                "Accepted but inventory not confirmed."
             )
 
         else
 
-            SniperState.HandledWildPets[key] =
-                nil
-
             SetSniperStatus(
-                "Buy not confirmed."
-            )
-
-            warn(
-                "[HOLY SNIPER]",
-                "Buy was sent but not confirmed",
-                "| pet:",
-                tostring(entry.Name),
-                "| uuid:",
-                tostring(entry.UUID)
+                "Buy not accepted."
             )
         end
+
+        warn(
+            "[HOLY SNIPER]",
+            "buy was not confirmed as owned",
+            "| pet:",
+            tostring(record.PetName),
+            "| uuid:",
+            tostring(record.UUID),
+            "| accepted:",
+            tostring(record.Accepted),
+            "| reason:",
+            tostring(record.AcceptReason or "none")
+        )
     end)
 end
 
-local function SniperFireWildBuyPacket(entry)
+function SniperFireWildBuyPacket(entry)
 
     if type(entry) ~= "table" then
         return false, "missing entry"
@@ -25211,13 +27441,9 @@ local function SniperFireWildBuyPacket(entry)
     return true, "fired"
 end
 
-local function SniperAttemptBuyEntry(entry)
+function SniperAttemptBuyEntry(entry)
 
     if type(entry) ~= "table" then
-        return false
-    end
-
-    if SniperState.Taming == true then
         return false
     end
 
@@ -25233,13 +27459,55 @@ local function SniperAttemptBuyEntry(entry)
         return false
     end
 
-    local uuid =
-        CleanText(entry.UUID)
-
     local attemptKey =
-        uuid ~= ""
-        and uuid
-        or tostring(entry.Name or "unknown")
+        ""
+
+    if type(SniperGetEntryKey) == "function" then
+
+        attemptKey =
+            SniperGetEntryKey(
+                entry
+            )
+    end
+
+    if attemptKey == "" then
+
+        attemptKey =
+            CleanText(entry.UUID)
+
+        if attemptKey == "" then
+
+            attemptKey =
+                tostring(entry.Name or "unknown")
+        end
+    end
+
+    if type(SniperState.PendingWildPets) == "table" then
+
+        local pending =
+            SniperState.PendingWildPets[attemptKey]
+
+        if type(pending) == "table"
+        and pending.Confirmed ~= true then
+
+            SetSniperStatus(
+                "Already pending: "
+                .. tostring(entry.Name)
+            )
+
+            return false
+        end
+
+        if pending == true then
+
+            SetSniperStatus(
+                "Already pending: "
+                .. tostring(entry.Name)
+            )
+
+            return false
+        end
+    end
 
     if SniperIsEntryHandled(entry) == true then
         return false
@@ -25251,16 +27519,9 @@ local function SniperAttemptBuyEntry(entry)
         )
         or 0
 
-    if os.clock() - lastAttempt < 8 then
+    if os.clock() - lastAttempt < 1.25 then
         return false
     end
-
-    if os.clock() - tonumber(SniperState.LastTameAt or 0) < 0.75 then
-        return false
-    end
-
-    SniperState.Taming =
-        true
 
     SniperState.LastTameAt =
         os.clock()
@@ -25271,207 +27532,179 @@ local function SniperAttemptBuyEntry(entry)
     SetSniperStatus(
         "Buying "
         .. tostring(entry.Name)
-        .. "..."
+        .. " | "
+        .. SniperGetMovementMode()
+        .. " + "
+        .. SniperGetBuyMode()
     )
 
     task.spawn(function()
 
-        local moveState =
-            nil
+        local okTask, taskError =
+            xpcall(
+                function()
 
-        local moveInfo =
-            "not started"
+                    SniperState.Taming =
+                        true
 
-        local noTeleportTest =
-            SniperState.NoTeleportPacketTest == true
-
-        if noTeleportTest == true then
-
-            local character, root =
-                SniperGetCharacterRoot()
-
-            if not character
-            or not root then
-
-                SetSniperStatus(
-                    "No-TP test failed: missing character."
-                )
-
-                SniperState.Taming =
-                    false
-
-                return
-            end
-
-            local targetPosition =
-                SniperGetEntryTamePosition(
-                    entry
-                )
-
-            local distance =
-                typeof(targetPosition) == "Vector3"
-                and (root.Position - targetPosition).Magnitude
-                or -1
-
-            moveState = {
-                Character = character,
-                OldCFrame = root.CFrame,
-                ClosePosition = root.Position,
-                Moved = false,
-                NoTeleportPacketTest = true,
-                FiredDistance = distance,
-            }
-
-            moveInfo =
-                "no-tp packet test"
-
-            SetSniperStatus(
-                "No-TP packet test: "
-                .. tostring(entry.Name)
-                .. " | "
-                .. (
-                    distance >= 0
-                    and tostring(math.floor(distance + 0.5)) .. " studs"
-                    or "distance ?"
-                )
-            )
-
-        else
-
-            moveState, moveInfo =
-                SniperMoveCloseForTame(
-                    entry
-                )
-        end
-
-        if not moveState then
-
-            SetSniperStatus(
-                noTeleportTest == true
-                and "No-TP test failed."
-                or "Move failed."
-            )
-
-            SniperState.Taming =
-                false
-
-            return
-        end
-
-        local ok, info =
-            SniperFireWildBuyPacket(
-                entry
-            )
-
-        if ok == true then
-
-            SniperMarkEntryHandled(
-                entry,
-                SniperState.HandledPetCooldown
-            )
-
-            if noTeleportTest == true then
-
-                local distanceText =
-                    tonumber(moveState.FiredDistance)
-                    and tostring(
-                        math.floor(
-                            tonumber(moveState.FiredDistance)
-                            + 0.5
+                    local moveState, moveInfo =
+                        SniperMoveToBuyPosition(
+                            entry
                         )
+
+                    if not moveState then
+
+                        SetSniperStatus(
+                            "Move failed."
+                        )
+
+                        warn(
+                            "[HOLY SNIPER]",
+                            "move failed",
+                            "| pet:",
+                            tostring(entry.Name),
+                            "| info:",
+                            tostring(moveInfo)
+                        )
+
+                        return
+                    end
+
+                    local targetPosition =
+                        SniperGetEntryTamePosition(
+                            entry
+                        )
+
+                    if typeof(targetPosition) == "Vector3" then
+
+                        SniperAimAtPetPosition(
+                            targetPosition
+                        )
+                    end
+
+                    task.wait(
+                        0.08
                     )
-                    or "?"
 
-                SetSniperStatus(
-                    "No-TP packet sent: "
-                    .. tostring(entry.Name)
-                    .. " | "
-                    .. tostring(distanceText)
-                    .. " studs"
-                )
+                    local okBuy =
+                        false
 
-                local report =
-                    "========== HOLY NO-TP PACKET TEST =========="
-                    .. "\nPet: "
-                    .. tostring(entry.Name)
-                    .. "\nUUID: "
-                    .. tostring(entry.UUID)
-                    .. "\nDistance: "
-                    .. tostring(distanceText)
-                    .. " studs"
-                    .. "\nMove skipped: YES"
-                    .. "\nPacket: "
-                    .. tostring(SniperState.BuyPacketSource)
-                    .. "\nResult: Packet fired. Waiting for normal confirmation."
-                    .. "\nIf pet disappears / confirms, no-TP works."
-                    .. "\nIf not confirmed, server distance-checks the packet."
+                    local info =
+                        "not fired"
 
-                CopyText(
-                    report
-                )
+                    if SniperGetBuyMode() == "Hold" then
 
-                print(
-                    report
-                )
+                        okBuy, info =
+                            SniperHoldEntryBuyPrompt(
+                                entry,
+                                moveState
+                            )
 
-            else
+                    else
 
-                SetSniperStatus(
-                    "Buy sent: "
-                    .. tostring(entry.Name)
-                )
+                        okBuy, info =
+                            SniperFireWildBuyPacket(
+                                entry
+                            )
+                    end
 
-                SniperHoldCloseForServerValidation(
-                    moveState
-                )
+                    if okBuy == true then
 
-                SniperRestoreAfterTame(
-                    moveState
-                )
-            end
+                        SniperMarkEntryHandled(
+                            entry,
+                            SniperState.HandledPetCooldown
+                        )
 
-            SniperStartBuyConfirmation(
-                entry
+                        SetSniperStatus(
+                            "Buy sent: "
+                            .. tostring(entry.Name)
+                            .. " | "
+                            .. SniperGetMovementMode()
+                            .. " + "
+                            .. SniperGetBuyMode()
+                        )
+
+                        SniperHoldCloseForServerValidation(
+                            moveState
+                        )
+
+                        SniperRestoreAfterTame(
+                            moveState
+                        )
+
+                        SniperStartBuyConfirmation(
+                            entry
+                        )
+
+                    else
+
+                        SniperRestoreAfterTame(
+                            moveState
+                        )
+
+                        SetSniperStatus(
+                            "Buy failed."
+                        )
+
+                        warn(
+                            "[HOLY SNIPER]",
+                            "buy failed",
+                            "| pet:",
+                            tostring(entry.Name),
+                            "| info:",
+                            tostring(info),
+                            "| move:",
+                            tostring(moveInfo)
+                        )
+                    end
+                end,
+
+                function(errorValue)
+
+                    local errorText =
+                        tostring(errorValue or "unknown error")
+
+                    if type(debug) == "table"
+                    and type(debug.traceback) == "function" then
+
+                        local traceOk, trace =
+                            pcall(
+                                debug.traceback,
+                                errorText,
+                                2
+                            )
+
+                        if traceOk == true
+                        and type(trace) == "string"
+                        and trace ~= "" then
+
+                            return trace
+                        end
+                    end
+
+                    return errorText
+                end
             )
 
-        else
+        SniperState.Taming =
+            false
 
-            if noTeleportTest ~= true then
-
-                SniperRestoreAfterTame(
-                    moveState
-                )
-            end
+        if okTask ~= true then
 
             SetSniperStatus(
-                noTeleportTest == true
-                and "No-TP packet failed."
-                or "Buy failed."
+                "Buy task error. Check console."
             )
 
             warn(
                 "[HOLY SNIPER]",
-                noTeleportTest == true
-                and "No-TP packet failed"
-                or "Buy failed",
-                "| pet:",
-                tostring(entry.Name),
-                "| info:",
-                tostring(info),
-                "| move:",
-                tostring(moveInfo),
-                "| packet:",
-                tostring(SniperState.BuyPacketSource)
+                "buy task error",
+                tostring(taskError)
             )
         end
-
-        SniperState.Taming =
-            false
     end)
 
     return true
 end
-
 local function SniperGetDropdownPetNames()
 
     local names =
@@ -26632,9 +28865,25 @@ function SniperScan(allowAutoHop)
 
             if readyToBuy == true then
 
-                SniperAttemptBuyEntry(
-                    matches[1]
-                )
+                if SniperState.Taming == true then
+
+                    SetSniperStatus(
+                        "Buying in progress..."
+                    )
+
+                elseif type(SniperHasUnacceptedPendingBuy) == "function"
+                and SniperHasUnacceptedPendingBuy() == true then
+
+                    SetSniperStatus(
+                        "Waiting for buy acceptance..."
+                    )
+
+                else
+
+                    SniperAttemptBuyEntry(
+                        matches[1]
+                    )
+                end
 
             else
 
@@ -27914,13 +30163,26 @@ function GAG2HomeManualBuyPetIndex(index)
 
     if SniperState.Taming == true then
 
-        Notify(
-            "Live Pets",
-            "Already buying another pet.",
-            3
-        )
+        local activeFor =
+            os.clock()
+            - (
+                tonumber(SniperState.LastTameAt)
+                or 0
+            )
 
-        return false
+        if activeFor < 2 then
+
+            Notify(
+                "Live Pets",
+                "Buying packet is still active.",
+                2
+            )
+
+            return false
+        end
+
+        SniperState.Taming =
+            false
     end
 
     if HomeLivePetsList
@@ -37315,6 +39577,13 @@ local ShopsMainBox =
         "Shop Controls",
         "shopping-cart"
     )
+    
+local ShopsSeedCollectBox =
+    AddLeftBox(
+        Tabs.Shops,
+        "Auto Collect Seeds",
+        "sparkles"
+    )
 
 local ShopsStatusBox =
     AddRightBox(
@@ -38021,6 +40290,93 @@ and type(GAG2_SHOP_DROPDOWNS.Crates.OnChanged) == "function" then
     end)
 end
 
+ShopsSeedCollectBox:AddToggle("HolyGAG2AutoCollectSeeds", {
+    Text = "Auto Collect Seeds",
+    Default = false,
+    Tooltip = "Collects Gold/Rainbow weather seeds from workspace.Map.SeedPackSpawnServerLocations.",
+    Callback = function(value)
+
+        GAG2SeedCollectSetEnabled(
+            value == true
+        )
+    end,
+})
+
+ShopsSeedCollectBox:AddDropdown("HolyGAG2SeedCollectType", {
+    Text = "Seed Type",
+    Values = {
+        "Gold",
+        "Rainbow",
+        "Gold + Rainbow",
+    },
+    Default = "Gold",
+    Multi = false,
+    Searchable = false,
+    Tooltip = "Which weather seeds to collect.",
+    Callback = function(value)
+
+        GAG2SeedCollectSetSeedType(
+            value
+        )
+    end,
+})
+
+ShopsSeedCollectBox:AddDropdown("HolyGAG2SeedCollectMovement", {
+    Text = "Movement Mode",
+    Values = {
+        "Teleport",
+        "Walk",
+    },
+    Default = "Teleport",
+    Multi = false,
+    Searchable = false,
+    Tooltip = "Teleport is fastest. Walk uses Humanoid:MoveTo.",
+    Callback = function(value)
+
+        GAG2SeedCollectSetMovementMode(
+            value
+        )
+    end,
+})
+
+ShopsSeedCollectBox:AddDropdown("HolyGAG2SeedCollectMode", {
+    Text = "Collect Mode",
+    Values = {
+        "Instant",
+        "Hold",
+    },
+    Default = "Instant",
+    Multi = false,
+    Searchable = false,
+    Tooltip = "Instant fires the prompt once. Hold tries executor hold mode.",
+    Callback = function(value)
+
+        GAG2SeedCollectSetCollectMode(
+            value
+        )
+    end,
+})
+
+ShopsSeedCollectBox:AddInput("HolyGAG2SeedCollectHoldDuration", {
+    Text = "Hold Duration",
+    Default = "3.2",
+    Numeric = true,
+    Finished = true,
+    ClearTextOnFocus = false,
+    Placeholder = "3.2",
+    Tooltip = "Used only in Hold mode. Minimum 3 seconds.",
+    Callback = function(value)
+
+        GAG2SeedCollectSetHoldDuration(
+            value
+        )
+    end,
+})
+
+ShopsSeedCollectBox:AddLabel("HolyGAG2SeedCollectStatus", {
+    Text = "Ready.",
+    DoesWrap = true,
+})
 
 --==================================================
 -- [8.5] SELL TAB
@@ -40942,6 +43298,80 @@ and type(GAG2_SNIPER_TOGGLE_CONTROL.AddKeyPicker) == "function" then
         )
 end
 
+local SniperMovementModeDropdown =
+    SniperMainBox:AddDropdown(
+        "HolyGAG2SniperMovementMode",
+        {
+            Text = "Movement Mode",
+            Values = {
+                "Teleport",
+                "Walk",
+            },
+            Default = SniperGetMovementMode(),
+            Multi = false,
+            Searchable = false,
+            AllowNull = false,
+            MaxVisibleDropdownItems = 2,
+            Tooltip = "Teleport is fastest. Walk is smoother and less ugly.",
+        }
+    )
+
+if SniperMovementModeDropdown
+and type(SniperMovementModeDropdown.OnChanged) == "function" then
+
+    SniperMovementModeDropdown:OnChanged(function(value)
+
+        SniperState.MovementMode =
+            CleanText(value) == "Walk"
+            and "Walk"
+            or "Teleport"
+
+        SetSniperStatus(
+            "Movement mode: "
+            .. tostring(SniperState.MovementMode)
+        )
+
+        MarkConfigDirty()
+    end)
+end
+
+local SniperBuyModeDropdown =
+    SniperMainBox:AddDropdown(
+        "HolyGAG2SniperBuyMode",
+        {
+            Text = "Buy Mode",
+            Values = {
+                "Instant",
+                "Hold",
+            },
+            Default = SniperGetBuyMode(),
+            Multi = false,
+            Searchable = false,
+            AllowNull = false,
+            MaxVisibleDropdownItems = 2,
+            Tooltip = "Instant uses packet buy. Hold uses the real BuyPrompt hold.",
+        }
+    )
+
+if SniperBuyModeDropdown
+and type(SniperBuyModeDropdown.OnChanged) == "function" then
+
+    SniperBuyModeDropdown:OnChanged(function(value)
+
+        SniperState.BuyMode =
+            CleanText(value) == "Hold"
+            and "Hold"
+            or "Instant"
+
+        SetSniperStatus(
+            "Buy mode: "
+            .. tostring(SniperState.BuyMode)
+        )
+
+        MarkConfigDirty()
+    end)
+end
+
 SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
     Text = "Auto Hop If No Match",
     Default = false,
@@ -41419,6 +43849,7 @@ if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
     GAG2RestoreMailboxState()
     GAG2RestoreSeedDropState()
     GAG2RestoreDropPickupState()
+    GAG2RestoreSeedCollectState()
     GAG2RestoreServerSelectionState()
     GAG2RestoreWildPetNetworkState()
     GAG2RestoreWildPetNetworkContributorState()
