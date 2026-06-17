@@ -765,7 +765,7 @@ GAG2_WILD_PET_NETWORK_STATE = {
     Running = false,
     Refreshing = false,
 
-    RefreshSeconds = 3,
+    RefreshSeconds = 1,
     MaxRenderedRows = 80,
 
     LoopToken = 0,
@@ -782,6 +782,38 @@ GAG2_WILD_PET_NETWORK_STATE = {
     LastPetCount = 0,
     LastStatus = "Disabled.",
 }
+
+pcall(function()
+
+    local env =
+        type(getgenv) == "function"
+        and getgenv()
+        or _G
+
+    if type(env) == "table" then
+
+        env.GAG2_WILD_PET_NETWORK_STATE =
+            GAG2_WILD_PET_NETWORK_STATE
+
+        env.GAG2_WILD_PET_NETWORK_ENDPOINT =
+            GAG2_WILD_PET_NETWORK_ENDPOINT
+
+        env.GAG2_WILD_PET_NETWORK_API_KEY =
+            GAG2_WILD_PET_NETWORK_API_KEY
+    end
+
+    if type(GAG2_EXECUTOR_ENV) == "table" then
+
+        GAG2_EXECUTOR_ENV.GAG2_WILD_PET_NETWORK_STATE =
+            GAG2_WILD_PET_NETWORK_STATE
+
+        GAG2_EXECUTOR_ENV.GAG2_WILD_PET_NETWORK_ENDPOINT =
+            GAG2_WILD_PET_NETWORK_ENDPOINT
+
+        GAG2_EXECUTOR_ENV.GAG2_WILD_PET_NETWORK_API_KEY =
+            GAG2_WILD_PET_NETWORK_API_KEY
+    end
+end)
 
 GAG2_EXACT_JOIN_STATE = {
     Retrying = false,
@@ -1947,6 +1979,800 @@ function GAG2QueueExactJoin(placeId, jobId, reason)
 
     return true,
         "queued"
+end
+
+function GAG2WildPetNetworkGetScoutUserId(rowData)
+
+    if type(rowData) ~= "table" then
+        return 0
+    end
+
+    local candidates = {
+        rowData.scoutUserId,
+        rowData.ScoutUserId,
+        rowData.scoutId,
+        rowData.ScoutId,
+        rowData.reporterUserId,
+        rowData.ReporterUserId,
+        rowData.playerUserId,
+        rowData.PlayerUserId,
+        rowData.userId,
+        rowData.UserId,
+    }
+
+    if type(rowData.scout) == "table" then
+
+        table.insert(
+            candidates,
+            rowData.scout.userId
+            or rowData.scout.UserId
+            or rowData.scout.id
+            or rowData.scout.Id
+        )
+    end
+
+    if type(rowData.reporter) == "table" then
+
+        table.insert(
+            candidates,
+            rowData.reporter.userId
+            or rowData.reporter.UserId
+            or rowData.reporter.id
+            or rowData.reporter.Id
+        )
+    end
+
+    for _, value in ipairs(candidates) do
+
+        local userId =
+            tonumber(value)
+
+        if userId
+        and userId > 0 then
+
+            return math.floor(
+                userId
+            )
+        end
+    end
+
+    return 0
+end
+
+function GAG2WildPetNetworkGetScoutName(rowData)
+
+    if type(rowData) ~= "table" then
+        return ""
+    end
+
+    local candidates = {
+        rowData.scoutName,
+        rowData.ScoutName,
+        rowData.reporterName,
+        rowData.ReporterName,
+        rowData.playerName,
+        rowData.PlayerName,
+        rowData.username,
+        rowData.Username,
+        rowData.name,
+        rowData.Name,
+    }
+
+    if type(rowData.scout) == "table" then
+
+        table.insert(
+            candidates,
+            rowData.scout.name
+            or rowData.scout.Name
+            or rowData.scout.username
+            or rowData.scout.Username
+        )
+    end
+
+    if type(rowData.reporter) == "table" then
+
+        table.insert(
+            candidates,
+            rowData.reporter.name
+            or rowData.reporter.Name
+            or rowData.reporter.username
+            or rowData.reporter.Username
+        )
+    end
+
+    for _, value in ipairs(candidates) do
+
+        local text =
+            CleanText(value)
+
+        if text ~= "" then
+            return text
+        end
+    end
+
+    return ""
+end
+
+function GAG2QueuePlayerIdJoin(
+    scoutUserId,
+    fallbackPlaceId,
+    fallbackJobId,
+    reason
+)
+
+    scoutUserId =
+        math.floor(
+            tonumber(scoutUserId)
+            or 0
+        )
+
+    fallbackPlaceId =
+        tonumber(fallbackPlaceId)
+
+    fallbackJobId =
+        CleanText(fallbackJobId)
+
+    reason =
+        tostring(reason or "player id join")
+
+    if scoutUserId <= 0 then
+
+        warn(
+            "[HOLY PLAYER JOIN]",
+            "missing scoutUserId, using fallback exact JobId"
+        )
+
+        if fallbackPlaceId
+        and fallbackPlaceId > 0
+        and fallbackJobId ~= "" then
+
+            GAG2SaveExactJoinTarget(
+                fallbackPlaceId,
+                fallbackJobId,
+                0,
+                reason .. " fallback no scoutUserId"
+            )
+
+            return GAG2QueueExactJoin(
+                fallbackPlaceId,
+                fallbackJobId,
+                reason .. " fallback no scoutUserId"
+            )
+        end
+
+        return false,
+            "missing scoutUserId and fallback JobId"
+    end
+
+    if LOCAL_PLAYER
+    and scoutUserId == LOCAL_PLAYER.UserId then
+
+        if fallbackPlaceId == tonumber(game.PlaceId)
+        and fallbackJobId == tostring(game.JobId) then
+
+            SetStatus(
+                "Scout is you. Already in this server."
+            )
+
+            if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+                GAG2WildPetNetworkSetStatus(
+                    "Already in scout server."
+                )
+            end
+
+            return false,
+                "already in scout server"
+        end
+    end
+
+    SetStatus(
+        "Resolving scout user "
+        .. tostring(scoutUserId)
+        .. "..."
+    )
+
+    if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+        GAG2WildPetNetworkSetStatus(
+            "Resolving scout "
+            .. tostring(scoutUserId)
+            .. "..."
+        )
+    end
+
+    print(
+        "[HOLY PLAYER JOIN]",
+        "GetPlayerPlaceInstanceAsync",
+        "| userId:",
+        tostring(scoutUserId),
+        "| fallback:",
+        tostring(fallbackPlaceId)
+        .. ":"
+        .. tostring(fallbackJobId),
+        "| reason:",
+        reason
+    )
+
+    local lookupOk,
+        currentInstance,
+        lookupError,
+        resolvedPlaceId,
+        resolvedJobId =
+        pcall(function()
+
+            return TeleportService:GetPlayerPlaceInstanceAsync(
+                scoutUserId
+            )
+        end)
+
+    if lookupOk ~= true then
+
+        warn(
+            "[HOLY PLAYER JOIN]",
+            "user lookup failed:",
+            tostring(currentInstance)
+        )
+
+        if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+            GAG2WildPetNetworkSetStatus(
+                "Player lookup failed. Fallback exact join..."
+            )
+        end
+
+        if fallbackPlaceId
+        and fallbackPlaceId > 0
+        and fallbackJobId ~= "" then
+
+            GAG2SaveExactJoinTarget(
+                fallbackPlaceId,
+                fallbackJobId,
+                0,
+                reason .. " fallback lookup failed"
+            )
+
+            return GAG2QueueExactJoin(
+                fallbackPlaceId,
+                fallbackJobId,
+                reason .. " fallback lookup failed"
+            )
+        end
+
+        return false,
+            tostring(currentInstance)
+    end
+
+    resolvedPlaceId =
+        tonumber(resolvedPlaceId)
+
+    resolvedJobId =
+        CleanText(resolvedJobId)
+
+    print(
+        "[HOLY PLAYER JOIN]",
+        "lookup returned",
+        "| currentInstance:",
+        tostring(currentInstance),
+        "| lookupError:",
+        tostring(lookupError),
+        "| placeId:",
+        tostring(resolvedPlaceId),
+        "| jobId:",
+        tostring(resolvedJobId)
+    )
+
+    if currentInstance == true then
+
+        SetStatus(
+            "Scout is already in this server."
+        )
+
+        if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+            GAG2WildPetNetworkSetStatus(
+                "Scout is already in this server."
+            )
+        end
+
+        return false,
+            "scout is current instance"
+    end
+
+    if not resolvedPlaceId
+    or resolvedPlaceId <= 0
+    or resolvedJobId == "" then
+
+        warn(
+            "[HOLY PLAYER JOIN]",
+            "lookup returned no usable JobId:",
+            tostring(lookupError)
+        )
+
+        if fallbackPlaceId
+        and fallbackPlaceId > 0
+        and fallbackJobId ~= "" then
+
+            if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+                GAG2WildPetNetworkSetStatus(
+                    "Player lookup empty. Fallback exact join..."
+                )
+            end
+
+            GAG2SaveExactJoinTarget(
+                fallbackPlaceId,
+                fallbackJobId,
+                0,
+                reason .. " fallback lookup empty"
+            )
+
+            return GAG2QueueExactJoin(
+                fallbackPlaceId,
+                fallbackJobId,
+                reason .. " fallback lookup empty"
+            )
+        end
+
+        return false,
+            tostring(lookupError or "lookup returned no JobId")
+    end
+
+    if resolvedPlaceId == tonumber(game.PlaceId)
+    and resolvedJobId == tostring(game.JobId) then
+
+        SetStatus(
+            "Already in resolved scout server."
+        )
+
+        if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+            GAG2WildPetNetworkSetStatus(
+                "Already in resolved scout server."
+            )
+        end
+
+        return false,
+            "already in resolved scout server"
+    end
+
+    GAG2ClearExactJoinTarget(
+        "new player-id resolved join"
+    )
+
+    GAG2_EXACT_JOIN_STATE.Retrying =
+        false
+
+    GAG2SaveExactJoinTarget(
+        resolvedPlaceId,
+        resolvedJobId,
+        0,
+        reason .. " resolved from scoutUserId"
+    )
+
+    if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+        GAG2WildPetNetworkSetStatus(
+            "Joining scout server "
+            .. tostring(resolvedJobId:sub(1, 8))
+            .. "..."
+        )
+    end
+
+    SetStatus(
+        "Joining resolved scout server..."
+    )
+
+    return GAG2QueueExactJoin(
+        resolvedPlaceId,
+        resolvedJobId,
+        reason .. " resolved from scoutUserId"
+    )
+end
+
+function GAG2WildPetNetworkGetScoutUserId(rowData)
+
+    if type(rowData) ~= "table" then
+        return 0
+    end
+
+    local candidates =
+        {}
+
+    local function add(value)
+
+        if value ~= nil then
+
+            table.insert(
+                candidates,
+                value
+            )
+        end
+    end
+
+    add(rowData.scoutUserId)
+    add(rowData.ScoutUserId)
+    add(rowData.bestScoutUserId)
+    add(rowData.BestScoutUserId)
+    add(rowData.reporterUserId)
+    add(rowData.ReporterUserId)
+    add(rowData.playerUserId)
+    add(rowData.PlayerUserId)
+    add(rowData.userId)
+    add(rowData.UserId)
+
+    if type(rowData.scout) == "table" then
+
+        add(rowData.scout.userId)
+        add(rowData.scout.UserId)
+        add(rowData.scout.id)
+        add(rowData.scout.Id)
+    end
+
+    if type(rowData.reporter) == "table" then
+
+        add(rowData.reporter.userId)
+        add(rowData.reporter.UserId)
+        add(rowData.reporter.id)
+        add(rowData.reporter.Id)
+    end
+
+    if type(rowData.scouts) == "table" then
+
+        for _, scout in ipairs(rowData.scouts) do
+
+            if type(scout) == "table" then
+
+                add(scout.userId)
+                add(scout.UserId)
+                add(scout.id)
+                add(scout.Id)
+
+            else
+
+                add(scout)
+            end
+        end
+    end
+
+    for _, value in ipairs(candidates) do
+
+        local userId =
+            tonumber(value)
+
+        if userId
+        and userId > 0 then
+
+            return math.floor(userId)
+        end
+    end
+
+    return 0
+end
+
+function GAG2WildPetNetworkGetScoutName(rowData)
+
+    if type(rowData) ~= "table" then
+        return ""
+    end
+
+    local candidates =
+        {}
+
+    local function add(value)
+
+        value =
+            CleanText(value)
+
+        if value ~= "" then
+
+            table.insert(
+                candidates,
+                value
+            )
+        end
+    end
+
+    add(rowData.scoutName)
+    add(rowData.ScoutName)
+    add(rowData.bestScoutName)
+    add(rowData.BestScoutName)
+    add(rowData.reporterName)
+    add(rowData.ReporterName)
+    add(rowData.playerName)
+    add(rowData.PlayerName)
+    add(rowData.username)
+    add(rowData.Username)
+    add(rowData.name)
+    add(rowData.Name)
+
+    if type(rowData.scout) == "table" then
+
+        add(rowData.scout.name)
+        add(rowData.scout.Name)
+        add(rowData.scout.username)
+        add(rowData.scout.Username)
+    end
+
+    if type(rowData.reporter) == "table" then
+
+        add(rowData.reporter.name)
+        add(rowData.reporter.Name)
+        add(rowData.reporter.username)
+        add(rowData.reporter.Username)
+    end
+
+    if type(rowData.scouts) == "table" then
+
+        for _, scout in ipairs(rowData.scouts) do
+
+            if type(scout) == "table" then
+
+                add(scout.name)
+                add(scout.Name)
+                add(scout.username)
+                add(scout.Username)
+            end
+        end
+    end
+
+    return candidates[1]
+        or ""
+end
+
+function GAG2QueuePlayerIdJoin(
+    scoutUserId,
+    fallbackPlaceId,
+    fallbackJobId,
+    reason
+)
+
+    scoutUserId =
+        math.floor(
+            tonumber(scoutUserId)
+            or 0
+        )
+
+    fallbackPlaceId =
+        tonumber(fallbackPlaceId)
+
+    fallbackJobId =
+        CleanText(fallbackJobId)
+
+    reason =
+        tostring(reason or "player-id join")
+
+    if scoutUserId <= 0 then
+
+        warn(
+            "[HOLY PLAYER JOIN]",
+            "missing scoutUserId; fallback exact join"
+        )
+
+        if fallbackPlaceId
+        and fallbackPlaceId > 0
+        and fallbackJobId ~= "" then
+
+            GAG2SaveExactJoinTarget(
+                fallbackPlaceId,
+                fallbackJobId,
+                0,
+                reason .. " fallback missing scoutUserId"
+            )
+
+            return GAG2QueueExactJoin(
+                fallbackPlaceId,
+                fallbackJobId,
+                reason .. " fallback missing scoutUserId"
+            )
+        end
+
+        return false,
+            "missing scoutUserId"
+    end
+
+    print(
+        "[HOLY PLAYER JOIN]",
+        "trying scout lookup",
+        "| userId:",
+        tostring(scoutUserId),
+        "| fallback:",
+        tostring(fallbackPlaceId)
+        .. ":"
+        .. tostring(fallbackJobId),
+        "| reason:",
+        reason
+    )
+
+    SetStatus(
+        "Resolving scout user "
+        .. tostring(scoutUserId)
+        .. "..."
+    )
+
+    if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+        GAG2WildPetNetworkSetStatus(
+            "Resolving scout user "
+            .. tostring(scoutUserId)
+            .. "..."
+        )
+    end
+
+    local lookupOk,
+        currentInstance,
+        lookupError,
+        resolvedPlaceId,
+        resolvedJobId =
+        pcall(function()
+
+            return TeleportService:GetPlayerPlaceInstanceAsync(
+                scoutUserId
+            )
+        end)
+
+    if lookupOk ~= true then
+
+        warn(
+            "[HOLY PLAYER JOIN]",
+            "scout lookup failed:",
+            tostring(currentInstance)
+        )
+
+        if fallbackPlaceId
+        and fallbackPlaceId > 0
+        and fallbackJobId ~= "" then
+
+            if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+                GAG2WildPetNetworkSetStatus(
+                    "Scout lookup failed. Fallback exact join..."
+                )
+            end
+
+            GAG2SaveExactJoinTarget(
+                fallbackPlaceId,
+                fallbackJobId,
+                0,
+                reason .. " fallback lookup failed"
+            )
+
+            return GAG2QueueExactJoin(
+                fallbackPlaceId,
+                fallbackJobId,
+                reason .. " fallback lookup failed"
+            )
+        end
+
+        return false,
+            tostring(currentInstance)
+    end
+
+    resolvedPlaceId =
+        tonumber(resolvedPlaceId)
+
+    resolvedJobId =
+        CleanText(resolvedJobId)
+
+    print(
+        "[HOLY PLAYER JOIN]",
+        "lookup returned",
+        "| currentInstance:",
+        tostring(currentInstance),
+        "| lookupError:",
+        tostring(lookupError),
+        "| placeId:",
+        tostring(resolvedPlaceId),
+        "| jobId:",
+        tostring(resolvedJobId)
+    )
+
+    if currentInstance == true then
+
+        SetStatus(
+            "Scout is already in this server."
+        )
+
+        if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+            GAG2WildPetNetworkSetStatus(
+                "Scout is already in this server."
+            )
+        end
+
+        return false,
+            "scout is already in this server"
+    end
+
+    if not resolvedPlaceId
+    or resolvedPlaceId <= 0
+    or resolvedJobId == "" then
+
+        warn(
+            "[HOLY PLAYER JOIN]",
+            "lookup returned no usable JobId:",
+            tostring(lookupError)
+        )
+
+        if fallbackPlaceId
+        and fallbackPlaceId > 0
+        and fallbackJobId ~= "" then
+
+            if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+                GAG2WildPetNetworkSetStatus(
+                    "Scout lookup empty. Fallback exact join..."
+                )
+            end
+
+            GAG2SaveExactJoinTarget(
+                fallbackPlaceId,
+                fallbackJobId,
+                0,
+                reason .. " fallback lookup empty"
+            )
+
+            return GAG2QueueExactJoin(
+                fallbackPlaceId,
+                fallbackJobId,
+                reason .. " fallback lookup empty"
+            )
+        end
+
+        return false,
+            tostring(lookupError or "scout lookup returned no JobId")
+    end
+
+    if resolvedPlaceId == tonumber(game.PlaceId)
+    and resolvedJobId == tostring(game.JobId) then
+
+        SetStatus(
+            "Already in resolved scout server."
+        )
+
+        if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+            GAG2WildPetNetworkSetStatus(
+                "Already in resolved scout server."
+            )
+        end
+
+        return false,
+            "already in resolved scout server"
+    end
+
+    GAG2ClearExactJoinTarget(
+        "new scout user-id resolved join"
+    )
+
+    GAG2_EXACT_JOIN_STATE.Retrying =
+        false
+
+    GAG2SaveExactJoinTarget(
+        resolvedPlaceId,
+        resolvedJobId,
+        0,
+        reason .. " resolved from scoutUserId"
+    )
+
+    SetStatus(
+        "Joining resolved scout server..."
+    )
+
+    if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+        GAG2WildPetNetworkSetStatus(
+            "Joining scout server "
+            .. tostring(resolvedJobId:sub(1, 8))
+            .. "..."
+        )
+    end
+
+    return GAG2QueueExactJoin(
+        resolvedPlaceId,
+        resolvedJobId,
+        reason .. " resolved from scoutUserId"
+    )
 end
 
 function GAG2RetryExactJoinTarget(target, reason)
@@ -4381,93 +5207,834 @@ function GAG2WildPetNetworkCreateLabel(
     return label
 end
 
-function GAG2WildPetNetworkCreateServerButton(
+function GAG2WildPetNetworkGetRarityColor3(rarity)
+
+    local colors = {
+        Common = Color3.fromRGB(203, 213, 225),
+        Uncommon = Color3.fromRGB(74, 222, 128),
+        Rare = Color3.fromRGB(96, 165, 250),
+        Epic = Color3.fromRGB(192, 132, 252),
+        Legendary = Color3.fromRGB(250, 204, 21),
+        Mythic = Color3.fromRGB(248, 113, 113),
+        Mythical = Color3.fromRGB(248, 113, 113),
+        Super = Color3.fromRGB(34, 211, 238),
+        Divine = Color3.fromRGB(251, 146, 60),
+        Prismatic = Color3.fromRGB(244, 114, 182),
+    }
+
+    return colors[
+        CleanText(rarity)
+    ]
+        or Color3.fromRGB(
+            203,
+            213,
+            225
+        )
+end
+
+function GAG2WildPetNetworkGetRowTimerSeconds(rowData)
+
+    if type(rowData) ~= "table" then
+        return 0
+    end
+
+    local now =
+        os.time()
+
+    local expiresAt =
+        tonumber(
+            rowData.bestExpiresAt
+            or rowData.expiresAt
+            or rowData.ExpiresAt
+            or rowData.endTime
+            or rowData.EndTime
+        )
+
+    if expiresAt
+    and expiresAt > 0 then
+
+        return math.max(
+            0,
+            math.floor(
+                expiresAt - now
+            )
+        )
+    end
+
+    local spawnedAt =
+        tonumber(
+            rowData.bestSpawnedAt
+            or rowData.spawnedAt
+            or rowData.SpawnedAt
+        )
+
+    local lifetime =
+        tonumber(
+            rowData.bestLifetime
+            or rowData.lifetime
+            or rowData.Lifetime
+        )
+
+    if spawnedAt
+    and lifetime
+    and spawnedAt > 0
+    and lifetime > 0 then
+
+        return math.max(
+            0,
+            math.floor(
+                spawnedAt + lifetime - now
+            )
+        )
+    end
+
+    local remaining =
+        tonumber(
+            rowData.bestRemaining
+            or rowData.remaining
+            or rowData.Remaining
+            or rowData.timeLeft
+            or rowData.TimeLeft
+            or rowData.timer
+            or rowData.Timer
+        )
+
+    if remaining then
+
+        return math.max(
+            0,
+            math.floor(
+                remaining
+            )
+        )
+    end
+
+    return 0
+end
+
+function GAG2WildPetNetworkCreateServerRow(
     parent,
-    text,
     rowData
 )
 
-    local button =
-        Instance.new("TextButton")
+    if type(rowData) ~= "table" then
+        return nil
+    end
 
-    button.Name =
+    local jobId =
+        CleanText(
+            rowData.jobId
+            or rowData.JobId
+        )
+
+    local placeId =
+        tonumber(
+            rowData.placeId
+            or rowData.PlaceId
+        )
+
+    if jobId == ""
+    or not placeId
+    or placeId <= 0 then
+        return nil
+    end
+
+    local players =
+        math.max(
+            0,
+            math.floor(
+                tonumber(rowData.players)
+                or 0
+            )
+        )
+
+    local maxPlayers =
+        math.max(
+            0,
+            math.floor(
+                tonumber(rowData.maxPlayers)
+                or 0
+            )
+        )
+
+    local timerSeconds =
+        GAG2WildPetNetworkGetRowTimerSeconds(
+            rowData
+        )
+
+    local count =
+        math.max(
+            1,
+            math.floor(
+                tonumber(rowData.count)
+                or 1
+            )
+        )
+
+    local row =
+        Instance.new("Frame")
+
+    row.Name =
         "ServerRow"
 
-    button.Size =
+    row.Size =
         UDim2.new(
             1,
-            -8,
             0,
-            29
+            0,
+            27
         )
 
-    button.BackgroundColor3 =
+    row.BackgroundColor3 =
         Color3.fromRGB(
-            25,
-            30,
-            42
+            12,
+            20,
+            31
         )
 
-    button.BorderSizePixel =
+    row.BackgroundTransparency =
+        0.18
+
+    row.BorderSizePixel =
         0
 
-    button.AutoButtonColor =
-        true
+    row.Parent =
+        parent
 
-    button.Font =
+    GAG2WildPetNetworkAddCorner(
+        row,
+        6
+    )
+
+    local rowStroke =
+        Instance.new("UIStroke")
+
+    rowStroke.Color =
+        Color3.fromRGB(
+            35,
+            50,
+            72
+        )
+
+    rowStroke.Thickness =
+        1
+
+    rowStroke.Transparency =
+        0.58
+
+    rowStroke.Parent =
+        row
+
+    local idLabel =
+        Instance.new("TextLabel")
+
+    idLabel.Name =
+        "JobId"
+
+    idLabel.Position =
+        UDim2.fromOffset(
+            10,
+            0
+        )
+
+    idLabel.Size =
+        UDim2.new(
+            0,
+            88,
+            1,
+            0
+        )
+
+    idLabel.BackgroundTransparency =
+        1
+
+    idLabel.Font =
         Enum.Font.Code
 
-    button.Text =
-        "  " .. tostring(text or "")
+    idLabel.Text =
+        jobId:sub(1, 8)
 
-    button.TextSize =
-        12
+    idLabel.TextSize =
+        11
 
-    button.TextColor3 =
+    idLabel.TextColor3 =
         Color3.fromRGB(
             203,
             213,
             225
         )
 
-    button.TextXAlignment =
+    idLabel.TextXAlignment =
         Enum.TextXAlignment.Left
 
-    button.Parent =
-        parent
+    idLabel.Parent =
+        row
 
-    GAG2WildPetNetworkAddCorner(
-        button,
-        5
-    )
+    local playersLabel =
+        Instance.new("TextLabel")
 
-    local stroke =
-        Instance.new("UIStroke")
+    playersLabel.Name =
+        "Players"
 
-    stroke.Color =
-        Color3.fromRGB(
-            51,
-            65,
-            85
+    playersLabel.Position =
+        UDim2.fromOffset(
+            110,
+            0
         )
 
-    stroke.Thickness =
+    playersLabel.Size =
+        UDim2.new(
+            0,
+            46,
+            1,
+            0
+        )
+
+    playersLabel.BackgroundTransparency =
         1
 
-    stroke.Transparency =
-        0.45
+    playersLabel.Font =
+        Enum.Font.Code
 
-    stroke.Parent =
-        button
+    playersLabel.Text =
+        tostring(players)
+        .. "/"
+        .. tostring(maxPlayers)
 
-    button.MouseButton1Click:Connect(function()
+    playersLabel.TextSize =
+        11
+
+    playersLabel.TextColor3 =
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+
+    playersLabel.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    playersLabel.Parent =
+        row
+
+    local timerLabel =
+        Instance.new("TextLabel")
+
+    timerLabel.Name =
+        "Timer"
+
+    timerLabel.Position =
+        UDim2.fromOffset(
+            166,
+            0
+        )
+
+    timerLabel.Size =
+        UDim2.new(
+            0,
+            68,
+            1,
+            0
+        )
+
+    timerLabel.BackgroundTransparency =
+        1
+
+    timerLabel.Font =
+        Enum.Font.Code
+
+    timerLabel.Text =
+        GAG2WildPetNetworkFormatSeconds(
+            timerSeconds
+        )
+
+    timerLabel.TextSize =
+        11
+
+    timerLabel.TextColor3 =
+        Color3.fromRGB(
+            203,
+            213,
+            225
+        )
+
+    timerLabel.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    timerLabel.Parent =
+        row
+
+    local countLabel =
+        Instance.new("TextLabel")
+
+    countLabel.Name =
+        "Count"
+
+    countLabel.Position =
+        UDim2.fromOffset(
+            244,
+            0
+        )
+
+    countLabel.Size =
+        UDim2.new(
+            0,
+            34,
+            1,
+            0
+        )
+
+    countLabel.BackgroundTransparency =
+        1
+
+    countLabel.Font =
+        Enum.Font.Code
+
+    countLabel.Text =
+        "x"
+        .. tostring(count)
+
+    countLabel.TextSize =
+        11
+
+    countLabel.TextColor3 =
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+
+    countLabel.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    countLabel.Parent =
+        row
+
+    local joinButton =
+        Instance.new("TextButton")
+
+    joinButton.Name =
+        "Join"
+
+    joinButton.AnchorPoint =
+        Vector2.new(
+            1,
+            0.5
+        )
+
+    joinButton.Position =
+        UDim2.new(
+            1,
+            -8,
+            0.5,
+            0
+        )
+
+    joinButton.Size =
+        UDim2.fromOffset(
+            55,
+            20
+        )
+
+    joinButton.BackgroundColor3 =
+        Color3.fromRGB(
+            8,
+            53,
+            28
+        )
+
+    joinButton.BackgroundTransparency =
+        0.06
+
+    joinButton.BorderSizePixel =
+        0
+
+    joinButton.AutoButtonColor =
+        true
+
+    joinButton.Font =
+        Enum.Font.GothamBold
+
+    joinButton.Text =
+        "Join"
+
+    joinButton.TextSize =
+        11
+
+    joinButton.TextColor3 =
+        Color3.fromRGB(
+            74,
+            222,
+            128
+        )
+
+    joinButton.Parent =
+        row
+
+    GAG2WildPetNetworkAddCorner(
+        joinButton,
+        6
+    )
+
+    local joinStroke =
+        Instance.new("UIStroke")
+
+    joinStroke.Color =
+        Color3.fromRGB(
+            34,
+            197,
+            94
+        )
+
+    joinStroke.Thickness =
+        1
+
+    joinStroke.Transparency =
+        0.25
+
+    joinStroke.Parent =
+        joinButton
+
+    joinButton.MouseButton1Click:Connect(function()
+
+        local joinPayload =
+            {}
+
+        if type(rowData) == "table" then
+
+            for key, value in pairs(rowData) do
+
+                joinPayload[key] =
+                    value
+            end
+        end
+
+        joinPayload.placeId =
+            placeId
+
+        joinPayload.jobId =
+            jobId
+
+        joinPayload.petName =
+            CleanText(
+                rowData.petName
+                or rowData.PetName
+            )
+
+        joinPayload.rarity =
+            CleanText(
+                rowData.rarity
+                or rowData.Rarity
+            )
+
+        joinPayload.scoutUserId =
+            GAG2WildPetNetworkGetScoutUserId(
+                joinPayload
+            )
+
+        joinPayload.scoutName =
+            GAG2WildPetNetworkGetScoutName(
+                joinPayload
+            )
 
         GAG2WildPetNetworkJoinServer(
-            rowData
+            joinPayload
         )
     end)
 
-    return button
+    return row
+end
+
+function GAG2WildPetNetworkCreatePetSection(
+    parent,
+    petName,
+    rarity,
+    rows
+)
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    local section =
+        Instance.new("Frame")
+
+    section.Name =
+        "PetSection"
+
+    section.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            0
+        )
+
+    section.AutomaticSize =
+        Enum.AutomaticSize.Y
+
+    section.BackgroundTransparency =
+        1
+
+    section.Parent =
+        parent
+
+    local sectionLayout =
+        Instance.new("UIListLayout")
+
+    sectionLayout.FillDirection =
+        Enum.FillDirection.Vertical
+
+    sectionLayout.HorizontalAlignment =
+        Enum.HorizontalAlignment.Left
+
+    sectionLayout.SortOrder =
+        Enum.SortOrder.LayoutOrder
+
+    sectionLayout.Padding =
+        UDim.new(
+            0,
+            3
+        )
+
+    sectionLayout.Parent =
+        section
+
+    local header =
+        Instance.new("Frame")
+
+    header.Name =
+        "Header"
+
+    header.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            23
+        )
+
+    header.BackgroundTransparency =
+        1
+
+    header.Parent =
+        section
+
+    local accent =
+        Instance.new("Frame")
+
+    accent.Name =
+        "Accent"
+
+    accent.Position =
+        UDim2.fromOffset(
+            0,
+            5
+        )
+
+    accent.Size =
+        UDim2.new(
+            0,
+            3,
+            0,
+            13
+        )
+
+    accent.BackgroundColor3 =
+        GAG2WildPetNetworkGetRarityColor3(
+            rarity
+        )
+
+    accent.BorderSizePixel =
+        0
+
+    accent.Parent =
+        header
+
+    GAG2WildPetNetworkAddCorner(
+        accent,
+        3
+    )
+
+    local title =
+        Instance.new("TextLabel")
+
+    title.Name =
+        "Title"
+
+    title.Position =
+        UDim2.fromOffset(
+            10,
+            0
+        )
+
+    title.Size =
+        UDim2.new(
+            1,
+            -90,
+            1,
+            0
+        )
+
+    title.BackgroundTransparency =
+        1
+
+    title.Font =
+        Enum.Font.GothamBold
+
+    title.RichText =
+        true
+
+    title.Text =
+        '<b>'
+        .. GAG2WildPetNetworkCleanDisplay(
+            petName
+        )
+        .. '</b>  <font color="'
+        .. GAG2WildPetNetworkGetRarityColor(
+            rarity
+        )
+        .. '">['
+        .. GAG2WildPetNetworkCleanDisplay(
+            rarity
+        )
+        .. ']</font>'
+
+    title.TextSize =
+        12
+
+    title.TextColor3 =
+        Color3.fromRGB(
+            241,
+            245,
+            249
+        )
+
+    title.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    title.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    title.Parent =
+        header
+
+    local resultCount =
+        Instance.new("TextLabel")
+
+    resultCount.Name =
+        "ResultCount"
+
+    resultCount.AnchorPoint =
+        Vector2.new(
+            1,
+            0
+        )
+
+    resultCount.Position =
+        UDim2.new(
+            1,
+            0,
+            0,
+            0
+        )
+
+    resultCount.Size =
+        UDim2.new(
+            0,
+            80,
+            1,
+            0
+        )
+
+    resultCount.BackgroundTransparency =
+        1
+
+    resultCount.Font =
+        Enum.Font.Code
+
+    resultCount.Text =
+        tostring(#rows)
+        .. " "
+        .. (
+            #rows == 1
+            and "server"
+            or "servers"
+        )
+
+    resultCount.TextSize =
+        11
+
+    resultCount.TextColor3 =
+        Color3.fromRGB(
+            96,
+            165,
+            250
+        )
+
+    resultCount.TextXAlignment =
+        Enum.TextXAlignment.Right
+
+    resultCount.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    resultCount.Parent =
+        header
+
+    if #rows <= 0 then
+
+        local empty =
+            Instance.new("TextLabel")
+
+        empty.Name =
+            "Empty"
+
+        empty.Size =
+            UDim2.new(
+                1,
+                0,
+                0,
+                20
+            )
+
+        empty.BackgroundTransparency =
+            1
+
+        empty.Font =
+            Enum.Font.Code
+
+        empty.Text =
+            "(no server found)"
+
+        empty.TextSize =
+            11
+
+        empty.TextColor3 =
+            Color3.fromRGB(
+                148,
+                163,
+                184
+            )
+
+        empty.TextXAlignment =
+            Enum.TextXAlignment.Left
+
+        empty.Parent =
+            section
+
+        return section
+    end
+
+    for _, rowData in ipairs(rows) do
+
+        GAG2WildPetNetworkCreateServerRow(
+            section,
+            rowData
+        )
+    end
+
+    return section
 end
 
 function GAG2WildPetNetworkClearRows()
@@ -4495,7 +6062,7 @@ function GAG2WildPetNetworkClearRows()
     layout.Padding =
         UDim.new(
             0,
-            4
+            5
         )
 
     layout.SortOrder =
@@ -4510,25 +6077,25 @@ function GAG2WildPetNetworkClearRows()
     padding.PaddingLeft =
         UDim.new(
             0,
-            4
+            0
         )
 
     padding.PaddingRight =
         UDim.new(
             0,
-            4
+            0
         )
 
     padding.PaddingTop =
         UDim.new(
             0,
-            4
+            2
         )
 
     padding.PaddingBottom =
         UDim.new(
             0,
-            4
+            6
         )
 
     padding.Parent =
@@ -4556,6 +6123,16 @@ function GAG2WildPetNetworkJoinServer(rowData)
         CleanText(
             rowData.jobId
             or rowData.JobId
+        )
+
+    local scoutUserId =
+        GAG2WildPetNetworkGetScoutUserId(
+            rowData
+        )
+
+    local scoutName =
+        GAG2WildPetNetworkGetScoutName(
+            rowData
         )
 
     if not placeId
@@ -4590,17 +6167,79 @@ function GAG2WildPetNetworkJoinServer(rowData)
         GAG2CancelServerHop()
     end
 
+    GAG2ClearExactJoinTarget(
+        "new live wild pet HUD join"
+    )
+
+    GAG2_EXACT_JOIN_STATE.Retrying =
+        false
+
+    print(
+        "[HOLY WILD PET JOIN]",
+        "clicked row",
+        "| place:",
+        tostring(placeId),
+        "| job:",
+        tostring(jobId),
+        "| scoutUserId:",
+        tostring(scoutUserId),
+        "| scoutName:",
+        tostring(
+            scoutName ~= ""
+            and scoutName
+            or "unknown"
+        )
+    )
+
+    if scoutUserId > 0 then
+
+        GAG2WildPetNetworkSetStatus(
+            "Trying scout user-id join..."
+        )
+
+        local ok, errorText =
+            GAG2QueuePlayerIdJoin(
+                scoutUserId,
+                placeId,
+                jobId,
+                "live wild pet HUD scout lookup"
+            )
+
+        if ok ~= true then
+
+            GAG2WildPetNetworkSetStatus(
+                "Player-id join failed: "
+                .. tostring(errorText)
+            )
+
+            Notify(
+                "Join Failed",
+                tostring(errorText),
+                5
+            )
+
+            return false
+        end
+
+        return true
+    end
+
+    warn(
+        "[HOLY WILD PET JOIN]",
+        "no scoutUserId after merge; using old exact JobId join"
+    )
+
+    GAG2WildPetNetworkSetStatus(
+        "No scoutUserId. Exact joining "
+        .. tostring(jobId:sub(1, 8))
+        .. "..."
+    )
+
     GAG2SaveExactJoinTarget(
         placeId,
         jobId,
         0,
-        "live wild pet HUD"
-    )
-
-    GAG2WildPetNetworkSetStatus(
-        "Joining "
-        .. tostring(jobId:sub(1, 8))
-        .. "..."
+        "live wild pet HUD no scoutUserId"
     )
 
     SetStatus(
@@ -4611,7 +6250,7 @@ function GAG2WildPetNetworkJoinServer(rowData)
         GAG2QueueExactJoin(
             placeId,
             jobId,
-            "live wild pet HUD"
+            "live wild pet HUD no scoutUserId"
         )
 
     if ok ~= true then
@@ -4673,26 +6312,81 @@ function GAG2WildPetNetworkRender(data)
     local petGroups =
         {}
 
+    local totalResults =
+        0
+
     for petName, servers in pairs(grouped) do
 
-        if type(servers) == "table"
-        and #servers > 0 then
+        if type(servers) == "table" then
 
-            local firstServer =
-                servers[1]
+            local validRows =
+                {}
 
-            table.insert(petGroups, {
-                PetName =
-                    tostring(petName),
+            local rarity =
+                "Unknown"
 
-                Servers =
-                    servers,
+            for _, row in ipairs(servers) do
 
-                Rarity =
-                    type(firstServer) == "table"
-                    and tostring(firstServer.rarity or "")
-                    or "",
-            })
+                if type(row) == "table" then
+
+                    local jobId =
+                        CleanText(
+                            row.jobId
+                            or row.JobId
+                        )
+
+                    local placeId =
+                        tonumber(
+                            row.placeId
+                            or row.PlaceId
+                        )
+
+                    if jobId ~= ""
+                    and placeId
+                    and placeId > 0 then
+
+                        if CleanText(
+                            row.rarity
+                            or row.Rarity
+                        ) ~= "" then
+
+                            rarity =
+                                tostring(
+                                    row.rarity
+                                    or row.Rarity
+                                )
+                        end
+
+                        row.petName =
+                            tostring(petName)
+
+                        row.rarity =
+                            tostring(rarity)
+
+                        table.insert(
+                            validRows,
+                            row
+                        )
+                    end
+                end
+            end
+
+            if #validRows > 0 then
+
+                totalResults =
+                    totalResults + #validRows
+
+                table.insert(petGroups, {
+                    PetName =
+                        tostring(petName),
+
+                    Rarity =
+                        tostring(rarity),
+
+                    Rows =
+                        validRows,
+                })
+            end
         end
     end
 
@@ -4715,6 +6409,23 @@ function GAG2WildPetNetworkRender(data)
         return tostring(a.PetName)
             < tostring(b.PetName)
     end)
+
+    if state.SummaryLabel then
+
+        pcall(function()
+
+            state.SummaryLabel.Text =
+                tostring(
+                    state.LastServerCount
+                    or 0
+                )
+                .. " live server(s)  •  "
+                .. tostring(#petGroups)
+                .. " pet(s)  •  "
+                .. tostring(totalResults)
+                .. " results"
+        end)
+    end
 
     if #petGroups <= 0 then
 
@@ -4748,185 +6459,41 @@ function GAG2WildPetNetworkRender(data)
             break
         end
 
-        local petName =
-            GAG2WildPetNetworkCleanDisplay(
-                group.PetName
-            )
+        local limitedRows =
+            {}
 
-        local rarity =
-            GAG2WildPetNetworkCleanDisplay(
-                group.Rarity
-            )
-
-        if rarity == "" then
-            rarity =
-                "Unknown"
-        end
-
-        local header =
-            GAG2WildPetNetworkCreateLabel(
-                scroll,
-                "PetHeader",
-                '<b>'
-                .. petName
-                .. '</b>  <font color="'
-                .. GAG2WildPetNetworkGetRarityColor(rarity)
-                .. '">['
-                .. rarity
-                .. ']</font>',
-                26,
-                14,
-                true
-            )
-
-        header.LayoutOrder =
-            renderedRows
-
-        for _, row in ipairs(group.Servers) do
+        for _, row in ipairs(group.Rows) do
 
             if renderedRows >= maxRows then
                 break
             end
 
-            if type(row) == "table" then
-
-                local jobId =
-                    CleanText(
-                        row.jobId
-                        or row.JobId
-                    )
-
-                local placeId =
-                    tonumber(
-                        row.placeId
-                        or row.PlaceId
-                    )
-
-                if jobId ~= ""
-                and placeId
-                and placeId > 0 then
-
-                    local players =
-                        math.max(
-                            0,
-                            math.floor(
-                                tonumber(row.players)
-                                or 0
-                            )
-                        )
-
-                    local maxPlayers =
-                        math.max(
-                            0,
-                            math.floor(
-                                tonumber(row.maxPlayers)
-                                or 0
-                            )
-                        )
-
-                    local age =
-                        math.max(
-                            0,
-                            math.floor(
-                                tonumber(row.ageSeconds)
-                                or 0
-                            )
-                        )
-
-                    local count =
-                        math.max(
-                            1,
-                            math.floor(
-                                tonumber(row.count)
-                                or 1
-                            )
-                        )
-
-                    local remaining =
-                        math.max(
-                            0,
-                            math.floor(
-                                tonumber(row.bestRemaining)
-                                or 0
-                            )
-                        )
-
-                    local rowText =
-                        jobId:sub(1, 8)
-                        .. "   "
-                        .. tostring(players)
-                        .. "/"
-                        .. tostring(maxPlayers)
-                        .. "   "
-                        .. tostring(age)
-                        .. "s   x"
-                        .. tostring(count)
-
-                    if remaining > 0 then
-
-                        rowText =
-                            rowText
-                            .. "   "
-                            .. GAG2WildPetNetworkFormatSeconds(
-                                remaining
-                            )
-                            .. " left"
-                    end
-
-                    local button =
-                        GAG2WildPetNetworkCreateServerButton(
-                            scroll,
-                            rowText,
-                            {
-                                placeId = placeId,
-                                jobId = jobId,
-                                petName = petName,
-                                rarity = rarity,
-                            }
-                        )
-
-                    renderedRows =
-                        renderedRows + 1
-
-                    button.LayoutOrder =
-                        renderedRows
-                end
-            end
-        end
-
-        local spacer =
-            Instance.new("Frame")
-
-        spacer.Name =
-            "Spacer"
-
-        spacer.Size =
-            UDim2.new(
-                1,
-                -8,
-                0,
-                4
+            table.insert(
+                limitedRows,
+                row
             )
 
-        spacer.BackgroundTransparency =
-            1
+            renderedRows =
+                renderedRows + 1
+        end
 
-        spacer.LayoutOrder =
-            renderedRows + 1
-
-        spacer.Parent =
-            scroll
+        GAG2WildPetNetworkCreatePetSection(
+            scroll,
+            group.PetName,
+            group.Rarity,
+            limitedRows
+        )
     end
 
-    if renderedRows >= maxRows then
+    if totalResults > renderedRows then
 
         GAG2WildPetNetworkCreateLabel(
             scroll,
             "RowLimit",
             "Showing first "
-            .. tostring(maxRows)
-            .. " server rows.",
-            26,
+            .. tostring(renderedRows)
+            .. " rows.",
+            24,
             11,
             false
         )
@@ -5084,6 +6651,159 @@ function GAG2WildPetNetworkDestroyHudOnly()
         nil
 end
 
+function GAG2WildPetNetworkGetHudSize(mode)
+
+    mode =
+        CleanText(mode)
+
+    if mode == "Medium" then
+
+        return 520,
+            390
+    end
+
+    if mode == "Large" then
+
+        return 680,
+            500
+    end
+
+    return 430,
+        315
+end
+
+function GAG2WildPetNetworkApplyHudLayout()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    local frame =
+        state.Frame
+
+    if not frame then
+        return
+    end
+
+    if CleanText(state.HudMode) ~= "Medium"
+    and CleanText(state.HudMode) ~= "Large" then
+
+        state.HudMode =
+            "Small"
+    end
+
+    local width, height =
+        GAG2WildPetNetworkGetHudSize(
+            state.HudMode
+        )
+
+    if state.HudMinimized == true then
+
+        frame.Size =
+            UDim2.fromOffset(
+                280,
+                44
+            )
+
+    else
+
+        frame.Size =
+            UDim2.fromOffset(
+                width,
+                height
+            )
+    end
+
+    local visible =
+        state.HudMinimized ~= true
+
+    local objects = {
+        state.SummaryLabel,
+        state.Scroll,
+        state.StatusLabel,
+        state.TopLine,
+        state.StatusLine,
+    }
+
+    for _, object in ipairs(objects) do
+
+        if object then
+
+            pcall(function()
+
+                object.Visible =
+                    visible
+            end)
+        end
+    end
+
+    if state.MinimizeButton then
+
+        state.MinimizeButton.Text =
+            state.HudMinimized == true
+            and "+"
+            or "−"
+    end
+
+    if state.SizeButton then
+
+        state.SizeButton.Visible =
+            visible
+
+        state.SizeButton.Text =
+            state.HudMode == "Large"
+            and "L"
+            or (
+                state.HudMode == "Medium"
+                and "M"
+                or "S"
+            )
+    end
+
+    if state.RefreshButton then
+
+        state.RefreshButton.Visible =
+            visible
+    end
+end
+
+function GAG2WildPetNetworkCycleHudSize()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    if state.HudMode == "Small" then
+
+        state.HudMode =
+            "Medium"
+
+    elseif state.HudMode == "Medium" then
+
+        state.HudMode =
+            "Large"
+
+    else
+
+        state.HudMode =
+            "Small"
+    end
+
+    state.HudMinimized =
+        false
+
+    GAG2WildPetNetworkApplyHudLayout()
+end
+
+function GAG2WildPetNetworkToggleMinimized()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.HudMinimized =
+        state.HudMinimized ~= true
+
+    GAG2WildPetNetworkApplyHudLayout()
+end
+
 function GAG2WildPetNetworkCreateHud()
 
     local state =
@@ -5120,6 +6840,14 @@ function GAG2WildPetNetworkCreateHud()
         end)
     end
 
+    state.HudMode =
+        CleanText(state.HudMode) ~= ""
+        and state.HudMode
+        or "Small"
+
+    state.HudMinimized =
+        state.HudMinimized == true
+
     local gui =
         Instance.new("ScreenGui")
 
@@ -5147,23 +6875,26 @@ function GAG2WildPetNetworkCreateHud()
     frame.Position =
         UDim2.new(
             0,
-            16,
-            0.5,
-            -220
+            18,
+            0,
+            92
         )
 
     frame.Size =
         UDim2.fromOffset(
-            390,
-            440
+            430,
+            315
         )
 
     frame.BackgroundColor3 =
         Color3.fromRGB(
-            10,
-            14,
+            7,
+            13,
             22
         )
+
+    frame.BackgroundTransparency =
+        0.24
 
     frame.BorderSizePixel =
         0
@@ -5179,7 +6910,7 @@ function GAG2WildPetNetworkCreateHud()
 
     GAG2WildPetNetworkAddCorner(
         frame,
-        9
+        10
     )
 
     local frameStroke =
@@ -5187,8 +6918,8 @@ function GAG2WildPetNetworkCreateHud()
 
     frameStroke.Color =
         Color3.fromRGB(
-            139,
-            92,
+            59,
+            130,
             246
         )
 
@@ -5196,42 +6927,10 @@ function GAG2WildPetNetworkCreateHud()
         1
 
     frameStroke.Transparency =
-        0.15
+        0.45
 
     frameStroke.Parent =
         frame
-
-    local accent =
-        Instance.new("Frame")
-
-    accent.Name =
-        "Accent"
-
-    accent.Size =
-        UDim2.new(
-            0,
-            4,
-            1,
-            0
-        )
-
-    accent.BackgroundColor3 =
-        Color3.fromRGB(
-            110,
-            231,
-            183
-        )
-
-    accent.BorderSizePixel =
-        0
-
-    accent.Parent =
-        frame
-
-    GAG2WildPetNetworkAddCorner(
-        accent,
-        9
-    )
 
     local title =
         Instance.new("TextLabel")
@@ -5242,15 +6941,15 @@ function GAG2WildPetNetworkCreateHud()
     title.Position =
         UDim2.fromOffset(
             14,
-            5
+            7
         )
 
     title.Size =
         UDim2.new(
             1,
-            -100,
+            -125,
             0,
-            25
+            24
         )
 
     title.BackgroundTransparency =
@@ -5263,7 +6962,7 @@ function GAG2WildPetNetworkCreateHud()
         "HOLY • LIVE WILD PETS"
 
     title.TextSize =
-        14
+        13
 
     title.TextColor3 =
         Color3.fromRGB(
@@ -5278,32 +6977,109 @@ function GAG2WildPetNetworkCreateHud()
     title.Parent =
         frame
 
+    local sizeButton =
+        Instance.new("TextButton")
+
+    sizeButton.Name =
+        "Size"
+
+    sizeButton.AnchorPoint =
+        Vector2.new(
+            1,
+            0
+        )
+
+    sizeButton.Position =
+        UDim2.new(
+            1,
+            -91,
+            0,
+            8
+        )
+
+    sizeButton.Size =
+        UDim2.fromOffset(
+            24,
+            22
+        )
+
+    sizeButton.BackgroundColor3 =
+        Color3.fromRGB(
+            12,
+            22,
+            35
+        )
+
+    sizeButton.BackgroundTransparency =
+        0.08
+
+    sizeButton.BorderSizePixel =
+        0
+
+    sizeButton.Font =
+        Enum.Font.GothamBold
+
+    sizeButton.Text =
+        "S"
+
+    sizeButton.TextSize =
+        11
+
+    sizeButton.TextColor3 =
+        Color3.fromRGB(
+            96,
+            165,
+            250
+        )
+
+    sizeButton.Parent =
+        frame
+
+    GAG2WildPetNetworkAddCorner(
+        sizeButton,
+        6
+    )
+
+    sizeButton.MouseButton1Click:Connect(function()
+
+        GAG2WildPetNetworkCycleHudSize()
+    end)
+
     local refreshButton =
         Instance.new("TextButton")
 
     refreshButton.Name =
         "Refresh"
 
+    refreshButton.AnchorPoint =
+        Vector2.new(
+            1,
+            0
+        )
+
     refreshButton.Position =
         UDim2.new(
             1,
-            -72,
+            -62,
             0,
-            5
+            8
         )
 
     refreshButton.Size =
         UDim2.fromOffset(
-            40,
-            24
+            24,
+            22
         )
 
     refreshButton.BackgroundColor3 =
         Color3.fromRGB(
-            30,
-            41,
-            59
+            12,
+            22,
+            35
         )
+
+    refreshButton.BackgroundTransparency =
+        0.08
 
     refreshButton.BorderSizePixel =
         0
@@ -5315,13 +7091,13 @@ function GAG2WildPetNetworkCreateHud()
         "↻"
 
     refreshButton.TextSize =
-        16
+        13
 
     refreshButton.TextColor3 =
         Color3.fromRGB(
-            196,
-            181,
-            253
+            96,
+            165,
+            250
         )
 
     refreshButton.Parent =
@@ -5329,7 +7105,7 @@ function GAG2WildPetNetworkCreateHud()
 
     GAG2WildPetNetworkAddCorner(
         refreshButton,
-        5
+        6
     )
 
     refreshButton.MouseButton1Click:Connect(function()
@@ -5339,24 +7115,83 @@ function GAG2WildPetNetworkCreateHud()
         )
     end)
 
+    local minimizeButton =
+        Instance.new("TextButton")
+
+    minimizeButton.Name =
+        "Minimize"
+
+    minimizeButton.AnchorPoint =
+        Vector2.new(
+            1,
+            0
+        )
+
+    minimizeButton.Position =
+        UDim2.new(
+            1,
+            -33,
+            0,
+            8
+        )
+
+    minimizeButton.Size =
+        UDim2.fromOffset(
+            24,
+            22
+        )
+
+    minimizeButton.BackgroundTransparency =
+        1
+
+    minimizeButton.Font =
+        Enum.Font.GothamBold
+
+    minimizeButton.Text =
+        "−"
+
+    minimizeButton.TextSize =
+        16
+
+    minimizeButton.TextColor3 =
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+
+    minimizeButton.Parent =
+        frame
+
+    minimizeButton.MouseButton1Click:Connect(function()
+
+        GAG2WildPetNetworkToggleMinimized()
+    end)
+
     local closeButton =
         Instance.new("TextButton")
 
     closeButton.Name =
         "Close"
 
+    closeButton.AnchorPoint =
+        Vector2.new(
+            1,
+            0
+        )
+
     closeButton.Position =
         UDim2.new(
             1,
-            -29,
+            -8,
             0,
-            5
+            8
         )
 
     closeButton.Size =
         UDim2.fromOffset(
             24,
-            24
+            22
         )
 
     closeButton.BackgroundTransparency =
@@ -5369,13 +7204,13 @@ function GAG2WildPetNetworkCreateHud()
         "×"
 
     closeButton.TextSize =
-        18
+        16
 
     closeButton.TextColor3 =
         Color3.fromRGB(
-            248,
-            113,
-            113
+            148,
+            163,
+            184
         )
 
     closeButton.Parent =
@@ -5407,7 +7242,7 @@ function GAG2WildPetNetworkCreateHud()
     summary.Position =
         UDim2.fromOffset(
             14,
-            33
+            32
         )
 
     summary.Size =
@@ -5415,7 +7250,7 @@ function GAG2WildPetNetworkCreateHud()
             1,
             -28,
             0,
-            31
+            20
         )
 
     summary.BackgroundTransparency =
@@ -5428,7 +7263,7 @@ function GAG2WildPetNetworkCreateHud()
         "Loading live servers..."
 
     summary.TextSize =
-        12
+        11
 
     summary.TextColor3 =
         Color3.fromRGB(
@@ -5440,10 +7275,45 @@ function GAG2WildPetNetworkCreateHud()
     summary.TextXAlignment =
         Enum.TextXAlignment.Left
 
-    summary.TextYAlignment =
-        Enum.TextYAlignment.Top
-
     summary.Parent =
+        frame
+
+    local topLine =
+        Instance.new("Frame")
+
+    topLine.Name =
+        "TopLine"
+
+    topLine.Position =
+        UDim2.new(
+            0,
+            12,
+            0,
+            57
+        )
+
+    topLine.Size =
+        UDim2.new(
+            1,
+            -24,
+            0,
+            1
+        )
+
+    topLine.BackgroundColor3 =
+        Color3.fromRGB(
+            30,
+            41,
+            59
+        )
+
+    topLine.BackgroundTransparency =
+        0.38
+
+    topLine.BorderSizePixel =
+        0
+
+    topLine.Parent =
         frame
 
     local scroll =
@@ -5454,35 +7324,31 @@ function GAG2WildPetNetworkCreateHud()
 
     scroll.Position =
         UDim2.fromOffset(
-            10,
-            66
+            14,
+            64
         )
 
     scroll.Size =
         UDim2.new(
             1,
-            -20,
+            -28,
             1,
-            -102
+            -103
         )
 
-    scroll.BackgroundColor3 =
-        Color3.fromRGB(
-            15,
-            21,
-            31
-        )
+    scroll.BackgroundTransparency =
+        1
 
     scroll.BorderSizePixel =
         0
 
     scroll.ScrollBarThickness =
-        4
+        3
 
     scroll.ScrollBarImageColor3 =
         Color3.fromRGB(
-            139,
-            92,
+            59,
+            130,
             246
         )
 
@@ -5495,10 +7361,43 @@ function GAG2WildPetNetworkCreateHud()
     scroll.Parent =
         frame
 
-    GAG2WildPetNetworkAddCorner(
-        scroll,
-        6
-    )
+    local statusLine =
+        Instance.new("Frame")
+
+    statusLine.Name =
+        "StatusLine"
+
+    statusLine.Position =
+        UDim2.new(
+            0,
+            12,
+            1,
+            -34
+        )
+
+    statusLine.Size =
+        UDim2.new(
+            1,
+            -24,
+            0,
+            1
+        )
+
+    statusLine.BackgroundColor3 =
+        Color3.fromRGB(
+            30,
+            41,
+            59
+        )
+
+    statusLine.BackgroundTransparency =
+        0.42
+
+    statusLine.BorderSizePixel =
+        0
+
+    statusLine.Parent =
+        frame
 
     local status =
         Instance.new("TextLabel")
@@ -5511,7 +7410,7 @@ function GAG2WildPetNetworkCreateHud()
             0,
             14,
             1,
-            -30
+            -28
         )
 
     status.Size =
@@ -5519,7 +7418,7 @@ function GAG2WildPetNetworkCreateHud()
             1,
             -28,
             0,
-            22
+            18
         )
 
     status.BackgroundTransparency =
@@ -5532,13 +7431,13 @@ function GAG2WildPetNetworkCreateHud()
         tostring(state.LastStatus or "Starting...")
 
     status.TextSize =
-        11
+        10
 
     status.TextColor3 =
         Color3.fromRGB(
-            196,
-            181,
-            253
+            96,
+            165,
+            250
         )
 
     status.TextXAlignment =
@@ -5562,6 +7461,24 @@ function GAG2WildPetNetworkCreateHud()
     state.Scroll =
         scroll
 
+    state.TopLine =
+        topLine
+
+    state.StatusLine =
+        statusLine
+
+    state.SizeButton =
+        sizeButton
+
+    state.RefreshButton =
+        refreshButton
+
+    state.MinimizeButton =
+        minimizeButton
+
+    state.CloseButton =
+        closeButton
+
     if type(state.LastData) == "table" then
 
         GAG2WildPetNetworkRender(
@@ -5576,12 +7493,13 @@ function GAG2WildPetNetworkCreateHud()
             scroll,
             "Loading",
             "Loading network reports...",
-            30,
-            13,
+            28,
+            12,
             false
         )
     end
 
+    GAG2WildPetNetworkApplyHudLayout()
     GAG2WildPetNetworkRefreshStatus()
 
     return gui
@@ -5658,8 +7576,8 @@ function GAG2WildPetNetworkStart()
             task.wait(
                 math.clamp(
                     tonumber(state.RefreshSeconds)
-                    or 3,
-                    2,
+                    or 1,
+                    1,
                     30
                 )
             )
@@ -5792,8 +7710,8 @@ GAG2_WILD_PET_NETWORK_CONTRIBUTE_STATE =
         Pending = false,
 
         LoopToken = 0,
-        HeartbeatSeconds = 10,
-        ClaimRefreshSeconds = 20,
+        HeartbeatSeconds = 1,
+        ClaimRefreshSeconds = 5,
 
         LastReportAt = 0,
         LastClaimAt = 0,
@@ -6578,8 +8496,8 @@ function GAG2WildPetNetworkContributorStart()
             task.wait(
                 math.clamp(
                     tonumber(state.HeartbeatSeconds)
-                    or 10,
-                    5,
+                    or 1,
+                    1,
                     60
                 )
             )
@@ -6959,16 +8877,6 @@ local SniperState = {
     ClaimWaitTimeout = 90,
     ClaimDisappearConfirmTime = 1.25,
     HandledPetCooldown = 120,
-
-    BuyMode = "Instant",
-    FollowPet = true,
-    MaxBuysPerPet = 1,
-    AttemptCounts = {},
-
-    TeleportGroundOffset = 3.25,
-    TeleportSideDistance = 5.25,
-    FollowRefreshDelay = 0.10,
-    FollowMaxSeconds = 3.25,
 
     PacketTable = nil,
     PacketSource = "not loaded",
@@ -11089,67 +12997,22 @@ local function SniperGetEntryTamePosition(entry)
     )
 end
 
-local function SniperAddRayIgnore(ignoreList, instance)
+local function SniperGetSafeTameCFrame(targetPosition)
 
-    if typeof(instance) ~= "Instance" then
-        return
+    if typeof(targetPosition) ~= "Vector3" then
+        return nil
     end
 
-    if table.find(ignoreList, instance) ~= nil then
-        return
-    end
-
-    table.insert(
-        ignoreList,
-        instance
-    )
-end
-
-local function SniperBuildTameRayParams(entry)
-
-    local character =
-        LOCAL_PLAYER
-        and LOCAL_PLAYER.Character
+    local character, root =
+        SniperGetCharacterRoot()
 
     local ignoreList =
         {}
 
-    SniperAddRayIgnore(
-        ignoreList,
-        character
-    )
-
-    if type(entry) == "table" then
-
-        SniperAddRayIgnore(
+    if character then
+        table.insert(
             ignoreList,
-            entry.Instance
-        )
-
-        SniperAddRayIgnore(
-            ignoreList,
-            entry.Spawn
-        )
-
-        SniperAddRayIgnore(
-            ignoreList,
-            entry.Ref
-        )
-    end
-
-    local map =
-        workspace:FindFirstChild("Map")
-
-    if map then
-
-        SniperAddRayIgnore(
-            ignoreList,
-            map:FindFirstChild("WildPetSpawns")
-        )
-
-        SniperAddRayIgnore(
-            ignoreList,
-            map:FindFirstChild("WildPetRef")
+            character
         )
     end
 
@@ -11165,181 +13028,16 @@ local function SniperBuildTameRayParams(entry)
     rayParams.IgnoreWater =
         true
 
-    return rayParams
-end
-
-local function SniperGetCurrentEntryPosition(entry)
-
-    if type(entry) ~= "table" then
-        return nil
-    end
-
-    local uuid =
-        CleanText(entry.UUID)
-
-    local ref =
-        entry.Ref
-
-    if (typeof(ref) ~= "Instance" or ref.Parent == nil)
-    and uuid ~= "" then
-
-        ref =
-            SniperFindRef(
-                uuid
-            )
-
-        entry.Ref =
-            ref
-    end
-
-    local refPosition =
-        SniperGetPosition(
-            ref
-        )
-
-    if typeof(refPosition) == "Vector3" then
-
-        entry.Position =
-            refPosition
-
-        return refPosition
-    end
-
-    local spawn =
-        entry.Spawn
-
-    if (typeof(spawn) ~= "Instance" or spawn.Parent == nil)
-    and uuid ~= "" then
-
-        local spawnFolder =
-            SniperGetSpawnsFolder()
-
-        if spawnFolder then
-
-            for _, child in ipairs(spawnFolder:GetChildren()) do
-
-                if SniperGetUuid(child.Name) == uuid then
-
-                    spawn =
-                        child
-
-                    break
-                end
-            end
-        end
-
-        entry.Spawn =
-            spawn
-    end
-
-    local spawnPosition =
-        SniperGetPosition(
-            spawn
-        )
-
-    if typeof(spawnPosition) == "Vector3" then
-
-        entry.Position =
-            spawnPosition
-
-        return spawnPosition
-    end
-
-    if typeof(entry.Position) == "Vector3" then
-        return entry.Position
-    end
-
-    return SniperGetEntryTamePosition(
-        entry
-    )
-end
-
-local function SniperGetSafeTameCFrame(entryOrPosition, fallbackPosition)
-
-    local entry =
-        type(entryOrPosition) == "table"
-        and entryOrPosition
-        or nil
-
-    local targetPosition =
-        typeof(fallbackPosition) == "Vector3"
-        and fallbackPosition
-        or (
-            typeof(entryOrPosition) == "Vector3"
-            and entryOrPosition
-            or nil
-        )
-
-    if typeof(targetPosition) ~= "Vector3"
-    and entry then
-
-        targetPosition =
-            SniperGetCurrentEntryPosition(
-                entry
-            )
-    end
-
-    if typeof(targetPosition) ~= "Vector3" then
-        return nil, nil
-    end
-
-    local _, root =
-        SniperGetCharacterRoot()
-
-    local rayParams =
-        SniperBuildTameRayParams(
-            entry
-        )
-
-    local sideDistance =
-        math.clamp(
-            tonumber(SniperState.TeleportSideDistance)
-            or 5.25,
-            3.5,
-            8
-        )
-
-    local groundOffset =
-        math.clamp(
-            tonumber(SniperState.TeleportGroundOffset)
-            or 3.25,
-            2.75,
-            5
-        )
-
-    local awayDirection =
-        Vector3.new(
-            1,
-            0,
-            0
-        )
-
-    if root then
-
-        local delta =
-            Vector3.new(
-                root.Position.X - targetPosition.X,
-                0,
-                root.Position.Z - targetPosition.Z
-            )
-
-        if delta.Magnitude > 0.25 then
-            awayDirection =
-                delta.Unit
-        end
-    end
-
     local offsets = {
-        awayDirection * sideDistance,
-        -awayDirection * sideDistance,
-        Vector3.new(0, 0, sideDistance),
-        Vector3.new(0, 0, -sideDistance),
-        Vector3.new(sideDistance, 0, 0),
-        Vector3.new(-sideDistance, 0, 0),
-        Vector3.new(sideDistance * 0.75, 0, sideDistance * 0.75),
-        Vector3.new(-sideDistance * 0.75, 0, sideDistance * 0.75),
-        Vector3.new(sideDistance * 0.75, 0, -sideDistance * 0.75),
-        Vector3.new(-sideDistance * 0.75, 0, -sideDistance * 0.75),
+        Vector3.new(5, 0, 0),
+        Vector3.new(-5, 0, 0),
+        Vector3.new(0, 0, 5),
+        Vector3.new(0, 0, -5),
+        Vector3.new(7, 0, 7),
+        Vector3.new(-7, 0, 7),
+        Vector3.new(7, 0, -7),
+        Vector3.new(-7, 0, -7),
+        Vector3.new(0, 0, 0),
     }
 
     local bestPosition =
@@ -11347,47 +13045,56 @@ local function SniperGetSafeTameCFrame(entryOrPosition, fallbackPosition)
 
     for _, offset in ipairs(offsets) do
 
-        local sampleXZ =
+        local rayOrigin =
             targetPosition
             + offset
+            + Vector3.new(
+                0,
+                60,
+                0
+            )
 
-        local rayOrigin =
+        local rayDirection =
             Vector3.new(
-                sampleXZ.X,
-                targetPosition.Y + 90,
-                sampleXZ.Z
+                0,
+                -140,
+                0
             )
 
         local result =
             workspace:Raycast(
                 rayOrigin,
-                Vector3.new(0, -260, 0),
+                rayDirection,
                 rayParams
             )
 
         if result
-        and typeof(result.Position) == "Vector3" then
+        and result.Position then
 
-            local groundPosition =
+            local candidatePosition =
                 result.Position
+                + Vector3.new(
+                    0,
+                    4.75,
+                    0
+                )
 
-            if groundPosition.Y <= targetPosition.Y + 18 then
+            bestPosition =
+                candidatePosition
 
-                bestPosition =
-                    groundPosition
-                    + Vector3.new(
-                        0,
-                        groundOffset,
-                        0
-                    )
-
-                break
-            end
+            break
         end
     end
 
     if typeof(bestPosition) ~= "Vector3" then
-        return nil, nil
+
+        bestPosition =
+            targetPosition
+            + Vector3.new(
+                0,
+                7,
+                0
+            )
     end
 
     local lookTarget =
@@ -22920,7 +24627,7 @@ local function SniperMoveCloseForTame(entry)
     end
 
     local targetPosition =
-        SniperGetCurrentEntryPosition(
+        SniperGetEntryTamePosition(
             entry
         )
 
@@ -22934,27 +24641,7 @@ local function SniperMoveCloseForTame(entry)
     local distance =
         (root.Position - targetPosition).Magnitude
 
-    if distance <= 8 then
-
-        local lookTarget =
-            Vector3.new(
-                targetPosition.X,
-                root.Position.Y,
-                targetPosition.Z
-            )
-
-        if (root.Position - lookTarget).Magnitude > 0.1 then
-
-            pcall(function()
-
-                character:PivotTo(
-                    CFrame.new(
-                        root.Position,
-                        lookTarget
-                    )
-                )
-            end)
-        end
+    if distance <= 10 then
 
         SniperStopCharacterMotion(
             root
@@ -22964,7 +24651,6 @@ local function SniperMoveCloseForTame(entry)
             Character = character,
             OldCFrame = oldCFrame,
             ClosePosition = root.Position,
-            TargetPosition = targetPosition,
             Moved = false,
         },
         "already close"
@@ -22972,13 +24658,12 @@ local function SniperMoveCloseForTame(entry)
 
     local closeCFrame, closePosition =
         SniperGetSafeTameCFrame(
-            entry,
             targetPosition
         )
 
     if typeof(closeCFrame) ~= "CFrame"
     or typeof(closePosition) ~= "Vector3" then
-        return nil, "safe ground position failed"
+        return nil, "safe position failed"
     end
 
     local ok, err =
@@ -23004,7 +24689,7 @@ local function SniperMoveCloseForTame(entry)
     end
 
     task.wait(
-        0.06
+        0.08
     )
 
     local _, newRoot =
@@ -23018,14 +24703,13 @@ local function SniperMoveCloseForTame(entry)
     end
 
     task.wait(
-        0.08
+        0.18
     )
 
     return {
         Character = character,
         OldCFrame = oldCFrame,
         ClosePosition = closePosition,
-        TargetPosition = targetPosition,
         Moved = true,
     },
     "moved"
@@ -23167,7 +24851,6 @@ local function SniperMarkEntryHandled(entry, seconds)
             or 60
         )
 end
-
 
 local function SniperFindSpawnByUuid(uuid)
 
@@ -23531,594 +25214,6 @@ local function SniperFireWildBuyPacket(entry)
     return true, "fired"
 end
 
-local function SniperGetEntryAttemptCount(entry)
-
-    local key =
-        SniperGetEntryKey(entry)
-
-    if key == "" then
-        return 0
-    end
-
-    SniperState.AttemptCounts =
-        type(SniperState.AttemptCounts) == "table"
-        and SniperState.AttemptCounts
-        or {}
-
-    return math.max(
-        0,
-        math.floor(
-            tonumber(SniperState.AttemptCounts[key])
-            or 0
-        )
-    )
-end
-
-local function SniperGetMaxBuysPerPet()
-
-    return math.max(
-        1,
-        math.floor(
-            tonumber(SniperState.MaxBuysPerPet)
-            or 1
-        )
-    )
-end
-
-local function SniperCanAttemptEntry(entry)
-
-    local maxBuys =
-        SniperGetMaxBuysPerPet()
-
-    if SniperGetEntryAttemptCount(entry) >= maxBuys then
-
-        return false,
-            "max buys reached"
-    end
-
-    return true,
-        "ok"
-end
-
-local function SniperMarkBuyAttempt(entry)
-
-    local key =
-        SniperGetEntryKey(entry)
-
-    if key == "" then
-        return
-    end
-
-    SniperState.AttemptCounts =
-        type(SniperState.AttemptCounts) == "table"
-        and SniperState.AttemptCounts
-        or {}
-
-    SniperState.AttemptCounts[key] =
-        SniperGetEntryAttemptCount(entry) + 1
-end
-
-local function SniperReadEntryOwnerState(entry)
-
-    if type(entry) ~= "table" then
-        return 0, "", ""
-    end
-
-    local uuid =
-        CleanText(entry.UUID)
-
-    local ref =
-        entry.Ref
-
-    if (typeof(ref) ~= "Instance" or ref.Parent == nil)
-    and uuid ~= "" then
-
-        ref =
-            SniperFindRef(
-                uuid
-            )
-
-        entry.Ref =
-            ref
-    end
-
-    if typeof(ref) ~= "Instance" then
-        return 0, "", ""
-    end
-
-    local ownerUserId =
-        tonumber(
-            ref:GetAttribute("OwnerUserId")
-        )
-        or 0
-
-    local ownerName =
-        CleanText(
-            ref:GetAttribute("OwnerName")
-        )
-
-    local state =
-        CleanText(
-            ref:GetAttribute("State")
-        ):lower()
-
-    entry.OwnerUserId =
-        ownerUserId
-
-    entry.OwnerName =
-        ownerName
-
-    entry.State =
-        state
-
-    return ownerUserId,
-        state,
-        ownerName
-end
-
-local function SniperEntryIsBuyable(entry, quiet)
-
-    local ownerUserId, state =
-        SniperReadEntryOwnerState(
-            entry
-        )
-
-    if ownerUserId > 0 then
-
-        if LOCAL_PLAYER
-        and ownerUserId == LOCAL_PLAYER.UserId then
-
-            return false,
-                "already owned by you"
-        end
-
-        return false,
-            "owned by another player"
-    end
-
-    if state ~= ""
-    and state ~= "wandering"
-    and state ~= "wandering_walking" then
-
-        return false,
-            "state " .. tostring(state)
-    end
-
-    local canAttempt, attemptReason =
-        SniperCanAttemptEntry(
-            entry
-        )
-
-    if canAttempt ~= true then
-
-        return false,
-            attemptReason
-    end
-
-    return true,
-        "ok"
-end
-
-local function SniperEntryBoughtByLocal(entry)
-
-    local ownerUserId, state =
-        SniperReadEntryOwnerState(
-            entry
-        )
-
-    return LOCAL_PLAYER
-        and ownerUserId == LOCAL_PLAYER.UserId
-        and (
-            state == "walking_to_garden"
-            or state == "owned"
-            or state == "claiming"
-            or state ~= ""
-        )
-end
-
-local function SniperAimAtEntry(entry, targetPosition)
-
-    targetPosition =
-        typeof(targetPosition) == "Vector3"
-        and targetPosition
-        or SniperGetCurrentEntryPosition(entry)
-
-    if typeof(targetPosition) ~= "Vector3" then
-        return false
-    end
-
-    local character, root =
-        SniperGetCharacterRoot()
-
-    if root
-    and character then
-
-        local lookTarget =
-            Vector3.new(
-                targetPosition.X,
-                root.Position.Y,
-                targetPosition.Z
-            )
-
-        if (root.Position - lookTarget).Magnitude > 0.1 then
-
-            pcall(function()
-
-                character:PivotTo(
-                    CFrame.new(
-                        root.Position,
-                        lookTarget
-                    )
-                )
-            end)
-        end
-    end
-
-    local camera =
-        workspace.CurrentCamera
-
-    if camera then
-
-        pcall(function()
-
-            camera.CFrame =
-                CFrame.new(
-                    camera.CFrame.Position,
-                    targetPosition + Vector3.new(0, 1.7, 0)
-                )
-        end)
-    end
-
-    return true
-end
-
-local function SniperFindBuyPrompt(entry)
-
-    if type(entry) ~= "table" then
-        return nil
-    end
-
-    local roots =
-        {}
-
-    local uuid =
-        CleanText(entry.UUID)
-
-    if uuid ~= "" then
-
-        local spawn =
-            SniperFindSpawnByUuid(
-                uuid
-            )
-
-        if spawn then
-
-            entry.Spawn =
-                spawn
-
-            table.insert(
-                roots,
-                spawn
-            )
-        end
-    end
-
-    table.insert(
-        roots,
-        entry.Spawn
-    )
-
-    table.insert(
-        roots,
-        entry.Instance
-    )
-
-    for _, root in ipairs(roots) do
-
-        if typeof(root) == "Instance"
-        and root.Parent ~= nil then
-
-            for _, descendant in ipairs(root:GetDescendants()) do
-
-                if descendant:IsA("ProximityPrompt") then
-
-                    local text =
-                        (
-                            tostring(descendant.Name)
-                            .. " "
-                            .. tostring(descendant.ActionText)
-                            .. " "
-                            .. tostring(descendant.ObjectText)
-                        ):lower()
-
-                    if text:find("buy", 1, true)
-                    or text:find("tame", 1, true)
-                    or text:find("adopt", 1, true) then
-
-                        return descendant
-                    end
-                end
-            end
-        end
-    end
-
-    return nil
-end
-
-local function SniperHoldBuyPrompt(prompt, entry)
-
-    if typeof(prompt) ~= "Instance"
-    or prompt:IsA("ProximityPrompt") ~= true
-    or prompt.Parent == nil then
-
-        return false,
-            "missing BuyPrompt"
-    end
-
-    local holdTime =
-        math.clamp(
-            tonumber(prompt.HoldDuration)
-            or 1.25,
-            0.15,
-            8
-        )
-        + 0.18
-
-    SniperAimAtEntry(
-        entry
-    )
-
-    task.wait(
-        0.08
-    )
-
-    local ok =
-        pcall(function()
-
-            prompt:InputHoldBegin()
-        end)
-
-    if ok == true then
-
-        local started =
-            os.clock()
-
-        while os.clock() - started < holdTime do
-
-            if SniperState.FollowPet == true then
-
-                local currentPosition =
-                    SniperGetCurrentEntryPosition(
-                        entry
-                    )
-
-                if typeof(currentPosition) == "Vector3" then
-
-                    local closeCFrame =
-                        SniperGetSafeTameCFrame(
-                            entry,
-                            currentPosition
-                        )
-
-                    local character =
-                        LOCAL_PLAYER
-                        and LOCAL_PLAYER.Character
-
-                    if typeof(closeCFrame) == "CFrame"
-                    and character then
-
-                        pcall(function()
-
-                            character:PivotTo(
-                                closeCFrame
-                            )
-                        end)
-                    end
-                end
-            end
-
-            task.wait(
-                0.05
-            )
-        end
-
-        pcall(function()
-
-            prompt:InputHoldEnd()
-        end)
-
-        return true,
-            "held prompt"
-    end
-
-    local firePrompt =
-        fireproximityprompt
-        or (
-            type(GAG2_EXECUTOR_ENV) == "table"
-            and GAG2_EXECUTOR_ENV.fireproximityprompt
-        )
-
-    if type(firePrompt) == "function" then
-
-        local fireOk, fireErr =
-            pcall(function()
-
-                firePrompt(
-                    prompt
-                )
-            end)
-
-        if fireOk == true then
-
-            task.wait(
-                holdTime
-            )
-
-            return true,
-                "fired prompt fallback"
-        end
-
-        return false,
-            tostring(fireErr)
-    end
-
-    return false,
-        "prompt hold unsupported"
-end
-
-local function SniperFollowPetForBuy(entry, moveState, maxSeconds)
-
-    if SniperState.FollowPet ~= true then
-        return false
-    end
-
-    local started =
-        os.clock()
-
-    local limit =
-        math.clamp(
-            tonumber(maxSeconds)
-            or tonumber(SniperState.FollowMaxSeconds)
-            or 3.25,
-            0.2,
-            12
-        )
-
-    while os.clock() - started < limit do
-
-        if SniperEntryBoughtByLocal(entry) == true then
-            return true
-        end
-
-        local canBuy, reason =
-            SniperEntryIsBuyable(
-                entry,
-                true
-            )
-
-        if canBuy ~= true then
-            return false, reason
-        end
-
-        local targetPosition =
-            SniperGetCurrentEntryPosition(
-                entry
-            )
-
-        if typeof(targetPosition) ~= "Vector3" then
-            return false, "missing moving pet position"
-        end
-
-        local closeCFrame, closePosition =
-            SniperGetSafeTameCFrame(
-                entry,
-                targetPosition
-            )
-
-        local character, root =
-            SniperGetCharacterRoot()
-
-        if typeof(closeCFrame) == "CFrame"
-        and typeof(closePosition) == "Vector3"
-        and character
-        and root then
-
-            if (root.Position - closePosition).Magnitude > 1.35 then
-
-                pcall(function()
-
-                    character:PivotTo(
-                        closeCFrame
-                    )
-                end)
-            else
-
-                SniperAimAtEntry(
-                    entry,
-                    targetPosition
-                )
-            end
-
-            if type(moveState) == "table" then
-
-                moveState.ClosePosition =
-                    closePosition
-
-                moveState.TargetPosition =
-                    targetPosition
-            end
-
-            SniperStopCharacterMotion(
-                root
-            )
-        end
-
-        task.wait(
-            math.clamp(
-                tonumber(SniperState.FollowRefreshDelay)
-                or 0.10,
-                0.05,
-                0.30
-            )
-        )
-    end
-
-    return SniperEntryBoughtByLocal(
-        entry
-    )
-end
-
-local function SniperGetBuyMode()
-
-    local mode =
-        CleanText(
-            SniperState.BuyMode
-        )
-
-    if mode ~= "Hold" then
-        mode = "Instant"
-    end
-
-    SniperState.BuyMode =
-        mode
-
-    return mode
-end
-
-local function SniperRunBuyMode(entry, moveState, noTeleportTest)
-
-    if noTeleportTest == true then
-        return SniperFireWildBuyPacket(entry)
-    end
-
-    local mode =
-        SniperGetBuyMode()
-
-    if mode == "Hold" then
-
-        local prompt =
-            SniperFindBuyPrompt(
-                entry
-            )
-
-        if not prompt then
-
-            return false,
-                "BuyPrompt not found"
-        end
-
-        return SniperHoldBuyPrompt(
-            prompt,
-            entry
-        )
-    end
-
-    return SniperFireWildBuyPacket(
-        entry
-    )
-end
-
-
 local function SniperAttemptBuyEntry(entry)
 
     if type(entry) ~= "table" then
@@ -24136,46 +25231,6 @@ local function SniperAttemptBuyEntry(entry)
 
         SetSniperStatus(
             readyText
-        )
-
-        return false
-    end
-
-    local canBuy, buyReason =
-        SniperEntryIsBuyable(
-            entry
-        )
-
-    if canBuy ~= true then
-
-        SniperMarkEntryHandled(
-            entry,
-            3
-        )
-
-        SetSniperStatus(
-            "Skip: "
-            .. tostring(buyReason)
-        )
-
-        return false
-    end
-
-    local canAttempt, attemptReason =
-        SniperCanAttemptEntry(
-            entry
-        )
-
-    if canAttempt ~= true then
-
-        SniperMarkEntryHandled(
-            entry,
-            SniperState.HandledPetCooldown
-        )
-
-        SetSniperStatus(
-            "Skip: "
-            .. tostring(attemptReason)
         )
 
         return false
@@ -24199,11 +25254,11 @@ local function SniperAttemptBuyEntry(entry)
         )
         or 0
 
-    if os.clock() - lastAttempt < 0.85 then
+    if os.clock() - lastAttempt < 8 then
         return false
     end
 
-    if os.clock() - tonumber(SniperState.LastTameAt or 0) < 0.35 then
+    if os.clock() - tonumber(SniperState.LastTameAt or 0) < 0.75 then
         return false
     end
 
@@ -24252,7 +25307,7 @@ local function SniperAttemptBuyEntry(entry)
             end
 
             local targetPosition =
-                SniperGetCurrentEntryPosition(
+                SniperGetEntryTamePosition(
                     entry
                 )
 
@@ -24265,7 +25320,6 @@ local function SniperAttemptBuyEntry(entry)
                 Character = character,
                 OldCFrame = root.CFrame,
                 ClosePosition = root.Position,
-                TargetPosition = targetPosition,
                 Moved = false,
                 NoTeleportPacketTest = true,
                 FiredDistance = distance,
@@ -24307,53 +25361,12 @@ local function SniperAttemptBuyEntry(entry)
             return
         end
 
-        if noTeleportTest ~= true
-        and SniperState.FollowPet == true then
-
-            SniperFollowPetForBuy(
-                entry,
-                moveState,
-                0.35
-            )
-        end
-
-        local canBuyNow, canBuyNowReason =
-            SniperEntryIsBuyable(
-                entry
-            )
-
-        if canBuyNow ~= true then
-
-            if noTeleportTest ~= true then
-
-                SniperRestoreAfterTame(
-                    moveState
-                )
-            end
-
-            SetSniperStatus(
-                "Skip: "
-                .. tostring(canBuyNowReason)
-            )
-
-            SniperState.Taming =
-                false
-
-            return
-        end
-
         local ok, info =
-            SniperRunBuyMode(
-                entry,
-                moveState,
-                noTeleportTest
+            SniperFireWildBuyPacket(
+                entry
             )
 
         if ok == true then
-
-            SniperMarkBuyAttempt(
-                entry
-            )
 
             SniperMarkEntryHandled(
                 entry,
@@ -24381,20 +25394,21 @@ local function SniperAttemptBuyEntry(entry)
                 )
 
                 local report =
-                    table.concat(
-                        {
-                            "========== HOLY NO-TP PACKET TEST ==========",
-                            "Pet: " .. tostring(entry.Name),
-                            "UUID: " .. tostring(entry.UUID),
-                            "Distance: " .. tostring(distanceText) .. " studs",
-                            "Move skipped: YES",
-                            "Packet: " .. tostring(SniperState.BuyPacketSource),
-                            "Result: Packet fired. Waiting for normal confirmation.",
-                            "If pet disappears / confirms, no-TP works.",
-                            "If not confirmed, server distance-checks the packet.",
-                        },
-                        "\n"
-                    )
+                    "========== HOLY NO-TP PACKET TEST =========="
+                    .. "\nPet: "
+                    .. tostring(entry.Name)
+                    .. "\nUUID: "
+                    .. tostring(entry.UUID)
+                    .. "\nDistance: "
+                    .. tostring(distanceText)
+                    .. " studs"
+                    .. "\nMove skipped: YES"
+                    .. "\nPacket: "
+                    .. tostring(SniperState.BuyPacketSource)
+                    .. "\nResult: Packet fired. Waiting for normal confirmation."
+                    .. "\nIf pet disappears / confirms, no-TP works."
+                    .. "\nIf not confirmed, server distance-checks the packet."
+
                 CopyText(
                     report
                 )
@@ -24406,25 +25420,13 @@ local function SniperAttemptBuyEntry(entry)
             else
 
                 SetSniperStatus(
-                    SniperGetBuyMode()
-                    .. " buy sent: "
+                    "Buy sent: "
                     .. tostring(entry.Name)
                 )
 
-                if SniperState.FollowPet == true then
-
-                    SniperFollowPetForBuy(
-                        entry,
-                        moveState,
-                        SniperState.FollowMaxSeconds
-                    )
-
-                else
-
-                    SniperHoldCloseForServerValidation(
-                        moveState
-                    )
-                end
+                SniperHoldCloseForServerValidation(
+                    moveState
+                )
 
                 SniperRestoreAfterTame(
                     moveState
@@ -24461,8 +25463,6 @@ local function SniperAttemptBuyEntry(entry)
                 tostring(info),
                 "| move:",
                 tostring(moveInfo),
-                "| mode:",
-                tostring(SniperGetBuyMode()),
                 "| packet:",
                 tostring(SniperState.BuyPacketSource)
             )
@@ -25553,8 +26553,6 @@ function SniperScan(allowAutoHop)
     for _, entry in ipairs(entries) do
 
         if SniperIsEntryHandled(entry) ~= true
-        and SniperEntryIsBuyable(entry, true) == true
-        and SniperCanAttemptEntry(entry) == true
         and SniperEntryMatchesTargets(entry, targets) == true
         and SniperEntryMatchesSizeClass(entry) == true then
 
@@ -25679,25 +26677,34 @@ function SniperScan(allowAutoHop)
     and hasHandledActiveTarget ~= true
     and SniperReadyToHop() == true then
 
-        local hopDelay =
-            math.max(
-                1,
-                math.floor(
-                    tonumber(SniperState.HopDelay)
-                    or 1
-                )
-            )
-
         local sinceHop =
             os.clock() - tonumber(SniperState.LastHopAt or 0)
 
-        if sinceHop < hopDelay then
+        local instantWanted =
+            SniperState.InstantFirstHop == true
+            and SniperState.FirstHopUsed ~= true
+            and SniperState.LastHopAt <= 0
+
+        local shouldInstantHop =
+            instantWanted == true
+
+        if shouldInstantHop == true then
+
+            SetSniperStatus(
+                "Instant hopping..."
+            )
+
+            GAG2SetPanicHudStatus(
+                "STOP / INSTANT HOP"
+            )
+
+        elseif sinceHop < SniperState.HopDelay then
 
             local remaining =
                 math.max(
                     1,
                     math.ceil(
-                        hopDelay - sinceHop
+                        SniperState.HopDelay - sinceHop
                     )
                 )
 
@@ -25716,17 +26723,23 @@ function SniperScan(allowAutoHop)
             return matches
         end
 
-        SniperState.FirstHopUsed =
-            true
+        if shouldInstantHop == true
+        or sinceHop >= SniperState.HopDelay then
 
-        SniperState.LastHopAt =
-            os.clock()
+            SniperState.FirstHopUsed =
+                true
 
-        SetSniperStatus(
-            "Hopping..."
-        )
+            SniperState.LastHopAt =
+                os.clock()
 
-        HopServerOnce()
+            SetSniperStatus(
+                shouldInstantHop == true
+                and "Instant hopping..."
+                or "Hopping..."
+            )
+
+            HopServerOnce()
+        end
     end
 
     return matches
@@ -26289,8 +27302,8 @@ function RestoreSniperAutosaveState()
         local returnAfterTame =
             Toggles.HolyGAG2SniperReturnAfterTame
 
-        local followPet =
-            Toggles.HolyGAG2SniperFollowPet
+        local instantFirstHop =
+            Toggles.HolyGAG2SniperInstantFirstHop
 
         local noTeleportPacketTest =
             Toggles.HolyGAG2SniperNoTeleportPacketTest
@@ -26298,8 +27311,16 @@ function RestoreSniperAutosaveState()
         SniperState.AutoHop =
             autoHop == true
 
-        SniperState.InstantFirstHop =
-            false
+        if instantFirstHop then
+
+            SniperState.InstantFirstHop =
+                instantFirstHop.Value == true
+
+        else
+
+            SniperState.InstantFirstHop =
+                false
+        end
 
         if returnAfterTame then
 
@@ -26312,44 +27333,7 @@ function RestoreSniperAutosaveState()
                 true
         end
 
-        if followPet then
-
-            SniperState.FollowPet =
-                followPet.Value == true
-
-        else
-
-            SniperState.FollowPet =
-                true
-        end
-
-        if Options.HolyGAG2SniperBuyMode
-        and Options.HolyGAG2SniperBuyMode.Value ~= nil then
-
-            local mode =
-                CleanText(
-                    Options.HolyGAG2SniperBuyMode.Value
-                )
-
-            SniperState.BuyMode =
-                mode == "Hold"
-                and "Hold"
-                or "Instant"
-        end
-
-        if Options.HolyGAG2SniperMaxBuysPerPet
-        and Options.HolyGAG2SniperMaxBuysPerPet.Value ~= nil then
-
-            SniperState.MaxBuysPerPet =
-                math.max(
-                    1,
-                    math.floor(
-                        tonumber(Options.HolyGAG2SniperMaxBuysPerPet.Value)
-                        or 1
-                    )
-                )
-        end
-
+        
         if noTeleportPacketTest then
 
             SniperState.NoTeleportPacketTest =
@@ -26374,13 +27358,12 @@ function RestoreSniperAutosaveState()
         and Options.HolyGAG2SniperHopDelay.Value ~= nil then
 
             SniperState.HopDelay =
-                math.max(
-                    1,
-                    math.floor(
-                        tonumber(Options.HolyGAG2SniperHopDelay.Value)
-                        or SniperState.HopDelay
-                        or 20
-                    )
+                math.clamp(
+                    tonumber(Options.HolyGAG2SniperHopDelay.Value)
+                    or SniperState.HopDelay
+                    or 20,
+                    5,
+                    120
                 )
         end
 
@@ -36557,178 +37540,6 @@ if Tabs.Dev then
 end
 
 --==================================================
--- [7.1] UI CONTROL COMPAT PATCH
--- Prevents nil :OnChanged crashes on controls that only support Callback/SetValue.
---==================================================
-
-function GAG2CompatAttachOnChanged(control)
-
-    if type(control) ~= "table" then
-        return control
-    end
-
-    if type(control.OnChanged) == "function" then
-        return control
-    end
-
-    local callbacks =
-        {}
-
-    control.OnChanged =
-        function(self, callback)
-
-            if type(callback) == "function" then
-
-                table.insert(
-                    callbacks,
-                    callback
-                )
-            end
-
-            return self
-        end
-
-    if type(control.SetValue) == "function"
-    and control.__HolyGAG2CompatSetValueWrapped ~= true then
-
-        local oldSetValue =
-            control.SetValue
-
-        control.__HolyGAG2CompatSetValueWrapped =
-            true
-
-        control.SetValue =
-            function(self, value, ...)
-
-                local ok, result =
-                    pcall(
-                        oldSetValue,
-                        self,
-                        value,
-                        ...
-                    )
-
-                if ok ~= true then
-
-                    error(
-                        tostring(result),
-                        0
-                    )
-                end
-
-                for _, callback in ipairs(callbacks) do
-
-                    pcall(
-                        callback,
-                        value
-                    )
-                end
-
-                return result
-            end
-    end
-
-    return control
-end
-
-function GAG2CompatPatchGroupbox(box)
-
-    if type(box) ~= "table" then
-        return
-    end
-
-    local methodNames = {
-        "AddToggle",
-        "AddDropdown",
-        "AddInput",
-    }
-
-    for _, methodName in ipairs(methodNames) do
-
-        local original =
-            box[methodName]
-
-        local patchKey =
-            "__HolyGAG2CompatPatched_"
-            .. tostring(methodName)
-
-        if type(original) == "function"
-        and box[patchKey] ~= true then
-
-            box[patchKey] =
-                true
-
-            box[methodName] =
-                function(self, ...)
-
-                    local control =
-                        original(
-                            self,
-                            ...
-                        )
-
-                    GAG2CompatAttachOnChanged(
-                        control
-                    )
-
-                    return control
-                end
-        end
-    end
-end
-
-for _, box in ipairs({
-    HomeMainBox,
-    HomeServerBox,
-
-    ServerMainBox,
-    ServerStatusBox,
-
-    CombatMainBox,
-    CombatStatusBox,
-
-    ShopsMainBox,
-    ShopsStatusBox,
-
-    SellMainBox,
-    SellStatusBox,
-
-    MailboxMainBox,
-    MailboxAutoBox,
-    MailboxStatusBox,
-    MailboxQueueBox,
-    MailboxReceiptsBox,
-
-    ExperimentMainBox,
-    ExperimentStatusBox,
-
-    FarmSeedPlantBox,
-    FarmMainBox,
-    FarmAutoShovelBox,
-    FarmAutoShovelFruitBox,
-    FarmStatusBox,
-
-    VisualsMainBox,
-    VisualsStatusBox,
-
-    SniperMainBox,
-    SniperStatusBox,
-
-    SettingsUIBox,
-
-    WebhookMainBox,
-    WebhookStatusBox,
-
-    DevToolsBox,
-    DevInfoBox,
-}) do
-
-    GAG2CompatPatchGroupbox(
-        box
-    )
-end
-
---==================================================
 -- [7.5] NEW TAB PLACEHOLDERS
 --==================================================
 
@@ -40134,92 +40945,10 @@ and type(GAG2_SNIPER_TOGGLE_CONTROL.AddKeyPicker) == "function" then
         )
 end
 
-local SniperBuyModeDropdown =
-    SniperMainBox:AddDropdown("HolyGAG2SniperBuyMode", {
-        Text = "Buy Mode",
-        Values = {
-            "Instant",
-            "Hold",
-        },
-        Default = SniperGetBuyMode(),
-        Multi = false,
-        Searchable = false,
-        Tooltip = "Instant fires the packet. Hold uses the in-game BuyPrompt hold flow.",
-    })
-
-if SniperBuyModeDropdown
-and type(SniperBuyModeDropdown.OnChanged) == "function" then
-
-    SniperBuyModeDropdown:OnChanged(function(value)
-
-        value =
-            CleanText(value)
-
-        SniperState.BuyMode =
-            value == "Hold"
-            and "Hold"
-            or "Instant"
-
-        SetSniperStatus(
-            "Buy mode: "
-            .. tostring(SniperState.BuyMode)
-        )
-
-        MarkConfigDirty()
-    end)
-end
-
-SniperMainBox:AddInput("HolyGAG2SniperMaxBuysPerPet", {
-    Text = "Max Buys Per Pet",
-    Default = tostring(SniperState.MaxBuysPerPet),
-    Numeric = true,
-    Finished = true,
-    ClearTextOnFocus = false,
-    Placeholder = "1",
-    Tooltip = "Per spawned wild pet UUID. Default 1 prevents rebuying after the price doubles.",
-    Callback = function(value)
-
-        SniperState.MaxBuysPerPet =
-            math.max(
-                1,
-                math.floor(
-                    tonumber(value)
-                    or 1
-                )
-            )
-
-        SetSniperStatus(
-            "Max buys per pet: "
-            .. tostring(SniperState.MaxBuysPerPet)
-        )
-
-        MarkConfigDirty()
-    end,
-})
-
-SniperMainBox:AddToggle("HolyGAG2SniperFollowPet", {
-    Text = "Follow Pet While Buying",
-    Default = SniperState.FollowPet == true,
-    Tooltip = "Keeps teleporting to the pet's current ground position while buying/holding so moving or far pets do not fail as often.",
-    Callback = function(value)
-
-        SniperState.FollowPet =
-            value == true
-
-        SetSniperStatus(
-            SniperState.FollowPet == true
-            and "Follow pet enabled."
-            or "Follow pet disabled."
-        )
-
-        MarkConfigDirty()
-    end,
-})
-
 SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
-    Text = "Auto Hop Delay",
+    Text = "Auto Hop If No Match",
     Default = false,
-    Tooltip = "OFF means no auto hopping. ON hops only after the delay and only when no buy/confirm is active.",
+    Tooltip = "Hop when no selected pet is found.",
     Callback = function(value)
 
         SniperState.AutoHop =
@@ -40227,7 +40956,7 @@ SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
 
         SetSniperStatus(
             SniperState.AutoHop == true
-            and "Auto hop delay enabled."
+            and "Auto hop enabled."
             or "Auto hop disabled."
         )
 
@@ -40235,34 +40964,19 @@ SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
     end,
 })
 
-SniperMainBox:AddInput("HolyGAG2SniperHopDelay", {
-    Text = "Hop Delay Seconds",
-    Default = tostring(SniperState.HopDelay),
-    Numeric = true,
-    Finished = true,
-    ClearTextOnFocus = false,
-    Placeholder = "20",
-    Tooltip = "Minimum 1 second. Used only when Auto Hop Delay is ON.",
+SniperMainBox:AddToggle("HolyGAG2SniperInstantFirstHop", {
+    Text = "Instant Hop On Join",
+    Default = SniperState.InstantFirstHop == true,
+    Tooltip = "Aggressive mode. Hops immediately on first no-match while STOP HUD stays visible.",
     Callback = function(value)
 
-        SniperState.HopDelay =
-            math.max(
-                1,
-                math.floor(
-                    tonumber(value)
-                    or 20
-                )
-            )
-
-        SetSniperStatus(
-            "Hop delay: "
-            .. tostring(SniperState.HopDelay)
-            .. "s"
-        )
+        SniperState.InstantFirstHop =
+            value == true
 
         MarkConfigDirty()
     end,
 })
+
 
 SniperMainBox:AddToggle("HolyGAG2SniperNoTeleportPacketTest", {
     Text = "No-TP Packet Test",
@@ -40278,6 +40992,34 @@ SniperMainBox:AddToggle("HolyGAG2SniperNoTeleportPacketTest", {
             SniperState.NoTeleportPacketTest == true
             and "No-TP packet test enabled."
             or "No-TP packet test disabled."
+        )
+
+        MarkConfigDirty()
+    end,
+})
+
+SniperMainBox:AddInput("HolyGAG2SniperHopDelay", {
+    Text = "Hop Delay",
+    Default = tostring(SniperState.HopDelay),
+    Numeric = true,
+    Finished = true,
+    ClearTextOnFocus = false,
+    Placeholder = "20",
+    Tooltip = "Minimum seconds between hop attempts.",
+    Callback = function(value)
+
+        SniperState.HopDelay =
+            math.clamp(
+                tonumber(value)
+                or 20,
+                5,
+                120
+            )
+
+        SetSniperStatus(
+            "Hop delay: "
+            .. tostring(SniperState.HopDelay)
+            .. "s"
         )
 
         MarkConfigDirty()
@@ -40717,7 +41459,8 @@ pcall(function()
         player,
         teleportResult,
         errorMessage,
-        placeId
+        placeId,
+        teleportOptions
     )
 
         if player ~= LOCAL_PLAYER then
@@ -40729,27 +41472,201 @@ pcall(function()
             and teleportResult.Name
             or "Unknown"
 
+        local failedServerInstanceId =
+            ""
+
+        pcall(function()
+
+            if teleportOptions then
+
+                failedServerInstanceId =
+                    CleanText(
+                        teleportOptions.ServerInstanceId
+                    )
+            end
+        end)
+
+        warn(
+            "[HOLY TELEPORT]",
+            "TeleportInitFailed",
+            "| result:",
+            tostring(resultName),
+            "| error:",
+            tostring(errorMessage),
+            "| place:",
+            tostring(placeId),
+            "| failed server:",
+            tostring(failedServerInstanceId)
+        )
+
         local exactTarget =
             GAG2ReadExactJoinTarget()
 
         if exactTarget then
 
+            local targetPlaceId =
+                tonumber(
+                    exactTarget.PlaceId
+                )
+
+            local targetJobId =
+                CleanText(
+                    exactTarget.JobId
+                )
+
+            local failedPlaceId =
+                tonumber(placeId)
+
+            local samePlace =
+                targetPlaceId ~= nil
+                and failedPlaceId ~= nil
+                and targetPlaceId == failedPlaceId
+
+            local sameServer =
+                failedServerInstanceId ~= ""
+                and targetJobId ~= ""
+                and failedServerInstanceId == targetJobId
+
+            if failedServerInstanceId ~= ""
+            and sameServer ~= true then
+
+                warn(
+                    "[HOLY EXACT JOIN]",
+                    "Ignoring stale exact target.",
+                    "| failed server:",
+                    tostring(failedServerInstanceId),
+                    "| saved target:",
+                    tostring(targetJobId)
+                )
+
+                GAG2ClearExactJoinTarget(
+                    "stale target mismatch"
+                )
+
+                GAG2_EXACT_JOIN_STATE.Retrying =
+                    false
+
+                if GAG2_SERVER_HOP_RETRYING == true then
+
+                    GAG2_SERVER_HOP_RETRYING =
+                        false
+
+                    task.delay(1, function()
+
+                        HopServerOnce()
+                    end)
+                end
+
+                return
+            end
+
+            local terminalFailure =
+                resultName == "Unauthorized"
+                or resultName == "GameFull"
+                or resultName == "GameEnded"
+                or resultName == "Flooded"
+                or tostring(errorMessage):lower():find(
+                    "private instance",
+                    1,
+                    true
+                ) ~= nil
+                or tostring(errorMessage):lower():find(
+                    "full",
+                    1,
+                    true
+                ) ~= nil
+
+            if terminalFailure == true then
+
+                warn(
+                    "[HOLY EXACT JOIN]",
+                    "Terminal exact join failure.",
+                    "| target:",
+                    tostring(targetPlaceId)
+                    .. ":"
+                    .. tostring(targetJobId),
+                    "| result:",
+                    tostring(resultName),
+                    "| error:",
+                    tostring(errorMessage)
+                )
+
+                GAG2ClearExactJoinTarget(
+                    "terminal TeleportInitFailed: "
+                    .. tostring(resultName)
+                )
+
+                GAG2_EXACT_JOIN_STATE.Retrying =
+                    false
+
+                SetStatus(
+                    "Exact join failed: "
+                    .. tostring(resultName)
+                )
+
+                if type(GAG2SetManualJoinStatus) == "function" then
+
+                    GAG2SetManualJoinStatus(
+                        "Exact join failed: "
+                        .. tostring(resultName)
+                    )
+                end
+
+                if type(GAG2WildPetNetworkSetStatus) == "function" then
+
+                    GAG2WildPetNetworkSetStatus(
+                        "Join failed: "
+                        .. tostring(resultName)
+                    )
+                end
+
+                if type(GAG2WildPetNetworkRefresh) == "function" then
+
+                    task.delay(0.75, function()
+
+                        GAG2WildPetNetworkRefresh(
+                            "join failed"
+                        )
+                    end)
+                end
+
+                return
+            end
+
+            if samePlace == true
+            and (
+                sameServer == true
+                or failedServerInstanceId == ""
+            ) then
+
+                GAG2RetryExactJoinTarget(
+                    exactTarget,
+                    "TeleportInitFailed: "
+                    .. tostring(resultName)
+                )
+
+                return
+            end
+
             warn(
                 "[HOLY EXACT JOIN]",
-                "TeleportInitFailed",
-                "| result:",
-                tostring(resultName),
-                "| error:",
-                tostring(errorMessage),
-                "| place:",
-                tostring(placeId)
+                "Exact target did not match failed teleport. Clearing.",
+                "| target:",
+                tostring(targetPlaceId)
+                .. ":"
+                .. tostring(targetJobId),
+                "| failed place:",
+                tostring(placeId),
+                "| failed server:",
+                tostring(failedServerInstanceId)
             )
 
-            GAG2RetryExactJoinTarget(
-                exactTarget,
-                "TeleportInitFailed: "
-                .. tostring(resultName)
+            GAG2ClearExactJoinTarget(
+                "failed teleport mismatch"
             )
+
+            GAG2_EXACT_JOIN_STATE.Retrying =
+                false
 
             return
         end
