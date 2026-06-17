@@ -28923,39 +28923,29 @@ function SniperScan(allowAutoHop)
     and hasHandledActiveTarget ~= true
     and SniperReadyToHop() == true then
 
+        local hopDelay =
+            math.clamp(
+                tonumber(SniperState.HopDelay)
+                or 20,
+                5,
+                120
+            )
+
         local sinceHop =
             os.clock() - tonumber(SniperState.LastHopAt or 0)
 
-        local instantWanted =
-            SniperState.InstantFirstHop == true
-            and SniperState.FirstHopUsed ~= true
-            and SniperState.LastHopAt <= 0
-
-        local shouldInstantHop =
-            instantWanted == true
-
-        if shouldInstantHop == true then
-
-            SetSniperStatus(
-                "Instant hopping..."
-            )
-
-            GAG2SetPanicHudStatus(
-                "STOP / INSTANT HOP"
-            )
-
-        elseif sinceHop < SniperState.HopDelay then
+        if sinceHop < hopDelay then
 
             local remaining =
                 math.max(
                     1,
                     math.ceil(
-                        SniperState.HopDelay - sinceHop
+                        hopDelay - sinceHop
                     )
                 )
 
             SetSniperStatus(
-                "Hop in "
+                "No target found. Hop in "
                 .. tostring(remaining)
                 .. "s"
             )
@@ -28969,23 +28959,18 @@ function SniperScan(allowAutoHop)
             return matches
         end
 
-        if shouldInstantHop == true
-        or sinceHop >= SniperState.HopDelay then
+        SniperState.LastHopAt =
+            os.clock()
 
-            SniperState.FirstHopUsed =
-                true
+        SetSniperStatus(
+            "No target found. Hopping..."
+        )
 
-            SniperState.LastHopAt =
-                os.clock()
+        GAG2SetPanicHudStatus(
+            "STOP / HOPPING"
+        )
 
-            SetSniperStatus(
-                shouldInstantHop == true
-                and "Instant hopping..."
-                or "Hopping..."
-            )
-
-            HopServerOnce()
-        end
+        HopServerOnce()
     end
 
     return matches
@@ -29041,8 +29026,16 @@ function SniperSetEnabled(value)
         SniperState.EnabledAt =
             os.clock()
 
-        if SniperState.AutoHop == true
-        and SniperState.InstantFirstHop == true then
+        SniperState.InstantFirstHop =
+            false
+
+        SniperState.FirstHopUsed =
+            true
+
+        SniperState.LastHopAt =
+            os.clock()
+
+        if SniperState.AutoHop == true then
 
             GAG2SetPanicHudStatus(
                 "STOP READY"
@@ -29549,7 +29542,7 @@ function RestoreSniperAutosaveState()
             Toggles.HolyGAG2SniperReturnAfterTame
 
         local instantFirstHop =
-            Toggles.HolyGAG2SniperInstantFirstHop
+            nil
 
         local noTeleportPacketTest =
             Toggles.HolyGAG2SniperNoTeleportPacketTest
@@ -43373,32 +43366,32 @@ and type(SniperBuyModeDropdown.OnChanged) == "function" then
 end
 
 SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
-    Text = "Auto Hop If No Match",
+    Text = "Auto Hop",
     Default = false,
-    Tooltip = "Hop when no selected pet is found.",
+    Tooltip = "When enabled, sniper waits Hop Delay seconds with no match, then hops.",
     Callback = function(value)
 
         SniperState.AutoHop =
             value == true
 
+        SniperState.InstantFirstHop =
+            false
+
+        SniperState.FirstHopUsed =
+            true
+
+        SniperState.LastHopAt =
+            os.clock()
+
         SetSniperStatus(
             SniperState.AutoHop == true
-            and "Auto hop enabled."
+            and (
+                "Auto hop enabled. First hop in "
+                .. tostring(SniperState.HopDelay)
+                .. "s."
+            )
             or "Auto hop disabled."
         )
-
-        MarkConfigDirty()
-    end,
-})
-
-SniperMainBox:AddToggle("HolyGAG2SniperInstantFirstHop", {
-    Text = "Instant Hop On Join",
-    Default = SniperState.InstantFirstHop == true,
-    Tooltip = "Aggressive mode. Hops immediately on first no-match while STOP HUD stays visible.",
-    Callback = function(value)
-
-        SniperState.InstantFirstHop =
-            value == true
 
         MarkConfigDirty()
     end,
