@@ -24796,6 +24796,12 @@ local function SniperHasPendingBuy()
         if value == true then
             return true
         end
+
+        if type(value) == "table"
+        and value.Confirmed ~= true then
+
+            return true
+        end
     end
 
     return false
@@ -24925,56 +24931,626 @@ local function SniperEntryStillActive(entry)
     return false
 end
 
-local function SniperWaitForClaimConfirmation(entry)
+function SniperGetLeaderstatsSheckles()
 
-    local started =
-        os.clock()
+    local function parseNumber(value)
 
-    local missingSince =
-        nil
+        if type(value) == "number" then
+            return value
+        end
 
-    local timeout =
-        math.clamp(
-            tonumber(SniperState.ClaimWaitTimeout)
-            or 90,
-            15,
-            180
-        )
+        local text =
+            CleanText(value)
 
-    local confirmTime =
-        math.clamp(
-            tonumber(SniperState.ClaimDisappearConfirmTime)
-            or 1.25,
-            0.5,
-            5
-        )
+        if text == "" then
+            return nil
+        end
 
-    while os.clock() - started < timeout do
+        text =
+            text:gsub(",", "")
+                :gsub("¢", "")
+                :gsub("%$", "")
+                :gsub("%s+", "")
 
-        if SniperEntryStillActive(entry) == true then
+        local multiplier =
+            1
 
-            missingSince =
-                nil
+        local suffix =
+            text:sub(-1):lower()
 
-        else
+        if suffix == "k" then
 
-            if missingSince == nil then
+            multiplier =
+                1000
 
-                missingSince =
-                    os.clock()
+            text =
+                text:sub(1, -2)
+
+        elseif suffix == "m" then
+
+            multiplier =
+                1000000
+
+            text =
+                text:sub(1, -2)
+
+        elseif suffix == "b" then
+
+            multiplier =
+                1000000000
+
+            text =
+                text:sub(1, -2)
+        end
+
+        local number =
+            tonumber(text)
+
+        if not number then
+            return nil
+        end
+
+        return number * multiplier
+    end
+
+    local names = {
+        "Sheckles",
+        "Sheckle",
+        "Money",
+        "Cash",
+        "Coins",
+        "Currency",
+    }
+
+    local leaderstats =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChild("leaderstats")
+
+    if leaderstats then
+
+        for _, name in ipairs(names) do
+
+            local valueObject =
+                leaderstats:FindFirstChild(name)
+
+            if valueObject
+            and valueObject:IsA("ValueBase") then
+
+                local number =
+                    parseNumber(valueObject.Value)
+
+                if number ~= nil then
+                    return number
+                end
             end
+        end
+    end
 
-            if os.clock() - missingSince >= confirmTime then
-                return true
+    if LOCAL_PLAYER then
+
+        for _, name in ipairs(names) do
+
+            local number =
+                parseNumber(
+                    LOCAL_PLAYER:GetAttribute(name)
+                )
+
+            if number ~= nil then
+                return number
+            end
+        end
+    end
+
+    return nil
+end
+
+function SniperClearPendingBuyKey(key)
+
+    key =
+        CleanText(key)
+
+    if key == "" then
+        return
+    end
+
+    local record =
+        type(SniperState.PendingWildPets) == "table"
+        and SniperState.PendingWildPets[key]
+        or nil
+
+    if type(record) == "table"
+    and type(record.RefConnections) == "table" then
+
+        for _, connection in ipairs(record.RefConnections) do
+
+            if connection then
+
+                pcall(function()
+
+                    connection:Disconnect()
+                end)
             end
         end
 
-        task.wait(
-            0.35
+        record.RefConnections =
+            {}
+    end
+
+    if type(SniperState.PendingWildPets) == "table" then
+
+        SniperState.PendingWildPets[key] =
+            nil
+    end
+
+    if SniperHasPendingBuy() == true then
+
+        SniperState.ConfirmingBuy =
+            true
+
+        SniperState.ConfirmingBuyKey =
+            ""
+
+    else
+
+        SniperState.ConfirmingBuy =
+            false
+
+        SniperState.ConfirmingBuyKey =
+            ""
+    end
+end
+
+function SniperConfirmPendingBuyRecord(record, reason, petId)
+
+    if type(record) ~= "table" then
+        return false
+    end
+
+    if record.Confirmed == true then
+        return false
+    end
+
+    record.Accepted =
+        true
+
+    record.Confirmed =
+        true
+
+    record.ConfirmReason =
+        tostring(reason or "confirmed")
+
+    record.PetId =
+        CleanText(petId)
+
+    local key =
+        CleanText(record.Key)
+
+    SetSniperStatus(
+        "Confirmed: "
+        .. tostring(record.PetName)
+    )
+
+    Notify(
+        "Sniper",
+        "Confirmed "
+        .. tostring(record.PetName)
+        .. ".",
+        3
+    )
+
+    print(
+        "[HOLY SNIPER]",
+        "buy confirmed",
+        "| pet:",
+        tostring(record.PetName),
+        "| uuid:",
+        tostring(record.UUID),
+        "| petId:",
+        tostring(record.PetId),
+        "| reason:",
+        tostring(record.ConfirmReason)
+    )
+
+    SniperClearPendingBuyKey(
+        key
+    )
+
+    return true
+end
+
+function SniperConfirmPendingBuyByPetName(petName, reason, petId)
+
+    petName =
+        CleanText(petName)
+
+    if petName == ""
+    or type(SniperState.PendingWildPets) ~= "table" then
+
+        return false
+    end
+
+    local wanted =
+        SniperNormalizeName(
+            petName
+        )
+
+    local bestRecord =
+        nil
+
+    for _, record in pairs(SniperState.PendingWildPets) do
+
+        if type(record) == "table"
+        and record.Confirmed ~= true
+        and SniperNormalizeName(record.PetName) == wanted then
+
+            if bestRecord == nil
+            or tonumber(record.StartedAt or 0) < tonumber(bestRecord.StartedAt or 0) then
+
+                bestRecord =
+                    record
+            end
+        end
+    end
+
+    if bestRecord then
+
+        return SniperConfirmPendingBuyRecord(
+            bestRecord,
+            reason,
+            petId
         )
     end
 
     return false
+end
+
+function SniperMarkPendingAcceptedByKey(key, reason)
+
+    key =
+        CleanText(key)
+
+    if key == ""
+    or type(SniperState.PendingWildPets) ~= "table" then
+
+        return false
+    end
+
+    local record =
+        SniperState.PendingWildPets[key]
+
+    if type(record) ~= "table"
+    or record.Confirmed == true
+    or record.Accepted == true then
+
+        return false
+    end
+
+    record.Accepted =
+        true
+
+    record.AcceptReason =
+        tostring(reason or "accepted")
+
+    SetSniperStatus(
+        "Accepted: "
+        .. tostring(record.PetName)
+    )
+
+    print(
+        "[HOLY SNIPER]",
+        "buy accepted",
+        "| pet:",
+        tostring(record.PetName),
+        "| uuid:",
+        tostring(record.UUID),
+        "| reason:",
+        tostring(record.AcceptReason)
+    )
+
+    return true
+end
+
+function SniperWatchRefForBuyConfirm(key, ref)
+
+    key =
+        CleanText(key)
+
+    if key == ""
+    or typeof(ref) ~= "Instance"
+    or ref.Parent == nil
+    or type(SniperState.PendingWildPets) ~= "table" then
+
+        return false
+    end
+
+    local record =
+        SniperState.PendingWildPets[key]
+
+    if type(record) ~= "table" then
+        return false
+    end
+
+    record.RefConnections =
+        type(record.RefConnections) == "table"
+        and record.RefConnections
+        or {}
+
+    local function checkOwner()
+
+        if typeof(ref) ~= "Instance"
+        or ref.Parent == nil then
+            return
+        end
+
+        local ownerUserId =
+            tonumber(
+                ref:GetAttribute("OwnerUserId")
+            )
+            or 0
+
+        local ownerName =
+            CleanText(
+                ref:GetAttribute("OwnerName")
+            )
+
+        if LOCAL_PLAYER
+        and ownerUserId == LOCAL_PLAYER.UserId then
+
+            SniperMarkPendingAcceptedByKey(
+                key,
+                "ownerUserId"
+            )
+
+            return
+        end
+
+        if LOCAL_PLAYER
+        and ownerName ~= ""
+        and ownerName == LOCAL_PLAYER.Name then
+
+            SniperMarkPendingAcceptedByKey(
+                key,
+                "ownerName"
+            )
+        end
+    end
+
+    checkOwner()
+
+    for _, attrName in ipairs({
+        "OwnerUserId",
+        "OwnerName",
+        "State",
+    }) do
+
+        local ok, connection =
+            pcall(function()
+
+                return ref:GetAttributeChangedSignal(attrName):Connect(function()
+
+                    checkOwner()
+                end)
+            end)
+
+        if ok == true
+        and connection then
+
+            table.insert(
+                record.RefConnections,
+                connection
+            )
+        end
+    end
+
+    return true
+end
+
+function SniperGetToolPetName(tool)
+
+    if typeof(tool) ~= "Instance"
+    or tool:IsA("Tool") ~= true then
+
+        return ""
+    end
+
+    local attrNames = {
+        "Pet",
+        "PetName",
+        "Name",
+        "DisplayName",
+    }
+
+    for _, attrName in ipairs(attrNames) do
+
+        local value =
+            CleanText(
+                tool:GetAttribute(attrName)
+            )
+
+        if value ~= "" then
+            return value
+        end
+    end
+
+    return CleanText(
+        tool.Name
+    )
+end
+
+function SniperAttachBuyConfirmToolContainer(container)
+
+    if typeof(container) ~= "Instance" then
+        return false
+    end
+
+    SniperState.BuyToolContainers =
+        type(SniperState.BuyToolContainers) == "table"
+        and SniperState.BuyToolContainers
+        or {}
+
+    if SniperState.BuyToolContainers[container] == true then
+        return true
+    end
+
+    SniperState.BuyToolContainers[container] =
+        true
+
+    container.ChildAdded:Connect(function(child)
+
+        if child:IsA("Tool") ~= true then
+            return
+        end
+
+        local petName =
+            SniperGetToolPetName(
+                child
+            )
+
+        if petName == "" then
+            return
+        end
+
+        SniperConfirmPendingBuyByPetName(
+            petName,
+            "tool added",
+            CleanText(
+                child:GetAttribute("PetId")
+            )
+        )
+    end)
+
+    return true
+end
+
+function SniperHandleReplicaSetForBuyConfirm(...)
+
+    local args = {
+        ...
+    }
+
+    for index, value in ipairs(args) do
+
+        local path =
+            nil
+
+        local payload =
+            nil
+
+        if type(value) == "table" then
+
+            if tostring(value[1]) == "Inventory"
+            and tostring(value[2]) == "Pets" then
+
+                path =
+                    value
+
+                payload =
+                    args[index + 1]
+            end
+        end
+
+        if path then
+
+            local petName =
+                ""
+
+            if type(payload) == "table" then
+
+                petName =
+                    CleanText(
+                        payload.Name
+                        or payload.PetName
+                        or payload.DisplayName
+                    )
+            end
+
+            if petName ~= "" then
+
+                SniperConfirmPendingBuyByPetName(
+                    petName,
+                    "replica inventory pet",
+                    CleanText(
+                        type(payload) == "table"
+                        and (
+                            payload.Id
+                            or payload.ID
+                            or path[3]
+                        )
+                        or path[3]
+                    )
+                )
+            end
+        end
+    end
+end
+
+function SniperEnsureBuyConfirmationHooks()
+
+    SniperState.BuyConfirmationHooksStarted =
+        SniperState.BuyConfirmationHooksStarted == true
+
+    if SniperState.BuyConfirmationHooksStarted ~= true then
+
+        SniperState.BuyConfirmationHooksStarted =
+            true
+
+        local remoteEvents =
+            ReplicatedStorage:FindFirstChild("RemoteEvents")
+
+        local replicaSet =
+            remoteEvents
+            and remoteEvents:FindFirstChild("ReplicaSet")
+
+        if replicaSet
+        and replicaSet:IsA("RemoteEvent") then
+
+            replicaSet.OnClientEvent:Connect(function(...)
+
+                SniperHandleReplicaSetForBuyConfirm(
+                    ...
+                )
+            end)
+        end
+
+        if LOCAL_PLAYER then
+
+            LOCAL_PLAYER.CharacterAdded:Connect(function(character)
+
+                SniperAttachBuyConfirmToolContainer(
+                    character
+                )
+            end)
+
+            LOCAL_PLAYER.ChildAdded:Connect(function(child)
+
+                if child:IsA("Backpack") then
+
+                    SniperAttachBuyConfirmToolContainer(
+                        child
+                    )
+                end
+            end)
+        end
+    end
+
+    local backpack =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("Backpack")
+
+    if backpack then
+
+        SniperAttachBuyConfirmToolContainer(
+            backpack
+        )
+    end
+
+    if LOCAL_PLAYER
+    and LOCAL_PLAYER.Character then
+
+        SniperAttachBuyConfirmToolContainer(
+            LOCAL_PLAYER.Character
+        )
+    end
 end
 
 local function SniperHoldCloseForServerValidation(moveState)
@@ -25024,12 +25600,71 @@ local function SniperStartBuyConfirmation(entry)
         return
     end
 
-    if SniperState.PendingWildPets[key] == true then
+    SniperEnsureBuyConfirmationHooks()
+
+    SniperState.PendingWildPets =
+        type(SniperState.PendingWildPets) == "table"
+        and SniperState.PendingWildPets
+        or {}
+
+    if type(SniperState.PendingWildPets[key]) == "table"
+    and SniperState.PendingWildPets[key].Confirmed ~= true then
+
         return
     end
 
+    local ref =
+        entry
+        and entry.Ref
+        or nil
+
+    if typeof(ref) ~= "Instance"
+    or ref.Parent == nil then
+
+        ref =
+            SniperFindRef(
+                entry
+                and entry.UUID
+                or ""
+            )
+    end
+
+    local record = {
+        Key =
+            key,
+
+        UUID =
+            CleanText(
+                entry
+                and entry.UUID
+                or ""
+            ),
+
+        PetName =
+            CleanText(
+                entry
+                and entry.Name
+                or "Unknown"
+            ),
+
+        StartedAt =
+            os.clock(),
+
+        StartedSheckles =
+            SniperGetLeaderstatsSheckles(),
+
+        Accepted =
+            false,
+
+        Confirmed =
+            false,
+
+        RefConnections =
+            {},
+    }
+
     SniperState.PendingWildPets[key] =
-        true
+        record
 
     SniperState.ConfirmingBuy =
         true
@@ -25041,66 +25676,113 @@ local function SniperStartBuyConfirmation(entry)
         nil
     )
 
+    SniperWatchRefForBuyConfirm(
+        key,
+        ref
+    )
+
     task.spawn(function()
 
-        local confirmed =
-            SniperWaitForClaimConfirmation(
-                entry
+        local timeout =
+            math.clamp(
+                tonumber(SniperState.ClaimWaitTimeout)
+                or 90,
+                20,
+                180
             )
 
-        SniperState.PendingWildPets[key] =
+        local lastAcceptedStatusAt =
+            0
+
+        while os.clock() - record.StartedAt < timeout do
+
+            if record.Confirmed == true then
+                return
+            end
+
+            if record.Accepted ~= true then
+
+                local currentSheckles =
+                    SniperGetLeaderstatsSheckles()
+
+                if tonumber(record.StartedSheckles)
+                and tonumber(currentSheckles)
+                and currentSheckles < record.StartedSheckles then
+
+                    record.Accepted =
+                        true
+
+                    record.AcceptReason =
+                        "sheckles decreased"
+
+                    print(
+                        "[HOLY SNIPER]",
+                        "buy accepted",
+                        "| pet:",
+                        tostring(record.PetName),
+                        "| uuid:",
+                        tostring(record.UUID),
+                        "| sheckles:",
+                        tostring(record.StartedSheckles),
+                        "->",
+                        tostring(currentSheckles)
+                    )
+                end
+            end
+
+            if record.Accepted == true
+            and os.clock() - lastAcceptedStatusAt > 3 then
+
+                lastAcceptedStatusAt =
+                    os.clock()
+
+                SetSniperStatus(
+                    "Accepted, waiting inventory: "
+                    .. tostring(record.PetName)
+                )
+            end
+
+            task.wait(
+                0.25
+            )
+        end
+
+        if record.Confirmed == true then
+            return
+        end
+
+        SniperClearPendingBuyKey(
+            key
+        )
+
+        SniperState.HandledWildPets[key] =
             nil
 
-        if SniperHasPendingBuy() == true then
-
-            SniperState.ConfirmingBuy =
-                true
-
-            SniperState.ConfirmingBuyKey =
-                ""
-
-        else
-
-            SniperState.ConfirmingBuy =
-                false
-
-            SniperState.ConfirmingBuyKey =
-                ""
-        end
-
-        if confirmed == true then
+        if record.Accepted == true then
 
             SetSniperStatus(
-                "Confirmed: "
-                .. tostring(entry.Name)
-            )
-
-            Notify(
-                "Sniper",
-                "Confirmed "
-                .. tostring(entry.Name)
-                .. ".",
-                3
+                "Accepted but inventory not confirmed."
             )
 
         else
 
-            SniperState.HandledWildPets[key] =
-                nil
-
             SetSniperStatus(
-                "Buy not confirmed."
-            )
-
-            warn(
-                "[HOLY SNIPER]",
-                "Buy was sent but not confirmed",
-                "| pet:",
-                tostring(entry.Name),
-                "| uuid:",
-                tostring(entry.UUID)
+                "Buy not accepted."
             )
         end
+
+        warn(
+            "[HOLY SNIPER]",
+            "buy was not confirmed as owned",
+            "| pet:",
+            tostring(record.PetName),
+            "| uuid:",
+            tostring(record.UUID),
+            "| accepted:",
+            tostring(record.Accepted),
+            "| reason:",
+            tostring(record.AcceptReason or "none")
+        )
     end)
 end
 
