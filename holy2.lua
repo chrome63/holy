@@ -863,8 +863,24 @@ GAG2_PANIC_HUD_GUI =
 GAG2_PANIC_HUD_STATUS =
     nil
 
+GAG2_PANIC_HUD_TOGGLE_CONTROL =
+    nil
+
+GAG2_PANIC_HUD_ENABLED =
+    true
+
 GAG2_PANIC_HUD_CREATED =
     false
+
+GAG2_MOON_PREDICTOR_LABEL =
+    nil
+
+GAG2_MOON_PREDICTOR_STATE = {
+    CycleInfo = nil,
+    PickWeather = nil,
+    LastBuildAt = 0,
+    LastText = "Loading moon data...",
+}
 
 GAG2_LOADING_GUI_CLEANER_RUNNING =
     false
@@ -9033,7 +9049,6 @@ local SniperState = {
     FollowPet = false,
     FollowMaxSeconds = 3.4,
     FollowRefreshDelay = 0.12,
-    NoTeleportPacketTest = false,
     MovementMode = "Teleport",
     BuyMode = "Instant",
 
@@ -30779,7 +30794,64 @@ end
 getgenv().HOLY_GAG2_STOP_SNIPER =
     StopGAG2SniperNow
 
+function GAG2DestroyPanicHud()
+
+    if GAG2_PANIC_HUD_GUI then
+
+        pcall(function()
+
+            GAG2_PANIC_HUD_GUI:Destroy()
+        end)
+    end
+
+    GAG2_PANIC_HUD_GUI =
+        nil
+
+    GAG2_PANIC_HUD_STATUS =
+        nil
+
+    GAG2_PANIC_HUD_CREATED =
+        false
+end
+
+function GAG2SetPanicHudEnabled(value)
+
+    GAG2_PANIC_HUD_ENABLED =
+        value == true
+
+    if GAG2_PANIC_HUD_ENABLED == true then
+
+        if type(GAG2CreatePanicHud) == "function" then
+
+            GAG2CreatePanicHud()
+        end
+
+        GAG2SetPanicHudStatus(
+            "Ready."
+        )
+
+    else
+
+        GAG2DestroyPanicHud()
+    end
+
+    MarkConfigDirty()
+end
+
 function GAG2SetPanicHudStatus(text)
+
+    if GAG2_PANIC_HUD_ENABLED ~= true then
+        return
+    end
+
+    if (
+        GAG2_PANIC_HUD_GUI == nil
+        or GAG2_PANIC_HUD_STATUS == nil
+    )
+    and type(GAG2CreatePanicHud) == "function" then
+
+        GAG2CreatePanicHud()
+    end
 
     if GAG2_PANIC_HUD_STATUS then
 
@@ -30888,6 +30960,10 @@ getgenv().HOLY_GAG2_PANIC_STOP =
     GAG2PanicStopNow
 
 function GAG2CreatePanicHud()
+
+    if GAG2_PANIC_HUD_ENABLED ~= true then
+        return nil
+    end
 
     if GAG2_PANIC_HUD_GUI then
         return GAG2_PANIC_HUD_GUI
@@ -31134,7 +31210,10 @@ function GAG2CreatePanicHud()
     return gui
 end
 
-GAG2CreatePanicHud()
+if GAG2_PANIC_HUD_ENABLED == true then
+
+    GAG2CreatePanicHud()
+end
 
 function StartGAG2SniperHotkey()
     return
@@ -31164,8 +31243,8 @@ function RestoreSniperAutosaveState()
         local instantFirstHop =
             nil
 
-        local noTeleportPacketTest =
-            Toggles.HolyGAG2SniperNoTeleportPacketTest
+        local panicHudToggle =
+            Toggles.HolyGAG2SniperPanicHud
 
         SniperState.AutoHop =
             autoHop == true
@@ -31217,16 +31296,24 @@ function RestoreSniperAutosaveState()
                 "Walk"
         end
 
-        
-        if noTeleportPacketTest then
+        if panicHudToggle then
 
-            SniperState.NoTeleportPacketTest =
-                noTeleportPacketTest.Value == true
+            GAG2_PANIC_HUD_ENABLED =
+                panicHudToggle.Value == true
 
         else
 
-            SniperState.NoTeleportPacketTest =
-                false
+            GAG2_PANIC_HUD_ENABLED =
+                true
+        end
+
+        if GAG2_PANIC_HUD_ENABLED == true then
+
+            GAG2CreatePanicHud()
+
+        else
+
+            GAG2DestroyPanicHud()
         end
 
         if Options.HolyGAG2SniperTargetsList
@@ -31994,6 +32081,745 @@ RefreshHomeActivePets = function()
     )
 end
 
+function GAG2MoonPredictorFormatSeconds(seconds)
+
+    seconds =
+        math.max(
+            0,
+            math.floor(
+                tonumber(seconds)
+                or 0
+            )
+        )
+
+    local days =
+        math.floor(seconds / 86400)
+
+    local hours =
+        math.floor((seconds % 86400) / 3600)
+
+    local minutes =
+        math.floor((seconds % 3600) / 60)
+
+    local remain =
+        seconds % 60
+
+    if days > 0 then
+
+        return tostring(days)
+            .. "d "
+            .. tostring(hours)
+            .. "h "
+            .. tostring(minutes)
+            .. "m"
+    end
+
+    if hours > 0 then
+
+        return tostring(hours)
+            .. "h "
+            .. tostring(minutes)
+            .. "m"
+    end
+
+    if minutes > 0 then
+
+        return tostring(minutes)
+            .. "m "
+            .. tostring(remain)
+            .. "s"
+    end
+
+    return tostring(remain)
+        .. "s"
+end
+
+function GAG2MoonPredictorGetNow()
+
+    local ok, value =
+        pcall(function()
+
+            return workspace:GetServerTimeNow()
+        end)
+
+    if ok == true
+    and tonumber(value) then
+
+        return math.floor(
+            tonumber(value)
+        )
+    end
+
+    return os.time()
+end
+
+function GAG2MoonPredictorGetColor(name)
+
+    name =
+        tostring(name or "")
+
+    if name == "Rainbow Moon" then
+        return "rgb(255,64,255)"
+    end
+
+    if name == "Goldmoon" then
+        return "rgb(250,204,21)"
+    end
+
+    if name == "Bloodmoon" then
+        return "rgb(248,64,64)"
+    end
+
+    if name == "Moon" then
+        return "rgb(147,197,253)"
+    end
+
+    if name == "Day" then
+        return "rgb(147,197,253)"
+    end
+
+    if name == "Sunset" then
+        return "rgb(251,191,36)"
+    end
+
+    return "rgb(196,181,253)"
+end
+
+function GAG2MoonPredictorIsRare(name)
+
+    return name == "Goldmoon"
+        or name == "Rainbow Moon"
+        or name == "Bloodmoon"
+end
+
+function GAG2MoonPredictorBuildCycleInfo()
+
+    local data =
+        nil
+
+    local ok, result =
+        pcall(function()
+
+            local sharedModules =
+                ReplicatedStorage:FindFirstChild("SharedModules")
+
+            local module =
+                sharedModules
+                and sharedModules:FindFirstChild("TimeCycleData")
+
+            if module
+            and module:IsA("ModuleScript") then
+
+                return require(
+                    module
+                )
+            end
+
+            return nil
+        end)
+
+    if ok == true
+    and type(result) == "table"
+    and type(result.Data) == "table" then
+
+        data =
+            result
+    end
+
+    if type(data) ~= "table"
+    or type(data.Data) ~= "table" then
+
+        data = {
+            Data = {
+                Day = {
+                    Lasts = 450,
+                    StartOrder = 1,
+                    Weathers = {
+                        Day = {
+                            Chance = 100,
+                        },
+                    },
+                },
+
+                Sunset = {
+                    Lasts = 30,
+                    StartOrder = 2,
+                    Weathers = {
+                        Sunset = {
+                            Chance = 100,
+                        },
+                    },
+                },
+
+                Night = {
+                    Lasts = 120,
+                    StartOrder = 3,
+                    Weathers = {
+                        Moon = {
+                            Chance = 79,
+                        },
+
+                        Bloodmoon = {
+                            Chance = 2,
+                        },
+
+                        Goldmoon = {
+                            Chance = 13,
+                        },
+
+                        ["Rainbow Moon"] = {
+                            Chance = 6,
+                        },
+                    },
+                },
+            },
+        }
+    end
+
+    local phases =
+        {}
+
+    for phaseName, phaseData in pairs(data.Data) do
+
+        if type(phaseData) == "table" then
+
+            table.insert(phases, {
+                Name = tostring(phaseName),
+                Weathers = type(phaseData.Weathers) == "table"
+                    and phaseData.Weathers
+                    or {},
+                Duration = tonumber(phaseData.Lasts) or 0,
+                Order = tonumber(phaseData.StartOrder) or 999,
+                Raw = phaseData,
+            })
+        end
+    end
+
+    table.sort(phases, function(a, b)
+
+        return a.Order < b.Order
+    end)
+
+    local fullCycle =
+        0
+
+    local secondsBeforeNight =
+        0
+
+    local nightIndex =
+        nil
+
+    local nightRecord =
+        nil
+
+    for index, phase in ipairs(phases) do
+
+        if phase.Name == "Night" then
+
+            nightIndex =
+                index
+
+            nightRecord =
+                phase
+
+            break
+        end
+
+        secondsBeforeNight =
+            secondsBeforeNight
+            + phase.Duration
+    end
+
+    for _, phase in ipairs(phases) do
+
+        fullCycle =
+            fullCycle
+            + phase.Duration
+    end
+
+    if not nightIndex
+    or not nightRecord then
+
+        nightIndex =
+            3
+
+        nightRecord = {
+            Name = "Night",
+            Duration = 120,
+            Weathers = {
+                Moon = {
+                    Chance = 79,
+                },
+
+                Bloodmoon = {
+                    Chance = 2,
+                },
+
+                Goldmoon = {
+                    Chance = 13,
+                },
+
+                ["Rainbow Moon"] = {
+                    Chance = 6,
+                },
+            },
+        }
+
+        fullCycle =
+            600
+
+        secondsBeforeNight =
+            480
+    end
+
+    if fullCycle <= 0 then
+
+        fullCycle =
+            600
+    end
+
+    if secondsBeforeNight <= 0 then
+
+        secondsBeforeNight =
+            480
+    end
+
+    return {
+        Phases = phases,
+        FullCycle = fullCycle,
+        SecondsBeforeNight = secondsBeforeNight,
+        NightIndex = nightIndex,
+        NightRecord = nightRecord,
+        NightDuration = tonumber(nightRecord.Duration) or 120,
+    }
+end
+
+function GAG2MoonPredictorExtractPickWeather(cycleInfo)
+
+    if type(cycleInfo) ~= "table" then
+        return nil
+    end
+
+    if type(debug) ~= "table"
+    or type(debug.getupvalues) ~= "function" then
+
+        return nil
+    end
+
+    local playerScripts =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChild("PlayerScripts")
+
+    local controllers =
+        playerScripts
+        and playerScripts:FindFirstChild("Controllers")
+
+    local module =
+        controllers
+        and controllers:FindFirstChild("TimeCycleController")
+
+    if not module then
+        return nil
+    end
+
+    local requireOk, controller =
+        pcall(function()
+
+            return require(module)
+        end)
+
+    if requireOk ~= true
+    or type(controller) ~= "table"
+    or type(controller.Start) ~= "function" then
+
+        return nil
+    end
+
+    local upvalueOk, upvalues =
+        pcall(function()
+
+            return debug.getupvalues(
+                controller.Start
+            )
+        end)
+
+    if upvalueOk ~= true
+    or type(upvalues) ~= "table" then
+
+        return nil
+    end
+
+    local function testPickWeather(fn)
+
+        if type(fn) ~= "function" then
+            return false
+        end
+
+        local callOk, moonName =
+            pcall(function()
+
+                return fn(
+                    cycleInfo.NightRecord,
+                    Random.new(123456)
+                )
+            end)
+
+        return callOk == true
+            and type(moonName) == "string"
+            and type(cycleInfo.NightRecord.Weathers) == "table"
+            and cycleInfo.NightRecord.Weathers[moonName] ~= nil
+    end
+
+    if testPickWeather(upvalues[2]) == true then
+        return upvalues[2]
+    end
+
+    for _, value in pairs(upvalues) do
+
+        if testPickWeather(value) == true then
+            return value
+        end
+    end
+
+    return nil
+end
+
+function GAG2MoonPredictorFallbackPickWeather(phaseRecord, rng)
+
+    if type(phaseRecord) ~= "table"
+    or type(phaseRecord.Weathers) ~= "table" then
+
+        return "?"
+    end
+
+    local rows =
+        {}
+
+    for weatherName, weatherData in pairs(phaseRecord.Weathers) do
+
+        table.insert(rows, {
+            Name = tostring(weatherName),
+            Chance =
+                tonumber(
+                    weatherData.Chance
+                )
+                or 0,
+        })
+    end
+
+    table.sort(rows, function(a, b)
+
+        return tostring(a.Name) < tostring(b.Name)
+    end)
+
+    local total =
+        0
+
+    for _, row in ipairs(rows) do
+
+        total =
+            total
+            + row.Chance
+    end
+
+    if total <= 0 then
+        return rows[1] and rows[1].Name or "?"
+    end
+
+    local roll =
+        rng:NextNumber()
+        * total
+
+    local cumulative =
+        0
+
+    for _, row in ipairs(rows) do
+
+        cumulative =
+            cumulative
+            + row.Chance
+
+        if roll <= cumulative then
+            return row.Name
+        end
+    end
+
+    return rows[#rows]
+        and rows[#rows].Name
+        or "?"
+end
+
+function GAG2MoonPredictorEnsureReady()
+
+    local state =
+        GAG2_MOON_PREDICTOR_STATE
+
+    if type(state.CycleInfo) ~= "table" then
+
+        state.CycleInfo =
+            GAG2MoonPredictorBuildCycleInfo()
+    end
+
+    if type(state.PickWeather) ~= "function"
+    and type(state.CycleInfo) == "table" then
+
+        state.PickWeather =
+            GAG2MoonPredictorExtractPickWeather(
+                state.CycleInfo
+            )
+    end
+
+    return type(state.CycleInfo) == "table"
+end
+
+function GAG2MoonPredictorPredictMoon(cycleIndex)
+
+    local state =
+        GAG2_MOON_PREDICTOR_STATE
+
+    if GAG2MoonPredictorEnsureReady() ~= true then
+        return "?"
+    end
+
+    cycleIndex =
+        math.floor(
+            tonumber(cycleIndex)
+            or 0
+        )
+
+    local seed =
+        cycleIndex
+        * 1000
+        + tonumber(state.CycleInfo.NightIndex)
+
+    if type(state.PickWeather) == "function" then
+
+        local ok, moonName =
+            pcall(function()
+
+                return state.PickWeather(
+                    state.CycleInfo.NightRecord,
+                    Random.new(seed)
+                )
+            end)
+
+        if ok == true
+        and type(moonName) == "string" then
+
+            return moonName
+        end
+    end
+
+    return GAG2MoonPredictorFallbackPickWeather(
+        state.CycleInfo.NightRecord,
+        Random.new(seed)
+    )
+end
+
+function GAG2MoonPredictorGetUpcomingRareRows(limit)
+
+    limit =
+        math.max(
+            1,
+            math.floor(
+                tonumber(limit)
+                or 7
+            )
+        )
+
+    if GAG2MoonPredictorEnsureReady() ~= true then
+        return {}
+    end
+
+    local state =
+        GAG2_MOON_PREDICTOR_STATE
+
+    local now =
+        GAG2MoonPredictorGetNow()
+
+    local currentCycle =
+        math.floor(
+            now / state.CycleInfo.FullCycle
+        )
+
+    local rows =
+        {}
+
+    for offset = 0, 600 do
+
+        local cycleIndex =
+            currentCycle
+            + offset
+
+        local nightStart =
+            cycleIndex
+            * state.CycleInfo.FullCycle
+            + state.CycleInfo.SecondsBeforeNight
+
+        if nightStart >= now then
+
+            local moonName =
+                GAG2MoonPredictorPredictMoon(
+                    cycleIndex
+                )
+
+            if GAG2MoonPredictorIsRare(moonName) == true then
+
+                table.insert(rows, {
+                    Moon = moonName,
+                    InSeconds = nightStart - now,
+                    NightStart = nightStart,
+                })
+
+                if #rows >= limit then
+                    break
+                end
+            end
+        end
+    end
+
+    return rows
+end
+
+function GAG2MoonPredictorBuildText()
+
+    if GAG2MoonPredictorEnsureReady() ~= true then
+
+        return '<font color="rgb(196,181,253)"><b>Current:</b></font> '
+            .. '<font color="rgb(148,163,184)">Loading...</font>'
+            .. '\n<font color="rgb(148,163,184)">Upcoming rare moons:</font>'
+            .. '\n<font color="rgb(148,163,184)">Loading moon data...</font>'
+    end
+
+    local now =
+        GAG2MoonPredictorGetNow()
+
+    local activeWeather =
+        CleanText(
+            workspace:GetAttribute("ActiveWeather")
+        )
+
+    if activeWeather == "" then
+        activeWeather =
+            "?"
+    end
+
+    local phaseEnd =
+        tonumber(
+            workspace:GetAttribute("PhaseDuration")
+        )
+        or now
+
+    local remaining =
+        math.max(
+            0,
+            math.floor(
+                phaseEnd - now
+            )
+        )
+
+    local lines =
+        {}
+
+    table.insert(
+        lines,
+        '<font color="rgb(226,232,240)"><b>Current:</b></font> '
+        .. '<font color="'
+        .. GAG2MoonPredictorGetColor(activeWeather)
+        .. '"><b>'
+        .. activeWeather
+        .. '</b></font> '
+        .. '<font color="rgb(148,163,184)">('
+        .. GAG2MoonPredictorFormatSeconds(remaining)
+        .. ' left)</font>'
+    )
+
+    table.insert(
+        lines,
+        '<font color="rgb(148,163,184)">Upcoming rare moons:</font>'
+    )
+
+    local rows =
+        GAG2MoonPredictorGetUpcomingRareRows(
+            7
+        )
+
+    if #rows <= 0 then
+
+        table.insert(
+            lines,
+            '<font color="rgb(148,163,184)">No rare moons found soon.</font>'
+        )
+
+    else
+
+        for _, row in ipairs(rows) do
+
+            table.insert(
+                lines,
+                '<font color="'
+                .. GAG2MoonPredictorGetColor(row.Moon)
+                .. '"><b>'
+                .. tostring(row.Moon)
+                .. '</b></font> '
+                .. '<font color="rgb(124,252,0)">in '
+                .. GAG2MoonPredictorFormatSeconds(row.InSeconds)
+                .. '</font>'
+            )
+        end
+    end
+
+    return table.concat(
+        lines,
+        "\n"
+    )
+end
+
+function GAG2MoonPredictorRefresh()
+
+    local ok, text =
+        pcall(function()
+
+            return GAG2MoonPredictorBuildText()
+        end)
+
+    if ok ~= true
+    or type(text) ~= "string"
+    or text == "" then
+
+        text =
+            '<font color="rgb(226,232,240)"><b>Current:</b></font> '
+            .. '<font color="rgb(248,113,113)">Error</font>'
+            .. '\n<font color="rgb(148,163,184)">Upcoming rare moons:</font>'
+            .. '\n<font color="rgb(248,113,113)">Moon predictor failed.</font>'
+    end
+
+    GAG2_MOON_PREDICTOR_STATE.LastText =
+        text
+
+    if GAG2_MOON_PREDICTOR_LABEL
+    and type(GAG2_MOON_PREDICTOR_LABEL.SetText) == "function" then
+
+        pcall(function()
+
+            GAG2_MOON_PREDICTOR_LABEL:SetText(
+                text
+            )
+        end)
+    end
+
+    if Options.HolyGAG2MoonPredictor
+    and type(Options.HolyGAG2MoonPredictor.SetText) == "function" then
+
+        pcall(function()
+
+            Options.HolyGAG2MoonPredictor:SetText(
+                text
+            )
+        end)
+    end
+end
+
 function StartHomeActivePetsLoop()
 
     if HomeActivePetsLoopRunning == true then
@@ -32009,8 +32835,14 @@ function StartHomeActivePetsLoop()
 
             if type(RefreshHomeActivePets) == "function" then
 
-            RefreshHomeActivePets()
-        end
+                RefreshHomeActivePets()
+            end
+
+            if type(GAG2MoonPredictorRefresh) == "function" then
+
+                GAG2MoonPredictorRefresh()
+            end
+
             GAG2RareWebhookScan()
 
             task.wait(
@@ -41181,6 +42013,13 @@ local HomeServerBox =
         "radar"
     )
 
+local HomeMoonPredictorBox =
+    AddRightBox(
+        Tabs.Home,
+        "Moon Predictor",
+        "moon"
+    )
+
 local ServerMainBox =
     AddLeftBox(
         Tabs.Server,
@@ -41637,6 +42476,31 @@ HomeLivePetsList =
             end,
         }
     )
+
+GAG2_MOON_PREDICTOR_LABEL =
+    HomeMoonPredictorBox:AddLabel("HolyGAG2MoonPredictor", {
+        Text =
+            '<font color="rgb(226,232,240)"><b>Current:</b></font> '
+            .. '<font color="rgb(148,163,184)">Loading...</font>'
+            .. '\n<font color="rgb(148,163,184)">Upcoming rare moons:</font>'
+            .. '\n<font color="rgb(148,163,184)">Loading moon data...</font>',
+        DoesWrap = true,
+    })
+
+task.defer(function()
+
+    for _ = 1, 8 do
+
+        if type(GAG2MoonPredictorRefresh) == "function" then
+
+            GAG2MoonPredictorRefresh()
+        end
+
+        task.wait(
+            0.25
+        )
+    end
+end)
 
 if IsGAG2World() ~= true then
 
@@ -44936,6 +45800,19 @@ and type(GAG2_SNIPER_TOGGLE_CONTROL.AddKeyPicker) == "function" then
         )
 end
 
+GAG2_PANIC_HUD_TOGGLE_CONTROL =
+    SniperMainBox:AddToggle("HolyGAG2SniperPanicHud", {
+        Text = "STOP HUD",
+        Default = true,
+        Tooltip = "Shows the draggable STOP button HUD. Turn OFF to hide it.",
+        Callback = function(value)
+
+            GAG2SetPanicHudEnabled(
+                value == true
+            )
+        end,
+    })
+
 local SniperMovementModeDropdown =
     SniperMainBox:AddDropdown(
         "HolyGAG2SniperMovementMode",
@@ -45118,26 +45995,6 @@ SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
     end,
 })
 
-
-SniperMainBox:AddToggle("HolyGAG2SniperNoTeleportPacketTest", {
-    Text = "No-TP Packet Test",
-    Default = SniperState.NoTeleportPacketTest == true,
-    Risky = true,
-    Tooltip = "Testing only. Fires the wild pet buy packet from your current position without teleporting close first.",
-    Callback = function(value)
-
-        SniperState.NoTeleportPacketTest =
-            value == true
-
-        SetSniperStatus(
-            SniperState.NoTeleportPacketTest == true
-            and "No-TP packet test enabled."
-            or "No-TP packet test disabled."
-        )
-
-        MarkConfigDirty()
-    end,
-})
 
 SniperMainBox:AddInput("HolyGAG2SniperHopDelay", {
     Text = "Hop Delay",
