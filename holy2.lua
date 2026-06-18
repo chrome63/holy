@@ -885,12 +885,38 @@ GAG2_MOON_PREDICTOR_STATE = {
 GAG2_FARM_DETAILS_LABEL =
     nil
 
+GAG2_FARM_DETAILS_PANEL =
+    nil
+
 GAG2_FARM_DETAILS_STATE = {
     LastRefreshAt = 0,
     RefreshSeconds = 3,
     LastText = "Loading farm data...",
+
     BaseWeights = {},
-    MaxRows = 4,
+
+    ShowAll = false,
+    TopRows = 6,
+    AllVisibleRows = 15,
+
+    PanelHeight = 246,
+    TopPanelHeight = 246,
+    AllPanelHeight = 455,
+
+    SummaryHeight = 74,
+    HeaderHeight = 22,
+    RowHeight = 24,
+
+    SearchText = "",
+
+    PanelRoot = nil,
+    SummaryLabel = nil,
+    HeaderLabel = nil,
+    ToggleButton = nil,
+    SearchBox = nil,
+    ColumnHeader = nil,
+    RowScroll = nil,
+    RowLayout = nil,
 }
 
 GAG2_LOADING_GUI_CLEANER_RUNNING =
@@ -33603,10 +33629,37 @@ function GAG2FarmDetailsBuildSnapshot()
     return snapshot
 end
 
-function GAG2FarmDetailsBuildText()
+function GAG2FarmDetailsShortText(value, maxLength)
 
-    local snapshot =
-        GAG2FarmDetailsBuildSnapshot()
+    local text =
+        tostring(value or "")
+
+    maxLength =
+        math.max(
+            4,
+            math.floor(
+                tonumber(maxLength)
+                or 18
+            )
+        )
+
+    if #text <= maxLength then
+        return text
+    end
+
+    return text:sub(
+        1,
+        maxLength - 1
+    )
+    .. "…"
+end
+
+function GAG2FarmDetailsBuildSummaryText(snapshot)
+
+    snapshot =
+        type(snapshot) == "table"
+        and snapshot
+        or GAG2FarmDetailsBuildSnapshot()
 
     local lines =
         {}
@@ -33647,21 +33700,12 @@ function GAG2FarmDetailsBuildText()
         .. '</font>'
     )
 
-    table.insert(
-        lines,
-        ""
-    )
-
-    table.insert(
-        lines,
-        '<font color="rgb(196,181,253)"><b>Best:</b></font>'
-    )
-
     if snapshot.Best then
 
         table.insert(
             lines,
-            '<font color="'
+            '<font color="rgb(196,181,253)"><b>Best:</b></font> '
+            .. '<font color="'
             .. GAG2FarmDetailsColorMutation(snapshot.Best.Mutation)
             .. '"><b>'
             .. GAG2FarmDetailsEscape(snapshot.Best.Mutation)
@@ -33677,71 +33721,1457 @@ function GAG2FarmDetailsBuildText()
 
         table.insert(
             lines,
-            '<font color="rgb(148,163,184)">No fruit weight data yet.</font>'
+            '<font color="rgb(196,181,253)"><b>Best:</b></font> '
+            .. '<font color="rgb(148,163,184)">No fruit weight data yet.</font>'
         )
     end
 
-    table.insert(
+    return table.concat(
         lines,
-        ""
+        "\n"
     )
+end
 
-    table.insert(
-        lines,
-        '<font color="rgb(196,181,253)"><b>Planted:</b></font>'
-    )
+function GAG2FarmDetailsBuildRowData(row)
 
-    if #snapshot.Rows <= 0 then
+    row =
+        type(row) == "table"
+        and row
+        or {}
 
-        table.insert(
-            lines,
-            '<font color="rgb(148,163,184)">No planted crops found.</font>'
+    local plantText =
+        GAG2FarmDetailsShortText(
+            tostring(row.Name or "?")
+            .. " x"
+            .. tostring(row.Plants or 0),
+            19
         )
 
-    else
+    local variantParts =
+        {}
 
-        local maxRows =
+    local gold =
+        math.max(
+            0,
+            math.floor(
+                tonumber(row.Gold)
+                or 0
+            )
+        )
+
+    local rainbow =
+        math.max(
+            0,
+            math.floor(
+                tonumber(row.Rainbow)
+                or 0
+            )
+        )
+
+    if gold > 0 then
+
+        table.insert(
+            variantParts,
+            '<font color="rgb(250,204,21)">G'
+            .. tostring(gold)
+            .. '</font>'
+        )
+    end
+
+    if rainbow > 0 then
+
+        table.insert(
+            variantParts,
+            '<font color="rgb(255,64,255)">R'
+            .. tostring(rainbow)
+            .. '</font>'
+        )
+    end
+
+    local variantText =
+        #variantParts > 0
+        and table.concat(
+            variantParts,
+            " "
+        )
+        or '<font color="rgb(148,163,184)">—</font>'
+
+    return {
+        Plant =
+            plantText,
+
+        Variant =
+            variantText,
+
+        Fruits =
+            tostring(row.Fruits or 0),
+
+        Best =
+            GAG2FarmDetailsFormatKg(
+                row.BestKg
+            ),
+
+        BestKg =
+            tonumber(row.BestKg),
+
+        RawName =
+            tostring(row.Name or ""),
+    }
+end
+
+function GAG2FarmDetailsBuildRowText(row)
+
+    local data =
+        GAG2FarmDetailsBuildRowData(
+            row
+        )
+
+    return '<font color="rgb(226,232,240)">'
+        .. GAG2FarmDetailsEscape(data.Plant)
+        .. '</font> '
+        .. data.Variant
+        .. ' <font color="rgb(148,163,184)">|</font> '
+        .. '<font color="rgb(226,232,240)">'
+        .. GAG2FarmDetailsEscape(data.Fruits)
+        .. '</font>'
+        .. ' <font color="rgb(148,163,184)">|</font> '
+        .. '<font color="rgb(124,252,0)">'
+        .. GAG2FarmDetailsEscape(data.Best)
+        .. '</font>'
+end
+
+function GAG2FarmDetailsGetPanelChromeHeight()
+
+    local state =
+        GAG2_FARM_DETAILS_STATE
+
+    return (tonumber(state.SummaryHeight) or 74)
+        + 26
+        + (tonumber(state.HeaderHeight) or 22)
+        + 4
+end
+
+function GAG2FarmDetailsGetWantedPanelHeight(snapshot)
+
+    local state =
+        GAG2_FARM_DETAILS_STATE
+
+    if state.ShowAll ~= true then
+
+        return tonumber(state.TopPanelHeight)
+            or tonumber(state.PanelHeight)
+            or 246
+    end
+
+    snapshot =
+        type(snapshot) == "table"
+        and snapshot
+        or {}
+
+    local rows =
+        type(snapshot.Rows) == "table"
+        and #snapshot.Rows
+        or 0
+
+    local visibleRows =
+        math.min(
+            math.max(
+                rows,
+                1
+            ),
             math.max(
                 1,
                 math.floor(
-                    tonumber(GAG2_FARM_DETAILS_STATE.MaxRows)
-                    or 4
+                    tonumber(state.AllVisibleRows)
+                    or 15
                 )
             )
+        )
 
-        for index, row in ipairs(snapshot.Rows) do
+    local rowHeight =
+        tonumber(state.RowHeight)
+        or 24
 
-            if index > maxRows then
-                break
-            end
+    local chromeHeight =
+        GAG2FarmDetailsGetPanelChromeHeight()
 
-            local displayName =
-                GAG2FarmDetailsPadRight(
-                    tostring(row.Name)
-                    .. " x"
-                    .. tostring(row.Plants),
-                    17
+    local wantedHeight =
+        chromeHeight
+        + (
+            visibleRows
+            * (rowHeight + 3)
+        )
+        + 10
+
+    local minHeight =
+        tonumber(state.TopPanelHeight)
+        or 246
+
+    local maxHeight =
+        tonumber(state.AllPanelHeight)
+        or 455
+
+    return math.clamp(
+        wantedHeight,
+        minHeight,
+        maxHeight
+    )
+end
+
+function GAG2FarmDetailsApplyPanelHeight(snapshot)
+
+    local state =
+        GAG2_FARM_DETAILS_STATE
+
+    local wantedHeight =
+        GAG2FarmDetailsGetWantedPanelHeight(
+            snapshot
+        )
+
+    state.PanelHeight =
+        wantedHeight
+
+    if GAG2_FARM_DETAILS_PANEL
+    and type(GAG2_FARM_DETAILS_PANEL.SetHeight) == "function" then
+
+        pcall(function()
+
+            GAG2_FARM_DETAILS_PANEL:SetHeight(
+                wantedHeight
+            )
+        end)
+    end
+
+    if state.PanelRoot then
+
+        pcall(function()
+
+            state.PanelRoot.Size =
+                UDim2.fromScale(
+                    1,
+                    1
                 )
+        end)
+    end
+
+    return wantedHeight
+end
+
+function GAG2FarmDetailsClearScroll()
+
+    local state =
+        GAG2_FARM_DETAILS_STATE
+
+    local scroll =
+        state.RowScroll
+
+    if typeof(scroll) ~= "Instance" then
+        return
+    end
+
+    for _, child in ipairs(scroll:GetChildren()) do
+
+        if child:IsA("UIListLayout") ~= true
+        and child:IsA("UIPadding") ~= true then
+
+            child:Destroy()
+        end
+    end
+end
+
+function GAG2FarmDetailsCreateColumnLabel(parent, name, position, size, text, textSize, color, align)
+
+    local label =
+        Instance.new("TextLabel")
+
+    label.Name =
+        tostring(name or "Label")
+
+    label.BackgroundTransparency =
+        1
+
+    label.Position =
+        position
+
+    label.Size =
+        size
+
+    label.Font =
+        Enum.Font.Code
+
+    label.RichText =
+        true
+
+    label.Text =
+        tostring(text or "")
+
+    label.TextSize =
+        tonumber(textSize)
+        or 12
+
+    label.TextColor3 =
+        color
+        or Color3.fromRGB(
+            226,
+            232,
+            240
+        )
+
+    label.TextXAlignment =
+        align
+        or Enum.TextXAlignment.Left
+
+    label.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    label.TextTruncate =
+        Enum.TextTruncate.AtEnd
+
+    label.Parent =
+        parent
+
+    return label
+end
+
+function GAG2FarmDetailsCreateRow(parent, rowData, muted)
+
+    if typeof(parent) ~= "Instance" then
+        return nil
+    end
+
+    local rowHeight =
+        tonumber(GAG2_FARM_DETAILS_STATE.RowHeight)
+        or 24
+
+    local row =
+        Instance.new("Frame")
+
+    row.Name =
+        "FarmRow"
+
+    row.BorderSizePixel =
+        0
+
+    row.Size =
+        UDim2.new(
+            1,
+            -2,
+            0,
+            rowHeight
+        )
+
+    row.Parent =
+        parent
+
+    if muted == true then
+
+        row.BackgroundTransparency =
+            1
+
+        GAG2FarmDetailsCreateColumnLabel(
+            row,
+            "MutedText",
+            UDim2.fromOffset(
+                6,
+                0
+            ),
+            UDim2.new(
+                1,
+                -12,
+                1,
+                0
+            ),
+            tostring(rowData or ""),
+            11,
+            Color3.fromRGB(
+                148,
+                163,
+                184
+            ),
+            Enum.TextXAlignment.Left
+        )
+
+        return row
+    end
+
+    local index =
+        tonumber(
+            type(rowData) == "table"
+            and rowData.Index
+        )
+        or 1
+
+    row.BackgroundColor3 =
+        Color3.fromRGB(
+            15,
+            13,
+            24
+        )
+
+    row.BackgroundTransparency =
+        index % 2 == 0
+        and 0.34
+        or 0.48
+
+    local corner =
+        Instance.new("UICorner")
+
+    corner.CornerRadius =
+        UDim.new(
+            0,
+            5
+        )
+
+    corner.Parent =
+        row
+
+    local data =
+        type(rowData) == "table"
+        and rowData
+        or {}
+
+    GAG2FarmDetailsCreateColumnLabel(
+        row,
+        "Plant",
+        UDim2.fromOffset(
+            7,
+            0
+        ),
+        UDim2.new(
+            0.46,
+            -7,
+            1,
+            0
+        ),
+        GAG2FarmDetailsEscape(
+            data.Plant
+            or "?"
+        ),
+        12,
+        Color3.fromRGB(
+            226,
+            232,
+            240
+        ),
+        Enum.TextXAlignment.Left
+    )
+
+    GAG2FarmDetailsCreateColumnLabel(
+        row,
+        "Variant",
+        UDim2.new(
+            0.46,
+            2,
+            0,
+            0
+        ),
+        UDim2.new(
+            0.19,
+            -2,
+            1,
+            0
+        ),
+        data.Variant
+        or '<font color="rgb(148,163,184)">—</font>',
+        12,
+        Color3.fromRGB(
+            226,
+            232,
+            240
+        ),
+        Enum.TextXAlignment.Left
+    )
+
+    GAG2FarmDetailsCreateColumnLabel(
+        row,
+        "Fruits",
+        UDim2.new(
+            0.65,
+            2,
+            0,
+            0
+        ),
+        UDim2.new(
+            0.13,
+            -2,
+            1,
+            0
+        ),
+        GAG2FarmDetailsEscape(
+            data.Fruits
+            or "0F"
+        ),
+        12,
+        Color3.fromRGB(
+            226,
+            232,
+            240
+        ),
+        Enum.TextXAlignment.Left
+    )
+
+    GAG2FarmDetailsCreateColumnLabel(
+        row,
+        "Best",
+        UDim2.new(
+            0.78,
+            0,
+            0,
+            0
+        ),
+        UDim2.new(
+            0.22,
+            -8,
+            1,
+            0
+        ),
+        GAG2FarmDetailsEscape(
+            data.Best
+            or "?kg"
+        ),
+        12,
+        Color3.fromRGB(
+            124,
+            252,
+            0
+        ),
+        Enum.TextXAlignment.Right
+    )
+
+    return row
+end
+
+function GAG2FarmDetailsSetShowAll(value)
+
+    GAG2_FARM_DETAILS_STATE.ShowAll =
+        value == true
+
+    GAG2FarmDetailsRefresh(
+        true
+    )
+end
+
+function GAG2FarmDetailsSetSearchText(value)
+
+    local state =
+        GAG2_FARM_DETAILS_STATE
+
+    local text =
+        CleanText(value)
+
+    if state.SearchText == text then
+        return
+    end
+
+    state.SearchText =
+        text
+
+    GAG2FarmDetailsRefresh(
+        true
+    )
+end
+
+function GAG2FarmDetailsRowMatchesSearch(row)
+
+    local state =
+        GAG2_FARM_DETAILS_STATE
+
+    local searchText =
+        CleanText(
+            state.SearchText
+        ):lower()
+
+    if searchText == "" then
+        return true
+    end
+
+    if type(row) ~= "table" then
+        return false
+    end
+
+    local name =
+        tostring(row.Name or ""):lower()
+
+    if name:find(searchText, 1, true) then
+        return true
+    end
+
+    local plantText =
+        tostring(row.Plant or ""):lower()
+
+    if plantText:find(searchText, 1, true) then
+        return true
+    end
+
+    return false
+end
+
+function GAG2FarmDetailsGetFilteredRows(snapshot)
+
+    local rows =
+        {}
+
+    if type(snapshot) ~= "table"
+    or type(snapshot.Rows) ~= "table" then
+
+        return rows
+    end
+
+    for _, row in ipairs(snapshot.Rows) do
+
+        if GAG2FarmDetailsRowMatchesSearch(row) == true then
 
             table.insert(
-                lines,
-                '<font color="rgb(226,232,240)">'
-                .. GAG2FarmDetailsEscape(displayName)
-                .. '</font> '
-                .. GAG2FarmDetailsVariantText(
-                    row.Gold,
-                    row.Rainbow
-                )
-                .. ' <font color="rgb(148,163,184)">|</font> '
-                .. '<font color="rgb(226,232,240)">'
-                .. tostring(row.Fruits)
-                .. ' fruits</font>'
-                .. ' <font color="rgb(148,163,184)">|</font> '
-                .. '<font color="rgb(124,252,0)">'
-                .. GAG2FarmDetailsFormatKg(row.BestKg)
-                .. '</font>'
+                rows,
+                row
             )
         end
+    end
+
+    return rows
+end
+
+function GAG2FarmDetailsCreatePanel()
+
+    local state =
+        GAG2_FARM_DETAILS_STATE
+
+    if state.PanelRoot
+    and state.PanelRoot.Parent then
+
+        return state.PanelRoot
+    end
+
+    local root =
+        Instance.new("Frame")
+
+    root.Name =
+        "HolyGAG2FarmDetailsPanel"
+
+    root.BackgroundTransparency =
+        1
+
+    root.BorderSizePixel =
+        0
+
+    root.Size =
+        UDim2.fromScale(
+            1,
+            1
+        )
+
+    local summaryHeight =
+        tonumber(state.SummaryHeight)
+        or 74
+
+    local headerHeight =
+        tonumber(state.HeaderHeight)
+        or 22
+
+    local summary =
+        Instance.new("TextLabel")
+
+    summary.Name =
+        "Summary"
+
+    summary.BackgroundTransparency =
+        1
+
+    summary.Position =
+        UDim2.fromOffset(
+            0,
+            0
+        )
+
+    summary.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            summaryHeight
+        )
+
+    summary.Font =
+        Enum.Font.Code
+
+    summary.RichText =
+        true
+
+    summary.Text =
+        '<font color="rgb(196,181,253)"><b>Farm:</b></font> '
+        .. '<font color="rgb(148,163,184)">Loading...</font>'
+
+    summary.TextSize =
+        12
+
+    summary.TextColor3 =
+        Color3.fromRGB(
+            226,
+            232,
+            240
+        )
+
+    summary.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    summary.TextYAlignment =
+        Enum.TextYAlignment.Top
+
+    summary.Parent =
+        root
+
+    local line =
+        Instance.new("Frame")
+
+    line.Name =
+        "Line"
+
+    line.BackgroundColor3 =
+        Color3.fromRGB(
+            43,
+            35,
+            68
+        )
+
+    line.BackgroundTransparency =
+        0.28
+
+    line.BorderSizePixel =
+        0
+
+    line.Position =
+        UDim2.new(
+            0,
+            0,
+            0,
+            summaryHeight
+        )
+
+    line.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            1
+        )
+
+    line.Parent =
+        root
+
+    local plantedHeader =
+        Instance.new("TextLabel")
+
+    plantedHeader.Name =
+        "PlantedHeader"
+
+    plantedHeader.BackgroundTransparency =
+        1
+
+    plantedHeader.Position =
+        UDim2.new(
+            0,
+            0,
+            0,
+            summaryHeight + 4
+        )
+
+    plantedHeader.Size =
+        UDim2.new(
+            0,
+            70,
+            0,
+            18
+        )
+
+    plantedHeader.Font =
+        Enum.Font.Code
+
+    plantedHeader.RichText =
+        true
+
+    plantedHeader.Text =
+        '<font color="rgb(196,181,253)"><b>Planted:</b></font>'
+
+    plantedHeader.TextSize =
+        12
+
+    plantedHeader.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    plantedHeader.TextColor3 =
+        Color3.fromRGB(
+            226,
+            232,
+            240
+        )
+
+    plantedHeader.Parent =
+        root
+
+    local searchBox =
+        Instance.new("TextBox")
+
+    searchBox.Name =
+        "Search"
+
+    searchBox.BackgroundColor3 =
+        Color3.fromRGB(
+            18,
+            14,
+            30
+        )
+
+    searchBox.BackgroundTransparency =
+        0.04
+
+    searchBox.BorderSizePixel =
+        0
+
+    searchBox.ClearTextOnFocus =
+        false
+
+    searchBox.Position =
+        UDim2.new(
+            0,
+            74,
+            0,
+            summaryHeight + 2
+        )
+
+    searchBox.Size =
+        UDim2.new(
+            1,
+            -144,
+            0,
+            20
+        )
+
+    searchBox.Font =
+        Enum.Font.Code
+
+    searchBox.PlaceholderText =
+        "Search plant..."
+
+    searchBox.PlaceholderColor3 =
+        Color3.fromRGB(
+            105,
+            96,
+            130
+        )
+
+    searchBox.Text =
+        tostring(state.SearchText or "")
+
+    searchBox.TextSize =
+        11
+
+    searchBox.TextColor3 =
+        Color3.fromRGB(
+            226,
+            232,
+            240
+        )
+
+    searchBox.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    searchBox.Parent =
+        root
+
+    local searchPadding =
+        Instance.new("UIPadding")
+
+    searchPadding.PaddingLeft =
+        UDim.new(
+            0,
+            7
+        )
+
+    searchPadding.PaddingRight =
+        UDim.new(
+            0,
+            7
+        )
+
+    searchPadding.Parent =
+        searchBox
+
+    local searchCorner =
+        Instance.new("UICorner")
+
+    searchCorner.CornerRadius =
+        UDim.new(
+            0,
+            5
+        )
+
+    searchCorner.Parent =
+        searchBox
+
+    local searchStroke =
+        Instance.new("UIStroke")
+
+    searchStroke.Color =
+        Color3.fromRGB(
+            43,
+            35,
+            68
+        )
+
+    searchStroke.Transparency =
+        0.10
+
+    searchStroke.Parent =
+        searchBox
+
+    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+
+        GAG2FarmDetailsSetSearchText(
+            searchBox.Text
+        )
+    end)
+
+    local toggleButton =
+        Instance.new("TextButton")
+
+    toggleButton.Name =
+        "ToggleRows"
+
+    toggleButton.AnchorPoint =
+        Vector2.new(
+            1,
+            0
+        )
+
+    toggleButton.BackgroundColor3 =
+        Color3.fromRGB(
+            18,
+            14,
+            30
+        )
+
+    toggleButton.BackgroundTransparency =
+        0.06
+
+    toggleButton.BorderSizePixel =
+        0
+
+    toggleButton.Position =
+        UDim2.new(
+            1,
+            0,
+            0,
+            summaryHeight + 2
+        )
+
+    toggleButton.Size =
+        UDim2.fromOffset(
+            64,
+            20
+        )
+
+    toggleButton.Font =
+        Enum.Font.Code
+
+    toggleButton.Text =
+        state.ShowAll == true
+        and "TOP"
+        or "ALL"
+
+    toggleButton.TextSize =
+        12
+
+    toggleButton.TextColor3 =
+        Color3.fromRGB(
+            196,
+            181,
+            253
+        )
+
+    toggleButton.Parent =
+        root
+
+    local toggleCorner =
+        Instance.new("UICorner")
+
+    toggleCorner.CornerRadius =
+        UDim.new(
+            0,
+            5
+        )
+
+    toggleCorner.Parent =
+        toggleButton
+
+    local toggleStroke =
+        Instance.new("UIStroke")
+
+    toggleStroke.Color =
+        Color3.fromRGB(
+            43,
+            35,
+            68
+        )
+
+    toggleStroke.Transparency =
+        0.10
+
+    toggleStroke.Parent =
+        toggleButton
+
+    toggleButton.MouseButton1Click:Connect(function()
+
+        GAG2FarmDetailsSetShowAll(
+            GAG2_FARM_DETAILS_STATE.ShowAll ~= true
+        )
+    end)
+
+    local columnHeader =
+        Instance.new("Frame")
+
+    columnHeader.Name =
+        "ColumnHeader"
+
+    columnHeader.BackgroundColor3 =
+        Color3.fromRGB(
+            15,
+            13,
+            24
+        )
+
+    columnHeader.BackgroundTransparency =
+        0.32
+
+    columnHeader.BorderSizePixel =
+        0
+
+    columnHeader.Position =
+        UDim2.new(
+            0,
+            0,
+            0,
+            summaryHeight + 26
+        )
+
+    columnHeader.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            headerHeight
+        )
+
+    columnHeader.Parent =
+        root
+
+    local headerCorner =
+        Instance.new("UICorner")
+
+    headerCorner.CornerRadius =
+        UDim.new(
+            0,
+            5
+        )
+
+    headerCorner.Parent =
+        columnHeader
+
+    GAG2FarmDetailsCreateColumnLabel(
+        columnHeader,
+        "PlantHeader",
+        UDim2.fromOffset(
+            7,
+            0
+        ),
+        UDim2.new(
+            0.46,
+            -7,
+            1,
+            0
+        ),
+        '<font color="rgb(148,163,184)">Plant</font>',
+        11,
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        ),
+        Enum.TextXAlignment.Left
+    )
+
+    GAG2FarmDetailsCreateColumnLabel(
+        columnHeader,
+        "VariantHeader",
+        UDim2.new(
+            0.46,
+            2,
+            0,
+            0
+        ),
+        UDim2.new(
+            0.19,
+            -2,
+            1,
+            0
+        ),
+        '<font color="rgb(148,163,184)">Variant</font>',
+        11,
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        ),
+        Enum.TextXAlignment.Left
+    )
+
+    GAG2FarmDetailsCreateColumnLabel(
+        columnHeader,
+        "FruitsHeader",
+        UDim2.new(
+            0.65,
+            2,
+            0,
+            0
+        ),
+        UDim2.new(
+            0.13,
+            -2,
+            1,
+            0
+        ),
+        '<font color="rgb(148,163,184)">Fruits</font>',
+        11,
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        ),
+        Enum.TextXAlignment.Left
+    )
+
+    GAG2FarmDetailsCreateColumnLabel(
+        columnHeader,
+        "BestHeader",
+        UDim2.new(
+            0.78,
+            0,
+            0,
+            0
+        ),
+        UDim2.new(
+            0.22,
+            -8,
+            1,
+            0
+        ),
+        '<font color="rgb(148,163,184)">Best</font>',
+        11,
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        ),
+        Enum.TextXAlignment.Right
+    )
+
+    local scrollY =
+        summaryHeight
+        + 26
+        + headerHeight
+        + 4
+
+    local scroll =
+        Instance.new("ScrollingFrame")
+
+    scroll.Name =
+        "Rows"
+
+    scroll.BackgroundTransparency =
+        1
+
+    scroll.BorderSizePixel =
+        0
+
+    scroll.Position =
+        UDim2.new(
+            0,
+            0,
+            0,
+            scrollY
+        )
+
+    scroll.Size =
+        UDim2.new(
+            1,
+            0,
+            1,
+            -scrollY
+        )
+
+    scroll.ScrollBarThickness =
+        3
+
+    scroll.ScrollBarImageColor3 =
+        Color3.fromRGB(
+            150,
+            95,
+            255
+        )
+
+    scroll.CanvasSize =
+        UDim2.new()
+
+    scroll.AutomaticCanvasSize =
+        Enum.AutomaticSize.Y
+
+    scroll.Parent =
+        root
+
+    local layout =
+        Instance.new("UIListLayout")
+
+    layout.Name =
+        "Layout"
+
+    layout.SortOrder =
+        Enum.SortOrder.LayoutOrder
+
+    layout.Padding =
+        UDim.new(
+            0,
+            3
+        )
+
+    layout.Parent =
+        scroll
+
+    local padding =
+        Instance.new("UIPadding")
+
+    padding.PaddingTop =
+        UDim.new(
+            0,
+            1
+        )
+
+    padding.PaddingBottom =
+        UDim.new(
+            0,
+            6
+        )
+
+    padding.Parent =
+        scroll
+
+    state.PanelRoot =
+        root
+
+    state.SummaryLabel =
+        summary
+
+    state.HeaderLabel =
+        plantedHeader
+
+    state.ToggleButton =
+        toggleButton
+
+    state.SearchBox =
+        searchBox
+
+    state.ColumnHeader =
+        columnHeader
+
+    state.RowScroll =
+        scroll
+
+    state.RowLayout =
+        layout
+
+    return root
+end
+
+function GAG2FarmDetailsRenderPanel(snapshot)
+
+    snapshot =
+        type(snapshot) == "table"
+        and snapshot
+        or GAG2FarmDetailsBuildSnapshot()
+
+    local state =
+        GAG2_FARM_DETAILS_STATE
+
+    if not state.PanelRoot
+    or not state.PanelRoot.Parent then
+
+        GAG2FarmDetailsCreatePanel()
+    end
+
+    local filteredRows =
+        GAG2FarmDetailsGetFilteredRows(
+            snapshot
+        )
+
+    local heightSnapshot = {
+        Rows =
+            filteredRows,
+    }
+
+    GAG2FarmDetailsApplyPanelHeight(
+        heightSnapshot
+    )
+
+    if state.SummaryLabel then
+
+        state.SummaryLabel.Text =
+            GAG2FarmDetailsBuildSummaryText(
+                snapshot
+            )
+    end
+
+    if state.SearchBox
+    and state.SearchBox.Text ~= tostring(state.SearchText or "") then
+
+        state.SearchBox.Text =
+            tostring(state.SearchText or "")
+    end
+
+    if state.ToggleButton then
+
+        state.ToggleButton.Text =
+            state.ShowAll == true
+            and "TOP"
+            or "ALL"
+    end
+
+    GAG2FarmDetailsClearScroll()
+
+    local scroll =
+        state.RowScroll
+
+    if typeof(scroll) ~= "Instance" then
+        return
+    end
+
+    if #filteredRows <= 0 then
+
+        local searchText =
+            CleanText(
+                state.SearchText
+            )
+
+        local emptyText =
+            searchText ~= ""
+            and (
+                '<font color="rgb(148,163,184)">No plants matching "'
+                .. GAG2FarmDetailsEscape(searchText)
+                .. '".</font>'
+            )
+            or '<font color="rgb(148,163,184)">No planted crops found.</font>'
+
+        GAG2FarmDetailsCreateRow(
+            scroll,
+            emptyText,
+            true
+        )
+
+        return
+    end
+
+    local topRows =
+        math.max(
+            1,
+            math.floor(
+                tonumber(state.TopRows)
+                or 6
+            )
+        )
+
+    local limit =
+        state.ShowAll == true
+        and #filteredRows
+        or math.min(
+            topRows,
+            #filteredRows
+        )
+
+    for index = 1, limit do
+
+        local row =
+            filteredRows[index]
+
+        local rowData =
+            GAG2FarmDetailsBuildRowData(
+                row
+            )
+
+        rowData.Index =
+            index
+
+        GAG2FarmDetailsCreateRow(
+            scroll,
+            rowData,
+            false
+        )
+    end
+
+    if state.ShowAll ~= true
+    and #filteredRows > limit then
+
+        GAG2FarmDetailsCreateRow(
+            scroll,
+            '<font color="rgb(148,163,184)">+'
+            .. tostring(#filteredRows - limit)
+            .. ' more  •  click ALL</font>',
+            true
+        )
+    end
+end
+
+function GAG2FarmDetailsBuildText()
+
+    local snapshot =
+        GAG2FarmDetailsBuildSnapshot()
+
+    local lines = {
+        GAG2FarmDetailsBuildSummaryText(
+            snapshot
+        ),
+        '<font color="rgb(196,181,253)"><b>Planted:</b></font>',
+    }
+
+    local topRows =
+        math.max(
+            1,
+            math.floor(
+                tonumber(GAG2_FARM_DETAILS_STATE.TopRows)
+                or 6
+            )
+        )
+
+    local limit =
+        math.min(
+            topRows,
+            #snapshot.Rows
+        )
+
+    for index = 1, limit do
+
+        table.insert(
+            lines,
+            GAG2FarmDetailsBuildRowText(
+                snapshot.Rows[index]
+            )
+        )
+    end
+
+    if #snapshot.Rows > limit then
+
+        table.insert(
+            lines,
+            '<font color="rgb(148,163,184)">+'
+            .. tostring(#snapshot.Rows - limit)
+            .. ' more</font>'
+        )
     end
 
     return table.concat(
@@ -33766,24 +35196,57 @@ function GAG2FarmDetailsRefresh(force)
     state.LastRefreshAt =
         now
 
-    local ok, text =
+    local ok, snapshot =
         pcall(function()
 
-            return GAG2FarmDetailsBuildText()
+            return GAG2FarmDetailsBuildSnapshot()
         end)
 
     if ok ~= true
-    or type(text) ~= "string"
-    or text == "" then
+    or type(snapshot) ~= "table" then
 
-        text =
+        local text =
             '<font color="rgb(196,181,253)"><b>Farm:</b></font> '
             .. '<font color="rgb(248,113,113)">Error</font>'
             .. '\n<font color="rgb(248,113,113)">Farm details failed.</font>'
+
+        state.LastText =
+            text
+
+        if state.SummaryLabel then
+            state.SummaryLabel.Text =
+                text
+        end
+
+        if GAG2_FARM_DETAILS_LABEL
+        and type(GAG2_FARM_DETAILS_LABEL.SetText) == "function" then
+
+            pcall(function()
+
+                GAG2_FARM_DETAILS_LABEL:SetText(
+                    text
+                )
+            end)
+        end
+
+        return
     end
+
+    local text =
+        GAG2FarmDetailsBuildText()
 
     state.LastText =
         text
+
+    if state.PanelRoot then
+
+        pcall(function()
+
+            GAG2FarmDetailsRenderPanel(
+                snapshot
+            )
+        end)
+    end
 
     if GAG2_FARM_DETAILS_LABEL
     and type(GAG2_FARM_DETAILS_LABEL.SetText) == "function" then
@@ -43502,14 +44965,36 @@ task.defer(function()
     end
 end)
 
-GAG2_FARM_DETAILS_LABEL =
-    HomeFarmDetailsBox:AddLabel("HolyGAG2FarmDetails", {
-        Text =
-            '<font color="rgb(196,181,253)"><b>Farm:</b></font> '
-            .. '<font color="rgb(148,163,184)">Loading...</font>'
-            .. '\n<font color="rgb(148,163,184)">Loading farm details...</font>',
-        DoesWrap = true,
-    })
+if type(HomeFarmDetailsBox.AddUIPassthrough) == "function" then
+
+    GAG2_FARM_DETAILS_PANEL =
+        HomeFarmDetailsBox:AddUIPassthrough(
+            "HolyGAG2FarmDetailsPanel",
+            {
+                Instance =
+                    GAG2FarmDetailsCreatePanel(),
+
+                Height =
+                    tonumber(GAG2_FARM_DETAILS_STATE.TopPanelHeight)
+                    or tonumber(GAG2_FARM_DETAILS_STATE.PanelHeight)
+                    or 246,
+
+                Visible =
+                    true,
+            }
+        )
+
+else
+
+    GAG2_FARM_DETAILS_LABEL =
+        HomeFarmDetailsBox:AddLabel("HolyGAG2FarmDetails", {
+            Text =
+                '<font color="rgb(196,181,253)"><b>Farm:</b></font> '
+                .. '<font color="rgb(148,163,184)">Loading...</font>'
+                .. '\n<font color="rgb(148,163,184)">Loading farm details...</font>',
+            DoesWrap = true,
+        })
+end
 
 task.defer(function()
 
