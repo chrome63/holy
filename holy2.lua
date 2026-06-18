@@ -882,6 +882,17 @@ GAG2_MOON_PREDICTOR_STATE = {
     LastText = "Loading moon data...",
 }
 
+GAG2_FARM_DETAILS_LABEL =
+    nil
+
+GAG2_FARM_DETAILS_STATE = {
+    LastRefreshAt = 0,
+    RefreshSeconds = 3,
+    LastText = "Loading farm data...",
+    BaseWeights = {},
+    MaxRows = 4,
+}
+
 GAG2_LOADING_GUI_CLEANER_RUNNING =
     false
 
@@ -17272,7 +17283,7 @@ end
 --==================================================
 -- [4.56] AUTO COLLECT FRUITS
 -- Priority harvest queue using ready HarvestPrompt fruits.
--- V1 note: Size/Weight uses SizeMulti because exact pre-harvest KG is not stored.
+-- Weight uses the game fruit weight formula, not raw SizeMulti ranking.
 --==================================================
 
 GAG2_AUTO_COLLECT_FRUIT_STATE =
@@ -17942,6 +17953,237 @@ function GAG2ACFEnsureModules()
     return state.Modules
 end
 
+function GAG2ACFGetFruitVisualizerController()
+
+    local modules =
+        GAG2ACFEnsureModules()
+
+    if not modules then
+        return nil
+    end
+
+    if modules.FruitVisualizerController ~= nil then
+        return modules.FruitVisualizerController
+    end
+
+    if modules.FruitVisualizerControllerAttempted == true then
+        return nil
+    end
+
+    modules.FruitVisualizerControllerAttempted =
+        true
+
+    local playerScripts =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChild("PlayerScripts")
+
+    local controllers =
+        playerScripts
+        and playerScripts:FindFirstChild("Controllers")
+
+    local module =
+        controllers
+        and controllers:FindFirstChild("FruitVisualizerController")
+
+    if not module
+    or module:IsA("ModuleScript") ~= true then
+        return nil
+    end
+
+    local ok, controller =
+        pcall(function()
+
+            return require(
+                module
+            )
+        end)
+
+    if ok == true
+    and type(controller) == "table" then
+
+        modules.FruitVisualizerController =
+            controller
+
+        return controller
+    end
+
+    return nil
+end
+
+function GAG2ACFGetFruitBaseWeight(fruitName)
+
+    fruitName =
+        GAG2ACFClean(fruitName)
+
+    if fruitName == "" then
+        return nil
+    end
+
+    local modules =
+        GAG2ACFEnsureModules()
+
+    if not modules then
+        return nil
+    end
+
+    modules.FruitBaseWeights =
+        type(modules.FruitBaseWeights) == "table"
+        and modules.FruitBaseWeights
+        or {}
+
+    if modules.FruitBaseWeights[fruitName] ~= nil then
+
+        if modules.FruitBaseWeights[fruitName] == false then
+            return nil
+        end
+
+        return modules.FruitBaseWeights[fruitName]
+    end
+
+    local plantGeneration =
+        ReplicatedStorage:FindFirstChild("PlantGenerationModules")
+
+    local fruitsFolder =
+        plantGeneration
+        and plantGeneration:FindFirstChild("Fruits")
+
+    local module =
+        fruitsFolder
+        and fruitsFolder:FindFirstChild(fruitName)
+
+    if not module
+    or module:IsA("ModuleScript") ~= true then
+
+        modules.FruitBaseWeights[fruitName] =
+            false
+
+        return nil
+    end
+
+    local ok, data =
+        pcall(function()
+
+            return require(
+                module
+            )
+        end)
+
+    if ok ~= true
+    or type(data) ~= "table" then
+
+        modules.FruitBaseWeights[fruitName] =
+            false
+
+        return nil
+    end
+
+    local baseWeight =
+        data.GrowData
+        and tonumber(data.GrowData.BaseWeight)
+
+    if not baseWeight
+    or baseWeight <= 0 then
+
+        modules.FruitBaseWeights[fruitName] =
+            false
+
+        return nil
+    end
+
+    modules.FruitBaseWeights[fruitName] =
+        baseWeight
+
+    return baseWeight
+end
+
+function GAG2ACFCalculateFruitWeightKg(fruit, fruitName)
+
+    if typeof(fruit) ~= "Instance" then
+        return nil, "missing fruit"
+    end
+
+    local controller =
+        GAG2ACFGetFruitVisualizerController()
+
+    if controller
+    and type(controller.CalculateFruitWeight) == "function" then
+
+        local ok, result =
+            pcall(function()
+
+                return controller:CalculateFruitWeight(
+                    fruit
+                )
+            end)
+
+        if ok == true
+        and tonumber(result)
+        and tonumber(result) > 0 then
+
+            return tonumber(result),
+                "FruitVisualizerController"
+        end
+    end
+
+    fruitName =
+        GAG2ACFClean(
+            fruitName
+            or fruit:GetAttribute("CorePartName")
+            or fruit:GetAttribute("SeedName")
+        )
+
+    local baseWeight =
+        GAG2ACFGetFruitBaseWeight(
+            fruitName
+        )
+
+    if not baseWeight then
+        return nil, "missing BaseWeight"
+    end
+
+    local sizeMulti =
+        tonumber(
+            fruit:GetAttribute("SizeMulti")
+        )
+
+    if not sizeMulti
+    or sizeMulti <= 0 then
+        return nil, "missing SizeMulti"
+    end
+
+    local overtimeGrowth =
+        tonumber(
+            fruit:GetAttribute("OvertimeGrowth")
+        )
+        or 1
+
+    if overtimeGrowth <= 0 then
+
+        overtimeGrowth =
+            1
+    end
+
+    return baseWeight
+        * sizeMulti
+        * overtimeGrowth,
+        "BaseWeight formula"
+end
+
+function GAG2ACFFormatWeightKg(value)
+
+    local weight =
+        tonumber(value)
+
+    if not weight then
+        return "?kg"
+    end
+
+    return string.format(
+        "%.2fkg",
+        weight
+    )
+end
+
 function GAG2ACFGetOwnGarden()
 
     if type(GAG2ResolveOwnFarmPlot) == "function" then
@@ -18132,7 +18374,7 @@ function GAG2ACFGetMutationScore(mutation)
     return 1
 end
 
-function GAG2ACFGetSellWorth(name, sizeMulti, mutation, fruit)
+function GAG2ACFGetSellWorth(name, weightKg, mutation, fruit)
 
     local modules =
         GAG2ACFEnsureModules()
@@ -18147,7 +18389,7 @@ function GAG2ACFGetSellWorth(name, sizeMulti, mutation, fruit)
             pcall(
                 fruitValueCalc,
                 name,
-                sizeMulti,
+                weightKg,
                 mutation,
                 fruit
             )
@@ -18170,9 +18412,17 @@ function GAG2ACFGetSellWorth(name, sizeMulti, mutation, fruit)
             mutation
         )
 
+    local weightMultiplier =
+        tonumber(weightKg)
+
+    if not weightMultiplier
+    or weightMultiplier <= 0 then
+        return 0
+    end
+
     return math.floor(
         base
-        * math.max(1, tonumber(sizeMulti) or 1)
+        * weightMultiplier
         * math.max(1, mutationScore)
     )
 end
@@ -18204,11 +18454,23 @@ function GAG2ACFBuildEntry(plant, fruit)
             plant
         )
 
-    local sizeMulti =
+    local weightKg, weightSource =
+        GAG2ACFCalculateFruitWeightKg(
+            fruit,
+            GAG2ACFReadFruitName(
+                fruit,
+                plant
+            )
+        )
+
+    if not weightKg then
+        return nil
+    end
+
+    local rawSizeMulti =
         tonumber(
             fruit:GetAttribute("SizeMulti")
         )
-        or 1
 
     local modules =
         GAG2ACFEnsureModules()
@@ -18233,7 +18495,7 @@ function GAG2ACFBuildEntry(plant, fruit)
     local sellWorth =
         GAG2ACFGetSellWorth(
             name,
-            sizeMulti,
+            weightKg,
             mutation,
             fruit
         )
@@ -18287,7 +18549,11 @@ function GAG2ACFBuildEntry(plant, fruit)
             or "None",
 
         MutationScore = mutationScore,
-        SizeMulti = sizeMulti,
+
+        WeightKg = weightKg,
+        WeightSource = weightSource,
+        RawSizeMulti = rawSizeMulti,
+
         SellWorth = sellWorth,
     }
 end
@@ -18346,15 +18612,23 @@ function GAG2ACFPassesExclusions(entry)
         tonumber(state.ExcludeSizeThreshold)
         or 0
 
-    if threshold > 0 then
+    if threshold > 0
+    and state.ExcludeSizeMode ~= "Off" then
+
+        local weightKg =
+            tonumber(entry.WeightKg)
+
+        if not weightKg then
+            return false
+        end
 
         if state.ExcludeSizeMode == "Above"
-        and tonumber(entry.SizeMulti or 0) > threshold then
+        and weightKg > threshold then
             return false
         end
 
         if state.ExcludeSizeMode == "Below"
-        and tonumber(entry.SizeMulti or 0) < threshold then
+        and weightKg < threshold then
             return false
         end
     end
@@ -18389,7 +18663,7 @@ function GAG2ACFPriorityValue(entry, priorityName)
     end
 
     if priorityName == "Weight" then
-        return tonumber(entry.SizeMulti) or 0
+        return tonumber(entry.WeightKg)
     end
 
     if priorityName == "Mutation" then
@@ -18488,10 +18762,10 @@ function GAG2ACFSortQueue(queue)
                 > tonumber(b.SellWorth or 0)
         end
 
-        if tonumber(a.SizeMulti or 0) ~= tonumber(b.SizeMulti or 0) then
+        if tonumber(a.WeightKg or 0) ~= tonumber(b.WeightKg or 0) then
 
-            return tonumber(a.SizeMulti or 0)
-                > tonumber(b.SizeMulti or 0)
+            return tonumber(a.WeightKg or 0)
+                > tonumber(b.WeightKg or 0)
         end
 
         return tostring(a.Name or "")
@@ -32820,6 +33094,720 @@ function GAG2MoonPredictorRefresh()
     end
 end
 
+function GAG2FarmDetailsEscape(value)
+
+    return tostring(value or "")
+        :gsub("&", "&amp;")
+        :gsub("<", "&lt;")
+        :gsub(">", "&gt;")
+end
+
+function GAG2FarmDetailsFormatKg(value)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "?kg"
+    end
+
+    return string.format(
+        "%.2fkg",
+        number
+    )
+end
+
+function GAG2FarmDetailsPadRight(value, width)
+
+    local text =
+        tostring(value or "")
+
+    width =
+        math.max(
+            1,
+            math.floor(
+                tonumber(width)
+                or 1
+            )
+        )
+
+    if #text >= width then
+        return text
+    end
+
+    return text
+        .. string.rep(
+            " ",
+            width - #text
+        )
+end
+
+function GAG2FarmDetailsColorMutation(mutation)
+
+    mutation =
+        CleanText(mutation)
+
+    if mutation == "Rainbow" then
+        return "rgb(255,64,255)"
+    end
+
+    if mutation == "Gold" then
+        return "rgb(250,204,21)"
+    end
+
+    return "rgb(226,232,240)"
+end
+
+function GAG2FarmDetailsVariantText(goldCount, rainbowCount)
+
+    goldCount =
+        math.max(
+            0,
+            math.floor(
+                tonumber(goldCount)
+                or 0
+            )
+        )
+
+    rainbowCount =
+        math.max(
+            0,
+            math.floor(
+                tonumber(rainbowCount)
+                or 0
+            )
+        )
+
+    local parts =
+        {}
+
+    if goldCount > 0 then
+
+        table.insert(
+            parts,
+            '<font color="rgb(250,204,21)">G'
+            .. tostring(goldCount)
+            .. '</font>'
+        )
+    end
+
+    if rainbowCount > 0 then
+
+        table.insert(
+            parts,
+            '<font color="rgb(255,64,255)">R'
+            .. tostring(rainbowCount)
+            .. '</font>'
+        )
+    end
+
+    if #parts <= 0 then
+        return '<font color="rgb(148,163,184)">—</font>'
+    end
+
+    return table.concat(
+        parts,
+        " "
+    )
+end
+
+function GAG2FarmDetailsFindOwnPlot()
+
+    local gardens =
+        workspace:FindFirstChild("Gardens")
+
+    if not gardens then
+        return nil
+    end
+
+    local userId =
+        LOCAL_PLAYER
+        and tostring(LOCAL_PLAYER.UserId)
+        or ""
+
+    local playerName =
+        LOCAL_PLAYER
+        and tostring(LOCAL_PLAYER.Name):lower()
+        or ""
+
+    for _, plot in ipairs(gardens:GetChildren()) do
+
+        local attrs =
+            {}
+
+        pcall(function()
+
+            attrs =
+                plot:GetAttributes()
+        end)
+
+        for key, value in pairs(attrs) do
+
+            local text =
+                tostring(key)
+                .. "="
+                .. tostring(value)
+
+            if userId ~= ""
+            and text:find(userId, 1, true) then
+
+                return plot
+            end
+
+            if playerName ~= ""
+            and text:lower():find(playerName, 1, true) then
+
+                return plot
+            end
+        end
+    end
+
+    return gardens:FindFirstChild("Plot2")
+        or gardens:GetChildren()[1]
+end
+
+function GAG2FarmDetailsGetPlantsFolder()
+
+    local plot =
+        GAG2FarmDetailsFindOwnPlot()
+
+    if not plot then
+        return nil, nil
+    end
+
+    local plants =
+        plot:FindFirstChild("Plants")
+        or plot:FindFirstChild("plants")
+
+    return plot,
+        plants
+end
+
+function GAG2FarmDetailsFindHarvestPrompt(root)
+
+    if typeof(root) ~= "Instance" then
+        return nil
+    end
+
+    for _, descendant in ipairs(root:GetDescendants()) do
+
+        if descendant:IsA("ProximityPrompt") then
+
+            local name =
+                CleanText(descendant.Name):lower()
+
+            local action =
+                CleanText(descendant.ActionText):lower()
+
+            local objectText =
+                CleanText(descendant.ObjectText):lower()
+
+            if name:find("harvest", 1, true)
+            or action:find("harvest", 1, true)
+            or action:find("collect", 1, true)
+            or objectText:find("harvest", 1, true) then
+
+                return descendant
+            end
+        end
+    end
+
+    return nil
+end
+
+function GAG2FarmDetailsIsFruitReady(fruit)
+
+    if typeof(fruit) ~= "Instance" then
+        return false
+    end
+
+    local age =
+        tonumber(
+            fruit:GetAttribute("Age")
+        )
+
+    local maxAge =
+        tonumber(
+            fruit:GetAttribute("MaxAge")
+        )
+
+    if age ~= nil
+    and maxAge ~= nil
+    and age >= maxAge then
+
+        return true
+    end
+
+    return GAG2FarmDetailsFindHarvestPrompt(fruit) ~= nil
+end
+
+function GAG2FarmDetailsCalculateKg(fruit, fruitName)
+
+    if typeof(fruit) ~= "Instance" then
+        return nil
+    end
+
+    if type(GAG2ACFCalculateFruitWeightKg) ~= "function" then
+        return nil
+    end
+
+    local ok, weightKg =
+        pcall(function()
+
+            return GAG2ACFCalculateFruitWeightKg(
+                fruit,
+                fruitName
+            )
+        end)
+
+    if ok == true
+    and tonumber(weightKg)
+    and tonumber(weightKg) > 0 then
+
+        return tonumber(weightKg)
+    end
+
+    return nil
+end
+
+function GAG2FarmDetailsMutationLabel(rootMutation, fruitMutation)
+
+    rootMutation =
+        CleanText(rootMutation)
+
+    fruitMutation =
+        CleanText(fruitMutation)
+
+    if fruitMutation ~= "" then
+        return fruitMutation
+    end
+
+    if rootMutation ~= "" then
+        return rootMutation
+    end
+
+    return "Normal"
+end
+
+function GAG2FarmDetailsBuildSnapshot()
+
+    local plot, plantsFolder =
+        GAG2FarmDetailsGetPlantsFolder()
+
+    local snapshot = {
+        PlotName = plot and plot.Name or "?",
+        TotalPlants = 0,
+        TotalFruits = 0,
+        ReadyFruits = 0,
+        GoldPlants = 0,
+        RainbowPlants = 0,
+        Best = nil,
+        Rows = {},
+    }
+
+    if not plantsFolder then
+        return snapshot
+    end
+
+    local byPlant =
+        {}
+
+    for _, plant in ipairs(plantsFolder:GetChildren()) do
+
+        if plant:IsA("Model")
+        or plant:IsA("Folder") then
+
+            snapshot.TotalPlants =
+                snapshot.TotalPlants + 1
+
+            local seedName =
+                CleanText(
+                    plant:GetAttribute("SeedName")
+                    or plant:GetAttribute("CorePartName")
+                    or plant.Name
+                )
+
+            if seedName == "" then
+                seedName =
+                    "Unknown"
+            end
+
+            local rootMutation =
+                CleanText(
+                    plant:GetAttribute("Mutation")
+                )
+
+            if rootMutation == "Gold" then
+
+                snapshot.GoldPlants =
+                    snapshot.GoldPlants + 1
+
+            elseif rootMutation == "Rainbow" then
+
+                snapshot.RainbowPlants =
+                    snapshot.RainbowPlants + 1
+            end
+
+            local record =
+                byPlant[seedName]
+
+            if not record then
+
+                record = {
+                    Name = seedName,
+                    Plants = 0,
+                    Fruits = 0,
+                    Ready = 0,
+                    Gold = 0,
+                    Rainbow = 0,
+                    BestKg = nil,
+                    BestMutation = "Normal",
+                }
+
+                byPlant[seedName] =
+                    record
+            end
+
+            record.Plants =
+                record.Plants + 1
+
+            if rootMutation == "Gold" then
+
+                record.Gold =
+                    record.Gold + 1
+
+            elseif rootMutation == "Rainbow" then
+
+                record.Rainbow =
+                    record.Rainbow + 1
+            end
+
+            local fruits =
+                plant:FindFirstChild("Fruits")
+                or plant:FindFirstChild("fruits")
+
+            if fruits then
+
+                for _, fruit in ipairs(fruits:GetChildren()) do
+
+                    local fruitName =
+                        CleanText(
+                            fruit:GetAttribute("CorePartName")
+                            or fruit:GetAttribute("FruitName")
+                            or seedName
+                        )
+
+                    if fruitName == "" then
+                        fruitName =
+                            seedName
+                    end
+
+                    local fruitMutation =
+                        CleanText(
+                            fruit:GetAttribute("Mutation")
+                        )
+
+                    snapshot.TotalFruits =
+                        snapshot.TotalFruits + 1
+
+                    record.Fruits =
+                        record.Fruits + 1
+
+                    if GAG2FarmDetailsIsFruitReady(fruit) == true then
+
+                        snapshot.ReadyFruits =
+                            snapshot.ReadyFruits + 1
+
+                        record.Ready =
+                            record.Ready + 1
+                    end
+
+                    local kg =
+                        GAG2FarmDetailsCalculateKg(
+                            fruit,
+                            fruitName
+                        )
+
+                    if kg
+                    and (
+                        record.BestKg == nil
+                        or kg > record.BestKg
+                    ) then
+
+                        record.BestKg =
+                            kg
+
+                        record.BestMutation =
+                            GAG2FarmDetailsMutationLabel(
+                                rootMutation,
+                                fruitMutation
+                            )
+                    end
+
+                    if kg
+                    and (
+                        snapshot.Best == nil
+                        or kg > snapshot.Best.Kg
+                    ) then
+
+                        snapshot.Best = {
+                            Name = fruitName,
+
+                            Mutation =
+                                GAG2FarmDetailsMutationLabel(
+                                    rootMutation,
+                                    fruitMutation
+                                ),
+
+                            Kg = kg,
+                        }
+                    end
+                end
+            end
+        end
+    end
+
+    for _, record in pairs(byPlant) do
+
+        table.insert(
+            snapshot.Rows,
+            record
+        )
+    end
+
+    table.sort(snapshot.Rows, function(a, b)
+
+        local aKg =
+            tonumber(a.BestKg)
+            or 0
+
+        local bKg =
+            tonumber(b.BestKg)
+            or 0
+
+        if aKg ~= bKg then
+            return aKg > bKg
+        end
+
+        if tonumber(a.Ready or 0) ~= tonumber(b.Ready or 0) then
+            return tonumber(a.Ready or 0) > tonumber(b.Ready or 0)
+        end
+
+        if tonumber(a.Fruits or 0) ~= tonumber(b.Fruits or 0) then
+            return tonumber(a.Fruits or 0) > tonumber(b.Fruits or 0)
+        end
+
+        return tostring(a.Name) < tostring(b.Name)
+    end)
+
+    return snapshot
+end
+
+function GAG2FarmDetailsBuildText()
+
+    local snapshot =
+        GAG2FarmDetailsBuildSnapshot()
+
+    local lines =
+        {}
+
+    table.insert(
+        lines,
+        '<font color="rgb(196,181,253)"><b>Farm:</b></font> '
+        .. '<font color="rgb(226,232,240)">'
+        .. GAG2FarmDetailsEscape(snapshot.PlotName)
+        .. '</font>'
+    )
+
+    table.insert(
+        lines,
+        '<font color="rgb(196,181,253)">Plants:</font> '
+        .. '<font color="rgb(226,232,240)">'
+        .. tostring(snapshot.TotalPlants)
+        .. '</font>'
+        .. ' <font color="rgb(148,163,184)">|</font> '
+        .. '<font color="rgb(196,181,253)">Fruits:</font> '
+        .. '<font color="rgb(226,232,240)">'
+        .. tostring(snapshot.TotalFruits)
+        .. '</font>'
+        .. ' <font color="rgb(148,163,184)">|</font> '
+        .. '<font color="rgb(124,252,0)">Ready: '
+        .. tostring(snapshot.ReadyFruits)
+        .. '</font>'
+    )
+
+    table.insert(
+        lines,
+        '<font color="rgb(250,204,21)">Gold x'
+        .. tostring(snapshot.GoldPlants)
+        .. '</font>'
+        .. ' <font color="rgb(148,163,184)">|</font> '
+        .. '<font color="rgb(255,64,255)">Rainbow x'
+        .. tostring(snapshot.RainbowPlants)
+        .. '</font>'
+    )
+
+    table.insert(
+        lines,
+        ""
+    )
+
+    table.insert(
+        lines,
+        '<font color="rgb(196,181,253)"><b>Best:</b></font>'
+    )
+
+    if snapshot.Best then
+
+        table.insert(
+            lines,
+            '<font color="'
+            .. GAG2FarmDetailsColorMutation(snapshot.Best.Mutation)
+            .. '"><b>'
+            .. GAG2FarmDetailsEscape(snapshot.Best.Mutation)
+            .. " "
+            .. GAG2FarmDetailsEscape(snapshot.Best.Name)
+            .. '</b></font> '
+            .. '<font color="rgb(124,252,0)">'
+            .. GAG2FarmDetailsFormatKg(snapshot.Best.Kg)
+            .. '</font>'
+        )
+
+    else
+
+        table.insert(
+            lines,
+            '<font color="rgb(148,163,184)">No fruit weight data yet.</font>'
+        )
+    end
+
+    table.insert(
+        lines,
+        ""
+    )
+
+    table.insert(
+        lines,
+        '<font color="rgb(196,181,253)"><b>Planted:</b></font>'
+    )
+
+    if #snapshot.Rows <= 0 then
+
+        table.insert(
+            lines,
+            '<font color="rgb(148,163,184)">No planted crops found.</font>'
+        )
+
+    else
+
+        local maxRows =
+            math.max(
+                1,
+                math.floor(
+                    tonumber(GAG2_FARM_DETAILS_STATE.MaxRows)
+                    or 4
+                )
+            )
+
+        for index, row in ipairs(snapshot.Rows) do
+
+            if index > maxRows then
+                break
+            end
+
+            local displayName =
+                GAG2FarmDetailsPadRight(
+                    tostring(row.Name)
+                    .. " x"
+                    .. tostring(row.Plants),
+                    17
+                )
+
+            table.insert(
+                lines,
+                '<font color="rgb(226,232,240)">'
+                .. GAG2FarmDetailsEscape(displayName)
+                .. '</font> '
+                .. GAG2FarmDetailsVariantText(
+                    row.Gold,
+                    row.Rainbow
+                )
+                .. ' <font color="rgb(148,163,184)">|</font> '
+                .. '<font color="rgb(226,232,240)">'
+                .. tostring(row.Fruits)
+                .. ' fruits</font>'
+                .. ' <font color="rgb(148,163,184)">|</font> '
+                .. '<font color="rgb(124,252,0)">'
+                .. GAG2FarmDetailsFormatKg(row.BestKg)
+                .. '</font>'
+            )
+        end
+    end
+
+    return table.concat(
+        lines,
+        "\n"
+    )
+end
+
+function GAG2FarmDetailsRefresh(force)
+
+    local state =
+        GAG2_FARM_DETAILS_STATE
+
+    local now =
+        os.clock()
+
+    if force ~= true
+    and now - tonumber(state.LastRefreshAt or 0) < tonumber(state.RefreshSeconds or 3) then
+        return
+    end
+
+    state.LastRefreshAt =
+        now
+
+    local ok, text =
+        pcall(function()
+
+            return GAG2FarmDetailsBuildText()
+        end)
+
+    if ok ~= true
+    or type(text) ~= "string"
+    or text == "" then
+
+        text =
+            '<font color="rgb(196,181,253)"><b>Farm:</b></font> '
+            .. '<font color="rgb(248,113,113)">Error</font>'
+            .. '\n<font color="rgb(248,113,113)">Farm details failed.</font>'
+    end
+
+    state.LastText =
+        text
+
+    if GAG2_FARM_DETAILS_LABEL
+    and type(GAG2_FARM_DETAILS_LABEL.SetText) == "function" then
+
+        pcall(function()
+
+            GAG2_FARM_DETAILS_LABEL:SetText(
+                text
+            )
+        end)
+    end
+
+    if Options.HolyGAG2FarmDetails
+    and type(Options.HolyGAG2FarmDetails.SetText) == "function" then
+
+        pcall(function()
+
+            Options.HolyGAG2FarmDetails:SetText(
+                text
+            )
+        end)
+    end
+end
+
 function StartHomeActivePetsLoop()
 
     if HomeActivePetsLoopRunning == true then
@@ -32841,6 +33829,11 @@ function StartHomeActivePetsLoop()
             if type(GAG2MoonPredictorRefresh) == "function" then
 
                 GAG2MoonPredictorRefresh()
+            end
+
+            if type(GAG2FarmDetailsRefresh) == "function" then
+
+                GAG2FarmDetailsRefresh()
             end
 
             GAG2RareWebhookScan()
@@ -42020,6 +43013,13 @@ local HomeMoonPredictorBox =
         "moon"
     )
 
+local HomeFarmDetailsBox =
+    AddRightBox(
+        Tabs.Home,
+        "Farm Details",
+        "sprout"
+    )
+
 local ServerMainBox =
     AddLeftBox(
         Tabs.Server,
@@ -42498,6 +43498,32 @@ task.defer(function()
 
         task.wait(
             0.25
+        )
+    end
+end)
+
+GAG2_FARM_DETAILS_LABEL =
+    HomeFarmDetailsBox:AddLabel("HolyGAG2FarmDetails", {
+        Text =
+            '<font color="rgb(196,181,253)"><b>Farm:</b></font> '
+            .. '<font color="rgb(148,163,184)">Loading...</font>'
+            .. '\n<font color="rgb(148,163,184)">Loading farm details...</font>',
+        DoesWrap = true,
+    })
+
+task.defer(function()
+
+    for _ = 1, 8 do
+
+        if type(GAG2FarmDetailsRefresh) == "function" then
+
+            GAG2FarmDetailsRefresh(
+                true
+            )
+        end
+
+        task.wait(
+            0.35
         )
     end
 end)
@@ -44844,13 +45870,13 @@ GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeSizeMode =
     FarmMainBox:AddDropdown(
         "HolyGAG2ACFExcludeSizeMode",
         {
-            Text = "Exclude Size/Weight Mode",
+            Text = "Exclude Weight Mode",
             Values = GAG2_ACF_SIZE_MODES,
             Default = "Off",
             Multi = false,
             Searchable = false,
             MaxVisibleDropdownItems = 4,
-            Tooltip = "Above 5 skips size above 5. Below 5 skips size below 5.",
+            Tooltip = "Above 5 skips fruit above 5kg. Below 5 skips fruit below 5kg.",
         }
     )
 
@@ -44871,13 +45897,13 @@ if type(FarmMainBox.AddInput) == "function" then
         FarmMainBox:AddInput(
             "HolyGAG2ACFExcludeSizeThreshold",
             {
-                Text = "Size/Weight Threshold",
+                Text = "Weight Threshold (kg)",
                 Default = "0",
                 Placeholder = "Example: 5",
                 Numeric = false,
                 Finished = false,
                 ClearTextOnFocus = false,
-                Tooltip = "Uses SizeMulti in V1. 0 disables threshold.",
+                Tooltip = "Uses predicted fruit weight in kg. 0 disables threshold.",
             }
         )
 
