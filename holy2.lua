@@ -728,6 +728,63 @@ GAG2_RARE_PET_WEBHOOK_IMAGES = {
 GAG2_RARE_PET_WEBHOOK_SENT =
     {}
 
+--==================================================
+-- HARD-CODED WEATHER EVENT RELAY
+--==================================================
+
+GAG2_WEATHER_WEBHOOK_ENABLED =
+    true
+
+GAG2_WEATHER_RELAY_URL =
+    "https://script.google.com/macros/s/AKfycbzZIEPH7vNA6YN-y6GLZQi22leT5GYc6imXUA9zGp3zA3vWMhQQtV1SvawHdWynbuqETA/exec"
+
+GAG2_WEATHER_RELAY_SECRET =
+    "HOLY_WEATHER_2026_ben_9x72qP"
+
+-- Compatibility name. Old functions can still read this.
+GAG2_WEATHER_WEBHOOK_URL =
+    GAG2_WEATHER_RELAY_URL
+
+GAG2_WEATHER_WEBHOOK_USERNAME =
+    "GAG 2 Stocks"
+
+GAG2_WEATHER_WEBHOOK_AVATAR_URL =
+    ""
+
+-- Empty = every alt can report.
+-- Google Apps Script lock + eventKey dedupe prevents spam.
+GAG2_WEATHER_WEBHOOK_SENDER_USER_IDS =
+    {}
+
+-- Roles are handled inside Google Apps Script now.
+GAG2_WEATHER_WEBHOOK_ROLE_IDS =
+    {}
+
+GAG2_WEATHER_WEBHOOK_EVENTS = {
+    Rain = true,
+    Lightning = true,
+    Rainbow = true,
+    Snowfall = true,
+    Starfall = true,
+
+    Moon = true,
+    Goldmoon = true,
+    ["Rainbow Moon"] = true,
+    Bloodmoon = true,
+
+    Day = false,
+    Sunset = false,
+}
+
+GAG2_WEATHER_WEBHOOK_SENT =
+    {}
+
+GAG2_WEATHER_WEBHOOK_STATE = {
+    Armed = false,
+    LastKey = "",
+    LastScanAt = 0,
+    MinScanDelay = 1,
+}
 GAG2_SERVER_HOP_RETRYING =
     false
 
@@ -12142,7 +12199,42 @@ GAG2_AUTO_COLLECT_SEEDS_STATE =
         HoldDuration = 3.2,
         LastStatus = "Idle.",
         Recent = {},
+
+        ClaimRangePadding = 1.75,
+        SafeClaimDistance = 7.25,
+        WalkTimeout = 12,
+        WalkRefreshDelay = 0.55,
+        TeleportClaimWait = 1.25,
+
+        StaleRecentSeconds = 8,
+        MissingRecentSeconds = 12,
+
+        ClaimRangePadding = 1.75,
+        SafeClaimDistance = 7.25,
+        WalkTimeout = 12,
+        WalkRefreshDelay = 0.55,
+        TeleportClaimWait = 1.25,
     }
+
+GAG2_AUTO_COLLECT_SEEDS_STATE.ClaimRangePadding =
+    tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.ClaimRangePadding)
+    or 1.75
+
+GAG2_AUTO_COLLECT_SEEDS_STATE.SafeClaimDistance =
+    tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.SafeClaimDistance)
+    or 7.25
+
+GAG2_AUTO_COLLECT_SEEDS_STATE.WalkTimeout =
+    tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.WalkTimeout)
+    or 12
+
+GAG2_AUTO_COLLECT_SEEDS_STATE.WalkRefreshDelay =
+    tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.WalkRefreshDelay)
+    or 0.55
+
+GAG2_AUTO_COLLECT_SEEDS_STATE.TeleportClaimWait =
+    tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.TeleportClaimWait)
+    or 1.25
 
 function GAG2SeedCollectSetStatus(text)
 
@@ -12376,6 +12468,832 @@ function GAG2SeedCollectFindNearest()
         "ok"
 end
 
+function GAG2SeedCollectGetPromptPosition(entry)
+
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local prompt =
+        entry.Prompt
+
+    if typeof(prompt) == "Instance" then
+
+        local parent =
+            prompt.Parent
+
+        if typeof(parent) == "Instance" then
+
+            if parent:IsA("BasePart") then
+                return parent.Position
+            end
+
+            if parent:IsA("Attachment") then
+                return parent.WorldPosition
+            end
+        end
+    end
+
+    if typeof(entry.Part) == "Instance"
+    and entry.Part:IsA("BasePart") then
+
+        return entry.Part.Position
+    end
+
+    return nil
+end
+
+function GAG2SeedCollectGetPromptDistance(entry, root)
+
+    if type(entry) ~= "table"
+    or typeof(root) ~= "Instance" then
+
+        return math.huge
+    end
+
+    local position =
+        GAG2SeedCollectGetPromptPosition(
+            entry
+        )
+
+    if typeof(position) ~= "Vector3" then
+        return math.huge
+    end
+
+    return (root.Position - position).Magnitude
+end
+
+function GAG2SeedCollectGetClaimDistance(prompt)
+
+    local maxDistance =
+        10
+
+    if typeof(prompt) == "Instance"
+    and prompt:IsA("ProximityPrompt") then
+
+        maxDistance =
+            tonumber(prompt.MaxActivationDistance)
+            or maxDistance
+    end
+
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
+
+    local padding =
+        tonumber(state.ClaimRangePadding)
+        or 1.75
+
+    local safeDistance =
+        maxDistance - padding
+
+    safeDistance =
+        math.min(
+            safeDistance,
+            tonumber(state.SafeClaimDistance)
+            or 7.25
+        )
+
+    return math.clamp(
+        safeDistance,
+        3,
+        maxDistance
+    )
+end
+
+function GAG2SeedCollectIsPromptClaimable(entry, root)
+
+    if type(entry) ~= "table"
+    or typeof(root) ~= "Instance" then
+
+        return false,
+            "missing entry/root"
+    end
+
+    local prompt =
+        entry.Prompt
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true then
+
+        return false,
+            "missing prompt"
+    end
+
+    if prompt.Parent == nil then
+
+        return false,
+            "prompt removed"
+    end
+
+    if prompt.Enabled ~= true then
+
+        return false,
+            "prompt disabled"
+    end
+
+    if typeof(entry.Part) ~= "Instance"
+    or entry.Part.Parent == nil then
+
+        return false,
+            "seed removed"
+    end
+
+    local distance =
+        GAG2SeedCollectGetPromptDistance(
+            entry,
+            root
+        )
+
+    local claimDistance =
+        GAG2SeedCollectGetClaimDistance(
+            prompt
+        )
+
+    if distance <= claimDistance then
+
+        return true,
+            "in range"
+    end
+
+    return false,
+        "too far: "
+        .. tostring(math.floor(distance + 0.5))
+        .. "/"
+        .. tostring(math.floor(claimDistance + 0.5))
+end
+
+function GAG2SeedCollectWaitClaimable(entry, timeout)
+
+    local _, root =
+        GAG2SeedCollectGetCharacterRoot()
+
+    if not root then
+        return false,
+            "missing root"
+    end
+
+    local started =
+        os.clock()
+
+    timeout =
+        tonumber(timeout)
+        or 2
+
+    while GAG2_AUTO_COLLECT_SEEDS_STATE.Enabled == true
+    and os.clock() - started < timeout do
+
+        local ok, reason =
+            GAG2SeedCollectIsPromptClaimable(
+                entry,
+                root
+            )
+
+        if ok == true then
+
+            return true,
+                reason
+        end
+
+        if reason == "seed removed"
+        or reason == "prompt removed" then
+
+            return false,
+                reason
+        end
+
+        task.wait(
+            0.05
+        )
+    end
+
+    local _, reason =
+        GAG2SeedCollectIsPromptClaimable(
+            entry,
+            root
+        )
+
+    return false,
+        reason or "not claimable"
+end
+
+function GAG2SeedCollectGetPromptPosition(entry)
+
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local prompt =
+        entry.Prompt
+
+    if typeof(prompt) == "Instance" then
+
+        local parent =
+            prompt.Parent
+
+        if typeof(parent) == "Instance" then
+
+            if parent:IsA("BasePart") then
+                return parent.Position
+            end
+
+            if parent:IsA("Attachment") then
+                return parent.WorldPosition
+            end
+        end
+    end
+
+    if typeof(entry.Part) == "Instance"
+    and entry.Part:IsA("BasePart") then
+
+        return entry.Part.Position
+    end
+
+    return nil
+end
+
+function GAG2SeedCollectGetPromptDistance(entry, root)
+
+    if type(entry) ~= "table"
+    or typeof(root) ~= "Instance" then
+
+        return math.huge
+    end
+
+    local position =
+        GAG2SeedCollectGetPromptPosition(
+            entry
+        )
+
+    if typeof(position) ~= "Vector3" then
+        return math.huge
+    end
+
+    return (root.Position - position).Magnitude
+end
+
+function GAG2SeedCollectGetClaimDistance(prompt)
+
+    local maxDistance =
+        10
+
+    if typeof(prompt) == "Instance"
+    and prompt:IsA("ProximityPrompt") then
+
+        maxDistance =
+            tonumber(prompt.MaxActivationDistance)
+            or maxDistance
+    end
+
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
+
+    local padding =
+        tonumber(state.ClaimRangePadding)
+        or 1.75
+
+    local safeDistance =
+        maxDistance - padding
+
+    safeDistance =
+        math.min(
+            safeDistance,
+            tonumber(state.SafeClaimDistance)
+            or 7.25
+        )
+
+    return math.clamp(
+        safeDistance,
+        3,
+        maxDistance
+    )
+end
+
+function GAG2SeedCollectHasClaimedFlag(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return false,
+            ""
+    end
+
+    local attributeNames = {
+        "Claimed",
+        "Collected",
+        "PickedUp",
+        "Picked",
+        "Taken",
+        "Disabled",
+        "Used",
+    }
+
+    for _, attributeName in ipairs(attributeNames) do
+
+        local ok, value =
+            pcall(function()
+
+                return instance:GetAttribute(
+                    attributeName
+                )
+            end)
+
+        if ok == true
+        and value ~= nil then
+
+            if value == true then
+
+                return true,
+                    tostring(attributeName)
+                    .. "=true"
+            end
+
+            local text =
+                CleanText(value):lower()
+
+            if text == "true"
+            or text == "claimed"
+            or text == "collected"
+            or text == "picked"
+            or text == "taken"
+            or text == "used"
+            or text == "disabled" then
+
+                return true,
+                    tostring(attributeName)
+                    .. "="
+                    .. tostring(value)
+            end
+        end
+    end
+
+    return false,
+        ""
+end
+
+function GAG2SeedCollectEntryHasClaimedFlag(entry)
+
+    if type(entry) ~= "table" then
+        return false,
+            ""
+    end
+
+    local objects = {
+        entry.Part,
+        entry.Prompt,
+        typeof(entry.Part) == "Instance" and entry.Part.Parent or nil,
+        typeof(entry.Prompt) == "Instance" and entry.Prompt.Parent or nil,
+    }
+
+    local checked =
+        {}
+
+    for _, object in ipairs(objects) do
+
+        if typeof(object) == "Instance"
+        and checked[object] ~= true then
+
+            checked[object] =
+                true
+
+            local claimed, reason =
+                GAG2SeedCollectHasClaimedFlag(
+                    object
+                )
+
+            if claimed == true then
+
+                return true,
+                    reason
+            end
+        end
+    end
+
+    return false,
+        ""
+end
+
+function GAG2SeedCollectGetSeedRoot(entry)
+
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local candidates = {
+        entry.Part,
+
+        typeof(entry.Prompt) == "Instance"
+        and entry.Prompt.Parent
+        or nil,
+    }
+
+    for _, candidate in ipairs(candidates) do
+
+        if typeof(candidate) == "Instance" then
+
+            local current =
+                candidate
+
+            for _ = 1, 8 do
+
+                if not current
+                or current == workspace
+                or current.Parent == nil then
+                    break
+                end
+
+                local currentName =
+                    CleanText(current.Name):lower()
+
+                local parentName =
+                    current.Parent
+                    and CleanText(current.Parent.Name):lower()
+                    or ""
+
+                if current:IsA("Model")
+                or current:IsA("Folder") then
+
+                    if currentName:find("seed", 1, true)
+                    or currentName:find("gold", 1, true)
+                    or currentName:find("rainbow", 1, true)
+                    or parentName:find("seed", 1, true)
+                    or parentName:find("spawn", 1, true) then
+
+                        return current
+                    end
+                end
+
+                if parentName:find("seedpackspawn", 1, true)
+                or parentName:find("seedpack", 1, true)
+                or parentName:find("seed", 1, true) then
+
+                    return current
+                end
+
+                current =
+                    current.Parent
+            end
+        end
+    end
+
+    if typeof(entry.Part) == "Instance" then
+        return entry.Part
+    end
+
+    return nil
+end
+
+function GAG2SeedCollectIsVisibleSeedPart(part, promptParent)
+
+    if typeof(part) ~= "Instance"
+    or part:IsA("BasePart") ~= true then
+
+        return false
+    end
+
+    if part.Parent == nil then
+        return false
+    end
+
+    if part:IsDescendantOf(workspace) ~= true then
+        return false
+    end
+
+    local size =
+        part.Size
+
+    if size.Magnitude <= 0.05 then
+        return false
+    end
+
+    local transparency =
+        tonumber(part.Transparency)
+        or 0
+
+    if transparency >= 0.96 then
+        return false
+    end
+
+    local name =
+        CleanText(part.Name):lower()
+
+    local looksLikePromptOnly =
+        name:find("prompt", 1, true)
+        or name:find("trigger", 1, true)
+        or name:find("hitbox", 1, true)
+        or name:find("interaction", 1, true)
+        or name:find("claim", 1, true)
+
+    if looksLikePromptOnly
+    and part == promptParent then
+
+        return false
+    end
+
+    return true
+end
+
+function GAG2SeedCollectEntryHasLiveSeedVisual(entry)
+
+    if type(entry) ~= "table" then
+
+        return false,
+            "bad entry"
+    end
+
+    local root =
+        GAG2SeedCollectGetSeedRoot(
+            entry
+        )
+
+    if typeof(root) ~= "Instance" then
+
+        return false,
+            "missing seed root"
+    end
+
+    if root.Parent == nil then
+
+        return false,
+            "seed root removed"
+    end
+
+    if root:IsDescendantOf(workspace) ~= true then
+
+        return false,
+            "seed root not in workspace"
+    end
+
+    local promptParent =
+        typeof(entry.Prompt) == "Instance"
+        and entry.Prompt.Parent
+        or nil
+
+    if GAG2SeedCollectIsVisibleSeedPart(root, promptParent) == true then
+
+        return true,
+            "visible root"
+    end
+
+    local checked =
+        0
+
+    for _, descendant in ipairs(root:GetDescendants()) do
+
+        checked =
+            checked + 1
+
+        if checked > 120 then
+            break
+        end
+
+        if GAG2SeedCollectIsVisibleSeedPart(descendant, promptParent) == true then
+
+            return true,
+                "visible descendant"
+        end
+    end
+
+    return false,
+        "seed visual gone"
+end
+
+function GAG2SeedCollectIsEntryAlive(entry)
+
+    if type(entry) ~= "table" then
+
+        return false,
+            "bad entry"
+    end
+
+    local part =
+        entry.Part
+
+    local prompt =
+        entry.Prompt
+
+    if typeof(part) ~= "Instance" then
+
+        return false,
+            "missing seed part"
+    end
+
+    if part.Parent == nil then
+
+        return false,
+            "seed removed"
+    end
+
+    if part:IsDescendantOf(workspace) ~= true then
+
+        return false,
+            "seed no longer in workspace"
+    end
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true then
+
+        return false,
+            "missing prompt"
+    end
+
+    if prompt.Parent == nil then
+
+        return false,
+            "prompt removed"
+    end
+
+    if prompt:IsDescendantOf(workspace) ~= true then
+
+        return false,
+            "prompt no longer in workspace"
+    end
+
+    local claimed, claimReason =
+        GAG2SeedCollectEntryHasClaimedFlag(
+            entry
+        )
+
+    if claimed == true then
+
+        return false,
+            "claimed: "
+            .. tostring(claimReason)
+    end
+
+    local visualAlive, visualReason =
+        GAG2SeedCollectEntryHasLiveSeedVisual(
+            entry
+        )
+
+    if visualAlive ~= true then
+
+        return false,
+            tostring(visualReason)
+    end
+
+    if prompt.Enabled ~= true then
+
+        return false,
+            "prompt disabled"
+    end
+
+    local position =
+        GAG2SeedCollectGetPromptPosition(
+            entry
+        )
+
+    if typeof(position) ~= "Vector3" then
+
+        return false,
+            "missing prompt position"
+    end
+
+    return true,
+        "alive"
+end
+
+function GAG2SeedCollectMarkEntryStale(entry, reason, seconds)
+
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
+
+    if type(state.Recent) ~= "table" then
+
+        state.Recent =
+            {}
+    end
+
+    local key =
+        type(entry) == "table"
+        and CleanText(entry.Key)
+        or ""
+
+    if key == "" then
+        return
+    end
+
+    seconds =
+        math.max(
+            1,
+            tonumber(seconds)
+            or tonumber(state.StaleRecentSeconds)
+            or 8
+        )
+
+    state.Recent[key] =
+        os.clock()
+        + seconds
+end
+
+function GAG2SeedCollectIsPromptClaimable(entry, root)
+
+    local alive, aliveReason =
+        GAG2SeedCollectIsEntryAlive(
+            entry
+        )
+
+    if alive ~= true then
+
+        return false,
+            aliveReason
+    end
+
+    if typeof(root) ~= "Instance" then
+
+        return false,
+            "missing root"
+    end
+
+    local prompt =
+        entry.Prompt
+
+    local distance =
+        GAG2SeedCollectGetPromptDistance(
+            entry,
+            root
+        )
+
+    local claimDistance =
+        GAG2SeedCollectGetClaimDistance(
+            prompt
+        )
+
+    if distance <= claimDistance then
+
+        return true,
+            "in range"
+    end
+
+    return false,
+        "too far: "
+        .. tostring(math.floor(distance + 0.5))
+        .. "/"
+        .. tostring(math.floor(claimDistance + 0.5))
+end
+
+function GAG2SeedCollectWaitClaimable(entry, timeout)
+
+    local _, root =
+        GAG2SeedCollectGetCharacterRoot()
+
+    if not root then
+        return false,
+            "missing root"
+    end
+
+    local started =
+        os.clock()
+
+    timeout =
+        tonumber(timeout)
+        or 2
+
+    while GAG2_AUTO_COLLECT_SEEDS_STATE.Enabled == true
+    and os.clock() - started < timeout do
+
+        local ok, reason =
+            GAG2SeedCollectIsPromptClaimable(
+                entry,
+                root
+            )
+
+        if ok == true then
+
+            return true,
+                reason
+        end
+
+        if reason == "seed removed"
+        or reason == "prompt removed"
+        or reason == "prompt disabled"
+        or reason == "seed visual gone"
+        or reason == "seed root removed"
+        or reason == "seed root not in workspace"
+        or tostring(reason):find("claimed", 1, true) then
+
+            GAG2SeedCollectMarkEntryStale(
+                entry,
+                reason,
+                GAG2_AUTO_COLLECT_SEEDS_STATE.MissingRecentSeconds
+            )
+
+            return false,
+                reason
+        end
+
+        task.wait(
+            0.05
+        )
+    end
+
+    local _, reason =
+        GAG2SeedCollectIsPromptClaimable(
+            entry,
+            root
+        )
+
+    return false,
+        reason or "not claimable"
+end
+
 function GAG2SeedCollectMoveTo(entry)
 
     local character, root, humanoid =
@@ -12390,17 +13308,42 @@ function GAG2SeedCollectMoveTo(entry)
             "missing move data"
     end
 
+    local alive, aliveReason =
+        GAG2SeedCollectIsEntryAlive(
+            entry
+        )
+
+    if alive ~= true then
+
+        GAG2SeedCollectMarkEntryStale(
+            entry,
+            aliveReason,
+            GAG2_AUTO_COLLECT_SEEDS_STATE.MissingRecentSeconds
+        )
+
+        return false,
+            aliveReason
+    end
+
     local targetPosition =
-        entry.Part.Position
+        GAG2SeedCollectGetPromptPosition(
+            entry
+        )
+
+    if typeof(targetPosition) ~= "Vector3" then
+
+        GAG2SeedCollectMarkEntryStale(
+            entry,
+            "missing target position",
+            GAG2_AUTO_COLLECT_SEEDS_STATE.MissingRecentSeconds
+        )
+
+        return false,
+            "missing target position"
+    end
 
     local direction =
         root.Position - targetPosition
-
-    if direction.Magnitude < 1 then
-
-        direction =
-            Vector3.new(1, 0, 0)
-    end
 
     direction =
         Vector3.new(
@@ -12412,51 +13355,176 @@ function GAG2SeedCollectMoveTo(entry)
     if direction.Magnitude < 1 then
 
         direction =
-            Vector3.new(1, 0, 0)
+            Vector3.new(
+                1,
+                0,
+                0
+            )
     end
 
     direction =
         direction.Unit
 
+    local claimDistance =
+        GAG2SeedCollectGetClaimDistance(
+            entry.Prompt
+        )
+
+    local standDistance =
+        math.clamp(
+            claimDistance * 0.55,
+            2.75,
+            4.25
+        )
+
     local standPosition =
         targetPosition
-        + direction * 4
-        + Vector3.new(0, 3, 0)
+        + direction * standDistance
+
+    local walkPosition =
+        Vector3.new(
+            standPosition.X,
+            root.Position.Y,
+            standPosition.Z
+        )
 
     if GAG2_AUTO_COLLECT_SEEDS_STATE.MovementMode == "Walk" then
-
-        humanoid:MoveTo(
-            standPosition
-        )
 
         local started =
             os.clock()
 
-        while GAG2_AUTO_COLLECT_SEEDS_STATE.Enabled == true
-        and entry.Part.Parent
-        and os.clock() - started < 8 do
+        local lastMoveAt =
+            0
 
-            if (root.Position - targetPosition).Magnitude <= 9 then
-                break
+        local timeout =
+            math.max(
+                4,
+                tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.WalkTimeout)
+                or 12
+            )
+
+        local refreshDelay =
+            math.clamp(
+                tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.WalkRefreshDelay)
+                or 0.55,
+                0.20,
+                1.50
+            )
+
+        while GAG2_AUTO_COLLECT_SEEDS_STATE.Enabled == true
+        and os.clock() - started < timeout do
+
+            alive, aliveReason =
+                GAG2SeedCollectIsEntryAlive(
+                    entry
+                )
+
+            if alive ~= true then
+
+                GAG2SeedCollectMarkEntryStale(
+                    entry,
+                    aliveReason,
+                    GAG2_AUTO_COLLECT_SEEDS_STATE.MissingRecentSeconds
+                )
+
+                return false,
+                    aliveReason
             end
 
-            task.wait(0.1)
+            local claimable, claimReason =
+                GAG2SeedCollectIsPromptClaimable(
+                    entry,
+                    root
+                )
+
+            if claimable == true then
+
+                return true,
+                    "walk in range"
+            end
+
+            if claimReason == "seed removed"
+            or claimReason == "prompt removed"
+            or claimReason == "prompt disabled"
+            or claimReason == "seed visual gone"
+            or claimReason == "seed root removed"
+            or claimReason == "seed root not in workspace"
+            or tostring(claimReason):find("claimed", 1, true) then
+
+                GAG2SeedCollectMarkEntryStale(
+                    entry,
+                    claimReason,
+                    GAG2_AUTO_COLLECT_SEEDS_STATE.MissingRecentSeconds
+                )
+
+                return false,
+                    claimReason
+            end
+
+            if os.clock() - lastMoveAt >= refreshDelay then
+
+                lastMoveAt =
+                    os.clock()
+
+                humanoid:MoveTo(
+                    walkPosition
+                )
+            end
+
+            task.wait(
+                0.08
+            )
         end
 
-        return true,
-            "walk"
+        local claimable, reason =
+            GAG2SeedCollectIsPromptClaimable(
+                entry,
+                root
+            )
+
+        if claimable == true then
+
+            return true,
+                "walk in range"
+        end
+
+        GAG2SeedCollectMarkEntryStale(
+            entry,
+            reason,
+            GAG2_AUTO_COLLECT_SEEDS_STATE.StaleRecentSeconds
+        )
+
+        return false,
+            reason or "walk timeout"
     end
 
     root.CFrame =
         CFrame.lookAt(
-            standPosition,
+            standPosition + Vector3.new(0, 3, 0),
             targetPosition
         )
 
-    task.wait(0.15)
+    local claimable, reason =
+        GAG2SeedCollectWaitClaimable(
+            entry,
+            tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.TeleportClaimWait)
+            or 1.25
+        )
+
+    if claimable ~= true then
+
+        GAG2SeedCollectMarkEntryStale(
+            entry,
+            reason,
+            GAG2_AUTO_COLLECT_SEEDS_STATE.StaleRecentSeconds
+        )
+
+        return false,
+            reason or "not claimable after teleport"
+    end
 
     return true,
-        "teleport"
+        "teleport in range"
 end
 
 function GAG2SeedCollectFirePrompt(prompt)
@@ -12573,6 +13641,27 @@ function GAG2SeedCollectCycle()
         return
     end
 
+    local alive, aliveReason =
+        GAG2SeedCollectIsEntryAlive(
+            entry
+        )
+
+    if alive ~= true then
+
+        GAG2SeedCollectMarkEntryStale(
+            entry,
+            aliveReason,
+            state.MissingRecentSeconds
+        )
+
+        GAG2SeedCollectSetStatus(
+            "Skipped stale seed: "
+            .. tostring(aliveReason)
+        )
+
+        return
+    end
+
     state.Recent[entry.Key] =
         os.clock()
 
@@ -12589,7 +13678,7 @@ function GAG2SeedCollectCycle()
             entry.SeedType
         )
 
-    local moved =
+    local moved, moveInfo =
         GAG2SeedCollectMoveTo(
             entry
         )
@@ -12597,7 +13686,51 @@ function GAG2SeedCollectCycle()
     if moved ~= true then
 
         GAG2SeedCollectSetStatus(
-            "Move failed."
+            "Move failed: "
+            .. tostring(moveInfo)
+        )
+
+        return
+    end
+
+    alive, aliveReason =
+        GAG2SeedCollectIsEntryAlive(
+            entry
+        )
+
+    if alive ~= true then
+
+        GAG2SeedCollectMarkEntryStale(
+            entry,
+            aliveReason,
+            state.MissingRecentSeconds
+        )
+
+        GAG2SeedCollectSetStatus(
+            "Seed disappeared: "
+            .. tostring(aliveReason)
+        )
+
+        return
+    end
+
+    local claimable, claimInfo =
+        GAG2SeedCollectWaitClaimable(
+            entry,
+            1.5
+        )
+
+    if claimable ~= true then
+
+        GAG2SeedCollectMarkEntryStale(
+            entry,
+            claimInfo,
+            state.StaleRecentSeconds
+        )
+
+        GAG2SeedCollectSetStatus(
+            "Not claimable: "
+            .. tostring(claimInfo)
         )
 
         return
@@ -12609,6 +13742,12 @@ function GAG2SeedCollectCycle()
         )
 
     if fired ~= true then
+
+        GAG2SeedCollectMarkEntryStale(
+            entry,
+            fireInfo,
+            state.StaleRecentSeconds
+        )
 
         GAG2SeedCollectSetStatus(
             "Collect failed: "
@@ -12626,6 +13765,12 @@ function GAG2SeedCollectCycle()
 
     if confirmed == true then
 
+        GAG2SeedCollectMarkEntryStale(
+            entry,
+            "confirmed",
+            state.MissingRecentSeconds
+        )
+
         GAG2SeedCollectSetStatus(
             "Collected "
             .. tostring(entry.SeedType)
@@ -12634,6 +13779,12 @@ function GAG2SeedCollectCycle()
         )
 
     else
+
+        GAG2SeedCollectMarkEntryStale(
+            entry,
+            confirmInfo,
+            state.StaleRecentSeconds
+        )
 
         GAG2SeedCollectSetStatus(
             "Not confirmed: "
@@ -35271,6 +36422,1159 @@ function GAG2FarmDetailsRefresh(force)
     end
 end
 
+function GAG2WeatherWebhookCanSend()
+
+    if GAG2_WEATHER_WEBHOOK_ENABLED ~= true then
+        return false
+    end
+
+    if type(GAG2_WEATHER_WEBHOOK_SENDER_USER_IDS) == "table"
+    and next(GAG2_WEATHER_WEBHOOK_SENDER_USER_IDS) ~= nil then
+
+        local userId =
+            LOCAL_PLAYER
+            and tonumber(LOCAL_PLAYER.UserId)
+            or 0
+
+        if GAG2_WEATHER_WEBHOOK_SENDER_USER_IDS[userId] ~= true then
+            return false
+        end
+    end
+
+    local relayUrl =
+        CleanText(
+            GAG2_WEATHER_RELAY_URL
+            or GAG2_WEATHER_WEBHOOK_URL
+        )
+
+    if relayUrl == ""
+    or relayUrl == "PASTE_YOUR_GOOGLE_WEB_APP_EXEC_URL_HERE"
+    or relayUrl == "PUT_WEATHER_WEBHOOK_URL_HERE" then
+        return false
+    end
+
+    local relaySecret =
+        CleanText(
+            GAG2_WEATHER_RELAY_SECRET
+        )
+
+    if relaySecret == ""
+    or relaySecret == "PUT_WEATHER_RELAY_SECRET_HERE" then
+        return false
+    end
+
+    return true
+end
+
+function GAG2WeatherWebhookGetRequestFunction()
+
+    if type(GAG2ExecutorGetRequestFunction) == "function" then
+
+        local requestFunction =
+            GAG2ExecutorGetRequestFunction()
+
+        if type(requestFunction) == "function" then
+            return requestFunction
+        end
+    end
+
+    return request
+        or http_request
+        or (
+            syn
+            and syn.request
+        )
+        or (
+            http
+            and http.request
+        )
+        or (
+            fluxus
+            and fluxus.request
+        )
+end
+
+function GAG2WeatherWebhookGetNow()
+
+    local ok, value =
+        pcall(function()
+
+            return workspace:GetServerTimeNow()
+        end)
+
+    if ok == true
+    and tonumber(value) then
+
+        return math.floor(
+            tonumber(value)
+        )
+    end
+
+    return os.time()
+end
+
+function GAG2WeatherWebhookFormatSeconds(seconds)
+
+    seconds =
+        math.max(
+            0,
+            math.floor(
+                tonumber(seconds)
+                or 0
+            )
+        )
+
+    local hours =
+        math.floor(seconds / 3600)
+
+    local minutes =
+        math.floor((seconds % 3600) / 60)
+
+    local remain =
+        seconds % 60
+
+    if hours > 0 then
+
+        return tostring(hours)
+            .. "h "
+            .. tostring(minutes)
+            .. "m"
+    end
+
+    if minutes > 0 then
+
+        return tostring(minutes)
+            .. "m "
+            .. tostring(remain)
+            .. "s"
+    end
+
+    return tostring(remain)
+        .. "s"
+end
+
+function GAG2WeatherWebhookEmoji(weatherName)
+
+    weatherName =
+        CleanText(weatherName)
+
+    if weatherName == "Rain" then
+        return "🌧️"
+    end
+
+    if weatherName == "Lightning" then
+        return "⚡"
+    end
+
+    if weatherName == "Rainbow" then
+        return "🌈"
+    end
+
+    if weatherName == "Snowfall" then
+        return "❄️"
+    end
+
+    if weatherName == "Starfall" then
+        return "🌠"
+    end
+
+    if weatherName == "Moon" then
+        return "🌙"
+    end
+
+    if weatherName == "Goldmoon" then
+        return "🌕"
+    end
+
+    if weatherName == "Rainbow Moon" then
+        return "🌈🌙"
+    end
+
+    if weatherName == "Bloodmoon" then
+        return "🩸🌙"
+    end
+
+    return "🌤️"
+end
+
+function GAG2WeatherWebhookColor(weatherName)
+
+    weatherName =
+        CleanText(weatherName)
+
+    if weatherName == "Rain" then
+        return 0x60A5FA
+    end
+
+    if weatherName == "Lightning" then
+        return 0xFACC15
+    end
+
+    if weatherName == "Rainbow"
+    or weatherName == "Rainbow Moon" then
+        return 0xE879F9
+    end
+
+    if weatherName == "Snowfall" then
+        return 0xBAE6FD
+    end
+
+    if weatherName == "Starfall" then
+        return 0xC084FC
+    end
+
+    if weatherName == "Goldmoon" then
+        return 0xFACC15
+    end
+
+    if weatherName == "Bloodmoon" then
+        return 0xEF4444
+    end
+
+    if weatherName == "Moon" then
+        return 0x93C5FD
+    end
+
+    return 0xC4B5FD
+end
+
+function GAG2WeatherWebhookRoleId(weatherName)
+
+    if type(GAG2_WEATHER_WEBHOOK_ROLE_IDS) ~= "table" then
+        return ""
+    end
+
+    local roleId =
+        CleanText(
+            GAG2_WEATHER_WEBHOOK_ROLE_IDS[
+                CleanText(weatherName)
+            ]
+        ):gsub("%D", "")
+
+    if roleId == ""
+    or roleId:find("PUT", 1, true) then
+        return ""
+    end
+
+    return roleId
+end
+
+function GAG2WeatherWebhookIsEnabledEvent(weatherName)
+
+    weatherName =
+        CleanText(weatherName)
+
+    if weatherName == "" then
+        return false
+    end
+
+    if type(GAG2_WEATHER_WEBHOOK_EVENTS) ~= "table" then
+        return true
+    end
+
+    return GAG2_WEATHER_WEBHOOK_EVENTS[weatherName] == true
+end
+
+function GAG2WeatherWebhookGetCurrentEvent()
+
+    local weatherName =
+        CleanText(
+            workspace:GetAttribute("ActiveWeather")
+        )
+
+    if weatherName == "" then
+        return nil,
+            "missing ActiveWeather"
+    end
+
+    if GAG2WeatherWebhookIsEnabledEvent(weatherName) ~= true then
+
+        return nil,
+            "event disabled: "
+            .. weatherName
+    end
+
+    local phaseName =
+        CleanText(
+            workspace:GetAttribute("ActivePhase")
+        )
+
+    local now =
+        GAG2WeatherWebhookGetNow()
+
+    local rawPhaseDuration =
+        tonumber(
+            workspace:GetAttribute("PhaseDuration")
+        )
+        or 0
+
+    local phaseEnd =
+        0
+
+    local remaining =
+        0
+
+    if rawPhaseDuration > 1000000000 then
+
+        phaseEnd =
+            rawPhaseDuration
+
+        remaining =
+            math.max(
+                0,
+                math.floor(
+                    phaseEnd - now
+                )
+            )
+
+    elseif rawPhaseDuration > 0 then
+
+        phaseEnd =
+            now + rawPhaseDuration
+
+        remaining =
+            math.max(
+                0,
+                math.floor(
+                    rawPhaseDuration
+                )
+            )
+    end
+
+    local phaseEndBucket =
+        "noend"
+
+    if phaseEnd > 0 then
+
+        phaseEndBucket =
+            tostring(
+                math.floor(
+                    phaseEnd / 30
+                )
+            )
+    end
+
+    -- Important:
+    -- Do not include phaseName in the key.
+    -- ActiveWeather / ActivePhase / PhaseDuration can update separately,
+    -- and including phaseName can cause 2-3 Discord sends for one event.
+    local key =
+        tostring(game.PlaceId)
+        .. ":"
+        .. weatherName
+        .. ":"
+        .. tostring(phaseEndBucket)
+
+    return {
+        Name = weatherName,
+        Phase = phaseName,
+        Now = now,
+        PhaseEnd = phaseEnd,
+        Remaining = remaining,
+        Key = key,
+    }
+end
+
+function GAG2WeatherWebhookAlreadySent(key)
+
+    key =
+        CleanText(key)
+
+    if key == "" then
+        return true
+    end
+
+    local sentAt =
+        tonumber(
+            GAG2_WEATHER_WEBHOOK_SENT[key]
+        )
+
+    if not sentAt then
+        return false
+    end
+
+    if os.clock() - sentAt > 7200 then
+
+        GAG2_WEATHER_WEBHOOK_SENT[key] =
+            nil
+
+        return false
+    end
+
+    return true
+end
+
+function GAG2WeatherWebhookMarkSent(key)
+
+    key =
+        CleanText(key)
+
+    if key == "" then
+        return
+    end
+
+    GAG2_WEATHER_WEBHOOK_SENT[key] =
+        os.clock()
+end
+
+function GAG2WeatherWebhookBuildPayload(event)
+
+    local weatherName =
+        CleanText(
+            event.Name
+        )
+
+    local emoji =
+        GAG2WeatherWebhookEmoji(
+            weatherName
+        )
+
+    local roleId =
+        GAG2WeatherWebhookRoleId(
+            weatherName
+        )
+
+    local content =
+        roleId ~= ""
+        and (
+            "<@&"
+            .. roleId
+            .. ">"
+        )
+        or ""
+
+    local description =
+        "• "
+        .. emoji
+        .. " **"
+        .. weatherName
+        .. "**"
+
+    local fields = {
+        {
+            name = "Weather",
+            value =
+                emoji
+                .. " "
+                .. weatherName,
+            inline = true,
+        },
+
+        {
+            name = "Phase",
+            value =
+                CleanText(event.Phase) ~= ""
+                and CleanText(event.Phase)
+                or "?",
+            inline = true,
+        },
+
+        {
+            name = "Ends In",
+            value =
+                GAG2WeatherWebhookFormatSeconds(
+                    event.Remaining
+                ),
+            inline = true,
+        },
+    }
+
+    local embed = {
+        title = "Weather Events",
+        description = description,
+        color =
+            GAG2WeatherWebhookColor(
+                weatherName
+            ),
+
+        fields = fields,
+
+        footer = {
+            text = "HOLY",
+        },
+
+        timestamp =
+            DateTime.now():ToIsoDate(),
+    }
+
+    local payload = {
+        username =
+            CleanText(GAG2_WEATHER_WEBHOOK_USERNAME) ~= ""
+            and CleanText(GAG2_WEATHER_WEBHOOK_USERNAME)
+            or "GAG 2 Stocks",
+
+        content =
+            content,
+
+        allowed_mentions =
+            roleId ~= ""
+            and {
+                parse = {},
+                roles = {
+                    roleId,
+                },
+            }
+            or {
+                parse = {},
+            },
+
+        embeds = {
+            embed,
+        },
+    }
+
+    local avatarUrl =
+        CleanText(
+            GAG2_WEATHER_WEBHOOK_AVATAR_URL
+        )
+
+    if avatarUrl ~= "" then
+        payload.avatar_url =
+            avatarUrl
+    end
+
+    return payload
+end
+
+function GAG2WeatherWebhookSend(event)
+
+    if type(event) ~= "table" then
+        return false,
+            "bad event"
+    end
+
+    if GAG2WeatherWebhookCanSend() ~= true then
+        return false,
+            "disabled or missing relay"
+    end
+
+    local relayUrl =
+        CleanText(
+            GAG2_WEATHER_RELAY_URL
+            or GAG2_WEATHER_WEBHOOK_URL
+        )
+
+    local relaySecret =
+        CleanText(
+            GAG2_WEATHER_RELAY_SECRET
+        )
+
+    local weatherName =
+        CleanText(
+            event.Name
+        )
+
+    local phaseName =
+        CleanText(
+            event.Phase
+        )
+
+    local remaining =
+        math.max(
+            0,
+            math.floor(
+                tonumber(event.Remaining)
+                or 0
+            )
+        )
+
+    local phaseEnd =
+        tonumber(event.PhaseEnd)
+        or 0
+
+    if phaseEnd <= 0
+    and remaining > 0 then
+
+        phaseEnd =
+            os.time() + remaining
+    end
+
+    local eventKey =
+        CleanText(
+            event.Key
+        )
+
+    if eventKey == "" then
+
+        local phaseEndBucket =
+            phaseEnd > 0
+            and tostring(
+                math.floor(
+                    phaseEnd / 30
+                )
+            )
+            or "noend"
+
+        eventKey =
+            tostring(game.PlaceId)
+            .. ":"
+            .. weatherName
+            .. ":"
+            .. tostring(phaseEndBucket)
+    end
+
+    local payload = {
+        secret =
+            relaySecret,
+
+        placeId =
+            tostring(game.PlaceId),
+
+        jobId =
+            tostring(game.JobId),
+
+        weatherName =
+            weatherName,
+
+        phase =
+            phaseName ~= ""
+            and phaseName
+            or "Active",
+
+        remaining =
+            tostring(remaining),
+
+        phaseEnd =
+            tostring(
+                math.floor(
+                    phaseEnd
+                )
+            ),
+
+        eventKey =
+            eventKey,
+    }
+
+    local function encodeQueryValue(value)
+
+        local text =
+            tostring(value or "")
+
+        local ok, encoded =
+            pcall(function()
+
+                return HttpService:UrlEncode(
+                    text
+                )
+            end)
+
+        if ok == true
+        and type(encoded) == "string" then
+
+            return encoded
+        end
+
+        return text
+            :gsub("%%", "%%25")
+            :gsub(" ", "%%20")
+            :gsub("\n", "%%0A")
+            :gsub("\r", "%%0D")
+            :gsub("&", "%%26")
+            :gsub("=", "%%3D")
+            :gsub("?", "%%3F")
+            :gsub("#", "%%23")
+    end
+
+    local function buildGetUrl()
+
+        local parts =
+            {}
+
+        for key, value in pairs(payload) do
+
+            parts[#parts + 1] =
+                encodeQueryValue(key)
+                .. "="
+                .. encodeQueryValue(value)
+        end
+
+        table.sort(
+            parts
+        )
+
+        local separator =
+            relayUrl:find(
+                "?",
+                1,
+                true
+            )
+            and "&"
+            or "?"
+
+        return relayUrl
+            .. separator
+            .. table.concat(
+                parts,
+                "&"
+            )
+    end
+
+    local function previewBody(body)
+
+        local text =
+            tostring(body or "")
+                :gsub("\r", " ")
+                :gsub("\n", " ")
+                :gsub("%s+", " ")
+
+        if #text > 220 then
+
+            text =
+                text:sub(
+                    1,
+                    220
+                )
+                .. "..."
+        end
+
+        if text == "" then
+            text =
+                "empty"
+        end
+
+        return text
+    end
+
+    local function parseRelayBody(body, label)
+
+        body =
+            tostring(body or "")
+
+        if body:sub(1, 3) == "\239\187\191" then
+
+            body =
+                body:sub(4)
+        end
+
+        local decodeOk, decoded =
+            pcall(function()
+
+                return HttpService:JSONDecode(
+                    body
+                )
+            end)
+
+        if decodeOk == true
+        and type(decoded) == "table" then
+
+            if decoded.ok == true then
+
+                if decoded.deduped == true then
+                    return true,
+                        "deduped"
+                end
+
+                if decoded.sent == true then
+                    return true,
+                        "sent"
+                end
+
+                if decoded.skipped == true then
+                    return true,
+                        "skipped"
+                end
+
+                return true,
+                    "ok"
+            end
+
+            return false,
+                tostring(
+                    decoded.error
+                    or decoded.message
+                    or "relay rejected request"
+                )
+        end
+
+        local lower =
+            body:sub(
+                1,
+                400
+            ):lower()
+
+        if lower:find("<!doctype html", 1, true)
+        or lower:find("<html", 1, true) then
+
+            return false,
+                tostring(label or "GET")
+                .. " returned HTML: "
+                .. previewBody(body)
+        end
+
+        return false,
+            tostring(label or "GET")
+            .. " invalid JSON: "
+            .. previewBody(body)
+    end
+
+    local function getResponseBody(response)
+
+        if type(response) == "string" then
+            return response
+        end
+
+        if type(response) ~= "table" then
+            return ""
+        end
+
+        return tostring(
+            response.Body
+            or response.body
+            or response.ResponseBody
+            or response.responseBody
+            or ""
+        )
+    end
+
+    local function getResponseCode(response)
+
+        if type(response) ~= "table" then
+            return 0
+        end
+
+        local raw =
+            response.StatusCode
+            or response.statusCode
+            or response.Status
+            or response.status
+            or 0
+
+        return tonumber(raw)
+            or tonumber(
+                tostring(raw):match("(%d+)")
+            )
+            or 0
+    end
+
+    local function parseRelayResponse(response, label)
+
+        local body =
+            getResponseBody(
+                response
+            )
+
+        local ok, info =
+            parseRelayBody(
+                body,
+                label
+            )
+
+        if ok == true then
+            return true,
+                info
+        end
+
+        local code =
+            getResponseCode(
+                response
+            )
+
+        if code >= 200
+        and code < 300
+        and body == "" then
+
+            return true,
+                "sent"
+        end
+
+        if code > 0 then
+
+            return false,
+                "HTTP "
+                .. tostring(code)
+                .. " | "
+                .. tostring(info)
+        end
+
+        return false,
+            info
+    end
+
+    local getUrl =
+        buildGetUrl()
+
+    local firstError =
+        nil
+
+    local httpGetOk, httpGetBody =
+        pcall(function()
+
+            return game:HttpGet(
+                getUrl,
+                true
+            )
+        end)
+
+    if httpGetOk == true
+    and type(httpGetBody) == "string"
+    and httpGetBody ~= "" then
+
+        local accepted, info =
+            parseRelayBody(
+                httpGetBody,
+                "game:HttpGet"
+            )
+
+        if accepted == true then
+            return true,
+                info
+        end
+
+        firstError =
+            info
+
+    elseif httpGetOk ~= true then
+
+        firstError =
+            tostring(httpGetBody)
+    end
+
+    local requestFunction =
+        GAG2WeatherWebhookGetRequestFunction()
+
+    if type(requestFunction) ~= "function" then
+
+        return false,
+            tostring(
+                firstError
+                or "request unsupported"
+            )
+    end
+
+    local requestOk, response =
+        pcall(function()
+
+            return requestFunction({
+                Url =
+                    getUrl,
+
+                Method =
+                    "GET",
+
+                Headers = {
+                    ["Accept"] =
+                        "application/json",
+
+                    ["Cache-Control"] =
+                        "no-cache",
+                },
+
+                Redirect =
+                    true,
+            })
+        end)
+
+    if requestOk ~= true then
+
+        return false,
+            tostring(response)
+    end
+
+    local accepted, info =
+        parseRelayResponse(
+            response,
+            "GET request"
+        )
+
+    if accepted == true then
+        return true,
+            info
+    end
+
+    return false,
+        tostring(
+            info
+            or firstError
+            or "GET relay failed"
+        )
+end
+
+function GAG2WeatherWebhookScan(force)
+
+    local state =
+        GAG2_WEATHER_WEBHOOK_STATE
+
+    local now =
+        os.clock()
+
+    if force ~= true
+    and now - tonumber(state.LastScanAt or 0) < tonumber(state.MinScanDelay or 1) then
+        return
+    end
+
+    state.LastScanAt =
+        now
+
+    local event, reason =
+        GAG2WeatherWebhookGetCurrentEvent()
+
+    if not event then
+        return false,
+            reason
+    end
+
+    if GAG2WeatherWebhookAlreadySent(event.Key) == true then
+        return false,
+            "already sent"
+    end
+
+    local sent, sendInfo =
+        GAG2WeatherWebhookSend(
+            event
+        )
+
+    if sent == true then
+
+        GAG2WeatherWebhookMarkSent(
+            event.Key
+        )
+
+        state.LastKey =
+            event.Key
+    end
+
+    return sent,
+        sendInfo
+end
+
+function GAG2WeatherWebhookArm()
+
+    local state =
+        GAG2_WEATHER_WEBHOOK_STATE
+
+    if state.Armed == true then
+        return
+    end
+
+    state.Armed =
+        true
+
+    local function trigger()
+
+        task.defer(function()
+
+            task.wait(
+                0.15
+            )
+
+            GAG2WeatherWebhookScan(
+                true
+            )
+        end)
+    end
+
+    pcall(function()
+
+        workspace:GetAttributeChangedSignal("ActiveWeather"):Connect(
+            trigger
+        )
+    end)
+
+    pcall(function()
+
+        workspace:GetAttributeChangedSignal("ActivePhase"):Connect(
+            trigger
+        )
+    end)
+
+    pcall(function()
+
+        workspace:GetAttributeChangedSignal("PhaseDuration"):Connect(
+            trigger
+        )
+    end)
+
+    task.defer(function()
+
+        task.wait(
+            2
+        )
+
+        GAG2WeatherWebhookScan(
+            true
+        )
+    end)
+end
+
+GAG2WeatherWebhookArm()
+
+function HOLYTestWeatherRelay()
+
+    if type(GAG2WeatherWebhookSend) ~= "function" then
+
+        warn(
+            "[HOLY WEATHER TEST]",
+            "GAG2WeatherWebhookSend is missing. Main script did not finish loading."
+        )
+
+        return false,
+            "GAG2WeatherWebhookSend missing"
+    end
+
+    local eventKey =
+        "manual-test-rain-"
+        .. tostring(os.time())
+        .. "-"
+        .. tostring(math.random(1000, 9999))
+
+    local ok, info =
+        GAG2WeatherWebhookSend({
+            Name =
+                "Rain",
+
+            Phase =
+                "Manual Test",
+
+            Remaining =
+                180,
+
+            PhaseEnd =
+                os.time() + 180,
+
+            Key =
+                eventKey,
+        })
+
+    print(
+        "[HOLY WEATHER TEST]",
+        tostring(ok),
+        tostring(info)
+    )
+
+    return ok,
+        info
+end
+
+pcall(function()
+
+    local environment =
+        _G
+
+    if type(getgenv) == "function" then
+
+        local resolved =
+            getgenv()
+
+        if type(resolved) == "table" then
+
+            environment =
+                resolved
+        end
+    end
+
+    environment.HOLYTestWeatherRelay =
+        HOLYTestWeatherRelay
+
+    environment.GAG2WeatherWebhookSend =
+        GAG2WeatherWebhookSend
+
+    environment.GAG2WeatherWebhookScan =
+        GAG2WeatherWebhookScan
+
+    environment.GAG2WeatherWebhookGetCurrentEvent =
+        GAG2WeatherWebhookGetCurrentEvent
+end)
+
 function StartHomeActivePetsLoop()
 
     if HomeActivePetsLoopRunning == true then
@@ -35297,6 +37601,11 @@ function StartHomeActivePetsLoop()
             if type(GAG2FarmDetailsRefresh) == "function" then
 
                 GAG2FarmDetailsRefresh()
+            end
+
+            if type(GAG2WeatherWebhookScan) == "function" then
+
+                GAG2WeatherWebhookScan()
             end
 
             GAG2RareWebhookScan()
