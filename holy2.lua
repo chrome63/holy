@@ -1034,6 +1034,13 @@ GAG2_AUTO_TP_MIDDLE_FARM_STATE = {
     MaxSkipAttempts = 2,
     SkipRetryDelay = 0.25,
 
+    LoadingFallbackSeconds = 5.00,
+    LoadingFallbackRetryDelay = 0.75,
+    LoadingFallbackStarted = false,
+    LoadingFallbackStartedAt = 0,
+    LoadingFallbackAttempts = 0,
+    LoadingFallbackLastAt = 0,
+
     PostLoadWatchSeconds = 10,
     PostLoadRepairRetryInterval = 0.50,
     PostLoadFinalSettleSeconds = 1.25,
@@ -9139,11 +9146,26 @@ local SniperState = {
     EnabledAt = 0,
     InstantHopGrace = 0,
     ReturnAfterTame = false,
+    ReturnAfterBatch = false,
     ReturnMovementMode = "Walk",
+
+    BatchReturnCFrame = nil,
+    BatchReturnClosePosition = nil,
+    BatchReturnActive = false,
+    BatchReturnStartedAt = 0,
+    BatchReturnEmptySince = 0,
+    BatchReturnLastMatchCount = 0,
+    BatchReturnLastReason = "",
+    BatchReturnStableSeconds = 2.0,
+
+    ReturningAfterBuy = false,
+    ReturnLockUntil = 0,
+    ReturnLockSeconds = 1.45,
+
     FollowPet = false,
     FollowMaxSeconds = 3.4,
     FollowRefreshDelay = 0.12,
-    MovementMode = "Teleport",
+    MovementMode = "Walk",
     BuyMode = "Instant",
 
     Taming = false,
@@ -9155,8 +9177,34 @@ local SniperState = {
     ConfirmingBuy = false,
     ConfirmingBuyKey = "",
 
-    BuyValidationHoldDelay = 0.25,
+    StopRequested = false,
+    BuyTaskToken = 0,
+
+    PostMoveBuyDelay = 0.10,
+    BuyValidationHoldDelay = 5.7,
     RequireShecklesDrop = true,
+
+    BuyConfirmQuickTimeout = 4.00,
+    BuyRetryDelay = 0.35,
+    MaxBuyAttemptsPerPet = 1,
+
+    WalkSettleDelay = 0.35,
+    WalkFireMaxDistance = 9.0,
+    WalkInstantMaxAttempts = 2,
+    TeleportInstantMaxAttempts = 1,
+    HoldMaxAttempts = 1,
+
+    TeleportSettleDelay = 0.20,
+    TeleportResnapDistance = 12,
+    TeleportPostSnapDelay = 0.08,
+
+    TeleportPetDistance = 5.9,
+    TeleportPetResnapDistance = 8.5,
+    TeleportTargetResnapDistance = 10.0,
+    TeleportResnapCooldown = 0.55,
+    FireMaxPetDistance = 9.0,
+    ExtraHoldAfterFinalResnap = 0.75,
+
     StartupBuyDelay = 8,
     StartedAt = os.clock(),
 
@@ -12198,43 +12246,88 @@ GAG2_AUTO_COLLECT_SEEDS_STATE =
         CollectMode = "Instant",
         HoldDuration = 3.2,
         LastStatus = "Idle.",
+
         Recent = {},
 
-        ClaimRangePadding = 1.75,
-        SafeClaimDistance = 7.25,
-        WalkTimeout = 12,
-        WalkRefreshDelay = 0.55,
-        TeleportClaimWait = 1.25,
+        PromptCache = {},
+        CacheConnections = {},
+        CacheFolder = nil,
 
-        StaleRecentSeconds = 8,
-        MissingRecentSeconds = 12,
+        ClaimRangePadding = 0.75,
+        SafeClaimDistance = 8.75,
 
-        ClaimRangePadding = 1.75,
-        SafeClaimDistance = 7.25,
-        WalkTimeout = 12,
-        WalkRefreshDelay = 0.55,
-        TeleportClaimWait = 1.25,
+        WalkTimeout = 8,
+        WalkRefreshDelay = 0.20,
+        TeleportClaimWait = 0.35,
+
+        ConfirmTimeout = 1.35,
+
+        CycleDelay = 0.06,
+        IdleCycleDelay = 0.12,
+
+        StaleRecentSeconds = 0.55,
+        MissingRecentSeconds = 0.75,
+        SuccessRecentSeconds = 0.30,
     }
+
+GAG2_AUTO_COLLECT_SEEDS_STATE.Recent =
+    type(GAG2_AUTO_COLLECT_SEEDS_STATE.Recent) == "table"
+    and GAG2_AUTO_COLLECT_SEEDS_STATE.Recent
+    or {}
+
+GAG2_AUTO_COLLECT_SEEDS_STATE.PromptCache =
+    type(GAG2_AUTO_COLLECT_SEEDS_STATE.PromptCache) == "table"
+    and GAG2_AUTO_COLLECT_SEEDS_STATE.PromptCache
+    or {}
+
+GAG2_AUTO_COLLECT_SEEDS_STATE.CacheConnections =
+    type(GAG2_AUTO_COLLECT_SEEDS_STATE.CacheConnections) == "table"
+    and GAG2_AUTO_COLLECT_SEEDS_STATE.CacheConnections
+    or {}
 
 GAG2_AUTO_COLLECT_SEEDS_STATE.ClaimRangePadding =
     tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.ClaimRangePadding)
-    or 1.75
+    or 0.75
 
 GAG2_AUTO_COLLECT_SEEDS_STATE.SafeClaimDistance =
     tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.SafeClaimDistance)
-    or 7.25
+    or 8.75
 
 GAG2_AUTO_COLLECT_SEEDS_STATE.WalkTimeout =
     tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.WalkTimeout)
-    or 12
+    or 8
 
 GAG2_AUTO_COLLECT_SEEDS_STATE.WalkRefreshDelay =
     tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.WalkRefreshDelay)
-    or 0.55
+    or 0.20
 
 GAG2_AUTO_COLLECT_SEEDS_STATE.TeleportClaimWait =
     tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.TeleportClaimWait)
-    or 1.25
+    or 0.35
+
+GAG2_AUTO_COLLECT_SEEDS_STATE.ConfirmTimeout =
+    tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.ConfirmTimeout)
+    or 1.35
+
+GAG2_AUTO_COLLECT_SEEDS_STATE.CycleDelay =
+    tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.CycleDelay)
+    or 0.06
+
+GAG2_AUTO_COLLECT_SEEDS_STATE.IdleCycleDelay =
+    tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.IdleCycleDelay)
+    or 0.12
+
+GAG2_AUTO_COLLECT_SEEDS_STATE.StaleRecentSeconds =
+    tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.StaleRecentSeconds)
+    or 0.55
+
+GAG2_AUTO_COLLECT_SEEDS_STATE.MissingRecentSeconds =
+    tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.MissingRecentSeconds)
+    or 0.75
+
+GAG2_AUTO_COLLECT_SEEDS_STATE.SuccessRecentSeconds =
+    tonumber(GAG2_AUTO_COLLECT_SEEDS_STATE.SuccessRecentSeconds)
+    or 0.30
 
 function GAG2SeedCollectSetStatus(text)
 
@@ -12257,6 +12350,226 @@ function GAG2SeedCollectGetFolder()
     return map
         and map:FindFirstChild("SeedPackSpawnServerLocations")
         or nil
+end
+
+function GAG2SeedCollectDisconnectCache()
+
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
+
+    if type(state.CacheConnections) == "table" then
+
+        for _, connection in ipairs(state.CacheConnections) do
+
+            if connection then
+
+                pcall(function()
+
+                    connection:Disconnect()
+                end)
+            end
+        end
+    end
+
+    state.CacheConnections =
+        {}
+
+    state.PromptCache =
+        {}
+
+    state.CacheFolder =
+        nil
+end
+
+function GAG2SeedCollectCachePrompt(prompt)
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true then
+
+        return false
+    end
+
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
+
+    state.PromptCache =
+        type(state.PromptCache) == "table"
+        and state.PromptCache
+        or {}
+
+    state.PromptCache[prompt] =
+        true
+
+    return true
+end
+
+function GAG2SeedCollectRebuildPromptCache(folder)
+
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
+
+    state.PromptCache =
+        {}
+
+    if typeof(folder) ~= "Instance" then
+        return 0
+    end
+
+    local count =
+        0
+
+    for _, descendant in ipairs(folder:GetDescendants()) do
+
+        if descendant:IsA("ProximityPrompt") then
+
+            state.PromptCache[descendant] =
+                true
+
+            count =
+                count + 1
+        end
+    end
+
+    return count
+end
+
+function GAG2SeedCollectEnsurePromptCache()
+
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
+
+    local folder =
+        GAG2SeedCollectGetFolder()
+
+    if not folder then
+
+        GAG2SeedCollectDisconnectCache()
+
+        return nil
+    end
+
+    if state.CacheFolder == folder
+    and type(state.PromptCache) == "table" then
+
+        return folder
+    end
+
+    GAG2SeedCollectDisconnectCache()
+
+    state.CacheFolder =
+        folder
+
+    state.PromptCache =
+        {}
+
+    state.CacheConnections =
+        {}
+
+    GAG2SeedCollectRebuildPromptCache(
+        folder
+    )
+
+    local addedConnection =
+        folder.DescendantAdded:Connect(function(descendant)
+
+            if descendant:IsA("ProximityPrompt") then
+
+                GAG2SeedCollectCachePrompt(
+                    descendant
+                )
+            end
+        end)
+
+    local removingConnection =
+        folder.DescendantRemoving:Connect(function(descendant)
+
+            if descendant:IsA("ProximityPrompt") then
+
+                GAG2_AUTO_COLLECT_SEEDS_STATE.PromptCache[descendant] =
+                    nil
+            end
+        end)
+
+    table.insert(
+        state.CacheConnections,
+        addedConnection
+    )
+
+    table.insert(
+        state.CacheConnections,
+        removingConnection
+    )
+
+    return folder
+end
+
+function GAG2SeedCollectGetCachedPrompts()
+
+    local folder =
+        GAG2SeedCollectEnsurePromptCache()
+
+    if not folder then
+        return {}
+    end
+
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
+
+    local prompts =
+        {}
+
+    state.PromptCache =
+        type(state.PromptCache) == "table"
+        and state.PromptCache
+        or {}
+
+    local aliveCount =
+        0
+
+    for prompt in pairs(state.PromptCache) do
+
+        if typeof(prompt) == "Instance"
+        and prompt:IsA("ProximityPrompt")
+        and prompt.Parent ~= nil
+        and prompt:IsDescendantOf(folder) == true then
+
+            aliveCount =
+                aliveCount + 1
+
+            table.insert(
+                prompts,
+                prompt
+            )
+
+        else
+
+            state.PromptCache[prompt] =
+                nil
+        end
+    end
+
+    if aliveCount <= 0 then
+
+        GAG2SeedCollectRebuildPromptCache(
+            folder
+        )
+
+        for prompt in pairs(state.PromptCache) do
+
+            if typeof(prompt) == "Instance"
+            and prompt:IsA("ProximityPrompt")
+            and prompt.Parent ~= nil
+            and prompt:IsDescendantOf(folder) == true then
+
+                table.insert(
+                    prompts,
+                    prompt
+                )
+            end
+        end
+    end
+
+    return prompts
 end
 
 function GAG2SeedCollectGetCharacterRoot()
@@ -12292,12 +12605,91 @@ function GAG2SeedCollectReadType(part)
         return ""
     end
 
-    if part:GetAttribute("GoldSeed") == true then
-        return "Gold"
+    local function scanInstance(instance)
+
+        if typeof(instance) ~= "Instance" then
+            return ""
+        end
+
+        local attrNames = {
+            "SeedType",
+            "Type",
+            "WeatherType",
+            "PackType",
+            "Name",
+        }
+
+        if instance:GetAttribute("GoldSeed") == true then
+            return "Gold"
+        end
+
+        if instance:GetAttribute("RainbowSeed") == true then
+            return "Rainbow"
+        end
+
+        for _, attrName in ipairs(attrNames) do
+
+            local ok, value =
+                pcall(function()
+
+                    return instance:GetAttribute(
+                        attrName
+                    )
+                end)
+
+            local text =
+                ok == true
+                and CleanText(value):lower()
+                or ""
+
+            if text:find("gold", 1, true) then
+                return "Gold"
+            end
+
+            if text:find("rainbow", 1, true) then
+                return "Rainbow"
+            end
+        end
+
+        local name =
+            CleanText(instance.Name):lower()
+
+        if name:find("gold", 1, true) then
+            return "Gold"
+        end
+
+        if name:find("rainbow", 1, true) then
+            return "Rainbow"
+        end
+
+        if instance:IsA("ProximityPrompt") then
+
+            local promptText =
+                (
+                    CleanText(instance.ObjectText)
+                    .. " "
+                    .. CleanText(instance.ActionText)
+                ):lower()
+
+            if promptText:find("gold", 1, true) then
+                return "Gold"
+            end
+
+            if promptText:find("rainbow", 1, true) then
+                return "Rainbow"
+            end
+        end
+
+        return ""
     end
 
-    if part:GetAttribute("RainbowSeed") == true then
-        return "Rainbow"
+    local direct =
+        scanInstance(
+            part
+        )
+
+    if direct ~= "" then
+        return direct
     end
 
     local prompt =
@@ -12308,18 +12700,37 @@ function GAG2SeedCollectReadType(part)
 
     if prompt then
 
-        local text =
-            CleanText(
-                tostring(prompt.ObjectText)
-            ):lower()
+        local promptType =
+            scanInstance(
+                prompt
+            )
 
-        if text:find("gold", 1, true) then
-            return "Gold"
+        if promptType ~= "" then
+            return promptType
+        end
+    end
+
+    local current =
+        part.Parent
+
+    for _ = 1, 6 do
+
+        if typeof(current) ~= "Instance"
+        or current == workspace then
+            break
         end
 
-        if text:find("rainbow", 1, true) then
-            return "Rainbow"
+        local parentType =
+            scanInstance(
+                current
+            )
+
+        if parentType ~= "" then
+            return parentType
         end
+
+        current =
+            current.Parent
     end
 
     return ""
@@ -12327,10 +12738,25 @@ end
 
 function GAG2SeedCollectTypeAllowed(seedType)
 
+    seedType =
+        CleanText(
+            seedType
+        )
+
     local selected =
         CleanText(
             GAG2_AUTO_COLLECT_SEEDS_STATE.SeedType
         )
+
+    -- Some live seed prompts are only stored as:
+    -- workspace.Map.SeedPackSpawnServerLocations.Part
+    -- and do not expose Gold/Rainbow text client-side.
+    -- Unknown is still allowed because the folder itself is seed-only.
+    if seedType == ""
+    or seedType == "Seed"
+    or seedType == "Unknown" then
+        return true
+    end
 
     if selected == "Gold + Rainbow" then
         return seedType == "Gold"
@@ -12344,6 +12770,38 @@ function GAG2SeedCollectGetToolCount(seedType)
 
     local count =
         0
+
+    seedType =
+        CleanText(
+            seedType
+        )
+
+    local function toolAllowed(toolName)
+
+        toolName =
+            CleanText(
+                toolName
+            )
+
+        local lowerName =
+            toolName:lower()
+
+        if seedType == ""
+        or seedType == "Seed"
+        or seedType == "Unknown"
+        or seedType == "Gold + Rainbow" then
+
+            return toolName == "Gold"
+                or toolName == "Rainbow"
+                or lowerName:find("seed", 1, true) ~= nil
+        end
+
+        return toolName == seedType
+            or (
+                lowerName:find(seedType:lower(), 1, true) ~= nil
+                and lowerName:find("seed", 1, true) ~= nil
+            )
+    end
 
     local backpack =
         LOCAL_PLAYER:FindFirstChildOfClass("Backpack")
@@ -12360,7 +12818,7 @@ function GAG2SeedCollectGetToolCount(seedType)
         for _, child in ipairs(root:GetChildren()) do
 
             if child:IsA("Tool")
-            and CleanText(child.Name) == seedType then
+            and toolAllowed(child.Name) == true then
 
                 local stack =
                     tonumber(child:GetAttribute("Count"))
@@ -12389,7 +12847,7 @@ end
 function GAG2SeedCollectFindNearest()
 
     local folder =
-        GAG2SeedCollectGetFolder()
+        GAG2SeedCollectEnsurePromptCache()
 
     local character, root =
         GAG2SeedCollectGetCharacterRoot()
@@ -12407,51 +12865,182 @@ function GAG2SeedCollectFindNearest()
     local bestDistance =
         math.huge
 
-    for _, child in ipairs(folder:GetChildren()) do
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
 
-        if child:IsA("BasePart") then
+    if type(state.Recent) ~= "table" then
+        state.Recent = {}
+    end
 
-            local prompt =
-                child:FindFirstChildWhichIsA(
-                    "ProximityPrompt",
-                    true
-                )
+    local prompts =
+        GAG2SeedCollectGetCachedPrompts()
 
-            local seedType =
-                GAG2SeedCollectReadType(
-                    child
-                )
+    if #prompts <= 0 then
 
-            if prompt
-            and prompt.Enabled == true
-            and GAG2SeedCollectTypeAllowed(seedType) == true then
+        return nil,
+            "no seed prompts"
+    end
 
-                local key =
-                    tostring(child)
+    local now =
+        os.clock()
 
-                local recent =
-                    tonumber(
-                        GAG2_AUTO_COLLECT_SEEDS_STATE.Recent[key]
+    for _, prompt in ipairs(prompts) do
+
+        if prompt.Enabled == true
+        and prompt.Parent ~= nil
+        and prompt:IsDescendantOf(workspace) == true then
+
+            local promptParent =
+                prompt.Parent
+
+            local part =
+                nil
+
+            if typeof(promptParent) == "Instance" then
+
+                if promptParent:IsA("BasePart") then
+
+                    part =
+                        promptParent
+
+                elseif promptParent:IsA("Attachment")
+                and typeof(promptParent.Parent) == "Instance"
+                and promptParent.Parent:IsA("BasePart") then
+
+                    part =
+                        promptParent.Parent
+                end
+            end
+
+            if not part then
+
+                local current =
+                    promptParent
+
+                for _ = 1, 8 do
+
+                    if typeof(current) ~= "Instance"
+                    or current == folder
+                    or current == workspace then
+                        break
+                    end
+
+                    if current:IsA("BasePart") then
+
+                        part =
+                            current
+
+                        break
+                    end
+
+                    current =
+                        current.Parent
+                end
+            end
+
+            if part
+            and part.Parent ~= nil
+            and part:IsDescendantOf(workspace) == true then
+
+                local seedType =
+                    GAG2SeedCollectReadType(
+                        part
                     )
-                    or 0
 
-                if os.clock() - recent >= 1.5 then
+                if seedType == "" then
 
-                    local distance =
-                        (root.Position - child.Position).Magnitude
+                    seedType =
+                        GAG2SeedCollectReadType(
+                            prompt
+                        )
+                end
 
-                    if distance < bestDistance then
+                if seedType == "" then
 
-                        bestDistance =
-                            distance
+                    local selected =
+                        CleanText(
+                            state.SeedType
+                        )
 
-                        best = {
-                            Part = child,
-                            Prompt = prompt,
-                            SeedType = seedType,
-                            Distance = distance,
-                            Key = key,
-                        }
+                    if selected == "Gold"
+                    or selected == "Rainbow" then
+
+                        seedType =
+                            selected
+
+                    else
+
+                        seedType =
+                            "Seed"
+                    end
+                end
+
+                if GAG2SeedCollectTypeAllowed(seedType) == true then
+
+                    local key =
+                        PathOf(prompt)
+                        .. "|"
+                        .. tostring(seedType)
+
+                    local debugId =
+                        ""
+
+                    pcall(function()
+
+                        debugId =
+                            tostring(
+                                prompt:GetDebugId(5)
+                            )
+                    end)
+
+                    if debugId ~= "" then
+
+                        key =
+                            key
+                            .. "|"
+                            .. debugId
+                    end
+
+                    local recent =
+                        tonumber(state.Recent[key])
+                        or 0
+
+                    if recent <= 0
+                    or now >= recent then
+
+                        local position =
+                            nil
+
+                        if promptParent:IsA("Attachment") then
+
+                            position =
+                                promptParent.WorldPosition
+
+                        else
+
+                            position =
+                                part.Position
+                        end
+
+                        if typeof(position) == "Vector3" then
+
+                            local distance =
+                                (root.Position - position).Magnitude
+
+                            if distance < bestDistance then
+
+                                bestDistance =
+                                    distance
+
+                                best = {
+                                    Part = part,
+                                    Prompt = prompt,
+                                    SeedType = seedType,
+                                    Distance = distance,
+                                    Key = key,
+                                }
+                            end
+                        end
                     end
                 end
             end
@@ -13069,7 +13658,8 @@ function GAG2SeedCollectIsEntryAlive(entry)
     local prompt =
         entry.Prompt
 
-    if typeof(part) ~= "Instance" then
+    if typeof(part) ~= "Instance"
+    or part:IsA("BasePart") ~= true then
 
         return false,
             "missing seed part"
@@ -13118,17 +13708,6 @@ function GAG2SeedCollectIsEntryAlive(entry)
             .. tostring(claimReason)
     end
 
-    local visualAlive, visualReason =
-        GAG2SeedCollectEntryHasLiveSeedVisual(
-            entry
-        )
-
-    if visualAlive ~= true then
-
-        return false,
-            tostring(visualReason)
-    end
-
     if prompt.Enabled ~= true then
 
         return false,
@@ -13144,6 +13723,16 @@ function GAG2SeedCollectIsEntryAlive(entry)
 
         return false,
             "missing prompt position"
+    end
+
+    local maxDistance =
+        tonumber(prompt.MaxActivationDistance)
+        or 0
+
+    if maxDistance <= 0 then
+
+        return false,
+            "bad activation distance"
     end
 
     return true,
@@ -13594,20 +14183,75 @@ function GAG2SeedCollectWaitConfirm(entry, beforeCount)
     local started =
         os.clock()
 
-    while GAG2_AUTO_COLLECT_SEEDS_STATE.Enabled == true
-    and os.clock() - started < 5 do
+    beforeCount =
+        tonumber(beforeCount)
+        or 0
 
-        if type(entry) == "table"
-        and typeof(entry.Part) == "Instance"
-        and entry.Part.Parent == nil then
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
 
-            return true,
-                "seed removed"
+    local timeout =
+        tonumber(state.ConfirmTimeout)
+        or 1.35
+
+    if CleanText(state.CollectMode) == "Hold" then
+
+        timeout =
+            math.max(
+                timeout,
+                (
+                    tonumber(state.HoldDuration)
+                    or 3.2
+                )
+                + 0.45
+            )
+    end
+
+    while state.Enabled == true
+    and os.clock() - started < timeout do
+
+        if type(entry) == "table" then
+
+            if typeof(entry.Part) == "Instance"
+            and entry.Part.Parent == nil then
+
+                return true,
+                    "seed removed"
+            end
+
+            if typeof(entry.Prompt) == "Instance" then
+
+                if entry.Prompt.Parent == nil then
+
+                    return true,
+                        "prompt removed"
+                end
+
+                if entry.Prompt.Enabled ~= true then
+
+                    return true,
+                        "prompt disabled"
+                end
+            end
+
+            local claimed, claimReason =
+                GAG2SeedCollectEntryHasClaimedFlag(
+                    entry
+                )
+
+            if claimed == true then
+
+                return true,
+                    "claimed flag: "
+                    .. tostring(claimReason)
+            end
         end
 
         local nowCount =
             GAG2SeedCollectGetToolCount(
-                entry.SeedType
+                entry
+                and entry.SeedType
+                or ""
             )
 
         if nowCount > beforeCount then
@@ -13616,7 +14260,9 @@ function GAG2SeedCollectWaitConfirm(entry, beforeCount)
                 "backpack confirmed"
         end
 
-        task.wait(0.1)
+        task.wait(
+            0.05
+        )
     end
 
     return false,
@@ -13630,6 +14276,9 @@ function GAG2SeedCollectCycle()
 
     local entry, reason =
         GAG2SeedCollectFindNearest()
+
+    state.LastHadEntry =
+        entry ~= nil
 
     if not entry then
 
@@ -13663,7 +14312,7 @@ function GAG2SeedCollectCycle()
     end
 
     state.Recent[entry.Key] =
-        os.clock()
+        os.clock() + 0.10
 
     GAG2SeedCollectSetStatus(
         "Collecting "
@@ -13714,10 +14363,14 @@ function GAG2SeedCollectCycle()
         return
     end
 
+    local _,
+        root =
+        GAG2SeedCollectGetCharacterRoot()
+
     local claimable, claimInfo =
-        GAG2SeedCollectWaitClaimable(
+        GAG2SeedCollectIsPromptClaimable(
             entry,
-            1.5
+            root
         )
 
     if claimable ~= true then
@@ -13768,7 +14421,7 @@ function GAG2SeedCollectCycle()
         GAG2SeedCollectMarkEntryStale(
             entry,
             "confirmed",
-            state.MissingRecentSeconds
+            state.SuccessRecentSeconds
         )
 
         GAG2SeedCollectSetStatus(
@@ -13805,13 +14458,32 @@ function GAG2SeedCollectStart()
     state.Running =
         true
 
+    GAG2SeedCollectEnsurePromptCache()
+
     task.spawn(function()
 
         while state.Enabled == true do
 
             GAG2SeedCollectCycle()
 
-            task.wait(0.2)
+            local delay =
+                state.LastHadEntry == true
+                and (
+                    tonumber(state.CycleDelay)
+                    or 0.06
+                )
+                or (
+                    tonumber(state.IdleCycleDelay)
+                    or 0.12
+                )
+
+            task.wait(
+                math.clamp(
+                    delay,
+                    0.04,
+                    0.25
+                )
+            )
         end
 
         state.Running =
@@ -14805,24 +15477,61 @@ end
 
 function GAG2AutoPlayLoadingStep()
 
-    -- Loading-screen automation removed.
-    -- This function is kept only so old calls do not error.
-
     GAG2_AUTO_PLAY_STATE =
         type(GAG2_AUTO_PLAY_STATE) == "table"
         and GAG2_AUTO_PLAY_STATE
         or {}
 
-    GAG2_AUTO_PLAY_STATE.Finished =
-        true
-
-    if type(SniperState) == "table" then
-
-        SniperState.PlayScreenClearAt =
-            os.clock()
+    if GAG2_AUTO_PLAY_STATE.Finished == true then
+        return false,
+            "already finished"
     end
 
-    return true
+    local now =
+        os.clock()
+
+    local lastClick =
+        tonumber(
+            GAG2_AUTO_PLAY_STATE.LastClick
+        )
+        or 0
+
+    if now - lastClick < 0.65 then
+
+        return false,
+            "click cooldown"
+    end
+
+    GAG2_AUTO_PLAY_STATE.Started =
+        true
+
+    GAG2_AUTO_PLAY_STATE.LastClick =
+        now
+
+    GAG2_AUTO_PLAY_STATE.Attempts =
+        math.floor(
+            tonumber(GAG2_AUTO_PLAY_STATE.Attempts)
+            or 0
+        )
+        + 1
+
+    if GAG2_AUTO_PLAY_STATE.Attempts > 30 then
+
+        return false,
+            "max autoplay attempts"
+    end
+
+    local ok, info =
+        GAG2SendLoadingScreenClick()
+
+    if ok == true then
+
+        return true,
+            tostring(info)
+    end
+
+    return false,
+        tostring(info)
 end
 
 function GAG2ClientReadyForBuy()
@@ -14952,7 +15661,24 @@ local function SniperReadyToHop()
         "Ready."
 end
 
-local function SniperReadyToBuy()
+local function SniperReadyToBuy(ignoreReturnLock)
+
+    if ignoreReturnLock ~= true then
+
+        local now =
+            os.clock()
+
+        local returnLockUntil =
+            tonumber(SniperState.ReturnLockUntil)
+            or 0
+
+        if SniperState.ReturningAfterBuy == true
+        or now < returnLockUntil then
+
+            return false,
+                "Returning..."
+        end
+    end
 
     local elapsed =
         os.clock()
@@ -15809,6 +16535,158 @@ function GAG2MiddleFarmWalkTo(position)
         return false, "missing humanoid"
     end
 
+    local cancelled =
+        false
+
+    local cancelReason =
+        ""
+
+    local connections =
+        {}
+
+    local movementKeys = {
+        [Enum.KeyCode.W] = true,
+        [Enum.KeyCode.A] = true,
+        [Enum.KeyCode.S] = true,
+        [Enum.KeyCode.D] = true,
+
+        [Enum.KeyCode.Up] = true,
+        [Enum.KeyCode.Down] = true,
+        [Enum.KeyCode.Left] = true,
+        [Enum.KeyCode.Right] = true,
+
+        [Enum.KeyCode.Space] = true,
+
+        [Enum.KeyCode.DPadUp] = true,
+        [Enum.KeyCode.DPadDown] = true,
+        [Enum.KeyCode.DPadLeft] = true,
+        [Enum.KeyCode.DPadRight] = true,
+        [Enum.KeyCode.ButtonA] = true,
+    }
+
+    local function requestCancel(reason)
+
+        if cancelled == true then
+            return
+        end
+
+        cancelled =
+            true
+
+        cancelReason =
+            tostring(reason or "manual movement")
+    end
+
+    local function disconnectInputs()
+
+        for _, connection in ipairs(connections) do
+
+            if connection then
+
+                pcall(function()
+
+                    connection:Disconnect()
+                end)
+            end
+        end
+
+        table.clear(
+            connections
+        )
+    end
+
+    if GAG2_USER_INPUT_SERVICE then
+
+        table.insert(
+            connections,
+            GAG2_USER_INPUT_SERVICE.InputBegan:Connect(function(input, gameProcessed)
+
+                if gameProcessed == true then
+                    return
+                end
+
+                if movementKeys[input.KeyCode] == true then
+
+                    requestCancel(
+                        "manual key movement"
+                    )
+                end
+
+                if input.UserInputType == Enum.UserInputType.Touch then
+
+                    requestCancel(
+                        "manual touch movement"
+                    )
+                end
+            end)
+        )
+
+        table.insert(
+            connections,
+            GAG2_USER_INPUT_SERVICE.InputChanged:Connect(function(input, gameProcessed)
+
+                if gameProcessed == true then
+                    return
+                end
+
+                if input.KeyCode == Enum.KeyCode.Thumbstick1 then
+
+                    local positionValue =
+                        input.Position
+
+                    if typeof(positionValue) == "Vector3"
+                    and positionValue.Magnitude >= 0.18 then
+
+                        requestCancel(
+                            "manual thumbstick movement"
+                        )
+                    end
+                end
+
+                if input.UserInputType == Enum.UserInputType.Touch then
+
+                    requestCancel(
+                        "manual touch movement"
+                    )
+                end
+            end)
+        )
+    end
+
+    local function stopWalking(currentRoot)
+
+        pcall(function()
+
+            if humanoid
+            and humanoid.Parent then
+
+                humanoid:Move(
+                    Vector3.zero,
+                    false
+                )
+
+                if currentRoot
+                and currentRoot.Parent then
+
+                    humanoid:MoveTo(
+                        currentRoot.Position
+                    )
+                end
+            end
+        end)
+
+        if currentRoot
+        and type(SniperStopCharacterMotion) == "function" then
+
+            pcall(function()
+
+                SniperStopCharacterMotion(
+                    currentRoot
+                )
+            end)
+        end
+    end
+
     local started =
         os.clock()
 
@@ -15822,6 +16700,9 @@ function GAG2MiddleFarmWalkTo(position)
 
         if not character
         or not root then
+
+            disconnectInputs()
+
             return false, "lost character/root"
         end
 
@@ -15829,7 +16710,31 @@ function GAG2MiddleFarmWalkTo(position)
             character:FindFirstChildOfClass("Humanoid")
 
         if not humanoid then
+
+            disconnectInputs()
+
             return false, "lost humanoid"
+        end
+
+        if cancelled == true then
+
+            stopWalking(
+                root
+            )
+
+            disconnectInputs()
+
+            GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovedOnce =
+                true
+
+            GAG2_AUTO_TP_MIDDLE_FARM_STATE.MiddleReady =
+                true
+
+            GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
+                "walk cancelled by user"
+
+            return true,
+                "walk cancelled by user movement"
         end
 
         local distance =
@@ -15854,12 +16759,14 @@ function GAG2MiddleFarmWalkTo(position)
         )
     end
 
+    disconnectInputs()
+
     local _, finalRoot =
         SniperGetCharacterRoot()
 
     if finalRoot then
 
-        SniperStopCharacterMotion(
+        stopWalking(
             finalRoot
         )
 
@@ -16051,7 +16958,7 @@ function GAG2TeleportToMiddleFarmOnce(reason)
     local mode =
         GAG2MiddleFarmGetMovementMode()
 
-    local ok, err =
+    local ok, moveInfo =
         GAG2MiddleFarmMoveTo(
             position
         )
@@ -16060,10 +16967,10 @@ function GAG2TeleportToMiddleFarmOnce(reason)
 
         GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
             "middle move failed: "
-            .. tostring(err)
+            .. tostring(moveInfo)
 
         return false,
-            tostring(err)
+            tostring(moveInfo)
     end
 
     GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastTeleportAt =
@@ -16076,9 +16983,10 @@ function GAG2TeleportToMiddleFarmOnce(reason)
         positionReason
 
     GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastResult =
-        "moved by "
-        .. tostring(mode)
+        tostring(mode)
         .. ": "
+        .. tostring(moveInfo or "done")
+        .. " | "
         .. tostring(positionReason)
 
     print(
@@ -16088,6 +16996,8 @@ function GAG2TeleportToMiddleFarmOnce(reason)
         tostring(mode),
         "| reason:",
         tostring(reason or "manual"),
+        "| result:",
+        tostring(moveInfo or "done"),
         "| target:",
         GAG2FarmVecText(position),
         "|",
@@ -16095,7 +17005,7 @@ function GAG2TeleportToMiddleFarmOnce(reason)
     )
 
     return true,
-        positionReason
+        tostring(moveInfo or positionReason)
 end
 
 function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
@@ -16185,6 +17095,30 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
 
         state.SkipSuccessReason =
             ""
+
+        state.LoadingFallbackStarted =
+            false
+
+        state.LoadingFallbackStartedAt =
+            0
+
+        state.LoadingFallbackAttempts =
+            0
+
+        state.LoadingFallbackLastAt =
+            0
+
+        GAG2_AUTO_PLAY_STATE.Started =
+            false
+
+        GAG2_AUTO_PLAY_STATE.Finished =
+            false
+
+        GAG2_AUTO_PLAY_STATE.LastClick =
+            0
+
+        GAG2_AUTO_PLAY_STATE.Attempts =
+            0
 
         state.HoldingSkip =
             false
@@ -16347,6 +17281,41 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
                 return
             end
 
+            local function tryDirectClick(label)
+
+                local clickOk, clickInfo =
+                    GAG2AutoPlayLoadingStep()
+
+                if clickOk == true then
+
+                    state.SkipStarted =
+                        true
+
+                    state.SkipSucceeded =
+                        true
+
+                    state.SkipSuccessReason =
+                        tostring(label or "loading click")
+                        .. ": "
+                        .. tostring(clickInfo)
+
+                    state.LastResult =
+                        "loading click sent"
+
+                    print(
+                        "[HOLY LOADING]",
+                        tostring(label or "Loading click")
+                        .. " | "
+                        .. tostring(clickInfo)
+                    )
+
+                    return true
+                end
+
+                return false,
+                    tostring(clickInfo)
+            end
+
             if state.HoldingSkip == true then
 
                 local heldFor =
@@ -16365,23 +17334,148 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
                 return
             end
 
-            if state.SkipAttempts >= tonumber(state.MaxSkipAttempts or 2) then
+            local maxSkipAttempts =
+                math.max(
+                    1,
+                    math.floor(
+                        tonumber(state.MaxSkipAttempts)
+                        or 2
+                    )
+                )
+
+            local skipRetryDelay =
+                math.clamp(
+                    tonumber(state.SkipRetryDelay)
+                    or 0.25,
+                    0.10,
+                    2.00
+                )
+
+            if tonumber(state.SkipAttempts or 0) < maxSkipAttempts then
+
+                if now - lastHoldReleasedAt < skipRetryDelay then
+                    return
+                end
+
+                state.SkipStarted =
+                    true
+
+                state.SkipAttempts =
+                    tonumber(state.SkipAttempts)
+                    or 0
+
+                state.SkipAttempts =
+                    state.SkipAttempts + 1
+
+                local clicked =
+                    tryDirectClick(
+                        "Primary loading skip"
+                    )
+
+                if clicked == true then
+                    return
+                end
+
+                local ok, holdInfo =
+                    GAG2MiddleFarmPressSkipHold()
+
+                if ok ~= true then
+
+                    lastHoldReleasedAt =
+                        now
+
+                    state.LastResult =
+                        "loading hold failed: "
+                        .. tostring(holdInfo)
+
+                else
+
+                    state.LastResult =
+                        "loading hold started"
+                end
+
                 return
             end
 
-            if now - lastHoldReleasedAt < tonumber(state.SkipRetryDelay or 0.25) then
+            if state.LoadingFallbackStarted ~= true then
+
+                state.LoadingFallbackStarted =
+                    true
+
+                state.LoadingFallbackStartedAt =
+                    now
+
+                state.LoadingFallbackAttempts =
+                    0
+
+                state.LoadingFallbackLastAt =
+                    0
+
+                state.LastResult =
+                    "loading fallback active"
+
+                print(
+                    "[HOLY LOADING]",
+                    "Skip fallback active for "
+                    .. tostring(state.LoadingFallbackSeconds or 5)
+                    .. "s"
+                )
+            end
+
+            local fallbackStartedAt =
+                tonumber(state.LoadingFallbackStartedAt)
+                or now
+
+            local fallbackSeconds =
+                math.clamp(
+                    tonumber(state.LoadingFallbackSeconds)
+                    or 5.00,
+                    1.00,
+                    12.00
+                )
+
+            if now - fallbackStartedAt > fallbackSeconds then
+
+                state.LastResult =
+                    "loading fallback ended"
+
                 return
             end
 
-            state.SkipStarted =
-                true
+            local fallbackRetryDelay =
+                math.clamp(
+                    tonumber(state.LoadingFallbackRetryDelay)
+                    or 0.75,
+                    0.35,
+                    2.50
+                )
 
-            state.SkipAttempts =
-                tonumber(state.SkipAttempts)
+            local fallbackLastAt =
+                tonumber(state.LoadingFallbackLastAt)
                 or 0
 
-            state.SkipAttempts =
-                state.SkipAttempts + 1
+            if now - fallbackLastAt < fallbackRetryDelay then
+                return
+            end
+
+            state.LoadingFallbackLastAt =
+                now
+
+            state.LoadingFallbackAttempts =
+                math.floor(
+                    tonumber(state.LoadingFallbackAttempts)
+                    or 0
+                )
+                + 1
+
+            local clicked =
+                tryDirectClick(
+                    "Fallback loading skip"
+                )
+
+            if clicked == true then
+                return
+            end
 
             local ok, holdInfo =
                 GAG2MiddleFarmPressSkipHold()
@@ -16392,10 +17486,16 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
                     now
 
                 state.LastResult =
-                    "loading hold failed: "
+                    "fallback hold failed: "
                     .. tostring(holdInfo)
+
+            else
+
+                state.LastResult =
+                    "fallback hold started"
             end
         end
+
 
         while os.clock() - started < tonumber(state.MaxRunSeconds or 120) do
 
@@ -18788,10 +19888,325 @@ function GAG2ACFSelectionHas(map, value)
         and map[value] == true
 end
 
+function GAG2ACFGetWeatherValuesRoot()
+
+    return ReplicatedStorage:FindFirstChild(
+        "WeatherValues"
+    )
+end
+
+function GAG2ACFWeatherCandidateNames()
+
+    return {
+        "Rain",
+        "Lightning",
+        "Rainbow",
+        "Snowfall",
+        "Starfall",
+    }
+end
+
+function GAG2ACFReadValueBaseValue(object)
+
+    if typeof(object) ~= "Instance" then
+        return nil
+    end
+
+    if object:IsA("ValueBase") ~= true then
+        return nil
+    end
+
+    local ok, value =
+        pcall(function()
+
+            return object.Value
+        end)
+
+    if ok == true then
+        return value
+    end
+
+    return nil
+end
+
+function GAG2ACFReadBoolish(value)
+
+    if typeof(value) == "boolean" then
+        return value == true
+    end
+
+    if typeof(value) == "number" then
+        return value ~= 0
+    end
+
+    local text =
+        GAG2ACFClean(value):lower()
+
+    return text == "true"
+        or text == "1"
+        or text == "yes"
+        or text == "on"
+        or text == "active"
+        or text == "playing"
+        or text == "enabled"
+end
+
+function GAG2ACFReadNumberish(value)
+
+    local number =
+        tonumber(value)
+
+    if number then
+        return number
+    end
+
+    return 0
+end
+
+function GAG2ACFReadWeatherValue(root, folder, weatherName, valueName)
+
+    if typeof(folder) == "Instance" then
+
+        local child =
+            folder:FindFirstChild(
+                valueName
+            )
+
+        local value =
+            GAG2ACFReadValueBaseValue(
+                child
+            )
+
+        if value ~= nil then
+            return value
+        end
+
+        local ok, attributeValue =
+            pcall(function()
+
+                return folder:GetAttribute(
+                    valueName
+                )
+            end)
+
+        if ok == true
+        and attributeValue ~= nil then
+            return attributeValue
+        end
+    end
+
+    if typeof(root) == "Instance" then
+
+        local directChild =
+            root:FindFirstChild(
+                tostring(weatherName)
+                .. "_"
+                .. tostring(valueName)
+            )
+
+        local directValue =
+            GAG2ACFReadValueBaseValue(
+                directChild
+            )
+
+        if directValue ~= nil then
+            return directValue
+        end
+
+        local ok, attributeValue =
+            pcall(function()
+
+                return root:GetAttribute(
+                    tostring(weatherName)
+                    .. "_"
+                    .. tostring(valueName)
+                )
+            end)
+
+        if ok == true
+        and attributeValue ~= nil then
+            return attributeValue
+        end
+    end
+
+    return nil
+end
+
+function GAG2ACFIsRealWeatherName(weather)
+
+    weather =
+        GAG2ACFClean(weather)
+
+    return GAG2_ACF_REAL_WEATHER_SET[weather] == true
+end
+
+function GAG2ACFGetActiveRealWeathers()
+
+    local root =
+        GAG2ACFGetWeatherValuesRoot()
+
+    if typeof(root) ~= "Instance" then
+        return {}
+    end
+
+    local nameSet =
+        {}
+
+    local ordered =
+        {}
+
+    local function addName(name)
+
+        name =
+            GAG2ACFClean(name)
+
+        if name == "" then
+            return
+        end
+
+        if GAG2ACFIsRealWeatherName(name) ~= true then
+            return
+        end
+
+        if nameSet[name] == true then
+            return
+        end
+
+        nameSet[name] =
+            true
+
+        table.insert(
+            ordered,
+            name
+        )
+    end
+
+    for _, weatherName in ipairs(GAG2ACFWeatherCandidateNames()) do
+
+        addName(
+            weatherName
+        )
+    end
+
+    for _, child in ipairs(root:GetChildren()) do
+
+        addName(
+            child.Name
+        )
+    end
+
+    local ok, attributes =
+        pcall(function()
+
+            return root:GetAttributes()
+        end)
+
+    if ok == true
+    and type(attributes) == "table" then
+
+        for attributeName in pairs(attributes) do
+
+            local fromPlaying =
+                tostring(attributeName):match("^(.-)_Playing$")
+
+            local fromEndTime =
+                tostring(attributeName):match("^(.-)_EndTime$")
+
+            addName(
+                fromPlaying
+                or fromEndTime
+                or ""
+            )
+        end
+    end
+
+    local active =
+        {}
+
+    local now =
+        os.time()
+
+    for _, weatherName in ipairs(ordered) do
+
+        local folder =
+            root:FindFirstChild(
+                weatherName
+            )
+
+        local playingRaw =
+            GAG2ACFReadWeatherValue(
+                root,
+                folder,
+                weatherName,
+                "Playing"
+            )
+
+        local endTimeRaw =
+            GAG2ACFReadWeatherValue(
+                root,
+                folder,
+                weatherName,
+                "EndTime"
+            )
+
+        local playing =
+            GAG2ACFReadBoolish(
+                playingRaw
+            )
+
+        local rawEndTime =
+            GAG2ACFReadNumberish(
+                endTimeRaw
+            )
+
+        local activeByEndTime =
+            rawEndTime > now
+            or (
+                rawEndTime > 0
+                and rawEndTime < 1000000000
+            )
+
+        if playing == true
+        or activeByEndTime == true then
+
+            table.insert(
+                active,
+                weatherName
+            )
+        end
+    end
+
+    return active
+end
+
 function GAG2ACFGetActiveWeather()
 
     local state =
         GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    local activeRealWeathers =
+        GAG2ACFGetActiveRealWeathers()
+
+    if #activeRealWeathers > 0 then
+
+        local weatherText =
+            table.concat(
+                activeRealWeathers,
+                ", "
+            )
+
+        state.ActiveWeathers =
+            activeRealWeathers
+
+        state.ActiveWeather =
+            activeRealWeathers[1]
+
+        state.ActivePhase =
+            weatherText
+
+        return activeRealWeathers[1],
+            weatherText
+    end
 
     local weather =
         GAG2ACFClean(
@@ -18813,6 +20228,9 @@ function GAG2ACFGetActiveWeather()
             weather
     end
 
+    state.ActiveWeathers =
+        {}
+
     state.ActiveWeather =
         weather
 
@@ -18823,12 +20241,91 @@ function GAG2ACFGetActiveWeather()
         phase
 end
 
-function GAG2ACFIsRealWeatherName(weather)
+function GAG2ACFSelectedWeatherMatches(weatherName)
 
-    weather =
-        GAG2ACFClean(weather)
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
 
-    return GAG2_ACF_REAL_WEATHER_SET[weather] == true
+    weatherName =
+        GAG2ACFClean(
+            weatherName
+        )
+
+    if weatherName == "" then
+        return false
+    end
+
+    if type(state.PauseWeathers) ~= "table" then
+        return false
+    end
+
+    if state.PauseWeathers[weatherName] == true then
+        return true
+    end
+
+    local normalizedTarget =
+        weatherName:lower()
+
+    for selectedName, enabled in pairs(state.PauseWeathers) do
+
+        if enabled == true
+        and GAG2ACFClean(selectedName):lower() == normalizedTarget then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function GAG2ACFShouldPauseForWeather()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    local weather, phase =
+        GAG2ACFGetActiveWeather()
+
+    if state.PauseDuringWeather ~= true then
+        return false,
+            phase ~= "" and phase or weather
+    end
+
+    local activeRealWeathers =
+        type(state.ActiveWeathers) == "table"
+        and state.ActiveWeathers
+        or {}
+
+    if #activeRealWeathers <= 0 then
+        return false,
+            phase ~= "" and phase or weather
+    end
+
+    if state.PauseWeatherMode == "Selected" then
+
+        for _, weatherName in ipairs(activeRealWeathers) do
+
+            if GAG2ACFSelectedWeatherMatches(
+                weatherName
+            ) == true then
+
+                return true,
+                    weatherName
+            end
+        end
+
+        return false,
+            table.concat(
+                activeRealWeathers,
+                ", "
+            )
+    end
+
+    return true,
+        table.concat(
+            activeRealWeathers,
+            ", "
+        )
 end
 
 function GAG2ACFShouldPauseForWeather()
@@ -18868,20 +20365,15 @@ function GAG2ACFWeatherStatusText()
     local weather, phase =
         GAG2ACFGetActiveWeather()
 
-    local paused =
+    local paused, pauseReason =
         GAG2ACFShouldPauseForWeather()
 
     local text =
-        tostring(weather)
-
-    if phase ~= ""
-    and phase ~= weather then
-
-        text =
-            text
-            .. " / "
-            .. tostring(phase)
-    end
+        tostring(
+            phase ~= ""
+            and phase
+            or weather
+        )
 
     if state.PauseDuringWeather == true then
 
@@ -18889,7 +20381,18 @@ function GAG2ACFWeatherStatusText()
             text
             .. (
                 paused == true
-                and " | PAUSED"
+                and (
+                    " | PAUSED"
+                    .. (
+                        pauseReason
+                        and tostring(pauseReason) ~= ""
+                        and (
+                            " "
+                            .. tostring(pauseReason)
+                        )
+                        or ""
+                    )
+                )
                 or " | watching"
             )
 
@@ -18908,56 +20411,84 @@ function GAG2ACFStartWeatherWatcher()
     local state =
         GAG2_AUTO_COLLECT_FRUIT_STATE
 
-    if state.WeatherWatcherStarted == true then
+    state.WeatherWatcherVersion =
+        tostring(
+            state.WeatherWatcherVersion
+            or ""
+        )
+
+    if state.WeatherWatcherStarted == true
+    and state.WeatherWatcherVersion == "WeatherValuesV2" then
         return
     end
+
+    if type(state.WeatherConnections) == "table" then
+
+        for _, connection in ipairs(state.WeatherConnections) do
+
+            pcall(function()
+
+                connection:Disconnect()
+            end)
+        end
+    end
+
+    state.WeatherConnections =
+        {}
 
     state.WeatherWatcherStarted =
         true
 
-    state.WeatherConnections =
-        type(state.WeatherConnections) == "table"
-        and state.WeatherConnections
-        or {}
+    state.WeatherWatcherVersion =
+        "WeatherValuesV2"
 
-    GAG2ACFGetActiveWeather()
+    local function refreshWeatherStatus(reason)
 
-    local function connectAttribute(attributeName)
+        local weather, phase =
+            GAG2ACFGetActiveWeather()
+
+        local paused, pauseReason =
+            GAG2ACFShouldPauseForWeather()
+
+        if GAG2_AUTO_COLLECT_FRUIT_STATE.Enabled ~= true then
+            return
+        end
+
+        if paused == true then
+
+            GAG2ACFSetStatus(
+                GAG2ACFBuildStatusText(
+                    {},
+                    GAG2_AUTO_COLLECT_FRUIT_STATE.LastReadyCount or 0,
+                    GAG2_AUTO_COLLECT_FRUIT_STATE.LastExcludedCount or 0,
+                    "Paused for weather: "
+                    .. tostring(pauseReason or phase or weather)
+                )
+            )
+
+        else
+
+            GAG2ACFSetStatus(
+                "Weather changed: "
+                .. tostring(phase ~= "" and phase or weather)
+                .. ". Auto Collect can run."
+            )
+        end
+    end
+
+    local function connectSignal(signal)
 
         local ok, connection =
             pcall(function()
 
-                return workspace:GetAttributeChangedSignal(attributeName):Connect(function()
+                return signal:Connect(function()
 
-                    local weather =
-                        GAG2ACFGetActiveWeather()
+                    task.defer(function()
 
-                    local paused =
-                        GAG2ACFShouldPauseForWeather()
-
-                    if GAG2_AUTO_COLLECT_FRUIT_STATE.Enabled == true then
-
-                        if paused == true then
-
-                            GAG2ACFSetStatus(
-                                GAG2ACFBuildStatusText(
-                                    {},
-                                    GAG2_AUTO_COLLECT_FRUIT_STATE.LastReadyCount or 0,
-                                    GAG2_AUTO_COLLECT_FRUIT_STATE.LastExcludedCount or 0,
-                                    "Paused for weather: "
-                                    .. tostring(weather)
-                                )
-                            )
-
-                        else
-
-                            GAG2ACFSetStatus(
-                                "Weather changed: "
-                                .. tostring(weather)
-                                .. ". Auto Collect can run."
-                            )
-                        end
-                    end
+                        refreshWeatherStatus(
+                            "weather changed"
+                        )
+                    end)
                 end)
             end)
 
@@ -18971,12 +20502,152 @@ function GAG2ACFStartWeatherWatcher()
         end
     end
 
-    connectAttribute(
+    local function connectWorkspaceAttribute(attributeName)
+
+        pcall(function()
+
+            connectSignal(
+                workspace:GetAttributeChangedSignal(
+                    attributeName
+                )
+            )
+        end)
+    end
+
+    local function connectValueObject(object)
+
+        if typeof(object) ~= "Instance" then
+            return
+        end
+
+        if object:IsA("ValueBase") ~= true then
+            return
+        end
+
+        connectSignal(
+            object.Changed
+        )
+    end
+
+    local function attachWeatherValuesRoot(root)
+
+        if typeof(root) ~= "Instance" then
+            return
+        end
+
+        for _, weatherName in ipairs(GAG2ACFWeatherCandidateNames()) do
+
+            pcall(function()
+
+                connectSignal(
+                    root:GetAttributeChangedSignal(
+                        tostring(weatherName)
+                        .. "_Playing"
+                    )
+                )
+            end)
+
+            pcall(function()
+
+                connectSignal(
+                    root:GetAttributeChangedSignal(
+                        tostring(weatherName)
+                        .. "_EndTime"
+                    )
+                )
+            end)
+        end
+
+        for _, descendant in ipairs(root:GetDescendants()) do
+
+            connectValueObject(
+                descendant
+            )
+        end
+
+        local ok, childConnection =
+            pcall(function()
+
+                return root.DescendantAdded:Connect(function(descendant)
+
+                    connectValueObject(
+                        descendant
+                    )
+
+                    task.defer(function()
+
+                        refreshWeatherStatus(
+                            "weather descendant added"
+                        )
+                    end)
+                end)
+            end)
+
+        if ok == true
+        and childConnection then
+
+            table.insert(
+                state.WeatherConnections,
+                childConnection
+            )
+        end
+    end
+
+    connectWorkspaceAttribute(
         "ActiveWeather"
     )
 
-    connectAttribute(
+    connectWorkspaceAttribute(
         "ActivePhase"
+    )
+
+    connectWorkspaceAttribute(
+        "PhaseDuration"
+    )
+
+    local weatherValues =
+        GAG2ACFGetWeatherValuesRoot()
+
+    if weatherValues then
+
+        attachWeatherValuesRoot(
+            weatherValues
+        )
+    end
+
+    local ok, rootAddedConnection =
+        pcall(function()
+
+            return ReplicatedStorage.ChildAdded:Connect(function(child)
+
+                if child.Name ~= "WeatherValues" then
+                    return
+                end
+
+                task.defer(function()
+
+                    attachWeatherValuesRoot(
+                        child
+                    )
+
+                    refreshWeatherStatus(
+                        "WeatherValues added"
+                    )
+                end)
+            end)
+        end)
+
+    if ok == true
+    and rootAddedConnection then
+
+        table.insert(
+            state.WeatherConnections,
+            rootAddedConnection
+        )
+    end
+
+    refreshWeatherStatus(
+        "watcher start"
     )
 end
 
@@ -24240,6 +25911,4694 @@ function GAG2AutoShovelStartMonitor()
 end
 
 --==================================================
+-- [4.571] AUTO SPRINKLER + AUTO WATERING CAN
+-- Separate own-plot gear automation.
+--==================================================
+
+if type(GAG2_AUTO_SPRINKLER_STATE) == "table" then
+
+    GAG2_AUTO_SPRINKLER_STATE.Enabled =
+        false
+
+    GAG2_AUTO_SPRINKLER_STATE.WorkerGeneration =
+        (tonumber(GAG2_AUTO_SPRINKLER_STATE.WorkerGeneration) or 0) + 1
+end
+
+if type(GAG2_AUTO_WATERING_STATE) == "table" then
+
+    GAG2_AUTO_WATERING_STATE.Enabled =
+        false
+
+    GAG2_AUTO_WATERING_STATE.WorkerGeneration =
+        (tonumber(GAG2_AUTO_WATERING_STATE.WorkerGeneration) or 0) + 1
+end
+
+GAG2_AUTO_TOOL_SHARED_LAST_SENT_AT =
+    tonumber(GAG2_AUTO_TOOL_SHARED_LAST_SENT_AT)
+    or 0
+
+GAG2_AUTO_SPRINKLER_STATE = {
+    Enabled = false,
+    Running = false,
+    WorkerGeneration = 0,
+
+    SelectedTools = {},
+    ToolChoiceMap = {},
+    ToolCursor = 0,
+
+    TargetLocalOffset = nil,
+
+    Interval = 60,
+    OnlyIfNoSprinkler = true,
+
+    PlacedThisRun = 0,
+    FailedThisRun = 0,
+    CurrentTool = "",
+    LastStatus = "Idle.",
+
+    UpdatingUI = false,
+    RefreshScheduled = false,
+    SavingPointText = false,
+}
+
+GAG2_AUTO_WATERING_STATE = {
+    Enabled = false,
+    Running = false,
+    WorkerGeneration = 0,
+
+    ToolName = "",
+    ToolChoiceMap = {},
+
+    SelectedPlants = {},
+    PlantChoiceMap = {},
+
+    TargetLocalOffset = nil,
+
+    Interval = 5,
+    RipeOnly = true,
+
+    WateredThisRun = 0,
+    FailedThisRun = 0,
+    CurrentTarget = "",
+    LastStatus = "Idle.",
+
+    UpdatingUI = false,
+    RefreshScheduled = false,
+    SavingPointText = false,
+}
+
+GAG2_AUTO_SPRINKLER_CONTROLS =
+    GAG2_AUTO_SPRINKLER_CONTROLS or {}
+
+GAG2_AUTO_WATERING_CONTROLS =
+    GAG2_AUTO_WATERING_CONTROLS or {}
+
+function GAG2AutoToolsClean(value)
+
+    return CleanText(
+        tostring(value or "")
+            :gsub("<[^>]->", "")
+            :gsub("<.->", "")
+    )
+end
+
+function GAG2AutoToolsDisplayToName(value)
+
+    local text =
+        GAG2AutoToolsClean(
+            value
+        )
+
+    local beforePipe =
+        text:match("^(.-)%s+|%s+")
+
+    if beforePipe
+    and GAG2AutoToolsClean(beforePipe) ~= "" then
+
+        text =
+            GAG2AutoToolsClean(
+                beforePipe
+            )
+    end
+
+    return text
+end
+
+function GAG2AutoToolsNormalizeSelection(value)
+
+    local selected =
+        {}
+
+    local function add(item)
+
+        local name =
+            GAG2AutoToolsDisplayToName(
+                item
+            )
+
+        if name == ""
+        or name:lower():find("no ", 1, true) == 1 then
+            return
+        end
+
+        selected[name] =
+            true
+    end
+
+    if type(value) == "table" then
+
+        for _, item in ipairs(value) do
+            add(item)
+        end
+
+        for item, enabled in pairs(value) do
+
+            if enabled == true then
+                add(item)
+            end
+        end
+
+    elseif type(value) == "string" then
+
+        add(value)
+    end
+
+    return selected
+end
+
+function GAG2AutoToolsSortedSelection(selection)
+
+    local rows =
+        {}
+
+    for name, enabled in pairs(selection or {}) do
+
+        if enabled == true then
+
+            table.insert(
+                rows,
+                tostring(name)
+            )
+        end
+    end
+
+    table.sort(rows, function(a, b)
+        return a:lower() < b:lower()
+    end)
+
+    return rows
+end
+
+function GAG2AutoToolsSelectionText(selection, fallback)
+
+    local rows =
+        GAG2AutoToolsSortedSelection(
+            selection
+        )
+
+    if #rows <= 0 then
+        return fallback or "None"
+    end
+
+    return table.concat(
+        rows,
+        ", "
+    )
+end
+
+function GAG2AutoToolsSetDropdownValues(dropdown, values)
+
+    if type(GAG2AutoShovelSetDropdownValues) == "function" then
+
+        GAG2AutoShovelSetDropdownValues(
+            dropdown,
+            values
+        )
+
+        return
+    end
+
+    if not dropdown then
+        return
+    end
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+end
+
+function GAG2AutoToolsSetStatusLabel(label, text)
+
+    if not label then
+        return
+    end
+
+    pcall(function()
+
+        if type(label.SetText) == "function" then
+
+            label:SetText(
+                tostring(text or "")
+            )
+
+        else
+
+            label.Text =
+                tostring(text or "")
+        end
+    end)
+end
+
+function GAG2AutoToolsClampNumber(value, fallback, minimum, maximum)
+
+    local number =
+        tonumber(value)
+        or fallback
+
+    if number ~= number
+    or number == math.huge
+    or number == -math.huge then
+
+        number =
+            fallback
+    end
+
+    return math.clamp(
+        number,
+        minimum,
+        maximum
+    )
+end
+
+function GAG2AutoToolsGetCharacterRoot()
+
+    local started =
+        os.clock()
+
+    while os.clock() - started < 4 do
+
+        local character =
+            LOCAL_PLAYER
+            and LOCAL_PLAYER.Character
+            or nil
+
+        if not character
+        and LOCAL_PLAYER then
+
+            local ok, newCharacter =
+                pcall(function()
+
+                    return LOCAL_PLAYER.CharacterAdded:Wait()
+                end)
+
+            if ok == true
+            and typeof(newCharacter) == "Instance" then
+
+                character =
+                    newCharacter
+            end
+        end
+
+        local root =
+            character
+            and character:FindFirstChild("HumanoidRootPart")
+            or nil
+
+        local humanoid =
+            character
+            and character:FindFirstChildOfClass("Humanoid")
+            or nil
+
+        if character
+        and root
+        and root:IsA("BasePart")
+        and humanoid then
+
+            return character,
+                root,
+                humanoid
+        end
+
+        task.wait(
+            0.10
+        )
+    end
+
+    return nil,
+        nil,
+        nil
+end
+
+function GAG2AutoToolsResolveOwnPlot()
+
+    if type(GAG2ResolveOwnFarmPlot) == "function" then
+
+        return GAG2ResolveOwnFarmPlot()
+    end
+
+    local gardens =
+        workspace:FindFirstChild("Gardens")
+
+    if not gardens then
+        return nil,
+            "workspace.Gardens missing"
+    end
+
+    for _, garden in ipairs(gardens:GetChildren()) do
+
+        local ownerUserId =
+            tonumber(
+                garden:GetAttribute("OwnerUserId")
+                or garden:GetAttribute("UserId")
+                or garden:GetAttribute("PlayerUserId")
+            )
+
+        local ownerName =
+            GAG2AutoToolsClean(
+                garden:GetAttribute("OwnerName")
+                or garden:GetAttribute("PlayerName")
+            )
+
+        if ownerUserId == LOCAL_PLAYER.UserId
+        or ownerName == LOCAL_PLAYER.Name then
+
+            return garden,
+                "attribute owner"
+        end
+    end
+
+    return nil,
+        "own garden not found"
+end
+
+function GAG2AutoToolsGetOwnPlantsFolder()
+
+    if type(GAG2AutoShovelGetOwnPlantsFolder) == "function" then
+
+        return GAG2AutoShovelGetOwnPlantsFolder()
+    end
+
+    local ownPlot, reason =
+        GAG2AutoToolsResolveOwnPlot()
+
+    if not ownPlot then
+        return nil, nil, reason
+    end
+
+    return ownPlot,
+        ownPlot:FindFirstChild("Plants"),
+        reason
+end
+
+function GAG2AutoToolsGetPlotFrame(plot)
+
+    if type(GAG2SeedPlantGetPlotFrame) == "function" then
+
+        return GAG2SeedPlantGetPlotFrame(
+            plot
+        )
+    end
+
+    if typeof(plot) ~= "Instance" then
+        return nil
+    end
+
+    local okPivot, pivot =
+        pcall(function()
+
+            return plot:GetPivot()
+        end)
+
+    if okPivot == true
+    and typeof(pivot) == "CFrame" then
+        return pivot
+    end
+
+    local okBox, boxFrame =
+        pcall(function()
+
+            return plot:GetBoundingBox()
+        end)
+
+    if okBox == true
+    and typeof(boxFrame) == "CFrame" then
+        return boxFrame
+    end
+
+    return nil
+end
+
+function GAG2AutoToolsRaycastGround(position, ownPlot)
+
+    if typeof(position) ~= "Vector3" then
+        return nil,
+            "bad position"
+    end
+
+    if type(GAG2SeedPlantRaycastGround) == "function" then
+
+        local groundPosition, reason =
+            GAG2SeedPlantRaycastGround(
+                position,
+                ownPlot
+            )
+
+        if typeof(groundPosition) == "Vector3" then
+
+            return groundPosition,
+                reason
+        end
+    end
+
+    local character =
+        LOCAL_PLAYER.Character
+
+    local filter =
+        {}
+
+    if character then
+
+        table.insert(
+            filter,
+            character
+        )
+    end
+
+    local plants =
+        ownPlot
+        and ownPlot:FindFirstChild("Plants")
+
+    if plants then
+
+        table.insert(
+            filter,
+            plants
+        )
+    end
+
+    local params =
+        RaycastParams.new()
+
+    params.FilterType =
+        Enum.RaycastFilterType.Exclude
+
+    params.FilterDescendantsInstances =
+        filter
+
+    params.IgnoreWater =
+        true
+
+    local result =
+        workspace:Raycast(
+            position + Vector3.new(0, 18, 0),
+            Vector3.new(0, -140, 0),
+            params
+        )
+
+    if not result then
+        return nil,
+            "no ground hit"
+    end
+
+    if ownPlot
+    and result.Instance
+    and result.Instance:IsDescendantOf(ownPlot) ~= true then
+
+        return nil,
+            "outside own plot"
+    end
+
+    return result.Position,
+        PathOf(result.Instance)
+end
+
+function GAG2AutoToolsEncodePoint(state)
+
+    local localOffset =
+        state.TargetLocalOffset
+
+    if typeof(localOffset) ~= "Vector3" then
+        return ""
+    end
+
+    local payload = {
+        LocalOffset = {
+            X = localOffset.X,
+            Y = localOffset.Y,
+            Z = localOffset.Z,
+        },
+        SavedAt = os.time(),
+    }
+
+    local ok, encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    return ok == true
+        and encoded
+        or ""
+end
+
+function GAG2AutoToolsLoadPointFromText(state, text)
+
+    text =
+        tostring(text or "")
+
+    if text == "" then
+        return false
+    end
+
+    local ok, payload =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                text
+            )
+        end)
+
+    if ok ~= true
+    or type(payload) ~= "table" then
+        return false
+    end
+
+    local localOffsetPayload =
+        payload.LocalOffset
+        or payload.localOffset
+        or payload.Offset
+        or payload
+
+    if type(localOffsetPayload) ~= "table" then
+        return false
+    end
+
+    local x =
+        tonumber(localOffsetPayload.X)
+        or tonumber(localOffsetPayload.x)
+        or tonumber(localOffsetPayload[1])
+
+    local y =
+        tonumber(localOffsetPayload.Y)
+        or tonumber(localOffsetPayload.y)
+        or tonumber(localOffsetPayload[2])
+
+    local z =
+        tonumber(localOffsetPayload.Z)
+        or tonumber(localOffsetPayload.z)
+        or tonumber(localOffsetPayload[3])
+
+    if not x
+    or not y
+    or not z then
+
+        return false
+    end
+
+    state.TargetLocalOffset =
+        Vector3.new(
+            x,
+            y,
+            z
+        )
+
+    return true
+end
+
+function GAG2AutoToolsPointText(state)
+
+    local localOffset =
+        state.TargetLocalOffset
+
+    if typeof(localOffset) ~= "Vector3" then
+        return "not set"
+    end
+
+    return string.format(
+        "%.1f, %.1f, %.1f",
+        localOffset.X,
+        localOffset.Y,
+        localOffset.Z
+    )
+end
+
+function GAG2AutoToolsGetSavedWorldPoint(state)
+
+    local localOffset =
+        state.TargetLocalOffset
+
+    if typeof(localOffset) ~= "Vector3" then
+        return nil,
+            nil,
+            "Set point first."
+    end
+
+    local ownPlot, plotReason =
+        GAG2AutoToolsResolveOwnPlot()
+
+    if not ownPlot then
+        return nil,
+            nil,
+            tostring(plotReason)
+    end
+
+    local plotFrame =
+        GAG2AutoToolsGetPlotFrame(
+            ownPlot
+        )
+
+    if typeof(plotFrame) ~= "CFrame" then
+        return nil,
+            ownPlot,
+            "plot frame missing"
+    end
+
+    local roughPosition =
+        plotFrame:PointToWorldSpace(
+            localOffset
+        )
+
+    local groundPosition =
+        GAG2AutoToolsRaycastGround(
+            roughPosition,
+            ownPlot
+        )
+
+    if typeof(groundPosition) == "Vector3" then
+
+        return groundPosition,
+            ownPlot,
+            "ok"
+    end
+
+    return roughPosition,
+        ownPlot,
+        "rough point"
+end
+
+function GAG2AutoToolsSetPointFromCurrentPosition(state)
+
+    local ownPlot, plotReason =
+        GAG2AutoToolsResolveOwnPlot()
+
+    if not ownPlot then
+        return false,
+            tostring(plotReason)
+    end
+
+    local plotFrame =
+        GAG2AutoToolsGetPlotFrame(
+            ownPlot
+        )
+
+    if typeof(plotFrame) ~= "CFrame" then
+        return false,
+            "plot frame missing"
+    end
+
+    local _, root =
+        GAG2AutoToolsGetCharacterRoot()
+
+    if not root then
+        return false,
+            "character root missing"
+    end
+
+    local groundPosition, groundReason =
+        GAG2AutoToolsRaycastGround(
+            root.Position,
+            ownPlot
+        )
+
+    if typeof(groundPosition) ~= "Vector3" then
+
+        return false,
+            tostring(groundReason)
+    end
+
+    state.TargetLocalOffset =
+        plotFrame:PointToObjectSpace(
+            groundPosition
+        )
+
+    return true,
+        tostring(groundReason)
+end
+
+function GAG2AutoToolsResolveNetworking()
+
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild("SharedModules")
+
+    local networkingModule =
+        sharedModules
+        and sharedModules:FindFirstChild("Networking")
+
+    if not networkingModule
+    or networkingModule:IsA("ModuleScript") ~= true then
+        return nil,
+            "Networking module missing"
+    end
+
+    local ok, networking =
+        pcall(function()
+
+            return require(
+                networkingModule
+            )
+        end)
+
+    if ok ~= true
+    or type(networking) ~= "table" then
+
+        return nil,
+            "Networking require failed: "
+            .. tostring(networking)
+    end
+
+    return networking,
+        "ok"
+end
+
+function GAG2AutoToolsResolvePacket(path, packetName, packetId)
+
+    local networking, reason =
+        GAG2AutoToolsResolveNetworking()
+
+    if type(networking) ~= "table" then
+        return nil,
+            reason
+    end
+
+    local packet =
+        networking
+
+    for _, key in ipairs(path or {}) do
+
+        if type(packet) ~= "table" then
+            return nil,
+                "packet path failed"
+        end
+
+        packet =
+            packet[key]
+    end
+
+    if type(packet) ~= "table" then
+        return nil,
+            "packet missing"
+    end
+
+    local name =
+        tostring(
+            rawget(packet, "Name")
+            or ""
+        )
+
+    local id =
+        tonumber(
+            rawget(packet, "Id")
+        )
+
+    if name ~= tostring(packetName)
+    and id ~= tonumber(packetId) then
+
+        return nil,
+            "bad packet: "
+            .. tostring(name)
+            .. " / "
+            .. tostring(id)
+    end
+
+    if type(packet.Fire) ~= "function" then
+
+        return nil,
+            tostring(packetName)
+            .. ".Fire missing"
+    end
+
+    return packet,
+        "ok"
+end
+
+function GAG2AutoToolsCollectTools(kind)
+
+    local values =
+        {}
+
+    local choiceMap =
+        {}
+
+    local seen =
+        {}
+
+    local containers = {
+        LOCAL_PLAYER.Character,
+        LOCAL_PLAYER:FindFirstChildOfClass("Backpack"),
+    }
+
+    for _, container in ipairs(containers) do
+
+        if typeof(container) == "Instance" then
+
+            for _, child in ipairs(container:GetChildren()) do
+
+                if child:IsA("Tool") then
+
+                    local toolName =
+                        GAG2AutoToolsClean(
+                            child.Name
+                        )
+
+                    local lower =
+                        toolName:lower()
+
+                    local allowed =
+                        false
+
+                    if kind == "Sprinkler" then
+
+                        allowed =
+                            lower:find("sprinkler", 1, true) ~= nil
+
+                    elseif kind == "Watering" then
+
+                        allowed =
+                            lower:find("watering", 1, true) ~= nil
+                            or lower:find("watering can", 1, true) ~= nil
+                    end
+
+                    if allowed == true
+                    and seen[toolName] ~= true then
+
+                        seen[toolName] =
+                            true
+
+                        local count =
+                            child:GetAttribute("Count")
+
+                        local display =
+                            toolName
+                            .. " | x"
+                            .. tostring(count or "?")
+
+                        values[#values + 1] =
+                            display
+
+                        choiceMap[display] =
+                            toolName
+                    end
+                end
+            end
+        end
+    end
+
+    table.sort(values, function(a, b)
+        return a:lower() < b:lower()
+    end)
+
+    if #values <= 0 then
+
+        if kind == "Sprinkler" then
+
+            values = {
+                "No sprinklers found",
+            }
+
+        else
+
+            values = {
+                "No watering cans found",
+            }
+        end
+    end
+
+    return values,
+        choiceMap
+end
+
+function GAG2AutoToolsFindTool(toolName)
+
+    toolName =
+        GAG2AutoToolsClean(
+            toolName
+        )
+
+    if toolName == "" then
+        return nil
+    end
+
+    local containers = {
+        LOCAL_PLAYER.Character,
+        LOCAL_PLAYER:FindFirstChildOfClass("Backpack"),
+    }
+
+    for _, container in ipairs(containers) do
+
+        if typeof(container) == "Instance" then
+
+            for _, child in ipairs(container:GetChildren()) do
+
+                if child:IsA("Tool")
+                and GAG2AutoToolsClean(child.Name) == toolName then
+
+                    return child
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function GAG2AutoToolsEquipTool(toolName)
+
+    local character, root, humanoid =
+        GAG2AutoToolsGetCharacterRoot()
+
+    if not humanoid then
+        return nil,
+            "Humanoid missing"
+    end
+
+    local tool =
+        GAG2AutoToolsFindTool(
+            toolName
+        )
+
+    if not tool then
+        return nil,
+            "tool missing: "
+            .. tostring(toolName)
+    end
+
+    if tool.Parent ~= character then
+
+        pcall(
+            humanoid.EquipTool,
+            humanoid,
+            tool
+        )
+
+        task.wait(
+            0.18
+        )
+    end
+
+    if tool.Parent ~= character then
+        return nil,
+            "failed to equip: "
+            .. tostring(toolName)
+    end
+
+    return tool,
+        "equipped"
+end
+
+function GAG2AutoToolsReadCount(toolName)
+
+    local tool =
+        GAG2AutoToolsFindTool(
+            toolName
+        )
+
+    if not tool then
+        return nil
+    end
+
+    return tonumber(
+        tool:GetAttribute("Count")
+    )
+end
+
+function GAG2AutoToolsWaitSeconds(seconds, activeCallback)
+
+    local deadline =
+        os.clock()
+        + math.max(
+            tonumber(seconds)
+            or 0,
+            0
+        )
+
+    while type(activeCallback) ~= "function"
+    or activeCallback() == true do
+
+        local remaining =
+            deadline - os.clock()
+
+        if remaining <= 0 then
+            return true
+        end
+
+        task.wait(
+            math.min(
+                remaining,
+                0.10
+            )
+        )
+    end
+
+    return false
+end
+
+function GAG2AutoToolsWaitSharedThrottle(activeCallback)
+
+    local nextAllowed =
+        (
+            tonumber(GAG2_AUTO_TOOL_SHARED_LAST_SENT_AT)
+            or 0
+        )
+        + 0.65
+
+    if os.clock() >= nextAllowed then
+        return true
+    end
+
+    return GAG2AutoToolsWaitSeconds(
+        nextAllowed - os.clock(),
+        activeCallback
+    )
+end
+
+function GAG2AutoToolsMoveNearTarget(position, activeCallback)
+
+    if typeof(position) ~= "Vector3" then
+        return nil,
+            "bad target position"
+    end
+
+    local character, root, humanoid =
+        GAG2AutoToolsGetCharacterRoot()
+
+    if not character
+    or not root
+    or root:IsA("BasePart") ~= true
+    or not humanoid then
+
+        return nil,
+            "character root missing"
+    end
+
+    if type(activeCallback) == "function"
+    and activeCallback() ~= true then
+
+        return nil,
+            "stopped"
+    end
+
+    local function isActive()
+
+        if type(activeCallback) == "function" then
+            return activeCallback() == true
+        end
+
+        return true
+    end
+
+    local function stopMotion()
+
+        pcall(function()
+
+            if humanoid
+            and humanoid.Parent then
+
+                humanoid:MoveTo(
+                    root.Position
+                )
+            end
+        end)
+
+        pcall(function()
+
+            if root
+            and root.Parent then
+
+                root.AssemblyLinearVelocity =
+                    Vector3.zero
+
+                root.AssemblyAngularVelocity =
+                    Vector3.zero
+            end
+        end)
+    end
+
+    local function getDistance()
+
+        if not root
+        or not root.Parent then
+
+            return math.huge,
+                math.huge
+        end
+
+        local delta =
+            root.Position - position
+
+        local horizontalDistance =
+            math.sqrt(
+                delta.X * delta.X
+                + delta.Z * delta.Z
+            )
+
+        return horizontalDistance,
+            delta.Magnitude
+    end
+
+    local startHorizontalDistance,
+        startFullDistance =
+        getDistance()
+
+    local closeEnoughDistance =
+        13.5
+
+    if startHorizontalDistance <= closeEnoughDistance
+    or startFullDistance <= 14 then
+
+        return function()
+
+            stopMotion()
+        end,
+        "already close "
+        .. string.format(
+            "%.1f studs",
+            math.min(
+                startHorizontalDistance,
+                startFullDistance
+            )
+        )
+    end
+
+    pcall(function()
+
+        humanoid.Sit =
+            false
+
+        humanoid.AutoRotate =
+            true
+    end)
+
+    local walkSpeed =
+        tonumber(humanoid.WalkSpeed)
+        or 16
+
+    local maxWalkSeconds =
+        math.clamp(
+            (
+                startHorizontalDistance
+                / math.max(
+                    walkSpeed,
+                    10
+                )
+            )
+            + 4.0,
+            5.0,
+            22.0
+        )
+
+    local startedAt =
+        os.clock()
+
+    local lastMoveAt =
+        0
+
+    local lastDistance =
+        startHorizontalDistance
+
+    while isActive() == true do
+
+        if not root
+        or not root.Parent
+        or not humanoid
+        or not humanoid.Parent then
+
+            return nil,
+                "character lost"
+        end
+
+        local horizontalDistance,
+            fullDistance =
+            getDistance()
+
+        lastDistance =
+            horizontalDistance
+
+        if horizontalDistance <= closeEnoughDistance
+        or fullDistance <= 14 then
+
+            stopMotion()
+
+            task.wait(
+                0.10
+            )
+
+            local confirmHorizontalDistance,
+                confirmFullDistance =
+                getDistance()
+
+            if confirmHorizontalDistance <= closeEnoughDistance + 2
+            or confirmFullDistance <= 16 then
+
+                return function()
+
+                    stopMotion()
+                end,
+                "walked "
+                .. string.format(
+                    "%.1f",
+                    startHorizontalDistance
+                )
+                .. " -> "
+                .. string.format(
+                    "%.1f studs",
+                    math.min(
+                        confirmHorizontalDistance,
+                        confirmFullDistance
+                    )
+                )
+            end
+        end
+
+        if os.clock() - startedAt > maxWalkSeconds then
+
+            stopMotion()
+
+            return nil,
+                "walk timed out: "
+                .. string.format(
+                    "%.1f studs",
+                    lastDistance
+                )
+        end
+
+        if os.clock() - lastMoveAt >= 0.55 then
+
+            lastMoveAt =
+                os.clock()
+
+            local moveTarget =
+                Vector3.new(
+                    position.X,
+                    root.Position.Y,
+                    position.Z
+                )
+
+            pcall(function()
+
+                humanoid:MoveTo(
+                    moveTarget
+                )
+            end)
+        end
+
+        task.wait(
+            0.08
+        )
+    end
+
+    stopMotion()
+
+    return nil,
+        "stopped"
+end
+
+
+function GAG2AutoToolsWaitCountDrop(toolName, beforeCount, timeout, activeCallback)
+
+    local deadline =
+        os.clock()
+        + (
+            tonumber(timeout)
+            or 2.5
+        )
+
+    while type(activeCallback) ~= "function"
+    or activeCallback() == true do
+
+        local afterCount =
+            GAG2AutoToolsReadCount(
+                toolName
+            )
+
+        if beforeCount
+        and afterCount
+        and afterCount < beforeCount then
+
+            return true,
+                "count decreased"
+        end
+
+        if os.clock() >= deadline then
+            return false,
+                "count did not decrease"
+        end
+
+        task.wait(
+            0.08
+        )
+    end
+
+    return false,
+        "stopped"
+end
+
+function GAG2AutoToolsGetPlantName(plant)
+
+    if typeof(plant) ~= "Instance" then
+        return ""
+    end
+
+    if type(GAG2AutoShovelGetPlantSeedName) == "function" then
+
+        local ok, result =
+            pcall(function()
+
+                return GAG2AutoShovelGetPlantSeedName(
+                    plant
+                )
+            end)
+
+        local text =
+            ok == true
+            and GAG2AutoToolsClean(result)
+            or ""
+
+        if text ~= "" then
+            return text
+        end
+    end
+
+    local attrNames = {
+        "SeedName",
+        "Seed",
+        "PlantName",
+        "DisplayName",
+        "Name",
+    }
+
+    for _, attrName in ipairs(attrNames) do
+
+        local ok, value =
+            pcall(function()
+
+                return plant:GetAttribute(
+                    attrName
+                )
+            end)
+
+        local text =
+            ok == true
+            and GAG2AutoToolsClean(value)
+            or ""
+
+        if text ~= "" then
+            return text
+        end
+    end
+
+    return GAG2AutoToolsClean(
+        tostring(plant.Name):gsub("_", " ")
+    )
+end
+
+function GAG2AutoToolsGetInstancePosition(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    if instance:IsA("BasePart") then
+        return instance.Position
+    end
+
+    if instance:IsA("Model") then
+
+        if instance.PrimaryPart then
+            return instance.PrimaryPart.Position
+        end
+
+        local ok, frame =
+            pcall(function()
+
+                return instance:GetBoundingBox()
+            end)
+
+        if ok == true
+        and typeof(frame) == "CFrame" then
+            return frame.Position
+        end
+    end
+
+    for _, descendant in ipairs(instance:GetDescendants()) do
+
+        if descendant:IsA("BasePart") then
+            return descendant.Position
+        end
+    end
+
+    return nil
+end
+
+function GAG2AutoToolsBuildPlantChoices(selected)
+
+    local ownPlot, plantsFolder =
+        GAG2AutoToolsGetOwnPlantsFolder()
+
+    local counts =
+        {}
+
+    if plantsFolder then
+
+        for _, plant in ipairs(plantsFolder:GetChildren()) do
+
+            if plant:IsA("Model")
+            or plant:IsA("Folder")
+            or plant:IsA("BasePart") then
+
+                local plantName =
+                    GAG2AutoToolsGetPlantName(
+                        plant
+                    )
+
+                if plantName ~= "" then
+
+                    counts[plantName] =
+                        (tonumber(counts[plantName]) or 0)
+                        + 1
+                end
+            end
+        end
+    end
+
+    for plantName, enabled in pairs(selected or {}) do
+
+        if enabled == true
+        and counts[plantName] == nil then
+
+            counts[plantName] =
+                0
+        end
+    end
+
+    local names =
+        {}
+
+    for plantName in pairs(counts) do
+
+        table.insert(
+            names,
+            plantName
+        )
+    end
+
+    table.sort(names, function(a, b)
+        return a:lower() < b:lower()
+    end)
+
+    local values =
+        {}
+
+    local choiceMap =
+        {}
+
+    for _, plantName in ipairs(names) do
+
+        local display =
+            plantName
+            .. " | x"
+            .. tostring(counts[plantName] or 0)
+
+        values[#values + 1] =
+            display
+
+        choiceMap[display] =
+            plantName
+    end
+
+    if #values <= 0 then
+
+        values = {
+            "No planted plants",
+        }
+    end
+
+    return values,
+        choiceMap
+end
+
+function GAG2AutoSprinklerSetSelectedTools(value)
+
+    GAG2_AUTO_SPRINKLER_STATE.SelectedTools =
+        GAG2AutoToolsNormalizeSelection(
+            value
+        )
+
+    MarkConfigDirty()
+    GAG2AutoSprinklerScheduleRefresh()
+end
+
+function GAG2AutoSprinklerSetInterval(value)
+
+    GAG2_AUTO_SPRINKLER_STATE.Interval =
+        GAG2AutoToolsClampNumber(
+            value,
+            60,
+            1,
+            86400
+        )
+
+    MarkConfigDirty()
+    GAG2AutoSprinklerScheduleRefresh()
+end
+
+function GAG2AutoSprinklerSetOnlyIfNoSprinkler(value)
+
+    GAG2_AUTO_SPRINKLER_STATE.OnlyIfNoSprinkler =
+        value == true
+
+    MarkConfigDirty()
+    GAG2AutoSprinklerScheduleRefresh()
+end
+
+function GAG2AutoSprinklerWorkerActive(generation)
+
+    return GAG2_AUTO_SPRINKLER_STATE.Enabled == true
+        and GAG2_AUTO_SPRINKLER_STATE.WorkerGeneration == generation
+end
+
+function GAG2AutoSprinklerSavePointText()
+
+    local state =
+        GAG2_AUTO_SPRINKLER_STATE
+
+    local control =
+        GAG2_AUTO_SPRINKLER_CONTROLS.PointData
+
+    if control
+    and type(control.SetValue) == "function" then
+
+        state.SavingPointText =
+            true
+
+        pcall(function()
+
+            control:SetValue(
+                GAG2AutoToolsEncodePoint(
+                    state
+                )
+            )
+        end)
+
+        state.SavingPointText =
+            false
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2AutoSprinklerLoadPointFromText(text)
+
+    local loaded =
+        GAG2AutoToolsLoadPointFromText(
+            GAG2_AUTO_SPRINKLER_STATE,
+            text
+        )
+
+    if loaded == true then
+        GAG2AutoSprinklerScheduleRefresh()
+    end
+
+    return loaded
+end
+
+function GAG2AutoSprinklerSetPointFromCurrentPosition()
+
+    local ok, reason =
+        GAG2AutoToolsSetPointFromCurrentPosition(
+            GAG2_AUTO_SPRINKLER_STATE
+        )
+
+    if ok == true then
+
+        GAG2_AUTO_SPRINKLER_STATE.LastStatus =
+            "Point saved: "
+            .. tostring(reason)
+
+        GAG2AutoSprinklerSavePointText()
+
+        Notify(
+            "Auto Sprinkler",
+            "Sprinkler point saved.",
+            3
+        )
+
+    else
+
+        GAG2_AUTO_SPRINKLER_STATE.LastStatus =
+            "Set point failed: "
+            .. tostring(reason)
+
+        Notify(
+            "Auto Sprinkler",
+            "Stand inside your garden before setting point.",
+            4
+        )
+    end
+
+    GAG2AutoSprinklerScheduleRefresh()
+
+    return ok
+end
+
+function GAG2AutoSprinklerCountActive()
+
+    local ownPlot =
+        GAG2AutoToolsResolveOwnPlot()
+
+    if not ownPlot then
+        return 0
+    end
+
+    local count =
+        0
+
+    local scanned =
+        0
+
+    for _, descendant in ipairs(ownPlot:GetDescendants()) do
+
+        scanned =
+            scanned + 1
+
+        if scanned > 2500 then
+            break
+        end
+
+        if descendant:IsA("Model")
+        or descendant:IsA("BasePart") then
+
+            local text =
+                (
+                    tostring(descendant.Name)
+                    .. " "
+                    .. tostring(descendant:GetAttribute("ItemName"))
+                    .. " "
+                    .. tostring(descendant:GetAttribute("SprinklerName"))
+                    .. " "
+                    .. tostring(descendant:GetAttribute("Type"))
+                    .. " "
+                    .. tostring(descendant:GetAttribute("Name"))
+                ):lower()
+
+            if text:find("sprinkler", 1, true) then
+
+                count =
+                    count + 1
+            end
+        end
+    end
+
+    return count
+end
+
+function GAG2AutoSprinklerPickTool()
+
+    local tools =
+        GAG2AutoToolsSortedSelection(
+            GAG2_AUTO_SPRINKLER_STATE.SelectedTools
+        )
+
+    if #tools <= 0 then
+        return ""
+    end
+
+    GAG2_AUTO_SPRINKLER_STATE.ToolCursor =
+        (
+            tonumber(GAG2_AUTO_SPRINKLER_STATE.ToolCursor)
+            or 0
+        )
+        + 1
+
+    if GAG2_AUTO_SPRINKLER_STATE.ToolCursor > #tools then
+
+        GAG2_AUTO_SPRINKLER_STATE.ToolCursor =
+            1
+    end
+
+    return tools[
+        GAG2_AUTO_SPRINKLER_STATE.ToolCursor
+    ]
+end
+
+function GAG2AutoSprinklerTryPlace(toolName, position, generation)
+
+    toolName =
+        GAG2AutoToolsDisplayToName(
+            toolName
+        )
+
+    if toolName == "" then
+        return false,
+            "no sprinkler selected"
+    end
+
+    local tool, toolReason =
+        GAG2AutoToolsEquipTool(
+            toolName
+        )
+
+    if not tool then
+        return false,
+            toolReason
+    end
+
+    local beforeCount =
+        GAG2AutoToolsReadCount(
+            toolName
+        )
+
+    if not beforeCount then
+        return false,
+            "could not read sprinkler count"
+    end
+
+    local stopMovement, moveReason =
+        GAG2AutoToolsMoveNearTarget(
+            position,
+            function()
+
+                return GAG2AutoSprinklerWorkerActive(
+                    generation
+                )
+            end
+        )
+
+    if type(stopMovement) ~= "function" then
+        return false,
+            moveReason
+    end
+
+    GAG2AutoToolsWaitSharedThrottle(function()
+
+        return GAG2AutoSprinklerWorkerActive(
+            generation
+        )
+    end)
+
+    if not GAG2AutoSprinklerWorkerActive(generation) then
+
+        stopMovement()
+
+        return false,
+            "stopped"
+    end
+
+    task.wait(
+        0.15
+    )
+
+    if not GAG2AutoSprinklerWorkerActive(generation) then
+
+        stopMovement()
+
+        return false,
+            "stopped"
+    end
+
+    local activateOk, activateErr =
+        pcall(function()
+
+            tool:Activate()
+        end)
+
+    if activateOk ~= true then
+
+        stopMovement()
+
+        return false,
+            "tool activate failed: "
+            .. tostring(activateErr)
+    end
+
+    GAG2_AUTO_TOOL_SHARED_LAST_SENT_AT =
+        os.clock()
+
+    GAG2_AUTO_SPRINKLER_STATE.LastStatus =
+        "Activated "
+        .. tostring(toolName)
+
+    GAG2AutoSprinklerScheduleRefresh()
+
+    local success, reason =
+        GAG2AutoToolsWaitCountDrop(
+            toolName,
+            beforeCount,
+            2.75,
+            function()
+
+                return GAG2AutoSprinklerWorkerActive(
+                    generation
+                )
+            end
+        )
+
+    stopMovement()
+
+    if success == true then
+
+        return true,
+            tostring(reason)
+            .. " | tool activate | "
+            .. tostring(moveReason)
+    end
+
+    return false,
+        tostring(toolName)
+        .. " activate failed: "
+        .. tostring(reason)
+        .. " | "
+        .. tostring(moveReason)
+end
+
+
+function GAG2AutoSprinklerBuildStatusText()
+
+    local state =
+        GAG2_AUTO_SPRINKLER_STATE
+
+    return
+        '<font color="rgb(196,181,253)"><b>Auto Sprinkler</b></font>'
+        .. "\nSelected: "
+        .. GAG2AutoToolsSelectionText(
+            state.SelectedTools,
+            "None"
+        )
+        .. "\nPoint: "
+        .. GAG2AutoToolsPointText(
+            state
+        )
+        .. " | Active sprinklers: "
+        .. tostring(GAG2AutoSprinklerCountActive())
+        .. "\nEvery: "
+        .. string.format(
+            "%.1fs",
+            tonumber(state.Interval) or 60
+        )
+        .. " | Only if none: "
+        .. (
+            state.OnlyIfNoSprinkler
+            and "YES"
+            or "NO"
+        )
+        .. "\nState: "
+        .. (
+            state.Enabled
+            and "ON"
+            or "OFF"
+        )
+        .. " | Running: "
+        .. tostring(state.Running)
+        .. "\nCurrent: "
+        .. (
+            state.CurrentTool ~= ""
+            and state.CurrentTool
+            or "none"
+        )
+        .. "\nPlaced: "
+        .. tostring(state.PlacedThisRun)
+        .. " | Failed: "
+        .. tostring(state.FailedThisRun)
+        .. "\nLast: "
+        .. tostring(state.LastStatus)
+end
+
+function GAG2AutoSprinklerRefreshUI()
+
+    local state =
+        GAG2_AUTO_SPRINKLER_STATE
+
+    if state.UpdatingUI == true then
+        return
+    end
+
+    state.UpdatingUI =
+        true
+
+    local ok, err =
+        pcall(function()
+
+            local values, choiceMap =
+                GAG2AutoToolsCollectTools(
+                    "Sprinkler"
+                )
+
+            state.ToolChoiceMap =
+                choiceMap
+
+            GAG2AutoToolsSetDropdownValues(
+                GAG2_AUTO_SPRINKLER_CONTROLS.Tools,
+                values
+            )
+
+            GAG2AutoToolsSetStatusLabel(
+                GAG2_AUTO_SPRINKLER_CONTROLS.StatusLabel,
+                GAG2AutoSprinklerBuildStatusText()
+            )
+        end)
+
+    state.UpdatingUI =
+        false
+
+    if ok ~= true then
+
+        state.LastStatus =
+            "UI refresh failed: "
+            .. tostring(err)
+    end
+end
+
+function GAG2AutoSprinklerScheduleRefresh()
+
+    local state =
+        GAG2_AUTO_SPRINKLER_STATE
+
+    if state.RefreshScheduled == true then
+        return
+    end
+
+    state.RefreshScheduled =
+        true
+
+    task.delay(0.15, function()
+
+        if GAG2_AUTO_SPRINKLER_STATE ~= state then
+            return
+        end
+
+        state.RefreshScheduled =
+            false
+
+        GAG2AutoSprinklerRefreshUI()
+    end)
+end
+
+function GAG2AutoSprinklerSetToggleOff()
+
+    local toggle =
+        Toggles
+        and Toggles.HolyGAG2AutoSprinklerEnabled
+
+    if toggle
+    and type(toggle.SetValue) == "function" then
+
+        pcall(
+            toggle.SetValue,
+            toggle,
+            false
+        )
+    end
+end
+
+function GAG2AutoSprinklerStartWorker()
+
+    local state =
+        GAG2_AUTO_SPRINKLER_STATE
+
+    if state.Running == true then
+        return
+    end
+
+    if typeof(state.TargetLocalOffset) ~= "Vector3" then
+
+        state.Enabled =
+            false
+
+        state.LastStatus =
+            "Set a sprinkler point first."
+
+        GAG2AutoSprinklerSetToggleOff()
+        GAG2AutoSprinklerScheduleRefresh()
+
+        Notify(
+            "Auto Sprinkler",
+            "Set a point first.",
+            4
+        )
+
+        return
+    end
+
+    if next(state.SelectedTools or {}) == nil then
+
+        state.Enabled =
+            false
+
+        state.LastStatus =
+            "Select at least one sprinkler."
+
+        GAG2AutoSprinklerSetToggleOff()
+        GAG2AutoSprinklerScheduleRefresh()
+
+        Notify(
+            "Auto Sprinkler",
+            "Select at least one sprinkler.",
+            4
+        )
+
+        return
+    end
+
+    state.Running =
+        true
+
+    state.PlacedThisRun =
+        0
+
+    state.FailedThisRun =
+        0
+
+    state.WorkerGeneration =
+        state.WorkerGeneration + 1
+
+    local generation =
+        state.WorkerGeneration
+
+    task.spawn(function()
+
+        while GAG2AutoSprinklerWorkerActive(generation) do
+
+            local activeCount =
+                GAG2AutoSprinklerCountActive()
+
+            if state.OnlyIfNoSprinkler == true
+            and activeCount > 0 then
+
+                state.CurrentTool =
+                    ""
+
+                state.LastStatus =
+                    "Skipping: sprinkler already exists."
+
+                GAG2AutoSprinklerScheduleRefresh()
+
+            else
+
+                local position, ownPlot, pointReason =
+                    GAG2AutoToolsGetSavedWorldPoint(
+                        state
+                    )
+
+                if typeof(position) ~= "Vector3" then
+
+                    state.FailedThisRun =
+                        state.FailedThisRun + 1
+
+                    state.LastStatus =
+                        "Point failed: "
+                        .. tostring(pointReason)
+
+                    GAG2AutoSprinklerScheduleRefresh()
+
+                else
+
+                    local toolName =
+                        GAG2AutoSprinklerPickTool()
+
+                    state.CurrentTool =
+                        toolName
+
+                    state.LastStatus =
+                        "Placing "
+                        .. tostring(toolName)
+
+                    GAG2AutoSprinklerScheduleRefresh()
+
+                    local success, reason =
+                        GAG2AutoSprinklerTryPlace(
+                            toolName,
+                            position,
+                            generation
+                        )
+
+                    if success == true then
+
+                        state.PlacedThisRun =
+                            state.PlacedThisRun + 1
+
+                        state.LastStatus =
+                            tostring(toolName)
+                            .. " placed: "
+                            .. tostring(reason)
+
+                    else
+
+                        state.FailedThisRun =
+                            state.FailedThisRun + 1
+
+                        state.LastStatus =
+                            tostring(toolName)
+                            .. " failed: "
+                            .. tostring(reason)
+                    end
+
+                    GAG2AutoSprinklerScheduleRefresh()
+                end
+            end
+
+            GAG2AutoToolsWaitSeconds(
+                tonumber(state.Interval) or 60,
+                function()
+
+                    return GAG2AutoSprinklerWorkerActive(
+                        generation
+                    )
+                end
+            )
+        end
+
+        state.Running =
+            false
+
+        state.CurrentTool =
+            ""
+
+        if state.Enabled ~= true then
+            state.LastStatus =
+                "Stopped."
+        end
+
+        GAG2AutoSprinklerScheduleRefresh()
+    end)
+end
+
+function GAG2AutoSprinklerSetEnabled(value)
+
+    local state =
+        GAG2_AUTO_SPRINKLER_STATE
+
+    local enabled =
+        value == true
+
+    if enabled == state.Enabled
+    and (
+        enabled ~= true
+        or state.Running == true
+    ) then
+
+        return
+    end
+
+    state.Enabled =
+        enabled
+
+    if ConfigState.Loading == true then
+        return
+    end
+
+    if enabled == true then
+
+        state.LastStatus =
+            "Starting."
+
+        GAG2AutoSprinklerStartWorker()
+
+    else
+
+        state.WorkerGeneration =
+            state.WorkerGeneration + 1
+
+        state.LastStatus =
+            "Disabled."
+    end
+
+    MarkConfigDirty()
+    GAG2AutoSprinklerScheduleRefresh()
+end
+
+function GAG2AutoWateringSetTool(value)
+
+    local toolName =
+        ""
+
+    if type(value) == "table" then
+
+        for _, item in ipairs(value) do
+
+            toolName =
+                GAG2AutoToolsDisplayToName(
+                    item
+                )
+
+            break
+        end
+
+        if toolName == "" then
+
+            for item, enabled in pairs(value) do
+
+                if enabled == true then
+
+                    toolName =
+                        GAG2AutoToolsDisplayToName(
+                            item
+                        )
+
+                    break
+                end
+            end
+        end
+
+    else
+
+        toolName =
+            GAG2AutoToolsDisplayToName(
+                value
+            )
+    end
+
+    if toolName:lower():find("no watering", 1, true) then
+        toolName = ""
+    end
+
+    GAG2_AUTO_WATERING_STATE.ToolName =
+        toolName
+
+    MarkConfigDirty()
+    GAG2AutoWateringScheduleRefresh()
+end
+
+function GAG2AutoWateringSetSelectedPlants(value)
+
+    GAG2_AUTO_WATERING_STATE.SelectedPlants =
+        GAG2AutoToolsNormalizeSelection(
+            value
+        )
+
+    MarkConfigDirty()
+    GAG2AutoWateringScheduleRefresh()
+end
+
+function GAG2AutoWateringSetInterval(value)
+
+    GAG2_AUTO_WATERING_STATE.Interval =
+        GAG2AutoToolsClampNumber(
+            value,
+            5,
+            0.65,
+            86400
+        )
+
+    MarkConfigDirty()
+    GAG2AutoWateringScheduleRefresh()
+end
+
+function GAG2AutoWateringSetRipeOnly(value)
+
+    GAG2_AUTO_WATERING_STATE.RipeOnly =
+        value == true
+
+    MarkConfigDirty()
+    GAG2AutoWateringScheduleRefresh()
+end
+
+function GAG2AutoWateringWorkerActive(generation)
+
+    return GAG2_AUTO_WATERING_STATE.Enabled == true
+        and GAG2_AUTO_WATERING_STATE.WorkerGeneration == generation
+end
+
+function GAG2AutoWateringSavePointText()
+
+    local state =
+        GAG2_AUTO_WATERING_STATE
+
+    local control =
+        GAG2_AUTO_WATERING_CONTROLS.PointData
+
+    if control
+    and type(control.SetValue) == "function" then
+
+        state.SavingPointText =
+            true
+
+        pcall(function()
+
+            control:SetValue(
+                GAG2AutoToolsEncodePoint(
+                    state
+                )
+            )
+        end)
+
+        state.SavingPointText =
+            false
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2AutoWateringLoadPointFromText(text)
+
+    local loaded =
+        GAG2AutoToolsLoadPointFromText(
+            GAG2_AUTO_WATERING_STATE,
+            text
+        )
+
+    if loaded == true then
+        GAG2AutoWateringScheduleRefresh()
+    end
+
+    return loaded
+end
+
+function GAG2AutoWateringSetPointFromCurrentPosition()
+
+    local ok, reason =
+        GAG2AutoToolsSetPointFromCurrentPosition(
+            GAG2_AUTO_WATERING_STATE
+        )
+
+    if ok == true then
+
+        GAG2_AUTO_WATERING_STATE.LastStatus =
+            "Point saved: "
+            .. tostring(reason)
+
+        GAG2AutoWateringSavePointText()
+
+        Notify(
+            "Auto Watering",
+            "Watering point saved.",
+            3
+        )
+
+    else
+
+        GAG2_AUTO_WATERING_STATE.LastStatus =
+            "Set point failed: "
+            .. tostring(reason)
+
+        Notify(
+            "Auto Watering",
+            "Stand inside your garden before setting point.",
+            4
+        )
+    end
+
+    GAG2AutoWateringScheduleRefresh()
+
+    return ok
+end
+
+function GAG2AutoWateringFindRipeTarget()
+
+    local ownPlot, plantsFolder =
+        GAG2AutoToolsGetOwnPlantsFolder()
+
+    if not plantsFolder then
+        return nil,
+            "Plants folder missing"
+    end
+
+    local selected =
+        GAG2_AUTO_WATERING_STATE.SelectedPlants
+        or {}
+
+    local requireSelected =
+        next(selected) ~= nil
+
+    for _, plant in ipairs(plantsFolder:GetChildren()) do
+
+        if plant:IsA("Model")
+        or plant:IsA("Folder")
+        or plant:IsA("BasePart") then
+
+            local plantName =
+                GAG2AutoToolsGetPlantName(
+                    plant
+                )
+
+            if requireSelected ~= true
+            or selected[plantName] == true then
+
+                local fruitsFolder =
+                    plant:FindFirstChild("Fruits")
+
+                if fruitsFolder then
+
+                    for _, fruit in ipairs(fruitsFolder:GetChildren()) do
+
+                        if fruit:IsA("Model")
+                        or fruit:IsA("Folder")
+                        or fruit:IsA("BasePart") then
+
+                            local position =
+                                GAG2AutoToolsGetInstancePosition(
+                                    fruit
+                                )
+                                or GAG2AutoToolsGetInstancePosition(
+                                    plant
+                                )
+
+                            if typeof(position) == "Vector3" then
+
+                                local groundPosition =
+                                    GAG2AutoToolsRaycastGround(
+                                        position,
+                                        ownPlot
+                                    )
+
+                                return typeof(groundPosition) == "Vector3"
+                                    and groundPosition
+                                    or position,
+                                    plantName
+                                    .. " has ripe fruit"
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return nil,
+        "No ripe fruit found."
+end
+
+function GAG2AutoWateringTryWater(toolName, position, generation)
+
+    local packet, packetReason =
+        GAG2AutoToolsResolvePacket(
+            {
+                "WateringCan",
+                "UseWateringCan",
+            },
+            "UseWateringCan",
+            48
+        )
+
+    if not packet then
+        return false,
+            packetReason
+    end
+
+    local tool, toolReason =
+        GAG2AutoToolsEquipTool(
+            toolName
+        )
+
+    if not tool then
+        return false,
+            toolReason
+    end
+
+    local beforeCount =
+        GAG2AutoToolsReadCount(
+            toolName
+        )
+
+    local restorePosition, moveReason =
+        GAG2AutoToolsMoveNearTarget(
+            position,
+            function()
+
+                return GAG2AutoWateringWorkerActive(
+                    generation
+                )
+            end
+        )
+
+    if type(restorePosition) ~= "function" then
+        return false,
+            moveReason
+    end
+
+    GAG2AutoToolsWaitSharedThrottle(function()
+
+        return GAG2AutoWateringWorkerActive(
+            generation
+        )
+    end)
+
+    if not GAG2AutoWateringWorkerActive(generation) then
+
+        restorePosition()
+
+        return false,
+            "stopped"
+    end
+
+    local ok, err =
+        pcall(function()
+
+            packet.Fire(
+                packet,
+                position,
+                toolName,
+                tool
+            )
+        end)
+
+    if ok ~= true then
+
+        restorePosition()
+
+        return false,
+            tostring(err)
+    end
+
+    GAG2_AUTO_TOOL_SHARED_LAST_SENT_AT =
+        os.clock()
+
+    local success, reason =
+        GAG2AutoToolsWaitCountDrop(
+            toolName,
+            beforeCount,
+            1.15,
+            function()
+
+                return GAG2AutoWateringWorkerActive(
+                    generation
+                )
+            end
+        )
+
+    restorePosition()
+
+    if success ~= true then
+
+        local lateSuccess, lateReason =
+            GAG2AutoToolsWaitCountDrop(
+                toolName,
+                beforeCount,
+                1.75,
+                function()
+
+                    return GAG2AutoWateringWorkerActive(
+                        generation
+                    )
+                end
+            )
+
+        success =
+            lateSuccess
+
+        reason =
+            lateReason
+    end
+
+    if success == true then
+
+        return true,
+            tostring(reason)
+            .. " | "
+            .. tostring(moveReason)
+    end
+
+    return false,
+        tostring(reason)
+        .. " | "
+        .. tostring(moveReason)
+end
+
+function GAG2AutoWateringBuildStatusText()
+
+    local state =
+        GAG2_AUTO_WATERING_STATE
+
+    return
+        '<font color="rgb(196,181,253)"><b>Auto Watering Can</b></font>'
+        .. "\nTool: "
+        .. (
+            state.ToolName ~= ""
+            and state.ToolName
+            or "None"
+        )
+        .. "\nRipe only: "
+        .. (
+            state.RipeOnly
+            and "YES"
+            or "NO"
+        )
+        .. " | Every: "
+        .. string.format(
+            "%.2fs",
+            tonumber(state.Interval) or 5
+        )
+        .. "\nPlant filter: "
+        .. GAG2AutoToolsSelectionText(
+            state.SelectedPlants,
+            "Any ripe plant"
+        )
+        .. "\nSaved point: "
+        .. GAG2AutoToolsPointText(
+            state
+        )
+        .. "\nState: "
+        .. (
+            state.Enabled
+            and "ON"
+            or "OFF"
+        )
+        .. " | Running: "
+        .. tostring(state.Running)
+        .. "\nCurrent: "
+        .. (
+            state.CurrentTarget ~= ""
+            and state.CurrentTarget
+            or "none"
+        )
+        .. "\nWatered: "
+        .. tostring(state.WateredThisRun)
+        .. " | Failed: "
+        .. tostring(state.FailedThisRun)
+        .. "\nLast: "
+        .. tostring(state.LastStatus)
+end
+
+function GAG2AutoWateringRefreshUI()
+
+    local state =
+        GAG2_AUTO_WATERING_STATE
+
+    if state.UpdatingUI == true then
+        return
+    end
+
+    state.UpdatingUI =
+        true
+
+    local ok, err =
+        pcall(function()
+
+            local toolValues, toolChoiceMap =
+                GAG2AutoToolsCollectTools(
+                    "Watering"
+                )
+
+            state.ToolChoiceMap =
+                toolChoiceMap
+
+            GAG2AutoToolsSetDropdownValues(
+                GAG2_AUTO_WATERING_CONTROLS.Tool,
+                toolValues
+            )
+
+            local plantValues, plantChoiceMap =
+                GAG2AutoToolsBuildPlantChoices(
+                    state.SelectedPlants
+                )
+
+            state.PlantChoiceMap =
+                plantChoiceMap
+
+            GAG2AutoToolsSetDropdownValues(
+                GAG2_AUTO_WATERING_CONTROLS.Plants,
+                plantValues
+            )
+
+            GAG2AutoToolsSetStatusLabel(
+                GAG2_AUTO_WATERING_CONTROLS.StatusLabel,
+                GAG2AutoWateringBuildStatusText()
+            )
+        end)
+
+    state.UpdatingUI =
+        false
+
+    if ok ~= true then
+
+        state.LastStatus =
+            "UI refresh failed: "
+            .. tostring(err)
+    end
+end
+
+function GAG2AutoWateringScheduleRefresh()
+
+    local state =
+        GAG2_AUTO_WATERING_STATE
+
+    if state.RefreshScheduled == true then
+        return
+    end
+
+    state.RefreshScheduled =
+        true
+
+    task.delay(0.15, function()
+
+        if GAG2_AUTO_WATERING_STATE ~= state then
+            return
+        end
+
+        state.RefreshScheduled =
+            false
+
+        GAG2AutoWateringRefreshUI()
+    end)
+end
+
+function GAG2AutoWateringSetToggleOff()
+
+    local toggle =
+        Toggles
+        and Toggles.HolyGAG2AutoWateringEnabled
+
+    if toggle
+    and type(toggle.SetValue) == "function" then
+
+        pcall(
+            toggle.SetValue,
+            toggle,
+            false
+        )
+    end
+end
+
+function GAG2AutoWateringStartWorker()
+
+    local state =
+        GAG2_AUTO_WATERING_STATE
+
+    if state.Running == true then
+        return
+    end
+
+    if state.ToolName == "" then
+
+        state.Enabled =
+            false
+
+        state.LastStatus =
+            "Select a watering can."
+
+        GAG2AutoWateringSetToggleOff()
+        GAG2AutoWateringScheduleRefresh()
+
+        Notify(
+            "Auto Watering",
+            "Select a watering can first.",
+            4
+        )
+
+        return
+    end
+
+    if state.RipeOnly ~= true
+    and typeof(state.TargetLocalOffset) ~= "Vector3" then
+
+        state.Enabled =
+            false
+
+        state.LastStatus =
+            "Set a watering point first."
+
+        GAG2AutoWateringSetToggleOff()
+        GAG2AutoWateringScheduleRefresh()
+
+        Notify(
+            "Auto Watering",
+            "Set a point first, or enable Ripe Only.",
+            4
+        )
+
+        return
+    end
+
+    state.Running =
+        true
+
+    state.WateredThisRun =
+        0
+
+    state.FailedThisRun =
+        0
+
+    state.WorkerGeneration =
+        state.WorkerGeneration + 1
+
+    local generation =
+        state.WorkerGeneration
+
+    task.spawn(function()
+
+        while GAG2AutoWateringWorkerActive(generation) do
+
+            local position =
+                nil
+
+            local targetReason =
+                ""
+
+            if state.RipeOnly == true then
+
+                position, targetReason =
+                    GAG2AutoWateringFindRipeTarget()
+
+            else
+
+                position, _, targetReason =
+                    GAG2AutoToolsGetSavedWorldPoint(
+                        state
+                    )
+            end
+
+            if typeof(position) ~= "Vector3" then
+
+                state.CurrentTarget =
+                    ""
+
+                state.LastStatus =
+                    tostring(targetReason)
+
+                GAG2AutoWateringScheduleRefresh()
+
+            else
+
+                state.CurrentTarget =
+                    tostring(targetReason)
+
+                state.LastStatus =
+                    "Watering: "
+                    .. tostring(targetReason)
+
+                GAG2AutoWateringScheduleRefresh()
+
+                local success, reason =
+                    GAG2AutoWateringTryWater(
+                        state.ToolName,
+                        position,
+                        generation
+                    )
+
+                if success == true then
+
+                    state.WateredThisRun =
+                        state.WateredThisRun + 1
+
+                    state.LastStatus =
+                        "Watered: "
+                        .. tostring(reason)
+
+                else
+
+                    state.FailedThisRun =
+                        state.FailedThisRun + 1
+
+                    state.LastStatus =
+                        "Water failed: "
+                        .. tostring(reason)
+                end
+
+                GAG2AutoWateringScheduleRefresh()
+            end
+
+            GAG2AutoToolsWaitSeconds(
+                tonumber(state.Interval) or 5,
+                function()
+
+                    return GAG2AutoWateringWorkerActive(
+                        generation
+                    )
+                end
+            )
+        end
+
+        state.Running =
+            false
+
+        state.CurrentTarget =
+            ""
+
+        if state.Enabled ~= true then
+            state.LastStatus =
+                "Stopped."
+        end
+
+        GAG2AutoWateringScheduleRefresh()
+    end)
+end
+
+function GAG2AutoWateringSetEnabled(value)
+
+    local state =
+        GAG2_AUTO_WATERING_STATE
+
+    local enabled =
+        value == true
+
+    if enabled == state.Enabled
+    and (
+        enabled ~= true
+        or state.Running == true
+    ) then
+
+        return
+    end
+
+    state.Enabled =
+        enabled
+
+    if ConfigState.Loading == true then
+        return
+    end
+
+    if enabled == true then
+
+        state.LastStatus =
+            "Starting."
+
+        GAG2AutoWateringStartWorker()
+
+    else
+
+        state.WorkerGeneration =
+            state.WorkerGeneration + 1
+
+        state.LastStatus =
+            "Disabled."
+    end
+
+    MarkConfigDirty()
+    GAG2AutoWateringScheduleRefresh()
+end
+
+--==================================================
+-- [4.572] AUTO TROWEL PLANTS
+-- Own-plot-only plant mover using Trowel.MovePlant.
+--==================================================
+
+if type(GAG2_AUTO_TROWEL_STATE) == "table" then
+
+    GAG2_AUTO_TROWEL_STATE.Enabled =
+        false
+
+    GAG2_AUTO_TROWEL_STATE.WorkerGeneration =
+        (tonumber(GAG2_AUTO_TROWEL_STATE.WorkerGeneration) or 0) + 1
+
+    GAG2_AUTO_TROWEL_STATE.MonitorGeneration =
+        (tonumber(GAG2_AUTO_TROWEL_STATE.MonitorGeneration) or 0) + 1
+end
+
+GAG2_AUTO_TROWEL_STATE = {
+    Enabled = false,
+    Running = false,
+    WorkerGeneration = 0,
+    MonitorGeneration = 0,
+
+    SelectedPlants = {},
+    SelectedPlantChoiceMap = {},
+
+    TargetPoint = nil,
+    TargetRotation = 0,
+
+    Limit = 1,
+    Delay = 0.75,
+    Spacing = 0.75,
+
+    MovePlantPacket = nil,
+    PacketSource = "not resolved",
+
+    OwnPlot = nil,
+    PlantsFolder = nil,
+    Summary = {},
+    TotalPlants = 0,
+    PlantTypes = 0,
+
+    MovedThisRun = 0,
+    FailedThisRun = 0,
+    CurrentPlant = "",
+    LastSentAt = 0,
+    LastStatus = "Idle.",
+
+    UpdatingUI = false,
+    RefreshScheduled = false,
+    SavingPointText = false,
+}
+
+GAG2_AUTO_TROWEL_CONTROLS =
+    GAG2_AUTO_TROWEL_CONTROLS or {}
+
+function GAG2AutoTrowelClean(value)
+
+    return CleanText(
+        tostring(value or "")
+            :gsub("<[^>]->", "")
+            :gsub("<.->", "")
+    )
+end
+
+function GAG2AutoTrowelGetEffectiveDelay()
+
+    return math.max(
+        tonumber(GAG2_AUTO_TROWEL_STATE.Delay)
+        or 0.75,
+        0.65
+    )
+end
+
+function GAG2AutoTrowelClampLimit(value)
+
+    local number =
+        tonumber(value)
+        or 1
+
+    if number ~= number
+    or number == math.huge
+    or number == -math.huge then
+
+        number =
+            1
+    end
+
+    return math.clamp(
+        math.floor(number),
+        0,
+        100000
+    )
+end
+
+function GAG2AutoTrowelSetDelay(value)
+
+    local number =
+        tonumber(value)
+        or 0.75
+
+    if number ~= number
+    or number == math.huge
+    or number == -math.huge then
+
+        number =
+            0.75
+    end
+
+    GAG2_AUTO_TROWEL_STATE.Delay =
+        math.clamp(
+            number,
+            0,
+            60
+        )
+
+    MarkConfigDirty()
+    GAG2AutoTrowelScheduleRefresh()
+end
+
+function GAG2AutoTrowelSetSpacing(value)
+
+    local number =
+        tonumber(value)
+        or 0.75
+
+    if number ~= number
+    or number == math.huge
+    or number == -math.huge then
+
+        number =
+            0.75
+    end
+
+    GAG2_AUTO_TROWEL_STATE.Spacing =
+        math.clamp(
+            number,
+            0,
+            12
+        )
+
+    MarkConfigDirty()
+    GAG2AutoTrowelScheduleRefresh()
+end
+
+function GAG2AutoTrowelSetLimit(value)
+
+    GAG2_AUTO_TROWEL_STATE.Limit =
+        GAG2AutoTrowelClampLimit(
+            value
+        )
+
+    MarkConfigDirty()
+    GAG2AutoTrowelScheduleRefresh()
+end
+
+function GAG2AutoTrowelDisplayToPlantName(value)
+
+    local text =
+        GAG2AutoTrowelClean(
+            value
+        )
+
+    local beforePipe =
+        text:match("^(.-)%s+|%s+")
+
+    if beforePipe
+    and GAG2AutoTrowelClean(beforePipe) ~= "" then
+
+        text =
+            GAG2AutoTrowelClean(
+                beforePipe
+            )
+    end
+
+    return text
+end
+
+function GAG2AutoTrowelNormalizeSelection(value)
+
+    local selected =
+        {}
+
+    local function add(item)
+
+        local plantName =
+            GAG2AutoTrowelDisplayToPlantName(
+                item
+            )
+
+        if plantName == ""
+        or plantName == "No planted plants" then
+            return
+        end
+
+        selected[plantName] =
+            true
+    end
+
+    if type(value) == "table" then
+
+        for _, item in ipairs(value) do
+            add(item)
+        end
+
+        for item, enabled in pairs(value) do
+
+            if enabled == true then
+                add(item)
+            end
+        end
+
+    elseif type(value) == "string" then
+
+        add(value)
+    end
+
+    return selected
+end
+
+function GAG2AutoTrowelSetSelectedPlants(value)
+
+    GAG2_AUTO_TROWEL_STATE.SelectedPlants =
+        GAG2AutoTrowelNormalizeSelection(
+            value
+        )
+
+    MarkConfigDirty()
+    GAG2AutoTrowelScheduleRefresh()
+end
+
+function GAG2AutoTrowelSelectionText(selection, fallback)
+
+    local rows =
+        {}
+
+    for plantName, enabled in pairs(selection or {}) do
+
+        if enabled == true then
+
+            table.insert(
+                rows,
+                tostring(plantName)
+            )
+        end
+    end
+
+    table.sort(rows, function(a, b)
+        return a:lower() < b:lower()
+    end)
+
+    if #rows <= 0 then
+        return fallback or "None"
+    end
+
+    return table.concat(
+        rows,
+        ", "
+    )
+end
+
+function GAG2AutoTrowelGetOwnPlantsFolder()
+
+    if type(GAG2AutoShovelGetOwnPlantsFolder) == "function" then
+
+        return GAG2AutoShovelGetOwnPlantsFolder()
+    end
+
+    if type(GAG2ResolveOwnFarmPlot) ~= "function" then
+        return nil, nil, "GAG2ResolveOwnFarmPlot missing"
+    end
+
+    local ownPlot, plotReason =
+        GAG2ResolveOwnFarmPlot()
+
+    if not ownPlot then
+        return nil, nil, tostring(plotReason)
+    end
+
+    local plantsFolder =
+        ownPlot:FindFirstChild("Plants")
+
+    if not plantsFolder then
+        return ownPlot, nil, "Plants folder missing"
+    end
+
+    return ownPlot,
+        plantsFolder,
+        tostring(plotReason or "own plot")
+end
+
+function GAG2AutoTrowelGetPlantSeedName(plant)
+
+    if typeof(plant) ~= "Instance" then
+        return ""
+    end
+
+    if type(GAG2AutoShovelGetPlantSeedName) == "function" then
+
+        local ok, result =
+            pcall(function()
+
+                return GAG2AutoShovelGetPlantSeedName(
+                    plant
+                )
+            end)
+
+        local clean =
+            ok == true
+            and GAG2AutoTrowelClean(result)
+            or ""
+
+        if clean ~= "" then
+            return clean
+        end
+    end
+
+    local attrNames = {
+        "SeedName",
+        "Seed",
+        "PlantName",
+        "DisplayName",
+        "Name",
+    }
+
+    for _, attrName in ipairs(attrNames) do
+
+        local ok, value =
+            pcall(function()
+
+                return plant:GetAttribute(
+                    attrName
+                )
+            end)
+
+        local text =
+            ok == true
+            and GAG2AutoTrowelClean(value)
+            or ""
+
+        if text ~= "" then
+            return text
+        end
+    end
+
+    local fruits =
+        plant:FindFirstChild("Fruits")
+
+    if fruits then
+
+        for _, fruit in ipairs(fruits:GetChildren()) do
+
+            for _, attrName in ipairs(attrNames) do
+
+                local ok, value =
+                    pcall(function()
+
+                        return fruit:GetAttribute(
+                            attrName
+                        )
+                    end)
+
+                local text =
+                    ok == true
+                    and GAG2AutoTrowelClean(value)
+                    or ""
+
+                if text ~= "" then
+                    return text
+                end
+            end
+        end
+    end
+
+    return GAG2AutoTrowelClean(
+        tostring(plant.Name):gsub("_", " ")
+    )
+end
+
+function GAG2AutoTrowelGetPlantPosition(plant)
+
+    if typeof(plant) ~= "Instance" then
+        return nil
+    end
+
+    if plant:IsA("BasePart") then
+        return plant.Position
+    end
+
+    if plant:IsA("Model") then
+
+        if plant.PrimaryPart then
+            return plant.PrimaryPart.Position
+        end
+
+        local ok, cf =
+            pcall(function()
+
+                return plant:GetBoundingBox()
+            end)
+
+        if ok == true
+        and typeof(cf) == "CFrame" then
+
+            return cf.Position
+        end
+    end
+
+    for _, descendant in ipairs(plant:GetDescendants()) do
+
+        if descendant:IsA("BasePart") then
+            return descendant.Position
+        end
+    end
+
+    return nil
+end
+
+function GAG2AutoTrowelScanPlants()
+
+    local state =
+        GAG2_AUTO_TROWEL_STATE
+
+    local ownPlot, plantsFolder =
+        GAG2AutoTrowelGetOwnPlantsFolder()
+
+    state.OwnPlot =
+        ownPlot
+
+    state.PlantsFolder =
+        plantsFolder
+
+    state.Summary =
+        {}
+
+    state.TotalPlants =
+        0
+
+    state.PlantTypes =
+        0
+
+    if not plantsFolder then
+        return false
+    end
+
+    for _, plant in ipairs(plantsFolder:GetChildren()) do
+
+        if plant:IsA("Model")
+        or plant:IsA("Folder")
+        or plant:IsA("BasePart") then
+
+            local plantName =
+                GAG2AutoTrowelGetPlantSeedName(
+                    plant
+                )
+
+            if plantName ~= "" then
+
+                local row =
+                    state.Summary[plantName]
+
+                if not row then
+
+                    row = {
+                        Count = 0,
+                        Models = {},
+                    }
+
+                    state.Summary[plantName] =
+                        row
+
+                    state.PlantTypes =
+                        state.PlantTypes + 1
+                end
+
+                row.Count =
+                    row.Count + 1
+
+                table.insert(
+                    row.Models,
+                    plant
+                )
+
+                state.TotalPlants =
+                    state.TotalPlants + 1
+            end
+        end
+    end
+
+    for _, row in pairs(state.Summary) do
+
+        table.sort(row.Models, function(a, b)
+
+            return tostring(a.Name)
+                < tostring(b.Name)
+        end)
+    end
+
+    return true
+end
+
+function GAG2AutoTrowelBuildPlantChoices()
+
+    local values =
+        {}
+
+    local choiceMap =
+        {}
+
+    local names =
+        {}
+
+    local state =
+        GAG2_AUTO_TROWEL_STATE
+
+    for plantName in pairs(state.Summary) do
+
+        table.insert(
+            names,
+            plantName
+        )
+    end
+
+    for plantName, enabled in pairs(state.SelectedPlants or {}) do
+
+        if enabled == true
+        and state.Summary[plantName] == nil then
+
+            table.insert(
+                names,
+                plantName
+            )
+        end
+    end
+
+    table.sort(names, function(a, b)
+        return a:lower() < b:lower()
+    end)
+
+    for _, plantName in ipairs(names) do
+
+        local row =
+            state.Summary[plantName]
+
+        local display =
+            plantName
+            .. " | x"
+            .. tostring(row and row.Count or 0)
+
+        table.insert(
+            values,
+            display
+        )
+
+        choiceMap[display] =
+            plantName
+    end
+
+    if #values <= 0 then
+
+        values = {
+            "No planted plants",
+        }
+    end
+
+    state.SelectedPlantChoiceMap =
+        choiceMap
+
+    return values
+end
+
+function GAG2AutoTrowelSetStatusLabel(text)
+
+    local label =
+        GAG2_AUTO_TROWEL_CONTROLS.StatusLabel
+
+    if not label then
+        return
+    end
+
+    pcall(function()
+
+        if type(label.SetText) == "function" then
+
+            label:SetText(
+                tostring(text or "")
+            )
+
+        else
+
+            label.Text =
+                tostring(text or "")
+        end
+    end)
+end
+
+function GAG2AutoTrowelPointText()
+
+    local point =
+        GAG2_AUTO_TROWEL_STATE.TargetPoint
+
+    if typeof(point) ~= "Vector3" then
+        return "not set"
+    end
+
+    return string.format(
+        "%.1f, %.1f, %.1f",
+        point.X,
+        point.Y,
+        point.Z
+    )
+end
+
+function GAG2AutoTrowelBuildStatusText()
+
+    local state =
+        GAG2_AUTO_TROWEL_STATE
+
+    return
+        '<font color="rgb(196,181,253)"><b>Auto Trowel Plants</b></font>'
+        .. "\nPlot: "
+        .. (
+            state.OwnPlot
+            and state.OwnPlot.Name
+            or "not resolved"
+        )
+        .. " | Total: "
+        .. tostring(state.TotalPlants)
+        .. " | Types: "
+        .. tostring(state.PlantTypes)
+        .. "\nSelected: "
+        .. GAG2AutoTrowelSelectionText(
+            state.SelectedPlants,
+            "None"
+        )
+        .. "\nPoint: "
+        .. GAG2AutoTrowelPointText()
+        .. " | Rotation: "
+        .. string.format(
+            "%.1f",
+            tonumber(state.TargetRotation)
+            or 0
+        )
+        .. "\nState: "
+        .. (
+            state.Enabled
+            and "ON"
+            or "OFF"
+        )
+        .. " | Running: "
+        .. tostring(state.Running)
+        .. " | Limit: "
+        .. tostring(state.Limit)
+        .. "\nDelay: "
+        .. string.format(
+            "%.2fs",
+            GAG2AutoTrowelGetEffectiveDelay()
+        )
+        .. " | Spacing: "
+        .. string.format(
+            "%.2f",
+            tonumber(state.Spacing)
+            or 0
+        )
+        .. "\nMoved: "
+        .. tostring(state.MovedThisRun)
+        .. " | Failed: "
+        .. tostring(state.FailedThisRun)
+        .. "\nCurrent: "
+        .. (
+            state.CurrentPlant ~= ""
+            and state.CurrentPlant
+            or "none"
+        )
+        .. "\nPacket: "
+        .. tostring(state.PacketSource)
+        .. "\nLast: "
+        .. tostring(state.LastStatus)
+end
+
+function GAG2AutoTrowelRefreshUI()
+
+    local state =
+        GAG2_AUTO_TROWEL_STATE
+
+    if state.UpdatingUI == true then
+        return
+    end
+
+    state.UpdatingUI =
+        true
+
+    local ok, err =
+        pcall(function()
+
+            GAG2AutoTrowelScanPlants()
+
+            GAG2AutoShovelSetDropdownValues(
+                GAG2_AUTO_TROWEL_CONTROLS.Plants,
+                GAG2AutoTrowelBuildPlantChoices()
+            )
+
+            GAG2AutoTrowelSetStatusLabel(
+                GAG2AutoTrowelBuildStatusText()
+            )
+        end)
+
+    state.UpdatingUI =
+        false
+
+    if ok ~= true then
+
+        state.LastStatus =
+            "UI refresh failed: "
+            .. tostring(err)
+    end
+end
+
+function GAG2AutoTrowelScheduleRefresh()
+
+    local state =
+        GAG2_AUTO_TROWEL_STATE
+
+    if state.RefreshScheduled == true then
+        return
+    end
+
+    state.RefreshScheduled =
+        true
+
+    task.delay(0.15, function()
+
+        if GAG2_AUTO_TROWEL_STATE ~= state then
+            return
+        end
+
+        state.RefreshScheduled =
+            false
+
+        GAG2AutoTrowelRefreshUI()
+    end)
+end
+
+function GAG2AutoTrowelEncodePoint()
+
+    local point =
+        GAG2_AUTO_TROWEL_STATE.TargetPoint
+
+    if typeof(point) ~= "Vector3" then
+        return ""
+    end
+
+    local payload = {
+        X = point.X,
+        Y = point.Y,
+        Z = point.Z,
+        Rotation =
+            tonumber(GAG2_AUTO_TROWEL_STATE.TargetRotation)
+            or 0,
+    }
+
+    local ok, encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    return ok == true
+        and encoded
+        or ""
+end
+
+function GAG2AutoTrowelLoadPointFromText(text)
+
+    text =
+        tostring(text or "")
+
+    if text == "" then
+        return false
+    end
+
+    local ok, payload =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                text
+            )
+        end)
+
+    if ok ~= true
+    or type(payload) ~= "table" then
+        return false
+    end
+
+    local x =
+        tonumber(payload.X)
+
+    local y =
+        tonumber(payload.Y)
+
+    local z =
+        tonumber(payload.Z)
+
+    if not x
+    or not y
+    or not z then
+        return false
+    end
+
+    GAG2_AUTO_TROWEL_STATE.TargetPoint =
+        Vector3.new(
+            x,
+            y,
+            z
+        )
+
+    GAG2_AUTO_TROWEL_STATE.TargetRotation =
+        tonumber(payload.Rotation)
+        or 0
+
+    GAG2AutoTrowelScheduleRefresh()
+
+    return true
+end
+
+function GAG2AutoTrowelSavePoint()
+
+    local state =
+        GAG2_AUTO_TROWEL_STATE
+
+    local control =
+        GAG2_AUTO_TROWEL_CONTROLS.PointData
+
+    if control
+    and type(control.SetValue) == "function" then
+
+        state.SavingPointText =
+            true
+
+        pcall(function()
+
+            control:SetValue(
+                GAG2AutoTrowelEncodePoint()
+            )
+        end)
+
+        state.SavingPointText =
+            false
+    end
+
+    MarkConfigDirty()
+    GAG2AutoTrowelScheduleRefresh()
+end
+
+function GAG2AutoTrowelGetCharacterRoot()
+
+    local character =
+        LOCAL_PLAYER.Character
+        or LOCAL_PLAYER.CharacterAdded:Wait()
+
+    local root =
+        character:FindFirstChild("HumanoidRootPart")
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    return character,
+        root,
+        humanoid
+end
+
+function GAG2AutoTrowelGetGroundPosition()
+
+    local character, root =
+        GAG2AutoTrowelGetCharacterRoot()
+
+    if not root then
+        return nil,
+            "root missing"
+    end
+
+    local params =
+        RaycastParams.new()
+
+    params.FilterType =
+        Enum.RaycastFilterType.Exclude
+
+    params.FilterDescendantsInstances =
+        {
+            character,
+        }
+
+    local result =
+        workspace:Raycast(
+            root.Position + Vector3.new(0, 6, 0),
+            Vector3.new(0, -120, 0),
+            params
+        )
+
+    if result then
+
+        return result.Position,
+            "ground"
+    end
+
+    return root.Position,
+        "root fallback"
+end
+
+function GAG2AutoTrowelGetRotationDegrees()
+
+    local _, root =
+        GAG2AutoTrowelGetCharacterRoot()
+
+    if not root then
+        return 0
+    end
+
+    local _, yaw =
+        root.CFrame:ToOrientation()
+
+    local degrees =
+        math.deg(
+            yaw
+        )
+
+    if degrees < 0 then
+        degrees =
+            degrees + 360
+    end
+
+    return degrees
+end
+
+function GAG2AutoTrowelSetPointFromCurrentPosition()
+
+    local point, reason =
+        GAG2AutoTrowelGetGroundPosition()
+
+    if typeof(point) ~= "Vector3" then
+
+        GAG2_AUTO_TROWEL_STATE.LastStatus =
+            "Set point failed: "
+            .. tostring(reason)
+
+        GAG2AutoTrowelScheduleRefresh()
+
+        Notify(
+            "Auto Trowel",
+            "Could not set point: "
+            .. tostring(reason),
+            4
+        )
+
+        return false
+    end
+
+    GAG2_AUTO_TROWEL_STATE.TargetPoint =
+        point
+
+    GAG2_AUTO_TROWEL_STATE.TargetRotation =
+        GAG2AutoTrowelGetRotationDegrees()
+
+    GAG2_AUTO_TROWEL_STATE.LastStatus =
+        "Point set: "
+        .. GAG2AutoTrowelPointText()
+
+    GAG2AutoTrowelSavePoint()
+
+    Notify(
+        "Auto Trowel",
+        "Trowel point saved.",
+        3
+    )
+
+    return true
+end
+
+function GAG2AutoTrowelResolvePacket()
+
+    local state =
+        GAG2_AUTO_TROWEL_STATE
+
+    if type(state.MovePlantPacket) == "table"
+    and type(state.MovePlantPacket.Fire) == "function" then
+
+        return state.MovePlantPacket,
+            state.PacketSource
+    end
+
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild("SharedModules")
+
+    local networkingModule =
+        sharedModules
+        and sharedModules:FindFirstChild("Networking")
+
+    if not networkingModule
+    or networkingModule:IsA("ModuleScript") ~= true then
+
+        return nil,
+            "Networking module missing"
+    end
+
+    local ok, networking =
+        pcall(function()
+
+            return require(
+                networkingModule
+            )
+        end)
+
+    if ok ~= true
+    or type(networking) ~= "table" then
+
+        return nil,
+            "Networking require failed: "
+            .. tostring(networking)
+    end
+
+    local packet =
+        networking.Trowel
+        and networking.Trowel.MovePlant
+
+    if type(packet) ~= "table" then
+
+        return nil,
+            "Trowel.MovePlant missing"
+    end
+
+    if tostring(rawget(packet, "Name") or "") ~= "MovePlant"
+    and tonumber(rawget(packet, "Id")) ~= 103 then
+
+        return nil,
+            "bad packet"
+    end
+
+    if type(packet.Fire) ~= "function" then
+
+        return nil,
+            "MovePlant.Fire missing"
+    end
+
+    state.MovePlantPacket =
+        packet
+
+    state.PacketSource =
+        "Networking.Trowel.MovePlant"
+
+    return packet,
+        state.PacketSource
+end
+
+function GAG2AutoTrowelFindRealTrowel()
+
+    local character =
+        LOCAL_PLAYER.Character
+
+    local backpack =
+        LOCAL_PLAYER:FindFirstChildOfClass("Backpack")
+
+    local function findIn(container)
+
+        if not container then
+            return nil
+        end
+
+        for _, child in ipairs(container:GetChildren()) do
+
+            if child:IsA("Tool")
+            and (
+                child:GetAttribute("Trowel") ~= nil
+                or tostring(child.Name):lower():find("trowel", 1, true) ~= nil
+            ) then
+
+                return child
+            end
+        end
+
+        return nil
+    end
+
+    local tool =
+        findIn(character)
+
+    if tool then
+        return tool,
+            "equipped"
+    end
+
+    tool =
+        findIn(backpack)
+
+    if not tool then
+        return nil,
+            "real Trowel tool missing"
+    end
+
+    local humanoid =
+        character
+        and character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid then
+        return nil,
+            "Humanoid missing"
+    end
+
+    pcall(
+        humanoid.EquipTool,
+        humanoid,
+        tool
+    )
+
+    task.wait(
+        0.15
+    )
+
+    if tool.Parent ~= character then
+        return nil,
+            "Trowel could not equip"
+    end
+
+    return tool,
+        "equipped from backpack"
+end
+
+function GAG2AutoTrowelReadTrowelCount()
+
+    local count =
+        nil
+
+    local containers = {
+        LOCAL_PLAYER.Character,
+        LOCAL_PLAYER:FindFirstChildOfClass("Backpack"),
+    }
+
+    for _, container in ipairs(containers) do
+
+        if typeof(container) == "Instance" then
+
+            for _, child in ipairs(container:GetChildren()) do
+
+                if child:IsA("Tool")
+                and (
+                    child:GetAttribute("Trowel") ~= nil
+                    or tostring(child.Name):lower():find("trowel", 1, true) ~= nil
+                ) then
+
+                    local value =
+                        tonumber(
+                            child:GetAttribute("Count")
+                        )
+
+                    if value then
+                        count = value
+                    end
+                end
+            end
+        end
+    end
+
+    return count
+end
+
+function GAG2AutoTrowelBuildMoveList()
+
+    GAG2AutoTrowelScanPlants()
+
+    local state =
+        GAG2_AUTO_TROWEL_STATE
+
+    local selected =
+        state.SelectedPlants
+        or {}
+
+    local rows =
+        {}
+
+    for plantName, enabled in pairs(selected) do
+
+        if enabled == true then
+
+            local summary =
+                state.Summary[plantName]
+
+            if summary
+            and type(summary.Models) == "table" then
+
+                for _, plant in ipairs(summary.Models) do
+
+                    if typeof(plant) == "Instance"
+                    and plant.Parent == state.PlantsFolder then
+
+                        table.insert(rows, {
+                            Plant = plant,
+                            PlantName = plantName,
+                            PlantId = tostring(plant.Name),
+                        })
+                    end
+                end
+            end
+        end
+    end
+
+    table.sort(rows, function(a, b)
+
+        if tostring(a.PlantName) ~= tostring(b.PlantName) then
+
+            return tostring(a.PlantName)
+                < tostring(b.PlantName)
+        end
+
+        return tostring(a.PlantId)
+            < tostring(b.PlantId)
+    end)
+
+    local limit =
+        GAG2AutoTrowelClampLimit(
+            state.Limit
+        )
+
+    if limit > 0
+    and #rows > limit then
+
+        local limited =
+            {}
+
+        for index = 1, limit do
+
+            limited[index] =
+                rows[index]
+        end
+
+        rows =
+            limited
+    end
+
+    return rows
+end
+
+function GAG2AutoTrowelGetMovePosition(index)
+
+    local point =
+        GAG2_AUTO_TROWEL_STATE.TargetPoint
+
+    if typeof(point) ~= "Vector3" then
+        return nil
+    end
+
+    local spacing =
+        tonumber(GAG2_AUTO_TROWEL_STATE.Spacing)
+        or 0
+
+    if spacing <= 0
+    or index <= 1 then
+
+        return point
+    end
+
+    local angle =
+        (index - 1)
+        * 2.399963229728653
+
+    local radius =
+        spacing
+        * math.sqrt(index - 1)
+
+    return point
+        + Vector3.new(
+            math.cos(angle) * radius,
+            0,
+            math.sin(angle) * radius
+        )
+end
+
+function GAG2AutoTrowelWorkerActive(generation)
+
+    local state =
+        GAG2_AUTO_TROWEL_STATE
+
+    return state.Enabled == true
+        and state.WorkerGeneration == generation
+end
+
+function GAG2AutoTrowelWaitUntil(targetTime, generation)
+
+    while GAG2AutoTrowelWorkerActive(generation) do
+
+        local remaining =
+            targetTime - os.clock()
+
+        if remaining <= 0 then
+            return true
+        end
+
+        task.wait(
+            math.min(
+                remaining,
+                0.05
+            )
+        )
+    end
+
+    return false
+end
+
+function GAG2AutoTrowelTryMove(entry, moveIndex, generation)
+
+    if type(entry) ~= "table"
+    or typeof(entry.Plant) ~= "Instance" then
+
+        return false,
+            "bad entry"
+    end
+
+    local state =
+        GAG2_AUTO_TROWEL_STATE
+
+    if entry.Plant.Parent ~= state.PlantsFolder then
+
+        return true,
+            "plant no longer in folder"
+    end
+
+    local packet, packetReason =
+        GAG2AutoTrowelResolvePacket()
+
+    if not packet then
+        return false,
+            packetReason
+    end
+
+    local trowel, trowelReason =
+        GAG2AutoTrowelFindRealTrowel()
+
+    if not trowel then
+        return false,
+            trowelReason
+    end
+
+    local position =
+        GAG2AutoTrowelGetMovePosition(
+            moveIndex
+        )
+
+    if typeof(position) ~= "Vector3" then
+        return false,
+            "target point not set"
+    end
+
+    local beforeCount =
+        GAG2AutoTrowelReadTrowelCount()
+
+    local now =
+        os.clock()
+
+    local nextAllowed =
+        math.max(
+            tonumber(state.LastSentAt) or 0,
+            tonumber(GAG2_AUTO_SHOVEL_SHARED_LAST_SENT_AT) or 0
+        )
+        + GAG2AutoTrowelGetEffectiveDelay()
+
+    if now < nextAllowed then
+
+        GAG2AutoTrowelWaitUntil(
+            nextAllowed,
+            generation
+        )
+    end
+
+    if not GAG2AutoTrowelWorkerActive(generation) then
+        return false,
+            "stopped"
+    end
+
+    local ok, err =
+        pcall(function()
+
+            packet.Fire(
+                packet,
+                entry.PlantId,
+                position,
+                tonumber(state.TargetRotation)
+                or 0
+            )
+        end)
+
+    if ok ~= true then
+
+        return false,
+            tostring(err)
+    end
+
+    state.LastSentAt =
+        os.clock()
+
+    GAG2_AUTO_SHOVEL_SHARED_LAST_SENT_AT =
+        state.LastSentAt
+
+    local deadline =
+        os.clock() + 3.0
+
+    while GAG2AutoTrowelWorkerActive(generation)
+    and os.clock() < deadline do
+
+        local afterCount =
+            GAG2AutoTrowelReadTrowelCount()
+
+        if beforeCount
+        and afterCount
+        and afterCount < beforeCount then
+
+            return true,
+                "trowel count decreased"
+        end
+
+        local currentPosition =
+            GAG2AutoTrowelGetPlantPosition(
+                entry.Plant
+            )
+
+        if typeof(currentPosition) == "Vector3"
+        and (currentPosition - position).Magnitude <= 4 then
+
+            return true,
+                "plant reached point"
+        end
+
+        task.wait(
+            0.08
+        )
+    end
+
+    return false,
+        "confirmation timeout"
+end
+
+function GAG2AutoTrowelSetToggleOff()
+
+    local toggle =
+        Toggles
+        and Toggles.HolyGAG2AutoTrowelPlants
+
+    if toggle
+    and type(toggle.SetValue) == "function" then
+
+        pcall(
+            toggle.SetValue,
+            toggle,
+            false
+        )
+    end
+end
+
+function GAG2AutoTrowelStartWorker()
+
+    local state =
+        GAG2_AUTO_TROWEL_STATE
+
+    if state.Running == true then
+        return
+    end
+
+    if typeof(state.TargetPoint) ~= "Vector3" then
+
+        state.Enabled =
+            false
+
+        state.LastStatus =
+            "Set a trowel point first."
+
+        GAG2AutoTrowelSetToggleOff()
+        GAG2AutoTrowelScheduleRefresh()
+
+        Notify(
+            "Auto Trowel",
+            "Set a point first.",
+            4
+        )
+
+        return
+    end
+
+    if next(state.SelectedPlants or {}) == nil then
+
+        state.Enabled =
+            false
+
+        state.LastStatus =
+            "Select at least one plant type."
+
+        GAG2AutoTrowelSetToggleOff()
+        GAG2AutoTrowelScheduleRefresh()
+
+        Notify(
+            "Auto Trowel",
+            "Select at least one plant.",
+            4
+        )
+
+        return
+    end
+
+    local runList =
+        GAG2AutoTrowelBuildMoveList()
+
+    if #runList <= 0 then
+
+        state.Enabled =
+            false
+
+        state.LastStatus =
+            "No matching plants found."
+
+        GAG2AutoTrowelSetToggleOff()
+        GAG2AutoTrowelScheduleRefresh()
+
+        return
+    end
+
+    if GAG2_AUTO_SHOVEL_STATE
+    and GAG2_AUTO_SHOVEL_STATE.Enabled == true
+    and type(GAG2AutoShovelSetEnabled) == "function" then
+
+        GAG2AutoShovelSetEnabled(
+            false
+        )
+
+        if type(GAG2AutoShovelSetToggleOff) == "function" then
+            GAG2AutoShovelSetToggleOff()
+        end
+    end
+
+    if GAG2_AUTO_SHOVEL_FRUIT_STATE
+    and GAG2_AUTO_SHOVEL_FRUIT_STATE.Enabled == true
+    and type(GAG2AutoShovelFruitSetEnabled) == "function" then
+
+        GAG2AutoShovelFruitSetEnabled(
+            false
+        )
+
+        if type(GAG2AutoShovelFruitSetToggleOff) == "function" then
+            GAG2AutoShovelFruitSetToggleOff()
+        end
+    end
+
+    state.Running =
+        true
+
+    state.MovedThisRun =
+        0
+
+    state.FailedThisRun =
+        0
+
+    state.WorkerGeneration =
+        state.WorkerGeneration + 1
+
+    local generation =
+        state.WorkerGeneration
+
+    task.spawn(function()
+
+        for index, entry in ipairs(runList) do
+
+            if not GAG2AutoTrowelWorkerActive(generation) then
+                break
+            end
+
+            state.CurrentPlant =
+                tostring(entry.PlantName)
+
+            state.LastStatus =
+                "Moving "
+                .. tostring(entry.PlantName)
+                .. " "
+                .. tostring(index)
+                .. "/"
+                .. tostring(#runList)
+
+            GAG2AutoTrowelScheduleRefresh()
+
+            local ok, reason =
+                GAG2AutoTrowelTryMove(
+                    entry,
+                    index,
+                    generation
+                )
+
+            if ok == true then
+
+                state.MovedThisRun =
+                    state.MovedThisRun + 1
+
+                state.LastStatus =
+                    tostring(entry.PlantName)
+                    .. " moved: "
+                    .. tostring(reason)
+
+            else
+
+                state.FailedThisRun =
+                    state.FailedThisRun + 1
+
+                state.LastStatus =
+                    tostring(entry.PlantName)
+                    .. " failed: "
+                    .. tostring(reason)
+
+                task.wait(
+                    0.2
+                )
+            end
+
+            GAG2AutoTrowelScheduleRefresh()
+        end
+
+        local completed =
+            GAG2AutoTrowelWorkerActive(
+                generation
+            )
+
+        state.Running =
+            false
+
+        state.CurrentPlant =
+            ""
+
+        if completed then
+
+            state.Enabled =
+                false
+
+            state.LastStatus =
+                "Trowel queue complete."
+
+            GAG2AutoTrowelSetToggleOff()
+
+        elseif state.Enabled ~= true then
+
+            state.LastStatus =
+                "Stopped."
+        end
+
+        GAG2AutoTrowelScheduleRefresh()
+    end)
+end
+
+function GAG2AutoTrowelSetEnabled(value)
+
+    local state =
+        GAG2_AUTO_TROWEL_STATE
+
+    local enabled =
+        value == true
+
+    if enabled == state.Enabled
+    and (
+        not enabled
+        or state.Running == true
+    ) then
+
+        return
+    end
+
+    state.Enabled =
+        enabled
+
+    if enabled == true then
+
+        if ConfigState.Loading ~= true then
+
+            state.LastStatus =
+                "Starting."
+
+            GAG2AutoTrowelStartWorker()
+        end
+
+    else
+
+        state.WorkerGeneration =
+            state.WorkerGeneration + 1
+
+        state.LastStatus =
+            "Disabled."
+    end
+
+    MarkConfigDirty()
+    GAG2AutoTrowelScheduleRefresh()
+end
+
+function GAG2AutoTrowelStartMonitor()
+
+    local state =
+        GAG2_AUTO_TROWEL_STATE
+
+    state.MonitorGeneration =
+        state.MonitorGeneration + 1
+
+    local generation =
+        state.MonitorGeneration
+
+    task.spawn(function()
+
+        while GAG2_AUTO_TROWEL_STATE == state
+        and state.MonitorGeneration == generation do
+
+            GAG2AutoTrowelScheduleRefresh()
+
+            task.wait(
+                3
+            )
+        end
+    end)
+end
+
+--==================================================
 -- [4.575] AUTO SHOVEL FRUITS
 -- Own-plot-only continuous fruit deletion.
 -- Uses fruit-only mutation protection.
@@ -24267,6 +30626,9 @@ GAG2_AUTO_SHOVEL_FRUIT_STATE = {
         Rainbow = true,
     },
 
+    WeightMode = "Off",
+    WeightThreshold = 0,
+
     Delay = 0.70,
     LastSentAt = 0,
 
@@ -24276,10 +30638,12 @@ GAG2_AUTO_SHOVEL_FRUIT_STATE = {
     TotalFruits = 0,
     EligibleFruits = 0,
     ProtectedFruits = 0,
+    WeightBlockedFruits = 0,
 
     RemovedThisRun = 0,
     FailedThisRun = 0,
     ProtectedSkipped = 0,
+    WeightSkipped = 0,
     CurrentFruit = "",
     LastStatus = "Idle.",
 
@@ -24392,6 +30756,273 @@ function GAG2AutoShovelFruitSetProtectedMutations(value)
     GAG2AutoShovelFruitScheduleRefresh()
 end
 
+GAG2_AUTO_SHOVEL_FRUIT_WEIGHT_MODES = {
+    "Off",
+    "Above",
+    "Below",
+}
+
+function GAG2AutoShovelFruitSetWeightMode(value)
+
+    value =
+        GAG2AutoShovelClean(
+            value
+        )
+
+    if value ~= "Above"
+    and value ~= "Below" then
+
+        value =
+            "Off"
+    end
+
+    GAG2_AUTO_SHOVEL_FRUIT_STATE.WeightMode =
+        value
+
+    MarkConfigDirty()
+    GAG2AutoShovelFruitScheduleRefresh()
+end
+
+function GAG2AutoShovelFruitParseWeightNumber(value)
+
+    local text =
+        tostring(value or "")
+
+    text =
+        select(
+            1,
+            text:gsub("[Kk][Gg]", "")
+        )
+
+    text =
+        select(
+            1,
+            text:gsub(",", ".")
+        )
+
+    text =
+        select(
+            1,
+            text:gsub("%s+", "")
+        )
+
+    local number =
+        tonumber(text)
+
+    if not number
+    or number ~= number
+    or number == math.huge
+    or number == -math.huge then
+
+        return nil
+    end
+
+    return number
+end
+
+function GAG2AutoShovelFruitSetWeightThreshold(value)
+
+    local number =
+        GAG2AutoShovelFruitParseWeightNumber(
+            value
+        )
+        or 0
+
+    GAG2_AUTO_SHOVEL_FRUIT_STATE.WeightThreshold =
+        math.max(
+            0,
+            number
+        )
+
+    MarkConfigDirty()
+    GAG2AutoShovelFruitScheduleRefresh()
+end
+
+function GAG2AutoShovelFruitFormatWeight(value)
+
+    if type(GAG2ACFFormatWeightKg) == "function" then
+
+        return GAG2ACFFormatWeightKg(
+            value
+        )
+    end
+
+    local number =
+        tonumber(value)
+
+    if not number then
+        return "?kg"
+    end
+
+    return string.format(
+        "%.2fkg",
+        number
+    )
+end
+
+function GAG2AutoShovelFruitReadWeightKg(fruit, fruitName)
+
+    if typeof(fruit) ~= "Instance" then
+        return nil,
+            "missing fruit"
+    end
+
+    if type(GAG2ACFCalculateFruitWeightKg) == "function" then
+
+        local ok, weightKg, source =
+            pcall(function()
+
+                return GAG2ACFCalculateFruitWeightKg(
+                    fruit,
+                    fruitName
+                )
+            end)
+
+        if ok == true
+        and tonumber(weightKg)
+        and tonumber(weightKg) > 0 then
+
+            return tonumber(weightKg),
+                tostring(source or "ACF")
+        end
+    end
+
+    local attrNames = {
+        "WeightKg",
+        "Weight",
+        "Mass",
+        "Kg",
+        "SizeKg",
+    }
+
+    for _, attrName in ipairs(attrNames) do
+
+        local ok, value =
+            pcall(function()
+
+                return fruit:GetAttribute(
+                    attrName
+                )
+            end)
+
+        if ok == true
+        and value ~= nil then
+
+            local number =
+                tonumber(value)
+
+            if not number then
+
+                number =
+                    GAG2AutoShovelFruitParseWeightNumber(
+                        value
+                    )
+            end
+
+            if number
+            and number > 0 then
+
+                return number,
+                    "attribute:"
+                    .. tostring(attrName)
+            end
+        end
+    end
+
+    return nil,
+        "weight unavailable"
+end
+
+function GAG2AutoShovelFruitPassesWeightFilter(fruit, fruitName, knownWeight, knownSource)
+
+    local state =
+        GAG2_AUTO_SHOVEL_FRUIT_STATE
+
+    local mode =
+        GAG2AutoShovelClean(
+            state.WeightMode
+        )
+
+    if mode ~= "Above"
+    and mode ~= "Below" then
+
+        return true,
+            knownWeight,
+            "weight filter off"
+    end
+
+    local threshold =
+        tonumber(state.WeightThreshold)
+        or 0
+
+    if threshold <= 0 then
+
+        return true,
+            knownWeight,
+            "weight threshold off"
+    end
+
+    local weightKg =
+        tonumber(knownWeight)
+
+    local source =
+        tostring(knownSource or "")
+
+    if not weightKg then
+
+        weightKg, source =
+            GAG2AutoShovelFruitReadWeightKg(
+                fruit,
+                fruitName
+            )
+    end
+
+    if not weightKg then
+
+        return false,
+            nil,
+            "weight unavailable"
+    end
+
+    if mode == "Above" then
+
+        if weightKg > threshold then
+
+            return true,
+                weightKg,
+                "above threshold"
+        end
+
+        return false,
+            weightKg,
+            "below "
+            .. GAG2AutoShovelFruitFormatWeight(
+                threshold
+            )
+    end
+
+    if mode == "Below" then
+
+        if weightKg < threshold then
+
+            return true,
+                weightKg,
+                "below threshold"
+        end
+
+        return false,
+            weightKg,
+            "above "
+            .. GAG2AutoShovelFruitFormatWeight(
+                threshold
+            )
+    end
+
+    return true,
+        weightKg,
+        source
+end
+
 function GAG2AutoShovelFruitReadName(fruit, plant)
 
     local name = ""
@@ -24494,6 +31125,7 @@ function GAG2AutoShovelFruitScan()
     local total = 0
     local eligible = 0
     local protectedCount = 0
+    local weightBlocked = 0
 
     if plantsFolder then
 
@@ -24532,6 +31164,20 @@ function GAG2AutoShovelFruitScan()
                                     fruitName
                                 )
 
+                            local weightKg, weightSource =
+                                GAG2AutoShovelFruitReadWeightKg(
+                                    fruit,
+                                    fruitName
+                                )
+
+                            local passesWeight, resolvedWeight, weightReason =
+                                GAG2AutoShovelFruitPassesWeightFilter(
+                                    fruit,
+                                    fruitName,
+                                    weightKg,
+                                    weightSource
+                                )
+
                             local row =
                                 summary[fruitName]
 
@@ -24542,8 +31188,10 @@ function GAG2AutoShovelFruitScan()
                                     Count = 0,
                                     Eligible = 0,
                                     Protected = 0,
+                                    WeightBlocked = 0,
                                     MutationCounts = {},
                                     Items = {},
+                                    MaxWeightKg = 0,
                                 }
 
                                 summary[fruitName] =
@@ -24557,15 +31205,29 @@ function GAG2AutoShovelFruitScan()
                                 (tonumber(row.MutationCounts[mutation]) or 0)
                                 + 1
 
+                            if tonumber(resolvedWeight)
+                            and tonumber(resolvedWeight) > tonumber(row.MaxWeightKg or 0) then
+
+                                row.MaxWeightKg =
+                                    tonumber(resolvedWeight)
+                            end
+
                             if isProtected then
 
                                 protectedCount = protectedCount + 1
                                 row.Protected = row.Protected + 1
 
-                            elseif isSelected then
+                            elseif isSelected
+                            and passesWeight == true then
 
                                 eligible = eligible + 1
                                 row.Eligible = row.Eligible + 1
+
+                            elseif isSelected
+                            and passesWeight ~= true then
+
+                                weightBlocked = weightBlocked + 1
+                                row.WeightBlocked = row.WeightBlocked + 1
                             end
 
                             table.insert(
@@ -24576,6 +31238,8 @@ function GAG2AutoShovelFruitScan()
                                     Fruit = fruit,
                                     FruitName = fruitName,
                                     Mutation = mutation,
+                                    WeightKg = resolvedWeight,
+                                    WeightReason = weightReason,
                                 }
                             )
                         end
@@ -24596,6 +31260,9 @@ function GAG2AutoShovelFruitScan()
 
     state.ProtectedFruits =
         protectedCount
+
+    state.WeightBlockedFruits =
+        weightBlocked
 
     return summary,
         ownPlot,
@@ -24693,6 +31360,21 @@ function GAG2AutoShovelFruitBuildStatusText()
     local state =
         GAG2_AUTO_SHOVEL_FRUIT_STATE
 
+    local weightText =
+        tostring(state.WeightMode or "Off")
+
+    if weightText ~= "Off"
+    and tonumber(state.WeightThreshold)
+    and tonumber(state.WeightThreshold) > 0 then
+
+        weightText =
+            weightText
+            .. " "
+            .. GAG2AutoShovelFruitFormatWeight(
+                state.WeightThreshold
+            )
+    end
+
     return
         '<font color="rgb(196,181,253)"><b>Auto Shovel Fruits</b></font>'
         .. "\nPlot: "
@@ -24719,6 +31401,10 @@ function GAG2AutoShovelFruitBuildStatusText()
             state.SelectedFruits,
             "All"
         )
+        .. "\nWeight Filter: "
+        .. weightText
+        .. " | Blocked: "
+        .. tostring(state.WeightBlockedFruits or 0)
         .. "\nProtecting Fruit Mutations: "
         .. GAG2AutoShovelSortedSelectionText(
             state.ProtectedMutations,
@@ -24734,9 +31420,11 @@ function GAG2AutoShovelFruitBuildStatusText()
         .. tostring(state.RemovedThisRun)
         .. " | Failed: "
         .. tostring(state.FailedThisRun)
-        .. " | Protected Skips: "
+        .. " | Weight Skips: "
+        .. tostring(state.WeightSkipped or 0)
+        .. "\nProtected Skips: "
         .. tostring(state.ProtectedSkipped)
-        .. "\nCurrent: "
+        .. " | Current: "
         .. (
             state.CurrentFruit ~= ""
             and state.CurrentFruit
@@ -24894,6 +31582,28 @@ function GAG2AutoShovelFruitTryDelete(item, generation)
             "protected"
     end
 
+    local passesWeight, weightKg, weightReason =
+        GAG2AutoShovelFruitPassesWeightFilter(
+            fruit,
+            item.FruitName
+        )
+
+    if passesWeight ~= true then
+
+        return false,
+            "weight skipped "
+                .. tostring(item.FruitName or "fruit")
+                .. " | "
+                .. (
+                    weightKg
+                    and GAG2AutoShovelFruitFormatWeight(weightKg)
+                    or "?kg"
+                )
+                .. " | "
+                .. tostring(weightReason),
+            "weight"
+    end
+
     local packet, packetReason =
         GAG2AutoShovelResolvePacket()
 
@@ -24960,6 +31670,26 @@ function GAG2AutoShovelFruitTryDelete(item, generation)
             "became protected before send: "
                 .. tostring(mutation),
             "protected"
+    end
+
+    passesWeight, weightKg, weightReason =
+        GAG2AutoShovelFruitPassesWeightFilter(
+            fruit,
+            item.FruitName
+        )
+
+    if passesWeight ~= true then
+
+        return false,
+            "became weight-blocked before send | "
+                .. (
+                    weightKg
+                    and GAG2AutoShovelFruitFormatWeight(weightKg)
+                    or "?kg"
+                )
+                .. " | "
+                .. tostring(weightReason),
+            "weight"
     end
 
     local plantId =
@@ -25092,7 +31822,14 @@ function GAG2AutoShovelFruitBuildCandidates()
                     )
                     or 0
 
+                local passesWeight =
+                    GAG2AutoShovelFruitPassesWeightFilter(
+                        item.Fruit,
+                        item.FruitName
+                    )
+
                 if isProtected ~= true
+                and passesWeight == true
                 and now >= blockedUntil then
 
                     item.Key =
@@ -25164,6 +31901,9 @@ function GAG2AutoShovelFruitStartWorker()
     state.ProtectedSkipped =
         0
 
+    state.WeightSkipped =
+        0
+
     state.WorkerGeneration = state.WorkerGeneration + 1
 
     local generation =
@@ -25227,6 +31967,14 @@ function GAG2AutoShovelFruitStartWorker()
                     elseif resultType == "protected" then
 
                         state.ProtectedSkipped = state.ProtectedSkipped + 1
+
+                        state.LastStatus =
+                            tostring(reason)
+
+                    elseif resultType == "weight" then
+
+                        state.WeightSkipped =
+                            (tonumber(state.WeightSkipped) or 0) + 1
 
                         state.LastStatus =
                             tostring(reason)
@@ -27950,46 +34698,415 @@ function GAG2RestoreSeedPlantingState()
     end)
 end
 
-function SniperGetMovementMode()
+function SniperNormalizeMovementModeValue(value, fallback)
 
     local mode =
         CleanText(
-            SniperState.MovementMode
-        )
-
-    if mode == "Walk" then
-        return "Walk"
-    end
-
-    return "Teleport"
-end
-
-function SniperGetBuyMode()
-
-    local mode =
-        CleanText(
-            SniperState.BuyMode
-        )
-
-    if mode == "Hold" then
-        return "Hold"
-    end
-
-    return "Instant"
-end
-
-function SniperGetReturnMovementMode()
-
-    local mode =
-        CleanText(
-            SniperState.ReturnMovementMode
+            value
         )
 
     if mode == "Teleport" then
         return "Teleport"
     end
 
+    if mode == "Walk" then
+        return "Walk"
+    end
+
+    fallback =
+        CleanText(
+            fallback
+        )
+
+    if fallback == "Teleport" then
+        return "Teleport"
+    end
+
     return "Walk"
+end
+
+function SniperNormalizeBuyModeValue(value, fallback)
+
+    local mode =
+        CleanText(
+            value
+        )
+
+    if mode == "Hold" then
+        return "Hold"
+    end
+
+    if mode == "Instant" then
+        return "Instant"
+    end
+
+    fallback =
+        CleanText(
+            fallback
+        )
+
+    if fallback == "Hold" then
+        return "Hold"
+    end
+
+    return "Instant"
+end
+
+function SniperGetMovementMode()
+
+    SniperState.MovementMode =
+        SniperNormalizeMovementModeValue(
+            SniperState.MovementMode,
+            "Walk"
+        )
+
+    return SniperState.MovementMode
+end
+
+function SniperGetBuyMode()
+
+    SniperState.BuyMode =
+        SniperNormalizeBuyModeValue(
+            SniperState.BuyMode,
+            "Instant"
+        )
+
+    return SniperState.BuyMode
+end
+
+function SniperGetReturnMovementMode()
+
+    SniperState.ReturnMovementMode =
+        SniperNormalizeMovementModeValue(
+            SniperState.ReturnMovementMode,
+            "Walk"
+        )
+
+    return SniperState.ReturnMovementMode
+end
+
+function SniperSyncBehaviorOptionsFromUi(reason)
+
+    local movementOption =
+        Options
+        and Options.HolyGAG2SniperMovementMode
+        or nil
+
+    if movementOption
+    and movementOption.Value ~= nil then
+
+        SniperState.MovementMode =
+            SniperNormalizeMovementModeValue(
+                movementOption.Value,
+                "Walk"
+            )
+
+    else
+
+        SniperState.MovementMode =
+            SniperNormalizeMovementModeValue(
+                SniperState.MovementMode,
+                "Walk"
+            )
+    end
+
+    local buyModeOption =
+        Options
+        and Options.HolyGAG2SniperBuyMode
+        or nil
+
+    if buyModeOption
+    and buyModeOption.Value ~= nil then
+
+        SniperState.BuyMode =
+            SniperNormalizeBuyModeValue(
+                buyModeOption.Value,
+                "Instant"
+            )
+
+    else
+
+        SniperState.BuyMode =
+            SniperNormalizeBuyModeValue(
+                SniperState.BuyMode,
+                "Instant"
+            )
+    end
+
+    local returnModeOption =
+        Options
+        and Options.HolyGAG2SniperReturnMode
+        or nil
+
+    if returnModeOption
+    and returnModeOption.Value ~= nil then
+
+        SniperState.ReturnMovementMode =
+            SniperNormalizeMovementModeValue(
+                returnModeOption.Value,
+                "Walk"
+            )
+
+    else
+
+        SniperState.ReturnMovementMode =
+            SniperNormalizeMovementModeValue(
+                SniperState.ReturnMovementMode,
+                "Walk"
+            )
+    end
+
+    return true
+end
+
+function SniperBumpBuyTaskToken(reason)
+
+    SniperState.BuyTaskToken =
+        (
+            tonumber(SniperState.BuyTaskToken)
+            or 0
+        )
+        + 1
+
+    return SniperState.BuyTaskToken
+end
+
+function SniperBuildBuyTaskContext(isManualBuy)
+
+    if isManualBuy == true then
+
+        return {
+            ManualBuy = true,
+            Token = nil,
+            CreatedAt = os.clock(),
+        }
+    end
+
+    return {
+        ManualBuy = false,
+        Token =
+            tonumber(SniperState.BuyTaskToken)
+            or 0,
+        CreatedAt = os.clock(),
+    }
+end
+
+function SniperBuyTaskStillAllowed(context)
+
+    local manualBuy =
+        false
+
+    local token =
+        context
+
+    if type(context) == "table" then
+
+        manualBuy =
+            context.ManualBuy == true
+
+        token =
+            context.Token
+    end
+
+    if manualBuy == true then
+
+        return true,
+            "manual buy allowed"
+    end
+
+    if SniperState.Enabled ~= true then
+
+        return false,
+            "sniper disabled"
+    end
+
+    if SniperState.StopRequested == true then
+
+        return false,
+            "sniper stop requested"
+    end
+
+    if token ~= nil
+    and tonumber(token) ~= tonumber(SniperState.BuyTaskToken) then
+
+        return false,
+            "buy task cancelled"
+    end
+
+    return true,
+        "allowed"
+end
+
+function SniperStopCharacterMovementNow(reason)
+
+    local character =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character
+        or nil
+
+    if not character then
+        return false
+    end
+
+    local root =
+        character:FindFirstChild("HumanoidRootPart")
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    if humanoid
+    and root then
+
+        pcall(function()
+
+            humanoid:MoveTo(
+                root.Position
+            )
+        end)
+    end
+
+    if root then
+
+        pcall(function()
+
+            root.AssemblyLinearVelocity =
+                Vector3.zero
+
+            root.AssemblyAngularVelocity =
+                Vector3.zero
+        end)
+    end
+
+    if reason ~= nil
+    and tostring(reason) ~= "" then
+
+        SetSniperStatus(
+            tostring(reason)
+        )
+    end
+
+    return true
+end
+
+function SniperMoveStateIsTeleport(moveState)
+
+    return type(moveState) == "table"
+        and CleanText(moveState.MovementMode) == "Teleport"
+end
+
+function SniperClampDelayNumber(value, fallback, minValue, maxValue)
+
+    local number =
+        tonumber(value)
+
+    if not number then
+
+        number =
+            tonumber(fallback)
+            or 0
+    end
+
+    return math.clamp(
+        number,
+        tonumber(minValue) or 0,
+        tonumber(maxValue) or 10
+    )
+end
+
+function SniperSetPostMoveBuyDelay(value)
+
+    SniperState.PostMoveBuyDelay =
+        SniperClampDelayNumber(
+            value,
+            0.02,
+            0,
+            3
+        )
+
+    SetSniperStatus(
+        "Buy fire delay: "
+        .. string.format("%.2f", SniperState.PostMoveBuyDelay)
+        .. "s"
+    )
+
+    MarkConfigDirty()
+end
+
+function SniperSetBuyValidationHoldDelay(value)
+
+    SniperState.BuyValidationHoldDelay =
+        SniperClampDelayNumber(
+            value,
+            5.7,
+            0.25,
+            10
+        )
+
+    SetSniperStatus(
+        "Pre-buy close hold: "
+        .. string.format("%.2f", SniperState.BuyValidationHoldDelay)
+        .. "s"
+    )
+
+    MarkConfigDirty()
+end
+
+function SniperSetBuyConfirmQuickTimeout(value)
+
+    SniperState.BuyConfirmQuickTimeout =
+        SniperClampDelayNumber(
+            value,
+            5.00,
+            0.75,
+            12
+        )
+
+    SetSniperStatus(
+        "Buy confirm timeout: "
+        .. string.format("%.2f", SniperState.BuyConfirmQuickTimeout)
+        .. "s"
+    )
+
+    MarkConfigDirty()
+end
+
+function SniperSetBuyRetryDelay(value)
+
+    SniperState.BuyRetryDelay =
+        SniperClampDelayNumber(
+            value,
+            0.50,
+            0.10,
+            5
+        )
+
+    SetSniperStatus(
+        "Buy retry delay: "
+        .. string.format("%.2f", SniperState.BuyRetryDelay)
+        .. "s"
+    )
+
+    MarkConfigDirty()
+end
+
+function SniperSetMaxBuyAttemptsPerPet(value)
+
+    SniperState.MaxBuyAttemptsPerPet =
+        math.clamp(
+            math.floor(
+                tonumber(value)
+                or 3
+            ),
+            1,
+            5
+        )
+
+    SetSniperStatus(
+        "Buy attempts: "
+        .. tostring(SniperState.MaxBuyAttemptsPerPet)
+    )
+
+    MarkConfigDirty()
 end
 
 function SniperWalkToSavedCFrame(savedCFrame)
@@ -28019,6 +35136,204 @@ function SniperWalkToSavedCFrame(savedCFrame)
     local targetPosition =
         savedCFrame.Position
 
+    local cancelled =
+        false
+
+    local cancelReason =
+        ""
+
+    local connections =
+        {}
+
+    local movementKeys = {
+        [Enum.KeyCode.W] = true,
+        [Enum.KeyCode.A] = true,
+        [Enum.KeyCode.S] = true,
+        [Enum.KeyCode.D] = true,
+
+        [Enum.KeyCode.Up] = true,
+        [Enum.KeyCode.Down] = true,
+        [Enum.KeyCode.Left] = true,
+        [Enum.KeyCode.Right] = true,
+
+        [Enum.KeyCode.Space] = true,
+
+        [Enum.KeyCode.DPadUp] = true,
+        [Enum.KeyCode.DPadDown] = true,
+        [Enum.KeyCode.DPadLeft] = true,
+        [Enum.KeyCode.DPadRight] = true,
+        [Enum.KeyCode.ButtonA] = true,
+    }
+
+    local function requestCancel(reason)
+
+        if cancelled == true then
+            return
+        end
+
+        cancelled =
+            true
+
+        cancelReason =
+            tostring(reason or "manual movement")
+    end
+
+    local function disconnectInputs()
+
+        for _, connection in ipairs(connections) do
+
+            if connection then
+
+                pcall(function()
+
+                    connection:Disconnect()
+                end)
+            end
+        end
+
+        table.clear(
+            connections
+        )
+    end
+
+    local function manualKeyHeld()
+
+        if not GAG2_USER_INPUT_SERVICE then
+            return false
+        end
+
+        local keys = {
+            Enum.KeyCode.W,
+            Enum.KeyCode.A,
+            Enum.KeyCode.S,
+            Enum.KeyCode.D,
+
+            Enum.KeyCode.Up,
+            Enum.KeyCode.Down,
+            Enum.KeyCode.Left,
+            Enum.KeyCode.Right,
+
+            Enum.KeyCode.Space,
+
+            Enum.KeyCode.DPadUp,
+            Enum.KeyCode.DPadDown,
+            Enum.KeyCode.DPadLeft,
+            Enum.KeyCode.DPadRight,
+            Enum.KeyCode.ButtonA,
+        }
+
+        for _, keyCode in ipairs(keys) do
+
+            local ok, isDown =
+                pcall(function()
+
+                    return GAG2_USER_INPUT_SERVICE:IsKeyDown(
+                        keyCode
+                    )
+                end)
+
+            if ok == true
+            and isDown == true then
+
+                return true
+            end
+        end
+
+        return false
+    end
+
+    local function stopWalking(currentRoot)
+
+        pcall(function()
+
+            if humanoid
+            and humanoid.Parent then
+
+                humanoid:Move(
+                    Vector3.zero,
+                    false
+                )
+
+                if currentRoot
+                and currentRoot.Parent then
+
+                    humanoid:MoveTo(
+                        currentRoot.Position
+                    )
+                end
+            end
+        end)
+
+        if currentRoot
+        and type(SniperStopCharacterMotion) == "function" then
+
+            pcall(function()
+
+                SniperStopCharacterMotion(
+                    currentRoot
+                )
+            end)
+        end
+    end
+
+    if GAG2_USER_INPUT_SERVICE then
+
+        table.insert(
+            connections,
+            GAG2_USER_INPUT_SERVICE.InputBegan:Connect(function(input, gameProcessed)
+
+                if gameProcessed == true then
+                    return
+                end
+
+                if movementKeys[input.KeyCode] == true then
+
+                    requestCancel(
+                        "manual key movement"
+                    )
+                end
+
+                if input.UserInputType == Enum.UserInputType.Touch then
+
+                    requestCancel(
+                        "manual touch movement"
+                    )
+                end
+            end)
+        )
+
+        table.insert(
+            connections,
+            GAG2_USER_INPUT_SERVICE.InputChanged:Connect(function(input, gameProcessed)
+
+                if gameProcessed == true then
+                    return
+                end
+
+                if input.KeyCode == Enum.KeyCode.Thumbstick1 then
+
+                    local positionValue =
+                        input.Position
+
+                    if typeof(positionValue) == "Vector3"
+                    and positionValue.Magnitude >= 0.18 then
+
+                        requestCancel(
+                            "manual thumbstick movement"
+                        )
+                    end
+                end
+
+                if input.UserInputType == Enum.UserInputType.Touch then
+
+                    requestCancel(
+                        "manual touch movement"
+                    )
+                end
+            end)
+        )
+    end
+
     local started =
         os.clock()
 
@@ -28032,6 +35347,9 @@ function SniperWalkToSavedCFrame(savedCFrame)
 
         if not character
         or not root then
+
+            disconnectInputs()
+
             return false,
                 "lost character"
         end
@@ -28040,8 +35358,26 @@ function SniperWalkToSavedCFrame(savedCFrame)
             character:FindFirstChildOfClass("Humanoid")
 
         if not humanoid then
+
+            disconnectInputs()
+
             return false,
                 "lost humanoid"
+        end
+
+        if cancelled == true
+        or manualKeyHeld() == true then
+
+            stopWalking(
+                root
+            )
+
+            disconnectInputs()
+
+            return true,
+                cancelReason ~= ""
+                and cancelReason
+                or "return cancelled by user movement"
         end
 
         local distance =
@@ -28066,24 +35402,29 @@ function SniperWalkToSavedCFrame(savedCFrame)
         )
     end
 
-    local _, finalRoot =
+    disconnectInputs()
+
+    local _,
+        finalRoot =
         SniperGetCharacterRoot()
 
     if finalRoot then
 
-        SniperStopCharacterMotion(
+        stopWalking(
             finalRoot
         )
 
-        return (finalRoot.Position - targetPosition).Magnitude <= 8,
-            "walked"
+        if (finalRoot.Position - targetPosition).Magnitude <= 8 then
+            return true,
+                "walked"
+        end
     end
 
     return false,
-        "missing final root"
+        "return walk timeout"
 end
 
-function SniperWalkCloseForTame(entry)
+function SniperWalkCloseForTame(entry, taskToken)
 
     local character, root =
         SniperGetCharacterRoot()
@@ -28103,16 +35444,107 @@ function SniperWalkCloseForTame(entry)
     local oldCFrame =
         root.CFrame
 
+    local firstTargetPosition =
+        SniperGetEntryTamePosition(
+            entry
+        )
+
+    if typeof(firstTargetPosition) ~= "Vector3" then
+        return nil, "missing pet position"
+    end
+
+    local firstDistance =
+        (root.Position - firstTargetPosition).Magnitude
+
+    local walkSpeed =
+        tonumber(humanoid.WalkSpeed)
+        or 16
+
+    if walkSpeed < 8 then
+        walkSpeed = 8
+    end
+
+    local maxWalkSeconds =
+        math.clamp(
+            (firstDistance / walkSpeed) + 10,
+            8,
+            36
+        )
+
     local started =
         os.clock()
 
-    local closePosition =
+    local currentMoveTarget =
         nil
+
+    local lastMoveTo =
+        0
 
     local targetPosition =
-        nil
+        firstTargetPosition
 
-    while os.clock() - started < 7 do
+    local reached =
+        false
+
+    local reachReason =
+        "not close"
+
+    while os.clock() - started < maxWalkSeconds do
+
+        local allowed, stopInfo =
+            SniperBuyTaskStillAllowed(
+                taskToken
+            )
+
+        if allowed ~= true then
+
+            local stopCharacter, stopRoot =
+                SniperGetCharacterRoot()
+
+            if stopCharacter
+            and stopRoot then
+
+                local stopHumanoid =
+                    stopCharacter:FindFirstChildOfClass("Humanoid")
+
+                if stopHumanoid then
+
+                    pcall(function()
+
+                        stopHumanoid:MoveTo(
+                            stopRoot.Position
+                        )
+                    end)
+                end
+
+                pcall(function()
+
+                    stopRoot.AssemblyLinearVelocity =
+                        Vector3.zero
+
+                    stopRoot.AssemblyAngularVelocity =
+                        Vector3.zero
+                end)
+            end
+
+            return nil,
+                tostring(stopInfo)
+        end
+
+        character, root =
+            SniperGetCharacterRoot()
+
+        if not character
+        or not root then
+            return nil, "lost character"
+        end
+
+        humanoid =
+            character:FindFirstChildOfClass("Humanoid")
+
+        if not humanoid then
+            return nil, "lost humanoid"
+        end
 
         targetPosition =
             SniperGetEntryTamePosition(
@@ -28123,62 +35555,243 @@ function SniperWalkCloseForTame(entry)
             return nil, "missing pet position"
         end
 
-        local _, safePosition =
+        local _,
+            safePosition =
             SniperGetSafeTameCFrame(
                 targetPosition
             )
 
-        if typeof(safePosition) == "Vector3" then
+        if typeof(safePosition) ~= "Vector3" then
 
-            closePosition =
-                safePosition
+            safePosition =
+                targetPosition
+        end
 
-                humanoid:MoveTo(
-                    closePosition
+        local distanceToSafe =
+            (root.Position - safePosition).Magnitude
+
+        local distanceToPet =
+            (root.Position - targetPosition).Magnitude
+
+        local prompt =
+            nil
+
+        if type(SniperFindEntryBuyPrompt) == "function" then
+
+            prompt =
+                SniperFindEntryBuyPrompt(
+                    entry
                 )
+        end
 
-            if (root.Position - closePosition).Magnitude <= 7 then
-                break
+        if typeof(prompt) == "Instance"
+        and prompt:IsA("ProximityPrompt") then
+
+            local promptParent =
+                prompt.Parent
+
+            local promptPosition =
+                nil
+
+            if typeof(promptParent) == "Instance" then
+
+                if promptParent:IsA("Attachment") then
+
+                    promptPosition =
+                        promptParent.WorldPosition
+
+                elseif promptParent:IsA("BasePart") then
+
+                    promptPosition =
+                        promptParent.Position
+                end
+            end
+
+            if typeof(promptPosition) == "Vector3" then
+
+                local promptDistance =
+                    (root.Position - promptPosition).Magnitude
+
+                local maxPromptDistance =
+                    12
+
+                pcall(function()
+
+                    maxPromptDistance =
+                        math.max(
+                            tonumber(prompt.MaxActivationDistance)
+                            or 12,
+                            8
+                        )
+                end)
+
+                if promptDistance <= maxPromptDistance - 1 then
+
+                    reached =
+                        true
+
+                    reachReason =
+                        "prompt range "
+                        .. string.format(
+                            "%.1f",
+                            promptDistance
+                        )
+                        .. "/"
+                        .. string.format(
+                            "%.1f",
+                            maxPromptDistance
+                        )
+
+                    break
+                end
             end
         end
 
+        if distanceToPet <= 8.75 then
+
+            reached =
+                true
+
+            reachReason =
+                "pet range "
+                .. string.format(
+                    "%.1f studs",
+                    distanceToPet
+                )
+
+            break
+        end
+
+        if distanceToSafe <= 5.75 then
+
+            reached =
+                true
+
+            reachReason =
+                "safe range "
+                .. string.format(
+                    "%.1f studs",
+                    distanceToSafe
+                )
+
+            break
+        end
+
+        local shouldRefreshMove =
+            false
+
+        if typeof(currentMoveTarget) ~= "Vector3" then
+
+            shouldRefreshMove =
+                true
+
+        elseif (safePosition - currentMoveTarget).Magnitude >= 8 then
+
+            shouldRefreshMove =
+                true
+
+        elseif os.clock() - lastMoveTo >= 1.25 then
+
+            shouldRefreshMove =
+                true
+        end
+
+        if shouldRefreshMove == true then
+
+            currentMoveTarget =
+                safePosition
+
+            lastMoveTo =
+                os.clock()
+
+            pcall(function()
+
+                humanoid:MoveTo(
+                    currentMoveTarget
+                )
+            end)
+        end
+
         task.wait(
-            0.12
+            0.10
         )
     end
 
-    SniperStopCharacterMotion(
-        root
-    )
+    character, root =
+        SniperGetCharacterRoot()
 
-    if typeof(targetPosition) == "Vector3" then
+    if reached ~= true then
 
-        SniperAimAtPetPosition(
-            targetPosition
-        )
+        local finalDistance =
+            nil
 
-        task.wait(
-            0.15
-        )
+        if root
+        and typeof(targetPosition) == "Vector3" then
+
+            finalDistance =
+                (root.Position - targetPosition).Magnitude
+        end
+
+        return nil,
+            "walk timeout before buy"
+            .. (
+                finalDistance
+                and (
+                    " | pet distance "
+                    .. string.format(
+                        "%.1f studs",
+                        finalDistance
+                    )
+                )
+                or ""
+            )
+    end
+
+    if root
+    and humanoid then
+
+        pcall(function()
+
+            humanoid:MoveTo(
+                root.Position
+            )
+        end)
     end
 
     return {
         Character = character,
         OldCFrame = oldCFrame,
-        ClosePosition = root.Position,
+        ClosePosition = root and root.Position or nil,
         TargetPosition = targetPosition,
         Moved = true,
         MovementMode = "Walk",
     },
-    "walked"
+    "walked close | "
+        .. tostring(reachReason)
 end
 
-function SniperMoveToBuyPosition(entry)
+function SniperMoveToBuyPosition(entry, taskToken)
+
+    SniperSyncBehaviorOptionsFromUi(
+        "move to buy"
+    )
+
+    local allowed, stopInfo =
+        SniperBuyTaskStillAllowed(
+            taskToken
+        )
+
+    if allowed ~= true then
+
+        return nil,
+            tostring(stopInfo)
+    end
 
     if SniperGetMovementMode() == "Walk" then
 
         return SniperWalkCloseForTame(
-            entry
+            entry,
+            taskToken
         )
     end
 
@@ -28347,6 +35960,373 @@ function SniperHoldBuyPromptForEntry(entry)
         "held"
 end
 
+function SniperBuildMovingPetBuyCFrame(entry)
+
+    if type(entry) ~= "table" then
+        return nil, nil, "missing entry"
+    end
+
+    local function getPositionFromInstance(instance)
+
+        if typeof(instance) ~= "Instance" then
+            return nil
+        end
+
+        if instance:IsA("BasePart") then
+            return instance.Position
+        end
+
+        if instance:IsA("Model") then
+
+            if instance.PrimaryPart then
+                return instance.PrimaryPart.Position
+            end
+
+            local ok, frame =
+                pcall(function()
+
+                    return instance:GetBoundingBox()
+                end)
+
+            if ok == true
+            and typeof(frame) == "CFrame" then
+                return frame.Position
+            end
+        end
+
+        for _, descendant in ipairs(instance:GetDescendants()) do
+
+            if descendant:IsA("BasePart") then
+                return descendant.Position
+            end
+        end
+
+        return nil
+    end
+
+    local function getTargetPosition()
+
+        if type(SniperGetEntryTamePosition) == "function" then
+
+            local ok, result =
+                pcall(function()
+
+                    return SniperGetEntryTamePosition(
+                        entry
+                    )
+                end)
+
+            if ok == true
+            and typeof(result) == "Vector3" then
+
+                return result
+            end
+        end
+
+        local ref =
+            entry.Ref
+
+        if typeof(ref) ~= "Instance"
+        and CleanText(entry.UUID) ~= ""
+        and type(SniperFindRef) == "function" then
+
+            local ok, result =
+                pcall(function()
+
+                    return SniperFindRef(
+                        entry.UUID
+                    )
+                end)
+
+            if ok == true
+            and typeof(result) == "Instance" then
+
+                ref =
+                    result
+            end
+        end
+
+        local refPosition =
+            getPositionFromInstance(
+                ref
+            )
+
+        if typeof(refPosition) == "Vector3" then
+            return refPosition
+        end
+
+        local spawn =
+            entry.Spawn
+
+        if typeof(spawn) ~= "Instance"
+        and CleanText(entry.UUID) ~= ""
+        and type(SniperFindSpawnByUuid) == "function" then
+
+            local ok, result =
+                pcall(function()
+
+                    return SniperFindSpawnByUuid(
+                        entry.UUID
+                    )
+                end)
+
+            if ok == true
+            and typeof(result) == "Instance" then
+
+                spawn =
+                    result
+            end
+        end
+
+        local spawnPosition =
+            getPositionFromInstance(
+                spawn
+            )
+
+        if typeof(spawnPosition) == "Vector3" then
+            return spawnPosition
+        end
+
+        return getPositionFromInstance(
+            entry.Instance
+        )
+    end
+
+    local targetPosition =
+        getTargetPosition()
+
+    if typeof(targetPosition) ~= "Vector3" then
+        return nil, nil, "missing pet position"
+    end
+
+    local character, root =
+        SniperGetCharacterRoot()
+
+    local direction =
+        root
+        and root.Position - targetPosition
+        or Vector3.new(1, 0, 0)
+
+    direction =
+        Vector3.new(
+            direction.X,
+            0,
+            direction.Z
+        )
+
+    if direction.Magnitude < 0.05 then
+
+        direction =
+            Vector3.new(1, 0, 0)
+
+    else
+
+        direction =
+            direction.Unit
+    end
+
+    local standDistance =
+        math.clamp(
+            tonumber(SniperState.TeleportPetDistance)
+            or 5.9,
+            4.5,
+            8.0
+        )
+
+    local desiredPosition =
+        targetPosition
+        + direction * standDistance
+
+    local ignoreList =
+        {}
+
+    if character then
+
+        table.insert(
+            ignoreList,
+            character
+        )
+    end
+
+    if typeof(entry.Ref) == "Instance" then
+
+        table.insert(
+            ignoreList,
+            entry.Ref
+        )
+    end
+
+    if typeof(entry.Spawn) == "Instance" then
+
+        table.insert(
+            ignoreList,
+            entry.Spawn
+        )
+    end
+
+    if typeof(entry.Instance) == "Instance" then
+
+        table.insert(
+            ignoreList,
+            entry.Instance
+        )
+    end
+
+    local rayParams =
+        RaycastParams.new()
+
+    rayParams.FilterType =
+        Enum.RaycastFilterType.Exclude
+
+    rayParams.FilterDescendantsInstances =
+        ignoreList
+
+    rayParams.IgnoreWater =
+        true
+
+    local rayOrigin =
+        Vector3.new(
+            desiredPosition.X,
+            targetPosition.Y + 24,
+            desiredPosition.Z
+        )
+
+    local rayResult =
+        workspace:Raycast(
+            rayOrigin,
+            Vector3.new(0, -90, 0),
+            rayParams
+        )
+
+    local groundPosition =
+        nil
+
+    local groundMode =
+        "fallback"
+
+    if rayResult
+    and typeof(rayResult.Position) == "Vector3"
+    and rayResult.Position.Y <= targetPosition.Y + 7
+    and rayResult.Position.Y >= targetPosition.Y - 16 then
+
+        groundPosition =
+            rayResult.Position
+
+        groundMode =
+            "ray"
+
+    else
+
+        groundPosition =
+            Vector3.new(
+                desiredPosition.X,
+                targetPosition.Y - 2.75,
+                desiredPosition.Z
+            )
+    end
+
+    local rootYOffset =
+        3.25
+
+    if root then
+
+        local humanoid =
+            character
+            and character:FindFirstChildOfClass("Humanoid")
+
+        local rootHalf =
+            root.Size.Y / 2
+
+        local hipHeight =
+            humanoid
+            and tonumber(humanoid.HipHeight)
+            or 2
+
+        rootYOffset =
+            math.max(
+                3.05,
+                rootHalf + hipHeight + 0.20
+            )
+    end
+
+    local finalPosition =
+        groundPosition
+        + Vector3.new(0, rootYOffset, 0)
+
+    local lookAt =
+        Vector3.new(
+            targetPosition.X,
+            finalPosition.Y,
+            targetPosition.Z
+        )
+
+    local cframe =
+        CFrame.lookAt(
+            finalPosition,
+            lookAt
+        )
+
+    return cframe,
+        finalPosition,
+        "ground "
+            .. string.format("%.2f, %.2f, %.2f", groundPosition.X, groundPosition.Y, groundPosition.Z)
+            .. " | root "
+            .. string.format("%.2f, %.2f, %.2f", finalPosition.X, finalPosition.Y, finalPosition.Z)
+            .. " | pet "
+            .. string.format("%.2f, %.2f, %.2f", targetPosition.X, targetPosition.Y, targetPosition.Z)
+            .. " | mode "
+            .. tostring(groundMode)
+end
+
+function SniperNormalBuyTeleport(targetCFrame)
+
+    if typeof(targetCFrame) ~= "CFrame" then
+        return false, "bad cframe"
+    end
+
+    local character, root =
+        SniperGetCharacterRoot()
+
+    if not character
+    or not root then
+        return false, "missing character"
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    pcall(function()
+
+        if humanoid then
+
+            humanoid.Sit =
+                false
+
+            humanoid.PlatformStand =
+                false
+
+            humanoid:Move(
+                Vector3.zero,
+                false
+            )
+
+            humanoid:ChangeState(
+                Enum.HumanoidStateType.Running
+            )
+        end
+
+        character:PivotTo(
+            targetCFrame
+        )
+    end)
+
+    SniperStopCharacterMotion(
+        root
+    )
+
+    return true, "teleported"
+end
+
 function SniperMoveCloseForTame(entry)
 
     local character, root =
@@ -28357,122 +36337,317 @@ function SniperMoveCloseForTame(entry)
         return nil, "missing character"
     end
 
-    local targetPosition =
+    local originalCFrame =
+        root.CFrame
+
+    local targetCFrame, targetPosition, targetInfo =
+        SniperBuildMovingPetBuyCFrame(
+            entry
+        )
+
+    if typeof(targetCFrame) ~= "CFrame"
+    or typeof(targetPosition) ~= "Vector3" then
+
+        return nil,
+            tostring(targetInfo)
+    end
+
+    local ok, err =
+        SniperNormalBuyTeleport(
+            targetCFrame
+        )
+
+    if ok ~= true then
+
+        return nil,
+            tostring(err)
+    end
+
+    task.wait(
+        math.clamp(
+            tonumber(SniperState.TeleportSettleDelay)
+            or 0.20,
+            0.10,
+            1.00
+        )
+    )
+
+    character, root =
+        SniperGetCharacterRoot()
+
+    if not character
+    or not root then
+        return nil, "lost character after teleport"
+    end
+
+    local petPosition =
         SniperGetEntryTamePosition(
             entry
         )
 
-    if typeof(targetPosition) ~= "Vector3" then
-        return nil, "missing pet position"
-    end
+    local distanceToPet =
+        typeof(petPosition) == "Vector3"
+        and (root.Position - petPosition).Magnitude
+        or math.huge
 
-    local oldCFrame =
-        root.CFrame
+    local moveState = {
+        Character = character,
+        OldCFrame = originalCFrame,
+        ClosePosition = root.Position,
+        TargetPosition = petPosition,
+        TargetCFrame = targetCFrame,
+        TargetStandPosition = targetPosition,
+        Moved = true,
+        MovementMode = "Teleport",
+        LastResnapAt = os.clock(),
+        ResnapCount = 1,
+    }
 
-    local distance =
-        (root.Position - targetPosition).Magnitude
+    SniperStopCharacterMotion(
+        root
+    )
 
-    if distance <= 8 then
+    return moveState,
+        "normal tp close | pet "
+        .. string.format(
+            "%.1f studs",
+            distanceToPet
+        )
+        .. " | "
+        .. tostring(targetInfo)
+end
 
-        SniperAimAtPetPosition(
-            targetPosition
+local function SniperStartReturnLock(seconds, reason)
+
+    local lockSeconds =
+        math.clamp(
+            tonumber(seconds)
+            or tonumber(SniperState.ReturnLockSeconds)
+            or 1.45,
+            0.35,
+            5.00
         )
 
-        SniperStopCharacterMotion(
-            root
-        )
+    SniperState.ReturningAfterBuy =
+        true
 
-        return {
-            Character = character,
-            OldCFrame = oldCFrame,
-            ClosePosition = root.Position,
-            TargetPosition = targetPosition,
-            Moved = false,
-        },
-        "already close"
+    SniperState.ReturnLockUntil =
+        os.clock()
+        + lockSeconds
+
+    task.delay(lockSeconds, function()
+
+        if os.clock() >= (
+            tonumber(SniperState.ReturnLockUntil)
+            or 0
+        ) then
+
+            SniperState.ReturningAfterBuy =
+                false
+        end
+    end)
+
+    return lockSeconds
+end
+
+local function SniperReturnToSavedCFrame(savedCFrame)
+
+    if typeof(savedCFrame) ~= "CFrame" then
+
+        return false,
+            "bad saved cframe"
     end
 
-    local closeCFrame, closePosition =
-        SniperGetSafeTameCFrame(
-            targetPosition
+    local currentCharacter, currentRoot =
+        SniperGetCharacterRoot()
+
+    if not currentCharacter
+    or not currentRoot then
+
+        return false,
+            "missing character"
+    end
+
+    local lockSeconds =
+        SniperStartReturnLock(
+            SniperState.ReturnLockSeconds,
+            "return start"
         )
 
-    if typeof(closeCFrame) ~= "CFrame"
-    or typeof(closePosition) ~= "Vector3" then
-        return nil, "safe ground position failed"
+    if SniperGetReturnMovementMode() == "Walk" then
+
+        SetSniperStatus(
+            "Returning by walk..."
+        )
+
+        local ok, info =
+            SniperWalkToSavedCFrame(
+                savedCFrame
+            )
+
+        SniperStartReturnLock(
+            lockSeconds,
+            "walk return finish"
+        )
+
+        return ok == true,
+            tostring(info)
     end
+
+    SetSniperStatus(
+        "Returning by teleport..."
+    )
 
     local ok, err =
         pcall(function()
 
-            character:PivotTo(
-                closeCFrame
+            currentCharacter:PivotTo(
+                savedCFrame
             )
         end)
 
     if ok ~= true then
 
-        ok, err =
-            pcall(function()
+        SniperState.ReturningAfterBuy =
+            false
 
-                root.CFrame =
-                    closeCFrame
-            end)
+        SniperState.ReturnLockUntil =
+            0
+
+        return false,
+            tostring(err)
     end
 
-    if ok ~= true then
-        return nil, tostring(err)
-    end
-
-    task.wait(
-        0.05
-    )
-
-    local freshTargetPosition =
-        SniperGetEntryTamePosition(
-            entry
-        )
-
-    if typeof(freshTargetPosition) == "Vector3" then
-
-        targetPosition =
-            freshTargetPosition
-
-        SniperAimAtPetPosition(
-            targetPosition
-        )
-    end
-
-    local _, newRoot =
+    currentCharacter, currentRoot =
         SniperGetCharacterRoot()
 
-    if newRoot then
+    if currentRoot then
 
         SniperStopCharacterMotion(
-            newRoot
+            currentRoot
         )
     end
 
     task.wait(
-        0.08
+        0.12
     )
 
-    return {
-        Character = character,
-        OldCFrame = oldCFrame,
-        ClosePosition = closePosition,
-        TargetPosition = targetPosition,
-        Moved = true,
-    },
-    "moved"
+    currentCharacter, currentRoot =
+        SniperGetCharacterRoot()
+
+    if currentCharacter
+    and currentRoot then
+
+        local driftDistance =
+            (currentRoot.Position - savedCFrame.Position).Magnitude
+
+        if driftDistance > 6 then
+
+            pcall(function()
+
+                currentCharacter:PivotTo(
+                    savedCFrame
+                )
+            end)
+
+            task.wait(
+                0.08
+            )
+
+            local _,
+                newRoot =
+                SniperGetCharacterRoot()
+
+            if newRoot then
+
+                SniperStopCharacterMotion(
+                    newRoot
+                )
+            end
+        end
+    end
+
+    SniperStartReturnLock(
+        lockSeconds,
+        "teleport return finish"
+    )
+
+    return true,
+        "teleported return"
 end
 
+local function SniperClearBatchReturnState()
+
+    SniperState.BatchReturnCFrame =
+        nil
+
+    SniperState.BatchReturnClosePosition =
+        nil
+
+    SniperState.BatchReturnActive =
+        false
+
+    SniperState.BatchReturnStartedAt =
+        0
+
+    SniperState.BatchReturnEmptySince =
+        0
+
+    SniperState.BatchReturnLastMatchCount =
+        0
+
+    SniperState.BatchReturnLastReason =
+        ""
+end
+
+local function SniperCaptureBatchReturnOrigin(moveState)
+
+    if SniperState.ReturnAfterBatch ~= true then
+        return false
+    end
+
+    if type(moveState) ~= "table" then
+        return false
+    end
+
+    if moveState.Moved ~= true then
+        return false
+    end
+
+    if typeof(moveState.OldCFrame) ~= "CFrame" then
+        return false
+    end
+
+    if SniperState.BatchReturnActive == true
+    and typeof(SniperState.BatchReturnCFrame) == "CFrame" then
+        return true
+    end
+
+    SniperState.BatchReturnCFrame =
+        moveState.OldCFrame
+
+    SniperState.BatchReturnClosePosition =
+        moveState.ClosePosition
+
+    SniperState.BatchReturnActive =
+        true
+
+    SniperState.BatchReturnStartedAt =
+        os.clock()
+
+    SniperState.BatchReturnEmptySince =
+        0
+
+    SniperState.BatchReturnLastMatchCount =
+        0
+
+    SniperState.BatchReturnLastReason =
+        "started"
+
+    return true
+end
 
 local function SniperRestoreAfterTame(moveState)
-
-    if SniperState.ReturnAfterTame ~= true then
-        return
-    end
 
     if type(moveState) ~= "table" then
         return
@@ -28485,54 +36660,60 @@ local function SniperRestoreAfterTame(moveState)
     local oldCFrame =
         moveState.OldCFrame
 
-    local closePosition =
-        moveState.ClosePosition
-
     if typeof(oldCFrame) ~= "CFrame" then
-        return
-    end
-
-    local currentCharacter, currentRoot =
-        SniperGetCharacterRoot()
-
-    if not currentCharacter
-    or not currentRoot then
-        return
-    end
-
-    if typeof(closePosition) == "Vector3" then
-
-        local movedAwayDistance =
-            (currentRoot.Position - closePosition).Magnitude
-
-        if movedAwayDistance > 18 then
-            return
-        end
-    end
-
-    if SniperGetReturnMovementMode() == "Walk" then
 
         SetSniperStatus(
-            "Returning by walk..."
-        )
-
-        SniperWalkToSavedCFrame(
-            oldCFrame
+            "Return failed: missing saved position."
         )
 
         return
     end
 
-    SetSniperStatus(
-        "Returning by teleport..."
+    if SniperState.ReturnAfterBatch == true then
+
+        local captured =
+            SniperCaptureBatchReturnOrigin(
+                moveState
+            )
+
+        if captured == true then
+
+            SetSniperStatus(
+                "Batch return armed. Buying remaining matches..."
+            )
+
+            if type(SniperScheduleBatchReturnCheck) == "function" then
+
+                SniperScheduleBatchReturnCheck(
+                    "restore after tame"
+                )
+            end
+        end
+
+        return
+    end
+
+    if SniperState.ReturnAfterTame ~= true then
+        return
+    end
+
+    task.wait(
+        0.08
     )
 
-    pcall(function()
-
-        currentCharacter:PivotTo(
+    local ok, info =
+        SniperReturnToSavedCFrame(
             oldCFrame
         )
-    end)
+
+    SetSniperStatus(
+        ok == true
+        and "Returned after buy."
+        or (
+            "Return failed: "
+            .. tostring(info)
+        )
+    )
 end
 
 local function SniperGetEntryKey(entry)
@@ -28586,6 +36767,7 @@ function SniperHasUnacceptedPendingBuy()
         end
 
         if type(record) == "table"
+        and record.Cancelled ~= true
         and record.Confirmed ~= true
         and record.Accepted ~= true then
 
@@ -28643,6 +36825,619 @@ local function SniperMarkEntryHandled(entry, seconds)
             or 60
         )
 end
+
+local function SniperCountCurrentRemainingMatches()
+
+    local targets =
+        {}
+
+    if type(SniperBuildTargets) == "function" then
+
+        local targetsOk, builtTargets =
+            pcall(function()
+
+                return SniperBuildTargets()
+            end)
+
+        if targetsOk == true
+        and type(builtTargets) == "table" then
+
+            targets =
+                builtTargets
+        end
+    end
+
+    local hasTargets =
+        false
+
+    for _, enabled in pairs(targets) do
+
+        if enabled == true then
+
+            hasTargets =
+                true
+
+            break
+        end
+    end
+
+    if hasTargets ~= true then
+
+        return 0,
+            "ok"
+    end
+
+    local function normalizeName(value)
+
+        if type(SniperNormalizeName) == "function" then
+
+            local ok, result =
+                pcall(function()
+
+                    return SniperNormalizeName(
+                        value
+                    )
+                end)
+
+            if ok == true then
+
+                return tostring(result or "")
+            end
+        end
+
+        return CleanText(value)
+            :lower()
+            :gsub("%s+", " ")
+    end
+
+    local function findSpawnByUuidLocal(uuid)
+
+        uuid =
+            CleanText(uuid)
+
+        if uuid == "" then
+            return nil
+        end
+
+        local folder =
+            SniperGetSpawnsFolder()
+
+        if not folder then
+            return nil
+        end
+
+        for _, child in ipairs(folder:GetChildren()) do
+
+            if SniperGetUuid(child.Name) == uuid then
+                return child
+            end
+        end
+
+        return nil
+    end
+
+    local function entryMatchesCurrentTargets(entry)
+
+        if type(entry) ~= "table" then
+            return false
+        end
+
+        local petKey =
+            normalizeName(
+                entry.Name
+            )
+
+        if petKey == "" then
+            return false
+        end
+
+        for targetKey, enabled in pairs(targets) do
+
+            if enabled == true then
+
+                targetKey =
+                    normalizeName(
+                        targetKey
+                    )
+
+                if targetKey ~= ""
+                and (
+                    petKey == targetKey
+                    or petKey:find(targetKey, 1, true) ~= nil
+                    or targetKey:find(petKey, 1, true) ~= nil
+                ) then
+
+                    return true
+                end
+            end
+        end
+
+        return false
+    end
+
+    local function entryMatchesCurrentSize(entry)
+
+        if type(SniperEntryMatchesSizeClass) ~= "function" then
+            return true
+        end
+
+        local ok, result =
+            pcall(function()
+
+                return SniperEntryMatchesSizeClass(
+                    entry
+                )
+            end)
+
+        return ok == true
+            and result == true
+    end
+
+    local function entryIsAvailable(entry)
+
+        if type(entry) ~= "table" then
+            return false
+        end
+
+        local ref =
+            entry.Ref
+
+        if typeof(ref) == "Instance" then
+
+            local ownerUserId =
+                tonumber(
+                    ref:GetAttribute("OwnerUserId")
+                )
+                or 0
+
+            if ownerUserId ~= 0 then
+                return false
+            end
+
+            local state =
+                CleanText(
+                    ref:GetAttribute("State")
+                ):lower()
+
+            if state ~= ""
+            and state ~= "wandering" then
+                return false
+            end
+        end
+
+        return true
+    end
+
+    local function addEntry(entries, usedKeys, spawn, ref, fallbackUuid)
+
+        local uuid =
+            CleanText(fallbackUuid)
+
+        if uuid == ""
+        and typeof(spawn) == "Instance" then
+
+            uuid =
+                SniperGetUuid(
+                    spawn.Name
+                )
+        end
+
+        if uuid == ""
+        and typeof(ref) == "Instance" then
+
+            uuid =
+                SniperGetUuid(
+                    ref.Name
+                )
+        end
+
+        local key =
+            uuid
+
+        if key == "" then
+
+            key =
+                typeof(spawn) == "Instance"
+                and PathOf(spawn)
+                or PathOf(ref)
+        end
+
+        if key == ""
+        or usedKeys[key] == true then
+            return
+        end
+
+        local petName =
+            "Unknown"
+
+        if typeof(spawn) == "Instance" then
+
+            petName =
+                SniperGetPetName(
+                    spawn
+                )
+        end
+
+        if (
+            petName == ""
+            or petName == "Unknown"
+            or petName:match("^WildPet[%s_]")
+        )
+        and typeof(ref) == "Instance" then
+
+            local refName =
+                SniperGetPetName(
+                    ref
+                )
+
+            if refName ~= ""
+            and refName ~= "Unknown"
+            and not refName:match("^WildPet[%s_]") then
+
+                petName =
+                    refName
+            end
+        end
+
+        if petName == ""
+        or petName == "Unknown" then
+            return
+        end
+
+        local position =
+            nil
+
+        if typeof(spawn) == "Instance" then
+
+            position =
+                SniperGetPosition(
+                    spawn
+                )
+        end
+
+        if typeof(position) ~= "Vector3"
+        and typeof(ref) == "Instance" then
+
+            position =
+                SniperGetPosition(
+                    ref
+                )
+        end
+
+        usedKeys[key] =
+            true
+
+        table.insert(entries, {
+            Instance = spawn or ref,
+            Spawn = spawn,
+            Ref = ref,
+            UUID = uuid,
+            Name = petName,
+            Key = SniperNormalizeName(petName),
+            Position = position,
+            SizeMetric =
+                type(SniperReadSizeMetric) == "function"
+                and SniperReadSizeMetric(spawn or ref)
+                or nil,
+            SizeClass = "Any Size",
+            SizeScore = 1,
+        })
+    end
+
+    local entries =
+        {}
+
+    local usedKeys =
+        {}
+
+    local spawnFolder =
+        SniperGetSpawnsFolder()
+
+    local refFolder =
+        SniperGetRefFolder()
+
+    if spawnFolder then
+
+        for _, child in ipairs(spawnFolder:GetChildren()) do
+
+            if child.Name:find("WildPet", 1, true) then
+
+                local uuid =
+                    SniperGetUuid(
+                        child.Name
+                    )
+
+                local ref =
+                    uuid ~= ""
+                    and SniperFindRef(
+                        uuid
+                    )
+                    or nil
+
+                addEntry(
+                    entries,
+                    usedKeys,
+                    child,
+                    ref,
+                    uuid
+                )
+            end
+        end
+    end
+
+    if refFolder then
+
+        for _, ref in ipairs(refFolder:GetChildren()) do
+
+            if ref.Name:find("WildPet", 1, true) then
+
+                local uuid =
+                    SniperGetUuid(
+                        ref.Name
+                    )
+
+                local spawn =
+                    uuid ~= ""
+                    and findSpawnByUuidLocal(
+                        uuid
+                    )
+                    or nil
+
+                addEntry(
+                    entries,
+                    usedKeys,
+                    spawn,
+                    ref,
+                    uuid
+                )
+            end
+        end
+    end
+
+    if type(SniperRefreshSizeBaselines) == "function" then
+
+        pcall(function()
+
+            SniperRefreshSizeBaselines(
+                entries
+            )
+        end)
+    end
+
+    if type(SniperApplyEntrySizeClass) == "function" then
+
+        for _, entry in ipairs(entries) do
+
+            pcall(function()
+
+                SniperApplyEntrySizeClass(
+                    entry
+                )
+            end)
+        end
+    end
+
+    if not spawnFolder
+    and not refFolder then
+
+        return 0,
+            "missing wild pet data"
+    end
+
+    local remaining =
+        0
+
+    for _, entry in ipairs(entries) do
+
+        if SniperIsEntryHandled(entry) ~= true
+        and entryIsAvailable(entry) == true
+        and entryMatchesCurrentTargets(entry) == true
+        and entryMatchesCurrentSize(entry) == true then
+
+            remaining =
+                remaining + 1
+        end
+    end
+
+    return remaining,
+        "ok"
+end
+
+function SniperTryReturnAfterBatch(reason)
+
+    if SniperState.ReturnAfterBatch ~= true then
+        return false
+    end
+
+    if SniperState.BatchReturnActive ~= true then
+        return false
+    end
+
+    if typeof(SniperState.BatchReturnCFrame) ~= "CFrame" then
+
+        SniperClearBatchReturnState()
+
+        return false
+    end
+
+    if SniperState.Taming == true then
+
+        SniperState.BatchReturnEmptySince =
+            0
+
+        return false
+    end
+
+    if type(SniperHasUnacceptedPendingBuy) == "function" then
+
+        local pendingOk, hasPending =
+            pcall(function()
+
+                return SniperHasUnacceptedPendingBuy()
+            end)
+
+        if pendingOk == true
+        and hasPending == true then
+
+            SniperState.BatchReturnEmptySince =
+                0
+
+            return false
+        end
+    end
+
+    local countOk, remaining, scanInfo =
+        pcall(function()
+
+            return SniperCountCurrentRemainingMatches()
+        end)
+
+    if countOk ~= true then
+
+        warn(
+            "[HOLY SNIPER]",
+            "batch return count failed:",
+            tostring(remaining)
+        )
+
+        return false
+    end
+
+    remaining =
+        tonumber(remaining)
+        or 0
+
+    SniperState.BatchReturnLastMatchCount =
+        remaining
+
+    SniperState.BatchReturnLastReason =
+        tostring(reason or "batch check")
+
+    if scanInfo ~= "ok" then
+
+        SniperState.BatchReturnEmptySince =
+            0
+
+        return false
+    end
+
+    if remaining > 0 then
+
+        SniperState.BatchReturnEmptySince =
+            0
+
+        SetSniperStatus(
+            "Batch active: "
+            .. tostring(remaining)
+            .. " match(es) left."
+        )
+
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    if tonumber(SniperState.BatchReturnEmptySince or 0) <= 0 then
+
+        SniperState.BatchReturnEmptySince =
+            now
+
+        SetSniperStatus(
+            "Batch empty. Verifying before return..."
+        )
+
+        return false
+    end
+
+    local stableSeconds =
+        math.clamp(
+            tonumber(SniperState.BatchReturnStableSeconds)
+            or 2.0,
+            0.5,
+            8.0
+        )
+
+    local emptyFor =
+        now - tonumber(SniperState.BatchReturnEmptySince or now)
+
+    if emptyFor < stableSeconds then
+
+        SetSniperStatus(
+            "Batch empty. Return in "
+            .. string.format("%.1f", stableSeconds - emptyFor)
+            .. "s"
+        )
+
+        return false
+    end
+
+    local savedCFrame =
+        SniperState.BatchReturnCFrame
+
+    SniperClearBatchReturnState()
+
+    local ok, info =
+        SniperReturnToSavedCFrame(
+            savedCFrame
+        )
+
+    SetSniperStatus(
+        ok == true
+        and "Batch complete. Returning..."
+        or (
+            "Batch complete. Return failed: "
+            .. tostring(info)
+        )
+    )
+
+    return ok == true
+end
+
+function SniperScheduleBatchReturnCheck(reason)
+
+    if SniperState.ReturnAfterBatch ~= true then
+        return false
+    end
+
+    if SniperState.BatchReturnActive ~= true then
+        return false
+    end
+
+    local started =
+        os.clock()
+
+    task.spawn(function()
+
+        while os.clock() - started < 18 do
+
+            if SniperState.ReturnAfterBatch ~= true
+            or SniperState.BatchReturnActive ~= true then
+
+                return
+            end
+
+            if SniperState.Taming ~= true then
+
+                local returned =
+                    SniperTryReturnAfterBatch(
+                        reason or "delayed batch check"
+                    )
+
+                if returned == true then
+                    return
+                end
+            end
+
+            task.wait(
+                0.35
+            )
+        end
+    end)
+
+    return true
+end
+
 
 local function SniperFindSpawnByUuid(uuid)
 
@@ -28881,6 +37676,24 @@ function SniperClearPendingBuyKey(key)
         and SniperState.PendingWildPets[key]
         or nil
 
+    local keepHandled =
+        type(record) == "table"
+        and (
+            record.Confirmed == true
+            or record.Accepted == true
+            or record.ShecklesDropSeen == true
+        )
+
+    if type(record) == "table" then
+
+        record.Cancelled =
+            true
+
+        record.CancelReason =
+            record.CancelReason
+            or "pending cleared"
+    end
+
     if type(record) == "table"
     and type(record.RefConnections) == "table" then
 
@@ -28914,6 +37727,13 @@ function SniperClearPendingBuyKey(key)
     if type(SniperState.PendingWildPets) == "table" then
 
         SniperState.PendingWildPets[key] =
+            nil
+    end
+
+    if keepHandled ~= true
+    and type(SniperState.HandledWildPets) == "table" then
+
+        SniperState.HandledWildPets[key] =
             nil
     end
 
@@ -29124,6 +37944,10 @@ function SniperTryAcceptPendingBuyRecord(record, reason)
         return false
     end
 
+    if record.Cancelled == true then
+        return false
+    end
+
     if record.Confirmed == true
     or record.Accepted == true then
         return false
@@ -29131,13 +37955,19 @@ function SniperTryAcceptPendingBuyRecord(record, reason)
 
     local hasShecklesDrop =
         record.ShecklesDropSeen == true
-        or SniperState.RequireShecklesDrop ~= true
 
     local hasRefAccept =
         record.RefAcceptedSeen == true
 
-    if hasShecklesDrop ~= true
-    or hasRefAccept ~= true then
+    if SniperState.RequireShecklesDrop == true then
+
+        if hasShecklesDrop ~= true then
+
+            return false
+        end
+
+    elseif hasShecklesDrop ~= true
+    and hasRefAccept ~= true then
 
         return false
     end
@@ -29146,7 +37976,12 @@ function SniperTryAcceptPendingBuyRecord(record, reason)
         true
 
     record.AcceptReason =
-        tostring(reason or record.RefAcceptReason or record.ShecklesReason or "fast accepted")
+        tostring(
+            reason
+            or record.ShecklesReason
+            or record.RefAcceptReason
+            or "accepted"
+        )
 
     local key =
         CleanText(record.Key)
@@ -29164,11 +37999,12 @@ function SniperTryAcceptPendingBuyRecord(record, reason)
     SetSniperStatus(
         "Accepted: "
         .. tostring(record.PetName)
+        .. " | sheckles confirmed"
     )
 
     print(
         "[HOLY SNIPER]",
-        "buy fast accepted",
+        "buy accepted",
         "| pet:",
         tostring(record.PetName),
         "| uuid:",
@@ -29187,7 +38023,7 @@ function SniperTryAcceptPendingBuyRecord(record, reason)
 
         SniperConfirmPendingBuyRecord(
             record,
-            record.InventoryReason or "inventory after fast accept",
+            record.InventoryReason or "inventory after accept",
             record.InventoryPetId
         )
     end
@@ -29601,41 +38437,568 @@ function SniperEnsureBuyConfirmationHooks()
     end
 end
 
-local function SniperHoldCloseForServerValidation(moveState)
+function SniperGetMovingBuyDistances(entry, moveState)
+
+    local _, root =
+        SniperGetCharacterRoot()
+
+    local petPosition =
+        SniperGetEntryTamePosition(
+            entry
+        )
+
+    local petDistance =
+        root
+        and typeof(petPosition) == "Vector3"
+        and (root.Position - petPosition).Magnitude
+        or nil
+
+    local targetDistance =
+        root
+        and type(moveState) == "table"
+        and typeof(moveState.TargetCFrame) == "CFrame"
+        and (root.Position - moveState.TargetCFrame.Position).Magnitude
+        or nil
+
+    return petDistance,
+        targetDistance,
+        petPosition,
+        root
+end
+
+function SniperRebuildMovingBuyTeleport(entry, moveState, reason)
+
+    if type(moveState) ~= "table" then
+        return false, "missing move state"
+    end
+
+    local targetCFrame, targetPosition, targetInfo =
+        SniperBuildMovingPetBuyCFrame(
+            entry
+        )
+
+    if typeof(targetCFrame) ~= "CFrame"
+    or typeof(targetPosition) ~= "Vector3" then
+
+        return false,
+            tostring(targetInfo)
+    end
+
+    moveState.TargetCFrame =
+        targetCFrame
+
+    moveState.TargetStandPosition =
+        targetPosition
+
+    local ok, err =
+        SniperNormalBuyTeleport(
+            targetCFrame
+        )
+
+    if ok ~= true then
+
+        return false,
+            tostring(err)
+    end
+
+    local _, root =
+        SniperGetCharacterRoot()
+
+    moveState.ClosePosition =
+        root
+        and root.Position
+        or targetPosition
+
+    moveState.TargetPosition =
+        SniperGetEntryTamePosition(
+            entry
+        )
+
+    moveState.LastResnapAt =
+        os.clock()
+
+    moveState.ResnapCount =
+        (
+            tonumber(moveState.ResnapCount)
+            or 0
+        )
+        + 1
+
+    print(
+        "[HOLY SNIPER]",
+        "moving pet resnap",
+        "| pet:",
+        tostring(entry and entry.Name),
+        "| reason:",
+        tostring(reason),
+        "| count:",
+        tostring(moveState.ResnapCount),
+        "|",
+        tostring(targetInfo)
+    )
+
+    return true,
+        "resnapped"
+end
+
+function SniperMaybeFollowMovingBuy(entry, moveState, reason)
+
+    if type(entry) ~= "table"
+    or type(moveState) ~= "table" then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    local cooldown =
+        math.clamp(
+            tonumber(SniperState.TeleportResnapCooldown)
+            or 0.55,
+            0.20,
+            2.00
+        )
+
+    if now - (
+        tonumber(moveState.LastResnapAt)
+        or 0
+    ) < cooldown then
+
+        return false
+    end
+
+    local petDistance, targetDistance =
+        SniperGetMovingBuyDistances(
+            entry,
+            moveState
+        )
+
+    local petResnapDistance =
+        math.clamp(
+            tonumber(SniperState.TeleportPetResnapDistance)
+            or 8.5,
+            6.0,
+            18.0
+        )
+
+    local targetResnapDistance =
+        math.clamp(
+            tonumber(SniperState.TeleportTargetResnapDistance)
+            or 10.0,
+            6.0,
+            30.0
+        )
+
+    if targetDistance
+    and targetDistance > targetResnapDistance then
+
+        return SniperRebuildMovingBuyTeleport(
+            entry,
+            moveState,
+            tostring(reason or "target snapback")
+            .. " | targetDist "
+            .. string.format("%.1f", targetDistance)
+        )
+    end
+
+    if petDistance
+    and petDistance > petResnapDistance then
+
+        return SniperRebuildMovingBuyTeleport(
+            entry,
+            moveState,
+            tostring(reason or "pet moved")
+            .. " | petDist "
+            .. string.format("%.1f", petDistance)
+        )
+    end
+
+    return false
+end
+
+local function SniperHoldCloseForServerValidation(entry, moveState, taskToken)
+
+    if SniperMoveStateIsTeleport(moveState) ~= true then
+
+        return true,
+            "walk mode skips pre-fire hold"
+    end
 
     local waitTime =
         math.clamp(
             tonumber(SniperState.BuyValidationHoldDelay)
-            or 0.85,
+            or 5.7,
             0.25,
-            2
+            10
         )
 
     local started =
         os.clock()
 
+    local nextStatusAt =
+        0
+
     while os.clock() - started < waitTime do
 
-        local _, root =
-            SniperGetCharacterRoot()
+        local allowed, stopInfo =
+            SniperBuyTaskStillAllowed(
+                taskToken
+            )
 
-        if root
-        and typeof(moveState) == "table"
-        and typeof(moveState.ClosePosition) == "Vector3" then
+        if allowed ~= true then
 
-            local distanceFromBuyPoint =
-                (root.Position - moveState.ClosePosition).Magnitude
+            return false,
+                tostring(stopInfo)
+        end
 
-            if distanceFromBuyPoint > 22 then
-                break
-            end
+        local elapsed =
+            os.clock() - started
+
+        if SniperEntryStillActive(entry) ~= true then
+            return false,
+                "pet no longer active during hold"
+        end
+
+        SniperMaybeFollowMovingBuy(
+            entry,
+            moveState,
+            "pre-fire hold "
+            .. string.format("%.2fs", elapsed)
+        )
+
+        if elapsed >= nextStatusAt then
+
+            nextStatusAt =
+                elapsed + 0.75
+
+            local petDistance, targetDistance =
+                SniperGetMovingBuyDistances(
+                    entry,
+                    moveState
+                )
+
+            SetSniperStatus(
+                "Holding near "
+                .. tostring(entry.Name)
+                .. " | "
+                .. string.format("%.1fs", math.max(0, waitTime - elapsed))
+                .. " | pet "
+                .. (
+                    petDistance
+                    and string.format("%.1f", petDistance)
+                    or "?"
+                )
+                .. " | target "
+                .. (
+                    targetDistance
+                    and string.format("%.1f", targetDistance)
+                    or "?"
+                )
+            )
         end
 
         task.wait(
-            0.05
+            0.15
         )
     end
+
+    return true,
+        "held close"
 end
+
+function SniperEnsureCloseBeforeWildBuy(entry, moveState, taskToken)
+
+    local allowed, stopInfo =
+        SniperBuyTaskStillAllowed(
+            taskToken
+        )
+
+    if allowed ~= true then
+
+        return false,
+            tostring(stopInfo)
+    end
+
+    if SniperMoveStateIsTeleport(moveState) ~= true then
+
+        local settleDelay =
+            math.clamp(
+                tonumber(SniperState.WalkSettleDelay)
+                or 0.35,
+                0.10,
+                1.25
+            )
+
+        local started =
+            os.clock()
+
+        while os.clock() - started < settleDelay do
+
+            allowed, stopInfo =
+                SniperBuyTaskStillAllowed(
+                    taskToken
+                )
+
+            if allowed ~= true then
+
+                return false,
+                    tostring(stopInfo)
+            end
+
+            task.wait(
+                0.05
+            )
+        end
+
+        local character, root =
+            SniperGetCharacterRoot()
+
+        if not character
+        or not root then
+
+            return false,
+                "missing character before walk fire"
+        end
+
+        local ref =
+            entry
+            and entry.Ref
+            or nil
+
+        if typeof(ref) ~= "Instance"
+        or ref.Parent == nil then
+
+            ref =
+                SniperFindRef(
+                    entry
+                    and entry.UUID
+                    or ""
+                )
+        end
+
+        if typeof(ref) == "Instance" then
+
+            local ownerUserId =
+                tonumber(
+                    ref:GetAttribute("OwnerUserId")
+                )
+                or 0
+
+            if ownerUserId ~= 0 then
+
+                return false,
+                    "pet already owned"
+            end
+
+            local stateText =
+                CleanText(
+                    ref:GetAttribute("State")
+                ):lower()
+
+            if stateText ~= ""
+            and stateText ~= "wandering" then
+
+                return false,
+                    "pet state "
+                    .. tostring(stateText)
+            end
+        end
+
+        local targetPosition =
+            SniperGetEntryTamePosition(
+                entry
+            )
+
+        if typeof(targetPosition) ~= "Vector3" then
+
+            return false,
+                "missing pet position before walk fire"
+        end
+
+        local distanceToPet =
+            (root.Position - targetPosition).Magnitude
+
+        local fireMaxDistance =
+            math.clamp(
+                tonumber(SniperState.WalkFireMaxDistance)
+                or 9.0,
+                6.0,
+                14.0
+            )
+
+        if distanceToPet <= fireMaxDistance then
+
+            return true,
+                "walk settled | pet "
+                .. string.format(
+                    "%.1f",
+                    distanceToPet
+                )
+        end
+
+        local prompt =
+            nil
+
+        if type(SniperFindEntryBuyPrompt) == "function" then
+
+            prompt =
+                SniperFindEntryBuyPrompt(
+                    entry
+                )
+        end
+
+        if typeof(prompt) == "Instance"
+        and prompt:IsA("ProximityPrompt") then
+
+            local promptParent =
+                prompt.Parent
+
+            local promptPosition =
+                nil
+
+            if typeof(promptParent) == "Instance" then
+
+                if promptParent:IsA("Attachment") then
+
+                    promptPosition =
+                        promptParent.WorldPosition
+
+                elseif promptParent:IsA("BasePart") then
+
+                    promptPosition =
+                        promptParent.Position
+                end
+            end
+
+            if typeof(promptPosition) == "Vector3" then
+
+                local promptDistance =
+                    (root.Position - promptPosition).Magnitude
+
+                local maxPromptDistance =
+                    12
+
+                pcall(function()
+
+                    maxPromptDistance =
+                        math.max(
+                            tonumber(prompt.MaxActivationDistance)
+                            or 12,
+                            8
+                        )
+                end)
+
+                if promptDistance <= maxPromptDistance - 0.75 then
+
+                    return true,
+                        "walk settled | prompt "
+                        .. string.format(
+                            "%.1f",
+                            promptDistance
+                        )
+                end
+            end
+        end
+
+        return false,
+            "walk too far before fire | pet "
+            .. string.format(
+                "%.1f",
+                distanceToPet
+            )
+    end
+
+    local petDistance =
+        SniperGetMovingBuyDistances(
+            entry,
+            moveState
+        )
+
+    local fireMaxDistance =
+        math.clamp(
+            tonumber(SniperState.FireMaxPetDistance)
+            or 9.0,
+            5.0,
+            18.0
+        )
+
+    if petDistance
+    and petDistance <= fireMaxDistance then
+
+        return true,
+            "already close"
+    end
+
+    local ok, info =
+        SniperRebuildMovingBuyTeleport(
+            entry,
+            moveState,
+            "final close check"
+        )
+
+    if ok ~= true then
+
+        return false,
+            tostring(info)
+    end
+
+    local extraHold =
+        math.clamp(
+            tonumber(SniperState.ExtraHoldAfterFinalResnap)
+            or 0.75,
+            0,
+            2.5
+        )
+
+    started =
+        os.clock()
+
+    while os.clock() - started < extraHold do
+
+        allowed, stopInfo =
+            SniperBuyTaskStillAllowed(
+                taskToken
+            )
+
+        if allowed ~= true then
+
+            return false,
+                tostring(stopInfo)
+        end
+
+        SniperMaybeFollowMovingBuy(
+            entry,
+            moveState,
+            "final extra hold"
+        )
+
+        task.wait(
+            0.15
+        )
+    end
+
+    petDistance =
+        SniperGetMovingBuyDistances(
+            entry,
+            moveState
+        )
+
+    if petDistance
+    and petDistance <= fireMaxDistance then
+
+        return true,
+            "close after final tp"
+    end
+
+    return false,
+        "too far before fire | pet "
+        .. (
+            petDistance
+            and string.format("%.1f", petDistance)
+            or "?"
+        )
+end
+
 
 function SniperGetPendingBuyRecordForEntry(entry)
 
@@ -30051,6 +39414,124 @@ function SniperWaitForBuyAccepted(entry, seconds)
     )
 end
 
+function SniperWaitForBuyRequestResult(entry, beforeSheckles, timeoutSeconds, moveState, taskToken)
+
+    local key =
+        SniperGetEntryKey(
+            entry
+        )
+
+    local started =
+        os.clock()
+
+    local timeout =
+        math.clamp(
+            tonumber(timeoutSeconds)
+            or tonumber(SniperState.BuyConfirmQuickTimeout)
+            or 4.00,
+            0.45,
+            10
+        )
+
+    beforeSheckles =
+        tonumber(beforeSheckles)
+
+    while os.clock() - started < timeout do
+
+        local allowed, stopInfo =
+            SniperBuyTaskStillAllowed(
+                taskToken
+            )
+
+        if allowed ~= true then
+
+            SniperClearPendingBuyKey(
+                key
+            )
+
+            return false,
+                tostring(stopInfo)
+        end
+
+        if SniperMoveStateIsTeleport(moveState) == true then
+
+            SniperMaybeFollowMovingBuy(
+                entry,
+                moveState,
+                "confirm"
+            )
+        end
+
+        local record =
+            type(SniperState.PendingWildPets) == "table"
+            and SniperState.PendingWildPets[key]
+            or nil
+
+        if type(record) == "table" then
+
+            if record.Confirmed == true
+            or record.Accepted == true then
+
+                return true,
+                    record.ConfirmReason
+                    or record.AcceptReason
+                    or "accepted"
+            end
+        end
+
+        local currentSheckles =
+            SniperGetLeaderstatsSheckles()
+
+        if beforeSheckles
+        and currentSheckles
+        and currentSheckles < beforeSheckles then
+
+            SniperMarkPendingShecklesDropByKey(
+                key,
+                currentSheckles,
+                "quick sheckles confirm"
+            )
+
+            return true,
+                "sheckles decreased "
+                .. tostring(beforeSheckles)
+                .. " -> "
+                .. tostring(currentSheckles)
+        end
+
+        task.wait(
+            0.07
+        )
+    end
+
+    local record =
+        type(SniperState.PendingWildPets) == "table"
+        and SniperState.PendingWildPets[key]
+        or nil
+
+    if type(record) == "table" then
+
+        record.CancelReason =
+            "quick confirm failed: sheckles unchanged"
+
+        record.Cancelled =
+            true
+    end
+
+    SniperClearPendingBuyKey(
+        key
+    )
+
+    if type(SniperState.HandledWildPets) == "table" then
+
+        SniperState.HandledWildPets[key] =
+            nil
+    end
+
+    return false,
+        "sheckles unchanged"
+end
+
 function SniperWatchShecklesForBuyConfirm(key)
 
     key =
@@ -30242,6 +39723,10 @@ function SniperStartBuyConfirmation(entry)
 
         while os.clock() - record.StartedAt < timeout do
 
+            if record.Cancelled == true then
+                return
+            end
+
             if record.Confirmed == true then
                 return
             end
@@ -30272,6 +39757,10 @@ function SniperStartBuyConfirmation(entry)
                 and 0.10
                 or 0.25
             )
+        end
+
+        if record.Cancelled == true then
+            return
         end
 
         if record.Confirmed == true then
@@ -30420,14 +39909,24 @@ function SniperFireWildBuyPacket(entry)
     return true, "fired"
 end
 
-function SniperAttemptBuyEntry(entry)
+function SniperAttemptBuyEntry(entry, options)
 
     if type(entry) ~= "table" then
         return false
     end
 
+    options =
+        type(options) == "table"
+        and options
+        or {}
+
+    local isManualBuy =
+        options.ManualBuy == true
+
     local readyToBuy, readyText =
-        SniperReadyToBuy()
+        SniperReadyToBuy(
+            isManualBuy == true
+        )
 
     if readyToBuy ~= true then
 
@@ -30469,27 +39968,77 @@ function SniperAttemptBuyEntry(entry)
         if type(pending) == "table"
         and pending.Confirmed ~= true then
 
-            SetSniperStatus(
-                "Already pending: "
-                .. tostring(entry.Name)
-            )
+            local age =
+                os.clock()
+                - (
+                    tonumber(pending.StartedAt)
+                    or os.clock()
+                )
 
-            return false
+            if pending.Accepted ~= true
+            and pending.ShecklesDropSeen ~= true
+            and age >= 3.25 then
+
+                pending.CancelReason =
+                    "stale pending cleared before retry"
+
+                SniperClearPendingBuyKey(
+                    attemptKey
+                )
+
+                SniperState.HandledWildPets[attemptKey] =
+                    nil
+
+            else
+
+                SetSniperStatus(
+                    "Already pending: "
+                    .. tostring(entry.Name)
+                )
+
+                return false
+            end
         end
 
         if pending == true then
 
+            SniperState.PendingWildPets[attemptKey] =
+                nil
+        end
+    end
+
+    if SniperIsEntryHandled(entry) == true then
+
+        local pending =
+            type(SniperState.PendingWildPets) == "table"
+            and SniperState.PendingWildPets[attemptKey]
+            or nil
+
+        if type(pending) == "table"
+        and (
+            pending.Confirmed == true
+            or pending.Accepted == true
+            or pending.ShecklesDropSeen == true
+        ) then
+
             SetSniperStatus(
-                "Already pending: "
+                "Already confirmed/handled: "
                 .. tostring(entry.Name)
             )
 
             return false
         end
-    end
 
-    if SniperIsEntryHandled(entry) == true then
-        return false
+        if type(SniperState.HandledWildPets) == "table" then
+
+            SniperState.HandledWildPets[attemptKey] =
+                nil
+        end
+
+        SetSniperStatus(
+            "Cleared stale handled state: "
+            .. tostring(entry.Name)
+        )
     end
 
     local lastAttempt =
@@ -30498,7 +40047,26 @@ function SniperAttemptBuyEntry(entry)
         )
         or 0
 
-    if os.clock() - lastAttempt < 1.25 then
+    local retryCooldown =
+        0.45
+
+    local retryRemaining =
+        retryCooldown
+        - (
+            os.clock()
+            - lastAttempt
+        )
+
+    if retryRemaining > 0 then
+
+        SetSniperStatus(
+            "Retry cooldown: "
+            .. string.format(
+                "%.2fs",
+                retryRemaining
+            )
+        )
+
         return false
     end
 
@@ -30509,7 +40077,11 @@ function SniperAttemptBuyEntry(entry)
         os.clock()
 
     SetSniperStatus(
-        "Buying "
+        (
+            isManualBuy == true
+            and "Manual buying "
+            or "Buying "
+        )
         .. tostring(entry.Name)
         .. " | "
         .. SniperGetMovementMode()
@@ -30517,7 +40089,25 @@ function SniperAttemptBuyEntry(entry)
         .. SniperGetBuyMode()
     )
 
+    local taskToken =
+        SniperBuildBuyTaskContext(
+            isManualBuy
+        )
+
     task.spawn(function()
+
+        local originalCFrame =
+            nil
+
+        local originalCharacter,
+            originalRoot =
+            SniperGetCharacterRoot()
+
+        if originalRoot then
+
+            originalCFrame =
+                originalRoot.CFrame
+        end
 
         local okTask, taskError =
             xpcall(
@@ -30526,113 +40116,413 @@ function SniperAttemptBuyEntry(entry)
                     SniperState.Taming =
                         true
 
-                    local moveState, moveInfo =
-                        SniperMoveToBuyPosition(
-                            entry
+                    local allowedStart, startStopInfo =
+                        SniperBuyTaskStillAllowed(
+                            taskToken
                         )
 
-                    if not moveState then
+                    if allowedStart ~= true then
 
                         SetSniperStatus(
-                            "Move failed."
-                        )
-
-                        warn(
-                            "[HOLY SNIPER]",
-                            "move failed",
-                            "| pet:",
-                            tostring(entry.Name),
-                            "| info:",
-                            tostring(moveInfo)
+                            "Buy stopped: "
+                            .. tostring(startStopInfo)
                         )
 
                         return
                     end
 
-                    local targetPosition =
-                        SniperGetEntryTamePosition(
-                            entry
-                        )
-
-                    if typeof(targetPosition) == "Vector3" then
-
-                        SniperAimAtPetPosition(
-                            targetPosition
-                        )
-                    end
-
-                    task.wait(
-                        0.08
+                    SniperSyncBehaviorOptionsFromUi(
+                        "buy attempt"
                     )
 
-                    local startedSheckles =
-                        SniperGetLeaderstatsSheckles()
+                    local movementMode =
+                        SniperGetMovementMode()
 
-                    entry._HolySniperStartedSheckles =
-                        startedSheckles
+                    local buyMode =
+                        SniperGetBuyMode()
 
-                    local okBuy =
-                        false
+                    local maxAttempts =
+                        1
 
-                    local info =
-                        "not fired"
+                    if buyMode == "Hold" then
 
-                    if SniperGetBuyMode() == "Hold" then
+                        maxAttempts =
+                            math.clamp(
+                                math.floor(
+                                    tonumber(SniperState.HoldMaxAttempts)
+                                    or 1
+                                ),
+                                1,
+                                2
+                            )
 
-                        okBuy, info =
-                            SniperHoldEntryBuyPrompt(
-                                entry,
-                                moveState
+                    elseif movementMode == "Walk" then
+
+                        maxAttempts =
+                            math.clamp(
+                                math.floor(
+                                    tonumber(SniperState.WalkInstantMaxAttempts)
+                                    or 2
+                                ),
+                                1,
+                                3
                             )
 
                     else
 
-                        okBuy, info =
-                            SniperFireWildBuyPacket(
-                                entry
+                        maxAttempts =
+                            math.clamp(
+                                math.floor(
+                                    tonumber(SniperState.TeleportInstantMaxAttempts)
+                                    or 1
+                                ),
+                                1,
+                                2
                             )
                     end
 
-                    if okBuy == true then
+                    local finalMoveState =
+                        nil
+
+                    for attemptNumber = 1, maxAttempts do
+
+                        local allowedAttempt, attemptStopInfo =
+                            SniperBuyTaskStillAllowed(
+                                taskToken
+                            )
+
+                        if allowedAttempt ~= true then
+
+                            SetSniperStatus(
+                                "Buy stopped: "
+                                .. tostring(attemptStopInfo)
+                            )
+
+                            break
+                        end
+
+                        if SniperEntryStillActive(entry) ~= true then
+
+                            SetSniperStatus(
+                                "Pet no longer active: "
+                                .. tostring(entry.Name)
+                            )
+
+                            break
+                        end
+
+                        SniperState.RecentTameAttempts[attemptKey] =
+                            os.clock()
 
                         SetSniperStatus(
-                            "Buy request sent. Verifying Sheckles: "
+                            "Buy attempt "
+                            .. tostring(attemptNumber)
+                            .. "/"
+                            .. tostring(maxAttempts)
+                            .. ": "
                             .. tostring(entry.Name)
                         )
+
+                        local moveState, moveInfo =
+                            SniperMoveToBuyPosition(
+                                entry,
+                                taskToken
+                            )
+
+                        finalMoveState =
+                            moveState
+
+                        if type(moveState) == "table"
+                        and typeof(originalCFrame) == "CFrame" then
+
+                            moveState.OldCFrame =
+                                originalCFrame
+                        end
+
+                        if not moveState then
+
+                            SetSniperStatus(
+                                "Move failed: "
+                                .. tostring(moveInfo)
+                            )
+
+                            warn(
+                                "[HOLY SNIPER]",
+                                "move failed",
+                                "| pet:",
+                                tostring(entry.Name),
+                                "| attempt:",
+                                tostring(attemptNumber),
+                                "| info:",
+                                tostring(moveInfo)
+                            )
+
+                            break
+                        end
+
+                        local allowedBeforeHold, beforeHoldStopInfo =
+                            SniperBuyTaskStillAllowed(
+                                taskToken
+                            )
+
+                        if allowedBeforeHold ~= true then
+
+                            SetSniperStatus(
+                                "Buy stopped: "
+                                .. tostring(beforeHoldStopInfo)
+                            )
+
+                            break
+                        end
+
+                        if SniperMoveStateIsTeleport(moveState) == true then
+
+                            local holdOk, holdInfo =
+                                SniperHoldCloseForServerValidation(
+                                    entry,
+                                    moveState,
+                                    taskToken
+                                )
+
+                            if holdOk ~= true then
+
+                                SetSniperStatus(
+                                    "Hold failed: "
+                                    .. tostring(holdInfo)
+                                )
+
+                                warn(
+                                    "[HOLY SNIPER]",
+                                    "pre-fire hold failed",
+                                    "| pet:",
+                                    tostring(entry.Name),
+                                    "| attempt:",
+                                    tostring(attemptNumber),
+                                    "| info:",
+                                    tostring(holdInfo)
+                                )
+
+                                break
+                            end
+
+                            local closeOk, closeInfo =
+                                SniperEnsureCloseBeforeWildBuy(
+                                    entry,
+                                    moveState,
+                                    taskToken
+                                )
+
+                            if closeOk ~= true then
+
+                                SetSniperStatus(
+                                    "Too far before buy: "
+                                    .. tostring(closeInfo)
+                                )
+
+                                warn(
+                                    "[HOLY SNIPER]",
+                                    "final close check failed",
+                                    "| pet:",
+                                    tostring(entry.Name),
+                                    "| attempt:",
+                                    tostring(attemptNumber),
+                                    "| info:",
+                                    tostring(closeInfo)
+                                )
+
+                                break
+                            end
+
+                        else
+
+                            SetSniperStatus(
+                                "Walk close reached. Buying instantly: "
+                                .. tostring(entry.Name)
+                            )
+                        end
+
+                        local postMoveBuyDelay =
+                            SniperClampDelayNumber(
+                                SniperState.PostMoveBuyDelay,
+                                0.02,
+                                0,
+                                3
+                            )
+
+                        if postMoveBuyDelay > 0 then
+
+                            task.wait(
+                                postMoveBuyDelay
+                            )
+                        end
+
+                        local allowedBeforeFire, beforeFireStopInfo =
+                            SniperBuyTaskStillAllowed(
+                                taskToken
+                            )
+
+                        if allowedBeforeFire ~= true then
+
+                            SetSniperStatus(
+                                "Buy stopped before fire: "
+                                .. tostring(beforeFireStopInfo)
+                            )
+
+                            break
+                        end
+
+                        local startedSheckles =
+                            SniperGetLeaderstatsSheckles()
+
+                        entry._HolySniperStartedSheckles =
+                            startedSheckles
 
                         SniperStartBuyConfirmation(
                             entry
                         )
 
-                        SniperHoldCloseForServerValidation(
-                            moveState
-                        )
+                        local okBuy =
+                            false
 
-                        SniperRestoreAfterTame(
-                            moveState
-                        )
+                        local info =
+                            "not fired"
 
-                    else
+                        if SniperGetBuyMode() == "Hold" then
 
-                        SniperRestoreAfterTame(
-                            moveState
-                        )
+                            okBuy, info =
+                                SniperHoldEntryBuyPrompt(
+                                    entry,
+                                    moveState
+                                )
 
-                        SetSniperStatus(
-                            "Buy failed."
-                        )
+                        else
 
-                        warn(
-                            "[HOLY SNIPER]",
-                            "buy failed",
-                            "| pet:",
-                            tostring(entry.Name),
-                            "| info:",
-                            tostring(info),
-                            "| move:",
-                            tostring(moveInfo)
-                        )
+                            okBuy, info =
+                                SniperFireWildBuyPacket(
+                                    entry
+                                )
+                        end
+
+                        if okBuy ~= true then
+
+                            SniperClearPendingBuyKey(
+                                attemptKey
+                            )
+
+                            SniperState.HandledWildPets[attemptKey] =
+                                nil
+
+                            SetSniperStatus(
+                                "Buy fire failed: "
+                                .. tostring(info)
+                            )
+
+                            warn(
+                                "[HOLY SNIPER]",
+                                "buy fire failed",
+                                "| pet:",
+                                tostring(entry.Name),
+                                "| attempt:",
+                                tostring(attemptNumber),
+                                "| info:",
+                                tostring(info),
+                                "| move:",
+                                tostring(moveInfo)
+                            )
+
+                        else
+
+                            SetSniperStatus(
+                                "Buy fired. Waiting sheckles: "
+                                .. tostring(entry.Name)
+                            )
+
+                            local confirmed, confirmInfo =
+                                SniperWaitForBuyRequestResult(
+                                    entry,
+                                    startedSheckles,
+                                    SniperState.BuyConfirmQuickTimeout,
+                                    moveState,
+                                    taskToken
+                                )
+
+                            if confirmed == true then
+
+                                SetSniperStatus(
+                                    "Buy confirmed: "
+                                    .. tostring(entry.Name)
+                                    .. " | "
+                                    .. tostring(confirmInfo)
+                                )
+
+                                SniperRestoreAfterTame(
+                                    moveState
+                                )
+
+                                if type(SniperScheduleBatchReturnCheck) == "function" then
+
+                                    SniperScheduleBatchReturnCheck(
+                                        "buy confirmed"
+                                    )
+                                end
+
+                                return
+                            end
+
+                            SniperState.HandledWildPets[attemptKey] =
+                                nil
+
+                            SniperClearPendingBuyKey(
+                                attemptKey
+                            )
+
+                            SetSniperStatus(
+                                "Buy not counted, retrying: "
+                                .. tostring(confirmInfo)
+                            )
+
+                            warn(
+                                "[HOLY SNIPER]",
+                                "buy not counted",
+                                "| pet:",
+                                tostring(entry.Name),
+                                "| attempt:",
+                                tostring(attemptNumber),
+                                "| reason:",
+                                tostring(confirmInfo),
+                                "| sheckles:",
+                                tostring(startedSheckles),
+                                "->",
+                                tostring(SniperGetLeaderstatsSheckles())
+                            )
+                        end
+
+                        if attemptNumber < maxAttempts then
+
+                            task.wait(
+                                math.clamp(
+                                    tonumber(SniperState.BuyRetryDelay)
+                                    or 0.75,
+                                    0.25,
+                                    3
+                                )
+                            )
+                        end
                     end
+
+                    SniperClearPendingBuyKey(
+                        attemptKey
+                    )
+
+                    if type(SniperState.HandledWildPets) == "table" then
+
+                        SniperState.HandledWildPets[attemptKey] =
+                            nil
+                    end
+
+                    SetSniperStatus(
+                        "Buy failed: no sheckles confirm. Staying close."
+                    )
                 end,
 
                 function(errorValue)
@@ -30667,6 +40557,13 @@ function SniperAttemptBuyEntry(entry)
 
         if okTask ~= true then
 
+            SniperClearPendingBuyKey(
+                attemptKey
+            )
+
+            SniperState.HandledWildPets[attemptKey] =
+                nil
+
             SetSniperStatus(
                 "Buy task error. Check console."
             )
@@ -30681,6 +40578,7 @@ function SniperAttemptBuyEntry(entry)
 
     return true
 end
+
 local function SniperGetDropdownPetNames()
 
     local names =
@@ -31980,6 +41878,10 @@ function SniperScan(allowAutoHop)
         "No target found."
     )
 
+    SniperTryReturnAfterBatch(
+        "no remaining matches"
+    )
+
     local hasHandledActiveTarget =
         false
 
@@ -32098,10 +42000,24 @@ end
 
 function SniperSetEnabled(value)
 
-    SniperState.Enabled =
+    local enabled =
         value == true
 
-    if SniperState.Enabled == true then
+    SniperState.Enabled =
+        enabled
+
+    if enabled == true then
+
+        SniperSyncBehaviorOptionsFromUi(
+            "sniper enabled"
+        )
+
+        SniperState.StopRequested =
+            false
+
+        SniperBumpBuyTaskToken(
+            "sniper enabled"
+        )
 
         SniperState.EnabledAt =
             os.clock()
@@ -32147,6 +42063,17 @@ function SniperSetEnabled(value)
 
     else
 
+        SniperState.StopRequested =
+            true
+
+        SniperBumpBuyTaskToken(
+            "sniper disabled"
+        )
+
+        SniperStopCharacterMovementNow(
+            "Sniper disabled."
+        )
+
         GAG2_SERVER_HOP_RETRYING =
             false
 
@@ -32157,6 +42084,26 @@ function SniperSetEnabled(value)
             false
 
         SniperState.EnabledAt =
+            0
+
+        SniperState.Taming =
+            false
+
+        SniperState.ConfirmingBuy =
+            false
+
+        SniperState.ConfirmingBuyKey =
+            ""
+
+        SniperState.PendingWildPets =
+            {}
+
+        SniperClearBatchReturnState()
+
+        SniperState.ReturningAfterBuy =
+            false
+
+        SniperState.ReturnLockUntil =
             0
 
         GAG2SetPanicHudStatus(
@@ -32225,8 +42172,36 @@ function StopGAG2SniperNow(reason)
     SniperState.Running =
         false
 
+    SniperState.StopRequested =
+        true
+
+    SniperBumpBuyTaskToken(
+        "manual sniper stop"
+    )
+
+    SniperStopCharacterMovementNow(
+        tostring(reason or "Sniper stopped.")
+    )
+
     SniperState.FirstHopUsed =
         false
+
+    SniperState.EnabledAt =
+        0
+
+    SniperState.Taming =
+        false
+
+    SniperState.ConfirmingBuy =
+        false
+
+    SniperState.ConfirmingBuyKey =
+        ""
+
+    SniperState.PendingWildPets =
+        {}
+
+    SniperClearBatchReturnState()
 
     SetSniperStatus(
         tostring(reason or "Sniper stopped.")
@@ -32685,8 +42660,17 @@ function RestoreSniperAutosaveState()
         local returnAfterTame =
             Toggles.HolyGAG2SniperReturnAfterTame
 
+        local returnAfterBatch =
+            Toggles.HolyGAG2SniperReturnAfterBatch
+
         local followPet =
             Toggles.HolyGAG2SniperFollowPet
+
+        local movementMode =
+            Options.HolyGAG2SniperMovementMode
+
+        local buyMode =
+            Options.HolyGAG2SniperBuyMode
 
         local returnMovementMode =
             Options.HolyGAG2SniperReturnMode
@@ -32722,6 +42706,22 @@ function RestoreSniperAutosaveState()
                 false
         end
 
+        if returnAfterBatch then
+
+            SniperState.ReturnAfterBatch =
+                returnAfterBatch.Value == true
+
+        else
+
+            SniperState.ReturnAfterBatch =
+                false
+        end
+
+        if SniperState.ReturnAfterBatch ~= true then
+
+            SniperClearBatchReturnState()
+        end
+
         if followPet then
 
             SniperState.FollowPet =
@@ -32732,6 +42732,43 @@ function RestoreSniperAutosaveState()
             SniperState.FollowPet =
                 false
         end
+
+                if movementMode
+        and movementMode.Value ~= nil then
+
+            SniperState.MovementMode =
+                SniperNormalizeMovementModeValue(
+                    movementMode.Value,
+                    "Walk"
+                )
+
+        else
+
+            SniperState.MovementMode =
+                SniperNormalizeMovementModeValue(
+                    SniperState.MovementMode,
+                    "Walk"
+                )
+        end
+
+        if buyMode
+        and buyMode.Value ~= nil then
+
+            SniperState.BuyMode =
+                SniperNormalizeBuyModeValue(
+                    buyMode.Value,
+                    "Instant"
+                )
+
+        else
+
+            SniperState.BuyMode =
+                SniperNormalizeBuyModeValue(
+                    SniperState.BuyMode,
+                    "Instant"
+                )
+        end
+
 
         if returnMovementMode
         and returnMovementMode.Value ~= nil then
@@ -33372,7 +43409,10 @@ function GAG2HomeManualBuyPetIndex(index)
 
     local started =
         SniperAttemptBuyEntry(
-            entry
+            entry,
+            {
+                ManualBuy = true,
+            }
         )
 
     if started == true then
@@ -33409,7 +43449,10 @@ function GAG2HomeManualBuyPetIndex(index)
 
     Notify(
         "Live Pets",
-        "Could not start buy. It may already be handled.",
+        tostring(
+            SniperState.LastStatus
+            or "Could not start buy."
+        ),
         3
     )
 
@@ -36675,37 +46718,170 @@ function GAG2WeatherWebhookIsEnabledEvent(weatherName)
     return GAG2_WEATHER_WEBHOOK_EVENTS[weatherName] == true
 end
 
-function GAG2WeatherWebhookGetCurrentEvent()
+function GAG2WeatherWebhookCandidateWeatherNames()
 
-    local weatherName =
+    return {
+        "Rain",
+        "Lightning",
+        "Rainbow",
+        "Snowfall",
+        "Starfall",
+    }
+end
+
+function GAG2WeatherWebhookReadValueBaseValue(object)
+
+    if typeof(object) ~= "Instance" then
+        return nil
+    end
+
+    if object:IsA("ValueBase") ~= true then
+        return nil
+    end
+
+    local ok, value =
+        pcall(function()
+
+            return object.Value
+        end)
+
+    if ok == true then
+        return value
+    end
+
+    return nil
+end
+
+function GAG2WeatherWebhookReadBoolish(value)
+
+    if typeof(value) == "boolean" then
+        return value == true
+    end
+
+    if typeof(value) == "number" then
+        return value ~= 0
+    end
+
+    local text =
+        CleanText(value):lower()
+
+    return text == "true"
+        or text == "1"
+        or text == "yes"
+        or text == "on"
+        or text == "active"
+        or text == "playing"
+        or text == "enabled"
+end
+
+function GAG2WeatherWebhookReadNumberish(value)
+
+    local number =
+        tonumber(value)
+
+    if number then
+        return number
+    end
+
+    return 0
+end
+
+function GAG2WeatherWebhookGetWeatherValuesRoot()
+
+    return ReplicatedStorage:FindFirstChild(
+        "WeatherValues"
+    )
+end
+
+function GAG2WeatherWebhookReadWeatherValue(root, folder, weatherName, valueName)
+
+    if typeof(folder) == "Instance" then
+
+        local child =
+            folder:FindFirstChild(
+                valueName
+            )
+
+        local value =
+            GAG2WeatherWebhookReadValueBaseValue(
+                child
+            )
+
+        if value ~= nil then
+            return value
+        end
+
+        local ok, attributeValue =
+            pcall(function()
+
+                return folder:GetAttribute(
+                    valueName
+                )
+            end)
+
+        if ok == true
+        and attributeValue ~= nil then
+            return attributeValue
+        end
+    end
+
+    if typeof(root) == "Instance" then
+
+        local directChild =
+            root:FindFirstChild(
+                tostring(weatherName)
+                .. "_"
+                .. tostring(valueName)
+            )
+
+        local directValue =
+            GAG2WeatherWebhookReadValueBaseValue(
+                directChild
+            )
+
+        if directValue ~= nil then
+            return directValue
+        end
+
+        local ok, attributeValue =
+            pcall(function()
+
+                return root:GetAttribute(
+                    tostring(weatherName)
+                    .. "_"
+                    .. tostring(valueName)
+                )
+            end)
+
+        if ok == true
+        and attributeValue ~= nil then
+            return attributeValue
+        end
+    end
+
+    return nil
+end
+
+function GAG2WeatherWebhookBuildEventFromRaw(weatherName, phaseName, rawEndTime, source)
+
+    weatherName =
         CleanText(
-            workspace:GetAttribute("ActiveWeather")
+            weatherName
         )
 
     if weatherName == "" then
-        return nil,
-            "missing ActiveWeather"
+        return nil
     end
 
     if GAG2WeatherWebhookIsEnabledEvent(weatherName) ~= true then
-
-        return nil,
-            "event disabled: "
-            .. weatherName
+        return nil
     end
-
-    local phaseName =
-        CleanText(
-            workspace:GetAttribute("ActivePhase")
-        )
 
     local now =
         GAG2WeatherWebhookGetNow()
 
     local rawPhaseDuration =
-        tonumber(
-            workspace:GetAttribute("PhaseDuration")
-        )
+        tonumber(rawEndTime)
         or 0
 
     local phaseEnd =
@@ -36754,10 +46930,6 @@ function GAG2WeatherWebhookGetCurrentEvent()
             )
     end
 
-    -- Important:
-    -- Do not include phaseName in the key.
-    -- ActiveWeather / ActivePhase / PhaseDuration can update separately,
-    -- and including phaseName can cause 2-3 Discord sends for one event.
     local key =
         tostring(game.PlaceId)
         .. ":"
@@ -36766,14 +46938,283 @@ function GAG2WeatherWebhookGetCurrentEvent()
         .. tostring(phaseEndBucket)
 
     return {
-        Name = weatherName,
-        Phase = phaseName,
-        Now = now,
-        PhaseEnd = phaseEnd,
-        Remaining = remaining,
-        Key = key,
+        Name =
+            weatherName,
+
+        Phase =
+            CleanText(phaseName) ~= ""
+            and CleanText(phaseName)
+            or tostring(source or "WeatherValues"),
+
+        Source =
+            tostring(source or "WeatherValues"),
+
+        Now =
+            now,
+
+        PhaseEnd =
+            phaseEnd,
+
+        Remaining =
+            remaining,
+
+        Key =
+            key,
     }
 end
+
+function GAG2WeatherWebhookGetWeatherValuesEvents()
+
+    local root =
+        GAG2WeatherWebhookGetWeatherValuesRoot()
+
+    if typeof(root) ~= "Instance" then
+        return {}
+    end
+
+    local nameSet =
+        {}
+
+    local ordered =
+        {}
+
+    local function addName(name)
+
+        name =
+            CleanText(name)
+
+        if name == "" then
+            return
+        end
+
+        if nameSet[name] == true then
+            return
+        end
+
+        nameSet[name] =
+            true
+
+        table.insert(
+            ordered,
+            name
+        )
+    end
+
+    for _, weatherName in ipairs(GAG2WeatherWebhookCandidateWeatherNames()) do
+
+        addName(
+            weatherName
+        )
+    end
+
+    for _, child in ipairs(root:GetChildren()) do
+
+        addName(
+            child.Name
+        )
+    end
+
+    local ok, attributes =
+        pcall(function()
+
+            return root:GetAttributes()
+        end)
+
+    if ok == true
+    and type(attributes) == "table" then
+
+        for attributeName in pairs(attributes) do
+
+            local fromPlaying =
+                tostring(attributeName):match("^(.-)_Playing$")
+
+            local fromEndTime =
+                tostring(attributeName):match("^(.-)_EndTime$")
+
+            addName(
+                fromPlaying
+                or fromEndTime
+                or ""
+            )
+        end
+    end
+
+    local events =
+        {}
+
+    for _, weatherName in ipairs(ordered) do
+
+        local folder =
+            root:FindFirstChild(
+                weatherName
+            )
+
+        local playingRaw =
+            GAG2WeatherWebhookReadWeatherValue(
+                root,
+                folder,
+                weatherName,
+                "Playing"
+            )
+
+        local endTimeRaw =
+            GAG2WeatherWebhookReadWeatherValue(
+                root,
+                folder,
+                weatherName,
+                "EndTime"
+            )
+
+        local playing =
+            GAG2WeatherWebhookReadBoolish(
+                playingRaw
+            )
+
+        local rawEndTime =
+            GAG2WeatherWebhookReadNumberish(
+                endTimeRaw
+            )
+
+        local now =
+            GAG2WeatherWebhookGetNow()
+
+        local absoluteEnd =
+            0
+
+        if rawEndTime > 1000000000 then
+
+            absoluteEnd =
+                rawEndTime
+
+        elseif rawEndTime > 0 then
+
+            absoluteEnd =
+                now + rawEndTime
+        end
+
+        local activeByEndTime =
+            absoluteEnd > now
+
+        if playing == true
+        or activeByEndTime == true then
+
+            local event =
+                GAG2WeatherWebhookBuildEventFromRaw(
+                    weatherName,
+                    "Real Weather",
+                    rawEndTime,
+                    "WeatherValues"
+                )
+
+            if event then
+
+                table.insert(
+                    events,
+                    event
+                )
+            end
+        end
+    end
+
+    return events
+end
+
+function GAG2WeatherWebhookGetWorkspaceEvent()
+
+    local weatherName =
+        CleanText(
+            workspace:GetAttribute("ActiveWeather")
+        )
+
+    if weatherName == "" then
+        return nil
+    end
+
+    local phaseName =
+        CleanText(
+            workspace:GetAttribute("ActivePhase")
+        )
+
+    local rawPhaseDuration =
+        tonumber(
+            workspace:GetAttribute("PhaseDuration")
+        )
+        or 0
+
+    return GAG2WeatherWebhookBuildEventFromRaw(
+        weatherName,
+        phaseName,
+        rawPhaseDuration,
+        "Workspace"
+    )
+end
+
+function GAG2WeatherWebhookGetCurrentEvents()
+
+    local events =
+        {}
+
+    local seen =
+        {}
+
+    local function addEvent(event)
+
+        if type(event) ~= "table" then
+            return
+        end
+
+        local key =
+            CleanText(
+                event.Key
+            )
+
+        if key == "" then
+            return
+        end
+
+        if seen[key] == true then
+            return
+        end
+
+        seen[key] =
+            true
+
+        table.insert(
+            events,
+            event
+        )
+    end
+
+    for _, event in ipairs(GAG2WeatherWebhookGetWeatherValuesEvents()) do
+
+        addEvent(
+            event
+        )
+    end
+
+    addEvent(
+        GAG2WeatherWebhookGetWorkspaceEvent()
+    )
+
+    return events
+end
+
+function GAG2WeatherWebhookGetCurrentEvent()
+
+    local events =
+        GAG2WeatherWebhookGetCurrentEvents()
+
+    if type(events) ~= "table"
+    or #events <= 0 then
+
+        return nil,
+            "no active weather"
+    end
+
+    return events[1],
+        "ok"
+end
+
 
 function GAG2WeatherWebhookAlreadySent(key)
 
@@ -37405,37 +47846,72 @@ function GAG2WeatherWebhookScan(force)
     state.LastScanAt =
         now
 
-    local event, reason =
-        GAG2WeatherWebhookGetCurrentEvent()
+    local events =
+        {}
 
-    if not event then
+    if type(GAG2WeatherWebhookGetCurrentEvents) == "function" then
+
+        events =
+            GAG2WeatherWebhookGetCurrentEvents()
+
+    else
+
+        local event =
+            GAG2WeatherWebhookGetCurrentEvent()
+
+        if event then
+
+            events = {
+                event,
+            }
+        end
+    end
+
+    if type(events) ~= "table"
+    or #events <= 0 then
+
         return false,
-            reason
+            "no active weather"
     end
 
-    if GAG2WeatherWebhookAlreadySent(event.Key) == true then
-        return false,
-            "already sent"
+    local sentAny =
+        false
+
+    local lastInfo =
+        "no unsent events"
+
+    for _, event in ipairs(events) do
+
+        if type(event) == "table"
+        and GAG2WeatherWebhookAlreadySent(event.Key) ~= true then
+
+            local sent, sendInfo =
+                GAG2WeatherWebhookSend(
+                    event
+                )
+
+            lastInfo =
+                tostring(sendInfo)
+
+            if sent == true then
+
+                sentAny =
+                    true
+
+                GAG2WeatherWebhookMarkSent(
+                    event.Key
+                )
+
+                state.LastKey =
+                    event.Key
+            end
+        end
     end
 
-    local sent, sendInfo =
-        GAG2WeatherWebhookSend(
-            event
-        )
-
-    if sent == true then
-
-        GAG2WeatherWebhookMarkSent(
-            event.Key
-        )
-
-        state.LastKey =
-            event.Key
-    end
-
-    return sent,
-        sendInfo
+    return sentAny,
+        lastInfo
 end
+
 
 function GAG2WeatherWebhookArm()
 
@@ -37463,25 +47939,139 @@ function GAG2WeatherWebhookArm()
         end)
     end
 
+    local function connectSignal(signal)
+
+        pcall(function()
+
+            signal:Connect(
+                trigger
+            )
+        end)
+    end
+
     pcall(function()
 
-        workspace:GetAttributeChangedSignal("ActiveWeather"):Connect(
-            trigger
+        connectSignal(
+            workspace:GetAttributeChangedSignal("ActiveWeather")
         )
     end)
 
     pcall(function()
 
-        workspace:GetAttributeChangedSignal("ActivePhase"):Connect(
-            trigger
+        connectSignal(
+            workspace:GetAttributeChangedSignal("ActivePhase")
         )
     end)
 
     pcall(function()
 
-        workspace:GetAttributeChangedSignal("PhaseDuration"):Connect(
-            trigger
+        connectSignal(
+            workspace:GetAttributeChangedSignal("PhaseDuration")
         )
+    end)
+
+    local function attachWeatherValuesRoot(root)
+
+        if typeof(root) ~= "Instance" then
+            return
+        end
+
+        for _, weatherName in ipairs(GAG2WeatherWebhookCandidateWeatherNames()) do
+
+            pcall(function()
+
+                connectSignal(
+                    root:GetAttributeChangedSignal(
+                        tostring(weatherName)
+                        .. "_Playing"
+                    )
+                )
+            end)
+
+            pcall(function()
+
+                connectSignal(
+                    root:GetAttributeChangedSignal(
+                        tostring(weatherName)
+                        .. "_EndTime"
+                    )
+                )
+            end)
+        end
+
+        local function attachValueObject(object)
+
+            if typeof(object) ~= "Instance" then
+                return
+            end
+
+            if object:IsA("ValueBase") == true then
+
+                pcall(function()
+
+                    object.Changed:Connect(
+                        trigger
+                    )
+                end)
+            end
+        end
+
+        for _, descendant in ipairs(root:GetDescendants()) do
+
+            attachValueObject(
+                descendant
+            )
+        end
+
+        pcall(function()
+
+            root.ChildAdded:Connect(function(child)
+
+                task.defer(function()
+
+                    attachValueObject(
+                        child
+                    )
+
+                    for _, descendant in ipairs(child:GetDescendants()) do
+
+                        attachValueObject(
+                            descendant
+                        )
+                    end
+
+                    trigger()
+                end)
+            end)
+        end)
+    end
+
+    local weatherValues =
+        GAG2WeatherWebhookGetWeatherValuesRoot()
+
+    if weatherValues then
+
+        attachWeatherValuesRoot(
+            weatherValues
+        )
+    end
+
+    pcall(function()
+
+        ReplicatedStorage.ChildAdded:Connect(function(child)
+
+            if child.Name == "WeatherValues" then
+
+                task.defer(function()
+
+                    attachWeatherValuesRoot(
+                        child
+                    )
+
+                    trigger()
+                end)
+            end
+        end)
     end)
 
     task.defer(function()
@@ -37495,6 +48085,7 @@ function GAG2WeatherWebhookArm()
         )
     end)
 end
+
 
 GAG2WeatherWebhookArm()
 
@@ -45796,115 +56387,284 @@ end
 
 function GAG2VersionHopReadCurrentVersion()
 
-    local label =
-        GAG2VersionHopGetLabelExact()
-
-    if label then
-
-        local ok, text =
-            pcall(function()
-
-                return label.Text
-            end)
+    local function acceptVersion(value, source)
 
         local version =
-            ok == true
-            and GAG2VersionHopNormalizeVersion(text)
-            or ""
+            GAG2VersionHopNormalizeVersion(
+                value
+            )
 
         if version ~= "" then
 
             GAG2_VERSION_HOP_STATE.CurrentVersion =
                 version
 
+            GAG2_VERSION_HOP_STATE.LastVersionSource =
+                tostring(source or "unknown")
+
             return version,
+                tostring(source or "unknown")
+        end
+
+        return "",
+            tostring(source or "empty")
+    end
+
+    local function readTextObject(object, source)
+
+        if typeof(object) ~= "Instance" then
+            return "", tostring(source or "bad object")
+        end
+
+        if object:IsA("TextLabel") ~= true
+        and object:IsA("TextButton") ~= true
+        and object:IsA("TextBox") ~= true then
+
+            return "",
+                tostring(source or "not text object")
+        end
+
+        local ok, text =
+            pcall(function()
+
+                return object.Text
+            end)
+
+        if ok ~= true then
+            return "", tostring(source or "text read failed")
+        end
+
+        return acceptVersion(
+            text,
+            source
+        )
+    end
+
+    local label =
+        GAG2VersionHopGetLabelExact()
+
+    if label then
+
+        local version, source =
+            readTextObject(
+                label,
                 "exact"
+            )
+
+        if version ~= "" then
+            return version, source
         end
     end
+
+    local roots =
+        {}
 
     local playerGui =
         LOCAL_PLAYER
         and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
 
-    if not playerGui then
+    if playerGui then
 
-        return "",
-            "PlayerGui missing"
+        table.insert(
+            roots,
+            {
+                Root = playerGui,
+                Name = "PlayerGui",
+            }
+        )
     end
 
-    local scanned =
-        0
+    if CoreGui then
 
-    for _, descendant in ipairs(playerGui:GetDescendants()) do
+        table.insert(
+            roots,
+            {
+                Root = CoreGui,
+                Name = "CoreGui",
+            }
+        )
+    end
 
-        scanned = scanned + 1
+    for _, rootInfo in ipairs(roots) do
 
-        if scanned > 10000 then
-            break
-        end
+        local root =
+            rootInfo.Root
 
-        if descendant.Name == "VersionLabel"
-        and (
-            descendant:IsA("TextLabel")
-            or descendant:IsA("TextButton")
-            or descendant:IsA("TextBox")
-        ) then
+        local scanned =
+            0
 
-            local ok, text =
-                pcall(function()
+        for _, descendant in ipairs(root:GetDescendants()) do
 
-                    return descendant.Text
-                end)
+            scanned =
+                scanned + 1
 
-            local version =
-                ok == true
-                and GAG2VersionHopNormalizeVersion(text)
-                or ""
+            if scanned > 15000 then
+                break
+            end
 
-            if version ~= "" then
+            if descendant.Name == "VersionLabel"
+            and (
+                descendant:IsA("TextLabel")
+                or descendant:IsA("TextButton")
+                or descendant:IsA("TextBox")
+            ) then
 
-                GAG2_VERSION_HOP_STATE.CurrentVersion =
-                    version
+                local version, source =
+                    readTextObject(
+                        descendant,
+                        tostring(rootInfo.Name)
+                        .. " VersionLabel"
+                    )
 
-                return version,
-                    "VersionLabel scan"
+                if version ~= "" then
+                    return version, source
+                end
             end
         end
     end
 
-    scanned =
-        0
+    for _, rootInfo in ipairs(roots) do
 
-    for _, descendant in ipairs(playerGui:GetDescendants()) do
+        local root =
+            rootInfo.Root
 
-        scanned = scanned + 1
+        local scanned =
+            0
 
-        if scanned > 10000 then
-            break
+        for _, descendant in ipairs(root:GetDescendants()) do
+
+            scanned =
+                scanned + 1
+
+            if scanned > 15000 then
+                break
+            end
+
+            if descendant:IsA("TextLabel")
+            or descendant:IsA("TextButton")
+            or descendant:IsA("TextBox") then
+
+                local ok, text =
+                    pcall(function()
+
+                        return descendant.Text
+                    end)
+
+                text =
+                    ok == true
+                    and CleanText(text)
+                    or ""
+
+                local lowerText =
+                    text:lower()
+
+                if lowerText:match("^v%d+$")
+                or lowerText:match("^server%s+v%d+$")
+                or lowerText:match("server%s+version%s+v?%d+") then
+
+                    local version, source =
+                        acceptVersion(
+                            text,
+                            tostring(rootInfo.Name)
+                            .. " text scan"
+                        )
+
+                    if version ~= "" then
+                        return version, source
+                    end
+                end
+            end
         end
+    end
 
-        if descendant:IsA("TextLabel")
-        or descendant:IsA("TextButton")
-        or descendant:IsA("TextBox") then
+    local attributeRoots = {
+        game,
+        ReplicatedStorage,
+        workspace:FindFirstChild("Map"),
+        LOCAL_PLAYER,
+    }
 
-            local ok, text =
+    for _, root in ipairs(attributeRoots) do
+
+        if typeof(root) == "Instance" then
+
+            local ok, attributes =
                 pcall(function()
 
-                    return descendant.Text
+                    return root:GetAttributes()
                 end)
 
-            local version =
-                ok == true
-                and GAG2VersionHopNormalizeVersion(text)
-                or ""
+            if ok == true
+            and type(attributes) == "table" then
 
-            if version ~= "" then
+                for attributeName, attributeValue in pairs(attributes) do
 
-                GAG2_VERSION_HOP_STATE.CurrentVersion =
-                    version
+                    local lowerName =
+                        tostring(attributeName):lower()
 
-                return version,
-                    "text scan"
+                    if lowerName:find("version", 1, true)
+                    or lowerName:find("serverversion", 1, true) then
+
+                        local version, source =
+                            acceptVersion(
+                                attributeValue,
+                                "attribute "
+                                .. tostring(root.Name)
+                                .. "."
+                                .. tostring(attributeName)
+                            )
+
+                        if version ~= "" then
+                            return version, source
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local valueRoots = {
+        ReplicatedStorage,
+        workspace:FindFirstChild("Map"),
+    }
+
+    for _, root in ipairs(valueRoots) do
+
+        if typeof(root) == "Instance" then
+
+            local scanned =
+                0
+
+            for _, descendant in ipairs(root:GetDescendants()) do
+
+                scanned =
+                    scanned + 1
+
+                if scanned > 5000 then
+                    break
+                end
+
+                local lowerName =
+                    tostring(descendant.Name):lower()
+
+                if descendant:IsA("ValueBase")
+                and (
+                    lowerName == "version"
+                    or lowerName == "serverversion"
+                    or lowerName:find("version", 1, true)
+                ) then
+
+                    local version, source =
+                        acceptVersion(
+                            descendant.Value,
+                            "value "
+                            .. PathOf(descendant)
+                        )
+
+                    if version ~= "" then
+                        return version, source
+                    end
+                end
             end
         end
     end
@@ -45912,6 +56672,7 @@ function GAG2VersionHopReadCurrentVersion()
     return "",
         "version label not found"
 end
+
 
 function GAG2VersionHopGetTarget()
 
@@ -45977,7 +56738,19 @@ function GAG2VersionHopBuildHomeText()
     end
 
     if current == "" then
-        return "Server loading..."
+
+        local lastKnown =
+            GAG2VersionHopNormalizeVersion(
+                GAG2_VERSION_HOP_STATE.CurrentVersion
+            )
+
+        if lastKnown ~= "" then
+
+            return "Server "
+                .. tostring(lastKnown)
+        end
+
+        return "Server ?"
     end
 
     return "Server "
@@ -46531,6 +57304,19 @@ function GAG2RestoreVersionHopState()
 
         GAG2VersionHopStartHeaderLoop()
 
+        task.defer(function()
+
+            for _ = 1, 12 do
+
+                GAG2VersionHopReadCurrentVersion()
+                GAG2VersionHopRefreshHome()
+
+                task.wait(
+                    0.5
+                )
+            end
+        end)
+
         if state.Enabled == true then
 
             GAG2VersionHopStartLoop()
@@ -46764,12 +57550,59 @@ local function AddRightBox(tab, title, icon)
     )
 end
 
+local function AddLeftBoxClosed(tab, title, icon)
+
+    if tab
+    and type(tab.AddLeftCollapsibleGroupbox) == "function" then
+
+        local ok, box =
+            pcall(function()
+
+                return tab:AddLeftCollapsibleGroupbox(
+                    title,
+                    icon,
+                    false
+                )
+            end)
+
+        if ok == true
+        and box ~= nil then
+            return box
+        end
+
+        return tab:AddLeftCollapsibleGroupbox(
+            title,
+            "settings",
+            false
+        )
+    end
+
+    return AddLeftBox(
+        tab,
+        title,
+        icon
+    )
+end
+
 local HomeMainBox =
     AddLeftBox(
         Tabs.Home,
         "Quick Actions",
         "sparkles"
     )
+
+local HomeVersionHopBox =
+    AddLeftBox(
+        Tabs.Home,
+        "Server Version Hop",
+        "git-branch"
+    )
+
+if HomeVersionHopBox == nil then
+
+    HomeVersionHopBox =
+        HomeMainBox
+end
 
 local HomeServerBox =
     AddRightBox(
@@ -46932,40 +57765,124 @@ local function AddFarmLeftBoxClosed(title, icon)
     )
 end
 
+local function AddFarmRightBoxClosed(title, icon)
+
+    if Tabs.Farm
+    and type(Tabs.Farm.AddRightCollapsibleGroupbox) == "function" then
+
+        local ok, box =
+            pcall(function()
+
+                return Tabs.Farm:AddRightCollapsibleGroupbox(
+                    title,
+                    icon,
+                    false
+                )
+            end)
+
+        if ok == true
+        and box ~= nil then
+            return box
+        end
+    end
+
+    return AddRightBox(
+        Tabs.Farm,
+        title,
+        icon
+    )
+end
+
 local FarmSeedPlantBox =
     AddFarmLeftBoxClosed(
         "Seed Planting",
         "sprout"
     )
 
-local FarmMainBox =
+local FarmCollectionBox =
     AddFarmLeftBoxClosed(
-        "Farm Controls",
+        "Fruit Collection",
         "leaf"
     )
 
-local FarmAutoShovelBox =
+-- Keep this alias so all existing fruit filter controls stay compile-safe,
+-- but they now render inside Fruit Collection instead of a separate groupbox.
+local FarmFiltersBox =
+    FarmCollectionBox
+
+
+local FarmAutoSprinklerBox =
     AddFarmLeftBoxClosed(
+        "Auto Sprinkler",
+        "spray-can"
+    )
+
+local FarmWeatherBox =
+    AddFarmRightBoxClosed(
+        "Weather Pause",
+        "cloud-rain"
+    )
+
+local FarmExclusionsBox =
+    AddFarmRightBoxClosed(
+        "Exclusions",
+        "ban"
+    )
+
+local FarmAutoShovelBox =
+    AddFarmRightBoxClosed(
         "Auto Shovel Plants",
         "shovel"
     )
 
+local FarmAutoWateringBox =
+    AddFarmRightBoxClosed(
+        "Auto Watering Can",
+        "droplets"
+    )
+
+local FarmAutoTrowelBox =
+    AddFarmRightBoxClosed(
+        "Auto Trowel Plants",
+        "move-3d"
+    )
+
 FarmAutoShovelFruitBox =
-    AddFarmLeftBoxClosed(
+    AddFarmRightBoxClosed(
         "Auto Shovel Fruits",
         "shovel"
     )
 
-local FarmStatusBox =
-    AddRightBox(
-        Tabs.Farm,
-        "Status",
-        "activity"
-    )
+local FarmMainBox =
+    FarmCollectionBox
 
 if FarmSeedPlantBox == nil then
 
     FarmSeedPlantBox =
+        FarmMainBox
+end
+
+if FarmCollectionBox == nil then
+
+    FarmCollectionBox =
+        FarmMainBox
+end
+
+if FarmFiltersBox == nil then
+
+    FarmFiltersBox =
+        FarmMainBox
+end
+
+if FarmWeatherBox == nil then
+
+    FarmWeatherBox =
+        FarmMainBox
+end
+
+if FarmExclusionsBox == nil then
+
+    FarmExclusionsBox =
         FarmMainBox
 end
 
@@ -46975,11 +57892,30 @@ if FarmAutoShovelBox == nil then
         FarmMainBox
 end
 
+if FarmAutoSprinklerBox == nil then
+
+    FarmAutoSprinklerBox =
+        FarmMainBox
+end
+
+if FarmAutoWateringBox == nil then
+
+    FarmAutoWateringBox =
+        FarmMainBox
+end
+
+if FarmAutoTrowelBox == nil then
+
+    FarmAutoTrowelBox =
+        FarmMainBox
+end
+
 if FarmAutoShovelFruitBox == nil then
 
     FarmAutoShovelFruitBox =
         FarmMainBox
 end
+
 
 
 local VisualsMainBox =
@@ -46999,16 +57935,35 @@ local VisualsStatusBox =
 local SniperMainBox =
     AddLeftBox(
         Tabs.Sniper,
-        "Wild Pet Sniper",
+        "Wild Sniper",
         "crosshair"
     )
 
-local SniperStatusBox =
+local SniperPriorityBox =
+    AddLeftBoxClosed(
+        Tabs.Sniper,
+        "Buy Priority",
+        "star"
+    )
+
+local SniperBuyBehaviorBox =
     AddRightBox(
         Tabs.Sniper,
-        "Sniper Status",
-        "radar"
+        "Buy Behavior",
+        "settings-2"
     )
+
+if SniperPriorityBox == nil then
+
+    SniperPriorityBox =
+        SniperMainBox
+end
+
+if SniperBuyBehaviorBox == nil then
+
+    SniperBuyBehaviorBox =
+        SniperMainBox
+end
 
 local SettingsUIBox =
     AddLeftBox(
@@ -47151,10 +58106,23 @@ HomeMainBox:AddButton({
 
 HomeMainBox:AddDivider()
 
-if type(HomeMainBox.AddInput) == "function" then
+GAG2_MANUAL_JOIN_HUD_TOGGLE =
+    HomeMainBox:AddToggle("HolyGAG2ManualJoinHud", {
+        Text = "Pop Out Join HUD",
+        Default = false,
+        Tooltip = "Show a small draggable server join HUD.",
+        Callback = function(value)
+
+            GAG2SetManualJoinHudEnabled(
+                value == true
+            )
+        end,
+    })
+
+if type(HomeVersionHopBox.AddInput) == "function" then
 
     local VersionHopTargetInput =
-        HomeMainBox:AddInput(
+        HomeVersionHopBox:AddInput(
             "HolyGAG2VersionHopTarget",
             {
                 Text = "Target Server Version",
@@ -47179,7 +58147,7 @@ if type(HomeMainBox.AddInput) == "function" then
     end
 
     local VersionHopDelayInput =
-        HomeMainBox:AddInput(
+        HomeVersionHopBox:AddInput(
             "HolyGAG2VersionHopDelay",
             {
                 Text = "Hop Delay",
@@ -47204,30 +58172,21 @@ if type(HomeMainBox.AddInput) == "function" then
     end
 end
 
-HomeMainBox:AddToggle("HolyGAG2AutoHopUntilVersion", {
-    Text = "Auto Hop Until Server Version",
-    Default = false,
-    Tooltip = "Reads the current server version from Settings and hops until it matches the target.",
-    Callback = function(value)
+if HomeVersionHopBox
+and type(HomeVersionHopBox.AddToggle) == "function" then
 
-        GAG2VersionHopSetEnabled(
-            value == true
-        )
-    end,
-})
-
-GAG2_MANUAL_JOIN_HUD_TOGGLE =
-    HomeMainBox:AddToggle("HolyGAG2ManualJoinHud", {
-        Text = "Pop Out Join HUD",
+    HomeVersionHopBox:AddToggle("HolyGAG2AutoHopUntilVersion", {
+        Text = "Auto Hop Until Server Version",
         Default = false,
-        Tooltip = "Show a small draggable server join HUD.",
+        Tooltip = "Reads the current server version and hops until it matches the target.",
         Callback = function(value)
 
-            GAG2SetManualJoinHudEnabled(
+            GAG2VersionHopSetEnabled(
                 value == true
             )
         end,
     })
+end
 
 HomeLivePetsList =
     HomeServerBox:AddPetMarketList(
@@ -47646,10 +58605,10 @@ ShopsSeedCollectBox:AddDropdown("HolyGAG2SeedCollectType", {
 ShopsSeedCollectBox:AddDropdown("HolyGAG2SeedCollectMovement", {
     Text = "Movement Mode",
     Values = {
-        "Teleport",
         "Walk",
+        "Teleport",
     },
-    Default = "Teleport",
+    Default = "Walk",
     Multi = false,
     Searchable = false,
     Tooltip = "Teleport is fastest. Walk uses Humanoid:MoveTo.",
@@ -49343,7 +60302,15 @@ FarmMainBox:AddToggle("HolyGAG2ACFStopIfFull", {
     end,
 })
 
-FarmMainBox:AddToggle("HolyGAG2ACFPauseDuringWeather", {
+FarmWeatherBox:AddLabel({
+    Text =
+        '<font color="rgb(196,181,253)"><b>Weather Pause</b></font>'
+        .. '\nPauses Auto Collect Fruits only during selected real weather.',
+    DoesWrap = true,
+    Size = 13,
+})
+
+FarmWeatherBox:AddToggle("HolyGAG2ACFPauseDuringWeather", {
     Text = "Pause During Weather",
     Default = false,
     Tooltip = "Pauses Auto Collect during real weather events only. Day/Night will not pause.",
@@ -49356,7 +60323,7 @@ FarmMainBox:AddToggle("HolyGAG2ACFPauseDuringWeather", {
 })
 
 GAG2_AUTO_COLLECT_FRUIT_CONTROLS.PauseWeatherMode =
-    FarmMainBox:AddDropdown(
+    FarmWeatherBox:AddDropdown(
         "HolyGAG2ACFPauseWeatherMode",
         {
             Text = "Pause Weather Mode",
@@ -49381,7 +60348,7 @@ and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.PauseWeatherMode.OnChanged) == "functi
 end
 
 GAG2_AUTO_COLLECT_FRUIT_CONTROLS.PauseWeathers =
-    FarmMainBox:AddDropdown(
+    FarmWeatherBox:AddDropdown(
         "HolyGAG2ACFPauseWeathers",
         {
             Text = "Pause Weathers",
@@ -49405,6 +60372,7 @@ and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.PauseWeathers.OnChanged) == "function"
         )
     end)
 end
+
 
 if type(FarmMainBox.AddInput) == "function" then
 
@@ -49459,14 +60427,14 @@ if type(FarmMainBox.AddInput) == "function" then
     end
 end
 
-FarmMainBox:AddLabel({
-    Text = '<font color="rgb(196,181,253)"><b>Collects</b></font>',
+FarmCollectionBox:AddLabel({
+    Text = '<font color="rgb(196,181,253)"><b>Collect Mode</b></font>',
     DoesWrap = true,
     Size = 13,
 })
 
 GAG2_AUTO_COLLECT_FRUIT_CONTROLS.CollectMode =
-    FarmMainBox:AddDropdown(
+    FarmCollectionBox:AddDropdown(
         "HolyGAG2ACFCollectMode",
         {
             Text = "Collect Mode",
@@ -49490,8 +60458,16 @@ and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.CollectMode.OnChanged) == "function" t
     end)
 end
 
+FarmFiltersBox:AddLabel({
+    Text =
+        '<font color="rgb(196,181,253)"><b>Fruit Filters</b></font>'
+        .. '\nOnly affects Collect Mode: Only Selected, rarity filtering, and mutation filtering.',
+    DoesWrap = true,
+    Size = 13,
+})
+
 GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedFruits =
-    FarmMainBox:AddDropdown(
+    FarmFiltersBox:AddDropdown(
         "HolyGAG2ACFSelectedFruits",
         {
             Text = "Select Fruit",
@@ -49518,7 +60494,7 @@ and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedFruits.OnChanged) == "function
 end
 
 GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedRarities =
-    FarmMainBox:AddDropdown(
+    FarmFiltersBox:AddDropdown(
         "HolyGAG2ACFSelectedRarities",
         {
             Text = "Select Rarity",
@@ -49545,7 +60521,7 @@ and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedRarities.OnChanged) == "functi
 end
 
 GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedMutations =
-    FarmMainBox:AddDropdown(
+    FarmFiltersBox:AddDropdown(
         "HolyGAG2ACFSelectedMutations",
         {
             Text = "Select Mutation",
@@ -49571,16 +60547,17 @@ and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.SelectedMutations.OnChanged) == "funct
     end)
 end
 
-FarmMainBox:AddDivider()
 
-FarmMainBox:AddLabel({
-    Text = '<font color="rgb(196,181,253)"><b>Exclusions</b></font>',
+FarmExclusionsBox:AddLabel({
+    Text =
+        '<font color="rgb(196,181,253)"><b>Exclusions</b></font>'
+        .. '\nAlways skip matching fruits before collecting.',
     DoesWrap = true,
     Size = 13,
 })
 
 GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeFruits =
-    FarmMainBox:AddDropdown(
+    FarmExclusionsBox:AddDropdown(
         "HolyGAG2ACFExcludeFruits",
         {
             Text = "Exclude Fruits",
@@ -49607,7 +60584,7 @@ and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeFruits.OnChanged) == "function"
 end
 
 GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeRarities =
-    FarmMainBox:AddDropdown(
+    FarmExclusionsBox:AddDropdown(
         "HolyGAG2ACFExcludeRarities",
         {
             Text = "Exclude Rarities",
@@ -49634,7 +60611,7 @@ and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeRarities.OnChanged) == "functio
 end
 
 GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeMutations =
-    FarmMainBox:AddDropdown(
+    FarmExclusionsBox:AddDropdown(
         "HolyGAG2ACFExcludeMutations",
         {
             Text = "Exclude Mutations",
@@ -49661,7 +60638,7 @@ and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeMutations.OnChanged) == "functi
 end
 
 GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeSizeMode =
-    FarmMainBox:AddDropdown(
+    FarmExclusionsBox:AddDropdown(
         "HolyGAG2ACFExcludeSizeMode",
         {
             Text = "Exclude Weight Mode",
@@ -49685,10 +60662,10 @@ and type(GAG2_AUTO_COLLECT_FRUIT_CONTROLS.ExcludeSizeMode.OnChanged) == "functio
     end)
 end
 
-if type(FarmMainBox.AddInput) == "function" then
+if type(FarmExclusionsBox.AddInput) == "function" then
 
     local SizeThresholdInput =
-        FarmMainBox:AddInput(
+        FarmExclusionsBox:AddInput(
             "HolyGAG2ACFExcludeSizeThreshold",
             {
                 Text = "Weight Threshold (kg)",
@@ -49712,6 +60689,7 @@ if type(FarmMainBox.AddInput) == "function" then
         end)
     end
 end
+
 
 FarmMainBox:AddDivider()
 
@@ -50153,6 +61131,742 @@ and type(GAG2_AUTO_SHOVEL_CONTROLS.QueueData.SetVisible) == "function" then
 end
 
 --==================================================
+-- [8.842] FARM AUTO SPRINKLER
+--==================================================
+
+FarmAutoSprinklerBox:AddLabel({
+    Text =
+        '<font color="rgb(196,181,253)"><b>Auto Sprinkler</b></font>'
+        .. '\nPlaces selected sprinklers at a saved point.'
+        .. '\nUse "Only If No Sprinkler Exists" to avoid wasting sprinklers.',
+    DoesWrap = true,
+    Size = 13,
+})
+
+FarmAutoSprinklerBox:AddButton({
+    Text = "Set Point",
+    Tooltip = "Stand inside your garden where sprinklers should be placed, then click this.",
+    Func = function()
+
+        GAG2AutoSprinklerSetPointFromCurrentPosition()
+    end,
+}):AddButton({
+    Text = "Refresh Tools",
+    Tooltip = "Refresh sprinkler dropdown.",
+    Func = function()
+
+        GAG2AutoSprinklerRefreshUI()
+
+        GAG2_AUTO_SPRINKLER_STATE.LastStatus =
+            "Sprinkler tools refreshed."
+
+        GAG2AutoSprinklerScheduleRefresh()
+    end,
+})
+
+GAG2_AUTO_SPRINKLER_CONTROLS.Tools =
+    FarmAutoSprinklerBox:AddDropdown(
+        "HolyGAG2AutoSprinklerTools",
+        {
+            Text = "Sprinklers To Place",
+            Values = {
+                "No sprinklers found",
+            },
+            Default = {},
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Select one or more sprinkler types.",
+        }
+    )
+
+if GAG2_AUTO_SPRINKLER_CONTROLS.Tools
+and type(GAG2_AUTO_SPRINKLER_CONTROLS.Tools.OnChanged) == "function" then
+
+    GAG2_AUTO_SPRINKLER_CONTROLS.Tools:OnChanged(function(value)
+
+        if GAG2_AUTO_SPRINKLER_STATE.UpdatingUI ~= true then
+
+            GAG2AutoSprinklerSetSelectedTools(
+                value
+            )
+        end
+    end)
+end
+
+GAG2_AUTO_SPRINKLER_CONTROLS.OnlyIfNone =
+    FarmAutoSprinklerBox:AddToggle(
+        "HolyGAG2AutoSprinklerOnlyIfNone",
+        {
+            Text = "Only If No Sprinkler Exists",
+            Default = true,
+            Tooltip = "When ON, Auto Sprinkler skips placing if your garden already has a sprinkler object.",
+        }
+    )
+
+GAG2_AUTO_SPRINKLER_CONTROLS.OnlyIfNone:OnChanged(function(value)
+
+    GAG2AutoSprinklerSetOnlyIfNoSprinkler(
+        value == true
+    )
+end)
+
+GAG2_AUTO_SPRINKLER_CONTROLS.Interval =
+    FarmAutoSprinklerBox:AddInput(
+        "HolyGAG2AutoSprinklerInterval",
+        {
+            Text = "Place Every Seconds",
+            Default = "60",
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Placeholder = "60",
+            Tooltip = "How often to place a sprinkler. Minimum is 1 second.",
+            Callback = function(value)
+
+                GAG2AutoSprinklerSetInterval(
+                    value
+                )
+            end,
+        }
+    )
+
+GAG2_AUTO_SPRINKLER_CONTROLS.Toggle =
+    FarmAutoSprinklerBox:AddToggle(
+        "HolyGAG2AutoSprinklerEnabled",
+        {
+            Text = "Auto Sprinkler",
+            Default = false,
+            Tooltip = "Automatically places selected sprinklers at your saved point.",
+        }
+    )
+
+GAG2_AUTO_SPRINKLER_CONTROLS.Toggle:OnChanged(function(value)
+
+    GAG2AutoSprinklerSetEnabled(
+        value == true
+    )
+end)
+
+FarmAutoSprinklerBox:AddButton({
+    Text = "Stop Sprinkler",
+    Risky = true,
+    Tooltip = "Stops Auto Sprinkler.",
+    Func = function()
+
+        GAG2AutoSprinklerSetEnabled(
+            false
+        )
+
+        GAG2AutoSprinklerSetToggleOff()
+    end,
+})
+
+GAG2_AUTO_SPRINKLER_CONTROLS.PointData =
+    FarmAutoSprinklerBox:AddInput(
+        "HolyGAG2AutoSprinklerPointData",
+        {
+            Text = "Point Data",
+            Default = "",
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Placeholder = "",
+            Tooltip = "Internal saved sprinkler point.",
+            Callback = function(value)
+
+                if GAG2_AUTO_SPRINKLER_STATE.SavingPointText ~= true then
+
+                    GAG2AutoSprinklerLoadPointFromText(
+                        value
+                    )
+                end
+            end,
+        }
+    )
+
+if GAG2_AUTO_SPRINKLER_CONTROLS.PointData
+and type(GAG2_AUTO_SPRINKLER_CONTROLS.PointData.SetVisible) == "function" then
+
+    pcall(function()
+
+        GAG2_AUTO_SPRINKLER_CONTROLS.PointData:SetVisible(
+            false
+        )
+    end)
+end
+
+GAG2_AUTO_SPRINKLER_CONTROLS.StatusLabel =
+    FarmAutoSprinklerBox:AddLabel(
+        "HolyGAG2AutoSprinklerStatus",
+        {
+            Text =
+                '<font color="rgb(196,181,253)"><b>Auto Sprinkler</b></font>'
+                .. '\nLoading sprinkler tools...',
+            DoesWrap = true,
+        }
+    )
+
+--==================================================
+-- [8.843] FARM AUTO WATERING CAN
+--==================================================
+
+FarmAutoWateringBox:AddLabel({
+    Text =
+        '<font color="rgb(196,181,253)"><b>Auto Watering Can</b></font>'
+        .. '\nUses selected watering can at a saved point, or on ripe plants.'
+        .. '\nRipe Only waters only when fruit exists on matching plants.',
+    DoesWrap = true,
+    Size = 13,
+})
+
+FarmAutoWateringBox:AddButton({
+    Text = "Set Point",
+    Tooltip = "Stand inside your garden where watering should happen, then click this.",
+    Func = function()
+
+        GAG2AutoWateringSetPointFromCurrentPosition()
+    end,
+}):AddButton({
+    Text = "Refresh",
+    Tooltip = "Refresh watering cans and plant filters.",
+    Func = function()
+
+        GAG2AutoWateringRefreshUI()
+
+        GAG2_AUTO_WATERING_STATE.LastStatus =
+            "Watering data refreshed."
+
+        GAG2AutoWateringScheduleRefresh()
+    end,
+})
+
+GAG2_AUTO_WATERING_CONTROLS.Tool =
+    FarmAutoWateringBox:AddDropdown(
+        "HolyGAG2AutoWateringTool",
+        {
+            Text = "Watering Can",
+            Values = {
+                "No watering cans found",
+            },
+            Default = "",
+            Multi = false,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 8,
+            Tooltip = "Select the watering can to use.",
+        }
+    )
+
+if GAG2_AUTO_WATERING_CONTROLS.Tool
+and type(GAG2_AUTO_WATERING_CONTROLS.Tool.OnChanged) == "function" then
+
+    GAG2_AUTO_WATERING_CONTROLS.Tool:OnChanged(function(value)
+
+        if GAG2_AUTO_WATERING_STATE.UpdatingUI ~= true then
+
+            GAG2AutoWateringSetTool(
+                value
+            )
+        end
+    end)
+end
+
+GAG2_AUTO_WATERING_CONTROLS.Plants =
+    FarmAutoWateringBox:AddDropdown(
+        "HolyGAG2AutoWateringPlants",
+        {
+            Text = "Ripe Plant Types",
+            Values = {
+                "No planted plants",
+            },
+            Default = {},
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Empty means any ripe plant. Select plants to water only those when ripe.",
+        }
+    )
+
+if GAG2_AUTO_WATERING_CONTROLS.Plants
+and type(GAG2_AUTO_WATERING_CONTROLS.Plants.OnChanged) == "function" then
+
+    GAG2_AUTO_WATERING_CONTROLS.Plants:OnChanged(function(value)
+
+        if GAG2_AUTO_WATERING_STATE.UpdatingUI ~= true then
+
+            GAG2AutoWateringSetSelectedPlants(
+                value
+            )
+        end
+    end)
+end
+
+GAG2_AUTO_WATERING_CONTROLS.RipeOnly =
+    FarmAutoWateringBox:AddToggle(
+        "HolyGAG2AutoWateringRipeOnly",
+        {
+            Text = "Ripe Only",
+            Default = true,
+            Tooltip = "When ON, watering waits until matching plants have fruit.",
+        }
+    )
+
+GAG2_AUTO_WATERING_CONTROLS.RipeOnly:OnChanged(function(value)
+
+    GAG2AutoWateringSetRipeOnly(
+        value == true
+    )
+end)
+
+GAG2_AUTO_WATERING_CONTROLS.Interval =
+    FarmAutoWateringBox:AddInput(
+        "HolyGAG2AutoWateringInterval",
+        {
+            Text = "Water Every Seconds",
+            Default = "5",
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Placeholder = "5",
+            Tooltip = "Delay between watering can uses. Minimum effective delay is 0.65 seconds.",
+            Callback = function(value)
+
+                GAG2AutoWateringSetInterval(
+                    value
+                )
+            end,
+        }
+    )
+
+GAG2_AUTO_WATERING_CONTROLS.Toggle =
+    FarmAutoWateringBox:AddToggle(
+        "HolyGAG2AutoWateringEnabled",
+        {
+            Text = "Auto Watering Can",
+            Default = false,
+            Tooltip = "Automatically uses selected watering can.",
+        }
+    )
+
+GAG2_AUTO_WATERING_CONTROLS.Toggle:OnChanged(function(value)
+
+    GAG2AutoWateringSetEnabled(
+        value == true
+    )
+end)
+
+FarmAutoWateringBox:AddButton({
+    Text = "Stop Watering",
+    Risky = true,
+    Tooltip = "Stops Auto Watering Can.",
+    Func = function()
+
+        GAG2AutoWateringSetEnabled(
+            false
+        )
+
+        GAG2AutoWateringSetToggleOff()
+    end,
+})
+
+GAG2_AUTO_WATERING_CONTROLS.PointData =
+    FarmAutoWateringBox:AddInput(
+        "HolyGAG2AutoWateringPointData",
+        {
+            Text = "Point Data",
+            Default = "",
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Placeholder = "",
+            Tooltip = "Internal saved watering point.",
+            Callback = function(value)
+
+                if GAG2_AUTO_WATERING_STATE.SavingPointText ~= true then
+
+                    GAG2AutoWateringLoadPointFromText(
+                        value
+                    )
+                end
+            end,
+        }
+    )
+
+if GAG2_AUTO_WATERING_CONTROLS.PointData
+and type(GAG2_AUTO_WATERING_CONTROLS.PointData.SetVisible) == "function" then
+
+    pcall(function()
+
+        GAG2_AUTO_WATERING_CONTROLS.PointData:SetVisible(
+            false
+        )
+    end)
+end
+
+GAG2_AUTO_WATERING_CONTROLS.StatusLabel =
+    FarmAutoWateringBox:AddLabel(
+        "HolyGAG2AutoWateringStatus",
+        {
+            Text =
+                '<font color="rgb(196,181,253)"><b>Auto Watering Can</b></font>'
+                .. '\nLoading watering cans...',
+            DoesWrap = true,
+        }
+    )
+
+task.defer(function()
+
+    GAG2AutoSprinklerRefreshUI()
+    GAG2AutoWateringRefreshUI()
+
+    task.delay(1.35, function()
+
+        if Options.HolyGAG2AutoSprinklerTools then
+
+            GAG2AutoSprinklerSetSelectedTools(
+                Options.HolyGAG2AutoSprinklerTools.Value
+            )
+        end
+
+        if Options.HolyGAG2AutoSprinklerInterval then
+
+            GAG2AutoSprinklerSetInterval(
+                Options.HolyGAG2AutoSprinklerInterval.Value
+            )
+        end
+
+        if Toggles.HolyGAG2AutoSprinklerOnlyIfNone then
+
+            GAG2AutoSprinklerSetOnlyIfNoSprinkler(
+                Toggles.HolyGAG2AutoSprinklerOnlyIfNone.Value == true
+            )
+        end
+
+        if Options.HolyGAG2AutoSprinklerPointData then
+
+            GAG2AutoSprinklerLoadPointFromText(
+                Options.HolyGAG2AutoSprinklerPointData.Value
+            )
+        end
+
+        if Options.HolyGAG2AutoWateringTool then
+
+            GAG2AutoWateringSetTool(
+                Options.HolyGAG2AutoWateringTool.Value
+            )
+        end
+
+        if Options.HolyGAG2AutoWateringPlants then
+
+            GAG2AutoWateringSetSelectedPlants(
+                Options.HolyGAG2AutoWateringPlants.Value
+            )
+        end
+
+        if Options.HolyGAG2AutoWateringInterval then
+
+            GAG2AutoWateringSetInterval(
+                Options.HolyGAG2AutoWateringInterval.Value
+            )
+        end
+
+        if Toggles.HolyGAG2AutoWateringRipeOnly then
+
+            GAG2AutoWateringSetRipeOnly(
+                Toggles.HolyGAG2AutoWateringRipeOnly.Value == true
+            )
+        end
+
+        if Options.HolyGAG2AutoWateringPointData then
+
+            GAG2AutoWateringLoadPointFromText(
+                Options.HolyGAG2AutoWateringPointData.Value
+            )
+        end
+
+        if Toggles.HolyGAG2AutoSprinklerEnabled
+        and Toggles.HolyGAG2AutoSprinklerEnabled.Value == true
+        and ConfigState.Loading ~= true then
+
+            GAG2AutoSprinklerSetEnabled(
+                true
+            )
+        end
+
+        if Toggles.HolyGAG2AutoWateringEnabled
+        and Toggles.HolyGAG2AutoWateringEnabled.Value == true
+        and ConfigState.Loading ~= true then
+
+            GAG2AutoWateringSetEnabled(
+                true
+            )
+        end
+
+        GAG2AutoSprinklerRefreshUI()
+        GAG2AutoWateringRefreshUI()
+    end)
+end)
+
+--==================================================
+-- [8.845] FARM AUTO TROWEL PLANTS
+--==================================================
+
+FarmAutoTrowelBox:AddLabel({
+    Text =
+        '<font color="rgb(196,181,253)"><b>Auto Trowel Plants</b></font>'
+        .. '\nMoves selected planted crops to a saved point.'
+        .. '\nDefault limit is 1 for safety. Set limit to 0 for all selected plants.',
+    DoesWrap = true,
+    Size = 13,
+})
+
+FarmAutoTrowelBox:AddButton({
+    Text = "Set Point",
+    Tooltip = "Stand inside your garden where moved plants should go, then click this.",
+    Func = function()
+
+        GAG2AutoTrowelSetPointFromCurrentPosition()
+    end,
+}):AddButton({
+    Text = "Refresh Plants",
+    Tooltip = "Refresh planted crop dropdown.",
+    Func = function()
+
+        GAG2AutoTrowelRefreshUI()
+
+        GAG2_AUTO_TROWEL_STATE.LastStatus =
+            "Plant list refreshed."
+
+        GAG2AutoTrowelScheduleRefresh()
+    end,
+})
+
+GAG2_AUTO_TROWEL_CONTROLS.Plants =
+    FarmAutoTrowelBox:AddDropdown(
+        "HolyGAG2AutoTrowelPlantTypes",
+        {
+            Text = "Plants To Trowel",
+            Values = {
+                "No planted plants",
+            },
+            Default = {},
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Select one or more planted crop types to move.",
+        }
+    )
+
+if GAG2_AUTO_TROWEL_CONTROLS.Plants
+and type(GAG2_AUTO_TROWEL_CONTROLS.Plants.OnChanged) == "function" then
+
+    GAG2_AUTO_TROWEL_CONTROLS.Plants:OnChanged(function(value)
+
+        if GAG2_AUTO_TROWEL_STATE.UpdatingUI ~= true then
+
+            GAG2AutoTrowelSetSelectedPlants(
+                value
+            )
+        end
+    end)
+end
+
+GAG2_AUTO_TROWEL_CONTROLS.Limit =
+    FarmAutoTrowelBox:AddInput(
+        "HolyGAG2AutoTrowelLimit",
+        {
+            Text = "Move Limit",
+            Default = "1",
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Placeholder = "1",
+            Tooltip = "How many plants to move this run. 0 = all selected plants.",
+            Callback = function(value)
+
+                GAG2AutoTrowelSetLimit(
+                    value
+                )
+            end,
+        }
+    )
+
+GAG2_AUTO_TROWEL_CONTROLS.Delay =
+    FarmAutoTrowelBox:AddInput(
+        "HolyGAG2AutoTrowelDelay",
+        {
+            Text = "Trowel Delay",
+            Default = "0.75",
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Placeholder = "0.75",
+            Tooltip = "Delay between trowel moves. Values below 0.65 use an effective 0.65-second minimum.",
+            Callback = function(value)
+
+                GAG2AutoTrowelSetDelay(
+                    value
+                )
+            end,
+        }
+    )
+
+GAG2_AUTO_TROWEL_CONTROLS.Spacing =
+    FarmAutoTrowelBox:AddInput(
+        "HolyGAG2AutoTrowelSpacing",
+        {
+            Text = "Move Spacing",
+            Default = "0.75",
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Placeholder = "0.75",
+            Tooltip = "Small spiral spacing around the saved point when moving multiple plants. 0 = exact same point.",
+            Callback = function(value)
+
+                GAG2AutoTrowelSetSpacing(
+                    value
+                )
+            end,
+        }
+    )
+
+GAG2_AUTO_TROWEL_CONTROLS.Toggle =
+    FarmAutoTrowelBox:AddToggle(
+        "HolyGAG2AutoTrowelPlants",
+        {
+            Text = "Auto Trowel Plants",
+            Default = false,
+            Tooltip = "Moves selected plants to your saved trowel point. Requires real Trowel uses.",
+        }
+    )
+
+GAG2_AUTO_TROWEL_CONTROLS.Toggle:OnChanged(function(value)
+
+    GAG2AutoTrowelSetEnabled(
+        value == true
+    )
+end)
+
+FarmAutoTrowelBox:AddButton({
+    Text = "Stop Trowel",
+    Risky = true,
+    Tooltip = "Stops Auto Trowel after the current confirmation check.",
+    Func = function()
+
+        GAG2AutoTrowelSetEnabled(
+            false
+        )
+
+        GAG2AutoTrowelSetToggleOff()
+    end,
+})
+
+GAG2_AUTO_TROWEL_CONTROLS.PointData =
+    FarmAutoTrowelBox:AddInput(
+        "HolyGAG2AutoTrowelPointData",
+        {
+            Text = "Point Data",
+            Default = "",
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Placeholder = "",
+            Tooltip = "Internal saved trowel point.",
+            Callback = function(value)
+
+                if GAG2_AUTO_TROWEL_STATE.SavingPointText ~= true then
+
+                    GAG2AutoTrowelLoadPointFromText(
+                        value
+                    )
+                end
+            end,
+        }
+    )
+
+if GAG2_AUTO_TROWEL_CONTROLS.PointData
+and type(GAG2_AUTO_TROWEL_CONTROLS.PointData.SetVisible) == "function" then
+
+    pcall(function()
+
+        GAG2_AUTO_TROWEL_CONTROLS.PointData:SetVisible(
+            false
+        )
+    end)
+end
+
+GAG2_AUTO_TROWEL_CONTROLS.StatusLabel =
+    FarmAutoTrowelBox:AddLabel(
+        "HolyGAG2AutoTrowelStatus",
+        {
+            Text =
+                '<font color="rgb(196,181,253)"><b>Auto Trowel Plants</b></font>'
+                .. '\nLoading planted crops...',
+            DoesWrap = true,
+        }
+    )
+
+task.defer(function()
+
+    GAG2AutoTrowelStartMonitor()
+    GAG2AutoTrowelRefreshUI()
+
+    task.delay(1.30, function()
+
+        if Options.HolyGAG2AutoTrowelPlantTypes then
+
+            GAG2AutoTrowelSetSelectedPlants(
+                Options.HolyGAG2AutoTrowelPlantTypes.Value
+            )
+        end
+
+        if Options.HolyGAG2AutoTrowelLimit then
+
+            GAG2AutoTrowelSetLimit(
+                Options.HolyGAG2AutoTrowelLimit.Value
+            )
+        end
+
+        if Options.HolyGAG2AutoTrowelDelay then
+
+            GAG2AutoTrowelSetDelay(
+                Options.HolyGAG2AutoTrowelDelay.Value
+            )
+        end
+
+        if Options.HolyGAG2AutoTrowelSpacing then
+
+            GAG2AutoTrowelSetSpacing(
+                Options.HolyGAG2AutoTrowelSpacing.Value
+            )
+        end
+
+        if Options.HolyGAG2AutoTrowelPointData then
+
+            GAG2AutoTrowelLoadPointFromText(
+                Options.HolyGAG2AutoTrowelPointData.Value
+            )
+        end
+
+        if Toggles.HolyGAG2AutoTrowelPlants
+        and Toggles.HolyGAG2AutoTrowelPlants.Value == true
+        and ConfigState.Loading ~= true then
+
+            GAG2AutoTrowelSetEnabled(
+                true
+            )
+        end
+
+        GAG2AutoTrowelRefreshUI()
+    end)
+end)
+
+--==================================================
 -- [8.85] FARM AUTO SHOVEL FRUITS
 --==================================================
 
@@ -50243,6 +61957,52 @@ and type(GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.ProtectedMutations.OnChanged) == "funct
     end)
 end
 
+GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.WeightMode =
+    FarmAutoShovelFruitBox:AddDropdown(
+        "HolyGAG2AutoShovelFruitWeightMode",
+        {
+            Text = "Weight Mode",
+            Values = GAG2_AUTO_SHOVEL_FRUIT_WEIGHT_MODES,
+            Default = "Off",
+            Multi = false,
+            Searchable = false,
+            AllowNull = false,
+            MaxVisibleDropdownItems = 3,
+            Tooltip = "Off = any weight. Above = shovel only fruits above threshold. Below = shovel only fruits below threshold.",
+        }
+    )
+
+if GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.WeightMode
+and type(GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.WeightMode.OnChanged) == "function" then
+
+    GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.WeightMode:OnChanged(function(value)
+
+        GAG2AutoShovelFruitSetWeightMode(
+            value
+        )
+    end)
+end
+
+GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.WeightThreshold =
+    FarmAutoShovelFruitBox:AddInput(
+        "HolyGAG2AutoShovelFruitWeightThreshold",
+        {
+            Text = "Weight Threshold (kg)",
+            Default = "0",
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Placeholder = "0",
+            Tooltip = "Used by Weight Mode. Example: Above + 5 only shovels fruits heavier than 5kg.",
+            Callback = function(value)
+
+                GAG2AutoShovelFruitSetWeightThreshold(
+                    value
+                )
+            end,
+        }
+    )
+
 GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.Delay =
     FarmAutoShovelFruitBox:AddInput(
         "HolyGAG2AutoShovelFruitDelay",
@@ -50284,30 +62044,32 @@ FarmAutoShovelFruitBox:AddButton({
     end,
 })
 
-FarmStatusBox:AddLabel("HolyGAG2FarmStatus", {
+FarmCollectionBox:AddDivider()
+
+FarmCollectionBox:AddLabel("HolyGAG2FarmStatus", {
     Text =
         '<font color="rgb(196,181,253)"><b>Auto Collect Fruits</b></font>'
         .. '\nIdle.',
     DoesWrap = true,
 })
 
-FarmStatusBox:AddDivider()
+FarmAutoShovelBox:AddDivider()
 
 GAG2_AUTO_SHOVEL_CONTROLS.StatusLabel =
-    FarmStatusBox:AddLabel(
+    FarmAutoShovelBox:AddLabel(
         "HolyGAG2AutoShovelStatus",
         {
             Text =
-                '<font color="rgb(196,181,253)"><b>Planted Plants / Auto Shovel</b></font>'
+                '<font color="rgb(196,181,253)"><b>Auto Shovel Plants</b></font>'
                 .. '\nLoading own garden plants...',
             DoesWrap = true,
         }
     )
 
-FarmStatusBox:AddDivider()
+FarmAutoShovelFruitBox:AddDivider()
 
 GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.StatusLabel =
-    FarmStatusBox:AddLabel(
+    FarmAutoShovelFruitBox:AddLabel(
         "HolyGAG2AutoShovelFruitStatus",
         {
             Text =
@@ -50316,6 +62078,7 @@ GAG2_AUTO_SHOVEL_FRUIT_CONTROLS.StatusLabel =
             DoesWrap = true,
         }
     )
+
 
 task.defer(function()
 
@@ -50355,6 +62118,20 @@ task.defer(function()
 
             GAG2AutoShovelFruitSetProtectedMutations(
                 Options.HolyGAG2AutoShovelFruitProtectedMutations.Value
+            )
+        end
+
+        if Options.HolyGAG2AutoShovelFruitWeightMode then
+
+            GAG2AutoShovelFruitSetWeightMode(
+                Options.HolyGAG2AutoShovelFruitWeightMode.Value
+            )
+        end
+
+        if Options.HolyGAG2AutoShovelFruitWeightThreshold then
+
+            GAG2AutoShovelFruitSetWeightThreshold(
+                Options.HolyGAG2AutoShovelFruitWeightThreshold.Value
             )
         end
 
@@ -50433,12 +62210,52 @@ VisualsStatusBox:AddLabel("HolyGAG2SnapshotStatus", {
 -- [9.5] SNIPER TAB
 --==================================================
 
-SniperMainBox:AddLabel({
-    Text =
-        '<font color="rgb(196,181,253)"><b>Wild Pet Sniper</b></font>',
-    DoesWrap = true,
-    Size = 13,
-})
+GAG2_SNIPER_TOGGLE_CONTROL =
+    SniperMainBox:AddToggle("HolyGAG2SniperEnabled", {
+        Text = "Activate Sniper",
+        Default = false,
+        Tooltip = "Start looking for selected pets. Hotkey: F.",
+        Callback = function(value)
+
+            if GAG2_SNIPER_STOPPING == true then
+                return
+            end
+
+            SniperSetEnabled(
+                value == true
+            )
+
+            MarkConfigDirty()
+        end,
+    })
+
+if GAG2_SNIPER_TOGGLE_CONTROL
+and type(GAG2_SNIPER_TOGGLE_CONTROL.AddKeyPicker) == "function" then
+
+    GAG2_SNIPER_KEYBIND_CONTROL =
+        GAG2_SNIPER_TOGGLE_CONTROL:AddKeyPicker(
+            "HolyGAG2SniperHotkey",
+            {
+                Text = "Sniper Key",
+                Default = "F",
+                Mode = "Toggle",
+                SyncToggleState = true,
+            }
+        )
+end
+
+GAG2_PANIC_HUD_TOGGLE_CONTROL =
+    SniperMainBox:AddToggle("HolyGAG2SniperPanicHud", {
+        Text = "STOP HUD",
+        Default = true,
+        Tooltip = "Shows the draggable STOP button HUD. Turn OFF to hide it.",
+        Callback = function(value)
+
+            GAG2SetPanicHudEnabled(
+                value == true
+            )
+        end,
+    })
 
 SniperMainBox:AddDivider()
 
@@ -50496,293 +62313,6 @@ SniperMainBox:AddButton({
 
 SniperMainBox:AddDivider()
 
-SniperMainBox:AddLabel({
-    Text =
-        '<font color="rgb(196,181,253)"><b>Buy Priority</b></font>',
-    DoesWrap = true,
-    Size = 13,
-})
-
-for priorityIndex = 1, 5 do
-
-    SniperPriorityDropdowns[priorityIndex] =
-        SniperMainBox:AddDropdown(
-            "HolyGAG2SniperPriority"
-                .. tostring(priorityIndex),
-            {
-                Text =
-                    "Priority "
-                    .. tostring(priorityIndex),
-                Values =
-                    SniperGetPriorityDropdownValues(),
-                Default =
-                    "None",
-                Multi =
-                    false,
-                Searchable =
-                    true,
-                AllowNull =
-                    false,
-                MaxVisibleDropdownItems =
-                    10,
-                Tooltip =
-                    "Higher priority pets are bought first.",
-            }
-        )
-
-    if SniperPriorityDropdowns[priorityIndex]
-    and type(SniperPriorityDropdowns[priorityIndex].OnChanged) == "function" then
-
-        SniperPriorityDropdowns[priorityIndex]:OnChanged(function(value)
-
-            if SniperPriorityRefreshing == true then
-                return
-            end
-
-            SniperSetPriorityPet(
-                priorityIndex,
-                value
-            )
-
-            SniperScan(
-                false
-            )
-        end)
-    end
-end
-
-SniperMainBox:AddButton({
-    Text = "Clear Priority",
-    Tooltip = "Reset all priority slots.",
-    Func = function()
-
-        for priorityIndex = 1, 5 do
-
-            SniperSetPriorityPet(
-                priorityIndex,
-                ""
-            )
-
-            local dropdown =
-                SniperPriorityDropdowns[priorityIndex]
-
-            if dropdown
-            and type(dropdown.SetValue) == "function" then
-
-                pcall(function()
-
-                    dropdown:SetValue(
-                        "None"
-                    )
-                end)
-            end
-        end
-
-        SniperScan(
-            false
-        )
-    end,
-})
-
-SniperMainBox:AddDivider()
-
-GAG2_SNIPER_TOGGLE_CONTROL =
-    SniperMainBox:AddToggle("HolyGAG2SniperEnabled", {
-        Text = "Activate Sniper",
-        Default = false,
-        Tooltip = "Start looking for selected pets. Hotkey: F.",
-        Callback = function(value)
-
-            if GAG2_SNIPER_STOPPING == true then
-                return
-            end
-
-            SniperSetEnabled(
-                value == true
-            )
-
-            MarkConfigDirty()
-        end,
-    })
-
-if GAG2_SNIPER_TOGGLE_CONTROL
-and type(GAG2_SNIPER_TOGGLE_CONTROL.AddKeyPicker) == "function" then
-
-    GAG2_SNIPER_KEYBIND_CONTROL =
-        GAG2_SNIPER_TOGGLE_CONTROL:AddKeyPicker(
-            "HolyGAG2SniperHotkey",
-            {
-                Text = "Sniper Key",
-                Default = "F",
-                Mode = "Toggle",
-                SyncToggleState = true,
-            }
-        )
-end
-
-GAG2_PANIC_HUD_TOGGLE_CONTROL =
-    SniperMainBox:AddToggle("HolyGAG2SniperPanicHud", {
-        Text = "STOP HUD",
-        Default = true,
-        Tooltip = "Shows the draggable STOP button HUD. Turn OFF to hide it.",
-        Callback = function(value)
-
-            GAG2SetPanicHudEnabled(
-                value == true
-            )
-        end,
-    })
-
-local SniperMovementModeDropdown =
-    SniperMainBox:AddDropdown(
-        "HolyGAG2SniperMovementMode",
-        {
-            Text = "Movement Mode",
-            Values = {
-                "Teleport",
-                "Walk",
-            },
-            Default = SniperGetMovementMode(),
-            Multi = false,
-            Searchable = false,
-            AllowNull = false,
-            MaxVisibleDropdownItems = 2,
-            Tooltip = "Teleport is fastest. Walk is smoother and less ugly.",
-        }
-    )
-
-if SniperMovementModeDropdown
-and type(SniperMovementModeDropdown.OnChanged) == "function" then
-
-    SniperMovementModeDropdown:OnChanged(function(value)
-
-        SniperState.MovementMode =
-            CleanText(value) == "Walk"
-            and "Walk"
-            or "Teleport"
-
-        SetSniperStatus(
-            "Movement mode: "
-            .. tostring(SniperState.MovementMode)
-        )
-
-        MarkConfigDirty()
-    end)
-end
-
-local SniperBuyModeDropdown =
-    SniperMainBox:AddDropdown(
-        "HolyGAG2SniperBuyMode",
-        {
-            Text = "Buy Mode",
-            Values = {
-                "Instant",
-                "Hold",
-            },
-            Default = SniperGetBuyMode(),
-            Multi = false,
-            Searchable = false,
-            AllowNull = false,
-            MaxVisibleDropdownItems = 2,
-            Tooltip = "Instant uses packet buy. Hold uses the real BuyPrompt hold.",
-        }
-    )
-
-if SniperBuyModeDropdown
-and type(SniperBuyModeDropdown.OnChanged) == "function" then
-
-    SniperBuyModeDropdown:OnChanged(function(value)
-
-        SniperState.BuyMode =
-            CleanText(value) == "Hold"
-            and "Hold"
-            or "Instant"
-
-        SetSniperStatus(
-            "Buy mode: "
-            .. tostring(SniperState.BuyMode)
-        )
-
-        MarkConfigDirty()
-    end)
-end
-
-SniperMainBox:AddToggle("HolyGAG2SniperFollowPet", {
-    Text = "Follow Pet",
-    Default = false,
-    Tooltip = "Walks toward the pet while holding BuyPrompt. Does not teleport-spam.",
-    Callback = function(value)
-
-        SniperState.FollowPet =
-            value == true
-
-        SetSniperStatus(
-            SniperState.FollowPet == true
-            and "Follow pet enabled."
-            or "Follow pet disabled."
-        )
-
-        MarkConfigDirty()
-    end,
-})
-
-SniperMainBox:AddToggle("HolyGAG2SniperReturnAfterTame", {
-    Text = "Return After Buy",
-    Default = false,
-    Tooltip = "Returns to your old position after the buy is sent.",
-    Callback = function(value)
-
-        SniperState.ReturnAfterTame =
-            value == true
-
-        SetSniperStatus(
-            SniperState.ReturnAfterTame == true
-            and "Return after buy enabled."
-            or "Return after buy disabled."
-        )
-
-        MarkConfigDirty()
-    end,
-})
-
-SniperReturnModeDropdown =
-    SniperMainBox:AddDropdown(
-        "HolyGAG2SniperReturnMode",
-        {
-            Text = "Return Mode",
-            Values = {
-                "Walk",
-                "Teleport",
-            },
-            Default = SniperGetReturnMovementMode(),
-            Multi = false,
-            Searchable = false,
-            AllowNull = false,
-            MaxVisibleDropdownItems = 2,
-            Tooltip = "How Return After Buy moves back to the saved position.",
-        }
-    )
-
-if SniperReturnModeDropdown
-and type(SniperReturnModeDropdown.OnChanged) == "function" then
-
-    SniperReturnModeDropdown:OnChanged(function(value)
-
-        SniperState.ReturnMovementMode =
-            CleanText(value) == "Teleport"
-            and "Teleport"
-            or "Walk"
-
-        SetSniperStatus(
-            "Return mode: "
-            .. tostring(SniperState.ReturnMovementMode)
-        )
-
-        MarkConfigDirty()
-    end)
-end
-
-
 SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
     Text = "Auto Hop",
     Default = false,
@@ -50814,7 +62344,6 @@ SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
         MarkConfigDirty()
     end,
 })
-
 
 SniperMainBox:AddInput("HolyGAG2SniperHopDelay", {
     Text = "Hop Delay",
@@ -50879,26 +62408,283 @@ SniperMainBox:AddButton({
     end,
 })
 
-SniperStatusBox:AddLabel("HolyGAG2SniperStatus", {
-    Text =
-        "Ready.",
-    DoesWrap = true,
+for priorityIndex = 1, 5 do
+
+    SniperPriorityDropdowns[priorityIndex] =
+        SniperPriorityBox:AddDropdown(
+            "HolyGAG2SniperPriority"
+                .. tostring(priorityIndex),
+            {
+                Text =
+                    "Priority "
+                    .. tostring(priorityIndex),
+                Values =
+                    SniperGetPriorityDropdownValues(),
+                Default =
+                    "None",
+                Multi =
+                    false,
+                Searchable =
+                    true,
+                AllowNull =
+                    false,
+                MaxVisibleDropdownItems =
+                    10,
+                Tooltip =
+                    "Higher priority pets are bought first.",
+            }
+        )
+
+    if SniperPriorityDropdowns[priorityIndex]
+    and type(SniperPriorityDropdowns[priorityIndex].OnChanged) == "function" then
+
+        SniperPriorityDropdowns[priorityIndex]:OnChanged(function(value)
+
+            if SniperPriorityRefreshing == true then
+                return
+            end
+
+            SniperSetPriorityPet(
+                priorityIndex,
+                value
+            )
+
+            SniperScan(
+                false
+            )
+        end)
+    end
+end
+
+SniperPriorityBox:AddButton({
+    Text = "Clear Priority",
+    Tooltip = "Reset all priority slots.",
+    Func = function()
+
+        for priorityIndex = 1, 5 do
+
+            SniperSetPriorityPet(
+                priorityIndex,
+                ""
+            )
+
+            local dropdown =
+                SniperPriorityDropdowns[priorityIndex]
+
+            if dropdown
+            and type(dropdown.SetValue) == "function" then
+
+                pcall(function()
+
+                    dropdown:SetValue(
+                        "None"
+                    )
+                end)
+            end
+        end
+
+        SniperScan(
+            false
+        )
+    end,
 })
 
-SniperStatusBox:AddLabel("HolyGAG2SniperMatches", {
-    Text =
-        '<font color="rgb(196,181,253)"><b>Selected Targets</b></font>'
-        .. '\nNone'
-        .. '\n\n'
-        .. '<font color="rgb(196,181,253)"><b>Size Class</b></font>'
-        .. '\nAny Size'
-        .. '\n\n'
-        .. '<font color="rgb(196,181,253)"><b>Result</b></font>'
-        .. '\nNo scan yet.',
-    DoesWrap = true,
+local SniperMovementModeDropdown =
+    SniperBuyBehaviorBox:AddDropdown(
+        "HolyGAG2SniperMovementMode",
+        {
+            Text = "Movement Mode",
+            Values = {
+                "Walk",
+                "Teleport",
+            },
+            Default = SniperGetMovementMode(),
+            Multi = false,
+            Searchable = false,
+            AllowNull = false,
+            MaxVisibleDropdownItems = 2,
+            Tooltip = "Teleport is fastest. Walk is smoother and less ugly.",
+        }
+    )
+
+if SniperMovementModeDropdown
+and type(SniperMovementModeDropdown.OnChanged) == "function" then
+
+    SniperMovementModeDropdown:OnChanged(function(value)
+
+        SniperState.MovementMode =
+            SniperNormalizeMovementModeValue(
+                value,
+                "Walk"
+            )
+
+        SetSniperStatus(
+            "Movement mode: "
+            .. tostring(SniperState.MovementMode)
+        )
+
+        MarkConfigDirty()
+    end)
+end
+
+local SniperBuyModeDropdown =
+    SniperBuyBehaviorBox:AddDropdown(
+        "HolyGAG2SniperBuyMode",
+        {
+            Text = "Buy Mode",
+            Values = {
+                "Instant",
+                "Hold",
+            },
+            Default = SniperGetBuyMode(),
+            Multi = false,
+            Searchable = false,
+            AllowNull = false,
+            MaxVisibleDropdownItems = 2,
+            Tooltip = "Instant uses packet buy. Hold uses the real BuyPrompt hold.",
+        }
+    )
+
+if SniperBuyModeDropdown
+and type(SniperBuyModeDropdown.OnChanged) == "function" then
+
+    SniperBuyModeDropdown:OnChanged(function(value)
+
+        SniperState.BuyMode =
+            CleanText(value) == "Hold"
+            and "Hold"
+            or "Instant"
+
+        SetSniperStatus(
+            "Buy mode: "
+            .. tostring(SniperState.BuyMode)
+        )
+
+        MarkConfigDirty()
+    end)
+end
+
+-- Walk follow is now automatic for Hold mode.
+-- This is hidden from UI so normal users cannot break buy movement.
+SniperState.FollowPet =
+    true
+
+SniperBuyBehaviorBox:AddToggle("HolyGAG2SniperReturnAfterTame", {
+    Text = "Return After Buy",
+    Default = false,
+    Tooltip = "Returns to your old position after each confirmed buy. Return After Batch works separately.",
+    Callback = function(value)
+
+        SniperState.ReturnAfterTame =
+            value == true
+
+        SetSniperStatus(
+            SniperState.ReturnAfterTame == true
+            and "Return after buy enabled."
+            or "Return after buy disabled."
+        )
+
+        MarkConfigDirty()
+    end,
 })
+
+SniperBuyBehaviorBox:AddToggle("HolyGAG2SniperReturnAfterBatch", {
+    Text = "Return After Batch",
+    Default = false,
+    Tooltip = "Saves your position before the first buy, buys all current matching pets, then returns once. Does not require Return After Buy.",
+    Callback = function(value)
+
+        SniperState.ReturnAfterBatch =
+            value == true
+
+        if SniperState.ReturnAfterBatch ~= true then
+
+            SniperClearBatchReturnState()
+        end
+
+        SetSniperStatus(
+            SniperState.ReturnAfterBatch == true
+            and "Return after batch enabled."
+            or "Return after batch disabled."
+        )
+
+        MarkConfigDirty()
+    end,
+})
+
+SniperReturnModeDropdown =
+    SniperBuyBehaviorBox:AddDropdown(
+        "HolyGAG2SniperReturnMode",
+        {
+            Text = "Return Mode",
+            Values = {
+                "Walk",
+                "Teleport",
+            },
+            Default = SniperGetReturnMovementMode(),
+            Multi = false,
+            Searchable = false,
+            AllowNull = false,
+            MaxVisibleDropdownItems = 2,
+            Tooltip = "How Return After Buy or Return After Batch moves back to the saved position.",
+        }
+    )
+
+if SniperReturnModeDropdown
+and type(SniperReturnModeDropdown.OnChanged) == "function" then
+
+    SniperReturnModeDropdown:OnChanged(function(value)
+
+        SniperState.ReturnMovementMode =
+            CleanText(value) == "Teleport"
+            and "Teleport"
+            or "Walk"
+
+        SetSniperStatus(
+            "Return mode: "
+            .. tostring(SniperState.ReturnMovementMode)
+        )
+
+        MarkConfigDirty()
+    end)
+end
+
+-- Advanced buy timing is intentionally hardcoded.
+-- User-facing controls stay simple:
+-- Movement Mode, Buy Mode, Return After Buy, Return After Batch, Return Mode.
+
+SniperState.PostMoveBuyDelay =
+    0.10
+
+SniperState.BuyValidationHoldDelay =
+    5.7
+
+SniperState.BuyConfirmQuickTimeout =
+    4.00
+
+SniperState.BuyRetryDelay =
+    0.35
+
+SniperState.MaxBuyAttemptsPerPet =
+    1
+
+SniperState.WalkSettleDelay =
+    0.35
+
+SniperState.WalkFireMaxDistance =
+    9.0
+
+SniperState.WalkInstantMaxAttempts =
+    2
+
+SniperState.TeleportInstantMaxAttempts =
+    1
+
+SniperState.HoldMaxAttempts =
+    1
 
 SniperRefreshTargetDropdown()
+
 
 task.delay(1, function()
 
