@@ -22,6 +22,12 @@ local ReplicatedStorage =
 local CoreGui =
     game:GetService("CoreGui")
 
+local RunService =
+    game:GetService("RunService")
+
+local Stats =
+    game:GetService("Stats")
+
 GAG2_USER_INPUT_SERVICE =
     game:GetService("UserInputService")
 
@@ -1098,6 +1104,37 @@ GAG2_AUTO_TP_MIDDLE_FARM_STATE = {
     MaxRunSeconds = 120,
 }
 
+
+if type(GAG2_STATS_OVERLAY_STATE) == "table"
+and type(GAG2_STATS_OVERLAY_STATE.Destroy) == "function" then
+
+    pcall(function()
+
+        GAG2_STATS_OVERLAY_STATE.Destroy()
+    end)
+end
+
+GAG2_STATS_OVERLAY_STATE = {
+    Enabled = true,
+    Running = false,
+
+    Gui = nil,
+    Holder = nil,
+    Bar = nil,
+
+    FpsLabel = nil,
+    HolyLabel = nil,
+    PingLabel = nil,
+
+    Connection = nil,
+
+    FrameCounter = 0,
+    FrameTimer = 0,
+
+    LastFPS = 60,
+    LastPing = 0,
+}
+
 --==================================================
 -- [2] BASIC HELPERS
 --==================================================
@@ -1810,6 +1847,1014 @@ function Notify(title, description, duration)
         tostring(description)
     )
 end
+
+
+--==================================================
+-- [3.5] HOLY FPS / PING OVERLAY
+--==================================================
+
+function GAG2StatsOverlayGetParent()
+
+    if CoreGui then
+        return CoreGui
+    end
+
+    return LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+        or nil
+end
+
+function GAG2StatsOverlayDisconnect()
+
+    local state =
+        GAG2_STATS_OVERLAY_STATE
+
+    if state.Connection then
+
+        pcall(function()
+
+            state.Connection:Disconnect()
+        end)
+    end
+
+    state.Connection =
+        nil
+end
+
+function GAG2StatsOverlayGetPing()
+
+    local ok, value =
+        pcall(function()
+
+            local network =
+                Stats:FindFirstChild("Network")
+
+            if not network then
+
+                network =
+                    Stats.Network
+            end
+
+            local serverStats =
+                network
+                and network:FindFirstChild("ServerStatsItem")
+
+            if not serverStats
+            and network then
+
+                serverStats =
+                    network.ServerStatsItem
+            end
+
+            local pingItem =
+                serverStats
+                and serverStats:FindFirstChild("Data Ping")
+
+            if not pingItem
+            and serverStats then
+
+                pingItem =
+                    serverStats["Data Ping"]
+            end
+
+            if pingItem
+            and type(pingItem.GetValue) == "function" then
+
+                return pingItem:GetValue()
+            end
+
+            return nil
+        end)
+
+    if ok == true
+    and tonumber(value) then
+
+        return math.max(
+            0,
+            math.floor(
+                tonumber(value) + 0.5
+            )
+        )
+    end
+
+    return nil
+end
+
+function GAG2StatsOverlayGetFPSColor(fps)
+
+    fps =
+        tonumber(fps)
+        or 0
+
+    if fps >= 45 then
+
+        return Color3.fromRGB(
+            34,
+            197,
+            94
+        )
+    end
+
+    if fps >= 25 then
+
+        return Color3.fromRGB(
+            250,
+            204,
+            21
+        )
+    end
+
+    return Color3.fromRGB(
+        248,
+        113,
+        113
+    )
+end
+
+function GAG2StatsOverlayGetPingColor(ping)
+
+    ping =
+        tonumber(ping)
+
+    if not ping then
+
+        return Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+    end
+
+    if ping < 80 then
+
+        return Color3.fromRGB(
+            14,
+            165,
+            233
+        )
+    end
+
+    if ping <= 150 then
+
+        return Color3.fromRGB(
+            250,
+            204,
+            21
+        )
+    end
+
+    return Color3.fromRGB(
+        248,
+        113,
+        113
+    )
+end
+
+function GAG2StatsOverlayCreateTextLabel(parent, name, position, size, text, textSize, color)
+
+    local label =
+        Instance.new("TextLabel")
+
+    label.Name =
+        tostring(name or "Label")
+
+    label.Position =
+        position
+
+    label.Size =
+        size
+
+    label.BackgroundTransparency =
+        1
+
+    label.BorderSizePixel =
+        0
+
+    label.Font =
+        Enum.Font.GothamBold
+
+    label.Text =
+        tostring(text or "")
+
+    label.TextSize =
+        tonumber(textSize)
+        or 16
+
+    label.TextColor3 =
+        color
+        or Color3.fromRGB(
+            241,
+            245,
+            249
+        )
+
+    label.TextStrokeTransparency =
+        0.72
+
+    label.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    label.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    label.ZIndex =
+        1004
+
+    label.Parent =
+        parent
+
+    return label
+end
+
+function GAG2StatsOverlayCreateLine(parent, x)
+
+    local line =
+        Instance.new("Frame")
+
+    line.Name =
+        "Separator"
+
+    line.Position =
+        UDim2.fromOffset(
+            x,
+            16
+        )
+
+    line.Size =
+        UDim2.fromOffset(
+            1,
+            26
+        )
+
+    line.BackgroundColor3 =
+        Color3.fromRGB(
+            92,
+            74,
+            38
+        )
+
+    line.BackgroundTransparency =
+        0.18
+
+    line.BorderSizePixel =
+        0
+
+    line.ZIndex =
+        1003
+
+    line.Parent =
+        parent
+
+    return line
+end
+
+function GAG2StatsOverlayCreate()
+
+    local state =
+        GAG2_STATS_OVERLAY_STATE
+
+    if state.Gui
+    and state.Gui.Parent then
+
+        return state.Gui
+    end
+
+    local parent =
+        GAG2StatsOverlayGetParent()
+
+    if not parent then
+        return nil
+    end
+
+    local old =
+        parent:FindFirstChild(
+            "HolyGAG2StatsOverlay"
+        )
+
+    if old then
+
+        pcall(function()
+
+            old:Destroy()
+        end)
+    end
+
+    local gui =
+        Instance.new("ScreenGui")
+
+    gui.Name =
+        "HolyGAG2StatsOverlay"
+
+    gui.ResetOnSpawn =
+        false
+
+    gui.IgnoreGuiInset =
+        true
+
+    gui.ZIndexBehavior =
+        Enum.ZIndexBehavior.Sibling
+
+    gui.Parent =
+        parent
+
+    local holder =
+        Instance.new("Frame")
+
+    holder.Name =
+        "Holder"
+
+    holder.AnchorPoint =
+        Vector2.new(
+            0.5,
+            0
+        )
+
+    holder.Position =
+        UDim2.new(
+            0.5,
+            0,
+            0,
+            10
+        )
+
+    holder.Size =
+        UDim2.fromOffset(
+            452,
+            58
+        )
+
+    holder.BackgroundTransparency =
+        1
+
+    holder.BorderSizePixel =
+        0
+
+    holder.Active =
+        true
+
+    holder.Draggable =
+        true
+
+    holder.ZIndex =
+        1000
+
+    holder.Parent =
+        gui
+
+    local shadow =
+        Instance.new("Frame")
+
+    shadow.Name =
+        "Shadow"
+
+    shadow.Position =
+        UDim2.fromOffset(
+            6,
+            12
+        )
+
+    shadow.Size =
+        UDim2.fromOffset(
+            440,
+            42
+        )
+
+    shadow.BackgroundColor3 =
+        Color3.fromRGB(
+            20,
+            14,
+            4
+        )
+
+    shadow.BackgroundTransparency =
+        0.42
+
+    shadow.BorderSizePixel =
+        0
+
+    shadow.ZIndex =
+        1000
+
+    shadow.Parent =
+        holder
+
+    local shadowCorner =
+        Instance.new("UICorner")
+
+    shadowCorner.CornerRadius =
+        UDim.new(
+            0,
+            14
+        )
+
+    shadowCorner.Parent =
+        shadow
+
+    local bar =
+        Instance.new("Frame")
+
+    bar.Name =
+        "Bar"
+
+    bar.Position =
+        UDim2.fromOffset(
+            6,
+            8
+        )
+
+    bar.Size =
+        UDim2.fromOffset(
+            440,
+            42
+        )
+
+    bar.BackgroundColor3 =
+        Color3.fromRGB(
+            245,
+            241,
+            229
+        )
+
+    bar.BackgroundTransparency =
+        0.10
+
+    bar.BorderSizePixel =
+        0
+
+    bar.Active =
+        true
+
+    bar.ZIndex =
+        1001
+
+    bar.Parent =
+        holder
+
+    local barCorner =
+        Instance.new("UICorner")
+
+    barCorner.CornerRadius =
+        UDim.new(
+            0,
+            12
+        )
+
+    barCorner.Parent =
+        bar
+
+    local barStroke =
+        Instance.new("UIStroke")
+
+    barStroke.Color =
+        Color3.fromRGB(
+            245,
+            190,
+            70
+        )
+
+    barStroke.Thickness =
+        2
+
+    barStroke.Transparency =
+        0.12
+
+    barStroke.Parent =
+        bar
+
+    local topCap =
+        Instance.new("Frame")
+
+    topCap.Name =
+        "TopCap"
+
+    topCap.AnchorPoint =
+        Vector2.new(
+            0.5,
+            0
+        )
+
+    topCap.Position =
+        UDim2.new(
+            0.5,
+            0,
+            0,
+            0
+        )
+
+    topCap.Size =
+        UDim2.fromOffset(
+            104,
+            24
+        )
+
+    topCap.BackgroundColor3 =
+        Color3.fromRGB(
+            248,
+            244,
+            232
+        )
+
+    topCap.BackgroundTransparency =
+        0.08
+
+    topCap.BorderSizePixel =
+        0
+
+    topCap.ZIndex =
+        1002
+
+    topCap.Parent =
+        holder
+
+    local capCorner =
+        Instance.new("UICorner")
+
+    capCorner.CornerRadius =
+        UDim.new(
+            0,
+            9
+        )
+
+    capCorner.Parent =
+        topCap
+
+    local capStroke =
+        Instance.new("UIStroke")
+
+    capStroke.Color =
+        Color3.fromRGB(
+            245,
+            190,
+            70
+        )
+
+    capStroke.Thickness =
+        1
+
+    capStroke.Transparency =
+        0.12
+
+    capStroke.Parent =
+        topCap
+
+    local halo =
+        GAG2StatsOverlayCreateTextLabel(
+            topCap,
+            "Halo",
+            UDim2.fromOffset(
+                0,
+                -6
+            ),
+            UDim2.new(
+                1,
+                0,
+                1,
+                8
+            ),
+            "◯",
+            28,
+            Color3.fromRGB(
+                245,
+                190,
+                70
+            )
+        )
+
+    halo.TextStrokeTransparency =
+        0.35
+
+    GAG2StatsOverlayCreateTextLabel(
+        bar,
+        "LeftSpark",
+        UDim2.fromOffset(
+            14,
+            0
+        ),
+        UDim2.fromOffset(
+            38,
+            42
+        ),
+        "✦",
+        24,
+        Color3.fromRGB(
+            190,
+            134,
+            28
+        )
+    )
+
+    GAG2StatsOverlayCreateTextLabel(
+        bar,
+        "RightSpark",
+        UDim2.fromOffset(
+            388,
+            0
+        ),
+        UDim2.fromOffset(
+            38,
+            42
+        ),
+        "✦",
+        24,
+        Color3.fromRGB(
+            190,
+            134,
+            28
+        )
+    )
+
+    GAG2StatsOverlayCreateLine(
+        bar,
+        58
+    )
+
+    GAG2StatsOverlayCreateLine(
+        bar,
+        382
+    )
+
+    local fpsLabel =
+        GAG2StatsOverlayCreateTextLabel(
+            bar,
+            "FPS",
+            UDim2.fromOffset(
+                70,
+                0
+            ),
+            UDim2.fromOffset(
+                116,
+                42
+            ),
+            "60 FPS",
+            22,
+            Color3.fromRGB(
+                34,
+                197,
+                94
+            )
+        )
+
+    local holyLabel =
+        GAG2StatsOverlayCreateTextLabel(
+            bar,
+            "HOLY",
+            UDim2.fromOffset(
+                184,
+                -1
+            ),
+            UDim2.fromOffset(
+                82,
+                42
+            ),
+            "HOLY",
+            28,
+            Color3.fromRGB(
+                190,
+                134,
+                28
+            )
+        )
+
+    holyLabel.TextStrokeTransparency =
+        0.50
+
+    local middleDot =
+        GAG2StatsOverlayCreateTextLabel(
+            bar,
+            "Dot",
+            UDim2.fromOffset(
+                266,
+                0
+            ),
+            UDim2.fromOffset(
+                26,
+                42
+            ),
+            "•",
+            20,
+            Color3.fromRGB(
+                92,
+                74,
+                38
+            )
+        )
+
+    middleDot.TextStrokeTransparency =
+        1
+
+    local pingLabel =
+        GAG2StatsOverlayCreateTextLabel(
+            bar,
+            "Ping",
+            UDim2.fromOffset(
+                292,
+                0
+            ),
+            UDim2.fromOffset(
+                86,
+                42
+            ),
+            "? ms",
+            22,
+            Color3.fromRGB(
+                14,
+                165,
+                233
+            )
+        )
+
+    state.Gui =
+        gui
+
+    state.Holder =
+        holder
+
+    state.Bar =
+        bar
+
+    state.FpsLabel =
+        fpsLabel
+
+    state.HolyLabel =
+        holyLabel
+
+    state.PingLabel =
+        pingLabel
+
+    return gui
+end
+
+function GAG2StatsOverlayUpdateText()
+
+    local state =
+        GAG2_STATS_OVERLAY_STATE
+
+    local fps =
+        math.max(
+            0,
+            math.floor(
+                tonumber(state.LastFPS)
+                or 0
+            )
+        )
+
+    local ping =
+        tonumber(
+            state.LastPing
+        )
+
+    if state.FpsLabel then
+
+        pcall(function()
+
+            state.FpsLabel.Text =
+                tostring(fps)
+                .. " FPS"
+
+            state.FpsLabel.TextColor3 =
+                GAG2StatsOverlayGetFPSColor(
+                    fps
+                )
+        end)
+    end
+
+    if state.PingLabel then
+
+        pcall(function()
+
+            state.PingLabel.Text =
+                ping
+                and (
+                    tostring(
+                        math.floor(
+                            ping + 0.5
+                        )
+                    )
+                    .. " ms"
+                )
+                or "? ms"
+
+            state.PingLabel.TextColor3 =
+                GAG2StatsOverlayGetPingColor(
+                    ping
+                )
+        end)
+    end
+end
+
+function GAG2StatsOverlayStart()
+
+    local state =
+        GAG2_STATS_OVERLAY_STATE
+
+    state.Enabled =
+        true
+
+    GAG2StatsOverlayCreate()
+
+    if state.Holder then
+
+        pcall(function()
+
+            state.Holder.Visible =
+                true
+        end)
+    end
+
+    if state.Running == true then
+
+        GAG2StatsOverlayUpdateText()
+        return true
+    end
+
+    state.Running =
+        true
+
+    state.FrameCounter =
+        0
+
+    state.FrameTimer =
+        tick()
+
+    state.LastPing =
+        GAG2StatsOverlayGetPing()
+
+    GAG2StatsOverlayUpdateText()
+
+    GAG2StatsOverlayDisconnect()
+
+    state.Connection =
+        RunService.RenderStepped:Connect(function()
+
+            if state.Enabled ~= true then
+                return
+            end
+
+            state.FrameCounter =
+                tonumber(state.FrameCounter)
+                or 0
+
+            state.FrameCounter =
+                state.FrameCounter + 1
+
+            local now =
+                tick()
+
+            local elapsed =
+                now - (
+                    tonumber(state.FrameTimer)
+                    or now
+                )
+
+            if elapsed >= 1 then
+
+                state.LastFPS =
+                    state.FrameCounter / math.max(
+                        elapsed,
+                        0.001
+                    )
+
+                state.FrameCounter =
+                    0
+
+                state.FrameTimer =
+                    now
+
+                state.LastPing =
+                    GAG2StatsOverlayGetPing()
+
+                GAG2StatsOverlayUpdateText()
+            end
+        end)
+
+    return true
+end
+
+function GAG2StatsOverlayStop(skipDirty)
+
+    local state =
+        GAG2_STATS_OVERLAY_STATE
+
+    state.Enabled =
+        false
+
+    state.Running =
+        false
+
+    GAG2StatsOverlayDisconnect()
+
+    if state.Holder then
+
+        pcall(function()
+
+            state.Holder.Visible =
+                false
+        end)
+    end
+
+    if skipDirty ~= true then
+
+        MarkConfigDirty()
+    end
+end
+
+function GAG2StatsOverlayDestroy()
+
+    GAG2StatsOverlayStop(
+        true
+    )
+
+    local state =
+        GAG2_STATS_OVERLAY_STATE
+
+    if state.Gui then
+
+        pcall(function()
+
+            state.Gui:Destroy()
+        end)
+    end
+
+    state.Gui =
+        nil
+
+    state.Holder =
+        nil
+
+    state.Bar =
+        nil
+
+    state.FpsLabel =
+        nil
+
+    state.HolyLabel =
+        nil
+
+    state.PingLabel =
+        nil
+end
+
+function GAG2StatsOverlaySetEnabled(value)
+
+    local state =
+        GAG2_STATS_OVERLAY_STATE
+
+    local enabled =
+        value == true
+
+    state.Enabled =
+        enabled
+
+    if ConfigState.Loading == true then
+        return
+    end
+
+    if enabled == true then
+
+        GAG2StatsOverlayStart()
+
+    else
+
+        GAG2StatsOverlayStop(
+            true
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2RestoreStatsOverlayState()
+
+    task.defer(function()
+
+        local enabled =
+            true
+
+        if Toggles.HolyGAG2StatsOverlay then
+
+            enabled =
+                Toggles.HolyGAG2StatsOverlay.Value ~= false
+        end
+
+        GAG2_STATS_OVERLAY_STATE.Enabled =
+            enabled
+
+        if enabled == true then
+
+            GAG2StatsOverlayStart()
+
+        else
+
+            GAG2StatsOverlayStop(
+                true
+            )
+        end
+    end)
+end
+
+GAG2_STATS_OVERLAY_STATE.Destroy =
+    GAG2StatsOverlayDestroy
+
 
 --==================================================
 -- [4] LOGIC HELPERS
@@ -71619,6 +72664,18 @@ end)
 
 SettingsUIBox:AddDivider()
 
+SettingsUIBox:AddToggle("HolyGAG2StatsOverlay", {
+    Text = "FPS / Ping Overlay",
+    Default = true,
+    Tooltip = "Default ON. Shows the draggable HOLY gold FPS/ping overlay at the top middle.",
+    Callback = function(value)
+
+        GAG2StatsOverlaySetEnabled(
+            value == true
+        )
+    end,
+})
+
 SettingsUIBox:AddToggle("HolyGAG2HideOtherGardens", {
     Text = "Hide Other Gardens",
     Default = false,
@@ -71755,6 +72812,11 @@ SettingsUIBox:AddButton({
     DoubleClick = true,
     Tooltip = "Unload HOLY UI.",
     Func = function()
+
+        if type(GAG2StatsOverlayDestroy) == "function" then
+
+            GAG2StatsOverlayDestroy()
+        end
 
         Library:Unload()
     end,
@@ -71897,6 +72959,8 @@ and type(Toggles.HolyGAG2AutoSkipLoading.SetValue) == "function" then
         )
     end)
 end
+
+GAG2RestoreStatsOverlayState()
 
 if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
 
