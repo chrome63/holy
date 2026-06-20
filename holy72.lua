@@ -9233,6 +9233,11 @@ local SniperState = {
     Running = false,
 
     Targets = {},
+
+    BuilderTargets = {},
+    BuilderSizeClass = "Any",
+    BuilderMutationFilter = "Any",
+
     PriorityPets = {
         "",
         "",
@@ -9709,10 +9714,10 @@ function SniperOnTargetDropdownChanged(value)
     local limitedTargets =
         SniperLimitTargetsForCurrentMode(
             rawTargets,
-            SniperState.Targets
+            SniperState.BuilderTargets
         )
 
-    SniperState.Targets =
+    SniperState.BuilderTargets =
         limitedTargets
 
     if SniperState.AllowMultiPets ~= true then
@@ -9721,6 +9726,12 @@ function SniperOnTargetDropdownChanged(value)
             limitedTargets
         )
     end
+
+    SetSniperStatus(
+        #limitedTargets > 0
+        and "Builder updated. Click Save Filter to activate."
+        or "Builder cleared."
+    )
 
     MarkConfigDirty()
 end
@@ -9737,21 +9748,27 @@ function SniperSetAllowMultiPets(value)
 
         currentTargets =
             SniperNormalizeList(
-                SniperState.Targets
+                SniperState.BuilderTargets
             )
     end
 
     currentTargets =
         SniperLimitTargetsForCurrentMode(
             currentTargets,
-            SniperState.Targets
+            SniperState.BuilderTargets
         )
 
-    SniperState.Targets =
+    SniperState.BuilderTargets =
         currentTargets
 
     SniperApplyTargetDropdownValue(
         currentTargets
+    )
+
+    SetSniperStatus(
+        SniperState.AllowMultiPets == true
+        and "Multi pet builder enabled."
+        or "Single pet builder enabled."
     )
 
     MarkConfigDirty()
@@ -9766,17 +9783,17 @@ function SniperGetBuilderTargetPets()
 
         targets =
             SniperNormalizeList(
-                SniperState.Targets
+                SniperState.BuilderTargets
             )
     end
 
     targets =
         SniperLimitTargetsForCurrentMode(
             targets,
-            SniperState.Targets
+            SniperState.BuilderTargets
         )
 
-    SniperState.Targets =
+    SniperState.BuilderTargets =
         targets
 
     SniperApplyTargetDropdownValue(
@@ -9788,13 +9805,22 @@ end
 
 function SniperTargetsText()
 
-    if type(SniperState.Targets) ~= "table"
-    or #SniperState.Targets <= 0 then
-        return "None"
+    local activeTargets =
+        {}
+
+    if type(SniperGetActiveWatchlistTargetNames) == "function" then
+
+        activeTargets =
+            SniperGetActiveWatchlistTargetNames()
+    end
+
+    if type(activeTargets) ~= "table"
+    or #activeTargets <= 0 then
+        return "No saved filters."
     end
 
     return table.concat(
-        SniperState.Targets,
+        activeTargets,
         ", "
     )
 end
@@ -10025,15 +10051,115 @@ function SniperGetRegistryPetNames()
     return names
 end
 
+function SniperGetActiveWatchlistRules()
+
+    local rules =
+        {}
+
+    for watchlistId = 1, 3 do
+
+        local source =
+            GAG2_SNIPER_FILTER_SETS[watchlistId]
+
+        if type(source) == "table" then
+
+            for key, rule in pairs(source) do
+
+                local copied =
+                    GAG2CopySniperRule(rule)
+
+                if copied
+                and copied.PetName ~= "" then
+
+                    copied.WatchlistId =
+                        watchlistId
+
+                    copied.Key =
+                        tostring(key)
+
+                    table.insert(
+                        rules,
+                        copied
+                    )
+                end
+            end
+        end
+    end
+
+    table.sort(rules, function(a, b)
+
+        if tonumber(a.WatchlistId or 1) ~= tonumber(b.WatchlistId or 1) then
+
+            return tonumber(a.WatchlistId or 1)
+                < tonumber(b.WatchlistId or 1)
+        end
+
+        if tostring(a.PetName or "") ~= tostring(b.PetName or "") then
+
+            return tostring(a.PetName or "")
+                < tostring(b.PetName or "")
+        end
+
+        if tostring(a.SizeFilter or "") ~= tostring(b.SizeFilter or "") then
+
+            return tostring(a.SizeFilter or "")
+                < tostring(b.SizeFilter or "")
+        end
+
+        return tostring(a.MutationFilter or "")
+            < tostring(b.MutationFilter or "")
+    end)
+
+    return rules
+end
+
+function SniperGetActiveWatchlistTargetNames()
+
+    local names =
+        {}
+
+    local seen =
+        {}
+
+    for _, rule in ipairs(
+        SniperGetActiveWatchlistRules()
+    ) do
+
+        local petName =
+            CleanText(
+                rule.PetName
+            )
+
+        if petName ~= ""
+        and seen[petName] ~= true then
+
+            seen[petName] =
+                true
+
+            table.insert(
+                names,
+                petName
+            )
+        end
+    end
+
+    table.sort(
+        names
+    )
+
+    return names
+end
+
 function SniperBuildTargets()
 
     local targets =
         {}
 
     local ordered =
-        SniperNormalizeList(
-            SniperState.Targets
-        )
+        SniperGetActiveWatchlistTargetNames()
+
+    SniperState.Targets =
+        ordered
 
     for _, targetName in ipairs(ordered) do
 
@@ -10045,7 +10171,71 @@ function SniperBuildTargets()
         end
     end
 
-    return targets, ordered
+    return targets,
+        ordered
+end
+
+function SniperEntryMatchesWatchlistRule(entry, rule)
+
+    if type(entry) ~= "table"
+    or type(rule) ~= "table" then
+        return false
+    end
+
+    local petKey =
+        SniperNormalizeName(
+            entry.Name
+        )
+
+    local targetKey =
+        SniperNormalizeName(
+            rule.PetName
+        )
+
+    if petKey == ""
+    or targetKey == "" then
+        return false
+    end
+
+    if petKey ~= targetKey
+    and petKey:find(targetKey, 1, true) == nil
+    and targetKey:find(petKey, 1, true) == nil then
+        return false
+    end
+
+    if SniperEntryMatchesSizeClass(
+        entry,
+        rule.SizeFilter
+    ) ~= true then
+        return false
+    end
+
+    if SniperEntryMatchesMutationFilter(
+        entry,
+        rule.MutationFilter
+    ) ~= true then
+        return false
+    end
+
+    return true
+end
+
+function SniperFindMatchingRuleForEntry(entry)
+
+    for _, rule in ipairs(
+        SniperGetActiveWatchlistRules()
+    ) do
+
+        if SniperEntryMatchesWatchlistRule(
+            entry,
+            rule
+        ) == true then
+
+            return rule
+        end
+    end
+
+    return nil
 end
 
 function SniperGetSpawnsFolder()
@@ -42609,7 +42799,7 @@ function SniperRefreshTargetDropdown()
 
         SniperApplyTargetDropdownValue(
             SniperLimitTargetsForCurrentMode(
-                SniperState.Targets,
+                SniperState.BuilderTargets,
                 {}
             )
         )
@@ -42833,7 +43023,7 @@ end
 
 function SniperSetSizeClass(value)
 
-    SniperState.SizeClass =
+    SniperState.BuilderSizeClass =
         SniperCleanSizeClass(
             value
         )
@@ -42844,7 +43034,8 @@ end
 function SniperSizeClassText()
 
     return SniperCleanSizeClass(
-        SniperState.SizeClass
+        SniperState.BuilderSizeClass
+        or SniperState.SizeClass
     )
 end
 
@@ -42866,7 +43057,7 @@ end
 
 function SniperSetMutationFilter(value)
 
-    SniperState.MutationFilter =
+    SniperState.BuilderMutationFilter =
         SniperCleanMutationFilter(
             value
         )
@@ -42877,7 +43068,8 @@ end
 function SniperMutationFilterText()
 
     return SniperCleanMutationFilter(
-        SniperState.MutationFilter
+        SniperState.BuilderMutationFilter
+        or SniperState.MutationFilter
     )
 end
 
@@ -43262,8 +43454,8 @@ function SniperAddCurrentFilterToWatchlist()
         local key =
             SniperBuildWatchlistKey(
                 petName,
-                SniperState.SizeClass,
-                SniperState.MutationFilter
+                SniperSizeClassText(),
+                SniperMutationFilterText()
             )
 
         GAG2_SNIPER_FILTER_SETS[watchlistId][key] = {
@@ -43289,6 +43481,8 @@ function SniperAddCurrentFilterToWatchlist()
     )
 
     GAG2RefreshSniperWatchlistUi()
+
+    SniperBuildTargets()
 
     SetSniperStatus(
         "Saved "
@@ -43725,16 +43919,16 @@ function SniperLoadSelectedWatchlistFilter()
     SniperState.SaveTarget =
         entry.WatchlistId
 
-    SniperState.Targets = {
+    SniperState.BuilderTargets = {
         CleanText(rule.PetName),
     }
 
-    SniperState.SizeClass =
+    SniperState.BuilderSizeClass =
         SniperCleanSizeClass(
             rule.SizeFilter
         )
 
-    SniperState.MutationFilter =
+    SniperState.BuilderMutationFilter =
         SniperCleanMutationFilter(
             rule.MutationFilter
         )
@@ -43754,7 +43948,7 @@ function SniperLoadSelectedWatchlistFilter()
     end
 
     SniperApplyTargetDropdownValue(
-        SniperState.Targets
+        SniperState.BuilderTargets
     )
 
     if SniperSizeDropdown
@@ -43763,7 +43957,7 @@ function SniperLoadSelectedWatchlistFilter()
         pcall(function()
 
             SniperSizeDropdown:SetValue(
-                SniperState.SizeClass
+                SniperState.BuilderSizeClass
             )
         end)
     end
@@ -43774,7 +43968,7 @@ function SniperLoadSelectedWatchlistFilter()
         pcall(function()
 
             SniperMutationDropdown:SetValue(
-                SniperState.MutationFilter
+                SniperState.BuilderMutationFilter
             )
         end)
     end
@@ -44954,9 +45148,7 @@ function SniperScan(allowAutoHop)
     for _, entry in ipairs(entries) do
 
         if SniperIsEntryHandled(entry) ~= true
-        and SniperEntryMatchesTargets(entry, targets) == true
-        and SniperEntryMatchesSizeClass(entry) == true
-        and SniperEntryMatchesMutationFilter(entry) == true then
+        and SniperFindMatchingRuleForEntry(entry) ~= nil then
 
             table.insert(
                 matches,
@@ -44994,7 +45186,7 @@ function SniperScan(allowAutoHop)
     if #orderedTargets <= 0 then
 
         SetSniperStatus(
-            "Select target pets."
+            "Save at least one sniper filter."
         )
 
         return matches
@@ -45082,7 +45274,7 @@ function SniperScan(allowAutoHop)
     for _, entry in ipairs(entries) do
 
         if SniperIsEntryHandled(entry) == true
-        and SniperEntryMatchesTargets(entry, targets) == true then
+        and SniperFindMatchingRuleForEntry(entry) ~= nil then
 
             hasHandledActiveTarget =
                 true
@@ -46008,26 +46200,26 @@ function RestoreSniperAutosaveState()
         if Options.HolyGAG2SniperTargetsList
         and Options.HolyGAG2SniperTargetsList.Value ~= nil then
 
-            SniperState.Targets =
+            SniperState.BuilderTargets =
                 SniperLimitTargetsForCurrentMode(
                     SniperTargetsFromDropdownValue(
                         Options.HolyGAG2SniperTargetsList.Value
                     ),
-                    SniperState.Targets
+                    SniperState.BuilderTargets
                 )
         end
 
         task.defer(function()
 
             SniperApplyTargetDropdownValue(
-                SniperState.Targets
+                SniperState.BuilderTargets
             )
         end)
 
         if Options.HolyGAG2SniperSizeClass
         and Options.HolyGAG2SniperSizeClass.Value ~= nil then
 
-            SniperState.SizeClass =
+            SniperState.BuilderSizeClass =
                 SniperCleanSizeClass(
                     Options.HolyGAG2SniperSizeClass.Value
                 )
@@ -46036,7 +46228,7 @@ function RestoreSniperAutosaveState()
         if Options.HolyGAG2SniperMutationFilter
         and Options.HolyGAG2SniperMutationFilter.Value ~= nil then
 
-            SniperState.MutationFilter =
+            SniperState.BuilderMutationFilter =
                 SniperCleanMutationFilter(
                     Options.HolyGAG2SniperMutationFilter.Value
                 )
@@ -66891,7 +67083,7 @@ SniperTargetDropdown =
             Values = SniperGetDropdownPetNames(),
             Default = SniperBuildDropdownSelectionMap(
                 SniperLimitTargetsForCurrentMode(
-                    SniperState.Targets,
+                    SniperState.BuilderTargets,
                     {}
                 )
             ),
@@ -66918,7 +67110,7 @@ task.defer(function()
 
     SniperApplyTargetDropdownValue(
         SniperLimitTargetsForCurrentMode(
-            SniperState.Targets,
+            SniperState.BuilderTargets,
             {}
         )
     )
@@ -66948,8 +67140,8 @@ and type(SniperSizeDropdown.OnChanged) == "function" then
             value
         )
 
-        SniperScan(
-            false
+        SetSniperStatus(
+            "Builder size updated. Click Save Filter to activate."
         )
     end)
 end
@@ -66978,8 +67170,8 @@ and type(SniperMutationDropdown.OnChanged) == "function" then
             value
         )
 
-        SniperScan(
-            false
+        SetSniperStatus(
+            "Builder mutation updated. Click Save Filter to activate."
         )
     end)
 end
