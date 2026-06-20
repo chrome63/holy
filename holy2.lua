@@ -22,6 +22,12 @@ local ReplicatedStorage =
 local CoreGui =
     game:GetService("CoreGui")
 
+local RunService =
+    game:GetService("RunService")
+
+local Stats =
+    game:GetService("Stats")
+
 GAG2_USER_INPUT_SERVICE =
     game:GetService("UserInputService")
 
@@ -1070,6 +1076,14 @@ GAG2_AUTO_TP_MIDDLE_FARM_STATE = {
     LastSniperMiddleStartAt = 0,
     SniperWaitActive = false,
 
+    AnchorReady = false,
+    AnchorResolving = false,
+    AnchorCFrame = nil,
+    AnchorPosition = nil,
+    AnchorReason = "not resolved",
+    AnchorResolvedAt = 0,
+    AnchorLastAttemptAt = 0,
+
     EarlyKeepDistance = 8,
     PostLoadRepairDistance = 12,
 
@@ -1096,6 +1110,37 @@ GAG2_AUTO_TP_MIDDLE_FARM_STATE = {
     PostLoadMaxRepairTries = 12,
 
     MaxRunSeconds = 120,
+}
+
+
+if type(GAG2_STATS_OVERLAY_STATE) == "table"
+and type(GAG2_STATS_OVERLAY_STATE.Destroy) == "function" then
+
+    pcall(function()
+
+        GAG2_STATS_OVERLAY_STATE.Destroy()
+    end)
+end
+
+GAG2_STATS_OVERLAY_STATE = {
+    Enabled = true,
+    Running = false,
+
+    Gui = nil,
+    Holder = nil,
+    Bar = nil,
+
+    FpsLabel = nil,
+    HolyLabel = nil,
+    PingLabel = nil,
+
+    Connection = nil,
+
+    FrameCounter = 0,
+    FrameTimer = 0,
+
+    LastFPS = 60,
+    LastPing = 0,
 }
 
 --==================================================
@@ -1810,6 +1855,1021 @@ function Notify(title, description, duration)
         tostring(description)
     )
 end
+
+
+--==================================================
+-- [3.5] HOLY FPS / PING OVERLAY
+--==================================================
+
+function GAG2StatsOverlayGetParent()
+
+    if CoreGui then
+        return CoreGui
+    end
+
+    return LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+        or nil
+end
+
+function GAG2StatsOverlayDisconnect()
+
+    local state =
+        GAG2_STATS_OVERLAY_STATE
+
+    if state.Connection then
+
+        pcall(function()
+
+            state.Connection:Disconnect()
+        end)
+    end
+
+    state.Connection =
+        nil
+end
+
+function GAG2StatsOverlayGetPing()
+
+    local ok, value =
+        pcall(function()
+
+            local network =
+                Stats:FindFirstChild("Network")
+
+            if not network then
+
+                network =
+                    Stats.Network
+            end
+
+            local serverStats =
+                network
+                and network:FindFirstChild("ServerStatsItem")
+
+            if not serverStats
+            and network then
+
+                serverStats =
+                    network.ServerStatsItem
+            end
+
+            local pingItem =
+                serverStats
+                and serverStats:FindFirstChild("Data Ping")
+
+            if not pingItem
+            and serverStats then
+
+                pingItem =
+                    serverStats["Data Ping"]
+            end
+
+            if pingItem
+            and type(pingItem.GetValue) == "function" then
+
+                return pingItem:GetValue()
+            end
+
+            return nil
+        end)
+
+    if ok == true
+    and tonumber(value) then
+
+        return math.max(
+            0,
+            math.floor(
+                tonumber(value) + 0.5
+            )
+        )
+    end
+
+    return nil
+end
+
+function GAG2StatsOverlayGetFPSColor(fps)
+
+    fps =
+        tonumber(fps)
+        or 0
+
+    if fps >= 45 then
+
+        return Color3.fromRGB(
+            34,
+            197,
+            94
+        )
+    end
+
+    if fps >= 25 then
+
+        return Color3.fromRGB(
+            250,
+            204,
+            21
+        )
+    end
+
+    return Color3.fromRGB(
+        248,
+        113,
+        113
+    )
+end
+
+function GAG2StatsOverlayGetPingColor(ping)
+
+    ping =
+        tonumber(ping)
+
+    if not ping then
+
+        return Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+    end
+
+    if ping < 80 then
+
+        return Color3.fromRGB(
+            14,
+            165,
+            233
+        )
+    end
+
+    if ping <= 150 then
+
+        return Color3.fromRGB(
+            250,
+            204,
+            21
+        )
+    end
+
+    return Color3.fromRGB(
+        248,
+        113,
+        113
+    )
+end
+
+function GAG2StatsOverlayCreateTextLabel(parent, name, position, size, text, textSize, color)
+
+    local label =
+        Instance.new("TextLabel")
+
+    label.Name =
+        tostring(name or "Label")
+
+    label.Position =
+        position
+
+    label.Size =
+        size
+
+    label.BackgroundTransparency =
+        1
+
+    label.BorderSizePixel =
+        0
+
+    label.Font =
+        Enum.Font.GothamBold
+
+    label.Text =
+        tostring(text or "")
+
+    label.TextSize =
+        tonumber(textSize)
+        or 16
+
+    label.TextColor3 =
+        color
+        or Color3.fromRGB(
+            241,
+            245,
+            249
+        )
+
+    label.TextStrokeTransparency =
+        0.72
+
+    label.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    label.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    label.ZIndex =
+        1004
+
+    label.Parent =
+        parent
+
+    return label
+end
+
+function GAG2StatsOverlayCreateLine(parent, x)
+
+    local line =
+        Instance.new("Frame")
+
+    line.Name =
+        "Separator"
+
+    line.Position =
+        UDim2.fromOffset(
+            x,
+            16
+        )
+
+    line.Size =
+        UDim2.fromOffset(
+            1,
+            26
+        )
+
+    line.BackgroundColor3 =
+        Color3.fromRGB(
+            92,
+            74,
+            38
+        )
+
+    line.BackgroundTransparency =
+        0.18
+
+    line.BorderSizePixel =
+        0
+
+    line.ZIndex =
+        1003
+
+    line.Parent =
+        parent
+
+    return line
+end
+
+function GAG2StatsOverlayCreate()
+
+    local state =
+        GAG2_STATS_OVERLAY_STATE
+
+    if state.Gui
+    and state.Gui.Parent then
+
+        return state.Gui
+    end
+
+    local parent =
+        GAG2StatsOverlayGetParent()
+
+    if not parent then
+        return nil
+    end
+
+    local old =
+        parent:FindFirstChild(
+            "HolyGAG2StatsOverlay"
+        )
+
+    if old then
+
+        pcall(function()
+
+            old:Destroy()
+        end)
+    end
+
+    local gui =
+        Instance.new("ScreenGui")
+
+    gui.Name =
+        "HolyGAG2StatsOverlay"
+
+    gui.ResetOnSpawn =
+        false
+
+    gui.IgnoreGuiInset =
+        true
+
+    gui.ZIndexBehavior =
+        Enum.ZIndexBehavior.Sibling
+
+    gui.Parent =
+        parent
+
+    local holder =
+        Instance.new("Frame")
+
+    holder.Name =
+        "Holder"
+
+    holder.AnchorPoint =
+        Vector2.new(
+            0.5,
+            0
+        )
+
+    holder.Position =
+        UDim2.new(
+            0.5,
+            0,
+            0,
+            8
+        )
+
+    holder.Size =
+        UDim2.fromOffset(
+            286,
+            34
+        )
+
+    holder.BackgroundTransparency =
+        1
+
+    holder.BorderSizePixel =
+        0
+
+    holder.Active =
+        true
+
+    holder.Draggable =
+        true
+
+    holder.ZIndex =
+        1000
+
+    holder.Parent =
+        gui
+
+    local shadow =
+        Instance.new("Frame")
+
+    shadow.Name =
+        "Shadow"
+
+    shadow.Position =
+        UDim2.fromOffset(
+            4,
+            5
+        )
+
+    shadow.Size =
+        UDim2.fromOffset(
+            278,
+            28
+        )
+
+    shadow.BackgroundColor3 =
+        Color3.fromRGB(
+            0,
+            0,
+            0
+        )
+
+    shadow.BackgroundTransparency =
+        0.58
+
+    shadow.BorderSizePixel =
+        0
+
+    shadow.ZIndex =
+        1000
+
+    shadow.Parent =
+        holder
+
+    local shadowCorner =
+        Instance.new("UICorner")
+
+    shadowCorner.CornerRadius =
+        UDim.new(
+            0,
+            10
+        )
+
+    shadowCorner.Parent =
+        shadow
+
+    local bar =
+        Instance.new("Frame")
+
+    bar.Name =
+        "Bar"
+
+    bar.Position =
+        UDim2.fromOffset(
+            3,
+            2
+        )
+
+    bar.Size =
+        UDim2.fromOffset(
+            280,
+            30
+        )
+
+    bar.BackgroundColor3 =
+        Color3.fromRGB(
+            8,
+            8,
+            10
+        )
+
+    bar.BackgroundTransparency =
+        0.18
+
+    bar.BorderSizePixel =
+        0
+
+    bar.Active =
+        false
+
+    bar.ZIndex =
+        1001
+
+    bar.Parent =
+        holder
+
+    local barCorner =
+        Instance.new("UICorner")
+
+    barCorner.CornerRadius =
+        UDim.new(
+            0,
+            10
+        )
+
+    barCorner.Parent =
+        bar
+
+    local barStroke =
+        Instance.new("UIStroke")
+
+    barStroke.Color =
+        Color3.fromRGB(
+            245,
+            190,
+            70
+        )
+
+    barStroke.Thickness =
+        1
+
+    barStroke.Transparency =
+        0.22
+
+    barStroke.Parent =
+        bar
+
+    local gradient =
+        Instance.new("UIGradient")
+
+    gradient.Color =
+        ColorSequence.new({
+            ColorSequenceKeypoint.new(
+                0,
+                Color3.fromRGB(
+                    6,
+                    6,
+                    8
+                )
+            ),
+
+            ColorSequenceKeypoint.new(
+                0.5,
+                Color3.fromRGB(
+                    18,
+                    14,
+                    7
+                )
+            ),
+
+            ColorSequenceKeypoint.new(
+                1,
+                Color3.fromRGB(
+                    6,
+                    6,
+                    8
+                )
+            ),
+        })
+
+    gradient.Rotation =
+        0
+
+    gradient.Parent =
+        bar
+
+    local glowLine =
+        Instance.new("Frame")
+
+    glowLine.Name =
+        "GoldLine"
+
+    glowLine.Position =
+        UDim2.fromOffset(
+            14,
+            2
+        )
+
+    glowLine.Size =
+        UDim2.new(
+            1,
+            -28,
+            0,
+            1
+        )
+
+    glowLine.BackgroundColor3 =
+        Color3.fromRGB(
+            255,
+            214,
+            102
+        )
+
+    glowLine.BackgroundTransparency =
+        0.35
+
+    glowLine.BorderSizePixel =
+        0
+
+    glowLine.ZIndex =
+        1002
+
+    glowLine.Parent =
+        bar
+
+    local holyLabel =
+        GAG2StatsOverlayCreateTextLabel(
+            bar,
+            "HOLY",
+            UDim2.fromOffset(
+                8,
+                0
+            ),
+            UDim2.fromOffset(
+                64,
+                30
+            ),
+            "HOLY",
+            15,
+            Color3.fromRGB(
+                255,
+                214,
+                102
+            )
+        )
+
+    holyLabel.TextStrokeTransparency =
+        0.55
+
+    local dotOne =
+        GAG2StatsOverlayCreateTextLabel(
+            bar,
+            "DotOne",
+            UDim2.fromOffset(
+                72,
+                0
+            ),
+            UDim2.fromOffset(
+                16,
+                30
+            ),
+            "•",
+            14,
+            Color3.fromRGB(
+                120,
+                99,
+                55
+            )
+        )
+
+    dotOne.TextStrokeTransparency =
+        1
+
+    local fpsLabel =
+        GAG2StatsOverlayCreateTextLabel(
+            bar,
+            "FPS",
+            UDim2.fromOffset(
+                88,
+                0
+            ),
+            UDim2.fromOffset(
+                78,
+                30
+            ),
+            "60 FPS",
+            14,
+            Color3.fromRGB(
+                34,
+                197,
+                94
+            )
+        )
+
+    local dotTwo =
+        GAG2StatsOverlayCreateTextLabel(
+            bar,
+            "DotTwo",
+            UDim2.fromOffset(
+                166,
+                0
+            ),
+            UDim2.fromOffset(
+                16,
+                30
+            ),
+            "•",
+            14,
+            Color3.fromRGB(
+                120,
+                99,
+                55
+            )
+        )
+
+    dotTwo.TextStrokeTransparency =
+        1
+
+    local pingLabel =
+        GAG2StatsOverlayCreateTextLabel(
+            bar,
+            "Ping",
+            UDim2.fromOffset(
+                182,
+                0
+            ),
+            UDim2.fromOffset(
+                82,
+                30
+            ),
+            "?ms",
+            14,
+            Color3.fromRGB(
+                14,
+                165,
+                233
+            )
+        )
+
+    local smallEdge =
+        Instance.new("Frame")
+
+    smallEdge.Name =
+        "RightAccent"
+
+    smallEdge.AnchorPoint =
+        Vector2.new(
+            1,
+            0.5
+        )
+
+    smallEdge.Position =
+        UDim2.new(
+            1,
+            -8,
+            0.5,
+            0
+        )
+
+    smallEdge.Size =
+        UDim2.fromOffset(
+            2,
+            15
+        )
+
+    smallEdge.BackgroundColor3 =
+        Color3.fromRGB(
+            245,
+            190,
+            70
+        )
+
+    smallEdge.BackgroundTransparency =
+        0.25
+
+    smallEdge.BorderSizePixel =
+        0
+
+    smallEdge.ZIndex =
+        1002
+
+    smallEdge.Parent =
+        bar
+
+    local edgeCorner =
+        Instance.new("UICorner")
+
+    edgeCorner.CornerRadius =
+        UDim.new(
+            0,
+            2
+        )
+
+    edgeCorner.Parent =
+        smallEdge
+
+    state.Gui =
+        gui
+
+    state.Holder =
+        holder
+
+    state.Bar =
+        bar
+
+    state.FpsLabel =
+        fpsLabel
+
+    state.HolyLabel =
+        holyLabel
+
+    state.PingLabel =
+        pingLabel
+
+    return gui
+end
+
+function GAG2StatsOverlayUpdateText()
+
+    local state =
+        GAG2_STATS_OVERLAY_STATE
+
+    local fps =
+        math.max(
+            0,
+            math.floor(
+                tonumber(state.LastFPS)
+                or 0
+            )
+        )
+
+    local ping =
+        tonumber(
+            state.LastPing
+        )
+
+    if state.FpsLabel then
+
+        pcall(function()
+
+            state.FpsLabel.Text =
+                tostring(fps)
+                .. " FPS"
+
+            state.FpsLabel.TextColor3 =
+                GAG2StatsOverlayGetFPSColor(
+                    fps
+                )
+        end)
+    end
+
+    if state.PingLabel then
+
+        pcall(function()
+
+            state.PingLabel.Text =
+                ping
+                and (
+                    tostring(
+                        math.floor(
+                            ping + 0.5
+                        )
+                    )
+                    .. "ms"
+                )
+                or "?ms"
+
+            state.PingLabel.TextColor3 =
+                GAG2StatsOverlayGetPingColor(
+                    ping
+                )
+        end)
+    end
+end
+
+function GAG2StatsOverlayStart()
+
+    local state =
+        GAG2_STATS_OVERLAY_STATE
+
+    state.Enabled =
+        true
+
+    GAG2StatsOverlayCreate()
+
+    if state.Holder then
+
+        pcall(function()
+
+            state.Holder.Visible =
+                true
+        end)
+    end
+
+    if state.Running == true then
+
+        GAG2StatsOverlayUpdateText()
+        return true
+    end
+
+    state.Running =
+        true
+
+    state.FrameCounter =
+        0
+
+    state.FrameTimer =
+        tick()
+
+    state.LastPing =
+        GAG2StatsOverlayGetPing()
+
+    GAG2StatsOverlayUpdateText()
+
+    GAG2StatsOverlayDisconnect()
+
+    state.Connection =
+        RunService.RenderStepped:Connect(function()
+
+            if state.Enabled ~= true then
+                return
+            end
+
+            state.FrameCounter =
+                tonumber(state.FrameCounter)
+                or 0
+
+            state.FrameCounter =
+                state.FrameCounter + 1
+
+            local now =
+                tick()
+
+            local elapsed =
+                now - (
+                    tonumber(state.FrameTimer)
+                    or now
+                )
+
+            if elapsed >= 1 then
+
+                state.LastFPS =
+                    state.FrameCounter / math.max(
+                        elapsed,
+                        0.001
+                    )
+
+                state.FrameCounter =
+                    0
+
+                state.FrameTimer =
+                    now
+
+                state.LastPing =
+                    GAG2StatsOverlayGetPing()
+
+                GAG2StatsOverlayUpdateText()
+            end
+        end)
+
+    return true
+end
+
+function GAG2StatsOverlayStop(skipDirty)
+
+    local state =
+        GAG2_STATS_OVERLAY_STATE
+
+    state.Enabled =
+        false
+
+    state.Running =
+        false
+
+    GAG2StatsOverlayDisconnect()
+
+    if state.Holder then
+
+        pcall(function()
+
+            state.Holder.Visible =
+                false
+        end)
+    end
+
+    if skipDirty ~= true then
+
+        MarkConfigDirty()
+    end
+end
+
+function GAG2StatsOverlayDestroy()
+
+    GAG2StatsOverlayStop(
+        true
+    )
+
+    local state =
+        GAG2_STATS_OVERLAY_STATE
+
+    if state.Gui then
+
+        pcall(function()
+
+            state.Gui:Destroy()
+        end)
+    end
+
+    state.Gui =
+        nil
+
+    state.Holder =
+        nil
+
+    state.Bar =
+        nil
+
+    state.FpsLabel =
+        nil
+
+    state.HolyLabel =
+        nil
+
+    state.PingLabel =
+        nil
+end
+
+function GAG2StatsOverlaySetEnabled(value)
+
+    local state =
+        GAG2_STATS_OVERLAY_STATE
+
+    local enabled =
+        value == true
+
+    state.Enabled =
+        enabled
+
+    if ConfigState.Loading == true then
+        return
+    end
+
+    if enabled == true then
+
+        GAG2StatsOverlayStart()
+
+    else
+
+        GAG2StatsOverlayStop(
+            true
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2RestoreStatsOverlayState()
+
+    task.defer(function()
+
+        local enabled =
+            true
+
+        if Toggles.HolyGAG2StatsOverlay then
+
+            enabled =
+                Toggles.HolyGAG2StatsOverlay.Value ~= false
+        end
+
+        GAG2_STATS_OVERLAY_STATE.Enabled =
+            enabled
+
+        if enabled == true then
+
+            GAG2StatsOverlayStart()
+
+        else
+
+            GAG2StatsOverlayStop(
+                true
+            )
+        end
+    end)
+end
+
+GAG2_STATS_OVERLAY_STATE.Destroy =
+    GAG2StatsOverlayDestroy
+
 
 --==================================================
 -- [4] LOGIC HELPERS
@@ -11329,6 +12389,12 @@ SniperPriorityDropdowns =
 SniperPriorityRefreshing =
     false
 
+SniperSeedPriorityDropdown =
+    nil
+
+SniperSeedPriorityStatusLabel =
+    nil
+
 GAG2_SNIPER_WATCHLIST_SAVE_FILE =
     UI_SETTINGS_FOLDER
     .. "/SniperWatchlist.json"
@@ -11429,6 +12495,20 @@ local SniperState = {
         "",
         "",
     },
+
+    SeedPriorityOverSeeds = true,
+    SeedPriorityPets = {
+        Raccoon = true,
+        ["Golden Dragonfly"] = true,
+        Unicorn = true,
+        ["Ice Serpent"] = true,
+    },
+    SeedPriorityActive = false,
+    SeedPriorityPetName = "",
+    SeedPriorityLastSeenAt = 0,
+    SeedPriorityHoldSeconds = 8,
+    SeedPriorityStatus = "Ready.",
+
     KnownPetNames = {},
 
     AllowMultiPets = false,
@@ -16781,6 +17861,20 @@ function GAG2SeedCollectMoveTo(entry)
             "missing move data"
     end
 
+    local shouldPause,
+        pauseReason =
+        SniperSeedPriorityShouldPauseSeeds()
+
+    if shouldPause == true then
+
+        humanoid:MoveTo(
+            root.Position
+        )
+
+        return false,
+            pauseReason
+    end
+
     local alive, aliveReason =
         GAG2SeedCollectIsEntryAlive(
             entry
@@ -16887,6 +17981,20 @@ function GAG2SeedCollectMoveTo(entry)
         while GAG2_AUTO_COLLECT_SEEDS_STATE.Enabled == true
         and os.clock() - started < timeout do
 
+            shouldPause,
+                pauseReason =
+                SniperSeedPriorityShouldPauseSeeds()
+
+            if shouldPause == true then
+
+                humanoid:MoveTo(
+                    root.Position
+                )
+
+                return false,
+                    pauseReason
+            end
+
             alive, aliveReason =
                 GAG2SeedCollectIsEntryAlive(
                     entry
@@ -16969,6 +18077,16 @@ function GAG2SeedCollectMoveTo(entry)
 
         return false,
             reason or "walk timeout"
+    end
+
+    shouldPause,
+        pauseReason =
+        SniperSeedPriorityShouldPauseSeeds()
+
+    if shouldPause == true then
+
+        return false,
+            pauseReason
     end
 
     root.CFrame =
@@ -17345,6 +18463,26 @@ function GAG2SeedCollectCycle()
 
         state.Recent =
             {}
+    end
+
+    local shouldPause,
+        pauseReason =
+        SniperSeedPriorityShouldPauseSeeds()
+
+    if shouldPause == true then
+
+        GAG2SeedCollectClearTargetLock(
+            pauseReason
+        )
+
+        state.LastHadEntry =
+            false
+
+        GAG2SeedCollectSetStatus(
+            pauseReason
+        )
+
+        return
     end
 
     local entry, reason =
@@ -19610,8 +20748,12 @@ end
 
 function GAG2AutoTpMiddleFarmEnabled()
 
-    return Toggles.HolyGAG2AutoTpMiddleFarm
-        and Toggles.HolyGAG2AutoTpMiddleFarm.Value == true
+    if Toggles.HolyGAG2FarmMiddleAnchor then
+
+        return Toggles.HolyGAG2FarmMiddleAnchor.Value ~= false
+    end
+
+    return true
 end
 
 function GAG2MiddleFarmWorkerShouldContinue(forceTp)
@@ -20208,6 +21350,326 @@ function GAG2TeleportToMiddleFarmOnce(reason)
 
     return true,
         tostring(moveInfo or positionReason)
+end
+
+
+function GAG2BuildFarmMiddleAnchorCFrame(position)
+
+    if typeof(position) ~= "Vector3" then
+        return nil
+    end
+
+    local _,
+        root =
+        SniperGetCharacterRoot()
+
+    local lookVector =
+        Vector3.new(
+            0,
+            0,
+            -1
+        )
+
+    if root
+    and typeof(root.CFrame.LookVector) == "Vector3"
+    and root.CFrame.LookVector.Magnitude > 0 then
+
+        lookVector =
+            root.CFrame.LookVector
+    end
+
+    return CFrame.new(
+        position,
+        position + lookVector
+    )
+end
+
+function GAG2ResetFarmMiddleAnchor(reason)
+
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    state.AnchorReady =
+        false
+
+    state.AnchorResolving =
+        false
+
+    state.AnchorCFrame =
+        nil
+
+    state.AnchorPosition =
+        nil
+
+    state.AnchorReason =
+        tostring(reason or "reset")
+
+    state.AnchorResolvedAt =
+        0
+
+    state.MiddleReady =
+        false
+
+    state.LastTarget =
+        nil
+
+    state.LastTargetReason =
+        tostring(reason or "reset")
+
+    state.LastResult =
+        "farm middle anchor reset: "
+        .. tostring(reason or "reset")
+end
+
+function GAG2ResolveFarmMiddleAnchor(reason, forceRefresh)
+
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    reason =
+        tostring(reason or "resolve anchor")
+
+    if forceRefresh ~= true
+    and state.AnchorReady == true
+    and typeof(state.AnchorPosition) == "Vector3"
+    and typeof(state.AnchorCFrame) == "CFrame" then
+
+        return true,
+            "cached | "
+            .. tostring(state.AnchorReason or "ready")
+    end
+
+    if state.AnchorResolving == true then
+
+        return false,
+            "anchor resolving"
+    end
+
+    state.AnchorResolving =
+        true
+
+    state.AnchorLastAttemptAt =
+        os.clock()
+
+    state.LastResult =
+        "resolving farm middle anchor..."
+
+    local started =
+        os.clock()
+
+    local position =
+        nil
+
+    local positionReason =
+        "not resolved"
+
+    while os.clock() - started < 10 do
+
+        local character, root =
+            SniperGetCharacterRoot()
+
+        local resolvedPosition, resolvedReason =
+            GAG2GetOwnFarmMiddlePosition()
+
+        if character
+        and root
+        and typeof(resolvedPosition) == "Vector3" then
+
+            position =
+                resolvedPosition
+
+            positionReason =
+                tostring(resolvedReason or "resolved")
+
+            break
+        end
+
+        positionReason =
+            tostring(resolvedReason or "not resolved")
+
+        task.wait(
+            0.12
+        )
+    end
+
+    if typeof(position) ~= "Vector3" then
+
+        state.AnchorReady =
+            false
+
+        state.AnchorResolving =
+            false
+
+        state.AnchorCFrame =
+            nil
+
+        state.AnchorPosition =
+            nil
+
+        state.AnchorReason =
+            tostring(positionReason)
+
+        state.MiddleReady =
+            false
+
+        state.LastTarget =
+            nil
+
+        state.LastTargetReason =
+            tostring(positionReason)
+
+        state.LastResult =
+            "anchor failed: "
+            .. tostring(positionReason)
+
+        return false,
+            tostring(positionReason)
+    end
+
+    local cframe =
+        GAG2BuildFarmMiddleAnchorCFrame(
+            position
+        )
+
+    state.AnchorReady =
+        true
+
+    state.AnchorResolving =
+        false
+
+    state.AnchorPosition =
+        position
+
+    state.AnchorCFrame =
+        cframe
+
+    state.AnchorReason =
+        tostring(positionReason)
+
+    state.AnchorResolvedAt =
+        os.clock()
+
+    state.MiddleReady =
+        true
+
+    state.MovedOnce =
+        false
+
+    state.LastMiddleReadyAt =
+        os.clock()
+
+    state.LastTarget =
+        position
+
+    state.LastTargetReason =
+        tostring(positionReason)
+
+    state.LastResult =
+        "anchor ready: "
+        .. tostring(positionReason)
+
+    print(
+        "[HOLY]",
+        "Farm Middle Anchor",
+        "| reason:",
+        reason,
+        "| target:",
+        GAG2FarmVecText(position),
+        "|",
+        tostring(positionReason)
+    )
+
+    return true,
+        tostring(positionReason)
+end
+
+function GAG2StartFarmMiddleAnchorResolver(reason, forceRefresh)
+
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    if state.AnchorResolving == true then
+        return false
+    end
+
+    task.spawn(function()
+
+        GAG2ResolveFarmMiddleAnchor(
+            reason or "background",
+            forceRefresh == true
+        )
+    end)
+
+    return true
+end
+
+function GAG2MoveToFarmMiddleAnchor(reason, forceRefresh)
+
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    local resolved, resolveInfo =
+        GAG2ResolveFarmMiddleAnchor(
+            reason or "move middle",
+            forceRefresh == true
+        )
+
+    if resolved ~= true then
+
+        return false,
+            tostring(resolveInfo)
+    end
+
+    local position =
+        state.AnchorPosition
+        or state.LastTarget
+
+    if typeof(position) ~= "Vector3" then
+
+        return false,
+            "farm middle anchor missing"
+    end
+
+    local mode =
+        GAG2MiddleFarmGetMovementMode()
+
+    state.Moving =
+        true
+
+    local ok, moveInfo =
+        GAG2MiddleFarmMoveTo(
+            position
+        )
+
+    state.Moving =
+        false
+
+    if ok == true then
+
+        state.MovedOnce =
+            true
+
+        state.MiddleReady =
+            true
+
+        state.LastTeleportAt =
+            os.clock()
+
+        state.LastResult =
+            tostring(mode)
+            .. ": "
+            .. tostring(moveInfo or "done")
+            .. " | "
+            .. tostring(state.AnchorReason or "anchor")
+    else
+
+        state.LastResult =
+            "middle move failed: "
+            .. tostring(moveInfo)
+    end
+
+    return ok == true,
+        tostring(moveInfo)
 end
 
 function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
@@ -20965,65 +22427,23 @@ function GAG2StartAutoTpMiddleFarm(reason)
     local state =
         GAG2_AUTO_TP_MIDDLE_FARM_STATE
 
-    if state.Moving == true then
-        return false
-    end
-
-    if state.MovedOnce == true then
-
-        state.MiddleReady =
-            true
-
-        state.LastResult =
-            "already moved once"
-
+    if state.AnchorResolving == true then
         return false
     end
 
     state.Moving =
-        true
-
-    state.MiddleReady =
         false
 
-    task.spawn(function()
+    state.MovedOnce =
+        false
 
-        local ok =
-            false
+    state.SniperWaitActive =
+        false
 
-        local info =
-            "not started"
-
-        ok, info =
-            GAG2TeleportToMiddleFarmOnce(
-                reason or "auto middle"
-            )
-
-        if ok == true then
-
-            state.MovedOnce =
-                true
-
-            state.MiddleReady =
-                true
-
-            state.LastMiddleReadyAt =
-                os.clock()
-
-            state.SniperWaitActive =
-                false
-
-        else
-
-            state.MiddleReady =
-                false
-        end
-
-        state.Moving =
-            false
-    end)
-
-    return true
+    return GAG2StartFarmMiddleAnchorResolver(
+        reason or "farm middle anchor",
+        false
+    )
 end
 
 function GAG2StartAutoSkipLoading(reason)
@@ -21045,23 +22465,9 @@ function GAG2SetAutoTpMiddleFarmEnabled(value)
 
     if enabled == true then
 
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovedOnce =
-            false
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.Moving =
-            false
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.MiddleReady =
-            false
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastMiddleReadyAt =
-            0
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastSniperMiddleStartAt =
-            0
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.SniperWaitActive =
-            false
+        GAG2ResetFarmMiddleAnchor(
+            "toggle refresh"
+        )
 
         if type(GAG2StartAutoTpMiddleFarm) == "function" then
 
@@ -21069,6 +22475,12 @@ function GAG2SetAutoTpMiddleFarmEnabled(value)
                 "toggle"
             )
         end
+
+    else
+
+        GAG2ResetFarmMiddleAnchor(
+            "anchor disabled"
+        )
     end
 
     if enabled ~= true
@@ -21078,7 +22490,7 @@ function GAG2SetAutoTpMiddleFarmEnabled(value)
         if type(GAG2MiddleFarmReleaseSkipHold) == "function" then
 
             GAG2MiddleFarmReleaseSkipHold(
-                "auto tp off"
+                "farm middle anchor off"
             )
         end
     end
@@ -21147,6 +22559,10 @@ function GAG2RestoreAutoTpMiddleFarmState()
                     0.15
                 )
 
+                GAG2ResetFarmMiddleAnchor(
+                    "respawn"
+                )
+
                 GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovedOnce =
                     false
 
@@ -21164,7 +22580,7 @@ function GAG2RestoreAutoTpMiddleFarmState()
                 if GAG2AutoTpMiddleFarmEnabled() == true then
 
                     GAG2StartAutoTpMiddleFarm(
-                        "respawn"
+                        "respawn anchor"
                     )
                 end
             end)
@@ -21191,14 +22607,12 @@ function GAG2RestoreAutoTpMiddleFarmState()
 
         if GAG2AutoTpMiddleFarmEnabled() == true then
 
-            GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovedOnce =
-                false
-
-            GAG2_AUTO_TP_MIDDLE_FARM_STATE.Moving =
-                false
+            GAG2ResetFarmMiddleAnchor(
+                "autosave"
+            )
 
             GAG2StartAutoTpMiddleFarm(
-                "autosave"
+                "autosave anchor"
             )
         end
     end)
@@ -21245,6 +22659,11 @@ GAG2_PERFORMANCE_STATE =
     or {
         HideOtherGardens = false,
         HideOwnGarden = false,
+        HardDeleteOwnGarden = false,
+        OwnGardenHardDeleted = false,
+        OwnGardenHardDeletedAt = 0,
+        OwnGardenHardDeletedDescendants = 0,
+        OwnGardenHardDeletedPath = "",
         HideMapClutter = false,
 
         MapClutterApplying = false,
@@ -21414,6 +22833,277 @@ function GAG2PerformanceRestoreMapClutter(reason)
     end
 
     return restored
+end
+
+function GAG2PerformanceCountDescendants(target)
+
+    if typeof(target) ~= "Instance" then
+        return 0
+    end
+
+    local ok, descendants =
+        pcall(function()
+
+            return target:GetDescendants()
+        end)
+
+    if ok == true
+    and type(descendants) == "table" then
+
+        return #descendants
+    end
+
+    return 0
+end
+
+function GAG2PerformanceFindOwnGardenForHardDelete()
+
+    local gardens =
+        GAG2PerformanceGetGardensRoot()
+
+    if typeof(gardens) ~= "Instance" then
+        return nil
+    end
+
+    local myName =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Name
+        or ""
+
+    local myUserId =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.UserId
+        or 0
+
+    for _, garden in ipairs(gardens:GetChildren()) do
+
+        local ownerName =
+            CleanText(
+                garden:GetAttribute("OwnerName")
+                or garden:GetAttribute("Owner")
+                or garden:GetAttribute("PlayerName")
+                or garden:GetAttribute("Username")
+            )
+
+        local ownerUserId =
+            tonumber(
+                garden:GetAttribute("OwnerUserId")
+                or garden:GetAttribute("UserId")
+                or garden:GetAttribute("PlayerUserId")
+            )
+            or 0
+
+        if myUserId > 0
+        and ownerUserId == myUserId then
+
+            return garden
+        end
+
+        if ownerName ~= ""
+        and ownerName:lower() == tostring(myName):lower() then
+
+            return garden
+        end
+    end
+
+    for _, garden in ipairs(gardens:GetChildren()) do
+
+        for _, descendant in ipairs(garden:GetDescendants()) do
+
+            if descendant:IsA("TextLabel")
+            or descendant:IsA("TextButton") then
+
+                local text =
+                    ""
+
+                pcall(function()
+
+                    text =
+                        tostring(descendant.Text or "")
+                end)
+
+                if myName ~= ""
+                and text:lower():find(
+                    myName:lower(),
+                    1,
+                    true
+                ) then
+
+                    return garden
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function GAG2PerformanceDestroyOwnGardenChild(garden, childName)
+
+    if typeof(garden) ~= "Instance" then
+        return false, 0
+    end
+
+    local child =
+        garden:FindFirstChild(
+            tostring(childName)
+        )
+
+    if typeof(child) ~= "Instance" then
+        return false, 0
+    end
+
+    local count =
+        GAG2PerformanceCountDescendants(
+            child
+        )
+
+    local ok =
+        pcall(function()
+
+            child:Destroy()
+        end)
+
+    return ok == true,
+        count
+end
+
+function GAG2PerformanceHardDeleteOwnGarden(reason)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    if state.OwnGardenHardDeleted == true then
+
+        GAG2PerformanceSetStatus(
+            "Own garden already hard-deleted. Rejoin required to restore."
+        )
+
+        return false
+    end
+
+    local garden =
+        GAG2PerformanceFindOwnGardenForHardDelete()
+
+    if typeof(garden) ~= "Instance" then
+
+        GAG2PerformanceSetStatus(
+            "Hard delete failed: own garden not found."
+        )
+
+        return false
+    end
+
+    local gardenPath =
+        PathOf(
+            garden
+        )
+
+    local beforeCount =
+        GAG2PerformanceCountDescendants(
+            garden
+        )
+
+    local plantsDeleted,
+        plantsCount =
+        GAG2PerformanceDestroyOwnGardenChild(
+            garden,
+            "Plants"
+        )
+
+    local visualDeleted,
+        visualCount =
+        GAG2PerformanceDestroyOwnGardenChild(
+            garden,
+            "Visual"
+        )
+
+    local deletedCount =
+        tonumber(plantsCount)
+        + tonumber(visualCount)
+
+    state.OwnGardenHardDeleted =
+        true
+
+    state.OwnGardenHardDeletedAt =
+        os.time()
+
+    state.OwnGardenHardDeletedDescendants =
+        deletedCount
+
+    state.OwnGardenHardDeletedPath =
+        gardenPath
+
+    GAG2PerformanceRestoreOwnGardenVisuals(
+        "hard delete own garden"
+    )
+
+    GAG2PerformanceSetStatus(
+        "Hard-deleted own garden locally. Plants="
+        .. tostring(plantsDeleted)
+        .. " ("
+        .. tostring(plantsCount)
+        .. ") | Visual="
+        .. tostring(visualDeleted)
+        .. " ("
+        .. tostring(visualCount)
+        .. ") | Rejoin required."
+    )
+
+    print(
+        "[HOLY PERFORMANCE]",
+        "hard delete own garden",
+        "| path:",
+        gardenPath,
+        "| before:",
+        tostring(beforeCount),
+        "| deleted:",
+        tostring(deletedCount),
+        "| reason:",
+        tostring(reason or "manual")
+    )
+
+    return true
+end
+
+function GAG2PerformanceSetHardDeleteOwnGardenEnabled(value)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    if value ~= true then
+
+        state.HardDeleteOwnGarden =
+            false
+
+        return
+    end
+
+    state.HardDeleteOwnGarden =
+        true
+
+    GAG2PerformanceHardDeleteOwnGarden(
+        "settings toggle"
+    )
+
+    state.HardDeleteOwnGarden =
+        false
+
+    task.defer(function()
+
+        if Toggles.HolyGAG2HardDeleteOwnGarden
+        and type(Toggles.HolyGAG2HardDeleteOwnGarden.SetValue) == "function" then
+
+            pcall(function()
+
+                Toggles.HolyGAG2HardDeleteOwnGarden:SetValue(
+                    false
+                )
+            end)
+        end
+    end)
+
+    MarkConfigDirty()
 end
 
 function GAG2PerformanceApplyHideMapClutter(reason)
@@ -22842,12 +24532,24 @@ GAG2_ACF_COLLECT_MODES = {
 }
 
 GAG2_ACF_SPEED_VALUES = {
+    "Low End",
     "Normal",
     "Fast",
     "Ultra",
 }
 
 GAG2_ACF_SPEED_PRESETS = {
+    ["Low End"] = {
+        Name = "Low End",
+        MinBurst = 1,
+        MaxBurst = 6,
+        RecentCooldown = 0.55,
+        PromptDelayOverride = 0.035,
+        YieldEvery = 1,
+        LoopWaitAfterFire = 0.075,
+        LoopWaitIdle = 0.35,
+    },
+
     Normal = {
         Name = "Normal",
         MinBurst = 16,
@@ -44997,6 +46699,9 @@ end
 function SniperRefreshTargetDropdown()
 
     if not SniperTargetDropdown then
+
+        SniperSeedPriorityRefreshDropdownValues()
+
         return
     end
 
@@ -45028,6 +46733,8 @@ function SniperRefreshTargetDropdown()
 
     SniperDropdownRefreshing =
         false
+
+    SniperSeedPriorityRefreshDropdownValues()
 
     task.defer(function()
 
@@ -45170,6 +46877,472 @@ function SniperGetPriorityRank(petName)
     end
 
     return 999
+end
+
+
+function SniperSeedPriorityDefaultPets()
+
+    return {
+        Raccoon = true,
+        ["Golden Dragonfly"] = true,
+        Unicorn = true,
+        ["Ice Serpent"] = true,
+    }
+end
+
+function SniperSeedPriorityNormalizePets(value)
+
+    local output =
+        {}
+
+    local function add(item)
+
+        item =
+            CleanText(item)
+
+        if item == ""
+        or item == "None"
+        or item == "---" then
+
+            return
+        end
+
+        output[item] =
+            true
+    end
+
+    if type(value) == "table" then
+
+        for _, item in ipairs(value) do
+
+            if type(item) == "table" then
+
+                add(
+                    item.Text
+                    or item.Name
+                    or item.Value
+                    or item[1]
+                )
+
+            else
+
+                add(item)
+            end
+        end
+
+        for key, selected in pairs(value) do
+
+            if selected == true then
+
+                add(key)
+
+            elseif type(selected) == "table" then
+
+                local isSelected =
+                    selected.Selected == true
+                    or selected.selected == true
+                    or selected.Checked == true
+                    or selected.checked == true
+                    or selected.Enabled == true
+                    or selected.enabled == true
+
+                if isSelected == true then
+
+                    add(
+                        selected.Text
+                        or selected.Name
+                        or selected.Value
+                        or selected[1]
+                        or key
+                    )
+                end
+            end
+        end
+
+    elseif type(value) == "string" then
+
+        add(value)
+    end
+
+    return output
+end
+
+function SniperSeedPriorityBuildSelectionMap(source)
+
+    local map =
+        {}
+
+    source =
+        type(source) == "table"
+        and source
+        or {}
+
+    for name, enabled in pairs(source) do
+
+        if enabled == true then
+
+            map[name] =
+                true
+        end
+    end
+
+    return map
+end
+
+function SniperSeedPriorityCountSelected()
+
+    local count =
+        0
+
+    local pets =
+        type(SniperState.SeedPriorityPets) == "table"
+        and SniperState.SeedPriorityPets
+        or {}
+
+    for _, enabled in pairs(pets) do
+
+        if enabled == true then
+            count =
+                count + 1
+        end
+    end
+
+    return count
+end
+
+function SniperSeedPriorityDropdownValues()
+
+    local values =
+        {}
+
+    local seen =
+        {}
+
+    local function add(name)
+
+        name =
+            CleanText(name)
+
+        if name == ""
+        or seen[name] == true then
+
+            return
+        end
+
+        seen[name] =
+            true
+
+        table.insert(
+            values,
+            name
+        )
+    end
+
+    for name in pairs(SniperSeedPriorityDefaultPets()) do
+        add(name)
+    end
+
+    for _, name in ipairs(SniperState.BuilderTargets or {}) do
+        add(name)
+    end
+
+    for _, name in ipairs(SniperState.Targets or {}) do
+        add(name)
+    end
+
+    for _, name in ipairs(SniperGetRegistryPetNames()) do
+        add(name)
+    end
+
+    table.sort(values)
+
+    return values
+end
+
+function SniperSeedPriorityRefreshDropdownValues()
+
+    if not SniperSeedPriorityDropdown then
+        return false
+    end
+
+    local values =
+        SniperSeedPriorityDropdownValues()
+
+    pcall(function()
+
+        if type(SniperSeedPriorityDropdown.SetValues) == "function" then
+
+            SniperSeedPriorityDropdown:SetValues(
+                values
+            )
+
+        elseif type(SniperSeedPriorityDropdown.SetItems) == "function" then
+
+            SniperSeedPriorityDropdown:SetItems(
+                values
+            )
+        end
+    end)
+
+    return true
+end
+
+function SniperSeedPriorityBuildStatusText()
+
+    local active =
+        SniperState.SeedPriorityActive == true
+
+    local selectedCount =
+        SniperSeedPriorityCountSelected()
+
+    local enabledText =
+        SniperState.SeedPriorityOverSeeds == true
+        and "ON"
+        or "OFF"
+
+    if active == true
+    and CleanText(SniperState.SeedPriorityPetName) ~= "" then
+
+        return '<font color="rgb(250,204,21)"><b>Seed Priority:</b></font> '
+            .. enabledText
+            .. '\nPaused for sniper: '
+            .. tostring(SniperState.SeedPriorityPetName)
+            .. '\nSelected priority pets: '
+            .. tostring(selectedCount)
+    end
+
+    return '<font color="rgb(196,181,253)"><b>Seed Priority:</b></font> '
+        .. enabledText
+        .. '\nIdle. Selected priority pets: '
+        .. tostring(selectedCount)
+end
+
+function SniperSeedPriorityRefreshStatus()
+
+    if Options.HolyGAG2SniperSeedPriorityStatus then
+
+        Options.HolyGAG2SniperSeedPriorityStatus:SetText(
+            SniperSeedPriorityBuildStatusText()
+        )
+    end
+end
+
+function SniperSeedPrioritySetEnabled(value)
+
+    SniperState.SeedPriorityOverSeeds =
+        value == true
+
+    if SniperState.SeedPriorityOverSeeds ~= true then
+
+        SniperState.SeedPriorityActive =
+            false
+
+        SniperState.SeedPriorityPetName =
+            ""
+
+        SniperState.SeedPriorityLastSeenAt =
+            0
+    end
+
+    SniperSeedPriorityRefreshStatus()
+    MarkConfigDirty()
+end
+
+function SniperSeedPrioritySetPets(value)
+
+    SniperState.SeedPriorityPets =
+        SniperSeedPriorityNormalizePets(
+            value
+        )
+
+    SniperSeedPriorityRefreshDropdownValues()
+    SniperSeedPriorityRefreshStatus()
+    MarkConfigDirty()
+end
+
+function SniperSeedPriorityPetSelected(petName)
+
+    local targetKey =
+        SniperNormalizeName(
+            petName
+        )
+
+    if targetKey == "" then
+        return false
+    end
+
+    local pets =
+        type(SniperState.SeedPriorityPets) == "table"
+        and SniperState.SeedPriorityPets
+        or {}
+
+    for selectedName, enabled in pairs(pets) do
+
+        if enabled == true then
+
+            local selectedKey =
+                SniperNormalizeName(
+                    selectedName
+                )
+
+            if selectedKey ~= ""
+            and (
+                targetKey == selectedKey
+                or targetKey:find(selectedKey, 1, true) ~= nil
+                or selectedKey:find(targetKey, 1, true) ~= nil
+            ) then
+
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+function SniperSeedPriorityEntryPetName(entry)
+
+    if type(entry) ~= "table" then
+        return ""
+    end
+
+    return CleanText(
+        entry.Name
+        or entry.PetName
+        or entry.petName
+        or entry.DisplayName
+        or entry.displayName
+    )
+end
+
+function SniperSeedPriorityMarkMatches(matches)
+
+    if SniperState.SeedPriorityOverSeeds ~= true then
+        return false
+    end
+
+    if type(matches) ~= "table"
+    or #matches <= 0 then
+        return false
+    end
+
+    for _, entry in ipairs(matches) do
+
+        local petName =
+            SniperSeedPriorityEntryPetName(
+                entry
+            )
+
+        if SniperSeedPriorityPetSelected(petName) == true then
+
+            SniperState.SeedPriorityActive =
+                true
+
+            SniperState.SeedPriorityPetName =
+                SniperEntryDisplayName(
+                    entry
+                )
+
+            SniperState.SeedPriorityLastSeenAt =
+                os.clock()
+
+            SniperSeedPriorityRefreshStatus()
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function SniperSeedPriorityClear(reason)
+
+    if SniperState.SeedPriorityActive ~= true then
+        return
+    end
+
+    SniperState.SeedPriorityActive =
+        false
+
+    SniperState.SeedPriorityPetName =
+        ""
+
+    SniperState.SeedPriorityLastSeenAt =
+        0
+
+    SniperState.SeedPriorityStatus =
+        tostring(reason or "Ready.")
+
+    SniperSeedPriorityRefreshStatus()
+end
+
+function SniperSeedPriorityShouldPauseSeeds()
+
+    if SniperState.SeedPriorityOverSeeds ~= true then
+        return false,
+            ""
+    end
+
+    if SniperState.Enabled ~= true then
+
+        SniperSeedPriorityClear(
+            "sniper disabled"
+        )
+
+        return false,
+            ""
+    end
+
+    if SniperState.SeedPriorityActive ~= true then
+        return false,
+            ""
+    end
+
+    local petName =
+        CleanText(
+            SniperState.SeedPriorityPetName
+        )
+
+    local lastSeenAt =
+        tonumber(
+            SniperState.SeedPriorityLastSeenAt
+        )
+        or 0
+
+    local holdSeconds =
+        math.max(
+            2,
+            tonumber(SniperState.SeedPriorityHoldSeconds)
+            or 8
+        )
+
+    local stillBuying =
+        SniperState.Taming == true
+
+    if type(SniperHasPendingBuy) == "function"
+    and SniperHasPendingBuy() == true then
+
+        stillBuying =
+            true
+    end
+
+    if petName ~= ""
+    and (
+        os.clock() - lastSeenAt <= holdSeconds
+        or stillBuying == true
+    ) then
+
+        return true,
+            "Paused for sniper: "
+            .. tostring(petName)
+    end
+
+    SniperSeedPriorityClear(
+        "expired"
+    )
+
+    return false,
+        ""
 end
 
 function SniperGetEntryDistanceValue(entry)
@@ -48436,60 +50609,12 @@ function SniperShouldWaitForMiddleFarm()
         return false
     end
 
-    local autoMiddleEnabled =
+    middleState.SniperWaitActive =
         false
 
-    if Toggles.HolyGAG2AutoTpMiddleFarm then
-
-        autoMiddleEnabled =
-            Toggles.HolyGAG2AutoTpMiddleFarm.Value == true
-    end
-
-    if autoMiddleEnabled ~= true then
-
-        middleState.SniperWaitActive =
-            false
-
-        return false
-    end
-
-    local mode =
-        "Teleport"
-
-    if type(GAG2MiddleFarmGetMovementMode) == "function" then
-
-        mode =
-            GAG2MiddleFarmGetMovementMode()
-
-    else
-
-        mode =
-            CleanText(
-                middleState.MovementMode
-            )
-    end
-
-    if mode ~= "Walk" then
-
-        middleState.SniperWaitActive =
-            false
-
-        return false
-    end
-
-    if middleState.MovedOnce == true
-    or middleState.MiddleReady == true then
-
-        middleState.MiddleReady =
-            true
-
-        middleState.SniperWaitActive =
-            false
-
-        return false
-    end
-
-    if middleState.Moving ~= true then
+    if GAG2AutoTpMiddleFarmEnabled() == true
+    and middleState.AnchorReady ~= true
+    and middleState.AnchorResolving ~= true then
 
         local now =
             os.clock()
@@ -48502,27 +50627,13 @@ function SniperShouldWaitForMiddleFarm()
             if type(GAG2StartAutoTpMiddleFarm) == "function" then
 
                 GAG2StartAutoTpMiddleFarm(
-                    "sniper wait"
+                    "sniper passive anchor resolve"
                 )
             end
         end
     end
 
-    SniperState.LastHopAt =
-        os.clock()
-
-    middleState.SniperWaitActive =
-        true
-
-    SetSniperStatus(
-        "Waiting for Auto Middle Farm walk..."
-    )
-
-    GAG2SetPanicHudStatus(
-        "MIDDLE FARM"
-    )
-
-    return true
+    return false
 end
 
 
@@ -48672,6 +50783,10 @@ function SniperScan(allowAutoHop)
 
     SetSniperStatus(
         "No target found."
+    )
+
+    SniperSeedPriorityClear(
+        "no target found"
     )
 
     SniperTryReturnAfterBatch(
@@ -49606,6 +51721,34 @@ function RestoreSniperAutosaveState()
             SniperState.AllowMultiPets =
                 Toggles.HolyGAG2SniperAllowMultiPets.Value == true
         end
+
+        if Toggles.HolyGAG2SniperSeedPriority
+        and Toggles.HolyGAG2SniperSeedPriority.Value ~= nil then
+
+            SniperState.SeedPriorityOverSeeds =
+                Toggles.HolyGAG2SniperSeedPriority.Value == true
+
+        else
+
+            SniperState.SeedPriorityOverSeeds =
+                true
+        end
+
+        if Options.HolyGAG2SniperSeedPriorityPets
+        and Options.HolyGAG2SniperSeedPriorityPets.Value ~= nil then
+
+            SniperState.SeedPriorityPets =
+                SniperSeedPriorityNormalizePets(
+                    Options.HolyGAG2SniperSeedPriorityPets.Value
+                )
+
+        elseif type(SniperState.SeedPriorityPets) ~= "table" then
+
+            SniperState.SeedPriorityPets =
+                SniperSeedPriorityDefaultPets()
+        end
+
+        SniperSeedPriorityRefreshStatus()
 
         if Options.HolyGAG2SniperTargetsList
         and Options.HolyGAG2SniperTargetsList.Value ~= nil then
@@ -66085,7 +68228,17 @@ local SniperBuyBehaviorBox =
     )
 
 local SniperPriorityBox =
-    nil
+    AddLeftBox(
+        Tabs.Sniper,
+        "Sniper Priority",
+        "shield-alert"
+    )
+
+if SniperPriorityBox == nil then
+
+    SniperPriorityBox =
+        SniperMainBox
+end
 
 if SniperWatchlistBox == nil then
 
@@ -68446,7 +70599,7 @@ GAG2_AUTO_COLLECT_FRUIT_CONTROLS.CollectionSpeed =
             Multi = false,
             Searchable = false,
             MaxVisibleDropdownItems = 4,
-            Tooltip = "Normal is safe. Fast and Ultra override old slow delay and fire bigger batches.",
+            Tooltip = "Low End is for cloudphones/weak CPUs. Normal, Fast, and Ultra collect faster but can lag large farms.",
         }
     )
 
@@ -70497,6 +72650,63 @@ task.defer(function()
     )
 end)
 
+SniperPriorityBox:AddLabel({
+    Text =
+        '<font color="rgb(250,204,21)"><b>Seed Walk Interrupt</b></font>'
+        .. '\nSelected pets can pause Auto Collect Seeds walk mode while sniper buys them.',
+    DoesWrap = true,
+    Size = 13,
+})
+
+SniperPriorityBox:AddToggle("HolyGAG2SniperSeedPriority", {
+    Text = "Priority Over Seed Walk",
+    Default = true,
+    Tooltip = "When selected priority pets are found, Auto Collect Seeds walk mode pauses so sniper can buy first.",
+    Callback = function(value)
+
+        SniperSeedPrioritySetEnabled(
+            value == true
+        )
+    end,
+})
+
+SniperSeedPriorityDropdown =
+    SniperPriorityBox:AddDropdown(
+        "HolyGAG2SniperSeedPriorityPets",
+        {
+            Text = "Seed Interrupt Pets",
+            Values = SniperSeedPriorityDropdownValues(),
+            Default = SniperSeedPriorityBuildSelectionMap(
+                SniperState.SeedPriorityPets
+            ),
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Only these matching sniper pets pause Auto Collect Seeds walk mode.",
+        }
+    )
+
+if SniperSeedPriorityDropdown
+and type(SniperSeedPriorityDropdown.OnChanged) == "function" then
+
+    SniperSeedPriorityDropdown:OnChanged(function(value)
+
+        SniperSeedPrioritySetPets(
+            value
+        )
+    end)
+end
+
+SniperSeedPriorityStatusLabel =
+    SniperPriorityBox:AddLabel(
+        "HolyGAG2SniperSeedPriorityStatus",
+        {
+            Text = SniperSeedPriorityBuildStatusText(),
+            DoesWrap = true,
+        }
+    )
+
 SniperAllowMultiSizesToggle =
     SniperMainBox:AddToggle("HolyGAG2SniperAllowMultiSizes", {
         Text = "Allow Multi Sizes",
@@ -71260,11 +73470,11 @@ SettingsUIBox:AddToggle(
 end)
 
 SettingsUIBox:AddToggle(
-    "HolyGAG2AutoTpMiddleFarm",
+    "HolyGAG2FarmMiddleAnchor",
     {
-        Text = "Auto Middle Farm",
-        Default = false,
-        Tooltip = "Moves to your farm middle once. Does not keep pulling you back after you move.",
+        Text = "Farm Middle Anchor",
+        Default = true,
+        Tooltip = "Default ON. Detects and saves your farm middle on join without moving you.",
     }
 ):OnChanged(function(value)
 
@@ -71275,7 +73485,7 @@ SettingsUIBox:AddToggle(
     if type(GAG2SetAutoTpMiddleFarmEnabled) == "function" then
 
         GAG2SetAutoTpMiddleFarmEnabled(
-            value == true
+            value ~= false
         )
     end
 end)
@@ -71283,7 +73493,7 @@ end)
 SettingsUIBox:AddDropdown(
     "HolyGAG2AutoMiddleFarmMode",
     {
-        Text = "Middle Farm Mode",
+        Text = "Middle Move Mode",
         Values = {
             "Teleport",
             "Walk",
@@ -71293,7 +73503,7 @@ SettingsUIBox:AddDropdown(
         Multi = false,
         Searchable = false,
         MaxVisibleDropdownItems = 2,
-        Tooltip = "How Auto Middle Farm moves to the saved farm middle.",
+        Tooltip = "Used only when something manually moves to the saved farm middle.",
     }
 ):OnChanged(function(value)
 
@@ -71302,34 +73512,63 @@ SettingsUIBox:AddDropdown(
         and "Walk"
         or "Teleport"
 
-    if GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovementMode == "Walk"
-    and Toggles.HolyGAG2AutoTpMiddleFarm
-    and Toggles.HolyGAG2AutoTpMiddleFarm.Value == true then
+    if GAG2AutoTpMiddleFarmEnabled() == true
+    and type(GAG2StartAutoTpMiddleFarm) == "function" then
 
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovedOnce =
-            false
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.MiddleReady =
-            false
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastMiddleReadyAt =
-            0
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastSniperMiddleStartAt =
-            0
-
-        if type(GAG2StartAutoTpMiddleFarm) == "function" then
-
-            GAG2StartAutoTpMiddleFarm(
-                "mode changed"
-            )
-        end
+        GAG2StartAutoTpMiddleFarm(
+            "mode changed anchor refresh"
+        )
     end
 
     MarkConfigDirty()
 end)
 
+SettingsUIBox:AddButton({
+    Text = "Go Farm Middle",
+    Tooltip = "Moves to the saved farm middle using Middle Move Mode.",
+    Func = function()
+
+        task.spawn(function()
+
+            local ok, info =
+                GAG2MoveToFarmMiddleAnchor(
+                    "manual go middle",
+                    true
+                )
+
+            Notify(
+                "Farm Middle",
+                ok == true
+                and (
+                    "Moved by "
+                    .. tostring(
+                        GAG2MiddleFarmGetMovementMode()
+                    )
+                    .. "."
+                )
+                or (
+                    "Failed: "
+                    .. tostring(info)
+                ),
+                4
+            )
+        end)
+    end,
+})
+
 SettingsUIBox:AddDivider()
+
+SettingsUIBox:AddToggle("HolyGAG2StatsOverlay", {
+    Text = "FPS / Ping Overlay",
+    Default = true,
+    Tooltip = "Default ON. Shows a compact draggable HOLY FPS/ping badge at the top middle.",
+    Callback = function(value)
+
+        GAG2StatsOverlaySetEnabled(
+            value == true
+        )
+    end,
+})
 
 SettingsUIBox:AddToggle("HolyGAG2HideOtherGardens", {
     Text = "Hide Other Gardens",
@@ -71350,6 +73589,18 @@ SettingsUIBox:AddToggle("HolyGAG2HideOwnGarden", {
     Callback = function(value)
 
         GAG2PerformanceSetHideOwnGardenEnabled(
+            value == true
+        )
+    end,
+})
+
+SettingsUIBox:AddToggle("HolyGAG2HardDeleteOwnGarden", {
+    Text = "Hard Delete Own Garden",
+    Default = false,
+    Tooltip = "One-shot local delete of your own Plants + Visual folders. Breaks fruit collection until rejoin. Auto-resets OFF.",
+    Callback = function(value)
+
+        GAG2PerformanceSetHardDeleteOwnGardenEnabled(
             value == true
         )
     end,
@@ -71381,7 +73632,7 @@ SettingsUIBox:AddToggle("HolyGAG2AntiAfk", {
 
 SettingsUIBox:AddButton({
     Text = "Restore Gardens",
-    Tooltip = "Restores gardens hidden by Hide Other Gardens.",
+    Tooltip = "Restores hidden gardens/map clutter. Hard-deleted own garden requires rejoin.",
     Func = function()
 
         GAG2_PERFORMANCE_STATE.HideOtherGardens =
@@ -71391,6 +73642,9 @@ SettingsUIBox:AddButton({
             false
 
         GAG2_PERFORMANCE_STATE.HideMapClutter =
+            false
+
+        GAG2_PERFORMANCE_STATE.HardDeleteOwnGarden =
             false
 
         if Toggles.HolyGAG2HideOtherGardens
@@ -71414,6 +73668,18 @@ SettingsUIBox:AddButton({
                 )
             end)
         end
+
+        if Toggles.HolyGAG2HardDeleteOwnGarden
+        and type(Toggles.HolyGAG2HardDeleteOwnGarden.SetValue) == "function" then
+
+            pcall(function()
+
+                Toggles.HolyGAG2HardDeleteOwnGarden:SetValue(
+                    false
+                )
+            end)
+        end
+
 
         if Toggles.HolyGAG2HideMapClutter
         and type(Toggles.HolyGAG2HideMapClutter.SetValue) == "function" then
@@ -71440,6 +73706,11 @@ SettingsUIBox:AddButton({
     DoubleClick = true,
     Tooltip = "Unload HOLY UI.",
     Func = function()
+
+        if type(GAG2StatsOverlayDestroy) == "function" then
+
+            GAG2StatsOverlayDestroy()
+        end
 
         Library:Unload()
     end,
@@ -71582,6 +73853,8 @@ and type(Toggles.HolyGAG2AutoSkipLoading.SetValue) == "function" then
         )
     end)
 end
+
+GAG2RestoreStatsOverlayState()
 
 if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
 
