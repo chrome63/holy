@@ -43756,7 +43756,7 @@ function SniperFormatWatchlistListRow(entry)
         Priority =
             priorityText,
 
-        Entry =
+        Entry =s
             entry,
     }
 end
@@ -44345,6 +44345,9 @@ function SniperResolveEntryInternalSize(entry)
                 "ScaleSize",
                 "VariantSize",
                 "WildPetSize",
+                "Scale",
+                "ModelScale",
+                "PetScale",
             }
         )
 
@@ -44361,40 +44364,62 @@ function SniperResolveEntryInternalSize(entry)
             or 2
     end
 
-    local key =
-        SniperSizeBaselineKey(
-            entry.Name
-        )
+    local numericScale =
+        tonumber(direct)
 
-    local metric =
-        tonumber(entry.SizeMetric)
-        or 0
+    if numericScale then
 
-    local baseline =
-        key ~= ""
-        and tonumber(
-            SniperState.SizeBaselines
-            and SniperState.SizeBaselines[key]
-        )
-        or nil
+        if numericScale >= 3.25 then
+            return "Huge", 3
+        end
 
-    local ratio =
-        1
+        if numericScale >= 1.50 then
+            return "Big", 2
+        end
 
-    if metric > 0
-    and baseline
-    and baseline > 0 then
-
-        ratio =
-            metric / baseline
+        return nil, 1
     end
 
-    if ratio >= 1.55 then
-        return "Huge", 3
+    local modelScale =
+        nil
+
+    for _, source in ipairs({
+        entry.Spawn,
+        entry.Instance,
+        entry.Ref,
+    }) do
+
+        if typeof(source) == "Instance"
+        and source:IsA("Model") then
+
+            local ok, scale =
+                pcall(function()
+
+                    return source:GetScale()
+                end)
+
+            if ok == true
+            and tonumber(scale) then
+
+                modelScale =
+                    tonumber(scale)
+
+                break
+            end
+        end
     end
 
-    if ratio >= 1.25 then
-        return "Big", 2
+    if modelScale then
+
+        if modelScale >= 3.25 then
+            return "Huge", 3
+        end
+
+        if modelScale >= 1.50 then
+            return "Big", 2
+        end
+
+        return nil, 1
     end
 
     return nil, 1
