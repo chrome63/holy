@@ -21245,6 +21245,11 @@ GAG2_PERFORMANCE_STATE =
     or {
         HideOtherGardens = false,
         HideOwnGarden = false,
+        HardDeleteOwnGarden = false,
+        OwnGardenHardDeleted = false,
+        OwnGardenHardDeletedAt = 0,
+        OwnGardenHardDeletedDescendants = 0,
+        OwnGardenHardDeletedPath = "",
         HideMapClutter = false,
 
         MapClutterApplying = false,
@@ -21414,6 +21419,277 @@ function GAG2PerformanceRestoreMapClutter(reason)
     end
 
     return restored
+end
+
+function GAG2PerformanceCountDescendants(target)
+
+    if typeof(target) ~= "Instance" then
+        return 0
+    end
+
+    local ok, descendants =
+        pcall(function()
+
+            return target:GetDescendants()
+        end)
+
+    if ok == true
+    and type(descendants) == "table" then
+
+        return #descendants
+    end
+
+    return 0
+end
+
+function GAG2PerformanceFindOwnGardenForHardDelete()
+
+    local gardens =
+        GAG2PerformanceGetGardensRoot()
+
+    if typeof(gardens) ~= "Instance" then
+        return nil
+    end
+
+    local myName =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Name
+        or ""
+
+    local myUserId =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.UserId
+        or 0
+
+    for _, garden in ipairs(gardens:GetChildren()) do
+
+        local ownerName =
+            CleanText(
+                garden:GetAttribute("OwnerName")
+                or garden:GetAttribute("Owner")
+                or garden:GetAttribute("PlayerName")
+                or garden:GetAttribute("Username")
+            )
+
+        local ownerUserId =
+            tonumber(
+                garden:GetAttribute("OwnerUserId")
+                or garden:GetAttribute("UserId")
+                or garden:GetAttribute("PlayerUserId")
+            )
+            or 0
+
+        if myUserId > 0
+        and ownerUserId == myUserId then
+
+            return garden
+        end
+
+        if ownerName ~= ""
+        and ownerName:lower() == tostring(myName):lower() then
+
+            return garden
+        end
+    end
+
+    for _, garden in ipairs(gardens:GetChildren()) do
+
+        for _, descendant in ipairs(garden:GetDescendants()) do
+
+            if descendant:IsA("TextLabel")
+            or descendant:IsA("TextButton") then
+
+                local text =
+                    ""
+
+                pcall(function()
+
+                    text =
+                        tostring(descendant.Text or "")
+                end)
+
+                if myName ~= ""
+                and text:lower():find(
+                    myName:lower(),
+                    1,
+                    true
+                ) then
+
+                    return garden
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function GAG2PerformanceDestroyOwnGardenChild(garden, childName)
+
+    if typeof(garden) ~= "Instance" then
+        return false, 0
+    end
+
+    local child =
+        garden:FindFirstChild(
+            tostring(childName)
+        )
+
+    if typeof(child) ~= "Instance" then
+        return false, 0
+    end
+
+    local count =
+        GAG2PerformanceCountDescendants(
+            child
+        )
+
+    local ok =
+        pcall(function()
+
+            child:Destroy()
+        end)
+
+    return ok == true,
+        count
+end
+
+function GAG2PerformanceHardDeleteOwnGarden(reason)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    if state.OwnGardenHardDeleted == true then
+
+        GAG2PerformanceSetStatus(
+            "Own garden already hard-deleted. Rejoin required to restore."
+        )
+
+        return false
+    end
+
+    local garden =
+        GAG2PerformanceFindOwnGardenForHardDelete()
+
+    if typeof(garden) ~= "Instance" then
+
+        GAG2PerformanceSetStatus(
+            "Hard delete failed: own garden not found."
+        )
+
+        return false
+    end
+
+    local gardenPath =
+        PathOf(
+            garden
+        )
+
+    local beforeCount =
+        GAG2PerformanceCountDescendants(
+            garden
+        )
+
+    local plantsDeleted,
+        plantsCount =
+        GAG2PerformanceDestroyOwnGardenChild(
+            garden,
+            "Plants"
+        )
+
+    local visualDeleted,
+        visualCount =
+        GAG2PerformanceDestroyOwnGardenChild(
+            garden,
+            "Visual"
+        )
+
+    local deletedCount =
+        tonumber(plantsCount)
+        + tonumber(visualCount)
+
+    state.OwnGardenHardDeleted =
+        true
+
+    state.OwnGardenHardDeletedAt =
+        os.time()
+
+    state.OwnGardenHardDeletedDescendants =
+        deletedCount
+
+    state.OwnGardenHardDeletedPath =
+        gardenPath
+
+    GAG2PerformanceRestoreOwnGardenVisuals(
+        "hard delete own garden"
+    )
+
+    GAG2PerformanceSetStatus(
+        "Hard-deleted own garden locally. Plants="
+        .. tostring(plantsDeleted)
+        .. " ("
+        .. tostring(plantsCount)
+        .. ") | Visual="
+        .. tostring(visualDeleted)
+        .. " ("
+        .. tostring(visualCount)
+        .. ") | Rejoin required."
+    )
+
+    print(
+        "[HOLY PERFORMANCE]",
+        "hard delete own garden",
+        "| path:",
+        gardenPath,
+        "| before:",
+        tostring(beforeCount),
+        "| deleted:",
+        tostring(deletedCount),
+        "| reason:",
+        tostring(reason or "manual")
+    )
+
+    return true
+end
+
+function GAG2PerformanceSetHardDeleteOwnGardenEnabled(value)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    if value ~= true then
+
+        state.HardDeleteOwnGarden =
+            false
+
+        return
+    end
+
+    state.HardDeleteOwnGarden =
+        true
+
+    GAG2PerformanceHardDeleteOwnGarden(
+        "settings toggle"
+    )
+
+    state.HardDeleteOwnGarden =
+        false
+
+    task.defer(function()
+
+        if Toggles.HolyGAG2HardDeleteOwnGarden
+        and type(Toggles.HolyGAG2HardDeleteOwnGarden.SetValue) == "function" then
+
+            pcall(function()
+
+                Toggles.HolyGAG2HardDeleteOwnGarden:SetValue(
+                    false
+                )
+            end)
+        end
+    end)
+
+    MarkConfigDirty()
 end
 
 function GAG2PerformanceApplyHideMapClutter(reason)
@@ -71367,6 +71643,18 @@ SettingsUIBox:AddToggle("HolyGAG2HideOwnGarden", {
     end,
 })
 
+SettingsUIBox:AddToggle("HolyGAG2HardDeleteOwnGarden", {
+    Text = "Hard Delete Own Garden",
+    Default = false,
+    Tooltip = "One-shot local delete of your own Plants + Visual folders. Breaks fruit collection until rejoin. Auto-resets OFF.",
+    Callback = function(value)
+
+        GAG2PerformanceSetHardDeleteOwnGardenEnabled(
+            value == true
+        )
+    end,
+})
+
 SettingsUIBox:AddToggle("HolyGAG2HideMapClutter", {
     Text = "Hide Map Clutter",
     Default = false,
@@ -71393,7 +71681,7 @@ SettingsUIBox:AddToggle("HolyGAG2AntiAfk", {
 
 SettingsUIBox:AddButton({
     Text = "Restore Gardens",
-    Tooltip = "Restores gardens hidden by Hide Other Gardens.",
+    Tooltip = "Restores hidden gardens/map clutter. Hard-deleted own garden requires rejoin.",
     Func = function()
 
         GAG2_PERFORMANCE_STATE.HideOtherGardens =
@@ -71403,6 +71691,9 @@ SettingsUIBox:AddButton({
             false
 
         GAG2_PERFORMANCE_STATE.HideMapClutter =
+            false
+
+        GAG2_PERFORMANCE_STATE.HardDeleteOwnGarden =
             false
 
         if Toggles.HolyGAG2HideOtherGardens
@@ -71426,6 +71717,18 @@ SettingsUIBox:AddButton({
                 )
             end)
         end
+
+        if Toggles.HolyGAG2HardDeleteOwnGarden
+        and type(Toggles.HolyGAG2HardDeleteOwnGarden.SetValue) == "function" then
+
+            pcall(function()
+
+                Toggles.HolyGAG2HardDeleteOwnGarden:SetValue(
+                    false
+                )
+            end)
+        end
+
 
         if Toggles.HolyGAG2HideMapClutter
         and type(Toggles.HolyGAG2HideMapClutter.SetValue) == "function" then
