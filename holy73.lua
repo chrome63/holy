@@ -9116,6 +9116,12 @@ end
 SniperAllowMultiPetsToggle =
     nil
 
+SniperAllowMultiSizesToggle =
+    nil
+
+SniperAllowMultiMutationsToggle =
+    nil
+
 SniperTargetDropdown =
     nil
 
@@ -9125,8 +9131,14 @@ SniperTargetDropdownLock =
 SniperSizeDropdown =
     nil
 
+SniperSizeDropdownLock =
+    false
+
 SniperMutationDropdown =
     nil
+
+SniperMutationDropdownLock =
+    false
 
 SniperRulePriorityDropdown =
     nil
@@ -9238,8 +9250,17 @@ local SniperState = {
     Targets = {},
 
     BuilderTargets = {},
+
     BuilderSizeClass = "Any",
+    BuilderSizeClasses = {
+        "Any",
+    },
+
     BuilderMutationFilter = "Any",
+    BuilderMutationFilters = {
+        "Any",
+    },
+
     BuilderPriority = "Medium",
 
     PriorityPets = {
@@ -9250,7 +9271,11 @@ local SniperState = {
         "",
     },
     KnownPetNames = {},
+
     AllowMultiPets = false,
+    AllowMultiSizes = false,
+    AllowMultiMutations = false,
+
     SizeClass = "Any",
     MutationFilter = "Any",
     SaveTarget = 1,
@@ -43167,21 +43192,361 @@ function SniperCleanSizeClass(value)
     return "Any"
 end
 
-function SniperSetSizeClass(value)
+function SniperSizeSortRank(value)
 
-    SniperState.BuilderSizeClass =
+    value =
         SniperCleanSizeClass(
             value
         )
 
+    if value == "Any" then
+        return 1
+    end
+
+    if value == "Normal" then
+        return 2
+    end
+
+    if value == "Big" then
+        return 3
+    end
+
+    if value == "Mega" then
+        return 4
+    end
+
+    return 99
+end
+
+function SniperNormalizeSizeList(value)
+
+    local result =
+        {}
+
+    local seen =
+        {}
+
+    local function add(item)
+
+        local cleaned =
+            SniperCleanSizeClass(
+                item
+            )
+
+        if cleaned == "" then
+            return
+        end
+
+        if seen[cleaned] == true then
+            return
+        end
+
+        seen[cleaned] =
+            true
+
+        table.insert(
+            result,
+            cleaned
+        )
+    end
+
+    if type(value) == "table" then
+
+        for _, item in ipairs(value) do
+            add(item)
+        end
+
+        for item, enabled in pairs(value) do
+
+            if enabled == true then
+                add(item)
+            end
+        end
+
+    elseif value ~= nil then
+
+        add(value)
+    end
+
+    if #result <= 0 then
+
+        table.insert(
+            result,
+            "Any"
+        )
+    end
+
+    if seen.Any == true
+    and #result > 1 then
+
+        local filtered =
+            {}
+
+        for _, item in ipairs(result) do
+
+            if item ~= "Any" then
+
+                table.insert(
+                    filtered,
+                    item
+                )
+            end
+        end
+
+        result =
+            filtered
+    end
+
+    table.sort(result, function(a, b)
+
+        return SniperSizeSortRank(a)
+            < SniperSizeSortRank(b)
+    end)
+
+    return result
+end
+
+function SniperPickSingleSizeFilter(filters, previousFilters)
+
+    filters =
+        SniperNormalizeSizeList(
+            filters
+        )
+
+    if #filters <= 1 then
+        return filters
+    end
+
+    local previousMap =
+        {}
+
+    for _, item in ipairs(
+        SniperNormalizeSizeList(previousFilters)
+    ) do
+
+        previousMap[item] =
+            true
+    end
+
+    for _, item in ipairs(filters) do
+
+        if previousMap[item] ~= true then
+
+            return {
+                item,
+            }
+        end
+    end
+
+    return {
+        filters[1],
+    }
+end
+
+function SniperLimitSizeFiltersForCurrentMode(filters, previousFilters)
+
+    filters =
+        SniperNormalizeSizeList(
+            filters
+        )
+
+    if SniperState.AllowMultiSizes == true then
+        return filters
+    end
+
+    return SniperPickSingleSizeFilter(
+        filters,
+        previousFilters
+    )
+end
+
+function SniperBuildSizeDropdownSelectionMap(filters)
+
+    local map =
+        {}
+
+    for _, item in ipairs(
+        SniperNormalizeSizeList(filters)
+    ) do
+
+        map[item] =
+            true
+    end
+
+    return map
+end
+
+function SniperApplySizeDropdownValue(filters)
+
+    if not SniperSizeDropdown
+    or type(SniperSizeDropdown.SetValue) ~= "function" then
+        return false
+    end
+
+    SniperSizeDropdownLock =
+        true
+
+    pcall(function()
+
+        SniperSizeDropdown:SetValue(
+            SniperBuildSizeDropdownSelectionMap(
+                filters
+            )
+        )
+    end)
+
+    task.defer(function()
+
+        SniperSizeDropdownLock =
+            false
+    end)
+
+    return true
+end
+
+function SniperReadSizeFiltersFromDropdown()
+
+    return SniperNormalizeSizeList(
+        SniperReadDropdownRawValue(
+            SniperSizeDropdown
+        )
+    )
+end
+
+function SniperSetSizeClass(value)
+
+    if SniperSizeDropdownLock == true then
+        return
+    end
+
+    local previousFilters =
+        SniperState.BuilderSizeClasses
+        or {
+            SniperState.BuilderSizeClass
+            or "Any",
+        }
+
+    local filters =
+        SniperLimitSizeFiltersForCurrentMode(
+            value,
+            previousFilters
+        )
+
+    SniperState.BuilderSizeClasses =
+        filters
+
+    SniperState.BuilderSizeClass =
+        filters[1]
+        or "Any"
+
+    if SniperState.AllowMultiSizes ~= true then
+
+        SniperApplySizeDropdownValue(
+            filters
+        )
+    end
+
     MarkConfigDirty()
+end
+
+function SniperSetAllowMultiSizes(value)
+
+    SniperState.AllowMultiSizes =
+        value == true
+
+    local currentFilters =
+        SniperReadSizeFiltersFromDropdown()
+
+    if #currentFilters <= 0 then
+
+        currentFilters =
+            SniperNormalizeSizeList(
+                SniperState.BuilderSizeClasses
+                or {
+                    SniperState.BuilderSizeClass
+                    or "Any",
+                }
+            )
+    end
+
+    currentFilters =
+        SniperLimitSizeFiltersForCurrentMode(
+            currentFilters,
+            SniperState.BuilderSizeClasses
+        )
+
+    SniperState.BuilderSizeClasses =
+        currentFilters
+
+    SniperState.BuilderSizeClass =
+        currentFilters[1]
+        or "Any"
+
+    SniperApplySizeDropdownValue(
+        currentFilters
+    )
+
+    SetSniperStatus(
+        SniperState.AllowMultiSizes == true
+        and "Multi size builder enabled."
+        or "Single size builder enabled."
+    )
+
+    MarkConfigDirty()
+end
+
+function SniperGetBuilderSizeFilters()
+
+    local filters =
+        SniperReadSizeFiltersFromDropdown()
+
+    if #filters <= 0 then
+
+        filters =
+            SniperNormalizeSizeList(
+                SniperState.BuilderSizeClasses
+                or {
+                    SniperState.BuilderSizeClass
+                    or "Any",
+                }
+            )
+    end
+
+    filters =
+        SniperLimitSizeFiltersForCurrentMode(
+            filters,
+            SniperState.BuilderSizeClasses
+        )
+
+    SniperState.BuilderSizeClasses =
+        filters
+
+    SniperState.BuilderSizeClass =
+        filters[1]
+        or "Any"
+
+    SniperApplySizeDropdownValue(
+        filters
+    )
+
+    return filters
 end
 
 function SniperSizeClassText()
 
+    local filters =
+        SniperNormalizeSizeList(
+            SniperState.BuilderSizeClasses
+            or {
+                SniperState.BuilderSizeClass
+                or SniperState.SizeClass
+                or "Any",
+            }
+        )
+
     return SniperCleanSizeClass(
-        SniperState.BuilderSizeClass
-        or SniperState.SizeClass
+        filters[1]
+        or "Any"
     )
 end
 
@@ -43196,35 +43561,369 @@ function SniperCleanMutationFilter(value)
     if lower == "rainbow"
     or lower == "pet rainbow"
     or lower == "rainbow pet" then
-
         return "Rainbow"
     end
 
     if lower == "normal"
     or lower == "none"
     or lower == "default" then
-
         return "Normal"
     end
 
     return "Any"
 end
 
-function SniperSetMutationFilter(value)
+function SniperMutationSortRank(value)
 
-    SniperState.BuilderMutationFilter =
+    value =
         SniperCleanMutationFilter(
             value
         )
 
+    if value == "Any" then
+        return 1
+    end
+
+    if value == "Normal" then
+        return 2
+    end
+
+    if value == "Rainbow" then
+        return 3
+    end
+
+    return 99
+end
+
+function SniperNormalizeMutationList(value)
+
+    local result =
+        {}
+
+    local seen =
+        {}
+
+    local function add(item)
+
+        local cleaned =
+            SniperCleanMutationFilter(
+                item
+            )
+
+        if cleaned == "" then
+            return
+        end
+
+        if seen[cleaned] == true then
+            return
+        end
+
+        seen[cleaned] =
+            true
+
+        table.insert(
+            result,
+            cleaned
+        )
+    end
+
+    if type(value) == "table" then
+
+        for _, item in ipairs(value) do
+            add(item)
+        end
+
+        for item, enabled in pairs(value) do
+
+            if enabled == true then
+                add(item)
+            end
+        end
+
+    elseif value ~= nil then
+
+        add(value)
+    end
+
+    if #result <= 0 then
+
+        table.insert(
+            result,
+            "Any"
+        )
+    end
+
+    if seen.Any == true
+    and #result > 1 then
+
+        local filtered =
+            {}
+
+        for _, item in ipairs(result) do
+
+            if item ~= "Any" then
+
+                table.insert(
+                    filtered,
+                    item
+                )
+            end
+        end
+
+        result =
+            filtered
+    end
+
+    table.sort(result, function(a, b)
+
+        return SniperMutationSortRank(a)
+            < SniperMutationSortRank(b)
+    end)
+
+    return result
+end
+
+function SniperPickSingleMutationFilter(filters, previousFilters)
+
+    filters =
+        SniperNormalizeMutationList(
+            filters
+        )
+
+    if #filters <= 1 then
+        return filters
+    end
+
+    local previousMap =
+        {}
+
+    for _, item in ipairs(
+        SniperNormalizeMutationList(previousFilters)
+    ) do
+
+        previousMap[item] =
+            true
+    end
+
+    for _, item in ipairs(filters) do
+
+        if previousMap[item] ~= true then
+
+            return {
+                item,
+            }
+        end
+    end
+
+    return {
+        filters[1],
+    }
+end
+
+function SniperLimitMutationFiltersForCurrentMode(filters, previousFilters)
+
+    filters =
+        SniperNormalizeMutationList(
+            filters
+        )
+
+    if SniperState.AllowMultiMutations == true then
+        return filters
+    end
+
+    return SniperPickSingleMutationFilter(
+        filters,
+        previousFilters
+    )
+end
+
+function SniperBuildMutationDropdownSelectionMap(filters)
+
+    local map =
+        {}
+
+    for _, item in ipairs(
+        SniperNormalizeMutationList(filters)
+    ) do
+
+        map[item] =
+            true
+    end
+
+    return map
+end
+
+function SniperApplyMutationDropdownValue(filters)
+
+    if not SniperMutationDropdown
+    or type(SniperMutationDropdown.SetValue) ~= "function" then
+        return false
+    end
+
+    SniperMutationDropdownLock =
+        true
+
+    pcall(function()
+
+        SniperMutationDropdown:SetValue(
+            SniperBuildMutationDropdownSelectionMap(
+                filters
+            )
+        )
+    end)
+
+    task.defer(function()
+
+        SniperMutationDropdownLock =
+            false
+    end)
+
+    return true
+end
+
+function SniperReadMutationFiltersFromDropdown()
+
+    return SniperNormalizeMutationList(
+        SniperReadDropdownRawValue(
+            SniperMutationDropdown
+        )
+    )
+end
+
+function SniperSetMutationFilter(value)
+
+    if SniperMutationDropdownLock == true then
+        return
+    end
+
+    local previousFilters =
+        SniperState.BuilderMutationFilters
+        or {
+            SniperState.BuilderMutationFilter
+            or "Any",
+        }
+
+    local filters =
+        SniperLimitMutationFiltersForCurrentMode(
+            value,
+            previousFilters
+        )
+
+    SniperState.BuilderMutationFilters =
+        filters
+
+    SniperState.BuilderMutationFilter =
+        filters[1]
+        or "Any"
+
+    if SniperState.AllowMultiMutations ~= true then
+
+        SniperApplyMutationDropdownValue(
+            filters
+        )
+    end
+
     MarkConfigDirty()
+end
+
+function SniperSetAllowMultiMutations(value)
+
+    SniperState.AllowMultiMutations =
+        value == true
+
+    local currentFilters =
+        SniperReadMutationFiltersFromDropdown()
+
+    if #currentFilters <= 0 then
+
+        currentFilters =
+            SniperNormalizeMutationList(
+                SniperState.BuilderMutationFilters
+                or {
+                    SniperState.BuilderMutationFilter
+                    or "Any",
+                }
+            )
+    end
+
+    currentFilters =
+        SniperLimitMutationFiltersForCurrentMode(
+            currentFilters,
+            SniperState.BuilderMutationFilters
+        )
+
+    SniperState.BuilderMutationFilters =
+        currentFilters
+
+    SniperState.BuilderMutationFilter =
+        currentFilters[1]
+        or "Any"
+
+    SniperApplyMutationDropdownValue(
+        currentFilters
+    )
+
+    SetSniperStatus(
+        SniperState.AllowMultiMutations == true
+        and "Multi mutation builder enabled."
+        or "Single mutation builder enabled."
+    )
+
+    MarkConfigDirty()
+end
+
+function SniperGetBuilderMutationFilters()
+
+    local filters =
+        SniperReadMutationFiltersFromDropdown()
+
+    if #filters <= 0 then
+
+        filters =
+            SniperNormalizeMutationList(
+                SniperState.BuilderMutationFilters
+                or {
+                    SniperState.BuilderMutationFilter
+                    or "Any",
+                }
+            )
+    end
+
+    filters =
+        SniperLimitMutationFiltersForCurrentMode(
+            filters,
+            SniperState.BuilderMutationFilters
+        )
+
+    SniperState.BuilderMutationFilters =
+        filters
+
+    SniperState.BuilderMutationFilter =
+        filters[1]
+        or "Any"
+
+    SniperApplyMutationDropdownValue(
+        filters
+    )
+
+    return filters
 end
 
 function SniperMutationFilterText()
 
+    local filters =
+        SniperNormalizeMutationList(
+            SniperState.BuilderMutationFilters
+            or {
+                SniperState.BuilderMutationFilter
+                or SniperState.MutationFilter
+                or "Any",
+            }
+        )
+
     return SniperCleanMutationFilter(
-        SniperState.BuilderMutationFilter
-        or SniperState.MutationFilter
+        filters[1]
+        or "Any"
     )
 end
 
@@ -43598,6 +44297,26 @@ function SniperAddCurrentFilterToWatchlist()
         return false
     end
 
+    local sizeFilters =
+        SniperGetBuilderSizeFilters()
+
+    local mutationFilters =
+        SniperGetBuilderMutationFilters()
+
+    if #sizeFilters <= 0 then
+
+        sizeFilters = {
+            "Any",
+        }
+    end
+
+    if #mutationFilters <= 0 then
+
+        mutationFilters = {
+            "Any",
+        }
+    end
+
     local watchlistId =
         math.clamp(
             math.floor(
@@ -43606,16 +44325,6 @@ function SniperAddCurrentFilterToWatchlist()
             ),
             1,
             3
-        )
-
-    local sizeFilter =
-        SniperCleanSizeClass(
-            SniperSizeClassText()
-        )
-
-    local mutationFilter =
-        SniperCleanMutationFilter(
-            SniperMutationFilterText()
         )
 
     local priority =
@@ -43646,40 +44355,56 @@ function SniperAddCurrentFilterToWatchlist()
 
         if petName ~= "" then
 
-            local key =
-                SniperBuildWatchlistKey(
-                    petName,
-                    sizeFilter,
-                    mutationFilter
-                )
+            for _, sizeFilter in ipairs(sizeFilters) do
 
-            if rules[key] ~= nil then
+                sizeFilter =
+                    SniperCleanSizeClass(
+                        sizeFilter
+                    )
 
-                updated =
-                    updated + 1
+                for _, mutationFilter in ipairs(mutationFilters) do
 
-            else
+                    mutationFilter =
+                        SniperCleanMutationFilter(
+                            mutationFilter
+                        )
 
-                added =
-                    added + 1
+                    local key =
+                        SniperBuildWatchlistKey(
+                            petName,
+                            sizeFilter,
+                            mutationFilter
+                        )
+
+                    if rules[key] ~= nil then
+
+                        updated =
+                            updated + 1
+
+                    else
+
+                        added =
+                            added + 1
+                    end
+
+                    rules[key] = {
+                        PetName =
+                            petName,
+
+                        SizeFilter =
+                            sizeFilter,
+
+                        MutationFilter =
+                            mutationFilter,
+
+                        Priority =
+                            priority,
+
+                        CreatedAt =
+                            os.time(),
+                    }
+                end
             end
-
-            rules[key] = {
-                PetName =
-                    petName,
-
-                SizeFilter =
-                    sizeFilter,
-
-                MutationFilter =
-                    mutationFilter,
-
-                Priority =
-                    priority,
-
-                CreatedAt =
-                    os.time(),
-            }
         end
     end
 
@@ -43690,29 +44415,35 @@ function SniperAddCurrentFilterToWatchlist()
         1
 
     GAG2SaveSniperWatchlistNow(
-        "save filter"
+        "save multi filter"
     )
 
     SniperBuildTargets()
 
     GAG2RefreshSniperWatchlistUi()
 
+    local total =
+        added + updated
+
     local status =
         "Saved "
-        .. tostring(added)
-        .. " new"
+        .. tostring(total)
+        .. " filter(s)"
 
-    if updated > 0 then
+    if added > 0
+    or updated > 0 then
 
         status =
             status
-            .. ", updated "
+            .. " | new "
+            .. tostring(added)
+            .. " / updated "
             .. tostring(updated)
     end
 
     status =
         status
-        .. " in "
+        .. " to "
         .. SniperWatchlistName(watchlistId)
         .. "."
 
@@ -67607,18 +68338,33 @@ task.defer(function()
     )
 end)
 
+SniperAllowMultiSizesToggle =
+    SniperMainBox:AddToggle("HolyGAG2SniperAllowMultiSizes", {
+        Text = "Allow Multi Sizes",
+        Default = false,
+        Tooltip = "OFF = only one size is kept. ON = Save Filter creates one saved rule for every selected size.",
+        Callback = function(value)
+
+            SniperSetAllowMultiSizes(
+                value == true
+            )
+        end,
+    })
+
 SniperSizeDropdown =
     SniperMainBox:AddDropdown(
         "HolyGAG2SniperSizeClass",
         {
             Text = "Size Filter",
             Values = SniperSizeClassValues(),
-            Default = SniperSizeClassText(),
-            Multi = false,
+            Default = SniperBuildSizeDropdownSelectionMap(
+                SniperGetBuilderSizeFilters()
+            ),
+            Multi = true,
             Searchable = false,
-            AllowNull = false,
+            AllowNull = true,
             MaxVisibleDropdownItems = 4,
-            Tooltip = "Mega displays in UI, but internally matches Huge.",
+            Tooltip = "Mega displays in UI, but internally matches Huge. Multi creates one saved rule per size.",
         }
     )
 
@@ -67637,18 +68383,40 @@ and type(SniperSizeDropdown.OnChanged) == "function" then
     end)
 end
 
+task.defer(function()
+
+    SniperApplySizeDropdownValue(
+        SniperGetBuilderSizeFilters()
+    )
+end)
+
+SniperAllowMultiMutationsToggle =
+    SniperMainBox:AddToggle("HolyGAG2SniperAllowMultiMutations", {
+        Text = "Allow Multi Mutations",
+        Default = false,
+        Tooltip = "OFF = only one mutation/type is kept. ON = Save Filter creates one saved rule for every selected mutation/type.",
+        Callback = function(value)
+
+            SniperSetAllowMultiMutations(
+                value == true
+            )
+        end,
+    })
+
 SniperMutationDropdown =
     SniperMainBox:AddDropdown(
         "HolyGAG2SniperMutationFilter",
         {
             Text = "Mutation Filter",
             Values = SniperMutationFilterValues(),
-            Default = SniperMutationFilterText(),
-            Multi = false,
+            Default = SniperBuildMutationDropdownSelectionMap(
+                SniperGetBuilderMutationFilters()
+            ),
+            Multi = true,
             Searchable = false,
-            AllowNull = false,
+            AllowNull = true,
             MaxVisibleDropdownItems = 3,
-            Tooltip = "Rainbow is stored as PetType, not MutationData.",
+            Tooltip = "Rainbow is stored as PetType, not MutationData. Multi creates one saved rule per mutation/type.",
         }
     )
 
@@ -67666,6 +68434,13 @@ and type(SniperMutationDropdown.OnChanged) == "function" then
         )
     end)
 end
+
+task.defer(function()
+
+    SniperApplyMutationDropdownValue(
+        SniperGetBuilderMutationFilters()
+    )
+end)
 
 SniperRulePriorityDropdown =
     SniperMainBox:AddDropdown(
