@@ -60349,6 +60349,19 @@ function GAG2FarmShowSection(sectionName)
             "Collect"
     end
 
+    GAG2_FARM_UI_STATE =
+        GAG2_FARM_UI_STATE
+        or {
+            Section = "Collect",
+            Boxes = {},
+            BoxKeys = {},
+        }
+
+    GAG2_FARM_UI_STATE.Boxes =
+        type(GAG2_FARM_UI_STATE.Boxes) == "table"
+        and GAG2_FARM_UI_STATE.Boxes
+        or {}
+
     GAG2_FARM_UI_STATE.Section =
         sectionName
 
@@ -60358,51 +60371,156 @@ function GAG2FarmShowSection(sectionName)
             sectionName == "All"
             or sectionName == registeredSection
 
-        for _, box in ipairs(boxes) do
+        if type(boxes) == "table" then
 
-            GAG2FarmSetGroupboxVisible(
-                box,
-                visible
-            )
+            for _, box in ipairs(boxes) do
+
+                if type(GAG2FarmSetGroupboxVisible) == "function" then
+
+                    GAG2FarmSetGroupboxVisible(
+                        box,
+                        visible
+                    )
+                end
+            end
         end
     end
 
-    GAG2FarmDashboardRefresh()
+    if type(GAG2FarmDashboardRefresh) == "function" then
+
+        pcall(function()
+
+            GAG2FarmDashboardRefresh()
+        end)
+    end
 end
 
 local FarmDashboardBox =
     AddLeftBox(
         Tabs.Farm,
-        "",
+        "Farm Dashboard",
         "sprout"
     )
 
+local FarmDashboardCreated =
+    false
+
 if FarmDashboardBox
-and type(FarmDashboardBox.AddUIPassthrough) == "function" then
+and type(FarmDashboardBox.AddUIPassthrough) == "function"
+and type(GAG2FarmDashboardCreatePanel) == "function" then
 
-    FarmDashboardBox:AddUIPassthrough(
-        "HolyGAG2FarmDashboard",
-        {
-            Instance =
-                GAG2FarmDashboardCreatePanel(),
+    local dashboardOk,
+        dashboardResult =
+        pcall(function()
 
-            Height =
-                124,
+            return FarmDashboardBox:AddUIPassthrough(
+                "HolyGAG2FarmDashboard",
+                {
+                    Instance =
+                        GAG2FarmDashboardCreatePanel(),
 
-            Visible =
-                true,
-        }
-    )
+                    Height =
+                        124,
 
-    GAG2FarmDashboardStartRefreshLoop()
+                    Visible =
+                        true,
+                }
+            )
+        end)
 
-else
+    if dashboardOk == true then
+
+        FarmDashboardCreated =
+            true
+
+        GAG2_FARM_DASHBOARD_STATE =
+            GAG2_FARM_DASHBOARD_STATE
+            or {}
+
+        GAG2_FARM_DASHBOARD_STATE.Passthrough =
+            dashboardResult
+
+        if type(GAG2FarmDashboardStartRefreshLoop) == "function" then
+
+            pcall(function()
+
+                GAG2FarmDashboardStartRefreshLoop()
+            end)
+        end
+
+    else
+
+        warn(
+            "[HOLY FARM DASHBOARD]",
+            "UIPassthrough failed:",
+            tostring(dashboardResult)
+        )
+    end
+end
+
+if FarmDashboardCreated ~= true then
 
     local FarmFallbackBox =
         FarmDashboardBox
         or AddLeftBox(
             Tabs.Farm,
-            "
+            "Farm",
+            "sprout"
+        )
+
+    if FarmFallbackBox
+    and type(FarmFallbackBox.AddButton) == "function" then
+
+        FarmFallbackBox:AddButton({
+            Text = "Collect",
+            Func = function()
+
+                GAG2FarmShowSection(
+                    "Collect"
+                )
+            end,
+        }):AddButton({
+            Text = "Plant",
+            Func = function()
+
+                GAG2FarmShowSection(
+                    "Plant"
+                )
+            end,
+        })
+
+        FarmFallbackBox:AddButton({
+            Text = "Tools",
+            Func = function()
+
+                GAG2FarmShowSection(
+                    "Tools"
+                )
+            end,
+        }):AddButton({
+            Text = "All",
+            Func = function()
+
+                GAG2FarmShowSection(
+                    "All"
+                )
+            end,
+        })
+    end
+end
+
+task.defer(function()
+
+    if type(GAG2FarmShowSection) == "function" then
+
+        GAG2FarmShowSection(
+            GAG2_FARM_UI_STATE
+            and GAG2_FARM_UI_STATE.Section
+            or "Collect"
+        )
+    end
+end)
+        
 local FarmSeedPlantBox =
     AddFarmLeftBoxClosed(
         "Seed Planting",
