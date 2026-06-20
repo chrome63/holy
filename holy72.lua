@@ -9128,6 +9128,15 @@ SniperSaveTargetDropdown =
 SniperWatchlistDropdown =
     nil
 
+SniperWatchlistFilterList =
+    nil
+
+SniperWatchlistRowButtons =
+    {}
+
+SniperWatchlistVisibleEntries =
+    {}
+
 SniperWatchlistStatusLabel =
     nil
 
@@ -9152,10 +9161,66 @@ GAG2_SNIPER_FILTER_SETS = {
 
 GAG2_SNIPER_WATCHLIST_STATE = {
     ViewTarget = 1,
-    SelectedKey = "",
     SearchText = "",
-    VisibleByText = {},
+    Page = 1,
+    PerPage = 8,
+
+    SelectedWatchlistId = nil,
+    SelectedKey = "",
 }
+
+function GAG2SniperSetControlText(control, text)
+
+    if not control then
+        return
+    end
+
+    text =
+        tostring(text or "")
+
+    if type(control.SetText) == "function" then
+
+        pcall(function()
+
+            control:SetText(
+                text
+            )
+        end)
+
+        return
+    end
+
+    if type(control.SetName) == "function" then
+
+        pcall(function()
+
+            control:SetName(
+                text
+            )
+        end)
+
+        return
+    end
+
+    pcall(function()
+
+        control.Text =
+            text
+    end)
+end
+
+function GAG2SniperClearTable(source)
+
+    if type(source) ~= "table" then
+        return
+    end
+
+    for key in pairs(source) do
+
+        source[key] =
+            nil
+    end
+end
 
 local SniperState = {
     Enabled = false,
@@ -42914,8 +42979,8 @@ function SniperBuildWatchlistEntries(watchlistId)
                         .. copied.MutationFilter
                     ):lower()
 
-                    if searchText == ""
-                    or haystack:find(searchText, 1, true) then
+                if searchText == ""
+                or haystack:find(searchText, 1, true) then
 
                     table.insert(entries, {
                         WatchlistId =
@@ -42963,14 +43028,21 @@ function SniperFormatWatchlistEntry(entry)
 
     if type(entry) ~= "table"
     or type(entry.Rule) ~= "table" then
-        return "None"
+        return " "
     end
 
     local rule =
         entry.Rule
 
-    return SniperWatchlistName(entry.WatchlistId)
-        .. " | "
+    local selected =
+        tonumber(GAG2_SNIPER_WATCHLIST_STATE.SelectedWatchlistId) == tonumber(entry.WatchlistId)
+        and tostring(GAG2_SNIPER_WATCHLIST_STATE.SelectedKey or "") == tostring(entry.Key)
+
+    return (
+        selected == true
+        and "● "
+        or "  "
+    )
         .. tostring(rule.PetName)
         .. " | "
         .. tostring(rule.SizeFilter)
@@ -42978,11 +43050,32 @@ function SniperFormatWatchlistEntry(entry)
         .. tostring(rule.MutationFilter)
 end
 
-function GAG2RefreshSniperWatchlistUi()
+function SniperFormatWatchlistListRow(entry)
 
-    if not SniperWatchlistDropdown then
-        return
+    if type(entry) ~= "table"
+    or type(entry.Rule) ~= "table" then
+        return nil
     end
+
+    local rule =
+        entry.Rule
+
+    return {
+        Pet =
+            tostring(rule.PetName or "Unknown"),
+
+        Size =
+            tostring(rule.SizeFilter or "Any"),
+
+        Type =
+            tostring(rule.MutationFilter or "Any"),
+
+        Entry =
+            entry,
+    }
+end
+
+function GAG2RefreshSniperWatchlistUi()
 
     local state =
         GAG2_SNIPER_WATCHLIST_STATE
@@ -42992,60 +43085,140 @@ function GAG2RefreshSniperWatchlistUi()
             state.ViewTarget
         )
 
-    local values =
-        {}
-
-    state.VisibleByText =
-        {}
-
-    for _, entry in ipairs(entries) do
-
-        local text =
-            SniperFormatWatchlistEntry(
-                entry
-            )
-
-        table.insert(
-            values,
-            text
+    local perPage =
+        math.clamp(
+            tonumber(state.PerPage)
+            or 8,
+            1,
+            20
         )
 
-        state.VisibleByText[text] =
+    local pageCount =
+        math.max(
+            1,
+            math.ceil(#entries / perPage)
+        )
+
+    state.Page =
+        math.clamp(
+            tonumber(state.Page)
+            or 1,
+            1,
+            pageCount
+        )
+
+    local startIndex =
+        ((state.Page - 1) * perPage) + 1
+
+    local selectedRowIndex =
+        nil
+
+    local listRows =
+        {}
+
+    GAG2SniperClearTable(
+        SniperWatchlistVisibleEntries
+    )
+
+    for rowIndex = 1, perPage do
+
+        local absoluteIndex =
+            startIndex + rowIndex - 1
+
+        local entry =
+            entries[absoluteIndex]
+
+        SniperWatchlistVisibleEntries[rowIndex] =
             entry
-    end
 
-    if #values <= 0 then
+        if entry then
 
-        values = {
-            "None",
-        }
-    end
+            listRows[rowIndex] =
+                SniperFormatWatchlistListRow(
+                    entry
+                )
 
-    pcall(function()
+            if tonumber(state.SelectedWatchlistId) == tonumber(entry.WatchlistId)
+            and tostring(state.SelectedKey or "") == tostring(entry.Key) then
 
-        if type(SniperWatchlistDropdown.SetValues) == "function" then
-
-            SniperWatchlistDropdown:SetValues(
-                values
-            )
-
-        elseif type(SniperWatchlistDropdown.SetItems) == "function" then
-
-            SniperWatchlistDropdown:SetItems(
-                values
-            )
+                selectedRowIndex =
+                    rowIndex
+            end
         end
-    end)
+    end
+
+    local statusText =
+        SniperWatchlistName(state.ViewTarget)
+        .. " · "
+        .. tostring(#entries)
+        .. " filter"
+        .. (
+            #entries == 1
+            and ""
+            or "s"
+        )
+        .. " · Page "
+        .. tostring(state.Page)
+        .. "/"
+        .. tostring(pageCount)
+        .. " · Total "
+        .. tostring(SniperCountAllWatchlistRules())
+
+    GAG2SniperSetControlText(
+        SniperWatchlistStatusLabel,
+        statusText
+    )
 
     if Options.HolyGAG2SniperWatchlistStatus then
 
         Options.HolyGAG2SniperWatchlistStatus:SetText(
-            SniperWatchlistName(state.ViewTarget)
-            .. " · "
-            .. tostring(#entries)
-            .. " saved · total "
-            .. tostring(SniperCountAllWatchlistRules())
+            statusText
         )
+    end
+
+    if SniperWatchlistFilterList
+    and type(SniperWatchlistFilterList.SetRows) == "function" then
+
+        pcall(function()
+
+            SniperWatchlistFilterList:SetRows(
+                listRows
+            )
+        end)
+
+        if type(SniperWatchlistFilterList.SetSelected) == "function" then
+
+            pcall(function()
+
+                SniperWatchlistFilterList:SetSelected(
+                    selectedRowIndex
+                )
+            end)
+        end
+
+    else
+
+        for rowIndex = 1, perPage do
+
+            local entry =
+                SniperWatchlistVisibleEntries[rowIndex]
+
+            local rowText =
+                " "
+
+            if entry then
+
+                rowText =
+                    SniperFormatWatchlistEntry(
+                        entry
+                    )
+            end
+
+            GAG2SniperSetControlText(
+                SniperWatchlistRowButtons[rowIndex],
+                rowText
+            )
+        end
     end
 end
 
@@ -43061,6 +43234,12 @@ function SniperSetWatchlistView(watchlistId)
             3
         )
 
+    GAG2_SNIPER_WATCHLIST_STATE.Page =
+        1
+
+    GAG2_SNIPER_WATCHLIST_STATE.SelectedWatchlistId =
+        nil
+
     GAG2_SNIPER_WATCHLIST_STATE.SelectedKey =
         ""
 
@@ -43068,40 +43247,90 @@ function SniperSetWatchlistView(watchlistId)
     MarkConfigDirty()
 end
 
+function SniperSelectWatchlistRow(rowIndex)
+
+    rowIndex =
+        math.floor(
+            tonumber(rowIndex)
+            or 0
+        )
+
+    local entry =
+        SniperWatchlistVisibleEntries[rowIndex]
+
+    if not entry then
+
+        GAG2_SNIPER_WATCHLIST_STATE.SelectedWatchlistId =
+            nil
+
+        GAG2_SNIPER_WATCHLIST_STATE.SelectedKey =
+            ""
+
+        GAG2RefreshSniperWatchlistUi()
+
+        return false
+    end
+
+    GAG2_SNIPER_WATCHLIST_STATE.SelectedWatchlistId =
+        entry.WatchlistId
+
+    GAG2_SNIPER_WATCHLIST_STATE.SelectedKey =
+        entry.Key
+
+    GAG2RefreshSniperWatchlistUi()
+
+    SetSniperStatus(
+        "Selected filter: "
+        .. SniperFormatWatchlistEntry(entry)
+    )
+
+    return true
+end
+
 function SniperGetSelectedWatchlistEntry()
 
-    local selectedText =
-        ""
+    local watchlistId =
+        tonumber(
+            GAG2_SNIPER_WATCHLIST_STATE.SelectedWatchlistId
+        )
 
-    if SniperWatchlistDropdown
-    and type(SniperWatchlistDropdown.GetValue) == "function" then
+    local key =
+        CleanText(
+            GAG2_SNIPER_WATCHLIST_STATE.SelectedKey
+        )
 
-        local ok, value =
-            pcall(function()
-
-                return SniperWatchlistDropdown:GetValue()
-            end)
-
-        if ok == true then
-            selectedText =
-                CleanText(value)
-        end
-    end
-
-    if selectedText == "" then
-
-        selectedText =
-            CleanText(
-                GAG2_SNIPER_WATCHLIST_STATE.SelectedText
-            )
-    end
-
-    if selectedText == ""
-    or selectedText == "None" then
+    if not watchlistId
+    or key == "" then
         return nil
     end
 
-    return GAG2_SNIPER_WATCHLIST_STATE.VisibleByText[selectedText]
+    local rules =
+        GAG2_SNIPER_FILTER_SETS[watchlistId]
+
+    if type(rules) ~= "table" then
+        return nil
+    end
+
+    local rule =
+        GAG2CopySniperRule(
+            rules[key]
+        )
+
+    if not rule
+    or rule.PetName == "" then
+        return nil
+    end
+
+    return {
+        WatchlistId =
+            watchlistId,
+
+        Key =
+            key,
+
+        Rule =
+            rule,
+    }
 end
 
 function SniperLoadSelectedWatchlistFilter()
@@ -43223,6 +43452,9 @@ function SniperRemoveSelectedWatchlistFilter()
     rules[entry.Key] =
         nil
 
+    GAG2_SNIPER_WATCHLIST_STATE.SelectedWatchlistId =
+        nil
+
     GAG2_SNIPER_WATCHLIST_STATE.SelectedKey =
         ""
 
@@ -43249,6 +43481,15 @@ function SniperClearCurrentWatchlist()
 
     GAG2_SNIPER_FILTER_SETS[watchlistId] =
         {}
+
+    GAG2_SNIPER_WATCHLIST_STATE.SelectedWatchlistId =
+        nil
+
+    GAG2_SNIPER_WATCHLIST_STATE.SelectedKey =
+        ""
+
+    GAG2_SNIPER_WATCHLIST_STATE.Page =
+        1
 
     GAG2SaveSniperWatchlistNow(
         "clear watchlist"
@@ -66475,7 +66716,7 @@ if SniperWatchlistBox then
         {
             Text = "Search",
             Default = "",
-            Placeholder = "Search saved filters...",
+            Placeholder = "Search filters...",
             Numeric = false,
             Finished = false,
             ClearTextOnFocus = false,
@@ -66484,6 +66725,9 @@ if SniperWatchlistBox then
 
                 GAG2_SNIPER_WATCHLIST_STATE.SearchText =
                     tostring(value or "")
+
+                GAG2_SNIPER_WATCHLIST_STATE.Page =
+                    1
 
                 GAG2RefreshSniperWatchlistUi()
                 MarkConfigDirty()
@@ -66495,36 +66739,91 @@ if SniperWatchlistBox then
         SniperWatchlistBox:AddLabel(
             "HolyGAG2SniperWatchlistStatus",
             {
-                Text = "W1 Main · 0 saved · total 0",
+                Text = "W1 Main · 0 filters · Page 1/1 · Total 0",
                 DoesWrap = true,
             }
         )
 
-    SniperWatchlistDropdown =
-        SniperWatchlistBox:AddDropdown(
-            "HolyGAG2SniperWatchlistRows",
-            {
-                Text = "Saved Filters",
-                Values = {
-                    "None",
-                },
-                Default = "None",
-                Multi = false,
-                Searchable = true,
-                AllowNull = false,
-                MaxVisibleDropdownItems = 8,
-                Tooltip = "Select a saved filter to load or remove.",
-            }
-        )
+    if type(SniperWatchlistBox.AddFilterList) == "function" then
 
-    if SniperWatchlistDropdown
-    and type(SniperWatchlistDropdown.OnChanged) == "function" then
+        SniperWatchlistFilterList =
+            SniperWatchlistBox:AddFilterList(
+                "HolyGAG2SniperWatchlistFilterList",
+                {
+                    Rows = GAG2_SNIPER_WATCHLIST_STATE.PerPage,
+                    RowHeight = 24,
+                    HeaderHeight = 20,
+                    Callback = function(rowIndex)
 
-        SniperWatchlistDropdown:OnChanged(function(value)
+                        SniperSelectWatchlistRow(
+                            rowIndex
+                        )
+                    end,
+                }
+            )
 
-            GAG2_SNIPER_WATCHLIST_STATE.SelectedText =
-                CleanText(value)
-        end)
+    else
+
+        for rowIndex = 1, GAG2_SNIPER_WATCHLIST_STATE.PerPage do
+
+            SniperWatchlistRowButtons[rowIndex] =
+                SniperWatchlistBox:AddButton({
+                    Text = " ",
+                    Tooltip = "Click to select this saved filter.",
+                    Func = function()
+
+                        SniperSelectWatchlistRow(
+                            rowIndex
+                        )
+                    end,
+                })
+        end
+    end
+
+    local WatchlistPrevButton =
+        SniperWatchlistBox:AddButton({
+            Text = "Prev",
+            Tooltip = "Previous watchlist page.",
+            Func = function()
+
+                GAG2_SNIPER_WATCHLIST_STATE.Page =
+                    math.max(
+                        1,
+                        (tonumber(GAG2_SNIPER_WATCHLIST_STATE.Page) or 1) - 1
+                    )
+
+                GAG2RefreshSniperWatchlistUi()
+            end,
+        })
+
+    if WatchlistPrevButton
+    and type(WatchlistPrevButton.AddButton) == "function" then
+
+        WatchlistPrevButton:AddButton({
+            Text = "Next",
+            Tooltip = "Next watchlist page.",
+            Func = function()
+
+                GAG2_SNIPER_WATCHLIST_STATE.Page =
+                    (tonumber(GAG2_SNIPER_WATCHLIST_STATE.Page) or 1) + 1
+
+                GAG2RefreshSniperWatchlistUi()
+            end,
+        })
+
+    else
+
+        SniperWatchlistBox:AddButton({
+            Text = "Next",
+            Tooltip = "Next watchlist page.",
+            Func = function()
+
+                GAG2_SNIPER_WATCHLIST_STATE.Page =
+                    (tonumber(GAG2_SNIPER_WATCHLIST_STATE.Page) or 1) + 1
+
+                GAG2RefreshSniperWatchlistUi()
+            end,
+        })
     end
 
     local WatchlistEditButton =
