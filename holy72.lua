@@ -44328,6 +44328,51 @@ function SniperReadVariantAttribute(spawn, ref, attrNames)
     return nil
 end
 
+function SniperReadSafeModelScale(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    if instance:IsA("Model") ~= true then
+        return nil
+    end
+
+    local getter =
+        nil
+
+    pcall(function()
+
+        getter =
+            instance.GetScale
+    end)
+
+    if type(getter) ~= "function" then
+        return nil
+    end
+
+    local ok, scale =
+        pcall(function()
+
+            return getter(
+                instance
+            )
+        end)
+
+    if ok ~= true then
+        return nil
+    end
+
+    scale =
+        tonumber(scale)
+
+    if not scale then
+        return nil
+    end
+
+    return scale
+end
+
 function SniperResolveEntryInternalSize(entry)
 
     if type(entry) ~= "table" then
@@ -44345,6 +44390,8 @@ function SniperResolveEntryInternalSize(entry)
                 "ScaleSize",
                 "VariantSize",
                 "WildPetSize",
+                "DisplaySize",
+                "SizeType",
                 "Scale",
                 "ModelScale",
                 "PetScale",
@@ -44383,29 +44430,25 @@ function SniperResolveEntryInternalSize(entry)
     local modelScale =
         nil
 
-    for _, source in ipairs({
+    local scaleSources = {
         entry.Spawn,
         entry.Instance,
         entry.Ref,
-    }) do
+    }
 
-        if typeof(source) == "Instance"
-        and source:IsA("Model") then
+    for _, source in ipairs(scaleSources) do
 
-            local ok, scale =
-                pcall(function()
+        local scale =
+            SniperReadSafeModelScale(
+                source
+            )
 
-                    return source:GetScale()
-                end)
+        if scale then
 
-            if ok == true
-            and tonumber(scale) then
+            modelScale =
+                scale
 
-                modelScale =
-                    tonumber(scale)
-
-                break
-            end
+            break
         end
     end
 
@@ -44518,13 +44561,9 @@ function SniperEntryMatchesSizeClass(entry, wantedSize)
         return false
     end
 
-    if entry.SizeClass == nil
-    or entry.SizeScore == nil then
-
-        SniperApplyEntrySizeClass(
-            entry
-        )
-    end
+    SniperApplyEntrySizeClass(
+        entry
+    )
 
     local internalSize =
         SniperCleanInternalSize(
@@ -44543,7 +44582,7 @@ function SniperEntryMatchesSizeClass(entry, wantedSize)
         return internalSize == "Huge"
     end
 
-    return true
+    return false
 end
 
 function SniperEntryMatchesMutationFilter(entry, wantedMutation)
