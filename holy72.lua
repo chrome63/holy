@@ -22842,12 +22842,24 @@ GAG2_ACF_COLLECT_MODES = {
 }
 
 GAG2_ACF_SPEED_VALUES = {
+    "Low End",
     "Normal",
     "Fast",
     "Ultra",
 }
 
 GAG2_ACF_SPEED_PRESETS = {
+    ["Low End"] = {
+        Name = "Low End",
+        MinBurst = 1,
+        MaxBurst = 6,
+        RecentCooldown = 0.55,
+        PromptDelayOverride = 0.035,
+        YieldEvery = 1,
+        LoopWaitAfterFire = 0.075,
+        LoopWaitIdle = 0.35,
+    },
+
     Normal = {
         Name = "Normal",
         MinBurst = 16,
@@ -68446,7 +68458,7 @@ GAG2_AUTO_COLLECT_FRUIT_CONTROLS.CollectionSpeed =
             Multi = false,
             Searchable = false,
             MaxVisibleDropdownItems = 4,
-            Tooltip = "Normal is safe. Fast and Ultra override old slow delay and fire bigger batches.",
+            Tooltip = "Low End is for cloudphones/weak CPUs. Normal, Fast, and Ultra collect faster but can lag large farms.",
         }
     )
 
