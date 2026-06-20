@@ -60335,66 +60335,6 @@ function GAG2FarmDashboardStartRefreshLoop()
     end)
 end
 
-function GAG2FarmShowSection(sectionName)
-
-    sectionName =
-        tostring(sectionName or "Collect")
-
-    if sectionName ~= "Collect"
-    and sectionName ~= "Plant"
-    and sectionName ~= "Tools"
-    and sectionName ~= "All" then
-
-        sectionName =
-            "Collect"
-    end
-
-    GAG2_FARM_UI_STATE =
-        GAG2_FARM_UI_STATE
-        or {
-            Section = "Collect",
-            Boxes = {},
-            BoxKeys = {},
-        }
-
-    GAG2_FARM_UI_STATE.Boxes =
-        type(GAG2_FARM_UI_STATE.Boxes) == "table"
-        and GAG2_FARM_UI_STATE.Boxes
-        or {}
-
-    GAG2_FARM_UI_STATE.Section =
-        sectionName
-
-    for registeredSection, boxes in pairs(GAG2_FARM_UI_STATE.Boxes) do
-
-        local visible =
-            sectionName == "All"
-            or sectionName == registeredSection
-
-        if type(boxes) == "table" then
-
-            for _, box in ipairs(boxes) do
-
-                if type(GAG2FarmSetGroupboxVisible) == "function" then
-
-                    GAG2FarmSetGroupboxVisible(
-                        box,
-                        visible
-                    )
-                end
-            end
-        end
-    end
-
-    if type(GAG2FarmDashboardRefresh) == "function" then
-
-        pcall(function()
-
-            GAG2FarmDashboardRefresh()
-        end)
-    end
-end
-
 function GAG2FarmDashboardGetHolder(box)
 
     if type(box) ~= "table" then
@@ -60412,50 +60352,26 @@ function GAG2FarmDashboardGetHolder(box)
     return nil
 end
 
-function GAG2FarmDashboardLooksLikeHeader(object)
+function GAG2FarmDashboardIsInsideDashboard(object)
 
     if typeof(object) ~= "Instance" then
         return false
     end
 
-    local hasDashboardText =
-        false
+    local current =
+        object
 
-    local hasArrowText =
-        false
+    while current do
 
-    for _, descendant in ipairs(object:GetDescendants()) do
-
-        if descendant:IsA("TextLabel")
-        or descendant:IsA("TextButton") then
-
-            local text =
-                tostring(descendant.Text or "")
-                    :lower()
-                    :gsub("%s+", " ")
-
-            if text:find("farm dashboard", 1, true)
-            or text == "farm"
-            or text == "" then
-
-                hasDashboardText =
-                    true
-            end
-
-            if text == "v"
-            or text == ">"
-            or text == "∨"
-            or text == "⌄"
-            or text == "˅" then
-
-                hasArrowText =
-                    true
-            end
+        if current.Name == "HolyGAG2FarmDashboardRoot" then
+            return true
         end
+
+        current =
+            current.Parent
     end
 
-    return hasDashboardText == true
-        or hasArrowText == true
+    return false
 end
 
 function GAG2FarmDashboardStripWrapper(box)
@@ -60469,70 +60385,86 @@ function GAG2FarmDashboardStripWrapper(box)
         return false
     end
 
-    holder.BackgroundTransparency =
-        1
+    pcall(function()
 
-    holder.BorderSizePixel =
-        0
+        holder.BackgroundTransparency =
+            1
 
-    local directChildren =
-        holder:GetChildren()
-
-    for _, child in ipairs(directChildren) do
-
-        if child:IsA("UIStroke") then
-
-            child.Transparency =
-                1
-
-        elseif child:IsA("Frame")
-        or child:IsA("TextButton")
-        or child:IsA("ImageButton") then
-
-            if GAG2FarmDashboardLooksLikeHeader(child) == true then
-
-                child.Visible =
-                    false
-
-                pcall(function()
-
-                    child.Size =
-                        UDim2.new(
-                            child.Size.X.Scale,
-                            child.Size.X.Offset,
-                            0,
-                            0
-                        )
-                end)
-            end
-        end
-    end
+        holder.BorderSizePixel =
+            0
+    end)
 
     for _, descendant in ipairs(holder:GetDescendants()) do
 
-        if descendant:IsA("TextLabel")
+        if GAG2FarmDashboardIsInsideDashboard(descendant) == true then
+            continue
+        end
+
+        if descendant:IsA("UIStroke") then
+
+            pcall(function()
+
+                descendant.Transparency =
+                    1
+            end)
+
+        elseif descendant:IsA("TextLabel")
         or descendant:IsA("TextButton") then
 
             local text =
                 tostring(descendant.Text or "")
 
-            if text == "Farm Dashboard"
-            or text == "FARM DASHBOARD"
-            or text == "v"
-            or text == ">"
-            or text == "∨"
-            or text == "⌄" then
+            local cleanText =
+                text
+                    :lower()
+                    :gsub("%s+", "")
 
-                descendant.Visible =
-                    false
+            if cleanText == "farmdashboard"
+            or cleanText == "farm"
+            or cleanText == "v"
+            or cleanText == ">"
+            or cleanText == "∨"
+            or cleanText == "⌄"
+            or cleanText == "˅" then
 
                 pcall(function()
 
                     descendant.Text =
                         ""
+
+                    descendant.Visible =
+                        false
                 end)
             end
         end
+    end
+
+    if GAG2_FARM_DASHBOARD_STATE
+    and typeof(GAG2_FARM_DASHBOARD_STATE.Root) == "Instance" then
+
+        pcall(function()
+
+            GAG2_FARM_DASHBOARD_STATE.Root.Visible =
+                true
+
+            GAG2_FARM_DASHBOARD_STATE.Root.Size =
+                UDim2.new(
+                    1,
+                    0,
+                    0,
+                    118
+                )
+        end)
+    end
+
+    if GAG2_FARM_DASHBOARD_STATE
+    and typeof(GAG2_FARM_DASHBOARD_STATE.Panel) == "Instance" then
+
+        pcall(function()
+
+            GAG2_FARM_DASHBOARD_STATE.Panel.Visible =
+                true
+        end)
     end
 
     return true
@@ -60612,69 +60544,109 @@ if FarmDashboardBox
 and type(FarmDashboardBox.AddUIPassthrough) == "function"
 and type(GAG2FarmDashboardCreatePanel) == "function" then
 
-    local dashboardOk,
-        dashboardResult =
+    local panelInstance =
+        nil
+
+    local panelOk,
+        panelResult =
         pcall(function()
 
-            return FarmDashboardBox:AddUIPassthrough(
-                "HolyGAG2FarmDashboard",
-                {
-                    Instance =
-                        GAG2FarmDashboardCreatePanel(),
-
-                    Height =
-                        118,
-
-                    Visible =
-                        true,
-                }
-            )
+            return GAG2FarmDashboardCreatePanel()
         end)
 
-    if dashboardOk == true then
+    if panelOk == true
+    and typeof(panelResult) == "Instance" then
 
-        FarmDashboardCreated =
-            true
+        panelInstance =
+            panelResult
+    end
 
-        GAG2_FARM_DASHBOARD_STATE =
-            GAG2_FARM_DASHBOARD_STATE
-            or {}
+    if panelInstance then
 
-        GAG2_FARM_DASHBOARD_STATE.Passthrough =
-            dashboardResult
+        local dashboardOk,
+            dashboardResult =
+            pcall(function()
 
-        GAG2FarmDashboardStripWrapper(
-            FarmDashboardBox
-        )
+                return FarmDashboardBox:AddUIPassthrough(
+                    "HolyGAG2FarmDashboard",
+                    {
+                        Instance =
+                            panelInstance,
 
-        task.defer(function()
+                        Height =
+                            118,
 
-            GAG2FarmDashboardStripWrapper(
-                FarmDashboardBox
-            )
-        end)
+                        Visible =
+                            true,
+                    }
+                )
+            end)
 
-        task.delay(0.5, function()
+        if dashboardOk == true then
 
-            GAG2FarmDashboardStripWrapper(
-                FarmDashboardBox
-            )
-        end)
+            FarmDashboardCreated =
+                true
 
-        if type(GAG2FarmDashboardStartRefreshLoop) == "function" then
+            GAG2_FARM_DASHBOARD_STATE =
+                GAG2_FARM_DASHBOARD_STATE
+                or {}
+
+            GAG2_FARM_DASHBOARD_STATE.Passthrough =
+                dashboardResult
 
             pcall(function()
 
-                GAG2FarmDashboardStartRefreshLoop()
+                panelInstance.Visible =
+                    true
             end)
+
+            task.defer(function()
+
+                GAG2FarmDashboardStripWrapper(
+                    FarmDashboardBox
+                )
+
+                if type(GAG2FarmDashboardRefresh) == "function" then
+
+                    GAG2FarmDashboardRefresh()
+                end
+            end)
+
+            task.delay(0.5, function()
+
+                GAG2FarmDashboardStripWrapper(
+                    FarmDashboardBox
+                )
+
+                if type(GAG2FarmDashboardRefresh) == "function" then
+
+                    GAG2FarmDashboardRefresh()
+                end
+            end)
+
+            if type(GAG2FarmDashboardStartRefreshLoop) == "function" then
+
+                pcall(function()
+
+                    GAG2FarmDashboardStartRefreshLoop()
+                end)
+            end
+
+        else
+
+            warn(
+                "[HOLY FARM DASHBOARD]",
+                "UIPassthrough failed:",
+                tostring(dashboardResult)
+            )
         end
 
     else
 
         warn(
             "[HOLY FARM DASHBOARD]",
-            "UIPassthrough failed:",
-            tostring(dashboardResult)
+            "panel create failed:",
+            tostring(panelResult)
         )
     end
 end
