@@ -43763,121 +43763,34 @@ end
 
 function GAG2RefreshSniperWatchlistUi()
 
-    local function safeClampNumber(value, minimum, maximum)
-
-        value =
-            tonumber(value)
-            or tonumber(minimum)
-            or 0
-
-        minimum =
-            tonumber(minimum)
-            or value
-
-        maximum =
-            tonumber(maximum)
-            or value
-
-        if minimum > maximum then
-
-            local oldMinimum =
-                minimum
-
-            minimum =
-                maximum
-
-            maximum =
-                oldMinimum
-        end
-
-        if type(math.clamp) == "function" then
-
-            local ok, result =
-                pcall(function()
-
-                    return math.clamp(
-                        value,
-                        minimum,
-                        maximum
-                    )
-                end)
-
-            if ok == true
-            and tonumber(result) then
-
-                return result
-            end
-        end
-
-        if value < minimum then
-            return minimum
-        end
-
-        if value > maximum then
-            return maximum
-        end
-
-        return value
-    end
-
     local state =
         GAG2_SNIPER_WATCHLIST_STATE
 
-    if type(state) ~= "table" then
-        return false
-    end
-
     local entries =
-        {}
-
-    if type(SniperBuildWatchlistEntries) == "function" then
-
-        local ok, result =
-            pcall(function()
-
-                return SniperBuildWatchlistEntries(
-                    state.ViewTarget
-                )
-            end)
-
-        if ok == true
-        and type(result) == "table" then
-
-            entries =
-                result
-        end
-    end
-
-    local perPage =
-        safeClampNumber(
-            state.PerPage,
-            1,
-            20
+        SniperBuildWatchlistEntries(
+            state.ViewTarget
         )
 
-    perPage =
-        math.floor(
-            perPage
+    local perPage =
+        math.clamp(
+            tonumber(state.PerPage)
+            or 8,
+            1,
+            20
         )
 
     local pageCount =
         math.max(
             1,
-            math.ceil(
-                #entries / perPage
-            )
+            math.ceil(#entries / perPage)
         )
 
     state.Page =
-        safeClampNumber(
-            state.Page,
+        math.clamp(
+            tonumber(state.Page)
+            or 1,
             1,
             pageCount
-        )
-
-    state.Page =
-        math.floor(
-            state.Page
         )
 
     local startIndex =
@@ -43889,25 +43802,9 @@ function GAG2RefreshSniperWatchlistUi()
     local listRows =
         {}
 
-    if type(GAG2SniperClearTable) == "function" then
-
-        GAG2SniperClearTable(
-            SniperWatchlistVisibleEntries
-        )
-
-    elseif type(SniperWatchlistVisibleEntries) == "table" then
-
-        for key in pairs(SniperWatchlistVisibleEntries) do
-
-            SniperWatchlistVisibleEntries[key] =
-                nil
-        end
-    end
-
-    SniperWatchlistVisibleEntries =
-        type(SniperWatchlistVisibleEntries) == "table"
-        and SniperWatchlistVisibleEntries
-        or {}
+    GAG2SniperClearTable(
+        SniperWatchlistVisibleEntries
+    )
 
     for rowIndex = 1, perPage do
 
@@ -43922,23 +43819,10 @@ function GAG2RefreshSniperWatchlistUi()
 
         if entry then
 
-            if type(SniperFormatWatchlistListRow) == "function" then
-
-                local ok, row =
-                    pcall(function()
-
-                        return SniperFormatWatchlistListRow(
-                            entry
-                        )
-                    end)
-
-                if ok == true
-                and row ~= nil then
-
-                    listRows[rowIndex] =
-                        row
-                end
-            end
+            listRows[rowIndex] =
+                SniperFormatWatchlistListRow(
+                    entry
+                )
 
             if tonumber(state.SelectedWatchlistId) == tonumber(entry.WatchlistId)
             and tostring(state.SelectedKey or "") == tostring(entry.Key) then
@@ -43949,48 +43833,8 @@ function GAG2RefreshSniperWatchlistUi()
         end
     end
 
-    local watchlistName =
-        "W1 Main"
-
-    if type(SniperWatchlistName) == "function" then
-
-        local ok, result =
-            pcall(function()
-
-                return SniperWatchlistName(
-                    state.ViewTarget
-                )
-            end)
-
-        if ok == true
-        and tostring(result or "") ~= "" then
-
-            watchlistName =
-                tostring(result)
-        end
-    end
-
-    local totalRules =
-        0
-
-    if type(SniperCountAllWatchlistRules) == "function" then
-
-        local ok, result =
-            pcall(function()
-
-                return SniperCountAllWatchlistRules()
-            end)
-
-        if ok == true
-        and tonumber(result) then
-
-            totalRules =
-                tonumber(result)
-        end
-    end
-
     local statusText =
-        watchlistName
+        SniperWatchlistName(state.ViewTarget)
         .. " · "
         .. tostring(#entries)
         .. " filter"
@@ -44004,23 +43848,18 @@ function GAG2RefreshSniperWatchlistUi()
         .. "/"
         .. tostring(pageCount)
         .. " · Total "
-        .. tostring(totalRules)
+        .. tostring(SniperCountAllWatchlistRules())
 
-    if type(GAG2SniperSetControlText) == "function" then
+    GAG2SniperSetControlText(
+        SniperWatchlistStatusLabel,
+        statusText
+    )
 
-        GAG2SniperSetControlText(
-            SniperWatchlistStatusLabel,
+    if Options.HolyGAG2SniperWatchlistStatus then
+
+        Options.HolyGAG2SniperWatchlistStatus:SetText(
             statusText
         )
-
-        if Options
-        and Options.HolyGAG2SniperWatchlistStatus then
-
-            GAG2SniperSetControlText(
-                Options.HolyGAG2SniperWatchlistStatus,
-                statusText
-            )
-        end
     end
 
     if SniperWatchlistFilterList
@@ -44053,37 +43892,20 @@ function GAG2RefreshSniperWatchlistUi()
             local rowText =
                 " "
 
-            if entry
-            and type(SniperFormatWatchlistEntry) == "function" then
+            if entry then
 
-                local ok, result =
-                    pcall(function()
-
-                        return SniperFormatWatchlistEntry(
-                            entry
-                        )
-                    end)
-
-                if ok == true
-                and tostring(result or "") ~= "" then
-
-                    rowText =
-                        tostring(result)
-                end
+                rowText =
+                    SniperFormatWatchlistEntry(
+                        entry
+                    )
             end
 
-            if type(GAG2SniperSetControlText) == "function" then
-
-                GAG2SniperSetControlText(
-                    SniperWatchlistRowButtons
-                    and SniperWatchlistRowButtons[rowIndex],
-                    rowText
-                )
-            end
+            GAG2SniperSetControlText(
+                SniperWatchlistRowButtons[rowIndex],
+                rowText
+            )
         end
     end
-
-    return true
 end
 
 function SniperSetWatchlistView(watchlistId)
@@ -44506,36 +44328,6 @@ function SniperReadVariantAttribute(spawn, ref, attrNames)
     return nil
 end
 
-function SniperReadSafeModelScale(instance)
-
-    if typeof(instance) ~= "Instance" then
-        return nil
-    end
-
-    if instance:IsA("Model") ~= true then
-        return nil
-    end
-
-    local ok, scale =
-        pcall(function()
-
-            return instance:GetScale()
-        end)
-
-    if ok ~= true then
-        return nil
-    end
-
-    scale =
-        tonumber(scale)
-
-    if not scale then
-        return nil
-    end
-
-    return scale
-end
-
 function SniperResolveEntryInternalSize(entry)
 
     if type(entry) ~= "table" then
@@ -44553,11 +44345,6 @@ function SniperResolveEntryInternalSize(entry)
                 "ScaleSize",
                 "VariantSize",
                 "WildPetSize",
-                "DisplaySize",
-                "SizeType",
-                "Scale",
-                "ModelScale",
-                "PetScale",
             }
         )
 
@@ -44574,58 +44361,40 @@ function SniperResolveEntryInternalSize(entry)
             or 2
     end
 
-    local numericScale =
-        tonumber(direct)
+    local key =
+        SniperSizeBaselineKey(
+            entry.Name
+        )
 
-    if numericScale then
+    local metric =
+        tonumber(entry.SizeMetric)
+        or 0
 
-        if numericScale >= 3.25 then
-            return "Huge", 3
-        end
+    local baseline =
+        key ~= ""
+        and tonumber(
+            SniperState.SizeBaselines
+            and SniperState.SizeBaselines[key]
+        )
+        or nil
 
-        if numericScale >= 1.50 then
-            return "Big", 2
-        end
+    local ratio =
+        1
 
-        return nil, 1
+    if metric > 0
+    and baseline
+    and baseline > 0 then
+
+        ratio =
+            metric / baseline
     end
 
-    local modelScale =
-        nil
-
-    local scaleSources = {
-        entry.Spawn,
-        entry.Instance,
-        entry.Ref,
-    }
-
-    for _, source in ipairs(scaleSources) do
-
-        local scale =
-            SniperReadSafeModelScale(
-                source
-            )
-
-        if scale then
-
-            modelScale =
-                scale
-
-            break
-        end
+    if ratio >= 1.55 then
+        return "Huge", 3
     end
 
-    if modelScale then
-
-        if modelScale >= 3.25 then
-            return "Huge", 3
-        end
-
-        if modelScale >= 1.50 then
-            return "Big", 2
-        end
-
-        return nil, 1
+    if ratio >= 1.25 then
+        return "Big", 2
     end
 
     return nil, 1
@@ -44724,9 +44493,13 @@ function SniperEntryMatchesSizeClass(entry, wantedSize)
         return false
     end
 
-    SniperApplyEntrySizeClass(
-        entry
-    )
+    if entry.SizeClass == nil
+    or entry.SizeScore == nil then
+
+        SniperApplyEntrySizeClass(
+            entry
+        )
+    end
 
     local internalSize =
         SniperCleanInternalSize(
@@ -44745,7 +44518,7 @@ function SniperEntryMatchesSizeClass(entry, wantedSize)
         return internalSize == "Huge"
     end
 
-    return false
+    return true
 end
 
 function SniperEntryMatchesMutationFilter(entry, wantedMutation)
@@ -44929,13 +44702,77 @@ end
 
 function SniperPriorityText()
 
-    return "Per-filter"
+    local rows =
+        {}
+
+    for index = 1, 5 do
+
+        local value =
+            SniperPriorityCleanValue(
+                SniperState.PriorityPets
+                and SniperState.PriorityPets[index]
+                or ""
+            )
+
+        if value ~= "" then
+
+            table.insert(
+                rows,
+                tostring(index)
+                .. ". "
+                .. value
+            )
+        end
+    end
+
+    if #rows <= 0 then
+        return "None"
+    end
+
+    return table.concat(
+        rows,
+        " > "
+    )
 end
 
 function SniperRefreshPriorityDropdowns()
 
-    -- Old global 5-slot Buy Priority refresh removed.
-    -- Priority now belongs to each saved sniper watchlist filter.
+    if SniperPriorityRefreshing == true then
+        return
+    end
+
+    SniperPriorityRefreshing =
+        true
+
+    local values =
+        SniperGetPriorityDropdownValues()
+
+    for index = 1, 5 do
+
+        local dropdown =
+            SniperPriorityDropdowns
+            and SniperPriorityDropdowns[index]
+
+        if dropdown then
+
+            pcall(function()
+
+                if type(dropdown.SetValues) == "function" then
+
+                    dropdown:SetValues(
+                        values
+                    )
+
+                elseif type(dropdown.SetItems) == "function" then
+
+                    dropdown:SetItems(
+                        values
+                    )
+                end
+            end)
+        end
+    end
+
     SniperPriorityRefreshing =
         false
 end
@@ -67682,20 +67519,7 @@ if SniperWatchlistBox then
                 GAG2_SNIPER_WATCHLIST_STATE.Page =
                     1
 
-                local refreshOk, refreshError =
-                    pcall(function()
-
-                        GAG2RefreshSniperWatchlistUi()
-                    end)
-
-                if refreshOk ~= true then
-
-                    SetSniperStatus(
-                        "Watchlist search refresh failed: "
-                        .. tostring(refreshError)
-                    )
-                end
-
+                GAG2RefreshSniperWatchlistUi()
                 MarkConfigDirty()
             end,
         }
