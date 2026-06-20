@@ -43756,7 +43756,7 @@ function SniperFormatWatchlistListRow(entry)
         Priority =
             priorityText,
 
-        Entry =s
+        Entry =
             entry,
     }
 end
