@@ -805,6 +805,11 @@ GAG2_WILD_PET_NETWORK_ENDPOINT =
 GAG2_WILD_PET_NETWORK_API_KEY =
     "HOLY_WILDPETS_2026_8f4c92d1e7a63b50"
 
+
+GAG2_WILD_PET_NETWORK_FILTER_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/WildPetHudFilters.json"
+
 if type(GAG2_WILD_PET_NETWORK_STATE) == "table"
 and type(GAG2_WILD_PET_NETWORK_STATE.Destroy) == "function" then
 
@@ -833,14 +838,58 @@ GAG2_WILD_PET_NETWORK_STATE = {
     Gui = nil,
     Frame = nil,
     SummaryLabel = nil,
+    FilterSummaryLabel = nil,
     StatusLabel = nil,
     Scroll = nil,
+
+    TopLine = nil,
+    StatusLine = nil,
+
+    SizeButton = nil,
+    FilterButton = nil,
+    RefreshButton = nil,
+    MinimizeButton = nil,
+    CloseButton = nil,
+
+    FilterOpen = false,
+    FilterPanel = nil,
+    FilterScroll = nil,
 
     LastData = nil,
     LastRefreshAt = 0,
     LastServerCount = 0,
     LastPetCount = 0,
+    LastFilteredPetCount = 0,
+    LastFilteredResultCount = 0,
     LastStatus = "Disabled.",
+
+    FilterSettings = {
+        Mode = "Smart",
+        HideUnmatched = true,
+
+        AlwaysPets = {
+            Raccoon = true,
+            ["Golden Dragonfly"] = true,
+            Unicorn = true,
+            ["Ice Serpent"] = true,
+            Monkey = true,
+            Bear = true,
+            Bee = true,
+        },
+
+        AlwaysRarities = {
+            Mythic = true,
+            Super = true,
+        },
+
+        AlsoVariants = {
+            Big = true,
+            Mega = true,
+            Rainbow = true,
+            ["Big Rainbow"] = true,
+            ["Mega Rainbow"] = true,
+        },
+    },
 }
 
 pcall(function()
@@ -5968,6 +6017,1149 @@ function GAG2WildPetNetworkBuildSectionVariantSummary(rows)
     )
 end
 
+
+function GAG2WildPetNetworkFilterPetOptions()
+
+    return {
+        "Raccoon",
+        "Golden Dragonfly",
+        "Unicorn",
+        "Ice Serpent",
+        "Monkey",
+        "Bear",
+        "Bee",
+        "Black Dragon",
+        "Bunny",
+        "Frog",
+        "Owl",
+        "Deer",
+        "Robin",
+    }
+end
+
+function GAG2WildPetNetworkFilterRarityOptions()
+
+    return {
+        "Common",
+        "Uncommon",
+        "Rare",
+        "Epic",
+        "Legendary",
+        "Mythic",
+        "Super",
+    }
+end
+
+function GAG2WildPetNetworkFilterVariantOptions()
+
+    return {
+        "Regular",
+        "Big",
+        "Mega",
+        "Rainbow",
+        "Big Rainbow",
+        "Mega Rainbow",
+    }
+end
+
+function GAG2WildPetNetworkNormalizeKey(value)
+
+    return CleanText(value)
+        :lower()
+        :gsub("_", " ")
+        :gsub("%-", " ")
+        :gsub("[^%w%s]", " ")
+        :gsub("%s+", "")
+end
+
+function GAG2WildPetNetworkDefaultFilterSettings()
+
+    return {
+        Mode = "Smart",
+        HideUnmatched = true,
+
+        AlwaysPets = {
+            Raccoon = true,
+            ["Golden Dragonfly"] = true,
+            Unicorn = true,
+            ["Ice Serpent"] = true,
+            Monkey = true,
+            Bear = true,
+            Bee = true,
+        },
+
+        AlwaysRarities = {
+            Mythic = true,
+            Super = true,
+        },
+
+        AlsoVariants = {
+            Big = true,
+            Mega = true,
+            Rainbow = true,
+            ["Big Rainbow"] = true,
+            ["Mega Rainbow"] = true,
+        },
+    }
+end
+
+function GAG2WildPetNetworkCopyBooleanMap(source)
+
+    local output =
+        {}
+
+    if type(source) ~= "table" then
+        return output
+    end
+
+    for key, value in pairs(source) do
+
+        local cleanKey =
+            CleanText(key)
+
+        if cleanKey ~= ""
+        and value == true then
+
+            output[cleanKey] =
+                true
+        end
+    end
+
+    return output
+end
+
+function GAG2WildPetNetworkNormalizeFilterSettings(settings)
+
+    local defaultSettings =
+        GAG2WildPetNetworkDefaultFilterSettings()
+
+    settings =
+        type(settings) == "table"
+        and settings
+        or defaultSettings
+
+    local mode =
+        CleanText(
+            settings.Mode
+        )
+
+    if mode ~= "Smart"
+    and mode ~= "Custom"
+    and mode ~= "All" then
+
+        mode =
+            "Smart"
+    end
+
+    return {
+        Mode =
+            mode,
+
+        HideUnmatched =
+            settings.HideUnmatched ~= false,
+
+        AlwaysPets =
+            GAG2WildPetNetworkCopyBooleanMap(
+                settings.AlwaysPets
+                or defaultSettings.AlwaysPets
+            ),
+
+        AlwaysRarities =
+            GAG2WildPetNetworkCopyBooleanMap(
+                settings.AlwaysRarities
+                or defaultSettings.AlwaysRarities
+            ),
+
+        AlsoVariants =
+            GAG2WildPetNetworkCopyBooleanMap(
+                settings.AlsoVariants
+                or defaultSettings.AlsoVariants
+            ),
+    }
+end
+
+function GAG2WildPetNetworkCountMap(source)
+
+    local count =
+        0
+
+    if type(source) ~= "table" then
+        return 0
+    end
+
+    for _, enabled in pairs(source) do
+
+        if enabled == true then
+            count =
+                count + 1
+        end
+    end
+
+    return count
+end
+
+function GAG2WildPetNetworkLoadFilterSettings()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    local loaded =
+        nil
+
+    if CanUseUISettingsFile() == true then
+
+        local exists =
+            false
+
+        pcall(function()
+
+            exists =
+                isfile(
+                    GAG2_WILD_PET_NETWORK_FILTER_FILE
+                )
+        end)
+
+        if exists == true then
+
+            local readOk, raw =
+                pcall(function()
+
+                    return readfile(
+                        GAG2_WILD_PET_NETWORK_FILTER_FILE
+                    )
+                end)
+
+            if readOk == true
+            and type(raw) == "string"
+            and raw ~= "" then
+
+                local decodeOk, decoded =
+                    pcall(function()
+
+                        return HttpService:JSONDecode(
+                            raw
+                        )
+                    end)
+
+                if decodeOk == true
+                and type(decoded) == "table" then
+
+                    loaded =
+                        decoded
+                end
+            end
+        end
+    end
+
+    state.FilterSettings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            loaded
+            or state.FilterSettings
+            or GAG2WildPetNetworkDefaultFilterSettings()
+        )
+
+    return state.FilterSettings
+end
+
+function GAG2WildPetNetworkSaveFilterSettings()
+
+    if CanUseUISettingsFile() ~= true then
+        return false
+    end
+
+    EnsureUISettingsFolder()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.FilterSettings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            state.FilterSettings
+        )
+
+    local encodeOk, encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                state.FilterSettings
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                GAG2_WILD_PET_NETWORK_FILTER_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function GAG2WildPetNetworkSetFilterCustom()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.FilterSettings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            state.FilterSettings
+        )
+
+    if state.FilterSettings.Mode ~= "All" then
+
+        state.FilterSettings.Mode =
+            "Custom"
+    end
+end
+
+function GAG2WildPetNetworkSetFilterMode(mode)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    mode =
+        CleanText(mode)
+
+    if mode == "Smart" then
+
+        state.FilterSettings =
+            GAG2WildPetNetworkDefaultFilterSettings()
+
+    elseif mode == "All" then
+
+        state.FilterSettings =
+            GAG2WildPetNetworkNormalizeFilterSettings(
+                state.FilterSettings
+            )
+
+        state.FilterSettings.Mode =
+            "All"
+
+    else
+
+        state.FilterSettings =
+            GAG2WildPetNetworkNormalizeFilterSettings(
+                state.FilterSettings
+            )
+
+        state.FilterSettings.Mode =
+            "Custom"
+    end
+
+    GAG2WildPetNetworkSaveFilterSettings()
+    GAG2WildPetNetworkRefreshFilterVisuals()
+
+    if type(state.LastData) == "table" then
+
+        GAG2WildPetNetworkRender(
+            state.LastData
+        )
+    end
+end
+
+function GAG2WildPetNetworkToggleFilterMap(mapName, label)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.FilterSettings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            state.FilterSettings
+        )
+
+    local map =
+        state.FilterSettings[mapName]
+
+    if type(map) ~= "table" then
+
+        map =
+            {}
+
+        state.FilterSettings[mapName] =
+            map
+    end
+
+    label =
+        CleanText(label)
+
+    if label == "" then
+        return false
+    end
+
+    map[label] =
+        map[label] ~= true
+
+    state.FilterSettings.Mode =
+        "Custom"
+
+    GAG2WildPetNetworkSaveFilterSettings()
+    GAG2WildPetNetworkRefreshFilterVisuals()
+
+    if type(state.LastData) == "table" then
+
+        GAG2WildPetNetworkRender(
+            state.LastData
+        )
+    end
+
+    return true
+end
+
+function GAG2WildPetNetworkToggleHideUnmatched()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.FilterSettings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            state.FilterSettings
+        )
+
+    state.FilterSettings.HideUnmatched =
+        state.FilterSettings.HideUnmatched ~= true
+
+    state.FilterSettings.Mode =
+        "Custom"
+
+    GAG2WildPetNetworkSaveFilterSettings()
+    GAG2WildPetNetworkRefreshFilterVisuals()
+
+    if type(state.LastData) == "table" then
+
+        GAG2WildPetNetworkRender(
+            state.LastData
+        )
+    end
+end
+
+function GAG2WildPetNetworkClearFilterSettings()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.FilterSettings = {
+        Mode = "Custom",
+        HideUnmatched = true,
+        AlwaysPets = {},
+        AlwaysRarities = {},
+        AlsoVariants = {},
+    }
+
+    GAG2WildPetNetworkSaveFilterSettings()
+    GAG2WildPetNetworkRefreshFilterVisuals()
+
+    if type(state.LastData) == "table" then
+
+        GAG2WildPetNetworkRender(
+            state.LastData
+        )
+    end
+end
+
+function GAG2WildPetNetworkMapHasNormalizedValue(map, value)
+
+    if type(map) ~= "table" then
+        return false
+    end
+
+    local targetKey =
+        GAG2WildPetNetworkNormalizeKey(
+            value
+        )
+
+    if targetKey == "" then
+        return false
+    end
+
+    for key, enabled in pairs(map) do
+
+        if enabled == true
+        and GAG2WildPetNetworkNormalizeKey(key) == targetKey then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function GAG2WildPetNetworkRowPassesFilters(petName, rarity, rowData)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    local settings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            state.FilterSettings
+        )
+
+    state.FilterSettings =
+        settings
+
+    if settings.Mode == "All" then
+        return true
+    end
+
+    if settings.HideUnmatched ~= true then
+        return true
+    end
+
+    local rowPetName =
+        CleanText(
+            rowData
+            and (
+                rowData.petName
+                or rowData.PetName
+                or petName
+            )
+        )
+
+    if rowPetName == "" then
+        rowPetName =
+            CleanText(petName)
+    end
+
+    local rowRarity =
+        CleanText(
+            rowData
+            and (
+                rowData.rarity
+                or rowData.Rarity
+                or rarity
+            )
+        )
+
+    if rowRarity == "" then
+        rowRarity =
+            CleanText(rarity)
+    end
+
+    local rowVariant =
+        GAG2WildPetNetworkBuildCleanVariantLabel(
+            rowData
+        )
+
+    local petMatch =
+        GAG2WildPetNetworkMapHasNormalizedValue(
+            settings.AlwaysPets,
+            rowPetName
+        )
+
+    local rarityMatch =
+        settings.AlwaysRarities[rowRarity] == true
+
+    local variantMatch =
+        settings.AlsoVariants[rowVariant] == true
+
+    return petMatch == true
+        or rarityMatch == true
+        or variantMatch == true
+end
+
+function GAG2WildPetNetworkBuildFilterSummaryText()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    local settings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            state.FilterSettings
+        )
+
+    state.FilterSettings =
+        settings
+
+    if settings.Mode == "All" then
+        return "Filter: All pets"
+    end
+
+    return "Filter: "
+        .. tostring(settings.Mode)
+        .. " • Pets "
+        .. tostring(
+            GAG2WildPetNetworkCountMap(
+                settings.AlwaysPets
+            )
+        )
+        .. " • Rarity "
+        .. tostring(
+            GAG2WildPetNetworkCountMap(
+                settings.AlwaysRarities
+            )
+        )
+        .. " • Variants "
+        .. tostring(
+            GAG2WildPetNetworkCountMap(
+                settings.AlsoVariants
+            )
+        )
+        .. " • Hide "
+        .. (
+            settings.HideUnmatched == true
+            and "ON"
+            or "OFF"
+        )
+end
+
+function GAG2WildPetNetworkRefreshFilterSummary()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    if state.FilterSummaryLabel then
+
+        pcall(function()
+
+            state.FilterSummaryLabel.Text =
+                GAG2WildPetNetworkBuildFilterSummaryText()
+        end)
+    end
+
+    if state.FilterButton then
+
+        pcall(function()
+
+            state.FilterButton.TextColor3 =
+                state.FilterOpen == true
+                and Color3.fromRGB(196, 181, 253)
+                or Color3.fromRGB(96, 165, 250)
+        end)
+    end
+end
+
+function GAG2WildPetNetworkStyleFilterChip(button, selected)
+
+    if typeof(button) ~= "Instance" then
+        return
+    end
+
+    selected =
+        selected == true
+
+    button.BackgroundColor3 =
+        selected == true
+        and Color3.fromRGB(50, 36, 82)
+        or Color3.fromRGB(12, 22, 35)
+
+    button.BackgroundTransparency =
+        selected == true
+        and 0.02
+        or 0.08
+
+    button.TextColor3 =
+        selected == true
+        and Color3.fromRGB(232, 222, 255)
+        or Color3.fromRGB(148, 163, 184)
+end
+
+function GAG2WildPetNetworkCreateFilterChip(
+    parent,
+    label,
+    x,
+    y,
+    width,
+    selected,
+    callback
+)
+
+    local button =
+        Instance.new("TextButton")
+
+    button.Name =
+        "Chip_"
+        .. tostring(label):gsub("%W+", "")
+
+    button.Position =
+        UDim2.fromOffset(
+            x,
+            y
+        )
+
+    button.Size =
+        UDim2.fromOffset(
+            width,
+            22
+        )
+
+    button.BorderSizePixel =
+        0
+
+    button.AutoButtonColor =
+        true
+
+    button.Font =
+        Enum.Font.GothamBold
+
+    button.Text =
+        tostring(label)
+
+    button.TextSize =
+        10
+
+    button.Parent =
+        parent
+
+    GAG2WildPetNetworkAddCorner(
+        button,
+        6
+    )
+
+    local stroke =
+        Instance.new("UIStroke")
+
+    stroke.Color =
+        selected == true
+        and Color3.fromRGB(139, 92, 246)
+        or Color3.fromRGB(35, 50, 72)
+
+    stroke.Thickness =
+        1
+
+    stroke.Transparency =
+        selected == true
+        and 0.15
+        or 0.55
+
+    stroke.Parent =
+        button
+
+    GAG2WildPetNetworkStyleFilterChip(
+        button,
+        selected
+    )
+
+    button.MouseButton1Click:Connect(function()
+
+        if type(callback) == "function" then
+
+            callback()
+        end
+    end)
+
+    return button
+end
+
+function GAG2WildPetNetworkCreateFilterText(parent, text, x, y, width, height, size)
+
+    local label =
+        Instance.new("TextLabel")
+
+    label.Name =
+        "FilterText"
+
+    label.Position =
+        UDim2.fromOffset(
+            x,
+            y
+        )
+
+    label.Size =
+        UDim2.fromOffset(
+            width,
+            height
+        )
+
+    label.BackgroundTransparency =
+        1
+
+    label.Font =
+        Enum.Font.GothamBold
+
+    label.Text =
+        tostring(text or "")
+
+    label.TextSize =
+        tonumber(size)
+        or 11
+
+    label.TextColor3 =
+        Color3.fromRGB(
+            226,
+            232,
+            240
+        )
+
+    label.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    label.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    label.Parent =
+        parent
+
+    return label
+end
+
+function GAG2WildPetNetworkAddFilterChipGroup(parent, title, options, mapName, y)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    local settings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            state.FilterSettings
+        )
+
+    local selectedMap =
+        settings[mapName]
+
+    GAG2WildPetNetworkCreateFilterText(
+        parent,
+        title,
+        0,
+        y,
+        360,
+        18,
+        11
+    )
+
+    y =
+        y + 22
+
+    local x =
+        0
+
+    for _, option in ipairs(options or {}) do
+
+        local width =
+            math.clamp(
+                42 + (#tostring(option) * 6),
+                58,
+                142
+            )
+
+        if x + width > 372 then
+
+            x =
+                0
+
+            y =
+                y + 26
+        end
+
+        GAG2WildPetNetworkCreateFilterChip(
+            parent,
+            option,
+            x,
+            y,
+            width,
+            selectedMap
+            and selectedMap[option] == true,
+            function()
+
+                GAG2WildPetNetworkToggleFilterMap(
+                    mapName,
+                    option
+                )
+            end
+        )
+
+        x =
+            x + width + 6
+    end
+
+    return y + 30
+end
+
+function GAG2WildPetNetworkPopulateFilterPanel()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    local scroll =
+        state.FilterScroll
+
+    if not scroll then
+        return false
+    end
+
+    for _, child in ipairs(scroll:GetChildren()) do
+
+        child:Destroy()
+    end
+
+    local settings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            state.FilterSettings
+        )
+
+    state.FilterSettings =
+        settings
+
+    local y =
+        0
+
+    GAG2WildPetNetworkCreateFilterText(
+        scroll,
+        "FILTERS",
+        0,
+        y,
+        160,
+        18,
+        12
+    )
+
+    GAG2WildPetNetworkCreateFilterChip(
+        scroll,
+        "Smart",
+        74,
+        y,
+        58,
+        settings.Mode == "Smart",
+        function()
+
+            GAG2WildPetNetworkSetFilterMode(
+                "Smart"
+            )
+        end
+    )
+
+    GAG2WildPetNetworkCreateFilterChip(
+        scroll,
+        "Custom",
+        138,
+        y,
+        66,
+        settings.Mode == "Custom",
+        function()
+
+            GAG2WildPetNetworkSetFilterMode(
+                "Custom"
+            )
+        end
+    )
+
+    GAG2WildPetNetworkCreateFilterChip(
+        scroll,
+        "All",
+        210,
+        y,
+        44,
+        settings.Mode == "All",
+        function()
+
+            GAG2WildPetNetworkSetFilterMode(
+                "All"
+            )
+        end
+    )
+
+    GAG2WildPetNetworkCreateFilterChip(
+        scroll,
+        settings.HideUnmatched == true
+        and "Hide ON"
+        or "Hide OFF",
+        260,
+        y,
+        78,
+        settings.HideUnmatched == true,
+        function()
+
+            GAG2WildPetNetworkToggleHideUnmatched()
+        end
+    )
+
+    GAG2WildPetNetworkCreateFilterChip(
+        scroll,
+        "Clear",
+        344,
+        y,
+        52,
+        false,
+        function()
+
+            GAG2WildPetNetworkClearFilterSettings()
+        end
+    )
+
+    y =
+        y + 34
+
+    y =
+        GAG2WildPetNetworkAddFilterChipGroup(
+            scroll,
+            "Always Show Pets",
+            GAG2WildPetNetworkFilterPetOptions(),
+            "AlwaysPets",
+            y
+        )
+
+    y =
+        GAG2WildPetNetworkAddFilterChipGroup(
+            scroll,
+            "Always Show Rarities",
+            GAG2WildPetNetworkFilterRarityOptions(),
+            "AlwaysRarities",
+            y
+        )
+
+    y =
+        GAG2WildPetNetworkAddFilterChipGroup(
+            scroll,
+            "Also Show Variants",
+            GAG2WildPetNetworkFilterVariantOptions(),
+            "AlsoVariants",
+            y
+        )
+
+    scroll.CanvasSize =
+        UDim2.fromOffset(
+            0,
+            y + 10
+        )
+
+    GAG2WildPetNetworkRefreshFilterSummary()
+
+    return true
+end
+
+function GAG2WildPetNetworkRefreshFilterVisuals()
+
+    GAG2WildPetNetworkRefreshFilterSummary()
+    GAG2WildPetNetworkPopulateFilterPanel()
+end
+
+function GAG2WildPetNetworkCreateFilterPanel(frame)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    local panel =
+        Instance.new("Frame")
+
+    panel.Name =
+        "FilterPanel"
+
+    panel.Position =
+        UDim2.fromOffset(
+            14,
+            82
+        )
+
+    panel.Size =
+        UDim2.new(
+            1,
+            -28,
+            0,
+            184
+        )
+
+    panel.BackgroundColor3 =
+        Color3.fromRGB(
+            9,
+            16,
+            28
+        )
+
+    panel.BackgroundTransparency =
+        0.08
+
+    panel.BorderSizePixel =
+        0
+
+    panel.Visible =
+        state.FilterOpen == true
+
+    panel.Parent =
+        frame
+
+    GAG2WildPetNetworkAddCorner(
+        panel,
+        8
+    )
+
+    local stroke =
+        Instance.new("UIStroke")
+
+    stroke.Color =
+        Color3.fromRGB(
+            59,
+            130,
+            246
+        )
+
+    stroke.Thickness =
+        1
+
+    stroke.Transparency =
+        0.55
+
+    stroke.Parent =
+        panel
+
+    local scroll =
+        Instance.new("ScrollingFrame")
+
+    scroll.Name =
+        "FilterScroll"
+
+    scroll.Position =
+        UDim2.fromOffset(
+            10,
+            8
+        )
+
+    scroll.Size =
+        UDim2.new(
+            1,
+            -20,
+            1,
+            -16
+        )
+
+    scroll.BackgroundTransparency =
+        1
+
+    scroll.BorderSizePixel =
+        0
+
+    scroll.ScrollBarThickness =
+        3
+
+    scroll.ScrollBarImageColor3 =
+        Color3.fromRGB(
+            96,
+            165,
+            250
+        )
+
+    scroll.CanvasSize =
+        UDim2.new()
+
+    scroll.Parent =
+        panel
+
+    state.FilterPanel =
+        panel
+
+    state.FilterScroll =
+        scroll
+
+    GAG2WildPetNetworkPopulateFilterPanel()
+
+    return panel
+end
+
+function GAG2WildPetNetworkToggleFilterPanel()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.FilterOpen =
+        state.FilterOpen ~= true
+
+    GAG2WildPetNetworkApplyHudLayout()
+    GAG2WildPetNetworkRefreshFilterVisuals()
+end
+
 function GAG2WildPetNetworkCreateServerRow(
     parent,
     rowData
@@ -6985,6 +8177,7 @@ function GAG2WildPetNetworkRender(data)
     end
 
     GAG2WildPetNetworkClearRows()
+    GAG2WildPetNetworkRefreshFilterSummary()
 
     local grouped =
         type(data) == "table"
@@ -7008,7 +8201,10 @@ function GAG2WildPetNetworkRender(data)
     local petGroups =
         {}
 
-    local totalResults =
+    local totalRawResults =
+        0
+
+    local totalFilteredResults =
         0
 
     for petName, servers in pairs(grouped) do
@@ -7041,6 +8237,9 @@ function GAG2WildPetNetworkRender(data)
                     and placeId
                     and placeId > 0 then
 
+                        totalRawResults =
+                            totalRawResults + 1
+
                         if CleanText(
                             row.rarity
                             or row.Rarity
@@ -7059,18 +8258,25 @@ function GAG2WildPetNetworkRender(data)
                         row.rarity =
                             tostring(rarity)
 
-                        table.insert(
-                            validRows,
+                        if GAG2WildPetNetworkRowPassesFilters(
+                            petName,
+                            rarity,
                             row
-                        )
+                        ) == true then
+
+                            table.insert(
+                                validRows,
+                                row
+                            )
+
+                            totalFilteredResults =
+                                totalFilteredResults + 1
+                        end
                     end
                 end
             end
 
             if #validRows > 0 then
-
-                totalResults =
-                    totalResults + #validRows
 
                 table.insert(petGroups, {
                     PetName =
@@ -7106,6 +8312,12 @@ function GAG2WildPetNetworkRender(data)
             < tostring(b.PetName)
     end)
 
+    state.LastFilteredPetCount =
+        #petGroups
+
+    state.LastFilteredResultCount =
+        totalFilteredResults
+
     if state.SummaryLabel then
 
         pcall(function()
@@ -7117,8 +8329,10 @@ function GAG2WildPetNetworkRender(data)
                 )
                 .. " live server(s)  •  "
                 .. tostring(#petGroups)
-                .. " pet(s)  •  "
-                .. tostring(totalResults)
+                .. " shown pet(s)  •  "
+                .. tostring(totalFilteredResults)
+                .. "/"
+                .. tostring(totalRawResults)
                 .. " results"
         end)
     end
@@ -7128,9 +8342,18 @@ function GAG2WildPetNetworkRender(data)
         GAG2WildPetNetworkCreateLabel(
             scroll,
             "NoServers",
-            "No live wild pets reported.",
+            "No pets match your HUD filters.",
             32,
             13,
+            false
+        )
+
+        GAG2WildPetNetworkCreateLabel(
+            scroll,
+            "FilterHint",
+            "Click F to change Always Pets, Rarities, or Variants.",
+            28,
+            11,
             false
         )
 
@@ -7173,22 +8396,25 @@ function GAG2WildPetNetworkRender(data)
                 renderedRows + 1
         end
 
-        GAG2WildPetNetworkCreatePetSection(
-            scroll,
-            group.PetName,
-            group.Rarity,
-            limitedRows
-        )
+        if #limitedRows > 0 then
+
+            GAG2WildPetNetworkCreatePetSection(
+                scroll,
+                group.PetName,
+                group.Rarity,
+                limitedRows
+            )
+        end
     end
 
-    if totalResults > renderedRows then
+    if totalFilteredResults > renderedRows then
 
         GAG2WildPetNetworkCreateLabel(
             scroll,
             "RowLimit",
             "Showing first "
             .. tostring(renderedRows)
-            .. " rows.",
+            .. " filtered rows.",
             24,
             11,
             false
@@ -7390,10 +8616,15 @@ function GAG2WildPetNetworkApplyHudLayout()
             "Small"
     end
 
-    local width, height =
+    local width, baseHeight =
         GAG2WildPetNetworkGetHudSize(
             state.HudMode
         )
+
+    local filterExtraHeight =
+        state.FilterOpen == true
+        and 190
+        or 0
 
     if state.HudMinimized == true then
 
@@ -7408,7 +8639,7 @@ function GAG2WildPetNetworkApplyHudLayout()
         frame.Size =
             UDim2.fromOffset(
                 width,
-                height
+                baseHeight + filterExtraHeight
             )
     end
 
@@ -7417,6 +8648,7 @@ function GAG2WildPetNetworkApplyHudLayout()
 
     local objects = {
         state.SummaryLabel,
+        state.FilterSummaryLabel,
         state.Scroll,
         state.StatusLabel,
         state.TopLine,
@@ -7433,6 +8665,16 @@ function GAG2WildPetNetworkApplyHudLayout()
                     visible
             end)
         end
+    end
+
+    if state.FilterPanel then
+
+        pcall(function()
+
+            state.FilterPanel.Visible =
+                visible == true
+                and state.FilterOpen == true
+        end)
     end
 
     if state.MinimizeButton then
@@ -7458,11 +8700,86 @@ function GAG2WildPetNetworkApplyHudLayout()
             )
     end
 
+    if state.FilterButton then
+
+        state.FilterButton.Visible =
+            visible
+
+        state.FilterButton.Text =
+            "F"
+
+        state.FilterButton.TextColor3 =
+            state.FilterOpen == true
+            and Color3.fromRGB(196, 181, 253)
+            or Color3.fromRGB(96, 165, 250)
+    end
+
     if state.RefreshButton then
 
         state.RefreshButton.Visible =
             visible
     end
+
+    local scrollY =
+        state.FilterOpen == true
+        and 274
+        or 82
+
+    if state.Scroll then
+
+        pcall(function()
+
+            state.Scroll.Position =
+                UDim2.fromOffset(
+                    14,
+                    scrollY
+                )
+
+            state.Scroll.Size =
+                UDim2.new(
+                    1,
+                    -28,
+                    1,
+                    -(scrollY + 39)
+                )
+        end)
+    end
+
+    if state.TopLine then
+
+        pcall(function()
+
+            state.TopLine.Position =
+                UDim2.new(
+                    0,
+                    12,
+                    0,
+                    75
+                )
+        end)
+    end
+
+    if state.FilterPanel then
+
+        pcall(function()
+
+            state.FilterPanel.Position =
+                UDim2.fromOffset(
+                    14,
+                    84
+                )
+
+            state.FilterPanel.Size =
+                UDim2.new(
+                    1,
+                    -28,
+                    0,
+                    184
+                )
+        end)
+    end
+
+    GAG2WildPetNetworkRefreshFilterSummary()
 end
 
 function GAG2WildPetNetworkCycleHudSize()
@@ -7691,7 +9008,7 @@ function GAG2WildPetNetworkCreateHud()
     sizeButton.Position =
         UDim2.new(
             1,
-            -91,
+            -120,
             0,
             8
         )
@@ -7742,6 +9059,74 @@ function GAG2WildPetNetworkCreateHud()
     sizeButton.MouseButton1Click:Connect(function()
 
         GAG2WildPetNetworkCycleHudSize()
+    end)
+
+    local filterButton =
+        Instance.new("TextButton")
+
+    filterButton.Name =
+        "Filter"
+
+    filterButton.AnchorPoint =
+        Vector2.new(
+            1,
+            0
+        )
+
+    filterButton.Position =
+        UDim2.new(
+            1,
+            -91,
+            0,
+            8
+        )
+
+    filterButton.Size =
+        UDim2.fromOffset(
+            24,
+            22
+        )
+
+    filterButton.BackgroundColor3 =
+        Color3.fromRGB(
+            12,
+            22,
+            35
+        )
+
+    filterButton.BackgroundTransparency =
+        0.08
+
+    filterButton.BorderSizePixel =
+        0
+
+    filterButton.Font =
+        Enum.Font.GothamBold
+
+    filterButton.Text =
+        "F"
+
+    filterButton.TextSize =
+        11
+
+    filterButton.TextColor3 =
+        Color3.fromRGB(
+            96,
+            165,
+            250
+        )
+
+    filterButton.Parent =
+        frame
+
+    GAG2WildPetNetworkAddCorner(
+        filterButton,
+        6
+    )
+
+    filterButton.MouseButton1Click:Connect(function()
+
+        GAG2WildPetNetworkToggleFilterPanel()
     end)
 
     local refreshButton =
@@ -7977,6 +9362,54 @@ function GAG2WildPetNetworkCreateHud()
     summary.Parent =
         frame
 
+    local filterSummary =
+        Instance.new("TextLabel")
+
+    filterSummary.Name =
+        "FilterSummary"
+
+    filterSummary.Position =
+        UDim2.fromOffset(
+            14,
+            51
+        )
+
+    filterSummary.Size =
+        UDim2.new(
+            1,
+            -28,
+            0,
+            18
+        )
+
+    filterSummary.BackgroundTransparency =
+        1
+
+    filterSummary.Font =
+        Enum.Font.Code
+
+    filterSummary.Text =
+        GAG2WildPetNetworkBuildFilterSummaryText()
+
+    filterSummary.TextSize =
+        10
+
+    filterSummary.TextColor3 =
+        Color3.fromRGB(
+            196,
+            181,
+            253
+        )
+
+    filterSummary.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    filterSummary.TextTruncate =
+        Enum.TextTruncate.AtEnd
+
+    filterSummary.Parent =
+        frame
+
     local topLine =
         Instance.new("Frame")
 
@@ -7988,7 +9421,7 @@ function GAG2WildPetNetworkCreateHud()
             0,
             12,
             0,
-            57
+            75
         )
 
     topLine.Size =
@@ -8024,7 +9457,7 @@ function GAG2WildPetNetworkCreateHud()
     scroll.Position =
         UDim2.fromOffset(
             14,
-            64
+            82
         )
 
     scroll.Size =
@@ -8032,7 +9465,7 @@ function GAG2WildPetNetworkCreateHud()
             1,
             -28,
             1,
-            -103
+            -121
         )
 
     scroll.BackgroundTransparency =
@@ -8145,6 +9578,12 @@ function GAG2WildPetNetworkCreateHud()
     status.Parent =
         frame
 
+    GAG2WildPetNetworkLoadFilterSettings()
+
+    GAG2WildPetNetworkCreateFilterPanel(
+        frame
+    )
+
     state.Gui =
         gui
 
@@ -8153,6 +9592,9 @@ function GAG2WildPetNetworkCreateHud()
 
     state.SummaryLabel =
         summary
+
+    state.FilterSummaryLabel =
+        filterSummary
 
     state.StatusLabel =
         status
@@ -8168,6 +9610,9 @@ function GAG2WildPetNetworkCreateHud()
 
     state.SizeButton =
         sizeButton
+
+    state.FilterButton =
+        filterButton
 
     state.RefreshButton =
         refreshButton
@@ -8199,6 +9644,7 @@ function GAG2WildPetNetworkCreateHud()
     end
 
     GAG2WildPetNetworkApplyHudLayout()
+    GAG2WildPetNetworkRefreshFilterVisuals()
     GAG2WildPetNetworkRefreshStatus()
 
     return gui
