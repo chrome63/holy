@@ -59927,7 +59927,7 @@ function GAG2FarmDashboardCreatePanel()
             1,
             0,
             0,
-            124
+            118
         )
 
     root.BackgroundTransparency =
@@ -59950,7 +59950,7 @@ function GAG2FarmDashboardCreatePanel()
             1,
             0,
             0,
-            124
+            118
         )
 
     panel.BackgroundColor3 =
@@ -59961,7 +59961,7 @@ function GAG2FarmDashboardCreatePanel()
         )
 
     panel.BackgroundTransparency =
-        0.03
+        0.08
 
     panel.BorderSizePixel =
         0
@@ -60209,7 +60209,7 @@ function GAG2FarmDashboardCreatePanel()
     nav.Position =
         UDim2.fromOffset(
             12,
-            87
+            83
         )
 
     nav.Size =
@@ -60217,7 +60217,7 @@ function GAG2FarmDashboardCreatePanel()
             1,
             -24,
             0,
-            27
+            26
         )
 
     nav.BackgroundTransparency =
@@ -60395,12 +60395,215 @@ function GAG2FarmShowSection(sectionName)
     end
 end
 
-local FarmDashboardBox =
-    AddLeftBox(
-        Tabs.Farm,
-        "Farm Dashboard",
-        "sprout"
+function GAG2FarmDashboardGetHolder(box)
+
+    if type(box) ~= "table" then
+        return nil
+    end
+
+    if typeof(box.BoxHolder) == "Instance" then
+        return box.BoxHolder
+    end
+
+    if typeof(box.Holder) == "Instance" then
+        return box.Holder
+    end
+
+    return nil
+end
+
+function GAG2FarmDashboardLooksLikeHeader(object)
+
+    if typeof(object) ~= "Instance" then
+        return false
+    end
+
+    local hasDashboardText =
+        false
+
+    local hasArrowText =
+        false
+
+    for _, descendant in ipairs(object:GetDescendants()) do
+
+        if descendant:IsA("TextLabel")
+        or descendant:IsA("TextButton") then
+
+            local text =
+                tostring(descendant.Text or "")
+                    :lower()
+                    :gsub("%s+", " ")
+
+            if text:find("farm dashboard", 1, true)
+            or text == "farm"
+            or text == "" then
+
+                hasDashboardText =
+                    true
+            end
+
+            if text == "v"
+            or text == ">"
+            or text == "∨"
+            or text == "⌄"
+            or text == "˅" then
+
+                hasArrowText =
+                    true
+            end
+        end
+    end
+
+    return hasDashboardText == true
+        or hasArrowText == true
+end
+
+function GAG2FarmDashboardStripWrapper(box)
+
+    local holder =
+        GAG2FarmDashboardGetHolder(
+            box
+        )
+
+    if typeof(holder) ~= "Instance" then
+        return false
+    end
+
+    holder.BackgroundTransparency =
+        1
+
+    holder.BorderSizePixel =
+        0
+
+    local directChildren =
+        holder:GetChildren()
+
+    for _, child in ipairs(directChildren) do
+
+        if child:IsA("UIStroke") then
+
+            child.Transparency =
+                1
+
+        elseif child:IsA("Frame")
+        or child:IsA("TextButton")
+        or child:IsA("ImageButton") then
+
+            if GAG2FarmDashboardLooksLikeHeader(child) == true then
+
+                child.Visible =
+                    false
+
+                pcall(function()
+
+                    child.Size =
+                        UDim2.new(
+                            child.Size.X.Scale,
+                            child.Size.X.Offset,
+                            0,
+                            0
+                        )
+                end)
+            end
+        end
+    end
+
+    for _, descendant in ipairs(holder:GetDescendants()) do
+
+        if descendant:IsA("TextLabel")
+        or descendant:IsA("TextButton") then
+
+            local text =
+                tostring(descendant.Text or "")
+
+            if text == "Farm Dashboard"
+            or text == "FARM DASHBOARD"
+            or text == "v"
+            or text == ">"
+            or text == "∨"
+            or text == "⌄" then
+
+                descendant.Visible =
+                    false
+
+                pcall(function()
+
+                    descendant.Text =
+                        ""
+                end)
+            end
+        end
+    end
+
+    return true
+end
+
+function GAG2FarmDashboardCreateHostBox()
+
+    local box =
+        nil
+
+    if Tabs.Farm
+    and type(Tabs.Farm.AddLeftGroupbox) == "function" then
+
+        local ok, result =
+            pcall(function()
+
+                return Tabs.Farm:AddLeftGroupbox(
+                    "",
+                    ""
+                )
+            end)
+
+        if ok == true
+        and result ~= nil then
+
+            box =
+                result
+        end
+    end
+
+    if box == nil
+    and Tabs.Farm
+    and type(Tabs.Farm.AddLeftCollapsibleGroupbox) == "function" then
+
+        local ok, result =
+            pcall(function()
+
+                return Tabs.Farm:AddLeftCollapsibleGroupbox(
+                    "",
+                    "",
+                    true
+                )
+            end)
+
+        if ok == true
+        and result ~= nil then
+
+            box =
+                result
+        end
+    end
+
+    if box == nil then
+
+        box =
+            AddLeftBox(
+                Tabs.Farm,
+                "",
+                ""
+            )
+    end
+
+    GAG2FarmDashboardStripWrapper(
+        box
     )
+
+    return box
+end
+
+local FarmDashboardBox =
+    GAG2FarmDashboardCreateHostBox()
 
 local FarmDashboardCreated =
     false
@@ -60420,7 +60623,7 @@ and type(GAG2FarmDashboardCreatePanel) == "function" then
                         GAG2FarmDashboardCreatePanel(),
 
                     Height =
-                        124,
+                        118,
 
                     Visible =
                         true,
@@ -60439,6 +60642,24 @@ and type(GAG2FarmDashboardCreatePanel) == "function" then
 
         GAG2_FARM_DASHBOARD_STATE.Passthrough =
             dashboardResult
+
+        GAG2FarmDashboardStripWrapper(
+            FarmDashboardBox
+        )
+
+        task.defer(function()
+
+            GAG2FarmDashboardStripWrapper(
+                FarmDashboardBox
+            )
+        end)
+
+        task.delay(0.5, function()
+
+            GAG2FarmDashboardStripWrapper(
+                FarmDashboardBox
+            )
+        end)
 
         if type(GAG2FarmDashboardStartRefreshLoop) == "function" then
 
