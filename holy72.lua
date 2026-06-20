@@ -12381,6 +12381,12 @@ SniperPriorityDropdowns =
 SniperPriorityRefreshing =
     false
 
+SniperSeedPriorityDropdown =
+    nil
+
+SniperSeedPriorityStatusLabel =
+    nil
+
 GAG2_SNIPER_WATCHLIST_SAVE_FILE =
     UI_SETTINGS_FOLDER
     .. "/SniperWatchlist.json"
@@ -12481,6 +12487,20 @@ local SniperState = {
         "",
         "",
     },
+
+    SeedPriorityOverSeeds = true,
+    SeedPriorityPets = {
+        Raccoon = true,
+        ["Golden Dragonfly"] = true,
+        Unicorn = true,
+        ["Ice Serpent"] = true,
+    },
+    SeedPriorityActive = false,
+    SeedPriorityPetName = "",
+    SeedPriorityLastSeenAt = 0,
+    SeedPriorityHoldSeconds = 8,
+    SeedPriorityStatus = "Ready.",
+
     KnownPetNames = {},
 
     AllowMultiPets = false,
@@ -17833,6 +17853,20 @@ function GAG2SeedCollectMoveTo(entry)
             "missing move data"
     end
 
+    local shouldPause,
+        pauseReason =
+        SniperSeedPriorityShouldPauseSeeds()
+
+    if shouldPause == true then
+
+        humanoid:MoveTo(
+            root.Position
+        )
+
+        return false,
+            pauseReason
+    end
+
     local alive, aliveReason =
         GAG2SeedCollectIsEntryAlive(
             entry
@@ -17939,6 +17973,20 @@ function GAG2SeedCollectMoveTo(entry)
         while GAG2_AUTO_COLLECT_SEEDS_STATE.Enabled == true
         and os.clock() - started < timeout do
 
+            shouldPause,
+                pauseReason =
+                SniperSeedPriorityShouldPauseSeeds()
+
+            if shouldPause == true then
+
+                humanoid:MoveTo(
+                    root.Position
+                )
+
+                return false,
+                    pauseReason
+            end
+
             alive, aliveReason =
                 GAG2SeedCollectIsEntryAlive(
                     entry
@@ -18021,6 +18069,16 @@ function GAG2SeedCollectMoveTo(entry)
 
         return false,
             reason or "walk timeout"
+    end
+
+    shouldPause,
+        pauseReason =
+        SniperSeedPriorityShouldPauseSeeds()
+
+    if shouldPause == true then
+
+        return false,
+            pauseReason
     end
 
     root.CFrame =
@@ -18397,6 +18455,26 @@ function GAG2SeedCollectCycle()
 
         state.Recent =
             {}
+    end
+
+    local shouldPause,
+        pauseReason =
+        SniperSeedPriorityShouldPauseSeeds()
+
+    if shouldPause == true then
+
+        GAG2SeedCollectClearTargetLock(
+            pauseReason
+        )
+
+        state.LastHadEntry =
+            false
+
+        GAG2SeedCollectSetStatus(
+            pauseReason
+        )
+
+        return
     end
 
     local entry, reason =
@@ -46337,6 +46415,9 @@ end
 function SniperRefreshTargetDropdown()
 
     if not SniperTargetDropdown then
+
+        SniperSeedPriorityRefreshDropdownValues()
+
         return
     end
 
@@ -46368,6 +46449,8 @@ function SniperRefreshTargetDropdown()
 
     SniperDropdownRefreshing =
         false
+
+    SniperSeedPriorityRefreshDropdownValues()
 
     task.defer(function()
 
@@ -46510,6 +46593,472 @@ function SniperGetPriorityRank(petName)
     end
 
     return 999
+end
+
+
+function SniperSeedPriorityDefaultPets()
+
+    return {
+        Raccoon = true,
+        ["Golden Dragonfly"] = true,
+        Unicorn = true,
+        ["Ice Serpent"] = true,
+    }
+end
+
+function SniperSeedPriorityNormalizePets(value)
+
+    local output =
+        {}
+
+    local function add(item)
+
+        item =
+            CleanText(item)
+
+        if item == ""
+        or item == "None"
+        or item == "---" then
+
+            return
+        end
+
+        output[item] =
+            true
+    end
+
+    if type(value) == "table" then
+
+        for _, item in ipairs(value) do
+
+            if type(item) == "table" then
+
+                add(
+                    item.Text
+                    or item.Name
+                    or item.Value
+                    or item[1]
+                )
+
+            else
+
+                add(item)
+            end
+        end
+
+        for key, selected in pairs(value) do
+
+            if selected == true then
+
+                add(key)
+
+            elseif type(selected) == "table" then
+
+                local isSelected =
+                    selected.Selected == true
+                    or selected.selected == true
+                    or selected.Checked == true
+                    or selected.checked == true
+                    or selected.Enabled == true
+                    or selected.enabled == true
+
+                if isSelected == true then
+
+                    add(
+                        selected.Text
+                        or selected.Name
+                        or selected.Value
+                        or selected[1]
+                        or key
+                    )
+                end
+            end
+        end
+
+    elseif type(value) == "string" then
+
+        add(value)
+    end
+
+    return output
+end
+
+function SniperSeedPriorityBuildSelectionMap(source)
+
+    local map =
+        {}
+
+    source =
+        type(source) == "table"
+        and source
+        or {}
+
+    for name, enabled in pairs(source) do
+
+        if enabled == true then
+
+            map[name] =
+                true
+        end
+    end
+
+    return map
+end
+
+function SniperSeedPriorityCountSelected()
+
+    local count =
+        0
+
+    local pets =
+        type(SniperState.SeedPriorityPets) == "table"
+        and SniperState.SeedPriorityPets
+        or {}
+
+    for _, enabled in pairs(pets) do
+
+        if enabled == true then
+            count =
+                count + 1
+        end
+    end
+
+    return count
+end
+
+function SniperSeedPriorityDropdownValues()
+
+    local values =
+        {}
+
+    local seen =
+        {}
+
+    local function add(name)
+
+        name =
+            CleanText(name)
+
+        if name == ""
+        or seen[name] == true then
+
+            return
+        end
+
+        seen[name] =
+            true
+
+        table.insert(
+            values,
+            name
+        )
+    end
+
+    for name in pairs(SniperSeedPriorityDefaultPets()) do
+        add(name)
+    end
+
+    for _, name in ipairs(SniperState.BuilderTargets or {}) do
+        add(name)
+    end
+
+    for _, name in ipairs(SniperState.Targets or {}) do
+        add(name)
+    end
+
+    for _, name in ipairs(SniperGetRegistryPetNames()) do
+        add(name)
+    end
+
+    table.sort(values)
+
+    return values
+end
+
+function SniperSeedPriorityRefreshDropdownValues()
+
+    if not SniperSeedPriorityDropdown then
+        return false
+    end
+
+    local values =
+        SniperSeedPriorityDropdownValues()
+
+    pcall(function()
+
+        if type(SniperSeedPriorityDropdown.SetValues) == "function" then
+
+            SniperSeedPriorityDropdown:SetValues(
+                values
+            )
+
+        elseif type(SniperSeedPriorityDropdown.SetItems) == "function" then
+
+            SniperSeedPriorityDropdown:SetItems(
+                values
+            )
+        end
+    end)
+
+    return true
+end
+
+function SniperSeedPriorityBuildStatusText()
+
+    local active =
+        SniperState.SeedPriorityActive == true
+
+    local selectedCount =
+        SniperSeedPriorityCountSelected()
+
+    local enabledText =
+        SniperState.SeedPriorityOverSeeds == true
+        and "ON"
+        or "OFF"
+
+    if active == true
+    and CleanText(SniperState.SeedPriorityPetName) ~= "" then
+
+        return '<font color="rgb(250,204,21)"><b>Seed Priority:</b></font> '
+            .. enabledText
+            .. '\nPaused for sniper: '
+            .. tostring(SniperState.SeedPriorityPetName)
+            .. '\nSelected priority pets: '
+            .. tostring(selectedCount)
+    end
+
+    return '<font color="rgb(196,181,253)"><b>Seed Priority:</b></font> '
+        .. enabledText
+        .. '\nIdle. Selected priority pets: '
+        .. tostring(selectedCount)
+end
+
+function SniperSeedPriorityRefreshStatus()
+
+    if Options.HolyGAG2SniperSeedPriorityStatus then
+
+        Options.HolyGAG2SniperSeedPriorityStatus:SetText(
+            SniperSeedPriorityBuildStatusText()
+        )
+    end
+end
+
+function SniperSeedPrioritySetEnabled(value)
+
+    SniperState.SeedPriorityOverSeeds =
+        value == true
+
+    if SniperState.SeedPriorityOverSeeds ~= true then
+
+        SniperState.SeedPriorityActive =
+            false
+
+        SniperState.SeedPriorityPetName =
+            ""
+
+        SniperState.SeedPriorityLastSeenAt =
+            0
+    end
+
+    SniperSeedPriorityRefreshStatus()
+    MarkConfigDirty()
+end
+
+function SniperSeedPrioritySetPets(value)
+
+    SniperState.SeedPriorityPets =
+        SniperSeedPriorityNormalizePets(
+            value
+        )
+
+    SniperSeedPriorityRefreshDropdownValues()
+    SniperSeedPriorityRefreshStatus()
+    MarkConfigDirty()
+end
+
+function SniperSeedPriorityPetSelected(petName)
+
+    local targetKey =
+        SniperNormalizeName(
+            petName
+        )
+
+    if targetKey == "" then
+        return false
+    end
+
+    local pets =
+        type(SniperState.SeedPriorityPets) == "table"
+        and SniperState.SeedPriorityPets
+        or {}
+
+    for selectedName, enabled in pairs(pets) do
+
+        if enabled == true then
+
+            local selectedKey =
+                SniperNormalizeName(
+                    selectedName
+                )
+
+            if selectedKey ~= ""
+            and (
+                targetKey == selectedKey
+                or targetKey:find(selectedKey, 1, true) ~= nil
+                or selectedKey:find(targetKey, 1, true) ~= nil
+            ) then
+
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+function SniperSeedPriorityEntryPetName(entry)
+
+    if type(entry) ~= "table" then
+        return ""
+    end
+
+    return CleanText(
+        entry.Name
+        or entry.PetName
+        or entry.petName
+        or entry.DisplayName
+        or entry.displayName
+    )
+end
+
+function SniperSeedPriorityMarkMatches(matches)
+
+    if SniperState.SeedPriorityOverSeeds ~= true then
+        return false
+    end
+
+    if type(matches) ~= "table"
+    or #matches <= 0 then
+        return false
+    end
+
+    for _, entry in ipairs(matches) do
+
+        local petName =
+            SniperSeedPriorityEntryPetName(
+                entry
+            )
+
+        if SniperSeedPriorityPetSelected(petName) == true then
+
+            SniperState.SeedPriorityActive =
+                true
+
+            SniperState.SeedPriorityPetName =
+                SniperEntryDisplayName(
+                    entry
+                )
+
+            SniperState.SeedPriorityLastSeenAt =
+                os.clock()
+
+            SniperSeedPriorityRefreshStatus()
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function SniperSeedPriorityClear(reason)
+
+    if SniperState.SeedPriorityActive ~= true then
+        return
+    end
+
+    SniperState.SeedPriorityActive =
+        false
+
+    SniperState.SeedPriorityPetName =
+        ""
+
+    SniperState.SeedPriorityLastSeenAt =
+        0
+
+    SniperState.SeedPriorityStatus =
+        tostring(reason or "Ready.")
+
+    SniperSeedPriorityRefreshStatus()
+end
+
+function SniperSeedPriorityShouldPauseSeeds()
+
+    if SniperState.SeedPriorityOverSeeds ~= true then
+        return false,
+            ""
+    end
+
+    if SniperState.Enabled ~= true then
+
+        SniperSeedPriorityClear(
+            "sniper disabled"
+        )
+
+        return false,
+            ""
+    end
+
+    if SniperState.SeedPriorityActive ~= true then
+        return false,
+            ""
+    end
+
+    local petName =
+        CleanText(
+            SniperState.SeedPriorityPetName
+        )
+
+    local lastSeenAt =
+        tonumber(
+            SniperState.SeedPriorityLastSeenAt
+        )
+        or 0
+
+    local holdSeconds =
+        math.max(
+            2,
+            tonumber(SniperState.SeedPriorityHoldSeconds)
+            or 8
+        )
+
+    local stillBuying =
+        SniperState.Taming == true
+
+    if type(SniperHasPendingBuy) == "function"
+    and SniperHasPendingBuy() == true then
+
+        stillBuying =
+            true
+    end
+
+    if petName ~= ""
+    and (
+        os.clock() - lastSeenAt <= holdSeconds
+        or stillBuying == true
+    ) then
+
+        return true,
+            "Paused for sniper: "
+            .. tostring(petName)
+    end
+
+    SniperSeedPriorityClear(
+        "expired"
+    )
+
+    return false,
+        ""
 end
 
 function SniperGetEntryDistanceValue(entry)
@@ -50014,6 +50563,10 @@ function SniperScan(allowAutoHop)
         "No target found."
     )
 
+    SniperSeedPriorityClear(
+        "no target found"
+    )
+
     SniperTryReturnAfterBatch(
         "no remaining matches"
     )
@@ -50946,6 +51499,34 @@ function RestoreSniperAutosaveState()
             SniperState.AllowMultiPets =
                 Toggles.HolyGAG2SniperAllowMultiPets.Value == true
         end
+
+        if Toggles.HolyGAG2SniperSeedPriority
+        and Toggles.HolyGAG2SniperSeedPriority.Value ~= nil then
+
+            SniperState.SeedPriorityOverSeeds =
+                Toggles.HolyGAG2SniperSeedPriority.Value == true
+
+        else
+
+            SniperState.SeedPriorityOverSeeds =
+                true
+        end
+
+        if Options.HolyGAG2SniperSeedPriorityPets
+        and Options.HolyGAG2SniperSeedPriorityPets.Value ~= nil then
+
+            SniperState.SeedPriorityPets =
+                SniperSeedPriorityNormalizePets(
+                    Options.HolyGAG2SniperSeedPriorityPets.Value
+                )
+
+        elseif type(SniperState.SeedPriorityPets) ~= "table" then
+
+            SniperState.SeedPriorityPets =
+                SniperSeedPriorityDefaultPets()
+        end
+
+        SniperSeedPriorityRefreshStatus()
 
         if Options.HolyGAG2SniperTargetsList
         and Options.HolyGAG2SniperTargetsList.Value ~= nil then
@@ -67425,7 +68006,17 @@ local SniperBuyBehaviorBox =
     )
 
 local SniperPriorityBox =
-    nil
+    AddLeftBox(
+        Tabs.Sniper,
+        "Sniper Priority",
+        "shield-alert"
+    )
+
+if SniperPriorityBox == nil then
+
+    SniperPriorityBox =
+        SniperMainBox
+end
 
 if SniperWatchlistBox == nil then
 
@@ -71836,6 +72427,63 @@ task.defer(function()
         )
     )
 end)
+
+SniperPriorityBox:AddLabel({
+    Text =
+        '<font color="rgb(250,204,21)"><b>Seed Walk Interrupt</b></font>'
+        .. '\nSelected pets can pause Auto Collect Seeds walk mode while sniper buys them.',
+    DoesWrap = true,
+    Size = 13,
+})
+
+SniperPriorityBox:AddToggle("HolyGAG2SniperSeedPriority", {
+    Text = "Priority Over Seed Walk",
+    Default = true,
+    Tooltip = "When selected priority pets are found, Auto Collect Seeds walk mode pauses so sniper can buy first.",
+    Callback = function(value)
+
+        SniperSeedPrioritySetEnabled(
+            value == true
+        )
+    end,
+})
+
+SniperSeedPriorityDropdown =
+    SniperPriorityBox:AddDropdown(
+        "HolyGAG2SniperSeedPriorityPets",
+        {
+            Text = "Seed Interrupt Pets",
+            Values = SniperSeedPriorityDropdownValues(),
+            Default = SniperSeedPriorityBuildSelectionMap(
+                SniperState.SeedPriorityPets
+            ),
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Only these matching sniper pets pause Auto Collect Seeds walk mode.",
+        }
+    )
+
+if SniperSeedPriorityDropdown
+and type(SniperSeedPriorityDropdown.OnChanged) == "function" then
+
+    SniperSeedPriorityDropdown:OnChanged(function(value)
+
+        SniperSeedPrioritySetPets(
+            value
+        )
+    end)
+end
+
+SniperSeedPriorityStatusLabel =
+    SniperPriorityBox:AddLabel(
+        "HolyGAG2SniperSeedPriorityStatus",
+        {
+            Text = SniperSeedPriorityBuildStatusText(),
+            DoesWrap = true,
+        }
+    )
 
 SniperAllowMultiSizesToggle =
     SniperMainBox:AddToggle("HolyGAG2SniperAllowMultiSizes", {
