@@ -59403,7 +59403,6 @@ function GAG2FarmShowSection(sectionName)
     if sectionName ~= "Collect"
     and sectionName ~= "Plant"
     and sectionName ~= "Tools"
-    and sectionName ~= "Rules"
     and sectionName ~= "All" then
 
         sectionName =
@@ -59498,17 +59497,6 @@ and type(FarmMenuBox.AddActionRow) == "function" then
 
             Buttons = {
                 {
-                    Id = "Rules",
-                    Text = "Rules",
-                    Callback = function()
-
-                        GAG2FarmShowSection(
-                            "Rules"
-                        )
-                    end,
-                },
-
-                {
                     Id = "All",
                     Text = "All",
                     Callback = function()
@@ -59560,16 +59548,6 @@ else
             )
         end,
     }):AddButton({
-        Text = "Rules",
-        Func = function()
-
-            GAG2FarmShowSection(
-                "Rules"
-            )
-        end,
-    })
-
-    FarmMenuBox:AddButton({
         Text = "All",
         Func = function()
 
@@ -59736,12 +59714,12 @@ GAG2FarmRegisterSectionBox(
 )
 
 GAG2FarmRegisterSectionBox(
-    "Rules",
+    "Collect",
     FarmWeatherBox
 )
 
 GAG2FarmRegisterSectionBox(
-    "Rules",
+    "Collect",
     FarmExclusionsBox
 )
 
