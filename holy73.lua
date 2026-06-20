@@ -7032,48 +7032,66 @@ function GAG2WildPetNetworkCreateFilterPanel(frame)
     local state =
         GAG2_WILD_PET_NETWORK_STATE
 
+    if not frame
+    or not frame.Parent then
+        return nil
+    end
+
+    local gui =
+        frame.Parent
+
+    if state.FilterPanel
+    and state.FilterPanel.Parent then
+
+        return state.FilterPanel
+    end
+
     local panel =
         Instance.new("Frame")
 
     panel.Name =
-        "FilterPanel"
+        "LiveWildPetFilterBox"
 
     panel.Position =
         UDim2.fromOffset(
-            14,
-            82
+            462,
+            92
         )
 
     panel.Size =
-        UDim2.new(
-            1,
-            -28,
-            0,
-            184
+        UDim2.fromOffset(
+            430,
+            320
         )
 
     panel.BackgroundColor3 =
         Color3.fromRGB(
-            9,
-            16,
-            28
+            7,
+            13,
+            22
         )
 
     panel.BackgroundTransparency =
-        0.08
+        0.12
 
     panel.BorderSizePixel =
         0
+
+    panel.Active =
+        true
+
+    panel.Draggable =
+        true
 
     panel.Visible =
         state.FilterOpen == true
 
     panel.Parent =
-        frame
+        gui
 
     GAG2WildPetNetworkAddCorner(
         panel,
-        8
+        10
     )
 
     local stroke =
@@ -7090,9 +7108,149 @@ function GAG2WildPetNetworkCreateFilterPanel(frame)
         1
 
     stroke.Transparency =
-        0.55
+        0.30
 
     stroke.Parent =
+        panel
+
+    local title =
+        Instance.new("TextLabel")
+
+    title.Name =
+        "Title"
+
+    title.Position =
+        UDim2.fromOffset(
+            14,
+            7
+        )
+
+    title.Size =
+        UDim2.new(
+            1,
+            -58,
+            0,
+            24
+        )
+
+    title.BackgroundTransparency =
+        1
+
+    title.Font =
+        Enum.Font.GothamBold
+
+    title.Text =
+        "LIVE PET FILTERS"
+
+    title.TextSize =
+        13
+
+    title.TextColor3 =
+        Color3.fromRGB(
+            241,
+            245,
+            249
+        )
+
+    title.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    title.Parent =
+        panel
+
+    local close =
+        Instance.new("TextButton")
+
+    close.Name =
+        "Close"
+
+    close.AnchorPoint =
+        Vector2.new(
+            1,
+            0
+        )
+
+    close.Position =
+        UDim2.new(
+            1,
+            -8,
+            0,
+            8
+        )
+
+    close.Size =
+        UDim2.fromOffset(
+            24,
+            22
+        )
+
+    close.BackgroundTransparency =
+        1
+
+    close.Font =
+        Enum.Font.GothamBold
+
+    close.Text =
+        "×"
+
+    close.TextSize =
+        16
+
+    close.TextColor3 =
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+
+    close.Parent =
+        panel
+
+    close.MouseButton1Click:Connect(function()
+
+        state.FilterOpen =
+            false
+
+        GAG2WildPetNetworkApplyHudLayout()
+        GAG2WildPetNetworkRefreshFilterVisuals()
+    end)
+
+    local line =
+        Instance.new("Frame")
+
+    line.Name =
+        "Line"
+
+    line.Position =
+        UDim2.new(
+            0,
+            12,
+            0,
+            38
+        )
+
+    line.Size =
+        UDim2.new(
+            1,
+            -24,
+            0,
+            1
+        )
+
+    line.BackgroundColor3 =
+        Color3.fromRGB(
+            30,
+            41,
+            59
+        )
+
+    line.BackgroundTransparency =
+        0.38
+
+    line.BorderSizePixel =
+        0
+
+    line.Parent =
         panel
 
     local scroll =
@@ -7103,16 +7261,16 @@ function GAG2WildPetNetworkCreateFilterPanel(frame)
 
     scroll.Position =
         UDim2.fromOffset(
-            10,
-            8
+            14,
+            48
         )
 
     scroll.Size =
         UDim2.new(
             1,
-            -20,
+            -28,
             1,
-            -16
+            -60
         )
 
     scroll.BackgroundTransparency =
@@ -7155,6 +7313,16 @@ function GAG2WildPetNetworkToggleFilterPanel()
 
     state.FilterOpen =
         state.FilterOpen ~= true
+
+    if state.FilterPanel then
+
+        pcall(function()
+
+            state.FilterPanel.Visible =
+                state.HudMinimized ~= true
+                and state.FilterOpen == true
+        end)
+    end
 
     GAG2WildPetNetworkApplyHudLayout()
     GAG2WildPetNetworkRefreshFilterVisuals()
@@ -8569,10 +8737,40 @@ function GAG2WildPetNetworkDestroyHudOnly()
     state.SummaryLabel =
         nil
 
+    state.FilterSummaryLabel =
+        nil
+
     state.StatusLabel =
         nil
 
     state.Scroll =
+        nil
+
+    state.TopLine =
+        nil
+
+    state.StatusLine =
+        nil
+
+    state.FilterPanel =
+        nil
+
+    state.FilterScroll =
+        nil
+
+    state.SizeButton =
+        nil
+
+    state.FilterButton =
+        nil
+
+    state.RefreshButton =
+        nil
+
+    state.MinimizeButton =
+        nil
+
+    state.CloseButton =
         nil
 end
 
@@ -8616,15 +8814,10 @@ function GAG2WildPetNetworkApplyHudLayout()
             "Small"
     end
 
-    local width, baseHeight =
+    local width, height =
         GAG2WildPetNetworkGetHudSize(
             state.HudMode
         )
-
-    local filterExtraHeight =
-        state.FilterOpen == true
-        and 190
-        or 0
 
     if state.HudMinimized == true then
 
@@ -8639,7 +8832,7 @@ function GAG2WildPetNetworkApplyHudLayout()
         frame.Size =
             UDim2.fromOffset(
                 width,
-                baseHeight + filterExtraHeight
+                height
             )
     end
 
@@ -8720,11 +8913,6 @@ function GAG2WildPetNetworkApplyHudLayout()
             visible
     end
 
-    local scrollY =
-        state.FilterOpen == true
-        and 274
-        or 82
-
     if state.Scroll then
 
         pcall(function()
@@ -8732,7 +8920,7 @@ function GAG2WildPetNetworkApplyHudLayout()
             state.Scroll.Position =
                 UDim2.fromOffset(
                     14,
-                    scrollY
+                    82
                 )
 
             state.Scroll.Size =
@@ -8740,7 +8928,7 @@ function GAG2WildPetNetworkApplyHudLayout()
                     1,
                     -28,
                     1,
-                    -(scrollY + 39)
+                    -121
                 )
         end)
     end
@@ -8755,26 +8943,6 @@ function GAG2WildPetNetworkApplyHudLayout()
                     12,
                     0,
                     75
-                )
-        end)
-    end
-
-    if state.FilterPanel then
-
-        pcall(function()
-
-            state.FilterPanel.Position =
-                UDim2.fromOffset(
-                    14,
-                    84
-                )
-
-            state.FilterPanel.Size =
-                UDim2.new(
-                    1,
-                    -28,
-                    0,
-                    184
                 )
         end)
     end
