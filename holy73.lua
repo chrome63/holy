@@ -10179,6 +10179,61 @@ function SniperBuildTargets()
         ordered
 end
 
+function SniperCanonicalPetKey(value)
+
+    local text =
+        CleanText(value)
+            :lower()
+            :gsub("_", " ")
+            :gsub("%-", " ")
+            :gsub("[^%w%s]", " ")
+            :gsub("%s+", " ")
+
+    text =
+        CleanText(text)
+
+    for _ = 1, 6 do
+
+        local before =
+            text
+
+        text =
+            text:gsub("^big%s+", "")
+                :gsub("^mega%s+", "")
+                :gsub("^huge%s+", "")
+                :gsub("^rainbow%s+", "")
+
+        text =
+            CleanText(text)
+
+        if text == before then
+            break
+        end
+    end
+
+    return text:gsub("%s+", "")
+end
+
+function SniperPetNamesMatch(entryName, targetName)
+
+    local entryKey =
+        SniperCanonicalPetKey(
+            entryName
+        )
+
+    local targetKey =
+        SniperCanonicalPetKey(
+            targetName
+        )
+
+    if entryKey == ""
+    or targetKey == "" then
+        return false
+    end
+
+    return entryKey == targetKey
+end
+
 function SniperEntryMatchesWatchlistRule(entry, rule)
 
     if type(entry) ~= "table"
@@ -10186,26 +10241,17 @@ function SniperEntryMatchesWatchlistRule(entry, rule)
         return false
     end
 
-    local petKey =
-        SniperNormalizeName(
-            entry.Name
-        )
+    if SniperPetNamesMatch(
+        entry.Name,
+        rule.PetName
+    ) ~= true then
 
-    local targetKey =
-        SniperNormalizeName(
-            rule.PetName
-        )
-
-    if petKey == ""
-    or targetKey == "" then
         return false
     end
 
-    if petKey ~= targetKey
-    and petKey:find(targetKey, 1, true) == nil
-    and targetKey:find(petKey, 1, true) == nil then
-        return false
-    end
+    SniperApplyEntrySizeClass(
+        entry
+    )
 
     if SniperEntryMatchesSizeClass(
         entry,
@@ -43076,17 +43122,22 @@ function SniperCleanSizeClass(value)
     value =
         CleanText(value)
 
-    if value == "Big" then
+    local lower =
+        value:lower()
+
+    if lower == "big" then
         return "Big"
     end
 
-    if value == "Mega"
-    or value == "Huge"
-    or value == "Huge Only" then
+    if lower == "mega"
+    or lower == "huge"
+    or lower == "huge only" then
         return "Mega"
     end
 
-    if value == "Normal" then
+    if lower == "normal"
+    or lower == "none"
+    or lower == "default" then
         return "Normal"
     end
 
@@ -43116,11 +43167,20 @@ function SniperCleanMutationFilter(value)
     value =
         CleanText(value)
 
-    if value == "Rainbow" then
+    local lower =
+        value:lower()
+
+    if lower == "rainbow"
+    or lower == "pet rainbow"
+    or lower == "rainbow pet" then
+
         return "Rainbow"
     end
 
-    if value == "Normal" then
+    if lower == "normal"
+    or lower == "none"
+    or lower == "default" then
+
         return "Normal"
     end
 
@@ -43495,12 +43555,21 @@ function SniperAddCurrentFilterToWatchlist()
     local targets =
         SniperGetBuilderTargetPets()
 
+    targets =
+        SniperNormalizeList(
+            targets
+        )
+
     if #targets <= 0 then
 
         Notify(
             "Sniper Watchlist",
             "Select at least one target pet first.",
             4
+        )
+
+        SetSniperStatus(
+            "Select Target Pets, then click Save Filter."
         )
 
         return false
@@ -43516,65 +43585,121 @@ function SniperAddCurrentFilterToWatchlist()
             3
         )
 
+    local sizeFilter =
+        SniperCleanSizeClass(
+            SniperSizeClassText()
+        )
+
+    local mutationFilter =
+        SniperCleanMutationFilter(
+            SniperMutationFilterText()
+        )
+
+    local priority =
+        SniperCleanPriorityLevel(
+            SniperBuilderPriorityText()
+        )
+
     GAG2_SNIPER_FILTER_SETS[watchlistId] =
         type(GAG2_SNIPER_FILTER_SETS[watchlistId]) == "table"
         and GAG2_SNIPER_FILTER_SETS[watchlistId]
         or {}
 
+    local rules =
+        GAG2_SNIPER_FILTER_SETS[watchlistId]
+
     local added =
+        0
+
+    local updated =
         0
 
     for _, petName in ipairs(targets) do
 
-        local key =
-            SniperBuildWatchlistKey(
-                petName,
-                SniperSizeClassText(),
-                SniperMutationFilterText()
+        petName =
+            CleanText(
+                petName
             )
 
-        GAG2_SNIPER_FILTER_SETS[watchlistId][key] = {
-            PetName =
-                CleanText(petName),
+        if petName ~= "" then
 
-            SizeFilter =
-                SniperSizeClassText(),
+            local key =
+                SniperBuildWatchlistKey(
+                    petName,
+                    sizeFilter,
+                    mutationFilter
+                )
 
-            MutationFilter =
-                SniperMutationFilterText(),
+            if rules[key] ~= nil then
 
-            Priority =
-                SniperBuilderPriorityText(),
+                updated =
+                    updated + 1
 
-            CreatedAt =
-                os.time(),
-        }
+            else
 
-        added =
-            added + 1
+                added =
+                    added + 1
+            end
+
+            rules[key] = {
+                PetName =
+                    petName,
+
+                SizeFilter =
+                    sizeFilter,
+
+                MutationFilter =
+                    mutationFilter,
+
+                Priority =
+                    priority,
+
+                CreatedAt =
+                    os.time(),
+            }
+        end
     end
+
+    GAG2_SNIPER_WATCHLIST_STATE.ViewTarget =
+        watchlistId
+
+    GAG2_SNIPER_WATCHLIST_STATE.Page =
+        1
 
     GAG2SaveSniperWatchlistNow(
         "save filter"
     )
 
-    GAG2RefreshSniperWatchlistUi()
-
     SniperBuildTargets()
 
-    SetSniperStatus(
+    GAG2RefreshSniperWatchlistUi()
+
+    local status =
         "Saved "
         .. tostring(added)
-        .. " filter(s) to "
+        .. " new"
+
+    if updated > 0 then
+
+        status =
+            status
+            .. ", updated "
+            .. tostring(updated)
+    end
+
+    status =
+        status
+        .. " in "
         .. SniperWatchlistName(watchlistId)
         .. "."
+
+    SetSniperStatus(
+        status
     )
 
     Notify(
         "Sniper Watchlist",
-        "Saved "
-        .. tostring(added)
-        .. " filter(s).",
+        status,
         3
     )
 
@@ -44702,36 +44827,95 @@ end
 
 function SniperPriorityText()
 
+    local buckets = {
+        High = {},
+        Medium = {},
+        Low = {},
+    }
+
+    for _, rule in ipairs(
+        SniperGetActiveWatchlistRules()
+    ) do
+
+        local priority =
+            SniperCleanPriorityLevel(
+                rule.Priority
+            )
+
+        local label =
+            CleanText(
+                rule.PetName
+            )
+
+        if label ~= "" then
+
+            local sizeFilter =
+                SniperCleanSizeClass(
+                    rule.SizeFilter
+                )
+
+            local mutationFilter =
+                SniperCleanMutationFilter(
+                    rule.MutationFilter
+                )
+
+            if sizeFilter ~= "Any" then
+
+                label =
+                    label
+                    .. " / "
+                    .. sizeFilter
+            end
+
+            if mutationFilter ~= "Any" then
+
+                label =
+                    label
+                    .. " / "
+                    .. mutationFilter
+            end
+
+            table.insert(
+                buckets[priority],
+                label
+            )
+        end
+    end
+
     local rows =
         {}
 
-    for index = 1, 5 do
+    for _, priority in ipairs({
+        "High",
+        "Medium",
+        "Low",
+    }) do
 
-        local value =
-            SniperPriorityCleanValue(
-                SniperState.PriorityPets
-                and SniperState.PriorityPets[index]
-                or ""
-            )
+        table.sort(
+            buckets[priority]
+        )
 
-        if value ~= "" then
+        if #buckets[priority] > 0 then
 
             table.insert(
                 rows,
-                tostring(index)
-                .. ". "
-                .. value
+                priority
+                .. ": "
+                .. table.concat(
+                    buckets[priority],
+                    ", "
+                )
             )
         end
     end
 
     if #rows <= 0 then
-        return "None"
+        return "No saved priority filters."
     end
 
     return table.concat(
         rows,
-        " > "
+        "\n"
     )
 end
 
@@ -45053,21 +45237,12 @@ function SniperEntryMatchesTargets(entry, targets)
         return false
     end
 
-    local petKey =
-        SniperNormalizeName(entry.Name)
-
-    if petKey == "" then
-        return false
-    end
-
     for targetKey in pairs(targets) do
 
-        if targetKey ~= ""
-        and (
-            petKey == targetKey
-            or petKey:find(targetKey, 1, true) ~= nil
-            or targetKey:find(petKey, 1, true) ~= nil
-        ) then
+        if SniperPetNamesMatch(
+            entry.Name,
+            targetKey
+        ) == true then
 
             return true
         end
@@ -45076,22 +45251,86 @@ function SniperEntryMatchesTargets(entry, targets)
     return false
 end
 
+function SniperBuildActiveFilterPreview(maxRows)
+
+    maxRows =
+        math.max(
+            1,
+            math.floor(
+                tonumber(maxRows)
+                or 6
+            )
+        )
+
+    local rules =
+        SniperGetActiveWatchlistRules()
+
+    if #rules <= 0 then
+        return "No saved filters."
+    end
+
+    local rows =
+        {}
+
+    for index, rule in ipairs(rules) do
+
+        if index > maxRows then
+
+            table.insert(
+                rows,
+                "+"
+                .. tostring(#rules - maxRows)
+                .. " more saved filter(s)"
+            )
+
+            break
+        end
+
+        local sizeFilter =
+            SniperCleanSizeClass(
+                rule.SizeFilter
+            )
+
+        local mutationFilter =
+            SniperCleanMutationFilter(
+                rule.MutationFilter
+            )
+
+        table.insert(
+            rows,
+            tostring(index)
+            .. ". "
+            .. CleanText(rule.PetName)
+            .. " | Size: "
+            .. sizeFilter
+            .. " | Type: "
+            .. mutationFilter
+            .. " | Priority: "
+            .. SniperCleanPriorityLevel(rule.Priority)
+            .. " | "
+            .. SniperWatchlistName(rule.WatchlistId)
+        )
+    end
+
+    return table.concat(
+        rows,
+        "\n"
+    )
+end
+
 function SniperBuildMatchText(entries, matches, orderedTargets, reason)
 
+    local activeRuleCount =
+        #SniperGetActiveWatchlistRules()
+
     local lines = {
-        '<font color="rgb(196,181,253)"><b>Selected Targets</b></font>',
+        '<font color="rgb(196,181,253)"><b>Active Saved Targets</b></font>',
         SniperTargetsText(),
         "",
-        '<font color="rgb(196,181,253)"><b>Size Filter</b></font>',
-        SniperSizeClassText(),
+        '<font color="rgb(196,181,253)"><b>Active Filters</b></font>',
+        SniperBuildActiveFilterPreview(6),
         "",
-        '<font color="rgb(196,181,253)"><b>Mutation Filter</b></font>',
-        SniperMutationFilterText(),
-        "",
-        '<font color="rgb(196,181,253)"><b>Watchlist</b></font>',
-        tostring(SniperCountAllWatchlistRules()) .. " saved filters",
-        "",
-        '<font color="rgb(196,181,253)"><b>Priority</b></font>',
+        '<font color="rgb(196,181,253)"><b>Priority Order</b></font>',
         SniperPriorityText(),
         "",
         '<font color="rgb(196,181,253)"><b>Result</b></font>',
@@ -45110,11 +45349,17 @@ function SniperBuildMatchText(entries, matches, orderedTargets, reason)
         )
     end
 
-    if #orderedTargets <= 0 then
+    if activeRuleCount <= 0
+    or #orderedTargets <= 0 then
 
         table.insert(
             lines,
-            "Select target pets first."
+            "No active sniper filters. Select Target Pets, choose Size/Type/Priority, then click Save Filter."
+        )
+
+        table.insert(
+            lines,
+            "Builder changes do not snipe until saved."
         )
 
         return table.concat(
@@ -45127,12 +45372,13 @@ function SniperBuildMatchText(entries, matches, orderedTargets, reason)
 
         table.insert(
             lines,
-            "No target found."
+            "No saved filter matched."
         )
 
         table.insert(
             lines,
-            "Active pets: " .. tostring(#entries)
+            "Active wild pets: "
+            .. tostring(#entries)
         )
 
         return table.concat(
@@ -45143,7 +45389,7 @@ function SniperBuildMatchText(entries, matches, orderedTargets, reason)
 
     table.insert(
         lines,
-        "Target found."
+        "Matched saved filter."
     )
 
     for index, entry in ipairs(matches) do
@@ -45152,21 +45398,38 @@ function SniperBuildMatchText(entries, matches, orderedTargets, reason)
 
             table.insert(
                 lines,
-                "+" .. tostring(#matches - 6) .. " more"
+                "+"
+                .. tostring(#matches - 6)
+                .. " more"
             )
 
             break
         end
+
+        local matchedRule =
+            entry.MatchedRule
+            or SniperFindMatchingRuleForEntry(
+                entry
+            )
+
+        local priority =
+            matchedRule
+            and SniperCleanPriorityLevel(
+                matchedRule.Priority
+            )
+            or "Medium"
 
         table.insert(
             lines,
             tostring(index)
             .. ". "
             .. SniperEntryDisplayName(entry)
-            .. " | "
+            .. " | Size: "
             .. SniperEntrySizeText(entry)
-            .. " | "
+            .. " | Type: "
             .. SniperEntryMutationText(entry)
+            .. " | Priority: "
+            .. priority
             .. " | Time: "
             .. tostring(entry.Timer or "?")
             .. " | Price: "
