@@ -5577,11 +5577,313 @@ function GAG2WildPetNetworkStartCountdownLoop(token)
     return true
 end
 
+function GAG2WildPetNetworkReadAnyAttribute(instance, attrNames)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    for _, attrName in ipairs(attrNames or {}) do
+
+        local ok, value =
+            pcall(function()
+
+                return instance:GetAttribute(
+                    attrName
+                )
+            end)
+
+        if ok == true
+        and value ~= nil
+        and tostring(value) ~= "" then
+
+            return value
+        end
+    end
+
+    return nil
+end
+
+function GAG2WildPetNetworkGetModelScale(instance)
+
+    if typeof(instance) ~= "Instance"
+    or instance:IsA("Model") ~= true then
+        return nil
+    end
+
+    local ok, scale =
+        pcall(function()
+
+            return instance:GetScale()
+        end)
+
+    if ok == true
+    and tonumber(scale) then
+        return tonumber(scale)
+    end
+
+    return nil
+end
+
+function GAG2WildPetNetworkNormalizePetSize(value)
+
+    local text =
+        CleanText(value)
+
+    local lower =
+        text:lower()
+
+    if lower == "big" then
+
+        return "Big",
+            "Big"
+    end
+
+    if lower == "huge"
+    or lower == "mega" then
+
+        return "Huge",
+            "Mega"
+    end
+
+    local number =
+        tonumber(value)
+
+    if number then
+
+        if number >= 3.25 then
+
+            return "Huge",
+                "Mega"
+        end
+
+        if number >= 1.5 then
+
+            return "Big",
+                "Big"
+        end
+    end
+
+    return "None",
+        "Normal"
+end
+
+function GAG2WildPetNetworkResolvePetSize(instance, rawValue)
+
+    local internalSize, displaySize =
+        GAG2WildAG2WildPetNetworkResolvePetSize(instance, rawValue)
+
+    local internalSize, displaySize =
+        GAG2WildPetNetworkNormalizePetSize(
+            rawValue
+        )
+
+    if displaySize ~= "Normal" then
+
+        return internalSize,
+            displaySize
+    end
+
+    local scale =
+        GAG2WildPetNetworkGetModelScale(
+            instance
+        )
+
+    if scale then
+
+        if scale >= 3.25 then
+
+            return "Huge",
+                "Mega"
+        end
+
+        if scale >= 1.5 then
+
+            return "Big",
+                "Big"
+        end
+    end
+
+    return "None",
+        "Normal"
+end
+
+function GAG2WildPetNetworkResolvePetType(petName, rawValue)
+
+    local text =
+        CleanText(rawValue)
+
+    local lower =
+        text:lower()
+
+    local nameLower =
+        CleanText(petName):lower()
+
+    if lower:find("rainbow", 1, true)
+    or nameLower:find("rainbow", 1, true) then
+
+        return "Rainbow",
+            "Rainbow"
+    end
+
+    return "None",
+        "Normal"
+end
+
+function GAG2WildPetNetworkGetRowSizeText(rowData)
+
+    if type(rowData) ~= "table" then
+        return "Normal"
+    end
+
+    local candidates = {
+        rowData.sizeLabel,
+        rowData.SizeLabel,
+        rowData.displaySize,
+        rowData.DisplaySize,
+        rowData.size,
+        rowData.Size,
+        rowData.petSize,
+        rowData.PetSize,
+    }
+
+    for _, value in ipairs(candidates) do
+
+        local text =
+            CleanText(value)
+
+        if text ~= "" then
+            return text
+        end
+    end
+
+    return "Normal"
+end
+
+function GAG2WildPetNetworkGetRowTypeText(rowData)
+
+    if type(rowData) ~= "table" then
+        return "Normal"
+    end
+
+    local candidates = {
+        rowData.mutation,
+        rowData.Mutation,
+        rowData.petType,
+        rowData.PetType,
+        rowData.typeLabel,
+        rowData.TypeLabel,
+        rowData.displayType,
+        rowData.DisplayType,
+        rowData.variant,
+        rowData.Variant,
+    }
+
+    for _, value in ipairs(candidates) do
+
+        local text =
+            CleanText(value)
+
+        if text ~= "" then
+
+            if text == "None" then
+                return "Normal"
+            end
+
+            return text
+        end
+    end
+
+    return "Normal"
+end
+
+function GAG2WildPetNetworkBuildVariantText(rowData)
+
+    return "Size: "
+        .. GAG2WildPetNetworkGetRowSizeText(
+            rowData
+        )
+        .. " | Type: "
+        .. GAG2WildPetNetworkGetRowTypeText(
+            rowData
+        )
+end
+
+function GAG2WildPetNetworkBuildSectionVariantSummary(rows)
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    local counts =
+        {}
+
+    for _, rowData in ipairs(rows) do
+
+        local key =
+            GAG2WildPetNetworkGetRowSizeText(rowData)
+            .. "/"
+            .. GAG2WildPetNetworkGetRowTypeText(rowData)
+
+        counts[key] =
+            (
+                counts[key]
+                or 0
+            )
+            + 1
+    end
+
+    local keys =
+        {}
+
+    for key in pairs(counts) do
+
+        table.insert(
+            keys,
+            key
+        )
+    end
+
+    table.sort(
+        keys
+    )
+
+    local parts =
+        {}
+
+    for index, key in ipairs(keys) do
+
+        if index > 3 then
+
+            table.insert(
+                parts,
+                "+"
+                .. tostring(#keys - 3)
+                .. " more"
+            )
+
+            break
+        end
+
+        table.insert(
+            parts,
+            key
+            .. " x"
+            .. tostring(counts[key])
+        )
+    end
+
+    return table.concat(
+        parts,
+        ", "
+    )
+end
 
 function GAG2WildPetNetworkCreateServerRow(
     parent,
     rowData
-)
+    )
 
     if type(rowData) ~= "table" then
         return nil
@@ -5637,6 +5939,11 @@ function GAG2WildPetNetworkCreateServerRow(
             )
         )
 
+    local variantText =
+        GAG2WildPetNetworkBuildVariantText(
+            rowData
+        )
+
     local row =
         Instance.new("Frame")
 
@@ -5648,7 +5955,7 @@ function GAG2WildPetNetworkCreateServerRow(
             1,
             0,
             0,
-            27
+            42
         )
 
     row.BackgroundColor3 =
@@ -5707,8 +6014,8 @@ function GAG2WildPetNetworkCreateServerRow(
         UDim2.new(
             0,
             88,
-            1,
-            0
+            0,
+            22
         )
 
     idLabel.BackgroundTransparency =
@@ -5752,8 +6059,8 @@ function GAG2WildPetNetworkCreateServerRow(
         UDim2.new(
             0,
             46,
-            1,
-            0
+            0,
+            22
         )
 
     playersLabel.BackgroundTransparency =
@@ -5799,8 +6106,8 @@ function GAG2WildPetNetworkCreateServerRow(
         UDim2.new(
             0,
             68,
-            1,
-            0
+            0,
+            22
         )
 
     timerLabel.BackgroundTransparency =
@@ -5852,8 +6159,8 @@ function GAG2WildPetNetworkCreateServerRow(
         UDim2.new(
             0,
             34,
-            1,
-            0
+            0,
+            22
         )
 
     countLabel.BackgroundTransparency =
@@ -5880,6 +6187,54 @@ function GAG2WildPetNetworkCreateServerRow(
         Enum.TextXAlignment.Left
 
     countLabel.Parent =
+        row
+
+    local variantLabel =
+        Instance.new("TextLabel")
+
+    variantLabel.Name =
+        "Variant"
+
+    variantLabel.Position =
+        UDim2.fromOffset(
+            10,
+            21
+        )
+
+    variantLabel.Size =
+        UDim2.new(
+            1,
+            -78,
+            0,
+            18
+        )
+
+    variantLabel.BackgroundTransparency =
+        1
+
+    variantLabel.Font =
+        Enum.Font.Code
+
+    variantLabel.Text =
+        variantText
+
+    variantLabel.TextSize =
+        10
+
+    variantLabel.TextColor3 =
+        Color3.fromRGB(
+            196,
+            181,
+            253
+        )
+
+    variantLabel.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    variantLabel.TextTruncate =
+        Enum.TextTruncate.AtEnd
+
+    variantLabel.Parent =
         row
 
     local joinButton =
@@ -6158,6 +6513,16 @@ function GAG2WildPetNetworkCreatePetSection(
     title.RichText =
         true
 
+    local variantSummary =
+        GAG2WildPetNetworkBuildSectionVariantSummary(
+            rows
+        )
+
+    local variantSummary =
+        GAG2WildPetNetworkBuildSectionVariantSummary(
+            rows
+        )
+
     title.Text =
         '<b>'
         .. GAG2WildPetNetworkCleanDisplay(
@@ -6172,6 +6537,28 @@ function GAG2WildPetNetworkCreatePetSection(
             rarity
         )
         .. ']</font>'
+        .. (
+            variantSummary ~= ""
+            and (
+                ' <font color="rgb(148,163,184)">• '
+                .. GAG2WildPetNetworkCleanDisplay(
+                    variantSummary
+                )
+                .. '</font>'
+            )
+            or ""
+        )
+        .. (
+            variantSummary ~= ""
+            and (
+                ' <font color="rgb(148,163,184)">• '
+                .. GAG2WildPetNetworkCleanDisplay(
+                    variantSummary
+                )
+                .. '</font>'
+            )
+            or ""
+        )
 
     title.TextSize =
         12
@@ -8165,6 +8552,56 @@ function GAG2WildPetNetworkReadRefPet(ref)
         return nil
     end
 
+    local rawSize =
+        GAG2WildPetNetworkReadAnyAttribute(
+            ref,
+            {
+                "PetSize",
+                "Size",
+                "SizeClass",
+                "ScaleSize",
+                "VariantSize",
+                "WildPetSize",
+                "DisplaySize",
+                "SizeType",
+                "Scale",
+                "ModelScale",
+                "PetScale",
+            }
+        )
+
+    local internalSize, displaySize =
+        GAG2WildPetNetworkResolvePetSize(
+            ref,
+            rawSize
+        )
+
+    local rawType =
+        GAG2WildPetNetworkReadAnyAttribute(
+            ref,
+            {
+                "PetType",
+                "Type",
+                "Variant",
+                "PetVariant",
+                "Mutation",
+                "MutationType",
+                "WildPetType",
+            }
+        )
+
+    local internalType, displayType =
+        GAG2WildPetNetworkResolvePetType(
+            petName,
+            rawType
+        )
+
+    local variantText =
+        "Size: "
+        .. tostring(displaySize)
+        .. " | Type: "
+        .. tostring(displayType)
+
     return {
         id =
             tostring(ref.Name),
@@ -8208,6 +8645,52 @@ function GAG2WildPetNetworkReadRefPet(ref)
                 0,
                 remaining
             ),
+
+        rawSize =
+            rawSize ~= nil
+            and tostring(rawSize)
+            or "",
+
+        internalSize =
+            internalSize,
+
+        displaySize =
+            displaySize,
+
+        size =
+            displaySize,
+
+        sizeLabel =
+            displaySize,
+
+        petSize =
+            displaySize,
+
+        rawType =
+            rawType ~= nil
+            and tostring(rawType)
+            or "",
+
+        internalType =
+            internalType,
+
+        petType =
+            internalType,
+
+        displayType =
+            displayType,
+
+        mutation =
+            displayType,
+
+        mutationFilter =
+            displayType,
+
+        typeLabel =
+            displayType,
+
+        variantText =
+            variantText,
     }
 end
 
@@ -8264,9 +8747,17 @@ function GAG2WildPetNetworkBuildPetSummary(pets)
 
         if petName ~= "" then
 
-            counts[petName] =
+            local key =
+                petName
+                .. " ["
+                .. GAG2WildPetNetworkGetRowSizeText(pet)
+                .. "/"
+                .. GAG2WildPetNetworkGetRowTypeText(pet)
+                .. "]"
+
+            counts[key] =
                 (
-                    counts[petName]
+                    counts[key]
                     or 0
                 )
                 + 1
@@ -8563,6 +9054,26 @@ function GAG2WildPetNetworkWatchRef(ref)
         "OwnerName",
         "SpawnedAt",
         "Lifetime",
+
+        "PetSize",
+        "Size",
+        "SizeClass",
+        "ScaleSize",
+        "VariantSize",
+        "WildPetSize",
+        "DisplaySize",
+        "SizeType",
+        "Scale",
+        "ModelScale",
+        "PetScale",
+
+        "PetType",
+        "Type",
+        "Variant",
+        "PetVariant",
+        "Mutation",
+        "MutationType",
+        "WildPetType",
     }
 
     local connections =
