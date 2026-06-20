@@ -608,14 +608,14 @@ local GROW_A_GARDEN_2_KNOWN_PLACE_IDS = {
     [133438856880402] = true,
 }
 
-local function IsGAG2KnownPlace(placeId)
+function IsGAG2KnownPlace(placeId)
 
     return GROW_A_GARDEN_2_KNOWN_PLACE_IDS[
         tonumber(placeId)
     ] == true
 end
 
-local function GAG2BuildJoinCode(placeId, jobId)
+function GAG2BuildJoinCode(placeId, jobId)
 
     local resolvedPlaceId =
         tonumber(placeId)
@@ -636,7 +636,7 @@ local function GAG2BuildJoinCode(placeId, jobId)
         .. tostring(resolvedJobId)
 end
 
-local function GAG2KnownPlaceIdsText()
+function GAG2KnownPlaceIdsText()
 
     local ids =
         {}
@@ -805,6 +805,11 @@ GAG2_WILD_PET_NETWORK_ENDPOINT =
 GAG2_WILD_PET_NETWORK_API_KEY =
     "HOLY_WILDPETS_2026_8f4c92d1e7a63b50"
 
+
+GAG2_WILD_PET_NETWORK_FILTER_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/WildPetHudFilters.json"
+
 if type(GAG2_WILD_PET_NETWORK_STATE) == "table"
 and type(GAG2_WILD_PET_NETWORK_STATE.Destroy) == "function" then
 
@@ -833,14 +838,58 @@ GAG2_WILD_PET_NETWORK_STATE = {
     Gui = nil,
     Frame = nil,
     SummaryLabel = nil,
+    FilterSummaryLabel = nil,
     StatusLabel = nil,
     Scroll = nil,
+
+    TopLine = nil,
+    StatusLine = nil,
+
+    SizeButton = nil,
+    FilterButton = nil,
+    RefreshButton = nil,
+    MinimizeButton = nil,
+    CloseButton = nil,
+
+    FilterOpen = false,
+    FilterPanel = nil,
+    FilterScroll = nil,
 
     LastData = nil,
     LastRefreshAt = 0,
     LastServerCount = 0,
     LastPetCount = 0,
+    LastFilteredPetCount = 0,
+    LastFilteredResultCount = 0,
     LastStatus = "Disabled.",
+
+    FilterSettings = {
+        Mode = "Smart",
+        HideUnmatched = true,
+
+        AlwaysPets = {
+            Raccoon = true,
+            ["Golden Dragonfly"] = true,
+            Unicorn = true,
+            ["Ice Serpent"] = true,
+            Monkey = true,
+            Bear = true,
+            Bee = true,
+        },
+
+        AlwaysRarities = {
+            Mythic = true,
+            Super = true,
+        },
+
+        AlsoVariants = {
+            Big = true,
+            Mega = true,
+            Rainbow = true,
+            ["Big Rainbow"] = true,
+            ["Mega Rainbow"] = true,
+        },
+    },
 }
 
 pcall(function()
@@ -1057,34 +1106,34 @@ if not game:IsLoaded() then
     game.Loaded:Wait()
 end
 
-local function CleanText(value)
+function CleanText(value)
 
     return tostring(value or "")
         :gsub("^%s+", "")
         :gsub("%s+$", "")
 end
 
-local function IsHolyGAG2Developer()
+function IsHolyGAG2Developer()
 
     return LOCAL_PLAYER
         and HOLY_GAG2_DEVELOPER_USER_IDS[LOCAL_PLAYER.UserId] == true
 end
 
-local function IsGAG2World()
+function IsGAG2World()
 
     return IsGAG2KnownPlace(
         game.PlaceId
     )
 end
 
-local function BoolText(value)
+function BoolText(value)
 
     return value == true
         and "YES"
         or "NO"
 end
 
-local function PathOf(instance)
+function PathOf(instance)
 
     if typeof(instance) ~= "Instance" then
         return tostring(instance)
@@ -1102,7 +1151,7 @@ local function PathOf(instance)
     return tostring(instance)
 end
 
-local function CopyText(text)
+function CopyText(text)
 
     local clipboard =
         setclipboard
@@ -1372,14 +1421,14 @@ local ConfigState = {
     Loading = true,
 }
 
-local function CanUseUISettingsFile()
+function CanUseUISettingsFile()
 
     return type(writefile) == "function"
         and type(readfile) == "function"
         and type(isfile) == "function"
 end
 
-local function EnsureUISettingsFolder()
+function EnsureUISettingsFolder()
 
     if type(makefolder) ~= "function"
     or type(isfolder) ~= "function" then
@@ -1397,7 +1446,7 @@ local function EnsureUISettingsFolder()
     return ok == true
 end
 
-local function SaveUISettingsNow()
+function SaveUISettingsNow()
 
     if CanUseUISettingsFile() ~= true then
         return false
@@ -1442,7 +1491,7 @@ local function SaveUISettingsNow()
     return writeOk == true
 end
 
-local function LoadUISettingsEarly()
+function LoadUISettingsEarly()
 
     if CanUseUISettingsFile() ~= true then
         return false
@@ -1513,7 +1562,7 @@ local function LoadUISettingsEarly()
     return true
 end
 
-local function MarkConfigDirty()
+function MarkConfigDirty()
 
     if ConfigState.Loading == true then
         return
@@ -1523,7 +1572,7 @@ local function MarkConfigDirty()
         true
 end
 
-local function FormatDPIScale(value)
+function FormatDPIScale(value)
 
     local scale =
         math.clamp(
@@ -1538,7 +1587,7 @@ local function FormatDPIScale(value)
     return tostring(scale) .. "%"
 end
 
-local function ParseDPIScale(value)
+function ParseDPIScale(value)
 
     local rawValue =
         tostring(value or "100%")
@@ -1741,7 +1790,7 @@ Library.GroupboxOrderChanged =
         )
     end
 
-local function Notify(title, description, duration)
+function Notify(title, description, duration)
 
     if Library
     and type(Library.Notify) == "function" then
@@ -1766,7 +1815,7 @@ end
 -- [4] LOGIC HELPERS
 --==================================================
 
-local function SetStatus(text)
+function SetStatus(text)
 
     if Options.HolyGAG2Status then
 
@@ -1777,7 +1826,7 @@ local function SetStatus(text)
     end
 end
 
-local function BuildServerInfoText()
+function BuildServerInfoText()
 
     local lines = {
         "Players: "
@@ -1799,7 +1848,7 @@ local function BuildServerInfoText()
     )
 end
 
-local function RefreshServerInfo()
+function RefreshServerInfo()
 
     if Options.HolyGAG2ServerInfo then
 
@@ -3069,7 +3118,7 @@ function GAG2HandlePendingExactJoinOnLoad()
     )
 end
 
-local function RejoinServer()
+function RejoinServer()
 
     SetStatus("Rejoining...")
 
@@ -3983,7 +4032,7 @@ function GAG2RefreshManualJoinVisuals()
         false
 end
 
-local function GetHttp(url)
+function GetHttp(url)
 
     local ok, body =
         pcall(function()
@@ -5577,11 +5626,1712 @@ function GAG2WildPetNetworkStartCountdownLoop(token)
     return true
 end
 
+function GAG2WildPetNetworkReadAnyAttribute(instance, attrNames)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    for _, attrName in ipairs(attrNames or {}) do
+
+        local ok, value =
+            pcall(function()
+
+                return instance:GetAttribute(
+                    attrName
+                )
+            end)
+
+        if ok == true
+        and value ~= nil
+        and tostring(value) ~= "" then
+
+            return value
+        end
+    end
+
+    return nil
+end
+
+function GAG2WildPetNetworkGetModelScale(instance)
+
+    if typeof(instance) ~= "Instance"
+    or instance:IsA("Model") ~= true then
+        return nil
+    end
+
+    local ok, scale =
+        pcall(function()
+
+            return instance:GetScale()
+        end)
+
+    if ok == true
+    and tonumber(scale) then
+        return tonumber(scale)
+    end
+
+    return nil
+end
+
+function GAG2WildPetNetworkNormalizePetSize(value)
+
+    local text =
+        CleanText(value)
+
+    local lower =
+        text:lower()
+
+    if lower == "big" then
+
+        return "Big",
+            "Big"
+    end
+
+    if lower == "huge"
+    or lower == "mega" then
+
+        return "Huge",
+            "Mega"
+    end
+
+    local number =
+        tonumber(value)
+
+    if number then
+
+        if number >= 3.25 then
+
+            return "Huge",
+                "Mega"
+        end
+
+        if number >= 1.5 then
+
+            return "Big",
+                "Big"
+        end
+    end
+
+    return "None",
+        "Normal"
+end
+
+function GAG2WildPetNetworkResolvePetSize(instance, rawValue)
+
+    local internalSize, displaySize =
+        GAG2WildPetNetworkNormalizePetSize(
+            rawValue
+        )
+
+    if displaySize ~= "Normal" then
+
+        return internalSize,
+            displaySize
+    end
+
+    local scale =
+        GAG2WildPetNetworkGetModelScale(
+            instance
+        )
+
+    if scale then
+
+        if scale >= 3.25 then
+
+            return "Huge",
+                "Mega"
+        end
+
+        if scale >= 1.5 then
+
+            return "Big",
+                "Big"
+        end
+    end
+
+    return "None",
+        "Normal"
+end
+
+function GAG2WildPetNetworkResolvePetType(petName, rawValue)
+
+    local text =
+        CleanText(rawValue)
+
+    local lower =
+        text:lower()
+
+    local nameLower =
+        CleanText(petName):lower()
+
+    if lower == "rainbow"
+    or lower == "rainbow pet"
+    or lower == "pet rainbow"
+    or lower:find("rainbow", 1, true)
+    or nameLower:find("rainbow", 1, true) then
+
+        return "Rainbow",
+            "Rainbow"
+    end
+
+    return "None",
+        "Normal"
+end
+
+function GAG2WildPetNetworkGetRowSizeText(rowData)
+
+    if type(rowData) ~= "table" then
+        return "Normal"
+    end
+
+    local candidates = {
+        rowData.displaySize,
+        rowData.DisplaySize,
+        rowData.sizeLabel,
+        rowData.SizeLabel,
+        rowData.size,
+        rowData.Size,
+        rowData.petSize,
+        rowData.PetSize,
+        rowData.internalSize,
+        rowData.InternalSize,
+        rowData.rawSize,
+        rowData.RawSize,
+    }
+
+    for _, value in ipairs(candidates) do
+
+        local _, displaySize =
+            GAG2WildPetNetworkNormalizePetSize(
+                value
+            )
+
+        if displaySize ~= "Normal" then
+            return displaySize
+        end
+    end
+
+    return "Normal"
+end
+
+function GAG2WildPetNetworkGetRowTypeText(rowData)
+
+    if type(rowData) ~= "table" then
+        return "Normal"
+    end
+
+    local candidates = {
+        rowData.displayType,
+        rowData.DisplayType,
+        rowData.typeLabel,
+        rowData.TypeLabel,
+        rowData.mutation,
+        rowData.Mutation,
+        rowData.mutationFilter,
+        rowData.MutationFilter,
+        rowData.petType,
+        rowData.PetType,
+        rowData.internalType,
+        rowData.InternalType,
+        rowData.variant,
+        rowData.Variant,
+        rowData.rawType,
+        rowData.RawType,
+    }
+
+    for _, value in ipairs(candidates) do
+
+        local text =
+            CleanText(value)
+
+        local lower =
+            text:lower()
+
+        if lower == "rainbow"
+        or lower == "rainbow pet"
+        or lower == "pet rainbow"
+        or lower:find("rainbow", 1, true) then
+
+            return "Rainbow"
+        end
+    end
+
+    return "Normal"
+end
+
+function GAG2WildPetNetworkBuildCleanVariantLabel(rowData)
+
+    local sizeText =
+        GAG2WildPetNetworkGetRowSizeText(
+            rowData
+        )
+
+    local typeText =
+        GAG2WildPetNetworkGetRowTypeText(
+            rowData
+        )
+
+    if sizeText == "Normal"
+    and typeText == "Normal" then
+
+        return "Regular"
+    end
+
+    if sizeText ~= "Normal"
+    and typeText == "Normal" then
+
+        return sizeText
+    end
+
+    if sizeText == "Normal"
+    and typeText ~= "Normal" then
+
+        return typeText
+    end
+
+    return sizeText
+        .. " "
+        .. typeText
+end
+
+function GAG2WildPetNetworkVariantSortRank(label)
+
+    label =
+        CleanText(label)
+
+    local ranks = {
+        Regular = 1,
+        Big = 2,
+        Mega = 3,
+        Rainbow = 4,
+        ["Big Rainbow"] = 5,
+        ["Mega Rainbow"] = 6,
+    }
+
+    return ranks[label]
+        or 99
+end
+
+function GAG2WildPetNetworkBuildVariantText(rowData)
+
+    return GAG2WildPetNetworkBuildCleanVariantLabel(
+        rowData
+    )
+end
+
+function GAG2WildPetNetworkBuildSectionVariantSummary(rows)
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    local counts =
+        {}
+
+    for _, rowData in ipairs(rows) do
+
+        local label =
+            GAG2WildPetNetworkBuildCleanVariantLabel(
+                rowData
+            )
+
+        local count =
+            math.max(
+                1,
+                math.floor(
+                    tonumber(rowData.count)
+                    or tonumber(rowData.Count)
+                    or 1
+                )
+            )
+
+        counts[label] =
+            (
+                counts[label]
+                or 0
+            )
+            + count
+    end
+
+    local labels =
+        {}
+
+    for label in pairs(counts) do
+
+        table.insert(
+            labels,
+            label
+        )
+    end
+
+    table.sort(labels, function(a, b)
+
+        local aRank =
+            GAG2WildPetNetworkVariantSortRank(
+                a
+            )
+
+        local bRank =
+            GAG2WildPetNetworkVariantSortRank(
+                b
+            )
+
+        if aRank ~= bRank then
+            return aRank < bRank
+        end
+
+        return tostring(a)
+            < tostring(b)
+    end)
+
+    local parts =
+        {}
+
+    for index, label in ipairs(labels) do
+
+        if index > 4 then
+
+            table.insert(
+                parts,
+                "+"
+                .. tostring(#labels - 4)
+                .. " more"
+            )
+
+            break
+        end
+
+        table.insert(
+            parts,
+            tostring(label)
+            .. " x"
+            .. tostring(counts[label])
+        )
+    end
+
+    return table.concat(
+        parts,
+        " • "
+    )
+end
+
+
+function GAG2WildPetNetworkFilterPetOptions()
+
+    return {
+        "Raccoon",
+        "Golden Dragonfly",
+        "Unicorn",
+        "Ice Serpent",
+        "Monkey",
+        "Bear",
+        "Bee",
+        "Black Dragon",
+        "Bunny",
+        "Frog",
+        "Owl",
+        "Deer",
+        "Robin",
+    }
+end
+
+function GAG2WildPetNetworkFilterRarityOptions()
+
+    return {
+        "Common",
+        "Uncommon",
+        "Rare",
+        "Epic",
+        "Legendary",
+        "Mythic",
+        "Super",
+    }
+end
+
+function GAG2WildPetNetworkFilterVariantOptions()
+
+    return {
+        "Regular",
+        "Big",
+        "Mega",
+        "Rainbow",
+        "Big Rainbow",
+        "Mega Rainbow",
+    }
+end
+
+function GAG2WildPetNetworkNormalizeKey(value)
+
+    return CleanText(value)
+        :lower()
+        :gsub("_", " ")
+        :gsub("%-", " ")
+        :gsub("[^%w%s]", " ")
+        :gsub("%s+", "")
+end
+
+function GAG2WildPetNetworkDefaultFilterSettings()
+
+    return {
+        Mode = "Smart",
+        HideUnmatched = true,
+
+        AlwaysPets = {
+            Raccoon = true,
+            ["Golden Dragonfly"] = true,
+            Unicorn = true,
+            ["Ice Serpent"] = true,
+            Monkey = true,
+            Bear = true,
+            Bee = true,
+        },
+
+        AlwaysRarities = {
+            Mythic = true,
+            Super = true,
+        },
+
+        AlsoVariants = {
+            Big = true,
+            Mega = true,
+            Rainbow = true,
+            ["Big Rainbow"] = true,
+            ["Mega Rainbow"] = true,
+        },
+    }
+end
+
+function GAG2WildPetNetworkCopyBooleanMap(source)
+
+    local output =
+        {}
+
+    if type(source) ~= "table" then
+        return output
+    end
+
+    for key, value in pairs(source) do
+
+        local cleanKey =
+            CleanText(key)
+
+        if cleanKey ~= ""
+        and value == true then
+
+            output[cleanKey] =
+                true
+        end
+    end
+
+    return output
+end
+
+function GAG2WildPetNetworkNormalizeFilterSettings(settings)
+
+    local defaultSettings =
+        GAG2WildPetNetworkDefaultFilterSettings()
+
+    settings =
+        type(settings) == "table"
+        and settings
+        or defaultSettings
+
+    local mode =
+        CleanText(
+            settings.Mode
+        )
+
+    if mode ~= "Smart"
+    and mode ~= "Custom"
+    and mode ~= "All" then
+
+        mode =
+            "Smart"
+    end
+
+    return {
+        Mode =
+            mode,
+
+        HideUnmatched =
+            settings.HideUnmatched ~= false,
+
+        AlwaysPets =
+            GAG2WildPetNetworkCopyBooleanMap(
+                settings.AlwaysPets
+                or defaultSettings.AlwaysPets
+            ),
+
+        AlwaysRarities =
+            GAG2WildPetNetworkCopyBooleanMap(
+                settings.AlwaysRarities
+                or defaultSettings.AlwaysRarities
+            ),
+
+        AlsoVariants =
+            GAG2WildPetNetworkCopyBooleanMap(
+                settings.AlsoVariants
+                or defaultSettings.AlsoVariants
+            ),
+    }
+end
+
+function GAG2WildPetNetworkCountMap(source)
+
+    local count =
+        0
+
+    if type(source) ~= "table" then
+        return 0
+    end
+
+    for _, enabled in pairs(source) do
+
+        if enabled == true then
+            count =
+                count + 1
+        end
+    end
+
+    return count
+end
+
+function GAG2WildPetNetworkLoadFilterSettings()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    local loaded =
+        nil
+
+    if CanUseUISettingsFile() == true then
+
+        local exists =
+            false
+
+        pcall(function()
+
+            exists =
+                isfile(
+                    GAG2_WILD_PET_NETWORK_FILTER_FILE
+                )
+        end)
+
+        if exists == true then
+
+            local readOk, raw =
+                pcall(function()
+
+                    return readfile(
+                        GAG2_WILD_PET_NETWORK_FILTER_FILE
+                    )
+                end)
+
+            if readOk == true
+            and type(raw) == "string"
+            and raw ~= "" then
+
+                local decodeOk, decoded =
+                    pcall(function()
+
+                        return HttpService:JSONDecode(
+                            raw
+                        )
+                    end)
+
+                if decodeOk == true
+                and type(decoded) == "table" then
+
+                    loaded =
+                        decoded
+                end
+            end
+        end
+    end
+
+    state.FilterSettings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            loaded
+            or state.FilterSettings
+            or GAG2WildPetNetworkDefaultFilterSettings()
+        )
+
+    return state.FilterSettings
+end
+
+function GAG2WildPetNetworkSaveFilterSettings()
+
+    if CanUseUISettingsFile() ~= true then
+        return false
+    end
+
+    EnsureUISettingsFolder()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.FilterSettings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            state.FilterSettings
+        )
+
+    local encodeOk, encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                state.FilterSettings
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                GAG2_WILD_PET_NETWORK_FILTER_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function GAG2WildPetNetworkSetFilterCustom()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.FilterSettings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            state.FilterSettings
+        )
+
+    if state.FilterSettings.Mode ~= "All" then
+
+        state.FilterSettings.Mode =
+            "Custom"
+    end
+end
+
+function GAG2WildPetNetworkSetFilterMode(mode)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    mode =
+        CleanText(mode)
+
+    if mode == "Smart" then
+
+        state.FilterSettings =
+            GAG2WildPetNetworkDefaultFilterSettings()
+
+    elseif mode == "All" then
+
+        state.FilterSettings =
+            GAG2WildPetNetworkNormalizeFilterSettings(
+                state.FilterSettings
+            )
+
+        state.FilterSettings.Mode =
+            "All"
+
+    else
+
+        state.FilterSettings =
+            GAG2WildPetNetworkNormalizeFilterSettings(
+                state.FilterSettings
+            )
+
+        state.FilterSettings.Mode =
+            "Custom"
+    end
+
+    GAG2WildPetNetworkSaveFilterSettings()
+    GAG2WildPetNetworkRefreshFilterVisuals()
+
+    if type(state.LastData) == "table" then
+
+        GAG2WildPetNetworkRender(
+            state.LastData
+        )
+    end
+end
+
+function GAG2WildPetNetworkToggleFilterMap(mapName, label)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.FilterSettings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            state.FilterSettings
+        )
+
+    local map =
+        state.FilterSettings[mapName]
+
+    if type(map) ~= "table" then
+
+        map =
+            {}
+
+        state.FilterSettings[mapName] =
+            map
+    end
+
+    label =
+        CleanText(label)
+
+    if label == "" then
+        return false
+    end
+
+    map[label] =
+        map[label] ~= true
+
+    state.FilterSettings.Mode =
+        "Custom"
+
+    GAG2WildPetNetworkSaveFilterSettings()
+    GAG2WildPetNetworkRefreshFilterVisuals()
+
+    if type(state.LastData) == "table" then
+
+        GAG2WildPetNetworkRender(
+            state.LastData
+        )
+    end
+
+    return true
+end
+
+function GAG2WildPetNetworkToggleHideUnmatched()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.FilterSettings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            state.FilterSettings
+        )
+
+    state.FilterSettings.HideUnmatched =
+        state.FilterSettings.HideUnmatched ~= true
+
+    state.FilterSettings.Mode =
+        "Custom"
+
+    GAG2WildPetNetworkSaveFilterSettings()
+    GAG2WildPetNetworkRefreshFilterVisuals()
+
+    if type(state.LastData) == "table" then
+
+        GAG2WildPetNetworkRender(
+            state.LastData
+        )
+    end
+end
+
+function GAG2WildPetNetworkClearFilterSettings()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.FilterSettings = {
+        Mode = "Custom",
+        HideUnmatched = true,
+        AlwaysPets = {},
+        AlwaysRarities = {},
+        AlsoVariants = {},
+    }
+
+    GAG2WildPetNetworkSaveFilterSettings()
+    GAG2WildPetNetworkRefreshFilterVisuals()
+
+    if type(state.LastData) == "table" then
+
+        GAG2WildPetNetworkRender(
+            state.LastData
+        )
+    end
+end
+
+function GAG2WildPetNetworkMapHasNormalizedValue(map, value)
+
+    if type(map) ~= "table" then
+        return false
+    end
+
+    local targetKey =
+        GAG2WildPetNetworkNormalizeKey(
+            value
+        )
+
+    if targetKey == "" then
+        return false
+    end
+
+    for key, enabled in pairs(map) do
+
+        if enabled == true
+        and GAG2WildPetNetworkNormalizeKey(key) == targetKey then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function GAG2WildPetNetworkRowPassesFilters(petName, rarity, rowData)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    local settings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            state.FilterSettings
+        )
+
+    state.FilterSettings =
+        settings
+
+    if settings.Mode == "All" then
+        return true
+    end
+
+    if settings.HideUnmatched ~= true then
+        return true
+    end
+
+    local rowPetName =
+        CleanText(
+            rowData
+            and (
+                rowData.petName
+                or rowData.PetName
+                or petName
+            )
+        )
+
+    if rowPetName == "" then
+        rowPetName =
+            CleanText(petName)
+    end
+
+    local rowRarity =
+        CleanText(
+            rowData
+            and (
+                rowData.rarity
+                or rowData.Rarity
+                or rarity
+            )
+        )
+
+    if rowRarity == "" then
+        rowRarity =
+            CleanText(rarity)
+    end
+
+    local rowVariant =
+        GAG2WildPetNetworkBuildCleanVariantLabel(
+            rowData
+        )
+
+    local petMatch =
+        GAG2WildPetNetworkMapHasNormalizedValue(
+            settings.AlwaysPets,
+            rowPetName
+        )
+
+    local rarityMatch =
+        settings.AlwaysRarities[rowRarity] == true
+
+    local variantMatch =
+        settings.AlsoVariants[rowVariant] == true
+
+    return petMatch == true
+        or rarityMatch == true
+        or variantMatch == true
+end
+
+function GAG2WildPetNetworkBuildFilterSummaryText()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    local settings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            state.FilterSettings
+        )
+
+    state.FilterSettings =
+        settings
+
+    if settings.Mode == "All" then
+        return "Filter: All pets"
+    end
+
+    return "Filter: "
+        .. tostring(settings.Mode)
+        .. " • Pets "
+        .. tostring(
+            GAG2WildPetNetworkCountMap(
+                settings.AlwaysPets
+            )
+        )
+        .. " • Rarity "
+        .. tostring(
+            GAG2WildPetNetworkCountMap(
+                settings.AlwaysRarities
+            )
+        )
+        .. " • Variants "
+        .. tostring(
+            GAG2WildPetNetworkCountMap(
+                settings.AlsoVariants
+            )
+        )
+        .. " • Hide "
+        .. (
+            settings.HideUnmatched == true
+            and "ON"
+            or "OFF"
+        )
+end
+
+function GAG2WildPetNetworkRefreshFilterSummary()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    if state.FilterSummaryLabel then
+
+        pcall(function()
+
+            state.FilterSummaryLabel.Text =
+                GAG2WildPetNetworkBuildFilterSummaryText()
+        end)
+    end
+
+    if state.FilterButton then
+
+        pcall(function()
+
+            state.FilterButton.TextColor3 =
+                state.FilterOpen == true
+                and Color3.fromRGB(196, 181, 253)
+                or Color3.fromRGB(96, 165, 250)
+        end)
+    end
+end
+
+function GAG2WildPetNetworkStyleFilterChip(button, selected)
+
+    if typeof(button) ~= "Instance" then
+        return
+    end
+
+    selected =
+        selected == true
+
+    button.BackgroundColor3 =
+        selected == true
+        and Color3.fromRGB(50, 36, 82)
+        or Color3.fromRGB(12, 22, 35)
+
+    button.BackgroundTransparency =
+        selected == true
+        and 0.02
+        or 0.08
+
+    button.TextColor3 =
+        selected == true
+        and Color3.fromRGB(232, 222, 255)
+        or Color3.fromRGB(148, 163, 184)
+end
+
+function GAG2WildPetNetworkCreateFilterChip(
+    parent,
+    label,
+    x,
+    y,
+    width,
+    selected,
+    callback
+)
+
+    local button =
+        Instance.new("TextButton")
+
+    button.Name =
+        "Chip_"
+        .. tostring(label):gsub("%W+", "")
+
+    button.Position =
+        UDim2.fromOffset(
+            x,
+            y
+        )
+
+    button.Size =
+        UDim2.fromOffset(
+            width,
+            22
+        )
+
+    button.BorderSizePixel =
+        0
+
+    button.AutoButtonColor =
+        true
+
+    button.Font =
+        Enum.Font.GothamBold
+
+    button.Text =
+        tostring(label)
+
+    button.TextSize =
+        10
+
+    button.Parent =
+        parent
+
+    GAG2WildPetNetworkAddCorner(
+        button,
+        6
+    )
+
+    local stroke =
+        Instance.new("UIStroke")
+
+    stroke.Color =
+        selected == true
+        and Color3.fromRGB(139, 92, 246)
+        or Color3.fromRGB(35, 50, 72)
+
+    stroke.Thickness =
+        1
+
+    stroke.Transparency =
+        selected == true
+        and 0.15
+        or 0.55
+
+    stroke.Parent =
+        button
+
+    GAG2WildPetNetworkStyleFilterChip(
+        button,
+        selected
+    )
+
+    button.MouseButton1Click:Connect(function()
+
+        if type(callback) == "function" then
+
+            callback()
+        end
+    end)
+
+    return button
+end
+
+function GAG2WildPetNetworkCreateFilterText(parent, text, x, y, width, height, size)
+
+    local label =
+        Instance.new("TextLabel")
+
+    label.Name =
+        "FilterText"
+
+    label.Position =
+        UDim2.fromOffset(
+            x,
+            y
+        )
+
+    label.Size =
+        UDim2.fromOffset(
+            width,
+            height
+        )
+
+    label.BackgroundTransparency =
+        1
+
+    label.Font =
+        Enum.Font.GothamBold
+
+    label.Text =
+        tostring(text or "")
+
+    label.TextSize =
+        tonumber(size)
+        or 11
+
+    label.TextColor3 =
+        Color3.fromRGB(
+            226,
+            232,
+            240
+        )
+
+    label.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    label.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    label.Parent =
+        parent
+
+    return label
+end
+
+function GAG2WildPetNetworkAddFilterChipGroup(parent, title, options, mapName, y)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    local settings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            state.FilterSettings
+        )
+
+    local selectedMap =
+        settings[mapName]
+
+    GAG2WildPetNetworkCreateFilterText(
+        parent,
+        title,
+        0,
+        y,
+        360,
+        18,
+        11
+    )
+
+    y =
+        y + 22
+
+    local x =
+        0
+
+    for _, option in ipairs(options or {}) do
+
+        local width =
+            math.clamp(
+                42 + (#tostring(option) * 6),
+                58,
+                142
+            )
+
+        if x + width > 372 then
+
+            x =
+                0
+
+            y =
+                y + 26
+        end
+
+        GAG2WildPetNetworkCreateFilterChip(
+            parent,
+            option,
+            x,
+            y,
+            width,
+            selectedMap
+            and selectedMap[option] == true,
+            function()
+
+                GAG2WildPetNetworkToggleFilterMap(
+                    mapName,
+                    option
+                )
+            end
+        )
+
+        x =
+            x + width + 6
+    end
+
+    return y + 30
+end
+
+function GAG2WildPetNetworkPopulateFilterPanel()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    local scroll =
+        state.FilterScroll
+
+    if not scroll then
+        return false
+    end
+
+    for _, child in ipairs(scroll:GetChildren()) do
+
+        child:Destroy()
+    end
+
+    local settings =
+        GAG2WildPetNetworkNormalizeFilterSettings(
+            state.FilterSettings
+        )
+
+    state.FilterSettings =
+        settings
+
+    local y =
+        0
+
+    GAG2WildPetNetworkCreateFilterText(
+        scroll,
+        "FILTERS",
+        0,
+        y,
+        160,
+        18,
+        12
+    )
+
+    GAG2WildPetNetworkCreateFilterChip(
+        scroll,
+        "Smart",
+        74,
+        y,
+        58,
+        settings.Mode == "Smart",
+        function()
+
+            GAG2WildPetNetworkSetFilterMode(
+                "Smart"
+            )
+        end
+    )
+
+    GAG2WildPetNetworkCreateFilterChip(
+        scroll,
+        "Custom",
+        138,
+        y,
+        66,
+        settings.Mode == "Custom",
+        function()
+
+            GAG2WildPetNetworkSetFilterMode(
+                "Custom"
+            )
+        end
+    )
+
+    GAG2WildPetNetworkCreateFilterChip(
+        scroll,
+        "All",
+        210,
+        y,
+        44,
+        settings.Mode == "All",
+        function()
+
+            GAG2WildPetNetworkSetFilterMode(
+                "All"
+            )
+        end
+    )
+
+    GAG2WildPetNetworkCreateFilterChip(
+        scroll,
+        settings.HideUnmatched == true
+        and "Hide ON"
+        or "Hide OFF",
+        260,
+        y,
+        78,
+        settings.HideUnmatched == true,
+        function()
+
+            GAG2WildPetNetworkToggleHideUnmatched()
+        end
+    )
+
+    GAG2WildPetNetworkCreateFilterChip(
+        scroll,
+        "Clear",
+        344,
+        y,
+        52,
+        false,
+        function()
+
+            GAG2WildPetNetworkClearFilterSettings()
+        end
+    )
+
+    y =
+        y + 34
+
+    y =
+        GAG2WildPetNetworkAddFilterChipGroup(
+            scroll,
+            "Always Show Pets",
+            GAG2WildPetNetworkFilterPetOptions(),
+            "AlwaysPets",
+            y
+        )
+
+    y =
+        GAG2WildPetNetworkAddFilterChipGroup(
+            scroll,
+            "Always Show Rarities",
+            GAG2WildPetNetworkFilterRarityOptions(),
+            "AlwaysRarities",
+            y
+        )
+
+    y =
+        GAG2WildPetNetworkAddFilterChipGroup(
+            scroll,
+            "Also Show Variants",
+            GAG2WildPetNetworkFilterVariantOptions(),
+            "AlsoVariants",
+            y
+        )
+
+    scroll.CanvasSize =
+        UDim2.fromOffset(
+            0,
+            y + 10
+        )
+
+    GAG2WildPetNetworkRefreshFilterSummary()
+
+    return true
+end
+
+function GAG2WildPetNetworkRefreshFilterVisuals()
+
+    GAG2WildPetNetworkRefreshFilterSummary()
+    GAG2WildPetNetworkPopulateFilterPanel()
+end
+
+function GAG2WildPetNetworkCreateFilterPanel(frame)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    if not frame
+    or not frame.Parent then
+        return nil
+    end
+
+    local gui =
+        frame.Parent
+
+    if state.FilterPanel
+    and state.FilterPanel.Parent then
+
+        return state.FilterPanel
+    end
+
+    local panel =
+        Instance.new("Frame")
+
+    panel.Name =
+        "LiveWildPetFilterBox"
+
+    panel.Position =
+        UDim2.fromOffset(
+            462,
+            92
+        )
+
+    panel.Size =
+        UDim2.fromOffset(
+            430,
+            320
+        )
+
+    panel.BackgroundColor3 =
+        Color3.fromRGB(
+            7,
+            13,
+            22
+        )
+
+    panel.BackgroundTransparency =
+        0.12
+
+    panel.BorderSizePixel =
+        0
+
+    panel.Active =
+        true
+
+    panel.Draggable =
+        true
+
+    panel.Visible =
+        state.FilterOpen == true
+
+    panel.Parent =
+        gui
+
+    GAG2WildPetNetworkAddCorner(
+        panel,
+        10
+    )
+
+    local stroke =
+        Instance.new("UIStroke")
+
+    stroke.Color =
+        Color3.fromRGB(
+            59,
+            130,
+            246
+        )
+
+    stroke.Thickness =
+        1
+
+    stroke.Transparency =
+        0.30
+
+    stroke.Parent =
+        panel
+
+    local title =
+        Instance.new("TextLabel")
+
+    title.Name =
+        "Title"
+
+    title.Position =
+        UDim2.fromOffset(
+            14,
+            7
+        )
+
+    title.Size =
+        UDim2.new(
+            1,
+            -58,
+            0,
+            24
+        )
+
+    title.BackgroundTransparency =
+        1
+
+    title.Font =
+        Enum.Font.GothamBold
+
+    title.Text =
+        "LIVE PET FILTERS"
+
+    title.TextSize =
+        13
+
+    title.TextColor3 =
+        Color3.fromRGB(
+            241,
+            245,
+            249
+        )
+
+    title.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    title.Parent =
+        panel
+
+    local close =
+        Instance.new("TextButton")
+
+    close.Name =
+        "Close"
+
+    close.AnchorPoint =
+        Vector2.new(
+            1,
+            0
+        )
+
+    close.Position =
+        UDim2.new(
+            1,
+            -8,
+            0,
+            8
+        )
+
+    close.Size =
+        UDim2.fromOffset(
+            24,
+            22
+        )
+
+    close.BackgroundTransparency =
+        1
+
+    close.Font =
+        Enum.Font.GothamBold
+
+    close.Text =
+        "×"
+
+    close.TextSize =
+        16
+
+    close.TextColor3 =
+        Color3.fromRGB(
+            148,
+            163,
+            184
+        )
+
+    close.Parent =
+        panel
+
+    close.MouseButton1Click:Connect(function()
+
+        state.FilterOpen =
+            false
+
+        GAG2WildPetNetworkApplyHudLayout()
+        GAG2WildPetNetworkRefreshFilterVisuals()
+    end)
+
+    local line =
+        Instance.new("Frame")
+
+    line.Name =
+        "Line"
+
+    line.Position =
+        UDim2.new(
+            0,
+            12,
+            0,
+            38
+        )
+
+    line.Size =
+        UDim2.new(
+            1,
+            -24,
+            0,
+            1
+        )
+
+    line.BackgroundColor3 =
+        Color3.fromRGB(
+            30,
+            41,
+            59
+        )
+
+    line.BackgroundTransparency =
+        0.38
+
+    line.BorderSizePixel =
+        0
+
+    line.Parent =
+        panel
+
+    local scroll =
+        Instance.new("ScrollingFrame")
+
+    scroll.Name =
+        "FilterScroll"
+
+    scroll.Position =
+        UDim2.fromOffset(
+            14,
+            48
+        )
+
+    scroll.Size =
+        UDim2.new(
+            1,
+            -28,
+            1,
+            -60
+        )
+
+    scroll.BackgroundTransparency =
+        1
+
+    scroll.BorderSizePixel =
+        0
+
+    scroll.ScrollBarThickness =
+        3
+
+    scroll.ScrollBarImageColor3 =
+        Color3.fromRGB(
+            96,
+            165,
+            250
+        )
+
+    scroll.CanvasSize =
+        UDim2.new()
+
+    scroll.Parent =
+        panel
+
+    state.FilterPanel =
+        panel
+
+    state.FilterScroll =
+        scroll
+
+    GAG2WildPetNetworkPopulateFilterPanel()
+
+    return panel
+end
+
+function GAG2WildPetNetworkToggleFilterPanel()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    state.FilterOpen =
+        state.FilterOpen ~= true
+
+    if state.FilterPanel then
+
+        pcall(function()
+
+            state.FilterPanel.Visible =
+                state.HudMinimized ~= true
+                and state.FilterOpen == true
+        end)
+    end
+
+    GAG2WildPetNetworkApplyHudLayout()
+    GAG2WildPetNetworkRefreshFilterVisuals()
+end
 
 function GAG2WildPetNetworkCreateServerRow(
     parent,
     rowData
-)
+    )
 
     if type(rowData) ~= "table" then
         return nil
@@ -5637,6 +7387,11 @@ function GAG2WildPetNetworkCreateServerRow(
             )
         )
 
+    local variantText =
+        GAG2WildPetNetworkBuildVariantText(
+            rowData
+        )
+
     local row =
         Instance.new("Frame")
 
@@ -5648,7 +7403,7 @@ function GAG2WildPetNetworkCreateServerRow(
             1,
             0,
             0,
-            27
+            32
         )
 
     row.BackgroundColor3 =
@@ -5691,51 +7446,6 @@ function GAG2WildPetNetworkCreateServerRow(
     rowStroke.Parent =
         row
 
-    local idLabel =
-        Instance.new("TextLabel")
-
-    idLabel.Name =
-        "JobId"
-
-    idLabel.Position =
-        UDim2.fromOffset(
-            10,
-            0
-        )
-
-    idLabel.Size =
-        UDim2.new(
-            0,
-            88,
-            1,
-            0
-        )
-
-    idLabel.BackgroundTransparency =
-        1
-
-    idLabel.Font =
-        Enum.Font.Code
-
-    idLabel.Text =
-        jobId:sub(1, 8)
-
-    idLabel.TextSize =
-        11
-
-    idLabel.TextColor3 =
-        Color3.fromRGB(
-            203,
-            213,
-            225
-        )
-
-    idLabel.TextXAlignment =
-        Enum.TextXAlignment.Left
-
-    idLabel.Parent =
-        row
-
     local playersLabel =
         Instance.new("TextLabel")
 
@@ -5744,14 +7454,14 @@ function GAG2WildPetNetworkCreateServerRow(
 
     playersLabel.Position =
         UDim2.fromOffset(
-            110,
+            10,
             0
         )
 
     playersLabel.Size =
         UDim2.new(
             0,
-            46,
+            50,
             1,
             0
         )
@@ -5791,14 +7501,14 @@ function GAG2WildPetNetworkCreateServerRow(
 
     timerLabel.Position =
         UDim2.fromOffset(
-            166,
+            68,
             0
         )
 
     timerLabel.Size =
         UDim2.new(
             0,
-            68,
+            72,
             1,
             0
         )
@@ -5844,14 +7554,14 @@ function GAG2WildPetNetworkCreateServerRow(
 
     countLabel.Position =
         UDim2.fromOffset(
-            244,
+            145,
             0
         )
 
     countLabel.Size =
         UDim2.new(
             0,
-            34,
+            54,
             1,
             0
         )
@@ -5863,8 +7573,12 @@ function GAG2WildPetNetworkCreateServerRow(
         Enum.Font.Code
 
     countLabel.Text =
-        "x"
-        .. tostring(count)
+        tostring(count)
+        .. (
+            count == 1
+            and " pet"
+            or " pets"
+        )
 
     countLabel.TextSize =
         11
@@ -5880,6 +7594,54 @@ function GAG2WildPetNetworkCreateServerRow(
         Enum.TextXAlignment.Left
 
     countLabel.Parent =
+        row
+
+    local variantLabel =
+        Instance.new("TextLabel")
+
+    variantLabel.Name =
+        "Variant"
+
+    variantLabel.Position =
+        UDim2.fromOffset(
+            205,
+            0
+        )
+
+    variantLabel.Size =
+        UDim2.new(
+            1,
+            -275,
+            1,
+            0
+        )
+
+    variantLabel.BackgroundTransparency =
+        1
+
+    variantLabel.Font =
+        Enum.Font.Code
+
+    variantLabel.Text =
+        variantText
+
+    variantLabel.TextSize =
+        11
+
+    variantLabel.TextColor3 =
+        Color3.fromRGB(
+            196,
+            181,
+            253
+        )
+
+    variantLabel.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    variantLabel.TextTruncate =
+        Enum.TextTruncate.AtEnd
+
+    variantLabel.Parent =
         row
 
     local joinButton =
@@ -6022,7 +7784,7 @@ function GAG2WildPetNetworkCreatePetSection(
     petName,
     rarity,
     rows
-)
+    )
 
     rows =
         type(rows) == "table"
@@ -6084,7 +7846,7 @@ function GAG2WildPetNetworkCreatePetSection(
             1,
             0,
             0,
-            23
+            24
         )
 
     header.BackgroundTransparency =
@@ -6129,6 +7891,11 @@ function GAG2WildPetNetworkCreatePetSection(
         3
     )
 
+    local variantSummary =
+        GAG2WildPetNetworkBuildSectionVariantSummary(
+            rows
+        )
+
     local title =
         Instance.new("TextLabel")
 
@@ -6144,7 +7911,7 @@ function GAG2WildPetNetworkCreatePetSection(
     title.Size =
         UDim2.new(
             1,
-            -90,
+            -95,
             1,
             0
         )
@@ -6172,6 +7939,17 @@ function GAG2WildPetNetworkCreatePetSection(
             rarity
         )
         .. ']</font>'
+        .. (
+            variantSummary ~= ""
+            and (
+                ' <font color="rgb(148,163,184)">• '
+                .. GAG2WildPetNetworkCleanDisplay(
+                    variantSummary
+                )
+                .. '</font>'
+            )
+            or ""
+        )
 
     title.TextSize =
         12
@@ -6188,6 +7966,9 @@ function GAG2WildPetNetworkCreatePetSection(
 
     title.TextYAlignment =
         Enum.TextYAlignment.Center
+
+    title.TextTruncate =
+        Enum.TextTruncate.AtEnd
 
     title.Parent =
         header
@@ -6215,7 +7996,7 @@ function GAG2WildPetNetworkCreatePetSection(
     resultCount.Size =
         UDim2.new(
             0,
-            80,
+            85,
             1,
             0
         )
@@ -6564,6 +8345,7 @@ function GAG2WildPetNetworkRender(data)
     end
 
     GAG2WildPetNetworkClearRows()
+    GAG2WildPetNetworkRefreshFilterSummary()
 
     local grouped =
         type(data) == "table"
@@ -6587,7 +8369,10 @@ function GAG2WildPetNetworkRender(data)
     local petGroups =
         {}
 
-    local totalResults =
+    local totalRawResults =
+        0
+
+    local totalFilteredResults =
         0
 
     for petName, servers in pairs(grouped) do
@@ -6620,6 +8405,9 @@ function GAG2WildPetNetworkRender(data)
                     and placeId
                     and placeId > 0 then
 
+                        totalRawResults =
+                            totalRawResults + 1
+
                         if CleanText(
                             row.rarity
                             or row.Rarity
@@ -6638,18 +8426,25 @@ function GAG2WildPetNetworkRender(data)
                         row.rarity =
                             tostring(rarity)
 
-                        table.insert(
-                            validRows,
+                        if GAG2WildPetNetworkRowPassesFilters(
+                            petName,
+                            rarity,
                             row
-                        )
+                        ) == true then
+
+                            table.insert(
+                                validRows,
+                                row
+                            )
+
+                            totalFilteredResults =
+                                totalFilteredResults + 1
+                        end
                     end
                 end
             end
 
             if #validRows > 0 then
-
-                totalResults =
-                    totalResults + #validRows
 
                 table.insert(petGroups, {
                     PetName =
@@ -6685,6 +8480,12 @@ function GAG2WildPetNetworkRender(data)
             < tostring(b.PetName)
     end)
 
+    state.LastFilteredPetCount =
+        #petGroups
+
+    state.LastFilteredResultCount =
+        totalFilteredResults
+
     if state.SummaryLabel then
 
         pcall(function()
@@ -6696,8 +8497,10 @@ function GAG2WildPetNetworkRender(data)
                 )
                 .. " live server(s)  •  "
                 .. tostring(#petGroups)
-                .. " pet(s)  •  "
-                .. tostring(totalResults)
+                .. " shown pet(s)  •  "
+                .. tostring(totalFilteredResults)
+                .. "/"
+                .. tostring(totalRawResults)
                 .. " results"
         end)
     end
@@ -6707,9 +8510,18 @@ function GAG2WildPetNetworkRender(data)
         GAG2WildPetNetworkCreateLabel(
             scroll,
             "NoServers",
-            "No live wild pets reported.",
+            "No pets match your HUD filters.",
             32,
             13,
+            false
+        )
+
+        GAG2WildPetNetworkCreateLabel(
+            scroll,
+            "FilterHint",
+            "Click F to change Always Pets, Rarities, or Variants.",
+            28,
+            11,
             false
         )
 
@@ -6752,22 +8564,25 @@ function GAG2WildPetNetworkRender(data)
                 renderedRows + 1
         end
 
-        GAG2WildPetNetworkCreatePetSection(
-            scroll,
-            group.PetName,
-            group.Rarity,
-            limitedRows
-        )
+        if #limitedRows > 0 then
+
+            GAG2WildPetNetworkCreatePetSection(
+                scroll,
+                group.PetName,
+                group.Rarity,
+                limitedRows
+            )
+        end
     end
 
-    if totalResults > renderedRows then
+    if totalFilteredResults > renderedRows then
 
         GAG2WildPetNetworkCreateLabel(
             scroll,
             "RowLimit",
             "Showing first "
             .. tostring(renderedRows)
-            .. " rows.",
+            .. " filtered rows.",
             24,
             11,
             false
@@ -6922,10 +8737,40 @@ function GAG2WildPetNetworkDestroyHudOnly()
     state.SummaryLabel =
         nil
 
+    state.FilterSummaryLabel =
+        nil
+
     state.StatusLabel =
         nil
 
     state.Scroll =
+        nil
+
+    state.TopLine =
+        nil
+
+    state.StatusLine =
+        nil
+
+    state.FilterPanel =
+        nil
+
+    state.FilterScroll =
+        nil
+
+    state.SizeButton =
+        nil
+
+    state.FilterButton =
+        nil
+
+    state.RefreshButton =
+        nil
+
+    state.MinimizeButton =
+        nil
+
+    state.CloseButton =
         nil
 end
 
@@ -6996,6 +8841,7 @@ function GAG2WildPetNetworkApplyHudLayout()
 
     local objects = {
         state.SummaryLabel,
+        state.FilterSummaryLabel,
         state.Scroll,
         state.StatusLabel,
         state.TopLine,
@@ -7012,6 +8858,16 @@ function GAG2WildPetNetworkApplyHudLayout()
                     visible
             end)
         end
+    end
+
+    if state.FilterPanel then
+
+        pcall(function()
+
+            state.FilterPanel.Visible =
+                visible == true
+                and state.FilterOpen == true
+        end)
     end
 
     if state.MinimizeButton then
@@ -7037,11 +8893,61 @@ function GAG2WildPetNetworkApplyHudLayout()
             )
     end
 
+    if state.FilterButton then
+
+        state.FilterButton.Visible =
+            visible
+
+        state.FilterButton.Text =
+            "F"
+
+        state.FilterButton.TextColor3 =
+            state.FilterOpen == true
+            and Color3.fromRGB(196, 181, 253)
+            or Color3.fromRGB(96, 165, 250)
+    end
+
     if state.RefreshButton then
 
         state.RefreshButton.Visible =
             visible
     end
+
+    if state.Scroll then
+
+        pcall(function()
+
+            state.Scroll.Position =
+                UDim2.fromOffset(
+                    14,
+                    82
+                )
+
+            state.Scroll.Size =
+                UDim2.new(
+                    1,
+                    -28,
+                    1,
+                    -121
+                )
+        end)
+    end
+
+    if state.TopLine then
+
+        pcall(function()
+
+            state.TopLine.Position =
+                UDim2.new(
+                    0,
+                    12,
+                    0,
+                    75
+                )
+        end)
+    end
+
+    GAG2WildPetNetworkRefreshFilterSummary()
 end
 
 function GAG2WildPetNetworkCycleHudSize()
@@ -7270,7 +9176,7 @@ function GAG2WildPetNetworkCreateHud()
     sizeButton.Position =
         UDim2.new(
             1,
-            -91,
+            -120,
             0,
             8
         )
@@ -7321,6 +9227,74 @@ function GAG2WildPetNetworkCreateHud()
     sizeButton.MouseButton1Click:Connect(function()
 
         GAG2WildPetNetworkCycleHudSize()
+    end)
+
+    local filterButton =
+        Instance.new("TextButton")
+
+    filterButton.Name =
+        "Filter"
+
+    filterButton.AnchorPoint =
+        Vector2.new(
+            1,
+            0
+        )
+
+    filterButton.Position =
+        UDim2.new(
+            1,
+            -91,
+            0,
+            8
+        )
+
+    filterButton.Size =
+        UDim2.fromOffset(
+            24,
+            22
+        )
+
+    filterButton.BackgroundColor3 =
+        Color3.fromRGB(
+            12,
+            22,
+            35
+        )
+
+    filterButton.BackgroundTransparency =
+        0.08
+
+    filterButton.BorderSizePixel =
+        0
+
+    filterButton.Font =
+        Enum.Font.GothamBold
+
+    filterButton.Text =
+        "F"
+
+    filterButton.TextSize =
+        11
+
+    filterButton.TextColor3 =
+        Color3.fromRGB(
+            96,
+            165,
+            250
+        )
+
+    filterButton.Parent =
+        frame
+
+    GAG2WildPetNetworkAddCorner(
+        filterButton,
+        6
+    )
+
+    filterButton.MouseButton1Click:Connect(function()
+
+        GAG2WildPetNetworkToggleFilterPanel()
     end)
 
     local refreshButton =
@@ -7556,6 +9530,54 @@ function GAG2WildPetNetworkCreateHud()
     summary.Parent =
         frame
 
+    local filterSummary =
+        Instance.new("TextLabel")
+
+    filterSummary.Name =
+        "FilterSummary"
+
+    filterSummary.Position =
+        UDim2.fromOffset(
+            14,
+            51
+        )
+
+    filterSummary.Size =
+        UDim2.new(
+            1,
+            -28,
+            0,
+            18
+        )
+
+    filterSummary.BackgroundTransparency =
+        1
+
+    filterSummary.Font =
+        Enum.Font.Code
+
+    filterSummary.Text =
+        GAG2WildPetNetworkBuildFilterSummaryText()
+
+    filterSummary.TextSize =
+        10
+
+    filterSummary.TextColor3 =
+        Color3.fromRGB(
+            196,
+            181,
+            253
+        )
+
+    filterSummary.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    filterSummary.TextTruncate =
+        Enum.TextTruncate.AtEnd
+
+    filterSummary.Parent =
+        frame
+
     local topLine =
         Instance.new("Frame")
 
@@ -7567,7 +9589,7 @@ function GAG2WildPetNetworkCreateHud()
             0,
             12,
             0,
-            57
+            75
         )
 
     topLine.Size =
@@ -7603,7 +9625,7 @@ function GAG2WildPetNetworkCreateHud()
     scroll.Position =
         UDim2.fromOffset(
             14,
-            64
+            82
         )
 
     scroll.Size =
@@ -7611,7 +9633,7 @@ function GAG2WildPetNetworkCreateHud()
             1,
             -28,
             1,
-            -103
+            -121
         )
 
     scroll.BackgroundTransparency =
@@ -7724,6 +9746,12 @@ function GAG2WildPetNetworkCreateHud()
     status.Parent =
         frame
 
+    GAG2WildPetNetworkLoadFilterSettings()
+
+    GAG2WildPetNetworkCreateFilterPanel(
+        frame
+    )
+
     state.Gui =
         gui
 
@@ -7732,6 +9760,9 @@ function GAG2WildPetNetworkCreateHud()
 
     state.SummaryLabel =
         summary
+
+    state.FilterSummaryLabel =
+        filterSummary
 
     state.StatusLabel =
         status
@@ -7747,6 +9778,9 @@ function GAG2WildPetNetworkCreateHud()
 
     state.SizeButton =
         sizeButton
+
+    state.FilterButton =
+        filterButton
 
     state.RefreshButton =
         refreshButton
@@ -7778,6 +9812,7 @@ function GAG2WildPetNetworkCreateHud()
     end
 
     GAG2WildPetNetworkApplyHudLayout()
+    GAG2WildPetNetworkRefreshFilterVisuals()
     GAG2WildPetNetworkRefreshStatus()
 
     return gui
@@ -8165,6 +10200,56 @@ function GAG2WildPetNetworkReadRefPet(ref)
         return nil
     end
 
+    local rawSize =
+        GAG2WildPetNetworkReadAnyAttribute(
+            ref,
+            {
+                "PetSize",
+                "Size",
+                "SizeClass",
+                "ScaleSize",
+                "VariantSize",
+                "WildPetSize",
+                "DisplaySize",
+                "SizeType",
+                "Scale",
+                "ModelScale",
+                "PetScale",
+            }
+        )
+
+    local internalSize, displaySize =
+        GAG2WildPetNetworkResolvePetSize(
+            ref,
+            rawSize
+        )
+
+    local rawType =
+        GAG2WildPetNetworkReadAnyAttribute(
+            ref,
+            {
+                "PetType",
+                "Type",
+                "Variant",
+                "PetVariant",
+                "Mutation",
+                "MutationType",
+                "WildPetType",
+            }
+        )
+
+    local internalType, displayType =
+        GAG2WildPetNetworkResolvePetType(
+            petName,
+            rawType
+        )
+
+    local variantText =
+        "Size: "
+        .. tostring(displaySize)
+        .. " | Type: "
+        .. tostring(displayType)
+
     return {
         id =
             tostring(ref.Name),
@@ -8208,6 +10293,52 @@ function GAG2WildPetNetworkReadRefPet(ref)
                 0,
                 remaining
             ),
+
+        rawSize =
+            rawSize ~= nil
+            and tostring(rawSize)
+            or "",
+
+        internalSize =
+            internalSize,
+
+        displaySize =
+            displaySize,
+
+        size =
+            displaySize,
+
+        sizeLabel =
+            displaySize,
+
+        petSize =
+            displaySize,
+
+        rawType =
+            rawType ~= nil
+            and tostring(rawType)
+            or "",
+
+        internalType =
+            internalType,
+
+        petType =
+            internalType,
+
+        displayType =
+            displayType,
+
+        mutation =
+            displayType,
+
+        mutationFilter =
+            displayType,
+
+        typeLabel =
+            displayType,
+
+        variantText =
+            variantText,
     }
 end
 
@@ -8264,9 +10395,17 @@ function GAG2WildPetNetworkBuildPetSummary(pets)
 
         if petName ~= "" then
 
-            counts[petName] =
+            local label =
+                petName
+                .. " ["
+                .. GAG2WildPetNetworkBuildCleanVariantLabel(
+                    pet
+                )
+                .. "]"
+
+            counts[label] =
                 (
-                    counts[petName]
+                    counts[label]
                     or 0
                 )
                 + 1
@@ -8563,6 +10702,26 @@ function GAG2WildPetNetworkWatchRef(ref)
         "OwnerName",
         "SpawnedAt",
         "Lifetime",
+
+        "PetSize",
+        "Size",
+        "SizeClass",
+        "ScaleSize",
+        "VariantSize",
+        "WildPetSize",
+        "DisplaySize",
+        "SizeType",
+        "Scale",
+        "ModelScale",
+        "PetScale",
+
+        "PetType",
+        "Type",
+        "Variant",
+        "PetVariant",
+        "Mutation",
+        "MutationType",
+        "WildPetType",
     }
 
     local connections =
@@ -8873,7 +11032,7 @@ function GAG2RestoreWildPetNetworkContributorState()
     end)
 end
 
-local function BuildSnapshot()
+function BuildSnapshot()
 
     local map =
         workspace:FindFirstChild("Map")
@@ -9029,7 +11188,7 @@ local function BuildSnapshot()
     )
 end
 
-local function PrintSnapshot(copyToClipboard)
+function PrintSnapshot(copyToClipboard)
 
     local snapshot =
         BuildSnapshot()
@@ -9066,7 +11225,7 @@ local function PrintSnapshot(copyToClipboard)
     end
 end
 
-local function LoadDevTool(url, label)
+function LoadDevTool(url, label)
 
     if IsHolyGAG2Developer() ~= true then
 
@@ -9113,7 +11272,52 @@ end
 -- Scanner + target matcher only. No buy/tame remotes yet.
 --==================================================
 
+SniperAllowMultiPetsToggle =
+    nil
+
+SniperAllowMultiSizesToggle =
+    nil
+
+SniperAllowMultiMutationsToggle =
+    nil
+
 SniperTargetDropdown =
+    nil
+
+SniperTargetDropdownLock =
+    false
+
+SniperSizeDropdown =
+    nil
+
+SniperSizeDropdownLock =
+    false
+
+SniperMutationDropdown =
+    nil
+
+SniperMutationDropdownLock =
+    false
+
+SniperRulePriorityDropdown =
+    nil
+
+SniperSaveTargetDropdown =
+    nil
+
+SniperWatchlistDropdown =
+    nil
+
+SniperWatchlistFilterList =
+    nil
+
+SniperWatchlistRowButtons =
+    {}
+
+SniperWatchlistVisibleEntries =
+    {}
+
+SniperWatchlistStatusLabel =
     nil
 
 SniperDropdownRefreshing =
@@ -9125,11 +11329,99 @@ SniperPriorityDropdowns =
 SniperPriorityRefreshing =
     false
 
+GAG2_SNIPER_WATCHLIST_SAVE_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/SniperWatchlist.json"
+
+GAG2_SNIPER_FILTER_SETS = {
+    [1] = {},
+    [2] = {},
+    [3] = {},
+}
+
+GAG2_SNIPER_WATCHLIST_STATE = {
+    ViewTarget = 1,
+    SearchText = "",
+    Page = 1,
+    PerPage = 8,
+
+    SelectedWatchlistId = nil,
+    SelectedKey = "",
+}
+
+function GAG2SniperSetControlText(control, text)
+
+    if not control then
+        return
+    end
+
+    text =
+        tostring(text or "")
+
+    if type(control.SetText) == "function" then
+
+        pcall(function()
+
+            control:SetText(
+                text
+            )
+        end)
+
+        return
+    end
+
+    if type(control.SetName) == "function" then
+
+        pcall(function()
+
+            control:SetName(
+                text
+            )
+        end)
+
+        return
+    end
+
+    pcall(function()
+
+        control.Text =
+            text
+    end)
+end
+
+function GAG2SniperClearTable(source)
+
+    if type(source) ~= "table" then
+        return
+    end
+
+    for key in pairs(source) do
+
+        source[key] =
+            nil
+    end
+end
+
 local SniperState = {
     Enabled = false,
     Running = false,
 
     Targets = {},
+
+    BuilderTargets = {},
+
+    BuilderSizeClass = "Any",
+    BuilderSizeClasses = {
+        "Any",
+    },
+
+    BuilderMutationFilter = "Any",
+    BuilderMutationFilters = {
+        "Any",
+    },
+
+    BuilderPriority = "Medium",
+
     PriorityPets = {
         "",
         "",
@@ -9138,7 +11430,14 @@ local SniperState = {
         "",
     },
     KnownPetNames = {},
-    SizeClass = "Any Size",
+
+    AllowMultiPets = false,
+    AllowMultiSizes = false,
+    AllowMultiMutations = false,
+
+    SizeClass = "Any",
+    MutationFilter = "Any",
+    SaveTarget = 1,
     SizeBaselines = {},
     AutoHop = false,
     InstantFirstHop = false,
@@ -9326,15 +11625,390 @@ function SniperSetTargets(value)
     MarkConfigDirty()
 end
 
+function SniperBuildDropdownSelectionMap(targets)
+
+    local map =
+        {}
+
+    for _, petName in ipairs(
+        SniperNormalizeList(targets)
+    ) do
+
+        if petName ~= "" then
+
+            map[petName] =
+                true
+        end
+    end
+
+    return map
+end
+
+function SniperTargetsFromDropdownValue(value)
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    local function add(item)
+
+        item =
+            CleanText(item)
+
+        if item == ""
+        or item == "---"
+        or item == "None"
+        or item == "Select"
+        or item == "Search" then
+            return
+        end
+
+        if seen[item] == true then
+            return
+        end
+
+        seen[item] =
+            true
+
+        table.insert(
+            output,
+            item
+        )
+    end
+
+    local function readChoice(choice)
+
+        if type(choice) ~= "table" then
+
+            add(choice)
+            return
+        end
+
+        local selected =
+            rawget(choice, "Selected") == true
+            or rawget(choice, "selected") == true
+            or rawget(choice, "Checked") == true
+            or rawget(choice, "checked") == true
+            or rawget(choice, "Enabled") == true
+            or rawget(choice, "enabled") == true
+
+        local text =
+            rawget(choice, "Text")
+            or rawget(choice, "Name")
+            or rawget(choice, "Value")
+            or rawget(choice, "Title")
+            or rawget(choice, 1)
+
+        if selected == true then
+
+            add(text)
+        end
+    end
+
+    if type(value) == "table" then
+
+        for key, selected in pairs(value) do
+
+            if selected == true then
+
+                add(key)
+
+            elseif type(key) == "number" then
+
+                if type(selected) == "string"
+                or type(selected) == "number" then
+
+                    add(selected)
+
+                elseif type(selected) == "table" then
+
+                    readChoice(
+                        selected
+                    )
+                end
+
+            elseif type(selected) == "table" then
+
+                readChoice(
+                    selected
+                )
+            end
+        end
+
+    else
+
+        add(value)
+    end
+
+    table.sort(
+        output
+    )
+
+    return output
+end
+
+function SniperReadDropdownRawValue(control)
+
+    if not control then
+        return nil
+    end
+
+    if type(control.GetValue) == "function" then
+
+        local ok, value =
+            pcall(function()
+
+                return control:GetValue()
+            end)
+
+        if ok == true
+        and value ~= nil then
+            return value
+        end
+    end
+
+    local value =
+        nil
+
+    pcall(function()
+
+        value =
+            control.Value
+    end)
+
+    if value ~= nil then
+        return value
+    end
+
+    pcall(function()
+
+        value =
+            control.Selected
+    end)
+
+    if value ~= nil then
+        return value
+    end
+
+    pcall(function()
+
+        value =
+            control.CurrentValue
+    end)
+
+    return value
+end
+
+function SniperReadTargetsFromDropdown()
+
+    return SniperTargetsFromDropdownValue(
+        SniperReadDropdownRawValue(
+            SniperTargetDropdown
+        )
+    )
+end
+
+function SniperPickSingleTarget(targets, previousTargets)
+
+    targets =
+        SniperNormalizeList(targets)
+
+    if #targets <= 1 then
+        return targets
+    end
+
+    local previousMap =
+        {}
+
+    for _, petName in ipairs(
+        SniperNormalizeList(previousTargets)
+    ) do
+
+        previousMap[petName] =
+            true
+    end
+
+    for _, petName in ipairs(targets) do
+
+        if previousMap[petName] ~= true then
+
+            return {
+                petName,
+            }
+        end
+    end
+
+    return {
+        targets[1],
+    }
+end
+
+function SniperLimitTargetsForCurrentMode(targets, previousTargets)
+
+    targets =
+        SniperNormalizeList(targets)
+
+    if SniperState.AllowMultiPets == true then
+        return targets
+    end
+
+    return SniperPickSingleTarget(
+        targets,
+        previousTargets
+    )
+end
+
+function SniperApplyTargetDropdownValue(targets)
+
+    if not SniperTargetDropdown
+    or type(SniperTargetDropdown.SetValue) ~= "function" then
+        return false
+    end
+
+    SniperTargetDropdownLock =
+        true
+
+    pcall(function()
+
+        SniperTargetDropdown:SetValue(
+            SniperBuildDropdownSelectionMap(
+                targets
+            )
+        )
+    end)
+
+    task.defer(function()
+
+        SniperTargetDropdownLock =
+            false
+    end)
+
+    return true
+end
+
+function SniperOnTargetDropdownChanged(value)
+
+    if SniperTargetDropdownLock == true then
+        return
+    end
+
+    local rawTargets =
+        SniperTargetsFromDropdownValue(
+            value
+        )
+
+    local limitedTargets =
+        SniperLimitTargetsForCurrentMode(
+            rawTargets,
+            SniperState.BuilderTargets
+        )
+
+    SniperState.BuilderTargets =
+        limitedTargets
+
+    if SniperState.AllowMultiPets ~= true then
+
+        SniperApplyTargetDropdownValue(
+            limitedTargets
+        )
+    end
+
+    SetSniperStatus(
+        #limitedTargets > 0
+        and "Builder updated. Click Save Filter to activate."
+        or "Builder cleared."
+    )
+
+    MarkConfigDirty()
+end
+
+function SniperSetAllowMultiPets(value)
+
+    SniperState.AllowMultiPets =
+        value == true
+
+    local currentTargets =
+        SniperReadTargetsFromDropdown()
+
+    if #currentTargets <= 0 then
+
+        currentTargets =
+            SniperNormalizeList(
+                SniperState.BuilderTargets
+            )
+    end
+
+    currentTargets =
+        SniperLimitTargetsForCurrentMode(
+            currentTargets,
+            SniperState.BuilderTargets
+        )
+
+    SniperState.BuilderTargets =
+        currentTargets
+
+    SniperApplyTargetDropdownValue(
+        currentTargets
+    )
+
+    SetSniperStatus(
+        SniperState.AllowMultiPets == true
+        and "Multi pet builder enabled."
+        or "Single pet builder enabled."
+    )
+
+    MarkConfigDirty()
+end
+
+function SniperGetBuilderTargetPets()
+
+    local targets =
+        SniperReadTargetsFromDropdown()
+
+    if #targets <= 0 then
+
+        targets =
+            SniperNormalizeList(
+                SniperState.BuilderTargets
+            )
+    end
+
+    targets =
+        SniperLimitTargetsForCurrentMode(
+            targets,
+            SniperState.BuilderTargets
+        )
+
+    SniperState.BuilderTargets =
+        targets
+
+    SniperApplyTargetDropdownValue(
+        targets
+    )
+
+    return targets
+end
+
 function SniperTargetsText()
 
-    if type(SniperState.Targets) ~= "table"
-    or #SniperState.Targets <= 0 then
-        return "None"
+    local activeTargets =
+        {}
+
+    if type(SniperGetActiveWatchlistTargetNames) == "function" then
+
+        activeTargets =
+            SniperGetActiveWatchlistTargetNames()
+    end
+
+    if type(activeTargets) ~= "table"
+    or #activeTargets <= 0 then
+        return "No saved filters."
     end
 
     return table.concat(
-        SniperState.Targets,
+        activeTargets,
         ", "
     )
 end
@@ -9565,15 +12239,115 @@ function SniperGetRegistryPetNames()
     return names
 end
 
+function SniperGetActiveWatchlistRules()
+
+    local rules =
+        {}
+
+    for watchlistId = 1, 3 do
+
+        local source =
+            GAG2_SNIPER_FILTER_SETS[watchlistId]
+
+        if type(source) == "table" then
+
+            for key, rule in pairs(source) do
+
+                local copied =
+                    GAG2CopySniperRule(rule)
+
+                if copied
+                and copied.PetName ~= "" then
+
+                    copied.WatchlistId =
+                        watchlistId
+
+                    copied.Key =
+                        tostring(key)
+
+                    table.insert(
+                        rules,
+                        copied
+                    )
+                end
+            end
+        end
+    end
+
+    table.sort(rules, function(a, b)
+
+        if tonumber(a.WatchlistId or 1) ~= tonumber(b.WatchlistId or 1) then
+
+            return tonumber(a.WatchlistId or 1)
+                < tonumber(b.WatchlistId or 1)
+        end
+
+        if tostring(a.PetName or "") ~= tostring(b.PetName or "") then
+
+            return tostring(a.PetName or "")
+                < tostring(b.PetName or "")
+        end
+
+        if tostring(a.SizeFilter or "") ~= tostring(b.SizeFilter or "") then
+
+            return tostring(a.SizeFilter or "")
+                < tostring(b.SizeFilter or "")
+        end
+
+        return tostring(a.MutationFilter or "")
+            < tostring(b.MutationFilter or "")
+    end)
+
+    return rules
+end
+
+function SniperGetActiveWatchlistTargetNames()
+
+    local names =
+        {}
+
+    local seen =
+        {}
+
+    for _, rule in ipairs(
+        SniperGetActiveWatchlistRules()
+    ) do
+
+        local petName =
+            CleanText(
+                rule.PetName
+            )
+
+        if petName ~= ""
+        and seen[petName] ~= true then
+
+            seen[petName] =
+                true
+
+            table.insert(
+                names,
+                petName
+            )
+        end
+    end
+
+    table.sort(
+        names
+    )
+
+    return names
+end
+
 function SniperBuildTargets()
 
     local targets =
         {}
 
     local ordered =
-        SniperNormalizeList(
-            SniperState.Targets
-        )
+        SniperGetActiveWatchlistTargetNames()
+
+    SniperState.Targets =
+        ordered
 
     for _, targetName in ipairs(ordered) do
 
@@ -9585,7 +12359,117 @@ function SniperBuildTargets()
         end
     end
 
-    return targets, ordered
+    return targets,
+        ordered
+end
+
+function SniperCanonicalPetKey(value)
+
+    local text =
+        CleanText(value)
+            :lower()
+            :gsub("_", " ")
+            :gsub("%-", " ")
+            :gsub("[^%w%s]", " ")
+            :gsub("%s+", " ")
+
+    text =
+        CleanText(text)
+
+    for _ = 1, 6 do
+
+        local before =
+            text
+
+        text =
+            text:gsub("^big%s+", "")
+                :gsub("^mega%s+", "")
+                :gsub("^huge%s+", "")
+                :gsub("^rainbow%s+", "")
+
+        text =
+            CleanText(text)
+
+        if text == before then
+            break
+        end
+    end
+
+    return text:gsub("%s+", "")
+end
+
+function SniperPetNamesMatch(entryName, targetName)
+
+    local entryKey =
+        SniperCanonicalPetKey(
+            entryName
+        )
+
+    local targetKey =
+        SniperCanonicalPetKey(
+            targetName
+        )
+
+    if entryKey == ""
+    or targetKey == "" then
+        return false
+    end
+
+    return entryKey == targetKey
+end
+
+function SniperEntryMatchesWatchlistRule(entry, rule)
+
+    if type(entry) ~= "table"
+    or type(rule) ~= "table" then
+        return false
+    end
+
+    if SniperPetNamesMatch(
+        entry.Name,
+        rule.PetName
+    ) ~= true then
+
+        return false
+    end
+
+    SniperApplyEntrySizeClass(
+        entry
+    )
+
+    if SniperEntryMatchesSizeClass(
+        entry,
+        rule.SizeFilter
+    ) ~= true then
+        return false
+    end
+
+    if SniperEntryMatchesMutationFilter(
+        entry,
+        rule.MutationFilter
+    ) ~= true then
+        return false
+    end
+
+    return true
+end
+
+function SniperFindMatchingRuleForEntry(entry)
+
+    for _, rule in ipairs(
+        SniperGetActiveWatchlistRules()
+    ) do
+
+        if SniperEntryMatchesWatchlistRule(
+            entry,
+            rule
+        ) == true then
+
+            return rule
+        end
+    end
+
+    return nil
 end
 
 function SniperGetSpawnsFolder()
@@ -10580,12 +13464,12 @@ local GAG2_SHOP_DROPDOWNS = {
     Crates = nil,
 }
 
-local function GAG2ShopGetStockRoot()
+function GAG2ShopGetStockRoot()
 
     return ReplicatedStorage:FindFirstChild("StockValues")
 end
 
-local function GAG2ShopGetShopFolder(category)
+function GAG2ShopGetShopFolder(category)
 
     local info =
         GAG2_SHOP_CATEGORIES[category]
@@ -10602,7 +13486,7 @@ local function GAG2ShopGetShopFolder(category)
         or nil
 end
 
-local function GAG2ShopGetItemsFolder(category)
+function GAG2ShopGetItemsFolder(category)
 
     local info =
         GAG2_SHOP_CATEGORIES[category]
@@ -10620,7 +13504,7 @@ local function GAG2ShopGetItemsFolder(category)
     )
 end
 
-local function GAG2ShopCleanItemName(itemName)
+function GAG2ShopCleanItemName(itemName)
 
     itemName =
         CleanText(itemName)
@@ -10643,7 +13527,7 @@ local function GAG2ShopCleanItemName(itemName)
     return itemName
 end
 
-local function GAG2ShopGetStockValueObject(category, itemName)
+function GAG2ShopGetStockValueObject(category, itemName)
 
     local items =
         GAG2ShopGetItemsFolder(category)
@@ -10662,7 +13546,7 @@ local function GAG2ShopGetStockValueObject(category, itemName)
     return items:FindFirstChild(itemName)
 end
 
-local function GAG2ShopReadStock(category, itemName)
+function GAG2ShopReadStock(category, itemName)
 
     local object =
         GAG2ShopGetStockValueObject(
@@ -10679,7 +13563,7 @@ local function GAG2ShopReadStock(category, itemName)
     return tonumber(object.Value)
 end
 
-local function GAG2ShopGetRestockKey(category)
+function GAG2ShopGetRestockKey(category)
 
     local shop =
         GAG2ShopGetShopFolder(category)
@@ -10709,7 +13593,7 @@ local function GAG2ShopGetRestockKey(category)
     return "0"
 end
 
-local function GAG2ShopGetNextRestockTime()
+function GAG2ShopGetNextRestockTime()
 
     local best =
         nil
@@ -10745,7 +13629,7 @@ local function GAG2ShopGetNextRestockTime()
     return best
 end
 
-local function GAG2ShopFormatRestockTime()
+function GAG2ShopFormatRestockTime()
 
     local nextRestock =
         GAG2ShopGetNextRestockTime()
@@ -10762,7 +13646,7 @@ local function GAG2ShopFormatRestockTime()
     )
 end
 
-local function GAG2ShopNormalizeSelection(value)
+function GAG2ShopNormalizeSelection(value)
 
     local selected =
         {}
@@ -10814,7 +13698,7 @@ local GAG2_SHOP_PRICE_CACHE = {
 local GAG2ShopReadPrice =
     nil
 
-local function GAG2ShopGetSortScore(category, itemName)
+function GAG2ShopGetSortScore(category, itemName)
 
     if type(GAG2ShopReadPrice) ~= "function" then
         return nil, false
@@ -10836,7 +13720,7 @@ local function GAG2ShopGetSortScore(category, itemName)
         false
 end
 
-local function GAG2ShopParsePriceNumber(value)
+function GAG2ShopParsePriceNumber(value)
 
     local text =
         CleanText(
@@ -10882,7 +13766,7 @@ local function GAG2ShopParsePriceNumber(value)
     return tonumber(numberText)
 end
 
-local function GAG2ShopBuildNameToCategoryMap()
+function GAG2ShopBuildNameToCategoryMap()
 
     local map =
         {}
@@ -10908,7 +13792,7 @@ local function GAG2ShopBuildNameToCategoryMap()
     return map
 end
 
-local function GAG2ShopCachePrice(category, itemName, price)
+function GAG2ShopCachePrice(category, itemName, price)
 
     category =
         CleanText(category)
@@ -10934,7 +13818,7 @@ local function GAG2ShopCachePrice(category, itemName, price)
         price
 end
 
-local function GAG2ShopSafePairs(value)
+function GAG2ShopSafePairs(value)
 
     if type(value) ~= "table" then
         return {}
@@ -10965,7 +13849,7 @@ local function GAG2ShopSafePairs(value)
     return {}
 end
 
-local function GAG2ShopLooksLikePriceKey(key)
+function GAG2ShopLooksLikePriceKey(key)
 
     local lowerKey =
         tostring(key or ""):lower()
@@ -10983,7 +13867,7 @@ local function GAG2ShopLooksLikePriceKey(key)
         or lowerKey:find("price", 1, true) ~= nil
 end
 
-local function GAG2ShopFindModulePrices(value, nameToCategory, depth, seen)
+function GAG2ShopFindModulePrices(value, nameToCategory, depth, seen)
 
     if type(value) ~= "table" then
         return
@@ -11071,7 +13955,7 @@ local function GAG2ShopFindModulePrices(value, nameToCategory, depth, seen)
     end
 end
 
-local function GAG2ShopBuildModulePriceCache()
+function GAG2ShopBuildModulePriceCache()
 
     if GAG2_SHOP_PRICE_CACHE.Built == true then
         return
@@ -11143,7 +14027,7 @@ local function GAG2ShopBuildModulePriceCache()
     end
 end
 
-local function GAG2ShopScanGuiPrices()
+function GAG2ShopScanGuiPrices()
 
     -- Disabled for performance.
     -- Scanning PlayerGui descendants for prices causes client stutter on low-end/cloud devices.
@@ -11247,7 +14131,7 @@ GAG2ShopReadPrice = function(category, itemName)
         or nil
 end
 
-local function GAG2ShopFormatPrice(category, itemName)
+function GAG2ShopFormatPrice(category, itemName)
 
     local price =
         GAG2ShopReadPrice(
@@ -11264,7 +14148,7 @@ local function GAG2ShopFormatPrice(category, itemName)
     )
 end
 
-local function GAG2ShopGetSortedItemRows(category)
+function GAG2ShopGetSortedItemRows(category)
 
     local rows =
         {}
@@ -11325,7 +14209,7 @@ local function GAG2ShopGetSortedItemRows(category)
     return rows
 end
 
-local function GAG2ShopMakeDropdownDisplayName(category, itemName)
+function GAG2ShopMakeDropdownDisplayName(category, itemName)
 
     itemName =
         GAG2ShopCleanItemName(itemName)
@@ -11342,7 +14226,7 @@ local function GAG2ShopMakeDropdownDisplayName(category, itemName)
         )
 end
 
-local function GAG2ShopGetItemNames(category)
+function GAG2ShopGetItemNames(category)
 
     local values =
         {}
@@ -11367,7 +14251,7 @@ local function GAG2ShopGetItemNames(category)
     return values
 end
 
-local function GAG2ShopBuildCurrentStockText()
+function GAG2ShopBuildCurrentStockText()
 
     local lines = {
         '<font color="rgb(196,181,253)"><b>Current Stock</b></font>',
@@ -11499,7 +14383,7 @@ local function GAG2ShopBuildCurrentStockText()
     )
 end
 
-local function GAG2ShopRefreshStockLabel()
+function GAG2ShopRefreshStockLabel()
 
     GAG2_SHOP_STATE.LastStockText =
         GAG2ShopBuildCurrentStockText()
@@ -11512,7 +14396,7 @@ local function GAG2ShopRefreshStockLabel()
     end
 end
 
-local function GAG2ShopRefreshDropdown(category)
+function GAG2ShopRefreshDropdown(category)
 
     local dropdown =
         GAG2_SHOP_DROPDOWNS[category]
@@ -11541,7 +14425,7 @@ local function GAG2ShopRefreshDropdown(category)
     end)
 end
 
-local function GAG2ShopRefreshAllDropdowns()
+function GAG2ShopRefreshAllDropdowns()
 
     for category in pairs(GAG2_SHOP_CATEGORIES) do
 
@@ -11551,7 +14435,7 @@ local function GAG2ShopRefreshAllDropdowns()
     end
 end
 
-local function GAG2ShopResolvePacket(category)
+function GAG2ShopResolvePacket(category)
 
     local cached =
         GAG2_SHOP_STATE.PacketCache[category]
@@ -11621,7 +14505,7 @@ local function GAG2ShopResolvePacket(category)
     return nil
 end
 
-local function GAG2ShopFirePurchase(category, itemName)
+function GAG2ShopFirePurchase(category, itemName)
 
     itemName =
         GAG2ShopCleanItemName(itemName)
@@ -11662,7 +14546,7 @@ local function GAG2ShopFirePurchase(category, itemName)
     return ok == true
 end
 
-local function GAG2ShopGetBurstBucket(category)
+function GAG2ShopGetBurstBucket(category)
 
     GAG2_SHOP_STATE.BurstAttempts =
         type(GAG2_SHOP_STATE.BurstAttempts) == "table"
@@ -11677,7 +14561,7 @@ local function GAG2ShopGetBurstBucket(category)
     return GAG2_SHOP_STATE.BurstAttempts[category]
 end
 
-local function GAG2ShopGetBurstKey(category, itemName, stock)
+function GAG2ShopGetBurstKey(category, itemName, stock)
 
     return tostring(category)
         .. ":"
@@ -11688,7 +14572,7 @@ local function GAG2ShopGetBurstKey(category, itemName, stock)
         .. tostring(math.floor(tonumber(stock) or 0))
 end
 
-local function GAG2ShopBurstAlreadyAttempted(category, itemName, stock)
+function GAG2ShopBurstAlreadyAttempted(category, itemName, stock)
 
     local bucket =
         GAG2ShopGetBurstBucket(
@@ -11705,7 +14589,7 @@ local function GAG2ShopBurstAlreadyAttempted(category, itemName, stock)
     return bucket[itemName] == burstKey
 end
 
-local function GAG2ShopMarkBurstAttempt(category, itemName, stock)
+function GAG2ShopMarkBurstAttempt(category, itemName, stock)
 
     local bucket =
         GAG2ShopGetBurstBucket(
@@ -11720,7 +14604,7 @@ local function GAG2ShopMarkBurstAttempt(category, itemName, stock)
         )
 end
 
-local function GAG2ShopClearBurstAttempt(category, itemName)
+function GAG2ShopClearBurstAttempt(category, itemName)
 
     local bucket =
         GAG2ShopGetBurstBucket(
@@ -11739,7 +14623,7 @@ local function GAG2ShopClearBurstAttempt(category, itemName)
     end
 end
 
-local function GAG2ShopCanBuy(category, itemName)
+function GAG2ShopCanBuy(category, itemName)
 
     if GAG2_SHOP_STATE.Enabled[category] ~= true then
         return false
@@ -11773,7 +14657,7 @@ local function GAG2ShopCanBuy(category, itemName)
     return true
 end
 
-local function GAG2ShopEnqueue(category, itemName)
+function GAG2ShopEnqueue(category, itemName)
 
     itemName =
         GAG2ShopCleanItemName(itemName)
@@ -11917,7 +14801,7 @@ function GAG2ShopStartWorker()
     end)
 end
 
-local function GAG2ShopEnqueueSelectedInStock(category)
+function GAG2ShopEnqueueSelectedInStock(category)
 
     local selected =
         GAG2_SHOP_STATE.Selected[category]
@@ -11938,7 +14822,7 @@ local function GAG2ShopEnqueueSelectedInStock(category)
     end
 end
 
-local function GAG2ShopEnqueueAllSelectedInStock()
+function GAG2ShopEnqueueAllSelectedInStock()
 
     for category in pairs(GAG2_SHOP_CATEGORIES) do
 
@@ -11948,7 +14832,7 @@ local function GAG2ShopEnqueueAllSelectedInStock()
     end
 end
 
-local function GAG2ShopClearRestockBuys(category)
+function GAG2ShopClearRestockBuys(category)
 
     if category then
 
@@ -11965,7 +14849,7 @@ local function GAG2ShopClearRestockBuys(category)
     end
 end
 
-local function GAG2ShopTrackItem(category, itemObject)
+function GAG2ShopTrackItem(category, itemObject)
 
     if typeof(itemObject) ~= "Instance"
     or itemObject:IsA("ValueBase") ~= true then
@@ -12008,7 +14892,7 @@ local function GAG2ShopTrackItem(category, itemObject)
         end)
 end
 
-local function GAG2ShopTrackCategory(category)
+function GAG2ShopTrackCategory(category)
 
     local shop =
         GAG2ShopGetShopFolder(category)
@@ -14926,7 +17810,7 @@ function GAG2RestoreShopAutosaveState()
     end)
 end
 
-local function SniperFindWildBuyPacket()
+function SniperFindWildBuyPacket()
 
     if SniperState.BuyPacket then
 
@@ -15000,7 +17884,7 @@ local function SniperFindWildBuyPacket()
     return SniperState.BuyPacket
 end
 
-local function SniperGetCharacterRoot()
+function SniperGetCharacterRoot()
 
     local character =
         LOCAL_PLAYER
@@ -15074,7 +17958,7 @@ function GAG2GuiObjectVisible(instance)
     return true
 end
 
-local function GAG2FindVisibleTextObjectByKeywords(keywords, maxScan)
+function GAG2FindVisibleTextObjectByKeywords(keywords, maxScan)
 
     local playerGui =
         LOCAL_PLAYER
@@ -15139,7 +18023,7 @@ local function GAG2FindVisibleTextObjectByKeywords(keywords, maxScan)
     return nil, "", ""
 end
 
-local function GAG2IsFullyLoadedTextVisible()
+function GAG2IsFullyLoadedTextVisible()
 
     local object, text =
         GAG2FindVisibleTextObjectByKeywords(
@@ -15342,22 +18226,96 @@ end
 
 function GAG2ReadLoadingAttributes()
 
-    -- Loading-screen logic removed.
-    -- Never block sniper/shop/farm systems based on loading attributes.
+    local loadingActive =
+        false
 
-    return false,
-        true
+    local loadingDone =
+        false
+
+    pcall(function()
+
+        loadingActive =
+            LOCAL_PLAYER:GetAttribute("LoadingScreenActive") == true
+
+        loadingDone =
+            LOCAL_PLAYER:GetAttribute("LoadingScreenDone") == true
+    end)
+
+    local loadingGui =
+        GAG2GetLoadingGui()
+
+    local variantFrame =
+        loadingGui
+        and loadingGui:FindFirstChild("Variant1Frame")
+
+    local variantVisible =
+        false
+
+    if variantFrame
+    and variantFrame:IsA("GuiObject") then
+
+        pcall(function()
+
+            variantVisible =
+                variantFrame.Visible == true
+        end)
+    end
+
+    local camera =
+        workspace.CurrentCamera
+
+    local cameraCustom =
+        camera
+        and camera.CameraType == Enum.CameraType.Custom
+
+    local cameraScriptable =
+        camera
+        and camera.CameraType == Enum.CameraType.Scriptable
+
+    local blocking =
+        loadingActive == true
+        or cameraScriptable == true
+        or (
+            variantVisible == true
+            and loadingDone ~= true
+        )
+
+    local ready =
+        loadingActive ~= true
+        and loadingDone == true
+        and cameraCustom == true
+
+    return blocking,
+        ready,
+        {
+            Active =
+                loadingActive,
+
+            Done =
+                loadingDone,
+
+            VariantVisible =
+                variantVisible,
+
+            Camera =
+                cameraScriptable == true
+                and "Scriptable"
+                or cameraCustom == true
+                and "Custom"
+                or "Other",
+        }
 end
 
 function GAG2IsLoadingPlayScreenVisible()
 
-    -- Loading-screen logic removed.
-    -- Do not scan PlayerGui and do not block sniper buying.
+    local blocking, ready =
+        GAG2ReadLoadingAttributes()
 
-    return false
+    return blocking == true
+        and ready ~= true
 end
 
-local function GAG2GetClickableGuiAncestor(object)
+function GAG2GetClickableGuiAncestor(object)
 
     local current =
         object
@@ -15378,7 +18336,7 @@ local function GAG2GetClickableGuiAncestor(object)
     return nil
 end
 
-local function GAG2ActivateLoadingGuiObject(object)
+function GAG2ActivateLoadingGuiObject(object)
 
     local button =
         GAG2GetClickableGuiAncestor(
@@ -15757,30 +18715,13 @@ function GAG2AutoPlayLoadingStep()
         or {}
 
     if GAG2_AUTO_PLAY_STATE.Finished == true then
-        return false,
+
+        return true,
             "already finished"
-    end
-
-    local now =
-        os.clock()
-
-    local lastClick =
-        tonumber(
-            GAG2_AUTO_PLAY_STATE.LastClick
-        )
-        or 0
-
-    if now - lastClick < 0.65 then
-
-        return false,
-            "click cooldown"
     end
 
     GAG2_AUTO_PLAY_STATE.Started =
         true
-
-    GAG2_AUTO_PLAY_STATE.LastClick =
-        now
 
     GAG2_AUTO_PLAY_STATE.Attempts =
         math.floor(
@@ -15789,61 +18730,38 @@ function GAG2AutoPlayLoadingStep()
         )
         + 1
 
-    if GAG2_AUTO_PLAY_STATE.Attempts > 30 then
+    local blocking, ready, info =
+        GAG2ReadLoadingAttributes()
 
-        return false,
-            "max autoplay attempts"
-    end
+    if ready == true then
 
-    local ok, info =
-        GAG2SendLoadingScreenClick()
-
-    if ok == true then
+        GAG2_AUTO_PLAY_STATE.Finished =
+            true
 
         return true,
-            tostring(info)
+            "loading done"
     end
 
     return false,
-        tostring(info)
+        "waiting genuine loading"
+        .. " active="
+        .. tostring(info and info.Active)
+        .. " done="
+        .. tostring(info and info.Done)
+        .. " camera="
+        .. tostring(info and info.Camera)
+        .. " variant="
+        .. tostring(info and info.VariantVisible)
+        .. " blocking="
+        .. tostring(blocking)
 end
 
 function GAG2ClientReadyForBuy()
 
-    local loadingActive =
-        false
+    local blocking, ready, info =
+        GAG2ReadLoadingAttributes()
 
-    local loadingDone =
-        false
-
-    pcall(function()
-
-        loadingActive =
-            LOCAL_PLAYER:GetAttribute("LoadingScreenActive") == true
-
-        loadingDone =
-            LOCAL_PLAYER:GetAttribute("LoadingScreenDone") == true
-    end)
-
-    local camera =
-        workspace.CurrentCamera
-
-    local cameraCustom =
-        camera
-        and camera.CameraType == Enum.CameraType.Custom
-
-    local cameraScriptable =
-        camera
-        and camera.CameraType == Enum.CameraType.Scriptable
-
-    local loadingCleared =
-        loadingActive ~= true
-        and (
-            loadingDone == true
-            or cameraCustom == true
-        )
-
-    if loadingCleared ~= true then
+    if ready ~= true then
 
         if type(SniperState) == "table" then
 
@@ -15854,17 +18772,21 @@ function GAG2ClientReadyForBuy()
         return false,
             "Waiting for loading..."
             .. " active="
-            .. tostring(loadingActive)
+            .. tostring(info and info.Active)
             .. " done="
-            .. tostring(loadingDone)
+            .. tostring(info and info.Done)
             .. " camera="
-            .. (
-                cameraScriptable == true
-                and "Scriptable"
-                or cameraCustom == true
-                and "Custom"
-                or "Other"
-            )
+            .. tostring(info and info.Camera)
+            .. " variant="
+            .. tostring(info and info.VariantVisible)
+            .. " blocking="
+            .. tostring(blocking)
+    end
+
+    if type(GAG2_AUTO_PLAY_STATE) == "table" then
+
+        GAG2_AUTO_PLAY_STATE.Finished =
+            true
     end
 
     if type(SniperState) == "table"
@@ -15877,22 +18799,28 @@ function GAG2ClientReadyForBuy()
             "Loading done. Settling..."
     end
 
-    local grace =
-        tonumber(
-            SniperState
-            and SniperState.PlayScreenClearGrace
-            or 0.35
-        )
-        or 0.35
+    local settleSeconds =
+        0.35
 
-    if os.clock() - tonumber(SniperState.PlayScreenClearAt or 0) < grace then
+    if type(SniperState) == "table" then
 
-        return false,
-            "Loading done. Settling..."
+        settleSeconds =
+            math.clamp(
+                tonumber(SniperState.PlayScreenClearGrace)
+                or 0.35,
+                0,
+                2
+            )
+
+        if os.clock() - tonumber(SniperState.PlayScreenClearAt or 0) < settleSeconds then
+
+            return false,
+                "Loading done. Settling..."
+        end
     end
 
     return true,
-        "Ready."
+        "Client ready."
 end
 
 function GAG2ReadyForFarmTeleport()
@@ -15922,7 +18850,7 @@ function GAG2StartLoadingGuiCleaner()
     return false
 end
 
-local function SniperReadyToHop()
+function SniperReadyToHop()
 
     if not SniperGetSpawnsFolder()
     or not SniperGetRefFolder() then
@@ -15935,7 +18863,7 @@ local function SniperReadyToHop()
         "Ready."
 end
 
-local function SniperReadyToBuy(ignoreReturnLock)
+function SniperReadyToBuy(ignoreReturnLock)
 
     if ignoreReturnLock ~= true then
 
@@ -15991,7 +18919,7 @@ local function SniperReadyToBuy(ignoreReturnLock)
         "Ready."
 end
 
-local function SniperGetEntryTamePosition(entry)
+function SniperGetEntryTamePosition(entry)
 
     if type(entry) ~= "table" then
         return nil
@@ -16225,7 +19153,7 @@ function SniperAimAtPetPosition(targetPosition)
 end
 
 
-local function SniperStopCharacterMotion(root)
+function SniperStopCharacterMotion(root)
 
     if typeof(root) ~= "Instance" then
         return
@@ -19922,35 +22850,35 @@ GAG2_ACF_SPEED_VALUES = {
 GAG2_ACF_SPEED_PRESETS = {
     Normal = {
         Name = "Normal",
-        MinBurst = 1,
-        MaxBurst = 40,
-        RecentCooldown = 1.25,
-        PromptDelayOverride = nil,
-        YieldEvery = 6,
-        LoopWaitAfterFire = 0.03,
-        LoopWaitIdle = 0.35,
+        MinBurst = 16,
+        MaxBurst = 80,
+        RecentCooldown = 0.18,
+        PromptDelayOverride = 0,
+        YieldEvery = 24,
+        LoopWaitAfterFire = 0.005,
+        LoopWaitIdle = 0.10,
     },
 
     Fast = {
         Name = "Fast",
-        MinBurst = 24,
-        MaxBurst = 90,
-        RecentCooldown = 0.25,
+        MinBurst = 40,
+        MaxBurst = 120,
+        RecentCooldown = 0.08,
         PromptDelayOverride = 0,
-        YieldEvery = 24,
-        LoopWaitAfterFire = 0.005,
-        LoopWaitIdle = 0.12,
+        YieldEvery = 40,
+        LoopWaitAfterFire = 0,
+        LoopWaitIdle = 0.05,
     },
 
     Ultra = {
         Name = "Ultra",
-        MinBurst = 60,
+        MinBurst = 80,
         MaxBurst = 160,
-        RecentCooldown = 0.04,
+        RecentCooldown = 0.02,
         PromptDelayOverride = 0,
-        YieldEvery = 60,
+        YieldEvery = 80,
         LoopWaitAfterFire = 0,
-        LoopWaitIdle = 0.025,
+        LoopWaitIdle = 0.02,
     },
 }
 
@@ -21272,10 +24200,9 @@ function GAG2ACFCalculateFruitWeightKg(fruit, fruitName)
     if not sizeMulti
     or sizeMulti <= 0 then
 
-        -- Bamboo/Mushroom-style harvests can expose HarvestPrompt directly
-        -- under the plant model. Those plant-level entries often have SeedName
-        -- and PlantGrowthReady, but no fruit SizeMulti.
-        -- Use 1 so the entry still passes collection filters and can be harvested.
+        -- Bamboo / Mushroom can behave like plant-level harvests.
+        -- They can have SeedName + HarvestPrompt, but no SizeMulti.
+        -- Do not reject them just because exact weight is missing.
         sizeMulti =
             1
     end
@@ -21468,7 +24395,8 @@ function GAG2ACFReadFruitName(fruit, plant)
     end
 
     if name == ""
-    and typeof(fruit) == "Instance" then
+    and typeof(fruit) == "Instance"
+    and fruit ~= plant then
 
         name =
             GAG2ACFClean(
@@ -21590,16 +24518,34 @@ function GAG2ACFGetSellWorth(name, weightKg, mutation, fruit)
     )
 end
 
-function GAG2ACFBuildEntry(plant, fruit)
+function GAG2ACFBuildEntry(plant, fruit, promptOverride)
 
     local prompt =
-        GAG2ACFGetHarvestPrompt(
-            fruit
-        )
+        nil
+
+    if typeof(promptOverride) == "Instance"
+    and promptOverride:IsA("ProximityPrompt")
+    and promptOverride.Enabled == true then
+
+        prompt =
+            promptOverride
+
+    else
+
+        prompt =
+            GAG2ACFGetHarvestPrompt(
+                fruit
+            )
+    end
 
     if not prompt then
         return nil
     end
+
+    local isPlantHarvest =
+        typeof(plant) == "Instance"
+        and typeof(fruit) == "Instance"
+        and plant == fruit
 
     local name =
         GAG2ACFReadFruitName(
@@ -21620,11 +24566,20 @@ function GAG2ACFBuildEntry(plant, fruit)
     local weightKg, weightSource =
         GAG2ACFCalculateFruitWeightKg(
             fruit,
-            GAG2ACFReadFruitName(
-                fruit,
-                plant
-            )
+            name
         )
+
+    if not weightKg
+    and isPlantHarvest == true then
+
+        -- One-time plants like Bamboo/Mushroom can be plant-level harvests.
+        -- If exact base-weight lookup fails, still queue/collect them.
+        weightKg =
+            1
+
+        weightSource =
+            "PlantHarvest fallback"
+    end
 
     if not weightKg then
         return nil
@@ -21634,9 +24589,6 @@ function GAG2ACFBuildEntry(plant, fruit)
         tonumber(
             fruit:GetAttribute("SizeMulti")
         )
-
-    local modules =
-        GAG2ACFEnsureModules()
 
     local seedRow =
         GAG2_AUTO_COLLECT_FRUIT_STATE.SeedMap[name]
@@ -21671,7 +24623,7 @@ function GAG2ACFBuildEntry(plant, fruit)
     local key =
         fruitId ~= ""
         and fruitId
-        or PathOf(fruit)
+        or PathOf(prompt)
 
     GAG2ACFRememberChoice(
         "FruitNames",
@@ -21701,6 +24653,14 @@ function GAG2ACFBuildEntry(plant, fruit)
         Key = key,
         FruitId = fruitId,
 
+        Kind =
+            isPlantHarvest == true
+            and "PlantHarvest"
+            or "FruitHarvest",
+
+        IsPlantHarvest =
+            isPlantHarvest == true,
+
         Name = name,
         Rarity = rarity,
         RarityScore = rarityScore,
@@ -21715,11 +24675,16 @@ function GAG2ACFBuildEntry(plant, fruit)
 
         WeightKg = weightKg,
         WeightSource = weightSource,
+
         RawSizeMulti = rawSizeMulti,
+        SizeMulti =
+            rawSizeMulti
+            or 1,
 
         SellWorth = sellWorth,
     }
 end
+
 
 function GAG2ACFPassesCollectRules(entry)
 
@@ -22041,10 +25006,11 @@ function GAG2ACFScanQueue()
         end
 
         local entry =
-            GAG2ACFBuildEntry(
-                plant,
-                fruit
-            )
+    GAG2ACFBuildEntry(
+        plant,
+        fruit,
+        prompt
+    )
 
         if not entry then
             return
@@ -22315,25 +25281,358 @@ function GAG2ACFFirePrompt(prompt)
         return false, "bad prompt"
     end
 
+    if prompt.Parent == nil then
+        return false, "prompt removed"
+    end
+
     if prompt.Enabled ~= true then
         return false, "prompt disabled"
     end
 
-    if type(fireproximityprompt) ~= "function" then
-        return false, "fireproximityprompt unsupported"
+    if type(fireproximityprompt) == "function" then
+
+        local ok, err =
+            pcall(
+                fireproximityprompt,
+                prompt
+            )
+
+        if ok == true then
+            return true, "fireproximityprompt"
+        end
+
+        return false,
+            tostring(err)
     end
 
-    local ok, err =
-        pcall(
-            fireproximityprompt,
-            prompt
+    if GAG2_PROXIMITY_PROMPT_SERVICE then
+
+        local holdDuration =
+            0
+
+        pcall(function()
+
+            holdDuration =
+                tonumber(prompt.HoldDuration)
+                or 0
+        end)
+
+        local ok, err =
+            pcall(function()
+
+                GAG2_PROXIMITY_PROMPT_SERVICE:InputHoldBegin(
+                    prompt
+                )
+
+                task.wait(
+                    math.max(
+                        holdDuration + 0.15,
+                        0.25
+                    )
+                )
+
+                GAG2_PROXIMITY_PROMPT_SERVICE:InputHoldEnd(
+                    prompt
+                )
+            end)
+
+        if ok == true then
+            return true, "InputHoldBegin/End"
+        end
+
+        return false,
+            tostring(err)
+    end
+
+    return false,
+        "no prompt fire method"
+end
+
+function GAG2ACFIsPlantHarvestEntry(entry)
+
+    return type(entry) == "table"
+        and (
+            entry.IsPlantHarvest == true
+            or entry.Kind == "PlantHarvest"
+            or (
+                typeof(entry.Plant) == "Instance"
+                and typeof(entry.Fruit) == "Instance"
+                and entry.Plant == entry.Fruit
+            )
+        )
+end
+
+function GAG2ACFGetCharacterRootHumanoid()
+
+    local character =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character
+
+    local root =
+        character
+        and character:FindFirstChild("HumanoidRootPart")
+
+    local humanoid =
+        character
+        and character:FindFirstChildOfClass("Humanoid")
+
+    return character,
+        root,
+        humanoid
+end
+
+function GAG2ACFGetInstancePosition(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    if instance:IsA("BasePart") then
+        return instance.Position
+    end
+
+    if instance:IsA("Model") then
+
+        local ok, cf =
+            pcall(function()
+
+                return instance:GetBoundingBox()
+            end)
+
+        if ok == true
+        and typeof(cf) == "CFrame" then
+
+            return cf.Position
+        end
+    end
+
+    for _, descendant in ipairs(instance:GetDescendants()) do
+
+        if descendant:IsA("BasePart") then
+            return descendant.Position
+        end
+    end
+
+    return nil
+end
+
+function GAG2ACFGetPromptPosition(prompt)
+
+    if typeof(prompt) ~= "Instance" then
+        return nil
+    end
+
+    if prompt.Parent
+    and prompt.Parent:IsA("BasePart") then
+
+        return prompt.Parent.Position
+    end
+
+    if prompt.Parent then
+
+        local position =
+            GAG2ACFGetInstancePosition(
+                prompt.Parent
+            )
+
+        if typeof(position) == "Vector3" then
+            return position
+        end
+    end
+
+    return nil
+end
+
+function GAG2ACFMoveToPlantHarvest(entry)
+
+    if type(entry) ~= "table" then
+        return false, "bad entry"
+    end
+
+    local prompt =
+        entry.Prompt
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true then
+
+        return false, "bad prompt"
+    end
+
+    if prompt.Parent == nil then
+        return true, "already removed"
+    end
+
+    local maxDistance =
+        10
+
+    pcall(function()
+
+        maxDistance =
+            tonumber(prompt.MaxActivationDistance)
+            or 10
+    end)
+
+    local stopDistance =
+        math.clamp(
+            maxDistance - 1.25,
+            5,
+            9
         )
 
-    if ok ~= true then
-        return false, tostring(err)
+    local startedAt =
+        os.clock()
+
+    local maxWalkSeconds =
+        10
+
+    while os.clock() - startedAt < maxWalkSeconds do
+
+        if prompt.Parent == nil then
+            return true, "prompt removed while walking"
+        end
+
+        local position =
+            GAG2ACFGetPromptPosition(
+                prompt
+            )
+
+        if typeof(position) ~= "Vector3" then
+
+            position =
+                GAG2ACFGetInstancePosition(
+                    entry.Plant
+                )
+        end
+
+        if typeof(position) ~= "Vector3" then
+            return false, "no prompt position"
+        end
+
+        local _,
+            root,
+            humanoid =
+            GAG2ACFGetCharacterRootHumanoid()
+
+        if not root
+        or not humanoid then
+            return false, "character missing"
+        end
+
+        local distance =
+            (root.Position - position).Magnitude
+
+        if distance <= stopDistance then
+            return true, "close"
+        end
+
+        humanoid:MoveTo(
+            position
+        )
+
+        task.wait(
+            0.18
+        )
     end
 
-    return true, "fired"
+    return false,
+        "walk timeout"
+end
+
+function GAG2ACFEntryLooksCollected(entry)
+
+    if type(entry) ~= "table" then
+        return true
+    end
+
+    local prompt =
+        entry.Prompt
+
+    if typeof(prompt) ~= "Instance"
+    or prompt.Parent == nil then
+        return true
+    end
+
+    if prompt.Enabled ~= true then
+        return true
+    end
+
+    if typeof(entry.Fruit) == "Instance"
+    and entry.Fruit.Parent == nil then
+        return true
+    end
+
+    if GAG2ACFIsPlantHarvestEntry(entry) == true
+    and typeof(entry.Plant) == "Instance"
+    and entry.Plant.Parent == nil then
+
+        return true
+    end
+
+    return false
+end
+
+function GAG2ACFWaitEntryConfirm(entry, timeout)
+
+    timeout =
+        math.clamp(
+            tonumber(timeout)
+            or 1.75,
+            0.25,
+            5
+        )
+
+    local startedAt =
+        os.clock()
+
+    while os.clock() - startedAt < timeout do
+
+        if GAG2ACFEntryLooksCollected(entry) == true then
+            return true, "removed"
+        end
+
+        task.wait(
+            0.08
+        )
+    end
+
+    return false,
+        "not confirmed"
+end
+
+function GAG2ACFCollectPlantHarvestEntry(entry)
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    if type(entry) ~= "table" then
+        return false, "bad entry"
+    end
+
+    if state.Enabled ~= true then
+        return false, "stopped"
+    end
+
+    if GAG2ACFEntryLooksCollected(entry) == true then
+        return true, "already collected"
+    end
+
+    local fired, fireInfo =
+        GAG2ACFFirePrompt(
+            entry.Prompt
+        )
+
+    state.Recent[entry.Key] =
+        os.clock()
+
+    if fired ~= true then
+
+        return false,
+            "fire failed: "
+            .. tostring(fireInfo)
+    end
+
+    return true,
+        "plant prompt fired"
 end
 
 function GAG2ACFCollectBatch()
@@ -22405,6 +25704,9 @@ function GAG2ACFCollectBatch()
     local fired =
         0
 
+    local lastNote =
+        "No prompt fired."
+
     for _, entry in ipairs(queue) do
 
         if fired >= burstAmount then
@@ -22421,7 +25723,54 @@ function GAG2ACFCollectBatch()
             )
             or 0
 
-        if os.clock() - recentAt >= recentCooldown then
+        if os.clock() - recentAt < recentCooldown then
+            continue
+        end
+
+        if GAG2ACFIsPlantHarvestEntry(entry) == true then
+
+            GAG2ACFSetStatus(
+                GAG2ACFBuildStatusText(
+                    queue,
+                    readyCount,
+                    excludedCount,
+                    "Collecting one-time plant: "
+                    .. tostring(entry.Name)
+                )
+            )
+
+            local collected, collectInfo =
+                GAG2ACFCollectPlantHarvestEntry(
+                    entry
+                )
+
+            state.Recent[entry.Key] =
+                os.clock()
+
+            if collected == true then
+
+                fired = fired + 1
+
+                state.LastFiredCount =
+                    fired
+
+                lastNote =
+                    tostring(collectInfo)
+
+                if type(GAG2AutoSellHandleCollectedFruit) == "function" then
+
+                    GAG2AutoSellHandleCollectedFruit(
+                        entry
+                    )
+                end
+
+            else
+
+                lastNote =
+                    tostring(collectInfo)
+            end
+
+        else
 
             local ok =
                 GAG2ACFFirePrompt(
@@ -22438,6 +25787,11 @@ function GAG2ACFCollectBatch()
                 state.LastFiredCount =
                     fired
 
+                lastNote =
+                    "Collected "
+                    .. tostring(fired)
+                    .. " this batch."
+
                 if type(GAG2AutoSellHandleCollectedFruit) == "function" then
 
                     GAG2AutoSellHandleCollectedFruit(
@@ -22445,18 +25799,19 @@ function GAG2ACFCollectBatch()
                     )
                 end
             end
+        end
 
-            if promptDelay > 0 then
+        if promptDelay > 0 then
 
-                task.wait(
-                    promptDelay
-                )
+            task.wait(
+                promptDelay
+            )
 
-            elseif yieldEvery > 0
-            and fired % yieldEvery == 0 then
+        elseif yieldEvery > 0
+        and fired > 0
+        and fired % yieldEvery == 0 then
 
-                task.wait()
-            end
+            task.wait()
         end
     end
 
@@ -22469,14 +25824,16 @@ function GAG2ACFCollectBatch()
             and (
                 "Collected "
                 .. tostring(fired)
-                .. " this batch."
+                .. " this batch. "
+                .. tostring(lastNote)
             )
-            or "No prompt fired."
+            or tostring(lastNote)
         )
     )
 
     return fired
 end
+
 
 function GAG2ACFStartLoop()
 
@@ -23355,6 +26712,10 @@ GAG2_AUTO_SELL_FRUIT_STATE =
         Speed = "Fast",
         RepeatCount = 1,
 
+        UseWeightFilter = false,
+        MinWeightKg = 0,
+        MaxWeightKg = 0,
+
         Queue = {},
         QueueMap = {},
         RecentFruitIds = {},
@@ -23367,10 +26728,14 @@ GAG2_AUTO_SELL_FRUIT_STATE =
         Packets = {},
         Connections = {},
 
+        EligibleCount = 0,
+        SkippedCount = 0,
+
         LastStatus = "Idle.",
         LastMethod = "None",
         LastFruitId = "",
         LastFruitName = "",
+        LastFruitWeightKg = 0,
     }
 
 GAG2_AUTO_SELL_METHOD_VALUES = {
@@ -23415,6 +26780,15 @@ function GAG2AutoSellSetStatus(text)
     state.LastStatus =
         tostring(text or "Idle.")
 
+    local filterText =
+        "Filter: OFF"
+
+    if type(GAG2AutoSellBuildWeightFilterText) == "function" then
+
+        filterText =
+            GAG2AutoSellBuildWeightFilterText()
+    end
+
     if Options.HolyGAG2SellStatus then
 
         Options.HolyGAG2SellStatus:SetText(
@@ -23427,6 +26801,12 @@ function GAG2AutoSellSetStatus(text)
             .. tostring(state.Speed or "Fast")
             .. ' | Repeat: '
             .. tostring(state.RepeatCount or 1)
+            .. '\n'
+            .. tostring(filterText)
+            .. '\nEligible: '
+            .. tostring(state.EligibleCount or 0)
+            .. ' | Skipped: '
+            .. tostring(state.SkippedCount or 0)
         )
     end
 end
@@ -23499,6 +26879,315 @@ function GAG2AutoSellSetRepeatCount(value)
     GAG2AutoSellSetStatus(
         "Repeat Count set: "
         .. tostring(state.RepeatCount)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2AutoSellClampWeight(value, fallback)
+
+    local number =
+        tonumber(value)
+
+    if not number
+    or number ~= number
+    or number == math.huge
+    or number == -math.huge then
+
+        number =
+            tonumber(fallback)
+            or 0
+    end
+
+    return math.clamp(
+        number,
+        0,
+        1000000
+    )
+end
+
+function GAG2AutoSellParseWeightKg(value)
+
+    if tonumber(value) then
+
+        local number =
+            tonumber(value)
+
+        if number
+        and number > 0 then
+
+            return number
+        end
+    end
+
+    local text =
+        GAG2AutoSellClean(value)
+            :lower()
+            :gsub(",", ".")
+
+    if text == "" then
+        return nil
+    end
+
+    local numberText =
+        text:match("([%d%.]+)%s*kg")
+        or text:match("([%d%.]+)%s*kilograms?")
+        or text:match("weight[%s:=]+([%d%.]+)")
+        or text:match("%[([%d%.]+)%s*kg%]")
+
+    local number =
+        tonumber(numberText)
+
+    if number
+    and number > 0 then
+
+        return number
+    end
+
+    return nil
+end
+
+function GAG2AutoSellReadToolWeightKg(tool)
+
+    if typeof(tool) ~= "Instance" then
+        return nil
+    end
+
+    local attrNames = {
+        "WeightKg",
+        "WeightKG",
+        "Weight",
+        "Kg",
+        "KG",
+        "FruitWeight",
+        "Mass",
+    }
+
+    for _, attrName in ipairs(attrNames) do
+
+        local ok, value =
+            pcall(function()
+
+                return tool:GetAttribute(
+                    attrName
+                )
+            end)
+
+        if ok == true then
+
+            local parsed =
+                GAG2AutoSellParseWeightKg(
+                    value
+                )
+
+            if parsed then
+                return parsed
+            end
+        end
+    end
+
+    for _, child in ipairs(tool:GetChildren()) do
+
+        if child:IsA("ValueBase") then
+
+            local childName =
+                tostring(child.Name or ""):lower()
+
+            if childName:find("weight", 1, true)
+            or childName == "kg"
+            or childName:find("mass", 1, true) then
+
+                local parsed =
+                    GAG2AutoSellParseWeightKg(
+                        child.Value
+                    )
+
+                if parsed then
+                    return parsed
+                end
+            end
+        end
+    end
+
+    return GAG2AutoSellParseWeightKg(
+        tool.Name
+    )
+end
+
+function GAG2AutoSellGetWeightBounds()
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    local minWeight =
+        GAG2AutoSellClampWeight(
+            state.MinWeightKg,
+            0
+        )
+
+    local maxWeight =
+        GAG2AutoSellClampWeight(
+            state.MaxWeightKg,
+            0
+        )
+
+    if maxWeight > 0
+    and minWeight > maxWeight then
+
+        local oldMin =
+            minWeight
+
+        minWeight =
+            maxWeight
+
+        maxWeight =
+            oldMin
+    end
+
+    return minWeight,
+        maxWeight
+end
+
+function GAG2AutoSellWeightFilterEnabled()
+
+    return type(GAG2_AUTO_SELL_FRUIT_STATE) == "table"
+        and GAG2_AUTO_SELL_FRUIT_STATE.UseWeightFilter == true
+end
+
+function GAG2AutoSellBuildWeightFilterText()
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    if state.UseWeightFilter ~= true then
+        return "Filter: OFF"
+    end
+
+    local minWeight, maxWeight =
+        GAG2AutoSellGetWeightBounds()
+
+    if maxWeight > 0 then
+
+        return "Filter: "
+            .. string.format("%.2fkg", minWeight)
+            .. " - "
+            .. string.format("%.2fkg", maxWeight)
+    end
+
+    return "Filter: "
+        .. string.format("%.2fkg", minWeight)
+        .. "+"
+end
+
+function GAG2AutoSellWeightPasses(weightKg)
+
+    if GAG2AutoSellWeightFilterEnabled() ~= true then
+        return true,
+            "filter off"
+    end
+
+    weightKg =
+        tonumber(weightKg)
+
+    if not weightKg
+    or weightKg <= 0 then
+
+        return false,
+            "missing weight"
+    end
+
+    local minWeight, maxWeight =
+        GAG2AutoSellGetWeightBounds()
+
+    if weightKg < minWeight then
+
+        return false,
+            "below min "
+            .. string.format("%.2fkg", minWeight)
+    end
+
+    if maxWeight > 0
+    and weightKg > maxWeight then
+
+        return false,
+            "above max "
+            .. string.format("%.2fkg", maxWeight)
+    end
+
+    return true,
+        "inside filter"
+end
+
+function GAG2AutoSellSetUseWeightFilter(value)
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    state.UseWeightFilter =
+        value == true
+
+    state.Queue =
+        {}
+
+    state.QueueMap =
+        {}
+
+    GAG2AutoSellSetStatus(
+        state.UseWeightFilter == true
+        and "Weight filter enabled."
+        or "Weight filter disabled."
+    )
+
+    if state.Enabled == true then
+
+        task.defer(function()
+
+            GAG2AutoSellScanExistingFruitTools(
+                "weight filter changed"
+            )
+        end)
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2AutoSellSetMinWeight(value)
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    state.MinWeightKg =
+        GAG2AutoSellClampWeight(
+            value,
+            0
+        )
+
+    GAG2AutoSellSetStatus(
+        "Min weight set: "
+        .. string.format("%.2fkg", state.MinWeightKg)
+    )
+
+    MarkConfigDirty()
+end
+
+function GAG2AutoSellSetMaxWeight(value)
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    state.MaxWeightKg =
+        GAG2AutoSellClampWeight(
+            value,
+            0
+        )
+
+    GAG2AutoSellSetStatus(
+        "Max weight set: "
+        .. (
+            state.MaxWeightKg > 0
+            and string.format("%.2fkg", state.MaxWeightKg)
+            or "none"
+        )
     )
 
     MarkConfigDirty()
@@ -23791,40 +27480,86 @@ function GAG2AutoSellFirePacket(packetName, ...)
         .. tostring(fired)
 end
 
-function GAG2AutoSellIsFruitTool(tool)
+function GAG2AutoSellIsFruitTool(instance)
 
-    if typeof(tool) ~= "Instance"
-    or tool:IsA("Tool") ~= true then
+    if typeof(instance) ~= "Instance" then
         return false,
             "",
-            ""
+            "",
+            nil,
+            false
+    end
+
+    if instance:IsA("Tool") ~= true
+    and instance:IsA("Configuration") ~= true then
+
+        return false,
+            "",
+            "",
+            nil,
+            false
     end
 
     local harvested =
-        tool:GetAttribute("HarvestedFruit")
+        instance:GetAttribute("HarvestedFruit")
+
+    local fruitProxy =
+        instance:GetAttribute("FruitProxy")
 
     local fruitId =
         GAG2AutoSellClean(
-            tool:GetAttribute("Id")
+            instance:GetAttribute("Id")
+            or instance:GetAttribute("FruitId")
+            or instance:GetAttribute("UUID")
+            or instance:GetAttribute("Guid")
         )
 
     local fruitName =
         GAG2AutoSellClean(
-            tool:GetAttribute("FruitName")
-            or tool:GetAttribute("Fruit")
+            instance:GetAttribute("FruitName")
+            or instance:GetAttribute("Fruit")
+            or instance.Name
         )
 
+    local weightKg =
+        tonumber(
+            instance:GetAttribute("Weight")
+            or instance:GetAttribute("WeightKg")
+            or instance:GetAttribute("WeightKG")
+        )
+
+    if not weightKg
+    and type(GAG2AutoSellParseWeightKg) == "function" then
+
+        weightKg =
+            GAG2AutoSellParseWeightKg(
+                instance.Name
+            )
+    end
+
+    local isFavorite =
+        instance:GetAttribute("IsFavorite") == true
+
     if harvested == true
-    and fruitId ~= "" then
+    and fruitId ~= ""
+    and (
+        fruitProxy == true
+        or instance:IsA("Tool") == true
+        or weightKg ~= nil
+    ) then
 
         return true,
             fruitId,
-            fruitName
+            fruitName,
+            weightKg,
+            isFavorite
     end
 
     return false,
         "",
-        fruitName
+        fruitName,
+        weightKg,
+        isFavorite
 end
 
 function GAG2AutoSellScheduleSellAll(reason)
@@ -23833,6 +27568,20 @@ function GAG2AutoSellScheduleSellAll(reason)
         GAG2_AUTO_SELL_FRUIT_STATE
 
     if state.Enabled ~= true then
+        return
+    end
+
+    local filterEnabled =
+        type(GAG2AutoSellWeightFilterEnabled) == "function"
+        and GAG2AutoSellWeightFilterEnabled() == true
+
+    if filterEnabled == true then
+
+        GAG2AutoSellScanExistingFruitTools(
+            "filtered "
+            .. tostring(reason or "fruit")
+        )
+
         return
     end
 
@@ -23867,6 +27616,14 @@ function GAG2AutoSellScheduleSellAll(reason)
             return
         end
 
+        local stillFiltered =
+            type(GAG2AutoSellWeightFilterEnabled) == "function"
+            and GAG2AutoSellWeightFilterEnabled() == true
+
+        if stillFiltered == true then
+            return
+        end
+
         if state.Method ~= "SellAll" then
             return
         end
@@ -23882,7 +27639,7 @@ function GAG2AutoSellScheduleSellAll(reason)
     )
 end
 
-function GAG2AutoSellQueueFruitId(fruitId, fruitName)
+function GAG2AutoSellQueueFruitId(fruitId, fruitName, weightKg)
 
     local state =
         GAG2_AUTO_SELL_FRUIT_STATE
@@ -23892,6 +27649,10 @@ function GAG2AutoSellQueueFruitId(fruitId, fruitName)
 
     fruitName =
         GAG2AutoSellClean(fruitName)
+
+    weightKg =
+        tonumber(weightKg)
+        or 0
 
     if fruitId == "" then
         return
@@ -23917,6 +27678,7 @@ function GAG2AutoSellQueueFruitId(fruitId, fruitName)
     table.insert(state.Queue, {
         Id = fruitId,
         Name = fruitName,
+        WeightKg = weightKg,
     })
 
     state.LastFruitId =
@@ -23924,6 +27686,9 @@ function GAG2AutoSellQueueFruitId(fruitId, fruitName)
 
     state.LastFruitName =
         fruitName
+
+    state.LastFruitWeightKg =
+        weightKg
 
     GAG2AutoSellStartWorker()
 end
@@ -23943,7 +27708,13 @@ function GAG2AutoSellStartWorker()
     task.spawn(function()
 
         while state.Enabled == true
-        and state.Method == "SellFruit"
+        and (
+            state.Method == "SellFruit"
+            or (
+                type(GAG2AutoSellWeightFilterEnabled) == "function"
+                and GAG2AutoSellWeightFilterEnabled() == true
+            )
+        )
         and type(state.Queue) == "table"
         and #state.Queue > 0 do
 
@@ -23975,7 +27746,13 @@ function GAG2AutoSellStartWorker()
             while fired < burst
             and #state.Queue > 0
             and state.Enabled == true
-            and state.Method == "SellFruit" do
+            and (
+                state.Method == "SellFruit"
+                or (
+                    type(GAG2AutoSellWeightFilterEnabled) == "function"
+                    and GAG2AutoSellWeightFilterEnabled() == true
+                )
+            ) do
 
                 local item =
                     table.remove(
@@ -24000,7 +27777,19 @@ function GAG2AutoSellStartWorker()
                     state.LastFruitName =
                         tostring(item.Name or "")
 
-                    fired = fired + 1
+                    state.LastFruitWeightKg =
+                        tonumber(item.WeightKg)
+                        or 0
+
+                    state.EligibleCount =
+                        tonumber(state.EligibleCount)
+                        or 0
+
+                    state.EligibleCount =
+                        state.EligibleCount + 1
+
+                    fired =
+                        fired + 1
 
                     if fired % yieldEvery == 0 then
                         task.wait()
@@ -24033,7 +27822,7 @@ function GAG2AutoSellStartWorker()
     end)
 end
 
-function GAG2AutoSellHandleFruitTool(tool, reason)
+function GAG2AutoSellHandleFruitTool(instance, reason)
 
     local state =
         GAG2_AUTO_SELL_FRUIT_STATE
@@ -24042,17 +27831,73 @@ function GAG2AutoSellHandleFruitTool(tool, reason)
         return false
     end
 
-    local isFruit, fruitId, fruitName =
+    local isFruit, fruitId, fruitName, weightKg, isFavorite =
         GAG2AutoSellIsFruitTool(
-            tool
+            instance
         )
 
     if isFruit ~= true then
         return false
     end
 
+    if isFavorite == true then
+
+        state.SkippedCount =
+            tonumber(state.SkippedCount)
+            or 0
+
+        state.SkippedCount =
+            state.SkippedCount + 1
+
+        GAG2AutoSellSetStatus(
+            "Skipped favorite "
+            .. tostring(fruitName ~= "" and fruitName or "fruit")
+        )
+
+        return false
+    end
+
+    local passesWeight =
+        true
+
+    local weightReason =
+        "filter off"
+
+    if type(GAG2AutoSellWeightPasses) == "function" then
+
+        passesWeight,
+        weightReason =
+            GAG2AutoSellWeightPasses(
+                weightKg
+            )
+    end
+
+    if passesWeight ~= true then
+
+        state.SkippedCount =
+            tonumber(state.SkippedCount)
+            or 0
+
+        state.SkippedCount =
+            state.SkippedCount + 1
+
+        GAG2AutoSellSetStatus(
+            "Skipped "
+            .. tostring(fruitName ~= "" and fruitName or "fruit")
+            .. " | "
+            .. tostring(weightReason)
+        )
+
+        return false
+    end
+
     local now =
         os.clock()
+
+    state.RecentFruitIds =
+        type(state.RecentFruitIds) == "table"
+        and state.RecentFruitIds
+        or {}
 
     local recent =
         tonumber(
@@ -24076,11 +27921,21 @@ function GAG2AutoSellHandleFruitTool(tool, reason)
     state.LastFruitName =
         fruitName
 
-    if state.Method == "SellFruit" then
+    state.LastFruitWeightKg =
+        tonumber(weightKg)
+        or 0
+
+    local filterEnabled =
+        type(GAG2AutoSellWeightFilterEnabled) == "function"
+        and GAG2AutoSellWeightFilterEnabled() == true
+
+    if state.Method == "SellFruit"
+    or filterEnabled == true then
 
         GAG2AutoSellQueueFruitId(
             fruitId,
-            fruitName
+            fruitName,
+            weightKg
         )
 
     else
@@ -24105,6 +27960,9 @@ function GAG2AutoSellScanExistingFruitTools(reason)
     local found =
         0
 
+    local scanned =
+        0
+
     local function scanContainer(container)
 
         if typeof(container) ~= "Instance" then
@@ -24113,15 +27971,25 @@ function GAG2AutoSellScanExistingFruitTools(reason)
 
         for _, child in ipairs(container:GetChildren()) do
 
-            if child:IsA("Tool") then
+            scanned =
+                scanned + 1
+
+            if GAG2AutoSellIsFruitTool(
+                child
+            ) == true then
 
                 if GAG2AutoSellHandleFruitTool(
                     child,
                     reason or "scan"
                 ) == true then
 
-                    found = found + 1
+                    found =
+                        found + 1
                 end
+            end
+
+            if scanned % 40 == 0 then
+                task.wait()
             end
         end
     end
@@ -24143,7 +28011,7 @@ function GAG2AutoSellScanExistingFruitTools(reason)
         GAG2AutoSellSetStatus(
             "Detected "
             .. tostring(found)
-            .. " fruit tool(s)."
+            .. " sellable fruit proxy item(s)."
         )
     end
 
@@ -24166,16 +28034,13 @@ function GAG2AutoSellHookCharacter(character)
                 return
             end
 
-            if child:IsA("Tool") then
+            task.defer(function()
 
-                task.defer(function()
-
-                    GAG2AutoSellHandleFruitTool(
-                        child,
-                        "character"
-                    )
-                end)
-            end
+                GAG2AutoSellHandleFruitTool(
+                    child,
+                    "character"
+                )
+            end)
         end)
 
     table.insert(
@@ -24217,16 +28082,13 @@ function GAG2AutoSellStartWatcher()
                     return
                 end
 
-                if child:IsA("Tool") then
+                task.defer(function()
 
-                    task.defer(function()
-
-                        GAG2AutoSellHandleFruitTool(
-                            child,
-                            "backpack"
-                        )
-                    end)
-                end
+                    GAG2AutoSellHandleFruitTool(
+                        child,
+                        "backpack"
+                    )
+                end)
             end)
         )
     end
@@ -24256,6 +28118,7 @@ function GAG2AutoSellStartWatcher()
         end)
     )
 end
+
 
 function GAG2AutoSellSetEnabled(value)
 
@@ -24377,6 +28240,129 @@ function GAG2AutoSellStop()
     MarkConfigDirty()
 end
 
+function GAG2AutoSellSellNow()
+
+    local state =
+        GAG2_AUTO_SELL_FRUIT_STATE
+
+    local filterEnabled =
+        type(GAG2AutoSellWeightFilterEnabled) == "function"
+        and GAG2AutoSellWeightFilterEnabled() == true
+
+    if filterEnabled ~= true then
+
+        return GAG2AutoSellFirePacket(
+            "SellAll"
+        )
+    end
+
+    local sold =
+        0
+
+    local skipped =
+        0
+
+    local scanned =
+        0
+
+    local function scanContainer(container)
+
+        if typeof(container) ~= "Instance" then
+            return
+        end
+
+        for _, child in ipairs(container:GetChildren()) do
+
+            scanned =
+                scanned + 1
+
+            local isFruit, fruitId, fruitName, weightKg, isFavorite =
+                GAG2AutoSellIsFruitTool(
+                    child
+                )
+
+            if isFruit == true then
+
+                local passesWeight =
+                    true
+
+                if type(GAG2AutoSellWeightPasses) == "function" then
+
+                    passesWeight =
+                        GAG2AutoSellWeightPasses(
+                            weightKg
+                        )
+                end
+
+                if isFavorite ~= true
+                and passesWeight == true
+                and fruitId ~= "" then
+
+                    GAG2AutoSellFirePacket(
+                        "SellFruit",
+                        fruitId
+                    )
+
+                    state.LastFruitId =
+                        fruitId
+
+                    state.LastFruitName =
+                        fruitName
+
+                    state.LastFruitWeightKg =
+                        tonumber(weightKg)
+                        or 0
+
+                    sold =
+                        sold + 1
+
+                else
+
+                    skipped =
+                        skipped + 1
+                end
+            end
+
+            if scanned % 30 == 0 then
+                task.wait()
+            end
+        end
+    end
+
+    scanContainer(
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChild("Backpack")
+    )
+
+    scanContainer(
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character
+    )
+
+    state.EligibleCount =
+        tonumber(state.EligibleCount)
+        or 0
+
+    state.SkippedCount =
+        tonumber(state.SkippedCount)
+        or 0
+
+    state.EligibleCount =
+        state.EligibleCount + sold
+
+    state.SkippedCount =
+        state.SkippedCount + skipped
+
+    GAG2AutoSellSetStatus(
+        "Filtered sell now: sold "
+        .. tostring(sold)
+        .. " | skipped "
+        .. tostring(skipped)
+    )
+
+    return sold > 0
+end
+
 function GAG2AutoSellIsEnabled()
 
     return type(GAG2_AUTO_SELL_FRUIT_STATE) == "table"
@@ -24400,7 +28386,35 @@ function GAG2AutoSellHandleCollectedFruit(entry)
     local method =
         tostring(state.Method or "SellAll")
 
-    if method == "SellFruit" then
+    local weightKg =
+        tonumber(entry.WeightKg)
+
+    local passesWeight, weightReason =
+        GAG2AutoSellWeightPasses(
+            weightKg
+        )
+
+    if passesWeight ~= true then
+
+        state.SkippedCount =
+            tonumber(state.SkippedCount)
+            or 0
+
+        state.SkippedCount =
+            state.SkippedCount + 1
+
+        GAG2AutoSellSetStatus(
+            "Skipped collected "
+            .. tostring(entry.Name or "fruit")
+            .. " | "
+            .. tostring(weightReason)
+        )
+
+        return false
+    end
+
+    if method == "SellFruit"
+    or GAG2AutoSellWeightFilterEnabled() == true then
 
         local fruitId =
             GAG2AutoSellClean(
@@ -24416,11 +28430,15 @@ function GAG2AutoSellHandleCollectedFruit(entry)
         task.delay(0.05, function()
 
             if GAG2AutoSellIsEnabled() == true
-            and GAG2_AUTO_SELL_FRUIT_STATE.Method == "SellFruit" then
+            and (
+                GAG2_AUTO_SELL_FRUIT_STATE.Method == "SellFruit"
+                or GAG2AutoSellWeightFilterEnabled() == true
+            ) then
 
                 GAG2AutoSellQueueFruitId(
                     fruitId,
-                    tostring(entry.Name or "")
+                    tostring(entry.Name or ""),
+                    weightKg
                 )
             end
         end)
@@ -24509,6 +28527,26 @@ function GAG2RestoreAutoSellState()
 
             GAG2AutoSellSetRepeatCount(
                 Options.HolyGAG2AutoSellRepeatCount.Value
+            )
+        end
+
+        if Toggles.HolyGAG2AutoSellUseWeightFilter then
+
+            state.UseWeightFilter =
+                Toggles.HolyGAG2AutoSellUseWeightFilter.Value == true
+        end
+
+        if Options.HolyGAG2AutoSellMinWeightKg then
+
+            GAG2AutoSellSetMinWeight(
+                Options.HolyGAG2AutoSellMinWeightKg.Value
+            )
+        end
+
+        if Options.HolyGAG2AutoSellMaxWeightKg then
+
+            GAG2AutoSellSetMaxWeight(
+                Options.HolyGAG2AutoSellMaxWeightKg.Value
             )
         end
 
@@ -36732,7 +40770,7 @@ function SniperMoveCloseForTame(entry)
         .. tostring(targetInfo)
 end
 
-local function SniperStartReturnLock(seconds, reason)
+function SniperStartReturnLock(seconds, reason)
 
     local lockSeconds =
         math.clamp(
@@ -36765,7 +40803,7 @@ local function SniperStartReturnLock(seconds, reason)
     return lockSeconds
 end
 
-local function SniperReturnToSavedCFrame(savedCFrame)
+function SniperReturnToSavedCFrame(savedCFrame)
 
     if typeof(savedCFrame) ~= "CFrame" then
 
@@ -36891,7 +40929,7 @@ local function SniperReturnToSavedCFrame(savedCFrame)
         "teleported return"
 end
 
-local function SniperClearBatchReturnState()
+function SniperClearBatchReturnState()
 
     SniperState.BatchReturnCFrame =
         nil
@@ -36915,7 +40953,7 @@ local function SniperClearBatchReturnState()
         ""
 end
 
-local function SniperCaptureBatchReturnOrigin(moveState)
+function SniperCaptureBatchReturnOrigin(moveState)
 
     if SniperState.ReturnAfterBatch ~= true then
         return false
@@ -36962,7 +41000,7 @@ local function SniperCaptureBatchReturnOrigin(moveState)
     return true
 end
 
-local function SniperRestoreAfterTame(moveState)
+function SniperRestoreAfterTame(moveState)
 
     if type(moveState) ~= "table" then
         return
@@ -37031,7 +41069,7 @@ local function SniperRestoreAfterTame(moveState)
     )
 end
 
-local function SniperGetEntryKey(entry)
+function SniperGetEntryKey(entry)
 
     if type(entry) ~= "table" then
         return ""
@@ -37093,7 +41131,7 @@ function SniperHasUnacceptedPendingBuy()
     return false
 end
 
-local function SniperIsEntryHandled(entry)
+function SniperIsEntryHandled(entry)
 
     local key =
         SniperGetEntryKey(entry)
@@ -37123,7 +41161,7 @@ local function SniperIsEntryHandled(entry)
     return true
 end
 
-local function SniperMarkEntryHandled(entry, seconds)
+function SniperMarkEntryHandled(entry, seconds)
 
     local key =
         SniperGetEntryKey(entry)
@@ -37141,7 +41179,7 @@ local function SniperMarkEntryHandled(entry, seconds)
         )
 end
 
-local function SniperCountCurrentRemainingMatches()
+function SniperCountCurrentRemainingMatches()
 
     local targets =
         {}
@@ -37754,7 +41792,7 @@ function SniperScheduleBatchReturnCheck(reason)
 end
 
 
-local function SniperFindSpawnByUuid(uuid)
+function SniperFindSpawnByUuid(uuid)
 
     uuid =
         CleanText(uuid)
@@ -37785,7 +41823,7 @@ local function SniperFindSpawnByUuid(uuid)
     return nil
 end
 
-local function SniperEntryStillActive(entry)
+function SniperEntryStillActive(entry)
 
     if type(entry) ~= "table" then
         return false
@@ -38931,7 +42969,7 @@ function SniperMaybeFollowMovingBuy(entry, moveState, reason)
     return false
 end
 
-local function SniperHoldCloseForServerValidation(entry, moveState, taskToken)
+function SniperHoldCloseForServerValidation(entry, moveState, taskToken)
 
     if SniperMoveStateIsTeleport(moveState) ~= true then
 
@@ -40894,7 +44932,7 @@ function SniperAttemptBuyEntry(entry, options)
     return true
 end
 
-local function SniperGetDropdownPetNames()
+function SniperGetDropdownPetNames()
 
     local names =
         {}
@@ -40956,7 +44994,7 @@ local function SniperGetDropdownPetNames()
     return names
 end
 
-local function SniperRefreshTargetDropdown()
+function SniperRefreshTargetDropdown()
 
     if not SniperTargetDropdown then
         return
@@ -40990,6 +45028,16 @@ local function SniperRefreshTargetDropdown()
 
     SniperDropdownRefreshing =
         false
+
+    task.defer(function()
+
+        SniperApplyTargetDropdownValue(
+            SniperLimitTargetsForCurrentMode(
+                SniperState.BuilderTargets,
+                {}
+            )
+        )
+    end)
 end
 
 function SniperPriorityCleanValue(value)
@@ -41151,19 +45199,129 @@ function SniperGetEntryDistanceValue(entry)
     return (root.Position - position).Magnitude
 end
 
-GAG2_SNIPER_SIZE_CLASS_VALUES = {
-    "Any Size",
-    "Big+",
-    "Huge Only",
+GAG2_SNIPER_SIZE_FILTER_VALUES = {
+    "Any",
+    "Normal",
+    "Big",
+    "Mega",
+}
+
+GAG2_SNIPER_MUTATION_FILTER_VALUES = {
+    "Any",
+    "Normal",
+    "Rainbow",
+}
+
+GAG2_SNIPER_SAVE_TARGET_VALUES = {
+    "W1 Main",
+    "W2 Alt",
+    "W3 Priority",
+}
+
+GAG2_SNIPER_PRIORITY_FILTER_VALUES = {
+    "High",
+    "Medium",
+    "Low",
 }
 
 function SniperSizeClassValues()
 
-    return {
-        "Any Size",
-        "Big+",
-        "Huge Only",
-    }
+    return GAG2_SNIPER_SIZE_FILTER_VALUES
+end
+
+function SniperMutationFilterValues()
+
+    return GAG2_SNIPER_MUTATION_FILTER_VALUES
+end
+
+function SniperSaveTargetValues()
+
+    return GAG2_SNIPER_SAVE_TARGET_VALUES
+end
+
+function SniperPriorityFilterValues()
+
+    return GAG2_SNIPER_PRIORITY_FILTER_VALUES
+end
+
+function SniperCleanPriorityLevel(value)
+
+    value =
+        CleanText(
+            value
+        )
+
+    local lower =
+        value:lower()
+
+    if lower == "high"
+    or lower == "h" then
+        return "High"
+    end
+
+    if lower == "low"
+    or lower == "l" then
+        return "Low"
+    end
+
+    return "Medium"
+end
+
+function SniperPriorityShortText(value)
+
+    local priority =
+        SniperCleanPriorityLevel(
+            value
+        )
+
+    if priority == "High" then
+        return "H"
+    end
+
+    if priority == "Low" then
+        return "L"
+    end
+
+    return "M"
+end
+
+function SniperSetBuilderPriority(value)
+
+    SniperState.BuilderPriority =
+        SniperCleanPriorityLevel(
+            value
+        )
+
+    MarkConfigDirty()
+end
+
+function SniperBuilderPriorityText()
+
+    return SniperCleanPriorityLevel(
+        SniperState.BuilderPriority
+    )
+end
+
+function SniperPriorityRankFromLevel(value)
+
+    local priority =
+        SniperCleanPriorityLevel(
+            value
+        )
+
+    if priority == "High" then
+        return 1
+    end
+
+    if priority == "Medium" then
+        return 2
+    end
+
+    if priority == "Low" then
+        return 3
+    end
+
+    return 2
 end
 
 function SniperCleanSizeClass(value)
@@ -41171,33 +45329,1961 @@ function SniperCleanSizeClass(value)
     value =
         CleanText(value)
 
-    if value == "Big+" then
-        return "Big+"
+    local lower =
+        value:lower()
+
+    if lower == "big" then
+        return "Big"
     end
 
-    if value == "Huge Only"
-    or value == "Huge" then
-        return "Huge Only"
+    if lower == "mega"
+    or lower == "huge"
+    or lower == "huge only" then
+        return "Mega"
     end
 
-    return "Any Size"
+    if lower == "normal"
+    or lower == "none"
+    or lower == "default" then
+        return "Normal"
+    end
+
+    return "Any"
+end
+
+function SniperSizeSortRank(value)
+
+    value =
+        SniperCleanSizeClass(
+            value
+        )
+
+    if value == "Any" then
+        return 1
+    end
+
+    if value == "Normal" then
+        return 2
+    end
+
+    if value == "Big" then
+        return 3
+    end
+
+    if value == "Mega" then
+        return 4
+    end
+
+    return 99
+end
+
+function SniperNormalizeSizeList(value)
+
+    local result =
+        {}
+
+    local seen =
+        {}
+
+    local function add(item)
+
+        local cleaned =
+            SniperCleanSizeClass(
+                item
+            )
+
+        if cleaned == "" then
+            return
+        end
+
+        if seen[cleaned] == true then
+            return
+        end
+
+        seen[cleaned] =
+            true
+
+        table.insert(
+            result,
+            cleaned
+        )
+    end
+
+    if type(value) == "table" then
+
+        for _, item in ipairs(value) do
+            add(item)
+        end
+
+        for item, enabled in pairs(value) do
+
+            if enabled == true then
+                add(item)
+            end
+        end
+
+    elseif value ~= nil then
+
+        add(value)
+    end
+
+    if #result <= 0 then
+
+        table.insert(
+            result,
+            "Any"
+        )
+    end
+
+    if seen.Any == true
+    and #result > 1 then
+
+        local filtered =
+            {}
+
+        for _, item in ipairs(result) do
+
+            if item ~= "Any" then
+
+                table.insert(
+                    filtered,
+                    item
+                )
+            end
+        end
+
+        result =
+            filtered
+    end
+
+    table.sort(result, function(a, b)
+
+        return SniperSizeSortRank(a)
+            < SniperSizeSortRank(b)
+    end)
+
+    return result
+end
+
+function SniperPickSingleSizeFilter(filters, previousFilters)
+
+    filters =
+        SniperNormalizeSizeList(
+            filters
+        )
+
+    if #filters <= 1 then
+        return filters
+    end
+
+    local previousMap =
+        {}
+
+    for _, item in ipairs(
+        SniperNormalizeSizeList(previousFilters)
+    ) do
+
+        previousMap[item] =
+            true
+    end
+
+    for _, item in ipairs(filters) do
+
+        if previousMap[item] ~= true then
+
+            return {
+                item,
+            }
+        end
+    end
+
+    return {
+        filters[1],
+    }
+end
+
+function SniperLimitSizeFiltersForCurrentMode(filters, previousFilters)
+
+    filters =
+        SniperNormalizeSizeList(
+            filters
+        )
+
+    if SniperState.AllowMultiSizes == true then
+        return filters
+    end
+
+    return SniperPickSingleSizeFilter(
+        filters,
+        previousFilters
+    )
+end
+
+function SniperBuildSizeDropdownSelectionMap(filters)
+
+    local map =
+        {}
+
+    for _, item in ipairs(
+        SniperNormalizeSizeList(filters)
+    ) do
+
+        map[item] =
+            true
+    end
+
+    return map
+end
+
+function SniperApplySizeDropdownValue(filters)
+
+    if not SniperSizeDropdown
+    or type(SniperSizeDropdown.SetValue) ~= "function" then
+        return false
+    end
+
+    SniperSizeDropdownLock =
+        true
+
+    pcall(function()
+
+        SniperSizeDropdown:SetValue(
+            SniperBuildSizeDropdownSelectionMap(
+                filters
+            )
+        )
+    end)
+
+    task.defer(function()
+
+        SniperSizeDropdownLock =
+            false
+    end)
+
+    return true
+end
+
+function SniperReadSizeFiltersFromDropdown()
+
+    return SniperNormalizeSizeList(
+        SniperReadDropdownRawValue(
+            SniperSizeDropdown
+        )
+    )
 end
 
 function SniperSetSizeClass(value)
 
-    SniperState.SizeClass =
-        SniperCleanSizeClass(
+    if SniperSizeDropdownLock == true then
+        return
+    end
+
+    local previousFilters =
+        SniperState.BuilderSizeClasses
+        or {
+            SniperState.BuilderSizeClass
+            or "Any",
+        }
+
+    local filters =
+        SniperLimitSizeFiltersForCurrentMode(
+            value,
+            previousFilters
+        )
+
+    SniperState.BuilderSizeClasses =
+        filters
+
+    SniperState.BuilderSizeClass =
+        filters[1]
+        or "Any"
+
+    if SniperState.AllowMultiSizes ~= true then
+
+        SniperApplySizeDropdownValue(
+            filters
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function SniperSetAllowMultiSizes(value)
+
+    SniperState.AllowMultiSizes =
+        value == true
+
+    local currentFilters =
+        SniperReadSizeFiltersFromDropdown()
+
+    if #currentFilters <= 0 then
+
+        currentFilters =
+            SniperNormalizeSizeList(
+                SniperState.BuilderSizeClasses
+                or {
+                    SniperState.BuilderSizeClass
+                    or "Any",
+                }
+            )
+    end
+
+    currentFilters =
+        SniperLimitSizeFiltersForCurrentMode(
+            currentFilters,
+            SniperState.BuilderSizeClasses
+        )
+
+    SniperState.BuilderSizeClasses =
+        currentFilters
+
+    SniperState.BuilderSizeClass =
+        currentFilters[1]
+        or "Any"
+
+    SniperApplySizeDropdownValue(
+        currentFilters
+    )
+
+    SetSniperStatus(
+        SniperState.AllowMultiSizes == true
+        and "Multi size builder enabled."
+        or "Single size builder enabled."
+    )
+
+    MarkConfigDirty()
+end
+
+function SniperGetBuilderSizeFilters()
+
+    local filters =
+        SniperReadSizeFiltersFromDropdown()
+
+    if #filters <= 0 then
+
+        filters =
+            SniperNormalizeSizeList(
+                SniperState.BuilderSizeClasses
+                or {
+                    SniperState.BuilderSizeClass
+                    or "Any",
+                }
+            )
+    end
+
+    filters =
+        SniperLimitSizeFiltersForCurrentMode(
+            filters,
+            SniperState.BuilderSizeClasses
+        )
+
+    SniperState.BuilderSizeClasses =
+        filters
+
+    SniperState.BuilderSizeClass =
+        filters[1]
+        or "Any"
+
+    SniperApplySizeDropdownValue(
+        filters
+    )
+
+    return filters
+end
+
+function SniperSizeClassText()
+
+    local filters =
+        SniperNormalizeSizeList(
+            SniperState.BuilderSizeClasses
+            or {
+                SniperState.BuilderSizeClass
+                or SniperState.SizeClass
+                or "Any",
+            }
+        )
+
+    return SniperCleanSizeClass(
+        filters[1]
+        or "Any"
+    )
+end
+
+function SniperCleanMutationFilter(value)
+
+    value =
+        CleanText(value)
+
+    local lower =
+        value:lower()
+
+    if lower == "rainbow"
+    or lower == "pet rainbow"
+    or lower == "rainbow pet" then
+        return "Rainbow"
+    end
+
+    if lower == "normal"
+    or lower == "none"
+    or lower == "default" then
+        return "Normal"
+    end
+
+    return "Any"
+end
+
+function SniperMutationSortRank(value)
+
+    value =
+        SniperCleanMutationFilter(
+            value
+        )
+
+    if value == "Any" then
+        return 1
+    end
+
+    if value == "Normal" then
+        return 2
+    end
+
+    if value == "Rainbow" then
+        return 3
+    end
+
+    return 99
+end
+
+function SniperNormalizeMutationList(value)
+
+    local result =
+        {}
+
+    local seen =
+        {}
+
+    local function add(item)
+
+        local cleaned =
+            SniperCleanMutationFilter(
+                item
+            )
+
+        if cleaned == "" then
+            return
+        end
+
+        if seen[cleaned] == true then
+            return
+        end
+
+        seen[cleaned] =
+            true
+
+        table.insert(
+            result,
+            cleaned
+        )
+    end
+
+    if type(value) == "table" then
+
+        for _, item in ipairs(value) do
+            add(item)
+        end
+
+        for item, enabled in pairs(value) do
+
+            if enabled == true then
+                add(item)
+            end
+        end
+
+    elseif value ~= nil then
+
+        add(value)
+    end
+
+    if #result <= 0 then
+
+        table.insert(
+            result,
+            "Any"
+        )
+    end
+
+    if seen.Any == true
+    and #result > 1 then
+
+        local filtered =
+            {}
+
+        for _, item in ipairs(result) do
+
+            if item ~= "Any" then
+
+                table.insert(
+                    filtered,
+                    item
+                )
+            end
+        end
+
+        result =
+            filtered
+    end
+
+    table.sort(result, function(a, b)
+
+        return SniperMutationSortRank(a)
+            < SniperMutationSortRank(b)
+    end)
+
+    return result
+end
+
+function SniperPickSingleMutationFilter(filters, previousFilters)
+
+    filters =
+        SniperNormalizeMutationList(
+            filters
+        )
+
+    if #filters <= 1 then
+        return filters
+    end
+
+    local previousMap =
+        {}
+
+    for _, item in ipairs(
+        SniperNormalizeMutationList(previousFilters)
+    ) do
+
+        previousMap[item] =
+            true
+    end
+
+    for _, item in ipairs(filters) do
+
+        if previousMap[item] ~= true then
+
+            return {
+                item,
+            }
+        end
+    end
+
+    return {
+        filters[1],
+    }
+end
+
+function SniperLimitMutationFiltersForCurrentMode(filters, previousFilters)
+
+    filters =
+        SniperNormalizeMutationList(
+            filters
+        )
+
+    if SniperState.AllowMultiMutations == true then
+        return filters
+    end
+
+    return SniperPickSingleMutationFilter(
+        filters,
+        previousFilters
+    )
+end
+
+function SniperBuildMutationDropdownSelectionMap(filters)
+
+    local map =
+        {}
+
+    for _, item in ipairs(
+        SniperNormalizeMutationList(filters)
+    ) do
+
+        map[item] =
+            true
+    end
+
+    return map
+end
+
+function SniperApplyMutationDropdownValue(filters)
+
+    if not SniperMutationDropdown
+    or type(SniperMutationDropdown.SetValue) ~= "function" then
+        return false
+    end
+
+    SniperMutationDropdownLock =
+        true
+
+    pcall(function()
+
+        SniperMutationDropdown:SetValue(
+            SniperBuildMutationDropdownSelectionMap(
+                filters
+            )
+        )
+    end)
+
+    task.defer(function()
+
+        SniperMutationDropdownLock =
+            false
+    end)
+
+    return true
+end
+
+function SniperReadMutationFiltersFromDropdown()
+
+    return SniperNormalizeMutationList(
+        SniperReadDropdownRawValue(
+            SniperMutationDropdown
+        )
+    )
+end
+
+function SniperSetMutationFilter(value)
+
+    if SniperMutationDropdownLock == true then
+        return
+    end
+
+    local previousFilters =
+        SniperState.BuilderMutationFilters
+        or {
+            SniperState.BuilderMutationFilter
+            or "Any",
+        }
+
+    local filters =
+        SniperLimitMutationFiltersForCurrentMode(
+            value,
+            previousFilters
+        )
+
+    SniperState.BuilderMutationFilters =
+        filters
+
+    SniperState.BuilderMutationFilter =
+        filters[1]
+        or "Any"
+
+    if SniperState.AllowMultiMutations ~= true then
+
+        SniperApplyMutationDropdownValue(
+            filters
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function SniperSetAllowMultiMutations(value)
+
+    SniperState.AllowMultiMutations =
+        value == true
+
+    local currentFilters =
+        SniperReadMutationFiltersFromDropdown()
+
+    if #currentFilters <= 0 then
+
+        currentFilters =
+            SniperNormalizeMutationList(
+                SniperState.BuilderMutationFilters
+                or {
+                    SniperState.BuilderMutationFilter
+                    or "Any",
+                }
+            )
+    end
+
+    currentFilters =
+        SniperLimitMutationFiltersForCurrentMode(
+            currentFilters,
+            SniperState.BuilderMutationFilters
+        )
+
+    SniperState.BuilderMutationFilters =
+        currentFilters
+
+    SniperState.BuilderMutationFilter =
+        currentFilters[1]
+        or "Any"
+
+    SniperApplyMutationDropdownValue(
+        currentFilters
+    )
+
+    SetSniperStatus(
+        SniperState.AllowMultiMutations == true
+        and "Multi mutation builder enabled."
+        or "Single mutation builder enabled."
+    )
+
+    MarkConfigDirty()
+end
+
+function SniperGetBuilderMutationFilters()
+
+    local filters =
+        SniperReadMutationFiltersFromDropdown()
+
+    if #filters <= 0 then
+
+        filters =
+            SniperNormalizeMutationList(
+                SniperState.BuilderMutationFilters
+                or {
+                    SniperState.BuilderMutationFilter
+                    or "Any",
+                }
+            )
+    end
+
+    filters =
+        SniperLimitMutationFiltersForCurrentMode(
+            filters,
+            SniperState.BuilderMutationFilters
+        )
+
+    SniperState.BuilderMutationFilters =
+        filters
+
+    SniperState.BuilderMutationFilter =
+        filters[1]
+        or "Any"
+
+    SniperApplyMutationDropdownValue(
+        filters
+    )
+
+    return filters
+end
+
+function SniperMutationFilterText()
+
+    local filters =
+        SniperNormalizeMutationList(
+            SniperState.BuilderMutationFilters
+            or {
+                SniperState.BuilderMutationFilter
+                or SniperState.MutationFilter
+                or "Any",
+            }
+        )
+
+    return SniperCleanMutationFilter(
+        filters[1]
+        or "Any"
+    )
+end
+
+function SniperWatchlistName(watchlistId)
+
+    watchlistId =
+        tonumber(watchlistId)
+        or 1
+
+    if watchlistId == 2 then
+        return "W2 Alt"
+    end
+
+    if watchlistId == 3 then
+        return "W3 Priority"
+    end
+
+    return "W1 Main"
+end
+
+function SniperWatchlistIdFromText(value)
+
+    value =
+        CleanText(value)
+
+    if value:find("W2", 1, true) then
+        return 2
+    end
+
+    if value:find("W3", 1, true) then
+        return 3
+    end
+
+    return 1
+end
+
+function SniperSetSaveTarget(value)
+
+    SniperState.SaveTarget =
+        SniperWatchlistIdFromText(
             value
         )
 
     MarkConfigDirty()
 end
 
-function SniperSizeClassText()
+function SniperSaveTargetText()
 
-    return SniperCleanSizeClass(
-        SniperState.SizeClass
+    return SniperWatchlistName(
+        SniperState.SaveTarget
     )
+end
+
+function SniperInternalSizeFromFilter(sizeFilter)
+
+    sizeFilter =
+        SniperCleanSizeClass(
+            sizeFilter
+        )
+
+    if sizeFilter == "Big" then
+        return "Big"
+    end
+
+    if sizeFilter == "Mega" then
+        return "Huge"
+    end
+
+    return nil
+end
+
+function SniperDisplaySizeFromInternal(sizeValue)
+
+    sizeValue =
+        CleanText(sizeValue)
+
+    if sizeValue == "Huge" then
+        return "Mega"
+    end
+
+    if sizeValue == "Big" then
+        return "Big"
+    end
+
+    return ""
+end
+
+function SniperCleanInternalSize(value)
+
+    value =
+        CleanText(value)
+
+    if value == "Big"
+    or value:lower() == "big" then
+        return "Big"
+    end
+
+    if value == "Huge"
+    or value == "Mega"
+    or value:lower() == "huge"
+    or value:lower() == "mega" then
+        return "Huge"
+    end
+
+    return nil
+end
+
+function SniperCleanPetType(value)
+
+    value =
+        CleanText(value)
+
+    if value == "Rainbow"
+    or value:lower() == "rainbow" then
+        return "Rainbow"
+    end
+
+    return nil
+end
+
+function GAG2CanUseSniperWatchlistFile()
+
+    return type(writefile) == "function"
+        and type(readfile) == "function"
+        and type(isfile) == "function"
+end
+
+function GAG2CopySniperRule(rule)
+
+    if type(rule) ~= "table" then
+        return nil
+    end
+
+    return {
+        PetName =
+            CleanText(rule.PetName),
+
+        SizeFilter =
+            SniperCleanSizeClass(rule.SizeFilter),
+
+        MutationFilter =
+            SniperCleanMutationFilter(rule.MutationFilter),
+
+        Priority =
+            SniperCleanPriorityLevel(rule.Priority),
+
+        CreatedAt =
+            tonumber(rule.CreatedAt)
+            or os.time(),
+    }
+end
+
+function GAG2SaveSniperWatchlistNow(reason)
+
+    if GAG2CanUseSniperWatchlistFile() ~= true then
+        return false
+    end
+
+    EnsureUISettingsFolder()
+
+    local payload = {
+        Sets = {},
+        SavedAt = os.time(),
+        Reason = tostring(reason or "manual"),
+    }
+
+    for watchlistId = 1, 3 do
+
+        payload.Sets[tostring(watchlistId)] =
+            {}
+
+        local source =
+            GAG2_SNIPER_FILTER_SETS[watchlistId]
+
+        if type(source) == "table" then
+
+            for key, rule in pairs(source) do
+
+                local copied =
+                    GAG2CopySniperRule(rule)
+
+                if copied
+                and copied.PetName ~= "" then
+
+                    payload.Sets[tostring(watchlistId)][tostring(key)] =
+                        copied
+                end
+            end
+        end
+    end
+
+    local encodeOk, encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                GAG2_SNIPER_WATCHLIST_SAVE_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function GAG2LoadSniperWatchlistNow()
+
+    if GAG2CanUseSniperWatchlistFile() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    local existsOk =
+        pcall(function()
+
+            exists =
+                isfile(
+                    GAG2_SNIPER_WATCHLIST_SAVE_FILE
+                )
+        end)
+
+    if existsOk ~= true
+    or exists ~= true then
+        return false
+    end
+
+    local readOk, raw =
+        pcall(function()
+
+            return readfile(
+                GAG2_SNIPER_WATCHLIST_SAVE_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+        return false
+    end
+
+    local decodeOk, payload =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(payload) ~= "table" then
+        return false
+    end
+
+    local sets =
+        type(payload.Sets) == "table"
+        and payload.Sets
+        or {}
+
+    for watchlistId = 1, 3 do
+
+        GAG2_SNIPER_FILTER_SETS[watchlistId] =
+            {}
+
+        local source =
+            sets[tostring(watchlistId)]
+            or sets[watchlistId]
+
+        if type(source) == "table" then
+
+            for key, rule in pairs(source) do
+
+                local copied =
+                    GAG2CopySniperRule(rule)
+
+                if copied
+                and copied.PetName ~= "" then
+
+                    GAG2_SNIPER_FILTER_SETS[watchlistId][tostring(key)] =
+                        copied
+                end
+            end
+        end
+    end
+
+    return true
+end
+
+function SniperBuildWatchlistKey(petName, sizeFilter, mutationFilter)
+
+    return SniperNormalizeName(petName)
+        .. "|"
+        .. SniperCleanSizeClass(sizeFilter)
+        .. "|"
+        .. SniperCleanMutationFilter(mutationFilter)
+end
+
+function SniperCountWatchlistRules(watchlistId)
+
+    local count =
+        0
+
+    local rules =
+        GAG2_SNIPER_FILTER_SETS[
+            tonumber(watchlistId)
+            or 1
+        ]
+
+    if type(rules) == "table" then
+
+        for _ in pairs(rules) do
+            count =
+                count + 1
+        end
+    end
+
+    return count
+end
+
+function SniperCountAllWatchlistRules()
+
+    local count =
+        0
+
+    for watchlistId = 1, 3 do
+
+        count =
+            count
+            + SniperCountWatchlistRules(
+                watchlistId
+            )
+    end
+
+    return count
+end
+
+function SniperAddCurrentFilterToWatchlist()
+
+    local targets =
+        SniperGetBuilderTargetPets()
+
+    targets =
+        SniperNormalizeList(
+            targets
+        )
+
+    if #targets <= 0 then
+
+        Notify(
+            "Sniper Watchlist",
+            "Select at least one target pet first.",
+            4
+        )
+
+        SetSniperStatus(
+            "Select Target Pets, then click Save Filter."
+        )
+
+        return false
+    end
+
+    local sizeFilters =
+        SniperGetBuilderSizeFilters()
+
+    local mutationFilters =
+        SniperGetBuilderMutationFilters()
+
+    if #sizeFilters <= 0 then
+
+        sizeFilters = {
+            "Any",
+        }
+    end
+
+    if #mutationFilters <= 0 then
+
+        mutationFilters = {
+            "Any",
+        }
+    end
+
+    local watchlistId =
+        math.clamp(
+            math.floor(
+                tonumber(SniperState.SaveTarget)
+                or 1
+            ),
+            1,
+            3
+        )
+
+    local priority =
+        SniperCleanPriorityLevel(
+            SniperBuilderPriorityText()
+        )
+
+    GAG2_SNIPER_FILTER_SETS[watchlistId] =
+        type(GAG2_SNIPER_FILTER_SETS[watchlistId]) == "table"
+        and GAG2_SNIPER_FILTER_SETS[watchlistId]
+        or {}
+
+    local rules =
+        GAG2_SNIPER_FILTER_SETS[watchlistId]
+
+    local added =
+        0
+
+    local updated =
+        0
+
+    for _, petName in ipairs(targets) do
+
+        petName =
+            CleanText(
+                petName
+            )
+
+        if petName ~= "" then
+
+            for _, sizeFilter in ipairs(sizeFilters) do
+
+                sizeFilter =
+                    SniperCleanSizeClass(
+                        sizeFilter
+                    )
+
+                for _, mutationFilter in ipairs(mutationFilters) do
+
+                    mutationFilter =
+                        SniperCleanMutationFilter(
+                            mutationFilter
+                        )
+
+                    local key =
+                        SniperBuildWatchlistKey(
+                            petName,
+                            sizeFilter,
+                            mutationFilter
+                        )
+
+                    if rules[key] ~= nil then
+
+                        updated =
+                            updated + 1
+
+                    else
+
+                        added =
+                            added + 1
+                    end
+
+                    rules[key] = {
+                        PetName =
+                            petName,
+
+                        SizeFilter =
+                            sizeFilter,
+
+                        MutationFilter =
+                            mutationFilter,
+
+                        Priority =
+                            priority,
+
+                        CreatedAt =
+                            os.time(),
+                    }
+                end
+            end
+        end
+    end
+
+    GAG2_SNIPER_WATCHLIST_STATE.ViewTarget =
+        watchlistId
+
+    GAG2_SNIPER_WATCHLIST_STATE.Page =
+        1
+
+    GAG2SaveSniperWatchlistNow(
+        "save multi filter"
+    )
+
+    SniperBuildTargets()
+
+    GAG2RefreshSniperWatchlistUi()
+
+    local total =
+        added + updated
+
+    local status =
+        "Saved "
+        .. tostring(total)
+        .. " filter(s)"
+
+    if added > 0
+    or updated > 0 then
+
+        status =
+            status
+            .. " | new "
+            .. tostring(added)
+            .. " / updated "
+            .. tostring(updated)
+    end
+
+    status =
+        status
+        .. " to "
+        .. SniperWatchlistName(watchlistId)
+        .. "."
+
+    SetSniperStatus(
+        status
+    )
+
+    Notify(
+        "Sniper Watchlist",
+        status,
+        3
+    )
+
+    MarkConfigDirty()
+
+    return true
+end
+
+function SniperBuildWatchlistEntries(watchlistId)
+
+    watchlistId =
+        tonumber(watchlistId)
+        or tonumber(GAG2_SNIPER_WATCHLIST_STATE.ViewTarget)
+        or 1
+
+    local entries =
+        {}
+
+    local searchText =
+        CleanText(
+            GAG2_SNIPER_WATCHLIST_STATE.SearchText
+        ):lower()
+
+    local rules =
+        GAG2_SNIPER_FILTER_SETS[watchlistId]
+
+    if type(rules) == "table" then
+
+        for key, rule in pairs(rules) do
+
+            local copied =
+                GAG2CopySniperRule(rule)
+
+            if copied
+            and copied.PetName ~= "" then
+
+                local haystack =
+                    (
+                        tostring(copied.PetName)
+                        .. " "
+                        .. tostring(copied.SizeFilter)
+                        .. " "
+                        .. tostring(copied.MutationFilter)
+                        .. " "
+                        .. tostring(copied.Priority)
+                    ):lower()
+
+                if searchText == ""
+                or haystack:find(searchText, 1, true) then
+
+                    table.insert(entries, {
+                        WatchlistId =
+                            watchlistId,
+
+                        Key =
+                            tostring(key),
+
+                        Rule =
+                            copied,
+                    })
+                end
+            end
+        end
+    end
+
+    table.sort(entries, function(a, b)
+
+        local aRule =
+            a.Rule or {}
+
+        local bRule =
+            b.Rule or {}
+
+        if tostring(aRule.PetName) ~= tostring(bRule.PetName) then
+
+            return tostring(aRule.PetName)
+                < tostring(bRule.PetName)
+        end
+
+        if tostring(aRule.MutationFilter) ~= tostring(bRule.MutationFilter) then
+
+            return tostring(aRule.MutationFilter)
+                < tostring(bRule.MutationFilter)
+        end
+
+        return tostring(aRule.SizeFilter)
+            < tostring(bRule.SizeFilter)
+    end)
+
+    return entries
+end
+
+function SniperFormatWatchlistEntry(entry)
+
+    if type(entry) ~= "table"
+    or type(entry.Rule) ~= "table" then
+        return " "
+    end
+
+    local rule =
+        entry.Rule
+
+    local selected =
+        tonumber(GAG2_SNIPER_WATCHLIST_STATE.SelectedWatchlistId) == tonumber(entry.WatchlistId)
+        and tostring(GAG2_SNIPER_WATCHLIST_STATE.SelectedKey or "") == tostring(entry.Key)
+
+    return (
+        selected == true
+        and "● "
+        or "  "
+    )
+        .. tostring(rule.PetName)
+        .. " | "
+        .. SniperCleanSizeClass(rule.SizeFilter)
+        .. " | "
+        .. SniperCleanMutationFilter(rule.MutationFilter)
+        .. " | "
+        .. SniperPriorityShortText(rule.Priority)
+end
+
+function SniperFormatWatchlistListRow(entry)
+
+    if type(entry) ~= "table"
+    or type(entry.Rule) ~= "table" then
+        return nil
+    end
+
+    local rule =
+        entry.Rule
+
+    local priorityFull =
+        SniperCleanPriorityLevel(
+            rule.Priority
+        )
+
+    local priorityShort =
+        SniperPriorityShortText(
+            priorityFull
+        )
+
+    local sizeText =
+        SniperCleanSizeClass(
+            rule.SizeFilter
+        )
+
+    local mutationText =
+        SniperCleanMutationFilter(
+            rule.MutationFilter
+        )
+
+    local petText =
+        CleanText(
+            rule.PetName
+        )
+
+    if petText == "" then
+        petText =
+            "Unknown"
+    end
+
+    return {
+        Pet =
+            petText,
+
+        PetName =
+            petText,
+
+        Name =
+            petText,
+
+        Max =
+            sizeText,
+
+        MaxPrice =
+            sizeText,
+
+        Size =
+            sizeText,
+
+        BW =
+            mutationText,
+
+        Weight =
+            mutationText,
+
+        MinWeight =
+            mutationText,
+
+        Type =
+            mutationText,
+
+        Mutation =
+            mutationText,
+
+        Mut =
+            mutationText,
+
+        Pri =
+            priorityShort,
+
+        Priority =
+            priorityShort,
+
+        PriorityText =
+            priorityShort,
+
+        PriorityFull =
+            priorityFull,
+
+        P =
+            priorityShort,
+
+        Entry =
+            entry,
+    }
+end
+
+function GAG2RefreshSniperWatchlistUi()
+
+    local state =
+        GAG2_SNIPER_WATCHLIST_STATE
+
+    local entries =
+        SniperBuildWatchlistEntries(
+            state.ViewTarget
+        )
+
+    local perPage =
+        math.clamp(
+            tonumber(state.PerPage)
+            or 8,
+            1,
+            20
+        )
+
+    local pageCount =
+        math.max(
+            1,
+            math.ceil(#entries / perPage)
+        )
+
+    state.Page =
+        math.clamp(
+            tonumber(state.Page)
+            or 1,
+            1,
+            pageCount
+        )
+
+    local startIndex =
+        ((state.Page - 1) * perPage) + 1
+
+    local selectedRowIndex =
+        nil
+
+    local listRows =
+        {}
+
+    GAG2SniperClearTable(
+        SniperWatchlistVisibleEntries
+    )
+
+    for rowIndex = 1, perPage do
+
+        local absoluteIndex =
+            startIndex + rowIndex - 1
+
+        local entry =
+            entries[absoluteIndex]
+
+        SniperWatchlistVisibleEntries[rowIndex] =
+            entry
+
+        if entry then
+
+            listRows[rowIndex] =
+                SniperFormatWatchlistListRow(
+                    entry
+                )
+
+            if tonumber(state.SelectedWatchlistId) == tonumber(entry.WatchlistId)
+            and tostring(state.SelectedKey or "") == tostring(entry.Key) then
+
+                selectedRowIndex =
+                    rowIndex
+            end
+        end
+    end
+
+    local statusText =
+        SniperWatchlistName(state.ViewTarget)
+        .. " · "
+        .. tostring(#entries)
+        .. " filter"
+        .. (
+            #entries == 1
+            and ""
+            or "s"
+        )
+        .. " · Page "
+        .. tostring(state.Page)
+        .. "/"
+        .. tostring(pageCount)
+        .. " · Total "
+        .. tostring(SniperCountAllWatchlistRules())
+
+    GAG2SniperSetControlText(
+        SniperWatchlistStatusLabel,
+        statusText
+    )
+
+    if Options.HolyGAG2SniperWatchlistStatus then
+
+        Options.HolyGAG2SniperWatchlistStatus:SetText(
+            statusText
+        )
+    end
+
+    if SniperWatchlistFilterList
+    and type(SniperWatchlistFilterList.SetRows) == "function" then
+
+        pcall(function()
+
+            SniperWatchlistFilterList:SetRows(
+                listRows
+            )
+        end)
+
+        if type(SniperWatchlistFilterList.SetSelected) == "function" then
+
+            pcall(function()
+
+                SniperWatchlistFilterList:SetSelected(
+                    selectedRowIndex
+                )
+            end)
+        end
+
+    else
+
+        for rowIndex = 1, perPage do
+
+            local entry =
+                SniperWatchlistVisibleEntries[rowIndex]
+
+            local rowText =
+                " "
+
+            if entry then
+
+                rowText =
+                    SniperFormatWatchlistEntry(
+                        entry
+                    )
+            end
+
+            GAG2SniperSetControlText(
+                SniperWatchlistRowButtons[rowIndex],
+                rowText
+            )
+        end
+    end
+end
+
+function SniperSetWatchlistView(watchlistId)
+
+    GAG2_SNIPER_WATCHLIST_STATE.ViewTarget =
+        math.clamp(
+            math.floor(
+                tonumber(watchlistId)
+                or 1
+            ),
+            1,
+            3
+        )
+
+    GAG2_SNIPER_WATCHLIST_STATE.Page =
+        1
+
+    GAG2_SNIPER_WATCHLIST_STATE.SelectedWatchlistId =
+        nil
+
+    GAG2_SNIPER_WATCHLIST_STATE.SelectedKey =
+        ""
+
+    GAG2RefreshSniperWatchlistUi()
+    MarkConfigDirty()
+end
+
+function SniperSelectWatchlistRow(rowIndex)
+
+    rowIndex =
+        math.floor(
+            tonumber(rowIndex)
+            or 0
+        )
+
+    local entry =
+        SniperWatchlistVisibleEntries[rowIndex]
+
+    if not entry then
+
+        GAG2_SNIPER_WATCHLIST_STATE.SelectedWatchlistId =
+            nil
+
+        GAG2_SNIPER_WATCHLIST_STATE.SelectedKey =
+            ""
+
+        GAG2RefreshSniperWatchlistUi()
+
+        return false
+    end
+
+    GAG2_SNIPER_WATCHLIST_STATE.SelectedWatchlistId =
+        entry.WatchlistId
+
+    GAG2_SNIPER_WATCHLIST_STATE.SelectedKey =
+        entry.Key
+
+    GAG2RefreshSniperWatchlistUi()
+
+    SetSniperStatus(
+        "Selected filter: "
+        .. SniperFormatWatchlistEntry(entry)
+    )
+
+    return true
+end
+
+function SniperGetSelectedWatchlistEntry()
+
+    local watchlistId =
+        tonumber(
+            GAG2_SNIPER_WATCHLIST_STATE.SelectedWatchlistId
+        )
+
+    local key =
+        CleanText(
+            GAG2_SNIPER_WATCHLIST_STATE.SelectedKey
+        )
+
+    if not watchlistId
+    or key == "" then
+        return nil
+    end
+
+    local rules =
+        GAG2_SNIPER_FILTER_SETS[watchlistId]
+
+    if type(rules) ~= "table" then
+        return nil
+    end
+
+    local rule =
+        GAG2CopySniperRule(
+            rules[key]
+        )
+
+    if not rule
+    or rule.PetName == "" then
+        return nil
+    end
+
+    return {
+        WatchlistId =
+            watchlistId,
+
+        Key =
+            key,
+
+        Rule =
+            rule,
+    }
+end
+
+function SniperLoadSelectedWatchlistFilter()
+
+    local entry =
+        SniperGetSelectedWatchlistEntry()
+
+    if not entry
+    or type(entry.Rule) ~= "table" then
+
+        Notify(
+            "Sniper Watchlist",
+            "Select a saved filter first.",
+            4
+        )
+
+        return false
+    end
+
+    local rule =
+        entry.Rule
+
+    SniperState.SaveTarget =
+        entry.WatchlistId
+
+    SniperState.BuilderTargets = {
+        CleanText(rule.PetName),
+    }
+
+    SniperState.BuilderSizeClass =
+        SniperCleanSizeClass(
+            rule.SizeFilter
+        )
+
+    SniperState.BuilderMutationFilter =
+        SniperCleanMutationFilter(
+            rule.MutationFilter
+        )
+
+    SniperState.BuilderPriority =
+        SniperCleanPriorityLevel(
+            rule.Priority
+        )
+
+    SniperState.AllowMultiPets =
+        false
+
+    if SniperAllowMultiPetsToggle
+    and type(SniperAllowMultiPetsToggle.SetValue) == "function" then
+
+        pcall(function()
+
+            SniperAllowMultiPetsToggle:SetValue(
+                false
+            )
+        end)
+    end
+
+    SniperApplyTargetDropdownValue(
+        SniperState.BuilderTargets
+    )
+
+    if SniperSizeDropdown
+    and type(SniperSizeDropdown.SetValue) == "function" then
+
+        pcall(function()
+
+            SniperSizeDropdown:SetValue(
+                SniperState.BuilderSizeClass
+            )
+        end)
+    end
+
+    if SniperMutationDropdown
+    and type(SniperMutationDropdown.SetValue) == "function" then
+
+        pcall(function()
+
+            SniperMutationDropdown:SetValue(
+                SniperState.BuilderMutationFilter
+            )
+        end)
+    end
+
+    if SniperRulePriorityDropdown
+    and type(SniperRulePriorityDropdown.SetValue) == "function" then
+
+        pcall(function()
+
+            SniperRulePriorityDropdown:SetValue(
+                SniperState.BuilderPriority
+            )
+        end)
+    end
+
+    if SniperSaveTargetDropdown
+    and type(SniperSaveTargetDropdown.SetValue) == "function" then
+
+        pcall(function()
+
+            SniperSaveTargetDropdown:SetValue(
+                SniperWatchlistName(
+                    SniperState.SaveTarget
+                )
+            )
+        end)
+    end
+
+    SetSniperStatus(
+        "Loaded filter: "
+        .. SniperFormatWatchlistEntry(entry)
+    )
+
+    MarkConfigDirty()
+
+    return true
+end
+
+function SniperRemoveSelectedWatchlistFilter()
+
+    local entry =
+        SniperGetSelectedWatchlistEntry()
+
+    if not entry then
+
+        Notify(
+            "Sniper Watchlist",
+            "Select a saved filter first.",
+            4
+        )
+
+        return false
+    end
+
+    local rules =
+        GAG2_SNIPER_FILTER_SETS[entry.WatchlistId]
+
+    if type(rules) ~= "table" then
+        return false
+    end
+
+    rules[entry.Key] =
+        nil
+
+    GAG2_SNIPER_WATCHLIST_STATE.SelectedWatchlistId =
+        nil
+
+    GAG2_SNIPER_WATCHLIST_STATE.SelectedKey =
+        ""
+
+    GAG2SaveSniperWatchlistNow(
+        "remove filter"
+    )
+
+    GAG2RefreshSniperWatchlistUi()
+
+    SetSniperStatus(
+        "Removed selected filter."
+    )
+
+    MarkConfigDirty()
+
+    return true
+end
+
+function SniperClearCurrentWatchlist()
+
+    local watchlistId =
+        tonumber(GAG2_SNIPER_WATCHLIST_STATE.ViewTarget)
+        or 1
+
+    GAG2_SNIPER_FILTER_SETS[watchlistId] =
+        {}
+
+    GAG2_SNIPER_WATCHLIST_STATE.SelectedWatchlistId =
+        nil
+
+    GAG2_SNIPER_WATCHLIST_STATE.SelectedKey =
+        ""
+
+    GAG2_SNIPER_WATCHLIST_STATE.Page =
+        1
+
+    GAG2SaveSniperWatchlistNow(
+        "clear watchlist"
+    )
+
+    GAG2RefreshSniperWatchlistUi()
+
+    SetSniperStatus(
+        "Cleared "
+        .. SniperWatchlistName(watchlistId)
+        .. "."
+    )
+
+    MarkConfigDirty()
+
+    return true
 end
 
 function SniperReadSizeMetric(instance)
@@ -41286,79 +47372,231 @@ function SniperRefreshSizeBaselines(entries)
     end
 end
 
+function SniperReadVariantAttribute(spawn, ref, attrNames)
+
+    for _, source in ipairs({
+        spawn,
+        ref,
+    }) do
+
+        if typeof(source) == "Instance" then
+
+            local value =
+                SniperReadAttributeAny(
+                    source,
+                    attrNames
+                )
+
+            if value ~= nil
+            and CleanText(value) ~= "" then
+                return value
+            end
+        end
+    end
+
+    return nil
+end
+
+function SniperReadSafeModelScale(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    if instance:IsA("Model") ~= true then
+        return nil
+    end
+
+    local ok, scale =
+        pcall(function()
+
+            return instance:GetScale()
+        end)
+
+    if ok ~= true then
+        return nil
+    end
+
+    scale =
+        tonumber(scale)
+
+    if not scale then
+        return nil
+    end
+
+    return scale
+end
+
+function SniperResolveEntryInternalSize(entry)
+
+    if type(entry) ~= "table" then
+        return nil, 1
+    end
+
+    local direct =
+        SniperReadVariantAttribute(
+            entry.Spawn,
+            entry.Ref,
+            {
+                "PetSize",
+                "Size",
+                "SizeClass",
+                "ScaleSize",
+                "VariantSize",
+                "WildPetSize",
+                "DisplaySize",
+                "SizeType",
+                "Scale",
+                "ModelScale",
+                "PetScale",
+            }
+        )
+
+    local internalSize =
+        SniperCleanInternalSize(
+            direct
+        )
+
+    if internalSize then
+
+        return internalSize,
+            internalSize == "Huge"
+            and 3
+            or 2
+    end
+
+    local numericScale =
+        tonumber(direct)
+
+    if numericScale then
+
+        if numericScale >= 3.25 then
+            return "Huge", 3
+        end
+
+        if numericScale >= 1.50 then
+            return "Big", 2
+        end
+
+        return nil, 1
+    end
+
+    local scaleSources = {
+        entry.Spawn,
+        entry.Instance,
+        entry.Ref,
+    }
+
+    for _, source in ipairs(scaleSources) do
+
+        local modelScale =
+            SniperReadSafeModelScale(
+                source
+            )
+
+        if modelScale then
+
+            if modelScale >= 3.25 then
+                return "Huge", 3
+            end
+
+            if modelScale >= 1.50 then
+                return "Big", 2
+            end
+
+            return nil, 1
+        end
+    end
+
+    return nil, 1
+end
+
+function SniperResolveEntryPetType(entry)
+
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local direct =
+        SniperReadVariantAttribute(
+            entry.Spawn,
+            entry.Ref,
+            {
+                "PetType",
+                "Type",
+                "Variant",
+                "PetVariant",
+                "Mutation",
+                "MutationType",
+                "WildPetType",
+            }
+        )
+
+    local petType =
+        SniperCleanPetType(
+            direct
+        )
+
+    if petType then
+        return petType
+    end
+
+    local nameText =
+        CleanText(entry.Name):lower()
+
+    if nameText:find("rainbow", 1, true) then
+        return "Rainbow"
+    end
+
+    return nil
+end
+
 function SniperApplyEntrySizeClass(entry)
 
     if type(entry) ~= "table" then
-        return "Any Size", 1
+        return "Normal", 1
     end
 
-    local key =
-        SniperSizeBaselineKey(
-            entry.Name
+    local internalSize, score =
+        SniperResolveEntryInternalSize(
+            entry
         )
 
-    local metric =
-        tonumber(entry.SizeMetric)
-        or 0
-
-    local baseline =
-        key ~= ""
-        and tonumber(
-            SniperState.SizeBaselines
-            and SniperState.SizeBaselines[key]
-        )
-        or nil
-
-    local ratio =
-        1
-
-    if metric > 0
-    and baseline
-    and baseline > 0 then
-
-        ratio =
-            metric / baseline
-    end
-
-    local label =
-        "Any Size"
-
-    local score =
-        1
-
-    if ratio >= 1.55 then
-
-        label =
-            "Huge"
-
-        score =
-            3
-
-    elseif ratio >= 1.25 then
-
-        label =
-            "Big+"
-
-        score =
-            2
-    end
-
-    entry.SizeClass =
-        label
+    entry.InternalSize =
+        internalSize
 
     entry.SizeScore =
-        score
+        tonumber(score)
+        or 1
 
-    return label,
-        score
+    entry.SizeClass =
+        SniperDisplaySizeFromInternal(
+            internalSize
+        )
+
+    if entry.SizeClass == "" then
+        entry.SizeClass =
+            "Normal"
+    end
+
+    entry.PetType =
+        SniperResolveEntryPetType(
+            entry
+        )
+
+    return entry.SizeClass,
+        entry.SizeScore
 end
 
-function SniperEntryMatchesSizeClass(entry)
+function SniperEntryMatchesSizeClass(entry, wantedSize)
 
-    local wanted =
-        SniperSizeClassText()
+    wantedSize =
+        SniperCleanSizeClass(
+            wantedSize
+            or SniperSizeClassText()
+        )
 
-    if wanted == "Any Size" then
+    if wantedSize == "Any" then
         return true
     end
 
@@ -41366,24 +47604,65 @@ function SniperEntryMatchesSizeClass(entry)
         return false
     end
 
-    if entry.SizeClass == nil
-    or entry.SizeScore == nil then
+    SniperApplyEntrySizeClass(
+        entry
+    )
 
-        SniperApplyEntrySizeClass(
-            entry
+    local internalSize =
+        SniperCleanInternalSize(
+            entry.InternalSize
         )
+
+    if wantedSize == "Normal" then
+        return internalSize == nil
     end
 
-    local score =
-        tonumber(entry.SizeScore)
-        or 1
-
-    if wanted == "Big+" then
-        return score >= 2
+    if wantedSize == "Big" then
+        return internalSize == "Big"
     end
 
-    if wanted == "Huge Only" then
-        return score >= 3
+    if wantedSize == "Mega" then
+        return internalSize == "Huge"
+    end
+
+    return false
+end
+
+function SniperEntryMatchesMutationFilter(entry, wantedMutation)
+
+    wantedMutation =
+        SniperCleanMutationFilter(
+            wantedMutation
+            or SniperMutationFilterText()
+        )
+
+    if wantedMutation == "Any" then
+        return true
+    end
+
+    if type(entry) ~= "table" then
+        return false
+    end
+
+    if entry.PetType == nil then
+
+        entry.PetType =
+            SniperResolveEntryPetType(
+                entry
+            )
+    end
+
+    local petType =
+        SniperCleanPetType(
+            entry.PetType
+        )
+
+    if wantedMutation == "Normal" then
+        return petType == nil
+    end
+
+    if wantedMutation == "Rainbow" then
+        return petType == "Rainbow"
     end
 
     return true
@@ -41403,29 +47682,45 @@ function SniperEntryDisplayName(entry)
             "Unknown"
     end
 
-    local score =
-        tonumber(entry.SizeScore)
-        or 1
+    local parts =
+        {}
 
-    if score >= 3 then
+    local displaySize =
+        SniperDisplaySizeFromInternal(
+            entry.InternalSize
+        )
 
-        return "Huge "
-            .. name
+    if displaySize ~= "" then
+
+        table.insert(
+            parts,
+            displaySize
+        )
     end
 
-    if score >= 2 then
+    if SniperCleanPetType(entry.PetType) == "Rainbow" then
 
-        return "Big "
-            .. name
+        table.insert(
+            parts,
+            "Rainbow"
+        )
     end
 
-    return name
+    table.insert(
+        parts,
+        name
+    )
+
+    return table.concat(
+        parts,
+        " "
+    )
 end
 
 function SniperEntrySizeText(entry)
 
     if type(entry) ~= "table" then
-        return "Any Size"
+        return "Normal"
     end
 
     if entry.SizeClass == nil then
@@ -41437,7 +47732,22 @@ function SniperEntrySizeText(entry)
 
     return CleanText(entry.SizeClass) ~= ""
         and CleanText(entry.SizeClass)
-        or "Any Size"
+        or "Normal"
+end
+
+function SniperEntryMutationText(entry)
+
+    if type(entry) ~= "table" then
+        return "Normal"
+    end
+
+    local petType =
+        SniperCleanPetType(
+            entry.PetType
+        )
+
+    return petType
+        or "Normal"
 end
 
 function SniperSortMatches(matches)
@@ -41448,14 +47758,30 @@ function SniperSortMatches(matches)
 
     table.sort(matches, function(a, b)
 
+        local aRule =
+            type(a) == "table"
+            and (
+                a.MatchedRule
+                or SniperFindMatchingRuleForEntry(a)
+            )
+            or nil
+
+        local bRule =
+            type(b) == "table"
+            and (
+                b.MatchedRule
+                or SniperFindMatchingRuleForEntry(b)
+            )
+            or nil
+
         local aRank =
-            SniperGetPriorityRank(
-                a and a.Name
+            SniperPriorityRankFromLevel(
+                aRule and aRule.Priority
             )
 
         local bRank =
-            SniperGetPriorityRank(
-                b and b.Name
+            SniperPriorityRankFromLevel(
+                bRule and bRule.Priority
             )
 
         if aRank ~= bRank then
@@ -41483,36 +47809,95 @@ end
 
 function SniperPriorityText()
 
+    local buckets = {
+        High = {},
+        Medium = {},
+        Low = {},
+    }
+
+    for _, rule in ipairs(
+        SniperGetActiveWatchlistRules()
+    ) do
+
+        local priority =
+            SniperCleanPriorityLevel(
+                rule.Priority
+            )
+
+        local label =
+            CleanText(
+                rule.PetName
+            )
+
+        if label ~= "" then
+
+            local sizeFilter =
+                SniperCleanSizeClass(
+                    rule.SizeFilter
+                )
+
+            local mutationFilter =
+                SniperCleanMutationFilter(
+                    rule.MutationFilter
+                )
+
+            if sizeFilter ~= "Any" then
+
+                label =
+                    label
+                    .. " / "
+                    .. sizeFilter
+            end
+
+            if mutationFilter ~= "Any" then
+
+                label =
+                    label
+                    .. " / "
+                    .. mutationFilter
+            end
+
+            table.insert(
+                buckets[priority],
+                label
+            )
+        end
+    end
+
     local rows =
         {}
 
-    for index = 1, 5 do
+    for _, priority in ipairs({
+        "High",
+        "Medium",
+        "Low",
+    }) do
 
-        local value =
-            SniperPriorityCleanValue(
-                SniperState.PriorityPets
-                and SniperState.PriorityPets[index]
-                or ""
-            )
+        table.sort(
+            buckets[priority]
+        )
 
-        if value ~= "" then
+        if #buckets[priority] > 0 then
 
             table.insert(
                 rows,
-                tostring(index)
-                .. ". "
-                .. value
+                priority
+                .. ": "
+                .. table.concat(
+                    buckets[priority],
+                    ", "
+                )
             )
         end
     end
 
     if #rows <= 0 then
-        return "None"
+        return "No saved priority filters."
     end
 
     return table.concat(
         rows,
-        " > "
+        "\n"
     )
 end
 
@@ -41558,7 +47943,7 @@ function SniperRefreshPriorityDropdowns()
         false
 end
 
-local function SniperGetActiveEntries()
+function SniperGetActiveEntries()
 
     local spawnFolder =
         SniperGetSpawnsFolder()
@@ -41827,28 +48212,19 @@ local function SniperGetActiveEntries()
     return entries, "ok"
 end
 
-local function SniperEntryMatchesTargets(entry, targets)
+function SniperEntryMatchesTargets(entry, targets)
 
     if type(entry) ~= "table"
     or type(targets) ~= "table" then
         return false
     end
 
-    local petKey =
-        SniperNormalizeName(entry.Name)
-
-    if petKey == "" then
-        return false
-    end
-
     for targetKey in pairs(targets) do
 
-        if targetKey ~= ""
-        and (
-            petKey == targetKey
-            or petKey:find(targetKey, 1, true) ~= nil
-            or targetKey:find(petKey, 1, true) ~= nil
-        ) then
+        if SniperPetNamesMatch(
+            entry.Name,
+            targetKey
+        ) == true then
 
             return true
         end
@@ -41857,16 +48233,86 @@ local function SniperEntryMatchesTargets(entry, targets)
     return false
 end
 
+function SniperBuildActiveFilterPreview(maxRows)
+
+    maxRows =
+        math.max(
+            1,
+            math.floor(
+                tonumber(maxRows)
+                or 6
+            )
+        )
+
+    local rules =
+        SniperGetActiveWatchlistRules()
+
+    if #rules <= 0 then
+        return "No saved filters."
+    end
+
+    local rows =
+        {}
+
+    for index, rule in ipairs(rules) do
+
+        if index > maxRows then
+
+            table.insert(
+                rows,
+                "+"
+                .. tostring(#rules - maxRows)
+                .. " more saved filter(s)"
+            )
+
+            break
+        end
+
+        local sizeFilter =
+            SniperCleanSizeClass(
+                rule.SizeFilter
+            )
+
+        local mutationFilter =
+            SniperCleanMutationFilter(
+                rule.MutationFilter
+            )
+
+        table.insert(
+            rows,
+            tostring(index)
+            .. ". "
+            .. CleanText(rule.PetName)
+            .. " | Size: "
+            .. sizeFilter
+            .. " | Type: "
+            .. mutationFilter
+            .. " | Priority: "
+            .. SniperCleanPriorityLevel(rule.Priority)
+            .. " | "
+            .. SniperWatchlistName(rule.WatchlistId)
+        )
+    end
+
+    return table.concat(
+        rows,
+        "\n"
+    )
+end
+
 function SniperBuildMatchText(entries, matches, orderedTargets, reason)
 
+    local activeRuleCount =
+        #SniperGetActiveWatchlistRules()
+
     local lines = {
-        '<font color="rgb(196,181,253)"><b>Selected Targets</b></font>',
+        '<font color="rgb(196,181,253)"><b>Active Saved Targets</b></font>',
         SniperTargetsText(),
         "",
-        '<font color="rgb(196,181,253)"><b>Size Class</b></font>',
-        SniperSizeClassText(),
+        '<font color="rgb(196,181,253)"><b>Active Filters</b></font>',
+        SniperBuildActiveFilterPreview(6),
         "",
-        '<font color="rgb(196,181,253)"><b>Priority</b></font>',
+        '<font color="rgb(196,181,253)"><b>Priority Order</b></font>',
         SniperPriorityText(),
         "",
         '<font color="rgb(196,181,253)"><b>Result</b></font>',
@@ -41885,11 +48331,17 @@ function SniperBuildMatchText(entries, matches, orderedTargets, reason)
         )
     end
 
-    if #orderedTargets <= 0 then
+    if activeRuleCount <= 0
+    or #orderedTargets <= 0 then
 
         table.insert(
             lines,
-            "Select target pets first."
+            "No active sniper filters. Select Target Pets, choose Size/Type/Priority, then click Save Filter."
+        )
+
+        table.insert(
+            lines,
+            "Builder changes do not snipe until saved."
         )
 
         return table.concat(
@@ -41902,12 +48354,13 @@ function SniperBuildMatchText(entries, matches, orderedTargets, reason)
 
         table.insert(
             lines,
-            "No target found."
+            "No saved filter matched."
         )
 
         table.insert(
             lines,
-            "Active pets: " .. tostring(#entries)
+            "Active wild pets: "
+            .. tostring(#entries)
         )
 
         return table.concat(
@@ -41918,7 +48371,7 @@ function SniperBuildMatchText(entries, matches, orderedTargets, reason)
 
     table.insert(
         lines,
-        "Target found."
+        "Matched saved filter."
     )
 
     for index, entry in ipairs(matches) do
@@ -41927,19 +48380,38 @@ function SniperBuildMatchText(entries, matches, orderedTargets, reason)
 
             table.insert(
                 lines,
-                "+" .. tostring(#matches - 6) .. " more"
+                "+"
+                .. tostring(#matches - 6)
+                .. " more"
             )
 
             break
         end
+
+        local matchedRule =
+            entry.MatchedRule
+            or SniperFindMatchingRuleForEntry(
+                entry
+            )
+
+        local priority =
+            matchedRule
+            and SniperCleanPriorityLevel(
+                matchedRule.Priority
+            )
+            or "Medium"
 
         table.insert(
             lines,
             tostring(index)
             .. ". "
             .. SniperEntryDisplayName(entry)
-            .. " | "
+            .. " | Size: "
             .. SniperEntrySizeText(entry)
+            .. " | Type: "
+            .. SniperEntryMutationText(entry)
+            .. " | Priority: "
+            .. priority
             .. " | Time: "
             .. tostring(entry.Timer or "?")
             .. " | Price: "
@@ -42075,18 +48547,27 @@ function SniperScan(allowAutoHop)
 
     for _, entry in ipairs(entries) do
 
-        if SniperIsEntryHandled(entry) ~= true
-        and SniperEntryMatchesTargets(entry, targets) == true
-        and SniperEntryMatchesSizeClass(entry) == true then
+        if SniperIsEntryHandled(entry) ~= true then
 
-            table.insert(
-                matches,
-                entry
-            )
+            local matchingRule =
+                SniperFindMatchingRuleForEntry(
+                    entry
+                )
+
+            if matchingRule ~= nil then
+
+                entry.MatchedRule =
+                    matchingRule
+
+                table.insert(
+                    matches,
+                    entry
+                )
+            end
         end
     end
 
-        SniperSortMatches(
+    SniperSortMatches(
         matches
     )
 
@@ -42115,7 +48596,7 @@ function SniperScan(allowAutoHop)
     if #orderedTargets <= 0 then
 
         SetSniperStatus(
-            "Select target pets."
+            "Save at least one sniper filter."
         )
 
         return matches
@@ -42203,7 +48684,7 @@ function SniperScan(allowAutoHop)
     for _, entry in ipairs(entries) do
 
         if SniperIsEntryHandled(entry) == true
-        and SniperEntryMatchesTargets(entry, targets) == true then
+        and SniperFindMatchingRuleForEntry(entry) ~= nil then
 
             hasHandledActiveTarget =
                 true
@@ -43119,14 +49600,61 @@ function RestoreSniperAutosaveState()
             GAG2DestroyPanicHud()
         end
 
+        if Toggles.HolyGAG2SniperAllowMultiPets
+        and Toggles.HolyGAG2SniperAllowMultiPets.Value ~= nil then
+
+            SniperState.AllowMultiPets =
+                Toggles.HolyGAG2SniperAllowMultiPets.Value == true
+        end
+
         if Options.HolyGAG2SniperTargetsList
         and Options.HolyGAG2SniperTargetsList.Value ~= nil then
 
-            SniperState.Targets =
-                SniperNormalizeList(
-                    Options.HolyGAG2SniperTargetsList.Value
+            SniperState.BuilderTargets =
+                SniperLimitTargetsForCurrentMode(
+                    SniperTargetsFromDropdownValue(
+                        Options.HolyGAG2SniperTargetsList.Value
+                    ),
+                    SniperState.BuilderTargets
                 )
         end
+
+        task.defer(function()
+
+            SniperApplyTargetDropdownValue(
+                SniperState.BuilderTargets
+            )
+        end)
+
+        if Options.HolyGAG2SniperSizeClass
+        and Options.HolyGAG2SniperSizeClass.Value ~= nil then
+
+            SniperState.BuilderSizeClass =
+                SniperCleanSizeClass(
+                    Options.HolyGAG2SniperSizeClass.Value
+                )
+        end
+
+        if Options.HolyGAG2SniperMutationFilter
+        and Options.HolyGAG2SniperMutationFilter.Value ~= nil then
+
+            SniperState.BuilderMutationFilter =
+                SniperCleanMutationFilter(
+                    Options.HolyGAG2SniperMutationFilter.Value
+                )
+        end
+
+        if Options.HolyGAG2SniperSaveTarget
+        and Options.HolyGAG2SniperSaveTarget.Value ~= nil then
+
+            SniperState.SaveTarget =
+                SniperWatchlistIdFromText(
+                    Options.HolyGAG2SniperSaveTarget.Value
+                )
+        end
+
+        GAG2LoadSniperWatchlistNow()
+        GAG2RefreshSniperWatchlistUi()
 
         if Options.HolyGAG2SniperHopDelay
         and Options.HolyGAG2SniperHopDelay.Value ~= nil then
@@ -43141,26 +49669,7 @@ function RestoreSniperAutosaveState()
                 )
         end
 
-        for priorityIndex = 1, 5 do
-
-            local option =
-                Options[
-                    "HolyGAG2SniperPriority"
-                    .. tostring(priorityIndex)
-                ]
-
-            if option
-            and option.Value ~= nil then
-
-                SniperSetPriorityPet(
-                    priorityIndex,
-                    option.Value
-                )
-            end
-        end
-
         SniperRefreshTargetDropdown()
-        SniperRefreshPriorityDropdowns()
 
         if enabled == true then
 
@@ -43187,7 +49696,7 @@ local ActiveWildPetHudLabel = nil
 local ActiveWildPetHudLoopRunning = false
 local ActiveWildPetHudLastDebug = 0
 
-local function ActiveWildPetHudDebug(message)
+function ActiveWildPetHudDebug(message)
     if tick() - ActiveWildPetHudLastDebug < 3 then
         return
     end
@@ -43196,7 +49705,7 @@ local function ActiveWildPetHudDebug(message)
     print("[HOLY][Active Wild Pets] " .. tostring(message))
 end
 
-local function ActiveWildPetHudGetRoot()
+function ActiveWildPetHudGetRoot()
     local map = workspace:FindFirstChild("Map")
     if not map then
         return nil
@@ -43205,7 +49714,7 @@ local function ActiveWildPetHudGetRoot()
     return map:FindFirstChild("WildPetSpawns")
 end
 
-local function ActiveWildPetHudGetDistanceText(spawnObject)
+function ActiveWildPetHudGetDistanceText(spawnObject)
     local player = game:GetService("Players").LocalPlayer
     local character = player and player.Character
     local hrp = character and character:FindFirstChild("HumanoidRootPart")
@@ -43241,7 +49750,7 @@ local function ActiveWildPetHudGetDistanceText(spawnObject)
     return tostring(math.floor(distance + 0.5)) .. "m"
 end
 
-local function ActiveWildPetHudCleanPetName(spawnObject)
+function ActiveWildPetHudCleanPetName(spawnObject)
     local attrNames = {
         "PetName",
         "Name",
@@ -43275,7 +49784,7 @@ local function ActiveWildPetHudCleanPetName(spawnObject)
     return rawName
 end
 
-local function ActiveWildPetHudReadAttributeByKeywords(root, keywords)
+function ActiveWildPetHudReadAttributeByKeywords(root, keywords)
     for _, keyword in ipairs(keywords) do
         local direct = root:GetAttribute(keyword)
         if direct ~= nil and tostring(direct) ~= "" then
@@ -43296,7 +49805,7 @@ local function ActiveWildPetHudReadAttributeByKeywords(root, keywords)
     return nil
 end
 
-local function ActiveWildPetHudReadDescendantValueByKeywords(root, keywords)
+function ActiveWildPetHudReadDescendantValueByKeywords(root, keywords)
     for _, descendant in ipairs(root:GetDescendants()) do
         local lowerName = string.lower(tostring(descendant.Name))
 
@@ -43318,7 +49827,7 @@ local function ActiveWildPetHudReadDescendantValueByKeywords(root, keywords)
     return nil
 end
 
-local function ActiveWildPetHudReadTextPattern(root, pattern)
+function ActiveWildPetHudReadTextPattern(root, pattern)
     for _, descendant in ipairs(root:GetDescendants()) do
         if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
             local text = tostring(descendant.Text or "")
@@ -43331,7 +49840,7 @@ local function ActiveWildPetHudReadTextPattern(root, pattern)
     return nil
 end
 
-local function ActiveWildPetHudReadTimer(root)
+function ActiveWildPetHudReadTimer(root)
     local value =
         ActiveWildPetHudReadAttributeByKeywords(root, { "Timer", "Time", "Expire", "Expires", "Duration", "Remaining" })
         or ActiveWildPetHudReadDescendantValueByKeywords(root, { "Timer", "Time", "Expire", "Expires", "Duration", "Remaining" })
@@ -43346,7 +49855,7 @@ local function ActiveWildPetHudReadTimer(root)
     return tostring(value)
 end
 
-local function ActiveWildPetHudReadPrice(root)
+function ActiveWildPetHudReadPrice(root)
     local value =
         ActiveWildPetHudReadAttributeByKeywords(root, { "Price", "Cost", "Coins", "Money", "Token", "Tokens" })
         or ActiveWildPetHudReadDescendantValueByKeywords(root, { "Price", "Cost", "Coins", "Money", "Token", "Tokens" })
@@ -43361,7 +49870,7 @@ local function ActiveWildPetHudReadPrice(root)
     return tostring(value)
 end
 
-local function ActiveWildPetHudIsActiveSpawn(spawnObject)
+function ActiveWildPetHudIsActiveSpawn(spawnObject)
     if not spawnObject then
         return false
     end
@@ -43381,7 +49890,7 @@ local function ActiveWildPetHudIsActiveSpawn(spawnObject)
     return false
 end
 
-local function ActiveWildPetHudBuildText()
+function ActiveWildPetHudBuildText()
     local root = ActiveWildPetHudGetRoot()
 
     if not root then
@@ -43442,7 +49951,7 @@ local function ActiveWildPetHudBuildText()
     return table.concat(lines, "\n")
 end
 
-local function ActiveWildPetHudRefresh(forceDebug)
+function ActiveWildPetHudRefresh(forceDebug)
     local text = ActiveWildPetHudBuildText()
 
     if ActiveWildPetHudLabel and ActiveWildPetHudLabel.SetText then
@@ -43455,7 +49964,7 @@ local function ActiveWildPetHudRefresh(forceDebug)
     end
 end
 
-local function ActiveWildPetHudStartLoop()
+function ActiveWildPetHudStartLoop()
     if ActiveWildPetHudLoopRunning then
         return
     end
@@ -57799,7 +64308,7 @@ end
 -- [7] GROUPBOXES
 --==================================================
 
-local function AddLeftBox(tab, title, icon)
+function AddLeftBox(tab, title, icon)
 
     if tab
     and type(tab.AddLeftCollapsibleGroupbox) == "function" then
@@ -57832,7 +64341,7 @@ local function AddLeftBox(tab, title, icon)
     )
 end
 
-local function AddRightBox(tab, title, icon)
+function AddRightBox(tab, title, icon)
 
     if tab
     and type(tab.AddRightCollapsibleGroupbox) == "function" then
@@ -57865,7 +64374,7 @@ local function AddRightBox(tab, title, icon)
     )
 end
 
-local function AddLeftBoxClosed(tab, title, icon)
+function AddLeftBoxClosed(tab, title, icon)
 
     if tab
     and type(tab.AddLeftCollapsibleGroupbox) == "function" then
@@ -58052,7 +64561,7 @@ local ExperimentStatusBox =
         "activity"
     )
 
-local function AddFarmLeftBoxClosed(title, icon)
+function AddFarmLeftBoxClosed(title, icon)
 
     if Tabs.Farm
     and type(Tabs.Farm.AddLeftCollapsibleGroupbox) == "function" then
@@ -58080,7 +64589,7 @@ local function AddFarmLeftBoxClosed(title, icon)
     )
 end
 
-local function AddFarmRightBoxClosed(title, icon)
+function AddFarmRightBoxClosed(title, icon)
 
     if Tabs.Farm
     and type(Tabs.Farm.AddRightCollapsibleGroupbox) == "function" then
@@ -58108,6 +64617,1265 @@ local function AddFarmRightBoxClosed(title, icon)
     )
 end
 
+GAG2_FARM_UI_STATE =
+    GAG2_FARM_UI_STATE
+    or {
+        Section = "Collect",
+        Boxes = {},
+        BoxKeys = {},
+    }
+
+function GAG2FarmGetGroupboxHolder(box)
+
+    if type(box) ~= "table" then
+        return nil
+    end
+
+    if typeof(box.BoxHolder) == "Instance" then
+        return box.BoxHolder
+    end
+
+    if typeof(box.Holder) == "Instance" then
+        return box.Holder
+    end
+
+    return nil
+end
+
+function GAG2FarmRefreshLayout(box)
+
+    if type(box) == "table"
+    and type(box.Tab) == "table"
+    and type(box.Tab.RefreshSides) == "function" then
+
+        task.defer(function()
+
+            if type(box.Tab) == "table"
+            and type(box.Tab.RefreshSides) == "function" then
+
+                box.Tab:RefreshSides()
+            end
+        end)
+
+        return
+    end
+
+    if Tabs.Farm
+    and type(Tabs.Farm.RefreshSides) == "function" then
+
+        task.defer(function()
+
+            if Tabs.Farm
+            and type(Tabs.Farm.RefreshSides) == "function" then
+
+                Tabs.Farm:RefreshSides()
+            end
+        end)
+    end
+end
+
+function GAG2FarmSetGroupboxVisible(box, visible)
+
+    local holder =
+        GAG2FarmGetGroupboxHolder(
+            box
+        )
+
+    if not holder then
+        return false
+    end
+
+    holder.Visible =
+        visible == true
+
+    GAG2FarmRefreshLayout(
+        box
+    )
+
+    return true
+end
+
+function GAG2FarmRegisterSectionBox(sectionName, box)
+
+    sectionName =
+        tostring(sectionName or "")
+
+    if sectionName == ""
+    or type(box) ~= "table" then
+        return
+    end
+
+    GAG2_FARM_UI_STATE.Boxes[sectionName] =
+        GAG2_FARM_UI_STATE.Boxes[sectionName]
+        or {}
+
+    local holder =
+        GAG2FarmGetGroupboxHolder(
+            box
+        )
+
+    local boxKey =
+        tostring(sectionName)
+        .. "|"
+        .. tostring(box.Name or "")
+        .. "|"
+        .. tostring(box.SideName or "")
+        .. "|"
+        .. tostring(box.CreatedOrder or "")
+        .. "|"
+        .. tostring(holder)
+
+    if GAG2_FARM_UI_STATE.BoxKeys[boxKey] == true then
+        return
+    end
+
+    GAG2_FARM_UI_STATE.BoxKeys[boxKey] =
+        true
+
+    table.insert(
+        GAG2_FARM_UI_STATE.Boxes[sectionName],
+        box
+    )
+
+    local activeSection =
+        tostring(
+            GAG2_FARM_UI_STATE.Section
+            or "Collect"
+        )
+
+    GAG2FarmSetGroupboxVisible(
+        box,
+        activeSection == "All"
+        or activeSection == sectionName
+    )
+end
+
+GAG2_FARM_DASHBOARD_STATE =
+    GAG2_FARM_DASHBOARD_STATE
+    or {
+        Root = nil,
+        Panel = nil,
+        TitleLabel = nil,
+        SectionLabel = nil,
+        StatusLabel = nil,
+        TargetLabel = nil,
+        Buttons = {},
+        ButtonStrokes = {},
+        LoopToken = 0,
+    }
+
+function GAG2FarmDashboardCleanText(value)
+
+    return tostring(value or "")
+        :gsub("<[^>]->", "")
+        :gsub("<.->", "")
+        :gsub("\r", " ")
+        :gsub("\n", " ")
+        :gsub("%s+", " ")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+function GAG2FarmDashboardFormatNumber(value)
+
+    local number =
+        math.floor(
+            tonumber(value)
+            or 0
+        )
+
+    local text =
+        tostring(number)
+
+    text =
+        text:reverse()
+            :gsub("(%d%d%d)", "%1,")
+            :reverse()
+            :gsub("^,", "")
+
+    return text
+end
+
+function GAG2FarmDashboardMakeCorner(parent, radius)
+
+    if typeof(parent) ~= "Instance" then
+        return nil
+    end
+
+    local corner =
+        Instance.new("UICorner")
+
+    corner.CornerRadius =
+        UDim.new(
+            0,
+            tonumber(radius)
+            or 8
+        )
+
+    corner.Parent =
+        parent
+
+    return corner
+end
+
+function GAG2FarmDashboardMakeStroke(parent, color, transparency, thickness)
+
+    if typeof(parent) ~= "Instance" then
+        return nil
+    end
+
+    local stroke =
+        Instance.new("UIStroke")
+
+    stroke.Color =
+        color
+        or Color3.fromRGB(
+            124,
+            58,
+            237
+        )
+
+    stroke.Transparency =
+        tonumber(transparency)
+        or 0.35
+
+    stroke.Thickness =
+        tonumber(thickness)
+        or 1
+
+    stroke.Parent =
+        parent
+
+    return stroke
+end
+
+function GAG2FarmDashboardMakeLabel(
+    parent,
+    name,
+    text,
+    position,
+    size,
+    textSize,
+    textColor,
+    font
+)
+
+    local label =
+        Instance.new("TextLabel")
+
+    label.Name =
+        tostring(name or "Label")
+
+    label.BackgroundTransparency =
+        1
+
+    label.Position =
+        position
+        or UDim2.fromOffset(
+            0,
+            0
+        )
+
+    label.Size =
+        size
+        or UDim2.fromOffset(
+            100,
+            20
+        )
+
+    label.Font =
+        font
+        or Enum.Font.Code
+
+    label.Text =
+        tostring(text or "")
+
+    label.TextSize =
+        tonumber(textSize)
+        or 12
+
+    label.TextColor3 =
+        textColor
+        or Color3.fromRGB(
+            226,
+            232,
+            240
+        )
+
+    label.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    label.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    label.TextWrapped =
+        false
+
+    label.RichText =
+        false
+
+    label.Parent =
+        parent
+
+    return label
+end
+
+function GAG2FarmDashboardGetCollectStatusLine()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    if type(state) ~= "table" then
+
+        return "Collect OFF • Ready • Queue 0"
+    end
+
+    local enabledText =
+        state.Enabled == true
+        and "Collect ON"
+        or "Collect OFF"
+
+    local modeText =
+        GAG2FarmDashboardCleanText(
+            state.CollectMode
+            or "All"
+        )
+
+    if modeText == "" then
+        modeText =
+            "All"
+    end
+
+    local queueCount =
+        tonumber(
+            state.LastMatchingCount
+            or state.LastReadyCount
+            or 0
+        )
+        or 0
+
+    local firedCount =
+        tonumber(
+            state.LastFiredCount
+            or 0
+        )
+        or 0
+
+    return enabledText
+        .. " • "
+        .. tostring(modeText)
+        .. " • Queue "
+        .. GAG2FarmDashboardFormatNumber(
+            queueCount
+        )
+        .. " • Fired "
+        .. GAG2FarmDashboardFormatNumber(
+            firedCount
+        )
+end
+
+function GAG2FarmDashboardGetCollectTargetLine()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    if type(state) ~= "table" then
+        return "Target: None"
+    end
+
+    local nextText =
+        GAG2FarmDashboardCleanText(
+            state.LastNextText
+            or ""
+        )
+
+    if nextText == ""
+    or nextText == "None" then
+
+        local statusText =
+            GAG2FarmDashboardCleanText(
+                state.LastStatus
+                or ""
+            )
+
+        if statusText ~= "" then
+            return "Status: " .. statusText
+        end
+
+        return "Target: None"
+    end
+
+    return "Target: "
+        .. tostring(nextText)
+end
+
+function GAG2FarmDashboardBuildStatusLine(sectionName)
+
+    sectionName =
+        tostring(sectionName or "Collect")
+
+    if sectionName == "Collect" then
+        return GAG2FarmDashboardGetCollectStatusLine()
+    end
+
+    if sectionName == "Plant" then
+        return "Plant view • Seeds, positions, amount, and advanced grid"
+    end
+
+    if sectionName == "Tools" then
+        return "Tools view • Sprinkler, watering can, trowel, and shovel"
+    end
+
+    if sectionName == "All" then
+        return "Farm overview • Showing every farm system"
+    end
+
+    return "Farm ready"
+end
+
+function GAG2FarmDashboardBuildTargetLine(sectionName)
+
+    sectionName =
+        tostring(sectionName or "Collect")
+
+    if sectionName == "Collect" then
+        return GAG2FarmDashboardGetCollectTargetLine()
+    end
+
+    if sectionName == "Plant" then
+        return "Tip: Plant controls stay separate from collect rules"
+    end
+
+    if sectionName == "Tools" then
+        return "Tip: Tool automations are grouped here for fast access"
+    end
+
+    if sectionName == "All" then
+        return "Tip: Use All only when configuring everything"
+    end
+
+    return "Target: None"
+end
+
+function GAG2FarmDashboardSetButtonStyle(sectionName)
+
+    local state =
+        GAG2_FARM_DASHBOARD_STATE
+
+    sectionName =
+        tostring(sectionName or "Collect")
+
+    for buttonName, button in pairs(state.Buttons or {}) do
+
+        if typeof(button) == "Instance" then
+
+            local active =
+                tostring(buttonName) == sectionName
+
+            button.BackgroundColor3 =
+                active == true
+                and Color3.fromRGB(
+                    93,
+                    63,
+                    211
+                )
+                or Color3.fromRGB(
+                    18,
+                    14,
+                    29
+                )
+
+            button.BackgroundTransparency =
+                active == true
+                and 0.05
+                or 0.16
+
+            button.TextColor3 =
+                active == true
+                and Color3.fromRGB(
+                    255,
+                    255,
+                    255
+                )
+                or Color3.fromRGB(
+                    196,
+                    181,
+                    253
+                )
+
+            local stroke =
+                state.ButtonStrokes
+                and state.ButtonStrokes[buttonName]
+
+            if typeof(stroke) == "Instance" then
+
+                stroke.Color =
+                    active == true
+                    and Color3.fromRGB(
+                        167,
+                        139,
+                        250
+                    )
+                    or Color3.fromRGB(
+                        91,
+                        63,
+                        145
+                    )
+
+                stroke.Transparency =
+                    active == true
+                    and 0.08
+                    or 0.35
+            end
+        end
+    end
+end
+
+function GAG2FarmDashboardRefresh()
+
+    local state =
+        GAG2_FARM_DASHBOARD_STATE
+
+    local sectionName =
+        tostring(
+            GAG2_FARM_UI_STATE
+            and GAG2_FARM_UI_STATE.Section
+            or "Collect"
+        )
+
+    if sectionName == "" then
+        sectionName =
+            "Collect"
+    end
+
+    if typeof(state.SectionLabel) == "Instance" then
+
+        state.SectionLabel.Text =
+            sectionName
+    end
+
+    if typeof(state.StatusLabel) == "Instance" then
+
+        state.StatusLabel.Text =
+            GAG2FarmDashboardBuildStatusLine(
+                sectionName
+            )
+    end
+
+    if typeof(state.TargetLabel) == "Instance" then
+
+        state.TargetLabel.Text =
+            GAG2FarmDashboardBuildTargetLine(
+                sectionName
+            )
+    end
+
+    GAG2FarmDashboardSetButtonStyle(
+        sectionName
+    )
+end
+
+function GAG2FarmDashboardCreateButton(parent, sectionName, text)
+
+    local state =
+        GAG2_FARM_DASHBOARD_STATE
+
+    local button =
+        Instance.new("TextButton")
+
+    button.Name =
+        "FarmNav"
+        .. tostring(sectionName)
+
+    button.Size =
+        UDim2.new(
+            0.25,
+            -5,
+            1,
+            0
+        )
+
+    button.BackgroundColor3 =
+        Color3.fromRGB(
+            18,
+            14,
+            29
+        )
+
+    button.BackgroundTransparency =
+        0.16
+
+    button.BorderSizePixel =
+        0
+
+    button.AutoButtonColor =
+        true
+
+    button.Font =
+        Enum.Font.Code
+
+    button.Text =
+        tostring(text or sectionName)
+
+    button.TextSize =
+        12
+
+    button.TextColor3 =
+        Color3.fromRGB(
+            196,
+            181,
+            253
+        )
+
+    button.Parent =
+        parent
+
+    GAG2FarmDashboardMakeCorner(
+        button,
+        7
+    )
+
+    local stroke =
+        GAG2FarmDashboardMakeStroke(
+            button,
+            Color3.fromRGB(
+                91,
+                63,
+                145
+            ),
+            0.35,
+            1
+        )
+
+    state.Buttons[sectionName] =
+        button
+
+    state.ButtonStrokes[sectionName] =
+        stroke
+
+    button.MouseButton1Click:Connect(function()
+
+        if type(GAG2FarmShowSection) == "function" then
+
+            GAG2FarmShowSection(
+                sectionName
+            )
+        end
+    end)
+
+    return button
+end
+
+function GAG2FarmDashboardCreatePanel()
+
+    local state =
+        GAG2_FARM_DASHBOARD_STATE
+
+    local root =
+        Instance.new("Frame")
+
+    root.Name =
+        "HolyGAG2FarmDashboardRoot"
+
+    root.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            124
+        )
+
+    root.BackgroundTransparency =
+        1
+
+    local panel =
+        Instance.new("Frame")
+
+    panel.Name =
+        "Panel"
+
+    panel.Position =
+        UDim2.fromOffset(
+            0,
+            0
+        )
+
+    panel.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            124
+        )
+
+    panel.BackgroundColor3 =
+        Color3.fromRGB(
+            8,
+            6,
+            14
+        )
+
+    panel.BackgroundTransparency =
+        0.03
+
+    panel.BorderSizePixel =
+        0
+
+    panel.ClipsDescendants =
+        true
+
+    panel.Parent =
+        root
+
+    GAG2FarmDashboardMakeCorner(
+        panel,
+        10
+    )
+
+    GAG2FarmDashboardMakeStroke(
+        panel,
+        Color3.fromRGB(
+            124,
+            58,
+            237
+        ),
+        0.18,
+        1
+    )
+
+    local glow =
+        Instance.new("Frame")
+
+    glow.Name =
+        "Glow"
+
+    glow.Position =
+        UDim2.fromOffset(
+            0,
+            0
+        )
+
+    glow.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            2
+        )
+
+    glow.BackgroundColor3 =
+        Color3.fromRGB(
+            139,
+            92,
+            246
+        )
+
+    glow.BackgroundTransparency =
+        0.12
+
+    glow.BorderSizePixel =
+        0
+
+    glow.Parent =
+        panel
+
+    local iconWrap =
+        Instance.new("Frame")
+
+    iconWrap.Name =
+        "IconWrap"
+
+    iconWrap.Position =
+        UDim2.fromOffset(
+            12,
+            13
+        )
+
+    iconWrap.Size =
+        UDim2.fromOffset(
+            43,
+            43
+        )
+
+    iconWrap.BackgroundColor3 =
+        Color3.fromRGB(
+            24,
+            18,
+            38
+        )
+
+    iconWrap.BackgroundTransparency =
+        0.08
+
+    iconWrap.BorderSizePixel =
+        0
+
+    iconWrap.Parent =
+        panel
+
+    GAG2FarmDashboardMakeCorner(
+        iconWrap,
+        10
+    )
+
+    GAG2FarmDashboardMakeStroke(
+        iconWrap,
+        Color3.fromRGB(
+            139,
+            92,
+            246
+        ),
+        0.18,
+        1
+    )
+
+    local icon =
+        GAG2FarmDashboardMakeLabel(
+            iconWrap,
+            "Icon",
+            "🌾",
+            UDim2.fromOffset(
+                0,
+                0
+            ),
+            UDim2.new(
+                1,
+                0,
+                1,
+                0
+            ),
+            22,
+            Color3.fromRGB(
+                196,
+                181,
+                253
+            ),
+            Enum.Font.GothamBold
+        )
+
+    icon.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    local title =
+        GAG2FarmDashboardMakeLabel(
+            panel,
+            "Title",
+            "FARM",
+            UDim2.fromOffset(
+                66,
+                11
+            ),
+            UDim2.new(
+                0.5,
+                -70,
+                0,
+                21
+            ),
+            15,
+            Color3.fromRGB(
+                245,
+                243,
+                255
+            ),
+            Enum.Font.GothamBold
+        )
+
+    local section =
+        GAG2FarmDashboardMakeLabel(
+            panel,
+            "Section",
+            "Collect",
+            UDim2.new(
+                1,
+                -148,
+                0,
+                11
+            ),
+            UDim2.fromOffset(
+                130,
+                21
+            ),
+            12,
+            Color3.fromRGB(
+                167,
+                139,
+                250
+            ),
+            Enum.Font.Code
+        )
+
+    section.TextXAlignment =
+        Enum.TextXAlignment.Right
+
+    local status =
+        GAG2FarmDashboardMakeLabel(
+            panel,
+            "Status",
+            "Collect OFF • All • Queue 0 • Fired 0",
+            UDim2.fromOffset(
+                66,
+                35
+            ),
+            UDim2.new(
+                1,
+                -82,
+                0,
+                18
+            ),
+            12,
+            Color3.fromRGB(
+                196,
+                181,
+                253
+            ),
+            Enum.Font.Code
+        )
+
+    local target =
+        GAG2FarmDashboardMakeLabel(
+            panel,
+            "Target",
+            "Target: None",
+            UDim2.fromOffset(
+                66,
+                57
+            ),
+            UDim2.new(
+                1,
+                -82,
+                0,
+                18
+            ),
+            12,
+            Color3.fromRGB(
+                148,
+                163,
+                184
+            ),
+            Enum.Font.Code
+        )
+
+    local nav =
+        Instance.new("Frame")
+
+    nav.Name =
+        "Navigation"
+
+    nav.Position =
+        UDim2.fromOffset(
+            12,
+            87
+        )
+
+    nav.Size =
+        UDim2.new(
+            1,
+            -24,
+            0,
+            27
+        )
+
+    nav.BackgroundTransparency =
+        1
+
+    nav.Parent =
+        panel
+
+    local navLayout =
+        Instance.new("UIListLayout")
+
+    navLayout.FillDirection =
+        Enum.FillDirection.Horizontal
+
+    navLayout.HorizontalAlignment =
+        Enum.HorizontalAlignment.Left
+
+    navLayout.VerticalAlignment =
+        Enum.VerticalAlignment.Center
+
+    navLayout.SortOrder =
+        Enum.SortOrder.LayoutOrder
+
+    navLayout.Padding =
+        UDim.new(
+            0,
+            6
+        )
+
+    navLayout.Parent =
+        nav
+
+    state.Buttons =
+        {}
+
+    state.ButtonStrokes =
+        {}
+
+    GAG2FarmDashboardCreateButton(
+        nav,
+        "Collect",
+        "Collect"
+    )
+
+    GAG2FarmDashboardCreateButton(
+        nav,
+        "Plant",
+        "Plant"
+    )
+
+    GAG2FarmDashboardCreateButton(
+        nav,
+        "Tools",
+        "Tools"
+    )
+
+    GAG2FarmDashboardCreateButton(
+        nav,
+        "All",
+        "All"
+    )
+
+    state.Root =
+        root
+
+    state.Panel =
+        panel
+
+    state.TitleLabel =
+        title
+
+    state.SectionLabel =
+        section
+
+    state.StatusLabel =
+        status
+
+    state.TargetLabel =
+        target
+
+    return root
+end
+
+function GAG2FarmDashboardStartRefreshLoop()
+
+    local state =
+        GAG2_FARM_DASHBOARD_STATE
+
+    state.LoopToken =
+        tonumber(state.LoopToken)
+        or 0
+
+    state.LoopToken =
+        state.LoopToken + 1
+
+    local token =
+        state.LoopToken
+
+    task.spawn(function()
+
+        while tonumber(state.LoopToken) == token do
+
+            if typeof(state.Root) ~= "Instance"
+            or state.Root.Parent == nil then
+
+                break
+            end
+
+            GAG2FarmDashboardRefresh()
+
+            task.wait(
+                2
+            )
+        end
+    end)
+end
+
+function GAG2FarmShowSection(sectionName)
+
+    sectionName =
+        tostring(sectionName or "Collect")
+
+    if sectionName ~= "Collect"
+    and sectionName ~= "Plant"
+    and sectionName ~= "Tools"
+    and sectionName ~= "All" then
+
+        sectionName =
+            "Collect"
+    end
+
+    GAG2_FARM_UI_STATE =
+        GAG2_FARM_UI_STATE
+        or {
+            Section = "Collect",
+            Boxes = {},
+            BoxKeys = {},
+        }
+
+    GAG2_FARM_UI_STATE.Boxes =
+        type(GAG2_FARM_UI_STATE.Boxes) == "table"
+        and GAG2_FARM_UI_STATE.Boxes
+        or {}
+
+    GAG2_FARM_UI_STATE.Section =
+        sectionName
+
+    for registeredSection, boxes in pairs(GAG2_FARM_UI_STATE.Boxes) do
+
+        local visible =
+            sectionName == "All"
+            or sectionName == registeredSection
+
+        if type(boxes) == "table" then
+
+            for _, box in ipairs(boxes) do
+
+                if type(GAG2FarmSetGroupboxVisible) == "function" then
+
+                    GAG2FarmSetGroupboxVisible(
+                        box,
+                        visible
+                    )
+                end
+            end
+        end
+    end
+
+    if type(GAG2FarmDashboardRefresh) == "function" then
+
+        pcall(function()
+
+            GAG2FarmDashboardRefresh()
+        end)
+    end
+end
+
+local FarmDashboardBox =
+    AddLeftBox(
+        Tabs.Farm,
+        "Farm Dashboard",
+        "sprout"
+    )
+
+local FarmDashboardCreated =
+    false
+
+if FarmDashboardBox
+and type(FarmDashboardBox.AddUIPassthrough) == "function"
+and type(GAG2FarmDashboardCreatePanel) == "function" then
+
+    local dashboardOk,
+        dashboardResult =
+        pcall(function()
+
+            return FarmDashboardBox:AddUIPassthrough(
+                "HolyGAG2FarmDashboard",
+                {
+                    Instance =
+                        GAG2FarmDashboardCreatePanel(),
+
+                    Height =
+                        124,
+
+                    Visible =
+                        true,
+                }
+            )
+        end)
+
+    if dashboardOk == true then
+
+        FarmDashboardCreated =
+            true
+
+        GAG2_FARM_DASHBOARD_STATE =
+            GAG2_FARM_DASHBOARD_STATE
+            or {}
+
+        GAG2_FARM_DASHBOARD_STATE.Passthrough =
+            dashboardResult
+
+        if type(GAG2FarmDashboardStartRefreshLoop) == "function" then
+
+            pcall(function()
+
+                GAG2FarmDashboardStartRefreshLoop()
+            end)
+        end
+
+    else
+
+        warn(
+            "[HOLY FARM DASHBOARD]",
+            "UIPassthrough failed:",
+            tostring(dashboardResult)
+        )
+    end
+end
+
+if FarmDashboardCreated ~= true then
+
+    local FarmFallbackBox =
+        FarmDashboardBox
+        or AddLeftBox(
+            Tabs.Farm,
+            "Farm",
+            "sprout"
+        )
+
+    if FarmFallbackBox
+    and type(FarmFallbackBox.AddButton) == "function" then
+
+        FarmFallbackBox:AddButton({
+            Text = "Collect",
+            Func = function()
+
+                GAG2FarmShowSection(
+                    "Collect"
+                )
+            end,
+        }):AddButton({
+            Text = "Plant",
+            Func = function()
+
+                GAG2FarmShowSection(
+                    "Plant"
+                )
+            end,
+        })
+
+        FarmFallbackBox:AddButton({
+            Text = "Tools",
+            Func = function()
+
+                GAG2FarmShowSection(
+                    "Tools"
+                )
+            end,
+        }):AddButton({
+            Text = "All",
+            Func = function()
+
+                GAG2FarmShowSection(
+                    "All"
+                )
+            end,
+        })
+    end
+end
+
+task.defer(function()
+
+    if type(GAG2FarmShowSection) == "function" then
+
+        GAG2FarmShowSection(
+            GAG2_FARM_UI_STATE
+            and GAG2_FARM_UI_STATE.Section
+            or "Collect"
+        )
+    end
+end)
+        
 local FarmSeedPlantBox =
     AddFarmLeftBoxClosed(
         "Seed Planting",
@@ -58120,11 +65888,8 @@ local FarmCollectionBox =
         "leaf"
     )
 
--- Keep this alias so all existing fruit filter controls stay compile-safe,
--- but they now render inside Fruit Collection instead of a separate groupbox.
 local FarmFiltersBox =
     FarmCollectionBox
-
 
 local FarmAutoSprinklerBox =
     AddFarmLeftBoxClosed(
@@ -58201,15 +65966,15 @@ if FarmExclusionsBox == nil then
         FarmMainBox
 end
 
-if FarmAutoShovelBox == nil then
-
-    FarmAutoShovelBox =
-        FarmMainBox
-end
-
 if FarmAutoSprinklerBox == nil then
 
     FarmAutoSprinklerBox =
+        FarmMainBox
+end
+
+if FarmAutoShovelBox == nil then
+
+    FarmAutoShovelBox =
         FarmMainBox
 end
 
@@ -58231,7 +65996,58 @@ if FarmAutoShovelFruitBox == nil then
         FarmMainBox
 end
 
+GAG2FarmRegisterSectionBox(
+    "Collect",
+    FarmCollectionBox
+)
 
+GAG2FarmRegisterSectionBox(
+    "Plant",
+    FarmSeedPlantBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Tools",
+    FarmAutoSprinklerBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Tools",
+    FarmAutoWateringBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Tools",
+    FarmAutoTrowelBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Tools",
+    FarmAutoShovelBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Tools",
+    FarmAutoShovelFruitBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Collect",
+    FarmWeatherBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Collect",
+    FarmExclusionsBox
+)
+
+task.defer(function()
+
+    GAG2FarmShowSection(
+        GAG2_FARM_UI_STATE.Section
+        or "Collect"
+    )
+end)
 
 local VisualsMainBox =
     AddLeftBox(
@@ -58254,11 +66070,11 @@ local SniperMainBox =
         "crosshair"
     )
 
-local SniperPriorityBox =
-    AddLeftBoxClosed(
+local SniperWatchlistBox =
+    AddRightBox(
         Tabs.Sniper,
-        "Buy Priority",
-        "star"
+        "Sniper Watchlist",
+        "list"
     )
 
 local SniperBuyBehaviorBox =
@@ -58268,9 +66084,12 @@ local SniperBuyBehaviorBox =
         "settings-2"
     )
 
-if SniperPriorityBox == nil then
+local SniperPriorityBox =
+    nil
 
-    SniperPriorityBox =
+if SniperWatchlistBox == nil then
+
+    SniperWatchlistBox =
         SniperMainBox
 end
 
@@ -59058,6 +66877,53 @@ GAG2_AUTO_SELL_FRUIT_CONTROLS.RepeatCount =
         end,
     })
 
+GAG2_AUTO_SELL_FRUIT_CONTROLS.UseWeightFilter =
+    SellMainBox:AddToggle("HolyGAG2AutoSellUseWeightFilter", {
+        Text = "Use Weight Filter",
+        Default = false,
+        Tooltip = "When enabled, SellAll is bypassed and only matching fruit Ids are sold.",
+        Callback = function(value)
+
+            GAG2AutoSellSetUseWeightFilter(
+                value == true
+            )
+        end,
+    })
+
+GAG2_AUTO_SELL_FRUIT_CONTROLS.MinWeightKg =
+    SellMainBox:AddInput("HolyGAG2AutoSellMinWeightKg", {
+        Text = "Min Weight KG",
+        Default = "0",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "0",
+        Tooltip = "Smallest fruit weight allowed to sell. Example: 0.",
+        Callback = function(value)
+
+            GAG2AutoSellSetMinWeight(
+                value
+            )
+        end,
+    })
+
+GAG2_AUTO_SELL_FRUIT_CONTROLS.MaxWeightKg =
+    SellMainBox:AddInput("HolyGAG2AutoSellMaxWeightKg", {
+        Text = "Max Weight KG",
+        Default = "0",
+        Numeric = true,
+        Finished = true,
+        ClearTextOnFocus = false,
+        Placeholder = "0 = no max",
+        Tooltip = "Largest fruit weight allowed to sell. Use 0 for no max.",
+        Callback = function(value)
+
+            GAG2AutoSellSetMaxWeight(
+                value
+            )
+        end,
+    })
+
 SellMainBox:AddToggle("HolyGAG2AutoSellFruits", {
     Text = "Auto Sell Fruits",
     Default = false,
@@ -59073,13 +66939,11 @@ SellMainBox:AddToggle("HolyGAG2AutoSellFruits", {
 SellMainBox:AddDivider()
 
 SellMainBox:AddButton({
-    Text = "Sell All Now",
-    Tooltip = "Fires NPCS.SellAll once.",
+    Text = "Sell Now",
+    Tooltip = "Without filter: fires SellAll. With filter: sells only matching fruit Ids.",
     Func = function()
 
-        GAG2AutoSellFirePacket(
-            "SellAll"
-        )
+        GAG2AutoSellSellNow()
     end,
 }):AddButton({
     Text = "Stop Auto Sell",
@@ -60189,7 +68053,15 @@ if FarmSeedAdvancedBox == nil then
         )
 end
 
-local function GAG2SeedPlantSetControlVisible(control, visible)
+if type(GAG2FarmRegisterSectionBox) == "function" then
+
+    GAG2FarmRegisterSectionBox(
+        "Plant",
+        FarmSeedAdvancedBox
+    )
+end
+
+function GAG2SeedPlantSetControlVisible(control, visible)
 
     if control
     and type(control.SetVisible) == "function" then
@@ -60203,7 +68075,7 @@ local function GAG2SeedPlantSetControlVisible(control, visible)
     end
 end
 
-local function GAG2SeedPlantRefreshAdvancedVisibility()
+function GAG2SeedPlantRefreshAdvancedVisibility()
 
     local isGrid =
         GAG2_SEED_PLANTING_STATE.Layout == "Grid"
@@ -60559,8 +68431,7 @@ GAG2SeedDropSetStatus(
 FarmMainBox:AddLabel({
     Text =
         '<font color="rgb(196,181,253)"><b>Auto Collect Fruits</b></font>'
-        .. '\nBuilds a ready-fruit queue, applies filters/exclusions, then collects by priority.'
-        .. '\nWeight currently uses SizeMulti because exact pre-harvest KG is not stored.',
+        .. '\nBuilds a ready-fruit queue, applies filters/exclusions, then collects by priority.',
     DoesWrap = true,
     Size = 13,
 })
@@ -62572,7 +70443,18 @@ GAG2_PANIC_HUD_TOGGLE_CONTROL =
         end,
     })
 
-SniperMainBox:AddDivider()
+SniperAllowMultiPetsToggle =
+    SniperMainBox:AddToggle("HolyGAG2SniperAllowMultiPets", {
+        Text = "Allow Multi Pets",
+        Default = false,
+        Tooltip = "OFF = one pet only. ON = same dropdown can keep multiple selected pets.",
+        Callback = function(value)
+
+            SniperSetAllowMultiPets(
+                value == true
+            )
+        end,
+    })
 
 SniperTargetDropdown =
     SniperMainBox:AddDropdown(
@@ -62580,53 +70462,209 @@ SniperTargetDropdown =
         {
             Text = "Target Pets",
             Values = SniperGetDropdownPetNames(),
-            Default = {},
+            Default = SniperBuildDropdownSelectionMap(
+                SniperLimitTargetsForCurrentMode(
+                    SniperState.BuilderTargets,
+                    {}
+                )
+            ),
             Multi = true,
             Searchable = true,
             AllowNull = true,
             MaxVisibleDropdownItems = 10,
-            Tooltip = "Select pets to look for.",
+            Tooltip = "Select target pets. Allow Multi Pets controls whether more than one is kept.",
         }
     )
 
-SniperMainBox:AddDropdown(
-    "HolyGAG2SniperSizeClass",
-    {
-        Text = "Size Class",
-        Values = SniperSizeClassValues(),
-        Default = SniperSizeClassText(),
-        Multi = false,
-        Searchable = false,
-        AllowNull = false,
-        MaxVisibleDropdownItems = 3,
-        Tooltip = "Only buy pets matching this size class.",
-    }
-):OnChanged(function(value)
+if SniperTargetDropdown
+and type(SniperTargetDropdown.OnChanged) == "function" then
 
-    SniperSetSizeClass(
-        value
-    )
+    SniperTargetDropdown:OnChanged(function(value)
 
-    SniperScan(
-        false
+        SniperOnTargetDropdownChanged(
+            value
+        )
+    end)
+end
+
+task.defer(function()
+
+    SniperApplyTargetDropdownValue(
+        SniperLimitTargetsForCurrentMode(
+            SniperState.BuilderTargets,
+            {}
+        )
     )
 end)
 
-SniperMainBox:AddButton({
-    Text = "Refresh List",
-    Tooltip = "Refresh available pet names.",
-    Func = function()
+SniperAllowMultiSizesToggle =
+    SniperMainBox:AddToggle("HolyGAG2SniperAllowMultiSizes", {
+        Text = "Allow Multi Sizes",
+        Default = false,
+        Tooltip = "OFF = only one size is kept. ON = Save Filter creates one saved rule for every selected size.",
+        Callback = function(value)
 
-        SniperRefreshTargetDropdown()
-        SniperRefreshPriorityDropdowns()
+            SniperSetAllowMultiSizes(
+                value == true
+            )
+        end,
+    })
+
+SniperSizeDropdown =
+    SniperMainBox:AddDropdown(
+        "HolyGAG2SniperSizeClass",
+        {
+            Text = "Size Filter",
+            Values = SniperSizeClassValues(),
+            Default = SniperBuildSizeDropdownSelectionMap(
+                SniperGetBuilderSizeFilters()
+            ),
+            Multi = true,
+            Searchable = false,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 4,
+            Tooltip = "Mega displays in UI, but internally matches Huge. Multi creates one saved rule per size.",
+        }
+    )
+
+if SniperSizeDropdown
+and type(SniperSizeDropdown.OnChanged) == "function" then
+
+    SniperSizeDropdown:OnChanged(function(value)
+
+        SniperSetSizeClass(
+            value
+        )
 
         SetSniperStatus(
-            "List refreshed."
+            "Builder size updated. Click Save Filter to activate."
         )
+    end)
+end
+
+task.defer(function()
+
+    SniperApplySizeDropdownValue(
+        SniperGetBuilderSizeFilters()
+    )
+end)
+
+SniperAllowMultiMutationsToggle =
+    SniperMainBox:AddToggle("HolyGAG2SniperAllowMultiMutations", {
+        Text = "Allow Multi Mutations",
+        Default = false,
+        Tooltip = "OFF = only one mutation/type is kept. ON = Save Filter creates one saved rule for every selected mutation/type.",
+        Callback = function(value)
+
+            SniperSetAllowMultiMutations(
+                value == true
+            )
+        end,
+    })
+
+SniperMutationDropdown =
+    SniperMainBox:AddDropdown(
+        "HolyGAG2SniperMutationFilter",
+        {
+            Text = "Mutation Filter",
+            Values = SniperMutationFilterValues(),
+            Default = SniperBuildMutationDropdownSelectionMap(
+                SniperGetBuilderMutationFilters()
+            ),
+            Multi = true,
+            Searchable = false,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 3,
+            Tooltip = "Rainbow is stored as PetType, not MutationData. Multi creates one saved rule per mutation/type.",
+        }
+    )
+
+if SniperMutationDropdown
+and type(SniperMutationDropdown.OnChanged) == "function" then
+
+    SniperMutationDropdown:OnChanged(function(value)
+
+        SniperSetMutationFilter(
+            value
+        )
+
+        SetSniperStatus(
+            "Builder mutation updated. Click Save Filter to activate."
+        )
+    end)
+end
+
+task.defer(function()
+
+    SniperApplyMutationDropdownValue(
+        SniperGetBuilderMutationFilters()
+    )
+end)
+
+SniperRulePriorityDropdown =
+    SniperMainBox:AddDropdown(
+        "HolyGAG2SniperFilterPriority",
+        {
+            Text = "Priority",
+            Values = SniperPriorityFilterValues(),
+            Default = SniperBuilderPriorityText(),
+            Multi = false,
+            Searchable = false,
+            AllowNull = false,
+            MaxVisibleDropdownItems = 3,
+            Tooltip = "High buys before Medium. Medium buys before Low.",
+        }
+    )
+
+if SniperRulePriorityDropdown
+and type(SniperRulePriorityDropdown.OnChanged) == "function" then
+
+    SniperRulePriorityDropdown:OnChanged(function(value)
+
+        SniperSetBuilderPriority(
+            value
+        )
+
+        SetSniperStatus(
+            "Builder priority updated. Click Save Filter to activate."
+        )
+    end)
+end
+
+SniperSaveTargetDropdown =
+    SniperMainBox:AddDropdown(
+        "HolyGAG2SniperSaveTarget",
+        {
+            Text = "Save To",
+            Values = SniperSaveTargetValues(),
+            Default = SniperSaveTargetText(),
+            Multi = false,
+            Searchable = false,
+            AllowNull = false,
+            MaxVisibleDropdownItems = 3,
+            Tooltip = "Choose which watchlist receives Save Filter.",
+        }
+    )
+
+if SniperSaveTargetDropdown
+and type(SniperSaveTargetDropdown.OnChanged) == "function" then
+
+    SniperSaveTargetDropdown:OnChanged(function(value)
+
+        SniperSetSaveTarget(
+            value
+        )
+    end)
+end
+
+SniperMainBox:AddButton({
+    Text = "Save Filter",
+    Tooltip = "Save current Target Pets + Size Filter + Mutation Filter to the selected watchlist.",
+    Func = function()
+
+        SniperAddCurrentFilterToWatchlist()
     end,
 })
-
-SniperMainBox:AddDivider()
 
 SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
     Text = "Auto Hop",
@@ -62688,121 +70726,235 @@ SniperMainBox:AddInput("HolyGAG2SniperHopDelay", {
     end,
 })
 
-SniperMainBox:AddDivider()
+if SniperWatchlistBox then
 
-SniperMainBox:AddButton({
-    Text = "Scan Now",
-    Tooltip = "Check once.",
-    Func = function()
+    local WatchlistViewButton =
+        SniperWatchlistBox:AddButton({
+            Text = "W1",
+            Tooltip = "View W1 Main filters.",
+            Func = function()
 
-        SniperScan(
-            false
-        )
-    end,
-}):AddButton({
-    Text = "Copy Results",
-    Tooltip = "Copy last result.",
-    Func = function()
+                SniperSetWatchlistView(
+                    1
+                )
+            end,
+        })
 
-        if CopyText(SniperState.LastMatchText) == true then
+    if WatchlistViewButton
+    and type(WatchlistViewButton.AddButton) == "function" then
 
-            Notify(
-                "Sniper",
-                "Results copied.",
-                3
-            )
+        WatchlistViewButton:AddButton({
+            Text = "W2",
+            Tooltip = "View W2 Alt filters.",
+            Func = function()
 
-        else
+                SniperSetWatchlistView(
+                    2
+                )
+            end,
+        })
 
-            Notify(
-                "Clipboard",
-                "Clipboard unsupported.",
-                4
-            )
-        end
-    end,
-})
+        WatchlistViewButton:AddButton({
+            Text = "W3",
+            Tooltip = "View W3 Priority filters.",
+            Func = function()
 
-for priorityIndex = 1, 5 do
+                SniperSetWatchlistView(
+                    3
+                )
+            end,
+        })
 
-    SniperPriorityDropdowns[priorityIndex] =
-        SniperPriorityBox:AddDropdown(
-            "HolyGAG2SniperPriority"
-                .. tostring(priorityIndex),
+    else
+
+        SniperWatchlistBox:AddButton({
+            Text = "W2",
+            Tooltip = "View W2 Alt filters.",
+            Func = function()
+
+                SniperSetWatchlistView(
+                    2
+                )
+            end,
+        })
+
+        SniperWatchlistBox:AddButton({
+            Text = "W3",
+            Tooltip = "View W3 Priority filters.",
+            Func = function()
+
+                SniperSetWatchlistView(
+                    3
+                )
+            end,
+        })
+    end
+
+    SniperWatchlistBox:AddInput(
+        "HolyGAG2SniperWatchlistSearch",
+        {
+            Text = "Search",
+            Default = "",
+            Placeholder = "Search filters...",
+            Numeric = false,
+            Finished = false,
+            ClearTextOnFocus = false,
+            Tooltip = "Search the current watchlist.",
+            Callback = function(value)
+
+                GAG2_SNIPER_WATCHLIST_STATE.SearchText =
+                    tostring(value or "")
+
+                GAG2_SNIPER_WATCHLIST_STATE.Page =
+                    1
+
+                GAG2RefreshSniperWatchlistUi()
+                MarkConfigDirty()
+            end,
+        }
+    )
+
+    SniperWatchlistStatusLabel =
+        SniperWatchlistBox:AddLabel(
+            "HolyGAG2SniperWatchlistStatus",
             {
-                Text =
-                    "Priority "
-                    .. tostring(priorityIndex),
-                Values =
-                    SniperGetPriorityDropdownValues(),
-                Default =
-                    "None",
-                Multi =
-                    false,
-                Searchable =
-                    true,
-                AllowNull =
-                    false,
-                MaxVisibleDropdownItems =
-                    10,
-                Tooltip =
-                    "Higher priority pets are bought first.",
+                Text = "W1 Main · 0 filters · Page 1/1 · Total 0",
+                DoesWrap = true,
             }
         )
 
-    if SniperPriorityDropdowns[priorityIndex]
-    and type(SniperPriorityDropdowns[priorityIndex].OnChanged) == "function" then
+    if type(SniperWatchlistBox.AddFilterList) == "function" then
 
-        SniperPriorityDropdowns[priorityIndex]:OnChanged(function(value)
+        SniperWatchlistFilterList =
+            SniperWatchlistBox:AddFilterList(
+                "HolyGAG2SniperWatchlistFilterList",
+                {
+                    Rows = GAG2_SNIPER_WATCHLIST_STATE.PerPage,
+                    RowHeight = 24,
+                    HeaderHeight = 20,
+                    Callback = function(rowIndex)
 
-            if SniperPriorityRefreshing == true then
-                return
-            end
-
-            SniperSetPriorityPet(
-                priorityIndex,
-                value
+                        SniperSelectWatchlistRow(
+                            rowIndex
+                        )
+                    end,
+                }
             )
 
-            SniperScan(
-                false
-            )
-        end)
-    end
-end
+    else
 
-SniperPriorityBox:AddButton({
-    Text = "Clear Priority",
-    Tooltip = "Reset all priority slots.",
-    Func = function()
+        for rowIndex = 1, GAG2_SNIPER_WATCHLIST_STATE.PerPage do
 
-        for priorityIndex = 1, 5 do
+            SniperWatchlistRowButtons[rowIndex] =
+                SniperWatchlistBox:AddButton({
+                    Text = " ",
+                    Tooltip = "Click to select this saved filter.",
+                    Func = function()
 
-            SniperSetPriorityPet(
-                priorityIndex,
-                ""
-            )
-
-            local dropdown =
-                SniperPriorityDropdowns[priorityIndex]
-
-            if dropdown
-            and type(dropdown.SetValue) == "function" then
-
-                pcall(function()
-
-                    dropdown:SetValue(
-                        "None"
-                    )
-                end)
-            end
+                        SniperSelectWatchlistRow(
+                            rowIndex
+                        )
+                    end,
+                })
         end
+    end
 
-        SniperScan(
-            false
-        )
-    end,
-})
+    local WatchlistPrevButton =
+        SniperWatchlistBox:AddButton({
+            Text = "Prev",
+            Tooltip = "Previous watchlist page.",
+            Func = function()
+
+                GAG2_SNIPER_WATCHLIST_STATE.Page =
+                    math.max(
+                        1,
+                        (tonumber(GAG2_SNIPER_WATCHLIST_STATE.Page) or 1) - 1
+                    )
+
+                GAG2RefreshSniperWatchlistUi()
+            end,
+        })
+
+    if WatchlistPrevButton
+    and type(WatchlistPrevButton.AddButton) == "function" then
+
+        WatchlistPrevButton:AddButton({
+            Text = "Next",
+            Tooltip = "Next watchlist page.",
+            Func = function()
+
+                GAG2_SNIPER_WATCHLIST_STATE.Page =
+                    (tonumber(GAG2_SNIPER_WATCHLIST_STATE.Page) or 1) + 1
+
+                GAG2RefreshSniperWatchlistUi()
+            end,
+        })
+
+    else
+
+        SniperWatchlistBox:AddButton({
+            Text = "Next",
+            Tooltip = "Next watchlist page.",
+            Func = function()
+
+                GAG2_SNIPER_WATCHLIST_STATE.Page =
+                    (tonumber(GAG2_SNIPER_WATCHLIST_STATE.Page) or 1) + 1
+
+                GAG2RefreshSniperWatchlistUi()
+            end,
+        })
+    end
+
+    local WatchlistEditButton =
+        SniperWatchlistBox:AddButton({
+            Text = "Edit",
+            Tooltip = "Load selected filter back into the Wild Sniper builder.",
+            Func = function()
+
+                SniperLoadSelectedWatchlistFilter()
+            end,
+        })
+
+    if WatchlistEditButton
+    and type(WatchlistEditButton.AddButton) == "function" then
+
+        WatchlistEditButton:AddButton({
+            Text = "Remove",
+            Tooltip = "Remove selected saved filter.",
+            Func = function()
+
+                SniperRemoveSelectedWatchlistFilter()
+            end,
+        })
+
+    else
+
+        SniperWatchlistBox:AddButton({
+            Text = "Remove",
+            Tooltip = "Remove selected saved filter.",
+            Func = function()
+
+                SniperRemoveSelectedWatchlistFilter()
+            end,
+        })
+    end
+
+    SniperWatchlistBox:AddButton({
+        Text = "Clear",
+        Tooltip = "Clear the currently viewed watchlist.",
+        Risky = true,
+        DoubleClick = true,
+        Func = function()
+
+            SniperClearCurrentWatchlist()
+        end,
+    })
+
+    task.defer(function()
+
+        GAG2RefreshSniperWatchlistUi()
+    end)
+end
 
 local SniperMovementModeDropdown =
     SniperBuyBehaviorBox:AddDropdown(
