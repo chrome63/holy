@@ -60534,172 +60534,282 @@ function GAG2FarmDashboardCreateHostBox()
     return box
 end
 
-local FarmDashboardBox =
-    GAG2FarmDashboardCreateHostBox()
+GAG2_FARM_STATIC_DASHBOARD_HEIGHT =
+    130
 
-local FarmDashboardCreated =
-    false
+function GAG2FarmDashboardDestroyStaticHost()
 
-if FarmDashboardBox
-and type(FarmDashboardBox.AddUIPassthrough) == "function"
-and type(GAG2FarmDashboardCreatePanel) == "function" then
+    if Tabs.Farm
+    and typeof(Tabs.Farm.Container) == "Instance" then
 
-    local panelInstance =
-        nil
+        local oldHost =
+            Tabs.Farm.Container:FindFirstChild(
+                "HolyGAG2FarmStaticDashboardHost"
+            )
+
+        if oldHost then
+
+            pcall(function()
+
+                oldHost:Destroy()
+            end)
+        end
+    end
+end
+
+function GAG2FarmDashboardPatchFarmTabLayout()
+
+    if not Tabs.Farm then
+        return false
+    end
+
+    if type(Tabs.Farm.RefreshSides) ~= "function" then
+        return false
+    end
+
+    if Tabs.Farm.__HolyFarmStaticDashboardLayoutPatched == true then
+
+        if type(Tabs.Farm.RefreshSides) == "function" then
+
+            pcall(function()
+
+                Tabs.Farm:RefreshSides()
+            end)
+        end
+
+        return true
+    end
+
+    local oldRefreshSides =
+        Tabs.Farm.RefreshSides
+
+    Tabs.Farm.__HolyFarmStaticDashboardOriginalRefreshSides =
+        oldRefreshSides
+
+    Tabs.Farm.__HolyFarmStaticDashboardLayoutPatched =
+        true
+
+    Tabs.Farm.RefreshSides =
+        function(tabSelf, ...)
+
+            oldRefreshSides(
+                tabSelf,
+                ...
+            )
+
+            local tab =
+                tabSelf
+                or Tabs.Farm
+
+            local extraOffset =
+                tonumber(GAG2_FARM_STATIC_DASHBOARD_HEIGHT)
+                or 130
+
+            if type(tab) ~= "table"
+            or type(tab.Sides) ~= "table" then
+                return
+            end
+
+            for _, side in pairs(tab.Sides) do
+
+                if typeof(side) == "Instance" then
+
+                    local baseY =
+                        tonumber(side.Position.Y.Offset)
+                        or 0
+
+                    local newY =
+                        baseY
+                        + extraOffset
+
+                    side.Position =
+                        UDim2.new(
+                            side.Position.X.Scale,
+                            side.Position.X.Offset,
+                            0,
+                            newY
+                        )
+
+                    side.Size =
+                        UDim2.new(
+                            side.Size.X.Scale,
+                            side.Size.X.Offset,
+                            1,
+                            -newY
+                        )
+                end
+            end
+        end
+
+    pcall(function()
+
+        Tabs.Farm:RefreshSides()
+    end)
+
+    return true
+end
+
+function GAG2FarmDashboardCreateStaticHost()
+
+    if not Tabs.Farm
+    or typeof(Tabs.Farm.Container) ~= "Instance" then
+
+        warn(
+            "[HOLY FARM DASHBOARD]",
+            "Farm tab container missing."
+        )
+
+        return false
+    end
+
+    if type(GAG2FarmDashboardCreatePanel) ~= "function" then
+
+        warn(
+            "[HOLY FARM DASHBOARD]",
+            "Panel creator missing."
+        )
+
+        return false
+    end
+
+    GAG2FarmDashboardDestroyStaticHost()
+
+    local host =
+        Instance.new("Frame")
+
+    host.Name =
+        "HolyGAG2FarmStaticDashboardHost"
+
+    host.BackgroundTransparency =
+        1
+
+    host.BorderSizePixel =
+        0
+
+    host.Position =
+        UDim2.fromOffset(
+            2,
+            0
+        )
+
+    host.Size =
+        UDim2.new(
+            1,
+            -5,
+            0,
+            124
+        )
+
+    host.ZIndex =
+        20
+
+    host.Parent =
+        Tabs.Farm.Container
 
     local panelOk,
-        panelResult =
+        panel =
         pcall(function()
 
             return GAG2FarmDashboardCreatePanel()
         end)
 
-    if panelOk == true
-    and typeof(panelResult) == "Instance" then
-
-        panelInstance =
-            panelResult
-    end
-
-    if panelInstance then
-
-        local dashboardOk,
-            dashboardResult =
-            pcall(function()
-
-                return FarmDashboardBox:AddUIPassthrough(
-                    "HolyGAG2FarmDashboard",
-                    {
-                        Instance =
-                            panelInstance,
-
-                        Height =
-                            118,
-
-                        Visible =
-                            true,
-                    }
-                )
-            end)
-
-        if dashboardOk == true then
-
-            FarmDashboardCreated =
-                true
-
-            GAG2_FARM_DASHBOARD_STATE =
-                GAG2_FARM_DASHBOARD_STATE
-                or {}
-
-            GAG2_FARM_DASHBOARD_STATE.Passthrough =
-                dashboardResult
-
-            pcall(function()
-
-                panelInstance.Visible =
-                    true
-            end)
-
-            task.defer(function()
-
-                GAG2FarmDashboardStripWrapper(
-                    FarmDashboardBox
-                )
-
-                if type(GAG2FarmDashboardRefresh) == "function" then
-
-                    GAG2FarmDashboardRefresh()
-                end
-            end)
-
-            task.delay(0.5, function()
-
-                GAG2FarmDashboardStripWrapper(
-                    FarmDashboardBox
-                )
-
-                if type(GAG2FarmDashboardRefresh) == "function" then
-
-                    GAG2FarmDashboardRefresh()
-                end
-            end)
-
-            if type(GAG2FarmDashboardStartRefreshLoop) == "function" then
-
-                pcall(function()
-
-                    GAG2FarmDashboardStartRefreshLoop()
-                end)
-            end
-
-        else
-
-            warn(
-                "[HOLY FARM DASHBOARD]",
-                "UIPassthrough failed:",
-                tostring(dashboardResult)
-            )
-        end
-
-    else
+    if panelOk ~= true
+    or typeof(panel) ~= "Instance" then
 
         warn(
             "[HOLY FARM DASHBOARD]",
-            "panel create failed:",
-            tostring(panelResult)
+            "Panel create failed:",
+            tostring(panel)
         )
+
+        host:Destroy()
+
+        return false
     end
+
+    panel.Position =
+        UDim2.fromOffset(
+            0,
+            0
+        )
+
+    panel.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            118
+        )
+
+    panel.Visible =
+        true
+
+    panel.ZIndex =
+        21
+
+    panel.Parent =
+        host
+
+    GAG2_FARM_DASHBOARD_STATE =
+        GAG2_FARM_DASHBOARD_STATE
+        or {}
+
+    GAG2_FARM_DASHBOARD_STATE.StaticHost =
+        host
+
+    GAG2_FARM_DASHBOARD_STATE.Root =
+        panel
+
+    GAG2FarmDashboardPatchFarmTabLayout()
+
+    if type(GAG2FarmDashboardStartRefreshLoop) == "function" then
+
+        pcall(function()
+
+            GAG2FarmDashboardStartRefreshLoop()
+        end)
+    end
+
+    task.defer(function()
+
+        if type(GAG2FarmDashboardRefresh) == "function" then
+
+            GAG2FarmDashboardRefresh()
+        end
+
+        if Tabs.Farm
+        and type(Tabs.Farm.RefreshSides) == "function" then
+
+            Tabs.Farm:RefreshSides()
+        end
+    end)
+
+    task.delay(0.5, function()
+
+        if type(GAG2FarmDashboardRefresh) == "function" then
+
+            GAG2FarmDashboardRefresh()
+        end
+
+        if Tabs.Farm
+        and type(Tabs.Farm.RefreshSides) == "function" then
+
+            Tabs.Farm:RefreshSides()
+        end
+    end)
+
+    return true
 end
+
+local FarmDashboardCreated =
+    GAG2FarmDashboardCreateStaticHost()
 
 if FarmDashboardCreated ~= true then
 
-    local FarmFallbackBox =
-        FarmDashboardBox
-        or AddLeftBox(
-            Tabs.Farm,
-            "Farm",
-            "sprout"
-        )
-
-    if FarmFallbackBox
-    and type(FarmFallbackBox.AddButton) == "function" then
-
-        FarmFallbackBox:AddButton({
-            Text = "Collect",
-            Func = function()
-
-                GAG2FarmShowSection(
-                    "Collect"
-                )
-            end,
-        }):AddButton({
-            Text = "Plant",
-            Func = function()
-
-                GAG2FarmShowSection(
-                    "Plant"
-                )
-            end,
-        })
-
-        FarmFallbackBox:AddButton({
-            Text = "Tools",
-            Func = function()
-
-                GAG2FarmShowSection(
-                    "Tools"
-                )
-            end,
-        }):AddButton({
-            Text = "All",
-            Func = function()
-
-                GAG2FarmShowSection(
-                    "All"
-                )
-            end,
-        })
-    end
+    warn(
+        "[HOLY FARM DASHBOARD]",
+        "Static dashboard failed. Farm sections will still work."
+    )
 end
 
 task.defer(function()
