@@ -2174,13 +2174,13 @@ function GAG2StatsOverlayCreate()
             0.5,
             0,
             0,
-            10
+            8
         )
 
     holder.Size =
         UDim2.fromOffset(
-            452,
-            58
+            286,
+            34
         )
 
     holder.BackgroundTransparency =
@@ -2209,25 +2209,25 @@ function GAG2StatsOverlayCreate()
 
     shadow.Position =
         UDim2.fromOffset(
-            6,
-            12
+            4,
+            5
         )
 
     shadow.Size =
         UDim2.fromOffset(
-            440,
-            42
+            278,
+            28
         )
 
     shadow.BackgroundColor3 =
         Color3.fromRGB(
-            20,
-            14,
-            4
+            0,
+            0,
+            0
         )
 
     shadow.BackgroundTransparency =
-        0.42
+        0.58
 
     shadow.BorderSizePixel =
         0
@@ -2244,7 +2244,7 @@ function GAG2StatsOverlayCreate()
     shadowCorner.CornerRadius =
         UDim.new(
             0,
-            14
+            10
         )
 
     shadowCorner.Parent =
@@ -2258,31 +2258,31 @@ function GAG2StatsOverlayCreate()
 
     bar.Position =
         UDim2.fromOffset(
-            6,
-            8
+            3,
+            2
         )
 
     bar.Size =
         UDim2.fromOffset(
-            440,
-            42
+            280,
+            30
         )
 
     bar.BackgroundColor3 =
         Color3.fromRGB(
-            245,
-            241,
-            229
+            8,
+            8,
+            10
         )
 
     bar.BackgroundTransparency =
-        0.10
+        0.18
 
     bar.BorderSizePixel =
         0
 
     bar.Active =
-        true
+        false
 
     bar.ZIndex =
         1001
@@ -2296,7 +2296,7 @@ function GAG2StatsOverlayCreate()
     barCorner.CornerRadius =
         UDim.new(
             0,
-            12
+            10
         )
 
     barCorner.Parent =
@@ -2313,180 +2313,154 @@ function GAG2StatsOverlayCreate()
         )
 
     barStroke.Thickness =
-        2
+        1
 
     barStroke.Transparency =
-        0.12
+        0.22
 
     barStroke.Parent =
         bar
 
-    local topCap =
-        Instance.new("Frame")
+    local gradient =
+        Instance.new("UIGradient")
 
-    topCap.Name =
-        "TopCap"
+    gradient.Color =
+        ColorSequence.new({
+            ColorSequenceKeypoint.new(
+                0,
+                Color3.fromRGB(
+                    6,
+                    6,
+                    8
+                )
+            ),
 
-    topCap.AnchorPoint =
-        Vector2.new(
-            0.5,
-            0
-        )
+            ColorSequenceKeypoint.new(
+                0.5,
+                Color3.fromRGB(
+                    18,
+                    14,
+                    7
+                )
+            ),
 
-    topCap.Position =
-        UDim2.new(
-            0.5,
-            0,
-            0,
-            0
-        )
+            ColorSequenceKeypoint.new(
+                1,
+                Color3.fromRGB(
+                    6,
+                    6,
+                    8
+                )
+            ),
+        })
 
-    topCap.Size =
-        UDim2.fromOffset(
-            104,
-            24
-        )
-
-    topCap.BackgroundColor3 =
-        Color3.fromRGB(
-            248,
-            244,
-            232
-        )
-
-    topCap.BackgroundTransparency =
-        0.08
-
-    topCap.BorderSizePixel =
+    gradient.Rotation =
         0
 
-    topCap.ZIndex =
+    gradient.Parent =
+        bar
+
+    local glowLine =
+        Instance.new("Frame")
+
+    glowLine.Name =
+        "GoldLine"
+
+    glowLine.Position =
+        UDim2.fromOffset(
+            14,
+            2
+        )
+
+    glowLine.Size =
+        UDim2.new(
+            1,
+            -28,
+            0,
+            1
+        )
+
+    glowLine.BackgroundColor3 =
+        Color3.fromRGB(
+            255,
+            214,
+            102
+        )
+
+    glowLine.BackgroundTransparency =
+        0.35
+
+    glowLine.BorderSizePixel =
+        0
+
+    glowLine.ZIndex =
         1002
 
-    topCap.Parent =
-        holder
+    glowLine.Parent =
+        bar
 
-    local capCorner =
-        Instance.new("UICorner")
-
-    capCorner.CornerRadius =
-        UDim.new(
-            0,
-            9
-        )
-
-    capCorner.Parent =
-        topCap
-
-    local capStroke =
-        Instance.new("UIStroke")
-
-    capStroke.Color =
-        Color3.fromRGB(
-            245,
-            190,
-            70
-        )
-
-    capStroke.Thickness =
-        1
-
-    capStroke.Transparency =
-        0.12
-
-    capStroke.Parent =
-        topCap
-
-    local halo =
+    local holyLabel =
         GAG2StatsOverlayCreateTextLabel(
-            topCap,
-            "Halo",
+            bar,
+            "HOLY",
             UDim2.fromOffset(
-                0,
-                -6
+                8,
+                0
             ),
-            UDim2.new(
-                1,
-                0,
-                1,
-                8
+            UDim2.fromOffset(
+                64,
+                30
             ),
-            "◯",
-            28,
+            "HOLY",
+            15,
             Color3.fromRGB(
-                245,
-                190,
-                70
+                255,
+                214,
+                102
             )
         )
 
-    halo.TextStrokeTransparency =
-        0.35
+    holyLabel.TextStrokeTransparency =
+        0.55
 
-    GAG2StatsOverlayCreateTextLabel(
-        bar,
-        "LeftSpark",
-        UDim2.fromOffset(
+    local dotOne =
+        GAG2StatsOverlayCreateTextLabel(
+            bar,
+            "DotOne",
+            UDim2.fromOffset(
+                72,
+                0
+            ),
+            UDim2.fromOffset(
+                16,
+                30
+            ),
+            "•",
             14,
-            0
-        ),
-        UDim2.fromOffset(
-            38,
-            42
-        ),
-        "✦",
-        24,
-        Color3.fromRGB(
-            190,
-            134,
-            28
+            Color3.fromRGB(
+                120,
+                99,
+                55
+            )
         )
-    )
 
-    GAG2StatsOverlayCreateTextLabel(
-        bar,
-        "RightSpark",
-        UDim2.fromOffset(
-            388,
-            0
-        ),
-        UDim2.fromOffset(
-            38,
-            42
-        ),
-        "✦",
-        24,
-        Color3.fromRGB(
-            190,
-            134,
-            28
-        )
-    )
-
-    GAG2StatsOverlayCreateLine(
-        bar,
-        58
-    )
-
-    GAG2StatsOverlayCreateLine(
-        bar,
-        382
-    )
+    dotOne.TextStrokeTransparency =
+        1
 
     local fpsLabel =
         GAG2StatsOverlayCreateTextLabel(
             bar,
             "FPS",
             UDim2.fromOffset(
-                70,
+                88,
                 0
             ),
             UDim2.fromOffset(
-                116,
-                42
+                78,
+                30
             ),
             "60 FPS",
-            22,
+            14,
             Color3.fromRGB(
                 34,
                 197,
@@ -2494,52 +2468,28 @@ function GAG2StatsOverlayCreate()
             )
         )
 
-    local holyLabel =
+    local dotTwo =
         GAG2StatsOverlayCreateTextLabel(
             bar,
-            "HOLY",
+            "DotTwo",
             UDim2.fromOffset(
-                184,
-                -1
-            ),
-            UDim2.fromOffset(
-                82,
-                42
-            ),
-            "HOLY",
-            28,
-            Color3.fromRGB(
-                190,
-                134,
-                28
-            )
-        )
-
-    holyLabel.TextStrokeTransparency =
-        0.50
-
-    local middleDot =
-        GAG2StatsOverlayCreateTextLabel(
-            bar,
-            "Dot",
-            UDim2.fromOffset(
-                266,
+                166,
                 0
             ),
             UDim2.fromOffset(
-                26,
-                42
+                16,
+                30
             ),
             "•",
-            20,
+            14,
             Color3.fromRGB(
-                92,
-                74,
-                38
+                120,
+                99,
+                55
             )
         )
 
-    middleDot.TextStrokeTransparency =
+    dotTwo.TextStrokeTransparency =
         1
 
     local pingLabel =
@@ -2547,21 +2497,78 @@ function GAG2StatsOverlayCreate()
             bar,
             "Ping",
             UDim2.fromOffset(
-                292,
+                182,
                 0
             ),
             UDim2.fromOffset(
-                86,
-                42
+                82,
+                30
             ),
-            "? ms",
-            22,
+            "?ms",
+            14,
             Color3.fromRGB(
                 14,
                 165,
                 233
             )
         )
+
+    local smallEdge =
+        Instance.new("Frame")
+
+    smallEdge.Name =
+        "RightAccent"
+
+    smallEdge.AnchorPoint =
+        Vector2.new(
+            1,
+            0.5
+        )
+
+    smallEdge.Position =
+        UDim2.new(
+            1,
+            -8,
+            0.5,
+            0
+        )
+
+    smallEdge.Size =
+        UDim2.fromOffset(
+            2,
+            15
+        )
+
+    smallEdge.BackgroundColor3 =
+        Color3.fromRGB(
+            245,
+            190,
+            70
+        )
+
+    smallEdge.BackgroundTransparency =
+        0.25
+
+    smallEdge.BorderSizePixel =
+        0
+
+    smallEdge.ZIndex =
+        1002
+
+    smallEdge.Parent =
+        bar
+
+    local edgeCorner =
+        Instance.new("UICorner")
+
+    edgeCorner.CornerRadius =
+        UDim.new(
+            0,
+            2
+        )
+
+    edgeCorner.Parent =
+        smallEdge
 
     state.Gui =
         gui
@@ -2630,9 +2637,9 @@ function GAG2StatsOverlayUpdateText()
                             ping + 0.5
                         )
                     )
-                    .. " ms"
+                    .. "ms"
                 )
-                or "? ms"
+                or "?ms"
 
             state.PingLabel.TextColor3 =
                 GAG2StatsOverlayGetPingColor(
@@ -72667,7 +72674,7 @@ SettingsUIBox:AddDivider()
 SettingsUIBox:AddToggle("HolyGAG2StatsOverlay", {
     Text = "FPS / Ping Overlay",
     Default = true,
-    Tooltip = "Default ON. Shows the draggable HOLY gold FPS/ping overlay at the top middle.",
+    Tooltip = "Default ON. Shows a compact draggable HOLY FPS/ping badge at the top middle.",
     Callback = function(value)
 
         GAG2StatsOverlaySetEnabled(
