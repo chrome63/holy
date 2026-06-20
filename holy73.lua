@@ -1076,6 +1076,14 @@ GAG2_AUTO_TP_MIDDLE_FARM_STATE = {
     LastSniperMiddleStartAt = 0,
     SniperWaitActive = false,
 
+    AnchorReady = false,
+    AnchorResolving = false,
+    AnchorCFrame = nil,
+    AnchorPosition = nil,
+    AnchorReason = "not resolved",
+    AnchorResolvedAt = 0,
+    AnchorLastAttemptAt = 0,
+
     EarlyKeepDistance = 8,
     PostLoadRepairDistance = 12,
 
@@ -20740,8 +20748,12 @@ end
 
 function GAG2AutoTpMiddleFarmEnabled()
 
-    return Toggles.HolyGAG2AutoTpMiddleFarm
-        and Toggles.HolyGAG2AutoTpMiddleFarm.Value == true
+    if Toggles.HolyGAG2FarmMiddleAnchor then
+
+        return Toggles.HolyGAG2FarmMiddleAnchor.Value ~= false
+    end
+
+    return true
 end
 
 function GAG2MiddleFarmWorkerShouldContinue(forceTp)
@@ -21338,6 +21350,326 @@ function GAG2TeleportToMiddleFarmOnce(reason)
 
     return true,
         tostring(moveInfo or positionReason)
+end
+
+
+function GAG2BuildFarmMiddleAnchorCFrame(position)
+
+    if typeof(position) ~= "Vector3" then
+        return nil
+    end
+
+    local _,
+        root =
+        SniperGetCharacterRoot()
+
+    local lookVector =
+        Vector3.new(
+            0,
+            0,
+            -1
+        )
+
+    if root
+    and typeof(root.CFrame.LookVector) == "Vector3"
+    and root.CFrame.LookVector.Magnitude > 0 then
+
+        lookVector =
+            root.CFrame.LookVector
+    end
+
+    return CFrame.new(
+        position,
+        position + lookVector
+    )
+end
+
+function GAG2ResetFarmMiddleAnchor(reason)
+
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    state.AnchorReady =
+        false
+
+    state.AnchorResolving =
+        false
+
+    state.AnchorCFrame =
+        nil
+
+    state.AnchorPosition =
+        nil
+
+    state.AnchorReason =
+        tostring(reason or "reset")
+
+    state.AnchorResolvedAt =
+        0
+
+    state.MiddleReady =
+        false
+
+    state.LastTarget =
+        nil
+
+    state.LastTargetReason =
+        tostring(reason or "reset")
+
+    state.LastResult =
+        "farm middle anchor reset: "
+        .. tostring(reason or "reset")
+end
+
+function GAG2ResolveFarmMiddleAnchor(reason, forceRefresh)
+
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    reason =
+        tostring(reason or "resolve anchor")
+
+    if forceRefresh ~= true
+    and state.AnchorReady == true
+    and typeof(state.AnchorPosition) == "Vector3"
+    and typeof(state.AnchorCFrame) == "CFrame" then
+
+        return true,
+            "cached | "
+            .. tostring(state.AnchorReason or "ready")
+    end
+
+    if state.AnchorResolving == true then
+
+        return false,
+            "anchor resolving"
+    end
+
+    state.AnchorResolving =
+        true
+
+    state.AnchorLastAttemptAt =
+        os.clock()
+
+    state.LastResult =
+        "resolving farm middle anchor..."
+
+    local started =
+        os.clock()
+
+    local position =
+        nil
+
+    local positionReason =
+        "not resolved"
+
+    while os.clock() - started < 10 do
+
+        local character, root =
+            SniperGetCharacterRoot()
+
+        local resolvedPosition, resolvedReason =
+            GAG2GetOwnFarmMiddlePosition()
+
+        if character
+        and root
+        and typeof(resolvedPosition) == "Vector3" then
+
+            position =
+                resolvedPosition
+
+            positionReason =
+                tostring(resolvedReason or "resolved")
+
+            break
+        end
+
+        positionReason =
+            tostring(resolvedReason or "not resolved")
+
+        task.wait(
+            0.12
+        )
+    end
+
+    if typeof(position) ~= "Vector3" then
+
+        state.AnchorReady =
+            false
+
+        state.AnchorResolving =
+            false
+
+        state.AnchorCFrame =
+            nil
+
+        state.AnchorPosition =
+            nil
+
+        state.AnchorReason =
+            tostring(positionReason)
+
+        state.MiddleReady =
+            false
+
+        state.LastTarget =
+            nil
+
+        state.LastTargetReason =
+            tostring(positionReason)
+
+        state.LastResult =
+            "anchor failed: "
+            .. tostring(positionReason)
+
+        return false,
+            tostring(positionReason)
+    end
+
+    local cframe =
+        GAG2BuildFarmMiddleAnchorCFrame(
+            position
+        )
+
+    state.AnchorReady =
+        true
+
+    state.AnchorResolving =
+        false
+
+    state.AnchorPosition =
+        position
+
+    state.AnchorCFrame =
+        cframe
+
+    state.AnchorReason =
+        tostring(positionReason)
+
+    state.AnchorResolvedAt =
+        os.clock()
+
+    state.MiddleReady =
+        true
+
+    state.MovedOnce =
+        false
+
+    state.LastMiddleReadyAt =
+        os.clock()
+
+    state.LastTarget =
+        position
+
+    state.LastTargetReason =
+        tostring(positionReason)
+
+    state.LastResult =
+        "anchor ready: "
+        .. tostring(positionReason)
+
+    print(
+        "[HOLY]",
+        "Farm Middle Anchor",
+        "| reason:",
+        reason,
+        "| target:",
+        GAG2FarmVecText(position),
+        "|",
+        tostring(positionReason)
+    )
+
+    return true,
+        tostring(positionReason)
+end
+
+function GAG2StartFarmMiddleAnchorResolver(reason, forceRefresh)
+
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    if state.AnchorResolving == true then
+        return false
+    end
+
+    task.spawn(function()
+
+        GAG2ResolveFarmMiddleAnchor(
+            reason or "background",
+            forceRefresh == true
+        )
+    end)
+
+    return true
+end
+
+function GAG2MoveToFarmMiddleAnchor(reason, forceRefresh)
+
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    local resolved, resolveInfo =
+        GAG2ResolveFarmMiddleAnchor(
+            reason or "move middle",
+            forceRefresh == true
+        )
+
+    if resolved ~= true then
+
+        return false,
+            tostring(resolveInfo)
+    end
+
+    local position =
+        state.AnchorPosition
+        or state.LastTarget
+
+    if typeof(position) ~= "Vector3" then
+
+        return false,
+            "farm middle anchor missing"
+    end
+
+    local mode =
+        GAG2MiddleFarmGetMovementMode()
+
+    state.Moving =
+        true
+
+    local ok, moveInfo =
+        GAG2MiddleFarmMoveTo(
+            position
+        )
+
+    state.Moving =
+        false
+
+    if ok == true then
+
+        state.MovedOnce =
+            true
+
+        state.MiddleReady =
+            true
+
+        state.LastTeleportAt =
+            os.clock()
+
+        state.LastResult =
+            tostring(mode)
+            .. ": "
+            .. tostring(moveInfo or "done")
+            .. " | "
+            .. tostring(state.AnchorReason or "anchor")
+    else
+
+        state.LastResult =
+            "middle move failed: "
+            .. tostring(moveInfo)
+    end
+
+    return ok == true,
+        tostring(moveInfo)
 end
 
 function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
@@ -22095,65 +22427,23 @@ function GAG2StartAutoTpMiddleFarm(reason)
     local state =
         GAG2_AUTO_TP_MIDDLE_FARM_STATE
 
-    if state.Moving == true then
-        return false
-    end
-
-    if state.MovedOnce == true then
-
-        state.MiddleReady =
-            true
-
-        state.LastResult =
-            "already moved once"
-
+    if state.AnchorResolving == true then
         return false
     end
 
     state.Moving =
-        true
-
-    state.MiddleReady =
         false
 
-    task.spawn(function()
+    state.MovedOnce =
+        false
 
-        local ok =
-            false
+    state.SniperWaitActive =
+        false
 
-        local info =
-            "not started"
-
-        ok, info =
-            GAG2TeleportToMiddleFarmOnce(
-                reason or "auto middle"
-            )
-
-        if ok == true then
-
-            state.MovedOnce =
-                true
-
-            state.MiddleReady =
-                true
-
-            state.LastMiddleReadyAt =
-                os.clock()
-
-            state.SniperWaitActive =
-                false
-
-        else
-
-            state.MiddleReady =
-                false
-        end
-
-        state.Moving =
-            false
-    end)
-
-    return true
+    return GAG2StartFarmMiddleAnchorResolver(
+        reason or "farm middle anchor",
+        false
+    )
 end
 
 function GAG2StartAutoSkipLoading(reason)
@@ -22175,23 +22465,9 @@ function GAG2SetAutoTpMiddleFarmEnabled(value)
 
     if enabled == true then
 
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovedOnce =
-            false
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.Moving =
-            false
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.MiddleReady =
-            false
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastMiddleReadyAt =
-            0
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastSniperMiddleStartAt =
-            0
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.SniperWaitActive =
-            false
+        GAG2ResetFarmMiddleAnchor(
+            "toggle refresh"
+        )
 
         if type(GAG2StartAutoTpMiddleFarm) == "function" then
 
@@ -22199,6 +22475,12 @@ function GAG2SetAutoTpMiddleFarmEnabled(value)
                 "toggle"
             )
         end
+
+    else
+
+        GAG2ResetFarmMiddleAnchor(
+            "anchor disabled"
+        )
     end
 
     if enabled ~= true
@@ -22208,7 +22490,7 @@ function GAG2SetAutoTpMiddleFarmEnabled(value)
         if type(GAG2MiddleFarmReleaseSkipHold) == "function" then
 
             GAG2MiddleFarmReleaseSkipHold(
-                "auto tp off"
+                "farm middle anchor off"
             )
         end
     end
@@ -22277,6 +22559,10 @@ function GAG2RestoreAutoTpMiddleFarmState()
                     0.15
                 )
 
+                GAG2ResetFarmMiddleAnchor(
+                    "respawn"
+                )
+
                 GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovedOnce =
                     false
 
@@ -22294,7 +22580,7 @@ function GAG2RestoreAutoTpMiddleFarmState()
                 if GAG2AutoTpMiddleFarmEnabled() == true then
 
                     GAG2StartAutoTpMiddleFarm(
-                        "respawn"
+                        "respawn anchor"
                     )
                 end
             end)
@@ -22321,14 +22607,12 @@ function GAG2RestoreAutoTpMiddleFarmState()
 
         if GAG2AutoTpMiddleFarmEnabled() == true then
 
-            GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovedOnce =
-                false
-
-            GAG2_AUTO_TP_MIDDLE_FARM_STATE.Moving =
-                false
+            GAG2ResetFarmMiddleAnchor(
+                "autosave"
+            )
 
             GAG2StartAutoTpMiddleFarm(
-                "autosave"
+                "autosave anchor"
             )
         end
     end)
@@ -50325,60 +50609,12 @@ function SniperShouldWaitForMiddleFarm()
         return false
     end
 
-    local autoMiddleEnabled =
+    middleState.SniperWaitActive =
         false
 
-    if Toggles.HolyGAG2AutoTpMiddleFarm then
-
-        autoMiddleEnabled =
-            Toggles.HolyGAG2AutoTpMiddleFarm.Value == true
-    end
-
-    if autoMiddleEnabled ~= true then
-
-        middleState.SniperWaitActive =
-            false
-
-        return false
-    end
-
-    local mode =
-        "Teleport"
-
-    if type(GAG2MiddleFarmGetMovementMode) == "function" then
-
-        mode =
-            GAG2MiddleFarmGetMovementMode()
-
-    else
-
-        mode =
-            CleanText(
-                middleState.MovementMode
-            )
-    end
-
-    if mode ~= "Walk" then
-
-        middleState.SniperWaitActive =
-            false
-
-        return false
-    end
-
-    if middleState.MovedOnce == true
-    or middleState.MiddleReady == true then
-
-        middleState.MiddleReady =
-            true
-
-        middleState.SniperWaitActive =
-            false
-
-        return false
-    end
-
-    if middleState.Moving ~= true then
+    if GAG2AutoTpMiddleFarmEnabled() == true
+    and middleState.AnchorReady ~= true
+    and middleState.AnchorResolving ~= true then
 
         local now =
             os.clock()
@@ -50391,27 +50627,13 @@ function SniperShouldWaitForMiddleFarm()
             if type(GAG2StartAutoTpMiddleFarm) == "function" then
 
                 GAG2StartAutoTpMiddleFarm(
-                    "sniper wait"
+                    "sniper passive anchor resolve"
                 )
             end
         end
     end
 
-    SniperState.LastHopAt =
-        os.clock()
-
-    middleState.SniperWaitActive =
-        true
-
-    SetSniperStatus(
-        "Waiting for Auto Middle Farm walk..."
-    )
-
-    GAG2SetPanicHudStatus(
-        "MIDDLE FARM"
-    )
-
-    return true
+    return false
 end
 
 
@@ -73248,11 +73470,11 @@ SettingsUIBox:AddToggle(
 end)
 
 SettingsUIBox:AddToggle(
-    "HolyGAG2AutoTpMiddleFarm",
+    "HolyGAG2FarmMiddleAnchor",
     {
-        Text = "Auto Middle Farm",
-        Default = false,
-        Tooltip = "Moves to your farm middle once. Does not keep pulling you back after you move.",
+        Text = "Farm Middle Anchor",
+        Default = true,
+        Tooltip = "Default ON. Detects and saves your farm middle on join without moving you.",
     }
 ):OnChanged(function(value)
 
@@ -73263,7 +73485,7 @@ SettingsUIBox:AddToggle(
     if type(GAG2SetAutoTpMiddleFarmEnabled) == "function" then
 
         GAG2SetAutoTpMiddleFarmEnabled(
-            value == true
+            value ~= false
         )
     end
 end)
@@ -73271,7 +73493,7 @@ end)
 SettingsUIBox:AddDropdown(
     "HolyGAG2AutoMiddleFarmMode",
     {
-        Text = "Middle Farm Mode",
+        Text = "Middle Move Mode",
         Values = {
             "Teleport",
             "Walk",
@@ -73281,7 +73503,7 @@ SettingsUIBox:AddDropdown(
         Multi = false,
         Searchable = false,
         MaxVisibleDropdownItems = 2,
-        Tooltip = "How Auto Middle Farm moves to the saved farm middle.",
+        Tooltip = "Used only when something manually moves to the saved farm middle.",
     }
 ):OnChanged(function(value)
 
@@ -73290,32 +73512,49 @@ SettingsUIBox:AddDropdown(
         and "Walk"
         or "Teleport"
 
-    if GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovementMode == "Walk"
-    and Toggles.HolyGAG2AutoTpMiddleFarm
-    and Toggles.HolyGAG2AutoTpMiddleFarm.Value == true then
+    if GAG2AutoTpMiddleFarmEnabled() == true
+    and type(GAG2StartAutoTpMiddleFarm) == "function" then
 
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovedOnce =
-            false
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.MiddleReady =
-            false
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastMiddleReadyAt =
-            0
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.LastSniperMiddleStartAt =
-            0
-
-        if type(GAG2StartAutoTpMiddleFarm) == "function" then
-
-            GAG2StartAutoTpMiddleFarm(
-                "mode changed"
-            )
-        end
+        GAG2StartAutoTpMiddleFarm(
+            "mode changed anchor refresh"
+        )
     end
 
     MarkConfigDirty()
 end)
+
+SettingsUIBox:AddButton({
+    Text = "Go Farm Middle",
+    Tooltip = "Moves to the saved farm middle using Middle Move Mode.",
+    Func = function()
+
+        task.spawn(function()
+
+            local ok, info =
+                GAG2MoveToFarmMiddleAnchor(
+                    "manual go middle",
+                    true
+                )
+
+            Notify(
+                "Farm Middle",
+                ok == true
+                and (
+                    "Moved by "
+                    .. tostring(
+                        GAG2MiddleFarmGetMovementMode()
+                    )
+                    .. "."
+                )
+                or (
+                    "Failed: "
+                    .. tostring(info)
+                ),
+                4
+            )
+        end)
+    end,
+})
 
 SettingsUIBox:AddDivider()
 
