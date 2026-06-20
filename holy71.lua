@@ -9116,6 +9116,21 @@ end
 SniperTargetDropdown =
     nil
 
+SniperSizeDropdown =
+    nil
+
+SniperMutationDropdown =
+    nil
+
+SniperSaveTargetDropdown =
+    nil
+
+SniperWatchlistDropdown =
+    nil
+
+SniperWatchlistStatusLabel =
+    nil
+
 SniperDropdownRefreshing =
     false
 
@@ -9124,6 +9139,23 @@ SniperPriorityDropdowns =
 
 SniperPriorityRefreshing =
     false
+
+GAG2_SNIPER_WATCHLIST_SAVE_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/SniperWatchlist.json"
+
+GAG2_SNIPER_FILTER_SETS = {
+    [1] = {},
+    [2] = {},
+    [3] = {},
+}
+
+GAG2_SNIPER_WATCHLIST_STATE = {
+    ViewTarget = 1,
+    SelectedKey = "",
+    SearchText = "",
+    VisibleByText = {},
+}
 
 local SniperState = {
     Enabled = false,
@@ -9138,7 +9170,9 @@ local SniperState = {
         "",
     },
     KnownPetNames = {},
-    SizeClass = "Any Size",
+    SizeClass = "Any",
+    MutationFilter = "Any",
+    SaveTarget = 1,
     SizeBaselines = {},
     AutoHop = false,
     InstantFirstHop = false,
@@ -42305,19 +42339,38 @@ function SniperGetEntryDistanceValue(entry)
     return (root.Position - position).Magnitude
 end
 
-GAG2_SNIPER_SIZE_CLASS_VALUES = {
-    "Any Size",
-    "Big+",
-    "Huge Only",
+GAG2_SNIPER_SIZE_FILTER_VALUES = {
+    "Any",
+    "Normal",
+    "Big",
+    "Mega",
+}
+
+GAG2_SNIPER_MUTATION_FILTER_VALUES = {
+    "Any",
+    "Normal",
+    "Rainbow",
+}
+
+GAG2_SNIPER_SAVE_TARGET_VALUES = {
+    "W1 Main",
+    "W2 Alt",
+    "W3 Priority",
 }
 
 function SniperSizeClassValues()
 
-    return {
-        "Any Size",
-        "Big+",
-        "Huge Only",
-    }
+    return GAG2_SNIPER_SIZE_FILTER_VALUES
+end
+
+function SniperMutationFilterValues()
+
+    return GAG2_SNIPER_MUTATION_FILTER_VALUES
+end
+
+function SniperSaveTargetValues()
+
+    return GAG2_SNIPER_SAVE_TARGET_VALUES
 end
 
 function SniperCleanSizeClass(value)
@@ -42325,16 +42378,21 @@ function SniperCleanSizeClass(value)
     value =
         CleanText(value)
 
-    if value == "Big+" then
-        return "Big+"
+    if value == "Big" then
+        return "Big"
     end
 
-    if value == "Huge Only"
-    or value == "Huge" then
-        return "Huge Only"
+    if value == "Mega"
+    or value == "Huge"
+    or value == "Huge Only" then
+        return "Mega"
     end
 
-    return "Any Size"
+    if value == "Normal" then
+        return "Normal"
+    end
+
+    return "Any"
 end
 
 function SniperSetSizeClass(value)
@@ -42352,6 +42410,861 @@ function SniperSizeClassText()
     return SniperCleanSizeClass(
         SniperState.SizeClass
     )
+end
+
+function SniperCleanMutationFilter(value)
+
+    value =
+        CleanText(value)
+
+    if value == "Rainbow" then
+        return "Rainbow"
+    end
+
+    if value == "Normal" then
+        return "Normal"
+    end
+
+    return "Any"
+end
+
+function SniperSetMutationFilter(value)
+
+    SniperState.MutationFilter =
+        SniperCleanMutationFilter(
+            value
+        )
+
+    MarkConfigDirty()
+end
+
+function SniperMutationFilterText()
+
+    return SniperCleanMutationFilter(
+        SniperState.MutationFilter
+    )
+end
+
+function SniperWatchlistName(watchlistId)
+
+    watchlistId =
+        tonumber(watchlistId)
+        or 1
+
+    if watchlistId == 2 then
+        return "W2 Alt"
+    end
+
+    if watchlistId == 3 then
+        return "W3 Priority"
+    end
+
+    return "W1 Main"
+end
+
+function SniperWatchlistIdFromText(value)
+
+    value =
+        CleanText(value)
+
+    if value:find("W2", 1, true) then
+        return 2
+    end
+
+    if value:find("W3", 1, true) then
+        return 3
+    end
+
+    return 1
+end
+
+function SniperSetSaveTarget(value)
+
+    SniperState.SaveTarget =
+        SniperWatchlistIdFromText(
+            value
+        )
+
+    MarkConfigDirty()
+end
+
+function SniperSaveTargetText()
+
+    return SniperWatchlistName(
+        SniperState.SaveTarget
+    )
+end
+
+function SniperInternalSizeFromFilter(sizeFilter)
+
+    sizeFilter =
+        SniperCleanSizeClass(
+            sizeFilter
+        )
+
+    if sizeFilter == "Big" then
+        return "Big"
+    end
+
+    if sizeFilter == "Mega" then
+        return "Huge"
+    end
+
+    return nil
+end
+
+function SniperDisplaySizeFromInternal(sizeValue)
+
+    sizeValue =
+        CleanText(sizeValue)
+
+    if sizeValue == "Huge" then
+        return "Mega"
+    end
+
+    if sizeValue == "Big" then
+        return "Big"
+    end
+
+    return ""
+end
+
+function SniperCleanInternalSize(value)
+
+    value =
+        CleanText(value)
+
+    if value == "Big"
+    or value:lower() == "big" then
+        return "Big"
+    end
+
+    if value == "Huge"
+    or value == "Mega"
+    or value:lower() == "huge"
+    or value:lower() == "mega" then
+        return "Huge"
+    end
+
+    return nil
+end
+
+function SniperCleanPetType(value)
+
+    value =
+        CleanText(value)
+
+    if value == "Rainbow"
+    or value:lower() == "rainbow" then
+        return "Rainbow"
+    end
+
+    return nil
+end
+
+function GAG2CanUseSniperWatchlistFile()
+
+    return type(writefile) == "function"
+        and type(readfile) == "function"
+        and type(isfile) == "function"
+end
+
+function GAG2CopySniperRule(rule)
+
+    if type(rule) ~= "table" then
+        return nil
+    end
+
+    return {
+        PetName =
+            CleanText(rule.PetName),
+
+        SizeFilter =
+            SniperCleanSizeClass(rule.SizeFilter),
+
+        MutationFilter =
+            SniperCleanMutationFilter(rule.MutationFilter),
+
+        CreatedAt =
+            tonumber(rule.CreatedAt)
+            or os.time(),
+    }
+end
+
+function GAG2SaveSniperWatchlistNow(reason)
+
+    if GAG2CanUseSniperWatchlistFile() ~= true then
+        return false
+    end
+
+    EnsureUISettingsFolder()
+
+    local payload = {
+        Sets = {},
+        SavedAt = os.time(),
+        Reason = tostring(reason or "manual"),
+    }
+
+    for watchlistId = 1, 3 do
+
+        payload.Sets[tostring(watchlistId)] =
+            {}
+
+        local source =
+            GAG2_SNIPER_FILTER_SETS[watchlistId]
+
+        if type(source) == "table" then
+
+            for key, rule in pairs(source) do
+
+                local copied =
+                    GAG2CopySniperRule(rule)
+
+                if copied
+                and copied.PetName ~= "" then
+
+                    payload.Sets[tostring(watchlistId)][tostring(key)] =
+                        copied
+                end
+            end
+        end
+    end
+
+    local encodeOk, encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                GAG2_SNIPER_WATCHLIST_SAVE_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function GAG2LoadSniperWatchlistNow()
+
+    if GAG2CanUseSniperWatchlistFile() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    local existsOk =
+        pcall(function()
+
+            exists =
+                isfile(
+                    GAG2_SNIPER_WATCHLIST_SAVE_FILE
+                )
+        end)
+
+    if existsOk ~= true
+    or exists ~= true then
+        return false
+    end
+
+    local readOk, raw =
+        pcall(function()
+
+            return readfile(
+                GAG2_SNIPER_WATCHLIST_SAVE_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+        return false
+    end
+
+    local decodeOk, payload =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(payload) ~= "table" then
+        return false
+    end
+
+    local sets =
+        type(payload.Sets) == "table"
+        and payload.Sets
+        or {}
+
+    for watchlistId = 1, 3 do
+
+        GAG2_SNIPER_FILTER_SETS[watchlistId] =
+            {}
+
+        local source =
+            sets[tostring(watchlistId)]
+            or sets[watchlistId]
+
+        if type(source) == "table" then
+
+            for key, rule in pairs(source) do
+
+                local copied =
+                    GAG2CopySniperRule(rule)
+
+                if copied
+                and copied.PetName ~= "" then
+
+                    GAG2_SNIPER_FILTER_SETS[watchlistId][tostring(key)] =
+                        copied
+                end
+            end
+        end
+    end
+
+    return true
+end
+
+function SniperBuildWatchlistKey(petName, sizeFilter, mutationFilter)
+
+    return SniperNormalizeName(petName)
+        .. "|"
+        .. SniperCleanSizeClass(sizeFilter)
+        .. "|"
+        .. SniperCleanMutationFilter(mutationFilter)
+end
+
+function SniperCountWatchlistRules(watchlistId)
+
+    local count =
+        0
+
+    local rules =
+        GAG2_SNIPER_FILTER_SETS[
+            tonumber(watchlistId)
+            or 1
+        ]
+
+    if type(rules) == "table" then
+
+        for _ in pairs(rules) do
+            count =
+                count + 1
+        end
+    end
+
+    return count
+end
+
+function SniperCountAllWatchlistRules()
+
+    local count =
+        0
+
+    for watchlistId = 1, 3 do
+
+        count =
+            count
+            + SniperCountWatchlistRules(
+                watchlistId
+            )
+    end
+
+    return count
+end
+
+function SniperAddCurrentFilterToWatchlist()
+
+    local targets =
+        SniperNormalizeList(
+            SniperState.Targets
+        )
+
+    if #targets <= 0 then
+
+        Notify(
+            "Sniper Watchlist",
+            "Select at least one target pet first.",
+            4
+        )
+
+        return false
+    end
+
+    local watchlistId =
+        math.clamp(
+            math.floor(
+                tonumber(SniperState.SaveTarget)
+                or 1
+            ),
+            1,
+            3
+        )
+
+    GAG2_SNIPER_FILTER_SETS[watchlistId] =
+        type(GAG2_SNIPER_FILTER_SETS[watchlistId]) == "table"
+        and GAG2_SNIPER_FILTER_SETS[watchlistId]
+        or {}
+
+    local added =
+        0
+
+    for _, petName in ipairs(targets) do
+
+        local key =
+            SniperBuildWatchlistKey(
+                petName,
+                SniperState.SizeClass,
+                SniperState.MutationFilter
+            )
+
+        GAG2_SNIPER_FILTER_SETS[watchlistId][key] = {
+            PetName =
+                CleanText(petName),
+
+            SizeFilter =
+                SniperSizeClassText(),
+
+            MutationFilter =
+                SniperMutationFilterText(),
+
+            CreatedAt =
+                os.time(),
+        }
+
+        added =
+            added + 1
+    end
+
+    GAG2SaveSniperWatchlistNow(
+        "save filter"
+    )
+
+    GAG2RefreshSniperWatchlistUi()
+
+    SetSniperStatus(
+        "Saved "
+        .. tostring(added)
+        .. " filter(s) to "
+        .. SniperWatchlistName(watchlistId)
+        .. "."
+    )
+
+    Notify(
+        "Sniper Watchlist",
+        "Saved "
+        .. tostring(added)
+        .. " filter(s).",
+        3
+    )
+
+    MarkConfigDirty()
+
+    return true
+end
+
+function SniperBuildWatchlistEntries(watchlistId)
+
+    watchlistId =
+        tonumber(watchlistId)
+        or tonumber(GAG2_SNIPER_WATCHLIST_STATE.ViewTarget)
+        or 1
+
+    local entries =
+        {}
+
+    local searchText =
+        CleanText(
+            GAG2_SNIPER_WATCHLIST_STATE.SearchText
+        ):lower()
+
+    local rules =
+        GAG2_SNIPER_FILTER_SETS[watchlistId]
+
+    if type(rules) == "table" then
+
+        for key, rule in pairs(rules) do
+
+            local copied =
+                GAG2CopySniperRule(rule)
+
+            if copied
+            and copied.PetName ~= "" then
+
+                local haystack =
+                    (
+                        copied.PetName
+                        .. " "
+                        .. copied.SizeFilter
+                        .. " "
+                        .. copied.MutationFilter
+                    ):lower()
+
+                    if searchText == ""
+                    or haystack:find(searchText, 1, true) then
+
+                    table.insert(entries, {
+                        WatchlistId =
+                            watchlistId,
+
+                        Key =
+                            tostring(key),
+
+                        Rule =
+                            copied,
+                    })
+                end
+            end
+        end
+    end
+
+    table.sort(entries, function(a, b)
+
+        local aRule =
+            a.Rule or {}
+
+        local bRule =
+            b.Rule or {}
+
+        if tostring(aRule.PetName) ~= tostring(bRule.PetName) then
+
+            return tostring(aRule.PetName)
+                < tostring(bRule.PetName)
+        end
+
+        if tostring(aRule.MutationFilter) ~= tostring(bRule.MutationFilter) then
+
+            return tostring(aRule.MutationFilter)
+                < tostring(bRule.MutationFilter)
+        end
+
+        return tostring(aRule.SizeFilter)
+            < tostring(bRule.SizeFilter)
+    end)
+
+    return entries
+end
+
+function SniperFormatWatchlistEntry(entry)
+
+    if type(entry) ~= "table"
+    or type(entry.Rule) ~= "table" then
+        return "None"
+    end
+
+    local rule =
+        entry.Rule
+
+    return SniperWatchlistName(entry.WatchlistId)
+        .. " | "
+        .. tostring(rule.PetName)
+        .. " | "
+        .. tostring(rule.SizeFilter)
+        .. " | "
+        .. tostring(rule.MutationFilter)
+end
+
+function GAG2RefreshSniperWatchlistUi()
+
+    if not SniperWatchlistDropdown then
+        return
+    end
+
+    local state =
+        GAG2_SNIPER_WATCHLIST_STATE
+
+    local entries =
+        SniperBuildWatchlistEntries(
+            state.ViewTarget
+        )
+
+    local values =
+        {}
+
+    state.VisibleByText =
+        {}
+
+    for _, entry in ipairs(entries) do
+
+        local text =
+            SniperFormatWatchlistEntry(
+                entry
+            )
+
+        table.insert(
+            values,
+            text
+        )
+
+        state.VisibleByText[text] =
+            entry
+    end
+
+    if #values <= 0 then
+
+        values = {
+            "None",
+        }
+    end
+
+    pcall(function()
+
+        if type(SniperWatchlistDropdown.SetValues) == "function" then
+
+            SniperWatchlistDropdown:SetValues(
+                values
+            )
+
+        elseif type(SniperWatchlistDropdown.SetItems) == "function" then
+
+            SniperWatchlistDropdown:SetItems(
+                values
+            )
+        end
+    end)
+
+    if Options.HolyGAG2SniperWatchlistStatus then
+
+        Options.HolyGAG2SniperWatchlistStatus:SetText(
+            SniperWatchlistName(state.ViewTarget)
+            .. " · "
+            .. tostring(#entries)
+            .. " saved · total "
+            .. tostring(SniperCountAllWatchlistRules())
+        )
+    end
+end
+
+function SniperSetWatchlistView(watchlistId)
+
+    GAG2_SNIPER_WATCHLIST_STATE.ViewTarget =
+        math.clamp(
+            math.floor(
+                tonumber(watchlistId)
+                or 1
+            ),
+            1,
+            3
+        )
+
+    GAG2_SNIPER_WATCHLIST_STATE.SelectedKey =
+        ""
+
+    GAG2RefreshSniperWatchlistUi()
+    MarkConfigDirty()
+end
+
+function SniperGetSelectedWatchlistEntry()
+
+    local selectedText =
+        ""
+
+    if SniperWatchlistDropdown
+    and type(SniperWatchlistDropdown.GetValue) == "function" then
+
+        local ok, value =
+            pcall(function()
+
+                return SniperWatchlistDropdown:GetValue()
+            end)
+
+        if ok == true then
+            selectedText =
+                CleanText(value)
+        end
+    end
+
+    if selectedText == "" then
+
+        selectedText =
+            CleanText(
+                GAG2_SNIPER_WATCHLIST_STATE.SelectedText
+            )
+    end
+
+    if selectedText == ""
+    or selectedText == "None" then
+        return nil
+    end
+
+    return GAG2_SNIPER_WATCHLIST_STATE.VisibleByText[selectedText]
+end
+
+function SniperLoadSelectedWatchlistFilter()
+
+    local entry =
+        SniperGetSelectedWatchlistEntry()
+
+    if not entry
+    or type(entry.Rule) ~= "table" then
+
+        Notify(
+            "Sniper Watchlist",
+            "Select a saved filter first.",
+            4
+        )
+
+        return false
+    end
+
+    local rule =
+        entry.Rule
+
+    SniperState.SaveTarget =
+        entry.WatchlistId
+
+    SniperState.Targets = {
+        CleanText(rule.PetName),
+    }
+
+    SniperState.SizeClass =
+        SniperCleanSizeClass(
+            rule.SizeFilter
+        )
+
+    SniperState.MutationFilter =
+        SniperCleanMutationFilter(
+            rule.MutationFilter
+        )
+
+    if SniperTargetDropdown
+    and type(SniperTargetDropdown.SetValue) == "function" then
+
+        pcall(function()
+
+            SniperTargetDropdown:SetValue(
+                SniperState.Targets
+            )
+        end)
+    end
+
+    if SniperSizeDropdown
+    and type(SniperSizeDropdown.SetValue) == "function" then
+
+        pcall(function()
+
+            SniperSizeDropdown:SetValue(
+                SniperState.SizeClass
+            )
+        end)
+    end
+
+    if SniperMutationDropdown
+    and type(SniperMutationDropdown.SetValue) == "function" then
+
+        pcall(function()
+
+            SniperMutationDropdown:SetValue(
+                SniperState.MutationFilter
+            )
+        end)
+    end
+
+    if SniperSaveTargetDropdown
+    and type(SniperSaveTargetDropdown.SetValue) == "function" then
+
+        pcall(function()
+
+            SniperSaveTargetDropdown:SetValue(
+                SniperWatchlistName(
+                    SniperState.SaveTarget
+                )
+            )
+        end)
+    end
+
+    SetSniperStatus(
+        "Loaded filter: "
+        .. SniperFormatWatchlistEntry(entry)
+    )
+
+    MarkConfigDirty()
+
+    return true
+end
+
+function SniperRemoveSelectedWatchlistFilter()
+
+    local entry =
+        SniperGetSelectedWatchlistEntry()
+
+    if not entry then
+
+        Notify(
+            "Sniper Watchlist",
+            "Select a saved filter first.",
+            4
+        )
+
+        return false
+    end
+
+    local rules =
+        GAG2_SNIPER_FILTER_SETS[entry.WatchlistId]
+
+    if type(rules) ~= "table" then
+        return false
+    end
+
+    rules[entry.Key] =
+        nil
+
+    GAG2_SNIPER_WATCHLIST_STATE.SelectedKey =
+        ""
+
+    GAG2SaveSniperWatchlistNow(
+        "remove filter"
+    )
+
+    GAG2RefreshSniperWatchlistUi()
+
+    SetSniperStatus(
+        "Removed selected filter."
+    )
+
+    MarkConfigDirty()
+
+    return true
+end
+
+function SniperClearCurrentWatchlist()
+
+    local watchlistId =
+        tonumber(GAG2_SNIPER_WATCHLIST_STATE.ViewTarget)
+        or 1
+
+    GAG2_SNIPER_FILTER_SETS[watchlistId] =
+        {}
+
+    GAG2SaveSniperWatchlistNow(
+        "clear watchlist"
+    )
+
+    GAG2RefreshSniperWatchlistUi()
+
+    SetSniperStatus(
+        "Cleared "
+        .. SniperWatchlistName(watchlistId)
+        .. "."
+    )
+
+    MarkConfigDirty()
+
+    return true
 end
 
 function SniperReadSizeMetric(instance)
@@ -42440,10 +43353,62 @@ function SniperRefreshSizeBaselines(entries)
     end
 end
 
-function SniperApplyEntrySizeClass(entry)
+function SniperReadVariantAttribute(spawn, ref, attrNames)
+
+    for _, source in ipairs({
+        spawn,
+        ref,
+    }) do
+
+        if typeof(source) == "Instance" then
+
+            local value =
+                SniperReadAttributeAny(
+                    source,
+                    attrNames
+                )
+
+            if value ~= nil
+            and CleanText(value) ~= "" then
+                return value
+            end
+        end
+    end
+
+    return nil
+end
+
+function SniperResolveEntryInternalSize(entry)
 
     if type(entry) ~= "table" then
-        return "Any Size", 1
+        return nil, 1
+    end
+
+    local direct =
+        SniperReadVariantAttribute(
+            entry.Spawn,
+            entry.Ref,
+            {
+                "PetSize",
+                "Size",
+                "SizeClass",
+                "ScaleSize",
+                "VariantSize",
+                "WildPetSize",
+            }
+        )
+
+    local internalSize =
+        SniperCleanInternalSize(
+            direct
+        )
+
+    if internalSize then
+
+        return internalSize,
+            internalSize == "Huge"
+            and 3
+            or 2
     end
 
     local key =
@@ -42474,45 +43439,103 @@ function SniperApplyEntrySizeClass(entry)
             metric / baseline
     end
 
-    local label =
-        "Any Size"
-
-    local score =
-        1
-
     if ratio >= 1.55 then
-
-        label =
-            "Huge"
-
-        score =
-            3
-
-    elseif ratio >= 1.25 then
-
-        label =
-            "Big+"
-
-        score =
-            2
+        return "Huge", 3
     end
 
-    entry.SizeClass =
-        label
+    if ratio >= 1.25 then
+        return "Big", 2
+    end
 
-    entry.SizeScore =
-        score
-
-    return label,
-        score
+    return nil, 1
 end
 
-function SniperEntryMatchesSizeClass(entry)
+function SniperResolveEntryPetType(entry)
 
-    local wanted =
-        SniperSizeClassText()
+    if type(entry) ~= "table" then
+        return nil
+    end
 
-    if wanted == "Any Size" then
+    local direct =
+        SniperReadVariantAttribute(
+            entry.Spawn,
+            entry.Ref,
+            {
+                "PetType",
+                "Type",
+                "Variant",
+                "PetVariant",
+                "Mutation",
+                "MutationType",
+                "WildPetType",
+            }
+        )
+
+    local petType =
+        SniperCleanPetType(
+            direct
+        )
+
+    if petType then
+        return petType
+    end
+
+    local nameText =
+        CleanText(entry.Name):lower()
+
+    if nameText:find("rainbow", 1, true) then
+        return "Rainbow"
+    end
+
+    return nil
+end
+
+function SniperApplyEntrySizeClass(entry)
+
+    if type(entry) ~= "table" then
+        return "Normal", 1
+    end
+
+    local internalSize, score =
+        SniperResolveEntryInternalSize(
+            entry
+        )
+
+    entry.InternalSize =
+        internalSize
+
+    entry.SizeScore =
+        tonumber(score)
+        or 1
+
+    entry.SizeClass =
+        SniperDisplaySizeFromInternal(
+            internalSize
+        )
+
+    if entry.SizeClass == "" then
+        entry.SizeClass =
+            "Normal"
+    end
+
+    entry.PetType =
+        SniperResolveEntryPetType(
+            entry
+        )
+
+    return entry.SizeClass,
+        entry.SizeScore
+end
+
+function SniperEntryMatchesSizeClass(entry, wantedSize)
+
+    wantedSize =
+        SniperCleanSizeClass(
+            wantedSize
+            or SniperSizeClassText()
+        )
+
+    if wantedSize == "Any" then
         return true
     end
 
@@ -42528,16 +43551,61 @@ function SniperEntryMatchesSizeClass(entry)
         )
     end
 
-    local score =
-        tonumber(entry.SizeScore)
-        or 1
+    local internalSize =
+        SniperCleanInternalSize(
+            entry.InternalSize
+        )
 
-    if wanted == "Big+" then
-        return score >= 2
+    if wantedSize == "Normal" then
+        return internalSize == nil
     end
 
-    if wanted == "Huge Only" then
-        return score >= 3
+    if wantedSize == "Big" then
+        return internalSize == "Big"
+    end
+
+    if wantedSize == "Mega" then
+        return internalSize == "Huge"
+    end
+
+    return true
+end
+
+function SniperEntryMatchesMutationFilter(entry, wantedMutation)
+
+    wantedMutation =
+        SniperCleanMutationFilter(
+            wantedMutation
+            or SniperMutationFilterText()
+        )
+
+    if wantedMutation == "Any" then
+        return true
+    end
+
+    if type(entry) ~= "table" then
+        return false
+    end
+
+    if entry.PetType == nil then
+
+        entry.PetType =
+            SniperResolveEntryPetType(
+                entry
+            )
+    end
+
+    local petType =
+        SniperCleanPetType(
+            entry.PetType
+        )
+
+    if wantedMutation == "Normal" then
+        return petType == nil
+    end
+
+    if wantedMutation == "Rainbow" then
+        return petType == "Rainbow"
     end
 
     return true
@@ -42557,29 +43625,45 @@ function SniperEntryDisplayName(entry)
             "Unknown"
     end
 
-    local score =
-        tonumber(entry.SizeScore)
-        or 1
+    local parts =
+        {}
 
-    if score >= 3 then
+    local displaySize =
+        SniperDisplaySizeFromInternal(
+            entry.InternalSize
+        )
 
-        return "Huge "
-            .. name
+    if displaySize ~= "" then
+
+        table.insert(
+            parts,
+            displaySize
+        )
     end
 
-    if score >= 2 then
+    if SniperCleanPetType(entry.PetType) == "Rainbow" then
 
-        return "Big "
-            .. name
+        table.insert(
+            parts,
+            "Rainbow"
+        )
     end
 
-    return name
+    table.insert(
+        parts,
+        name
+    )
+
+    return table.concat(
+        parts,
+        " "
+    )
 end
 
 function SniperEntrySizeText(entry)
 
     if type(entry) ~= "table" then
-        return "Any Size"
+        return "Normal"
     end
 
     if entry.SizeClass == nil then
@@ -42591,7 +43675,22 @@ function SniperEntrySizeText(entry)
 
     return CleanText(entry.SizeClass) ~= ""
         and CleanText(entry.SizeClass)
-        or "Any Size"
+        or "Normal"
+end
+
+function SniperEntryMutationText(entry)
+
+    if type(entry) ~= "table" then
+        return "Normal"
+    end
+
+    local petType =
+        SniperCleanPetType(
+            entry.PetType
+        )
+
+    return petType
+        or "Normal"
 end
 
 function SniperSortMatches(matches)
@@ -43017,8 +44116,14 @@ function SniperBuildMatchText(entries, matches, orderedTargets, reason)
         '<font color="rgb(196,181,253)"><b>Selected Targets</b></font>',
         SniperTargetsText(),
         "",
-        '<font color="rgb(196,181,253)"><b>Size Class</b></font>',
+        '<font color="rgb(196,181,253)"><b>Size Filter</b></font>',
         SniperSizeClassText(),
+        "",
+        '<font color="rgb(196,181,253)"><b>Mutation Filter</b></font>',
+        SniperMutationFilterText(),
+        "",
+        '<font color="rgb(196,181,253)"><b>Watchlist</b></font>',
+        tostring(SniperCountAllWatchlistRules()) .. " saved filters",
         "",
         '<font color="rgb(196,181,253)"><b>Priority</b></font>',
         SniperPriorityText(),
@@ -43094,6 +44199,8 @@ function SniperBuildMatchText(entries, matches, orderedTargets, reason)
             .. SniperEntryDisplayName(entry)
             .. " | "
             .. SniperEntrySizeText(entry)
+            .. " | "
+            .. SniperEntryMutationText(entry)
             .. " | Time: "
             .. tostring(entry.Timer or "?")
             .. " | Price: "
@@ -43231,7 +44338,8 @@ function SniperScan(allowAutoHop)
 
         if SniperIsEntryHandled(entry) ~= true
         and SniperEntryMatchesTargets(entry, targets) == true
-        and SniperEntryMatchesSizeClass(entry) == true then
+        and SniperEntryMatchesSizeClass(entry) == true
+        and SniperEntryMatchesMutationFilter(entry) == true then
 
             table.insert(
                 matches,
@@ -44281,6 +45389,36 @@ function RestoreSniperAutosaveState()
                     Options.HolyGAG2SniperTargetsList.Value
                 )
         end
+
+        if Options.HolyGAG2SniperSizeClass
+        and Options.HolyGAG2SniperSizeClass.Value ~= nil then
+
+            SniperState.SizeClass =
+                SniperCleanSizeClass(
+                    Options.HolyGAG2SniperSizeClass.Value
+                )
+        end
+
+        if Options.HolyGAG2SniperMutationFilter
+        and Options.HolyGAG2SniperMutationFilter.Value ~= nil then
+
+            SniperState.MutationFilter =
+                SniperCleanMutationFilter(
+                    Options.HolyGAG2SniperMutationFilter.Value
+                )
+        end
+
+        if Options.HolyGAG2SniperSaveTarget
+        and Options.HolyGAG2SniperSaveTarget.Value ~= nil then
+
+            SniperState.SaveTarget =
+                SniperWatchlistIdFromText(
+                    Options.HolyGAG2SniperSaveTarget.Value
+                )
+        end
+
+        GAG2LoadSniperWatchlistNow()
+        GAG2RefreshSniperWatchlistUi()
 
         if Options.HolyGAG2SniperHopDelay
         and Options.HolyGAG2SniperHopDelay.Value ~= nil then
@@ -59270,35 +60408,7 @@ GAG2_FARM_UI_STATE =
         BoxKeys = {},
     }
 
-GAG2_FARM_UI_STATE.Section =
-    GAG2_FARM_UI_STATE.Section
-    or "Collect"
-
-GAG2_FARM_UI_STATE.Boxes =
-    type(GAG2_FARM_UI_STATE.Boxes) == "table"
-    and GAG2_FARM_UI_STATE.Boxes
-    or {}
-
-GAG2_FARM_UI_STATE.BoxKeys =
-    type(GAG2_FARM_UI_STATE.BoxKeys) == "table"
-    and GAG2_FARM_UI_STATE.BoxKeys
-    or {}
-
-GAG2_FARM_DASHBOARD_STATE =
-    GAG2_FARM_DASHBOARD_STATE
-    or {
-        ScreenGui = nil,
-        Root = nil,
-        Panel = nil,
-        SectionLabel = nil,
-        StatusLabel = nil,
-        TargetLabel = nil,
-        Buttons = {},
-        ButtonStrokes = {},
-        LoopToken = 0,
-    }
-
-function GAG2FarmGetBoxHolder(box)
+function GAG2FarmGetGroupboxHolder(box)
 
     if type(box) ~= "table" then
         return nil
@@ -59315,49 +60425,55 @@ function GAG2FarmGetBoxHolder(box)
     return nil
 end
 
-function GAG2FarmGuiObjectActuallyVisible(object)
+function GAG2FarmRefreshLayout(box)
 
-    if typeof(object) ~= "Instance" then
-        return false
+    if type(box) == "table"
+    and type(box.Tab) == "table"
+    and type(box.Tab.RefreshSides) == "function" then
+
+        task.defer(function()
+
+            if type(box.Tab) == "table"
+            and type(box.Tab.RefreshSides) == "function" then
+
+                box.Tab:RefreshSides()
+            end
+        end)
+
+        return
     end
 
-    local current =
-        object
+    if Tabs.Farm
+    and type(Tabs.Farm.RefreshSides) == "function" then
 
-    while current do
+        task.defer(function()
 
-        if current:IsA("GuiObject")
-        and current.Visible ~= true then
+            if Tabs.Farm
+            and type(Tabs.Farm.RefreshSides) == "function" then
 
-            return false
-        end
-
-        if current:IsA("ScreenGui")
-        and current.Enabled ~= true then
-
-            return false
-        end
-
-        current =
-            current.Parent
+                Tabs.Farm:RefreshSides()
+            end
+        end)
     end
-
-    return true
 end
 
 function GAG2FarmSetGroupboxVisible(box, visible)
 
     local holder =
-        GAG2FarmGetBoxHolder(
+        GAG2FarmGetGroupboxHolder(
             box
         )
 
-    if typeof(holder) ~= "Instance" then
+    if not holder then
         return false
     end
 
     holder.Visible =
         visible == true
+
+    GAG2FarmRefreshLayout(
+        box
+    )
 
     return true
 end
@@ -59377,7 +60493,7 @@ function GAG2FarmRegisterSectionBox(sectionName, box)
         or {}
 
     local holder =
-        GAG2FarmGetBoxHolder(
+        GAG2FarmGetGroupboxHolder(
             box
         )
 
@@ -59404,12 +60520,32 @@ function GAG2FarmRegisterSectionBox(sectionName, box)
         box
     )
 
+    local activeSection =
+        tostring(
+            GAG2_FARM_UI_STATE.Section
+            or "Collect"
+        )
+
     GAG2FarmSetGroupboxVisible(
         box,
-        GAG2_FARM_UI_STATE.Section == "All"
-        or GAG2_FARM_UI_STATE.Section == sectionName
+        activeSection == "All"
+        or activeSection == sectionName
     )
 end
+
+GAG2_FARM_DASHBOARD_STATE =
+    GAG2_FARM_DASHBOARD_STATE
+    or {
+        Root = nil,
+        Panel = nil,
+        TitleLabel = nil,
+        SectionLabel = nil,
+        StatusLabel = nil,
+        TargetLabel = nil,
+        Buttons = {},
+        ButtonStrokes = {},
+        LoopToken = 0,
+    }
 
 function GAG2FarmDashboardCleanText(value)
 
@@ -59494,38 +60630,6 @@ function GAG2FarmDashboardMakeStroke(parent, color, transparency, thickness)
         parent
 
     return stroke
-end
-
-function GAG2FarmDashboardApplyZIndex(root, zIndex)
-
-    if typeof(root) ~= "Instance" then
-        return
-    end
-
-    zIndex =
-        tonumber(zIndex)
-        or 200
-
-    if root:IsA("GuiObject") then
-
-        pcall(function()
-
-            root.ZIndex =
-                zIndex
-        end)
-    end
-
-    for _, descendant in ipairs(root:GetDescendants()) do
-
-        if descendant:IsA("GuiObject") then
-
-            pcall(function()
-
-                descendant.ZIndex =
-                    zIndex + 1
-            end)
-        end
-    end
 end
 
 function GAG2FarmDashboardMakeLabel(
@@ -59668,24 +60772,24 @@ function GAG2FarmDashboardGetCollectTargetLine()
             or ""
         )
 
-    if nextText ~= ""
-    and nextText ~= "None" then
+    if nextText == ""
+    or nextText == "None" then
 
-        return "Target: "
-            .. tostring(nextText)
+        local statusText =
+            GAG2FarmDashboardCleanText(
+                state.LastStatus
+                or ""
+            )
+
+        if statusText ~= "" then
+            return "Status: " .. statusText
+        end
+
+        return "Target: None"
     end
 
-    local statusText =
-        GAG2FarmDashboardCleanText(
-            state.LastStatus
-            or ""
-        )
-
-    if statusText ~= "" then
-        return "Status: " .. statusText
-    end
-
-    return "Target: None"
+    return "Target: "
+        .. tostring(nextText)
 end
 
 function GAG2FarmDashboardBuildStatusLine(sectionName)
@@ -59698,7 +60802,7 @@ function GAG2FarmDashboardBuildStatusLine(sectionName)
     end
 
     if sectionName == "Plant" then
-        return "Plant view • Seeds, point, amount, layout, and advanced grid"
+        return "Plant view • Seeds, positions, amount, and advanced grid"
     end
 
     if sectionName == "Tools" then
@@ -59766,7 +60870,7 @@ function GAG2FarmDashboardSetButtonStyle(sectionName)
 
             button.BackgroundTransparency =
                 active == true
-                and 0.04
+                and 0.05
                 or 0.16
 
             button.TextColor3 =
@@ -59803,8 +60907,8 @@ function GAG2FarmDashboardSetButtonStyle(sectionName)
 
                 stroke.Transparency =
                     active == true
-                    and 0.06
-                    or 0.38
+                    and 0.08
+                    or 0.35
             end
         end
     end
@@ -59852,44 +60956,6 @@ function GAG2FarmDashboardRefresh()
     GAG2FarmDashboardSetButtonStyle(
         sectionName
     )
-end
-
-function GAG2FarmShowSection(sectionName)
-
-    sectionName =
-        tostring(sectionName or "Collect")
-
-    if sectionName ~= "Collect"
-    and sectionName ~= "Plant"
-    and sectionName ~= "Tools"
-    and sectionName ~= "All" then
-
-        sectionName =
-            "Collect"
-    end
-
-    GAG2_FARM_UI_STATE.Section =
-        sectionName
-
-    for registeredSection, boxes in pairs(GAG2_FARM_UI_STATE.Boxes or {}) do
-
-        local visible =
-            sectionName == "All"
-            or sectionName == registeredSection
-
-        if type(boxes) == "table" then
-
-            for _, box in ipairs(boxes) do
-
-                GAG2FarmSetGroupboxVisible(
-                    box,
-                    visible
-                )
-            end
-        end
-    end
-
-    GAG2FarmDashboardRefresh()
 end
 
 function GAG2FarmDashboardCreateButton(parent, sectionName, text)
@@ -59960,7 +61026,7 @@ function GAG2FarmDashboardCreateButton(parent, sectionName, text)
                 63,
                 145
             ),
-            0.38,
+            0.35,
             1
         )
 
@@ -59972,122 +61038,38 @@ function GAG2FarmDashboardCreateButton(parent, sectionName, text)
 
     button.MouseButton1Click:Connect(function()
 
-        GAG2FarmShowSection(
-            sectionName
-        )
+        if type(GAG2FarmShowSection) == "function" then
+
+            GAG2FarmShowSection(
+                sectionName
+            )
+        end
     end)
 
     return button
 end
 
-function GAG2FarmDashboardGetParent()
-
-    local okCore =
-        pcall(function()
-
-            return CoreGui.Name
-        end)
-
-    if okCore == true
-    and CoreGui then
-        return CoreGui
-    end
-
-    return LOCAL_PLAYER
-        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
-        or nil
-end
-
-function GAG2FarmDashboardDestroyOldGui()
-
-    local parent =
-        GAG2FarmDashboardGetParent()
-
-    if not parent then
-        return
-    end
-
-    local old =
-        parent:FindFirstChild(
-            "HolyGAG2FarmDashboardScreen"
-        )
-
-    if old then
-
-        pcall(function()
-
-            old:Destroy()
-        end)
-    end
-end
-
-function GAG2FarmDashboardCreateOverlay()
-
-    GAG2FarmDashboardDestroyOldGui()
-
-    local parent =
-        GAG2FarmDashboardGetParent()
-
-    if not parent then
-        return nil
-    end
+function GAG2FarmDashboardCreatePanel()
 
     local state =
         GAG2_FARM_DASHBOARD_STATE
-
-    local gui =
-        Instance.new("ScreenGui")
-
-    gui.Name =
-        "HolyGAG2FarmDashboardScreen"
-
-    gui.ResetOnSpawn =
-        false
-
-    gui.IgnoreGuiInset =
-        true
-
-    gui.ZIndexBehavior =
-        Enum.ZIndexBehavior.Sibling
-
-    gui.DisplayOrder =
-        999999
-
-    gui.Enabled =
-        true
-
-    gui.Parent =
-        parent
 
     local root =
         Instance.new("Frame")
 
     root.Name =
-        "Root"
+        "HolyGAG2FarmDashboardRoot"
+
+    root.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            124
+        )
 
     root.BackgroundTransparency =
         1
-
-    root.BorderSizePixel =
-        0
-
-    root.Visible =
-        false
-
-    root.Position =
-        UDim2.fromOffset(
-            0,
-            0
-        )
-
-    root.Size =
-        UDim2.fromOffset(
-            600,
-            118
-        )
-
-    root.Parent =
-        gui
 
     local panel =
         Instance.new("Frame")
@@ -60106,7 +61088,7 @@ function GAG2FarmDashboardCreateOverlay()
             1,
             0,
             0,
-            118
+            124
         )
 
     panel.BackgroundColor3 =
@@ -60117,7 +61099,7 @@ function GAG2FarmDashboardCreateOverlay()
         )
 
     panel.BackgroundTransparency =
-        0.07
+        0.03
 
     panel.BorderSizePixel =
         0
@@ -60140,7 +61122,7 @@ function GAG2FarmDashboardCreateOverlay()
             58,
             237
         ),
-        0.16,
+        0.18,
         1
     )
 
@@ -60172,7 +61154,7 @@ function GAG2FarmDashboardCreateOverlay()
         )
 
     glow.BackgroundTransparency =
-        0.1
+        0.12
 
     glow.BorderSizePixel =
         0
@@ -60188,7 +61170,7 @@ function GAG2FarmDashboardCreateOverlay()
 
     iconWrap.Position =
         UDim2.fromOffset(
-            13,
+            12,
             13
         )
 
@@ -60257,28 +61239,29 @@ function GAG2FarmDashboardCreateOverlay()
     icon.TextXAlignment =
         Enum.TextXAlignment.Center
 
-    GAG2FarmDashboardMakeLabel(
-        panel,
-        "Title",
-        "FARM",
-        UDim2.fromOffset(
-            68,
-            11
-        ),
-        UDim2.new(
-            0.5,
-            -70,
-            0,
-            21
-        ),
-        15,
-        Color3.fromRGB(
-            245,
-            243,
-            255
-        ),
-        Enum.Font.GothamBold
-    )
+    local title =
+        GAG2FarmDashboardMakeLabel(
+            panel,
+            "Title",
+            "FARM",
+            UDim2.fromOffset(
+                66,
+                11
+            ),
+            UDim2.new(
+                0.5,
+                -70,
+                0,
+                21
+            ),
+            15,
+            Color3.fromRGB(
+                245,
+                243,
+                255
+            ),
+            Enum.Font.GothamBold
+        )
 
     local section =
         GAG2FarmDashboardMakeLabel(
@@ -60287,12 +61270,12 @@ function GAG2FarmDashboardCreateOverlay()
             "Collect",
             UDim2.new(
                 1,
-                -150,
+                -148,
                 0,
                 11
             ),
             UDim2.fromOffset(
-                132,
+                130,
                 21
             ),
             12,
@@ -60313,12 +61296,12 @@ function GAG2FarmDashboardCreateOverlay()
             "Status",
             "Collect OFF • All • Queue 0 • Fired 0",
             UDim2.fromOffset(
-                68,
+                66,
                 35
             ),
             UDim2.new(
                 1,
-                -84,
+                -82,
                 0,
                 18
             ),
@@ -60337,12 +61320,12 @@ function GAG2FarmDashboardCreateOverlay()
             "Target",
             "Target: None",
             UDim2.fromOffset(
-                68,
+                66,
                 57
             ),
             UDim2.new(
                 1,
-                -84,
+                -82,
                 0,
                 18
             ),
@@ -60363,16 +61346,16 @@ function GAG2FarmDashboardCreateOverlay()
 
     nav.Position =
         UDim2.fromOffset(
-            13,
-            84
+            12,
+            87
         )
 
     nav.Size =
         UDim2.new(
             1,
-            -26,
+            -24,
             0,
-            26
+            27
         )
 
     nav.BackgroundTransparency =
@@ -60435,14 +61418,14 @@ function GAG2FarmDashboardCreateOverlay()
         "All"
     )
 
-    state.ScreenGui =
-        gui
-
     state.Root =
         root
 
     state.Panel =
         panel
+
+    state.TitleLabel =
+        title
 
     state.SectionLabel =
         section
@@ -60453,219 +61436,10 @@ function GAG2FarmDashboardCreateOverlay()
     state.TargetLabel =
         target
 
-    GAG2FarmDashboardApplyZIndex(
-        root,
-        500
-    )
-
-    GAG2FarmDashboardRefresh()
-
-    return gui
+    return root
 end
 
-function GAG2FarmCreateTransparentSpacer(sideName)
-
-    local box =
-        nil
-
-    if sideName == "Right" then
-
-        box =
-            AddRightBox(
-                Tabs.Farm,
-                "",
-                ""
-            )
-
-    else
-
-        box =
-            AddLeftBox(
-                Tabs.Farm,
-                "",
-                ""
-            )
-    end
-
-    if box
-    and type(box.AddUIPassthrough) == "function" then
-
-        local spacer =
-            Instance.new("Frame")
-
-        spacer.Name =
-            "HolyGAG2FarmDashboardSpacer"
-
-        spacer.Size =
-            UDim2.new(
-                1,
-                0,
-                0,
-                128
-            )
-
-        spacer.BackgroundTransparency =
-            1
-
-        spacer.BorderSizePixel =
-            0
-
-        pcall(function()
-
-            box:AddUIPassthrough(
-                "HolyGAG2FarmDashboardSpacer"
-                .. tostring(sideName),
-                {
-                    Instance =
-                        spacer,
-
-                    Height =
-                        128,
-
-                    Visible =
-                        true,
-                }
-            )
-        end)
-    end
-
-    return box
-end
-
-function GAG2FarmStripSpacerVisuals(box)
-
-    local holder =
-        GAG2FarmGetBoxHolder(
-            box
-        )
-
-    if typeof(holder) ~= "Instance" then
-        return
-    end
-
-    pcall(function()
-
-        holder.BackgroundTransparency =
-            1
-
-        holder.BorderSizePixel =
-            0
-    end)
-
-    for _, descendant in ipairs(holder:GetDescendants()) do
-
-        if descendant:IsA("UIStroke") then
-
-            pcall(function()
-
-                descendant.Transparency =
-                    1
-            end)
-
-        elseif descendant:IsA("TextLabel")
-        or descendant:IsA("TextButton")
-        or descendant:IsA("ImageLabel")
-        or descendant:IsA("ImageButton") then
-
-            pcall(function()
-
-                descendant.Visible =
-                    false
-            end)
-        end
-    end
-end
-
-function GAG2FarmDashboardSyncPosition()
-
-    local state =
-        GAG2_FARM_DASHBOARD_STATE
-
-    if typeof(state.Root) ~= "Instance" then
-        return
-    end
-
-    local leftHolder =
-        GAG2FarmGetBoxHolder(
-            GAG2_FARM_DASHBOARD_LEFT_SPACER
-        )
-
-    local rightHolder =
-        GAG2FarmGetBoxHolder(
-            GAG2_FARM_DASHBOARD_RIGHT_SPACER
-        )
-
-    if typeof(leftHolder) ~= "Instance"
-    or typeof(rightHolder) ~= "Instance" then
-
-        state.Root.Visible =
-            false
-
-        return
-    end
-
-    if GAG2FarmGuiObjectActuallyVisible(leftHolder) ~= true
-    or GAG2FarmGuiObjectActuallyVisible(rightHolder) ~= true then
-
-        state.Root.Visible =
-            false
-
-        return
-    end
-
-    local leftPos =
-        leftHolder.AbsolutePosition
-
-    local rightPos =
-        rightHolder.AbsolutePosition
-
-    local leftSize =
-        leftHolder.AbsoluteSize
-
-    local rightSize =
-        rightHolder.AbsoluteSize
-
-    local x1 =
-        math.min(
-            leftPos.X,
-            rightPos.X
-        )
-
-    local y1 =
-        math.min(
-            leftPos.Y,
-            rightPos.Y
-        )
-
-    local x2 =
-        math.max(
-            leftPos.X + leftSize.X,
-            rightPos.X + rightSize.X
-        )
-
-    local width =
-        math.max(
-            300,
-            x2 - x1
-        )
-
-    state.Root.Position =
-        UDim2.fromOffset(
-            x1,
-            y1
-        )
-
-    state.Root.Size =
-        UDim2.fromOffset(
-            width,
-            118
-        )
-
-    state.Root.Visible =
-        true
-end
-
-function GAG2FarmDashboardStartLoop()
+function GAG2FarmDashboardStartRefreshLoop()
 
     local state =
         GAG2_FARM_DASHBOARD_STATE
@@ -60684,51 +61458,207 @@ function GAG2FarmDashboardStartLoop()
 
         while tonumber(state.LoopToken) == token do
 
-            GAG2FarmDashboardSyncPosition()
+            if typeof(state.Root) ~= "Instance"
+            or state.Root.Parent == nil then
+
+                break
+            end
+
             GAG2FarmDashboardRefresh()
 
             task.wait(
-                0.25
+                2
             )
         end
     end)
 end
 
-GAG2_FARM_DASHBOARD_LEFT_SPACER =
-    GAG2FarmCreateTransparentSpacer(
-        "Left"
+function GAG2FarmShowSection(sectionName)
+
+    sectionName =
+        tostring(sectionName or "Collect")
+
+    if sectionName ~= "Collect"
+    and sectionName ~= "Plant"
+    and sectionName ~= "Tools"
+    and sectionName ~= "All" then
+
+        sectionName =
+            "Collect"
+    end
+
+    GAG2_FARM_UI_STATE =
+        GAG2_FARM_UI_STATE
+        or {
+            Section = "Collect",
+            Boxes = {},
+            BoxKeys = {},
+        }
+
+    GAG2_FARM_UI_STATE.Boxes =
+        type(GAG2_FARM_UI_STATE.Boxes) == "table"
+        and GAG2_FARM_UI_STATE.Boxes
+        or {}
+
+    GAG2_FARM_UI_STATE.Section =
+        sectionName
+
+    for registeredSection, boxes in pairs(GAG2_FARM_UI_STATE.Boxes) do
+
+        local visible =
+            sectionName == "All"
+            or sectionName == registeredSection
+
+        if type(boxes) == "table" then
+
+            for _, box in ipairs(boxes) do
+
+                if type(GAG2FarmSetGroupboxVisible) == "function" then
+
+                    GAG2FarmSetGroupboxVisible(
+                        box,
+                        visible
+                    )
+                end
+            end
+        end
+    end
+
+    if type(GAG2FarmDashboardRefresh) == "function" then
+
+        pcall(function()
+
+            GAG2FarmDashboardRefresh()
+        end)
+    end
+end
+
+local FarmDashboardBox =
+    AddLeftBox(
+        Tabs.Farm,
+        "Farm Dashboard",
+        "sprout"
     )
 
-GAG2_FARM_DASHBOARD_RIGHT_SPACER =
-    GAG2FarmCreateTransparentSpacer(
-        "Right"
-    )
+local FarmDashboardCreated =
+    false
+
+if FarmDashboardBox
+and type(FarmDashboardBox.AddUIPassthrough) == "function"
+and type(GAG2FarmDashboardCreatePanel) == "function" then
+
+    local dashboardOk,
+        dashboardResult =
+        pcall(function()
+
+            return FarmDashboardBox:AddUIPassthrough(
+                "HolyGAG2FarmDashboard",
+                {
+                    Instance =
+                        GAG2FarmDashboardCreatePanel(),
+
+                    Height =
+                        124,
+
+                    Visible =
+                        true,
+                }
+            )
+        end)
+
+    if dashboardOk == true then
+
+        FarmDashboardCreated =
+            true
+
+        GAG2_FARM_DASHBOARD_STATE =
+            GAG2_FARM_DASHBOARD_STATE
+            or {}
+
+        GAG2_FARM_DASHBOARD_STATE.Passthrough =
+            dashboardResult
+
+        if type(GAG2FarmDashboardStartRefreshLoop) == "function" then
+
+            pcall(function()
+
+                GAG2FarmDashboardStartRefreshLoop()
+            end)
+        end
+
+    else
+
+        warn(
+            "[HOLY FARM DASHBOARD]",
+            "UIPassthrough failed:",
+            tostring(dashboardResult)
+        )
+    end
+end
+
+if FarmDashboardCreated ~= true then
+
+    local FarmFallbackBox =
+        FarmDashboardBox
+        or AddLeftBox(
+            Tabs.Farm,
+            "Farm",
+            "sprout"
+        )
+
+    if FarmFallbackBox
+    and type(FarmFallbackBox.AddButton) == "function" then
+
+        FarmFallbackBox:AddButton({
+            Text = "Collect",
+            Func = function()
+
+                GAG2FarmShowSection(
+                    "Collect"
+                )
+            end,
+        }):AddButton({
+            Text = "Plant",
+            Func = function()
+
+                GAG2FarmShowSection(
+                    "Plant"
+                )
+            end,
+        })
+
+        FarmFallbackBox:AddButton({
+            Text = "Tools",
+            Func = function()
+
+                GAG2FarmShowSection(
+                    "Tools"
+                )
+            end,
+        }):AddButton({
+            Text = "All",
+            Func = function()
+
+                GAG2FarmShowSection(
+                    "All"
+                )
+            end,
+        })
+    end
+end
 
 task.defer(function()
 
-    GAG2FarmStripSpacerVisuals(
-        GAG2_FARM_DASHBOARD_LEFT_SPACER
-    )
+    if type(GAG2FarmShowSection) == "function" then
 
-    GAG2FarmStripSpacerVisuals(
-        GAG2_FARM_DASHBOARD_RIGHT_SPACER
-    )
+        GAG2FarmShowSection(
+            GAG2_FARM_UI_STATE
+            and GAG2_FARM_UI_STATE.Section
+            or "Collect"
+        )
+    end
 end)
-
-task.delay(0.5, function()
-
-    GAG2FarmStripSpacerVisuals(
-        GAG2_FARM_DASHBOARD_LEFT_SPACER
-    )
-
-    GAG2FarmStripSpacerVisuals(
-        GAG2_FARM_DASHBOARD_RIGHT_SPACER
-    )
-end)
-
-GAG2FarmDashboardCreateOverlay()
-GAG2FarmDashboardStartLoop()
-
+        
 local FarmSeedPlantBox =
     AddFarmLeftBoxClosed(
         "Seed Planting",
@@ -60819,15 +61749,15 @@ if FarmExclusionsBox == nil then
         FarmMainBox
 end
 
-if FarmAutoShovelBox == nil then
-
-    FarmAutoShovelBox =
-        FarmMainBox
-end
-
 if FarmAutoSprinklerBox == nil then
 
     FarmAutoSprinklerBox =
+        FarmMainBox
+end
+
+if FarmAutoShovelBox == nil then
+
+    FarmAutoShovelBox =
         FarmMainBox
 end
 
@@ -60852,16 +61782,6 @@ end
 GAG2FarmRegisterSectionBox(
     "Collect",
     FarmCollectionBox
-)
-
-GAG2FarmRegisterSectionBox(
-    "Collect",
-    FarmWeatherBox
-)
-
-GAG2FarmRegisterSectionBox(
-    "Collect",
-    FarmExclusionsBox
 )
 
 GAG2FarmRegisterSectionBox(
@@ -60892,6 +61812,16 @@ GAG2FarmRegisterSectionBox(
 GAG2FarmRegisterSectionBox(
     "Tools",
     FarmAutoShovelFruitBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Collect",
+    FarmWeatherBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Collect",
+    FarmExclusionsBox
 )
 
 task.defer(function()
@@ -60930,6 +61860,13 @@ local SniperPriorityBox =
         "star"
     )
 
+local SniperWatchlistBox =
+    AddRightBox(
+        Tabs.Sniper,
+        "Sniper Watchlist",
+        "list"
+    )
+
 local SniperBuyBehaviorBox =
     AddRightBox(
         Tabs.Sniper,
@@ -60940,6 +61877,12 @@ local SniperBuyBehaviorBox =
 if SniperPriorityBox == nil then
 
     SniperPriorityBox =
+        SniperMainBox
+end
+
+if SniperWatchlistBox == nil then
+
+    SniperWatchlistBox =
         SniperMainBox
 end
 
@@ -62901,26 +63844,6 @@ if FarmSeedAdvancedBox == nil then
             "Seed Advanced",
             "sliders-horizontal"
         )
-end
-
-if type(GAG2FarmRegisterSectionBox) == "function" then
-
-    GAG2FarmRegisterSectionBox(
-        "Plant",
-        FarmSeedAdvancedBox
-    )
-end
-
-if type(GAG2FarmShowSection) == "function" then
-
-    task.defer(function()
-
-        GAG2FarmShowSection(
-            GAG2_FARM_UI_STATE
-            and GAG2_FARM_UI_STATE.Section
-            or "Collect"
-        )
-    end)
 end
 
 if type(GAG2FarmRegisterSectionBox) == "function" then
@@ -65313,8 +66236,6 @@ GAG2_PANIC_HUD_TOGGLE_CONTROL =
         end,
     })
 
-SniperMainBox:AddDivider()
-
 SniperTargetDropdown =
     SniperMainBox:AddDropdown(
         "HolyGAG2SniperTargetsList",
@@ -65330,44 +66251,100 @@ SniperTargetDropdown =
         }
     )
 
-SniperMainBox:AddDropdown(
-    "HolyGAG2SniperSizeClass",
-    {
-        Text = "Size Class",
-        Values = SniperSizeClassValues(),
-        Default = SniperSizeClassText(),
-        Multi = false,
-        Searchable = false,
-        AllowNull = false,
-        MaxVisibleDropdownItems = 3,
-        Tooltip = "Only buy pets matching this size class.",
-    }
-):OnChanged(function(value)
-
-    SniperSetSizeClass(
-        value
+SniperSizeDropdown =
+    SniperMainBox:AddDropdown(
+        "HolyGAG2SniperSizeClass",
+        {
+            Text = "Size Filter",
+            Values = SniperSizeClassValues(),
+            Default = SniperSizeClassText(),
+            Multi = false,
+            Searchable = false,
+            AllowNull = false,
+            MaxVisibleDropdownItems = 4,
+            Tooltip = "Mega displays in UI, but internally matches Huge.",
+        }
     )
 
-    SniperScan(
-        false
+if SniperSizeDropdown
+and type(SniperSizeDropdown.OnChanged) == "function" then
+
+    SniperSizeDropdown:OnChanged(function(value)
+
+        SniperSetSizeClass(
+            value
+        )
+
+        SniperScan(
+            false
+        )
+    end)
+end
+
+SniperMutationDropdown =
+    SniperMainBox:AddDropdown(
+        "HolyGAG2SniperMutationFilter",
+        {
+            Text = "Mutation Filter",
+            Values = SniperMutationFilterValues(),
+            Default = SniperMutationFilterText(),
+            Multi = false,
+            Searchable = false,
+            AllowNull = false,
+            MaxVisibleDropdownItems = 3,
+            Tooltip = "Rainbow is stored as PetType, not MutationData.",
+        }
     )
-end)
+
+if SniperMutationDropdown
+and type(SniperMutationDropdown.OnChanged) == "function" then
+
+    SniperMutationDropdown:OnChanged(function(value)
+
+        SniperSetMutationFilter(
+            value
+        )
+
+        SniperScan(
+            false
+        )
+    end)
+end
+
+SniperSaveTargetDropdown =
+    SniperMainBox:AddDropdown(
+        "HolyGAG2SniperSaveTarget",
+        {
+            Text = "Save To",
+            Values = SniperSaveTargetValues(),
+            Default = SniperSaveTargetText(),
+            Multi = false,
+            Searchable = false,
+            AllowNull = false,
+            MaxVisibleDropdownItems = 3,
+            Tooltip = "Choose which watchlist receives Save Filter.",
+        }
+    )
+
+if SniperSaveTargetDropdown
+and type(SniperSaveTargetDropdown.OnChanged) == "function" then
+
+    SniperSaveTargetDropdown:OnChanged(function(value)
+
+        SniperSetSaveTarget(
+            value
+        )
+    end)
+end
 
 SniperMainBox:AddButton({
-    Text = "Refresh List",
-    Tooltip = "Refresh available pet names.",
+    Text = "Save Filter",
+    Tooltip = "Save current Target Pets + Size Filter + Mutation Filter to the selected watchlist.",
     Func = function()
 
-        SniperRefreshTargetDropdown()
-        SniperRefreshPriorityDropdowns()
-
-        SetSniperStatus(
-            "List refreshed."
-        )
+        SniperAddCurrentFilterToWatchlist()
     end,
 })
-
-SniperMainBox:AddDivider()
 
 SniperMainBox:AddToggle("HolyGAG2SniperAutoHop", {
     Text = "Auto Hop",
@@ -65429,40 +66406,177 @@ SniperMainBox:AddInput("HolyGAG2SniperHopDelay", {
     end,
 })
 
-SniperMainBox:AddDivider()
+if SniperWatchlistBox then
 
-SniperMainBox:AddButton({
-    Text = "Scan Now",
-    Tooltip = "Check once.",
-    Func = function()
+    local WatchlistViewButton =
+        SniperWatchlistBox:AddButton({
+            Text = "W1",
+            Tooltip = "View W1 Main filters.",
+            Func = function()
 
-        SniperScan(
-            false
+                SniperSetWatchlistView(
+                    1
+                )
+            end,
+        })
+
+    if WatchlistViewButton
+    and type(WatchlistViewButton.AddButton) == "function" then
+
+        WatchlistViewButton:AddButton({
+            Text = "W2",
+            Tooltip = "View W2 Alt filters.",
+            Func = function()
+
+                SniperSetWatchlistView(
+                    2
+                )
+            end,
+        })
+
+        WatchlistViewButton:AddButton({
+            Text = "W3",
+            Tooltip = "View W3 Priority filters.",
+            Func = function()
+
+                SniperSetWatchlistView(
+                    3
+                )
+            end,
+        })
+
+    else
+
+        SniperWatchlistBox:AddButton({
+            Text = "W2",
+            Tooltip = "View W2 Alt filters.",
+            Func = function()
+
+                SniperSetWatchlistView(
+                    2
+                )
+            end,
+        })
+
+        SniperWatchlistBox:AddButton({
+            Text = "W3",
+            Tooltip = "View W3 Priority filters.",
+            Func = function()
+
+                SniperSetWatchlistView(
+                    3
+                )
+            end,
+        })
+    end
+
+    SniperWatchlistBox:AddInput(
+        "HolyGAG2SniperWatchlistSearch",
+        {
+            Text = "Search",
+            Default = "",
+            Placeholder = "Search saved filters...",
+            Numeric = false,
+            Finished = false,
+            ClearTextOnFocus = false,
+            Tooltip = "Search the current watchlist.",
+            Callback = function(value)
+
+                GAG2_SNIPER_WATCHLIST_STATE.SearchText =
+                    tostring(value or "")
+
+                GAG2RefreshSniperWatchlistUi()
+                MarkConfigDirty()
+            end,
+        }
+    )
+
+    SniperWatchlistStatusLabel =
+        SniperWatchlistBox:AddLabel(
+            "HolyGAG2SniperWatchlistStatus",
+            {
+                Text = "W1 Main · 0 saved · total 0",
+                DoesWrap = true,
+            }
         )
-    end,
-}):AddButton({
-    Text = "Copy Results",
-    Tooltip = "Copy last result.",
-    Func = function()
 
-        if CopyText(SniperState.LastMatchText) == true then
+    SniperWatchlistDropdown =
+        SniperWatchlistBox:AddDropdown(
+            "HolyGAG2SniperWatchlistRows",
+            {
+                Text = "Saved Filters",
+                Values = {
+                    "None",
+                },
+                Default = "None",
+                Multi = false,
+                Searchable = true,
+                AllowNull = false,
+                MaxVisibleDropdownItems = 8,
+                Tooltip = "Select a saved filter to load or remove.",
+            }
+        )
 
-            Notify(
-                "Sniper",
-                "Results copied.",
-                3
-            )
+    if SniperWatchlistDropdown
+    and type(SniperWatchlistDropdown.OnChanged) == "function" then
 
-        else
+        SniperWatchlistDropdown:OnChanged(function(value)
 
-            Notify(
-                "Clipboard",
-                "Clipboard unsupported.",
-                4
-            )
-        end
-    end,
-})
+            GAG2_SNIPER_WATCHLIST_STATE.SelectedText =
+                CleanText(value)
+        end)
+    end
+
+    local WatchlistEditButton =
+        SniperWatchlistBox:AddButton({
+            Text = "Edit",
+            Tooltip = "Load selected filter back into the Wild Sniper builder.",
+            Func = function()
+
+                SniperLoadSelectedWatchlistFilter()
+            end,
+        })
+
+    if WatchlistEditButton
+    and type(WatchlistEditButton.AddButton) == "function" then
+
+        WatchlistEditButton:AddButton({
+            Text = "Remove",
+            Tooltip = "Remove selected saved filter.",
+            Func = function()
+
+                SniperRemoveSelectedWatchlistFilter()
+            end,
+        })
+
+    else
+
+        SniperWatchlistBox:AddButton({
+            Text = "Remove",
+            Tooltip = "Remove selected saved filter.",
+            Func = function()
+
+                SniperRemoveSelectedWatchlistFilter()
+            end,
+        })
+    end
+
+    SniperWatchlistBox:AddButton({
+        Text = "Clear",
+        Tooltip = "Clear the currently viewed watchlist.",
+        Risky = true,
+        DoubleClick = true,
+        Func = function()
+
+            SniperClearCurrentWatchlist()
+        end,
+    })
+
+    task.defer(function()
+
+        GAG2RefreshSniperWatchlistUi()
+    end)
+end
 
 for priorityIndex = 1, 5 do
 
