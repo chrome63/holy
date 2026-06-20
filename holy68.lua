@@ -59395,6 +59395,946 @@ function GAG2FarmRegisterSectionBox(sectionName, box)
     )
 end
 
+GAG2_FARM_DASHBOARD_STATE =
+    GAG2_FARM_DASHBOARD_STATE
+    or {
+        Root = nil,
+        Panel = nil,
+        TitleLabel = nil,
+        SectionLabel = nil,
+        StatusLabel = nil,
+        TargetLabel = nil,
+        Buttons = {},
+        ButtonStrokes = {},
+        LoopToken = 0,
+    }
+
+function GAG2FarmDashboardCleanText(value)
+
+    return tostring(value or "")
+        :gsub("<[^>]->", "")
+        :gsub("<.->", "")
+        :gsub("\r", " ")
+        :gsub("\n", " ")
+        :gsub("%s+", " ")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+function GAG2FarmDashboardFormatNumber(value)
+
+    local number =
+        math.floor(
+            tonumber(value)
+            or 0
+        )
+
+    local text =
+        tostring(number)
+
+    text =
+        text:reverse()
+            :gsub("(%d%d%d)", "%1,")
+            :reverse()
+            :gsub("^,", "")
+
+    return text
+end
+
+function GAG2FarmDashboardMakeCorner(parent, radius)
+
+    if typeof(parent) ~= "Instance" then
+        return nil
+    end
+
+    local corner =
+        Instance.new("UICorner")
+
+    corner.CornerRadius =
+        UDim.new(
+            0,
+            tonumber(radius)
+            or 8
+        )
+
+    corner.Parent =
+        parent
+
+    return corner
+end
+
+function GAG2FarmDashboardMakeStroke(parent, color, transparency, thickness)
+
+    if typeof(parent) ~= "Instance" then
+        return nil
+    end
+
+    local stroke =
+        Instance.new("UIStroke")
+
+    stroke.Color =
+        color
+        or Color3.fromRGB(
+            124,
+            58,
+            237
+        )
+
+    stroke.Transparency =
+        tonumber(transparency)
+        or 0.35
+
+    stroke.Thickness =
+        tonumber(thickness)
+        or 1
+
+    stroke.Parent =
+        parent
+
+    return stroke
+end
+
+function GAG2FarmDashboardMakeLabel(
+    parent,
+    name,
+    text,
+    position,
+    size,
+    textSize,
+    textColor,
+    font
+)
+
+    local label =
+        Instance.new("TextLabel")
+
+    label.Name =
+        tostring(name or "Label")
+
+    label.BackgroundTransparency =
+        1
+
+    label.Position =
+        position
+        or UDim2.fromOffset(
+            0,
+            0
+        )
+
+    label.Size =
+        size
+        or UDim2.fromOffset(
+            100,
+            20
+        )
+
+    label.Font =
+        font
+        or Enum.Font.Code
+
+    label.Text =
+        tostring(text or "")
+
+    label.TextSize =
+        tonumber(textSize)
+        or 12
+
+    label.TextColor3 =
+        textColor
+        or Color3.fromRGB(
+            226,
+            232,
+            240
+        )
+
+    label.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    label.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    label.TextWrapped =
+        false
+
+    label.RichText =
+        false
+
+    label.Parent =
+        parent
+
+    return label
+end
+
+function GAG2FarmDashboardGetCollectStatusLine()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    if type(state) ~= "table" then
+
+        return "Collect OFF • Ready • Queue 0"
+    end
+
+    local enabledText =
+        state.Enabled == true
+        and "Collect ON"
+        or "Collect OFF"
+
+    local modeText =
+        GAG2FarmDashboardCleanText(
+            state.CollectMode
+            or "All"
+        )
+
+    if modeText == "" then
+        modeText =
+            "All"
+    end
+
+    local queueCount =
+        tonumber(
+            state.LastMatchingCount
+            or state.LastReadyCount
+            or 0
+        )
+        or 0
+
+    local firedCount =
+        tonumber(
+            state.LastFiredCount
+            or 0
+        )
+        or 0
+
+    return enabledText
+        .. " • "
+        .. tostring(modeText)
+        .. " • Queue "
+        .. GAG2FarmDashboardFormatNumber(
+            queueCount
+        )
+        .. " • Fired "
+        .. GAG2FarmDashboardFormatNumber(
+            firedCount
+        )
+end
+
+function GAG2FarmDashboardGetCollectTargetLine()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    if type(state) ~= "table" then
+        return "Target: None"
+    end
+
+    local nextText =
+        GAG2FarmDashboardCleanText(
+            state.LastNextText
+            or ""
+        )
+
+    if nextText == ""
+    or nextText == "None" then
+
+        local statusText =
+            GAG2FarmDashboardCleanText(
+                state.LastStatus
+                or ""
+            )
+
+        if statusText ~= "" then
+            return "Status: " .. statusText
+        end
+
+        return "Target: None"
+    end
+
+    return "Target: "
+        .. tostring(nextText)
+end
+
+function GAG2FarmDashboardBuildStatusLine(sectionName)
+
+    sectionName =
+        tostring(sectionName or "Collect")
+
+    if sectionName == "Collect" then
+        return GAG2FarmDashboardGetCollectStatusLine()
+    end
+
+    if sectionName == "Plant" then
+        return "Plant view • Seeds, positions, amount, and advanced grid"
+    end
+
+    if sectionName == "Tools" then
+        return "Tools view • Sprinkler, watering can, trowel, and shovel"
+    end
+
+    if sectionName == "All" then
+        return "Farm overview • Showing every farm system"
+    end
+
+    return "Farm ready"
+end
+
+function GAG2FarmDashboardBuildTargetLine(sectionName)
+
+    sectionName =
+        tostring(sectionName or "Collect")
+
+    if sectionName == "Collect" then
+        return GAG2FarmDashboardGetCollectTargetLine()
+    end
+
+    if sectionName == "Plant" then
+        return "Tip: Plant controls stay separate from collect rules"
+    end
+
+    if sectionName == "Tools" then
+        return "Tip: Tool automations are grouped here for fast access"
+    end
+
+    if sectionName == "All" then
+        return "Tip: Use All only when configuring everything"
+    end
+
+    return "Target: None"
+end
+
+function GAG2FarmDashboardSetButtonStyle(sectionName)
+
+    local state =
+        GAG2_FARM_DASHBOARD_STATE
+
+    sectionName =
+        tostring(sectionName or "Collect")
+
+    for buttonName, button in pairs(state.Buttons or {}) do
+
+        if typeof(button) == "Instance" then
+
+            local active =
+                tostring(buttonName) == sectionName
+
+            button.BackgroundColor3 =
+                active == true
+                and Color3.fromRGB(
+                    93,
+                    63,
+                    211
+                )
+                or Color3.fromRGB(
+                    18,
+                    14,
+                    29
+                )
+
+            button.BackgroundTransparency =
+                active == true
+                and 0.05
+                or 0.16
+
+            button.TextColor3 =
+                active == true
+                and Color3.fromRGB(
+                    255,
+                    255,
+                    255
+                )
+                or Color3.fromRGB(
+                    196,
+                    181,
+                    253
+                )
+
+            local stroke =
+                state.ButtonStrokes
+                and state.ButtonStrokes[buttonName]
+
+            if typeof(stroke) == "Instance" then
+
+                stroke.Color =
+                    active == true
+                    and Color3.fromRGB(
+                        167,
+                        139,
+                        250
+                    )
+                    or Color3.fromRGB(
+                        91,
+                        63,
+                        145
+                    )
+
+                stroke.Transparency =
+                    active == true
+                    and 0.08
+                    or 0.35
+            end
+        end
+    end
+end
+
+function GAG2FarmDashboardRefresh()
+
+    local state =
+        GAG2_FARM_DASHBOARD_STATE
+
+    local sectionName =
+        tostring(
+            GAG2_FARM_UI_STATE
+            and GAG2_FARM_UI_STATE.Section
+            or "Collect"
+        )
+
+    if sectionName == "" then
+        sectionName =
+            "Collect"
+    end
+
+    if typeof(state.SectionLabel) == "Instance" then
+
+        state.SectionLabel.Text =
+            sectionName
+    end
+
+    if typeof(state.StatusLabel) == "Instance" then
+
+        state.StatusLabel.Text =
+            GAG2FarmDashboardBuildStatusLine(
+                sectionName
+            )
+    end
+
+    if typeof(state.TargetLabel) == "Instance" then
+
+        state.TargetLabel.Text =
+            GAG2FarmDashboardBuildTargetLine(
+                sectionName
+            )
+    end
+
+    GAG2FarmDashboardSetButtonStyle(
+        sectionName
+    )
+end
+
+function GAG2FarmDashboardCreateButton(parent, sectionName, text)
+
+    local state =
+        GAG2_FARM_DASHBOARD_STATE
+
+    local button =
+        Instance.new("TextButton")
+
+    button.Name =
+        "FarmNav"
+        .. tostring(sectionName)
+
+    button.Size =
+        UDim2.new(
+            0.25,
+            -5,
+            1,
+            0
+        )
+
+    button.BackgroundColor3 =
+        Color3.fromRGB(
+            18,
+            14,
+            29
+        )
+
+    button.BackgroundTransparency =
+        0.16
+
+    button.BorderSizePixel =
+        0
+
+    button.AutoButtonColor =
+        true
+
+    button.Font =
+        Enum.Font.Code
+
+    button.Text =
+        tostring(text or sectionName)
+
+    button.TextSize =
+        12
+
+    button.TextColor3 =
+        Color3.fromRGB(
+            196,
+            181,
+            253
+        )
+
+    button.Parent =
+        parent
+
+    GAG2FarmDashboardMakeCorner(
+        button,
+        7
+    )
+
+    local stroke =
+        GAG2FarmDashboardMakeStroke(
+            button,
+            Color3.fromRGB(
+                91,
+                63,
+                145
+            ),
+            0.35,
+            1
+        )
+
+    state.Buttons[sectionName] =
+        button
+
+    state.ButtonStrokes[sectionName] =
+        stroke
+
+    button.MouseButton1Click:Connect(function()
+
+        if type(GAG2FarmShowSection) == "function" then
+
+            GAG2FarmShowSection(
+                sectionName
+            )
+        end
+    end)
+
+    return button
+end
+
+function GAG2FarmDashboardCreatePanel()
+
+    local state =
+        GAG2_FARM_DASHBOARD_STATE
+
+    local root =
+        Instance.new("Frame")
+
+    root.Name =
+        "HolyGAG2FarmDashboardRoot"
+
+    root.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            124
+        )
+
+    root.BackgroundTransparency =
+        1
+
+    local panel =
+        Instance.new("Frame")
+
+    panel.Name =
+        "Panel"
+
+    panel.Position =
+        UDim2.fromOffset(
+            0,
+            0
+        )
+
+    panel.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            124
+        )
+
+    panel.BackgroundColor3 =
+        Color3.fromRGB(
+            8,
+            6,
+            14
+        )
+
+    panel.BackgroundTransparency =
+        0.03
+
+    panel.BorderSizePixel =
+        0
+
+    panel.ClipsDescendants =
+        true
+
+    panel.Parent =
+        root
+
+    GAG2FarmDashboardMakeCorner(
+        panel,
+        10
+    )
+
+    GAG2FarmDashboardMakeStroke(
+        panel,
+        Color3.fromRGB(
+            124,
+            58,
+            237
+        ),
+        0.18,
+        1
+    )
+
+    local glow =
+        Instance.new("Frame")
+
+    glow.Name =
+        "Glow"
+
+    glow.Position =
+        UDim2.fromOffset(
+            0,
+            0
+        )
+
+    glow.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            2
+        )
+
+    glow.BackgroundColor3 =
+        Color3.fromRGB(
+            139,
+            92,
+            246
+        )
+
+    glow.BackgroundTransparency =
+        0.12
+
+    glow.BorderSizePixel =
+        0
+
+    glow.Parent =
+        panel
+
+    local iconWrap =
+        Instance.new("Frame")
+
+    iconWrap.Name =
+        "IconWrap"
+
+    iconWrap.Position =
+        UDim2.fromOffset(
+            12,
+            13
+        )
+
+    iconWrap.Size =
+        UDim2.fromOffset(
+            43,
+            43
+        )
+
+    iconWrap.BackgroundColor3 =
+        Color3.fromRGB(
+            24,
+            18,
+            38
+        )
+
+    iconWrap.BackgroundTransparency =
+        0.08
+
+    iconWrap.BorderSizePixel =
+        0
+
+    iconWrap.Parent =
+        panel
+
+    GAG2FarmDashboardMakeCorner(
+        iconWrap,
+        10
+    )
+
+    GAG2FarmDashboardMakeStroke(
+        iconWrap,
+        Color3.fromRGB(
+            139,
+            92,
+            246
+        ),
+        0.18,
+        1
+    )
+
+    local icon =
+        GAG2FarmDashboardMakeLabel(
+            iconWrap,
+            "Icon",
+            "🌾",
+            UDim2.fromOffset(
+                0,
+                0
+            ),
+            UDim2.new(
+                1,
+                0,
+                1,
+                0
+            ),
+            22,
+            Color3.fromRGB(
+                196,
+                181,
+                253
+            ),
+            Enum.Font.GothamBold
+        )
+
+    icon.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    local title =
+        GAG2FarmDashboardMakeLabel(
+            panel,
+            "Title",
+            "FARM",
+            UDim2.fromOffset(
+                66,
+                11
+            ),
+            UDim2.new(
+                0.5,
+                -70,
+                0,
+                21
+            ),
+            15,
+            Color3.fromRGB(
+                245,
+                243,
+                255
+            ),
+            Enum.Font.GothamBold
+        )
+
+    local section =
+        GAG2FarmDashboardMakeLabel(
+            panel,
+            "Section",
+            "Collect",
+            UDim2.new(
+                1,
+                -148,
+                0,
+                11
+            ),
+            UDim2.fromOffset(
+                130,
+                21
+            ),
+            12,
+            Color3.fromRGB(
+                167,
+                139,
+                250
+            ),
+            Enum.Font.Code
+        )
+
+    section.TextXAlignment =
+        Enum.TextXAlignment.Right
+
+    local status =
+        GAG2FarmDashboardMakeLabel(
+            panel,
+            "Status",
+            "Collect OFF • All • Queue 0 • Fired 0",
+            UDim2.fromOffset(
+                66,
+                35
+            ),
+            UDim2.new(
+                1,
+                -82,
+                0,
+                18
+            ),
+            12,
+            Color3.fromRGB(
+                196,
+                181,
+                253
+            ),
+            Enum.Font.Code
+        )
+
+    local target =
+        GAG2FarmDashboardMakeLabel(
+            panel,
+            "Target",
+            "Target: None",
+            UDim2.fromOffset(
+                66,
+                57
+            ),
+            UDim2.new(
+                1,
+                -82,
+                0,
+                18
+            ),
+            12,
+            Color3.fromRGB(
+                148,
+                163,
+                184
+            ),
+            Enum.Font.Code
+        )
+
+    local nav =
+        Instance.new("Frame")
+
+    nav.Name =
+        "Navigation"
+
+    nav.Position =
+        UDim2.fromOffset(
+            12,
+            87
+        )
+
+    nav.Size =
+        UDim2.new(
+            1,
+            -24,
+            0,
+            27
+        )
+
+    nav.BackgroundTransparency =
+        1
+
+    nav.Parent =
+        panel
+
+    local navLayout =
+        Instance.new("UIListLayout")
+
+    navLayout.FillDirection =
+        Enum.FillDirection.Horizontal
+
+    navLayout.HorizontalAlignment =
+        Enum.HorizontalAlignment.Left
+
+    navLayout.VerticalAlignment =
+        Enum.VerticalAlignment.Center
+
+    navLayout.SortOrder =
+        Enum.SortOrder.LayoutOrder
+
+    navLayout.Padding =
+        UDim.new(
+            0,
+            6
+        )
+
+    navLayout.Parent =
+        nav
+
+    state.Buttons =
+        {}
+
+    state.ButtonStrokes =
+        {}
+
+    GAG2FarmDashboardCreateButton(
+        nav,
+        "Collect",
+        "Collect"
+    )
+
+    GAG2FarmDashboardCreateButton(
+        nav,
+        "Plant",
+        "Plant"
+    )
+
+    GAG2FarmDashboardCreateButton(
+        nav,
+        "Tools",
+        "Tools"
+    )
+
+    GAG2FarmDashboardCreateButton(
+        nav,
+        "All",
+        "All"
+    )
+
+    state.Root =
+        root
+
+    state.Panel =
+        panel
+
+    state.TitleLabel =
+        title
+
+    state.SectionLabel =
+        section
+
+    state.StatusLabel =
+        status
+
+    state.TargetLabel =
+        target
+
+    return root
+end
+
+function GAG2FarmDashboardStartRefreshLoop()
+
+    local state =
+        GAG2_FARM_DASHBOARD_STATE
+
+    state.LoopToken =
+        tonumber(state.LoopToken)
+        or 0
+
+    state.LoopToken =
+        state.LoopToken + 1
+
+    local token =
+        state.LoopToken
+
+    task.spawn(function()
+
+        while tonumber(state.LoopToken) == token do
+
+            if typeof(state.Root) ~= "Instance"
+            or state.Root.Parent == nil then
+
+                break
+            end
+
+            GAG2FarmDashboardRefresh()
+
+            task.wait(
+                2
+            )
+        end
+    end)
+end
+
 function GAG2FarmShowSection(sectionName)
 
     sectionName =
@@ -59427,137 +60367,42 @@ function GAG2FarmShowSection(sectionName)
         end
     end
 
-    if Options.HolyGAG2FarmMenuStatus then
-
-        Options.HolyGAG2FarmMenuStatus:SetText(
-            "Showing: "
-            .. tostring(sectionName)
-        )
-    end
+    GAG2FarmDashboardRefresh()
 end
 
-local FarmMenuBox =
+local FarmDashboardBox =
     AddLeftBox(
         Tabs.Farm,
-        "Farm Menu",
-        "layout-grid"
+        "",
+        "sprout"
     )
 
-if FarmMenuBox
-and type(FarmMenuBox.AddActionRow) == "function" then
+if FarmDashboardBox
+and type(FarmDashboardBox.AddUIPassthrough) == "function" then
 
-    FarmMenuBox:AddActionRow(
-        "HolyGAG2FarmMenuRow1",
+    FarmDashboardBox:AddUIPassthrough(
+        "HolyGAG2FarmDashboard",
         {
-            Height = 22,
-            Gap = 6,
+            Instance =
+                GAG2FarmDashboardCreatePanel(),
 
-            Buttons = {
-                {
-                    Id = "Collect",
-                    Text = "Collect",
-                    Callback = function()
+            Height =
+                124,
 
-                        GAG2FarmShowSection(
-                            "Collect"
-                        )
-                    end,
-                },
-
-                {
-                    Id = "Plant",
-                    Text = "Plant",
-                    Callback = function()
-
-                        GAG2FarmShowSection(
-                            "Plant"
-                        )
-                    end,
-                },
-
-                {
-                    Id = "Tools",
-                    Text = "Tools",
-                    Callback = function()
-
-                        GAG2FarmShowSection(
-                            "Tools"
-                        )
-                    end,
-                },
-            },
+            Visible =
+                true,
         }
     )
 
-    FarmMenuBox:AddActionRow(
-        "HolyGAG2FarmMenuRow2",
-        {
-            Height = 22,
-            Gap = 6,
-
-            Buttons = {
-                {
-                    Id = "All",
-                    Text = "All",
-                    Callback = function()
-
-                        GAG2FarmShowSection(
-                            "All"
-                        )
-                    end,
-                },
-            },
-        }
-    )
-
-    FarmMenuBox:AddLabel(
-        "HolyGAG2FarmMenuStatus",
-        {
-            Text = "Showing: Collect",
-            DoesWrap = false,
-            Size = 12,
-        }
-    )
+    GAG2FarmDashboardStartRefreshLoop()
 
 else
 
-    FarmMenuBox:AddButton({
-        Text = "Collect",
-        Func = function()
-
-            GAG2FarmShowSection(
-                "Collect"
-            )
-        end,
-    }):AddButton({
-        Text = "Plant",
-        Func = function()
-
-            GAG2FarmShowSection(
-                "Plant"
-            )
-        end,
-    })
-
-    FarmMenuBox:AddButton({
-        Text = "Tools",
-        Func = function()
-
-            GAG2FarmShowSection(
-                "Tools"
-            )
-        end,
-    }):AddButton({
-        Text = "All",
-        Func = function()
-
-            GAG2FarmShowSection(
-                "All"
-            )
-        end,
-    })
-end
-
+    local FarmFallbackBox =
+        FarmDashboardBox
+        or AddLeftBox(
+            Tabs.Farm,
+            "
 local FarmSeedPlantBox =
     AddFarmLeftBoxClosed(
         "Seed Planting",
