@@ -43705,18 +43705,56 @@ function SniperFormatWatchlistListRow(entry)
     local rule =
         entry.Rule
 
+    local priorityText =
+        SniperCleanPriorityLevel(
+            rule.Priority
+        )
+
+    local sizeText =
+        tostring(
+            rule.SizeFilter
+            or "Any"
+        )
+
+    local mutationText =
+        tostring(
+            rule.MutationFilter
+            or "Any"
+        )
+
     return {
         Pet =
             tostring(rule.PetName or "Unknown"),
 
+        PetName =
+            tostring(rule.PetName or "Unknown"),
+
         Max =
-            tostring(rule.SizeFilter or "Any"),
+            sizeText,
+
+        MaxPrice =
+            sizeText,
+
+        Size =
+            sizeText,
 
         BW =
-            tostring(rule.MutationFilter or "Any"),
+            mutationText,
+
+        Weight =
+            mutationText,
+
+        MinWeight =
+            mutationText,
+
+        Type =
+            mutationText,
 
         Pri =
-            SniperCleanPriorityLevel(rule.Priority),
+            priorityText,
+
+        Priority =
+            priorityText,
 
         Entry =
             entry,
