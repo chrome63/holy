@@ -59262,86 +59262,496 @@ function AddFarmRightBoxClosed(title, icon)
     )
 end
 
-local FarmPlantBox =
-    AddFarmLeftBoxClosed(
-        "Plant",
-        "sprout"
-    )
+GAG2_FARM_UI_STATE =
+    GAG2_FARM_UI_STATE
+    or {
+        Section = "Collect",
+        Boxes = {},
+        BoxKeys = {},
+    }
 
-local FarmCollectBox =
-    AddFarmLeftBoxClosed(
-        "Collect",
-        "leaf"
-    )
+function GAG2FarmGetGroupboxHolder(box)
 
-local FarmRulesBox =
-    AddFarmRightBoxClosed(
-        "Rules",
-        "sliders-horizontal"
-    )
+    if type(box) ~= "table" then
+        return nil
+    end
 
-local FarmToolsBox =
-    AddFarmRightBoxClosed(
-        "Tools",
-        "wrench"
-    )
+    if typeof(box.BoxHolder) == "Instance" then
+        return box.BoxHolder
+    end
 
-local FarmMainBox =
-    FarmCollectBox
-    or FarmPlantBox
-    or FarmRulesBox
-    or FarmToolsBox
+    if typeof(box.Holder) == "Instance" then
+        return box.Holder
+    end
 
-if FarmMainBox == nil then
+    return nil
+end
 
-    FarmMainBox =
-        AddLeftBox(
-            Tabs.Farm,
-            "Farm",
-            "sprout"
+function GAG2FarmRefreshLayout(box)
+
+    if type(box) == "table"
+    and type(box.Tab) == "table"
+    and type(box.Tab.RefreshSides) == "function" then
+
+        task.defer(function()
+
+            if type(box.Tab) == "table"
+            and type(box.Tab.RefreshSides) == "function" then
+
+                box.Tab:RefreshSides()
+            end
+        end)
+
+        return
+    end
+
+    if Tabs.Farm
+    and type(Tabs.Farm.RefreshSides) == "function" then
+
+        task.defer(function()
+
+            if Tabs.Farm
+            and type(Tabs.Farm.RefreshSides) == "function" then
+
+                Tabs.Farm:RefreshSides()
+            end
+        end)
+    end
+end
+
+function GAG2FarmSetGroupboxVisible(box, visible)
+
+    local holder =
+        GAG2FarmGetGroupboxHolder(
+            box
         )
+
+    if not holder then
+        return false
+    end
+
+    holder.Visible =
+        visible == true
+
+    GAG2FarmRefreshLayout(
+        box
+    )
+
+    return true
+end
+
+function GAG2FarmRegisterSectionBox(sectionName, box)
+
+    sectionName =
+        tostring(sectionName or "")
+
+    if sectionName == ""
+    or type(box) ~= "table" then
+        return
+    end
+
+    GAG2_FARM_UI_STATE.Boxes[sectionName] =
+        GAG2_FARM_UI_STATE.Boxes[sectionName]
+        or {}
+
+    local holder =
+        GAG2FarmGetGroupboxHolder(
+            box
+        )
+
+    local boxKey =
+        tostring(sectionName)
+        .. "|"
+        .. tostring(box.Name or "")
+        .. "|"
+        .. tostring(box.SideName or "")
+        .. "|"
+        .. tostring(box.CreatedOrder or "")
+        .. "|"
+        .. tostring(holder)
+
+    if GAG2_FARM_UI_STATE.BoxKeys[boxKey] == true then
+        return
+    end
+
+    GAG2_FARM_UI_STATE.BoxKeys[boxKey] =
+        true
+
+    table.insert(
+        GAG2_FARM_UI_STATE.Boxes[sectionName],
+        box
+    )
+
+    local activeSection =
+        tostring(
+            GAG2_FARM_UI_STATE.Section
+            or "Collect"
+        )
+
+    GAG2FarmSetGroupboxVisible(
+        box,
+        activeSection == "All"
+        or activeSection == sectionName
+    )
+end
+
+function GAG2FarmShowSection(sectionName)
+
+    sectionName =
+        tostring(sectionName or "Collect")
+
+    if sectionName ~= "Collect"
+    and sectionName ~= "Plant"
+    and sectionName ~= "Tools"
+    and sectionName ~= "Rules"
+    and sectionName ~= "All" then
+
+        sectionName =
+            "Collect"
+    end
+
+    GAG2_FARM_UI_STATE.Section =
+        sectionName
+
+    for registeredSection, boxes in pairs(GAG2_FARM_UI_STATE.Boxes) do
+
+        local visible =
+            sectionName == "All"
+            or sectionName == registeredSection
+
+        for _, box in ipairs(boxes) do
+
+            GAG2FarmSetGroupboxVisible(
+                box,
+                visible
+            )
+        end
+    end
+
+    if Options.HolyGAG2FarmMenuStatus then
+
+        Options.HolyGAG2FarmMenuStatus:SetText(
+            "Showing: "
+            .. tostring(sectionName)
+        )
+    end
+end
+
+local FarmMenuBox =
+    AddLeftBox(
+        Tabs.Farm,
+        "Farm Menu",
+        "layout-grid"
+    )
+
+if FarmMenuBox
+and type(FarmMenuBox.AddActionRow) == "function" then
+
+    FarmMenuBox:AddActionRow(
+        "HolyGAG2FarmMenuRow1",
+        {
+            Height = 22,
+            Gap = 6,
+
+            Buttons = {
+                {
+                    Id = "Collect",
+                    Text = "Collect",
+                    Callback = function()
+
+                        GAG2FarmShowSection(
+                            "Collect"
+                        )
+                    end,
+                },
+
+                {
+                    Id = "Plant",
+                    Text = "Plant",
+                    Callback = function()
+
+                        GAG2FarmShowSection(
+                            "Plant"
+                        )
+                    end,
+                },
+
+                {
+                    Id = "Tools",
+                    Text = "Tools",
+                    Callback = function()
+
+                        GAG2FarmShowSection(
+                            "Tools"
+                        )
+                    end,
+                },
+            },
+        }
+    )
+
+    FarmMenuBox:AddActionRow(
+        "HolyGAG2FarmMenuRow2",
+        {
+            Height = 22,
+            Gap = 6,
+
+            Buttons = {
+                {
+                    Id = "Rules",
+                    Text = "Rules",
+                    Callback = function()
+
+                        GAG2FarmShowSection(
+                            "Rules"
+                        )
+                    end,
+                },
+
+                {
+                    Id = "All",
+                    Text = "All",
+                    Callback = function()
+
+                        GAG2FarmShowSection(
+                            "All"
+                        )
+                    end,
+                },
+            },
+        }
+    )
+
+    FarmMenuBox:AddLabel(
+        "HolyGAG2FarmMenuStatus",
+        {
+            Text = "Showing: Collect",
+            DoesWrap = false,
+            Size = 12,
+        }
+    )
+
+else
+
+    FarmMenuBox:AddButton({
+        Text = "Collect",
+        Func = function()
+
+            GAG2FarmShowSection(
+                "Collect"
+            )
+        end,
+    }):AddButton({
+        Text = "Plant",
+        Func = function()
+
+            GAG2FarmShowSection(
+                "Plant"
+            )
+        end,
+    })
+
+    FarmMenuBox:AddButton({
+        Text = "Tools",
+        Func = function()
+
+            GAG2FarmShowSection(
+                "Tools"
+            )
+        end,
+    }):AddButton({
+        Text = "Rules",
+        Func = function()
+
+            GAG2FarmShowSection(
+                "Rules"
+            )
+        end,
+    })
+
+    FarmMenuBox:AddButton({
+        Text = "All",
+        Func = function()
+
+            GAG2FarmShowSection(
+                "All"
+            )
+        end,
+    })
 end
 
 local FarmSeedPlantBox =
-    FarmPlantBox
-    or FarmMainBox
+    AddFarmLeftBoxClosed(
+        "Seed Planting",
+        "sprout"
+    )
 
 local FarmCollectionBox =
-    FarmCollectBox
-    or FarmMainBox
+    AddFarmLeftBoxClosed(
+        "Fruit Collection",
+        "leaf"
+    )
 
 local FarmFiltersBox =
-    FarmCollectBox
-    or FarmMainBox
-
-local FarmWeatherBox =
-    FarmRulesBox
-    or FarmMainBox
-
-local FarmExclusionsBox =
-    FarmRulesBox
-    or FarmMainBox
+    FarmCollectionBox
 
 local FarmAutoSprinklerBox =
-    FarmToolsBox
-    or FarmMainBox
+    AddFarmLeftBoxClosed(
+        "Auto Sprinkler",
+        "spray-can"
+    )
+
+local FarmWeatherBox =
+    AddFarmRightBoxClosed(
+        "Weather Pause",
+        "cloud-rain"
+    )
+
+local FarmExclusionsBox =
+    AddFarmRightBoxClosed(
+        "Exclusions",
+        "ban"
+    )
 
 local FarmAutoShovelBox =
-    FarmToolsBox
-    or FarmMainBox
+    AddFarmRightBoxClosed(
+        "Auto Shovel Plants",
+        "shovel"
+    )
 
 local FarmAutoWateringBox =
-    FarmToolsBox
-    or FarmMainBox
+    AddFarmRightBoxClosed(
+        "Auto Watering Can",
+        "droplets"
+    )
 
 local FarmAutoTrowelBox =
-    FarmToolsBox
-    or FarmMainBox
+    AddFarmRightBoxClosed(
+        "Auto Trowel Plants",
+        "move-3d"
+    )
 
 FarmAutoShovelFruitBox =
-    FarmToolsBox
-    or FarmMainBox
+    AddFarmRightBoxClosed(
+        "Auto Shovel Fruits",
+        "shovel"
+    )
 
+local FarmMainBox =
+    FarmCollectionBox
+
+if FarmSeedPlantBox == nil then
+
+    FarmSeedPlantBox =
+        FarmMainBox
+end
+
+if FarmCollectionBox == nil then
+
+    FarmCollectionBox =
+        FarmMainBox
+end
+
+if FarmFiltersBox == nil then
+
+    FarmFiltersBox =
+        FarmMainBox
+end
+
+if FarmWeatherBox == nil then
+
+    FarmWeatherBox =
+        FarmMainBox
+end
+
+if FarmExclusionsBox == nil then
+
+    FarmExclusionsBox =
+        FarmMainBox
+end
+
+if FarmAutoSprinklerBox == nil then
+
+    FarmAutoSprinklerBox =
+        FarmMainBox
+end
+
+if FarmAutoShovelBox == nil then
+
+    FarmAutoShovelBox =
+        FarmMainBox
+end
+
+if FarmAutoWateringBox == nil then
+
+    FarmAutoWateringBox =
+        FarmMainBox
+end
+
+if FarmAutoTrowelBox == nil then
+
+    FarmAutoTrowelBox =
+        FarmMainBox
+end
+
+if FarmAutoShovelFruitBox == nil then
+
+    FarmAutoShovelFruitBox =
+        FarmMainBox
+end
+
+GAG2FarmRegisterSectionBox(
+    "Collect",
+    FarmCollectionBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Plant",
+    FarmSeedPlantBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Tools",
+    FarmAutoSprinklerBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Tools",
+    FarmAutoWateringBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Tools",
+    FarmAutoTrowelBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Tools",
+    FarmAutoShovelBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Tools",
+    FarmAutoShovelFruitBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Rules",
+    FarmWeatherBox
+)
+
+GAG2FarmRegisterSectionBox(
+    "Rules",
+    FarmExclusionsBox
+)
+
+task.defer(function()
+
+    GAG2FarmShowSection(
+        GAG2_FARM_UI_STATE.Section
+        or "Collect"
+    )
+end)
 
 local VisualsMainBox =
     AddLeftBox(
@@ -61311,9 +61721,46 @@ if FarmSeedPlantBox == nil then
 end
 
 local FarmSeedAdvancedBox =
-    FarmPlantBox
-    or FarmSeedPlantBox
-    or FarmMainBox
+    nil
+
+if Tabs.Farm
+and type(Tabs.Farm.AddLeftCollapsibleGroupbox) == "function" then
+
+    local okAdvanced, advancedBox =
+        pcall(function()
+
+            return Tabs.Farm:AddLeftCollapsibleGroupbox(
+                "Seed Advanced",
+                "sliders-horizontal",
+                false
+            )
+        end)
+
+    if okAdvanced == true
+    and advancedBox ~= nil then
+
+        FarmSeedAdvancedBox =
+            advancedBox
+    end
+end
+
+if FarmSeedAdvancedBox == nil then
+
+    FarmSeedAdvancedBox =
+        AddLeftBox(
+            Tabs.Farm,
+            "Seed Advanced",
+            "sliders-horizontal"
+        )
+end
+
+if type(GAG2FarmRegisterSectionBox) == "function" then
+
+    GAG2FarmRegisterSectionBox(
+        "Plant",
+        FarmSeedAdvancedBox
+    )
+end
 
 function GAG2SeedPlantSetControlVisible(control, visible)
 
