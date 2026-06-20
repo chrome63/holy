@@ -44338,25 +44338,10 @@ function SniperReadSafeModelScale(instance)
         return nil
     end
 
-    local getter =
-        nil
-
-    pcall(function()
-
-        getter =
-            instance.GetScale
-    end)
-
-    if type(getter) ~= "function" then
-        return nil
-    end
-
     local ok, scale =
         pcall(function()
 
-            return getter(
-                instance
-            )
+            return instance:GetScale()
         end)
 
     if ok ~= true then
@@ -44766,77 +44751,13 @@ end
 
 function SniperPriorityText()
 
-    local rows =
-        {}
-
-    for index = 1, 5 do
-
-        local value =
-            SniperPriorityCleanValue(
-                SniperState.PriorityPets
-                and SniperState.PriorityPets[index]
-                or ""
-            )
-
-        if value ~= "" then
-
-            table.insert(
-                rows,
-                tostring(index)
-                .. ". "
-                .. value
-            )
-        end
-    end
-
-    if #rows <= 0 then
-        return "None"
-    end
-
-    return table.concat(
-        rows,
-        " > "
-    )
+    return "Per-filter"
 end
 
 function SniperRefreshPriorityDropdowns()
 
-    if SniperPriorityRefreshing == true then
-        return
-    end
-
-    SniperPriorityRefreshing =
-        true
-
-    local values =
-        SniperGetPriorityDropdownValues()
-
-    for index = 1, 5 do
-
-        local dropdown =
-            SniperPriorityDropdowns
-            and SniperPriorityDropdowns[index]
-
-        if dropdown then
-
-            pcall(function()
-
-                if type(dropdown.SetValues) == "function" then
-
-                    dropdown:SetValues(
-                        values
-                    )
-
-                elseif type(dropdown.SetItems) == "function" then
-
-                    dropdown:SetItems(
-                        values
-                    )
-                end
-            end)
-        end
-    end
-
+    -- Old global 5-slot Buy Priority refresh removed.
+    -- Priority now belongs to each saved sniper watchlist filter.
     SniperPriorityRefreshing =
         false
 end
