@@ -43067,15 +43067,38 @@ function SniperCleanPriorityLevel(value)
             value
         )
 
-    if value == "High" then
+    local lower =
+        value:lower()
+
+    if lower == "high"
+    or lower == "h" then
         return "High"
     end
 
-    if value == "Low" then
+    if lower == "low"
+    or lower == "l" then
         return "Low"
     end
 
     return "Medium"
+end
+
+function SniperPriorityShortText(value)
+
+    local priority =
+        SniperCleanPriorityLevel(
+            value
+        )
+
+    if priority == "High" then
+        return "H"
+    end
+
+    if priority == "Low" then
+        return "L"
+    end
+
+    return "M"
 end
 
 function SniperSetBuilderPriority(value)
@@ -43813,11 +43836,11 @@ function SniperFormatWatchlistEntry(entry)
     )
         .. tostring(rule.PetName)
         .. " | "
-        .. tostring(rule.SizeFilter)
+        .. SniperCleanSizeClass(rule.SizeFilter)
         .. " | "
-        .. tostring(rule.MutationFilter)
+        .. SniperCleanMutationFilter(rule.MutationFilter)
         .. " | "
-        .. SniperCleanPriorityLevel(rule.Priority)
+        .. SniperPriorityShortText(rule.Priority)
 end
 
 function SniperFormatWatchlistListRow(entry)
@@ -43830,18 +43853,87 @@ function SniperFormatWatchlistListRow(entry)
     local rule =
         entry.Rule
 
+    local priorityFull =
+        SniperCleanPriorityLevel(
+            rule.Priority
+        )
+
+    local priorityShort =
+        SniperPriorityShortText(
+            priorityFull
+        )
+
+    local sizeText =
+        SniperCleanSizeClass(
+            rule.SizeFilter
+        )
+
+    local mutationText =
+        SniperCleanMutationFilter(
+            rule.MutationFilter
+        )
+
+    local petText =
+        CleanText(
+            rule.PetName
+        )
+
+    if petText == "" then
+        petText =
+            "Unknown"
+    end
+
     return {
         Pet =
-            tostring(rule.PetName or "Unknown"),
+            petText,
+
+        PetName =
+            petText,
+
+        Name =
+            petText,
 
         Max =
-            tostring(rule.SizeFilter or "Any"),
+            sizeText,
+
+        MaxPrice =
+            sizeText,
+
+        Size =
+            sizeText,
 
         BW =
-            tostring(rule.MutationFilter or "Any"),
+            mutationText,
+
+        Weight =
+            mutationText,
+
+        MinWeight =
+            mutationText,
+
+        Type =
+            mutationText,
+
+        Mutation =
+            mutationText,
+
+        Mut =
+            mutationText,
 
         Pri =
-            SniperCleanPriorityLevel(rule.Priority),
+            priorityShort,
+
+        Priority =
+            priorityShort,
+
+        PriorityText =
+            priorityShort,
+
+        PriorityFull =
+            priorityFull,
+
+        P =
+            priorityShort,
 
         Entry =
             entry,
