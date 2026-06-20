@@ -14269,13 +14269,216 @@ function GAG2SeedCollectWaitConfirm(entry, beforeCount)
         "confirmation timeout"
 end
 
+function GAG2SeedCollectGetMaxAttemptsPerTarget()
+
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
+
+    return math.max(
+        1,
+        math.floor(
+            tonumber(state.MaxAttemptsPerTarget)
+            or 2
+        )
+    )
+end
+
+function GAG2SeedCollectClearTargetLock(reason)
+
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
+
+    state.LockedEntry =
+        nil
+
+    state.LockedKey =
+        ""
+
+    state.LockedAttempts =
+        0
+
+    state.LockedReason =
+        tostring(reason or "")
+end
+
+function GAG2SeedCollectLockTarget(entry, reason)
+
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
+
+    if type(entry) ~= "table"
+    or CleanText(entry.Key) == "" then
+
+        GAG2SeedCollectClearTargetLock(
+            "bad lock target"
+        )
+
+        return false
+    end
+
+    local key =
+        CleanText(
+            entry.Key
+        )
+
+    if CleanText(state.LockedKey) ~= key then
+
+        state.LockedAttempts =
+            0
+    end
+
+    state.LockedEntry =
+        entry
+
+    state.LockedKey =
+        key
+
+    state.LockedReason =
+        tostring(reason or "locked")
+
+    return true
+end
+
+function GAG2SeedCollectGetLockedTarget()
+
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
+
+    local entry =
+        state.LockedEntry
+
+    if type(entry) ~= "table"
+    or CleanText(entry.Key) == "" then
+
+        GAG2SeedCollectClearTargetLock(
+            "no locked target"
+        )
+
+        return nil,
+            "no locked target"
+    end
+
+    if CleanText(entry.Key) ~= CleanText(state.LockedKey) then
+
+        GAG2SeedCollectClearTargetLock(
+            "lock key mismatch"
+        )
+
+        return nil,
+            "lock key mismatch"
+    end
+
+    local alive, aliveReason =
+        GAG2SeedCollectIsEntryAlive(
+            entry
+        )
+
+    if alive ~= true then
+
+        GAG2SeedCollectMarkEntryStale(
+            entry,
+            aliveReason,
+            state.MissingRecentSeconds
+        )
+
+        GAG2SeedCollectClearTargetLock(
+            aliveReason
+        )
+
+        return nil,
+            aliveReason
+    end
+
+    return entry,
+        "locked"
+end
+
+function GAG2SeedCollectShouldRetryLockedTarget(entry, failReason)
+
+    local state =
+        GAG2_AUTO_COLLECT_SEEDS_STATE
+
+    local attempts =
+        math.max(
+            0,
+            math.floor(
+                tonumber(state.LockedAttempts)
+                or 0
+            )
+        )
+
+    local maxAttempts =
+        GAG2SeedCollectGetMaxAttemptsPerTarget()
+
+    if attempts < maxAttempts then
+
+        return true,
+            "retry "
+            .. tostring(attempts)
+            .. "/"
+            .. tostring(maxAttempts)
+            .. ": "
+            .. tostring(failReason)
+    end
+
+    GAG2SeedCollectMarkEntryStale(
+        entry,
+        failReason,
+        state.StaleRecentSeconds
+    )
+
+    GAG2SeedCollectClearTargetLock(
+        "failed "
+        .. tostring(maxAttempts)
+        .. " attempts: "
+        .. tostring(failReason)
+    )
+
+    return false,
+        "failed "
+        .. tostring(maxAttempts)
+        .. "/"
+        .. tostring(maxAttempts)
+        .. ": "
+        .. tostring(failReason)
+end
+
 function GAG2SeedCollectCycle()
 
     local state =
         GAG2_AUTO_COLLECT_SEEDS_STATE
 
+    state.MaxAttemptsPerTarget =
+        math.max(
+            1,
+            math.floor(
+                tonumber(state.MaxAttemptsPerTarget)
+                or 2
+            )
+        )
+
+    if type(state.Recent) ~= "table" then
+
+        state.Recent =
+            {}
+    end
+
     local entry, reason =
-        GAG2SeedCollectFindNearest()
+        GAG2SeedCollectGetLockedTarget()
+
+    if not entry then
+
+        entry, reason =
+            GAG2SeedCollectFindNearest()
+
+        if entry then
+
+            GAG2SeedCollectLockTarget(
+                entry,
+                "nearest"
+            )
+        end
+    end
 
     state.LastHadEntry =
         entry ~= nil
@@ -14303,6 +14506,10 @@ function GAG2SeedCollectCycle()
             state.MissingRecentSeconds
         )
 
+        GAG2SeedCollectClearTargetLock(
+            aliveReason
+        )
+
         GAG2SeedCollectSetStatus(
             "Skipped stale seed: "
             .. tostring(aliveReason)
@@ -14311,13 +14518,33 @@ function GAG2SeedCollectCycle()
         return
     end
 
+    state.LockedAttempts =
+        math.max(
+            0,
+            math.floor(
+                tonumber(state.LockedAttempts)
+                or 0
+            )
+        )
+        + 1
+
+    local attemptNumber =
+        state.LockedAttempts
+
+    local maxAttempts =
+        GAG2SeedCollectGetMaxAttemptsPerTarget()
+
     state.Recent[entry.Key] =
-        os.clock() + 0.10
+        os.clock() + 0.50
 
     GAG2SeedCollectSetStatus(
-        "Collecting "
+        "Locked "
         .. tostring(entry.SeedType)
-        .. " Seed | "
+        .. " Seed | attempt "
+        .. tostring(attemptNumber)
+        .. "/"
+        .. tostring(maxAttempts)
+        .. " | "
         .. tostring(math.floor(entry.Distance + 0.5))
         .. " studs"
     )
@@ -14334,9 +14561,23 @@ function GAG2SeedCollectCycle()
 
     if moved ~= true then
 
+        local retry, retryInfo =
+            GAG2SeedCollectShouldRetryLockedTarget(
+                entry,
+                "move failed: "
+                .. tostring(moveInfo)
+            )
+
         GAG2SeedCollectSetStatus(
-            "Move failed: "
-            .. tostring(moveInfo)
+            retry == true
+            and (
+                "Retrying same seed: "
+                .. tostring(retryInfo)
+            )
+            or (
+                "Choosing next seed: "
+                .. tostring(retryInfo)
+            )
         )
 
         return
@@ -14353,6 +14594,10 @@ function GAG2SeedCollectCycle()
             entry,
             aliveReason,
             state.MissingRecentSeconds
+        )
+
+        GAG2SeedCollectClearTargetLock(
+            aliveReason
         )
 
         GAG2SeedCollectSetStatus(
@@ -14375,15 +14620,23 @@ function GAG2SeedCollectCycle()
 
     if claimable ~= true then
 
-        GAG2SeedCollectMarkEntryStale(
-            entry,
-            claimInfo,
-            state.StaleRecentSeconds
-        )
+        local retry, retryInfo =
+            GAG2SeedCollectShouldRetryLockedTarget(
+                entry,
+                "not claimable: "
+                .. tostring(claimInfo)
+            )
 
         GAG2SeedCollectSetStatus(
-            "Not claimable: "
-            .. tostring(claimInfo)
+            retry == true
+            and (
+                "Retrying same seed: "
+                .. tostring(retryInfo)
+            )
+            or (
+                "Choosing next seed: "
+                .. tostring(retryInfo)
+            )
         )
 
         return
@@ -14396,15 +14649,23 @@ function GAG2SeedCollectCycle()
 
     if fired ~= true then
 
-        GAG2SeedCollectMarkEntryStale(
-            entry,
-            fireInfo,
-            state.StaleRecentSeconds
-        )
+        local retry, retryInfo =
+            GAG2SeedCollectShouldRetryLockedTarget(
+                entry,
+                "fire failed: "
+                .. tostring(fireInfo)
+            )
 
         GAG2SeedCollectSetStatus(
-            "Collect failed: "
-            .. tostring(fireInfo)
+            retry == true
+            and (
+                "Retrying same seed: "
+                .. tostring(retryInfo)
+            )
+            or (
+                "Choosing next seed: "
+                .. tostring(retryInfo)
+            )
         )
 
         return
@@ -14424,6 +14685,10 @@ function GAG2SeedCollectCycle()
             state.SuccessRecentSeconds
         )
 
+        GAG2SeedCollectClearTargetLock(
+            "confirmed"
+        )
+
         GAG2SeedCollectSetStatus(
             "Collected "
             .. tostring(entry.SeedType)
@@ -14431,20 +14696,29 @@ function GAG2SeedCollectCycle()
             .. tostring(confirmInfo)
         )
 
-    else
+        return
+    end
 
-        GAG2SeedCollectMarkEntryStale(
+    local retry, retryInfo =
+        GAG2SeedCollectShouldRetryLockedTarget(
             entry,
-            confirmInfo,
-            state.StaleRecentSeconds
-        )
-
-        GAG2SeedCollectSetStatus(
-            "Not confirmed: "
+            "not confirmed: "
             .. tostring(confirmInfo)
         )
-    end
+
+    GAG2SeedCollectSetStatus(
+        retry == true
+        and (
+            "Retrying same seed: "
+            .. tostring(retryInfo)
+        )
+        or (
+            "Choosing next seed: "
+            .. tostring(retryInfo)
+        )
+    )
 end
+
 
 function GAG2SeedCollectStart()
 
@@ -20977,6 +21251,7 @@ function GAG2ACFCalculateFruitWeightKg(fruit, fruitName)
         GAG2ACFClean(
             fruitName
             or fruit:GetAttribute("CorePartName")
+            or fruit:GetAttribute("FruitName")
             or fruit:GetAttribute("SeedName")
         )
 
@@ -20996,7 +21271,13 @@ function GAG2ACFCalculateFruitWeightKg(fruit, fruitName)
 
     if not sizeMulti
     or sizeMulti <= 0 then
-        return nil, "missing SizeMulti"
+
+        -- Bamboo/Mushroom-style harvests can expose HarvestPrompt directly
+        -- under the plant model. Those plant-level entries often have SeedName
+        -- and PlantGrowthReady, but no fruit SizeMulti.
+        -- Use 1 so the entry still passes collection filters and can be harvested.
+        sizeMulti =
+            1
     end
 
     local overtimeGrowth =
@@ -21016,6 +21297,7 @@ function GAG2ACFCalculateFruitWeightKg(fruit, fruitName)
         * overtimeGrowth,
         "BaseWeight formula"
 end
+
 
 function GAG2ACFFormatWeightKg(value)
 
@@ -21142,6 +21424,22 @@ function GAG2ACFReadFruitName(fruit, plant)
             GAG2ACFClean(
                 fruit:GetAttribute("CorePartName")
             )
+
+        if name == "" then
+
+            name =
+                GAG2ACFClean(
+                    fruit:GetAttribute("FruitName")
+                )
+        end
+
+        if name == "" then
+
+            name =
+                GAG2ACFClean(
+                    fruit:GetAttribute("SeedName")
+                )
+        end
     end
 
     if name == ""
@@ -21151,6 +21449,22 @@ function GAG2ACFReadFruitName(fruit, plant)
             GAG2ACFClean(
                 plant:GetAttribute("SeedName")
             )
+
+        if name == "" then
+
+            name =
+                GAG2ACFClean(
+                    plant:GetAttribute("CorePartName")
+                )
+        end
+
+        if name == "" then
+
+            name =
+                GAG2ACFClean(
+                    plant:GetAttribute("FruitName")
+                )
+        end
     end
 
     if name == ""
@@ -21164,6 +21478,7 @@ function GAG2ACFReadFruitName(fruit, plant)
 
     return name
 end
+
 
 function GAG2ACFReadMutation(fruit, plant)
 
