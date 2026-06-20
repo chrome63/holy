@@ -9113,8 +9113,14 @@ end
 -- Scanner + target matcher only. No buy/tame remotes yet.
 --==================================================
 
+SniperAllowMultiPetsToggle =
+    nil
+
 SniperTargetDropdown =
     nil
+
+SniperTargetDropdownLock =
+    false
 
 SniperSizeDropdown =
     nil
@@ -9235,6 +9241,7 @@ local SniperState = {
         "",
     },
     KnownPetNames = {},
+    AllowMultiPets = false,
     SizeClass = "Any",
     MutationFilter = "Any",
     SaveTarget = 1,
@@ -9423,6 +9430,360 @@ function SniperSetTargets(value)
         SniperNormalizeList(value)
 
     MarkConfigDirty()
+end
+
+function SniperBuildDropdownSelectionMap(targets)
+
+    local map =
+        {}
+
+    for _, petName in ipairs(
+        SniperNormalizeList(targets)
+    ) do
+
+        if petName ~= "" then
+
+            map[petName] =
+                true
+        end
+    end
+
+    return map
+end
+
+function SniperTargetsFromDropdownValue(value)
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    local function add(item)
+
+        item =
+            CleanText(item)
+
+        if item == ""
+        or item == "---"
+        or item == "None"
+        or item == "Select"
+        or item == "Search" then
+            return
+        end
+
+        if seen[item] == true then
+            return
+        end
+
+        seen[item] =
+            true
+
+        table.insert(
+            output,
+            item
+        )
+    end
+
+    local function readChoice(choice)
+
+        if type(choice) ~= "table" then
+
+            add(choice)
+            return
+        end
+
+        local selected =
+            rawget(choice, "Selected") == true
+            or rawget(choice, "selected") == true
+            or rawget(choice, "Checked") == true
+            or rawget(choice, "checked") == true
+            or rawget(choice, "Enabled") == true
+            or rawget(choice, "enabled") == true
+
+        local text =
+            rawget(choice, "Text")
+            or rawget(choice, "Name")
+            or rawget(choice, "Value")
+            or rawget(choice, "Title")
+            or rawget(choice, 1)
+
+        if selected == true then
+
+            add(text)
+        end
+    end
+
+    if type(value) == "table" then
+
+        for key, selected in pairs(value) do
+
+            if selected == true then
+
+                add(key)
+
+            elseif type(key) == "number" then
+
+                if type(selected) == "string"
+                or type(selected) == "number" then
+
+                    add(selected)
+
+                elseif type(selected) == "table" then
+
+                    readChoice(
+                        selected
+                    )
+                end
+
+            elseif type(selected) == "table" then
+
+                readChoice(
+                    selected
+                )
+            end
+        end
+
+    else
+
+        add(value)
+    end
+
+    table.sort(
+        output
+    )
+
+    return output
+end
+
+function SniperReadDropdownRawValue(control)
+
+    if not control then
+        return nil
+    end
+
+    if type(control.GetValue) == "function" then
+
+        local ok, value =
+            pcall(function()
+
+                return control:GetValue()
+            end)
+
+        if ok == true
+        and value ~= nil then
+            return value
+        end
+    end
+
+    local value =
+        nil
+
+    pcall(function()
+
+        value =
+            control.Value
+    end)
+
+    if value ~= nil then
+        return value
+    end
+
+    pcall(function()
+
+        value =
+            control.Selected
+    end)
+
+    if value ~= nil then
+        return value
+    end
+
+    pcall(function()
+
+        value =
+            control.CurrentValue
+    end)
+
+    return value
+end
+
+function SniperReadTargetsFromDropdown()
+
+    return SniperTargetsFromDropdownValue(
+        SniperReadDropdownRawValue(
+            SniperTargetDropdown
+        )
+    )
+end
+
+function SniperPickSingleTarget(targets, previousTargets)
+
+    targets =
+        SniperNormalizeList(targets)
+
+    if #targets <= 1 then
+        return targets
+    end
+
+    local previousMap =
+        {}
+
+    for _, petName in ipairs(
+        SniperNormalizeList(previousTargets)
+    ) do
+
+        previousMap[petName] =
+            true
+    end
+
+    for _, petName in ipairs(targets) do
+
+        if previousMap[petName] ~= true then
+
+            return {
+                petName,
+            }
+        end
+    end
+
+    return {
+        targets[1],
+    }
+end
+
+function SniperLimitTargetsForCurrentMode(targets, previousTargets)
+
+    targets =
+        SniperNormalizeList(targets)
+
+    if SniperState.AllowMultiPets == true then
+        return targets
+    end
+
+    return SniperPickSingleTarget(
+        targets,
+        previousTargets
+    )
+end
+
+function SniperApplyTargetDropdownValue(targets)
+
+    if not SniperTargetDropdown
+    or type(SniperTargetDropdown.SetValue) ~= "function" then
+        return false
+    end
+
+    SniperTargetDropdownLock =
+        true
+
+    pcall(function()
+
+        SniperTargetDropdown:SetValue(
+            SniperBuildDropdownSelectionMap(
+                targets
+            )
+        )
+    end)
+
+    task.defer(function()
+
+        SniperTargetDropdownLock =
+            false
+    end)
+
+    return true
+end
+
+function SniperOnTargetDropdownChanged(value)
+
+    if SniperTargetDropdownLock == true then
+        return
+    end
+
+    local rawTargets =
+        SniperTargetsFromDropdownValue(
+            value
+        )
+
+    local limitedTargets =
+        SniperLimitTargetsForCurrentMode(
+            rawTargets,
+            SniperState.Targets
+        )
+
+    SniperState.Targets =
+        limitedTargets
+
+    if SniperState.AllowMultiPets ~= true then
+
+        SniperApplyTargetDropdownValue(
+            limitedTargets
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function SniperSetAllowMultiPets(value)
+
+    SniperState.AllowMultiPets =
+        value == true
+
+    local currentTargets =
+        SniperReadTargetsFromDropdown()
+
+    if #currentTargets <= 0 then
+
+        currentTargets =
+            SniperNormalizeList(
+                SniperState.Targets
+            )
+    end
+
+    currentTargets =
+        SniperLimitTargetsForCurrentMode(
+            currentTargets,
+            SniperState.Targets
+        )
+
+    SniperState.Targets =
+        currentTargets
+
+    SniperApplyTargetDropdownValue(
+        currentTargets
+    )
+
+    MarkConfigDirty()
+end
+
+function SniperGetBuilderTargetPets()
+
+    local targets =
+        SniperReadTargetsFromDropdown()
+
+    if #targets <= 0 then
+
+        targets =
+            SniperNormalizeList(
+                SniperState.Targets
+            )
+    end
+
+    targets =
+        SniperLimitTargetsForCurrentMode(
+            targets,
+            SniperState.Targets
+        )
+
+    SniperState.Targets =
+        targets
+
+    SniperApplyTargetDropdownValue(
+        targets
+    )
+
+    return targets
 end
 
 function SniperTargetsText()
@@ -42243,6 +42604,16 @@ function SniperRefreshTargetDropdown()
 
     SniperDropdownRefreshing =
         false
+
+    task.defer(function()
+
+        SniperApplyTargetDropdownValue(
+            SniperLimitTargetsForCurrentMode(
+                SniperState.Targets,
+                {}
+            )
+        )
+    end)
 end
 
 function SniperPriorityCleanValue(value)
@@ -42855,9 +43226,7 @@ end
 function SniperAddCurrentFilterToWatchlist()
 
     local targets =
-        SniperNormalizeList(
-            SniperState.Targets
-        )
+        SniperGetBuilderTargetPets()
 
     if #targets <= 0 then
 
@@ -43370,16 +43739,23 @@ function SniperLoadSelectedWatchlistFilter()
             rule.MutationFilter
         )
 
-    if SniperTargetDropdown
-    and type(SniperTargetDropdown.SetValue) == "function" then
+    SniperState.AllowMultiPets =
+        false
+
+    if SniperAllowMultiPetsToggle
+    and type(SniperAllowMultiPetsToggle.SetValue) == "function" then
 
         pcall(function()
 
-            SniperTargetDropdown:SetValue(
-                SniperState.Targets
+            SniperAllowMultiPetsToggle:SetValue(
+                false
             )
         end)
     end
+
+    SniperApplyTargetDropdownValue(
+        SniperState.Targets
+    )
 
     if SniperSizeDropdown
     and type(SniperSizeDropdown.SetValue) == "function" then
@@ -45622,14 +45998,31 @@ function RestoreSniperAutosaveState()
             GAG2DestroyPanicHud()
         end
 
+        if Toggles.HolyGAG2SniperAllowMultiPets
+        and Toggles.HolyGAG2SniperAllowMultiPets.Value ~= nil then
+
+            SniperState.AllowMultiPets =
+                Toggles.HolyGAG2SniperAllowMultiPets.Value == true
+        end
+
         if Options.HolyGAG2SniperTargetsList
         and Options.HolyGAG2SniperTargetsList.Value ~= nil then
 
             SniperState.Targets =
-                SniperNormalizeList(
-                    Options.HolyGAG2SniperTargetsList.Value
+                SniperLimitTargetsForCurrentMode(
+                    SniperTargetsFromDropdownValue(
+                        Options.HolyGAG2SniperTargetsList.Value
+                    ),
+                    SniperState.Targets
                 )
         end
+
+        task.defer(function()
+
+            SniperApplyTargetDropdownValue(
+                SniperState.Targets
+            )
+        end)
 
         if Options.HolyGAG2SniperSizeClass
         and Options.HolyGAG2SniperSizeClass.Value ~= nil then
@@ -66477,20 +66870,59 @@ GAG2_PANIC_HUD_TOGGLE_CONTROL =
         end,
     })
 
+SniperAllowMultiPetsToggle =
+    SniperMainBox:AddToggle("HolyGAG2SniperAllowMultiPets", {
+        Text = "Allow Multi Pets",
+        Default = false,
+        Tooltip = "OFF = one pet only. ON = same dropdown can keep multiple selected pets.",
+        Callback = function(value)
+
+            SniperSetAllowMultiPets(
+                value == true
+            )
+        end,
+    })
+
 SniperTargetDropdown =
     SniperMainBox:AddDropdown(
         "HolyGAG2SniperTargetsList",
         {
             Text = "Target Pets",
             Values = SniperGetDropdownPetNames(),
-            Default = {},
+            Default = SniperBuildDropdownSelectionMap(
+                SniperLimitTargetsForCurrentMode(
+                    SniperState.Targets,
+                    {}
+                )
+            ),
             Multi = true,
             Searchable = true,
             AllowNull = true,
             MaxVisibleDropdownItems = 10,
-            Tooltip = "Select pets to look for.",
+            Tooltip = "Select target pets. Allow Multi Pets controls whether more than one is kept.",
         }
     )
+
+if SniperTargetDropdown
+and type(SniperTargetDropdown.OnChanged) == "function" then
+
+    SniperTargetDropdown:OnChanged(function(value)
+
+        SniperOnTargetDropdownChanged(
+            value
+        )
+    end)
+end
+
+task.defer(function()
+
+    SniperApplyTargetDropdownValue(
+        SniperLimitTargetsForCurrentMode(
+            SniperState.Targets,
+            {}
+        )
+    )
+end)
 
 SniperSizeDropdown =
     SniperMainBox:AddDropdown(
