@@ -9128,6 +9128,9 @@ SniperSizeDropdown =
 SniperMutationDropdown =
     nil
 
+SniperRulePriorityDropdown =
+    nil
+
 SniperSaveTargetDropdown =
     nil
 
@@ -9237,6 +9240,7 @@ local SniperState = {
     BuilderTargets = {},
     BuilderSizeClass = "Any",
     BuilderMutationFilter = "Any",
+    BuilderPriority = "Medium",
 
     PriorityPets = {
         "",
@@ -42984,6 +42988,12 @@ GAG2_SNIPER_SAVE_TARGET_VALUES = {
     "W3 Priority",
 }
 
+GAG2_SNIPER_PRIORITY_FILTER_VALUES = {
+    "High",
+    "Medium",
+    "Low",
+}
+
 function SniperSizeClassValues()
 
     return GAG2_SNIPER_SIZE_FILTER_VALUES
@@ -42997,6 +43007,68 @@ end
 function SniperSaveTargetValues()
 
     return GAG2_SNIPER_SAVE_TARGET_VALUES
+end
+
+function SniperPriorityFilterValues()
+
+    return GAG2_SNIPER_PRIORITY_FILTER_VALUES
+end
+
+function SniperCleanPriorityLevel(value)
+
+    value =
+        CleanText(
+            value
+        )
+
+    if value == "High" then
+        return "High"
+    end
+
+    if value == "Low" then
+        return "Low"
+    end
+
+    return "Medium"
+end
+
+function SniperSetBuilderPriority(value)
+
+    SniperState.BuilderPriority =
+        SniperCleanPriorityLevel(
+            value
+        )
+
+    MarkConfigDirty()
+end
+
+function SniperBuilderPriorityText()
+
+    return SniperCleanPriorityLevel(
+        SniperState.BuilderPriority
+    )
+end
+
+function SniperPriorityRankFromLevel(value)
+
+    local priority =
+        SniperCleanPriorityLevel(
+            value
+        )
+
+    if priority == "High" then
+        return 1
+    end
+
+    if priority == "Medium" then
+        return 2
+    end
+
+    if priority == "Low" then
+        return 3
+    end
+
+    return 2
 end
 
 function SniperCleanSizeClass(value)
@@ -43212,6 +43284,9 @@ function GAG2CopySniperRule(rule)
 
         MutationFilter =
             SniperCleanMutationFilter(rule.MutationFilter),
+
+        Priority =
+            SniperCleanPriorityLevel(rule.Priority),
 
         CreatedAt =
             tonumber(rule.CreatedAt)
@@ -43468,6 +43543,9 @@ function SniperAddCurrentFilterToWatchlist()
             MutationFilter =
                 SniperMutationFilterText(),
 
+            Priority =
+                SniperBuilderPriorityText(),
+
             CreatedAt =
                 os.time(),
         }
@@ -43535,11 +43613,13 @@ function SniperBuildWatchlistEntries(watchlistId)
 
                 local haystack =
                     (
-                        copied.PetName
+                        tostring(copied.PetName)
                         .. " "
-                        .. copied.SizeFilter
+                        .. tostring(copied.SizeFilter)
                         .. " "
-                        .. copied.MutationFilter
+                        .. tostring(copied.MutationFilter)
+                        .. " "
+                        .. tostring(copied.Priority)
                     ):lower()
 
                 if searchText == ""
@@ -43611,6 +43691,8 @@ function SniperFormatWatchlistEntry(entry)
         .. tostring(rule.SizeFilter)
         .. " | "
         .. tostring(rule.MutationFilter)
+        .. " | "
+        .. SniperCleanPriorityLevel(rule.Priority)
 end
 
 function SniperFormatWatchlistListRow(entry)
@@ -43627,11 +43709,14 @@ function SniperFormatWatchlistListRow(entry)
         Pet =
             tostring(rule.PetName or "Unknown"),
 
-        Size =
+        Max =
             tostring(rule.SizeFilter or "Any"),
 
-        Type =
+        BW =
             tostring(rule.MutationFilter or "Any"),
+
+        Pri =
+            SniperCleanPriorityLevel(rule.Priority),
 
         Entry =
             entry,
@@ -43933,6 +44018,11 @@ function SniperLoadSelectedWatchlistFilter()
             rule.MutationFilter
         )
 
+    SniperState.BuilderPriority =
+        SniperCleanPriorityLevel(
+            rule.Priority
+        )
+
     SniperState.AllowMultiPets =
         false
 
@@ -43969,6 +44059,17 @@ function SniperLoadSelectedWatchlistFilter()
 
             SniperMutationDropdown:SetValue(
                 SniperState.BuilderMutationFilter
+            )
+        end)
+    end
+
+    if SniperRulePriorityDropdown
+    and type(SniperRulePriorityDropdown.SetValue) == "function" then
+
+        pcall(function()
+
+            SniperRulePriorityDropdown:SetValue(
+                SniperState.BuilderPriority
             )
         end)
     end
@@ -44512,14 +44613,30 @@ function SniperSortMatches(matches)
 
     table.sort(matches, function(a, b)
 
+        local aRule =
+            type(a) == "table"
+            and (
+                a.MatchedRule
+                or SniperFindMatchingRuleForEntry(a)
+            )
+            or nil
+
+        local bRule =
+            type(b) == "table"
+            and (
+                b.MatchedRule
+                or SniperFindMatchingRuleForEntry(b)
+            )
+            or nil
+
         local aRank =
-            SniperGetPriorityRank(
-                a and a.Name
+            SniperPriorityRankFromLevel(
+                aRule and aRule.Priority
             )
 
         local bRank =
-            SniperGetPriorityRank(
-                b and b.Name
+            SniperPriorityRankFromLevel(
+                bRule and bRule.Priority
             )
 
         if aRank ~= bRank then
@@ -45147,17 +45264,27 @@ function SniperScan(allowAutoHop)
 
     for _, entry in ipairs(entries) do
 
-        if SniperIsEntryHandled(entry) ~= true
-        and SniperFindMatchingRuleForEntry(entry) ~= nil then
+        if SniperIsEntryHandled(entry) ~= true then
 
-            table.insert(
-                matches,
-                entry
-            )
+            local matchingRule =
+                SniperFindMatchingRuleForEntry(
+                    entry
+                )
+
+            if matchingRule ~= nil then
+
+                entry.MatchedRule =
+                    matchingRule
+
+                table.insert(
+                    matches,
+                    entry
+                )
+            end
         end
     end
 
-        SniperSortMatches(
+    SniperSortMatches(
         matches
     )
 
@@ -46259,26 +46386,7 @@ function RestoreSniperAutosaveState()
                 )
         end
 
-        for priorityIndex = 1, 5 do
-
-            local option =
-                Options[
-                    "HolyGAG2SniperPriority"
-                    .. tostring(priorityIndex)
-                ]
-
-            if option
-            and option.Value ~= nil then
-
-                SniperSetPriorityPet(
-                    priorityIndex,
-                    option.Value
-                )
-            end
-        end
-
         SniperRefreshTargetDropdown()
-        SniperRefreshPriorityDropdowns()
 
         if enabled == true then
 
@@ -62679,13 +62787,6 @@ local SniperMainBox =
         "crosshair"
     )
 
-local SniperPriorityBox =
-    AddLeftBoxClosed(
-        Tabs.Sniper,
-        "Buy Priority",
-        "star"
-    )
-
 local SniperWatchlistBox =
     AddRightBox(
         Tabs.Sniper,
@@ -62700,11 +62801,8 @@ local SniperBuyBehaviorBox =
         "settings-2"
     )
 
-if SniperPriorityBox == nil then
-
-    SniperPriorityBox =
-        SniperMainBox
-end
+local SniperPriorityBox =
+    nil
 
 if SniperWatchlistBox == nil then
 
@@ -67176,6 +67274,36 @@ and type(SniperMutationDropdown.OnChanged) == "function" then
     end)
 end
 
+SniperRulePriorityDropdown =
+    SniperMainBox:AddDropdown(
+        "HolyGAG2SniperFilterPriority",
+        {
+            Text = "Priority",
+            Values = SniperPriorityFilterValues(),
+            Default = SniperBuilderPriorityText(),
+            Multi = false,
+            Searchable = false,
+            AllowNull = false,
+            MaxVisibleDropdownItems = 3,
+            Tooltip = "High buys before Medium. Medium buys before Low.",
+        }
+    )
+
+if SniperRulePriorityDropdown
+and type(SniperRulePriorityDropdown.OnChanged) == "function" then
+
+    SniperRulePriorityDropdown:OnChanged(function(value)
+
+        SniperSetBuilderPriority(
+            value
+        )
+
+        SetSniperStatus(
+            "Builder priority updated. Click Save Filter to activate."
+        )
+    end)
+end
+
 SniperSaveTargetDropdown =
     SniperMainBox:AddDropdown(
         "HolyGAG2SniperSaveTarget",
@@ -67500,87 +67628,6 @@ if SniperWatchlistBox then
         GAG2RefreshSniperWatchlistUi()
     end)
 end
-
-for priorityIndex = 1, 5 do
-
-    SniperPriorityDropdowns[priorityIndex] =
-        SniperPriorityBox:AddDropdown(
-            "HolyGAG2SniperPriority"
-                .. tostring(priorityIndex),
-            {
-                Text =
-                    "Priority "
-                    .. tostring(priorityIndex),
-                Values =
-                    SniperGetPriorityDropdownValues(),
-                Default =
-                    "None",
-                Multi =
-                    false,
-                Searchable =
-                    true,
-                AllowNull =
-                    false,
-                MaxVisibleDropdownItems =
-                    10,
-                Tooltip =
-                    "Higher priority pets are bought first.",
-            }
-        )
-
-    if SniperPriorityDropdowns[priorityIndex]
-    and type(SniperPriorityDropdowns[priorityIndex].OnChanged) == "function" then
-
-        SniperPriorityDropdowns[priorityIndex]:OnChanged(function(value)
-
-            if SniperPriorityRefreshing == true then
-                return
-            end
-
-            SniperSetPriorityPet(
-                priorityIndex,
-                value
-            )
-
-            SniperScan(
-                false
-            )
-        end)
-    end
-end
-
-SniperPriorityBox:AddButton({
-    Text = "Clear Priority",
-    Tooltip = "Reset all priority slots.",
-    Func = function()
-
-        for priorityIndex = 1, 5 do
-
-            SniperSetPriorityPet(
-                priorityIndex,
-                ""
-            )
-
-            local dropdown =
-                SniperPriorityDropdowns[priorityIndex]
-
-            if dropdown
-            and type(dropdown.SetValue) == "function" then
-
-                pcall(function()
-
-                    dropdown:SetValue(
-                        "None"
-                    )
-                end)
-            end
-        end
-
-        SniperScan(
-            false
-        )
-    end,
-})
 
 local SniperMovementModeDropdown =
     SniperBuyBehaviorBox:AddDropdown(
