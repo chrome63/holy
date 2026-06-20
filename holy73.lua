@@ -5671,9 +5671,6 @@ end
 function GAG2WildPetNetworkResolvePetSize(instance, rawValue)
 
     local internalSize, displaySize =
-        GAG2WildAG2WildPetNetworkResolvePetSize(instance, rawValue)
-
-    local internalSize, displaySize =
         GAG2WildPetNetworkNormalizePetSize(
             rawValue
         )
@@ -5719,7 +5716,10 @@ function GAG2WildPetNetworkResolvePetType(petName, rawValue)
     local nameLower =
         CleanText(petName):lower()
 
-    if lower:find("rainbow", 1, true)
+    if lower == "rainbow"
+    or lower == "rainbow pet"
+    or lower == "pet rainbow"
+    or lower:find("rainbow", 1, true)
     or nameLower:find("rainbow", 1, true) then
 
         return "Rainbow",
@@ -5737,23 +5737,29 @@ function GAG2WildPetNetworkGetRowSizeText(rowData)
     end
 
     local candidates = {
-        rowData.sizeLabel,
-        rowData.SizeLabel,
         rowData.displaySize,
         rowData.DisplaySize,
+        rowData.sizeLabel,
+        rowData.SizeLabel,
         rowData.size,
         rowData.Size,
         rowData.petSize,
         rowData.PetSize,
+        rowData.internalSize,
+        rowData.InternalSize,
+        rowData.rawSize,
+        rowData.RawSize,
     }
 
     for _, value in ipairs(candidates) do
 
-        local text =
-            CleanText(value)
+        local _, displaySize =
+            GAG2WildPetNetworkNormalizePetSize(
+                value
+            )
 
-        if text ~= "" then
-            return text
+        if displaySize ~= "Normal" then
+            return displaySize
         end
     end
 
@@ -5767,16 +5773,22 @@ function GAG2WildPetNetworkGetRowTypeText(rowData)
     end
 
     local candidates = {
-        rowData.mutation,
-        rowData.Mutation,
-        rowData.petType,
-        rowData.PetType,
-        rowData.typeLabel,
-        rowData.TypeLabel,
         rowData.displayType,
         rowData.DisplayType,
+        rowData.typeLabel,
+        rowData.TypeLabel,
+        rowData.mutation,
+        rowData.Mutation,
+        rowData.mutationFilter,
+        rowData.MutationFilter,
+        rowData.petType,
+        rowData.PetType,
+        rowData.internalType,
+        rowData.InternalType,
         rowData.variant,
         rowData.Variant,
+        rowData.rawType,
+        rowData.RawType,
     }
 
     for _, value in ipairs(candidates) do
@@ -5784,29 +5796,79 @@ function GAG2WildPetNetworkGetRowTypeText(rowData)
         local text =
             CleanText(value)
 
-        if text ~= "" then
+        local lower =
+            text:lower()
 
-            if text == "None" then
-                return "Normal"
-            end
+        if lower == "rainbow"
+        or lower == "rainbow pet"
+        or lower == "pet rainbow"
+        or lower:find("rainbow", 1, true) then
 
-            return text
+            return "Rainbow"
         end
     end
 
     return "Normal"
 end
 
+function GAG2WildPetNetworkBuildCleanVariantLabel(rowData)
+
+    local sizeText =
+        GAG2WildPetNetworkGetRowSizeText(
+            rowData
+        )
+
+    local typeText =
+        GAG2WildPetNetworkGetRowTypeText(
+            rowData
+        )
+
+    if sizeText == "Normal"
+    and typeText == "Normal" then
+
+        return "Regular"
+    end
+
+    if sizeText ~= "Normal"
+    and typeText == "Normal" then
+
+        return sizeText
+    end
+
+    if sizeText == "Normal"
+    and typeText ~= "Normal" then
+
+        return typeText
+    end
+
+    return sizeText
+        .. " "
+        .. typeText
+end
+
+function GAG2WildPetNetworkVariantSortRank(label)
+
+    label =
+        CleanText(label)
+
+    local ranks = {
+        Regular = 1,
+        Big = 2,
+        Mega = 3,
+        Rainbow = 4,
+        ["Big Rainbow"] = 5,
+        ["Mega Rainbow"] = 6,
+    }
+
+    return ranks[label]
+        or 99
+end
+
 function GAG2WildPetNetworkBuildVariantText(rowData)
 
-    return "Size: "
-        .. GAG2WildPetNetworkGetRowSizeText(
-            rowData
-        )
-        .. " | Type: "
-        .. GAG2WildPetNetworkGetRowTypeText(
-            rowData
-        )
+    return GAG2WildPetNetworkBuildCleanVariantLabel(
+        rowData
+    )
 end
 
 function GAG2WildPetNetworkBuildSectionVariantSummary(rows)
@@ -5821,45 +5883,71 @@ function GAG2WildPetNetworkBuildSectionVariantSummary(rows)
 
     for _, rowData in ipairs(rows) do
 
-        local key =
-            GAG2WildPetNetworkGetRowSizeText(rowData)
-            .. "/"
-            .. GAG2WildPetNetworkGetRowTypeText(rowData)
+        local label =
+            GAG2WildPetNetworkBuildCleanVariantLabel(
+                rowData
+            )
 
-        counts[key] =
+        local count =
+            math.max(
+                1,
+                math.floor(
+                    tonumber(rowData.count)
+                    or tonumber(rowData.Count)
+                    or 1
+                )
+            )
+
+        counts[label] =
             (
-                counts[key]
+                counts[label]
                 or 0
             )
-            + 1
+            + count
     end
 
-    local keys =
+    local labels =
         {}
 
-    for key in pairs(counts) do
+    for label in pairs(counts) do
 
         table.insert(
-            keys,
-            key
+            labels,
+            label
         )
     end
 
-    table.sort(
-        keys
-    )
+    table.sort(labels, function(a, b)
+
+        local aRank =
+            GAG2WildPetNetworkVariantSortRank(
+                a
+            )
+
+        local bRank =
+            GAG2WildPetNetworkVariantSortRank(
+                b
+            )
+
+        if aRank ~= bRank then
+            return aRank < bRank
+        end
+
+        return tostring(a)
+            < tostring(b)
+    end)
 
     local parts =
         {}
 
-    for index, key in ipairs(keys) do
+    for index, label in ipairs(labels) do
 
-        if index > 3 then
+        if index > 4 then
 
             table.insert(
                 parts,
                 "+"
-                .. tostring(#keys - 3)
+                .. tostring(#labels - 4)
                 .. " more"
             )
 
@@ -5868,15 +5956,15 @@ function GAG2WildPetNetworkBuildSectionVariantSummary(rows)
 
         table.insert(
             parts,
-            key
+            tostring(label)
             .. " x"
-            .. tostring(counts[key])
+            .. tostring(counts[label])
         )
     end
 
     return table.concat(
         parts,
-        ", "
+        " • "
     )
 end
 
@@ -5955,7 +6043,7 @@ function GAG2WildPetNetworkCreateServerRow(
             1,
             0,
             0,
-            42
+            32
         )
 
     row.BackgroundColor3 =
@@ -5998,51 +6086,6 @@ function GAG2WildPetNetworkCreateServerRow(
     rowStroke.Parent =
         row
 
-    local idLabel =
-        Instance.new("TextLabel")
-
-    idLabel.Name =
-        "JobId"
-
-    idLabel.Position =
-        UDim2.fromOffset(
-            10,
-            0
-        )
-
-    idLabel.Size =
-        UDim2.new(
-            0,
-            88,
-            0,
-            22
-        )
-
-    idLabel.BackgroundTransparency =
-        1
-
-    idLabel.Font =
-        Enum.Font.Code
-
-    idLabel.Text =
-        jobId:sub(1, 8)
-
-    idLabel.TextSize =
-        11
-
-    idLabel.TextColor3 =
-        Color3.fromRGB(
-            203,
-            213,
-            225
-        )
-
-    idLabel.TextXAlignment =
-        Enum.TextXAlignment.Left
-
-    idLabel.Parent =
-        row
-
     local playersLabel =
         Instance.new("TextLabel")
 
@@ -6051,16 +6094,16 @@ function GAG2WildPetNetworkCreateServerRow(
 
     playersLabel.Position =
         UDim2.fromOffset(
-            110,
+            10,
             0
         )
 
     playersLabel.Size =
         UDim2.new(
             0,
-            46,
-            0,
-            22
+            50,
+            1,
+            0
         )
 
     playersLabel.BackgroundTransparency =
@@ -6098,16 +6141,16 @@ function GAG2WildPetNetworkCreateServerRow(
 
     timerLabel.Position =
         UDim2.fromOffset(
-            166,
+            68,
             0
         )
 
     timerLabel.Size =
         UDim2.new(
             0,
-            68,
-            0,
-            22
+            72,
+            1,
+            0
         )
 
     timerLabel.BackgroundTransparency =
@@ -6151,16 +6194,16 @@ function GAG2WildPetNetworkCreateServerRow(
 
     countLabel.Position =
         UDim2.fromOffset(
-            244,
+            145,
             0
         )
 
     countLabel.Size =
         UDim2.new(
             0,
-            34,
-            0,
-            22
+            54,
+            1,
+            0
         )
 
     countLabel.BackgroundTransparency =
@@ -6170,8 +6213,12 @@ function GAG2WildPetNetworkCreateServerRow(
         Enum.Font.Code
 
     countLabel.Text =
-        "x"
-        .. tostring(count)
+        tostring(count)
+        .. (
+            count == 1
+            and " pet"
+            or " pets"
+        )
 
     countLabel.TextSize =
         11
@@ -6197,16 +6244,16 @@ function GAG2WildPetNetworkCreateServerRow(
 
     variantLabel.Position =
         UDim2.fromOffset(
-            10,
-            21
+            205,
+            0
         )
 
     variantLabel.Size =
         UDim2.new(
             1,
-            -78,
-            0,
-            18
+            -275,
+            1,
+            0
         )
 
     variantLabel.BackgroundTransparency =
@@ -6219,7 +6266,7 @@ function GAG2WildPetNetworkCreateServerRow(
         variantText
 
     variantLabel.TextSize =
-        10
+        11
 
     variantLabel.TextColor3 =
         Color3.fromRGB(
@@ -6377,7 +6424,7 @@ function GAG2WildPetNetworkCreatePetSection(
     petName,
     rarity,
     rows
-)
+    )
 
     rows =
         type(rows) == "table"
@@ -6439,7 +6486,7 @@ function GAG2WildPetNetworkCreatePetSection(
             1,
             0,
             0,
-            23
+            24
         )
 
     header.BackgroundTransparency =
@@ -6484,6 +6531,11 @@ function GAG2WildPetNetworkCreatePetSection(
         3
     )
 
+    local variantSummary =
+        GAG2WildPetNetworkBuildSectionVariantSummary(
+            rows
+        )
+
     local title =
         Instance.new("TextLabel")
 
@@ -6499,7 +6551,7 @@ function GAG2WildPetNetworkCreatePetSection(
     title.Size =
         UDim2.new(
             1,
-            -90,
+            -95,
             1,
             0
         )
@@ -6512,16 +6564,6 @@ function GAG2WildPetNetworkCreatePetSection(
 
     title.RichText =
         true
-
-    local variantSummary =
-        GAG2WildPetNetworkBuildSectionVariantSummary(
-            rows
-        )
-
-    local variantSummary =
-        GAG2WildPetNetworkBuildSectionVariantSummary(
-            rows
-        )
 
     title.Text =
         '<b>'
@@ -6537,17 +6579,6 @@ function GAG2WildPetNetworkCreatePetSection(
             rarity
         )
         .. ']</font>'
-        .. (
-            variantSummary ~= ""
-            and (
-                ' <font color="rgb(148,163,184)">• '
-                .. GAG2WildPetNetworkCleanDisplay(
-                    variantSummary
-                )
-                .. '</font>'
-            )
-            or ""
-        )
         .. (
             variantSummary ~= ""
             and (
@@ -6576,6 +6607,9 @@ function GAG2WildPetNetworkCreatePetSection(
     title.TextYAlignment =
         Enum.TextYAlignment.Center
 
+    title.TextTruncate =
+        Enum.TextTruncate.AtEnd
+
     title.Parent =
         header
 
@@ -6602,7 +6636,7 @@ function GAG2WildPetNetworkCreatePetSection(
     resultCount.Size =
         UDim2.new(
             0,
-            80,
+            85,
             1,
             0
         )
@@ -8747,17 +8781,17 @@ function GAG2WildPetNetworkBuildPetSummary(pets)
 
         if petName ~= "" then
 
-            local key =
+            local label =
                 petName
                 .. " ["
-                .. GAG2WildPetNetworkGetRowSizeText(pet)
-                .. "/"
-                .. GAG2WildPetNetworkGetRowTypeText(pet)
+                .. GAG2WildPetNetworkBuildCleanVariantLabel(
+                    pet
+                )
                 .. "]"
 
-            counts[key] =
+            counts[label] =
                 (
-                    counts[key]
+                    counts[label]
                     or 0
                 )
                 + 1
