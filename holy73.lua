@@ -9104,7 +9104,7 @@ function GAG2SendSnipeBoughtWebhook(record)
     end
 
     local title =
-        "✅ Pet Sniped: "
+        "💫 Pet Secured: "
         .. tostring(data.PetName)
 
     if #title > 250 then
@@ -9122,35 +9122,35 @@ function GAG2SendSnipeBoughtWebhook(record)
     local description =
         "**"
         .. tostring(data.PetName)
-        .. "** was successfully sniped by **HOLY**."
+        .. "** was secured by **HOLY**."
 
     local fields = {
         {
-            name = "Rarity",
+            name = "🏷️ Rarity",
             value = safeFieldText(data.Rarity, "Unknown"),
             inline = true,
         },
 
         {
-            name = "Mutation",
+            name = "🧪 Mutation",
             value = safeFieldText(data.Mutation, "Normal"),
             inline = true,
         },
 
         {
-            name = "Size",
+            name = "📏 Size",
             value = safeFieldText(data.Size, "Normal"),
             inline = true,
         },
 
         {
-            name = "Variant",
+            name = "🌀 Variant",
             value = safeFieldText(variant, "Normal / Normal"),
             inline = true,
         },
 
         {
-            name = "Price",
+            name = "💰 Price",
             value =
                 data.Price > 0
                 and GAG2SnipeBoughtWebhookFormatNumber(data.Price)
@@ -9159,27 +9159,16 @@ function GAG2SendSnipeBoughtWebhook(record)
         },
 
         {
-            name = "Sniped By",
+            name = "🪽 Sniped By",
             value = "HOLY",
             inline = true,
-        },
-
-        {
-            name = "Server",
-            value =
-                "`"
-                .. tostring(game.PlaceId)
-                .. ":"
-                .. tostring(game.JobId)
-                .. "`",
-            inline = false,
         },
     }
 
     if data.PetId ~= "" then
 
         table.insert(fields, {
-            name = "PetId",
+            name = "🆔 PetId",
             value = "`" .. tostring(data.PetId) .. "`",
             inline = false,
         })
@@ -9187,7 +9176,7 @@ function GAG2SendSnipeBoughtWebhook(record)
     elseif data.UUID ~= "" then
 
         table.insert(fields, {
-            name = "UUID",
+            name = "🆔 UUID",
             value = "`" .. tostring(data.UUID) .. "`",
             inline = false,
         })
