@@ -4,6 +4,72 @@
 --==================================================
 
 --==================================================
+-- [0.00] BOOT PROFILER
+-- Measures startup before the normal autosave/startup profiler exists.
+--==================================================
+
+GAG2_BOOT_PROFILE =
+    GAG2_BOOT_PROFILE
+    or {
+        StartedAt = os.clock(),
+        LastAt = os.clock(),
+        Rows = {},
+    }
+
+function GAG2BootMark(label)
+
+    if type(GAG2_BOOT_PROFILE) ~= "table" then
+        return
+    end
+
+    local now =
+        os.clock()
+
+    local delta =
+        now
+        - (
+            tonumber(GAG2_BOOT_PROFILE.LastAt)
+            or now
+        )
+
+    local total =
+        now
+        - (
+            tonumber(GAG2_BOOT_PROFILE.StartedAt)
+            or now
+        )
+
+    GAG2_BOOT_PROFILE.LastAt =
+        now
+
+    GAG2_BOOT_PROFILE.Rows =
+        type(GAG2_BOOT_PROFILE.Rows) == "table"
+        and GAG2_BOOT_PROFILE.Rows
+        or {}
+
+    local row =
+        string.format(
+            "[%.3fs +%.3fs] %s",
+            total,
+            delta,
+            tostring(label or "boot")
+        )
+
+    table.insert(
+        GAG2_BOOT_PROFILE.Rows,
+        row
+    )
+
+    if delta >= 0.05 then
+
+        print(
+            "[HOLY BOOT]",
+            row
+        )
+    end
+end
+
+--==================================================
 -- [0] SERVICES
 --==================================================
 
@@ -26,7 +92,31 @@ local RunService =
     game:GetService("RunService")
 
 local Stats =
-    game:GetService("Stats")
+    nil
+
+function GAG2GetStatsService()
+
+    if Stats then
+        return Stats
+    end
+
+    local ok,
+        result =
+        pcall(function()
+
+            return game:GetService(
+                "Stats"
+            )
+        end)
+
+    if ok == true then
+
+        Stats =
+            result
+    end
+
+    return Stats
+end
 
 GAG2_USER_INPUT_SERVICE =
     game:GetService("UserInputService")
@@ -46,11 +136,33 @@ end)
 local VirtualInputManager =
     nil
 
-pcall(function()
+function GAG2GetVirtualInputManager()
 
-    VirtualInputManager =
-        game:GetService("VirtualInputManager")
-end)
+    if VirtualInputManager then
+        return VirtualInputManager
+    end
+
+    local ok,
+        result =
+        pcall(function()
+
+            return game:GetService(
+                "VirtualInputManager"
+            )
+        end)
+
+    if ok == true then
+
+        VirtualInputManager =
+            result
+    end
+
+    return VirtualInputManager
+end
+
+GAG2BootMark(
+    "Services block ready"
+)
 
 --==================================================
 -- [0.1] EXECUTOR COMPATIBILITY
@@ -483,6 +595,17 @@ function GAG2LoadRemoteModule(url, moduleName)
             or "remote module"
         )
 
+        local moduleStartedAt =
+        os.clock()
+
+    if type(GAG2BootMark) == "function" then
+
+        GAG2BootMark(
+            "Remote module start: "
+            .. tostring(moduleName)
+        )
+    end
+
     local source, downloadError =
         GAG2ExecutorHttpGet(
             url
@@ -497,6 +620,17 @@ function GAG2LoadRemoteModule(url, moduleName)
             .. ":\n"
             .. tostring(downloadError),
             0
+        )
+    end
+
+        if type(GAG2BootMark) == "function" then
+
+        GAG2BootMark(
+            "Remote module downloaded: "
+            .. tostring(moduleName)
+            .. " | "
+            .. tostring(#source)
+            .. " bytes"
         )
     end
 
@@ -577,6 +711,14 @@ function GAG2LoadRemoteModule(url, moduleName)
         )
     end
 
+        if type(GAG2BootMark) == "function" then
+
+        GAG2BootMark(
+            "Remote module compiled: "
+            .. tostring(moduleName)
+        )
+    end
+
     local runOk, result =
         xpcall(
             chunk,
@@ -591,6 +733,19 @@ function GAG2LoadRemoteModule(url, moduleName)
             .. " runtime failed:\n"
             .. tostring(result),
             0
+        )
+    end
+
+    if type(GAG2BootMark) == "function" then
+
+        GAG2BootMark(
+            "Remote module ran: "
+            .. tostring(moduleName)
+            .. " | total "
+            .. string.format(
+                "%.3fs",
+                os.clock() - moduleStartedAt
+            )
         )
     end
 
@@ -1912,13 +2067,20 @@ function GAG2StatsOverlayGetPing()
     local ok, value =
         pcall(function()
 
+            local statsService =
+                GAG2GetStatsService()
+
+            if not statsService then
+                return nil
+            end
+
             local network =
-                Stats:FindFirstChild("Network")
+                statsService:FindFirstChild("Network")
 
             if not network then
 
                 network =
-                    Stats.Network
+                    statsService.Network
             end
 
             local serverStats =
@@ -3960,7 +4122,10 @@ end
 
 function GAG2DefenceSendMouseSwing()
 
-    if not VirtualInputManager then
+    local virtualInput =
+        GAG2GetVirtualInputManager()
+
+    if not virtualInput then
         return false
     end
 
@@ -3989,7 +4154,7 @@ function GAG2DefenceSendMouseSwing()
     local ok =
         pcall(function()
 
-            VirtualInputManager:SendMouseButtonEvent(
+            virtualInput:SendMouseButtonEvent(
                 x,
                 y,
                 0,
@@ -4002,7 +4167,7 @@ function GAG2DefenceSendMouseSwing()
                 0.025
             )
 
-            VirtualInputManager:SendMouseButtonEvent(
+            virtualInput:SendMouseButtonEvent(
                 x,
                 y,
                 0,
