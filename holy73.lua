@@ -2894,6 +2894,21 @@ GAG2_PET_TEAMS_FILE =
 GAG2_PET_TEAMS_MAX_SAVED_SLOTS =
     6
 
+GAG2_PET_TEAMS_FAST_TIMING = {
+    UnequipDelay = 0.08,
+    PostUnequipSettle = 0.12,
+
+    ToolSelectDelay = 0.055,
+    ToolActivateDelay = 0.065,
+    PacketDelay = 0.115,
+
+    BatchSettleDelay = 0.38,
+
+    RetrySelectDelay = 0.10,
+    RetryActivateDelay = 0.12,
+    RetryPacketDelay = 0.16,
+}
+
 GAG2_PET_TEAMS_DEFAULT_NAMES = {
     "Default",
     "Bunny Speed",
@@ -4579,7 +4594,56 @@ function GAG2PetTeamsGetHumanoid()
     )
 end
 
-function GAG2PetTeamsEquipInventoryRow(row)
+function GAG2PetTeamsGetFastTiming()
+
+    GAG2_PET_TEAMS_FAST_TIMING =
+        type(GAG2_PET_TEAMS_FAST_TIMING) == "table"
+        and GAG2_PET_TEAMS_FAST_TIMING
+        or {}
+
+    local timing =
+        GAG2_PET_TEAMS_FAST_TIMING
+
+    timing.UnequipDelay =
+        tonumber(timing.UnequipDelay)
+        or 0.08
+
+    timing.PostUnequipSettle =
+        tonumber(timing.PostUnequipSettle)
+        or 0.12
+
+    timing.ToolSelectDelay =
+        tonumber(timing.ToolSelectDelay)
+        or 0.055
+
+    timing.ToolActivateDelay =
+        tonumber(timing.ToolActivateDelay)
+        or 0.065
+
+    timing.PacketDelay =
+        tonumber(timing.PacketDelay)
+        or 0.115
+
+    timing.BatchSettleDelay =
+        tonumber(timing.BatchSettleDelay)
+        or 0.38
+
+    timing.RetrySelectDelay =
+        tonumber(timing.RetrySelectDelay)
+        or 0.10
+
+    timing.RetryActivateDelay =
+        tonumber(timing.RetryActivateDelay)
+        or 0.12
+
+    timing.RetryPacketDelay =
+        tonumber(timing.RetryPacketDelay)
+        or 0.16
+
+    return timing
+end
+
+function GAG2PetTeamsEquipInventoryRow(row, fastMode)
 
     if type(row) ~= "table"
     or typeof(row.Tool) ~= "Instance"
@@ -4603,6 +4667,19 @@ function GAG2PetTeamsEquipInventoryRow(row)
         return false, "humanoid missing"
     end
 
+    local timing =
+        GAG2PetTeamsGetFastTiming()
+
+    local selectDelay =
+        fastMode == true
+        and timing.ToolSelectDelay
+        or timing.RetrySelectDelay
+
+    local activateDelay =
+        fastMode == true
+        and timing.ToolActivateDelay
+        or timing.RetryActivateDelay
+
     local tool =
         row.Tool
 
@@ -4622,20 +4699,21 @@ function GAG2PetTeamsEquipInventoryRow(row)
     end
 
     task.wait(
-        0.18
+        selectDelay
     )
 
-    pcall(function()
+    local activateOk, activateError =
+        pcall(function()
 
-        if tool
-        and tool.Parent then
+            if tool
+            and tool.Parent then
 
-            tool:Activate()
-        end
-    end)
+                tool:Activate()
+            end
+        end)
 
     task.wait(
-        0.28
+        activateDelay
     )
 
     local fireOk, fireResult =
@@ -4658,6 +4736,144 @@ function GAG2PetTeamsEquipInventoryRow(row)
         .. tostring(row.Pet)
         .. " "
         .. GAG2PetTeamsShortId(row.PetId)
+end
+
+function GAG2PetTeamsEquipMissingRowsFast(rows, cap)
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    cap =
+        math.clamp(
+            math.floor(
+                tonumber(cap)
+                or GAG2PetTeamsGetEquipCap()
+            ),
+            1,
+            GAG2_PET_TEAMS_MAX_SAVED_SLOTS
+        )
+
+    if #rows <= 0 then
+        return 0, 0
+    end
+
+    local timing =
+        GAG2PetTeamsGetFastTiming()
+
+    local attempted =
+        0
+
+    local fired =
+        0
+
+    for _, row in ipairs(rows) do
+
+        local currentMap,
+            currentCount =
+            GAG2PetTeamsGetEquippedMap()
+
+        if currentCount >= cap then
+            break
+        end
+
+        if currentMap[row.PetId] then
+            continue
+        end
+
+        local freshRow =
+            GAG2PetTeamsFindInventoryByPetId(
+                row.PetId
+            )
+
+        if freshRow then
+
+            attempted =
+                attempted + 1
+
+            local equipOk, equipInfo =
+                GAG2PetTeamsEquipInventoryRow(
+                    freshRow,
+                    true
+                )
+
+            if equipOk == true then
+                fired =
+                    fired + 1
+            end
+
+            task.wait(
+                timing.PacketDelay
+            )
+        end
+    end
+
+    task.wait(
+        timing.BatchSettleDelay
+    )
+
+    local afterMap =
+        GAG2PetTeamsGetEquippedMap()
+
+    local retryRows =
+        {}
+
+    for _, row in ipairs(rows) do
+
+        if afterMap[row.PetId] ~= true
+        and afterMap[row.PetId] == nil then
+
+            local retryRow =
+                GAG2PetTeamsFindInventoryByPetId(
+                    row.PetId
+                )
+
+            if retryRow then
+
+                table.insert(
+                    retryRows,
+                    retryRow
+                )
+            end
+        end
+    end
+
+    for _, row in ipairs(retryRows) do
+
+        local currentMap,
+            currentCount =
+            GAG2PetTeamsGetEquippedMap()
+
+        if currentCount >= cap then
+            break
+        end
+
+        if currentMap[row.PetId] then
+            continue
+        end
+
+        attempted =
+            attempted + 1
+
+        local equipOk, equipInfo =
+            GAG2PetTeamsEquipInventoryRow(
+                row,
+                false
+            )
+
+        if equipOk == true then
+            fired =
+                fired + 1
+        end
+
+        task.wait(
+            timing.RetryPacketDelay
+        )
+    end
+
+    return attempted,
+        fired
 end
 
 function GAG2PetTeamsBuildDesiredList(team, cap)
@@ -4788,9 +5004,15 @@ function GAG2PetTeamsApplyTeam(teamName, reason)
                     .. "..."
                 )
 
+                local timing =
+                    GAG2PetTeamsGetFastTiming()
+
                 local equippedMap,
                     equippedCount =
                     GAG2PetTeamsGetEquippedMap()
+
+                local unequipped =
+                    0
 
                 for petId, row in pairs(equippedMap) do
 
@@ -4803,6 +5025,9 @@ function GAG2PetTeamsApplyTeam(teamName, reason)
 
                         if unequipOk == true then
 
+                            unequipped =
+                                unequipped + 1
+
                             equippedCount =
                                 math.max(
                                     0,
@@ -4811,14 +5036,23 @@ function GAG2PetTeamsApplyTeam(teamName, reason)
                         end
 
                         task.wait(
-                            0.28
+                            timing.UnequipDelay
                         )
                     end
                 end
 
-                task.wait(
-                    0.25
-                )
+                if unequipped > 0 then
+
+                    task.wait(
+                        timing.PostUnequipSettle
+                    )
+                end
+
+                local missingRows =
+                    {}
+
+                local seenMissing =
+                    {}
 
                 for _, petId in ipairs(desired) do
 
@@ -4830,8 +5064,12 @@ function GAG2PetTeamsApplyTeam(teamName, reason)
                         continue
                     end
 
-                    if currentCount >= cap then
+                    if currentCount + #missingRows >= cap then
                         break
+                    end
+
+                    if seenMissing[petId] == true then
+                        continue
                     end
 
                     local row =
@@ -4841,15 +5079,28 @@ function GAG2PetTeamsApplyTeam(teamName, reason)
 
                     if row then
 
-                        local equipOk, equipInfo =
-                            GAG2PetTeamsEquipInventoryRow(
-                                row
-                            )
+                        seenMissing[petId] =
+                            true
 
-                        task.wait(
-                            0.55
+                        table.insert(
+                            missingRows,
+                            row
                         )
                     end
+                end
+
+                if #missingRows > 0 then
+
+                    GAG2PetTeamsSetStatus(
+                        "Burst equipping "
+                        .. tostring(#missingRows)
+                        .. " pet(s)..."
+                    )
+
+                    GAG2PetTeamsEquipMissingRowsFast(
+                        missingRows,
+                        cap
+                    )
                 end
 
                 local finalMap,
