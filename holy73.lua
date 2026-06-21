@@ -5481,6 +5481,23 @@ function GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle(reason, delaySeconds)
         return false
     end
 
+    if state.DefaultReturnWaitingForMiddle == true then
+
+        local queuedAt =
+            tonumber(state.DefaultReturnMiddleQueuedAt)
+            or 0
+
+        if os.clock() - queuedAt <= 120 then
+
+            state.LastStatus =
+                "Default return already waiting for Farm Middle."
+
+            GAG2PetTeamsRefreshStatus()
+
+            return true
+        end
+    end
+
     state.DefaultReturnToken =
         (
             tonumber(state.DefaultReturnToken)
@@ -5494,13 +5511,19 @@ function GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle(reason, delaySeconds)
     local delay =
         math.clamp(
             tonumber(delaySeconds)
-            or 0.75,
-            0.15,
+            or 0.15,
+            0.05,
             8
         )
 
+    state.DefaultReturnWaitingForMiddle =
+        true
+
+    state.DefaultReturnMiddleQueuedAt =
+        os.clock()
+
     state.LastStatus =
-        "Default return waiting for Farm Middle..."
+        "Default return armed: waiting for Farm Middle."
 
     GAG2PetTeamsRefreshStatus()
 
@@ -5529,56 +5552,22 @@ function GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle(reason, delaySeconds)
             or liveState.AutoSwitch ~= true
             or liveState.ReturnAfterTemporary == false
             or liveState.ReturnDefaultAtFarmMiddle ~= true then
+
+                liveState.DefaultReturnWaitingForMiddle =
+                    false
+
+                GAG2PetTeamsRefreshStatus()
+
                 return
             end
 
             if liveState.Busy == true then
 
                 task.wait(
-                    0.45
+                    0.20
                 )
 
                 continue
-            end
-
-            if type(SniperState) == "table"
-            and SniperState.Taming == true then
-
-                liveState.LastStatus =
-                    "Default return waiting: sniper buying."
-
-                GAG2PetTeamsRefreshStatus()
-
-                task.wait(
-                    0.55
-                )
-
-                continue
-            end
-
-            if type(SniperHasPendingBuy) == "function" then
-
-                local pendingOk,
-                    hasPending =
-                    pcall(function()
-
-                        return SniperHasPendingBuy()
-                    end)
-
-                if pendingOk == true
-                and hasPending == true then
-
-                    liveState.LastStatus =
-                        "Default return waiting: pending buy."
-
-                    GAG2PetTeamsRefreshStatus()
-
-                    task.wait(
-                        0.55
-                    )
-
-                    continue
-                end
             end
 
             if type(GAG2StartFarmMiddleAnchorResolver) == "function" then
@@ -5591,7 +5580,7 @@ function GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle(reason, delaySeconds)
                 and middleState.AnchorResolving ~= true then
 
                     GAG2StartFarmMiddleAnchorResolver(
-                        "default return wait middle",
+                        "default return middle watcher",
                         false
                     )
                 end
@@ -5609,7 +5598,7 @@ function GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle(reason, delaySeconds)
                 and middleState.IdleMoveDone ~= true then
 
                     GAG2StartAutoTpMiddleFarm(
-                        "default return wait middle"
+                        "default return middle watcher"
                     )
                 end
             end
@@ -5619,6 +5608,17 @@ function GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle(reason, delaySeconds)
                 GAG2PetTeamsIsAtFarmMiddleAnchor()
 
             if atMiddle == true then
+
+                liveState.DefaultReturnWaitingForMiddle =
+                    false
+
+                liveState.DefaultReturnMiddleReachedAt =
+                    os.clock()
+
+                liveState.LastStatus =
+                    "Reached Farm Middle. Applying Default Team..."
+
+                GAG2PetTeamsRefreshStatus()
 
                 GAG2PetTeamsApplyTeam(
                     defaultTeamName,
@@ -5635,7 +5635,7 @@ function GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle(reason, delaySeconds)
             GAG2PetTeamsRefreshStatus()
 
             task.wait(
-                0.50
+                0.20
             )
         end
 
@@ -5643,6 +5643,9 @@ function GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle(reason, delaySeconds)
             GAG2PetTeamsGetState()
 
         if tonumber(finalState.DefaultReturnToken) == token then
+
+            finalState.DefaultReturnWaitingForMiddle =
+                false
 
             finalState.LastStatus =
                 "Middle default return timed out."
@@ -47556,7 +47559,39 @@ function SniperConfirmPendingBuyRecord(record, reason, petId)
         key
     )
 
-    if type(GAG2PetTeamsQueueDefaultReturn) == "function" then
+    local returnAtMiddle =
+        false
+
+    if type(GAG2PetTeamsShouldReturnAtFarmMiddle) == "function" then
+
+        local okReturnMode,
+            returnMode =
+            pcall(function()
+
+                return GAG2PetTeamsShouldReturnAtFarmMiddle()
+            end)
+
+        returnAtMiddle =
+            okReturnMode == true
+            and returnMode == true
+    end
+
+    if returnAtMiddle == true then
+
+        local petTeamState =
+            type(GAG2PetTeamsGetState) == "function"
+            and GAG2PetTeamsGetState()
+            or nil
+
+        if type(petTeamState) == "table" then
+
+            petTeamState.LastStatus =
+                "Buy confirmed; default return is controlled by Farm Middle."
+
+            GAG2PetTeamsRefreshStatus()
+        end
+
+    elseif type(GAG2PetTeamsQueueDefaultReturn) == "function" then
 
         GAG2PetTeamsQueueDefaultReturn(
             "sniper confirmed "
@@ -54313,11 +54348,24 @@ function SniperRequestPetTeamForMatches(matches)
         return false
     end
 
-    return GAG2PetTeamsRequestTeam(
-        "SniperFound",
-        90,
-        "sniper found matching pet"
-    )
+    local requested =
+        GAG2PetTeamsRequestTeam(
+            "SniperFound",
+            90,
+            "sniper found matching pet"
+        )
+
+    if type(GAG2PetTeamsShouldReturnAtFarmMiddle) == "function"
+    and GAG2PetTeamsShouldReturnAtFarmMiddle() == true
+    and type(GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle) == "function" then
+
+        GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle(
+            "reached middle after sniper found",
+            0.15
+        )
+    end
+
+    return requested
 end
 
 
