@@ -71365,14 +71365,14 @@ if PetTeamsInventoryBox then
 
     PetTeamsState.Controls.InventoryPet =
         PetTeamsInventoryBox:AddDropdown("HolyGAG2PetTeamsInventoryPet", {
-            Text = "Inventory Pet",
+            Text = "Inventory Pets",
             Values = GAG2PetTeamsBuildInventoryChoices(),
-            Default = PetTeamsState.SelectedPetChoice or "None",
-            Multi = false,
+            Default = PetTeamsState.SelectedPetChoices or {},
+            Multi = true,
             Searchable = true,
-            AllowNull = false,
+            AllowNull = true,
             MaxVisibleDropdownItems = 14,
-            Tooltip = "Real owned pet tools from Backpack/Character. Duplicates are separated by PetId.",
+            Tooltip = "Select multiple owned pet tools. Duplicates are separated by PetId.",
         })
 
     if PetTeamsState.Controls.InventoryPet
@@ -71387,16 +71387,19 @@ if PetTeamsInventoryBox then
                 return
             end
 
-            state.SelectedPetChoice =
-                tostring(value or "None")
+            state.SelectedPetChoices =
+                GAG2PetTeamsNormalizeChoiceMap(
+                    value
+                )
 
             GAG2PetTeamsSaveSettings()
+            GAG2PetTeamsRefreshStatus()
         end)
     end
 
     PetTeamsInventoryBox:AddButton({
-        Text = "Add Selected Pet",
-        Tooltip = "Adds the selected exact PetId to the selected team.",
+        Text = "Add Selected Pets",
+        Tooltip = "Adds all selected exact PetIds to the selected team until the team reaches 6 saved pets.",
         Func = function()
 
             GAG2PetTeamsAddPetToSelected()
@@ -71412,7 +71415,7 @@ if PetTeamsInventoryBox then
 
     PetTeamsInventoryBox:AddLabel("HolyGAG2PetTeamsInventoryInfo", {
         Text =
-            "Tip: save up to 6 pets. Fresh accounts only equip current MaxEquippedPets, and later upgrades will use more saved slots automatically.",
+            "Tip: multi-select up to 6 pets, then click Add Selected Pets. Fresh accounts only equip current MaxEquippedPets, and later upgrades will use more saved slots automatically.",
         DoesWrap = true,
     })
 end
