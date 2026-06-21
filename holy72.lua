@@ -9119,6 +9119,20 @@ function GAG2SendSnipeBoughtWebhook(record)
         .. " / "
         .. tostring(data.Mutation)
 
+    local boughtAtUnix =
+        math.floor(
+            tonumber(
+                record
+                and record.BoughtAtUnix
+            )
+            or os.time()
+        )
+
+    local boughtAtText =
+        "<t:"
+        .. tostring(boughtAtUnix)
+        .. ":t>"
+
     local description =
         "**"
         .. tostring(data.PetName)
@@ -9159,8 +9173,8 @@ function GAG2SendSnipeBoughtWebhook(record)
         },
 
         {
-            name = "🪽 Sniped By",
-            value = "HOLY",
+            name = "⏰ Bought At",
+            value = boughtAtText,
             inline = true,
         },
     }
@@ -51113,6 +51127,9 @@ function SniperConfirmPendingBuyRecord(record, reason, petId)
         "| reason:",
         tostring(record.ConfirmReason)
     )
+
+    record.BoughtAtUnix =
+        os.time()
 
     GAG2QueueSnipeBoughtWebhook(
         record
