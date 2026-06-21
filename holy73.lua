@@ -5288,6 +5288,18 @@ function GAG2PetTeamsRequestTeam(ruleName, priority, reason)
     state.LastAutoRequestRule =
         ruleName
 
+    if ruleName ~= "Default" then
+
+        state.LastTemporaryRule =
+            ruleName
+
+        state.LastTemporaryTeam =
+            teamName
+
+        state.LastTemporaryAt =
+            now
+    end
+
     state.LastStatus =
         "Auto request: "
         .. tostring(ruleName)
@@ -5300,6 +5312,227 @@ function GAG2PetTeamsRequestTeam(ruleName, priority, reason)
         teamName,
         reason or ruleName
     )
+end
+
+function GAG2PetTeamsCanReturnToDefault()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    if state.AutoSwitch ~= true then
+        return false, "auto switch off"
+    end
+
+    if state.ReturnAfterTemporary == false then
+        return false, "return after temporary off"
+    end
+
+    if state.ManualLock == true then
+        return false, "manual lock on"
+    end
+
+    local defaultTeamName =
+        state.Rules
+        and state.Rules.Default
+        or "Default"
+
+    defaultTeamName =
+        GAG2PetTeamsCleanName(
+            defaultTeamName
+        )
+
+    local defaultTeam =
+        state.Teams
+        and state.Teams[defaultTeamName]
+        or nil
+
+    if type(defaultTeam) ~= "table" then
+        return false, "default team missing"
+    end
+
+    if type(defaultTeam.PetIds) ~= "table"
+    or #defaultTeam.PetIds <= 0 then
+        return false, "default team empty"
+    end
+
+    return true,
+        defaultTeamName
+end
+
+function GAG2PetTeamsScheduleDefaultReturn(reason, delaySeconds)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local canReturn,
+        defaultTeamName =
+        GAG2PetTeamsCanReturnToDefault()
+
+    if canReturn ~= true then
+
+        state.LastStatus =
+            "Default return skipped: "
+            .. tostring(defaultTeamName)
+
+        GAG2PetTeamsRefreshStatus()
+
+        return false
+    end
+
+    state.DefaultReturnToken =
+        (
+            tonumber(state.DefaultReturnToken)
+            or 0
+        )
+        + 1
+
+    local token =
+        state.DefaultReturnToken
+
+    local delay =
+        math.clamp(
+            tonumber(delaySeconds)
+            or 1.75,
+            0.25,
+            8
+        )
+
+    state.LastStatus =
+        "Default return queued: "
+        .. tostring(defaultTeamName)
+
+    GAG2PetTeamsRefreshStatus()
+
+    task.spawn(function()
+
+        task.wait(
+            delay
+        )
+
+        local checkCount =
+            0
+
+        while checkCount < 12 do
+
+            checkCount =
+                checkCount + 1
+
+            local liveState =
+                GAG2PetTeamsGetState()
+
+            if tonumber(liveState.DefaultReturnToken) ~= token then
+                return
+            end
+
+            if liveState.ManualLock == true
+            or liveState.AutoSwitch ~= true
+            or liveState.ReturnAfterTemporary == false then
+                return
+            end
+
+            if liveState.Busy == true then
+
+                task.wait(
+                    0.45
+                )
+
+                continue
+            end
+
+            if type(SniperState) == "table"
+            and SniperState.Taming == true then
+
+                liveState.LastStatus =
+                    "Default return waiting: sniper buying."
+
+                GAG2PetTeamsRefreshStatus()
+
+                task.wait(
+                    0.55
+                )
+
+                continue
+            end
+
+            if type(SniperHasPendingBuy) == "function" then
+
+                local pendingOk,
+                    hasPending =
+                    pcall(function()
+
+                        return SniperHasPendingBuy()
+                    end)
+
+                if pendingOk == true
+                and hasPending == true then
+
+                    liveState.LastStatus =
+                        "Default return waiting: pending buy."
+
+                    GAG2PetTeamsRefreshStatus()
+
+                    task.wait(
+                        0.55
+                    )
+
+                    continue
+                end
+            end
+
+            if type(SniperCountCurrentRemainingMatches) == "function" then
+
+                local countOk,
+                    remaining,
+                    countReason =
+                    pcall(function()
+
+                        return SniperCountCurrentRemainingMatches()
+                    end)
+
+                remaining =
+                    tonumber(remaining)
+                    or 0
+
+                if countOk == true
+                and countReason == "ok"
+                and remaining > 0 then
+
+                    liveState.LastStatus =
+                        "Default return waiting: "
+                        .. tostring(remaining)
+                        .. " match(es) left."
+
+                    GAG2PetTeamsRefreshStatus()
+
+                    task.wait(
+                        0.75
+                    )
+
+                    continue
+                end
+            end
+
+            GAG2PetTeamsApplyTeam(
+                defaultTeamName,
+                reason or "return after temporary"
+            )
+
+            return
+        end
+
+        local finalState =
+            GAG2PetTeamsGetState()
+
+        if tonumber(finalState.DefaultReturnToken) == token then
+
+            finalState.LastStatus =
+                "Default return timed out."
+
+            GAG2PetTeamsRefreshStatus()
+        end
+    end)
+
+    return true
 end
 
 function GAG2PetTeamsBuildTeamSlotsText()
@@ -46980,6 +47213,15 @@ function SniperConfirmPendingBuyRecord(record, reason, petId)
     SniperClearPendingBuyKey(
         key
     )
+
+    if type(GAG2PetTeamsScheduleDefaultReturn) == "function" then
+
+        GAG2PetTeamsScheduleDefaultReturn(
+            "sniper confirmed "
+            .. tostring(record.PetName),
+            1.75
+        )
+    end
 
     return true
 end
