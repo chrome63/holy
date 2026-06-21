@@ -9122,9 +9122,7 @@ function GAG2SendSnipeBoughtWebhook(record)
     local description =
         "**"
         .. tostring(data.PetName)
-        .. "** was successfully sniped by **"
-        .. tostring(LOCAL_PLAYER and LOCAL_PLAYER.Name or "Unknown")
-        .. "**."
+        .. "** was successfully sniped by **HOLY**."
 
     local fields = {
         {
@@ -9161,12 +9159,8 @@ function GAG2SendSnipeBoughtWebhook(record)
         },
 
         {
-            name = "Player",
-            value =
-                tostring(LOCAL_PLAYER and LOCAL_PLAYER.Name or "Unknown")
-                .. " (`"
-                .. tostring(LOCAL_PLAYER and LOCAL_PLAYER.UserId or "?")
-                .. "`)",
+            name = "Sniped By",
+            value = "HOLY",
             inline = true,
         },
 
@@ -9242,10 +9236,10 @@ function GAG2SendSnipeBoughtWebhook(record)
 
     local payload = {
         username =
-            "HOLY GAG2 Snipes",
+            "HOLY",
 
         content =
-            "✅ Pet sniped: **"
+            "✅ Sniped by **HOLY**: **"
             .. tostring(data.PetName)
             .. "** | "
             .. tostring(data.Rarity)
