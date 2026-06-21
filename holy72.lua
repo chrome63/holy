@@ -81861,7 +81861,76 @@ end
 
 --==================================================
 -- [11.5] AUTOSAVE
+-- Fast startup order:
+-- 1. Load UI config.
+-- 2. Restore sniper immediately.
+-- 3. Stagger heavy systems after sniper is live.
 --==================================================
+
+GAG2_STARTUP_PROFILE =
+    {
+        StartedAt = os.clock(),
+        Rows = {},
+    }
+
+function GAG2StartupProfile(label, fn)
+
+    local startedAt =
+        os.clock()
+
+    local ok,
+        result =
+        pcall(function()
+
+            if type(fn) == "function" then
+
+                return fn()
+            end
+
+            return nil
+        end)
+
+    local elapsed =
+        os.clock()
+        - startedAt
+
+    local row =
+        string.format(
+            "[%.3fs] %s | %.3fs | %s",
+            os.clock() - GAG2_STARTUP_PROFILE.StartedAt,
+            tostring(label),
+            elapsed,
+            ok == true and "ok" or tostring(result)
+        )
+
+    table.insert(
+        GAG2_STARTUP_PROFILE.Rows,
+        row
+    )
+
+    print(
+        "[HOLY STARTUP]",
+        row
+    )
+
+    return ok,
+        result
+end
+
+function GAG2StartupDefer(delaySeconds, label, fn)
+
+    task.delay(
+        tonumber(delaySeconds)
+        or 0,
+        function()
+
+            GAG2StartupProfile(
+                label,
+                fn
+            )
+        end
+    )
+end
 
 ThemeManager:SetLibrary(
     Library
@@ -81894,29 +81963,45 @@ if type(SaveManager.SetIgnoreIndexes) == "function" then
     })
 end
 
-pcall(function()
+GAG2StartupProfile("ThemeManager ApplyTheme", function()
 
     ThemeManager:ApplyTheme(
         "Dark"
     )
 end)
 
-pcall(function()
+GAG2StartupProfile("SaveManager Load", function()
 
     SaveManager:Load(
         ConfigState.AutosaveName
     )
 end)
 
-GAG2StartLoadingGuiCleaner()
+GAG2StartupProfile("Loading GUI Cleaner", function()
+
+    GAG2StartLoadingGuiCleaner()
+end)
 
 local GAG2_EXACT_JOIN_PENDING_ON_LOAD =
-    GAG2HandlePendingExactJoinOnLoad()
+    false
+
+GAG2StartupProfile("Exact Join Check", function()
+
+    GAG2_EXACT_JOIN_PENDING_ON_LOAD =
+        GAG2HandlePendingExactJoinOnLoad() == true
+end)
 
 if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
 
-    RestoreSniperAutosaveState()
-    GAG2RestoreShopAutosaveState()
+    GAG2StartupProfile("Restore Sniper", function()
+
+        RestoreSniperAutosaveState()
+    end)
+
+    GAG2StartupDefer(0.05, "Restore Shops", function()
+
+        GAG2RestoreShopAutosaveState()
+    end)
 end
 
 ConfigState.Loading =
@@ -81933,27 +82018,121 @@ and type(Toggles.HolyGAG2AutoSkipLoading.SetValue) == "function" then
     end)
 end
 
-GAG2RestoreStatsOverlayState()
+GAG2StartupDefer(0.10, "Restore Stats Overlay", function()
+
+    GAG2RestoreStatsOverlayState()
+end)
 
 if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
 
-    GAG2RestoreAntiAfkState()
-    GAG2RestoreAutoTpMiddleFarmState()
-    GAG2RestorePerformanceState()
-    GAG2RestoreSeedPlantingState()
-    GAG2RestoreAutoCollectFruitState()
-    GAG2RestoreAutoSellState()
-    GAG2RestoreMailboxState()
-    GAG2RestorePetTeamsState()
-    GAG2RestoreDefenceState()
-    GAG2RestoreSeedDropState()
-    GAG2RestoreDropPickupState()
-    GAG2RestoreSeedCollectState()
-    GAG2RestoreServerSelectionState()
-    GAG2RestoreWildPetNetworkState()
-    GAG2RestoreWildPetNetworkContributorState()
-    GAG2RestoreVersionHopState()
+    -- Light / important helpers first.
+    GAG2StartupDefer(0.15, "Restore Anti AFK", function()
+
+        GAG2RestoreAntiAfkState()
+    end)
+
+    GAG2StartupDefer(0.25, "Restore Performance", function()
+
+        GAG2RestorePerformanceState()
+    end)
+
+    GAG2StartupDefer(0.35, "Restore Server Selection", function()
+
+        GAG2RestoreServerSelectionState()
+    end)
+
+    GAG2StartupDefer(0.45, "Restore Version Hop", function()
+
+        GAG2RestoreVersionHopState()
+    end)
+
+    -- Sniper-supporting movement after core sniper is live.
+    GAG2StartupDefer(0.65, "Restore Farm Middle", function()
+
+        GAG2RestoreAutoTpMiddleFarmState()
+    end)
+
+    -- Defence after movement/core systems.
+    GAG2StartupDefer(0.85, "Restore Defence", function()
+
+        if type(GAG2RestoreDefenceState) == "function" then
+
+            GAG2RestoreDefenceState()
+        end
+    end)
+
+    -- Farm systems later.
+    GAG2StartupDefer(1.05, "Restore Auto Sell", function()
+
+        GAG2RestoreAutoSellState()
+    end)
+
+    GAG2StartupDefer(1.25, "Restore Seed Planting", function()
+
+        GAG2RestoreSeedPlantingState()
+    end)
+
+    GAG2StartupDefer(1.45, "Restore Auto Collect Fruit", function()
+
+        GAG2RestoreAutoCollectFruitState()
+    end)
+
+    GAG2StartupDefer(1.65, "Restore Seed Collect", function()
+
+        GAG2RestoreSeedCollectState()
+    end)
+
+    -- UI / inventory systems after startup.
+    GAG2StartupDefer(1.90, "Restore Mailbox", function()
+
+        GAG2RestoreMailboxState()
+    end)
+
+    GAG2StartupDefer(2.15, "Restore Pet Teams", function()
+
+        if type(GAG2RestorePetTeamsState) == "function" then
+
+            GAG2RestorePetTeamsState()
+        end
+    end)
+
+    GAG2StartupDefer(2.40, "Restore Seed Drop", function()
+
+        GAG2RestoreSeedDropState()
+    end)
+
+    GAG2StartupDefer(2.60, "Restore Drop Pickup", function()
+
+        GAG2RestoreDropPickupState()
+    end)
+
+    -- Network HUD last because it can do HTTP / render work.
+    GAG2StartupDefer(3.00, "Restore Wild Pet Network", function()
+
+        GAG2RestoreWildPetNetworkState()
+    end)
+
+    GAG2StartupDefer(3.25, "Restore Wild Pet Contributor", function()
+
+        GAG2RestoreWildPetNetworkContributorState()
+    end)
 end
+
+task.delay(4.00, function()
+
+    print(
+        "========== HOLY STARTUP PROFILE =========="
+    )
+
+    for _, row in ipairs(GAG2_STARTUP_PROFILE.Rows or {}) do
+
+        print(row)
+    end
+
+    print(
+        "=========================================="
+    )
+end)
 
 task.spawn(function()
 
