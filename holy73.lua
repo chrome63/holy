@@ -2912,6 +2912,7 @@ GAG2_PET_TEAMS_STATE =
         SelectedTeam = "Bunny Speed",
         DraftTeamName = "Bunny Speed",
         SelectedPetChoice = "None",
+        SelectedPetChoices = {},
 
         AutoSwitch = false,
         ReturnAfterTemporary = true,
@@ -3003,6 +3004,11 @@ function GAG2PetTeamsGetState()
     state.InventoryRows =
         type(state.InventoryRows) == "table"
         and state.InventoryRows
+        or {}
+
+    state.SelectedPetChoices =
+        type(state.SelectedPetChoices) == "table"
+        and state.SelectedPetChoices
         or {}
 
     local seen =
@@ -3892,6 +3898,122 @@ function GAG2PetTeamsBuildInventoryChoices()
     return values
 end
 
+function GAG2PetTeamsNormalizeChoiceMap(value)
+
+    local output =
+        {}
+
+    if type(value) == "table" then
+
+        if #value > 0 then
+
+            for _, choice in ipairs(value) do
+
+                choice =
+                    tostring(choice or "")
+
+                if choice ~= ""
+                and choice ~= "None" then
+
+                    output[choice] =
+                        true
+                end
+            end
+
+        else
+
+            for choice, enabled in pairs(value) do
+
+                choice =
+                    tostring(choice or "")
+
+                if choice ~= ""
+                and choice ~= "None"
+                and enabled == true then
+
+                    output[choice] =
+                        true
+                end
+            end
+        end
+
+    elseif type(value) == "string" then
+
+        value =
+            tostring(value or "")
+
+        if value ~= ""
+        and value ~= "None" then
+
+            output[value] =
+                true
+        end
+    end
+
+    return output
+end
+
+function GAG2PetTeamsGetSelectedChoiceList(value)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local selectedMap =
+        GAG2PetTeamsNormalizeChoiceMap(
+            value
+            or state.SelectedPetChoices
+            or state.SelectedPetChoice
+        )
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    for _, row in ipairs(state.InventoryRows or {}) do
+
+        local shortId =
+            GAG2PetTeamsShortId(
+                row.PetId
+            )
+
+        for choice, enabled in pairs(selectedMap) do
+
+            if enabled == true
+            and seen[choice] ~= true
+            and state.ChoiceToPetId[choice] == row.PetId then
+
+                table.insert(
+                    output,
+                    choice
+                )
+
+                seen[choice] =
+                    true
+            end
+        end
+    end
+
+    for choice, enabled in pairs(selectedMap) do
+
+        if enabled == true
+        and seen[choice] ~= true
+        and state.ChoiceToPetId[choice] ~= nil then
+
+            table.insert(
+                output,
+                choice
+            )
+
+            seen[choice] =
+                true
+        end
+    end
+
+    return output
+end
+
 function GAG2PetTeamsRefreshTeamDropdowns()
 
     local state =
@@ -3970,18 +4092,29 @@ function GAG2PetTeamsRefreshInventoryDropdown()
         values
     )
 
-    if state.SelectedPetChoice == ""
-    or state.SelectedPetChoice == nil
-    or state.ChoiceToPetId[state.SelectedPetChoice] == nil then
+    local validSelection =
+        {}
 
-        state.SelectedPetChoice =
-            values[1]
-            or "None"
+    for choice, enabled in pairs(
+        GAG2PetTeamsNormalizeChoiceMap(
+            state.SelectedPetChoices
+        )
+    ) do
+
+        if enabled == true
+        and state.ChoiceToPetId[choice] ~= nil then
+
+            validSelection[choice] =
+                true
+        end
     end
+
+    state.SelectedPetChoices =
+        validSelection
 
     GAG2PetTeamsSetDropdownValue(
         state.Controls.InventoryPet,
-        state.SelectedPetChoice
+        validSelection
     )
 end
 
@@ -4104,34 +4237,17 @@ function GAG2PetTeamsAddPetToSelected(choice)
     local state =
         GAG2PetTeamsGetState()
 
-    choice =
-        tostring(
+    local selectedChoices =
+        GAG2PetTeamsGetSelectedChoiceList(
             choice
+            or state.SelectedPetChoices
             or state.SelectedPetChoice
-            or ""
         )
 
-    local petId =
-        state.ChoiceToPetId[choice]
-
-    if not petId then
+    if #selectedChoices <= 0 then
 
         GAG2PetTeamsSetStatus(
-            "Select an inventory pet first."
-        )
-
-        return false
-    end
-
-    local row =
-        GAG2PetTeamsFindInventoryByPetId(
-            petId
-        )
-
-    if not row then
-
-        GAG2PetTeamsSetStatus(
-            "Pet not found in inventory."
+            "Select one or more inventory pets first."
         )
 
         return false
@@ -4140,36 +4256,82 @@ function GAG2PetTeamsAddPetToSelected(choice)
     local team, teamName =
         GAG2PetTeamsGetSelectedTeam()
 
-    if GAG2PetTeamsTeamContainsPetId(team, row.PetId) == true then
+    local added =
+        0
+
+    local skipped =
+        0
+
+    local addedNames =
+        {}
+
+    for _, selectedChoice in ipairs(selectedChoices) do
+
+        if #team.PetIds >= GAG2_PET_TEAMS_MAX_SAVED_SLOTS then
+            skipped =
+                skipped + 1
+
+            continue
+        end
+
+        local petId =
+            state.ChoiceToPetId[selectedChoice]
+
+        local row =
+            petId
+            and GAG2PetTeamsFindInventoryByPetId(
+                petId
+            )
+            or nil
+
+        if not row then
+
+            skipped =
+                skipped + 1
+
+            continue
+        end
+
+        if GAG2PetTeamsTeamContainsPetId(team, row.PetId) == true then
+
+            skipped =
+                skipped + 1
+
+            continue
+        end
+
+        table.insert(
+            team.PetIds,
+            row.PetId
+        )
+
+        table.insert(
+            team.PetNames,
+            row.Pet
+        )
+
+        table.insert(
+            addedNames,
+            tostring(row.Pet)
+            .. " ["
+            .. GAG2PetTeamsShortId(row.PetId)
+            .. "]"
+        )
+
+        added =
+            added + 1
+    end
+
+    if added <= 0 then
 
         GAG2PetTeamsSetStatus(
-            "Already in team: "
-            .. tostring(row.Pet)
+            "No pets added. Team may be full or selected pets are already saved."
         )
+
+        GAG2PetTeamsRefreshAllControls()
 
         return false
     end
-
-    if #team.PetIds >= GAG2_PET_TEAMS_MAX_SAVED_SLOTS then
-
-        GAG2PetTeamsSetStatus(
-            "Team is full. Max "
-            .. tostring(GAG2_PET_TEAMS_MAX_SAVED_SLOTS)
-            .. " saved pets."
-        )
-
-        return false
-    end
-
-    table.insert(
-        team.PetIds,
-        row.PetId
-    )
-
-    table.insert(
-        team.PetNames,
-        row.Pet
-    )
 
     team.UpdatedAt =
         os.time()
@@ -4179,10 +4341,21 @@ function GAG2PetTeamsAddPetToSelected(choice)
 
     GAG2PetTeamsSetStatus(
         "Added "
-        .. tostring(row.Pet)
-        .. " to "
+        .. tostring(added)
+        .. " pet(s) to "
         .. tostring(teamName)
-        .. "."
+        .. ". Slots: "
+        .. tostring(#team.PetIds)
+        .. "/"
+        .. tostring(GAG2_PET_TEAMS_MAX_SAVED_SLOTS)
+        .. (
+            skipped > 0
+            and (
+                " | skipped "
+                .. tostring(skipped)
+            )
+            or ""
+        )
     )
 
     return true
