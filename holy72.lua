@@ -2905,21 +2905,21 @@ GAG2_DEFENCE_STATE =
         LastTriggerAt = 0,
         LastDefendAt = 0,
 
-        SamePlayerCooldown = 2.25,
-        GlobalCooldown = 0.65,
+        SamePlayerCooldown = 0.15,
+        GlobalCooldown = 0.15,
 
-        WalkStopDistance = 3.6,
-        WalkMaxSeconds = 10,
+        WalkStopDistance = 2.4,
+        WalkMaxSeconds = 12,
 
-        StickDistance = 2.4,
-        StickLeadSeconds = 0.12,
-        StickStepDelay = 0.08,
+        StickDistance = 1.35,
+        StickLeadSeconds = 0.16,
+        StickStepDelay = 0.045,
 
         TeleportOffset = 2.2,
         TeleportReturnDelay = 0.35,
 
-        SwingAttempts = 18,
-        SwingDelay = 0.11,
+        SwingAttempts = 40,
+        SwingDelay = 0.075,
 
         DefenceReach = 3.6,
         HitboxEnabled = false,
@@ -3719,6 +3719,74 @@ function GAG2DefenceApplyShovelHitbox(shovel)
         changed
 end
 
+function GAG2DefenceFindEquippedShovel()
+
+    local character =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character
+        or nil
+
+    if not character then
+        return nil
+    end
+
+    for _, child in ipairs(character:GetChildren()) do
+
+        if child:IsA("Tool") then
+
+            local lowerName =
+                tostring(child.Name or "")
+                    :lower()
+
+            local shovelAttr =
+                ""
+
+            pcall(function()
+
+                shovelAttr =
+                    tostring(
+                        child:GetAttribute("Shovel")
+                        or ""
+                    )
+            end)
+
+            if lowerName:find("shovel", 1, true)
+            or shovelAttr:lower():find("shovel", 1, true) then
+
+                return child
+            end
+        end
+    end
+
+    return nil
+end
+
+function GAG2DefenceWaitForEquippedShovel(timeoutSeconds)
+
+    local deadline =
+        os.clock()
+        + (
+            tonumber(timeoutSeconds)
+            or 0.45
+        )
+
+    while os.clock() <= deadline do
+
+        local equipped =
+            GAG2DefenceFindEquippedShovel()
+
+        if equipped then
+            return equipped
+        end
+
+        task.wait(
+            0.025
+        )
+    end
+
+    return nil
+end
+
 function GAG2DefenceEquipShovel()
 
     local character,
@@ -3730,9 +3798,24 @@ function GAG2DefenceEquipShovel()
         and character:FindFirstChildOfClass("Humanoid")
         or nil
 
-    if not humanoid then
+    if not character
+    or not humanoid then
+
         return nil,
             "humanoid missing"
+    end
+
+    local equipped =
+        GAG2DefenceFindEquippedShovel()
+
+    if equipped then
+
+        GAG2DefenceApplyShovelHitbox(
+            equipped
+        )
+
+        return equipped,
+            "already equipped"
     end
 
     local shovel =
@@ -3743,35 +3826,250 @@ function GAG2DefenceEquipShovel()
             "shovel missing"
     end
 
-    if shovel.Parent ~= character then
+    pcall(function()
 
-        local ok,
-            err =
+        humanoid:EquipTool(
+            shovel
+        )
+    end)
+
+    equipped =
+        GAG2DefenceWaitForEquippedShovel(
+            0.55
+        )
+
+    if not equipped then
+
+        pcall(function()
+
+            humanoid:UnequipTools()
+        end)
+
+        task.wait(
+            0.06
+        )
+
+        shovel =
+            GAG2DefenceFindShovelTool()
+
+        if shovel then
+
             pcall(function()
 
                 humanoid:EquipTool(
                     shovel
                 )
             end)
-
-        if ok ~= true then
-
-            return nil,
-                "equip shovel failed: "
-                .. tostring(err)
         end
 
-        task.wait(
-            0.08
-        )
+        equipped =
+            GAG2DefenceWaitForEquippedShovel(
+                0.65
+            )
+    end
+
+    if not equipped then
+
+        return nil,
+            "shovel did not equip"
     end
 
     GAG2DefenceApplyShovelHitbox(
-        shovel
+        equipped
     )
 
-    return shovel,
+    return equipped,
         "ok"
+end
+
+function GAG2DefenceAimCameraAtPlayer(player)
+
+    if typeof(player) ~= "Instance"
+    or player:IsA("Player") ~= true then
+
+        return false
+    end
+
+    local camera =
+        workspace.CurrentCamera
+
+    if not camera then
+        return false
+    end
+
+    local character =
+        player.Character
+
+    if not character then
+        return false
+    end
+
+    local part =
+        character:FindFirstChild("Head")
+        or character:FindFirstChild("UpperTorso")
+        or character:FindFirstChild("Torso")
+        or character:FindFirstChild("HumanoidRootPart")
+        or character.PrimaryPart
+
+    if not part then
+        return false
+    end
+
+    local velocity =
+        Vector3.new(
+            0,
+            0,
+            0
+        )
+
+    pcall(function()
+
+        velocity =
+            part.AssemblyLinearVelocity
+    end)
+
+    local aimPosition =
+        part.Position
+        + Vector3.new(
+            0,
+            0.35,
+            0
+        )
+        + (
+            velocity
+            * 0.10
+        )
+
+    pcall(function()
+
+        camera.CFrame =
+            CFrame.new(
+                camera.CFrame.Position,
+                aimPosition
+            )
+    end)
+
+    return true
+end
+
+function GAG2DefenceSendMouseSwing()
+
+    if not VirtualInputManager then
+        return false
+    end
+
+    local camera =
+        workspace.CurrentCamera
+
+    local x =
+        400
+
+    local y =
+        300
+
+    if camera then
+
+        x =
+            math.floor(
+                camera.ViewportSize.X / 2
+            )
+
+        y =
+            math.floor(
+                camera.ViewportSize.Y / 2
+            )
+    end
+
+    local ok =
+        pcall(function()
+
+            VirtualInputManager:SendMouseButtonEvent(
+                x,
+                y,
+                0,
+                true,
+                game,
+                0
+            )
+
+            task.wait(
+                0.025
+            )
+
+            VirtualInputManager:SendMouseButtonEvent(
+                x,
+                y,
+                0,
+                false,
+                game,
+                0
+            )
+        end)
+
+    return ok == true
+end
+
+function GAG2DefenceActivateEquippedShovel(targetPlayer)
+
+    local shovel,
+        reason =
+        GAG2DefenceEquipShovel()
+
+    if not shovel then
+
+        return false,
+            reason
+    end
+
+    local character =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character
+        or nil
+
+    if not character
+    or shovel.Parent ~= character then
+
+        return false,
+            "shovel not equipped"
+    end
+
+    if targetPlayer then
+
+        if type(GAG2DefenceFaceTarget) == "function" then
+
+            GAG2DefenceFaceTarget(
+                targetPlayer
+            )
+        end
+
+        GAG2DefenceAimCameraAtPlayer(
+            targetPlayer
+        )
+    end
+
+    GAG2DefenceSendMouseSwing()
+
+    task.wait(
+        0.015
+    )
+
+    shovel =
+        GAG2DefenceFindEquippedShovel()
+
+    if shovel
+    and shovel.Parent == character then
+
+        pcall(function()
+
+            shovel:Activate()
+        end)
+
+        return true,
+            "activated equipped shovel"
+    end
+
+    return false,
+        "shovel unequipped before activate"
 end
 
 function GAG2DefenceGetPredictedTargetPosition(player)
@@ -4003,26 +4301,20 @@ function GAG2DefenceSwingShovel(targetPlayer)
     local state =
         GAG2DefenceGetState()
 
-    local shovel,
-        reason =
-        GAG2DefenceEquipShovel()
-
-    if not shovel then
-        return false,
-            reason
-    end
-
     local swings =
         math.max(
             1,
             math.floor(
                 tonumber(state.SwingAttempts)
-                or 18
+                or 40
             )
         )
 
     local teleportMode =
         state.MovementMode == "Teleport"
+
+    local activatedAny =
+        false
 
     for _ = 1, swings do
 
@@ -4042,18 +4334,34 @@ function GAG2DefenceSwingShovel(targetPlayer)
             GAG2DefenceFaceTarget(
                 targetPlayer
             )
+
+            GAG2DefenceAimCameraAtPlayer(
+                targetPlayer
+            )
         end
 
-        pcall(function()
+        local activated =
+            false
 
-            if shovel.Parent then
+        local activateOk =
+            pcall(function()
 
-                shovel:Activate()
-            end
-        end)
+                activated =
+                    GAG2DefenceActivateEquippedShovel(
+                        targetPlayer
+                    ) == true
+            end)
+
+        if activateOk == true
+        and activated == true then
+
+            activatedAny =
+                true
+        end
 
         if targetPlayer
-        and targetPlayer.Parent == Players then
+        and targetPlayer.Parent == Players
+        and type(GAG2DefenceFireDirectShovelHit) == "function" then
 
             local burst =
                 math.max(
@@ -4066,7 +4374,16 @@ function GAG2DefenceSwingShovel(targetPlayer)
 
             for _ = 1, burst do
 
+                GAG2DefenceStickyStepToPlayer(
+                    targetPlayer,
+                    teleportMode
+                )
+
                 GAG2DefenceFaceTarget(
+                    targetPlayer
+                )
+
+                GAG2DefenceAimCameraAtPlayer(
                     targetPlayer
                 )
 
@@ -4076,6 +4393,7 @@ function GAG2DefenceSwingShovel(targetPlayer)
 
                 task.wait(
                     state.DirectHitDelay
+                    or 0.035
                 )
             end
         end
@@ -4085,8 +4403,10 @@ function GAG2DefenceSwingShovel(targetPlayer)
         )
     end
 
-    return true,
-        "direct sticky shovel swing"
+    return activatedAny,
+        activatedAny == true
+        and "auto clicked equipped shovel"
+        or "no equipped shovel activation"
 end
 
 function GAG2DefenceWalkToPlayer(player)
@@ -4310,6 +4630,15 @@ function GAG2DefenceRunTarget(record)
     state.LastDefendAt =
         os.clock()
 
+    state.CurrentTargetUserId =
+        player.UserId
+
+    state.CurrentTargetName =
+        player.Name
+
+    state.CurrentTargetStartedAt =
+        os.clock()
+
     if state.MovementMode == "Teleport" then
 
         return GAG2DefenceTeleportToPlayerAndSwing(
@@ -4328,6 +4657,12 @@ function GAG2DefenceRunTarget(record)
             player
         )
     end
+
+    state.CurrentTargetUserId =
+        0
+
+    state.CurrentTargetName =
+        ""
 
     return false
 end
@@ -4506,6 +4841,17 @@ function GAG2DefenceQueueTarget(player, reason)
 
     if now - previous < state.SamePlayerCooldown then
 
+        if tonumber(state.CurrentTargetUserId) == player.UserId then
+
+            state.CurrentTargetRefreshAt =
+                now
+
+            return true
+        end
+
+        local updatedExisting =
+            false
+
         for _, record in ipairs(state.Queue) do
 
             if tonumber(record.UserId) == player.UserId then
@@ -4513,19 +4859,29 @@ function GAG2DefenceQueueTarget(player, reason)
                 record.Player =
                     player
 
-                record.AddedAt =
-                    now
+                record.Name =
+                    player.Name
 
                 record.Reason =
                     tostring(reason or "steal started")
 
-                GAG2DefenceSortQueue()
+                record.AddedAt =
+                    now
 
-                return true
+                updatedExisting =
+                    true
+
+                break
             end
         end
 
-        return false
+        if updatedExisting == true then
+
+            GAG2DefenceSortQueue()
+            GAG2DefenceStartWorker()
+
+            return true
+        end
     end
 
     state.RecentTargets[key] =
