@@ -1084,6 +1084,18 @@ GAG2_AUTO_TP_MIDDLE_FARM_STATE = {
     AnchorResolvedAt = 0,
     AnchorLastAttemptAt = 0,
 
+    IdleMoveRunning = false,
+    IdleMoveToken = 0,
+    IdleMoveDone = false,
+    IdleMoveStartedAt = 0,
+    IdleMoveLastCheckAt = 0,
+    IdleMoveLastSafeAt = 0,
+    IdleMoveLastReason = "not started",
+    IdleMoveSafeSeconds = 0.65,
+    IdleMoveCheckInterval = 0.35,
+    IdleMoveMaxWaitSeconds = 90,
+    IdleMoveStopDistance = 9,
+
     EarlyKeepDistance = 8,
     PostLoadRepairDistance = 12,
 
@@ -2869,6 +2881,3133 @@ end
 
 GAG2_STATS_OVERLAY_STATE.Destroy =
     GAG2StatsOverlayDestroy
+
+
+--==================================================
+-- [3.6] PET TEAMS CORE
+--==================================================
+
+GAG2_PET_TEAMS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/PetTeams.json"
+
+GAG2_PET_TEAMS_MAX_SAVED_SLOTS =
+    6
+
+GAG2_PET_TEAMS_FAST_TIMING = {
+    UnequipDelay = 0.08,
+    PostUnequipSettle = 0.12,
+
+    ToolSelectDelay = 0.055,
+    ToolActivateDelay = 0.065,
+    PacketDelay = 0.115,
+
+    BatchSettleDelay = 0.38,
+
+    RetrySelectDelay = 0.10,
+    RetryActivateDelay = 0.12,
+    RetryPacketDelay = 0.16,
+}
+
+GAG2_PET_TEAMS_DEFAULT_NAMES = {
+    "Default",
+    "Bunny Speed",
+    "Sniper Speed",
+    "Weather",
+    "Manual",
+}
+
+GAG2_PET_TEAMS_STATE =
+    GAG2_PET_TEAMS_STATE
+    or {
+        Loaded = false,
+        Busy = false,
+        RefreshingControls = false,
+
+        SelectedTeam = "Bunny Speed",
+        DraftTeamName = "Bunny Speed",
+        SelectedPetChoice = "None",
+        SelectedPetChoices = {},
+
+        AutoSwitch = false,
+        ReturnAfterTemporary = true,
+        ReturnDefaultAtFarmMiddle = false,
+        ManualLock = false,
+
+        LastStatus = "Ready.",
+        LastApplyReason = "Idle.",
+        LastApplyAt = 0,
+
+        TeamNames = {},
+        Teams = {},
+
+        Rules = {
+            Default = "Default",
+            Day = "Default",
+            Night = "Default",
+            Weather = "Weather",
+            SeedCollect = "Bunny Speed",
+            SniperFound = "Sniper Speed",
+        },
+
+        Controls = {},
+        ChoiceToPetId = {},
+        InventoryRows = {},
+    }
+
+function GAG2PetTeamsCleanName(value)
+
+    local text =
+        CleanText(value)
+
+    text =
+        text:gsub("%s+", " ")
+
+    if text == "" then
+        text = "Default"
+    end
+
+    return text
+end
+
+function GAG2PetTeamsShortId(value)
+
+    value =
+        tostring(value or "")
+
+    if #value >= 8 then
+        return value:sub(1, 8)
+    end
+
+    return value
+end
+
+function GAG2PetTeamsGetState()
+
+    GAG2_PET_TEAMS_STATE =
+        type(GAG2_PET_TEAMS_STATE) == "table"
+        and GAG2_PET_TEAMS_STATE
+        or {}
+
+    local state =
+        GAG2_PET_TEAMS_STATE
+
+    state.TeamNames =
+        type(state.TeamNames) == "table"
+        and state.TeamNames
+        or {}
+
+    state.Teams =
+        type(state.Teams) == "table"
+        and state.Teams
+        or {}
+
+    state.Controls =
+        type(state.Controls) == "table"
+        and state.Controls
+        or {}
+
+    state.Rules =
+        type(state.Rules) == "table"
+        and state.Rules
+        or {}
+
+    state.ChoiceToPetId =
+        type(state.ChoiceToPetId) == "table"
+        and state.ChoiceToPetId
+        or {}
+
+    state.InventoryRows =
+        type(state.InventoryRows) == "table"
+        and state.InventoryRows
+        or {}
+
+    state.SelectedPetChoices =
+        type(state.SelectedPetChoices) == "table"
+        and state.SelectedPetChoices
+        or {}
+
+    local seen =
+        {}
+
+    local normalizedNames =
+        {}
+
+    local function addTeamName(name)
+
+        name =
+            GAG2PetTeamsCleanName(name)
+
+        if seen[name] == true then
+            return
+        end
+
+        seen[name] =
+            true
+
+        table.insert(
+            normalizedNames,
+            name
+        )
+    end
+
+    for _, name in ipairs(GAG2_PET_TEAMS_DEFAULT_NAMES) do
+        addTeamName(name)
+    end
+
+    for _, name in ipairs(state.TeamNames) do
+        addTeamName(name)
+    end
+
+    for name in pairs(state.Teams) do
+        addTeamName(name)
+    end
+
+    state.TeamNames =
+        normalizedNames
+
+    for _, name in ipairs(state.TeamNames) do
+
+        local team =
+            state.Teams[name]
+
+        if type(team) ~= "table" then
+
+            team = {
+                Name = name,
+                PetIds = {},
+                PetNames = {},
+                UpdatedAt = 0,
+            }
+
+            state.Teams[name] =
+                team
+        end
+
+        team.Name =
+            name
+
+        team.PetIds =
+            type(team.PetIds) == "table"
+            and team.PetIds
+            or {}
+
+        team.PetNames =
+            type(team.PetNames) == "table"
+            and team.PetNames
+            or {}
+    end
+
+    state.SelectedTeam =
+        GAG2PetTeamsCleanName(
+            state.SelectedTeam
+            or "Bunny Speed"
+        )
+
+    if state.Teams[state.SelectedTeam] == nil then
+        state.SelectedTeam = "Bunny Speed"
+    end
+
+    state.DraftTeamName =
+        CleanText(state.DraftTeamName)
+
+    if state.DraftTeamName == "" then
+        state.DraftTeamName =
+            state.SelectedTeam
+    end
+
+    state.Rules.Default =
+        GAG2PetTeamsCleanName(
+            state.Rules.Default
+            or "Default"
+        )
+
+    state.Rules.Day =
+        GAG2PetTeamsCleanName(
+            state.Rules.Day
+            or state.Rules.Default
+            or "Default"
+        )
+
+    state.Rules.Night =
+        GAG2PetTeamsCleanName(
+            state.Rules.Night
+            or state.Rules.Default
+            or "Default"
+        )
+
+    state.Rules.Weather =
+        GAG2PetTeamsCleanName(
+            state.Rules.Weather
+            or "Weather"
+        )
+
+    state.Rules.SeedCollect =
+        GAG2PetTeamsCleanName(
+            state.Rules.SeedCollect
+            or "Bunny Speed"
+        )
+
+    state.Rules.SniperFound =
+        GAG2PetTeamsCleanName(
+            state.Rules.SniperFound
+            or "Sniper Speed"
+        )
+
+    state.AutoSwitch =
+        state.AutoSwitch == true
+
+    state.ReturnAfterTemporary =
+        state.ReturnAfterTemporary ~= false
+
+    state.ReturnDefaultAtFarmMiddle =
+        state.ReturnDefaultAtFarmMiddle == true
+
+    state.ManualLock =
+        state.ManualLock == true
+
+    return state
+end
+
+function GAG2PetTeamsCopyArray(source, maxCount)
+
+    local output =
+        {}
+
+    maxCount =
+        math.max(
+            1,
+            math.floor(
+                tonumber(maxCount)
+                or GAG2_PET_TEAMS_MAX_SAVED_SLOTS
+            )
+        )
+
+    if type(source) ~= "table" then
+        return output
+    end
+
+    for _, value in ipairs(source) do
+
+        value =
+            CleanText(value)
+
+        if value ~= "" then
+
+            table.insert(
+                output,
+                value
+            )
+
+            if #output >= maxCount then
+                break
+            end
+        end
+    end
+
+    return output
+end
+
+function GAG2PetTeamsSerialize()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local teams =
+        {}
+
+    for _, name in ipairs(state.TeamNames) do
+
+        local team =
+            state.Teams[name]
+
+        teams[name] = {
+            Name = name,
+            PetIds =
+                GAG2PetTeamsCopyArray(
+                    team and team.PetIds,
+                    GAG2_PET_TEAMS_MAX_SAVED_SLOTS
+                ),
+
+            PetNames =
+                GAG2PetTeamsCopyArray(
+                    team and team.PetNames,
+                    GAG2_PET_TEAMS_MAX_SAVED_SLOTS
+                ),
+
+            UpdatedAt =
+                tonumber(team and team.UpdatedAt)
+                or 0,
+        }
+    end
+
+    return {
+        SelectedTeam =
+            state.SelectedTeam,
+
+        DraftTeamName =
+            state.DraftTeamName,
+
+        AutoSwitch =
+            state.AutoSwitch == true,
+
+        ReturnAfterTemporary =
+            state.ReturnAfterTemporary ~= false,
+
+        ReturnDefaultAtFarmMiddle =
+            state.ReturnDefaultAtFarmMiddle == true,
+
+        ManualLock =
+            state.ManualLock == true,
+
+        TeamNames =
+            GAG2PetTeamsCopyArray(
+                state.TeamNames,
+                50
+            ),
+
+        Teams =
+            teams,
+
+        Rules = {
+            Default =
+                state.Rules.Default,
+
+            Day =
+                state.Rules.Day,
+
+            Night =
+                state.Rules.Night,
+
+            Weather =
+                state.Rules.Weather,
+
+            SeedCollect =
+                state.Rules.SeedCollect,
+
+            SniperFound =
+                state.Rules.SniperFound,
+        },
+    }
+end
+
+function GAG2PetTeamsLoadSettings()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    if state.Loaded == true then
+        return true
+    end
+
+    state.Loaded =
+        true
+
+    if CanUseUISettingsFile() ~= true then
+
+        GAG2PetTeamsGetState()
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                GAG2_PET_TEAMS_FILE
+            )
+    end)
+
+    if exists ~= true then
+
+        GAG2PetTeamsGetState()
+        return false
+    end
+
+    local readOk, raw =
+        pcall(function()
+
+            return readfile(
+                GAG2_PET_TEAMS_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        GAG2PetTeamsGetState()
+        return false
+    end
+
+    local decodeOk, payload =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(payload) ~= "table" then
+
+        GAG2PetTeamsGetState()
+        return false
+    end
+
+    state.SelectedTeam =
+        GAG2PetTeamsCleanName(
+            payload.SelectedTeam
+            or state.SelectedTeam
+        )
+
+    state.DraftTeamName =
+        CleanText(
+            payload.DraftTeamName
+            or state.SelectedTeam
+        )
+
+    state.AutoSwitch =
+        payload.AutoSwitch == true
+
+    state.ReturnAfterTemporary =
+        payload.ReturnAfterTemporary ~= false
+
+    state.ReturnDefaultAtFarmMiddle =
+        payload.ReturnDefaultAtFarmMiddle == true
+
+    state.ManualLock =
+        payload.ManualLock == true
+
+    if type(payload.TeamNames) == "table" then
+        state.TeamNames =
+            GAG2PetTeamsCopyArray(
+                payload.TeamNames,
+                50
+            )
+    end
+
+    if type(payload.Teams) == "table" then
+
+        for name, team in pairs(payload.Teams) do
+
+            name =
+                GAG2PetTeamsCleanName(
+                    name
+                )
+
+            state.Teams[name] = {
+                Name =
+                    name,
+
+                PetIds =
+                    GAG2PetTeamsCopyArray(
+                        team and team.PetIds,
+                        GAG2_PET_TEAMS_MAX_SAVED_SLOTS
+                    ),
+
+                PetNames =
+                    GAG2PetTeamsCopyArray(
+                        team and team.PetNames,
+                        GAG2_PET_TEAMS_MAX_SAVED_SLOTS
+                    ),
+
+                UpdatedAt =
+                    tonumber(team and team.UpdatedAt)
+                    or 0,
+            }
+        end
+    end
+
+    if type(payload.Rules) == "table" then
+
+        for key, value in pairs(payload.Rules) do
+
+            state.Rules[key] =
+                GAG2PetTeamsCleanName(
+                    value
+                )
+        end
+    end
+
+    GAG2PetTeamsGetState()
+
+    return true
+end
+
+function GAG2PetTeamsSaveSettings()
+
+    if CanUseUISettingsFile() ~= true then
+        return false
+    end
+
+    EnsureUISettingsFolder()
+
+    local payload =
+        GAG2PetTeamsSerialize()
+
+    local encodeOk, encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                GAG2_PET_TEAMS_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function GAG2PetTeamsSetStatus(text)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    state.LastStatus =
+        tostring(text or "Ready.")
+
+    GAG2PetTeamsRefreshStatus()
+end
+
+function GAG2PetTeamsGetTeamNames()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local values =
+        {}
+
+    for _, name in ipairs(state.TeamNames) do
+
+        table.insert(
+            values,
+            name
+        )
+    end
+
+    if #values <= 0 then
+        values = {"Default"}
+    end
+
+    return values
+end
+
+function GAG2PetTeamsSetDropdownValues(dropdown, values)
+
+    if not dropdown then
+        return
+    end
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+end
+
+function GAG2PetTeamsSetDropdownValue(dropdown, value)
+
+    if not dropdown then
+        return
+    end
+
+    pcall(function()
+
+        if type(dropdown.SetValue) == "function" then
+
+            dropdown:SetValue(
+                value
+            )
+        end
+    end)
+end
+
+function GAG2PetTeamsReadTexts(root)
+
+    local rows =
+        {}
+
+    if typeof(root) ~= "Instance" then
+        return rows
+    end
+
+    for _, descendant in ipairs(root:GetDescendants()) do
+
+        if descendant:IsA("TextLabel")
+        or descendant:IsA("TextButton")
+        or descendant:IsA("TextBox") then
+
+            local text =
+                ""
+
+            pcall(function()
+
+                text =
+                    descendant.Text
+            end)
+
+            text =
+                CleanText(
+                    text
+                )
+
+            if text ~= "" then
+
+                table.insert(
+                    rows,
+                    text
+                )
+            end
+        end
+    end
+
+    return rows
+end
+
+function GAG2PetTeamsGetPetListGui()
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChild("PlayerGui")
+        or nil
+
+    if not playerGui then
+        return nil
+    end
+
+    return playerGui:FindFirstChild(
+        "PetList"
+    )
+end
+
+function GAG2PetTeamsScanEquipped()
+
+    local rows =
+        {}
+
+    local petList =
+        GAG2PetTeamsGetPetListGui()
+
+    if not petList then
+        return rows
+    end
+
+    local scrolling =
+        nil
+
+    for _, descendant in ipairs(petList:GetDescendants()) do
+
+        if descendant.Name == "ScrollingFrame" then
+
+            scrolling =
+                descendant
+
+            break
+        end
+    end
+
+    if not scrolling then
+        return rows
+    end
+
+    for _, child in ipairs(scrolling:GetChildren()) do
+
+        if child:IsA("Frame")
+        and child.Name:find(
+            "PetEntry_",
+            1,
+            true
+        ) then
+
+            local petId =
+                child.Name:gsub(
+                    "^PetEntry_",
+                    ""
+                )
+
+            local petName =
+                ""
+
+            local action =
+                ""
+
+            for _, text in ipairs(GAG2PetTeamsReadTexts(child)) do
+
+                local lower =
+                    text:lower()
+
+                if lower == "equip"
+                or lower == "unequip" then
+
+                    action =
+                        text
+
+                elseif petName == "" then
+
+                    petName =
+                        text
+                end
+            end
+
+            table.insert(rows, {
+                Pet =
+                    petName,
+
+                PetId =
+                    petId,
+
+                Equipped =
+                    action:lower() == "unequip",
+
+                Action =
+                    action,
+
+                Path =
+                    PathOf(child),
+            })
+        end
+    end
+
+    table.sort(rows, function(a, b)
+
+        return tostring(a.PetId)
+            < tostring(b.PetId)
+    end)
+
+    return rows
+end
+
+function GAG2PetTeamsGetEquippedMap()
+
+    local map =
+        {}
+
+    local count =
+        0
+
+    for _, row in ipairs(GAG2PetTeamsScanEquipped()) do
+
+        if row.Equipped == true
+        and CleanText(row.PetId) ~= "" then
+
+            map[row.PetId] =
+                row
+
+            count =
+                count + 1
+        end
+    end
+
+    return map,
+        count
+end
+
+function GAG2PetTeamsGetEquipCap()
+
+    local cap =
+        tonumber(
+            LOCAL_PLAYER
+            and LOCAL_PLAYER:GetAttribute("MaxEquippedPets")
+        )
+
+    if not cap then
+
+        cap =
+            3
+
+        local petList =
+            GAG2PetTeamsGetPetListGui()
+
+        if petList then
+
+            for _, text in ipairs(GAG2PetTeamsReadTexts(petList)) do
+
+                local current, max =
+                    text:match(
+                        "(%d+)%s*/%s*(%d+)%s*Active"
+                    )
+
+                if max then
+
+                    cap =
+                        tonumber(max)
+                        or cap
+
+                    break
+                end
+            end
+        end
+    end
+
+    return math.clamp(
+        math.floor(cap or 3),
+        1,
+        GAG2_PET_TEAMS_MAX_SAVED_SLOTS
+    )
+end
+
+function GAG2PetTeamsScanInventory(includeCharacter)
+
+    local rows =
+        {}
+
+    local function scanRoot(root, source, usableForEquip)
+
+        if typeof(root) ~= "Instance" then
+            return
+        end
+
+        for _, child in ipairs(root:GetChildren()) do
+
+            if child:IsA("Tool") then
+
+                local attrs =
+                    child:GetAttributes()
+
+                local petName =
+                    CleanText(
+                        attrs.Pet
+                        or attrs.PetName
+                        or attrs.pet
+                        or attrs.petName
+                    )
+
+                local petId =
+                    CleanText(
+                        attrs.PetId
+                        or attrs.PetID
+                        or attrs.UUID
+                        or attrs.Uuid
+                        or attrs.Id
+                    )
+
+                if petName ~= ""
+                and petId ~= "" then
+
+                    table.insert(rows, {
+                        Pet =
+                            petName,
+
+                        PetId =
+                            petId,
+
+                        Tool =
+                            child,
+
+                        Source =
+                            tostring(source or "?"),
+
+                        UsableForEquip =
+                            usableForEquip == true,
+
+                        Path =
+                            PathOf(child),
+                    })
+                end
+            end
+        end
+    end
+
+    scanRoot(
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("Backpack"),
+        "Backpack",
+        true
+    )
+
+    -- Character pet tools are often temporary/selected/stale.
+    -- Do not use them for normal Pet Team inventory/equip candidates.
+    if includeCharacter == true then
+
+        scanRoot(
+            LOCAL_PLAYER
+            and LOCAL_PLAYER.Character,
+            "Character",
+            false
+        )
+    end
+
+    table.sort(rows, function(a, b)
+
+        if tostring(a.Pet) ~= tostring(b.Pet) then
+            return tostring(a.Pet) < tostring(b.Pet)
+        end
+
+        return tostring(a.PetId) < tostring(b.PetId)
+    end)
+
+    return rows
+end
+
+function GAG2PetTeamsFindInventoryByPetId(petId)
+
+    petId =
+        CleanText(petId)
+
+    if petId == "" then
+        return nil
+    end
+
+    for _, row in ipairs(GAG2PetTeamsScanInventory(false)) do
+
+        if row.PetId == petId
+        and row.UsableForEquip == true
+        and typeof(row.Tool) == "Instance"
+        and row.Tool.Parent == (
+            LOCAL_PLAYER
+            and LOCAL_PLAYER:FindFirstChildOfClass("Backpack")
+        ) then
+
+            return row
+        end
+    end
+
+    return nil
+end
+
+function GAG2PetTeamsBuildInventoryChoices()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local rows =
+        GAG2PetTeamsScanInventory(false)
+
+    state.InventoryRows =
+        rows
+
+    state.ChoiceToPetId =
+        {}
+
+    local values =
+        {}
+
+    for index, row in ipairs(rows) do
+
+        local choice =
+            tostring(row.Pet)
+            .. " • "
+            .. GAG2PetTeamsShortId(row.PetId)
+            .. " • "
+            .. tostring(row.Source)
+
+        if state.ChoiceToPetId[choice] ~= nil then
+
+            choice =
+                choice
+                .. " #"
+                .. tostring(index)
+        end
+
+        state.ChoiceToPetId[choice] =
+            row.PetId
+
+        table.insert(
+            values,
+            choice
+        )
+    end
+
+    if #values <= 0 then
+        values = {"None"}
+    end
+
+    return values
+end
+
+function GAG2PetTeamsNormalizeChoiceMap(value)
+
+    local output =
+        {}
+
+    if type(value) == "table" then
+
+        if #value > 0 then
+
+            for _, choice in ipairs(value) do
+
+                choice =
+                    tostring(choice or "")
+
+                if choice ~= ""
+                and choice ~= "None" then
+
+                    output[choice] =
+                        true
+                end
+            end
+
+        else
+
+            for choice, enabled in pairs(value) do
+
+                choice =
+                    tostring(choice or "")
+
+                if choice ~= ""
+                and choice ~= "None"
+                and enabled == true then
+
+                    output[choice] =
+                        true
+                end
+            end
+        end
+
+    elseif type(value) == "string" then
+
+        value =
+            tostring(value or "")
+
+        if value ~= ""
+        and value ~= "None" then
+
+            output[value] =
+                true
+        end
+    end
+
+    return output
+end
+
+function GAG2PetTeamsGetSelectedChoiceList(value)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local selectedMap =
+        GAG2PetTeamsNormalizeChoiceMap(
+            value
+            or state.SelectedPetChoices
+            or state.SelectedPetChoice
+        )
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    for _, row in ipairs(state.InventoryRows or {}) do
+
+        local shortId =
+            GAG2PetTeamsShortId(
+                row.PetId
+            )
+
+        for choice, enabled in pairs(selectedMap) do
+
+            if enabled == true
+            and seen[choice] ~= true
+            and state.ChoiceToPetId[choice] == row.PetId then
+
+                table.insert(
+                    output,
+                    choice
+                )
+
+                seen[choice] =
+                    true
+            end
+        end
+    end
+
+    for choice, enabled in pairs(selectedMap) do
+
+        if enabled == true
+        and seen[choice] ~= true
+        and state.ChoiceToPetId[choice] ~= nil then
+
+            table.insert(
+                output,
+                choice
+            )
+
+            seen[choice] =
+                true
+        end
+    end
+
+    return output
+end
+
+function GAG2PetTeamsRefreshTeamDropdowns()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local controls =
+        state.Controls
+
+    local values =
+        GAG2PetTeamsGetTeamNames()
+
+    local dropdowns = {
+        controls.Team,
+        controls.RuleDefault,
+        controls.RuleDay,
+        controls.RuleNight,
+        controls.RuleWeather,
+        controls.RuleSeedCollect,
+        controls.RuleSniperFound,
+    }
+
+    for _, dropdown in ipairs(dropdowns) do
+
+        GAG2PetTeamsSetDropdownValues(
+            dropdown,
+            values
+        )
+    end
+
+    GAG2PetTeamsSetDropdownValue(
+        controls.Team,
+        state.SelectedTeam
+    )
+
+    GAG2PetTeamsSetDropdownValue(
+        controls.RuleDefault,
+        state.Rules.Default
+    )
+
+    GAG2PetTeamsSetDropdownValue(
+        controls.RuleDay,
+        state.Rules.Day
+    )
+
+    GAG2PetTeamsSetDropdownValue(
+        controls.RuleNight,
+        state.Rules.Night
+    )
+
+    GAG2PetTeamsSetDropdownValue(
+        controls.RuleWeather,
+        state.Rules.Weather
+    )
+
+    GAG2PetTeamsSetDropdownValue(
+        controls.RuleSeedCollect,
+        state.Rules.SeedCollect
+    )
+
+    GAG2PetTeamsSetDropdownValue(
+        controls.RuleSniperFound,
+        state.Rules.SniperFound
+    )
+end
+
+function GAG2PetTeamsRefreshInventoryDropdown()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local values =
+        GAG2PetTeamsBuildInventoryChoices()
+
+    GAG2PetTeamsSetDropdownValues(
+        state.Controls.InventoryPet,
+        values
+    )
+
+    local validSelection =
+        {}
+
+    for choice, enabled in pairs(
+        GAG2PetTeamsNormalizeChoiceMap(
+            state.SelectedPetChoices
+        )
+    ) do
+
+        if enabled == true
+        and state.ChoiceToPetId[choice] ~= nil then
+
+            validSelection[choice] =
+                true
+        end
+    end
+
+    state.SelectedPetChoices =
+        validSelection
+
+    GAG2PetTeamsSetDropdownValue(
+        state.Controls.InventoryPet,
+        validSelection
+    )
+end
+
+function GAG2PetTeamsGetSelectedTeam()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local name =
+        GAG2PetTeamsCleanName(
+            state.SelectedTeam
+        )
+
+    local team =
+        state.Teams[name]
+
+    if type(team) ~= "table" then
+
+        GAG2PetTeamsCreateTeam(
+            name
+        )
+
+        team =
+            state.Teams[name]
+    end
+
+    return team,
+        name
+end
+
+function GAG2PetTeamsCreateTeam(name)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    name =
+        GAG2PetTeamsCleanName(name)
+
+    if state.Teams[name] == nil then
+
+        state.Teams[name] = {
+            Name = name,
+            PetIds = {},
+            PetNames = {},
+            UpdatedAt = os.time(),
+        }
+
+        table.insert(
+            state.TeamNames,
+            name
+        )
+    end
+
+    state.SelectedTeam =
+        name
+
+    state.DraftTeamName =
+        name
+
+    GAG2PetTeamsGetState()
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshAllControls()
+    GAG2PetTeamsSetStatus(
+        "Selected team: "
+        .. tostring(name)
+    )
+
+    return state.Teams[name]
+end
+
+function GAG2PetTeamsSetSelectedTeam(name)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    name =
+        GAG2PetTeamsCleanName(name)
+
+    if state.Teams[name] == nil then
+        return false
+    end
+
+    state.SelectedTeam =
+        name
+
+    state.DraftTeamName =
+        name
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshAllControls()
+
+    return true
+end
+
+function GAG2PetTeamsTeamContainsPetId(team, petId)
+
+    if type(team) ~= "table" then
+        return false
+    end
+
+    petId =
+        CleanText(petId)
+
+    if petId == "" then
+        return false
+    end
+
+    for _, savedPetId in ipairs(team.PetIds or {}) do
+
+        if savedPetId == petId then
+            return true
+        end
+    end
+
+    return false
+end
+
+function GAG2PetTeamsAddPetToSelected(choice)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local selectedChoices =
+        GAG2PetTeamsGetSelectedChoiceList(
+            choice
+            or state.SelectedPetChoices
+            or state.SelectedPetChoice
+        )
+
+    if #selectedChoices <= 0 then
+
+        GAG2PetTeamsSetStatus(
+            "Select one or more inventory pets first."
+        )
+
+        return false
+    end
+
+    local team, teamName =
+        GAG2PetTeamsGetSelectedTeam()
+
+    local added =
+        0
+
+    local skipped =
+        0
+
+    local addedNames =
+        {}
+
+    for _, selectedChoice in ipairs(selectedChoices) do
+
+        if #team.PetIds >= GAG2_PET_TEAMS_MAX_SAVED_SLOTS then
+            skipped =
+                skipped + 1
+
+            continue
+        end
+
+        local petId =
+            state.ChoiceToPetId[selectedChoice]
+
+        local row =
+            petId
+            and GAG2PetTeamsFindInventoryByPetId(
+                petId
+            )
+            or nil
+
+        if not row then
+
+            skipped =
+                skipped + 1
+
+            continue
+        end
+
+        if GAG2PetTeamsTeamContainsPetId(team, row.PetId) == true then
+
+            skipped =
+                skipped + 1
+
+            continue
+        end
+
+        table.insert(
+            team.PetIds,
+            row.PetId
+        )
+
+        table.insert(
+            team.PetNames,
+            row.Pet
+        )
+
+        table.insert(
+            addedNames,
+            tostring(row.Pet)
+            .. " ["
+            .. GAG2PetTeamsShortId(row.PetId)
+            .. "]"
+        )
+
+        added =
+            added + 1
+    end
+
+    if added <= 0 then
+
+        GAG2PetTeamsSetStatus(
+            "No pets added. Team may be full or selected pets are already saved."
+        )
+
+        GAG2PetTeamsRefreshAllControls()
+
+        return false
+    end
+
+    team.UpdatedAt =
+        os.time()
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshAllControls()
+
+    GAG2PetTeamsSetStatus(
+        "Added "
+        .. tostring(added)
+        .. " pet(s) to "
+        .. tostring(teamName)
+        .. ". Slots: "
+        .. tostring(#team.PetIds)
+        .. "/"
+        .. tostring(GAG2_PET_TEAMS_MAX_SAVED_SLOTS)
+        .. (
+            skipped > 0
+            and (
+                " | skipped "
+                .. tostring(skipped)
+            )
+            or ""
+        )
+    )
+
+    return true
+end
+
+function GAG2PetTeamsSaveCurrentEquipped()
+
+    local team, teamName =
+        GAG2PetTeamsGetSelectedTeam()
+
+    local petIds =
+        {}
+
+    local petNames =
+        {}
+
+    for _, row in ipairs(GAG2PetTeamsScanEquipped()) do
+
+        if row.Equipped == true
+        and CleanText(row.PetId) ~= "" then
+
+            table.insert(
+                petIds,
+                row.PetId
+            )
+
+            table.insert(
+                petNames,
+                row.Pet
+            )
+
+            if #petIds >= GAG2_PET_TEAMS_MAX_SAVED_SLOTS then
+                break
+            end
+        end
+    end
+
+    team.PetIds =
+        petIds
+
+    team.PetNames =
+        petNames
+
+    team.UpdatedAt =
+        os.time()
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshAllControls()
+
+    GAG2PetTeamsSetStatus(
+        "Saved current equipped as "
+        .. tostring(teamName)
+        .. "."
+    )
+
+    return true
+end
+
+function GAG2PetTeamsClearSelectedTeam()
+
+    local team, teamName =
+        GAG2PetTeamsGetSelectedTeam()
+
+    team.PetIds =
+        {}
+
+    team.PetNames =
+        {}
+
+    team.UpdatedAt =
+        os.time()
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshAllControls()
+
+    GAG2PetTeamsSetStatus(
+        "Cleared "
+        .. tostring(teamName)
+        .. "."
+    )
+
+    return true
+end
+
+function GAG2PetTeamsRemoveLastPet()
+
+    local team, teamName =
+        GAG2PetTeamsGetSelectedTeam()
+
+    if #(team.PetIds or {}) <= 0 then
+
+        GAG2PetTeamsSetStatus(
+            "Team is already empty."
+        )
+
+        return false
+    end
+
+    table.remove(
+        team.PetIds,
+        #team.PetIds
+    )
+
+    table.remove(
+        team.PetNames,
+        #team.PetNames
+    )
+
+    team.UpdatedAt =
+        os.time()
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshAllControls()
+
+    GAG2PetTeamsSetStatus(
+        "Removed last pet from "
+        .. tostring(teamName)
+        .. "."
+    )
+
+    return true
+end
+
+function GAG2PetTeamsResolvePackets()
+
+    local module =
+        ReplicatedStorage:FindFirstChild("SharedModules")
+        and ReplicatedStorage.SharedModules:FindFirstChild("Networking")
+
+    if not module
+    or module:IsA("ModuleScript") ~= true then
+
+        return nil,
+            nil,
+            "Networking module missing"
+    end
+
+    local ok, networking =
+        pcall(function()
+
+            return require(
+                module
+            )
+        end)
+
+    if ok ~= true
+    or type(networking) ~= "table" then
+
+        return nil,
+            nil,
+            "Networking require failed: "
+            .. tostring(networking)
+    end
+
+    local pets =
+        networking.Pets
+
+    if type(pets) ~= "table" then
+        return nil, nil, "Networking.Pets missing"
+    end
+
+    local unequip =
+        pets.RequestUnequip
+
+    local equip =
+        pets.RequestEquipByName
+
+    if type(unequip) ~= "table"
+    or type(unequip.Fire) ~= "function" then
+        return nil, nil, "RequestUnequip missing"
+    end
+
+    if type(equip) ~= "table"
+    or type(equip.Fire) ~= "function" then
+        return nil, nil, "RequestEquipByName missing"
+    end
+
+    return unequip,
+        equip,
+        "ok"
+end
+
+function GAG2PetTeamsUnequipPetId(petId)
+
+    local unequipPacket, _, reason =
+        GAG2PetTeamsResolvePackets()
+
+    if type(unequipPacket) ~= "table" then
+        return false, reason
+    end
+
+    local ok, result =
+        pcall(function()
+
+            return unequipPacket:Fire(
+                petId
+            )
+        end)
+
+    if ok ~= true then
+        return false, tostring(result)
+    end
+
+    return true,
+        tostring(result)
+end
+
+function GAG2PetTeamsGetHumanoid()
+
+    local character =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character
+        or nil
+
+    if not character then
+        return nil
+    end
+
+    return character:FindFirstChildOfClass(
+        "Humanoid"
+    )
+end
+
+function GAG2PetTeamsGetFastTiming()
+
+    GAG2_PET_TEAMS_FAST_TIMING =
+        type(GAG2_PET_TEAMS_FAST_TIMING) == "table"
+        and GAG2_PET_TEAMS_FAST_TIMING
+        or {}
+
+    local timing =
+        GAG2_PET_TEAMS_FAST_TIMING
+
+    timing.UnequipDelay =
+        tonumber(timing.UnequipDelay)
+        or 0.08
+
+    timing.PostUnequipSettle =
+        tonumber(timing.PostUnequipSettle)
+        or 0.12
+
+    timing.ToolSelectDelay =
+        tonumber(timing.ToolSelectDelay)
+        or 0.055
+
+    timing.ToolActivateDelay =
+        tonumber(timing.ToolActivateDelay)
+        or 0.065
+
+    timing.PacketDelay =
+        tonumber(timing.PacketDelay)
+        or 0.115
+
+    timing.BatchSettleDelay =
+        tonumber(timing.BatchSettleDelay)
+        or 0.38
+
+    timing.RetrySelectDelay =
+        tonumber(timing.RetrySelectDelay)
+        or 0.10
+
+    timing.RetryActivateDelay =
+        tonumber(timing.RetryActivateDelay)
+        or 0.12
+
+    timing.RetryPacketDelay =
+        tonumber(timing.RetryPacketDelay)
+        or 0.16
+
+    return timing
+end
+
+function GAG2PetTeamsEquipInventoryRow(row, fastMode)
+
+    if type(row) ~= "table"
+    or typeof(row.Tool) ~= "Instance"
+    or row.Tool:IsA("Tool") ~= true then
+
+        return false,
+            "bad pet tool"
+    end
+
+    local _, equipPacket, reason =
+        GAG2PetTeamsResolvePackets()
+
+    if type(equipPacket) ~= "table" then
+        return false, reason
+    end
+
+    local humanoid =
+        GAG2PetTeamsGetHumanoid()
+
+    if not humanoid then
+        return false, "humanoid missing"
+    end
+
+    local timing =
+        GAG2PetTeamsGetFastTiming()
+
+    local selectDelay =
+        fastMode == true
+        and timing.ToolSelectDelay
+        or timing.RetrySelectDelay
+
+    local activateDelay =
+        fastMode == true
+        and timing.ToolActivateDelay
+        or timing.RetryActivateDelay
+
+    local tool =
+        row.Tool
+
+    local equipToolOk, equipToolError =
+        pcall(function()
+
+            humanoid:EquipTool(
+                tool
+            )
+        end)
+
+    if equipToolOk ~= true then
+
+        return false,
+            "EquipTool failed: "
+            .. tostring(equipToolError)
+    end
+
+    task.wait(
+        selectDelay
+    )
+
+    local activateOk, activateError =
+        pcall(function()
+
+            if tool
+            and tool.Parent then
+
+                tool:Activate()
+            end
+        end)
+
+    task.wait(
+        activateDelay
+    )
+
+    local fireOk, fireResult =
+        pcall(function()
+
+            return equipPacket:Fire(
+                row.Pet
+            )
+        end)
+
+    if fireOk ~= true then
+
+        return false,
+            "RequestEquipByName failed: "
+            .. tostring(fireResult)
+    end
+
+    return true,
+        "equipped "
+        .. tostring(row.Pet)
+        .. " "
+        .. GAG2PetTeamsShortId(row.PetId)
+end
+
+function GAG2PetTeamsEquipMissingRowsFast(rows, cap)
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    cap =
+        math.clamp(
+            math.floor(
+                tonumber(cap)
+                or GAG2PetTeamsGetEquipCap()
+            ),
+            1,
+            GAG2_PET_TEAMS_MAX_SAVED_SLOTS
+        )
+
+    if #rows <= 0 then
+        return 0, 0
+    end
+
+    local timing =
+        GAG2PetTeamsGetFastTiming()
+
+    local attempted =
+        0
+
+    local fired =
+        0
+
+    for _, row in ipairs(rows) do
+
+        local currentMap,
+            currentCount =
+            GAG2PetTeamsGetEquippedMap()
+
+        if currentCount >= cap then
+            break
+        end
+
+        if currentMap[row.PetId] then
+            continue
+        end
+
+        local freshRow =
+            GAG2PetTeamsFindInventoryByPetId(
+                row.PetId
+            )
+
+        if freshRow then
+
+            attempted =
+                attempted + 1
+
+            local equipOk, equipInfo =
+                GAG2PetTeamsEquipInventoryRow(
+                    freshRow,
+                    true
+                )
+
+            if equipOk == true then
+                fired =
+                    fired + 1
+            end
+
+            task.wait(
+                timing.PacketDelay
+            )
+        end
+    end
+
+    task.wait(
+        timing.BatchSettleDelay
+    )
+
+    local afterMap =
+        GAG2PetTeamsGetEquippedMap()
+
+    local retryRows =
+        {}
+
+    for _, row in ipairs(rows) do
+
+        if afterMap[row.PetId] ~= true
+        and afterMap[row.PetId] == nil then
+
+            local retryRow =
+                GAG2PetTeamsFindInventoryByPetId(
+                    row.PetId
+                )
+
+            if retryRow then
+
+                table.insert(
+                    retryRows,
+                    retryRow
+                )
+            end
+        end
+    end
+
+    for _, row in ipairs(retryRows) do
+
+        local currentMap,
+            currentCount =
+            GAG2PetTeamsGetEquippedMap()
+
+        if currentCount >= cap then
+            break
+        end
+
+        if currentMap[row.PetId] then
+            continue
+        end
+
+        attempted =
+            attempted + 1
+
+        local equipOk, equipInfo =
+            GAG2PetTeamsEquipInventoryRow(
+                row,
+                false
+            )
+
+        if equipOk == true then
+            fired =
+                fired + 1
+        end
+
+        task.wait(
+            timing.RetryPacketDelay
+        )
+    end
+
+    return attempted,
+        fired
+end
+
+function GAG2PetTeamsBuildDesiredList(team, cap)
+
+    local desired =
+        {}
+
+    local desiredSet =
+        {}
+
+    cap =
+        math.clamp(
+            math.floor(
+                tonumber(cap)
+                or GAG2PetTeamsGetEquipCap()
+            ),
+            1,
+            GAG2_PET_TEAMS_MAX_SAVED_SLOTS
+        )
+
+    local equippedMap =
+        GAG2PetTeamsGetEquippedMap()
+
+    for _, petId in ipairs(team and team.PetIds or {}) do
+
+        petId =
+            CleanText(petId)
+
+        if petId ~= ""
+        and desiredSet[petId] ~= true then
+
+            local exists =
+                equippedMap[petId] ~= nil
+                or GAG2PetTeamsFindInventoryByPetId(petId) ~= nil
+
+            if exists == true then
+
+                table.insert(
+                    desired,
+                    petId
+                )
+
+                desiredSet[petId] =
+                    true
+
+                if #desired >= cap then
+                    break
+                end
+            end
+        end
+    end
+
+    return desired,
+        desiredSet
+end
+
+function GAG2PetTeamsApplyTeam(teamName, reason)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    if state.Busy == true then
+
+        GAG2PetTeamsSetStatus(
+            "Already applying a team."
+        )
+
+        return false
+    end
+
+    teamName =
+        GAG2PetTeamsCleanName(
+            teamName
+            or state.SelectedTeam
+        )
+
+    local team =
+        state.Teams[teamName]
+
+    if type(team) ~= "table" then
+
+        GAG2PetTeamsSetStatus(
+            "Team not found: "
+            .. tostring(teamName)
+        )
+
+        return false
+    end
+
+    state.Busy =
+        true
+
+    state.LastApplyReason =
+        tostring(reason or "manual")
+
+    state.LastApplyAt =
+        tick()
+
+    GAG2PetTeamsRefreshStatus()
+
+    task.spawn(function()
+
+        local ok, err =
+            pcall(function()
+
+                local cap =
+                    GAG2PetTeamsGetEquipCap()
+
+                local desired,
+                    desiredSet =
+                    GAG2PetTeamsBuildDesiredList(
+                        team,
+                        cap
+                    )
+
+                if #desired <= 0 then
+
+                    GAG2PetTeamsSetStatus(
+                        "Team has no available pets."
+                    )
+
+                    return
+                end
+
+                GAG2PetTeamsSetStatus(
+                    "Applying "
+                    .. tostring(teamName)
+                    .. "..."
+                )
+
+                local timing =
+                    GAG2PetTeamsGetFastTiming()
+
+                local equippedMap,
+                    equippedCount =
+                    GAG2PetTeamsGetEquippedMap()
+
+                local unequipped =
+                    0
+
+                for petId, row in pairs(equippedMap) do
+
+                    if desiredSet[petId] ~= true then
+
+                        local unequipOk, unequipInfo =
+                            GAG2PetTeamsUnequipPetId(
+                                petId
+                            )
+
+                        if unequipOk == true then
+
+                            unequipped =
+                                unequipped + 1
+
+                            equippedCount =
+                                math.max(
+                                    0,
+                                    equippedCount - 1
+                                )
+                        end
+
+                        task.wait(
+                            timing.UnequipDelay
+                        )
+                    end
+                end
+
+                if unequipped > 0 then
+
+                    task.wait(
+                        timing.PostUnequipSettle
+                    )
+                end
+
+                local missingRows =
+                    {}
+
+                local seenMissing =
+                    {}
+
+                for _, petId in ipairs(desired) do
+
+                    local currentMap,
+                        currentCount =
+                        GAG2PetTeamsGetEquippedMap()
+
+                    if currentMap[petId] then
+                        continue
+                    end
+
+                    if currentCount + #missingRows >= cap then
+                        break
+                    end
+
+                    if seenMissing[petId] == true then
+                        continue
+                    end
+
+                    local row =
+                        GAG2PetTeamsFindInventoryByPetId(
+                            petId
+                        )
+
+                    if row then
+
+                        seenMissing[petId] =
+                            true
+
+                        table.insert(
+                            missingRows,
+                            row
+                        )
+                    end
+                end
+
+                if #missingRows > 0 then
+
+                    GAG2PetTeamsSetStatus(
+                        "Burst equipping "
+                        .. tostring(#missingRows)
+                        .. " pet(s)..."
+                    )
+
+                    GAG2PetTeamsEquipMissingRowsFast(
+                        missingRows,
+                        cap
+                    )
+                end
+
+                local finalMap,
+                    finalCount =
+                    GAG2PetTeamsGetEquippedMap()
+
+                GAG2PetTeamsSetStatus(
+                    "Applied "
+                    .. tostring(teamName)
+                    .. " • equipped "
+                    .. tostring(finalCount)
+                    .. "/"
+                    .. tostring(cap)
+                )
+            end)
+
+        if ok ~= true then
+
+            GAG2PetTeamsSetStatus(
+                "Apply failed: "
+                .. tostring(err)
+            )
+        end
+
+        state.Busy =
+            false
+
+        GAG2PetTeamsRefreshAllControls()
+    end)
+
+    return true
+end
+
+function GAG2PetTeamsSetRule(ruleName, teamName)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    ruleName =
+        tostring(ruleName or "")
+
+    teamName =
+        GAG2PetTeamsCleanName(teamName)
+
+    if ruleName == "" then
+        return false
+    end
+
+    if state.Teams[teamName] == nil then
+        return false
+    end
+
+    state.Rules[ruleName] =
+        teamName
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshStatus()
+    MarkConfigDirty()
+
+    return true
+end
+
+function GAG2PetTeamsSetAutoSwitch(value)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    state.AutoSwitch =
+        value == true
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshStatus()
+    MarkConfigDirty()
+end
+
+function GAG2PetTeamsSetReturnAfterTemporary(value)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    state.ReturnAfterTemporary =
+        value ~= false
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshStatus()
+    MarkConfigDirty()
+end
+
+function GAG2PetTeamsSetReturnDefaultAtFarmMiddle(value)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    state.ReturnDefaultAtFarmMiddle =
+        value == true
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshStatus()
+    MarkConfigDirty()
+end
+
+function GAG2PetTeamsSetManualLock(value)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    state.ManualLock =
+        value == true
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshStatus()
+    MarkConfigDirty()
+end
+
+function GAG2PetTeamsRequestTeam(ruleName, priority, reason)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    if state.AutoSwitch ~= true then
+        return false
+    end
+
+    if state.ManualLock == true then
+        return false
+    end
+
+    ruleName =
+        tostring(ruleName or "")
+
+    local teamName =
+        state.Rules[ruleName]
+
+    if not teamName
+    or state.Teams[teamName] == nil then
+        return false
+    end
+
+    local team =
+        state.Teams[teamName]
+
+    if type(team.PetIds) ~= "table"
+    or #team.PetIds <= 0 then
+
+        state.LastStatus =
+            "Auto request skipped: "
+            .. tostring(teamName)
+            .. " is empty."
+
+        GAG2PetTeamsRefreshStatus()
+
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    state.LastAutoRequestAt =
+        tonumber(state.LastAutoRequestAt)
+        or 0
+
+    state.LastAutoRequestRule =
+        tostring(state.LastAutoRequestRule or "")
+
+    state.MinAutoRequestDelay =
+        tonumber(state.MinAutoRequestDelay)
+        or 8
+
+    if state.Busy == true then
+        return false
+    end
+
+    if state.LastAutoRequestRule == ruleName
+    and now - state.LastAutoRequestAt < state.MinAutoRequestDelay then
+        return false
+    end
+
+    state.LastAutoRequestAt =
+        now
+
+    state.LastAutoRequestRule =
+        ruleName
+
+    if ruleName ~= "Default" then
+
+        state.LastTemporaryRule =
+            ruleName
+
+        state.LastTemporaryTeam =
+            teamName
+
+        state.LastTemporaryAt =
+            now
+    end
+
+    state.LastStatus =
+        "Auto request: "
+        .. tostring(ruleName)
+        .. " -> "
+        .. tostring(teamName)
+
+    GAG2PetTeamsRefreshStatus()
+
+    return GAG2PetTeamsApplyTeam(
+        teamName,
+        reason or ruleName
+    )
+end
+
+function GAG2PetTeamsCanReturnToDefault()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    if state.AutoSwitch ~= true then
+        return false, "auto switch off"
+    end
+
+    if state.ReturnAfterTemporary == false then
+        return false, "return after temporary off"
+    end
+
+    if state.ManualLock == true then
+        return false, "manual lock on"
+    end
+
+    local defaultTeamName =
+        state.Rules
+        and state.Rules.Default
+        or "Default"
+
+    defaultTeamName =
+        GAG2PetTeamsCleanName(
+            defaultTeamName
+        )
+
+    local defaultTeam =
+        state.Teams
+        and state.Teams[defaultTeamName]
+        or nil
+
+    if type(defaultTeam) ~= "table" then
+        return false, "default team missing"
+    end
+
+    if type(defaultTeam.PetIds) ~= "table"
+    or #defaultTeam.PetIds <= 0 then
+        return false, "default team empty"
+    end
+
+    return true,
+        defaultTeamName
+end
+
+function GAG2PetTeamsShouldReturnAtFarmMiddle()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    return state.ReturnDefaultAtFarmMiddle == true
+end
+
+function GAG2PetTeamsIsAtFarmMiddleAnchor()
+
+    local middleState =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    if type(middleState) ~= "table" then
+        return false,
+            "middle state missing"
+    end
+
+    if middleState.AnchorReady ~= true
+    or typeof(middleState.AnchorPosition) ~= "Vector3" then
+
+        if type(GAG2StartFarmMiddleAnchorResolver) == "function"
+        and middleState.AnchorResolving ~= true then
+
+            GAG2StartFarmMiddleAnchorResolver(
+                "pet team default return needs anchor",
+                false
+            )
+        end
+
+        return false,
+            "anchor not ready"
+    end
+
+    local _,
+        root =
+        SniperGetCharacterRoot()
+
+    if not root then
+        return false,
+            "character root missing"
+    end
+
+    local distance =
+        (
+            root.Position
+            - middleState.AnchorPosition
+        ).Magnitude
+
+    local threshold =
+        math.max(
+            tonumber(middleState.IdleMoveStopDistance)
+            or 9,
+            9
+        )
+
+    if distance <= threshold then
+
+        middleState.MiddleReady =
+            true
+
+        middleState.IdleMoveDone =
+            true
+
+        middleState.LastResult =
+            "at farm middle"
+
+        return true,
+            "at farm middle | "
+            .. string.format("%.1f", distance)
+            .. " studs"
+    end
+
+    return false,
+        "not at middle | "
+        .. string.format("%.1f", distance)
+        .. " studs"
+end
+
+function GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle(reason, delaySeconds)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local canReturn,
+        defaultTeamName =
+        GAG2PetTeamsCanReturnToDefault()
+
+    if canReturn ~= true then
+
+        state.LastStatus =
+            "Middle default return skipped: "
+            .. tostring(defaultTeamName)
+
+        GAG2PetTeamsRefreshStatus()
+
+        return false
+    end
+
+    if state.DefaultReturnWaitingForMiddle == true then
+
+        local queuedAt =
+            tonumber(state.DefaultReturnMiddleQueuedAt)
+            or 0
+
+        if os.clock() - queuedAt <= 120 then
+
+            state.LastStatus =
+                "Default return already waiting for Farm Middle."
+
+            GAG2PetTeamsRefreshStatus()
+
+            return true
+        end
+    end
+
+    state.DefaultReturnToken =
+        (
+            tonumber(state.DefaultReturnToken)
+            or 0
+        )
+        + 1
+
+    local token =
+        state.DefaultReturnToken
+
+    local delay =
+        math.clamp(
+            tonumber(delaySeconds)
+            or 0.15,
+            0.05,
+            8
+        )
+
+    state.DefaultReturnWaitingForMiddle =
+        true
+
+    state.DefaultReturnMiddleQueuedAt =
+        os.clock()
+
+    state.LastStatus =
+        "Default return armed: waiting for Farm Middle."
+
+    GAG2PetTeamsRefreshStatus()
+
+    task.spawn(function()
+
+        task.wait(
+            delay
+        )
+
+        local startedAt =
+            os.clock()
+
+        local timeoutSeconds =
+            120
+
+        while os.clock() - startedAt <= timeoutSeconds do
+
+            local liveState =
+                GAG2PetTeamsGetState()
+
+            if tonumber(liveState.DefaultReturnToken) ~= token then
+                return
+            end
+
+            if liveState.ManualLock == true
+            or liveState.AutoSwitch ~= true
+            or liveState.ReturnAfterTemporary == false
+            or liveState.ReturnDefaultAtFarmMiddle ~= true then
+
+                liveState.DefaultReturnWaitingForMiddle =
+                    false
+
+                GAG2PetTeamsRefreshStatus()
+
+                return
+            end
+
+            if liveState.Busy == true then
+
+                task.wait(
+                    0.20
+                )
+
+                continue
+            end
+
+            if type(GAG2StartFarmMiddleAnchorResolver) == "function" then
+
+                local middleState =
+                    GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+                if type(middleState) == "table"
+                and middleState.AnchorReady ~= true
+                and middleState.AnchorResolving ~= true then
+
+                    GAG2StartFarmMiddleAnchorResolver(
+                        "default return middle watcher",
+                        false
+                    )
+                end
+            end
+
+            if type(GAG2AutoTpMiddleFarmEnabled) == "function"
+            and GAG2AutoTpMiddleFarmEnabled() == true
+            and type(GAG2StartAutoTpMiddleFarm) == "function" then
+
+                local middleState =
+                    GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+                if type(middleState) == "table"
+                and middleState.IdleMoveRunning ~= true
+                and middleState.IdleMoveDone ~= true then
+
+                    GAG2StartAutoTpMiddleFarm(
+                        "default return middle watcher"
+                    )
+                end
+            end
+
+            local atMiddle,
+                middleReason =
+                GAG2PetTeamsIsAtFarmMiddleAnchor()
+
+            if atMiddle == true then
+
+                liveState.DefaultReturnWaitingForMiddle =
+                    false
+
+                liveState.DefaultReturnMiddleReachedAt =
+                    os.clock()
+
+                liveState.LastStatus =
+                    "Reached Farm Middle. Applying Default Team..."
+
+                GAG2PetTeamsRefreshStatus()
+
+                GAG2PetTeamsApplyTeam(
+                    defaultTeamName,
+                    reason or "return at farm middle"
+                )
+
+                return
+            end
+
+            liveState.LastStatus =
+                "Default return waiting: "
+                .. tostring(middleReason)
+
+            GAG2PetTeamsRefreshStatus()
+
+            task.wait(
+                0.20
+            )
+        end
+
+        local finalState =
+            GAG2PetTeamsGetState()
+
+        if tonumber(finalState.DefaultReturnToken) == token then
+
+            finalState.DefaultReturnWaitingForMiddle =
+                false
+
+            finalState.LastStatus =
+                "Middle default return timed out."
+
+            GAG2PetTeamsRefreshStatus()
+        end
+    end)
+
+    return true
+end
+
+function GAG2PetTeamsQueueDefaultReturn(reason, delaySeconds)
+
+    if GAG2PetTeamsShouldReturnAtFarmMiddle() == true then
+
+        return GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle(
+            reason,
+            delaySeconds or 0.75
+        )
+    end
+
+    return GAG2PetTeamsScheduleDefaultReturn(
+        reason,
+        delaySeconds or 1.75
+    )
+end
+
+function GAG2PetTeamsScheduleDefaultReturn(reason, delaySeconds)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local canReturn,
+        defaultTeamName =
+        GAG2PetTeamsCanReturnToDefault()
+
+    if canReturn ~= true then
+
+        state.LastStatus =
+            "Default return skipped: "
+            .. tostring(defaultTeamName)
+
+        GAG2PetTeamsRefreshStatus()
+
+        return false
+    end
+
+    state.DefaultReturnToken =
+        (
+            tonumber(state.DefaultReturnToken)
+            or 0
+        )
+        + 1
+
+    local token =
+        state.DefaultReturnToken
+
+    local delay =
+        math.clamp(
+            tonumber(delaySeconds)
+            or 1.75,
+            0.25,
+            8
+        )
+
+    state.LastStatus =
+        "Default return queued: "
+        .. tostring(defaultTeamName)
+
+    GAG2PetTeamsRefreshStatus()
+
+    task.spawn(function()
+
+        task.wait(
+            delay
+        )
+
+        local checkCount =
+            0
+
+        while checkCount < 12 do
+
+            checkCount =
+                checkCount + 1
+
+            local liveState =
+                GAG2PetTeamsGetState()
+
+            if tonumber(liveState.DefaultReturnToken) ~= token then
+                return
+            end
+
+            if liveState.ManualLock == true
+            or liveState.AutoSwitch ~= true
+            or liveState.ReturnAfterTemporary == false then
+                return
+            end
+
+            if liveState.Busy == true then
+
+                task.wait(
+                    0.45
+                )
+
+                continue
+            end
+
+            if type(SniperState) == "table"
+            and SniperState.Taming == true then
+
+                liveState.LastStatus =
+                    "Default return waiting: sniper buying."
+
+                GAG2PetTeamsRefreshStatus()
+
+                task.wait(
+                    0.55
+                )
+
+                continue
+            end
+
+            if type(SniperHasPendingBuy) == "function" then
+
+                local pendingOk,
+                    hasPending =
+                    pcall(function()
+
+                        return SniperHasPendingBuy()
+                    end)
+
+                if pendingOk == true
+                and hasPending == true then
+
+                    liveState.LastStatus =
+                        "Default return waiting: pending buy."
+
+                    GAG2PetTeamsRefreshStatus()
+
+                    task.wait(
+                        0.55
+                    )
+
+                    continue
+                end
+            end
+
+            if type(SniperCountCurrentRemainingMatches) == "function" then
+
+                local countOk,
+                    remaining,
+                    countReason =
+                    pcall(function()
+
+                        return SniperCountCurrentRemainingMatches()
+                    end)
+
+                remaining =
+                    tonumber(remaining)
+                    or 0
+
+                if countOk == true
+                and countReason == "ok"
+                and remaining > 0 then
+
+                    liveState.LastStatus =
+                        "Default return waiting: "
+                        .. tostring(remaining)
+                        .. " match(es) left."
+
+                    GAG2PetTeamsRefreshStatus()
+
+                    task.wait(
+                        0.75
+                    )
+
+                    continue
+                end
+            end
+
+            GAG2PetTeamsApplyTeam(
+                defaultTeamName,
+                reason or "return after temporary"
+            )
+
+            return
+        end
+
+        local finalState =
+            GAG2PetTeamsGetState()
+
+        if tonumber(finalState.DefaultReturnToken) == token then
+
+            finalState.LastStatus =
+                "Default return timed out."
+
+            GAG2PetTeamsRefreshStatus()
+        end
+    end)
+
+    return true
+end
+
+function GAG2PetTeamsBuildTeamSlotsText()
+
+    local team, teamName =
+        GAG2PetTeamsGetSelectedTeam()
+
+    local lines = {
+        '<font color="rgb(196,181,253)"><b>'
+            .. tostring(teamName)
+            .. '</b></font>',
+    }
+
+    local cap =
+        GAG2PetTeamsGetEquipCap()
+
+    for index = 1, GAG2_PET_TEAMS_MAX_SAVED_SLOTS do
+
+        local petName =
+            team.PetNames
+            and team.PetNames[index]
+            or ""
+
+        local petId =
+            team.PetIds
+            and team.PetIds[index]
+            or ""
+
+        local prefix =
+            index <= cap
+            and "✓ "
+            or "• "
+
+        if CleanText(petId) ~= "" then
+
+            lines[#lines + 1] =
+                prefix
+                .. tostring(index)
+                .. ". "
+                .. tostring(petName ~= "" and petName or "Pet")
+                .. " ["
+                .. GAG2PetTeamsShortId(petId)
+                .. "]"
+
+        else
+
+            lines[#lines + 1] =
+                "• "
+                .. tostring(index)
+                .. ". Empty"
+        end
+    end
+
+    lines[#lines + 1] =
+        "Can equip now: "
+        .. tostring(cap)
+        .. "/"
+        .. tostring(GAG2_PET_TEAMS_MAX_SAVED_SLOTS)
+
+    return table.concat(
+        lines,
+        "\n"
+    )
+end
+
+function GAG2PetTeamsBuildStatusText()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local equippedMap,
+        equippedCount =
+        GAG2PetTeamsGetEquippedMap()
+
+    local inventoryCount =
+        #GAG2PetTeamsScanInventory(false)
+
+    return '<font color="rgb(196,181,253)"><b>Pet Teams</b></font>'
+        .. '\nSelected: '
+        .. tostring(state.SelectedTeam)
+        .. ' | Busy: '
+        .. BoolText(state.Busy == true)
+        .. '\nAuto: '
+        .. BoolText(state.AutoSwitch == true)
+        .. ' | Return: '
+        .. BoolText(state.ReturnAfterTemporary ~= false)
+        .. ' | Mode: '
+        .. (
+            state.ReturnDefaultAtFarmMiddle == true
+            and "Middle"
+            or "Confirm"
+        )
+        .. '\nLock: '
+        .. BoolText(state.ManualLock == true)
+        .. '\nEquipped: '
+        .. tostring(equippedCount)
+        .. '/'
+        .. tostring(GAG2PetTeamsGetEquipCap())
+        .. ' | Inventory pets: '
+        .. tostring(inventoryCount)
+        .. '\nLast: '
+        .. tostring(state.LastStatus or "Ready.")
+end
+
+function GAG2PetTeamsRefreshStatus()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    if state.Controls.Status
+    and type(state.Controls.Status.SetText) == "function" then
+
+        pcall(function()
+
+            state.Controls.Status:SetText(
+                GAG2PetTeamsBuildStatusText()
+            )
+        end)
+    end
+
+    if state.Controls.TeamSlots
+    and type(state.Controls.TeamSlots.SetText) == "function" then
+
+        pcall(function()
+
+            state.Controls.TeamSlots:SetText(
+                GAG2PetTeamsBuildTeamSlotsText()
+            )
+        end)
+    end
+end
+
+function GAG2PetTeamsRefreshAllControls()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    if state.RefreshingControls == true then
+        return
+    end
+
+    state.RefreshingControls =
+        true
+
+    GAG2PetTeamsRefreshTeamDropdowns()
+    GAG2PetTeamsRefreshInventoryDropdown()
+
+    state.RefreshingControls =
+        false
+
+    GAG2PetTeamsRefreshStatus()
+end
+
+function GAG2RestorePetTeamsState()
+
+    task.defer(function()
+
+        GAG2PetTeamsLoadSettings()
+        GAG2PetTeamsRefreshAllControls()
+    end)
+end
 
 
 --==================================================
@@ -21416,6 +24555,15 @@ function GAG2ResetFarmMiddleAnchor(reason)
     state.LastTargetReason =
         tostring(reason or "reset")
 
+    state.IdleMoveDone =
+        false
+
+    state.IdleMoveLastSafeAt =
+        0
+
+    state.IdleMoveLastReason =
+        tostring(reason or "reset")
+
     state.LastResult =
         "farm middle anchor reset: "
         .. tostring(reason or "reset")
@@ -21463,23 +24611,18 @@ function GAG2ResolveFarmMiddleAnchor(reason, forceRefresh)
     local positionReason =
         "not resolved"
 
-    while os.clock() - started < 10 do
-
-        local character, root =
-            SniperGetCharacterRoot()
+    while os.clock() - started < 12 do
 
         local resolvedPosition, resolvedReason =
             GAG2GetOwnFarmMiddlePosition()
 
-        if character
-        and root
-        and typeof(resolvedPosition) == "Vector3" then
+        if typeof(resolvedPosition) == "Vector3" then
 
             position =
                 resolvedPosition
 
             positionReason =
-                tostring(resolvedReason or "resolved")
+                tostring(resolvedReason or "resolved from own farm")
 
             break
         end
@@ -21552,9 +24695,6 @@ function GAG2ResolveFarmMiddleAnchor(reason, forceRefresh)
     state.MiddleReady =
         true
 
-    state.MovedOnce =
-        false
-
     state.LastMiddleReadyAt =
         os.clock()
 
@@ -21598,6 +24738,489 @@ function GAG2StartFarmMiddleAnchorResolver(reason, forceRefresh)
             reason or "background",
             forceRefresh == true
         )
+    end)
+
+    return true
+end
+
+
+function GAG2FarmMiddleStateFlagBusy(stateTable, keys)
+
+    if type(stateTable) ~= "table" then
+        return false
+    end
+
+    for _, key in ipairs(keys or {}) do
+
+        if stateTable[key] == true then
+            return true
+        end
+    end
+
+    return false
+end
+
+function GAG2FarmMiddleStateHasTarget(stateTable, keys)
+
+    if type(stateTable) ~= "table" then
+        return false
+    end
+
+    for _, key in ipairs(keys or {}) do
+
+        local value =
+            stateTable[key]
+
+        if value ~= nil
+        and value ~= false
+        and value ~= "" then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function GAG2FarmMiddleStateRecent(stateTable, keys, window)
+
+    if type(stateTable) ~= "table" then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    window =
+        tonumber(window)
+        or 3
+
+    for _, key in ipairs(keys or {}) do
+
+        local value =
+            tonumber(
+                stateTable[key]
+            )
+
+        if value
+        and value > 0
+        and now - value <= window then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function GAG2FarmMiddleSniperBusy()
+
+    if GAG2_SNIPER_STOPPING == true then
+        return false
+    end
+
+    local sniperState =
+        SniperState
+
+    if type(sniperState) ~= "table" then
+        return false
+    end
+
+    if GAG2FarmMiddleStateFlagBusy(
+        sniperState,
+        {
+            "Buying",
+            "BuyBusy",
+            "BuyingPet",
+            "Moving",
+            "MovementBusy",
+            "MovingToPet",
+            "Teleporting",
+            "Returning",
+            "ConfirmingBuy",
+            "WaitingBuyConfirm",
+            "SeedPriorityActive",
+            "BatchBuying",
+        }
+    ) == true then
+
+        return true
+    end
+
+    if GAG2FarmMiddleStateHasTarget(
+        sniperState,
+        {
+            "CurrentTarget",
+            "ActiveTarget",
+            "CurrentEntry",
+            "ActiveEntry",
+            "BuyingEntry",
+            "MoveEntry",
+            "LastMatchedEntry",
+        }
+    ) == true then
+
+        return true
+    end
+
+    if GAG2FarmMiddleStateRecent(
+        sniperState,
+        {
+            "LastMatchAt",
+            "LastFoundAt",
+            "LastBuyAt",
+            "LastBuyStartAt",
+            "LastMoveAt",
+            "LastMoveStartAt",
+            "LastTeleportAt",
+        },
+        3.25
+    ) == true then
+
+        return true
+    end
+
+    return false
+end
+
+function GAG2FarmMiddleSeedCollectBusy()
+
+    local seedEnabled =
+        Toggles.HolyGAG2AutoCollectSeeds
+        and Toggles.HolyGAG2AutoCollectSeeds.Value == true
+
+    if seedEnabled ~= true then
+        return false
+    end
+
+    local seedState =
+        GAG2_SEED_COLLECT_STATE
+        or GAG2_SEED_COLLECTION_STATE
+        or GAG2SeedCollectState
+
+    if type(seedState) ~= "table" then
+        return false
+    end
+
+    if GAG2FarmMiddleStateFlagBusy(
+        seedState,
+        {
+            "Moving",
+            "Walking",
+            "Teleporting",
+            "Collecting",
+            "FiringPrompt",
+            "HoldingPrompt",
+            "Busy",
+            "RunningPrompt",
+        }
+    ) == true then
+
+        return true
+    end
+
+    if GAG2FarmMiddleStateHasTarget(
+        seedState,
+        {
+            "LockedTarget",
+            "CurrentTarget",
+            "Target",
+            "Prompt",
+            "TargetPrompt",
+            "TargetPart",
+        }
+    ) == true then
+
+        return true
+    end
+
+    local status =
+        CleanText(
+            seedState.LastStatus
+            or seedState.Status
+            or ""
+        ):lower()
+
+    if status ~= ""
+    and status:find("ready", 1, true) == nil
+    and status:find("no seed", 1, true) == nil
+    and status:find("no target", 1, true) == nil
+    and status:find("idle", 1, true) == nil then
+
+        if status:find("walk", 1, true)
+        or status:find("move", 1, true)
+        or status:find("collect", 1, true)
+        or status:find("prompt", 1, true)
+        or status:find("teleport", 1, true) then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function GAG2FarmMiddleIdleCanMove()
+
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    local forceSniperBatchMiddleReturn =
+        state.SniperBatchMiddleReturnActive == true
+
+    if GAG2AutoTpMiddleFarmEnabled() ~= true
+    and forceSniperBatchMiddleReturn ~= true then
+
+        return false,
+            "anchor disabled"
+    end
+
+    if state.Moving == true then
+
+        return false,
+            "middle already moving"
+    end
+
+    if state.IdleMoveDone == true
+    and forceSniperBatchMiddleReturn ~= true then
+
+        return false,
+            "idle move already done"
+    end
+
+    if state.AnchorReady ~= true
+    or typeof(state.AnchorPosition) ~= "Vector3" then
+
+        if state.AnchorResolving ~= true then
+
+            GAG2StartFarmMiddleAnchorResolver(
+                "idle needs anchor",
+                false
+            )
+        end
+
+        return false,
+            "waiting for anchor"
+    end
+
+    local _,
+        root =
+        SniperGetCharacterRoot()
+
+    if not root then
+
+        return false,
+            "character root missing"
+    end
+
+    local distance =
+        (
+            root.Position
+            - state.AnchorPosition
+        ).Magnitude
+
+    if distance <= tonumber(state.IdleMoveStopDistance or 9) then
+
+        state.IdleMoveDone =
+            true
+
+        state.MiddleReady =
+            true
+
+        state.SniperBatchMiddleReturnActive =
+            false
+
+        state.SniperBatchMiddleReturnCompletedAt =
+            os.clock()
+
+        state.LastResult =
+            "already at farm middle"
+
+        return false,
+            "already near middle"
+    end
+
+    if forceSniperBatchMiddleReturn ~= true
+    and GAG2FarmMiddleSniperBusy() == true then
+
+        return false,
+            "sniper busy"
+    end
+
+    if forceSniperBatchMiddleReturn ~= true
+    and type(SniperState) == "table" then
+
+        local sniperEnabled =
+            Toggles.HolyGAG2SniperEnabled
+            and Toggles.HolyGAG2SniperEnabled.Value == true
+
+        local recentMatch =
+            tonumber(SniperState.LastMatchAt or 0) > 0
+            and os.clock() - tonumber(SniperState.LastMatchAt or 0) <= 10
+
+        local hasLiveMatches =
+            type(SniperState.LastMatches) == "table"
+            and #SniperState.LastMatches > 0
+
+        if sniperEnabled == true
+        and (
+            recentMatch == true
+            or hasLiveMatches == true
+        ) then
+
+            return false,
+                "sniper match active"
+        end
+    end
+
+    if forceSniperBatchMiddleReturn ~= true
+    and GAG2FarmMiddleSeedCollectBusy() == true then
+
+        return false,
+            "seed collector busy"
+    end
+
+    if forceSniperBatchMiddleReturn == true then
+
+        return true,
+            "forced sniper batch middle return"
+    end
+
+    return true,
+        "safe"
+end
+
+function GAG2StartFarmMiddleIdleMoveWorker(reason)
+
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    if state.IdleMoveRunning == true then
+        return false
+    end
+
+    state.IdleMoveToken =
+        tonumber(state.IdleMoveToken)
+        or 0
+
+    state.IdleMoveToken =
+        state.IdleMoveToken + 1
+
+    local token =
+        state.IdleMoveToken
+
+    state.IdleMoveRunning =
+        true
+
+    state.IdleMoveStartedAt =
+        os.clock()
+
+    state.IdleMoveLastSafeAt =
+        0
+
+    state.IdleMoveLastReason =
+        tostring(reason or "idle worker")
+
+    task.spawn(function()
+
+        local startedAt =
+            os.clock()
+
+        while state.IdleMoveRunning == true
+        and tonumber(state.IdleMoveToken) == token do
+
+            if GAG2AutoTpMiddleFarmEnabled() ~= true
+            and state.SniperBatchMiddleReturnActive ~= true then
+
+                state.IdleMoveLastReason =
+                    "anchor disabled"
+
+                break
+            end
+
+            if state.IdleMoveDone == true then
+
+                state.IdleMoveLastReason =
+                    "done"
+
+                break
+            end
+
+            if os.clock() - startedAt >= tonumber(state.IdleMoveMaxWaitSeconds or 90) then
+
+                state.IdleMoveLastReason =
+                    "idle wait timeout"
+
+                break
+            end
+
+            local canMove, moveReason =
+                GAG2FarmMiddleIdleCanMove()
+
+            state.IdleMoveLastCheckAt =
+                os.clock()
+
+            state.IdleMoveLastReason =
+                tostring(moveReason or "checking")
+
+            if canMove == true then
+
+                if tonumber(state.IdleMoveLastSafeAt or 0) <= 0 then
+
+                    state.IdleMoveLastSafeAt =
+                        os.clock()
+                end
+
+                if os.clock() - tonumber(state.IdleMoveLastSafeAt or 0) >= tonumber(state.IdleMoveSafeSeconds or 0.65) then
+
+                    local ok, info =
+                        GAG2MoveToFarmMiddleAnchor(
+                            "idle safe middle",
+                            false
+                        )
+
+                    if ok == true then
+
+                        state.IdleMoveDone =
+                            true
+
+                        state.MiddleReady =
+                            true
+
+                        state.IdleMoveLastReason =
+                            "moved: "
+                            .. tostring(info)
+
+                        break
+
+                    else
+
+                        state.IdleMoveLastSafeAt =
+                            0
+
+                        state.IdleMoveLastReason =
+                            "move failed: "
+                            .. tostring(info)
+                    end
+                end
+
+            else
+
+                state.IdleMoveLastSafeAt =
+                    0
+            end
+
+            task.wait(
+                tonumber(state.IdleMoveCheckInterval)
+                or 0.35
+            )
+        end
+
+        if tonumber(state.IdleMoveToken) == token then
+
+            state.IdleMoveRunning =
+                false
+        end
     end)
 
     return true
@@ -21651,6 +25274,12 @@ function GAG2MoveToFarmMiddleAnchor(reason, forceRefresh)
 
         state.MiddleReady =
             true
+
+        state.SniperBatchMiddleReturnActive =
+            false
+
+        state.SniperBatchMiddleReturnCompletedAt =
+            os.clock()
 
         state.LastTeleportAt =
             os.clock()
@@ -22427,10 +26056,6 @@ function GAG2StartAutoTpMiddleFarm(reason)
     local state =
         GAG2_AUTO_TP_MIDDLE_FARM_STATE
 
-    if state.AnchorResolving == true then
-        return false
-    end
-
     state.Moving =
         false
 
@@ -22440,10 +26065,25 @@ function GAG2StartAutoTpMiddleFarm(reason)
     state.SniperWaitActive =
         false
 
-    return GAG2StartFarmMiddleAnchorResolver(
-        reason or "farm middle anchor",
+    local resolverStarted =
         false
+
+    if state.AnchorReady ~= true
+    and state.AnchorResolving ~= true then
+
+        resolverStarted =
+            GAG2StartFarmMiddleAnchorResolver(
+                reason or "farm middle anchor",
+                false
+            )
+    end
+
+    GAG2StartFarmMiddleIdleMoveWorker(
+        reason or "farm middle anchor"
     )
+
+    return resolverStarted == true
+        or state.IdleMoveRunning == true
 end
 
 function GAG2StartAutoSkipLoading(reason)
@@ -22463,11 +26103,28 @@ function GAG2SetAutoTpMiddleFarmEnabled(value)
     local enabled =
         value == true
 
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
     if enabled == true then
 
-        GAG2ResetFarmMiddleAnchor(
-            "toggle refresh"
-        )
+        state.IdleMoveDone =
+            false
+
+        state.MovedOnce =
+            false
+
+        state.Moving =
+            false
+
+        if type(GAG2StartFarmMiddleAnchorResolver) == "function"
+        and state.AnchorResolving ~= true then
+
+            GAG2StartFarmMiddleAnchorResolver(
+                "toggle preload anchor",
+                true
+            )
+        end
 
         if type(GAG2StartAutoTpMiddleFarm) == "function" then
 
@@ -22478,9 +26135,20 @@ function GAG2SetAutoTpMiddleFarmEnabled(value)
 
     else
 
-        GAG2ResetFarmMiddleAnchor(
+        state.IdleMoveRunning =
+            false
+
+        state.Moving =
+            false
+
+        state.SniperWaitActive =
+            false
+
+        state.IdleMoveLastReason =
             "anchor disabled"
-        )
+
+        state.LastResult =
+            "farm middle anchor disabled; cached position kept"
     end
 
     if enabled ~= true
@@ -22559,9 +26227,13 @@ function GAG2RestoreAutoTpMiddleFarmState()
                     0.15
                 )
 
-                GAG2ResetFarmMiddleAnchor(
-                    "respawn"
-                )
+                if type(GAG2StartFarmMiddleAnchorResolver) == "function" then
+
+                    GAG2StartFarmMiddleAnchorResolver(
+                        "respawn preload anchor",
+                        true
+                    )
+                end
 
                 GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovedOnce =
                     false
@@ -22605,11 +26277,18 @@ function GAG2RestoreAutoTpMiddleFarmState()
             )
         end
 
+        if type(GAG2StartFarmMiddleAnchorResolver) == "function" then
+
+            GAG2StartFarmMiddleAnchorResolver(
+                "autosave preload anchor",
+                true
+            )
+        end
+
         if GAG2AutoTpMiddleFarmEnabled() == true then
 
-            GAG2ResetFarmMiddleAnchor(
-                "autosave"
-            )
+            GAG2_AUTO_TP_MIDDLE_FARM_STATE.IdleMoveDone =
+                false
 
             GAG2StartAutoTpMiddleFarm(
                 "autosave anchor"
@@ -43298,6 +46977,128 @@ function SniperCountCurrentRemainingMatches()
         "ok"
 end
 
+function GAG2SniperShouldReturnBatchToFarmMiddle()
+
+    if type(GAG2PetTeamsGetState) ~= "function" then
+        return false
+    end
+
+    local ok,
+        state =
+        pcall(function()
+
+            return GAG2PetTeamsGetState()
+        end)
+
+    if ok ~= true
+    or type(state) ~= "table" then
+        return false
+    end
+
+    if state.AutoSwitch ~= true then
+        return false
+    end
+
+    if state.ReturnAfterTemporary == false then
+        return false
+    end
+
+    if state.ReturnDefaultAtFarmMiddle ~= true then
+        return false
+    end
+
+    if state.ManualLock == true then
+        return false
+    end
+
+    return true
+end
+
+function GAG2SniperStartBatchFarmMiddleReturn(reason)
+
+    if GAG2SniperShouldReturnBatchToFarmMiddle() ~= true then
+        return false,
+            "middle return mode off"
+    end
+
+    if type(GAG2StartAutoTpMiddleFarm) ~= "function" then
+        return false,
+            "farm middle start missing"
+    end
+
+    local middleState =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    if type(middleState) ~= "table" then
+        return false,
+            "farm middle state missing"
+    end
+
+    middleState.SniperBatchMiddleReturnActive =
+        true
+
+    middleState.SniperBatchMiddleReturnStartedAt =
+        os.clock()
+
+    middleState.SniperBatchMiddleReturnReason =
+        tostring(reason or "sniper batch complete")
+
+    middleState.IdleMoveRunning =
+        false
+
+    middleState.IdleMoveDone =
+        false
+
+    middleState.MiddleReady =
+        false
+
+    middleState.MovedOnce =
+        false
+
+    middleState.Moving =
+        false
+
+    middleState.SniperWaitActive =
+        false
+
+    middleState.IdleMoveLastSafeAt =
+        0
+
+    middleState.IdleMoveLastReason =
+        "sniper batch middle return armed"
+
+    middleState.LastResult =
+        "sniper batch returning to farm middle"
+
+    if type(GAG2StartFarmMiddleAnchorResolver) == "function"
+    and middleState.AnchorReady ~= true
+    and middleState.AnchorResolving ~= true then
+
+        GAG2StartFarmMiddleAnchorResolver(
+            "sniper batch middle return",
+            false
+        )
+    end
+
+    if type(GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle) == "function" then
+
+        GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle(
+            "reached middle after sniper batch",
+            0.15
+        )
+    end
+
+    local started =
+        GAG2StartAutoTpMiddleFarm(
+            "sniper batch middle return"
+        )
+
+    return started == true,
+        started == true
+        and "farm middle return started"
+        or "farm middle worker did not start"
+end
+
 function SniperTryReturnAfterBatch(reason)
 
     if SniperState.ReturnAfterBatch ~= true then
@@ -43431,6 +47232,27 @@ function SniperTryReturnAfterBatch(reason)
         SniperState.BatchReturnCFrame
 
     SniperClearBatchReturnState()
+
+    if type(GAG2SniperShouldReturnBatchToFarmMiddle) == "function"
+    and GAG2SniperShouldReturnBatchToFarmMiddle() == true then
+
+        local middleOk,
+            middleInfo =
+            GAG2SniperStartBatchFarmMiddleReturn(
+                reason or "batch complete"
+            )
+
+        SetSniperStatus(
+            middleOk == true
+            and "Batch complete. Going to Farm Middle..."
+            or (
+                "Batch complete. Farm Middle failed: "
+                .. tostring(middleInfo)
+            )
+        )
+
+        return middleOk == true
+    end
 
     local ok, info =
         SniperReturnToSavedCFrame(
@@ -43906,6 +47728,55 @@ function SniperConfirmPendingBuyRecord(record, reason, petId)
     SniperClearPendingBuyKey(
         key
     )
+
+    local returnAtMiddle =
+        false
+
+    if type(GAG2PetTeamsShouldReturnAtFarmMiddle) == "function" then
+
+        local okReturnMode,
+            returnMode =
+            pcall(function()
+
+                return GAG2PetTeamsShouldReturnAtFarmMiddle()
+            end)
+
+        returnAtMiddle =
+            okReturnMode == true
+            and returnMode == true
+    end
+
+    if returnAtMiddle == true then
+
+        local petTeamState =
+            type(GAG2PetTeamsGetState) == "function"
+            and GAG2PetTeamsGetState()
+            or nil
+
+        if type(petTeamState) == "table" then
+
+            petTeamState.LastStatus =
+                "Buy confirmed; default return is controlled by Farm Middle."
+
+            GAG2PetTeamsRefreshStatus()
+        end
+
+    elseif type(GAG2PetTeamsQueueDefaultReturn) == "function" then
+
+        GAG2PetTeamsQueueDefaultReturn(
+            "sniper confirmed "
+            .. tostring(record.PetName),
+            1.25
+        )
+
+    elseif type(GAG2PetTeamsScheduleDefaultReturn) == "function" then
+
+        GAG2PetTeamsScheduleDefaultReturn(
+            "sniper confirmed "
+            .. tostring(record.PetName),
+            1.75
+        )
+    end
 
     return true
 end
@@ -50600,37 +54471,86 @@ function SniperBuildMatchText(entries, matches, orderedTargets, reason)
     )
 end
 
+function SniperRequestPetTeamForMatches(matches)
+
+    if type(matches) ~= "table"
+    or #matches <= 0 then
+        return false
+    end
+
+    if type(GAG2PetTeamsRequestTeam) ~= "function" then
+        return false
+    end
+
+    local state =
+        type(GAG2PetTeamsGetState) == "function"
+        and GAG2PetTeamsGetState()
+        or nil
+
+    if type(state) ~= "table" then
+        return false
+    end
+
+    if state.AutoSwitch ~= true then
+        return false
+    end
+
+    if state.ManualLock == true then
+        return false
+    end
+
+    local teamName =
+        state.Rules
+        and state.Rules.SniperFound
+        or nil
+
+    if not teamName
+    or not state.Teams
+    or type(state.Teams[teamName]) ~= "table" then
+        return false
+    end
+
+    local team =
+        state.Teams[teamName]
+
+    if type(team.PetIds) ~= "table"
+    or #team.PetIds <= 0 then
+        return false
+    end
+
+    local requested =
+        GAG2PetTeamsRequestTeam(
+            "SniperFound",
+            90,
+            "sniper found matching pet"
+        )
+
+    if type(GAG2PetTeamsShouldReturnAtFarmMiddle) == "function"
+    and GAG2PetTeamsShouldReturnAtFarmMiddle() == true
+    and type(GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle) == "function" then
+
+        GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle(
+            "reached middle after sniper found",
+            0.15
+        )
+    end
+
+    return requested
+end
+
+
 function SniperShouldWaitForMiddleFarm()
 
     local middleState =
         GAG2_AUTO_TP_MIDDLE_FARM_STATE
 
-    if type(middleState) ~= "table" then
-        return false
-    end
+    if type(middleState) == "table" then
 
-    middleState.SniperWaitActive =
-        false
+        middleState.SniperWaitActive =
+            false
 
-    if GAG2AutoTpMiddleFarmEnabled() == true
-    and middleState.AnchorReady ~= true
-    and middleState.AnchorResolving ~= true then
-
-        local now =
-            os.clock()
-
-        if now - tonumber(middleState.LastSniperMiddleStartAt or 0) >= 2 then
-
-            middleState.LastSniperMiddleStartAt =
-                now
-
-            if type(GAG2StartAutoTpMiddleFarm) == "function" then
-
-                GAG2StartAutoTpMiddleFarm(
-                    "sniper passive anchor resolve"
-                )
-            end
-        end
+        middleState.IdleMoveLastReason =
+            "sniper controls movement"
     end
 
     return false
@@ -50684,6 +54604,25 @@ function SniperScan(allowAutoHop)
 
     SniperState.LastMatchCount =
         #matches
+
+    SniperState.LastMatches =
+        matches
+
+    if #matches > 0 then
+
+        local now =
+            os.clock()
+
+        SniperState.LastMatchAt =
+            now
+
+        SniperState.LastFoundAt =
+            now
+
+        SniperRequestPetTeamForMatches(
+            matches
+        )
+    end
 
     SniperState.LastMatchText =
         SniperBuildMatchText(
@@ -66391,6 +70330,13 @@ local Tabs = {
             Description = "Mailbox send and inbox tools.",
         }),
 
+    PetTeams =
+        Window:AddTab({
+            Name = "Pet Teams",
+            Icon = "paw-print",
+            Description = "Saved pet teams and automatic team switching.",
+        }),
+
     Experiment =
         Window:AddTab({
             Name = "Experiment",
@@ -66688,6 +70634,34 @@ MailboxReceiptsBox =
         Tabs.Mailbox,
         "Receipts",
         "receipt"
+    )
+
+PetTeamsBuilderBox =
+    AddLeftBox(
+        Tabs.PetTeams,
+        "Team Builder",
+        "paw-print"
+    )
+
+PetTeamsInventoryBox =
+    AddLeftBox(
+        Tabs.PetTeams,
+        "Inventory Pets",
+        "archive"
+    )
+
+PetTeamsRulesBox =
+    AddRightBox(
+        Tabs.PetTeams,
+        "Automation Rules",
+        "workflow"
+    )
+
+PetTeamsStatusBox =
+    AddRightBox(
+        Tabs.PetTeams,
+        "Status",
+        "activity"
     )
 
 local ExperimentMainBox =
@@ -68339,6 +72313,447 @@ if WebhookStatusBox then
         DoesWrap = true,
     })
 end
+
+--==================================================
+-- [7.6] PET TEAMS TAB
+--==================================================
+
+GAG2PetTeamsLoadSettings()
+
+if PetTeamsBuilderBox then
+
+    local PetTeamsState =
+        GAG2PetTeamsGetState()
+
+    PetTeamsState.Controls.Team =
+        PetTeamsBuilderBox:AddDropdown("HolyGAG2PetTeamsSelectedTeam", {
+            Text = "Team Preset",
+            Values = GAG2PetTeamsGetTeamNames(),
+            Default = PetTeamsState.SelectedTeam,
+            Multi = false,
+            Searchable = false,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Select which saved pet team you are editing or applying.",
+        })
+
+    if PetTeamsState.Controls.Team
+    and type(PetTeamsState.Controls.Team.OnChanged) == "function" then
+
+        PetTeamsState.Controls.Team:OnChanged(function(value)
+
+            local state =
+                GAG2PetTeamsGetState()
+
+            if state.RefreshingControls == true then
+                return
+            end
+
+            GAG2PetTeamsSetSelectedTeam(
+                value
+            )
+        end)
+    end
+
+    PetTeamsState.Controls.TeamName =
+        PetTeamsBuilderBox:AddInput("HolyGAG2PetTeamsDraftTeamName", {
+            Text = "Team Name",
+            Default = PetTeamsState.DraftTeamName or "Bunny Speed",
+            Placeholder = "Bunny Speed",
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Tooltip = "Type a new team name, then press Create / Select.",
+            Callback = function(value)
+
+                local state =
+                    GAG2PetTeamsGetState()
+
+                state.DraftTeamName =
+                    CleanText(value)
+
+                GAG2PetTeamsSaveSettings()
+            end,
+        })
+
+    PetTeamsBuilderBox:AddButton({
+        Text = "Create / Select",
+        Tooltip = "Creates the typed team if needed, then selects it.",
+        Func = function()
+
+            local state =
+                GAG2PetTeamsGetState()
+
+            GAG2PetTeamsCreateTeam(
+                state.DraftTeamName
+                or state.SelectedTeam
+            )
+        end,
+    }):AddButton({
+        Text = "Refresh",
+        Tooltip = "Refresh team and inventory dropdowns.",
+        Func = function()
+
+            GAG2PetTeamsRefreshAllControls()
+        end,
+    })
+
+    PetTeamsBuilderBox:AddButton({
+        Text = "Save Current Equipped",
+        Tooltip = "Saves your currently equipped pets into the selected team.",
+        Func = function()
+
+            GAG2PetTeamsSaveCurrentEquipped()
+        end,
+    }):AddButton({
+        Text = "Apply Team",
+        Tooltip = "Equips this team using exact PetIds and current slot cap.",
+        Func = function()
+
+            local state =
+                GAG2PetTeamsGetState()
+
+            GAG2PetTeamsApplyTeam(
+                state.SelectedTeam,
+                "manual apply"
+            )
+        end,
+    })
+
+    PetTeamsBuilderBox:AddButton({
+        Text = "Remove Last",
+        Tooltip = "Removes the last saved pet slot from this team.",
+        Func = function()
+
+            GAG2PetTeamsRemoveLastPet()
+        end,
+    }):AddButton({
+        Text = "Clear Team",
+        Tooltip = "Clears all saved pet slots from this team.",
+        Func = function()
+
+            GAG2PetTeamsClearSelectedTeam()
+        end,
+    })
+end
+
+if PetTeamsInventoryBox then
+
+    local PetTeamsState =
+        GAG2PetTeamsGetState()
+
+    PetTeamsState.Controls.InventoryPet =
+        PetTeamsInventoryBox:AddDropdown("HolyGAG2PetTeamsInventoryPet", {
+            Text = "Inventory Pets",
+            Values = GAG2PetTeamsBuildInventoryChoices(),
+            Default = PetTeamsState.SelectedPetChoices or {},
+            Multi = true,
+            Searchable = true,
+            AllowNull = true,
+            MaxVisibleDropdownItems = 14,
+            Tooltip = "Select multiple owned pet tools. Duplicates are separated by PetId.",
+        })
+
+    if PetTeamsState.Controls.InventoryPet
+    and type(PetTeamsState.Controls.InventoryPet.OnChanged) == "function" then
+
+        PetTeamsState.Controls.InventoryPet:OnChanged(function(value)
+
+            local state =
+                GAG2PetTeamsGetState()
+
+            if state.RefreshingControls == true then
+                return
+            end
+
+            state.SelectedPetChoices =
+                GAG2PetTeamsNormalizeChoiceMap(
+                    value
+                )
+
+            GAG2PetTeamsSaveSettings()
+            GAG2PetTeamsRefreshStatus()
+        end)
+    end
+
+    PetTeamsInventoryBox:AddButton({
+        Text = "Add Selected Pets",
+        Tooltip = "Adds all selected exact PetIds to the selected team until the team reaches 6 saved pets.",
+        Func = function()
+
+            GAG2PetTeamsAddPetToSelected()
+        end,
+    }):AddButton({
+        Text = "Refresh Inventory",
+        Tooltip = "Re-scans owned pet tools and active pet list.",
+        Func = function()
+
+            GAG2PetTeamsRefreshAllControls()
+        end,
+    })
+
+    PetTeamsInventoryBox:AddLabel("HolyGAG2PetTeamsInventoryInfo", {
+        Text =
+            "Tip: multi-select up to 6 pets, then click Add Selected Pets. Fresh accounts only equip current MaxEquippedPets, and later upgrades will use more saved slots automatically.",
+        DoesWrap = true,
+    })
+end
+
+if PetTeamsRulesBox then
+
+    PetTeamsRulesBox:AddToggle("HolyGAG2PetTeamsAutoSwitch", {
+        Text = "Auto Team Switch",
+        Default = GAG2PetTeamsGetState().AutoSwitch == true,
+        Tooltip = "Allows other HOLY systems to request team changes. Wiring to Seed/Sniper/Weather comes next.",
+        Callback = function(value)
+
+            if ConfigState.Loading == true then
+                return
+            end
+
+            GAG2PetTeamsSetAutoSwitch(
+                value == true
+            )
+        end,
+    })
+
+    PetTeamsRulesBox:AddToggle("HolyGAG2PetTeamsReturnAfterTemporary", {
+        Text = "Return After Temporary Team",
+        Default = GAG2PetTeamsGetState().ReturnAfterTemporary ~= false,
+        Tooltip = "Temporary teams can return to the previous/default team after the action ends.",
+        Callback = function(value)
+
+            if ConfigState.Loading == true then
+                return
+            end
+
+            GAG2PetTeamsSetReturnAfterTemporary(
+                value ~= false
+            )
+        end,
+    })
+
+    PetTeamsRulesBox:AddToggle("HolyGAG2PetTeamsReturnDefaultAtMiddle", {
+        Text = "Return Only At Farm Middle",
+        Default = GAG2PetTeamsGetState().ReturnDefaultAtFarmMiddle == true,
+        Tooltip = "ON: after a sniper buy, wait until you reach Farm Middle before switching back to Default Team. OFF: switch back after confirm.",
+        Callback = function(value)
+
+            if ConfigState.Loading == true then
+                return
+            end
+
+            GAG2PetTeamsSetReturnDefaultAtFarmMiddle(
+                value == true
+            )
+        end,
+    })
+
+    PetTeamsRulesBox:AddToggle("HolyGAG2PetTeamsManualLock", {
+        Text = "Manual Lock Team",
+        Default = GAG2PetTeamsGetState().ManualLock == true,
+        Tooltip = "Blocks automatic team requests while enabled.",
+        Callback = function(value)
+
+            if ConfigState.Loading == true then
+                return
+            end
+
+            GAG2PetTeamsSetManualLock(
+                value == true
+            )
+        end,
+    })
+
+    local PetTeamsState =
+        GAG2PetTeamsGetState()
+
+    PetTeamsState.Controls.RuleDefault =
+        PetTeamsRulesBox:AddDropdown("HolyGAG2PetTeamsRuleDefault", {
+            Text = "Default Team",
+            Values = GAG2PetTeamsGetTeamNames(),
+            Default = PetTeamsState.Rules.Default or "Default",
+            Multi = false,
+            Searchable = false,
+        })
+
+    PetTeamsState.Controls.RuleDay =
+        PetTeamsRulesBox:AddDropdown("HolyGAG2PetTeamsRuleDay", {
+            Text = "Day Team",
+            Values = GAG2PetTeamsGetTeamNames(),
+            Default = PetTeamsState.Rules.Day or "Default",
+            Multi = false,
+            Searchable = false,
+        })
+
+    PetTeamsState.Controls.RuleNight =
+        PetTeamsRulesBox:AddDropdown("HolyGAG2PetTeamsRuleNight", {
+            Text = "Night Team",
+            Values = GAG2PetTeamsGetTeamNames(),
+            Default = PetTeamsState.Rules.Night or "Default",
+            Multi = false,
+            Searchable = false,
+        })
+
+    PetTeamsState.Controls.RuleWeather =
+        PetTeamsRulesBox:AddDropdown("HolyGAG2PetTeamsRuleWeather", {
+            Text = "Weather Team",
+            Values = GAG2PetTeamsGetTeamNames(),
+            Default = PetTeamsState.Rules.Weather or "Weather",
+            Multi = false,
+            Searchable = false,
+        })
+
+    PetTeamsState.Controls.RuleSeedCollect =
+        PetTeamsRulesBox:AddDropdown("HolyGAG2PetTeamsRuleSeedCollect", {
+            Text = "Seed Collect Team",
+            Values = GAG2PetTeamsGetTeamNames(),
+            Default = PetTeamsState.Rules.SeedCollect or "Bunny Speed",
+            Multi = false,
+            Searchable = false,
+        })
+
+    PetTeamsState.Controls.RuleSniperFound =
+        PetTeamsRulesBox:AddDropdown("HolyGAG2PetTeamsRuleSniperFound", {
+            Text = "Sniper Found Team",
+            Values = GAG2PetTeamsGetTeamNames(),
+            Default = PetTeamsState.Rules.SniperFound or "Sniper Speed",
+            Multi = false,
+            Searchable = false,
+        })
+
+    local function bindRule(dropdown, ruleName)
+
+        if dropdown
+        and type(dropdown.OnChanged) == "function" then
+
+            dropdown:OnChanged(function(value)
+
+                local state =
+                    GAG2PetTeamsGetState()
+
+                if state.RefreshingControls == true then
+                    return
+                end
+
+                GAG2PetTeamsSetRule(
+                    ruleName,
+                    value
+                )
+            end)
+        end
+    end
+
+    bindRule(
+        PetTeamsState.Controls.RuleDefault,
+        "Default"
+    )
+
+    bindRule(
+        PetTeamsState.Controls.RuleDay,
+        "Day"
+    )
+
+    bindRule(
+        PetTeamsState.Controls.RuleNight,
+        "Night"
+    )
+
+    bindRule(
+        PetTeamsState.Controls.RuleWeather,
+        "Weather"
+    )
+
+    bindRule(
+        PetTeamsState.Controls.RuleSeedCollect,
+        "SeedCollect"
+    )
+
+    bindRule(
+        PetTeamsState.Controls.RuleSniperFound,
+        "SniperFound"
+    )
+end
+
+if PetTeamsStatusBox then
+
+    local PetTeamsState =
+        GAG2PetTeamsGetState()
+
+    PetTeamsState.Controls.TeamSlots =
+        PetTeamsStatusBox:AddLabel("HolyGAG2PetTeamsSlots", {
+            Text =
+                GAG2PetTeamsBuildTeamSlotsText(),
+            DoesWrap = true,
+        })
+
+    PetTeamsState.Controls.Status =
+        PetTeamsStatusBox:AddLabel("HolyGAG2PetTeamsStatus", {
+            Text =
+                GAG2PetTeamsBuildStatusText(),
+            DoesWrap = true,
+        })
+
+    PetTeamsStatusBox:AddButton({
+        Text = "Apply Default",
+        Tooltip = "Applies the selected default team rule.",
+        Func = function()
+
+            local state =
+                GAG2PetTeamsGetState()
+
+            GAG2PetTeamsApplyTeam(
+                state.Rules.Default,
+                "manual default"
+            )
+        end,
+    }):AddButton({
+        Text = "Copy Team JSON",
+        Tooltip = "Copies the selected team's saved PetIds.",
+        Func = function()
+
+            local team, teamName =
+                GAG2PetTeamsGetSelectedTeam()
+
+            local ok, encoded =
+                pcall(function()
+
+                    return HttpService:JSONEncode({
+                        Name =
+                            teamName,
+
+                        PetIds =
+                            team.PetIds,
+
+                        PetNames =
+                            team.PetNames,
+                    })
+                end)
+
+            if ok == true
+            and CopyText(encoded) == true then
+
+                Notify(
+                    "Pet Teams",
+                    "Copied team JSON.",
+                    3
+                )
+
+            else
+
+                Notify(
+                    "Pet Teams",
+                    "Could not copy team JSON.",
+                    4
+                )
+            end
+        end,
+    })
+end
+
+task.defer(function()
+
+    GAG2PetTeamsRefreshAllControls()
+end)
 
 --==================================================
 -- [8] HOME TAB
@@ -73474,7 +77889,7 @@ SettingsUIBox:AddToggle(
     {
         Text = "Farm Middle Anchor",
         Default = true,
-        Tooltip = "Default ON. Detects and saves your farm middle on join without moving you.",
+        Tooltip = "Default ON. Detects farm middle, then moves there once when sniper and seed collector are idle.",
     }
 ):OnChanged(function(value)
 
@@ -73865,6 +78280,7 @@ if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
     GAG2RestoreAutoCollectFruitState()
     GAG2RestoreAutoSellState()
     GAG2RestoreMailboxState()
+    GAG2RestorePetTeamsState()
     GAG2RestoreSeedDropState()
     GAG2RestoreDropPickupState()
     GAG2RestoreSeedCollectState()
