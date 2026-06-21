@@ -1084,6 +1084,18 @@ GAG2_AUTO_TP_MIDDLE_FARM_STATE = {
     AnchorResolvedAt = 0,
     AnchorLastAttemptAt = 0,
 
+    IdleMoveRunning = false,
+    IdleMoveToken = 0,
+    IdleMoveDone = false,
+    IdleMoveStartedAt = 0,
+    IdleMoveLastCheckAt = 0,
+    IdleMoveLastSafeAt = 0,
+    IdleMoveLastReason = "not started",
+    IdleMoveSafeSeconds = 0.65,
+    IdleMoveCheckInterval = 0.35,
+    IdleMoveMaxWaitSeconds = 90,
+    IdleMoveStopDistance = 9,
+
     EarlyKeepDistance = 8,
     PostLoadRepairDistance = 12,
 
@@ -21416,6 +21428,15 @@ function GAG2ResetFarmMiddleAnchor(reason)
     state.LastTargetReason =
         tostring(reason or "reset")
 
+    state.IdleMoveDone =
+        false
+
+    state.IdleMoveLastSafeAt =
+        0
+
+    state.IdleMoveLastReason =
+        tostring(reason or "reset")
+
     state.LastResult =
         "farm middle anchor reset: "
         .. tostring(reason or "reset")
@@ -21598,6 +21619,443 @@ function GAG2StartFarmMiddleAnchorResolver(reason, forceRefresh)
             reason or "background",
             forceRefresh == true
         )
+    end)
+
+    return true
+end
+
+
+function GAG2FarmMiddleStateFlagBusy(stateTable, keys)
+
+    if type(stateTable) ~= "table" then
+        return false
+    end
+
+    for _, key in ipairs(keys or {}) do
+
+        if stateTable[key] == true then
+            return true
+        end
+    end
+
+    return false
+end
+
+function GAG2FarmMiddleStateHasTarget(stateTable, keys)
+
+    if type(stateTable) ~= "table" then
+        return false
+    end
+
+    for _, key in ipairs(keys or {}) do
+
+        local value =
+            stateTable[key]
+
+        if value ~= nil
+        and value ~= false
+        and value ~= "" then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function GAG2FarmMiddleStateRecent(stateTable, keys, window)
+
+    if type(stateTable) ~= "table" then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    window =
+        tonumber(window)
+        or 3
+
+    for _, key in ipairs(keys or {}) do
+
+        local value =
+            tonumber(
+                stateTable[key]
+            )
+
+        if value
+        and value > 0
+        and now - value <= window then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function GAG2FarmMiddleSniperBusy()
+
+    if GAG2_SNIPER_STOPPING == true then
+        return false
+    end
+
+    local sniperState =
+        SniperState
+
+    if type(sniperState) ~= "table" then
+        return false
+    end
+
+    if GAG2FarmMiddleStateFlagBusy(
+        sniperState,
+        {
+            "Buying",
+            "BuyBusy",
+            "BuyingPet",
+            "Moving",
+            "MovementBusy",
+            "MovingToPet",
+            "Teleporting",
+            "Returning",
+            "ConfirmingBuy",
+            "WaitingBuyConfirm",
+            "SeedPriorityActive",
+            "BatchBuying",
+        }
+    ) == true then
+
+        return true
+    end
+
+    if GAG2FarmMiddleStateHasTarget(
+        sniperState,
+        {
+            "CurrentTarget",
+            "ActiveTarget",
+            "CurrentEntry",
+            "ActiveEntry",
+            "BuyingEntry",
+            "MoveEntry",
+            "LastMatchedEntry",
+        }
+    ) == true then
+
+        return true
+    end
+
+    if GAG2FarmMiddleStateRecent(
+        sniperState,
+        {
+            "LastMatchAt",
+            "LastFoundAt",
+            "LastBuyAt",
+            "LastBuyStartAt",
+            "LastMoveAt",
+            "LastMoveStartAt",
+            "LastTeleportAt",
+        },
+        3.25
+    ) == true then
+
+        return true
+    end
+
+    return false
+end
+
+function GAG2FarmMiddleSeedCollectBusy()
+
+    local seedEnabled =
+        Toggles.HolyGAG2AutoCollectSeeds
+        and Toggles.HolyGAG2AutoCollectSeeds.Value == true
+
+    if seedEnabled ~= true then
+        return false
+    end
+
+    local seedState =
+        GAG2_SEED_COLLECT_STATE
+        or GAG2_SEED_COLLECTION_STATE
+        or GAG2SeedCollectState
+
+    if type(seedState) ~= "table" then
+        return false
+    end
+
+    if GAG2FarmMiddleStateFlagBusy(
+        seedState,
+        {
+            "Moving",
+            "Walking",
+            "Teleporting",
+            "Collecting",
+            "FiringPrompt",
+            "HoldingPrompt",
+            "Busy",
+            "RunningPrompt",
+        }
+    ) == true then
+
+        return true
+    end
+
+    if GAG2FarmMiddleStateHasTarget(
+        seedState,
+        {
+            "LockedTarget",
+            "CurrentTarget",
+            "Target",
+            "Prompt",
+            "TargetPrompt",
+            "TargetPart",
+        }
+    ) == true then
+
+        return true
+    end
+
+    local status =
+        CleanText(
+            seedState.LastStatus
+            or seedState.Status
+            or ""
+        ):lower()
+
+    if status ~= ""
+    and status:find("ready", 1, true) == nil
+    and status:find("no seed", 1, true) == nil
+    and status:find("no target", 1, true) == nil
+    and status:find("idle", 1, true) == nil then
+
+        if status:find("walk", 1, true)
+        or status:find("move", 1, true)
+        or status:find("collect", 1, true)
+        or status:find("prompt", 1, true)
+        or status:find("teleport", 1, true) then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function GAG2FarmMiddleIdleCanMove()
+
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    if GAG2AutoTpMiddleFarmEnabled() ~= true then
+
+        return false,
+            "anchor disabled"
+    end
+
+    if state.Moving == true then
+
+        return false,
+            "middle already moving"
+    end
+
+    if state.IdleMoveDone == true then
+
+        return false,
+            "idle move already done"
+    end
+
+    if state.AnchorReady ~= true
+    or typeof(state.AnchorPosition) ~= "Vector3" then
+
+        if state.AnchorResolving ~= true then
+
+            GAG2StartFarmMiddleAnchorResolver(
+                "idle needs anchor",
+                false
+            )
+        end
+
+        return false,
+            "waiting for anchor"
+    end
+
+    local _,
+        root =
+        SniperGetCharacterRoot()
+
+    if not root then
+
+        return false,
+            "character root missing"
+    end
+
+    local distance =
+        (
+            root.Position
+            - state.AnchorPosition
+        ).Magnitude
+
+    if distance <= tonumber(state.IdleMoveStopDistance or 9) then
+
+        state.IdleMoveDone =
+            true
+
+        state.MiddleReady =
+            true
+
+        state.LastResult =
+            "already at farm middle"
+
+        return false,
+            "already near middle"
+    end
+
+    if GAG2FarmMiddleSniperBusy() == true then
+
+        return false,
+            "sniper busy"
+    end
+
+    if GAG2FarmMiddleSeedCollectBusy() == true then
+
+        return false,
+            "seed collector busy"
+    end
+
+    return true,
+        "safe"
+end
+
+function GAG2StartFarmMiddleIdleMoveWorker(reason)
+
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    if state.IdleMoveRunning == true then
+        return false
+    end
+
+    state.IdleMoveToken =
+        tonumber(state.IdleMoveToken)
+        or 0
+
+    state.IdleMoveToken =
+        state.IdleMoveToken + 1
+
+    local token =
+        state.IdleMoveToken
+
+    state.IdleMoveRunning =
+        true
+
+    state.IdleMoveStartedAt =
+        os.clock()
+
+    state.IdleMoveLastSafeAt =
+        0
+
+    state.IdleMoveLastReason =
+        tostring(reason or "idle worker")
+
+    task.spawn(function()
+
+        local startedAt =
+            os.clock()
+
+        while state.IdleMoveRunning == true
+        and tonumber(state.IdleMoveToken) == token do
+
+            if GAG2AutoTpMiddleFarmEnabled() ~= true then
+
+                state.IdleMoveLastReason =
+                    "anchor disabled"
+
+                break
+            end
+
+            if state.IdleMoveDone == true then
+
+                state.IdleMoveLastReason =
+                    "done"
+
+                break
+            end
+
+            if os.clock() - startedAt >= tonumber(state.IdleMoveMaxWaitSeconds or 90) then
+
+                state.IdleMoveLastReason =
+                    "idle wait timeout"
+
+                break
+            end
+
+            local canMove, moveReason =
+                GAG2FarmMiddleIdleCanMove()
+
+            state.IdleMoveLastCheckAt =
+                os.clock()
+
+            state.IdleMoveLastReason =
+                tostring(moveReason or "checking")
+
+            if canMove == true then
+
+                if tonumber(state.IdleMoveLastSafeAt or 0) <= 0 then
+
+                    state.IdleMoveLastSafeAt =
+                        os.clock()
+                end
+
+                if os.clock() - tonumber(state.IdleMoveLastSafeAt or 0) >= tonumber(state.IdleMoveSafeSeconds or 0.65) then
+
+                    local ok, info =
+                        GAG2MoveToFarmMiddleAnchor(
+                            "idle safe middle",
+                            false
+                        )
+
+                    if ok == true then
+
+                        state.IdleMoveDone =
+                            true
+
+                        state.MiddleReady =
+                            true
+
+                        state.IdleMoveLastReason =
+                            "moved: "
+                            .. tostring(info)
+
+                        break
+
+                    else
+
+                        state.IdleMoveLastSafeAt =
+                            0
+
+                        state.IdleMoveLastReason =
+                            "move failed: "
+                            .. tostring(info)
+                    end
+                end
+
+            else
+
+                state.IdleMoveLastSafeAt =
+                    0
+            end
+
+            task.wait(
+                tonumber(state.IdleMoveCheckInterval)
+                or 0.35
+            )
+        end
+
+        if tonumber(state.IdleMoveToken) == token then
+
+            state.IdleMoveRunning =
+                false
+        end
     end)
 
     return true
@@ -22427,10 +22885,6 @@ function GAG2StartAutoTpMiddleFarm(reason)
     local state =
         GAG2_AUTO_TP_MIDDLE_FARM_STATE
 
-    if state.AnchorResolving == true then
-        return false
-    end
-
     state.Moving =
         false
 
@@ -22440,10 +22894,25 @@ function GAG2StartAutoTpMiddleFarm(reason)
     state.SniperWaitActive =
         false
 
-    return GAG2StartFarmMiddleAnchorResolver(
-        reason or "farm middle anchor",
+    local resolverStarted =
         false
+
+    if state.AnchorReady ~= true
+    and state.AnchorResolving ~= true then
+
+        resolverStarted =
+            GAG2StartFarmMiddleAnchorResolver(
+                reason or "farm middle anchor",
+                false
+            )
+    end
+
+    GAG2StartFarmMiddleIdleMoveWorker(
+        reason or "farm middle anchor"
     )
+
+    return resolverStarted == true
+        or state.IdleMoveRunning == true
 end
 
 function GAG2StartAutoSkipLoading(reason)
@@ -22469,6 +22938,9 @@ function GAG2SetAutoTpMiddleFarmEnabled(value)
             "toggle refresh"
         )
 
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.IdleMoveDone =
+            false
+
         if type(GAG2StartAutoTpMiddleFarm) == "function" then
 
             GAG2StartAutoTpMiddleFarm(
@@ -22477,6 +22949,9 @@ function GAG2SetAutoTpMiddleFarmEnabled(value)
         end
 
     else
+
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE.IdleMoveRunning =
+            false
 
         GAG2ResetFarmMiddleAnchor(
             "anchor disabled"
@@ -73474,7 +73949,7 @@ SettingsUIBox:AddToggle(
     {
         Text = "Farm Middle Anchor",
         Default = true,
-        Tooltip = "Default ON. Detects and saves your farm middle on join without moving you.",
+        Tooltip = "Default ON. Detects farm middle, then moves there once when sniper and seed collector are idle.",
     }
 ):OnChanged(function(value)
 
