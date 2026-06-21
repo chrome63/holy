@@ -29742,21 +29742,6 @@ GAG2_PERFORMANCE_STATE =
         HideOtherGardens = false,
         HideOwnGarden = false,
         HardDeleteOwnGarden = false,
-
-        StripPlantVisuals = false,
-        PlantVisualsStripped = false,
-        PlantVisualsStrippedAt = 0,
-        PlantVisualsStrippedCount = 0,
-        PlantVisualsStripPath = "",
-        PlantVisualsConnection = nil,
-
-        StripFruitModels = false,
-        FruitModelsStripped = false,
-        FruitModelsStrippedAt = 0,
-        FruitModelsStrippedCount = 0,
-        FruitModelsStripPath = "",
-        FruitModelsConnection = nil,
-
         OwnGardenHardDeleted = false,
         OwnGardenHardDeletedAt = 0,
         OwnGardenHardDeletedDescendants = 0,
@@ -30035,1189 +30020,6 @@ function GAG2PerformanceFindOwnGardenForHardDelete()
     return nil
 end
 
-function GAG2PerformanceIsInsideFruits(instance)
-
-    if typeof(instance) ~= "Instance" then
-        return false
-    end
-
-    local current =
-        instance
-
-    while current do
-
-        local name =
-            tostring(current.Name or "")
-                :lower()
-
-        if name == "fruits"
-        or name == "fruit" then
-
-            return true
-        end
-
-        current =
-            current.Parent
-    end
-
-    return false
-end
-
-function GAG2PerformanceIsPlantVisualObject(instance)
-
-    if typeof(instance) ~= "Instance" then
-        return false
-    end
-
-    if GAG2PerformanceIsInsideFruits(instance) == true then
-        return false
-    end
-
-    if instance:IsA("ProximityPrompt")
-    or instance:IsA("ClickDetector")
-    or instance:IsA("TouchTransmitter") then
-
-        return false
-    end
-
-    local lowerName =
-        tostring(instance.Name or "")
-            :lower()
-
-    if lowerName == "fruits"
-    or lowerName == "fruit"
-    or lowerName == "data"
-    or lowerName == "stats"
-    or lowerName == "state"
-    or lowerName:find("fruit", 1, true)
-    or lowerName:find("prompt", 1, true)
-    or lowerName:find("harvest", 1, true)
-    or lowerName:find("collect", 1, true)
-    or lowerName:find("hitbox", 1, true)
-    or lowerName:find("root", 1, true) then
-
-        return false
-    end
-
-    if instance:IsA("BasePart") then
-
-        if instance:FindFirstChildWhichIsA("ProximityPrompt", true)
-        or instance:FindFirstChildWhichIsA("ClickDetector", true) then
-
-            return false
-        end
-
-        return true
-    end
-
-    if instance:IsA("Decal")
-    or instance:IsA("Texture")
-    or instance:IsA("SurfaceAppearance")
-    or instance:IsA("SpecialMesh")
-    or instance:IsA("ParticleEmitter")
-    or instance:IsA("Trail")
-    or instance:IsA("Beam")
-    or instance:IsA("Highlight")
-    or instance:IsA("Light")
-    or instance:IsA("Sound")
-    or instance:IsA("Fire")
-    or instance:IsA("Smoke")
-    or instance:IsA("Sparkles") then
-
-        return true
-    end
-
-    return false
-end
-
-function GAG2PerformanceDestroyPlantVisualObject(instance)
-
-    if GAG2PerformanceIsPlantVisualObject(instance) ~= true then
-        return false
-    end
-
-    if typeof(instance) ~= "Instance"
-    or instance.Parent == nil then
-
-        return false
-    end
-
-    local ok =
-        pcall(function()
-
-            instance:Destroy()
-        end)
-
-    return ok == true
-end
-
-function GAG2PerformanceCountBranchObjects(instance)
-
-    if typeof(instance) ~= "Instance" then
-        return 0
-    end
-
-    local count =
-        1
-
-    local ok,
-        descendants =
-        pcall(function()
-
-            return instance:GetDescendants()
-        end)
-
-    if ok == true
-    and type(descendants) == "table" then
-
-        count =
-            count
-            + #descendants
-    end
-
-    return count
-end
-
-function GAG2PerformancePlantBranchHasProtectedDescendant(instance)
-
-    if typeof(instance) ~= "Instance" then
-        return true
-    end
-
-    if GAG2PerformanceIsInsideFruits(instance) == true then
-        return true
-    end
-
-    local lowerName =
-        tostring(instance.Name or "")
-            :lower()
-
-    if lowerName == "fruits"
-    or lowerName == "fruit"
-    or lowerName == "data"
-    or lowerName == "stats"
-    or lowerName == "state"
-    or lowerName:find("fruit", 1, true)
-    or lowerName:find("prompt", 1, true)
-    or lowerName:find("harvest", 1, true)
-    or lowerName:find("collect", 1, true)
-    or lowerName:find("hitbox", 1, true)
-    or lowerName:find("root", 1, true) then
-
-        return true
-    end
-
-    if instance:IsA("ProximityPrompt")
-    or instance:IsA("ClickDetector")
-    or instance:IsA("TouchTransmitter")
-    or instance:IsA("Script")
-    or instance:IsA("LocalScript")
-    or instance:IsA("ModuleScript")
-    or instance:IsA("ValueBase") then
-
-        return true
-    end
-
-    for _, descendant in ipairs(instance:GetDescendants()) do
-
-        local descendantName =
-            tostring(descendant.Name or "")
-                :lower()
-
-        if descendantName == "fruits"
-        or descendantName == "fruit"
-        or descendantName == "data"
-        or descendantName == "stats"
-        or descendantName == "state"
-        or descendantName:find("fruit", 1, true)
-        or descendantName:find("prompt", 1, true)
-        or descendantName:find("harvest", 1, true)
-        or descendantName:find("collect", 1, true)
-        or descendantName:find("hitbox", 1, true)
-        or descendantName:find("root", 1, true) then
-
-            return true
-        end
-
-        if descendant:IsA("ProximityPrompt")
-        or descendant:IsA("ClickDetector")
-        or descendant:IsA("TouchTransmitter")
-        or descendant:IsA("Script")
-        or descendant:IsA("LocalScript")
-        or descendant:IsA("ModuleScript")
-        or descendant:IsA("ValueBase") then
-
-            return true
-        end
-    end
-
-    return false
-end
-
-function GAG2PerformancePlantBranchHasVisualDescendant(instance)
-
-    if typeof(instance) ~= "Instance" then
-        return false
-    end
-
-    if GAG2PerformanceIsPlantVisualObject(instance) == true then
-        return true
-    end
-
-    for _, descendant in ipairs(instance:GetDescendants()) do
-
-        if GAG2PerformanceIsPlantVisualObject(descendant) == true then
-            return true
-        end
-    end
-
-    return false
-end
-
-function GAG2PerformanceCanStripPlantModelBranch(instance, plantRoot)
-
-    if typeof(instance) ~= "Instance" then
-        return false
-    end
-
-    if typeof(plantRoot) == "Instance"
-    and instance == plantRoot then
-
-        return false
-    end
-
-    if instance.Parent == nil then
-        return false
-    end
-
-    if GAG2PerformanceIsInsideFruits(instance) == true then
-        return false
-    end
-
-    if GAG2PerformancePlantBranchHasProtectedDescendant(instance) == true then
-        return false
-    end
-
-    if instance:IsA("Model")
-    or instance:IsA("Folder") then
-
-        return GAG2PerformancePlantBranchHasVisualDescendant(
-            instance
-        ) == true
-    end
-
-    return GAG2PerformanceIsPlantVisualObject(
-        instance
-    ) == true
-end
-
-function GAG2PerformanceGetTopPlantObject(instance)
-
-    if typeof(instance) ~= "Instance" then
-        return nil
-    end
-
-    local current =
-        instance
-
-    local last =
-        instance
-
-    while current do
-
-        local name =
-            tostring(current.Name or "")
-                :lower()
-
-        if name == "plants" then
-            return last
-        end
-
-        last =
-            current
-
-        current =
-            current.Parent
-    end
-
-    return nil
-end
-
-function GAG2PerformanceHasHarvestObject(instance)
-
-    if typeof(instance) ~= "Instance" then
-        return false
-    end
-
-    if instance:IsA("ProximityPrompt")
-    or instance:IsA("ClickDetector")
-    or instance:IsA("TouchTransmitter") then
-
-        return true
-    end
-
-    if instance:FindFirstChildWhichIsA("ProximityPrompt", true)
-    or instance:FindFirstChildWhichIsA("ClickDetector", true) then
-
-        return true
-    end
-
-    return false
-end
-
-function GAG2PerformanceFindFruitsAncestor(instance)
-
-    if typeof(instance) ~= "Instance" then
-        return nil
-    end
-
-    local current =
-        instance
-
-    while current do
-
-        local name =
-            tostring(current.Name or "")
-                :lower()
-
-        if name == "fruits"
-        or name == "fruit" then
-
-            return current
-        end
-
-        current =
-            current.Parent
-    end
-
-    return nil
-end
-
-function GAG2PerformanceGetTopFruitObject(instance)
-
-    if typeof(instance) ~= "Instance" then
-        return nil
-    end
-
-    local fruitsFolder =
-        GAG2PerformanceFindFruitsAncestor(
-            instance
-        )
-
-    if typeof(fruitsFolder) ~= "Instance" then
-        return nil
-    end
-
-    local current =
-        instance
-
-    while current
-    and current.Parent ~= fruitsFolder do
-
-        current =
-            current.Parent
-    end
-
-    return current
-end
-
-function GAG2PerformanceLightenHarvestCarrier(instance)
-
-    if typeof(instance) ~= "Instance" then
-        return false
-    end
-
-    if instance:IsA("BasePart") ~= true then
-        return false
-    end
-
-    local ok =
-        pcall(function()
-
-            instance.Transparency =
-                1
-
-            instance.LocalTransparencyModifier =
-                1
-
-            instance.CastShadow =
-                false
-
-            instance.CanCollide =
-                false
-
-            instance.CanTouch =
-                false
-
-            instance.Massless =
-                true
-        end)
-
-    return ok == true
-end
-
-function GAG2PerformanceIsFruitVisualObject(instance)
-
-    if typeof(instance) ~= "Instance" then
-        return false
-    end
-
-    if GAG2PerformanceIsInsideFruits(instance) ~= true then
-        return false
-    end
-
-    if instance:IsA("ProximityPrompt")
-    or instance:IsA("ClickDetector")
-    or instance:IsA("TouchTransmitter") then
-
-        return false
-    end
-
-    if instance:IsA("BasePart") then
-
-        if GAG2PerformanceHasHarvestObject(instance) == true then
-            return false
-        end
-
-        return true
-    end
-
-    if instance:IsA("Decal")
-    or instance:IsA("Texture")
-    or instance:IsA("SurfaceAppearance")
-    or instance:IsA("SpecialMesh")
-    or instance:IsA("ParticleEmitter")
-    or instance:IsA("Trail")
-    or instance:IsA("Beam")
-    or instance:IsA("Highlight")
-    or instance:IsA("Light")
-    or instance:IsA("Sound")
-    or instance:IsA("Fire")
-    or instance:IsA("Smoke")
-    or instance:IsA("Sparkles") then
-
-        return true
-    end
-
-    return false
-end
-
-function GAG2PerformanceDestroyFruitVisualObject(instance)
-
-    if GAG2PerformanceIsFruitVisualObject(instance) ~= true then
-        return false
-    end
-
-    if typeof(instance) ~= "Instance"
-    or instance.Parent == nil then
-
-        return false
-    end
-
-    local ok =
-        pcall(function()
-
-            instance:Destroy()
-        end)
-
-    return ok == true
-end
-
-function GAG2PerformanceStripOneFruitObject(fruit)
-
-    if typeof(fruit) ~= "Instance" then
-        return 0, 0
-    end
-
-    if GAG2PerformanceIsInsideFruits(fruit) ~= true then
-        return 0, 0
-    end
-
-    local destroyed =
-        0
-
-    local carriers =
-        0
-
-    if fruit:IsA("BasePart") then
-
-        GAG2PerformanceLightenHarvestCarrier(
-            fruit
-        )
-
-        carriers =
-            carriers + 1
-    end
-
-    local toDestroy =
-        {}
-
-    for _, descendant in ipairs(fruit:GetDescendants()) do
-
-        if descendant:IsA("BasePart")
-        and GAG2PerformanceHasHarvestObject(descendant) == true then
-
-            if GAG2PerformanceLightenHarvestCarrier(descendant) == true then
-
-                carriers =
-                    carriers + 1
-            end
-
-        elseif GAG2PerformanceIsFruitVisualObject(descendant) == true then
-
-            table.insert(
-                toDestroy,
-                descendant
-            )
-        end
-    end
-
-    for index, object in ipairs(toDestroy) do
-
-        if GAG2PerformanceDestroyFruitVisualObject(object) == true then
-
-            destroyed =
-                destroyed + 1
-        end
-
-        if index % 120 == 0 then
-
-            task.wait()
-        end
-    end
-
-    return destroyed,
-        carriers
-end
-
-function GAG2PerformanceStripFruitModelsFromPlant(plant)
-
-    if typeof(plant) ~= "Instance" then
-        return 0, 0, 0
-    end
-
-    local fruitsFolders =
-        {}
-
-    if tostring(plant.Name or ""):lower() == "fruits" then
-
-        table.insert(
-            fruitsFolders,
-            plant
-        )
-    end
-
-    for _, descendant in ipairs(plant:GetDescendants()) do
-
-        local lowerName =
-            tostring(descendant.Name or "")
-                :lower()
-
-        if lowerName == "fruits"
-        or lowerName == "fruit" then
-
-            table.insert(
-                fruitsFolders,
-                descendant
-            )
-        end
-    end
-
-    local fruitCount =
-        0
-
-    local destroyed =
-        0
-
-    local carriers =
-        0
-
-    for _, fruitsFolder in ipairs(fruitsFolders) do
-
-        for index, fruit in ipairs(fruitsFolder:GetChildren()) do
-
-            fruitCount =
-                fruitCount + 1
-
-            local removed,
-                keptCarriers =
-                GAG2PerformanceStripOneFruitObject(
-                    fruit
-                )
-
-            destroyed =
-                destroyed
-                + removed
-
-            carriers =
-                carriers
-                + keptCarriers
-
-            if index % 15 == 0 then
-
-                task.wait()
-            end
-        end
-    end
-
-    return destroyed,
-        carriers,
-        fruitCount
-end
-
-function GAG2PerformanceStripOwnGardenFruitModels(reason)
-
-    local state =
-        GAG2_PERFORMANCE_STATE
-
-    local garden =
-        GAG2PerformanceFindOwnGardenForHardDelete()
-
-    if typeof(garden) ~= "Instance" then
-
-        GAG2PerformanceSetStatus(
-            "Strip Fruit Models failed: own garden not found."
-        )
-
-        return false
-    end
-
-    local plants =
-        garden:FindFirstChild("Plants")
-
-    if typeof(plants) ~= "Instance" then
-
-        GAG2PerformanceSetStatus(
-            "Strip Fruit Models failed: Plants folder missing."
-        )
-
-        return false
-    end
-
-    local removed =
-        0
-
-    local carriers =
-        0
-
-    local fruits =
-        0
-
-    local plantCount =
-        0
-
-    for index, plant in ipairs(plants:GetChildren()) do
-
-        plantCount =
-            plantCount + 1
-
-        local removedNow,
-            carriersNow,
-            fruitsNow =
-            GAG2PerformanceStripFruitModelsFromPlant(
-                plant
-            )
-
-        removed =
-            removed
-            + removedNow
-
-        carriers =
-            carriers
-            + carriersNow
-
-        fruits =
-            fruits
-            + fruitsNow
-
-        if index % 8 == 0 then
-
-            task.wait()
-        end
-    end
-
-    state.FruitModelsStripped =
-        true
-
-    state.FruitModelsStrippedAt =
-        os.time()
-
-    state.FruitModelsStrippedCount =
-        tonumber(state.FruitModelsStrippedCount)
-        or 0
-
-    state.FruitModelsStrippedCount =
-        state.FruitModelsStrippedCount
-        + removed
-
-    state.FruitModelsStripPath =
-        PathOf(
-            garden
-        )
-
-    if state.FruitModelsConnection then
-
-        pcall(function()
-
-            state.FruitModelsConnection:Disconnect()
-        end)
-
-        state.FruitModelsConnection =
-            nil
-    end
-
-    state.FruitModelsConnection =
-        plants.DescendantAdded:Connect(function(descendant)
-
-            if GAG2_PERFORMANCE_STATE.StripFruitModels ~= true then
-                return
-            end
-
-            task.defer(function()
-
-                task.wait(
-                    0.15
-                )
-
-                if GAG2_PERFORMANCE_STATE.StripFruitModels ~= true then
-                    return
-                end
-
-                if descendant.Parent == nil then
-                    return
-                end
-
-                local fruit =
-                    GAG2PerformanceGetTopFruitObject(
-                        descendant
-                    )
-
-                if typeof(fruit) ~= "Instance" then
-                    return
-                end
-
-                local removedNow =
-                    GAG2PerformanceStripOneFruitObject(
-                        fruit
-                    )
-
-                removedNow =
-                    tonumber(removedNow)
-                    or 0
-
-                if removedNow > 0 then
-
-                    GAG2_PERFORMANCE_STATE.FruitModelsStrippedCount =
-                        tonumber(GAG2_PERFORMANCE_STATE.FruitModelsStrippedCount)
-                        or 0
-
-                    GAG2_PERFORMANCE_STATE.FruitModelsStrippedCount =
-                        GAG2_PERFORMANCE_STATE.FruitModelsStrippedCount
-                        + removedNow
-                end
-            end)
-        end)
-
-    GAG2PerformanceSetStatus(
-        "Stripped fruit models. Plants="
-        .. tostring(plantCount)
-        .. " | fruits="
-        .. tostring(fruits)
-        .. " | removed="
-        .. tostring(removed)
-        .. " | harvest carriers kept="
-        .. tostring(carriers)
-    )
-
-    print(
-        "[HOLY PERFORMANCE]",
-        "strip fruit models",
-        "| garden:",
-        tostring(state.FruitModelsStripPath),
-        "| plants:",
-        tostring(plantCount),
-        "| fruits:",
-        tostring(fruits),
-        "| removed:",
-        tostring(removed),
-        "| carriers:",
-        tostring(carriers),
-        "| reason:",
-        tostring(reason or "manual")
-    )
-
-    return true
-end
-
-function GAG2PerformanceSetStripFruitModelsEnabled(value)
-
-    local state =
-        GAG2_PERFORMANCE_STATE
-
-    state.StripFruitModels =
-        value == true
-
-    if state.StripFruitModels ~= true then
-
-        if state.FruitModelsConnection then
-
-            pcall(function()
-
-                state.FruitModelsConnection:Disconnect()
-            end)
-
-            state.FruitModelsConnection =
-                nil
-        end
-
-        GAG2PerformanceSetStatus(
-            "Strip Fruit Models disabled. Rejoin required to restore deleted fruit visuals."
-        )
-
-        MarkConfigDirty()
-
-        return false
-    end
-
-    if ConfigState.Loading == true then
-
-        MarkConfigDirty()
-
-        return true
-    end
-
-    task.defer(function()
-
-        task.wait(
-            0.15
-        )
-
-        if GAG2_PERFORMANCE_STATE.StripFruitModels ~= true then
-            return
-        end
-
-        GAG2PerformanceStripOwnGardenFruitModels(
-            "settings toggle"
-        )
-    end)
-
-    MarkConfigDirty()
-
-    return true
-end
-
-function GAG2PerformanceStripPlantVisualsFromPlant(plant)
-
-    if typeof(plant) ~= "Instance" then
-        return 0
-    end
-
-    if GAG2PerformanceIsInsideFruits(plant) == true then
-        return 0
-    end
-
-    local toDestroy =
-        {}
-
-    local seen =
-        {}
-
-    local function collectBranch(instance)
-
-        if typeof(instance) ~= "Instance" then
-            return
-        end
-
-        if instance.Parent == nil then
-            return
-        end
-
-        if seen[instance] == true then
-            return
-        end
-
-        seen[instance] =
-            true
-
-        if GAG2PerformanceCanStripPlantModelBranch(
-            instance,
-            plant
-        ) == true then
-
-            table.insert(
-                toDestroy,
-                instance
-            )
-
-            return
-        end
-
-        for _, child in ipairs(instance:GetChildren()) do
-
-            collectBranch(
-                child
-            )
-        end
-    end
-
-    for _, child in ipairs(plant:GetChildren()) do
-
-        collectBranch(
-            child
-        )
-    end
-
-    local destroyed =
-        0
-
-    for index, object in ipairs(toDestroy) do
-
-        if typeof(object) == "Instance"
-        and object.Parent ~= nil then
-
-            local count =
-                GAG2PerformanceCountBranchObjects(
-                    object
-                )
-
-            local ok =
-                pcall(function()
-
-                    object:Destroy()
-                end)
-
-            if ok == true then
-
-                destroyed =
-                    destroyed
-                    + count
-            end
-        end
-
-        if index % 40 == 0 then
-
-            task.wait()
-        end
-    end
-
-    return destroyed
-end
-
-function GAG2PerformanceStripOwnGardenPlantVisuals(reason)
-
-    local state =
-        GAG2_PERFORMANCE_STATE
-
-    local garden =
-        GAG2PerformanceFindOwnGardenForHardDelete()
-
-    if typeof(garden) ~= "Instance" then
-
-        GAG2PerformanceSetStatus(
-            "Strip Plant Visuals failed: own garden not found."
-        )
-
-        return false
-    end
-
-    local plants =
-        garden:FindFirstChild("Plants")
-
-    if typeof(plants) ~= "Instance" then
-
-        GAG2PerformanceSetStatus(
-            "Strip Plant Visuals failed: Plants folder missing."
-        )
-
-        return false
-    end
-
-    local stripped =
-        0
-
-    local plantCount =
-        0
-
-    for index, plant in ipairs(plants:GetChildren()) do
-
-        plantCount =
-            plantCount + 1
-
-        stripped =
-            stripped
-            + GAG2PerformanceStripPlantVisualsFromPlant(
-                plant
-            )
-
-        if index % 8 == 0 then
-
-            task.wait()
-        end
-    end
-
-    state.PlantVisualsStripped =
-        true
-
-    state.PlantVisualsStrippedAt =
-        os.time()
-
-    state.PlantVisualsStrippedCount =
-        tonumber(state.PlantVisualsStrippedCount)
-        or 0
-
-    state.PlantVisualsStrippedCount =
-        state.PlantVisualsStrippedCount
-        + stripped
-
-    state.PlantVisualsStripPath =
-        PathOf(
-            garden
-        )
-
-    if state.PlantVisualsConnection then
-
-        pcall(function()
-
-            state.PlantVisualsConnection:Disconnect()
-        end)
-
-        state.PlantVisualsConnection =
-            nil
-    end
-
-    state.PlantVisualsConnection =
-        plants.DescendantAdded:Connect(function(descendant)
-
-            if GAG2_PERFORMANCE_STATE.StripPlantVisuals ~= true then
-                return
-            end
-
-            task.defer(function()
-
-                task.wait(
-                    0.10
-                )
-
-                if GAG2_PERFORMANCE_STATE.StripPlantVisuals ~= true then
-                    return
-                end
-
-                if descendant.Parent == nil then
-                    return
-                end
-
-                local plant =
-                    GAG2PerformanceGetTopPlantObject(
-                        descendant
-                    )
-
-                if typeof(plant) ~= "Instance" then
-                    return
-                end
-
-                local removedNow =
-                    GAG2PerformanceStripPlantVisualsFromPlant(
-                        plant
-                    )
-
-                removedNow =
-                    tonumber(removedNow)
-                    or 0
-
-                if removedNow > 0 then
-
-                    GAG2_PERFORMANCE_STATE.PlantVisualsStrippedCount =
-                        tonumber(GAG2_PERFORMANCE_STATE.PlantVisualsStrippedCount)
-                        or 0
-
-                    GAG2_PERFORMANCE_STATE.PlantVisualsStrippedCount =
-                        GAG2_PERFORMANCE_STATE.PlantVisualsStrippedCount
-                        + removedNow
-                end
-            end)
-        end)
-
-    GAG2PerformanceSetStatus(
-        "Stripped plant visuals. Plants="
-        .. tostring(plantCount)
-        .. " | visuals removed="
-        .. tostring(stripped)
-        .. " | Fruits preserved."
-    )
-
-    print(
-        "[HOLY PERFORMANCE]",
-        "strip plant visuals",
-        "| garden:",
-        tostring(state.PlantVisualsStripPath),
-        "| plants:",
-        tostring(plantCount),
-        "| stripped:",
-        tostring(stripped),
-        "| reason:",
-        tostring(reason or "manual")
-    )
-
-    return true
-end
-
-function GAG2PerformanceSetStripPlantVisualsEnabled(value)
-
-    local state =
-        GAG2_PERFORMANCE_STATE
-
-    state.StripPlantVisuals =
-        value == true
-
-    if state.StripPlantVisuals ~= true then
-
-        if state.PlantVisualsConnection then
-
-            pcall(function()
-
-                state.PlantVisualsConnection:Disconnect()
-            end)
-
-            state.PlantVisualsConnection =
-                nil
-        end
-
-        GAG2PerformanceSetStatus(
-            "Strip Plant Visuals disabled. Rejoin required to restore stripped plant visuals."
-        )
-
-        MarkConfigDirty()
-
-        return false
-    end
-
-    if ConfigState.Loading == true then
-
-        MarkConfigDirty()
-
-        return true
-    end
-
-    task.defer(function()
-
-        task.wait(
-            0.15
-        )
-
-        if GAG2_PERFORMANCE_STATE.StripPlantVisuals ~= true then
-            return
-        end
-
-        GAG2PerformanceStripOwnGardenPlantVisuals(
-            "settings toggle"
-        )
-    end)
-
-    MarkConfigDirty()
-
-    return true
-end
-
 function GAG2PerformanceDestroyOwnGardenChild(garden, childName)
 
     if typeof(garden) ~= "Instance" then
@@ -31233,27 +30035,19 @@ function GAG2PerformanceDestroyOwnGardenChild(garden, childName)
         return false, 0
     end
 
-    local hidden =
-        0
+    local count =
+        GAG2PerformanceCountDescendants(
+            child
+        )
 
-    for index, descendant in ipairs(child:GetDescendants()) do
+    local ok =
+        pcall(function()
 
-        if GAG2PerformanceHideOwnGardenObject(
-            descendant
-        ) == true then
+            child:Destroy()
+        end)
 
-            hidden =
-                hidden + 1
-        end
-
-        if index % 350 == 0 then
-
-            task.wait()
-        end
-    end
-
-    return hidden > 0,
-        hidden
+    return ok == true,
+        count
 end
 
 function GAG2PerformanceHardDeleteOwnGarden(reason)
@@ -31264,7 +30058,7 @@ function GAG2PerformanceHardDeleteOwnGarden(reason)
     if state.OwnGardenHardDeleted == true then
 
         GAG2PerformanceSetStatus(
-            "Own garden already safe-hidden. Rejoin or Restore Gardens to restore visuals."
+            "Own garden already hard-deleted. Rejoin required to restore."
         )
 
         return false
@@ -31292,21 +30086,21 @@ function GAG2PerformanceHardDeleteOwnGarden(reason)
             garden
         )
 
-    local plantsHidden,
+    local plantsDeleted,
         plantsCount =
         GAG2PerformanceDestroyOwnGardenChild(
             garden,
             "Plants"
         )
 
-    local visualHidden,
+    local visualDeleted,
         visualCount =
         GAG2PerformanceDestroyOwnGardenChild(
             garden,
             "Visual"
         )
 
-    local hiddenCount =
+    local deletedCount =
         tonumber(plantsCount)
         + tonumber(visualCount)
 
@@ -31317,32 +30111,36 @@ function GAG2PerformanceHardDeleteOwnGarden(reason)
         os.time()
 
     state.OwnGardenHardDeletedDescendants =
-        hiddenCount
+        deletedCount
 
     state.OwnGardenHardDeletedPath =
         gardenPath
 
+    GAG2PerformanceRestoreOwnGardenVisuals(
+        "hard delete own garden"
+    )
+
     GAG2PerformanceSetStatus(
-        "Safe-hidden own garden locally. Plants="
-        .. tostring(plantsHidden)
+        "Hard-deleted own garden locally. Plants="
+        .. tostring(plantsDeleted)
         .. " ("
         .. tostring(plantsCount)
         .. ") | Visual="
-        .. tostring(visualHidden)
+        .. tostring(visualDeleted)
         .. " ("
         .. tostring(visualCount)
-        .. ") | Restore Gardens can undo."
+        .. ") | Rejoin required."
     )
 
     print(
         "[HOLY PERFORMANCE]",
-        "safe-hide own garden",
+        "hard delete own garden",
         "| path:",
         gardenPath,
         "| before:",
         tostring(beforeCount),
-        "| hidden:",
-        tostring(hiddenCount),
+        "| deleted:",
+        tostring(deletedCount),
         "| reason:",
         tostring(reason or "manual")
     )
@@ -31977,9 +30775,6 @@ function GAG2PerformanceHideGarden(garden, ownGarden, gardensRoot)
             garden
         )
 
-        state.HiddenGardens[garden] =
-            true
-
         return true
     end
 
@@ -31991,16 +30786,23 @@ function GAG2PerformanceHideGarden(garden, ownGarden, gardensRoot)
         return false
     end
 
-    -- Important:
-    -- Do NOT set garden.Parent = nil.
-    -- The game's PlotsController keeps references to plot/tag objects
-    -- and errors if the plot tree disappears.
-    GAG2PerformanceHideOwnGardenVisuals(
-        garden
-    )
-
     state.HiddenGardens[garden] =
-        true
+        garden.Parent
+
+    local ok =
+        pcall(function()
+
+            garden.Parent =
+                nil
+        end)
+
+    if ok ~= true then
+
+        state.HiddenGardens[garden] =
+            nil
+
+        return false
+    end
 
     return true
 end
@@ -32174,18 +30976,6 @@ function GAG2RestorePerformanceState()
                 Toggles.HolyGAG2HardDeleteOwnGarden.Value == true
         end
 
-        if Toggles.HolyGAG2StripPlantVisuals then
-
-            GAG2_PERFORMANCE_STATE.StripPlantVisuals =
-                Toggles.HolyGAG2StripPlantVisuals.Value == true
-        end
-
-                if Toggles.HolyGAG2StripFruitModels then
-
-            GAG2_PERFORMANCE_STATE.StripFruitModels =
-                Toggles.HolyGAG2StripFruitModels.Value == true
-        end
-
         if GAG2_PERFORMANCE_STATE.HideOtherGardens == true
         or GAG2_PERFORMANCE_STATE.HideOwnGarden == true then
 
@@ -32216,28 +31006,6 @@ function GAG2RestorePerformanceState()
             )
 
             GAG2PerformanceHardDeleteOwnGarden(
-                "autosave persistent toggle"
-            )
-        end
-
-        if GAG2_PERFORMANCE_STATE.StripPlantVisuals == true then
-
-            task.wait(
-                0.45
-            )
-
-            GAG2PerformanceStripOwnGardenPlantVisuals(
-                "autosave persistent toggle"
-            )
-        end
-
-                if GAG2_PERFORMANCE_STATE.StripFruitModels == true then
-
-            task.wait(
-                0.45
-            )
-
-            GAG2PerformanceStripOwnGardenFruitModels(
                 "autosave persistent toggle"
             )
         end
@@ -82908,34 +81676,10 @@ SettingsUIBox:AddToggle("HolyGAG2HideOwnGarden", {
 SettingsUIBox:AddToggle("HolyGAG2HardDeleteOwnGarden", {
     Text = "Hard Delete Own Garden",
     Default = false,
-    Tooltip = "Safe-hides own garden visuals locally for FPS. Keeps plot structure alive. Rejoin may be required to fully restore visuals.",
+    Tooltip = "Deletes own garden to improve FPS",
     Callback = function(value)
 
         GAG2PerformanceSetHardDeleteOwnGardenEnabled(
-            value == true
-        )
-    end,
-})
-
-SettingsUIBox:AddToggle("HolyGAG2StripPlantVisuals", {
-    Text = "Strip Plant Models",
-    Default = false,
-    Tooltip = "Extreme FPS mode. Deletes visual plant model branches under your own Plants folder. Keeps outer plant containers and Fruits folders. Rejoin required to restore stripped models.",
-    Callback = function(value)
-
-        GAG2PerformanceSetStripPlantVisualsEnabled(
-            value == true
-        )
-    end,
-})
-
-SettingsUIBox:AddToggle("HolyGAG2StripFruitModels", {
-    Text = "Strip Fruit Models",
-    Default = false,
-    Tooltip = "Extreme FPS mode. Deletes fruit visual parts inside Fruits while keeping harvest prompts/carriers when needed. Rejoin required to restore deleted fruit visuals.",
-    Callback = function(value)
-
-        GAG2PerformanceSetStripFruitModelsEnabled(
             value == true
         )
     end,
@@ -82982,34 +81726,6 @@ SettingsUIBox:AddButton({
         GAG2_PERFORMANCE_STATE.HardDeleteOwnGarden =
             false
 
-                GAG2_PERFORMANCE_STATE.StripPlantVisuals =
-            false
-
-                GAG2_PERFORMANCE_STATE.StripFruitModels =
-            false
-
-        if GAG2_PERFORMANCE_STATE.FruitModelsConnection then
-
-            pcall(function()
-
-                GAG2_PERFORMANCE_STATE.FruitModelsConnection:Disconnect()
-            end)
-
-            GAG2_PERFORMANCE_STATE.FruitModelsConnection =
-                nil
-        end
-
-        if GAG2_PERFORMANCE_STATE.PlantVisualsConnection then
-
-            pcall(function()
-
-                GAG2_PERFORMANCE_STATE.PlantVisualsConnection:Disconnect()
-            end)
-
-            GAG2_PERFORMANCE_STATE.PlantVisualsConnection =
-                nil
-        end
-
         if Toggles.HolyGAG2HideOtherGardens
         and type(Toggles.HolyGAG2HideOtherGardens.SetValue) == "function" then
 
@@ -83038,28 +81754,6 @@ SettingsUIBox:AddButton({
             pcall(function()
 
                 Toggles.HolyGAG2HardDeleteOwnGarden:SetValue(
-                    false
-                )
-            end)
-        end
-
-                if Toggles.HolyGAG2StripPlantVisuals
-        and type(Toggles.HolyGAG2StripPlantVisuals.SetValue) == "function" then
-
-            pcall(function()
-
-                Toggles.HolyGAG2StripPlantVisuals:SetValue(
-                    false
-                )
-            end)
-        end
-
-                if Toggles.HolyGAG2StripFruitModels
-        and type(Toggles.HolyGAG2StripFruitModels.SetValue) == "function" then
-
-            pcall(function()
-
-                Toggles.HolyGAG2StripFruitModels:SetValue(
                     false
                 )
             end)
@@ -83408,24 +82102,11 @@ if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
         GAG2RestoreAutoTpMiddleFarmState()
     end)
 
-    -- Performance can touch huge garden trees. Only restore it if one of
-    -- the performance toggles is saved ON.
-    GAG2StartupOptionalDefer(
-        6.50,
-        "Restore Performance",
-        {
-            "HolyGAG2HideOtherGardens",
-            "HolyGAG2HideOwnGarden",
-            "HolyGAG2HardDeleteOwnGarden",
-            "HolyGAG2StripPlantVisuals",
-            "HolyGAG2StripFruitModels",
-            "HolyGAG2HideMapClutter",
-        },
-        function()
+    -- Performance can delete/hide many objects, so keep it after core sniper.
+    GAG2StartupDefer(1.25, "Restore Performance", function()
 
-            GAG2RestorePerformanceState()
-        end
-    )
+        GAG2RestorePerformanceState()
+    end)
 
     -- Optional systems. These only restore if their saved toggle is ON.
     -- This prevents sniping-only users from freezing on systems they do not use.
