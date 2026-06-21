@@ -4802,6 +4802,59 @@ function GAG2PetTeamsRequestTeam(ruleName, priority, reason)
         return false
     end
 
+    local team =
+        state.Teams[teamName]
+
+    if type(team.PetIds) ~= "table"
+    or #team.PetIds <= 0 then
+
+        state.LastStatus =
+            "Auto request skipped: "
+            .. tostring(teamName)
+            .. " is empty."
+
+        GAG2PetTeamsRefreshStatus()
+
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    state.LastAutoRequestAt =
+        tonumber(state.LastAutoRequestAt)
+        or 0
+
+    state.LastAutoRequestRule =
+        tostring(state.LastAutoRequestRule or "")
+
+    state.MinAutoRequestDelay =
+        tonumber(state.MinAutoRequestDelay)
+        or 8
+
+    if state.Busy == true then
+        return false
+    end
+
+    if state.LastAutoRequestRule == ruleName
+    and now - state.LastAutoRequestAt < state.MinAutoRequestDelay then
+        return false
+    end
+
+    state.LastAutoRequestAt =
+        now
+
+    state.LastAutoRequestRule =
+        ruleName
+
+    state.LastStatus =
+        "Auto request: "
+        .. tostring(ruleName)
+        .. " -> "
+        .. tostring(teamName)
+
+    GAG2PetTeamsRefreshStatus()
+
     return GAG2PetTeamsApplyTeam(
         teamName,
         reason or ruleName
@@ -23994,6 +24047,31 @@ function GAG2FarmMiddleIdleCanMove()
 
         return false,
             "sniper busy"
+    end
+
+    if type(SniperState) == "table" then
+
+        local sniperEnabled =
+            Toggles.HolyGAG2SniperEnabled
+            and Toggles.HolyGAG2SniperEnabled.Value == true
+
+        local recentMatch =
+            tonumber(SniperState.LastMatchAt or 0) > 0
+            and os.clock() - tonumber(SniperState.LastMatchAt or 0) <= 10
+
+        local hasLiveMatches =
+            type(SniperState.LastMatches) == "table"
+            and #SniperState.LastMatches > 0
+
+        if sniperEnabled == true
+        and (
+            recentMatch == true
+            or hasLiveMatches == true
+        ) then
+
+            return false,
+                "sniper match active"
+        end
     end
 
     if GAG2FarmMiddleSeedCollectBusy() == true then
@@ -53155,37 +53233,73 @@ function SniperBuildMatchText(entries, matches, orderedTargets, reason)
     )
 end
 
+function SniperRequestPetTeamForMatches(matches)
+
+    if type(matches) ~= "table"
+    or #matches <= 0 then
+        return false
+    end
+
+    if type(GAG2PetTeamsRequestTeam) ~= "function" then
+        return false
+    end
+
+    local state =
+        type(GAG2PetTeamsGetState) == "function"
+        and GAG2PetTeamsGetState()
+        or nil
+
+    if type(state) ~= "table" then
+        return false
+    end
+
+    if state.AutoSwitch ~= true then
+        return false
+    end
+
+    if state.ManualLock == true then
+        return false
+    end
+
+    local teamName =
+        state.Rules
+        and state.Rules.SniperFound
+        or nil
+
+    if not teamName
+    or not state.Teams
+    or type(state.Teams[teamName]) ~= "table" then
+        return false
+    end
+
+    local team =
+        state.Teams[teamName]
+
+    if type(team.PetIds) ~= "table"
+    or #team.PetIds <= 0 then
+        return false
+    end
+
+    return GAG2PetTeamsRequestTeam(
+        "SniperFound",
+        90,
+        "sniper found matching pet"
+    )
+end
+
+
 function SniperShouldWaitForMiddleFarm()
 
     local middleState =
         GAG2_AUTO_TP_MIDDLE_FARM_STATE
 
-    if type(middleState) ~= "table" then
-        return false
-    end
+    if type(middleState) == "table" then
 
-    middleState.SniperWaitActive =
-        false
+        middleState.SniperWaitActive =
+            false
 
-    if GAG2AutoTpMiddleFarmEnabled() == true
-    and middleState.AnchorReady ~= true
-    and middleState.AnchorResolving ~= true then
-
-        local now =
-            os.clock()
-
-        if now - tonumber(middleState.LastSniperMiddleStartAt or 0) >= 2 then
-
-            middleState.LastSniperMiddleStartAt =
-                now
-
-            if type(GAG2StartAutoTpMiddleFarm) == "function" then
-
-                GAG2StartAutoTpMiddleFarm(
-                    "sniper passive anchor resolve"
-                )
-            end
-        end
+        middleState.IdleMoveLastReason =
+            "sniper controls movement"
     end
 
     return false
@@ -53239,6 +53353,25 @@ function SniperScan(allowAutoHop)
 
     SniperState.LastMatchCount =
         #matches
+
+    SniperState.LastMatches =
+        matches
+
+    if #matches > 0 then
+
+        local now =
+            os.clock()
+
+        SniperState.LastMatchAt =
+            now
+
+        SniperState.LastFoundAt =
+            now
+
+        SniperRequestPetTeamForMatches(
+            matches
+        )
+    end
 
     SniperState.LastMatchText =
         SniperBuildMatchText(
