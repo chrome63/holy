@@ -2925,6 +2925,10 @@ GAG2_DEFENCE_STATE =
         HitboxEnabled = false,
         HitboxScale = 1,
 
+        DirectHitEnabled = true,
+        DirectHitDelay = 0.035,
+        DirectHitBurst = 2,
+
         MaxQueueSize = 12,
         QueueSortMode = "Closest",
     }
@@ -3057,6 +3061,27 @@ function GAG2DefenceGetState()
             or 1,
             1,
             8
+        )
+
+        state.DirectHitEnabled =
+        state.DirectHitEnabled ~= false
+
+    state.DirectHitDelay =
+        math.clamp(
+            tonumber(state.DirectHitDelay)
+            or 0.035,
+            0.01,
+            0.12
+        )
+
+    state.DirectHitBurst =
+        math.clamp(
+            math.floor(
+                tonumber(state.DirectHitBurst)
+                or 2
+            ),
+            1,
+            5
         )
 
     state.MaxQueueSize =
@@ -3281,6 +3306,304 @@ function GAG2DefenceFindShovelTool()
     end
 
     return nil
+end
+
+function GAG2DefenceResolveShovelPackets()
+
+    local module =
+        ReplicatedStorage:FindFirstChild("SharedModules")
+        and ReplicatedStorage.SharedModules:FindFirstChild("Networking")
+
+    if not module
+    or module:IsA("ModuleScript") ~= true then
+
+        return nil,
+            nil,
+            nil,
+            "Networking module missing"
+    end
+
+    local ok,
+        networking =
+        pcall(function()
+
+            return require(
+                module
+            )
+        end)
+
+    if ok ~= true
+    or type(networking) ~= "table" then
+
+        return nil,
+            nil,
+            nil,
+            "Networking require failed: "
+            .. tostring(networking)
+    end
+
+    local shovel =
+        networking.Shovel
+
+    if type(shovel) ~= "table" then
+
+        return nil,
+            nil,
+            nil,
+            "Networking.Shovel missing"
+    end
+
+    local useShovel =
+        shovel.UseShovel
+
+    local hitPlayer =
+        shovel.HitPlayer
+
+    local swingShovel =
+        shovel.SwingShovel
+
+    return useShovel,
+        hitPlayer,
+        swingShovel,
+        "ok"
+end
+
+function GAG2DefencePacketFire(packet, ...)
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return false,
+            "bad packet"
+    end
+
+    local ok,
+        result =
+        pcall(function(...)
+
+            return packet:Fire(...)
+        end, ...)
+
+    if ok ~= true then
+
+        return false,
+            tostring(result)
+    end
+
+    return true,
+        tostring(result)
+end
+
+function GAG2DefenceGetTargetPieces(player)
+
+    local character,
+        root =
+        GAG2DefenceGetCharacterRoot(
+            player
+        )
+
+    if not character then
+        return nil
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    local head =
+        character:FindFirstChild("Head")
+
+    local upperTorso =
+        character:FindFirstChild("UpperTorso")
+        or character:FindFirstChild("Torso")
+
+    return {
+        Player =
+            player,
+
+        Character =
+            character,
+
+        Root =
+            root,
+
+        Humanoid =
+            humanoid,
+
+        Head =
+            head,
+
+        UpperTorso =
+            upperTorso,
+
+        Position =
+            root
+            and root.Position
+            or nil,
+    }
+end
+
+function GAG2DefenceFireDirectShovelHit(player)
+
+    local state =
+        GAG2DefenceGetState()
+
+    if state.DirectHitEnabled ~= true then
+        return false,
+            "direct hit disabled"
+    end
+
+    if typeof(player) ~= "Instance"
+    or player:IsA("Player") ~= true
+    or player == LOCAL_PLAYER then
+
+        return false,
+            "bad target"
+    end
+
+    local pieces =
+        GAG2DefenceGetTargetPieces(
+            player
+        )
+
+    if type(pieces) ~= "table"
+    or not pieces.Character then
+
+        return false,
+            "target pieces missing"
+    end
+
+    local useShovel,
+        hitPlayer,
+        swingShovel =
+        GAG2DefenceResolveShovelPackets()
+
+    local fired =
+        0
+
+    if type(swingShovel) == "table"
+    and type(swingShovel.Fire) == "function" then
+
+        if GAG2DefencePacketFire(
+            swingShovel
+        ) == true then
+
+            fired =
+                fired + 1
+        end
+    end
+
+    if type(useShovel) == "table"
+    and type(useShovel.Fire) == "function" then
+
+        if GAG2DefencePacketFire(
+            useShovel
+        ) == true then
+
+            fired =
+                fired + 1
+        end
+    end
+
+    if type(hitPlayer) == "table"
+    and type(hitPlayer.Fire) == "function" then
+
+        local payloads = {
+            {
+                pieces.Player,
+            },
+
+            {
+                pieces.Character,
+            },
+
+            {
+                pieces.Root,
+            },
+
+            {
+                pieces.Humanoid,
+            },
+
+            {
+                pieces.Head,
+            },
+
+            {
+                pieces.UpperTorso,
+            },
+
+            {
+                pieces.Player,
+                pieces.Position,
+            },
+
+            {
+                pieces.Character,
+                pieces.Position,
+            },
+
+            {
+                pieces.Root,
+                pieces.Position,
+            },
+
+            {
+                {
+                    Player =
+                        pieces.Player,
+
+                    Character =
+                        pieces.Character,
+
+                    Root =
+                        pieces.Root,
+
+                    Humanoid =
+                        pieces.Humanoid,
+
+                    Position =
+                        pieces.Position,
+                },
+            },
+        }
+
+        for _, payload in ipairs(payloads) do
+
+            local cleanPayload =
+                {}
+
+            for _, value in ipairs(payload) do
+
+                if value ~= nil then
+
+                    table.insert(
+                        cleanPayload,
+                        value
+                    )
+                end
+            end
+
+            if #cleanPayload > 0 then
+
+                if GAG2DefencePacketFire(
+                    hitPlayer,
+                    table.unpack(cleanPayload)
+                ) == true then
+
+                    fired =
+                        fired + 1
+                end
+
+                task.wait(
+                    state.DirectHitDelay
+                )
+            end
+        end
+    end
+
+    return fired > 0,
+        "direct shovel packets fired: "
+        .. tostring(fired)
 end
 
 function GAG2DefenceApplyShovelHitbox(shovel)
@@ -3729,13 +4052,41 @@ function GAG2DefenceSwingShovel(targetPlayer)
             end
         end)
 
+        if targetPlayer
+        and targetPlayer.Parent == Players then
+
+            local burst =
+                math.max(
+                    1,
+                    math.floor(
+                        tonumber(state.DirectHitBurst)
+                        or 2
+                    )
+                )
+
+            for _ = 1, burst do
+
+                GAG2DefenceFaceTarget(
+                    targetPlayer
+                )
+
+                GAG2DefenceFireDirectShovelHit(
+                    targetPlayer
+                )
+
+                task.wait(
+                    state.DirectHitDelay
+                )
+            end
+        end
+
         task.wait(
             state.SwingDelay
         )
     end
 
     return true,
-        "sticky shovel swing"
+        "direct sticky shovel swing"
 end
 
 function GAG2DefenceWalkToPlayer(player)
@@ -4516,6 +4867,12 @@ function GAG2RestoreDefenceState()
 
             state.HitboxEnabled =
                 Toggles.HolyGAG2DefenceHitboxEnabled.Value == true
+        end
+
+                if Toggles.HolyGAG2DefenceDirectHit then
+
+            state.DirectHitEnabled =
+                Toggles.HolyGAG2DefenceDirectHit.Value ~= false
         end
 
         if state.MovementMode ~= "Walk"
@@ -74133,6 +74490,26 @@ if CombatStatusBox then
             GAG2DefenceSetReach(
                 value
             )
+        end,
+    })
+
+    CombatStatusBox:AddToggle("HolyGAG2DefenceDirectHit", {
+        Text = "Use Shovel Hit Remote",
+        Default = true,
+        Tooltip = "Uses the discovered Shovel.HitPlayer / UseShovel / SwingShovel packets while Auto Defend sticks to the thief.",
+        Callback = function(value)
+
+            if ConfigState.Loading == true then
+                return
+            end
+
+            local state =
+                GAG2DefenceGetState()
+
+            state.DirectHitEnabled =
+                value ~= false
+
+            MarkConfigDirty()
         end,
     })
 
