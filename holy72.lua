@@ -81871,119 +81871,9 @@ GAG2_STARTUP_PROFILE =
     {
         StartedAt = os.clock(),
         Rows = {},
-        Stalls = {},
-
-        ActiveLabel = "boot",
-        LastCompletedLabel = "none",
-
-        SaveBlockedUntil =
-            os.clock() + 10,
-
-        StallWatcherStarted = false,
-        StallWatcherDone = false,
-
-        PrintFull =
-            false,
     }
 
-function GAG2StartupAddRow(text)
-
-    GAG2_STARTUP_PROFILE.Rows =
-        type(GAG2_STARTUP_PROFILE.Rows) == "table"
-        and GAG2_STARTUP_PROFILE.Rows
-        or {}
-
-    table.insert(
-        GAG2_STARTUP_PROFILE.Rows,
-        tostring(text)
-    )
-end
-
-function GAG2StartupAddStall(text)
-
-    GAG2_STARTUP_PROFILE.Stalls =
-        type(GAG2_STARTUP_PROFILE.Stalls) == "table"
-        and GAG2_STARTUP_PROFILE.Stalls
-        or {}
-
-    table.insert(
-        GAG2_STARTUP_PROFILE.Stalls,
-        tostring(text)
-    )
-
-    warn(
-        "[HOLY STARTUP STALL]",
-        tostring(text)
-    )
-end
-
-function GAG2StartupStartStallWatcher()
-
-    local profile =
-        GAG2_STARTUP_PROFILE
-
-    if type(profile) ~= "table"
-    or profile.StallWatcherStarted == true then
-        return false
-    end
-
-    profile.StallWatcherStarted =
-        true
-
-    task.spawn(function()
-
-        local last =
-            os.clock()
-
-        while os.clock() - profile.StartedAt <= 16 do
-
-            RunService.Heartbeat:Wait()
-
-            local now =
-                os.clock()
-
-            local delta =
-                now - last
-
-            last =
-                now
-
-            if delta >= 0.38 then
-
-                GAG2StartupAddStall(
-                    string.format(
-                        "[%.3fs] frame stall %.3fs | active=%s | last=%s",
-                        now - profile.StartedAt,
-                        delta,
-                        tostring(profile.ActiveLabel or "?"),
-                        tostring(profile.LastCompletedLabel or "?")
-                    )
-                )
-            end
-        end
-
-        profile.StallWatcherDone =
-            true
-    end)
-
-    return true
-end
-
-GAG2StartupStartStallWatcher()
-
 function GAG2StartupProfile(label, fn)
-
-    label =
-        tostring(label or "startup step")
-
-    local profile =
-        GAG2_STARTUP_PROFILE
-
-    if type(profile) == "table" then
-
-        profile.ActiveLabel =
-            label
-    end
 
     local startedAt =
         os.clock()
@@ -82008,33 +81898,20 @@ function GAG2StartupProfile(label, fn)
         string.format(
             "[%.3fs] %s | %.3fs | %s",
             os.clock() - GAG2_STARTUP_PROFILE.StartedAt,
-            label,
+            tostring(label),
             elapsed,
             ok == true and "ok" or tostring(result)
         )
 
-    GAG2StartupAddRow(
+    table.insert(
+        GAG2_STARTUP_PROFILE.Rows,
         row
     )
 
-    if elapsed >= 0.08
-    or ok ~= true then
-
-        print(
-            "[HOLY STARTUP]",
-            row
-        )
-    end
-
-    if type(profile) == "table" then
-
-        profile.LastCompletedLabel =
-            label
-
-        profile.ActiveLabel =
-            "idle after "
-            .. label
-    end
+    print(
+        "[HOLY STARTUP]",
+        row
+    )
 
     return ok,
         result
@@ -82042,24 +81919,9 @@ end
 
 function GAG2StartupDefer(delaySeconds, label, fn)
 
-    delaySeconds =
-        tonumber(delaySeconds)
-        or 0
-
-    label =
-        tostring(label or "deferred startup")
-
-    GAG2StartupAddRow(
-        string.format(
-            "[%.3fs] scheduled %s at +%.2fs",
-            os.clock() - GAG2_STARTUP_PROFILE.StartedAt,
-            label,
-            delaySeconds
-        )
-    )
-
     task.delay(
-        delaySeconds,
+        tonumber(delaySeconds)
+        or 0,
         function()
 
             GAG2StartupProfile(
@@ -82068,6 +81930,62 @@ function GAG2StartupDefer(delaySeconds, label, fn)
             )
         end
     )
+end
+
+function GAG2StartupAnyToggleEnabled(toggleNames)
+
+    if type(toggleNames) ~= "table" then
+        return false
+    end
+
+    for _, toggleName in ipairs(toggleNames) do
+
+        toggleName =
+            tostring(toggleName or "")
+
+        local toggle =
+            Toggles
+            and Toggles[toggleName]
+            or nil
+
+        if toggle
+        and toggle.Value == true then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function GAG2StartupOptionalDefer(delaySeconds, label, toggleNames, fn)
+
+    label =
+        tostring(label or "Optional Restore")
+
+    if GAG2StartupAnyToggleEnabled(toggleNames) ~= true then
+
+        if type(GAG2StartupAddRow) == "function" then
+
+            GAG2StartupAddRow(
+                string.format(
+                    "[%.3fs] skipped %s | toggle off",
+                    os.clock() - GAG2_STARTUP_PROFILE.StartedAt,
+                    label
+                )
+            )
+        end
+
+        return false
+    end
+
+    GAG2StartupDefer(
+        delaySeconds,
+        label,
+        fn
+    )
+
+    return true
 end
 
 ThemeManager:SetLibrary(
@@ -82163,141 +82081,196 @@ end)
 
 if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
 
-    -- Light / important helpers first.
+    -- Core startup only. These are light or directly useful for sniping.
     GAG2StartupDefer(0.15, "Restore Anti AFK", function()
 
         GAG2RestoreAntiAfkState()
     end)
 
-    GAG2StartupDefer(0.25, "Restore Performance", function()
-
-        GAG2RestorePerformanceState()
-    end)
-
-    GAG2StartupDefer(0.35, "Restore Server Selection", function()
+    GAG2StartupDefer(0.25, "Restore Server Selection", function()
 
         GAG2RestoreServerSelectionState()
     end)
 
-    GAG2StartupDefer(0.45, "Restore Version Hop", function()
+    GAG2StartupDefer(0.35, "Restore Version Hop", function()
 
         GAG2RestoreVersionHopState()
     end)
 
-    -- Sniper-supporting movement after core sniper is live.
-    GAG2StartupDefer(0.65, "Restore Farm Middle", function()
+    GAG2StartupDefer(0.55, "Restore Farm Middle", function()
 
         GAG2RestoreAutoTpMiddleFarmState()
     end)
 
-    -- Defence after movement/core systems.
-    GAG2StartupDefer(0.85, "Restore Defence", function()
+    -- Performance can delete/hide many objects, so keep it after core sniper.
+    GAG2StartupDefer(1.25, "Restore Performance", function()
 
-        if type(GAG2RestoreDefenceState) == "function" then
+        GAG2RestorePerformanceState()
+    end)
 
-            GAG2RestoreDefenceState()
+    -- Optional systems. These only restore if their saved toggle is ON.
+    -- This prevents sniping-only users from freezing on systems they do not use.
+
+    GAG2StartupOptionalDefer(
+        3.00,
+        "Restore Defence",
+        {
+            "HolyGAG2AutoDefend",
+        },
+        function()
+
+            if type(GAG2RestoreDefenceState) == "function" then
+
+                GAG2RestoreDefenceState()
+            end
         end
-    end)
+    )
 
-    -- Farm systems later.
-    GAG2StartupDefer(1.05, "Restore Auto Sell", function()
+    GAG2StartupOptionalDefer(
+        4.00,
+        "Restore Auto Sell",
+        {
+            "HolyGAG2AutoSell",
+            "HolyGAG2AutoSellFruits",
+        },
+        function()
 
-        GAG2RestoreAutoSellState()
-    end)
-
-    GAG2StartupDefer(1.25, "Restore Seed Planting", function()
-
-        GAG2RestoreSeedPlantingState()
-    end)
-
-    GAG2StartupDefer(1.45, "Restore Auto Collect Fruit", function()
-
-        GAG2RestoreAutoCollectFruitState()
-    end)
-
-    GAG2StartupDefer(1.65, "Restore Seed Collect", function()
-
-        GAG2RestoreSeedCollectState()
-    end)
-
-    -- UI / inventory systems after startup.
-    GAG2StartupDefer(1.90, "Restore Mailbox", function()
-
-        GAG2RestoreMailboxState()
-    end)
-
-    GAG2StartupDefer(2.15, "Restore Pet Teams", function()
-
-        if type(GAG2RestorePetTeamsState) == "function" then
-
-            GAG2RestorePetTeamsState()
+            GAG2RestoreAutoSellState()
         end
-    end)
+    )
 
-    GAG2StartupDefer(2.40, "Restore Seed Drop", function()
+    GAG2StartupOptionalDefer(
+        5.00,
+        "Restore Seed Planting",
+        {
+            "HolyGAG2AutoPlantSeeds",
+            "HolyGAG2AutoPlant",
+        },
+        function()
 
-        GAG2RestoreSeedDropState()
-    end)
+            GAG2RestoreSeedPlantingState()
+        end
+    )
 
-    GAG2StartupDefer(2.60, "Restore Drop Pickup", function()
+    GAG2StartupOptionalDefer(
+        6.00,
+        "Restore Auto Collect Fruit",
+        {
+            "HolyGAG2AutoCollectFruit",
+            "HolyGAG2AutoCollectFruits",
+        },
+        function()
 
-        GAG2RestoreDropPickupState()
-    end)
+            GAG2RestoreAutoCollectFruitState()
+        end
+    )
 
-    -- Network HUD/contributor are delayed hard because they can HTTP, render rows,
-    -- attach WildPetRef connections, and cause startup freezes.
-    GAG2StartupDefer(8.50, "Restore Wild Pet Network", function()
+    GAG2StartupOptionalDefer(
+        7.00,
+        "Restore Seed Collect",
+        {
+            "HolyGAG2AutoCollectSeed",
+            "HolyGAG2AutoCollectSeeds",
+        },
+        function()
 
-        GAG2RestoreWildPetNetworkState()
-    end)
+            GAG2RestoreSeedCollectState()
+        end
+    )
 
-    GAG2StartupDefer(10.00, "Restore Wild Pet Contributor", function()
+    -- Heavy UI/inventory systems much later.
+    -- These caused the biggest visible stalls in your screenshot.
+    GAG2StartupOptionalDefer(
+        15.00,
+        "Restore Mailbox",
+        {
+            "HolyGAG2MailboxEnabled",
+            "HolyGAG2MailboxAutoSend",
+            "HolyGAG2AutoMailbox",
+        },
+        function()
 
-        GAG2RestoreWildPetNetworkContributorState()
-    end)
+            GAG2RestoreMailboxState()
+        end
+    )
+
+    GAG2StartupOptionalDefer(
+        18.00,
+        "Restore Pet Teams",
+        {
+            "HolyGAG2PetTeamsAutoSwitch",
+            "HolyGAG2PetTeamsAuto",
+        },
+        function()
+
+            if type(GAG2RestorePetTeamsState) == "function" then
+
+                GAG2RestorePetTeamsState()
+            end
+        end
+    )
+
+    GAG2StartupOptionalDefer(
+        21.00,
+        "Restore Seed Drop",
+        {
+            "HolyGAG2AutoDropSeed",
+        },
+        function()
+
+            GAG2RestoreSeedDropState()
+        end
+    )
+
+    GAG2StartupOptionalDefer(
+        24.00,
+        "Restore Drop Pickup",
+        {
+            "HolyGAG2DropPickupEnabled",
+            "HolyGAG2AutoPickupDrops",
+            "HolyGAG2AutoPickupDroppedItems",
+        },
+        function()
+
+            GAG2RestoreDropPickupState()
+        end
+    )
+
+    -- Network systems last and only if toggled on.
+    GAG2StartupOptionalDefer(
+        28.00,
+        "Restore Wild Pet Network",
+        {
+            "HolyGAG2WildPetNetworkHud",
+        },
+        function()
+
+            GAG2RestoreWildPetNetworkState()
+        end
+    )
+
+    GAG2StartupOptionalDefer(
+        32.00,
+        "Restore Wild Pet Contributor",
+        {
+            "HolyGAG2WildPetNetworkContribute",
+        },
+        function()
+
+            GAG2RestoreWildPetNetworkContributorState()
+        end
+    )
 end
 
-task.delay(12.50, function()
+task.delay(4.00, function()
 
     print(
         "========== HOLY STARTUP PROFILE =========="
     )
 
-    print(
-        "Slow rows / important rows only:"
-    )
-
     for _, row in ipairs(GAG2_STARTUP_PROFILE.Rows or {}) do
 
-        local elapsedText =
-            tostring(row):match("|%s*([%d%.]+)s%s*|")
-
-        local elapsed =
-            tonumber(elapsedText)
-            or 0
-
-        if elapsed >= 0.08
-        or tostring(row):find("scheduled", 1, true)
-        or tostring(row):find("SaveManager", 1, true) then
-
-            print(row)
-        end
-    end
-
-    print(
-        "---- STALLS ----"
-    )
-
-    if type(GAG2_STARTUP_PROFILE.Stalls) == "table"
-    and #GAG2_STARTUP_PROFILE.Stalls > 0 then
-
-        for _, row in ipairs(GAG2_STARTUP_PROFILE.Stalls) do
-
-            print(row)
-        end
-    else
-
-        print("none")
+        print(row)
     end
 
     print(
@@ -82313,33 +82286,15 @@ task.spawn(function()
 
         if ConfigState.Dirty == true then
 
-            local saveBlockedUntil =
-                0
+            ConfigState.Dirty =
+                false
 
-            if type(GAG2_STARTUP_PROFILE) == "table" then
+            pcall(function()
 
-                saveBlockedUntil =
-                    tonumber(GAG2_STARTUP_PROFILE.SaveBlockedUntil)
-                    or 0
-            end
-
-            if os.clock() < saveBlockedUntil then
-
-                -- Keep Dirty true, but do not save during startup.
-                -- SaveManager writes can freeze while all restore callbacks are firing.
-
-            else
-
-                ConfigState.Dirty =
-                    false
-
-                GAG2StartupProfile("SaveManager Save", function()
-
-                    SaveManager:Save(
-                        ConfigState.AutosaveName
-                    )
-                end)
-            end
+                SaveManager:Save(
+                    ConfigState.AutosaveName
+                )
+            end)
         end
     end
 end)
