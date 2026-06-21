@@ -2884,6 +2884,946 @@ GAG2_STATS_OVERLAY_STATE.Destroy =
 
 
 --==================================================
+-- [3.6] DEFENCE CORE
+-- Auto shovel players who start stealing from your garden.
+--==================================================
+
+GAG2_DEFENCE_STATE =
+    GAG2_DEFENCE_STATE
+    or {
+        Enabled = false,
+        MovementMode = "Walk",
+
+        Busy = false,
+        Queue = {},
+        RecentTargets = {},
+
+        ListenerConnection = nil,
+
+        LastTargetUserId = 0,
+        LastTargetName = "",
+        LastTriggerAt = 0,
+        LastDefendAt = 0,
+
+        SamePlayerCooldown = 2.25,
+        GlobalCooldown = 0.65,
+
+        WalkStopDistance = 8,
+        WalkMaxSeconds = 8,
+
+        TeleportOffset = 5,
+        TeleportReturnDelay = 0.35,
+
+        SwingAttempts = 3,
+        SwingDelay = 0.18,
+    }
+
+function GAG2DefenceGetState()
+
+    GAG2_DEFENCE_STATE =
+        type(GAG2_DEFENCE_STATE) == "table"
+        and GAG2_DEFENCE_STATE
+        or {}
+
+    local state =
+        GAG2_DEFENCE_STATE
+
+    state.MovementMode =
+        CleanText(state.MovementMode)
+
+    if state.MovementMode ~= "Walk"
+    and state.MovementMode ~= "Teleport" then
+
+        state.MovementMode =
+            "Walk"
+    end
+
+    state.Queue =
+        type(state.Queue) == "table"
+        and state.Queue
+        or {}
+
+    state.RecentTargets =
+        type(state.RecentTargets) == "table"
+        and state.RecentTargets
+        or {}
+
+    state.SamePlayerCooldown =
+        tonumber(state.SamePlayerCooldown)
+        or 2.25
+
+    state.GlobalCooldown =
+        tonumber(state.GlobalCooldown)
+        or 0.65
+
+    state.WalkStopDistance =
+        tonumber(state.WalkStopDistance)
+        or 8
+
+    state.WalkMaxSeconds =
+        tonumber(state.WalkMaxSeconds)
+        or 8
+
+    state.TeleportOffset =
+        tonumber(state.TeleportOffset)
+        or 5
+
+    state.TeleportReturnDelay =
+        tonumber(state.TeleportReturnDelay)
+        or 0.35
+
+    state.SwingAttempts =
+        tonumber(state.SwingAttempts)
+        or 3
+
+    state.SwingDelay =
+        tonumber(state.SwingDelay)
+        or 0.18
+
+    state.Enabled =
+        state.Enabled == true
+
+    state.Busy =
+        state.Busy == true
+
+    return state
+end
+
+function GAG2DefenceReadPacketId(value)
+
+    if typeof(value) ~= "buffer" then
+        return nil
+    end
+
+    if type(buffer) ~= "table"
+    or type(buffer.len) ~= "function"
+    or type(buffer.readu8) ~= "function" then
+
+        return nil
+    end
+
+    local lenOk,
+        len =
+        pcall(function()
+
+            return buffer.len(
+                value
+            )
+        end)
+
+    if lenOk ~= true
+    or tonumber(len) == nil
+    or tonumber(len) <= 0 then
+
+        return nil
+    end
+
+    local idOk,
+        packetId =
+        pcall(function()
+
+            return buffer.readu8(
+                value,
+                0
+            )
+        end)
+
+    if idOk ~= true then
+        return nil
+    end
+
+    return tonumber(packetId)
+end
+
+function GAG2DefenceFindPlayerArgument(args)
+
+    if type(args) ~= "table" then
+        return nil
+    end
+
+    for index = 1, tonumber(args.n) or #args do
+
+        local value =
+            args[index]
+
+        if typeof(value) == "Instance"
+        and value:IsA("Player") then
+
+            return value
+        end
+
+        if type(value) == "table" then
+
+            for _, child in pairs(value) do
+
+                if typeof(child) == "Instance"
+                and child:IsA("Player") then
+
+                    return child
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function GAG2DefenceGetCharacterRoot(player)
+
+    if typeof(player) ~= "Instance"
+    or player:IsA("Player") ~= true then
+
+        return nil,
+            nil
+    end
+
+    local character =
+        player.Character
+
+    if not character then
+        return nil,
+            nil
+    end
+
+    local root =
+        character:FindFirstChild("HumanoidRootPart")
+        or character:FindFirstChild("RootPart")
+        or character.PrimaryPart
+
+    return character,
+        root
+end
+
+function GAG2DefenceGetLocalHumanoidAndRoot()
+
+    local character =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character
+        or nil
+
+    if not character then
+        return nil,
+            nil,
+            nil
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    local root =
+        character:FindFirstChild("HumanoidRootPart")
+        or character:FindFirstChild("RootPart")
+        or character.PrimaryPart
+
+    return character,
+        humanoid,
+        root
+end
+
+function GAG2DefenceFindShovelTool()
+
+    local roots = {
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character
+        or nil,
+
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("Backpack")
+        or nil,
+    }
+
+    for _, root in ipairs(roots) do
+
+        if typeof(root) == "Instance" then
+
+            for _, child in ipairs(root:GetChildren()) do
+
+                if child:IsA("Tool") then
+
+                    local lowerName =
+                        tostring(child.Name or "")
+                            :lower()
+
+                    local shovelAttr =
+                        nil
+
+                    pcall(function()
+
+                        shovelAttr =
+                            child:GetAttribute("Shovel")
+                    end)
+
+                    if lowerName:find("shovel", 1, true)
+                    or tostring(shovelAttr or ""):lower():find("shovel", 1, true) then
+
+                        return child
+                    end
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function GAG2DefenceEquipShovel()
+
+    local character,
+        humanoid =
+        GAG2DefenceGetLocalHumanoidAndRoot()
+
+    humanoid =
+        character
+        and character:FindFirstChildOfClass("Humanoid")
+        or nil
+
+    if not humanoid then
+        return nil,
+            "humanoid missing"
+    end
+
+    local shovel =
+        GAG2DefenceFindShovelTool()
+
+    if not shovel then
+        return nil,
+            "shovel missing"
+    end
+
+    if shovel.Parent ~= character then
+
+        local ok,
+            err =
+            pcall(function()
+
+                humanoid:EquipTool(
+                    shovel
+                )
+            end)
+
+        if ok ~= true then
+
+            return nil,
+                "equip shovel failed: "
+                .. tostring(err)
+        end
+
+        task.wait(
+            0.08
+        )
+    end
+
+    return shovel,
+        "ok"
+end
+
+function GAG2DefenceSwingShovel()
+
+    local state =
+        GAG2DefenceGetState()
+
+    local shovel,
+        reason =
+        GAG2DefenceEquipShovel()
+
+    if not shovel then
+        return false,
+            reason
+    end
+
+    local swings =
+        math.max(
+            1,
+            math.floor(
+                tonumber(state.SwingAttempts)
+                or 3
+            )
+        )
+
+    for _ = 1, swings do
+
+        if state.Enabled ~= true then
+            return false,
+                "disabled"
+        end
+
+        pcall(function()
+
+            if shovel.Parent then
+
+                shovel:Activate()
+            end
+        end)
+
+        task.wait(
+            state.SwingDelay
+        )
+    end
+
+    return true,
+        "swung shovel"
+end
+
+function GAG2DefenceWalkToPlayer(player)
+
+    local state =
+        GAG2DefenceGetState()
+
+    local _,
+        humanoid,
+        root =
+        GAG2DefenceGetLocalHumanoidAndRoot()
+
+    if not humanoid
+    or not root then
+
+        return false,
+            "local character missing"
+    end
+
+    local startedAt =
+        os.clock()
+
+    while os.clock() - startedAt <= state.WalkMaxSeconds do
+
+        if state.Enabled ~= true then
+            return false,
+                "disabled"
+        end
+
+        local _,
+            targetRoot =
+            GAG2DefenceGetCharacterRoot(
+                player
+            )
+
+        if not targetRoot then
+            return false,
+                "target root missing"
+        end
+
+        local distance =
+            (
+                root.Position
+                - targetRoot.Position
+            ).Magnitude
+
+        if distance <= state.WalkStopDistance then
+            return true,
+                "in range"
+        end
+
+        pcall(function()
+
+            humanoid:MoveTo(
+                targetRoot.Position
+            )
+        end)
+
+        task.wait(
+            0.20
+        )
+
+        local _,
+            refreshedHumanoid,
+            refreshedRoot =
+            GAG2DefenceGetLocalHumanoidAndRoot()
+
+        humanoid =
+            refreshedHumanoid
+            or humanoid
+
+        root =
+            refreshedRoot
+            or root
+    end
+
+    return false,
+        "walk timeout"
+end
+
+function GAG2DefenceTeleportToPlayerAndSwing(player)
+
+    local state =
+        GAG2DefenceGetState()
+
+    local _,
+        _,
+        root =
+        GAG2DefenceGetLocalHumanoidAndRoot()
+
+    if not root then
+        return false,
+            "local root missing"
+    end
+
+    local _,
+        targetRoot =
+        GAG2DefenceGetCharacterRoot(
+            player
+        )
+
+    if not targetRoot then
+        return false,
+            "target root missing"
+    end
+
+    local savedCFrame =
+        root.CFrame
+
+    local offset =
+        math.max(
+            3,
+            tonumber(state.TeleportOffset)
+            or 5
+        )
+
+    local direction =
+        targetRoot.CFrame.LookVector
+
+    if direction.Magnitude <= 0 then
+
+        direction =
+            Vector3.new(
+                0,
+                0,
+                -1
+            )
+    end
+
+    local targetPosition =
+        targetRoot.Position
+        - (
+            direction.Unit
+            * offset
+        )
+        + Vector3.new(
+            0,
+            2.5,
+            0
+        )
+
+    local teleportOk =
+        pcall(function()
+
+            root.CFrame =
+                CFrame.new(
+                    targetPosition,
+                    targetRoot.Position
+                )
+        end)
+
+    if teleportOk ~= true then
+        return false,
+            "teleport failed"
+    end
+
+    task.wait(
+        0.12
+    )
+
+    local swung,
+        swingInfo =
+        GAG2DefenceSwingShovel()
+
+    task.wait(
+        state.TeleportReturnDelay
+    )
+
+    local _,
+        _,
+        returnRoot =
+        GAG2DefenceGetLocalHumanoidAndRoot()
+
+    if returnRoot
+    and typeof(savedCFrame) == "CFrame" then
+
+        pcall(function()
+
+            returnRoot.CFrame =
+                savedCFrame
+        end)
+    end
+
+    return swung,
+        swingInfo
+end
+
+function GAG2DefenceRunTarget(record)
+
+    local state =
+        GAG2DefenceGetState()
+
+    if type(record) ~= "table" then
+        return false
+    end
+
+    local player =
+        record.Player
+
+    if typeof(player) ~= "Instance"
+    or player:IsA("Player") ~= true then
+
+        player =
+            Players:GetPlayerByUserId(
+                tonumber(record.UserId)
+                or 0
+            )
+    end
+
+    if not player
+    or player == LOCAL_PLAYER then
+        return false
+    end
+
+    state.LastTargetUserId =
+        player.UserId
+
+    state.LastTargetName =
+        player.Name
+
+    state.LastDefendAt =
+        os.clock()
+
+    if state.MovementMode == "Teleport" then
+
+        return GAG2DefenceTeleportToPlayerAndSwing(
+            player
+        )
+    end
+
+    local walkOk =
+        GAG2DefenceWalkToPlayer(
+            player
+        )
+
+    if walkOk == true then
+
+        return GAG2DefenceSwingShovel()
+    end
+
+    return false
+end
+
+function GAG2DefenceStartWorker()
+
+    local state =
+        GAG2DefenceGetState()
+
+    if state.Busy == true then
+        return false
+    end
+
+    state.Busy =
+        true
+
+    task.spawn(function()
+
+        while state.Enabled == true
+        and #state.Queue > 0 do
+
+            local now =
+                os.clock()
+
+            local lastDefendAt =
+                tonumber(state.LastDefendAt)
+                or 0
+
+            if now - lastDefendAt < state.GlobalCooldown then
+
+                task.wait(
+                    state.GlobalCooldown
+                    - (
+                        now
+                        - lastDefendAt
+                    )
+                )
+            end
+
+            local record =
+                table.remove(
+                    state.Queue,
+                    1
+                )
+
+            if record then
+
+                pcall(function()
+
+                    GAG2DefenceRunTarget(
+                        record
+                    )
+                end)
+            end
+
+            task.wait(
+                0.05
+            )
+        end
+
+        state.Busy =
+            false
+    end)
+
+    return true
+end
+
+function GAG2DefenceQueueTarget(player, reason)
+
+    local state =
+        GAG2DefenceGetState()
+
+    if state.Enabled ~= true then
+        return false
+    end
+
+    if typeof(player) ~= "Instance"
+    or player:IsA("Player") ~= true
+    or player == LOCAL_PLAYER then
+
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    local key =
+        tostring(player.UserId)
+
+    local previous =
+        tonumber(state.RecentTargets[key])
+        or 0
+
+    if now - previous < state.SamePlayerCooldown then
+        return false
+    end
+
+    state.RecentTargets[key] =
+        now
+
+    state.LastTriggerAt =
+        now
+
+    state.LastTargetUserId =
+        player.UserId
+
+    state.LastTargetName =
+        player.Name
+
+    table.insert(state.Queue, {
+        Player =
+            player,
+
+        UserId =
+            player.UserId,
+
+        Name =
+            player.Name,
+
+        Reason =
+            tostring(reason or "steal started"),
+
+        AddedAt =
+            now,
+    })
+
+    while #state.Queue > 6 do
+
+        table.remove(
+            state.Queue,
+            1
+        )
+    end
+
+    GAG2DefenceStartWorker()
+
+    return true
+end
+
+function GAG2DefenceHandleRemoteEvent(...)
+
+    local state =
+        GAG2DefenceGetState()
+
+    if state.Enabled ~= true then
+        return
+    end
+
+    local args =
+        table.pack(...)
+
+    local packetId =
+        GAG2DefenceReadPacketId(
+            args[1]
+        )
+
+    -- 102 = Networking.Steal.StealStarted
+    if packetId ~= 102 then
+        return
+    end
+
+    local player =
+        GAG2DefenceFindPlayerArgument(
+            args
+        )
+
+    if not player
+    or player == LOCAL_PLAYER then
+        return
+    end
+
+    GAG2DefenceQueueTarget(
+        player,
+        "StealStarted"
+    )
+end
+
+function GAG2DefenceStopListener()
+
+    local state =
+        GAG2DefenceGetState()
+
+    if state.ListenerConnection then
+
+        pcall(function()
+
+            state.ListenerConnection:Disconnect()
+        end)
+    end
+
+    state.ListenerConnection =
+        nil
+
+    state.Queue =
+        {}
+
+    state.Busy =
+        false
+
+    return true
+end
+
+function GAG2DefenceStartListener()
+
+    local state =
+        GAG2DefenceGetState()
+
+    if state.ListenerConnection then
+        return true
+    end
+
+    local packetFolder =
+        ReplicatedStorage:FindFirstChild("SharedModules")
+        and ReplicatedStorage.SharedModules:FindFirstChild("Packet")
+        or nil
+
+    local remote =
+        packetFolder
+        and packetFolder:FindFirstChild("RemoteEvent")
+        or nil
+
+    if not remote
+    or remote:IsA("RemoteEvent") ~= true then
+        return false
+    end
+
+    state.ListenerConnection =
+        remote.OnClientEvent:Connect(function(...)
+
+            GAG2DefenceHandleRemoteEvent(...)
+        end)
+
+    return true
+end
+
+function GAG2DefenceSetEnabled(value)
+
+    local state =
+        GAG2DefenceGetState()
+
+    state.Enabled =
+        value == true
+
+    if state.Enabled == true then
+
+        GAG2DefenceStartListener()
+
+    else
+
+        GAG2DefenceStopListener()
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2DefenceSetMovementMode(value)
+
+    local state =
+        GAG2DefenceGetState()
+
+    value =
+        CleanText(value)
+
+    if value ~= "Walk"
+    and value ~= "Teleport" then
+
+        value =
+            "Walk"
+    end
+
+    state.MovementMode =
+        value
+
+    MarkConfigDirty()
+end
+
+function GAG2RestoreDefenceState()
+
+    task.defer(function()
+
+        local state =
+            GAG2DefenceGetState()
+
+        if Options.HolyGAG2DefenceMovement then
+
+            state.MovementMode =
+                CleanText(
+                    Options.HolyGAG2DefenceMovement.Value
+                )
+        end
+
+        if state.MovementMode ~= "Walk"
+        and state.MovementMode ~= "Teleport" then
+
+            state.MovementMode =
+                "Walk"
+        end
+
+        local enabled =
+            false
+
+        if Toggles.HolyGAG2AutoDefend then
+
+            enabled =
+                Toggles.HolyGAG2AutoDefend.Value == true
+        end
+
+        state.Enabled =
+            enabled
+
+        if enabled == true then
+
+            GAG2DefenceStartListener()
+
+        else
+
+            GAG2DefenceStopListener()
+        end
+    end)
+end
+
+
+--==================================================
 -- [3.6] PET TEAMS CORE
 --==================================================
 
@@ -70703,15 +71643,15 @@ local ServerStatusBox =
 CombatMainBox =
     AddLeftBox(
         Tabs.Combat,
-        "Combat Controls",
-        "swords"
+        "Steal",
+        "hand-coins"
     )
 
 CombatStatusBox =
     AddRightBox(
         Tabs.Combat,
-        "Combat Status",
-        "shield"
+        "Defence",
+        "shield-check"
     )
 
 local ShopsMainBox =
@@ -72424,21 +73364,52 @@ end
 
 if CombatMainBox then
 
-    CombatMainBox:AddLabel("HolyGAG2CombatInfo", {
+    CombatMainBox:AddLabel("HolyGAG2StealInfo", {
         Text =
-            '<font color="rgb(196,181,253)"><b>Combat</b></font>'
-            .. '\nCombat tools will be added here.',
+            '<font color="rgb(196,181,253)"><b>Steal</b></font>'
+            .. '\nSteal tools will be added later.',
         DoesWrap = true,
     })
 end
 
 if CombatStatusBox then
 
-    CombatStatusBox:AddLabel("HolyGAG2CombatStatus", {
-        Text =
-            '<font color="rgb(196,181,253)"><b>Status</b></font>'
-            .. '\nIdle.',
-        DoesWrap = true,
+    CombatStatusBox:AddToggle("HolyGAG2AutoDefend", {
+        Text = "Auto Defend",
+        Default = false,
+        Tooltip = "When someone starts stealing from your garden, HOLY equips shovel, moves to the thief, and swings.",
+        Callback = function(value)
+
+            if ConfigState.Loading == true then
+                return
+            end
+
+            GAG2DefenceSetEnabled(
+                value == true
+            )
+        end,
+    })
+
+    CombatStatusBox:AddDropdown("HolyGAG2DefenceMovement", {
+        Text = "Defence Movement",
+        Values = {
+            "Walk",
+            "Teleport",
+        },
+        Default = "Walk",
+        Multi = false,
+        Searchable = false,
+        Tooltip = "Walk is default and safer. Teleport jumps to the thief, swings, then returns.",
+        Callback = function(value)
+
+            if ConfigState.Loading == true then
+                return
+            end
+
+            GAG2DefenceSetMovementMode(
+                value
+            )
+        end,
     })
 end
 
@@ -78473,6 +79444,7 @@ if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
     GAG2RestoreAutoSellState()
     GAG2RestoreMailboxState()
     GAG2RestorePetTeamsState()
+    GAG2RestoreDefenceState()
     GAG2RestoreSeedDropState()
     GAG2RestoreDropPickupState()
     GAG2RestoreSeedCollectState()
