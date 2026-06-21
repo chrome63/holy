@@ -2917,6 +2917,19 @@ GAG2_PET_TEAMS_DEFAULT_NAMES = {
     "Manual",
 }
 
+GAG2_PET_TEAMS_WEATHER_VALUES = {
+    "Rain",
+    "Lightning",
+    "Rainbow",
+    "Snowfall",
+    "Starfall",
+    "Aurora",
+    "Moon",
+    "Goldmoon",
+    "Rainbow Moon",
+    "Bloodmoon",
+}
+
 GAG2_PET_TEAMS_STATE =
     GAG2_PET_TEAMS_STATE
     or {
@@ -2982,6 +2995,71 @@ function GAG2PetTeamsShortId(value)
     return value
 end
 
+function GAG2PetTeamsGetWeatherValues()
+
+    local output =
+        {}
+
+    for _, weatherName in ipairs(GAG2_PET_TEAMS_WEATHER_VALUES) do
+
+        table.insert(
+            output,
+            tostring(weatherName)
+        )
+    end
+
+    return output
+end
+
+function GAG2PetTeamsNormalizeWeatherChoiceMap(source)
+
+    local output =
+        {}
+
+    if type(source) ~= "table" then
+        return output
+    end
+
+    for key, value in pairs(source) do
+
+        local weatherName =
+            ""
+
+        local enabled =
+            false
+
+        if type(key) == "number" then
+
+            weatherName =
+                CleanText(
+                    tostring(value or "")
+                )
+
+            enabled =
+                weatherName ~= ""
+
+        else
+
+            weatherName =
+                CleanText(
+                    tostring(key or "")
+                )
+
+            enabled =
+                value == true
+        end
+
+        if weatherName ~= ""
+        and enabled == true then
+
+            output[weatherName] =
+                true
+        end
+    end
+
+    return output
+end
+
 function GAG2PetTeamsGetState()
 
     GAG2_PET_TEAMS_STATE =
@@ -3025,6 +3103,11 @@ function GAG2PetTeamsGetState()
     state.SelectedPetChoices =
         type(state.SelectedPetChoices) == "table"
         and state.SelectedPetChoices
+        or {}
+
+    state.SelectedWeatherChoices =
+        type(state.SelectedWeatherChoices) == "table"
+        and state.SelectedWeatherChoices
         or {}
 
     local seen =
@@ -3166,6 +3249,14 @@ function GAG2PetTeamsGetState()
     state.ManualLock =
         state.ManualLock == true
 
+    state.UseWeatherTeam =
+        state.UseWeatherTeam == true
+
+    state.SelectedWeatherChoices =
+        GAG2PetTeamsNormalizeWeatherChoiceMap(
+            state.SelectedWeatherChoices
+        )
+
     return state
 end
 
@@ -3259,6 +3350,14 @@ function GAG2PetTeamsSerialize()
 
         ManualLock =
             state.ManualLock == true,
+
+        UseWeatherTeam =
+            state.UseWeatherTeam == true,
+
+        SelectedWeatherChoices =
+            GAG2PetTeamsNormalizeWeatherChoiceMap(
+                state.SelectedWeatherChoices
+            ),
 
         TeamNames =
             GAG2PetTeamsCopyArray(
@@ -3380,6 +3479,14 @@ function GAG2PetTeamsLoadSettings()
 
     state.ManualLock =
         payload.ManualLock == true
+
+    state.UseWeatherTeam =
+        payload.UseWeatherTeam == true
+
+    state.SelectedWeatherChoices =
+        GAG2PetTeamsNormalizeWeatherChoiceMap(
+            payload.SelectedWeatherChoices
+        )
 
     if type(payload.TeamNames) == "table" then
         state.TeamNames =
@@ -4064,26 +4171,34 @@ function GAG2PetTeamsRefreshTeamDropdowns()
     local controls =
         state.Controls
 
-    local values =
+    local teamValues =
         GAG2PetTeamsGetTeamNames()
 
-    local dropdowns = {
+    local weatherValues =
+        GAG2PetTeamsGetWeatherValues()
+
+    local teamDropdowns = {
         controls.Team,
         controls.RuleDefault,
         controls.RuleDay,
         controls.RuleNight,
-        controls.RuleWeather,
+        controls.RuleWeatherTeam,
         controls.RuleSeedCollect,
         controls.RuleSniperFound,
     }
 
-    for _, dropdown in ipairs(dropdowns) do
+    for _, dropdown in ipairs(teamDropdowns) do
 
         GAG2PetTeamsSetDropdownValues(
             dropdown,
-            values
+            teamValues
         )
     end
+
+    GAG2PetTeamsSetDropdownValues(
+        controls.RuleWeatherChoices,
+        weatherValues
+    )
 
     GAG2PetTeamsSetDropdownValue(
         controls.Team,
@@ -4106,8 +4221,13 @@ function GAG2PetTeamsRefreshTeamDropdowns()
     )
 
     GAG2PetTeamsSetDropdownValue(
-        controls.RuleWeather,
+        controls.RuleWeatherTeam,
         state.Rules.Weather
+    )
+
+    GAG2PetTeamsSetDropdownValue(
+        controls.RuleWeatherChoices,
+        state.SelectedWeatherChoices
     )
 
     GAG2PetTeamsSetDropdownValue(
@@ -5236,6 +5356,34 @@ function GAG2PetTeamsSetManualLock(value)
 
     state.ManualLock =
         value == true
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshStatus()
+    MarkConfigDirty()
+end
+
+function GAG2PetTeamsSetUseWeatherTeam(value)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    state.UseWeatherTeam =
+        value == true
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshStatus()
+    MarkConfigDirty()
+end
+
+function GAG2PetTeamsSetSelectedWeatherChoices(value)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    state.SelectedWeatherChoices =
+        GAG2PetTeamsNormalizeWeatherChoiceMap(
+            value
+        )
 
     GAG2PetTeamsSaveSettings()
     GAG2PetTeamsRefreshStatus()
@@ -72594,14 +72742,58 @@ if PetTeamsRulesBox then
             Searchable = false,
         })
 
-    PetTeamsState.Controls.RuleWeather =
-        PetTeamsRulesBox:AddDropdown("HolyGAG2PetTeamsRuleWeather", {
+    PetTeamsState.Controls.UseWeatherTeam =
+        PetTeamsRulesBox:AddToggle("HolyGAG2PetTeamsUseWeatherTeam", {
+            Text = "Use Weather Team",
+            Default = PetTeamsState.UseWeatherTeam == true,
+            Tooltip = "ON: if any selected weather is active, HOLY can switch to the selected Weather Team.",
+            Callback = function(value)
+
+                if ConfigState.Loading == true then
+                    return
+                end
+
+                GAG2PetTeamsSetUseWeatherTeam(
+                    value == true
+                )
+            end,
+        })
+
+    PetTeamsState.Controls.RuleWeatherChoices =
+        PetTeamsRulesBox:AddDropdown("HolyGAG2PetTeamsRuleWeatherChoices", {
+            Text = "Selected Weathers",
+            Values = GAG2PetTeamsGetWeatherValues(),
+            Default = PetTeamsState.SelectedWeatherChoices,
+            Multi = true,
+            Searchable = false,
+        })
+
+    PetTeamsState.Controls.RuleWeatherTeam =
+        PetTeamsRulesBox:AddDropdown("HolyGAG2PetTeamsRuleWeatherTeam", {
             Text = "Weather Team",
             Values = GAG2PetTeamsGetTeamNames(),
             Default = PetTeamsState.Rules.Weather or "Weather",
             Multi = false,
             Searchable = false,
         })
+
+    if PetTeamsState.Controls.RuleWeatherChoices
+    and type(PetTeamsState.Controls.RuleWeatherChoices.OnChanged) == "function" then
+
+        PetTeamsState.Controls.RuleWeatherChoices:OnChanged(function(value)
+
+            local state =
+                GAG2PetTeamsGetState()
+
+            if state.RefreshingControls == true then
+                return
+            end
+
+            GAG2PetTeamsSetSelectedWeatherChoices(
+                value
+            )
+        end)
+    end
 
     PetTeamsState.Controls.RuleSeedCollect =
         PetTeamsRulesBox:AddDropdown("HolyGAG2PetTeamsRuleSeedCollect", {
@@ -72659,7 +72851,7 @@ if PetTeamsRulesBox then
     )
 
     bindRule(
-        PetTeamsState.Controls.RuleWeather,
+        PetTeamsState.Controls.RuleWeatherTeam,
         "Weather"
     )
 
