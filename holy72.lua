@@ -587,6 +587,156 @@ function GAG2ExecutorBuildTrace(errorValue)
     return errorText
 end
 
+function GAG2RemoteCacheCanUse()
+
+    return type(readfile) == "function"
+        and type(writefile) == "function"
+        and type(isfile) == "function"
+        and type(makefolder) == "function"
+        and type(isfolder) == "function"
+end
+
+function GAG2RemoteCacheHash(text)
+
+    text =
+        tostring(text or "")
+
+    local hash =
+        2166136261
+
+    for index = 1, #text do
+
+        hash =
+            (
+                hash
+                ~ string.byte(text, index)
+            )
+            * 16777619
+
+        hash =
+            hash % 4294967296
+    end
+
+    return tostring(hash)
+end
+
+function GAG2RemoteCachePath(url, moduleName)
+
+    local safeName =
+        tostring(moduleName or "module")
+            :gsub("[^%w_%-%.]", "_")
+
+    return "HolyGAG2/RemoteCache/"
+        .. safeName
+        .. "_"
+        .. GAG2RemoteCacheHash(url)
+        .. ".lua"
+end
+
+function GAG2RemoteCacheEnsureFolder()
+
+    if GAG2RemoteCacheCanUse() ~= true then
+        return false
+    end
+
+    pcall(function()
+
+        if not isfolder("HolyGAG2") then
+            makefolder("HolyGAG2")
+        end
+
+        if not isfolder("HolyGAG2/RemoteCache") then
+            makefolder("HolyGAG2/RemoteCache")
+        end
+    end)
+
+    return true
+end
+
+function GAG2RemoteCacheRead(url, moduleName)
+
+    if GAG2RemoteCacheCanUse() ~= true then
+        return nil
+    end
+
+    local path =
+        GAG2RemoteCachePath(
+            url,
+            moduleName
+        )
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(path)
+    end)
+
+    if exists ~= true then
+        return nil
+    end
+
+    local ok,
+        source =
+        pcall(function()
+
+            return readfile(path)
+        end)
+
+    if ok ~= true
+    or type(source) ~= "string"
+    or source == "" then
+
+        return nil
+    end
+
+    local validated =
+        GAG2ExecutorValidateLuaSource(
+            source
+        )
+
+    if type(validated) ~= "string"
+    or validated == "" then
+
+        return nil
+    end
+
+    return validated
+end
+
+function GAG2RemoteCacheWrite(url, moduleName, source)
+
+    if GAG2RemoteCacheCanUse() ~= true then
+        return false
+    end
+
+    if type(source) ~= "string"
+    or source == "" then
+        return false
+    end
+
+    GAG2RemoteCacheEnsureFolder()
+
+    local path =
+        GAG2RemoteCachePath(
+            url,
+            moduleName
+        )
+
+    local ok =
+        pcall(function()
+
+            writefile(
+                path,
+                source
+            )
+        end)
+
+    return ok == true
+end
+
 function GAG2LoadRemoteModule(url, moduleName)
 
     moduleName =
@@ -595,7 +745,7 @@ function GAG2LoadRemoteModule(url, moduleName)
             or "remote module"
         )
 
-        local moduleStartedAt =
+    local moduleStartedAt =
         os.clock()
 
     if type(GAG2BootMark) == "function" then
@@ -606,32 +756,68 @@ function GAG2LoadRemoteModule(url, moduleName)
         )
     end
 
-    local source, downloadError =
-        GAG2ExecutorHttpGet(
-            url
+    local source =
+        GAG2RemoteCacheRead(
+            url,
+            moduleName
         )
 
-    if type(source) ~= "string"
-    or source == "" then
+    local fromCache =
+        type(source) == "string"
+        and source ~= ""
 
-        error(
-            "[HOLY] Failed to download "
-            .. moduleName
-            .. ":\n"
-            .. tostring(downloadError),
-            0
-        )
-    end
+    if fromCache == true then
 
         if type(GAG2BootMark) == "function" then
 
-        GAG2BootMark(
-            "Remote module downloaded: "
-            .. tostring(moduleName)
-            .. " | "
-            .. tostring(#source)
-            .. " bytes"
+            GAG2BootMark(
+                "Remote module cache hit: "
+                .. tostring(moduleName)
+                .. " | "
+                .. tostring(#source)
+                .. " bytes"
+            )
+        end
+
+    else
+
+        local downloadError =
+            nil
+
+        source,
+            downloadError =
+            GAG2ExecutorHttpGet(
+                url
+            )
+
+        if type(source) ~= "string"
+        or source == "" then
+
+            error(
+                "[HOLY] Failed to download "
+                .. moduleName
+                .. ":\n"
+                .. tostring(downloadError),
+                0
+            )
+        end
+
+        GAG2RemoteCacheWrite(
+            url,
+            moduleName,
+            source
         )
+
+        if type(GAG2BootMark) == "function" then
+
+            GAG2BootMark(
+                "Remote module downloaded: "
+                .. tostring(moduleName)
+                .. " | "
+                .. tostring(#source)
+                .. " bytes"
+            )
+        end
     end
 
     if moduleName == "librarygag2.lua" then
@@ -653,8 +839,21 @@ function GAG2LoadRemoteModule(url, moduleName)
         if hasLibraryStart ~= true
         or hasLibraryReturn ~= true then
 
+            if fromCache == true then
+
+                pcall(function()
+
+                    delfile(
+                        GAG2RemoteCachePath(
+                            url,
+                            moduleName
+                        )
+                    )
+                end)
+            end
+
             error(
-                "[HOLY] librarygag2.lua download is stale or invalid."
+                "[HOLY] librarygag2.lua source is stale or invalid."
                 .. "\nSource size: "
                 .. tostring(#source)
                 .. " bytes"
@@ -679,7 +878,9 @@ function GAG2LoadRemoteModule(url, moduleName)
         )
     end
 
-    local compileOk, chunk, compileError =
+    local compileOk,
+        chunk,
+        compileError =
         pcall(
             compiler,
             source
@@ -711,7 +912,7 @@ function GAG2LoadRemoteModule(url, moduleName)
         )
     end
 
-        if type(GAG2BootMark) == "function" then
+    if type(GAG2BootMark) == "function" then
 
         GAG2BootMark(
             "Remote module compiled: "
@@ -719,7 +920,8 @@ function GAG2LoadRemoteModule(url, moduleName)
         )
     end
 
-    local runOk, result =
+    local runOk,
+        result =
         xpcall(
             chunk,
             GAG2ExecutorBuildTrace
@@ -741,6 +943,12 @@ function GAG2LoadRemoteModule(url, moduleName)
         GAG2BootMark(
             "Remote module ran: "
             .. tostring(moduleName)
+            .. " | "
+            .. (
+                fromCache == true
+                and "cache"
+                or "download"
+            )
             .. " | total "
             .. string.format(
                 "%.3fs",
@@ -82267,11 +82475,22 @@ if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
         GAG2RestoreAutoTpMiddleFarmState()
     end)
 
-    -- Performance can delete/hide many objects, so keep it after core sniper.
-    GAG2StartupDefer(1.25, "Restore Performance", function()
+    -- Performance touches garden visuals. Delay it so it does not fight
+    -- PetVisualController while the game is still loading.
+    GAG2StartupOptionalDefer(
+        13.50,
+        "Restore Performance",
+        {
+            "HolyGAG2HideOtherGardens",
+            "HolyGAG2HideOwnGarden",
+            "HolyGAG2HardDeleteOwnGarden",
+            "HolyGAG2HideMapClutter",
+        },
+        function()
 
-        GAG2RestorePerformanceState()
-    end)
+            GAG2RestorePerformanceState()
+        end
+    )
 
     -- Optional systems. These only restore if their saved toggle is ON.
     -- This prevents sniping-only users from freezing on systems they do not use.
@@ -82427,7 +82646,14 @@ if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
     )
 end
 
-task.delay(4.00, function()
+GAG2_STARTUP_PROFILE_PRINT_ENABLED =
+    false
+
+task.delay(14.00, function()
+
+    if GAG2_STARTUP_PROFILE_PRINT_ENABLED ~= true then
+        return
+    end
 
     print(
         "========== HOLY STARTUP PROFILE =========="
@@ -82435,7 +82661,18 @@ task.delay(4.00, function()
 
     for _, row in ipairs(GAG2_STARTUP_PROFILE.Rows or {}) do
 
-        print(row)
+        local elapsedText =
+            tostring(row):match("|%s*([%d%.]+)s%s*|")
+
+        local elapsed =
+            tonumber(elapsedText)
+            or 0
+
+        if elapsed >= 0.08
+        or tostring(row):find("SaveManager", 1, true) then
+
+            print(row)
+        end
     end
 
     print(
