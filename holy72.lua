@@ -9150,7 +9150,7 @@ function GAG2SendSnipeBoughtWebhook(record)
         },
 
         {
-            name = "Base Price",
+            name = "Price",
             value =
                 data.Price > 0
                 and GAG2SnipeBoughtWebhookFormatNumber(data.Price)
@@ -9208,12 +9208,6 @@ function GAG2SendSnipeBoughtWebhook(record)
         fields =
             fields,
 
-        footer = {
-            text =
-                "HOLY GAG2 • "
-                .. tostring(data.ConfirmReason),
-        },
-
         timestamp =
             os.date("!%Y-%m-%dT%H:%M:%SZ"),
     }
@@ -9237,16 +9231,6 @@ function GAG2SendSnipeBoughtWebhook(record)
     local payload = {
         username =
             "HOLY",
-
-        content =
-            "✅ Sniped by **HOLY**: **"
-            .. tostring(data.PetName)
-            .. "** | "
-            .. tostring(data.Rarity)
-            .. " | "
-            .. tostring(data.Size)
-            .. " | "
-            .. tostring(data.Mutation),
 
         allowed_mentions = {
             parse = {},
