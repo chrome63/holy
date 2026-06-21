@@ -9083,9 +9083,36 @@ function GAG2SendSnipeBoughtWebhook(record)
     GAG2_SNIPE_BOUGHT_WEBHOOK_SENT[key] =
         true
 
+    local function safeFieldText(value, fallback)
+
+        local text =
+            CleanText(value)
+
+        if text == "" then
+            text =
+                tostring(fallback or "Unknown")
+        end
+
+        if #text > 1000 then
+
+            text =
+                text:sub(1, 997)
+                .. "..."
+        end
+
+        return text
+    end
+
     local title =
         "✅ Pet Sniped: "
         .. tostring(data.PetName)
+
+    if #title > 250 then
+
+        title =
+            title:sub(1, 247)
+            .. "..."
+    end
 
     local variant =
         tostring(data.Size)
@@ -9102,25 +9129,25 @@ function GAG2SendSnipeBoughtWebhook(record)
     local fields = {
         {
             name = "Rarity",
-            value = tostring(data.Rarity),
+            value = safeFieldText(data.Rarity, "Unknown"),
             inline = true,
         },
 
         {
             name = "Mutation",
-            value = tostring(data.Mutation),
+            value = safeFieldText(data.Mutation, "Normal"),
             inline = true,
         },
 
         {
             name = "Size",
-            value = tostring(data.Size),
+            value = safeFieldText(data.Size, "Normal"),
             inline = true,
         },
 
         {
             name = "Variant",
-            value = variant,
+            value = safeFieldText(variant, "Normal / Normal"),
             inline = true,
         },
 
@@ -9197,17 +9224,39 @@ function GAG2SendSnipeBoughtWebhook(record)
             os.date("!%Y-%m-%dT%H:%M:%SZ"),
     }
 
-    if data.Image ~= "" then
+    local imageUrl =
+        CleanText(
+            data.Image
+        )
+
+    -- Discord rejects non-http thumbnail URLs.
+    -- Some Roblox/game images can be rbxassetid:// or invalid for Discord.
+    if imageUrl:match("^https://")
+    or imageUrl:match("^http://") then
 
         embed.thumbnail = {
             url =
-                data.Image,
+                imageUrl,
         }
     end
 
     local payload = {
         username =
             "HOLY GAG2 Snipes",
+
+        content =
+            "✅ Pet sniped: **"
+            .. tostring(data.PetName)
+            .. "** | "
+            .. tostring(data.Rarity)
+            .. " | "
+            .. tostring(data.Size)
+            .. " | "
+            .. tostring(data.Mutation),
+
+        allowed_mentions = {
+            parse = {},
+        },
 
         embeds = {
             embed,
@@ -9226,6 +9275,9 @@ function GAG2SendSnipeBoughtWebhook(record)
     if encodedOk ~= true
     or type(encoded) ~= "string" then
 
+        GAG2_SNIPE_BOUGHT_WEBHOOK_SENT[key] =
+            nil
+
         return false,
             "json encode failed"
     end
@@ -9235,8 +9287,27 @@ function GAG2SendSnipeBoughtWebhook(record)
 
     if type(requestFunction) ~= "function" then
 
+        GAG2_SNIPE_BOUGHT_WEBHOOK_SENT[key] =
+            nil
+
         return false,
             "executor request missing"
+    end
+
+    local postUrl =
+        url
+
+    if postUrl:find("?", 1, true) then
+
+        postUrl =
+            postUrl
+            .. "&wait=true"
+
+    else
+
+        postUrl =
+            postUrl
+            .. "?wait=true"
     end
 
     local ok,
@@ -9245,16 +9316,13 @@ function GAG2SendSnipeBoughtWebhook(record)
 
             return requestFunction({
                 Url =
-                    url,
+                    postUrl,
 
                 Method =
                     "POST",
 
                 Headers = {
                     ["Content-Type"] =
-                        "application/json",
-
-                    ["Accept"] =
                         "application/json",
                 },
 
@@ -9269,11 +9337,81 @@ function GAG2SendSnipeBoughtWebhook(record)
             nil
 
         return false,
-            tostring(response)
+            "request crashed: "
+            .. tostring(response)
     end
 
+    local statusCode =
+        nil
+
+    local responseBody =
+        ""
+
+    if type(response) == "table" then
+
+        statusCode =
+            tonumber(
+                response.StatusCode
+                or response.statusCode
+                or response.Status
+                or response.status
+                or response.ResponseCode
+                or response.responseCode
+            )
+
+        responseBody =
+            tostring(
+                response.Body
+                or response.body
+                or response.ResponseBody
+                or response.responseBody
+                or ""
+            )
+
+    elseif type(response) == "string" then
+
+        responseBody =
+            response
+    end
+
+    if statusCode
+    and (
+        statusCode < 200
+        or statusCode >= 300
+    ) then
+
+        GAG2_SNIPE_BOUGHT_WEBHOOK_SENT[key] =
+            nil
+
+        warn(
+            "[HOLY SNIPE BOUGHT WEBHOOK]",
+            "bad status:",
+            tostring(statusCode),
+            tostring(responseBody)
+        )
+
+        return false,
+            "bad status "
+            .. tostring(statusCode)
+            .. " "
+            .. tostring(responseBody)
+    end
+
+    print(
+        "[HOLY SNIPE BOUGHT WEBHOOK]",
+        "discord response status:",
+        tostring(statusCode or "no-status"),
+        "| body:",
+        tostring(
+            responseBody ~= ""
+            and responseBody:sub(1, 180)
+            or "empty"
+        )
+    )
+
     return true,
-        "sent"
+        "sent status "
+        .. tostring(statusCode or "no-status")
 end
 
 function GAG2QueueSnipeBoughtWebhook(record)
@@ -9291,8 +9429,9 @@ function GAG2QueueSnipeBoughtWebhook(record)
 
     task.spawn(function()
 
-        local ok,
-            result =
+        local callOk,
+            sent,
+            info =
             pcall(function()
 
                 return GAG2SendSnipeBoughtWebhook(
@@ -9300,32 +9439,41 @@ function GAG2QueueSnipeBoughtWebhook(record)
                 )
             end)
 
-        if ok ~= true then
+        if callOk ~= true then
+
+            record.SnipeBoughtWebhookQueued =
+                false
 
             warn(
                 "[HOLY SNIPE BOUGHT WEBHOOK]",
                 "crashed:",
-                tostring(result)
+                tostring(sent)
             )
 
             return
         end
 
-        if result ~= true then
+        if sent ~= true then
+
+            record.SnipeBoughtWebhookQueued =
+                false
 
             warn(
                 "[HOLY SNIPE BOUGHT WEBHOOK]",
                 "not sent:",
-                tostring(result)
+                tostring(info or sent)
             )
-        else
 
-            print(
-                "[HOLY SNIPE BOUGHT WEBHOOK]",
-                "sent:",
-                tostring(record.PetName or "Unknown")
-            )
+            return
         end
+
+        print(
+            "[HOLY SNIPE BOUGHT WEBHOOK]",
+            "sent:",
+            tostring(record.PetName or "Unknown"),
+            "|",
+            tostring(info or "ok")
+        )
     end)
 
     return true
