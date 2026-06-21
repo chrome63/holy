@@ -81871,9 +81871,119 @@ GAG2_STARTUP_PROFILE =
     {
         StartedAt = os.clock(),
         Rows = {},
+        Stalls = {},
+
+        ActiveLabel = "boot",
+        LastCompletedLabel = "none",
+
+        SaveBlockedUntil =
+            os.clock() + 10,
+
+        StallWatcherStarted = false,
+        StallWatcherDone = false,
+
+        PrintFull =
+            false,
     }
 
+function GAG2StartupAddRow(text)
+
+    GAG2_STARTUP_PROFILE.Rows =
+        type(GAG2_STARTUP_PROFILE.Rows) == "table"
+        and GAG2_STARTUP_PROFILE.Rows
+        or {}
+
+    table.insert(
+        GAG2_STARTUP_PROFILE.Rows,
+        tostring(text)
+    )
+end
+
+function GAG2StartupAddStall(text)
+
+    GAG2_STARTUP_PROFILE.Stalls =
+        type(GAG2_STARTUP_PROFILE.Stalls) == "table"
+        and GAG2_STARTUP_PROFILE.Stalls
+        or {}
+
+    table.insert(
+        GAG2_STARTUP_PROFILE.Stalls,
+        tostring(text)
+    )
+
+    warn(
+        "[HOLY STARTUP STALL]",
+        tostring(text)
+    )
+end
+
+function GAG2StartupStartStallWatcher()
+
+    local profile =
+        GAG2_STARTUP_PROFILE
+
+    if type(profile) ~= "table"
+    or profile.StallWatcherStarted == true then
+        return false
+    end
+
+    profile.StallWatcherStarted =
+        true
+
+    task.spawn(function()
+
+        local last =
+            os.clock()
+
+        while os.clock() - profile.StartedAt <= 16 do
+
+            RunService.Heartbeat:Wait()
+
+            local now =
+                os.clock()
+
+            local delta =
+                now - last
+
+            last =
+                now
+
+            if delta >= 0.38 then
+
+                GAG2StartupAddStall(
+                    string.format(
+                        "[%.3fs] frame stall %.3fs | active=%s | last=%s",
+                        now - profile.StartedAt,
+                        delta,
+                        tostring(profile.ActiveLabel or "?"),
+                        tostring(profile.LastCompletedLabel or "?")
+                    )
+                )
+            end
+        end
+
+        profile.StallWatcherDone =
+            true
+    end)
+
+    return true
+end
+
+GAG2StartupStartStallWatcher()
+
 function GAG2StartupProfile(label, fn)
+
+    label =
+        tostring(label or "startup step")
+
+    local profile =
+        GAG2_STARTUP_PROFILE
+
+    if type(profile) == "table" then
+
+        profile.ActiveLabel =
+            label
+    end
 
     local startedAt =
         os.clock()
@@ -81898,20 +82008,33 @@ function GAG2StartupProfile(label, fn)
         string.format(
             "[%.3fs] %s | %.3fs | %s",
             os.clock() - GAG2_STARTUP_PROFILE.StartedAt,
-            tostring(label),
+            label,
             elapsed,
             ok == true and "ok" or tostring(result)
         )
 
-    table.insert(
-        GAG2_STARTUP_PROFILE.Rows,
+    GAG2StartupAddRow(
         row
     )
 
-    print(
-        "[HOLY STARTUP]",
-        row
-    )
+    if elapsed >= 0.08
+    or ok ~= true then
+
+        print(
+            "[HOLY STARTUP]",
+            row
+        )
+    end
+
+    if type(profile) == "table" then
+
+        profile.LastCompletedLabel =
+            label
+
+        profile.ActiveLabel =
+            "idle after "
+            .. label
+    end
 
     return ok,
         result
@@ -81919,9 +82042,24 @@ end
 
 function GAG2StartupDefer(delaySeconds, label, fn)
 
-    task.delay(
+    delaySeconds =
         tonumber(delaySeconds)
-        or 0,
+        or 0
+
+    label =
+        tostring(label or "deferred startup")
+
+    GAG2StartupAddRow(
+        string.format(
+            "[%.3fs] scheduled %s at +%.2fs",
+            os.clock() - GAG2_STARTUP_PROFILE.StartedAt,
+            label,
+            delaySeconds
+        )
+    )
+
+    task.delay(
+        delaySeconds,
         function()
 
             GAG2StartupProfile(
@@ -82106,27 +82244,60 @@ if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
         GAG2RestoreDropPickupState()
     end)
 
-    -- Network HUD last because it can do HTTP / render work.
-    GAG2StartupDefer(3.00, "Restore Wild Pet Network", function()
+    -- Network HUD/contributor are delayed hard because they can HTTP, render rows,
+    -- attach WildPetRef connections, and cause startup freezes.
+    GAG2StartupDefer(8.50, "Restore Wild Pet Network", function()
 
         GAG2RestoreWildPetNetworkState()
     end)
 
-    GAG2StartupDefer(3.25, "Restore Wild Pet Contributor", function()
+    GAG2StartupDefer(10.00, "Restore Wild Pet Contributor", function()
 
         GAG2RestoreWildPetNetworkContributorState()
     end)
 end
 
-task.delay(4.00, function()
+task.delay(12.50, function()
 
     print(
         "========== HOLY STARTUP PROFILE =========="
     )
 
+    print(
+        "Slow rows / important rows only:"
+    )
+
     for _, row in ipairs(GAG2_STARTUP_PROFILE.Rows or {}) do
 
-        print(row)
+        local elapsedText =
+            tostring(row):match("|%s*([%d%.]+)s%s*|")
+
+        local elapsed =
+            tonumber(elapsedText)
+            or 0
+
+        if elapsed >= 0.08
+        or tostring(row):find("scheduled", 1, true)
+        or tostring(row):find("SaveManager", 1, true) then
+
+            print(row)
+        end
+    end
+
+    print(
+        "---- STALLS ----"
+    )
+
+    if type(GAG2_STARTUP_PROFILE.Stalls) == "table"
+    and #GAG2_STARTUP_PROFILE.Stalls > 0 then
+
+        for _, row in ipairs(GAG2_STARTUP_PROFILE.Stalls) do
+
+            print(row)
+        end
+    else
+
+        print("none")
     end
 
     print(
@@ -82142,15 +82313,33 @@ task.spawn(function()
 
         if ConfigState.Dirty == true then
 
-            ConfigState.Dirty =
-                false
+            local saveBlockedUntil =
+                0
 
-            pcall(function()
+            if type(GAG2_STARTUP_PROFILE) == "table" then
 
-                SaveManager:Save(
-                    ConfigState.AutosaveName
-                )
-            end)
+                saveBlockedUntil =
+                    tonumber(GAG2_STARTUP_PROFILE.SaveBlockedUntil)
+                    or 0
+            end
+
+            if os.clock() < saveBlockedUntil then
+
+                -- Keep Dirty true, but do not save during startup.
+                -- SaveManager writes can freeze while all restore callbacks are firing.
+
+            else
+
+                ConfigState.Dirty =
+                    false
+
+                GAG2StartupProfile("SaveManager Save", function()
+
+                    SaveManager:Save(
+                        ConfigState.AutosaveName
+                    )
+                end)
+            end
         end
     end
 end)
