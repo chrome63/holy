@@ -24965,7 +24965,11 @@ function GAG2FarmMiddleIdleCanMove()
     local state =
         GAG2_AUTO_TP_MIDDLE_FARM_STATE
 
-    if GAG2AutoTpMiddleFarmEnabled() ~= true then
+    local forceSniperBatchMiddleReturn =
+        state.SniperBatchMiddleReturnActive == true
+
+    if GAG2AutoTpMiddleFarmEnabled() ~= true
+    and forceSniperBatchMiddleReturn ~= true then
 
         return false,
             "anchor disabled"
@@ -24977,7 +24981,8 @@ function GAG2FarmMiddleIdleCanMove()
             "middle already moving"
     end
 
-    if state.IdleMoveDone == true then
+    if state.IdleMoveDone == true
+    and forceSniperBatchMiddleReturn ~= true then
 
         return false,
             "idle move already done"
@@ -25022,6 +25027,12 @@ function GAG2FarmMiddleIdleCanMove()
         state.MiddleReady =
             true
 
+        state.SniperBatchMiddleReturnActive =
+            false
+
+        state.SniperBatchMiddleReturnCompletedAt =
+            os.clock()
+
         state.LastResult =
             "already at farm middle"
 
@@ -25029,13 +25040,15 @@ function GAG2FarmMiddleIdleCanMove()
             "already near middle"
     end
 
-    if GAG2FarmMiddleSniperBusy() == true then
+    if forceSniperBatchMiddleReturn ~= true
+    and GAG2FarmMiddleSniperBusy() == true then
 
         return false,
             "sniper busy"
     end
 
-    if type(SniperState) == "table" then
+    if forceSniperBatchMiddleReturn ~= true
+    and type(SniperState) == "table" then
 
         local sniperEnabled =
             Toggles.HolyGAG2SniperEnabled
@@ -25060,10 +25073,17 @@ function GAG2FarmMiddleIdleCanMove()
         end
     end
 
-    if GAG2FarmMiddleSeedCollectBusy() == true then
+    if forceSniperBatchMiddleReturn ~= true
+    and GAG2FarmMiddleSeedCollectBusy() == true then
 
         return false,
             "seed collector busy"
+    end
+
+    if forceSniperBatchMiddleReturn == true then
+
+        return true,
+            "forced sniper batch middle return"
     end
 
     return true,
@@ -25109,7 +25129,8 @@ function GAG2StartFarmMiddleIdleMoveWorker(reason)
         while state.IdleMoveRunning == true
         and tonumber(state.IdleMoveToken) == token do
 
-            if GAG2AutoTpMiddleFarmEnabled() ~= true then
+            if GAG2AutoTpMiddleFarmEnabled() ~= true
+            and state.SniperBatchMiddleReturnActive ~= true then
 
                 state.IdleMoveLastReason =
                     "anchor disabled"
@@ -25253,6 +25274,12 @@ function GAG2MoveToFarmMiddleAnchor(reason, forceRefresh)
 
         state.MiddleReady =
             true
+
+        state.SniperBatchMiddleReturnActive =
+            false
+
+        state.SniperBatchMiddleReturnCompletedAt =
+            os.clock()
 
         state.LastTeleportAt =
             os.clock()
@@ -46950,6 +46977,128 @@ function SniperCountCurrentRemainingMatches()
         "ok"
 end
 
+function GAG2SniperShouldReturnBatchToFarmMiddle()
+
+    if type(GAG2PetTeamsGetState) ~= "function" then
+        return false
+    end
+
+    local ok,
+        state =
+        pcall(function()
+
+            return GAG2PetTeamsGetState()
+        end)
+
+    if ok ~= true
+    or type(state) ~= "table" then
+        return false
+    end
+
+    if state.AutoSwitch ~= true then
+        return false
+    end
+
+    if state.ReturnAfterTemporary == false then
+        return false
+    end
+
+    if state.ReturnDefaultAtFarmMiddle ~= true then
+        return false
+    end
+
+    if state.ManualLock == true then
+        return false
+    end
+
+    return true
+end
+
+function GAG2SniperStartBatchFarmMiddleReturn(reason)
+
+    if GAG2SniperShouldReturnBatchToFarmMiddle() ~= true then
+        return false,
+            "middle return mode off"
+    end
+
+    if type(GAG2StartAutoTpMiddleFarm) ~= "function" then
+        return false,
+            "farm middle start missing"
+    end
+
+    local middleState =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    if type(middleState) ~= "table" then
+        return false,
+            "farm middle state missing"
+    end
+
+    middleState.SniperBatchMiddleReturnActive =
+        true
+
+    middleState.SniperBatchMiddleReturnStartedAt =
+        os.clock()
+
+    middleState.SniperBatchMiddleReturnReason =
+        tostring(reason or "sniper batch complete")
+
+    middleState.IdleMoveRunning =
+        false
+
+    middleState.IdleMoveDone =
+        false
+
+    middleState.MiddleReady =
+        false
+
+    middleState.MovedOnce =
+        false
+
+    middleState.Moving =
+        false
+
+    middleState.SniperWaitActive =
+        false
+
+    middleState.IdleMoveLastSafeAt =
+        0
+
+    middleState.IdleMoveLastReason =
+        "sniper batch middle return armed"
+
+    middleState.LastResult =
+        "sniper batch returning to farm middle"
+
+    if type(GAG2StartFarmMiddleAnchorResolver) == "function"
+    and middleState.AnchorReady ~= true
+    and middleState.AnchorResolving ~= true then
+
+        GAG2StartFarmMiddleAnchorResolver(
+            "sniper batch middle return",
+            false
+        )
+    end
+
+    if type(GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle) == "function" then
+
+        GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle(
+            "reached middle after sniper batch",
+            0.15
+        )
+    end
+
+    local started =
+        GAG2StartAutoTpMiddleFarm(
+            "sniper batch middle return"
+        )
+
+    return started == true,
+        started == true
+        and "farm middle return started"
+        or "farm middle worker did not start"
+end
+
 function SniperTryReturnAfterBatch(reason)
 
     if SniperState.ReturnAfterBatch ~= true then
@@ -47083,6 +47232,27 @@ function SniperTryReturnAfterBatch(reason)
         SniperState.BatchReturnCFrame
 
     SniperClearBatchReturnState()
+
+    if type(GAG2SniperShouldReturnBatchToFarmMiddle) == "function"
+    and GAG2SniperShouldReturnBatchToFarmMiddle() == true then
+
+        local middleOk,
+            middleInfo =
+            GAG2SniperStartBatchFarmMiddleReturn(
+                reason or "batch complete"
+            )
+
+        SetSniperStatus(
+            middleOk == true
+            and "Batch complete. Going to Farm Middle..."
+            or (
+                "Batch complete. Farm Middle failed: "
+                .. tostring(middleInfo)
+            )
+        )
+
+        return middleOk == true
+    end
 
     local ok, info =
         SniperReturnToSavedCFrame(
