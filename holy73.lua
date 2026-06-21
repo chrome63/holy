@@ -2884,6 +2884,2086 @@ GAG2_STATS_OVERLAY_STATE.Destroy =
 
 
 --==================================================
+-- [3.6] PET TEAMS CORE
+--==================================================
+
+GAG2_PET_TEAMS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/PetTeams.json"
+
+GAG2_PET_TEAMS_MAX_SAVED_SLOTS =
+    6
+
+GAG2_PET_TEAMS_DEFAULT_NAMES = {
+    "Default",
+    "Bunny Speed",
+    "Sniper Speed",
+    "Weather",
+    "Manual",
+}
+
+GAG2_PET_TEAMS_STATE =
+    GAG2_PET_TEAMS_STATE
+    or {
+        Loaded = false,
+        Busy = false,
+        RefreshingControls = false,
+
+        SelectedTeam = "Bunny Speed",
+        DraftTeamName = "Bunny Speed",
+        SelectedPetChoice = "None",
+
+        AutoSwitch = false,
+        ReturnAfterTemporary = true,
+        ManualLock = false,
+
+        LastStatus = "Ready.",
+        LastApplyReason = "Idle.",
+        LastApplyAt = 0,
+
+        TeamNames = {},
+        Teams = {},
+
+        Rules = {
+            Default = "Default",
+            Day = "Default",
+            Night = "Default",
+            Weather = "Weather",
+            SeedCollect = "Bunny Speed",
+            SniperFound = "Sniper Speed",
+        },
+
+        Controls = {},
+        ChoiceToPetId = {},
+        InventoryRows = {},
+    }
+
+function GAG2PetTeamsCleanName(value)
+
+    local text =
+        CleanText(value)
+
+    text =
+        text:gsub("%s+", " ")
+
+    if text == "" then
+        text = "Default"
+    end
+
+    return text
+end
+
+function GAG2PetTeamsShortId(value)
+
+    value =
+        tostring(value or "")
+
+    if #value >= 8 then
+        return value:sub(1, 8)
+    end
+
+    return value
+end
+
+function GAG2PetTeamsGetState()
+
+    GAG2_PET_TEAMS_STATE =
+        type(GAG2_PET_TEAMS_STATE) == "table"
+        and GAG2_PET_TEAMS_STATE
+        or {}
+
+    local state =
+        GAG2_PET_TEAMS_STATE
+
+    state.TeamNames =
+        type(state.TeamNames) == "table"
+        and state.TeamNames
+        or {}
+
+    state.Teams =
+        type(state.Teams) == "table"
+        and state.Teams
+        or {}
+
+    state.Controls =
+        type(state.Controls) == "table"
+        and state.Controls
+        or {}
+
+    state.Rules =
+        type(state.Rules) == "table"
+        and state.Rules
+        or {}
+
+    state.ChoiceToPetId =
+        type(state.ChoiceToPetId) == "table"
+        and state.ChoiceToPetId
+        or {}
+
+    state.InventoryRows =
+        type(state.InventoryRows) == "table"
+        and state.InventoryRows
+        or {}
+
+    local seen =
+        {}
+
+    local normalizedNames =
+        {}
+
+    local function addTeamName(name)
+
+        name =
+            GAG2PetTeamsCleanName(name)
+
+        if seen[name] == true then
+            return
+        end
+
+        seen[name] =
+            true
+
+        table.insert(
+            normalizedNames,
+            name
+        )
+    end
+
+    for _, name in ipairs(GAG2_PET_TEAMS_DEFAULT_NAMES) do
+        addTeamName(name)
+    end
+
+    for _, name in ipairs(state.TeamNames) do
+        addTeamName(name)
+    end
+
+    for name in pairs(state.Teams) do
+        addTeamName(name)
+    end
+
+    state.TeamNames =
+        normalizedNames
+
+    for _, name in ipairs(state.TeamNames) do
+
+        local team =
+            state.Teams[name]
+
+        if type(team) ~= "table" then
+
+            team = {
+                Name = name,
+                PetIds = {},
+                PetNames = {},
+                UpdatedAt = 0,
+            }
+
+            state.Teams[name] =
+                team
+        end
+
+        team.Name =
+            name
+
+        team.PetIds =
+            type(team.PetIds) == "table"
+            and team.PetIds
+            or {}
+
+        team.PetNames =
+            type(team.PetNames) == "table"
+            and team.PetNames
+            or {}
+    end
+
+    state.SelectedTeam =
+        GAG2PetTeamsCleanName(
+            state.SelectedTeam
+            or "Bunny Speed"
+        )
+
+    if state.Teams[state.SelectedTeam] == nil then
+        state.SelectedTeam = "Bunny Speed"
+    end
+
+    state.DraftTeamName =
+        CleanText(state.DraftTeamName)
+
+    if state.DraftTeamName == "" then
+        state.DraftTeamName =
+            state.SelectedTeam
+    end
+
+    state.Rules.Default =
+        GAG2PetTeamsCleanName(
+            state.Rules.Default
+            or "Default"
+        )
+
+    state.Rules.Day =
+        GAG2PetTeamsCleanName(
+            state.Rules.Day
+            or state.Rules.Default
+            or "Default"
+        )
+
+    state.Rules.Night =
+        GAG2PetTeamsCleanName(
+            state.Rules.Night
+            or state.Rules.Default
+            or "Default"
+        )
+
+    state.Rules.Weather =
+        GAG2PetTeamsCleanName(
+            state.Rules.Weather
+            or "Weather"
+        )
+
+    state.Rules.SeedCollect =
+        GAG2PetTeamsCleanName(
+            state.Rules.SeedCollect
+            or "Bunny Speed"
+        )
+
+    state.Rules.SniperFound =
+        GAG2PetTeamsCleanName(
+            state.Rules.SniperFound
+            or "Sniper Speed"
+        )
+
+    state.AutoSwitch =
+        state.AutoSwitch == true
+
+    state.ReturnAfterTemporary =
+        state.ReturnAfterTemporary ~= false
+
+    state.ManualLock =
+        state.ManualLock == true
+
+    return state
+end
+
+function GAG2PetTeamsCopyArray(source, maxCount)
+
+    local output =
+        {}
+
+    maxCount =
+        math.max(
+            1,
+            math.floor(
+                tonumber(maxCount)
+                or GAG2_PET_TEAMS_MAX_SAVED_SLOTS
+            )
+        )
+
+    if type(source) ~= "table" then
+        return output
+    end
+
+    for _, value in ipairs(source) do
+
+        value =
+            CleanText(value)
+
+        if value ~= "" then
+
+            table.insert(
+                output,
+                value
+            )
+
+            if #output >= maxCount then
+                break
+            end
+        end
+    end
+
+    return output
+end
+
+function GAG2PetTeamsSerialize()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local teams =
+        {}
+
+    for _, name in ipairs(state.TeamNames) do
+
+        local team =
+            state.Teams[name]
+
+        teams[name] = {
+            Name = name,
+            PetIds =
+                GAG2PetTeamsCopyArray(
+                    team and team.PetIds,
+                    GAG2_PET_TEAMS_MAX_SAVED_SLOTS
+                ),
+
+            PetNames =
+                GAG2PetTeamsCopyArray(
+                    team and team.PetNames,
+                    GAG2_PET_TEAMS_MAX_SAVED_SLOTS
+                ),
+
+            UpdatedAt =
+                tonumber(team and team.UpdatedAt)
+                or 0,
+        }
+    end
+
+    return {
+        SelectedTeam =
+            state.SelectedTeam,
+
+        DraftTeamName =
+            state.DraftTeamName,
+
+        AutoSwitch =
+            state.AutoSwitch == true,
+
+        ReturnAfterTemporary =
+            state.ReturnAfterTemporary ~= false,
+
+        ManualLock =
+            state.ManualLock == true,
+
+        TeamNames =
+            GAG2PetTeamsCopyArray(
+                state.TeamNames,
+                50
+            ),
+
+        Teams =
+            teams,
+
+        Rules = {
+            Default =
+                state.Rules.Default,
+
+            Day =
+                state.Rules.Day,
+
+            Night =
+                state.Rules.Night,
+
+            Weather =
+                state.Rules.Weather,
+
+            SeedCollect =
+                state.Rules.SeedCollect,
+
+            SniperFound =
+                state.Rules.SniperFound,
+        },
+    }
+end
+
+function GAG2PetTeamsLoadSettings()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    if state.Loaded == true then
+        return true
+    end
+
+    state.Loaded =
+        true
+
+    if CanUseUISettingsFile() ~= true then
+
+        GAG2PetTeamsGetState()
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                GAG2_PET_TEAMS_FILE
+            )
+    end)
+
+    if exists ~= true then
+
+        GAG2PetTeamsGetState()
+        return false
+    end
+
+    local readOk, raw =
+        pcall(function()
+
+            return readfile(
+                GAG2_PET_TEAMS_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        GAG2PetTeamsGetState()
+        return false
+    end
+
+    local decodeOk, payload =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(payload) ~= "table" then
+
+        GAG2PetTeamsGetState()
+        return false
+    end
+
+    state.SelectedTeam =
+        GAG2PetTeamsCleanName(
+            payload.SelectedTeam
+            or state.SelectedTeam
+        )
+
+    state.DraftTeamName =
+        CleanText(
+            payload.DraftTeamName
+            or state.SelectedTeam
+        )
+
+    state.AutoSwitch =
+        payload.AutoSwitch == true
+
+    state.ReturnAfterTemporary =
+        payload.ReturnAfterTemporary ~= false
+
+    state.ManualLock =
+        payload.ManualLock == true
+
+    if type(payload.TeamNames) == "table" then
+        state.TeamNames =
+            GAG2PetTeamsCopyArray(
+                payload.TeamNames,
+                50
+            )
+    end
+
+    if type(payload.Teams) == "table" then
+
+        for name, team in pairs(payload.Teams) do
+
+            name =
+                GAG2PetTeamsCleanName(
+                    name
+                )
+
+            state.Teams[name] = {
+                Name =
+                    name,
+
+                PetIds =
+                    GAG2PetTeamsCopyArray(
+                        team and team.PetIds,
+                        GAG2_PET_TEAMS_MAX_SAVED_SLOTS
+                    ),
+
+                PetNames =
+                    GAG2PetTeamsCopyArray(
+                        team and team.PetNames,
+                        GAG2_PET_TEAMS_MAX_SAVED_SLOTS
+                    ),
+
+                UpdatedAt =
+                    tonumber(team and team.UpdatedAt)
+                    or 0,
+            }
+        end
+    end
+
+    if type(payload.Rules) == "table" then
+
+        for key, value in pairs(payload.Rules) do
+
+            state.Rules[key] =
+                GAG2PetTeamsCleanName(
+                    value
+                )
+        end
+    end
+
+    GAG2PetTeamsGetState()
+
+    return true
+end
+
+function GAG2PetTeamsSaveSettings()
+
+    if CanUseUISettingsFile() ~= true then
+        return false
+    end
+
+    EnsureUISettingsFolder()
+
+    local payload =
+        GAG2PetTeamsSerialize()
+
+    local encodeOk, encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                GAG2_PET_TEAMS_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function GAG2PetTeamsSetStatus(text)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    state.LastStatus =
+        tostring(text or "Ready.")
+
+    GAG2PetTeamsRefreshStatus()
+end
+
+function GAG2PetTeamsGetTeamNames()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local values =
+        {}
+
+    for _, name in ipairs(state.TeamNames) do
+
+        table.insert(
+            values,
+            name
+        )
+    end
+
+    if #values <= 0 then
+        values = {"Default"}
+    end
+
+    return values
+end
+
+function GAG2PetTeamsSetDropdownValues(dropdown, values)
+
+    if not dropdown then
+        return
+    end
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+end
+
+function GAG2PetTeamsSetDropdownValue(dropdown, value)
+
+    if not dropdown then
+        return
+    end
+
+    pcall(function()
+
+        if type(dropdown.SetValue) == "function" then
+
+            dropdown:SetValue(
+                value
+            )
+        end
+    end)
+end
+
+function GAG2PetTeamsReadTexts(root)
+
+    local rows =
+        {}
+
+    if typeof(root) ~= "Instance" then
+        return rows
+    end
+
+    for _, descendant in ipairs(root:GetDescendants()) do
+
+        if descendant:IsA("TextLabel")
+        or descendant:IsA("TextButton")
+        or descendant:IsA("TextBox") then
+
+            local text =
+                ""
+
+            pcall(function()
+
+                text =
+                    descendant.Text
+            end)
+
+            text =
+                CleanText(
+                    text
+                )
+
+            if text ~= "" then
+
+                table.insert(
+                    rows,
+                    text
+                )
+            end
+        end
+    end
+
+    return rows
+end
+
+function GAG2PetTeamsGetPetListGui()
+
+    local playerGui =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChild("PlayerGui")
+        or nil
+
+    if not playerGui then
+        return nil
+    end
+
+    return playerGui:FindFirstChild(
+        "PetList"
+    )
+end
+
+function GAG2PetTeamsScanEquipped()
+
+    local rows =
+        {}
+
+    local petList =
+        GAG2PetTeamsGetPetListGui()
+
+    if not petList then
+        return rows
+    end
+
+    local scrolling =
+        nil
+
+    for _, descendant in ipairs(petList:GetDescendants()) do
+
+        if descendant.Name == "ScrollingFrame" then
+
+            scrolling =
+                descendant
+
+            break
+        end
+    end
+
+    if not scrolling then
+        return rows
+    end
+
+    for _, child in ipairs(scrolling:GetChildren()) do
+
+        if child:IsA("Frame")
+        and child.Name:find(
+            "PetEntry_",
+            1,
+            true
+        ) then
+
+            local petId =
+                child.Name:gsub(
+                    "^PetEntry_",
+                    ""
+                )
+
+            local petName =
+                ""
+
+            local action =
+                ""
+
+            for _, text in ipairs(GAG2PetTeamsReadTexts(child)) do
+
+                local lower =
+                    text:lower()
+
+                if lower == "equip"
+                or lower == "unequip" then
+
+                    action =
+                        text
+
+                elseif petName == "" then
+
+                    petName =
+                        text
+                end
+            end
+
+            table.insert(rows, {
+                Pet =
+                    petName,
+
+                PetId =
+                    petId,
+
+                Equipped =
+                    action:lower() == "unequip",
+
+                Action =
+                    action,
+
+                Path =
+                    PathOf(child),
+            })
+        end
+    end
+
+    table.sort(rows, function(a, b)
+
+        return tostring(a.PetId)
+            < tostring(b.PetId)
+    end)
+
+    return rows
+end
+
+function GAG2PetTeamsGetEquippedMap()
+
+    local map =
+        {}
+
+    local count =
+        0
+
+    for _, row in ipairs(GAG2PetTeamsScanEquipped()) do
+
+        if row.Equipped == true
+        and CleanText(row.PetId) ~= "" then
+
+            map[row.PetId] =
+                row
+
+            count =
+                count + 1
+        end
+    end
+
+    return map,
+        count
+end
+
+function GAG2PetTeamsGetEquipCap()
+
+    local cap =
+        tonumber(
+            LOCAL_PLAYER
+            and LOCAL_PLAYER:GetAttribute("MaxEquippedPets")
+        )
+
+    if not cap then
+
+        cap =
+            3
+
+        local petList =
+            GAG2PetTeamsGetPetListGui()
+
+        if petList then
+
+            for _, text in ipairs(GAG2PetTeamsReadTexts(petList)) do
+
+                local current, max =
+                    text:match(
+                        "(%d+)%s*/%s*(%d+)%s*Active"
+                    )
+
+                if max then
+
+                    cap =
+                        tonumber(max)
+                        or cap
+
+                    break
+                end
+            end
+        end
+    end
+
+    return math.clamp(
+        math.floor(cap or 3),
+        1,
+        GAG2_PET_TEAMS_MAX_SAVED_SLOTS
+    )
+end
+
+function GAG2PetTeamsScanInventory()
+
+    local rows =
+        {}
+
+    local function scanRoot(root, source)
+
+        if typeof(root) ~= "Instance" then
+            return
+        end
+
+        for _, child in ipairs(root:GetChildren()) do
+
+            if child:IsA("Tool") then
+
+                local attrs =
+                    child:GetAttributes()
+
+                local petName =
+                    CleanText(
+                        attrs.Pet
+                        or attrs.PetName
+                        or attrs.pet
+                        or attrs.petName
+                    )
+
+                local petId =
+                    CleanText(
+                        attrs.PetId
+                        or attrs.PetID
+                        or attrs.UUID
+                        or attrs.Uuid
+                        or attrs.Id
+                    )
+
+                if petName ~= ""
+                and petId ~= "" then
+
+                    table.insert(rows, {
+                        Pet =
+                            petName,
+
+                        PetId =
+                            petId,
+
+                        Tool =
+                            child,
+
+                        Source =
+                            tostring(source or "?"),
+
+                        Path =
+                            PathOf(child),
+                    })
+                end
+            end
+        end
+    end
+
+    scanRoot(
+        LOCAL_PLAYER
+        and LOCAL_PLAYER:FindFirstChildOfClass("Backpack"),
+        "Backpack"
+    )
+
+    scanRoot(
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character,
+        "Character"
+    )
+
+    table.sort(rows, function(a, b)
+
+        if tostring(a.Pet) ~= tostring(b.Pet) then
+            return tostring(a.Pet) < tostring(b.Pet)
+        end
+
+        return tostring(a.PetId) < tostring(b.PetId)
+    end)
+
+    return rows
+end
+
+function GAG2PetTeamsFindInventoryByPetId(petId)
+
+    petId =
+        CleanText(petId)
+
+    if petId == "" then
+        return nil
+    end
+
+    for _, row in ipairs(GAG2PetTeamsScanInventory()) do
+
+        if row.PetId == petId then
+            return row
+        end
+    end
+
+    return nil
+end
+
+function GAG2PetTeamsBuildInventoryChoices()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local rows =
+        GAG2PetTeamsScanInventory()
+
+    state.InventoryRows =
+        rows
+
+    state.ChoiceToPetId =
+        {}
+
+    local values =
+        {}
+
+    for index, row in ipairs(rows) do
+
+        local choice =
+            tostring(row.Pet)
+            .. " • "
+            .. GAG2PetTeamsShortId(row.PetId)
+            .. " • "
+            .. tostring(row.Source)
+
+        if state.ChoiceToPetId[choice] ~= nil then
+
+            choice =
+                choice
+                .. " #"
+                .. tostring(index)
+        end
+
+        state.ChoiceToPetId[choice] =
+            row.PetId
+
+        table.insert(
+            values,
+            choice
+        )
+    end
+
+    if #values <= 0 then
+        values = {"None"}
+    end
+
+    return values
+end
+
+function GAG2PetTeamsRefreshTeamDropdowns()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local controls =
+        state.Controls
+
+    local values =
+        GAG2PetTeamsGetTeamNames()
+
+    local dropdowns = {
+        controls.Team,
+        controls.RuleDefault,
+        controls.RuleDay,
+        controls.RuleNight,
+        controls.RuleWeather,
+        controls.RuleSeedCollect,
+        controls.RuleSniperFound,
+    }
+
+    for _, dropdown in ipairs(dropdowns) do
+
+        GAG2PetTeamsSetDropdownValues(
+            dropdown,
+            values
+        )
+    end
+
+    GAG2PetTeamsSetDropdownValue(
+        controls.Team,
+        state.SelectedTeam
+    )
+
+    GAG2PetTeamsSetDropdownValue(
+        controls.RuleDefault,
+        state.Rules.Default
+    )
+
+    GAG2PetTeamsSetDropdownValue(
+        controls.RuleDay,
+        state.Rules.Day
+    )
+
+    GAG2PetTeamsSetDropdownValue(
+        controls.RuleNight,
+        state.Rules.Night
+    )
+
+    GAG2PetTeamsSetDropdownValue(
+        controls.RuleWeather,
+        state.Rules.Weather
+    )
+
+    GAG2PetTeamsSetDropdownValue(
+        controls.RuleSeedCollect,
+        state.Rules.SeedCollect
+    )
+
+    GAG2PetTeamsSetDropdownValue(
+        controls.RuleSniperFound,
+        state.Rules.SniperFound
+    )
+end
+
+function GAG2PetTeamsRefreshInventoryDropdown()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local values =
+        GAG2PetTeamsBuildInventoryChoices()
+
+    GAG2PetTeamsSetDropdownValues(
+        state.Controls.InventoryPet,
+        values
+    )
+
+    if state.SelectedPetChoice == ""
+    or state.SelectedPetChoice == nil
+    or state.ChoiceToPetId[state.SelectedPetChoice] == nil then
+
+        state.SelectedPetChoice =
+            values[1]
+            or "None"
+    end
+
+    GAG2PetTeamsSetDropdownValue(
+        state.Controls.InventoryPet,
+        state.SelectedPetChoice
+    )
+end
+
+function GAG2PetTeamsGetSelectedTeam()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local name =
+        GAG2PetTeamsCleanName(
+            state.SelectedTeam
+        )
+
+    local team =
+        state.Teams[name]
+
+    if type(team) ~= "table" then
+
+        GAG2PetTeamsCreateTeam(
+            name
+        )
+
+        team =
+            state.Teams[name]
+    end
+
+    return team,
+        name
+end
+
+function GAG2PetTeamsCreateTeam(name)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    name =
+        GAG2PetTeamsCleanName(name)
+
+    if state.Teams[name] == nil then
+
+        state.Teams[name] = {
+            Name = name,
+            PetIds = {},
+            PetNames = {},
+            UpdatedAt = os.time(),
+        }
+
+        table.insert(
+            state.TeamNames,
+            name
+        )
+    end
+
+    state.SelectedTeam =
+        name
+
+    state.DraftTeamName =
+        name
+
+    GAG2PetTeamsGetState()
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshAllControls()
+    GAG2PetTeamsSetStatus(
+        "Selected team: "
+        .. tostring(name)
+    )
+
+    return state.Teams[name]
+end
+
+function GAG2PetTeamsSetSelectedTeam(name)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    name =
+        GAG2PetTeamsCleanName(name)
+
+    if state.Teams[name] == nil then
+        return false
+    end
+
+    state.SelectedTeam =
+        name
+
+    state.DraftTeamName =
+        name
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshAllControls()
+
+    return true
+end
+
+function GAG2PetTeamsTeamContainsPetId(team, petId)
+
+    if type(team) ~= "table" then
+        return false
+    end
+
+    petId =
+        CleanText(petId)
+
+    if petId == "" then
+        return false
+    end
+
+    for _, savedPetId in ipairs(team.PetIds or {}) do
+
+        if savedPetId == petId then
+            return true
+        end
+    end
+
+    return false
+end
+
+function GAG2PetTeamsAddPetToSelected(choice)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    choice =
+        tostring(
+            choice
+            or state.SelectedPetChoice
+            or ""
+        )
+
+    local petId =
+        state.ChoiceToPetId[choice]
+
+    if not petId then
+
+        GAG2PetTeamsSetStatus(
+            "Select an inventory pet first."
+        )
+
+        return false
+    end
+
+    local row =
+        GAG2PetTeamsFindInventoryByPetId(
+            petId
+        )
+
+    if not row then
+
+        GAG2PetTeamsSetStatus(
+            "Pet not found in inventory."
+        )
+
+        return false
+    end
+
+    local team, teamName =
+        GAG2PetTeamsGetSelectedTeam()
+
+    if GAG2PetTeamsTeamContainsPetId(team, row.PetId) == true then
+
+        GAG2PetTeamsSetStatus(
+            "Already in team: "
+            .. tostring(row.Pet)
+        )
+
+        return false
+    end
+
+    if #team.PetIds >= GAG2_PET_TEAMS_MAX_SAVED_SLOTS then
+
+        GAG2PetTeamsSetStatus(
+            "Team is full. Max "
+            .. tostring(GAG2_PET_TEAMS_MAX_SAVED_SLOTS)
+            .. " saved pets."
+        )
+
+        return false
+    end
+
+    table.insert(
+        team.PetIds,
+        row.PetId
+    )
+
+    table.insert(
+        team.PetNames,
+        row.Pet
+    )
+
+    team.UpdatedAt =
+        os.time()
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshAllControls()
+
+    GAG2PetTeamsSetStatus(
+        "Added "
+        .. tostring(row.Pet)
+        .. " to "
+        .. tostring(teamName)
+        .. "."
+    )
+
+    return true
+end
+
+function GAG2PetTeamsSaveCurrentEquipped()
+
+    local team, teamName =
+        GAG2PetTeamsGetSelectedTeam()
+
+    local petIds =
+        {}
+
+    local petNames =
+        {}
+
+    for _, row in ipairs(GAG2PetTeamsScanEquipped()) do
+
+        if row.Equipped == true
+        and CleanText(row.PetId) ~= "" then
+
+            table.insert(
+                petIds,
+                row.PetId
+            )
+
+            table.insert(
+                petNames,
+                row.Pet
+            )
+
+            if #petIds >= GAG2_PET_TEAMS_MAX_SAVED_SLOTS then
+                break
+            end
+        end
+    end
+
+    team.PetIds =
+        petIds
+
+    team.PetNames =
+        petNames
+
+    team.UpdatedAt =
+        os.time()
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshAllControls()
+
+    GAG2PetTeamsSetStatus(
+        "Saved current equipped as "
+        .. tostring(teamName)
+        .. "."
+    )
+
+    return true
+end
+
+function GAG2PetTeamsClearSelectedTeam()
+
+    local team, teamName =
+        GAG2PetTeamsGetSelectedTeam()
+
+    team.PetIds =
+        {}
+
+    team.PetNames =
+        {}
+
+    team.UpdatedAt =
+        os.time()
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshAllControls()
+
+    GAG2PetTeamsSetStatus(
+        "Cleared "
+        .. tostring(teamName)
+        .. "."
+    )
+
+    return true
+end
+
+function GAG2PetTeamsRemoveLastPet()
+
+    local team, teamName =
+        GAG2PetTeamsGetSelectedTeam()
+
+    if #(team.PetIds or {}) <= 0 then
+
+        GAG2PetTeamsSetStatus(
+            "Team is already empty."
+        )
+
+        return false
+    end
+
+    table.remove(
+        team.PetIds,
+        #team.PetIds
+    )
+
+    table.remove(
+        team.PetNames,
+        #team.PetNames
+    )
+
+    team.UpdatedAt =
+        os.time()
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshAllControls()
+
+    GAG2PetTeamsSetStatus(
+        "Removed last pet from "
+        .. tostring(teamName)
+        .. "."
+    )
+
+    return true
+end
+
+function GAG2PetTeamsResolvePackets()
+
+    local module =
+        ReplicatedStorage:FindFirstChild("SharedModules")
+        and ReplicatedStorage.SharedModules:FindFirstChild("Networking")
+
+    if not module
+    or module:IsA("ModuleScript") ~= true then
+
+        return nil,
+            nil,
+            "Networking module missing"
+    end
+
+    local ok, networking =
+        pcall(function()
+
+            return require(
+                module
+            )
+        end)
+
+    if ok ~= true
+    or type(networking) ~= "table" then
+
+        return nil,
+            nil,
+            "Networking require failed: "
+            .. tostring(networking)
+    end
+
+    local pets =
+        networking.Pets
+
+    if type(pets) ~= "table" then
+        return nil, nil, "Networking.Pets missing"
+    end
+
+    local unequip =
+        pets.RequestUnequip
+
+    local equip =
+        pets.RequestEquipByName
+
+    if type(unequip) ~= "table"
+    or type(unequip.Fire) ~= "function" then
+        return nil, nil, "RequestUnequip missing"
+    end
+
+    if type(equip) ~= "table"
+    or type(equip.Fire) ~= "function" then
+        return nil, nil, "RequestEquipByName missing"
+    end
+
+    return unequip,
+        equip,
+        "ok"
+end
+
+function GAG2PetTeamsUnequipPetId(petId)
+
+    local unequipPacket, _, reason =
+        GAG2PetTeamsResolvePackets()
+
+    if type(unequipPacket) ~= "table" then
+        return false, reason
+    end
+
+    local ok, result =
+        pcall(function()
+
+            return unequipPacket:Fire(
+                petId
+            )
+        end)
+
+    if ok ~= true then
+        return false, tostring(result)
+    end
+
+    return true,
+        tostring(result)
+end
+
+function GAG2PetTeamsGetHumanoid()
+
+    local character =
+        LOCAL_PLAYER
+        and LOCAL_PLAYER.Character
+        or nil
+
+    if not character then
+        return nil
+    end
+
+    return character:FindFirstChildOfClass(
+        "Humanoid"
+    )
+end
+
+function GAG2PetTeamsEquipInventoryRow(row)
+
+    if type(row) ~= "table"
+    or typeof(row.Tool) ~= "Instance"
+    or row.Tool:IsA("Tool") ~= true then
+
+        return false,
+            "bad pet tool"
+    end
+
+    local _, equipPacket, reason =
+        GAG2PetTeamsResolvePackets()
+
+    if type(equipPacket) ~= "table" then
+        return false, reason
+    end
+
+    local humanoid =
+        GAG2PetTeamsGetHumanoid()
+
+    if not humanoid then
+        return false, "humanoid missing"
+    end
+
+    local tool =
+        row.Tool
+
+    local equipToolOk, equipToolError =
+        pcall(function()
+
+            humanoid:EquipTool(
+                tool
+            )
+        end)
+
+    if equipToolOk ~= true then
+
+        return false,
+            "EquipTool failed: "
+            .. tostring(equipToolError)
+    end
+
+    task.wait(
+        0.18
+    )
+
+    pcall(function()
+
+        if tool
+        and tool.Parent then
+
+            tool:Activate()
+        end
+    end)
+
+    task.wait(
+        0.28
+    )
+
+    local fireOk, fireResult =
+        pcall(function()
+
+            return equipPacket:Fire(
+                row.Pet
+            )
+        end)
+
+    if fireOk ~= true then
+
+        return false,
+            "RequestEquipByName failed: "
+            .. tostring(fireResult)
+    end
+
+    return true,
+        "equipped "
+        .. tostring(row.Pet)
+        .. " "
+        .. GAG2PetTeamsShortId(row.PetId)
+end
+
+function GAG2PetTeamsBuildDesiredList(team, cap)
+
+    local desired =
+        {}
+
+    local desiredSet =
+        {}
+
+    cap =
+        math.clamp(
+            math.floor(
+                tonumber(cap)
+                or GAG2PetTeamsGetEquipCap()
+            ),
+            1,
+            GAG2_PET_TEAMS_MAX_SAVED_SLOTS
+        )
+
+    local equippedMap =
+        GAG2PetTeamsGetEquippedMap()
+
+    for _, petId in ipairs(team and team.PetIds or {}) do
+
+        petId =
+            CleanText(petId)
+
+        if petId ~= ""
+        and desiredSet[petId] ~= true then
+
+            local exists =
+                equippedMap[petId] ~= nil
+                or GAG2PetTeamsFindInventoryByPetId(petId) ~= nil
+
+            if exists == true then
+
+                table.insert(
+                    desired,
+                    petId
+                )
+
+                desiredSet[petId] =
+                    true
+
+                if #desired >= cap then
+                    break
+                end
+            end
+        end
+    end
+
+    return desired,
+        desiredSet
+end
+
+function GAG2PetTeamsApplyTeam(teamName, reason)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    if state.Busy == true then
+
+        GAG2PetTeamsSetStatus(
+            "Already applying a team."
+        )
+
+        return false
+    end
+
+    teamName =
+        GAG2PetTeamsCleanName(
+            teamName
+            or state.SelectedTeam
+        )
+
+    local team =
+        state.Teams[teamName]
+
+    if type(team) ~= "table" then
+
+        GAG2PetTeamsSetStatus(
+            "Team not found: "
+            .. tostring(teamName)
+        )
+
+        return false
+    end
+
+    state.Busy =
+        true
+
+    state.LastApplyReason =
+        tostring(reason or "manual")
+
+    state.LastApplyAt =
+        tick()
+
+    GAG2PetTeamsRefreshStatus()
+
+    task.spawn(function()
+
+        local ok, err =
+            pcall(function()
+
+                local cap =
+                    GAG2PetTeamsGetEquipCap()
+
+                local desired,
+                    desiredSet =
+                    GAG2PetTeamsBuildDesiredList(
+                        team,
+                        cap
+                    )
+
+                if #desired <= 0 then
+
+                    GAG2PetTeamsSetStatus(
+                        "Team has no available pets."
+                    )
+
+                    return
+                end
+
+                GAG2PetTeamsSetStatus(
+                    "Applying "
+                    .. tostring(teamName)
+                    .. "..."
+                )
+
+                local equippedMap,
+                    equippedCount =
+                    GAG2PetTeamsGetEquippedMap()
+
+                for petId, row in pairs(equippedMap) do
+
+                    if desiredSet[petId] ~= true then
+
+                        local unequipOk, unequipInfo =
+                            GAG2PetTeamsUnequipPetId(
+                                petId
+                            )
+
+                        if unequipOk == true then
+
+                            equippedCount =
+                                math.max(
+                                    0,
+                                    equippedCount - 1
+                                )
+                        end
+
+                        task.wait(
+                            0.28
+                        )
+                    end
+                end
+
+                task.wait(
+                    0.25
+                )
+
+                for _, petId in ipairs(desired) do
+
+                    local currentMap,
+                        currentCount =
+                        GAG2PetTeamsGetEquippedMap()
+
+                    if currentMap[petId] then
+                        continue
+                    end
+
+                    if currentCount >= cap then
+                        break
+                    end
+
+                    local row =
+                        GAG2PetTeamsFindInventoryByPetId(
+                            petId
+                        )
+
+                    if row then
+
+                        local equipOk, equipInfo =
+                            GAG2PetTeamsEquipInventoryRow(
+                                row
+                            )
+
+                        task.wait(
+                            0.55
+                        )
+                    end
+                end
+
+                local finalMap,
+                    finalCount =
+                    GAG2PetTeamsGetEquippedMap()
+
+                GAG2PetTeamsSetStatus(
+                    "Applied "
+                    .. tostring(teamName)
+                    .. " • equipped "
+                    .. tostring(finalCount)
+                    .. "/"
+                    .. tostring(cap)
+                )
+            end)
+
+        if ok ~= true then
+
+            GAG2PetTeamsSetStatus(
+                "Apply failed: "
+                .. tostring(err)
+            )
+        end
+
+        state.Busy =
+            false
+
+        GAG2PetTeamsRefreshAllControls()
+    end)
+
+    return true
+end
+
+function GAG2PetTeamsSetRule(ruleName, teamName)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    ruleName =
+        tostring(ruleName or "")
+
+    teamName =
+        GAG2PetTeamsCleanName(teamName)
+
+    if ruleName == "" then
+        return false
+    end
+
+    if state.Teams[teamName] == nil then
+        return false
+    end
+
+    state.Rules[ruleName] =
+        teamName
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshStatus()
+    MarkConfigDirty()
+
+    return true
+end
+
+function GAG2PetTeamsSetAutoSwitch(value)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    state.AutoSwitch =
+        value == true
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshStatus()
+    MarkConfigDirty()
+end
+
+function GAG2PetTeamsSetReturnAfterTemporary(value)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    state.ReturnAfterTemporary =
+        value ~= false
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshStatus()
+    MarkConfigDirty()
+end
+
+function GAG2PetTeamsSetManualLock(value)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    state.ManualLock =
+        value == true
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshStatus()
+    MarkConfigDirty()
+end
+
+function GAG2PetTeamsRequestTeam(ruleName, priority, reason)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    if state.AutoSwitch ~= true then
+        return false
+    end
+
+    if state.ManualLock == true then
+        return false
+    end
+
+    ruleName =
+        tostring(ruleName or "")
+
+    local teamName =
+        state.Rules[ruleName]
+
+    if not teamName
+    or state.Teams[teamName] == nil then
+        return false
+    end
+
+    return GAG2PetTeamsApplyTeam(
+        teamName,
+        reason or ruleName
+    )
+end
+
+function GAG2PetTeamsBuildTeamSlotsText()
+
+    local team, teamName =
+        GAG2PetTeamsGetSelectedTeam()
+
+    local lines = {
+        '<font color="rgb(196,181,253)"><b>'
+            .. tostring(teamName)
+            .. '</b></font>',
+    }
+
+    local cap =
+        GAG2PetTeamsGetEquipCap()
+
+    for index = 1, GAG2_PET_TEAMS_MAX_SAVED_SLOTS do
+
+        local petName =
+            team.PetNames
+            and team.PetNames[index]
+            or ""
+
+        local petId =
+            team.PetIds
+            and team.PetIds[index]
+            or ""
+
+        local prefix =
+            index <= cap
+            and "✓ "
+            or "• "
+
+        if CleanText(petId) ~= "" then
+
+            lines[#lines + 1] =
+                prefix
+                .. tostring(index)
+                .. ". "
+                .. tostring(petName ~= "" and petName or "Pet")
+                .. " ["
+                .. GAG2PetTeamsShortId(petId)
+                .. "]"
+
+        else
+
+            lines[#lines + 1] =
+                "• "
+                .. tostring(index)
+                .. ". Empty"
+        end
+    end
+
+    lines[#lines + 1] =
+        "Can equip now: "
+        .. tostring(cap)
+        .. "/"
+        .. tostring(GAG2_PET_TEAMS_MAX_SAVED_SLOTS)
+
+    return table.concat(
+        lines,
+        "\n"
+    )
+end
+
+function GAG2PetTeamsBuildStatusText()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local equippedMap,
+        equippedCount =
+        GAG2PetTeamsGetEquippedMap()
+
+    local inventoryCount =
+        #GAG2PetTeamsScanInventory()
+
+    return '<font color="rgb(196,181,253)"><b>Pet Teams</b></font>'
+        .. '\nSelected: '
+        .. tostring(state.SelectedTeam)
+        .. ' | Busy: '
+        .. BoolText(state.Busy == true)
+        .. '\nAuto: '
+        .. BoolText(state.AutoSwitch == true)
+        .. ' | Return: '
+        .. BoolText(state.ReturnAfterTemporary ~= false)
+        .. ' | Lock: '
+        .. BoolText(state.ManualLock == true)
+        .. '\nEquipped: '
+        .. tostring(equippedCount)
+        .. '/'
+        .. tostring(GAG2PetTeamsGetEquipCap())
+        .. ' | Inventory pets: '
+        .. tostring(inventoryCount)
+        .. '\nLast: '
+        .. tostring(state.LastStatus or "Ready.")
+end
+
+function GAG2PetTeamsRefreshStatus()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    if state.Controls.Status
+    and type(state.Controls.Status.SetText) == "function" then
+
+        pcall(function()
+
+            state.Controls.Status:SetText(
+                GAG2PetTeamsBuildStatusText()
+            )
+        end)
+    end
+
+    if state.Controls.TeamSlots
+    and type(state.Controls.TeamSlots.SetText) == "function" then
+
+        pcall(function()
+
+            state.Controls.TeamSlots:SetText(
+                GAG2PetTeamsBuildTeamSlotsText()
+            )
+        end)
+    end
+end
+
+function GAG2PetTeamsRefreshAllControls()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    if state.RefreshingControls == true then
+        return
+    end
+
+    state.RefreshingControls =
+        true
+
+    GAG2PetTeamsRefreshTeamDropdowns()
+    GAG2PetTeamsRefreshInventoryDropdown()
+
+    state.RefreshingControls =
+        false
+
+    GAG2PetTeamsRefreshStatus()
+end
+
+function GAG2RestorePetTeamsState()
+
+    task.defer(function()
+
+        GAG2PetTeamsLoadSettings()
+        GAG2PetTeamsRefreshAllControls()
+    end)
+end
+
+
+--==================================================
 -- [4] LOGIC HELPERS
 --==================================================
 
@@ -66866,6 +68946,13 @@ local Tabs = {
             Description = "Mailbox send and inbox tools.",
         }),
 
+    PetTeams =
+        Window:AddTab({
+            Name = "Pet Teams",
+            Icon = "paw-print",
+            Description = "Saved pet teams and automatic team switching.",
+        }),
+
     Experiment =
         Window:AddTab({
             Name = "Experiment",
@@ -67163,6 +69250,34 @@ MailboxReceiptsBox =
         Tabs.Mailbox,
         "Receipts",
         "receipt"
+    )
+
+PetTeamsBuilderBox =
+    AddLeftBox(
+        Tabs.PetTeams,
+        "Team Builder",
+        "paw-print"
+    )
+
+PetTeamsInventoryBox =
+    AddLeftBox(
+        Tabs.PetTeams,
+        "Inventory Pets",
+        "archive"
+    )
+
+PetTeamsRulesBox =
+    AddRightBox(
+        Tabs.PetTeams,
+        "Automation Rules",
+        "workflow"
+    )
+
+PetTeamsStatusBox =
+    AddRightBox(
+        Tabs.PetTeams,
+        "Status",
+        "activity"
     )
 
 local ExperimentMainBox =
@@ -68814,6 +70929,428 @@ if WebhookStatusBox then
         DoesWrap = true,
     })
 end
+
+--==================================================
+-- [7.6] PET TEAMS TAB
+--==================================================
+
+GAG2PetTeamsLoadSettings()
+
+if PetTeamsBuilderBox then
+
+    local PetTeamsState =
+        GAG2PetTeamsGetState()
+
+    PetTeamsState.Controls.Team =
+        PetTeamsBuilderBox:AddDropdown("HolyGAG2PetTeamsSelectedTeam", {
+            Text = "Team Preset",
+            Values = GAG2PetTeamsGetTeamNames(),
+            Default = PetTeamsState.SelectedTeam,
+            Multi = false,
+            Searchable = false,
+            MaxVisibleDropdownItems = 10,
+            Tooltip = "Select which saved pet team you are editing or applying.",
+        })
+
+    if PetTeamsState.Controls.Team
+    and type(PetTeamsState.Controls.Team.OnChanged) == "function" then
+
+        PetTeamsState.Controls.Team:OnChanged(function(value)
+
+            local state =
+                GAG2PetTeamsGetState()
+
+            if state.RefreshingControls == true then
+                return
+            end
+
+            GAG2PetTeamsSetSelectedTeam(
+                value
+            )
+        end)
+    end
+
+    PetTeamsState.Controls.TeamName =
+        PetTeamsBuilderBox:AddInput("HolyGAG2PetTeamsDraftTeamName", {
+            Text = "Team Name",
+            Default = PetTeamsState.DraftTeamName or "Bunny Speed",
+            Placeholder = "Bunny Speed",
+            Numeric = false,
+            Finished = true,
+            ClearTextOnFocus = false,
+            Tooltip = "Type a new team name, then press Create / Select.",
+            Callback = function(value)
+
+                local state =
+                    GAG2PetTeamsGetState()
+
+                state.DraftTeamName =
+                    CleanText(value)
+
+                GAG2PetTeamsSaveSettings()
+            end,
+        })
+
+    PetTeamsBuilderBox:AddButton({
+        Text = "Create / Select",
+        Tooltip = "Creates the typed team if needed, then selects it.",
+        Func = function()
+
+            local state =
+                GAG2PetTeamsGetState()
+
+            GAG2PetTeamsCreateTeam(
+                state.DraftTeamName
+                or state.SelectedTeam
+            )
+        end,
+    }):AddButton({
+        Text = "Refresh",
+        Tooltip = "Refresh team and inventory dropdowns.",
+        Func = function()
+
+            GAG2PetTeamsRefreshAllControls()
+        end,
+    })
+
+    PetTeamsBuilderBox:AddButton({
+        Text = "Save Current Equipped",
+        Tooltip = "Saves your currently equipped pets into the selected team.",
+        Func = function()
+
+            GAG2PetTeamsSaveCurrentEquipped()
+        end,
+    }):AddButton({
+        Text = "Apply Team",
+        Tooltip = "Equips this team using exact PetIds and current slot cap.",
+        Func = function()
+
+            local state =
+                GAG2PetTeamsGetState()
+
+            GAG2PetTeamsApplyTeam(
+                state.SelectedTeam,
+                "manual apply"
+            )
+        end,
+    })
+
+    PetTeamsBuilderBox:AddButton({
+        Text = "Remove Last",
+        Tooltip = "Removes the last saved pet slot from this team.",
+        Func = function()
+
+            GAG2PetTeamsRemoveLastPet()
+        end,
+    }):AddButton({
+        Text = "Clear Team",
+        Tooltip = "Clears all saved pet slots from this team.",
+        Func = function()
+
+            GAG2PetTeamsClearSelectedTeam()
+        end,
+    })
+end
+
+if PetTeamsInventoryBox then
+
+    local PetTeamsState =
+        GAG2PetTeamsGetState()
+
+    PetTeamsState.Controls.InventoryPet =
+        PetTeamsInventoryBox:AddDropdown("HolyGAG2PetTeamsInventoryPet", {
+            Text = "Inventory Pet",
+            Values = GAG2PetTeamsBuildInventoryChoices(),
+            Default = PetTeamsState.SelectedPetChoice or "None",
+            Multi = false,
+            Searchable = true,
+            AllowNull = false,
+            MaxVisibleDropdownItems = 14,
+            Tooltip = "Real owned pet tools from Backpack/Character. Duplicates are separated by PetId.",
+        })
+
+    if PetTeamsState.Controls.InventoryPet
+    and type(PetTeamsState.Controls.InventoryPet.OnChanged) == "function" then
+
+        PetTeamsState.Controls.InventoryPet:OnChanged(function(value)
+
+            local state =
+                GAG2PetTeamsGetState()
+
+            if state.RefreshingControls == true then
+                return
+            end
+
+            state.SelectedPetChoice =
+                tostring(value or "None")
+
+            GAG2PetTeamsSaveSettings()
+        end)
+    end
+
+    PetTeamsInventoryBox:AddButton({
+        Text = "Add Selected Pet",
+        Tooltip = "Adds the selected exact PetId to the selected team.",
+        Func = function()
+
+            GAG2PetTeamsAddPetToSelected()
+        end,
+    }):AddButton({
+        Text = "Refresh Inventory",
+        Tooltip = "Re-scans owned pet tools and active pet list.",
+        Func = function()
+
+            GAG2PetTeamsRefreshAllControls()
+        end,
+    })
+
+    PetTeamsInventoryBox:AddLabel("HolyGAG2PetTeamsInventoryInfo", {
+        Text =
+            "Tip: save up to 6 pets. Fresh accounts only equip current MaxEquippedPets, and later upgrades will use more saved slots automatically.",
+        DoesWrap = true,
+    })
+end
+
+if PetTeamsRulesBox then
+
+    PetTeamsRulesBox:AddToggle("HolyGAG2PetTeamsAutoSwitch", {
+        Text = "Auto Team Switch",
+        Default = GAG2PetTeamsGetState().AutoSwitch == true,
+        Tooltip = "Allows other HOLY systems to request team changes. Wiring to Seed/Sniper/Weather comes next.",
+        Callback = function(value)
+
+            if ConfigState.Loading == true then
+                return
+            end
+
+            GAG2PetTeamsSetAutoSwitch(
+                value == true
+            )
+        end,
+    })
+
+    PetTeamsRulesBox:AddToggle("HolyGAG2PetTeamsReturnAfterTemporary", {
+        Text = "Return After Temporary Team",
+        Default = GAG2PetTeamsGetState().ReturnAfterTemporary ~= false,
+        Tooltip = "Temporary teams can return to the previous/default team after the action ends.",
+        Callback = function(value)
+
+            if ConfigState.Loading == true then
+                return
+            end
+
+            GAG2PetTeamsSetReturnAfterTemporary(
+                value ~= false
+            )
+        end,
+    })
+
+    PetTeamsRulesBox:AddToggle("HolyGAG2PetTeamsManualLock", {
+        Text = "Manual Lock Team",
+        Default = GAG2PetTeamsGetState().ManualLock == true,
+        Tooltip = "Blocks automatic team requests while enabled.",
+        Callback = function(value)
+
+            if ConfigState.Loading == true then
+                return
+            end
+
+            GAG2PetTeamsSetManualLock(
+                value == true
+            )
+        end,
+    })
+
+    local PetTeamsState =
+        GAG2PetTeamsGetState()
+
+    PetTeamsState.Controls.RuleDefault =
+        PetTeamsRulesBox:AddDropdown("HolyGAG2PetTeamsRuleDefault", {
+            Text = "Default Team",
+            Values = GAG2PetTeamsGetTeamNames(),
+            Default = PetTeamsState.Rules.Default or "Default",
+            Multi = false,
+            Searchable = false,
+        })
+
+    PetTeamsState.Controls.RuleDay =
+        PetTeamsRulesBox:AddDropdown("HolyGAG2PetTeamsRuleDay", {
+            Text = "Day Team",
+            Values = GAG2PetTeamsGetTeamNames(),
+            Default = PetTeamsState.Rules.Day or "Default",
+            Multi = false,
+            Searchable = false,
+        })
+
+    PetTeamsState.Controls.RuleNight =
+        PetTeamsRulesBox:AddDropdown("HolyGAG2PetTeamsRuleNight", {
+            Text = "Night Team",
+            Values = GAG2PetTeamsGetTeamNames(),
+            Default = PetTeamsState.Rules.Night or "Default",
+            Multi = false,
+            Searchable = false,
+        })
+
+    PetTeamsState.Controls.RuleWeather =
+        PetTeamsRulesBox:AddDropdown("HolyGAG2PetTeamsRuleWeather", {
+            Text = "Weather Team",
+            Values = GAG2PetTeamsGetTeamNames(),
+            Default = PetTeamsState.Rules.Weather or "Weather",
+            Multi = false,
+            Searchable = false,
+        })
+
+    PetTeamsState.Controls.RuleSeedCollect =
+        PetTeamsRulesBox:AddDropdown("HolyGAG2PetTeamsRuleSeedCollect", {
+            Text = "Seed Collect Team",
+            Values = GAG2PetTeamsGetTeamNames(),
+            Default = PetTeamsState.Rules.SeedCollect or "Bunny Speed",
+            Multi = false,
+            Searchable = false,
+        })
+
+    PetTeamsState.Controls.RuleSniperFound =
+        PetTeamsRulesBox:AddDropdown("HolyGAG2PetTeamsRuleSniperFound", {
+            Text = "Sniper Found Team",
+            Values = GAG2PetTeamsGetTeamNames(),
+            Default = PetTeamsState.Rules.SniperFound or "Sniper Speed",
+            Multi = false,
+            Searchable = false,
+        })
+
+    local function bindRule(dropdown, ruleName)
+
+        if dropdown
+        and type(dropdown.OnChanged) == "function" then
+
+            dropdown:OnChanged(function(value)
+
+                local state =
+                    GAG2PetTeamsGetState()
+
+                if state.RefreshingControls == true then
+                    return
+                end
+
+                GAG2PetTeamsSetRule(
+                    ruleName,
+                    value
+                )
+            end)
+        end
+    end
+
+    bindRule(
+        PetTeamsState.Controls.RuleDefault,
+        "Default"
+    )
+
+    bindRule(
+        PetTeamsState.Controls.RuleDay,
+        "Day"
+    )
+
+    bindRule(
+        PetTeamsState.Controls.RuleNight,
+        "Night"
+    )
+
+    bindRule(
+        PetTeamsState.Controls.RuleWeather,
+        "Weather"
+    )
+
+    bindRule(
+        PetTeamsState.Controls.RuleSeedCollect,
+        "SeedCollect"
+    )
+
+    bindRule(
+        PetTeamsState.Controls.RuleSniperFound,
+        "SniperFound"
+    )
+end
+
+if PetTeamsStatusBox then
+
+    local PetTeamsState =
+        GAG2PetTeamsGetState()
+
+    PetTeamsState.Controls.TeamSlots =
+        PetTeamsStatusBox:AddLabel("HolyGAG2PetTeamsSlots", {
+            Text =
+                GAG2PetTeamsBuildTeamSlotsText(),
+            DoesWrap = true,
+        })
+
+    PetTeamsState.Controls.Status =
+        PetTeamsStatusBox:AddLabel("HolyGAG2PetTeamsStatus", {
+            Text =
+                GAG2PetTeamsBuildStatusText(),
+            DoesWrap = true,
+        })
+
+    PetTeamsStatusBox:AddButton({
+        Text = "Apply Default",
+        Tooltip = "Applies the selected default team rule.",
+        Func = function()
+
+            local state =
+                GAG2PetTeamsGetState()
+
+            GAG2PetTeamsApplyTeam(
+                state.Rules.Default,
+                "manual default"
+            )
+        end,
+    }):AddButton({
+        Text = "Copy Team JSON",
+        Tooltip = "Copies the selected team's saved PetIds.",
+        Func = function()
+
+            local team, teamName =
+                GAG2PetTeamsGetSelectedTeam()
+
+            local ok, encoded =
+                pcall(function()
+
+                    return HttpService:JSONEncode({
+                        Name =
+                            teamName,
+
+                        PetIds =
+                            team.PetIds,
+
+                        PetNames =
+                            team.PetNames,
+                    })
+                end)
+
+            if ok == true
+            and CopyText(encoded) == true then
+
+                Notify(
+                    "Pet Teams",
+                    "Copied team JSON.",
+                    3
+                )
+
+            else
+
+                Notify(
+                    "Pet Teams",
+                    "Could not copy team JSON.",
+                    4
+                )
+            end
+        end,
+    })
+end
+
+task.defer(function()
+
+    GAG2PetTeamsRefreshAllControls()
+end)
 
 --==================================================
 -- [8] HOME TAB
@@ -74340,6 +76877,7 @@ if GAG2_EXACT_JOIN_PENDING_ON_LOAD ~= true then
     GAG2RestoreAutoCollectFruitState()
     GAG2RestoreAutoSellState()
     GAG2RestoreMailboxState()
+    GAG2RestorePetTeamsState()
     GAG2RestoreSeedDropState()
     GAG2RestoreDropPickupState()
     GAG2RestoreSeedCollectState()
