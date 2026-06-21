@@ -734,6 +734,12 @@ GAG2_RARE_PET_WEBHOOK_IMAGES = {
 GAG2_RARE_PET_WEBHOOK_SENT =
     {}
 
+GAG2_SNIPE_BOUGHT_WEBHOOK_URL =
+    "https://discord.com/api/webhooks/1518301566573084692/VBV3wDxmI9a5hk8Z92kSpMrZK1iBpUGY4_KM3FIAK7JX10Xla0OkOcqzdLeWPzUNgoWc"
+
+GAG2_SNIPE_BOUGHT_WEBHOOK_SENT =
+    {}
+
 --==================================================
 -- HARD-CODED WEATHER EVENT RELAY
 --==================================================
@@ -8582,6 +8588,747 @@ function RefreshServerInfo()
             BuildServerInfoText()
         )
     end
+end
+
+--==================================================
+-- [4.05] HARD-CODED SNIPE BOUGHT WEBHOOK
+-- Sends every confirmed pet snipe to a fixed Discord webhook.
+--==================================================
+
+function GAG2SnipeBoughtWebhookNormalizeKey(value)
+
+    return tostring(value or "")
+        :lower()
+        :gsub("%s+", "")
+        :gsub("_", "")
+        :gsub("%-", "")
+end
+
+function GAG2SnipeBoughtWebhookGetPetData(petName)
+
+    petName =
+        CleanText(petName)
+
+    if petName == "" then
+        return nil,
+            ""
+    end
+
+    local module =
+        ReplicatedStorage:FindFirstChild("SharedData")
+        and ReplicatedStorage.SharedData:FindFirstChild("PetData")
+        or nil
+
+    if not module
+    or module:IsA("ModuleScript") ~= true then
+        return nil,
+            ""
+    end
+
+    local ok,
+        petData =
+        pcall(function()
+
+            return require(
+                module
+            )
+        end)
+
+    if ok ~= true
+    or type(petData) ~= "table" then
+
+        return nil,
+            ""
+    end
+
+    local wanted =
+        GAG2SnipeBoughtWebhookNormalizeKey(
+            petName
+        )
+
+    for key, data in pairs(petData) do
+
+        if type(data) == "table" then
+
+            local displayName =
+                CleanText(
+                    data.DisplayName
+                    or data.Name
+                    or key
+                )
+
+            if GAG2SnipeBoughtWebhookNormalizeKey(key) == wanted
+            or GAG2SnipeBoughtWebhookNormalizeKey(displayName) == wanted then
+
+                return data,
+                    tostring(key)
+            end
+        end
+    end
+
+    return nil,
+        ""
+end
+
+function GAG2SnipeBoughtWebhookCleanSize(value)
+
+    local text =
+        CleanText(value)
+
+    local lower =
+        text:lower()
+
+    if lower == ""
+    or lower == "none"
+    or lower == "nil" then
+
+        return "Normal"
+    end
+
+    if lower == "huge"
+    or lower == "mega" then
+
+        return "Mega"
+    end
+
+    if lower == "big" then
+        return "Big"
+    end
+
+    local number =
+        tonumber(text)
+
+    if number then
+
+        if number >= 3.25 then
+            return "Mega"
+        end
+
+        if number >= 1.5 then
+            return "Big"
+        end
+    end
+
+    if lower:find("huge", 1, true)
+    or lower:find("mega", 1, true) then
+
+        return "Mega"
+    end
+
+    if lower:find("big", 1, true) then
+        return "Big"
+    end
+
+    return text
+end
+
+function GAG2SnipeBoughtWebhookCleanMutation(value)
+
+    local text =
+        CleanText(value)
+
+    local lower =
+        text:lower()
+
+    if lower == ""
+    or lower == "none"
+    or lower == "nil"
+    or lower == "normal" then
+
+        return "Normal"
+    end
+
+    if lower:find("rainbow", 1, true) then
+        return "Rainbow"
+    end
+
+    return text
+end
+
+function GAG2SnipeBoughtWebhookReadRef(record)
+
+    if type(record) ~= "table" then
+        return nil
+    end
+
+    if typeof(record.Ref) == "Instance"
+    and record.Ref.Parent ~= nil then
+
+        return record.Ref
+    end
+
+    if type(SniperFindRef) == "function" then
+
+        local ok,
+            ref =
+            pcall(function()
+
+                return SniperFindRef(
+                    record.UUID
+                    or ""
+                )
+            end)
+
+        if ok == true
+        and typeof(ref) == "Instance" then
+
+            return ref
+        end
+    end
+
+    return nil
+end
+
+function GAG2SnipeBoughtWebhookReadRefAttribute(ref, names)
+
+    if typeof(ref) ~= "Instance" then
+        return ""
+    end
+
+    for _, name in ipairs(names or {}) do
+
+        local ok,
+            value =
+            pcall(function()
+
+                return ref:GetAttribute(
+                    name
+                )
+            end)
+
+        if ok == true
+        and value ~= nil
+        and tostring(value) ~= "" then
+
+            return value
+        end
+    end
+
+    return ""
+end
+
+function GAG2SnipeBoughtWebhookResolveRecord(record)
+
+    record =
+        type(record) == "table"
+        and record
+        or {}
+
+    local ref =
+        GAG2SnipeBoughtWebhookReadRef(
+            record
+        )
+
+    local petName =
+        CleanText(
+            record.PetName
+            or record.Name
+            or (
+                typeof(ref) == "Instance"
+                and (
+                    ref:GetAttribute("Pet")
+                    or ref:GetAttribute("PetName")
+                    or ref:GetAttribute("Name")
+                )
+            )
+            or "Unknown"
+        )
+
+    local petData =
+        nil
+
+    petData =
+        select(
+            1,
+            GAG2SnipeBoughtWebhookGetPetData(
+                petName
+            )
+        )
+
+    local rarity =
+        CleanText(
+            record.Rarity
+            or record.RarityText
+            or GAG2SnipeBoughtWebhookReadRefAttribute(
+                ref,
+                {
+                    "Rarity",
+                    "PetRarity",
+                    "rarity",
+                }
+            )
+            or (
+                type(petData) == "table"
+                and petData.Rarity
+            )
+            or "Unknown"
+        )
+
+    if rarity == "" then
+        rarity = "Unknown"
+    end
+
+    local rawSize =
+        record.Size
+        or record.DisplaySize
+        or record.SizeLabel
+        or record.PetSize
+        or record.InternalSize
+        or GAG2SnipeBoughtWebhookReadRefAttribute(
+            ref,
+            {
+                "PetSize",
+                "Size",
+                "SizeClass",
+                "DisplaySize",
+                "WildPetSize",
+                "Scale",
+                "ModelScale",
+                "PetScale",
+            }
+        )
+
+    local size =
+        GAG2SnipeBoughtWebhookCleanSize(
+            rawSize
+        )
+
+    local rawMutation =
+        record.Mutation
+        or record.DisplayType
+        or record.Type
+        or record.PetType
+        or record.TypeLabel
+        or GAG2SnipeBoughtWebhookReadRefAttribute(
+            ref,
+            {
+                "PetType",
+                "Type",
+                "Variant",
+                "PetVariant",
+                "Mutation",
+                "MutationType",
+                "WildPetType",
+            }
+        )
+
+    local mutation =
+        GAG2SnipeBoughtWebhookCleanMutation(
+            rawMutation
+        )
+
+    local price =
+        tonumber(
+            record.Price
+        )
+        or tonumber(
+            GAG2SnipeBoughtWebhookReadRefAttribute(
+                ref,
+                {
+                    "Price",
+                    "Cost",
+                }
+            )
+        )
+        or tonumber(
+            type(petData) == "table"
+            and petData.BasePrice
+        )
+        or 0
+
+    local image =
+        CleanText(
+            type(petData) == "table"
+            and petData.Image
+            or ""
+        )
+
+    return {
+        PetName =
+            petName,
+
+        Rarity =
+            rarity,
+
+        Mutation =
+            mutation,
+
+        Size =
+            size,
+
+        Price =
+            price,
+
+        Image =
+            image,
+
+        UUID =
+            CleanText(
+                record.UUID
+            ),
+
+        PetId =
+            CleanText(
+                record.PetId
+            ),
+
+        ConfirmReason =
+            CleanText(
+                record.ConfirmReason
+                or "confirmed"
+            ),
+
+        RefPath =
+            typeof(ref) == "Instance"
+            and PathOf(ref)
+            or "missing",
+    }
+end
+
+function GAG2SnipeBoughtWebhookColor(rarity)
+
+    rarity =
+        CleanText(rarity)
+
+    local colors = {
+        Common = 0xCBD5E1,
+        Uncommon = 0x4ADE80,
+        Rare = 0x60A5FA,
+        Epic = 0xC084FC,
+        Legendary = 0xFACC15,
+        Mythic = 0xF87171,
+        Mythical = 0xF87171,
+        Super = 0x22D3EE,
+    }
+
+    return colors[rarity]
+        or 0xA78BFA
+end
+
+function GAG2SnipeBoughtWebhookFormatNumber(value)
+
+    value =
+        tonumber(value)
+        or 0
+
+    if value >= 1000000000 then
+        return string.format("%.2fB", value / 1000000000)
+    end
+
+    if value >= 1000000 then
+        return string.format("%.2fM", value / 1000000)
+    end
+
+    if value >= 1000 then
+        return string.format("%.2fK", value / 1000)
+    end
+
+    return tostring(
+        math.floor(value)
+    )
+end
+
+function GAG2SendSnipeBoughtWebhook(record)
+
+    local url =
+        CleanText(
+            GAG2_SNIPE_BOUGHT_WEBHOOK_URL
+        )
+
+    if url == "" then
+        return false,
+            "webhook url missing"
+    end
+
+    local data =
+        GAG2SnipeBoughtWebhookResolveRecord(
+            record
+        )
+
+    local key =
+        CleanText(
+            data.PetId
+        )
+
+    if key == "" then
+
+        key =
+            CleanText(
+                data.UUID
+            )
+    end
+
+    if key == "" then
+
+        key =
+            tostring(data.PetName)
+            .. "|"
+            .. tostring(data.Size)
+            .. "|"
+            .. tostring(data.Mutation)
+            .. "|"
+            .. tostring(os.time())
+    end
+
+    GAG2_SNIPE_BOUGHT_WEBHOOK_SENT =
+        type(GAG2_SNIPE_BOUGHT_WEBHOOK_SENT) == "table"
+        and GAG2_SNIPE_BOUGHT_WEBHOOK_SENT
+        or {}
+
+    if GAG2_SNIPE_BOUGHT_WEBHOOK_SENT[key] == true then
+        return false,
+            "duplicate webhook key"
+    end
+
+    GAG2_SNIPE_BOUGHT_WEBHOOK_SENT[key] =
+        true
+
+    local title =
+        "✅ Pet Sniped: "
+        .. tostring(data.PetName)
+
+    local variant =
+        tostring(data.Size)
+        .. " / "
+        .. tostring(data.Mutation)
+
+    local description =
+        "**"
+        .. tostring(data.PetName)
+        .. "** was successfully sniped by **"
+        .. tostring(LOCAL_PLAYER and LOCAL_PLAYER.Name or "Unknown")
+        .. "**."
+
+    local fields = {
+        {
+            name = "Rarity",
+            value = tostring(data.Rarity),
+            inline = true,
+        },
+
+        {
+            name = "Mutation",
+            value = tostring(data.Mutation),
+            inline = true,
+        },
+
+        {
+            name = "Size",
+            value = tostring(data.Size),
+            inline = true,
+        },
+
+        {
+            name = "Variant",
+            value = variant,
+            inline = true,
+        },
+
+        {
+            name = "Base Price",
+            value =
+                data.Price > 0
+                and GAG2SnipeBoughtWebhookFormatNumber(data.Price)
+                or "Unknown",
+            inline = true,
+        },
+
+        {
+            name = "Player",
+            value =
+                tostring(LOCAL_PLAYER and LOCAL_PLAYER.Name or "Unknown")
+                .. " (`"
+                .. tostring(LOCAL_PLAYER and LOCAL_PLAYER.UserId or "?")
+                .. "`)",
+            inline = true,
+        },
+
+        {
+            name = "Server",
+            value =
+                "`"
+                .. tostring(game.PlaceId)
+                .. ":"
+                .. tostring(game.JobId)
+                .. "`",
+            inline = false,
+        },
+    }
+
+    if data.PetId ~= "" then
+
+        table.insert(fields, {
+            name = "PetId",
+            value = "`" .. tostring(data.PetId) .. "`",
+            inline = false,
+        })
+
+    elseif data.UUID ~= "" then
+
+        table.insert(fields, {
+            name = "UUID",
+            value = "`" .. tostring(data.UUID) .. "`",
+            inline = false,
+        })
+    end
+
+    local embed = {
+        title =
+            title,
+
+        description =
+            description,
+
+        color =
+            GAG2SnipeBoughtWebhookColor(
+                data.Rarity
+            ),
+
+        fields =
+            fields,
+
+        footer = {
+            text =
+                "HOLY GAG2 • "
+                .. tostring(data.ConfirmReason),
+        },
+
+        timestamp =
+            os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+    if data.Image ~= "" then
+
+        embed.thumbnail = {
+            url =
+                data.Image,
+        }
+    end
+
+    local payload = {
+        username =
+            "HOLY GAG2 Snipes",
+
+        embeds = {
+            embed,
+        },
+    }
+
+    local encodedOk,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodedOk ~= true
+    or type(encoded) ~= "string" then
+
+        return false,
+            "json encode failed"
+    end
+
+    local requestFunction =
+        GAG2ExecutorGetRequestFunction()
+
+    if type(requestFunction) ~= "function" then
+
+        return false,
+            "executor request missing"
+    end
+
+    local ok,
+        response =
+        pcall(function()
+
+            return requestFunction({
+                Url =
+                    url,
+
+                Method =
+                    "POST",
+
+                Headers = {
+                    ["Content-Type"] =
+                        "application/json",
+
+                    ["Accept"] =
+                        "application/json",
+                },
+
+                Body =
+                    encoded,
+            })
+        end)
+
+    if ok ~= true then
+
+        GAG2_SNIPE_BOUGHT_WEBHOOK_SENT[key] =
+            nil
+
+        return false,
+            tostring(response)
+    end
+
+    return true,
+        "sent"
+end
+
+function GAG2QueueSnipeBoughtWebhook(record)
+
+    if type(record) ~= "table" then
+        return false
+    end
+
+    if record.SnipeBoughtWebhookQueued == true then
+        return false
+    end
+
+    record.SnipeBoughtWebhookQueued =
+        true
+
+    task.spawn(function()
+
+        local ok,
+            result =
+            pcall(function()
+
+                return GAG2SendSnipeBoughtWebhook(
+                    record
+                )
+            end)
+
+        if ok ~= true then
+
+            warn(
+                "[HOLY SNIPE BOUGHT WEBHOOK]",
+                "crashed:",
+                tostring(result)
+            )
+
+            return
+        end
+
+        if result ~= true then
+
+            warn(
+                "[HOLY SNIPE BOUGHT WEBHOOK]",
+                "not sent:",
+                tostring(result)
+            )
+        else
+
+            print(
+                "[HOLY SNIPE BOUGHT WEBHOOK]",
+                "sent:",
+                tostring(record.PetName or "Unknown")
+            )
+        end
+    end)
+
+    return true
 end
 
 --==================================================
@@ -50252,6 +50999,10 @@ function SniperConfirmPendingBuyRecord(record, reason, petId)
         tostring(record.ConfirmReason)
     )
 
+    GAG2QueueSnipeBoughtWebhook(
+        record
+    )
+
     SniperClearPendingBuyKey(
         key
     )
@@ -52099,6 +52850,99 @@ function SniperStartBuyConfirmation(entry)
                 and entry.Name
                 or "Unknown"
             ),
+
+        Ref =
+            ref,
+
+        Rarity =
+            CleanText(
+                entry
+                and (
+                    entry.Rarity
+                    or entry.rarity
+                    or entry.RarityText
+                    or entry.rarityText
+                )
+                or (
+                    typeof(ref) == "Instance"
+                    and ref:GetAttribute("Rarity")
+                )
+                or ""
+            ),
+
+        Size =
+            CleanText(
+                entry
+                and (
+                    entry.Size
+                    or entry.size
+                    or entry.DisplaySize
+                    or entry.displaySize
+                    or entry.SizeLabel
+                    or entry.sizeLabel
+                    or entry.PetSize
+                    or entry.petSize
+                    or entry.InternalSize
+                    or entry.internalSize
+                )
+                or (
+                    typeof(ref) == "Instance"
+                    and (
+                        ref:GetAttribute("PetSize")
+                        or ref:GetAttribute("Size")
+                        or ref:GetAttribute("SizeClass")
+                        or ref:GetAttribute("DisplaySize")
+                        or ref:GetAttribute("WildPetSize")
+                        or ref:GetAttribute("Scale")
+                        or ref:GetAttribute("ModelScale")
+                    )
+                )
+                or ""
+            ),
+
+        Mutation =
+            CleanText(
+                entry
+                and (
+                    entry.Mutation
+                    or entry.mutation
+                    or entry.Type
+                    or entry.type
+                    or entry.DisplayType
+                    or entry.displayType
+                    or entry.PetType
+                    or entry.petType
+                    or entry.TypeLabel
+                    or entry.typeLabel
+                )
+                or (
+                    typeof(ref) == "Instance"
+                    and (
+                        ref:GetAttribute("PetType")
+                        or ref:GetAttribute("Type")
+                        or ref:GetAttribute("Variant")
+                        or ref:GetAttribute("PetVariant")
+                        or ref:GetAttribute("Mutation")
+                        or ref:GetAttribute("MutationType")
+                        or ref:GetAttribute("WildPetType")
+                    )
+                )
+                or ""
+            ),
+
+        Price =
+            tonumber(
+                entry
+                and (
+                    entry.Price
+                    or entry.price
+                )
+            )
+            or (
+                typeof(ref) == "Instance"
+                and tonumber(ref:GetAttribute("Price"))
+            )
+            or 0,
 
         StartedAt =
             os.clock(),
