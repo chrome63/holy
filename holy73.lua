@@ -2908,14 +2908,18 @@ GAG2_DEFENCE_STATE =
         SamePlayerCooldown = 2.25,
         GlobalCooldown = 0.65,
 
-        WalkStopDistance = 8,
-        WalkMaxSeconds = 8,
+        WalkStopDistance = 3.6,
+        WalkMaxSeconds = 10,
 
-        TeleportOffset = 5,
+        StickDistance = 2.4,
+        StickLeadSeconds = 0.12,
+        StickStepDelay = 0.08,
+
+        TeleportOffset = 2.2,
         TeleportReturnDelay = 0.35,
 
-        SwingAttempts = 3,
-        SwingDelay = 0.18,
+        SwingAttempts = 18,
+        SwingDelay = 0.11,
     }
 
 function GAG2DefenceGetState()
@@ -2956,29 +2960,77 @@ function GAG2DefenceGetState()
         tonumber(state.GlobalCooldown)
         or 0.65
 
-    state.WalkStopDistance =
+    local walkStopDistance =
         tonumber(state.WalkStopDistance)
-        or 8
+        or 3.6
+
+    if walkStopDistance > 5 then
+        walkStopDistance = 3.6
+    end
+
+    state.WalkStopDistance =
+        math.clamp(
+            walkStopDistance,
+            2.2,
+            5
+        )
 
     state.WalkMaxSeconds =
         tonumber(state.WalkMaxSeconds)
-        or 8
+        or 10
+
+    state.StickDistance =
+        math.clamp(
+            tonumber(state.StickDistance)
+            or 2.4,
+            1.4,
+            4
+        )
+
+    state.StickLeadSeconds =
+        math.clamp(
+            tonumber(state.StickLeadSeconds)
+            or 0.12,
+            0,
+            0.35
+        )
+
+    state.StickStepDelay =
+        math.clamp(
+            tonumber(state.StickStepDelay)
+            or 0.08,
+            0.03,
+            0.20
+        )
 
     state.TeleportOffset =
-        tonumber(state.TeleportOffset)
-        or 5
+        math.clamp(
+            tonumber(state.TeleportOffset)
+            or 2.2,
+            1.5,
+            4
+        )
 
     state.TeleportReturnDelay =
         tonumber(state.TeleportReturnDelay)
         or 0.35
 
     state.SwingAttempts =
-        tonumber(state.SwingAttempts)
-        or 3
+        math.max(
+            6,
+            math.floor(
+                tonumber(state.SwingAttempts)
+                or 18
+            )
+        )
 
     state.SwingDelay =
-        tonumber(state.SwingDelay)
-        or 0.18
+        math.clamp(
+            tonumber(state.SwingDelay)
+            or 0.11,
+            0.06,
+            0.22
+        )
 
     state.Enabled =
         state.Enabled == true
@@ -3217,7 +3269,231 @@ function GAG2DefenceEquipShovel()
         "ok"
 end
 
-function GAG2DefenceSwingShovel()
+function GAG2DefenceGetPredictedTargetPosition(player)
+
+    local state =
+        GAG2DefenceGetState()
+
+    local _,
+        targetRoot =
+        GAG2DefenceGetCharacterRoot(
+            player
+        )
+
+    if not targetRoot then
+        return nil,
+            nil
+    end
+
+    local velocity =
+        Vector3.new(
+            0,
+            0,
+            0
+        )
+
+    pcall(function()
+
+        velocity =
+            targetRoot.AssemblyLinearVelocity
+    end)
+
+    local predictedPosition =
+        targetRoot.Position
+        + (
+            velocity
+            * state.StickLeadSeconds
+        )
+
+    return predictedPosition,
+        targetRoot
+end
+
+function GAG2DefenceFaceTarget(player)
+
+    local _,
+        _,
+        root =
+        GAG2DefenceGetLocalHumanoidAndRoot()
+
+    if not root then
+        return false
+    end
+
+    local predictedPosition =
+        GAG2DefenceGetPredictedTargetPosition(
+            player
+        )
+
+    if typeof(predictedPosition) ~= "Vector3" then
+        return false
+    end
+
+    local flatTarget =
+        Vector3.new(
+            predictedPosition.X,
+            root.Position.Y,
+            predictedPosition.Z
+        )
+
+    if (
+        flatTarget
+        - root.Position
+    ).Magnitude <= 0.25 then
+
+        return false
+    end
+
+    pcall(function()
+
+        root.CFrame =
+            CFrame.new(
+                root.Position,
+                flatTarget
+            )
+    end)
+
+    return true
+end
+
+function GAG2DefenceGetStickyPosition(player)
+
+    local state =
+        GAG2DefenceGetState()
+
+    local _,
+        _,
+        root =
+        GAG2DefenceGetLocalHumanoidAndRoot()
+
+    if not root then
+        return nil,
+            nil,
+            "local root missing"
+    end
+
+    local predictedPosition,
+        targetRoot =
+        GAG2DefenceGetPredictedTargetPosition(
+            player
+        )
+
+    if typeof(predictedPosition) ~= "Vector3"
+    or not targetRoot then
+
+        return nil,
+            nil,
+            "target root missing"
+    end
+
+    local away =
+        root.Position
+        - predictedPosition
+
+    if away.Magnitude <= 0.35 then
+
+        away =
+            -targetRoot.CFrame.LookVector
+    end
+
+    if away.Magnitude <= 0.35 then
+
+        away =
+            Vector3.new(
+                0,
+                0,
+                -1
+            )
+    end
+
+    local stickyPosition =
+        predictedPosition
+        + (
+            away.Unit
+            * state.StickDistance
+        )
+
+    stickyPosition =
+        Vector3.new(
+            stickyPosition.X,
+            root.Position.Y,
+            stickyPosition.Z
+        )
+
+    return stickyPosition,
+        predictedPosition,
+        "ok"
+end
+
+function GAG2DefenceStickyStepToPlayer(player, teleportMode)
+
+    local state =
+        GAG2DefenceGetState()
+
+    local _,
+        humanoid,
+        root =
+        GAG2DefenceGetLocalHumanoidAndRoot()
+
+    if not humanoid
+    or not root then
+
+        return false,
+            "local character missing"
+    end
+
+    local stickyPosition,
+        lookPosition,
+        reason =
+        GAG2DefenceGetStickyPosition(
+            player
+        )
+
+    if typeof(stickyPosition) ~= "Vector3"
+    or typeof(lookPosition) ~= "Vector3" then
+
+        return false,
+            reason
+    end
+
+    if teleportMode == true then
+
+        pcall(function()
+
+            root.CFrame =
+                CFrame.new(
+                    stickyPosition,
+                    Vector3.new(
+                        lookPosition.X,
+                        stickyPosition.Y,
+                        lookPosition.Z
+                    )
+                )
+        end)
+
+    else
+
+        pcall(function()
+
+            humanoid:MoveTo(
+                stickyPosition
+            )
+        end)
+
+        GAG2DefenceFaceTarget(
+            player
+        )
+    end
+
+    task.wait(
+        state.StickStepDelay
+    )
+
+    return true,
+        "sticky step"
+end
+
+function GAG2DefenceSwingShovel(targetPlayer)
 
     local state =
         GAG2DefenceGetState()
@@ -3236,15 +3512,31 @@ function GAG2DefenceSwingShovel()
             1,
             math.floor(
                 tonumber(state.SwingAttempts)
-                or 3
+                or 18
             )
         )
+
+    local teleportMode =
+        state.MovementMode == "Teleport"
 
     for _ = 1, swings do
 
         if state.Enabled ~= true then
             return false,
                 "disabled"
+        end
+
+        if targetPlayer
+        and targetPlayer.Parent == Players then
+
+            GAG2DefenceStickyStepToPlayer(
+                targetPlayer,
+                teleportMode
+            )
+
+            GAG2DefenceFaceTarget(
+                targetPlayer
+            )
         end
 
         pcall(function()
@@ -3261,7 +3553,7 @@ function GAG2DefenceSwingShovel()
     end
 
     return true,
-        "swung shovel"
+        "sticky shovel swing"
 end
 
 function GAG2DefenceWalkToPlayer(player)
@@ -3308,21 +3600,19 @@ function GAG2DefenceWalkToPlayer(player)
                 - targetRoot.Position
             ).Magnitude
 
+        GAG2DefenceStickyStepToPlayer(
+            player,
+            false
+        )
+
+        GAG2DefenceFaceTarget(
+            player
+        )
+
         if distance <= state.WalkStopDistance then
             return true,
-                "in range"
+                "in hit range"
         end
-
-        pcall(function()
-
-            humanoid:MoveTo(
-                targetRoot.Position
-            )
-        end)
-
-        task.wait(
-            0.20
-        )
 
         local _,
             refreshedHumanoid,
@@ -3424,7 +3714,9 @@ function GAG2DefenceTeleportToPlayerAndSwing(player)
 
     local swung,
         swingInfo =
-        GAG2DefenceSwingShovel()
+        GAG2DefenceSwingShovel(
+            player
+        )
 
     task.wait(
         state.TeleportReturnDelay
@@ -3499,7 +3791,9 @@ function GAG2DefenceRunTarget(record)
 
     if walkOk == true then
 
-        return GAG2DefenceSwingShovel()
+        return GAG2DefenceSwingShovel(
+            player
+        )
     end
 
     return false
