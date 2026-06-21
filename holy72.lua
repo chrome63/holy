@@ -3761,12 +3761,12 @@ function GAG2PetTeamsGetEquipCap()
     )
 end
 
-function GAG2PetTeamsScanInventory()
+function GAG2PetTeamsScanInventory(includeCharacter)
 
     local rows =
         {}
 
-    local function scanRoot(root, source)
+    local function scanRoot(root, source, usableForEquip)
 
         if typeof(root) ~= "Instance" then
             return
@@ -3812,6 +3812,9 @@ function GAG2PetTeamsScanInventory()
                         Source =
                             tostring(source or "?"),
 
+                        UsableForEquip =
+                            usableForEquip == true,
+
                         Path =
                             PathOf(child),
                     })
@@ -3823,14 +3826,21 @@ function GAG2PetTeamsScanInventory()
     scanRoot(
         LOCAL_PLAYER
         and LOCAL_PLAYER:FindFirstChildOfClass("Backpack"),
-        "Backpack"
+        "Backpack",
+        true
     )
 
-    scanRoot(
-        LOCAL_PLAYER
-        and LOCAL_PLAYER.Character,
-        "Character"
-    )
+    -- Character pet tools are often temporary/selected/stale.
+    -- Do not use them for normal Pet Team inventory/equip candidates.
+    if includeCharacter == true then
+
+        scanRoot(
+            LOCAL_PLAYER
+            and LOCAL_PLAYER.Character,
+            "Character",
+            false
+        )
+    end
 
     table.sort(rows, function(a, b)
 
@@ -3853,9 +3863,16 @@ function GAG2PetTeamsFindInventoryByPetId(petId)
         return nil
     end
 
-    for _, row in ipairs(GAG2PetTeamsScanInventory()) do
+    for _, row in ipairs(GAG2PetTeamsScanInventory(false)) do
 
-        if row.PetId == petId then
+        if row.PetId == petId
+        and row.UsableForEquip == true
+        and typeof(row.Tool) == "Instance"
+        and row.Tool.Parent == (
+            LOCAL_PLAYER
+            and LOCAL_PLAYER:FindFirstChildOfClass("Backpack")
+        ) then
+
             return row
         end
     end
@@ -3869,7 +3886,7 @@ function GAG2PetTeamsBuildInventoryChoices()
         GAG2PetTeamsGetState()
 
     local rows =
-        GAG2PetTeamsScanInventory()
+        GAG2PetTeamsScanInventory(false)
 
     state.InventoryRows =
         rows
@@ -5358,7 +5375,7 @@ function GAG2PetTeamsBuildStatusText()
         GAG2PetTeamsGetEquippedMap()
 
     local inventoryCount =
-        #GAG2PetTeamsScanInventory()
+        #GAG2PetTeamsScanInventory(false)
 
     return '<font color="rgb(196,181,253)"><b>Pet Teams</b></font>'
         .. '\nSelected: '
