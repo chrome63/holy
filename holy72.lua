@@ -4,72 +4,6 @@
 --==================================================
 
 --==================================================
--- [0.00] BOOT PROFILER
--- Measures startup before the normal autosave/startup profiler exists.
---==================================================
-
-GAG2_BOOT_PROFILE =
-    GAG2_BOOT_PROFILE
-    or {
-        StartedAt = os.clock(),
-        LastAt = os.clock(),
-        Rows = {},
-    }
-
-function GAG2BootMark(label)
-
-    if type(GAG2_BOOT_PROFILE) ~= "table" then
-        return
-    end
-
-    local now =
-        os.clock()
-
-    local delta =
-        now
-        - (
-            tonumber(GAG2_BOOT_PROFILE.LastAt)
-            or now
-        )
-
-    local total =
-        now
-        - (
-            tonumber(GAG2_BOOT_PROFILE.StartedAt)
-            or now
-        )
-
-    GAG2_BOOT_PROFILE.LastAt =
-        now
-
-    GAG2_BOOT_PROFILE.Rows =
-        type(GAG2_BOOT_PROFILE.Rows) == "table"
-        and GAG2_BOOT_PROFILE.Rows
-        or {}
-
-    local row =
-        string.format(
-            "[%.3fs +%.3fs] %s",
-            total,
-            delta,
-            tostring(label or "boot")
-        )
-
-    table.insert(
-        GAG2_BOOT_PROFILE.Rows,
-        row
-    )
-
-    if delta >= 0.05 then
-
-        print(
-            "[HOLY BOOT]",
-            row
-        )
-    end
-end
-
---==================================================
 -- [0] SERVICES
 --==================================================
 
@@ -92,31 +26,7 @@ local RunService =
     game:GetService("RunService")
 
 local Stats =
-    nil
-
-function GAG2GetStatsService()
-
-    if Stats then
-        return Stats
-    end
-
-    local ok,
-        result =
-        pcall(function()
-
-            return game:GetService(
-                "Stats"
-            )
-        end)
-
-    if ok == true then
-
-        Stats =
-            result
-    end
-
-    return Stats
-end
+    game:GetService("Stats")
 
 GAG2_USER_INPUT_SERVICE =
     game:GetService("UserInputService")
@@ -136,33 +46,11 @@ end)
 local VirtualInputManager =
     nil
 
-function GAG2GetVirtualInputManager()
+pcall(function()
 
-    if VirtualInputManager then
-        return VirtualInputManager
-    end
-
-    local ok,
-        result =
-        pcall(function()
-
-            return game:GetService(
-                "VirtualInputManager"
-            )
-        end)
-
-    if ok == true then
-
-        VirtualInputManager =
-            result
-    end
-
-    return VirtualInputManager
-end
-
-GAG2BootMark(
-    "Services block ready"
-)
+    VirtualInputManager =
+        game:GetService("VirtualInputManager")
+end)
 
 --==================================================
 -- [0.1] EXECUTOR COMPATIBILITY
@@ -2024,20 +1912,13 @@ function GAG2StatsOverlayGetPing()
     local ok, value =
         pcall(function()
 
-            local statsService =
-                GAG2GetStatsService()
-
-            if not statsService then
-                return nil
-            end
-
             local network =
-                statsService:FindFirstChild("Network")
+                Stats:FindFirstChild("Network")
 
             if not network then
 
                 network =
-                    statsService.Network
+                    Stats.Network
             end
 
             local serverStats =
@@ -4079,10 +3960,7 @@ end
 
 function GAG2DefenceSendMouseSwing()
 
-    local virtualInput =
-        GAG2GetVirtualInputManager()
-
-    if not virtualInput then
+    if not VirtualInputManager then
         return false
     end
 
@@ -4111,7 +3989,7 @@ function GAG2DefenceSendMouseSwing()
     local ok =
         pcall(function()
 
-            virtualInput:SendMouseButtonEvent(
+            VirtualInputManager:SendMouseButtonEvent(
                 x,
                 y,
                 0,
@@ -4124,7 +4002,7 @@ function GAG2DefenceSendMouseSwing()
                 0.025
             )
 
-            virtualInput:SendMouseButtonEvent(
+            VirtualInputManager:SendMouseButtonEvent(
                 x,
                 y,
                 0,
@@ -30157,19 +30035,27 @@ function GAG2PerformanceDestroyOwnGardenChild(garden, childName)
         return false, 0
     end
 
-    local count =
-        GAG2PerformanceCountDescendants(
-            child
-        )
+    local hidden =
+        0
 
-    local ok =
-        pcall(function()
+    for index, descendant in ipairs(child:GetDescendants()) do
 
-            child:Destroy()
-        end)
+        if GAG2PerformanceHideOwnGardenObject(
+            descendant
+        ) == true then
 
-    return ok == true,
-        count
+            hidden =
+                hidden + 1
+        end
+
+        if index % 350 == 0 then
+
+            task.wait()
+        end
+    end
+
+    return hidden > 0,
+        hidden
 end
 
 function GAG2PerformanceHardDeleteOwnGarden(reason)
@@ -30180,7 +30066,7 @@ function GAG2PerformanceHardDeleteOwnGarden(reason)
     if state.OwnGardenHardDeleted == true then
 
         GAG2PerformanceSetStatus(
-            "Own garden already hard-deleted. Rejoin required to restore."
+            "Own garden already safe-hidden. Rejoin or Restore Gardens to restore visuals."
         )
 
         return false
@@ -30208,21 +30094,21 @@ function GAG2PerformanceHardDeleteOwnGarden(reason)
             garden
         )
 
-    local plantsDeleted,
+    local plantsHidden,
         plantsCount =
         GAG2PerformanceDestroyOwnGardenChild(
             garden,
             "Plants"
         )
 
-    local visualDeleted,
+    local visualHidden,
         visualCount =
         GAG2PerformanceDestroyOwnGardenChild(
             garden,
             "Visual"
         )
 
-    local deletedCount =
+    local hiddenCount =
         tonumber(plantsCount)
         + tonumber(visualCount)
 
@@ -30233,36 +30119,32 @@ function GAG2PerformanceHardDeleteOwnGarden(reason)
         os.time()
 
     state.OwnGardenHardDeletedDescendants =
-        deletedCount
+        hiddenCount
 
     state.OwnGardenHardDeletedPath =
         gardenPath
 
-    GAG2PerformanceRestoreOwnGardenVisuals(
-        "hard delete own garden"
-    )
-
     GAG2PerformanceSetStatus(
-        "Hard-deleted own garden locally. Plants="
-        .. tostring(plantsDeleted)
+        "Safe-hidden own garden locally. Plants="
+        .. tostring(plantsHidden)
         .. " ("
         .. tostring(plantsCount)
         .. ") | Visual="
-        .. tostring(visualDeleted)
+        .. tostring(visualHidden)
         .. " ("
         .. tostring(visualCount)
-        .. ") | Rejoin required."
+        .. ") | Restore Gardens can undo."
     )
 
     print(
         "[HOLY PERFORMANCE]",
-        "hard delete own garden",
+        "safe-hide own garden",
         "| path:",
         gardenPath,
         "| before:",
         tostring(beforeCount),
-        "| deleted:",
-        tostring(deletedCount),
+        "| hidden:",
+        tostring(hiddenCount),
         "| reason:",
         tostring(reason or "manual")
     )
@@ -30897,6 +30779,9 @@ function GAG2PerformanceHideGarden(garden, ownGarden, gardensRoot)
             garden
         )
 
+        state.HiddenGardens[garden] =
+            true
+
         return true
     end
 
@@ -30908,23 +30793,16 @@ function GAG2PerformanceHideGarden(garden, ownGarden, gardensRoot)
         return false
     end
 
+    -- Important:
+    -- Do NOT set garden.Parent = nil.
+    -- The game's PlotsController keeps references to plot/tag objects
+    -- and errors if the plot tree disappears.
+    GAG2PerformanceHideOwnGardenVisuals(
+        garden
+    )
+
     state.HiddenGardens[garden] =
-        garden.Parent
-
-    local ok =
-        pcall(function()
-
-            garden.Parent =
-                nil
-        end)
-
-    if ok ~= true then
-
-        state.HiddenGardens[garden] =
-            nil
-
-        return false
-    end
+        true
 
     return true
 end
