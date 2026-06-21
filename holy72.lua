@@ -2931,6 +2931,7 @@ GAG2_PET_TEAMS_STATE =
 
         AutoSwitch = false,
         ReturnAfterTemporary = true,
+        ReturnDefaultAtFarmMiddle = false,
         ManualLock = false,
 
         LastStatus = "Ready.",
@@ -3159,6 +3160,9 @@ function GAG2PetTeamsGetState()
     state.ReturnAfterTemporary =
         state.ReturnAfterTemporary ~= false
 
+    state.ReturnDefaultAtFarmMiddle =
+        state.ReturnDefaultAtFarmMiddle == true
+
     state.ManualLock =
         state.ManualLock == true
 
@@ -3249,6 +3253,9 @@ function GAG2PetTeamsSerialize()
 
         ReturnAfterTemporary =
             state.ReturnAfterTemporary ~= false,
+
+        ReturnDefaultAtFarmMiddle =
+            state.ReturnDefaultAtFarmMiddle == true,
 
         ManualLock =
             state.ManualLock == true,
@@ -3367,6 +3374,9 @@ function GAG2PetTeamsLoadSettings()
 
     state.ReturnAfterTemporary =
         payload.ReturnAfterTemporary ~= false
+
+    state.ReturnDefaultAtFarmMiddle =
+        payload.ReturnDefaultAtFarmMiddle == true
 
     state.ManualLock =
         payload.ManualLock == true
@@ -5206,6 +5216,19 @@ function GAG2PetTeamsSetReturnAfterTemporary(value)
     MarkConfigDirty()
 end
 
+function GAG2PetTeamsSetReturnDefaultAtFarmMiddle(value)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    state.ReturnDefaultAtFarmMiddle =
+        value == true
+
+    GAG2PetTeamsSaveSettings()
+    GAG2PetTeamsRefreshStatus()
+    MarkConfigDirty()
+end
+
 function GAG2PetTeamsSetManualLock(value)
 
     local state =
@@ -5357,6 +5380,294 @@ function GAG2PetTeamsCanReturnToDefault()
 
     return true,
         defaultTeamName
+end
+
+function GAG2PetTeamsShouldReturnAtFarmMiddle()
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    return state.ReturnDefaultAtFarmMiddle == true
+end
+
+function GAG2PetTeamsIsAtFarmMiddleAnchor()
+
+    local middleState =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+    if type(middleState) ~= "table" then
+        return false,
+            "middle state missing"
+    end
+
+    if middleState.AnchorReady ~= true
+    or typeof(middleState.AnchorPosition) ~= "Vector3" then
+
+        if type(GAG2StartFarmMiddleAnchorResolver) == "function"
+        and middleState.AnchorResolving ~= true then
+
+            GAG2StartFarmMiddleAnchorResolver(
+                "pet team default return needs anchor",
+                false
+            )
+        end
+
+        return false,
+            "anchor not ready"
+    end
+
+    local _,
+        root =
+        SniperGetCharacterRoot()
+
+    if not root then
+        return false,
+            "character root missing"
+    end
+
+    local distance =
+        (
+            root.Position
+            - middleState.AnchorPosition
+        ).Magnitude
+
+    local threshold =
+        math.max(
+            tonumber(middleState.IdleMoveStopDistance)
+            or 9,
+            9
+        )
+
+    if distance <= threshold then
+
+        middleState.MiddleReady =
+            true
+
+        middleState.IdleMoveDone =
+            true
+
+        middleState.LastResult =
+            "at farm middle"
+
+        return true,
+            "at farm middle | "
+            .. string.format("%.1f", distance)
+            .. " studs"
+    end
+
+    return false,
+        "not at middle | "
+        .. string.format("%.1f", distance)
+        .. " studs"
+end
+
+function GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle(reason, delaySeconds)
+
+    local state =
+        GAG2PetTeamsGetState()
+
+    local canReturn,
+        defaultTeamName =
+        GAG2PetTeamsCanReturnToDefault()
+
+    if canReturn ~= true then
+
+        state.LastStatus =
+            "Middle default return skipped: "
+            .. tostring(defaultTeamName)
+
+        GAG2PetTeamsRefreshStatus()
+
+        return false
+    end
+
+    state.DefaultReturnToken =
+        (
+            tonumber(state.DefaultReturnToken)
+            or 0
+        )
+        + 1
+
+    local token =
+        state.DefaultReturnToken
+
+    local delay =
+        math.clamp(
+            tonumber(delaySeconds)
+            or 0.75,
+            0.15,
+            8
+        )
+
+    state.LastStatus =
+        "Default return waiting for Farm Middle..."
+
+    GAG2PetTeamsRefreshStatus()
+
+    task.spawn(function()
+
+        task.wait(
+            delay
+        )
+
+        local startedAt =
+            os.clock()
+
+        local timeoutSeconds =
+            120
+
+        while os.clock() - startedAt <= timeoutSeconds do
+
+            local liveState =
+                GAG2PetTeamsGetState()
+
+            if tonumber(liveState.DefaultReturnToken) ~= token then
+                return
+            end
+
+            if liveState.ManualLock == true
+            or liveState.AutoSwitch ~= true
+            or liveState.ReturnAfterTemporary == false
+            or liveState.ReturnDefaultAtFarmMiddle ~= true then
+                return
+            end
+
+            if liveState.Busy == true then
+
+                task.wait(
+                    0.45
+                )
+
+                continue
+            end
+
+            if type(SniperState) == "table"
+            and SniperState.Taming == true then
+
+                liveState.LastStatus =
+                    "Default return waiting: sniper buying."
+
+                GAG2PetTeamsRefreshStatus()
+
+                task.wait(
+                    0.55
+                )
+
+                continue
+            end
+
+            if type(SniperHasPendingBuy) == "function" then
+
+                local pendingOk,
+                    hasPending =
+                    pcall(function()
+
+                        return SniperHasPendingBuy()
+                    end)
+
+                if pendingOk == true
+                and hasPending == true then
+
+                    liveState.LastStatus =
+                        "Default return waiting: pending buy."
+
+                    GAG2PetTeamsRefreshStatus()
+
+                    task.wait(
+                        0.55
+                    )
+
+                    continue
+                end
+            end
+
+            if type(GAG2StartFarmMiddleAnchorResolver) == "function" then
+
+                local middleState =
+                    GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+                if type(middleState) == "table"
+                and middleState.AnchorReady ~= true
+                and middleState.AnchorResolving ~= true then
+
+                    GAG2StartFarmMiddleAnchorResolver(
+                        "default return wait middle",
+                        false
+                    )
+                end
+            end
+
+            if type(GAG2AutoTpMiddleFarmEnabled) == "function"
+            and GAG2AutoTpMiddleFarmEnabled() == true
+            and type(GAG2StartAutoTpMiddleFarm) == "function" then
+
+                local middleState =
+                    GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
+                if type(middleState) == "table"
+                and middleState.IdleMoveRunning ~= true
+                and middleState.IdleMoveDone ~= true then
+
+                    GAG2StartAutoTpMiddleFarm(
+                        "default return wait middle"
+                    )
+                end
+            end
+
+            local atMiddle,
+                middleReason =
+                GAG2PetTeamsIsAtFarmMiddleAnchor()
+
+            if atMiddle == true then
+
+                GAG2PetTeamsApplyTeam(
+                    defaultTeamName,
+                    reason or "return at farm middle"
+                )
+
+                return
+            end
+
+            liveState.LastStatus =
+                "Default return waiting: "
+                .. tostring(middleReason)
+
+            GAG2PetTeamsRefreshStatus()
+
+            task.wait(
+                0.50
+            )
+        end
+
+        local finalState =
+            GAG2PetTeamsGetState()
+
+        if tonumber(finalState.DefaultReturnToken) == token then
+
+            finalState.LastStatus =
+                "Middle default return timed out."
+
+            GAG2PetTeamsRefreshStatus()
+        end
+    end)
+
+    return true
+end
+
+function GAG2PetTeamsQueueDefaultReturn(reason, delaySeconds)
+
+    if GAG2PetTeamsShouldReturnAtFarmMiddle() == true then
+
+        return GAG2PetTeamsScheduleDefaultReturnAtFarmMiddle(
+            reason,
+            delaySeconds or 0.75
+        )
+    end
+
+    return GAG2PetTeamsScheduleDefaultReturn(
+        reason,
+        delaySeconds or 1.75
+    )
 end
 
 function GAG2PetTeamsScheduleDefaultReturn(reason, delaySeconds)
@@ -5619,7 +5930,13 @@ function GAG2PetTeamsBuildStatusText()
         .. BoolText(state.AutoSwitch == true)
         .. ' | Return: '
         .. BoolText(state.ReturnAfterTemporary ~= false)
-        .. ' | Lock: '
+        .. ' | Mode: '
+        .. (
+            state.ReturnDefaultAtFarmMiddle == true
+            and "Middle"
+            or "Confirm"
+        )
+        .. '\nLock: '
         .. BoolText(state.ManualLock == true)
         .. '\nEquipped: '
         .. tostring(equippedCount)
@@ -24291,23 +24608,18 @@ function GAG2ResolveFarmMiddleAnchor(reason, forceRefresh)
     local positionReason =
         "not resolved"
 
-    while os.clock() - started < 10 do
-
-        local character, root =
-            SniperGetCharacterRoot()
+    while os.clock() - started < 12 do
 
         local resolvedPosition, resolvedReason =
             GAG2GetOwnFarmMiddlePosition()
 
-        if character
-        and root
-        and typeof(resolvedPosition) == "Vector3" then
+        if typeof(resolvedPosition) == "Vector3" then
 
             position =
                 resolvedPosition
 
             positionReason =
-                tostring(resolvedReason or "resolved")
+                tostring(resolvedReason or "resolved from own farm")
 
             break
         end
@@ -24379,9 +24691,6 @@ function GAG2ResolveFarmMiddleAnchor(reason, forceRefresh)
 
     state.MiddleReady =
         true
-
-    state.MovedOnce =
-        false
 
     state.LastMiddleReadyAt =
         os.clock()
@@ -25764,14 +26073,28 @@ function GAG2SetAutoTpMiddleFarmEnabled(value)
     local enabled =
         value == true
 
+    local state =
+        GAG2_AUTO_TP_MIDDLE_FARM_STATE
+
     if enabled == true then
 
-        GAG2ResetFarmMiddleAnchor(
-            "toggle refresh"
-        )
-
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.IdleMoveDone =
+        state.IdleMoveDone =
             false
+
+        state.MovedOnce =
+            false
+
+        state.Moving =
+            false
+
+        if type(GAG2StartFarmMiddleAnchorResolver) == "function"
+        and state.AnchorResolving ~= true then
+
+            GAG2StartFarmMiddleAnchorResolver(
+                "toggle preload anchor",
+                true
+            )
+        end
 
         if type(GAG2StartAutoTpMiddleFarm) == "function" then
 
@@ -25782,12 +26105,20 @@ function GAG2SetAutoTpMiddleFarmEnabled(value)
 
     else
 
-        GAG2_AUTO_TP_MIDDLE_FARM_STATE.IdleMoveRunning =
+        state.IdleMoveRunning =
             false
 
-        GAG2ResetFarmMiddleAnchor(
+        state.Moving =
+            false
+
+        state.SniperWaitActive =
+            false
+
+        state.IdleMoveLastReason =
             "anchor disabled"
-        )
+
+        state.LastResult =
+            "farm middle anchor disabled; cached position kept"
     end
 
     if enabled ~= true
@@ -25866,9 +26197,13 @@ function GAG2RestoreAutoTpMiddleFarmState()
                     0.15
                 )
 
-                GAG2ResetFarmMiddleAnchor(
-                    "respawn"
-                )
+                if type(GAG2StartFarmMiddleAnchorResolver) == "function" then
+
+                    GAG2StartFarmMiddleAnchorResolver(
+                        "respawn preload anchor",
+                        true
+                    )
+                end
 
                 GAG2_AUTO_TP_MIDDLE_FARM_STATE.MovedOnce =
                     false
@@ -25912,11 +26247,18 @@ function GAG2RestoreAutoTpMiddleFarmState()
             )
         end
 
+        if type(GAG2StartFarmMiddleAnchorResolver) == "function" then
+
+            GAG2StartFarmMiddleAnchorResolver(
+                "autosave preload anchor",
+                true
+            )
+        end
+
         if GAG2AutoTpMiddleFarmEnabled() == true then
 
-            GAG2ResetFarmMiddleAnchor(
-                "autosave"
-            )
+            GAG2_AUTO_TP_MIDDLE_FARM_STATE.IdleMoveDone =
+                false
 
             GAG2StartAutoTpMiddleFarm(
                 "autosave anchor"
@@ -47214,7 +47556,15 @@ function SniperConfirmPendingBuyRecord(record, reason, petId)
         key
     )
 
-    if type(GAG2PetTeamsScheduleDefaultReturn) == "function" then
+    if type(GAG2PetTeamsQueueDefaultReturn) == "function" then
+
+        GAG2PetTeamsQueueDefaultReturn(
+            "sniper confirmed "
+            .. tostring(record.PetName),
+            1.25
+        )
+
+    elseif type(GAG2PetTeamsScheduleDefaultReturn) == "function" then
 
         GAG2PetTeamsScheduleDefaultReturn(
             "sniper confirmed "
@@ -71960,6 +72310,22 @@ if PetTeamsRulesBox then
 
             GAG2PetTeamsSetReturnAfterTemporary(
                 value ~= false
+            )
+        end,
+    })
+
+    PetTeamsRulesBox:AddToggle("HolyGAG2PetTeamsReturnDefaultAtMiddle", {
+        Text = "Return Only At Farm Middle",
+        Default = GAG2PetTeamsGetState().ReturnDefaultAtFarmMiddle == true,
+        Tooltip = "ON: after a sniper buy, wait until you reach Farm Middle before switching back to Default Team. OFF: switch back after confirm.",
+        Callback = function(value)
+
+            if ConfigState.Loading == true then
+                return
+            end
+
+            GAG2PetTeamsSetReturnDefaultAtFarmMiddle(
+                value == true
             )
         end,
     })
