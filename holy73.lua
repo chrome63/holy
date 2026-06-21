@@ -30153,39 +30153,54 @@ function GAG2PerformanceSetHardDeleteOwnGardenEnabled(value)
     local state =
         GAG2_PERFORMANCE_STATE
 
-    if value ~= true then
+    state.HardDeleteOwnGarden =
+        value == true
 
-        state.HardDeleteOwnGarden =
-            false
+    if state.HardDeleteOwnGarden ~= true then
 
-        return
+        GAG2PerformanceSetStatus(
+            "Hard Delete Own Garden disabled. Rejoin required if already deleted."
+        )
+
+        MarkConfigDirty()
+
+        return false
     end
 
-    state.HardDeleteOwnGarden =
-        true
+    if ConfigState.Loading == true then
 
-    GAG2PerformanceHardDeleteOwnGarden(
-        "settings toggle"
-    )
+        return true
+    end
 
-    state.HardDeleteOwnGarden =
-        false
+    if state.OwnGardenHardDeleted == true then
+
+        GAG2PerformanceSetStatus(
+            "Hard Delete Own Garden is ON. Own garden is already deleted this session."
+        )
+
+        MarkConfigDirty()
+
+        return true
+    end
 
     task.defer(function()
 
-        if Toggles.HolyGAG2HardDeleteOwnGarden
-        and type(Toggles.HolyGAG2HardDeleteOwnGarden.SetValue) == "function" then
+        task.wait(
+            0.15
+        )
 
-            pcall(function()
-
-                Toggles.HolyGAG2HardDeleteOwnGarden:SetValue(
-                    false
-                )
-            end)
+        if GAG2_PERFORMANCE_STATE.HardDeleteOwnGarden ~= true then
+            return
         end
+
+        GAG2PerformanceHardDeleteOwnGarden(
+            "persistent settings toggle"
+        )
     end)
 
     MarkConfigDirty()
+
+    return true
 end
 
 function GAG2PerformanceApplyHideMapClutter(reason)
@@ -30955,6 +30970,12 @@ function GAG2RestorePerformanceState()
                 Toggles.HolyGAG2HideMapClutter.Value == true
         end
 
+        if Toggles.HolyGAG2HardDeleteOwnGarden then
+
+            GAG2_PERFORMANCE_STATE.HardDeleteOwnGarden =
+                Toggles.HolyGAG2HardDeleteOwnGarden.Value == true
+        end
+
         if GAG2_PERFORMANCE_STATE.HideOtherGardens == true
         or GAG2_PERFORMANCE_STATE.HideOwnGarden == true then
 
@@ -30975,6 +30996,17 @@ function GAG2RestorePerformanceState()
 
             GAG2PerformanceApplyHideMapClutter(
                 "autosave"
+            )
+        end
+
+        if GAG2_PERFORMANCE_STATE.HardDeleteOwnGarden == true then
+
+            task.wait(
+                0.35
+            )
+
+            GAG2PerformanceHardDeleteOwnGarden(
+                "autosave persistent toggle"
             )
         end
     end)
@@ -81644,7 +81676,7 @@ SettingsUIBox:AddToggle("HolyGAG2HideOwnGarden", {
 SettingsUIBox:AddToggle("HolyGAG2HardDeleteOwnGarden", {
     Text = "Hard Delete Own Garden",
     Default = false,
-    Tooltip = "One-shot local delete of your own Plants + Visual folders. Breaks fruit collection until rejoin. Auto-resets OFF.",
+    Tooltip = "Deletes own garden to improve FPS",
     Callback = function(value)
 
         GAG2PerformanceSetHardDeleteOwnGardenEnabled(
