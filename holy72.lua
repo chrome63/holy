@@ -2920,6 +2920,13 @@ GAG2_DEFENCE_STATE =
 
         SwingAttempts = 18,
         SwingDelay = 0.11,
+
+        DefenceReach = 3.6,
+        HitboxEnabled = false,
+        HitboxScale = 1,
+
+        MaxQueueSize = 12,
+        QueueSortMode = "Closest",
     }
 
 function GAG2DefenceGetState()
@@ -3030,6 +3037,64 @@ function GAG2DefenceGetState()
             or 0.11,
             0.06,
             0.22
+        )
+
+        state.DefenceReach =
+        math.clamp(
+            tonumber(state.DefenceReach)
+            or state.WalkStopDistance
+            or 3.6,
+            2.2,
+            12
+        )
+
+    state.HitboxEnabled =
+        state.HitboxEnabled == true
+
+    state.HitboxScale =
+        math.clamp(
+            tonumber(state.HitboxScale)
+            or 1,
+            1,
+            8
+        )
+
+    state.MaxQueueSize =
+        math.clamp(
+            math.floor(
+                tonumber(state.MaxQueueSize)
+                or 12
+            ),
+            3,
+            24
+        )
+
+    state.QueueSortMode =
+        CleanText(
+            state.QueueSortMode
+        )
+
+    if state.QueueSortMode ~= "Closest" then
+
+        state.QueueSortMode =
+            "Closest"
+    end
+
+    state.WalkStopDistance =
+        state.DefenceReach
+
+    state.StickDistance =
+        math.clamp(
+            math.min(
+                state.StickDistance
+                or 2.4,
+                math.max(
+                    1.4,
+                    state.DefenceReach - 1.2
+                )
+            ),
+            1.2,
+            5
         )
 
     state.Enabled =
@@ -3218,6 +3283,119 @@ function GAG2DefenceFindShovelTool()
     return nil
 end
 
+function GAG2DefenceApplyShovelHitbox(shovel)
+
+    local state =
+        GAG2DefenceGetState()
+
+    if typeof(shovel) ~= "Instance"
+    or shovel:IsA("Tool") ~= true then
+
+        return false
+    end
+
+    local enabled =
+        state.HitboxEnabled == true
+
+    local scale =
+        enabled == true
+        and state.HitboxScale
+        or 1
+
+    local changed =
+        0
+
+    local parts =
+        {}
+
+    for _, descendant in ipairs(shovel:GetDescendants()) do
+
+        if descendant:IsA("BasePart") then
+
+            table.insert(
+                parts,
+                descendant
+            )
+        end
+    end
+
+    if shovel:FindFirstChild("Handle")
+    and shovel.Handle:IsA("BasePart") then
+
+        local found =
+            false
+
+        for _, part in ipairs(parts) do
+
+            if part == shovel.Handle then
+
+                found =
+                    true
+
+                break
+            end
+        end
+
+        if found ~= true then
+
+            table.insert(
+                parts,
+                shovel.Handle
+            )
+        end
+    end
+
+    for _, part in ipairs(parts) do
+
+        pcall(function()
+
+            local originalSize =
+                part:GetAttribute("HOLY_OriginalSize")
+
+            if typeof(originalSize) ~= "Vector3" then
+
+                part:SetAttribute(
+                    "HOLY_OriginalSize",
+                    part.Size
+                )
+
+                originalSize =
+                    part.Size
+            end
+
+            if enabled == true then
+
+                part.Size =
+                    Vector3.new(
+                        math.max(originalSize.X * scale, originalSize.X),
+                        math.max(originalSize.Y * scale, originalSize.Y),
+                        math.max(originalSize.Z * scale, originalSize.Z)
+                    )
+
+                part.CanTouch =
+                    true
+
+                part.CanQuery =
+                    true
+
+                part.Massless =
+                    true
+
+            else
+
+                part.Size =
+                    originalSize
+            end
+
+            changed =
+                changed + 1
+        end)
+    end
+
+    return changed > 0,
+        changed
+end
+
 function GAG2DefenceEquipShovel()
 
     local character,
@@ -3264,6 +3442,10 @@ function GAG2DefenceEquipShovel()
             0.08
         )
     end
+
+    GAG2DefenceApplyShovelHitbox(
+        shovel
+    )
 
     return shovel,
         "ok"
@@ -3834,6 +4016,8 @@ function GAG2DefenceStartWorker()
                 )
             end
 
+            GAG2DefenceSortQueue()
+
             local record =
                 table.remove(
                     state.Queue,
@@ -3860,6 +4044,87 @@ function GAG2DefenceStartWorker()
     end)
 
     return true
+end
+
+function GAG2DefenceGetDistanceToPlayer(player)
+
+    local _,
+        _,
+        root =
+        GAG2DefenceGetLocalHumanoidAndRoot()
+
+    local _,
+        targetRoot =
+        GAG2DefenceGetCharacterRoot(
+            player
+        )
+
+    if not root
+    or not targetRoot then
+        return math.huge
+    end
+
+    return (
+        root.Position
+        - targetRoot.Position
+    ).Magnitude
+end
+
+function GAG2DefenceSortQueue()
+
+    local state =
+        GAG2DefenceGetState()
+
+    if type(state.Queue) ~= "table" then
+        state.Queue = {}
+        return
+    end
+
+    table.sort(state.Queue, function(a, b)
+
+        local playerA =
+            a
+            and (
+                a.Player
+                or Players:GetPlayerByUserId(
+                    tonumber(a.UserId)
+                    or 0
+                )
+            )
+            or nil
+
+        local playerB =
+            b
+            and (
+                b.Player
+                or Players:GetPlayerByUserId(
+                    tonumber(b.UserId)
+                    or 0
+                )
+            )
+            or nil
+
+        local distA =
+            GAG2DefenceGetDistanceToPlayer(
+                playerA
+            )
+
+        local distB =
+            GAG2DefenceGetDistanceToPlayer(
+                playerB
+            )
+
+        if distA ~= distB then
+            return distA < distB
+        end
+
+        return tonumber(a and a.AddedAt)
+            or 0
+            > (
+                tonumber(b and b.AddedAt)
+                or 0
+            )
+    end)
 end
 
 function GAG2DefenceQueueTarget(player, reason)
@@ -3889,6 +4154,26 @@ function GAG2DefenceQueueTarget(player, reason)
         or 0
 
     if now - previous < state.SamePlayerCooldown then
+
+        for _, record in ipairs(state.Queue) do
+
+            if tonumber(record.UserId) == player.UserId then
+
+                record.Player =
+                    player
+
+                record.AddedAt =
+                    now
+
+                record.Reason =
+                    tostring(reason or "steal started")
+
+                GAG2DefenceSortQueue()
+
+                return true
+            end
+        end
+
         return false
     end
 
@@ -3904,28 +4189,59 @@ function GAG2DefenceQueueTarget(player, reason)
     state.LastTargetName =
         player.Name
 
-    table.insert(state.Queue, {
-        Player =
-            player,
+    local updatedExisting =
+        false
 
-        UserId =
-            player.UserId,
+    for _, record in ipairs(state.Queue) do
 
-        Name =
-            player.Name,
+        if tonumber(record.UserId) == player.UserId then
 
-        Reason =
-            tostring(reason or "steal started"),
+            record.Player =
+                player
 
-        AddedAt =
-            now,
-    })
+            record.Name =
+                player.Name
 
-    while #state.Queue > 6 do
+            record.Reason =
+                tostring(reason or "steal started")
+
+            record.AddedAt =
+                now
+
+            updatedExisting =
+                true
+
+            break
+        end
+    end
+
+    if updatedExisting ~= true then
+
+        table.insert(state.Queue, {
+            Player =
+                player,
+
+            UserId =
+                player.UserId,
+
+            Name =
+                player.Name,
+
+            Reason =
+                tostring(reason or "steal started"),
+
+            AddedAt =
+                now,
+        })
+    end
+
+    GAG2DefenceSortQueue()
+
+    while #state.Queue > state.MaxQueueSize do
 
         table.remove(
             state.Queue,
-            1
+            #state.Queue
         )
     end
 
@@ -4050,6 +4366,102 @@ function GAG2DefenceSetEnabled(value)
     MarkConfigDirty()
 end
 
+function GAG2DefenceSetReach(value)
+
+    local state =
+        GAG2DefenceGetState()
+
+    local reach =
+        tonumber(value)
+
+    if not reach then
+        reach =
+            tonumber(
+                tostring(value or ""):match("[%d%.]+")
+            )
+    end
+
+    reach =
+        math.clamp(
+            reach or 3.6,
+            2.2,
+            12
+        )
+
+    state.DefenceReach =
+        reach
+
+    state.WalkStopDistance =
+        reach
+
+    MarkConfigDirty()
+
+    return true
+end
+
+function GAG2DefenceSetHitboxEnabled(value)
+
+    local state =
+        GAG2DefenceGetState()
+
+    state.HitboxEnabled =
+        value == true
+
+    local shovel =
+        GAG2DefenceFindShovelTool()
+
+    if shovel then
+
+        GAG2DefenceApplyShovelHitbox(
+            shovel
+        )
+    end
+
+    MarkConfigDirty()
+
+    return true
+end
+
+function GAG2DefenceSetHitboxScale(value)
+
+    local state =
+        GAG2DefenceGetState()
+
+    local scale =
+        tonumber(value)
+
+    if not scale then
+        scale =
+            tonumber(
+                tostring(value or ""):match("[%d%.]+")
+            )
+    end
+
+    scale =
+        math.clamp(
+            scale or 1,
+            1,
+            8
+        )
+
+    state.HitboxScale =
+        scale
+
+    local shovel =
+        GAG2DefenceFindShovelTool()
+
+    if shovel then
+
+        GAG2DefenceApplyShovelHitbox(
+            shovel
+        )
+    end
+
+    MarkConfigDirty()
+
+    return true
+end
+
 function GAG2DefenceSetMovementMode(value)
 
     local state =
@@ -4084,6 +4496,26 @@ function GAG2RestoreDefenceState()
                 CleanText(
                     Options.HolyGAG2DefenceMovement.Value
                 )
+        end
+
+                if Options.HolyGAG2DefenceReach then
+
+            GAG2DefenceSetReach(
+                Options.HolyGAG2DefenceReach.Value
+            )
+        end
+
+        if Options.HolyGAG2DefenceHitboxScale then
+
+            GAG2DefenceSetHitboxScale(
+                Options.HolyGAG2DefenceHitboxScale.Value
+            )
+        end
+
+        if Toggles.HolyGAG2DefenceHitboxEnabled then
+
+            state.HitboxEnabled =
+                Toggles.HolyGAG2DefenceHitboxEnabled.Value == true
         end
 
         if state.MovementMode ~= "Walk"
@@ -73684,23 +74116,57 @@ if CombatStatusBox then
         end,
     })
 
-    CombatStatusBox:AddDropdown("HolyGAG2DefenceMovement", {
-        Text = "Defence Movement",
-        Values = {
-            "Walk",
-            "Teleport",
-        },
-        Default = "Walk",
-        Multi = false,
-        Searchable = false,
-        Tooltip = "Walk is default and safer. Teleport jumps to the thief, swings, then returns.",
+    CombatStatusBox:AddInput("HolyGAG2DefenceReach", {
+        Text = "Defence Reach",
+        Default = "3.6",
+        Placeholder = "3.6",
+        Numeric = false,
+        Finished = false,
+        ClearTextOnFocus = false,
+        Tooltip = "How close Auto Defend tries to stay before swinging. Default 3.6. Higher can be useful in your own game if shovel hit validation allows it.",
         Callback = function(value)
 
             if ConfigState.Loading == true then
                 return
             end
 
-            GAG2DefenceSetMovementMode(
+            GAG2DefenceSetReach(
+                value
+            )
+        end,
+    })
+
+    CombatStatusBox:AddToggle("HolyGAG2DefenceHitboxEnabled", {
+        Text = "Extend Shovel Hitbox",
+        Default = false,
+        Tooltip = "Attempts to enlarge shovel BaseParts if the shovel has any. In this game the shovel may have no parts, so reach/sticky follow still matters most.",
+        Callback = function(value)
+
+            if ConfigState.Loading == true then
+                return
+            end
+
+            GAG2DefenceSetHitboxEnabled(
+                value == true
+            )
+        end,
+    })
+
+    CombatStatusBox:AddInput("HolyGAG2DefenceHitboxScale", {
+        Text = "Shovel Hitbox",
+        Default = "1",
+        Placeholder = "1",
+        Numeric = false,
+        Finished = false,
+        ClearTextOnFocus = false,
+        Tooltip = "Hitbox multiplier for shovel parts. 1 = normal. Works only if the shovel exposes BaseParts / Handle.",
+        Callback = function(value)
+
+            if ConfigState.Loading == true then
+                return
+            end
+
+            GAG2DefenceSetHitboxScale(
                 value
             )
         end,
