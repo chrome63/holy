@@ -32710,51 +32710,88 @@ GAG2_ACF_SPEED_VALUES = {
     "Normal",
     "Fast",
     "Ultra",
+    "Exotic",
 }
 
 GAG2_ACF_SPEED_PRESETS = {
     ["Low End"] = {
         Name = "Low End",
         MinBurst = 1,
-        MaxBurst = 6,
-        RecentCooldown = 0.55,
+        MaxBurst = 8,
+        RecentCooldown = 0.45,
         PromptDelayOverride = 0.035,
         YieldEvery = 1,
         LoopWaitAfterFire = 0.075,
         LoopWaitIdle = 0.35,
+        UsePacketCache = false,
+        FullScanInterval = 3,
+        SkipCachedSort = false,
+        StatusEveryBatches = 1,
+        AutoSellNotifyEvery = 1,
     },
 
     Normal = {
         Name = "Normal",
-        MinBurst = 16,
-        MaxBurst = 80,
-        RecentCooldown = 0.18,
+        MinBurst = 32,
+        MaxBurst = 160,
+        RecentCooldown = 0.05,
         PromptDelayOverride = 0,
-        YieldEvery = 24,
-        LoopWaitAfterFire = 0.005,
-        LoopWaitIdle = 0.10,
+        YieldEvery = 48,
+        LoopWaitAfterFire = 0,
+        LoopWaitIdle = 0.05,
+        UsePacketCache = true,
+        FullScanInterval = 5,
+        SkipCachedSort = false,
+        StatusEveryBatches = 2,
+        AutoSellNotifyEvery = 4,
     },
 
     Fast = {
         Name = "Fast",
-        MinBurst = 40,
-        MaxBurst = 120,
-        RecentCooldown = 0.08,
+        MinBurst = 120,
+        MaxBurst = 320,
+        RecentCooldown = 0.01,
         PromptDelayOverride = 0,
-        YieldEvery = 40,
+        YieldEvery = 96,
         LoopWaitAfterFire = 0,
-        LoopWaitIdle = 0.05,
+        LoopWaitIdle = 0.02,
+        UsePacketCache = true,
+        FullScanInterval = 12,
+        SkipCachedSort = true,
+        StatusEveryBatches = 4,
+        AutoSellNotifyEvery = 10,
     },
 
     Ultra = {
         Name = "Ultra",
-        MinBurst = 80,
-        MaxBurst = 160,
-        RecentCooldown = 0.02,
+        MinBurst = 260,
+        MaxBurst = 600,
+        RecentCooldown = 0,
         PromptDelayOverride = 0,
-        YieldEvery = 80,
+        YieldEvery = 160,
         LoopWaitAfterFire = 0,
-        LoopWaitIdle = 0.02,
+        LoopWaitIdle = 0.01,
+        UsePacketCache = true,
+        FullScanInterval = 25,
+        SkipCachedSort = true,
+        StatusEveryBatches = 6,
+        AutoSellNotifyEvery = 20,
+    },
+
+    Hyper = {
+        Name = "Hyper",
+        MinBurst = 500,
+        MaxBurst = 800,
+        RecentCooldown = 0,
+        PromptDelayOverride = 0,
+        YieldEvery = 220,
+        LoopWaitAfterFire = 0,
+        LoopWaitIdle = 0.005,
+        UsePacketCache = true,
+        FullScanInterval = 60,
+        SkipCachedSort = true,
+        StatusEveryBatches = 10,
+        AutoSellNotifyEvery = 30,
     },
 }
 
@@ -36037,12 +36074,213 @@ function GAG2ACFCollectPlantHarvestEntry(entry)
         collectInfo
 end
 
+function GAG2ACFGetCachedFruitCount()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    local order =
+        type(state.CachedFruitOrder) == "table"
+        and state.CachedFruitOrder
+        or {}
+
+    local entries =
+        type(state.CachedFruitEntries) == "table"
+        and state.CachedFruitEntries
+        or {}
+
+    local count =
+        0
+
+    for _, key in ipairs(order) do
+
+        if type(entries[key]) == "table" then
+
+            count =
+                count + 1
+        end
+    end
+
+    return count
+end
+
+function GAG2ACFGetPacketCacheScanInterval()
+
+    local preset =
+        GAG2ACFGetSpeedPreset()
+
+    return math.clamp(
+        tonumber(preset.FullScanInterval)
+        or 5,
+        1,
+        120
+    )
+end
+
+function GAG2ACFBuildCachedFastQueue(reason)
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    local entries =
+        type(state.CachedFruitEntries) == "table"
+        and state.CachedFruitEntries
+        or {}
+
+    local order =
+        type(state.CachedFruitOrder) == "table"
+        and state.CachedFruitOrder
+        or {}
+
+    local preset =
+        GAG2ACFGetSpeedPreset()
+
+    local queue =
+        {}
+
+    local readyCount =
+        0
+
+    local excludedCount =
+        0
+
+    for _, key in ipairs(order) do
+
+        local cached =
+            entries[key]
+
+        if type(cached) == "table" then
+
+            readyCount =
+                readyCount + 1
+
+            if GAG2ACFEntryAllowed(cached) == true then
+
+                table.insert(
+                    queue,
+                    cached
+                )
+
+            else
+
+                excludedCount =
+                    excludedCount + 1
+            end
+        end
+    end
+
+    if preset.SkipCachedSort ~= true then
+
+        GAG2ACFSortQueue(
+            queue
+        )
+    end
+
+    if #queue > 0 then
+
+        return queue,
+            readyCount,
+            excludedCount,
+            "ok"
+    end
+
+    return queue,
+        readyCount,
+        excludedCount,
+        tostring(reason or "packet cache empty")
+end
+
+function GAG2ACFShouldUsePacketCacheQueue()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    local preset =
+        GAG2ACFGetSpeedPreset()
+
+    if preset.UsePacketCache ~= true then
+        return false
+    end
+
+    if GAG2ACFGetCachedFruitCount() <= 0 then
+        return false
+    end
+
+    local lastFullScanAt =
+        tonumber(state.LastPacketFullScanAt)
+        or 0
+
+    if lastFullScanAt <= 0 then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    if now - lastFullScanAt < GAG2ACFGetPacketCacheScanInterval() then
+        return true
+    end
+
+    local garden =
+        GAG2ACFGetOwnGarden()
+
+    local plants =
+        garden
+        and garden:FindFirstChild("Plants")
+        or nil
+
+    if not plants then
+        return true
+    end
+
+    return false
+end
+
+function GAG2ACFGetQueueForBatch()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    if GAG2ACFShouldUsePacketCacheQueue() == true then
+
+        return GAG2ACFBuildCachedFastQueue(
+            "packet cache"
+        )
+    end
+
+    state.LastPacketFullScanAt =
+        os.clock()
+
+    local queue,
+        readyCount,
+        excludedCount,
+        reason =
+        GAG2ACFScanQueue()
+
+    state.LastPacketFullScanAt =
+        os.clock()
+
+    if reason ~= "ok"
+    and GAG2ACFGetCachedFruitCount() > 0 then
+
+        return GAG2ACFBuildCachedFastQueue(
+            reason
+        )
+    end
+
+    return queue,
+        readyCount,
+        excludedCount,
+        reason
+end
+
 function GAG2ACFCollectBatch()
 
     local state =
         GAG2_AUTO_COLLECT_FRUIT_STATE
 
-    local pausedForWeather, weather =
+    local pausedForWeather,
+        weather =
         GAG2ACFShouldPauseForWeather()
 
     if pausedForWeather == true then
@@ -36060,8 +36298,11 @@ function GAG2ACFCollectBatch()
         return -1
     end
 
-    local queue, readyCount, excludedCount, reason =
-        GAG2ACFScanQueue()
+    local queue,
+        readyCount,
+        excludedCount,
+        reason =
+        GAG2ACFGetQueueForBatch()
 
     if reason ~= "ok" then
 
@@ -36091,11 +36332,20 @@ function GAG2ACFCollectBatch()
         return 0
     end
 
+    local preset =
+        GAG2ACFGetSpeedPreset()
+
     local burstAmount =
         GAG2ACFGetEffectiveBurstAmount()
 
     local recentCooldown =
         GAG2ACFGetEffectiveRecentCooldown()
+
+    if preset.RecentCooldown == 0 then
+
+        recentCooldown =
+            0
+    end
 
     local promptDelay =
         GAG2ACFGetEffectivePromptDelay()
@@ -36103,11 +36353,27 @@ function GAG2ACFCollectBatch()
     local yieldEvery =
         GAG2ACFGetEffectiveYieldEvery()
 
+    local autoSellNotifyEvery =
+        math.max(
+            1,
+            math.floor(
+                tonumber(preset.AutoSellNotifyEvery)
+                or 1
+            )
+        )
+
+    state.BatchCounter =
+        (
+            tonumber(state.BatchCounter)
+            or 0
+        )
+        + 1
+
     local fired =
         0
 
     local lastNote =
-        "No prompt fired."
+        "No packet fired."
 
     for _, entry in ipairs(queue) do
 
@@ -36119,14 +36385,17 @@ function GAG2ACFCollectBatch()
             break
         end
 
-        local recentAt =
-            tonumber(
-                state.Recent[entry.Key]
-            )
-            or 0
+        if recentCooldown > 0 then
 
-        if os.clock() - recentAt < recentCooldown then
-            continue
+            local recentAt =
+                tonumber(
+                    state.Recent[entry.Key]
+                )
+                or 0
+
+            if os.clock() - recentAt < recentCooldown then
+                continue
+            end
         end
 
         local collected,
@@ -36135,8 +36404,16 @@ function GAG2ACFCollectBatch()
                 entry
             )
 
-        state.Recent[entry.Key] =
-            os.clock()
+        if recentCooldown > 0 then
+
+            state.Recent[entry.Key] =
+                os.clock()
+
+        else
+
+            state.Recent[entry.Key] =
+                nil
+        end
 
         if collected == true then
 
@@ -36149,7 +36426,11 @@ function GAG2ACFCollectBatch()
             lastNote =
                 tostring(collectInfo)
 
-            if type(GAG2AutoSellHandleCollectedFruit) == "function" then
+            if type(GAG2AutoSellHandleCollectedFruit) == "function"
+            and (
+                autoSellNotifyEvery <= 1
+                or fired % autoSellNotifyEvery == 0
+            ) then
 
                 GAG2AutoSellHandleCollectedFruit(
                     entry
@@ -36161,7 +36442,9 @@ function GAG2ACFCollectBatch()
             lastNote =
                 tostring(collectInfo)
         end
-        if promptDelay > 0 then
+
+        if promptDelay > 0
+        and entry.Cached ~= true then
 
             task.wait(
                 promptDelay
@@ -36175,21 +36458,35 @@ function GAG2ACFCollectBatch()
         end
     end
 
-    GAG2ACFSetStatus(
-        GAG2ACFBuildStatusText(
-            queue,
-            readyCount,
-            excludedCount,
-            fired > 0
-            and (
-                "Collected "
-                .. tostring(fired)
-                .. " this batch. "
-                .. tostring(lastNote)
+    local statusEvery =
+        math.max(
+            1,
+            math.floor(
+                tonumber(preset.StatusEveryBatches)
+                or 1
             )
-            or tostring(lastNote)
         )
-    )
+
+    if fired <= 0
+    or statusEvery <= 1
+    or state.BatchCounter % statusEvery == 0 then
+
+        GAG2ACFSetStatus(
+            GAG2ACFBuildStatusText(
+                queue,
+                readyCount,
+                excludedCount,
+                fired > 0
+                and (
+                    "Packet burst fired "
+                    .. tostring(fired)
+                    .. ". "
+                    .. tostring(lastNote)
+                )
+                or tostring(lastNote)
+            )
+        )
+    end
 
     return fired
 end
@@ -36424,7 +36721,7 @@ function GAG2ACFGetEffectiveBurstAmount()
                 or 8
             ),
             1,
-            160
+            800
         )
 
     return math.clamp(
@@ -36433,7 +36730,7 @@ function GAG2ACFGetEffectiveBurstAmount()
             tonumber(preset.MinBurst) or inputBurst
         ),
         1,
-        tonumber(preset.MaxBurst) or 160
+        tonumber(preset.MaxBurst) or 800
     )
 end
 
@@ -36511,7 +36808,7 @@ function GAG2ACFGetLoopWaitIdle()
     return math.clamp(
         tonumber(preset.LoopWaitIdle)
         or 0.35,
-        0.02,
+        0.005,
         2
     )
 end
@@ -36581,7 +36878,7 @@ function GAG2ACFSetBurst(value)
                 or 8
             ),
             1,
-            160
+            800
         )
 
     MarkConfigDirty()
@@ -80639,8 +80936,8 @@ GAG2_AUTO_COLLECT_FRUIT_CONTROLS.CollectionSpeed =
             Default = "Normal",
             Multi = false,
             Searchable = false,
-            MaxVisibleDropdownItems = 4,
-            Tooltip = "Low End is for cloudphones/weak CPUs. Normal, Fast, and Ultra collect faster but can lag large farms.",
+            MaxVisibleDropdownItems = 5,
+            Tooltip = "Low End is safest. Hyper uses cached CollectFruit packets and is the fastest mode for large/deleted gardens.",
         }
     )
 
