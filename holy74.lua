@@ -83324,6 +83324,18 @@ and DevInfoBox then
         end,
     })
 
+        DevToolsBox:AddButton({
+        Text = "Dex Explorer V2",
+        Tooltip = "Open Dex Explorer.",
+        Func = function()
+
+            LoadDevTool(
+                "https://github.com/BOXLEGENDARY/Dex/releases/latest/download/out.lua",
+                "Dex Explorer V2"
+            )
+        end,
+    })
+
     DevInfoBox:AddLabel({
         Text =
             '<font color="rgb(148,163,184)"><b>Dev Info</b></font>'
