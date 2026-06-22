@@ -20911,55 +20911,185 @@ end
 
 function SniperGetEntryTimer(spawn, ref, textRows)
 
-    local value =
-        SniperReadAttributeAny(
+    local function readFromSources(attrNames)
+
+        for _, source in ipairs({
             spawn,
-            {
-                "TimeLeft",
-                "Timer",
-                "Remaining",
-                "RemainingTime",
+            ref,
+        }) do
+
+            if typeof(source) == "Instance" then
+
+                local value =
+                    SniperReadAttributeAny(
+                        source,
+                        attrNames
+                    )
+
+                if value ~= nil
+                and CleanText(value) ~= "" then
+                    return value
+                end
+            end
+        end
+
+        return nil
+    end
+
+    local function normalizeTimeNumber(value)
+
+        local number =
+            tonumber(value)
+
+        if not number then
+            return nil
+        end
+
+        if number > 1000000000000 then
+
+            number =
+                number / 1000
+        end
+
+        return number
+    end
+
+    local now =
+        os.time()
+
+    pcall(function()
+
+        local serverNow =
+            workspace:GetServerTimeNow()
+
+        serverNow =
+            tonumber(serverNow)
+
+        if serverNow
+        and serverNow > 1000000000 then
+
+            now =
+                serverNow
+        end
+    end)
+
+    local runtimeNow =
+        0
+
+    pcall(function()
+
+        if type(time) == "function" then
+
+            runtimeNow =
+                tonumber(time())
+                or 0
+        end
+    end)
+
+    local expiresAt =
+        normalizeTimeNumber(
+            readFromSources({
                 "DespawnTime",
+                "DespawnAt",
                 "ExpiresAt",
+                "ExpireAt",
+                "ExpirationTime",
                 "EndTime",
-                "Duration",
-            }
+                "EndsAt",
+                "DestroyAt",
+                "RemoveAt",
+            })
         )
 
-    if value == nil
-    and typeof(ref) == "Instance" then
+    if expiresAt
+    and expiresAt > now then
 
-        value =
-            SniperReadAttributeAny(
-                ref,
-                {
-                    "TimeLeft",
-                    "Timer",
-                    "Remaining",
-                    "RemainingTime",
-                    "DespawnTime",
-                    "ExpiresAt",
-                    "EndTime",
-                    "Duration",
-                }
-            )
+        return SniperFormatSeconds(
+            expiresAt - now
+        )
     end
+
+    local spawnedAt =
+        normalizeTimeNumber(
+            readFromSources({
+                "SpawnedAt",
+                "SpawnTime",
+                "CreatedAt",
+                "StartedAt",
+                "StartTime",
+                "BornAt",
+            })
+        )
+
+    local lifetime =
+        tonumber(
+            readFromSources({
+                "Lifetime",
+                "LifeTime",
+                "Duration",
+                "TTL",
+                "MaxLifetime",
+                "MaxLifeTime",
+            })
+        )
+
+    if spawnedAt
+    and lifetime
+    and lifetime > 0 then
+
+        local baseNow =
+            now
+
+        if spawnedAt < 1000000000
+        and runtimeNow > 0 then
+
+            baseNow =
+                runtimeNow
+        end
+
+        local remaining =
+            (spawnedAt + lifetime)
+            - baseNow
+
+        return SniperFormatSeconds(
+            math.max(
+                0,
+                remaining
+            )
+        )
+    end
+
+    local value =
+        readFromSources({
+            "TimeLeft",
+            "Timer",
+            "Remaining",
+            "RemainingTime",
+            "TimeRemaining",
+            "SecondsLeft",
+            "SecondsRemaining",
+        })
 
     if typeof(value) == "number"
     or tonumber(value) ~= nil then
 
         local number =
-            tonumber(value)
+            normalizeTimeNumber(
+                value
+            )
 
-        if number > os.time() then
+        if number
+        and number > now
+        and number > 1000000000 then
 
             return SniperFormatSeconds(
-                number - os.time()
+                number - now
             )
         end
 
         return SniperFormatSeconds(
             number
+            or 0
         )
     end
 
@@ -57449,36 +57579,83 @@ function SniperResolveEntryInternalSize(entry)
         return nil, 1
     end
 
+    local sizeAttributes = {
+        "PetSize",
+        "Size",
+        "SizeClass",
+        "ScaleSize",
+        "VariantSize",
+        "WildPetSize",
+        "DisplaySize",
+        "SizeType",
+        "Scale",
+        "ModelScale",
+        "PetScale",
+    }
+
     local direct =
         SniperReadVariantAttribute(
             entry.Spawn,
             entry.Ref,
-            {
-                "PetSize",
-                "Size",
-                "SizeClass",
-                "ScaleSize",
-                "VariantSize",
-                "WildPetSize",
-                "DisplaySize",
-                "SizeType",
-                "Scale",
-                "ModelScale",
-                "PetScale",
-            }
+            sizeAttributes
         )
 
-    local internalSize =
-        SniperCleanInternalSize(
+    if direct == nil
+    and typeof(entry.Instance) == "Instance" then
+
+        direct =
+            SniperReadVariantAttribute(
+                entry.Instance,
+                nil,
+                sizeAttributes
+            )
+    end
+
+    local resolvedInternal =
+        nil
+
+    if type(GAG2PetVariantResolveSize) == "function" then
+
+        local ok,
+            internalSize,
+            displaySize =
+            pcall(function()
+
+                return GAG2PetVariantResolveSize(
+                    entry.Ref
+                    or entry.Instance
+                    or entry.Spawn,
+                    direct,
+                    entry,
+                    entry.Name
+                )
+            end)
+
+        if ok == true then
+
+            resolvedInternal =
+                SniperCleanInternalSize(
+                    internalSize
+                )
+                or SniperCleanInternalSize(
+                    displaySize
+                )
+        end
+    end
+
+    resolvedInternal =
+        resolvedInternal
+        or SniperCleanInternalSize(
             direct
         )
 
-    if internalSize then
+    if resolvedInternal then
 
-        return internalSize,
-            internalSize == "Huge"
-            and 3
-            or 2
+        if resolvedInternal == "Huge" then
+            return "Huge", 3
+        end
+
+        return "Big", 2
     end
 
     local numericScale =
@@ -57497,7 +57674,26 @@ function SniperResolveEntryInternalSize(entry)
         return nil, 1
     end
 
+    local visual =
+        nil
+
+    if type(GAG2PetVariantFindWildPetVisual) == "function" then
+
+        pcall(function()
+
+            visual =
+                GAG2PetVariantFindWildPetVisual(
+                    entry.Ref
+                    or entry.Instance
+                    or entry.Spawn,
+                    entry,
+                    entry.Name
+                )
+        end)
+    end
+
     local scaleSources = {
+        visual,
         entry.Spawn,
         entry.Instance,
         entry.Ref,
@@ -57533,32 +57729,135 @@ function SniperResolveEntryPetType(entry)
         return nil
     end
 
-    local direct =
+    local rainbowFlag =
         SniperReadVariantAttribute(
             entry.Spawn,
             entry.Ref,
             {
-                "PetType",
-                "Type",
-                "Variant",
-                "PetVariant",
-                "Mutation",
-                "MutationType",
-                "WildPetType",
+                "IsRainbow",
+                "RainbowPet",
+                "RainbowVariant",
             }
         )
 
-    local petType =
-        SniperCleanPetType(
+    if rainbowFlag == nil
+    and typeof(entry.Instance) == "Instance" then
+
+        rainbowFlag =
+            SniperReadVariantAttribute(
+                entry.Instance,
+                nil,
+                {
+                    "IsRainbow",
+                    "RainbowPet",
+                    "RainbowVariant",
+                }
+            )
+    end
+
+    local rainbowFlagText =
+        CleanText(
+            rainbowFlag
+        ):lower()
+
+    if rainbowFlag == true
+    or rainbowFlagText == "true"
+    or rainbowFlagText == "yes"
+    or rainbowFlagText == "rainbow" then
+
+        return "Rainbow"
+    end
+
+    local typeAttributes = {
+        "PetType",
+        "Type",
+        "Variant",
+        "PetVariant",
+        "Mutation",
+        "MutationType",
+        "WildPetType",
+    }
+
+    local direct =
+        SniperReadVariantAttribute(
+            entry.Spawn,
+            entry.Ref,
+            typeAttributes
+        )
+
+    if direct == nil
+    and typeof(entry.Instance) == "Instance" then
+
+        direct =
+            SniperReadVariantAttribute(
+                entry.Instance,
+                nil,
+                typeAttributes
+            )
+    end
+
+    local resolvedType =
+        nil
+
+    if type(GAG2PetVariantResolveType) == "function" then
+
+        local ok,
+            internalType,
+            displayType =
+            pcall(function()
+
+                return GAG2PetVariantResolveType(
+                    entry.Ref
+                    or entry.Instance
+                    or entry.Spawn,
+                    direct,
+                    entry.Name,
+                    entry
+                )
+            end)
+
+        if ok == true then
+
+            resolvedType =
+                SniperCleanPetType(
+                    internalType
+                )
+                or SniperCleanPetType(
+                    displayType
+                )
+        end
+    end
+
+    resolvedType =
+        resolvedType
+        or SniperCleanPetType(
             direct
         )
 
-    if petType then
-        return petType
+    if resolvedType then
+        return resolvedType
     end
 
     local nameText =
-        CleanText(entry.Name):lower()
+        (
+            CleanText(entry.Name)
+            .. " "
+            .. CleanText(entry.DisplayName)
+            .. " "
+            .. CleanText(entry.Key)
+            .. " "
+            .. (
+                typeof(entry.Spawn) == "Instance"
+                and CleanText(entry.Spawn.Name)
+                or ""
+            )
+            .. " "
+            .. (
+                typeof(entry.Ref) == "Instance"
+                and CleanText(entry.Ref.Name)
+                or ""
+            )
+        ):lower()
 
     if nameText:find("rainbow", 1, true) then
         return "Rainbow"
