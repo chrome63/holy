@@ -840,11 +840,7 @@ GAG2_WILD_PET_NETWORK_STATE = {
     Refreshing = false,
 
     RefreshSeconds = 8,
-    MaxRenderedRows = 5,
-
-    HudHeight = 315,
-    HudMinHeight = 220,
-    HudMaxHeight = 620,
+    MaxRenderedRows = 80,
 
     LoopToken = 0,
     CountdownRunning = false,
@@ -870,14 +866,6 @@ GAG2_WILD_PET_NETWORK_STATE = {
     FilterOpen = false,
     FilterPanel = nil,
     FilterScroll = nil,
-
-    SettingsOpen = false,
-    SettingsPanel = nil,
-    SettingsScroll = nil,
-
-    ResizeHandle = nil,
-    ResizeMoveConnection = nil,
-    ResizeEndConnection = nil,
 
     LastData = nil,
     LastRefreshAt = 0,
@@ -12883,9 +12871,6 @@ function GAG2WildPetNetworkRefreshStatus()
                     state.LastStatus
                     or "Idle."
                 )
-                .. "  |  refresh "
-                .. GAG2WildPetNetworkGetRefreshText()
-                .. "  |  drag bottom edge"
         end)
     end
 
@@ -13875,96 +13860,6 @@ function GAG2WildPetNetworkLoadFilterSettings()
             or GAG2WildPetNetworkDefaultFilterSettings()
         )
 
-    if type(loaded) == "table" then
-
-        local loadedHeight =
-            tonumber(loaded.HudHeight)
-
-        if loadedHeight then
-
-            state.HudHeight =
-                math.clamp(
-                    math.floor(loadedHeight + 0.5),
-                    tonumber(state.HudMinHeight) or 220,
-                    tonumber(state.HudMaxHeight) or 620
-                )
-        end
-
-        local loadedRows =
-            tonumber(loaded.MaxRenderedRows)
-
-        if loadedRows then
-
-            state.MaxRenderedRows =
-                math.clamp(
-                    math.floor(loadedRows + 0.5),
-                    1,
-                    50
-                )
-        end
-
-        local loadedRefresh =
-            tonumber(loaded.RefreshSeconds)
-
-        if loadedRefresh then
-
-            if loadedRefresh <= 0 then
-
-                state.RefreshSeconds =
-                    0
-
-            else
-
-                state.RefreshSeconds =
-                    math.clamp(
-                        math.floor(loadedRefresh + 0.5),
-                        5,
-                        120
-                    )
-            end
-        end
-    end
-
-    state.HudHeight =
-        math.clamp(
-            tonumber(state.HudHeight) or 315,
-            tonumber(state.HudMinHeight) or 220,
-            tonumber(state.HudMaxHeight) or 620
-        )
-
-    state.MaxRenderedRows =
-        math.clamp(
-            math.floor(
-                tonumber(state.MaxRenderedRows)
-                or 5
-            ),
-            1,
-            50
-        )
-
-    local refreshSeconds =
-        tonumber(state.RefreshSeconds)
-
-    if refreshSeconds == nil then
-
-        state.RefreshSeconds =
-            8
-
-    elseif refreshSeconds <= 0 then
-
-        state.RefreshSeconds =
-            0
-
-    else
-
-        state.RefreshSeconds =
-            math.clamp(
-                math.floor(refreshSeconds + 0.5),
-                5,
-                120
-            )
-    end
-
     return state.FilterSettings
 end
 
@@ -13984,58 +13879,11 @@ function GAG2WildPetNetworkSaveFilterSettings()
             state.FilterSettings
         )
 
-    local payload = {
-        Mode =
-            state.FilterSettings.Mode,
-
-        HideUnmatched =
-            state.FilterSettings.HideUnmatched ~= false,
-
-        AlwaysPets =
-            GAG2WildPetNetworkCopyBooleanMap(
-                state.FilterSettings.AlwaysPets
-            ),
-
-        AlwaysRarities =
-            GAG2WildPetNetworkCopyBooleanMap(
-                state.FilterSettings.AlwaysRarities
-            ),
-
-        AlsoVariants =
-            GAG2WildPetNetworkCopyBooleanMap(
-                state.FilterSettings.AlsoVariants
-            ),
-
-        HudHeight =
-            math.clamp(
-                math.floor(
-                    tonumber(state.HudHeight)
-                    or 315
-                ),
-                tonumber(state.HudMinHeight) or 220,
-                tonumber(state.HudMaxHeight) or 620
-            ),
-
-        MaxRenderedRows =
-            math.clamp(
-                math.floor(
-                    tonumber(state.MaxRenderedRows)
-                    or 5
-                ),
-                1,
-                50
-            ),
-
-        RefreshSeconds =
-            tonumber(state.RefreshSeconds)
-            or 8,
-    }
-
     local encodeOk, encoded =
         pcall(function()
 
             return HttpService:JSONEncode(
-                payload
+                state.FilterSettings
             )
         end)
 
@@ -14781,974 +14629,6 @@ function GAG2WildPetNetworkRefreshFilterVisuals()
     GAG2WildPetNetworkPopulateFilterPanel()
 end
 
-function GAG2WildPetNetworkGetRefreshText()
-
-    local seconds =
-        tonumber(
-            GAG2_WILD_PET_NETWORK_STATE.RefreshSeconds
-        )
-        or 8
-
-    if seconds <= 0 then
-        return "manual"
-    end
-
-    return tostring(
-        math.floor(seconds + 0.5)
-    )
-    .. "s"
-end
-
-function GAG2WildPetNetworkClampHudSettings()
-
-    local state =
-        GAG2_WILD_PET_NETWORK_STATE
-
-    state.HudHeight =
-        math.clamp(
-            tonumber(state.HudHeight)
-            or 315,
-            tonumber(state.HudMinHeight)
-            or 220,
-            tonumber(state.HudMaxHeight)
-            or 620
-        )
-
-    state.MaxRenderedRows =
-        math.clamp(
-            math.floor(
-                tonumber(state.MaxRenderedRows)
-                or 5
-            ),
-            1,
-            50
-        )
-
-    local refresh =
-        tonumber(state.RefreshSeconds)
-
-    if refresh == nil then
-
-        state.RefreshSeconds =
-            8
-
-    elseif refresh <= 0 then
-
-        state.RefreshSeconds =
-            0
-
-    else
-
-        state.RefreshSeconds =
-            math.clamp(
-                math.floor(refresh + 0.5),
-                5,
-                120
-            )
-    end
-end
-
-function GAG2WildPetNetworkSetHudHeight(value, skipSave)
-
-    local state =
-        GAG2_WILD_PET_NETWORK_STATE
-
-    state.HudHeight =
-        math.clamp(
-            math.floor(
-                tonumber(value)
-                or state.HudHeight
-                or 315
-            ),
-            tonumber(state.HudMinHeight)
-            or 220,
-            tonumber(state.HudMaxHeight)
-            or 620
-        )
-
-    GAG2WildPetNetworkApplyHudLayout()
-
-    if skipSave ~= true then
-
-        GAG2WildPetNetworkSaveFilterSettings()
-        GAG2WildPetNetworkPopulateSettingsPanel()
-        GAG2WildPetNetworkRefreshStatus()
-    end
-
-    return true
-end
-
-function GAG2WildPetNetworkSetMaxRenderedRows(value)
-
-    local state =
-        GAG2_WILD_PET_NETWORK_STATE
-
-    state.MaxRenderedRows =
-        math.clamp(
-            math.floor(
-                tonumber(value)
-                or state.MaxRenderedRows
-                or 5
-            ),
-            1,
-            50
-        )
-
-    GAG2WildPetNetworkSaveFilterSettings()
-    GAG2WildPetNetworkPopulateSettingsPanel()
-    GAG2WildPetNetworkRefreshStatus()
-
-    if type(state.LastData) == "table" then
-
-        GAG2WildPetNetworkRender(
-            state.LastData
-        )
-    end
-
-    return true
-end
-
-function GAG2WildPetNetworkSetRefreshSeconds(value)
-
-    local state =
-        GAG2_WILD_PET_NETWORK_STATE
-
-    local seconds =
-        tonumber(value)
-
-    if seconds == nil then
-        seconds = 8
-    end
-
-    if seconds <= 0 then
-
-        state.RefreshSeconds =
-            0
-
-    else
-
-        state.RefreshSeconds =
-            math.clamp(
-                math.floor(seconds + 0.5),
-                5,
-                120
-            )
-    end
-
-    GAG2WildPetNetworkSaveFilterSettings()
-    GAG2WildPetNetworkPopulateSettingsPanel()
-    GAG2WildPetNetworkRefreshStatus()
-
-    if type(state.LastData) == "table" then
-
-        GAG2WildPetNetworkRender(
-            state.LastData
-        )
-    end
-
-    return true
-end
-
-function GAG2WildPetNetworkResetHudSettings()
-
-    local state =
-        GAG2_WILD_PET_NETWORK_STATE
-
-    state.HudHeight =
-        315
-
-    state.MaxRenderedRows =
-        5
-
-    state.RefreshSeconds =
-        8
-
-    state.SettingsOpen =
-        true
-
-    GAG2WildPetNetworkSaveFilterSettings()
-    GAG2WildPetNetworkApplyHudLayout()
-    GAG2WildPetNetworkPopulateSettingsPanel()
-    GAG2WildPetNetworkRefreshStatus()
-
-    if type(state.LastData) == "table" then
-
-        GAG2WildPetNetworkRender(
-            state.LastData
-        )
-    end
-
-    return true
-end
-
-function GAG2WildPetNetworkCreateSettingsValueChip(parent, label, x, y, width, selected, callback)
-
-    return GAG2WildPetNetworkCreateFilterChip(
-        parent,
-        label,
-        x,
-        y,
-        width,
-        selected == true,
-        callback
-    )
-end
-
-function GAG2WildPetNetworkPopulateSettingsPanel()
-
-    local state =
-        GAG2_WILD_PET_NETWORK_STATE
-
-    local scroll =
-        state.SettingsScroll
-
-    if not scroll then
-        return false
-    end
-
-    for _, child in ipairs(scroll:GetChildren()) do
-
-        child:Destroy()
-    end
-
-    GAG2WildPetNetworkClampHudSettings()
-
-    local y =
-        0
-
-    GAG2WildPetNetworkCreateFilterText(
-        scroll,
-        "HUD Height: "
-        .. tostring(math.floor(state.HudHeight))
-        .. "px",
-        0,
-        y,
-        360,
-        18,
-        11
-    )
-
-    y =
-        y + 24
-
-    GAG2WildPetNetworkCreateSettingsValueChip(
-        scroll,
-        "-40",
-        0,
-        y,
-        58,
-        false,
-        function()
-
-            GAG2WildPetNetworkSetHudHeight(
-                state.HudHeight - 40
-            )
-        end
-    )
-
-    GAG2WildPetNetworkCreateSettingsValueChip(
-        scroll,
-        "+40",
-        64,
-        y,
-        58,
-        false,
-        function()
-
-            GAG2WildPetNetworkSetHudHeight(
-                state.HudHeight + 40
-            )
-        end
-    )
-
-    GAG2WildPetNetworkCreateSettingsValueChip(
-        scroll,
-        "Small",
-        132,
-        y,
-        68,
-        state.HudHeight <= 320,
-        function()
-
-            GAG2WildPetNetworkSetHudHeight(
-                315
-            )
-        end
-    )
-
-    GAG2WildPetNetworkCreateSettingsValueChip(
-        scroll,
-        "Medium",
-        208,
-        y,
-        82,
-        state.HudHeight > 320
-        and state.HudHeight <= 430,
-        function()
-
-            GAG2WildPetNetworkSetHudHeight(
-                390
-            )
-        end
-    )
-
-    GAG2WildPetNetworkCreateSettingsValueChip(
-        scroll,
-        "Large",
-        298,
-        y,
-        68,
-        state.HudHeight > 430,
-        function()
-
-            GAG2WildPetNetworkSetHudHeight(
-                500
-            )
-        end
-    )
-
-    y =
-        y + 38
-
-    GAG2WildPetNetworkCreateFilterText(
-        scroll,
-        "Shown Results: "
-        .. tostring(state.MaxRenderedRows),
-        0,
-        y,
-        360,
-        18,
-        11
-    )
-
-    y =
-        y + 24
-
-    local rowOptions = {
-        1,
-        3,
-        5,
-        10,
-        20,
-        50,
-    }
-
-    local x =
-        0
-
-    for _, count in ipairs(rowOptions) do
-
-        GAG2WildPetNetworkCreateSettingsValueChip(
-            scroll,
-            tostring(count),
-            x,
-            y,
-            48,
-            tonumber(state.MaxRenderedRows) == count,
-            function()
-
-                GAG2WildPetNetworkSetMaxRenderedRows(
-                    count
-                )
-            end
-        )
-
-        x =
-            x + 54
-    end
-
-    y =
-        y + 38
-
-    GAG2WildPetNetworkCreateFilterText(
-        scroll,
-        "Auto Refresh: "
-        .. GAG2WildPetNetworkGetRefreshText(),
-        0,
-        y,
-        360,
-        18,
-        11
-    )
-
-    y =
-        y + 24
-
-    local refreshOptions = {
-        {
-            Label = "OFF",
-            Seconds = 0,
-            Width = 58,
-        },
-        {
-            Label = "5s",
-            Seconds = 5,
-            Width = 48,
-        },
-        {
-            Label = "8s",
-            Seconds = 8,
-            Width = 48,
-        },
-        {
-            Label = "15s",
-            Seconds = 15,
-            Width = 52,
-        },
-        {
-            Label = "30s",
-            Seconds = 30,
-            Width = 52,
-        },
-        {
-            Label = "60s",
-            Seconds = 60,
-            Width = 52,
-        },
-        {
-            Label = "120s",
-            Seconds = 120,
-            Width = 62,
-        },
-    }
-
-    x =
-        0
-
-    for _, option in ipairs(refreshOptions) do
-
-        local seconds =
-            tonumber(option.Seconds)
-            or 0
-
-        GAG2WildPetNetworkCreateSettingsValueChip(
-            scroll,
-            option.Label,
-            x,
-            y,
-            option.Width,
-            tonumber(state.RefreshSeconds) == seconds,
-            function()
-
-                GAG2WildPetNetworkSetRefreshSeconds(
-                    seconds
-                )
-            end
-        )
-
-        x =
-            x + option.Width + 6
-    end
-
-    y =
-        y + 42
-
-    GAG2WildPetNetworkCreateSettingsValueChip(
-        scroll,
-        "Manual Refresh",
-        0,
-        y,
-        122,
-        false,
-        function()
-
-            GAG2WildPetNetworkRefresh(
-                "manual"
-            )
-        end
-    )
-
-    GAG2WildPetNetworkCreateSettingsValueChip(
-        scroll,
-        "Reset HUD",
-        132,
-        y,
-        96,
-        false,
-        function()
-
-            GAG2WildPetNetworkResetHudSettings()
-        end
-    )
-
-    y =
-        y + 38
-
-    GAG2WildPetNetworkCreateFilterText(
-        scroll,
-        "Tip: drag the bottom edge of this HUD to resize it.",
-        0,
-        y,
-        360,
-        18,
-        10
-    )
-
-    scroll.CanvasSize =
-        UDim2.fromOffset(
-            0,
-            y + 38
-        )
-
-    return true
-end
-
-function GAG2WildPetNetworkCreateSettingsPanel(frame)
-
-    local state =
-        GAG2_WILD_PET_NETWORK_STATE
-
-    if not frame
-    or not frame.Parent then
-        return nil
-    end
-
-    if state.SettingsPanel
-    and state.SettingsPanel.Parent then
-
-        return state.SettingsPanel
-    end
-
-    local panel =
-        Instance.new("Frame")
-
-    panel.Name =
-        "LiveWildPetSettingsBox"
-
-    panel.Position =
-        UDim2.fromOffset(
-            12,
-            82
-        )
-
-    panel.Size =
-        UDim2.new(
-            1,
-            -24,
-            1,
-            -118
-        )
-
-    panel.BackgroundColor3 =
-        Color3.fromRGB(
-            7,
-            13,
-            22
-        )
-
-    panel.BackgroundTransparency =
-        0.04
-
-    panel.BorderSizePixel =
-        0
-
-    panel.Active =
-        true
-
-    panel.Visible =
-        state.SettingsOpen == true
-
-    panel.Parent =
-        frame
-
-    GAG2WildPetNetworkAddCorner(
-        panel,
-        9
-    )
-
-    local stroke =
-        Instance.new("UIStroke")
-
-    stroke.Color =
-        Color3.fromRGB(
-            139,
-            92,
-            246
-        )
-
-    stroke.Thickness =
-        1
-
-    stroke.Transparency =
-        0.28
-
-    stroke.Parent =
-        panel
-
-    local title =
-        Instance.new("TextLabel")
-
-    title.Name =
-        "Title"
-
-    title.Position =
-        UDim2.fromOffset(
-            14,
-            7
-        )
-
-    title.Size =
-        UDim2.new(
-            1,
-            -58,
-            0,
-            24
-        )
-
-    title.BackgroundTransparency =
-        1
-
-    title.Font =
-        Enum.Font.GothamBold
-
-    title.Text =
-        "HUD SETTINGS"
-
-    title.TextSize =
-        13
-
-    title.TextColor3 =
-        Color3.fromRGB(
-            241,
-            245,
-            249
-        )
-
-    title.TextXAlignment =
-        Enum.TextXAlignment.Left
-
-    title.Parent =
-        panel
-
-    local close =
-        Instance.new("TextButton")
-
-    close.Name =
-        "Close"
-
-    close.AnchorPoint =
-        Vector2.new(
-            1,
-            0
-        )
-
-    close.Position =
-        UDim2.new(
-            1,
-            -8,
-            0,
-            8
-        )
-
-    close.Size =
-        UDim2.fromOffset(
-            24,
-            22
-        )
-
-    close.BackgroundTransparency =
-        1
-
-    close.Font =
-        Enum.Font.GothamBold
-
-    close.Text =
-        "×"
-
-    close.TextSize =
-        16
-
-    close.TextColor3 =
-        Color3.fromRGB(
-            148,
-            163,
-            184
-        )
-
-    close.Parent =
-        panel
-
-    close.MouseButton1Click:Connect(function()
-
-        state.SettingsOpen =
-            false
-
-        GAG2WildPetNetworkApplyHudLayout()
-    end)
-
-    local line =
-        Instance.new("Frame")
-
-    line.Name =
-        "Line"
-
-    line.Position =
-        UDim2.new(
-            0,
-            12,
-            0,
-            38
-        )
-
-    line.Size =
-        UDim2.new(
-            1,
-            -24,
-            0,
-            1
-        )
-
-    line.BackgroundColor3 =
-        Color3.fromRGB(
-            30,
-            41,
-            59
-        )
-
-    line.BackgroundTransparency =
-        0.38
-
-    line.BorderSizePixel =
-        0
-
-    line.Parent =
-        panel
-
-    local scroll =
-        Instance.new("ScrollingFrame")
-
-    scroll.Name =
-        "SettingsScroll"
-
-    scroll.Position =
-        UDim2.fromOffset(
-            14,
-            48
-        )
-
-    scroll.Size =
-        UDim2.new(
-            1,
-            -28,
-            1,
-            -60
-        )
-
-    scroll.BackgroundTransparency =
-        1
-
-    scroll.BorderSizePixel =
-        0
-
-    scroll.ScrollBarThickness =
-        3
-
-    scroll.ScrollBarImageColor3 =
-        Color3.fromRGB(
-            139,
-            92,
-            246
-        )
-
-    scroll.CanvasSize =
-        UDim2.new()
-
-    scroll.Parent =
-        panel
-
-    state.SettingsPanel =
-        panel
-
-    state.SettingsScroll =
-        scroll
-
-    GAG2WildPetNetworkPopulateSettingsPanel()
-
-    return panel
-end
-
-function GAG2WildPetNetworkToggleSettingsPanel()
-
-    local state =
-        GAG2_WILD_PET_NETWORK_STATE
-
-    state.SettingsOpen =
-        state.SettingsOpen ~= true
-
-    if state.SettingsOpen == true then
-
-        state.FilterOpen =
-            false
-
-        GAG2WildPetNetworkPopulateSettingsPanel()
-    end
-
-    GAG2WildPetNetworkApplyHudLayout()
-    GAG2WildPetNetworkRefreshFilterVisuals()
-end
-
-function GAG2WildPetNetworkCreateResizeHandle(frame)
-
-    local state =
-        GAG2_WILD_PET_NETWORK_STATE
-
-    if not frame then
-        return nil
-    end
-
-    if state.ResizeHandle
-    and state.ResizeHandle.Parent then
-
-        return state.ResizeHandle
-    end
-
-    local handle =
-        Instance.new("TextButton")
-
-    handle.Name =
-        "ResizeHandle"
-
-    handle.AnchorPoint =
-        Vector2.new(
-            0.5,
-            1
-        )
-
-    handle.Position =
-        UDim2.new(
-            0.5,
-            0,
-            1,
-            -2
-        )
-
-    handle.Size =
-        UDim2.new(
-            1,
-            -28,
-            0,
-            14
-        )
-
-    handle.BackgroundColor3 =
-        Color3.fromRGB(
-            12,
-            22,
-            35
-        )
-
-    handle.BackgroundTransparency =
-        0.30
-
-    handle.BorderSizePixel =
-        0
-
-    handle.Font =
-        Enum.Font.Code
-
-    handle.Text =
-        "↕ drag height"
-
-    handle.TextSize =
-        10
-
-    handle.TextColor3 =
-        Color3.fromRGB(
-            148,
-            163,
-            184
-        )
-
-    handle.Parent =
-        frame
-
-    GAG2WildPetNetworkAddCorner(
-        handle,
-        6
-    )
-
-    handle.InputBegan:Connect(function(input)
-
-        if input.UserInputType ~= Enum.UserInputType.MouseButton1
-        and input.UserInputType ~= Enum.UserInputType.Touch then
-
-            return
-        end
-
-        local startY =
-            input.Position.Y
-
-        local startHeight =
-            frame.AbsoluteSize.Y
-
-        if state.ResizeMoveConnection then
-
-            state.ResizeMoveConnection:Disconnect()
-            state.ResizeMoveConnection =
-                nil
-        end
-
-        if state.ResizeEndConnection then
-
-            state.ResizeEndConnection:Disconnect()
-            state.ResizeEndConnection =
-                nil
-        end
-
-        state.ResizeMoveConnection =
-            GAG2_USER_INPUT_SERVICE.InputChanged:Connect(function(moveInput)
-
-                if moveInput.UserInputType ~= Enum.UserInputType.MouseMovement
-                and moveInput.UserInputType ~= Enum.UserInputType.Touch then
-
-                    return
-                end
-
-                local delta =
-                    moveInput.Position.Y
-                    - startY
-
-                GAG2WildPetNetworkSetHudHeight(
-                    startHeight + delta,
-                    true
-                )
-            end)
-
-        state.ResizeEndConnection =
-            GAG2_USER_INPUT_SERVICE.InputEnded:Connect(function(endInput)
-
-                if endInput.UserInputType ~= Enum.UserInputType.MouseButton1
-                and endInput.UserInputType ~= Enum.UserInputType.Touch then
-
-                    return
-                end
-
-                if state.ResizeMoveConnection then
-
-                    state.ResizeMoveConnection:Disconnect()
-                    state.ResizeMoveConnection =
-                        nil
-                end
-
-                if state.ResizeEndConnection then
-
-                    state.ResizeEndConnection:Disconnect()
-                    state.ResizeEndConnection =
-                        nil
-                end
-
-                GAG2WildPetNetworkSaveFilterSettings()
-                GAG2WildPetNetworkPopulateSettingsPanel()
-                GAG2WildPetNetworkRefreshStatus()
-            end)
-    end)
-
-    state.ResizeHandle =
-        handle
-
-    return handle
-end
-
 function GAG2WildPetNetworkCreateFilterPanel(frame)
 
     local state =
@@ -15758,6 +14638,9 @@ function GAG2WildPetNetworkCreateFilterPanel(frame)
     or not frame.Parent then
         return nil
     end
+
+    local gui =
+        frame.Parent
 
     if state.FilterPanel
     and state.FilterPanel.Parent then
@@ -15773,16 +14656,14 @@ function GAG2WildPetNetworkCreateFilterPanel(frame)
 
     panel.Position =
         UDim2.fromOffset(
-            12,
-            82
+            462,
+            92
         )
 
     panel.Size =
-        UDim2.new(
-            1,
-            -24,
-            1,
-            -118
+        UDim2.fromOffset(
+            430,
+            320
         )
 
     panel.BackgroundColor3 =
@@ -15793,7 +14674,7 @@ function GAG2WildPetNetworkCreateFilterPanel(frame)
         )
 
     panel.BackgroundTransparency =
-        0.04
+        0.12
 
     panel.BorderSizePixel =
         0
@@ -15801,15 +14682,18 @@ function GAG2WildPetNetworkCreateFilterPanel(frame)
     panel.Active =
         true
 
+    panel.Draggable =
+        true
+
     panel.Visible =
         state.FilterOpen == true
 
     panel.Parent =
-        frame
+        gui
 
     GAG2WildPetNetworkAddCorner(
         panel,
-        9
+        10
     )
 
     local stroke =
@@ -15826,7 +14710,7 @@ function GAG2WildPetNetworkCreateFilterPanel(frame)
         1
 
     stroke.Transparency =
-        0.28
+        0.30
 
     stroke.Parent =
         panel
@@ -16032,12 +14916,6 @@ function GAG2WildPetNetworkToggleFilterPanel()
     state.FilterOpen =
         state.FilterOpen ~= true
 
-    if state.FilterOpen == true then
-
-        state.SettingsOpen =
-            false
-    end
-
     if state.FilterPanel then
 
         pcall(function()
@@ -16045,16 +14923,6 @@ function GAG2WildPetNetworkToggleFilterPanel()
             state.FilterPanel.Visible =
                 state.HudMinimized ~= true
                 and state.FilterOpen == true
-        end)
-    end
-
-    if state.SettingsPanel then
-
-        pcall(function()
-
-            state.SettingsPanel.Visible =
-                state.HudMinimized ~= true
-                and state.SettingsOpen == true
         end)
     end
 
@@ -17224,32 +16092,18 @@ function GAG2WildPetNetworkRender(data)
 
         pcall(function()
 
-            local maxRowsForSummary =
-                math.clamp(
-                    math.floor(
-                        tonumber(state.MaxRenderedRows)
-                        or 5
-                    ),
-                    1,
-                    50
-                )
-
             state.SummaryLabel.Text =
                 tostring(
                     state.LastServerCount
                     or 0
                 )
-                .. " server(s)  •  "
+                .. " live server(s)  •  "
+                .. tostring(#petGroups)
+                .. " shown pet(s)  •  "
                 .. tostring(totalFilteredResults)
-                .. " match(es)  •  showing "
-                .. tostring(
-                    math.min(
-                        totalFilteredResults,
-                        maxRowsForSummary
-                    )
-                )
-                .. "  •  refresh "
-                .. GAG2WildPetNetworkGetRefreshText()
+                .. "/"
+                .. tostring(totalRawResults)
+                .. " results"
         end)
     end
 
@@ -17267,7 +16121,7 @@ function GAG2WildPetNetworkRender(data)
         GAG2WildPetNetworkCreateLabel(
             scroll,
             "FilterHint",
-            "Click F for filters or S for HUD settings.",
+            "Click F to change Always Pets, Rarities, or Variants.",
             28,
             11,
             false
@@ -17280,13 +16134,12 @@ function GAG2WildPetNetworkRender(data)
         0
 
     local maxRows =
-        math.clamp(
+        math.max(
+            10,
             math.floor(
                 tonumber(state.MaxRenderedRows)
-                or 5
-            ),
-            1,
-            50
+                or 80
+            )
         )
 
     for _, group in ipairs(petGroups) do
@@ -17556,8 +16409,6 @@ function GAG2WildPetNetworkApplyHudLayout()
         return
     end
 
-    GAG2WildPetNetworkClampHudSettings()
-
     if CleanText(state.HudMode) ~= "Medium"
     and CleanText(state.HudMode) ~= "Large" then
 
@@ -17565,17 +16416,10 @@ function GAG2WildPetNetworkApplyHudLayout()
             "Small"
     end
 
-    local width =
-        select(
-            1,
-            GAG2WildPetNetworkGetHudSize(
-                state.HudMode
-            )
+    local width, height =
+        GAG2WildPetNetworkGetHudSize(
+            state.HudMode
         )
-
-    local height =
-        tonumber(state.HudHeight)
-        or 315
 
     if state.HudMinimized == true then
 
@@ -17604,7 +16448,6 @@ function GAG2WildPetNetworkApplyHudLayout()
         state.StatusLabel,
         state.TopLine,
         state.StatusLine,
-        state.ResizeHandle,
     }
 
     for _, object in ipairs(objects) do
@@ -17623,47 +16466,9 @@ function GAG2WildPetNetworkApplyHudLayout()
 
         pcall(function()
 
-            state.FilterPanel.Position =
-                UDim2.fromOffset(
-                    12,
-                    82
-                )
-
-            state.FilterPanel.Size =
-                UDim2.new(
-                    1,
-                    -24,
-                    1,
-                    -118
-                )
-
             state.FilterPanel.Visible =
                 visible == true
                 and state.FilterOpen == true
-        end)
-    end
-
-    if state.SettingsPanel then
-
-        pcall(function()
-
-            state.SettingsPanel.Position =
-                UDim2.fromOffset(
-                    12,
-                    82
-                )
-
-            state.SettingsPanel.Size =
-                UDim2.new(
-                    1,
-                    -24,
-                    1,
-                    -118
-                )
-
-            state.SettingsPanel.Visible =
-                visible == true
-                and state.SettingsOpen == true
         end)
     end
 
@@ -17681,19 +16486,12 @@ function GAG2WildPetNetworkApplyHudLayout()
             visible
 
         state.SizeButton.Text =
-            "S"
-
-        state.SizeButton.TextColor3 =
-            state.SettingsOpen == true
-            and Color3.fromRGB(
-                196,
-                181,
-                253
-            )
-            or Color3.fromRGB(
-                96,
-                165,
-                250
+            state.HudMode == "Large"
+            and "L"
+            or (
+                state.HudMode == "Medium"
+                and "M"
+                or "S"
             )
     end
 
@@ -17707,16 +16505,8 @@ function GAG2WildPetNetworkApplyHudLayout()
 
         state.FilterButton.TextColor3 =
             state.FilterOpen == true
-            and Color3.fromRGB(
-                196,
-                181,
-                253
-            )
-            or Color3.fromRGB(
-                96,
-                165,
-                250
-            )
+            and Color3.fromRGB(196, 181, 253)
+            or Color3.fromRGB(96, 165, 250)
     end
 
     if state.RefreshButton then
@@ -17759,44 +16549,7 @@ function GAG2WildPetNetworkApplyHudLayout()
         end)
     end
 
-    if state.StatusLine then
-
-        pcall(function()
-
-            state.StatusLine.Position =
-                UDim2.new(
-                    0,
-                    12,
-                    1,
-                    -34
-                )
-        end)
-    end
-
-    if state.StatusLabel then
-
-        pcall(function()
-
-            state.StatusLabel.Position =
-                UDim2.new(
-                    0,
-                    14,
-                    1,
-                    -28
-                )
-
-            state.StatusLabel.Size =
-                UDim2.new(
-                    1,
-                    -28,
-                    0,
-                    18
-                )
-        end)
-    end
-
     GAG2WildPetNetworkRefreshFilterSummary()
-    GAG2WildPetNetworkRefreshStatus()
 end
 
 function GAG2WildPetNetworkCycleHudSize()
@@ -18075,7 +16828,7 @@ function GAG2WildPetNetworkCreateHud()
 
     sizeButton.MouseButton1Click:Connect(function()
 
-        GAG2WildPetNetworkToggleSettingsPanel()
+        GAG2WildPetNetworkCycleHudSize()
     end)
 
     local filterButton =
@@ -18601,14 +17354,6 @@ function GAG2WildPetNetworkCreateHud()
         frame
     )
 
-    GAG2WildPetNetworkCreateSettingsPanel(
-        frame
-    )
-
-    GAG2WildPetNetworkCreateResizeHandle(
-        frame
-    )
-
     state.Gui =
         gui
 
@@ -18729,24 +17474,13 @@ function GAG2WildPetNetworkStart()
     local token =
         state.LoopToken
 
-    local startupRefreshSeconds =
-        tonumber(state.RefreshSeconds)
-        or 8
-
-    if startupRefreshSeconds <= 0 then
-
-        state.RefreshSeconds =
-            0
-
-    else
-
-        state.RefreshSeconds =
-            math.clamp(
-                math.floor(startupRefreshSeconds + 0.5),
-                5,
-                120
-            )
-    end
+    state.RefreshSeconds =
+        math.clamp(
+            tonumber(state.RefreshSeconds)
+            or 8,
+            5,
+            30
+        )
 
     GAG2WildPetNetworkSetStatus(
         "Starting..."
@@ -18766,34 +17500,22 @@ function GAG2WildPetNetworkStart()
         and state.Running == true
         and state.LoopToken == token do
 
-            local refreshSeconds =
-                tonumber(state.RefreshSeconds)
-                or 8
-
-            if refreshSeconds <= 0 then
-
-                task.wait(
-                    1
+            task.wait(
+                math.clamp(
+                    tonumber(state.RefreshSeconds)
+                    or 8,
+                    5,
+                    30
                 )
+            )
 
-            else
+            if state.Enabled == true
+            and state.Running == true
+            and state.LoopToken == token then
 
-                task.wait(
-                    math.clamp(
-                        math.floor(refreshSeconds + 0.5),
-                        5,
-                        120
-                    )
+                GAG2WildPetNetworkRefresh(
+                    "automatic"
                 )
-
-                if state.Enabled == true
-                and state.Running == true
-                and state.LoopToken == token then
-
-                    GAG2WildPetNetworkRefresh(
-                        "automatic"
-                    )
-                end
             end
         end
     end)
