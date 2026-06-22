@@ -707,12 +707,38 @@ GAG2_RARE_PET_WEBHOOK_URL =
 GAG2_RARE_PET_WEBHOOK_ROLE_ID =
     "1515584233811345499"
 
-GAG2_RARE_PET_WEBHOOK_TARGETS = {
+GAG2_RARE_PET_WEBHOOK_ALWAYS_TARGETS = {
     raccoon = true,
     goldendragonfly = true,
     unicorn = true,
-
+    iceserpent = true,
+    blackdragon = true,
 }
+
+GAG2_RARE_PET_WEBHOOK_VARIANT_ONLY_TARGETS = {
+    bunny = true,
+    frog = true,
+    owl = true,
+    deer = true,
+    bee = true,
+    bear = true,
+    robin = true,
+    monkey = true,
+}
+
+GAG2_RARE_PET_WEBHOOK_TARGETS = {}
+
+for petKey in pairs(GAG2_RARE_PET_WEBHOOK_ALWAYS_TARGETS) do
+
+    GAG2_RARE_PET_WEBHOOK_TARGETS[petKey] =
+        true
+end
+
+for petKey in pairs(GAG2_RARE_PET_WEBHOOK_VARIANT_ONLY_TARGETS) do
+
+    GAG2_RARE_PET_WEBHOOK_TARGETS[petKey] =
+        true
+end
 
 GAG2_RARE_PET_WEBHOOK_IMAGES = {
     raccoon =
@@ -14121,15 +14147,10 @@ function GAG2WildPetNetworkDefaultFilterSettings()
             ["Golden Dragonfly"] = true,
             Unicorn = true,
             ["Ice Serpent"] = true,
-            Monkey = true,
-            Bear = true,
-            Bee = true,
+            ["Black Dragon"] = true,
         },
 
-        AlwaysRarities = {
-            Mythic = true,
-            Super = true,
-        },
+        AlwaysRarities = {},
 
         AlsoVariants = {
             Big = true,
@@ -14528,6 +14549,54 @@ function GAG2WildPetNetworkMapHasNormalizedValue(map, value)
     return false
 end
 
+function GAG2WildPetNetworkVariantOnlyPetMap()
+
+    return {
+        bunny = true,
+        frog = true,
+        owl = true,
+        deer = true,
+        bee = true,
+        bear = true,
+        robin = true,
+        monkey = true,
+    }
+end
+
+function GAG2WildPetNetworkIsVariantOnlyPet(petName)
+
+    local key =
+        GAG2WildPetNetworkNormalizeKey(
+            petName
+        )
+
+    if key == "" then
+        return false
+    end
+
+    local map =
+        GAG2WildPetNetworkVariantOnlyPetMap()
+
+    return map[key] == true
+end
+
+function GAG2WildPetNetworkRowHasSpecialVariant(rowData)
+
+    local variant =
+        GAG2WildPetNetworkBuildCleanVariantLabel(
+            rowData
+        )
+
+    variant =
+        CleanText(
+            variant
+        )
+
+    return variant ~= ""
+        and variant ~= "Regular"
+        and variant ~= "Normal"
+end
+
 function GAG2WildPetNetworkRowPassesFilters(petName, rarity, rowData)
 
     local state =
@@ -14540,14 +14609,6 @@ function GAG2WildPetNetworkRowPassesFilters(petName, rarity, rowData)
 
     state.FilterSettings =
         settings
-
-    if settings.Mode == "All" then
-        return true
-    end
-
-    if settings.HideUnmatched ~= true then
-        return true
-    end
 
     local rowPetName =
         CleanText(
@@ -14584,6 +14645,20 @@ function GAG2WildPetNetworkRowPassesFilters(petName, rarity, rowData)
             rowData
         )
 
+    if GAG2WildPetNetworkIsVariantOnlyPet(rowPetName) == true
+    and GAG2WildPetNetworkRowHasSpecialVariant(rowData) ~= true then
+
+        return false
+    end
+
+    if settings.Mode == "All" then
+        return true
+    end
+
+    if settings.HideUnmatched ~= true then
+        return true
+    end
+
     local petMatch =
         GAG2WildPetNetworkMapHasNormalizedValue(
             settings.AlwaysPets,
@@ -14591,10 +14666,16 @@ function GAG2WildPetNetworkRowPassesFilters(petName, rarity, rowData)
         )
 
     local rarityMatch =
-        settings.AlwaysRarities[rowRarity] == true
+        GAG2WildPetNetworkMapHasNormalizedValue(
+            settings.AlwaysRarities,
+            rowRarity
+        )
 
     local variantMatch =
-        settings.AlsoVariants[rowVariant] == true
+        GAG2WildPetNetworkMapHasNormalizedValue(
+            settings.AlsoVariants,
+            rowVariant
+        )
 
     return petMatch == true
         or rarityMatch == true
@@ -18238,62 +18319,266 @@ function GAG2WildPetNetworkReadRefPet(ref)
         return nil
     end
 
+    local refName =
+        tostring(ref.Name or "")
+
+    local uuid =
+        refName:match("WildPet_([%w%-]+)$")
+        or refName:match("([%w]+%-%w+%-%w+%-%w+%-%w+)")
+        or refName
+
+    local record = {
+        id =
+            refName,
+
+        uuid =
+            uuid,
+
+        UUID =
+            uuid,
+
+        RefName =
+            refName,
+
+        refName =
+            refName,
+
+        petName =
+            petName,
+
+        PetName =
+            petName,
+    }
+
+    local visual =
+        nil
+
+    if type(GAG2PetVariantFindWildPetVisual) == "function" then
+
+        pcall(function()
+
+            visual =
+                GAG2PetVariantFindWildPetVisual(
+                    ref,
+                    record,
+                    petName
+                )
+        end)
+    end
+
+    local sizeAttributes = {
+        "PetSize",
+        "Size",
+        "SizeClass",
+        "ScaleSize",
+        "VariantSize",
+        "WildPetSize",
+        "DisplaySize",
+        "SizeType",
+        "Scale",
+        "ModelScale",
+        "PetScale",
+    }
+
     local rawSize =
         GAG2WildPetNetworkReadAnyAttribute(
             ref,
-            {
-                "PetSize",
-                "Size",
-                "SizeClass",
-                "ScaleSize",
-                "VariantSize",
-                "WildPetSize",
-                "DisplaySize",
-                "SizeType",
-                "Scale",
-                "ModelScale",
-                "PetScale",
-            }
+            sizeAttributes
         )
 
-    local internalSize, displaySize =
-        GAG2WildPetNetworkResolvePetSize(
-            ref,
-            rawSize
-        )
+    if rawSize == nil then
+
+        rawSize =
+            GAG2WildPetNetworkReadAnyAttribute(
+                visual,
+                sizeAttributes
+            )
+    end
+
+    if rawSize == nil then
+
+        rawSize =
+            GAG2WildPetNetworkGetModelScale(
+                visual
+            )
+    end
+
+    local internalSize =
+        "None"
+
+    local displaySize =
+        "Normal"
+
+    if type(GAG2PetVariantResolveSize) == "function" then
+
+        local ok,
+            resolvedInternalSize,
+            resolvedDisplaySize =
+            pcall(function()
+
+                return GAG2PetVariantResolveSize(
+                    ref,
+                    rawSize,
+                    record,
+                    petName
+                )
+            end)
+
+        if ok == true then
+
+            internalSize =
+                CleanText(resolvedInternalSize)
+
+            displaySize =
+                CleanText(resolvedDisplaySize)
+        end
+
+    else
+
+        local _,
+            fallbackDisplaySize =
+            GAG2PetVariantNormalizeSize(
+                rawSize
+            )
+
+        displaySize =
+            CleanText(fallbackDisplaySize)
+    end
+
+    if internalSize == "" then
+        internalSize = "None"
+    end
+
+    if displaySize == "" then
+        displaySize = "Normal"
+    end
+
+    local typeAttributes = {
+        "PetType",
+        "Type",
+        "Variant",
+        "PetVariant",
+        "Mutation",
+        "MutationType",
+        "WildPetType",
+    }
+
+    local rainbowAttributes = {
+        "IsRainbow",
+        "Rainbow",
+        "RainbowPet",
+        "RainbowVariant",
+    }
 
     local rawType =
         GAG2WildPetNetworkReadAnyAttribute(
             ref,
-            {
-                "PetType",
-                "Type",
-                "Variant",
-                "PetVariant",
-                "Mutation",
-                "MutationType",
-                "WildPetType",
-            }
+            typeAttributes
         )
 
-    local internalType, displayType =
-        GAG2WildPetNetworkResolvePetType(
+    if rawType == nil then
+
+        rawType =
+            GAG2WildPetNetworkReadAnyAttribute(
+                visual,
+                typeAttributes
+            )
+    end
+
+    local rainbowFlag =
+        GAG2WildPetNetworkReadAnyAttribute(
             ref,
-            petName,
-            rawType
+            rainbowAttributes
         )
 
-    local variantText =
-        "Size: "
-        .. tostring(displaySize)
-        .. " | Type: "
-        .. tostring(displayType)
+    if rainbowFlag == nil then
 
-    return {
+        rainbowFlag =
+            GAG2WildPetNetworkReadAnyAttribute(
+                visual,
+                rainbowAttributes
+            )
+    end
+
+    local rainbowFlagText =
+        CleanText(
+            rainbowFlag
+        ):lower()
+
+    if rainbowFlag == true
+    or rainbowFlagText == "true"
+    or rainbowFlagText == "yes"
+    or rainbowFlagText == "rainbow" then
+
+        rawType =
+            "Rainbow"
+    end
+
+    local internalType =
+        "None"
+
+    local displayType =
+        "Normal"
+
+    if type(GAG2PetVariantResolveType) == "function" then
+
+        local ok,
+            resolvedInternalType,
+            resolvedDisplayType =
+            pcall(function()
+
+                return GAG2PetVariantResolveType(
+                    ref,
+                    rawType,
+                    petName,
+                    record
+                )
+            end)
+
+        if ok == true then
+
+            internalType =
+                CleanText(resolvedInternalType)
+
+            displayType =
+                CleanText(resolvedDisplayType)
+        end
+
+    else
+
+        local _,
+            fallbackDisplayType =
+            GAG2PetVariantNormalizeType(
+                rawType,
+                petName
+            )
+
+        displayType =
+            CleanText(fallbackDisplayType)
+    end
+
+    if internalType == "" then
+        internalType = "None"
+    end
+
+    if displayType == "" then
+        displayType = "Normal"
+    end
+
+    local pet = {
         id =
-            tostring(ref.Name),
+            refName,
+
+        uuid =
+            uuid,
+
+        UUID =
+            uuid,
 
         petName =
+            petName,
+
+        PetName =
             petName,
 
         rarity =
@@ -18333,6 +18618,9 @@ function GAG2WildPetNetworkReadRefPet(ref)
                 remaining
             ),
 
+        count =
+            1,
+
         rawSize =
             rawSize ~= nil
             and tostring(rawSize)
@@ -18341,10 +18629,19 @@ function GAG2WildPetNetworkReadRefPet(ref)
         internalSize =
             internalSize,
 
+        InternalSize =
+            internalSize,
+
         displaySize =
             displaySize,
 
+        DisplaySize =
+            displaySize,
+
         size =
+            displaySize,
+
+        Size =
             displaySize,
 
         sizeLabel =
@@ -18361,13 +18658,25 @@ function GAG2WildPetNetworkReadRefPet(ref)
         internalType =
             internalType,
 
+        InternalType =
+            internalType,
+
         petType =
+            internalType,
+
+        PetType =
             internalType,
 
         displayType =
             displayType,
 
+        DisplayType =
+            displayType,
+
         mutation =
+            displayType,
+
+        Mutation =
             displayType,
 
         mutationFilter =
@@ -18375,10 +18684,23 @@ function GAG2WildPetNetworkReadRefPet(ref)
 
         typeLabel =
             displayType,
-
-        variantText =
-            variantText,
     }
+
+    pet.variant =
+        GAG2WildPetNetworkBuildCleanVariantLabel(
+            pet
+        )
+
+    pet.Variant =
+        pet.variant
+
+    pet.variantText =
+        "Size: "
+        .. tostring(displaySize)
+        .. " | Mutation: "
+        .. tostring(displayType)
+
+    return pet
 end
 
 function GAG2WildPetNetworkBuildPetSnapshot()
@@ -65393,6 +65715,154 @@ function GAG2RareWebhookPetKey(name)
         :gsub("[^%w]", "")
 end
 
+function GAG2RareWebhookGetVariantInfo(entry)
+
+    local petName =
+        CleanText(
+            entry
+            and entry.Name
+            or "Unknown"
+        )
+
+    local prettyName =
+        petName
+
+    local sizeText =
+        "Normal"
+
+    local mutationText =
+        "Normal"
+
+    if type(GAG2SnipeBoughtWebhookResolveRecord) == "function" then
+
+        local ok,
+            data =
+            pcall(function()
+
+                return GAG2SnipeBoughtWebhookResolveRecord(
+                    entry
+                )
+            end)
+
+        if ok == true
+        and type(data) == "table" then
+
+            sizeText =
+                CleanText(
+                    data.Size
+                    or data.DisplaySize
+                    or "Normal"
+                )
+
+            mutationText =
+                CleanText(
+                    data.Mutation
+                    or data.DisplayType
+                    or "Normal"
+                )
+
+            if CleanText(data.PetName) ~= "" then
+
+                prettyName =
+                    CleanText(data.PetName)
+            end
+        end
+    end
+
+    if type(GAG2SnipeBoughtWebhookGetPetData) == "function" then
+
+        local petData =
+            nil
+
+        pcall(function()
+
+            petData =
+                select(
+                    1,
+                    GAG2SnipeBoughtWebhookGetPetData(
+                        prettyName
+                    )
+                )
+        end)
+
+        if type(petData) == "table"
+        and CleanText(petData.DisplayName) ~= "" then
+
+            prettyName =
+                CleanText(
+                    petData.DisplayName
+                )
+        end
+    end
+
+    if sizeText == "" then
+        sizeText = "Normal"
+    end
+
+    if mutationText == "" then
+        mutationText = "Normal"
+    end
+
+    local displayParts =
+        {}
+
+    if sizeText ~= "Normal" then
+
+        table.insert(
+            displayParts,
+            sizeText
+        )
+    end
+
+    if mutationText ~= "Normal" then
+
+        table.insert(
+            displayParts,
+            mutationText
+        )
+    end
+
+    table.insert(
+        displayParts,
+        prettyName
+    )
+
+    local displayName =
+        table.concat(
+            displayParts,
+            " "
+        )
+
+    local variantLabel =
+        tostring(sizeText)
+        .. " / "
+        .. tostring(mutationText)
+
+    local isSpecialVariant =
+        sizeText ~= "Normal"
+        or mutationText ~= "Normal"
+
+    return {
+        PetName =
+            prettyName,
+
+        DisplayName =
+            displayName,
+
+        Size =
+            sizeText,
+
+        Mutation =
+            mutationText,
+
+        Variant =
+            variantLabel,
+
+        IsSpecialVariant =
+            isSpecialVariant,
+    }
+end
+
 function GAG2RareWebhookIsTarget(entry)
 
     if type(entry) ~= "table" then
@@ -65404,7 +65874,21 @@ function GAG2RareWebhookIsTarget(entry)
             entry.Name
         )
 
-    return GAG2_RARE_PET_WEBHOOK_TARGETS[key] == true
+    if GAG2_RARE_PET_WEBHOOK_ALWAYS_TARGETS[key] == true then
+        return true
+    end
+
+    if GAG2_RARE_PET_WEBHOOK_VARIANT_ONLY_TARGETS[key] == true then
+
+        local variant =
+            GAG2RareWebhookGetVariantInfo(
+                entry
+            )
+
+        return variant.IsSpecialVariant == true
+    end
+
+    return false
 end
 
 function GAG2RareWebhookGetEntryKey(entry)
@@ -65420,9 +65904,22 @@ function GAG2RareWebhookGetEntryKey(entry)
         return uuid
     end
 
+    local variant =
+        GAG2RareWebhookGetVariantInfo(
+            entry
+        )
+
     return GAG2RareWebhookPetKey(
         entry.Name
     )
+        .. "|"
+        .. GAG2RareWebhookPetKey(
+            variant.Size
+        )
+        .. "|"
+        .. GAG2RareWebhookPetKey(
+            variant.Mutation
+        )
 end
 
 function GAG2RareWebhookGetImageUrl(entry)
@@ -65487,8 +65984,65 @@ function GAG2RareWebhookSend(entry)
         return false
     end
 
+    local variant =
+        GAG2RareWebhookGetVariantInfo(
+            entry
+        )
+
     local petName =
-        CleanText(entry.Name)
+        CleanText(
+            variant.PetName
+        )
+
+    if petName == "" then
+
+        petName =
+            CleanText(entry.Name)
+    end
+
+    if petName == "" then
+        petName = "Unknown"
+    end
+
+    local displayPetName =
+        CleanText(
+            variant.DisplayName
+        )
+
+    if displayPetName == "" then
+        displayPetName = petName
+    end
+
+    local sizeText =
+        CleanText(
+            variant.Size
+        )
+
+    if sizeText == "" then
+        sizeText = "Normal"
+    end
+
+    local mutationText =
+        CleanText(
+            variant.Mutation
+        )
+
+    if mutationText == "" then
+        mutationText = "Normal"
+    end
+
+    local variantText =
+        CleanText(
+            variant.Variant
+        )
+
+    if variantText == "" then
+
+        variantText =
+            tostring(sizeText)
+            .. " / "
+            .. tostring(mutationText)
+    end
 
     local priceText =
         CleanText(entry.Price)
@@ -65526,7 +66080,7 @@ function GAG2RareWebhookSend(entry)
 
         title =
             "🌟 Rare Pet Found • "
-            .. petName,
+            .. displayPetName,
 
         color =
             0xC4B5FD,
@@ -65535,7 +66089,25 @@ function GAG2RareWebhookSend(entry)
 
             {
                 name = "Pet",
-                value = petName,
+                value = displayPetName,
+                inline = true,
+            },
+
+            {
+                name = "Size",
+                value = sizeText,
+                inline = true,
+            },
+
+            {
+                name = "Mutation",
+                value = mutationText,
+                inline = true,
+            },
+
+            {
+                name = "Variant",
+                value = variantText,
                 inline = true,
             },
 
@@ -65616,16 +66188,22 @@ function GAG2RareWebhookSend(entry)
             "<@&"
             .. roleId
             .. "> 🌟 Rare pet found: **"
-            .. petName
+            .. displayPetName
             .. "**"
+            .. "\nVariant: `"
+            .. variantText
+            .. "`"
             .. "\n`"
             .. tostring(joinCode)
             .. "`"
         )
         or (
             "🌟 Rare pet found: **"
-            .. petName
+            .. displayPetName
             .. "**"
+            .. "\nVariant: `"
+            .. variantText
+            .. "`"
             .. "\n`"
             .. tostring(joinCode)
             .. "`"
@@ -65664,18 +66242,9 @@ function GAG2RareWebhookSend(entry)
                     ["Content-Type"] = "application/json",
                 },
                 Body =
-                    (function()
-
-                        print(
-                            "[HOLY WEBHOOK]",
-                            "payload content:",
-                            tostring(payload.content)
-                        )
-
-                        return HttpService:JSONEncode(
-                            payload
-                        )
-                    end)(),
+                    HttpService:JSONEncode(
+                        payload
+                    ),
             })
         end)
 
@@ -65722,7 +66291,9 @@ function GAG2RareWebhookSend(entry)
     print(
         "[HOLY WEBHOOK]",
         "sent rare pet alert:",
-        petName
+        displayPetName,
+        "| variant:",
+        variantText
     )
 
     return true
