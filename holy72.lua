@@ -26793,6 +26793,337 @@ function GAG2GetLoadingGui()
     return playerGui:FindFirstChild("LoadingGui")
 end
 
+function GAG2GetLoadingGuiTemplate()
+
+    local replicatedFirst =
+        nil
+
+    pcall(function()
+
+        replicatedFirst =
+            game:GetService("ReplicatedFirst")
+    end)
+
+    if not replicatedFirst then
+        return nil
+    end
+
+    local menu =
+        replicatedFirst:FindFirstChild("LoadingScreenMenu")
+
+    local loadingGui =
+        menu
+        and menu:FindFirstChild("LoadingGui")
+
+    return loadingGui
+end
+
+function GAG2LoadingCleanText(value)
+
+    return CleanText(
+        tostring(value or "")
+            :gsub("<[^>]->", "")
+            :gsub("<.->", "")
+    )
+end
+
+function GAG2LoadingFindLabel(root, labelName)
+
+    if typeof(root) ~= "Instance" then
+        return nil
+    end
+
+    labelName =
+        tostring(labelName or "")
+
+    if labelName == "" then
+        return nil
+    end
+
+    local variantFrame =
+        root:FindFirstChild("Variant1Frame")
+
+    local innerFrame =
+        variantFrame
+        and variantFrame:FindFirstChild("InnerFrame")
+
+    local direct =
+        innerFrame
+        and innerFrame:FindFirstChild(labelName)
+
+    if direct then
+        return direct
+    end
+
+    return root:FindFirstChild(
+        labelName,
+        true
+    )
+end
+
+function GAG2LoadingReadLabel(root, labelName)
+
+    local object =
+        GAG2LoadingFindLabel(
+            root,
+            labelName
+        )
+
+    local text =
+        ""
+
+    local visible =
+        false
+
+    if typeof(object) == "Instance" then
+
+        pcall(function()
+
+            if object:IsA("TextLabel")
+            or object:IsA("TextButton")
+            or object:IsA("TextBox") then
+
+                text =
+                    GAG2LoadingCleanText(
+                        object.Text
+                    )
+            end
+        end)
+
+        if object:IsA("GuiObject") then
+
+            visible =
+                GAG2GuiObjectVisible(
+                    object
+                ) == true
+        end
+    end
+
+    return {
+        Object =
+            object,
+
+        Text =
+            text,
+
+        Visible =
+            visible,
+
+        Path =
+            typeof(object) == "Instance"
+            and PathOf(object)
+            or "",
+    }
+end
+
+function GAG2ReadLoadingScreenData()
+
+    local liveGui =
+        GAG2GetLoadingGui()
+
+    local templateGui =
+        GAG2GetLoadingGuiTemplate()
+
+    local function readGroup(root, source)
+
+        return {
+            Root =
+                root,
+
+            Source =
+                tostring(source or "unknown"),
+
+            Skip =
+                GAG2LoadingReadLabel(
+                    root,
+                    "SkipTxt"
+                ),
+
+            PressAny =
+                GAG2LoadingReadLabel(
+                    root,
+                    "PressAnyTxt"
+                ),
+
+            Counter =
+                GAG2LoadingReadLabel(
+                    root,
+                    "CounterTxt"
+                ),
+        }
+    end
+
+    return {
+        Live =
+            readGroup(
+                liveGui,
+                "PlayerGui"
+            ),
+
+        Template =
+            readGroup(
+                templateGui,
+                "ReplicatedFirst"
+            ),
+    }
+end
+
+function GAG2LoadingTextHas(text, words)
+
+    local lower =
+        GAG2LoadingCleanText(
+            text
+        ):lower()
+
+    if lower == "" then
+        return false
+    end
+
+    for _, word in ipairs(words or {}) do
+
+        if lower:find(
+            tostring(word or ""):lower(),
+            1,
+            true
+        ) then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function GAG2GetLoadingScreenDecision()
+
+    local data =
+        GAG2ReadLoadingScreenData()
+
+    local live =
+        data
+        and data.Live
+        or nil
+
+    if type(live) ~= "table"
+    or typeof(live.Root) ~= "Instance" then
+
+        return {
+            Ready =
+                false,
+
+            Kind =
+                "NO_LIVE_GUI",
+
+            Reason =
+                "no live PlayerGui.LoadingGui",
+
+            Data =
+                data,
+        }
+    end
+
+    local skip =
+        live.Skip
+
+    if type(skip) == "table"
+    and typeof(skip.Object) == "Instance"
+    and skip.Visible == true then
+
+        return {
+            Ready =
+                true,
+
+            Kind =
+                "SKIP_READY",
+
+            Reason =
+                "SkipTxt visible: "
+                .. tostring(skip.Text),
+
+            Object =
+                skip.Object,
+
+            Text =
+                skip.Text,
+
+            Data =
+                data,
+        }
+    end
+
+    local pressAny =
+        live.PressAny
+
+    if type(pressAny) == "table"
+    and typeof(pressAny.Object) == "Instance"
+    and pressAny.Visible == true then
+
+        return {
+            Ready =
+                true,
+
+            Kind =
+                "PRESS_ANY_READY",
+
+            Reason =
+                "PressAnyTxt visible: "
+                .. tostring(pressAny.Text),
+
+            Object =
+                pressAny.Object,
+
+            Text =
+                pressAny.Text,
+
+            Data =
+                data,
+        }
+    end
+
+    local counter =
+        live.Counter
+
+    if type(counter) == "table"
+    and typeof(counter.Object) == "Instance"
+    and counter.Visible == true then
+
+        return {
+            Ready =
+                false,
+
+            Kind =
+                "COUNTER_WAIT",
+
+            Reason =
+                "CounterTxt visible: "
+                .. tostring(counter.Text),
+
+            Object =
+                counter.Object,
+
+            Text =
+                counter.Text,
+
+            Data =
+                data,
+        }
+    end
+
+    return {
+        Ready =
+            false,
+
+        Kind =
+            "WAITING_LABELS",
+
+        Reason =
+            "waiting for SkipTxt or PressAnyTxt",
+
+        Data =
+            data,
+    }
+end
+
 function GAG2ReadLoadingAttributes()
 
     local loadingActive =
@@ -26829,6 +27160,9 @@ function GAG2ReadLoadingAttributes()
                 variantFrame.Visible == true
         end)
     end
+
+    local decision =
+        GAG2GetLoadingScreenDecision()
 
     local camera =
         workspace.CurrentCamera
@@ -26872,6 +27206,16 @@ function GAG2ReadLoadingAttributes()
                 or cameraCustom == true
                 and "Custom"
                 or "Other",
+
+            LoadingDecision =
+                decision
+                and decision.Kind
+                or "unknown",
+
+            LoadingReason =
+                decision
+                and decision.Reason
+                or "unknown",
         }
 end
 
@@ -27042,148 +27386,63 @@ end
 
 function GAG2FindLoadingSkipGuiObject()
 
-    local playerGui =
-        LOCAL_PLAYER
-        and LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui")
+    local decision =
+        GAG2GetLoadingScreenDecision()
 
-    if not playerGui then
-        return nil,
-            "PlayerGui missing"
-    end
+    if type(decision) == "table"
+    and decision.Ready == true
+    and typeof(decision.Object) == "Instance" then
 
-    local preferredRoots =
-        {}
-
-    local loadingGui =
-        playerGui:FindFirstChild("LoadingGui")
-
-    if loadingGui then
-
-        table.insert(
-            preferredRoots,
-            loadingGui
-        )
-    end
-
-    table.insert(
-        preferredRoots,
-        playerGui
-    )
-
-    local keywords = {
-        "skip",
-        "click to skip",
-        "click to skip!",
-        "fully loaded",
-        "press any key",
-        "key to play",
-        "play",
-        "start",
-        "continue",
-    }
-
-    for _, root in ipairs(preferredRoots) do
-
-        if typeof(root) == "Instance" then
-
-            local scanned =
-                0
-
-            for _, descendant in ipairs(root:GetDescendants()) do
-
-                scanned = scanned + 1
-
-                if scanned > 10000 then
-                    break
-                end
-
-                if descendant:IsA("TextButton")
-                or descendant:IsA("ImageButton")
-                or descendant:IsA("TextLabel")
-                or descendant:IsA("TextBox") then
-
-                    local rawText =
-                        ""
-
-                    pcall(function()
-
-                        rawText =
-                            tostring(descendant.Text or "")
-                    end)
-
-                    local text =
-                        CleanText(
-                            rawText
-                                :gsub("<[^>]->", "")
-                                :gsub("<.->", "")
-                        )
-
-                    local lowerText =
-                        text:lower()
-
-                    if GAG2GuiObjectVisible(descendant) == true then
-
-                        for _, keyword in ipairs(keywords) do
-
-                            if lowerText:find(
-                                tostring(keyword):lower(),
-                                1,
-                                true
-                            ) then
-
-                                return descendant,
-                                    "text: "
-                                    .. tostring(text)
-                                    .. " | "
-                                    .. PathOf(descendant)
-                            end
-                        end
-
-                        local lowerPath =
-                            PathOf(descendant):lower()
-
-                        if lowerPath:find("loading", 1, true)
-                        and (
-                            lowerPath:find("skip", 1, true)
-                            or lowerPath:find("play", 1, true)
-                            or lowerPath:find("continue", 1, true)
-                            or lowerPath:find("button", 1, true)
-                        ) then
-
-                            return descendant,
-                                "path: "
-                                .. PathOf(descendant)
-                        end
-                    end
-                end
-            end
-        end
+        return decision.Object,
+            tostring(decision.Kind)
+            .. " | "
+            .. tostring(decision.Reason)
+            .. " | "
+            .. PathOf(decision.Object)
     end
 
     return nil,
-        "no visible loading skip gui object"
+        decision
+        and tostring(decision.Reason)
+        or "loading decision missing"
 end
 
 function GAG2SendLoadingScreenClick()
 
+    local decision =
+        GAG2GetLoadingScreenDecision()
+
+    if type(decision) ~= "table"
+    or decision.Ready ~= true then
+
+        return false,
+            decision
+            and tostring(decision.Reason)
+            or "loading data not ready"
+    end
+
     local bindableOk, bindableInfo =
         GAG2FireLoadingSkipBindable(
-            "HOLY_AUTO_SKIP"
+            "HOLY_AUTO_SKIP_"
+            .. tostring(decision.Kind or "READY")
         )
 
     if bindableOk == true then
 
         return true,
-            tostring(bindableInfo)
+            tostring(decision.Kind)
+            .. " | "
+            .. tostring(bindableInfo)
     end
 
-    local object, objectInfo =
-        GAG2FindLoadingSkipGuiObject()
+    local object =
+        decision.Object
 
-    if not object then
+    if typeof(object) ~= "Instance" then
 
         return false,
-            tostring(objectInfo)
+            "ready label missing object: "
+            .. tostring(decision.Reason)
     end
 
     local ok =
@@ -27195,12 +27454,18 @@ function GAG2SendLoadingScreenClick()
 
         return true,
             "direct gui: "
-            .. tostring(objectInfo)
+            .. tostring(decision.Kind)
+            .. " | "
+            .. tostring(decision.Reason)
+            .. " | "
+            .. PathOf(object)
     end
 
     return false,
         "direct gui activation failed: "
-        .. tostring(objectInfo)
+        .. tostring(decision.Kind)
+        .. " | "
+        .. tostring(decision.Reason)
 end
 
 function GAG2FireFinishLoadingRemoteSafe()
@@ -27311,8 +27576,28 @@ function GAG2AutoPlayLoadingStep()
             "loading done"
     end
 
+    local decision =
+        GAG2GetLoadingScreenDecision()
+
+    if type(decision) == "table"
+    and decision.Ready == true then
+
+        local clickOk, clickInfo =
+            GAG2SendLoadingScreenClick()
+
+        if clickOk == true then
+
+            return true,
+                tostring(clickInfo)
+        end
+
+        return false,
+            "ready but click failed: "
+            .. tostring(clickInfo)
+    end
+
     return false,
-        "waiting genuine loading"
+        "waiting loading data"
         .. " active="
         .. tostring(info and info.Active)
         .. " done="
@@ -27321,9 +27606,22 @@ function GAG2AutoPlayLoadingStep()
         .. tostring(info and info.Camera)
         .. " variant="
         .. tostring(info and info.VariantVisible)
+        .. " decision="
+        .. tostring(
+            decision
+            and decision.Kind
+            or "unknown"
+        )
+        .. " reason="
+        .. tostring(
+            decision
+            and decision.Reason
+            or "unknown"
+        )
         .. " blocking="
         .. tostring(blocking)
 end
+
 
 function GAG2ClientReadyForBuy()
 
@@ -29866,220 +30164,93 @@ function GAG2StartMiddleFarmLoadingWorker(reason, forceTp)
                 return
             end
 
-            local function tryDirectClick(label)
-
-                local clickOk, clickInfo =
-                    GAG2AutoPlayLoadingStep()
-
-                if clickOk == true then
-
-                    state.SkipStarted =
-                        true
-
-                    state.SkipSucceeded =
-                        true
-
-                    state.SkipSuccessReason =
-                        tostring(label or "loading click")
-                        .. ": "
-                        .. tostring(clickInfo)
-
-                    state.LastResult =
-                        "loading click sent"
-
-                    print(
-                        "[HOLY LOADING]",
-                        tostring(label or "Loading click")
-                        .. " | "
-                        .. tostring(clickInfo)
-                    )
-
-                    return true
-                end
-
-                return false,
-                    tostring(clickInfo)
-            end
-
             if state.HoldingSkip == true then
 
-                local heldFor =
-                    now - tonumber(state.HoldStartAt or now)
+                GAG2MiddleFarmReleaseSkipHold(
+                    "data-driven skip mode"
+                )
+            end
 
-                if heldFor >= tonumber(state.HoldMaxSeconds or 3.75) then
+            local decision =
+                GAG2GetLoadingScreenDecision()
 
-                    GAG2MiddleFarmReleaseSkipHold(
-                        "hold cycle complete"
+            if type(decision) ~= "table"
+            or decision.Ready ~= true then
+
+                state.LastResult =
+                    "loading data wait: "
+                    .. tostring(
+                        decision
+                        and decision.Reason
+                        or "decision missing"
                     )
-
-                    lastHoldReleasedAt =
-                        now
-                end
 
                 return
             end
 
-            local maxSkipAttempts =
-                math.max(
-                    1,
-                    math.floor(
-                        tonumber(state.MaxSkipAttempts)
-                        or 2
-                    )
-                )
-
-            local skipRetryDelay =
+            local retryDelay =
                 math.clamp(
                     tonumber(state.SkipRetryDelay)
-                    or 0.25,
-                    0.10,
+                    or 0.35,
+                    0.20,
                     2.00
                 )
 
-            if tonumber(state.SkipAttempts or 0) < maxSkipAttempts then
-
-                if now - lastHoldReleasedAt < skipRetryDelay then
-                    return
-                end
-
-                state.SkipStarted =
-                    true
-
-                state.SkipAttempts =
-                    tonumber(state.SkipAttempts)
-                    or 0
-
-                state.SkipAttempts =
-                    state.SkipAttempts + 1
-
-                local clicked =
-                    tryDirectClick(
-                        "Primary loading skip"
-                    )
-
-                if clicked == true then
-                    return
-                end
-
-                local ok, holdInfo =
-                    GAG2MiddleFarmPressSkipHold()
-
-                if ok ~= true then
-
-                    lastHoldReleasedAt =
-                        now
-
-                    state.LastResult =
-                        "loading hold failed: "
-                        .. tostring(holdInfo)
-
-                else
-
-                    state.LastResult =
-                        "loading hold started"
-                end
-
-                return
-            end
-
-            if state.LoadingFallbackStarted ~= true then
-
-                state.LoadingFallbackStarted =
-                    true
-
-                state.LoadingFallbackStartedAt =
-                    now
-
-                state.LoadingFallbackAttempts =
-                    0
-
-                state.LoadingFallbackLastAt =
-                    0
-
-                state.LastResult =
-                    "loading fallback active"
-
-                print(
-                    "[HOLY LOADING]",
-                    "Skip fallback active for "
-                    .. tostring(state.LoadingFallbackSeconds or 5)
-                    .. "s"
+            local lastAttemptAt =
+                tonumber(
+                    GAG2_AUTO_PLAY_STATE.LastClick
                 )
-            end
-
-            local fallbackStartedAt =
-                tonumber(state.LoadingFallbackStartedAt)
-                or now
-
-            local fallbackSeconds =
-                math.clamp(
-                    tonumber(state.LoadingFallbackSeconds)
-                    or 5.00,
-                    1.00,
-                    12.00
-                )
-
-            if now - fallbackStartedAt > fallbackSeconds then
-
-                state.LastResult =
-                    "loading fallback ended"
-
-                return
-            end
-
-            local fallbackRetryDelay =
-                math.clamp(
-                    tonumber(state.LoadingFallbackRetryDelay)
-                    or 0.75,
-                    0.35,
-                    2.50
-                )
-
-            local fallbackLastAt =
-                tonumber(state.LoadingFallbackLastAt)
                 or 0
 
-            if now - fallbackLastAt < fallbackRetryDelay then
+            if now - lastAttemptAt < retryDelay then
                 return
             end
 
-            state.LoadingFallbackLastAt =
+            GAG2_AUTO_PLAY_STATE.LastClick =
                 now
 
-            state.LoadingFallbackAttempts =
+            state.SkipStarted =
+                true
+
+            state.SkipAttempts =
                 math.floor(
-                    tonumber(state.LoadingFallbackAttempts)
+                    tonumber(state.SkipAttempts)
                     or 0
                 )
                 + 1
 
-            local clicked =
-                tryDirectClick(
-                    "Fallback loading skip"
+            local clickOk, clickInfo =
+                GAG2AutoPlayLoadingStep()
+
+            if clickOk == true then
+
+                state.SkipSucceeded =
+                    true
+
+                state.SkipSuccessReason =
+                    tostring(decision.Kind)
+                    .. ": "
+                    .. tostring(clickInfo)
+
+                state.LastResult =
+                    "data loading skip sent"
+
+                print(
+                    "[HOLY LOADING]",
+                    "Data skip | "
+                    .. tostring(decision.Kind)
+                    .. " | "
+                    .. tostring(clickInfo)
                 )
 
-            if clicked == true then
                 return
             end
 
-            local ok, holdInfo =
-                GAG2MiddleFarmPressSkipHold()
-
-            if ok ~= true then
-
-                lastHoldReleasedAt =
-                    now
-
-                state.LastResult =
-                    "fallback hold failed: "
-                    .. tostring(holdInfo)
-
-            else
-
-                state.LastResult =
-                    "fallback hold started"
-            end
+            state.LastResult =
+                "data loading skip failed: "
+                .. tostring(clickInfo)
         end
+
 
 
         while os.clock() - started < tonumber(state.MaxRunSeconds or 120) do
