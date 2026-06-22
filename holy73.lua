@@ -8670,59 +8670,102 @@ function GAG2SnipeBoughtWebhookGetPetData(petName)
         ""
 end
 
-function GAG2SnipeBoughtWebhookCleanSize(value)
+--==================================================
+-- [4.04] PET SIZE / TYPE RESOLVER
+-- PetData does not store size/type. PetSizes and PetTypes are helper modules.
+-- Missing data must resolve to Normal, not guessed.
+--==================================================
 
-    local text =
-        CleanText(value)
+GAG2_PET_VARIANT_CACHE =
+    GAG2_PET_VARIANT_CACHE
+    or {}
 
-    local lower =
-        text:lower()
+function GAG2PetVariantRequireSharedModule(moduleName)
 
-    if lower == ""
-    or lower == "none"
-    or lower == "nil" then
+    moduleName =
+        CleanText(moduleName)
 
-        return "Normal"
+    if moduleName == "" then
+        return nil
     end
 
-    if lower == "huge"
-    or lower == "mega" then
+    GAG2_PET_VARIANT_CACHE.Modules =
+        type(GAG2_PET_VARIANT_CACHE.Modules) == "table"
+        and GAG2_PET_VARIANT_CACHE.Modules
+        or {}
 
-        return "Mega"
+    if GAG2_PET_VARIANT_CACHE.Modules[moduleName] ~= nil then
+
+        return GAG2_PET_VARIANT_CACHE.Modules[moduleName]
     end
 
-    if lower == "big" then
-        return "Big"
+    local module =
+        ReplicatedStorage:FindFirstChild("SharedData")
+        and ReplicatedStorage.SharedData:FindFirstChild(moduleName)
+        or nil
+
+    if not module
+    or module:IsA("ModuleScript") ~= true then
+
+        GAG2_PET_VARIANT_CACHE.Modules[moduleName] =
+            false
+
+        return nil
     end
 
-    local number =
-        tonumber(text)
+    local ok,
+        result =
+        pcall(function()
 
-    if number then
+            return require(
+                module
+            )
+        end)
 
-        if number >= 3.25 then
-            return "Mega"
-        end
+    if ok ~= true
+    or type(result) ~= "table" then
 
-        if number >= 1.5 then
-            return "Big"
-        end
+        GAG2_PET_VARIANT_CACHE.Modules[moduleName] =
+            false
+
+        return nil
     end
 
-    if lower:find("huge", 1, true)
-    or lower:find("mega", 1, true) then
+    GAG2_PET_VARIANT_CACHE.Modules[moduleName] =
+        result
 
-        return "Mega"
-    end
-
-    if lower:find("big", 1, true) then
-        return "Big"
-    end
-
-    return text
+    return result
 end
 
-function GAG2SnipeBoughtWebhookCleanMutation(value)
+function GAG2PetVariantReadAnyAttribute(instance, attrNames)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    for _, attrName in ipairs(attrNames or {}) do
+
+        local ok,
+            value =
+            pcall(function()
+
+                return instance:GetAttribute(
+                    attrName
+                )
+            end)
+
+        if ok == true
+        and value ~= nil
+        and tostring(value) ~= "" then
+
+            return value
+        end
+    end
+
+    return nil
+end
+
+function GAG2PetVariantNormalizeSize(value)
 
     local text =
         CleanText(value)
@@ -8733,16 +8776,409 @@ function GAG2SnipeBoughtWebhookCleanMutation(value)
     if lower == ""
     or lower == "none"
     or lower == "nil"
-    or lower == "normal" then
+    or lower == "normal"
+    or lower == "regular" then
 
-        return "Normal"
+        return "None",
+            "Normal"
     end
 
-    if lower:find("rainbow", 1, true) then
-        return "Rainbow"
+    local number =
+        tonumber(text)
+
+    if number then
+
+        if number >= 3.25 then
+
+            return "Huge",
+                "Mega"
+        end
+
+        if number >= 1.5 then
+
+            return "Big",
+                "Big"
+        end
+
+        return "None",
+            "Normal"
     end
 
-    return text
+    local petSizes =
+        GAG2PetVariantRequireSharedModule(
+            "PetSizes"
+        )
+
+    local internalSize =
+        nil
+
+    if type(petSizes) == "table"
+    and type(petSizes.Normalize) == "function" then
+
+        local ok,
+            normalized =
+            pcall(function()
+
+                return petSizes.Normalize(
+                    text
+                )
+            end)
+
+        if ok == true
+        and normalized ~= nil
+        and tostring(normalized) ~= "" then
+
+            internalSize =
+                tostring(normalized)
+        end
+    end
+
+    if internalSize == nil then
+
+        if lower == "huge"
+        or lower == "mega"
+        or lower:find("huge", 1, true)
+        or lower:find("mega", 1, true) then
+
+            internalSize =
+                "Huge"
+
+        elseif lower == "big"
+        or lower:find("big", 1, true) then
+
+            internalSize =
+                "Big"
+        end
+    end
+
+    if internalSize == "Huge" then
+
+        local display =
+            "Mega"
+
+        if type(petSizes) == "table"
+        and type(petSizes.DisplaySize) == "function" then
+
+            local ok,
+                result =
+                pcall(function()
+
+                    return petSizes.DisplaySize(
+                        "Huge"
+                    )
+                end)
+
+            if ok == true
+            and CleanText(result) ~= "" then
+
+                display =
+                    CleanText(result)
+            end
+        end
+
+        return "Huge",
+            display
+    end
+
+    if internalSize == "Big" then
+
+        return "Big",
+            "Big"
+    end
+
+    return "None",
+        "Normal"
+end
+
+function GAG2PetVariantNormalizeType(value, petName)
+
+    local text =
+        CleanText(value)
+
+    local lower =
+        text:lower()
+
+    local petNameLower =
+        CleanText(petName):lower()
+
+    if lower == ""
+    or lower == "none"
+    or lower == "nil"
+    or lower == "normal"
+    or lower == "regular" then
+
+        return "None",
+            "Normal"
+    end
+
+    local petTypes =
+        GAG2PetVariantRequireSharedModule(
+            "PetTypes"
+        )
+
+    if type(petTypes) == "table"
+    and type(petTypes.IsRainbow) == "function" then
+
+        local ok,
+            isRainbow =
+            pcall(function()
+
+                return petTypes.IsRainbow(
+                    text
+                )
+            end)
+
+        if ok == true
+        and isRainbow == true then
+
+            return "Rainbow",
+                "Rainbow"
+        end
+    end
+
+    if lower == "rainbow"
+    or lower == "rainbow pet"
+    or lower == "pet rainbow"
+    or lower:find("rainbow", 1, true)
+    or petNameLower:find("rainbow", 1, true) then
+
+        return "Rainbow",
+            "Rainbow"
+    end
+
+    return "None",
+        "Normal"
+end
+
+function GAG2PetVariantFindWildPetVisual(instance, record, petName)
+
+    local root =
+        workspace:FindFirstChild("Map")
+        and workspace.Map:FindFirstChild("WildPetSpawns")
+        or workspace:FindFirstChild("WildPetSpawns")
+
+    if typeof(root) ~= "Instance" then
+        return nil
+    end
+
+    local tokens =
+        {}
+
+    local function addToken(value)
+
+        value =
+            CleanText(value)
+
+        if value == "" then
+            return
+        end
+
+        tokens[#tokens + 1] =
+            value
+
+        local uuid =
+            value:match("WildPet_([%w%-]+)$")
+            or value:match("([%w]+%-%w+%-%w+%-%w+%-%w+)")
+
+        if uuid
+        and uuid ~= "" then
+
+            tokens[#tokens + 1] =
+                uuid
+        end
+    end
+
+    if typeof(instance) == "Instance" then
+
+        addToken(
+            instance.Name
+        )
+    end
+
+    if type(record) == "table" then
+
+        addToken(record.id)
+        addToken(record.Id)
+        addToken(record.UUID)
+        addToken(record.uuid)
+        addToken(record.PetId)
+        addToken(record.petId)
+        addToken(record.RefName)
+        addToken(record.refName)
+    end
+
+    addToken(
+        petName
+    )
+
+    for _, child in ipairs(root:GetChildren()) do
+
+        if child:IsA("Model") then
+
+            local name =
+                tostring(child.Name or "")
+
+            for _, token in ipairs(tokens) do
+
+                if token ~= ""
+                and (
+                    name == token
+                    or name:find(token, 1, true)
+                ) then
+
+                    return child
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function GAG2PetVariantGetModelScale(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    if instance:IsA("Model") then
+
+        local ok,
+            scale =
+            pcall(function()
+
+                return instance:GetScale()
+            end)
+
+        if ok == true
+        and tonumber(scale) then
+
+            return tonumber(scale)
+        end
+    end
+
+    return nil
+end
+
+function GAG2PetVariantResolveSize(instance, rawValue, record, petName)
+
+    local internalSize,
+        displaySize =
+        GAG2PetVariantNormalizeSize(
+            rawValue
+        )
+
+    if displaySize ~= "Normal" then
+
+        return internalSize,
+            displaySize
+    end
+
+    local visual =
+        GAG2PetVariantFindWildPetVisual(
+            instance,
+            record,
+            petName
+        )
+
+    local scale =
+        GAG2PetVariantGetModelScale(
+            visual
+        )
+
+    if scale == nil then
+
+        scale =
+            GAG2PetVariantGetModelScale(
+                instance
+            )
+    end
+
+    if tonumber(scale) then
+
+        return GAG2PetVariantNormalizeSize(
+            scale
+        )
+    end
+
+    return "None",
+        "Normal"
+end
+
+function GAG2PetVariantResolveType(instance, rawValue, petName, record)
+
+    local internalType,
+        displayType =
+        GAG2PetVariantNormalizeType(
+            rawValue,
+            petName
+        )
+
+    if displayType ~= "Normal" then
+
+        return internalType,
+            displayType
+    end
+
+    local visual =
+        GAG2PetVariantFindWildPetVisual(
+            instance,
+            record,
+            petName
+        )
+
+    local visualType =
+        GAG2PetVariantReadAnyAttribute(
+            visual,
+            {
+                "PetType",
+                "Type",
+                "Variant",
+                "PetVariant",
+                "Mutation",
+                "MutationType",
+                "WildPetType",
+            }
+        )
+
+    internalType,
+        displayType =
+        GAG2PetVariantNormalizeType(
+            visualType,
+            petName
+        )
+
+    if displayType ~= "Normal" then
+
+        return internalType,
+            displayType
+    end
+
+    return "None",
+        "Normal"
+end
+
+function GAG2SnipeBoughtWebhookCleanSize(value)
+
+    local _,
+        displaySize =
+        GAG2PetVariantNormalizeSize(
+            value
+        )
+
+    return displaySize
+end
+
+function GAG2SnipeBoughtWebhookCleanMutation(value)
+
+    local _,
+        displayType =
+        GAG2PetVariantNormalizeType(
+            value,
+            ""
+        )
+
+    return displayType
 end
 
 function GAG2SnipeBoughtWebhookReadRef(record)
@@ -8869,11 +9305,18 @@ function GAG2SnipeBoughtWebhookResolveRecord(record)
     end
 
     local rawSize =
-        record.Size
+        record.InternalSize
+        or record.internalSize
+        or record.RawSize
+        or record.rawSize
         or record.DisplaySize
+        or record.displaySize
         or record.SizeLabel
+        or record.sizeLabel
         or record.PetSize
-        or record.InternalSize
+        or record.petSize
+        or record.Size
+        or record.size
         or GAG2SnipeBoughtWebhookReadRefAttribute(
             ref,
             {
@@ -8882,23 +9325,41 @@ function GAG2SnipeBoughtWebhookResolveRecord(record)
                 "SizeClass",
                 "DisplaySize",
                 "WildPetSize",
+                "ScaleSize",
+                "VariantSize",
+                "SizeType",
                 "Scale",
                 "ModelScale",
                 "PetScale",
             }
         )
 
-    local size =
-        GAG2SnipeBoughtWebhookCleanSize(
-            rawSize
+    local internalSize,
+        size =
+        GAG2PetVariantResolveSize(
+            ref,
+            rawSize,
+            record,
+            petName
         )
 
     local rawMutation =
-        record.Mutation
+        record.InternalType
+        or record.internalType
+        or record.RawType
+        or record.rawType
         or record.DisplayType
-        or record.Type
-        or record.PetType
+        or record.displayType
         or record.TypeLabel
+        or record.typeLabel
+        or record.PetType
+        or record.petType
+        or record.Mutation
+        or record.mutation
+        or record.Type
+        or record.type
+        or record.Variant
+        or record.variant
         or GAG2SnipeBoughtWebhookReadRefAttribute(
             ref,
             {
@@ -8912,9 +9373,13 @@ function GAG2SnipeBoughtWebhookResolveRecord(record)
             }
         )
 
-    local mutation =
-        GAG2SnipeBoughtWebhookCleanMutation(
-            rawMutation
+    local internalMutation,
+        mutation =
+        GAG2PetVariantResolveType(
+            ref,
+            rawMutation,
+            petName,
+            record
         )
 
     local price =
@@ -8953,7 +9418,19 @@ function GAG2SnipeBoughtWebhookResolveRecord(record)
         Mutation =
             mutation,
 
+        InternalType =
+            internalMutation,
+
+        DisplayType =
+            mutation,
+
         Size =
+            size,
+
+        InternalSize =
+            internalSize,
+
+        DisplaySize =
             size,
 
         Price =
@@ -13278,107 +13755,62 @@ end
 
 function GAG2WildPetNetworkNormalizePetSize(value)
 
-    local text =
-        CleanText(value)
-
-    local lower =
-        text:lower()
-
-    if lower == "big" then
-
-        return "Big",
-            "Big"
-    end
-
-    if lower == "huge"
-    or lower == "mega" then
-
-        return "Huge",
-            "Mega"
-    end
-
-    local number =
-        tonumber(value)
-
-    if number then
-
-        if number >= 3.25 then
-
-            return "Huge",
-                "Mega"
-        end
-
-        if number >= 1.5 then
-
-            return "Big",
-                "Big"
-        end
-    end
-
-    return "None",
-        "Normal"
+    return GAG2PetVariantNormalizeSize(
+        value
+    )
 end
 
 function GAG2WildPetNetworkResolvePetSize(instance, rawValue)
 
-    local internalSize, displaySize =
-        GAG2WildPetNetworkNormalizePetSize(
-            rawValue
-        )
-
-    if displaySize ~= "Normal" then
-
-        return internalSize,
-            displaySize
-    end
-
-    local scale =
-        GAG2WildPetNetworkGetModelScale(
-            instance
-        )
-
-    if scale then
-
-        if scale >= 3.25 then
-
-            return "Huge",
-                "Mega"
-        end
-
-        if scale >= 1.5 then
-
-            return "Big",
-                "Big"
-        end
-    end
-
-    return "None",
-        "Normal"
+    return GAG2PetVariantResolveSize(
+        instance,
+        rawValue,
+        nil,
+        nil
+    )
 end
 
-function GAG2WildPetNetworkResolvePetType(petName, rawValue)
+function GAG2WildPetNetworkResolvePetType(instanceOrPetName, petNameOrRawValue, maybeRawValue)
 
-    local text =
-        CleanText(rawValue)
+    local instance =
+        nil
 
-    local lower =
-        text:lower()
+    local petName =
+        ""
 
-    local nameLower =
-        CleanText(petName):lower()
+    local rawValue =
+        nil
 
-    if lower == "rainbow"
-    or lower == "rainbow pet"
-    or lower == "pet rainbow"
-    or lower:find("rainbow", 1, true)
-    or nameLower:find("rainbow", 1, true) then
+    if typeof(instanceOrPetName) == "Instance" then
 
-        return "Rainbow",
-            "Rainbow"
+        instance =
+            instanceOrPetName
+
+        petName =
+            CleanText(
+                petNameOrRawValue
+            )
+
+        rawValue =
+            maybeRawValue
+
+    else
+
+        petName =
+            CleanText(
+                instanceOrPetName
+            )
+
+        rawValue =
+            petNameOrRawValue
     end
 
-    return "None",
-        "Normal"
+    return GAG2PetVariantResolveType(
+        instance,
+        rawValue,
+        petName,
+        nil
+    )
 end
 
 function GAG2WildPetNetworkGetRowSizeText(rowData)
@@ -13388,24 +13820,25 @@ function GAG2WildPetNetworkGetRowSizeText(rowData)
     end
 
     local candidates = {
-        rowData.displaySize,
-        rowData.DisplaySize,
-        rowData.sizeLabel,
-        rowData.SizeLabel,
-        rowData.size,
-        rowData.Size,
-        rowData.petSize,
-        rowData.PetSize,
         rowData.internalSize,
         rowData.InternalSize,
         rowData.rawSize,
         rowData.RawSize,
+        rowData.displaySize,
+        rowData.DisplaySize,
+        rowData.sizeLabel,
+        rowData.SizeLabel,
+        rowData.petSize,
+        rowData.PetSize,
+        rowData.size,
+        rowData.Size,
     }
 
     for _, value in ipairs(candidates) do
 
-        local _, displaySize =
-            GAG2WildPetNetworkNormalizePetSize(
+        local _,
+            displaySize =
+            GAG2PetVariantNormalizeSize(
                 value
             )
 
@@ -13424,38 +13857,41 @@ function GAG2WildPetNetworkGetRowTypeText(rowData)
     end
 
     local candidates = {
+        rowData.internalType,
+        rowData.InternalType,
+        rowData.rawType,
+        rowData.RawType,
         rowData.displayType,
         rowData.DisplayType,
         rowData.typeLabel,
         rowData.TypeLabel,
+        rowData.petType,
+        rowData.PetType,
         rowData.mutation,
         rowData.Mutation,
         rowData.mutationFilter,
         rowData.MutationFilter,
-        rowData.petType,
-        rowData.PetType,
-        rowData.internalType,
-        rowData.InternalType,
         rowData.variant,
         rowData.Variant,
-        rowData.rawType,
-        rowData.RawType,
+        rowData.type,
+        rowData.Type,
     }
 
     for _, value in ipairs(candidates) do
 
-        local text =
-            CleanText(value)
+        local _,
+            displayType =
+            GAG2PetVariantNormalizeType(
+                value,
+                rowData.petName
+                or rowData.PetName
+                or rowData.name
+                or rowData.Name
+                or ""
+            )
 
-        local lower =
-            text:lower()
-
-        if lower == "rainbow"
-        or lower == "rainbow pet"
-        or lower == "pet rainbow"
-        or lower:find("rainbow", 1, true) then
-
-            return "Rainbow"
+        if displayType ~= "Normal" then
+            return displayType
         end
     end
 
@@ -17842,6 +18278,7 @@ function GAG2WildPetNetworkReadRefPet(ref)
 
     local internalType, displayType =
         GAG2WildPetNetworkResolvePetType(
+            ref,
             petName,
             rawType
         )
