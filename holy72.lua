@@ -18144,6 +18144,927 @@ GAG2_WILD_PET_NETWORK_STATE.Destroy =
     end
 
 --==================================================
+-- [4.125.Z] LIVE WILD PET NETWORK FAST LOAD PATCH
+-- Instant cache/local render + background network refresh.
+--==================================================
+
+GAG2_WILD_PET_NETWORK_FAST_LOAD_VERSION =
+    "20260624-fast-network-cache-v1"
+
+GAG2_WILD_PET_NETWORK_CACHE_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/WildPetNetworkCache.json"
+
+GAG2_WILD_PET_NETWORK_CACHE_MAX_AGE =
+    75
+
+do
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    if type(state) == "table" then
+
+        state.RefreshSeconds =
+            4
+
+        state.MaxRenderedRows =
+            50
+
+        state.FastLoadEnabled =
+            true
+
+        state.CacheMaxAge =
+            GAG2_WILD_PET_NETWORK_CACHE_MAX_AGE
+    end
+end
+
+function GAG2WildPetNetworkFastCanCache()
+
+    return CanUseUISettingsFile() == true
+end
+
+function GAG2WildPetNetworkFastDecodeBody(body, label)
+
+    body =
+        tostring(body or "")
+
+    if body:sub(1, 3) == "\239\187\191" then
+
+        body =
+            body:sub(4)
+    end
+
+    local decodeOk,
+        decoded =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                body
+            )
+        end)
+
+    if decodeOk == true
+    and type(decoded) == "table" then
+
+        if decoded.ok ~= true then
+
+            return nil,
+                tostring(
+                    decoded.message
+                    or decoded.error
+                    or "endpoint rejected request"
+                )
+        end
+
+        return decoded,
+            nil
+    end
+
+    local firstBrace =
+        body:find(
+            "{",
+            1,
+            true
+        )
+
+    local lastBrace =
+        body:match("^.*()}")
+
+    if firstBrace
+    and lastBrace
+    and lastBrace >= firstBrace then
+
+        local sliced =
+            body:sub(
+                firstBrace,
+                lastBrace
+            )
+
+        local slicedOk,
+            slicedDecoded =
+            pcall(function()
+
+                return HttpService:JSONDecode(
+                    sliced
+                )
+            end)
+
+        if slicedOk == true
+        and type(slicedDecoded) == "table" then
+
+            if slicedDecoded.ok ~= true then
+
+                return nil,
+                    tostring(
+                        slicedDecoded.message
+                        or slicedDecoded.error
+                        or "endpoint rejected request"
+                    )
+            end
+
+            return slicedDecoded,
+                nil
+        end
+    end
+
+    local preview =
+        body:gsub("\r", " ")
+            :gsub("\n", " ")
+            :gsub("%s+", " ")
+
+    if #preview > 180 then
+
+        preview =
+            preview:sub(1, 180)
+            .. "..."
+    end
+
+    return nil,
+        tostring(label or "request")
+        .. " invalid JSON: "
+        .. tostring(preview ~= "" and preview or "empty")
+end
+
+function GAG2WildPetNetworkFastEncodeQueryValue(value)
+
+    local text =
+        tostring(value or "")
+
+    local ok,
+        encoded =
+        pcall(function()
+
+            return HttpService:UrlEncode(
+                text
+            )
+        end)
+
+    if ok == true
+    and type(encoded) == "string" then
+
+        return encoded
+    end
+
+    return text
+        :gsub("%%", "%%25")
+        :gsub(" ", "%%20")
+        :gsub("\n", "%%0A")
+        :gsub("\r", "%%0D")
+        :gsub("&", "%%26")
+        :gsub("=", "%%3D")
+        :gsub("?", "%%3F")
+end
+
+function GAG2WildPetNetworkFastBuildGetUrl(payload)
+
+    payload =
+        type(payload) == "table"
+        and payload
+        or {}
+
+    local endpoint =
+        CleanText(
+            GAG2_WILD_PET_NETWORK_ENDPOINT
+        )
+
+    local parts =
+        {}
+
+    for key, value in pairs(payload) do
+
+        if type(value) ~= "table"
+        and type(value) ~= "function"
+        and type(value) ~= "thread"
+        and type(value) ~= "userdata" then
+
+            parts[#parts + 1] =
+                GAG2WildPetNetworkFastEncodeQueryValue(
+                    key
+                )
+                .. "="
+                .. GAG2WildPetNetworkFastEncodeQueryValue(
+                    value
+                )
+        end
+    end
+
+    parts[#parts + 1] =
+        "apiKey="
+        .. GAG2WildPetNetworkFastEncodeQueryValue(
+            GAG2_WILD_PET_NETWORK_API_KEY
+        )
+
+    table.sort(
+        parts
+    )
+
+    local separator =
+        endpoint:find(
+            "?",
+            1,
+            true
+        )
+        and "&"
+        or "?"
+
+    return endpoint
+        .. separator
+        .. table.concat(
+            parts,
+            "&"
+        )
+end
+
+GAG2_WILD_PET_NETWORK_REQUEST_BEFORE_FAST_LOAD =
+    GAG2_WILD_PET_NETWORK_REQUEST_BEFORE_FAST_LOAD
+    or GAG2WildPetNetworkRequest
+
+function GAG2WildPetNetworkRequest(payload)
+
+    payload =
+        type(payload) == "table"
+        and payload
+        or {}
+
+    local action =
+        tostring(
+            payload.action
+            or payload.Action
+            or ""
+        )
+
+    if action == "GetLiveWildPets"
+    or action == "ping" then
+
+        local getUrl =
+            GAG2WildPetNetworkFastBuildGetUrl(
+                payload
+            )
+
+        if type(GAG2ExecutorHttpGet) == "function" then
+
+            local body,
+                getError =
+                GAG2ExecutorHttpGet(
+                    getUrl
+                )
+
+            if type(body) == "string"
+            and body ~= "" then
+
+                local decoded,
+                    decodeError =
+                    GAG2WildPetNetworkFastDecodeBody(
+                        body,
+                        "fast GET"
+                    )
+
+                if decoded then
+
+                    return decoded,
+                        nil
+                end
+            end
+        end
+    end
+
+    return GAG2_WILD_PET_NETWORK_REQUEST_BEFORE_FAST_LOAD(
+        payload
+    )
+end
+
+function GAG2WildPetNetworkSaveCache(data)
+
+    if GAG2WildPetNetworkFastCanCache() ~= true then
+        return false
+    end
+
+    if type(data) ~= "table" then
+        return false
+    end
+
+    EnsureUISettingsFolder()
+
+    local payload = {
+        SavedAt =
+            os.time(),
+
+        Data =
+            data,
+    }
+
+    local encodeOk,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                GAG2_WILD_PET_NETWORK_CACHE_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function GAG2WildPetNetworkLoadCache()
+
+    if GAG2WildPetNetworkFastCanCache() ~= true then
+        return nil,
+            "cache unavailable"
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                GAG2_WILD_PET_NETWORK_CACHE_FILE
+            )
+    end)
+
+    if exists ~= true then
+
+        return nil,
+            "no cache"
+    end
+
+    local readOk,
+        raw =
+        pcall(function()
+
+            return readfile(
+                GAG2_WILD_PET_NETWORK_CACHE_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        return nil,
+            "cache read failed"
+    end
+
+    local decodeOk,
+        payload =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(payload) ~= "table"
+    or type(payload.Data) ~= "table" then
+
+        return nil,
+            "bad cache"
+    end
+
+    local age =
+        os.time()
+        - (
+            tonumber(payload.SavedAt)
+            or 0
+        )
+
+    local maxAge =
+        math.max(
+            15,
+            tonumber(
+                GAG2_WILD_PET_NETWORK_CACHE_MAX_AGE
+            )
+            or 75
+        )
+
+    if age > maxAge then
+
+        return nil,
+            "cache stale "
+            .. tostring(age)
+            .. "s"
+    end
+
+    payload.Data.CacheAge =
+        age
+
+    payload.Data.CacheSavedAt =
+        tonumber(payload.SavedAt)
+        or os.time()
+
+    return payload.Data,
+        "cache "
+        .. tostring(age)
+        .. "s old"
+end
+
+function GAG2WildPetNetworkBuildLocalInstantData()
+
+    if type(GAG2WildPetNetworkBuildPetSnapshot) ~= "function" then
+        return nil,
+            "snapshot function not ready"
+    end
+
+    local pets =
+        GAG2WildPetNetworkBuildPetSnapshot()
+
+    if type(pets) ~= "table"
+    or #pets <= 0 then
+
+        return nil,
+            "no current-server pets"
+    end
+
+    local grouped =
+        {}
+
+    for _, pet in ipairs(pets) do
+
+        if type(pet) == "table" then
+
+            local petName =
+                CleanText(
+                    pet.petName
+                    or pet.PetName
+                    or pet.name
+                    or pet.Name
+                )
+
+            if petName ~= "" then
+
+                local row =
+                    {}
+
+                for key, value in pairs(pet) do
+
+                    row[key] =
+                        value
+                end
+
+                row.placeId =
+                    tonumber(game.PlaceId)
+                    or GROW_A_GARDEN_2_PLACE_ID
+
+                row.PlaceId =
+                    row.placeId
+
+                row.jobId =
+                    tostring(game.JobId)
+
+                row.JobId =
+                    row.jobId
+
+                row.players =
+                    #Players:GetPlayers()
+
+                row.Players =
+                    row.players
+
+                row.maxPlayers =
+                    Players.MaxPlayers
+
+                row.MaxPlayers =
+                    row.maxPlayers
+
+                row.scoutUserId =
+                    LOCAL_PLAYER
+                    and LOCAL_PLAYER.UserId
+                    or 0
+
+                row.ScoutUserId =
+                    row.scoutUserId
+
+                row.scoutName =
+                    LOCAL_PLAYER
+                    and LOCAL_PLAYER.Name
+                    or "You"
+
+                row.ScoutName =
+                    row.scoutName
+
+                row.localInstant =
+                    true
+
+                grouped[petName] =
+                    grouped[petName]
+                    or {}
+
+                table.insert(
+                    grouped[petName],
+                    row
+                )
+            end
+        end
+    end
+
+    local petCount =
+        0
+
+    for _, rows in pairs(grouped) do
+
+        petCount =
+            petCount
+            + #rows
+    end
+
+    if petCount <= 0 then
+        return nil,
+            "no grouped local pets"
+    end
+
+    return {
+        ok =
+            true,
+
+        localInstant =
+            true,
+
+        grouped =
+            grouped,
+
+        serverCount =
+            1,
+
+        petCount =
+            petCount,
+    },
+    "current server"
+end
+
+function GAG2WildPetNetworkApplyData(data, reason, shouldSave)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    if type(data) ~= "table" then
+        return false
+    end
+
+    state.LastData =
+        data
+
+    state.LastRefreshAt =
+        tonumber(data.CacheSavedAt)
+        or os.time()
+
+    state.LastServerCount =
+        math.max(
+            0,
+            math.floor(
+                tonumber(data.serverCount)
+                or tonumber(data.ServerCount)
+                or 0
+            )
+        )
+
+    state.LastPetCount =
+        math.max(
+            0,
+            math.floor(
+                tonumber(data.petCount)
+                or tonumber(data.PetCount)
+                or 0
+            )
+        )
+
+    if state.SummaryLabel then
+
+        pcall(function()
+
+            state.SummaryLabel.Text =
+                tostring(state.LastServerCount)
+                .. " live server(s)  •  "
+                .. tostring(state.LastPetCount)
+                .. " pet(s)"
+        end)
+    end
+
+    local renderOk,
+        renderError =
+        pcall(function()
+
+            GAG2WildPetNetworkRender(
+                data
+            )
+        end)
+
+    if renderOk ~= true then
+
+        GAG2WildPetNetworkSetStatus(
+            "Render failed: "
+            .. tostring(renderError)
+        )
+
+        return false
+    end
+
+    if shouldSave == true then
+
+        GAG2WildPetNetworkSaveCache(
+            data
+        )
+    end
+
+    GAG2WildPetNetworkSetStatus(
+        tostring(reason or "Updated")
+    )
+
+    return true
+end
+
+function GAG2WildPetNetworkShowInstantData(reason)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    if type(state.LastData) == "table" then
+
+        return GAG2WildPetNetworkApplyData(
+            state.LastData,
+            "Showing previous data while refreshing...",
+            false
+        )
+    end
+
+    local cachedData,
+        cacheReason =
+        GAG2WildPetNetworkLoadCache()
+
+    if type(cachedData) == "table" then
+
+        return GAG2WildPetNetworkApplyData(
+            cachedData,
+            "Showing cached network data | "
+            .. tostring(cacheReason),
+            false
+        )
+    end
+
+    local localData,
+        localReason =
+        GAG2WildPetNetworkBuildLocalInstantData()
+
+    if type(localData) == "table" then
+
+        return GAG2WildPetNetworkApplyData(
+            localData,
+            "Showing current server while network loads...",
+            false
+        )
+    end
+
+    if state.Scroll then
+
+        GAG2WildPetNetworkClearRows()
+
+        GAG2WildPetNetworkCreateLabel(
+            state.Scroll,
+            "FastLoading",
+            "Loading network reports...",
+            34,
+            13,
+            false
+        )
+
+        GAG2WildPetNetworkCreateLabel(
+            state.Scroll,
+            "FastLoadingHint",
+            "Cache/local data not ready yet. Network refresh is running in background.",
+            24,
+            11,
+            false
+        )
+    end
+
+    GAG2WildPetNetworkSetStatus(
+        "Loading network reports..."
+    )
+
+    return false
+end
+
+function GAG2WildPetNetworkRefresh(reason)
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    if state.Enabled ~= true then
+        return false
+    end
+
+    if state.Refreshing == true then
+        return false
+    end
+
+    state.Refreshing =
+        true
+
+    if tostring(reason or "") ~= "automatic" then
+
+        GAG2WildPetNetworkSetStatus(
+            "Refreshing in background..."
+        )
+    end
+
+    task.spawn(function()
+
+        local started =
+            os.clock()
+
+        local data,
+            errorText =
+            GAG2WildPetNetworkRequest({
+                action =
+                    "GetLiveWildPets",
+
+                placeId =
+                    tostring(
+                        GROW_A_GARDEN_2_PLACE_ID
+                    ),
+
+                minimumRemaining =
+                    1,
+            })
+
+        state.Refreshing =
+            false
+
+        if state.Enabled ~= true then
+            return
+        end
+
+        if not data then
+
+            if type(state.LastData) == "table" then
+
+                GAG2WildPetNetworkSetStatus(
+                    "Refresh failed, keeping old data: "
+                    .. tostring(errorText)
+                )
+
+            else
+
+                GAG2WildPetNetworkSetStatus(
+                    "Refresh failed: "
+                    .. tostring(errorText)
+                )
+            end
+
+            return
+        end
+
+        GAG2WildPetNetworkApplyData(
+            data,
+            "Updated"
+            .. (
+                reason
+                and " | " .. tostring(reason)
+                or ""
+            )
+            .. " | "
+            .. string.format(
+                "%.2fs",
+                os.clock() - started
+            ),
+            true
+        )
+    end)
+
+    return true
+end
+
+function GAG2WildPetNetworkStart()
+
+    local state =
+        GAG2_WILD_PET_NETWORK_STATE
+
+    if CleanText(GAG2_WILD_PET_NETWORK_API_KEY) == ""
+    or CleanText(GAG2_WILD_PET_NETWORK_API_KEY) == "PASTE_CONFIG_B2_KEY_HERE" then
+
+        state.Enabled =
+            false
+
+        state.Running =
+            false
+
+        GAG2WildPetNetworkSetStatus(
+            "Hard-coded API key is missing."
+        )
+
+        Notify(
+            "Live Wild Pets",
+            "Paste Config B2 into GAG2_WILD_PET_NETWORK_API_KEY.",
+            6
+        )
+
+        return false
+    end
+
+    state.Enabled =
+        true
+
+    GAG2WildPetNetworkCreateHud()
+
+    state.RefreshSeconds =
+        math.clamp(
+            tonumber(state.RefreshSeconds)
+            or 4,
+            3,
+            15
+        )
+
+    state.MaxRenderedRows =
+        math.clamp(
+            math.floor(
+                tonumber(state.MaxRenderedRows)
+                or 50
+            ),
+            25,
+            80
+        )
+
+    GAG2WildPetNetworkShowInstantData(
+        "start"
+    )
+
+    if state.Running == true then
+
+        GAG2WildPetNetworkRefresh(
+            "reopened"
+        )
+
+        return true
+    end
+
+    state.Running =
+        true
+
+    state.LoopToken =
+        tonumber(state.LoopToken)
+        or 0
+
+    state.LoopToken =
+        state.LoopToken + 1
+
+    local token =
+        state.LoopToken
+
+    GAG2WildPetNetworkRefresh(
+        "startup"
+    )
+
+    GAG2WildPetNetworkStartCountdownLoop(
+        token
+    )
+
+    task.spawn(function()
+
+        while state.Enabled == true
+        and state.Running == true
+        and state.LoopToken == token do
+
+            task.wait(
+                math.clamp(
+                    tonumber(state.RefreshSeconds)
+                    or 4,
+                    3,
+                    15
+                )
+            )
+
+            if state.Enabled == true
+            and state.Running == true
+            and state.LoopToken == token then
+
+                GAG2WildPetNetworkRefresh(
+                    "automatic"
+                )
+            end
+        end
+    end)
+
+    return true
+end
+
+--==================================================
 -- [4.126] LIVE WILD PET NETWORK CONTRIBUTOR
 --
 -- Reports the current server's WildPetRef data.
