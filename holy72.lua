@@ -500,7 +500,7 @@ function GAG2LoadRemoteModule(url, moduleName)
         )
     end
 
-    if moduleName == "librarygag2.lua" then
+    if moduleName == "libraryholy2.lua" then
 
         local hasLibraryStart =
             source:find(
