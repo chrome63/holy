@@ -673,7 +673,7 @@ local REMOTE_SOURCE_VERSION =
 
 local LIBRARY_URL =
     REPO_URL
-    .. "librarygag2.lua?v="
+    .. "libraryholy2.lua?v="
     .. REMOTE_SOURCE_VERSION
 
 local THEME_MANAGER_URL =
