@@ -37437,6 +37437,5353 @@ function GAG2RestoreAutoCollectFruitState()
 end
 
 --==================================================
+-- [4.56.X] ACF PACKET CACHE OVERRIDE
+-- Collects fruits by PlantId/FruitId, survives local hard-delete.
+--==================================================
+
+function GAG2ACFEnsurePacketCacheState()
+
+    GAG2_AUTO_COLLECT_FRUIT_STATE =
+        type(GAG2_AUTO_COLLECT_FRUIT_STATE) == "table"
+        and GAG2_AUTO_COLLECT_FRUIT_STATE
+        or {}
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    state.CachedFruitEntries =
+        type(state.CachedFruitEntries) == "table"
+        and state.CachedFruitEntries
+        or {}
+
+    state.CachedFruitOrder =
+        type(state.CachedFruitOrder) == "table"
+        and state.CachedFruitOrder
+        or {}
+
+    state.Recent =
+        type(state.Recent) == "table"
+        and state.Recent
+        or {}
+
+    state.MaxCachedFruitEntries =
+        math.clamp(
+            math.floor(
+                tonumber(state.MaxCachedFruitEntries)
+                or 2500
+            ),
+            250,
+            8000
+        )
+
+    state.CachedFruitTTL =
+        math.clamp(
+            tonumber(state.CachedFruitTTL)
+            or 1800,
+            120,
+            7200
+        )
+
+    return state
+end
+
+function GAG2ACFReadIdFromName(name)
+
+    name =
+        GAG2ACFClean(
+            name
+        )
+
+    if name == "" then
+        return ""
+    end
+
+    return GAG2ACFClean(
+        name:match("^%d+_(.+)$")
+        or name:match("([%w]+%-%w+%-%w+%-%w+%-%w+)$")
+        or ""
+    )
+end
+
+function GAG2ACFReadPlantId(plant)
+
+    if typeof(plant) ~= "Instance" then
+        return ""
+    end
+
+    local value =
+        ""
+
+    pcall(function()
+
+        value =
+            GAG2ACFClean(
+                plant:GetAttribute("PlantId")
+                or plant:GetAttribute("PlantID")
+                or plant:GetAttribute("plantId")
+                or plant:GetAttribute("plantID")
+            )
+    end)
+
+    if value ~= "" then
+        return value
+    end
+
+    return GAG2ACFReadIdFromName(
+        plant.Name
+    )
+end
+
+function GAG2ACFReadFruitId(plant, fruit)
+
+    if typeof(fruit) ~= "Instance" then
+        return ""
+    end
+
+    local value =
+        ""
+
+    pcall(function()
+
+        value =
+            GAG2ACFClean(
+                fruit:GetAttribute("FruitId")
+                or fruit:GetAttribute("FruitID")
+                or fruit:GetAttribute("fruitId")
+                or fruit:GetAttribute("fruitID")
+            )
+    end)
+
+    if value ~= "" then
+        return value
+    end
+
+    if typeof(plant) == "Instance" then
+
+        local plantName =
+            tostring(plant.Name or "")
+
+        local fruitName =
+            tostring(fruit.Name or "")
+
+        local prefix =
+            plantName
+            .. "_"
+
+        if fruitName:sub(1, #prefix) == prefix then
+
+            value =
+                GAG2ACFClean(
+                    fruitName:sub(
+                        #prefix + 1
+                    )
+                )
+
+            if value ~= "" then
+                return value
+            end
+        end
+    end
+
+    return GAG2ACFReadIdFromName(
+        fruit.Name
+    )
+end
+
+function GAG2ACFReadFruitNameSafe(fruit, plant)
+
+    local name =
+        ""
+
+    if type(GAG2ACFReadFruitName) == "function" then
+
+        pcall(function()
+
+            name =
+                GAG2ACFClean(
+                    GAG2ACFReadFruitName(
+                        fruit,
+                        plant
+                    )
+                )
+        end)
+    end
+
+    local lowerName =
+        name:lower()
+
+    if name == ""
+    or lowerName == "?"
+    or lowerName == "nil"
+    or name:match("^%d+_") then
+
+        if typeof(fruit) == "Instance" then
+
+            pcall(function()
+
+                name =
+                    GAG2ACFClean(
+                        fruit:GetAttribute("CorePartName")
+                        or fruit:GetAttribute("FruitName")
+                        or fruit:GetAttribute("SeedName")
+                    )
+            end)
+        end
+    end
+
+    if name == ""
+    and typeof(plant) == "Instance" then
+
+        pcall(function()
+
+            name =
+                GAG2ACFClean(
+                    plant:GetAttribute("SeedName")
+                    or plant:GetAttribute("CorePartName")
+                    or plant:GetAttribute("FruitName")
+                )
+        end)
+    end
+
+    if name == ""
+    and typeof(fruit) == "Instance" then
+
+        name =
+            GAG2ACFClean(
+                fruit.Name
+            )
+    end
+
+    return name
+end
+
+function GAG2ACFBuildPacketKey(plantId, fruitId)
+
+    plantId =
+        GAG2ACFClean(
+            plantId
+        )
+
+    fruitId =
+        GAG2ACFClean(
+            fruitId
+        )
+
+    if plantId == ""
+    or fruitId == "" then
+        return ""
+    end
+
+    return plantId
+        .. ":"
+        .. fruitId
+end
+
+function GAG2ACFResolveCollectFruitPacket()
+
+    local state =
+        GAG2ACFEnsurePacketCacheState()
+
+    if type(state.CollectFruitPacket) == "table"
+    and type(state.CollectFruitPacket.Fire) == "function" then
+
+        return state.CollectFruitPacket,
+            "cached"
+    end
+
+    local module =
+        ReplicatedStorage:FindFirstChild("SharedModules")
+        and ReplicatedStorage.SharedModules:FindFirstChild("Networking")
+
+    if not module
+    or module:IsA("ModuleScript") ~= true then
+
+        return nil,
+            "Networking module missing"
+    end
+
+    local ok,
+        networking =
+        pcall(function()
+
+            return require(
+                module
+            )
+        end)
+
+    if ok ~= true
+    or type(networking) ~= "table" then
+
+        return nil,
+            "Networking require failed: "
+            .. tostring(networking)
+    end
+
+    local packet =
+        networking.Garden
+        and networking.Garden.CollectFruit
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return nil,
+            "Garden.CollectFruit missing"
+    end
+
+    state.CollectFruitPacket =
+        packet
+
+    return packet,
+        "ok"
+end
+
+function GAG2ACFCollectFruitByIds(plantId, fruitId)
+
+    plantId =
+        GAG2ACFClean(
+            plantId
+        )
+
+    fruitId =
+        GAG2ACFClean(
+            fruitId
+        )
+
+    if plantId == ""
+    or fruitId == "" then
+
+        return false,
+            "missing PlantId/FruitId"
+    end
+
+    local packet,
+        reason =
+        GAG2ACFResolveCollectFruitPacket()
+
+    if type(packet) ~= "table" then
+        return false, reason
+    end
+
+    local ok,
+        result =
+        pcall(function()
+
+            return packet:Fire(
+                plantId,
+                fruitId
+            )
+        end)
+
+    if ok ~= true then
+
+        ok,
+            result =
+            pcall(function()
+
+                return packet.Fire(
+                    packet,
+                    plantId,
+                    fruitId
+                )
+            end)
+    end
+
+    if ok ~= true then
+
+        return false,
+            tostring(result)
+    end
+
+    return true,
+        "CollectFruit packet fired"
+end
+
+function GAG2ACFBuildEntry(plant, fruit, promptOverride)
+
+    if typeof(plant) ~= "Instance"
+    or typeof(fruit) ~= "Instance" then
+
+        return nil
+    end
+
+    local prompt =
+        nil
+
+    if typeof(promptOverride) == "Instance"
+    and promptOverride:IsA("ProximityPrompt")
+    and promptOverride.Enabled == true then
+
+        prompt =
+            promptOverride
+
+    else
+
+        prompt =
+            GAG2ACFGetHarvestPrompt(
+                fruit
+            )
+    end
+
+    local plantId =
+        GAG2ACFReadPlantId(
+            plant
+        )
+
+    local fruitId =
+        GAG2ACFReadFruitId(
+            plant,
+            fruit
+        )
+
+    local packetKey =
+        GAG2ACFBuildPacketKey(
+            plantId,
+            fruitId
+        )
+
+    if not prompt
+    and packetKey == "" then
+        return nil
+    end
+
+    local isPlantHarvest =
+        plant == fruit
+
+    local name =
+        GAG2ACFReadFruitNameSafe(
+            fruit,
+            plant
+        )
+
+    if name == "" then
+        return nil
+    end
+
+    local mutation =
+        GAG2ACFReadMutation(
+            fruit,
+            plant
+        )
+
+    local weightKg,
+        weightSource =
+        GAG2ACFCalculateFruitWeightKg(
+            fruit,
+            name
+        )
+
+    local rawSizeMulti =
+        nil
+
+    pcall(function()
+
+        rawSizeMulti =
+            tonumber(
+                fruit:GetAttribute("SizeMulti")
+                or fruit:GetAttribute("SizeMultiplier")
+                or fruit:GetAttribute("Size")
+            )
+    end)
+
+    if not weightKg then
+
+        if rawSizeMulti then
+
+            weightKg =
+                rawSizeMulti
+
+            weightSource =
+                "SizeMulti fallback"
+
+        elseif isPlantHarvest == true then
+
+            weightKg =
+                1
+
+            weightSource =
+                "PlantHarvest fallback"
+        end
+    end
+
+    if not weightKg then
+        weightKg =
+            1
+
+        weightSource =
+            "packet fallback"
+    end
+
+    local state =
+        GAG2ACFEnsurePacketCacheState()
+
+    local seedRow =
+        state.SeedMap
+        and state.SeedMap[name]
+
+    local rarity =
+        seedRow
+        and GAG2ACFClean(seedRow.Rarity)
+        or "?"
+
+    local rarityScore =
+        GAG2_ACF_RARITY_SCORE[rarity]
+        or 0
+
+    local mutationScore =
+        GAG2ACFGetMutationScore(
+            mutation
+        )
+
+    local sellWorth =
+        GAG2ACFGetSellWorth(
+            name,
+            weightKg,
+            mutation,
+            fruit
+        )
+
+    local key =
+        packetKey ~= ""
+        and packetKey
+        or (
+            fruitId ~= ""
+            and fruitId
+            or (
+                prompt
+                and PathOf(prompt)
+                or PathOf(fruit)
+            )
+        )
+
+    GAG2ACFRememberChoice(
+        "FruitNames",
+        name
+    )
+
+    if rarity ~= "?" then
+
+        GAG2ACFRememberChoice(
+            "RarityNames",
+            rarity
+        )
+    end
+
+    if mutation ~= "" then
+
+        GAG2ACFRememberChoice(
+            "MutationNames",
+            mutation
+        )
+    end
+
+    return {
+        Plant =
+            plant,
+
+        Fruit =
+            fruit,
+
+        Prompt =
+            prompt,
+
+        Key =
+            key,
+
+        PacketKey =
+            packetKey,
+
+        PlantId =
+            plantId,
+
+        FruitId =
+            fruitId,
+
+        PacketCollect =
+            packetKey ~= "",
+
+        Kind =
+            isPlantHarvest == true
+            and "PlantHarvest"
+            or "FruitHarvest",
+
+        IsPlantHarvest =
+            isPlantHarvest == true,
+
+        Name =
+            name,
+
+        Rarity =
+            rarity,
+
+        RarityScore =
+            rarityScore,
+
+        Mutation =
+            mutation,
+
+        MutationLabel =
+            mutation ~= ""
+            and mutation
+            or "None",
+
+        MutationScore =
+            mutationScore,
+
+        WeightKg =
+            weightKg,
+
+        WeightSource =
+            weightSource,
+
+        RawSizeMulti =
+            rawSizeMulti,
+
+        SizeMulti =
+            rawSizeMulti
+            or weightKg
+            or 1,
+
+        SellWorth =
+            sellWorth,
+
+        Cached =
+            false,
+
+        CachedAt =
+            os.clock(),
+
+        CollectMethod =
+            packetKey ~= ""
+            and "CollectFruitPacket"
+            or "Prompt",
+    }
+end
+
+function GAG2ACFCloneEntryForCache(entry)
+
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local packetKey =
+        GAG2ACFBuildPacketKey(
+            entry.PlantId,
+            entry.FruitId
+        )
+
+    if packetKey == "" then
+        return nil
+    end
+
+    return {
+        Plant =
+            nil,
+
+        Fruit =
+            nil,
+
+        Prompt =
+            nil,
+
+        Key =
+            packetKey,
+
+        PacketKey =
+            packetKey,
+
+        PlantId =
+            GAG2ACFClean(entry.PlantId),
+
+        FruitId =
+            GAG2ACFClean(entry.FruitId),
+
+        PacketCollect =
+            true,
+
+        Name =
+            entry.Name,
+
+        Rarity =
+            entry.Rarity,
+
+        RarityScore =
+            entry.RarityScore,
+
+        Mutation =
+            entry.Mutation,
+
+        MutationLabel =
+            entry.MutationLabel,
+
+        MutationScore =
+            entry.MutationScore,
+
+        WeightKg =
+            entry.WeightKg,
+
+        WeightSource =
+            entry.WeightSource,
+
+        RawSizeMulti =
+            entry.RawSizeMulti,
+
+        SizeMulti =
+            entry.SizeMulti,
+
+        SellWorth =
+            entry.SellWorth,
+
+        Kind =
+            "FruitHarvest",
+
+        IsPlantHarvest =
+            false,
+
+        Cached =
+            true,
+
+        CachedAt =
+            os.clock(),
+
+        CollectMethod =
+            "CollectFruitPacketCached",
+    }
+end
+
+function GAG2ACFCacheEntry(entry)
+
+    local state =
+        GAG2ACFEnsurePacketCacheState()
+
+    local cached =
+        GAG2ACFCloneEntryForCache(
+            entry
+        )
+
+    if not cached then
+        return false
+    end
+
+    if state.CachedFruitEntries[cached.PacketKey] == nil then
+
+        table.insert(
+            state.CachedFruitOrder,
+            cached.PacketKey
+        )
+    end
+
+    state.CachedFruitEntries[cached.PacketKey] =
+        cached
+
+    state.LastFruitCacheAt =
+        os.clock()
+
+    while #state.CachedFruitOrder > state.MaxCachedFruitEntries do
+
+        local oldKey =
+            table.remove(
+                state.CachedFruitOrder,
+                1
+            )
+
+        if oldKey then
+
+            state.CachedFruitEntries[oldKey] =
+                nil
+        end
+    end
+
+    return true
+end
+
+function GAG2ACFGetCachedFruitCount()
+
+    local state =
+        GAG2ACFEnsurePacketCacheState()
+
+    local count =
+        0
+
+    local now =
+        os.clock()
+
+    for _, key in ipairs(state.CachedFruitOrder) do
+
+        local entry =
+            state.CachedFruitEntries[key]
+
+        if type(entry) == "table"
+        and now - tonumber(entry.CachedAt or now) <= state.CachedFruitTTL then
+
+            count =
+                count + 1
+        end
+    end
+
+    return count
+end
+
+function GAG2ACFAppendCachedEntries(queue, seenKeys)
+
+    local state =
+        GAG2ACFEnsurePacketCacheState()
+
+    queue =
+        type(queue) == "table"
+        and queue
+        or {}
+
+    seenKeys =
+        type(seenKeys) == "table"
+        and seenKeys
+        or {}
+
+    local readyCount =
+        0
+
+    local excludedCount =
+        0
+
+    local now =
+        os.clock()
+
+    for _, key in ipairs(state.CachedFruitOrder) do
+
+        local cached =
+            state.CachedFruitEntries[key]
+
+        if type(cached) == "table"
+        and seenKeys[key] ~= true then
+
+            if now - tonumber(cached.CachedAt or now) > state.CachedFruitTTL then
+
+                state.CachedFruitEntries[key] =
+                    nil
+
+            else
+
+                seenKeys[key] =
+                    true
+
+                readyCount =
+                    readyCount + 1
+
+                if GAG2ACFEntryAllowed(cached) == true then
+
+                    table.insert(
+                        queue,
+                        cached
+                    )
+
+                else
+
+                    excludedCount =
+                        excludedCount + 1
+                end
+            end
+        end
+    end
+
+    return readyCount,
+        excludedCount
+end
+
+function GAG2ACFBuildCachedFallbackQueue(reason)
+
+    local queue =
+        {}
+
+    local seenKeys =
+        {}
+
+    local readyCount,
+        excludedCount =
+        GAG2ACFAppendCachedEntries(
+            queue,
+            seenKeys
+        )
+
+    GAG2ACFSortQueue(
+        queue
+    )
+
+    if #queue > 0 then
+
+        return queue,
+            readyCount,
+            excludedCount,
+            "ok"
+    end
+
+    return queue,
+        readyCount,
+        excludedCount,
+        tostring(reason or "plants missing")
+end
+
+function GAG2ACFResolveFruitFromPrompt(plant, prompt, plants, garden)
+
+    if typeof(plant) ~= "Instance"
+    or typeof(prompt) ~= "Instance" then
+
+        return nil
+    end
+
+    local current =
+        prompt.Parent
+
+    while typeof(current) == "Instance"
+    and current ~= plants
+    and current ~= garden
+    and current ~= game do
+
+        if (
+            current:IsA("Model")
+            or current:IsA("Folder")
+        )
+        and current.Parent
+        and tostring(current.Parent.Name) == "Fruits" then
+
+            return current
+        end
+
+        if current == plant then
+            break
+        end
+
+        current =
+            current.Parent
+    end
+
+    if plant:IsA("Model")
+    or plant:IsA("Folder") then
+
+        return plant
+    end
+
+    return nil
+end
+
+function GAG2ACFScanQueue()
+
+    GAG2ACFEnsureModules()
+
+    local garden =
+        GAG2ACFGetOwnGarden()
+
+    local queue =
+        {}
+
+    local readyCount =
+        0
+
+    local excludedCount =
+        0
+
+    if not garden then
+
+        return GAG2ACFBuildCachedFallbackQueue(
+            "own garden missing"
+        )
+    end
+
+    local plants =
+        garden:FindFirstChild("Plants")
+
+    if not plants then
+
+        return GAG2ACFBuildCachedFallbackQueue(
+            "plants folder missing"
+        )
+    end
+
+    local seenKeys =
+        {}
+
+    local function addEntry(entry)
+
+        if type(entry) ~= "table" then
+            return false
+        end
+
+        local key =
+            GAG2ACFClean(
+                entry.PacketKey
+                ~= ""
+                and entry.PacketKey
+                or entry.Key
+            )
+
+        if key == "" then
+            return false
+        end
+
+        if seenKeys[key] == true then
+            return false
+        end
+
+        seenKeys[key] =
+            true
+
+        readyCount =
+            readyCount + 1
+
+        GAG2ACFCacheEntry(
+            entry
+        )
+
+        if GAG2ACFEntryAllowed(entry) == true then
+
+            table.insert(
+                queue,
+                entry
+            )
+
+        else
+
+            excludedCount =
+                excludedCount + 1
+        end
+
+        return true
+    end
+
+    for _, plant in ipairs(plants:GetChildren()) do
+
+        if plant:IsA("Model")
+        or plant:IsA("Folder") then
+
+            local fruits =
+                plant:FindFirstChild("Fruits")
+
+            if fruits then
+
+                for _, fruit in ipairs(fruits:GetChildren()) do
+
+                    if fruit:IsA("Model")
+                    or fruit:IsA("Folder") then
+
+                        addEntry(
+                            GAG2ACFBuildEntry(
+                                plant,
+                                fruit,
+                                nil
+                            )
+                        )
+                    end
+                end
+            end
+
+            local scanned =
+                0
+
+            for _, descendant in ipairs(plant:GetDescendants()) do
+
+                scanned =
+                    scanned + 1
+
+                if scanned > 2200 then
+                    break
+                end
+
+                if descendant:IsA("ProximityPrompt")
+                and descendant.Enabled == true then
+
+                    local promptName =
+                        tostring(descendant.Name or ""):lower()
+
+                    local parentName =
+                        descendant.Parent
+                        and tostring(descendant.Parent.Name or ""):lower()
+                        or ""
+
+                    if promptName == "harvestprompt"
+                    or promptName:find("harvest", 1, true)
+                    or parentName:find("harvest", 1, true) then
+
+                        local fruit =
+                            GAG2ACFResolveFruitFromPrompt(
+                                plant,
+                                descendant,
+                                plants,
+                                garden
+                            )
+
+                        if typeof(fruit) == "Instance" then
+
+                            addEntry(
+                                GAG2ACFBuildEntry(
+                                    plant,
+                                    fruit,
+                                    descendant
+                                )
+                            )
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local cachedReady,
+        cachedExcluded =
+        GAG2ACFAppendCachedEntries(
+            queue,
+            seenKeys
+        )
+
+    readyCount =
+        readyCount + cachedReady
+
+    excludedCount =
+        excludedCount + cachedExcluded
+
+    GAG2ACFSortQueue(
+        queue
+    )
+
+    local state =
+        GAG2ACFEnsurePacketCacheState()
+
+    local now =
+        os.clock()
+
+    if now - tonumber(state.LastRefreshAt or 0) >= 5 then
+
+        state.LastRefreshAt =
+            now
+
+        task.defer(function()
+
+            if type(GAG2ACFRefreshDropdownValues) == "function" then
+
+                GAG2ACFRefreshDropdownValues()
+            end
+        end)
+    end
+
+    return queue,
+        readyCount,
+        excludedCount,
+        "ok"
+end
+
+function GAG2ACFCollectEntry(entry)
+
+    local state =
+        GAG2ACFEnsurePacketCacheState()
+
+    if type(entry) ~= "table" then
+        return false, "bad entry"
+    end
+
+    if state.Enabled ~= true then
+        return false, "stopped"
+    end
+
+    if GAG2ACFClean(entry.PlantId) ~= ""
+    and GAG2ACFClean(entry.FruitId) ~= "" then
+
+        local packetOk,
+            packetInfo =
+            GAG2ACFCollectFruitByIds(
+                entry.PlantId,
+                entry.FruitId
+            )
+
+        state.Recent[entry.Key] =
+            os.clock()
+
+        if packetOk == true then
+
+            return true,
+                packetInfo
+        end
+
+        if entry.Cached == true
+        or typeof(entry.Prompt) ~= "Instance" then
+
+            return false,
+                "packet failed: "
+                .. tostring(packetInfo)
+        end
+    end
+
+    local promptOk,
+        promptInfo =
+        GAG2ACFFirePrompt(
+            entry.Prompt
+        )
+
+    state.Recent[entry.Key] =
+        os.clock()
+
+    if promptOk == true then
+
+        return true,
+            "prompt fallback"
+    end
+
+    return false,
+        "prompt failed: "
+        .. tostring(promptInfo)
+end
+
+function GAG2ACFCollectBatch()
+
+    local state =
+        GAG2ACFEnsurePacketCacheState()
+
+    local pausedForWeather,
+        weather =
+        GAG2ACFShouldPauseForWeather()
+
+    if pausedForWeather == true then
+
+        GAG2ACFSetStatus(
+            GAG2ACFBuildStatusText(
+                {},
+                state.LastReadyCount or 0,
+                state.LastExcludedCount or 0,
+                "Paused for weather: "
+                .. tostring(weather)
+            )
+        )
+
+        return -1
+    end
+
+    local queue,
+        readyCount,
+        excludedCount,
+        reason =
+        GAG2ACFScanQueue()
+
+    if reason ~= "ok" then
+
+        GAG2ACFSetStatus(
+            GAG2ACFBuildStatusText(
+                {},
+                readyCount,
+                excludedCount,
+                reason
+            )
+        )
+
+        return 0
+    end
+
+    if #queue <= 0 then
+
+        GAG2ACFSetStatus(
+            GAG2ACFBuildStatusText(
+                queue,
+                readyCount,
+                excludedCount,
+                "No matching cached fruit."
+            )
+        )
+
+        return 0
+    end
+
+    local burstAmount =
+        GAG2ACFGetEffectiveBurstAmount()
+
+    local recentCooldown =
+        GAG2ACFGetEffectiveRecentCooldown()
+
+    local promptDelay =
+        GAG2ACFGetEffectivePromptDelay()
+
+    local yieldEvery =
+        GAG2ACFGetEffectiveYieldEvery()
+
+    local fired =
+        0
+
+    local lastNote =
+        "No packet fired."
+
+    for _, entry in ipairs(queue) do
+
+        if fired >= burstAmount then
+            break
+        end
+
+        if state.Enabled ~= true then
+            break
+        end
+
+        local recentAt =
+            tonumber(
+                state.Recent[entry.Key]
+            )
+            or 0
+
+        if os.clock() - recentAt < recentCooldown then
+            continue
+        end
+
+        local collected,
+            collectInfo =
+            GAG2ACFCollectEntry(
+                entry
+            )
+
+        state.Recent[entry.Key] =
+            os.clock()
+
+        if collected == true then
+
+            fired =
+                fired + 1
+
+            state.LastFiredCount =
+                fired
+
+            lastNote =
+                tostring(collectInfo)
+
+            if type(GAG2AutoSellHandleCollectedFruit) == "function" then
+
+                GAG2AutoSellHandleCollectedFruit(
+                    entry
+                )
+            end
+
+        else
+
+            lastNote =
+                tostring(collectInfo)
+        end
+
+        if promptDelay > 0 then
+
+            task.wait(
+                promptDelay
+            )
+
+        elseif yieldEvery > 0
+        and fired > 0
+        and fired % yieldEvery == 0 then
+
+            task.wait()
+        end
+    end
+
+    GAG2ACFSetStatus(
+        GAG2ACFBuildStatusText(
+            queue,
+            readyCount,
+            excludedCount,
+            fired > 0
+            and (
+                "Packet-collected "
+                .. tostring(fired)
+                .. " this batch. "
+                .. tostring(lastNote)
+            )
+            or tostring(lastNote)
+        )
+    )
+
+    return fired
+end
+
+function GAG2PerformanceCountOwnGardenFruitChildren(garden)
+
+    if typeof(garden) ~= "Instance" then
+        return 0
+    end
+
+    local plants =
+        garden:FindFirstChild("Plants")
+
+    if typeof(plants) ~= "Instance" then
+        return 0
+    end
+
+    local count =
+        0
+
+    for _, plant in ipairs(plants:GetChildren()) do
+
+        local fruits =
+            plant:FindFirstChild("Fruits")
+
+        if typeof(fruits) == "Instance" then
+
+            count =
+                count + #fruits:GetChildren()
+        end
+    end
+
+    return count
+end
+
+function GAG2PerformancePrimeACFCacheBeforeHardDelete(reason)
+
+    local startedAt =
+        os.clock()
+
+    local timeoutSeconds =
+        3
+
+    local lastInfo =
+        "waiting for ACF cache"
+
+    while os.clock() - startedAt <= timeoutSeconds do
+
+        if type(GAG2ACFScanQueue) == "function"
+        and type(GAG2ACFGetCachedFruitCount) == "function" then
+
+            local before =
+                GAG2ACFGetCachedFruitCount()
+
+            local scanOk,
+                queue,
+                readyCount,
+                excludedCount,
+                scanReason =
+                pcall(function()
+
+                    return GAG2ACFScanQueue()
+                end)
+
+            local after =
+                GAG2ACFGetCachedFruitCount()
+
+            lastInfo =
+                "before="
+                .. tostring(before)
+                .. " after="
+                .. tostring(after)
+                .. " scanOk="
+                .. tostring(scanOk)
+                .. " reason="
+                .. tostring(scanReason)
+                .. " queue="
+                .. tostring(
+                    type(queue) == "table"
+                    and #queue
+                    or "?"
+                )
+
+            if after > 0 then
+
+                print(
+                    "[HOLY PERFORMANCE]",
+                    "ACF cache primed before hard delete",
+                    "| cached:",
+                    tostring(after),
+                    "| reason:",
+                    tostring(reason or "hard delete")
+                )
+
+                return true,
+                    after,
+                    lastInfo
+            end
+        end
+
+        task.wait(
+            0.15
+        )
+    end
+
+    return false,
+        GAG2ACFGetCachedFruitCount(),
+        lastInfo
+end
+
+function GAG2PerformanceHardDeleteOwnGarden(reason)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    if state.OwnGardenHardDeleted == true then
+
+        GAG2PerformanceSetStatus(
+            "Own garden already hard-deleted. Rejoin required to restore."
+        )
+
+        return false
+    end
+
+    local garden =
+        GAG2PerformanceFindOwnGardenForHardDelete()
+
+    if typeof(garden) ~= "Instance" then
+
+        GAG2PerformanceSetStatus(
+            "Hard delete failed: own garden not found."
+        )
+
+        return false
+    end
+
+    local fruitChildren =
+        GAG2PerformanceCountOwnGardenFruitChildren(
+            garden
+        )
+
+    local cacheOk,
+        cachedCount,
+        cacheInfo =
+        GAG2PerformancePrimeACFCacheBeforeHardDelete(
+            reason
+        )
+
+    if fruitChildren > 0
+    and tonumber(cachedCount or 0) <= 0 then
+
+        GAG2PerformanceSetStatus(
+            "Hard delete blocked: found "
+            .. tostring(fruitChildren)
+            .. " fruit child(ren), but ACF packet cache is empty."
+        )
+
+        warn(
+            "[HOLY PERFORMANCE]",
+            "hard delete blocked because ACF cache is empty",
+            "| fruits:",
+            tostring(fruitChildren),
+            "| info:",
+            tostring(cacheInfo)
+        )
+
+        return false
+    end
+
+    local gardenPath =
+        PathOf(
+            garden
+        )
+
+    local beforeCount =
+        GAG2PerformanceCountDescendants(
+            garden
+        )
+
+    local plantsDeleted,
+        plantsCount =
+        GAG2PerformanceDestroyOwnGardenChild(
+            garden,
+            "Plants"
+        )
+
+    local visualDeleted,
+        visualCount =
+        GAG2PerformanceDestroyOwnGardenChild(
+            garden,
+            "Visual"
+        )
+
+    local deletedCount =
+        tonumber(plantsCount)
+        + tonumber(visualCount)
+
+    state.OwnGardenHardDeleted =
+        true
+
+    state.OwnGardenHardDeletedAt =
+        os.time()
+
+    state.OwnGardenHardDeletedDescendants =
+        deletedCount
+
+    state.OwnGardenHardDeletedPath =
+        gardenPath
+
+    GAG2PerformanceRestoreOwnGardenVisuals(
+        "hard delete own garden"
+    )
+
+    GAG2PerformanceSetStatus(
+        "Hard-deleted own garden locally after caching "
+        .. tostring(cachedCount or 0)
+        .. " fruit packet records. Plants="
+        .. tostring(plantsDeleted)
+        .. " ("
+        .. tostring(plantsCount)
+        .. ") | Visual="
+        .. tostring(visualDeleted)
+        .. " ("
+        .. tostring(visualCount)
+        .. ") | Rejoin required."
+    )
+
+    print(
+        "[HOLY PERFORMANCE]",
+        "hard delete own garden",
+        "| path:",
+        gardenPath,
+        "| before:",
+        tostring(beforeCount),
+        "| deleted:",
+        tostring(deletedCount),
+        "| fruits:",
+        tostring(fruitChildren),
+        "| cached:",
+        tostring(cachedCount or 0),
+        "| reason:",
+        tostring(reason or "manual")
+    )
+
+    return true
+end
+
+--==================================================
+-- [4.56.Y] ACF CONTINUOUS HIDDEN FRUIT CACHE
+-- Keeps finding new FruitId records after local hard-delete.
+--==================================================
+
+GAG2_ACF_HIDDEN_CACHE_CONTINUOUS_PATCH_VERSION =
+    "20260622-continuous-hidden-cache-v1"
+
+function GAG2ACFEnsureContinuousHiddenCacheState()
+
+    local state =
+        GAG2ACFEnsurePacketCacheState()
+
+    state.PlantNameById =
+        type(state.PlantNameById) == "table"
+        and state.PlantNameById
+        or {}
+
+    state.FruitNameById =
+        type(state.FruitNameById) == "table"
+        and state.FruitNameById
+        or {}
+
+    state.KnownPlantIds =
+        type(state.KnownPlantIds) == "table"
+        and state.KnownPlantIds
+        or {}
+
+    state.HiddenFruitSeenKeys =
+        type(state.HiddenFruitSeenKeys) == "table"
+        and state.HiddenFruitSeenKeys
+        or {}
+
+    state.HiddenScanCursor =
+        math.max(
+            1,
+            math.floor(
+                tonumber(state.HiddenScanCursor)
+                or 1
+            )
+        )
+
+    state.HiddenScanInterval =
+        tonumber(state.HiddenScanInterval)
+        or 1.25
+
+    state.HiddenNormalScanInterval =
+        tonumber(state.HiddenNormalScanInterval)
+        or 4.50
+
+    state.HiddenHardDeletedScanInterval =
+        tonumber(state.HiddenHardDeletedScanInterval)
+        or 1.15
+
+    state.HiddenNormalScanBudget =
+        tonumber(state.HiddenNormalScanBudget)
+        or 0.35
+
+    state.HiddenHardDeletedScanBudget =
+        tonumber(state.HiddenHardDeletedScanBudget)
+        or 0.85
+
+    state.HiddenNormalMaxObjects =
+        math.floor(
+            tonumber(state.HiddenNormalMaxObjects)
+            or 150000
+        )
+
+    state.HiddenHardDeletedMaxObjects =
+        math.floor(
+            tonumber(state.HiddenHardDeletedMaxObjects)
+            or 420000
+        )
+
+    state.PacketAttemptShortRetry =
+        tonumber(state.PacketAttemptShortRetry)
+        or 0.85
+
+    state.PacketAttemptMediumRetry =
+        tonumber(state.PacketAttemptMediumRetry)
+        or 5.50
+
+    state.PacketAttemptLongRetry =
+        tonumber(state.PacketAttemptLongRetry)
+        or 22.00
+
+    return state
+end
+
+function GAG2ACFHiddenIsHardDeleted()
+
+    return type(GAG2_PERFORMANCE_STATE) == "table"
+        and GAG2_PERFORMANCE_STATE.OwnGardenHardDeleted == true
+end
+
+function GAG2ACFHiddenUsefulName(value)
+
+    local text =
+        GAG2ACFClean(
+            value
+        )
+
+    if text == ""
+    or text == "?"
+    or text == "0"
+    or text:lower() == "nil"
+    or text:lower() == "none" then
+
+        return ""
+    end
+
+    if text:match("^%d+_[%w%-]+_[%w%-]+$") then
+        return ""
+    end
+
+    if text:match("^[%w]+%-%w+%-%w+%-%w+%-%w+$") then
+        return ""
+    end
+
+    return text
+end
+
+function GAG2ACFRememberPacketName(entry)
+
+    local state =
+        GAG2ACFEnsureContinuousHiddenCacheState()
+
+    if type(entry) ~= "table" then
+        return false
+    end
+
+    local plantId =
+        GAG2ACFClean(
+            entry.PlantId
+        )
+
+    local fruitId =
+        GAG2ACFClean(
+            entry.FruitId
+        )
+
+    local name =
+        GAG2ACFHiddenUsefulName(
+            entry.Name
+        )
+
+    if plantId ~= "" then
+
+        state.KnownPlantIds[plantId] =
+            true
+
+        if name ~= "" then
+
+            state.PlantNameById[plantId] =
+                name
+        end
+    end
+
+    if fruitId ~= ""
+    and name ~= "" then
+
+        state.FruitNameById[fruitId] =
+            name
+    end
+
+    return true
+end
+
+function GAG2ACFResolveHiddenName(record)
+
+    local state =
+        GAG2ACFEnsureContinuousHiddenCacheState()
+
+    if type(record) ~= "table" then
+        return ""
+    end
+
+    local fruitId =
+        GAG2ACFClean(
+            record.FruitId
+        )
+
+    local plantId =
+        GAG2ACFClean(
+            record.PlantId
+        )
+
+    local fromFruit =
+        GAG2ACFHiddenUsefulName(
+            state.FruitNameById[fruitId]
+        )
+
+    if fromFruit ~= "" then
+        return fromFruit
+    end
+
+    local fromHidden =
+        GAG2ACFHiddenUsefulName(
+            record.Name
+        )
+
+    if fromHidden ~= "" then
+        return fromHidden
+    end
+
+    local fromPlant =
+        GAG2ACFHiddenUsefulName(
+            state.PlantNameById[plantId]
+        )
+
+    if fromPlant ~= "" then
+        return fromPlant
+    end
+
+    return ""
+end
+
+function GAG2ACFReadHiddenFruitRecord(row)
+
+    if type(row) ~= "table" then
+        return nil
+    end
+
+    local plantId =
+        GAG2ACFClean(
+            rawget(row, "plantId")
+            or rawget(row, "PlantId")
+            or rawget(row, "PlantID")
+            or rawget(row, "plantID")
+            or rawget(row, "plant")
+            or rawget(row, "Plant")
+        )
+
+    local fruitId =
+        GAG2ACFClean(
+            rawget(row, "fruitId")
+            or rawget(row, "FruitId")
+            or rawget(row, "FruitID")
+            or rawget(row, "fruitID")
+            or rawget(row, "fruit")
+            or rawget(row, "Fruit")
+        )
+
+    if plantId == ""
+    or fruitId == ""
+    or plantId == "0"
+    or fruitId == "0" then
+
+        return nil
+    end
+
+    local shape =
+        0
+
+    local keys = {
+        "plantId",
+        "PlantId",
+        "fruitId",
+        "FruitId",
+        "name",
+        "Name",
+        "fruitName",
+        "FruitName",
+        "seedName",
+        "SeedName",
+        "ready",
+        "kg",
+        "grams",
+        "age",
+        "max_age",
+    }
+
+    for _, key in ipairs(keys) do
+
+        if rawget(row, key) ~= nil then
+            shape =
+                shape + 1
+        end
+    end
+
+    if shape < 2 then
+        return nil
+    end
+
+    local name =
+        GAG2ACFClean(
+            rawget(row, "name")
+            or rawget(row, "Name")
+            or rawget(row, "fruitName")
+            or rawget(row, "FruitName")
+            or rawget(row, "seedName")
+            or rawget(row, "SeedName")
+            or ""
+        )
+
+    return {
+        PlantId =
+            plantId,
+
+        FruitId =
+            fruitId,
+
+        PacketKey =
+            GAG2ACFBuildPacketKey(
+                plantId,
+                fruitId
+            ),
+
+        Name =
+            name,
+
+        Ready =
+            rawget(row, "ready"),
+
+        Kg =
+            tonumber(
+                rawget(row, "kg")
+            ),
+
+        Grams =
+            tonumber(
+                rawget(row, "grams")
+            ),
+
+        Age =
+            tonumber(
+                rawget(row, "age")
+            ),
+
+        MaxAge =
+            tonumber(
+                rawget(row, "max_age")
+            ),
+
+        Shape =
+            shape,
+    }
+end
+
+function GAG2ACFBuildEntryFromHiddenRecord(record)
+
+    if type(record) ~= "table" then
+        return nil
+    end
+
+    local packetKey =
+        GAG2ACFBuildPacketKey(
+            record.PlantId,
+            record.FruitId
+        )
+
+    if packetKey == "" then
+        return nil
+    end
+
+    local state =
+        GAG2ACFEnsureContinuousHiddenCacheState()
+
+    local knownPlant =
+        state.KnownPlantIds[record.PlantId] == true
+
+    local name =
+        GAG2ACFResolveHiddenName(
+            record
+        )
+
+    if name == ""
+    and knownPlant ~= true then
+
+        return nil
+    end
+
+    if name == "" then
+
+        name =
+            "Unknown"
+    end
+
+    local mutation =
+        ""
+
+    local weightKg =
+        tonumber(record.Kg)
+        or tonumber(record.Grams)
+        or 1
+
+    local seedRow =
+        state.SeedMap
+        and state.SeedMap[name]
+
+    local rarity =
+        seedRow
+        and GAG2ACFClean(seedRow.Rarity)
+        or "?"
+
+    local rarityScore =
+        GAG2_ACF_RARITY_SCORE[rarity]
+        or 0
+
+    local mutationScore =
+        GAG2ACFGetMutationScore(
+            mutation
+        )
+
+    local sellWorth =
+        0
+
+    pcall(function()
+
+        sellWorth =
+            GAG2ACFGetSellWorth(
+                name,
+                weightKg,
+                mutation,
+                nil
+            )
+    end)
+
+    GAG2ACFRememberChoice(
+        "FruitNames",
+        name
+    )
+
+    if rarity ~= "?" then
+
+        GAG2ACFRememberChoice(
+            "RarityNames",
+            rarity
+        )
+    end
+
+    return {
+        Plant =
+            nil,
+
+        Fruit =
+            nil,
+
+        Prompt =
+            nil,
+
+        Key =
+            packetKey,
+
+        PacketKey =
+            packetKey,
+
+        PlantId =
+            record.PlantId,
+
+        FruitId =
+            record.FruitId,
+
+        PacketCollect =
+            true,
+
+        Name =
+            name,
+
+        Rarity =
+            rarity,
+
+        RarityScore =
+            rarityScore,
+
+        Mutation =
+            mutation,
+
+        MutationLabel =
+            "None",
+
+        MutationScore =
+            mutationScore,
+
+        WeightKg =
+            weightKg,
+
+        WeightSource =
+            "Hidden getgc packet cache",
+
+        RawSizeMulti =
+            nil,
+
+        SizeMulti =
+            weightKg,
+
+        SellWorth =
+            sellWorth,
+
+        Kind =
+            "FruitHarvest",
+
+        IsPlantHarvest =
+            false,
+
+        Cached =
+            true,
+
+        HiddenCached =
+            true,
+
+        CachedAt =
+            os.clock(),
+
+        CollectMethod =
+            "HiddenCollectFruitPacket",
+    }
+end
+
+GAG2_ACF_CACHE_ENTRY_BEFORE_HIDDEN_CONTINUOUS =
+    type(GAG2_ACF_CACHE_ENTRY_BEFORE_HIDDEN_CONTINUOUS) == "function"
+    and GAG2_ACF_CACHE_ENTRY_BEFORE_HIDDEN_CONTINUOUS
+    or GAG2ACFCacheEntry
+
+function GAG2ACFCacheEntry(entry)
+
+    local state =
+        GAG2ACFEnsureContinuousHiddenCacheState()
+
+    GAG2ACFRememberPacketName(
+        entry
+    )
+
+    local packetKey =
+        type(entry) == "table"
+        and GAG2ACFBuildPacketKey(
+            entry.PlantId,
+            entry.FruitId
+        )
+        or ""
+
+    local previous =
+        packetKey ~= ""
+        and state.CachedFruitEntries[packetKey]
+        or nil
+
+    local previousAttempts =
+        type(previous) == "table"
+        and tonumber(previous.PacketAttempts)
+        or nil
+
+    local previousNextRetryAt =
+        type(previous) == "table"
+        and tonumber(previous.NextRetryAt)
+        or nil
+
+    local previousFirstCachedAt =
+        type(previous) == "table"
+        and tonumber(previous.FirstCachedAt)
+        or nil
+
+    local ok =
+        false
+
+    if type(GAG2_ACF_CACHE_ENTRY_BEFORE_HIDDEN_CONTINUOUS) == "function" then
+
+        ok =
+            GAG2_ACF_CACHE_ENTRY_BEFORE_HIDDEN_CONTINUOUS(
+                entry
+            ) == true
+    end
+
+    if packetKey ~= "" then
+
+        local cached =
+            state.CachedFruitEntries[packetKey]
+
+        if type(cached) == "table" then
+
+            cached.PacketAttempts =
+                previousAttempts
+                or tonumber(cached.PacketAttempts)
+                or 0
+
+            cached.NextRetryAt =
+                previousNextRetryAt
+                or tonumber(cached.NextRetryAt)
+                or 0
+
+            cached.FirstCachedAt =
+                previousFirstCachedAt
+                or tonumber(cached.FirstCachedAt)
+                or os.clock()
+
+            GAG2ACFRememberPacketName(
+                cached
+            )
+        end
+    end
+
+    return ok
+end
+
+function GAG2ACFAppendCachedEntries(queue, seenKeys)
+
+    local state =
+        GAG2ACFEnsureContinuousHiddenCacheState()
+
+    queue =
+        type(queue) == "table"
+        and queue
+        or {}
+
+    seenKeys =
+        type(seenKeys) == "table"
+        and seenKeys
+        or {}
+
+    local readyCount =
+        0
+
+    local excludedCount =
+        0
+
+    local retryWaiting =
+        0
+
+    local now =
+        os.clock()
+
+    for _, key in ipairs(state.CachedFruitOrder) do
+
+        local cached =
+            state.CachedFruitEntries[key]
+
+        if type(cached) == "table"
+        and seenKeys[key] ~= true then
+
+            if now - tonumber(cached.CachedAt or now) > state.CachedFruitTTL then
+
+                state.CachedFruitEntries[key] =
+                    nil
+
+            else
+
+                local nextRetryAt =
+                    tonumber(cached.NextRetryAt)
+                    or 0
+
+                if nextRetryAt > now then
+
+                    retryWaiting =
+                        retryWaiting + 1
+
+                else
+
+                    seenKeys[key] =
+                        true
+
+                    readyCount =
+                        readyCount + 1
+
+                    if GAG2ACFEntryAllowed(cached) == true then
+
+                        table.insert(
+                            queue,
+                            cached
+                        )
+
+                    else
+
+                        excludedCount =
+                            excludedCount + 1
+                    end
+                end
+            end
+        end
+    end
+
+    state.LastCachedRetryWaiting =
+        retryWaiting
+
+    return readyCount,
+        excludedCount
+end
+
+GAG2_ACF_COLLECT_ENTRY_BEFORE_HIDDEN_CONTINUOUS =
+    type(GAG2_ACF_COLLECT_ENTRY_BEFORE_HIDDEN_CONTINUOUS) == "function"
+    and GAG2_ACF_COLLECT_ENTRY_BEFORE_HIDDEN_CONTINUOUS
+    or GAG2ACFCollectEntry
+
+function GAG2ACFCollectEntry(entry)
+
+    local state =
+        GAG2ACFEnsureContinuousHiddenCacheState()
+
+    if type(entry) ~= "table" then
+
+        return false,
+            "bad entry"
+    end
+
+    local packetKey =
+        GAG2ACFBuildPacketKey(
+            entry.PlantId,
+            entry.FruitId
+        )
+
+    local cached =
+        packetKey ~= ""
+        and state.CachedFruitEntries[packetKey]
+        or nil
+
+    local now =
+        os.clock()
+
+    if type(cached) == "table" then
+
+        local nextRetryAt =
+            tonumber(cached.NextRetryAt)
+            or 0
+
+        if nextRetryAt > now then
+
+            return false,
+                "packet retry wait "
+                .. string.format(
+                    "%.1fs",
+                    nextRetryAt - now
+                )
+        end
+    end
+
+    local ok,
+        info =
+        false,
+        "collect function missing"
+
+    if type(GAG2_ACF_COLLECT_ENTRY_BEFORE_HIDDEN_CONTINUOUS) == "function" then
+
+        ok,
+            info =
+            GAG2_ACF_COLLECT_ENTRY_BEFORE_HIDDEN_CONTINUOUS(
+                entry
+            )
+    end
+
+    if packetKey ~= "" then
+
+        cached =
+            state.CachedFruitEntries[packetKey]
+
+        if type(cached) == "table" then
+
+            local attempts =
+                math.max(
+                    0,
+                    math.floor(
+                        tonumber(cached.PacketAttempts)
+                        or 0
+                    )
+                )
+                + 1
+
+            cached.PacketAttempts =
+                attempts
+
+            cached.LastAttemptAt =
+                now
+
+            if attempts <= 1 then
+
+                cached.NextRetryAt =
+                    now
+                    + state.PacketAttemptShortRetry
+
+            elseif attempts <= 3 then
+
+                cached.NextRetryAt =
+                    now
+                    + state.PacketAttemptMediumRetry
+
+            else
+
+                cached.NextRetryAt =
+                    now
+                    + state.PacketAttemptLongRetry
+            end
+        end
+    end
+
+    return ok,
+        info
+end
+
+function GAG2ACFPrimeHiddenFruitCache(reason, force)
+
+    local state =
+        GAG2ACFEnsureContinuousHiddenCacheState()
+
+    if type(getgc) ~= "function" then
+        return 0, "getgc unavailable"
+    end
+
+    local hardDeleted =
+        GAG2ACFHiddenIsHardDeleted()
+
+    local budget =
+        hardDeleted == true
+        and state.HiddenHardDeletedScanBudget
+        or state.HiddenNormalScanBudget
+
+    local maxObjects =
+        hardDeleted == true
+        and state.HiddenHardDeletedMaxObjects
+        or state.HiddenNormalMaxObjects
+
+    local getOk,
+        objects =
+        pcall(function()
+
+            return getgc(
+                true
+            )
+        end)
+
+    if getOk ~= true
+    or type(objects) ~= "table"
+    or #objects <= 0 then
+
+        return 0,
+            "getgc failed"
+    end
+
+    local startedAt =
+        os.clock()
+
+    local startIndex =
+        math.clamp(
+            math.floor(
+                tonumber(state.HiddenScanCursor)
+                or 1
+            ),
+            1,
+            #objects
+        )
+
+    local index =
+        startIndex
+
+    local scanned =
+        0
+
+    local added =
+        0
+
+    local refreshed =
+        0
+
+    while index <= #objects do
+
+        local object =
+            objects[index]
+
+        if type(object) == "table" then
+
+            local record =
+                GAG2ACFReadHiddenFruitRecord(
+                    object
+                )
+
+            if record
+            and record.PacketKey ~= "" then
+
+                local hiddenEntry =
+                    GAG2ACFBuildEntryFromHiddenRecord(
+                        record
+                    )
+
+                if hiddenEntry then
+
+                    local existed =
+                        state.CachedFruitEntries[hiddenEntry.PacketKey] ~= nil
+
+                    if GAG2ACFCacheEntry(hiddenEntry) == true then
+
+                        if existed == true then
+
+                            refreshed =
+                                refreshed + 1
+
+                        else
+
+                            added =
+                                added + 1
+                        end
+
+                        state.HiddenFruitSeenKeys[hiddenEntry.PacketKey] =
+                            os.clock()
+                    end
+                end
+            end
+        end
+
+        scanned =
+            scanned + 1
+
+        if scanned >= maxObjects then
+            break
+        end
+
+        if scanned % 5000 == 0 then
+
+            task.wait()
+        end
+
+        if os.clock() - startedAt >= budget then
+            break
+        end
+
+        index =
+            index + 1
+    end
+
+    if index >= #objects then
+
+        state.HiddenScanCursor =
+            1
+
+    else
+
+        state.HiddenScanCursor =
+            index + 1
+    end
+
+    state.LastHiddenScanAt =
+        os.clock()
+
+    state.LastHiddenScanAdded =
+        added
+
+    state.LastHiddenScanRefreshed =
+        refreshed
+
+    state.LastHiddenScanScanned =
+        scanned
+
+    state.LastHiddenScanObjects =
+        #objects
+
+    state.LastHiddenScanReason =
+        tostring(reason or "scan")
+
+    if added > 0 then
+
+        print(
+            "[HOLY ACF]",
+            "hidden fruit cache added",
+            tostring(added),
+            "| refreshed:",
+            tostring(refreshed),
+            "| scanned:",
+            tostring(scanned),
+            "/",
+            tostring(#objects),
+            "| reason:",
+            tostring(reason or "scan")
+        )
+    end
+
+    return added,
+        "added="
+        .. tostring(added)
+        .. " refreshed="
+        .. tostring(refreshed)
+        .. " scanned="
+        .. tostring(scanned)
+        .. "/"
+        .. tostring(#objects)
+end
+
+function GAG2ACFMaybePrimeHiddenFruitCache(reason, force)
+
+    local state =
+        GAG2ACFEnsureContinuousHiddenCacheState()
+
+    local hardDeleted =
+        GAG2ACFHiddenIsHardDeleted()
+
+    if force ~= true
+    and state.Enabled ~= true
+    and hardDeleted ~= true then
+
+        return 0,
+            "disabled"
+    end
+
+    local now =
+        os.clock()
+
+    local interval =
+        hardDeleted == true
+        and state.HiddenHardDeletedScanInterval
+        or state.HiddenNormalScanInterval
+
+    if force ~= true
+    and now - tonumber(state.LastHiddenScanAt or 0) < interval then
+
+        return 0,
+            "throttled"
+    end
+
+    return GAG2ACFPrimeHiddenFruitCache(
+        reason,
+        force
+    )
+end
+
+GAG2_ACF_SCAN_QUEUE_BEFORE_HIDDEN_CONTINUOUS =
+    type(GAG2_ACF_SCAN_QUEUE_BEFORE_HIDDEN_CONTINUOUS) == "function"
+    and GAG2_ACF_SCAN_QUEUE_BEFORE_HIDDEN_CONTINUOUS
+    or GAG2ACFScanQueue
+
+function GAG2ACFScanQueue()
+
+    pcall(function()
+
+        GAG2ACFMaybePrimeHiddenFruitCache(
+            "ACF scan queue",
+            false
+        )
+    end)
+
+    return GAG2_ACF_SCAN_QUEUE_BEFORE_HIDDEN_CONTINUOUS()
+end
+
+GAG2_PERFORMANCE_PRIME_ACF_BEFORE_HIDDEN_CONTINUOUS =
+    type(GAG2_PERFORMANCE_PRIME_ACF_BEFORE_HIDDEN_CONTINUOUS) == "function"
+    and GAG2_PERFORMANCE_PRIME_ACF_BEFORE_HIDDEN_CONTINUOUS
+    or GAG2PerformancePrimeACFCacheBeforeHardDelete
+
+function GAG2PerformancePrimeACFCacheBeforeHardDelete(reason)
+
+    pcall(function()
+
+        GAG2ACFMaybePrimeHiddenFruitCache(
+            "before hard delete pre-prime",
+            true
+        )
+    end)
+
+    local ok,
+        count,
+        info =
+        false,
+        0,
+        "prime function missing"
+
+    if type(GAG2_PERFORMANCE_PRIME_ACF_BEFORE_HIDDEN_CONTINUOUS) == "function" then
+
+        ok,
+            count,
+            info =
+            GAG2_PERFORMANCE_PRIME_ACF_BEFORE_HIDDEN_CONTINUOUS(
+                reason
+            )
+    end
+
+    pcall(function()
+
+        GAG2ACFMaybePrimeHiddenFruitCache(
+            "before hard delete post-prime",
+            true
+        )
+    end)
+
+    local finalCount =
+        0
+
+    pcall(function()
+
+        finalCount =
+            GAG2ACFGetCachedFruitCount()
+    end)
+
+    if tonumber(finalCount)
+    and tonumber(finalCount) > tonumber(count or 0) then
+
+        return true,
+            finalCount,
+            tostring(info)
+            .. " | hidden final="
+            .. tostring(finalCount)
+    end
+
+    return ok,
+        count,
+        info
+end
+
+function GAG2ACFStartHiddenCacheWorker()
+
+    local state =
+        GAG2ACFEnsureContinuousHiddenCacheState()
+
+    state.HiddenCacheWorkerToken =
+        (
+            tonumber(state.HiddenCacheWorkerToken)
+            or 0
+        )
+        + 1
+
+    local token =
+        state.HiddenCacheWorkerToken
+
+    if state.HiddenCacheWorkerRunning == true then
+        return true
+    end
+
+    state.HiddenCacheWorkerRunning =
+        true
+
+    task.spawn(function()
+
+        while true do
+
+            local liveState =
+                GAG2ACFEnsureContinuousHiddenCacheState()
+
+            if tonumber(liveState.HiddenCacheWorkerToken) ~= token then
+                break
+            end
+
+            if liveState.Enabled == true
+            or GAG2ACFHiddenIsHardDeleted() == true then
+
+                pcall(function()
+
+                    GAG2ACFMaybePrimeHiddenFruitCache(
+                        "hidden cache worker",
+                        false
+                    )
+                end)
+            end
+
+            task.wait(
+                0.95
+            )
+        end
+
+        local finalState =
+            GAG2ACFEnsureContinuousHiddenCacheState()
+
+        if tonumber(finalState.HiddenCacheWorkerToken) == token then
+
+            finalState.HiddenCacheWorkerRunning =
+                false
+        end
+    end)
+
+    return true
+end
+
+--==================================================
+-- [4.56.Z] ACF TURBO STREAM OVERRIDE
+-- Direct CollectFruit packet stream, no prompt hot-path, no debug spam.
+--==================================================
+
+GAG2_ACF_TURBO_STREAM_PATCH_VERSION =
+    "20260624-turbo-stream-v1"
+
+GAG2_ACF_SPEED_PRESETS = {
+    ["Low End"] = {
+        Name = "Low End",
+
+        CollectDelay = 0.010,
+        WaveSize = 14,
+        WavePause = 0.075,
+
+        RetryAfter = 1.75,
+        RetryDelay = 0.014,
+        MaxRetries = 1,
+
+        Adaptive = true,
+        FPSLow = 22,
+        PendingHigh = 35,
+
+        MinBurst = 14,
+        MaxBurst = 24,
+        MaxWaveSize = 24,
+
+        RecentCooldown = 0,
+        PromptDelayOverride = 0,
+        YieldEvery = 14,
+        LoopWaitAfterFire = 0.075,
+        LoopWaitIdle = 0.28,
+
+        UsePacketCache = true,
+        FullScanInterval = 4,
+        SkipCachedSort = false,
+        StatusEveryBatches = 1,
+        AutoSellNotifyEvery = 8,
+    },
+
+    Normal = {
+        Name = "Normal",
+
+        CollectDelay = 0.006,
+        WaveSize = 25,
+        WavePause = 0.050,
+
+        RetryAfter = 1.35,
+        RetryDelay = 0.010,
+        MaxRetries = 1,
+
+        Adaptive = true,
+        FPSLow = 24,
+        PendingHigh = 55,
+
+        MinBurst = 25,
+        MaxBurst = 40,
+        MaxWaveSize = 40,
+
+        RecentCooldown = 0,
+        PromptDelayOverride = 0,
+        YieldEvery = 25,
+        LoopWaitAfterFire = 0.050,
+        LoopWaitIdle = 0.14,
+
+        UsePacketCache = true,
+        FullScanInterval = 5,
+        SkipCachedSort = true,
+        StatusEveryBatches = 2,
+        AutoSellNotifyEvery = 12,
+    },
+
+    Fast = {
+        Name = "Fast",
+
+        CollectDelay = 0.005,
+        WaveSize = 30,
+        WavePause = 0.040,
+
+        RetryAfter = 1.35,
+        RetryDelay = 0.010,
+        MaxRetries = 1,
+
+        Adaptive = true,
+        FPSLow = 24,
+        PendingHigh = 60,
+
+        MinBurst = 30,
+        MaxBurst = 50,
+        MaxWaveSize = 50,
+
+        RecentCooldown = 0,
+        PromptDelayOverride = 0,
+        YieldEvery = 30,
+        LoopWaitAfterFire = 0.040,
+        LoopWaitIdle = 0.10,
+
+        UsePacketCache = true,
+        FullScanInterval = 6,
+        SkipCachedSort = true,
+        StatusEveryBatches = 3,
+        AutoSellNotifyEvery = 16,
+    },
+
+    Ultra = {
+        Name = "Ultra",
+
+        CollectDelay = 0.004,
+        WaveSize = 32,
+        WavePause = 0.035,
+
+        RetryAfter = 1.30,
+        RetryDelay = 0.010,
+        MaxRetries = 1,
+
+        Adaptive = true,
+        FPSLow = 24,
+        PendingHigh = 65,
+
+        MinBurst = 32,
+        MaxBurst = 55,
+        MaxWaveSize = 55,
+
+        RecentCooldown = 0,
+        PromptDelayOverride = 0,
+        YieldEvery = 32,
+        LoopWaitAfterFire = 0.035,
+        LoopWaitIdle = 0.08,
+
+        UsePacketCache = true,
+        FullScanInterval = 8,
+        SkipCachedSort = true,
+        StatusEveryBatches = 4,
+        AutoSellNotifyEvery = 18,
+    },
+
+    Hyper = {
+        Name = "Hyper",
+
+        CollectDelay = 0.003,
+        WaveSize = 35,
+        WavePause = 0.025,
+
+        RetryAfter = 1.25,
+        RetryDelay = 0.010,
+        MaxRetries = 1,
+
+        Adaptive = true,
+        FPSLow = 24,
+        PendingHigh = 70,
+
+        MinBurst = 35,
+        MaxBurst = 65,
+        MaxWaveSize = 65,
+
+        RecentCooldown = 0,
+        PromptDelayOverride = 0,
+        YieldEvery = 35,
+        LoopWaitAfterFire = 0.025,
+        LoopWaitIdle = 0.06,
+
+        UsePacketCache = true,
+        FullScanInterval = 10,
+        SkipCachedSort = true,
+        StatusEveryBatches = 5,
+        AutoSellNotifyEvery = 20,
+    },
+}
+
+GAG2_ACF_SPEED_PRESETS.Exotic =
+    GAG2_ACF_SPEED_PRESETS.Hyper
+
+function GAG2ACFEnsureTurboState()
+
+    local state =
+        GAG2_AUTO_COLLECT_FRUIT_STATE
+
+    if type(GAG2ACFEnsurePacketCacheState) == "function" then
+
+        local ok,
+            patchedState =
+            pcall(function()
+
+                return GAG2ACFEnsurePacketCacheState()
+            end)
+
+        if ok == true
+        and type(patchedState) == "table" then
+
+            state =
+                patchedState
+        end
+    end
+
+    state.Recent =
+        type(state.Recent) == "table"
+        and state.Recent
+        or {}
+
+    state.CachedFruitEntries =
+        type(state.CachedFruitEntries) == "table"
+        and state.CachedFruitEntries
+        or {}
+
+    state.CachedFruitOrder =
+        type(state.CachedFruitOrder) == "table"
+        and state.CachedFruitOrder
+        or {}
+
+    state.TurboPending =
+        type(state.TurboPending) == "table"
+        and state.TurboPending
+        or {}
+
+    state.TurboConfirmed =
+        type(state.TurboConfirmed) == "table"
+        and state.TurboConfirmed
+        or {}
+
+    state.TurboStats =
+        type(state.TurboStats) == "table"
+        and state.TurboStats
+        or {
+            Sent = 0,
+            Confirmed = 0,
+            Retried = 0,
+            Errors = 0,
+            Adapted = 0,
+        }
+
+    state.TurboConfirmTTL =
+        tonumber(state.TurboConfirmTTL)
+        or 45
+
+    state.TurboPendingTTL =
+        tonumber(state.TurboPendingTTL)
+        or 8
+
+    state.HiddenCacheWorkerDisabled =
+        true
+
+    return state
+end
+
+function GAG2ACFTurboCountMap(map)
+
+    local count =
+        0
+
+    if type(map) ~= "table" then
+        return count
+    end
+
+    for _ in pairs(map) do
+
+        count =
+            count + 1
+    end
+
+    return count
+end
+
+function GAG2ACFTurboCountPending()
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    return GAG2ACFTurboCountMap(
+        state.TurboPending
+    )
+end
+
+function GAG2ACFTurboReadFPS()
+
+    if type(GAG2_STATS_OVERLAY_STATE) == "table" then
+
+        local fps =
+            tonumber(
+                GAG2_STATS_OVERLAY_STATE.LastFPS
+            )
+
+        if fps
+        and fps > 0 then
+
+            return fps
+        end
+    end
+
+    return 60
+end
+
+function GAG2ACFTurboCleanupState()
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    local now =
+        os.clock()
+
+    local confirmTTL =
+        math.clamp(
+            tonumber(state.TurboConfirmTTL)
+            or 45,
+            5,
+            180
+        )
+
+    local pendingTTL =
+        math.clamp(
+            tonumber(state.TurboPendingTTL)
+            or 8,
+            3,
+            60
+        )
+
+    for key, timestamp in pairs(state.TurboConfirmed) do
+
+        if now - tonumber(timestamp or now) > confirmTTL then
+
+            state.TurboConfirmed[key] =
+                nil
+        end
+    end
+
+    for key, row in pairs(state.TurboPending) do
+
+        local sentAt =
+            tonumber(
+                row.LastSentAt
+                or row.SentAt
+            )
+            or now
+
+        if now - sentAt > pendingTTL then
+
+            state.TurboPending[key] =
+                nil
+        end
+    end
+
+    for key, timestamp in pairs(state.Recent) do
+
+        if now - tonumber(timestamp or now) > 10 then
+
+            state.Recent[key] =
+                nil
+        end
+    end
+end
+
+function GAG2ACFTurboGetTiming()
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    local preset =
+        GAG2ACFGetSpeedPreset()
+
+    local collectDelay =
+        math.clamp(
+            tonumber(preset.CollectDelay)
+            or 0.006,
+            0.002,
+            0.05
+        )
+
+    local waveSize =
+        math.clamp(
+            math.floor(
+                tonumber(preset.WaveSize)
+                or 25
+            ),
+            1,
+            math.floor(
+                tonumber(preset.MaxWaveSize)
+                or 65
+            )
+        )
+
+    local userBurst =
+        math.floor(
+            tonumber(state.BurstAmount)
+            or 0
+        )
+
+    if userBurst > waveSize then
+
+        waveSize =
+            math.clamp(
+                userBurst,
+                1,
+                math.floor(
+                    tonumber(preset.MaxWaveSize)
+                    or 65
+                )
+            )
+    end
+
+    local wavePause =
+        math.clamp(
+            tonumber(preset.WavePause)
+            or 0.05,
+            0,
+            0.25
+        )
+
+    local retryAfter =
+        math.clamp(
+            tonumber(preset.RetryAfter)
+            or 1.35,
+            0.40,
+            4
+        )
+
+    local retryDelay =
+        math.clamp(
+            tonumber(preset.RetryDelay)
+            or 0.01,
+            0,
+            0.10
+        )
+
+    local maxRetries =
+        math.clamp(
+            math.floor(
+                tonumber(preset.MaxRetries)
+                or 1
+            ),
+            0,
+            3
+        )
+
+    local fps =
+        GAG2ACFTurboReadFPS()
+
+    local pending =
+        GAG2ACFTurboCountPending()
+
+    if preset.Adaptive ~= false then
+
+        local fpsLow =
+            tonumber(preset.FPSLow)
+            or 24
+
+        local pendingHigh =
+            tonumber(preset.PendingHigh)
+            or 55
+
+        if fps < math.max(
+            16,
+            fpsLow - 4
+        )
+        or pending > pendingHigh then
+
+            collectDelay =
+                math.max(
+                    collectDelay,
+                    0.008
+                )
+
+            waveSize =
+                math.min(
+                    waveSize,
+                    18
+                )
+
+            wavePause =
+                math.max(
+                    wavePause,
+                    0.070
+                )
+
+            state.TurboStats.Adapted =
+                tonumber(state.TurboStats.Adapted)
+                or 0
+
+            state.TurboStats.Adapted =
+                state.TurboStats.Adapted + 1
+
+        elseif fps < fpsLow
+        or pending > math.floor(pendingHigh * 0.75) then
+
+            collectDelay =
+                math.max(
+                    collectDelay,
+                    0.006
+                )
+
+            waveSize =
+                math.min(
+                    waveSize,
+                    25
+                )
+
+            wavePause =
+                math.max(
+                    wavePause,
+                    0.050
+                )
+
+            state.TurboStats.Adapted =
+                tonumber(state.TurboStats.Adapted)
+                or 0
+
+            state.TurboStats.Adapted =
+                state.TurboStats.Adapted + 1
+        end
+    end
+
+    return {
+        Name =
+            preset.Name
+            or "Normal",
+
+        CollectDelay =
+            collectDelay,
+
+        WaveSize =
+            waveSize,
+
+        WavePause =
+            wavePause,
+
+        RetryAfter =
+            retryAfter,
+
+        RetryDelay =
+            retryDelay,
+
+        MaxRetries =
+            maxRetries,
+
+        AutoSellNotifyEvery =
+            math.max(
+                1,
+                math.floor(
+                    tonumber(preset.AutoSellNotifyEvery)
+                    or 12
+                )
+            ),
+
+        StatusEveryBatches =
+            math.max(
+                1,
+                math.floor(
+                    tonumber(preset.StatusEveryBatches)
+                    or 2
+                )
+            ),
+
+        LoopWaitIdle =
+            math.clamp(
+                tonumber(preset.LoopWaitIdle)
+                or 0.14,
+                0.03,
+                2
+            ),
+    }
+end
+
+function GAG2ACFNormalizeSpeedName(value)
+
+    local speed =
+        GAG2ACFClean(
+            value
+        )
+
+    if speed == "" then
+        return "Normal"
+    end
+
+    if speed == "Exotic" then
+        return "Hyper"
+    end
+
+    if GAG2_ACF_SPEED_PRESETS[speed] ~= nil then
+        return speed
+    end
+
+    return "Normal"
+end
+
+function GAG2ACFGetSpeedPreset()
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    local speed =
+        GAG2ACFNormalizeSpeedName(
+            state.CollectionSpeed
+        )
+
+    local preset =
+        GAG2_ACF_SPEED_PRESETS[speed]
+        or GAG2_ACF_SPEED_PRESETS.Normal
+
+    state.CollectionSpeed =
+        preset.Name
+
+    return preset
+end
+
+function GAG2ACFGetEffectiveBurstAmount()
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    local preset =
+        GAG2ACFGetSpeedPreset()
+
+    local userBurst =
+        math.floor(
+            tonumber(state.BurstAmount)
+            or 0
+        )
+
+    local base =
+        math.max(
+            userBurst,
+            math.floor(
+                tonumber(preset.WaveSize)
+                or 25
+            )
+        )
+
+    return math.clamp(
+        base,
+        1,
+        math.floor(
+            tonumber(preset.MaxWaveSize)
+            or 65
+        )
+    )
+end
+
+function GAG2ACFGetEffectiveRecentCooldown()
+
+    return 0
+end
+
+function GAG2ACFGetEffectivePromptDelay()
+
+    return 0
+end
+
+function GAG2ACFGetEffectiveYieldEvery()
+
+    local timing =
+        GAG2ACFTurboGetTiming()
+
+    return math.max(
+        1,
+        timing.WaveSize
+    )
+end
+
+function GAG2ACFGetLoopWaitAfterFire()
+
+    local timing =
+        GAG2ACFTurboGetTiming()
+
+    return timing.WavePause
+end
+
+function GAG2ACFGetLoopWaitIdle()
+
+    local timing =
+        GAG2ACFTurboGetTiming()
+
+    return timing.LoopWaitIdle
+end
+
+function GAG2ACFTurboBuildKey(plantId, fruitId)
+
+    plantId =
+        GAG2ACFClean(
+            plantId
+        )
+
+    fruitId =
+        GAG2ACFClean(
+            fruitId
+        )
+
+    if plantId == ""
+    or fruitId == "" then
+
+        return ""
+    end
+
+    return plantId
+        .. ":"
+        .. fruitId
+end
+
+function GAG2ACFTurboMarkConfirmed(plantId, fruitId)
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    local key =
+        GAG2ACFTurboBuildKey(
+            plantId,
+            fruitId
+        )
+
+    if key == "" then
+        return false
+    end
+
+    state.TurboPending[key] =
+        nil
+
+    if state.TurboConfirmed[key] == nil then
+
+        state.TurboStats.Confirmed =
+            tonumber(state.TurboStats.Confirmed)
+            or 0
+
+        state.TurboStats.Confirmed =
+            state.TurboStats.Confirmed + 1
+    end
+
+    state.TurboConfirmed[key] =
+        os.clock()
+
+    state.Recent[key] =
+        os.clock()
+
+    if type(state.CachedFruitEntries) == "table" then
+
+        state.CachedFruitEntries[key] =
+            nil
+    end
+
+    return true
+end
+
+function GAG2ACFTurboInstallFruitRemovedAck()
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    if state.TurboFruitRemovedHooked == true then
+        return true
+    end
+
+    local module =
+        ReplicatedStorage:FindFirstChild("SharedModules")
+        and ReplicatedStorage.SharedModules:FindFirstChild("Networking")
+
+    if not module
+    or module:IsA("ModuleScript") ~= true then
+
+        return false
+    end
+
+    local ok,
+        networking =
+        pcall(function()
+
+            return require(
+                module
+            )
+        end)
+
+    if ok ~= true
+    or type(networking) ~= "table" then
+
+        return false
+    end
+
+    local onClient =
+        networking.Garden
+        and networking.Garden.FruitRemoved
+        and networking.Garden.FruitRemoved.OnClientEvent
+
+    if type(onClient) ~= "table"
+    or type(onClient.Fire) ~= "function" then
+
+        return false
+    end
+
+    local original =
+        onClient.Fire
+
+    onClient.Fire =
+        function(...)
+
+            local args =
+                table.pack(...)
+
+            local offset =
+                args[1] == onClient
+                and 1
+                or 0
+
+            local userId =
+                tonumber(
+                    args[1 + offset]
+                )
+
+            local plantId =
+                GAG2ACFClean(
+                    args[2 + offset]
+                )
+
+            local fruitId =
+                GAG2ACFClean(
+                    args[3 + offset]
+                )
+
+            if userId == nil
+            or userId == LOCAL_PLAYER.UserId then
+
+                pcall(function()
+
+                    GAG2ACFTurboMarkConfirmed(
+                        plantId,
+                        fruitId
+                    )
+                end)
+            end
+
+            return original(...)
+        end
+
+    state.TurboFruitRemovedHooked =
+        true
+
+    state.TurboFruitRemovedPacket =
+        onClient
+
+    state.TurboFruitRemovedOriginal =
+        original
+
+    return true
+end
+
+function GAG2ACFTurboHasDirectHarvestPrompt(root)
+
+    if typeof(root) ~= "Instance" then
+        return nil
+    end
+
+    local harvestPart =
+        root:FindFirstChild("HarvestPart")
+
+    if typeof(harvestPart) ~= "Instance" then
+        return nil
+    end
+
+    local prompt =
+        harvestPart:FindFirstChild("HarvestPrompt")
+
+    if typeof(prompt) == "Instance"
+    and prompt:IsA("ProximityPrompt")
+    and prompt.Enabled == true then
+
+        return prompt
+    end
+
+    return nil
+end
+
+function GAG2ACFTurboIsReadyFruit(fruit)
+
+    if typeof(fruit) ~= "Instance" then
+        return false,
+            nil
+    end
+
+    local prompt =
+        GAG2ACFTurboHasDirectHarvestPrompt(
+            fruit
+        )
+
+    if prompt then
+
+        return true,
+            prompt
+    end
+
+    local attrs =
+        {}
+
+    pcall(function()
+
+        attrs =
+            fruit:GetAttributes()
+    end)
+
+    local age =
+        tonumber(
+            attrs.Age
+        )
+
+    local maxAge =
+        tonumber(
+            attrs.MaxAge
+        )
+
+    if age
+    and maxAge
+    and age >= maxAge then
+
+        return true,
+            nil
+    end
+
+    return false,
+        nil
+end
+
+function GAG2ACFTurboReadFruitName(fruit, plant)
+
+    local name =
+        ""
+
+    if type(GAG2ACFReadFruitNameSafe) == "function" then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return GAG2ACFReadFruitNameSafe(
+                    fruit,
+                    plant
+                )
+            end)
+
+        if ok == true then
+
+            name =
+                GAG2ACFClean(
+                    result
+                )
+        end
+    end
+
+    if name == ""
+    and type(GAG2ACFReadFruitName) == "function" then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return GAG2ACFReadFruitName(
+                    fruit,
+                    plant
+                )
+            end)
+
+        if ok == true then
+
+            name =
+                GAG2ACFClean(
+                    result
+                )
+        end
+    end
+
+    if name == ""
+    and typeof(plant) == "Instance" then
+
+        pcall(function()
+
+            name =
+                GAG2ACFClean(
+                    plant:GetAttribute("SeedName")
+                    or plant:GetAttribute("CorePartName")
+                    or plant:GetAttribute("FruitName")
+                    or plant:GetAttribute("Name")
+                    or ""
+                )
+        end)
+    end
+
+    if name == ""
+    and typeof(fruit) == "Instance" then
+
+        pcall(function()
+
+            name =
+                GAG2ACFClean(
+                    fruit:GetAttribute("SeedName")
+                    or fruit:GetAttribute("CorePartName")
+                    or fruit:GetAttribute("FruitName")
+                    or fruit:GetAttribute("Name")
+                    or ""
+                )
+        end)
+    end
+
+    return name
+end
+
+function GAG2ACFBuildEntry(plant, fruit, promptOverride)
+
+    if typeof(plant) ~= "Instance"
+    or typeof(fruit) ~= "Instance" then
+
+        return nil
+    end
+
+    local plantId =
+        GAG2ACFReadPlantId(
+            plant
+        )
+
+    local fruitId =
+        GAG2ACFReadFruitId(
+            plant,
+            fruit
+        )
+
+    local packetKey =
+        GAG2ACFTurboBuildKey(
+            plantId,
+            fruitId
+        )
+
+    if packetKey == "" then
+        return nil
+    end
+
+    local prompt =
+        nil
+
+    if typeof(promptOverride) == "Instance"
+    and promptOverride:IsA("ProximityPrompt")
+    and promptOverride.Enabled == true then
+
+        prompt =
+            promptOverride
+
+    else
+
+        prompt =
+            GAG2ACFTurboHasDirectHarvestPrompt(
+                fruit
+            )
+    end
+
+    local name =
+        GAG2ACFTurboReadFruitName(
+            fruit,
+            plant
+        )
+
+    if name == "" then
+        return nil
+    end
+
+    local mutation =
+        GAG2ACFReadMutation(
+            fruit,
+            plant
+        )
+
+    local weightKg,
+        weightSource =
+        GAG2ACFCalculateFruitWeightKg(
+            fruit,
+            name
+        )
+
+    local rawSizeMulti =
+        nil
+
+    pcall(function()
+
+        rawSizeMulti =
+            tonumber(
+                fruit:GetAttribute("SizeMulti")
+                or fruit:GetAttribute("SizeMultiplier")
+                or fruit:GetAttribute("Size")
+            )
+    end)
+
+    if not weightKg then
+
+        weightKg =
+            rawSizeMulti
+            or 1
+
+        weightSource =
+            rawSizeMulti
+            and "SizeMulti fallback"
+            or "packet fallback"
+    end
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    local seedRow =
+        state.SeedMap
+        and state.SeedMap[name]
+
+    local rarity =
+        seedRow
+        and GAG2ACFClean(seedRow.Rarity)
+        or "?"
+
+    local rarityScore =
+        GAG2_ACF_RARITY_SCORE[rarity]
+        or 0
+
+    local mutationScore =
+        GAG2ACFGetMutationScore(
+            mutation
+        )
+
+    local sellWorth =
+        GAG2ACFGetSellWorth(
+            name,
+            weightKg,
+            mutation,
+            fruit
+        )
+
+    GAG2ACFRememberChoice(
+        "FruitNames",
+        name
+    )
+
+    if rarity ~= "?" then
+
+        GAG2ACFRememberChoice(
+            "RarityNames",
+            rarity
+        )
+    end
+
+    if mutation ~= "" then
+
+        GAG2ACFRememberChoice(
+            "MutationNames",
+            mutation
+        )
+    end
+
+    return {
+        Plant =
+            plant,
+
+        Fruit =
+            fruit,
+
+        Prompt =
+            prompt,
+
+        Key =
+            packetKey,
+
+        PacketKey =
+            packetKey,
+
+        PlantId =
+            plantId,
+
+        FruitId =
+            fruitId,
+
+        PacketCollect =
+            true,
+
+        Kind =
+            plant == fruit
+            and "PlantHarvest"
+            or "FruitHarvest",
+
+        IsPlantHarvest =
+            plant == fruit,
+
+        Name =
+            name,
+
+        Rarity =
+            rarity,
+
+        RarityScore =
+            rarityScore,
+
+        Mutation =
+            mutation,
+
+        MutationLabel =
+            mutation ~= ""
+            and mutation
+            or "None",
+
+        MutationScore =
+            mutationScore,
+
+        WeightKg =
+            weightKg,
+
+        WeightSource =
+            weightSource,
+
+        RawSizeMulti =
+            rawSizeMulti,
+
+        SizeMulti =
+            rawSizeMulti
+            or weightKg
+            or 1,
+
+        SellWorth =
+            sellWorth,
+
+        Cached =
+            false,
+
+        CachedAt =
+            os.clock(),
+
+        CollectMethod =
+            "CollectFruitPacket",
+    }
+end
+
+function GAG2ACFBuildCachedFallbackQueue(reason)
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    local queue =
+        {}
+
+    local readyCount =
+        0
+
+    local excludedCount =
+        0
+
+    local now =
+        os.clock()
+
+    for _, key in ipairs(state.CachedFruitOrder or {}) do
+
+        local cached =
+            state.CachedFruitEntries[key]
+
+        if type(cached) == "table"
+        and state.TurboConfirmed[key] == nil then
+
+            local cachedAt =
+                tonumber(cached.CachedAt)
+                or now
+
+            if now - cachedAt <= 45 then
+
+                readyCount =
+                    readyCount + 1
+
+                if GAG2ACFEntryAllowed(cached) == true then
+
+                    table.insert(
+                        queue,
+                        cached
+                    )
+
+                else
+
+                    excludedCount =
+                        excludedCount + 1
+                end
+            end
+        end
+    end
+
+    GAG2ACFSortQueue(
+        queue
+    )
+
+    if #queue > 0 then
+
+        return queue,
+            readyCount,
+            excludedCount,
+            "ok"
+    end
+
+    return queue,
+        readyCount,
+        excludedCount,
+        tostring(reason or "plants missing")
+end
+
+function GAG2ACFTurboAddEntry(queue, seenKeys, entry)
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    if type(entry) ~= "table" then
+        return false,
+            false
+    end
+
+    local key =
+        GAG2ACFClean(
+            entry.PacketKey
+            or entry.Key
+        )
+
+    if key == "" then
+        return false,
+            false
+    end
+
+    if seenKeys[key] == true then
+        return false,
+            false
+    end
+
+    seenKeys[key] =
+        true
+
+    GAG2ACFCacheEntry(
+        entry
+    )
+
+    if state.TurboConfirmed[key] ~= nil then
+
+        return true,
+            true
+    end
+
+    if GAG2ACFEntryAllowed(entry) == true then
+
+        table.insert(
+            queue,
+            entry
+        )
+
+        return true,
+            true
+    end
+
+    return true,
+        false
+end
+
+function GAG2ACFTurboScanPlant(queue, seenKeys, plant)
+
+    if typeof(plant) ~= "Instance" then
+        return 0,
+            0
+    end
+
+    local readyCount =
+        0
+
+    local excludedCount =
+        0
+
+    local fruits =
+        plant:FindFirstChild("Fruits")
+
+    local scannedFruit =
+        false
+
+    if typeof(fruits) == "Instance" then
+
+        for _, fruit in ipairs(fruits:GetChildren()) do
+
+            if fruit:IsA("Model")
+            or fruit:IsA("Folder")
+            or fruit:IsA("BasePart") then
+
+                scannedFruit =
+                    true
+
+                local ready,
+                    prompt =
+                    GAG2ACFTurboIsReadyFruit(
+                        fruit
+                    )
+
+                if ready == true then
+
+                    local added,
+                        allowed =
+                        GAG2ACFTurboAddEntry(
+                            queue,
+                            seenKeys,
+                            GAG2ACFBuildEntry(
+                                plant,
+                                fruit,
+                                prompt
+                            )
+                        )
+
+                    if added == true then
+
+                        readyCount =
+                            readyCount + 1
+
+                        if allowed ~= true then
+
+                            excludedCount =
+                                excludedCount + 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if scannedFruit ~= true then
+
+        local ready,
+            prompt =
+            GAG2ACFTurboIsReadyFruit(
+                plant
+            )
+
+        if ready == true
+        and prompt ~= nil then
+
+            local added,
+                allowed =
+                GAG2ACFTurboAddEntry(
+                    queue,
+                    seenKeys,
+                    GAG2ACFBuildEntry(
+                        plant,
+                        plant,
+                        prompt
+                    )
+                )
+
+            if added == true then
+
+                readyCount =
+                    readyCount + 1
+
+                if allowed ~= true then
+
+                    excludedCount =
+                        excludedCount + 1
+                end
+            end
+        end
+    end
+
+    return readyCount,
+        excludedCount
+end
+
+function GAG2ACFScanQueue()
+
+    GAG2ACFEnsureModules()
+
+    GAG2ACFEnsureTurboState()
+
+    GAG2ACFTurboCleanupState()
+
+    GAG2ACFTurboInstallFruitRemovedAck()
+
+    local garden =
+        GAG2ACFGetOwnGarden()
+
+    local queue =
+        {}
+
+    local readyCount =
+        0
+
+    local excludedCount =
+        0
+
+    if not garden then
+
+        return GAG2ACFBuildCachedFallbackQueue(
+            "own garden missing"
+        )
+    end
+
+    local plants =
+        garden:FindFirstChild("Plants")
+
+    if typeof(plants) ~= "Instance" then
+
+        return GAG2ACFBuildCachedFallbackQueue(
+            "plants folder missing"
+        )
+    end
+
+    local seenKeys =
+        {}
+
+    for _, plant in ipairs(plants:GetChildren()) do
+
+        if plant:IsA("Model")
+        or plant:IsA("Folder") then
+
+            local addedReady,
+                addedExcluded =
+                GAG2ACFTurboScanPlant(
+                    queue,
+                    seenKeys,
+                    plant
+                )
+
+            readyCount =
+                readyCount + addedReady
+
+            excludedCount =
+                excludedCount + addedExcluded
+        end
+    end
+
+    GAG2ACFSortQueue(
+        queue
+    )
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    local now =
+        os.clock()
+
+    if now - tonumber(state.LastRefreshAt or 0) >= 5 then
+
+        state.LastRefreshAt =
+            now
+
+        task.defer(function()
+
+            if type(GAG2ACFRefreshDropdownValues) == "function" then
+
+                GAG2ACFRefreshDropdownValues()
+            end
+        end)
+    end
+
+    return queue,
+        readyCount,
+        excludedCount,
+        "ok"
+end
+
+function GAG2ACFTurboCanSend(entry, timing)
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    if type(entry) ~= "table" then
+        return false,
+            "bad entry"
+    end
+
+    local key =
+        GAG2ACFClean(
+            entry.PacketKey
+            or entry.Key
+        )
+
+    if key == "" then
+
+        return false,
+            "missing key"
+    end
+
+    if state.TurboConfirmed[key] ~= nil then
+
+        return false,
+            "already confirmed"
+    end
+
+    local pending =
+        state.TurboPending[key]
+
+    if type(pending) == "table" then
+
+        local now =
+            os.clock()
+
+        local lastSent =
+            tonumber(
+                pending.LastSentAt
+                or pending.SentAt
+            )
+            or now
+
+        if now - lastSent < timing.RetryAfter then
+
+            return false,
+                "waiting ack"
+        end
+
+        local attempts =
+            math.floor(
+                tonumber(pending.Attempts)
+                or 1
+            )
+
+        if attempts >= 1 + timing.MaxRetries then
+
+            return false,
+                "retry limit"
+        end
+    end
+
+    return true,
+        "ok"
+end
+
+function GAG2ACFTurboRegisterSent(entry)
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    local key =
+        GAG2ACFClean(
+            entry.PacketKey
+            or entry.Key
+        )
+
+    if key == "" then
+        return false
+    end
+
+    local existing =
+        state.TurboPending[key]
+
+    local attempts =
+        1
+
+    if type(existing) == "table" then
+
+        attempts =
+            math.floor(
+                tonumber(existing.Attempts)
+                or 1
+            )
+            + 1
+    end
+
+    if attempts > 1 then
+
+        state.TurboStats.Retried =
+            tonumber(state.TurboStats.Retried)
+            or 0
+
+        state.TurboStats.Retried =
+            state.TurboStats.Retried + 1
+    end
+
+    state.TurboPending[key] = {
+        PlantId =
+            entry.PlantId,
+
+        FruitId =
+            entry.FruitId,
+
+        Name =
+            entry.Name,
+
+        SentAt =
+            existing
+            and existing.SentAt
+            or os.clock(),
+
+        LastSentAt =
+            os.clock(),
+
+        Attempts =
+            attempts,
+    }
+
+    state.TurboStats.Sent =
+        tonumber(state.TurboStats.Sent)
+        or 0
+
+    state.TurboStats.Sent =
+        state.TurboStats.Sent + 1
+
+    state.LastFiredCount =
+        tonumber(state.LastFiredCount)
+        or 0
+
+    state.LastFiredCount =
+        state.LastFiredCount + 1
+
+    return true
+end
+
+function GAG2ACFTurboFireEntry(entry)
+
+    if type(entry) ~= "table" then
+        return false,
+            "bad entry"
+    end
+
+    local plantId =
+        GAG2ACFClean(
+            entry.PlantId
+        )
+
+    local fruitId =
+        GAG2ACFClean(
+            entry.FruitId
+        )
+
+    if plantId == ""
+    or fruitId == "" then
+
+        return false,
+            "missing plantId/fruitId"
+    end
+
+    local packetOk,
+        packetInfo =
+        GAG2ACFCollectFruitByIds(
+            plantId,
+            fruitId
+        )
+
+    if packetOk == true then
+
+        GAG2ACFTurboRegisterSent(
+            entry
+        )
+
+        return true,
+            packetInfo
+    end
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    state.TurboStats.Errors =
+        tonumber(state.TurboStats.Errors)
+        or 0
+
+    state.TurboStats.Errors =
+        state.TurboStats.Errors + 1
+
+    if entry.IsPlantHarvest == true
+    and typeof(entry.Prompt) == "Instance"
+    and entry.Prompt.Parent ~= nil then
+
+        local promptOk,
+            promptInfo =
+            GAG2ACFFirePrompt(
+                entry.Prompt
+            )
+
+        if promptOk == true then
+
+            GAG2ACFTurboRegisterSent(
+                entry
+            )
+
+            return true,
+                "plant prompt fallback"
+        end
+
+        return false,
+            "packet failed: "
+            .. tostring(packetInfo)
+            .. " | prompt failed: "
+            .. tostring(promptInfo)
+    end
+
+    return false,
+        "packet failed: "
+        .. tostring(packetInfo)
+end
+
+function GAG2ACFCollectEntry(entry)
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    if state.Enabled ~= true then
+
+        return false,
+            "stopped"
+    end
+
+    local timing =
+        GAG2ACFTurboGetTiming()
+
+    local canSend,
+        canReason =
+        GAG2ACFTurboCanSend(
+            entry,
+            timing
+        )
+
+    if canSend ~= true then
+
+        return false,
+            canReason
+    end
+
+    return GAG2ACFTurboFireEntry(
+        entry
+    )
+end
+
+function GAG2ACFBuildStatusText(queue, readyCount, excludedCount, note)
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    queue =
+        type(queue) == "table"
+        and queue
+        or {}
+
+    local timing =
+        GAG2ACFTurboGetTiming()
+
+    local matching =
+        #queue
+
+    local nextText =
+        "None"
+
+    if queue[1] then
+
+        nextText =
+            tostring(queue[1].Name)
+            .. " | "
+            .. tostring(queue[1].Rarity)
+            .. " | "
+            .. tostring(queue[1].MutationLabel)
+            .. " | size "
+            .. GAG2ACFFormatSize(queue[1].SizeMulti)
+            .. " | worth "
+            .. GAG2ACFFormatNumber(queue[1].SellWorth)
+    end
+
+    state.LastReadyCount =
+        readyCount
+
+    state.LastMatchingCount =
+        matching
+
+    state.LastExcludedCount =
+        excludedCount
+
+    state.LastNextText =
+        nextText
+
+    return '<font color="rgb(196,181,253)"><b>Auto Collect Fruits</b></font>'
+        .. '\nState: '
+        .. (
+            state.Enabled == true
+            and "ON"
+            or "OFF"
+        )
+        .. '\nReady: '
+        .. tostring(readyCount)
+        .. ' | Matching: '
+        .. tostring(matching)
+        .. ' | Excluded: '
+        .. tostring(excludedCount)
+        .. '\nNext: '
+        .. tostring(nextText)
+        .. '\nPriority: '
+        .. tostring(state.Priority1)
+        .. ' > '
+        .. tostring(state.Priority2)
+        .. ' > '
+        .. tostring(state.Priority3)
+        .. '\nSpeed: '
+        .. tostring(timing.Name)
+        .. ' | Wave: '
+        .. tostring(timing.WaveSize)
+        .. ' | Delay: '
+        .. string.format("%.3f", timing.CollectDelay)
+        .. 's | Pause: '
+        .. string.format("%.3f", timing.WavePause)
+        .. 's'
+        .. '\nPending: '
+        .. tostring(GAG2ACFTurboCountPending())
+        .. ' | Sent: '
+        .. tostring(state.TurboStats.Sent or 0)
+        .. ' | Confirmed: '
+        .. tostring(state.TurboStats.Confirmed or 0)
+        .. '\nWeather: '
+        .. GAG2ACFWeatherStatusText()
+        .. '\nNote: '
+        .. tostring(note or "Turbo packet stream active.")
+end
+
+function GAG2ACFCollectBatch()
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    local pausedForWeather,
+        weather =
+        GAG2ACFShouldPauseForWeather()
+
+    if pausedForWeather == true then
+
+        GAG2ACFSetStatus(
+            GAG2ACFBuildStatusText(
+                {},
+                state.LastReadyCount or 0,
+                state.LastExcludedCount or 0,
+                "Paused for weather: "
+                .. tostring(weather)
+            )
+        )
+
+        return -1
+    end
+
+    local queue,
+        readyCount,
+        excludedCount,
+        reason =
+        GAG2ACFScanQueue()
+
+    if reason ~= "ok" then
+
+        GAG2ACFSetStatus(
+            GAG2ACFBuildStatusText(
+                {},
+                readyCount,
+                excludedCount,
+                reason
+            )
+        )
+
+        return 0
+    end
+
+    if #queue <= 0 then
+
+        GAG2ACFSetStatus(
+            GAG2ACFBuildStatusText(
+                queue,
+                readyCount,
+                excludedCount,
+                "No matching ready fruit."
+            )
+        )
+
+        return 0
+    end
+
+    local timing =
+        GAG2ACFTurboGetTiming()
+
+    state.TurboBatchCounter =
+        (
+            tonumber(state.TurboBatchCounter)
+            or 0
+        )
+        + 1
+
+    local fired =
+        0
+
+    local skipped =
+        0
+
+    local lastNote =
+        "No packet fired."
+
+    for _, entry in ipairs(queue) do
+
+        if state.Enabled ~= true then
+            break
+        end
+
+        if fired >= timing.WaveSize then
+            break
+        end
+
+        local canSend,
+            canReason =
+            GAG2ACFTurboCanSend(
+                entry,
+                timing
+            )
+
+        if canSend ~= true then
+
+            skipped =
+                skipped + 1
+
+            lastNote =
+                tostring(canReason)
+
+            continue
+        end
+
+        local collected,
+            collectInfo =
+            GAG2ACFTurboFireEntry(
+                entry
+            )
+
+        if collected == true then
+
+            fired =
+                fired + 1
+
+            lastNote =
+                tostring(collectInfo)
+
+            if type(GAG2AutoSellHandleCollectedFruit) == "function"
+            and fired % timing.AutoSellNotifyEvery == 0 then
+
+                GAG2AutoSellHandleCollectedFruit(
+                    entry
+                )
+            end
+
+            task.wait(
+                timing.CollectDelay
+            )
+
+        else
+
+            lastNote =
+                tostring(collectInfo)
+        end
+    end
+
+    local statusEvery =
+        timing.StatusEveryBatches
+
+    if fired <= 0
+    or statusEvery <= 1
+    or state.TurboBatchCounter % statusEvery == 0 then
+
+        GAG2ACFSetStatus(
+            GAG2ACFBuildStatusText(
+                queue,
+                readyCount,
+                excludedCount,
+                fired > 0
+                and (
+                    "Turbo collected "
+                    .. tostring(fired)
+                    .. " fruit(s). "
+                    .. tostring(lastNote)
+                )
+                or (
+                    "Waiting. "
+                    .. tostring(lastNote)
+                    .. " | skipped "
+                    .. tostring(skipped)
+                )
+            )
+        )
+    end
+
+    return fired
+end
+
+function GAG2ACFStartLoop()
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    if state.Running == true then
+        return
+    end
+
+    state.Running =
+        true
+
+    task.spawn(function()
+
+        GAG2ACFTurboInstallFruitRemovedAck()
+
+        while state.Enabled == true do
+
+            if GAG2ACFBackpackLooksFull() == true then
+
+                if type(GAG2AutoSellIsEnabled) == "function"
+                and GAG2AutoSellIsEnabled() == true then
+
+                    if type(GAG2AutoSellScanExistingFruitTools) == "function" then
+
+                        GAG2AutoSellScanExistingFruitTools(
+                            "backpack full"
+                        )
+                    end
+
+                    if type(GAG2AutoSellScheduleSellAll) == "function"
+                    and GAG2_AUTO_SELL_FRUIT_STATE
+                    and GAG2_AUTO_SELL_FRUIT_STATE.Method == "SellAll" then
+
+                        GAG2AutoSellScheduleSellAll(
+                            "backpack full"
+                        )
+                    end
+
+                    GAG2ACFSetStatus(
+                        '<font color="rgb(196,181,253)"><b>Auto Collect:</b></font>'
+                        .. '\nBackpack full/max detected.'
+                        .. '\nAuto Sell is ON, selling and continuing.'
+                    )
+
+                    task.wait(
+                        0.20
+                    )
+
+                else
+
+                    state.Enabled =
+                        false
+
+                    if Toggles.HolyGAG2AutoCollectFruits
+                    and type(Toggles.HolyGAG2AutoCollectFruits.SetValue) == "function" then
+
+                        pcall(function()
+
+                            Toggles.HolyGAG2AutoCollectFruits:SetValue(
+                                false
+                            )
+                        end)
+                    end
+
+                    GAG2ACFSetStatus(
+                        '<font color="rgb(248,113,113)"><b>Auto Collect stopped:</b></font>'
+                        .. '\nBackpack looks full/max.'
+                    )
+
+                    break
+                end
+            end
+
+            local fired =
+                GAG2ACFCollectBatch()
+
+            if fired == -1 then
+
+                task.wait(
+                    0.75
+                )
+
+            elseif fired > 0 then
+
+                task.wait(
+                    GAG2ACFGetLoopWaitAfterFire()
+                )
+
+            else
+
+                task.wait(
+                    GAG2ACFGetLoopWaitIdle()
+                )
+            end
+        end
+
+        state.Running =
+            false
+
+        if state.Enabled ~= true then
+
+            state.TurboPending =
+                {}
+
+            GAG2ACFSetStatus(
+                GAG2ACFBuildStatusText(
+                    {},
+                    state.LastReadyCount or 0,
+                    state.LastExcludedCount or 0,
+                    "Stopped."
+                )
+            )
+        end
+    end)
+end
+
+function GAG2ACFSetEnabled(value)
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    local enabled =
+        value == true
+
+    if enabled
+    and GAG2_AUTO_SHOVEL_FRUIT_STATE
+    and GAG2_AUTO_SHOVEL_FRUIT_STATE.Enabled == true then
+
+        GAG2AutoShovelFruitSetEnabled(
+            false
+        )
+
+        GAG2AutoShovelFruitSetToggleOff()
+    end
+
+    state.Enabled =
+        enabled
+
+    if enabled == true then
+
+        state.TurboPending =
+            {}
+
+        GAG2ACFTurboInstallFruitRemovedAck()
+
+        GAG2ACFSetStatus(
+            "Auto Collect Fruits starting..."
+        )
+
+        if ConfigState.Loading ~= true then
+
+            GAG2ACFStartLoop()
+        end
+
+    else
+
+        state.TurboPending =
+            {}
+
+        GAG2ACFSetStatus(
+            GAG2ACFBuildStatusText(
+                {},
+                state.LastReadyCount or 0,
+                state.LastExcludedCount or 0,
+                "Stopped."
+            )
+        )
+    end
+
+    MarkConfigDirty()
+end
+
+function GAG2ACFMaybePrimeHiddenFruitCache(reason, forceFull)
+
+    return 0,
+        0,
+        "hidden getgc cache disabled by turbo stream"
+end
+
+function GAG2ACFStartHiddenCacheWorker()
+
+    local state =
+        GAG2ACFEnsureTurboState()
+
+    state.HiddenCacheWorkerDisabled =
+        true
+
+    state.HiddenCacheWorkerRunning =
+        false
+
+    return false
+end
+
+function GAG2PerformancePrimeACFCacheBeforeHardDelete(reason)
+
+    local queue =
+        {}
+
+    local readyCount =
+        0
+
+    local excludedCount =
+        0
+
+    local scanReason =
+        "not scanned"
+
+    if type(GAG2ACFScanQueue) == "function" then
+
+        local ok,
+            resultQueue,
+            resultReady,
+            resultExcluded,
+            resultReason =
+            pcall(function()
+
+                return GAG2ACFScanQueue()
+            end)
+
+        if ok == true then
+
+            queue =
+                type(resultQueue) == "table"
+                and resultQueue
+                or {}
+
+            readyCount =
+                tonumber(resultReady)
+                or #queue
+
+            excludedCount =
+                tonumber(resultExcluded)
+                or 0
+
+            scanReason =
+                tostring(resultReason)
+        else
+
+            scanReason =
+                tostring(resultQueue)
+        end
+    end
+
+    local cachedCount =
+        0
+
+    if type(GAG2ACFGetCachedFruitCount) == "function" then
+
+        pcall(function()
+
+            cachedCount =
+                tonumber(
+                    GAG2ACFGetCachedFruitCount()
+                )
+                or 0
+        end)
+    end
+
+    return true,
+        math.max(
+            cachedCount,
+            readyCount
+        ),
+        "turbo prime | queue="
+        .. tostring(#queue)
+        .. " ready="
+        .. tostring(readyCount)
+        .. " excluded="
+        .. tostring(excludedCount)
+        .. " reason="
+        .. tostring(scanReason)
+        .. " | "
+        .. tostring(reason or "hard delete")
+end
+
+function GAG2PerformanceShouldStripOwnGardenVisual(descendant)
+
+    if typeof(descendant) ~= "Instance" then
+        return false
+    end
+
+    if descendant:IsA("BasePart") then
+        return true
+    end
+
+    if descendant:IsA("Decal")
+    or descendant:IsA("Texture")
+    or descendant:IsA("SurfaceAppearance")
+    or descendant:IsA("SpecialMesh")
+    or descendant:IsA("FileMesh")
+    or descendant:IsA("ParticleEmitter")
+    or descendant:IsA("Trail")
+    or descendant:IsA("Beam")
+    or descendant:IsA("PointLight")
+    or descendant:IsA("SpotLight")
+    or descendant:IsA("SurfaceLight")
+    or descendant:IsA("Highlight")
+    or descendant:IsA("BillboardGui")
+    or descendant:IsA("SurfaceGui") then
+
+        return true
+    end
+
+    return false
+end
+
+function GAG2PerformanceStripPlantVisuals(root, reason)
+
+    if typeof(root) ~= "Instance" then
+        return 0
+    end
+
+    local stripped =
+        0
+
+    local descendants =
+        root:GetDescendants()
+
+    for index = #descendants, 1, -1 do
+
+        local descendant =
+            descendants[index]
+
+        if typeof(descendant) == "Instance"
+        and descendant.Parent ~= nil
+        and GAG2PerformanceShouldStripOwnGardenVisual(descendant) == true then
+
+            local ok =
+                pcall(function()
+
+                    descendant:Destroy()
+                end)
+
+            if ok == true then
+
+                stripped =
+                    stripped + 1
+            end
+        end
+
+        if stripped > 0
+        and stripped % 450 == 0 then
+
+            task.wait()
+        end
+    end
+
+    return stripped
+end
+
+function GAG2PerformanceStartLogicPreservedPlantWatcher(plants)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    if state.OwnGardenVisualStripConnection then
+
+        pcall(function()
+
+            state.OwnGardenVisualStripConnection:Disconnect()
+        end)
+    end
+
+    state.OwnGardenVisualStripConnection =
+        nil
+
+    if typeof(plants) ~= "Instance" then
+        return false
+    end
+
+    state.OwnGardenVisualStripConnection =
+        plants.DescendantAdded:Connect(function(descendant)
+
+            if GAG2_PERFORMANCE_STATE.OwnGardenHardDeleted ~= true then
+                return
+            end
+
+            task.defer(function()
+
+                if typeof(descendant) == "Instance"
+                and descendant.Parent ~= nil
+                and GAG2PerformanceShouldStripOwnGardenVisual(descendant) == true then
+
+                    pcall(function()
+
+                        descendant:Destroy()
+                    end)
+                end
+            end)
+        end)
+
+    return true
+end
+
+function GAG2PerformanceHardDeleteOwnGarden(reason)
+
+    local state =
+        GAG2_PERFORMANCE_STATE
+
+    if state.OwnGardenHardDeleted == true then
+
+        GAG2PerformanceSetStatus(
+            "Own garden already optimized. Rejoin required to restore visuals."
+        )
+
+        return false
+    end
+
+    local garden =
+        GAG2PerformanceFindOwnGardenForHardDelete()
+
+    if typeof(garden) ~= "Instance" then
+
+        GAG2PerformanceSetStatus(
+            "Hard delete failed: own garden not found."
+        )
+
+        return false
+    end
+
+    GAG2PerformancePrimeACFCacheBeforeHardDelete(
+        reason
+    )
+
+    local gardenPath =
+        PathOf(
+            garden
+        )
+
+    local beforeCount =
+        GAG2PerformanceCountDescendants(
+            garden
+        )
+
+    local plants =
+        garden:FindFirstChild("Plants")
+
+    local strippedPlants =
+        0
+
+    if typeof(plants) == "Instance" then
+
+        strippedPlants =
+            GAG2PerformanceStripPlantVisuals(
+                plants,
+                reason
+            )
+
+        GAG2PerformanceStartLogicPreservedPlantWatcher(
+            plants
+        )
+    end
+
+    local visualDeleted =
+        false
+
+    local visualCount =
+        0
+
+    local visual =
+        garden:FindFirstChild("Visual")
+
+    if typeof(visual) == "Instance" then
+
+        visualCount =
+            GAG2PerformanceCountDescendants(
+                visual
+            )
+
+        visualDeleted =
+            pcall(function()
+
+                visual:Destroy()
+            end)
+    end
+
+    local deletedCount =
+        strippedPlants
+        + visualCount
+
+    state.OwnGardenHardDeleted =
+        true
+
+    state.OwnGardenHardDeletedMode =
+        "LogicPreservedPlants"
+
+    state.OwnGardenHardDeletedAt =
+        os.time()
+
+    state.OwnGardenHardDeletedDescendants =
+        deletedCount
+
+    state.OwnGardenHardDeletedPath =
+        gardenPath
+
+    GAG2PerformanceSetStatus(
+        "Ultra optimized own garden. Kept Plants/Fruits logic alive. "
+        .. "Stripped plant visuals="
+        .. tostring(strippedPlants)
+        .. " | Visual="
+        .. tostring(visualDeleted)
+        .. " ("
+        .. tostring(visualCount)
+        .. ") | Rejoin restores visuals."
+    )
+
+    print(
+        "[HOLY PERFORMANCE]",
+        "logic-preserved own garden optimization",
+        "| path:",
+        gardenPath,
+        "| before:",
+        tostring(beforeCount),
+        "| strippedPlants:",
+        tostring(strippedPlants),
+        "| visualDeleted:",
+        tostring(visualDeleted),
+        "| visualCount:",
+        tostring(visualCount),
+        "| reason:",
+        tostring(reason or "manual")
+    )
+
+    return true
+end
+
+task.defer(function()
+
+    GAG2ACFStartHiddenCacheWorker()
+end)
+
+--==================================================
 -- [4.57] AUTO SELL FRUITS
 -- Event-based instant fruit selling.
 -- Packets confirmed:
