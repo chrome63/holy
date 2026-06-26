@@ -40,7 +40,7 @@ local REMOTE_SOURCE_VERSION =
 
 local LIBRARY_URL =
     REPO_URL
-    .. "libraryholy6.lua?v="
+    .. "libraryholy5.lua?v="
     .. REMOTE_SOURCE_VERSION
 
 local UI_SETTINGS_FOLDER =
