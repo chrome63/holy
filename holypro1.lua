@@ -147,6 +147,7 @@ HOLY_DEV_UI_STATE = {
 
     UnloadOtherGardens = false,
     UnloadOwnGarden = false,
+    HideMiddle = false,
 }
 
 HOLY_SERVER_PICK_STYLES = {
@@ -245,6 +246,7 @@ HOLY_PERFORMANCE_STATE = {
 
     Connections = {},
     PlotConnections = {},
+    MapConnections = {},
 
     OwnPlot = nil,
     OwnMarker = "",
@@ -887,6 +889,9 @@ function HolySaveUISettings()
 
         UnloadOwnGarden =
             HOLY_DEV_UI_STATE.UnloadOwnGarden == true,
+
+        HideMiddle =
+            HOLY_DEV_UI_STATE.HideMiddle == true,
     }
 
     local encodeOk,
@@ -1024,6 +1029,22 @@ function HolyLoadUISettings()
 
         HOLY_DEV_UI_STATE.UnloadOwnGarden =
             data.DeleteOwnGarden
+    end
+
+    if type(data.HideMiddle) == "boolean" then
+
+        HOLY_DEV_UI_STATE.HideMiddle =
+            data.HideMiddle
+
+    elseif type(data.DeleteMiddle) == "boolean" then
+
+        HOLY_DEV_UI_STATE.HideMiddle =
+            data.DeleteMiddle
+
+    elseif type(data.UnloadMiddle) == "boolean" then
+
+        HOLY_DEV_UI_STATE.HideMiddle =
+            data.UnloadMiddle
     end
 
     return true
@@ -17298,10 +17319,17 @@ function HolyPerformanceDisconnectConnections()
         HOLY_PERFORMANCE_STATE.PlotConnections
     )
 
+    HolyPerformanceDisconnectConnectionMap(
+        HOLY_PERFORMANCE_STATE.MapConnections
+    )
+
     HOLY_PERFORMANCE_STATE.Connections =
         {}
 
     HOLY_PERFORMANCE_STATE.PlotConnections =
+        {}
+
+    HOLY_PERFORMANCE_STATE.MapConnections =
         {}
 end
 
@@ -17493,10 +17521,16 @@ function HolyPerformanceIsOwnGarden(garden, ownGarden)
     return garden == ownGarden
 end
 
-function HolyPerformanceAnyUnloadEnabled()
+function HolyPerformanceAnyGardenUnloadEnabled()
 
     return HOLY_DEV_UI_STATE.UnloadOtherGardens == true
         or HOLY_DEV_UI_STATE.UnloadOwnGarden == true
+end
+
+function HolyPerformanceAnyUnloadEnabled()
+
+    return HolyPerformanceAnyGardenUnloadEnabled() == true
+        or HOLY_DEV_UI_STATE.HideMiddle == true
 end
 
 function HolyPerformanceShouldProcessPlot(plot, ownPlot)
@@ -17548,6 +17582,54 @@ function HolyPerformanceShouldHideChild(child)
     return hideNames[
         tostring(child.Name)
     ] == true
+end
+
+function HolyPerformanceGetMapRoot()
+
+    local map =
+        workspace:FindFirstChild(
+            "Map"
+        )
+
+    if typeof(map) == "Instance" then
+        return map
+    end
+
+    map =
+        workspace:FindFirstChild(
+            "Map",
+            true
+        )
+
+    if typeof(map) == "Instance" then
+        return map
+    end
+
+    return nil
+end
+
+function HolyPerformanceGetMiddleRoot()
+
+    local map =
+        HolyPerformanceGetMapRoot()
+
+    if typeof(map) ~= "Instance" then
+        return nil,
+            nil
+    end
+
+    local middle =
+        map:FindFirstChild(
+            "Middle"
+        )
+
+    if typeof(middle) == "Instance" then
+        return middle,
+            map
+    end
+
+    return nil,
+        map
 end
 
 function HolyPerformanceHideInstanceVisual(instance)
@@ -17744,6 +17826,130 @@ function HolyPerformanceRemoveChild(child)
     return false
 end
 
+function HolyPerformanceHideMiddleOnce(reason)
+
+    if HOLY_DEV_UI_STATE.HideMiddle ~= true then
+        return 0
+    end
+
+    local middle =
+        HolyPerformanceGetMiddleRoot()
+
+    if typeof(middle) ~= "Instance" then
+
+        HolyPerformanceSetStatus(
+            "Waiting."
+        )
+
+        return 0
+    end
+
+    local children =
+        {}
+
+    pcall(function()
+
+        children =
+            middle:GetChildren()
+    end)
+
+    local removed =
+        0
+
+    for _, child in ipairs(children) do
+
+        if typeof(child) == "Instance"
+        and child.Parent == middle then
+
+            if HolyPerformanceRemoveChild(child) == true then
+
+                removed =
+                    removed + 1
+            end
+        end
+    end
+
+    if removed > 0 then
+
+        HolyPerformanceSetStatus(
+            "Applied."
+        )
+    end
+
+    return removed
+end
+
+function HolyPerformanceConnectMiddleWatcher()
+
+    if HOLY_DEV_UI_STATE.HideMiddle ~= true then
+        return false
+    end
+
+    HOLY_PERFORMANCE_STATE.MapConnections =
+        type(HOLY_PERFORMANCE_STATE.MapConnections) == "table"
+        and HOLY_PERFORMANCE_STATE.MapConnections
+        or {}
+
+    local middle,
+        map =
+        HolyPerformanceGetMiddleRoot()
+
+    if typeof(middle) == "Instance"
+    and HOLY_PERFORMANCE_STATE.MapConnections[middle] == nil then
+
+        HOLY_PERFORMANCE_STATE.MapConnections[middle] =
+            middle.ChildAdded:Connect(function(child)
+
+                task.defer(function()
+
+                    if HOLY_DEV_UI_STATE.HideMiddle ~= true
+                    or HOLY_PERFORMANCE_STATE.Active ~= true then
+
+                        return
+                    end
+
+                    if typeof(child) == "Instance"
+                    and typeof(middle) == "Instance"
+                    and child.Parent == middle then
+
+                        HolyPerformanceRemoveChild(
+                            child
+                        )
+                    end
+                end)
+            end)
+    end
+
+    if typeof(map) == "Instance"
+    and HOLY_PERFORMANCE_STATE.MapConnections.__MapChildAdded == nil then
+
+        HOLY_PERFORMANCE_STATE.MapConnections.__MapChildAdded =
+            map.ChildAdded:Connect(function(child)
+
+                task.delay(0.25, function()
+
+                    if HOLY_DEV_UI_STATE.HideMiddle ~= true
+                    or HOLY_PERFORMANCE_STATE.Active ~= true then
+
+                        return
+                    end
+
+                    if typeof(child) == "Instance"
+                    and child.Name == "Middle" then
+
+                        HolyPerformanceHideMiddleOnce(
+                            "middle added"
+                        )
+
+                        HolyPerformanceConnectMiddleWatcher()
+                    end
+                end)
+            end)
+    end
+
+    return true
+end
+
 function HolyPerformanceProcessPlotChild(child)
 
     if typeof(child) ~= "Instance" then
@@ -17934,6 +18140,28 @@ function HolyPerformanceDeleteOtherGardensOnce(reason)
         return 0
     end
 
+    local totalRemoved =
+        0
+
+    if HOLY_DEV_UI_STATE.HideMiddle == true then
+
+        totalRemoved =
+            totalRemoved
+            + HolyPerformanceHideMiddleOnce(
+                reason
+                or "apply"
+            )
+    end
+
+    if HolyPerformanceAnyGardenUnloadEnabled() ~= true then
+
+        HolyPerformanceSetStatus(
+            "Applied."
+        )
+
+        return totalRemoved
+    end
+
     local gardens =
         HolyPerformanceGetGardensRoot()
 
@@ -17943,7 +18171,7 @@ function HolyPerformanceDeleteOtherGardensOnce(reason)
             "Waiting."
         )
 
-        return 0
+        return totalRemoved
     end
 
     local ownPlot =
@@ -17960,7 +18188,7 @@ function HolyPerformanceDeleteOtherGardensOnce(reason)
             "Waiting."
         )
 
-        return 0
+        return totalRemoved
     end
 
     local removedThisPass =
@@ -17992,7 +18220,8 @@ function HolyPerformanceDeleteOtherGardensOnce(reason)
         "Applied."
     )
 
-    return removedThisPass
+    return totalRemoved
+        + removedThisPass
 end
 
 function HolyPerformanceConnectGardenWatcher()
@@ -18004,6 +18233,18 @@ function HolyPerformanceConnectGardenWatcher()
 
     HOLY_PERFORMANCE_STATE.PlotConnections =
         {}
+
+    HOLY_PERFORMANCE_STATE.MapConnections =
+        {}
+
+    if HOLY_DEV_UI_STATE.HideMiddle == true then
+
+        HolyPerformanceConnectMiddleWatcher()
+    end
+
+    if HolyPerformanceAnyGardenUnloadEnabled() ~= true then
+        return true
+    end
 
     local gardens =
         HolyPerformanceGetGardensRoot()
@@ -18142,6 +18383,23 @@ function HolyPerformanceStartApply(reason)
         and HOLY_PERFORMANCE_STATE.Active == true
         and os.clock() <= deadline do
 
+            if HOLY_DEV_UI_STATE.HideMiddle == true then
+
+                HolyPerformanceHideMiddleOnce(
+                    reason
+                    or "apply"
+                )
+
+                HolyPerformanceConnectMiddleWatcher()
+            end
+
+            if HolyPerformanceAnyGardenUnloadEnabled() ~= true then
+
+                HolyPerformanceConnectGardenWatcher()
+
+                break
+            end
+
             local gardens =
                 HolyPerformanceGetGardensRoot()
 
@@ -18243,6 +18501,52 @@ end
 function HolyPerformanceStopUnloadOwnGarden(reason)
 
     HOLY_DEV_UI_STATE.UnloadOwnGarden =
+        false
+
+    HolySaveUISettings()
+
+    if HolyPerformanceAnyUnloadEnabled() == true then
+
+        HOLY_PERFORMANCE_STATE.Active =
+            true
+
+        HolyPerformanceConnectGardenWatcher()
+
+        return true
+    end
+
+    HOLY_PERFORMANCE_STATE.Active =
+        false
+
+    HOLY_PERFORMANCE_STATE.Applying =
+        false
+
+    HolyPerformanceDisconnectConnections()
+
+    HolyPerformanceSetStatus(
+        "Off."
+    )
+
+    return true
+end
+
+function HolyPerformanceStartHideMiddle(reason)
+
+    HOLY_DEV_UI_STATE.HideMiddle =
+        true
+
+    HOLY_PERFORMANCE_STATE.Active =
+        true
+
+    return HolyPerformanceStartApply(
+        reason
+        or "performance"
+    )
+end
+
+function HolyPerformanceStopHideMiddle(reason)
+
+    HOLY_DEV_UI_STATE.HideMiddle =
         false
 
     HolySaveUISettings()
@@ -29504,7 +29808,7 @@ SettingsPerformanceBox:AddToggle(
     "HolyPerformanceMode",
     {
         Text =
-            "Performance Mode",
+            "Delete Other Gardens",
 
         Default =
             HOLY_DEV_UI_STATE.UnloadOtherGardens == true,
@@ -29532,7 +29836,7 @@ SettingsPerformanceBox:AddToggle(
     "HolyPerformanceModePlus",
     {
         Text =
-            "Performance Mode+",
+            "Delete Own Garden",
 
         Default =
             HOLY_DEV_UI_STATE.UnloadOwnGarden == true,
@@ -29556,6 +29860,34 @@ SettingsPerformanceBox:AddToggle(
     end
 end)
 
+SettingsPerformanceBox:AddToggle(
+    "HolyHideMiddle",
+    {
+        Text =
+            "Hide Middle",
+
+        Default =
+            HOLY_DEV_UI_STATE.HideMiddle == true,
+
+        Tooltip =
+            "Improves client performance.",
+    }
+):OnChanged(function(value)
+
+    if value == true then
+
+        HolyPerformanceStartHideMiddle(
+            "toggle on"
+        )
+
+    else
+
+        HolyPerformanceStopHideMiddle(
+            "toggle off"
+        )
+    end
+end)
+
 if HOLY_DEV_UI_STATE.UnloadOtherGardens == true then
 
     task.defer(function()
@@ -29571,6 +29903,16 @@ if HOLY_DEV_UI_STATE.UnloadOwnGarden == true then
     task.defer(function()
 
         HolyPerformanceStartUnloadOwnGarden(
+            "startup"
+        )
+    end)
+end
+
+if HOLY_DEV_UI_STATE.HideMiddle == true then
+
+    task.defer(function()
+
+        HolyPerformanceStartHideMiddle(
             "startup"
         )
     end)
