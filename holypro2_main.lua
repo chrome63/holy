@@ -28,6 +28,16 @@ local LocalPlayer =
     Players.LocalPlayer
     or Players.PlayerAdded:Wait()
 
+if not game:IsLoaded() then
+
+    game.Loaded:Wait()
+end
+
+print(
+    "[HOLY DATA]",
+    "Game loaded."
+)
+
 --==================================================
 -- [1] CONSTANTS
 --==================================================
@@ -300,6 +310,14 @@ HOLY_SNIPER_STATE = {
     ReturnMode = "Teleport",
     ReturnDestination = "Farm Center",
     SavedReturnCFrameData = nil,
+}
+
+HOLY_DATA_STATE = {
+    LoaderStarted = false,
+    PetDataReady = false,
+    PetDataCount = 0,
+    Modules = {},
+    Logged = {},
 }
 
 HOLY_SNIPER_UI = {
@@ -1762,8 +1780,8 @@ end
 function HolySniperGetPetSizesModule()
 
     local petSizes =
-        HolyShopRequireModule(
-            "SharedData.PetSizes"
+        HolyDataGetModule(
+            "PetSizes"
         )
 
     if type(petSizes) ~= "table" then
@@ -1776,8 +1794,8 @@ end
 function HolySniperGetPetTypesModule()
 
     local petTypes =
-        HolyShopRequireModule(
-            "SharedData.PetTypes"
+        HolyDataGetModule(
+            "PetTypes"
         )
 
     if type(petTypes) ~= "table" then
@@ -2525,8 +2543,8 @@ end
 function HolySniperGetPetData()
 
     local petData =
-        HolyShopRequireModule(
-            "SharedData.PetData"
+        HolyDataGetModule(
+            "PetData"
         )
 
     if type(petData) ~= "table" then
@@ -14592,6 +14610,425 @@ function HolyShopRequireModule(path)
     return result
 end
 
+function HolyDataLogOnce(key, ...)
+
+    HOLY_DATA_STATE =
+        type(HOLY_DATA_STATE) == "table"
+        and HOLY_DATA_STATE
+        or {}
+
+    HOLY_DATA_STATE.Logged =
+        type(HOLY_DATA_STATE.Logged) == "table"
+        and HOLY_DATA_STATE.Logged
+        or {}
+
+    key =
+        tostring(key or "")
+
+    if key ~= ""
+    and HOLY_DATA_STATE.Logged[key] == true then
+        return false
+    end
+
+    if key ~= "" then
+
+        HOLY_DATA_STATE.Logged[key] =
+            true
+    end
+
+    print(
+        "[HOLY DATA]",
+        ...
+    )
+
+    return true
+end
+
+function HolyDataFindSharedModule(moduleName)
+
+    moduleName =
+        HolyCleanText(
+            moduleName
+        )
+
+    if moduleName == "" then
+        return nil,
+            "empty module"
+    end
+
+    local sharedData =
+        ReplicatedStorage:FindFirstChild(
+            "SharedData"
+        )
+
+    if typeof(sharedData) ~= "Instance" then
+
+        return nil,
+            "SharedData missing"
+    end
+
+    local module =
+        sharedData:FindFirstChild(
+            moduleName
+        )
+
+    if typeof(module) ~= "Instance"
+    or module:IsA("ModuleScript") ~= true then
+
+        return nil,
+            moduleName .. " missing"
+    end
+
+    return module,
+        "found"
+end
+
+function HolyDataTryRequireModule(moduleName)
+
+    HOLY_DATA_STATE =
+        type(HOLY_DATA_STATE) == "table"
+        and HOLY_DATA_STATE
+        or {}
+
+    HOLY_DATA_STATE.Modules =
+        type(HOLY_DATA_STATE.Modules) == "table"
+        and HOLY_DATA_STATE.Modules
+        or {}
+
+    moduleName =
+        HolyCleanText(
+            moduleName
+        )
+
+    if moduleName == "" then
+        return nil,
+            "empty module"
+    end
+
+    local cached =
+        HOLY_DATA_STATE.Modules[moduleName]
+
+    if type(cached) == "table" then
+        return cached,
+            "cached"
+    end
+
+    local module,
+        findReason =
+        HolyDataFindSharedModule(
+            moduleName
+        )
+
+    if typeof(module) ~= "Instance" then
+        return nil,
+            findReason
+    end
+
+    local ok,
+        result =
+        pcall(function()
+
+            return require(
+                module
+            )
+        end)
+
+    if ok ~= true
+    or type(result) ~= "table" then
+
+        return nil,
+            "require failed"
+    end
+
+    HOLY_DATA_STATE.Modules[moduleName] =
+        result
+
+    HolyDataLogOnce(
+        "loaded:" .. moduleName,
+        moduleName .. " loaded."
+    )
+
+    return result,
+        "loaded"
+end
+
+function HolyDataGetModule(moduleName)
+
+    local result =
+        HolyDataTryRequireModule(
+            moduleName
+        )
+
+    if type(result) ~= "table" then
+        return nil
+    end
+
+    return result
+end
+
+function HolyDataCountPetDataRows(petData)
+
+    if type(petData) ~= "table" then
+        return 0
+    end
+
+    local count =
+        0
+
+    for key, row in pairs(petData) do
+
+        if type(HolySniperIsPetDataRow) == "function"
+        and HolySniperIsPetDataRow(key, row) == true then
+
+            count =
+                count + 1
+        end
+    end
+
+    return count
+end
+
+function HolyDataListHasValue(values, value)
+
+    value =
+        HolyCleanText(
+            value
+        )
+
+    if value == "" then
+        return false
+    end
+
+    for _, item in ipairs(values or {}) do
+
+        if item == value then
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyDataSetDropdownValues(dropdown, values, selected)
+
+    if type(dropdown) ~= "table" then
+        return false
+    end
+
+    values =
+        type(values) == "table"
+        and values
+        or {
+            "Raccoon",
+        }
+
+    selected =
+        HolyCleanText(
+            selected
+        )
+
+    if selected == "" then
+        selected =
+            "Raccoon"
+    end
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+
+    if type(dropdown.SetValue) == "function" then
+
+        pcall(function()
+
+            dropdown:SetValue(
+                selected
+            )
+        end)
+    end
+
+    return true
+end
+
+function HolyDataRefreshPetDropdowns()
+
+    local values =
+        HolySniperGetPetValues()
+
+    if type(values) ~= "table"
+    or #values <= 0 then
+
+        values = {
+            "Raccoon",
+        }
+    end
+
+    local selected =
+        HolySniperResolvePetDisplay(
+            HOLY_SNIPER_STATE.BuilderPet
+            or "Raccoon"
+        )
+
+    if HolyDataListHasValue(values, selected) ~= true then
+
+        selected =
+            HolyDataListHasValue(values, "Raccoon") == true
+            and "Raccoon"
+            or values[1]
+            or "Raccoon"
+    end
+
+    HOLY_SNIPER_STATE.BuilderPet =
+        selected
+
+    local options =
+        HOLY_DEV_LIBRARY
+        and HOLY_DEV_LIBRARY.Options
+        or Options
+
+    if type(options) == "table" then
+
+        HolyDataSetDropdownValues(
+            options.HolySniperPetFilter,
+            values,
+            selected
+        )
+    end
+
+    if type(HolyServerFinderApplyFilterOptions) == "function"
+    and type(HOLY_SERVER_FINDER_HUD) == "table" then
+
+        HolyServerFinderApplyFilterOptions(
+            HOLY_SERVER_FINDER_HUD
+        )
+    end
+
+    if type(HolySniperRefreshUI) == "function" then
+
+        HolySniperRefreshUI()
+    end
+
+    HolyDataLogOnce(
+        "pet-dropdown-refreshed",
+        "Pet dropdown refreshed."
+    )
+
+    return true
+end
+
+function HolyDataStartPetLoader(reason)
+
+    HOLY_DATA_STATE =
+        type(HOLY_DATA_STATE) == "table"
+        and HOLY_DATA_STATE
+        or {}
+
+    if HOLY_DATA_STATE.LoaderStarted == true then
+        return false
+    end
+
+    HOLY_DATA_STATE.LoaderStarted =
+        true
+
+    HolyDataLogOnce(
+        "petdata-waiting",
+        "PetData waiting..."
+    )
+
+    task.spawn(function()
+
+        local retryDelays = {
+            0,
+            0.15,
+            0.35,
+            0.75,
+            1.20,
+            1.80,
+            2.50,
+        }
+
+        local lastReason =
+            "not started"
+
+        for _, delay in ipairs(retryDelays) do
+
+            if delay > 0 then
+
+                task.wait(
+                    delay
+                )
+            end
+
+            HolyDataTryRequireModule(
+                "PetSizes"
+            )
+
+            HolyDataTryRequireModule(
+                "PetTypes"
+            )
+
+            local petData,
+                petReason =
+                HolyDataTryRequireModule(
+                    "PetData"
+                )
+
+            lastReason =
+                tostring(petReason or "unknown")
+
+            local count =
+                HolyDataCountPetDataRows(
+                    petData
+                )
+
+            if count > 0 then
+
+                HOLY_DATA_STATE.PetDataReady =
+                    true
+
+                HOLY_DATA_STATE.PetDataCount =
+                    count
+
+                HolyDataLogOnce(
+                    "petdata-loaded",
+                    "PetData loaded: "
+                        .. tostring(count)
+                        .. " pets."
+                )
+
+                HolyDataRefreshPetDropdowns()
+
+                return
+            end
+        end
+
+        HOLY_DATA_STATE.PetDataReady =
+            false
+
+        HOLY_DATA_STATE.PetDataCount =
+            0
+
+        HolyDataLogOnce(
+            "petdata-failed",
+            "PetData unavailable after startup retries. Using Raccoon fallback. Last: "
+                .. tostring(lastReason)
+        )
+    end)
+
+    return true
+end
+
 function HolyShopAddItemRow(rows, name, price)
 
     name =
@@ -26346,8 +26783,6 @@ function HolySniperSetPageMode(value)
         setupVisible
     )
 
--- HOLY_PREMIUM_END
-
     HolySetGroupboxVisible(
         SniperFilterBox,
         setupVisible
@@ -27602,6 +28037,10 @@ HolySniperSetPageMode(
 )
 
 HolySniperRefreshUI()
+
+HolyDataStartPetLoader(
+    "sniper ui ready"
+)
 
 if HOLY_SNIPER_STATE.ActivateSniper == true then
 
