@@ -217,6 +217,29 @@ end)
 
 HOLY_SERVER_UI = {}
 
+if type(HOLY_RARE_ALERT_STATE) == "table" then
+
+    HOLY_RARE_ALERT_STATE.Token =
+        nil
+
+    HOLY_RARE_ALERT_STATE.Running =
+        false
+end
+
+HOLY_RARE_ALERT_STATE = {
+    Running = false,
+    Token = nil,
+
+    ScanInterval = 0.85,
+
+    Sent = {},
+
+    LastScanAt = 0,
+    LastReportAt = 0,
+    LastStatus = "Ready",
+    LastError = "",
+}
+
 if type(HOLY_PERFORMANCE_STATE) == "table" then
 
     local connections =
@@ -26122,6 +26145,680 @@ function HolyServerFinderBuildReportPayload()
     }
 end
 
+function HolyRareAlertAlias(value)
+
+    if type(HolySniperPetAliasKey) == "function" then
+
+        return HolySniperPetAliasKey(
+            value
+        )
+    end
+
+    return HolyCleanText(
+        value
+    )
+        :lower()
+        :gsub("[%s_%-%[%]%(%)%.]", "")
+end
+
+function HolyRareAlertNormalizeSize(value)
+
+    if type(HolySniperNormalizeSizeName) == "function" then
+
+        return HolySniperNormalizeSizeName(
+            value
+        )
+    end
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == "" then
+        return "Normal"
+    end
+
+    if text == "Mega" then
+        return "Huge"
+    end
+
+    return text
+end
+
+function HolyRareAlertNormalizeVariant(value)
+
+    if type(HolySniperNormalizeVariantName) == "function" then
+
+        local normalized =
+            HolySniperNormalizeVariantName(
+                value
+            )
+
+        if normalized == "Regular" then
+            return "Normal"
+        end
+
+        return normalized
+    end
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == ""
+    or text == "Regular" then
+
+        return "Normal"
+    end
+
+    return text
+end
+
+function HolyRareAlertIsSpecificPet(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    local key =
+        HolyRareAlertAlias(
+            row.Pet
+            or row.PetName
+            or row.DisplayName
+        )
+
+    return key == "raccoon"
+        or key == "unicorn"
+        or key == "goldendragonfly"
+        or key == "dragonfly"
+end
+
+function HolyRareAlertIsVariantPet(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    local size =
+        HolyRareAlertNormalizeSize(
+            row.Size
+        )
+
+    local variant =
+        HolyRareAlertNormalizeVariant(
+            row.Variant
+            or row.Mutation
+        )
+
+    if size == "Big"
+    or size == "Huge" then
+
+        return true
+    end
+
+    if variant ~= ""
+    and variant ~= "Normal"
+    and variant ~= "Regular"
+    and variant ~= "Any" then
+
+        return true
+    end
+
+    return false
+end
+
+function HolyRareAlertShouldReportRow(row)
+
+    if type(row) ~= "table" then
+        return false
+    end
+
+    local state =
+        tostring(
+            row.State
+            or ""
+        )
+        :lower()
+
+    if state == "sent"
+    or state == "bought"
+    or state == "gone" then
+
+        return false
+    end
+
+    local lifetime =
+        tonumber(
+            row.Lifetime
+        )
+        or 0
+
+    local timeLeft =
+        tonumber(
+            row.TimeLeftNumber
+            or row.TimeLeft
+        )
+        or 0
+
+    if lifetime > 0
+    and timeLeft <= 0 then
+
+        return false
+    end
+
+    if HolyRareAlertIsSpecificPet(row) == true then
+        return true
+    end
+
+    if HolyRareAlertIsVariantPet(row) == true then
+        return true
+    end
+
+    return false
+end
+
+function HolyRareAlertRowExpiresAt(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    local spawnedAt =
+        tonumber(
+            row.SpawnedAt
+        )
+        or 0
+
+    local lifetime =
+        tonumber(
+            row.Lifetime
+        )
+        or 0
+
+    if spawnedAt > 0
+    and lifetime > 0 then
+
+        return spawnedAt + lifetime
+    end
+
+    local timeLeft =
+        tonumber(
+            row.TimeLeftNumber
+            or row.TimeLeft
+        )
+        or 0
+
+    if timeLeft > 0 then
+
+        return os.time() + timeLeft
+    end
+
+    return os.time() + 300
+end
+
+function HolyRareAlertRowKey(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    local key =
+        HolyCleanText(
+            row.UUID
+            or row.Key
+            or ""
+        )
+
+    if key == "" then
+
+        key =
+            table.concat({
+                HolyRareAlertAlias(
+                    row.Pet
+                    or row.PetName
+                    or row.DisplayName
+                ),
+
+                HolyRareAlertNormalizeSize(
+                    row.Size
+                ),
+
+                HolyRareAlertNormalizeVariant(
+                    row.Variant
+                    or row.Mutation
+                ),
+
+                tostring(
+                    tonumber(row.SpawnedAt)
+                    or 0
+                ),
+            }, "_")
+    end
+
+    return table.concat({
+        tostring(game.PlaceId),
+        tostring(game.JobId),
+        key,
+    }, "|")
+end
+
+function HolyRareAlertPruneSent()
+
+    HOLY_RARE_ALERT_STATE =
+        type(HOLY_RARE_ALERT_STATE) == "table"
+        and HOLY_RARE_ALERT_STATE
+        or {}
+
+    HOLY_RARE_ALERT_STATE.Sent =
+        type(HOLY_RARE_ALERT_STATE.Sent) == "table"
+        and HOLY_RARE_ALERT_STATE.Sent
+        or {}
+
+    local now =
+        os.time()
+
+    for key, expiresAt in pairs(HOLY_RARE_ALERT_STATE.Sent) do
+
+        if tonumber(expiresAt) == nil
+        or tonumber(expiresAt) <= now then
+
+            HOLY_RARE_ALERT_STATE.Sent[key] =
+                nil
+        end
+    end
+end
+
+function HolyRareAlertBuildPetPayload(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    local expiresAt =
+        HolyRareAlertRowExpiresAt(
+            row
+        )
+
+    local timeLeft =
+        math.max(
+            0,
+            expiresAt - os.time()
+        )
+
+    return {
+        Key =
+            HolyCleanText(
+                row.Key
+                or row.UUID
+                or ""
+            ),
+
+        UUID =
+            HolyCleanText(
+                row.UUID
+                or row.Key
+                or ""
+            ),
+
+        Pet =
+            HolyCleanText(
+                row.Pet
+                or row.PetName
+                or ""
+            ),
+
+        PetName =
+            HolyCleanText(
+                row.Pet
+                or row.PetName
+                or ""
+            ),
+
+        DisplayName =
+            HolyCleanText(
+                row.DisplayName
+                or ""
+            ),
+
+        Rarity =
+            HolyCleanText(
+                row.Rarity
+                or ""
+            ),
+
+        Size =
+            HolyRareAlertNormalizeSize(
+                row.Size
+            ),
+
+        Variant =
+            HolyRareAlertNormalizeVariant(
+                row.Variant
+                or row.Mutation
+            ),
+
+        Mutation =
+            HolyRareAlertNormalizeVariant(
+                row.Variant
+                or row.Mutation
+            ),
+
+        SpawnedAt =
+            tonumber(row.SpawnedAt)
+            or 0,
+
+        Lifetime =
+            tonumber(row.Lifetime)
+            or 0,
+
+        ExpiresAt =
+            expiresAt,
+
+        TimeLeft =
+            timeLeft,
+
+        Price =
+            tonumber(
+                row.PriceNumber
+                or row.Price
+            )
+            or 0,
+    }
+end
+
+function HolyRareAlertBuildPayload()
+
+    HolyRareAlertPruneSent()
+
+    local rows =
+        {}
+
+    local ok,
+        result =
+        pcall(function()
+
+            return HolyLivePetsScanRows()
+        end)
+
+    if ok == true
+    and type(result) == "table" then
+
+        rows =
+            result
+    end
+
+    local pets =
+        {}
+
+    local sentKeys =
+        {}
+
+    for _, row in ipairs(rows) do
+
+        if HolyRareAlertShouldReportRow(row) == true then
+
+            local rowKey =
+                HolyRareAlertRowKey(
+                    row
+                )
+
+            if HOLY_RARE_ALERT_STATE.Sent[rowKey] ~= true
+            and HOLY_RARE_ALERT_STATE.Sent[rowKey] == nil then
+
+                table.insert(
+                    pets,
+                    HolyRareAlertBuildPetPayload(
+                        row
+                    )
+                )
+
+                table.insert(
+                    sentKeys,
+                    {
+                        Key =
+                            rowKey,
+
+                        ExpiresAt =
+                            HolyRareAlertRowExpiresAt(
+                                row
+                            ),
+                    }
+                )
+            end
+        end
+    end
+
+    if #pets <= 0 then
+        return nil,
+            sentKeys
+    end
+
+    local playing,
+        maxPlayers =
+        0,
+        8
+
+    if type(HolyServerFinderGetPlayerCounts) == "function" then
+
+        playing,
+            maxPlayers =
+            HolyServerFinderGetPlayerCounts()
+
+    else
+
+        playing =
+            #Players:GetPlayers()
+
+        maxPlayers =
+            tonumber(Players.MaxPlayers)
+            or 8
+    end
+
+    return {
+        Key =
+            tostring(
+                SERVER_FINDER_API_KEY
+                or ""
+            ),
+
+        PlaceId =
+            game.PlaceId,
+
+        JobId =
+            tostring(
+                game.JobId
+            ),
+
+        Playing =
+            playing,
+
+        MaxPlayers =
+            maxPlayers,
+
+        ServerVersion =
+            type(HolyServerFinderReadServerVersion) == "function"
+            and HolyServerFinderReadServerVersion()
+            or "",
+
+        Reporter =
+            tostring(
+                LocalPlayer
+                and LocalPlayer.Name
+                or "unknown"
+            ),
+
+        Pets =
+            pets,
+    },
+        sentKeys
+end
+
+function HolyRareAlertSendPayload(payload, sentKeys)
+
+    if type(payload) ~= "table" then
+        return false,
+            "empty"
+    end
+
+    if type(HolyServerFinderRequestJson) ~= "function"
+    or type(HolyServerFinderBackendUrl) ~= "function" then
+
+        return false,
+            "request helper missing"
+    end
+
+    local data,
+        reason =
+        HolyServerFinderRequestJson(
+            "POST",
+            HolyServerFinderBackendUrl(
+                "/rare-alert"
+            ),
+            payload
+        )
+
+    if type(data) == "table"
+    and data.ok == true then
+
+        HOLY_RARE_ALERT_STATE.LastReportAt =
+            os.time()
+
+        HOLY_RARE_ALERT_STATE.LastStatus =
+            "Reported "
+            .. tostring(
+                #(
+                    payload.Pets
+                    or {}
+                )
+            )
+            .. " pet(s)"
+
+        for _, row in ipairs(sentKeys or {}) do
+
+            local key =
+                HolyCleanText(
+                    row.Key
+                )
+
+            if key ~= "" then
+
+                HOLY_RARE_ALERT_STATE.Sent[key] =
+                    tonumber(row.ExpiresAt)
+                    or (
+                        os.time() + 300
+                    )
+            end
+        end
+
+        return true,
+            "ok"
+    end
+
+    HOLY_RARE_ALERT_STATE.LastError =
+        tostring(reason or "request failed")
+
+    return false,
+        HOLY_RARE_ALERT_STATE.LastError
+end
+
+function HolyRareAlertTick()
+
+    HOLY_RARE_ALERT_STATE.LastScanAt =
+        os.time()
+
+    local payload,
+        sentKeys =
+        HolyRareAlertBuildPayload()
+
+    if type(payload) ~= "table" then
+        return false
+    end
+
+    return HolyRareAlertSendPayload(
+        payload,
+        sentKeys
+    )
+end
+
+function HolyRareAlertStart(reason)
+
+    HOLY_RARE_ALERT_STATE =
+        type(HOLY_RARE_ALERT_STATE) == "table"
+        and HOLY_RARE_ALERT_STATE
+        or {}
+
+    if HOLY_RARE_ALERT_STATE.Running == true then
+        return false
+    end
+
+    HOLY_RARE_ALERT_STATE.Running =
+        true
+
+    HOLY_RARE_ALERT_STATE.Sent =
+        type(HOLY_RARE_ALERT_STATE.Sent) == "table"
+        and HOLY_RARE_ALERT_STATE.Sent
+        or {}
+
+    local token =
+        {}
+
+    HOLY_RARE_ALERT_STATE.Token =
+        token
+
+    task.spawn(function()
+
+        task.wait(
+            1.25
+        )
+
+        while HOLY_RARE_ALERT_STATE.Token == token do
+
+            pcall(function()
+
+                HolyRareAlertTick()
+            end)
+
+            task.wait(
+                tonumber(
+                    HOLY_RARE_ALERT_STATE.ScanInterval
+                )
+                or 0.85
+            )
+        end
+
+        if HOLY_RARE_ALERT_STATE.Token == token then
+
+            HOLY_RARE_ALERT_STATE.Running =
+                false
+        end
+    end)
+
+    return true
+end
+
+function HolyRareAlertStop(reason)
+
+    HOLY_RARE_ALERT_STATE =
+        type(HOLY_RARE_ALERT_STATE) == "table"
+        and HOLY_RARE_ALERT_STATE
+        or {}
+
+    HOLY_RARE_ALERT_STATE.Token =
+        nil
+
+    HOLY_RARE_ALERT_STATE.Running =
+        false
+
+    return true
+end
+
 function HolyServerFinderReportNow(reason)
 
     HOLY_SERVER_FINDER_REPORTER =
@@ -30266,6 +30963,16 @@ end
 --==================================================
 -- [8] FINISH
 --==================================================
+
+if type(HolyRareAlertStart) == "function" then
+
+    task.defer(function()
+
+        HolyRareAlertStart(
+            "startup"
+        )
+    end)
+end
 
 HolyNotify(
     "HOLY Premium",
