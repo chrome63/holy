@@ -28,6 +28,16 @@ local LocalPlayer =
     Players.LocalPlayer
     or Players.PlayerAdded:Wait()
 
+if not game:IsLoaded() then
+
+    game.Loaded:Wait()
+end
+
+print(
+    "[HOLY DATA]",
+    "Game loaded."
+)
+
 --==================================================
 -- [1] CONSTANTS
 --==================================================
@@ -36,11 +46,11 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260626-serverfinder-refresh-report-v1"
+    "holy-premium-20260626-petdata-loader-v2"
 
 local LIBRARY_URL =
     REPO_URL
-    .. "libraryholy5.lua?v="
+    .. "libraryholy7.lua?v="
     .. REMOTE_SOURCE_VERSION
 
 local UI_SETTINGS_FOLDER =
@@ -224,14 +234,23 @@ end
 HOLY_PERFORMANCE_STATE = {
     Active = false,
     Applying = false,
+
     DeletedCount = 0,
+    RemovedCount = 0,
+    HiddenCount = 0,
+
     LastStatus = "Ready.",
+
     Connections = {},
+    PlotConnections = {},
+
+    OwnPlot = nil,
+    OwnMarker = "",
+
+    ProcessedPlots = {},
 }
 
-HOLY_PERFORMANCE_UI = {
-    StatusLabel = nil,
-}
+HOLY_PERFORMANCE_UI = {}
 
 HOLY_GROUPBOX_STATE = {
     Loaded = false,
@@ -300,6 +319,14 @@ HOLY_SNIPER_STATE = {
     ReturnMode = "Teleport",
     ReturnDestination = "Farm Center",
     SavedReturnCFrameData = nil,
+}
+
+HOLY_DATA_STATE = {
+    LoaderStarted = false,
+    PetDataReady = false,
+    PetDataCount = 0,
+    Modules = {},
+    Logged = {},
 }
 
 HOLY_SNIPER_UI = {
@@ -1762,8 +1789,8 @@ end
 function HolySniperGetPetSizesModule()
 
     local petSizes =
-        HolyShopRequireModule(
-            "SharedData.PetSizes"
+        HolyDataGetModule(
+            "PetSizes"
         )
 
     if type(petSizes) ~= "table" then
@@ -1776,8 +1803,8 @@ end
 function HolySniperGetPetTypesModule()
 
     local petTypes =
-        HolyShopRequireModule(
-            "SharedData.PetTypes"
+        HolyDataGetModule(
+            "PetTypes"
         )
 
     if type(petTypes) ~= "table" then
@@ -2525,8 +2552,8 @@ end
 function HolySniperGetPetData()
 
     local petData =
-        HolyShopRequireModule(
-            "SharedData.PetData"
+        HolyDataGetModule(
+            "PetData"
         )
 
     if type(petData) ~= "table" then
@@ -6085,185 +6112,61 @@ function HolySniperScoreOwnedGarden(garden)
         return 0
     end
 
-    local playerName =
-        tostring(
-            LocalPlayer
-            and LocalPlayer.Name
-            or ""
-        )
-
-    local playerNameLower =
-        playerName:lower()
-
-    local userIdText =
+    local localUserId =
         tostring(
             LocalPlayer
             and LocalPlayer.UserId
             or ""
         )
 
-    local score =
-        0
+    local localName =
+        HolyCleanText(
+            LocalPlayer
+            and LocalPlayer.Name
+            or ""
+        )
 
-    local function scoreText(value, weight)
-
-        local text =
-            HolyCleanText(
-                value
-            )
-
-        if text == "" then
-            return
-        end
-
-        local lower =
-            text:lower()
-
-        if text == userIdText then
-
-            score =
-                score
-                + weight
-                + 25
-        end
-
-        if playerNameLower ~= ""
-        and lower == playerNameLower then
-
-            score =
-                score
-                + weight
-                + 35
-
-        elseif playerNameLower ~= ""
-        and lower:find(playerNameLower, 1, true) then
-
-            score =
-                score
-                + weight
-        end
-    end
-
-    local attrs =
-        {}
+    local ownerUserId =
+        nil
 
     pcall(function()
 
-        attrs =
-            garden:GetAttributes()
+        ownerUserId =
+            garden:GetAttribute(
+                "OwnerUserId"
+            )
     end)
 
-    if type(attrs) == "table" then
+    if ownerUserId ~= nil
+    and tostring(ownerUserId) == localUserId then
 
-        for key, value in pairs(attrs) do
-
-            local lowerKey =
-                tostring(key)
-                :lower()
-
-            if lowerKey:find("owner", 1, true)
-            or lowerKey:find("player", 1, true)
-            or lowerKey:find("user", 1, true) then
-
-                scoreText(
-                    value,
-                    80
-                )
-            end
-        end
+        return 1000
     end
 
-    local scanned =
-        0
+    local ownerName =
+        nil
 
-    for _, descendant in ipairs(garden:GetDescendants()) do
+    pcall(function()
 
-        scanned =
-            scanned + 1
-
-        if scanned > 2500 then
-            break
-        end
-
-        if descendant:IsA("TextLabel")
-        or descendant:IsA("TextButton")
-        or descendant:IsA("TextBox") then
-
-            local ok,
-                text =
-                pcall(function()
-
-                    return descendant.Text
-                end)
-
-            if ok == true then
-
-                scoreText(
-                    text,
-                    35
-                )
-            end
-        end
-
-        if descendant:IsA("StringValue") then
-
-            scoreText(
-                descendant.Value,
-                45
+        ownerName =
+            garden:GetAttribute(
+                "Owner"
             )
-        end
+    end)
 
-        if descendant:IsA("IntValue")
-        or descendant:IsA("NumberValue") then
+    ownerName =
+        HolyCleanText(
+            ownerName
+        )
 
-            scoreText(
-                descendant.Value,
-                45
-            )
-        end
+    if ownerName ~= ""
+    and localName ~= ""
+    and ownerName == localName then
 
-        if descendant:IsA("ObjectValue") then
-
-            local value =
-                descendant.Value
-
-            if value == LocalPlayer then
-
-                score =
-                    score
-                    + 120
-            end
-        end
-
-        local lowerName =
-            tostring(descendant.Name)
-            :lower()
-
-        if lowerName:find("owner", 1, true)
-        or lowerName:find("player", 1, true)
-        or lowerName:find("user", 1, true) then
-
-            if descendant:IsA("ValueBase") then
-
-                local ok,
-                    value =
-                    pcall(function()
-
-                        return descendant.Value
-                    end)
-
-                if ok == true then
-
-                    scoreText(
-                        value,
-                        55
-                    )
-                end
-            end
-        end
+        return 900
     end
 
-    return score
+    return 0
 end
 
 function HolySniperFindOwnedGarden()
@@ -14592,6 +14495,425 @@ function HolyShopRequireModule(path)
     return result
 end
 
+function HolyDataLogOnce(key, ...)
+
+    HOLY_DATA_STATE =
+        type(HOLY_DATA_STATE) == "table"
+        and HOLY_DATA_STATE
+        or {}
+
+    HOLY_DATA_STATE.Logged =
+        type(HOLY_DATA_STATE.Logged) == "table"
+        and HOLY_DATA_STATE.Logged
+        or {}
+
+    key =
+        tostring(key or "")
+
+    if key ~= ""
+    and HOLY_DATA_STATE.Logged[key] == true then
+        return false
+    end
+
+    if key ~= "" then
+
+        HOLY_DATA_STATE.Logged[key] =
+            true
+    end
+
+    print(
+        "[HOLY DATA]",
+        ...
+    )
+
+    return true
+end
+
+function HolyDataFindSharedModule(moduleName)
+
+    moduleName =
+        HolyCleanText(
+            moduleName
+        )
+
+    if moduleName == "" then
+        return nil,
+            "empty module"
+    end
+
+    local sharedData =
+        ReplicatedStorage:FindFirstChild(
+            "SharedData"
+        )
+
+    if typeof(sharedData) ~= "Instance" then
+
+        return nil,
+            "SharedData missing"
+    end
+
+    local module =
+        sharedData:FindFirstChild(
+            moduleName
+        )
+
+    if typeof(module) ~= "Instance"
+    or module:IsA("ModuleScript") ~= true then
+
+        return nil,
+            moduleName .. " missing"
+    end
+
+    return module,
+        "found"
+end
+
+function HolyDataTryRequireModule(moduleName)
+
+    HOLY_DATA_STATE =
+        type(HOLY_DATA_STATE) == "table"
+        and HOLY_DATA_STATE
+        or {}
+
+    HOLY_DATA_STATE.Modules =
+        type(HOLY_DATA_STATE.Modules) == "table"
+        and HOLY_DATA_STATE.Modules
+        or {}
+
+    moduleName =
+        HolyCleanText(
+            moduleName
+        )
+
+    if moduleName == "" then
+        return nil,
+            "empty module"
+    end
+
+    local cached =
+        HOLY_DATA_STATE.Modules[moduleName]
+
+    if type(cached) == "table" then
+        return cached,
+            "cached"
+    end
+
+    local module,
+        findReason =
+        HolyDataFindSharedModule(
+            moduleName
+        )
+
+    if typeof(module) ~= "Instance" then
+        return nil,
+            findReason
+    end
+
+    local ok,
+        result =
+        pcall(function()
+
+            return require(
+                module
+            )
+        end)
+
+    if ok ~= true
+    or type(result) ~= "table" then
+
+        return nil,
+            "require failed"
+    end
+
+    HOLY_DATA_STATE.Modules[moduleName] =
+        result
+
+    HolyDataLogOnce(
+        "loaded:" .. moduleName,
+        moduleName .. " loaded."
+    )
+
+    return result,
+        "loaded"
+end
+
+function HolyDataGetModule(moduleName)
+
+    local result =
+        HolyDataTryRequireModule(
+            moduleName
+        )
+
+    if type(result) ~= "table" then
+        return nil
+    end
+
+    return result
+end
+
+function HolyDataCountPetDataRows(petData)
+
+    if type(petData) ~= "table" then
+        return 0
+    end
+
+    local count =
+        0
+
+    for key, row in pairs(petData) do
+
+        if type(HolySniperIsPetDataRow) == "function"
+        and HolySniperIsPetDataRow(key, row) == true then
+
+            count =
+                count + 1
+        end
+    end
+
+    return count
+end
+
+function HolyDataListHasValue(values, value)
+
+    value =
+        HolyCleanText(
+            value
+        )
+
+    if value == "" then
+        return false
+    end
+
+    for _, item in ipairs(values or {}) do
+
+        if item == value then
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyDataSetDropdownValues(dropdown, values, selected)
+
+    if type(dropdown) ~= "table" then
+        return false
+    end
+
+    values =
+        type(values) == "table"
+        and values
+        or {
+            "Raccoon",
+        }
+
+    selected =
+        HolyCleanText(
+            selected
+        )
+
+    if selected == "" then
+        selected =
+            "Raccoon"
+    end
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+
+    if type(dropdown.SetValue) == "function" then
+
+        pcall(function()
+
+            dropdown:SetValue(
+                selected
+            )
+        end)
+    end
+
+    return true
+end
+
+function HolyDataRefreshPetDropdowns()
+
+    local values =
+        HolySniperGetPetValues()
+
+    if type(values) ~= "table"
+    or #values <= 0 then
+
+        values = {
+            "Raccoon",
+        }
+    end
+
+    local selected =
+        HolySniperResolvePetDisplay(
+            HOLY_SNIPER_STATE.BuilderPet
+            or "Raccoon"
+        )
+
+    if HolyDataListHasValue(values, selected) ~= true then
+
+        selected =
+            HolyDataListHasValue(values, "Raccoon") == true
+            and "Raccoon"
+            or values[1]
+            or "Raccoon"
+    end
+
+    HOLY_SNIPER_STATE.BuilderPet =
+        selected
+
+    local options =
+        HOLY_DEV_LIBRARY
+        and HOLY_DEV_LIBRARY.Options
+        or Options
+
+    if type(options) == "table" then
+
+        HolyDataSetDropdownValues(
+            options.HolySniperPetFilter,
+            values,
+            selected
+        )
+    end
+
+    if type(HolyServerFinderApplyFilterOptions) == "function"
+    and type(HOLY_SERVER_FINDER_HUD) == "table" then
+
+        HolyServerFinderApplyFilterOptions(
+            HOLY_SERVER_FINDER_HUD
+        )
+    end
+
+    if type(HolySniperRefreshUI) == "function" then
+
+        HolySniperRefreshUI()
+    end
+
+    HolyDataLogOnce(
+        "pet-dropdown-refreshed",
+        "Pet dropdown refreshed."
+    )
+
+    return true
+end
+
+function HolyDataStartPetLoader(reason)
+
+    HOLY_DATA_STATE =
+        type(HOLY_DATA_STATE) == "table"
+        and HOLY_DATA_STATE
+        or {}
+
+    if HOLY_DATA_STATE.LoaderStarted == true then
+        return false
+    end
+
+    HOLY_DATA_STATE.LoaderStarted =
+        true
+
+    HolyDataLogOnce(
+        "petdata-waiting",
+        "PetData waiting..."
+    )
+
+    task.spawn(function()
+
+        local retryDelays = {
+            0,
+            0.15,
+            0.35,
+            0.75,
+            1.20,
+            1.80,
+            2.50,
+        }
+
+        local lastReason =
+            "not started"
+
+        for _, delay in ipairs(retryDelays) do
+
+            if delay > 0 then
+
+                task.wait(
+                    delay
+                )
+            end
+
+            HolyDataTryRequireModule(
+                "PetSizes"
+            )
+
+            HolyDataTryRequireModule(
+                "PetTypes"
+            )
+
+            local petData,
+                petReason =
+                HolyDataTryRequireModule(
+                    "PetData"
+                )
+
+            lastReason =
+                tostring(petReason or "unknown")
+
+            local count =
+                HolyDataCountPetDataRows(
+                    petData
+                )
+
+            if count > 0 then
+
+                HOLY_DATA_STATE.PetDataReady =
+                    true
+
+                HOLY_DATA_STATE.PetDataCount =
+                    count
+
+                HolyDataLogOnce(
+                    "petdata-loaded",
+                    "PetData loaded: "
+                        .. tostring(count)
+                        .. " pets."
+                )
+
+                HolyDataRefreshPetDropdowns()
+
+                return
+            end
+        end
+
+        HOLY_DATA_STATE.PetDataReady =
+            false
+
+        HOLY_DATA_STATE.PetDataCount =
+            0
+
+        HolyDataLogOnce(
+            "petdata-failed",
+            "PetData unavailable after startup retries. Using Raccoon fallback. Last: "
+                .. tostring(lastReason)
+        )
+    end)
+
+    return true
+end
+
 function HolyShopAddItemRow(rows, name, price)
 
     name =
@@ -16878,15 +17200,7 @@ end
 
 function HolyPerformanceRefreshUI()
 
-    if type(HolySniperSetLabel) == "function" then
-
-        HolySniperSetLabel(
-            HOLY_PERFORMANCE_UI
-            and HOLY_PERFORMANCE_UI.StatusLabel
-            or nil,
-            HolyPerformanceBuildStatusText()
-        )
-    end
+    return false
 end
 
 function HolyPerformanceSetStatus(status)
@@ -16899,7 +17213,7 @@ function HolyPerformanceSetStatus(status)
     HOLY_PERFORMANCE_STATE.LastStatus =
         tostring(status or "Ready.")
 
-    HolyPerformanceRefreshUI()
+    return true
 end
 
 function HolyPerformanceGetGardensRoot()
@@ -16926,19 +17240,24 @@ function HolyPerformanceGetGardensRoot()
     return nil
 end
 
-function HolyPerformanceDisconnectConnections()
+function HolyPerformanceIsPlot(instance)
 
-    HOLY_PERFORMANCE_STATE =
-        type(HOLY_PERFORMANCE_STATE) == "table"
-        and HOLY_PERFORMANCE_STATE
-        or {}
+    return typeof(instance) == "Instance"
+        and (
+            instance:IsA("Model")
+            or instance:IsA("Folder")
+        )
+end
 
-    local connections =
-        HOLY_PERFORMANCE_STATE.Connections
+function HolyPerformanceDisconnectConnectionMap(map)
 
-    if type(connections) == "table" then
+    if type(map) ~= "table" then
+        return
+    end
 
-        for _, connection in ipairs(connections) do
+    for _, connection in pairs(map) do
+
+        if connection then
 
             pcall(function()
 
@@ -16946,9 +17265,205 @@ function HolyPerformanceDisconnectConnections()
             end)
         end
     end
+end
+
+function HolyPerformanceDisconnectConnections()
+
+    HOLY_PERFORMANCE_STATE =
+        type(HOLY_PERFORMANCE_STATE) == "table"
+        and HOLY_PERFORMANCE_STATE
+        or {}
+
+    HolyPerformanceDisconnectConnectionMap(
+        HOLY_PERFORMANCE_STATE.Connections
+    )
+
+    HolyPerformanceDisconnectConnectionMap(
+        HOLY_PERFORMANCE_STATE.PlotConnections
+    )
 
     HOLY_PERFORMANCE_STATE.Connections =
         {}
+
+    HOLY_PERFORMANCE_STATE.PlotConnections =
+        {}
+end
+
+function HolyPerformanceReadPlotAttribute(plot, attributeName)
+
+    if typeof(plot) ~= "Instance" then
+        return nil
+    end
+
+    local value =
+        nil
+
+    pcall(function()
+
+        value =
+            plot:GetAttribute(
+                attributeName
+            )
+    end)
+
+    return value
+end
+
+function HolyPerformancePlotOwnedByLocal(plot)
+
+    if HolyPerformanceIsPlot(plot) ~= true then
+        return false,
+            ""
+    end
+
+    local localUserId =
+        tostring(
+            LocalPlayer
+            and LocalPlayer.UserId
+            or ""
+        )
+
+    local localName =
+        HolyCleanText(
+            LocalPlayer
+            and LocalPlayer.Name
+            or ""
+        )
+
+    local ownerUserId =
+        HolyPerformanceReadPlotAttribute(
+            plot,
+            "OwnerUserId"
+        )
+
+    if ownerUserId ~= nil
+    and tostring(ownerUserId) == localUserId then
+
+        return true,
+            "OwnerUserId="
+                .. tostring(ownerUserId)
+    end
+
+    local ownerName =
+        HolyCleanText(
+            HolyPerformanceReadPlotAttribute(
+                plot,
+                "Owner"
+            )
+        )
+
+    if ownerName ~= ""
+    and localName ~= ""
+    and ownerName == localName then
+
+        return true,
+            "Owner="
+                .. tostring(ownerName)
+    end
+
+    return false,
+        ""
+end
+
+function HolyPerformanceFindOwnPlotOnce(gardens)
+
+    if typeof(gardens) ~= "Instance" then
+        return nil,
+            "gardens missing"
+    end
+
+    for _, plot in ipairs(gardens:GetChildren()) do
+
+        if HolyPerformanceIsPlot(plot) == true then
+
+            local owned,
+                marker =
+                HolyPerformancePlotOwnedByLocal(
+                    plot
+                )
+
+            if owned == true then
+
+                return plot,
+                    marker
+            end
+        end
+    end
+
+    return nil,
+        "no owner attribute match"
+end
+
+function HolyPerformanceResolveOwnPlot(gardens)
+
+    HOLY_PERFORMANCE_STATE =
+        type(HOLY_PERFORMANCE_STATE) == "table"
+        and HOLY_PERFORMANCE_STATE
+        or {}
+
+    if typeof(gardens) ~= "Instance" then
+        return nil,
+            "gardens missing"
+    end
+
+    local cached =
+        HOLY_PERFORMANCE_STATE.OwnPlot
+
+    if typeof(cached) == "Instance"
+    and cached.Parent == gardens then
+
+        local owned,
+            marker =
+            HolyPerformancePlotOwnedByLocal(
+                cached
+            )
+
+        if owned == true then
+
+            HOLY_PERFORMANCE_STATE.OwnMarker =
+                marker
+
+            return cached,
+                marker
+        end
+    end
+
+    local startedAt =
+        os.clock()
+
+    local lastReason =
+        ""
+
+    while os.clock() - startedAt <= 4 do
+
+        local plot,
+            reason =
+            HolyPerformanceFindOwnPlotOnce(
+                gardens
+            )
+
+        lastReason =
+            tostring(reason or "")
+
+        if typeof(plot) == "Instance" then
+
+            HOLY_PERFORMANCE_STATE.OwnPlot =
+                plot
+
+            HOLY_PERFORMANCE_STATE.OwnMarker =
+                lastReason
+
+            return plot,
+                lastReason
+        end
+
+        task.wait(
+            0.10
+        )
+    end
+
+    return nil,
+        lastReason
 end
 
 function HolyPerformanceIsOwnGarden(garden, ownGarden)
@@ -16959,24 +17474,386 @@ function HolyPerformanceIsOwnGarden(garden, ownGarden)
         return false
     end
 
-    if garden == ownGarden then
+    return garden == ownGarden
+end
+
+function HolyPerformanceShouldRemoveChild(child)
+
+    if typeof(child) ~= "Instance" then
+        return false
+    end
+
+    local removeNames = {
+        Plants = true,
+        Sprinklers = true,
+        Visual = true,
+        Props = true,
+    }
+
+    return removeNames[
+        tostring(child.Name)
+    ] == true
+end
+
+function HolyPerformanceShouldHideChild(child)
+
+    if typeof(child) ~= "Instance" then
+        return false
+    end
+
+    local hideNames = {
+        Signs = true,
+        SpawnPoint = true,
+        PlotSizeReference = true,
+        LoadingCam = true,
+        LoadingScreenCam = true,
+    }
+
+    return hideNames[
+        tostring(child.Name)
+    ] == true
+end
+
+function HolyPerformanceHideInstanceVisual(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return false
+    end
+
+    local changed =
+        false
+
+    if instance:IsA("BasePart") then
+
+        pcall(function()
+
+            instance.Transparency =
+                1
+
+            instance.LocalTransparencyModifier =
+                1
+
+            instance.CanCollide =
+                false
+
+            instance.CanTouch =
+                false
+
+            instance.CanQuery =
+                false
+
+            instance.CastShadow =
+                false
+        end)
+
+        changed =
+            true
+    end
+
+    if instance:IsA("Decal")
+    or instance:IsA("Texture") then
+
+        pcall(function()
+
+            instance.Transparency =
+                1
+        end)
+
+        changed =
+            true
+    end
+
+    if instance:IsA("ParticleEmitter")
+    or instance:IsA("Beam")
+    or instance:IsA("Trail")
+    or instance:IsA("Fire")
+    or instance:IsA("Smoke")
+    or instance:IsA("Sparkles") then
+
+        pcall(function()
+
+            instance.Enabled =
+                false
+        end)
+
+        changed =
+            true
+    end
+
+    if instance:IsA("BillboardGui")
+    or instance:IsA("SurfaceGui") then
+
+        pcall(function()
+
+            instance.Enabled =
+                false
+        end)
+
+        changed =
+            true
+    end
+
+    if instance:IsA("ProximityPrompt") then
+
+        pcall(function()
+
+            instance.Enabled =
+                false
+        end)
+
+        changed =
+            true
+    end
+
+    if instance:IsA("TextLabel")
+    or instance:IsA("TextButton")
+    or instance:IsA("TextBox") then
+
+        pcall(function()
+
+            instance.TextTransparency =
+                1
+
+            instance.TextStrokeTransparency =
+                1
+
+            instance.BackgroundTransparency =
+                1
+        end)
+
+        changed =
+            true
+    end
+
+    return changed
+end
+
+function HolyPerformanceHideVisualTree(root)
+
+    if typeof(root) ~= "Instance" then
+        return 0
+    end
+
+    local changed =
+        0
+
+    if HolyPerformanceHideInstanceVisual(root) == true then
+
+        changed =
+            changed + 1
+    end
+
+    local descendants =
+        {}
+
+    pcall(function()
+
+        descendants =
+            root:GetDescendants()
+    end)
+
+    for _, descendant in ipairs(descendants) do
+
+        if HolyPerformanceHideInstanceVisual(
+            descendant
+        ) == true then
+
+            changed =
+                changed + 1
+        end
+    end
+
+    HOLY_PERFORMANCE_STATE.HiddenCount =
+        (
+            tonumber(
+                HOLY_PERFORMANCE_STATE.HiddenCount
+            )
+            or 0
+        )
+        + changed
+
+    return changed
+end
+
+function HolyPerformanceRemoveChild(child)
+
+    if typeof(child) ~= "Instance" then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            child.Parent =
+                nil
+        end)
+
+    if ok == true then
+
+        HOLY_PERFORMANCE_STATE.RemovedCount =
+            (
+                tonumber(
+                    HOLY_PERFORMANCE_STATE.RemovedCount
+                )
+                or 0
+            )
+            + 1
+
+        HOLY_PERFORMANCE_STATE.DeletedCount =
+            HOLY_PERFORMANCE_STATE.RemovedCount
+
         return true
     end
 
-    local ok,
-        isAncestor =
-        pcall(function()
+    return false
+end
 
-            return garden:IsAncestorOf(
-                ownGarden
+function HolyPerformanceProcessPlotChild(child)
+
+    if typeof(child) ~= "Instance" then
+
+        return "skip",
+            0
+    end
+
+    if HolyPerformanceShouldRemoveChild(child) == true then
+
+        if HolyPerformanceRemoveChild(child) == true then
+
+            return "removed",
+                1
+        end
+
+        return "failed",
+            0
+    end
+
+    if HolyPerformanceShouldHideChild(child) == true then
+
+        return "hidden",
+            HolyPerformanceHideVisualTree(
+                child
             )
-            or ownGarden:IsAncestorOf(
-                garden
-            )
+    end
+
+    return "kept",
+        0
+end
+
+function HolyPerformanceConnectPlotCleaner(plot)
+
+    if HolyPerformanceIsPlot(plot) ~= true then
+        return false
+    end
+
+    HOLY_PERFORMANCE_STATE.PlotConnections =
+        type(HOLY_PERFORMANCE_STATE.PlotConnections) == "table"
+        and HOLY_PERFORMANCE_STATE.PlotConnections
+        or {}
+
+    if HOLY_PERFORMANCE_STATE.PlotConnections[plot] then
+        return true
+    end
+
+    HOLY_PERFORMANCE_STATE.PlotConnections[plot] =
+        plot.ChildAdded:Connect(function(child)
+
+            task.defer(function()
+
+                if HOLY_DEV_UI_STATE.UnloadOtherGardens ~= true
+                or HOLY_PERFORMANCE_STATE.Active ~= true then
+
+                    return
+                end
+
+                if typeof(plot) ~= "Instance"
+                or plot.Parent == nil then
+
+                    return
+                end
+
+                if plot == HOLY_PERFORMANCE_STATE.OwnPlot then
+                    return
+                end
+
+                HolyPerformanceProcessPlotChild(
+                    child
+                )
+            end)
         end)
 
-    return ok == true
-        and isAncestor == true
+    return true
+end
+
+function HolyPerformanceProcessOtherPlot(plot, ownPlot)
+
+    if HolyPerformanceIsPlot(plot) ~= true then
+        return 0,
+            0
+    end
+
+    if plot == ownPlot then
+        return 0,
+            0
+    end
+
+    local children =
+        {}
+
+    pcall(function()
+
+        children =
+            plot:GetChildren()
+    end)
+
+    local removed =
+        0
+
+    local hidden =
+        0
+
+    for _, child in ipairs(children) do
+
+        if typeof(child) == "Instance"
+        and child.Parent == plot then
+
+            local action,
+                amount =
+                HolyPerformanceProcessPlotChild(
+                    child
+                )
+
+            if action == "removed" then
+
+                removed =
+                    removed + amount
+
+            elseif action == "hidden" then
+
+                hidden =
+                    hidden + amount
+            end
+        end
+    end
+
+    if removed > 0
+    or hidden > 0 then
+
+        HOLY_PERFORMANCE_STATE.ProcessedPlots =
+            type(HOLY_PERFORMANCE_STATE.ProcessedPlots) == "table"
+            and HOLY_PERFORMANCE_STATE.ProcessedPlots
+            or {}
+
+        HOLY_PERFORMANCE_STATE.ProcessedPlots[plot] =
+            true
+    end
+
+    HolyPerformanceConnectPlotCleaner(
+        plot
+    )
+
+    return removed,
+        hidden
 end
 
 function HolyPerformanceDeleteOtherGardensOnce(reason)
@@ -16991,94 +17868,65 @@ function HolyPerformanceDeleteOtherGardensOnce(reason)
     if typeof(gardens) ~= "Instance" then
 
         HolyPerformanceSetStatus(
-            "Waiting for gardens..."
+            "Waiting for gardens."
         )
 
         return 0
     end
 
-    local ownGarden =
-        nil
+    local ownPlot,
+        marker =
+        HolyPerformanceResolveOwnPlot(
+            gardens
+        )
 
-    if type(HolySniperFindOwnedGarden) == "function" then
-
-        ownGarden =
-            HolySniperFindOwnedGarden()
-    end
-
-    if typeof(ownGarden) ~= "Instance" then
+    if typeof(ownPlot) ~= "Instance" then
 
         HolyPerformanceSetStatus(
-            "Waiting for own garden..."
+            "Waiting for own plot."
         )
 
         return 0
     end
 
-    local deletedThisPass =
+    local removedThisPass =
         0
 
-    for _, garden in ipairs(gardens:GetChildren()) do
+    local hiddenThisPass =
+        0
 
-        if garden:IsA("Model")
-        or garden:IsA("Folder") then
+    for _, plot in ipairs(gardens:GetChildren()) do
 
-            if HolyPerformanceIsOwnGarden(
-                garden,
-                ownGarden
-            ) ~= true then
+        if HolyPerformanceIsPlot(plot) == true
+        and plot ~= ownPlot then
 
-                local ok =
-                    pcall(function()
+            local removed,
+                hidden =
+                HolyPerformanceProcessOtherPlot(
+                    plot,
+                    ownPlot
+                )
 
-                        garden:Destroy()
-                    end)
+            removedThisPass =
+                removedThisPass + removed
 
-                if ok == true then
-
-                    deletedThisPass =
-                        deletedThisPass + 1
-                end
-            end
+            hiddenThisPass =
+                hiddenThisPass + hidden
         end
     end
 
-    HOLY_PERFORMANCE_STATE.DeletedCount =
-        (
-            tonumber(
-                HOLY_PERFORMANCE_STATE.DeletedCount
-            )
-            or 0
-        )
-        + deletedThisPass
+    HolyPerformanceSetStatus(
+        "Own="
+            .. tostring(ownPlot.Name)
+            .. " | "
+            .. tostring(marker)
+            .. " | removed "
+            .. tostring(removedThisPass)
+            .. " | hidden "
+            .. tostring(hiddenThisPass)
+    )
 
-    if deletedThisPass > 0 then
-
-        HolyPerformanceSetStatus(
-            "Unloaded "
-            .. tostring(HOLY_PERFORMANCE_STATE.DeletedCount)
-            .. " other gardens."
-        )
-
-    elseif (
-        tonumber(
-            HOLY_PERFORMANCE_STATE.DeletedCount
-        )
-        or 0
-    ) > 0 then
-
-        HolyPerformanceSetStatus(
-            "Other gardens unloaded."
-        )
-
-    else
-
-        HolyPerformanceSetStatus(
-            "No other gardens found."
-        )
-    end
-
-    return deletedThisPass
+    return removedThisPass
 end
 
 function HolyPerformanceConnectGardenWatcher()
@@ -17088,6 +17936,9 @@ function HolyPerformanceConnectGardenWatcher()
     HOLY_PERFORMANCE_STATE.Connections =
         {}
 
+    HOLY_PERFORMANCE_STATE.PlotConnections =
+        {}
+
     local gardens =
         HolyPerformanceGetGardensRoot()
 
@@ -17095,17 +17946,80 @@ function HolyPerformanceConnectGardenWatcher()
         return false
     end
 
+    for _, plot in ipairs(gardens:GetChildren()) do
+
+        if HolyPerformanceIsPlot(plot) == true
+        and plot ~= HOLY_PERFORMANCE_STATE.OwnPlot then
+
+            HolyPerformanceConnectPlotCleaner(
+                plot
+            )
+        end
+    end
+
     table.insert(
         HOLY_PERFORMANCE_STATE.Connections,
-        gardens.ChildAdded:Connect(function()
+        gardens.ChildAdded:Connect(function(plot)
 
-            task.delay(0.35, function()
+            task.delay(0.45, function()
 
-                if HOLY_DEV_UI_STATE.UnloadOtherGardens == true
-                and HOLY_PERFORMANCE_STATE.Active == true then
+                if HOLY_DEV_UI_STATE.UnloadOtherGardens ~= true
+                or HOLY_PERFORMANCE_STATE.Active ~= true then
 
-                    HolyPerformanceDeleteOtherGardensOnce(
-                        "child added"
+                    return
+                end
+
+                if HolyPerformanceIsPlot(plot) ~= true then
+                    return
+                end
+
+                if typeof(plot) ~= "Instance"
+                or plot.Parent ~= gardens then
+
+                    return
+                end
+
+                local owned,
+                    marker =
+                    HolyPerformancePlotOwnedByLocal(
+                        plot
+                    )
+
+                if owned == true then
+
+                    HOLY_PERFORMANCE_STATE.OwnPlot =
+                        plot
+
+                    HOLY_PERFORMANCE_STATE.OwnMarker =
+                        marker
+
+                    return
+                end
+
+                local ownPlot =
+                    HOLY_PERFORMANCE_STATE.OwnPlot
+
+                if typeof(ownPlot) ~= "Instance"
+                or ownPlot.Parent ~= gardens then
+
+                    ownPlot =
+                        select(
+                            1,
+                            HolyPerformanceResolveOwnPlot(
+                                gardens
+                            )
+                        )
+                end
+
+                if typeof(ownPlot) ~= "Instance" then
+                    return
+                end
+
+                if plot ~= ownPlot then
+
+                    HolyPerformanceProcessOtherPlot(
+                        plot,
+                        ownPlot
                     )
                 end
             end)
@@ -17125,8 +18039,6 @@ function HolyPerformanceStartUnloadOtherGardens(reason)
 
     HolySaveUISettings()
 
-    HolyPerformanceConnectGardenWatcher()
-
     if HOLY_PERFORMANCE_STATE.Applying == true then
         return true
     end
@@ -17134,39 +18046,44 @@ function HolyPerformanceStartUnloadOtherGardens(reason)
     HOLY_PERFORMANCE_STATE.Applying =
         true
 
-    HolyPerformanceSetStatus(
-        "Unloading other gardens..."
-    )
-
     task.spawn(function()
 
-        local passes =
-            0
+        local deadline =
+            os.clock() + 6
 
         while HOLY_DEV_UI_STATE.UnloadOtherGardens == true
         and HOLY_PERFORMANCE_STATE.Active == true
-        and passes < 18 do
+        and os.clock() <= deadline do
 
-            passes =
-                passes + 1
+            local gardens =
+                HolyPerformanceGetGardensRoot()
 
-            HolyPerformanceDeleteOtherGardensOnce(
-                reason
-                or "apply"
-            )
+            if typeof(gardens) == "Instance" then
 
-            if passes <= 5 then
+                local ownPlot =
+                    select(
+                        1,
+                        HolyPerformanceResolveOwnPlot(
+                            gardens
+                        )
+                    )
 
-                task.wait(
-                    0.60
-                )
+                if typeof(ownPlot) == "Instance" then
 
-            else
+                    HolyPerformanceDeleteOtherGardensOnce(
+                        reason
+                        or "apply"
+                    )
 
-                task.wait(
-                    2
-                )
+                    HolyPerformanceConnectGardenWatcher()
+
+                    break
+                end
             end
+
+            task.wait(
+                0.10
+            )
         end
 
         HOLY_PERFORMANCE_STATE.Applying =
@@ -17192,7 +18109,7 @@ function HolyPerformanceStopUnloadOtherGardens(reason)
     HolySaveUISettings()
 
     HolyPerformanceSetStatus(
-        "Off. Rejoin restores deleted gardens."
+        "Off. Rejoin restores unloaded gardens."
     )
 
     return true
@@ -27601,6 +28518,10 @@ HolySniperSetPageMode(
 
 HolySniperRefreshUI()
 
+HolyDataStartPetLoader(
+    "sniper ui ready"
+)
+
 if HOLY_SNIPER_STATE.ActivateSniper == true then
 
     HolySniperStart(
@@ -28432,7 +29353,7 @@ SettingsPerformanceBox:AddToggle(
             HOLY_DEV_UI_STATE.UnloadOtherGardens == true,
 
         Tooltip =
-            "Deletes other players' gardens locally to reduce lag. Turning OFF stops future deletes; rejoin restores deleted gardens.",
+            "Removes heavy contents from other players' gardens locally. Keeps plot system objects safe. Rejoin restores unloaded gardens.",
     }
 ):OnChanged(function(value)
 
@@ -28449,14 +29370,6 @@ SettingsPerformanceBox:AddToggle(
         )
     end
 end)
-
-HOLY_PERFORMANCE_UI.StatusLabel =
-    HolySniperAddLabel(
-        SettingsPerformanceBox,
-        HolyPerformanceBuildStatusText()
-    )
-
-HolyPerformanceRefreshUI()
 
 if HOLY_DEV_UI_STATE.UnloadOtherGardens == true then
 
@@ -28631,3 +29544,9 @@ HolyNotify(
     "Loaded. Toggle UI with LeftAlt.",
     4
 )
+
+--==================================================
+-- [9] END MARKER
+--==================================================
+
+-- HOLY_PREMIUM_END_MARKER
