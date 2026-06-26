@@ -339,6 +339,9 @@ HOLY_SNIPER_STATE = {
 
     Watchlist = {},
 
+    WatchlistPage = 1,
+    WatchlistPageSize = 7,
+
     MovementMode = "Walk",
     BuyMode = "Instant",
     ReturnEnabled = false,
@@ -360,6 +363,7 @@ HOLY_SNIPER_UI = {
     StatusLabel = nil,
     WatchlistLabel = nil,
     WatchlistTable = nil,
+    WatchlistPager = nil,
 
     LivePetsList = nil,
     LivePetsActions = nil,
@@ -3211,7 +3215,7 @@ function HolySniperMatchesSearch(row, searchText)
     ) ~= nil
 end
 
-function HolySniperBuildWatchlistRows()
+function HolySniperBuildAllWatchlistRows()
 
     local rows =
         {}
@@ -3301,6 +3305,211 @@ function HolySniperBuildWatchlistRows()
 
     return rows
 end
+
+function HolySniperGetWatchlistPageSize()
+
+    local pageSize =
+        math.floor(
+            tonumber(
+                HOLY_SNIPER_STATE.WatchlistPageSize
+            )
+            or 7
+        )
+
+    return math.clamp(
+        pageSize,
+        1,
+        20
+    )
+end
+
+function HolySniperGetWatchlistPageCount(totalRows)
+
+    totalRows =
+        math.max(
+            0,
+            math.floor(
+                tonumber(totalRows)
+                or 0
+            )
+        )
+
+    local pageSize =
+        HolySniperGetWatchlistPageSize()
+
+    return math.max(
+        1,
+        math.ceil(
+            totalRows / pageSize
+        )
+    )
+end
+
+function HolySniperClampWatchlistPage(totalRows)
+
+    local pageCount =
+        HolySniperGetWatchlistPageCount(
+            totalRows
+        )
+
+    local page =
+        math.floor(
+            tonumber(
+                HOLY_SNIPER_STATE.WatchlistPage
+            )
+            or 1
+        )
+
+    page =
+        math.clamp(
+            page,
+            1,
+            pageCount
+        )
+
+    HOLY_SNIPER_STATE.WatchlistPage =
+        page
+
+    return page,
+        pageCount
+end
+
+function HolySniperBuildWatchlistRows()
+
+    local allRows =
+        HolySniperBuildAllWatchlistRows()
+
+    local page,
+        pageCount =
+        HolySniperClampWatchlistPage(
+            #allRows
+        )
+
+    local pageSize =
+        HolySniperGetWatchlistPageSize()
+
+    local firstIndex =
+        ((page - 1) * pageSize) + 1
+
+    local lastIndex =
+        math.min(
+            #allRows,
+            firstIndex + pageSize - 1
+        )
+
+    local pageRows =
+        {}
+
+    for index = firstIndex, lastIndex do
+
+        if type(allRows[index]) == "table" then
+
+            table.insert(
+                pageRows,
+                allRows[index]
+            )
+        end
+    end
+
+    return pageRows,
+        {
+            Page =
+                page,
+
+            PageCount =
+                pageCount,
+
+            TotalRows =
+                #allRows,
+
+            FirstIndex =
+                firstIndex,
+
+            LastIndex =
+                lastIndex,
+        }
+end
+
+function HolySniperBuildWatchlistPageText()
+
+    local allRows =
+        HolySniperBuildAllWatchlistRows()
+
+    local page,
+        pageCount =
+        HolySniperClampWatchlistPage(
+            #allRows
+        )
+
+    return "Page "
+        .. tostring(page)
+        .. "/"
+        .. tostring(pageCount)
+end
+
+function HolySniperSetWatchlistPage(page)
+
+    local allRows =
+        HolySniperBuildAllWatchlistRows()
+
+    local pageCount =
+        HolySniperGetWatchlistPageCount(
+            #allRows
+        )
+
+    HOLY_SNIPER_STATE.WatchlistPage =
+        math.clamp(
+            math.floor(
+                tonumber(page)
+                or 1
+            ),
+            1,
+            pageCount
+        )
+
+    HOLY_SNIPER_STATE.SelectedWatchlistSourceIndex =
+        nil
+
+    if HOLY_SNIPER_UI
+    and type(HOLY_SNIPER_UI.WatchlistTable) == "table"
+    and type(HOLY_SNIPER_UI.WatchlistTable.SetSelected) == "function" then
+
+        HOLY_SNIPER_UI.WatchlistTable:SetSelected(
+            nil
+        )
+    end
+
+    HolySniperRefreshUI()
+
+    return true
+end
+
+function HolySniperWatchlistPrevPage()
+
+    return HolySniperSetWatchlistPage(
+        (
+            tonumber(
+                HOLY_SNIPER_STATE.WatchlistPage
+            )
+            or 1
+        )
+        - 1
+    )
+end
+
+function HolySniperWatchlistNextPage()
+
+    return HolySniperSetWatchlistPage(
+        (
+            tonumber(
+                HOLY_SNIPER_STATE.WatchlistPage
+            )
+            or 1
+        )
+        + 1
+    )
+end
+
 
 function HolySniperBuildWatchlistText()
 
@@ -3444,11 +3653,15 @@ function HolySniperRefreshUI()
         HolySniperBuildStatusText()
     )
 
+    local pageRows,
+        pageInfo =
+        HolySniperBuildWatchlistRows()
+
     if type(HOLY_SNIPER_UI.WatchlistTable) == "table"
     and type(HOLY_SNIPER_UI.WatchlistTable.SetRows) == "function" then
 
         HOLY_SNIPER_UI.WatchlistTable:SetRows(
-            HolySniperBuildWatchlistRows()
+            pageRows
         )
 
     else
@@ -3457,6 +3670,50 @@ function HolySniperRefreshUI()
             HOLY_SNIPER_UI.WatchlistLabel,
             HolySniperBuildWatchlistText()
         )
+    end
+
+    local pager =
+        HOLY_SNIPER_UI.WatchlistPager
+
+    if type(pager) == "table" then
+
+        local page =
+            tonumber(
+                pageInfo
+                and pageInfo.Page
+            )
+            or 1
+
+        local pageCount =
+            tonumber(
+                pageInfo
+                and pageInfo.PageCount
+            )
+            or 1
+
+        if type(pager.SetText) == "function" then
+
+            pager:SetText(
+                "Page",
+                "Page "
+                .. tostring(page)
+                .. "/"
+                .. tostring(pageCount)
+            )
+        end
+
+        if type(pager.SetDisabled) == "function" then
+
+            pager:SetDisabled(
+                "Prev",
+                page <= 1
+            )
+
+            pager:SetDisabled(
+                "Next",
+                page >= pageCount
+            )
+        end
     end
 end
 
@@ -10732,6 +10989,9 @@ function HolySniperSaveFilterFromBuilder()
         )
     end
 
+    HOLY_SNIPER_STATE.WatchlistPage =
+        1
+
     HolySaveSniperSettings()
 
     HolySniperRefreshUI()
@@ -10928,6 +11188,12 @@ function HolySniperRemoveSelectedFilter()
         HOLY_SNIPER_STATE.Watchlist,
         index
     )
+
+    HOLY_SNIPER_STATE.WatchlistPage =
+        1
+
+    HOLY_SNIPER_STATE.WatchlistPage =
+        1
 
     HOLY_SNIPER_STATE.SelectedWatchlistSourceIndex =
         nil
@@ -29756,6 +30022,63 @@ HOLY_SNIPER_UI.WatchlistTable =
                         and tonumber(rowData.SourceIndex)
                         or nil
                 end,
+        }
+    )
+
+HOLY_SNIPER_UI.WatchlistPager =
+    SniperWatchlistBox:AddActionRow(
+        "HolySniperWatchlistPager",
+        {
+            Buttons = {
+                {
+                    Id =
+                        "Prev",
+
+                    Text =
+                        "<",
+
+                    Tooltip =
+                        "Previous watchlist page.",
+
+                    Callback =
+                        function()
+
+                            HolySniperWatchlistPrevPage()
+                        end,
+                },
+
+                {
+                    Id =
+                        "Page",
+
+                    Text =
+                        "Page 1/1",
+
+                    Tooltip =
+                        "Current watchlist page.",
+
+                    Callback =
+                        function()
+                        end,
+                },
+
+                {
+                    Id =
+                        "Next",
+
+                    Text =
+                        ">",
+
+                    Tooltip =
+                        "Next watchlist page.",
+
+                    Callback =
+                        function()
+
+                            HolySniperWatchlistNextPage()
+                        end,
+                },
+            },
         }
     )
 
