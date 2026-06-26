@@ -17632,6 +17632,51 @@ function HolyPerformanceGetMiddleRoot()
         map
 end
 
+function HolyPerformanceGetStandsRoot()
+
+    local map =
+        HolyPerformanceGetMapRoot()
+
+    if typeof(map) ~= "Instance" then
+        return nil
+    end
+
+    local stands =
+        map:FindFirstChild(
+            "Stands"
+        )
+
+    if typeof(stands) == "Instance" then
+        return stands
+    end
+
+    return nil
+end
+
+function HolyPerformanceGetNpcsRoot()
+
+    local npcs =
+        workspace:FindFirstChild(
+            "NPCS"
+        )
+
+    if typeof(npcs) == "Instance" then
+        return npcs
+    end
+
+    npcs =
+        workspace:FindFirstChild(
+            "NPCS",
+            true
+        )
+
+    if typeof(npcs) == "Instance" then
+        return npcs
+    end
+
+    return nil
+end
+
 function HolyPerformanceHideInstanceVisual(instance)
 
     if typeof(instance) ~= "Instance" then
@@ -17826,21 +17871,9 @@ function HolyPerformanceRemoveChild(child)
     return false
 end
 
-function HolyPerformanceHideMiddleOnce(reason)
-
-    if HOLY_DEV_UI_STATE.HideMiddle ~= true then
-        return 0
-    end
-
-    local middle =
-        HolyPerformanceGetMiddleRoot()
+function HolyPerformanceRemoveMiddleChildren(middle)
 
     if typeof(middle) ~= "Instance" then
-
-        HolyPerformanceSetStatus(
-            "Waiting."
-        )
-
         return 0
     end
 
@@ -17869,14 +17902,111 @@ function HolyPerformanceHideMiddleOnce(reason)
         end
     end
 
-    if removed > 0 then
+    return removed
+end
+
+function HolyPerformanceHideMiddleOnce(reason)
+
+    if HOLY_DEV_UI_STATE.HideMiddle ~= true then
+        return 0
+    end
+
+    local totalChanged =
+        0
+
+    local middle =
+        HolyPerformanceGetMiddleRoot()
+
+    if typeof(middle) == "Instance" then
+
+        totalChanged =
+            totalChanged
+            + HolyPerformanceRemoveMiddleChildren(
+                middle
+            )
+    end
+
+    local stands =
+        HolyPerformanceGetStandsRoot()
+
+    if typeof(stands) == "Instance" then
+
+        totalChanged =
+            totalChanged
+            + HolyPerformanceHideVisualTree(
+                stands
+            )
+    end
+
+    local npcs =
+        HolyPerformanceGetNpcsRoot()
+
+    if typeof(npcs) == "Instance" then
+
+        totalChanged =
+            totalChanged
+            + HolyPerformanceHideVisualTree(
+                npcs
+            )
+    end
+
+    if totalChanged > 0 then
 
         HolyPerformanceSetStatus(
             "Applied."
         )
+
+    else
+
+        HolyPerformanceSetStatus(
+            "Waiting."
+        )
     end
 
-    return removed
+    return totalChanged
+end
+
+function HolyPerformanceConnectHideTreeWatcher(root)
+
+    if HOLY_DEV_UI_STATE.HideMiddle ~= true then
+        return false
+    end
+
+    if typeof(root) ~= "Instance" then
+        return false
+    end
+
+    HOLY_PERFORMANCE_STATE.MapConnections =
+        type(HOLY_PERFORMANCE_STATE.MapConnections) == "table"
+        and HOLY_PERFORMANCE_STATE.MapConnections
+        or {}
+
+    if HOLY_PERFORMANCE_STATE.MapConnections[root] then
+        return true
+    end
+
+    HOLY_PERFORMANCE_STATE.MapConnections[root] =
+        root.ChildAdded:Connect(function(child)
+
+            task.defer(function()
+
+                if HOLY_DEV_UI_STATE.HideMiddle ~= true
+                or HOLY_PERFORMANCE_STATE.Active ~= true then
+
+                    return
+                end
+
+                if typeof(child) == "Instance"
+                and child.Parent == root then
+
+                    HolyPerformanceHideVisualTree(
+                        child
+                    )
+                end
+            end)
+        end)
+
+    return true
 end
 
 function HolyPerformanceConnectMiddleWatcher()
@@ -17920,6 +18050,26 @@ function HolyPerformanceConnectMiddleWatcher()
             end)
     end
 
+    local stands =
+        HolyPerformanceGetStandsRoot()
+
+    if typeof(stands) == "Instance" then
+
+        HolyPerformanceConnectHideTreeWatcher(
+            stands
+        )
+    end
+
+    local npcs =
+        HolyPerformanceGetNpcsRoot()
+
+    if typeof(npcs) == "Instance" then
+
+        HolyPerformanceConnectHideTreeWatcher(
+            npcs
+        )
+    end
+
     if typeof(map) == "Instance"
     and HOLY_PERFORMANCE_STATE.MapConnections.__MapChildAdded == nil then
 
@@ -17934,14 +18084,55 @@ function HolyPerformanceConnectMiddleWatcher()
                         return
                     end
 
-                    if typeof(child) == "Instance"
-                    and child.Name == "Middle" then
+                    if typeof(child) ~= "Instance" then
+                        return
+                    end
+
+                    if child.Name == "Middle" then
 
                         HolyPerformanceHideMiddleOnce(
                             "middle added"
                         )
 
                         HolyPerformanceConnectMiddleWatcher()
+
+                    elseif child.Name == "Stands" then
+
+                        HolyPerformanceHideVisualTree(
+                            child
+                        )
+
+                        HolyPerformanceConnectHideTreeWatcher(
+                            child
+                        )
+                    end
+                end)
+            end)
+    end
+
+    if HOLY_PERFORMANCE_STATE.MapConnections.__WorkspaceChildAdded == nil then
+
+        HOLY_PERFORMANCE_STATE.MapConnections.__WorkspaceChildAdded =
+            workspace.ChildAdded:Connect(function(child)
+
+                task.delay(0.25, function()
+
+                    if HOLY_DEV_UI_STATE.HideMiddle ~= true
+                    or HOLY_PERFORMANCE_STATE.Active ~= true then
+
+                        return
+                    end
+
+                    if typeof(child) == "Instance"
+                    and child.Name == "NPCS" then
+
+                        HolyPerformanceHideVisualTree(
+                            child
+                        )
+
+                        HolyPerformanceConnectHideTreeWatcher(
+                            child
+                        )
                     end
                 end)
             end)
