@@ -36,11 +36,11 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260626-smart-random-server-hop-v1"
+    "holy-premium-20260626-serverfinder-refresh-report-v1"
 
 local LIBRARY_URL =
     REPO_URL
-    .. "libraryholy6.lua?v="
+    .. "libraryholy5.lua?v="
     .. REMOTE_SOURCE_VERSION
 
 local UI_SETTINGS_FOLDER =
@@ -17726,6 +17726,9 @@ HOLY_SERVER_FINDER_REPORTER = {
     LastFetchAt = 0,
     LastReportStatus = "Ready",
     LastFetchStatus = "Ready",
+
+    RefreshReportRunning = false,
+    LastRefreshReportClock = 0,
 }
 
 HOLY_SERVER_FINDER_STATE = {
@@ -24596,6 +24599,74 @@ function HolyServerFinderReportNow(reason)
         HOLY_SERVER_FINDER_REPORTER.LastReportStatus
 end
 
+function HolyServerFinderReportForRefresh(reason)
+
+    HOLY_SERVER_FINDER_REPORTER =
+        type(HOLY_SERVER_FINDER_REPORTER) == "table"
+        and HOLY_SERVER_FINDER_REPORTER
+        or {}
+
+    if type(HolyGetRequestFunction()) ~= "function" then
+
+        HOLY_SERVER_FINDER_REPORTER.LastReportStatus =
+            "request unsupported"
+
+        return false,
+            "request unsupported"
+    end
+
+    if HOLY_SERVER_FINDER_REPORTER.RefreshReportRunning == true then
+
+        return false,
+            "report already running"
+    end
+
+    local nowClock =
+        os.clock()
+
+    if nowClock - (
+        tonumber(
+            HOLY_SERVER_FINDER_REPORTER.LastRefreshReportClock
+        )
+        or 0
+    ) < 0.85 then
+
+        return false,
+            "refresh report cooldown"
+    end
+
+    HOLY_SERVER_FINDER_REPORTER.RefreshReportRunning =
+        true
+
+    HOLY_SERVER_FINDER_REPORTER.LastRefreshReportClock =
+        nowClock
+
+    local ok,
+        success,
+        status =
+        pcall(function()
+
+            return HolyServerFinderReportNow(
+                reason or "refresh"
+            )
+        end)
+
+    HOLY_SERVER_FINDER_REPORTER.RefreshReportRunning =
+        false
+
+    if ok == true then
+
+        return success == true,
+            tostring(status or HOLY_SERVER_FINDER_REPORTER.LastReportStatus or "reported")
+    end
+
+    HOLY_SERVER_FINDER_REPORTER.LastReportStatus =
+        tostring(success or "report failed")
+
+    return false,
+        HOLY_SERVER_FINDER_REPORTER.LastReportStatus
+end
+
 function HolyServerFinderStartReporter()
 
     HOLY_SERVER_FINDER_REPORTER =
@@ -24628,19 +24699,31 @@ function HolyServerFinderStartReporter()
 
         while HOLY_SERVER_FINDER_REPORTER.Token == token do
 
-            pcall(function()
-
-                HolyServerFinderReportNow(
-                    "loop"
-                )
-            end)
-
-            task.wait(
+            local interval =
                 math.max(
                     3,
                     tonumber(SERVER_FINDER_REPORT_INTERVAL)
                     or 5
                 )
+
+            pcall(function()
+
+                local lastReportAt =
+                    tonumber(
+                        HOLY_SERVER_FINDER_REPORTER.LastReportAt
+                    )
+                    or 0
+
+                if os.time() - lastReportAt >= interval then
+
+                    HolyServerFinderReportNow(
+                        "loop"
+                    )
+                end
+            end)
+
+            task.wait(
+                interval
             )
         end
 
@@ -25812,12 +25895,16 @@ function HolyServerFinderBuildPetDisplayRows(serverRows)
     return output
 end
 
-function HolyServerFinderRefreshRows(hud)
+function HolyServerFinderRefreshRows(hud, reason)
 
     if type(hud) ~= "table"
     or type(hud.SetRows) ~= "function" then
         return false
     end
+
+    HolyServerFinderReportForRefresh(
+        reason or "refresh"
+    )
 
     local localRows =
         HolyServerFinderBuildLocalRows()
@@ -26176,7 +26263,8 @@ function HolyServerFinderOpenHud()
                     function(hud)
 
                         HolyServerFinderRefreshRows(
-                            hud
+                            hud,
+                            "refresh button"
                         )
                     end,
 
@@ -26200,7 +26288,8 @@ function HolyServerFinderOpenHud()
     )
 
     HolyServerFinderRefreshRows(
-        HOLY_SERVER_FINDER_HUD
+        HOLY_SERVER_FINDER_HUD,
+        "hud open"
     )
 
     HOLY_SERVER_FINDER_HUD:SetCurrentServer(
