@@ -46,7 +46,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260626-serverfinder-refresh-report-v1"
+    "holy-premium-20260626-petdata-loader-v2"
 
 local LIBRARY_URL =
     REPO_URL
@@ -29072,3 +29072,9 @@ HolyNotify(
     "Loaded. Toggle UI with LeftAlt.",
     4
 )
+
+--==================================================
+-- [9] END MARKER
+--==================================================
+
+-- HOLY_PREMIUM_END_MARKER
