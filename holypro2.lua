@@ -3,10 +3,10 @@
 --==================================================
 
 local MAIN_URL =
-    "https://raw.githubusercontent.com/bencapalot041/holy/main/holypro2_main.lua?v=20260626_1"
+    "https://raw.githubusercontent.com/bencapalot041/holy/main/holypro2_main.lua?v=20260626_2"
 
 local END_MARKER =
-    "HOLY_PREMIUM_END"
+    "HOLY_PREMIUM_END_MARKER"
 
 local function holy_clean_text(value)
 
