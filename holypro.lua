@@ -1,0 +1,28355 @@
+--==================================================
+-- HOLY PREMIUM
+--==================================================
+
+--==================================================
+-- [0] SERVICES
+--==================================================
+
+local Players =
+    game:GetService("Players")
+
+local TeleportService =
+    game:GetService("TeleportService")
+
+local HttpService =
+    game:GetService("HttpService")
+
+local ReplicatedStorage =
+    game:GetService("ReplicatedStorage")
+
+local CoreGui =
+    game:GetService("CoreGui")
+
+local UserInputService =
+    game:GetService("UserInputService")
+
+local LocalPlayer =
+    Players.LocalPlayer
+    or Players.PlayerAdded:Wait()
+
+--==================================================
+-- [1] CONSTANTS
+--==================================================
+
+local REPO_URL =
+    "https://raw.githubusercontent.com/bencapalot041/goons/main/"
+
+local REMOTE_SOURCE_VERSION =
+    "holy-premium-20260626-smart-random-server-hop-v1"
+
+local LIBRARY_URL =
+    REPO_URL
+    .. "libraryholy6.lua?v="
+    .. REMOTE_SOURCE_VERSION
+
+local UI_SETTINGS_FOLDER =
+    "HolyGAG2"
+
+local UI_SETTINGS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyDevUISettings.json"
+
+local SHOP_SETTINGS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyPremiumShopSettings.json"
+
+local SNIPER_SETTINGS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyPremiumSniperSettings.json"
+
+local SERVER_SETTINGS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyPremiumServerSettings.json"
+
+local SERVER_FINDER_SETTINGS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyPremiumServerFinderSettings.json"
+
+local SERVER_FINDER_API_BASE =
+    "https://holy-server-finder-api.benjicapalot041.workers.dev"
+
+local SERVER_FINDER_API_KEY =
+    "holy_2026_private_backend_key_92841"
+
+local SERVER_FINDER_REPORT_INTERVAL =
+    5
+
+local SERVER_FINDER_AUTO_JOIN_FRESH_SECONDS =
+    12
+
+local SERVER_FINDER_MANUAL_JOIN_FRESH_SECONDS =
+    20
+
+local SERVER_FINDER_ROW_HIDE_AFTER_SECONDS =
+    45
+
+local SERVER_FINDER_TOO_LATE_SECONDS =
+    15
+
+local HOLY_SNIPER_PET_BUY_SETTLE_SECONDS =
+    18
+
+local HOLY_SNIPER_PET_BUY_HARD_TIMEOUT =
+    120
+
+local HOLY_SNIPER_TARGET_LOCK_TIMEOUT =
+    45
+
+local SERVER_HOP_FAST_CANDIDATES =
+    24
+
+local GROUPBOX_SETTINGS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyPremiumGroupboxes.json"
+
+local DEV_TOOLS = {
+    {
+        Name = "Remote Spy",
+        Url = "https://raw.githubusercontent.com/Klinac/scripts/main/utopia_spy.lua",
+        Tooltip = "Open Utopia Remote Spy.",
+    },
+
+    {
+        Name = "Cobalt Spy",
+        Url = "https://github.com/notpoiu/cobalt/releases/latest/download/Cobalt.luau",
+        Tooltip = "Open Cobalt Remote Spy.",
+    },
+
+    {
+        Name = "Dex Explorer",
+        Url = "https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua",
+        Tooltip = "Open Dex Explorer.",
+    },
+
+    {
+        Name = "Dex Explorer V2",
+        Url = "https://github.com/BOXLEGENDARY/Dex/releases/latest/download/out.lua",
+        Tooltip = "Open Dex Explorer V2.",
+    },
+}
+
+HOLY_DEV_UI_STATE = {
+    ShowUIOnLoad = true,
+    DPIScale = 100,
+    AutoSkipLoading = true,
+    AntiAfk = true,
+    UnloadOtherGardens = false,
+}
+
+HOLY_SERVER_PICK_STYLES = {
+    "Recommended",
+    "Fullest Under Max",
+    "Balanced",
+    "Random in Range",
+    "Random Spread",
+    "Lowest Real Server",
+}
+
+HOLY_SERVER_STATE = {
+    MinPlayers = 4,
+    MaxPlayers = 8,
+
+    PickStyle = "Random Spread",
+    TargetPlayers = 6,
+
+    -- 0 = smart auto search with candidate pooling.
+    SearchPages = 0,
+
+    RetryDelay = 0.1,
+    TeleportTimeout = 3,
+
+    AvoidRecent = true,
+    RecentCooldown = 600,
+
+    FailedCooldown = 120,
+
+    Hopping = false,
+    HopAttempt = 0,
+    HopToken = 0,
+
+    LastStatus = "Ready.",
+    LastTarget = "None",
+    LastCandidates = 0,
+    LastPagesRead = 0,
+    LastFallbackStage = "None",
+    LastSortOrder = "None",
+    LastFailed = "None",
+
+    RecentServers = {},
+    FailedServers = {},
+}
+
+pcall(function()
+
+    local seed =
+        os.time()
+        + math.floor(os.clock() * 1000000)
+        + (
+            tonumber(
+                LocalPlayer
+                and LocalPlayer.UserId
+            )
+            or 0
+        )
+
+    math.randomseed(
+        seed
+    )
+
+    math.random()
+    math.random()
+    math.random()
+end)
+
+HOLY_SERVER_UI = {}
+
+if type(HOLY_PERFORMANCE_STATE) == "table" then
+
+    local connections =
+        HOLY_PERFORMANCE_STATE.Connections
+
+    if type(connections) == "table" then
+
+        for _, connection in ipairs(connections) do
+
+            pcall(function()
+
+                connection:Disconnect()
+            end)
+        end
+    end
+end
+
+HOLY_PERFORMANCE_STATE = {
+    Active = false,
+    Applying = false,
+    DeletedCount = 0,
+    LastStatus = "Ready.",
+    Connections = {},
+}
+
+HOLY_PERFORMANCE_UI = {
+    StatusLabel = nil,
+}
+
+HOLY_GROUPBOX_STATE = {
+    Loaded = false,
+    Collapsed = {},
+}
+
+if type(HOLY_LOADING_SKIP_STATE) == "table" then
+
+    if type(HOLY_LOADING_SKIP_STATE.Stop) == "function" then
+
+        pcall(function()
+
+            HOLY_LOADING_SKIP_STATE.Stop(
+                "restart"
+            )
+        end)
+    end
+
+    local connections =
+        HOLY_LOADING_SKIP_STATE.Connections
+
+    if type(connections) == "table" then
+
+        for _, connection in ipairs(connections) do
+
+            pcall(function()
+
+                connection:Disconnect()
+            end)
+        end
+    end
+end
+
+HOLY_LOADING_SKIP_STATE = {
+    Running = false,
+    Token = nil,
+    Connections = {},
+    ClickedSkip = false,
+    PressedFinal = false,
+    LogsPrinted = 0,
+}
+
+HOLY_SNIPER_STATE = {
+    ActivateSniper = false,
+    AutoHop = false,
+    HopDelay = "5",
+    AutoHopTiming = "Safe - After Loading",
+    Status = "Ready",
+
+    BuilderPet = "Raccoon",
+    BuilderSizes = {
+        "Any",
+    },
+    BuilderVariants = {
+        "Any",
+    },
+    BuilderAmount = "1",
+    BuilderPriority = "High",
+
+    Watchlist = {},
+
+    MovementMode = "Walk",
+    BuyMode = "Instant",
+    ReturnEnabled = false,
+    ReturnTiming = "After Batch",
+    ReturnMode = "Teleport",
+    ReturnDestination = "Farm Center",
+    SavedReturnCFrameData = nil,
+}
+
+HOLY_SNIPER_UI = {
+    StatusLabel = nil,
+    WatchlistLabel = nil,
+    WatchlistTable = nil,
+
+    LivePetsList = nil,
+    LivePetsActions = nil,
+}
+
+HOLY_SNIPER_PAGE_STATE = {
+    Mode = "Sniper Setup",
+}
+
+if type(HOLY_SNIPER_RUNTIME) == "table" then
+
+    HOLY_SNIPER_RUNTIME.Token =
+        nil
+
+    HOLY_SNIPER_RUNTIME.Running =
+        false
+end
+
+HOLY_SNIPER_RUNTIME = {
+    Running = false,
+    Token = nil,
+
+    LoadingReady = false,
+    Buying = false,
+
+    BuyProtection = {
+        Active = false,
+    },
+
+    BuyProtectionActive = false,
+
+    TargetLock = {
+        Active = false,
+    },
+
+    TargetLockActive = false,
+
+    LastScanAt = 0,
+    LastMatchAt = 0,
+    LastBuyAt = 0,
+    LastHopAt = 0,
+
+    AutoHopInProgress = false,
+    NoMatchSince = 0,
+    NoMatchScans = 0,
+    StartClock = 0,
+
+    AutoHopMinimumServerAge = 8,
+    HopFailureBackoffUntil = 0,
+    EarlyHopMinimumSeconds = 8,
+    EarlyHopRequiredScans = 3,
+    SafeHopRequiredScans = 2,
+
+    ScanCount = 0,
+    PetCount = 0,
+    MatchCount = 0,
+
+    CurrentTarget = nil,
+    CurrentTargetKey = "",
+
+    Handled = {},
+    FailedUntil = {},
+    BoughtCounts = {},
+
+    WalkTimeout = 26,
+    ConfirmTimeout = 9,
+    SafeRangePadding = 2.15,
+
+    ReturnWalkTimeout = 22,
+    ReturnArriveDistance = 12,
+    BatchStableSeconds = 1.5,
+
+    Returning = false,
+    ReturnActivationCFrame = nil,
+
+    LastManualMoveInputAt = 0,
+    ManualReturnCancelGrace = 0.20,
+    ManualInputWatcherStarted = false,
+
+    BatchActive = false,
+    BatchBoughtCount = 0,
+    BatchEmptySince = 0,
+
+    FarmCenterCFrame = nil,
+    FarmCenterLastScanAt = 0,
+
+    LastStatusText = "",
+}
+
+if type(HOLY_ANTI_AFK_STATE) == "table" then
+
+    if type(HOLY_ANTI_AFK_STATE.Stop) == "function" then
+
+        pcall(function()
+
+            HOLY_ANTI_AFK_STATE.Stop(
+                "restart"
+            )
+        end)
+    end
+end
+
+HOLY_ANTI_AFK_STATE = {
+    Running = false,
+    Token = nil,
+    OldOverrideCaptured = false,
+    OldOverride = nil,
+    LogsPrinted = 0,
+}
+
+if type(HOLY_SHOP_STATE) == "table" then
+
+    for _, connectionListName in ipairs({
+        "StockConnections",
+        "SellConnections",
+    }) do
+
+        local connectionList =
+            HOLY_SHOP_STATE[connectionListName]
+
+        if type(connectionList) == "table" then
+
+            for _, connection in ipairs(connectionList) do
+
+                pcall(function()
+
+                    connection:Disconnect()
+                end)
+            end
+        end
+    end
+end
+
+HOLY_SHOP_STATE = {
+    Mode = "Buy",
+
+    AutoBuySeeds = false,
+    AutoBuyGear = false,
+    AutoBuyProps = false,
+
+    SelectedSeeds = {},
+    SelectedGear = {},
+    SelectedProps = {},
+
+    AutoSellFruits = false,
+    SellMethod = "Sell All",
+
+    UseSellFilters = false,
+
+    SellFruits = {},
+    SellRarities = {},
+    SellMutations = {},
+    SellVariants = {},
+
+    ProtectMutations = {},
+    ProtectVariants = {},
+
+    MinWeightKg = "0",
+    MaxWeightKg = "0",
+
+    WorkerRunning = false,
+    PendingCategories = {},
+    BurstAttempts = {},
+    PacketCache = {},
+    ItemCache = {},
+    StockConnections = {},
+
+    MaxBurstFires = 120,
+    YieldEvery = 24,
+
+    SellWorkerRunning = false,
+    SellWatcherStarted = false,
+
+    SellPacketCache = {},
+    SellConnections = {},
+
+    SellQueue = {},
+    SellQueueMap = {},
+    SellRecentFruitIds = {},
+
+    SellAllInterval = 0.5,
+    SellFruitInterval = 0.05,
+    SelectedScanInterval = 0.25,
+    MaxSellFruitPerPass = 75,
+}
+
+--==================================================
+-- [2] BASIC HELPERS
+--==================================================
+
+function HolyCleanText(value)
+
+    local text =
+        tostring(value or "")
+
+    text =
+        text:gsub(
+            "^%s+",
+            ""
+        )
+
+    text =
+        text:gsub(
+            "%s+$",
+            ""
+        )
+
+    return text
+end
+
+function HolyGetRequestFunction()
+
+    if type(syn) == "table"
+    and type(syn.request) == "function" then
+
+        return syn.request
+    end
+
+    if type(http_request) == "function" then
+        return http_request
+    end
+
+    if type(request) == "function" then
+        return request
+    end
+
+    if type(fluxus) == "table"
+    and type(fluxus.request) == "function" then
+
+        return fluxus.request
+    end
+
+    local env =
+        type(getgenv) == "function"
+        and getgenv()
+        or _G
+
+    if type(env) == "table" then
+
+        if type(env.request) == "function" then
+            return env.request
+        end
+
+        if type(env.http_request) == "function" then
+            return env.http_request
+        end
+    end
+
+    return nil
+end
+
+function HolyValidateSource(body)
+
+    if type(body) ~= "string"
+    or body == "" then
+
+        return nil,
+            "empty response"
+    end
+
+    if body:sub(1, 3) == "\239\187\191" then
+        body = body:sub(4)
+    end
+
+    local preview =
+        body:sub(1, 220):lower()
+
+    if preview:find("<!doctype html", 1, true)
+    or preview:find("<html", 1, true)
+    or preview:find("rate limit", 1, true) then
+
+        return nil,
+            "response was HTML/rate-limit page"
+    end
+
+    if body:find("\0", 1, true) then
+
+        return nil,
+            "response contains binary null bytes"
+    end
+
+    return body,
+        nil
+end
+
+function HolyHttpGet(url)
+
+    url =
+        HolyCleanText(url)
+
+    if url == "" then
+        return nil, "empty URL"
+    end
+
+    local failures =
+        {}
+
+    local ok,
+        result =
+        pcall(function()
+
+            return game:HttpGet(
+                url,
+                true
+            )
+        end)
+
+    if ok == true then
+
+        local source,
+            sourceError =
+            HolyValidateSource(result)
+
+        if source then
+            return source, nil
+        end
+
+        failures[#failures + 1] =
+            "game:HttpGet: "
+            .. tostring(sourceError)
+
+    else
+
+        failures[#failures + 1] =
+            "game:HttpGet failed: "
+            .. tostring(result)
+    end
+
+    local requestFunction =
+        HolyGetRequestFunction()
+
+    if type(requestFunction) == "function" then
+
+        local requestOk,
+            response =
+            pcall(function()
+
+                return requestFunction({
+                    Url = url,
+                    Method = "GET",
+                    Headers = {
+                        ["Accept"] = "text/plain",
+                        ["Accept-Encoding"] = "identity",
+                        ["Cache-Control"] = "no-cache",
+                    },
+                })
+            end)
+
+        if requestOk == true then
+
+            local body =
+                nil
+
+            if type(response) == "string" then
+
+                body =
+                    response
+
+            elseif type(response) == "table" then
+
+                body =
+                    response.Body
+                    or response.body
+                    or response.ResponseBody
+                    or response.responseBody
+            end
+
+            local source,
+                sourceError =
+                HolyValidateSource(body)
+
+            if source then
+                return source, nil
+            end
+
+            failures[#failures + 1] =
+                "request: "
+                .. tostring(sourceError)
+
+        else
+
+            failures[#failures + 1] =
+                "request failed: "
+                .. tostring(response)
+        end
+    end
+
+    return nil,
+        table.concat(
+            failures,
+            " | "
+        )
+end
+
+function HolyGetCompiler()
+
+    if type(loadstring) == "function" then
+        return loadstring
+    end
+
+    if type(load) == "function" then
+        return load
+    end
+
+    local env =
+        type(getgenv) == "function"
+        and getgenv()
+        or _G
+
+    if type(env) == "table" then
+
+        if type(env.loadstring) == "function" then
+            return env.loadstring
+        end
+
+        if type(env.load) == "function" then
+            return env.load
+        end
+    end
+
+    return nil
+end
+
+function HolyLoadUrl(url, name)
+
+    name =
+        tostring(name or "remote script")
+
+    local source,
+        downloadError =
+        HolyHttpGet(url)
+
+    if type(source) ~= "string"
+    or source == "" then
+
+        error(
+            "[HOLY] Failed to download "
+            .. name
+            .. ": "
+            .. tostring(downloadError),
+            0
+        )
+    end
+
+    local compiler =
+        HolyGetCompiler()
+
+    if type(compiler) ~= "function" then
+
+        error(
+            "[HOLY] loadstring/load is missing.",
+            0
+        )
+    end
+
+    local compileOk,
+        chunk,
+        compileError =
+        pcall(
+            compiler,
+            source
+        )
+
+    if compileOk ~= true
+    or type(chunk) ~= "function" then
+
+        error(
+            "[HOLY] Failed to compile "
+            .. name
+            .. ": "
+            .. tostring(compileError or chunk),
+            0
+        )
+    end
+
+    local runOk,
+        result =
+        pcall(chunk)
+
+    if runOk ~= true then
+
+        error(
+            "[HOLY] Failed to run "
+            .. name
+            .. ": "
+            .. tostring(result),
+            0
+        )
+    end
+
+    return result
+end
+
+function HolyCanUseFiles()
+
+    return type(writefile) == "function"
+        and type(readfile) == "function"
+        and type(isfile) == "function"
+end
+
+function HolyEnsureFolder()
+
+    if type(makefolder) ~= "function"
+    or type(isfolder) ~= "function" then
+
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            if not isfolder(UI_SETTINGS_FOLDER) then
+
+                makefolder(
+                    UI_SETTINGS_FOLDER
+                )
+            end
+        end)
+
+    return ok == true
+end
+
+function HolySaveUISettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local payload = {
+        ShowUIOnLoad =
+            HOLY_DEV_UI_STATE.ShowUIOnLoad == true,
+
+        AutoCloseUI =
+            HOLY_DEV_UI_STATE.ShowUIOnLoad ~= true,
+
+        DPIScale =
+            tonumber(HOLY_DEV_UI_STATE.DPIScale)
+            or 100,
+
+        AutoSkipLoading =
+            HOLY_DEV_UI_STATE.AutoSkipLoading == true,
+
+        AntiAfk =
+            HOLY_DEV_UI_STATE.AntiAfk == true,
+
+        UnloadOtherGardens =
+            HOLY_DEV_UI_STATE.UnloadOtherGardens == true,
+    }
+
+    local encodeOk,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                UI_SETTINGS_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function HolyLoadUISettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                UI_SETTINGS_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return false
+    end
+
+    local readOk,
+        raw =
+        pcall(function()
+
+            return readfile(
+                UI_SETTINGS_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        return false
+    end
+
+    local decodeOk,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(data) ~= "table" then
+
+        return false
+    end
+
+    if type(data.AutoCloseUI) == "boolean" then
+
+        HOLY_DEV_UI_STATE.ShowUIOnLoad =
+            data.AutoCloseUI ~= true
+
+    elseif type(data.ShowUIOnLoad) == "boolean" then
+
+        HOLY_DEV_UI_STATE.ShowUIOnLoad =
+            data.ShowUIOnLoad
+    end
+
+    local scale =
+        tonumber(data.DPIScale)
+
+    if scale then
+
+        HOLY_DEV_UI_STATE.DPIScale =
+            math.clamp(
+                math.floor(scale + 0.5),
+                30,
+                110
+            )
+    end
+
+    if type(data.AutoSkipLoading) == "boolean" then
+
+        HOLY_DEV_UI_STATE.AutoSkipLoading =
+            data.AutoSkipLoading
+    end
+
+    if type(data.AntiAfk) == "boolean" then
+
+        HOLY_DEV_UI_STATE.AntiAfk =
+            data.AntiAfk
+    end
+
+    if type(data.UnloadOtherGardens) == "boolean" then
+
+        HOLY_DEV_UI_STATE.UnloadOtherGardens =
+            data.UnloadOtherGardens
+
+    elseif type(data.DeleteOtherGardens) == "boolean" then
+
+        HOLY_DEV_UI_STATE.UnloadOtherGardens =
+            data.DeleteOtherGardens
+    end
+
+    return true
+end
+
+function HolyNormalizeGroupboxKey(value)
+
+    local key =
+        HolyCleanText(
+            value
+        )
+
+    key =
+        key:gsub(
+            "%s+",
+            "."
+        )
+
+    return key
+end
+
+function HolyLoadGroupboxSettings()
+
+    HOLY_GROUPBOX_STATE =
+        type(HOLY_GROUPBOX_STATE) == "table"
+        and HOLY_GROUPBOX_STATE
+        or {
+            Loaded = false,
+            Collapsed = {},
+        }
+
+    if HOLY_GROUPBOX_STATE.Loaded == true then
+        return true
+    end
+
+    HOLY_GROUPBOX_STATE.Loaded =
+        true
+
+    HOLY_GROUPBOX_STATE.Collapsed =
+        type(HOLY_GROUPBOX_STATE.Collapsed) == "table"
+        and HOLY_GROUPBOX_STATE.Collapsed
+        or {}
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                GROUPBOX_SETTINGS_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return false
+    end
+
+    local readOk,
+        raw =
+        pcall(function()
+
+            return readfile(
+                GROUPBOX_SETTINGS_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        return false
+    end
+
+    local decodeOk,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(data) ~= "table" then
+
+        return false
+    end
+
+    local collapsed =
+        type(data.Collapsed) == "table"
+        and data.Collapsed
+        or {}
+
+    HOLY_GROUPBOX_STATE.Collapsed =
+        {}
+
+    for key, value in pairs(collapsed) do
+
+        key =
+            HolyNormalizeGroupboxKey(
+                key
+            )
+
+        if key ~= "" then
+
+            HOLY_GROUPBOX_STATE.Collapsed[key] =
+                value == true
+        end
+    end
+
+    return true
+end
+
+function HolySaveGroupboxSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    HOLY_GROUPBOX_STATE =
+        type(HOLY_GROUPBOX_STATE) == "table"
+        and HOLY_GROUPBOX_STATE
+        or {}
+
+    HOLY_GROUPBOX_STATE.Collapsed =
+        type(HOLY_GROUPBOX_STATE.Collapsed) == "table"
+        and HOLY_GROUPBOX_STATE.Collapsed
+        or {}
+
+    local payload = {
+        Collapsed =
+            HOLY_GROUPBOX_STATE.Collapsed,
+    }
+
+    local encodeOk,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                GROUPBOX_SETTINGS_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function HolyGetGroupboxCollapsed(key, defaultCollapsed)
+
+    key =
+        HolyNormalizeGroupboxKey(
+            key
+        )
+
+    HOLY_GROUPBOX_STATE =
+        type(HOLY_GROUPBOX_STATE) == "table"
+        and HOLY_GROUPBOX_STATE
+        or {}
+
+    HOLY_GROUPBOX_STATE.Collapsed =
+        type(HOLY_GROUPBOX_STATE.Collapsed) == "table"
+        and HOLY_GROUPBOX_STATE.Collapsed
+        or {}
+
+    if key ~= ""
+    and HOLY_GROUPBOX_STATE.Collapsed[key] ~= nil then
+
+        return HOLY_GROUPBOX_STATE.Collapsed[key] == true
+    end
+
+    return defaultCollapsed == true
+end
+
+function HolyHookGroupboxAutosave(groupbox, key, collapsed)
+
+    key =
+        HolyNormalizeGroupboxKey(
+            key
+        )
+
+    if type(groupbox) ~= "table" then
+        return groupbox
+    end
+
+    groupbox.__HolyGroupboxKey =
+        key
+
+    if groupbox.__HolyGroupboxAutosave ~= true
+    and type(groupbox.SetCollapsed) == "function" then
+
+        local originalSetCollapsed =
+            groupbox.SetCollapsed
+
+        groupbox.__HolyGroupboxAutosave =
+            true
+
+        groupbox.__HolyOriginalSetCollapsed =
+            originalSetCollapsed
+
+        groupbox.SetCollapsed =
+            function(self, state, skipSave)
+
+                local result =
+                    originalSetCollapsed(
+                        self,
+                        state
+                    )
+
+                HOLY_GROUPBOX_STATE =
+                    type(HOLY_GROUPBOX_STATE) == "table"
+                    and HOLY_GROUPBOX_STATE
+                    or {}
+
+                HOLY_GROUPBOX_STATE.Collapsed =
+                    type(HOLY_GROUPBOX_STATE.Collapsed) == "table"
+                    and HOLY_GROUPBOX_STATE.Collapsed
+                    or {}
+
+                if key ~= "" then
+
+                    HOLY_GROUPBOX_STATE.Collapsed[key] =
+                        self.Collapsed == true
+                end
+
+                if skipSave ~= true then
+
+                    HolySaveGroupboxSettings()
+                end
+
+                return result
+            end
+    end
+
+    if type(groupbox.SetCollapsed) == "function"
+    and groupbox.Collapsible == true then
+
+        pcall(function()
+
+            groupbox:SetCollapsed(
+                collapsed == true,
+                true
+            )
+        end)
+    end
+
+    return groupbox
+end
+
+function HolyAddGroupbox(tab, side, key, title, icon, defaultCollapsed)
+
+    key =
+        HolyNormalizeGroupboxKey(
+            key
+            or title
+        )
+
+    local collapsed =
+        HolyGetGroupboxCollapsed(
+            key,
+            defaultCollapsed == true
+        )
+
+    local defaultOpen =
+        collapsed ~= true
+
+    local groupbox =
+        nil
+
+    local sideName =
+        tostring(side or "Left")
+
+    local collapsibleMethod =
+        sideName == "Right"
+        and "AddRightCollapsibleGroupbox"
+        or "AddLeftCollapsibleGroupbox"
+
+    local fallbackMethod =
+        sideName == "Right"
+        and "AddRightGroupbox"
+        or "AddLeftGroupbox"
+
+    if tab
+    and type(tab[collapsibleMethod]) == "function" then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return tab[collapsibleMethod](
+                    tab,
+                    title,
+                    icon,
+                    defaultOpen
+                )
+            end)
+
+        if ok == true
+        and result ~= nil then
+
+            groupbox =
+                result
+        end
+    end
+
+    if groupbox == nil
+    and tab
+    and type(tab[fallbackMethod]) == "function" then
+
+        groupbox =
+            tab[fallbackMethod](
+                tab,
+                title,
+                icon
+            )
+    end
+
+    return HolyHookGroupboxAutosave(
+        groupbox,
+        key,
+        collapsed
+    )
+end
+
+function HolyAddLeftGroupbox(tab, key, title, icon, defaultCollapsed)
+
+    return HolyAddGroupbox(
+        tab,
+        "Left",
+        key,
+        title,
+        icon,
+        defaultCollapsed
+    )
+end
+
+function HolyAddRightGroupbox(tab, key, title, icon, defaultCollapsed)
+
+    return HolyAddGroupbox(
+        tab,
+        "Right",
+        key,
+        title,
+        icon,
+        defaultCollapsed
+    )
+end
+
+function HolyShopSelectionArray(value)
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    local function add(itemName)
+
+        itemName =
+            HolyCleanText(itemName)
+
+        if itemName == ""
+        or seen[itemName] == true then
+            return
+        end
+
+        seen[itemName] =
+            true
+
+        table.insert(
+            output,
+            itemName
+        )
+    end
+
+    if type(value) == "table" then
+
+        for key, enabled in pairs(value) do
+
+            if type(key) == "number" then
+
+                add(
+                    enabled
+                )
+
+            elseif enabled == true then
+
+                add(
+                    key
+                )
+            end
+        end
+
+    elseif type(value) == "string" then
+
+        add(
+            value
+        )
+    end
+
+    table.sort(output, function(a, b)
+
+        if a == "All" then
+            return true
+        end
+
+        if b == "All" then
+            return false
+        end
+
+        return tostring(a) < tostring(b)
+    end)
+
+    return output
+end
+
+function HolySellNormalizeMethod(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local lower =
+        text:lower()
+
+    if lower:find("filtered", 1, true)
+    or lower:find("selected", 1, true)
+    or lower:find("sellfruit", 1, true) then
+
+        return "Filtered Sell"
+    end
+
+    return "Sell All"
+end
+
+function HolySellMethodDisplay(value)
+
+    local method =
+        HolySellNormalizeMethod(
+            value
+        )
+
+    if method == "Filtered Sell" then
+        return "🎯 Filtered Sell"
+    end
+
+    return "💰 Sell All"
+end
+
+function HolySellIsFilteredMethod(value)
+
+    return HolySellNormalizeMethod(
+        value
+    ) == "Filtered Sell"
+end
+
+function HolySaveShopSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local payload = {
+        Mode =
+            HOLY_SHOP_STATE.Mode == "Sell"
+            and "Sell"
+            or "Buy",
+
+        AutoBuySeeds =
+            HOLY_SHOP_STATE.AutoBuySeeds == true,
+
+        AutoBuyGear =
+            HOLY_SHOP_STATE.AutoBuyGear == true,
+
+        AutoBuyProps =
+            HOLY_SHOP_STATE.AutoBuyProps == true,
+
+        SelectedSeeds =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.SelectedSeeds
+            ),
+
+        SelectedGear =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.SelectedGear
+            ),
+
+        SelectedProps =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.SelectedProps
+            ),
+
+        AutoSellFruits =
+            HOLY_SHOP_STATE.AutoSellFruits == true,
+
+        SellMethod =
+            HolySellNormalizeMethod(
+                HOLY_SHOP_STATE.SellMethod
+                or "Sell All"
+            ),
+
+        UseSellFilters =
+            HOLY_SHOP_STATE.UseSellFilters == true,
+
+        SellFruits =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.SellFruits
+            ),
+
+        SellRarities =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.SellRarities
+            ),
+
+        SellMutations =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.SellMutations
+            ),
+
+        SellVariants =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.SellVariants
+            ),
+
+        ProtectMutations =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.ProtectMutations
+            ),
+
+        ProtectVariants =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.ProtectVariants
+            ),
+
+        MinWeightKg =
+            tostring(
+                HOLY_SHOP_STATE.MinWeightKg
+                or "0"
+            ),
+
+        MaxWeightKg =
+            tostring(
+                HOLY_SHOP_STATE.MaxWeightKg
+                or "0"
+            ),
+
+        SellAllInterval =
+            math.clamp(
+                tonumber(HOLY_SHOP_STATE.SellAllInterval)
+                or 0.5,
+                0,
+                5
+            ),
+    }
+
+    local encodeOk,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                SHOP_SETTINGS_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function HolyLoadShopSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                SHOP_SETTINGS_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return false
+    end
+
+    local readOk,
+        raw =
+        pcall(function()
+
+            return readfile(
+                SHOP_SETTINGS_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+        return false
+    end
+
+    local decodeOk,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(data) ~= "table" then
+        return false
+    end
+
+    HOLY_SHOP_STATE.Mode =
+        data.Mode == "Sell"
+        and "Sell"
+        or "Buy"
+
+    HOLY_SHOP_STATE.AutoBuySeeds =
+        data.AutoBuySeeds == true
+
+    HOLY_SHOP_STATE.AutoBuyGear =
+        data.AutoBuyGear == true
+
+    HOLY_SHOP_STATE.AutoBuyProps =
+        data.AutoBuyProps == true
+        or data.AutoBuyCrates == true
+
+    HOLY_SHOP_STATE.SelectedSeeds =
+        HolyShopSelectionArray(
+            data.SelectedSeeds
+        )
+
+    HOLY_SHOP_STATE.SelectedGear =
+        HolyShopSelectionArray(
+            data.SelectedGear
+        )
+
+    HOLY_SHOP_STATE.SelectedProps =
+        HolyShopSelectionArray(
+            data.SelectedProps
+            or data.SelectedCrates
+        )
+
+    HOLY_SHOP_STATE.AutoSellFruits =
+        data.AutoSellFruits == true
+
+    HOLY_SHOP_STATE.SellMethod =
+        HolySellNormalizeMethod(
+            data.SellMethod
+            or "Sell All"
+        )
+
+    HOLY_SHOP_STATE.UseSellFilters =
+        data.UseSellFilters == true
+
+    HOLY_SHOP_STATE.SellFruits =
+        HolyShopSelectionArray(
+            data.SellFruits
+        )
+
+    HOLY_SHOP_STATE.SellRarities =
+        HolyShopSelectionArray(
+            data.SellRarities
+        )
+
+    HOLY_SHOP_STATE.SellMutations =
+        HolyShopSelectionArray(
+            data.SellMutations
+        )
+
+    HOLY_SHOP_STATE.SellVariants =
+        HolyShopSelectionArray(
+            data.SellVariants
+        )
+
+    HOLY_SHOP_STATE.ProtectMutations =
+        HolyShopSelectionArray(
+            data.ProtectMutations
+        )
+
+    HOLY_SHOP_STATE.ProtectVariants =
+        HolyShopSelectionArray(
+            data.ProtectVariants
+        )
+
+    HOLY_SHOP_STATE.MinWeightKg =
+        tostring(
+            data.MinWeightKg
+            or data.WeightKg
+            or "0"
+        )
+
+    HOLY_SHOP_STATE.MaxWeightKg =
+        tostring(
+            data.MaxWeightKg
+            or "0"
+        )
+
+    HOLY_SHOP_STATE.SellAllInterval =
+        math.clamp(
+            tonumber(data.SellAllInterval)
+            or 0.5,
+            0,
+            5
+        )
+
+    return true
+end
+
+function HolySniperNormalizeAnySelection(value)
+
+    local selection =
+        HolyShopSelectionArray(
+            value
+        )
+
+    if #selection <= 0 then
+
+        return {
+            "Any",
+        }
+    end
+
+    for _, itemName in ipairs(selection) do
+
+        if itemName == "Any" then
+
+            return {
+                "Any",
+            }
+        end
+    end
+
+    return selection
+end
+
+function HolySniperGetPetSizesModule()
+
+    local petSizes =
+        HolyShopRequireModule(
+            "SharedData.PetSizes"
+        )
+
+    if type(petSizes) ~= "table" then
+        return {}
+    end
+
+    return petSizes
+end
+
+function HolySniperGetPetTypesModule()
+
+    local petTypes =
+        HolyShopRequireModule(
+            "SharedData.PetTypes"
+        )
+
+    if type(petTypes) ~= "table" then
+        return {}
+    end
+
+    return petTypes
+end
+
+function HolySniperNormalizeSizeName(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local lower =
+        text:lower()
+
+    if lower == ""
+    or lower == "none"
+    or lower == "nil"
+    or lower == "normal"
+    or lower == "regular" then
+
+        return "Normal"
+    end
+
+    if lower == "mega"
+    or lower == "huge" then
+
+        return "Huge"
+    end
+
+    local petSizes =
+        HolySniperGetPetSizesModule()
+
+    if type(petSizes.Normalize) == "function" then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return petSizes.Normalize(
+                    text
+                )
+            end)
+
+        result =
+            HolyCleanText(
+                ok == true
+                and result
+                or ""
+            )
+
+        if result ~= "" then
+
+            if result == "Mega" then
+                return "Huge"
+            end
+
+            return result
+        end
+    end
+
+    return text
+end
+
+function HolySniperAddSortedValue(values, seen, value)
+
+    value =
+        HolyCleanText(
+            value
+        )
+
+    if value == "" then
+        return false
+    end
+
+    if value == "Mega" then
+        value =
+            "Huge"
+    end
+
+    if seen[value] == true then
+        return false
+    end
+
+    seen[value] =
+        true
+
+    table.insert(
+        values,
+        value
+    )
+
+    return true
+end
+
+function HolySniperSortSizeValues(values)
+
+    table.sort(values, function(a, b)
+
+        local order = {
+            Any = 0,
+            Normal = 1,
+            Big = 2,
+            Huge = 3,
+        }
+
+        local rankA =
+            order[a]
+            or 50
+
+        local rankB =
+            order[b]
+            or 50
+
+        if rankA ~= rankB then
+            return rankA < rankB
+        end
+
+        return tostring(a) < tostring(b)
+    end)
+end
+
+function HolySniperSortVariantValues(values)
+
+    table.sort(values, function(a, b)
+
+        local order = {
+            Any = 0,
+            Normal = 1,
+            Rainbow = 2,
+        }
+
+        local rankA =
+            order[a]
+            or 50
+
+        local rankB =
+            order[b]
+            or 50
+
+        if rankA ~= rankB then
+            return rankA < rankB
+        end
+
+        return tostring(a) < tostring(b)
+    end)
+end
+
+function HolySniperGetSizeValues()
+
+    local values =
+        {}
+
+    local seen =
+        {}
+
+    HolySniperAddSortedValue(
+        values,
+        seen,
+        "Any"
+    )
+
+    HolySniperAddSortedValue(
+        values,
+        seen,
+        "Normal"
+    )
+
+    local petSizes =
+        HolySniperGetPetSizesModule()
+
+    local function addSizeFromKey(key)
+
+        key =
+            HolyCleanText(
+                key
+            )
+
+        if key == "" then
+            return
+        end
+
+        local normalized =
+            HolySniperNormalizeSizeName(
+                key
+            )
+
+        if normalized ~= ""
+        and normalized ~= "Normal" then
+
+            HolySniperAddSortedValue(
+                values,
+                seen,
+                normalized
+            )
+        end
+    end
+
+    if type(petSizes.Scales) == "table" then
+
+        for key in pairs(petSizes.Scales) do
+
+            addSizeFromKey(
+                key
+            )
+        end
+    end
+
+    if type(petSizes.BoostMultipliers) == "table" then
+
+        for key in pairs(petSizes.BoostMultipliers) do
+
+            addSizeFromKey(
+                key
+            )
+        end
+    end
+
+    HolySniperSortSizeValues(
+        values
+    )
+
+    return values
+end
+
+function HolySniperSizeValueMap()
+
+    local map =
+        {}
+
+    for _, value in ipairs(HolySniperGetSizeValues()) do
+
+        if value ~= "Any" then
+
+            map[value] =
+                true
+        end
+    end
+
+    return map
+end
+
+function HolySniperNormalizeSizeSelection(value)
+
+    local selection =
+        HolyShopSelectionArray(
+            value
+        )
+
+    if #selection <= 0 then
+
+        return {
+            "Any",
+        }
+    end
+
+    for _, itemName in ipairs(selection) do
+
+        if itemName == "Any" then
+
+            return {
+                "Any",
+            }
+        end
+    end
+
+    local validMap =
+        HolySniperSizeValueMap()
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    for _, itemName in ipairs(selection) do
+
+        local normalized =
+            HolySniperNormalizeSizeName(
+                itemName
+            )
+
+        if validMap[normalized] == true
+        and seen[normalized] ~= true then
+
+            seen[normalized] =
+                true
+
+            table.insert(
+                output,
+                normalized
+            )
+        end
+    end
+
+    if #output <= 0 then
+
+        return {
+            "Normal",
+        }
+    end
+
+    HolySniperSortSizeValues(
+        output
+    )
+
+    return output
+end
+
+function HolySniperPetTypeIsValid(typeName)
+
+    typeName =
+        HolyCleanText(
+            typeName
+        )
+
+    if typeName == "" then
+        return false
+    end
+
+    if typeName == "Normal" then
+        return true
+    end
+
+    local petTypes =
+        HolySniperGetPetTypesModule()
+
+    if type(petTypes.IsValid) == "function" then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return petTypes.IsValid(
+                    typeName
+                )
+            end)
+
+        if ok == true then
+            return result == true
+        end
+    end
+
+    return false
+end
+
+function HolySniperNormalizeVariantName(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local lower =
+        text:lower()
+
+    if lower == ""
+    or lower == "none"
+    or lower == "nil"
+    or lower == "normal"
+    or lower == "regular" then
+
+        return "Normal"
+    end
+
+    return text
+end
+
+function HolySniperGetVariantValues()
+
+    local values =
+        {}
+
+    local seen =
+        {}
+
+    HolySniperAddSortedValue(
+        values,
+        seen,
+        "Any"
+    )
+
+    HolySniperAddSortedValue(
+        values,
+        seen,
+        "Normal"
+    )
+
+    local petTypes =
+        HolySniperGetPetTypesModule()
+
+    for key, value in pairs(petTypes) do
+
+        if type(value) == "string" then
+
+            local normalized =
+                HolySniperNormalizeVariantName(
+                    value
+                )
+
+            if normalized ~= "Normal"
+            and HolySniperPetTypeIsValid(normalized) == true then
+
+                HolySniperAddSortedValue(
+                    values,
+                    seen,
+                    normalized
+                )
+            end
+        end
+
+        if type(key) == "string"
+        and type(value) ~= "function"
+        and key ~= "BOOST_MULTIPLIER" then
+
+            local normalized =
+                HolySniperNormalizeVariantName(
+                    key
+                )
+
+            if normalized ~= "Normal"
+            and HolySniperPetTypeIsValid(normalized) == true then
+
+                HolySniperAddSortedValue(
+                    values,
+                    seen,
+                    normalized
+                )
+            end
+        end
+    end
+
+    -- Safe fallback only if the module did not expose string variants.
+    if seen.Rainbow ~= true
+    and HolySniperPetTypeIsValid("Rainbow") == true then
+
+        HolySniperAddSortedValue(
+            values,
+            seen,
+            "Rainbow"
+        )
+    end
+
+    HolySniperSortVariantValues(
+        values
+    )
+
+    return values
+end
+
+function HolySniperVariantValueMap()
+
+    local map =
+        {}
+
+    for _, value in ipairs(HolySniperGetVariantValues()) do
+
+        if value ~= "Any" then
+
+            map[value] =
+                true
+        end
+    end
+
+    return map
+end
+
+function HolySniperNormalizeVariantSelection(value)
+
+    local selection =
+        HolyShopSelectionArray(
+            value
+        )
+
+    if #selection <= 0 then
+
+        return {
+            "Any",
+        }
+    end
+
+    for _, itemName in ipairs(selection) do
+
+        if itemName == "Any" then
+
+            return {
+                "Any",
+            }
+        end
+    end
+
+    local validMap =
+        HolySniperVariantValueMap()
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    for _, itemName in ipairs(selection) do
+
+        local normalized =
+            HolySniperNormalizeVariantName(
+                itemName
+            )
+
+        -- Gold is ignored unless PetTypes ever marks it as valid.
+        if validMap[normalized] == true
+        and seen[normalized] ~= true then
+
+            seen[normalized] =
+                true
+
+            table.insert(
+                output,
+                normalized
+            )
+        end
+    end
+
+    if #output <= 0 then
+
+        return {
+            "Normal",
+        }
+    end
+
+    HolySniperSortVariantValues(
+        output
+    )
+
+    return output
+end
+
+function HolySniperNormalizePriority(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    if text:find("high", 1, true) then
+        return "High"
+    end
+
+    if text:find("low", 1, true) then
+        return "Low"
+    end
+
+    return "Medium"
+end
+
+function HolySniperNormalizeMovementMode(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    if text:find("teleport", 1, true) then
+        return "Teleport"
+    end
+
+    return "Walk"
+end
+
+function HolySniperNormalizeBuyMode(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    if text:find("hold", 1, true) then
+        return "Hold"
+    end
+
+    return "Instant"
+end
+
+function HolySniperNormalizeReturnTiming(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    if text:find("each", 1, true)
+    or text:find("buy", 1, true) then
+
+        return "After Buy"
+    end
+
+    return "After Batch"
+end
+
+function HolySniperNormalizeReturnMode(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    if text:find("teleport", 1, true) then
+        return "Teleport"
+    end
+
+    return "Walk"
+end
+
+function HolySniperNormalizeReturnDestination(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    if text:find("saved", 1, true)
+    or text:find("position", 1, true) then
+
+        return "Saved Position"
+    end
+
+    return "Farm Center"
+end
+
+function HolySniperNormalizeAutoHopTiming(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    if text:find("fast", 1, true)
+    or text:find("during", 1, true)
+    or text:find("before", 1, true) then
+
+        return "Fast - During Loading"
+    end
+
+    return "Safe - After Loading"
+end
+
+function HolySniperReadHopDelay(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    text =
+        text:gsub(
+            "[sS]",
+            ""
+        )
+
+    local number =
+        tonumber(
+            text
+        )
+
+    if not number then
+
+        number =
+            5
+    end
+
+    return math.max(
+        0,
+        number
+    )
+end
+
+function HolySniperFormatDelay(value)
+
+    local number =
+        HolySniperReadHopDelay(
+            value
+        )
+
+    if math.abs(number - math.floor(number)) < 0.001 then
+
+        return tostring(
+            math.floor(number)
+        )
+    end
+
+    return tostring(
+        math.floor(number * 100 + 0.5) / 100
+    )
+end
+
+function HolySniperReadAmount(value)
+
+    local amount =
+        math.floor(
+            tonumber(value)
+            or 1
+        )
+
+    return math.clamp(
+        amount,
+        1,
+        999
+    )
+end
+
+function HolySniperArrayText(values, fallback)
+
+    values =
+        HolyShopSelectionArray(
+            values
+        )
+
+    fallback =
+        tostring(fallback or "Any")
+
+    if #values <= 0 then
+        return fallback
+    end
+
+    if #values == 1
+    and values[1] == "Any" then
+        return fallback
+    end
+
+    return table.concat(
+        values,
+        "/"
+    )
+end
+
+function HolySniperGetPetData()
+
+    local petData =
+        HolyShopRequireModule(
+            "SharedData.PetData"
+        )
+
+    if type(petData) ~= "table" then
+        return {}
+    end
+
+    return petData
+end
+
+function HolySniperIsPetDataRow(key, row)
+
+    if type(key) ~= "string" then
+        return false
+    end
+
+    if type(row) ~= "table" then
+        return false
+    end
+
+    if type(row.DisplayName) == "string"
+    or type(row.BasePrice) == "number"
+    or type(row.Rarity) == "string"
+    or type(row.SpawnChance) == "number" then
+
+        return true
+    end
+
+    return false
+end
+
+function HolySniperPetAliasKey(value)
+
+    return HolyCleanText(
+        value
+    )
+        :lower()
+        :gsub("[%s_%-%[%]%(%)%.]", "")
+end
+
+function HolySniperBuildPetMaps()
+
+    local values =
+        {}
+
+    local seen =
+        {}
+
+    local displayToKey =
+        {}
+
+    local keyToDisplay =
+        {}
+
+    local petData =
+        HolySniperGetPetData()
+
+    for key, row in pairs(petData) do
+
+        if HolySniperIsPetDataRow(key, row) == true then
+
+            local internalKey =
+                HolyCleanText(
+                    key
+                )
+
+            local displayName =
+                HolyCleanText(
+                    row.DisplayName
+                    or row.PetName
+                    or row.Name
+                    or key
+                )
+
+            if internalKey ~= ""
+            and displayName ~= "" then
+
+                if seen[displayName] ~= true then
+
+                    seen[displayName] =
+                        true
+
+                    table.insert(
+                        values,
+                        displayName
+                    )
+                end
+
+                displayToKey[displayName] =
+                    internalKey
+
+                keyToDisplay[internalKey] =
+                    displayName
+            end
+        end
+    end
+
+    table.sort(values, function(a, b)
+
+        return tostring(a) < tostring(b)
+    end)
+
+    if #values <= 0 then
+
+        values = {
+            "Raccoon",
+        }
+
+        displayToKey.Raccoon =
+            "Raccoon"
+
+        keyToDisplay.Raccoon =
+            "Raccoon"
+    end
+
+    HOLY_SNIPER_STATE.PetDisplayToKey =
+        displayToKey
+
+    HOLY_SNIPER_STATE.PetKeyToDisplay =
+        keyToDisplay
+
+    return values,
+        displayToKey,
+        keyToDisplay
+end
+
+function HolySniperGetPetValues()
+
+    local values =
+        HolySniperBuildPetMaps()
+
+    return values
+end
+
+function HolySniperGetDefaultPetName()
+
+    local values =
+        HolySniperGetPetValues()
+
+    for _, petName in ipairs(values) do
+
+        if petName == "Raccoon" then
+            return "Raccoon"
+        end
+    end
+
+    return values[1]
+        or "Raccoon"
+end
+
+function HolySniperResolvePetKey(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == "" then
+        return "Raccoon"
+    end
+
+    HolySniperGetPetValues()
+
+    local displayToKey =
+        type(HOLY_SNIPER_STATE.PetDisplayToKey) == "table"
+        and HOLY_SNIPER_STATE.PetDisplayToKey
+        or {}
+
+    local keyToDisplay =
+        type(HOLY_SNIPER_STATE.PetKeyToDisplay) == "table"
+        and HOLY_SNIPER_STATE.PetKeyToDisplay
+        or {}
+
+    if displayToKey[text] then
+        return displayToKey[text]
+    end
+
+    if keyToDisplay[text] then
+        return text
+    end
+
+    local wantedAlias =
+        HolySniperPetAliasKey(
+            text
+        )
+
+    for internalKey, displayName in pairs(keyToDisplay) do
+
+        if HolySniperPetAliasKey(internalKey) == wantedAlias
+        or HolySniperPetAliasKey(displayName) == wantedAlias then
+
+            return internalKey
+        end
+    end
+
+    return text
+end
+
+function HolySniperResolvePetDisplay(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == "" then
+        return HolySniperGetDefaultPetName()
+    end
+
+    HolySniperGetPetValues()
+
+    local displayToKey =
+        type(HOLY_SNIPER_STATE.PetDisplayToKey) == "table"
+        and HOLY_SNIPER_STATE.PetDisplayToKey
+        or {}
+
+    local keyToDisplay =
+        type(HOLY_SNIPER_STATE.PetKeyToDisplay) == "table"
+        and HOLY_SNIPER_STATE.PetKeyToDisplay
+        or {}
+
+    if displayToKey[text] then
+        return text
+    end
+
+    if keyToDisplay[text] then
+        return keyToDisplay[text]
+    end
+
+    local wantedAlias =
+        HolySniperPetAliasKey(
+            text
+        )
+
+    for internalKey, displayName in pairs(keyToDisplay) do
+
+        if HolySniperPetAliasKey(internalKey) == wantedAlias
+        or HolySniperPetAliasKey(displayName) == wantedAlias then
+
+            return displayName
+        end
+    end
+
+    return text
+end
+
+function HolySniperNormalizeFilter(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    local petName =
+        HolySniperResolvePetDisplay(
+            row.Pet
+            or row.PetName
+            or row.Name
+            or HolySniperGetDefaultPetName()
+        )
+
+    if petName == "" then
+
+        petName =
+            HolySniperGetDefaultPetName()
+    end
+
+    return {
+        Pet =
+            petName,
+
+        PetKey =
+            HolySniperResolvePetKey(
+                petName
+            ),
+
+        Sizes =
+            HolySniperNormalizeSizeSelection(
+                row.Sizes
+                or row.Size
+                or {
+                    "Any",
+                }
+            ),
+
+        Variants =
+            HolySniperNormalizeVariantSelection(
+                row.Variants
+                or row.Variant
+                or {
+                    "Any",
+                }
+            ),
+
+        Amount =
+            HolySniperReadAmount(
+                row.Amount
+                or row.TargetAmount
+                or 1
+            ),
+
+        Priority =
+            HolySniperNormalizePriority(
+                row.Priority
+                or "Medium"
+            ),
+
+        Enabled =
+            row.Enabled ~= false,
+    }
+end
+
+function HolySniperNormalizeWatchlist(value)
+
+    local output =
+        {}
+
+    if type(value) ~= "table" then
+        return output
+    end
+
+    for _, row in ipairs(value) do
+
+        table.insert(
+            output,
+            HolySniperNormalizeFilter(
+                row
+            )
+        )
+    end
+
+    return output
+end
+
+function HolySniperFilterKey(row)
+
+    row =
+        HolySniperNormalizeFilter(
+            row
+        )
+
+    return table.concat({
+        HolyCleanText(
+            row.PetKey
+            or HolySniperResolvePetKey(
+                row.Pet
+            )
+        ):lower(),
+
+        HolySniperArrayText(row.Sizes, "Any"):lower(),
+
+        HolySniperArrayText(row.Variants, "Any"):lower(),
+    }, "|")
+end
+
+function HolySniperGetBasePrice(row)
+
+    local petKey =
+        ""
+
+    if type(row) == "table" then
+
+        petKey =
+            HolyCleanText(
+                row.PetKey
+                or HolySniperResolvePetKey(
+                    row.Pet
+                )
+            )
+
+    else
+
+        petKey =
+            HolyCleanText(
+                HolySniperResolvePetKey(
+                    row
+                )
+            )
+    end
+
+    if petKey == "" then
+        return 0
+    end
+
+    local petData =
+        HolySniperGetPetData()
+
+    local data =
+        type(petData) == "table"
+        and petData[petKey]
+        or nil
+
+    if type(data) ~= "table" then
+        return 0
+    end
+
+    return tonumber(data.BasePrice)
+        or 0
+end
+
+function HolySniperFormatMoney(value)
+
+    value =
+        math.max(
+            0,
+            tonumber(value)
+            or 0
+        )
+
+    if value >= 1000000 then
+
+        return "$"
+            .. string.format(
+                "%.1fM",
+                value / 1000000
+            )
+    end
+
+    if value >= 1000 then
+
+        return "$"
+            .. string.format(
+                "%.0fK",
+                value / 1000
+            )
+    end
+
+    return "$"
+        .. tostring(
+            math.floor(value)
+        )
+end
+
+function HolySniperShortValue(value)
+
+    value =
+        HolyCleanText(
+            value
+        )
+
+    if value == "Mega" then
+        return "Huge"
+    end
+
+    if value == "Rainbow" then
+        return "Rb"
+    end
+
+    if value == "Normal" then
+        return "Norm"
+    end
+
+    return value
+end
+
+function HolySniperShortArrayText(values, fallback)
+
+    values =
+        HolyShopSelectionArray(
+            values
+        )
+
+    fallback =
+        tostring(fallback or "Any")
+
+    if #values <= 0 then
+        return fallback
+    end
+
+    if #values == 1
+    and values[1] == "Any" then
+        return fallback
+    end
+
+    local output =
+        {}
+
+    for _, value in ipairs(values) do
+
+        if value ~= "Any" then
+
+            table.insert(
+                output,
+                HolySniperShortValue(
+                    value
+                )
+            )
+        end
+    end
+
+    if #output <= 0 then
+        return fallback
+    end
+
+    return table.concat(
+        output,
+        "+"
+    )
+end
+
+function HolySniperPriorityRank(value)
+
+    value =
+        HolySniperNormalizePriority(
+            value
+        )
+
+    if value == "High" then
+        return 1
+    end
+
+    if value == "Medium" then
+        return 2
+    end
+
+    return 3
+end
+
+function HolySniperPriorityShort(value)
+
+    value =
+        HolySniperNormalizePriority(
+            value
+        )
+
+    return value:sub(
+        1,
+        1
+    )
+end
+
+function HolySniperSortWatchlist(watchlist)
+
+    table.sort(watchlist, function(a, b)
+
+        local priceA =
+            tonumber(a.ValueNumber)
+            or HolySniperGetBasePrice(a)
+
+        local priceB =
+            tonumber(b.ValueNumber)
+            or HolySniperGetBasePrice(b)
+
+        if priceA ~= priceB then
+            return priceA > priceB
+        end
+
+        local rankA =
+            HolySniperPriorityRank(
+                a.Priority
+            )
+
+        local rankB =
+            HolySniperPriorityRank(
+                b.Priority
+            )
+
+        if rankA ~= rankB then
+            return rankA < rankB
+        end
+
+        return tostring(a.Pet) < tostring(b.Pet)
+    end)
+
+    return watchlist
+end
+
+function HolySniperMatchesSearch(row, searchText)
+
+    searchText =
+        HolyCleanText(
+            searchText
+        )
+        :lower()
+
+    if searchText == "" then
+        return true
+    end
+
+    local haystack =
+        table.concat({
+            tostring(row.Pet or ""),
+            tostring(row.PetKey or ""),
+            tostring(row.Value or ""),
+            tostring(row.Size or ""),
+            tostring(row.Variant or ""),
+            tostring(row.Amount or ""),
+            tostring(row.Priority or ""),
+            tostring(row.PriorityFull or ""),
+        }, " "):lower()
+
+    return haystack:find(
+        searchText,
+        1,
+        true
+    ) ~= nil
+end
+
+function HolySniperBuildWatchlistRows()
+
+    local rows =
+        {}
+
+    local searchText =
+        HolyCleanText(
+            HOLY_SNIPER_STATE.WatchlistSearch
+            or ""
+        )
+
+    for sourceIndex, row in ipairs(HOLY_SNIPER_STATE.Watchlist or {}) do
+
+        local filter =
+            HolySniperNormalizeFilter(
+                row
+            )
+
+        local price =
+            HolySniperGetBasePrice(
+                filter
+            )
+
+        local tableRow = {
+            SourceIndex =
+                sourceIndex,
+
+            Pet =
+                tostring(filter.Pet),
+
+            PetKey =
+                tostring(filter.PetKey),
+
+            Value =
+                HolySniperFormatMoney(
+                    price
+                ),
+
+            ValueNumber =
+                price,
+
+            Size =
+                HolySniperShortArrayText(
+                    filter.Sizes,
+                    "Any"
+                ),
+
+            Variant =
+                HolySniperShortArrayText(
+                    filter.Variants,
+                    "Any"
+                ),
+
+            Amount =
+                "x"
+                .. tostring(filter.Amount),
+
+            AmountNumber =
+                tonumber(filter.Amount)
+                or 1,
+
+            Priority =
+                HolySniperPriorityShort(
+                    filter.Priority
+                ),
+
+            PriorityFull =
+                HolySniperNormalizePriority(
+                    filter.Priority
+                ),
+        }
+
+        if HolySniperMatchesSearch(
+            tableRow,
+            searchText
+        ) == true then
+
+            table.insert(
+                rows,
+                tableRow
+            )
+        end
+    end
+
+    HolySniperSortWatchlist(
+        rows
+    )
+
+    return rows
+end
+
+function HolySniperBuildWatchlistText()
+
+    local rows =
+        HolySniperBuildWatchlistRows()
+
+    if #rows <= 0 then
+
+        return "No active watchlist filters."
+    end
+
+    local lines =
+        {}
+
+    for index, row in ipairs(rows) do
+
+        lines[#lines + 1] =
+            tostring(index)
+            .. ". "
+            .. tostring(row.Value)
+            .. " "
+            .. tostring(row.Priority)
+            .. " "
+            .. tostring(row.Pet)
+            .. " "
+            .. tostring(row.Size)
+            .. " "
+            .. tostring(row.Variant)
+            .. " "
+            .. tostring(row.Amount)
+    end
+
+    return table.concat(
+        lines,
+        "\n"
+    )
+end
+
+function HolySniperBuildStatusText()
+
+    return "Status: "
+        .. tostring(
+            HOLY_SNIPER_STATE.Status
+            or "Ready"
+        )
+end
+
+function HolySniperAddLabel(groupbox, text)
+
+    if type(groupbox) ~= "table"
+    or type(groupbox.AddLabel) ~= "function" then
+
+        return nil
+    end
+
+    local ok,
+        label =
+        pcall(function()
+
+            return groupbox:AddLabel({
+                Text =
+                    tostring(text or ""),
+            })
+        end)
+
+    if ok == true then
+        return label
+    end
+
+    ok,
+        label =
+        pcall(function()
+
+            return groupbox:AddLabel(
+                tostring(text or "")
+            )
+        end)
+
+    if ok == true then
+        return label
+    end
+
+    return nil
+end
+
+function HolySniperSetLabel(label, text)
+
+    text =
+        tostring(text or "")
+
+    if type(label) == "table" then
+
+        if type(label.SetText) == "function" then
+
+            pcall(function()
+
+                label:SetText(
+                    text
+                )
+            end)
+
+            return true
+        end
+
+        if label.TextLabel
+        and typeof(label.TextLabel) == "Instance" then
+
+            pcall(function()
+
+                label.TextLabel.Text =
+                    text
+            end)
+
+            return true
+        end
+    end
+
+    if typeof(label) == "Instance" then
+
+        pcall(function()
+
+            label.Text =
+                text
+        end)
+
+        return true
+    end
+
+    return false
+end
+
+function HolySniperRefreshUI()
+
+    HOLY_SNIPER_UI =
+        type(HOLY_SNIPER_UI) == "table"
+        and HOLY_SNIPER_UI
+        or {}
+
+    HolySniperSetLabel(
+        HOLY_SNIPER_UI.StatusLabel,
+        HolySniperBuildStatusText()
+    )
+
+    if type(HOLY_SNIPER_UI.WatchlistTable) == "table"
+    and type(HOLY_SNIPER_UI.WatchlistTable.SetRows) == "function" then
+
+        HOLY_SNIPER_UI.WatchlistTable:SetRows(
+            HolySniperBuildWatchlistRows()
+        )
+
+    else
+
+        HolySniperSetLabel(
+            HOLY_SNIPER_UI.WatchlistLabel,
+            HolySniperBuildWatchlistText()
+        )
+    end
+end
+
+function HolySniperSetStatus(status)
+
+    HOLY_SNIPER_STATE.Status =
+        tostring(status or "Ready")
+
+    HolySniperRefreshUI()
+end
+
+function HolySniperGetCharacter()
+
+    return LocalPlayer
+        and LocalPlayer.Character
+        or nil
+end
+
+function HolySniperGetCharacterHumanoid()
+
+    local character =
+        HolySniperGetCharacter()
+
+    if typeof(character) ~= "Instance" then
+        return nil
+    end
+
+    return character:FindFirstChildOfClass(
+        "Humanoid"
+    )
+end
+
+function HolySniperGetCharacterRoot()
+
+    local character =
+        HolySniperGetCharacter()
+
+    if typeof(character) ~= "Instance" then
+        return nil
+    end
+
+    return character:FindFirstChild(
+        "HumanoidRootPart"
+    )
+    or character:FindFirstChild(
+        "RootPart"
+    )
+    or character.PrimaryPart
+end
+
+function HolySniperStillActive(token)
+
+    HOLY_SNIPER_RUNTIME =
+        type(HOLY_SNIPER_RUNTIME) == "table"
+        and HOLY_SNIPER_RUNTIME
+        or {}
+
+    if HOLY_SNIPER_RUNTIME.ManualBuying == true then
+
+        if token ~= nil
+        and HOLY_SNIPER_RUNTIME.ManualToken ~= token then
+
+            return false
+        end
+
+        return true
+    end
+
+    if HOLY_SNIPER_STATE.ActivateSniper ~= true then
+        return false
+    end
+
+    if token ~= nil
+    and HOLY_SNIPER_RUNTIME.Token ~= token then
+
+        return false
+    end
+
+    return true
+end
+
+function HolySniperLoadingGateReady()
+
+    if HolySniperGetCharacterRoot() == nil then
+        return false
+    end
+
+    local loadingGui =
+        HolyLoadingGetWorkspaceLoadingGui()
+
+    if loadingGui == nil then
+        return true
+    end
+
+    if type(HOLY_LOADING_SKIP_STATE) == "table"
+    and HOLY_LOADING_SKIP_STATE.PressedFinal == true then
+
+        return true
+    end
+
+    if type(HOLY_LOADING_SKIP_STATE) == "table"
+    and HOLY_LOADING_SKIP_STATE.ClickedSkip == true
+    and loadingGui == nil then
+
+        return true
+    end
+
+    return false
+end
+
+function HolySniperGetWildPetRoot()
+
+    local map =
+        workspace:FindFirstChild(
+            "Map"
+        )
+
+    local root =
+        map
+        and map:FindFirstChild(
+            "WildPetSpawns"
+        )
+        or nil
+
+    if typeof(root) == "Instance" then
+        return root
+    end
+
+    root =
+        workspace:FindFirstChild(
+            "WildPetSpawns",
+            true
+        )
+
+    if typeof(root) == "Instance" then
+        return root
+    end
+
+    return nil
+end
+
+function HolySniperGetWildPetRefRoot()
+
+    local map =
+        workspace:FindFirstChild(
+            "Map"
+        )
+
+    local root =
+        map
+        and map:FindFirstChild(
+            "WildPetRef"
+        )
+        or nil
+
+    if typeof(root) == "Instance" then
+        return root
+    end
+
+    root =
+        workspace:FindFirstChild(
+            "WildPetRef",
+            true
+        )
+
+    if typeof(root) == "Instance" then
+        return root
+    end
+
+    return nil
+end
+
+function HolySniperUuidFromName(value)
+
+    value =
+        tostring(value or "")
+
+    return value:match(
+        "WildPet_([%w%-]+)$"
+    )
+    or value:match(
+        "_WildPet_([%w%-]+)$"
+    )
+    or value:match(
+        "([%w]+%-%w+%-%w+%-%w+%-%w+)"
+    )
+    or ""
+end
+
+function HolySniperReadModelAttribute(instance, names)
+
+    if typeof(instance) ~= "Instance" then
+        return ""
+    end
+
+    for _, name in ipairs(names or {}) do
+
+        local ok,
+            value =
+            pcall(function()
+
+                return instance:GetAttribute(
+                    name
+                )
+            end)
+
+        value =
+            HolyCleanText(
+                ok == true
+                and value
+                or ""
+            )
+
+        if value ~= "" then
+            return value
+        end
+    end
+
+    return ""
+end
+
+function HolySniperFindRefForModel(model)
+
+    if typeof(model) ~= "Instance" then
+        return nil,
+            ""
+    end
+
+    local refs =
+        HolySniperGetWildPetRefRoot()
+
+    if typeof(refs) ~= "Instance" then
+        return nil,
+            ""
+    end
+
+    local uuid =
+        HolySniperUuidFromName(
+            model.Name
+        )
+
+    if uuid ~= "" then
+
+        local direct =
+            refs:FindFirstChild(
+                "WildPet_"
+                .. uuid
+            )
+
+        if typeof(direct) == "Instance" then
+
+            return direct,
+                uuid
+        end
+
+        for _, ref in ipairs(refs:GetChildren()) do
+
+            if tostring(ref.Name):find(
+                uuid,
+                1,
+                true
+            ) then
+
+                return ref,
+                    uuid
+            end
+        end
+    end
+
+    local modelPetName =
+        HolySniperReadModelAttribute(
+            model,
+            {
+                "PetName",
+                "Pet",
+                "DisplayName",
+                "Name",
+            }
+        )
+
+    if modelPetName ~= "" then
+
+        for _, ref in ipairs(refs:GetChildren()) do
+
+            local refPetName =
+                HolySniperReadModelAttribute(
+                    ref,
+                    {
+                        "PetName",
+                        "Pet",
+                        "DisplayName",
+                        "Name",
+                    }
+                )
+
+            if refPetName == modelPetName then
+
+                return ref,
+                    uuid
+            end
+        end
+    end
+
+    return nil,
+        uuid
+end
+
+function HolySniperFindBuyPrompt(model)
+
+    if typeof(model) ~= "Instance" then
+        return nil
+    end
+
+    local directRoot =
+        model:FindFirstChild(
+            "RootPart"
+        )
+        or model:FindFirstChild(
+            "RigPart"
+        )
+        or model.PrimaryPart
+
+    local directPrompt =
+        directRoot
+        and directRoot:FindFirstChild(
+            "BuyPrompt"
+        )
+        or nil
+
+    if typeof(directPrompt) == "Instance"
+    and directPrompt:IsA("ProximityPrompt") then
+
+        return directPrompt
+    end
+
+    for _, descendant in ipairs(model:GetDescendants()) do
+
+        if descendant:IsA("ProximityPrompt") then
+
+            local action =
+                HolyCleanText(
+                    descendant.ActionText
+                )
+                :lower()
+
+            local name =
+                tostring(
+                    descendant.Name
+                    or ""
+                )
+                :lower()
+
+            if action == "buy"
+            or action:find("buy", 1, true)
+            or name:find("buy", 1, true) then
+
+                return descendant
+            end
+        end
+    end
+
+    return nil
+end
+
+function HolySniperGetPromptPosition(prompt, model)
+
+    if typeof(prompt) == "Instance" then
+
+        local parent =
+            prompt.Parent
+
+        if typeof(parent) == "Instance" then
+
+            if parent:IsA("BasePart") then
+                return parent.Position
+            end
+
+            if parent:IsA("Attachment") then
+                return parent.WorldPosition
+            end
+        end
+    end
+
+    return HolySniperGetModelPosition(
+        model
+    )
+end
+
+function HolySniperReadLivePetName(model, ref)
+
+    local attrName =
+        HolySniperReadModelAttribute(
+            ref,
+            {
+                "PetName",
+                "Pet",
+                "PetTypeName",
+                "DisplayName",
+                "Name",
+            }
+        )
+
+    if attrName == "" then
+
+        attrName =
+            HolySniperReadModelAttribute(
+                model,
+                {
+                    "PetName",
+                    "Pet",
+                    "PetTypeName",
+                    "DisplayName",
+                    "Name",
+                }
+            )
+    end
+
+    if attrName ~= "" then
+
+        return HolySniperResolvePetDisplay(
+            attrName
+        )
+    end
+
+    local rawName =
+        tostring(
+            model
+            and model.Name
+            or ""
+        )
+
+    local fromWildName =
+        rawName:match(
+            "^WildPet_([^_]+)_"
+        )
+        or rawName:match(
+            "^WildPet_([^_]+)"
+        )
+        or ""
+
+    fromWildName =
+        HolyCleanText(
+            fromWildName
+        )
+
+    if fromWildName ~= "" then
+
+        return HolySniperResolvePetDisplay(
+            fromWildName
+        )
+    end
+
+    return ""
+end
+
+function HolySniperReadLiveSize(model)
+
+    local rawSize =
+        HolySniperReadModelAttribute(
+            model,
+            {
+                "PetSize",
+                "Size",
+                "ScaleType",
+                "WildPetSize",
+            }
+        )
+
+    if rawSize ~= "" then
+
+        return HolySniperNormalizeSizeName(
+            rawSize
+        )
+    end
+
+    local scale =
+        1
+
+    pcall(function()
+
+        scale =
+            model:GetScale()
+    end)
+
+    scale =
+        tonumber(scale)
+        or 1
+
+    if scale >= 3.25 then
+        return "Huge"
+    end
+
+    if scale >= 1.50 then
+        return "Big"
+    end
+
+    return "Normal"
+end
+
+function HolySniperReadLiveVariant(model, ref)
+
+    local rawVariant =
+        HolySniperReadModelAttribute(
+            ref,
+            {
+                "PetType",
+                "Type",
+                "Variant",
+                "PetVariant",
+                "Mutation",
+                "WildPetType",
+            }
+        )
+
+    if rawVariant == "" then
+
+        rawVariant =
+            HolySniperReadModelAttribute(
+                model,
+                {
+                    "PetType",
+                    "Type",
+                    "Variant",
+                    "PetVariant",
+                    "Mutation",
+                    "WildPetType",
+                }
+            )
+    end
+
+    if rawVariant ~= "" then
+
+        rawVariant =
+            HolySniperNormalizeVariantName(
+                rawVariant
+            )
+
+        if rawVariant ~= "Normal"
+        and HolySniperPetTypeIsValid(rawVariant) == true then
+
+            return rawVariant
+        end
+
+        return "Normal"
+    end
+
+    local name =
+        tostring(
+            model
+            and model.Name
+            or ""
+        )
+        :lower()
+
+    if name:find("rainbow", 1, true) then
+        return "Rainbow"
+    end
+
+    return "Normal"
+end
+
+function HolySniperGetModelPosition(model)
+
+    if typeof(model) ~= "Instance" then
+        return nil
+    end
+
+    local rootPart =
+        model:FindFirstChild(
+            "RootPart"
+        )
+        or model:FindFirstChild(
+            "RigPart"
+        )
+        or model.PrimaryPart
+
+    if typeof(rootPart) == "Instance"
+    and rootPart:IsA("BasePart") then
+
+        return rootPart.Position
+    end
+
+    local ok,
+        pivot =
+        pcall(function()
+
+            return model:GetPivot()
+        end)
+
+    if ok == true
+    and typeof(pivot) == "CFrame" then
+
+        return pivot.Position
+    end
+
+    return nil
+end
+
+function HolySniperReadShecklesObject()
+
+    local roots = {
+        LocalPlayer,
+        LocalPlayer and LocalPlayer:FindFirstChild("leaderstats"),
+        LocalPlayer and LocalPlayer:FindFirstChild("PlayerData"),
+    }
+
+    for _, root in ipairs(roots) do
+
+        if typeof(root) == "Instance" then
+
+            for _, name in ipairs({
+                "Sheckles",
+                "Sheckle",
+                "Money",
+                "Cash",
+                "Coins",
+            }) do
+
+                local object =
+                    root:FindFirstChild(
+                        name,
+                        true
+                    )
+
+                if object
+                and object:IsA("ValueBase")
+                and tonumber(object.Value) then
+
+                    return object
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function HolySniperReadSheckles()
+
+    local object =
+        HolySniperReadShecklesObject()
+
+    if object then
+
+        return tonumber(object.Value)
+            or 0
+    end
+
+    return nil
+end
+
+function HolySniperReadEntryPrice(ref, prompt, petName, petKey)
+
+    local refPrice =
+        tonumber(
+            HolySniperReadModelAttribute(
+                ref,
+                {
+                    "Price",
+                    "Cost",
+                }
+            )
+        )
+
+    if refPrice
+    and refPrice > 0 then
+
+        return refPrice
+    end
+
+    if typeof(prompt) == "Instance" then
+
+        local text =
+            HolyCleanText(
+                prompt.ObjectText
+            )
+
+        local raw =
+            text:match(
+                "([%d,]+)"
+            )
+
+        if raw then
+
+            local price =
+                tonumber(
+                    raw:gsub(",", "")
+                )
+
+            if price
+            and price > 0 then
+
+                return price
+            end
+        end
+    end
+
+    return HolySniperGetBasePrice({
+        Pet =
+            petName,
+
+        PetKey =
+            petKey,
+    })
+end
+
+function HolySniperRawBuyable(model, ref, prompt)
+
+    if typeof(model) ~= "Instance"
+    or model.Parent == nil then
+
+        return false,
+            "spawn missing"
+    end
+
+    if typeof(ref) ~= "Instance"
+    or ref.Parent == nil then
+
+        return false,
+            "ref missing"
+    end
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true
+    or prompt.Parent == nil then
+
+        return false,
+            "prompt missing"
+    end
+
+    if prompt.Enabled ~= true then
+
+        return false,
+            "prompt disabled"
+    end
+
+    local ownerUserId =
+        tonumber(
+            HolySniperReadModelAttribute(
+                ref,
+                {
+                    "OwnerUserId",
+                }
+            )
+        )
+        or 0
+
+    local ownerName =
+        HolyCleanText(
+            HolySniperReadModelAttribute(
+                ref,
+                {
+                    "OwnerName",
+                }
+            )
+        )
+
+    local state =
+        HolyCleanText(
+            HolySniperReadModelAttribute(
+                ref,
+                {
+                    "State",
+                }
+            )
+        )
+
+    if ownerUserId ~= 0 then
+
+        return false,
+            "already owned"
+    end
+
+    if ownerName ~= "" then
+
+        return false,
+            "already owned"
+    end
+
+    if state ~= ""
+    and state ~= "wandering"
+    and state ~= "wandering_walking" then
+
+        return false,
+            "state "
+            .. state
+    end
+
+    return true,
+        "buyable"
+end
+
+function HolySniperBuildLiveEntry(model)
+
+    if typeof(model) ~= "Instance"
+    or model:IsA("Model") ~= true then
+
+        return nil
+    end
+
+    local ref,
+        uuid =
+        HolySniperFindRefForModel(
+            model
+        )
+
+    local prompt =
+        HolySniperFindBuyPrompt(
+            model
+        )
+
+    local petName =
+        HolySniperReadLivePetName(
+            model,
+            ref
+        )
+
+    if petName == "" then
+        return nil
+    end
+
+    local petKey =
+        HolySniperResolvePetKey(
+            petName
+        )
+
+    local position =
+        HolySniperGetPromptPosition(
+            prompt,
+            model
+        )
+
+    local root =
+        HolySniperGetCharacterRoot()
+
+    local distance =
+        999999
+
+    if typeof(position) == "Vector3"
+    and typeof(root) == "Instance"
+    and root:IsA("BasePart") then
+
+        distance =
+            (
+                root.Position
+                - position
+            ).Magnitude
+    end
+
+    local size =
+        HolySniperReadLiveSize(
+            model
+        )
+
+    local variant =
+        HolySniperReadLiveVariant(
+            model,
+            ref
+        )
+
+    local debugId =
+        ""
+
+    pcall(function()
+
+        debugId =
+            model:GetDebugId()
+    end)
+
+    local buyable,
+        buyableReason =
+        HolySniperRawBuyable(
+            model,
+            ref,
+            prompt
+        )
+
+    local promptRange =
+        12
+
+    if typeof(prompt) == "Instance"
+    and prompt:IsA("ProximityPrompt") then
+
+        promptRange =
+            tonumber(prompt.MaxActivationDistance)
+            or 12
+    end
+
+    local key =
+        uuid ~= ""
+        and uuid
+        or (
+            debugId ~= ""
+            and debugId
+            or tostring(model.Name)
+        )
+
+    local entry = {
+        Key =
+            key,
+
+        UUID =
+            uuid,
+
+        Model =
+            model,
+
+        Ref =
+            ref,
+
+        Prompt =
+            prompt,
+
+        Pet =
+            petName,
+
+        PetKey =
+            petKey,
+
+        Size =
+            size,
+
+        Variant =
+            variant,
+
+        Position =
+            position,
+
+        Distance =
+            distance,
+
+        PromptRange =
+            promptRange,
+
+        Buyable =
+            buyable == true,
+
+        BuyableReason =
+            tostring(buyableReason or ""),
+
+        Price =
+            HolySniperReadEntryPrice(
+                ref,
+                prompt,
+                petName,
+                petKey
+            ),
+
+        BasePrice =
+            HolySniperGetBasePrice({
+                Pet =
+                    petName,
+
+                PetKey =
+                    petKey,
+            }),
+    }
+
+    return entry
+end
+
+function HolySniperRefreshEntry(entry)
+
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    if typeof(entry.Model) ~= "Instance"
+    or entry.Model.Parent == nil then
+
+        return nil
+    end
+
+    return HolySniperBuildLiveEntry(
+        entry.Model
+    )
+end
+
+function HolySniperEntryKey(entry)
+
+    if type(entry) ~= "table" then
+        return ""
+    end
+
+    return HolyCleanText(
+        entry.UUID
+        or entry.Key
+        or ""
+    )
+end
+
+function HolySniperPetBuyProtectionEnsure()
+
+    HOLY_SNIPER_RUNTIME =
+        type(HOLY_SNIPER_RUNTIME) == "table"
+        and HOLY_SNIPER_RUNTIME
+        or {}
+
+    HOLY_SNIPER_RUNTIME.BuyProtection =
+        type(HOLY_SNIPER_RUNTIME.BuyProtection) == "table"
+        and HOLY_SNIPER_RUNTIME.BuyProtection
+        or {
+            Active = false,
+        }
+
+    return HOLY_SNIPER_RUNTIME.BuyProtection
+end
+
+function HolySniperPetBuyStateLooksPending(value)
+
+    local state =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    state =
+        state:gsub(
+            "%s+",
+            "_"
+        )
+
+    if state == "" then
+        return false
+    end
+
+    if state == "walking_to_garden"
+    or state == "waiting_for_garden"
+    or state == "going_to_garden"
+    or state == "moving_to_garden"
+    or state == "traveling_to_garden"
+    or state == "travelling_to_garden"
+    or state == "pathing_to_garden"
+    or state == "returning_to_garden" then
+
+        return true
+    end
+
+    if state:find("_to_garden", 1, true) then
+        return true
+    end
+
+    if state:find("garden", 1, true)
+    and (
+        state:find("walk", 1, true)
+        or state:find("wait", 1, true)
+        or state:find("go", 1, true)
+        or state:find("move", 1, true)
+        or state:find("travel", 1, true)
+        or state:find("path", 1, true)
+        or state:find("return", 1, true)
+    ) then
+
+        return true
+    end
+
+    return false
+end
+
+function HolySniperFindPetBuyProtectionRef(lock)
+
+    lock =
+        type(lock) == "table"
+        and lock
+        or {}
+
+    local key =
+        HolyCleanText(
+            lock.UUID
+            or lock.Key
+            or lock.EntryKey
+        )
+
+    if key == "" then
+        return nil
+    end
+
+    local root =
+        HolySniperGetWildPetRefRoot()
+
+    if typeof(root) ~= "Instance" then
+        return nil
+    end
+
+    local direct =
+        root:FindFirstChild(
+            "WildPet_"
+            .. key
+        )
+
+    if typeof(direct) == "Instance" then
+        return direct
+    end
+
+    for _, child in ipairs(root:GetChildren()) do
+
+        if tostring(child.Name):find(
+            key,
+            1,
+            true
+        ) then
+
+            return child
+        end
+    end
+
+    return nil
+end
+
+function HolySniperArmPetBuyProtection(entry, reason)
+
+    local lock =
+        HolySniperPetBuyProtectionEnsure()
+
+    entry =
+        type(entry) == "table"
+        and entry
+        or {}
+
+    local now =
+        os.clock()
+
+    local key =
+        HolySniperEntryKey(
+            entry
+        )
+
+    lock.Active =
+        true
+
+    lock.EntryKey =
+        key
+
+    lock.Key =
+        key
+
+    lock.UUID =
+        HolyCleanText(
+            entry.UUID
+            or entry.Key
+            or key
+        )
+
+    lock.Pet =
+        HolyCleanText(
+            entry.Pet
+            or entry.PetName
+            or entry.DisplayName
+            or "pet"
+        )
+
+    lock.Ref =
+        entry.Ref
+
+    lock.StartedAt =
+        now
+
+    lock.ConfirmedAt =
+        tonumber(lock.ConfirmedAt)
+        or 0
+
+    lock.MinUntil =
+        now
+        + (
+            tonumber(HOLY_SNIPER_PET_BUY_SETTLE_SECONDS)
+            or 18
+        )
+
+    lock.HardUntil =
+        now
+        + (
+            tonumber(HOLY_SNIPER_PET_BUY_HARD_TIMEOUT)
+            or 120
+        )
+
+    lock.Reason =
+        tostring(reason or "buy pending")
+
+    lock.LastStatusAt =
+        0
+
+    lock.LastNotifyAt =
+        0
+
+    HOLY_SNIPER_RUNTIME.BuyProtectionActive =
+        true
+
+    return true
+end
+
+function HolySniperTouchPetBuyProtection(entry, reason)
+
+    local lock =
+        HolySniperPetBuyProtectionEnsure()
+
+    if lock.Active ~= true then
+
+        return HolySniperArmPetBuyProtection(
+            entry,
+            reason
+        )
+    end
+
+    local now =
+        os.clock()
+
+    entry =
+        type(entry) == "table"
+        and entry
+        or {}
+
+    if entry.Ref ~= nil then
+        lock.Ref =
+            entry.Ref
+    end
+
+    local key =
+        HolySniperEntryKey(
+            entry
+        )
+
+    if key ~= "" then
+
+        lock.EntryKey =
+            key
+
+        lock.Key =
+            key
+
+        lock.UUID =
+            HolyCleanText(
+                entry.UUID
+                or entry.Key
+                or key
+            )
+    end
+
+    if reason ~= nil then
+
+        lock.Reason =
+            tostring(reason)
+    end
+
+    lock.ConfirmedAt =
+        now
+
+    lock.MinUntil =
+        math.max(
+            tonumber(lock.MinUntil)
+            or 0,
+            now
+            + (
+                tonumber(HOLY_SNIPER_PET_BUY_SETTLE_SECONDS)
+                or 18
+            )
+        )
+
+    HOLY_SNIPER_RUNTIME.BuyProtectionActive =
+        true
+
+    return true
+end
+
+function HolySniperClearPetBuyProtection(reason)
+
+    local lock =
+        HolySniperPetBuyProtectionEnsure()
+
+    if lock.Active ~= true then
+        return false
+    end
+
+    lock.Active =
+        false
+
+    lock.Reason =
+        tostring(reason or "clear")
+
+    lock.Ref =
+        nil
+
+    lock.EntryKey =
+        ""
+
+    lock.Key =
+        ""
+
+    lock.UUID =
+        ""
+
+    lock.Pet =
+        ""
+
+    lock.StartedAt =
+        0
+
+    lock.ConfirmedAt =
+        0
+
+    lock.MinUntil =
+        0
+
+    lock.HardUntil =
+        0
+
+    HOLY_SNIPER_RUNTIME.BuyProtectionActive =
+        false
+
+    return true
+end
+
+function HolySniperPetBuyProtectionActive()
+
+    local lock =
+        HolySniperPetBuyProtectionEnsure()
+
+    if lock.Active ~= true then
+
+        HOLY_SNIPER_RUNTIME.BuyProtectionActive =
+            false
+
+        return false,
+            "clear"
+    end
+
+    local now =
+        os.clock()
+
+    local hardUntil =
+        tonumber(lock.HardUntil)
+        or 0
+
+    if hardUntil > 0
+    and now >= hardUntil then
+
+        HolySniperClearPetBuyProtection(
+            "hard timeout"
+        )
+
+        return false,
+            "hard timeout"
+    end
+
+    if HOLY_SNIPER_RUNTIME.Buying == true then
+
+        HOLY_SNIPER_RUNTIME.BuyProtectionActive =
+            true
+
+        return true,
+            "buying"
+    end
+
+    local ref =
+        lock.Ref
+
+    if typeof(ref) ~= "Instance"
+    or ref.Parent == nil then
+
+        ref =
+            HolySniperFindPetBuyProtectionRef(
+                lock
+            )
+
+        lock.Ref =
+            ref
+    end
+
+    local state =
+        ""
+
+    local ownerUserId =
+        0
+
+    local ownerName =
+        ""
+
+    if typeof(ref) == "Instance"
+    and ref.Parent ~= nil then
+
+        state =
+            HolySniperReadModelAttribute(
+                ref,
+                {
+                    "State",
+                    "PetState",
+                }
+            )
+
+        ownerUserId =
+            tonumber(
+                HolySniperReadModelAttribute(
+                    ref,
+                    {
+                        "OwnerUserId",
+                        "OwnerUserID",
+                        "Owner",
+                        "UserId",
+                        "UserID",
+                    }
+                )
+            )
+            or 0
+
+        ownerName =
+            HolyCleanText(
+                HolySniperReadModelAttribute(
+                    ref,
+                    {
+                        "OwnerName",
+                        "OwnerDisplayName",
+                    }
+                )
+            )
+    end
+
+    local ownedByLocal =
+        ownerUserId == tonumber(LocalPlayer.UserId)
+        or (
+            ownerName ~= ""
+            and ownerName == HolyCleanText(LocalPlayer.Name)
+        )
+
+    if HolySniperPetBuyStateLooksPending(state) == true then
+
+        HOLY_SNIPER_RUNTIME.BuyProtectionActive =
+            true
+
+        lock.Reason =
+            state ~= ""
+            and state
+            or "going to garden"
+
+        return true,
+            lock.Reason
+    end
+
+    if ownedByLocal == true then
+
+        HOLY_SNIPER_RUNTIME.BuyProtectionActive =
+            true
+
+        lock.Reason =
+            "owned by you, settling"
+
+        return true,
+            lock.Reason
+    end
+
+    local minUntil =
+        tonumber(lock.MinUntil)
+        or 0
+
+    if now < minUntil then
+
+        HOLY_SNIPER_RUNTIME.BuyProtectionActive =
+            true
+
+        return true,
+            tostring(lock.Reason or "settling")
+    end
+
+    HolySniperClearPetBuyProtection(
+        "settled"
+    )
+
+    return false,
+        "settled"
+end
+
+function HolySniperPetBuyProtectionBlocks(actionName, notify)
+
+    local active,
+        reason =
+        HolySniperPetBuyProtectionActive()
+
+    if active ~= true then
+        return false
+    end
+
+    local lock =
+        HolySniperPetBuyProtectionEnsure()
+
+    local now =
+        os.clock()
+
+    if now - (
+        tonumber(lock.LastStatusAt)
+        or 0
+    ) >= 1.25 then
+
+        lock.LastStatusAt =
+            now
+
+        if type(HolySniperSetStatus) == "function" then
+
+            HolySniperSetStatus(
+                tostring(actionName or "Action")
+                .. " blocked: pet buy pending"
+            )
+        end
+
+        if type(HolyServerSetStatus) == "function" then
+
+            HolyServerSetStatus(
+                tostring(actionName or "Action")
+                .. " blocked: pet buy pending"
+            )
+        end
+    end
+
+    if notify == true
+    and now - (
+        tonumber(lock.LastNotifyAt)
+        or 0
+    ) >= 3 then
+
+        lock.LastNotifyAt =
+            now
+
+        if type(HolyNotify) == "function" then
+
+            HolyNotify(
+                "HOLY Protection",
+                tostring(actionName or "Action")
+                .. " blocked while pet is settling: "
+                .. tostring(reason or "pending"),
+                4
+            )
+        end
+    end
+
+    return true
+end
+
+function HolySniperTargetLockEnsure()
+
+    HOLY_SNIPER_RUNTIME =
+        type(HOLY_SNIPER_RUNTIME) == "table"
+        and HOLY_SNIPER_RUNTIME
+        or {}
+
+    HOLY_SNIPER_RUNTIME.TargetLock =
+        type(HOLY_SNIPER_RUNTIME.TargetLock) == "table"
+        and HOLY_SNIPER_RUNTIME.TargetLock
+        or {
+            Active = false,
+        }
+
+    return HOLY_SNIPER_RUNTIME.TargetLock
+end
+
+function HolySniperArmTargetLock(entry, reason)
+
+    local lock =
+        HolySniperTargetLockEnsure()
+
+    entry =
+        type(entry) == "table"
+        and entry
+        or {}
+
+    local key =
+        HolySniperEntryKey(
+            entry
+        )
+
+    if key == "" then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    lock.Active =
+        true
+
+    lock.EntryKey =
+        key
+
+    lock.Key =
+        key
+
+    lock.UUID =
+        HolyCleanText(
+            entry.UUID
+            or entry.Key
+            or key
+        )
+
+    lock.Pet =
+        HolyCleanText(
+            entry.Pet
+            or entry.PetName
+            or entry.DisplayName
+            or "target pet"
+        )
+
+    lock.StartedAt =
+        now
+
+    lock.LastTouchAt =
+        now
+
+    lock.HardUntil =
+        now
+        + (
+            tonumber(HOLY_SNIPER_TARGET_LOCK_TIMEOUT)
+            or 45
+        )
+
+    lock.Reason =
+        tostring(reason or "target locked")
+
+    lock.LastStatusAt =
+        0
+
+    lock.LastNotifyAt =
+        0
+
+    HOLY_SNIPER_RUNTIME.TargetLockActive =
+        true
+
+    return true
+end
+
+function HolySniperTouchTargetLock(entry, reason)
+
+    local lock =
+        HolySniperTargetLockEnsure()
+
+    entry =
+        type(entry) == "table"
+        and entry
+        or {}
+
+    if lock.Active ~= true then
+
+        return HolySniperArmTargetLock(
+            entry,
+            reason
+        )
+    end
+
+    local key =
+        HolySniperEntryKey(
+            entry
+        )
+
+    if key ~= "" then
+
+        lock.EntryKey =
+            key
+
+        lock.Key =
+            key
+
+        lock.UUID =
+            HolyCleanText(
+                entry.UUID
+                or entry.Key
+                or key
+            )
+    end
+
+    if entry.Pet
+    or entry.PetName
+    or entry.DisplayName then
+
+        lock.Pet =
+            HolyCleanText(
+                entry.Pet
+                or entry.PetName
+                or entry.DisplayName
+                or lock.Pet
+            )
+    end
+
+    lock.LastTouchAt =
+        os.clock()
+
+    lock.HardUntil =
+        math.max(
+            tonumber(lock.HardUntil)
+            or 0,
+            os.clock()
+            + (
+                tonumber(HOLY_SNIPER_TARGET_LOCK_TIMEOUT)
+                or 45
+            )
+        )
+
+    if reason ~= nil then
+        lock.Reason =
+            tostring(reason)
+    end
+
+    HOLY_SNIPER_RUNTIME.TargetLockActive =
+        true
+
+    return true
+end
+
+function HolySniperClearTargetLock(reason)
+
+    local lock =
+        HolySniperTargetLockEnsure()
+
+    if lock.Active ~= true then
+        return false
+    end
+
+    lock.Active =
+        false
+
+    lock.EntryKey =
+        ""
+
+    lock.Key =
+        ""
+
+    lock.UUID =
+        ""
+
+    lock.Pet =
+        ""
+
+    lock.StartedAt =
+        0
+
+    lock.LastTouchAt =
+        0
+
+    lock.HardUntil =
+        0
+
+    lock.Reason =
+        tostring(reason or "clear")
+
+    lock.LastStatusAt =
+        0
+
+    lock.LastNotifyAt =
+        0
+
+    HOLY_SNIPER_RUNTIME.TargetLockActive =
+        false
+
+    return true
+end
+
+function HolySniperTargetLockActive()
+
+    local lock =
+        HolySniperTargetLockEnsure()
+
+    if lock.Active ~= true then
+
+        HOLY_SNIPER_RUNTIME.TargetLockActive =
+            false
+
+        return false,
+            "clear"
+    end
+
+    local now =
+        os.clock()
+
+    local hardUntil =
+        tonumber(lock.HardUntil)
+        or 0
+
+    if hardUntil > 0
+    and now >= hardUntil then
+
+        HolySniperClearTargetLock(
+            "target lock timeout"
+        )
+
+        return false,
+            "target lock timeout"
+    end
+
+    if HOLY_SNIPER_RUNTIME.Buying == true then
+
+        HOLY_SNIPER_RUNTIME.TargetLockActive =
+            true
+
+        return true,
+            tostring(lock.Reason or "buying target")
+    end
+
+    local currentKey =
+        HolyCleanText(
+            HOLY_SNIPER_RUNTIME.CurrentTargetKey
+            or ""
+        )
+
+    local lockKey =
+        HolyCleanText(
+            lock.EntryKey
+            or lock.Key
+            or lock.UUID
+        )
+
+    if currentKey ~= ""
+    and lockKey ~= ""
+    and currentKey == lockKey then
+
+        HOLY_SNIPER_RUNTIME.TargetLockActive =
+            true
+
+        return true,
+            tostring(lock.Reason or "target locked")
+    end
+
+    if now - (
+        tonumber(lock.LastTouchAt)
+        or 0
+    ) <= 2.5 then
+
+        HOLY_SNIPER_RUNTIME.TargetLockActive =
+            true
+
+        return true,
+            tostring(lock.Reason or "target locked")
+    end
+
+    HolySniperClearTargetLock(
+        "target no longer active"
+    )
+
+    return false,
+        "target no longer active"
+end
+
+function HolySniperTargetLockBlocks(actionName, notify)
+
+    local active,
+        reason =
+        HolySniperTargetLockActive()
+
+    if active ~= true then
+        return false
+    end
+
+    local lock =
+        HolySniperTargetLockEnsure()
+
+    local now =
+        os.clock()
+
+    if now - (
+        tonumber(lock.LastStatusAt)
+        or 0
+    ) >= 1.25 then
+
+        lock.LastStatusAt =
+            now
+
+        if type(HolySniperSetStatus) == "function" then
+
+            HolySniperSetStatus(
+                tostring(actionName or "Action")
+                .. " blocked: sniper target locked"
+            )
+        end
+
+        if type(HolyServerSetStatus) == "function" then
+
+            HolyServerSetStatus(
+                tostring(actionName or "Action")
+                .. " blocked: sniper target locked"
+            )
+        end
+    end
+
+    if notify == true
+    and now - (
+        tonumber(lock.LastNotifyAt)
+        or 0
+    ) >= 3 then
+
+        lock.LastNotifyAt =
+            now
+
+        if type(HolyNotify) == "function" then
+
+            HolyNotify(
+                "HOLY Protection",
+                tostring(actionName or "Action")
+                .. " blocked while sniper is handling "
+                .. tostring(lock.Pet or "a target")
+                .. ".",
+                4
+            )
+        end
+    end
+
+    return true
+end
+
+function HolySniperServerSwitchBlocked(actionName, notify)
+
+    if HolySniperPetBuyProtectionBlocks(
+        actionName,
+        notify
+    ) == true then
+
+        return true
+    end
+
+    if HolySniperTargetLockBlocks(
+        actionName,
+        notify
+    ) == true then
+
+        return true
+    end
+
+    return false
+end
+
+function HolySniperIsHandled(entry)
+
+    local key =
+        HolySniperEntryKey(
+            entry
+        )
+
+    if key == "" then
+        return false
+    end
+
+    HOLY_SNIPER_RUNTIME.Handled =
+        type(HOLY_SNIPER_RUNTIME.Handled) == "table"
+        and HOLY_SNIPER_RUNTIME.Handled
+        or {}
+
+    return HOLY_SNIPER_RUNTIME.Handled[key] == true
+end
+
+function HolySniperIsFailedCooling(entry)
+
+    local key =
+        HolySniperEntryKey(
+            entry
+        )
+
+    if key == "" then
+        return false
+    end
+
+    HOLY_SNIPER_RUNTIME.FailedUntil =
+        type(HOLY_SNIPER_RUNTIME.FailedUntil) == "table"
+        and HOLY_SNIPER_RUNTIME.FailedUntil
+        or {}
+
+    local untilTime =
+        tonumber(
+            HOLY_SNIPER_RUNTIME.FailedUntil[key]
+        )
+        or 0
+
+    if untilTime <= 0 then
+        return false
+    end
+
+    if os.clock() >= untilTime then
+
+        HOLY_SNIPER_RUNTIME.FailedUntil[key] =
+            nil
+
+        return false
+    end
+
+    return true
+end
+
+function HolySniperFilterComplete(filter)
+
+    filter =
+        HolySniperNormalizeFilter(
+            filter
+        )
+
+    local key =
+        HolySniperFilterKey(
+            filter
+        )
+
+    HOLY_SNIPER_RUNTIME.BoughtCounts =
+        type(HOLY_SNIPER_RUNTIME.BoughtCounts) == "table"
+        and HOLY_SNIPER_RUNTIME.BoughtCounts
+        or {}
+
+    local bought =
+        tonumber(
+            HOLY_SNIPER_RUNTIME.BoughtCounts[key]
+        )
+        or 0
+
+    return bought >= (
+        tonumber(filter.Amount)
+        or 1
+    )
+end
+
+function HolySniperScanLivePets()
+
+    local root =
+        HolySniperGetWildPetRoot()
+
+    local entries =
+        {}
+
+    if typeof(root) ~= "Instance" then
+        return entries
+    end
+
+    for _, child in ipairs(root:GetChildren()) do
+
+        if child:IsA("Model") then
+
+            local entry =
+                HolySniperBuildLiveEntry(
+                    child
+                )
+
+            if entry then
+
+                table.insert(
+                    entries,
+                    entry
+                )
+            end
+        end
+    end
+
+    return entries
+end
+
+function HolySniperSelectionHasAny(values)
+
+    values =
+        HolyShopSelectionArray(
+            values
+        )
+
+    if #values <= 0 then
+        return true
+    end
+
+    for _, value in ipairs(values) do
+
+        if value == "Any" then
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolySniperSelectionContains(values, wanted)
+
+    wanted =
+        HolyCleanText(
+            wanted
+        )
+
+    if wanted == "" then
+        return false
+    end
+
+    values =
+        HolyShopSelectionArray(
+            values
+        )
+
+    for _, value in ipairs(values) do
+
+        if value == wanted then
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolySniperEntryMatchesFilter(entry, filter)
+
+    if type(entry) ~= "table"
+    or type(filter) ~= "table"
+    or filter.Enabled == false then
+
+        return false
+    end
+
+    if entry.Buyable ~= true then
+        return false
+    end
+
+    if HolySniperIsHandled(entry) == true then
+        return false
+    end
+
+    if HolySniperIsFailedCooling(entry) == true then
+        return false
+    end
+
+    if HolySniperFilterComplete(filter) == true then
+        return false
+    end
+
+    local entryPet =
+        HolySniperPetAliasKey(
+            entry.PetKey
+            or entry.Pet
+        )
+
+    local filterPet =
+        HolySniperPetAliasKey(
+            filter.PetKey
+            or filter.Pet
+        )
+
+    if entryPet ~= filterPet then
+        return false
+    end
+
+    if HolySniperSelectionHasAny(filter.Sizes) ~= true
+    and HolySniperSelectionContains(filter.Sizes, entry.Size) ~= true then
+
+        return false
+    end
+
+    if HolySniperSelectionHasAny(filter.Variants) ~= true
+    and HolySniperSelectionContains(filter.Variants, entry.Variant) ~= true then
+
+        return false
+    end
+
+    return true
+end
+
+function HolySniperSizeRank(sizeName)
+
+    sizeName =
+        HolySniperNormalizeSizeName(
+            sizeName
+        )
+
+    if sizeName == "Huge" then
+        return 3
+    end
+
+    if sizeName == "Big" then
+        return 2
+    end
+
+    return 1
+end
+
+function HolySniperVariantRank(variantName)
+
+    variantName =
+        HolySniperNormalizeVariantName(
+            variantName
+        )
+
+    if variantName == "Rainbow" then
+        return 2
+    end
+
+    return 1
+end
+
+function HolySniperFindMatches(entries)
+
+    local matches =
+        {}
+
+    local watchlist =
+        type(HOLY_SNIPER_STATE.Watchlist) == "table"
+        and HOLY_SNIPER_STATE.Watchlist
+        or {}
+
+    for _, entry in ipairs(entries or {}) do
+
+        for filterIndex, rawFilter in ipairs(watchlist) do
+
+            local filter =
+                HolySniperNormalizeFilter(
+                    rawFilter
+                )
+
+            if HolySniperEntryMatchesFilter(
+                entry,
+                filter
+            ) == true then
+
+                table.insert(
+                    matches,
+                    {
+                        Entry =
+                            entry,
+
+                        Filter =
+                            filter,
+
+                        FilterIndex =
+                            filterIndex,
+
+                        PriorityRank =
+                            HolySniperPriorityRank(
+                                filter.Priority
+                            ),
+
+                        ValueRank =
+                            tonumber(entry.BasePrice)
+                            or tonumber(entry.Price)
+                            or 0,
+
+                        SizeRank =
+                            HolySniperSizeRank(
+                                entry.Size
+                            ),
+
+                        VariantRank =
+                            HolySniperVariantRank(
+                                entry.Variant
+                            ),
+
+                        Distance =
+                            tonumber(entry.Distance)
+                            or 999999,
+                    }
+                )
+            end
+        end
+    end
+
+    table.sort(matches, function(a, b)
+
+        if a.PriorityRank ~= b.PriorityRank then
+            return a.PriorityRank < b.PriorityRank
+        end
+
+        if a.ValueRank ~= b.ValueRank then
+            return a.ValueRank > b.ValueRank
+        end
+
+        if a.VariantRank ~= b.VariantRank then
+            return a.VariantRank > b.VariantRank
+        end
+
+        if a.SizeRank ~= b.SizeRank then
+            return a.SizeRank > b.SizeRank
+        end
+
+        return a.Distance < b.Distance
+    end)
+
+    return matches
+end
+
+function HolySniperDescribeEntry(entry)
+
+    if type(entry) ~= "table" then
+        return "None"
+    end
+
+    return tostring(entry.Size)
+        .. " "
+        .. tostring(entry.Variant)
+        .. " "
+        .. tostring(entry.Pet)
+end
+
+function HolySniperGetSafeRange(prompt)
+
+    local maxRange =
+        12
+
+    if typeof(prompt) == "Instance"
+    and prompt:IsA("ProximityPrompt") then
+
+        maxRange =
+            tonumber(prompt.MaxActivationDistance)
+            or 12
+    end
+
+    local padding =
+        tonumber(
+            HOLY_SNIPER_RUNTIME.SafeRangePadding
+        )
+        or 2.15
+
+    return math.clamp(
+        maxRange - padding,
+        5,
+        math.max(5, maxRange - 0.35)
+    )
+end
+
+function HolySniperDistanceToEntry(entry)
+
+    if type(entry) ~= "table" then
+        return math.huge
+    end
+
+    local root =
+        HolySniperGetCharacterRoot()
+
+    if typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true then
+
+        return math.huge
+    end
+
+    local position =
+        HolySniperGetPromptPosition(
+            entry.Prompt,
+            entry.Model
+        )
+
+    if typeof(position) ~= "Vector3" then
+        return math.huge
+    end
+
+    return (
+        root.Position
+        - position
+    ).Magnitude
+end
+
+function HolySniperValidateTargetForBuy(entry, filter)
+
+    local refreshed =
+        HolySniperRefreshEntry(
+            entry
+        )
+
+    if type(refreshed) ~= "table" then
+
+        return false,
+            nil,
+            "target gone"
+    end
+
+    if refreshed.Buyable ~= true then
+
+        return false,
+            refreshed,
+            refreshed.BuyableReason
+            or "not buyable"
+    end
+
+    if HolySniperEntryMatchesFilter(
+        refreshed,
+        filter
+    ) ~= true then
+
+        return false,
+            refreshed,
+            "no longer matches"
+    end
+
+    return true,
+        refreshed,
+        "ok"
+end
+
+function HolySniperZeroRootVelocity(root)
+
+    if typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true then
+
+        return false
+    end
+
+    pcall(function()
+
+        root.AssemblyLinearVelocity =
+            Vector3.zero
+
+        root.AssemblyAngularVelocity =
+            Vector3.zero
+    end)
+
+    return true
+end
+
+function HolySniperMovementInputIsDown()
+
+    if typeof(UserInputService) ~= "Instance" then
+        return false
+    end
+
+    local movementKeys = {
+        Enum.KeyCode.W,
+        Enum.KeyCode.A,
+        Enum.KeyCode.S,
+        Enum.KeyCode.D,
+        Enum.KeyCode.Up,
+        Enum.KeyCode.Down,
+        Enum.KeyCode.Left,
+        Enum.KeyCode.Right,
+        Enum.KeyCode.Space,
+    }
+
+    for _, keyCode in ipairs(movementKeys) do
+
+        local ok,
+            isDown =
+            pcall(function()
+
+                return UserInputService:IsKeyDown(
+                    keyCode
+                )
+            end)
+
+        if ok == true
+        and isDown == true then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolySniperIsManualMovementInput(input)
+
+    if typeof(input) ~= "InputObject" then
+        return false
+    end
+
+    local keyCode =
+        input.KeyCode
+
+    if keyCode == Enum.KeyCode.W
+    or keyCode == Enum.KeyCode.A
+    or keyCode == Enum.KeyCode.S
+    or keyCode == Enum.KeyCode.D
+    or keyCode == Enum.KeyCode.Up
+    or keyCode == Enum.KeyCode.Down
+    or keyCode == Enum.KeyCode.Left
+    or keyCode == Enum.KeyCode.Right
+    or keyCode == Enum.KeyCode.Space then
+
+        return true
+    end
+
+    if input.UserInputType == Enum.UserInputType.Touch then
+        return true
+    end
+
+    if input.UserInputType == Enum.UserInputType.Gamepad1
+    and (
+        keyCode == Enum.KeyCode.Thumbstick1
+        or keyCode == Enum.KeyCode.DPadUp
+        or keyCode == Enum.KeyCode.DPadDown
+        or keyCode == Enum.KeyCode.DPadLeft
+        or keyCode == Enum.KeyCode.DPadRight
+        or keyCode == Enum.KeyCode.ButtonA
+    ) then
+
+        return true
+    end
+
+    return false
+end
+
+function HolySniperMarkManualMovementInput(input)
+
+    if HOLY_SNIPER_RUNTIME.Returning ~= true then
+        return
+    end
+
+    if HolySniperIsManualMovementInput(input) ~= true then
+        return
+    end
+
+    HOLY_SNIPER_RUNTIME.LastManualMoveInputAt =
+        os.clock()
+end
+
+function HolySniperStartManualInputWatcher()
+
+    HOLY_SNIPER_RUNTIME =
+        type(HOLY_SNIPER_RUNTIME) == "table"
+        and HOLY_SNIPER_RUNTIME
+        or {}
+
+    if HOLY_SNIPER_RUNTIME.ManualInputWatcherStarted == true then
+        return true
+    end
+
+    HOLY_SNIPER_RUNTIME.ManualInputWatcherStarted =
+        true
+
+    pcall(function()
+
+        UserInputService.InputBegan:Connect(function(input)
+
+            HolySniperMarkManualMovementInput(
+                input
+            )
+        end)
+
+        UserInputService.InputChanged:Connect(function(input)
+
+            if input.UserInputType == Enum.UserInputType.Gamepad1
+            and input.KeyCode == Enum.KeyCode.Thumbstick1 then
+
+                HolySniperMarkManualMovementInput(
+                    input
+                )
+            end
+        end)
+    end)
+
+    return true
+end
+
+function HolySniperManualReturnCancelled(returnStartedAt)
+
+    returnStartedAt =
+        tonumber(returnStartedAt)
+        or 0
+
+    if HolySniperMovementInputIsDown() == true then
+        return true
+    end
+
+    local lastInputAt =
+        tonumber(
+            HOLY_SNIPER_RUNTIME.LastManualMoveInputAt
+        )
+        or 0
+
+    local grace =
+        tonumber(
+            HOLY_SNIPER_RUNTIME.ManualReturnCancelGrace
+        )
+        or 0.20
+
+    return lastInputAt > returnStartedAt + grace
+end
+
+function HolySniperStopHumanoidMovement(humanoid, root)
+
+    if typeof(humanoid) == "Instance"
+    and humanoid:IsA("Humanoid") then
+
+        pcall(function()
+
+            humanoid:Move(
+                Vector3.zero,
+                false
+            )
+        end)
+
+        if typeof(root) == "Instance"
+        and root:IsA("BasePart") then
+
+            pcall(function()
+
+                humanoid:MoveTo(
+                    root.Position
+                )
+            end)
+        end
+    end
+end
+
+function HolySniperCFrameToData(cframe)
+
+    if typeof(cframe) ~= "CFrame" then
+        return nil
+    end
+
+    return {
+        cframe:GetComponents()
+    }
+end
+
+function HolySniperDataToCFrame(data)
+
+    if type(data) ~= "table" then
+        return nil
+    end
+
+    local components =
+        {}
+
+    for index = 1, 12 do
+
+        local value =
+            tonumber(
+                data[index]
+                or data[tostring(index)]
+            )
+
+        if value == nil then
+            return nil
+        end
+
+        components[index] =
+            value
+    end
+
+    local unpackFunction =
+        table.unpack
+        or unpack
+
+    return CFrame.new(
+        unpackFunction(
+            components
+        )
+    )
+end
+
+function HolySniperFormatVectorShort(position)
+
+    if typeof(position) ~= "Vector3" then
+        return "Not set"
+    end
+
+    return tostring(
+        math.floor(position.X + 0.5)
+    )
+    .. ", "
+    .. tostring(
+        math.floor(position.Y + 0.5)
+    )
+    .. ", "
+    .. tostring(
+        math.floor(position.Z + 0.5)
+    )
+end
+
+function HolySniperSetSavedReturnPosition()
+
+    local root =
+        HolySniperGetCharacterRoot()
+
+    if typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true then
+
+        if type(HolyNotify) == "function" then
+
+            HolyNotify(
+                "HOLY Sniper",
+                "Could not save return position. Character root missing.",
+                4
+            )
+        end
+
+        return false
+    end
+
+    HOLY_SNIPER_STATE.SavedReturnCFrameData =
+        HolySniperCFrameToData(
+            root.CFrame
+        )
+
+    HOLY_SNIPER_STATE.ReturnDestination =
+        "Saved Position"
+
+    HolySaveSniperSettings()
+
+    local options =
+        HOLY_DEV_LIBRARY
+        and HOLY_DEV_LIBRARY.Options
+        or nil
+
+    if type(options) == "table"
+    and options.HolySniperReturnDestination
+    and type(options.HolySniperReturnDestination.SetValue) == "function" then
+
+        pcall(function()
+
+            options.HolySniperReturnDestination:SetValue(
+                "Saved Position"
+            )
+        end)
+    end
+
+    if type(HolyNotify) == "function" then
+
+        HolyNotify(
+            "HOLY Sniper",
+            "Saved return position: "
+            .. HolySniperFormatVectorShort(root.Position),
+            4
+        )
+    end
+
+    return true
+end
+
+function HolySniperGetSavedReturnCFrame()
+
+    return HolySniperDataToCFrame(
+        HOLY_SNIPER_STATE.SavedReturnCFrameData
+    )
+end
+
+function HolySniperScoreOwnedGarden(garden)
+
+    if typeof(garden) ~= "Instance" then
+        return 0
+    end
+
+    local playerName =
+        tostring(
+            LocalPlayer
+            and LocalPlayer.Name
+            or ""
+        )
+
+    local playerNameLower =
+        playerName:lower()
+
+    local userIdText =
+        tostring(
+            LocalPlayer
+            and LocalPlayer.UserId
+            or ""
+        )
+
+    local score =
+        0
+
+    local function scoreText(value, weight)
+
+        local text =
+            HolyCleanText(
+                value
+            )
+
+        if text == "" then
+            return
+        end
+
+        local lower =
+            text:lower()
+
+        if text == userIdText then
+
+            score =
+                score
+                + weight
+                + 25
+        end
+
+        if playerNameLower ~= ""
+        and lower == playerNameLower then
+
+            score =
+                score
+                + weight
+                + 35
+
+        elseif playerNameLower ~= ""
+        and lower:find(playerNameLower, 1, true) then
+
+            score =
+                score
+                + weight
+        end
+    end
+
+    local attrs =
+        {}
+
+    pcall(function()
+
+        attrs =
+            garden:GetAttributes()
+    end)
+
+    if type(attrs) == "table" then
+
+        for key, value in pairs(attrs) do
+
+            local lowerKey =
+                tostring(key)
+                :lower()
+
+            if lowerKey:find("owner", 1, true)
+            or lowerKey:find("player", 1, true)
+            or lowerKey:find("user", 1, true) then
+
+                scoreText(
+                    value,
+                    80
+                )
+            end
+        end
+    end
+
+    local scanned =
+        0
+
+    for _, descendant in ipairs(garden:GetDescendants()) do
+
+        scanned =
+            scanned + 1
+
+        if scanned > 2500 then
+            break
+        end
+
+        if descendant:IsA("TextLabel")
+        or descendant:IsA("TextButton")
+        or descendant:IsA("TextBox") then
+
+            local ok,
+                text =
+                pcall(function()
+
+                    return descendant.Text
+                end)
+
+            if ok == true then
+
+                scoreText(
+                    text,
+                    35
+                )
+            end
+        end
+
+        if descendant:IsA("StringValue") then
+
+            scoreText(
+                descendant.Value,
+                45
+            )
+        end
+
+        if descendant:IsA("IntValue")
+        or descendant:IsA("NumberValue") then
+
+            scoreText(
+                descendant.Value,
+                45
+            )
+        end
+
+        if descendant:IsA("ObjectValue") then
+
+            local value =
+                descendant.Value
+
+            if value == LocalPlayer then
+
+                score =
+                    score
+                    + 120
+            end
+        end
+
+        local lowerName =
+            tostring(descendant.Name)
+            :lower()
+
+        if lowerName:find("owner", 1, true)
+        or lowerName:find("player", 1, true)
+        or lowerName:find("user", 1, true) then
+
+            if descendant:IsA("ValueBase") then
+
+                local ok,
+                    value =
+                    pcall(function()
+
+                        return descendant.Value
+                    end)
+
+                if ok == true then
+
+                    scoreText(
+                        value,
+                        55
+                    )
+                end
+            end
+        end
+    end
+
+    return score
+end
+
+function HolySniperFindOwnedGarden()
+
+    local gardens =
+        workspace:FindFirstChild(
+            "Gardens"
+        )
+
+    if typeof(gardens) ~= "Instance" then
+
+        gardens =
+            workspace:FindFirstChild(
+                "Gardens",
+                true
+            )
+    end
+
+    if typeof(gardens) ~= "Instance" then
+        return nil
+    end
+
+    local bestGarden =
+        nil
+
+    local bestScore =
+        0
+
+    for _, child in ipairs(gardens:GetChildren()) do
+
+        if child:IsA("Model")
+        or child:IsA("Folder") then
+
+            local score =
+                HolySniperScoreOwnedGarden(
+                    child
+                )
+
+            if score > bestScore then
+
+                bestScore =
+                    score
+
+                bestGarden =
+                    child
+            end
+        end
+    end
+
+    if bestGarden
+    and bestScore > 0 then
+
+        return bestGarden
+    end
+
+    return nil
+end
+
+function HolySniperPickGardenCenterPosition(garden)
+
+    if typeof(garden) ~= "Instance" then
+        return nil
+    end
+
+    local bestPart =
+        nil
+
+    local bestScore =
+        0
+
+    for _, descendant in ipairs(garden:GetDescendants()) do
+
+        if descendant:IsA("BasePart") then
+
+            local lowerName =
+                tostring(descendant.Name)
+                :lower()
+
+            local area =
+                math.max(
+                    1,
+                    descendant.Size.X
+                    * descendant.Size.Z
+                )
+
+            local score =
+                area
+
+            if lowerName:find("farm", 1, true)
+            or lowerName:find("soil", 1, true)
+            or lowerName:find("dirt", 1, true)
+            or lowerName:find("plot", 1, true)
+            or lowerName:find("ground", 1, true)
+            or lowerName:find("base", 1, true)
+            or lowerName:find("garden", 1, true) then
+
+                score =
+                    score * 4
+            end
+
+            if score > bestScore then
+
+                bestScore =
+                    score
+
+                bestPart =
+                    descendant
+            end
+        end
+    end
+
+    if bestPart then
+
+        return bestPart.Position
+            + Vector3.new(
+                0,
+                math.clamp(
+                    bestPart.Size.Y / 2 + 3,
+                    3,
+                    8
+                ),
+                0
+            )
+    end
+
+    local ok,
+        pivot =
+        pcall(function()
+
+            return garden:GetPivot()
+        end)
+
+    if ok == true
+    and typeof(pivot) == "CFrame" then
+
+        return pivot.Position
+            + Vector3.new(
+                0,
+                4,
+                0
+            )
+    end
+
+    return nil
+end
+
+function HolySniperBuildReturnCFrame(position)
+
+    if typeof(position) ~= "Vector3" then
+        return nil
+    end
+
+    local root =
+        HolySniperGetCharacterRoot()
+
+    local lookVector =
+        root
+        and root:IsA("BasePart")
+        and root.CFrame.LookVector
+        or Vector3.new(
+            0,
+            0,
+            -1
+        )
+
+    lookVector =
+        Vector3.new(
+            lookVector.X,
+            0,
+            lookVector.Z
+        )
+
+    if lookVector.Magnitude < 0.1 then
+
+        lookVector =
+            Vector3.new(
+                0,
+                0,
+                -1
+            )
+
+    else
+
+        lookVector =
+            lookVector.Unit
+    end
+
+    return CFrame.new(
+        position,
+        position + lookVector
+    )
+end
+
+function HolySniperGetFarmCenterCFrame(forceRefresh)
+
+    HOLY_SNIPER_RUNTIME.FarmCenterLastScanAt =
+        tonumber(
+            HOLY_SNIPER_RUNTIME.FarmCenterLastScanAt
+        )
+        or 0
+
+    if forceRefresh ~= true
+    and typeof(HOLY_SNIPER_RUNTIME.FarmCenterCFrame) == "CFrame"
+    and os.clock() - HOLY_SNIPER_RUNTIME.FarmCenterLastScanAt < 8 then
+
+        return HOLY_SNIPER_RUNTIME.FarmCenterCFrame
+    end
+
+    local garden =
+        HolySniperFindOwnedGarden()
+
+    if not garden then
+        return nil
+    end
+
+    local position =
+        HolySniperPickGardenCenterPosition(
+            garden
+        )
+
+    if typeof(position) ~= "Vector3" then
+        return nil
+    end
+
+    local cframe =
+        HolySniperBuildReturnCFrame(
+            position
+        )
+
+    HOLY_SNIPER_RUNTIME.FarmCenterCFrame =
+        cframe
+
+    HOLY_SNIPER_RUNTIME.FarmCenterLastScanAt =
+        os.clock()
+
+    return cframe
+end
+
+function HolySniperResolveReturnCFrame()
+
+    local destination =
+        HolySniperNormalizeReturnDestination(
+            HOLY_SNIPER_STATE.ReturnDestination
+        )
+
+    local savedCFrame =
+        HolySniperGetSavedReturnCFrame()
+
+    local activationCFrame =
+        typeof(HOLY_SNIPER_RUNTIME.ReturnActivationCFrame) == "CFrame"
+        and HOLY_SNIPER_RUNTIME.ReturnActivationCFrame
+        or nil
+
+    local root =
+        HolySniperGetCharacterRoot()
+
+    local currentCFrame =
+        root
+        and root:IsA("BasePart")
+        and root.CFrame
+        or nil
+
+    if destination == "Saved Position" then
+
+        if savedCFrame then
+            return savedCFrame, "Saved Position"
+        end
+
+        if activationCFrame then
+            return activationCFrame, "Sniper Start"
+        end
+
+        local farmCFrame =
+            HolySniperGetFarmCenterCFrame()
+
+        if farmCFrame then
+            return farmCFrame, "Farm Center"
+        end
+
+        return currentCFrame,
+            "Current Position"
+    end
+
+    local farmCFrame =
+        HolySniperGetFarmCenterCFrame()
+
+    if farmCFrame then
+        return farmCFrame, "Farm Center"
+    end
+
+    if savedCFrame then
+        return savedCFrame, "Saved Position"
+    end
+
+    if activationCFrame then
+        return activationCFrame, "Sniper Start"
+    end
+
+    return currentCFrame,
+        "Current Position"
+end
+
+function HolySniperReturnTeleport(cframe, token)
+
+    if typeof(cframe) ~= "CFrame" then
+        return false, "missing return cframe"
+    end
+
+    if HolySniperStillActive(token) ~= true then
+        return false, "stopped"
+    end
+
+    local root =
+        HolySniperGetCharacterRoot()
+
+    if typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true then
+
+        return false,
+            "missing root"
+    end
+
+    HolySniperZeroRootVelocity(
+        root
+    )
+
+    local ok,
+        err =
+        pcall(function()
+
+            root.CFrame =
+                cframe
+        end)
+
+    if ok ~= true then
+
+        return false,
+            "teleport return failed "
+            .. tostring(err)
+    end
+
+    task.wait(
+        0.08
+    )
+
+    HolySniperZeroRootVelocity(
+        root
+    )
+
+    return true,
+        "teleported"
+end
+
+function HolySniperReturnWalk(cframe, token)
+
+    if typeof(cframe) ~= "CFrame" then
+        return false, "missing return cframe"
+    end
+
+    local targetPosition =
+        cframe.Position
+
+    local timeout =
+        tonumber(
+            HOLY_SNIPER_RUNTIME.ReturnWalkTimeout
+        )
+        or 22
+
+    local arriveDistance =
+        tonumber(
+            HOLY_SNIPER_RUNTIME.ReturnArriveDistance
+        )
+        or 12
+
+    local startedAt =
+        os.clock()
+
+    local lastStatusAt =
+        0
+
+    while HolySniperStillActive(token) == true
+    and os.clock() - startedAt <= timeout do
+
+        local humanoid =
+            HolySniperGetCharacterHumanoid()
+
+        local root =
+            HolySniperGetCharacterRoot()
+
+        if typeof(humanoid) ~= "Instance"
+        or typeof(root) ~= "Instance"
+        or root:IsA("BasePart") ~= true then
+
+            return false,
+                "missing humanoid/root"
+        end
+
+        if HolySniperManualReturnCancelled(
+            startedAt
+        ) == true then
+
+            HolySniperStopHumanoidMovement(
+                humanoid,
+                root
+            )
+
+            return false,
+                "manual movement"
+        end
+
+        local flatDelta =
+            Vector3.new(
+                root.Position.X - targetPosition.X,
+                0,
+                root.Position.Z - targetPosition.Z
+            )
+
+        local flatDistance =
+            flatDelta.Magnitude
+
+        if os.clock() - lastStatusAt >= 0.55 then
+
+            lastStatusAt =
+                os.clock()
+
+            HolySniperSetStatus(
+                "Returning / "
+                .. tostring(
+                    math.floor(flatDistance + 0.5)
+                )
+                .. " studs"
+            )
+        end
+
+        if flatDistance <= arriveDistance then
+
+            HolySniperStopHumanoidMovement(
+                humanoid,
+                root
+            )
+
+            HolySniperZeroRootVelocity(
+                root
+            )
+
+            return true,
+                "walked"
+        end
+
+        local movePosition =
+            Vector3.new(
+                targetPosition.X,
+                root.Position.Y,
+                targetPosition.Z
+            )
+
+        pcall(function()
+
+            humanoid:MoveTo(
+                movePosition
+            )
+        end)
+
+        task.wait(
+            0.14
+        )
+    end
+
+    local humanoid =
+        HolySniperGetCharacterHumanoid()
+
+    local root =
+        HolySniperGetCharacterRoot()
+
+    HolySniperStopHumanoidMovement(
+        humanoid,
+        root
+    )
+
+    return false,
+        "return walk timeout"
+end
+
+function HolySniperReturnToDestination(reason, token)
+
+    if HOLY_SNIPER_STATE.ReturnEnabled ~= true then
+        return false
+    end
+
+    if HOLY_SNIPER_RUNTIME.Returning == true then
+        return false
+    end
+
+    local cframe,
+        destinationName =
+        HolySniperResolveReturnCFrame()
+
+    if typeof(cframe) ~= "CFrame" then
+
+        HolySniperSetStatus(
+            "Return skipped: no destination"
+        )
+
+        return false
+    end
+
+    HOLY_SNIPER_RUNTIME.Returning =
+        true
+
+    HolySniperSetStatus(
+        "Returning to "
+        .. tostring(destinationName)
+    )
+
+    local mode =
+        HolySniperNormalizeReturnMode(
+            HOLY_SNIPER_STATE.ReturnMode
+        )
+
+    local ok,
+        returnReason =
+        false,
+        ""
+
+    if mode == "Teleport" then
+
+        ok,
+            returnReason =
+            HolySniperReturnTeleport(
+                cframe,
+                token
+            )
+
+    else
+
+        ok,
+            returnReason =
+            HolySniperReturnWalk(
+                cframe,
+                token
+            )
+    end
+
+    HOLY_SNIPER_RUNTIME.Returning =
+        false
+
+    if ok == true then
+
+        HolySniperSetStatus(
+            "Returned to "
+            .. tostring(destinationName)
+        )
+
+    elseif tostring(returnReason) == "manual movement" then
+
+        HolySniperSetStatus(
+            "Return cancelled by movement"
+        )
+
+    else
+
+        HolySniperSetStatus(
+            "Return failed: "
+            .. tostring(returnReason)
+        )
+    end
+
+    return ok
+end
+
+function HolySniperRegisterConfirmedBuy(match, entry)
+
+    if HOLY_SNIPER_STATE.ReturnEnabled ~= true then
+        return
+    end
+
+    if HolySniperNormalizeReturnTiming(
+        HOLY_SNIPER_STATE.ReturnTiming
+    ) ~= "After Batch" then
+
+        return
+    end
+
+    HOLY_SNIPER_RUNTIME.BatchActive =
+        true
+
+    HOLY_SNIPER_RUNTIME.BatchBoughtCount =
+        (
+            tonumber(
+                HOLY_SNIPER_RUNTIME.BatchBoughtCount
+            )
+            or 0
+        )
+        + 1
+
+    HOLY_SNIPER_RUNTIME.BatchEmptySince =
+        0
+end
+
+function HolySniperMaybeReturnAfterBuy(token)
+
+    if HOLY_SNIPER_STATE.ReturnEnabled ~= true then
+        return false
+    end
+
+    if HolySniperNormalizeReturnTiming(
+        HOLY_SNIPER_STATE.ReturnTiming
+    ) ~= "After Buy" then
+
+        return false
+    end
+
+    return HolySniperReturnToDestination(
+        "after buy",
+        token
+    )
+end
+
+function HolySniperMaybeReturnAfterBatchNoMatches(token)
+
+    if HOLY_SNIPER_STATE.ReturnEnabled ~= true then
+        return false
+    end
+
+    if HolySniperNormalizeReturnTiming(
+        HOLY_SNIPER_STATE.ReturnTiming
+    ) ~= "After Batch" then
+
+        HOLY_SNIPER_RUNTIME.BatchActive =
+            false
+
+        HOLY_SNIPER_RUNTIME.BatchBoughtCount =
+            0
+
+        HOLY_SNIPER_RUNTIME.BatchEmptySince =
+            0
+
+        return false
+    end
+
+    if HOLY_SNIPER_RUNTIME.BatchActive ~= true then
+        return false
+    end
+
+    if (
+        tonumber(
+            HOLY_SNIPER_RUNTIME.BatchBoughtCount
+        )
+        or 0
+    ) <= 0 then
+
+        return false
+    end
+
+    if HOLY_SNIPER_RUNTIME.Buying == true
+    or HOLY_SNIPER_RUNTIME.Returning == true then
+
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    if (
+        tonumber(
+            HOLY_SNIPER_RUNTIME.BatchEmptySince
+        )
+        or 0
+    ) <= 0 then
+
+        HOLY_SNIPER_RUNTIME.BatchEmptySince =
+            now
+
+        HolySniperSetStatus(
+            "Batch clear, waiting..."
+        )
+
+        return false
+    end
+
+    local stableSeconds =
+        tonumber(
+            HOLY_SNIPER_RUNTIME.BatchStableSeconds
+        )
+        or 1.5
+
+    if now - HOLY_SNIPER_RUNTIME.BatchEmptySince < stableSeconds then
+        return false
+    end
+
+    local returned =
+        HolySniperReturnToDestination(
+            "after batch",
+            token
+        )
+
+    HOLY_SNIPER_RUNTIME.BatchActive =
+        false
+
+    HOLY_SNIPER_RUNTIME.BatchBoughtCount =
+        0
+
+    HOLY_SNIPER_RUNTIME.BatchEmptySince =
+        0
+
+    return returned
+end
+
+function HolySniperMoveWalkToEntry(entry, filter, token)
+
+    local startedAt =
+        os.clock()
+
+    local timeout =
+        tonumber(
+            HOLY_SNIPER_RUNTIME.WalkTimeout
+        )
+        or 26
+
+    local lastStatusAt =
+        0
+
+    while HolySniperStillActive(token) == true
+    and os.clock() - startedAt <= timeout do
+
+        local valid,
+            refreshed,
+            reason =
+            HolySniperValidateTargetForBuy(
+                entry,
+                filter
+            )
+
+        if valid ~= true then
+
+            return false,
+                refreshed,
+                reason
+        end
+
+        entry =
+            refreshed
+
+        local humanoid =
+            HolySniperGetCharacterHumanoid()
+
+        local root =
+            HolySniperGetCharacterRoot()
+
+        if typeof(humanoid) ~= "Instance"
+        or typeof(root) ~= "Instance"
+        or root:IsA("BasePart") ~= true then
+
+            return false,
+                entry,
+                "missing humanoid/root"
+        end
+
+        local position =
+            HolySniperGetPromptPosition(
+                entry.Prompt,
+                entry.Model
+            )
+
+        if typeof(position) ~= "Vector3" then
+
+            return false,
+                entry,
+                "missing prompt position"
+        end
+
+        local distance =
+            (
+                root.Position
+                - position
+            ).Magnitude
+
+        local safeRange =
+            HolySniperGetSafeRange(
+                entry.Prompt
+            )
+
+        if os.clock() - lastStatusAt >= 0.55 then
+
+            lastStatusAt =
+                os.clock()
+
+            HolySniperSetStatus(
+                "Walking: "
+                .. HolySniperDescribeEntry(entry)
+                .. " / "
+                .. tostring(
+                    math.floor(distance + 0.5)
+                )
+                .. " studs"
+            )
+        end
+
+        if distance <= safeRange then
+
+            pcall(function()
+
+                humanoid:MoveTo(
+                    root.Position
+                )
+            end)
+
+            return true,
+                entry,
+                "in range"
+        end
+
+        pcall(function()
+
+            humanoid:MoveTo(
+                position
+            )
+        end)
+
+        task.wait(
+            0.12
+        )
+    end
+
+    return false,
+        entry,
+        "walk timeout"
+end
+
+function HolySniperMoveTeleportToEntry(entry, filter, token)
+
+    local valid,
+        refreshed,
+        reason =
+        HolySniperValidateTargetForBuy(
+            entry,
+            filter
+        )
+
+    if valid ~= true then
+
+        return false,
+            refreshed,
+            reason
+    end
+
+    entry =
+        refreshed
+
+    local root =
+        HolySniperGetCharacterRoot()
+
+    if typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true then
+
+        return false,
+            entry,
+            "missing root"
+    end
+
+    local position =
+        HolySniperGetPromptPosition(
+            entry.Prompt,
+            entry.Model
+        )
+
+    if typeof(position) ~= "Vector3" then
+
+        return false,
+            entry,
+            "missing prompt position"
+    end
+
+    HolySniperSetStatus(
+        "Teleporting: "
+        .. HolySniperDescribeEntry(entry)
+    )
+
+    local away =
+        root.Position
+        - position
+
+    away =
+        Vector3.new(
+            away.X,
+            0,
+            away.Z
+        )
+
+    if away.Magnitude < 1 then
+
+        away =
+            Vector3.new(
+                0,
+                0,
+                1
+            )
+
+    else
+
+        away =
+            away.Unit
+    end
+
+    local destination =
+        position
+        + away * 6
+        + Vector3.new(
+            0,
+            2.4,
+            0
+        )
+
+    local cframe =
+        CFrame.new(
+            destination,
+            position
+        )
+
+    HolySniperZeroRootVelocity(
+        root
+    )
+
+    local ok,
+        err =
+        pcall(function()
+
+            root.CFrame =
+                cframe
+        end)
+
+    if ok ~= true then
+
+        return false,
+            entry,
+            "teleport failed "
+            .. tostring(err)
+    end
+
+    task.wait(
+        0.055
+    )
+
+    HolySniperZeroRootVelocity(
+        root
+    )
+
+    task.wait(
+        0.035
+    )
+
+    valid,
+        refreshed,
+        reason =
+        HolySniperValidateTargetForBuy(
+            entry,
+            filter
+        )
+
+    if valid ~= true then
+
+        return false,
+            refreshed,
+            reason
+    end
+
+    entry =
+        refreshed
+
+    local distance =
+        HolySniperDistanceToEntry(
+            entry
+        )
+
+    local safeRange =
+        HolySniperGetSafeRange(
+            entry.Prompt
+        )
+
+    if distance > safeRange then
+
+        return false,
+            entry,
+            "teleport out of range "
+            .. tostring(
+                math.floor(distance + 0.5)
+            )
+    end
+
+    return true,
+        entry,
+        "teleported"
+end
+
+function HolySniperTriggerPrompt(prompt)
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true
+    or prompt.Parent == nil then
+
+        return false,
+            "bad prompt"
+    end
+
+    local hold =
+        math.max(
+            tonumber(prompt.HoldDuration)
+            or 1,
+            0.05
+        )
+
+    local buyMode =
+        HolySniperNormalizeBuyMode(
+            HOLY_SNIPER_STATE.BuyMode
+        )
+
+    if buyMode == "Instant"
+    and type(fireproximityprompt) == "function" then
+
+        local ok,
+            err =
+            pcall(function()
+
+                fireproximityprompt(
+                    prompt,
+                    hold + 0.25
+                )
+            end)
+
+        if ok == true then
+
+            task.wait(
+                0.08
+            )
+
+            return true,
+                "fireproximityprompt"
+        end
+    end
+
+    local beginOk =
+        pcall(function()
+
+            prompt:InputHoldBegin()
+        end)
+
+    task.wait(
+        hold + 0.20
+    )
+
+    local endOk =
+        pcall(function()
+
+            prompt:InputHoldEnd()
+        end)
+
+    if beginOk == true
+    and endOk == true then
+
+        return true,
+            "hold prompt"
+    end
+
+    return false,
+        "prompt trigger failed"
+end
+
+function HolySniperAddUniqueReason(reasons, reason)
+
+    reason =
+        HolyCleanText(
+            reason
+        )
+
+    if reason == "" then
+        return
+    end
+
+    for _, existing in ipairs(reasons) do
+
+        if existing == reason then
+            return
+        end
+    end
+
+    table.insert(
+        reasons,
+        reason
+    )
+end
+
+function HolySniperConfirmBuy(entry, beforeSheckles, token)
+
+    local deadline =
+        os.clock()
+        + (
+            tonumber(
+                HOLY_SNIPER_RUNTIME.ConfirmTimeout
+            )
+            or 9
+        )
+
+    local reasons =
+        {}
+
+    while os.clock() <= deadline do
+
+        if token ~= nil
+        and HolySniperStillActive(token) ~= true then
+
+            return false,
+                "cancelled"
+        end
+
+        local ref =
+            type(entry) == "table"
+            and entry.Ref
+            or nil
+
+        if typeof(ref) == "Instance"
+        and ref.Parent ~= nil then
+
+            local ownerUserId =
+                tonumber(
+                    HolySniperReadModelAttribute(
+                        ref,
+                        {
+                            "OwnerUserId",
+                            "OwnerUserID",
+                            "Owner",
+                            "UserId",
+                            "UserID",
+                        }
+                    )
+                )
+                or 0
+
+            local ownerName =
+                HolyCleanText(
+                    HolySniperReadModelAttribute(
+                        ref,
+                        {
+                            "OwnerName",
+                            "OwnerDisplayName",
+                        }
+                    )
+                )
+
+            local state =
+                HolyCleanText(
+                    HolySniperReadModelAttribute(
+                        ref,
+                        {
+                            "State",
+                            "PetState",
+                        }
+                    )
+                )
+
+            if ownerUserId == tonumber(LocalPlayer.UserId) then
+
+                HolySniperAddUniqueReason(
+                    reasons,
+                    "owner user id"
+                )
+
+                HolySniperTouchPetBuyProtection(
+                    entry,
+                    "owner user id"
+                )
+            end
+
+            if ownerName == HolyCleanText(LocalPlayer.Name) then
+
+                HolySniperAddUniqueReason(
+                    reasons,
+                    "owner name"
+                )
+
+                HolySniperTouchPetBuyProtection(
+                    entry,
+                    "owner name"
+                )
+            end
+
+            if HolySniperPetBuyStateLooksPending(state) == true then
+
+                HolySniperAddUniqueReason(
+                    reasons,
+                    state ~= ""
+                    and state
+                    or "walking to garden"
+                )
+
+                HolySniperTouchPetBuyProtection(
+                    entry,
+                    state ~= ""
+                    and state
+                    or "walking to garden"
+                )
+            end
+        end
+
+        local currentSheckles =
+            HolySniperReadSheckles()
+
+        if beforeSheckles
+        and currentSheckles
+        and currentSheckles < beforeSheckles then
+
+            HolySniperAddUniqueReason(
+                reasons,
+                "sheckles decreased"
+            )
+
+            HolySniperTouchPetBuyProtection(
+                entry,
+                "sheckles decreased"
+            )
+        end
+
+        if #reasons > 0 then
+
+            return true,
+                table.concat(
+                    reasons,
+                    ", "
+                )
+        end
+
+        task.wait(
+            0.10
+        )
+    end
+
+    return false,
+        "confirm timeout"
+end
+
+function HolySniperMarkBought(match, entry)
+
+    HOLY_SNIPER_RUNTIME.Handled =
+        type(HOLY_SNIPER_RUNTIME.Handled) == "table"
+        and HOLY_SNIPER_RUNTIME.Handled
+        or {}
+
+    HOLY_SNIPER_RUNTIME.BoughtCounts =
+        type(HOLY_SNIPER_RUNTIME.BoughtCounts) == "table"
+        and HOLY_SNIPER_RUNTIME.BoughtCounts
+        or {}
+
+    local entryKey =
+        HolySniperEntryKey(
+            entry
+        )
+
+    if entryKey ~= "" then
+
+        HOLY_SNIPER_RUNTIME.Handled[entryKey] =
+            true
+    end
+
+    local filter =
+        match
+        and match.Filter
+        or nil
+
+    if type(filter) == "table" then
+
+        local filterKey =
+            HolySniperFilterKey(
+                filter
+            )
+
+        HOLY_SNIPER_RUNTIME.BoughtCounts[filterKey] =
+            (
+                tonumber(
+                    HOLY_SNIPER_RUNTIME.BoughtCounts[filterKey]
+                )
+                or 0
+            )
+            + 1
+    end
+
+    HOLY_SNIPER_RUNTIME.LastBuyAt =
+        os.clock()
+end
+
+function HolySniperMarkFailed(entry)
+
+    HOLY_SNIPER_RUNTIME.FailedUntil =
+        type(HOLY_SNIPER_RUNTIME.FailedUntil) == "table"
+        and HOLY_SNIPER_RUNTIME.FailedUntil
+        or {}
+
+    local key =
+        HolySniperEntryKey(
+            entry
+        )
+
+    if key ~= "" then
+
+        HOLY_SNIPER_RUNTIME.FailedUntil[key] =
+            os.clock() + 3.5
+    end
+end
+
+function HolySniperExecuteMatch(match, token)
+
+    if type(match) ~= "table"
+    or type(match.Entry) ~= "table"
+    or type(match.Filter) ~= "table" then
+
+        return false,
+            "bad match"
+    end
+
+    if HOLY_SNIPER_RUNTIME.Buying == true
+    or HOLY_SNIPER_RUNTIME.Returning == true then
+
+        return false,
+            "busy"
+    end
+
+    if HolySniperPetBuyProtectionBlocks(
+        "Buy",
+        false
+    ) == true then
+
+        return false,
+            "pet buy pending"
+    end
+
+    HOLY_SNIPER_RUNTIME.Buying =
+        true
+
+    local entry =
+        match.Entry
+
+    local filter =
+        match.Filter
+
+    HolySniperArmTargetLock(
+        entry,
+        "buy flow"
+    )
+
+    local protectionArmed =
+        false
+
+    local promptTriggered =
+        false
+
+    HOLY_SNIPER_RUNTIME.CurrentTarget =
+        entry
+
+    HOLY_SNIPER_RUNTIME.CurrentTargetKey =
+        HolySniperEntryKey(
+            entry
+        )
+
+    local root =
+        HolySniperGetCharacterRoot()
+
+    if typeof(root) == "Instance"
+    and root:IsA("BasePart")
+    and typeof(HOLY_SNIPER_RUNTIME.ReturnActivationCFrame) ~= "CFrame" then
+
+        HOLY_SNIPER_RUNTIME.ReturnActivationCFrame =
+            root.CFrame
+    end
+
+    local success =
+        false
+
+    local finalReason =
+        "unknown"
+
+    local ok,
+        err =
+        pcall(function()
+
+            local valid,
+                refreshed,
+                reason =
+                HolySniperValidateTargetForBuy(
+                    entry,
+                    filter
+                )
+
+            if valid ~= true then
+
+                entry =
+                    refreshed
+                    or entry
+
+                finalReason =
+                    reason
+                    or "target invalid"
+
+                return
+            end
+
+            entry =
+                refreshed
+
+            local beforeSheckles =
+                HolySniperReadSheckles()
+
+            HolySniperSetStatus(
+                "Target locked: "
+                .. HolySniperDescribeEntry(entry)
+            )
+
+            local moveOk,
+                movedEntry,
+                moveReason =
+                false,
+                nil,
+                ""
+
+            if HolySniperNormalizeMovementMode(
+                HOLY_SNIPER_STATE.MovementMode
+            ) == "Teleport" then
+
+                moveOk,
+                    movedEntry,
+                    moveReason =
+                    HolySniperMoveTeleportToEntry(
+                        entry,
+                        filter,
+                        token
+                    )
+
+            else
+
+                moveOk,
+                    movedEntry,
+                    moveReason =
+                    HolySniperMoveWalkToEntry(
+                        entry,
+                        filter,
+                        token
+                    )
+            end
+
+            entry =
+                movedEntry
+                or entry
+
+            if moveOk ~= true then
+
+                finalReason =
+                    moveReason
+                    or "move failed"
+
+                return
+            end
+
+            valid,
+                refreshed,
+                reason =
+                HolySniperValidateTargetForBuy(
+                    entry,
+                    filter
+                )
+
+            if valid ~= true then
+
+                entry =
+                    refreshed
+                    or entry
+
+                finalReason =
+                    reason
+                    or "target invalid after move"
+
+                return
+            end
+
+            entry =
+                refreshed
+
+            local distance =
+                HolySniperDistanceToEntry(
+                    entry
+                )
+
+            local safeRange =
+                HolySniperGetSafeRange(
+                    entry.Prompt
+                )
+
+            if distance > safeRange then
+
+                finalReason =
+                    "not in range"
+
+                return
+            end
+
+            HolySniperArmPetBuyProtection(
+                entry,
+                "buy prompt"
+            )
+
+            protectionArmed =
+                true
+
+            HolySniperSetStatus(
+                "Buying: "
+                .. HolySniperDescribeEntry(entry)
+            )
+
+            local triggerOk,
+                triggerReason =
+                HolySniperTriggerPrompt(
+                    entry.Prompt
+                )
+
+            if triggerOk ~= true then
+
+                finalReason =
+                    triggerReason
+                    or "prompt trigger failed"
+
+                HolySniperClearPetBuyProtection(
+                    "prompt trigger failed"
+                )
+
+                protectionArmed =
+                    false
+
+                return
+            end
+
+            promptTriggered =
+                true
+
+            HolySniperTouchPetBuyProtection(
+                entry,
+                "prompt fired"
+            )
+
+            local confirmed,
+                confirmReason =
+                HolySniperConfirmBuy(
+                    entry,
+                    beforeSheckles,
+                    token
+                )
+
+            if confirmed == true then
+
+                HolySniperTouchPetBuyProtection(
+                    entry,
+                    confirmReason
+                    or "confirmed"
+                )
+
+                HolySniperMarkBought(
+                    match,
+                    entry
+                )
+
+                HolySniperRegisterConfirmedBuy(
+                    match,
+                    entry
+                )
+
+                success =
+                    true
+
+                finalReason =
+                    confirmReason
+                    or "confirmed"
+
+                HolySniperSetStatus(
+                    "Bought: "
+                    .. HolySniperDescribeEntry(entry)
+                    .. " / protected"
+                )
+
+                HolySniperMaybeReturnAfterBuy(
+                    token
+                )
+
+            else
+
+                finalReason =
+                    confirmReason
+                    or "confirm failed"
+            end
+        end)
+
+    if ok ~= true then
+
+        finalReason =
+            tostring(err)
+    end
+
+    if protectionArmed == true
+    and promptTriggered ~= true
+    and success ~= true then
+
+        HolySniperClearPetBuyProtection(
+            "buy failed before prompt"
+        )
+    end
+
+    if success == true then
+
+        HolySniperClearTargetLock(
+            "buy protection active"
+        )
+
+    else
+
+        HolySniperMarkFailed(
+            entry
+        )
+
+        HolySniperClearTargetLock(
+            "buy failed: "
+            .. tostring(finalReason or "unknown")
+        )
+
+        HolySniperSetStatus(
+            "Buy failed: "
+            .. tostring(finalReason or "unknown")
+        )
+    end
+
+    HOLY_SNIPER_RUNTIME.Buying =
+        false
+
+    HOLY_SNIPER_RUNTIME.CurrentTarget =
+        nil
+
+    HOLY_SNIPER_RUNTIME.CurrentTargetKey =
+        ""
+
+    task.wait(
+        success == true
+        and 0.30
+        or 0.55
+    )
+
+    return success,
+        finalReason
+end
+
+function HolySniperRunScan()
+
+    local entries =
+        HolySniperScanLivePets()
+
+    local matches =
+        HolySniperFindMatches(
+            entries
+        )
+
+    HOLY_SNIPER_RUNTIME.ScanCount =
+        (
+            tonumber(
+                HOLY_SNIPER_RUNTIME.ScanCount
+            )
+            or 0
+        )
+        + 1
+
+    HOLY_SNIPER_RUNTIME.PetCount =
+        #entries
+
+    HOLY_SNIPER_RUNTIME.MatchCount =
+        #matches
+
+    HOLY_SNIPER_RUNTIME.LastScanAt =
+        os.clock()
+
+    if #matches > 0 then
+
+        local best =
+            matches[1].Entry
+
+        HOLY_SNIPER_RUNTIME.CurrentTarget =
+            best
+
+        HOLY_SNIPER_RUNTIME.CurrentTargetKey =
+            HolySniperEntryKey(
+                best
+            )
+
+        HOLY_SNIPER_RUNTIME.LastMatchAt =
+            os.clock()
+
+        HolySniperArmTargetLock(
+            best,
+            "match found"
+        )
+
+        HolySniperSetStatus(
+            tostring(#entries)
+            .. " pets / "
+            .. tostring(#matches)
+            .. " matches / Best: "
+            .. HolySniperDescribeEntry(best)
+        )
+
+        return matches
+    end
+
+    HOLY_SNIPER_RUNTIME.CurrentTarget =
+        nil
+
+    HOLY_SNIPER_RUNTIME.CurrentTargetKey =
+        ""
+
+    HolySniperClearTargetLock(
+        "no matches"
+    )
+
+    if type(HOLY_SNIPER_STATE.Watchlist) ~= "table"
+    or #HOLY_SNIPER_STATE.Watchlist <= 0 then
+
+        HolySniperSetStatus(
+            tostring(#entries)
+            .. " pets / No watchlist"
+        )
+
+    else
+
+        HolySniperSetStatus(
+            tostring(#entries)
+            .. " pets / 0 matches"
+        )
+    end
+
+    return matches
+end
+
+--==================================================
+-- [2.45] LIVE WILD PETS MAIN PANEL
+--==================================================
+
+if type(HOLY_LIVE_PETS_RUNTIME) == "table" then
+
+    HOLY_LIVE_PETS_RUNTIME.Running =
+        false
+
+    HOLY_LIVE_PETS_RUNTIME.Token =
+        nil
+
+    local oldConnections =
+        HOLY_LIVE_PETS_RUNTIME.Connections
+
+    if type(oldConnections) == "table" then
+
+        for _, connection in ipairs(oldConnections) do
+
+            pcall(function()
+
+                connection:Disconnect()
+            end)
+        end
+    end
+end
+
+HOLY_LIVE_PETS_RUNTIME = {
+    Running = false,
+    Token = nil,
+    Connections = {},
+    LastRows = {},
+    LastSummary = "Next Spawn: --:-- | Active: 0",
+
+    LastSpawnedAt = 0,
+    LastSpawnKey = "",
+    LastPet = "None",
+    SpawnSequence = {},
+}
+
+function HolyLivePetsReadAttr(instance, names)
+
+    if typeof(instance) ~= "Instance" then
+        return ""
+    end
+
+    for _, name in ipairs(names or {}) do
+
+        local ok,
+            value =
+            pcall(function()
+
+                return instance:GetAttribute(
+                    name
+                )
+            end)
+
+        value =
+            HolyCleanText(
+                ok == true
+                and value
+                or ""
+            )
+
+        if value ~= "" then
+            return value
+        end
+    end
+
+    return ""
+end
+
+function HolyLivePetsReadNumber(instance, names)
+
+    local value =
+        HolyLivePetsReadAttr(
+            instance,
+            names
+        )
+
+    return tonumber(value)
+        or 0
+end
+
+function HolyLivePetsFormatTime(seconds)
+
+    seconds =
+        math.max(
+            0,
+            math.floor(
+                tonumber(seconds)
+                or 0
+            )
+        )
+
+    local minutes =
+        math.floor(seconds / 60)
+
+    local remaining =
+        seconds % 60
+
+    return tostring(minutes)
+        .. "m "
+        .. tostring(remaining)
+        .. "s"
+end
+
+function HolyLivePetsFormatCountdown(seconds)
+
+    seconds =
+        math.max(
+            0,
+            math.floor(
+                tonumber(seconds)
+                or 0
+            )
+        )
+
+    local minutes =
+        math.floor(seconds / 60)
+
+    local remaining =
+        seconds % 60
+
+    return string.format(
+        "%02d:%02d",
+        minutes,
+        remaining
+    )
+end
+
+function HolyLivePetsFormatMoney(value)
+
+    value =
+        math.max(
+            0,
+            tonumber(value)
+            or 0
+        )
+
+    local text =
+        tostring(
+            math.floor(value)
+        )
+
+    local left,
+        number,
+        right =
+        string.match(
+            text,
+            "^([^%d]*%d)(%d*)(.-)$"
+        )
+
+    if number then
+
+        text =
+            left
+            .. number:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+            .. right
+    end
+
+    return "¢"
+        .. text
+end
+
+function HolyLivePetsGetUuidFromRef(ref)
+
+    if typeof(ref) ~= "Instance" then
+        return ""
+    end
+
+    local uuid =
+        tostring(ref.Name):match(
+            "^WildPet_([%w%-]+)$"
+        )
+        or ""
+
+    return uuid
+end
+
+function HolyLivePetsFindRefByKey(key)
+
+    key =
+        HolyCleanText(
+            key
+        )
+
+    if key == "" then
+        return nil
+    end
+
+    local root =
+        HolySniperGetWildPetRefRoot()
+
+    if typeof(root) ~= "Instance" then
+        return nil
+    end
+
+    local direct =
+        root:FindFirstChild(
+            "WildPet_"
+            .. key
+        )
+
+    if typeof(direct) == "Instance" then
+        return direct
+    end
+
+    for _, child in ipairs(root:GetChildren()) do
+
+        if tostring(child.Name):find(
+            key,
+            1,
+            true
+        ) then
+
+            return child
+        end
+    end
+
+    return nil
+end
+
+function HolyLivePetsFindModelForRef(ref)
+
+    local uuid =
+        HolyLivePetsGetUuidFromRef(
+            ref
+        )
+
+    if uuid == "" then
+        return nil
+    end
+
+    local root =
+        HolySniperGetWildPetRoot()
+
+    if typeof(root) ~= "Instance" then
+        return nil
+    end
+
+    for _, child in ipairs(root:GetChildren()) do
+
+        if child:IsA("Model")
+        and tostring(child.Name):find(
+            uuid,
+            1,
+            true
+        ) then
+
+            return child
+        end
+    end
+
+    return nil
+end
+
+function HolyLivePetsGetPosition(ref, model)
+
+    if typeof(ref) == "Instance"
+    and ref:IsA("BasePart") then
+
+        return ref.Position
+    end
+
+    if typeof(model) == "Instance" then
+
+        return HolySniperGetModelPosition(
+            model
+        )
+    end
+
+    return nil
+end
+
+function HolyLivePetsGetDistance(position)
+
+    local root =
+        HolySniperGetCharacterRoot()
+
+    if typeof(position) ~= "Vector3"
+    or typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true then
+
+        return nil
+    end
+
+    return (
+        root.Position
+        - position
+    ).Magnitude
+end
+
+function HolyLivePetsReadSize(ref, model)
+
+    local raw =
+        HolyLivePetsReadAttr(
+            ref,
+            {
+                "PetSize",
+                "Size",
+                "DisplaySize",
+                "ScaleType",
+                "WildPetSize",
+            }
+        )
+
+    if raw ~= "" then
+        return HolySniperNormalizeSizeName(
+            raw
+        )
+    end
+
+    raw =
+        HolySniperReadModelAttribute(
+            model,
+            {
+                "PetSize",
+                "Size",
+                "DisplaySize",
+                "ScaleType",
+                "WildPetSize",
+            }
+        )
+
+    if raw ~= "" then
+        return HolySniperNormalizeSizeName(
+            raw
+        )
+    end
+
+    if typeof(model) == "Instance" then
+
+        return HolySniperReadLiveSize(
+            model
+        )
+    end
+
+    return "Normal"
+end
+
+function HolyLivePetsReadVariant(ref, model)
+
+    local raw =
+        HolyLivePetsReadAttr(
+            ref,
+            {
+                "PetType",
+                "Type",
+                "Variant",
+                "PetVariant",
+                "Mutation",
+                "WildPetType",
+            }
+        )
+
+    if raw == "" then
+
+        raw =
+            HolySniperReadModelAttribute(
+                model,
+                {
+                    "PetType",
+                    "Type",
+                    "Variant",
+                    "PetVariant",
+                    "Mutation",
+                    "WildPetType",
+                }
+            )
+    end
+
+    raw =
+        HolySniperNormalizeVariantName(
+            raw
+        )
+
+    if raw ~= ""
+    and raw ~= "Normal" then
+        return raw
+    end
+
+    local modelName =
+        tostring(
+            model
+            and model.Name
+            or ""
+        )
+        :lower()
+
+    if modelName:find("rainbow", 1, true) then
+        return "Rainbow"
+    end
+
+    return "Normal"
+end
+
+function HolyLivePetsBuildDisplayName(petName, sizeName, variantName)
+
+    local parts =
+        {}
+
+    sizeName =
+        HolySniperNormalizeSizeName(
+            sizeName
+        )
+
+    variantName =
+        HolySniperNormalizeVariantName(
+            variantName
+        )
+
+    if sizeName ~= ""
+    and sizeName ~= "Normal"
+    and sizeName ~= "Any" then
+
+        table.insert(
+            parts,
+            sizeName
+        )
+    end
+
+    if variantName ~= ""
+    and variantName ~= "Normal"
+    and variantName ~= "Any" then
+
+        table.insert(
+            parts,
+            variantName
+        )
+    end
+
+    table.insert(
+        parts,
+        tostring(petName or "?")
+    )
+
+    return table.concat(
+        parts,
+        " "
+    )
+end
+
+function HolyLivePetsRarityRank(rarity)
+
+    rarity =
+        HolyCleanText(
+            rarity
+        )
+
+    local ranks = {
+        Super = 7,
+        Mythic = 6,
+        Legendary = 5,
+        Epic = 4,
+        Rare = 3,
+        Uncommon = 2,
+        Common = 1,
+    }
+
+    return ranks[rarity]
+        or 0
+end
+
+function HolyLivePetsFilterMatches(entry)
+
+    local watchlist =
+        type(HOLY_SNIPER_STATE.Watchlist) == "table"
+        and HOLY_SNIPER_STATE.Watchlist
+        or {}
+
+    if #watchlist <= 0 then
+        return false
+    end
+
+    for _, rawFilter in ipairs(watchlist) do
+
+        local filter =
+            HolySniperNormalizeFilter(
+                rawFilter
+            )
+
+        if filter.Enabled ~= false then
+
+            local entryPet =
+                HolySniperPetAliasKey(
+                    entry.PetKey
+                    or entry.Pet
+                )
+
+            local filterPet =
+                HolySniperPetAliasKey(
+                    filter.PetKey
+                    or filter.Pet
+                )
+
+            if entryPet == filterPet then
+
+                local sizeOk =
+                    HolySniperSelectionHasAny(
+                        filter.Sizes
+                    )
+                    or HolySniperSelectionContains(
+                        filter.Sizes,
+                        entry.Size
+                    )
+
+                local variantOk =
+                    HolySniperSelectionHasAny(
+                        filter.Variants
+                    )
+                    or HolySniperSelectionContains(
+                        filter.Variants,
+                        entry.Variant
+                    )
+
+                if sizeOk == true
+                and variantOk == true then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+function HolyLivePetsBuildEntryFromRef(ref)
+
+    if typeof(ref) ~= "Instance" then
+        return nil
+    end
+
+    local petName =
+        HolyLivePetsReadAttr(
+            ref,
+            {
+                "PetName",
+                "Pet",
+                "DisplayName",
+                "Name",
+            }
+        )
+
+    if petName == "" then
+        return nil
+    end
+
+    petName =
+        HolySniperResolvePetDisplay(
+            petName
+        )
+
+    local petKey =
+        HolySniperResolvePetKey(
+            petName
+        )
+
+    local uuid =
+        HolyLivePetsGetUuidFromRef(
+            ref
+        )
+
+    if uuid == "" then
+        uuid =
+            tostring(ref.Name)
+    end
+
+    local spawnedAt =
+        HolyLivePetsReadNumber(
+            ref,
+            {
+                "SpawnedAt",
+                "SpawnTime",
+                "CreatedAt",
+            }
+        )
+
+    local lifetime =
+        HolyLivePetsReadNumber(
+            ref,
+            {
+                "Lifetime",
+                "LifeTime",
+                "Duration",
+            }
+        )
+
+    local timeLeft =
+        lifetime > 0
+        and spawnedAt > 0
+        and (
+            spawnedAt
+            + lifetime
+            - os.time()
+        )
+        or 0
+
+    if lifetime > 0
+    and timeLeft <= -4 then
+
+        return nil
+    end
+
+    local ownerUserId =
+        HolyLivePetsReadNumber(
+            ref,
+            {
+                "OwnerUserId",
+                "OwnerUserID",
+                "Owner",
+                "UserId",
+                "UserID",
+            }
+        )
+
+    local ownerName =
+        HolyLivePetsReadAttr(
+            ref,
+            {
+                "OwnerName",
+                "OwnerDisplayName",
+            }
+        )
+
+    local rawState =
+        HolyLivePetsReadAttr(
+            ref,
+            {
+                "State",
+                "PetState",
+            }
+        )
+
+    local lowerState =
+        rawState:lower()
+
+    local model =
+        HolyLivePetsFindModelForRef(
+            ref
+        )
+
+    local prompt =
+        model
+        and HolySniperFindBuyPrompt(
+            model
+        )
+        or nil
+
+    local size =
+        HolyLivePetsReadSize(
+            ref,
+            model
+        )
+
+    local variant =
+        HolyLivePetsReadVariant(
+            ref,
+            model
+        )
+
+    local rarity =
+        HolyLivePetsReadAttr(
+            ref,
+            {
+                "Rarity",
+                "PetRarity",
+            }
+        )
+
+    local price =
+        HolyLivePetsReadNumber(
+            ref,
+            {
+                "Price",
+                "Cost",
+                "TameCost",
+            }
+        )
+
+    if price <= 0 then
+        price =
+            HolySniperGetBasePrice({
+                Pet =
+                    petName,
+
+                PetKey =
+                    petKey,
+            })
+    end
+
+    local position =
+        HolyLivePetsGetPosition(
+            ref,
+            model
+        )
+
+    local distance =
+        HolyLivePetsGetDistance(
+            position
+        )
+
+    local handledEntry = {
+        UUID = uuid,
+        Key = uuid,
+    }
+
+    local handled =
+        HolySniperIsHandled(
+            handledEntry
+        )
+
+    local cooling =
+        HolySniperIsFailedCooling(
+            handledEntry
+        )
+
+    local owned =
+        ownerUserId ~= 0
+        or ownerName ~= ""
+
+    if owned == true
+    and handled ~= true then
+
+        return nil
+    end
+
+    if lowerState:find("owned", 1, true)
+    or lowerState:find("collected", 1, true)
+    or lowerState:find("tamed", 1, true) then
+
+        if handled ~= true then
+            return nil
+        end
+    end
+
+    local entry = {
+        Key =
+            uuid,
+
+        UUID =
+            uuid,
+
+        Ref =
+            ref,
+
+        Model =
+            model,
+
+        Prompt =
+            prompt,
+
+        Pet =
+            petName,
+
+        PetKey =
+            petKey,
+
+        Size =
+            size,
+
+        Variant =
+            variant,
+
+        Rarity =
+            rarity,
+
+        Price =
+            price,
+
+        SpawnedAt =
+            spawnedAt,
+
+        Lifetime =
+            lifetime,
+
+        TimeLeft =
+            timeLeft,
+
+        Distance =
+            distance,
+
+        Position =
+            position,
+
+        RawState =
+            rawState,
+    }
+
+    local match =
+        HolyLivePetsFilterMatches(
+            entry
+        )
+
+    local displayName =
+        HolyLivePetsBuildDisplayName(
+            petName,
+            size,
+            variant
+        )
+
+    local priceText =
+        HolyLivePetsFormatMoney(
+            price
+        )
+
+    local distanceText =
+        distance
+        and (
+            tostring(math.floor(distance + 0.5))
+            .. " studs"
+        )
+        or "? studs"
+
+    local timeText =
+        lifetime > 0
+        and HolyLivePetsFormatTime(timeLeft)
+        or "? left"
+
+    local metaParts =
+        {}
+
+    if rarity ~= "" then
+        table.insert(
+            metaParts,
+            rarity
+        )
+    end
+
+    table.insert(
+        metaParts,
+        priceText
+    )
+
+    table.insert(
+        metaParts,
+        distanceText
+    )
+
+    local rowState =
+        "ready"
+
+    local badge =
+        "BUY"
+
+    local clickable =
+        true
+
+    if handled == true then
+
+        rowState =
+            "sent"
+
+        badge =
+            "SENT"
+
+        clickable =
+            false
+
+    elseif cooling == true then
+
+        rowState =
+            "blocked"
+
+        badge =
+            "WAIT"
+
+        clickable =
+            false
+
+    elseif model == nil
+    or prompt == nil then
+
+        badge =
+            "WAIT"
+
+        clickable =
+            true
+    end
+
+    return {
+        Key =
+            uuid,
+
+        UUID =
+            uuid,
+
+        DisplayName =
+            displayName,
+
+        Pet =
+            petName,
+
+        PetKey =
+            petKey,
+
+        Size =
+            size,
+
+        Variant =
+            variant,
+
+        Rarity =
+            rarity,
+
+        RarityRank =
+            HolyLivePetsRarityRank(
+                rarity
+            ),
+
+        PriceNumber =
+            tonumber(price)
+            or 0,
+
+        Price =
+            priceText,
+
+        SpawnedAt =
+            tonumber(spawnedAt)
+            or 0,
+
+        Lifetime =
+            tonumber(lifetime)
+            or 0,
+
+        DistanceNumber =
+            tonumber(distance)
+            or 999999,
+
+        Distance =
+            distanceText,
+
+        TimeLeftNumber =
+            tonumber(timeLeft)
+            or 0,
+
+        Timer =
+            timeText,
+
+        Meta =
+            table.concat(
+                metaParts,
+                " · "
+            ),
+
+        Match =
+            match == true,
+
+        Badge =
+            badge,
+
+        State =
+            rowState,
+
+        Clickable =
+            clickable,
+
+        RawState =
+            rawState,
+
+        Ref =
+            ref,
+    }
+end
+
+function HolyLivePetsScanRows()
+
+    local rows =
+        {}
+
+    local refRoot =
+        HolySniperGetWildPetRefRoot()
+
+    if typeof(refRoot) ~= "Instance" then
+        return rows
+    end
+
+    for _, ref in ipairs(refRoot:GetChildren()) do
+
+        local row =
+            HolyLivePetsBuildEntryFromRef(
+                ref
+            )
+
+        if row then
+
+            table.insert(
+                rows,
+                row
+            )
+        end
+    end
+
+    table.sort(rows, function(a, b)
+
+        if a.Match ~= b.Match then
+            return a.Match == true
+        end
+
+        if a.RarityRank ~= b.RarityRank then
+            return a.RarityRank > b.RarityRank
+        end
+
+        if a.PriceNumber ~= b.PriceNumber then
+            return a.PriceNumber > b.PriceNumber
+        end
+
+        if a.TimeLeftNumber ~= b.TimeLeftNumber then
+            return a.TimeLeftNumber < b.TimeLeftNumber
+        end
+
+        return a.DistanceNumber < b.DistanceNumber
+    end)
+
+    return rows
+end
+
+function HolyLivePetsBuildTimer(rows)
+
+    rows =
+        rows
+        or HolyLivePetsScanRows()
+
+    HOLY_LIVE_PETS_RUNTIME =
+        type(HOLY_LIVE_PETS_RUNTIME) == "table"
+        and HOLY_LIVE_PETS_RUNTIME
+        or {}
+
+    HOLY_LIVE_PETS_RUNTIME.SpawnSequence =
+        type(HOLY_LIVE_PETS_RUNTIME.SpawnSequence) == "table"
+        and HOLY_LIVE_PETS_RUNTIME.SpawnSequence
+        or {}
+
+    local clean =
+        {}
+
+    for _, row in ipairs(rows) do
+
+        local spawnedAt =
+            tonumber(row.SpawnedAt)
+            or 0
+
+        if spawnedAt > 0 then
+
+            table.insert(
+                clean,
+                row
+            )
+        end
+    end
+
+    table.sort(clean, function(a, b)
+
+        return tonumber(a.SpawnedAt or 0)
+            < tonumber(b.SpawnedAt or 0)
+    end)
+
+    if #clean > 0 then
+
+        local latest =
+            clean[#clean]
+
+        local latestSpawnedAt =
+            tonumber(latest.SpawnedAt)
+            or 0
+
+        local latestPet =
+            tostring(latest.Pet or "None")
+
+        local latestKey =
+            tostring(latestSpawnedAt)
+            .. "|"
+            .. latestPet
+
+        if latestSpawnedAt > 0
+        and latestKey ~= tostring(HOLY_LIVE_PETS_RUNTIME.LastSpawnKey or "") then
+
+            HOLY_LIVE_PETS_RUNTIME.LastSpawnedAt =
+                latestSpawnedAt
+
+            HOLY_LIVE_PETS_RUNTIME.LastSpawnKey =
+                latestKey
+
+            HOLY_LIVE_PETS_RUNTIME.LastPet =
+                latestPet
+
+            table.insert(
+                HOLY_LIVE_PETS_RUNTIME.SpawnSequence,
+                latestPet
+            )
+
+            while #HOLY_LIVE_PETS_RUNTIME.SpawnSequence > 4 do
+
+                table.remove(
+                    HOLY_LIVE_PETS_RUNTIME.SpawnSequence,
+                    1
+                )
+            end
+        end
+    end
+
+    local lastSpawnedAt =
+        tonumber(
+            HOLY_LIVE_PETS_RUNTIME.LastSpawnedAt
+        )
+        or 0
+
+    local lastPet =
+        HolyCleanText(
+            HOLY_LIVE_PETS_RUNTIME.LastPet
+            or "None"
+        )
+
+    if lastSpawnedAt <= 0 then
+
+        return {
+            NextText = "--:--",
+            Active = #rows,
+            Last = "None",
+            Sequence = "None",
+        }
+    end
+
+    local nextSpawn =
+        lastSpawnedAt + 100
+
+    while nextSpawn <= os.time() - 3 do
+
+        nextSpawn =
+            nextSpawn + 100
+    end
+
+    local sequence =
+        "None"
+
+    if #HOLY_LIVE_PETS_RUNTIME.SpawnSequence > 0 then
+
+        sequence =
+            table.concat(
+                HOLY_LIVE_PETS_RUNTIME.SpawnSequence,
+                " > "
+            )
+    end
+
+    return {
+        NextText =
+            HolyLivePetsFormatCountdown(
+                nextSpawn - os.time()
+            ),
+
+        Active =
+            #rows,
+
+        Last =
+            lastPet ~= ""
+            and lastPet
+            or "None",
+
+        Sequence =
+            sequence,
+    }
+end
+
+function HolyLivePetsBuildSummary(rows)
+
+    local timer =
+        HolyLivePetsBuildTimer(
+            rows
+        )
+
+    return "Next Spawn: "
+        .. tostring(timer.NextText)
+        .. " | Active: "
+        .. tostring(timer.Active)
+        .. " | Last: "
+        .. tostring(timer.Last)
+end
+
+function HolyLivePetsBuildModeText()
+
+    local movement =
+        HolySniperNormalizeMovementMode(
+            HOLY_SNIPER_STATE.MovementMode
+            or "Walk"
+        )
+
+    local buy =
+        HolySniperNormalizeBuyMode(
+            HOLY_SNIPER_STATE.BuyMode
+            or "Instant"
+        )
+
+    return "Mode: "
+        .. movement
+        .. " · "
+        .. buy
+        .. " | Click a pet to buy"
+end
+
+function HolyLivePetsRefreshUI()
+
+    local list =
+        HOLY_SNIPER_UI
+        and HOLY_SNIPER_UI.LivePetsList
+        or nil
+
+    if type(list) ~= "table" then
+        return false
+    end
+
+    local rows =
+        HolyLivePetsScanRows()
+
+    HOLY_LIVE_PETS_RUNTIME.LastRows =
+        rows
+
+    if type(list.SetSummary) == "function" then
+
+        list:SetSummary(
+            HolyLivePetsBuildSummary(
+                rows
+            )
+        )
+    end
+
+    if type(list.SetModeText) == "function" then
+
+        list:SetModeText(
+            HolyLivePetsBuildModeText()
+        )
+    end
+
+    if type(list.SetRows) == "function" then
+
+        list:SetRows(
+            rows
+        )
+    end
+
+    return true
+end
+
+function HolyLivePetsResolveEntryForBuy(rowData)
+
+    rowData =
+        type(rowData) == "table"
+        and rowData
+        or {}
+
+    local key =
+        HolyCleanText(
+            rowData.Key
+            or rowData.UUID
+            or ""
+        )
+
+    if key == "" then
+        return nil, "missing key"
+    end
+
+    local deadline =
+        os.clock() + 3
+
+    while os.clock() <= deadline do
+
+        local ref =
+            HolyLivePetsFindRefByKey(
+                key
+            )
+
+        if typeof(ref) ~= "Instance" then
+
+            return nil,
+                "pet gone"
+        end
+
+        local model =
+            HolyLivePetsFindModelForRef(
+                ref
+            )
+
+        if typeof(model) == "Instance"
+        and model:IsA("Model") then
+
+            local entry =
+                HolySniperBuildLiveEntry(
+                    model
+                )
+
+            if type(entry) == "table" then
+
+                return entry,
+                    "ok"
+            end
+        end
+
+        task.wait(
+            0.05
+        )
+    end
+
+    return nil,
+        "prompt missing"
+end
+
+function HolyLivePetsMakeManualFilter(entry)
+
+    entry =
+        type(entry) == "table"
+        and entry
+        or {}
+
+    return HolySniperNormalizeFilter({
+        Pet =
+            entry.Pet
+            or "Raccoon",
+
+        Sizes = {
+            entry.Size
+            or "Any",
+        },
+
+        Variants = {
+            entry.Variant
+            or "Any",
+        },
+
+        Amount =
+            999,
+
+        Priority =
+            "High",
+
+        Enabled =
+            true,
+    })
+end
+
+function HolyLivePetsManualBuy(rowData)
+
+    if type(rowData) ~= "table" then
+        return false
+    end
+
+    if HOLY_SNIPER_RUNTIME.Buying == true
+    or HOLY_SNIPER_RUNTIME.Returning == true then
+
+        if type(HolyNotify) == "function" then
+
+            HolyNotify(
+                "HOLY Live Pets",
+                "Already buying or returning.",
+                3
+            )
+        end
+
+        return false
+    end
+
+    local key =
+        HolyCleanText(
+            rowData.Key
+            or rowData.UUID
+            or ""
+        )
+
+    local list =
+        HOLY_SNIPER_UI
+        and HOLY_SNIPER_UI.LivePetsList
+        or nil
+
+    if type(list) == "table"
+    and type(list.SetStateByKey) == "function"
+    and key ~= "" then
+
+        list:SetStateByKey(
+            key,
+            "buying"
+        )
+    end
+
+    local token =
+        {}
+
+    HOLY_SNIPER_RUNTIME.ManualBuying =
+        true
+
+    HOLY_SNIPER_RUNTIME.ManualToken =
+        token
+
+    local success =
+        false
+
+    local reason =
+        "unknown"
+
+    local ok,
+        err =
+        pcall(function()
+
+            local entry,
+                resolveReason =
+                HolyLivePetsResolveEntryForBuy(
+                    rowData
+                )
+
+            if type(entry) ~= "table" then
+
+                reason =
+                    resolveReason
+                    or "target missing"
+
+                return
+            end
+
+            local filter =
+                HolyLivePetsMakeManualFilter(
+                    entry
+                )
+
+            local match = {
+                Entry =
+                    entry,
+
+                Filter =
+                    filter,
+
+                FilterIndex =
+                    0,
+
+                Manual =
+                    true,
+            }
+
+            HolySniperSetStatus(
+                "Manual buy: "
+                .. HolySniperDescribeEntry(entry)
+            )
+
+            local executeReason =
+                nil
+
+            success,
+                executeReason =
+                HolySniperExecuteMatch(
+                    match,
+                    token
+                )
+
+            reason =
+                executeReason
+                or (
+                    success == true
+                    and "bought"
+                    or "buy failed"
+                )
+        end)
+
+    if ok ~= true then
+
+        reason =
+            tostring(err)
+    end
+
+    HOLY_SNIPER_RUNTIME.ManualBuying =
+        false
+
+    HOLY_SNIPER_RUNTIME.ManualToken =
+        nil
+
+    if type(list) == "table"
+    and type(list.SetStateByKey) == "function"
+    and key ~= "" then
+
+        list:SetStateByKey(
+            key,
+            success == true
+            and "sent"
+            or "ready"
+        )
+    end
+
+    HolyLivePetsRefreshUI()
+
+    if success == true then
+
+        if type(HolyNotify) == "function" then
+
+            HolyNotify(
+                "HOLY Live Pets",
+                "Bought "
+                .. tostring(rowData.DisplayName or rowData.Pet or "pet")
+                .. ".",
+                3
+            )
+        end
+
+    else
+
+        if type(HolyNotify) == "function" then
+
+            HolyNotify(
+                "HOLY Live Pets",
+                "Buy failed: "
+                .. tostring(reason),
+                4
+            )
+        end
+    end
+
+    return success
+end
+
+function HolyLivePetsCopySnapshot()
+
+    local rows =
+        HolyLivePetsScanRows()
+
+    local lines =
+        {}
+
+    local function add(line)
+
+        table.insert(
+            lines,
+            tostring(line or "")
+        )
+    end
+
+    add("========== HOLY LIVE WILD PETS ==========")
+    add("PlaceId: " .. tostring(game.PlaceId))
+    add("JobId: " .. tostring(game.JobId))
+    add(HolyLivePetsBuildSummary(rows))
+    add("Mode: " .. HolySniperNormalizeMovementMode(HOLY_SNIPER_STATE.MovementMode) .. " / " .. HolySniperNormalizeBuyMode(HOLY_SNIPER_STATE.BuyMode))
+    add("")
+
+    if #rows <= 0 then
+
+        add("No active wild pets.")
+
+    else
+
+        for index, row in ipairs(rows) do
+
+            add(
+                tostring(index)
+                .. ". "
+                .. tostring(row.DisplayName)
+                .. " | "
+                .. tostring(row.Meta)
+                .. " | "
+                .. tostring(row.Timer)
+                .. " | "
+                .. tostring(row.Badge)
+            )
+        end
+    end
+
+    local text =
+        table.concat(
+            lines,
+            "\n"
+        )
+
+    if HolyCopyText(text) == true then
+
+        if type(HolyNotify) == "function" then
+
+            HolyNotify(
+                "HOLY Live Pets",
+                "Copied live pets.",
+                3
+            )
+        end
+
+        return true
+    end
+
+    if type(HolyNotify) == "function" then
+
+        HolyNotify(
+            "HOLY Live Pets",
+            "Clipboard unsupported.",
+            4
+        )
+    end
+
+    return false
+end
+
+function HolyLivePetsDisconnect()
+
+    local connections =
+        HOLY_LIVE_PETS_RUNTIME
+        and HOLY_LIVE_PETS_RUNTIME.Connections
+        or nil
+
+    if type(connections) == "table" then
+
+        for _, connection in ipairs(connections) do
+
+            pcall(function()
+
+                connection:Disconnect()
+            end)
+        end
+    end
+
+    HOLY_LIVE_PETS_RUNTIME.Connections =
+        {}
+end
+
+function HolyLivePetsStart()
+
+    HOLY_LIVE_PETS_RUNTIME =
+        type(HOLY_LIVE_PETS_RUNTIME) == "table"
+        and HOLY_LIVE_PETS_RUNTIME
+        or {}
+
+    if HOLY_LIVE_PETS_RUNTIME.Running == true then
+        return false
+    end
+
+    HolyLivePetsDisconnect()
+
+    HOLY_LIVE_PETS_RUNTIME.Running =
+        true
+
+    local token =
+        {}
+
+    HOLY_LIVE_PETS_RUNTIME.Token =
+        token
+
+    local function connectRoot(root)
+
+        if typeof(root) ~= "Instance" then
+            return
+        end
+
+        table.insert(
+            HOLY_LIVE_PETS_RUNTIME.Connections,
+            root.ChildAdded:Connect(function()
+
+                task.defer(
+                    HolyLivePetsRefreshUI
+                )
+            end)
+        )
+
+        table.insert(
+            HOLY_LIVE_PETS_RUNTIME.Connections,
+            root.ChildRemoved:Connect(function()
+
+                task.defer(
+                    HolyLivePetsRefreshUI
+                )
+            end)
+        )
+    end
+
+    connectRoot(
+        HolySniperGetWildPetRefRoot()
+    )
+
+    connectRoot(
+        HolySniperGetWildPetRoot()
+    )
+
+    task.spawn(function()
+
+        while HOLY_LIVE_PETS_RUNTIME.Token == token do
+
+            HolyLivePetsRefreshUI()
+
+            task.wait(
+                0.35
+            )
+        end
+
+        if HOLY_LIVE_PETS_RUNTIME.Token == token then
+
+            HOLY_LIVE_PETS_RUNTIME.Running =
+                false
+        end
+    end)
+
+    return true
+end
+
+function HolyLivePetsStop(reason)
+
+    HOLY_LIVE_PETS_RUNTIME =
+        type(HOLY_LIVE_PETS_RUNTIME) == "table"
+        and HOLY_LIVE_PETS_RUNTIME
+        or {}
+
+    HOLY_LIVE_PETS_RUNTIME.Token =
+        nil
+
+    HOLY_LIVE_PETS_RUNTIME.Running =
+        false
+
+    HolyLivePetsDisconnect()
+
+    return true
+end
+
+function HolySniperAutoHopReset(reason)
+
+    HOLY_SNIPER_RUNTIME.NoMatchSince =
+        0
+
+    HOLY_SNIPER_RUNTIME.NoMatchScans =
+        0
+end
+
+function HolySniperAutoHopDataReady()
+
+    local wildRoot =
+        HolySniperGetWildPetRoot()
+
+    local refRoot =
+        HolySniperGetWildPetRefRoot()
+
+    return typeof(wildRoot) == "Instance"
+        and typeof(refRoot) == "Instance"
+end
+
+function HolySniperAutoHopCanRun()
+
+    if HOLY_SNIPER_STATE.ActivateSniper ~= true then
+
+        HolySniperAutoHopReset(
+            "sniper off"
+        )
+
+        return false
+    end
+
+    if HOLY_SNIPER_STATE.AutoHop ~= true then
+
+        HolySniperAutoHopReset(
+            "auto hop off"
+        )
+
+        return false
+    end
+
+    if HOLY_SNIPER_RUNTIME.AutoHopInProgress == true then
+        return false
+    end
+
+    if HolySniperServerSwitchBlocked(
+        "Auto Hop",
+        false
+    ) == true then
+
+        HolySniperAutoHopReset(
+            "sniper protection"
+        )
+
+        return false
+    end
+
+    if HOLY_SNIPER_RUNTIME.Buying == true
+    or HOLY_SNIPER_RUNTIME.Returning == true then
+
+        return false
+    end
+
+    if HOLY_SNIPER_RUNTIME.BatchActive == true then
+        return false
+    end
+
+    if type(HOLY_SNIPER_STATE.Watchlist) ~= "table"
+    or #HOLY_SNIPER_STATE.Watchlist <= 0 then
+
+        HolySniperAutoHopReset(
+            "no watchlist"
+        )
+
+        return false
+    end
+
+    if HolySniperGetCharacterRoot() == nil then
+        return false
+    end
+
+    return true
+end
+
+function HolySniperBeginAutoHop(reason, token)
+
+    if HolySniperStillActive(token) ~= true then
+        return false
+    end
+
+    if HolySniperServerSwitchBlocked(
+        "Auto Hop",
+        false
+    ) == true then
+
+        return false
+    end
+
+    if HOLY_SNIPER_RUNTIME.AutoHopInProgress == true then
+        return false
+    end
+
+    HOLY_SNIPER_RUNTIME.AutoHopInProgress =
+        true
+
+    HOLY_SNIPER_RUNTIME.LastHopAt =
+        os.clock()
+
+    HolySniperSetStatus(
+        "Auto Hop: finding server..."
+    )
+
+    local queued,
+        queueReason =
+        HolyQueueSmartServerHop(
+            tostring(reason or "auto hop"),
+            function(_ok, errorText)
+
+                HOLY_SNIPER_RUNTIME.AutoHopInProgress =
+                    false
+
+                HOLY_SNIPER_RUNTIME.HopFailureBackoffUntil =
+                    os.clock() + 4
+
+                HolySniperSetStatus(
+                    "Auto Hop failed: "
+                    .. tostring(errorText)
+                )
+            end
+        )
+
+    if queued ~= true then
+
+        HOLY_SNIPER_RUNTIME.AutoHopInProgress =
+            false
+
+        HOLY_SNIPER_RUNTIME.HopFailureBackoffUntil =
+            os.clock() + 4
+
+        HolySniperSetStatus(
+            "Auto Hop failed: "
+            .. tostring(queueReason)
+        )
+
+        return false
+    end
+
+    return true
+end
+
+function HolySniperAutoHopEvaluate(matches, phase, token)
+
+    phase =
+        tostring(phase or "Safe")
+
+    local phaseLabel =
+        phase == "Fast"
+        and "Fast Hop"
+        or "Safe Hop"
+
+    if HolySniperAutoHopCanRun() ~= true then
+        return false
+    end
+
+    if HolySniperAutoHopDataReady() ~= true then
+
+        HolySniperAutoHopReset(
+            "pet data missing"
+        )
+
+        HolySniperSetStatus(
+            phaseLabel
+            .. ": waiting for pet data"
+        )
+
+        return false
+    end
+
+    matches =
+        type(matches) == "table"
+        and matches
+        or {}
+
+    if #matches > 0 then
+
+        HolySniperAutoHopReset(
+            "match found"
+        )
+
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    local backoffUntil =
+        tonumber(
+            HOLY_SNIPER_RUNTIME.HopFailureBackoffUntil
+        )
+        or 0
+
+    if now < backoffUntil then
+
+        HolySniperSetStatus(
+            phaseLabel
+            .. ": retry in "
+            .. HolySniperFormatDelay(
+                backoffUntil - now
+            )
+            .. "s"
+        )
+
+        return false
+    end
+
+    local startClock =
+        tonumber(
+            HOLY_SNIPER_RUNTIME.StartClock
+        )
+        or now
+
+    local minimumServerAge =
+        tonumber(
+            HOLY_SNIPER_RUNTIME.AutoHopMinimumServerAge
+        )
+        or 8
+
+    if now - startClock < minimumServerAge then
+
+        HolySniperSetStatus(
+            phaseLabel
+            .. ": waiting for save data..."
+        )
+
+        return false
+    end
+
+    if (
+        tonumber(
+            HOLY_SNIPER_RUNTIME.NoMatchSince
+        )
+        or 0
+    ) <= 0 then
+
+        HOLY_SNIPER_RUNTIME.NoMatchSince =
+            now
+
+        HOLY_SNIPER_RUNTIME.NoMatchScans =
+            0
+    end
+
+    HOLY_SNIPER_RUNTIME.NoMatchScans =
+        (
+            tonumber(
+                HOLY_SNIPER_RUNTIME.NoMatchScans
+            )
+            or 0
+        )
+        + 1
+
+    local requiredScans =
+        phase == "Fast"
+        and (
+            tonumber(
+                HOLY_SNIPER_RUNTIME.EarlyHopRequiredScans
+            )
+            or 3
+        )
+        or (
+            tonumber(
+                HOLY_SNIPER_RUNTIME.SafeHopRequiredScans
+            )
+            or 2
+        )
+
+    if phase == "Fast" then
+
+        local minimumSeconds =
+            tonumber(
+                HOLY_SNIPER_RUNTIME.EarlyHopMinimumSeconds
+            )
+            or 8
+
+        if now - startClock < minimumSeconds then
+
+            HolySniperSetStatus(
+                phaseLabel
+                .. ": confirming server..."
+            )
+
+            return false
+        end
+    end
+
+    if HOLY_SNIPER_RUNTIME.NoMatchScans < requiredScans then
+
+        HolySniperSetStatus(
+            phaseLabel
+            .. ": confirming no match..."
+        )
+
+        return false
+    end
+
+    local delay =
+        HolySniperReadHopDelay(
+            HOLY_SNIPER_STATE.HopDelay
+        )
+
+    local elapsed =
+        now
+        - (
+            tonumber(
+                HOLY_SNIPER_RUNTIME.NoMatchSince
+            )
+            or now
+        )
+
+    local remaining =
+        math.max(
+            0,
+            delay - elapsed
+        )
+
+    if remaining > 0.05 then
+
+        HolySniperSetStatus(
+            phaseLabel
+            .. ": no match, hopping in "
+            .. HolySniperFormatDelay(remaining)
+            .. "s"
+        )
+
+        return false
+    end
+
+    return HolySniperBeginAutoHop(
+        phaseLabel
+        .. " no match",
+        token
+    )
+end
+
+function HolySniperEarlyAutoHopTick(token)
+
+    if HolySniperNormalizeAutoHopTiming(
+        HOLY_SNIPER_STATE.AutoHopTiming
+    ) ~= "Fast - During Loading" then
+
+        return false
+    end
+
+    if HolySniperAutoHopCanRun() ~= true then
+        return false
+    end
+
+    if HolySniperAutoHopDataReady() ~= true then
+
+        HolySniperAutoHopReset(
+            "early data missing"
+        )
+
+        HolySniperSetStatus(
+            "Fast Hop: waiting for pet data"
+        )
+
+        return false
+    end
+
+    local matches =
+        HolySniperRunScan()
+
+    if #matches > 0 then
+
+        HolySniperAutoHopReset(
+            "early match found"
+        )
+
+        HolySniperSetStatus(
+            "Fast Hop: match found, waiting loading"
+        )
+
+        return false
+    end
+
+    return HolySniperAutoHopEvaluate(
+        matches,
+        "Fast",
+        token
+    )
+end
+
+function HolySniperTick(token)
+
+    if HOLY_SNIPER_RUNTIME.Buying == true
+    or HOLY_SNIPER_RUNTIME.Returning == true then
+
+        return false
+    end
+
+    if HolySniperPetBuyProtectionBlocks(
+        "Sniper",
+        false
+    ) == true then
+
+        return false
+    end
+
+    local matches =
+        HolySniperRunScan()
+
+    if #matches <= 0 then
+
+        local returned =
+            HolySniperMaybeReturnAfterBatchNoMatches(
+                token
+            )
+
+        if returned == true then
+
+            HolySniperAutoHopReset(
+                "returned"
+            )
+
+            return true
+        end
+
+        local phase =
+            HolySniperNormalizeAutoHopTiming(
+                HOLY_SNIPER_STATE.AutoHopTiming
+            ) == "Fast - During Loading"
+            and "Fast"
+            or "Safe"
+
+        return HolySniperAutoHopEvaluate(
+            matches,
+            phase,
+            token
+        )
+    end
+
+    HolySniperAutoHopReset(
+        "match found"
+    )
+
+    HOLY_SNIPER_RUNTIME.BatchEmptySince =
+        0
+
+    return HolySniperExecuteMatch(
+        matches[1],
+        token
+    )
+end
+
+function HolySniperStop(reason)
+
+    HOLY_SNIPER_RUNTIME =
+        type(HOLY_SNIPER_RUNTIME) == "table"
+        and HOLY_SNIPER_RUNTIME
+        or {}
+
+    HOLY_SNIPER_RUNTIME.Token =
+        nil
+
+    HOLY_SNIPER_RUNTIME.Running =
+        false
+
+    HOLY_SNIPER_RUNTIME.AutoHopInProgress =
+        false
+
+    if HOLY_SERVER_STATE then
+
+        HOLY_SERVER_STATE.Hopping =
+            false
+    end
+
+    HOLY_SNIPER_RUNTIME.NoMatchSince =
+        0
+
+    HOLY_SNIPER_RUNTIME.NoMatchScans =
+        0
+
+    HOLY_SNIPER_RUNTIME.Buying =
+        false
+
+    HOLY_SNIPER_RUNTIME.Returning =
+        false
+
+    HOLY_SNIPER_RUNTIME.LastManualMoveInputAt =
+        0
+
+    HolySniperStartManualInputWatcher()
+
+    HOLY_SNIPER_RUNTIME.BatchActive =
+        false
+
+    HOLY_SNIPER_RUNTIME.BatchBoughtCount =
+        0
+
+    HOLY_SNIPER_RUNTIME.BatchEmptySince =
+        0
+
+    HOLY_SNIPER_RUNTIME.CurrentTarget =
+        nil
+
+    HOLY_SNIPER_RUNTIME.CurrentTargetKey =
+        ""
+
+    HolySniperClearTargetLock(
+        "sniper stopped"
+    )
+
+    HolySniperSetStatus(
+        tostring(reason or "Ready")
+    )
+end
+
+function HolySniperStart(reason)
+
+    HOLY_SNIPER_RUNTIME =
+        type(HOLY_SNIPER_RUNTIME) == "table"
+        and HOLY_SNIPER_RUNTIME
+        or {}
+
+    if HOLY_SNIPER_RUNTIME.Running == true then
+        return false
+    end
+
+    HOLY_SNIPER_RUNTIME.Running =
+        true
+
+    HOLY_SNIPER_RUNTIME.LoadingReady =
+        false
+
+    HOLY_SNIPER_RUNTIME.StartClock =
+        os.clock()
+
+    HOLY_SNIPER_RUNTIME.AutoHopInProgress =
+        false
+
+    HOLY_SNIPER_RUNTIME.HopFailureBackoffUntil =
+        0
+
+    HOLY_SNIPER_RUNTIME.NoMatchSince =
+        0
+
+    HOLY_SNIPER_RUNTIME.NoMatchScans =
+        0
+
+    HOLY_SNIPER_RUNTIME.Buying =
+        false
+
+    HOLY_SNIPER_RUNTIME.Returning =
+        false
+
+    HOLY_SNIPER_RUNTIME.BatchActive =
+        false
+
+    HOLY_SNIPER_RUNTIME.BatchBoughtCount =
+        0
+
+    HOLY_SNIPER_RUNTIME.BatchEmptySince =
+        0
+
+    HolySniperClearTargetLock(
+        "sniper start"
+    )
+
+    local startRoot =
+        HolySniperGetCharacterRoot()
+
+    HOLY_SNIPER_RUNTIME.ReturnActivationCFrame =
+        startRoot
+        and startRoot:IsA("BasePart")
+        and startRoot.CFrame
+        or nil
+
+    HOLY_SNIPER_RUNTIME.FarmCenterCFrame =
+        nil
+
+    HOLY_SNIPER_RUNTIME.FarmCenterLastScanAt =
+        0
+
+    HolySniperGetFarmCenterCFrame(
+        true
+    )
+
+    HOLY_SNIPER_RUNTIME.Handled =
+        type(HOLY_SNIPER_RUNTIME.Handled) == "table"
+        and HOLY_SNIPER_RUNTIME.Handled
+        or {}
+
+    HOLY_SNIPER_RUNTIME.FailedUntil =
+        type(HOLY_SNIPER_RUNTIME.FailedUntil) == "table"
+        and HOLY_SNIPER_RUNTIME.FailedUntil
+        or {}
+
+    HOLY_SNIPER_RUNTIME.BoughtCounts =
+        type(HOLY_SNIPER_RUNTIME.BoughtCounts) == "table"
+        and HOLY_SNIPER_RUNTIME.BoughtCounts
+        or {}
+
+    local token =
+        {}
+
+    HOLY_SNIPER_RUNTIME.Token =
+        token
+
+    HolySniperSetStatus(
+        "Waiting for loading"
+    )
+
+    task.spawn(function()
+
+        while HOLY_SNIPER_RUNTIME.Token == token
+        and HOLY_SNIPER_STATE.ActivateSniper == true do
+
+            if HolySniperLoadingGateReady() ~= true then
+
+                if HOLY_SNIPER_STATE.AutoHop == true
+                and HolySniperNormalizeAutoHopTiming(
+                    HOLY_SNIPER_STATE.AutoHopTiming
+                ) == "Fast - During Loading" then
+
+                    local hopOk,
+                        hopErr =
+                        pcall(function()
+
+                            HolySniperEarlyAutoHopTick(
+                                token
+                            )
+                        end)
+
+                    if hopOk ~= true then
+
+                        HolySniperSetStatus(
+                            "Fast Hop error: "
+                            .. tostring(hopErr)
+                        )
+
+                        task.wait(
+                            1
+                        )
+
+                    else
+
+                        task.wait(
+                            0.22
+                        )
+                    end
+
+                else
+
+                    HolySniperAutoHopReset(
+                        "waiting loading"
+                    )
+
+                    HolySniperSetStatus(
+                        "Waiting for loading"
+                    )
+
+                    task.wait(
+                        0.25
+                    )
+                end
+
+            else
+
+                HOLY_SNIPER_RUNTIME.LoadingReady =
+                    true
+
+                local ok,
+                    err =
+                    pcall(function()
+
+                        HolySniperTick(
+                            token
+                        )
+                    end)
+
+                if ok ~= true then
+
+                    HolySniperSetStatus(
+                        "Sniper error: "
+                        .. tostring(err)
+                    )
+
+                    task.wait(
+                        1
+                    )
+                end
+
+                task.wait(
+                    0.18
+                )
+            end
+        end
+
+        if HOLY_SNIPER_RUNTIME.Token == token then
+
+            HOLY_SNIPER_RUNTIME.Running =
+                false
+        end
+    end)
+
+    return true
+end
+
+function HolySniperEnsureRunning()
+
+    if HOLY_SNIPER_STATE.ActivateSniper == true then
+
+        return HolySniperStart(
+            "enabled"
+        )
+    end
+
+    HolySniperStop(
+        "Ready"
+    )
+
+    return false
+end
+
+function HolySaveSniperSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local payload = {
+        ActivateSniper =
+            HOLY_SNIPER_STATE.ActivateSniper == true,
+
+        AutoHop =
+            HOLY_SNIPER_STATE.AutoHop == true,
+
+        HopDelay =
+            HolySniperReadHopDelay(
+                HOLY_SNIPER_STATE.HopDelay
+            ),
+
+        AutoHopTiming =
+            HolySniperNormalizeAutoHopTiming(
+                HOLY_SNIPER_STATE.AutoHopTiming
+            ),
+
+        MovementMode =
+            HolySniperNormalizeMovementMode(
+                HOLY_SNIPER_STATE.MovementMode
+            ),
+
+        BuyMode =
+            HolySniperNormalizeBuyMode(
+                HOLY_SNIPER_STATE.BuyMode
+            ),
+
+        ReturnEnabled =
+            HOLY_SNIPER_STATE.ReturnEnabled == true,
+
+        ReturnTiming =
+            HolySniperNormalizeReturnTiming(
+                HOLY_SNIPER_STATE.ReturnTiming
+            ),
+
+        ReturnMode =
+            HolySniperNormalizeReturnMode(
+                HOLY_SNIPER_STATE.ReturnMode
+            ),
+
+        ReturnDestination =
+            HolySniperNormalizeReturnDestination(
+                HOLY_SNIPER_STATE.ReturnDestination
+            ),
+
+        SavedReturnCFrameData =
+            HOLY_SNIPER_STATE.SavedReturnCFrameData,
+
+        BuilderPet =
+            HolySniperResolvePetDisplay(
+                HOLY_SNIPER_STATE.BuilderPet
+                or HolySniperGetDefaultPetName()
+            ),
+
+        BuilderSizes =
+            HolySniperNormalizeSizeSelection(
+                HOLY_SNIPER_STATE.BuilderSizes
+            ),
+
+        BuilderVariants =
+            HolySniperNormalizeVariantSelection(
+                HOLY_SNIPER_STATE.BuilderVariants
+            ),
+
+        BuilderAmount =
+            tostring(
+                HolySniperReadAmount(
+                    HOLY_SNIPER_STATE.BuilderAmount
+                )
+            ),
+
+        BuilderPriority =
+            HolySniperNormalizePriority(
+                HOLY_SNIPER_STATE.BuilderPriority
+            ),
+
+        Watchlist =
+            HolySniperNormalizeWatchlist(
+                HOLY_SNIPER_STATE.Watchlist
+            ),
+    }
+
+    local encodeOk,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                SNIPER_SETTINGS_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function HolyLoadSniperSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                SNIPER_SETTINGS_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return false
+    end
+
+    local readOk,
+        raw =
+        pcall(function()
+
+            return readfile(
+                SNIPER_SETTINGS_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        return false
+    end
+
+    local decodeOk,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(data) ~= "table" then
+        return false
+    end
+
+    HOLY_SNIPER_STATE.ActivateSniper =
+        data.ActivateSniper == true
+
+    HOLY_SNIPER_STATE.AutoHop =
+        data.AutoHop == true
+
+    HOLY_SNIPER_STATE.HopDelay =
+        tostring(
+            HolySniperReadHopDelay(
+                data.HopDelay
+                or HOLY_SNIPER_STATE.HopDelay
+                or 5
+            )
+        )
+
+    HOLY_SNIPER_STATE.AutoHopTiming =
+        HolySniperNormalizeAutoHopTiming(
+            data.AutoHopTiming
+            or HOLY_SNIPER_STATE.AutoHopTiming
+            or "Safe - After Loading"
+        )
+
+    HOLY_SNIPER_STATE.MovementMode =
+        HolySniperNormalizeMovementMode(
+            data.MovementMode
+            or HOLY_SNIPER_STATE.MovementMode
+            or "Walk"
+        )
+
+    HOLY_SNIPER_STATE.BuyMode =
+        HolySniperNormalizeBuyMode(
+            data.BuyMode
+            or HOLY_SNIPER_STATE.BuyMode
+            or "Instant"
+        )
+
+    HOLY_SNIPER_STATE.ReturnEnabled =
+        data.ReturnEnabled == true
+
+    HOLY_SNIPER_STATE.ReturnTiming =
+        HolySniperNormalizeReturnTiming(
+            data.ReturnTiming
+            or HOLY_SNIPER_STATE.ReturnTiming
+            or "After Batch"
+        )
+
+    HOLY_SNIPER_STATE.ReturnMode =
+        HolySniperNormalizeReturnMode(
+            data.ReturnMode
+            or HOLY_SNIPER_STATE.ReturnMode
+            or "Teleport"
+        )
+
+    HOLY_SNIPER_STATE.ReturnDestination =
+        HolySniperNormalizeReturnDestination(
+            data.ReturnDestination
+            or HOLY_SNIPER_STATE.ReturnDestination
+            or "Farm Center"
+        )
+
+    HOLY_SNIPER_STATE.SavedReturnCFrameData =
+        type(data.SavedReturnCFrameData) == "table"
+        and data.SavedReturnCFrameData
+        or nil
+
+    HOLY_SNIPER_STATE.BuilderPet =
+        HolySniperResolvePetDisplay(
+            data.BuilderPet
+            or HolySniperGetDefaultPetName()
+        )
+
+    HOLY_SNIPER_STATE.BuilderSizes =
+        HolySniperNormalizeSizeSelection(
+            data.BuilderSizes
+        )
+
+    HOLY_SNIPER_STATE.BuilderVariants =
+        HolySniperNormalizeVariantSelection(
+            data.BuilderVariants
+        )
+
+    HOLY_SNIPER_STATE.BuilderAmount =
+        tostring(
+            HolySniperReadAmount(
+                data.BuilderAmount
+            )
+        )
+
+    HOLY_SNIPER_STATE.BuilderPriority =
+        HolySniperNormalizePriority(
+            data.BuilderPriority
+        )
+
+    HOLY_SNIPER_STATE.Watchlist =
+        HolySniperNormalizeWatchlist(
+            data.Watchlist
+        )
+
+    HOLY_SNIPER_STATE.Status =
+        HOLY_SNIPER_STATE.ActivateSniper == true
+        and "Scanning"
+        or "Ready"
+
+    return true
+end
+
+function HolySniperSaveFilterFromBuilder()
+
+    local filter =
+        HolySniperNormalizeFilter({
+            Pet =
+                HOLY_SNIPER_STATE.BuilderPet,
+
+            Sizes =
+                HOLY_SNIPER_STATE.BuilderSizes,
+
+            Variants =
+                HOLY_SNIPER_STATE.BuilderVariants,
+
+            Amount =
+                HOLY_SNIPER_STATE.BuilderAmount,
+
+            Priority =
+                HOLY_SNIPER_STATE.BuilderPriority,
+
+            Enabled =
+                true,
+        })
+
+    HOLY_SNIPER_STATE.Watchlist =
+        type(HOLY_SNIPER_STATE.Watchlist) == "table"
+        and HOLY_SNIPER_STATE.Watchlist
+        or {}
+
+    local newKey =
+        HolySniperFilterKey(
+            filter
+        )
+
+    local replaced =
+        false
+
+    for index, row in ipairs(HOLY_SNIPER_STATE.Watchlist) do
+
+        if HolySniperFilterKey(row) == newKey then
+
+            HOLY_SNIPER_STATE.Watchlist[index] =
+                filter
+
+            replaced =
+                true
+
+            break
+        end
+    end
+
+    if replaced ~= true then
+
+        table.insert(
+            HOLY_SNIPER_STATE.Watchlist,
+            filter
+        )
+    end
+
+    HolySaveSniperSettings()
+
+    HolySniperRefreshUI()
+
+    if type(HolyNotify) == "function" then
+
+        HolyNotify(
+            "HOLY Sniper",
+            (
+                replaced == true
+                and "Updated filter: "
+                or "Saved filter: "
+            )
+            .. tostring(filter.Pet),
+            3
+        )
+    end
+end
+
+function HolySniperGetSelectedWatchlistIndex()
+
+    local index =
+        tonumber(
+            HOLY_SNIPER_STATE.SelectedWatchlistSourceIndex
+        )
+
+    if not index then
+
+        local tableObject =
+            HOLY_SNIPER_UI
+            and HOLY_SNIPER_UI.WatchlistTable
+            or nil
+
+        if type(tableObject) == "table"
+        and type(tableObject.GetSelectedData) == "function" then
+
+            local selected =
+                tableObject:GetSelectedData()
+
+            if type(selected) == "table" then
+
+                index =
+                    tonumber(
+                        selected.SourceIndex
+                    )
+            end
+        end
+    end
+
+    if not index then
+        return nil
+    end
+
+    if type(HOLY_SNIPER_STATE.Watchlist) ~= "table"
+    or HOLY_SNIPER_STATE.Watchlist[index] == nil then
+
+        return nil
+    end
+
+    return index
+end
+
+function HolySniperEditSelectedFilter()
+
+    local index =
+        HolySniperGetSelectedWatchlistIndex()
+
+    if not index then
+
+        if type(HolyNotify) == "function" then
+
+            HolyNotify(
+                "HOLY Sniper",
+                "Select a watchlist row first.",
+                3
+            )
+        end
+
+        return false
+    end
+
+    local filter =
+        HolySniperNormalizeFilter(
+            HOLY_SNIPER_STATE.Watchlist[index]
+        )
+
+    HOLY_SNIPER_STATE.BuilderPet =
+        filter.Pet
+
+    HOLY_SNIPER_STATE.BuilderSizes =
+        filter.Sizes
+
+    HOLY_SNIPER_STATE.BuilderVariants =
+        filter.Variants
+
+    HOLY_SNIPER_STATE.BuilderAmount =
+        tostring(
+            filter.Amount
+        )
+
+    HOLY_SNIPER_STATE.BuilderPriority =
+        filter.Priority
+
+    local options =
+        HOLY_DEV_LIBRARY
+        and HOLY_DEV_LIBRARY.Options
+        or nil
+
+    if type(options) == "table" then
+
+        if options.HolySniperPetFilter
+        and type(options.HolySniperPetFilter.SetValue) == "function" then
+
+            options.HolySniperPetFilter:SetValue(
+                filter.Pet
+            )
+        end
+
+        if options.HolySniperSizeFilter
+        and type(options.HolySniperSizeFilter.SetValue) == "function" then
+
+            options.HolySniperSizeFilter:SetValue(
+                filter.Sizes
+            )
+        end
+
+        if options.HolySniperVariantFilter
+        and type(options.HolySniperVariantFilter.SetValue) == "function" then
+
+            options.HolySniperVariantFilter:SetValue(
+                filter.Variants
+            )
+        end
+
+        if options.HolySniperTargetAmount
+        and type(options.HolySniperTargetAmount.SetValue) == "function" then
+
+            options.HolySniperTargetAmount:SetValue(
+                tostring(filter.Amount)
+            )
+        end
+
+        if options.HolySniperPriority
+        and type(options.HolySniperPriority.SetValue) == "function" then
+
+            options.HolySniperPriority:SetValue(
+                filter.Priority
+            )
+        end
+    end
+
+    HolySaveSniperSettings()
+
+    HolySniperRefreshUI()
+
+    if type(HolyNotify) == "function" then
+
+        HolyNotify(
+            "HOLY Sniper",
+            "Loaded filter: "
+            .. tostring(filter.Pet),
+            3
+        )
+    end
+
+    return true
+end
+
+function HolySniperRemoveSelectedFilter()
+
+    local index =
+        HolySniperGetSelectedWatchlistIndex()
+
+    if not index then
+
+        if type(HolyNotify) == "function" then
+
+            HolyNotify(
+                "HOLY Sniper",
+                "Select a watchlist row first.",
+                3
+            )
+        end
+
+        return false
+    end
+
+    local removed =
+        HolySniperNormalizeFilter(
+            HOLY_SNIPER_STATE.Watchlist[index]
+        )
+
+    table.remove(
+        HOLY_SNIPER_STATE.Watchlist,
+        index
+    )
+
+    HOLY_SNIPER_STATE.SelectedWatchlistSourceIndex =
+        nil
+
+    if HOLY_SNIPER_UI
+    and type(HOLY_SNIPER_UI.WatchlistTable) == "table"
+    and type(HOLY_SNIPER_UI.WatchlistTable.SetSelected) == "function" then
+
+        HOLY_SNIPER_UI.WatchlistTable:SetSelected(
+            nil
+        )
+    end
+
+    HolySaveSniperSettings()
+
+    HolySniperRefreshUI()
+
+    if type(HolyNotify) == "function" then
+
+        HolyNotify(
+            "HOLY Sniper",
+            "Removed filter: "
+            .. tostring(removed.Pet),
+            3
+        )
+    end
+
+    return true
+end
+
+function HolySniperRemoveLastFilter()
+
+    return HolySniperRemoveSelectedFilter()
+end
+
+function HolySniperClearWatchlist()
+
+    HOLY_SNIPER_STATE.Watchlist =
+        {}
+
+    HOLY_SNIPER_STATE.SelectedWatchlistSourceIndex =
+        nil
+
+    if HOLY_SNIPER_UI
+    and type(HOLY_SNIPER_UI.WatchlistTable) == "table"
+    and type(HOLY_SNIPER_UI.WatchlistTable.SetSelected) == "function" then
+
+        HOLY_SNIPER_UI.WatchlistTable:SetSelected(
+            nil
+        )
+    end
+
+    HolySaveSniperSettings()
+
+    HolySniperRefreshUI()
+end
+
+function HolyFormatScale(value)
+
+    value =
+        math.clamp(
+            math.floor(
+                tonumber(value)
+                or 100
+            ),
+            30,
+            110
+        )
+
+    return tostring(value)
+        .. "%"
+end
+
+function HolyParseScale(value)
+
+    local rawValue =
+        tostring(value or "100%")
+
+    local cleanedValue =
+        rawValue:gsub(
+            "%%",
+            ""
+        )
+
+    local scale =
+        tonumber(
+            cleanedValue
+        )
+
+    if not scale then
+
+        scale =
+            100
+    end
+
+    return math.clamp(
+        math.floor(scale + 0.5),
+        30,
+        110
+    )
+end
+
+function HolyCopyText(text)
+
+    local clipboard =
+        setclipboard
+        or toclipboard
+        or set_clipboard
+
+    if type(clipboard) ~= "function" then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            clipboard(
+                tostring(text or "")
+            )
+        end)
+
+    return ok == true
+end
+
+function HolyBuildJoinCode()
+
+    return tostring(game.PlaceId)
+        .. ":"
+        .. tostring(game.JobId)
+end
+
+function HolyServerGetPlayerLimit()
+
+    local maxPlayers =
+        tonumber(
+            Players.MaxPlayers
+        )
+        or 8
+
+    if maxPlayers <= 0 then
+        maxPlayers =
+            8
+    end
+
+    return math.max(
+        1,
+        math.floor(maxPlayers)
+    )
+end
+
+function HolyServerReadInteger(value, fallback)
+
+    local number =
+        tonumber(
+            tostring(value or "")
+                :match("%-?%d+")
+        )
+
+    if not number then
+        number =
+            tonumber(fallback)
+            or 0
+    end
+
+    return math.floor(number)
+end
+
+function HolyServerReadNumber(value, fallback)
+
+    local number =
+        tonumber(
+            tostring(value or "")
+                :match("%-?%d+%.?%d*")
+        )
+
+    if not number then
+        number =
+            tonumber(fallback)
+            or 0
+    end
+
+    return number
+end
+
+function HolyServerPickStyleValid(value)
+
+    value =
+        HolyCleanText(
+            value
+        )
+
+    for _, style in ipairs(HOLY_SERVER_PICK_STYLES or {}) do
+
+        if style == value then
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyServerNormalizePickStyle(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if HolyServerPickStyleValid(text) == true then
+        return text
+    end
+
+    local lower =
+        text:lower()
+
+    if lower:find("spread", 1, true)
+    or lower:find("random servers", 1, true)
+    or lower:find("random only", 1, true) then
+
+        return "Random Spread"
+    end
+
+    if lower:find("recommend", 1, true)
+    or lower:find("smart", 1, true)
+    or lower:find("default", 1, true) then
+
+        return "Recommended"
+    end
+
+    if lower:find("fullest", 1, true)
+    or lower:find("highest", 1, true)
+    or lower:find("full under", 1, true)
+    or lower:find("under max", 1, true) then
+
+        return "Fullest Under Max"
+    end
+
+    if lower:find("lowest", 1, true)
+    or lower:find("real", 1, true)
+    or lower:find("empty", 1, true) then
+
+        return "Lowest Real Server"
+    end
+
+    if lower:find("target", 1, true)
+    or lower:find("closest", 1, true)
+    or lower:find("balanced", 1, true) then
+
+        return "Balanced"
+    end
+
+    if lower:find("free", 1, true)
+    or lower:find("slot", 1, true) then
+
+        return "Random Spread"
+    end
+
+    if lower:find("random", 1, true) then
+
+        return "Random in Range"
+    end
+
+    return "Recommended"
+end
+
+function HolyServerLegacyModeToPickStyle(value)
+
+    local lower =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    if lower:find("spread", 1, true) then
+        return "Random Spread"
+    end
+
+    if lower:find("empty", 1, true)
+    or lower:find("lowest", 1, true) then
+
+        return "Lowest Real Server"
+    end
+
+    if lower:find("full", 1, true)
+    or lower:find("highest", 1, true) then
+
+        return "Fullest Under Max"
+    end
+
+    if lower:find("balanced", 1, true)
+    or lower:find("target", 1, true) then
+
+        return "Balanced"
+    end
+
+    if lower:find("random", 1, true) then
+        return "Random Spread"
+    end
+
+    return "Recommended"
+end
+
+function HolyServerNormalizeState()
+
+    HOLY_SERVER_STATE =
+        type(HOLY_SERVER_STATE) == "table"
+        and HOLY_SERVER_STATE
+        or {}
+
+    local state =
+        HOLY_SERVER_STATE
+
+    local playerLimit =
+        HolyServerGetPlayerLimit()
+
+    state.MinPlayers =
+        math.clamp(
+            HolyServerReadInteger(
+                state.MinPlayers,
+                4
+            ),
+            0,
+            playerLimit
+        )
+
+    state.MaxPlayers =
+        math.clamp(
+            HolyServerReadInteger(
+                state.MaxPlayers,
+                playerLimit
+            ),
+            0,
+            playerLimit
+        )
+
+    if state.MaxPlayers < state.MinPlayers then
+
+        state.MaxPlayers =
+            state.MinPlayers
+    end
+
+    local defaultTarget =
+        math.clamp(
+            math.floor(
+                (
+                    tonumber(state.MinPlayers)
+                    + tonumber(state.MaxPlayers)
+                ) / 2
+            ),
+            0,
+            playerLimit
+        )
+
+    state.TargetPlayers =
+        math.clamp(
+            HolyServerReadInteger(
+                state.TargetPlayers,
+                defaultTarget
+            ),
+            0,
+            playerLimit
+        )
+
+    state.PickStyle =
+        HolyServerNormalizePickStyle(
+            state.PickStyle
+            or "Random Spread"
+        )
+
+    state.SearchPages =
+        math.max(
+            0,
+            HolyServerReadInteger(
+                state.SearchPages,
+                0
+            )
+        )
+
+    state.RetryDelay =
+        math.max(
+            0,
+            HolyServerReadNumber(
+                state.RetryDelay,
+                0.1
+            )
+        )
+
+    state.TeleportTimeout =
+        math.max(
+            0,
+            HolyServerReadNumber(
+                state.TeleportTimeout,
+                3
+            )
+        )
+
+    state.AvoidRecent =
+        state.AvoidRecent ~= false
+
+    state.RecentCooldown =
+        math.max(
+            0,
+            HolyServerReadInteger(
+                state.RecentCooldown,
+                600
+            )
+        )
+
+    state.FailedCooldown =
+        math.max(
+            0,
+            HolyServerReadInteger(
+                state.FailedCooldown,
+                120
+            )
+        )
+
+    state.HopToken =
+        tonumber(state.HopToken)
+        or 0
+
+    state.HopAttempt =
+        tonumber(state.HopAttempt)
+        or 0
+
+    state.RecentServers =
+        type(state.RecentServers) == "table"
+        and state.RecentServers
+        or {}
+
+    state.FailedServers =
+        type(state.FailedServers) == "table"
+        and state.FailedServers
+        or {}
+
+    state.LastStatus =
+        tostring(
+            state.LastStatus
+            or "Ready."
+        )
+
+    state.LastTarget =
+        tostring(
+            state.LastTarget
+            or "None"
+        )
+
+    state.LastCandidates =
+        tonumber(state.LastCandidates)
+        or 0
+
+    state.LastPagesRead =
+        tonumber(state.LastPagesRead)
+        or 0
+
+    state.LastFallbackStage =
+        tostring(
+            state.LastFallbackStage
+            or "None"
+        )
+
+    state.LastSortOrder =
+        tostring(
+            state.LastSortOrder
+            or "None"
+        )
+
+    state.LastFailed =
+        tostring(
+            state.LastFailed
+            or "None"
+        )
+
+    return state
+end
+
+function HolyServerGetMinPlayers()
+
+    return HolyServerNormalizeState().MinPlayers
+end
+
+function HolyServerGetMaxPlayers()
+
+    return HolyServerNormalizeState().MaxPlayers
+end
+
+function HolyServerGetPickStyle()
+
+    return HolyServerNormalizeState().PickStyle
+end
+
+function HolyServerGetTargetPlayers()
+
+    return HolyServerNormalizeState().TargetPlayers
+end
+
+function HolyServerGetSearchPages()
+
+    return HolyServerNormalizeState().SearchPages
+end
+
+function HolyServerGetRetryDelay()
+
+    return HolyServerNormalizeState().RetryDelay
+end
+
+function HolyServerGetTeleportTimeout()
+
+    return HolyServerNormalizeState().TeleportTimeout
+end
+
+function HolyServerBuildStatusText()
+
+    local state =
+        HolyServerNormalizeState()
+
+    local failedCount =
+        0
+
+    if type(HolyServerPruneFailedServers) == "function" then
+        HolyServerPruneFailedServers()
+    end
+
+    for _ in pairs(state.FailedServers or {}) do
+        failedCount =
+            failedCount + 1
+    end
+
+    local recentCount =
+        0
+
+    if type(HolyServerPruneRecentServers) == "function" then
+        HolyServerPruneRecentServers()
+    end
+
+    for _ in pairs(state.RecentServers or {}) do
+        recentCount =
+            recentCount + 1
+    end
+
+    return "Mode: "
+        .. tostring(state.PickStyle)
+        .. " | Range: "
+        .. tostring(state.MinPlayers)
+        .. "-"
+        .. tostring(state.MaxPlayers)
+        .. " | Target: "
+        .. tostring(state.TargetPlayers)
+        .. "\nScan: "
+        .. tostring(state.LastCandidates)
+        .. " candidate(s)"
+        .. " | "
+        .. tostring(state.LastPagesRead)
+        .. " page(s)"
+        .. " | "
+        .. tostring(state.LastSortOrder)
+        .. " | "
+        .. tostring(state.LastFallbackStage)
+        .. "\nLast: "
+        .. tostring(state.LastStatus or "Ready.")
+        .. "\nTarget: "
+        .. tostring(state.LastTarget or "None")
+        .. "\nMemory: "
+        .. tostring(recentCount)
+        .. " recent | "
+        .. tostring(failedCount)
+        .. " failed"
+end
+
+function HolyServerRefreshUI()
+
+    if type(HolySniperSetLabel) == "function" then
+
+        HolySniperSetLabel(
+            HOLY_SERVER_UI
+            and HOLY_SERVER_UI.StatusLabel
+            or nil,
+            HolyServerBuildStatusText()
+        )
+    end
+end
+
+function HolyServerSetStatus(text)
+
+    HolyServerNormalizeState().LastStatus =
+        tostring(text or "Ready.")
+
+    HolyServerRefreshUI()
+end
+
+function HolySaveServerSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local state =
+        HolyServerNormalizeState()
+
+    local payload = {
+        MinPlayers =
+            state.MinPlayers,
+
+        MaxPlayers =
+            state.MaxPlayers,
+
+        PickStyle =
+            state.PickStyle,
+
+        TargetPlayers =
+            state.TargetPlayers,
+
+        SearchPages =
+            state.SearchPages,
+
+        RetryDelay =
+            state.RetryDelay,
+
+        TeleportTimeout =
+            state.TeleportTimeout,
+
+        AvoidRecent =
+            state.AvoidRecent == true,
+
+        RecentCooldown =
+            state.RecentCooldown,
+    }
+
+    local encodeOk,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                SERVER_SETTINGS_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function HolyLoadServerSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                SERVER_SETTINGS_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return false
+    end
+
+    local readOk,
+        raw =
+        pcall(function()
+
+            return readfile(
+                SERVER_SETTINGS_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        return false
+    end
+
+    local decodeOk,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(data) ~= "table" then
+
+        return false
+    end
+
+    HOLY_SERVER_STATE.MinPlayers =
+        data.MinPlayers
+        or HOLY_SERVER_STATE.MinPlayers
+        or 0
+
+    HOLY_SERVER_STATE.MaxPlayers =
+        data.MaxPlayers
+        or HOLY_SERVER_STATE.MaxPlayers
+        or 6
+
+    HOLY_SERVER_STATE.PickStyle =
+        data.PickStyle
+        and HolyServerNormalizePickStyle(
+            data.PickStyle
+        )
+        or HolyServerLegacyModeToPickStyle(
+            data.SelectionMode
+            or HOLY_SERVER_STATE.PickStyle
+            or "Random in Range"
+        )
+
+    HOLY_SERVER_STATE.TargetPlayers =
+        data.TargetPlayers
+        or HOLY_SERVER_STATE.TargetPlayers
+        or 4
+
+    HOLY_SERVER_STATE.SearchPages =
+        data.SearchPages
+        or HOLY_SERVER_STATE.SearchPages
+        or 0
+
+    HOLY_SERVER_STATE.RetryDelay =
+        data.RetryDelay
+        or HOLY_SERVER_STATE.RetryDelay
+        or 2
+
+    HOLY_SERVER_STATE.TeleportTimeout =
+        data.TeleportTimeout
+        or HOLY_SERVER_STATE.TeleportTimeout
+        or 8
+
+    if type(data.AvoidRecent) == "boolean" then
+
+        HOLY_SERVER_STATE.AvoidRecent =
+            data.AvoidRecent
+    end
+
+    HOLY_SERVER_STATE.RecentCooldown =
+        data.RecentCooldown
+        or HOLY_SERVER_STATE.RecentCooldown
+        or 600
+
+    HolyServerNormalizeState()
+
+    return true
+end
+
+function HolyServerSetMinPlayers(value)
+
+    HOLY_SERVER_STATE.MinPlayers =
+        HolyServerReadInteger(
+            value,
+            HOLY_SERVER_STATE.MinPlayers
+            or 0
+        )
+
+    HolyServerNormalizeState()
+    HolySaveServerSettings()
+    HolyServerRefreshUI()
+end
+
+function HolyServerSetMaxPlayers(value)
+
+    HOLY_SERVER_STATE.MaxPlayers =
+        HolyServerReadInteger(
+            value,
+            HOLY_SERVER_STATE.MaxPlayers
+            or 6
+        )
+
+    HolyServerNormalizeState()
+    HolySaveServerSettings()
+    HolyServerRefreshUI()
+end
+
+function HolyServerSetPickStyle(value)
+
+    HOLY_SERVER_STATE.PickStyle =
+        HolyServerNormalizePickStyle(
+            value
+        )
+
+    HolyServerNormalizeState()
+    HolySaveServerSettings()
+    HolyServerRefreshUI()
+end
+
+function HolyServerSetTargetPlayers(value)
+
+    HOLY_SERVER_STATE.TargetPlayers =
+        HolyServerReadInteger(
+            value,
+            HOLY_SERVER_STATE.TargetPlayers
+            or 4
+        )
+
+    HolyServerNormalizeState()
+    HolySaveServerSettings()
+    HolyServerRefreshUI()
+end
+
+function HolyServerSetSearchPages(value)
+
+    HOLY_SERVER_STATE.SearchPages =
+        math.max(
+            0,
+            HolyServerReadInteger(
+                value,
+                HOLY_SERVER_STATE.SearchPages
+                or 0
+            )
+        )
+
+    HolyServerNormalizeState()
+    HolySaveServerSettings()
+    HolyServerRefreshUI()
+end
+
+function HolyServerSetRetryDelay(value)
+
+    HOLY_SERVER_STATE.RetryDelay =
+        math.max(
+            0,
+            HolyServerReadNumber(
+                value,
+                HOLY_SERVER_STATE.RetryDelay
+                or 2
+            )
+        )
+
+    HolyServerNormalizeState()
+    HolySaveServerSettings()
+    HolyServerRefreshUI()
+end
+
+function HolyServerSetTeleportTimeout(value)
+
+    HOLY_SERVER_STATE.TeleportTimeout =
+        math.max(
+            0,
+            HolyServerReadNumber(
+                value,
+                HOLY_SERVER_STATE.TeleportTimeout
+                or 8
+            )
+        )
+
+    HolyServerNormalizeState()
+    HolySaveServerSettings()
+    HolyServerRefreshUI()
+end
+
+function HolyServerSetAvoidRecent(value)
+
+    HOLY_SERVER_STATE.AvoidRecent =
+        value == true
+
+    HolyServerNormalizeState()
+    HolySaveServerSettings()
+    HolyServerRefreshUI()
+end
+
+function HolyServerPruneRecentServers()
+
+    local state =
+        HolyServerNormalizeState()
+
+    local now =
+        os.time()
+
+    for jobId, expiresAt in pairs(state.RecentServers) do
+
+        if tonumber(expiresAt) == nil
+        or tonumber(expiresAt) <= now then
+
+            state.RecentServers[jobId] =
+                nil
+        end
+    end
+end
+
+function HolyServerIsRecent(serverId)
+
+    local state =
+        HolyServerNormalizeState()
+
+    if state.AvoidRecent ~= true then
+        return false
+    end
+
+    serverId =
+        HolyCleanText(
+            serverId
+        )
+
+    if serverId == "" then
+        return false
+    end
+
+    HolyServerPruneRecentServers()
+
+    return tonumber(
+        state.RecentServers[serverId]
+    ) ~= nil
+end
+
+function HolyServerRememberRecent(serverId)
+
+    local state =
+        HolyServerNormalizeState()
+
+    serverId =
+        HolyCleanText(
+            serverId
+        )
+
+    if serverId == "" then
+        return false
+    end
+
+    local cooldown =
+        tonumber(state.RecentCooldown)
+        or 600
+
+    if cooldown <= 0 then
+        return false
+    end
+
+    state.RecentServers[serverId] =
+        os.time() + cooldown
+
+    return true
+end
+
+function HolyServerPruneFailedServers()
+
+    local state =
+        HolyServerNormalizeState()
+
+    local now =
+        os.time()
+
+    for jobId, row in pairs(state.FailedServers or {}) do
+
+        local expiresAt =
+            0
+
+        if type(row) == "table" then
+
+            expiresAt =
+                tonumber(row.ExpiresAt)
+                or 0
+
+        else
+
+            expiresAt =
+                tonumber(row)
+                or 0
+        end
+
+        if expiresAt <= now then
+
+            state.FailedServers[jobId] =
+                nil
+        end
+    end
+end
+
+function HolyServerIsFailed(serverId)
+
+    local state =
+        HolyServerNormalizeState()
+
+    serverId =
+        HolyCleanText(
+            serverId
+        )
+
+    if serverId == "" then
+        return false
+    end
+
+    HolyServerPruneFailedServers()
+
+    return state.FailedServers[serverId] ~= nil
+end
+
+function HolyServerRememberFailed(serverId, reason)
+
+    local state =
+        HolyServerNormalizeState()
+
+    serverId =
+        HolyCleanText(
+            serverId
+        )
+
+    if serverId == "" then
+        return false
+    end
+
+    local cooldown =
+        tonumber(state.FailedCooldown)
+        or 120
+
+    if cooldown <= 0 then
+        return false
+    end
+
+    state.FailedServers[serverId] = {
+        ExpiresAt =
+            os.time() + cooldown,
+
+        Reason =
+            tostring(reason or "failed"),
+    }
+
+    state.LastFailed =
+        tostring(reason or "failed")
+        .. " | "
+        .. serverId:sub(1, 8)
+
+    return true
+end
+
+function HolyServerGetPublicSortOrders(stage)
+
+    local state =
+        HolyServerNormalizeState()
+
+    local style =
+        HolyServerNormalizePickStyle(
+            state.PickStyle
+        )
+
+    local minPlayers =
+        tonumber(
+            stage
+            and stage.MinPlayers
+        )
+        or state.MinPlayers
+
+    if style == "Lowest Real Server" then
+
+        return {
+            "Asc",
+            "Desc",
+        }
+    end
+
+    if minPlayers >= math.max(
+        3,
+        math.floor(HolyServerGetPlayerLimit() * 0.45)
+    ) then
+
+        return {
+            "Desc",
+            "Asc",
+        }
+    end
+
+    if style == "Random Spread" then
+
+        if math.random(1, 2) == 1 then
+
+            return {
+                "Desc",
+                "Asc",
+            }
+        end
+
+        return {
+            "Asc",
+            "Desc",
+        }
+    end
+
+    return {
+        "Desc",
+        "Asc",
+    }
+end
+
+function HolyServerBuildPublicServerUrl(cursor, sortOrder)
+
+    sortOrder =
+        HolyCleanText(
+            sortOrder
+        )
+
+    if sortOrder ~= "Asc"
+    and sortOrder ~= "Desc" then
+
+        sortOrder =
+            "Desc"
+    end
+
+    local url =
+        "https://games.roblox.com/v1/games/"
+        .. tostring(game.PlaceId)
+        .. "/servers/Public?sortOrder="
+        .. sortOrder
+        .. "&limit=100&excludeFullGames=true"
+
+    cursor =
+        HolyCleanText(
+            cursor
+        )
+
+    if cursor ~= "" then
+
+        url =
+            url
+            .. "&cursor="
+            .. HttpService:UrlEncode(
+                cursor
+            )
+    end
+
+    return url
+end
+
+function HolyServerRowAllowed(server, seen, stage)
+
+    if type(server) ~= "table" then
+        return false
+    end
+
+    local state =
+        HolyServerNormalizeState()
+
+    stage =
+        type(stage) == "table"
+        and stage
+        or {}
+
+    local serverId =
+        HolyCleanText(
+            server.id
+        )
+
+    if serverId == ""
+    or serverId == tostring(game.JobId) then
+
+        return false
+    end
+
+    if type(seen) == "table"
+    and seen[serverId] == true then
+
+        return false
+    end
+
+    local playing =
+        tonumber(server.playing)
+        or 0
+
+    local maxPlayers =
+        tonumber(server.maxPlayers)
+        or 0
+
+    if maxPlayers <= 0 then
+        return false
+    end
+
+    if playing >= maxPlayers then
+        return false
+    end
+
+    local minPlayers =
+        tonumber(stage.MinPlayers)
+        or state.MinPlayers
+
+    local maxAllowedPlayers =
+        tonumber(stage.MaxPlayers)
+        or state.MaxPlayers
+
+    if state.PickStyle == "Lowest Real Server"
+    and stage.AllowLowReal ~= true then
+
+        minPlayers =
+            math.max(
+                minPlayers,
+                2
+            )
+    end
+
+    if playing < minPlayers then
+        return false
+    end
+
+    if playing > maxAllowedPlayers then
+        return false
+    end
+
+    if stage.AllowRecent ~= true
+    and HolyServerIsRecent(serverId) == true then
+
+        return false
+    end
+
+    if stage.AllowFailed ~= true
+    and HolyServerIsFailed(serverId) == true then
+
+        return false
+    end
+
+    return true
+end
+
+function HolyServerGetCandidatePoolTarget()
+
+    local state =
+        HolyServerNormalizeState()
+
+    local style =
+        HolyServerNormalizePickStyle(
+            state.PickStyle
+        )
+
+    if style == "Random Spread" then
+        return 44
+    end
+
+    if style == "Random in Range" then
+        return 28
+    end
+
+    if style == "Recommended" then
+        return 24
+    end
+
+    if style == "Balanced" then
+        return 22
+    end
+
+    if style == "Fullest Under Max" then
+        return 18
+    end
+
+    if style == "Lowest Real Server" then
+        return 18
+    end
+
+    return math.max(
+        12,
+        tonumber(SERVER_HOP_FAST_CANDIDATES)
+        or 24
+    )
+end
+
+function HolyServerAutoPageLimit(stage)
+
+    local state =
+        HolyServerNormalizeState()
+
+    if state.SearchPages > 0 then
+        return state.SearchPages
+    end
+
+    local style =
+        HolyServerNormalizePickStyle(
+            state.PickStyle
+        )
+
+    local stageName =
+        tostring(
+            stage
+            and stage.Name
+            or ""
+        )
+
+    if stageName == "Any Under Max" then
+        return 2
+    end
+
+    if style == "Random Spread" then
+        return 5
+    end
+
+    if style == "Recommended" then
+        return 4
+    end
+
+    if style == "Balanced" then
+        return 4
+    end
+
+    return 3
+end
+
+function HolyServerBuildSearchStages(forceAllowRecent)
+
+    local state =
+        HolyServerNormalizeState()
+
+    local stages =
+        {}
+
+    local seen =
+        {}
+
+    local function addStage(name, minPlayers, maxPlayers, allowRecent, allowLowReal)
+
+        minPlayers =
+            math.clamp(
+                math.floor(
+                    tonumber(minPlayers)
+                    or 0
+                ),
+                0,
+                HolyServerGetPlayerLimit()
+            )
+
+        maxPlayers =
+            math.clamp(
+                math.floor(
+                    tonumber(maxPlayers)
+                    or HolyServerGetPlayerLimit()
+                ),
+                0,
+                HolyServerGetPlayerLimit()
+            )
+
+        if maxPlayers < minPlayers then
+            maxPlayers =
+                minPlayers
+        end
+
+        local key =
+            tostring(minPlayers)
+            .. "|"
+            .. tostring(maxPlayers)
+            .. "|"
+            .. tostring(allowRecent == true)
+            .. "|"
+            .. tostring(allowLowReal == true)
+
+        if seen[key] == true then
+            return
+        end
+
+        seen[key] =
+            true
+
+        table.insert(
+            stages,
+            {
+                Name =
+                    tostring(name or "Stage"),
+
+                MinPlayers =
+                    minPlayers,
+
+                MaxPlayers =
+                    maxPlayers,
+
+                AllowRecent =
+                    allowRecent == true,
+
+                AllowLowReal =
+                    allowLowReal == true,
+
+                AllowFailed =
+                    false,
+            }
+        )
+    end
+
+    addStage(
+        "Strict",
+        state.MinPlayers,
+        state.MaxPlayers,
+        forceAllowRecent == true,
+        false
+    )
+
+    if state.MinPlayers > 0 then
+
+        addStage(
+            "Relaxed -1",
+            state.MinPlayers - 1,
+            state.MaxPlayers,
+            forceAllowRecent == true,
+            false
+        )
+    end
+
+    if state.AvoidRecent == true
+    and forceAllowRecent ~= true then
+
+        addStage(
+            "Allow Recent",
+            state.MinPlayers,
+            state.MaxPlayers,
+            true,
+            false
+        )
+    end
+
+    addStage(
+        "Any Under Max",
+        0,
+        state.MaxPlayers,
+        true,
+        true
+    )
+
+    return stages
+end
+
+function HolyServerFetchCandidates(allowRecent)
+
+    local state =
+        HolyServerNormalizeState()
+
+    local candidates =
+        {}
+
+    local seenServers =
+        {}
+
+    local totalPagesRead =
+        0
+
+    local poolTarget =
+        math.max(
+            1,
+            math.floor(
+                tonumber(HolyServerGetCandidatePoolTarget())
+                or 24
+            )
+        )
+
+    local lastReason =
+        "no servers scanned"
+
+    local stages =
+        HolyServerBuildSearchStages(
+            allowRecent == true
+        )
+
+    for _, stage in ipairs(stages) do
+
+        local stageCandidates =
+            {}
+
+        for _, sortOrder in ipairs(HolyServerGetPublicSortOrders(stage)) do
+
+            local cursor =
+                ""
+
+            local seenCursors =
+                {}
+
+            local pagesReadThisSort =
+                0
+
+            local pageLimit =
+                HolyServerAutoPageLimit(
+                    stage
+                )
+
+            while true do
+
+                if state.Hopping ~= true then
+                    break
+                end
+
+                if pagesReadThisSort >= pageLimit then
+                    break
+                end
+
+                pagesReadThisSort =
+                    pagesReadThisSort + 1
+
+                totalPagesRead =
+                    totalPagesRead + 1
+
+                HOLY_SERVER_STATE.LastPagesRead =
+                    totalPagesRead
+
+                HOLY_SERVER_STATE.LastCandidates =
+                    #candidates
+
+                HOLY_SERVER_STATE.LastFallbackStage =
+                    stage.Name
+
+                HOLY_SERVER_STATE.LastSortOrder =
+                    sortOrder
+
+                HolyServerSetStatus(
+                    "Scanning "
+                    .. tostring(stage.Name)
+                    .. " "
+                    .. tostring(sortOrder)
+                    .. " p"
+                    .. tostring(pagesReadThisSort)
+                    .. " · "
+                    .. tostring(#candidates)
+                    .. " found"
+                )
+
+                local body,
+                    requestError =
+                    HolyHttpGet(
+                        HolyServerBuildPublicServerUrl(
+                            cursor,
+                            sortOrder
+                        )
+                    )
+
+                if type(body) ~= "string"
+                or body == "" then
+
+                    lastReason =
+                        "server list failed: "
+                        .. tostring(requestError)
+
+                    break
+                end
+
+                local decodeOk,
+                    data =
+                    pcall(function()
+
+                        return HttpService:JSONDecode(
+                            body
+                        )
+                    end)
+
+                if decodeOk ~= true
+                or type(data) ~= "table" then
+
+                    lastReason =
+                        "server list decode failed"
+
+                    break
+                end
+
+                for _, server in ipairs(data.data or {}) do
+
+                    local serverId =
+                        HolyCleanText(
+                            server.id
+                        )
+
+                    if HolyServerRowAllowed(
+                        server,
+                        seenServers,
+                        stage
+                    ) == true then
+
+                        seenServers[serverId] =
+                            true
+
+                        local playing =
+                            tonumber(server.playing)
+                            or 0
+
+                        local maxPlayers =
+                            tonumber(server.maxPlayers)
+                            or 0
+
+                        server.FreeSlots =
+                            math.max(
+                                0,
+                                maxPlayers - playing
+                            )
+
+                        server.HolyStage =
+                            stage.Name
+
+                        server.HolySortOrder =
+                            sortOrder
+
+                        server.HolyRandom =
+                            math.random(
+                                1,
+                                1000000
+                            )
+
+                        table.insert(
+                            candidates,
+                            server
+                        )
+
+                        table.insert(
+                            stageCandidates,
+                            server
+                        )
+
+                        if #stageCandidates >= poolTarget then
+
+                            HOLY_SERVER_STATE.LastCandidates =
+                                #candidates
+
+                            HOLY_SERVER_STATE.LastPagesRead =
+                                totalPagesRead
+
+                            HOLY_SERVER_STATE.LastFallbackStage =
+                                stage.Name
+
+                            HOLY_SERVER_STATE.LastSortOrder =
+                                sortOrder
+
+                            return stageCandidates,
+                                "ok"
+                        end
+                    end
+                end
+
+                cursor =
+                    HolyCleanText(
+                        data.nextPageCursor
+                    )
+
+                if cursor == "" then
+                    break
+                end
+
+                if seenCursors[cursor] == true then
+                    break
+                end
+
+                seenCursors[cursor] =
+                    true
+
+                task.wait()
+            end
+        end
+
+        if #stageCandidates > 0 then
+
+            HOLY_SERVER_STATE.LastCandidates =
+                #stageCandidates
+
+            HOLY_SERVER_STATE.LastPagesRead =
+                totalPagesRead
+
+            HOLY_SERVER_STATE.LastFallbackStage =
+                stage.Name
+
+            return stageCandidates,
+                "ok"
+        end
+    end
+
+    HOLY_SERVER_STATE.LastCandidates =
+        0
+
+    HOLY_SERVER_STATE.LastPagesRead =
+        totalPagesRead
+
+    return {},
+        "no servers found after smart search: "
+        .. tostring(lastReason)
+end
+
+function HolyServerShuffleServers(servers)
+
+    servers =
+        type(servers) == "table"
+        and servers
+        or {}
+
+    for index = #servers, 2, -1 do
+
+        local swapIndex =
+            math.random(
+                1,
+                index
+            )
+
+        servers[index],
+            servers[swapIndex] =
+            servers[swapIndex],
+            servers[index]
+    end
+
+    return servers
+end
+
+function HolyServerPickFromTop(servers, limit)
+
+    if type(servers) ~= "table"
+    or #servers <= 0 then
+
+        return nil
+    end
+
+    limit =
+        math.min(
+            #servers,
+            math.max(
+                1,
+                math.floor(
+                    tonumber(limit)
+                    or 8
+                )
+            )
+        )
+
+    return servers[
+        math.random(
+            1,
+            limit
+        )
+    ]
+end
+
+function HolyServerIdealTargetPlayers(state)
+
+    state =
+        state
+        or HolyServerNormalizeState()
+
+    local playerLimit =
+        HolyServerGetPlayerLimit()
+
+    local target =
+        tonumber(state.TargetPlayers)
+        or math.floor(
+            (
+                tonumber(state.MinPlayers)
+                + tonumber(state.MaxPlayers)
+            ) / 2
+        )
+
+    target =
+        math.clamp(
+            math.floor(target),
+            tonumber(state.MinPlayers)
+            or 0,
+            tonumber(state.MaxPlayers)
+            or playerLimit
+        )
+
+    if target >= playerLimit then
+        target =
+            playerLimit - 1
+    end
+
+    return math.max(
+        0,
+        target
+    )
+end
+
+function HolyServerRecommendedScore(server, state)
+
+    state =
+        state
+        or HolyServerNormalizeState()
+
+    local playing =
+        tonumber(server.playing)
+        or 0
+
+    local maxPlayers =
+        tonumber(server.maxPlayers)
+        or HolyServerGetPlayerLimit()
+
+    local freeSlots =
+        math.max(
+            0,
+            maxPlayers - playing
+        )
+
+    local ideal =
+        HolyServerIdealTargetPlayers(
+            state
+        )
+
+    local score =
+        0
+
+    score =
+        score
+        - math.abs(playing - ideal) * 120
+
+    score =
+        score
+        + playing * 12
+
+    score =
+        score
+        + freeSlots * 8
+
+    if playing >= tonumber(state.MinPlayers)
+    and playing <= tonumber(state.MaxPlayers) then
+
+        score =
+            score + 300
+    end
+
+    if playing == maxPlayers - 1 then
+
+        score =
+            score + 80
+    end
+
+    if tostring(server.HolyStage or "") == "Strict" then
+
+        score =
+            score + 200
+
+    elseif tostring(server.HolyStage or "") == "Relaxed -1" then
+
+        score =
+            score + 100
+
+    elseif tostring(server.HolyStage or "") == "Any Under Max" then
+
+        score =
+            score - 180
+    end
+
+    score =
+        score
+        + math.random(
+            1,
+            100
+        ) / 100
+
+    return score
+end
+
+function HolyServerPickTarget(servers)
+
+    if type(servers) ~= "table"
+    or #servers <= 0 then
+
+        return nil
+    end
+
+    local state =
+        HolyServerNormalizeState()
+
+    local style =
+        HolyServerNormalizePickStyle(
+            state.PickStyle
+        )
+
+    HolyServerShuffleServers(
+        servers
+    )
+
+    if style == "Random Spread"
+    or style == "Random in Range" then
+
+        return servers[
+            math.random(
+                1,
+                #servers
+            )
+        ]
+    end
+
+    if style == "Fullest Under Max" then
+
+        table.sort(servers, function(a, b)
+
+            local playingA =
+                tonumber(a.playing)
+                or 0
+
+            local playingB =
+                tonumber(b.playing)
+                or 0
+
+            if playingA ~= playingB then
+                return playingA > playingB
+            end
+
+            local freeA =
+                tonumber(a.FreeSlots)
+                or 0
+
+            local freeB =
+                tonumber(b.FreeSlots)
+                or 0
+
+            if freeA ~= freeB then
+                return freeA < freeB
+            end
+
+            return tonumber(a.HolyRandom or 0)
+                > tonumber(b.HolyRandom or 0)
+        end)
+
+        return HolyServerPickFromTop(
+            servers,
+            8
+        )
+    end
+
+    if style == "Lowest Real Server" then
+
+        table.sort(servers, function(a, b)
+
+            local playingA =
+                tonumber(a.playing)
+                or 0
+
+            local playingB =
+                tonumber(b.playing)
+                or 0
+
+            local realA =
+                playingA >= 2
+
+            local realB =
+                playingB >= 2
+
+            if realA ~= realB then
+                return realA == true
+            end
+
+            if playingA ~= playingB then
+                return playingA < playingB
+            end
+
+            return tonumber(a.FreeSlots or 0)
+                > tonumber(b.FreeSlots or 0)
+        end)
+
+        return HolyServerPickFromTop(
+            servers,
+            6
+        )
+    end
+
+    if style == "Balanced" then
+
+        local target =
+            HolyServerIdealTargetPlayers(
+                state
+            )
+
+        table.sort(servers, function(a, b)
+
+            local playingA =
+                tonumber(a.playing)
+                or 0
+
+            local playingB =
+                tonumber(b.playing)
+                or 0
+
+            local distanceA =
+                math.abs(
+                    playingA - target
+                )
+
+            local distanceB =
+                math.abs(
+                    playingB - target
+                )
+
+            if distanceA ~= distanceB then
+                return distanceA < distanceB
+            end
+
+            return tonumber(a.FreeSlots or 0)
+                > tonumber(b.FreeSlots or 0)
+        end)
+
+        return HolyServerPickFromTop(
+            servers,
+            8
+        )
+    end
+
+    table.sort(servers, function(a, b)
+
+        local scoreA =
+            HolyServerRecommendedScore(
+                a,
+                state
+            )
+
+        local scoreB =
+            HolyServerRecommendedScore(
+                b,
+                state
+            )
+
+        if scoreA ~= scoreB then
+            return scoreA > scoreB
+        end
+
+        return tonumber(a.HolyRandom or 0)
+            > tonumber(b.HolyRandom or 0)
+    end)
+
+    return HolyServerPickFromTop(
+        servers,
+        10
+    )
+end
+
+function HolyRememberServerTarget(target)
+
+    if type(target) ~= "table" then
+        return
+    end
+
+    HOLY_SERVER_STATE.LastTarget =
+        tostring(target.playing or "?")
+        .. "/"
+        .. tostring(target.maxPlayers or "?")
+        .. " | "
+        .. tostring(
+            target.id
+            or "?"
+        ):sub(
+            1,
+            8
+        )
+        .. " | "
+        .. tostring(
+            target.HolyStage
+            or "Stage"
+        )
+
+    HOLY_SERVER_STATE.LastSortOrder =
+        tostring(
+            target.HolySortOrder
+            or HOLY_SERVER_STATE.LastSortOrder
+            or "None"
+        )
+
+    HOLY_SERVER_STATE.LastFallbackStage =
+        tostring(
+            target.HolyStage
+            or HOLY_SERVER_STATE.LastFallbackStage
+            or "None"
+        )
+
+    HolyServerRefreshUI()
+end
+
+function HolyQueueSmartServerHop(reason, failCallback)
+
+    if HolySniperServerSwitchBlocked(
+        "Server Hop",
+        true
+    ) == true then
+
+        return false,
+            "sniper protection"
+    end
+
+    local state =
+        HolyServerNormalizeState()
+
+    state.HopToken =
+        (
+            tonumber(state.HopToken)
+            or 0
+        )
+        + 1
+
+    local token =
+        state.HopToken
+
+    state.Hopping =
+        true
+
+    state.HopAttempt =
+        0
+
+    reason =
+        tostring(reason or "server hop")
+
+    HolyServerSetStatus(
+        "Starting smart server search..."
+    )
+
+    task.spawn(function()
+
+        while state.Hopping == true
+        and state.HopToken == token do
+
+            if HolySniperServerSwitchBlocked(
+                "Server Hop",
+                false
+            ) == true then
+
+                state.Hopping =
+                    false
+
+                if type(failCallback) == "function" then
+
+                    pcall(
+                        failCallback,
+                        false,
+                        "sniper protection"
+                    )
+                end
+
+                return
+            end
+
+            state.HopAttempt =
+                (
+                    tonumber(state.HopAttempt)
+                    or 0
+                )
+                + 1
+
+            HolyServerSetStatus(
+                "Finding "
+                .. tostring(state.MinPlayers)
+                .. "-"
+                .. tostring(state.MaxPlayers)
+                .. " · "
+                .. tostring(state.PickStyle)
+                .. " · attempt "
+                .. tostring(state.HopAttempt)
+            )
+
+            local servers,
+                fetchReason =
+                HolyServerFetchCandidates(
+                    false
+                )
+
+            if state.Hopping ~= true
+            or state.HopToken ~= token then
+                return
+            end
+
+            if type(servers) ~= "table"
+            or #servers <= 0 then
+
+                HolyServerSetStatus(
+                    tostring(fetchReason)
+                    .. ". Retrying..."
+                )
+
+                task.wait(
+                    state.RetryDelay
+                )
+
+                continue
+            end
+
+            local target =
+                HolyServerPickTarget(
+                    servers
+                )
+
+            if not target then
+
+                HolyServerSetStatus(
+                    "No server target. Retrying..."
+                )
+
+                task.wait(
+                    state.RetryDelay
+                )
+
+                continue
+            end
+
+            if HolySniperServerSwitchBlocked(
+                "Server Hop",
+                false
+            ) == true then
+
+                state.Hopping =
+                    false
+
+                if type(failCallback) == "function" then
+
+                    pcall(
+                        failCallback,
+                        false,
+                        "sniper protection"
+                    )
+                end
+
+                return
+            end
+
+            HolyRememberServerTarget(
+                target
+            )
+
+            HolyServerRememberRecent(
+                target.id
+            )
+
+            HolyServerSetStatus(
+                "Joining "
+                .. tostring(target.playing)
+                .. "/"
+                .. tostring(target.maxPlayers)
+                .. " · "
+                .. tostring(state.PickStyle)
+                .. "..."
+            )
+
+            local startedJobId =
+                tostring(game.JobId)
+
+            local ok,
+                err =
+                pcall(function()
+
+                    TeleportService:TeleportToPlaceInstance(
+                        game.PlaceId,
+                        target.id,
+                        LocalPlayer
+                    )
+                end)
+
+            if ok == true then
+
+                HolyServerSetStatus(
+                    "Teleport queued to "
+                    .. tostring(target.playing)
+                    .. "/"
+                    .. tostring(target.maxPlayers)
+                    .. "."
+                )
+
+                local timeout =
+                    tonumber(state.TeleportTimeout)
+                    or 3
+
+                if timeout <= 0 then
+
+                    state.Hopping =
+                        false
+
+                    return
+                end
+
+                local startedAt =
+                    os.clock()
+
+                while state.Hopping == true
+                and state.HopToken == token
+                and os.clock() - startedAt < timeout do
+
+                    if tostring(game.JobId) ~= startedJobId then
+                        return
+                    end
+
+                    task.wait(
+                        0.25
+                    )
+                end
+
+                if state.Hopping ~= true
+                or state.HopToken ~= token then
+                    return
+                end
+
+                if tostring(game.JobId) == startedJobId then
+
+                    HolyServerRememberFailed(
+                        target.id,
+                        "teleport timeout"
+                    )
+
+                    HolyServerSetStatus(
+                        "Teleport timed out. Blocking target and retrying..."
+                    )
+
+                    task.wait(
+                        state.RetryDelay
+                    )
+
+                    continue
+                end
+
+                return
+            end
+
+            HolyServerRememberFailed(
+                target.id,
+                "teleport failed"
+            )
+
+            HolyServerSetStatus(
+                "Teleport failed. Blocking target and retrying..."
+            )
+
+            warn(
+                "[HOLY PREMIUM SERVER HOP]",
+                tostring(err)
+            )
+
+            task.wait(
+                state.RetryDelay
+            )
+        end
+
+        if state.HopToken == token then
+
+            state.Hopping =
+                false
+        end
+    end)
+
+    return true,
+        "queued"
+end
+
+function HolyCancelServerHop(reason)
+
+    HOLY_SERVER_STATE =
+        type(HOLY_SERVER_STATE) == "table"
+        and HOLY_SERVER_STATE
+        or {}
+
+    HOLY_SERVER_STATE.HopToken =
+        (
+            tonumber(HOLY_SERVER_STATE.HopToken)
+            or 0
+        )
+        + 1
+
+    HOLY_SERVER_STATE.Hopping =
+        false
+
+    HOLY_SERVER_STATE.HopAttempt =
+        0
+
+    if type(HOLY_SNIPER_RUNTIME) == "table" then
+
+        HOLY_SNIPER_RUNTIME.AutoHopInProgress =
+            false
+
+        HOLY_SNIPER_RUNTIME.HopFailureBackoffUntil =
+            os.clock() + 2
+    end
+
+    HolyServerSetStatus(
+        tostring(reason or "Hop cancelled.")
+    )
+end
+
+function HolyRejoin()
+
+    if HolySniperServerSwitchBlocked(
+        "Rejoin",
+        true
+    ) == true then
+
+        return false
+    end
+
+    local ok,
+        err =
+        pcall(function()
+
+            TeleportService:TeleportToPlaceInstance(
+                game.PlaceId,
+                game.JobId,
+                LocalPlayer
+            )
+        end)
+
+    if ok ~= true then
+
+        if type(HolyNotify) == "function" then
+
+            HolyNotify(
+                "HOLY",
+                "Rejoin failed: "
+                .. tostring(err),
+                5
+            )
+        end
+    end
+
+    return ok == true
+end
+
+function HolyServerHop()
+
+    local ok,
+        err =
+        HolyQueueSmartServerHop(
+            "manual server hop"
+        )
+
+    if ok ~= true then
+
+        if type(HolyNotify) == "function" then
+
+            HolyNotify(
+                "HOLY",
+                "Server hop failed: "
+                .. tostring(err),
+                5
+            )
+        end
+    end
+end
+
+function HolyLoadingLog(...)
+
+    HOLY_LOADING_SKIP_STATE =
+        type(HOLY_LOADING_SKIP_STATE) == "table"
+        and HOLY_LOADING_SKIP_STATE
+        or {}
+
+    HOLY_LOADING_SKIP_STATE.LogsPrinted =
+        tonumber(HOLY_LOADING_SKIP_STATE.LogsPrinted)
+        or 0
+
+    if HOLY_LOADING_SKIP_STATE.LogsPrinted >= 8 then
+        return
+    end
+
+    HOLY_LOADING_SKIP_STATE.LogsPrinted =
+        HOLY_LOADING_SKIP_STATE.LogsPrinted + 1
+
+    print(
+        "[HOLY LOADING SKIP]",
+        ...
+    )
+end
+
+function HolyLoadingGetInputManager()
+
+    local ok,
+        service =
+        pcall(function()
+
+            return game:GetService(
+                "VirtualInputManager"
+            )
+        end)
+
+    if ok == true then
+        return service
+    end
+
+    return nil
+end
+
+function HolyLoadingPathOf(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return tostring(instance)
+    end
+
+    local ok,
+        result =
+        pcall(function()
+
+            return instance:GetFullName()
+        end)
+
+    if ok == true then
+        return tostring(result)
+    end
+
+    return tostring(instance)
+end
+
+function HolyLoadingGetText(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return ""
+    end
+
+    if instance:IsA("TextLabel")
+    or instance:IsA("TextButton")
+    or instance:IsA("TextBox") then
+
+        local ok,
+            text =
+            pcall(function()
+
+                return instance.Text
+            end)
+
+        if ok == true then
+
+            return HolyCleanText(
+                text
+            )
+        end
+    end
+
+    return ""
+end
+
+function HolyLoadingGetTextTransparency(instance)
+
+    local value =
+        nil
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    pcall(function()
+
+        if instance:IsA("TextLabel")
+        or instance:IsA("TextButton")
+        or instance:IsA("TextBox") then
+
+            value =
+                instance.TextTransparency
+        end
+    end)
+
+    return tonumber(value)
+end
+
+function HolyLoadingVisibleChainReady(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return false
+    end
+
+    local current =
+        instance
+
+    while current
+    and current ~= game do
+
+        if current:IsA("GuiObject") then
+
+            local visible =
+                false
+
+            local absSize =
+                Vector2.zero
+
+            pcall(function()
+
+                visible =
+                    current.Visible == true
+
+                absSize =
+                    current.AbsoluteSize
+            end)
+
+            if visible ~= true then
+                return false
+            end
+
+            if current == instance
+            and (
+                typeof(absSize) ~= "Vector2"
+                or absSize.X <= 2
+                or absSize.Y <= 2
+            ) then
+
+                return false
+            end
+        end
+
+        if current:IsA("LayerCollector") then
+
+            local enabled =
+                false
+
+            pcall(function()
+
+                enabled =
+                    current.Enabled == true
+            end)
+
+            if enabled ~= true then
+                return false
+            end
+        end
+
+        if current == workspace then
+            break
+        end
+
+        current =
+            current.Parent
+    end
+
+    return true
+end
+
+function HolyLoadingGetGuiCenter(instance)
+
+    if typeof(instance) ~= "Instance"
+    or instance:IsA("GuiObject") ~= true then
+
+        return nil
+    end
+
+    local position =
+        nil
+
+    local size =
+        nil
+
+    pcall(function()
+
+        position =
+            instance.AbsolutePosition
+
+        size =
+            instance.AbsoluteSize
+    end)
+
+    if typeof(position) ~= "Vector2"
+    or typeof(size) ~= "Vector2" then
+
+        return nil
+    end
+
+    return Vector2.new(
+        position.X + size.X / 2,
+        position.Y + size.Y / 2
+    )
+end
+
+function HolyLoadingGetScreenCenter()
+
+    local camera =
+        workspace.CurrentCamera
+
+    local viewport =
+        camera
+        and camera.ViewportSize
+        or Vector2.new(
+            1280,
+            720
+        )
+
+    return Vector2.new(
+        viewport.X / 2,
+        viewport.Y / 2
+    )
+end
+
+function HolyLoadingClickAt(position)
+
+    if typeof(position) ~= "Vector2" then
+        return false
+    end
+
+    local inputManager =
+        HolyLoadingGetInputManager()
+
+    if not inputManager then
+        return false
+    end
+
+    pcall(function()
+
+        inputManager:SendMouseMoveEvent(
+            position.X,
+            position.Y,
+            game
+        )
+    end)
+
+    task.wait(
+        0.025
+    )
+
+    pcall(function()
+
+        inputManager:SendMouseButtonEvent(
+            position.X,
+            position.Y,
+            0,
+            true,
+            game,
+            0
+        )
+    end)
+
+    task.wait(
+        0.055
+    )
+
+    pcall(function()
+
+        inputManager:SendMouseButtonEvent(
+            position.X,
+            position.Y,
+            0,
+            false,
+            game,
+            0
+        )
+    end)
+
+    return true
+end
+
+function HolyLoadingPressKey(keyCode)
+
+    local inputManager =
+        HolyLoadingGetInputManager()
+
+    if not inputManager then
+        return false
+    end
+
+    pcall(function()
+
+        inputManager:SendKeyEvent(
+            true,
+            keyCode,
+            false,
+            game
+        )
+    end)
+
+    task.wait(
+        0.055
+    )
+
+    pcall(function()
+
+        inputManager:SendKeyEvent(
+            false,
+            keyCode,
+            false,
+            game
+        )
+    end)
+
+    return true
+end
+
+function HolyLoadingGetWorkspaceLoadingGui()
+
+    local menu =
+        workspace:FindFirstChild(
+            "LoadingScreenMenu"
+        )
+
+    if not menu then
+
+        menu =
+            workspace:FindFirstChild(
+                "LoadingScreenMenu",
+                true
+            )
+    end
+
+    if not menu then
+        return nil
+    end
+
+    local loadingGui =
+        menu:FindFirstChild(
+            "LoadingGui"
+        )
+
+    if not loadingGui then
+
+        loadingGui =
+            menu:FindFirstChild(
+                "LoadingGui",
+                true
+            )
+    end
+
+    return loadingGui
+end
+
+function HolyLoadingGetInnerFrame()
+
+    local loadingGui =
+        HolyLoadingGetWorkspaceLoadingGui()
+
+    if not loadingGui then
+        return nil
+    end
+
+    local variant =
+        loadingGui:FindFirstChild(
+            "Variant1Frame",
+            true
+        )
+
+    if not variant then
+        return nil
+    end
+
+    return variant:FindFirstChild(
+        "InnerFrame",
+        true
+    )
+end
+
+function HolyLoadingGetSkipPrompt()
+
+    local innerFrame =
+        HolyLoadingGetInnerFrame()
+
+    if not innerFrame then
+        return nil
+    end
+
+    return innerFrame:FindFirstChild(
+        "SkipTxt",
+        true
+    )
+end
+
+function HolyLoadingGetCounterPrompt()
+
+    local innerFrame =
+        HolyLoadingGetInnerFrame()
+
+    if not innerFrame then
+        return nil
+    end
+
+    return innerFrame:FindFirstChild(
+        "CounterTxt",
+        true
+    )
+end
+
+function HolyLoadingSkipPromptReady(skipPrompt)
+
+    if typeof(skipPrompt) ~= "Instance" then
+        return false
+    end
+
+    if HolyLoadingVisibleChainReady(skipPrompt) ~= true then
+        return false
+    end
+
+    local transparency =
+        HolyLoadingGetTextTransparency(
+            skipPrompt
+        )
+
+    if transparency ~= nil
+    and transparency >= 0.95 then
+
+        return false
+    end
+
+    return true
+end
+
+function HolyLoadingFullyLoaded(counterPrompt)
+
+    if typeof(counterPrompt) ~= "Instance" then
+        return false
+    end
+
+    if HolyLoadingVisibleChainReady(counterPrompt) ~= true then
+        return false
+    end
+
+    local text =
+        HolyLoadingGetText(
+            counterPrompt
+        )
+        :lower()
+
+    return text:find(
+        "fully loaded",
+        1,
+        true
+    ) ~= nil
+end
+
+function HolyLoadingClickSkip(skipPrompt)
+
+    HOLY_LOADING_SKIP_STATE.ClickedSkip =
+        true
+
+    HolyLoadingLog(
+        "skip ready",
+        "text="
+            .. HolyLoadingGetText(skipPrompt),
+        "transparency="
+            .. tostring(
+                HolyLoadingGetTextTransparency(
+                    skipPrompt
+                )
+            )
+    )
+
+    local promptCenter =
+        HolyLoadingGetGuiCenter(
+            skipPrompt
+        )
+
+    if promptCenter then
+
+        HolyLoadingClickAt(
+            promptCenter
+        )
+
+        task.wait(
+            0.08
+        )
+    end
+
+    HolyLoadingClickAt(
+        HolyLoadingGetScreenCenter()
+    )
+
+    task.wait(
+        0.12
+    )
+
+    HolyLoadingClickAt(
+        HolyLoadingGetScreenCenter()
+    )
+
+    HolyLoadingLog(
+        "clicked skip prompt"
+    )
+end
+
+function HolyLoadingPressFinal(counterPrompt)
+
+    HOLY_LOADING_SKIP_STATE.PressedFinal =
+        true
+
+    HolyLoadingLog(
+        "fully loaded",
+        HolyLoadingGetText(counterPrompt),
+        HolyLoadingPathOf(counterPrompt)
+    )
+
+    HolyLoadingPressKey(
+        Enum.KeyCode.Space
+    )
+
+    task.wait(
+        0.10
+    )
+
+    HolyLoadingPressKey(
+        Enum.KeyCode.Return
+    )
+
+    task.wait(
+        0.10
+    )
+
+    HolyLoadingClickAt(
+        HolyLoadingGetScreenCenter()
+    )
+
+    HolyLoadingLog(
+        "sent final play input"
+    )
+end
+
+function HolyLoadingStopAutoSkip(reason)
+
+    HOLY_LOADING_SKIP_STATE =
+        type(HOLY_LOADING_SKIP_STATE) == "table"
+        and HOLY_LOADING_SKIP_STATE
+        or {}
+
+    HOLY_LOADING_SKIP_STATE.Token =
+        nil
+
+    HOLY_LOADING_SKIP_STATE.Running =
+        false
+
+    local connections =
+        HOLY_LOADING_SKIP_STATE.Connections
+
+    if type(connections) == "table" then
+
+        for _, connection in ipairs(connections) do
+
+            pcall(function()
+
+                connection:Disconnect()
+            end)
+        end
+    end
+
+    HOLY_LOADING_SKIP_STATE.Connections =
+        {}
+
+    HolyLoadingLog(
+        "stopped",
+        tostring(reason or "manual")
+    )
+end
+
+function HolyLoadingStartAutoSkip(reason)
+
+    HOLY_LOADING_SKIP_STATE =
+        type(HOLY_LOADING_SKIP_STATE) == "table"
+        and HOLY_LOADING_SKIP_STATE
+        or {}
+
+    if HOLY_LOADING_SKIP_STATE.Running == true then
+        return false
+    end
+
+    HOLY_LOADING_SKIP_STATE.Running =
+        true
+
+    HOLY_LOADING_SKIP_STATE.ClickedSkip =
+        false
+
+    HOLY_LOADING_SKIP_STATE.PressedFinal =
+        false
+
+    HOLY_LOADING_SKIP_STATE.LogsPrinted =
+        0
+
+    local token =
+        {}
+
+    HOLY_LOADING_SKIP_STATE.Token =
+        token
+
+    local startedAt =
+        os.clock()
+
+    HolyLoadingLog(
+        "started",
+        tostring(reason or "startup")
+    )
+
+    task.spawn(function()
+
+        while HOLY_LOADING_SKIP_STATE.Token == token
+        and os.clock() - startedAt <= 75 do
+
+            local skipPrompt =
+                HolyLoadingGetSkipPrompt()
+
+            if HOLY_LOADING_SKIP_STATE.ClickedSkip ~= true
+            and HolyLoadingSkipPromptReady(skipPrompt) == true then
+
+                HolyLoadingClickSkip(
+                    skipPrompt
+                )
+            end
+
+            local counterPrompt =
+                HolyLoadingGetCounterPrompt()
+
+            if HolyLoadingFullyLoaded(counterPrompt) == true then
+
+                if HOLY_LOADING_SKIP_STATE.PressedFinal ~= true then
+
+                    HolyLoadingPressFinal(
+                        counterPrompt
+                    )
+                end
+
+                task.wait(
+                    1
+                )
+
+                HOLY_LOADING_SKIP_STATE.Token =
+                    nil
+
+                break
+            end
+
+            if HOLY_LOADING_SKIP_STATE.ClickedSkip == true
+            and HolyLoadingGetWorkspaceLoadingGui() == nil then
+
+                HOLY_LOADING_SKIP_STATE.Token =
+                    nil
+
+                break
+            end
+
+            task.wait(
+                0.05
+            )
+        end
+
+        if HOLY_LOADING_SKIP_STATE.Token == token then
+
+            HOLY_LOADING_SKIP_STATE.Token =
+                nil
+
+            HolyLoadingLog(
+                "timeout",
+                "clickedSkip="
+                    .. tostring(HOLY_LOADING_SKIP_STATE.ClickedSkip),
+                "pressedFinal="
+                    .. tostring(HOLY_LOADING_SKIP_STATE.PressedFinal)
+            )
+        end
+
+        HOLY_LOADING_SKIP_STATE.Running =
+            false
+    end)
+
+    return true
+end
+
+HOLY_LOADING_SKIP_STATE.Stop =
+    HolyLoadingStopAutoSkip
+
+function HolyAntiAfkLog(...)
+
+    HOLY_ANTI_AFK_STATE =
+        type(HOLY_ANTI_AFK_STATE) == "table"
+        and HOLY_ANTI_AFK_STATE
+        or {}
+
+    HOLY_ANTI_AFK_STATE.LogsPrinted =
+        tonumber(HOLY_ANTI_AFK_STATE.LogsPrinted)
+        or 0
+
+    if HOLY_ANTI_AFK_STATE.LogsPrinted >= 6 then
+        return
+    end
+
+    HOLY_ANTI_AFK_STATE.LogsPrinted =
+        HOLY_ANTI_AFK_STATE.LogsPrinted + 1
+
+    print(
+        "[HOLY ANTI AFK]",
+        ...
+    )
+end
+
+function HolyAntiAfkGetInputManager()
+
+    local ok,
+        service =
+        pcall(function()
+
+            return game:GetService(
+                "VirtualInputManager"
+            )
+        end)
+
+    if ok == true then
+        return service
+    end
+
+    return nil
+end
+
+function HolyAntiAfkCaptureOldOverride()
+
+    HOLY_ANTI_AFK_STATE =
+        type(HOLY_ANTI_AFK_STATE) == "table"
+        and HOLY_ANTI_AFK_STATE
+        or {}
+
+    if HOLY_ANTI_AFK_STATE.OldOverrideCaptured == true then
+        return
+    end
+
+    local oldValue =
+        nil
+
+    pcall(function()
+
+        oldValue =
+            LocalPlayer:GetAttribute(
+                "AntiAfkIdleOverride"
+            )
+    end)
+
+    HOLY_ANTI_AFK_STATE.OldOverride =
+        oldValue
+
+    HOLY_ANTI_AFK_STATE.OldOverrideCaptured =
+        true
+end
+
+function HolyAntiAfkSetOverride()
+
+    if not LocalPlayer then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            LocalPlayer:SetAttribute(
+                "AntiAfkIdleOverride",
+                999999999
+            )
+        end)
+
+    return ok == true
+end
+
+function HolyAntiAfkRestoreOverride()
+
+    if not LocalPlayer then
+        return false
+    end
+
+    if type(HOLY_ANTI_AFK_STATE) ~= "table"
+    or HOLY_ANTI_AFK_STATE.OldOverrideCaptured ~= true then
+
+        return false
+    end
+
+    local oldValue =
+        HOLY_ANTI_AFK_STATE.OldOverride
+
+    local ok =
+        pcall(function()
+
+            LocalPlayer:SetAttribute(
+                "AntiAfkIdleOverride",
+                oldValue
+            )
+        end)
+
+    HOLY_ANTI_AFK_STATE.OldOverrideCaptured =
+        false
+
+    HOLY_ANTI_AFK_STATE.OldOverride =
+        nil
+
+    return ok == true
+end
+
+function HolyAntiAfkPulse()
+
+    HolyAntiAfkSetOverride()
+
+    local inputManager =
+        HolyAntiAfkGetInputManager()
+
+    if not inputManager then
+        return false
+    end
+
+    pcall(function()
+
+        inputManager:SendKeyEvent(
+            true,
+            Enum.KeyCode.RightControl,
+            false,
+            game
+        )
+    end)
+
+    task.wait(
+        0.055
+    )
+
+    pcall(function()
+
+        inputManager:SendKeyEvent(
+            false,
+            Enum.KeyCode.RightControl,
+            false,
+            game
+        )
+    end)
+
+    return true
+end
+
+function HolyAntiAfkStop(reason)
+
+    HOLY_ANTI_AFK_STATE =
+        type(HOLY_ANTI_AFK_STATE) == "table"
+        and HOLY_ANTI_AFK_STATE
+        or {}
+
+    HOLY_ANTI_AFK_STATE.Token =
+        nil
+
+    HOLY_ANTI_AFK_STATE.Running =
+        false
+
+    HolyAntiAfkRestoreOverride()
+
+    HolyAntiAfkLog(
+        "stopped",
+        tostring(reason or "manual")
+    )
+end
+
+function HolyAntiAfkStart(reason)
+
+    HOLY_ANTI_AFK_STATE =
+        type(HOLY_ANTI_AFK_STATE) == "table"
+        and HOLY_ANTI_AFK_STATE
+        or {}
+
+    if HOLY_ANTI_AFK_STATE.Running == true then
+        return false
+    end
+
+    HOLY_ANTI_AFK_STATE.Running =
+        true
+
+    HOLY_ANTI_AFK_STATE.LogsPrinted =
+        0
+
+    local token =
+        {}
+
+    HOLY_ANTI_AFK_STATE.Token =
+        token
+
+    HolyAntiAfkCaptureOldOverride()
+
+    HolyAntiAfkSetOverride()
+
+    HolyAntiAfkLog(
+        "started",
+        tostring(reason or "startup")
+    )
+
+    task.spawn(function()
+
+        local nextPulseAt =
+            os.clock() + 15
+
+        while HOLY_ANTI_AFK_STATE.Token == token do
+
+            HolyAntiAfkSetOverride()
+
+            if os.clock() >= nextPulseAt then
+
+                HolyAntiAfkPulse()
+
+                nextPulseAt =
+                    os.clock() + 75
+            end
+
+            task.wait(
+                1
+            )
+        end
+
+        if HOLY_ANTI_AFK_STATE.Token == token then
+
+            HOLY_ANTI_AFK_STATE.Running =
+                false
+        end
+    end)
+
+    return true
+end
+
+HOLY_ANTI_AFK_STATE.Stop =
+    HolyAntiAfkStop
+
+function HolySetGroupboxVisible(groupbox, visible)
+
+    if type(groupbox) ~= "table" then
+        return false
+    end
+
+    visible =
+        visible == true
+
+    if groupbox.BoxHolder then
+
+        groupbox.BoxHolder.Visible =
+            visible
+
+        groupbox.BoxHolder.Size =
+            visible
+            and UDim2.fromScale(
+                1,
+                0
+            )
+            or UDim2.new(
+                1,
+                0,
+                0,
+                0
+            )
+    end
+
+    if groupbox.Holder then
+
+        groupbox.Holder.Visible =
+            visible
+    end
+
+    if visible == true
+    and type(groupbox.Resize) == "function" then
+
+        pcall(function()
+
+            groupbox:Resize()
+        end)
+    end
+
+    if groupbox.Tab
+    and type(groupbox.Tab.RefreshSides) == "function" then
+
+        task.defer(function()
+
+            groupbox.Tab:RefreshSides()
+        end)
+    end
+
+    return true
+end
+
+HOLY_SHOP_CATEGORIES = {
+    Seeds = {
+        ShopName = "SeedShop",
+        PacketShop = "SeedShop",
+        PacketName = "PurchaseSeed",
+    },
+
+    Gear = {
+        ShopName = "GearShop",
+        PacketShop = "GearShop",
+        PacketName = "PurchaseGear",
+    },
+
+    Props = {
+        ShopName = "CrateShop",
+        PacketShop = "CrateShop",
+        PacketName = "PurchaseCrate",
+    },
+}
+
+function HolyShopRequireModule(path)
+
+    local current =
+        ReplicatedStorage
+
+    for part in tostring(path or ""):gmatch("[^%.]+") do
+
+        current =
+            current
+            and current:FindFirstChild(part)
+            or nil
+    end
+
+    if typeof(current) ~= "Instance"
+    or current:IsA("ModuleScript") ~= true then
+
+        return nil
+    end
+
+    local ok,
+        result =
+        pcall(function()
+
+            return require(
+                current
+            )
+        end)
+
+    if ok ~= true then
+        return nil
+    end
+
+    return result
+end
+
+function HolyShopAddItemRow(rows, name, price)
+
+    name =
+        HolyCleanText(name)
+
+    if name == "" then
+        return
+    end
+
+    rows[name] =
+        rows[name]
+        or {
+            Name = name,
+            Price = 0,
+        }
+
+    rows[name].Price =
+        math.max(
+            tonumber(rows[name].Price)
+            or 0,
+            tonumber(price)
+            or 0
+        )
+end
+
+function HolyShopModuleEnabled(modulePath, functionName, itemName, fallback)
+
+    local module =
+        HolyShopRequireModule(
+            modulePath
+        )
+
+    local callback =
+        type(module) == "table"
+        and module[functionName]
+        or nil
+
+    if type(callback) ~= "function" then
+        return fallback ~= false
+    end
+
+    local ok,
+        result =
+        pcall(
+            callback,
+            itemName
+        )
+
+    if ok ~= true then
+
+        ok,
+            result =
+            pcall(
+                callback,
+                module,
+                itemName
+            )
+    end
+
+    if ok == true
+    and type(result) == "boolean" then
+
+        return result
+    end
+
+    return fallback ~= false
+end
+
+function HolyShopFlagEnabled(modulePath, itemName, fallback)
+
+    local module =
+        HolyShopRequireModule(
+            modulePath
+        )
+
+    local enabledOverrides =
+        type(module) == "table"
+        and module.EnabledOverrides
+        or nil
+
+    local valueTable =
+        type(enabledOverrides) == "table"
+        and enabledOverrides.Value
+        or nil
+
+    if type(valueTable) == "table"
+    and valueTable[itemName] ~= nil then
+
+        return valueTable[itemName] == true
+    end
+
+    return fallback ~= false
+end
+
+function HolyShopAddStockRows(category, rows)
+
+    -- Dropdown names must come from real shop data only.
+    -- StockValues can contain hidden, future, or internal items.
+    return false
+end
+
+function HolyShopBuildSeedRows()
+
+    local rows =
+        {}
+
+    local data =
+        HolyShopRequireModule(
+            "SharedModules.SeedData"
+        )
+
+    if type(data) == "table" then
+
+        for _, row in pairs(data) do
+
+            if type(row) == "table" then
+
+                local seedName =
+                    HolyCleanText(
+                        row.SeedName
+                    )
+
+                if seedName ~= ""
+                and row.RestockShop == true
+                and HolyShopModuleEnabled(
+                    "SharedModules.SeedShopEnabled",
+                    "IsSeedEnabled",
+                    seedName,
+                    true
+                ) == true then
+
+                    HolyShopAddItemRow(
+                        rows,
+                        seedName,
+                        row.PurchasePrice
+                    )
+                end
+            end
+        end
+    end
+
+    return rows
+end
+
+function HolyShopBuildGearRows()
+
+    local rows =
+        {}
+
+    local data =
+        HolyShopRequireModule(
+            "SharedModules.GearShopData"
+        )
+
+    data =
+        type(data) == "table"
+        and data.Data
+        or nil
+
+    if type(data) == "table" then
+
+        for _, row in pairs(data) do
+
+            if type(row) == "table" then
+
+                local itemName =
+                    HolyCleanText(
+                        row.ItemName
+                    )
+
+                if itemName ~= ""
+                and row.HideFromShop ~= true
+                and HolyShopModuleEnabled(
+                    "SharedModules.GearShopABTest",
+                    "IsGearEnabled",
+                    itemName,
+                    true
+                ) == true
+                and HolyShopFlagEnabled(
+                    "SharedModules.Flags.GearShopFlags",
+                    itemName,
+                    true
+                ) == true then
+
+                    HolyShopAddItemRow(
+                        rows,
+                        itemName,
+                        row.Cost
+                    )
+                end
+            end
+        end
+    end
+
+    return rows
+end
+
+function HolyShopBuildPropRows()
+
+    local rows =
+        {}
+
+    local data =
+        HolyShopRequireModule(
+            "SharedModules.CrateData"
+        )
+
+    if type(data) == "table"
+    and type(data.GetAllCrates) == "function" then
+
+        local ok,
+            crates =
+            pcall(function()
+
+                return data.GetAllCrates()
+            end)
+
+        if ok ~= true
+        or type(crates) ~= "table" then
+
+            ok,
+                crates =
+                pcall(
+                    data.GetAllCrates,
+                    data
+                )
+        end
+
+        if ok == true
+        and type(crates) == "table" then
+
+            for key, row in pairs(crates) do
+
+                if type(row) == "table" then
+
+                    local crateName =
+                        HolyCleanText(
+                            row.Name
+                            or key
+                        )
+
+                    if crateName ~= ""
+                    and HolyShopModuleEnabled(
+                        "SharedModules.CrateShopEnabled",
+                        "IsCrateEnabled",
+                        crateName,
+                        true
+                    ) == true
+                    and HolyShopFlagEnabled(
+                        "SharedModules.Flags.CrateShopFlags",
+                        crateName,
+                        true
+                    ) == true then
+
+                        HolyShopAddItemRow(
+                            rows,
+                            crateName,
+                            row.Cost
+                        )
+                    end
+                end
+            end
+        end
+    end
+
+    return rows
+end
+
+function HolyShopGetItemRows(category)
+
+    HOLY_SHOP_STATE.ItemCache =
+        type(HOLY_SHOP_STATE.ItemCache) == "table"
+        and HOLY_SHOP_STATE.ItemCache
+        or {}
+
+    if type(HOLY_SHOP_STATE.ItemCache[category]) == "table" then
+
+        return HOLY_SHOP_STATE.ItemCache[category]
+    end
+
+    local map =
+        {}
+
+    if category == "Seeds" then
+
+        map =
+            HolyShopBuildSeedRows()
+
+    elseif category == "Gear" then
+
+        map =
+            HolyShopBuildGearRows()
+
+    elseif category == "Props" then
+
+        map =
+            HolyShopBuildPropRows()
+    end
+
+    local rows =
+        {}
+
+    for _, row in pairs(map) do
+
+        table.insert(
+            rows,
+            row
+        )
+    end
+
+    table.sort(rows, function(a, b)
+
+        local priceA =
+            tonumber(a.Price)
+            or 0
+
+        local priceB =
+            tonumber(b.Price)
+            or 0
+
+        if priceA ~= priceB then
+            return priceA > priceB
+        end
+
+        return tostring(a.Name) < tostring(b.Name)
+    end)
+
+    HOLY_SHOP_STATE.ItemCache[category] =
+        rows
+
+    return rows
+end
+
+function HolyShopGetDropdownValues(category)
+
+    local values = {
+        "All",
+    }
+
+    for _, row in ipairs(HolyShopGetItemRows(category)) do
+
+        table.insert(
+            values,
+            row.Name
+        )
+    end
+
+    return values
+end
+
+function HolyShopNormalizeSelection(value)
+
+    local output =
+        {}
+
+    if type(value) == "table" then
+
+        for key, enabled in pairs(value) do
+
+            if type(key) == "number" then
+
+                local text =
+                    HolyCleanText(enabled)
+
+                if text ~= "" then
+
+                    output[text] =
+                        true
+                end
+
+            elseif enabled == true then
+
+                local text =
+                    HolyCleanText(key)
+
+                if text ~= "" then
+
+                    output[text] =
+                        true
+                end
+            end
+        end
+
+    elseif type(value) == "string" then
+
+        local text =
+            HolyCleanText(value)
+
+        if text ~= "" then
+
+            output[text] =
+                true
+        end
+    end
+
+    return output
+end
+
+function HolyShopGetSelection(category)
+
+    if category == "Seeds" then
+
+        return HolyShopNormalizeSelection(
+            HOLY_SHOP_STATE.SelectedSeeds
+        )
+
+    elseif category == "Gear" then
+
+        return HolyShopNormalizeSelection(
+            HOLY_SHOP_STATE.SelectedGear
+        )
+
+    elseif category == "Props" then
+
+        return HolyShopNormalizeSelection(
+            HOLY_SHOP_STATE.SelectedProps
+        )
+    end
+
+    return {}
+end
+
+function HolyShopCategoryEnabled(category)
+
+    if category == "Seeds" then
+        return HOLY_SHOP_STATE.AutoBuySeeds == true
+    end
+
+    if category == "Gear" then
+        return HOLY_SHOP_STATE.AutoBuyGear == true
+    end
+
+    if category == "Props" then
+        return HOLY_SHOP_STATE.AutoBuyProps == true
+    end
+
+    return false
+end
+
+function HolyShopGetSelectedRows(category)
+
+    local selection =
+        HolyShopGetSelection(category)
+
+    local hasSelection =
+        false
+
+    for _ in pairs(selection) do
+
+        hasSelection =
+            true
+
+        break
+    end
+
+    if hasSelection ~= true then
+        return {}
+    end
+
+    local useAll =
+        selection.All == true
+
+    local rows =
+        {}
+
+    for _, row in ipairs(HolyShopGetItemRows(category)) do
+
+        if useAll == true
+        or selection[row.Name] == true then
+
+            table.insert(
+                rows,
+                row
+            )
+        end
+    end
+
+    return rows
+end
+
+function HolyShopGetStockValue(category, itemName)
+
+    local config =
+        HOLY_SHOP_CATEGORIES[category]
+
+    local valueObject =
+        config
+        and ReplicatedStorage:FindFirstChild("StockValues")
+        and ReplicatedStorage.StockValues:FindFirstChild(config.ShopName)
+        and ReplicatedStorage.StockValues[config.ShopName]:FindFirstChild("Items")
+        and ReplicatedStorage.StockValues[config.ShopName].Items:FindFirstChild(itemName)
+        or nil
+
+    if typeof(valueObject) ~= "Instance"
+    or valueObject:IsA("ValueBase") ~= true then
+
+        return 0
+    end
+
+    local value =
+        0
+
+    pcall(function()
+
+        value =
+            valueObject.Value
+    end)
+
+    return math.max(
+        0,
+        math.floor(
+            tonumber(value)
+            or 0
+        )
+    )
+end
+
+function HolyShopGetRestockKey(category)
+
+    local config =
+        HOLY_SHOP_CATEGORIES[category]
+
+    local shop =
+        config
+        and ReplicatedStorage:FindFirstChild("StockValues")
+        and ReplicatedStorage.StockValues:FindFirstChild(config.ShopName)
+        or nil
+
+    local value =
+        0
+
+    if typeof(shop) == "Instance" then
+
+        local last =
+            shop:FindFirstChild("UnixLastRestock")
+
+        if last
+        and last:IsA("ValueBase") then
+
+            pcall(function()
+
+                value =
+                    last.Value
+            end)
+        end
+    end
+
+    return tostring(value)
+end
+
+function HolyShopResolvePacket(category)
+
+    local config =
+        HOLY_SHOP_CATEGORIES[category]
+
+    if type(config) ~= "table" then
+        return nil
+    end
+
+    HOLY_SHOP_STATE.PacketCache =
+        type(HOLY_SHOP_STATE.PacketCache) == "table"
+        and HOLY_SHOP_STATE.PacketCache
+        or {}
+
+    if HOLY_SHOP_STATE.PacketCache[category] ~= nil then
+
+        return HOLY_SHOP_STATE.PacketCache[category]
+    end
+
+    local networking =
+        HolyShopRequireModule(
+            "SharedModules.Networking"
+        )
+
+    local packet =
+        type(networking) == "table"
+        and networking[config.PacketShop]
+        and networking[config.PacketShop][config.PacketName]
+        or nil
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        HOLY_SHOP_STATE.PacketCache[category] =
+            false
+
+        return nil
+    end
+
+    HOLY_SHOP_STATE.PacketCache[category] =
+        packet
+
+    return packet
+end
+
+function HolyShopFireBurst(category, itemName, amount)
+
+    local packet =
+        HolyShopResolvePacket(category)
+
+    if type(packet) ~= "table" then
+        return 0
+    end
+
+    amount =
+        math.clamp(
+            math.floor(
+                tonumber(amount)
+                or 0
+            ),
+            0,
+            tonumber(HOLY_SHOP_STATE.MaxBurstFires)
+            or 120
+        )
+
+    local fired =
+        0
+
+    local yieldEvery =
+        math.max(
+            1,
+            math.floor(
+                tonumber(HOLY_SHOP_STATE.YieldEvery)
+                or 24
+            )
+        )
+
+    for index = 1, amount do
+
+        local ok =
+            pcall(function()
+
+                packet:Fire(
+                    itemName
+                )
+            end)
+
+        if ok == true then
+
+            fired =
+                fired + 1
+        end
+
+        if index % yieldEvery == 0 then
+
+            task.wait()
+        end
+    end
+
+    return fired
+end
+
+function HolyShopRunCategory(category)
+
+    if HolyShopCategoryEnabled(category) ~= true then
+        return false
+    end
+
+    local rows =
+        HolyShopGetSelectedRows(category)
+
+    if #rows <= 0 then
+        return false
+    end
+
+    HOLY_SHOP_STATE.BurstAttempts =
+        type(HOLY_SHOP_STATE.BurstAttempts) == "table"
+        and HOLY_SHOP_STATE.BurstAttempts
+        or {}
+
+    local restockKey =
+        HolyShopGetRestockKey(category)
+
+    for _, row in ipairs(rows) do
+
+        if HolyShopCategoryEnabled(category) ~= true then
+            return true
+        end
+
+        local stock =
+            HolyShopGetStockValue(
+                category,
+                row.Name
+            )
+
+        if stock > 0 then
+
+            local attemptKey =
+                tostring(category)
+                .. "|"
+                .. tostring(row.Name)
+                .. "|"
+                .. tostring(restockKey)
+                .. "|"
+                .. tostring(stock)
+
+            if HOLY_SHOP_STATE.BurstAttempts[attemptKey] ~= true then
+
+                HOLY_SHOP_STATE.BurstAttempts[attemptKey] =
+                    true
+
+                HolyShopFireBurst(
+                    category,
+                    row.Name,
+                    stock
+                )
+            end
+        end
+    end
+
+    return true
+end
+
+function HolyShopQueueCategory(category)
+
+    HOLY_SHOP_STATE.PendingCategories =
+        type(HOLY_SHOP_STATE.PendingCategories) == "table"
+        and HOLY_SHOP_STATE.PendingCategories
+        or {}
+
+    HOLY_SHOP_STATE.PendingCategories[category] =
+        true
+
+    if HOLY_SHOP_STATE.WorkerRunning == true then
+        return
+    end
+
+    HOLY_SHOP_STATE.WorkerRunning =
+        true
+
+    task.spawn(function()
+
+        while true do
+
+            local pending =
+                HOLY_SHOP_STATE.PendingCategories
+
+            HOLY_SHOP_STATE.PendingCategories =
+                {}
+
+            local hasPending =
+                false
+
+            for _ in pairs(pending) do
+
+                hasPending =
+                    true
+
+                break
+            end
+
+            if hasPending ~= true then
+                break
+            end
+
+            if pending.Seeds == true then
+
+                HolyShopRunCategory(
+                    "Seeds"
+                )
+            end
+
+            if pending.Gear == true then
+
+                HolyShopRunCategory(
+                    "Gear"
+                )
+            end
+
+            if pending.Props == true then
+
+                HolyShopRunCategory(
+                    "Props"
+                )
+            end
+
+            task.wait()
+        end
+
+        HOLY_SHOP_STATE.WorkerRunning =
+            false
+    end)
+end
+
+function HolyShopQueueAll()
+
+    if HOLY_SHOP_STATE.AutoBuySeeds == true then
+
+        HolyShopQueueCategory(
+            "Seeds"
+        )
+    end
+
+    if HOLY_SHOP_STATE.AutoBuyGear == true then
+
+        HolyShopQueueCategory(
+            "Gear"
+        )
+    end
+
+    if HOLY_SHOP_STATE.AutoBuyProps == true then
+
+        HolyShopQueueCategory(
+            "Props"
+        )
+    end
+end
+
+function HolyShopConnectStockSignals()
+
+    if HOLY_SHOP_STATE.StockConnected == true then
+        return
+    end
+
+    HOLY_SHOP_STATE.StockConnected =
+        true
+
+    HOLY_SHOP_STATE.StockConnections =
+        type(HOLY_SHOP_STATE.StockConnections) == "table"
+        and HOLY_SHOP_STATE.StockConnections
+        or {}
+
+    for category, config in pairs(HOLY_SHOP_CATEGORIES) do
+
+        local items =
+            ReplicatedStorage:FindFirstChild("StockValues")
+            and ReplicatedStorage.StockValues:FindFirstChild(config.ShopName)
+            and ReplicatedStorage.StockValues[config.ShopName]:FindFirstChild("Items")
+            or nil
+
+        if typeof(items) == "Instance" then
+
+            for _, child in ipairs(items:GetChildren()) do
+
+                if child:IsA("ValueBase") then
+
+                    table.insert(
+                        HOLY_SHOP_STATE.StockConnections,
+                        child.Changed:Connect(function()
+
+                            HolyShopQueueCategory(
+                                category
+                            )
+                        end)
+                    )
+                end
+            end
+
+            table.insert(
+                HOLY_SHOP_STATE.StockConnections,
+                items.ChildAdded:Connect(function(child)
+
+                    if child:IsA("ValueBase") then
+
+                        task.defer(function()
+
+                            HolyShopQueueCategory(
+                                category
+                            )
+                        end)
+                    end
+                end)
+            )
+        end
+    end
+end
+
+--==================================================
+-- [2.6] SELL CORE
+--==================================================
+
+function HolySellResolvePacket(packetName)
+
+    packetName =
+        HolyCleanText(
+            packetName
+        )
+
+    if packetName == "" then
+        return nil
+    end
+
+    HOLY_SHOP_STATE.SellPacketCache =
+        type(HOLY_SHOP_STATE.SellPacketCache) == "table"
+        and HOLY_SHOP_STATE.SellPacketCache
+        or {}
+
+    if HOLY_SHOP_STATE.SellPacketCache[packetName] ~= nil then
+
+        return HOLY_SHOP_STATE.SellPacketCache[packetName]
+    end
+
+    local networking =
+        HolyShopRequireModule(
+            "SharedModules.Networking"
+        )
+
+    local packet =
+        type(networking) == "table"
+        and type(networking.NPCS) == "table"
+        and networking.NPCS[packetName]
+        or nil
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        HOLY_SHOP_STATE.SellPacketCache[packetName] =
+            false
+
+        return nil
+    end
+
+    HOLY_SHOP_STATE.SellPacketCache[packetName] =
+        packet
+
+    return packet
+end
+
+function HolySellFirePacket(packetName, ...)
+
+    local packet =
+        HolySellResolvePacket(
+            packetName
+        )
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return false
+    end
+
+    local ok =
+        pcall(function(...)
+
+            packet:Fire(...)
+
+        end, ...)
+
+    return ok == true
+end
+
+function HolySellAllOnce()
+
+    HolySellFirePacket(
+        "PreviewSellAll"
+    )
+
+    task.wait(
+        0.05
+    )
+
+    return HolySellFirePacket(
+        "SellAll"
+    )
+end
+
+function HolySellGetToolAttributes(tool)
+
+    local attrs =
+        {}
+
+    if typeof(tool) ~= "Instance" then
+        return attrs
+    end
+
+    pcall(function()
+
+        attrs =
+            tool:GetAttributes()
+    end)
+
+    return type(attrs) == "table"
+        and attrs
+        or {}
+end
+
+function HolySellKey(value)
+
+    return HolyCleanText(
+        value
+    )
+        :lower()
+        :gsub("[%s_%-%[%]%(%)%.]", "")
+end
+
+function HolySellFruitNameCandidates(fruitName)
+
+    fruitName =
+        HolyCleanText(
+            fruitName
+        )
+
+    local candidates =
+        {}
+
+    local seen =
+        {}
+
+    local function add(value)
+
+        value =
+            HolyCleanText(
+                value
+            )
+
+        if value == ""
+        or seen[value] == true then
+            return
+        end
+
+        seen[value] =
+            true
+
+        table.insert(
+            candidates,
+            value
+        )
+    end
+
+    add(
+        fruitName
+    )
+
+    local prefixes = {
+        "Baby ",
+        "Big ",
+        "Huge ",
+        "Mega ",
+        "Small ",
+        "Large ",
+        "Giant ",
+        "Gold ",
+        "Golden ",
+        "Rainbow ",
+    }
+
+    for _, prefix in ipairs(prefixes) do
+
+        if fruitName:sub(1, #prefix):lower() == prefix:lower() then
+
+            add(
+                fruitName:sub(
+                    #prefix + 1
+                )
+            )
+        end
+    end
+
+    return candidates
+end
+
+function HolySellBuildRarityMap()
+
+    if type(HOLY_SHOP_STATE.SellRarityMap) == "table" then
+
+        return HOLY_SHOP_STATE.SellRarityMap
+    end
+
+    local map =
+        {}
+
+    local data =
+        HolyShopRequireModule(
+            "SharedModules.SeedData"
+        )
+
+    if type(data) == "table" then
+
+        for _, row in pairs(data) do
+
+            if type(row) == "table" then
+
+                local seedName =
+                    HolyCleanText(
+                        row.SeedName
+                        or row.Name
+                        or row.FruitName
+                        or row.CropName
+                    )
+
+                local rarity =
+                    HolyCleanText(
+                        row.Rarity
+                        or row.SeedRarity
+                        or row.FruitRarity
+                        or ""
+                    )
+
+                if seedName ~= ""
+                and rarity ~= "" then
+
+                    map[
+                        HolySellKey(
+                            seedName
+                        )
+                    ] =
+                        rarity
+                end
+            end
+        end
+    end
+
+    HOLY_SHOP_STATE.SellRarityMap =
+        map
+
+    return map
+end
+
+function HolySellListInsertSorted(map, value)
+
+    value =
+        HolyCleanText(
+            value
+        )
+
+    if value == "" then
+        return
+    end
+
+    map[value] =
+        true
+end
+
+function HolySellMapToValues(map, includeAll, includeNone)
+
+    local values =
+        {}
+
+    if includeAll == true then
+
+        table.insert(
+            values,
+            "All"
+        )
+    end
+
+    if includeNone == true then
+
+        table.insert(
+            values,
+            "None"
+        )
+    end
+
+    local sorted =
+        {}
+
+    for value in pairs(map or {}) do
+
+        if value ~= "All"
+        and value ~= "None" then
+
+            table.insert(
+                sorted,
+                value
+            )
+        end
+    end
+
+    table.sort(sorted, function(a, b)
+
+        return tostring(a) < tostring(b)
+    end)
+
+    for _, value in ipairs(sorted) do
+
+        table.insert(
+            values,
+            value
+        )
+    end
+
+    return values
+end
+
+function HolySellAppendValue(values, seen, value)
+
+    value =
+        HolyCleanText(
+            value
+        )
+
+    if value == ""
+    or seen[value] == true then
+        return
+    end
+
+    seen[value] =
+        true
+
+    table.insert(
+        values,
+        value
+    )
+end
+
+function HolySellGetFruitDropdownValues()
+
+    local values = {
+        "All",
+    }
+
+    local seen = {
+        All = true,
+    }
+
+    local data =
+        HolyShopRequireModule(
+            "SharedModules.SeedData"
+        )
+
+    local rows =
+        {}
+
+    if type(data) == "table" then
+
+        for _, row in pairs(data) do
+
+            if type(row) == "table"
+            and row.MutationSeed ~= true then
+
+                local fruitName =
+                    HolyCleanText(
+                        row.FruitName
+                        or row.SeedName
+                        or row.CropName
+                        or row.Name
+                    )
+
+                if fruitName ~= "" then
+
+                    table.insert(
+                        rows,
+                        fruitName
+                    )
+                end
+            end
+        end
+    end
+
+    table.sort(rows, function(a, b)
+
+        return tostring(a) < tostring(b)
+    end)
+
+    for _, fruitName in ipairs(rows) do
+
+        HolySellAppendValue(
+            values,
+            seen,
+            fruitName
+        )
+    end
+
+    return values
+end
+
+function HolySellGetMutationDropdownValues()
+
+    return {
+        "All",
+        "None",
+        "Aurora",
+        "Bloodlit",
+        "Chained",
+        "Electric",
+        "Frozen",
+        "Pizza",
+        "Solarflare",
+        "Starstruck",
+    }
+end
+
+function HolySellGetVariantDropdownValues()
+
+    return {
+        "All",
+        "Normal",
+        "Gold",
+        "Rainbow",
+    }
+end
+
+function HolySellGetProtectMutationDropdownValues()
+
+    return {
+        "None",
+        "Aurora",
+        "Bloodlit",
+        "Chained",
+        "Electric",
+        "Frozen",
+        "Pizza",
+        "Solarflare",
+        "Starstruck",
+    }
+end
+
+function HolySellGetProtectVariantDropdownValues()
+
+    return {
+        "Normal",
+        "Gold",
+        "Rainbow",
+    }
+end
+
+function HolySellReadWeightSetting(value)
+
+    local number =
+        tonumber(
+            tostring(value or "0")
+                :match("[%d%.]+")
+        )
+
+    return math.max(
+        0,
+        tonumber(number)
+        or 0
+    )
+end
+
+function HolySellIsPetTool(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return false
+    end
+
+    local attrs =
+        HolySellGetToolAttributes(
+            instance
+        )
+
+    if attrs.PetId ~= nil
+    or attrs.PetID ~= nil
+    or attrs.Pet ~= nil
+    or attrs.PetName ~= nil then
+
+        return true
+    end
+
+    return false
+end
+
+function HolySellIsBlockedToolName(toolName)
+
+    local lower =
+        tostring(toolName or "")
+            :lower()
+
+    local blockedWords = {
+        "shovel",
+        "trowel",
+        "build",
+        "sprinkler",
+        "watering can",
+        "crate",
+        "teleporter",
+        "gnome",
+        "pot",
+        "flashbang",
+        "magnet",
+        "trap",
+    }
+
+    for _, word in ipairs(blockedWords) do
+
+        if lower:find(word, 1, true) then
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolySellLooksLikeFruitTool(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return false
+    end
+
+    if instance:IsA("Tool") ~= true
+    and instance:IsA("Configuration") ~= true then
+
+        return false
+    end
+
+    if HolySellIsPetTool(instance) == true then
+        return false
+    end
+
+    local attrs =
+        HolySellGetToolAttributes(
+            instance
+        )
+
+    local fruitId =
+        attrs.Id
+        or attrs.FruitId
+        or attrs.FruitID
+        or attrs.UUID
+        or attrs.Uuid
+        or attrs.Guid
+        or attrs.GUID
+
+    local fruitName =
+        attrs.FruitName
+        or attrs.Fruit
+
+    local hasWeight =
+        attrs.Weight ~= nil
+        or attrs.WeightKg ~= nil
+        or attrs.WeightKG ~= nil
+        or attrs.KG ~= nil
+        or attrs.Kg ~= nil
+
+    if attrs.HarvestedFruit == true
+    and fruitId ~= nil
+    and tostring(fruitId) ~= ""
+    and fruitName ~= nil
+    and tostring(fruitName) ~= ""
+    and (
+        attrs.FruitProxy == true
+        or instance:IsA("Tool") == true
+        or hasWeight == true
+    ) then
+
+        return true
+    end
+
+    return false
+end
+
+function HolySellReadFruitIdFromValue(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == "" then
+        return ""
+    end
+
+    local uuid =
+        text:match(
+            "[%w]+%-%w+%-%w+%-%w+%-%w+"
+        )
+
+    if uuid then
+        return uuid
+    end
+
+    return text
+end
+
+function HolySellResolveFruitId(tool)
+
+    if HolySellLooksLikeFruitTool(tool) ~= true then
+        return ""
+    end
+
+    local attrs =
+        HolySellGetToolAttributes(
+            tool
+        )
+
+    local value =
+        attrs.Id
+        or attrs.FruitId
+        or attrs.FruitID
+        or attrs.UUID
+        or attrs.Uuid
+        or attrs.Guid
+        or attrs.GUID
+
+    if value ~= nil
+    and tostring(value) ~= "" then
+
+        return HolySellReadFruitIdFromValue(
+            value
+        )
+    end
+
+    return ""
+end
+
+function HolySellGetToolFruitName(tool)
+
+    if typeof(tool) ~= "Instance" then
+        return ""
+    end
+
+    local attrs =
+        HolySellGetToolAttributes(
+            tool
+        )
+
+    return HolyCleanText(
+        attrs.FruitName
+        or attrs.Fruit
+        or ""
+    )
+end
+
+function HolySellGetToolRarity(tool)
+
+    local attrs =
+        HolySellGetToolAttributes(
+            tool
+        )
+
+    local direct =
+        HolyCleanText(
+            attrs.Rarity
+            or attrs.FruitRarity
+            or attrs.CropRarity
+            or ""
+        )
+
+    if direct ~= "" then
+        return direct
+    end
+
+    local fruitName =
+        HolySellGetToolFruitName(
+            tool
+        )
+
+    local rarityMap =
+        HolySellBuildRarityMap()
+
+    for _, candidate in ipairs(HolySellFruitNameCandidates(fruitName)) do
+
+        local rarity =
+            rarityMap[
+                HolySellKey(
+                    candidate
+                )
+            ]
+
+        if HolyCleanText(rarity) ~= "" then
+
+            return HolyCleanText(
+                rarity
+            )
+        end
+    end
+
+    return ""
+end
+
+function HolySellGetRawToolMutation(tool)
+
+    local attrs =
+        HolySellGetToolAttributes(
+            tool
+        )
+
+    return HolyCleanText(
+        attrs.Mutation
+        or attrs.Mutations
+        or ""
+    )
+end
+
+function HolySellIsVariantMutation(value)
+
+    value =
+        HolyCleanText(
+            value
+        )
+
+    return value == "Gold"
+        or value == "Rainbow"
+end
+
+function HolySellGetToolMutation(tool)
+
+    local mutation =
+        HolySellGetRawToolMutation(
+            tool
+        )
+
+    if mutation == ""
+    or HolySellIsVariantMutation(mutation) == true then
+
+        return "None"
+    end
+
+    return mutation
+end
+
+function HolySellGetToolVariant(tool)
+
+    local attrs =
+        HolySellGetToolAttributes(
+            tool
+        )
+
+    local variant =
+        HolyCleanText(
+            attrs.Variant
+            or attrs.FruitVariant
+            or attrs.PlantVariant
+            or attrs.Type
+            or ""
+        )
+
+    if variant ~= "" then
+
+        return variant
+    end
+
+    local rawMutation =
+        HolySellGetRawToolMutation(
+            tool
+        )
+
+    if HolySellIsVariantMutation(rawMutation) == true then
+
+        return rawMutation
+    end
+
+    return "Normal"
+end
+
+function HolySellGetToolWeight(tool)
+
+    local attrs =
+        HolySellGetToolAttributes(
+            tool
+        )
+
+    local value =
+        tonumber(
+            attrs.WeightKg
+            or attrs.WeightKG
+            or attrs.KG
+            or attrs.Kg
+            or attrs.Weight
+            or attrs.Mass
+        )
+
+    if value then
+        return value
+    end
+
+    local name =
+        tostring(
+            tool
+            and tool.Name
+            or ""
+        )
+
+    value =
+        tonumber(
+            name:match("([%d%.]+)%s*[Kk][Gg]")
+        )
+
+    return tonumber(value)
+        or 0
+end
+
+function HolySellSelectedMap(value)
+
+    return HolyShopNormalizeSelection(
+        value
+    )
+end
+
+function HolySellPassesSelectedMap(map, itemName)
+
+    itemName =
+        HolyCleanText(
+            itemName
+        )
+
+    if type(map) ~= "table" then
+        return true
+    end
+
+    local hasAny =
+        false
+
+    for _ in pairs(map) do
+
+        hasAny =
+            true
+
+        break
+    end
+
+    if hasAny ~= true then
+        return true
+    end
+
+    if map.All == true then
+        return true
+    end
+
+    return itemName ~= ""
+        and map[itemName] == true
+end
+
+function HolySellPassesFilters(tool)
+
+    if HolySellLooksLikeFruitTool(tool) ~= true then
+        return false
+    end
+
+    if HOLY_SHOP_STATE.UseSellFilters ~= true then
+        return true
+    end
+
+    local fruitMap =
+        HolySellSelectedMap(
+            HOLY_SHOP_STATE.SellFruits
+        )
+
+    local rarityMap =
+        HolySellSelectedMap(
+            HOLY_SHOP_STATE.SellRarities
+        )
+
+    local mutationMap =
+        HolySellSelectedMap(
+            HOLY_SHOP_STATE.SellMutations
+        )
+
+    local variantMap =
+        HolySellSelectedMap(
+            HOLY_SHOP_STATE.SellVariants
+        )
+
+    local protectMutationMap =
+        HolySellSelectedMap(
+            HOLY_SHOP_STATE.ProtectMutations
+        )
+
+    local protectVariantMap =
+        HolySellSelectedMap(
+            HOLY_SHOP_STATE.ProtectVariants
+        )
+
+    local fruitName =
+        HolySellGetToolFruitName(
+            tool
+        )
+
+    local rarity =
+        HolySellGetToolRarity(
+            tool
+        )
+
+    local mutation =
+        HolySellGetToolMutation(
+            tool
+        )
+
+    local variant =
+        HolySellGetToolVariant(
+            tool
+        )
+
+    if protectMutationMap[mutation] == true then
+        return false
+    end
+
+    if protectVariantMap[variant] == true then
+        return false
+    end
+
+    if HolySellPassesSelectedMap(fruitMap, fruitName) ~= true then
+        return false
+    end
+
+    if HolySellPassesSelectedMap(rarityMap, rarity) ~= true then
+        return false
+    end
+
+    if HolySellPassesSelectedMap(mutationMap, mutation) ~= true then
+        return false
+    end
+
+    if HolySellPassesSelectedMap(variantMap, variant) ~= true then
+        return false
+    end
+
+    local weight =
+        HolySellGetToolWeight(
+            tool
+        )
+
+    local minWeight =
+        HolySellReadWeightSetting(
+            HOLY_SHOP_STATE.MinWeightKg
+        )
+
+    local maxWeight =
+        HolySellReadWeightSetting(
+            HOLY_SHOP_STATE.MaxWeightKg
+        )
+
+    if minWeight > 0
+    and weight < minWeight then
+
+        return false
+    end
+
+    if maxWeight > 0
+    and weight > maxWeight then
+
+        return false
+    end
+
+    return true
+end
+
+function HolySellGetFruitTools()
+
+    local fruits =
+        {}
+
+    local roots = {
+        LocalPlayer
+        and LocalPlayer.Character
+        or nil,
+
+        LocalPlayer
+        and LocalPlayer:FindFirstChildOfClass("Backpack")
+        or nil,
+    }
+
+    for _, root in ipairs(roots) do
+
+        if typeof(root) == "Instance" then
+
+            for _, child in ipairs(root:GetChildren()) do
+
+                if HolySellLooksLikeFruitTool(child) == true then
+
+                    table.insert(
+                        fruits,
+                        child
+                    )
+                end
+            end
+        end
+    end
+
+    table.sort(fruits, function(a, b)
+
+        return tostring(a.Name) < tostring(b.Name)
+    end)
+
+    return fruits
+end
+
+function HolySellPruneRecentFruitIds()
+
+    HOLY_SHOP_STATE.SellRecentFruitIds =
+        type(HOLY_SHOP_STATE.SellRecentFruitIds) == "table"
+        and HOLY_SHOP_STATE.SellRecentFruitIds
+        or {}
+
+    local now =
+        os.clock()
+
+    for fruitId, lastAt in pairs(HOLY_SHOP_STATE.SellRecentFruitIds) do
+
+        if now - (
+            tonumber(lastAt)
+            or 0
+        ) > 6 then
+
+            HOLY_SHOP_STATE.SellRecentFruitIds[fruitId] =
+                nil
+        end
+    end
+end
+
+function HolySellQueueFruitTool(tool, reason)
+
+    if HOLY_SHOP_STATE.AutoSellFruits ~= true then
+        return false
+    end
+
+    if HolySellIsFilteredMethod(
+        HOLY_SHOP_STATE.SellMethod
+    ) ~= true then
+
+        return false
+    end
+
+    if HolySellPassesFilters(tool) ~= true then
+        return false
+    end
+
+    local fruitId =
+        HolySellResolveFruitId(
+            tool
+        )
+
+    if fruitId == "" then
+        return false
+    end
+
+    HolySellPruneRecentFruitIds()
+
+    HOLY_SHOP_STATE.SellRecentFruitIds =
+        type(HOLY_SHOP_STATE.SellRecentFruitIds) == "table"
+        and HOLY_SHOP_STATE.SellRecentFruitIds
+        or {}
+
+    local recentAt =
+        tonumber(
+            HOLY_SHOP_STATE.SellRecentFruitIds[fruitId]
+        )
+        or 0
+
+    if recentAt > 0
+    and os.clock() - recentAt < 6 then
+
+        return false
+    end
+
+    HOLY_SHOP_STATE.SellQueue =
+        type(HOLY_SHOP_STATE.SellQueue) == "table"
+        and HOLY_SHOP_STATE.SellQueue
+        or {}
+
+    HOLY_SHOP_STATE.SellQueueMap =
+        type(HOLY_SHOP_STATE.SellQueueMap) == "table"
+        and HOLY_SHOP_STATE.SellQueueMap
+        or {}
+
+    if HOLY_SHOP_STATE.SellQueueMap[fruitId] == true then
+        return false
+    end
+
+    HOLY_SHOP_STATE.SellQueueMap[fruitId] =
+        true
+
+    table.insert(
+        HOLY_SHOP_STATE.SellQueue,
+        {
+            Id =
+                fruitId,
+
+            Name =
+                HolySellGetToolFruitName(
+                    tool
+                ),
+
+            Weight =
+                HolySellGetToolWeight(
+                    tool
+                ),
+
+            Reason =
+                tostring(reason or "detected"),
+        }
+    )
+
+    return true
+end
+
+function HolySellScanExistingFruitTools(reason)
+
+    if HOLY_SHOP_STATE.AutoSellFruits ~= true then
+        return 0
+    end
+
+    if HolySellIsFilteredMethod(
+        HOLY_SHOP_STATE.SellMethod
+    ) ~= true then
+
+        return 0
+    end
+
+    local queued =
+        0
+
+    for _, tool in ipairs(HolySellGetFruitTools()) do
+
+        if HolySellQueueFruitTool(
+            tool,
+            reason or "scan"
+        ) == true then
+
+            queued =
+                queued + 1
+        end
+    end
+
+    return queued
+end
+
+function HolySellHookContainer(container, reason)
+
+    if typeof(container) ~= "Instance" then
+        return false
+    end
+
+    HOLY_SHOP_STATE.SellConnections =
+        type(HOLY_SHOP_STATE.SellConnections) == "table"
+        and HOLY_SHOP_STATE.SellConnections
+        or {}
+
+    local function tryQueue(child, queueReason)
+
+        if HOLY_SHOP_STATE.AutoSellFruits ~= true then
+            return
+        end
+
+        if HolySellQueueFruitTool(
+            child,
+            queueReason
+        ) == true then
+
+            HolySellStartWorker()
+        end
+    end
+
+    table.insert(
+        HOLY_SHOP_STATE.SellConnections,
+        container.ChildAdded:Connect(function(child)
+
+            task.defer(function()
+
+                tryQueue(
+                    child,
+                    reason or "child added"
+                )
+            end)
+
+            task.delay(0.12, function()
+
+                tryQueue(
+                    child,
+                    tostring(reason or "child added")
+                    .. " delayed"
+                )
+            end)
+
+            task.delay(0.35, function()
+
+                tryQueue(
+                    child,
+                    tostring(reason or "child added")
+                    .. " settled"
+                )
+            end)
+        end)
+    )
+
+    return true
+end
+
+function HolySellStartWatcher()
+
+    if HOLY_SHOP_STATE.SellWatcherStarted == true then
+        return
+    end
+
+    HOLY_SHOP_STATE.SellWatcherStarted =
+        true
+
+    HOLY_SHOP_STATE.SellConnections =
+        type(HOLY_SHOP_STATE.SellConnections) == "table"
+        and HOLY_SHOP_STATE.SellConnections
+        or {}
+
+    local backpack =
+        LocalPlayer
+        and (
+            LocalPlayer:FindFirstChildOfClass("Backpack")
+            or LocalPlayer:WaitForChild("Backpack", 10)
+        )
+        or nil
+
+    HolySellHookContainer(
+        backpack,
+        "backpack"
+    )
+
+    HolySellHookContainer(
+        LocalPlayer and LocalPlayer.Character,
+        "character"
+    )
+
+    if LocalPlayer then
+
+        table.insert(
+            HOLY_SHOP_STATE.SellConnections,
+            LocalPlayer.CharacterAdded:Connect(function(character)
+
+                task.defer(function()
+
+                    HolySellHookContainer(
+                        character,
+                        "character"
+                    )
+
+                    task.wait(
+                        0.25
+                    )
+
+                    HolySellScanExistingFruitTools(
+                        "character added"
+                    )
+
+                    HolySellStartWorker()
+                end)
+            end)
+        )
+    end
+end
+
+function HolySellSelectedOnce()
+
+    HolySellScanExistingFruitTools(
+        "selected pass"
+    )
+
+    HOLY_SHOP_STATE.SellQueue =
+        type(HOLY_SHOP_STATE.SellQueue) == "table"
+        and HOLY_SHOP_STATE.SellQueue
+        or {}
+
+    HOLY_SHOP_STATE.SellQueueMap =
+        type(HOLY_SHOP_STATE.SellQueueMap) == "table"
+        and HOLY_SHOP_STATE.SellQueueMap
+        or {}
+
+    HOLY_SHOP_STATE.SellRecentFruitIds =
+        type(HOLY_SHOP_STATE.SellRecentFruitIds) == "table"
+        and HOLY_SHOP_STATE.SellRecentFruitIds
+        or {}
+
+    local sold =
+        0
+
+    local maxPerPass =
+        math.max(
+            1,
+            math.floor(
+                tonumber(HOLY_SHOP_STATE.MaxSellFruitPerPass)
+                or 75
+            )
+        )
+
+    while HOLY_SHOP_STATE.AutoSellFruits == true
+    and HolySellIsFilteredMethod(
+        HOLY_SHOP_STATE.SellMethod
+    ) == true
+    and #HOLY_SHOP_STATE.SellQueue > 0
+    and sold < maxPerPass do
+
+        local row =
+            table.remove(
+                HOLY_SHOP_STATE.SellQueue,
+                1
+            )
+
+        local fruitId =
+            row
+            and HolyCleanText(row.Id)
+            or ""
+
+        if fruitId ~= "" then
+
+            HOLY_SHOP_STATE.SellQueueMap[fruitId] =
+                nil
+
+            if HolySellFirePacket(
+                "SellFruit",
+                fruitId
+            ) == true then
+
+                HOLY_SHOP_STATE.SellRecentFruitIds[fruitId] =
+                    os.clock()
+
+                sold =
+                    sold + 1
+            end
+
+            task.wait(
+                tonumber(HOLY_SHOP_STATE.SellFruitInterval)
+                or 0.05
+            )
+        end
+    end
+
+    return sold
+end
+
+function HolySellRunOnce()
+
+    if HOLY_SHOP_STATE.AutoSellFruits ~= true then
+        return false
+    end
+
+    local method =
+        tostring(
+            HOLY_SHOP_STATE.SellMethod
+            or "Sell All"
+        )
+
+    if HolySellIsFilteredMethod(method) == true then
+
+        HolySellSelectedOnce()
+
+        return true
+    end
+
+    HolySellAllOnce()
+
+    return true
+end
+
+function HolySellStartWorker()
+
+    if HOLY_SHOP_STATE.SellWorkerRunning == true then
+        return
+    end
+
+    HOLY_SHOP_STATE.SellWorkerRunning =
+        true
+
+    task.spawn(function()
+
+        while HOLY_SHOP_STATE.AutoSellFruits == true do
+
+            HolySellRunOnce()
+
+            local method =
+                tostring(
+                    HOLY_SHOP_STATE.SellMethod
+                    or "Sell All"
+                )
+
+            local waitTime =
+                HolySellIsFilteredMethod(method) == true
+                and math.clamp(
+                    tonumber(HOLY_SHOP_STATE.SelectedScanInterval)
+                    or 0.25,
+                    0.05,
+                    2
+                )
+                or math.clamp(
+                    tonumber(HOLY_SHOP_STATE.SellAllInterval)
+                    or 0.5,
+                    0,
+                    5
+                )
+
+            task.wait(
+                waitTime
+            )
+        end
+
+        HOLY_SHOP_STATE.SellWorkerRunning =
+            false
+    end)
+end
+
+function HolySellStopWorker()
+
+    HOLY_SHOP_STATE.AutoSellFruits =
+        false
+end
+
+function HolyPerformanceBuildStatusText()
+
+    return "Status: "
+        .. tostring(
+            HOLY_PERFORMANCE_STATE
+            and HOLY_PERFORMANCE_STATE.LastStatus
+            or "Ready."
+        )
+end
+
+function HolyPerformanceRefreshUI()
+
+    if type(HolySniperSetLabel) == "function" then
+
+        HolySniperSetLabel(
+            HOLY_PERFORMANCE_UI
+            and HOLY_PERFORMANCE_UI.StatusLabel
+            or nil,
+            HolyPerformanceBuildStatusText()
+        )
+    end
+end
+
+function HolyPerformanceSetStatus(status)
+
+    HOLY_PERFORMANCE_STATE =
+        type(HOLY_PERFORMANCE_STATE) == "table"
+        and HOLY_PERFORMANCE_STATE
+        or {}
+
+    HOLY_PERFORMANCE_STATE.LastStatus =
+        tostring(status or "Ready.")
+
+    HolyPerformanceRefreshUI()
+end
+
+function HolyPerformanceGetGardensRoot()
+
+    local gardens =
+        workspace:FindFirstChild(
+            "Gardens"
+        )
+
+    if typeof(gardens) == "Instance" then
+        return gardens
+    end
+
+    gardens =
+        workspace:FindFirstChild(
+            "Gardens",
+            true
+        )
+
+    if typeof(gardens) == "Instance" then
+        return gardens
+    end
+
+    return nil
+end
+
+function HolyPerformanceDisconnectConnections()
+
+    HOLY_PERFORMANCE_STATE =
+        type(HOLY_PERFORMANCE_STATE) == "table"
+        and HOLY_PERFORMANCE_STATE
+        or {}
+
+    local connections =
+        HOLY_PERFORMANCE_STATE.Connections
+
+    if type(connections) == "table" then
+
+        for _, connection in ipairs(connections) do
+
+            pcall(function()
+
+                connection:Disconnect()
+            end)
+        end
+    end
+
+    HOLY_PERFORMANCE_STATE.Connections =
+        {}
+end
+
+function HolyPerformanceIsOwnGarden(garden, ownGarden)
+
+    if typeof(garden) ~= "Instance"
+    or typeof(ownGarden) ~= "Instance" then
+
+        return false
+    end
+
+    if garden == ownGarden then
+        return true
+    end
+
+    local ok,
+        isAncestor =
+        pcall(function()
+
+            return garden:IsAncestorOf(
+                ownGarden
+            )
+            or ownGarden:IsAncestorOf(
+                garden
+            )
+        end)
+
+    return ok == true
+        and isAncestor == true
+end
+
+function HolyPerformanceDeleteOtherGardensOnce(reason)
+
+    if HOLY_DEV_UI_STATE.UnloadOtherGardens ~= true then
+        return 0
+    end
+
+    local gardens =
+        HolyPerformanceGetGardensRoot()
+
+    if typeof(gardens) ~= "Instance" then
+
+        HolyPerformanceSetStatus(
+            "Waiting for gardens..."
+        )
+
+        return 0
+    end
+
+    local ownGarden =
+        nil
+
+    if type(HolySniperFindOwnedGarden) == "function" then
+
+        ownGarden =
+            HolySniperFindOwnedGarden()
+    end
+
+    if typeof(ownGarden) ~= "Instance" then
+
+        HolyPerformanceSetStatus(
+            "Waiting for own garden..."
+        )
+
+        return 0
+    end
+
+    local deletedThisPass =
+        0
+
+    for _, garden in ipairs(gardens:GetChildren()) do
+
+        if garden:IsA("Model")
+        or garden:IsA("Folder") then
+
+            if HolyPerformanceIsOwnGarden(
+                garden,
+                ownGarden
+            ) ~= true then
+
+                local ok =
+                    pcall(function()
+
+                        garden:Destroy()
+                    end)
+
+                if ok == true then
+
+                    deletedThisPass =
+                        deletedThisPass + 1
+                end
+            end
+        end
+    end
+
+    HOLY_PERFORMANCE_STATE.DeletedCount =
+        (
+            tonumber(
+                HOLY_PERFORMANCE_STATE.DeletedCount
+            )
+            or 0
+        )
+        + deletedThisPass
+
+    if deletedThisPass > 0 then
+
+        HolyPerformanceSetStatus(
+            "Unloaded "
+            .. tostring(HOLY_PERFORMANCE_STATE.DeletedCount)
+            .. " other gardens."
+        )
+
+    elseif (
+        tonumber(
+            HOLY_PERFORMANCE_STATE.DeletedCount
+        )
+        or 0
+    ) > 0 then
+
+        HolyPerformanceSetStatus(
+            "Other gardens unloaded."
+        )
+
+    else
+
+        HolyPerformanceSetStatus(
+            "No other gardens found."
+        )
+    end
+
+    return deletedThisPass
+end
+
+function HolyPerformanceConnectGardenWatcher()
+
+    HolyPerformanceDisconnectConnections()
+
+    HOLY_PERFORMANCE_STATE.Connections =
+        {}
+
+    local gardens =
+        HolyPerformanceGetGardensRoot()
+
+    if typeof(gardens) ~= "Instance" then
+        return false
+    end
+
+    table.insert(
+        HOLY_PERFORMANCE_STATE.Connections,
+        gardens.ChildAdded:Connect(function()
+
+            task.delay(0.35, function()
+
+                if HOLY_DEV_UI_STATE.UnloadOtherGardens == true
+                and HOLY_PERFORMANCE_STATE.Active == true then
+
+                    HolyPerformanceDeleteOtherGardensOnce(
+                        "child added"
+                    )
+                end
+            end)
+        end)
+    )
+
+    return true
+end
+
+function HolyPerformanceStartUnloadOtherGardens(reason)
+
+    HOLY_DEV_UI_STATE.UnloadOtherGardens =
+        true
+
+    HOLY_PERFORMANCE_STATE.Active =
+        true
+
+    HolySaveUISettings()
+
+    HolyPerformanceConnectGardenWatcher()
+
+    if HOLY_PERFORMANCE_STATE.Applying == true then
+        return true
+    end
+
+    HOLY_PERFORMANCE_STATE.Applying =
+        true
+
+    HolyPerformanceSetStatus(
+        "Unloading other gardens..."
+    )
+
+    task.spawn(function()
+
+        local passes =
+            0
+
+        while HOLY_DEV_UI_STATE.UnloadOtherGardens == true
+        and HOLY_PERFORMANCE_STATE.Active == true
+        and passes < 18 do
+
+            passes =
+                passes + 1
+
+            HolyPerformanceDeleteOtherGardensOnce(
+                reason
+                or "apply"
+            )
+
+            if passes <= 5 then
+
+                task.wait(
+                    0.60
+                )
+
+            else
+
+                task.wait(
+                    2
+                )
+            end
+        end
+
+        HOLY_PERFORMANCE_STATE.Applying =
+            false
+    end)
+
+    return true
+end
+
+function HolyPerformanceStopUnloadOtherGardens(reason)
+
+    HOLY_DEV_UI_STATE.UnloadOtherGardens =
+        false
+
+    HOLY_PERFORMANCE_STATE.Active =
+        false
+
+    HOLY_PERFORMANCE_STATE.Applying =
+        false
+
+    HolyPerformanceDisconnectConnections()
+
+    HolySaveUISettings()
+
+    HolyPerformanceSetStatus(
+        "Off. Rejoin restores deleted gardens."
+    )
+
+    return true
+end
+
+--==================================================
+-- [3] LOAD SETTINGS + LIBRARY
+--==================================================
+
+HolyLoadUISettings()
+HolyLoadGroupboxSettings()
+
+if HOLY_DEV_UI_STATE.AutoSkipLoading == true then
+
+    HolyLoadingStartAutoSkip(
+        "startup"
+    )
+end
+
+if HOLY_DEV_UI_STATE.AntiAfk == true then
+
+    HolyAntiAfkStart(
+        "startup"
+    )
+end
+
+HolyLoadShopSettings()
+HolyLoadSniperSettings()
+HolyLoadServerSettings()
+
+local Library =
+    HolyLoadUrl(
+        LIBRARY_URL,
+        "libraryholy4.lua"
+    )
+
+if type(Library) ~= "table" then
+
+    error(
+        "[HOLY] librarygag2.lua did not return Library table.",
+        0
+    )
+end
+
+local Options =
+    Library.Options
+
+local Toggles =
+    Library.Toggles
+
+if type(Options) ~= "table"
+or type(Toggles) ~= "table" then
+
+    error(
+        "[HOLY] UI library missing Options/Toggles.",
+        0
+    )
+end
+
+HOLY_DEV_LIBRARY =
+    Library
+
+function HolyApplyUIScale(value)
+
+    local scale =
+        HolyParseScale(
+            value
+        )
+
+    HOLY_DEV_UI_STATE.DPIScale =
+        scale
+
+    if Library
+    and type(Library.SetDPIScale) == "function" then
+
+        pcall(function()
+
+            Library:SetDPIScale(
+                scale
+            )
+        end)
+    end
+
+    return true
+end
+
+Library.ForceCheckbox =
+    false
+
+Library.ShowToggleFrameInKeybinds =
+    true
+
+function HolyNotify(title, description, duration)
+
+    if Library
+    and type(Library.Notify) == "function" then
+
+        Library:Notify({
+            Title =
+                tostring(title or "HOLY"),
+
+            Description =
+                tostring(description or ""),
+
+            Time =
+                tonumber(duration)
+                or 4,
+        })
+
+        return
+    end
+
+    print(
+        "[HOLY]",
+        tostring(title),
+        tostring(description)
+    )
+end
+
+function HolyOpenDevTool(url, name)
+
+    url =
+        HolyCleanText(url)
+
+    name =
+        tostring(name or "Dev Tool")
+
+    if url == "" then
+
+        HolyNotify(
+            "HOLY",
+            "Missing URL for "
+            .. name,
+            4
+        )
+
+        return false
+    end
+
+    HolyNotify(
+        "HOLY",
+        "Loading "
+        .. name
+        .. "...",
+        3
+    )
+
+    task.spawn(function()
+
+        local ok,
+            result =
+            pcall(function()
+
+                return HolyLoadUrl(
+                    url,
+                    name
+                )
+            end)
+
+        if ok == true then
+
+            HolyNotify(
+                "HOLY",
+                name
+                .. " loaded.",
+                3
+            )
+
+        else
+
+            warn(
+                "[HOLY DEV TOOL]",
+                name,
+                tostring(result)
+            )
+
+            HolyNotify(
+                "HOLY",
+                name
+                .. " failed: "
+                .. tostring(result),
+                7
+            )
+        end
+    end)
+
+    return true
+end
+
+--==================================================
+-- [4] WINDOW
+--==================================================
+
+local Window =
+    Library:CreateWindow({
+        Title =
+            '<font color="rgb(245,245,247)"><b>HOLY</b></font> <font color="rgb(232,45,67)"><b>PRO</b></font>',
+
+        Footer =
+            "HOLY Premium",
+
+        ToggleKeybind =
+            Enum.KeyCode.LeftAlt,
+
+        Font =
+            Enum.Font.GothamMedium,
+
+        Center =
+            true,
+
+        AutoShow =
+            HOLY_DEV_UI_STATE.ShowUIOnLoad == true,
+
+        Size =
+            UDim2.fromOffset(
+                560,
+                390
+            ),
+
+        CornerRadius =
+            7,
+
+        GlobalSearch =
+            true,
+
+        EnableCompacting =
+            true,
+
+        EnableSidebarResize =
+            true,
+
+        MinSidebarWidth =
+            150,
+    })
+
+HolyApplyUIScale(
+    HOLY_DEV_UI_STATE.DPIScale
+)
+
+--==================================================
+-- [5] TABS
+--==================================================
+
+local Tabs = {
+    Main =
+        Window:AddTab({
+            Name = "Main",
+            Icon = "house",
+            Description = "Quick actions.",
+        }),
+
+    Farm =
+        Window:AddTab({
+            Name = "Farm",
+            Icon = "sprout",
+            Description = "Garden automation.",
+        }),
+
+    Shop =
+        Window:AddTab({
+            Name = "Shop",
+            Icon = "shopping-cart",
+            Description = "Shop automation.",
+        }),
+
+    Sniper =
+        Window:AddTab({
+            Name = "Sniper",
+            Icon = "crosshair",
+            Description = "Wild pet sniper.",
+        }),
+
+    PetTeams =
+        Window:AddTab({
+            Name = "Pet Teams",
+            Icon = "paw-print",
+            Description = "Pet team automation.",
+        }),
+
+    Visual =
+        Window:AddTab({
+            Name = "Visual",
+            Icon = "eye",
+            Description = "ESP and performance.",
+        }),
+
+    Webhook =
+        Window:AddTab({
+            Name = "Webhook",
+            Icon = "webhook",
+            Description = "Discord alerts.",
+        }),
+
+    Server =
+        Window:AddTab({
+            Name = "Server",
+            Icon = "server",
+            Description = "Server tools.",
+        }),
+
+    Settings =
+        Window:AddTab({
+            Name = "Settings",
+            Icon = "sliders-horizontal",
+            Description = "UI settings.",
+        }),
+
+    Dev =
+        Window:AddTab({
+            Name = "Dev",
+            Icon = "terminal",
+            Description = "Developer tools.",
+        }),
+}
+
+local MainQuickBox =
+    HolyAddLeftGroupbox(
+        Tabs.Main,
+        "Main.ServerControls",
+        "Server Controls",
+        "server"
+    )
+
+local MainLivePetsBox =
+    HolyAddRightGroupbox(
+        Tabs.Main,
+        "Main.LiveWildPets",
+        "Live Wild Pets",
+        "paw-print"
+    )
+
+local ServerControlsBox =
+    HolyAddLeftGroupbox(
+        Tabs.Server,
+        "Server.Controls",
+        "Server Controls",
+        "server"
+    )
+
+local SniperEngineBox =
+    HolyAddLeftGroupbox(
+        Tabs.Sniper,
+        "Sniper.Engine",
+        "Sniper Engine",
+        "crosshair"
+    )
+
+local SniperExecutionBox =
+    HolyAddLeftGroupbox(
+        Tabs.Sniper,
+        "Sniper.Execution",
+        "Snipe Execution",
+        "zap"
+    )
+
+local SniperFilterBox =
+    HolyAddRightGroupbox(
+        Tabs.Sniper,
+        "Sniper.Filter",
+        "Pet Filter",
+        "paw-print"
+    )
+
+local SniperWatchlistBox =
+    HolyAddRightGroupbox(
+        Tabs.Sniper,
+        "Sniper.Watchlist",
+        "Sniper Watchlist",
+        "list"
+    )
+
+local ServerSniperBox =
+    HolyAddLeftGroupbox(
+        Tabs.Sniper,
+        "Sniper.ServerSniper",
+        "Server Sniper",
+        "server"
+    )
+
+local SniperModeControl =
+    nil
+
+local ShopModeControl =
+    nil
+
+local ShopSeedsBox =
+    HolyAddLeftGroupbox(
+        Tabs.Shop,
+        "Shop.Seeds",
+        "Seeds",
+        "sprout"
+    )
+
+local ShopGearBox =
+    HolyAddLeftGroupbox(
+        Tabs.Shop,
+        "Shop.Gear",
+        "Gear",
+        "wrench"
+    )
+
+local ShopCratesBox =
+    HolyAddLeftGroupbox(
+        Tabs.Shop,
+        "Shop.Props",
+        "Props",
+        "package"
+    )
+
+local ShopSellBox =
+    HolyAddLeftGroupbox(
+        Tabs.Shop,
+        "Shop.Sell",
+        "Sell",
+        "coins"
+    )
+
+local ShopFiltersBox =
+    HolyAddLeftGroupbox(
+        Tabs.Shop,
+        "Shop.FruitFilters",
+        "Fruit Filters",
+        "filter"
+    )
+
+local SettingsUIBox =
+    HolyAddLeftGroupbox(
+        Tabs.Settings,
+        "Settings.UI",
+        "UI",
+        "sliders-horizontal"
+    )
+
+local SettingsSessionBox =
+    HolyAddLeftGroupbox(
+        Tabs.Settings,
+        "Settings.Session",
+        "Session",
+        "activity"
+    )
+
+local SettingsPerformanceBox =
+    HolyAddRightGroupbox(
+        Tabs.Settings,
+        "Settings.Performance",
+        "Performance",
+        "gauge"
+    )
+
+local DevToolsBox =
+    HolyAddLeftGroupbox(
+        Tabs.Dev,
+        "Dev.Tools",
+        "Developer Tools",
+        "terminal"
+    )
+
+--==================================================
+-- [5.45] SERVER FINDER HUD
+--==================================================
+
+HOLY_SERVER_FINDER_HUD =
+    nil
+
+HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME = {
+    StartedAt = os.clock(),
+    LastAttemptAt = 0,
+    LastNotifyAt = 0,
+    LastTargetKey = "",
+    Teleporting = false,
+
+    HoldArrivedJobId = "",
+    HoldArrivedAt = 0,
+    LastHoldStatus = "",
+}
+
+if type(HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI) == "table"
+and typeof(HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI.Holder) == "Instance" then
+
+    pcall(function()
+
+        HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI.Holder:Destroy()
+    end)
+end
+
+if type(HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI) == "table"
+and typeof(HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI.Holder) == "Instance" then
+
+    pcall(function()
+
+        HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI.Holder:Destroy()
+    end)
+end
+
+HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI =
+    nil
+
+HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI =
+    nil
+
+HOLY_SERVER_FINDER_TOGGLE =
+    nil
+
+HOLY_SERVER_FINDER_TOGGLE_LOCK =
+    false
+
+HOLY_SERVER_FINDER_SAVE_TOKEN =
+    0
+
+if type(HOLY_SERVER_FINDER_REPORTER) == "table" then
+
+    HOLY_SERVER_FINDER_REPORTER.Token =
+        nil
+
+    HOLY_SERVER_FINDER_REPORTER.Running =
+        false
+end
+
+HOLY_SERVER_FINDER_REPORTER = {
+    Running = false,
+    Token = nil,
+    LastReportAt = 0,
+    LastFetchAt = 0,
+    LastReportStatus = "Ready",
+    LastFetchStatus = "Ready",
+}
+
+HOLY_SERVER_FINDER_STATE = {
+    Enabled = false,
+    AutoRefresh = false,
+    RefreshDelay = 5,
+    HideFull = true,
+
+    SelectedPets = {},
+    SelectedRarities = {},
+    SelectedSizes = {},
+    SelectedVariants = {},
+
+    -- Legacy only. Old saves used SelectedTraits.
+    SelectedTraits = {},
+
+    Minimized = false,
+
+    Position = nil,
+    FilterPosition =
+        nil,
+
+    AutoJoinMode =
+        "Off",
+
+    AutoJoinMinLife =
+        30,
+
+    AutoJoinCooldown =
+        10,
+
+    AutoJoinHoldLoadGrace =
+        22,
+
+    AutoJoinHold =
+        nil,
+
+    AutoJoinSelectedRuleIndex =
+        1,
+
+    AutoJoinRules =
+        {
+            {
+                PetScope =
+                    "Selected Pets",
+
+                Pets =
+                    {
+                        "Bunny",
+                    },
+
+                Sizes =
+                    {
+                        "Big",
+                        "Huge",
+                    },
+
+                Variants =
+                    {
+                        "Rainbow",
+                    },
+
+                Rarities =
+                    {
+                        "Any",
+                    },
+
+                MatchMode =
+                    "Any Selected",
+
+                Enabled =
+                    true,
+            },
+
+            {
+                PetScope =
+                    "Any Pet",
+
+                Pets =
+                    {
+                        "Any",
+                    },
+
+                Sizes =
+                    {
+                        "Big",
+                        "Huge",
+                    },
+
+                Variants =
+                    {
+                        "Any",
+                    },
+
+                Rarities =
+                    {
+                        "Any",
+                    },
+
+                MatchMode =
+                    "Any Selected",
+
+                Enabled =
+                    true,
+            },
+
+            {
+                PetScope =
+                    "Selected Pets",
+
+                Pets =
+                    {
+                        "Raccoon",
+                    },
+
+                Sizes =
+                    {
+                        "Any",
+                    },
+
+                Variants =
+                    {
+                        "Any",
+                    },
+
+                Rarities =
+                    {
+                        "Any",
+                    },
+
+                MatchMode =
+                    "Any Selected",
+
+                Enabled =
+                    true,
+            },
+
+            {
+                PetScope =
+                    "Selected Pets",
+
+                Pets =
+                    {
+                        "Golden Dragonfly",
+                    },
+
+                Sizes =
+                    {
+                        "Any",
+                    },
+
+                Variants =
+                    {
+                        "Any",
+                    },
+
+                Rarities =
+                    {
+                        "Any",
+                    },
+
+                MatchMode =
+                    "Any Selected",
+
+                Enabled =
+                    true,
+            },
+        },
+}
+
+function HolyServerFinderSelectionValues(value)
+
+    local output =
+        {}
+
+    if type(value) ~= "table" then
+        return output
+    end
+
+    for key, enabled in pairs(value) do
+
+        local text =
+            ""
+
+        if type(key) == "number" then
+
+            text =
+                HolyCleanText(
+                    enabled
+                )
+
+        elseif enabled == true then
+
+            text =
+                HolyCleanText(
+                    key
+                )
+        end
+
+        if text ~= "" then
+
+            table.insert(
+                output,
+                text
+            )
+        end
+    end
+
+    return output
+end
+
+function HolyServerFinderAddMapValue(map, value)
+
+    value =
+        HolyCleanText(
+            value
+        )
+
+    if value == "" then
+        return false
+    end
+
+    map[value] =
+        true
+
+    return true
+end
+
+function HolyServerFinderNormalizeSizeChoice(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local lower =
+        text:lower()
+
+    if lower == "big" then
+        return "Big"
+    end
+
+    if lower == "huge"
+    or lower == "mega" then
+        return "Huge"
+    end
+
+    if lower == "normal"
+    or lower == "regular" then
+        return "Normal"
+    end
+
+    if lower == "big rainbow" then
+        return "Big"
+    end
+
+    if lower == "mega rainbow"
+    or lower == "huge rainbow" then
+        return "Huge"
+    end
+
+    return ""
+end
+
+function HolyServerFinderNormalizeVariantChoice(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local lower =
+        text:lower()
+
+    if lower == "rainbow"
+    or lower == "big rainbow"
+    or lower == "huge rainbow"
+    or lower == "mega rainbow" then
+        return "Rainbow"
+    end
+
+    if lower == "regular"
+    or lower == "normal" then
+        return "Regular"
+    end
+
+    return ""
+end
+
+function HolyServerFinderMapFromArray(value)
+
+    local output =
+        {}
+
+    for _, text in ipairs(HolyServerFinderSelectionValues(value)) do
+
+        HolyServerFinderAddMapValue(
+            output,
+            text
+        )
+    end
+
+    return output
+end
+
+function HolyServerFinderSizeMapFromArray(value)
+
+    local output =
+        {}
+
+    for _, text in ipairs(HolyServerFinderSelectionValues(value)) do
+
+        local size =
+            HolyServerFinderNormalizeSizeChoice(
+                text
+            )
+
+        if size ~= "" then
+
+            HolyServerFinderAddMapValue(
+                output,
+                size
+            )
+        end
+    end
+
+    return output
+end
+
+function HolyServerFinderVariantMapFromArray(value)
+
+    local output =
+        {}
+
+    for _, text in ipairs(HolyServerFinderSelectionValues(value)) do
+
+        local variant =
+            HolyServerFinderNormalizeVariantChoice(
+                text
+            )
+
+        if variant ~= "" then
+
+            HolyServerFinderAddMapValue(
+                output,
+                variant
+            )
+        end
+    end
+
+    return output
+end
+
+function HolyServerFinderArrayFromMap(map)
+
+    local output =
+        {}
+
+    if type(map) ~= "table" then
+        return output
+    end
+
+    for key, enabled in pairs(map) do
+
+        if enabled == true then
+
+            local text =
+                HolyCleanText(
+                    key
+                )
+
+            if text ~= "" then
+
+                table.insert(
+                    output,
+                    text
+                )
+            end
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
+function HolyServerFinderReadPosition(value)
+
+    if type(value) ~= "table" then
+        return nil
+    end
+
+    local x =
+        tonumber(
+            value.X
+            or value.x
+            or value[1]
+        )
+
+    local y =
+        tonumber(
+            value.Y
+            or value.y
+            or value[2]
+        )
+
+    if not x
+    or not y then
+        return nil
+    end
+
+    return {
+        X =
+            math.clamp(
+                math.floor(x + 0.5),
+                -5000,
+                5000
+            ),
+
+        Y =
+            math.clamp(
+                math.floor(y + 0.5),
+                -5000,
+                5000
+            ),
+    }
+end
+
+local HOLY_SERVER_FINDER_AUTO_JOIN_SIZE_CHOICES = {
+    "Any",
+    "Normal",
+    "Big",
+    "Huge",
+}
+
+local HOLY_SERVER_FINDER_AUTO_JOIN_VARIANT_CHOICES = {
+    "Any",
+    "Regular",
+    "Rainbow",
+}
+
+local HOLY_SERVER_FINDER_AUTO_JOIN_RARITY_CHOICES = {
+    "Any",
+    "Common",
+    "Uncommon",
+    "Rare",
+    "Epic",
+    "Legendary",
+    "Mythic",
+    "Super",
+}
+
+function HolyServerFinderGetDefaultAutoJoinRules()
+
+    return {
+        {
+            PetScope =
+                "Selected Pets",
+
+            Pets =
+                {
+                    "Bunny",
+                },
+
+            Sizes =
+                {
+                    "Big",
+                    "Huge",
+                },
+
+            Variants =
+                {
+                    "Rainbow",
+                },
+
+            Rarities =
+                {
+                    "Any",
+                },
+
+            MatchMode =
+                "Any Selected",
+
+            Enabled =
+                true,
+        },
+
+        {
+            PetScope =
+                "Any Pet",
+
+            Pets =
+                {
+                    "Any",
+                },
+
+            Sizes =
+                {
+                    "Big",
+                    "Huge",
+                },
+
+            Variants =
+                {
+                    "Any",
+                },
+
+            Rarities =
+                {
+                    "Any",
+                },
+
+            MatchMode =
+                "Any Selected",
+
+            Enabled =
+                true,
+        },
+
+        {
+            PetScope =
+                "Selected Pets",
+
+            Pets =
+                {
+                    "Raccoon",
+                },
+
+            Sizes =
+                {
+                    "Any",
+                },
+
+            Variants =
+                {
+                    "Any",
+                },
+
+            Rarities =
+                {
+                    "Any",
+                },
+
+            MatchMode =
+                "Any Selected",
+
+            Enabled =
+                true,
+        },
+
+        {
+            PetScope =
+                "Selected Pets",
+
+            Pets =
+                {
+                    "Golden Dragonfly",
+                },
+
+            Sizes =
+                {
+                    "Any",
+                },
+
+            Variants =
+                {
+                    "Any",
+                },
+
+            Rarities =
+                {
+                    "Any",
+                },
+
+            MatchMode =
+                "Any Selected",
+
+            Enabled =
+                true,
+        },
+    }
+end
+
+function HolyServerFinderNormalizeAutoJoinMode(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    if text:find("notify", 1, true) then
+        return "Notify"
+    end
+
+    if text:find("join", 1, true)
+    or text:find("best", 1, true) then
+        return "Join Best"
+    end
+
+    return "Off"
+end
+
+function HolyServerFinderNextAutoJoinMode(value)
+
+    value =
+        HolyServerFinderNormalizeAutoJoinMode(
+            value
+        )
+
+    if value == "Off" then
+        return "Notify"
+    end
+
+    if value == "Notify" then
+        return "Join Best"
+    end
+
+    return "Off"
+end
+
+function HolyServerFinderNormalizeAutoJoinMatchMode(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    if text:find("all", 1, true)
+    or text == "and" then
+
+        return "All Selected"
+    end
+
+    return "Any Selected"
+end
+
+function HolyServerFinderNormalizeAutoJoinPetScope(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    if text:find("any", 1, true) then
+        return "Any Pet"
+    end
+
+    return "Selected Pets"
+end
+
+function HolyServerFinderSplitCommaList(value)
+
+    local output =
+        {}
+
+    if type(value) == "table" then
+
+        for key, enabled in pairs(value) do
+
+            local text =
+                ""
+
+            if type(key) == "number" then
+
+                text =
+                    HolyCleanText(
+                        enabled
+                    )
+
+            elseif enabled == true then
+
+                text =
+                    HolyCleanText(
+                        key
+                    )
+            end
+
+            if text ~= "" then
+
+                table.insert(
+                    output,
+                    text
+                )
+            end
+        end
+
+    else
+
+        value =
+            HolyCleanText(
+                value
+            )
+
+        value =
+            value:gsub("/", ",")
+                :gsub("%+", ",")
+                :gsub(";", ",")
+
+        for part in value:gmatch("[^,]+") do
+
+            local text =
+                HolyCleanText(
+                    part
+                )
+
+            if text ~= "" then
+
+                table.insert(
+                    output,
+                    text
+                )
+            end
+        end
+    end
+
+    return output
+end
+
+function HolyServerFinderAutoJoinListHasAny(list)
+
+    if type(list) ~= "table"
+    or #list <= 0 then
+
+        return true
+    end
+
+    for _, value in ipairs(list) do
+
+        local text =
+            HolyCleanText(
+                value
+            )
+            :lower()
+
+        if text == ""
+        or text == "any"
+        or text == "any pet"
+        or text == "all" then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyServerFinderAutoJoinUniqueList(list, normalizer, fallback)
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    fallback =
+        fallback
+        or "Any"
+
+    for _, value in ipairs(HolyServerFinderSplitCommaList(list)) do
+
+        local text =
+            HolyCleanText(
+                value
+            )
+
+        local lower =
+            text:lower()
+
+        if lower == ""
+        or lower == "any"
+        or lower == "all"
+        or lower == "any pet" then
+
+            return {
+                "Any",
+            }
+        end
+
+        if type(normalizer) == "function" then
+
+            text =
+                normalizer(
+                    text
+                )
+        end
+
+        text =
+            HolyCleanText(
+                text
+            )
+
+        if text ~= "" then
+
+            local key =
+                text:lower()
+
+            if seen[key] ~= true then
+
+                seen[key] =
+                    true
+
+                table.insert(
+                    output,
+                    text
+                )
+            end
+        end
+    end
+
+    if #output <= 0 then
+        return {
+            fallback,
+        }
+    end
+
+    return output
+end
+
+function HolyServerFinderNormalizeAutoJoinPetName(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == "" then
+        return ""
+    end
+
+    return HolySniperResolvePetDisplay(
+        text
+    )
+end
+
+function HolyServerFinderNormalizeAutoJoinSizeName(value)
+
+    local text =
+        HolySniperNormalizeSizeName(
+            value
+        )
+
+    if text == "Normal"
+    or text == "Big"
+    or text == "Huge" then
+
+        return text
+    end
+
+    return ""
+end
+
+function HolyServerFinderNormalizeAutoJoinVariantName(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local lower =
+        text:lower()
+
+    if lower == "regular"
+    or lower == "normal" then
+
+        return "Regular"
+    end
+
+    text =
+        HolySniperNormalizeVariantName(
+            text
+        )
+
+    if text == "Normal" then
+        return "Regular"
+    end
+
+    if text == "Rainbow" then
+        return "Rainbow"
+    end
+
+    return text
+end
+
+function HolyServerFinderNormalizeAutoJoinRarityName(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == "" then
+        return ""
+    end
+
+    return text
+end
+
+function HolyServerFinderNormalizeAutoJoinRule(rule)
+
+    rule =
+        type(rule) == "table"
+        and rule
+        or {}
+
+    local petScope =
+        HolyServerFinderNormalizeAutoJoinPetScope(
+            rule.PetScope
+            or rule.Scope
+            or "Selected Pets"
+        )
+
+    local pets =
+        HolyServerFinderAutoJoinUniqueList(
+            rule.Pets
+            or rule.Pet
+            or rule.SelectedPets,
+            HolyServerFinderNormalizeAutoJoinPetName,
+            "Any"
+        )
+
+    if petScope == "Any Pet" then
+
+        pets =
+            {
+                "Any",
+            }
+    end
+
+    if petScope ~= "Any Pet"
+    and HolyServerFinderAutoJoinListHasAny(pets) == true then
+
+        pets =
+            {
+                "Bunny",
+            }
+    end
+
+    local sizes =
+        HolyServerFinderAutoJoinUniqueList(
+            rule.Sizes
+            or rule.Size,
+            HolyServerFinderNormalizeAutoJoinSizeName,
+            "Any"
+        )
+
+    local variants =
+        HolyServerFinderAutoJoinUniqueList(
+            rule.Variants
+            or rule.Variant
+            or rule.Mutations
+            or rule.Mutation,
+            HolyServerFinderNormalizeAutoJoinVariantName,
+            "Any"
+        )
+
+    local rarities =
+        HolyServerFinderAutoJoinUniqueList(
+            rule.Rarities
+            or rule.Rarity,
+            HolyServerFinderNormalizeAutoJoinRarityName,
+            "Any"
+        )
+
+    return {
+        PetScope =
+            petScope,
+
+        Pets =
+            pets,
+
+        Sizes =
+            sizes,
+
+        Variants =
+            variants,
+
+        Rarities =
+            rarities,
+
+        MatchMode =
+            HolyServerFinderNormalizeAutoJoinMatchMode(
+                rule.MatchMode
+                or rule.Match
+                or "Any Selected"
+            ),
+
+        Enabled =
+            rule.Enabled ~= false,
+    }
+end
+
+function HolyServerFinderNormalizeAutoJoinRules(rules)
+
+    local output =
+        {}
+
+    if type(rules) == "table" then
+
+        for _, rule in ipairs(rules) do
+
+            if type(rule) == "table" then
+
+                table.insert(
+                    output,
+                    HolyServerFinderNormalizeAutoJoinRule(
+                        rule
+                    )
+                )
+            end
+        end
+    end
+
+    if #output <= 0 then
+
+        for _, rule in ipairs(HolyServerFinderGetDefaultAutoJoinRules()) do
+
+            table.insert(
+                output,
+                HolyServerFinderNormalizeAutoJoinRule(
+                    rule
+                )
+            )
+        end
+    end
+
+    return output
+end
+
+function HolyServerFinderNormalizeAutoJoinHold(hold)
+
+    if type(hold) ~= "table"
+    or hold.Active ~= true then
+
+        return nil
+    end
+
+    local jobId =
+        HolyCleanText(
+            hold.JobId
+            or hold.TargetJobId
+            or hold.ServerId
+        )
+
+    if jobId == "" then
+        return nil
+    end
+
+    local expiresAt =
+        tonumber(
+            hold.ExpiresAt
+            or hold.expiresAt
+        )
+        or 0
+
+    if expiresAt > 0
+    and expiresAt <= os.time() - 8 then
+
+        return nil
+    end
+
+    local size =
+        HolyCleanText(
+            hold.Size
+            or "Any"
+        )
+
+    if size == ""
+    or size:lower() == "any" then
+
+        size =
+            "Any"
+
+    else
+
+        size =
+            HolySniperNormalizeSizeName(
+                size
+            )
+    end
+
+    local variant =
+        HolyCleanText(
+            hold.Variant
+            or hold.Mutation
+            or "Any"
+        )
+
+    if variant == ""
+    or variant:lower() == "any" then
+
+        variant =
+            "Any"
+
+    else
+
+        variant =
+            HolyServerFinderNormalizeAutoJoinVariantName(
+                variant
+            )
+    end
+
+    local rarity =
+        HolyCleanText(
+            hold.Rarity
+            or "Any"
+        )
+
+    if rarity == "" then
+        rarity =
+            "Any"
+    end
+
+    return {
+        Active =
+            true,
+
+        JobId =
+            jobId,
+
+        PlaceId =
+            tonumber(
+                hold.PlaceId
+                or hold.placeId
+                or game.PlaceId
+            )
+            or game.PlaceId,
+
+        Pet =
+            HolyCleanText(
+                hold.Pet
+                or hold.BasePet
+                or hold.BestPet
+            ),
+
+        Size =
+            size,
+
+        Variant =
+            variant,
+
+        Rarity =
+            rarity,
+
+        DisplayName =
+            HolyCleanText(
+                hold.DisplayName
+                or hold.Name
+                or hold.Pet
+            ),
+
+        RuleIndex =
+            tonumber(
+                hold.RuleIndex
+            )
+            or 0,
+
+        ExpiresAt =
+            expiresAt,
+
+        CreatedAt =
+            tonumber(
+                hold.CreatedAt
+            )
+            or os.time(),
+
+        Source =
+            HolyCleanText(
+                hold.Source
+                or "Auto Join"
+            ),
+    }
+end
+
+function HolyServerFinderEnsureAutoJoinState()
+
+    HOLY_SERVER_FINDER_STATE =
+        type(HOLY_SERVER_FINDER_STATE) == "table"
+        and HOLY_SERVER_FINDER_STATE
+        or {}
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinMode =
+        HolyServerFinderNormalizeAutoJoinMode(
+            HOLY_SERVER_FINDER_STATE.AutoJoinMode
+            or "Off"
+        )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinMinLife =
+        math.clamp(
+            tonumber(
+                HOLY_SERVER_FINDER_STATE.AutoJoinMinLife
+            )
+            or 30,
+            0,
+            420
+        )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinCooldown =
+        math.clamp(
+            tonumber(
+                HOLY_SERVER_FINDER_STATE.AutoJoinCooldown
+            )
+            or 10,
+            1,
+            120
+        )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinHoldLoadGrace =
+        math.clamp(
+            tonumber(
+                HOLY_SERVER_FINDER_STATE.AutoJoinHoldLoadGrace
+            )
+            or 22,
+            5,
+            90
+        )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinRules =
+        HolyServerFinderNormalizeAutoJoinRules(
+            HOLY_SERVER_FINDER_STATE.AutoJoinRules
+        )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
+        math.clamp(
+            math.floor(
+                tonumber(
+                    HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
+                )
+                or 1
+            ),
+            1,
+            math.max(
+                1,
+                #HOLY_SERVER_FINDER_STATE.AutoJoinRules
+            )
+        )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinHold =
+        HolyServerFinderNormalizeAutoJoinHold(
+            HOLY_SERVER_FINDER_STATE.AutoJoinHold
+        )
+
+    return HOLY_SERVER_FINDER_STATE
+end
+
+function HolyServerFinderSetAutoJoinMode(value)
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinMode =
+        HolyServerFinderNormalizeAutoJoinMode(
+            value
+        )
+
+    if type(HOLY_SERVER_FINDER_HUD) == "table"
+    and type(HOLY_SERVER_FINDER_HUD.SetAutoJoinMode) == "function" then
+
+        pcall(function()
+
+            HOLY_SERVER_FINDER_HUD:SetAutoJoinMode(
+                HOLY_SERVER_FINDER_STATE.AutoJoinMode
+            )
+        end)
+    end
+
+    HolyQueueSaveServerFinderSettings()
+
+    HolyServerFinderRefreshAutoJoinRulesPopup()
+
+    return HOLY_SERVER_FINDER_STATE.AutoJoinMode
+end
+
+function HolyServerFinderRowKey(row)
+
+    if type(row) ~= "table" then
+        return ""
+    end
+
+    return HolyCleanText(
+        row.Key
+        or row.Id
+        or row.JobId
+        or row.jobId
+        or ""
+    )
+end
+
+function HolyServerFinderRowJobId(row)
+
+    if type(row) ~= "table" then
+        return ""
+    end
+
+    return HolyCleanText(
+        row.JobId
+        or row.jobId
+        or row.ServerId
+        or row.id
+        or row.Id
+        or row.Key
+    )
+end
+
+function HolyServerFinderRowTimeLeft(row)
+
+    if type(row) ~= "table" then
+        return 0
+    end
+
+    local expiresAt =
+        tonumber(
+            row.ExpiresAt
+            or row.expiresAt
+        )
+        or 0
+
+    if expiresAt > 0 then
+
+        return math.max(
+            0,
+            expiresAt - os.time()
+        )
+    end
+
+    local timeLeft =
+        tonumber(
+            row.TimeLeft
+            or row.timeLeft
+        )
+        or 0
+
+    local reportedAt =
+        tonumber(
+            row.ReportedAt
+            or row.reportedAt
+        )
+        or 0
+
+    if reportedAt > 0 then
+
+        timeLeft =
+            timeLeft
+            - math.max(
+                0,
+                os.time() - reportedAt
+            )
+    end
+
+    return math.max(
+        0,
+        timeLeft
+    )
+end
+
+function HolyServerFinderRowIsFull(row)
+
+    if type(row) ~= "table" then
+        return true
+    end
+
+    local playing =
+        tonumber(
+            row.Playing
+            or row.playing
+        )
+        or 0
+
+    local maxPlayers =
+        tonumber(
+            row.MaxPlayers
+            or row.maxPlayers
+        )
+        or 8
+
+    return maxPlayers > 0
+        and playing >= maxPlayers
+end
+
+function HolyServerFinderRowIsCurrent(row)
+
+    local jobId =
+        HolyServerFinderRowJobId(
+            row
+        )
+
+    return jobId ~= ""
+        and jobId == tostring(game.JobId)
+end
+
+function HolyServerFinderRowReportAge(row)
+
+    if type(row) ~= "table" then
+        return 999999
+    end
+
+    local reportedAt =
+        tonumber(
+            row.ReportedAt
+            or row.reportedAt
+        )
+        or 0
+
+    if reportedAt <= 0 then
+        return 0
+    end
+
+    return math.max(
+        0,
+        os.time() - reportedAt
+    )
+end
+
+function HolyServerFinderRowIsHiddenByAge(row)
+
+    if type(row) ~= "table" then
+        return true
+    end
+
+    if row.HideFromFinder == true
+    or row.Expired == true then
+
+        return true
+    end
+
+    local expiresAt =
+        tonumber(
+            row.ExpiresAt
+            or row.expiresAt
+        )
+        or 0
+
+    if expiresAt > 0
+    and expiresAt <= os.time() then
+
+        return true
+    end
+
+    local reportedAt =
+        tonumber(
+            row.ReportedAt
+            or row.reportedAt
+        )
+        or 0
+
+    if reportedAt <= 0 then
+        return false
+    end
+
+    local maxAge =
+        tonumber(
+            row.MaxReportAge
+            or row.maxReportAge
+        )
+        or tonumber(SERVER_FINDER_ROW_HIDE_AFTER_SECONDS)
+        or 45
+
+    return HolyServerFinderRowReportAge(row) > maxAge
+end
+
+function HolyServerFinderRowIsStale(row)
+
+    local maxAge =
+        tonumber(
+            row
+            and (
+                row.ManualJoinMaxAge
+                or row.manualJoinMaxAge
+            )
+        )
+        or tonumber(SERVER_FINDER_MANUAL_JOIN_FRESH_SECONDS)
+        or 20
+
+    return HolyServerFinderRowReportAge(row) > maxAge
+end
+
+function HolyServerFinderRowIsTooLate(row, minLife)
+
+    if type(row) ~= "table" then
+        return true
+    end
+
+    local expiresAt =
+        tonumber(
+            row.ExpiresAt
+            or row.expiresAt
+        )
+        or 0
+
+    local rawTimeLeft =
+        tonumber(
+            row.TimeLeft
+            or row.timeLeft
+        )
+
+    if expiresAt <= 0
+    and rawTimeLeft == nil then
+
+        return false
+    end
+
+    local timeLeft =
+        HolyServerFinderRowTimeLeft(
+            row
+        )
+
+    if timeLeft <= 0 then
+        return true
+    end
+
+    minLife =
+        tonumber(minLife)
+        or tonumber(SERVER_FINDER_TOO_LATE_SECONDS)
+        or 15
+
+    return timeLeft < minLife
+end
+
+function HolyServerFinderRowManualJoinAllowed(row)
+
+    if type(row) ~= "table" then
+        return false
+    end
+
+    if HolyServerFinderRowIsCurrent(row) == true then
+        return false
+    end
+
+    if HolyServerFinderRowIsFull(row) == true then
+        return false
+    end
+
+    if HolyServerFinderRowIsHiddenByAge(row) == true then
+        return false
+    end
+
+    return true
+end
+
+function HolyServerFinderRowAutoJoinFresh(row, minLife)
+
+    return HolyServerFinderRowManualJoinAllowed(
+        row
+    ) == true
+end
+
+function HolyServerFinderAnnotateJoinState(row)
+
+    if type(row) ~= "table" then
+        return nil
+    end
+
+    row.MaxReportAge =
+        tonumber(SERVER_FINDER_ROW_HIDE_AFTER_SECONDS)
+        or 45
+
+    row.ManualJoinMaxAge =
+        tonumber(SERVER_FINDER_MANUAL_JOIN_FRESH_SECONDS)
+        or 20
+
+    row.AutoJoinMaxAge =
+        tonumber(SERVER_FINDER_AUTO_JOIN_FRESH_SECONDS)
+        or 12
+
+    row.ManualMinLife =
+        tonumber(SERVER_FINDER_TOO_LATE_SECONDS)
+        or 15
+
+    row.ReportAge =
+        HolyServerFinderRowReportAge(
+            row
+        )
+
+    row.JoinEnabled =
+        true
+
+    row.JoinDisabled =
+        false
+
+    row.JoinText =
+        "Join"
+
+    row.JoinState =
+        "fresh"
+
+    row.Freshness =
+        "Fresh"
+
+    if HolyServerFinderRowIsHiddenByAge(row) == true then
+
+        row.Expired =
+            true
+
+        row.HideFromFinder =
+            true
+
+        row.JoinEnabled =
+            false
+
+        row.JoinDisabled =
+            true
+
+        row.JoinText =
+            "Gone"
+
+        row.JoinState =
+            "gone"
+
+        row.Freshness =
+            "Gone"
+
+        return row
+    end
+
+    if HolyServerFinderRowIsCurrent(row) == true then
+
+        row.JoinEnabled =
+            false
+
+        row.JoinDisabled =
+            true
+
+        row.JoinText =
+            "Current"
+
+        row.JoinState =
+            "current"
+
+        row.Freshness =
+            "Current"
+
+        return row
+    end
+
+    if HolyServerFinderRowIsFull(row) == true then
+
+        row.JoinEnabled =
+            false
+
+        row.JoinDisabled =
+            true
+
+        row.JoinText =
+            "Full"
+
+        row.JoinState =
+            "full"
+
+        row.Freshness =
+            "Full"
+
+        return row
+    end
+
+    if HolyServerFinderRowIsTooLate(
+        row,
+        SERVER_FINDER_TOO_LATE_SECONDS
+    ) == true then
+
+        row.JoinEnabled =
+            true
+
+        row.JoinDisabled =
+            false
+
+        row.JoinText =
+            "Join"
+
+        row.JoinState =
+            "late"
+
+        row.Freshness =
+            "Late"
+
+        return row
+    end
+
+    if HolyServerFinderRowIsStale(row) == true then
+
+        row.JoinEnabled =
+            true
+
+        row.JoinDisabled =
+            false
+
+        row.JoinText =
+            "Join"
+
+        row.JoinState =
+            "stale"
+
+        row.Freshness =
+            "Stale"
+
+        return row
+    end
+
+    if HolyServerFinderRowReportAge(row)
+    > (
+        tonumber(SERVER_FINDER_AUTO_JOIN_FRESH_SECONDS)
+        or 12
+    ) then
+
+        row.JoinState =
+            "aging"
+
+        row.Freshness =
+            "Aging"
+
+    else
+
+        row.JoinState =
+            "fresh"
+
+        row.Freshness =
+            "Fresh"
+    end
+
+    return row
+end
+
+function HolyServerFinderAnnotateDisplayRows(rows)
+
+    local output =
+        {}
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    for _, row in ipairs(rows) do
+
+        row =
+            HolyServerFinderAnnotateJoinState(
+                row
+            )
+
+        if type(row) == "table"
+        and row.HideFromFinder ~= true then
+
+            table.insert(
+                output,
+                row
+            )
+        end
+    end
+
+    return output
+end
+
+function HolyServerFinderSelectionMatchesText(selection, text)
+
+    if HolyServerFinderAutoJoinListHasAny(selection) == true then
+        return true
+    end
+
+    local haystack =
+        HolySniperPetAliasKey(
+            text
+        )
+
+    for _, value in ipairs(selection or {}) do
+
+        local needle =
+            HolySniperPetAliasKey(
+                value
+            )
+
+        if needle ~= ""
+        and haystack == needle then
+
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyServerFinderAutoJoinRowSize(row)
+
+    return HolySniperNormalizeSizeName(
+        row.Size
+        or row.size
+        or "Normal"
+    )
+end
+
+function HolyServerFinderAutoJoinRowVariant(row)
+
+    local variant =
+        HolySniperNormalizeVariantName(
+            row.Variant
+            or row.variant
+            or row.Mutation
+            or row.mutation
+            or "Normal"
+        )
+
+    if variant == "Normal" then
+        return "Regular"
+    end
+
+    return variant
+end
+
+function HolyServerFinderSelectionContainsValue(selection, value, normalizer)
+
+    if HolyServerFinderAutoJoinListHasAny(selection) == true then
+        return true
+    end
+
+    if type(normalizer) == "function" then
+
+        value =
+            normalizer(
+                value
+            )
+    end
+
+    value =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    for _, wanted in ipairs(selection or {}) do
+
+        wanted =
+            type(normalizer) == "function"
+            and normalizer(wanted)
+            or wanted
+
+        wanted =
+            HolyCleanText(
+                wanted
+            )
+            :lower()
+
+        if wanted == value then
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyServerFinderRaritySelectionMatches(selection, value)
+
+    if HolyServerFinderAutoJoinListHasAny(selection) == true then
+        return true
+    end
+
+    local rarity =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    for _, wanted in ipairs(selection or {}) do
+
+        if rarity == HolyCleanText(wanted):lower() then
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyServerFinderAutoJoinRuleMatchesRow(rule, row)
+
+    if type(rule) ~= "table"
+    or rule.Enabled == false
+    or type(row) ~= "table" then
+
+        return false
+    end
+
+    rule =
+        HolyServerFinderNormalizeAutoJoinRule(
+            rule
+        )
+
+    if rule.PetScope ~= "Any Pet" then
+
+        local basePet =
+            HolyCleanText(
+                row.BasePet
+                or row.BestPet
+                or row.PetName
+                or row.Pet
+                or row.DisplayName
+                or row.Name
+            )
+
+        if HolyServerFinderSelectionMatchesText(
+            rule.Pets,
+            basePet
+        ) ~= true then
+
+            return false
+        end
+    end
+
+    if HolyServerFinderRaritySelectionMatches(
+        rule.Rarities,
+        row.Rarity
+        or row.rarity
+    ) ~= true then
+
+        return false
+    end
+
+    local sizeAny =
+        HolyServerFinderAutoJoinListHasAny(
+            rule.Sizes
+        )
+
+    local variantAny =
+        HolyServerFinderAutoJoinListHasAny(
+            rule.Variants
+        )
+
+    if sizeAny == true
+    and variantAny == true then
+
+        return true
+    end
+
+    local sizeMatch =
+        HolyServerFinderSelectionContainsValue(
+            rule.Sizes,
+            HolyServerFinderAutoJoinRowSize(row),
+            HolyServerFinderNormalizeAutoJoinSizeName
+        )
+
+    local variantMatch =
+        HolyServerFinderSelectionContainsValue(
+            rule.Variants,
+            HolyServerFinderAutoJoinRowVariant(row),
+            HolyServerFinderNormalizeAutoJoinVariantName
+        )
+
+    local matchMode =
+        HolyServerFinderNormalizeAutoJoinMatchMode(
+            rule.MatchMode
+        )
+
+    if matchMode == "All Selected" then
+
+        if sizeAny ~= true
+        and sizeMatch ~= true then
+            return false
+        end
+
+        if variantAny ~= true
+        and variantMatch ~= true then
+            return false
+        end
+
+        return true
+    end
+
+    if sizeAny ~= true
+    and sizeMatch == true then
+        return true
+    end
+
+    if variantAny ~= true
+    and variantMatch == true then
+        return true
+    end
+
+    return false
+end
+
+function HolyServerFinderAutoJoinScoreRow(row)
+
+    if type(row) ~= "table" then
+        return 0
+    end
+
+    local score =
+        0
+
+    score =
+        score
+        + (
+            tonumber(row.RarityRank)
+            or HolyServerFinderRarityRank(
+                row.Rarity
+            )
+        ) * 100000
+
+    local freshness =
+        HolyCleanText(
+            row.Freshness
+            or row.JoinState
+            or ""
+        )
+        :lower()
+
+    if HolyServerFinderRowIsTooLate(
+        row,
+        SERVER_FINDER_TOO_LATE_SECONDS
+    ) == true then
+
+        freshness =
+            "late"
+
+    elseif HolyServerFinderRowIsStale(row) == true then
+
+        freshness =
+            "stale"
+
+    elseif HolyServerFinderRowReportAge(row)
+    > (
+        tonumber(SERVER_FINDER_AUTO_JOIN_FRESH_SECONDS)
+        or 12
+    ) then
+
+        freshness =
+            "aging"
+
+    elseif freshness == "" then
+
+        freshness =
+            "fresh"
+    end
+
+    if freshness == "fresh" then
+
+        score =
+            score + 4500
+
+    elseif freshness == "aging" then
+
+        score =
+            score + 3000
+
+    elseif freshness == "stale" then
+
+        score =
+            score + 1500
+    end
+
+    local variant =
+        HolyServerFinderAutoJoinRowVariant(
+            row
+        )
+
+    local size =
+        HolyServerFinderAutoJoinRowSize(
+            row
+        )
+
+    if variant == "Rainbow" then
+        score =
+            score + 10000
+    end
+
+    if size == "Huge" then
+        score =
+            score + 5000
+
+    elseif size == "Big" then
+
+        score =
+            score + 2500
+    end
+
+    score =
+        score
+        + math.min(
+            999,
+            math.floor(
+                HolyServerFinderRowTimeLeft(row)
+            )
+        )
+
+    local playing =
+        tonumber(row.Playing)
+        or 0
+
+    local maxPlayers =
+        tonumber(row.MaxPlayers)
+        or 8
+
+    score =
+        score
+        + math.max(
+            0,
+            maxPlayers - playing
+        ) * 10
+
+    return score
+end
+
+function HolyServerFinderFindAutoJoinTarget(rows)
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    local minLife =
+        tonumber(
+            HOLY_SERVER_FINDER_STATE.AutoJoinMinLife
+        )
+        or 30
+
+    for ruleIndex, rule in ipairs(HOLY_SERVER_FINDER_STATE.AutoJoinRules or {}) do
+
+        local candidates =
+            {}
+
+        for _, row in ipairs(rows) do
+
+            if type(row) == "table"
+            and HolyServerFinderRowAutoJoinFresh(
+                row,
+                minLife
+            ) == true
+            and HolyServerFinderAutoJoinRuleMatchesRow(rule, row) == true then
+
+                table.insert(
+                    candidates,
+                    {
+                        RuleIndex =
+                            ruleIndex,
+
+                        Rule =
+                            rule,
+
+                        Row =
+                            row,
+
+                        Score =
+                            HolyServerFinderAutoJoinScoreRow(
+                                row
+                            ),
+                    }
+                )
+            end
+        end
+
+        if #candidates > 0 then
+
+            table.sort(candidates, function(a, b)
+
+                if a.Score ~= b.Score then
+                    return a.Score > b.Score
+                end
+
+                return tostring(a.Row.DisplayName or "")
+                    < tostring(b.Row.DisplayName or "")
+            end)
+
+            return candidates[1]
+        end
+    end
+
+    return nil
+end
+
+function HolyServerFinderRowAlive(row)
+
+    if type(row) ~= "table" then
+        return false
+    end
+
+    local expiresAt =
+        tonumber(
+            row.ExpiresAt
+            or row.expiresAt
+        )
+        or 0
+
+    if expiresAt <= 0 then
+        return true
+    end
+
+    return expiresAt > os.time() - 2
+        and HolyServerFinderRowTimeLeft(row) > 0
+end
+
+function HolyServerFinderRowBasePet(row)
+
+    if type(row) ~= "table" then
+        return ""
+    end
+
+    return HolyCleanText(
+        row.BasePet
+        or row.BestPet
+        or row.Pet
+        or row.PetName
+        or row.DisplayName
+        or row.Name
+    )
+end
+
+function HolyServerFinderAutoJoinValueIsAny(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    return text == ""
+        or text == "any"
+        or text == "any pet"
+        or text == "all"
+end
+
+function HolyServerFinderHoldMatchesRow(hold, row)
+
+    hold =
+        HolyServerFinderNormalizeAutoJoinHold(
+            hold
+        )
+
+    if type(hold) ~= "table"
+    or type(row) ~= "table" then
+        return false
+    end
+
+    if HolyServerFinderRowAlive(row) ~= true then
+        return false
+    end
+
+    if HolyServerFinderAutoJoinValueIsAny(hold.Pet) ~= true then
+
+        local holdPet =
+            HolySniperPetAliasKey(
+                hold.Pet
+            )
+
+        local rowPet =
+            HolySniperPetAliasKey(
+                HolyServerFinderRowBasePet(
+                    row
+                )
+            )
+
+        if holdPet == ""
+        or rowPet ~= holdPet then
+            return false
+        end
+    end
+
+    if HolyServerFinderAutoJoinValueIsAny(hold.Size) ~= true then
+
+        if HolySniperNormalizeSizeName(
+            row.Size
+            or row.size
+            or "Normal"
+        ) ~= HolySniperNormalizeSizeName(
+            hold.Size
+        ) then
+
+            return false
+        end
+    end
+
+    if HolyServerFinderAutoJoinValueIsAny(hold.Variant) ~= true then
+
+        if HolyServerFinderAutoJoinRowVariant(
+            row
+        ) ~= HolyServerFinderNormalizeAutoJoinVariantName(
+            hold.Variant
+        ) then
+
+            return false
+        end
+    end
+
+    if HolyServerFinderAutoJoinValueIsAny(hold.Rarity) ~= true then
+
+        if HolyCleanText(
+            row.Rarity
+            or row.rarity
+        ):lower() ~= HolyCleanText(
+            hold.Rarity
+        ):lower() then
+
+            return false
+        end
+    end
+
+    return true
+end
+
+function HolyServerFinderFindHoldTargetInCurrentRows(rows, hold)
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    for _, row in ipairs(rows) do
+
+        if type(row) == "table"
+        and HolyServerFinderRowIsCurrent(row) == true
+        and HolyServerFinderHoldMatchesRow(
+            hold,
+            row
+        ) == true then
+
+            return row
+        end
+    end
+
+    return nil
+end
+
+function HolyServerFinderFindCurrentAutoJoinTarget(rows)
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    for ruleIndex, rule in ipairs(HOLY_SERVER_FINDER_STATE.AutoJoinRules or {}) do
+
+        for _, row in ipairs(rows) do
+
+            if type(row) == "table"
+            and HolyServerFinderRowIsCurrent(row) == true
+            and HolyServerFinderRowAlive(row) == true
+            and HolyServerFinderAutoJoinRuleMatchesRow(
+                rule,
+                row
+            ) == true then
+
+                return {
+                    RuleIndex =
+                        ruleIndex,
+
+                    Rule =
+                        rule,
+
+                    Row =
+                        row,
+                }
+            end
+        end
+    end
+
+    return nil
+end
+
+function HolyServerFinderClearAutoJoinHold(reason)
+
+    HOLY_SERVER_FINDER_STATE =
+        type(HOLY_SERVER_FINDER_STATE) == "table"
+        and HOLY_SERVER_FINDER_STATE
+        or {}
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinHold =
+        nil
+
+    if type(HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME) == "table" then
+
+        HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.HoldArrivedJobId =
+            ""
+
+        HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.HoldArrivedAt =
+            0
+
+        HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.LastHoldStatus =
+            tostring(reason or "")
+    end
+
+    HolyQueueSaveServerFinderSettings()
+
+    return true
+end
+
+function HolyServerFinderArmAutoJoinHold(row, source, targetInfo)
+
+    if type(row) ~= "table" then
+        return false
+    end
+
+    local jobId =
+        HolyServerFinderRowJobId(
+            row
+        )
+
+    if jobId == "" then
+        return false
+    end
+
+    local displayName =
+        HolyCleanText(
+            row.DisplayName
+            or row.Pet
+            or row.PetName
+            or "target pet"
+        )
+
+    local hold = {
+        Active =
+            true,
+
+        JobId =
+            jobId,
+
+        PlaceId =
+            tonumber(
+                row.PlaceId
+                or row.placeId
+                or game.PlaceId
+            )
+            or game.PlaceId,
+
+        Pet =
+            HolyServerFinderRowBasePet(
+                row
+            ),
+
+        Size =
+            HolyServerFinderAutoJoinRowSize(
+                row
+            ),
+
+        Variant =
+            HolyServerFinderAutoJoinRowVariant(
+                row
+            ),
+
+        Rarity =
+            HolyCleanText(
+                row.Rarity
+                or row.rarity
+                or "Any"
+            ),
+
+        DisplayName =
+            displayName,
+
+        RuleIndex =
+            type(targetInfo) == "table"
+            and tonumber(targetInfo.RuleIndex)
+            or 0,
+
+        ExpiresAt =
+            tonumber(
+                row.ExpiresAt
+                or row.expiresAt
+            )
+            or 0,
+
+        CreatedAt =
+            os.time(),
+
+        Source =
+            tostring(
+                source
+                or "Auto Join"
+            ),
+    }
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinHold =
+        HolyServerFinderNormalizeAutoJoinHold(
+            hold
+        )
+
+    HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.HoldArrivedJobId =
+        ""
+
+    HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.HoldArrivedAt =
+        0
+
+    HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.LastHoldStatus =
+        "Armed "
+        .. displayName
+
+    HolySaveServerFinderSettings()
+
+    return true
+end
+
+function HolyServerFinderAutoJoinHoldBlocks(rows)
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    local hold =
+        HOLY_SERVER_FINDER_STATE.AutoJoinHold
+
+    if type(hold) == "table"
+    and hold.Active == true then
+
+        if hold.JobId == tostring(game.JobId) then
+
+            if HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.HoldArrivedJobId ~= tostring(game.JobId) then
+
+                HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.HoldArrivedJobId =
+                    tostring(game.JobId)
+
+                HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.HoldArrivedAt =
+                    os.clock()
+            end
+
+            local targetRow =
+                HolyServerFinderFindHoldTargetInCurrentRows(
+                    rows,
+                    hold
+                )
+
+            if targetRow then
+
+                HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.LastHoldStatus =
+                    "Holding "
+                    .. tostring(
+                        targetRow.DisplayName
+                        or hold.DisplayName
+                        or "target"
+                    )
+
+                return true,
+                    "hold target present"
+            end
+
+            local arrivedAt =
+                tonumber(
+                    HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.HoldArrivedAt
+                )
+                or os.clock()
+
+            local grace =
+                tonumber(
+                    HOLY_SERVER_FINDER_STATE.AutoJoinHoldLoadGrace
+                )
+                or 22
+
+            if os.clock() - arrivedAt < grace then
+
+                HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.LastHoldStatus =
+                    "Waiting for target data"
+
+                return true,
+                    "waiting for target data"
+            end
+
+            HolyServerFinderClearAutoJoinHold(
+                "hold target gone"
+            )
+
+        elseif os.time() - (
+            tonumber(hold.CreatedAt)
+            or os.time()
+        ) > 120 then
+
+            HolyServerFinderClearAutoJoinHold(
+                "stale hold"
+            )
+        end
+    end
+
+    local currentTarget =
+        HolyServerFinderFindCurrentAutoJoinTarget(
+            rows
+        )
+
+    if type(currentTarget) == "table"
+    and type(currentTarget.Row) == "table" then
+
+        HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.LastHoldStatus =
+            "Current match "
+            .. tostring(
+                currentTarget.Row.DisplayName
+                or currentTarget.Row.Pet
+                or "pet"
+            )
+
+        return true,
+            "current server has matching pet"
+    end
+
+    return false,
+        "clear"
+end
+
+function HolyServerFinderJoinRow(row, source, targetInfo)
+
+    if type(row) ~= "table" then
+        return false
+    end
+
+    local jobId =
+        HolyServerFinderRowJobId(
+            row
+        )
+
+    local placeId =
+        tonumber(
+            row.PlaceId
+            or row.placeId
+            or game.PlaceId
+        )
+        or game.PlaceId
+
+    if jobId == "" then
+        return false
+    end
+
+    if jobId == tostring(game.JobId) then
+
+        if type(HolyNotify) == "function" then
+
+            HolyNotify(
+                "HOLY Server Finder",
+                "Already in this server.",
+                3
+            )
+        end
+
+        return false
+    end
+
+    if HolySniperServerSwitchBlocked(
+        "Server Finder",
+        true
+    ) == true then
+
+        return false
+    end
+
+    if HolyServerFinderRowManualJoinAllowed(row) ~= true then
+
+        local reason =
+            tostring(
+                row.JoinText
+                or row.Freshness
+                or "not fresh"
+            )
+
+        if type(HolyNotify) == "function" then
+
+            HolyNotify(
+                "HOLY Server Finder",
+                "Join blocked: "
+                .. reason
+                .. ". Refresh or wait for a fresh report.",
+                4
+            )
+        end
+
+        return false
+    end
+
+    HolyServerFinderArmAutoJoinHold(
+        row,
+        source,
+        targetInfo
+    )
+
+    HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.Teleporting =
+        true
+
+    HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.LastTargetKey =
+        HolyServerFinderRowKey(
+            row
+        )
+
+    if type(HolyNotify) == "function" then
+
+        HolyNotify(
+            "HOLY Server Finder",
+            tostring(source or "Joining")
+            .. ": "
+            .. tostring(row.DisplayName or row.Pet or "server"),
+            3
+        )
+    end
+
+    local startedJobId =
+        tostring(game.JobId)
+
+    local ok,
+        err =
+        pcall(function()
+
+            TeleportService:TeleportToPlaceInstance(
+                placeId,
+                jobId,
+                LocalPlayer
+            )
+        end)
+
+    if ok ~= true then
+
+        HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.Teleporting =
+            false
+
+        HolyServerFinderClearAutoJoinHold(
+            "teleport failed"
+        )
+
+        if type(HolyNotify) == "function" then
+
+            HolyNotify(
+                "HOLY Server Finder",
+                "Teleport failed: "
+                .. tostring(err),
+                4
+            )
+        end
+
+        return false
+    end
+
+    task.delay(12, function()
+
+        if tostring(game.JobId) == startedJobId
+        and type(HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME) == "table" then
+
+            HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.Teleporting =
+                false
+        end
+    end)
+
+    return true
+end
+
+function HolyServerFinderEvaluateAutoJoin(hud)
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    local mode =
+        HolyServerFinderNormalizeAutoJoinMode(
+            HOLY_SERVER_FINDER_STATE.AutoJoinMode
+        )
+
+    if mode == "Off" then
+        return false
+    end
+
+    if HolySniperServerSwitchBlocked(
+        "Auto Join",
+        false
+    ) == true then
+
+        return false
+    end
+
+    if HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.Teleporting == true then
+        return false
+    end
+
+    local rows =
+        type(hud) == "table"
+        and type(hud.Rows) == "table"
+        and hud.Rows
+        or {}
+
+    local holdBlocked =
+        HolyServerFinderAutoJoinHoldBlocks(
+            rows
+        )
+
+    if holdBlocked == true then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    local cooldown =
+        tonumber(
+            HOLY_SERVER_FINDER_STATE.AutoJoinCooldown
+        )
+        or 10
+
+    if now - (
+        tonumber(
+            HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.LastAttemptAt
+        )
+        or 0
+    ) < cooldown then
+
+        return false
+    end
+
+    local target =
+        HolyServerFinderFindAutoJoinTarget(
+            rows
+        )
+
+    if type(target) ~= "table"
+    or type(target.Row) ~= "table" then
+
+        return false
+    end
+
+    local row =
+        target.Row
+
+    HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.LastAttemptAt =
+        now
+
+    if mode == "Notify" then
+
+        if type(HolyNotify) == "function" then
+
+            HolyNotify(
+                "HOLY Auto Join",
+                "Found rule #"
+                .. tostring(target.RuleIndex)
+                .. ": "
+                .. tostring(row.DisplayName or row.Pet or "server"),
+                5
+            )
+        end
+
+        return true
+    end
+
+    return HolyServerFinderJoinRow(
+        row,
+        "Auto Join",
+        target
+    )
+end
+
+function HolyServerFinderAutoJoinJoinList(list, fallback)
+
+    if HolyServerFinderAutoJoinListHasAny(list) == true then
+        return fallback or "Any"
+    end
+
+    return table.concat(
+        list,
+        "/"
+    )
+end
+
+function HolyServerFinderAutoJoinRulePetText(rule)
+
+    rule =
+        HolyServerFinderNormalizeAutoJoinRule(
+            rule
+        )
+
+    if rule.PetScope == "Any Pet" then
+        return "Any Pet"
+    end
+
+    return HolyServerFinderAutoJoinJoinList(
+        rule.Pets,
+        "Any Pet"
+    )
+end
+
+function HolyServerFinderAutoJoinRuleDetailText(rule)
+
+    rule =
+        HolyServerFinderNormalizeAutoJoinRule(
+            rule
+        )
+
+    local parts =
+        {}
+
+    if HolyServerFinderAutoJoinListHasAny(rule.Sizes) ~= true then
+
+        table.insert(
+            parts,
+            HolyServerFinderAutoJoinJoinList(
+                rule.Sizes,
+                ""
+            )
+        )
+    end
+
+    if HolyServerFinderAutoJoinListHasAny(rule.Variants) ~= true then
+
+        table.insert(
+            parts,
+            HolyServerFinderAutoJoinJoinList(
+                rule.Variants,
+                ""
+            )
+        )
+    end
+
+    if HolyServerFinderAutoJoinListHasAny(rule.Rarities) ~= true then
+
+        table.insert(
+            parts,
+            HolyServerFinderAutoJoinJoinList(
+                rule.Rarities,
+                ""
+            )
+        )
+    end
+
+    if #parts <= 0 then
+        return "Any"
+    end
+
+    local text =
+        table.concat(
+            parts,
+            "/"
+        )
+
+    if rule.MatchMode == "All Selected"
+    and #parts > 1 then
+
+        text =
+            text
+            .. " · All"
+    end
+
+    return text
+end
+
+function HolyServerFinderPopupRoot()
+
+    if Library
+    and typeof(Library.ScreenGui) == "Instance" then
+
+        return Library.ScreenGui
+    end
+
+    if typeof(CoreGui) == "Instance" then
+        return CoreGui
+    end
+
+    return game:GetService(
+        "CoreGui"
+    )
+end
+
+function HolyServerFinderPopupZIndex(parent, offset)
+
+    offset =
+        tonumber(offset)
+        or 1
+
+    if typeof(parent) == "Instance"
+    and parent:IsA("GuiObject") then
+
+        return (
+            tonumber(parent.ZIndex)
+            or 9600
+        ) + offset
+    end
+
+    return 9600 + offset
+end
+
+function HolyServerFinderStyleBox(instance, selected)
+
+    if typeof(instance) ~= "Instance" then
+        return
+    end
+
+    local scheme =
+        Library
+        and Library.Scheme
+        or {}
+
+    local mainColor =
+        scheme.MainColor
+        or Color3.fromRGB(12, 13, 16)
+
+    local accentColor =
+        scheme.AccentColor
+        or Color3.fromRGB(232, 45, 67)
+
+    local outlineColor =
+        scheme.OutlineColor
+        or Color3.fromRGB(42, 18, 23)
+
+    local fontColor =
+        scheme.FontColor
+        or Color3.fromRGB(245, 245, 247)
+
+    if instance:IsA("GuiObject") then
+
+        instance.BackgroundColor3 =
+            selected == true
+            and accentColor
+            or mainColor
+
+        instance.BackgroundTransparency =
+            selected == true
+            and 0.06
+            or 0.28
+    end
+
+    if instance:IsA("TextButton")
+    or instance:IsA("TextBox")
+    or instance:IsA("TextLabel") then
+
+        instance.TextColor3 =
+            fontColor
+
+        instance.FontFace =
+            scheme.Font
+            or Font.fromEnum(Enum.Font.GothamMedium)
+
+        instance.TextTransparency =
+            selected == true
+            and 0.02
+            or 0.28
+    end
+
+    local corner =
+        instance:FindFirstChildOfClass(
+            "UICorner"
+        )
+
+    if corner == nil then
+
+        corner =
+            Instance.new(
+                "UICorner"
+            )
+
+        corner.CornerRadius =
+            UDim.new(
+                0,
+                5
+            )
+
+        corner.Parent =
+            instance
+    end
+
+    local stroke =
+        instance:FindFirstChildOfClass(
+            "UIStroke"
+        )
+
+    if stroke == nil then
+
+        stroke =
+            Instance.new(
+                "UIStroke"
+            )
+
+        stroke.Parent =
+            instance
+    end
+
+    stroke.Color =
+        selected == true
+        and accentColor
+        or outlineColor
+
+    stroke.Transparency =
+        selected == true
+        and 0.20
+        or 0.44
+end
+
+function HolyServerFinderCreateFixedPopup(title, width, height, position, zIndex)
+
+    width =
+        tonumber(width)
+        or 360
+
+    height =
+        tonumber(height)
+        or 320
+
+    zIndex =
+        tonumber(zIndex)
+        or 9600
+
+    local root =
+        HolyServerFinderPopupRoot()
+
+    local holder =
+        Instance.new(
+            "Frame"
+        )
+
+    holder.Name =
+        "HolyAutoJoinPopup"
+
+    holder.AutomaticSize =
+        Enum.AutomaticSize.None
+
+    holder.BackgroundColor3 =
+        Library.Scheme.BackgroundColor
+
+    holder.BackgroundTransparency =
+        0.04
+
+    holder.ClipsDescendants =
+        true
+
+    holder.Position =
+        position
+        or UDim2.fromOffset(
+            420,
+            92
+        )
+
+    holder.Size =
+        UDim2.fromOffset(
+            width,
+            height
+        )
+
+    holder.ZIndex =
+        zIndex
+
+    holder.Visible =
+        false
+
+    holder.Parent =
+        root
+
+    local corner =
+        Instance.new(
+            "UICorner"
+        )
+
+    corner.CornerRadius =
+        UDim.new(
+            0,
+            7
+        )
+
+    corner.Parent =
+        holder
+
+    local stroke =
+        Instance.new(
+            "UIStroke"
+        )
+
+    stroke.Color =
+        Library.Scheme.OutlineColor
+
+    stroke.Transparency =
+        0.20
+
+    stroke.Parent =
+        holder
+
+    local header =
+        Instance.new(
+            "TextButton"
+        )
+
+    header.AutoButtonColor =
+        false
+
+    header.BackgroundColor3 =
+        Library.Scheme.MainColor
+
+    header.BackgroundTransparency =
+        0.28
+
+    header.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            34
+        )
+
+    header.Text =
+        ""
+
+    header.ZIndex =
+        holder.ZIndex + 1
+
+    header.Parent =
+        holder
+
+    local titleLabel =
+        Instance.new(
+            "TextLabel"
+        )
+
+    titleLabel.BackgroundTransparency =
+        1
+
+    titleLabel.Position =
+        UDim2.fromOffset(
+            12,
+            0
+        )
+
+    titleLabel.Size =
+        UDim2.new(
+            1,
+            -48,
+            1,
+            0
+        )
+
+    titleLabel.Text =
+        tostring(title or "Popup")
+
+    titleLabel.TextSize =
+        14
+
+    titleLabel.TextTransparency =
+        0.02
+
+    titleLabel.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    titleLabel.TextColor3 =
+        Library.Scheme.FontColor
+
+    titleLabel.FontFace =
+        Library.Scheme.Font
+
+    titleLabel.ZIndex =
+        header.ZIndex + 1
+
+    titleLabel.Parent =
+        header
+
+    local closeButton =
+        Instance.new(
+            "TextButton"
+        )
+
+    closeButton.AutoButtonColor =
+        false
+
+    closeButton.BackgroundColor3 =
+        Library.Scheme.MainColor
+
+    closeButton.BackgroundTransparency =
+        0.20
+
+    closeButton.Position =
+        UDim2.new(
+            1,
+            -29,
+            0,
+            7
+        )
+
+    closeButton.Size =
+        UDim2.fromOffset(
+            20,
+            20
+        )
+
+    closeButton.Text =
+        "×"
+
+    closeButton.TextSize =
+        16
+
+    closeButton.TextTransparency =
+        0.20
+
+    closeButton.TextColor3 =
+        Library.Scheme.FontColor
+
+    closeButton.FontFace =
+        Library.Scheme.Font
+
+    closeButton.ZIndex =
+        header.ZIndex + 2
+
+    closeButton.Parent =
+        header
+
+    HolyServerFinderStyleBox(
+        closeButton,
+        false
+    )
+
+    closeButton.MouseButton1Click:Connect(function()
+
+        holder.Visible =
+            false
+    end)
+
+    local line =
+        Instance.new(
+            "Frame"
+        )
+
+    line.BackgroundColor3 =
+        Library.Scheme.OutlineColor
+
+    line.BackgroundTransparency =
+        0.18
+
+    line.BorderSizePixel =
+        0
+
+    line.Position =
+        UDim2.fromOffset(
+            0,
+            34
+        )
+
+    line.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            1
+        )
+
+    line.ZIndex =
+        holder.ZIndex + 1
+
+    line.Parent =
+        holder
+
+    local container =
+        Instance.new(
+            "ScrollingFrame"
+        )
+
+    container.Active =
+        true
+
+    container.AutomaticCanvasSize =
+        Enum.AutomaticSize.Y
+
+    container.BackgroundTransparency =
+        1
+
+    container.BorderSizePixel =
+        0
+
+    container.CanvasSize =
+        UDim2.fromOffset(
+            0,
+            0
+        )
+
+    container.ClipsDescendants =
+        true
+
+    container.Position =
+        UDim2.fromOffset(
+            8,
+            43
+        )
+
+    container.ScrollBarImageColor3 =
+        Library.Scheme.OutlineColor
+
+    container.ScrollBarImageTransparency =
+        0.15
+
+    container.ScrollBarThickness =
+        3
+
+    container.ScrollingDirection =
+        Enum.ScrollingDirection.Y
+
+    container.Size =
+        UDim2.new(
+            1,
+            -16,
+            1,
+            -51
+        )
+
+    container.TopImage =
+        "rbxasset://textures/ui/Scroll/scroll-middle.png"
+
+    container.MidImage =
+        "rbxasset://textures/ui/Scroll/scroll-middle.png"
+
+    container.BottomImage =
+        "rbxasset://textures/ui/Scroll/scroll-middle.png"
+
+    container.ZIndex =
+        holder.ZIndex + 1
+
+    container.Parent =
+        holder
+
+    local layout =
+        Instance.new(
+            "UIListLayout"
+        )
+
+    layout.Padding =
+        UDim.new(
+            0,
+            7
+        )
+
+    layout.SortOrder =
+        Enum.SortOrder.LayoutOrder
+
+    layout.Parent =
+        container
+
+    local padding =
+        Instance.new(
+            "UIPadding"
+        )
+
+    padding.PaddingBottom =
+        UDim.new(
+            0,
+            8
+        )
+
+    padding.PaddingRight =
+        UDim.new(
+            0,
+            4
+        )
+
+    padding.Parent =
+        container
+
+    if Library
+    and type(Library.MakeDraggable) == "function" then
+
+        Library:MakeDraggable(
+            holder,
+            header,
+            true
+        )
+    end
+
+    return holder,
+        container,
+        closeButton
+end
+
+function HolyServerFinderMakePopupRow(parent, height)
+
+    local row =
+        Instance.new(
+            "Frame"
+        )
+
+    row.BackgroundTransparency =
+        1
+
+    row.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            height
+        )
+
+    row.ZIndex =
+        HolyServerFinderPopupZIndex(
+            parent,
+            1
+        )
+
+    row.Parent =
+        parent
+
+    return row
+end
+
+function HolyServerFinderMakeHorizontalRow(parent, height, gap)
+
+    local row =
+        HolyServerFinderMakePopupRow(
+            parent,
+            height
+        )
+
+    local layout =
+        Instance.new(
+            "UIListLayout"
+        )
+
+    layout.FillDirection =
+        Enum.FillDirection.Horizontal
+
+    layout.HorizontalFlex =
+        Enum.UIFlexAlignment.Fill
+
+    layout.Padding =
+        UDim.new(
+            0,
+            gap or 7
+        )
+
+    layout.SortOrder =
+        Enum.SortOrder.LayoutOrder
+
+    layout.Parent =
+        row
+
+    return row
+end
+
+function HolyServerFinderMakePopupLabel(parent, text, height, transparency)
+
+    local label =
+        Instance.new(
+            "TextLabel"
+        )
+
+    label.BackgroundTransparency =
+        1
+
+    label.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            height or 18
+        )
+
+    label.Text =
+        tostring(text or "")
+
+    label.TextSize =
+        12
+
+    label.TextTransparency =
+        transparency or 0.30
+
+    label.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    label.TextColor3 =
+        Library.Scheme.FontColor
+
+    label.FontFace =
+        Library.Scheme.Font
+
+    label.ZIndex =
+        HolyServerFinderPopupZIndex(
+            parent,
+            1
+        )
+
+    label.Parent =
+        parent
+
+    return label
+end
+
+function HolyServerFinderMakePopupButton(parent, text, callback, selected)
+
+    local button =
+        Instance.new(
+            "TextButton"
+        )
+
+    button.AutoButtonColor =
+        false
+
+    button.Size =
+        UDim2.fromScale(
+            1,
+            1
+        )
+
+    button.Text =
+        tostring(text or "Button")
+
+    button.TextSize =
+        12
+
+    button.TextTruncate =
+        Enum.TextTruncate.AtEnd
+
+    button.ZIndex =
+        HolyServerFinderPopupZIndex(
+            parent,
+            1
+        )
+
+    button.Parent =
+        parent
+
+    HolyServerFinderStyleBox(
+        button,
+        selected == true
+    )
+
+    button.MouseButton1Click:Connect(function()
+
+        if type(callback) == "function" then
+
+            callback(
+                button
+            )
+        end
+    end)
+
+    return button
+end
+
+function HolyServerFinderMakePopupInput(parent, text, placeholder)
+
+    local box =
+        Instance.new(
+            "TextBox"
+        )
+
+    box.ClearTextOnFocus =
+        false
+
+    box.Text =
+        tostring(text or "")
+
+    box.PlaceholderText =
+        tostring(placeholder or "")
+
+    box.TextSize =
+        12
+
+    box.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    box.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    box.TextWrapped =
+        false
+
+    box.Size =
+        UDim2.fromScale(
+            1,
+            1
+        )
+
+    box.ZIndex =
+        HolyServerFinderPopupZIndex(
+            parent,
+            1
+        )
+
+    box.Parent =
+        parent
+
+    HolyServerFinderStyleBox(
+        box,
+        false
+    )
+
+    local padding =
+        Instance.new(
+            "UIPadding"
+        )
+
+    padding.PaddingLeft =
+        UDim.new(
+            0,
+            8
+        )
+
+    padding.PaddingRight =
+        UDim.new(
+            0,
+            8
+        )
+
+    padding.Parent =
+        box
+
+    return box
+end
+
+function HolyServerFinderMakeRuleRow(parent, index)
+
+    local button =
+        Instance.new(
+            "TextButton"
+        )
+
+    button.AutoButtonColor =
+        false
+
+    button.Text =
+        ""
+
+    button.Size =
+        UDim2.new(
+            1,
+            0,
+            0,
+            28
+        )
+
+    button.ZIndex =
+        HolyServerFinderPopupZIndex(
+            parent,
+            1
+        )
+
+    button.Parent =
+        parent
+
+    HolyServerFinderStyleBox(
+        button,
+        false
+    )
+
+    local marker =
+        Instance.new(
+            "Frame"
+        )
+
+    marker.BackgroundColor3 =
+        Library.Scheme.AccentColor
+
+    marker.BackgroundTransparency =
+        1
+
+    marker.Position =
+        UDim2.fromOffset(
+            5,
+            6
+        )
+
+    marker.Size =
+        UDim2.new(
+            0,
+            3,
+            1,
+            -12
+        )
+
+    marker.ZIndex =
+        button.ZIndex + 1
+
+    marker.Parent =
+        button
+
+    local markerCorner =
+        Instance.new(
+            "UICorner"
+        )
+
+    markerCorner.CornerRadius =
+        UDim.new(
+            1,
+            0
+        )
+
+    markerCorner.Parent =
+        marker
+
+    local petLabel =
+        Instance.new(
+            "TextLabel"
+        )
+
+    petLabel.BackgroundTransparency =
+        1
+
+    petLabel.Position =
+        UDim2.fromOffset(
+            14,
+            0
+        )
+
+    petLabel.Size =
+        UDim2.new(
+            0.47,
+            -14,
+            1,
+            0
+        )
+
+    petLabel.Text =
+        ""
+
+    petLabel.TextSize =
+        12
+
+    petLabel.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    petLabel.TextTruncate =
+        Enum.TextTruncate.AtEnd
+
+    petLabel.TextColor3 =
+        Library.Scheme.FontColor
+
+    petLabel.FontFace =
+        Library.Scheme.Font
+
+    petLabel.ZIndex =
+        button.ZIndex + 1
+
+    petLabel.Parent =
+        button
+
+    local detailLabel =
+        Instance.new(
+            "TextLabel"
+        )
+
+    detailLabel.BackgroundTransparency =
+        1
+
+    detailLabel.Position =
+        UDim2.fromScale(
+            0.50,
+            0
+        )
+
+    detailLabel.Size =
+        UDim2.new(
+            0.50,
+            -8,
+            1,
+            0
+        )
+
+    detailLabel.Text =
+        ""
+
+    detailLabel.TextSize =
+        12
+
+    detailLabel.TextTransparency =
+        0.34
+
+    detailLabel.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    detailLabel.TextTruncate =
+        Enum.TextTruncate.AtEnd
+
+    detailLabel.TextColor3 =
+        Library.Scheme.FontColor
+
+    detailLabel.FontFace =
+        Library.Scheme.Font
+
+    detailLabel.ZIndex =
+        button.ZIndex + 1
+
+    detailLabel.Parent =
+        button
+
+    button.MouseButton1Click:Connect(function()
+
+        HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
+            index
+
+        HolyServerFinderRefreshAutoJoinRulesPopup()
+    end)
+
+    return {
+        Index =
+            index,
+
+        Button =
+            button,
+
+        Marker =
+            marker,
+
+        PetLabel =
+            petLabel,
+
+        DetailLabel =
+            detailLabel,
+    }
+end
+
+function HolyServerFinderRefreshModeButtons(ui)
+
+    if type(ui) ~= "table" then
+        return false
+    end
+
+    local mode =
+        HolyServerFinderNormalizeAutoJoinMode(
+            HOLY_SERVER_FINDER_STATE.AutoJoinMode
+        )
+
+    for modeName, button in pairs(ui.ModeButtons or {}) do
+
+        HolyServerFinderStyleBox(
+            button,
+            mode == modeName
+        )
+    end
+
+    return true
+end
+
+function HolyServerFinderRefreshAutoJoinRulesPopup()
+
+    local ui =
+        HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI
+
+    if type(ui) ~= "table" then
+        return false
+    end
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    HolyServerFinderRefreshModeButtons(
+        ui
+    )
+
+    if ui.MinLifeInput then
+
+        ui.MinLifeInput.Text =
+            tostring(
+                math.floor(
+                    tonumber(
+                        HOLY_SERVER_FINDER_STATE.AutoJoinMinLife
+                    )
+                    or 30
+                )
+            )
+    end
+
+    if ui.CooldownInput then
+
+        ui.CooldownInput.Text =
+            tostring(
+                math.floor(
+                    tonumber(
+                        HOLY_SERVER_FINDER_STATE.AutoJoinCooldown
+                    )
+                    or 10
+                )
+            )
+    end
+
+    local rules =
+        HOLY_SERVER_FINDER_STATE.AutoJoinRules
+        or {}
+
+    local selectedIndex =
+        tonumber(
+            HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
+        )
+        or 1
+
+    if ui.ListHolder then
+
+        ui.ListHolder.Size =
+            UDim2.new(
+                1,
+                0,
+                0,
+                math.max(
+                    32,
+                    (#rules * 33)
+                    + (
+                        #rules <= 0
+                        and 30
+                        or 0
+                    )
+                )
+            )
+
+        while #(
+            ui.RuleRows
+            or {}
+        ) < #rules do
+
+            ui.RuleRows =
+                ui.RuleRows
+                or {}
+
+            table.insert(
+                ui.RuleRows,
+                HolyServerFinderMakeRuleRow(
+                    ui.ListHolder,
+                    #ui.RuleRows + 1
+                )
+            )
+        end
+    end
+
+    for index, row in ipairs(ui.RuleRows or {}) do
+
+        local rule =
+            rules[index]
+
+        if type(rule) == "table" then
+
+            row.Button.Visible =
+                true
+
+            row.PetLabel.Text =
+                tostring(index)
+                .. ". "
+                .. HolyServerFinderAutoJoinRulePetText(
+                    rule
+                )
+
+            row.DetailLabel.Text =
+                HolyServerFinderAutoJoinRuleDetailText(
+                    rule
+                )
+
+            local selected =
+                index == selectedIndex
+
+            row.Button.BackgroundTransparency =
+                selected and 0.12
+                or 0.32
+
+            row.Marker.BackgroundTransparency =
+                selected and 0
+                or 1
+
+            row.PetLabel.TextTransparency =
+                selected and 0.03
+                or 0.18
+
+            row.DetailLabel.TextTransparency =
+                selected and 0.08
+                or 0.38
+
+        else
+
+            row.Button.Visible =
+                false
+        end
+    end
+
+    if ui.EmptyLabel then
+
+        ui.EmptyLabel.Visible =
+            #rules <= 0
+    end
+
+    return true
+end
+
+function HolyServerFinderApplyAutoJoinRulesPopup()
+
+    local ui =
+        HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI
+
+    if type(ui) ~= "table" then
+        return false
+    end
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinMinLife =
+        math.clamp(
+            tonumber(
+                ui.MinLifeInput
+                and ui.MinLifeInput.Text
+            )
+            or 30,
+            0,
+            420
+        )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinCooldown =
+        math.clamp(
+            tonumber(
+                ui.CooldownInput
+                and ui.CooldownInput.Text
+            )
+            or 10,
+            1,
+            120
+        )
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    HolyQueueSaveServerFinderSettings()
+
+    HolyServerFinderRefreshAutoJoinRulesPopup()
+
+    return true
+end
+
+function HolyServerFinderSetRuleSelected(index)
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    index =
+        math.clamp(
+            math.floor(
+                tonumber(index)
+                or 1
+            ),
+            1,
+            math.max(
+                1,
+                #HOLY_SERVER_FINDER_STATE.AutoJoinRules
+            )
+        )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
+        index
+
+    HolyServerFinderRefreshAutoJoinRulesPopup()
+
+    return index
+end
+
+function HolyServerFinderCloneRule(rule)
+
+    rule =
+        HolyServerFinderNormalizeAutoJoinRule(
+            rule
+        )
+
+    local copy = {
+        PetScope =
+            rule.PetScope,
+
+        Pets =
+            {},
+
+        Sizes =
+            {},
+
+        Variants =
+            {},
+
+        Rarities =
+            {},
+
+        MatchMode =
+            rule.MatchMode,
+
+        Enabled =
+            rule.Enabled ~= false,
+    }
+
+    for _, value in ipairs(rule.Pets or {}) do
+        table.insert(copy.Pets, value)
+    end
+
+    for _, value in ipairs(rule.Sizes or {}) do
+        table.insert(copy.Sizes, value)
+    end
+
+    for _, value in ipairs(rule.Variants or {}) do
+        table.insert(copy.Variants, value)
+    end
+
+    for _, value in ipairs(rule.Rarities or {}) do
+        table.insert(copy.Rarities, value)
+    end
+
+    return copy
+end
+
+function HolyServerFinderDefaultEditableRule()
+
+    return HolyServerFinderCloneRule({
+        PetScope =
+            "Selected Pets",
+
+        Pets =
+            {
+                "Bunny",
+            },
+
+        Sizes =
+            {
+                "Big",
+                "Huge",
+            },
+
+        Variants =
+            {
+                "Rainbow",
+            },
+
+        Rarities =
+            {
+                "Any",
+            },
+
+        MatchMode =
+            "Any Selected",
+
+        Enabled =
+            true,
+    })
+end
+
+function HolyServerFinderToggleRuleListValue(list, value)
+
+    list =
+        type(list) == "table"
+        and list
+        or {
+            "Any",
+        }
+
+    value =
+        HolyCleanText(
+            value
+        )
+
+    if value == "" then
+        return list
+    end
+
+    if value == "Any" then
+        return {
+            "Any",
+        }
+    end
+
+    local output =
+        {}
+
+    local removed =
+        false
+
+    for _, current in ipairs(list) do
+
+        if current ~= "Any" then
+
+            if current == value then
+
+                removed =
+                    true
+
+            else
+
+                table.insert(
+                    output,
+                    current
+                )
+            end
+        end
+    end
+
+    if removed ~= true then
+
+        table.insert(
+            output,
+            value
+        )
+    end
+
+    if #output <= 0 then
+        return {
+            "Any",
+        }
+    end
+
+    return output
+end
+
+function HolyServerFinderListContainsExact(list, value)
+
+    if HolyServerFinderAutoJoinListHasAny(list) == true then
+        return value == "Any"
+    end
+
+    for _, current in ipairs(list or {}) do
+
+        if current == value then
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyServerFinderRefreshEditPopup()
+
+    local ui =
+        HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI
+
+    if type(ui) ~= "table"
+    or type(ui.DraftRule) ~= "table" then
+        return false
+    end
+
+    local rule =
+        HolyServerFinderNormalizeAutoJoinRule(
+            ui.DraftRule
+        )
+
+    ui.DraftRule =
+        rule
+
+    if ui.ScopeButton then
+
+        ui.ScopeButton.Text =
+            rule.PetScope == "Any Pet"
+            and "Scope: Any Pet"
+            or "Scope: Selected Pets"
+
+        HolyServerFinderStyleBox(
+            ui.ScopeButton,
+            rule.PetScope == "Any Pet"
+        )
+    end
+
+    if ui.PetsInput then
+
+        if UserInputService:GetFocusedTextBox() ~= ui.PetsInput then
+
+            ui.PetsInput.Text =
+                rule.PetScope == "Any Pet"
+                and ""
+                or HolyServerFinderAutoJoinJoinList(
+                    rule.Pets,
+                    ""
+                )
+        end
+
+        ui.PetsInput.PlaceholderText =
+            rule.PetScope == "Any Pet"
+            and "Any Pet"
+            or "Bunny, Raccoon..."
+
+        ui.PetsInput.TextEditable =
+            rule.PetScope ~= "Any Pet"
+
+        ui.PetsInput.BackgroundTransparency =
+            rule.PetScope == "Any Pet"
+            and 0.52
+            or 0.28
+    end
+
+    for value, button in pairs(ui.SizeButtons or {}) do
+
+        HolyServerFinderStyleBox(
+            button,
+            HolyServerFinderListContainsExact(
+                rule.Sizes,
+                value
+            )
+        )
+    end
+
+    for value, button in pairs(ui.VariantButtons or {}) do
+
+        HolyServerFinderStyleBox(
+            button,
+            HolyServerFinderListContainsExact(
+                rule.Variants,
+                value
+            )
+        )
+    end
+
+    for value, button in pairs(ui.RarityButtons or {}) do
+
+        HolyServerFinderStyleBox(
+            button,
+            HolyServerFinderListContainsExact(
+                rule.Rarities,
+                value
+            )
+        )
+    end
+
+    for value, button in pairs(ui.MatchButtons or {}) do
+
+        HolyServerFinderStyleBox(
+            button,
+            rule.MatchMode == value
+        )
+    end
+
+    return true
+end
+
+function HolyServerFinderSaveAutoJoinEditPopup()
+
+    local ui =
+        HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI
+
+    if type(ui) ~= "table"
+    or type(ui.DraftRule) ~= "table" then
+        return false
+    end
+
+    local draft =
+        HolyServerFinderCloneRule(
+            ui.DraftRule
+        )
+
+    draft.PetScope =
+        HolyServerFinderNormalizeAutoJoinPetScope(
+            draft.PetScope
+        )
+
+    if draft.PetScope == "Any Pet" then
+
+        draft.Pets =
+            {
+                "Any",
+            }
+
+    else
+
+        draft.Pets =
+            HolyServerFinderAutoJoinUniqueList(
+                ui.PetsInput
+                and ui.PetsInput.Text
+                or draft.Pets,
+                HolyServerFinderNormalizeAutoJoinPetName,
+                "Bunny"
+            )
+
+        if HolyServerFinderAutoJoinListHasAny(draft.Pets) == true then
+
+            draft.Pets =
+                {
+                    "Bunny",
+                }
+        end
+    end
+
+    draft =
+        HolyServerFinderNormalizeAutoJoinRule(
+            draft
+        )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinRules =
+        type(HOLY_SERVER_FINDER_STATE.AutoJoinRules) == "table"
+        and HOLY_SERVER_FINDER_STATE.AutoJoinRules
+        or {}
+
+    local index =
+        tonumber(
+            ui.EditingIndex
+        )
+
+    if index
+    and HOLY_SERVER_FINDER_STATE.AutoJoinRules[index] ~= nil then
+
+        HOLY_SERVER_FINDER_STATE.AutoJoinRules[index] =
+            draft
+
+        HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
+            index
+
+    else
+
+        table.insert(
+            HOLY_SERVER_FINDER_STATE.AutoJoinRules,
+            draft
+        )
+
+        HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
+            #HOLY_SERVER_FINDER_STATE.AutoJoinRules
+    end
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    HolyQueueSaveServerFinderSettings()
+
+    HolyServerFinderRefreshAutoJoinRulesPopup()
+
+    if ui.Holder then
+
+        ui.Holder.Visible =
+            false
+    end
+
+    if type(HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI) == "table"
+    and HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI.Holder then
+
+        HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI.Holder.Visible =
+            true
+    end
+
+    return true
+end
+
+function HolyServerFinderOpenAutoJoinEditPopup(index)
+
+    local ui =
+        HolyServerFinderCreateAutoJoinEditPopup()
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    index =
+        tonumber(index)
+
+    ui.EditingIndex =
+        index
+
+    local rule =
+        index
+        and HOLY_SERVER_FINDER_STATE.AutoJoinRules[index]
+        or nil
+
+    ui.DraftRule =
+        rule
+        and HolyServerFinderCloneRule(
+            rule
+        )
+        or HolyServerFinderDefaultEditableRule()
+
+    local rulesHolder =
+        type(HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI) == "table"
+        and HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI.Holder
+        or nil
+
+    if typeof(rulesHolder) == "Instance" then
+
+        rulesHolder.Visible =
+            true
+    end
+
+    HolyServerFinderRefreshAutoJoinRulesPopup()
+
+    HolyServerFinderRefreshEditPopup()
+
+    if typeof(rulesHolder) == "Instance"
+    and typeof(ui.Holder) == "Instance" then
+
+        local camera =
+            workspace.CurrentCamera
+
+        local viewport =
+            camera
+            and camera.ViewportSize
+            or Vector2.new(
+                1280,
+                720
+            )
+
+        local rulesPosition =
+            rulesHolder.AbsolutePosition
+
+        local rulesSize =
+            rulesHolder.AbsoluteSize
+
+        local editWidth =
+            tonumber(ui.Holder.Size.X.Offset)
+            or 360
+
+        local editHeight =
+            tonumber(ui.Holder.Size.Y.Offset)
+            or 430
+
+        local x =
+            math.floor(
+                rulesPosition.X
+                + rulesSize.X
+                + 10
+            )
+
+        if x + editWidth > viewport.X - 8 then
+
+            x =
+                math.floor(
+                    rulesPosition.X
+                    - editWidth
+                    - 10
+                )
+        end
+
+        x =
+            math.clamp(
+                x,
+                8,
+                math.max(
+                    8,
+                    viewport.X
+                    - editWidth
+                    - 8
+                )
+            )
+
+        local y =
+            math.clamp(
+                math.floor(
+                    rulesPosition.Y
+                ),
+                8,
+                math.max(
+                    8,
+                    viewport.Y
+                    - editHeight
+                    - 8
+                )
+            )
+
+        ui.Holder.Position =
+            UDim2.fromOffset(
+                x,
+                y
+            )
+    end
+
+    ui.Holder.Visible =
+        true
+
+    return true
+end
+
+function HolyServerFinderRemoveSelectedAutoJoinRule()
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    local rules =
+        HOLY_SERVER_FINDER_STATE.AutoJoinRules
+
+    local index =
+        tonumber(
+            HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
+        )
+        or 1
+
+    if #rules <= 1 then
+
+        rules[1] =
+            HolyServerFinderDefaultEditableRule()
+
+        HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
+            1
+
+    else
+
+        table.remove(
+            rules,
+            index
+        )
+
+        HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
+            math.clamp(
+                index,
+                1,
+                #rules
+            )
+    end
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    HolyQueueSaveServerFinderSettings()
+
+    HolyServerFinderRefreshAutoJoinRulesPopup()
+
+    return true
+end
+
+function HolyServerFinderMoveSelectedAutoJoinRule(delta)
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    local rules =
+        HOLY_SERVER_FINDER_STATE.AutoJoinRules
+
+    local index =
+        tonumber(
+            HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
+        )
+        or 1
+
+    local newIndex =
+        math.clamp(
+            index + (
+                tonumber(delta)
+                or 0
+            ),
+            1,
+            #rules
+        )
+
+    if newIndex == index then
+        return false
+    end
+
+    local rule =
+        table.remove(
+            rules,
+            index
+        )
+
+    table.insert(
+        rules,
+        newIndex,
+        rule
+    )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
+        newIndex
+
+    HolyQueueSaveServerFinderSettings()
+
+    HolyServerFinderRefreshAutoJoinRulesPopup()
+
+    return true
+end
+
+function HolyServerFinderCreateAutoJoinRulesPopup()
+
+    if type(HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI) == "table"
+    and typeof(HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI.Holder) == "Instance" then
+
+        return HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI
+    end
+
+    local holder,
+        container,
+        closeButton =
+        HolyServerFinderCreateFixedPopup(
+            "AUTO JOIN PRIORITY",
+            386,
+            314,
+            UDim2.fromOffset(
+                420,
+                92
+            ),
+            9650
+        )
+
+    local ui = {
+        Holder =
+            holder,
+
+        Container =
+            container,
+
+        CloseButton =
+            closeButton,
+
+        ModeButtons =
+            {},
+
+        RuleRows =
+            {},
+    }
+
+    if closeButton then
+
+        closeButton.MouseButton1Click:Connect(function()
+
+            if type(HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI) == "table"
+            and typeof(HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI.Holder) == "Instance" then
+
+                HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI.Holder.Visible =
+                    false
+            end
+        end)
+    end
+
+    local modeRow =
+        HolyServerFinderMakeHorizontalRow(
+            container,
+            27,
+            7
+        )
+
+    for _, modeName in ipairs({
+        "Off",
+        "Notify",
+        "Join Best",
+    }) do
+
+        ui.ModeButtons[modeName] =
+            HolyServerFinderMakePopupButton(
+                modeRow,
+                modeName,
+                function()
+
+                    HolyServerFinderSetAutoJoinMode(
+                        modeName
+                    )
+
+                    HolyServerFinderRefreshAutoJoinRulesPopup()
+                end
+            )
+    end
+
+    local settingsRow =
+        HolyServerFinderMakeHorizontalRow(
+            container,
+            27,
+            7
+        )
+
+    HolyServerFinderMakePopupLabel(
+        settingsRow,
+        "Min Life",
+        27,
+        0.38
+    )
+
+    ui.MinLifeInput =
+        HolyServerFinderMakePopupInput(
+            settingsRow,
+            "30",
+            "30"
+        )
+
+    HolyServerFinderMakePopupLabel(
+        settingsRow,
+        "Cooldown",
+        27,
+        0.38
+    )
+
+    ui.CooldownInput =
+        HolyServerFinderMakePopupInput(
+            settingsRow,
+            "10",
+            "10"
+        )
+
+    ui.MinLifeInput.FocusLost:Connect(function()
+
+        HolyServerFinderApplyAutoJoinRulesPopup()
+    end)
+
+    ui.CooldownInput.FocusLost:Connect(function()
+
+        HolyServerFinderApplyAutoJoinRulesPopup()
+    end)
+
+    HolyServerFinderMakePopupLabel(
+        container,
+        "Priority List",
+        18,
+        0.16
+    )
+
+    local listHolder =
+        HolyServerFinderMakePopupRow(
+            container,
+            132
+        )
+
+    ui.ListHolder =
+        listHolder
+
+    local listLayout =
+        Instance.new(
+            "UIListLayout"
+        )
+
+    listLayout.Padding =
+        UDim.new(
+            0,
+            5
+        )
+
+    listLayout.SortOrder =
+        Enum.SortOrder.LayoutOrder
+
+    listLayout.Parent =
+        listHolder
+
+    ui.EmptyLabel =
+        HolyServerFinderMakePopupLabel(
+            listHolder,
+            "No rules. Add one to start.",
+            26,
+            0.48
+        )
+
+    local actionRow =
+        HolyServerFinderMakeHorizontalRow(
+            container,
+            27,
+            6
+        )
+
+    HolyServerFinderMakePopupButton(
+        actionRow,
+        "Add",
+        function()
+
+            HolyServerFinderOpenAutoJoinEditPopup(
+                nil
+            )
+        end
+    )
+
+    HolyServerFinderMakePopupButton(
+        actionRow,
+        "Edit",
+        function()
+
+            HolyServerFinderOpenAutoJoinEditPopup(
+                HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
+            )
+        end
+    )
+
+    HolyServerFinderMakePopupButton(
+        actionRow,
+        "↑",
+        function()
+
+            HolyServerFinderMoveSelectedAutoJoinRule(
+                -1
+            )
+        end
+    )
+
+    HolyServerFinderMakePopupButton(
+        actionRow,
+        "↓",
+        function()
+
+            HolyServerFinderMoveSelectedAutoJoinRule(
+                1
+            )
+        end
+    )
+
+    HolyServerFinderMakePopupButton(
+        actionRow,
+        "Remove",
+        function()
+
+            HolyServerFinderRemoveSelectedAutoJoinRule()
+        end
+    )
+
+    HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI =
+        ui
+
+    HolyServerFinderRefreshAutoJoinRulesPopup()
+
+    return ui
+end
+
+function HolyServerFinderMakeChipGrid(parent, title, values, buttonMap, onClick)
+
+    HolyServerFinderMakePopupLabel(
+        parent,
+        title,
+        18,
+        0.24
+    )
+
+    local rowCount =
+        math.ceil(
+            #values / 4
+        )
+
+    local grid =
+        HolyServerFinderMakePopupRow(
+            parent,
+            math.max(
+                27,
+                rowCount * 29
+            )
+        )
+
+    local layout =
+        Instance.new(
+            "UIGridLayout"
+        )
+
+    layout.CellPadding =
+        UDim2.fromOffset(
+            6,
+            6
+        )
+
+    layout.CellSize =
+        UDim2.new(
+            0.25,
+            -6,
+            0,
+            23
+        )
+
+    layout.SortOrder =
+        Enum.SortOrder.LayoutOrder
+
+    layout.Parent =
+        grid
+
+    for _, value in ipairs(values) do
+
+        buttonMap[value] =
+            HolyServerFinderMakePopupButton(
+                grid,
+                value,
+                function()
+
+                    onClick(
+                        value
+                    )
+                end
+            )
+    end
+
+    return grid
+end
+
+function HolyServerFinderCreateAutoJoinEditPopup()
+
+    if type(HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI) == "table"
+    and typeof(HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI.Holder) == "Instance" then
+
+        return HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI
+    end
+
+    local holder,
+        container =
+        HolyServerFinderCreateFixedPopup(
+            "EDIT AUTO JOIN RULE",
+            360,
+            430,
+            UDim2.fromOffset(
+                460,
+                126
+            ),
+            9750
+        )
+
+    local ui = {
+        Holder =
+            holder,
+
+        Container =
+            container,
+
+        EditingIndex =
+            nil,
+
+        DraftRule =
+            HolyServerFinderDefaultEditableRule(),
+
+        SizeButtons =
+            {},
+
+        VariantButtons =
+            {},
+
+        RarityButtons =
+            {},
+
+        MatchButtons =
+            {},
+    }
+
+    ui.ScopeButton =
+        HolyServerFinderMakePopupButton(
+            HolyServerFinderMakePopupRow(
+                container,
+                27
+            ),
+            "Scope: Selected Pets",
+            function()
+
+                ui.DraftRule.PetScope =
+                    ui.DraftRule.PetScope == "Any Pet"
+                    and "Selected Pets"
+                    or "Any Pet"
+
+                HolyServerFinderRefreshEditPopup()
+            end
+        )
+
+    HolyServerFinderMakePopupLabel(
+        container,
+        "Pets",
+        18,
+        0.24
+    )
+
+    ui.PetsInput =
+        HolyServerFinderMakePopupInput(
+            HolyServerFinderMakePopupRow(
+                container,
+                27
+            ),
+            "Bunny",
+            "Bunny, Raccoon..."
+        )
+
+    ui.PetsInput.FocusLost:Connect(function()
+
+        if ui.DraftRule.PetScope ~= "Any Pet" then
+
+            ui.DraftRule.Pets =
+                HolyServerFinderAutoJoinUniqueList(
+                    ui.PetsInput.Text,
+                    HolyServerFinderNormalizeAutoJoinPetName,
+                    "Bunny"
+                )
+        end
+
+        HolyServerFinderRefreshEditPopup()
+    end)
+
+    HolyServerFinderMakeChipGrid(
+        container,
+        "Sizes",
+        HOLY_SERVER_FINDER_AUTO_JOIN_SIZE_CHOICES,
+        ui.SizeButtons,
+        function(value)
+
+            ui.DraftRule.Sizes =
+                HolyServerFinderToggleRuleListValue(
+                    ui.DraftRule.Sizes,
+                    value
+                )
+
+            HolyServerFinderRefreshEditPopup()
+        end
+    )
+
+    HolyServerFinderMakeChipGrid(
+        container,
+        "Variants",
+        HOLY_SERVER_FINDER_AUTO_JOIN_VARIANT_CHOICES,
+        ui.VariantButtons,
+        function(value)
+
+            ui.DraftRule.Variants =
+                HolyServerFinderToggleRuleListValue(
+                    ui.DraftRule.Variants,
+                    value
+                )
+
+            HolyServerFinderRefreshEditPopup()
+        end
+    )
+
+    HolyServerFinderMakeChipGrid(
+        container,
+        "Rarities",
+        HOLY_SERVER_FINDER_AUTO_JOIN_RARITY_CHOICES,
+        ui.RarityButtons,
+        function(value)
+
+            ui.DraftRule.Rarities =
+                HolyServerFinderToggleRuleListValue(
+                    ui.DraftRule.Rarities,
+                    value
+                )
+
+            HolyServerFinderRefreshEditPopup()
+        end
+    )
+
+    HolyServerFinderMakePopupLabel(
+        container,
+        "Match",
+        18,
+        0.24
+    )
+
+    local matchRow =
+        HolyServerFinderMakeHorizontalRow(
+            container,
+            27,
+            7
+        )
+
+    for _, value in ipairs({
+        "Any Selected",
+        "All Selected",
+    }) do
+
+        ui.MatchButtons[value] =
+            HolyServerFinderMakePopupButton(
+                matchRow,
+                value,
+                function()
+
+                    ui.DraftRule.MatchMode =
+                        value
+
+                    HolyServerFinderRefreshEditPopup()
+                end
+            )
+    end
+
+    local actionRow =
+        HolyServerFinderMakeHorizontalRow(
+            container,
+            27,
+            7
+        )
+
+    HolyServerFinderMakePopupButton(
+        actionRow,
+        "Save Rule",
+        function()
+
+            HolyServerFinderSaveAutoJoinEditPopup()
+        end
+    )
+
+    HolyServerFinderMakePopupButton(
+        actionRow,
+        "Cancel",
+        function()
+
+            holder.Visible =
+                false
+        end
+    )
+
+    HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI =
+        ui
+
+    HolyServerFinderRefreshEditPopup()
+
+    return ui
+end
+
+function HolyServerFinderShowAutoJoinRulesPopup()
+
+    local ui =
+        HolyServerFinderCreateAutoJoinRulesPopup()
+
+    if type(HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI) == "table"
+    and HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI.Holder then
+
+        HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI.Holder.Visible =
+            false
+    end
+
+    HolyServerFinderRefreshAutoJoinRulesPopup()
+
+    ui.Holder.Visible =
+        true
+
+    return true
+end
+
+
+function HolyServerFinderBuildSavePayload()
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    return {
+        Enabled =
+            HOLY_SERVER_FINDER_STATE.Enabled == true,
+
+        AutoRefresh =
+            HOLY_SERVER_FINDER_STATE.AutoRefresh == true,
+
+        RefreshDelay =
+            math.clamp(
+                tonumber(HOLY_SERVER_FINDER_STATE.RefreshDelay)
+                or 5,
+                1,
+                60
+            ),
+
+        HideFull =
+            HOLY_SERVER_FINDER_STATE.HideFull ~= false,
+
+        SelectedPets =
+            HolyServerFinderArrayFromMap(
+                HOLY_SERVER_FINDER_STATE.SelectedPets
+            ),
+
+        SelectedRarities =
+            HolyServerFinderArrayFromMap(
+                HOLY_SERVER_FINDER_STATE.SelectedRarities
+            ),
+
+        SelectedSizes =
+            HolyServerFinderArrayFromMap(
+                HOLY_SERVER_FINDER_STATE.SelectedSizes
+            ),
+
+        SelectedVariants =
+            HolyServerFinderArrayFromMap(
+                HOLY_SERVER_FINDER_STATE.SelectedVariants
+            ),
+
+        AutoJoinMode =
+            HolyServerFinderNormalizeAutoJoinMode(
+                HOLY_SERVER_FINDER_STATE.AutoJoinMode
+            ),
+
+        AutoJoinMinLife =
+            tonumber(
+                HOLY_SERVER_FINDER_STATE.AutoJoinMinLife
+            )
+            or 30,
+
+        AutoJoinCooldown =
+            tonumber(
+                HOLY_SERVER_FINDER_STATE.AutoJoinCooldown
+            )
+            or 10,
+
+        AutoJoinHoldLoadGrace =
+            tonumber(
+                HOLY_SERVER_FINDER_STATE.AutoJoinHoldLoadGrace
+            )
+            or 22,
+
+        AutoJoinHold =
+            HolyServerFinderNormalizeAutoJoinHold(
+                HOLY_SERVER_FINDER_STATE.AutoJoinHold
+            ),
+
+        AutoJoinSelectedRuleIndex =
+            tonumber(
+                HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex
+            )
+            or 1,
+
+        AutoJoinRules =
+            HolyServerFinderNormalizeAutoJoinRules(
+                HOLY_SERVER_FINDER_STATE.AutoJoinRules
+            ),
+
+        Minimized =
+            HOLY_SERVER_FINDER_STATE.Minimized == true,
+
+        Position =
+            HolyServerFinderReadPosition(
+                HOLY_SERVER_FINDER_STATE.Position
+            ),
+
+        FilterPosition =
+            HolyServerFinderReadPosition(
+                HOLY_SERVER_FINDER_STATE.FilterPosition
+            ),
+    }
+end
+
+function HolySaveServerFinderSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local encodeOk,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                HolyServerFinderBuildSavePayload()
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                SERVER_FINDER_SETTINGS_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function HolyQueueSaveServerFinderSettings()
+
+    HOLY_SERVER_FINDER_SAVE_TOKEN =
+        (
+            tonumber(
+                HOLY_SERVER_FINDER_SAVE_TOKEN
+            )
+            or 0
+        )
+        + 1
+
+    local token =
+        HOLY_SERVER_FINDER_SAVE_TOKEN
+
+    task.delay(0.35, function()
+
+        if HOLY_SERVER_FINDER_SAVE_TOKEN ~= token then
+            return
+        end
+
+        HolySaveServerFinderSettings()
+    end)
+end
+
+function HolyLoadServerFinderSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                SERVER_FINDER_SETTINGS_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return false
+    end
+
+    local readOk,
+        raw =
+        pcall(function()
+
+            return readfile(
+                SERVER_FINDER_SETTINGS_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+        return false
+    end
+
+    local decodeOk,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(data) ~= "table" then
+        return false
+    end
+
+    HOLY_SERVER_FINDER_STATE.Enabled =
+        data.Enabled == true
+
+    HOLY_SERVER_FINDER_STATE.AutoRefresh =
+        data.AutoRefresh == true
+
+    HOLY_SERVER_FINDER_STATE.RefreshDelay =
+        math.clamp(
+            tonumber(data.RefreshDelay)
+            or 5,
+            1,
+            60
+        )
+
+    HOLY_SERVER_FINDER_STATE.HideFull =
+        data.HideFull ~= false
+
+    HOLY_SERVER_FINDER_STATE.SelectedPets =
+        HolyServerFinderMapFromArray(
+            data.SelectedPets
+        )
+
+    HOLY_SERVER_FINDER_STATE.SelectedRarities =
+        HolyServerFinderMapFromArray(
+            data.SelectedRarities
+        )
+
+    HOLY_SERVER_FINDER_STATE.SelectedSizes =
+        HolyServerFinderSizeMapFromArray(
+            data.SelectedSizes
+        )
+
+    HOLY_SERVER_FINDER_STATE.SelectedVariants =
+        HolyServerFinderVariantMapFromArray(
+            data.SelectedVariants
+        )
+
+    if next(HOLY_SERVER_FINDER_STATE.SelectedSizes) == nil
+    and next(HOLY_SERVER_FINDER_STATE.SelectedVariants) == nil
+    and type(data.SelectedTraits) == "table" then
+
+        HOLY_SERVER_FINDER_STATE.SelectedSizes =
+            HolyServerFinderSizeMapFromArray(
+                data.SelectedTraits
+            )
+
+        HOLY_SERVER_FINDER_STATE.SelectedVariants =
+            HolyServerFinderVariantMapFromArray(
+                data.SelectedTraits
+            )
+    end
+
+    HOLY_SERVER_FINDER_STATE.SelectedTraits =
+        {}
+
+    HOLY_SERVER_FINDER_STATE.Minimized =
+        data.Minimized == true
+
+    HOLY_SERVER_FINDER_STATE.Position =
+        HolyServerFinderReadPosition(
+            data.Position
+        )
+
+    HOLY_SERVER_FINDER_STATE.FilterPosition =
+        HolyServerFinderReadPosition(
+            data.FilterPosition
+        )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinMode =
+        HolyServerFinderNormalizeAutoJoinMode(
+            data.AutoJoinMode
+            or HOLY_SERVER_FINDER_STATE.AutoJoinMode
+            or "Off"
+        )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinMinLife =
+        math.clamp(
+            tonumber(
+                data.AutoJoinMinLife
+            )
+            or 30,
+            0,
+            420
+        )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinCooldown =
+        math.clamp(
+            tonumber(
+                data.AutoJoinCooldown
+            )
+            or 10,
+            1,
+            120
+        )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinHoldLoadGrace =
+        math.clamp(
+            tonumber(
+                data.AutoJoinHoldLoadGrace
+            )
+            or 22,
+            5,
+            90
+        )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinHold =
+        HolyServerFinderNormalizeAutoJoinHold(
+            data.AutoJoinHold
+        )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinSelectedRuleIndex =
+        tonumber(
+            data.AutoJoinSelectedRuleIndex
+        )
+        or 1
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinRules =
+        type(data.AutoJoinRules) == "table"
+        and data.AutoJoinRules
+        or HolyServerFinderGetDefaultAutoJoinRules()
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    return true
+end
+
+HolyLoadServerFinderSettings()
+
+function HolyServerFinderAddUniqueChoice(list, seen, value)
+
+    value =
+        HolyCleanText(
+            value
+        )
+
+    if value == "" then
+        return false
+    end
+
+    if value == "Mega" then
+        value =
+            "Huge"
+    end
+
+    if value == "Any" then
+        return false
+    end
+
+    local key =
+        value:lower()
+
+    if seen[key] == true then
+        return false
+    end
+
+    seen[key] =
+        true
+
+    table.insert(
+        list,
+        value
+    )
+
+    return true
+end
+
+function HolyServerFinderSortChoices(list)
+
+    table.sort(list, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return list
+end
+
+function HolyServerFinderBuildFilterOptions()
+
+    local pets =
+        {}
+
+    local rarities =
+        {}
+
+    local sizes =
+        {}
+
+    local variants =
+        {}
+
+    local seenPets =
+        {}
+
+    local seenRarities =
+        {}
+
+    local seenSizes =
+        {}
+
+    local seenVariants =
+        {}
+
+    for _, petName in ipairs(HolySniperGetPetValues()) do
+
+        HolyServerFinderAddUniqueChoice(
+            pets,
+            seenPets,
+            petName
+        )
+    end
+
+    local petData =
+        HolySniperGetPetData()
+
+    for key, row in pairs(petData) do
+
+        if HolySniperIsPetDataRow(
+            key,
+            row
+        ) == true then
+
+            HolyServerFinderAddUniqueChoice(
+                rarities,
+                seenRarities,
+                row.Rarity
+            )
+        end
+    end
+
+    for _, sizeName in ipairs({
+        "Normal",
+        "Big",
+        "Huge",
+    }) do
+
+        HolyServerFinderAddUniqueChoice(
+            sizes,
+            seenSizes,
+            sizeName
+        )
+    end
+
+    for _, variantName in ipairs({
+        "Regular",
+        "Rainbow",
+    }) do
+
+        HolyServerFinderAddUniqueChoice(
+            variants,
+            seenVariants,
+            variantName
+        )
+    end
+
+    return {
+        Pets =
+            HolyServerFinderSortChoices(
+                pets
+            ),
+
+        Rarities =
+            HolyServerFinderSortChoices(
+                rarities
+            ),
+
+        Sizes =
+            sizes,
+
+        Variants =
+            variants,
+    }
+end
+
+function HolyServerFinderApplyFilterOptions(hud)
+
+    if type(hud) ~= "table"
+    or type(hud.SetFilterOptions) ~= "function" then
+        return false
+    end
+
+    hud:SetFilterOptions(
+        HolyServerFinderBuildFilterOptions()
+    )
+
+    return true
+end
+
+function HolyServerFinderGetPlayerCounts()
+
+    local playing =
+        #Players:GetPlayers()
+
+    local maxPlayers =
+        8
+
+    pcall(function()
+
+        maxPlayers =
+            tonumber(
+                Players.MaxPlayers
+            )
+            or maxPlayers
+    end)
+
+    if maxPlayers <= 0 then
+        maxPlayers =
+            8
+    end
+
+    return playing,
+        maxPlayers
+end
+
+function HolyServerFinderBuildRowName(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    local displayName =
+        HolyCleanText(
+            row.DisplayName
+        )
+
+    if displayName ~= "" then
+        return displayName
+    end
+
+    local parts =
+        {}
+
+    local size =
+        HolyCleanText(
+            row.Size
+        )
+
+    local variant =
+        HolyCleanText(
+            row.Variant
+        )
+
+    local pet =
+        HolyCleanText(
+            row.Pet
+        )
+
+    if size ~= ""
+    and size ~= "Any"
+    and size ~= "Normal"
+    and size ~= "Regular" then
+
+        table.insert(
+            parts,
+            size
+        )
+    end
+
+    if variant ~= ""
+    and variant ~= "Any"
+    and variant ~= "Normal"
+    and variant ~= "Regular" then
+
+        table.insert(
+            parts,
+            variant
+        )
+    end
+
+    if pet ~= "" then
+
+        table.insert(
+            parts,
+            pet
+        )
+    end
+
+    if #parts <= 0 then
+        return "Unknown Pet"
+    end
+
+    return table.concat(
+        parts,
+        " "
+    )
+end
+
+function HolyServerFinderRarityRank(rarity)
+
+    rarity =
+        HolyCleanText(
+            rarity
+        )
+
+    local ranks = {
+        Secret = 8,
+        Super = 7,
+        Mythic = 6,
+        Legendary = 5,
+        Epic = 4,
+        Rare = 3,
+        Uncommon = 2,
+        Common = 1,
+    }
+
+    return ranks[rarity]
+        or 0
+end
+
+function HolyServerFinderBuildLocalPetRow(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    local state =
+        tostring(
+            row.State
+            or ""
+        )
+        :lower()
+
+    if state == "sent"
+    or state == "bought"
+    or state == "gone" then
+
+        return nil
+    end
+
+    local timeLeft =
+        tonumber(
+            row.TimeLeftNumber
+            or row.TimeLeft
+        )
+        or 0
+
+    local lifetime =
+        tonumber(
+            row.Lifetime
+        )
+        or 0
+
+    if lifetime > 0
+    and timeLeft <= 0 then
+
+        return nil
+    end
+
+    local petName =
+        HolyCleanText(
+            row.Pet
+            or row.PetName
+        )
+
+    if petName == "" then
+
+        petName =
+            HolyServerFinderBuildRowName(
+                row
+            )
+    end
+
+    if petName == "" then
+        return nil
+    end
+
+    local now =
+        os.time()
+
+    local spawnedAt =
+        tonumber(
+            row.SpawnedAt
+        )
+        or 0
+
+    local expiresAt =
+        0
+
+    if spawnedAt > 0
+    and lifetime > 0 then
+
+        expiresAt =
+            spawnedAt
+            + lifetime
+
+    elseif timeLeft > 0 then
+
+        expiresAt =
+            now
+            + timeLeft
+    end
+
+    local displayName =
+        HolyServerFinderBuildRowName(
+            row
+        )
+
+    local rarity =
+        HolyCleanText(
+            row.Rarity
+        )
+
+    local size =
+        HolyCleanText(
+            row.Size
+        )
+
+    local variant =
+        HolyCleanText(
+            row.Variant
+        )
+
+    return {
+        Key =
+            tostring(row.Key or row.UUID or petName),
+
+        UUID =
+            tostring(row.UUID or row.Key or ""),
+
+        DisplayName =
+            displayName,
+
+        Pet =
+            petName,
+
+        PetName =
+            petName,
+
+        Rarity =
+            rarity,
+
+        RarityRank =
+            HolyServerFinderRarityRank(
+                rarity
+            ),
+
+        Size =
+            size,
+
+        Variant =
+            variant,
+
+        Mutation =
+            variant,
+
+        SpawnedAt =
+            spawnedAt,
+
+        Lifetime =
+            lifetime,
+
+        ExpiresAt =
+            expiresAt,
+
+        TimeLeft =
+            math.max(
+                0,
+                expiresAt > 0
+                and expiresAt - now
+                or timeLeft
+            ),
+
+        Price =
+            row.PriceNumber
+            or row.Price
+            or 0,
+
+        PriceNumber =
+            tonumber(
+                row.PriceNumber
+                or row.Price
+            )
+            or 0,
+    }
+end
+
+function HolyServerFinderAddUniqueText(list, seen, value)
+
+    value =
+        HolyCleanText(
+            value
+        )
+
+    if value == ""
+    or value == "Any"
+    or value == "Regular" then
+
+        return false
+    end
+
+    local key =
+        value:lower()
+
+    if seen[key] == true then
+        return false
+    end
+
+    seen[key] =
+        true
+
+    table.insert(
+        list,
+        value
+    )
+
+    return true
+end
+
+function HolyServerFinderBuildPetSummary(pets, maxShown)
+
+    pets =
+        type(pets) == "table"
+        and pets
+        or {}
+
+    maxShown =
+        math.max(
+            1,
+            tonumber(maxShown)
+            or 3
+        )
+
+    local order =
+        {}
+
+    local counts =
+        {}
+
+    local seen =
+        {}
+
+    for _, pet in ipairs(pets) do
+
+        local name =
+            HolyCleanText(
+                pet.DisplayName
+                or pet.Pet
+                or pet.PetName
+            )
+
+        if name ~= "" then
+
+            local key =
+                name:lower()
+
+            if seen[key] ~= true then
+
+                seen[key] =
+                    true
+
+                table.insert(
+                    order,
+                    name
+                )
+
+                counts[key] =
+                    0
+            end
+
+            counts[key] =
+                (
+                    tonumber(
+                        counts[key]
+                    )
+                    or 0
+                )
+                + 1
+        end
+    end
+
+    if #order <= 0 then
+        return "Unknown Server"
+    end
+
+    local shown =
+        {}
+
+    for index, name in ipairs(order) do
+
+        if index > maxShown then
+            break
+        end
+
+        local count =
+            tonumber(
+                counts[name:lower()]
+            )
+            or 1
+
+        if count > 1 then
+
+            table.insert(
+                shown,
+                name
+                .. " x"
+                .. tostring(count)
+            )
+
+        else
+
+            table.insert(
+                shown,
+                name
+            )
+        end
+    end
+
+    local text =
+        table.concat(
+            shown,
+            ", "
+        )
+
+    local extra =
+        #order - maxShown
+
+    if extra > 0 then
+
+        text =
+            text
+            .. " +"
+            .. tostring(extra)
+    end
+
+    return text
+end
+
+function HolyServerFinderBuildUniquePetField(pets, fieldName)
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    for _, pet in ipairs(pets or {}) do
+
+        HolyServerFinderAddUniqueText(
+            output,
+            seen,
+            pet[fieldName]
+        )
+    end
+
+    return table.concat(
+        output,
+        " "
+    )
+end
+
+function HolyServerFinderBuildPetSearchBlob(pets)
+
+    local parts =
+        {}
+
+    for _, pet in ipairs(pets or {}) do
+
+        for _, value in ipairs({
+            pet.DisplayName,
+            pet.Pet,
+            pet.PetName,
+            pet.Rarity,
+            pet.Size,
+            pet.Variant,
+            pet.Mutation,
+        }) do
+
+            value =
+                HolyCleanText(
+                    value
+                )
+
+            if value ~= "" then
+
+                table.insert(
+                    parts,
+                    value
+                )
+            end
+        end
+    end
+
+    return table.concat(
+        parts,
+        " "
+    )
+end
+
+function HolyServerFinderBuildLocalRows()
+
+    local liveRows =
+        {}
+
+    local ok,
+        result =
+        pcall(function()
+
+            return HolyLivePetsScanRows()
+        end)
+
+    if ok == true
+    and type(result) == "table" then
+
+        liveRows =
+            result
+    end
+
+    local pets =
+        {}
+
+    for _, row in ipairs(liveRows) do
+
+        local pet =
+            HolyServerFinderBuildLocalPetRow(
+                row
+            )
+
+        if pet then
+
+            table.insert(
+                pets,
+                pet
+            )
+        end
+    end
+
+    if #pets <= 0 then
+        return {}
+    end
+
+    table.sort(pets, function(a, b)
+
+        local rarityA =
+            tonumber(a.RarityRank)
+            or 0
+
+        local rarityB =
+            tonumber(b.RarityRank)
+            or 0
+
+        if rarityA ~= rarityB then
+            return rarityA > rarityB
+        end
+
+        local priceA =
+            tonumber(a.PriceNumber)
+            or 0
+
+        local priceB =
+            tonumber(b.PriceNumber)
+            or 0
+
+        if priceA ~= priceB then
+            return priceA > priceB
+        end
+
+        local timeA =
+            tonumber(a.TimeLeft)
+            or 0
+
+        local timeB =
+            tonumber(b.TimeLeft)
+            or 0
+
+        if timeA ~= timeB then
+            return timeA < timeB
+        end
+
+        return tostring(a.DisplayName or "")
+            < tostring(b.DisplayName or "")
+    end)
+
+    local playing,
+        maxPlayers =
+        HolyServerFinderGetPlayerCounts()
+
+    local now =
+        os.time()
+
+    local minExpiresAt =
+        nil
+
+    local maxExpiresAt =
+        nil
+
+    for _, pet in ipairs(pets) do
+
+        local expiresAt =
+            tonumber(
+                pet.ExpiresAt
+            )
+            or 0
+
+        if expiresAt > now then
+
+            if minExpiresAt == nil
+            or expiresAt < minExpiresAt then
+
+                minExpiresAt =
+                    expiresAt
+            end
+
+            if maxExpiresAt == nil
+            or expiresAt > maxExpiresAt then
+
+                maxExpiresAt =
+                    expiresAt
+            end
+        end
+    end
+
+    minExpiresAt =
+        minExpiresAt
+        or 0
+
+    maxExpiresAt =
+        maxExpiresAt
+        or 0
+
+    local bestPet =
+        pets[1]
+        or {}
+
+    local serverKey =
+        tostring(game.JobId)
+        .. "|local-server"
+
+    local displayName =
+        HolyServerFinderBuildPetSummary(
+            pets,
+            3
+        )
+
+    local searchBlob =
+        HolyServerFinderBuildPetSearchBlob(
+            pets
+        )
+
+    return {
+        {
+            Key =
+                serverKey,
+
+            Id =
+                serverKey,
+
+            PlaceId =
+                game.PlaceId,
+
+            JobId =
+                tostring(game.JobId),
+
+            DisplayName =
+                displayName,
+
+            Name =
+                searchBlob,
+
+            Pet =
+                displayName,
+
+            PetName =
+                displayName,
+
+            BestPet =
+                bestPet.Pet
+                or bestPet.PetName
+                or "",
+
+            BestDisplayName =
+                bestPet.DisplayName
+                or bestPet.Pet
+                or "",
+
+            Rarity =
+                bestPet.Rarity
+                or "",
+
+            Size =
+                HolyServerFinderBuildUniquePetField(
+                    pets,
+                    "Size"
+                ),
+
+            Variant =
+                HolyServerFinderBuildUniquePetField(
+                    pets,
+                    "Variant"
+                ),
+
+            Mutation =
+                HolyServerFinderBuildUniquePetField(
+                    pets,
+                    "Mutation"
+                ),
+
+            Playing =
+                playing,
+
+            MaxPlayers =
+                maxPlayers,
+
+            ReportedAt =
+                now,
+
+            ExpiresAt =
+                maxExpiresAt,
+
+            MinExpiresAt =
+                minExpiresAt,
+
+            MaxExpiresAt =
+                maxExpiresAt,
+
+            TimeLeft =
+                math.max(
+                    0,
+                    maxExpiresAt > 0
+                    and maxExpiresAt - now
+                    or 0
+                ),
+
+            PetCount =
+                #pets,
+
+            Pets =
+                pets,
+
+            Source =
+                "Local",
+
+            IsCurrentServer =
+                true,
+        },
+    }
+end
+
+function HolyServerFinderBackendUrl(path)
+
+    path =
+        HolyCleanText(
+            path
+        )
+
+    if path == "" then
+        path =
+            "/"
+    end
+
+    if path:sub(1, 1) ~= "/" then
+        path =
+            "/"
+            .. path
+    end
+
+    return tostring(SERVER_FINDER_API_BASE or "")
+        :gsub("/+$", "")
+        .. path
+end
+
+function HolyServerFinderRequestJson(method, url, payload)
+
+    local requestFunction =
+        HolyGetRequestFunction()
+
+    if type(requestFunction) ~= "function" then
+        return nil,
+            "request unsupported"
+    end
+
+    method =
+        tostring(method or "GET")
+            :upper()
+
+    url =
+        HolyCleanText(
+            url
+        )
+
+    if url == "" then
+        return nil,
+            "missing url"
+    end
+
+    local requestOptions = {
+        Url =
+            url,
+
+        Method =
+            method,
+
+        Headers = {
+            ["Accept"] =
+                "application/json",
+
+            ["Content-Type"] =
+                "application/json",
+
+            ["x-api-key"] =
+                tostring(SERVER_FINDER_API_KEY or ""),
+        },
+    }
+
+    if payload ~= nil then
+
+        local encodeOk,
+            encoded =
+            pcall(function()
+
+                return HttpService:JSONEncode(
+                    payload
+                )
+            end)
+
+        if encodeOk ~= true
+        or type(encoded) ~= "string" then
+
+            return nil,
+                "encode failed"
+        end
+
+        requestOptions.Body =
+            encoded
+    end
+
+    local requestOk,
+        response =
+        pcall(function()
+
+            return requestFunction(
+                requestOptions
+            )
+        end)
+
+    if requestOk ~= true then
+
+        return nil,
+            "request failed: "
+            .. tostring(response)
+    end
+
+    local status =
+        0
+
+    local body =
+        ""
+
+    if type(response) == "table" then
+
+        status =
+            tonumber(
+                response.StatusCode
+                or response.Status
+                or response.statusCode
+                or response.status
+            )
+            or 0
+
+        body =
+            response.Body
+            or response.body
+            or response.ResponseBody
+            or response.responseBody
+            or ""
+
+    elseif type(response) == "string" then
+
+        body =
+            response
+    end
+
+    if status > 0
+    and (
+        status < 200
+        or status >= 300
+    ) then
+
+        return nil,
+            "http "
+            .. tostring(status)
+            .. ": "
+            .. tostring(body):sub(1, 180)
+    end
+
+    local decodeOk,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                tostring(body or "")
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(data) ~= "table" then
+
+        return nil,
+            "decode failed: "
+            .. tostring(body):sub(1, 180)
+    end
+
+    if data.ok == false then
+
+        return nil,
+            tostring(data.error or "backend error")
+    end
+
+    return data,
+        "ok"
+end
+
+function HolyServerFinderReadServerVersion()
+
+    local roots = {
+        workspace,
+        ReplicatedStorage,
+        game,
+    }
+
+    local names = {
+        "ServerVersion",
+        "Version",
+        "GameVersion",
+        "BuildVersion",
+    }
+
+    for _, root in ipairs(roots) do
+
+        if typeof(root) == "Instance" then
+
+            for _, name in ipairs(names) do
+
+                local ok,
+                    value =
+                    pcall(function()
+
+                        return root:GetAttribute(
+                            name
+                        )
+                    end)
+
+                value =
+                    HolyCleanText(
+                        ok == true
+                        and value
+                        or ""
+                    )
+
+                if value ~= "" then
+                    return value
+                end
+            end
+        end
+    end
+
+    return ""
+end
+
+function HolyServerFinderBuildReportPayload()
+
+    local liveRows =
+        {}
+
+    local scanOk,
+        scanResult =
+        pcall(function()
+
+            return HolyLivePetsScanRows()
+        end)
+
+    if scanOk == true
+    and type(scanResult) == "table" then
+
+        liveRows =
+            scanResult
+    end
+
+    local pets =
+        {}
+
+    for _, row in ipairs(liveRows) do
+
+        local pet =
+            HolyServerFinderBuildLocalPetRow(
+                row
+            )
+
+        if pet then
+
+            table.insert(
+                pets,
+                {
+                    Key =
+                        pet.Key,
+
+                    UUID =
+                        pet.UUID,
+
+                    Pet =
+                        pet.Pet,
+
+                    PetName =
+                        pet.PetName,
+
+                    Rarity =
+                        pet.Rarity,
+
+                    Size =
+                        pet.Size,
+
+                    Variant =
+                        pet.Variant,
+
+                    Mutation =
+                        pet.Mutation,
+
+                    SpawnedAt =
+                        tonumber(pet.SpawnedAt)
+                        or 0,
+
+                    Lifetime =
+                        tonumber(pet.Lifetime)
+                        or 0,
+
+                    ExpiresAt =
+                        tonumber(pet.ExpiresAt)
+                        or 0,
+
+                    Price =
+                        tonumber(pet.PriceNumber)
+                        or 0,
+                }
+            )
+        end
+    end
+
+    local playing,
+        maxPlayers =
+        HolyServerFinderGetPlayerCounts()
+
+    return {
+        Key =
+            tostring(SERVER_FINDER_API_KEY or ""),
+
+        PlaceId =
+            game.PlaceId,
+
+        JobId =
+            tostring(game.JobId),
+
+        Playing =
+            playing,
+
+        MaxPlayers =
+            maxPlayers,
+
+        ServerVersion =
+            HolyServerFinderReadServerVersion(),
+
+        Reporter =
+            tostring(
+                LocalPlayer
+                and LocalPlayer.Name
+                or "unknown"
+            ),
+
+        Pets =
+            pets,
+    }
+end
+
+function HolyServerFinderReportNow(reason)
+
+    HOLY_SERVER_FINDER_REPORTER =
+        type(HOLY_SERVER_FINDER_REPORTER) == "table"
+        and HOLY_SERVER_FINDER_REPORTER
+        or {}
+
+    local payload =
+        HolyServerFinderBuildReportPayload()
+
+    local data,
+        requestReason =
+        HolyServerFinderRequestJson(
+            "POST",
+            HolyServerFinderBackendUrl(
+                "/report"
+            ),
+            payload
+        )
+
+    HOLY_SERVER_FINDER_REPORTER.LastReportAt =
+        os.time()
+
+    if type(data) == "table"
+    and data.ok == true then
+
+        HOLY_SERVER_FINDER_REPORTER.LastReportStatus =
+            data.deleted == true
+            and "Deleted empty server"
+            or (
+                "Reported "
+                .. tostring(data.petCount or 0)
+                .. " pet(s)"
+            )
+
+        return true,
+            HOLY_SERVER_FINDER_REPORTER.LastReportStatus
+    end
+
+    HOLY_SERVER_FINDER_REPORTER.LastReportStatus =
+        tostring(requestReason or "report failed")
+
+    return false,
+        HOLY_SERVER_FINDER_REPORTER.LastReportStatus
+end
+
+function HolyServerFinderStartReporter()
+
+    HOLY_SERVER_FINDER_REPORTER =
+        type(HOLY_SERVER_FINDER_REPORTER) == "table"
+        and HOLY_SERVER_FINDER_REPORTER
+        or {}
+
+    if HOLY_SERVER_FINDER_REPORTER.Running == true then
+        return false
+    end
+
+    if type(HolyGetRequestFunction()) ~= "function" then
+
+        HOLY_SERVER_FINDER_REPORTER.LastReportStatus =
+            "request unsupported"
+
+        return false
+    end
+
+    local token =
+        {}
+
+    HOLY_SERVER_FINDER_REPORTER.Token =
+        token
+
+    HOLY_SERVER_FINDER_REPORTER.Running =
+        true
+
+    task.spawn(function()
+
+        while HOLY_SERVER_FINDER_REPORTER.Token == token do
+
+            pcall(function()
+
+                HolyServerFinderReportNow(
+                    "loop"
+                )
+            end)
+
+            task.wait(
+                math.max(
+                    3,
+                    tonumber(SERVER_FINDER_REPORT_INTERVAL)
+                    or 5
+                )
+            )
+        end
+
+        if HOLY_SERVER_FINDER_REPORTER.Token == token then
+
+            HOLY_SERVER_FINDER_REPORTER.Running =
+                false
+        end
+    end)
+
+    return true
+end
+
+function HolyServerFinderNormalizeBackendPet(row)
+
+    if type(row) ~= "table" then
+        return nil
+    end
+
+    local petName =
+        HolyCleanText(
+            row.Pet
+            or row.PetName
+            or row.Name
+        )
+
+    if petName == "" then
+        return nil
+    end
+
+    local size =
+        HolySniperNormalizeSizeName(
+            row.Size
+            or row.size
+            or "Normal"
+        )
+
+    local variant =
+        HolySniperNormalizeVariantName(
+            row.Variant
+            or row.variant
+            or row.Mutation
+            or row.mutation
+            or "Normal"
+        )
+
+    local spawnedAt =
+        tonumber(
+            row.SpawnedAt
+            or row.spawnedAt
+        )
+        or 0
+
+    local lifetime =
+        tonumber(
+            row.Lifetime
+            or row.lifetime
+        )
+        or 0
+
+    local expiresAt =
+        tonumber(
+            row.ExpiresAt
+            or row.expiresAt
+        )
+        or 0
+
+    if expiresAt <= 0
+    and spawnedAt > 0
+    and lifetime > 0 then
+
+        expiresAt =
+            spawnedAt
+            + lifetime
+    end
+
+    local displayName =
+        HolyLivePetsBuildDisplayName(
+            petName,
+            size,
+            variant
+        )
+
+    return {
+        Key =
+            HolyCleanText(
+                row.Key
+                or row.UUID
+                or row.Id
+                or displayName
+            ),
+
+        UUID =
+            HolyCleanText(
+                row.UUID
+                or row.Key
+                or ""
+            ),
+
+        DisplayName =
+            displayName,
+
+        Pet =
+            petName,
+
+        PetName =
+            petName,
+
+        Rarity =
+            HolyCleanText(
+                row.Rarity
+                or row.rarity
+            ),
+
+        RarityRank =
+            HolyServerFinderRarityRank(
+                row.Rarity
+                or row.rarity
+            ),
+
+        Size =
+            size,
+
+        Variant =
+            variant,
+
+        Mutation =
+            variant,
+
+        SpawnedAt =
+            spawnedAt,
+
+        Lifetime =
+            lifetime,
+
+        ExpiresAt =
+            expiresAt,
+
+        TimeLeft =
+            math.max(
+                0,
+                expiresAt - os.time()
+            ),
+
+        Price =
+            row.Price
+            or row.price
+            or 0,
+
+        PriceNumber =
+            tonumber(
+                row.Price
+                or row.price
+            )
+            or 0,
+    }
+end
+
+function HolyServerFinderNormalizeBackendRow(row)
+
+    if type(row) ~= "table" then
+        return nil
+    end
+
+    local jobId =
+        HolyCleanText(
+            row.JobId
+            or row.jobId
+            or row.ServerId
+            or row.id
+            or row.Id
+        )
+
+    if jobId == "" then
+        return nil
+    end
+
+    local pets =
+        {}
+
+    if type(row.Pets) == "table" then
+
+        for _, petRow in ipairs(row.Pets) do
+
+            local pet =
+                HolyServerFinderNormalizeBackendPet(
+                    petRow
+                )
+
+            if pet then
+
+                table.insert(
+                    pets,
+                    pet
+                )
+            end
+        end
+    end
+
+    table.sort(pets, function(a, b)
+
+        if a.RarityRank ~= b.RarityRank then
+            return a.RarityRank > b.RarityRank
+        end
+
+        if a.PriceNumber ~= b.PriceNumber then
+            return a.PriceNumber > b.PriceNumber
+        end
+
+        return tostring(a.DisplayName)
+            < tostring(b.DisplayName)
+    end)
+
+    local now =
+        os.time()
+
+    local maxExpiresAt =
+        tonumber(
+            row.ExpiresAt
+            or row.expiresAt
+        )
+        or 0
+
+    if maxExpiresAt <= 0 then
+
+        for _, pet in ipairs(pets) do
+
+            maxExpiresAt =
+                math.max(
+                    maxExpiresAt,
+                    tonumber(pet.ExpiresAt)
+                    or 0
+                )
+        end
+    end
+
+    local bestPet =
+        pets[1]
+        or {}
+
+    local displayName =
+        HolyCleanText(
+            row.DisplayName
+            or row.displayName
+        )
+
+    if displayName == "" then
+
+        displayName =
+            HolyServerFinderBuildPetSummary(
+                pets,
+                3
+            )
+    end
+
+    return {
+        Key =
+            jobId,
+
+        Id =
+            jobId,
+
+        PlaceId =
+            tonumber(
+                row.PlaceId
+                or row.placeId
+            )
+            or game.PlaceId,
+
+        JobId =
+            jobId,
+
+        DisplayName =
+            displayName,
+
+        Name =
+            HolyServerFinderBuildPetSearchBlob(
+                pets
+            ),
+
+        Pet =
+            displayName,
+
+        PetName =
+            displayName,
+
+        BestPet =
+            HolyCleanText(
+                row.BestPet
+                or row.bestPet
+                or bestPet.Pet
+                or bestPet.PetName
+            ),
+
+        BestDisplayName =
+            bestPet.DisplayName
+            or bestPet.Pet
+            or "",
+
+        Rarity =
+            HolyCleanText(
+                row.Rarity
+                or row.rarity
+                or bestPet.Rarity
+            ),
+
+        Size =
+            HolyServerFinderBuildUniquePetField(
+                pets,
+                "Size"
+            ),
+
+        Variant =
+            HolyServerFinderBuildUniquePetField(
+                pets,
+                "Variant"
+            ),
+
+        Mutation =
+            HolyServerFinderBuildUniquePetField(
+                pets,
+                "Mutation"
+            ),
+
+        Playing =
+            tonumber(
+                row.Playing
+                or row.playing
+            )
+            or 0,
+
+        MaxPlayers =
+            tonumber(
+                row.MaxPlayers
+                or row.maxPlayers
+            )
+            or 8,
+
+        ServerVersion =
+            HolyCleanText(
+                row.ServerVersion
+                or row.serverVersion
+            ),
+
+        ReportedAt =
+            tonumber(
+                row.ReportedAt
+                or row.reportedAt
+            )
+            or now,
+
+        ExpiresAt =
+            maxExpiresAt,
+
+        TimeLeft =
+            math.max(
+                0,
+                maxExpiresAt - now
+            ),
+
+        PetCount =
+            tonumber(
+                row.PetCount
+                or row.petCount
+            )
+            or #pets,
+
+        Pets =
+            pets,
+
+        Source =
+            "Cloudflare",
+
+        IsCurrentServer =
+            jobId == tostring(game.JobId),
+    }
+end
+
+function HolyServerFinderFetchBackendRows()
+
+    if type(HolyGetRequestFunction()) ~= "function" then
+        return nil,
+            "request unsupported"
+    end
+
+    local hideFullValue =
+        HOLY_SERVER_FINDER_STATE.HideFull ~= false
+        and "1"
+        or "0"
+
+    local url =
+        HolyServerFinderBackendUrl(
+            "/servers"
+        )
+        .. "?placeId="
+        .. tostring(game.PlaceId)
+        .. "&limit=100"
+        .. "&maxAge=45"
+        .. "&hideFull="
+        .. hideFullValue
+
+    local data,
+        requestReason =
+        HolyServerFinderRequestJson(
+            "GET",
+            url,
+            nil
+        )
+
+    HOLY_SERVER_FINDER_REPORTER.LastFetchAt =
+        os.time()
+
+    if type(data) ~= "table"
+    or data.ok ~= true then
+
+        HOLY_SERVER_FINDER_REPORTER.LastFetchStatus =
+            tostring(requestReason or "fetch failed")
+
+        return nil,
+            HOLY_SERVER_FINDER_REPORTER.LastFetchStatus
+    end
+
+    local rows =
+        {}
+
+    local serverRows =
+        type(data.servers) == "table"
+        and data.servers
+        or type(data.Servers) == "table"
+        and data.Servers
+        or {}
+
+    for _, serverRow in ipairs(serverRows) do
+
+        local normalized =
+            HolyServerFinderNormalizeBackendRow(
+                serverRow
+            )
+
+        if normalized then
+
+            table.insert(
+                rows,
+                normalized
+            )
+        end
+    end
+
+    HOLY_SERVER_FINDER_REPORTER.LastFetchStatus =
+        "Fetched "
+        .. tostring(#rows)
+        .. " server(s)"
+
+    return rows,
+        "ok"
+end
+
+function HolyServerFinderMergeRows(backendRows, localRows)
+
+    local output =
+        {}
+
+    local indexByJobId =
+        {}
+
+    local function add(row, allowReplace)
+
+        if type(row) ~= "table" then
+            return
+        end
+
+        local jobId =
+            HolyCleanText(
+                row.JobId
+                or row.jobId
+                or row.ServerId
+                or row.Id
+                or row.Key
+            )
+
+        if jobId == "" then
+            return
+        end
+
+        local existingIndex =
+            indexByJobId[jobId]
+
+        if existingIndex then
+
+            if allowReplace == true then
+
+                output[existingIndex] =
+                    row
+            end
+
+            return
+        end
+
+        indexByJobId[jobId] =
+            #output + 1
+
+        table.insert(
+            output,
+            row
+        )
+    end
+
+    for _, row in ipairs(backendRows or {}) do
+
+        add(
+            row,
+            false
+        )
+    end
+
+    for _, row in ipairs(localRows or {}) do
+
+        add(
+            row,
+            true
+        )
+    end
+
+    return output
+end
+
+function HolyServerFinderPetBaseName(pet)
+
+    pet =
+        type(pet) == "table"
+        and pet
+        or {}
+
+    local baseName =
+        HolyCleanText(
+            pet.Pet
+            or pet.PetName
+            or pet.BasePet
+            or pet.Name
+        )
+
+    if baseName ~= "" then
+        return baseName
+    end
+
+    return HolyCleanText(
+        pet.DisplayName
+        or "Unknown Pet"
+    )
+end
+
+function HolyServerFinderPetDisplayName(pet)
+
+    pet =
+        type(pet) == "table"
+        and pet
+        or {}
+
+    local baseName =
+        HolyCleanText(
+            pet.Pet
+            or pet.PetName
+            or pet.BasePet
+        )
+
+    local displayName =
+        HolyCleanText(
+            pet.DisplayName
+            or pet.Name
+        )
+
+    local size =
+        HolySniperNormalizeSizeName(
+            pet.Size
+            or pet.size
+            or "Normal"
+        )
+
+    local variant =
+        HolySniperNormalizeVariantName(
+            pet.Variant
+            or pet.variant
+            or pet.Mutation
+            or pet.mutation
+            or "Normal"
+        )
+
+    if baseName ~= "" then
+
+        return HolyLivePetsBuildDisplayName(
+            baseName,
+            size,
+            variant
+        )
+    end
+
+    if displayName ~= "" then
+        return displayName
+    end
+
+    return "Unknown Pet"
+end
+
+function HolyServerFinderPetGroupKey(pet)
+
+    pet =
+        type(pet) == "table"
+        and pet
+        or {}
+
+    local baseName =
+        HolySniperPetAliasKey(
+            HolyServerFinderPetBaseName(
+                pet
+            )
+        )
+
+    local size =
+        HolySniperNormalizeSizeName(
+            pet.Size
+            or pet.size
+            or "Normal"
+        )
+
+    local variant =
+        HolySniperNormalizeVariantName(
+            pet.Variant
+            or pet.variant
+            or pet.Mutation
+            or pet.mutation
+            or "Normal"
+        )
+
+    local rarity =
+        HolyCleanText(
+            pet.Rarity
+            or pet.rarity
+        )
+
+    return table.concat({
+        baseName,
+        size:lower(),
+        variant:lower(),
+        rarity:lower(),
+    }, "|")
+end
+
+function HolyServerFinderClonePetForDisplay(pet)
+
+    pet =
+        type(pet) == "table"
+        and pet
+        or {}
+
+    local copy =
+        {}
+
+    for key, value in pairs(pet) do
+
+        copy[key] =
+            value
+    end
+
+    local baseName =
+        HolyServerFinderPetBaseName(
+            pet
+        )
+
+    local size =
+        HolySniperNormalizeSizeName(
+            pet.Size
+            or pet.size
+            or "Normal"
+        )
+
+    local variant =
+        HolySniperNormalizeVariantName(
+            pet.Variant
+            or pet.variant
+            or pet.Mutation
+            or pet.mutation
+            or "Normal"
+        )
+
+    copy.Pet =
+        baseName
+
+    copy.PetName =
+        baseName
+
+    copy.Size =
+        size
+
+    copy.Variant =
+        variant
+
+    copy.Mutation =
+        variant
+
+    copy.DisplayName =
+        HolyServerFinderPetDisplayName(
+            copy
+        )
+
+    copy.Rarity =
+        HolyCleanText(
+            copy.Rarity
+            or copy.rarity
+        )
+
+    copy.RarityRank =
+        tonumber(copy.RarityRank)
+        or HolyServerFinderRarityRank(
+            copy.Rarity
+        )
+
+    copy.PriceNumber =
+        tonumber(
+            copy.PriceNumber
+            or copy.Price
+            or copy.price
+        )
+        or 0
+
+    copy.Price =
+        copy.PriceNumber
+
+    return copy
+end
+
+function HolyServerFinderBuildPetDisplayRows(serverRows)
+
+    local output =
+        {}
+
+    local now =
+        os.time()
+
+    for _, serverRow in ipairs(serverRows or {}) do
+
+        if type(serverRow) ~= "table" then
+            continue
+        end
+
+        local jobId =
+            HolyCleanText(
+                serverRow.JobId
+                or serverRow.jobId
+                or serverRow.ServerId
+                or serverRow.Id
+                or serverRow.Key
+            )
+
+        if jobId == "" then
+            continue
+        end
+
+        local pets =
+            {}
+
+        if type(serverRow.Pets) == "table" then
+
+            for _, pet in ipairs(serverRow.Pets) do
+
+                if type(pet) == "table" then
+
+                    local copy =
+                        HolyServerFinderClonePetForDisplay(
+                            pet
+                        )
+
+                    table.insert(
+                        pets,
+                        copy
+                    )
+                end
+            end
+        end
+
+        if #pets <= 0 then
+
+            local copy =
+                HolyServerFinderClonePetForDisplay(
+                    serverRow
+                )
+
+            if HolyCleanText(copy.DisplayName) ~= ""
+            and HolyCleanText(copy.DisplayName) ~= "Unknown Pet" then
+
+                table.insert(
+                    pets,
+                    copy
+                )
+            end
+        end
+
+        if #pets <= 0 then
+            continue
+        end
+
+        local groups =
+            {}
+
+        local order =
+            {}
+
+        for _, pet in ipairs(pets) do
+
+            local key =
+                HolyServerFinderPetGroupKey(
+                    pet
+                )
+
+            if groups[key] == nil then
+
+                groups[key] = {
+                    Key =
+                        key,
+
+                    Count =
+                        0,
+
+                    Pets =
+                        {},
+
+                    DisplayName =
+                        HolyCleanText(
+                            pet.DisplayName
+                        ),
+
+                    BasePet =
+                        HolyCleanText(
+                            pet.Pet
+                            or pet.PetName
+                        ),
+
+                    Rarity =
+                        HolyCleanText(
+                            pet.Rarity
+                        ),
+
+                    RarityRank =
+                        tonumber(pet.RarityRank)
+                        or HolyServerFinderRarityRank(
+                            pet.Rarity
+                        ),
+
+                    Size =
+                        HolySniperNormalizeSizeName(
+                            pet.Size
+                            or "Normal"
+                        ),
+
+                    Variant =
+                        HolySniperNormalizeVariantName(
+                            pet.Variant
+                            or pet.Mutation
+                            or "Normal"
+                        ),
+
+                    PriceNumber =
+                        tonumber(
+                            pet.PriceNumber
+                            or pet.Price
+                        )
+                        or 0,
+
+                    ExpiresAt =
+                        0,
+                }
+
+                table.insert(
+                    order,
+                    key
+                )
+            end
+
+            local group =
+                groups[key]
+
+            group.Count =
+                group.Count + 1
+
+            group.PriceNumber =
+                math.max(
+                    tonumber(group.PriceNumber)
+                    or 0,
+                    tonumber(
+                        pet.PriceNumber
+                        or pet.Price
+                    )
+                    or 0
+                )
+
+            group.RarityRank =
+                math.max(
+                    tonumber(group.RarityRank)
+                    or 0,
+                    tonumber(pet.RarityRank)
+                    or HolyServerFinderRarityRank(
+                        pet.Rarity
+                    )
+                )
+
+            local expiresAt =
+                tonumber(
+                    pet.ExpiresAt
+                    or pet.expiresAt
+                )
+                or 0
+
+            if expiresAt <= 0 then
+
+                local spawnedAt =
+                    tonumber(
+                        pet.SpawnedAt
+                        or pet.spawnedAt
+                    )
+                    or 0
+
+                local lifetime =
+                    tonumber(
+                        pet.Lifetime
+                        or pet.lifetime
+                    )
+                    or 0
+
+                if spawnedAt > 0
+                and lifetime > 0 then
+
+                    expiresAt =
+                        spawnedAt
+                        + lifetime
+                end
+            end
+
+            if expiresAt > group.ExpiresAt then
+
+                group.ExpiresAt =
+                    expiresAt
+            end
+
+            table.insert(
+                group.Pets,
+                pet
+            )
+        end
+
+        for _, key in ipairs(order) do
+
+            local group =
+                groups[key]
+
+            local displayName =
+                HolyCleanText(
+                    group.DisplayName
+                )
+
+            if displayName == "" then
+
+                displayName =
+                    HolyLivePetsBuildDisplayName(
+                        group.BasePet,
+                        group.Size,
+                        group.Variant
+                    )
+            end
+
+            if group.Count > 1 then
+
+                displayName =
+                    displayName
+                    .. " x"
+                    .. tostring(group.Count)
+            end
+
+            local expiresAt =
+                tonumber(group.ExpiresAt)
+                or tonumber(serverRow.ExpiresAt)
+                or 0
+
+            local otherPetCount =
+                math.max(
+                    0,
+                    #pets - group.Count
+                )
+
+            local searchBlob =
+                HolyServerFinderBuildPetSearchBlob(
+                    group.Pets
+                )
+
+            table.insert(
+                output,
+                {
+                    Key =
+                        tostring(jobId)
+                        .. "|pet|"
+                        .. tostring(key),
+
+                    Id =
+                        tostring(jobId)
+                        .. "|pet|"
+                        .. tostring(key),
+
+                    JobId =
+                        jobId,
+
+                    PlaceId =
+                        tonumber(
+                            serverRow.PlaceId
+                            or serverRow.placeId
+                        )
+                        or game.PlaceId,
+
+                    DisplayName =
+                        displayName,
+
+                    Name =
+                        searchBlob,
+
+                    Pet =
+                        displayName,
+
+                    PetName =
+                        displayName,
+
+                    BasePet =
+                        group.BasePet,
+
+                    BestPet =
+                        group.BasePet,
+
+                    BestDisplayName =
+                        displayName,
+
+                    Rarity =
+                        group.Rarity,
+
+                    RarityRank =
+                        group.RarityRank,
+
+                    Size =
+                        group.Size,
+
+                    Variant =
+                        group.Variant,
+
+                    Mutation =
+                        group.Variant,
+
+                    Price =
+                        group.PriceNumber,
+
+                    PriceNumber =
+                        group.PriceNumber,
+
+                    Playing =
+                        tonumber(
+                            serverRow.Playing
+                            or serverRow.playing
+                        )
+                        or 0,
+
+                    MaxPlayers =
+                        tonumber(
+                            serverRow.MaxPlayers
+                            or serverRow.maxPlayers
+                        )
+                        or 8,
+
+                    ServerVersion =
+                        HolyCleanText(
+                            serverRow.ServerVersion
+                            or serverRow.serverVersion
+                        ),
+
+                    ReportedAt =
+                        tonumber(
+                            serverRow.ReportedAt
+                            or serverRow.reportedAt
+                        )
+                        or now,
+
+                    ExpiresAt =
+                        expiresAt,
+
+                    TimeLeft =
+                        math.max(
+                            0,
+                            expiresAt > 0
+                            and expiresAt - now
+                            or 0
+                        ),
+
+                    PetCount =
+                        group.Count,
+
+                    ServerPetCount =
+                        #pets,
+
+                    OtherPetCount =
+                        otherPetCount,
+
+                    Pets =
+                        group.Pets,
+
+                    Source =
+                        serverRow.Source
+                        or "Cloudflare",
+
+                    IsCurrentServer =
+                        serverRow.IsCurrentServer == true
+                        or jobId == tostring(game.JobId),
+
+                    ParentServerRow =
+                        serverRow,
+                }
+            )
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        if a.IsCurrentServer ~= b.IsCurrentServer then
+            return a.IsCurrentServer == true
+        end
+
+        local rarityA =
+            tonumber(a.RarityRank)
+            or 0
+
+        local rarityB =
+            tonumber(b.RarityRank)
+            or 0
+
+        if rarityA ~= rarityB then
+            return rarityA > rarityB
+        end
+
+        local priceA =
+            tonumber(a.PriceNumber)
+            or 0
+
+        local priceB =
+            tonumber(b.PriceNumber)
+            or 0
+
+        if priceA ~= priceB then
+            return priceA > priceB
+        end
+
+        local timeA =
+            tonumber(a.TimeLeft)
+            or 0
+
+        local timeB =
+            tonumber(b.TimeLeft)
+            or 0
+
+        if timeA ~= timeB then
+            return timeA > timeB
+        end
+
+        return tostring(a.DisplayName or "")
+            < tostring(b.DisplayName or "")
+    end)
+
+    return output
+end
+
+function HolyServerFinderRefreshRows(hud)
+
+    if type(hud) ~= "table"
+    or type(hud.SetRows) ~= "function" then
+        return false
+    end
+
+    local localRows =
+        HolyServerFinderBuildLocalRows()
+
+    local backendRows =
+        nil
+
+    local ok,
+        result =
+        pcall(function()
+
+            return HolyServerFinderFetchBackendRows()
+        end)
+
+    if ok == true
+    and type(result) == "table" then
+
+        backendRows =
+            result
+    end
+
+    local mergedRows =
+        HolyServerFinderMergeRows(
+            backendRows,
+            localRows
+        )
+
+    local displayRows =
+        HolyServerFinderAnnotateDisplayRows(
+            HolyServerFinderBuildPetDisplayRows(
+                mergedRows
+            )
+        )
+
+    hud:SetRows(
+        displayRows
+    )
+
+    HolyServerFinderEvaluateAutoJoin(
+        hud
+    )
+
+    return true
+end
+
+function HolyServerFinderPullStateFromHud(hud)
+
+    if type(hud) ~= "table"
+    or type(hud.GetSettings) ~= "function" then
+        return false
+    end
+
+    local settings =
+        hud:GetSettings()
+
+    if type(settings) ~= "table" then
+        return false
+    end
+
+    HOLY_SERVER_FINDER_STATE.AutoRefresh =
+        settings.AutoRefresh == true
+
+    HOLY_SERVER_FINDER_STATE.RefreshDelay =
+        math.clamp(
+            tonumber(settings.RefreshDelay)
+            or 5,
+            1,
+            60
+        )
+
+    HOLY_SERVER_FINDER_STATE.HideFull =
+        settings.HideFull ~= false
+
+    HOLY_SERVER_FINDER_STATE.SelectedPets =
+        HolyServerFinderMapFromArray(
+            settings.SelectedPets
+        )
+
+    HOLY_SERVER_FINDER_STATE.SelectedRarities =
+        HolyServerFinderMapFromArray(
+            settings.SelectedRarities
+        )
+
+    HOLY_SERVER_FINDER_STATE.SelectedSizes =
+        HolyServerFinderSizeMapFromArray(
+            settings.SelectedSizes
+            or settings.SelectedTraits
+        )
+
+    HOLY_SERVER_FINDER_STATE.SelectedVariants =
+        HolyServerFinderVariantMapFromArray(
+            settings.SelectedVariants
+            or settings.SelectedTraits
+        )
+
+    HOLY_SERVER_FINDER_STATE.SelectedTraits =
+        {}
+
+    HOLY_SERVER_FINDER_STATE.Minimized =
+        settings.Minimized == true
+
+    HOLY_SERVER_FINDER_STATE.Position =
+        HolyServerFinderReadPosition(
+            settings.Position
+        )
+
+    HOLY_SERVER_FINDER_STATE.FilterPosition =
+        HolyServerFinderReadPosition(
+            settings.FilterPosition
+        )
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinMode =
+        HolyServerFinderNormalizeAutoJoinMode(
+            settings.AutoJoinMode
+            or HOLY_SERVER_FINDER_STATE.AutoJoinMode
+            or "Off"
+        )
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    return true
+end
+
+function HolyServerFinderApplyStateToHud(hud)
+
+    if type(hud) ~= "table"
+    or type(hud.ApplySettings) ~= "function" then
+        return false
+    end
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    hud:ApplySettings({
+        AutoRefresh =
+            HOLY_SERVER_FINDER_STATE.AutoRefresh == true,
+
+        RefreshDelay =
+            HOLY_SERVER_FINDER_STATE.RefreshDelay,
+
+        HideFull =
+            HOLY_SERVER_FINDER_STATE.HideFull ~= false,
+
+        AutoJoinMode =
+            HolyServerFinderNormalizeAutoJoinMode(
+                HOLY_SERVER_FINDER_STATE.AutoJoinMode
+            ),
+
+        SelectedPets =
+            HolyServerFinderArrayFromMap(
+                HOLY_SERVER_FINDER_STATE.SelectedPets
+            ),
+
+        SelectedRarities =
+            HolyServerFinderArrayFromMap(
+                HOLY_SERVER_FINDER_STATE.SelectedRarities
+            ),
+
+        SelectedSizes =
+            HolyServerFinderArrayFromMap(
+                HOLY_SERVER_FINDER_STATE.SelectedSizes
+            ),
+
+        SelectedVariants =
+            HolyServerFinderArrayFromMap(
+                HOLY_SERVER_FINDER_STATE.SelectedVariants
+            ),
+
+        Minimized =
+            HOLY_SERVER_FINDER_STATE.Minimized == true,
+
+        Position =
+            HOLY_SERVER_FINDER_STATE.Position,
+
+        FilterPosition =
+            HOLY_SERVER_FINDER_STATE.FilterPosition,
+    })
+
+    return true
+end
+
+function HolyServerFinderSyncToggle(value)
+
+    if HOLY_SERVER_FINDER_TOGGLE_LOCK == true then
+        return false
+    end
+
+    local toggle =
+        HOLY_SERVER_FINDER_TOGGLE
+
+    if type(toggle) ~= "table"
+    or type(toggle.SetValue) ~= "function" then
+        return false
+    end
+
+    HOLY_SERVER_FINDER_TOGGLE_LOCK =
+        true
+
+    pcall(function()
+
+        toggle:SetValue(
+            value == true
+        )
+    end)
+
+    HOLY_SERVER_FINDER_TOGGLE_LOCK =
+        false
+
+    return true
+end
+
+function HolyServerFinderSetHudVisible(value)
+
+    value =
+        value == true
+
+    HOLY_SERVER_FINDER_STATE.Enabled =
+        value
+
+    HolyQueueSaveServerFinderSettings()
+
+    if value == true then
+
+        HolyServerFinderOpenHud()
+
+        return true
+    end
+
+    if type(HOLY_SERVER_FINDER_HUD) == "table"
+    and type(HOLY_SERVER_FINDER_HUD.Hide) == "function" then
+
+        HOLY_SERVER_FINDER_HUD:Hide()
+    end
+
+    return true
+end
+
+function HolyServerFinderOpenHud()
+
+    local filterOptions =
+        HolyServerFinderBuildFilterOptions()
+
+    if HOLY_SERVER_FINDER_HUD == nil then
+
+        HOLY_SERVER_FINDER_HUD =
+            Library:CreateServerFinderHUD({
+                Title =
+                    "HOLY Server Finder",
+
+                CurrentServer =
+                    tostring(game.JobId),
+
+                AutoRefresh =
+                    HOLY_SERVER_FINDER_STATE.AutoRefresh == true,
+
+                RefreshDelay =
+                    HOLY_SERVER_FINDER_STATE.RefreshDelay,
+
+                HideFull =
+                    HOLY_SERVER_FINDER_STATE.HideFull ~= false,
+
+                AutoJoinMode =
+                    HolyServerFinderNormalizeAutoJoinMode(
+                        HOLY_SERVER_FINDER_STATE.AutoJoinMode
+                    ),
+
+                SelectedPets =
+                    HolyServerFinderArrayFromMap(
+                        HOLY_SERVER_FINDER_STATE.SelectedPets
+                    ),
+
+                SelectedRarities =
+                    HolyServerFinderArrayFromMap(
+                        HOLY_SERVER_FINDER_STATE.SelectedRarities
+                    ),
+
+                SelectedSizes =
+                    HolyServerFinderArrayFromMap(
+                        HOLY_SERVER_FINDER_STATE.SelectedSizes
+                    ),
+
+                SelectedVariants =
+                    HolyServerFinderArrayFromMap(
+                        HOLY_SERVER_FINDER_STATE.SelectedVariants
+                    ),
+
+                Minimized =
+                    HOLY_SERVER_FINDER_STATE.Minimized == true,
+
+                Position =
+                    HOLY_SERVER_FINDER_STATE.Position,
+
+                FilterPosition =
+                    HOLY_SERVER_FINDER_STATE.FilterPosition,
+
+                FilterPets =
+                    filterOptions.Pets,
+
+                FilterRarities =
+                    filterOptions.Rarities,
+
+                FilterSizes =
+                    filterOptions.Sizes,
+
+                FilterVariants =
+                    filterOptions.Variants,
+
+                OnVisibleChanged =
+                    function(visible, hud)
+
+                        HOLY_SERVER_FINDER_STATE.Enabled =
+                            visible == true
+
+                        if visible == true then
+
+                            HolyServerFinderPullStateFromHud(
+                                hud
+                            )
+                        end
+
+                        HolyServerFinderSyncToggle(
+                            visible == true
+                        )
+
+                        HolyQueueSaveServerFinderSettings()
+                    end,
+
+                OnSettingsChanged =
+                    function(hud)
+
+                        HolyServerFinderPullStateFromHud(
+                            hud
+                        )
+
+                        HolyQueueSaveServerFinderSettings()
+                    end,
+
+                OnAutoJoinModeChanged =
+                    function(mode, hud)
+
+                        HolyServerFinderSetAutoJoinMode(
+                            mode
+                        )
+
+                        HolyServerFinderEvaluateAutoJoin(
+                            hud
+                        )
+                    end,
+
+                OnOpenAutoJoinRules =
+                    function()
+
+                        HolyServerFinderShowAutoJoinRulesPopup()
+                    end,
+
+                OnRefresh =
+                    function(hud)
+
+                        HolyServerFinderRefreshRows(
+                            hud
+                        )
+                    end,
+
+                OnJoin =
+                    function(row)
+
+                        HolyServerFinderJoinRow(
+                            row,
+                            "Manual Join"
+                        )
+                    end,
+            })
+    end
+
+    HolyServerFinderApplyStateToHud(
+        HOLY_SERVER_FINDER_HUD
+    )
+
+    HolyServerFinderApplyFilterOptions(
+        HOLY_SERVER_FINDER_HUD
+    )
+
+    HolyServerFinderRefreshRows(
+        HOLY_SERVER_FINDER_HUD
+    )
+
+    HOLY_SERVER_FINDER_HUD:SetCurrentServer(
+        tostring(game.JobId)
+    )
+
+    HOLY_SERVER_FINDER_HUD:Show()
+end
+
+
+--==================================================
+-- [5.5] SNIPER TAB MODE
+--==================================================
+
+function HolySniperNormalizePageMode(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    if text:find("server", 1, true) then
+        return "Server Sniper"
+    end
+
+    return "Sniper Setup"
+end
+
+function HolySniperSetPageMode(value)
+
+    HOLY_SNIPER_PAGE_STATE =
+        type(HOLY_SNIPER_PAGE_STATE) == "table"
+        and HOLY_SNIPER_PAGE_STATE
+        or {
+            Mode = "Sniper Setup",
+        }
+
+    HOLY_SNIPER_PAGE_STATE.Mode =
+        HolySniperNormalizePageMode(
+            value
+        )
+
+    local setupVisible =
+        HOLY_SNIPER_PAGE_STATE.Mode == "Sniper Setup"
+
+    HolySetGroupboxVisible(
+        SniperEngineBox,
+        setupVisible
+    )
+
+    HolySetGroupboxVisible(
+        SniperExecutionBox,
+        setupVisible
+    )
+
+    HolySetGroupboxVisible(
+        SniperFilterBox,
+        setupVisible
+    )
+
+    HolySetGroupboxVisible(
+        SniperWatchlistBox,
+        setupVisible
+    )
+
+    HolySetGroupboxVisible(
+        ServerSniperBox,
+        setupVisible ~= true
+    )
+end
+
+--==================================================
+-- [6] MAIN TAB
+--==================================================
+
+local RejoinButton =
+    MainQuickBox:AddButton({
+        Text =
+            "Rejoin",
+
+        Tooltip =
+            "Rejoin the current server.",
+
+        Func =
+            function()
+
+                HolyRejoin()
+            end,
+    })
+
+RejoinButton:AddButton({
+    Text =
+        "Server Hop",
+
+    Tooltip =
+        "Join a different server.",
+
+    Func =
+        function()
+
+            HolyServerHop()
+        end,
+})
+
+local CopyJoinCodeButton =
+    MainQuickBox:AddButton({
+        Text =
+            "Copy Join Code",
+
+        Tooltip =
+            "Copies PlaceId:JobId.",
+
+        Func =
+            function()
+
+                if HolyCopyText(HolyBuildJoinCode()) == true then
+
+                    HolyNotify(
+                        "HOLY",
+                        "Copied join code.",
+                        3
+                    )
+
+                else
+
+                    HolyNotify(
+                        "HOLY",
+                        "Clipboard unsupported.",
+                        4
+                    )
+                end
+            end,
+    })
+
+CopyJoinCodeButton:AddButton({
+    Text =
+        "Copy JobId",
+
+    Tooltip =
+        "Copies raw JobId only.",
+
+    Func =
+        function()
+
+            if HolyCopyText(game.JobId) == true then
+
+                HolyNotify(
+                    "HOLY",
+                    "Copied JobId.",
+                    3
+                )
+
+            else
+
+                HolyNotify(
+                    "HOLY",
+                    "Clipboard unsupported.",
+                    4
+                )
+            end
+        end,
+})
+
+HOLY_SNIPER_UI.LivePetsList =
+    MainLivePetsBox:AddPetMarketList(
+        "HolyMainLiveWildPets",
+        {
+            Rows =
+                6,
+
+            RowHeight =
+                42,
+
+            Summary =
+                "Next Spawn: --:-- | Active: 0",
+
+            ModeText =
+                "Mode: Walk · Instant | Click a pet to buy",
+
+            EmptyText =
+                "No active wild pets.",
+
+            Callback =
+                function(_rowIndex, rowData)
+
+                    HolyLivePetsManualBuy(
+                        rowData
+                    )
+                end,
+        }
+    )
+
+HOLY_SNIPER_UI.LivePetsActions =
+    MainLivePetsBox:AddActionRow(
+        "HolyMainLiveWildPetsActions",
+        {
+            Height =
+                21,
+
+            Buttons = {
+                {
+                    Id =
+                        "Refresh",
+
+                    Text =
+                        "Refresh",
+
+                    Tooltip =
+                        "Refresh live wild pets.",
+
+                    Callback =
+                        function()
+
+                            HolyLivePetsRefreshUI()
+                        end,
+                },
+
+                {
+                    Id =
+                        "Copy",
+
+                    Text =
+                        "Copy Pets",
+
+                    Tooltip =
+                        "Copy current live wild pets snapshot.",
+
+                    Callback =
+                        function()
+
+                            HolyLivePetsCopySnapshot()
+                        end,
+                },
+            },
+        }
+    )
+
+HolyLivePetsRefreshUI()
+HolyLivePetsStart()
+HolyServerFinderStartReporter()
+
+ServerControlsBox:AddInput(
+    "HolyServerMinPlayers",
+    {
+        Text =
+            "Min Players",
+
+        Default =
+            tostring(
+                HolyServerGetMinPlayers()
+            ),
+
+        Numeric =
+            true,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Lowest player count HOLY is allowed to join.",
+    }
+):OnChanged(function(value)
+
+    HolyServerSetMinPlayers(
+        value
+    )
+end)
+
+ServerControlsBox:AddInput(
+    "HolyServerMaxPlayers",
+    {
+        Text =
+            "Max Players",
+
+        Default =
+            tostring(
+                HolyServerGetMaxPlayers()
+            ),
+
+        Numeric =
+            true,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Highest player count HOLY is allowed to join. If this is 6, HOLY will not join 7/8 or 8/8.",
+    }
+):OnChanged(function(value)
+
+    HolyServerSetMaxPlayers(
+        value
+    )
+end)
+
+ServerControlsBox:AddDropdown(
+    "HolyServerPickStyle",
+    {
+        Text =
+            "Pick Style",
+
+        Values =
+            HOLY_SERVER_PICK_STYLES,
+
+        Default =
+            HolyServerGetPickStyle(),
+
+        Multi =
+            false,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            6,
+
+        Tooltip =
+            "Recommended = smart. Random Spread = spreads users across many valid servers. Fullest/Lowest/Balanced obey your min/max range.",
+    }
+):OnChanged(function(value)
+
+    HolyServerSetPickStyle(
+        value
+    )
+end)
+
+ServerControlsBox:AddInput(
+    "HolyServerTargetPlayers",
+    {
+        Text =
+            "Target Players",
+
+        Default =
+            tostring(
+                HolyServerGetTargetPlayers()
+            ),
+
+        Numeric =
+            true,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Used by Closest to Target. Example: target 4 prefers 4/8 servers.",
+    }
+):OnChanged(function(value)
+
+    HolyServerSetTargetPlayers(
+        value
+    )
+end)
+
+ServerControlsBox:AddInput(
+    "HolyServerSearchPages",
+    {
+        Text =
+            "Search Pages",
+
+        Default =
+            tostring(
+                HolyServerGetSearchPages()
+            ),
+
+        Numeric =
+            true,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "0 = smart auto search. HOLY joins as soon as a valid server is found. 1/2/3/etc = max pages if no valid server appears early.",
+    }
+):OnChanged(function(value)
+
+    HolyServerSetSearchPages(
+        value
+    )
+end)
+
+ServerControlsBox:AddInput(
+    "HolyServerRetryDelay",
+    {
+        Text =
+            "Retry Delay",
+
+        Default =
+            tostring(
+                HolyServerGetRetryDelay()
+            ),
+
+        Numeric =
+            true,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Seconds between failed hop retries.",
+    }
+):OnChanged(function(value)
+
+    HolyServerSetRetryDelay(
+        value
+    )
+end)
+
+ServerControlsBox:AddInput(
+    "HolyServerTeleportTimeout",
+    {
+        Text =
+            "Teleport Timeout",
+
+        Default =
+            tostring(
+                HolyServerGetTeleportTimeout()
+            ),
+
+        Numeric =
+            true,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "If teleport does not move you after this many seconds, HOLY retries. 0 = do not timeout-retry.",
+    }
+):OnChanged(function(value)
+
+    HolyServerSetTeleportTimeout(
+        value
+    )
+end)
+
+ServerControlsBox:AddToggle(
+    "HolyServerAvoidRecent",
+    {
+        Text =
+            "Avoid Recent Servers",
+
+        Default =
+            HolyServerNormalizeState().AvoidRecent == true,
+
+        Tooltip =
+            "Avoids recently tried JobIds so hopping does not loop the same servers.",
+    }
+):OnChanged(function(value)
+
+    HolyServerSetAvoidRecent(
+        value
+    )
+end)
+
+local ServerHopButton =
+    ServerControlsBox:AddButton({
+        Text =
+            "Find + Join Server",
+
+        Tooltip =
+            "Finds a server using your configured player range and pick style. Press again to restart the search.",
+
+        Func =
+            function()
+
+                HolyServerHop()
+            end,
+    })
+
+ServerHopButton:AddButton({
+    Text =
+        "Stop Hop",
+
+    Tooltip =
+        "Cancels the current server search/retry loop.",
+
+    Func =
+        function()
+
+            HolyCancelServerHop(
+                "Hop cancelled."
+            )
+        end,
+})
+
+HOLY_SERVER_UI.StatusLabel =
+    HolySniperAddLabel(
+        ServerControlsBox,
+        HolyServerBuildStatusText()
+    )
+
+HolyServerRefreshUI()
+
+--==================================================
+-- [6.25] SNIPER TAB
+--==================================================
+
+SniperModeControl =
+    Tabs.Sniper:AddTopSegmentedControl({
+        Values = {
+            "Sniper Setup",
+            "Server Sniper",
+        },
+
+        Default =
+            HolySniperNormalizePageMode(
+                HOLY_SNIPER_PAGE_STATE.Mode
+            ),
+
+        Width =
+            360,
+
+        Height =
+            46,
+
+        PillHeight =
+            32,
+
+        Callback =
+            function(value)
+
+                HolySniperSetPageMode(
+                    value
+                )
+            end,
+    })
+
+SniperEngineBox:AddToggle(
+    "HolySniperActivate",
+    {
+        Text =
+            "Activate Sniper",
+
+        Default =
+            HOLY_SNIPER_STATE.ActivateSniper == true,
+
+        Tooltip =
+            "Enables loading-gated scan, target lock, movement, and prompt buying.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SNIPER_STATE.ActivateSniper =
+        value == true
+
+    HolySaveSniperSettings()
+
+    if HOLY_SNIPER_STATE.ActivateSniper == true then
+
+        HolySniperStart(
+            "toggle on"
+        )
+
+    else
+
+        HolySniperStop(
+            "Ready"
+        )
+    end
+end)
+
+SniperEngineBox:AddToggle(
+    "HolySniperAutoHop",
+    {
+        Text =
+            "🚀 Auto Hop",
+
+        Default =
+            HOLY_SNIPER_STATE.AutoHop == true,
+
+        Tooltip =
+            "Hops with smart server selection after stable no-match scans.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SNIPER_STATE.AutoHop =
+        value == true
+
+    HolySniperAutoHopReset(
+        "toggle changed"
+    )
+
+    HolySaveSniperSettings()
+end)
+
+SniperEngineBox:AddInput(
+    "HolySniperHopDelay",
+    {
+        Text =
+            "⏱️ Hop Delay",
+
+        Default =
+            HolySniperFormatDelay(
+                HOLY_SNIPER_STATE.HopDelay
+            ),
+
+        Numeric =
+            true,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Seconds to wait before hopping after no match. No max cap.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SNIPER_STATE.HopDelay =
+        HolySniperFormatDelay(
+            value
+        )
+
+    HolySniperAutoHopReset(
+        "delay changed"
+    )
+
+    HolySaveSniperSettings()
+end)
+
+SniperEngineBox:AddDropdown(
+    "HolySniperAutoHopTiming",
+    {
+        Text =
+            "Hop Timing",
+
+        Values = {
+            "Safe - After Loading",
+            "Fast - During Loading",
+        },
+
+        Default =
+            HolySniperNormalizeAutoHopTiming(
+                HOLY_SNIPER_STATE.AutoHopTiming
+            ),
+
+        Multi =
+            false,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            2,
+
+        Tooltip =
+            "Safe waits for loading. Fast can hop during loading once pet data exists.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SNIPER_STATE.AutoHopTiming =
+        HolySniperNormalizeAutoHopTiming(
+            value
+        )
+
+    HolySniperAutoHopReset(
+        "timing changed"
+    )
+
+    HolySaveSniperSettings()
+end)
+
+HOLY_SNIPER_UI.StatusLabel =
+    HolySniperAddLabel(
+        SniperEngineBox,
+        HolySniperBuildStatusText()
+    )
+
+SniperExecutionBox:AddDropdown(
+    "HolySniperMovementMode",
+    {
+        Text =
+            "Movement Mode",
+
+        Values = {
+            "Walk",
+            "Teleport",
+        },
+
+        Default =
+            HolySniperNormalizeMovementMode(
+                HOLY_SNIPER_STATE.MovementMode
+            ),
+
+        Multi =
+            false,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            2,
+
+        Tooltip =
+            "How HOLY moves to the target pet.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SNIPER_STATE.MovementMode =
+        HolySniperNormalizeMovementMode(
+            value
+        )
+
+    HolySaveSniperSettings()
+end)
+
+SniperExecutionBox:AddDropdown(
+    "HolySniperBuyMode",
+    {
+        Text =
+            "Buy Mode",
+
+        Values = {
+            "Instant",
+            "Hold",
+        },
+
+        Default =
+            HolySniperNormalizeBuyMode(
+                HOLY_SNIPER_STATE.BuyMode
+            ),
+
+        Multi =
+            false,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            2,
+
+        Tooltip =
+            "How HOLY attempts to buy the target pet.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SNIPER_STATE.BuyMode =
+        HolySniperNormalizeBuyMode(
+            value
+        )
+
+    HolySaveSniperSettings()
+end)
+
+SniperExecutionBox:AddToggle(
+    "HolySniperReturnEnabled",
+    {
+        Text =
+            "Auto Return",
+
+        Default =
+            HOLY_SNIPER_STATE.ReturnEnabled == true,
+
+        Tooltip =
+            "Return after sniping based on the selected return timing.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SNIPER_STATE.ReturnEnabled =
+        value == true
+
+    HolySaveSniperSettings()
+end)
+
+SniperExecutionBox:AddDropdown(
+    "HolySniperReturnTiming",
+    {
+        Text =
+            "Return Timing",
+
+        Values = {
+            "After Buy",
+            "After Batch",
+        },
+
+        Default =
+            HolySniperNormalizeReturnTiming(
+                HOLY_SNIPER_STATE.ReturnTiming
+            ),
+
+        Multi =
+            false,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            2,
+
+        Tooltip =
+            "After Buy returns after each pet. After Batch returns after current matches are done.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SNIPER_STATE.ReturnTiming =
+        HolySniperNormalizeReturnTiming(
+            value
+        )
+
+    HolySaveSniperSettings()
+end)
+
+SniperExecutionBox:AddDropdown(
+    "HolySniperReturnMode",
+    {
+        Text =
+            "Return Mode",
+
+        Values = {
+            "Walk",
+            "Teleport",
+        },
+
+        Default =
+            HolySniperNormalizeReturnMode(
+                HOLY_SNIPER_STATE.ReturnMode
+            ),
+
+        Multi =
+            false,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            2,
+
+        Tooltip =
+            "How HOLY returns after sniping.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SNIPER_STATE.ReturnMode =
+        HolySniperNormalizeReturnMode(
+            value
+        )
+
+    HolySaveSniperSettings()
+end)
+
+SniperExecutionBox:AddDropdown(
+    "HolySniperReturnDestination",
+    {
+        Text =
+            "Return To",
+
+        Values = {
+            "Farm Center",
+            "Saved Position",
+        },
+
+        Default =
+            HolySniperNormalizeReturnDestination(
+                HOLY_SNIPER_STATE.ReturnDestination
+            ),
+
+        Multi =
+            false,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            2,
+
+        Tooltip =
+            "Farm Center auto-detects your plot. Saved Position uses the button below.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SNIPER_STATE.ReturnDestination =
+        HolySniperNormalizeReturnDestination(
+            value
+        )
+
+    HolySaveSniperSettings()
+end)
+
+SniperExecutionBox:AddButton({
+    Text =
+        "Set Saved Position",
+
+    Tooltip =
+        "Saves your current position as the custom return destination.",
+
+    Func =
+        function()
+
+            HolySniperSetSavedReturnPosition()
+        end,
+})
+
+SniperFilterBox:AddDropdown(
+    "HolySniperPetFilter",
+    {
+        Text =
+            "Select Pet",
+
+        Values =
+            HolySniperGetPetValues(),
+
+        Default =
+            HolySniperResolvePetDisplay(
+                HOLY_SNIPER_STATE.BuilderPet
+                or HolySniperGetDefaultPetName()
+            ),
+
+        Multi =
+            false,
+
+        Searchable =
+            true,
+
+        MaxVisibleDropdownItems =
+            8,
+    }
+):OnChanged(function(value)
+
+    HOLY_SNIPER_STATE.BuilderPet =
+        HolySniperResolvePetDisplay(
+            value
+        )
+
+    HolySaveSniperSettings()
+end)
+
+SniperFilterBox:AddDropdown(
+    "HolySniperSizeFilter",
+    {
+        Text =
+            "Size Filter",
+
+        Values =
+            HolySniperGetSizeValues(),
+
+        Default =
+            HolySniperNormalizeSizeSelection(
+                HOLY_SNIPER_STATE.BuilderSizes
+            ),
+
+        Multi =
+            true,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            4,
+    }
+):OnChanged(function(value)
+
+    HOLY_SNIPER_STATE.BuilderSizes =
+        HolySniperNormalizeSizeSelection(
+            value
+        )
+
+    HolySaveSniperSettings()
+end)
+
+SniperFilterBox:AddDropdown(
+    "HolySniperVariantFilter",
+    {
+        Text =
+            "Variant Filter",
+
+        Values =
+            HolySniperGetVariantValues(),
+
+        Default =
+            HolySniperNormalizeVariantSelection(
+                HOLY_SNIPER_STATE.BuilderVariants
+            ),
+
+        Multi =
+            true,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            4,
+    }
+):OnChanged(function(value)
+
+    HOLY_SNIPER_STATE.BuilderVariants =
+        HolySniperNormalizeVariantSelection(
+            value
+        )
+
+    HolySaveSniperSettings()
+end)
+
+SniperFilterBox:AddInput(
+    "HolySniperTargetAmount",
+    {
+        Text =
+            "Target Amount",
+
+        Default =
+            tostring(
+                HOLY_SNIPER_STATE.BuilderAmount
+                or "1"
+            ),
+
+        Numeric =
+            true,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "How many pets this filter should buy before it is considered done.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SNIPER_STATE.BuilderAmount =
+        tostring(
+            HolySniperReadAmount(
+                value
+            )
+        )
+
+    HolySaveSniperSettings()
+end)
+
+SniperFilterBox:AddDropdown(
+    "HolySniperPriority",
+    {
+        Text =
+            "Priority",
+
+        Values = {
+            "High",
+            "Medium",
+            "Low",
+        },
+
+        Default =
+            HolySniperNormalizePriority(
+                HOLY_SNIPER_STATE.BuilderPriority
+            ),
+
+        Multi =
+            false,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            3,
+    }
+):OnChanged(function(value)
+
+    HOLY_SNIPER_STATE.BuilderPriority =
+        HolySniperNormalizePriority(
+            value
+        )
+
+    HolySaveSniperSettings()
+end)
+
+SniperFilterBox:AddButton({
+    Text =
+        "Save Filter",
+
+    Tooltip =
+        "Saves this pet filter into the Sniper Watchlist.",
+
+    Func =
+        function()
+
+            HolySniperSaveFilterFromBuilder()
+        end,
+})
+
+SniperWatchlistBox:AddInput(
+    "HolySniperWatchlistSearch",
+    {
+        Text =
+            "Search",
+
+        Default =
+            "",
+
+        Placeholder =
+            "Search filters...",
+
+        Finished =
+            false,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Search saved watchlist filters.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SNIPER_STATE.WatchlistSearch =
+        HolyCleanText(
+            value
+        )
+
+    HOLY_SNIPER_STATE.SelectedWatchlistSourceIndex =
+        nil
+
+    if HOLY_SNIPER_UI
+    and type(HOLY_SNIPER_UI.WatchlistTable) == "table"
+    and type(HOLY_SNIPER_UI.WatchlistTable.SetSelected) == "function" then
+
+        HOLY_SNIPER_UI.WatchlistTable:SetSelected(
+            nil
+        )
+    end
+
+    HolySniperRefreshUI()
+end)
+
+HOLY_SNIPER_UI.WatchlistTable =
+    SniperWatchlistBox:AddSniperWatchlist(
+        "HolySniperWatchlistTable",
+        {
+            Rows =
+                7,
+
+            RowHeight =
+                23,
+
+            Callback =
+                function(_rowIndex, rowData)
+
+                    HOLY_SNIPER_STATE.SelectedWatchlistSourceIndex =
+                        type(rowData) == "table"
+                        and tonumber(rowData.SourceIndex)
+                        or nil
+                end,
+        }
+    )
+
+SniperWatchlistBox:AddActionRow(
+    "HolySniperWatchlistActions",
+    {
+        Buttons = {
+            {
+                Id =
+                    "Edit",
+
+                Text =
+                    "Edit Selected",
+
+                Tooltip =
+                    "Loads the selected watchlist filter back into Pet Filter.",
+
+                Callback =
+                    function()
+
+                        HolySniperEditSelectedFilter()
+                    end,
+            },
+
+            {
+                Id =
+                    "Remove",
+
+                Text =
+                    "Remove Selected",
+
+                Tooltip =
+                    "Removes the selected watchlist filter.",
+
+                Callback =
+                    function()
+
+                        HolySniperRemoveSelectedFilter()
+                    end,
+            },
+        },
+    }
+)
+
+SniperWatchlistBox:AddButton({
+    Text =
+        "Clear Watchlist",
+
+    Risky =
+        true,
+
+    DoubleClick =
+        true,
+
+    Tooltip =
+        "Double click to remove every saved sniper filter.",
+
+    Func =
+        function()
+
+            HolySniperClearWatchlist()
+        end,
+})
+
+HOLY_SERVER_FINDER_TOGGLE =
+    ServerSniperBox:AddCheckbox(
+        "HolyServerFinderHudToggle",
+        {
+            Text =
+                "Server Pet Finder HUD",
+
+            Default =
+                HOLY_SERVER_FINDER_STATE.Enabled == true,
+
+            Tooltip =
+                "Toggle the HOLY Server Finder HUD.",
+        }
+    )
+
+HOLY_SERVER_FINDER_TOGGLE:OnChanged(function(value)
+
+    if HOLY_SERVER_FINDER_TOGGLE_LOCK == true then
+        return
+    end
+
+    HOLY_SERVER_FINDER_STATE.Enabled =
+        value == true
+
+    HolyQueueSaveServerFinderSettings()
+
+    HolyServerFinderSetHudVisible(
+        value == true
+    )
+end)
+
+if HOLY_SERVER_FINDER_STATE.Enabled == true then
+
+    task.defer(function()
+
+        HolyServerFinderSetHudVisible(
+            true
+        )
+    end)
+end
+
+HolySniperSetPageMode(
+    HOLY_SNIPER_PAGE_STATE.Mode
+)
+
+HolySniperRefreshUI()
+
+if HOLY_SNIPER_STATE.ActivateSniper == true then
+
+    HolySniperStart(
+        "startup"
+    )
+end
+
+--==================================================
+-- [6.5] SHOP TAB
+--==================================================
+
+function HolyShopRefreshMode()
+
+    local isBuy =
+        HOLY_SHOP_STATE.Mode ~= "Sell"
+
+    HolySetGroupboxVisible(
+        ShopSeedsBox,
+        isBuy
+    )
+
+    HolySetGroupboxVisible(
+        ShopGearBox,
+        isBuy
+    )
+
+    HolySetGroupboxVisible(
+        ShopCratesBox,
+        isBuy
+    )
+
+    HolySetGroupboxVisible(
+        ShopSellBox,
+        not isBuy
+    )
+
+    HolySetGroupboxVisible(
+        ShopFiltersBox,
+        not isBuy
+    )
+end
+
+function HolyShopSetMode(mode)
+
+    mode =
+        tostring(mode or "Buy")
+
+    if mode ~= "Sell" then
+
+        mode =
+            "Buy"
+    end
+
+    HOLY_SHOP_STATE.Mode =
+        mode
+
+    HolySaveShopSettings()
+
+    if ShopModeControl
+    and type(ShopModeControl.SetValue) == "function" then
+
+        ShopModeControl:SetValue(
+            mode,
+            true
+        )
+    end
+
+    HolyShopRefreshMode()
+end
+
+ShopModeControl =
+    Tabs.Shop:AddTopSegmentedControl({
+        Values = {
+            "Buy",
+            "Sell",
+        },
+
+        Default =
+            HOLY_SHOP_STATE.Mode,
+
+        Width =
+            340,
+
+        Height =
+            46,
+
+        PillHeight =
+            32,
+
+        Callback =
+            function(value)
+
+                HolyShopSetMode(
+                    value
+                )
+            end,
+    })
+
+ShopSeedsBox:AddToggle(
+    "HolyShopAutoBuySeeds",
+    {
+        Text =
+            "Auto Buy Seeds",
+
+        Default =
+            HOLY_SHOP_STATE.AutoBuySeeds,
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.AutoBuySeeds =
+        value == true
+
+    HolySaveShopSettings()
+
+    if value == true then
+
+        HolyShopQueueCategory(
+            "Seeds"
+        )
+    end
+end)
+
+ShopSeedsBox:AddDropdown(
+    "HolyShopSelectedSeeds",
+    {
+        Text =
+            "Seeds",
+
+        Values =
+            HolyShopGetDropdownValues(
+                "Seeds"
+            ),
+
+        Default =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.SelectedSeeds
+            ),
+
+        Multi =
+            true,
+
+        Searchable =
+            true,
+
+        MaxVisibleDropdownItems =
+            8,
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.SelectedSeeds =
+        HolyShopSelectionArray(
+            value
+        )
+
+    HolySaveShopSettings()
+
+    HolyShopQueueCategory(
+        "Seeds"
+    )
+end)
+
+ShopGearBox:AddToggle(
+    "HolyShopAutoBuyGear",
+    {
+        Text =
+            "Auto Buy Gear",
+
+        Default =
+            HOLY_SHOP_STATE.AutoBuyGear,
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.AutoBuyGear =
+        value == true
+
+    HolySaveShopSettings()
+
+    if value == true then
+
+        HolyShopQueueCategory(
+            "Gear"
+        )
+    end
+end)
+
+ShopGearBox:AddDropdown(
+    "HolyShopSelectedGear",
+    {
+        Text =
+            "Gear",
+
+        Values =
+            HolyShopGetDropdownValues(
+                "Gear"
+            ),
+
+        Default =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.SelectedGear
+            ),
+
+        Multi =
+            true,
+
+        Searchable =
+            true,
+
+        MaxVisibleDropdownItems =
+            8,
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.SelectedGear =
+        HolyShopSelectionArray(
+            value
+        )
+
+    HolySaveShopSettings()
+
+    HolyShopQueueCategory(
+        "Gear"
+    )
+end)
+
+ShopCratesBox:AddToggle(
+    "HolyShopAutoBuyProps",
+    {
+        Text =
+            "Auto Buy Props",
+
+        Default =
+            HOLY_SHOP_STATE.AutoBuyProps,
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.AutoBuyProps =
+        value == true
+
+    HolySaveShopSettings()
+
+    if value == true then
+
+        HolyShopQueueCategory(
+            "Props"
+        )
+    end
+end)
+
+ShopCratesBox:AddDropdown(
+    "HolyShopSelectedProps",
+    {
+        Text =
+            "Props",
+
+        Values =
+            HolyShopGetDropdownValues(
+                "Props"
+            ),
+
+        Default =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.SelectedProps
+            ),
+
+        Multi =
+            true,
+
+        Searchable =
+            true,
+
+        MaxVisibleDropdownItems =
+            8,
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.SelectedProps =
+        HolyShopSelectionArray(
+            value
+        )
+
+    HolySaveShopSettings()
+
+    HolyShopQueueCategory(
+        "Props"
+    )
+end)
+
+ShopSellBox:AddToggle(
+    "HolyShopAutoSellFruits",
+    {
+        Text =
+            "💰 Auto Sell Fruits",
+
+        Default =
+            HOLY_SHOP_STATE.AutoSellFruits,
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.AutoSellFruits =
+        value == true
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+        HolySellStartWatcher()
+
+        HolySellScanExistingFruitTools(
+            "toggle on"
+        )
+
+        HolySellStartWorker()
+
+    else
+
+        HolySellStopWorker()
+    end
+end)
+
+ShopSellBox:AddDropdown(
+    "HolyShopSellMethod",
+    {
+        Text =
+            "⚙️ Method",
+
+        Values = {
+            HolySellMethodDisplay(
+                "Sell All"
+            ),
+
+            HolySellMethodDisplay(
+                "Filtered Sell"
+            ),
+        },
+
+        Default =
+            HolySellMethodDisplay(
+                HOLY_SHOP_STATE.SellMethod
+            ),
+
+        Multi =
+            false,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            2,
+
+        Tooltip =
+            "💰 Sell All uses bulk SellAll. 🎯 Filtered Sell sells fruits one by one with filters.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.SellMethod =
+        HolySellNormalizeMethod(
+            value
+        )
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+        HolySellStartWatcher()
+
+        HolySellScanExistingFruitTools(
+            "saved toggle"
+        )
+
+        HolySellStartWorker()
+    end
+end)
+
+ShopSellBox:AddSlider(
+    "HolyShopSellAllSpeed",
+    {
+        Text =
+            "⚡ Sell Speed",
+
+        Default =
+            math.clamp(
+                tonumber(HOLY_SHOP_STATE.SellAllInterval)
+                or 0.5,
+                0,
+                5
+            ),
+
+        Min =
+            0,
+
+        Max =
+            5,
+
+        Rounding =
+            2,
+
+        Suffix =
+            "s",
+
+        HideMax =
+            true,
+
+        Tooltip =
+            "Speed for 💰 Sell All mode. 0 = fastest.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.SellAllInterval =
+        math.clamp(
+            tonumber(value)
+            or 0.5,
+            0,
+            5
+        )
+
+    HolySaveShopSettings()
+end)
+
+ShopFiltersBox:AddToggle(
+    "HolyShopUseSellFilters",
+    {
+        Text =
+            "🛡️ Use Sell Filters",
+
+        Default =
+            HOLY_SHOP_STATE.UseSellFilters,
+
+        Tooltip =
+            "OFF = sell all detected fruits in Selected Only. ON = apply the filters below.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.UseSellFilters =
+        value == true
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+        HolySellScanExistingFruitTools(
+            "use filters changed"
+        )
+
+        HolySellStartWorker()
+    end
+end)
+
+ShopFiltersBox:AddDropdown(
+    "HolyShopSellFruits",
+    {
+        Text =
+            "🍎 Only Fruits",
+
+        Tooltip =
+            "Only sell selected fruits. Empty allows all fruits.",
+
+        Values =
+            HolySellGetFruitDropdownValues(),
+
+        Default =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.SellFruits
+            ),
+
+        Multi =
+            true,
+
+        Searchable =
+            true,
+
+        MaxVisibleDropdownItems =
+            6,
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.SellFruits =
+        HolyShopSelectionArray(
+            value
+        )
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+        HolySellStartWatcher()
+
+        HolySellScanExistingFruitTools(
+            "only fruits changed"
+        )
+
+        HolySellStartWorker()
+    end
+end)
+
+ShopFiltersBox:AddDropdown(
+    "HolyShopSellRarities",
+    {
+        Text =
+            "⭐ Only Rarity",
+
+        Tooltip =
+            "Only sell selected rarities. Empty allows all rarities.",
+
+        Values = {
+            "All",
+            "Common",
+            "Uncommon",
+            "Rare",
+            "Epic",
+            "Legendary",
+            "Mythic",
+            "Super",
+        },
+
+        Default =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.SellRarities
+            ),
+
+        Multi =
+            true,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            6,
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.SellRarities =
+        HolyShopSelectionArray(
+            value
+        )
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+        HolySellScanExistingFruitTools(
+            "only rarity changed"
+        )
+
+        HolySellStartWorker()
+    end
+end)
+
+ShopFiltersBox:AddDropdown(
+    "HolyShopSellMutations",
+    {
+        Text =
+            "🧬 Only Mutations",
+
+        Tooltip =
+            "Only sell fruits with selected mutations. Empty allows all mutations.",
+
+        Values =
+            HolySellGetMutationDropdownValues(),
+
+        Default =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.SellMutations
+            ),
+
+        Multi =
+            true,
+
+        Searchable =
+            true,
+
+        MaxVisibleDropdownItems =
+            8,
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.SellMutations =
+        HolyShopSelectionArray(
+            value
+        )
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+        HolySellScanExistingFruitTools(
+            "only mutations changed"
+        )
+
+        HolySellStartWorker()
+    end
+end)
+
+ShopFiltersBox:AddDropdown(
+    "HolyShopProtectMutations",
+    {
+        Text =
+            "🚫 Protect Mutations",
+
+        Tooltip =
+            "Selected mutations will not be sold. Protect wins over Only.",
+
+        Values =
+            HolySellGetProtectMutationDropdownValues(),
+
+        Default =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.ProtectMutations
+            ),
+
+        Multi =
+            true,
+
+        Searchable =
+            true,
+
+        MaxVisibleDropdownItems =
+            8,
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.ProtectMutations =
+        HolyShopSelectionArray(
+            value
+        )
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+        HolySellScanExistingFruitTools(
+            "protect mutations changed"
+        )
+
+        HolySellStartWorker()
+    end
+end)
+
+ShopFiltersBox:AddDropdown(
+    "HolyShopSellVariants",
+    {
+        Text =
+            "🌈 Only Variants",
+
+        Tooltip =
+            "Only sell selected variants. Empty allows all variants.",
+
+        Values =
+            HolySellGetVariantDropdownValues(),
+
+        Default =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.SellVariants
+            ),
+
+        Multi =
+            true,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            4,
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.SellVariants =
+        HolyShopSelectionArray(
+            value
+        )
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+        HolySellScanExistingFruitTools(
+            "only variants changed"
+        )
+
+        HolySellStartWorker()
+    end
+end)
+
+ShopFiltersBox:AddDropdown(
+    "HolyShopProtectVariants",
+    {
+        Text =
+            "🛡️ Protect Variants",
+
+        Tooltip =
+            "Selected variants will not be sold. Protect wins over Only.",
+
+        Values =
+            HolySellGetProtectVariantDropdownValues(),
+
+        Default =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.ProtectVariants
+            ),
+
+        Multi =
+            true,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            3,
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.ProtectVariants =
+        HolyShopSelectionArray(
+            value
+        )
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+        HolySellScanExistingFruitTools(
+            "protect variants changed"
+        )
+
+        HolySellStartWorker()
+    end
+end)
+
+ShopFiltersBox:AddInput(
+    "HolyShopMinWeightKg",
+    {
+        Text =
+            "⬇️ Min Weight KG",
+
+        Default =
+            HOLY_SHOP_STATE.MinWeightKg,
+
+        Numeric =
+            true,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "0 = no minimum weight filter.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.MinWeightKg =
+        tostring(value or "0")
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+        HolySellScanExistingFruitTools(
+            "min weight changed"
+        )
+
+        HolySellStartWorker()
+    end
+end)
+
+ShopFiltersBox:AddInput(
+    "HolyShopMaxWeightKg",
+    {
+        Text =
+            "⬆️ Max Weight KG",
+
+        Default =
+            HOLY_SHOP_STATE.MaxWeightKg,
+
+        Numeric =
+            true,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "0 = no maximum weight filter.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.MaxWeightKg =
+        tostring(value or "0")
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+        HolySellScanExistingFruitTools(
+            "max weight changed"
+        )
+
+        HolySellStartWorker()
+    end
+end)
+
+HolyShopConnectStockSignals()
+
+HolyShopRefreshMode()
+
+task.defer(function()
+
+    HolyShopQueueAll()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+        HolySellStartWorker()
+    end
+end)
+
+--==================================================
+-- [6] SETTINGS TAB
+--==================================================
+
+SettingsPerformanceBox:AddToggle(
+    "HolyUnloadOtherGardens",
+    {
+        Text =
+            "Unload Other Gardens",
+
+        Default =
+            HOLY_DEV_UI_STATE.UnloadOtherGardens == true,
+
+        Tooltip =
+            "Deletes other players' gardens locally to reduce lag. Turning OFF stops future deletes; rejoin restores deleted gardens.",
+    }
+):OnChanged(function(value)
+
+    if value == true then
+
+        HolyPerformanceStartUnloadOtherGardens(
+            "toggle on"
+        )
+
+    else
+
+        HolyPerformanceStopUnloadOtherGardens(
+            "toggle off"
+        )
+    end
+end)
+
+HOLY_PERFORMANCE_UI.StatusLabel =
+    HolySniperAddLabel(
+        SettingsPerformanceBox,
+        HolyPerformanceBuildStatusText()
+    )
+
+HolyPerformanceRefreshUI()
+
+if HOLY_DEV_UI_STATE.UnloadOtherGardens == true then
+
+    task.defer(function()
+
+        HolyPerformanceStartUnloadOtherGardens(
+            "startup"
+        )
+    end)
+end
+
+SettingsSessionBox:AddToggle(
+    "HolyAutoSkipLoading",
+    {
+        Text =
+            "⏩ Auto Skip Loading",
+
+        Default =
+            HOLY_DEV_UI_STATE.AutoSkipLoading == true,
+
+        Tooltip =
+            "Automatically skips loading on execute.",
+    }
+):OnChanged(function(value)
+
+    HOLY_DEV_UI_STATE.AutoSkipLoading =
+        value == true
+
+    HolySaveUISettings()
+
+    if HOLY_DEV_UI_STATE.AutoSkipLoading == true then
+
+        HolyLoadingStartAutoSkip(
+            "toggle on"
+        )
+
+    else
+
+        HolyLoadingStopAutoSkip(
+            "toggle off"
+        )
+    end
+end)
+
+SettingsSessionBox:AddToggle(
+    "HolyAntiAfk",
+    {
+        Text =
+            "💤 Anti-AFK",
+
+        Default =
+            HOLY_DEV_UI_STATE.AntiAfk == true,
+
+        Tooltip =
+            "Keeps the session active.",
+    }
+):OnChanged(function(value)
+
+    HOLY_DEV_UI_STATE.AntiAfk =
+        value == true
+
+    HolySaveUISettings()
+
+    if HOLY_DEV_UI_STATE.AntiAfk == true then
+
+        HolyAntiAfkStart(
+            "toggle on"
+        )
+
+    else
+
+        HolyAntiAfkStop(
+            "toggle off"
+        )
+    end
+end)
+
+SettingsUIBox:AddToggle(
+    "HolyDevAutoCloseUI",
+    {
+        Text =
+            "Auto Close UI",
+
+        Default =
+            HOLY_DEV_UI_STATE.ShowUIOnLoad ~= true,
+
+        Tooltip =
+            "When enabled, HOLY starts closed next execution. Press LeftAlt to open.",
+    }
+):OnChanged(function(value)
+
+    HOLY_DEV_UI_STATE.ShowUIOnLoad =
+        value ~= true
+
+    HolySaveUISettings()
+end)
+
+SettingsUIBox:AddDropdown(
+    "HolyDevDPI",
+    {
+        Text =
+            "UI Scale",
+
+        Values = {
+            "30%",
+            "40%",
+            "50%",
+            "60%",
+            "70%",
+            "80%",
+            "90%",
+            "100%",
+            "110%",
+        },
+
+        Default =
+            HolyFormatScale(
+                HOLY_DEV_UI_STATE.DPIScale
+            ),
+
+        Multi =
+            false,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            9,
+
+        Tooltip =
+            "Changes HOLY UI size.",
+    }
+):OnChanged(function(value)
+
+    HolyApplyUIScale(
+        value
+    )
+
+    HolySaveUISettings()
+end)
+
+--==================================================
+-- [7] DEV TAB
+--==================================================
+
+for _, tool in ipairs(DEV_TOOLS) do
+
+    DevToolsBox:AddButton({
+        Text =
+            tool.Name,
+
+        Tooltip =
+            tool.Tooltip,
+
+        Func =
+            function()
+
+                HolyOpenDevTool(
+                    tool.Url,
+                    tool.Name
+                )
+            end,
+    })
+end
+
+--==================================================
+-- [8] FINISH
+--==================================================
+
+HolyNotify(
+    "HOLY Premium",
+    "Loaded. Toggle UI with LeftAlt.",
+    4
+)
