@@ -144,7 +144,9 @@ HOLY_DEV_UI_STATE = {
     DPIScale = 100,
     AutoSkipLoading = true,
     AntiAfk = true,
+
     UnloadOtherGardens = false,
+    UnloadOwnGarden = false,
 }
 
 HOLY_SERVER_PICK_STYLES = {
@@ -882,6 +884,9 @@ function HolySaveUISettings()
 
         UnloadOtherGardens =
             HOLY_DEV_UI_STATE.UnloadOtherGardens == true,
+
+        UnloadOwnGarden =
+            HOLY_DEV_UI_STATE.UnloadOwnGarden == true,
     }
 
     local encodeOk,
@@ -1008,6 +1013,17 @@ function HolyLoadUISettings()
 
         HOLY_DEV_UI_STATE.UnloadOtherGardens =
             data.DeleteOtherGardens
+    end
+
+    if type(data.UnloadOwnGarden) == "boolean" then
+
+        HOLY_DEV_UI_STATE.UnloadOwnGarden =
+            data.UnloadOwnGarden
+
+    elseif type(data.DeleteOwnGarden) == "boolean" then
+
+        HOLY_DEV_UI_STATE.UnloadOwnGarden =
+            data.DeleteOwnGarden
     end
 
     return true
@@ -17477,6 +17493,26 @@ function HolyPerformanceIsOwnGarden(garden, ownGarden)
     return garden == ownGarden
 end
 
+function HolyPerformanceAnyUnloadEnabled()
+
+    return HOLY_DEV_UI_STATE.UnloadOtherGardens == true
+        or HOLY_DEV_UI_STATE.UnloadOwnGarden == true
+end
+
+function HolyPerformanceShouldProcessPlot(plot, ownPlot)
+
+    if HolyPerformanceIsPlot(plot) ~= true then
+        return false
+    end
+
+    if plot == ownPlot then
+
+        return HOLY_DEV_UI_STATE.UnloadOwnGarden == true
+    end
+
+    return HOLY_DEV_UI_STATE.UnloadOtherGardens == true
+end
+
 function HolyPerformanceShouldRemoveChild(child)
 
     if typeof(child) ~= "Instance" then
@@ -17760,19 +17796,43 @@ function HolyPerformanceConnectPlotCleaner(plot)
 
             task.defer(function()
 
-                if HOLY_DEV_UI_STATE.UnloadOtherGardens ~= true
+                if HolyPerformanceAnyUnloadEnabled() ~= true
                 or HOLY_PERFORMANCE_STATE.Active ~= true then
 
                     return
                 end
 
-                if typeof(plot) ~= "Instance"
-                or plot.Parent == nil then
+                local gardens =
+                    HolyPerformanceGetGardensRoot()
 
+                if typeof(gardens) ~= "Instance" then
                     return
                 end
 
-                if plot == HOLY_PERFORMANCE_STATE.OwnPlot then
+                local ownPlot =
+                    HOLY_PERFORMANCE_STATE.OwnPlot
+
+                if typeof(ownPlot) ~= "Instance"
+                or ownPlot.Parent ~= gardens then
+
+                    ownPlot =
+                        select(
+                            1,
+                            HolyPerformanceResolveOwnPlot(
+                                gardens
+                            )
+                        )
+                end
+
+                if typeof(ownPlot) ~= "Instance" then
+                    return
+                end
+
+                if HolyPerformanceShouldProcessPlot(
+                    plot,
+                    ownPlot
+                ) ~= true then
+
                     return
                 end
 
@@ -17785,14 +17845,18 @@ function HolyPerformanceConnectPlotCleaner(plot)
     return true
 end
 
-function HolyPerformanceProcessOtherPlot(plot, ownPlot)
+function HolyPerformanceProcessPlot(plot, ownPlot)
 
     if HolyPerformanceIsPlot(plot) ~= true then
         return 0,
             0
     end
 
-    if plot == ownPlot then
+    if HolyPerformanceShouldProcessPlot(
+        plot,
+        ownPlot
+    ) ~= true then
+
         return 0,
             0
     end
@@ -17856,9 +17920,17 @@ function HolyPerformanceProcessOtherPlot(plot, ownPlot)
         hidden
 end
 
+function HolyPerformanceProcessOtherPlot(plot, ownPlot)
+
+    return HolyPerformanceProcessPlot(
+        plot,
+        ownPlot
+    )
+end
+
 function HolyPerformanceDeleteOtherGardensOnce(reason)
 
-    if HOLY_DEV_UI_STATE.UnloadOtherGardens ~= true then
+    if HolyPerformanceAnyUnloadEnabled() ~= true then
         return 0
     end
 
@@ -17868,22 +17940,24 @@ function HolyPerformanceDeleteOtherGardensOnce(reason)
     if typeof(gardens) ~= "Instance" then
 
         HolyPerformanceSetStatus(
-            "Waiting for gardens."
+            "Waiting."
         )
 
         return 0
     end
 
-    local ownPlot,
-        marker =
-        HolyPerformanceResolveOwnPlot(
-            gardens
+    local ownPlot =
+        select(
+            1,
+            HolyPerformanceResolveOwnPlot(
+                gardens
+            )
         )
 
     if typeof(ownPlot) ~= "Instance" then
 
         HolyPerformanceSetStatus(
-            "Waiting for own plot."
+            "Waiting."
         )
 
         return 0
@@ -17897,12 +17971,11 @@ function HolyPerformanceDeleteOtherGardensOnce(reason)
 
     for _, plot in ipairs(gardens:GetChildren()) do
 
-        if HolyPerformanceIsPlot(plot) == true
-        and plot ~= ownPlot then
+        if HolyPerformanceIsPlot(plot) == true then
 
             local removed,
                 hidden =
-                HolyPerformanceProcessOtherPlot(
+                HolyPerformanceProcessPlot(
                     plot,
                     ownPlot
                 )
@@ -17916,14 +17989,7 @@ function HolyPerformanceDeleteOtherGardensOnce(reason)
     end
 
     HolyPerformanceSetStatus(
-        "Own="
-            .. tostring(ownPlot.Name)
-            .. " | "
-            .. tostring(marker)
-            .. " | removed "
-            .. tostring(removedThisPass)
-            .. " | hidden "
-            .. tostring(hiddenThisPass)
+        "Applied."
     )
 
     return removedThisPass
@@ -17946,10 +18012,29 @@ function HolyPerformanceConnectGardenWatcher()
         return false
     end
 
+    local ownPlot =
+        HOLY_PERFORMANCE_STATE.OwnPlot
+
+    if typeof(ownPlot) ~= "Instance"
+    or ownPlot.Parent ~= gardens then
+
+        ownPlot =
+            select(
+                1,
+                HolyPerformanceResolveOwnPlot(
+                    gardens
+                )
+            )
+    end
+
     for _, plot in ipairs(gardens:GetChildren()) do
 
         if HolyPerformanceIsPlot(plot) == true
-        and plot ~= HOLY_PERFORMANCE_STATE.OwnPlot then
+        and typeof(ownPlot) == "Instance"
+        and HolyPerformanceShouldProcessPlot(
+            plot,
+            ownPlot
+        ) == true then
 
             HolyPerformanceConnectPlotCleaner(
                 plot
@@ -17963,7 +18048,7 @@ function HolyPerformanceConnectGardenWatcher()
 
             task.delay(0.45, function()
 
-                if HOLY_DEV_UI_STATE.UnloadOtherGardens ~= true
+                if HolyPerformanceAnyUnloadEnabled() ~= true
                 or HOLY_PERFORMANCE_STATE.Active ~= true then
 
                     return
@@ -17992,17 +18077,15 @@ function HolyPerformanceConnectGardenWatcher()
 
                     HOLY_PERFORMANCE_STATE.OwnMarker =
                         marker
-
-                    return
                 end
 
-                local ownPlot =
+                local resolvedOwnPlot =
                     HOLY_PERFORMANCE_STATE.OwnPlot
 
-                if typeof(ownPlot) ~= "Instance"
-                or ownPlot.Parent ~= gardens then
+                if typeof(resolvedOwnPlot) ~= "Instance"
+                or resolvedOwnPlot.Parent ~= gardens then
 
-                    ownPlot =
+                    resolvedOwnPlot =
                         select(
                             1,
                             HolyPerformanceResolveOwnPlot(
@@ -18011,15 +18094,18 @@ function HolyPerformanceConnectGardenWatcher()
                         )
                 end
 
-                if typeof(ownPlot) ~= "Instance" then
+                if typeof(resolvedOwnPlot) ~= "Instance" then
                     return
                 end
 
-                if plot ~= ownPlot then
+                if HolyPerformanceShouldProcessPlot(
+                    plot,
+                    resolvedOwnPlot
+                ) == true then
 
-                    HolyPerformanceProcessOtherPlot(
+                    HolyPerformanceProcessPlot(
                         plot,
-                        ownPlot
+                        resolvedOwnPlot
                     )
                 end
             end)
@@ -18029,10 +18115,11 @@ function HolyPerformanceConnectGardenWatcher()
     return true
 end
 
-function HolyPerformanceStartUnloadOtherGardens(reason)
+function HolyPerformanceStartApply(reason)
 
-    HOLY_DEV_UI_STATE.UnloadOtherGardens =
-        true
+    if HolyPerformanceAnyUnloadEnabled() ~= true then
+        return false
+    end
 
     HOLY_PERFORMANCE_STATE.Active =
         true
@@ -18051,7 +18138,7 @@ function HolyPerformanceStartUnloadOtherGardens(reason)
         local deadline =
             os.clock() + 6
 
-        while HOLY_DEV_UI_STATE.UnloadOtherGardens == true
+        while HolyPerformanceAnyUnloadEnabled() == true
         and HOLY_PERFORMANCE_STATE.Active == true
         and os.clock() <= deadline do
 
@@ -18093,10 +18180,36 @@ function HolyPerformanceStartUnloadOtherGardens(reason)
     return true
 end
 
+function HolyPerformanceStartUnloadOtherGardens(reason)
+
+    HOLY_DEV_UI_STATE.UnloadOtherGardens =
+        true
+
+    HOLY_PERFORMANCE_STATE.Active =
+        true
+
+    return HolyPerformanceStartApply(
+        reason
+        or "performance"
+    )
+end
+
 function HolyPerformanceStopUnloadOtherGardens(reason)
 
     HOLY_DEV_UI_STATE.UnloadOtherGardens =
         false
+
+    HolySaveUISettings()
+
+    if HolyPerformanceAnyUnloadEnabled() == true then
+
+        HOLY_PERFORMANCE_STATE.Active =
+            true
+
+        HolyPerformanceConnectGardenWatcher()
+
+        return true
+    end
 
     HOLY_PERFORMANCE_STATE.Active =
         false
@@ -18106,10 +18219,54 @@ function HolyPerformanceStopUnloadOtherGardens(reason)
 
     HolyPerformanceDisconnectConnections()
 
+    HolyPerformanceSetStatus(
+        "Off."
+    )
+
+    return true
+end
+
+function HolyPerformanceStartUnloadOwnGarden(reason)
+
+    HOLY_DEV_UI_STATE.UnloadOwnGarden =
+        true
+
+    HOLY_PERFORMANCE_STATE.Active =
+        true
+
+    return HolyPerformanceStartApply(
+        reason
+        or "performance"
+    )
+end
+
+function HolyPerformanceStopUnloadOwnGarden(reason)
+
+    HOLY_DEV_UI_STATE.UnloadOwnGarden =
+        false
+
     HolySaveUISettings()
 
+    if HolyPerformanceAnyUnloadEnabled() == true then
+
+        HOLY_PERFORMANCE_STATE.Active =
+            true
+
+        HolyPerformanceConnectGardenWatcher()
+
+        return true
+    end
+
+    HOLY_PERFORMANCE_STATE.Active =
+        false
+
+    HOLY_PERFORMANCE_STATE.Applying =
+        false
+
+    HolyPerformanceDisconnectConnections()
+
     HolyPerformanceSetStatus(
-        "Off. Rejoin restores unloaded gardens."
+        "Off."
     )
 
     return true
@@ -29344,16 +29501,16 @@ end)
 --==================================================
 
 SettingsPerformanceBox:AddToggle(
-    "HolyUnloadOtherGardens",
+    "HolyPerformanceMode",
     {
         Text =
-            "Unload Other Gardens",
+            "Performance Mode",
 
         Default =
             HOLY_DEV_UI_STATE.UnloadOtherGardens == true,
 
         Tooltip =
-            "Removes heavy contents from other players' gardens locally. Keeps plot system objects safe. Rejoin restores unloaded gardens.",
+            "Improves client performance.",
     }
 ):OnChanged(function(value)
 
@@ -29371,11 +29528,49 @@ SettingsPerformanceBox:AddToggle(
     end
 end)
 
+SettingsPerformanceBox:AddToggle(
+    "HolyPerformanceModePlus",
+    {
+        Text =
+            "Performance Mode+",
+
+        Default =
+            HOLY_DEV_UI_STATE.UnloadOwnGarden == true,
+
+        Tooltip =
+            "Stronger client performance profile.",
+    }
+):OnChanged(function(value)
+
+    if value == true then
+
+        HolyPerformanceStartUnloadOwnGarden(
+            "toggle on"
+        )
+
+    else
+
+        HolyPerformanceStopUnloadOwnGarden(
+            "toggle off"
+        )
+    end
+end)
+
 if HOLY_DEV_UI_STATE.UnloadOtherGardens == true then
 
     task.defer(function()
 
         HolyPerformanceStartUnloadOtherGardens(
+            "startup"
+        )
+    end)
+end
+
+if HOLY_DEV_UI_STATE.UnloadOwnGarden == true then
+
+    task.defer(function()
+
+        HolyPerformanceStartUnloadOwnGarden(
             "startup"
         )
     end)
