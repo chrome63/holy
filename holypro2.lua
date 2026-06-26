@@ -11476,7 +11476,7 @@ function HolyServerGetTeleportTimeout()
     return HolyServerNormalizeState().TeleportTimeout
 end
 
-function HolyServerBuildStatusText()
+function HolyServerGetMemoryCounts()
 
     local state =
         HolyServerNormalizeState()
@@ -11489,6 +11489,7 @@ function HolyServerBuildStatusText()
     end
 
     for _ in pairs(state.FailedServers or {}) do
+
         failedCount =
             failedCount + 1
     end
@@ -11501,50 +11502,193 @@ function HolyServerBuildStatusText()
     end
 
     for _ in pairs(state.RecentServers or {}) do
+
         recentCount =
             recentCount + 1
     end
 
+    return recentCount,
+        failedCount
+end
+
+function HolyServerBuildCompactStatusText()
+
+    local state =
+        HolyServerNormalizeState()
+
+    return "Status: "
+        .. tostring(state.LastCandidates)
+        .. " found · "
+        .. tostring(state.LastPagesRead)
+        .. " page(s) · "
+        .. tostring(state.LastFallbackStage)
+        .. " "
+        .. tostring(state.LastSortOrder)
+end
+
+function HolyServerBuildModeStatusText()
+
+    local state =
+        HolyServerNormalizeState()
+
     return "Mode: "
         .. tostring(state.PickStyle)
-        .. " | Range: "
+end
+
+function HolyServerBuildRangeStatusText()
+
+    local state =
+        HolyServerNormalizeState()
+
+    return "Range: "
         .. tostring(state.MinPlayers)
         .. "-"
         .. tostring(state.MaxPlayers)
-        .. " | Target: "
+        .. " · Target: "
         .. tostring(state.TargetPlayers)
-        .. "\nScan: "
+end
+
+function HolyServerBuildScanStatusText()
+
+    local state =
+        HolyServerNormalizeState()
+
+    return "Scan: "
         .. tostring(state.LastCandidates)
-        .. " candidate(s)"
-        .. " | "
+        .. " candidate(s) · "
         .. tostring(state.LastPagesRead)
         .. " page(s)"
-        .. " | "
-        .. tostring(state.LastSortOrder)
-        .. " | "
+end
+
+function HolyServerBuildStageStatusText()
+
+    local state =
+        HolyServerNormalizeState()
+
+    return "Stage: "
         .. tostring(state.LastFallbackStage)
-        .. "\nLast: "
+        .. " · "
+        .. tostring(state.LastSortOrder)
+end
+
+function HolyServerBuildLastStatusText()
+
+    local state =
+        HolyServerNormalizeState()
+
+    return "Last: "
         .. tostring(state.LastStatus or "Ready.")
-        .. "\nTarget: "
+end
+
+function HolyServerBuildTargetStatusText()
+
+    local state =
+        HolyServerNormalizeState()
+
+    return "Target: "
         .. tostring(state.LastTarget or "None")
-        .. "\nMemory: "
+end
+
+function HolyServerBuildMemoryStatusText()
+
+    local recentCount,
+        failedCount =
+        HolyServerGetMemoryCounts()
+
+    return "Memory: "
         .. tostring(recentCount)
-        .. " recent | "
+        .. " recent · "
         .. tostring(failedCount)
         .. " failed"
 end
 
+function HolyServerBuildStatusText()
+
+    return HolyServerBuildModeStatusText()
+        .. "\n"
+        .. HolyServerBuildRangeStatusText()
+        .. "\n"
+        .. HolyServerBuildScanStatusText()
+        .. "\n"
+        .. HolyServerBuildStageStatusText()
+        .. "\n"
+        .. HolyServerBuildLastStatusText()
+        .. "\n"
+        .. HolyServerBuildTargetStatusText()
+        .. "\n"
+        .. HolyServerBuildMemoryStatusText()
+end
+
 function HolyServerRefreshUI()
 
-    if type(HolySniperSetLabel) == "function" then
-
-        HolySniperSetLabel(
-            HOLY_SERVER_UI
-            and HOLY_SERVER_UI.StatusLabel
-            or nil,
-            HolyServerBuildStatusText()
-        )
+    if type(HolySniperSetLabel) ~= "function" then
+        return false
     end
+
+    HolySniperSetLabel(
+        HOLY_SERVER_UI
+        and HOLY_SERVER_UI.CompactStatusLabel
+        or nil,
+        HolyServerBuildCompactStatusText()
+    )
+
+    HolySniperSetLabel(
+        HOLY_SERVER_UI
+        and HOLY_SERVER_UI.ModeLabel
+        or nil,
+        HolyServerBuildModeStatusText()
+    )
+
+    HolySniperSetLabel(
+        HOLY_SERVER_UI
+        and HOLY_SERVER_UI.RangeLabel
+        or nil,
+        HolyServerBuildRangeStatusText()
+    )
+
+    HolySniperSetLabel(
+        HOLY_SERVER_UI
+        and HOLY_SERVER_UI.ScanLabel
+        or nil,
+        HolyServerBuildScanStatusText()
+    )
+
+    HolySniperSetLabel(
+        HOLY_SERVER_UI
+        and HOLY_SERVER_UI.StageLabel
+        or nil,
+        HolyServerBuildStageStatusText()
+    )
+
+    HolySniperSetLabel(
+        HOLY_SERVER_UI
+        and HOLY_SERVER_UI.LastLabel
+        or nil,
+        HolyServerBuildLastStatusText()
+    )
+
+    HolySniperSetLabel(
+        HOLY_SERVER_UI
+        and HOLY_SERVER_UI.TargetLabel
+        or nil,
+        HolyServerBuildTargetStatusText()
+    )
+
+    HolySniperSetLabel(
+        HOLY_SERVER_UI
+        and HOLY_SERVER_UI.MemoryLabel
+        or nil,
+        HolyServerBuildMemoryStatusText()
+    )
+
+    HolySniperSetLabel(
+        HOLY_SERVER_UI
+        and HOLY_SERVER_UI.StatusLabel
+        or nil,
+        HolyServerBuildCompactStatusText()
+    )
+
+    return true
 end
 
 function HolyServerSetStatus(text)
@@ -12476,8 +12620,7 @@ function HolyServerFetchCandidates(allowRecent)
                     sortOrder
 
                 HolyServerSetStatus(
-                    "Scanning "
-                    .. tostring(stage.Name)
+                    tostring(stage.Name)
                     .. " "
                     .. tostring(sortOrder)
                     .. " p"
@@ -13101,9 +13244,7 @@ function HolyQueueSmartServerHop(reason, failCallback)
                 .. tostring(state.MinPlayers)
                 .. "-"
                 .. tostring(state.MaxPlayers)
-                .. " · "
-                .. tostring(state.PickStyle)
-                .. " · attempt "
+                .. " · try "
                 .. tostring(state.HopAttempt)
             )
 
@@ -13184,8 +13325,6 @@ function HolyQueueSmartServerHop(reason, failCallback)
                 .. tostring(target.playing)
                 .. "/"
                 .. tostring(target.maxPlayers)
-                .. " · "
-                .. tostring(state.PickStyle)
                 .. "..."
             )
 
@@ -17391,6 +17530,14 @@ local ServerControlsBox =
         "Server.Controls",
         "Server Controls",
         "server"
+    )
+
+local ServerStatusBox =
+    HolyAddRightGroupbox(
+        Tabs.Server,
+        "Server.Status",
+        "Search Status",
+        "activity"
     )
 
 local SniperEngineBox =
@@ -26557,10 +26704,52 @@ ServerHopButton:AddButton({
         end,
 })
 
-HOLY_SERVER_UI.StatusLabel =
+HOLY_SERVER_UI.CompactStatusLabel =
     HolySniperAddLabel(
         ServerControlsBox,
-        HolyServerBuildStatusText()
+        HolyServerBuildCompactStatusText()
+    )
+
+HOLY_SERVER_UI.ModeLabel =
+    HolySniperAddLabel(
+        ServerStatusBox,
+        HolyServerBuildModeStatusText()
+    )
+
+HOLY_SERVER_UI.RangeLabel =
+    HolySniperAddLabel(
+        ServerStatusBox,
+        HolyServerBuildRangeStatusText()
+    )
+
+HOLY_SERVER_UI.ScanLabel =
+    HolySniperAddLabel(
+        ServerStatusBox,
+        HolyServerBuildScanStatusText()
+    )
+
+HOLY_SERVER_UI.StageLabel =
+    HolySniperAddLabel(
+        ServerStatusBox,
+        HolyServerBuildStageStatusText()
+    )
+
+HOLY_SERVER_UI.LastLabel =
+    HolySniperAddLabel(
+        ServerStatusBox,
+        HolyServerBuildLastStatusText()
+    )
+
+HOLY_SERVER_UI.TargetLabel =
+    HolySniperAddLabel(
+        ServerStatusBox,
+        HolyServerBuildTargetStatusText()
+    )
+
+HOLY_SERVER_UI.MemoryLabel =
+    HolySniperAddLabel(
+        ServerStatusBox,
+        HolyServerBuildMemoryStatusText()
     )
 
 HolyServerRefreshUI()
