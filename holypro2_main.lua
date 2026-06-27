@@ -12561,6 +12561,299 @@ function HolyParseScale(value)
     )
 end
 
+function HolyServerFinderReadHudScale(value)
+
+    local rawValue =
+        tostring(value or "80%")
+
+    local cleanedValue =
+        rawValue:gsub(
+            "%%",
+            ""
+        )
+
+    local scale =
+        tonumber(
+            cleanedValue
+        )
+
+    if not scale then
+
+        scale =
+            80
+    end
+
+    return math.clamp(
+        math.floor(scale + 0.5),
+        60,
+        110
+    )
+end
+
+function HolyServerFinderFormatHudScale(value)
+
+    return tostring(
+        HolyServerFinderReadHudScale(
+            value
+        )
+    )
+        .. "%"
+end
+
+function HolyServerFinderGetHudScale()
+
+    HOLY_SERVER_FINDER_STATE =
+        type(HOLY_SERVER_FINDER_STATE) == "table"
+        and HOLY_SERVER_FINDER_STATE
+        or {}
+
+    HOLY_SERVER_FINDER_STATE.HudScale =
+        HolyServerFinderReadHudScale(
+            HOLY_SERVER_FINDER_STATE.HudScale
+            or 80
+        )
+
+    return HOLY_SERVER_FINDER_STATE.HudScale
+end
+
+function HolyServerFinderGetHudScaleFactor()
+
+    return HolyServerFinderGetHudScale() / 100
+end
+
+function HolyServerFinderClampFrameToScreen(frame)
+
+    if typeof(frame) ~= "Instance"
+    or frame:IsA("GuiObject") ~= true then
+
+        return false
+    end
+
+    task.defer(function()
+
+        if typeof(frame) ~= "Instance"
+        or frame.Parent == nil
+        or frame:IsA("GuiObject") ~= true then
+
+            return
+        end
+
+        local camera =
+            workspace.CurrentCamera
+
+        local viewport =
+            camera
+            and camera.ViewportSize
+            or Vector2.new(
+                1280,
+                720
+            )
+
+        local size =
+            frame.AbsoluteSize
+
+        local width =
+            math.max(
+                60,
+                tonumber(size.X)
+                or 60
+            )
+
+        local height =
+            math.max(
+                40,
+                tonumber(size.Y)
+                or 40
+            )
+
+        local x =
+            math.floor(
+                frame.Position.X.Offset + 0.5
+            )
+
+        local y =
+            math.floor(
+                frame.Position.Y.Offset + 0.5
+            )
+
+        x =
+            math.clamp(
+                x,
+                6,
+                math.max(
+                    6,
+                    viewport.X - width - 6
+                )
+            )
+
+        y =
+            math.clamp(
+                y,
+                6,
+                math.max(
+                    6,
+                    viewport.Y - height - 6
+                )
+            )
+
+        frame.Position =
+            UDim2.fromOffset(
+                x,
+                y
+            )
+    end)
+
+    return true
+end
+
+function HolyServerFinderApplyScaleToFrame(frame, scale)
+
+    if typeof(frame) ~= "Instance"
+    or frame:IsA("GuiObject") ~= true then
+
+        return false
+    end
+
+    scale =
+        tonumber(scale)
+        or HolyServerFinderGetHudScaleFactor()
+
+    scale =
+        math.clamp(
+            scale,
+            0.60,
+            1.10
+        )
+
+    local uiScale =
+        frame:FindFirstChild(
+            "HolyServerFinderUIScale"
+        )
+
+    if typeof(uiScale) ~= "Instance"
+    or uiScale:IsA("UIScale") ~= true then
+
+        uiScale =
+            Instance.new(
+                "UIScale"
+            )
+
+        uiScale.Name =
+            "HolyServerFinderUIScale"
+
+        uiScale.Parent =
+            frame
+    end
+
+    uiScale.Scale =
+        scale
+
+    HolyServerFinderClampFrameToScreen(
+        frame
+    )
+
+    return true
+end
+
+function HolyServerFinderApplyScaleToUi(ui)
+
+    if type(ui) ~= "table" then
+        return false
+    end
+
+    return HolyServerFinderApplyScaleToFrame(
+        ui.Holder
+    )
+end
+
+function HolyServerFinderApplyScaleToHud(hud)
+
+    local scale =
+        HolyServerFinderGetHudScaleFactor()
+
+    if type(hud) ~= "table" then
+        return false
+    end
+
+    if type(hud.SetScale) == "function" then
+
+        pcall(function()
+
+            hud:SetScale(
+                scale
+            )
+        end)
+    end
+
+    local applied =
+        false
+
+    for _, key in ipairs({
+        "Holder",
+        "Frame",
+        "Main",
+        "Root",
+        "Window",
+        "HudFrame",
+        "HUDFrame",
+        "FilterFrame",
+        "FilterHolder",
+        "FiltersFrame",
+        "FiltersHolder",
+    }) do
+
+        if HolyServerFinderApplyScaleToFrame(
+            hud[key],
+            scale
+        ) == true then
+
+            applied =
+                true
+        end
+    end
+
+    return applied
+end
+
+function HolyServerFinderApplyScaleEverywhere()
+
+    HolyServerFinderApplyScaleToHud(
+        HOLY_SERVER_FINDER_HUD
+    )
+
+    HolyServerFinderApplyScaleToUi(
+        HOLY_SERVER_FINDER_AUTO_JOIN_RULES_UI
+    )
+
+    HolyServerFinderApplyScaleToUi(
+        HOLY_SERVER_FINDER_AUTO_JOIN_EDIT_UI
+    )
+
+    return true
+end
+
+function HolyServerFinderSetHudScale(value)
+
+    HOLY_SERVER_FINDER_STATE =
+        type(HOLY_SERVER_FINDER_STATE) == "table"
+        and HOLY_SERVER_FINDER_STATE
+        or {}
+
+    HOLY_SERVER_FINDER_STATE.HudScale =
+        HolyServerFinderReadHudScale(
+            value
+        )
+
+    HolyServerFinderApplyScaleEverywhere()
+
+    if type(HolyQueueSaveServerFinderSettings) == "function" then
+
+        HolyQueueSaveServerFinderSettings()
+    end
+
+    return true
+end
+
 function HolyCopyText(text)
 
     local clipboard =
@@ -20875,6 +21168,8 @@ HOLY_SERVER_FINDER_STATE = {
 
     Minimized = false,
 
+    HudScale = 80,
+
     Position = nil,
     FilterPosition =
         nil,
@@ -23992,6 +24287,10 @@ function HolyServerFinderCreateFixedPopup(title, width, height, position, zIndex
     holder.Parent =
         root
 
+    HolyServerFinderApplyScaleToFrame(
+        holder
+    )
+
     local corner =
         Instance.new(
             "UICorner"
@@ -25390,6 +25689,8 @@ function HolyServerFinderOpenAutoJoinEditPopup(index)
 
     HolyServerFinderRefreshEditPopup()
 
+    HolyServerFinderApplyScaleEverywhere()
+
     if typeof(rulesHolder) == "Instance"
     and typeof(ui.Holder) == "Instance" then
 
@@ -26097,6 +26398,8 @@ function HolyServerFinderShowAutoJoinRulesPopup()
 
     HolyServerFinderRefreshAutoJoinRulesPopup()
 
+    HolyServerFinderApplyScaleEverywhere()
+
     ui.Holder.Visible =
         true
 
@@ -26125,6 +26428,9 @@ function HolyServerFinderBuildSavePayload()
 
         HideFull =
             HOLY_SERVER_FINDER_STATE.HideFull ~= false,
+
+        HudScale =
+            HolyServerFinderGetHudScale(),
 
         SelectedPets =
             HolyServerFinderArrayFromMap(
@@ -26324,6 +26630,14 @@ function HolyLoadServerFinderSettings()
 
     HOLY_SERVER_FINDER_STATE.HideFull =
         data.HideFull ~= false
+
+    HOLY_SERVER_FINDER_STATE.HudScale =
+        HolyServerFinderReadHudScale(
+            data.HudScale
+            or data.Scale
+            or HOLY_SERVER_FINDER_STATE.HudScale
+            or 80
+        )
 
     HOLY_SERVER_FINDER_STATE.SelectedPets =
         HolyServerFinderMapFromArray(
@@ -29818,6 +30132,14 @@ function HolyServerFinderPullStateFromHud(hud)
             settings.FilterPosition
         )
 
+    HOLY_SERVER_FINDER_STATE.HudScale =
+        HolyServerFinderReadHudScale(
+            settings.HudScale
+            or settings.Scale
+            or HOLY_SERVER_FINDER_STATE.HudScale
+            or 80
+        )
+
     HOLY_SERVER_FINDER_STATE.AutoJoinMode =
         HolyServerFinderNormalizeAutoJoinMode(
             settings.AutoJoinMode
@@ -29882,7 +30204,17 @@ function HolyServerFinderApplyStateToHud(hud)
 
         FilterPosition =
             HOLY_SERVER_FINDER_STATE.FilterPosition,
+
+        HudScale =
+            HolyServerFinderGetHudScale(),
+
+        Scale =
+            HolyServerFinderGetHudScaleFactor(),
     })
+
+    HolyServerFinderApplyScaleToHud(
+        hud
+    )
 
     return true
 end
@@ -29966,6 +30298,12 @@ function HolyServerFinderOpenHud()
 
                 HideFull =
                     HOLY_SERVER_FINDER_STATE.HideFull ~= false,
+
+                HudScale =
+                    HolyServerFinderGetHudScale(),
+
+                Scale =
+                    HolyServerFinderGetHudScaleFactor(),
 
                 AutoJoinMode =
                     HolyServerFinderNormalizeAutoJoinMode(
@@ -32549,6 +32887,46 @@ SettingsUIBox:AddDropdown(
     )
 
     HolySaveUISettings()
+end)
+
+SettingsUIBox:AddDropdown(
+    "HolyServerFinderHudScale",
+    {
+        Text =
+            "Server Finder Scale",
+
+        Values = {
+            "60%",
+            "70%",
+            "80%",
+            "90%",
+            "100%",
+            "110%",
+        },
+
+        Default =
+            HolyServerFinderFormatHudScale(
+                HOLY_SERVER_FINDER_STATE.HudScale
+                or 80
+            ),
+
+        Multi =
+            false,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            6,
+
+        Tooltip =
+            "Changes Server Finder HUD, filters, and auto-join rule popups size.",
+    }
+):OnChanged(function(value)
+
+    HolyServerFinderSetHudScale(
+        value
+    )
 end)
 
 --==================================================
