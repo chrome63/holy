@@ -46,7 +46,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260626-petdata-loader-v2"
+    "holy-premium-20260626-autofarm_middle_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -144,6 +144,7 @@ HOLY_DEV_UI_STATE = {
     DPIScale = 100,
     AutoSkipLoading = true,
     AntiAfk = true,
+    AutoFarmMiddle = true,
 
     UnloadOtherGardens = false,
     UnloadOwnGarden = false,
@@ -320,6 +321,71 @@ HOLY_LOADING_SKIP_STATE = {
     LogsPrinted = 0,
 }
 
+if type(HOLY_FARM_MIDDLE_STATE) == "table" then
+
+    HOLY_FARM_MIDDLE_STATE.Token =
+        nil
+
+    HOLY_FARM_MIDDLE_STATE.Running =
+        false
+
+    if HOLY_FARM_MIDDLE_STATE.CharacterConnection then
+
+        pcall(function()
+
+            HOLY_FARM_MIDDLE_STATE.CharacterConnection:Disconnect()
+        end)
+    end
+
+    if type(HOLY_FARM_MIDDLE_STATE.InputConnections) == "table" then
+
+        for _, connection in ipairs(HOLY_FARM_MIDDLE_STATE.InputConnections) do
+
+            pcall(function()
+
+                connection:Disconnect()
+            end)
+        end
+    end
+end
+
+HOLY_FARM_MIDDLE_STATE = {
+    Enabled = true,
+    Running = false,
+    Token = nil,
+
+    CharacterConnection = nil,
+    InputConnections = {},
+
+    ManualCancelled = false,
+    Done = false,
+    Moving = false,
+    CancelArmed = false,
+
+    StartedAt = 0,
+    LastMoveAt = 0,
+    LastStatusAt = 0,
+    LastResolveAt = 0,
+
+    AcceptManualInputAfter = 0,
+
+    TargetCFrame = nil,
+    TargetResolvedAt = 0,
+
+    StopDistance = 10,
+    MaxRunSeconds = 75,
+    MoveRetryDelay = 0.35,
+    TargetRefreshSeconds = 2,
+    StartAfterLoadingDelay = 0.35,
+    SniperPauseDelay = 0.18,
+    MissingTargetDelay = 0.25,
+    ManualCancelGrace = 0.20,
+
+    LastStatus = "Ready",
+    LastReason = "",
+    LastDistance = 0,
+}
+
 HOLY_SNIPER_STATE = {
     ActivateSniper = false,
     AutoHop = false,
@@ -338,6 +404,9 @@ HOLY_SNIPER_STATE = {
     BuilderPriority = "High",
 
     Watchlist = {},
+
+    WatchlistPage = 1,
+    WatchlistPageSize = 7,
 
     MovementMode = "Walk",
     BuyMode = "Instant",
@@ -360,6 +429,7 @@ HOLY_SNIPER_UI = {
     StatusLabel = nil,
     WatchlistLabel = nil,
     WatchlistTable = nil,
+    WatchlistPager = nil,
 
     LivePetsList = nil,
     LivePetsActions = nil,
@@ -907,6 +977,9 @@ function HolySaveUISettings()
         AntiAfk =
             HOLY_DEV_UI_STATE.AntiAfk == true,
 
+        AutoFarmMiddle =
+            HOLY_DEV_UI_STATE.AutoFarmMiddle == true,
+
         UnloadOtherGardens =
             HOLY_DEV_UI_STATE.UnloadOtherGardens == true,
 
@@ -1030,6 +1103,12 @@ function HolyLoadUISettings()
 
         HOLY_DEV_UI_STATE.AntiAfk =
             data.AntiAfk
+    end
+
+    if type(data.AutoFarmMiddle) == "boolean" then
+
+        HOLY_DEV_UI_STATE.AutoFarmMiddle =
+            data.AutoFarmMiddle
     end
 
     if type(data.UnloadOtherGardens) == "boolean" then
@@ -3211,7 +3290,7 @@ function HolySniperMatchesSearch(row, searchText)
     ) ~= nil
 end
 
-function HolySniperBuildWatchlistRows()
+function HolySniperBuildAllWatchlistRows()
 
     local rows =
         {}
@@ -3301,6 +3380,211 @@ function HolySniperBuildWatchlistRows()
 
     return rows
 end
+
+function HolySniperGetWatchlistPageSize()
+
+    local pageSize =
+        math.floor(
+            tonumber(
+                HOLY_SNIPER_STATE.WatchlistPageSize
+            )
+            or 7
+        )
+
+    return math.clamp(
+        pageSize,
+        1,
+        20
+    )
+end
+
+function HolySniperGetWatchlistPageCount(totalRows)
+
+    totalRows =
+        math.max(
+            0,
+            math.floor(
+                tonumber(totalRows)
+                or 0
+            )
+        )
+
+    local pageSize =
+        HolySniperGetWatchlistPageSize()
+
+    return math.max(
+        1,
+        math.ceil(
+            totalRows / pageSize
+        )
+    )
+end
+
+function HolySniperClampWatchlistPage(totalRows)
+
+    local pageCount =
+        HolySniperGetWatchlistPageCount(
+            totalRows
+        )
+
+    local page =
+        math.floor(
+            tonumber(
+                HOLY_SNIPER_STATE.WatchlistPage
+            )
+            or 1
+        )
+
+    page =
+        math.clamp(
+            page,
+            1,
+            pageCount
+        )
+
+    HOLY_SNIPER_STATE.WatchlistPage =
+        page
+
+    return page,
+        pageCount
+end
+
+function HolySniperBuildWatchlistRows()
+
+    local allRows =
+        HolySniperBuildAllWatchlistRows()
+
+    local page,
+        pageCount =
+        HolySniperClampWatchlistPage(
+            #allRows
+        )
+
+    local pageSize =
+        HolySniperGetWatchlistPageSize()
+
+    local firstIndex =
+        ((page - 1) * pageSize) + 1
+
+    local lastIndex =
+        math.min(
+            #allRows,
+            firstIndex + pageSize - 1
+        )
+
+    local pageRows =
+        {}
+
+    for index = firstIndex, lastIndex do
+
+        if type(allRows[index]) == "table" then
+
+            table.insert(
+                pageRows,
+                allRows[index]
+            )
+        end
+    end
+
+    return pageRows,
+        {
+            Page =
+                page,
+
+            PageCount =
+                pageCount,
+
+            TotalRows =
+                #allRows,
+
+            FirstIndex =
+                firstIndex,
+
+            LastIndex =
+                lastIndex,
+        }
+end
+
+function HolySniperBuildWatchlistPageText()
+
+    local allRows =
+        HolySniperBuildAllWatchlistRows()
+
+    local page,
+        pageCount =
+        HolySniperClampWatchlistPage(
+            #allRows
+        )
+
+    return "Page "
+        .. tostring(page)
+        .. "/"
+        .. tostring(pageCount)
+end
+
+function HolySniperSetWatchlistPage(page)
+
+    local allRows =
+        HolySniperBuildAllWatchlistRows()
+
+    local pageCount =
+        HolySniperGetWatchlistPageCount(
+            #allRows
+        )
+
+    HOLY_SNIPER_STATE.WatchlistPage =
+        math.clamp(
+            math.floor(
+                tonumber(page)
+                or 1
+            ),
+            1,
+            pageCount
+        )
+
+    HOLY_SNIPER_STATE.SelectedWatchlistSourceIndex =
+        nil
+
+    if HOLY_SNIPER_UI
+    and type(HOLY_SNIPER_UI.WatchlistTable) == "table"
+    and type(HOLY_SNIPER_UI.WatchlistTable.SetSelected) == "function" then
+
+        HOLY_SNIPER_UI.WatchlistTable:SetSelected(
+            nil
+        )
+    end
+
+    HolySniperRefreshUI()
+
+    return true
+end
+
+function HolySniperWatchlistPrevPage()
+
+    return HolySniperSetWatchlistPage(
+        (
+            tonumber(
+                HOLY_SNIPER_STATE.WatchlistPage
+            )
+            or 1
+        )
+        - 1
+    )
+end
+
+function HolySniperWatchlistNextPage()
+
+    return HolySniperSetWatchlistPage(
+        (
+            tonumber(
+                HOLY_SNIPER_STATE.WatchlistPage
+            )
+            or 1
+        )
+        + 1
+    )
+end
+
 
 function HolySniperBuildWatchlistText()
 
@@ -3444,11 +3728,15 @@ function HolySniperRefreshUI()
         HolySniperBuildStatusText()
     )
 
+    local pageRows,
+        pageInfo =
+        HolySniperBuildWatchlistRows()
+
     if type(HOLY_SNIPER_UI.WatchlistTable) == "table"
     and type(HOLY_SNIPER_UI.WatchlistTable.SetRows) == "function" then
 
         HOLY_SNIPER_UI.WatchlistTable:SetRows(
-            HolySniperBuildWatchlistRows()
+            pageRows
         )
 
     else
@@ -3457,6 +3745,50 @@ function HolySniperRefreshUI()
             HOLY_SNIPER_UI.WatchlistLabel,
             HolySniperBuildWatchlistText()
         )
+    end
+
+    local pager =
+        HOLY_SNIPER_UI.WatchlistPager
+
+    if type(pager) == "table" then
+
+        local page =
+            tonumber(
+                pageInfo
+                and pageInfo.Page
+            )
+            or 1
+
+        local pageCount =
+            tonumber(
+                pageInfo
+                and pageInfo.PageCount
+            )
+            or 1
+
+        if type(pager.SetText) == "function" then
+
+            pager:SetText(
+                "Page",
+                "Page "
+                .. tostring(page)
+                .. "/"
+                .. tostring(pageCount)
+            )
+        end
+
+        if type(pager.SetDisabled) == "function" then
+
+            pager:SetDisabled(
+                "Prev",
+                page <= 1
+            )
+
+            pager:SetDisabled(
+                "Next",
+                page >= pageCount
+            )
+        end
     end
 end
 
@@ -6463,6 +6795,1131 @@ function HolySniperGetFarmCenterCFrame(forceRefresh)
         os.clock()
 
     return cframe
+end
+
+function HolyFarmMiddleGetState()
+
+    HOLY_FARM_MIDDLE_STATE =
+        type(HOLY_FARM_MIDDLE_STATE) == "table"
+        and HOLY_FARM_MIDDLE_STATE
+        or {}
+
+    local state =
+        HOLY_FARM_MIDDLE_STATE
+
+    state.InputConnections =
+        type(state.InputConnections) == "table"
+        and state.InputConnections
+        or {}
+
+    state.StopDistance =
+        math.clamp(
+            tonumber(state.StopDistance)
+            or 10,
+            6,
+            18
+        )
+
+    state.MaxRunSeconds =
+        math.clamp(
+            tonumber(state.MaxRunSeconds)
+            or 75,
+            15,
+            180
+        )
+
+    state.MoveRetryDelay =
+        math.clamp(
+            tonumber(state.MoveRetryDelay)
+            or 0.35,
+            0.12,
+            1
+        )
+
+    state.TargetRefreshSeconds =
+        math.clamp(
+            tonumber(state.TargetRefreshSeconds)
+            or 2,
+            0.5,
+            10
+        )
+
+    state.StartAfterLoadingDelay =
+        math.clamp(
+            tonumber(state.StartAfterLoadingDelay)
+            or 0.35,
+            0,
+            3
+        )
+
+    state.SniperPauseDelay =
+        math.clamp(
+            tonumber(state.SniperPauseDelay)
+            or 0.18,
+            0.08,
+            1
+        )
+
+    state.MissingTargetDelay =
+        math.clamp(
+            tonumber(state.MissingTargetDelay)
+            or 0.25,
+            0.10,
+            2
+        )
+
+    state.ManualCancelGrace =
+        math.clamp(
+            tonumber(state.ManualCancelGrace)
+            or 0.20,
+            0,
+            1
+        )
+
+    state.Enabled =
+        HOLY_DEV_UI_STATE.AutoFarmMiddle == true
+
+    return state
+end
+
+function HolyFarmMiddleSetStatus(status, reason)
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    state.LastStatus =
+        tostring(status or "Ready")
+
+    state.LastReason =
+        tostring(reason or "")
+
+    state.LastStatusAt =
+        os.clock()
+end
+
+function HolyFarmMiddleStopMovement()
+
+    local humanoid =
+        HolySniperGetCharacterHumanoid()
+
+    local root =
+        HolySniperGetCharacterRoot()
+
+    if type(HolySniperStopHumanoidMovement) == "function" then
+
+        HolySniperStopHumanoidMovement(
+            humanoid,
+            root
+        )
+    end
+
+    if type(HolySniperZeroRootVelocity) == "function" then
+
+        HolySniperZeroRootVelocity(
+            root
+        )
+    end
+
+    return true
+end
+
+function HolyFarmMiddleDisconnectInputWatcher()
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    for _, connection in ipairs(state.InputConnections or {}) do
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+
+    state.InputConnections =
+        {}
+
+    state.InputWatcherStarted =
+        false
+end
+
+function HolyFarmMiddleCancel(reason)
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    state.ManualCancelled =
+        true
+
+    state.Running =
+        false
+
+    state.Moving =
+        false
+
+    state.Token =
+        nil
+
+    state.CancelArmed =
+        false
+
+    HolyFarmMiddleStopMovement()
+
+    HolyFarmMiddleSetStatus(
+        "Cancelled",
+        reason or "manual movement"
+    )
+
+    return true
+end
+
+function HolyFarmMiddleInputIsCancel(input)
+
+    if typeof(input) ~= "InputObject" then
+        return false
+    end
+
+    if input.UserInputType == Enum.UserInputType.Gamepad1
+    and input.KeyCode == Enum.KeyCode.Thumbstick1 then
+
+        local position =
+            input.Position
+
+        if typeof(position) == "Vector3" then
+
+            if math.abs(position.X) < 0.18
+            and math.abs(position.Y) < 0.18 then
+
+                return false
+            end
+        end
+    end
+
+    if type(HolySniperIsManualMovementInput) == "function" then
+
+        return HolySniperIsManualMovementInput(
+            input
+        ) == true
+    end
+
+    local keyCode =
+        input.KeyCode
+
+    return keyCode == Enum.KeyCode.W
+        or keyCode == Enum.KeyCode.A
+        or keyCode == Enum.KeyCode.S
+        or keyCode == Enum.KeyCode.D
+        or keyCode == Enum.KeyCode.Up
+        or keyCode == Enum.KeyCode.Down
+        or keyCode == Enum.KeyCode.Left
+        or keyCode == Enum.KeyCode.Right
+        or keyCode == Enum.KeyCode.Space
+end
+
+function HolyFarmMiddleMarkManualInput(input)
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    if state.Running ~= true then
+        return false
+    end
+
+    if state.CancelArmed ~= true then
+        return false
+    end
+
+    if state.Done == true
+    or state.ManualCancelled == true then
+
+        return false
+    end
+
+    if os.clock() < (
+        tonumber(state.AcceptManualInputAfter)
+        or 0
+    ) then
+
+        return false
+    end
+
+    local focusedTextBox =
+        nil
+
+    pcall(function()
+
+        focusedTextBox =
+            UserInputService:GetFocusedTextBox()
+    end)
+
+    if focusedTextBox ~= nil then
+        return false
+    end
+
+    if HolyFarmMiddleInputIsCancel(input) ~= true then
+        return false
+    end
+
+    return HolyFarmMiddleCancel(
+        "manual movement"
+    )
+end
+
+function HolyFarmMiddleConnectInputWatcher()
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    if state.InputWatcherStarted == true then
+        return true
+    end
+
+    state.InputWatcherStarted =
+        true
+
+    state.InputConnections =
+        type(state.InputConnections) == "table"
+        and state.InputConnections
+        or {}
+
+    table.insert(
+        state.InputConnections,
+        UserInputService.InputBegan:Connect(function(input)
+
+            HolyFarmMiddleMarkManualInput(
+                input
+            )
+        end)
+    )
+
+    table.insert(
+        state.InputConnections,
+        UserInputService.InputChanged:Connect(function(input)
+
+            if input.UserInputType == Enum.UserInputType.Gamepad1
+            and input.KeyCode == Enum.KeyCode.Thumbstick1 then
+
+                HolyFarmMiddleMarkManualInput(
+                    input
+                )
+            end
+        end)
+    )
+
+    return true
+end
+
+function HolyFarmMiddleManualInputDown()
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    if state.CancelArmed ~= true then
+        return false
+    end
+
+    if os.clock() < (
+        tonumber(state.AcceptManualInputAfter)
+        or 0
+    ) then
+
+        return false
+    end
+
+    local focusedTextBox =
+        nil
+
+    pcall(function()
+
+        focusedTextBox =
+            UserInputService:GetFocusedTextBox()
+    end)
+
+    if focusedTextBox ~= nil then
+        return false
+    end
+
+    if type(HolySniperMovementInputIsDown) == "function" then
+
+        return HolySniperMovementInputIsDown() == true
+    end
+
+    return false
+end
+
+function HolyFarmMiddleLoadingReady()
+
+    if HolySniperGetCharacterRoot() == nil then
+
+        return false,
+            "character"
+    end
+
+    local loadingGui =
+        nil
+
+    if type(HolyLoadingGetWorkspaceLoadingGui) == "function" then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return HolyLoadingGetWorkspaceLoadingGui()
+            end)
+
+        if ok == true then
+
+            loadingGui =
+                result
+        end
+    end
+
+    if loadingGui ~= nil then
+
+        if type(HOLY_LOADING_SKIP_STATE) == "table"
+        and HOLY_LOADING_SKIP_STATE.PressedFinal == true then
+
+            return true,
+                "final pressed"
+        end
+
+        return false,
+            "loading"
+    end
+
+    if type(HOLY_LOADING_SKIP_STATE) == "table"
+    and HOLY_DEV_UI_STATE.AutoSkipLoading == true
+    and HOLY_LOADING_SKIP_STATE.Running == true
+    and HOLY_LOADING_SKIP_STATE.ClickedSkip ~= true
+    and HOLY_LOADING_SKIP_STATE.PressedFinal ~= true then
+
+        return false,
+            "skip loading"
+    end
+
+    return true,
+        "ready"
+end
+
+function HolyFarmMiddleSeedCollectorBusy()
+
+    local states = {
+        rawget(_G, "HOLY_SEED_COLLECTOR_STATE"),
+        rawget(_G, "HOLY_AUTO_COLLECT_SEEDS_STATE"),
+        rawget(_G, "GAG2_AUTO_COLLECT_SEEDS_STATE"),
+    }
+
+    for _, seedState in ipairs(states) do
+
+        if type(seedState) == "table" then
+
+            if seedState.Busy == true
+            or seedState.Moving == true
+            or seedState.Collecting == true
+            or seedState.Claiming == true
+            or seedState.Walking == true then
+
+                return true,
+                    "seed collector"
+            end
+
+            if seedState.Enabled == true
+            and seedState.Running == true
+            and (
+                seedState.CurrentTarget ~= nil
+                or seedState.Target ~= nil
+            ) then
+
+                return true,
+                    "seed collector"
+            end
+        end
+    end
+
+    return false,
+        "clear"
+end
+
+function HolyFarmMiddleSniperBusy()
+
+    local runtime =
+        type(HOLY_SNIPER_RUNTIME) == "table"
+        and HOLY_SNIPER_RUNTIME
+        or {}
+
+    if runtime.Buying == true then
+        return true, "sniper buying"
+    end
+
+    if runtime.Returning == true then
+        return true, "sniper returning"
+    end
+
+    if runtime.AutoHopInProgress == true then
+        return true, "auto hop"
+    end
+
+    if runtime.CurrentTarget ~= nil then
+        return true, "sniper target"
+    end
+
+    if HolyCleanText(runtime.CurrentTargetKey) ~= "" then
+        return true, "sniper target"
+    end
+
+    if runtime.BatchActive == true then
+        return true, "sniper batch"
+    end
+
+    if type(HolySniperTargetLockActive) == "function" then
+
+        local ok,
+            active,
+            reason =
+            pcall(function()
+
+                return HolySniperTargetLockActive()
+            end)
+
+        if ok == true
+        and active == true then
+
+            return true,
+                tostring(reason or "target locked")
+        end
+    end
+
+    if type(HolySniperPetBuyProtectionActive) == "function" then
+
+        local ok,
+            active,
+            reason =
+            pcall(function()
+
+                return HolySniperPetBuyProtectionActive()
+            end)
+
+        if ok == true
+        and active == true then
+
+            return true,
+                tostring(reason or "pet buy protection")
+        end
+    end
+
+    local lastMatchAt =
+        tonumber(runtime.LastMatchAt)
+        or 0
+
+    local matchCount =
+        tonumber(runtime.MatchCount)
+        or 0
+
+    if matchCount > 0
+    and os.clock() - lastMatchAt <= 3 then
+
+        return true,
+            "match found"
+    end
+
+    local seedBusy,
+        seedReason =
+        HolyFarmMiddleSeedCollectorBusy()
+
+    if seedBusy == true then
+        return true, seedReason
+    end
+
+    return false,
+        "clear"
+end
+
+function HolyFarmMiddleResolveTarget(forceRefresh)
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    if forceRefresh ~= true
+    and typeof(state.TargetCFrame) == "CFrame"
+    and os.clock() - (
+        tonumber(state.TargetResolvedAt)
+        or 0
+    ) < state.TargetRefreshSeconds then
+
+        return state.TargetCFrame
+    end
+
+    local cframe =
+        nil
+
+    if type(HolySniperGetFarmCenterCFrame) == "function" then
+
+        cframe =
+            HolySniperGetFarmCenterCFrame(
+                true
+            )
+    end
+
+    if typeof(cframe) == "CFrame" then
+
+        state.TargetCFrame =
+            cframe
+
+        state.TargetResolvedAt =
+            os.clock()
+
+        return cframe
+    end
+
+    return nil
+end
+
+function HolyFarmMiddleFlatDistance(root, targetPosition)
+
+    if typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true
+    or typeof(targetPosition) ~= "Vector3" then
+
+        return math.huge
+    end
+
+    return (
+        Vector3.new(
+            root.Position.X,
+            0,
+            root.Position.Z
+        )
+        -
+        Vector3.new(
+            targetPosition.X,
+            0,
+            targetPosition.Z
+        )
+    ).Magnitude
+end
+
+function HolyFarmMiddleRunWorker(token, reason)
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    state.StartedAt =
+        os.clock()
+
+    state.Running =
+        true
+
+    state.Done =
+        false
+
+    state.Moving =
+        false
+
+    state.ManualCancelled =
+        false
+
+    state.CancelArmed =
+        false
+
+    state.AcceptManualInputAfter =
+        0
+
+    state.TargetCFrame =
+        nil
+
+    state.TargetResolvedAt =
+        0
+
+    local loadingReadyAt =
+        0
+
+    HolyFarmMiddleSetStatus(
+        "Waiting loading",
+        tostring(reason or "startup")
+    )
+
+    while state.Token == token
+    and state.Enabled == true
+    and HOLY_DEV_UI_STATE.AutoFarmMiddle == true
+    and os.clock() - state.StartedAt <= state.MaxRunSeconds do
+
+        if state.ManualCancelled == true then
+
+            HolyFarmMiddleStopMovement()
+
+            state.Running =
+                false
+
+            state.Moving =
+                false
+
+            return false
+        end
+
+        local loadingReady,
+            loadingReason =
+            HolyFarmMiddleLoadingReady()
+
+        if loadingReady ~= true then
+
+            state.CancelArmed =
+                false
+
+            state.Moving =
+                false
+
+            HolyFarmMiddleSetStatus(
+                "Waiting loading",
+                loadingReason
+            )
+
+            task.wait(
+                0.15
+            )
+
+            continue
+        end
+
+        if loadingReadyAt <= 0 then
+
+            loadingReadyAt =
+                os.clock()
+
+            state.CancelArmed =
+                true
+
+            state.AcceptManualInputAfter =
+                os.clock()
+                + state.ManualCancelGrace
+                + state.StartAfterLoadingDelay
+
+            HolyFarmMiddleSetStatus(
+                "Settling",
+                "loading ready"
+            )
+        end
+
+        if os.clock() - loadingReadyAt < state.StartAfterLoadingDelay then
+
+            task.wait(
+                0.05
+            )
+
+            continue
+        end
+
+        if HolyFarmMiddleManualInputDown() == true then
+
+            HolyFarmMiddleCancel(
+                "manual movement"
+            )
+
+            return false
+        end
+
+        local sniperBusy,
+            busyReason =
+            HolyFarmMiddleSniperBusy()
+
+        if sniperBusy == true then
+
+            state.Moving =
+                false
+
+            HolyFarmMiddleStopMovement()
+
+            HolyFarmMiddleSetStatus(
+                "Paused",
+                busyReason
+            )
+
+            task.wait(
+                state.SniperPauseDelay
+            )
+
+            continue
+        end
+
+        local targetCFrame =
+            HolyFarmMiddleResolveTarget(
+                os.clock() - (
+                    tonumber(state.TargetResolvedAt)
+                    or 0
+                ) >= state.TargetRefreshSeconds
+            )
+
+        if typeof(targetCFrame) ~= "CFrame" then
+
+            state.Moving =
+                false
+
+            HolyFarmMiddleSetStatus(
+                "Waiting farm",
+                "farm middle not found"
+            )
+
+            task.wait(
+                state.MissingTargetDelay
+            )
+
+            continue
+        end
+
+        local humanoid =
+            HolySniperGetCharacterHumanoid()
+
+        local root =
+            HolySniperGetCharacterRoot()
+
+        if typeof(humanoid) ~= "Instance"
+        or humanoid:IsA("Humanoid") ~= true
+        or typeof(root) ~= "Instance"
+        or root:IsA("BasePart") ~= true then
+
+            state.Moving =
+                false
+
+            HolyFarmMiddleSetStatus(
+                "Waiting character",
+                "humanoid/root missing"
+            )
+
+            task.wait(
+                0.15
+            )
+
+            continue
+        end
+
+        local targetPosition =
+            targetCFrame.Position
+
+        local distance =
+            HolyFarmMiddleFlatDistance(
+                root,
+                targetPosition
+            )
+
+        state.LastDistance =
+            distance
+
+        if distance <= state.StopDistance then
+
+            state.Done =
+                true
+
+            state.Running =
+                false
+
+            state.Moving =
+                false
+
+            state.CancelArmed =
+                false
+
+            HolyFarmMiddleStopMovement()
+
+            HolyFarmMiddleSetStatus(
+                "Done",
+                tostring(
+                    math.floor(distance + 0.5)
+                )
+                .. " studs"
+            )
+
+            return true
+        end
+
+        state.Moving =
+            true
+
+        state.CancelArmed =
+            true
+
+        if (
+            tonumber(state.AcceptManualInputAfter)
+            or 0
+        ) <= 0 then
+
+            state.AcceptManualInputAfter =
+                os.clock()
+                + state.ManualCancelGrace
+        end
+
+        HolyFarmMiddleSetStatus(
+            "Walking",
+            tostring(
+                math.floor(distance + 0.5)
+            )
+            .. " studs"
+        )
+
+        local movePosition =
+            Vector3.new(
+                targetPosition.X,
+                root.Position.Y,
+                targetPosition.Z
+            )
+
+        pcall(function()
+
+            humanoid:MoveTo(
+                movePosition
+            )
+        end)
+
+        state.LastMoveAt =
+            os.clock()
+
+        task.wait(
+            state.MoveRetryDelay
+        )
+    end
+
+    if state.Token == token then
+
+        state.Running =
+            false
+
+        state.Moving =
+            false
+
+        state.CancelArmed =
+            false
+
+        HolyFarmMiddleStopMovement()
+
+        HolyFarmMiddleSetStatus(
+            "Stopped",
+            "timeout"
+        )
+    end
+
+    return false
+end
+
+function HolyFarmMiddleStop(reason)
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    state.Token =
+        nil
+
+    state.Running =
+        false
+
+    state.Moving =
+        false
+
+    state.CancelArmed =
+        false
+
+    HolyFarmMiddleStopMovement()
+
+    HolyFarmMiddleSetStatus(
+        "Stopped",
+        reason or "manual"
+    )
+
+    return true
+end
+
+function HolyFarmMiddleStart(reason)
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    if HOLY_DEV_UI_STATE.AutoFarmMiddle ~= true then
+        return false
+    end
+
+    state.Enabled =
+        true
+
+    if state.Running == true then
+        return false
+    end
+
+    HolyFarmMiddleConnectInputWatcher()
+
+    local token =
+        {}
+
+    state.Token =
+        token
+
+    state.Running =
+        true
+
+    state.Done =
+        false
+
+    state.ManualCancelled =
+        false
+
+    state.Moving =
+        false
+
+    state.CancelArmed =
+        false
+
+    task.spawn(function()
+
+        HolyFarmMiddleRunWorker(
+            token,
+            reason or "startup"
+        )
+    end)
+
+    return true
+end
+
+function HolyFarmMiddleConnectCharacterWatcher()
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    if state.CharacterConnection then
+        return true
+    end
+
+    if not LocalPlayer then
+        return false
+    end
+
+    state.CharacterConnection =
+        LocalPlayer.CharacterAdded:Connect(function()
+
+            local liveState =
+                HolyFarmMiddleGetState()
+
+            liveState.Token =
+                nil
+
+            liveState.Running =
+                false
+
+            liveState.Moving =
+                false
+
+            liveState.Done =
+                false
+
+            liveState.ManualCancelled =
+                false
+
+            liveState.CancelArmed =
+                false
+
+            liveState.TargetCFrame =
+                nil
+
+            liveState.TargetResolvedAt =
+                0
+
+            if HOLY_DEV_UI_STATE.AutoFarmMiddle == true then
+
+                task.delay(0.65, function()
+
+                    if HOLY_DEV_UI_STATE.AutoFarmMiddle == true then
+
+                        HolyFarmMiddleStart(
+                            "respawn"
+                        )
+                    end
+                end)
+            end
+        end)
+
+    return true
+end
+
+function HolyFarmMiddleDisconnectCharacterWatcher()
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    if state.CharacterConnection then
+
+        pcall(function()
+
+            state.CharacterConnection:Disconnect()
+        end)
+    end
+
+    state.CharacterConnection =
+        nil
+end
+
+function HolyFarmMiddleSetEnabled(value, reason)
+
+    local enabled =
+        value == true
+
+    HOLY_DEV_UI_STATE.AutoFarmMiddle =
+        enabled
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    state.Enabled =
+        enabled
+
+    HolySaveUISettings()
+
+    if enabled == true then
+
+        HolyFarmMiddleConnectCharacterWatcher()
+
+        state.ManualCancelled =
+            false
+
+        state.Done =
+            false
+
+        return HolyFarmMiddleStart(
+            reason or "enabled"
+        )
+    end
+
+    HolyFarmMiddleStop(
+        reason or "disabled"
+    )
+
+    HolyFarmMiddleDisconnectCharacterWatcher()
+    HolyFarmMiddleDisconnectInputWatcher()
+
+    return true
+end
+
+function HolyFarmMiddleRestoreState()
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    state.Enabled =
+        HOLY_DEV_UI_STATE.AutoFarmMiddle == true
+
+    if state.Enabled == true then
+
+        HolyFarmMiddleConnectCharacterWatcher()
+
+        task.defer(function()
+
+            HolyFarmMiddleStart(
+                "startup"
+            )
+        end)
+
+    else
+
+        HolyFarmMiddleStop(
+            "disabled"
+        )
+    end
+
+    return true
 end
 
 function HolySniperResolveReturnCFrame()
@@ -10732,6 +12189,9 @@ function HolySniperSaveFilterFromBuilder()
         )
     end
 
+    HOLY_SNIPER_STATE.WatchlistPage =
+        1
+
     HolySaveSniperSettings()
 
     HolySniperRefreshUI()
@@ -10928,6 +12388,12 @@ function HolySniperRemoveSelectedFilter()
         HOLY_SNIPER_STATE.Watchlist,
         index
     )
+
+    HOLY_SNIPER_STATE.WatchlistPage =
+        1
+
+    HOLY_SNIPER_STATE.WatchlistPage =
+        1
 
     HOLY_SNIPER_STATE.SelectedWatchlistSourceIndex =
         nil
@@ -18809,6 +20275,11 @@ if HOLY_DEV_UI_STATE.AntiAfk == true then
     HolyAntiAfkStart(
         "startup"
     )
+end
+
+if HOLY_DEV_UI_STATE.AutoFarmMiddle == true then
+
+    HolyFarmMiddleRestoreState()
 end
 
 HolyLoadShopSettings()
@@ -29759,6 +31230,63 @@ HOLY_SNIPER_UI.WatchlistTable =
         }
     )
 
+HOLY_SNIPER_UI.WatchlistPager =
+    SniperWatchlistBox:AddActionRow(
+        "HolySniperWatchlistPager",
+        {
+            Buttons = {
+                {
+                    Id =
+                        "Prev",
+
+                    Text =
+                        "<",
+
+                    Tooltip =
+                        "Previous watchlist page.",
+
+                    Callback =
+                        function()
+
+                            HolySniperWatchlistPrevPage()
+                        end,
+                },
+
+                {
+                    Id =
+                        "Page",
+
+                    Text =
+                        "Page 1/1",
+
+                    Tooltip =
+                        "Current watchlist page.",
+
+                    Callback =
+                        function()
+                        end,
+                },
+
+                {
+                    Id =
+                        "Next",
+
+                    Text =
+                        ">",
+
+                    Tooltip =
+                        "Next watchlist page.",
+
+                    Callback =
+                        function()
+
+                            HolySniperWatchlistNextPage()
+                        end,
+                },
+            },
+        }
+    )
+
 SniperWatchlistBox:AddActionRow(
     "HolySniperWatchlistActions",
     {
@@ -30870,6 +32398,28 @@ SettingsSessionBox:AddToggle(
             "toggle off"
         )
     end
+end)
+
+SettingsSessionBox:AddToggle(
+    "HolyAutoFarmMiddle",
+    {
+        Text =
+            "🧭 Auto Farm Middle",
+
+        Default =
+            HOLY_DEV_UI_STATE.AutoFarmMiddle == true,
+
+        Tooltip =
+            "Walks to your farm middle after loading. Stops on manual movement and pauses while sniper is busy.",
+    }
+):OnChanged(function(value)
+
+    HolyFarmMiddleSetEnabled(
+        value == true,
+        value == true
+        and "toggle on"
+        or "toggle off"
+    )
 end)
 
 SettingsUIBox:AddToggle(
