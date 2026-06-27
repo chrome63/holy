@@ -580,9 +580,22 @@ HOLY_SHOP_STATE = {
 
     AutoDoubleOrNothing = false,
     DoubleTargetWins = "1",
+    DoubleBustFavDelay = "0.10",
+    DoubleUnfavoriteDelay = "1.00",
+    DoubleHudEnabled = false,
+    DoubleHudPosition = nil,
+
     DoubleWorkerRunning = false,
+    DoubleManualBusy = false,
     DoubleToken = nil,
     DoubleStatus = "Ready",
+
+    DoubleLastPot = 0,
+    DoubleLastWins = 0,
+    DoubleLastMultiplier = 1,
+    DoubleLastStakeCount = 0,
+    DoubleLastResult = "Ready",
+    DoubleTouchedRows = {},
 
     UseSellFilters = false,
 
@@ -1681,6 +1694,24 @@ function HolySaveShopSettings()
                 or "1"
             ),
 
+        DoubleBustFavDelay =
+            tostring(
+                HOLY_SHOP_STATE.DoubleBustFavDelay
+                or "0.10"
+            ),
+
+        DoubleUnfavoriteDelay =
+            tostring(
+                HOLY_SHOP_STATE.DoubleUnfavoriteDelay
+                or "1.00"
+            ),
+
+        DoubleHudEnabled =
+            HOLY_SHOP_STATE.DoubleHudEnabled == true,
+
+        DoubleHudPosition =
+            HOLY_SHOP_STATE.DoubleHudPosition,
+
         SellMethod =
             HolySellNormalizeMethod(
                 HOLY_SHOP_STATE.SellMethod
@@ -1854,17 +1885,44 @@ function HolyLoadShopSettings()
     HOLY_SHOP_STATE.AutoDoubleOrNothing =
         data.AutoDoubleOrNothing == true
 
+    local doubleTargetWins =
+        math.floor(
+            tonumber(data.DoubleTargetWins)
+            or 1
+        )
+
+    if doubleTargetWins < 1 then
+
+        doubleTargetWins =
+            1
+    end
+
     HOLY_SHOP_STATE.DoubleTargetWins =
         tostring(
-            math.clamp(
-                math.floor(
-                    tonumber(data.DoubleTargetWins)
-                    or 1
-                ),
-                1,
-                5
-            )
+            doubleTargetWins
         )
+
+    HOLY_SHOP_STATE.DoubleBustFavDelay =
+        tostring(
+            data.DoubleBustFavDelay
+            or HOLY_SHOP_STATE.DoubleBustFavDelay
+            or "0.10"
+        )
+
+    HOLY_SHOP_STATE.DoubleUnfavoriteDelay =
+        tostring(
+            data.DoubleUnfavoriteDelay
+            or HOLY_SHOP_STATE.DoubleUnfavoriteDelay
+            or "1.00"
+        )
+
+    HOLY_SHOP_STATE.DoubleHudEnabled =
+        data.DoubleHudEnabled == true
+
+    HOLY_SHOP_STATE.DoubleHudPosition =
+        type(data.DoubleHudPosition) == "table"
+        and data.DoubleHudPosition
+        or nil
 
     HOLY_SHOP_STATE.SellMethod =
         HolySellNormalizeMethod(
@@ -17773,6 +17831,11 @@ end
 -- [2.61] AUTO DOUBLE OR NOTHING CORE
 --==================================================
 
+HOLY_DOUBLE_HUD =
+    type(HOLY_DOUBLE_HUD) == "table"
+    and HOLY_DOUBLE_HUD
+    or {}
+
 function HolyDoubleEnsureState()
 
     HOLY_SHOP_STATE =
@@ -17797,37 +17860,261 @@ function HolyDoubleEnsureState()
             or "1"
         )
 
+    HOLY_SHOP_STATE.DoubleBustFavDelay =
+        tostring(
+            HOLY_SHOP_STATE.DoubleBustFavDelay
+            or "0.10"
+        )
+
+    HOLY_SHOP_STATE.DoubleUnfavoriteDelay =
+        tostring(
+            HOLY_SHOP_STATE.DoubleUnfavoriteDelay
+            or "1.00"
+        )
+
+    HOLY_SHOP_STATE.DoubleTouchedRows =
+        type(HOLY_SHOP_STATE.DoubleTouchedRows) == "table"
+        and HOLY_SHOP_STATE.DoubleTouchedRows
+        or {}
+
+    HOLY_SHOP_STATE.DoubleLastPot =
+        tonumber(HOLY_SHOP_STATE.DoubleLastPot)
+        or 0
+
+    HOLY_SHOP_STATE.DoubleLastWins =
+        tonumber(HOLY_SHOP_STATE.DoubleLastWins)
+        or 0
+
+    HOLY_SHOP_STATE.DoubleLastMultiplier =
+        tonumber(HOLY_SHOP_STATE.DoubleLastMultiplier)
+        or 1
+
+    HOLY_SHOP_STATE.DoubleLastStakeCount =
+        tonumber(HOLY_SHOP_STATE.DoubleLastStakeCount)
+        or 0
+
+    HOLY_SHOP_STATE.DoubleLastResult =
+        tostring(
+            HOLY_SHOP_STATE.DoubleLastResult
+            or "Ready"
+        )
+
     return HOLY_SHOP_STATE
 end
 
 function HolyDoubleReadTargetWins(value)
 
-    local wins =
-        math.floor(
-            tonumber(
-                value
-                or HOLY_SHOP_STATE.DoubleTargetWins
-                or 1
-            )
-            or 1
+    local text =
+        HolyCleanText(
+            value
+            or HOLY_SHOP_STATE.DoubleTargetWins
+            or "1"
         )
 
+    local number =
+        tonumber(
+            text:match("%d+")
+        )
+        or 1
+
+    number =
+        math.floor(
+            number
+        )
+
+    if number < 1 then
+
+        number =
+            1
+    end
+
+    return number
+end
+
+function HolyDoubleReadDelay(value, fallback, maxValue)
+
+    local text =
+        HolyCleanText(
+            value
+            or fallback
+            or "0"
+        )
+
+    text =
+        text:gsub(
+            "[sS]",
+            ""
+        )
+
+    local number =
+        tonumber(
+            text:match("%d+%.?%d*")
+        )
+
+    if number == nil then
+
+        number =
+            tonumber(fallback)
+            or 0
+    end
+
     return math.clamp(
-        wins,
-        1,
-        5
+        number,
+        0,
+        tonumber(maxValue)
+        or 10
     )
+end
+
+function HolyDoubleFormatDelay(value, fallback)
+
+    local number =
+        HolyDoubleReadDelay(
+            value,
+            fallback or 0,
+            10
+        )
+
+    local text =
+        string.format(
+            "%.2f",
+            number
+        )
+
+    text =
+        text:gsub(
+            "0+$",
+            ""
+        )
+
+    text =
+        text:gsub(
+            "%.$",
+            ""
+        )
+
+    if text == "" then
+        text = "0"
+    end
+
+    return text
+end
+
+function HolyDoubleFormatNumber(value)
+
+    value =
+        math.floor(
+            tonumber(value)
+            or 0
+        )
+
+    local text =
+        tostring(value)
+
+    while true do
+
+        local newText =
+            text:gsub(
+                "^(-?%d+)(%d%d%d)",
+                "%1,%2"
+            )
+
+        if newText == text then
+            break
+        end
+
+        text =
+            newText
+    end
+
+    return text
 end
 
 function HolyDoubleBuildStatusText()
 
     HolyDoubleEnsureState()
 
-    return "Status: "
+    return "🎲 Status: "
         .. tostring(
             HOLY_SHOP_STATE.DoubleStatus
             or "Ready"
         )
+end
+
+function HolyDoubleUpdateHud()
+
+    HolyDoubleEnsureState()
+
+    local hud =
+        HOLY_DOUBLE_HUD
+
+    if type(hud) ~= "table"
+    or typeof(hud.Holder) ~= "Instance"
+    or hud.Holder.Parent == nil then
+
+        return false
+    end
+
+    local targetWins =
+        HolyDoubleReadTargetWins()
+
+    local wins =
+        tonumber(
+            HOLY_SHOP_STATE.DoubleLastWins
+        )
+        or 0
+
+    local pot =
+        tonumber(
+            HOLY_SHOP_STATE.DoubleLastPot
+        )
+        or 0
+
+    local nextPot =
+        pot > 0
+        and pot * 2
+        or 0
+
+    if hud.PotLabel then
+
+        hud.PotLabel.Text =
+            "💰 Pot: "
+            .. HolyDoubleFormatNumber(
+                pot
+            )
+    end
+
+    if hud.WinsLabel then
+
+        hud.WinsLabel.Text =
+            "🏆 Wins: "
+            .. tostring(wins)
+            .. " / "
+            .. tostring(targetWins)
+    end
+
+    if hud.NextLabel then
+
+        hud.NextLabel.Text =
+            "⏭️ Next: "
+            .. (
+                nextPot > 0
+                and HolyDoubleFormatNumber(nextPot)
+                or "--"
+            )
+    end
+
+    if hud.StateLabel then
+
+        hud.StateLabel.Text =
+            "⚡ "
+            .. tostring(
+                HOLY_SHOP_STATE.DoubleStatus
+                or "Ready"
+            )
+    end
+
+    return true
 end
 
 function HolyDoubleRefreshUI()
@@ -17841,6 +18128,8 @@ function HolyDoubleRefreshUI()
             HolyDoubleBuildStatusText()
         )
     end
+
+    HolyDoubleUpdateHud()
 
     return true
 end
@@ -17871,8 +18160,50 @@ function HolyDoubleSetTargetWins(value)
     HolySaveShopSettings()
 
     HolyDoubleSetStatus(
-        "Target wins: "
+        "🎯 Target wins: "
         .. tostring(HOLY_SHOP_STATE.DoubleTargetWins)
+    )
+
+    return true
+end
+
+function HolyDoubleSetBustFavDelay(value)
+
+    HolyDoubleEnsureState()
+
+    HOLY_SHOP_STATE.DoubleBustFavDelay =
+        HolyDoubleFormatDelay(
+            value,
+            0.10
+        )
+
+    HolySaveShopSettings()
+
+    HolyDoubleSetStatus(
+        "🛡️ Bust fav delay: "
+        .. tostring(HOLY_SHOP_STATE.DoubleBustFavDelay)
+        .. "s"
+    )
+
+    return true
+end
+
+function HolyDoubleSetUnfavoriteDelay(value)
+
+    HolyDoubleEnsureState()
+
+    HOLY_SHOP_STATE.DoubleUnfavoriteDelay =
+        HolyDoubleFormatDelay(
+            value,
+            1.00
+        )
+
+    HolySaveShopSettings()
+
+    HolyDoubleSetStatus(
+        "🔓 Unfav delay: "
+        .. tostring(HOLY_SHOP_STATE.DoubleUnfavoriteDelay)
+        .. "s"
     )
 
     return true
@@ -17929,6 +18260,65 @@ function HolyDoubleFirePacket(packetName, ...)
     return result,
         true,
         "ok"
+end
+
+function HolyDoubleResolveFavoritePacket()
+
+    HolyDoubleEnsureState()
+
+    if HOLY_SHOP_STATE.DoubleFavoritePacketCache ~= nil then
+
+        if HOLY_SHOP_STATE.DoubleFavoritePacketCache == false then
+            return nil
+        end
+
+        return HOLY_SHOP_STATE.DoubleFavoritePacketCache
+    end
+
+    local networking =
+        HolyShopRequireModule(
+            "SharedModules.Networking"
+        )
+
+    if type(networking) ~= "table" then
+
+        HOLY_SHOP_STATE.DoubleFavoritePacketCache =
+            false
+
+        return nil
+    end
+
+    local containers = {
+        networking.NPCS,
+        networking.Fruits,
+        networking.Fruit,
+        networking.Inventory,
+        networking.Backpack,
+        networking.Tools,
+        networking,
+    }
+
+    for _, container in ipairs(containers) do
+
+        local packet =
+            type(container) == "table"
+            and container.SetFruitFavorite
+            or nil
+
+        if type(packet) == "table"
+        and type(packet.Fire) == "function" then
+
+            HOLY_SHOP_STATE.DoubleFavoritePacketCache =
+                packet
+
+            return packet
+        end
+    end
+
+    HOLY_SHOP_STATE.DoubleFavoritePacketCache =
+        false
+
+    return nil
 end
 
 function HolyDoublePreviewNumbers(preview)
@@ -18000,6 +18390,746 @@ function HolyDoubleDisableAutoSell()
     return true
 end
 
+function HolyDoubleToolIsFavorite(tool)
+
+    if typeof(tool) ~= "Instance" then
+        return false
+    end
+
+    local attrs =
+        HolySellGetToolAttributes(
+            tool
+        )
+
+    return attrs.IsFavorite == true
+        or attrs.Favorite == true
+        or attrs.Favorited == true
+end
+
+function HolyDoubleGetFruitRows()
+
+    local rows =
+        {}
+
+    local seen =
+        {}
+
+    for _, tool in ipairs(HolySellGetFruitTools()) do
+
+        local fruitId =
+            HolySellResolveFruitId(
+                tool
+            )
+
+        if fruitId ~= ""
+        and seen[fruitId] ~= true then
+
+            seen[fruitId] =
+                true
+
+            table.insert(
+                rows,
+                {
+                    Id =
+                        fruitId,
+
+                    Tool =
+                        tool,
+
+                    Name =
+                        HolySellGetToolFruitName(
+                            tool
+                        ),
+
+                    WasFavorite =
+                        HolyDoubleToolIsFavorite(
+                            tool
+                        ),
+
+                    TouchedAt =
+                        os.clock(),
+                }
+            )
+        end
+    end
+
+    return rows
+end
+
+function HolyDoubleRememberTouchedRows(rows)
+
+    HolyDoubleEnsureState()
+
+    for _, row in ipairs(rows or {}) do
+
+        local fruitId =
+            HolyCleanText(
+                row
+                and row.Id
+                or ""
+            )
+
+        if fruitId ~= "" then
+
+            HOLY_SHOP_STATE.DoubleTouchedRows[fruitId] =
+                row
+        end
+    end
+
+    return true
+end
+
+function HolyDoubleForgetTouchedRows(rows)
+
+    HolyDoubleEnsureState()
+
+    for _, row in ipairs(rows or {}) do
+
+        local fruitId =
+            HolyCleanText(
+                row
+                and row.Id
+                or ""
+            )
+
+        if fruitId ~= "" then
+
+            HOLY_SHOP_STATE.DoubleTouchedRows[fruitId] =
+                nil
+        end
+    end
+
+    return true
+end
+
+function HolyDoublePruneTouchedRows()
+
+    HolyDoubleEnsureState()
+
+    local now =
+        os.clock()
+
+    for fruitId, row in pairs(HOLY_SHOP_STATE.DoubleTouchedRows) do
+
+        local touchedAt =
+            tonumber(
+                row
+                and row.TouchedAt
+            )
+            or 0
+
+        if touchedAt <= 0
+        or now - touchedAt > 45 then
+
+            HOLY_SHOP_STATE.DoubleTouchedRows[fruitId] =
+                nil
+        end
+    end
+
+    return true
+end
+
+function HolyDoubleGetTouchedRows()
+
+    HolyDoublePruneTouchedRows()
+
+    local rows =
+        {}
+
+    for _, row in pairs(HOLY_SHOP_STATE.DoubleTouchedRows or {}) do
+
+        if type(row) == "table"
+        and HolyCleanText(row.Id) ~= "" then
+
+            table.insert(
+                rows,
+                row
+            )
+        end
+    end
+
+    return rows
+end
+
+function HolyDoubleSetRowsFavorite(rows, favorite, reason)
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    if #rows <= 0 then
+        return 0
+    end
+
+    local packet =
+        HolyDoubleResolveFavoritePacket()
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        HolyDoubleSetStatus(
+            "⚠️ Favorite packet missing"
+        )
+
+        return 0
+    end
+
+    favorite =
+        favorite == true
+
+    if favorite == true then
+
+        HolyDoubleRememberTouchedRows(
+            rows
+        )
+    end
+
+    local completed =
+        0
+
+    local success =
+        0
+
+    local total =
+        0
+
+    for _, row in ipairs(rows) do
+
+        local fruitId =
+            HolyCleanText(
+                row.Id
+            )
+
+        if fruitId ~= "" then
+
+            total =
+                total + 1
+
+            task.spawn(function()
+
+                local ok,
+                    result =
+                    pcall(function()
+
+                        return packet:Fire(
+                            fruitId,
+                            favorite
+                        )
+                    end)
+
+                if ok == true
+                and result ~= false then
+
+                    success =
+                        success + 1
+                end
+
+                completed =
+                    completed + 1
+            end)
+        end
+    end
+
+    local startedAt =
+        os.clock()
+
+    while completed < total
+    and os.clock() - startedAt <= 2.5 do
+
+        task.wait(
+            0.02
+        )
+    end
+
+    if favorite ~= true then
+
+        HolyDoubleForgetTouchedRows(
+            rows
+        )
+    end
+
+    return success
+end
+
+function HolyDoubleReleaseRows(rows, reason, delayOverride)
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    if #rows <= 0 then
+        return 0
+    end
+
+    local delaySeconds =
+        delayOverride
+
+    if delaySeconds == nil then
+
+        delaySeconds =
+            HolyDoubleReadDelay(
+                HOLY_SHOP_STATE.DoubleUnfavoriteDelay,
+                1.00,
+                10
+            )
+    end
+
+    delaySeconds =
+        math.max(
+            0,
+            tonumber(delaySeconds)
+            or 0
+        )
+
+    if delaySeconds > 0 then
+
+        task.wait(
+            delaySeconds
+        )
+    end
+
+    return HolyDoubleSetRowsFavorite(
+        rows,
+        false,
+        reason or "release"
+    )
+end
+
+function HolyDoubleUnfavoriteTouchedRows(reason)
+
+    local touchedRows =
+        HolyDoubleGetTouchedRows()
+
+    if #touchedRows <= 0 then
+        return 0
+    end
+
+    return HolyDoubleReleaseRows(
+        touchedRows,
+        reason or "restore touched",
+        0
+    )
+end
+
+function HolyDoubleUpdateFromRollResult(result)
+
+    HolyDoubleEnsureState()
+
+    result =
+        type(result) == "table"
+        and result
+        or {}
+
+    if result.Won == true then
+
+        HOLY_SHOP_STATE.DoubleLastResult =
+            "Won"
+
+        HOLY_SHOP_STATE.DoubleLastWins =
+            tonumber(result.Wins)
+            or HOLY_SHOP_STATE.DoubleLastWins
+            or 0
+
+        HOLY_SHOP_STATE.DoubleLastPot =
+            tonumber(result.Pot)
+            or HOLY_SHOP_STATE.DoubleLastPot
+            or 0
+
+        HOLY_SHOP_STATE.DoubleLastMultiplier =
+            tonumber(result.Multiplier)
+            or HOLY_SHOP_STATE.DoubleLastMultiplier
+            or 1
+
+        HOLY_SHOP_STATE.DoubleLastStakeCount =
+            tonumber(result.StakeCount)
+            or HOLY_SHOP_STATE.DoubleLastStakeCount
+            or 0
+
+    elseif result.Busted == true then
+
+        HOLY_SHOP_STATE.DoubleLastResult =
+            "Busted"
+
+        HOLY_SHOP_STATE.DoubleLastWins =
+            tonumber(result.Wins)
+            or 0
+
+        HOLY_SHOP_STATE.DoubleLastPot =
+            0
+
+        HOLY_SHOP_STATE.DoubleLastStakeCount =
+            tonumber(result.LostCount)
+            or HOLY_SHOP_STATE.DoubleLastStakeCount
+            or 0
+    end
+
+    HolyDoubleUpdateHud()
+end
+
+function HolyDoubleUpdateFromCashout(result)
+
+    HolyDoubleEnsureState()
+
+    result =
+        type(result) == "table"
+        and result
+        or {}
+
+    HOLY_SHOP_STATE.DoubleLastResult =
+        "Cashed"
+
+    HOLY_SHOP_STATE.DoubleLastWins =
+        tonumber(result.Wins)
+        or HOLY_SHOP_STATE.DoubleLastWins
+        or 0
+
+    HOLY_SHOP_STATE.DoubleLastPot =
+        0
+
+    HOLY_SHOP_STATE.DoubleLastStakeCount =
+        tonumber(result.SoldCount)
+        or HOLY_SHOP_STATE.DoubleLastStakeCount
+        or 0
+
+    HolyDoubleUpdateHud()
+end
+
+function HolyDoubleRollWithFavoriteRace(token, rollIndex, targetWins, requireActive)
+
+    if requireActive == true
+    and HolyDoubleStillActive(token) ~= true then
+
+        return nil,
+            false,
+            "stopped",
+            {}
+    end
+
+    local snapshotRows =
+        HolyDoubleGetFruitRows()
+
+    local favoriteDelay =
+        HolyDoubleReadDelay(
+            HOLY_SHOP_STATE.DoubleBustFavDelay,
+            0.10,
+            5
+        )
+
+    local rollDone =
+        false
+
+    local favoriteBusy =
+        false
+
+    local favoriteRows =
+        nil
+
+    local result =
+        nil
+
+    local rollOk =
+        false
+
+    local rollReason =
+        "not started"
+
+    task.spawn(function()
+
+        result,
+            rollOk,
+            rollReason =
+            HolyDoubleFirePacket(
+                "DoubleOrNothing"
+            )
+
+        rollDone =
+            true
+    end)
+
+    if #snapshotRows > 0 then
+
+        task.delay(favoriteDelay, function()
+
+            if rollDone == true then
+                return
+            end
+
+            favoriteRows =
+                snapshotRows
+
+            favoriteBusy =
+                true
+
+            HolyDoubleSetRowsFavorite(
+                snapshotRows,
+                true,
+                "roll race"
+            )
+
+            favoriteBusy =
+                false
+        end)
+    end
+
+    local deadline =
+        os.clock() + 12
+
+    while rollDone ~= true
+    and os.clock() <= deadline do
+
+        if requireActive == true
+        and HolyDoubleStillActive(token) ~= true then
+
+            rollDone =
+                true
+
+            return nil,
+                false,
+                "stopped",
+                favoriteRows or {}
+        end
+
+        task.wait(
+            0.02
+        )
+    end
+
+    if rollDone ~= true then
+
+        rollDone =
+            true
+
+        return nil,
+            false,
+            "roll timeout",
+            favoriteRows or {}
+    end
+
+    local favoriteDeadline =
+        os.clock() + 1.5
+
+    while favoriteBusy == true
+    and os.clock() <= favoriteDeadline do
+
+        task.wait(
+            0.02
+        )
+    end
+
+    return result,
+        rollOk,
+        rollReason,
+        favoriteRows or {}
+end
+
+function HolyDoubleDoOneRoll(token, rollIndex, targetWins, requireActive)
+
+    HolyDoubleSetStatus(
+        "🎲 Roll "
+        .. tostring(rollIndex)
+        .. "/"
+        .. tostring(targetWins)
+    )
+
+    local result,
+        rollOk,
+        rollReason,
+        favoriteRows =
+        HolyDoubleRollWithFavoriteRace(
+            token,
+            rollIndex,
+            targetWins,
+            requireActive == true
+        )
+
+    if rollOk ~= true
+    or type(result) ~= "table" then
+
+        if #favoriteRows > 0 then
+
+            HolyDoubleReleaseRows(
+                favoriteRows,
+                "roll failed restore"
+            )
+        end
+
+        HolyDoubleSetStatus(
+            "⚠️ Roll failed: "
+            .. tostring(rollReason)
+        )
+
+        return false,
+            result,
+            "failed"
+    end
+
+    if result.Success == false then
+
+        if #favoriteRows > 0 then
+
+            HolyDoubleReleaseRows(
+                favoriteRows,
+                "blocked restore"
+            )
+        end
+
+        HolyDoubleSetStatus(
+            "⛔ Blocked: "
+            .. tostring(result.Reason or "server")
+        )
+
+        return false,
+            result,
+            "blocked"
+    end
+
+    if result.Busted == true then
+
+        HolyDoubleUpdateFromRollResult(
+            result
+        )
+
+        HolyDoubleSetStatus(
+            "💥 Busted: lost "
+            .. tostring(result.LostCount or "?")
+            .. " fruit(s)"
+        )
+
+        if #favoriteRows > 0 then
+
+            HolyDoubleReleaseRows(
+                favoriteRows,
+                "busted restore"
+            )
+        end
+
+        return true,
+            result,
+            "busted"
+    end
+
+    if result.Won == true then
+
+        HolyDoubleUpdateFromRollResult(
+            result
+        )
+
+        HolyDoubleSetStatus(
+            "✅ Won "
+            .. tostring(result.Wins or rollIndex)
+            .. " | 💰 Pot "
+            .. HolyDoubleFormatNumber(
+                result.Pot or 0
+            )
+        )
+
+        if #favoriteRows > 0 then
+
+            HolyDoubleReleaseRows(
+                favoriteRows,
+                "won restore"
+            )
+        end
+
+        return true,
+            result,
+            "won"
+    end
+
+    if #favoriteRows > 0 then
+
+        HolyDoubleReleaseRows(
+            favoriteRows,
+            "unknown restore"
+        )
+    end
+
+    HolyDoubleSetStatus(
+        "⚠️ Unknown roll result"
+    )
+
+    return false,
+        result,
+        "unknown"
+end
+
+function HolyDoubleCashoutCurrent(requireActive, token)
+
+    if requireActive == true
+    and HolyDoubleStillActive(token) ~= true then
+
+        return false
+    end
+
+    HolyDoubleSetStatus(
+        "🔓 Restoring favorites..."
+    )
+
+    HolyDoubleUnfavoriteTouchedRows(
+        "cashout restore"
+    )
+
+    task.wait(
+        0.25
+    )
+
+    if requireActive == true
+    and HolyDoubleStillActive(token) ~= true then
+
+        return false
+    end
+
+    HolyDoubleSetStatus(
+        "💰 Cashing out..."
+    )
+
+    local cashout,
+        cashoutOk,
+        cashoutReason =
+        HolyDoubleFirePacket(
+            "CashOutDoubleOrNothing"
+        )
+
+    if cashoutOk ~= true
+    or type(cashout) ~= "table" then
+
+        HolyDoubleSetStatus(
+            "⚠️ Cashout failed: "
+            .. tostring(cashoutReason)
+        )
+
+        return false
+    end
+
+    if cashout.Success == false then
+
+        HolyDoubleSetStatus(
+            "⛔ Cashout blocked: "
+            .. tostring(cashout.Reason or "server")
+        )
+
+        return false
+    end
+
+    HolyDoubleUpdateFromCashout(
+        cashout
+    )
+
+    HolyDoubleSetStatus(
+        "💰 Cashed: +"
+        .. HolyDoubleFormatNumber(
+            cashout.SellPrice or 0
+        )
+        .. " | "
+        .. tostring(cashout.SoldCount or "?")
+        .. " fruit(s)"
+    )
+
+    return true
+end
+
 function HolyDoubleRunOnce(token)
 
     if HolyDoubleStillActive(token) ~= true then
@@ -18017,7 +19147,7 @@ function HolyDoubleRunOnce(token)
     or type(preview) ~= "table" then
 
         HolyDoubleSetStatus(
-            "Preview failed: "
+            "⚠️ Preview failed: "
             .. tostring(previewReason)
         )
 
@@ -18033,7 +19163,7 @@ function HolyDoubleRunOnce(token)
     if fruitCount <= 0 then
 
         HolyDoubleSetStatus(
-            "Waiting for fruits"
+            "⏳ Waiting for fruits"
         )
 
         return false
@@ -18043,17 +19173,15 @@ function HolyDoubleRunOnce(token)
         HolyDoubleReadTargetWins()
 
     HolyDoubleSetStatus(
-        "Rolling "
+        "🎲 Rolling "
         .. tostring(fruitCount)
-        .. " fruit(s) / target "
+        .. " fruit(s) | 🎯 "
         .. tostring(targetWins)
+        .. " win(s)"
     )
 
     local currentWins =
         0
-
-    local busted =
-        false
 
     for rollIndex = 1, targetWins do
 
@@ -18064,89 +19192,46 @@ function HolyDoubleRunOnce(token)
         task.wait(
             rollIndex == 1
             and 0.15
-            or 1.00
+            or 0.65
         )
 
-        HolyDoubleSetStatus(
-            "Roll "
-            .. tostring(rollIndex)
-            .. "/"
-            .. tostring(targetWins)
-        )
-
-        local result,
-            rollOk,
-            rollReason =
-            HolyDoubleFirePacket(
-                "DoubleOrNothing"
-            )
-
-        if rollOk ~= true
-        or type(result) ~= "table" then
-
-            HolyDoubleSetStatus(
-                "Roll failed: "
-                .. tostring(rollReason)
-            )
-
-            return false
-        end
-
-        if result.Success == false then
-
-            HolyDoubleSetStatus(
-                "Blocked: "
-                .. tostring(result.Reason or "server")
-            )
-
-            return false
-        end
-
-        if result.Busted == true then
-
-            busted =
+        local rollSuccess,
+            result,
+            mode =
+            HolyDoubleDoOneRoll(
+                token,
+                rollIndex,
+                targetWins,
                 true
-
-            HolyDoubleSetStatus(
-                "Busted: lost "
-                .. tostring(result.LostCount or "?")
-                .. " fruit(s)"
             )
 
-            break
+        if rollSuccess ~= true then
+            return false
         end
 
-        if result.Won == true then
+        if mode == "busted" then
+            return true
+        end
+
+        if mode == "won" then
 
             currentWins =
-                tonumber(result.Wins)
+                tonumber(
+                    result
+                    and result.Wins
+                )
                 or rollIndex
 
-            HolyDoubleSetStatus(
-                "Won "
-                .. tostring(currentWins)
-                .. " / Pot "
-                .. tostring(result.Pot or "?")
-            )
-
-        else
-
-            HolyDoubleSetStatus(
-                "Stopped: unknown result"
-            )
-
-            return false
+            if currentWins >= targetWins then
+                break
+            end
         end
-    end
-
-    if busted == true then
-        return true
     end
 
     if currentWins < targetWins then
 
         HolyDoubleSetStatus(
-            "Stopped at "
+            "⚠️ Stopped at "
             .. tostring(currentWins)
             .. " win(s)"
         )
@@ -18159,48 +19244,700 @@ function HolyDoubleRunOnce(token)
     end
 
     task.wait(
-        0.90
+        0.35
     )
 
-    HolyDoubleSetStatus(
-        "Cashing out..."
+    return HolyDoubleCashoutCurrent(
+        true,
+        token
     )
+end
 
-    local cashout,
-        cashoutOk,
-        cashoutReason =
-        HolyDoubleFirePacket(
-            "CashOutDoubleOrNothing"
-        )
+function HolyDoubleManualDouble()
 
-    if cashoutOk ~= true
-    or type(cashout) ~= "table" then
+    HolyDoubleEnsureState()
+
+    if HOLY_SHOP_STATE.DoubleWorkerRunning == true then
 
         HolyDoubleSetStatus(
-            "Cashout failed: "
-            .. tostring(cashoutReason)
+            "⚠️ Manual blocked: auto running"
         )
 
         return false
     end
 
-    if cashout.Success == false then
+    if HOLY_SHOP_STATE.DoubleManualBusy == true then
 
         HolyDoubleSetStatus(
-            "Cashout blocked: "
-            .. tostring(cashout.Reason or "server")
+            "⏳ Manual busy"
         )
 
         return false
     end
 
-    HolyDoubleSetStatus(
-        "Cashed: +"
-        .. tostring(cashout.SellPrice or "?")
-        .. " / "
-        .. tostring(cashout.SoldCount or "?")
-        .. " fruit(s)"
+    HOLY_SHOP_STATE.DoubleManualBusy =
+        true
+
+    task.spawn(function()
+
+        local ok,
+            err =
+            pcall(function()
+
+                HolyDoubleDisableAutoSell()
+
+                local targetWins =
+                    HolyDoubleReadTargetWins()
+
+                local preview =
+                    select(
+                        1,
+                        HolyDoubleFirePacket(
+                            "PreviewSellAll"
+                        )
+                    )
+
+                local fruitCount =
+                    0
+
+                if type(preview) == "table" then
+
+                    fruitCount =
+                        tonumber(preview.FruitCount)
+                        or 0
+                end
+
+                if fruitCount <= 0 then
+
+                    HolyDoubleSetStatus(
+                        "⏳ No fruits to double"
+                    )
+
+                    return
+                end
+
+                HolyDoubleDoOneRoll(
+                    nil,
+                    1,
+                    targetWins,
+                    false
+                )
+            end)
+
+        if ok ~= true then
+
+            HolyDoubleSetStatus(
+                "⚠️ Manual error: "
+                .. tostring(err)
+            )
+        end
+
+        HOLY_SHOP_STATE.DoubleManualBusy =
+            false
+    end)
+
+    return true
+end
+
+function HolyDoubleManualCashout()
+
+    HolyDoubleEnsureState()
+
+    if HOLY_SHOP_STATE.DoubleWorkerRunning == true then
+
+        HolyDoubleSetStatus(
+            "⚠️ Manual blocked: auto running"
+        )
+
+        return false
+    end
+
+    if HOLY_SHOP_STATE.DoubleManualBusy == true then
+
+        HolyDoubleSetStatus(
+            "⏳ Manual busy"
+        )
+
+        return false
+    end
+
+    HOLY_SHOP_STATE.DoubleManualBusy =
+        true
+
+    task.spawn(function()
+
+        local ok,
+            err =
+            pcall(function()
+
+                HolyDoubleCashoutCurrent(
+                    false,
+                    nil
+                )
+            end)
+
+        if ok ~= true then
+
+            HolyDoubleSetStatus(
+                "⚠️ Cashout error: "
+                .. tostring(err)
+            )
+        end
+
+        HOLY_SHOP_STATE.DoubleManualBusy =
+            false
+    end)
+
+    return true
+end
+
+function HolyDoubleGetHudRoot()
+
+    local library =
+        type(HOLY_DEV_LIBRARY) == "table"
+        and HOLY_DEV_LIBRARY
+        or nil
+
+    if library
+    and typeof(library.ScreenGui) == "Instance" then
+
+        return library.ScreenGui,
+            nil
+    end
+
+    local screenGui =
+        HOLY_DOUBLE_HUD
+        and HOLY_DOUBLE_HUD.ScreenGui
+        or nil
+
+    if typeof(screenGui) == "Instance"
+    and screenGui.Parent ~= nil then
+
+        return screenGui,
+            screenGui
+    end
+
+    screenGui =
+        Instance.new(
+            "ScreenGui"
+        )
+
+    screenGui.Name =
+        "HolyDoubleOrNothingHudGui"
+
+    screenGui.ResetOnSpawn =
+        false
+
+    screenGui.IgnoreGuiInset =
+        true
+
+    screenGui.ZIndexBehavior =
+        Enum.ZIndexBehavior.Sibling
+
+    screenGui.Parent =
+        CoreGui
+
+    return screenGui,
+        screenGui
+end
+
+function HolyDoubleReadHudPosition()
+
+    local position =
+        HOLY_SHOP_STATE.DoubleHudPosition
+
+    if type(position) == "table" then
+
+        local x =
+            tonumber(
+                position.X
+                or position.x
+                or position[1]
+            )
+
+        local y =
+            tonumber(
+                position.Y
+                or position.y
+                or position[2]
+            )
+
+        if x
+        and y then
+
+            return UDim2.fromOffset(
+                math.floor(x + 0.5),
+                math.floor(y + 0.5)
+            )
+        end
+    end
+
+    return UDim2.fromOffset(
+        18,
+        180
     )
+end
+
+function HolyDoubleSaveHudPosition()
+
+    local holder =
+        HOLY_DOUBLE_HUD
+        and HOLY_DOUBLE_HUD.Holder
+        or nil
+
+    if typeof(holder) ~= "Instance" then
+        return false
+    end
+
+    HOLY_SHOP_STATE.DoubleHudPosition = {
+        X =
+            math.floor(
+                holder.Position.X.Offset + 0.5
+            ),
+
+        Y =
+            math.floor(
+                holder.Position.Y.Offset + 0.5
+            ),
+    }
+
+    HolySaveShopSettings()
+
+    return true
+end
+
+function HolyDoubleMakeHudLabel(parent, text, y, size, transparency)
+
+    local label =
+        Instance.new(
+            "TextLabel"
+        )
+
+    label.BackgroundTransparency =
+        1
+
+    label.Position =
+        UDim2.fromOffset(
+            10,
+            y
+        )
+
+    label.Size =
+        UDim2.new(
+            1,
+            -20,
+            0,
+            size
+        )
+
+    label.Text =
+        tostring(text or "")
+
+    label.TextSize =
+        size
+
+    label.TextTransparency =
+        transparency or 0.08
+
+    label.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    label.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    label.TextTruncate =
+        Enum.TextTruncate.AtEnd
+
+    local scheme =
+        HOLY_DEV_LIBRARY
+        and HOLY_DEV_LIBRARY.Scheme
+        or {}
+
+    label.TextColor3 =
+        scheme.FontColor
+        or Color3.fromRGB(
+            245,
+            245,
+            247
+        )
+
+    label.FontFace =
+        scheme.Font
+        or Font.fromEnum(
+            Enum.Font.GothamMedium
+        )
+
+    label.ZIndex =
+        parent.ZIndex + 2
+
+    label.Parent =
+        parent
+
+    return label
+end
+
+function HolyDoubleMakeHudDraggable(holder)
+
+    if typeof(holder) ~= "Instance" then
+        return false
+    end
+
+    local dragging =
+        false
+
+    local dragInput =
+        nil
+
+    local dragStart =
+        nil
+
+    local startPosition =
+        nil
+
+    HOLY_DOUBLE_HUD.Connections =
+        HOLY_DOUBLE_HUD.Connections
+        or {}
+
+    table.insert(
+        HOLY_DOUBLE_HUD.Connections,
+        holder.InputBegan:Connect(function(input)
+
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+
+                dragging =
+                    true
+
+                dragStart =
+                    input.Position
+
+                startPosition =
+                    holder.Position
+
+                input.Changed:Connect(function()
+
+                    if input.UserInputState == Enum.UserInputState.End then
+
+                        dragging =
+                            false
+
+                        HolyDoubleSaveHudPosition()
+                    end
+                end)
+            end
+        end)
+    )
+
+    table.insert(
+        HOLY_DOUBLE_HUD.Connections,
+        holder.InputChanged:Connect(function(input)
+
+            if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then
+
+                dragInput =
+                    input
+            end
+        end)
+    )
+
+    table.insert(
+        HOLY_DOUBLE_HUD.Connections,
+        UserInputService.InputChanged:Connect(function(input)
+
+            if input ~= dragInput
+            or dragging ~= true
+            or dragStart == nil
+            or startPosition == nil then
+
+                return
+            end
+
+            local delta =
+                input.Position - dragStart
+
+            holder.Position =
+                UDim2.fromOffset(
+                    startPosition.X.Offset + delta.X,
+                    startPosition.Y.Offset + delta.Y
+                )
+        end)
+    )
+
+    return true
+end
+
+function HolyDoubleDestroyHud()
+
+    if type(HOLY_DOUBLE_HUD) == "table"
+    and type(HOLY_DOUBLE_HUD.Connections) == "table" then
+
+        for _, connection in ipairs(HOLY_DOUBLE_HUD.Connections) do
+
+            pcall(function()
+
+                connection:Disconnect()
+            end)
+        end
+    end
+
+    if type(HOLY_DOUBLE_HUD) == "table"
+    and typeof(HOLY_DOUBLE_HUD.Holder) == "Instance" then
+
+        pcall(function()
+
+            HOLY_DOUBLE_HUD.Holder:Destroy()
+        end)
+    end
+
+    if type(HOLY_DOUBLE_HUD) == "table"
+    and typeof(HOLY_DOUBLE_HUD.ScreenGui) == "Instance" then
+
+        pcall(function()
+
+            HOLY_DOUBLE_HUD.ScreenGui:Destroy()
+        end)
+    end
+
+    HOLY_DOUBLE_HUD =
+        {}
+
+    return true
+end
+
+function HolyDoubleCreateHud()
+
+    if type(HOLY_DOUBLE_HUD) == "table"
+    and typeof(HOLY_DOUBLE_HUD.Holder) == "Instance"
+    and HOLY_DOUBLE_HUD.Holder.Parent ~= nil then
+
+        HolyDoubleUpdateHud()
+
+        return HOLY_DOUBLE_HUD
+    end
+
+    HolyDoubleDestroyHud()
+
+    local parent,
+        ownedScreenGui =
+        HolyDoubleGetHudRoot()
+
+    local scheme =
+        HOLY_DEV_LIBRARY
+        and HOLY_DEV_LIBRARY.Scheme
+        or {}
+
+    local holder =
+        Instance.new(
+            "Frame"
+        )
+
+    holder.Name =
+        "HolyDoubleOrNothingHud"
+
+    holder.Active =
+        true
+
+    holder.BackgroundColor3 =
+        scheme.BackgroundColor
+        or Color3.fromRGB(
+            12,
+            13,
+            16
+        )
+
+    holder.BackgroundTransparency =
+        0.36
+
+    holder.BorderSizePixel =
+        0
+
+    holder.Position =
+        HolyDoubleReadHudPosition()
+
+    holder.Size =
+        UDim2.fromOffset(
+            172,
+            90
+        )
+
+    holder.ZIndex =
+        9300
+
+    holder.Parent =
+        parent
+
+    local corner =
+        Instance.new(
+            "UICorner"
+        )
+
+    corner.CornerRadius =
+        UDim.new(
+            0,
+            8
+        )
+
+    corner.Parent =
+        holder
+
+    local stroke =
+        Instance.new(
+            "UIStroke"
+        )
+
+    stroke.Color =
+        scheme.OutlineColor
+        or Color3.fromRGB(
+            45,
+            20,
+            25
+        )
+
+    stroke.Transparency =
+        0.42
+
+    stroke.Thickness =
+        1
+
+    stroke.Parent =
+        holder
+
+    local accent =
+        Instance.new(
+            "Frame"
+        )
+
+    accent.BackgroundColor3 =
+        scheme.AccentColor
+        or Color3.fromRGB(
+            232,
+            45,
+            67
+        )
+
+    accent.BackgroundTransparency =
+        0.05
+
+    accent.BorderSizePixel =
+        0
+
+    accent.Position =
+        UDim2.fromOffset(
+            0,
+            0
+        )
+
+    accent.Size =
+        UDim2.new(
+            0,
+            3,
+            1,
+            0
+        )
+
+    accent.ZIndex =
+        holder.ZIndex + 1
+
+    accent.Parent =
+        holder
+
+    local accentCorner =
+        Instance.new(
+            "UICorner"
+        )
+
+    accentCorner.CornerRadius =
+        UDim.new(
+            1,
+            0
+        )
+
+    accentCorner.Parent =
+        accent
+
+    HOLY_DOUBLE_HUD = {
+        Holder =
+            holder,
+
+        ScreenGui =
+            ownedScreenGui,
+
+        Connections =
+            {},
+
+        TitleLabel =
+            HolyDoubleMakeHudLabel(
+                holder,
+                "🎲 HOLY DOUBLE",
+                5,
+                13,
+                0.02
+            ),
+
+        PotLabel =
+            HolyDoubleMakeHudLabel(
+                holder,
+                "💰 Pot: --",
+                27,
+                12,
+                0.15
+            ),
+
+        WinsLabel =
+            HolyDoubleMakeHudLabel(
+                holder,
+                "🏆 Wins: 0 / 1",
+                44,
+                12,
+                0.15
+            ),
+
+        NextLabel =
+            HolyDoubleMakeHudLabel(
+                holder,
+                "⏭️ Next: --",
+                61,
+                12,
+                0.22
+            ),
+
+        StateLabel =
+            HolyDoubleMakeHudLabel(
+                holder,
+                "⚡ Ready",
+                75,
+                11,
+                0.28
+            ),
+    }
+
+    HolyDoubleMakeHudDraggable(
+        holder
+    )
+
+    HolyDoubleUpdateHud()
+
+    return HOLY_DOUBLE_HUD
+end
+
+function HolyDoubleSetHudVisible(value)
+
+    HolyDoubleEnsureState()
+
+    HOLY_SHOP_STATE.DoubleHudEnabled =
+        value == true
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.DoubleHudEnabled == true then
+
+        HolyDoubleCreateHud()
+
+    else
+
+        HolyDoubleDestroyHud()
+    end
 
     return true
 end
@@ -18230,7 +19967,7 @@ function HolyDoubleStartWorker(reason)
         true
 
     HolyDoubleSetStatus(
-        "Starting..."
+        "🚀 Starting..."
     )
 
     task.spawn(function()
@@ -18249,7 +19986,7 @@ function HolyDoubleStartWorker(reason)
             if ok ~= true then
 
                 HolyDoubleSetStatus(
-                    "Error: "
+                    "⚠️ Error: "
                     .. tostring(err)
                 )
 
@@ -32816,7 +34553,7 @@ ShopDoubleBox:AddToggle(
             HOLY_SHOP_STATE.AutoDoubleOrNothing == true,
 
         Tooltip =
-            "Uses Steven's Double or Nothing on unfavorited harvested fruits. Favorited fruits are protected.",
+            "Automatically doubles until Target Wins, then cashes out.",
     }
 ):OnChanged(function(value)
 
@@ -32839,39 +34576,153 @@ ShopDoubleBox:AddToggle(
     end
 end)
 
-ShopDoubleBox:AddSlider(
+ShopDoubleBox:AddInput(
     "HolyShopDoubleTargetWins",
     {
         Text =
             "🎯 Target Wins",
 
         Default =
-            HolyDoubleReadTargetWins(
+            tostring(
                 HOLY_SHOP_STATE.DoubleTargetWins
+                or "1"
             ),
 
-        Min =
-            1,
+        Placeholder =
+            "1",
 
-        Max =
-            5,
-
-        Rounding =
-            0,
-
-        Suffix =
-            " win(s)",
-
-        HideMax =
+        Numeric =
             true,
 
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
         Tooltip =
-            "Cashout after this many wins. Higher wins = more risk.",
+            "Cashout after this many wins. Minimum 1. No max clamp.",
     }
 ):OnChanged(function(value)
 
     HolyDoubleSetTargetWins(
         value
+    )
+end)
+
+ShopDoubleBox:AddInput(
+    "HolyShopDoubleBustFavDelay",
+    {
+        Text =
+            "🛡️ Bust Fav Delay",
+
+        Default =
+            tostring(
+                HOLY_SHOP_STATE.DoubleBustFavDelay
+                or "0.10"
+            ),
+
+        Placeholder =
+            "0.10",
+
+        Numeric =
+            false,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Delay after rolling before burst-favoriting fruits. Depends on ping. Lower = earlier, higher = later.",
+    }
+):OnChanged(function(value)
+
+    HolyDoubleSetBustFavDelay(
+        value
+    )
+end)
+
+ShopDoubleBox:AddInput(
+    "HolyShopDoubleUnfavoriteDelay",
+    {
+        Text =
+            "🔓 Unfav Delay",
+
+        Default =
+            tostring(
+                HOLY_SHOP_STATE.DoubleUnfavoriteDelay
+                or "1.00"
+            ),
+
+        Placeholder =
+            "1.00",
+
+        Numeric =
+            false,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "How long to wait before unfavoriting auto-touched fruits after a roll.",
+    }
+):OnChanged(function(value)
+
+    HolyDoubleSetUnfavoriteDelay(
+        value
+    )
+end)
+
+local HolyDoubleManualButton =
+    ShopDoubleBox:AddButton({
+        Text =
+            "🎲 Manual Double",
+
+        Tooltip =
+            "Roll Double or Nothing one time using the same favorite timing.",
+
+        Func =
+            function()
+
+                HolyDoubleManualDouble()
+            end,
+    })
+
+HolyDoubleManualButton:AddButton({
+    Text =
+        "💰 Cashout",
+
+    Tooltip =
+        "Unfavorites auto-touched fruits, waits briefly, then cashes out.",
+
+    Func =
+        function()
+
+            HolyDoubleManualCashout()
+        end,
+})
+
+ShopDoubleBox:AddToggle(
+    "HolyShopDoubleHud",
+    {
+        Text =
+            "📌 Pot HUD",
+
+        Default =
+            HOLY_SHOP_STATE.DoubleHudEnabled == true,
+
+        Tooltip =
+            "Shows a small transparent draggable HUD with pot, wins, and next pot.",
+    }
+):OnChanged(function(value)
+
+    HolyDoubleSetHudVisible(
+        value == true
     )
 end)
 
@@ -32882,6 +34733,16 @@ HOLY_SHOP_UI.DoubleStatusLabel =
     )
 
 HolyDoubleRefreshUI()
+
+if HOLY_SHOP_STATE.DoubleHudEnabled == true then
+
+    task.defer(function()
+
+        HolyDoubleSetHudVisible(
+            true
+        )
+    end)
+end
 
 ShopFiltersBox:AddToggle(
     "HolyShopUseSellFilters",
