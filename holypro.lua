@@ -50,7 +50,7 @@ local REMOTE_SOURCE_VERSION =
 
 local LIBRARY_URL =
     REPO_URL
-    .. "libraryholy7.lua?v="
+    .. "libraryholy5.lua?v="
     .. REMOTE_SOURCE_VERSION
 
 local UI_SETTINGS_FOLDER =
@@ -577,6 +577,12 @@ HOLY_SHOP_STATE = {
 
     AutoSellFruits = false,
     SellMethod = "Sell All",
+
+    AutoDoubleOrNothing = false,
+    DoubleTargetWins = "1",
+    DoubleWorkerRunning = false,
+    DoubleToken = nil,
+    DoubleStatus = "Ready",
 
     UseSellFilters = false,
 
@@ -1666,6 +1672,15 @@ function HolySaveShopSettings()
         AutoSellFruits =
             HOLY_SHOP_STATE.AutoSellFruits == true,
 
+        AutoDoubleOrNothing =
+            HOLY_SHOP_STATE.AutoDoubleOrNothing == true,
+
+        DoubleTargetWins =
+            tostring(
+                HOLY_SHOP_STATE.DoubleTargetWins
+                or "1"
+            ),
+
         SellMethod =
             HolySellNormalizeMethod(
                 HOLY_SHOP_STATE.SellMethod
@@ -1835,6 +1850,21 @@ function HolyLoadShopSettings()
 
     HOLY_SHOP_STATE.AutoSellFruits =
         data.AutoSellFruits == true
+
+    HOLY_SHOP_STATE.AutoDoubleOrNothing =
+        data.AutoDoubleOrNothing == true
+
+    HOLY_SHOP_STATE.DoubleTargetWins =
+        tostring(
+            math.clamp(
+                math.floor(
+                    tonumber(data.DoubleTargetWins)
+                    or 1
+                ),
+                1,
+                5
+            )
+        )
 
     HOLY_SHOP_STATE.SellMethod =
         HolySellNormalizeMethod(
@@ -17739,6 +17769,544 @@ function HolySellFirePacket(packetName, ...)
     return ok == true
 end
 
+--==================================================
+-- [2.61] AUTO DOUBLE OR NOTHING CORE
+--==================================================
+
+function HolyDoubleEnsureState()
+
+    HOLY_SHOP_STATE =
+        type(HOLY_SHOP_STATE) == "table"
+        and HOLY_SHOP_STATE
+        or {}
+
+    HOLY_SHOP_UI =
+        type(HOLY_SHOP_UI) == "table"
+        and HOLY_SHOP_UI
+        or {}
+
+    HOLY_SHOP_STATE.DoubleStatus =
+        tostring(
+            HOLY_SHOP_STATE.DoubleStatus
+            or "Ready"
+        )
+
+    HOLY_SHOP_STATE.DoubleTargetWins =
+        tostring(
+            HOLY_SHOP_STATE.DoubleTargetWins
+            or "1"
+        )
+
+    return HOLY_SHOP_STATE
+end
+
+function HolyDoubleReadTargetWins(value)
+
+    local wins =
+        math.floor(
+            tonumber(
+                value
+                or HOLY_SHOP_STATE.DoubleTargetWins
+                or 1
+            )
+            or 1
+        )
+
+    return math.clamp(
+        wins,
+        1,
+        5
+    )
+end
+
+function HolyDoubleBuildStatusText()
+
+    HolyDoubleEnsureState()
+
+    return "Status: "
+        .. tostring(
+            HOLY_SHOP_STATE.DoubleStatus
+            or "Ready"
+        )
+end
+
+function HolyDoubleRefreshUI()
+
+    HolyDoubleEnsureState()
+
+    if type(HolySniperSetLabel) == "function" then
+
+        HolySniperSetLabel(
+            HOLY_SHOP_UI.DoubleStatusLabel,
+            HolyDoubleBuildStatusText()
+        )
+    end
+
+    return true
+end
+
+function HolyDoubleSetStatus(status)
+
+    HolyDoubleEnsureState()
+
+    HOLY_SHOP_STATE.DoubleStatus =
+        tostring(status or "Ready")
+
+    HolyDoubleRefreshUI()
+
+    return true
+end
+
+function HolyDoubleSetTargetWins(value)
+
+    HolyDoubleEnsureState()
+
+    HOLY_SHOP_STATE.DoubleTargetWins =
+        tostring(
+            HolyDoubleReadTargetWins(
+                value
+            )
+        )
+
+    HolySaveShopSettings()
+
+    HolyDoubleSetStatus(
+        "Target wins: "
+        .. tostring(HOLY_SHOP_STATE.DoubleTargetWins)
+    )
+
+    return true
+end
+
+function HolyDoubleStillActive(token)
+
+    HolyDoubleEnsureState()
+
+    if HOLY_SHOP_STATE.AutoDoubleOrNothing ~= true then
+        return false
+    end
+
+    if token ~= nil
+    and HOLY_SHOP_STATE.DoubleToken ~= token then
+
+        return false
+    end
+
+    return true
+end
+
+function HolyDoubleFirePacket(packetName, ...)
+
+    local packet =
+        HolySellResolvePacket(
+            packetName
+        )
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return nil,
+            false,
+            "packet missing: "
+            .. tostring(packetName)
+    end
+
+    local ok,
+        result =
+        pcall(function(...)
+
+            return packet:Fire(...)
+
+        end, ...)
+
+    if ok ~= true then
+
+        return nil,
+            false,
+            tostring(result)
+    end
+
+    return result,
+        true,
+        "ok"
+end
+
+function HolyDoublePreviewNumbers(preview)
+
+    preview =
+        type(preview) == "table"
+        and preview
+        or {}
+
+    local fruitCount =
+        tonumber(preview.FruitCount)
+        or 0
+
+    local totalValue =
+        tonumber(
+            preview.TotalValue
+            or preview.TotalBaseValue
+            or preview.TotalSellValue
+        )
+        or 0
+
+    return fruitCount,
+        totalValue
+end
+
+function HolyDoubleDisableAutoSell()
+
+    if HOLY_SHOP_STATE.AutoSellFruits ~= true then
+        return false
+    end
+
+    HOLY_SHOP_STATE.AutoSellFruits =
+        false
+
+    if type(HolySellStopWorker) == "function" then
+
+        HolySellStopWorker()
+    end
+
+    local library =
+        type(HOLY_DEV_LIBRARY) == "table"
+        and HOLY_DEV_LIBRARY
+        or nil
+
+    local toggles =
+        library
+        and type(library.Toggles) == "table"
+        and library.Toggles
+        or nil
+
+    local toggle =
+        toggles
+        and toggles.HolyShopAutoSellFruits
+        or nil
+
+    if type(toggle) == "table"
+    and type(toggle.SetValue) == "function" then
+
+        pcall(function()
+
+            toggle:SetValue(
+                false
+            )
+        end)
+    end
+
+    HolySaveShopSettings()
+
+    return true
+end
+
+function HolyDoubleRunOnce(token)
+
+    if HolyDoubleStillActive(token) ~= true then
+        return false
+    end
+
+    local preview,
+        previewOk,
+        previewReason =
+        HolyDoubleFirePacket(
+            "PreviewSellAll"
+        )
+
+    if previewOk ~= true
+    or type(preview) ~= "table" then
+
+        HolyDoubleSetStatus(
+            "Preview failed: "
+            .. tostring(previewReason)
+        )
+
+        return false
+    end
+
+    local fruitCount,
+        totalValue =
+        HolyDoublePreviewNumbers(
+            preview
+        )
+
+    if fruitCount <= 0 then
+
+        HolyDoubleSetStatus(
+            "Waiting for fruits"
+        )
+
+        return false
+    end
+
+    local targetWins =
+        HolyDoubleReadTargetWins()
+
+    HolyDoubleSetStatus(
+        "Rolling "
+        .. tostring(fruitCount)
+        .. " fruit(s) / target "
+        .. tostring(targetWins)
+    )
+
+    local currentWins =
+        0
+
+    local busted =
+        false
+
+    for rollIndex = 1, targetWins do
+
+        if HolyDoubleStillActive(token) ~= true then
+            return false
+        end
+
+        task.wait(
+            rollIndex == 1
+            and 0.15
+            or 1.00
+        )
+
+        HolyDoubleSetStatus(
+            "Roll "
+            .. tostring(rollIndex)
+            .. "/"
+            .. tostring(targetWins)
+        )
+
+        local result,
+            rollOk,
+            rollReason =
+            HolyDoubleFirePacket(
+                "DoubleOrNothing"
+            )
+
+        if rollOk ~= true
+        or type(result) ~= "table" then
+
+            HolyDoubleSetStatus(
+                "Roll failed: "
+                .. tostring(rollReason)
+            )
+
+            return false
+        end
+
+        if result.Success == false then
+
+            HolyDoubleSetStatus(
+                "Blocked: "
+                .. tostring(result.Reason or "server")
+            )
+
+            return false
+        end
+
+        if result.Busted == true then
+
+            busted =
+                true
+
+            HolyDoubleSetStatus(
+                "Busted: lost "
+                .. tostring(result.LostCount or "?")
+                .. " fruit(s)"
+            )
+
+            break
+        end
+
+        if result.Won == true then
+
+            currentWins =
+                tonumber(result.Wins)
+                or rollIndex
+
+            HolyDoubleSetStatus(
+                "Won "
+                .. tostring(currentWins)
+                .. " / Pot "
+                .. tostring(result.Pot or "?")
+            )
+
+        else
+
+            HolyDoubleSetStatus(
+                "Stopped: unknown result"
+            )
+
+            return false
+        end
+    end
+
+    if busted == true then
+        return true
+    end
+
+    if currentWins < targetWins then
+
+        HolyDoubleSetStatus(
+            "Stopped at "
+            .. tostring(currentWins)
+            .. " win(s)"
+        )
+
+        return false
+    end
+
+    if HolyDoubleStillActive(token) ~= true then
+        return false
+    end
+
+    task.wait(
+        0.90
+    )
+
+    HolyDoubleSetStatus(
+        "Cashing out..."
+    )
+
+    local cashout,
+        cashoutOk,
+        cashoutReason =
+        HolyDoubleFirePacket(
+            "CashOutDoubleOrNothing"
+        )
+
+    if cashoutOk ~= true
+    or type(cashout) ~= "table" then
+
+        HolyDoubleSetStatus(
+            "Cashout failed: "
+            .. tostring(cashoutReason)
+        )
+
+        return false
+    end
+
+    if cashout.Success == false then
+
+        HolyDoubleSetStatus(
+            "Cashout blocked: "
+            .. tostring(cashout.Reason or "server")
+        )
+
+        return false
+    end
+
+    HolyDoubleSetStatus(
+        "Cashed: +"
+        .. tostring(cashout.SellPrice or "?")
+        .. " / "
+        .. tostring(cashout.SoldCount or "?")
+        .. " fruit(s)"
+    )
+
+    return true
+end
+
+function HolyDoubleStartWorker(reason)
+
+    HolyDoubleEnsureState()
+
+    HOLY_SHOP_STATE.AutoDoubleOrNothing =
+        true
+
+    HolySaveShopSettings()
+
+    HolyDoubleDisableAutoSell()
+
+    if HOLY_SHOP_STATE.DoubleWorkerRunning == true then
+        return false
+    end
+
+    local token =
+        {}
+
+    HOLY_SHOP_STATE.DoubleToken =
+        token
+
+    HOLY_SHOP_STATE.DoubleWorkerRunning =
+        true
+
+    HolyDoubleSetStatus(
+        "Starting..."
+    )
+
+    task.spawn(function()
+
+        while HolyDoubleStillActive(token) == true do
+
+            local ok,
+                err =
+                pcall(function()
+
+                    HolyDoubleRunOnce(
+                        token
+                    )
+                end)
+
+            if ok ~= true then
+
+                HolyDoubleSetStatus(
+                    "Error: "
+                    .. tostring(err)
+                )
+
+                task.wait(
+                    1.25
+                )
+
+            else
+
+                task.wait(
+                    0.75
+                )
+            end
+        end
+
+        if HOLY_SHOP_STATE.DoubleToken == token then
+
+            HOLY_SHOP_STATE.DoubleToken =
+                nil
+        end
+
+        HOLY_SHOP_STATE.DoubleWorkerRunning =
+            false
+
+        if HOLY_SHOP_STATE.AutoDoubleOrNothing ~= true then
+
+            HolyDoubleSetStatus(
+                "Off"
+            )
+        end
+    end)
+
+    return true
+end
+
+function HolyDoubleStopWorker(reason)
+
+    HolyDoubleEnsureState()
+
+    HOLY_SHOP_STATE.AutoDoubleOrNothing =
+        false
+
+    HOLY_SHOP_STATE.DoubleToken =
+        nil
+
+    HOLY_SHOP_STATE.DoubleWorkerRunning =
+        false
+
+    HolySaveShopSettings()
+
+    HolyDoubleSetStatus(
+        tostring(reason or "Off")
+    )
+
+    return true
+end
+
 function HolySellAllOnce()
 
     HolySellFirePacket(
@@ -21045,6 +21613,14 @@ local ShopFiltersBox =
         "Shop.FruitFilters",
         "Fruit Filters",
         "filter"
+    )
+
+local ShopDoubleBox =
+    HolyAddRightGroupbox(
+        Tabs.Shop,
+        "Shop.AutoDoubleOrNothing",
+        "Auto Double or Nothing",
+        "dice-5"
     )
 
 local SettingsUIBox =
@@ -31842,6 +32418,11 @@ function HolyShopRefreshMode()
         ShopFiltersBox,
         not isBuy
     )
+
+    HolySetGroupboxVisible(
+        ShopDoubleBox,
+        not isBuy
+    )
 end
 
 function HolyShopSetMode(mode)
@@ -32219,6 +32800,88 @@ ShopSellBox:AddSlider(
 
     HolySaveShopSettings()
 end)
+
+HOLY_SHOP_UI =
+    type(HOLY_SHOP_UI) == "table"
+    and HOLY_SHOP_UI
+    or {}
+
+ShopDoubleBox:AddToggle(
+    "HolyShopAutoDoubleOrNothing",
+    {
+        Text =
+            "🎲 Auto Double or Nothing",
+
+        Default =
+            HOLY_SHOP_STATE.AutoDoubleOrNothing == true,
+
+        Tooltip =
+            "Uses Steven's Double or Nothing on unfavorited harvested fruits. Favorited fruits are protected.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.AutoDoubleOrNothing =
+        value == true
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoDoubleOrNothing == true then
+
+        HolyDoubleStartWorker(
+            "toggle on"
+        )
+
+    else
+
+        HolyDoubleStopWorker(
+            "Off"
+        )
+    end
+end)
+
+ShopDoubleBox:AddSlider(
+    "HolyShopDoubleTargetWins",
+    {
+        Text =
+            "🎯 Target Wins",
+
+        Default =
+            HolyDoubleReadTargetWins(
+                HOLY_SHOP_STATE.DoubleTargetWins
+            ),
+
+        Min =
+            1,
+
+        Max =
+            5,
+
+        Rounding =
+            0,
+
+        Suffix =
+            " win(s)",
+
+        HideMax =
+            true,
+
+        Tooltip =
+            "Cashout after this many wins. Higher wins = more risk.",
+    }
+):OnChanged(function(value)
+
+    HolyDoubleSetTargetWins(
+        value
+    )
+end)
+
+HOLY_SHOP_UI.DoubleStatusLabel =
+    HolySniperAddLabel(
+        ShopDoubleBox,
+        HolyDoubleBuildStatusText()
+    )
+
+HolyDoubleRefreshUI()
 
 ShopFiltersBox:AddToggle(
     "HolyShopUseSellFilters",
@@ -32613,7 +33276,13 @@ task.defer(function()
 
     HolyShopQueueAll()
 
-    if HOLY_SHOP_STATE.AutoSellFruits == true then
+    if HOLY_SHOP_STATE.AutoDoubleOrNothing == true then
+
+        HolyDoubleStartWorker(
+            "startup"
+        )
+
+    elseif HOLY_SHOP_STATE.AutoSellFruits == true then
 
         HolySellStartWorker()
     end
