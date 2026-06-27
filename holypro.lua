@@ -46,7 +46,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260626-petdata-loader-v2"
+    "holy-premium-20260626-autofarm_middle_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -358,6 +358,7 @@ HOLY_FARM_MIDDLE_STATE = {
     InputConnections = {},
 
     ManualCancelled = false,
+    SniperCancelled = false,
     Done = false,
     Moving = false,
     CancelArmed = false,
@@ -376,7 +377,7 @@ HOLY_FARM_MIDDLE_STATE = {
     MaxRunSeconds = 75,
     MoveRetryDelay = 0.35,
     TargetRefreshSeconds = 2,
-    StartAfterLoadingDelay = 0.35,
+    StartAfterLoadingDelay = 1.00,
     SniperPauseDelay = 0.18,
     MissingTargetDelay = 0.25,
     ManualCancelGrace = 0.20,
@@ -6847,7 +6848,7 @@ function HolyFarmMiddleGetState()
     state.StartAfterLoadingDelay =
         math.clamp(
             tonumber(state.StartAfterLoadingDelay)
-            or 0.35,
+            or 1.00,
             0,
             3
         )
@@ -6968,6 +6969,54 @@ function HolyFarmMiddleCancel(reason)
     HolyFarmMiddleSetStatus(
         "Cancelled",
         reason or "manual movement"
+    )
+
+    return true
+end
+
+function HolyFarmMiddleCancelForSniper(reason)
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    if state.Done == true then
+        return false
+    end
+
+    if state.Running ~= true
+    and state.Moving ~= true
+    and state.Token == nil then
+
+        return false
+    end
+
+    state.SniperCancelled =
+        true
+
+    state.ManualCancelled =
+        true
+
+    state.Running =
+        false
+
+    state.Moving =
+        false
+
+    state.Token =
+        nil
+
+    state.CancelArmed =
+        false
+
+    state.TargetCFrame =
+        nil
+
+    state.TargetResolvedAt =
+        0
+
+    HolyFarmMiddleSetStatus(
+        "Cancelled",
+        reason or "sniper priority"
     )
 
     return true
@@ -7418,6 +7467,9 @@ function HolyFarmMiddleRunWorker(token, reason)
     state.ManualCancelled =
         false
 
+    state.SniperCancelled =
+        false
+
     state.CancelArmed =
         false
 
@@ -7523,21 +7575,11 @@ function HolyFarmMiddleRunWorker(token, reason)
 
         if sniperBusy == true then
 
-            state.Moving =
-                false
-
-            HolyFarmMiddleStopMovement()
-
-            HolyFarmMiddleSetStatus(
-                "Paused",
+            HolyFarmMiddleCancelForSniper(
                 busyReason
             )
 
-            task.wait(
-                state.SniperPauseDelay
-            )
-
-            continue
+            return false
         end
 
         local targetCFrame =
@@ -7758,6 +7800,9 @@ function HolyFarmMiddleStart(reason)
     state.ManualCancelled =
         false
 
+    state.SniperCancelled =
+        false
+
     state.Moving =
         false
 
@@ -7807,6 +7852,9 @@ function HolyFarmMiddleConnectCharacterWatcher()
                 false
 
             liveState.ManualCancelled =
+                false
+
+            liveState.SniperCancelled =
                 false
 
             liveState.CancelArmed =
@@ -7873,6 +7921,9 @@ function HolyFarmMiddleSetEnabled(value, reason)
         HolyFarmMiddleConnectCharacterWatcher()
 
         state.ManualCancelled =
+            false
+
+        state.SniperCancelled =
             false
 
         state.Done =
@@ -9001,6 +9052,13 @@ function HolySniperExecuteMatch(match, token)
             "bad match"
     end
 
+    if type(HolyFarmMiddleCancelForSniper) == "function" then
+
+        HolyFarmMiddleCancelForSniper(
+            "sniper buy"
+        )
+    end
+
     if HOLY_SNIPER_RUNTIME.Buying == true
     or HOLY_SNIPER_RUNTIME.Returning == true then
 
@@ -9365,6 +9423,13 @@ function HolySniperRunScan()
         os.clock()
 
     if #matches > 0 then
+
+        if type(HolyFarmMiddleCancelForSniper) == "function" then
+
+            HolyFarmMiddleCancelForSniper(
+                "match found"
+            )
+        end
 
         local best =
             matches[1].Entry
