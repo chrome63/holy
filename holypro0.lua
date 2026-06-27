@@ -18262,18 +18262,199 @@ function HolyDoubleFirePacket(packetName, ...)
         "ok"
 end
 
-function HolyDoubleResolveFavoritePacket()
+function HolyDoubleFavoritePacketIsValid(packet)
 
-    HolyDoubleEnsureState()
+    return type(packet) == "table"
+        and type(packet.Fire) == "function"
+end
 
-    if HOLY_SHOP_STATE.DoubleFavoritePacketCache ~= nil then
+function HolyDoubleFavoritePacketNameMatches(key, value)
 
-        if HOLY_SHOP_STATE.DoubleFavoritePacketCache == false then
+    local keyText =
+        tostring(key or "")
+        :lower()
+
+    local nameText =
+        ""
+
+    if type(value) == "table" then
+
+        for _, nameKey in ipairs({
+            "Name",
+            "PacketName",
+            "RemoteName",
+            "EventName",
+            "_name",
+            "__name",
+        }) do
+
+            local raw =
+                value[nameKey]
+
+            if raw ~= nil then
+
+                nameText =
+                    nameText
+                    .. " "
+                    .. tostring(raw)
+            end
+        end
+    end
+
+    local haystack =
+        keyText
+        .. " "
+        .. nameText:lower()
+
+    if haystack:find("setfruitfavorite", 1, true) then
+        return true
+    end
+
+    if haystack:find("backpacksetfruitfavorite", 1, true) then
+        return true
+    end
+
+    if haystack:find("fruit", 1, true)
+    and haystack:find("favorite", 1, true) then
+
+        return true
+    end
+
+    return false
+end
+
+function HolyDoubleFavoritePacketFromPath(root, pathParts)
+
+    local current =
+        root
+
+    for _, part in ipairs(pathParts or {}) do
+
+        if type(current) ~= "table" then
             return nil
         end
 
-        return HOLY_SHOP_STATE.DoubleFavoritePacketCache
+        current =
+            current[part]
     end
+
+    return current
+end
+
+function HolyDoubleFindFavoritePacketDeep(root, pathText, depth, seen)
+
+    if type(root) ~= "table" then
+        return nil, ""
+    end
+
+    depth =
+        math.floor(
+            tonumber(depth)
+            or 0
+        )
+
+    if depth <= 0 then
+        return nil, ""
+    end
+
+    seen =
+        type(seen) == "table"
+        and seen
+        or {}
+
+    if seen[root] == true then
+        return nil, ""
+    end
+
+    seen[root] =
+        true
+
+    local foundPacket =
+        nil
+
+    local foundPath =
+        ""
+
+    pcall(function()
+
+        for key, value in pairs(root) do
+
+            if foundPacket ~= nil then
+                return
+            end
+
+            local childPath =
+                tostring(pathText or "Networking")
+                .. "."
+                .. tostring(key)
+
+            if HolyDoubleFavoritePacketIsValid(value) == true
+            and HolyDoubleFavoritePacketNameMatches(key, value) == true then
+
+                foundPacket =
+                    value
+
+                foundPath =
+                    childPath
+
+                return
+            end
+
+            if type(value) == "table" then
+
+                local nestedPacket,
+                    nestedPath =
+                    HolyDoubleFindFavoritePacketDeep(
+                        value,
+                        childPath,
+                        depth - 1,
+                        seen
+                    )
+
+                if HolyDoubleFavoritePacketIsValid(nestedPacket) == true then
+
+                    foundPacket =
+                        nestedPacket
+
+                    foundPath =
+                        nestedPath
+
+                    return
+                end
+            end
+        end
+    end)
+
+    return foundPacket,
+        foundPath
+end
+
+function HolyDoubleResolveFavoritePacket(forceRefresh)
+
+    HolyDoubleEnsureState()
+
+    if forceRefresh == true then
+
+        HOLY_SHOP_STATE.DoubleFavoritePacketCache =
+            nil
+
+        HOLY_SHOP_STATE.DoubleFavoritePacketPath =
+            ""
+
+        HOLY_SHOP_STATE.DoubleFavoritePacketLastError =
+            ""
+    end
+
+    local cached =
+        HOLY_SHOP_STATE.DoubleFavoritePacketCache
+
+    if HolyDoubleFavoritePacketIsValid(cached) == true then
+
+        return cached
+    end
+
+    HOLY_SHOP_STATE.DoubleFavoritePacketCache =
+        nil
 
     local networking =
         HolyShopRequireModule(
@@ -18282,41 +18463,115 @@ function HolyDoubleResolveFavoritePacket()
 
     if type(networking) ~= "table" then
 
-        HOLY_SHOP_STATE.DoubleFavoritePacketCache =
-            false
+        HOLY_SHOP_STATE.DoubleFavoritePacketLastError =
+            "SharedModules.Networking missing"
 
         return nil
     end
 
-    local containers = {
-        networking.NPCS,
-        networking.Fruits,
-        networking.Fruit,
-        networking.Inventory,
-        networking.Backpack,
-        networking.Tools,
-        networking,
+    local exactPaths = {
+        {
+            "Backpack",
+            "SetFruitFavorite",
+        },
+
+        {
+            "Backpack",
+            "BackpackSetFruitFavorite",
+        },
+
+        {
+            "BackpackSetFruitFavorite",
+        },
+
+        {
+            "SetFruitFavorite",
+        },
+
+        {
+            "Fruits",
+            "SetFruitFavorite",
+        },
+
+        {
+            "Fruit",
+            "SetFruitFavorite",
+        },
+
+        {
+            "Inventory",
+            "SetFruitFavorite",
+        },
+
+        {
+            "Tools",
+            "SetFruitFavorite",
+        },
+
+        {
+            "NPCS",
+            "SetFruitFavorite",
+        },
     }
 
-    for _, container in ipairs(containers) do
+    for _, pathParts in ipairs(exactPaths) do
 
         local packet =
-            type(container) == "table"
-            and container.SetFruitFavorite
-            or nil
+            HolyDoubleFavoritePacketFromPath(
+                networking,
+                pathParts
+            )
 
-        if type(packet) == "table"
-        and type(packet.Fire) == "function" then
+        if HolyDoubleFavoritePacketIsValid(packet) == true then
 
             HOLY_SHOP_STATE.DoubleFavoritePacketCache =
                 packet
+
+            HOLY_SHOP_STATE.DoubleFavoritePacketPath =
+                "Networking."
+                .. table.concat(
+                    pathParts,
+                    "."
+                )
+
+            HOLY_SHOP_STATE.DoubleFavoritePacketLastError =
+                "ok"
 
             return packet
         end
     end
 
+    local packet,
+        packetPath =
+        HolyDoubleFindFavoritePacketDeep(
+            networking,
+            "Networking",
+            5,
+            {}
+        )
+
+    if HolyDoubleFavoritePacketIsValid(packet) == true then
+
+        HOLY_SHOP_STATE.DoubleFavoritePacketCache =
+            packet
+
+        HOLY_SHOP_STATE.DoubleFavoritePacketPath =
+            tostring(packetPath or "Networking.?")
+
+        HOLY_SHOP_STATE.DoubleFavoritePacketLastError =
+            "ok"
+
+        return packet
+    end
+
     HOLY_SHOP_STATE.DoubleFavoritePacketCache =
-        false
+        nil
+
+    HOLY_SHOP_STATE.DoubleFavoritePacketPath =
+        ""
+
+    HOLY_SHOP_STATE.DoubleFavoritePacketLastError =
+        "SetFruitFavorite not found"
 
     return nil
 end
@@ -18553,23 +18808,47 @@ end
 
 function HolyDoubleSetRowsFavorite(rows, favorite, reason)
 
+    HolyDoubleEnsureState()
+
     rows =
         type(rows) == "table"
         and rows
         or {}
 
     if #rows <= 0 then
+
+        HolyDoubleSetStatus(
+            "🛡️ Fav skipped: no fruits"
+        )
+
         return 0
     end
 
     local packet =
-        HolyDoubleResolveFavoritePacket()
+        HolyDoubleResolveFavoritePacket(
+            false
+        )
 
-    if type(packet) ~= "table"
-    or type(packet.Fire) ~= "function" then
+    if HolyDoubleFavoritePacketIsValid(packet) ~= true then
+
+        task.wait(
+            0.05
+        )
+
+        packet =
+            HolyDoubleResolveFavoritePacket(
+                true
+            )
+    end
+
+    if HolyDoubleFavoritePacketIsValid(packet) ~= true then
 
         HolyDoubleSetStatus(
-            "⚠️ Favorite packet missing"
+            "⚠️ Favorite packet missing: "
+            .. tostring(
+                HOLY_SHOP_STATE.DoubleFavoritePacketLastError
+                or "not found"
+            )
         )
 
         return 0
@@ -18598,7 +18877,9 @@ function HolyDoubleSetRowsFavorite(rows, favorite, reason)
 
         local fruitId =
             HolyCleanText(
-                row.Id
+                row
+                and row.Id
+                or ""
             )
 
         if fruitId ~= "" then
@@ -18631,6 +18912,15 @@ function HolyDoubleSetRowsFavorite(rows, favorite, reason)
         end
     end
 
+    if total <= 0 then
+
+        HolyDoubleSetStatus(
+            "🛡️ Fav skipped: no fruit IDs"
+        )
+
+        return 0
+    end
+
     local startedAt =
         os.clock()
 
@@ -18648,6 +18938,38 @@ function HolyDoubleSetRowsFavorite(rows, favorite, reason)
             rows
         )
     end
+
+    local actionText =
+        favorite == true
+        and "Fav"
+        or "Unfav"
+
+    local actionIcon =
+        favorite == true
+        and "🛡️"
+        or "🔓"
+
+    local packetPath =
+        HolyCleanText(
+            HOLY_SHOP_STATE.DoubleFavoritePacketPath
+            or ""
+        )
+
+    if packetPath == "" then
+
+        packetPath =
+            "favorite packet"
+    end
+
+    HolyDoubleSetStatus(
+        actionIcon
+        .. " "
+        .. actionText
+        .. " sent: "
+        .. tostring(success)
+        .. "/"
+        .. tostring(total)
+    )
 
     return success
 end
