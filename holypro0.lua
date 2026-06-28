@@ -3309,10 +3309,9 @@ function HolyFarmInstanceReady(instance)
         )
 
     if age ~= nil
-    and maxAge ~= nil
-    and age >= maxAge then
+    and maxAge ~= nil then
 
-        return true
+        return age >= maxAge
     end
 
     local ready =
@@ -3417,6 +3416,21 @@ function HolyFarmBuildFruitKey(plantId, fruitId)
     return plantId
         .. ":"
         .. fruitId
+end
+
+function HolyFarmBuildPlantHarvestKey(plantId)
+
+    plantId =
+        HolyCleanText(
+            plantId
+        )
+
+    if plantId == "" then
+        return ""
+    end
+
+    return plantId
+        .. ":__PLANT_HARVEST__"
 end
 
 function HolyFarmResolveCollectFruitPacket(forceRefresh)
@@ -3620,13 +3634,9 @@ function HolyFarmQueuePlantHarvest(plant, reason)
             plant
         )
 
-    local fruitId =
-        plantId
-
     local key =
-        HolyFarmBuildFruitKey(
-            plantId,
-            fruitId
+        HolyFarmBuildPlantHarvestKey(
+            plantId
         )
 
     if key == "" then
@@ -3664,7 +3674,7 @@ function HolyFarmQueuePlantHarvest(plant, reason)
                 plantId,
 
             FruitId =
-                fruitId,
+                "",
 
             QueuedAt =
                 os.clock(),
@@ -3849,8 +3859,7 @@ function HolyFarmUnwatchPlant(plant)
             )
 
         local plantKey =
-            HolyFarmBuildFruitKey(
-                plantId,
+            HolyFarmBuildPlantHarvestKey(
                 plantId
             )
 
@@ -4281,6 +4290,9 @@ function HolyFarmCollectEntry(entry)
         return false
     end
 
+    local key =
+        ""
+
     if entry.Kind == "PlantHarvest" then
 
         if HolyFarmPlantLevelHarvestReady(
@@ -4289,6 +4301,11 @@ function HolyFarmCollectEntry(entry)
 
             return false
         end
+
+        key =
+            HolyFarmBuildPlantHarvestKey(
+                entry.PlantId
+            )
 
     else
 
@@ -4304,21 +4321,24 @@ function HolyFarmCollectEntry(entry)
 
             return false
         end
+
+        key =
+            HolyFarmBuildFruitKey(
+                entry.PlantId,
+                entry.FruitId
+            )
     end
 
     if HolyFarmSelectionAllowsPlant(entry.PlantName) ~= true then
         return false
     end
 
-    local key =
-        HolyFarmBuildFruitKey(
-            entry.PlantId,
-            entry.FruitId
-        )
-
     if key == "" then
         return false
     end
+
+    entry.Key =
+        key
 
     if runtime.Pending[key] ~= nil then
         return false
@@ -4367,6 +4387,14 @@ function HolyFarmCollectEntry(entry)
     local ok,
         result =
         pcall(function()
+
+            if entry.Kind == "PlantHarvest" then
+
+                return packet:Fire(
+                    entry.PlantId,
+                    ""
+                )
+            end
 
             return packet:Fire(
                 entry.PlantId,
