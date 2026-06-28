@@ -46,7 +46,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260628-visual_fruit_value_fix_v2"
+    "holy-premium-20260628-visual_fruit_total_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -312,10 +312,19 @@ if type(HOLY_VISUAL_RUNTIME) == "table" then
             end
         end
     end
+
+    if typeof(HOLY_VISUAL_RUNTIME.TotalValueLabel) == "Instance" then
+
+        pcall(function()
+
+            HOLY_VISUAL_RUNTIME.TotalValueLabel:Destroy()
+        end)
+    end
 end
 
 HOLY_VISUAL_STATE = {
     FruitValueOverlay = false,
+    FruitTotalValue = false,
 }
 
 HOLY_VISUAL_RUNTIME = {
@@ -323,6 +332,7 @@ HOLY_VISUAL_RUNTIME = {
     Token = nil,
 
     Labels = {},
+    TotalValueLabel = nil,
 
     FruitValueCalc = nil,
     SellValueData = nil,
@@ -334,6 +344,7 @@ HOLY_VISUAL_RUNTIME = {
 
 HOLY_VISUAL_UI = {
     FruitValueOverlayToggle = nil,
+    FruitTotalValueToggle = nil,
 }
 
 HOLY_GROUPBOX_STATE = {
@@ -1352,6 +1363,9 @@ function HolyVisualEnsureState()
     HOLY_VISUAL_STATE.FruitValueOverlay =
         HOLY_VISUAL_STATE.FruitValueOverlay == true
 
+    HOLY_VISUAL_STATE.FruitTotalValue =
+        HOLY_VISUAL_STATE.FruitTotalValue == true
+
     return HOLY_VISUAL_STATE
 end
 
@@ -1367,6 +1381,9 @@ function HolySaveVisualSettings()
     local payload = {
         FruitValueOverlay =
             HOLY_VISUAL_STATE.FruitValueOverlay == true,
+
+        FruitTotalValue =
+            HOLY_VISUAL_STATE.FruitTotalValue == true,
     }
 
     local encodeOk,
@@ -1450,6 +1467,9 @@ function HolyLoadVisualSettings()
 
     HOLY_VISUAL_STATE.FruitValueOverlay =
         data.FruitValueOverlay == true
+
+    HOLY_VISUAL_STATE.FruitTotalValue =
+        data.FruitTotalValue == true
 
     HolyVisualEnsureState()
 
@@ -26290,7 +26310,8 @@ function HolyVisualLoadValueCaches(forceRefresh)
 
                     local multiplier =
                         tonumber(
-                            result.SellMultiplier
+                            result.PriceMultiplier
+                            or result.SellMultiplier
                             or result.ValueMultiplier
                             or result.Multiplier
                             or result.Boost
@@ -26532,7 +26553,19 @@ function HolyVisualCalculateFruitValue(tool, row)
 
     if type(fruitValueCalc) == "function" then
 
+        local unpackFunction =
+            table.unpack
+            or unpack
+
         local attempts = {
+            {
+                row.Name,
+                row.SizeMultiplier,
+                tool,
+                tool,
+                tool,
+            },
+
             {
                 row.Name,
                 row.SizeMultiplier,
@@ -26560,7 +26593,9 @@ function HolyVisualCalculateFruitValue(tool, row)
                 pcall(function()
 
                     return fruitValueCalc(
-                        unpack(args)
+                        unpackFunction(
+                            args
+                        )
                     )
                 end)
 
@@ -27443,6 +27478,502 @@ function HolyVisualClearAllFruitValueLabels()
     return true
 end
 
+function HolyVisualCalculateTotalFruitValue()
+
+    local count =
+        0
+
+    local total =
+        0
+
+    local index =
+        0
+
+    for _, tool in ipairs(HolySellGetFruitTools()) do
+
+        index =
+            index + 1
+
+        local row =
+            HolyVisualReadFruitTool(
+                tool,
+                index
+            )
+
+        if type(row) == "table" then
+
+            count =
+                count + 1
+
+            total =
+                total
+                + (
+                    tonumber(row.Value)
+                    or 0
+                )
+        end
+    end
+
+    return count,
+        total
+end
+
+function HolyVisualFormatTotalFruitValue(value)
+
+    local number =
+        math.max(
+            0,
+            tonumber(value)
+            or 0
+        )
+
+    local function trimUnit(text, unit)
+
+        text =
+            tostring(text)
+
+        text =
+            text:gsub(
+                "0+"
+                    .. unit
+                    .. "$",
+                unit
+            )
+
+        text =
+            text:gsub(
+                "%."
+                    .. unit
+                    .. "$",
+                unit
+            )
+
+        return text
+    end
+
+    if number >= 1000000000 then
+
+        return "$"
+            .. trimUnit(
+                string.format(
+                    "%.3fB",
+                    number / 1000000000
+                ),
+                "B"
+            )
+    end
+
+    if number >= 1000000 then
+
+        return "$"
+            .. trimUnit(
+                string.format(
+                    "%.3fM",
+                    number / 1000000
+                ),
+                "M"
+            )
+    end
+
+    if number >= 1000 then
+
+        local text =
+            tostring(
+                math.floor(number + 0.5)
+            )
+
+        while true do
+
+            local newText =
+                text:gsub(
+                    "^(-?%d+)(%d%d%d)",
+                    "%1.%2"
+                )
+
+            if newText == text then
+                break
+            end
+
+            text =
+                newText
+        end
+
+        return "$"
+            .. text
+    end
+
+    return "$"
+        .. tostring(
+            math.floor(number + 0.5)
+        )
+end
+
+function HolyVisualGetBackpackInventory()
+
+    local playerGui =
+        HolyVisualGetPlayerGui()
+
+    if typeof(playerGui) ~= "Instance" then
+        return nil
+    end
+
+    local backpackGui =
+        playerGui:FindFirstChild(
+            "BackpackGui"
+        )
+
+    local backpack =
+        backpackGui
+        and backpackGui:FindFirstChild(
+            "Backpack"
+        )
+        or nil
+
+    local inventory =
+        backpack
+        and backpack:FindFirstChild(
+            "Inventory"
+        )
+        or nil
+
+    return inventory
+end
+
+function HolyVisualGetInventoryTitleLabel()
+
+    local inventory =
+        HolyVisualGetBackpackInventory()
+
+    if typeof(inventory) ~= "Instance" then
+        return nil
+    end
+
+    local direct =
+        inventory:FindFirstChild(
+            "FruitInventory"
+        )
+
+    if typeof(direct) == "Instance"
+    and direct:IsA("TextLabel") then
+
+        return direct
+    end
+
+    for _, descendant in ipairs(inventory:GetDescendants()) do
+
+        if descendant:IsA("TextLabel") then
+
+            local text =
+                HolyCleanText(
+                    descendant.Text
+                )
+
+            local lower =
+                text:lower()
+
+            if lower == "inventory"
+            or lower:find("fruit", 1, true)
+            or text:match("%d+%s*/%s*%d+") then
+
+                return descendant
+            end
+        end
+    end
+
+    return nil
+end
+
+function HolyVisualTitleAllowsTotalValue(title)
+
+    if typeof(title) ~= "Instance"
+    or title:IsA("TextLabel") ~= true then
+
+        return false
+    end
+
+    local text =
+        HolyCleanText(
+            title.Text
+        )
+
+    local lower =
+        text:lower()
+
+    if lower == "inventory" then
+        return true
+    end
+
+    if lower:find("fruit", 1, true) then
+        return true
+    end
+
+    if text:match("%d+%s*/%s*%d+%s*[Ff]ruits") then
+        return true
+    end
+
+    return false
+end
+
+function HolyVisualClearTotalValueLabel()
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    if typeof(runtime.TotalValueLabel) == "Instance" then
+
+        pcall(function()
+
+            runtime.TotalValueLabel:Destroy()
+        end)
+    end
+
+    runtime.TotalValueLabel =
+        nil
+
+    local inventory =
+        HolyVisualGetBackpackInventory()
+
+    if typeof(inventory) == "Instance" then
+
+        for _, descendant in ipairs(inventory:GetDescendants()) do
+
+            if descendant.Name == "HolyFruitTotalValueText"
+            or descendant.Name == "HolyFruitTotalValueTestText" then
+
+                pcall(function()
+
+                    descendant:Destroy()
+                end)
+            end
+        end
+    end
+
+    return true
+end
+
+function HolyVisualEnsureTotalValueLabel(title)
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    local parent =
+        typeof(title) == "Instance"
+        and title.Parent
+        or HolyVisualGetBackpackInventory()
+
+    if typeof(parent) ~= "Instance" then
+        return nil
+    end
+
+    local label =
+        parent:FindFirstChild(
+            "HolyFruitTotalValueText"
+        )
+
+    if typeof(label) ~= "Instance"
+    or label:IsA("TextLabel") ~= true then
+
+        HolyVisualClearTotalValueLabel()
+
+        label =
+            Instance.new(
+                "TextLabel"
+            )
+
+        label.Name =
+            "HolyFruitTotalValueText"
+
+        label.BackgroundTransparency =
+            1
+
+        label.BorderSizePixel =
+            0
+
+        label.RichText =
+            true
+
+        label.Text =
+            '<font color="#EAEAEA">|</font> <font color="#39FF14">$0</font>'
+
+        label.TextStrokeColor3 =
+            Color3.fromRGB(
+                0,
+                0,
+                0
+            )
+
+        label.TextStrokeTransparency =
+            0
+
+        label.Font =
+            Enum.Font.GothamBlack
+
+        label.TextSize =
+            32
+
+        label.TextXAlignment =
+            Enum.TextXAlignment.Left
+
+        label.TextYAlignment =
+            Enum.TextYAlignment.Center
+
+        label.ZIndex =
+            (
+                tonumber(title and title.ZIndex)
+                or 1
+            )
+            + 80
+
+        label.Parent =
+            parent
+    end
+
+    label.RichText =
+        true
+
+    runtime.TotalValueLabel =
+        label
+
+    return label
+end
+
+function HolyVisualPositionTotalValueLabel(label, title)
+
+    if typeof(label) ~= "Instance"
+    or label:IsA("GuiObject") ~= true
+    or typeof(title) ~= "Instance"
+    or title:IsA("GuiObject") ~= true then
+
+        return false
+    end
+
+    local parent =
+        label.Parent
+
+    if typeof(parent) ~= "Instance"
+    or parent:IsA("GuiObject") ~= true then
+
+        return false
+    end
+
+    local titlePosition =
+        title.AbsolutePosition
+
+    local parentPosition =
+        parent.AbsolutePosition
+
+    local titleSize =
+        title.AbsoluteSize
+
+    local textBounds =
+        title.TextBounds
+
+    local x =
+        titlePosition.X
+        - parentPosition.X
+        + math.min(
+            titleSize.X - 140,
+            textBounds.X + 14
+        )
+
+    local y =
+        titlePosition.Y
+        - parentPosition.Y
+        + 1
+
+    label.Position =
+        UDim2.fromOffset(
+            math.floor(x + 0.5),
+            math.floor(y + 0.5)
+        )
+
+    label.Size =
+        UDim2.fromOffset(
+            330,
+            math.max(
+                36,
+                math.floor(titleSize.Y + 0.5)
+            )
+        )
+
+    label.TextSize =
+        math.clamp(
+            tonumber(title.TextSize)
+            or 32,
+            26,
+            36
+        )
+
+    label.ZIndex =
+        (
+            tonumber(title.ZIndex)
+            or 1
+        )
+        + 80
+
+    return true
+end
+
+function HolyVisualRefreshTotalValueLabel()
+
+    HolyVisualEnsureState()
+
+    if HOLY_VISUAL_STATE.FruitTotalValue ~= true then
+
+        HolyVisualClearTotalValueLabel()
+
+        return false
+    end
+
+    local title =
+        HolyVisualGetInventoryTitleLabel()
+
+    if typeof(title) ~= "Instance"
+    or HolyVisualTitleAllowsTotalValue(title) ~= true then
+
+        local runtime =
+            HolyVisualGetRuntime()
+
+        if typeof(runtime.TotalValueLabel) == "Instance" then
+
+            runtime.TotalValueLabel.Visible =
+                false
+        end
+
+        return false
+    end
+
+    local _count,
+        total =
+        HolyVisualCalculateTotalFruitValue()
+
+    local label =
+        HolyVisualEnsureTotalValueLabel(
+            title
+        )
+
+    if not label then
+        return false
+    end
+
+    label.Text =
+        '<font color="#EAEAEA">|</font> <font color="#39FF14">'
+        .. HolyVisualFormatTotalFruitValue(
+            total
+        )
+        .. '</font>'
+
+    label.Visible =
+        true
+
+    HolyVisualPositionTotalValueLabel(
+        label,
+        title
+    )
+
+    return true
+end
+
 function HolyVisualRefreshFruitValueOverlay()
 
     HolyVisualEnsureState()
@@ -27536,33 +28067,39 @@ function HolyVisualRefreshFruitValueOverlay()
     return true
 end
 
-function HolyVisualStartFruitValueOverlay(reason, skipSave)
+function HolyVisualAnyInventoryOverlayEnabled()
 
     HolyVisualEnsureState()
 
-    HOLY_VISUAL_STATE.FruitValueOverlay =
-        true
+    return HOLY_VISUAL_STATE.FruitValueOverlay == true
+        or HOLY_VISUAL_STATE.FruitTotalValue == true
+end
 
-    if skipSave ~= true then
+function HolyVisualStartInventoryOverlayWorker(reason)
 
-        HolySaveVisualSettings()
-    end
+    HolyVisualEnsureState()
 
     local runtime =
         HolyVisualGetRuntime()
 
-    HolyVisualClearAllFruitValueLabels()
+    HolyVisualLoadValueCaches(
+        false
+    )
 
     if runtime.Running == true then
 
-        HolyVisualRefreshFruitValueOverlay()
+        if HOLY_VISUAL_STATE.FruitValueOverlay == true then
+
+            HolyVisualRefreshFruitValueOverlay()
+        end
+
+        if HOLY_VISUAL_STATE.FruitTotalValue == true then
+
+            HolyVisualRefreshTotalValueLabel()
+        end
 
         return true
     end
-
-    HolyVisualLoadValueCaches(
-        true
-    )
 
     local token =
         {}
@@ -27576,12 +28113,23 @@ function HolyVisualStartFruitValueOverlay(reason, skipSave)
     task.spawn(function()
 
         while runtime.Token == token
-        and HOLY_VISUAL_STATE.FruitValueOverlay == true do
+        and HolyVisualAnyInventoryOverlayEnabled() == true do
 
-            pcall(function()
+            if HOLY_VISUAL_STATE.FruitValueOverlay == true then
 
-                HolyVisualRefreshFruitValueOverlay()
-            end)
+                pcall(function()
+
+                    HolyVisualRefreshFruitValueOverlay()
+                end)
+            end
+
+            if HOLY_VISUAL_STATE.FruitTotalValue == true then
+
+                pcall(function()
+
+                    HolyVisualRefreshTotalValueLabel()
+                end)
+            end
 
             task.wait(
                 runtime.UpdateDelay
@@ -27593,7 +28141,62 @@ function HolyVisualStartFruitValueOverlay(reason, skipSave)
             runtime.Running =
                 false
         end
+
+        if HOLY_VISUAL_STATE.FruitValueOverlay ~= true then
+
+            HolyVisualClearAllFruitValueLabels()
+        end
+
+        if HOLY_VISUAL_STATE.FruitTotalValue ~= true then
+
+            HolyVisualClearTotalValueLabel()
+        end
     end)
+
+    return true
+end
+
+function HolyVisualStopInventoryOverlayWorkerIfIdle()
+
+    if HolyVisualAnyInventoryOverlayEnabled() == true then
+        return false
+    end
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    runtime.Token =
+        nil
+
+    runtime.Running =
+        false
+
+    return true
+end
+
+function HolyVisualStartFruitValueOverlay(reason, skipSave)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.FruitValueOverlay =
+        true
+
+    if skipSave ~= true then
+
+        HolySaveVisualSettings()
+    end
+
+    HolyVisualClearAllFruitValueLabels()
+
+    HolyVisualLoadValueCaches(
+        true
+    )
+
+    HolyVisualStartInventoryOverlayWorker(
+        reason or "fruit value overlay"
+    )
+
+    HolyVisualRefreshFruitValueOverlay()
 
     return true
 end
@@ -27610,16 +28213,9 @@ function HolyVisualStopFruitValueOverlay(reason, skipSave)
         HolySaveVisualSettings()
     end
 
-    local runtime =
-        HolyVisualGetRuntime()
-
-    runtime.Token =
-        nil
-
-    runtime.Running =
-        false
-
     HolyVisualClearAllFruitValueLabels()
+
+    HolyVisualStopInventoryOverlayWorkerIfIdle()
 
     return true
 end
@@ -27635,6 +28231,68 @@ function HolyVisualSetFruitValueOverlay(value)
     end
 
     return HolyVisualStopFruitValueOverlay(
+        "toggle off",
+        false
+    )
+end
+
+function HolyVisualStartFruitTotalValue(reason, skipSave)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.FruitTotalValue =
+        true
+
+    if skipSave ~= true then
+
+        HolySaveVisualSettings()
+    end
+
+    HolyVisualClearTotalValueLabel()
+
+    HolyVisualLoadValueCaches(
+        true
+    )
+
+    HolyVisualStartInventoryOverlayWorker(
+        reason or "fruit total value"
+    )
+
+    HolyVisualRefreshTotalValueLabel()
+
+    return true
+end
+
+function HolyVisualStopFruitTotalValue(reason, skipSave)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.FruitTotalValue =
+        false
+
+    if skipSave ~= true then
+
+        HolySaveVisualSettings()
+    end
+
+    HolyVisualClearTotalValueLabel()
+
+    HolyVisualStopInventoryOverlayWorkerIfIdle()
+
+    return true
+end
+
+function HolyVisualSetFruitTotalValue(value)
+
+    if value == true then
+
+        return HolyVisualStartFruitTotalValue(
+            "toggle on",
+            false
+        )
+    end
+
+    return HolyVisualStopFruitTotalValue(
         "toggle off",
         false
     )
@@ -42171,6 +42829,32 @@ if type(VisualInventoryBox) == "table" then
             )
         end)
     end
+
+    HOLY_VISUAL_UI.FruitTotalValueToggle =
+        VisualInventoryBox:AddToggle(
+            "HolyVisualFruitTotalValue",
+            {
+                Text =
+                    "Fruit Total Value",
+
+                Default =
+                    HOLY_VISUAL_STATE.FruitTotalValue == true,
+
+                Tooltip =
+                    "Shows total fruit value beside the inventory title.",
+            }
+        )
+
+    if type(HOLY_VISUAL_UI.FruitTotalValueToggle) == "table"
+    and type(HOLY_VISUAL_UI.FruitTotalValueToggle.OnChanged) == "function" then
+
+        HOLY_VISUAL_UI.FruitTotalValueToggle:OnChanged(function(value)
+
+            HolyVisualSetFruitTotalValue(
+                value == true
+            )
+        end)
+    end
 end
 
 task.defer(function()
@@ -42181,6 +42865,22 @@ task.defer(function()
             "startup",
             true
         )
+
+    else
+
+        HolyVisualClearAllFruitValueLabels()
+    end
+
+    if HOLY_VISUAL_STATE.FruitTotalValue == true then
+
+        HolyVisualStartFruitTotalValue(
+            "startup",
+            true
+        )
+
+    else
+
+        HolyVisualClearTotalValueLabel()
     end
 end)
 
