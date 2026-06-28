@@ -723,6 +723,10 @@ HOLY_FARM_RUNTIME = {
     BaseKgCache = nil,
     BaseKgCacheLoaded = false,
 
+    MutationNameCache = nil,
+    MutationNameCacheLoaded = false,
+    MutationNameCacheAt = 0,
+
     LastPacketWarnAt = 0,
     LastPlotWarnAt = 0,
 }
@@ -2572,49 +2576,153 @@ function HolyFarmWeightAllowsEntry(entry)
     return true
 end
 
-function HolyFarmReadEntryMutation(entry)
+function HolyFarmSplitMutationText(value)
+
+    local output =
+        {}
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == "" then
+        return output
+    end
+
+    text =
+        text:gsub("^%[", "")
+            :gsub("%]$", "")
+            :gsub("^%{", "")
+            :gsub("%}$", "")
+
+    for part in text:gmatch("[^,%|/;]+") do
+
+        part =
+            HolyCleanText(
+                part
+            )
+
+        if part ~= "" then
+
+            table.insert(
+                output,
+                part
+            )
+        end
+    end
+
+    if #output <= 0 then
+
+        table.insert(
+            output,
+            text
+        )
+    end
+
+    return output
+end
+
+function HolyFarmReadInstanceMutations(instance)
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    if typeof(instance) ~= "Instance" then
+        return output
+    end
+
+    for _, attributeName in ipairs({
+        "Mutation",
+        "Mutations",
+    }) do
+
+        local raw =
+            HolyFarmReadAttribute(
+                instance,
+                {
+                    attributeName,
+                }
+            )
+
+        for _, part in ipairs(HolyFarmSplitMutationText(raw)) do
+
+            local mutation =
+                HolyFarmNormalizeMutationName(
+                    part
+                )
+
+            if mutation ~= ""
+            and seen[mutation] ~= true then
+
+                seen[mutation] =
+                    true
+
+                table.insert(
+                    output,
+                    mutation
+                )
+            end
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
+function HolyFarmReadEntryMutations(entry)
 
     if type(entry) ~= "table" then
-        return ""
+        return {}
     end
 
     if entry.Kind == "PlantHarvest" then
 
-        return HolyFarmNormalizeMutationName(
-            HolyFarmReadAttribute(
-                entry.Plant,
-                {
-                    "Mutation",
-                    "Mutations",
-                }
-            )
+        return HolyFarmReadInstanceMutations(
+            entry.Plant
         )
     end
 
-    local fruitMutation =
-        HolyFarmNormalizeMutationName(
-            HolyFarmReadAttribute(
-                entry.Fruit,
-                {
-                    "Mutation",
-                    "Mutations",
-                }
-            )
-        )
-
-    if fruitMutation ~= "" then
-        return fruitMutation
-    end
-
-    return HolyFarmNormalizeMutationName(
-        HolyFarmReadAttribute(
-            entry.Plant,
-            {
-                "Mutation",
-                "Mutations",
-            }
-        )
+    return HolyFarmReadInstanceMutations(
+        entry.Fruit
     )
+end
+
+function HolyFarmReadEntryMutation(entry)
+
+    local mutations =
+        HolyFarmReadEntryMutations(
+            entry
+        )
+
+    return mutations[1]
+        or ""
+end
+
+function HolyFarmMutationListHasSelected(mutations, selectedMap)
+
+    if type(mutations) ~= "table"
+    or type(selectedMap) ~= "table" then
+
+        return false
+    end
+
+    for _, mutation in ipairs(mutations) do
+
+        if selectedMap[mutation] == true then
+            return true
+        end
+    end
+
+    return false
 end
 
 function HolyFarmMutationAllowsEntry(entry)
@@ -2631,13 +2739,13 @@ function HolyFarmMutationAllowsEntry(entry)
         return true
     end
 
-    local mutation =
-        HolyFarmReadEntryMutation(
+    local mutations =
+        HolyFarmReadEntryMutations(
             entry
         )
 
     local hasMutation =
-        mutation ~= ""
+        #mutations > 0
 
     if mode == "Only Mutated" then
 
@@ -2665,7 +2773,10 @@ function HolyFarmMutationAllowsEntry(entry)
         end
 
         return hasMutation == true
-            and selectedMap[mutation] == true
+            and HolyFarmMutationListHasSelected(
+                mutations,
+                selectedMap
+            ) == true
     end
 
     if mode == "Skip Selected" then
@@ -2678,7 +2789,10 @@ function HolyFarmMutationAllowsEntry(entry)
             return true
         end
 
-        return selectedMap[mutation] ~= true
+        return HolyFarmMutationListHasSelected(
+            mutations,
+            selectedMap
+        ) ~= true
     end
 
     return true
@@ -2792,6 +2906,18 @@ function HolyFarmEnsureRuntime()
 
     state.BaseKgCacheLoaded =
         state.BaseKgCacheLoaded == true
+
+    state.MutationNameCache =
+        type(state.MutationNameCache) == "table"
+        and state.MutationNameCache
+        or nil
+
+    state.MutationNameCacheLoaded =
+        state.MutationNameCacheLoaded == true
+
+    state.MutationNameCacheAt =
+        tonumber(state.MutationNameCacheAt)
+        or 0
 
     return state
 end
@@ -3249,6 +3375,15 @@ function HolyFarmNormalizePlantSelection(value)
     return output
 end
 
+function HolyFarmMutationKey(value)
+
+    return HolyCleanText(
+        value
+    )
+        :lower()
+        :gsub("[%s_%-%[%]%(%)%.'\"_/{}]", "")
+end
+
 function HolyFarmCleanMutationName(value)
 
     local text =
@@ -3267,12 +3402,105 @@ function HolyFarmCleanMutationName(value)
     or lower == "none"
     or lower == "normal"
     or lower == "---"
-    or lower == "nil" then
+    or lower == "nil"
+    or lower == "false"
+    or lower == "true"
+    or lower == "0"
+    or lower == "{}"
+    or lower == "[]"
+    or lower == "default" then
 
         return ""
     end
 
+    if lower:find("kg", 1, true) then
+        return ""
+    end
+
+    if lower:find("table:", 1, true) then
+        return ""
+    end
+
+    if text:match("^%d+%.?%d*$") then
+        return ""
+    end
+
+    if #text > 48 then
+        return ""
+    end
+
     return text
+end
+
+function HolyFarmMutationCacheAddName(cache, value)
+
+    cache =
+        type(cache) == "table"
+        and cache
+        or {}
+
+    cache.Values =
+        type(cache.Values) == "table"
+        and cache.Values
+        or {}
+
+    cache.Map =
+        type(cache.Map) == "table"
+        and cache.Map
+        or {}
+
+    local mutationName =
+        HolyFarmCleanMutationName(
+            value
+        )
+
+    if mutationName == "" then
+        return false
+    end
+
+    local key =
+        HolyFarmMutationKey(
+            mutationName
+        )
+
+    if key == "" then
+        return false
+    end
+
+    if cache.Map[key] ~= nil then
+        return false
+    end
+
+    cache.Map[key] =
+        mutationName
+
+    table.insert(
+        cache.Values,
+        mutationName
+    )
+
+    return true
+end
+
+function HolyFarmMutationCacheSort(cache)
+
+    cache =
+        type(cache) == "table"
+        and cache
+        or {}
+
+    cache.Values =
+        type(cache.Values) == "table"
+        and cache.Values
+        or {}
+
+    table.sort(cache.Values, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return cache
 end
 
 function HolyFarmAddMutationDropdownName(values, seen, value)
@@ -3287,9 +3515,13 @@ function HolyFarmAddMutationDropdownName(values, seen, value)
     end
 
     local key =
-        mutationName:lower()
+        HolyFarmMutationKey(
+            mutationName
+        )
 
-    if seen[key] == true then
+    if key == ""
+    or seen[key] == true then
+
         return false
     end
 
@@ -3322,13 +3554,175 @@ function HolyFarmAddMutationDropdownSource(values, seen, root)
     return true
 end
 
-function HolyFarmGetMutationDropdownValues()
+function HolyFarmScanInstanceMutationNames(cache, instance)
 
-    local values =
-        {}
+    if typeof(instance) ~= "Instance" then
+        return false
+    end
 
-    local seen =
-        {}
+    for _, attributeName in ipairs({
+        "Mutation",
+        "Mutations",
+    }) do
+
+        local raw =
+            HolyFarmReadAttribute(
+                instance,
+                {
+                    attributeName,
+                }
+            )
+
+        for _, part in ipairs(HolyFarmSplitMutationText(raw)) do
+
+            HolyFarmMutationCacheAddName(
+                cache,
+                part
+            )
+        end
+    end
+
+    return true
+end
+
+function HolyFarmScanLiveMutationNames(cache)
+
+    local plot =
+        nil
+
+    if type(HolyFarmResolveOwnPlot) == "function" then
+
+        plot =
+            HolyFarmResolveOwnPlot(
+                false
+            )
+    end
+
+    local plantsFolder =
+        plot
+        and plot:FindFirstChild(
+            "Plants"
+        )
+        or nil
+
+    if typeof(plantsFolder) ~= "Instance" then
+        return false
+    end
+
+    for _, plant in ipairs(plantsFolder:GetChildren()) do
+
+        HolyFarmScanInstanceMutationNames(
+            cache,
+            plant
+        )
+
+        local fruitsFolder =
+            plant:FindFirstChild(
+                "Fruits"
+            )
+
+        if typeof(fruitsFolder) == "Instance" then
+
+            for _, fruit in ipairs(fruitsFolder:GetChildren()) do
+
+                HolyFarmScanInstanceMutationNames(
+                    cache,
+                    fruit
+                )
+            end
+        end
+    end
+
+    return true
+end
+
+function HolyFarmScanContainerMutationNames(cache, container)
+
+    if typeof(container) ~= "Instance" then
+        return false
+    end
+
+    for _, item in ipairs(container:GetChildren()) do
+
+        if item:IsA("Tool")
+        or item:IsA("Configuration") then
+
+            local shouldScan =
+                true
+
+            if type(HolySellLooksLikeFruitTool) == "function" then
+
+                shouldScan =
+                    HolySellLooksLikeFruitTool(
+                        item
+                    ) == true
+            end
+
+            if shouldScan == true then
+
+                HolyFarmScanInstanceMutationNames(
+                    cache,
+                    item
+                )
+
+                for bracket in tostring(item.Name or ""):gmatch("%[([^%]]+)%]") do
+
+                    HolyFarmMutationCacheAddName(
+                        cache,
+                        bracket
+                    )
+                end
+            end
+        end
+    end
+
+    return true
+end
+
+function HolyFarmScanBackpackMutationNames(cache)
+
+    HolyFarmScanContainerMutationNames(
+        cache,
+        LocalPlayer
+        and LocalPlayer:FindFirstChildOfClass(
+            "Backpack"
+        )
+        or nil
+    )
+
+    HolyFarmScanContainerMutationNames(
+        cache,
+        LocalPlayer
+        and LocalPlayer.Character
+        or nil
+    )
+
+    return true
+end
+
+function HolyFarmBuildMutationNameCache(forceRefresh)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    local now =
+        os.clock()
+
+    if forceRefresh ~= true
+    and runtime.MutationNameCacheLoaded == true
+    and type(runtime.MutationNameCache) == "table"
+    and now - (
+        tonumber(runtime.MutationNameCacheAt)
+        or 0
+    ) < 3 then
+
+        return runtime.MutationNameCache
+    end
+
+    local cache = {
+        Values = {},
+        Map = {},
+    }
 
     local sharedModules =
         ReplicatedStorage:FindFirstChild(
@@ -3342,13 +3736,26 @@ function HolyFarmGetMutationDropdownValues()
         )
         or nil
 
-    HolyFarmAddMutationDropdownSource(
-        values,
-        seen,
-        mutationData
+    if typeof(mutationData) == "Instance" then
+
+        for _, child in ipairs(mutationData:GetChildren()) do
+
+            HolyFarmMutationCacheAddName(
+                cache,
+                child.Name
+            )
+        end
+    end
+
+    HolyFarmScanLiveMutationNames(
+        cache
     )
 
-    if #values <= 0 then
+    HolyFarmScanBackpackMutationNames(
+        cache
+    )
+
+    if #cache.Values <= 0 then
 
         for _, mutationName in ipairs({
             "Aurora",
@@ -3364,35 +3771,93 @@ function HolyFarmGetMutationDropdownValues()
             "Starstruck",
         }) do
 
-            HolyFarmAddMutationDropdownName(
-                values,
-                seen,
+            HolyFarmMutationCacheAddName(
+                cache,
                 mutationName
             )
         end
     end
 
-    table.sort(values, function(a, b)
+    HolyFarmMutationCacheSort(
+        cache
+    )
 
-        return tostring(a):lower()
-            < tostring(b):lower()
-    end)
+    runtime.MutationNameCache =
+        cache
+
+    runtime.MutationNameCacheLoaded =
+        true
+
+    runtime.MutationNameCacheAt =
+        now
+
+    return cache
+end
+
+function HolyFarmInvalidateMutationNameCache()
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    runtime.MutationNameCache =
+        nil
+
+    runtime.MutationNameCacheLoaded =
+        false
+
+    runtime.MutationNameCacheAt =
+        0
+
+    return true
+end
+
+function HolyFarmGetMutationDropdownValues()
+
+    local cache =
+        HolyFarmBuildMutationNameCache(
+            false
+        )
+
+    local values =
+        {}
+
+    for _, mutationName in ipairs(
+        type(cache) == "table"
+        and type(cache.Values) == "table"
+        and cache.Values
+        or {}
+    ) do
+
+        table.insert(
+            values,
+            mutationName
+        )
+    end
 
     return values
 end
 
 function HolyFarmGetMutationValueMap()
 
-    local map =
+    local cache =
+        HolyFarmBuildMutationNameCache(
+            false
+        )
+
+    local output =
         {}
 
-    for _, mutationName in ipairs(HolyFarmGetMutationDropdownValues()) do
+    if type(cache) == "table"
+    and type(cache.Map) == "table" then
 
-        map[mutationName] =
-            true
+        for _, mutationName in pairs(cache.Map) do
+
+            output[mutationName] =
+                true
+        end
     end
 
-    return map
+    return output
 end
 
 function HolyFarmNormalizeMutationName(value)
@@ -3406,21 +3871,26 @@ function HolyFarmNormalizeMutationName(value)
         return ""
     end
 
-    local validMap =
-        HolyFarmGetMutationValueMap()
+    local cache =
+        HolyFarmBuildMutationNameCache(
+            false
+        )
 
-    if validMap[text] == true then
-        return text
-    end
+    local map =
+        type(cache) == "table"
+        and type(cache.Map) == "table"
+        and cache.Map
+        or {}
 
-    local lower =
-        text:lower()
+    local canonical =
+        map[
+            HolyFarmMutationKey(
+                text
+            )
+        ]
 
-    for mutationName in pairs(validMap) do
-
-        if tostring(mutationName):lower() == lower then
-            return mutationName
-        end
+    if canonical ~= nil then
+        return canonical
     end
 
     return text
@@ -3498,12 +3968,17 @@ function HolyFarmSelectedMutationMap()
     return map
 end
 
-function HolyFarmRefreshMutationDropdown()
+function HolyFarmRefreshMutationDropdown(forceRefresh)
 
     HOLY_FARM_UI =
         type(HOLY_FARM_UI) == "table"
         and HOLY_FARM_UI
         or {}
+
+    if forceRefresh == true then
+
+        HolyFarmInvalidateMutationNameCache()
+    end
 
     local dropdown =
         HOLY_FARM_UI.MutationsDropdown
@@ -4833,7 +5308,13 @@ function HolyFarmWatchFruit(plant, fruit)
 
     local function refreshFruit()
 
+        HolyFarmInvalidateMutationNameCache()
+
         task.defer(function()
+
+            HolyFarmRefreshMutationDropdown(
+                false
+            )
 
             if HOLY_FARM_STATE.AutoCollectFruits == true then
 
@@ -4998,7 +5479,13 @@ function HolyFarmWatchPlant(plant)
 
     local function refreshPlantHarvest()
 
+        HolyFarmInvalidateMutationNameCache()
+
         task.defer(function()
+
+            HolyFarmRefreshMutationDropdown(
+                false
+            )
 
             if HOLY_FARM_STATE.AutoCollectFruits == true then
 
