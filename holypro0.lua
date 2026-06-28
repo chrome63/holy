@@ -46,7 +46,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260628-farm_preload_cache_v1"
+    "holy-premium-20260628-visual_fruit_value_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -67,6 +67,10 @@ local SHOP_SETTINGS_FILE =
 local FARM_SETTINGS_FILE =
     UI_SETTINGS_FOLDER
     .. "/HolyPremiumFarmSettings.json"
+
+local VISUAL_SETTINGS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyPremiumVisualSettings.json"
 
 local SNIPER_SETTINGS_FILE =
     UI_SETTINGS_FOLDER
@@ -283,6 +287,54 @@ HOLY_PERFORMANCE_STATE = {
 }
 
 HOLY_PERFORMANCE_UI = {}
+
+if type(HOLY_VISUAL_RUNTIME) == "table" then
+
+    HOLY_VISUAL_RUNTIME.Token =
+        nil
+
+    HOLY_VISUAL_RUNTIME.Running =
+        false
+
+    local oldLabels =
+        HOLY_VISUAL_RUNTIME.Labels
+
+    if type(oldLabels) == "table" then
+
+        for _, label in pairs(oldLabels) do
+
+            if typeof(label) == "Instance" then
+
+                pcall(function()
+
+                    label:Destroy()
+                end)
+            end
+        end
+    end
+end
+
+HOLY_VISUAL_STATE = {
+    FruitValueOverlay = false,
+}
+
+HOLY_VISUAL_RUNTIME = {
+    Running = false,
+    Token = nil,
+
+    Labels = {},
+
+    FruitValueCalc = nil,
+    SellValueData = nil,
+    MutationMultipliers = nil,
+    ValueCachesLoaded = false,
+
+    UpdateDelay = 0.75,
+}
+
+HOLY_VISUAL_UI = {
+    FruitValueOverlayToggle = nil,
+}
 
 HOLY_GROUPBOX_STATE = {
     Loaded = false,
@@ -1286,6 +1338,120 @@ function HolyLoadUISettings()
         HOLY_DEV_UI_STATE.HideMiddle =
             data.UnloadMiddle
     end
+
+    return true
+end
+
+function HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE =
+        type(HOLY_VISUAL_STATE) == "table"
+        and HOLY_VISUAL_STATE
+        or {}
+
+    HOLY_VISUAL_STATE.FruitValueOverlay =
+        HOLY_VISUAL_STATE.FruitValueOverlay == true
+
+    return HOLY_VISUAL_STATE
+end
+
+function HolySaveVisualSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+    HolyVisualEnsureState()
+
+    local payload = {
+        FruitValueOverlay =
+            HOLY_VISUAL_STATE.FruitValueOverlay == true,
+    }
+
+    local encodeOk,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                VISUAL_SETTINGS_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function HolyLoadVisualSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                VISUAL_SETTINGS_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return false
+    end
+
+    local readOk,
+        raw =
+        pcall(function()
+
+            return readfile(
+                VISUAL_SETTINGS_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        return false
+    end
+
+    local decodeOk,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(data) ~= "table" then
+
+        return false
+    end
+
+    HOLY_VISUAL_STATE.FruitValueOverlay =
+        data.FruitValueOverlay == true
+
+    HolyVisualEnsureState()
 
     return true
 end
@@ -26004,6 +26170,1381 @@ function HolySellGetFruitTools()
     return fruits
 end
 
+--==================================================
+-- [2.665] VISUAL / FRUIT VALUE OVERLAY
+--==================================================
+
+function HolyVisualGetRuntime()
+
+    HOLY_VISUAL_RUNTIME =
+        type(HOLY_VISUAL_RUNTIME) == "table"
+        and HOLY_VISUAL_RUNTIME
+        or {}
+
+    local runtime =
+        HOLY_VISUAL_RUNTIME
+
+    runtime.Labels =
+        type(runtime.Labels) == "table"
+        and runtime.Labels
+        or {}
+
+    runtime.UpdateDelay =
+        math.clamp(
+            tonumber(runtime.UpdateDelay)
+            or 0.75,
+            0.25,
+            2
+        )
+
+    return runtime
+end
+
+function HolyVisualGetPlayerGui()
+
+    if not LocalPlayer then
+        return nil
+    end
+
+    return LocalPlayer:FindFirstChildOfClass(
+        "PlayerGui"
+    )
+    or LocalPlayer:FindFirstChild(
+        "PlayerGui"
+    )
+end
+
+function HolyVisualLoadValueCaches(forceRefresh)
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    if forceRefresh ~= true
+    and runtime.ValueCachesLoaded == true then
+
+        return runtime
+    end
+
+    runtime.FruitValueCalc =
+        nil
+
+    runtime.SellValueData =
+        nil
+
+    runtime.MutationMultipliers =
+        {}
+
+    local fruitValueCalc =
+        HolyShopRequireModule(
+            "SharedModules.FruitValueCalc"
+        )
+
+    if type(fruitValueCalc) == "function" then
+
+        runtime.FruitValueCalc =
+            fruitValueCalc
+
+    elseif type(fruitValueCalc) == "table" then
+
+        runtime.FruitValueCalc =
+            fruitValueCalc.Calculate
+            or fruitValueCalc.GetValue
+            or fruitValueCalc.GetFruitValue
+            or fruitValueCalc.Value
+    end
+
+    runtime.SellValueData =
+        HolyShopRequireModule(
+            "SharedModules.SellValueData"
+        )
+
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild(
+            "SharedModules"
+        )
+
+    local mutationData =
+        sharedModules
+        and sharedModules:FindFirstChild(
+            "MutationData"
+        )
+        or nil
+
+    if typeof(mutationData) == "Instance" then
+
+        for _, module in ipairs(mutationData:GetChildren()) do
+
+            if module:IsA("ModuleScript") then
+
+                local ok,
+                    result =
+                    pcall(function()
+
+                        return require(
+                            module
+                        )
+                    end)
+
+                if ok == true
+                and type(result) == "table" then
+
+                    local multiplier =
+                        tonumber(
+                            result.SellMultiplier
+                            or result.ValueMultiplier
+                            or result.Multiplier
+                            or result.Boost
+                        )
+
+                    if multiplier ~= nil
+                    and multiplier > 0 then
+
+                        runtime.MutationMultipliers[module.Name] =
+                            multiplier
+                    end
+                end
+            end
+        end
+    end
+
+    runtime.ValueCachesLoaded =
+        true
+
+    return runtime
+end
+
+function HolyVisualNameKey(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    text =
+        text:gsub(
+            "%b[]",
+            ""
+        )
+
+    text =
+        text:gsub(
+            "[%s_%-%[%]%(%)%.'\"_/{}]",
+            ""
+        )
+
+    return text
+end
+
+function HolyVisualParseKg(value)
+
+    local number =
+        tonumber(
+            tostring(value or "")
+                :match("([%d%.]+)%s*[Kk][Gg]")
+        )
+
+    return tonumber(number)
+        or 0
+end
+
+function HolyVisualStripBracketText(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    text =
+        text:gsub(
+            "%s*%b[]",
+            ""
+        )
+
+    text =
+        text:gsub(
+            "%s+",
+            " "
+        )
+
+    return HolyCleanText(
+        text
+    )
+end
+
+function HolyVisualParseBracketMutation(value)
+
+    local text =
+        tostring(value or "")
+
+    local bracket =
+        text:match(
+            "%[([^%]]+)%]"
+        )
+
+    bracket =
+        HolyCleanText(
+            bracket
+        )
+
+    if bracket == "" then
+        return ""
+    end
+
+    if bracket:lower():find("kg", 1, true) then
+        return ""
+    end
+
+    return bracket
+end
+
+function HolyVisualRoundKg(value)
+
+    value =
+        tonumber(value)
+        or 0
+
+    if value <= 0 then
+        return 0
+    end
+
+    return math.floor(
+        value * 100 + 0.5
+    ) / 100
+end
+
+function HolyVisualMutationMultiplier(rawMutation)
+
+    local runtime =
+        HolyVisualLoadValueCaches(
+            false
+        )
+
+    local multipliers =
+        type(runtime.MutationMultipliers) == "table"
+        and runtime.MutationMultipliers
+        or {}
+
+    rawMutation =
+        HolyCleanText(
+            rawMutation
+        )
+
+    if rawMutation == "" then
+        return 1
+    end
+
+    local multiplier =
+        1
+
+    for part in rawMutation:gmatch("[^,%|/;]+") do
+
+        part =
+            HolyCleanText(
+                part
+            )
+
+        if part ~= "" then
+
+            for mutationName, mutationMultiplier in pairs(multipliers) do
+
+                if HolyVisualNameKey(mutationName) == HolyVisualNameKey(part) then
+
+                    multiplier =
+                        multiplier
+                        * (
+                            tonumber(mutationMultiplier)
+                            or 1
+                        )
+                end
+            end
+        end
+    end
+
+    return math.max(
+        1,
+        multiplier
+    )
+end
+
+function HolyVisualFormatFruitValue(value)
+
+    value =
+        math.max(
+            0,
+            tonumber(value)
+            or 0
+        )
+
+    if value >= 1000000000 then
+
+        return "$"
+            .. string.format(
+                "%.1fB",
+                value / 1000000000
+            )
+    end
+
+    if value >= 1000000 then
+
+        return "$"
+            .. string.format(
+                "%.1fM",
+                value / 1000000
+            )
+    end
+
+    if value >= 1000 then
+
+        return "$"
+            .. string.format(
+                "%.1fK",
+                value / 1000
+            ):gsub(
+                "%.0K",
+                "K"
+            )
+    end
+
+    return "$"
+        .. tostring(
+            math.floor(value + 0.5)
+        )
+end
+
+function HolyVisualCalculateFruitValue(tool, row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    local runtime =
+        HolyVisualLoadValueCaches(
+            false
+        )
+
+    local value =
+        nil
+
+    local fruitValueCalc =
+        runtime.FruitValueCalc
+
+    if type(fruitValueCalc) == "function" then
+
+        local attempts = {
+            {
+                row.Name,
+                row.SizeMultiplier,
+                tool,
+            },
+
+            {
+                row.Name,
+                row.SizeMultiplier,
+            },
+
+            {
+                tool,
+            },
+
+            {
+                row,
+            },
+        }
+
+        for _, args in ipairs(attempts) do
+
+            local ok,
+                result =
+                pcall(function()
+
+                    return fruitValueCalc(
+                        unpack(args)
+                    )
+                end)
+
+            result =
+                tonumber(result)
+
+            if ok == true
+            and result ~= nil
+            and result >= 0 then
+
+                value =
+                    result
+
+                break
+            end
+        end
+    end
+
+    if value == nil then
+
+        local sellValueData =
+            type(runtime.SellValueData) == "table"
+            and runtime.SellValueData
+            or {}
+
+        local baseValue =
+            tonumber(
+                sellValueData[row.Name]
+            )
+            or tonumber(
+                sellValueData[
+                    HolyVisualStripBracketText(
+                        row.Name
+                    )
+                ]
+            )
+            or 0
+
+        local sizeMultiplier =
+            tonumber(row.SizeMultiplier)
+            or 1
+
+        sizeMultiplier =
+            math.max(
+                0.01,
+                sizeMultiplier
+            )
+
+        value =
+            baseValue
+            * (
+                sizeMultiplier ^ 2.5
+            )
+    end
+
+    value =
+        value
+        * HolyVisualMutationMultiplier(
+            row.RawMutation
+        )
+
+    return math.max(
+        0,
+        math.floor(value + 0.5)
+    )
+end
+
+function HolyVisualReadFruitTool(tool, index)
+
+    if HolySellLooksLikeFruitTool(tool) ~= true then
+        return nil
+    end
+
+    local attrs =
+        HolySellGetToolAttributes(
+            tool
+        )
+
+    local fruitName =
+        HolySellGetToolFruitName(
+            tool
+        )
+
+    if fruitName == "" then
+
+        fruitName =
+            HolyVisualStripBracketText(
+                tool.Name
+            )
+    end
+
+    fruitName =
+        HolyCleanText(
+            fruitName
+        )
+
+    if fruitName == "" then
+        return nil
+    end
+
+    local rawMutation =
+        HolySellGetRawToolMutation(
+            tool
+        )
+
+    if rawMutation == "" then
+
+        rawMutation =
+            HolyVisualParseBracketMutation(
+                tool.Name
+            )
+    end
+
+    local weight =
+        HolySellGetToolWeight(
+            tool
+        )
+
+    if weight <= 0 then
+
+        weight =
+            HolyVisualParseKg(
+                tool.Name
+            )
+    end
+
+    local sizeMultiplier =
+        tonumber(
+            attrs.SizeMultiplier
+            or attrs.SizeMulti
+            or attrs.ScaleMultiplier
+            or attrs.ScaleMulti
+            or attrs.Scale
+            or attrs.SizeScale
+        )
+
+    if sizeMultiplier == nil
+    or sizeMultiplier <= 0 then
+
+        sizeMultiplier =
+            math.max(
+                0.01,
+                weight
+            )
+    end
+
+    local row = {
+        Tool =
+            tool,
+
+        Name =
+            fruitName,
+
+        NameKey =
+            HolyVisualNameKey(
+                fruitName
+            ),
+
+        RawName =
+            tostring(tool.Name or ""),
+
+        RawNameKey =
+            HolyVisualNameKey(
+                tool.Name
+            ),
+
+        RawMutation =
+            rawMutation,
+
+        Weight =
+            HolyVisualRoundKg(
+                weight
+            ),
+
+        WeightKey =
+            tostring(
+                HolyVisualRoundKg(
+                    weight
+                )
+            ),
+
+        SizeMultiplier =
+            tonumber(sizeMultiplier)
+            or 1,
+
+        Index =
+            tonumber(index)
+            or 0,
+    }
+
+    row.Value =
+        HolyVisualCalculateFruitValue(
+            tool,
+            row
+        )
+
+    row.ValueText =
+        HolyVisualFormatFruitValue(
+            row.Value
+        )
+
+    return row
+end
+
+function HolyVisualAddFruitRowToMap(map, row)
+
+    if type(row) ~= "table" then
+        return false
+    end
+
+    local keys = {
+        row.NameKey
+            .. "|"
+            .. row.WeightKey,
+
+        row.RawNameKey
+            .. "|"
+            .. row.WeightKey,
+
+        row.NameKey,
+        row.RawNameKey,
+    }
+
+    for _, key in ipairs(keys) do
+
+        key =
+            HolyCleanText(
+                key
+            )
+
+        if key ~= "" then
+
+            map[key] =
+                map[key]
+                or {}
+
+            table.insert(
+                map[key],
+                row
+            )
+        end
+    end
+
+    return true
+end
+
+function HolyVisualBuildFruitMaps()
+
+    local map =
+        {}
+
+    local index =
+        0
+
+    for _, tool in ipairs(HolySellGetFruitTools()) do
+
+        index =
+            index + 1
+
+        local row =
+            HolyVisualReadFruitTool(
+                tool,
+                index
+            )
+
+        if row then
+
+            HolyVisualAddFruitRowToMap(
+                map,
+                row
+            )
+        end
+    end
+
+    return map
+end
+
+function HolyVisualTakeFruitRow(map, key, used)
+
+    key =
+        HolyCleanText(
+            key
+        )
+
+    if key == "" then
+        return nil
+    end
+
+    local rows =
+        map[key]
+
+    if type(rows) ~= "table" then
+        return nil
+    end
+
+    for _, row in ipairs(rows) do
+
+        if used[row] ~= true then
+
+            used[row] =
+                true
+
+            return row
+        end
+    end
+
+    return nil
+end
+
+function HolyVisualGetText(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return ""
+    end
+
+    if instance:IsA("TextLabel")
+    or instance:IsA("TextButton")
+    or instance:IsA("TextBox") then
+
+        return HolyCleanText(
+            instance.Text
+        )
+    end
+
+    return ""
+end
+
+function HolyVisualFindText(root, matcher)
+
+    if typeof(root) ~= "Instance" then
+        return ""
+    end
+
+    for _, descendant in ipairs(root:GetDescendants()) do
+
+        local text =
+            HolyVisualGetText(
+                descendant
+            )
+
+        if text ~= ""
+        and matcher(text) == true then
+
+            return text
+        end
+    end
+
+    return ""
+end
+
+function HolyVisualReadSlotInfo(slot)
+
+    if typeof(slot) ~= "Instance" then
+        return nil
+    end
+
+    local nameText =
+        HolyVisualFindText(
+            slot,
+            function(text)
+
+                local lower =
+                    text:lower()
+
+                if lower:find("kg", 1, true) then
+                    return false
+                end
+
+                if text:match("^x%d") then
+                    return false
+                end
+
+                if text:match("^%$") then
+                    return false
+                end
+
+                if text == "" then
+                    return false
+                end
+
+                return true
+            end
+        )
+
+    local kgText =
+        HolyVisualFindText(
+            slot,
+            function(text)
+
+                return text:lower():find(
+                    "kg",
+                    1,
+                    true
+                ) ~= nil
+            end
+        )
+
+    local weight =
+        HolyVisualRoundKg(
+            HolyVisualParseKg(
+                kgText
+            )
+        )
+
+    if nameText == ""
+    and weight <= 0 then
+        return nil
+    end
+
+    local cleanName =
+        HolyVisualStripBracketText(
+            nameText
+        )
+
+    return {
+        Name =
+            cleanName,
+
+        NameKey =
+            HolyVisualNameKey(
+                cleanName
+            ),
+
+        RawName =
+            nameText,
+
+        RawNameKey =
+            HolyVisualNameKey(
+                nameText
+            ),
+
+        Weight =
+            weight,
+
+        WeightKey =
+            tostring(weight),
+    }
+end
+
+function HolyVisualMatchSlotToFruit(slot, map, used)
+
+    local slotInfo =
+        HolyVisualReadSlotInfo(
+            slot
+        )
+
+    if type(slotInfo) ~= "table" then
+        return nil
+    end
+
+    local keys =
+        {}
+
+    if slotInfo.Weight > 0 then
+
+        table.insert(
+            keys,
+            slotInfo.NameKey
+                .. "|"
+                .. slotInfo.WeightKey
+        )
+
+        table.insert(
+            keys,
+            slotInfo.RawNameKey
+                .. "|"
+                .. slotInfo.WeightKey
+        )
+    end
+
+    table.insert(
+        keys,
+        slotInfo.NameKey
+    )
+
+    table.insert(
+        keys,
+        slotInfo.RawNameKey
+    )
+
+    for _, key in ipairs(keys) do
+
+        local row =
+            HolyVisualTakeFruitRow(
+                map,
+                key,
+                used
+            )
+
+        if row then
+            return row
+        end
+    end
+
+    return nil
+end
+
+function HolyVisualClearOldSlotOverlays(slot)
+
+    if typeof(slot) ~= "Instance" then
+        return false
+    end
+
+    for _, child in ipairs(slot:GetChildren()) do
+
+        if child.Name == "HolyFruitValueSlotText"
+        or child.Name == "HolyFruitValueOverlay"
+        or child.Name == "HolyFruitValueTextOverlay" then
+
+            pcall(function()
+
+                child:Destroy()
+            end)
+        end
+    end
+
+    return true
+end
+
+function HolyVisualEnsureSlotLabel(slot)
+
+    if typeof(slot) ~= "Instance"
+    or slot:IsA("GuiObject") ~= true then
+
+        return nil
+    end
+
+    local label =
+        slot:FindFirstChild(
+            "HolyFruitValueSlotText"
+        )
+
+    if typeof(label) == "Instance"
+    and label:IsA("TextLabel") then
+
+        return label
+    end
+
+    HolyVisualClearOldSlotOverlays(
+        slot
+    )
+
+    label =
+        Instance.new(
+            "TextLabel"
+        )
+
+    label.Name =
+        "HolyFruitValueSlotText"
+
+    label.BackgroundTransparency =
+        1
+
+    label.AnchorPoint =
+        Vector2.new(
+            0.5,
+            0
+        )
+
+    label.Position =
+        UDim2.new(
+            0.5,
+            0,
+            0,
+            1
+        )
+
+    label.Size =
+        UDim2.new(
+            1,
+            -4,
+            0,
+            18
+        )
+
+    label.Font =
+        Enum.Font.GothamBlack
+
+    label.TextSize =
+        14
+
+    label.TextColor3 =
+        Color3.fromRGB(
+            57,
+            255,
+            20
+        )
+
+    label.TextStrokeColor3 =
+        Color3.fromRGB(
+            0,
+            0,
+            0
+        )
+
+    label.TextStrokeTransparency =
+        0
+
+    label.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    label.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    label.TextWrapped =
+        false
+
+    label.TextTruncate =
+        Enum.TextTruncate.AtEnd
+
+    label.ZIndex =
+        (
+            tonumber(slot.ZIndex)
+            or 1
+        )
+        + 60
+
+    label.Parent =
+        slot
+
+    return label
+end
+
+function HolyVisualRemoveSlotLabel(slot)
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    if typeof(slot) == "Instance" then
+
+        local label =
+            runtime.Labels[slot]
+
+        if typeof(label) == "Instance" then
+
+            pcall(function()
+
+                label:Destroy()
+            end)
+        end
+
+        runtime.Labels[slot] =
+            nil
+
+        HolyVisualClearOldSlotOverlays(
+            slot
+        )
+    end
+
+    return true
+end
+
+function HolyVisualVisibleChain(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return false
+    end
+
+    local current =
+        instance
+
+    while current
+    and current ~= game do
+
+        if current:IsA("GuiObject") then
+
+            if current.Visible ~= true then
+                return false
+            end
+        end
+
+        if current:IsA("LayerCollector") then
+
+            if current.Enabled ~= true then
+                return false
+            end
+        end
+
+        current =
+            current.Parent
+    end
+
+    return true
+end
+
+function HolyVisualGetSlotRoots(includeHidden)
+
+    local playerGui =
+        HolyVisualGetPlayerGui()
+
+    if typeof(playerGui) ~= "Instance" then
+        return {}
+    end
+
+    local roots =
+        {}
+
+    local candidates =
+        {}
+
+    local backpackGui =
+        playerGui:FindFirstChild(
+            "BackpackGui"
+        )
+
+    if backpackGui then
+
+        table.insert(
+            candidates,
+            backpackGui:FindFirstChild(
+                "UIGridFrame",
+                true
+            )
+        )
+
+        table.insert(
+            candidates,
+            backpackGui:FindFirstChild(
+                "Hotbar",
+                true
+            )
+        )
+
+        table.insert(
+            candidates,
+            backpackGui:FindFirstChild(
+                "Inventory",
+                true
+            )
+        )
+    end
+
+    for _, candidate in ipairs(candidates) do
+
+        if typeof(candidate) == "Instance"
+        and candidate:IsA("GuiObject")
+        and (
+            includeHidden == true
+            or HolyVisualVisibleChain(candidate) == true
+        ) then
+
+            table.insert(
+                roots,
+                candidate
+            )
+        end
+    end
+
+    return roots
+end
+
+function HolyVisualClearAllFruitValueLabels()
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    for slot, label in pairs(runtime.Labels) do
+
+        if typeof(label) == "Instance" then
+
+            pcall(function()
+
+                label:Destroy()
+            end)
+        end
+
+        runtime.Labels[slot] =
+            nil
+    end
+
+    for _, root in ipairs(HolyVisualGetSlotRoots(true)) do
+
+        for _, descendant in ipairs(root:GetDescendants()) do
+
+            if descendant.Name == "HolyFruitValueSlotText"
+            or descendant.Name == "HolyFruitValueOverlay"
+            or descendant.Name == "HolyFruitValueTextOverlay" then
+
+                pcall(function()
+
+                    descendant:Destroy()
+                end)
+            end
+        end
+    end
+
+    return true
+end
+
+function HolyVisualRefreshFruitValueOverlay()
+
+    HolyVisualEnsureState()
+
+    if HOLY_VISUAL_STATE.FruitValueOverlay ~= true then
+
+        HolyVisualClearAllFruitValueLabels()
+
+        return false
+    end
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    local fruitMap =
+        HolyVisualBuildFruitMaps()
+
+    local touched =
+        {}
+
+    for _, root in ipairs(HolyVisualGetSlotRoots(false)) do
+
+        local used =
+            {}
+
+        local slots =
+            root:GetChildren()
+
+        for _, slot in ipairs(slots) do
+
+            if typeof(slot) == "Instance"
+            and slot:IsA("GuiObject") then
+
+                local row =
+                    HolyVisualMatchSlotToFruit(
+                        slot,
+                        fruitMap,
+                        used
+                    )
+
+                if row then
+
+                    local label =
+                        HolyVisualEnsureSlotLabel(
+                            slot
+                        )
+
+                    if label then
+
+                        label.Text =
+                            tostring(row.ValueText)
+
+                        label.Visible =
+                            true
+
+                        runtime.Labels[slot] =
+                            label
+
+                        touched[slot] =
+                            true
+                    end
+
+                else
+
+                    if runtime.Labels[slot] ~= nil
+                    or slot:FindFirstChild("HolyFruitValueSlotText") then
+
+                        HolyVisualRemoveSlotLabel(
+                            slot
+                        )
+                    end
+                end
+            end
+        end
+    end
+
+    for slot, label in pairs(runtime.Labels) do
+
+        if touched[slot] ~= true
+        or typeof(slot) ~= "Instance"
+        or slot.Parent == nil
+        or typeof(label) ~= "Instance"
+        or label.Parent == nil then
+
+            HolyVisualRemoveSlotLabel(
+                slot
+            )
+        end
+    end
+
+    return true
+end
+
+function HolyVisualStartFruitValueOverlay(reason, skipSave)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.FruitValueOverlay =
+        true
+
+    if skipSave ~= true then
+
+        HolySaveVisualSettings()
+    end
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    if runtime.Running == true then
+
+        HolyVisualRefreshFruitValueOverlay()
+
+        return true
+    end
+
+    HolyVisualLoadValueCaches(
+        true
+    )
+
+    local token =
+        {}
+
+    runtime.Token =
+        token
+
+    runtime.Running =
+        true
+
+    task.spawn(function()
+
+        while runtime.Token == token
+        and HOLY_VISUAL_STATE.FruitValueOverlay == true do
+
+            pcall(function()
+
+                HolyVisualRefreshFruitValueOverlay()
+            end)
+
+            task.wait(
+                runtime.UpdateDelay
+            )
+        end
+
+        if runtime.Token == token then
+
+            runtime.Running =
+                false
+        end
+    end)
+
+    return true
+end
+
+function HolyVisualStopFruitValueOverlay(reason, skipSave)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.FruitValueOverlay =
+        false
+
+    if skipSave ~= true then
+
+        HolySaveVisualSettings()
+    end
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    runtime.Token =
+        nil
+
+    runtime.Running =
+        false
+
+    HolyVisualClearAllFruitValueLabels()
+
+    return true
+end
+
+function HolyVisualSetFruitValueOverlay(value)
+
+    if value == true then
+
+        return HolyVisualStartFruitValueOverlay(
+            "toggle on",
+            false
+        )
+    end
+
+    return HolyVisualStopFruitValueOverlay(
+        "toggle off",
+        false
+    )
+end
+
 function HolySellPruneRecentFruitIds()
 
     HOLY_SHOP_STATE.SellRecentFruitIds =
@@ -27967,6 +29508,7 @@ end
 
 HolyLoadUISettings()
 HolyLoadGroupboxSettings()
+HolyLoadVisualSettings()
 
 if HOLY_DEV_UI_STATE.AutoSkipLoading == true then
 
@@ -28409,6 +29951,14 @@ local FarmCollectionBox =
         "Farm.FruitCollection",
         "Fruit Collection",
         "leaf"
+    )
+
+local VisualInventoryBox =
+    HolyAddLeftGroupbox(
+        Tabs.Visual,
+        "Visual.InventoryVisuals",
+        "Inventory Visuals",
+        "eye"
     )
 
 local SettingsUIBox =
@@ -40492,6 +42042,50 @@ task.defer(function()
     elseif HOLY_SHOP_STATE.AutoSellFruits == true then
 
         HolySellStartWorker()
+    end
+end)
+
+--==================================================
+-- [5.5] VISUAL TAB
+--==================================================
+
+if type(VisualInventoryBox) == "table" then
+
+    HOLY_VISUAL_UI.FruitValueOverlayToggle =
+        VisualInventoryBox:AddToggle(
+            "HolyVisualFruitValueOverlay",
+            {
+                Text =
+                    "Fruit Value Overlay",
+
+                Default =
+                    HOLY_VISUAL_STATE.FruitValueOverlay == true,
+
+                Tooltip =
+                    "Shows fruit value on inventory fruit slots.",
+            }
+        )
+
+    if type(HOLY_VISUAL_UI.FruitValueOverlayToggle) == "table"
+    and type(HOLY_VISUAL_UI.FruitValueOverlayToggle.OnChanged) == "function" then
+
+        HOLY_VISUAL_UI.FruitValueOverlayToggle:OnChanged(function(value)
+
+            HolyVisualSetFruitValueOverlay(
+                value == true
+            )
+        end)
+    end
+end
+
+task.defer(function()
+
+    if HOLY_VISUAL_STATE.FruitValueOverlay == true then
+
+        HolyVisualStartFruitValueOverlay(
+            "startup",
+            true
+        )
     end
 end)
 
