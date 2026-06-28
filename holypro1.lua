@@ -50,7 +50,7 @@ local REMOTE_SOURCE_VERSION =
 
 local LIBRARY_URL =
     REPO_URL
-    .. "libraryholy5.lua?v="
+    .. "libraryholy7.lua?v="
     .. REMOTE_SOURCE_VERSION
 
 local UI_SETTINGS_FOLDER =
@@ -872,6 +872,8 @@ HOLY_FARM_RUNTIME = {
 }
 
 HOLY_FARM_UI = {
+    PageControl = nil,
+
     PlantsDropdown = nil,
     ModeDropdown = nil,
     MutationModeDropdown = nil,
@@ -879,6 +881,10 @@ HOLY_FARM_UI = {
     WeightModeDropdown = nil,
     WeightThresholdInput = nil,
     AutoCollectToggle = nil,
+}
+
+HOLY_FARM_PAGE_STATE = {
+    Mode = "Collect",
 }
 
 --==================================================
@@ -33381,6 +33387,9 @@ local SniperModeControl =
 local ShopModeControl =
     nil
 
+local FarmModeControl =
+    nil
+
 local ShopSeedsBox =
     HolyAddLeftGroupbox(
         Tabs.Shop,
@@ -33433,8 +33442,64 @@ local FarmCollectionBox =
     HolyAddLeftGroupbox(
         Tabs.Farm,
         "Farm.FruitCollection",
-        "Fruit Collection",
-        "leaf"
+        "Auto Collect Fruits",
+        "zap"
+    )
+
+local FarmOverridesBox =
+    HolyAddRightGroupbox(
+        Tabs.Farm,
+        "Farm.CollectionOverrides",
+        "Collection Overrides",
+        "shield"
+    )
+
+local FarmPlantBox =
+    HolyAddLeftGroupbox(
+        Tabs.Farm,
+        "Farm.AutoPlant",
+        "Auto Plant Seeds",
+        "sprout"
+    )
+
+local FarmPlantSettingsBox =
+    HolyAddRightGroupbox(
+        Tabs.Farm,
+        "Farm.PlantSettings",
+        "Plant Settings",
+        "settings"
+    )
+
+local FarmToolsWaterBox =
+    HolyAddLeftGroupbox(
+        Tabs.Farm,
+        "Farm.WateringSprinklers",
+        "Watering & Sprinklers",
+        "droplets"
+    )
+
+local FarmToolsUtilityBox =
+    HolyAddRightGroupbox(
+        Tabs.Farm,
+        "Farm.UtilityTools",
+        "Utility Tools",
+        "wrench"
+    )
+
+local FarmExtraUtilitiesBox =
+    HolyAddLeftGroupbox(
+        Tabs.Farm,
+        "Farm.Utilities",
+        "Farm Utilities",
+        "settings"
+    )
+
+local FarmExtraExperimentalBox =
+    HolyAddRightGroupbox(
+        Tabs.Farm,
+        "Farm.Experimental",
+        "Experimental",
+        "flask-conical"
     )
 
 local VisualInventoryBox =
@@ -33484,6 +33549,144 @@ local DevToolsBox =
         "Developer Tools",
         "terminal"
     )
+
+function HolyFarmNormalizePageMode(mode)
+
+    local text =
+        HolyCleanText(
+            mode
+        )
+
+    local lower =
+        text:lower()
+
+    if lower:find("plant", 1, true) then
+        return "Plant"
+    end
+
+    if lower:find("tool", 1, true) then
+        return "Tools"
+    end
+
+    if lower:find("extra", 1, true)
+    or lower:find("misc", 1, true)
+    or lower:find("setting", 1, true) then
+
+        return "Extra"
+    end
+
+    return "Collect"
+end
+
+function HolyFarmRefreshPage()
+
+    HOLY_FARM_PAGE_STATE =
+        type(HOLY_FARM_PAGE_STATE) == "table"
+        and HOLY_FARM_PAGE_STATE
+        or {}
+
+    local mode =
+        HolyFarmNormalizePageMode(
+            HOLY_FARM_PAGE_STATE.Mode
+            or "Collect"
+        )
+
+    HOLY_FARM_PAGE_STATE.Mode =
+        mode
+
+    local isCollect =
+        mode == "Collect"
+
+    local isPlant =
+        mode == "Plant"
+
+    local isTools =
+        mode == "Tools"
+
+    local isExtra =
+        mode == "Extra"
+
+    HolySetGroupboxVisible(
+        FarmCollectionBox,
+        isCollect
+    )
+
+    HolySetGroupboxVisible(
+        FarmOverridesBox,
+        isCollect
+    )
+
+    HolySetGroupboxVisible(
+        FarmPlantBox,
+        isPlant
+    )
+
+    HolySetGroupboxVisible(
+        FarmPlantSettingsBox,
+        isPlant
+    )
+
+    HolySetGroupboxVisible(
+        FarmToolsWaterBox,
+        isTools
+    )
+
+    HolySetGroupboxVisible(
+        FarmToolsUtilityBox,
+        isTools
+    )
+
+    HolySetGroupboxVisible(
+        FarmExtraUtilitiesBox,
+        isExtra
+    )
+
+    HolySetGroupboxVisible(
+        FarmExtraExperimentalBox,
+        isExtra
+    )
+
+    if Tabs.Farm
+    and type(Tabs.Farm.RefreshSides) == "function" then
+
+        task.defer(function()
+
+            Tabs.Farm:RefreshSides()
+        end)
+    end
+
+    return mode
+end
+
+function HolyFarmSetPage(mode)
+
+    HOLY_FARM_PAGE_STATE =
+        type(HOLY_FARM_PAGE_STATE) == "table"
+        and HOLY_FARM_PAGE_STATE
+        or {}
+
+    mode =
+        HolyFarmNormalizePageMode(
+            mode
+        )
+
+    HOLY_FARM_PAGE_STATE.Mode =
+        mode
+
+    if FarmModeControl
+    and type(FarmModeControl.SetValue) == "function" then
+
+        pcall(function()
+
+            FarmModeControl:SetValue(
+                mode,
+                true
+            )
+        end)
+    end
+
+    return HolyFarmRefreshPage()
+end
 
 --==================================================
 -- [5.45] SERVER FINDER HUD
@@ -44219,6 +44422,91 @@ end
 -- [6.25] FARM TAB
 --==================================================
 
+if Tabs.Farm
+and type(Tabs.Farm.AddTopNavigation) == "function" then
+
+    FarmModeControl =
+        Tabs.Farm:AddTopNavigation({
+            Items = {
+                {
+                    Key = "Collect",
+                    Text = "🎯 Collect",
+                    AccentColor = Color3.fromRGB(255, 70, 88),
+                },
+
+                {
+                    Key = "Plant",
+                    Text = "🌱 Plant",
+                    AccentColor = Color3.fromRGB(94, 255, 120),
+                },
+
+                {
+                    Key = "Tools",
+                    Text = "🛠️ Tools",
+                    AccentColor = Color3.fromRGB(86, 160, 255),
+                },
+
+                {
+                    Key = "Extra",
+                    Text = "⭐ Extra",
+                    AccentColor = Color3.fromRGB(255, 216, 74),
+                },
+            },
+
+            Default =
+                HOLY_FARM_PAGE_STATE.Mode
+                or "Collect",
+
+            Height =
+                58,
+
+            BarHeight =
+                42,
+
+            Callback =
+                function(value)
+
+                    HolyFarmSetPage(
+                        value
+                    )
+                end,
+        })
+
+elseif Tabs.Farm
+and type(Tabs.Farm.AddTopSegmentedControl) == "function" then
+
+    FarmModeControl =
+        Tabs.Farm:AddTopSegmentedControl({
+            Values = {
+                "Collect",
+                "Plant",
+                "Tools",
+                "Extra",
+            },
+
+            Default =
+                HOLY_FARM_PAGE_STATE.Mode
+                or "Collect",
+
+            Width =
+                520,
+
+            Height =
+                46,
+
+            PillHeight =
+                32,
+
+            Callback =
+                function(value)
+
+                    HolyFarmSetPage(
+                        value
+                    )
+                end,
+        })
+end
+
 if FarmCollectionBox
 and type(FarmCollectionBox.AddToggle) == "function" then
 
@@ -44481,7 +44769,77 @@ and type(FarmCollectionBox.AddInput) == "function" then
     end)
 end
 
+local function HolyFarmAddPageNote(box, text)
+
+    if type(box) ~= "table"
+    or type(box.AddLabel) ~= "function" then
+
+        return false
+    end
+
+    pcall(function()
+
+        box:AddLabel({
+            Text =
+                text,
+
+            DoesWrap =
+                true,
+
+            Size =
+                13,
+        })
+    end)
+
+    return true
+end
+
+HolyFarmAddPageNote(
+    FarmOverridesBox,
+    "No overrides added yet.\nMutation Weight Override will go here."
+)
+
+HolyFarmAddPageNote(
+    FarmPlantBox,
+    "Auto Plant Seeds will go here.\nThis page is ready for seed planting features."
+)
+
+HolyFarmAddPageNote(
+    FarmPlantSettingsBox,
+    "Plant position, random position, and replant settings will go here."
+)
+
+HolyFarmAddPageNote(
+    FarmToolsWaterBox,
+    "Watering can and sprinkler automation will go here."
+)
+
+HolyFarmAddPageNote(
+    FarmToolsUtilityBox,
+    "Trowel, shovel, pickup, and farm utility tools will go here."
+)
+
+HolyFarmAddPageNote(
+    FarmExtraUtilitiesBox,
+    "Farm middle, safety, and maintenance options will go here."
+)
+
+HolyFarmAddPageNote(
+    FarmExtraExperimentalBox,
+    "Experimental farm systems and debug tools will go here."
+)
+
+HolyFarmSetPage(
+    HOLY_FARM_PAGE_STATE.Mode
+    or "Collect"
+)
+
 task.defer(function()
+
+    HolyFarmSetPage(
+        HOLY_FARM_PAGE_STATE.Mode
+        or "Collect"
+    )
 
     HolyFarmPrimeStaticCaches(
         true
