@@ -689,9 +689,9 @@ end
 HOLY_FARM_STATE = {
     AutoCollectFruits = false,
 
-    SelectedPlants = {
-        "All",
-    },
+    CollectMode = "All",
+
+    SelectedPlants = {},
 }
 
 HOLY_FARM_RUNTIME = {
@@ -720,6 +720,7 @@ HOLY_FARM_RUNTIME = {
 
 HOLY_FARM_UI = {
     PlantsDropdown = nil,
+    ModeDropdown = nil,
     AutoCollectToggle = nil,
 }
 
@@ -2078,6 +2079,27 @@ end
 -- [2.12] FARM / FRUIT COLLECTION CORE
 --==================================================
 
+function HolyFarmNormalizeCollectMode(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local lower =
+        text:lower()
+
+    if lower == "selected"
+    or lower == "select"
+    or lower == "selected plants"
+    or lower == "only selected" then
+
+        return "Selected"
+    end
+
+    return "All"
+end
+
 function HolyFarmEnsureState()
 
     HOLY_FARM_STATE =
@@ -2085,12 +2107,16 @@ function HolyFarmEnsureState()
         and HOLY_FARM_STATE
         or {}
 
+    HOLY_FARM_STATE.CollectMode =
+        HolyFarmNormalizeCollectMode(
+            HOLY_FARM_STATE.CollectMode
+            or "All"
+        )
+
     HOLY_FARM_STATE.SelectedPlants =
         HolyFarmNormalizePlantSelection(
             HOLY_FARM_STATE.SelectedPlants
-            or {
-                "All",
-            }
+            or {}
         )
 
     HOLY_FARM_STATE.AutoCollectFruits =
@@ -2268,6 +2294,11 @@ function HolySaveFarmSettings()
         AutoCollectFruits =
             HOLY_FARM_STATE.AutoCollectFruits == true,
 
+        CollectMode =
+            HolyFarmNormalizeCollectMode(
+                HOLY_FARM_STATE.CollectMode
+            ),
+
         SelectedPlants =
             HolyShopSelectionArray(
                 HOLY_FARM_STATE.SelectedPlants
@@ -2355,6 +2386,12 @@ function HolyLoadFarmSettings()
 
     HOLY_FARM_STATE.AutoCollectFruits =
         data.AutoCollectFruits == true
+
+    HOLY_FARM_STATE.CollectMode =
+        HolyFarmNormalizeCollectMode(
+            data.CollectMode
+            or "All"
+        )
 
     HOLY_FARM_STATE.SelectedPlants =
         HolyFarmNormalizePlantSelection(
@@ -2475,12 +2512,6 @@ function HolyFarmGetPlantDropdownValues()
             < tostring(b):lower()
     end)
 
-    table.insert(
-        values,
-        1,
-        "All"
-    )
-
     return values
 end
 
@@ -2507,19 +2538,7 @@ function HolyFarmNormalizePlantSelection(value)
 
     if #raw <= 0 then
 
-        return {
-            "All",
-        }
-    end
-
-    for _, plantName in ipairs(raw) do
-
-        if plantName == "All" then
-
-            return {
-                "All",
-            }
-        end
+        return {}
     end
 
     local validMap =
@@ -2539,6 +2558,7 @@ function HolyFarmNormalizePlantSelection(value)
             )
 
         if plantName ~= ""
+        and plantName ~= "All"
         and validMap[plantName] == true
         and seen[plantName] ~= true then
 
@@ -2550,13 +2570,6 @@ function HolyFarmNormalizePlantSelection(value)
                 plantName
             )
         end
-    end
-
-    if #output <= 0 then
-
-        return {
-            "All",
-        }
     end
 
     table.sort(output, function(a, b)
@@ -2577,15 +2590,16 @@ function HolyFarmSelectedPlantMap()
 
     for _, plantName in ipairs(HOLY_FARM_STATE.SelectedPlants or {}) do
 
-        map[plantName] =
-            true
-    end
+        plantName =
+            HolyFarmCleanPlantName(
+                plantName
+            )
 
-    if map.All == true then
+        if plantName ~= "" then
 
-        return {
-            All = true,
-        }
+            map[plantName] =
+                true
+        end
     end
 
     return map
@@ -2598,12 +2612,17 @@ function HolyFarmSelectionAllowsPlant(plantName)
             plantName
         )
 
-    local map =
-        HolyFarmSelectedPlantMap()
+    if HolyFarmNormalizeCollectMode(
+        HOLY_FARM_STATE
+        and HOLY_FARM_STATE.CollectMode
+        or "All"
+    ) == "All" then
 
-    if map.All == true then
         return true
     end
+
+    local map =
+        HolyFarmSelectedPlantMap()
 
     return plantName ~= ""
         and map[plantName] == true
@@ -2656,6 +2675,27 @@ function HolyFarmRefreshPlantDropdown()
             )
         end
     end)
+
+    return true
+end
+
+function HolyFarmSetCollectMode(value)
+
+    HolyFarmEnsureState()
+
+    HOLY_FARM_STATE.CollectMode =
+        HolyFarmNormalizeCollectMode(
+            value
+        )
+
+    HolySaveFarmSettings()
+
+    if HOLY_FARM_STATE.AutoCollectFruits == true then
+
+        HolyFarmRebuildReadyQueue(
+            "mode changed"
+        )
+    end
 
     return true
 end
@@ -36808,6 +36848,45 @@ end
 if FarmCollectionBox
 and type(FarmCollectionBox.AddDropdown) == "function" then
 
+    HOLY_FARM_UI.ModeDropdown =
+        FarmCollectionBox:AddDropdown(
+            "HolyFarmCollectMode",
+            {
+                Text =
+                    "Mode",
+
+                Values = {
+                    "All",
+                    "Selected",
+                },
+
+                Default =
+                    HolyFarmNormalizeCollectMode(
+                        HOLY_FARM_STATE.CollectMode
+                        or "All"
+                    ),
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    2,
+
+                Tooltip =
+                    "All collects every ready fruit. Selected only collects chosen plants.",
+            }
+        )
+
+    HOLY_FARM_UI.ModeDropdown:OnChanged(function(value)
+
+        HolyFarmSetCollectMode(
+            value
+        )
+    end)
+
     HOLY_FARM_UI.PlantsDropdown =
         FarmCollectionBox:AddDropdown(
             "HolyFarmCollectPlants",
@@ -36833,7 +36912,7 @@ and type(FarmCollectionBox.AddDropdown) == "function" then
                     10,
 
                 Tooltip =
-                    "All collects every ready fruit. Select plants to collect only those crops.",
+                    "Used only when Mode is Selected. Empty selection collects nothing.",
             }
         )
 
