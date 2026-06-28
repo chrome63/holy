@@ -580,15 +580,6 @@ HOLY_SHOP_STATE = {
 
     AutoDoubleOrNothing = false,
     DoubleTargetWins = "1",
-
-    DoubleAutoCashout = true,
-    DoubleAutoFavorite = true,
-    DoubleAutoUnfavorite = true,
-
-    DoubleFruitMode = "🎒 All Backpack",
-    DoubleTargetFruit = "",
-    DoubleTargetFruitKey = "",
-
     DoubleBustFavDelay = "0.10",
     DoubleUnfavoriteDelay = "1.00",
     DoubleHudEnabled = false,
@@ -604,11 +595,7 @@ HOLY_SHOP_STATE = {
     DoubleLastMultiplier = 1,
     DoubleLastStakeCount = 0,
     DoubleLastResult = "Ready",
-
-    DoubleAwaitingCashout = false,
     DoubleTouchedRows = {},
-    DoubleBackpackChoiceMap = {},
-    DoubleBackpackRows = {},
 
     UseSellFilters = false,
 
@@ -1707,37 +1694,6 @@ function HolySaveShopSettings()
                 or "1"
             ),
 
-        DoubleAutoCashout =
-            HOLY_SHOP_STATE.DoubleAutoCashout ~= false,
-
-        DoubleAutoFavorite =
-            HOLY_SHOP_STATE.DoubleAutoFavorite ~= false,
-
-        DoubleAutoUnfavorite =
-            HOLY_SHOP_STATE.DoubleAutoUnfavorite ~= false,
-
-        DoubleFruitMode =
-            type(HolyDoubleNormalizeFruitMode) == "function"
-            and HolyDoubleNormalizeFruitMode(
-                HOLY_SHOP_STATE.DoubleFruitMode
-            )
-            or tostring(
-                HOLY_SHOP_STATE.DoubleFruitMode
-                or "🎒 All Backpack"
-            ),
-
-        DoubleTargetFruit =
-            tostring(
-                HOLY_SHOP_STATE.DoubleTargetFruit
-                or ""
-            ),
-
-        DoubleTargetFruitKey =
-            tostring(
-                HOLY_SHOP_STATE.DoubleTargetFruitKey
-                or ""
-            ),
-
         DoubleBustFavDelay =
             tostring(
                 HOLY_SHOP_STATE.DoubleBustFavDelay
@@ -1946,42 +1902,6 @@ function HolyLoadShopSettings()
             doubleTargetWins
         )
 
-    HOLY_SHOP_STATE.DoubleAutoCashout =
-        data.DoubleAutoCashout ~= false
-
-    HOLY_SHOP_STATE.DoubleAutoFavorite =
-        data.DoubleAutoFavorite ~= false
-
-    HOLY_SHOP_STATE.DoubleAutoUnfavorite =
-        data.DoubleAutoUnfavorite ~= false
-
-    HOLY_SHOP_STATE.DoubleFruitMode =
-        type(HolyDoubleNormalizeFruitMode) == "function"
-        and HolyDoubleNormalizeFruitMode(
-            data.DoubleFruitMode
-            or HOLY_SHOP_STATE.DoubleFruitMode
-            or "🎒 All Backpack"
-        )
-        or tostring(
-            data.DoubleFruitMode
-            or HOLY_SHOP_STATE.DoubleFruitMode
-            or "🎒 All Backpack"
-        )
-
-    HOLY_SHOP_STATE.DoubleTargetFruit =
-        tostring(
-            data.DoubleTargetFruit
-            or HOLY_SHOP_STATE.DoubleTargetFruit
-            or ""
-        )
-
-    HOLY_SHOP_STATE.DoubleTargetFruitKey =
-        tostring(
-            data.DoubleTargetFruitKey
-            or HOLY_SHOP_STATE.DoubleTargetFruitKey
-            or ""
-        )
-
     HOLY_SHOP_STATE.DoubleBustFavDelay =
         tostring(
             data.DoubleBustFavDelay
@@ -2003,9 +1923,6 @@ function HolyLoadShopSettings()
         type(data.DoubleHudPosition) == "table"
         and data.DoubleHudPosition
         or nil
-
-    HOLY_SHOP_STATE.DoubleAwaitingCashout =
-        false
 
     HOLY_SHOP_STATE.SellMethod =
         HolySellNormalizeMethod(
@@ -17919,41 +17836,6 @@ HOLY_DOUBLE_HUD =
     and HOLY_DOUBLE_HUD
     or {}
 
-HOLY_DOUBLE_FRUIT_MODES = {
-    "🎒 All Backpack",
-    "🍓 Fruit Type",
-    "🎯 Exact Fruit",
-}
-
-function HolyDoubleNormalizeFruitMode(value)
-
-    local text =
-        HolyCleanText(
-            value
-        )
-
-    local lower =
-        text:lower()
-
-    if lower:find("exact", 1, true) then
-        return "🎯 Exact Fruit"
-    end
-
-    if lower:find("type", 1, true) then
-        return "🍓 Fruit Type"
-    end
-
-    return "🎒 All Backpack"
-end
-
-function HolyDoubleFruitModeIsTargeted(value)
-
-    return HolyDoubleNormalizeFruitMode(
-        value
-        or HOLY_SHOP_STATE.DoubleFruitMode
-    ) ~= "🎒 All Backpack"
-end
-
 function HolyDoubleEnsureState()
 
     HOLY_SHOP_STATE =
@@ -17978,42 +17860,6 @@ function HolyDoubleEnsureState()
             or "1"
         )
 
-    if type(HOLY_SHOP_STATE.DoubleAutoCashout) ~= "boolean" then
-
-        HOLY_SHOP_STATE.DoubleAutoCashout =
-            true
-    end
-
-    if type(HOLY_SHOP_STATE.DoubleAutoFavorite) ~= "boolean" then
-
-        HOLY_SHOP_STATE.DoubleAutoFavorite =
-            true
-    end
-
-    if type(HOLY_SHOP_STATE.DoubleAutoUnfavorite) ~= "boolean" then
-
-        HOLY_SHOP_STATE.DoubleAutoUnfavorite =
-            true
-    end
-
-    HOLY_SHOP_STATE.DoubleFruitMode =
-        HolyDoubleNormalizeFruitMode(
-            HOLY_SHOP_STATE.DoubleFruitMode
-            or "🎒 All Backpack"
-        )
-
-    HOLY_SHOP_STATE.DoubleTargetFruit =
-        tostring(
-            HOLY_SHOP_STATE.DoubleTargetFruit
-            or ""
-        )
-
-    HOLY_SHOP_STATE.DoubleTargetFruitKey =
-        tostring(
-            HOLY_SHOP_STATE.DoubleTargetFruitKey
-            or ""
-        )
-
     HOLY_SHOP_STATE.DoubleBustFavDelay =
         tostring(
             HOLY_SHOP_STATE.DoubleBustFavDelay
@@ -18030,19 +17876,6 @@ function HolyDoubleEnsureState()
         type(HOLY_SHOP_STATE.DoubleTouchedRows) == "table"
         and HOLY_SHOP_STATE.DoubleTouchedRows
         or {}
-
-    HOLY_SHOP_STATE.DoubleBackpackChoiceMap =
-        type(HOLY_SHOP_STATE.DoubleBackpackChoiceMap) == "table"
-        and HOLY_SHOP_STATE.DoubleBackpackChoiceMap
-        or {}
-
-    HOLY_SHOP_STATE.DoubleBackpackRows =
-        type(HOLY_SHOP_STATE.DoubleBackpackRows) == "table"
-        and HOLY_SHOP_STATE.DoubleBackpackRows
-        or {}
-
-    HOLY_SHOP_STATE.DoubleAwaitingCashout =
-        HOLY_SHOP_STATE.DoubleAwaitingCashout == true
 
     HOLY_SHOP_STATE.DoubleLastPot =
         tonumber(HOLY_SHOP_STATE.DoubleLastPot)
@@ -18197,860 +18030,6 @@ function HolyDoubleFormatNumber(value)
     return text
 end
 
-function HolyDoubleFormatKg(value)
-
-    local number =
-        tonumber(value)
-        or 0
-
-    local text =
-        string.format(
-            "%.2f",
-            number
-        )
-
-    text =
-        text:gsub(
-            "0+$",
-            ""
-        )
-
-    text =
-        text:gsub(
-            "%.$",
-            ""
-        )
-
-    if text == "" then
-        text = "0"
-    end
-
-    return text
-end
-
-function HolyDoubleNormalizeMutation(value)
-
-    local text =
-        HolyCleanText(
-            value
-        )
-
-    local lower =
-        text:lower()
-
-    if lower == ""
-    or lower == "none"
-    or lower == "normal"
-    or lower == "regular"
-    or lower == "nil"
-    or lower == "false" then
-
-        return "None"
-    end
-
-    return text
-end
-
-function HolyDoubleGetToolMutation(tool)
-
-    if typeof(tool) ~= "Instance" then
-        return "None"
-    end
-
-    local attrs =
-        HolySellGetToolAttributes(
-            tool
-        )
-
-    local raw =
-        attrs.Mutation
-        or attrs.Mutations
-        or attrs.FruitMutation
-        or attrs.FruitMutations
-        or attrs.CropMutation
-        or attrs.CropMutations
-        or attrs.WeatherMutation
-
-    if type(raw) == "table" then
-
-        for key, value in pairs(raw) do
-
-            if value == true then
-
-                return HolyDoubleNormalizeMutation(
-                    key
-                )
-            end
-
-            if type(value) == "string"
-            and HolyCleanText(value) ~= "" then
-
-                return HolyDoubleNormalizeMutation(
-                    value
-                )
-            end
-        end
-
-        return "None"
-    end
-
-    return HolyDoubleNormalizeMutation(
-        raw
-    )
-end
-
-function HolyDoubleToolIsFavorite(tool)
-
-    if typeof(tool) ~= "Instance" then
-        return false
-    end
-
-    local attrs =
-        HolySellGetToolAttributes(
-            tool
-        )
-
-    return attrs.IsFavorite == true
-        or attrs.Favorite == true
-        or attrs.Favorited == true
-end
-
-function HolyDoubleFruitLabelName(fruitName, mutation)
-
-    fruitName =
-        HolyCleanText(
-            fruitName
-        )
-
-    if fruitName == "" then
-        fruitName =
-            "Unknown"
-    end
-
-    mutation =
-        HolyDoubleNormalizeMutation(
-            mutation
-        )
-
-    if mutation ~= "None" then
-
-        return mutation
-            .. " "
-            .. fruitName
-    end
-
-    return fruitName
-end
-
-function HolyDoubleFruitGroupKey(fruitName, mutation)
-
-    return HolyCleanText(
-        HolyDoubleNormalizeMutation(mutation)
-    )
-        .. "|"
-        .. HolyCleanText(
-            fruitName
-        )
-end
-
-function HolyDoubleGetFruitRows()
-
-    local rows =
-        {}
-
-    local seen =
-        {}
-
-    for _, tool in ipairs(HolySellGetFruitTools()) do
-
-        local fruitId =
-            HolySellResolveFruitId(
-                tool
-            )
-
-        if fruitId ~= ""
-        and seen[fruitId] ~= true then
-
-            seen[fruitId] =
-                true
-
-            local fruitName =
-                HolySellGetToolFruitName(
-                    tool
-                )
-
-            local mutation =
-                HolyDoubleGetToolMutation(
-                    tool
-                )
-
-            local weight =
-                HolySellGetToolWeight(
-                    tool
-                )
-
-            local labelName =
-                HolyDoubleFruitLabelName(
-                    fruitName,
-                    mutation
-                )
-
-            table.insert(
-                rows,
-                {
-                    Id =
-                        fruitId,
-
-                    Tool =
-                        tool,
-
-                    Name =
-                        fruitName,
-
-                    FruitName =
-                        fruitName,
-
-                    Mutation =
-                        mutation,
-
-                    Weight =
-                        weight,
-
-                    LabelName =
-                        labelName,
-
-                    Label =
-                        labelName
-                        .. " · "
-                        .. HolyDoubleFormatKg(weight)
-                        .. "kg",
-
-                    GroupKey =
-                        HolyDoubleFruitGroupKey(
-                            fruitName,
-                            mutation
-                        ),
-
-                    WasFavorite =
-                        HolyDoubleToolIsFavorite(
-                            tool
-                        ),
-
-                    TouchedAt =
-                        os.clock(),
-                }
-            )
-        end
-    end
-
-    table.sort(rows, function(a, b)
-
-        if tostring(a.FruitName) ~= tostring(b.FruitName) then
-
-            return tostring(a.FruitName) < tostring(b.FruitName)
-        end
-
-        if tostring(a.Mutation) ~= tostring(b.Mutation) then
-
-            if a.Mutation == "None" then
-                return false
-            end
-
-            if b.Mutation == "None" then
-                return true
-            end
-
-            return tostring(a.Mutation) < tostring(b.Mutation)
-        end
-
-        if tonumber(a.Weight or 0) ~= tonumber(b.Weight or 0) then
-
-            return tonumber(a.Weight or 0) > tonumber(b.Weight or 0)
-        end
-
-        return tostring(a.Id) < tostring(b.Id)
-    end)
-
-    return rows
-end
-
-function HolyDoubleMakeUniqueLabel(label, used)
-
-    label =
-        HolyCleanText(
-            label
-        )
-
-    used =
-        type(used) == "table"
-        and used
-        or {}
-
-    if used[label] == nil then
-
-        used[label] =
-            1
-
-        return label
-    end
-
-    used[label] =
-        used[label] + 1
-
-    return label
-        .. " · #"
-        .. tostring(used[label])
-end
-
-function HolyDoubleBuildBackpackChoices(mode)
-
-    HolyDoubleEnsureState()
-
-    mode =
-        HolyDoubleNormalizeFruitMode(
-            mode
-            or HOLY_SHOP_STATE.DoubleFruitMode
-        )
-
-    local rows =
-        HolyDoubleGetFruitRows()
-
-    local values =
-        {}
-
-    local map =
-        {}
-
-    local usedLabels =
-        {}
-
-    if mode == "🎒 All Backpack" then
-
-        values = {
-            "All Backpack",
-        }
-
-        map["All Backpack"] = {
-            Mode =
-                mode,
-
-            Key =
-                "all",
-
-            Label =
-                "All Backpack",
-        }
-
-    elseif mode == "🍓 Fruit Type" then
-
-        local groups =
-            {}
-
-        for _, row in ipairs(rows) do
-
-            local key =
-                "group:"
-                .. tostring(row.GroupKey)
-
-            groups[key] =
-                groups[key]
-                or {
-                    Mode =
-                        mode,
-
-                    Key =
-                        key,
-
-                    GroupKey =
-                        row.GroupKey,
-
-                    FruitName =
-                        row.FruitName,
-
-                    Mutation =
-                        row.Mutation,
-
-                    LabelName =
-                        row.LabelName,
-
-                    Count =
-                        0,
-
-                    TotalWeight =
-                        0,
-
-                    Biggest =
-                        0,
-                }
-
-            groups[key].Count =
-                groups[key].Count + 1
-
-            groups[key].TotalWeight =
-                groups[key].TotalWeight
-                + (
-                    tonumber(row.Weight)
-                    or 0
-                )
-
-            groups[key].Biggest =
-                math.max(
-                    groups[key].Biggest,
-                    tonumber(row.Weight)
-                    or 0
-                )
-        end
-
-        local groupRows =
-            {}
-
-        for _, group in pairs(groups) do
-
-            table.insert(
-                groupRows,
-                group
-            )
-        end
-
-        table.sort(groupRows, function(a, b)
-
-            if tostring(a.FruitName) ~= tostring(b.FruitName) then
-                return tostring(a.FruitName) < tostring(b.FruitName)
-            end
-
-            if tostring(a.Mutation) ~= tostring(b.Mutation) then
-
-                if a.Mutation == "None" then
-                    return false
-                end
-
-                if b.Mutation == "None" then
-                    return true
-                end
-
-                return tostring(a.Mutation) < tostring(b.Mutation)
-            end
-
-            return tonumber(a.Count or 0) > tonumber(b.Count or 0)
-        end)
-
-        for _, group in ipairs(groupRows) do
-
-            local label =
-                HolyDoubleMakeUniqueLabel(
-                    tostring(group.LabelName)
-                    .. " · x"
-                    .. tostring(group.Count),
-                    usedLabels
-                )
-
-            group.Label =
-                label
-
-            table.insert(
-                values,
-                label
-            )
-
-            map[label] =
-                group
-        end
-
-    else
-
-        for _, row in ipairs(rows) do
-
-            local label =
-                HolyDoubleMakeUniqueLabel(
-                    row.Label,
-                    usedLabels
-                )
-
-            local key =
-                "id:"
-                .. tostring(row.Id)
-
-            table.insert(
-                values,
-                label
-            )
-
-            map[label] = {
-                Mode =
-                    mode,
-
-                Key =
-                    key,
-
-                FruitId =
-                    row.Id,
-
-                GroupKey =
-                    row.GroupKey,
-
-                FruitName =
-                    row.FruitName,
-
-                Mutation =
-                    row.Mutation,
-
-                Weight =
-                    row.Weight,
-
-                Label =
-                    label,
-            }
-        end
-    end
-
-    if #values <= 0 then
-
-        values = {
-            "No fruits found",
-        }
-
-        map["No fruits found"] = {
-            Mode =
-                mode,
-
-            Key =
-                "",
-        }
-    end
-
-    HOLY_SHOP_STATE.DoubleBackpackChoiceMap =
-        map
-
-    HOLY_SHOP_STATE.DoubleBackpackRows =
-        rows
-
-    return values,
-        map,
-        rows
-end
-
-function HolyDoubleChoiceExists(values, value)
-
-    value =
-        HolyCleanText(
-            value
-        )
-
-    if value == "" then
-        return false
-    end
-
-    for _, item in ipairs(values or {}) do
-
-        if item == value then
-            return true
-        end
-    end
-
-    return false
-end
-
-function HolyDoubleGetTargetFruitDropdownValues()
-
-    local values =
-        HolyDoubleBuildBackpackChoices(
-            HOLY_SHOP_STATE.DoubleFruitMode
-        )
-
-    return values
-end
-
-function HolyDoubleGetTargetFruitDropdownDefault()
-
-    local values =
-        HolyDoubleBuildBackpackChoices(
-            HOLY_SHOP_STATE.DoubleFruitMode
-        )
-
-    local selected =
-        HolyCleanText(
-            HOLY_SHOP_STATE.DoubleTargetFruit
-        )
-
-    if HolyDoubleChoiceExists(
-        values,
-        selected
-    ) == true then
-
-        return selected
-    end
-
-    return values[1]
-        or "No fruits found"
-end
-
-function HolyDoubleSetDropdownValues(dropdown, values, selected)
-
-    if type(dropdown) ~= "table" then
-        return false
-    end
-
-    values =
-        type(values) == "table"
-        and values
-        or {}
-
-    selected =
-        HolyCleanText(
-            selected
-        )
-
-    pcall(function()
-
-        if type(dropdown.SetValues) == "function" then
-
-            dropdown:SetValues(
-                values
-            )
-
-        elseif type(dropdown.SetItems) == "function" then
-
-            dropdown:SetItems(
-                values
-            )
-        end
-    end)
-
-    if selected ~= ""
-    and type(dropdown.SetValue) == "function" then
-
-        pcall(function()
-
-            dropdown:SetValue(
-                selected
-            )
-        end)
-    end
-
-    return true
-end
-
-function HolyDoubleBuildBackpackSummaryText()
-
-    local rows =
-        HOLY_SHOP_STATE.DoubleBackpackRows
-
-    if type(rows) ~= "table" then
-
-        rows =
-            HolyDoubleGetFruitRows()
-    end
-
-    local groups =
-        {}
-
-    for _, row in ipairs(rows) do
-
-        if type(row) == "table"
-        and row.GroupKey then
-
-            groups[row.GroupKey] =
-                true
-        end
-    end
-
-    local groupCount =
-        0
-
-    for _ in pairs(groups) do
-
-        groupCount =
-            groupCount + 1
-    end
-
-    return "🎒 Backpack: "
-        .. tostring(#rows)
-        .. " fruit(s) · "
-        .. tostring(groupCount)
-        .. " type(s)"
-end
-
-function HolyDoubleRefreshBackpackDropdowns(keepSelected)
-
-    HolyDoubleEnsureState()
-
-    local values,
-        map =
-        HolyDoubleBuildBackpackChoices(
-            HOLY_SHOP_STATE.DoubleFruitMode
-        )
-
-    local selected =
-        HolyCleanText(
-            HOLY_SHOP_STATE.DoubleTargetFruit
-        )
-
-    if keepSelected ~= true
-    or HolyDoubleChoiceExists(values, selected) ~= true then
-
-        selected =
-            values[1]
-            or "No fruits found"
-    end
-
-    local choice =
-        map[selected]
-
-    HOLY_SHOP_STATE.DoubleTargetFruit =
-        selected
-
-    HOLY_SHOP_STATE.DoubleTargetFruitKey =
-        choice
-        and tostring(choice.Key or "")
-        or ""
-
-    local options =
-        HOLY_DEV_LIBRARY
-        and HOLY_DEV_LIBRARY.Options
-        or Options
-
-    if type(options) == "table" then
-
-        HolyDoubleSetDropdownValues(
-            options.HolyShopDoubleTargetFruit,
-            values,
-            selected
-        )
-    end
-
-    if type(HolySniperSetLabel) == "function" then
-
-        HolySniperSetLabel(
-            HOLY_SHOP_UI
-            and HOLY_SHOP_UI.DoubleBackpackLabel
-            or nil,
-            HolyDoubleBuildBackpackSummaryText()
-        )
-    end
-
-    HolySaveShopSettings()
-
-    return true
-end
-
-function HolyDoubleSetFruitMode(value)
-
-    HolyDoubleEnsureState()
-
-    HOLY_SHOP_STATE.DoubleFruitMode =
-        HolyDoubleNormalizeFruitMode(
-            value
-        )
-
-    HolyDoubleRefreshBackpackDropdowns(
-        false
-    )
-
-    HolyDoubleSetStatus(
-        "🎒 Fruit mode: "
-        .. tostring(HOLY_SHOP_STATE.DoubleFruitMode)
-    )
-
-    return true
-end
-
-function HolyDoubleSetTargetFruit(value)
-
-    HolyDoubleEnsureState()
-
-    local values,
-        map =
-        HolyDoubleBuildBackpackChoices(
-            HOLY_SHOP_STATE.DoubleFruitMode
-        )
-
-    local selected =
-        HolyCleanText(
-            value
-        )
-
-    if HolyDoubleChoiceExists(values, selected) ~= true then
-
-        selected =
-            values[1]
-            or "No fruits found"
-    end
-
-    local choice =
-        map[selected]
-
-    HOLY_SHOP_STATE.DoubleTargetFruit =
-        selected
-
-    HOLY_SHOP_STATE.DoubleTargetFruitKey =
-        choice
-        and tostring(choice.Key or "")
-        or ""
-
-    HolySaveShopSettings()
-
-    HolyDoubleSetStatus(
-        "🍓 Target: "
-        .. tostring(selected)
-    )
-
-    return true
-end
-
-function HolyDoubleSetAutoCashout(value)
-
-    HolyDoubleEnsureState()
-
-    HOLY_SHOP_STATE.DoubleAutoCashout =
-        value == true
-
-    HolySaveShopSettings()
-
-    HolyDoubleSetStatus(
-        HOLY_SHOP_STATE.DoubleAutoCashout == true
-        and "💰 Auto Cashout: ON"
-        or "💰 Auto Cashout: OFF"
-    )
-
-    return true
-end
-
-function HolyDoubleSetAutoFavorite(value)
-
-    HolyDoubleEnsureState()
-
-    HOLY_SHOP_STATE.DoubleAutoFavorite =
-        value == true
-
-    HolySaveShopSettings()
-
-    HolyDoubleSetStatus(
-        HOLY_SHOP_STATE.DoubleAutoFavorite == true
-        and "🛡️ Auto Favorite: ON"
-        or "🛡️ Auto Favorite: OFF"
-    )
-
-    return true
-end
-
-function HolyDoubleSetAutoUnfavorite(value)
-
-    HolyDoubleEnsureState()
-
-    HOLY_SHOP_STATE.DoubleAutoUnfavorite =
-        value == true
-
-    HolySaveShopSettings()
-
-    HolyDoubleSetStatus(
-        HOLY_SHOP_STATE.DoubleAutoUnfavorite == true
-        and "🔓 Auto Unfavorite: ON"
-        or "🔓 Auto Unfavorite: OFF"
-    )
-
-    return true
-end
-
 function HolyDoubleBuildStatusText()
 
     HolyDoubleEnsureState()
@@ -19148,11 +18127,6 @@ function HolyDoubleRefreshUI()
             HOLY_SHOP_UI.DoubleStatusLabel,
             HolyDoubleBuildStatusText()
         )
-
-        HolySniperSetLabel(
-            HOLY_SHOP_UI.DoubleBackpackLabel,
-            HolyDoubleBuildBackpackSummaryText()
-        )
     end
 
     HolyDoubleUpdateHud()
@@ -19206,7 +18180,7 @@ function HolyDoubleSetBustFavDelay(value)
     HolySaveShopSettings()
 
     HolyDoubleSetStatus(
-        "⏱️ Fav delay: "
+        "🛡️ Bust fav delay: "
         .. tostring(HOLY_SHOP_STATE.DoubleBustFavDelay)
         .. "s"
     )
@@ -19227,7 +18201,7 @@ function HolyDoubleSetUnfavoriteDelay(value)
     HolySaveShopSettings()
 
     HolyDoubleSetStatus(
-        "⏱️ Unfav delay: "
+        "🔓 Unfav delay: "
         .. tostring(HOLY_SHOP_STATE.DoubleUnfavoriteDelay)
         .. "s"
     )
@@ -19671,6 +18645,72 @@ function HolyDoubleDisableAutoSell()
     return true
 end
 
+function HolyDoubleToolIsFavorite(tool)
+
+    if typeof(tool) ~= "Instance" then
+        return false
+    end
+
+    local attrs =
+        HolySellGetToolAttributes(
+            tool
+        )
+
+    return attrs.IsFavorite == true
+        or attrs.Favorite == true
+        or attrs.Favorited == true
+end
+
+function HolyDoubleGetFruitRows()
+
+    local rows =
+        {}
+
+    local seen =
+        {}
+
+    for _, tool in ipairs(HolySellGetFruitTools()) do
+
+        local fruitId =
+            HolySellResolveFruitId(
+                tool
+            )
+
+        if fruitId ~= ""
+        and seen[fruitId] ~= true then
+
+            seen[fruitId] =
+                true
+
+            table.insert(
+                rows,
+                {
+                    Id =
+                        fruitId,
+
+                    Tool =
+                        tool,
+
+                    Name =
+                        HolySellGetToolFruitName(
+                            tool
+                        ),
+
+                    WasFavorite =
+                        HolyDoubleToolIsFavorite(
+                            tool
+                        ),
+
+                    TouchedAt =
+                        os.clock(),
+                }
+            )
+        end
+    end
+
+    return rows
+end
+
 function HolyDoubleRememberTouchedRows(rows)
 
     HolyDoubleEnsureState()
@@ -19684,11 +18724,7 @@ function HolyDoubleRememberTouchedRows(rows)
                 or ""
             )
 
-        if fruitId ~= ""
-        and row.WasFavorite ~= true then
-
-            row.TouchedAt =
-                os.clock()
+        if fruitId ~= "" then
 
             HOLY_SHOP_STATE.DoubleTouchedRows[fruitId] =
                 row
@@ -19738,7 +18774,7 @@ function HolyDoublePruneTouchedRows()
             or 0
 
         if touchedAt <= 0
-        or now - touchedAt > 180 then
+        or now - touchedAt > 45 then
 
             HOLY_SHOP_STATE.DoubleTouchedRows[fruitId] =
                 nil
@@ -19748,31 +18784,22 @@ function HolyDoublePruneTouchedRows()
     return true
 end
 
-function HolyDoubleGetTouchedRows(reasonFilter)
+function HolyDoubleGetTouchedRows()
 
     HolyDoublePruneTouchedRows()
 
     local rows =
         {}
 
-    reasonFilter =
-        HolyCleanText(
-            reasonFilter
-        )
-
     for _, row in pairs(HOLY_SHOP_STATE.DoubleTouchedRows or {}) do
 
         if type(row) == "table"
         and HolyCleanText(row.Id) ~= "" then
 
-            if reasonFilter == ""
-            or HolyCleanText(row.TouchedReason) == reasonFilter then
-
-                table.insert(
-                    rows,
-                    row
-                )
-            end
+            table.insert(
+                rows,
+                row
+            )
         end
     end
 
@@ -19830,8 +18857,21 @@ function HolyDoubleSetRowsFavorite(rows, favorite, reason)
     favorite =
         favorite == true
 
-    local sendRows =
-        {}
+    if favorite == true then
+
+        HolyDoubleRememberTouchedRows(
+            rows
+        )
+    end
+
+    local completed =
+        0
+
+    local success =
+        0
+
+    local total =
+        0
 
     for _, row in ipairs(rows) do
 
@@ -19844,99 +18884,41 @@ function HolyDoubleSetRowsFavorite(rows, favorite, reason)
 
         if fruitId ~= "" then
 
-            local liveFavorite =
-                row.WasFavorite == true
-                or HolyDoubleToolIsFavorite(
-                    row.Tool
-                ) == true
+            total =
+                total + 1
 
-            if favorite == true then
+            task.spawn(function()
 
-                if liveFavorite ~= true then
+                local ok,
+                    result =
+                    pcall(function()
 
-                    row.WasFavorite =
-                        false
+                        return packet:Fire(
+                            fruitId,
+                            favorite
+                        )
+                    end)
 
-                    row.TouchedReason =
-                        HolyCleanText(reason) ~= ""
-                        and tostring(reason)
-                        or "auto favorite"
+                if ok == true
+                and result ~= false then
 
-                    table.insert(
-                        sendRows,
-                        row
-                    )
+                    success =
+                        success + 1
                 end
 
-            else
-
-                if row.WasFavorite ~= true then
-
-                    table.insert(
-                        sendRows,
-                        row
-                    )
-                end
-            end
+                completed =
+                    completed + 1
+            end)
         end
     end
 
-    if #sendRows <= 0 then
+    if total <= 0 then
 
         HolyDoubleSetStatus(
-            favorite == true
-            and "🛡️ Fav skipped: already protected"
-            or "🔓 Unfav skipped: nothing touched"
+            "🛡️ Fav skipped: no fruit IDs"
         )
 
         return 0
-    end
-
-    local completed =
-        0
-
-    local success =
-        0
-
-    local total =
-        #sendRows
-
-    for _, row in ipairs(sendRows) do
-
-        local fruitId =
-            HolyCleanText(
-                row.Id
-            )
-
-        task.spawn(function()
-
-            local ok,
-                result =
-                pcall(function()
-
-                    return packet:Fire(
-                        fruitId,
-                        favorite
-                    )
-                end)
-
-            if ok == true
-            and result ~= false then
-
-                success =
-                    success + 1
-
-                if favorite == true then
-
-                    HolyDoubleRememberTouchedRows({
-                        row,
-                    })
-                end
-            end
-
-            completed =
-                completed + 1
-        end)
     end
 
     local startedAt =
@@ -19953,7 +18935,7 @@ function HolyDoubleSetRowsFavorite(rows, favorite, reason)
     if favorite ~= true then
 
         HolyDoubleForgetTouchedRows(
-            sendRows
+            rows
         )
     end
 
@@ -19966,6 +18948,18 @@ function HolyDoubleSetRowsFavorite(rows, favorite, reason)
         favorite == true
         and "🛡️"
         or "🔓"
+
+    local packetPath =
+        HolyCleanText(
+            HOLY_SHOP_STATE.DoubleFavoritePacketPath
+            or ""
+        )
+
+    if packetPath == "" then
+
+        packetPath =
+            "favorite packet"
+    end
 
     HolyDoubleSetStatus(
         actionIcon
@@ -19980,7 +18974,7 @@ function HolyDoubleSetRowsFavorite(rows, favorite, reason)
     return success
 end
 
-function HolyDoubleReleaseRows(rows, reason, delayOverride, force)
+function HolyDoubleReleaseRows(rows, reason, delayOverride)
 
     rows =
         type(rows) == "table"
@@ -19988,16 +18982,6 @@ function HolyDoubleReleaseRows(rows, reason, delayOverride, force)
         or {}
 
     if #rows <= 0 then
-        return 0
-    end
-
-    if force ~= true
-    and HOLY_SHOP_STATE.DoubleAutoUnfavorite ~= true then
-
-        HolyDoubleSetStatus(
-            "🔓 Restore paused: Auto Unfavorite OFF"
-        )
-
         return 0
     end
 
@@ -20035,7 +19019,7 @@ function HolyDoubleReleaseRows(rows, reason, delayOverride, force)
     )
 end
 
-function HolyDoubleReleaseTouchedRowsAuto(reason, delayOverride)
+function HolyDoubleUnfavoriteTouchedRows(reason)
 
     local touchedRows =
         HolyDoubleGetTouchedRows()
@@ -20047,30 +19031,7 @@ function HolyDoubleReleaseTouchedRowsAuto(reason, delayOverride)
     return HolyDoubleReleaseRows(
         touchedRows,
         reason or "restore touched",
-        delayOverride,
-        false
-    )
-end
-
-function HolyDoubleUnfavoriteTouchedRows(reason)
-
-    local touchedRows =
-        HolyDoubleGetTouchedRows()
-
-    if #touchedRows <= 0 then
-
-        HolyDoubleSetStatus(
-            "🔓 Restore skipped: nothing touched"
-        )
-
-        return 0
-    end
-
-    return HolyDoubleReleaseRows(
-        touchedRows,
-        reason or "manual restore",
-        0,
-        true
+        0
     )
 end
 
@@ -20124,9 +19085,6 @@ function HolyDoubleUpdateFromRollResult(result)
             tonumber(result.LostCount)
             or HOLY_SHOP_STATE.DoubleLastStakeCount
             or 0
-
-        HOLY_SHOP_STATE.DoubleAwaitingCashout =
-            false
     end
 
     HolyDoubleUpdateHud()
@@ -20157,234 +19115,7 @@ function HolyDoubleUpdateFromCashout(result)
         or HOLY_SHOP_STATE.DoubleLastStakeCount
         or 0
 
-    HOLY_SHOP_STATE.DoubleAwaitingCashout =
-        false
-
     HolyDoubleUpdateHud()
-end
-
-function HolyDoubleFindChoiceByKey(mode, key, label)
-
-    local values,
-        map =
-        HolyDoubleBuildBackpackChoices(
-            mode
-        )
-
-    key =
-        HolyCleanText(
-            key
-        )
-
-    if key ~= "" then
-
-        for _, choice in pairs(map or {}) do
-
-            if type(choice) == "table"
-            and HolyCleanText(choice.Key) == key then
-
-                return choice
-            end
-        end
-    end
-
-    label =
-        HolyCleanText(
-            label
-        )
-
-    if label ~= ""
-    and map[label] then
-
-        return map[label]
-    end
-
-    local first =
-        values[1]
-
-    if first
-    and map[first] then
-
-        HOLY_SHOP_STATE.DoubleTargetFruit =
-            first
-
-        HOLY_SHOP_STATE.DoubleTargetFruitKey =
-            tostring(map[first].Key or "")
-
-        return map[first]
-    end
-
-    return nil
-end
-
-function HolyDoubleRowMatchesChoice(row, choice)
-
-    if type(row) ~= "table"
-    or type(choice) ~= "table" then
-
-        return false
-    end
-
-    if choice.Mode == "🎯 Exact Fruit" then
-
-        return HolyCleanText(row.Id) ~= ""
-            and HolyCleanText(row.Id) == HolyCleanText(choice.FruitId)
-    end
-
-    if choice.Mode == "🍓 Fruit Type" then
-
-        return HolyCleanText(row.GroupKey) ~= ""
-            and HolyCleanText(row.GroupKey) == HolyCleanText(choice.GroupKey)
-    end
-
-    return true
-end
-
-function HolyDoublePrepareFruitModeProtection()
-
-    HolyDoubleEnsureState()
-
-    local mode =
-        HolyDoubleNormalizeFruitMode(
-            HOLY_SHOP_STATE.DoubleFruitMode
-        )
-
-    if mode == "🎒 All Backpack" then
-
-        return {},
-            true,
-            "all backpack"
-    end
-
-    if HOLY_SHOP_STATE.DoubleAutoFavorite ~= true then
-
-        HolyDoubleSetStatus(
-            "🛡️ Fruit Mode needs Auto Favorite"
-        )
-
-        return nil,
-            false,
-            "fruit mode needs auto favorite"
-    end
-
-    local choice =
-        HolyDoubleFindChoiceByKey(
-            mode,
-            HOLY_SHOP_STATE.DoubleTargetFruitKey,
-            HOLY_SHOP_STATE.DoubleTargetFruit
-        )
-
-    if type(choice) ~= "table"
-    or HolyCleanText(choice.Key) == "" then
-
-        HolyDoubleSetStatus(
-            "🍓 Select a backpack fruit"
-        )
-
-        return nil,
-            false,
-            "select backpack fruit"
-    end
-
-    local rows =
-        HolyDoubleGetFruitRows()
-
-    local targetRows =
-        {}
-
-    local protectRows =
-        {}
-
-    for _, row in ipairs(rows) do
-
-        if HolyDoubleRowMatchesChoice(
-            row,
-            choice
-        ) == true then
-
-            table.insert(
-                targetRows,
-                row
-            )
-
-        else
-
-            row.TouchedReason =
-                "fruit mode protect"
-
-            table.insert(
-                protectRows,
-                row
-            )
-        end
-    end
-
-    if #targetRows <= 0 then
-
-        HolyDoubleSetStatus(
-            "🍓 Waiting for "
-            .. tostring(choice.Label or HOLY_SHOP_STATE.DoubleTargetFruit or "target")
-        )
-
-        return protectRows,
-            false,
-            "target missing"
-    end
-
-    local usableTargets =
-        0
-
-    for _, row in ipairs(targetRows) do
-
-        if HolyDoubleToolIsFavorite(row.Tool) ~= true then
-
-            usableTargets =
-                usableTargets + 1
-        end
-    end
-
-    if usableTargets <= 0 then
-
-        HolyDoubleSetStatus(
-            "⭐ Target is favorited"
-        )
-
-        return protectRows,
-            false,
-            "target favorited"
-    end
-
-    if #protectRows > 0 then
-
-        HolyDoubleSetRowsFavorite(
-            protectRows,
-            true,
-            "fruit mode protect"
-        )
-    end
-
-    HolyDoubleSetStatus(
-        "🍓 Target ready: "
-        .. tostring(choice.Label or HOLY_SHOP_STATE.DoubleTargetFruit)
-    )
-
-    return protectRows,
-        true,
-        "ok"
-end
-
-function HolyDoubleRowsAreFruitMode(rows)
-
-    for _, row in ipairs(rows or {}) do
-
-        if type(row) == "table"
-        and HolyCleanText(row.TouchedReason) == "fruit mode protect" then
-
-            return true
-        end
-    end
-
-    return false
 end
 
 function HolyDoubleRollWithFavoriteRace(token, rollIndex, targetWins, requireActive)
@@ -20396,45 +19127,6 @@ function HolyDoubleRollWithFavoriteRace(token, rollIndex, targetWins, requireAct
             false,
             "stopped",
             {}
-    end
-
-    local mode =
-        HolyDoubleNormalizeFruitMode(
-            HOLY_SHOP_STATE.DoubleFruitMode
-        )
-
-    if mode ~= "🎒 All Backpack" then
-
-        local protectedRows,
-            prepared,
-            prepareReason =
-            HolyDoublePrepareFruitModeProtection()
-
-        if prepared ~= true then
-
-            return {
-                Success =
-                    false,
-
-                Reason =
-                    prepareReason or "target not ready",
-            },
-                false,
-                prepareReason or "target not ready",
-                protectedRows or {}
-        end
-
-        local result,
-            rollOk,
-            rollReason =
-            HolyDoubleFirePacket(
-                "DoubleOrNothing"
-            )
-
-        return result,
-            rollOk,
-            rollReason,
-            protectedRows or {}
     end
 
     local snapshotRows =
@@ -20478,8 +19170,7 @@ function HolyDoubleRollWithFavoriteRace(token, rollIndex, targetWins, requireAct
             true
     end)
 
-    if HOLY_SHOP_STATE.DoubleAutoFavorite == true
-    and #snapshotRows > 0 then
+    if #snapshotRows > 0 then
 
         task.delay(favoriteDelay, function()
 
@@ -20489,12 +19180,6 @@ function HolyDoubleRollWithFavoriteRace(token, rollIndex, targetWins, requireAct
 
             favoriteRows =
                 snapshotRows
-
-            for _, row in ipairs(favoriteRows) do
-
-                row.TouchedReason =
-                    "roll race"
-            end
 
             favoriteBusy =
                 true
@@ -20581,11 +19266,6 @@ function HolyDoubleDoOneRoll(token, rollIndex, targetWins, requireActive)
             requireActive == true
         )
 
-    local fruitModeRows =
-        HolyDoubleRowsAreFruitMode(
-            favoriteRows
-        )
-
     if rollOk ~= true
     or type(result) ~= "table" then
 
@@ -20613,8 +19293,7 @@ function HolyDoubleDoOneRoll(token, rollIndex, targetWins, requireActive)
 
             HolyDoubleReleaseRows(
                 favoriteRows,
-                "blocked restore",
-                0
+                "blocked restore"
             )
         end
 
@@ -20668,8 +19347,7 @@ function HolyDoubleDoOneRoll(token, rollIndex, targetWins, requireActive)
             )
         )
 
-        if fruitModeRows ~= true
-        and #favoriteRows > 0 then
+        if #favoriteRows > 0 then
 
             HolyDoubleReleaseRows(
                 favoriteRows,
@@ -20707,24 +19385,17 @@ function HolyDoubleCashoutCurrent(requireActive, token)
         return false
     end
 
-    local targetedMode =
-        HolyDoubleFruitModeIsTargeted()
+    HolyDoubleSetStatus(
+        "🔓 Restoring favorites..."
+    )
 
-    if targetedMode ~= true then
+    HolyDoubleUnfavoriteTouchedRows(
+        "cashout restore"
+    )
 
-        HolyDoubleSetStatus(
-            "🔓 Restoring favorites..."
-        )
-
-        HolyDoubleReleaseTouchedRowsAuto(
-            "cashout restore",
-            0
-        )
-
-        task.wait(
-            0.25
-        )
-    end
+    task.wait(
+        0.25
+    )
 
     if requireActive == true
     and HolyDoubleStillActive(token) ~= true then
@@ -20768,14 +19439,6 @@ function HolyDoubleCashoutCurrent(requireActive, token)
         cashout
     )
 
-    if targetedMode == true then
-
-        HolyDoubleReleaseTouchedRowsAuto(
-            "post cashout restore",
-            0
-        )
-    end
-
     HolyDoubleSetStatus(
         "💰 Cashed: +"
         .. HolyDoubleFormatNumber(
@@ -20794,27 +19457,6 @@ function HolyDoubleRunOnce(token)
     if HolyDoubleStillActive(token) ~= true then
         return false
     end
-
-    if HOLY_SHOP_STATE.DoubleAwaitingCashout == true then
-
-        if HOLY_SHOP_STATE.DoubleAutoCashout == true then
-
-            return HolyDoubleCashoutCurrent(
-                true,
-                token
-            )
-        end
-
-        HolyDoubleSetStatus(
-            "💰 Cashout ready"
-        )
-
-        return false
-    end
-
-    HolyDoubleRefreshBackpackDropdowns(
-        true
-    )
 
     local preview,
         previewOk,
@@ -20919,19 +19561,7 @@ function HolyDoubleRunOnce(token)
         return false
     end
 
-    HOLY_SHOP_STATE.DoubleAwaitingCashout =
-        true
-
     if HolyDoubleStillActive(token) ~= true then
-        return false
-    end
-
-    if HOLY_SHOP_STATE.DoubleAutoCashout ~= true then
-
-        HolyDoubleSetStatus(
-            "💰 Cashout ready"
-        )
-
         return false
     end
 
@@ -20977,10 +19607,6 @@ function HolyDoubleManualDouble()
             pcall(function()
 
                 HolyDoubleDisableAutoSell()
-
-                HolyDoubleRefreshBackpackDropdowns(
-                    true
-                )
 
                 local targetWins =
                     HolyDoubleReadTargetWins()
@@ -21039,11 +19665,10 @@ function HolyDoubleManualCashout()
 
     HolyDoubleEnsureState()
 
-    if HOLY_SHOP_STATE.DoubleWorkerRunning == true
-    and HOLY_SHOP_STATE.DoubleAwaitingCashout ~= true then
+    if HOLY_SHOP_STATE.DoubleWorkerRunning == true then
 
         HolyDoubleSetStatus(
-            "⚠️ Cashout blocked: auto rolling"
+            "⚠️ Manual blocked: auto running"
         )
 
         return false
@@ -21077,48 +19702,6 @@ function HolyDoubleManualCashout()
 
             HolyDoubleSetStatus(
                 "⚠️ Cashout error: "
-                .. tostring(err)
-            )
-        end
-
-        HOLY_SHOP_STATE.DoubleManualBusy =
-            false
-    end)
-
-    return true
-end
-
-function HolyDoubleManualRestoreFavorites()
-
-    HolyDoubleEnsureState()
-
-    if HOLY_SHOP_STATE.DoubleManualBusy == true then
-
-        HolyDoubleSetStatus(
-            "⏳ Manual busy"
-        )
-
-        return false
-    end
-
-    HOLY_SHOP_STATE.DoubleManualBusy =
-        true
-
-    task.spawn(function()
-
-        local ok,
-            err =
-            pcall(function()
-
-                HolyDoubleUnfavoriteTouchedRows(
-                    "manual restore"
-                )
-            end)
-
-        if ok ~= true then
-
-            HolyDoubleSetStatus(
-                "⚠️ Restore error: "
                 .. tostring(err)
             )
         end
@@ -36292,7 +34875,7 @@ ShopDoubleBox:AddToggle(
             HOLY_SHOP_STATE.AutoDoubleOrNothing == true,
 
         Tooltip =
-            "Automatically rolls Double or Nothing. Cashout, favorites, and fruit targeting are controlled below.",
+            "Automatically doubles until Target Wins, then cashes out.",
     }
 ):OnChanged(function(value)
 
@@ -36340,7 +34923,7 @@ ShopDoubleBox:AddInput(
             false,
 
         Tooltip =
-            "Auto Cashout only fires after this many wins are ready.",
+            "Cashout after this many wins. Minimum 1. No max clamp.",
     }
 ):OnChanged(function(value)
 
@@ -36349,130 +34932,11 @@ ShopDoubleBox:AddInput(
     )
 end)
 
-ShopDoubleBox:AddToggle(
-    "HolyShopDoubleAutoCashout",
-    {
-        Text =
-            "💰 Auto Cashout",
-
-        Default =
-            HOLY_SHOP_STATE.DoubleAutoCashout ~= false,
-
-        Tooltip =
-            "Cashout only after all Target Wins are reached.",
-    }
-):OnChanged(function(value)
-
-    HolyDoubleSetAutoCashout(
-        value == true
-    )
-end)
-
-ShopDoubleBox:AddDropdown(
-    "HolyShopDoubleFruitMode",
-    {
-        Text =
-            "🎒 Fruit Mode",
-
-        Values =
-            HOLY_DOUBLE_FRUIT_MODES,
-
-        Default =
-            HolyDoubleNormalizeFruitMode(
-                HOLY_SHOP_STATE.DoubleFruitMode
-            ),
-
-        Multi =
-            false,
-
-        Searchable =
-            false,
-
-        MaxVisibleDropdownItems =
-            3,
-
-        Tooltip =
-            "All Backpack uses normal behavior. Fruit Type and Exact Fruit scan your current backpack.",
-    }
-):OnChanged(function(value)
-
-    HolyDoubleSetFruitMode(
-        value
-    )
-end)
-
-ShopDoubleBox:AddDropdown(
-    "HolyShopDoubleTargetFruit",
-    {
-        Text =
-            "🍓 Target Fruit",
-
-        Values =
-            HolyDoubleGetTargetFruitDropdownValues(),
-
-        Default =
-            HolyDoubleGetTargetFruitDropdownDefault(),
-
-        Multi =
-            false,
-
-        Searchable =
-            true,
-
-        MaxVisibleDropdownItems =
-            8,
-
-        Tooltip =
-            "Backpack-only list. Shows mutation + fruit + kg. UUID stays hidden.",
-    }
-):OnChanged(function(value)
-
-    HolyDoubleSetTargetFruit(
-        value
-    )
-end)
-
-local HolyDoubleRefreshBackpackButton =
-    ShopDoubleBox:AddButton({
-        Text =
-            "🔄 Refresh Backpack",
-
-        Tooltip =
-            "Refresh the Target Fruit dropdown from your current backpack.",
-
-        Func =
-            function()
-
-                HolyDoubleRefreshBackpackDropdowns(
-                    true
-                )
-            end,
-    })
-
-ShopDoubleBox:AddToggle(
-    "HolyShopDoubleAutoFavorite",
-    {
-        Text =
-            "🛡️ Auto Favorite",
-
-        Default =
-            HOLY_SHOP_STATE.DoubleAutoFavorite ~= false,
-
-        Tooltip =
-            "All Backpack: uses Fav Delay. Fruit modes: protects non-target fruits before rolling.",
-    }
-):OnChanged(function(value)
-
-    HolyDoubleSetAutoFavorite(
-        value == true
-    )
-end)
-
 ShopDoubleBox:AddInput(
     "HolyShopDoubleBustFavDelay",
     {
         Text =
-            "⏱️ Fav Delay",
+            "🛡️ Bust Fav Delay",
 
         Default =
             tostring(
@@ -36493,7 +34957,7 @@ ShopDoubleBox:AddInput(
             false,
 
         Tooltip =
-            "All Backpack only. Delay after rolling before auto-favoriting.",
+            "Delay after rolling before burst-favoriting fruits. Depends on ping. Lower = earlier, higher = later.",
     }
 ):OnChanged(function(value)
 
@@ -36502,30 +34966,11 @@ ShopDoubleBox:AddInput(
     )
 end)
 
-ShopDoubleBox:AddToggle(
-    "HolyShopDoubleAutoUnfavorite",
-    {
-        Text =
-            "🔓 Auto Unfavorite",
-
-        Default =
-            HOLY_SHOP_STATE.DoubleAutoUnfavorite ~= false,
-
-        Tooltip =
-            "Automatically restores only fruits HOLY touched. User-favorited fruits are left alone.",
-    }
-):OnChanged(function(value)
-
-    HolyDoubleSetAutoUnfavorite(
-        value == true
-    )
-end)
-
 ShopDoubleBox:AddInput(
     "HolyShopDoubleUnfavoriteDelay",
     {
         Text =
-            "⏱️ Unfav Delay",
+            "🔓 Unfav Delay",
 
         Default =
             tostring(
@@ -36546,7 +34991,7 @@ ShopDoubleBox:AddInput(
             false,
 
         Tooltip =
-            "Delay before restoring HOLY-touched favorites.",
+            "How long to wait before unfavoriting auto-touched fruits after a roll.",
     }
 ):OnChanged(function(value)
 
@@ -36561,7 +35006,7 @@ local HolyDoubleManualButton =
             "🎲 Manual Double",
 
         Tooltip =
-            "Roll Double or Nothing one time using the selected settings.",
+            "Roll Double or Nothing one time using the same favorite timing.",
 
         Func =
             function()
@@ -36575,26 +35020,12 @@ HolyDoubleManualButton:AddButton({
         "💰 Cashout",
 
     Tooltip =
-        "Cashout the current pot.",
+        "Unfavorites auto-touched fruits, waits briefly, then cashes out.",
 
     Func =
         function()
 
             HolyDoubleManualCashout()
-        end,
-})
-
-HolyDoubleManualButton:AddButton({
-    Text =
-        "🔓 Restore Favorites",
-
-    Tooltip =
-        "Manually restore only fruits HOLY auto-favorited.",
-
-    Func =
-        function()
-
-            HolyDoubleManualRestoreFavorites()
         end,
 })
 
@@ -36617,21 +35048,11 @@ ShopDoubleBox:AddToggle(
     )
 end)
 
-HOLY_SHOP_UI.DoubleBackpackLabel =
-    HolySniperAddLabel(
-        ShopDoubleBox,
-        HolyDoubleBuildBackpackSummaryText()
-    )
-
 HOLY_SHOP_UI.DoubleStatusLabel =
     HolySniperAddLabel(
         ShopDoubleBox,
         HolyDoubleBuildStatusText()
     )
-
-HolyDoubleRefreshBackpackDropdowns(
-    true
-)
 
 HolyDoubleRefreshUI()
 
