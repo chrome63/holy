@@ -25589,23 +25589,10 @@ if HOLY_DEV_UI_STATE.AutoFarmMiddle == true then
     HolyFarmMiddleRestoreState()
 end
 
-local ShopDoubleBox =
-    HolyAddRightGroupbox(
-        Tabs.Shop,
-        "Shop.AutoDoubleOrNothing",
-        "Auto Gamble",
-        "dice-5"
-    )
-
-local FarmCollectionBox =
-    HolyAddLeftGroupbox(
-        Tabs.Farm,
-        "Farm.FruitCollection",
-        "Fruit Collection",
-        "leaf"
-    )
-
-local SettingsUIBox =
+HolyLoadShopSettings()
+HolyLoadFarmSettings()
+HolyLoadSniperSettings()
+HolyLoadServerSettings()
 
 local Library =
     HolyLoadUrl(
@@ -26016,6 +26003,14 @@ local ShopDoubleBox =
         "Shop.AutoDoubleOrNothing",
         "Auto Gamble",
         "dice-5"
+    )
+
+local FarmCollectionBox =
+    HolyAddLeftGroupbox(
+        Tabs.Farm,
+        "Farm.FruitCollection",
+        "Fruit Collection",
+        "leaf"
     )
 
 local SettingsUIBox =
