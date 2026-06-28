@@ -46,7 +46,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260628-visual_fruit_total_v1"
+    "holy-premium-20260628-garden_fruit_esp_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -296,6 +296,12 @@ if type(HOLY_VISUAL_RUNTIME) == "table" then
     HOLY_VISUAL_RUNTIME.Running =
         false
 
+    HOLY_VISUAL_RUNTIME.GardenFruitToken =
+        nil
+
+    HOLY_VISUAL_RUNTIME.GardenFruitRunning =
+        false
+
     local oldLabels =
         HOLY_VISUAL_RUNTIME.Labels
 
@@ -320,11 +326,48 @@ if type(HOLY_VISUAL_RUNTIME) == "table" then
             HOLY_VISUAL_RUNTIME.TotalValueLabel:Destroy()
         end)
     end
+
+    local oldGardenLabels =
+        HOLY_VISUAL_RUNTIME.GardenFruitLabels
+
+    if type(oldGardenLabels) == "table" then
+
+        for _, label in pairs(oldGardenLabels) do
+
+            if typeof(label) == "Instance" then
+
+                pcall(function()
+
+                    label:Destroy()
+                end)
+            end
+        end
+    end
+
+    if typeof(HOLY_VISUAL_RUNTIME.GardenFruitGui) == "Instance" then
+
+        pcall(function()
+
+            HOLY_VISUAL_RUNTIME.GardenFruitGui:Destroy()
+        end)
+    end
 end
 
 HOLY_VISUAL_STATE = {
     FruitValueOverlay = false,
     FruitTotalValue = false,
+
+    GardenFruitESP = false,
+    GardenFruitShowValue = true,
+
+    GardenFruitMaxDistance = "150",
+    GardenFruitMinValue = "0",
+
+    GardenFruitWeightMode = "Off",
+    GardenFruitWeightThresholdKg = "0",
+
+    GardenFruitMutationMode = "All",
+    GardenFruitSelectedMutations = {},
 }
 
 HOLY_VISUAL_RUNTIME = {
@@ -333,6 +376,13 @@ HOLY_VISUAL_RUNTIME = {
 
     Labels = {},
     TotalValueLabel = nil,
+
+    GardenFruitRunning = false,
+    GardenFruitToken = nil,
+    GardenFruitLabels = {},
+    GardenFruitGui = nil,
+    GardenFruitUpdateDelay = 1.0,
+    GardenFruitMaxLabels = 160,
 
     FruitValueCalc = nil,
     SellValueData = nil,
@@ -345,6 +395,15 @@ HOLY_VISUAL_RUNTIME = {
 HOLY_VISUAL_UI = {
     FruitValueOverlayToggle = nil,
     FruitTotalValueToggle = nil,
+
+    GardenFruitESPToggle = nil,
+    GardenFruitShowValueToggle = nil,
+    GardenFruitMaxDistanceInput = nil,
+    GardenFruitMinValueInput = nil,
+    GardenFruitWeightModeDropdown = nil,
+    GardenFruitWeightThresholdInput = nil,
+    GardenFruitMutationModeDropdown = nil,
+    GardenFruitMutationsDropdown = nil,
 }
 
 HOLY_GROUPBOX_STATE = {
@@ -1353,6 +1412,160 @@ function HolyLoadUISettings()
     return true
 end
 
+function HolyVisualReadNumberText(value, fallback, maxValue)
+
+    local number =
+        tonumber(
+            tostring(value or "")
+                :match("%d+%.?%d*")
+        )
+
+    if number == nil then
+
+        number =
+            tonumber(fallback)
+            or 0
+    end
+
+    number =
+        math.max(
+            0,
+            number
+        )
+
+    if maxValue ~= nil then
+
+        number =
+            math.min(
+                number,
+                tonumber(maxValue)
+                or number
+            )
+    end
+
+    if math.abs(number - math.floor(number)) < 0.001 then
+
+        return tostring(
+            math.floor(number)
+        )
+    end
+
+    return tostring(
+        math.floor(number * 100 + 0.5) / 100
+    )
+end
+
+function HolyVisualNormalizeGardenMutationMode(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local lower =
+        text:lower()
+
+    if lower == "only mutated"
+    or (
+        lower:find("only", 1, true)
+        and lower:find("mutat", 1, true)
+    ) then
+
+        return "Only Mutated"
+    end
+
+    if lower == "only selected"
+    or (
+        lower:find("only", 1, true)
+        and lower:find("selected", 1, true)
+    ) then
+
+        return "Only Selected"
+    end
+
+    if lower == "skip selected"
+    or lower:find("skip", 1, true)
+    or lower:find("exclude", 1, true)
+    or lower:find("ignore selected", 1, true) then
+
+        return "Skip Selected"
+    end
+
+    return "All"
+end
+
+function HolyVisualNormalizeGardenMutationSelection(value)
+
+    local raw =
+        HolyShopSelectionArray(
+            value
+        )
+
+    if #raw <= 0 then
+        return {}
+    end
+
+    local validMap =
+        {}
+
+    if type(HolyFarmGetMutationValueMap) == "function" then
+
+        validMap =
+            HolyFarmGetMutationValueMap()
+    end
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    for _, mutationName in ipairs(raw) do
+
+        local normalized =
+            ""
+
+        if type(HolyFarmNormalizeMutationName) == "function" then
+
+            normalized =
+                HolyFarmNormalizeMutationName(
+                    mutationName
+                )
+
+        else
+
+            normalized =
+                HolyCleanText(
+                    mutationName
+                )
+        end
+
+        if normalized ~= ""
+        and seen[normalized] ~= true
+        and (
+            next(validMap) == nil
+            or validMap[normalized] == true
+        ) then
+
+            seen[normalized] =
+                true
+
+            table.insert(
+                output,
+                normalized
+            )
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
 function HolyVisualEnsureState()
 
     HOLY_VISUAL_STATE =
@@ -1365,6 +1578,83 @@ function HolyVisualEnsureState()
 
     HOLY_VISUAL_STATE.FruitTotalValue =
         HOLY_VISUAL_STATE.FruitTotalValue == true
+
+    HOLY_VISUAL_STATE.GardenFruitESP =
+        HOLY_VISUAL_STATE.GardenFruitESP == true
+
+    if HOLY_VISUAL_STATE.GardenFruitShowValue == nil then
+
+        HOLY_VISUAL_STATE.GardenFruitShowValue =
+            true
+
+    else
+
+        HOLY_VISUAL_STATE.GardenFruitShowValue =
+            HOLY_VISUAL_STATE.GardenFruitShowValue == true
+    end
+
+    HOLY_VISUAL_STATE.GardenFruitMaxDistance =
+        HolyVisualReadNumberText(
+            HOLY_VISUAL_STATE.GardenFruitMaxDistance
+            or "150",
+            150,
+            1000
+        )
+
+    HOLY_VISUAL_STATE.GardenFruitMinValue =
+        HolyVisualReadNumberText(
+            HOLY_VISUAL_STATE.GardenFruitMinValue
+            or "0",
+            0,
+            nil
+        )
+
+    if type(HolyFarmNormalizeWeightMode) == "function" then
+
+        HOLY_VISUAL_STATE.GardenFruitWeightMode =
+            HolyFarmNormalizeWeightMode(
+                HOLY_VISUAL_STATE.GardenFruitWeightMode
+                or "Off"
+            )
+
+    else
+
+        HOLY_VISUAL_STATE.GardenFruitWeightMode =
+            "Off"
+    end
+
+    if type(HolyFarmReadWeightThresholdKg) == "function" then
+
+        HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg =
+            tostring(
+                HolyFarmReadWeightThresholdKg(
+                    HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg
+                    or "0"
+                )
+            )
+
+    else
+
+        HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg =
+            HolyVisualReadNumberText(
+                HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg
+                or "0",
+                0,
+                nil
+            )
+    end
+
+    HOLY_VISUAL_STATE.GardenFruitMutationMode =
+        HolyVisualNormalizeGardenMutationMode(
+            HOLY_VISUAL_STATE.GardenFruitMutationMode
+            or "All"
+        )
+
+    HOLY_VISUAL_STATE.GardenFruitSelectedMutations =
+        HolyVisualNormalizeGardenMutationSelection(
+            HOLY_VISUAL_STATE.GardenFruitSelectedMutations
+            or {}
+        )
 
     return HOLY_VISUAL_STATE
 end
@@ -1384,6 +1674,48 @@ function HolySaveVisualSettings()
 
         FruitTotalValue =
             HOLY_VISUAL_STATE.FruitTotalValue == true,
+
+        GardenFruitESP =
+            HOLY_VISUAL_STATE.GardenFruitESP == true,
+
+        GardenFruitShowValue =
+            HOLY_VISUAL_STATE.GardenFruitShowValue == true,
+
+        GardenFruitMaxDistance =
+            tostring(
+                HOLY_VISUAL_STATE.GardenFruitMaxDistance
+                or "150"
+            ),
+
+        GardenFruitMinValue =
+            tostring(
+                HOLY_VISUAL_STATE.GardenFruitMinValue
+                or "0"
+            ),
+
+        GardenFruitWeightMode =
+            tostring(
+                HOLY_VISUAL_STATE.GardenFruitWeightMode
+                or "Off"
+            ),
+
+        GardenFruitWeightThresholdKg =
+            tostring(
+                HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg
+                or "0"
+            ),
+
+        GardenFruitMutationMode =
+            tostring(
+                HOLY_VISUAL_STATE.GardenFruitMutationMode
+                or "All"
+            ),
+
+        GardenFruitSelectedMutations =
+            HolyShopSelectionArray(
+                HOLY_VISUAL_STATE.GardenFruitSelectedMutations
+                or {}
+            ),
     }
 
     local encodeOk,
@@ -1411,6 +1743,119 @@ function HolySaveVisualSettings()
         end)
 
     return writeOk == true
+end
+
+function HolyLoadVisualSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                VISUAL_SETTINGS_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return false
+    end
+
+    local readOk,
+        raw =
+        pcall(function()
+
+            return readfile(
+                VISUAL_SETTINGS_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        return false
+    end
+
+    local decodeOk,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(data) ~= "table" then
+
+        return false
+    end
+
+    HOLY_VISUAL_STATE.FruitValueOverlay =
+        data.FruitValueOverlay == true
+
+    HOLY_VISUAL_STATE.FruitTotalValue =
+        data.FruitTotalValue == true
+
+    HOLY_VISUAL_STATE.GardenFruitESP =
+        data.GardenFruitESP == true
+
+    if type(data.GardenFruitShowValue) == "boolean" then
+
+        HOLY_VISUAL_STATE.GardenFruitShowValue =
+            data.GardenFruitShowValue
+
+    elseif HOLY_VISUAL_STATE.GardenFruitShowValue == nil then
+
+        HOLY_VISUAL_STATE.GardenFruitShowValue =
+            true
+    end
+
+    HOLY_VISUAL_STATE.GardenFruitMaxDistance =
+        tostring(
+            data.GardenFruitMaxDistance
+            or HOLY_VISUAL_STATE.GardenFruitMaxDistance
+            or "150"
+        )
+
+    HOLY_VISUAL_STATE.GardenFruitMinValue =
+        tostring(
+            data.GardenFruitMinValue
+            or HOLY_VISUAL_STATE.GardenFruitMinValue
+            or "0"
+        )
+
+    HOLY_VISUAL_STATE.GardenFruitWeightMode =
+        data.GardenFruitWeightMode
+        or HOLY_VISUAL_STATE.GardenFruitWeightMode
+        or "Off"
+
+    HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg =
+        tostring(
+            data.GardenFruitWeightThresholdKg
+            or HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg
+            or "0"
+        )
+
+    HOLY_VISUAL_STATE.GardenFruitMutationMode =
+        data.GardenFruitMutationMode
+        or HOLY_VISUAL_STATE.GardenFruitMutationMode
+        or "All"
+
+    HOLY_VISUAL_STATE.GardenFruitSelectedMutations =
+        data.GardenFruitSelectedMutations
+        or HOLY_VISUAL_STATE.GardenFruitSelectedMutations
+        or {}
+
+    HolyVisualEnsureState()
+
+    return true
 end
 
 function HolyLoadVisualSettings()
@@ -26209,12 +26654,35 @@ function HolyVisualGetRuntime()
         and runtime.Labels
         or {}
 
+    runtime.GardenFruitLabels =
+        type(runtime.GardenFruitLabels) == "table"
+        and runtime.GardenFruitLabels
+        or {}
+
     runtime.UpdateDelay =
         math.clamp(
             tonumber(runtime.UpdateDelay)
             or 0.75,
             0.25,
             2
+        )
+
+    runtime.GardenFruitUpdateDelay =
+        math.clamp(
+            tonumber(runtime.GardenFruitUpdateDelay)
+            or 1.0,
+            0.35,
+            3
+        )
+
+    runtime.GardenFruitMaxLabels =
+        math.clamp(
+            math.floor(
+                tonumber(runtime.GardenFruitMaxLabels)
+                or 160
+            ),
+            20,
+            250
         )
 
     return runtime
@@ -28296,6 +28764,1923 @@ function HolyVisualSetFruitTotalValue(value)
         "toggle off",
         false
     )
+end
+
+function HolyVisualGardenRichEscape(value)
+
+    local text =
+        tostring(value or "")
+
+    text =
+        text:gsub("&", "&amp;")
+            :gsub("<", "&lt;")
+            :gsub(">", "&gt;")
+            :gsub('"', "&quot;")
+            :gsub("'", "&apos;")
+
+    return text
+end
+
+function HolyVisualGardenCleanInstanceName(instance)
+
+    local name =
+        tostring(
+            instance
+            and instance.Name
+            or ""
+        )
+
+    name =
+        name:gsub(
+            "^%d+_",
+            ""
+        )
+
+    name =
+        name:gsub(
+            "_[%w]+%-%w+%-%w+%-%w+%-%w+$",
+            ""
+        )
+
+    name =
+        name:gsub(
+            "[_%s]*Fruit$",
+            ""
+        )
+
+    return HolyCleanText(
+        name
+    )
+end
+
+function HolyVisualGardenReadFruitName(plant, fruit)
+
+    local name =
+        ""
+
+    if type(HolyFarmReadAttribute) == "function" then
+
+        name =
+            HolyFarmReadAttribute(
+                fruit,
+                {
+                    "CorePartName",
+                    "FruitName",
+                    "SeedName",
+                    "PlantName",
+                    "CropName",
+                    "DisplayName",
+                    "ItemName",
+                    "Name",
+                }
+            )
+    end
+
+    if name == ""
+    and type(HolyFarmReadAttribute) == "function" then
+
+        name =
+            HolyFarmReadAttribute(
+                plant,
+                {
+                    "SeedName",
+                    "PlantName",
+                    "CropName",
+                    "FruitName",
+                    "DisplayName",
+                    "ItemName",
+                    "Name",
+                }
+            )
+    end
+
+    if name == ""
+    and type(HolyFarmReadPlantName) == "function" then
+
+        name =
+            HolyFarmReadPlantName(
+                plant,
+                fruit
+            )
+    end
+
+    if name == ""
+    or name == "Unknown" then
+
+        name =
+            HolyVisualGardenCleanInstanceName(
+                fruit
+            )
+    end
+
+    if name == ""
+    or name == "Unknown" then
+
+        name =
+            HolyVisualGardenCleanInstanceName(
+                plant
+            )
+    end
+
+    return HolyCleanText(
+        name
+    )
+end
+
+function HolyVisualGardenReadNumberAttribute(instance, names)
+
+    if type(HolyFarmReadNumberAttribute) == "function" then
+
+        return HolyFarmReadNumberAttribute(
+            instance,
+            names
+        )
+    end
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    for _, name in ipairs(names or {}) do
+
+        local ok,
+            value =
+            pcall(function()
+
+                return instance:GetAttribute(
+                    name
+                )
+            end)
+
+        local number =
+            tonumber(
+                ok == true
+                and value
+                or nil
+            )
+
+        if number ~= nil then
+            return number
+        end
+    end
+
+    return nil
+end
+
+function HolyVisualGardenReadSizeMultiplier(plant, fruit, kind)
+
+    local target =
+        kind == "PlantHarvest"
+        and plant
+        or fruit
+
+    local size =
+        HolyVisualGardenReadNumberAttribute(
+            target,
+            {
+                "SizeMultiplier",
+                "SizeMulti",
+                "ScaleMultiplier",
+                "ScaleMulti",
+                "Scale",
+                "SizeScale",
+            }
+        )
+
+    if size ~= nil
+    and size > 0 then
+
+        return size
+    end
+
+    if typeof(target) == "Instance"
+    and target:IsA("Model") then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return target:GetScale()
+            end)
+
+        result =
+            tonumber(result)
+
+        if ok == true
+        and result ~= nil
+        and result > 0 then
+
+            return result
+        end
+    end
+
+    return 1
+end
+
+function HolyVisualGardenReadWeightKg(plant, fruit, fruitName, sizeMultiplier, kind)
+
+    local target =
+        kind == "PlantHarvest"
+        and plant
+        or fruit
+
+    local direct =
+        HolyVisualGardenReadNumberAttribute(
+            target,
+            {
+                "WeightKg",
+                "WeightKG",
+                "KG",
+                "Kg",
+                "Weight",
+                "Mass",
+            }
+        )
+
+    if direct ~= nil
+    and direct > 0 then
+
+        return direct
+    end
+
+    local plantDirect =
+        HolyVisualGardenReadNumberAttribute(
+            plant,
+            {
+                "WeightKg",
+                "WeightKG",
+                "KG",
+                "Kg",
+                "Weight",
+                "Mass",
+            }
+        )
+
+    if kind == "PlantHarvest"
+    and plantDirect ~= nil
+    and plantDirect > 0 then
+
+        return plantDirect
+    end
+
+    local baseKg =
+        nil
+
+    if type(HolyFarmGetBaseKg) == "function" then
+
+        baseKg =
+            HolyFarmGetBaseKg(
+                fruitName,
+                kind
+            )
+    end
+
+    baseKg =
+        tonumber(baseKg)
+        or 1
+
+    return baseKg
+        * (
+            tonumber(sizeMultiplier)
+            or 1
+        )
+end
+
+function HolyVisualGardenSplitMutationText(value)
+
+    local output =
+        {}
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == "" then
+        return output
+    end
+
+    text =
+        text:gsub("^%[", "")
+            :gsub("%]$", "")
+            :gsub("^%{", "")
+            :gsub("%}$", "")
+
+    for part in text:gmatch("[^,%|/;]+") do
+
+        part =
+            HolyCleanText(
+                part
+            )
+
+        if part ~= "" then
+
+            table.insert(
+                output,
+                part
+            )
+        end
+    end
+
+    if #output <= 0 then
+
+        table.insert(
+            output,
+            text
+        )
+    end
+
+    return output
+end
+
+function HolyVisualGardenReadRawAttribute(instance, names)
+
+    if type(HolyFarmReadAttribute) == "function" then
+
+        return HolyFarmReadAttribute(
+            instance,
+            names
+        )
+    end
+
+    if typeof(instance) ~= "Instance" then
+        return ""
+    end
+
+    for _, name in ipairs(names or {}) do
+
+        local ok,
+            value =
+            pcall(function()
+
+                return instance:GetAttribute(
+                    name
+                )
+            end)
+
+        value =
+            HolyCleanText(
+                ok == true
+                and value
+                or ""
+            )
+
+        if value ~= "" then
+            return value
+        end
+    end
+
+    return ""
+end
+
+function HolyVisualGardenReadInstanceMutations(instance)
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    if typeof(instance) ~= "Instance" then
+        return output
+    end
+
+    for _, attributeName in ipairs({
+        "Mutation",
+        "Mutations",
+        "Variant",
+        "FruitVariant",
+        "Type",
+    }) do
+
+        local raw =
+            HolyVisualGardenReadRawAttribute(
+                instance,
+                {
+                    attributeName,
+                }
+            )
+
+        for _, part in ipairs(HolyVisualGardenSplitMutationText(raw)) do
+
+            local mutation =
+                ""
+
+            if type(HolyFarmNormalizeMutationName) == "function" then
+
+                mutation =
+                    HolyFarmNormalizeMutationName(
+                        part
+                    )
+
+            else
+
+                mutation =
+                    HolyCleanText(
+                        part
+                    )
+            end
+
+            if mutation ~= ""
+            and seen[mutation] ~= true then
+
+                seen[mutation] =
+                    true
+
+                table.insert(
+                    output,
+                    mutation
+                )
+            end
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
+function HolyVisualGardenReadMutations(plant, fruit, kind)
+
+    if kind == "PlantHarvest" then
+
+        return HolyVisualGardenReadInstanceMutations(
+            plant
+        )
+    end
+
+    -- Important: fruit ESP should not inherit plant mutations.
+    return HolyVisualGardenReadInstanceMutations(
+        fruit
+    )
+end
+
+function HolyVisualGardenFindAdornee(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    if instance:IsA("BasePart") then
+        return instance
+    end
+
+    local harvestPart =
+        instance:FindFirstChild(
+            "HarvestPart",
+            true
+        )
+
+    if typeof(harvestPart) == "Instance" then
+
+        if harvestPart:IsA("BasePart") then
+            return harvestPart
+        end
+
+        local nested =
+            harvestPart:FindFirstChildWhichIsA(
+                "BasePart",
+                true
+            )
+
+        if nested then
+            return nested
+        end
+    end
+
+    if instance:IsA("Model") then
+
+        if instance.PrimaryPart then
+            return instance.PrimaryPart
+        end
+
+        local rootPart =
+            instance:FindFirstChild(
+                "RootPart",
+                true
+            )
+
+        if rootPart
+        and rootPart:IsA("BasePart") then
+
+            return rootPart
+        end
+    end
+
+    return instance:FindFirstChildWhichIsA(
+        "BasePart",
+        true
+    )
+end
+
+function HolyVisualGardenGetRootPart()
+
+    local character =
+        LocalPlayer
+        and LocalPlayer.Character
+        or nil
+
+    if typeof(character) ~= "Instance" then
+        return nil
+    end
+
+    return character:FindFirstChild(
+        "HumanoidRootPart"
+    )
+    or character:FindFirstChild(
+        "RootPart"
+    )
+    or character.PrimaryPart
+end
+
+function HolyVisualGardenGetDistance(adornee)
+
+    if typeof(adornee) ~= "Instance"
+    or adornee:IsA("BasePart") ~= true then
+
+        return 0
+    end
+
+    local root =
+        HolyVisualGardenGetRootPart()
+
+    if typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true then
+
+        return 0
+    end
+
+    return (
+        root.Position
+        - adornee.Position
+    ).Magnitude
+end
+
+function HolyVisualGardenSelectedMutationMap()
+
+    HolyVisualEnsureState()
+
+    local map =
+        {}
+
+    for _, mutationName in ipairs(HOLY_VISUAL_STATE.GardenFruitSelectedMutations or {}) do
+
+        local normalized =
+            ""
+
+        if type(HolyFarmNormalizeMutationName) == "function" then
+
+            normalized =
+                HolyFarmNormalizeMutationName(
+                    mutationName
+                )
+
+        else
+
+            normalized =
+                HolyCleanText(
+                    mutationName
+                )
+        end
+
+        if normalized ~= "" then
+
+            map[normalized] =
+                true
+        end
+    end
+
+    return map
+end
+
+function HolyVisualGardenMutationAllows(mutations)
+
+    HolyVisualEnsureState()
+
+    local mode =
+        HolyVisualNormalizeGardenMutationMode(
+            HOLY_VISUAL_STATE.GardenFruitMutationMode
+            or "All"
+        )
+
+    local hasMutation =
+        type(mutations) == "table"
+        and #mutations > 0
+
+    if mode == "All" then
+        return true
+    end
+
+    if mode == "Only Mutated" then
+        return hasMutation == true
+    end
+
+    local selectedMap =
+        HolyVisualGardenSelectedMutationMap()
+
+    local hasSelected =
+        false
+
+    for _ in pairs(selectedMap) do
+
+        hasSelected =
+            true
+
+        break
+    end
+
+    if mode == "Only Selected" then
+
+        if hasSelected ~= true then
+            return false
+        end
+
+        for _, mutationName in ipairs(mutations or {}) do
+
+            if selectedMap[mutationName] == true then
+                return true
+            end
+        end
+
+        return false
+    end
+
+    if mode == "Skip Selected" then
+
+        if hasSelected ~= true then
+            return true
+        end
+
+        for _, mutationName in ipairs(mutations or {}) do
+
+            if selectedMap[mutationName] == true then
+                return false
+            end
+        end
+
+        return true
+    end
+
+    return true
+end
+
+function HolyVisualGardenWeightAllows(weight)
+
+    HolyVisualEnsureState()
+
+    local mode =
+        "Off"
+
+    if type(HolyFarmNormalizeWeightMode) == "function" then
+
+        mode =
+            HolyFarmNormalizeWeightMode(
+                HOLY_VISUAL_STATE.GardenFruitWeightMode
+                or "Off"
+            )
+    end
+
+    if mode == "Off" then
+        return true
+    end
+
+    local threshold =
+        0
+
+    if type(HolyFarmReadWeightThresholdKg) == "function" then
+
+        threshold =
+            HolyFarmReadWeightThresholdKg(
+                HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg
+            )
+
+    else
+
+        threshold =
+            tonumber(
+                HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg
+            )
+            or 0
+    end
+
+    if threshold <= 0 then
+        return true
+    end
+
+    weight =
+        tonumber(weight)
+        or 0
+
+    if mode == "Above" then
+        return weight >= threshold
+    end
+
+    if mode == "Below" then
+        return weight <= threshold
+    end
+
+    return true
+end
+
+function HolyVisualGardenValueAllows(value)
+
+    HolyVisualEnsureState()
+
+    local minValue =
+        tonumber(
+            HOLY_VISUAL_STATE.GardenFruitMinValue
+        )
+        or 0
+
+    if minValue <= 0 then
+        return true
+    end
+
+    return (
+        tonumber(value)
+        or 0
+    ) >= minValue
+end
+
+function HolyVisualGardenCalculateValue(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    row.RawMutation =
+        table.concat(
+            row.Mutations
+            or {},
+            ","
+        )
+
+    local value =
+        HolyVisualCalculateFruitValue(
+            row.Fruit,
+            row
+        )
+
+    return math.max(
+        0,
+        tonumber(value)
+        or 0
+    )
+end
+
+function HolyVisualGardenFormatMoney(value)
+
+    local number =
+        math.max(
+            0,
+            tonumber(value)
+            or 0
+        )
+
+    local suffix =
+        ""
+
+    if number >= 1000000000 then
+
+        number =
+            number / 1000000000
+
+        suffix =
+            "B"
+
+    elseif number >= 1000000 then
+
+        number =
+            number / 1000000
+
+        suffix =
+            "M"
+
+    elseif number >= 1000 then
+
+        number =
+            number / 1000
+
+        suffix =
+            "K"
+    end
+
+    if suffix ~= "" then
+
+        local text =
+            string.format(
+                "%.3f",
+                number
+            )
+
+        text =
+            text:gsub("0+$", "")
+                :gsub("%.$", "")
+
+        return "$"
+            .. text
+            .. suffix
+    end
+
+    return "$"
+        .. tostring(
+            math.floor(number + 0.5)
+        )
+end
+
+function HolyVisualGardenFormatKg(value)
+
+    return string.format(
+        "%.2fkg",
+        tonumber(value)
+        or 0
+    )
+end
+
+function HolyVisualGardenKgColor(weight)
+
+    weight =
+        tonumber(weight)
+        or 0
+
+    if weight >= 100 then
+        return "#FF2D2D"
+    end
+
+    if weight >= 50 then
+        return "#FFD84A"
+    end
+
+    return "#D8D8D8"
+end
+
+function HolyVisualGardenMutationColor(mutationName)
+
+    local key =
+        HolyVisualNameKey(
+            mutationName
+        )
+
+    local colors = {
+        gold = "#FFD84A",
+        rainbow = "#FF4DFF",
+        electric = "#00E5FF",
+        frozen = "#9CEBFF",
+        bloodlit = "#FF3D3D",
+        starstruck = "#FFF06A",
+        aurora = "#B56CFF",
+        solarflare = "#FF8A00",
+        ignited = "#FF4B1F",
+        chained = "#B8B8B8",
+        pizza = "#FFB347",
+    }
+
+    return colors[key]
+        or "#FFFFFF"
+end
+
+function HolyVisualGardenMutationEmoji(mutationName)
+
+    local key =
+        HolyVisualNameKey(
+            mutationName
+        )
+
+    local emojis = {
+        gold = "🥇",
+        rainbow = "🌈",
+        electric = "⚡",
+        frozen = "❄️",
+        bloodlit = "🩸",
+        starstruck = "✨",
+        aurora = "🟣",
+        solarflare = "☀️",
+        ignited = "🔥",
+        chained = "⛓️",
+        pizza = "🍕",
+    }
+
+    return emojis[key]
+        or ""
+end
+
+function HolyVisualGardenBuildRichText(row)
+
+    local lineOneParts =
+        {}
+
+    table.insert(
+        lineOneParts,
+        '<font color="#FFFFFF">'
+            .. HolyVisualGardenRichEscape(row.Name)
+            .. '</font>'
+    )
+
+    table.insert(
+        lineOneParts,
+        '<font color="'
+            .. HolyVisualGardenKgColor(row.Weight)
+            .. '">'
+            .. HolyVisualGardenRichEscape(
+                HolyVisualGardenFormatKg(
+                    row.Weight
+                )
+            )
+            .. '</font>'
+    )
+
+    if HOLY_VISUAL_STATE.GardenFruitShowValue == true then
+
+        table.insert(
+            lineOneParts,
+            '<font color="#39FF14">['
+                .. HolyVisualGardenRichEscape(
+                    HolyVisualGardenFormatMoney(
+                        row.Value
+                    )
+                )
+                .. ']</font>'
+        )
+    end
+
+    local lineOne =
+        table.concat(
+            lineOneParts,
+            " "
+        )
+
+    local badges =
+        {}
+
+    for _, mutationName in ipairs(row.Mutations or {}) do
+
+        local emoji =
+            HolyVisualGardenMutationEmoji(
+                mutationName
+            )
+
+        local prefix =
+            emoji ~= ""
+            and (
+                emoji
+                .. " "
+            )
+            or ""
+
+        table.insert(
+            badges,
+            '<font color="'
+                .. HolyVisualGardenMutationColor(mutationName)
+                .. '">'
+                .. HolyVisualGardenRichEscape(prefix .. mutationName)
+                .. '</font>'
+        )
+    end
+
+    if #badges > 0 then
+
+        return lineOne
+            .. "\n"
+            .. table.concat(
+                badges,
+                "  "
+            )
+    end
+
+    return lineOne
+end
+
+function HolyVisualGardenReadRow(plant, fruit, kind)
+
+    if typeof(plant) ~= "Instance"
+    or typeof(fruit) ~= "Instance"
+    or fruit.Parent == nil then
+
+        return nil
+    end
+
+    local adornee =
+        HolyVisualGardenFindAdornee(
+            fruit
+        )
+
+    if typeof(adornee) ~= "Instance"
+    or adornee:IsA("BasePart") ~= true then
+
+        return nil
+    end
+
+    local maxDistance =
+        tonumber(
+            HOLY_VISUAL_STATE.GardenFruitMaxDistance
+        )
+        or 150
+
+    local distance =
+        HolyVisualGardenGetDistance(
+            adornee
+        )
+
+    if maxDistance > 0
+    and distance > maxDistance then
+
+        return nil
+    end
+
+    local fruitName =
+        HolyVisualGardenReadFruitName(
+            plant,
+            fruit
+        )
+
+    if fruitName == ""
+    or fruitName == "Unknown" then
+
+        return nil
+    end
+
+    local sizeMultiplier =
+        HolyVisualGardenReadSizeMultiplier(
+            plant,
+            fruit,
+            kind
+        )
+
+    local weight =
+        HolyVisualGardenReadWeightKg(
+            plant,
+            fruit,
+            fruitName,
+            sizeMultiplier,
+            kind
+        )
+
+    if HolyVisualGardenWeightAllows(weight) ~= true then
+        return nil
+    end
+
+    local mutations =
+        HolyVisualGardenReadMutations(
+            plant,
+            fruit,
+            kind
+        )
+
+    if HolyVisualGardenMutationAllows(mutations) ~= true then
+        return nil
+    end
+
+    local row = {
+        Key =
+            fruit,
+
+        Plant =
+            plant,
+
+        Fruit =
+            fruit,
+
+        Kind =
+            kind,
+
+        Adornee =
+            adornee,
+
+        Name =
+            fruitName,
+
+        RawMutation =
+            table.concat(
+                mutations,
+                ","
+            ),
+
+        Mutations =
+            mutations,
+
+        Weight =
+            tonumber(weight)
+            or 0,
+
+        SizeMultiplier =
+            tonumber(sizeMultiplier)
+            or 1,
+
+        Distance =
+            tonumber(distance)
+            or 0,
+    }
+
+    row.Value =
+        HolyVisualGardenCalculateValue(
+            row
+        )
+
+    if HolyVisualGardenValueAllows(row.Value) ~= true then
+        return nil
+    end
+
+    row.Score =
+        (
+            tonumber(row.Value)
+            or 0
+        )
+        + (
+            #mutations
+            * 100000000
+        )
+        + (
+            tonumber(row.Weight)
+            or 0
+        )
+        * 250
+        - (
+            tonumber(row.Distance)
+            or 0
+        )
+
+    return row
+end
+
+function HolyVisualGardenBuildRows()
+
+    HolyVisualEnsureState()
+
+    local rows =
+        {}
+
+    local plot =
+        nil
+
+    if type(HolyFarmResolveOwnPlot) == "function" then
+
+        plot =
+            HolyFarmResolveOwnPlot(
+                false
+            )
+    end
+
+    if typeof(plot) ~= "Instance" then
+        return rows
+    end
+
+    local plantsFolder =
+        plot:FindFirstChild(
+            "Plants"
+        )
+
+    if typeof(plantsFolder) ~= "Instance" then
+        return rows
+    end
+
+    for _, plant in ipairs(plantsFolder:GetChildren()) do
+
+        if typeof(plant) == "Instance" then
+
+            local fruitsFolder =
+                plant:FindFirstChild(
+                    "Fruits"
+                )
+
+            if typeof(fruitsFolder) == "Instance" then
+
+                for _, fruit in ipairs(fruitsFolder:GetChildren()) do
+
+                    local row =
+                        HolyVisualGardenReadRow(
+                            plant,
+                            fruit,
+                            "FruitHarvest"
+                        )
+
+                    if row then
+
+                        table.insert(
+                            rows,
+                            row
+                        )
+                    end
+                end
+
+            elseif plant:FindFirstChild("HarvestPart", true) then
+
+                local row =
+                    HolyVisualGardenReadRow(
+                        plant,
+                        plant,
+                        "PlantHarvest"
+                    )
+
+                if row then
+
+                    table.insert(
+                        rows,
+                        row
+                    )
+                end
+            end
+        end
+    end
+
+    table.sort(rows, function(a, b)
+
+        return tonumber(a.Score or 0)
+            > tonumber(b.Score or 0)
+    end)
+
+    return rows
+end
+
+function HolyVisualGardenGetGui()
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    if typeof(runtime.GardenFruitGui) == "Instance"
+    and runtime.GardenFruitGui.Parent ~= nil then
+
+        return runtime.GardenFruitGui
+    end
+
+    local playerGui =
+        HolyVisualGetPlayerGui()
+
+    if typeof(playerGui) ~= "Instance" then
+        return nil
+    end
+
+    local oldGui =
+        playerGui:FindFirstChild(
+            "HolyGardenFruitESPGui"
+        )
+
+    if typeof(oldGui) == "Instance" then
+
+        pcall(function()
+
+            oldGui:Destroy()
+        end)
+    end
+
+    local gui =
+        Instance.new(
+            "ScreenGui"
+        )
+
+    gui.Name =
+        "HolyGardenFruitESPGui"
+
+    gui.ResetOnSpawn =
+        false
+
+    gui.IgnoreGuiInset =
+        true
+
+    gui.DisplayOrder =
+        999999
+
+    gui.ZIndexBehavior =
+        Enum.ZIndexBehavior.Global
+
+    gui.Parent =
+        playerGui
+
+    runtime.GardenFruitGui =
+        gui
+
+    return gui
+end
+
+function HolyVisualGardenEnsureLabel(row)
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    local gui =
+        HolyVisualGardenGetGui()
+
+    if typeof(gui) ~= "Instance" then
+        return nil
+    end
+
+    local label =
+        runtime.GardenFruitLabels[row.Key]
+
+    if typeof(label) == "Instance"
+    and label.Parent == gui then
+
+        return label
+    end
+
+    label =
+        Instance.new(
+            "BillboardGui"
+        )
+
+    label.Name =
+        "HolyGardenFruitESPLabel"
+
+    label.AlwaysOnTop =
+        true
+
+    label.LightInfluence =
+        0
+
+    label.MaxDistance =
+        tonumber(
+            HOLY_VISUAL_STATE.GardenFruitMaxDistance
+        )
+        or 150
+
+    label.Size =
+        UDim2.fromOffset(
+            285,
+            44
+        )
+
+    label.StudsOffset =
+        Vector3.new(
+            0,
+            2.2,
+            0
+        )
+
+    label.Adornee =
+        row.Adornee
+
+    label.Parent =
+        gui
+
+    local text =
+        Instance.new(
+            "TextLabel"
+        )
+
+    text.Name =
+        "Text"
+
+    text.BackgroundTransparency =
+        1
+
+    text.Size =
+        UDim2.fromScale(
+            1,
+            1
+        )
+
+    text.RichText =
+        true
+
+    text.Text =
+        ""
+
+    text.TextColor3 =
+        Color3.fromRGB(
+            255,
+            255,
+            255
+        )
+
+    text.TextStrokeColor3 =
+        Color3.fromRGB(
+            0,
+            0,
+            0
+        )
+
+    text.TextStrokeTransparency =
+        0
+
+    text.TextSize =
+        12
+
+    text.Font =
+        Enum.Font.GothamBold
+
+    text.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    text.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    text.ZIndex =
+        10
+
+    text.Parent =
+        label
+
+    runtime.GardenFruitLabels[row.Key] =
+        label
+
+    return label
+end
+
+function HolyVisualGardenRemoveLabel(key)
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    local label =
+        runtime.GardenFruitLabels[key]
+
+    if typeof(label) == "Instance" then
+
+        pcall(function()
+
+            label:Destroy()
+        end)
+    end
+
+    runtime.GardenFruitLabels[key] =
+        nil
+end
+
+function HolyVisualClearGardenFruitESP()
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    for key, label in pairs(runtime.GardenFruitLabels or {}) do
+
+        if typeof(label) == "Instance" then
+
+            pcall(function()
+
+                label:Destroy()
+            end)
+        end
+
+        runtime.GardenFruitLabels[key] =
+            nil
+    end
+
+    if typeof(runtime.GardenFruitGui) == "Instance" then
+
+        pcall(function()
+
+            runtime.GardenFruitGui:Destroy()
+        end)
+    end
+
+    runtime.GardenFruitGui =
+        nil
+
+    return true
+end
+
+function HolyVisualRefreshGardenFruitESP()
+
+    HolyVisualEnsureState()
+
+    if HOLY_VISUAL_STATE.GardenFruitESP ~= true then
+
+        HolyVisualClearGardenFruitESP()
+
+        return false
+    end
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    HolyVisualLoadValueCaches(
+        false
+    )
+
+    if type(HolyFarmPrimeStaticCaches) == "function" then
+
+        pcall(function()
+
+            HolyFarmPrimeStaticCaches(
+                false
+            )
+        end)
+    end
+
+    local rows =
+        HolyVisualGardenBuildRows()
+
+    local maxLabels =
+        math.clamp(
+            math.floor(
+                tonumber(runtime.GardenFruitMaxLabels)
+                or 160
+            ),
+            20,
+            250
+        )
+
+    local touched =
+        {}
+
+    local shown =
+        0
+
+    for _, row in ipairs(rows) do
+
+        if shown >= maxLabels then
+            break
+        end
+
+        local label =
+            HolyVisualGardenEnsureLabel(
+                row
+            )
+
+        if label then
+
+            label.Adornee =
+                row.Adornee
+
+            label.MaxDistance =
+                tonumber(
+                    HOLY_VISUAL_STATE.GardenFruitMaxDistance
+                )
+                or 150
+
+            label.Size =
+                UDim2.fromOffset(
+                    285,
+                    #row.Mutations > 0
+                    and 44
+                    or 28
+                )
+
+            local text =
+                label:FindFirstChild(
+                    "Text"
+                )
+
+            if typeof(text) == "Instance"
+            and text:IsA("TextLabel") then
+
+                text.Text =
+                    HolyVisualGardenBuildRichText(
+                        row
+                    )
+
+                text.TextSize =
+                    12
+
+                text.Font =
+                    Enum.Font.GothamBold
+            end
+
+            label.Enabled =
+                true
+
+            touched[row.Key] =
+                true
+
+            shown =
+                shown + 1
+        end
+    end
+
+    local stale =
+        {}
+
+    for key in pairs(runtime.GardenFruitLabels or {}) do
+
+        if touched[key] ~= true then
+
+            table.insert(
+                stale,
+                key
+            )
+        end
+    end
+
+    for _, key in ipairs(stale) do
+
+        HolyVisualGardenRemoveLabel(
+            key
+        )
+    end
+
+    return true
+end
+
+function HolyVisualStartGardenFruitESP(reason, skipSave)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitESP =
+        true
+
+    if skipSave ~= true then
+
+        HolySaveVisualSettings()
+    end
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    HolyVisualLoadValueCaches(
+        true
+    )
+
+    if runtime.GardenFruitRunning == true then
+
+        HolyVisualRefreshGardenFruitESP()
+
+        return true
+    end
+
+    local token =
+        {}
+
+    runtime.GardenFruitToken =
+        token
+
+    runtime.GardenFruitRunning =
+        true
+
+    task.spawn(function()
+
+        while runtime.GardenFruitToken == token
+        and HOLY_VISUAL_STATE.GardenFruitESP == true do
+
+            pcall(function()
+
+                HolyVisualRefreshGardenFruitESP()
+            end)
+
+            task.wait(
+                runtime.GardenFruitUpdateDelay
+            )
+        end
+
+        if runtime.GardenFruitToken == token then
+
+            runtime.GardenFruitRunning =
+                false
+        end
+
+        if HOLY_VISUAL_STATE.GardenFruitESP ~= true then
+
+            HolyVisualClearGardenFruitESP()
+        end
+    end)
+
+    HolyVisualRefreshGardenFruitESP()
+
+    return true
+end
+
+function HolyVisualStopGardenFruitESP(reason, skipSave)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitESP =
+        false
+
+    if skipSave ~= true then
+
+        HolySaveVisualSettings()
+    end
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    runtime.GardenFruitToken =
+        nil
+
+    runtime.GardenFruitRunning =
+        false
+
+    HolyVisualClearGardenFruitESP()
+
+    return true
+end
+
+function HolyVisualSetGardenFruitESP(value)
+
+    if value == true then
+
+        return HolyVisualStartGardenFruitESP(
+            "toggle on",
+            false
+        )
+    end
+
+    return HolyVisualStopGardenFruitESP(
+        "toggle off",
+        false
+    )
+end
+
+function HolyVisualGardenRefreshIfEnabled()
+
+    if HOLY_VISUAL_STATE.GardenFruitESP == true then
+
+        task.defer(function()
+
+            pcall(function()
+
+                HolyVisualRefreshGardenFruitESP()
+            end)
+        end)
+    end
+end
+
+function HolyVisualGardenSetShowValue(value)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitShowValue =
+        value == true
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenSetMaxDistance(value)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitMaxDistance =
+        HolyVisualReadNumberText(
+            value,
+            150,
+            1000
+        )
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenSetMinValue(value)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitMinValue =
+        HolyVisualReadNumberText(
+            value,
+            0,
+            nil
+        )
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenSetWeightMode(value)
+
+    HolyVisualEnsureState()
+
+    if type(HolyFarmNormalizeWeightMode) == "function" then
+
+        HOLY_VISUAL_STATE.GardenFruitWeightMode =
+            HolyFarmNormalizeWeightMode(
+                value
+            )
+
+    else
+
+        HOLY_VISUAL_STATE.GardenFruitWeightMode =
+            "Off"
+    end
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenSetWeightThresholdKg(value)
+
+    HolyVisualEnsureState()
+
+    if type(HolyFarmReadWeightThresholdKg) == "function" then
+
+        HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg =
+            tostring(
+                HolyFarmReadWeightThresholdKg(
+                    value
+                )
+            )
+
+    else
+
+        HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg =
+            HolyVisualReadNumberText(
+                value,
+                0,
+                nil
+            )
+    end
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenSetMutationMode(value)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitMutationMode =
+        HolyVisualNormalizeGardenMutationMode(
+            value
+        )
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenSetSelectedMutations(value)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitSelectedMutations =
+        HolyVisualNormalizeGardenMutationSelection(
+            value
+        )
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenRefreshMutationDropdown(forceRefresh)
+
+    HOLY_VISUAL_UI =
+        type(HOLY_VISUAL_UI) == "table"
+        and HOLY_VISUAL_UI
+        or {}
+
+    if forceRefresh == true
+    and type(HolyFarmInvalidateMutationNameCache) == "function" then
+
+        HolyFarmInvalidateMutationNameCache()
+    end
+
+    local dropdown =
+        HOLY_VISUAL_UI.GardenFruitMutationsDropdown
+
+    if type(dropdown) ~= "table" then
+        return false
+    end
+
+    local values =
+        {}
+
+    if type(HolyFarmGetMutationDropdownValues) == "function" then
+
+        values =
+            HolyFarmGetMutationDropdownValues()
+    end
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+
+    pcall(function()
+
+        if type(dropdown.SetValue) == "function" then
+
+            dropdown:SetValue(
+                HOLY_VISUAL_STATE.GardenFruitSelectedMutations
+                or {}
+            )
+        end
+    end)
+
+    return true
 end
 
 function HolySellPruneRecentFruitIds()
@@ -30712,6 +33097,14 @@ local VisualInventoryBox =
         "Visual.InventoryVisuals",
         "Inventory Visuals",
         "eye"
+    )
+
+local VisualGardenBox =
+    HolyAddLeftGroupbox(
+        Tabs.Visual,
+        "Visual.GardenVisuals",
+        "Garden Visuals",
+        "sprout"
     )
 
 local SettingsUIBox =
@@ -42857,6 +45250,283 @@ if type(VisualInventoryBox) == "table" then
     end
 end
 
+if type(VisualGardenBox) == "table" then
+
+    HOLY_VISUAL_UI.GardenFruitESPToggle =
+        VisualGardenBox:AddToggle(
+            "HolyVisualGardenFruitESP",
+            {
+                Text =
+                    "Garden Fruit ESP",
+
+                Default =
+                    HOLY_VISUAL_STATE.GardenFruitESP == true,
+
+                Tooltip =
+                    "Shows fruit name, weight, value, and fruit mutations above fruits in your own garden only.",
+            }
+        )
+
+    if type(HOLY_VISUAL_UI.GardenFruitESPToggle) == "table"
+    and type(HOLY_VISUAL_UI.GardenFruitESPToggle.OnChanged) == "function" then
+
+        HOLY_VISUAL_UI.GardenFruitESPToggle:OnChanged(function(value)
+
+            HolyVisualSetGardenFruitESP(
+                value == true
+            )
+        end)
+    end
+
+    HOLY_VISUAL_UI.GardenFruitShowValueToggle =
+        VisualGardenBox:AddToggle(
+            "HolyVisualGardenFruitShowValue",
+            {
+                Text =
+                    "Show Value",
+
+                Default =
+                    HOLY_VISUAL_STATE.GardenFruitShowValue == true,
+
+                Tooltip =
+                    "When disabled, labels only show name, weight, and mutations.",
+            }
+        )
+
+    if type(HOLY_VISUAL_UI.GardenFruitShowValueToggle) == "table"
+    and type(HOLY_VISUAL_UI.GardenFruitShowValueToggle.OnChanged) == "function" then
+
+        HOLY_VISUAL_UI.GardenFruitShowValueToggle:OnChanged(function(value)
+
+            HolyVisualGardenSetShowValue(
+                value == true
+            )
+        end)
+    end
+
+    HOLY_VISUAL_UI.GardenFruitMaxDistanceInput =
+        VisualGardenBox:AddInput(
+            "HolyVisualGardenFruitMaxDistance",
+            {
+                Text =
+                    "Max Distance",
+
+                Default =
+                    tostring(
+                        HOLY_VISUAL_STATE.GardenFruitMaxDistance
+                        or "150"
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Only show garden fruit labels within this distance. 0 disables distance filtering.",
+            }
+        )
+
+    HOLY_VISUAL_UI.GardenFruitMaxDistanceInput:OnChanged(function(value)
+
+        HolyVisualGardenSetMaxDistance(
+            value
+        )
+    end)
+
+    HOLY_VISUAL_UI.GardenFruitMinValueInput =
+        VisualGardenBox:AddInput(
+            "HolyVisualGardenFruitMinValue",
+            {
+                Text =
+                    "Minimum Value",
+
+                Default =
+                    tostring(
+                        HOLY_VISUAL_STATE.GardenFruitMinValue
+                        or "0"
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Only show fruits at or above this value. 0 disables value filtering.",
+            }
+        )
+
+    HOLY_VISUAL_UI.GardenFruitMinValueInput:OnChanged(function(value)
+
+        HolyVisualGardenSetMinValue(
+            value
+        )
+    end)
+
+    HOLY_VISUAL_UI.GardenFruitWeightModeDropdown =
+        VisualGardenBox:AddDropdown(
+            "HolyVisualGardenFruitWeightMode",
+            {
+                Text =
+                    "Weight Mode",
+
+                Values = {
+                    "Off",
+                    "Above",
+                    "Below",
+                },
+
+                Default =
+                    HolyFarmNormalizeWeightMode(
+                        HOLY_VISUAL_STATE.GardenFruitWeightMode
+                        or "Off"
+                    ),
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    3,
+
+                Tooltip =
+                    "Off ignores weight. Above shows fruits at or above the threshold. Below shows fruits at or below the threshold.",
+            }
+        )
+
+    HOLY_VISUAL_UI.GardenFruitWeightModeDropdown:OnChanged(function(value)
+
+        HolyVisualGardenSetWeightMode(
+            value
+        )
+    end)
+
+    HOLY_VISUAL_UI.GardenFruitWeightThresholdInput =
+        VisualGardenBox:AddInput(
+            "HolyVisualGardenFruitWeightThresholdKg",
+            {
+                Text =
+                    "Weight Threshold KG",
+
+                Default =
+                    tostring(
+                        HolyFarmReadWeightThresholdKg(
+                            HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg
+                            or "0"
+                        )
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Used only when Weight Mode is Above or Below. 0 disables the weight filter.",
+            }
+        )
+
+    HOLY_VISUAL_UI.GardenFruitWeightThresholdInput:OnChanged(function(value)
+
+        HolyVisualGardenSetWeightThresholdKg(
+            value
+        )
+    end)
+
+    HOLY_VISUAL_UI.GardenFruitMutationModeDropdown =
+        VisualGardenBox:AddDropdown(
+            "HolyVisualGardenFruitMutationMode",
+            {
+                Text =
+                    "Mutation Mode",
+
+                Values = {
+                    "All",
+                    "Only Mutated",
+                    "Only Selected",
+                    "Skip Selected",
+                },
+
+                Default =
+                    HolyVisualNormalizeGardenMutationMode(
+                        HOLY_VISUAL_STATE.GardenFruitMutationMode
+                        or "All"
+                    ),
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    4,
+
+                Tooltip =
+                    "All shows every fruit. Only Mutated shows fruits with mutation. Only Selected and Skip Selected use the mutation dropdown.",
+            }
+        )
+
+    HOLY_VISUAL_UI.GardenFruitMutationModeDropdown:OnChanged(function(value)
+
+        HolyVisualGardenSetMutationMode(
+            value
+        )
+    end)
+
+    HOLY_VISUAL_UI.GardenFruitMutationsDropdown =
+        VisualGardenBox:AddDropdown(
+            "HolyVisualGardenFruitSelectedMutations",
+            {
+                Text =
+                    "Select Mutations",
+
+                Values =
+                    HolyFarmGetMutationDropdownValues(),
+
+                Default =
+                    HolyVisualNormalizeGardenMutationSelection(
+                        HOLY_VISUAL_STATE.GardenFruitSelectedMutations
+                        or {}
+                    ),
+
+                Multi =
+                    true,
+
+                Searchable =
+                    true,
+
+                MaxVisibleDropdownItems =
+                    8,
+
+                Tooltip =
+                    "Used by Only Selected and Skip Selected. Fruit labels only read fruit mutations, not plant mutations.",
+            }
+        )
+
+    HOLY_VISUAL_UI.GardenFruitMutationsDropdown:OnChanged(function(value)
+
+        HolyVisualGardenSetSelectedMutations(
+            value
+        )
+    end)
+end
+
 task.defer(function()
 
     if HOLY_VISUAL_STATE.FruitValueOverlay == true then
@@ -42882,7 +45552,24 @@ task.defer(function()
 
         HolyVisualClearTotalValueLabel()
     end
+
+    HolyVisualGardenRefreshMutationDropdown(
+        false
+    )
+
+    if HOLY_VISUAL_STATE.GardenFruitESP == true then
+
+        HolyVisualStartGardenFruitESP(
+            "startup",
+            true
+        )
+
+    else
+
+        HolyVisualClearGardenFruitESP()
+    end
 end)
+
 
 --==================================================
 -- [6] SETTINGS TAB
