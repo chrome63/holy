@@ -693,6 +693,9 @@ HOLY_FARM_STATE = {
 
     SelectedPlants = {},
 
+    MutationMode = "Off",
+    SelectedMutations = {},
+
     WeightMode = "Off",
     WeightThresholdKg = "0",
 }
@@ -727,6 +730,8 @@ HOLY_FARM_RUNTIME = {
 HOLY_FARM_UI = {
     PlantsDropdown = nil,
     ModeDropdown = nil,
+    MutationModeDropdown = nil,
+    MutationsDropdown = nil,
     WeightModeDropdown = nil,
     WeightThresholdInput = nil,
     AutoCollectToggle = nil,
@@ -2108,6 +2113,38 @@ function HolyFarmNormalizeCollectMode(value)
     return "All"
 end
 
+function HolyFarmNormalizeMutationMode(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local lower =
+        text:lower()
+
+    if lower:find("only", 1, true)
+    and lower:find("mutat", 1, true) then
+
+        return "Only Mutated"
+    end
+
+    if lower:find("only", 1, true)
+    and lower:find("selected", 1, true) then
+
+        return "Only Selected"
+    end
+
+    if lower:find("skip", 1, true)
+    or lower:find("exclude", 1, true)
+    or lower:find("ignore selected", 1, true) then
+
+        return "Skip Selected"
+    end
+
+    return "Off"
+end
+
 function HolyFarmNormalizeWeightMode(value)
 
     local text =
@@ -2535,6 +2572,118 @@ function HolyFarmWeightAllowsEntry(entry)
     return true
 end
 
+function HolyFarmReadEntryMutation(entry)
+
+    if type(entry) ~= "table" then
+        return ""
+    end
+
+    if entry.Kind == "PlantHarvest" then
+
+        return HolyFarmNormalizeMutationName(
+            HolyFarmReadAttribute(
+                entry.Plant,
+                {
+                    "Mutation",
+                    "Mutations",
+                }
+            )
+        )
+    end
+
+    local fruitMutation =
+        HolyFarmNormalizeMutationName(
+            HolyFarmReadAttribute(
+                entry.Fruit,
+                {
+                    "Mutation",
+                    "Mutations",
+                }
+            )
+        )
+
+    if fruitMutation ~= "" then
+        return fruitMutation
+    end
+
+    return HolyFarmNormalizeMutationName(
+        HolyFarmReadAttribute(
+            entry.Plant,
+            {
+                "Mutation",
+                "Mutations",
+            }
+        )
+    )
+end
+
+function HolyFarmMutationAllowsEntry(entry)
+
+    HolyFarmEnsureState()
+
+    local mode =
+        HolyFarmNormalizeMutationMode(
+            HOLY_FARM_STATE.MutationMode
+            or "Off"
+        )
+
+    if mode == "Off" then
+        return true
+    end
+
+    local mutation =
+        HolyFarmReadEntryMutation(
+            entry
+        )
+
+    local hasMutation =
+        mutation ~= ""
+
+    if mode == "Only Mutated" then
+
+        return hasMutation == true
+    end
+
+    local selectedMap =
+        HolyFarmSelectedMutationMap()
+
+    local hasSelected =
+        false
+
+    for _ in pairs(selectedMap) do
+
+        hasSelected =
+            true
+
+        break
+    end
+
+    if mode == "Only Selected" then
+
+        if hasSelected ~= true then
+            return false
+        end
+
+        return hasMutation == true
+            and selectedMap[mutation] == true
+    end
+
+    if mode == "Skip Selected" then
+
+        if hasSelected ~= true then
+            return true
+        end
+
+        if hasMutation ~= true then
+            return true
+        end
+
+        return selectedMap[mutation] ~= true
+    end
+
+    return true
+end
+
 function HolyFarmEnsureState()
 
     HOLY_FARM_STATE =
@@ -2551,6 +2700,18 @@ function HolyFarmEnsureState()
     HOLY_FARM_STATE.SelectedPlants =
         HolyFarmNormalizePlantSelection(
             HOLY_FARM_STATE.SelectedPlants
+            or {}
+        )
+
+    HOLY_FARM_STATE.MutationMode =
+        HolyFarmNormalizeMutationMode(
+            HOLY_FARM_STATE.MutationMode
+            or "Off"
+        )
+
+    HOLY_FARM_STATE.SelectedMutations =
+        HolyFarmNormalizeMutationSelection(
+            HOLY_FARM_STATE.SelectedMutations
             or {}
         )
 
@@ -2761,6 +2922,16 @@ function HolySaveFarmSettings()
                 HOLY_FARM_STATE.SelectedPlants
             ),
 
+        MutationMode =
+            HolyFarmNormalizeMutationMode(
+                HOLY_FARM_STATE.MutationMode
+            ),
+
+        SelectedMutations =
+            HolyShopSelectionArray(
+                HOLY_FARM_STATE.SelectedMutations
+            ),
+
         WeightMode =
             HolyFarmNormalizeWeightMode(
                 HOLY_FARM_STATE.WeightMode
@@ -2865,6 +3036,19 @@ function HolyLoadFarmSettings()
     HOLY_FARM_STATE.SelectedPlants =
         HolyFarmNormalizePlantSelection(
             data.SelectedPlants
+        )
+
+    HOLY_FARM_STATE.MutationMode =
+        HolyFarmNormalizeMutationMode(
+            data.MutationMode
+            or "Off"
+        )
+
+    HOLY_FARM_STATE.SelectedMutations =
+        HolyFarmNormalizeMutationSelection(
+            data.SelectedMutations
+            or data.Mutations
+            or data.SkipMutations
         )
 
     HOLY_FARM_STATE.WeightMode =
@@ -3065,6 +3249,306 @@ function HolyFarmNormalizePlantSelection(value)
     return output
 end
 
+function HolyFarmCleanMutationName(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == "" then
+        return ""
+    end
+
+    local lower =
+        text:lower()
+
+    if lower == "all"
+    or lower == "none"
+    or lower == "normal"
+    or lower == "---"
+    or lower == "nil" then
+
+        return ""
+    end
+
+    return text
+end
+
+function HolyFarmAddMutationDropdownName(values, seen, value)
+
+    local mutationName =
+        HolyFarmCleanMutationName(
+            value
+        )
+
+    if mutationName == "" then
+        return false
+    end
+
+    local key =
+        mutationName:lower()
+
+    if seen[key] == true then
+        return false
+    end
+
+    seen[key] =
+        true
+
+    table.insert(
+        values,
+        mutationName
+    )
+
+    return true
+end
+
+function HolyFarmAddMutationDropdownSource(values, seen, root)
+
+    if typeof(root) ~= "Instance" then
+        return false
+    end
+
+    for _, child in ipairs(root:GetChildren()) do
+
+        HolyFarmAddMutationDropdownName(
+            values,
+            seen,
+            child.Name
+        )
+    end
+
+    return true
+end
+
+function HolyFarmGetMutationDropdownValues()
+
+    local values =
+        {}
+
+    local seen =
+        {}
+
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild(
+            "SharedModules"
+        )
+
+    local mutationData =
+        sharedModules
+        and sharedModules:FindFirstChild(
+            "MutationData"
+        )
+        or nil
+
+    HolyFarmAddMutationDropdownSource(
+        values,
+        seen,
+        mutationData
+    )
+
+    if #values <= 0 then
+
+        for _, mutationName in ipairs({
+            "Aurora",
+            "Bloodlit",
+            "Chained",
+            "Electric",
+            "Frozen",
+            "Gold",
+            "Ignited",
+            "Pizza",
+            "Rainbow",
+            "Solarflare",
+            "Starstruck",
+        }) do
+
+            HolyFarmAddMutationDropdownName(
+                values,
+                seen,
+                mutationName
+            )
+        end
+    end
+
+    table.sort(values, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return values
+end
+
+function HolyFarmGetMutationValueMap()
+
+    local map =
+        {}
+
+    for _, mutationName in ipairs(HolyFarmGetMutationDropdownValues()) do
+
+        map[mutationName] =
+            true
+    end
+
+    return map
+end
+
+function HolyFarmNormalizeMutationName(value)
+
+    local text =
+        HolyFarmCleanMutationName(
+            value
+        )
+
+    if text == "" then
+        return ""
+    end
+
+    local validMap =
+        HolyFarmGetMutationValueMap()
+
+    if validMap[text] == true then
+        return text
+    end
+
+    local lower =
+        text:lower()
+
+    for mutationName in pairs(validMap) do
+
+        if tostring(mutationName):lower() == lower then
+            return mutationName
+        end
+    end
+
+    return text
+end
+
+function HolyFarmNormalizeMutationSelection(value)
+
+    local raw =
+        HolyShopSelectionArray(
+            value
+        )
+
+    if #raw <= 0 then
+        return {}
+    end
+
+    local validMap =
+        HolyFarmGetMutationValueMap()
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    for _, mutationName in ipairs(raw) do
+
+        mutationName =
+            HolyFarmNormalizeMutationName(
+                mutationName
+            )
+
+        if mutationName ~= ""
+        and validMap[mutationName] == true
+        and seen[mutationName] ~= true then
+
+            seen[mutationName] =
+                true
+
+            table.insert(
+                output,
+                mutationName
+            )
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
+function HolyFarmSelectedMutationMap()
+
+    local map =
+        {}
+
+    for _, mutationName in ipairs(HOLY_FARM_STATE.SelectedMutations or {}) do
+
+        mutationName =
+            HolyFarmNormalizeMutationName(
+                mutationName
+            )
+
+        if mutationName ~= "" then
+
+            map[mutationName] =
+                true
+        end
+    end
+
+    return map
+end
+
+function HolyFarmRefreshMutationDropdown()
+
+    HOLY_FARM_UI =
+        type(HOLY_FARM_UI) == "table"
+        and HOLY_FARM_UI
+        or {}
+
+    local dropdown =
+        HOLY_FARM_UI.MutationsDropdown
+
+    if type(dropdown) ~= "table" then
+        return false
+    end
+
+    local values =
+        HolyFarmGetMutationDropdownValues()
+
+    HOLY_FARM_STATE.SelectedMutations =
+        HolyFarmNormalizeMutationSelection(
+            HOLY_FARM_STATE.SelectedMutations
+        )
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+
+    pcall(function()
+
+        if type(dropdown.SetValue) == "function" then
+
+            dropdown:SetValue(
+                HOLY_FARM_STATE.SelectedMutations
+            )
+        end
+    end)
+
+    return true
+end
+
 function HolyFarmSelectedPlantMap()
 
     HolyFarmEnsureState()
@@ -3199,6 +3683,48 @@ function HolyFarmSetSelectedPlants(value)
 
         HolyFarmRebuildReadyQueue(
             "selection changed"
+        )
+    end
+
+    return true
+end
+
+function HolyFarmSetMutationMode(value)
+
+    HolyFarmEnsureState()
+
+    HOLY_FARM_STATE.MutationMode =
+        HolyFarmNormalizeMutationMode(
+            value
+        )
+
+    HolySaveFarmSettings()
+
+    if HOLY_FARM_STATE.AutoCollectFruits == true then
+
+        HolyFarmRebuildReadyQueue(
+            "mutation mode changed"
+        )
+    end
+
+    return true
+end
+
+function HolyFarmSetSelectedMutations(value)
+
+    HolyFarmEnsureState()
+
+    HOLY_FARM_STATE.SelectedMutations =
+        HolyFarmNormalizeMutationSelection(
+            value
+        )
+
+    HolySaveFarmSettings()
+
+    if HOLY_FARM_STATE.AutoCollectFruits == true then
+
+        HolyFarmRebuildReadyQueue(
+            "mutations changed"
         )
     end
 
@@ -4111,6 +4637,10 @@ function HolyFarmQueueFruit(plant, fruit, reason)
             tostring(reason or "ready"),
     }
 
+    if HolyFarmMutationAllowsEntry(entry) ~= true then
+        return false
+    end
+
     if HolyFarmWeightAllowsEntry(entry) ~= true then
         return false
     end
@@ -4205,6 +4735,10 @@ function HolyFarmQueuePlantHarvest(plant, reason)
         Reason =
             tostring(reason or "plant ready"),
     }
+
+    if HolyFarmMutationAllowsEntry(entry) ~= true then
+        return false
+    end
 
     if HolyFarmWeightAllowsEntry(entry) ~= true then
         return false
@@ -4315,6 +4849,8 @@ function HolyFarmWatchFruit(plant, fruit)
     for _, attributeName in ipairs({
         "Age",
         "MaxAge",
+        "Mutation",
+        "Mutations",
         "SizeMulti",
         "SizeMultiplier",
         "ScaleMultiplier",
@@ -4470,6 +5006,23 @@ function HolyFarmWatchPlant(plant)
                     plant,
                     "plant changed"
                 )
+
+                local fruitsFolder =
+                    plant:FindFirstChild(
+                        "Fruits"
+                    )
+
+                if typeof(fruitsFolder) == "Instance" then
+
+                    for _, fruit in ipairs(fruitsFolder:GetChildren()) do
+
+                        HolyFarmQueueFruit(
+                            plant,
+                            fruit,
+                            "plant changed"
+                        )
+                    end
+                end
             end
         end)
     end
@@ -4507,6 +5060,8 @@ function HolyFarmWatchPlant(plant)
     for _, attributeName in ipairs({
         "Age",
         "MaxAge",
+        "Mutation",
+        "Mutations",
         "PlantGrowthReady",
         "Ready",
         "IsReady",
@@ -4882,6 +5437,10 @@ function HolyFarmCollectEntry(entry)
     end
 
     if HolyFarmSelectionAllowsPlant(entry.PlantName) ~= true then
+        return false
+    end
+
+    if HolyFarmMutationAllowsEntry(entry) ~= true then
         return false
     end
 
@@ -37882,7 +38441,7 @@ and type(FarmCollectionBox.AddToggle) == "function" then
             "HolyFarmAutoCollectFruits",
             {
                 Text =
-                    "Auto Collect Fruits",
+                    "⚡ Auto Collect Fruits",
 
                 Default =
                     HOLY_FARM_STATE.AutoCollectFruits == true,
@@ -37908,7 +38467,7 @@ and type(FarmCollectionBox.AddDropdown) == "function" then
             "HolyFarmCollectMode",
             {
                 Text =
-                    "Mode",
+                    "🎯 Mode",
 
                 Values = {
                     "All",
@@ -37947,7 +38506,7 @@ and type(FarmCollectionBox.AddDropdown) == "function" then
             "HolyFarmCollectPlants",
             {
                 Text =
-                    "Plants",
+                    "🌱 Plants",
 
                 Values =
                     HolyFarmGetPlantDropdownValues(),
@@ -37978,12 +38537,89 @@ and type(FarmCollectionBox.AddDropdown) == "function" then
         )
     end)
 
+    HOLY_FARM_UI.MutationModeDropdown =
+        FarmCollectionBox:AddDropdown(
+            "HolyFarmMutationMode",
+            {
+                Text =
+                    "🧬 Mutation Mode",
+
+                Values = {
+                    "Off",
+                    "Only Mutated",
+                    "Only Selected",
+                    "Skip Selected",
+                },
+
+                Default =
+                    HolyFarmNormalizeMutationMode(
+                        HOLY_FARM_STATE.MutationMode
+                        or "Off"
+                    ),
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    4,
+
+                Tooltip =
+                    "Off ignores mutations. Only Mutated collects any mutated fruit. Only Selected collects chosen mutations. Skip Selected avoids chosen mutations.",
+            }
+        )
+
+    HOLY_FARM_UI.MutationModeDropdown:OnChanged(function(value)
+
+        HolyFarmSetMutationMode(
+            value
+        )
+    end)
+
+    HOLY_FARM_UI.MutationsDropdown =
+        FarmCollectionBox:AddDropdown(
+            "HolyFarmSelectedMutations",
+            {
+                Text =
+                    "🧪 Mutations",
+
+                Values =
+                    HolyFarmGetMutationDropdownValues(),
+
+                Default =
+                    HolyFarmNormalizeMutationSelection(
+                        HOLY_FARM_STATE.SelectedMutations
+                    ),
+
+                Multi =
+                    true,
+
+                Searchable =
+                    true,
+
+                MaxVisibleDropdownItems =
+                    8,
+
+                Tooltip =
+                    "Used by Only Selected and Skip Selected. Only Mutated ignores this dropdown.",
+            }
+        )
+
+    HOLY_FARM_UI.MutationsDropdown:OnChanged(function(value)
+
+        HolyFarmSetSelectedMutations(
+            value
+        )
+    end)
+
     HOLY_FARM_UI.WeightModeDropdown =
         FarmCollectionBox:AddDropdown(
             "HolyFarmWeightMode",
             {
                 Text =
-                    "Weight Mode",
+                    "⚖️ Weight Mode",
 
                 Values = {
                     "Off",
@@ -38027,7 +38663,7 @@ and type(FarmCollectionBox.AddInput) == "function" then
             "HolyFarmWeightThresholdKg",
             {
                 Text =
-                    "Weight Threshold (kg)",
+                    "📏 Weight Threshold (kg)",
 
                 Default =
                     tostring(
@@ -38063,6 +38699,8 @@ task.defer(function()
 
     HolyFarmRefreshPlantDropdown()
 
+    HolyFarmRefreshMutationDropdown()
+
     HolyFarmLoadBaseKgCache(
         false
     )
@@ -38078,6 +38716,8 @@ end)
 task.delay(2, function()
 
     HolyFarmRefreshPlantDropdown()
+
+    HolyFarmRefreshMutationDropdown()
 
     HolyFarmLoadBaseKgCache(
         false
