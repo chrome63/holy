@@ -3161,17 +3161,133 @@ function HolyFarmFindHarvestPrompt(fruit)
     )
 end
 
-function HolyFarmFruitReady(fruit)
+function HolyFarmReadBooleanAttribute(instance, names)
 
-    if typeof(fruit) ~= "Instance"
-    or fruit.Parent == nil then
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    for _, name in ipairs(names or {}) do
+
+        local ok,
+            value =
+            pcall(function()
+
+                return instance:GetAttribute(
+                    name
+                )
+            end)
+
+        if ok == true
+        and value ~= nil then
+
+            if value == true then
+                return true
+            end
+
+            if value == false then
+                return false
+            end
+
+            local text =
+                tostring(value)
+                    :lower()
+
+            if text == "true"
+            or text == "1"
+            or text == "yes"
+            or text == "ready"
+            or text == "harvestable" then
+
+                return true
+            end
+
+            if text == "false"
+            or text == "0"
+            or text == "no" then
+
+                return false
+            end
+        end
+    end
+
+    return nil
+end
+
+function HolyFarmPromptUnderFruits(prompt, plant)
+
+    if typeof(prompt) ~= "Instance"
+    or typeof(plant) ~= "Instance" then
+
+        return false
+    end
+
+    local current =
+        prompt.Parent
+
+    while current
+    and current ~= plant do
+
+        if current.Name == "Fruits" then
+            return true
+        end
+
+        current =
+            current.Parent
+    end
+
+    return false
+end
+
+function HolyFarmFindPlantHarvestPrompt(plant)
+
+    if typeof(plant) ~= "Instance" then
+        return nil
+    end
+
+    local prompt =
+        HolyFarmFindHarvestPrompt(
+            plant
+        )
+
+    if typeof(prompt) == "Instance"
+    and prompt:IsA("ProximityPrompt")
+    and HolyFarmPromptUnderFruits(
+        prompt,
+        plant
+    ) ~= true then
+
+        return prompt
+    end
+
+    return nil
+end
+
+function HolyFarmPlantHasFruitsFolder(plant)
+
+    if typeof(plant) ~= "Instance" then
+        return false
+    end
+
+    local fruitsFolder =
+        plant:FindFirstChild(
+            "Fruits"
+        )
+
+    return typeof(fruitsFolder) == "Instance"
+end
+
+function HolyFarmInstanceReady(instance)
+
+    if typeof(instance) ~= "Instance"
+    or instance.Parent == nil then
 
         return false
     end
 
     local age =
         HolyFarmReadNumberAttribute(
-            fruit,
+            instance,
             {
                 "Age",
                 "Growth",
@@ -3182,7 +3298,7 @@ function HolyFarmFruitReady(fruit)
 
     local maxAge =
         HolyFarmReadNumberAttribute(
-            fruit,
+            instance,
             {
                 "MaxAge",
                 "MaxGrowth",
@@ -3193,14 +3309,82 @@ function HolyFarmFruitReady(fruit)
         )
 
     if age ~= nil
-    and maxAge ~= nil then
+    and maxAge ~= nil
+    and age >= maxAge then
 
-        return age >= maxAge
+        return true
+    end
+
+    local ready =
+        HolyFarmReadBooleanAttribute(
+            instance,
+            {
+                "PlantGrowthReady",
+                "Ready",
+                "IsReady",
+                "Harvestable",
+                "CanHarvest",
+                "Grown",
+                "FullyGrown",
+                "Ripe",
+            }
+        )
+
+    if ready == true then
+        return true
+    end
+
+    return false
+end
+
+function HolyFarmFruitReady(fruit)
+
+    if HolyFarmInstanceReady(
+        fruit
+    ) == true then
+
+        return true
     end
 
     local prompt =
         HolyFarmFindHarvestPrompt(
             fruit
+        )
+
+    if typeof(prompt) == "Instance"
+    and prompt:IsA("ProximityPrompt") then
+
+        return prompt.Enabled == true
+    end
+
+    return false
+end
+
+function HolyFarmPlantLevelHarvestReady(plant)
+
+    if typeof(plant) ~= "Instance"
+    or plant.Parent == nil then
+
+        return false
+    end
+
+    if HolyFarmPlantHasFruitsFolder(
+        plant
+    ) == true then
+
+        return false
+    end
+
+    if HolyFarmInstanceReady(
+        plant
+    ) == true then
+
+        return true
+    end
+
+    local prompt =
+        HolyFarmFindPlantHarvestPrompt(
+            plant
         )
 
     if typeof(prompt) == "Instance"
@@ -3371,6 +3555,9 @@ function HolyFarmQueueFruit(plant, fruit, reason)
             Key =
                 key,
 
+            Kind =
+                "FruitHarvest",
+
             Plant =
                 plant,
 
@@ -3395,6 +3582,120 @@ function HolyFarmQueueFruit(plant, fruit, reason)
     )
 
     return true
+end
+
+function HolyFarmQueuePlantHarvest(plant, reason)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    if typeof(plant) ~= "Instance"
+    or plant.Parent == nil then
+
+        return false
+    end
+
+    if HolyFarmPlantLevelHarvestReady(
+        plant
+    ) ~= true then
+
+        return false
+    end
+
+    local plantName =
+        HolyFarmReadPlantName(
+            plant,
+            nil
+        )
+
+    if HolyFarmSelectionAllowsPlant(
+        plantName
+    ) ~= true then
+
+        return false
+    end
+
+    local plantId =
+        HolyFarmReadPlantId(
+            plant
+        )
+
+    local fruitId =
+        plantId
+
+    local key =
+        HolyFarmBuildFruitKey(
+            plantId,
+            fruitId
+        )
+
+    if key == "" then
+        return false
+    end
+
+    if runtime.Pending[key] ~= nil
+    or runtime.ReadyMap[key] == true then
+
+        return false
+    end
+
+    runtime.ReadyMap[key] =
+        true
+
+    table.insert(
+        runtime.ReadyQueue,
+        {
+            Key =
+                key,
+
+            Kind =
+                "PlantHarvest",
+
+            Plant =
+                plant,
+
+            Fruit =
+                plant,
+
+            PlantName =
+                plantName,
+
+            PlantId =
+                plantId,
+
+            FruitId =
+                fruitId,
+
+            QueuedAt =
+                os.clock(),
+
+            Reason =
+                tostring(reason or "plant ready"),
+        }
+    )
+
+    return true
+end
+
+function HolyFarmRetryEntry(entry, reason)
+
+    if type(entry) ~= "table" then
+        return false
+    end
+
+    if entry.Kind == "PlantHarvest" then
+
+        return HolyFarmQueuePlantHarvest(
+            entry.Plant,
+            reason or "retry plant"
+        )
+    end
+
+    return HolyFarmQueueFruit(
+        entry.Plant,
+        entry.Fruit,
+        reason or "retry fruit"
+    )
 end
 
 function HolyFarmUnwatchFruit(fruit)
@@ -3540,6 +3841,29 @@ function HolyFarmUnwatchPlant(plant)
     local runtime =
         HolyFarmEnsureRuntime()
 
+    if typeof(plant) == "Instance" then
+
+        local plantId =
+            HolyFarmReadPlantId(
+                plant
+            )
+
+        local plantKey =
+            HolyFarmBuildFruitKey(
+                plantId,
+                plantId
+            )
+
+        if plantKey ~= "" then
+
+            runtime.ReadyMap[plantKey] =
+                nil
+
+            runtime.Pending[plantKey] =
+                nil
+        end
+    end
+
     HolyFarmDisconnectConnectionList(
         runtime.PlantConnections[plant]
     )
@@ -3563,6 +3887,12 @@ function HolyFarmWatchPlant(plant)
     end
 
     if runtime.WatchedPlants[plant] == true then
+
+        HolyFarmQueuePlantHarvest(
+            plant,
+            "plant refresh"
+        )
+
         return true
     end
 
@@ -3571,6 +3901,87 @@ function HolyFarmWatchPlant(plant)
 
     runtime.PlantConnections[plant] =
         {}
+
+    local plantPromptConnected =
+        false
+
+    local function refreshPlantHarvest()
+
+        task.defer(function()
+
+            if HOLY_FARM_STATE.AutoCollectFruits == true then
+
+                HolyFarmQueuePlantHarvest(
+                    plant,
+                    "plant changed"
+                )
+            end
+        end)
+    end
+
+    local function connectPlantHarvestPrompt()
+
+        if plantPromptConnected == true then
+            return false
+        end
+
+        local prompt =
+            HolyFarmFindPlantHarvestPrompt(
+                plant
+            )
+
+        if typeof(prompt) ~= "Instance"
+        or prompt:IsA("ProximityPrompt") ~= true then
+
+            return false
+        end
+
+        plantPromptConnected =
+            true
+
+        table.insert(
+            runtime.PlantConnections[plant],
+            prompt:GetPropertyChangedSignal("Enabled"):Connect(
+                refreshPlantHarvest
+            )
+        )
+
+        return true
+    end
+
+    for _, attributeName in ipairs({
+        "Age",
+        "MaxAge",
+        "PlantGrowthReady",
+        "Ready",
+        "IsReady",
+        "Harvestable",
+        "CanHarvest",
+        "Grown",
+        "FullyGrown",
+        "Ripe",
+    }) do
+
+        local ok,
+            signal =
+            pcall(function()
+
+                return plant:GetAttributeChangedSignal(
+                    attributeName
+                )
+            end)
+
+        if ok == true
+        and signal then
+
+            table.insert(
+                runtime.PlantConnections[plant],
+                signal:Connect(
+                    refreshPlantHarvest
+                )
+            )
+        end
+    end
 
     local function attachFruitsFolder(fruitsFolder)
 
@@ -3645,6 +4056,13 @@ function HolyFarmWatchPlant(plant)
         )
     )
 
+    connectPlantHarvestPrompt()
+
+    HolyFarmQueuePlantHarvest(
+        plant,
+        "initial plant"
+    )
+
     table.insert(
         runtime.PlantConnections[plant],
         plant.ChildAdded:Connect(function(child)
@@ -3656,6 +4074,15 @@ function HolyFarmWatchPlant(plant)
                     attachFruitsFolder(
                         child
                     )
+                end)
+
+            elseif child.Name == "HarvestPart" then
+
+                task.defer(function()
+
+                    connectPlantHarvestPrompt()
+
+                    refreshPlantHarvest()
                 end)
             end
         end)
@@ -3826,6 +4253,13 @@ function HolyFarmRebuildReadyQueue(reason)
                     reason or "rebuild"
                 )
             end
+
+        else
+
+            HolyFarmQueuePlantHarvest(
+                plant,
+                reason or "rebuild plant"
+            )
         end
     end
 
@@ -3842,14 +4276,34 @@ function HolyFarmCollectEntry(entry)
     end
 
     if typeof(entry.Plant) ~= "Instance"
-    or typeof(entry.Fruit) ~= "Instance"
-    or entry.Fruit.Parent == nil then
+    or entry.Plant.Parent == nil then
 
         return false
     end
 
-    if HolyFarmFruitReady(entry.Fruit) ~= true then
-        return false
+    if entry.Kind == "PlantHarvest" then
+
+        if HolyFarmPlantLevelHarvestReady(
+            entry.Plant
+        ) ~= true then
+
+            return false
+        end
+
+    else
+
+        if typeof(entry.Fruit) ~= "Instance"
+        or entry.Fruit.Parent == nil then
+
+            return false
+        end
+
+        if HolyFarmFruitReady(
+            entry.Fruit
+        ) ~= true then
+
+            return false
+        end
     end
 
     if HolyFarmSelectionAllowsPlant(entry.PlantName) ~= true then
@@ -3929,9 +4383,8 @@ function HolyFarmCollectEntry(entry)
 
             if HOLY_FARM_STATE.AutoCollectFruits == true then
 
-                HolyFarmQueueFruit(
-                    entry.Plant,
-                    entry.Fruit,
+                HolyFarmRetryEntry(
+                    entry,
                     "retry"
                 )
             end
@@ -3964,9 +4417,28 @@ function HolyFarmPrunePending()
             and tonumber(row.At)
             or 0
 
-        if type(entry) ~= "table"
-        or typeof(entry.Fruit) ~= "Instance"
-        or entry.Fruit.Parent == nil then
+        local missing =
+            false
+
+        if type(entry) ~= "table" then
+
+            missing =
+                true
+
+        elseif entry.Kind == "PlantHarvest" then
+
+            missing =
+                typeof(entry.Plant) ~= "Instance"
+                or entry.Plant.Parent == nil
+
+        else
+
+            missing =
+                typeof(entry.Fruit) ~= "Instance"
+                or entry.Fruit.Parent == nil
+        end
+
+        if missing == true then
 
             runtime.Pending[key] =
                 nil
@@ -3979,9 +4451,8 @@ function HolyFarmPrunePending()
             runtime.Pending[key] =
                 nil
 
-            HolyFarmQueueFruit(
-                entry.Plant,
-                entry.Fruit,
+            HolyFarmRetryEntry(
+                entry,
                 "pending retry"
             )
         end
@@ -26041,7 +26512,7 @@ local ShopDoubleBox =
     HolyAddRightGroupbox(
         Tabs.Shop,
         "Shop.AutoDoubleOrNothing",
-        "Auto Gamble",
+        "Gamble",
         "dice-5"
     )
 
