@@ -692,6 +692,9 @@ HOLY_FARM_STATE = {
     CollectMode = "All",
 
     SelectedPlants = {},
+
+    WeightMode = "Off",
+    WeightThresholdKg = "0",
 }
 
 HOLY_FARM_RUNTIME = {
@@ -714,6 +717,9 @@ HOLY_FARM_RUNTIME = {
 
     CollectFruitPacket = nil,
 
+    BaseKgCache = nil,
+    BaseKgCacheLoaded = false,
+
     LastPacketWarnAt = 0,
     LastPlotWarnAt = 0,
 }
@@ -721,6 +727,8 @@ HOLY_FARM_RUNTIME = {
 HOLY_FARM_UI = {
     PlantsDropdown = nil,
     ModeDropdown = nil,
+    WeightModeDropdown = nil,
+    WeightThresholdInput = nil,
     AutoCollectToggle = nil,
 }
 
@@ -2100,6 +2108,433 @@ function HolyFarmNormalizeCollectMode(value)
     return "All"
 end
 
+function HolyFarmNormalizeWeightMode(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local lower =
+        text:lower()
+
+    if lower == "above"
+    or lower == "over"
+    or lower == "bigger"
+    or lower == "bigger than"
+    or lower == "greater"
+    or lower == "greater than" then
+
+        return "Above"
+    end
+
+    if lower == "below"
+    or lower == "under"
+    or lower == "smaller"
+    or lower == "smaller than"
+    or lower == "less"
+    or lower == "less than" then
+
+        return "Below"
+    end
+
+    return "Off"
+end
+
+function HolyFarmReadWeightThresholdKg(value)
+
+    local number =
+        tonumber(
+            tostring(value or "0")
+                :match("[%d%.]+")
+        )
+
+    return math.max(
+        0,
+        tonumber(number)
+        or 0
+    )
+end
+
+function HolyFarmFindBaseWeight(value, depth, seen)
+
+    if type(value) ~= "table" then
+        return nil
+    end
+
+    seen =
+        type(seen) == "table"
+        and seen
+        or {}
+
+    if seen[value] == true then
+        return nil
+    end
+
+    seen[value] =
+        true
+
+    depth =
+        tonumber(depth)
+        or 0
+
+    if depth > 5 then
+        return nil
+    end
+
+    local direct =
+        tonumber(value.BaseWeight)
+
+    if direct ~= nil then
+        return direct
+    end
+
+    if type(value.GrowData) == "table" then
+
+        local growBase =
+            tonumber(value.GrowData.BaseWeight)
+
+        if growBase ~= nil then
+            return growBase
+        end
+    end
+
+    for key, child in pairs(value) do
+
+        if type(child) == "table" then
+
+            local found =
+                HolyFarmFindBaseWeight(
+                    child,
+                    depth + 1,
+                    seen
+                )
+
+            if found ~= nil then
+                return found
+            end
+
+        elseif type(child) == "number" then
+
+            local keyText =
+                tostring(key or "")
+                    :lower()
+
+            if keyText:find("baseweight", 1, true)
+            or keyText == "weight" then
+
+                return child
+            end
+        end
+    end
+
+    return nil
+end
+
+function HolyFarmRequireGenerationModule(module)
+
+    if typeof(module) ~= "Instance"
+    or module:IsA("ModuleScript") ~= true then
+
+        return nil
+    end
+
+    local ok,
+        result =
+        pcall(function()
+
+            return require(
+                module
+            )
+        end)
+
+    if ok == true
+    and type(result) == "table" then
+
+        return result
+    end
+
+    return nil
+end
+
+function HolyFarmLoadBaseKgCache(forceRefresh)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    if forceRefresh ~= true
+    and runtime.BaseKgCacheLoaded == true
+    and type(runtime.BaseKgCache) == "table" then
+
+        return runtime.BaseKgCache
+    end
+
+    local cache = {
+        Fruits = {},
+        Plants = {},
+    }
+
+    local plantGenerationModules =
+        ReplicatedStorage:FindFirstChild("PlantGenerationModules")
+
+    local function scanFolder(folder, targetMap)
+
+        if typeof(folder) ~= "Instance" then
+            return
+        end
+
+        for _, module in ipairs(folder:GetChildren()) do
+
+            if module:IsA("ModuleScript") then
+
+                local value =
+                    HolyFarmRequireGenerationModule(
+                        module
+                    )
+
+                local baseWeight =
+                    HolyFarmFindBaseWeight(
+                        value,
+                        0,
+                        {}
+                    )
+
+                baseWeight =
+                    tonumber(baseWeight)
+
+                if baseWeight ~= nil
+                and baseWeight > 0 then
+
+                    targetMap[module.Name] =
+                        baseWeight
+                end
+            end
+        end
+    end
+
+    scanFolder(
+        plantGenerationModules
+        and plantGenerationModules:FindFirstChild("Fruits"),
+        cache.Fruits
+    )
+
+    scanFolder(
+        plantGenerationModules
+        and plantGenerationModules:FindFirstChild("Plants"),
+        cache.Plants
+    )
+
+    runtime.BaseKgCache =
+        cache
+
+    runtime.BaseKgCacheLoaded =
+        true
+
+    return cache
+end
+
+function HolyFarmGetBaseKg(plantName, kind)
+
+    plantName =
+        HolyCleanText(
+            plantName
+        )
+
+    if plantName == "" then
+        return nil
+    end
+
+    local cache =
+        HolyFarmLoadBaseKgCache(
+            false
+        )
+
+    cache =
+        type(cache) == "table"
+        and cache
+        or {}
+
+    local fruits =
+        type(cache.Fruits) == "table"
+        and cache.Fruits
+        or {}
+
+    local plants =
+        type(cache.Plants) == "table"
+        and cache.Plants
+        or {}
+
+    if kind == "PlantHarvest" then
+
+        return tonumber(plants[plantName])
+            or tonumber(fruits[plantName])
+    end
+
+    return tonumber(fruits[plantName])
+        or tonumber(plants[plantName])
+end
+
+function HolyFarmReadSizeMultiplier(instance, fallbackToOne)
+
+    if typeof(instance) ~= "Instance" then
+
+        return fallbackToOne == true
+            and 1
+            or nil
+    end
+
+    local size =
+        HolyFarmReadNumberAttribute(
+            instance,
+            {
+                "SizeMulti",
+                "SizeMultiplier",
+                "ScaleMultiplier",
+                "ScaleMulti",
+                "Scale",
+                "SizeScale",
+            }
+        )
+
+    if size ~= nil
+    and size > 0 then
+
+        return size
+    end
+
+    if instance:IsA("Model") then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return instance:GetScale()
+            end)
+
+        result =
+            tonumber(result)
+
+        if ok == true
+        and result ~= nil
+        and result > 0 then
+
+            return result
+        end
+    end
+
+    return fallbackToOne == true
+        and 1
+        or nil
+end
+
+function HolyFarmPredictEntryWeightKg(entry)
+
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local plantName =
+        HolyCleanText(
+            entry.PlantName
+            or ""
+        )
+
+    if plantName == "" then
+
+        plantName =
+            HolyFarmReadPlantName(
+                entry.Plant,
+                entry.Fruit
+            )
+    end
+
+    local baseKg =
+        HolyFarmGetBaseKg(
+            plantName,
+            entry.Kind
+        )
+
+    if baseKg == nil then
+        return nil
+    end
+
+    local sizeMulti =
+        nil
+
+    if entry.Kind == "PlantHarvest" then
+
+        sizeMulti =
+            HolyFarmReadSizeMultiplier(
+                entry.Plant,
+                true
+            )
+
+    else
+
+        sizeMulti =
+            HolyFarmReadSizeMultiplier(
+                entry.Fruit,
+                false
+            )
+    end
+
+    if sizeMulti == nil then
+        return nil
+    end
+
+    return baseKg * sizeMulti,
+        baseKg,
+        sizeMulti
+end
+
+function HolyFarmWeightAllowsEntry(entry)
+
+    HolyFarmEnsureState()
+
+    local mode =
+        HolyFarmNormalizeWeightMode(
+            HOLY_FARM_STATE.WeightMode
+            or "Off"
+        )
+
+    if mode == "Off" then
+        return true
+    end
+
+    local threshold =
+        HolyFarmReadWeightThresholdKg(
+            HOLY_FARM_STATE.WeightThresholdKg
+        )
+
+    if threshold <= 0 then
+        return true
+    end
+
+    local predictedKg =
+        HolyFarmPredictEntryWeightKg(
+            entry
+        )
+
+    predictedKg =
+        tonumber(predictedKg)
+
+    if predictedKg == nil then
+        return false
+    end
+
+    if mode == "Above" then
+
+        return predictedKg >= threshold
+    end
+
+    if mode == "Below" then
+
+        return predictedKg <= threshold
+    end
+
+    return true
+end
+
 function HolyFarmEnsureState()
 
     HOLY_FARM_STATE =
@@ -2117,6 +2552,20 @@ function HolyFarmEnsureState()
         HolyFarmNormalizePlantSelection(
             HOLY_FARM_STATE.SelectedPlants
             or {}
+        )
+
+    HOLY_FARM_STATE.WeightMode =
+        HolyFarmNormalizeWeightMode(
+            HOLY_FARM_STATE.WeightMode
+            or "Off"
+        )
+
+    HOLY_FARM_STATE.WeightThresholdKg =
+        tostring(
+            HolyFarmReadWeightThresholdKg(
+                HOLY_FARM_STATE.WeightThresholdKg
+                or "0"
+            )
         )
 
     HOLY_FARM_STATE.AutoCollectFruits =
@@ -2174,6 +2623,14 @@ function HolyFarmEnsureRuntime()
         type(state.Pending) == "table"
         and state.Pending
         or {}
+
+    state.BaseKgCache =
+        type(state.BaseKgCache) == "table"
+        and state.BaseKgCache
+        or nil
+
+    state.BaseKgCacheLoaded =
+        state.BaseKgCacheLoaded == true
 
     return state
 end
@@ -2303,6 +2760,18 @@ function HolySaveFarmSettings()
             HolyShopSelectionArray(
                 HOLY_FARM_STATE.SelectedPlants
             ),
+
+        WeightMode =
+            HolyFarmNormalizeWeightMode(
+                HOLY_FARM_STATE.WeightMode
+            ),
+
+        WeightThresholdKg =
+            tostring(
+                HolyFarmReadWeightThresholdKg(
+                    HOLY_FARM_STATE.WeightThresholdKg
+                )
+            ),
     }
 
     local encodeOk,
@@ -2396,6 +2865,21 @@ function HolyLoadFarmSettings()
     HOLY_FARM_STATE.SelectedPlants =
         HolyFarmNormalizePlantSelection(
             data.SelectedPlants
+        )
+
+    HOLY_FARM_STATE.WeightMode =
+        HolyFarmNormalizeWeightMode(
+            data.WeightMode
+            or "Off"
+        )
+
+    HOLY_FARM_STATE.WeightThresholdKg =
+        tostring(
+            HolyFarmReadWeightThresholdKg(
+                data.WeightThresholdKg
+                or data.WeightKg
+                or "0"
+            )
         )
 
     return true
@@ -2715,6 +3199,50 @@ function HolyFarmSetSelectedPlants(value)
 
         HolyFarmRebuildReadyQueue(
             "selection changed"
+        )
+    end
+
+    return true
+end
+
+function HolyFarmSetWeightMode(value)
+
+    HolyFarmEnsureState()
+
+    HOLY_FARM_STATE.WeightMode =
+        HolyFarmNormalizeWeightMode(
+            value
+        )
+
+    HolySaveFarmSettings()
+
+    if HOLY_FARM_STATE.AutoCollectFruits == true then
+
+        HolyFarmRebuildReadyQueue(
+            "weight mode changed"
+        )
+    end
+
+    return true
+end
+
+function HolyFarmSetWeightThresholdKg(value)
+
+    HolyFarmEnsureState()
+
+    HOLY_FARM_STATE.WeightThresholdKg =
+        tostring(
+            HolyFarmReadWeightThresholdKg(
+                value
+            )
+        )
+
+    HolySaveFarmSettings()
+
+    if HOLY_FARM_STATE.AutoCollectFruits == true then
+
+        HolyFarmRebuildReadyQueue(
+            "weight threshold changed"
         )
     end
 
@@ -3554,6 +4082,39 @@ function HolyFarmQueueFruit(plant, fruit, reason)
         return false
     end
 
+    local entry = {
+        Key =
+            key,
+
+        Kind =
+            "FruitHarvest",
+
+        Plant =
+            plant,
+
+        Fruit =
+            fruit,
+
+        PlantName =
+            plantName,
+
+        PlantId =
+            plantId,
+
+        FruitId =
+            fruitId,
+
+        QueuedAt =
+            os.clock(),
+
+        Reason =
+            tostring(reason or "ready"),
+    }
+
+    if HolyFarmWeightAllowsEntry(entry) ~= true then
+        return false
+    end
+
     if runtime.Pending[key] ~= nil
     or runtime.ReadyMap[key] == true then
 
@@ -3565,34 +4126,7 @@ function HolyFarmQueueFruit(plant, fruit, reason)
 
     table.insert(
         runtime.ReadyQueue,
-        {
-            Key =
-                key,
-
-            Kind =
-                "FruitHarvest",
-
-            Plant =
-                plant,
-
-            Fruit =
-                fruit,
-
-            PlantName =
-                plantName,
-
-            PlantId =
-                plantId,
-
-            FruitId =
-                fruitId,
-
-            QueuedAt =
-                os.clock(),
-
-            Reason =
-                tostring(reason or "ready"),
-        }
+        entry
     )
 
     return true
@@ -3643,6 +4177,39 @@ function HolyFarmQueuePlantHarvest(plant, reason)
         return false
     end
 
+    local entry = {
+        Key =
+            key,
+
+        Kind =
+            "PlantHarvest",
+
+        Plant =
+            plant,
+
+        Fruit =
+            plant,
+
+        PlantName =
+            plantName,
+
+        PlantId =
+            plantId,
+
+        FruitId =
+            "",
+
+        QueuedAt =
+            os.clock(),
+
+        Reason =
+            tostring(reason or "plant ready"),
+    }
+
+    if HolyFarmWeightAllowsEntry(entry) ~= true then
+        return false
+    end
+
     if runtime.Pending[key] ~= nil
     or runtime.ReadyMap[key] == true then
 
@@ -3654,34 +4221,7 @@ function HolyFarmQueuePlantHarvest(plant, reason)
 
     table.insert(
         runtime.ReadyQueue,
-        {
-            Key =
-                key,
-
-            Kind =
-                "PlantHarvest",
-
-            Plant =
-                plant,
-
-            Fruit =
-                plant,
-
-            PlantName =
-                plantName,
-
-            PlantId =
-                plantId,
-
-            FruitId =
-                "",
-
-            QueuedAt =
-                os.clock(),
-
-            Reason =
-                tostring(reason or "plant ready"),
-        }
+        entry
     )
 
     return true
@@ -3775,6 +4315,12 @@ function HolyFarmWatchFruit(plant, fruit)
     for _, attributeName in ipairs({
         "Age",
         "MaxAge",
+        "SizeMulti",
+        "SizeMultiplier",
+        "ScaleMultiplier",
+        "ScaleMulti",
+        "Scale",
+        "SizeScale",
     }) do
 
         local ok,
@@ -3969,6 +4515,12 @@ function HolyFarmWatchPlant(plant)
         "Grown",
         "FullyGrown",
         "Ripe",
+        "SizeMulti",
+        "SizeMultiplier",
+        "ScaleMultiplier",
+        "ScaleMulti",
+        "Scale",
+        "SizeScale",
     }) do
 
         local ok,
@@ -4330,6 +4882,10 @@ function HolyFarmCollectEntry(entry)
     end
 
     if HolyFarmSelectionAllowsPlant(entry.PlantName) ~= true then
+        return false
+    end
+
+    if HolyFarmWeightAllowsEntry(entry) ~= true then
         return false
     end
 
@@ -37421,11 +37977,95 @@ and type(FarmCollectionBox.AddDropdown) == "function" then
             value
         )
     end)
+
+    HOLY_FARM_UI.WeightModeDropdown =
+        FarmCollectionBox:AddDropdown(
+            "HolyFarmWeightMode",
+            {
+                Text =
+                    "Weight Mode",
+
+                Values = {
+                    "Off",
+                    "Above",
+                    "Below",
+                },
+
+                Default =
+                    HolyFarmNormalizeWeightMode(
+                        HOLY_FARM_STATE.WeightMode
+                        or "Off"
+                    ),
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    3,
+
+                Tooltip =
+                    "Off ignores weight. Above collects fruits at or above the threshold. Below collects fruits at or below the threshold.",
+            }
+        )
+
+    HOLY_FARM_UI.WeightModeDropdown:OnChanged(function(value)
+
+        HolyFarmSetWeightMode(
+            value
+        )
+    end)
+end
+
+if FarmCollectionBox
+and type(FarmCollectionBox.AddInput) == "function" then
+
+    HOLY_FARM_UI.WeightThresholdInput =
+        FarmCollectionBox:AddInput(
+            "HolyFarmWeightThresholdKg",
+            {
+                Text =
+                    "Weight Threshold (kg)",
+
+                Default =
+                    tostring(
+                        HolyFarmReadWeightThresholdKg(
+                            HOLY_FARM_STATE.WeightThresholdKg
+                            or "0"
+                        )
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Used only when Weight Mode is Above or Below. 0 disables the weight filter.",
+            }
+        )
+
+    HOLY_FARM_UI.WeightThresholdInput:OnChanged(function(value)
+
+        HolyFarmSetWeightThresholdKg(
+            value
+        )
+    end)
 end
 
 task.defer(function()
 
     HolyFarmRefreshPlantDropdown()
+
+    HolyFarmLoadBaseKgCache(
+        false
+    )
 
     if HOLY_FARM_STATE.AutoCollectFruits == true then
 
@@ -37438,6 +38078,10 @@ end)
 task.delay(2, function()
 
     HolyFarmRefreshPlantDropdown()
+
+    HolyFarmLoadBaseKgCache(
+        false
+    )
 end)
 
 --==================================================
