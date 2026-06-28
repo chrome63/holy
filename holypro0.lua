@@ -360,6 +360,9 @@ HOLY_VISUAL_STATE = {
     GardenFruitESP = false,
     GardenFruitShowValue = true,
 
+    GardenFruitMode = "All",
+    GardenFruitSelectedFruits = {},
+
     GardenFruitMaxDistance = "150",
     GardenFruitMinValue = "0",
 
@@ -398,6 +401,8 @@ HOLY_VISUAL_UI = {
 
     GardenFruitESPToggle = nil,
     GardenFruitShowValueToggle = nil,
+    GardenFruitModeDropdown = nil,
+    GardenFruitFruitsDropdown = nil,
     GardenFruitMaxDistanceInput = nil,
     GardenFruitMinValueInput = nil,
     GardenFruitWeightModeDropdown = nil,
@@ -1455,6 +1460,111 @@ function HolyVisualReadNumberText(value, fallback, maxValue)
     )
 end
 
+function HolyVisualNormalizeGardenFruitMode(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local lower =
+        text:lower()
+
+    if lower == "only selected"
+    or lower == "selected"
+    or (
+        lower:find("only", 1, true)
+        and lower:find("selected", 1, true)
+    ) then
+
+        return "Only Selected"
+    end
+
+    if lower == "skip selected"
+    or lower == "exclude selected"
+    or lower:find("skip", 1, true)
+    or lower:find("exclude", 1, true)
+    or lower:find("ignore selected", 1, true) then
+
+        return "Skip Selected"
+    end
+
+    return "All"
+end
+
+function HolyVisualNormalizeGardenFruitSelection(value)
+
+    local raw =
+        HolyShopSelectionArray(
+            value
+        )
+
+    if #raw <= 0 then
+        return {}
+    end
+
+    local validMap =
+        {}
+
+    if type(HolyFarmGetPlantValueMap) == "function" then
+
+        validMap =
+            HolyFarmGetPlantValueMap()
+    end
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    for _, fruitName in ipairs(raw) do
+
+        local normalized =
+            ""
+
+        if type(HolyFarmNormalizePlantName) == "function" then
+
+            normalized =
+                HolyFarmNormalizePlantName(
+                    fruitName
+                )
+
+        else
+
+            normalized =
+                HolyCleanText(
+                    fruitName
+                )
+        end
+
+        if normalized ~= ""
+        and normalized ~= "All"
+        and seen[normalized] ~= true
+        and (
+            next(validMap) == nil
+            or validMap[normalized] == true
+        ) then
+
+            seen[normalized] =
+                true
+
+            table.insert(
+                output,
+                normalized
+            )
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
 function HolyVisualNormalizeGardenMutationMode(value)
 
     local text =
@@ -1593,6 +1703,18 @@ function HolyVisualEnsureState()
             HOLY_VISUAL_STATE.GardenFruitShowValue == true
     end
 
+    HOLY_VISUAL_STATE.GardenFruitMode =
+        HolyVisualNormalizeGardenFruitMode(
+            HOLY_VISUAL_STATE.GardenFruitMode
+            or "All"
+        )
+
+    HOLY_VISUAL_STATE.GardenFruitSelectedFruits =
+        HolyVisualNormalizeGardenFruitSelection(
+            HOLY_VISUAL_STATE.GardenFruitSelectedFruits
+            or {}
+        )
+
     HOLY_VISUAL_STATE.GardenFruitMaxDistance =
         HolyVisualReadNumberText(
             HOLY_VISUAL_STATE.GardenFruitMaxDistance
@@ -1680,6 +1802,18 @@ function HolySaveVisualSettings()
 
         GardenFruitShowValue =
             HOLY_VISUAL_STATE.GardenFruitShowValue == true,
+
+        GardenFruitMode =
+            tostring(
+                HOLY_VISUAL_STATE.GardenFruitMode
+                or "All"
+            ),
+
+        GardenFruitSelectedFruits =
+            HolyShopSelectionArray(
+                HOLY_VISUAL_STATE.GardenFruitSelectedFruits
+                or {}
+            ),
 
         GardenFruitMaxDistance =
             tostring(
@@ -1816,6 +1950,16 @@ function HolyLoadVisualSettings()
         HOLY_VISUAL_STATE.GardenFruitShowValue =
             true
     end
+
+    HOLY_VISUAL_STATE.GardenFruitMode =
+        data.GardenFruitMode
+        or HOLY_VISUAL_STATE.GardenFruitMode
+        or "All"
+
+    HOLY_VISUAL_STATE.GardenFruitSelectedFruits =
+        data.GardenFruitSelectedFruits
+        or HOLY_VISUAL_STATE.GardenFruitSelectedFruits
+        or {}
 
     HOLY_VISUAL_STATE.GardenFruitMaxDistance =
         tostring(
@@ -29320,6 +29464,110 @@ function HolyVisualGardenGetDistance(adornee)
     ).Magnitude
 end
 
+function HolyVisualGardenSelectedFruitMap()
+
+    HolyVisualEnsureState()
+
+    local map =
+        {}
+
+    for _, fruitName in ipairs(HOLY_VISUAL_STATE.GardenFruitSelectedFruits or {}) do
+
+        local normalized =
+            ""
+
+        if type(HolyFarmNormalizePlantName) == "function" then
+
+            normalized =
+                HolyFarmNormalizePlantName(
+                    fruitName
+                )
+
+        else
+
+            normalized =
+                HolyCleanText(
+                    fruitName
+                )
+        end
+
+        if normalized ~= "" then
+
+            map[normalized] =
+                true
+        end
+    end
+
+    return map
+end
+
+function HolyVisualGardenFruitAllows(fruitName)
+
+    HolyVisualEnsureState()
+
+    local mode =
+        HolyVisualNormalizeGardenFruitMode(
+            HOLY_VISUAL_STATE.GardenFruitMode
+            or "All"
+        )
+
+    if mode == "All" then
+        return true
+    end
+
+    fruitName =
+        HolyCleanText(
+            fruitName
+        )
+
+    local normalized =
+        fruitName
+
+    if type(HolyFarmNormalizePlantName) == "function" then
+
+        normalized =
+            HolyFarmNormalizePlantName(
+                fruitName
+            )
+    end
+
+    local selectedMap =
+        HolyVisualGardenSelectedFruitMap()
+
+    local hasSelected =
+        false
+
+    for _ in pairs(selectedMap) do
+
+        hasSelected =
+            true
+
+        break
+    end
+
+    if mode == "Only Selected" then
+
+        if hasSelected ~= true then
+            return false
+        end
+
+        return selectedMap[normalized] == true
+            or selectedMap[fruitName] == true
+    end
+
+    if mode == "Skip Selected" then
+
+        if hasSelected ~= true then
+            return true
+        end
+
+        return selectedMap[normalized] ~= true
+            and selectedMap[fruitName] ~= true
+    end
+
+    return true
+end
+
 function HolyVisualGardenSelectedMutationMap()
 
     HolyVisualEnsureState()
@@ -29800,6 +30048,13 @@ function HolyVisualGardenReadRow(plant, fruit, kind)
 
     if fruitName == ""
     or fruitName == "Unknown" then
+
+        return nil
+    end
+
+    if HolyVisualGardenFruitAllows(
+        fruitName
+    ) ~= true then
 
         return nil
     end
@@ -30498,6 +30753,97 @@ function HolyVisualGardenSetShowValue(value)
     HolySaveVisualSettings()
 
     HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenSetFruitMode(value)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitMode =
+        HolyVisualNormalizeGardenFruitMode(
+            value
+        )
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenSetSelectedFruits(value)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitSelectedFruits =
+        HolyVisualNormalizeGardenFruitSelection(
+            value
+        )
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenRefreshFruitDropdown(forceRefresh)
+
+    HOLY_VISUAL_UI =
+        type(HOLY_VISUAL_UI) == "table"
+        and HOLY_VISUAL_UI
+        or {}
+
+    if forceRefresh == true
+    and type(HolyFarmInvalidatePlantNameCache) == "function" then
+
+        HolyFarmInvalidatePlantNameCache()
+    end
+
+    local dropdown =
+        HOLY_VISUAL_UI.GardenFruitFruitsDropdown
+
+    if type(dropdown) ~= "table" then
+        return false
+    end
+
+    local values =
+        {}
+
+    if type(HolyFarmGetPlantDropdownValues) == "function" then
+
+        values =
+            HolyFarmGetPlantDropdownValues()
+    end
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+
+    pcall(function()
+
+        if type(dropdown.SetValue) == "function" then
+
+            dropdown:SetValue(
+                HOLY_VISUAL_STATE.GardenFruitSelectedFruits
+                or {}
+            )
+        end
+    end)
 
     return true
 end
@@ -45304,6 +45650,83 @@ if type(VisualGardenBox) == "table" then
         end)
     end
 
+    HOLY_VISUAL_UI.GardenFruitModeDropdown =
+        VisualGardenBox:AddDropdown(
+            "HolyVisualGardenFruitMode",
+            {
+                Text =
+                    "Fruit Mode",
+
+                Values = {
+                    "All",
+                    "Only Selected",
+                    "Skip Selected",
+                },
+
+                Default =
+                    HolyVisualNormalizeGardenFruitMode(
+                        HOLY_VISUAL_STATE.GardenFruitMode
+                        or "All"
+                    ),
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    3,
+
+                Tooltip =
+                    "All shows every fruit. Only Selected and Skip Selected use the Select Fruits dropdown.",
+            }
+        )
+
+    HOLY_VISUAL_UI.GardenFruitModeDropdown:OnChanged(function(value)
+
+        HolyVisualGardenSetFruitMode(
+            value
+        )
+    end)
+
+    HOLY_VISUAL_UI.GardenFruitFruitsDropdown =
+        VisualGardenBox:AddDropdown(
+            "HolyVisualGardenFruitSelectedFruits",
+            {
+                Text =
+                    "Select Fruits",
+
+                Values =
+                    HolyFarmGetPlantDropdownValues(),
+
+                Default =
+                    HolyVisualNormalizeGardenFruitSelection(
+                        HOLY_VISUAL_STATE.GardenFruitSelectedFruits
+                        or {}
+                    ),
+
+                Multi =
+                    true,
+
+                Searchable =
+                    true,
+
+                MaxVisibleDropdownItems =
+                    8,
+
+                Tooltip =
+                    "Used by Only Selected and Skip Selected. This filters fruit labels by fruit/crop name.",
+            }
+        )
+
+    HOLY_VISUAL_UI.GardenFruitFruitsDropdown:OnChanged(function(value)
+
+        HolyVisualGardenSetSelectedFruits(
+            value
+        )
+    end)
+
     HOLY_VISUAL_UI.GardenFruitMaxDistanceInput =
         VisualGardenBox:AddInput(
             "HolyVisualGardenFruitMaxDistance",
@@ -45552,6 +45975,10 @@ task.defer(function()
 
         HolyVisualClearTotalValueLabel()
     end
+
+    HolyVisualGardenRefreshFruitDropdown(
+        false
+    )
 
     HolyVisualGardenRefreshMutationDropdown(
         false
