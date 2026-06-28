@@ -4333,18 +4333,117 @@ function HolySniperReadLivePetName(model, ref)
     return ""
 end
 
-function HolySniperReadLiveSize(model)
+function HolySniperReadModelBooleanAttribute(instance, names)
+
+    if typeof(instance) ~= "Instance" then
+        return false
+    end
+
+    for _, name in ipairs(names or {}) do
+
+        local ok,
+            value =
+            pcall(function()
+
+                return instance:GetAttribute(
+                    name
+                )
+            end)
+
+        if ok == true then
+
+            if value == true then
+                return true
+            end
+
+            local text =
+                tostring(value or "")
+                    :lower()
+
+            if text == "true"
+            or text == "1"
+            or text == "yes" then
+
+                return true
+            end
+
+            local number =
+                tonumber(value)
+
+            if number ~= nil
+            and number == 1 then
+
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+function HolySniperReadModelNumberAttribute(instance, names)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    for _, name in ipairs(names or {}) do
+
+        local ok,
+            value =
+            pcall(function()
+
+                return instance:GetAttribute(
+                    name
+                )
+            end)
+
+        if ok == true then
+
+            local number =
+                tonumber(value)
+
+            if number ~= nil then
+                return number
+            end
+        end
+    end
+
+    return nil
+end
+
+function HolySniperReadLiveSize(model, ref)
 
     local rawSize =
         HolySniperReadModelAttribute(
-            model,
+            ref,
             {
                 "PetSize",
                 "Size",
+                "DisplaySize",
                 "ScaleType",
                 "WildPetSize",
+                "PetScaleType",
+                "VariantSize",
             }
         )
+
+    if rawSize == "" then
+
+        rawSize =
+            HolySniperReadModelAttribute(
+                model,
+                {
+                    "PetSize",
+                    "Size",
+                    "DisplaySize",
+                    "ScaleType",
+                    "WildPetSize",
+                    "PetScaleType",
+                    "VariantSize",
+                }
+            )
+    end
 
     if rawSize ~= "" then
 
@@ -4354,13 +4453,46 @@ function HolySniperReadLiveSize(model)
     end
 
     local scale =
-        1
+        HolySniperReadModelNumberAttribute(
+            ref,
+            {
+                "Scale",
+                "PetScale",
+                "SizeScale",
+                "SizeMulti",
+                "ScaleMultiplier",
+            }
+        )
 
-    pcall(function()
+    if scale == nil then
 
         scale =
-            model:GetScale()
-    end)
+            HolySniperReadModelNumberAttribute(
+                model,
+                {
+                    "Scale",
+                    "PetScale",
+                    "SizeScale",
+                    "SizeMulti",
+                    "ScaleMultiplier",
+                }
+            )
+    end
+
+    if scale == nil then
+
+        scale =
+            1
+
+        if typeof(model) == "Instance" then
+
+            pcall(function()
+
+                scale =
+                    model:GetScale()
+            end)
+        end
+    end
 
     scale =
         tonumber(scale)
@@ -4379,6 +4511,32 @@ end
 
 function HolySniperReadLiveVariant(model, ref)
 
+    if HolySniperReadModelBooleanAttribute(
+        ref,
+        {
+            "Rainbow",
+            "IsRainbow",
+            "PetRainbow",
+            "RainbowPet",
+        }
+    ) == true then
+
+        return "Rainbow"
+    end
+
+    if HolySniperReadModelBooleanAttribute(
+        model,
+        {
+            "Rainbow",
+            "IsRainbow",
+            "PetRainbow",
+            "RainbowPet",
+        }
+    ) == true then
+
+        return "Rainbow"
+    end
+
     local rawVariant =
         HolySniperReadModelAttribute(
             ref,
@@ -4387,8 +4545,11 @@ function HolySniperReadLiveVariant(model, ref)
                 "Type",
                 "Variant",
                 "PetVariant",
+                "DisplayType",
+                "DisplayVariant",
                 "Mutation",
                 "WildPetType",
+                "PetTypeName",
             }
         )
 
@@ -4402,8 +4563,11 @@ function HolySniperReadLiveVariant(model, ref)
                     "Type",
                     "Variant",
                     "PetVariant",
+                    "DisplayType",
+                    "DisplayVariant",
                     "Mutation",
                     "WildPetType",
+                    "PetTypeName",
                 }
             )
     end
@@ -4415,6 +4579,10 @@ function HolySniperReadLiveVariant(model, ref)
                 rawVariant
             )
 
+        if rawVariant == "Rainbow" then
+            return "Rainbow"
+        end
+
         if rawVariant ~= "Normal"
         and HolySniperPetTypeIsValid(rawVariant) == true then
 
@@ -4424,7 +4592,15 @@ function HolySniperReadLiveVariant(model, ref)
         return "Normal"
     end
 
-    local name =
+    local refName =
+        tostring(
+            ref
+            and ref.Name
+            or ""
+        )
+        :lower()
+
+    local modelName =
         tostring(
             model
             and model.Name
@@ -4432,7 +4608,9 @@ function HolySniperReadLiveVariant(model, ref)
         )
         :lower()
 
-    if name:find("rainbow", 1, true) then
+    if refName:find("rainbow", 1, true)
+    or modelName:find("rainbow", 1, true) then
+
         return "Rainbow"
     end
 
@@ -4728,9 +4906,10 @@ function HolySniperBuildLiveEntry(model)
     end
 
     local size =
-        HolySniperReadLiveSize(
-            model
-        )
+    HolySniperReadLiveSize(
+        model,
+        ref
+    )
 
     local variant =
         HolySniperReadLiveVariant(
