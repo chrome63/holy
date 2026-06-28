@@ -46,7 +46,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260626-autofarm_middle_v1"
+    "holy-premium-20260628-farm_preload_cache_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -723,9 +723,22 @@ HOLY_FARM_RUNTIME = {
     BaseKgCache = nil,
     BaseKgCacheLoaded = false,
 
+    PlantNameCache = nil,
+    PlantNameCacheLoaded = false,
+    PlantNameCacheAt = 0,
+
     MutationNameCache = nil,
     MutationNameCacheLoaded = false,
     MutationNameCacheAt = 0,
+
+    StaticCachesPrimed = false,
+    StaticCachesPrimedAt = 0,
+
+    RebuildToken = 0,
+    RebuildPending = false,
+
+    IndexerInstalled = false,
+    LastIndexerCheckAt = 0,
 
     LastPacketWarnAt = 0,
     LastPlotWarnAt = 0,
@@ -2907,6 +2920,18 @@ function HolyFarmEnsureRuntime()
     state.BaseKgCacheLoaded =
         state.BaseKgCacheLoaded == true
 
+    state.PlantNameCache =
+        type(state.PlantNameCache) == "table"
+        and state.PlantNameCache
+        or nil
+
+    state.PlantNameCacheLoaded =
+        state.PlantNameCacheLoaded == true
+
+    state.PlantNameCacheAt =
+        tonumber(state.PlantNameCacheAt)
+        or 0
+
     state.MutationNameCache =
         type(state.MutationNameCache) == "table"
         and state.MutationNameCache
@@ -2917,6 +2942,27 @@ function HolyFarmEnsureRuntime()
 
     state.MutationNameCacheAt =
         tonumber(state.MutationNameCacheAt)
+        or 0
+
+    state.StaticCachesPrimed =
+        state.StaticCachesPrimed == true
+
+    state.StaticCachesPrimedAt =
+        tonumber(state.StaticCachesPrimedAt)
+        or 0
+
+    state.RebuildToken =
+        tonumber(state.RebuildToken)
+        or 0
+
+    state.RebuildPending =
+        state.RebuildPending == true
+
+    state.IndexerInstalled =
+        state.IndexerInstalled == true
+
+    state.LastIndexerCheckAt =
+        tonumber(state.LastIndexerCheckAt)
         or 0
 
     return state
@@ -3018,6 +3064,22 @@ function HolyFarmDisconnectIndexer()
 
     runtime.PlantsFolder =
         nil
+
+    runtime.IndexerInstalled =
+        false
+
+    runtime.LastIndexerCheckAt =
+        0
+
+    runtime.RebuildToken =
+        (
+            tonumber(runtime.RebuildToken)
+            or 0
+        )
+        + 1
+
+    runtime.RebuildPending =
+        false
 
     HolyFarmClearQueues()
 
@@ -3195,6 +3257,15 @@ function HolyLoadFarmSettings()
     return true
 end
 
+function HolyFarmPlantKey(value)
+
+    return HolyCleanText(
+        value
+    )
+        :lower()
+        :gsub("[%s_%-%[%]%(%)%.'\"_/{}]", "")
+end
+
 function HolyFarmCleanPlantName(value)
 
     local text =
@@ -3217,12 +3288,94 @@ function HolyFarmCleanPlantName(value)
     or lower == "gold"
     or lower == "rainbow"
     or lower == "mega"
+    or lower == "huge"
+    or lower == "big"
+    or lower == "normal"
     or lower == "moon bloom old" then
 
         return ""
     end
 
+    if lower:find("table:", 1, true) then
+        return ""
+    end
+
+    if #text > 64 then
+        return ""
+    end
+
     return text
+end
+
+function HolyFarmPlantCacheAddName(cache, value)
+
+    cache =
+        type(cache) == "table"
+        and cache
+        or {}
+
+    cache.Values =
+        type(cache.Values) == "table"
+        and cache.Values
+        or {}
+
+    cache.Map =
+        type(cache.Map) == "table"
+        and cache.Map
+        or {}
+
+    local plantName =
+        HolyFarmCleanPlantName(
+            value
+        )
+
+    if plantName == "" then
+        return false
+    end
+
+    local key =
+        HolyFarmPlantKey(
+            plantName
+        )
+
+    if key == "" then
+        return false
+    end
+
+    if cache.Map[key] ~= nil then
+        return false
+    end
+
+    cache.Map[key] =
+        plantName
+
+    table.insert(
+        cache.Values,
+        plantName
+    )
+
+    return true
+end
+
+function HolyFarmPlantCacheSort(cache)
+
+    cache =
+        type(cache) == "table"
+        and cache
+        or {}
+
+    cache.Values =
+        type(cache.Values) == "table"
+        and cache.Values
+        or {}
+
+    table.sort(cache.Values, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return cache
 end
 
 function HolyFarmAddPlantDropdownName(values, seen, value)
@@ -3237,9 +3390,13 @@ function HolyFarmAddPlantDropdownName(values, seen, value)
     end
 
     local key =
-        plantName:lower()
+        HolyFarmPlantKey(
+            plantName
+        )
 
-    if seen[key] == true then
+    if key == ""
+    or seen[key] == true then
+
         return false
     end
 
@@ -3272,55 +3429,203 @@ function HolyFarmAddPlantDropdownSource(values, seen, root)
     return true
 end
 
+function HolyFarmBuildPlantNameCache(forceRefresh)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    if forceRefresh ~= true
+    and runtime.PlantNameCacheLoaded == true
+    and type(runtime.PlantNameCache) == "table" then
+
+        return runtime.PlantNameCache
+    end
+
+    local cache = {
+        Values = {},
+        Map = {},
+    }
+
+    local assets =
+        ReplicatedStorage:FindFirstChild(
+            "Assets"
+        )
+
+    local assetPlants =
+        assets
+        and assets:FindFirstChild(
+            "Plants"
+        )
+        or nil
+
+    if typeof(assetPlants) == "Instance" then
+
+        for _, child in ipairs(assetPlants:GetChildren()) do
+
+            HolyFarmPlantCacheAddName(
+                cache,
+                child.Name
+            )
+        end
+    end
+
+    local plantGenerationModules =
+        ReplicatedStorage:FindFirstChild(
+            "PlantGenerationModules"
+        )
+
+    local plantsFolder =
+        plantGenerationModules
+        and plantGenerationModules:FindFirstChild(
+            "Plants"
+        )
+        or nil
+
+    if typeof(plantsFolder) == "Instance" then
+
+        for _, child in ipairs(plantsFolder:GetChildren()) do
+
+            HolyFarmPlantCacheAddName(
+                cache,
+                child.Name
+            )
+        end
+    end
+
+    local fruitsFolder =
+        plantGenerationModules
+        and plantGenerationModules:FindFirstChild(
+            "Fruits"
+        )
+        or nil
+
+    if typeof(fruitsFolder) == "Instance" then
+
+        for _, child in ipairs(fruitsFolder:GetChildren()) do
+
+            HolyFarmPlantCacheAddName(
+                cache,
+                child.Name
+            )
+        end
+    end
+
+    HolyFarmPlantCacheSort(
+        cache
+    )
+
+    runtime.PlantNameCache =
+        cache
+
+    runtime.PlantNameCacheLoaded =
+        true
+
+    runtime.PlantNameCacheAt =
+        os.clock()
+
+    return cache
+end
+
+function HolyFarmInvalidatePlantNameCache()
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    runtime.PlantNameCache =
+        nil
+
+    runtime.PlantNameCacheLoaded =
+        false
+
+    runtime.PlantNameCacheAt =
+        0
+
+    return true
+end
+
 function HolyFarmGetPlantDropdownValues()
+
+    local cache =
+        HolyFarmBuildPlantNameCache(
+            false
+        )
 
     local values =
         {}
 
-    local seen =
-        {}
+    for _, plantName in ipairs(
+        type(cache) == "table"
+        and type(cache.Values) == "table"
+        and cache.Values
+        or {}
+    ) do
 
-    local assets =
-        ReplicatedStorage:FindFirstChild("Assets")
-
-    HolyFarmAddPlantDropdownSource(
-        values,
-        seen,
-        assets
-        and assets:FindFirstChild("Plants")
-    )
-
-    local plantGenerationModules =
-        ReplicatedStorage:FindFirstChild("PlantGenerationModules")
-
-    HolyFarmAddPlantDropdownSource(
-        values,
-        seen,
-        plantGenerationModules
-        and plantGenerationModules:FindFirstChild("Plants")
-    )
-
-    table.sort(values, function(a, b)
-
-        return tostring(a):lower()
-            < tostring(b):lower()
-    end)
+        table.insert(
+            values,
+            plantName
+        )
+    end
 
     return values
 end
 
 function HolyFarmGetPlantValueMap()
 
+    local cache =
+        HolyFarmBuildPlantNameCache(
+            false
+        )
+
     local map =
         {}
 
-    for _, plantName in ipairs(HolyFarmGetPlantDropdownValues()) do
+    if type(cache) == "table"
+    and type(cache.Map) == "table" then
 
-        map[plantName] =
-            true
+        for _, plantName in pairs(cache.Map) do
+
+            map[plantName] =
+                true
+        end
     end
 
     return map
+end
+
+function HolyFarmNormalizePlantName(value)
+
+    local text =
+        HolyFarmCleanPlantName(
+            value
+        )
+
+    if text == "" then
+        return ""
+    end
+
+    local cache =
+        HolyFarmBuildPlantNameCache(
+            false
+        )
+
+    local map =
+        type(cache) == "table"
+        and type(cache.Map) == "table"
+        and cache.Map
+        or {}
+
+    local canonical =
+        map[
+            HolyFarmPlantKey(
+                text
+            )
+        ]
+
+    if canonical ~= nil then
+        return canonical
+    end
+
+    return text
 end
 
 function HolyFarmNormalizePlantSelection(value)
@@ -3331,7 +3636,6 @@ function HolyFarmNormalizePlantSelection(value)
         )
 
     if #raw <= 0 then
-
         return {}
     end
 
@@ -3347,7 +3651,7 @@ function HolyFarmNormalizePlantSelection(value)
     for _, plantName in ipairs(raw) do
 
         plantName =
-            HolyFarmCleanPlantName(
+            HolyFarmNormalizePlantName(
                 plantName
             )
 
@@ -3910,12 +4214,17 @@ function HolyFarmSelectionAllowsPlant(plantName)
         and map[plantName] == true
 end
 
-function HolyFarmRefreshPlantDropdown()
+function HolyFarmRefreshPlantDropdown(forceRefresh)
 
     HOLY_FARM_UI =
         type(HOLY_FARM_UI) == "table"
         and HOLY_FARM_UI
         or {}
+
+    if forceRefresh == true then
+
+        HolyFarmInvalidatePlantNameCache()
+    end
 
     local dropdown =
         HOLY_FARM_UI.PlantsDropdown
@@ -3961,6 +4270,56 @@ function HolyFarmRefreshPlantDropdown()
     return true
 end
 
+function HolyFarmRequestRebuild(reason, delaySeconds)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    runtime.RebuildToken =
+        (
+            tonumber(runtime.RebuildToken)
+            or 0
+        )
+        + 1
+
+    local token =
+        runtime.RebuildToken
+
+    runtime.RebuildPending =
+        true
+
+    delaySeconds =
+        math.clamp(
+            tonumber(delaySeconds)
+            or 0.25,
+            0.05,
+            2
+        )
+
+    task.delay(delaySeconds, function()
+
+        local liveRuntime =
+            HolyFarmEnsureRuntime()
+
+        if liveRuntime.RebuildToken ~= token then
+            return
+        end
+
+        liveRuntime.RebuildPending =
+            false
+
+        if HOLY_FARM_STATE.AutoCollectFruits ~= true then
+            return
+        end
+
+        HolyFarmRebuildReadyQueue(
+            reason or "settings changed"
+        )
+    end)
+
+    return true
+end
+
 function HolyFarmSetCollectMode(value)
 
     HolyFarmEnsureState()
@@ -3974,7 +4333,7 @@ function HolyFarmSetCollectMode(value)
 
     if HOLY_FARM_STATE.AutoCollectFruits == true then
 
-        HolyFarmRebuildReadyQueue(
+        HolyFarmRequestRebuild(
             "mode changed"
         )
     end
@@ -3995,7 +4354,7 @@ function HolyFarmSetSelectedPlants(value)
 
     if HOLY_FARM_STATE.AutoCollectFruits == true then
 
-        HolyFarmRebuildReadyQueue(
+        HolyFarmRequestRebuild(
             "selection changed"
         )
     end
@@ -4016,7 +4375,7 @@ function HolyFarmSetMutationMode(value)
 
     if HOLY_FARM_STATE.AutoCollectFruits == true then
 
-        HolyFarmRebuildReadyQueue(
+        HolyFarmRequestRebuild(
             "mutation mode changed"
         )
     end
@@ -4037,7 +4396,7 @@ function HolyFarmSetSelectedMutations(value)
 
     if HOLY_FARM_STATE.AutoCollectFruits == true then
 
-        HolyFarmRebuildReadyQueue(
+        HolyFarmRequestRebuild(
             "mutations changed"
         )
     end
@@ -4058,7 +4417,7 @@ function HolyFarmSetWeightMode(value)
 
     if HOLY_FARM_STATE.AutoCollectFruits == true then
 
-        HolyFarmRebuildReadyQueue(
+        HolyFarmRequestRebuild(
             "weight mode changed"
         )
     end
@@ -4081,7 +4440,7 @@ function HolyFarmSetWeightThresholdKg(value)
 
     if HOLY_FARM_STATE.AutoCollectFruits == true then
 
-        HolyFarmRebuildReadyQueue(
+        HolyFarmRequestRebuild(
             "weight threshold changed"
         )
     end
@@ -4873,6 +5232,73 @@ function HolyFarmResolveCollectFruitPacket(forceRefresh)
 
     return packet,
         "ok"
+end
+
+function HolyFarmPrimeStaticCaches(forceRefresh)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    if forceRefresh ~= true
+    and runtime.StaticCachesPrimed == true then
+
+        return true
+    end
+
+    pcall(function()
+
+        HolyFarmBuildPlantNameCache(
+            forceRefresh == true
+        )
+    end)
+
+    pcall(function()
+
+        HolyFarmBuildMutationNameCache(
+            forceRefresh == true
+        )
+    end)
+
+    pcall(function()
+
+        HolyFarmLoadBaseKgCache(
+            forceRefresh == true
+        )
+    end)
+
+    pcall(function()
+
+        HolyFarmResolveCollectFruitPacket(
+            forceRefresh == true
+        )
+    end)
+
+    pcall(function()
+
+        HolyFarmResolveOwnPlot(
+            forceRefresh == true
+        )
+    end)
+
+    runtime.StaticCachesPrimed =
+        true
+
+    runtime.StaticCachesPrimedAt =
+        os.clock()
+
+    return true
+end
+
+function HolyFarmIndexerReady()
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    return runtime.IndexerInstalled == true
+        and typeof(runtime.OwnPlot) == "Instance"
+        and runtime.OwnPlot.Parent ~= nil
+        and typeof(runtime.PlantsFolder) == "Instance"
+        and runtime.PlantsFolder.Parent ~= nil
 end
 
 function HolyFarmQueueFruit(plant, fruit, reason)
@@ -5926,6 +6352,9 @@ function HolyFarmRunAutoCollectWorker(token)
     runtime.Running =
         true
 
+    runtime.LastIndexerCheckAt =
+        0
+
     while runtime.Token == token
     and HOLY_FARM_STATE.AutoCollectFruits == true do
 
@@ -5938,35 +6367,45 @@ function HolyFarmRunAutoCollectWorker(token)
             continue
         end
 
-        local installed =
-            HolyFarmInstallIndexer(
-                false
-            )
+        local now =
+            os.clock()
 
-        if installed ~= true then
+        if HolyFarmIndexerReady() ~= true
+        or now - (
+            tonumber(runtime.LastIndexerCheckAt)
+            or 0
+        ) >= 5 then
 
-            local now =
-                os.clock()
+            runtime.LastIndexerCheckAt =
+                now
 
-            if now - (
-                tonumber(runtime.LastPlotWarnAt)
-                or 0
-            ) > 8 then
-
-                runtime.LastPlotWarnAt =
-                    now
-
-                print(
-                    "[HOLY FARM]",
-                    "Waiting for own plot / Plants folder."
+            local installed =
+                HolyFarmInstallIndexer(
+                    false
                 )
+
+            if installed ~= true then
+
+                if now - (
+                    tonumber(runtime.LastPlotWarnAt)
+                    or 0
+                ) > 8 then
+
+                    runtime.LastPlotWarnAt =
+                        now
+
+                    print(
+                        "[HOLY FARM]",
+                        "Waiting for own plot / Plants folder."
+                    )
+                end
+
+                task.wait(
+                    0.75
+                )
+
+                continue
             end
-
-            task.wait(
-                1
-            )
-
-            continue
         end
 
         HolyFarmPrunePending()
@@ -6020,19 +6459,27 @@ function HolyFarmStartAutoCollect(reason)
         return false
     end
 
+    HolyFarmPrimeStaticCaches(
+        false
+    )
+
     runtime.Token =
         {}
 
     local token =
         runtime.Token
 
-    HolyFarmInstallIndexer(
-        false
-    )
+    local installed =
+        HolyFarmInstallIndexer(
+            false
+        )
 
-    HolyFarmRebuildReadyQueue(
-        reason or "start"
-    )
+    if installed == true then
+
+        HolyFarmRebuildReadyQueue(
+            reason or "start"
+        )
+    end
 
     task.spawn(function()
 
@@ -38994,13 +39441,15 @@ end
 
 task.defer(function()
 
-    HolyFarmRefreshPlantDropdown()
-
-    HolyFarmRefreshMutationDropdown(
+    HolyFarmPrimeStaticCaches(
         true
     )
 
-    HolyFarmLoadBaseKgCache(
+    HolyFarmRefreshPlantDropdown(
+        false
+    )
+
+    HolyFarmRefreshMutationDropdown(
         false
     )
 
@@ -39014,9 +39463,7 @@ end)
 
 task.delay(2, function()
 
-    HolyFarmRefreshPlantDropdown()
-
-    HolyFarmLoadBaseKgCache(
+    HolyFarmPrimeStaticCaches(
         false
     )
 end)
