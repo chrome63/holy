@@ -46,7 +46,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260628-visual_fruit_value_v1"
+    "holy-premium-20260628-visual_fruit_value_fix_v2"
 
 local LIBRARY_URL =
     REPO_URL
@@ -26911,9 +26911,57 @@ function HolyVisualFindText(root, matcher)
     return ""
 end
 
+function HolyVisualSlotLooksLikeInventoryItem(slot)
+
+    if typeof(slot) ~= "Instance"
+    or slot:IsA("GuiObject") ~= true then
+
+        return false
+    end
+
+    if slot.Visible ~= true then
+        return false
+    end
+
+    local blockedNames = {
+        Backpack = true,
+        Inventory = true,
+        ScrollingFrame = true,
+        UIGridFrame = true,
+        Hotbar = true,
+        Search = true,
+        Tabs = true,
+    }
+
+    if blockedNames[tostring(slot.Name)] == true then
+        return false
+    end
+
+    local size =
+        slot.AbsoluteSize
+
+    if typeof(size) == "Vector2" then
+
+        if size.X < 32
+        or size.Y < 32 then
+
+            return false
+        end
+
+        -- Real inventory cards are small. Big containers should never get labels.
+        if size.X > 180
+        or size.Y > 180 then
+
+            return false
+        end
+    end
+
+    return true
+end
+
 function HolyVisualReadSlotInfo(slot)
 
-    if typeof(slot) ~= "Instance" then
+    if HolyVisualSlotLooksLikeInventoryItem(slot) ~= true then
         return nil
     end
 
@@ -26966,7 +27014,8 @@ function HolyVisualReadSlotInfo(slot)
         )
 
     if nameText == ""
-    and weight <= 0 then
+    or weight <= 0 then
+
         return nil
     end
 
@@ -26974,6 +27023,10 @@ function HolyVisualReadSlotInfo(slot)
         HolyVisualStripBracketText(
             nameText
         )
+
+    if cleanName == "" then
+        return nil
+    end
 
     return {
         Name =
@@ -27258,55 +27311,85 @@ function HolyVisualGetSlotRoots(includeHidden)
     local roots =
         {}
 
-    local candidates =
-        {}
+    local function addRoot(root)
+
+        if typeof(root) ~= "Instance"
+        or root:IsA("GuiObject") ~= true then
+
+            return
+        end
+
+        if includeHidden ~= true
+        and HolyVisualVisibleChain(root) ~= true then
+
+            return
+        end
+
+        table.insert(
+            roots,
+            root
+        )
+    end
 
     local backpackGui =
         playerGui:FindFirstChild(
             "BackpackGui"
         )
 
-    if backpackGui then
+    local backpack =
+        backpackGui
+        and backpackGui:FindFirstChild(
+            "Backpack"
+        )
+        or nil
 
-        table.insert(
-            candidates,
+    local inventory =
+        backpack
+        and backpack:FindFirstChild(
+            "Inventory"
+        )
+        or nil
+
+    local scrollingFrame =
+        inventory
+        and inventory:FindFirstChild(
+            "ScrollingFrame"
+        )
+        or nil
+
+    addRoot(
+        scrollingFrame
+        and scrollingFrame:FindFirstChild(
+            "UIGridFrame"
+        )
+        or nil
+    )
+
+    addRoot(
+        backpack
+        and backpack:FindFirstChild(
+            "Hotbar"
+        )
+        or nil
+    )
+
+    -- Fallback, but still only slot containers. Never add Inventory itself.
+    if #roots <= 0
+    and backpackGui then
+
+        addRoot(
             backpackGui:FindFirstChild(
                 "UIGridFrame",
                 true
             )
         )
 
-        table.insert(
-            candidates,
+        addRoot(
             backpackGui:FindFirstChild(
                 "Hotbar",
                 true
             )
         )
-
-        table.insert(
-            candidates,
-            backpackGui:FindFirstChild(
-                "Inventory",
-                true
-            )
-        )
-    end
-
-    for _, candidate in ipairs(candidates) do
-
-        if typeof(candidate) == "Instance"
-        and candidate:IsA("GuiObject")
-        and (
-            includeHidden == true
-            or HolyVisualVisibleChain(candidate) == true
-        ) then
-
-            table.insert(
-                roots,
-                candidate
-            )
-        end
     end
 
     return roots
@@ -27331,9 +27414,19 @@ function HolyVisualClearAllFruitValueLabels()
             nil
     end
 
-    for _, root in ipairs(HolyVisualGetSlotRoots(true)) do
+    local playerGui =
+        HolyVisualGetPlayerGui()
 
-        for _, descendant in ipairs(root:GetDescendants()) do
+    local backpackGui =
+        typeof(playerGui) == "Instance"
+        and playerGui:FindFirstChild(
+            "BackpackGui"
+        )
+        or nil
+
+    if typeof(backpackGui) == "Instance" then
+
+        for _, descendant in ipairs(backpackGui:GetDescendants()) do
 
             if descendant.Name == "HolyFruitValueSlotText"
             or descendant.Name == "HolyFruitValueOverlay"
@@ -27457,6 +27550,8 @@ function HolyVisualStartFruitValueOverlay(reason, skipSave)
 
     local runtime =
         HolyVisualGetRuntime()
+
+    HolyVisualClearAllFruitValueLabels()
 
     if runtime.Running == true then
 
