@@ -3554,167 +3554,14 @@ function HolyFarmAddMutationDropdownSource(values, seen, root)
     return true
 end
 
-function HolyFarmScanInstanceMutationNames(cache, instance)
-
-    if typeof(instance) ~= "Instance" then
-        return false
-    end
-
-    for _, attributeName in ipairs({
-        "Mutation",
-        "Mutations",
-    }) do
-
-        local raw =
-            HolyFarmReadAttribute(
-                instance,
-                {
-                    attributeName,
-                }
-            )
-
-        for _, part in ipairs(HolyFarmSplitMutationText(raw)) do
-
-            HolyFarmMutationCacheAddName(
-                cache,
-                part
-            )
-        end
-    end
-
-    return true
-end
-
-function HolyFarmScanLiveMutationNames(cache)
-
-    local plot =
-        nil
-
-    if type(HolyFarmResolveOwnPlot) == "function" then
-
-        plot =
-            HolyFarmResolveOwnPlot(
-                false
-            )
-    end
-
-    local plantsFolder =
-        plot
-        and plot:FindFirstChild(
-            "Plants"
-        )
-        or nil
-
-    if typeof(plantsFolder) ~= "Instance" then
-        return false
-    end
-
-    for _, plant in ipairs(plantsFolder:GetChildren()) do
-
-        HolyFarmScanInstanceMutationNames(
-            cache,
-            plant
-        )
-
-        local fruitsFolder =
-            plant:FindFirstChild(
-                "Fruits"
-            )
-
-        if typeof(fruitsFolder) == "Instance" then
-
-            for _, fruit in ipairs(fruitsFolder:GetChildren()) do
-
-                HolyFarmScanInstanceMutationNames(
-                    cache,
-                    fruit
-                )
-            end
-        end
-    end
-
-    return true
-end
-
-function HolyFarmScanContainerMutationNames(cache, container)
-
-    if typeof(container) ~= "Instance" then
-        return false
-    end
-
-    for _, item in ipairs(container:GetChildren()) do
-
-        if item:IsA("Tool")
-        or item:IsA("Configuration") then
-
-            local shouldScan =
-                true
-
-            if type(HolySellLooksLikeFruitTool) == "function" then
-
-                shouldScan =
-                    HolySellLooksLikeFruitTool(
-                        item
-                    ) == true
-            end
-
-            if shouldScan == true then
-
-                HolyFarmScanInstanceMutationNames(
-                    cache,
-                    item
-                )
-
-                for bracket in tostring(item.Name or ""):gmatch("%[([^%]]+)%]") do
-
-                    HolyFarmMutationCacheAddName(
-                        cache,
-                        bracket
-                    )
-                end
-            end
-        end
-    end
-
-    return true
-end
-
-function HolyFarmScanBackpackMutationNames(cache)
-
-    HolyFarmScanContainerMutationNames(
-        cache,
-        LocalPlayer
-        and LocalPlayer:FindFirstChildOfClass(
-            "Backpack"
-        )
-        or nil
-    )
-
-    HolyFarmScanContainerMutationNames(
-        cache,
-        LocalPlayer
-        and LocalPlayer.Character
-        or nil
-    )
-
-    return true
-end
-
 function HolyFarmBuildMutationNameCache(forceRefresh)
 
     local runtime =
         HolyFarmEnsureRuntime()
 
-    local now =
-        os.clock()
-
     if forceRefresh ~= true
     and runtime.MutationNameCacheLoaded == true
-    and type(runtime.MutationNameCache) == "table"
-    and now - (
-        tonumber(runtime.MutationNameCacheAt)
-        or 0
-    ) < 3 then
+    and type(runtime.MutationNameCache) == "table" then
 
         return runtime.MutationNameCache
     end
@@ -3746,14 +3593,6 @@ function HolyFarmBuildMutationNameCache(forceRefresh)
             )
         end
     end
-
-    HolyFarmScanLiveMutationNames(
-        cache
-    )
-
-    HolyFarmScanBackpackMutationNames(
-        cache
-    )
 
     if #cache.Values <= 0 then
 
@@ -3789,7 +3628,7 @@ function HolyFarmBuildMutationNameCache(forceRefresh)
         true
 
     runtime.MutationNameCacheAt =
-        now
+        os.clock()
 
     return cache
 end
@@ -5308,13 +5147,7 @@ function HolyFarmWatchFruit(plant, fruit)
 
     local function refreshFruit()
 
-        HolyFarmInvalidateMutationNameCache()
-
         task.defer(function()
-
-            HolyFarmRefreshMutationDropdown(
-                false
-            )
 
             if HOLY_FARM_STATE.AutoCollectFruits == true then
 
@@ -5479,13 +5312,7 @@ function HolyFarmWatchPlant(plant)
 
     local function refreshPlantHarvest()
 
-        HolyFarmInvalidateMutationNameCache()
-
         task.defer(function()
-
-            HolyFarmRefreshMutationDropdown(
-                false
-            )
 
             if HOLY_FARM_STATE.AutoCollectFruits == true then
 
@@ -5493,23 +5320,6 @@ function HolyFarmWatchPlant(plant)
                     plant,
                     "plant changed"
                 )
-
-                local fruitsFolder =
-                    plant:FindFirstChild(
-                        "Fruits"
-                    )
-
-                if typeof(fruitsFolder) == "Instance" then
-
-                    for _, fruit in ipairs(fruitsFolder:GetChildren()) do
-
-                        HolyFarmQueueFruit(
-                            plant,
-                            fruit,
-                            "plant changed"
-                        )
-                    end
-                end
             end
         end)
     end
@@ -39186,7 +38996,9 @@ task.defer(function()
 
     HolyFarmRefreshPlantDropdown()
 
-    HolyFarmRefreshMutationDropdown()
+    HolyFarmRefreshMutationDropdown(
+        true
+    )
 
     HolyFarmLoadBaseKgCache(
         false
@@ -39203,8 +39015,6 @@ end)
 task.delay(2, function()
 
     HolyFarmRefreshPlantDropdown()
-
-    HolyFarmRefreshMutationDropdown()
 
     HolyFarmLoadBaseKgCache(
         false
