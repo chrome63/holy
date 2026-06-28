@@ -64,6 +64,10 @@ local SHOP_SETTINGS_FILE =
     UI_SETTINGS_FOLDER
     .. "/HolyPremiumShopSettings.json"
 
+local FARM_SETTINGS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyPremiumFarmSettings.json"
+
 local SNIPER_SETTINGS_FILE =
     UI_SETTINGS_FOLDER
     .. "/HolyPremiumSniperSettings.json"
@@ -634,6 +638,89 @@ HOLY_SHOP_STATE = {
     SellFruitInterval = 0.05,
     SelectedScanInterval = 0.25,
     MaxSellFruitPerPass = 75,
+}
+
+if type(HOLY_FARM_RUNTIME) == "table" then
+
+    HOLY_FARM_RUNTIME.Token =
+        nil
+
+    HOLY_FARM_RUNTIME.Running =
+        false
+
+    for _, connectionListName in ipairs({
+        "Connections",
+        "PlantConnections",
+        "FruitConnections",
+    }) do
+
+        local connectionList =
+            HOLY_FARM_RUNTIME[connectionListName]
+
+        if type(connectionList) == "table" then
+
+            for _, item in pairs(connectionList) do
+
+                if typeof(item) == "RBXScriptConnection" then
+
+                    pcall(function()
+
+                        item:Disconnect()
+                    end)
+
+                elseif type(item) == "table" then
+
+                    for _, connection in ipairs(item) do
+
+                        if typeof(connection) == "RBXScriptConnection" then
+
+                            pcall(function()
+
+                                connection:Disconnect()
+                            end)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+HOLY_FARM_STATE = {
+    AutoCollectFruits = false,
+
+    SelectedPlants = {
+        "All",
+    },
+}
+
+HOLY_FARM_RUNTIME = {
+    Running = false,
+    Token = nil,
+
+    OwnPlot = nil,
+    PlantsFolder = nil,
+
+    Connections = {},
+    PlantConnections = {},
+    FruitConnections = {},
+
+    WatchedPlants = {},
+    WatchedFruits = {},
+
+    ReadyQueue = {},
+    ReadyMap = {},
+    Pending = {},
+
+    CollectFruitPacket = nil,
+
+    LastPacketWarnAt = 0,
+    LastPlotWarnAt = 0,
+}
+
+HOLY_FARM_UI = {
+    PlantsDropdown = nil,
+    AutoCollectToggle = nil,
 }
 
 --==================================================
@@ -1985,6 +2072,2062 @@ function HolyLoadShopSettings()
         )
 
     return true
+end
+
+--==================================================
+-- [2.12] FARM / FRUIT COLLECTION CORE
+--==================================================
+
+function HolyFarmEnsureState()
+
+    HOLY_FARM_STATE =
+        type(HOLY_FARM_STATE) == "table"
+        and HOLY_FARM_STATE
+        or {}
+
+    HOLY_FARM_STATE.SelectedPlants =
+        HolyFarmNormalizePlantSelection(
+            HOLY_FARM_STATE.SelectedPlants
+            or {
+                "All",
+            }
+        )
+
+    HOLY_FARM_STATE.AutoCollectFruits =
+        HOLY_FARM_STATE.AutoCollectFruits == true
+
+    return HOLY_FARM_STATE
+end
+
+function HolyFarmEnsureRuntime()
+
+    HOLY_FARM_RUNTIME =
+        type(HOLY_FARM_RUNTIME) == "table"
+        and HOLY_FARM_RUNTIME
+        or {}
+
+    local state =
+        HOLY_FARM_RUNTIME
+
+    state.Connections =
+        type(state.Connections) == "table"
+        and state.Connections
+        or {}
+
+    state.PlantConnections =
+        type(state.PlantConnections) == "table"
+        and state.PlantConnections
+        or {}
+
+    state.FruitConnections =
+        type(state.FruitConnections) == "table"
+        and state.FruitConnections
+        or {}
+
+    state.WatchedPlants =
+        type(state.WatchedPlants) == "table"
+        and state.WatchedPlants
+        or {}
+
+    state.WatchedFruits =
+        type(state.WatchedFruits) == "table"
+        and state.WatchedFruits
+        or {}
+
+    state.ReadyQueue =
+        type(state.ReadyQueue) == "table"
+        and state.ReadyQueue
+        or {}
+
+    state.ReadyMap =
+        type(state.ReadyMap) == "table"
+        and state.ReadyMap
+        or {}
+
+    state.Pending =
+        type(state.Pending) == "table"
+        and state.Pending
+        or {}
+
+    return state
+end
+
+function HolyFarmDisconnectConnectionList(list)
+
+    if type(list) ~= "table" then
+        return
+    end
+
+    for _, connection in ipairs(list) do
+
+        if typeof(connection) == "RBXScriptConnection" then
+
+            pcall(function()
+
+                connection:Disconnect()
+            end)
+        end
+    end
+end
+
+function HolyFarmDisconnectConnectionMap(map)
+
+    if type(map) ~= "table" then
+        return
+    end
+
+    for _, value in pairs(map) do
+
+        if typeof(value) == "RBXScriptConnection" then
+
+            pcall(function()
+
+                value:Disconnect()
+            end)
+
+        elseif type(value) == "table" then
+
+            HolyFarmDisconnectConnectionList(
+                value
+            )
+        end
+    end
+end
+
+function HolyFarmClearQueues()
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    runtime.ReadyQueue =
+        {}
+
+    runtime.ReadyMap =
+        {}
+
+    runtime.Pending =
+        {}
+
+    return true
+end
+
+function HolyFarmDisconnectIndexer()
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    HolyFarmDisconnectConnectionMap(
+        runtime.Connections
+    )
+
+    HolyFarmDisconnectConnectionMap(
+        runtime.PlantConnections
+    )
+
+    HolyFarmDisconnectConnectionMap(
+        runtime.FruitConnections
+    )
+
+    runtime.Connections =
+        {}
+
+    runtime.PlantConnections =
+        {}
+
+    runtime.FruitConnections =
+        {}
+
+    runtime.WatchedPlants =
+        {}
+
+    runtime.WatchedFruits =
+        {}
+
+    runtime.OwnPlot =
+        nil
+
+    runtime.PlantsFolder =
+        nil
+
+    HolyFarmClearQueues()
+
+    return true
+end
+
+function HolySaveFarmSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    HolyFarmEnsureState()
+
+    local payload = {
+        AutoCollectFruits =
+            HOLY_FARM_STATE.AutoCollectFruits == true,
+
+        SelectedPlants =
+            HolyShopSelectionArray(
+                HOLY_FARM_STATE.SelectedPlants
+            ),
+    }
+
+    local encodeOk,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                FARM_SETTINGS_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function HolyLoadFarmSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                FARM_SETTINGS_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return false
+    end
+
+    local readOk,
+        raw =
+        pcall(function()
+
+            return readfile(
+                FARM_SETTINGS_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        return false
+    end
+
+    local decodeOk,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(data) ~= "table" then
+
+        return false
+    end
+
+    HOLY_FARM_STATE.AutoCollectFruits =
+        data.AutoCollectFruits == true
+
+    HOLY_FARM_STATE.SelectedPlants =
+        HolyFarmNormalizePlantSelection(
+            data.SelectedPlants
+        )
+
+    return true
+end
+
+function HolyFarmCleanPlantName(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == "" then
+        return ""
+    end
+
+    if text:match("^%d+$") then
+        return ""
+    end
+
+    local lower =
+        text:lower()
+
+    if lower == "partfruit"
+    or lower == "gold"
+    or lower == "rainbow"
+    or lower == "mega"
+    or lower == "moon bloom old" then
+
+        return ""
+    end
+
+    return text
+end
+
+function HolyFarmAddPlantDropdownName(values, seen, value)
+
+    local plantName =
+        HolyFarmCleanPlantName(
+            value
+        )
+
+    if plantName == "" then
+        return false
+    end
+
+    local key =
+        plantName:lower()
+
+    if seen[key] == true then
+        return false
+    end
+
+    seen[key] =
+        true
+
+    table.insert(
+        values,
+        plantName
+    )
+
+    return true
+end
+
+function HolyFarmAddPlantDropdownSource(values, seen, root)
+
+    if typeof(root) ~= "Instance" then
+        return false
+    end
+
+    for _, child in ipairs(root:GetChildren()) do
+
+        HolyFarmAddPlantDropdownName(
+            values,
+            seen,
+            child.Name
+        )
+    end
+
+    return true
+end
+
+function HolyFarmGetPlantDropdownValues()
+
+    local values =
+        {}
+
+    local seen =
+        {}
+
+    local assets =
+        ReplicatedStorage:FindFirstChild("Assets")
+
+    HolyFarmAddPlantDropdownSource(
+        values,
+        seen,
+        assets
+        and assets:FindFirstChild("Plants")
+    )
+
+    local plantGenerationModules =
+        ReplicatedStorage:FindFirstChild("PlantGenerationModules")
+
+    HolyFarmAddPlantDropdownSource(
+        values,
+        seen,
+        plantGenerationModules
+        and plantGenerationModules:FindFirstChild("Plants")
+    )
+
+    table.sort(values, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    table.insert(
+        values,
+        1,
+        "All"
+    )
+
+    return values
+end
+
+function HolyFarmGetPlantValueMap()
+
+    local map =
+        {}
+
+    for _, plantName in ipairs(HolyFarmGetPlantDropdownValues()) do
+
+        map[plantName] =
+            true
+    end
+
+    return map
+end
+
+function HolyFarmNormalizePlantSelection(value)
+
+    local raw =
+        HolyShopSelectionArray(
+            value
+        )
+
+    if #raw <= 0 then
+
+        return {
+            "All",
+        }
+    end
+
+    for _, plantName in ipairs(raw) do
+
+        if plantName == "All" then
+
+            return {
+                "All",
+            }
+        end
+    end
+
+    local validMap =
+        HolyFarmGetPlantValueMap()
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    for _, plantName in ipairs(raw) do
+
+        plantName =
+            HolyFarmCleanPlantName(
+                plantName
+            )
+
+        if plantName ~= ""
+        and validMap[plantName] == true
+        and seen[plantName] ~= true then
+
+            seen[plantName] =
+                true
+
+            table.insert(
+                output,
+                plantName
+            )
+        end
+    end
+
+    if #output <= 0 then
+
+        return {
+            "All",
+        }
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
+function HolyFarmSelectedPlantMap()
+
+    HolyFarmEnsureState()
+
+    local map =
+        {}
+
+    for _, plantName in ipairs(HOLY_FARM_STATE.SelectedPlants or {}) do
+
+        map[plantName] =
+            true
+    end
+
+    if map.All == true then
+
+        return {
+            All = true,
+        }
+    end
+
+    return map
+end
+
+function HolyFarmSelectionAllowsPlant(plantName)
+
+    plantName =
+        HolyCleanText(
+            plantName
+        )
+
+    local map =
+        HolyFarmSelectedPlantMap()
+
+    if map.All == true then
+        return true
+    end
+
+    return plantName ~= ""
+        and map[plantName] == true
+end
+
+function HolyFarmRefreshPlantDropdown()
+
+    HOLY_FARM_UI =
+        type(HOLY_FARM_UI) == "table"
+        and HOLY_FARM_UI
+        or {}
+
+    local dropdown =
+        HOLY_FARM_UI.PlantsDropdown
+
+    if type(dropdown) ~= "table" then
+        return false
+    end
+
+    local values =
+        HolyFarmGetPlantDropdownValues()
+
+    HOLY_FARM_STATE.SelectedPlants =
+        HolyFarmNormalizePlantSelection(
+            HOLY_FARM_STATE.SelectedPlants
+        )
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+
+    pcall(function()
+
+        if type(dropdown.SetValue) == "function" then
+
+            dropdown:SetValue(
+                HOLY_FARM_STATE.SelectedPlants
+            )
+        end
+    end)
+
+    return true
+end
+
+function HolyFarmSetSelectedPlants(value)
+
+    HolyFarmEnsureState()
+
+    HOLY_FARM_STATE.SelectedPlants =
+        HolyFarmNormalizePlantSelection(
+            value
+        )
+
+    HolySaveFarmSettings()
+
+    if HOLY_FARM_STATE.AutoCollectFruits == true then
+
+        HolyFarmRebuildReadyQueue(
+            "selection changed"
+        )
+    end
+
+    return true
+end
+
+function HolyFarmGetGardensRoot()
+
+    local gardens =
+        workspace:FindFirstChild(
+            "Gardens"
+        )
+
+    if typeof(gardens) == "Instance" then
+        return gardens
+    end
+
+    gardens =
+        workspace:FindFirstChild(
+            "Gardens",
+            true
+        )
+
+    if typeof(gardens) == "Instance" then
+        return gardens
+    end
+
+    return nil
+end
+
+function HolyFarmCountOwnPrefixedPlants(plantsFolder)
+
+    if typeof(plantsFolder) ~= "Instance" then
+        return 0
+    end
+
+    local prefix =
+        tostring(
+            LocalPlayer
+            and LocalPlayer.UserId
+            or ""
+        )
+        .. "_"
+
+    if prefix == "_" then
+        return 0
+    end
+
+    local count =
+        0
+
+    for _, plant in ipairs(plantsFolder:GetChildren()) do
+
+        if tostring(plant.Name):sub(1, #prefix) == prefix then
+
+            count =
+                count + 1
+        end
+    end
+
+    return count
+end
+
+function HolyFarmScorePlot(plot)
+
+    if typeof(plot) ~= "Instance" then
+        return 0
+    end
+
+    local score =
+        0
+
+    local localUserId =
+        tostring(
+            LocalPlayer
+            and LocalPlayer.UserId
+            or ""
+        )
+
+    local localName =
+        HolyCleanText(
+            LocalPlayer
+            and LocalPlayer.Name
+            or ""
+        )
+
+    local ownerUserId =
+        nil
+
+    pcall(function()
+
+        ownerUserId =
+            plot:GetAttribute(
+                "OwnerUserId"
+            )
+    end)
+
+    if ownerUserId ~= nil
+    and tostring(ownerUserId) == localUserId then
+
+        score =
+            score + 1000
+    end
+
+    local owner =
+        nil
+
+    pcall(function()
+
+        owner =
+            plot:GetAttribute(
+                "Owner"
+            )
+    end)
+
+    owner =
+        HolyCleanText(
+            owner
+        )
+
+    if owner ~= ""
+    and localName ~= ""
+    and owner == localName then
+
+        score =
+            score + 900
+    end
+
+    local plantsFolder =
+        plot:FindFirstChild(
+            "Plants"
+        )
+
+    local ownPrefixCount =
+        HolyFarmCountOwnPrefixedPlants(
+            plantsFolder
+        )
+
+    if ownPrefixCount > 0 then
+
+        score =
+            score + 100 + math.min(
+                ownPrefixCount,
+                100
+            )
+    end
+
+    return score
+end
+
+function HolyFarmResolveOwnPlot(forceRefresh)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    local gardens =
+        HolyFarmGetGardensRoot()
+
+    if typeof(gardens) ~= "Instance" then
+        return nil
+    end
+
+    if forceRefresh ~= true
+    and typeof(runtime.OwnPlot) == "Instance"
+    and runtime.OwnPlot.Parent == gardens
+    and HolyFarmScorePlot(runtime.OwnPlot) > 0 then
+
+        runtime.PlantsFolder =
+            runtime.OwnPlot:FindFirstChild(
+                "Plants"
+            )
+
+        return runtime.OwnPlot
+    end
+
+    local bestPlot =
+        nil
+
+    local bestScore =
+        0
+
+    for _, plot in ipairs(gardens:GetChildren()) do
+
+        local score =
+            HolyFarmScorePlot(
+                plot
+            )
+
+        if score > bestScore then
+
+            bestScore =
+                score
+
+            bestPlot =
+                plot
+        end
+    end
+
+    if typeof(bestPlot) == "Instance"
+    and bestScore > 0 then
+
+        runtime.OwnPlot =
+            bestPlot
+
+        runtime.PlantsFolder =
+            bestPlot:FindFirstChild(
+                "Plants"
+            )
+
+        return bestPlot
+    end
+
+    runtime.OwnPlot =
+        nil
+
+    runtime.PlantsFolder =
+        nil
+
+    return nil
+end
+
+function HolyFarmReadAttribute(instance, names)
+
+    if typeof(instance) ~= "Instance" then
+        return ""
+    end
+
+    for _, name in ipairs(names or {}) do
+
+        local ok,
+            value =
+            pcall(function()
+
+                return instance:GetAttribute(
+                    name
+                )
+            end)
+
+        value =
+            HolyCleanText(
+                ok == true
+                and value
+                or ""
+            )
+
+        if value ~= "" then
+            return value
+        end
+    end
+
+    return ""
+end
+
+function HolyFarmReadNumberAttribute(instance, names)
+
+    local raw =
+        HolyFarmReadAttribute(
+            instance,
+            names
+        )
+
+    return tonumber(raw)
+end
+
+function HolyFarmReadPlantId(plant)
+
+    local fromAttr =
+        HolyFarmReadAttribute(
+            plant,
+            {
+                "PlantId",
+                "PlantID",
+                "PlantUUID",
+                "PlantUid",
+                "UUID",
+                "Uuid",
+                "Id",
+                "ID",
+            }
+        )
+
+    if fromAttr ~= "" then
+        return fromAttr
+    end
+
+    local fromName =
+        tostring(
+            plant
+            and plant.Name
+            or ""
+        )
+
+    local plantId =
+        fromName:match(
+            "^%d+_(.+)$"
+        )
+
+    if plantId
+    and plantId ~= "" then
+        return plantId
+    end
+
+    local uuid =
+        fromName:match(
+            "([%w]+%-%w+%-%w+%-%w+%-%w+)$"
+        )
+
+    return HolyCleanText(
+        uuid
+        or fromName
+    )
+end
+
+function HolyFarmReadFruitId(plant, fruit)
+
+    local fromAttr =
+        HolyFarmReadAttribute(
+            fruit,
+            {
+                "FruitId",
+                "FruitID",
+                "FruitUUID",
+                "FruitUid",
+                "UUID",
+                "Uuid",
+                "Id",
+                "ID",
+            }
+        )
+
+    if fromAttr ~= "" then
+        return fromAttr
+    end
+
+    local fruitName =
+        tostring(
+            fruit
+            and fruit.Name
+            or ""
+        )
+
+    if typeof(plant) == "Instance" then
+
+        local plantName =
+            tostring(
+                plant.Name
+                or ""
+            )
+
+        local prefix =
+            plantName
+            .. "_"
+
+        if fruitName:sub(1, #prefix) == prefix then
+
+            return HolyCleanText(
+                fruitName:sub(
+                    #prefix + 1
+                )
+            )
+        end
+    end
+
+    local uuid =
+        fruitName:match(
+            "([%w]+%-%w+%-%w+%-%w+%-%w+)$"
+        )
+
+    return HolyCleanText(
+        uuid
+        or fruitName
+    )
+end
+
+function HolyFarmReadPlantName(plant, fruit)
+
+    local plantName =
+        HolyFarmReadAttribute(
+            plant,
+            {
+                "SeedName",
+                "PlantName",
+                "CropName",
+                "FruitName",
+                "DisplayName",
+                "ItemName",
+                "Name",
+            }
+        )
+
+    if plantName ~= "" then
+        return plantName
+    end
+
+    plantName =
+        HolyFarmReadAttribute(
+            fruit,
+            {
+                "CorePartName",
+                "FruitName",
+                "SeedName",
+                "PlantName",
+                "CropName",
+                "DisplayName",
+                "ItemName",
+                "Name",
+            }
+        )
+
+    if plantName ~= "" then
+        return plantName
+    end
+
+    return "Unknown"
+end
+
+function HolyFarmFindHarvestPrompt(fruit)
+
+    if typeof(fruit) ~= "Instance" then
+        return nil
+    end
+
+    local harvestPart =
+        fruit:FindFirstChild(
+            "HarvestPart"
+        )
+
+    if harvestPart then
+
+        local prompt =
+            harvestPart:FindFirstChildWhichIsA(
+                "ProximityPrompt",
+                true
+            )
+
+        if prompt then
+            return prompt
+        end
+    end
+
+    return fruit:FindFirstChildWhichIsA(
+        "ProximityPrompt",
+        true
+    )
+end
+
+function HolyFarmFruitReady(fruit)
+
+    if typeof(fruit) ~= "Instance"
+    or fruit.Parent == nil then
+
+        return false
+    end
+
+    local age =
+        HolyFarmReadNumberAttribute(
+            fruit,
+            {
+                "Age",
+                "Growth",
+                "GrowAge",
+                "CurrentAge",
+            }
+        )
+
+    local maxAge =
+        HolyFarmReadNumberAttribute(
+            fruit,
+            {
+                "MaxAge",
+                "MaxGrowth",
+                "GrowTime",
+                "GrowthTime",
+                "RequiredAge",
+            }
+        )
+
+    if age ~= nil
+    and maxAge ~= nil then
+
+        return age >= maxAge
+    end
+
+    local prompt =
+        HolyFarmFindHarvestPrompt(
+            fruit
+        )
+
+    if typeof(prompt) == "Instance"
+    and prompt:IsA("ProximityPrompt") then
+
+        return prompt.Enabled == true
+    end
+
+    return false
+end
+
+function HolyFarmBuildFruitKey(plantId, fruitId)
+
+    plantId =
+        HolyCleanText(
+            plantId
+        )
+
+    fruitId =
+        HolyCleanText(
+            fruitId
+        )
+
+    if plantId == ""
+    or fruitId == "" then
+
+        return ""
+    end
+
+    return plantId
+        .. ":"
+        .. fruitId
+end
+
+function HolyFarmResolveCollectFruitPacket(forceRefresh)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    if forceRefresh ~= true
+    and type(runtime.CollectFruitPacket) == "table"
+    and type(runtime.CollectFruitPacket.Fire) == "function" then
+
+        return runtime.CollectFruitPacket,
+            "cached"
+    end
+
+    runtime.CollectFruitPacket =
+        nil
+
+    local networking =
+        nil
+
+    if type(HolyShopRequireModule) == "function" then
+
+        networking =
+            HolyShopRequireModule(
+                "SharedModules.Networking"
+            )
+    end
+
+    if type(networking) ~= "table" then
+
+        local module =
+            ReplicatedStorage:FindFirstChild("SharedModules")
+            and ReplicatedStorage.SharedModules:FindFirstChild("Networking")
+
+        if typeof(module) == "Instance"
+        and module:IsA("ModuleScript") == true then
+
+            local ok,
+                result =
+                pcall(function()
+
+                    return require(
+                        module
+                    )
+                end)
+
+            if ok == true
+            and type(result) == "table" then
+
+                networking =
+                    result
+            end
+        end
+    end
+
+    local packet =
+        type(networking) == "table"
+        and type(networking.Garden) == "table"
+        and networking.Garden.CollectFruit
+        or nil
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return nil,
+            "Networking.Garden.CollectFruit missing"
+    end
+
+    runtime.CollectFruitPacket =
+        packet
+
+    return packet,
+        "ok"
+end
+
+function HolyFarmQueueFruit(plant, fruit, reason)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    if typeof(plant) ~= "Instance"
+    or typeof(fruit) ~= "Instance"
+    or fruit.Parent == nil then
+
+        return false
+    end
+
+    if HolyFarmFruitReady(fruit) ~= true then
+        return false
+    end
+
+    local plantName =
+        HolyFarmReadPlantName(
+            plant,
+            fruit
+        )
+
+    if HolyFarmSelectionAllowsPlant(plantName) ~= true then
+        return false
+    end
+
+    local plantId =
+        HolyFarmReadPlantId(
+            plant
+        )
+
+    local fruitId =
+        HolyFarmReadFruitId(
+            plant,
+            fruit
+        )
+
+    local key =
+        HolyFarmBuildFruitKey(
+            plantId,
+            fruitId
+        )
+
+    if key == "" then
+        return false
+    end
+
+    if runtime.Pending[key] ~= nil
+    or runtime.ReadyMap[key] == true then
+
+        return false
+    end
+
+    runtime.ReadyMap[key] =
+        true
+
+    table.insert(
+        runtime.ReadyQueue,
+        {
+            Key =
+                key,
+
+            Plant =
+                plant,
+
+            Fruit =
+                fruit,
+
+            PlantName =
+                plantName,
+
+            PlantId =
+                plantId,
+
+            FruitId =
+                fruitId,
+
+            QueuedAt =
+                os.clock(),
+
+            Reason =
+                tostring(reason or "ready"),
+        }
+    )
+
+    return true
+end
+
+function HolyFarmUnwatchFruit(fruit)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    local connections =
+        runtime.FruitConnections[fruit]
+
+    HolyFarmDisconnectConnectionList(
+        connections
+    )
+
+    runtime.FruitConnections[fruit] =
+        nil
+
+    runtime.WatchedFruits[fruit] =
+        nil
+
+    return true
+end
+
+function HolyFarmWatchFruit(plant, fruit)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    if typeof(plant) ~= "Instance"
+    or typeof(fruit) ~= "Instance" then
+
+        return false
+    end
+
+    if runtime.WatchedFruits[fruit] == true then
+
+        HolyFarmQueueFruit(
+            plant,
+            fruit,
+            "refresh"
+        )
+
+        return true
+    end
+
+    runtime.WatchedFruits[fruit] =
+        true
+
+    runtime.FruitConnections[fruit] =
+        {}
+
+    local function refreshFruit()
+
+        task.defer(function()
+
+            if HOLY_FARM_STATE.AutoCollectFruits == true then
+
+                HolyFarmQueueFruit(
+                    plant,
+                    fruit,
+                    "changed"
+                )
+            end
+        end)
+    end
+
+    for _, attributeName in ipairs({
+        "Age",
+        "MaxAge",
+    }) do
+
+        local ok,
+            signal =
+            pcall(function()
+
+                return fruit:GetAttributeChangedSignal(
+                    attributeName
+                )
+            end)
+
+        if ok == true
+        and signal then
+
+            table.insert(
+                runtime.FruitConnections[fruit],
+                signal:Connect(
+                    refreshFruit
+                )
+            )
+        end
+    end
+
+    table.insert(
+        runtime.FruitConnections[fruit],
+        fruit.AncestryChanged:Connect(function(_, parent)
+
+            if parent == nil then
+
+                local plantId =
+                    HolyFarmReadPlantId(
+                        plant
+                    )
+
+                local fruitId =
+                    HolyFarmReadFruitId(
+                        plant,
+                        fruit
+                    )
+
+                local key =
+                    HolyFarmBuildFruitKey(
+                        plantId,
+                        fruitId
+                    )
+
+                if key ~= "" then
+
+                    runtime.ReadyMap[key] =
+                        nil
+
+                    runtime.Pending[key] =
+                        nil
+                end
+
+                HolyFarmUnwatchFruit(
+                    fruit
+                )
+            end
+        end)
+    )
+
+    HolyFarmQueueFruit(
+        plant,
+        fruit,
+        "initial"
+    )
+
+    return true
+end
+
+function HolyFarmUnwatchPlant(plant)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    HolyFarmDisconnectConnectionList(
+        runtime.PlantConnections[plant]
+    )
+
+    runtime.PlantConnections[plant] =
+        nil
+
+    runtime.WatchedPlants[plant] =
+        nil
+
+    return true
+end
+
+function HolyFarmWatchPlant(plant)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    if typeof(plant) ~= "Instance" then
+        return false
+    end
+
+    if runtime.WatchedPlants[plant] == true then
+        return true
+    end
+
+    runtime.WatchedPlants[plant] =
+        true
+
+    runtime.PlantConnections[plant] =
+        {}
+
+    local function attachFruitsFolder(fruitsFolder)
+
+        if typeof(fruitsFolder) ~= "Instance" then
+            return false
+        end
+
+        for _, fruit in ipairs(fruitsFolder:GetChildren()) do
+
+            HolyFarmWatchFruit(
+                plant,
+                fruit
+            )
+        end
+
+        table.insert(
+            runtime.PlantConnections[plant],
+            fruitsFolder.ChildAdded:Connect(function(fruit)
+
+                task.defer(function()
+
+                    HolyFarmWatchFruit(
+                        plant,
+                        fruit
+                    )
+                end)
+            end)
+        )
+
+        table.insert(
+            runtime.PlantConnections[plant],
+            fruitsFolder.ChildRemoved:Connect(function(fruit)
+
+                local plantId =
+                    HolyFarmReadPlantId(
+                        plant
+                    )
+
+                local fruitId =
+                    HolyFarmReadFruitId(
+                        plant,
+                        fruit
+                    )
+
+                local key =
+                    HolyFarmBuildFruitKey(
+                        plantId,
+                        fruitId
+                    )
+
+                if key ~= "" then
+
+                    runtime.ReadyMap[key] =
+                        nil
+
+                    runtime.Pending[key] =
+                        nil
+                end
+
+                HolyFarmUnwatchFruit(
+                    fruit
+                )
+            end)
+        )
+
+        return true
+    end
+
+    attachFruitsFolder(
+        plant:FindFirstChild(
+            "Fruits"
+        )
+    )
+
+    table.insert(
+        runtime.PlantConnections[plant],
+        plant.ChildAdded:Connect(function(child)
+
+            if child.Name == "Fruits" then
+
+                task.defer(function()
+
+                    attachFruitsFolder(
+                        child
+                    )
+                end)
+            end
+        end)
+    )
+
+    table.insert(
+        runtime.PlantConnections[plant],
+        plant.AncestryChanged:Connect(function(_, parent)
+
+            if parent == nil then
+
+                HolyFarmUnwatchPlant(
+                    plant
+                )
+            end
+        end)
+    )
+
+    return true
+end
+
+function HolyFarmInstallIndexer(forceRefresh)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    local plot =
+        HolyFarmResolveOwnPlot(
+            forceRefresh == true
+        )
+
+    if typeof(plot) ~= "Instance" then
+        return false, "own plot missing"
+    end
+
+    local plantsFolder =
+        plot:FindFirstChild(
+            "Plants"
+        )
+
+    if typeof(plantsFolder) ~= "Instance" then
+        return false, "plants folder missing"
+    end
+
+    if forceRefresh ~= true
+    and runtime.PlantsFolder == plantsFolder
+    and runtime.IndexerInstalled == true then
+
+        return true, "cached"
+    end
+
+    HolyFarmDisconnectConnectionMap(
+        runtime.Connections
+    )
+
+    HolyFarmDisconnectConnectionMap(
+        runtime.PlantConnections
+    )
+
+    HolyFarmDisconnectConnectionMap(
+        runtime.FruitConnections
+    )
+
+    runtime.Connections =
+        {}
+
+    runtime.PlantConnections =
+        {}
+
+    runtime.FruitConnections =
+        {}
+
+    runtime.WatchedPlants =
+        {}
+
+    runtime.WatchedFruits =
+        {}
+
+    runtime.ReadyQueue =
+        {}
+
+    runtime.ReadyMap =
+        {}
+
+    runtime.Pending =
+        {}
+
+    runtime.OwnPlot =
+        plot
+
+    runtime.PlantsFolder =
+        plantsFolder
+
+    runtime.IndexerInstalled =
+        true
+
+    for _, plant in ipairs(plantsFolder:GetChildren()) do
+
+        HolyFarmWatchPlant(
+            plant
+        )
+    end
+
+    table.insert(
+        runtime.Connections,
+        plantsFolder.ChildAdded:Connect(function(plant)
+
+            task.defer(function()
+
+                HolyFarmWatchPlant(
+                    plant
+                )
+            end)
+        end)
+    )
+
+    table.insert(
+        runtime.Connections,
+        plantsFolder.ChildRemoved:Connect(function(plant)
+
+            HolyFarmUnwatchPlant(
+                plant
+            )
+        end)
+    )
+
+    return true, "ok"
+end
+
+function HolyFarmRebuildReadyQueue(reason)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    runtime.ReadyQueue =
+        {}
+
+    runtime.ReadyMap =
+        {}
+
+    runtime.Pending =
+        {}
+
+    if typeof(runtime.PlantsFolder) ~= "Instance"
+    or runtime.PlantsFolder.Parent == nil then
+
+        return false
+    end
+
+    for _, plant in ipairs(runtime.PlantsFolder:GetChildren()) do
+
+        HolyFarmWatchPlant(
+            plant
+        )
+
+        local fruitsFolder =
+            plant:FindFirstChild(
+                "Fruits"
+            )
+
+        if typeof(fruitsFolder) == "Instance" then
+
+            for _, fruit in ipairs(fruitsFolder:GetChildren()) do
+
+                HolyFarmQueueFruit(
+                    plant,
+                    fruit,
+                    reason or "rebuild"
+                )
+            end
+        end
+    end
+
+    return true
+end
+
+function HolyFarmCollectEntry(entry)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    if type(entry) ~= "table" then
+        return false
+    end
+
+    if typeof(entry.Plant) ~= "Instance"
+    or typeof(entry.Fruit) ~= "Instance"
+    or entry.Fruit.Parent == nil then
+
+        return false
+    end
+
+    if HolyFarmFruitReady(entry.Fruit) ~= true then
+        return false
+    end
+
+    if HolyFarmSelectionAllowsPlant(entry.PlantName) ~= true then
+        return false
+    end
+
+    local key =
+        HolyFarmBuildFruitKey(
+            entry.PlantId,
+            entry.FruitId
+        )
+
+    if key == "" then
+        return false
+    end
+
+    if runtime.Pending[key] ~= nil then
+        return false
+    end
+
+    local packet,
+        packetReason =
+        HolyFarmResolveCollectFruitPacket(
+            false
+        )
+
+    if type(packet) ~= "table" then
+
+        local now =
+            os.clock()
+
+        if now - (
+            tonumber(runtime.LastPacketWarnAt)
+            or 0
+        ) > 5 then
+
+            runtime.LastPacketWarnAt =
+                now
+
+            if type(HolyNotify) == "function" then
+
+                HolyNotify(
+                    "HOLY Farm",
+                    tostring(packetReason or "CollectFruit packet missing."),
+                    4
+                )
+            end
+        end
+
+        return false
+    end
+
+    runtime.Pending[key] = {
+        At =
+            os.clock(),
+
+        Entry =
+            entry,
+    }
+
+    local ok,
+        result =
+        pcall(function()
+
+            return packet:Fire(
+                entry.PlantId,
+                entry.FruitId
+            )
+        end)
+
+    if ok ~= true then
+
+        runtime.Pending[key] =
+            nil
+
+        task.delay(0.35, function()
+
+            if HOLY_FARM_STATE.AutoCollectFruits == true then
+
+                HolyFarmQueueFruit(
+                    entry.Plant,
+                    entry.Fruit,
+                    "retry"
+                )
+            end
+        end)
+
+        return false,
+            tostring(result)
+    end
+
+    return true
+end
+
+function HolyFarmPrunePending()
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    local now =
+        os.clock()
+
+    for key, row in pairs(runtime.Pending) do
+
+        local entry =
+            type(row) == "table"
+            and row.Entry
+            or nil
+
+        local at =
+            type(row) == "table"
+            and tonumber(row.At)
+            or 0
+
+        if type(entry) ~= "table"
+        or typeof(entry.Fruit) ~= "Instance"
+        or entry.Fruit.Parent == nil then
+
+            runtime.Pending[key] =
+                nil
+
+            runtime.ReadyMap[key] =
+                nil
+
+        elseif now - at >= 3 then
+
+            runtime.Pending[key] =
+                nil
+
+            HolyFarmQueueFruit(
+                entry.Plant,
+                entry.Fruit,
+                "pending retry"
+            )
+        end
+    end
+end
+
+function HolyFarmAutoCollectBlocked()
+
+    local sniper =
+        type(HOLY_SNIPER_RUNTIME) == "table"
+        and HOLY_SNIPER_RUNTIME
+        or {}
+
+    if sniper.Buying == true
+    or sniper.Returning == true
+    or sniper.AutoHopInProgress == true
+    or sniper.CurrentTarget ~= nil
+    or HolyCleanText(sniper.CurrentTargetKey) ~= "" then
+
+        return true
+    end
+
+    return false
+end
+
+function HolyFarmRunAutoCollectWorker(token)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    runtime.Running =
+        true
+
+    while runtime.Token == token
+    and HOLY_FARM_STATE.AutoCollectFruits == true do
+
+        if HolyFarmAutoCollectBlocked() == true then
+
+            task.wait(
+                0.20
+            )
+
+            continue
+        end
+
+        local installed =
+            HolyFarmInstallIndexer(
+                false
+            )
+
+        if installed ~= true then
+
+            local now =
+                os.clock()
+
+            if now - (
+                tonumber(runtime.LastPlotWarnAt)
+                or 0
+            ) > 8 then
+
+                runtime.LastPlotWarnAt =
+                    now
+
+                print(
+                    "[HOLY FARM]",
+                    "Waiting for own plot / Plants folder."
+                )
+            end
+
+            task.wait(
+                1
+            )
+
+            continue
+        end
+
+        HolyFarmPrunePending()
+
+        local entry =
+            table.remove(
+                runtime.ReadyQueue,
+                1
+            )
+
+        if type(entry) == "table" then
+
+            runtime.ReadyMap[entry.Key] =
+                nil
+
+            HolyFarmCollectEntry(
+                entry
+            )
+
+            task.wait(
+                0.045
+            )
+
+        else
+
+            task.wait(
+                0.20
+            )
+        end
+    end
+
+    if runtime.Token == token then
+
+        runtime.Running =
+            false
+    end
+end
+
+function HolyFarmStartAutoCollect(reason)
+
+    HolyFarmEnsureState()
+
+    if HOLY_FARM_STATE.AutoCollectFruits ~= true then
+        return false
+    end
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    if runtime.Running == true then
+        return false
+    end
+
+    runtime.Token =
+        {}
+
+    local token =
+        runtime.Token
+
+    HolyFarmInstallIndexer(
+        false
+    )
+
+    HolyFarmRebuildReadyQueue(
+        reason or "start"
+    )
+
+    task.spawn(function()
+
+        HolyFarmRunAutoCollectWorker(
+            token
+        )
+    end)
+
+    return true
+end
+
+function HolyFarmStopAutoCollect(reason)
+
+    local runtime =
+        HolyFarmEnsureRuntime()
+
+    runtime.Token =
+        nil
+
+    runtime.Running =
+        false
+
+    HolyFarmDisconnectIndexer()
+
+    return true
+end
+
+function HolyFarmSetAutoCollectFruits(value)
+
+    HolyFarmEnsureState()
+
+    HOLY_FARM_STATE.AutoCollectFruits =
+        value == true
+
+    HolySaveFarmSettings()
+
+    if HOLY_FARM_STATE.AutoCollectFruits == true then
+
+        return HolyFarmStartAutoCollect(
+            "toggle on"
+        )
+    end
+
+    return HolyFarmStopAutoCollect(
+        "toggle off"
+    )
 end
 
 function HolySniperNormalizeAnySelection(value)
@@ -20370,7 +22513,7 @@ function HolyDoubleCreateHud()
         TitleLabel =
             HolyDoubleMakeHudLabel(
                 holder,
-                "🎲 HOLY DOUBLE",
+                "🎲 Gamble",
                 5,
                 13,
                 0.02
@@ -23446,9 +25589,23 @@ if HOLY_DEV_UI_STATE.AutoFarmMiddle == true then
     HolyFarmMiddleRestoreState()
 end
 
-HolyLoadShopSettings()
-HolyLoadSniperSettings()
-HolyLoadServerSettings()
+local ShopDoubleBox =
+    HolyAddRightGroupbox(
+        Tabs.Shop,
+        "Shop.AutoDoubleOrNothing",
+        "Auto Gamble",
+        "dice-5"
+    )
+
+local FarmCollectionBox =
+    HolyAddLeftGroupbox(
+        Tabs.Farm,
+        "Farm.FruitCollection",
+        "Fruit Collection",
+        "leaf"
+    )
+
+local SettingsUIBox =
 
 local Library =
     HolyLoadUrl(
@@ -23857,7 +26014,7 @@ local ShopDoubleBox =
     HolyAddRightGroupbox(
         Tabs.Shop,
         "Shop.AutoDoubleOrNothing",
-        "Auto Double or Nothing",
+        "Auto Gamble",
         "dice-5"
     )
 
@@ -34622,6 +36779,93 @@ if HOLY_SNIPER_STATE.ActivateSniper == true then
         "startup"
     )
 end
+
+--==================================================
+-- [6.25] FARM TAB
+--==================================================
+
+if FarmCollectionBox
+and type(FarmCollectionBox.AddToggle) == "function" then
+
+    HOLY_FARM_UI.AutoCollectToggle =
+        FarmCollectionBox:AddToggle(
+            "HolyFarmAutoCollectFruits",
+            {
+                Text =
+                    "Auto Collect Fruits",
+
+                Default =
+                    HOLY_FARM_STATE.AutoCollectFruits == true,
+
+                Tooltip =
+                    "Collects ready fruits from your own plot using the direct CollectFruit packet.",
+            }
+        )
+
+    HOLY_FARM_UI.AutoCollectToggle:OnChanged(function(value)
+
+        HolyFarmSetAutoCollectFruits(
+            value == true
+        )
+    end)
+end
+
+if FarmCollectionBox
+and type(FarmCollectionBox.AddDropdown) == "function" then
+
+    HOLY_FARM_UI.PlantsDropdown =
+        FarmCollectionBox:AddDropdown(
+            "HolyFarmCollectPlants",
+            {
+                Text =
+                    "Plants",
+
+                Values =
+                    HolyFarmGetPlantDropdownValues(),
+
+                Default =
+                    HolyFarmNormalizePlantSelection(
+                        HOLY_FARM_STATE.SelectedPlants
+                    ),
+
+                Multi =
+                    true,
+
+                Searchable =
+                    true,
+
+                MaxVisibleDropdownItems =
+                    10,
+
+                Tooltip =
+                    "All collects every ready fruit. Select plants to collect only those crops.",
+            }
+        )
+
+    HOLY_FARM_UI.PlantsDropdown:OnChanged(function(value)
+
+        HolyFarmSetSelectedPlants(
+            value
+        )
+    end)
+end
+
+task.defer(function()
+
+    HolyFarmRefreshPlantDropdown()
+
+    if HOLY_FARM_STATE.AutoCollectFruits == true then
+
+        HolyFarmStartAutoCollect(
+            "startup"
+        )
+    end
+end)
+
+task.delay(2, function()
+
+    HolyFarmRefreshPlantDropdown()
+end)
 
 --==================================================
 -- [6.5] SHOP TAB
