@@ -46,7 +46,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260628-garden_fruit_esp_v1"
+    "holy-premium-20260629-garden_visual_autosave_fix_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -2002,69 +2002,6 @@ function HolyLoadVisualSettings()
         data.GardenFruitSelectedMutations
         or HOLY_VISUAL_STATE.GardenFruitSelectedMutations
         or {}
-
-    HolyVisualEnsureState()
-
-    return true
-end
-
-function HolyLoadVisualSettings()
-
-    if HolyCanUseFiles() ~= true then
-        return false
-    end
-
-    local exists =
-        false
-
-    pcall(function()
-
-        exists =
-            isfile(
-                VISUAL_SETTINGS_FILE
-            )
-    end)
-
-    if exists ~= true then
-        return false
-    end
-
-    local readOk,
-        raw =
-        pcall(function()
-
-            return readfile(
-                VISUAL_SETTINGS_FILE
-            )
-        end)
-
-    if readOk ~= true
-    or type(raw) ~= "string"
-    or raw == "" then
-
-        return false
-    end
-
-    local decodeOk,
-        data =
-        pcall(function()
-
-            return HttpService:JSONDecode(
-                raw
-            )
-        end)
-
-    if decodeOk ~= true
-    or type(data) ~= "table" then
-
-        return false
-    end
-
-    HOLY_VISUAL_STATE.FruitValueOverlay =
-        data.FruitValueOverlay == true
-
-    HOLY_VISUAL_STATE.FruitTotalValue =
-        data.FruitTotalValue == true
 
     HolyVisualEnsureState()
 
