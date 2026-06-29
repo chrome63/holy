@@ -46,11 +46,11 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260628-visual_fruit_total_v1"
+    "holy-premium-20260629-auction_v1"
 
 local LIBRARY_URL =
     REPO_URL
-    .. "libraryholy5.lua?v="
+    .. "libraryholy7.lua?v="
     .. REMOTE_SOURCE_VERSION
 
 local UI_SETTINGS_FOLDER =
@@ -296,6 +296,12 @@ if type(HOLY_VISUAL_RUNTIME) == "table" then
     HOLY_VISUAL_RUNTIME.Running =
         false
 
+    HOLY_VISUAL_RUNTIME.GardenFruitToken =
+        nil
+
+    HOLY_VISUAL_RUNTIME.GardenFruitRunning =
+        false
+
     local oldLabels =
         HOLY_VISUAL_RUNTIME.Labels
 
@@ -320,11 +326,51 @@ if type(HOLY_VISUAL_RUNTIME) == "table" then
             HOLY_VISUAL_RUNTIME.TotalValueLabel:Destroy()
         end)
     end
+
+    local oldGardenLabels =
+        HOLY_VISUAL_RUNTIME.GardenFruitLabels
+
+    if type(oldGardenLabels) == "table" then
+
+        for _, label in pairs(oldGardenLabels) do
+
+            if typeof(label) == "Instance" then
+
+                pcall(function()
+
+                    label:Destroy()
+                end)
+            end
+        end
+    end
+
+    if typeof(HOLY_VISUAL_RUNTIME.GardenFruitGui) == "Instance" then
+
+        pcall(function()
+
+            HOLY_VISUAL_RUNTIME.GardenFruitGui:Destroy()
+        end)
+    end
 end
 
 HOLY_VISUAL_STATE = {
     FruitValueOverlay = false,
     FruitTotalValue = false,
+
+    GardenFruitESP = false,
+    GardenFruitShowValue = true,
+
+    GardenFruitMode = "All",
+    GardenFruitSelectedFruits = {},
+
+    GardenFruitMaxDistance = "150",
+    GardenFruitMinValue = "0",
+
+    GardenFruitWeightMode = "Off",
+    GardenFruitWeightThresholdKg = "0",
+
+    GardenFruitMutationMode = "All",
+    GardenFruitSelectedMutations = {},
 }
 
 HOLY_VISUAL_RUNTIME = {
@@ -333,6 +379,13 @@ HOLY_VISUAL_RUNTIME = {
 
     Labels = {},
     TotalValueLabel = nil,
+
+    GardenFruitRunning = false,
+    GardenFruitToken = nil,
+    GardenFruitLabels = {},
+    GardenFruitGui = nil,
+    GardenFruitUpdateDelay = 1.0,
+    GardenFruitMaxLabels = 160,
 
     FruitValueCalc = nil,
     SellValueData = nil,
@@ -345,6 +398,17 @@ HOLY_VISUAL_RUNTIME = {
 HOLY_VISUAL_UI = {
     FruitValueOverlayToggle = nil,
     FruitTotalValueToggle = nil,
+
+    GardenFruitESPToggle = nil,
+    GardenFruitShowValueToggle = nil,
+    GardenFruitModeDropdown = nil,
+    GardenFruitFruitsDropdown = nil,
+    GardenFruitMaxDistanceInput = nil,
+    GardenFruitMinValueInput = nil,
+    GardenFruitWeightModeDropdown = nil,
+    GardenFruitWeightThresholdInput = nil,
+    GardenFruitMutationModeDropdown = nil,
+    GardenFruitMutationsDropdown = nil,
 }
 
 HOLY_GROUPBOX_STATE = {
@@ -610,9 +674,30 @@ HOLY_ANTI_AFK_STATE = {
 
 if type(HOLY_SHOP_STATE) == "table" then
 
+    if type(HolyAuctionSetHudVisible) == "function" then
+
+        pcall(function()
+
+            HolyAuctionSetHudVisible(
+                false,
+                "restart"
+            )
+        end)
+    end
+
+    if type(HolyAuctionRestoreOffscreen) == "function" then
+
+        pcall(function()
+
+            HolyAuctionRestoreOffscreen()
+        end)
+    end
+
     for _, connectionListName in ipairs({
         "StockConnections",
         "SellConnections",
+        "AuctionConnections",
+        "AuctionHudConnections",
     }) do
 
         local connectionList =
@@ -642,6 +727,45 @@ HOLY_SHOP_STATE = {
     SelectedGear = {},
     SelectedProps = {},
 
+    AutoBuyAuctions = false,
+    SelectedAuctions = {},
+    AuctionKnownItems = {},
+
+    AuctionMaxPrice = "0",
+    AuctionCooldown = "10",
+    AuctionBuyUntilSoldOut = true,
+    AuctionStatus = "Ready",
+    AuctionWorkerRunning = false,
+    AuctionWatcherStarted = false,
+    AuctionNextBuyAt = 0,
+    AuctionLastLots = {},
+    AuctionAttemptedLots = {},
+    AuctionConnections = {},
+
+    AuctionStockMap = {},
+    AuctionServerNow = 0,
+    AuctionLastStockUpdateAt = 0,
+    AuctionStockCycle = nil,
+
+    AuctionRefreshText = "Refresh in --",
+    AuctionRefreshSeconds = 0,
+    AuctionRefreshReadAt = 0,
+
+    AuctionHudEnabled = false,
+    AuctionHudScale = "80%",
+    AuctionHudMinimized = false,
+    AuctionHudPosition = nil,
+    AuctionHudClickSelect = true,
+    AuctionHudConnections = {},
+
+    AuctionOffscreenSaved = false,
+    AuctionOffscreenState = {},
+    AuctionOffscreenEnabled = false,
+
+    AuctionHiddenRowsFound = 0,
+    AuctionIgnoredStaleRows = 0,
+    AuctionDataMode = "Waiting",
+
     AutoSellFruits = false,
     SellMethod = "Sell All",
 
@@ -663,6 +787,26 @@ HOLY_SHOP_STATE = {
     DoubleLastStakeCount = 0,
     DoubleLastResult = "Ready",
     DoubleTouchedRows = {},
+
+    AutoDailyDealAll = false,
+    DailyDealTriggerFruits = {
+        "All",
+    },
+    DailyDealMinStockMultiplier = "2",
+    DailyDealMinFriendBoost = "0",
+    DailyDealMinInventoryValue = "0",
+    DailyDealMinValue = "0",
+    DailyDealAutoDisable = true,
+    DailyDealRequirePreview = true,
+
+    DailyDealWorkerRunning = false,
+    DailyDealManualBusy = false,
+    DailyDealToken = nil,
+    DailyDealStatus = "Ready",
+    DailyDealLastStock = "Stock: --",
+    DailyDealLastPreview = "Preview: --",
+    DailyDealLastResult = "Last: --",
+    DailyDealLastCheckAt = 0,
 
     UseSellFilters = false,
 
@@ -808,6 +952,8 @@ HOLY_FARM_RUNTIME = {
 }
 
 HOLY_FARM_UI = {
+    PageControl = nil,
+
     PlantsDropdown = nil,
     ModeDropdown = nil,
     MutationModeDropdown = nil,
@@ -815,6 +961,10 @@ HOLY_FARM_UI = {
     WeightModeDropdown = nil,
     WeightThresholdInput = nil,
     AutoCollectToggle = nil,
+}
+
+HOLY_FARM_PAGE_STATE = {
+    Mode = "Collect",
 }
 
 --==================================================
@@ -1353,6 +1503,265 @@ function HolyLoadUISettings()
     return true
 end
 
+function HolyVisualReadNumberText(value, fallback, maxValue)
+
+    local number =
+        tonumber(
+            tostring(value or "")
+                :match("%d+%.?%d*")
+        )
+
+    if number == nil then
+
+        number =
+            tonumber(fallback)
+            or 0
+    end
+
+    number =
+        math.max(
+            0,
+            number
+        )
+
+    if maxValue ~= nil then
+
+        number =
+            math.min(
+                number,
+                tonumber(maxValue)
+                or number
+            )
+    end
+
+    if math.abs(number - math.floor(number)) < 0.001 then
+
+        return tostring(
+            math.floor(number)
+        )
+    end
+
+    return tostring(
+        math.floor(number * 100 + 0.5) / 100
+    )
+end
+
+function HolyVisualNormalizeGardenFruitMode(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local lower =
+        text:lower()
+
+    if lower == "only selected"
+    or lower == "selected"
+    or (
+        lower:find("only", 1, true)
+        and lower:find("selected", 1, true)
+    ) then
+
+        return "Only Selected"
+    end
+
+    if lower == "skip selected"
+    or lower == "exclude selected"
+    or lower:find("skip", 1, true)
+    or lower:find("exclude", 1, true)
+    or lower:find("ignore selected", 1, true) then
+
+        return "Skip Selected"
+    end
+
+    return "All"
+end
+
+function HolyVisualNormalizeGardenFruitSelection(value)
+
+    local raw =
+        HolyShopSelectionArray(
+            value
+        )
+
+    if #raw <= 0 then
+        return {}
+    end
+
+    local validMap =
+        {}
+
+    if type(HolyFarmGetPlantValueMap) == "function" then
+
+        validMap =
+            HolyFarmGetPlantValueMap()
+    end
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    for _, fruitName in ipairs(raw) do
+
+        local normalized =
+            ""
+
+        if type(HolyFarmNormalizePlantName) == "function" then
+
+            normalized =
+                HolyFarmNormalizePlantName(
+                    fruitName
+                )
+
+        else
+
+            normalized =
+                HolyCleanText(
+                    fruitName
+                )
+        end
+
+        if normalized ~= ""
+        and normalized ~= "All"
+        and seen[normalized] ~= true
+        and (
+            next(validMap) == nil
+            or validMap[normalized] == true
+        ) then
+
+            seen[normalized] =
+                true
+
+            table.insert(
+                output,
+                normalized
+            )
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
+function HolyVisualNormalizeGardenMutationMode(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local lower =
+        text:lower()
+
+    if lower == "only mutated"
+    or (
+        lower:find("only", 1, true)
+        and lower:find("mutat", 1, true)
+    ) then
+
+        return "Only Mutated"
+    end
+
+    if lower == "only selected"
+    or (
+        lower:find("only", 1, true)
+        and lower:find("selected", 1, true)
+    ) then
+
+        return "Only Selected"
+    end
+
+    if lower == "skip selected"
+    or lower:find("skip", 1, true)
+    or lower:find("exclude", 1, true)
+    or lower:find("ignore selected", 1, true) then
+
+        return "Skip Selected"
+    end
+
+    return "All"
+end
+
+function HolyVisualNormalizeGardenMutationSelection(value)
+
+    local raw =
+        HolyShopSelectionArray(
+            value
+        )
+
+    if #raw <= 0 then
+        return {}
+    end
+
+    local validMap =
+        {}
+
+    if type(HolyFarmGetMutationValueMap) == "function" then
+
+        validMap =
+            HolyFarmGetMutationValueMap()
+    end
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    for _, mutationName in ipairs(raw) do
+
+        local normalized =
+            ""
+
+        if type(HolyFarmNormalizeMutationName) == "function" then
+
+            normalized =
+                HolyFarmNormalizeMutationName(
+                    mutationName
+                )
+
+        else
+
+            normalized =
+                HolyCleanText(
+                    mutationName
+                )
+        end
+
+        if normalized ~= ""
+        and seen[normalized] ~= true
+        and (
+            next(validMap) == nil
+            or validMap[normalized] == true
+        ) then
+
+            seen[normalized] =
+                true
+
+            table.insert(
+                output,
+                normalized
+            )
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
 function HolyVisualEnsureState()
 
     HOLY_VISUAL_STATE =
@@ -1365,6 +1774,95 @@ function HolyVisualEnsureState()
 
     HOLY_VISUAL_STATE.FruitTotalValue =
         HOLY_VISUAL_STATE.FruitTotalValue == true
+
+    HOLY_VISUAL_STATE.GardenFruitESP =
+        HOLY_VISUAL_STATE.GardenFruitESP == true
+
+    if HOLY_VISUAL_STATE.GardenFruitShowValue == nil then
+
+        HOLY_VISUAL_STATE.GardenFruitShowValue =
+            true
+
+    else
+
+        HOLY_VISUAL_STATE.GardenFruitShowValue =
+            HOLY_VISUAL_STATE.GardenFruitShowValue == true
+    end
+
+    HOLY_VISUAL_STATE.GardenFruitMode =
+        HolyVisualNormalizeGardenFruitMode(
+            HOLY_VISUAL_STATE.GardenFruitMode
+            or "All"
+        )
+
+    HOLY_VISUAL_STATE.GardenFruitSelectedFruits =
+        HolyVisualNormalizeGardenFruitSelection(
+            HOLY_VISUAL_STATE.GardenFruitSelectedFruits
+            or {}
+        )
+
+    HOLY_VISUAL_STATE.GardenFruitMaxDistance =
+        HolyVisualReadNumberText(
+            HOLY_VISUAL_STATE.GardenFruitMaxDistance
+            or "150",
+            150,
+            1000
+        )
+
+    HOLY_VISUAL_STATE.GardenFruitMinValue =
+        HolyVisualReadNumberText(
+            HOLY_VISUAL_STATE.GardenFruitMinValue
+            or "0",
+            0,
+            nil
+        )
+
+    if type(HolyFarmNormalizeWeightMode) == "function" then
+
+        HOLY_VISUAL_STATE.GardenFruitWeightMode =
+            HolyFarmNormalizeWeightMode(
+                HOLY_VISUAL_STATE.GardenFruitWeightMode
+                or "Off"
+            )
+
+    else
+
+        HOLY_VISUAL_STATE.GardenFruitWeightMode =
+            "Off"
+    end
+
+    if type(HolyFarmReadWeightThresholdKg) == "function" then
+
+        HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg =
+            tostring(
+                HolyFarmReadWeightThresholdKg(
+                    HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg
+                    or "0"
+                )
+            )
+
+    else
+
+        HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg =
+            HolyVisualReadNumberText(
+                HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg
+                or "0",
+                0,
+                nil
+            )
+    end
+
+    HOLY_VISUAL_STATE.GardenFruitMutationMode =
+        HolyVisualNormalizeGardenMutationMode(
+            HOLY_VISUAL_STATE.GardenFruitMutationMode
+            or "All"
+        )
+
+    HOLY_VISUAL_STATE.GardenFruitSelectedMutations =
+        HolyVisualNormalizeGardenMutationSelection(
+            HOLY_VISUAL_STATE.GardenFruitSelectedMutations
+            or {}
+        )
 
     return HOLY_VISUAL_STATE
 end
@@ -1384,6 +1882,60 @@ function HolySaveVisualSettings()
 
         FruitTotalValue =
             HOLY_VISUAL_STATE.FruitTotalValue == true,
+
+        GardenFruitESP =
+            HOLY_VISUAL_STATE.GardenFruitESP == true,
+
+        GardenFruitShowValue =
+            HOLY_VISUAL_STATE.GardenFruitShowValue == true,
+
+        GardenFruitMode =
+            tostring(
+                HOLY_VISUAL_STATE.GardenFruitMode
+                or "All"
+            ),
+
+        GardenFruitSelectedFruits =
+            HolyShopSelectionArray(
+                HOLY_VISUAL_STATE.GardenFruitSelectedFruits
+                or {}
+            ),
+
+        GardenFruitMaxDistance =
+            tostring(
+                HOLY_VISUAL_STATE.GardenFruitMaxDistance
+                or "150"
+            ),
+
+        GardenFruitMinValue =
+            tostring(
+                HOLY_VISUAL_STATE.GardenFruitMinValue
+                or "0"
+            ),
+
+        GardenFruitWeightMode =
+            tostring(
+                HOLY_VISUAL_STATE.GardenFruitWeightMode
+                or "Off"
+            ),
+
+        GardenFruitWeightThresholdKg =
+            tostring(
+                HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg
+                or "0"
+            ),
+
+        GardenFruitMutationMode =
+            tostring(
+                HOLY_VISUAL_STATE.GardenFruitMutationMode
+                or "All"
+            ),
+
+        GardenFruitSelectedMutations =
+            HolyShopSelectionArray(
+                HOLY_VISUAL_STATE.GardenFruitSelectedMutations
+                or {}
+            ),
     }
 
     local encodeOk,
@@ -1470,6 +2022,66 @@ function HolyLoadVisualSettings()
 
     HOLY_VISUAL_STATE.FruitTotalValue =
         data.FruitTotalValue == true
+
+    HOLY_VISUAL_STATE.GardenFruitESP =
+        data.GardenFruitESP == true
+
+    if type(data.GardenFruitShowValue) == "boolean" then
+
+        HOLY_VISUAL_STATE.GardenFruitShowValue =
+            data.GardenFruitShowValue
+
+    elseif HOLY_VISUAL_STATE.GardenFruitShowValue == nil then
+
+        HOLY_VISUAL_STATE.GardenFruitShowValue =
+            true
+    end
+
+    HOLY_VISUAL_STATE.GardenFruitMode =
+        data.GardenFruitMode
+        or HOLY_VISUAL_STATE.GardenFruitMode
+        or "All"
+
+    HOLY_VISUAL_STATE.GardenFruitSelectedFruits =
+        data.GardenFruitSelectedFruits
+        or HOLY_VISUAL_STATE.GardenFruitSelectedFruits
+        or {}
+
+    HOLY_VISUAL_STATE.GardenFruitMaxDistance =
+        tostring(
+            data.GardenFruitMaxDistance
+            or HOLY_VISUAL_STATE.GardenFruitMaxDistance
+            or "150"
+        )
+
+    HOLY_VISUAL_STATE.GardenFruitMinValue =
+        tostring(
+            data.GardenFruitMinValue
+            or HOLY_VISUAL_STATE.GardenFruitMinValue
+            or "0"
+        )
+
+    HOLY_VISUAL_STATE.GardenFruitWeightMode =
+        data.GardenFruitWeightMode
+        or HOLY_VISUAL_STATE.GardenFruitWeightMode
+        or "Off"
+
+    HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg =
+        tostring(
+            data.GardenFruitWeightThresholdKg
+            or HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg
+            or "0"
+        )
+
+    HOLY_VISUAL_STATE.GardenFruitMutationMode =
+        data.GardenFruitMutationMode
+        or HOLY_VISUAL_STATE.GardenFruitMutationMode
+        or "All"
+
+    HOLY_VISUAL_STATE.GardenFruitSelectedMutations =
+        data.GardenFruitSelectedMutations
+        or HOLY_VISUAL_STATE.GardenFruitSelectedMutations
+        or {}
 
     HolyVisualEnsureState()
 
@@ -1986,6 +2598,52 @@ function HolySaveShopSettings()
                 HOLY_SHOP_STATE.SelectedProps
             ),
 
+        AutoBuyAuctions =
+            HOLY_SHOP_STATE.AutoBuyAuctions == true,
+
+        SelectedAuctions =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.SelectedAuctions
+            ),
+
+        AuctionKnownItems =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.AuctionKnownItems
+            ),
+
+        AuctionMaxPrice =
+            tostring(
+                HOLY_SHOP_STATE.AuctionMaxPrice
+                or "0"
+            ),
+
+        AuctionCooldown =
+            tostring(
+                HOLY_SHOP_STATE.AuctionCooldown
+                or "10"
+            ),
+
+        AuctionBuyUntilSoldOut =
+            HOLY_SHOP_STATE.AuctionBuyUntilSoldOut ~= false,
+
+        AuctionHudEnabled =
+            HOLY_SHOP_STATE.AuctionHudEnabled == true,
+
+        AuctionHudScale =
+            tostring(
+                HOLY_SHOP_STATE.AuctionHudScale
+                or "80%"
+            ),
+
+        AuctionHudMinimized =
+            HOLY_SHOP_STATE.AuctionHudMinimized == true,
+
+        AuctionHudPosition =
+            HOLY_SHOP_STATE.AuctionHudPosition,
+
+        AuctionHudClickSelect =
+            HOLY_SHOP_STATE.AuctionHudClickSelect ~= false,
+
         AutoSellFruits =
             HOLY_SHOP_STATE.AutoSellFruits == true,
 
@@ -2015,6 +2673,44 @@ function HolySaveShopSettings()
 
         DoubleHudPosition =
             HOLY_SHOP_STATE.DoubleHudPosition,
+
+        AutoDailyDealAll =
+            HOLY_SHOP_STATE.AutoDailyDealAll == true,
+
+        DailyDealTriggerFruits =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.DailyDealTriggerFruits
+            ),
+
+        DailyDealMinStockMultiplier =
+            tostring(
+                HOLY_SHOP_STATE.DailyDealMinStockMultiplier
+                or "2"
+            ),
+
+        DailyDealMinFriendBoost =
+            tostring(
+                HOLY_SHOP_STATE.DailyDealMinFriendBoost
+                or "0"
+            ),
+
+        DailyDealMinInventoryValue =
+            tostring(
+                HOLY_SHOP_STATE.DailyDealMinInventoryValue
+                or "0"
+            ),
+
+        DailyDealMinValue =
+            tostring(
+                HOLY_SHOP_STATE.DailyDealMinValue
+                or "0"
+            ),
+
+        DailyDealAutoDisable =
+            HOLY_SHOP_STATE.DailyDealAutoDisable ~= false,
+
+        DailyDealRequirePreview =
+            HOLY_SHOP_STATE.DailyDealRequirePreview ~= false,
 
         SellMethod =
             HolySellNormalizeMethod(
@@ -2183,6 +2879,73 @@ function HolyLoadShopSettings()
             or data.SelectedCrates
         )
 
+    HOLY_SHOP_STATE.AutoBuyAuctions =
+        data.AutoBuyAuctions == true
+
+    HOLY_SHOP_STATE.SelectedAuctions =
+        HolyShopSelectionArray(
+            data.SelectedAuctions
+        )
+
+    HOLY_SHOP_STATE.AuctionKnownItems =
+        HolyShopSelectionArray(
+            data.AuctionKnownItems
+        )
+
+    HOLY_SHOP_STATE.AuctionMaxPrice =
+        tostring(
+            data.AuctionMaxPrice
+            or HOLY_SHOP_STATE.AuctionMaxPrice
+            or "0"
+        )
+
+    HOLY_SHOP_STATE.AuctionCooldown =
+        tostring(
+            data.AuctionCooldown
+            or HOLY_SHOP_STATE.AuctionCooldown
+            or "10"
+        )
+
+    if type(data.AuctionBuyUntilSoldOut) == "boolean" then
+
+        HOLY_SHOP_STATE.AuctionBuyUntilSoldOut =
+            data.AuctionBuyUntilSoldOut
+
+    else
+
+        HOLY_SHOP_STATE.AuctionBuyUntilSoldOut =
+            true
+    end
+
+    HOLY_SHOP_STATE.AuctionHudEnabled =
+        data.AuctionHudEnabled == true
+
+    HOLY_SHOP_STATE.AuctionHudScale =
+        tostring(
+            data.AuctionHudScale
+            or HOLY_SHOP_STATE.AuctionHudScale
+            or "80%"
+        )
+
+    HOLY_SHOP_STATE.AuctionHudMinimized =
+        data.AuctionHudMinimized == true
+
+    HOLY_SHOP_STATE.AuctionHudPosition =
+        type(data.AuctionHudPosition) == "table"
+        and data.AuctionHudPosition
+        or nil
+
+    if type(data.AuctionHudClickSelect) == "boolean" then
+
+        HOLY_SHOP_STATE.AuctionHudClickSelect =
+            data.AuctionHudClickSelect
+
+    else
+
+        HOLY_SHOP_STATE.AuctionHudClickSelect =
+            true
+    end
+
     HOLY_SHOP_STATE.AutoSellFruits =
         data.AutoSellFruits == true
 
@@ -2227,6 +2990,76 @@ function HolyLoadShopSettings()
         type(data.DoubleHudPosition) == "table"
         and data.DoubleHudPosition
         or nil
+
+    HOLY_SHOP_STATE.AutoDailyDealAll =
+        data.AutoDailyDealAll == true
+
+    HOLY_SHOP_STATE.DailyDealTriggerFruits =
+        HolyShopSelectionArray(
+            data.DailyDealTriggerFruits
+            or data.DailyDealFruits
+            or {
+                "All",
+            }
+        )
+
+    if #HOLY_SHOP_STATE.DailyDealTriggerFruits <= 0 then
+
+        HOLY_SHOP_STATE.DailyDealTriggerFruits = {
+            "All",
+        }
+    end
+
+    HOLY_SHOP_STATE.DailyDealMinStockMultiplier =
+        tostring(
+            data.DailyDealMinStockMultiplier
+            or HOLY_SHOP_STATE.DailyDealMinStockMultiplier
+            or "2"
+        )
+
+    HOLY_SHOP_STATE.DailyDealMinFriendBoost =
+        tostring(
+            data.DailyDealMinFriendBoost
+            or HOLY_SHOP_STATE.DailyDealMinFriendBoost
+            or "0"
+        )
+
+    HOLY_SHOP_STATE.DailyDealMinInventoryValue =
+        tostring(
+            data.DailyDealMinInventoryValue
+            or HOLY_SHOP_STATE.DailyDealMinInventory
+            or HOLY_SHOP_STATE.DailyDealMinInventoryValue
+            or "0"
+        )
+
+    HOLY_SHOP_STATE.DailyDealMinValue =
+        tostring(
+            data.DailyDealMinValue
+            or HOLY_SHOP_STATE.DailyDealMinValue
+            or "0"
+        )
+
+    if type(data.DailyDealAutoDisable) == "boolean" then
+
+        HOLY_SHOP_STATE.DailyDealAutoDisable =
+            data.DailyDealAutoDisable
+
+    else
+
+        HOLY_SHOP_STATE.DailyDealAutoDisable =
+            true
+    end
+
+    if type(data.DailyDealRequirePreview) == "boolean" then
+
+        HOLY_SHOP_STATE.DailyDealRequirePreview =
+            data.DailyDealRequirePreview
+
+    else
+
+        HOLY_SHOP_STATE.DailyDealRequirePreview =
+            true
+    end
 
     HOLY_SHOP_STATE.SellMethod =
         HolySellNormalizeMethod(
@@ -22660,6 +23493,5353 @@ function HolyShopConnectStockSignals()
 end
 
 --==================================================
+-- [2.55] AUCTION CORE
+--==================================================
+
+function HolyAuctionEnsureState()
+
+    HOLY_SHOP_STATE =
+        type(HOLY_SHOP_STATE) == "table"
+        and HOLY_SHOP_STATE
+        or {}
+
+    HOLY_SHOP_STATE.AutoBuyAuctions =
+        HOLY_SHOP_STATE.AutoBuyAuctions == true
+
+    HOLY_SHOP_STATE.SelectedAuctions =
+        HolyShopSelectionArray(
+            HOLY_SHOP_STATE.SelectedAuctions
+            or {}
+        )
+
+    HOLY_SHOP_STATE.AuctionKnownItems =
+        HolyShopSelectionArray(
+            HOLY_SHOP_STATE.AuctionKnownItems
+            or {}
+        )
+
+    HOLY_SHOP_STATE.AuctionMaxPrice =
+        tostring(
+            HOLY_SHOP_STATE.AuctionMaxPrice
+            or "0"
+        )
+
+    HOLY_SHOP_STATE.AuctionCooldown =
+        tostring(
+            HOLY_SHOP_STATE.AuctionCooldown
+            or "10"
+        )
+
+    HOLY_SHOP_STATE.AuctionBuyUntilSoldOut =
+        HOLY_SHOP_STATE.AuctionBuyUntilSoldOut ~= false
+
+    HOLY_SHOP_STATE.AuctionStatus =
+        tostring(
+            HOLY_SHOP_STATE.AuctionStatus
+            or "Ready"
+        )
+
+    HOLY_SHOP_STATE.AuctionWorkerRunning =
+        HOLY_SHOP_STATE.AuctionWorkerRunning == true
+
+    HOLY_SHOP_STATE.AuctionWatcherStarted =
+        HOLY_SHOP_STATE.AuctionWatcherStarted == true
+
+    HOLY_SHOP_STATE.AuctionNextBuyAt =
+        tonumber(HOLY_SHOP_STATE.AuctionNextBuyAt)
+        or 0
+
+    HOLY_SHOP_STATE.AuctionLastLots =
+        type(HOLY_SHOP_STATE.AuctionLastLots) == "table"
+        and HOLY_SHOP_STATE.AuctionLastLots
+        or {}
+
+    HOLY_SHOP_STATE.AuctionAttemptedLots =
+        type(HOLY_SHOP_STATE.AuctionAttemptedLots) == "table"
+        and HOLY_SHOP_STATE.AuctionAttemptedLots
+        or {}
+
+    HOLY_SHOP_STATE.AuctionConnections =
+        type(HOLY_SHOP_STATE.AuctionConnections) == "table"
+        and HOLY_SHOP_STATE.AuctionConnections
+        or {}
+
+    HOLY_SHOP_STATE.AuctionStockMap =
+        type(HOLY_SHOP_STATE.AuctionStockMap) == "table"
+        and HOLY_SHOP_STATE.AuctionStockMap
+        or {}
+
+    HOLY_SHOP_STATE.AuctionServerNow =
+        tonumber(HOLY_SHOP_STATE.AuctionServerNow)
+        or 0
+
+    HOLY_SHOP_STATE.AuctionLastStockUpdateAt =
+        tonumber(HOLY_SHOP_STATE.AuctionLastStockUpdateAt)
+        or 0
+
+    HOLY_SHOP_STATE.AuctionItemCache =
+        type(HOLY_SHOP_STATE.AuctionItemCache) == "table"
+        and HOLY_SHOP_STATE.AuctionItemCache
+        or nil
+
+    return HOLY_SHOP_STATE
+end
+
+function HolyAuctionItemKey(value)
+
+    return HolyCleanText(
+        value
+    )
+        :lower()
+        :gsub("[%s_%-%[%]%(%)%.'\"_/{}:]", "")
+end
+
+function HolyAuctionSafeTonumber(value)
+
+    local ok,
+        result =
+        pcall(function()
+
+            return tonumber(
+                value
+            )
+        end)
+
+    if ok == true
+    and result ~= nil then
+
+        return result
+    end
+
+    return nil
+end
+
+function HolyAuctionReadMoney(value)
+
+    if type(value) == "number" then
+
+        return math.max(
+            0,
+            math.floor(value + 0.5)
+        )
+    end
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == "" then
+        return 0
+    end
+
+    text =
+        text:gsub("¢", "")
+            :gsub("%$", "")
+            :gsub(",", "")
+            :gsub("%s+", "")
+
+    local lower =
+        text:lower()
+
+    local multiplier =
+        1
+
+    if lower:find("b", 1, true) then
+
+        multiplier =
+            1000000000
+
+    elseif lower:find("m", 1, true) then
+
+        multiplier =
+            1000000
+
+    elseif lower:find("k", 1, true) then
+
+        multiplier =
+            1000
+    end
+
+    local rawNumber =
+        lower:match("%d+%.?%d*")
+
+    local number =
+        HolyAuctionSafeTonumber(
+            rawNumber
+        )
+
+    if number == nil then
+        return 0
+    end
+
+    return math.max(
+        0,
+        math.floor(
+            number * multiplier + 0.5
+        )
+    )
+end
+
+function HolyAuctionFormatMoney(value)
+
+    value =
+        math.max(
+            0,
+            tonumber(value)
+            or 0
+        )
+
+    if value >= 1000000000 then
+
+        return string.format(
+            "%.2fB¢",
+            value / 1000000000
+        )
+    end
+
+    if value >= 1000000 then
+
+        return string.format(
+            "%.2fM¢",
+            value / 1000000
+        )
+    end
+
+    if value >= 1000 then
+
+        return string.format(
+            "%.2fK¢",
+            value / 1000
+        )
+    end
+
+    return tostring(
+        math.floor(value)
+    )
+        .. "¢"
+end
+
+function HolyAuctionReadStock(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local lower =
+        text:lower()
+
+    if lower == ""
+    or lower:find("sold", 1, true)
+    or lower:find("out", 1, true)
+    or lower:find("expired", 1, true) then
+
+        return 0
+    end
+
+    -- Strict UI stock safety:
+    -- only trust text like "x19,631 in Stock".
+    if lower:find("stock", 1, true) == nil then
+        return 0
+    end
+
+    local raw =
+        text:match("x%s*([%d,]+)")
+        or text:match("([%d,]+)")
+
+    if raw == nil then
+        return 0
+    end
+
+    local digits =
+        tostring(raw or "")
+
+    digits =
+        digits:gsub(
+            ",",
+            ""
+        )
+
+    local number =
+        HolyAuctionSafeTonumber(
+            digits
+        )
+
+    return math.max(
+        0,
+        math.floor(
+            number
+            or 0
+        )
+    )
+end
+
+function HolyAuctionReadCooldown()
+
+    local number =
+        tonumber(
+            tostring(
+                HOLY_SHOP_STATE.AuctionCooldown
+                or "10"
+            ):match("%d+%.?%d*")
+        )
+
+    return math.clamp(
+        tonumber(number)
+        or 10,
+        0.2,
+        60
+    )
+end
+
+function HolyAuctionAddCandidate(rows, name, source, data)
+
+    name =
+        HolyCleanText(
+            name
+        )
+
+    if name == ""
+    or name == "All"
+    or name == "None"
+    or name == "Normal"
+    or name == "Big"
+    or name == "Huge"
+    or name == "Mega"
+    or #name > 80
+    or name:find("table:", 1, true) then
+
+        return false
+    end
+
+    source =
+        HolyCleanText(
+            source
+        )
+
+    local blockedUnlessLive = {
+        Gold = true,
+        Rainbow = true,
+        Mega = true,
+        Default = true,
+        Wood = true,
+        Stone = true,
+        White = true,
+        Light = true,
+        Star = true,
+        Flower = true,
+        Pole = true,
+        Stick = true,
+        Spike = true,
+        Cupid = true,
+        Lantern = true,
+        Futuristic = true,
+    }
+
+    if blockedUnlessLive[name] == true
+    and source ~= "LiveAuctionGui"
+    and source ~= "KnownAuctionItems" then
+
+        return false
+    end
+
+    if name == "Test Egg"
+    and source ~= "LiveAuctionGui"
+    and source ~= "KnownAuctionItems" then
+
+        return false
+    end
+
+    local key =
+        HolyAuctionItemKey(
+            name
+        )
+
+    if key == "" then
+        return false
+    end
+
+    rows[key] =
+        rows[key]
+        or {
+            Name = name,
+            Sources = {},
+            Price = 0,
+        }
+
+    rows[key].Sources[source ~= "" and source or "Unknown"] =
+        true
+
+    data =
+        type(data) == "table"
+        and data
+        or {}
+
+    rows[key].Category =
+        rows[key].Category
+        or data.Category
+
+    rows[key].Rarity =
+        rows[key].Rarity
+        or data.Rarity
+
+    rows[key].Price =
+        math.max(
+            tonumber(rows[key].Price)
+            or 0,
+            tonumber(data.Price)
+            or tonumber(data.Cost)
+            or 0
+        )
+
+    return true
+end
+
+function HolyAuctionReadRestockValues(value)
+
+    if type(value) ~= "table" then
+        return ""
+    end
+
+    local parts =
+        {}
+
+    for _, item in ipairs(value) do
+
+        table.insert(
+            parts,
+            tostring(item)
+        )
+    end
+
+    return table.concat(
+        parts,
+        "-"
+    )
+end
+
+function HolyAuctionScanCrateCandidates(rows)
+
+    local data =
+        HolyShopRequireModule(
+            "SharedModules.CrateData"
+        )
+
+    if type(data) == "table"
+    and type(data.GetAllCrates) == "function" then
+
+        local ok,
+            crates =
+            pcall(function()
+
+                return data.GetAllCrates()
+            end)
+
+        if ok ~= true
+        or type(crates) ~= "table" then
+
+            ok,
+                crates =
+                pcall(
+                    data.GetAllCrates,
+                    data
+                )
+        end
+
+        if ok == true
+        and type(crates) == "table" then
+
+            for key, row in pairs(crates) do
+
+                if type(row) == "table" then
+
+                    HolyAuctionAddCandidate(
+                        rows,
+                        row.Name
+                            or key,
+                        "CrateData",
+                        {
+                            Category =
+                                "Crate",
+
+                            Rarity =
+                                row.Rarity,
+
+                            Cost =
+                                row.Cost,
+                        }
+                    )
+                end
+            end
+        end
+    end
+
+    local root =
+        ReplicatedStorage:FindFirstChild("SharedModules")
+        and ReplicatedStorage.SharedModules:FindFirstChild("CrateData")
+        or nil
+
+    if typeof(root) == "Instance" then
+
+        for _, child in ipairs(root:GetChildren()) do
+
+            if child:IsA("ModuleScript") then
+
+                local ok,
+                    row =
+                    pcall(function()
+
+                        return require(child)
+                    end)
+
+                if ok == true
+                and type(row) == "table" then
+
+                    HolyAuctionAddCandidate(
+                        rows,
+                        row.Name
+                            or child.Name,
+                        "CrateData",
+                        {
+                            Category =
+                                "Crate",
+
+                            Rarity =
+                                row.Rarity,
+
+                            Cost =
+                                row.Cost,
+                        }
+                    )
+
+                else
+
+                    HolyAuctionAddCandidate(
+                        rows,
+                        child.Name,
+                        "CrateData",
+                        {
+                            Category =
+                                "Crate",
+                        }
+                    )
+                end
+            end
+        end
+    end
+end
+
+function HolyAuctionScanGuildCrateCandidates(rows)
+
+    local root =
+        ReplicatedStorage:FindFirstChild("SharedModules")
+        and ReplicatedStorage.SharedModules:FindFirstChild("GuildCrateData")
+        or nil
+
+    if typeof(root) ~= "Instance" then
+        return false
+    end
+
+    for _, child in ipairs(root:GetChildren()) do
+
+        if child:IsA("ModuleScript") then
+
+            local ok,
+                row =
+                pcall(function()
+
+                    return require(child)
+                end)
+
+            row =
+                ok == true
+                and type(row) == "table"
+                and row
+                or {}
+
+            HolyAuctionAddCandidate(
+                rows,
+                row.Name
+                    or row.CrateName
+                    or child.Name,
+                "GuildCrateData",
+                {
+                    Category =
+                        "Guild Crate",
+
+                    Rarity =
+                        row.Rarity,
+
+                    Cost =
+                        row.Cost,
+                }
+            )
+        end
+    end
+
+    return true
+end
+
+function HolyAuctionScanGearCandidates(rows)
+
+    local data =
+        HolyShopRequireModule(
+            "SharedModules.GearShopData"
+        )
+
+    data =
+        type(data) == "table"
+        and (
+            data.Data
+            or data
+        )
+        or {}
+
+    for _, row in pairs(data) do
+
+        if type(row) == "table" then
+
+            HolyAuctionAddCandidate(
+                rows,
+                row.ItemName
+                    or row.Name,
+                "GearShopData",
+                {
+                    Category =
+                        "Gear",
+
+                    Rarity =
+                        row.Rarity,
+
+                    Cost =
+                        row.Cost,
+                }
+            )
+        end
+    end
+end
+
+function HolyAuctionScanEggCandidates(rows)
+
+    local data =
+        HolyShopRequireModule(
+            "SharedModules.EggData"
+        )
+
+    data =
+        type(data) == "table"
+        and (
+            data.Data
+            or data
+        )
+        or {}
+
+    for _, row in pairs(data) do
+
+        if type(row) == "table" then
+
+            HolyAuctionAddCandidate(
+                rows,
+                row.EggName
+                    or row.Name,
+                "EggData",
+                {
+                    Category =
+                        "Egg",
+
+                    Rarity =
+                        row.Rarity,
+                }
+            )
+        end
+    end
+end
+
+function HolyAuctionScanSeedCandidates(rows)
+
+    local data =
+        HolyShopRequireModule(
+            "SharedModules.SeedData"
+        )
+
+    data =
+        type(data) == "table"
+        and (
+            data.Data
+            or data
+        )
+        or {}
+
+    for _, row in pairs(data) do
+
+        if type(row) == "table" then
+
+            local seedName =
+                HolyCleanText(
+                    row.SeedName
+                    or row.Name
+                )
+
+            if seedName ~= "" then
+
+                HolyAuctionAddCandidate(
+                    rows,
+                    seedName,
+                    "SeedData",
+                    {
+                        Category =
+                            "Seed",
+
+                        Rarity =
+                            row.Rarity
+                            or row.SeedRarity,
+
+                        Cost =
+                            row.PurchasePrice
+                            or row.Cost
+                            or row.Price,
+                    }
+                )
+            end
+        end
+    end
+end
+
+function HolyAuctionScanSeedPackCandidates(rows)
+
+    local data =
+        HolyShopRequireModule(
+            "SharedModules.SeedPackData"
+        )
+
+    if type(data) ~= "table" then
+        return false
+    end
+
+    local seen =
+        {}
+
+    local function visit(value, depth)
+
+        if type(value) ~= "table" then
+            return
+        end
+
+        if seen[value] == true then
+            return
+        end
+
+        seen[value] =
+            true
+
+        depth =
+            tonumber(depth)
+            or 0
+
+        if depth > 5 then
+            return
+        end
+
+        local name =
+            value.Name
+            or value.PackName
+            or value.SeedPackName
+            or value.ItemName
+            or value.DisplayName
+
+        if type(name) == "string"
+        and name ~= ""
+        and name:lower():find("pack", 1, true) then
+
+            HolyAuctionAddCandidate(
+                rows,
+                name,
+                "SeedPackData",
+                {
+                    Category =
+                        "Seed Pack",
+
+                    Rarity =
+                        value.Rarity,
+
+                    Cost =
+                        value.Cost
+                        or value.Price,
+                }
+            )
+        end
+
+        for _, child in pairs(value) do
+
+            if type(child) == "table" then
+
+                visit(
+                    child,
+                    depth + 1
+                )
+            end
+        end
+    end
+
+    visit(
+        data.Data
+        or data.Packs
+        or data,
+        0
+    )
+
+    return true
+end
+
+function HolyAuctionScanMiscCandidates(rows)
+
+    local paths = {
+        "SharedModules.SprinklerData",
+        "SharedModules.MushroomData",
+        "SharedModules.WateringcanData",
+        "SharedModules.TrowelData",
+        "SharedModules.RakeData",
+        "SharedModules.TeleporterData",
+        "SharedModules.PetTeleporterData",
+        "SharedModules.PetLureData",
+        "SharedModules.GnomeData",
+        "SharedModules.MagicDiceConfig",
+        "SharedModules.CrowbarData",
+        "SharedModules.MagnetData",
+        "SharedModules.PowerHoseData",
+        "SharedModules.FreezeRayData",
+    }
+
+    local nameKeys = {
+        "Name",
+        "ItemName",
+        "DisplayName",
+        "GearName",
+        "SprinklerName",
+        "MushroomName",
+        "ToolName",
+    }
+
+    for _, path in ipairs(paths) do
+
+        local data =
+            HolyShopRequireModule(
+                path
+            )
+
+        local source =
+            path:match("([^%.]+)$")
+            or path
+
+        local seen =
+            {}
+
+        local function visit(value, depth)
+
+            if type(value) ~= "table" then
+                return
+            end
+
+            if seen[value] == true then
+                return
+            end
+
+            seen[value] =
+                true
+
+            depth =
+                tonumber(depth)
+                or 0
+
+            if depth > 4 then
+                return
+            end
+
+            for _, key in ipairs(nameKeys) do
+
+                if type(value[key]) == "string"
+                and value[key] ~= "" then
+
+                    HolyAuctionAddCandidate(
+                        rows,
+                        value[key],
+                        source,
+                        {
+                            Category =
+                                "Misc",
+
+                            Rarity =
+                                value.Rarity,
+
+                            Cost =
+                                value.Cost
+                                or value.Price,
+                        }
+                    )
+                end
+            end
+
+            for _, child in pairs(value) do
+
+                if type(child) == "table" then
+
+                    visit(
+                        child,
+                        depth + 1
+                    )
+                end
+            end
+        end
+
+        visit(
+            data,
+            0
+        )
+    end
+end
+
+function HolyAuctionRememberKnownItem(itemName)
+
+    HolyAuctionEnsureState()
+
+    itemName =
+        HolyCleanText(
+            itemName
+        )
+
+    if itemName == "" then
+        return false
+    end
+
+    local key =
+        HolyAuctionItemKey(
+            itemName
+        )
+
+    local has =
+        false
+
+    for _, known in ipairs(HOLY_SHOP_STATE.AuctionKnownItems or {}) do
+
+        if HolyAuctionItemKey(known) == key then
+
+            has =
+                true
+
+            break
+        end
+    end
+
+    if has == true then
+        return false
+    end
+
+    table.insert(
+        HOLY_SHOP_STATE.AuctionKnownItems,
+        itemName
+    )
+
+    HOLY_SHOP_STATE.AuctionItemCache =
+        nil
+
+    HolySaveShopSettings()
+
+    return true
+end
+
+function HolyAuctionBuildItemRows(forceRefresh)
+
+    HolyAuctionEnsureState()
+
+    if forceRefresh ~= true
+    and type(HOLY_SHOP_STATE.AuctionItemCache) == "table" then
+
+        return HOLY_SHOP_STATE.AuctionItemCache
+    end
+
+    local map =
+        {}
+
+    HolyAuctionScanCrateCandidates(
+        map
+    )
+
+    HolyAuctionScanGuildCrateCandidates(
+        map
+    )
+
+    HolyAuctionScanGearCandidates(
+        map
+    )
+
+    HolyAuctionScanEggCandidates(
+        map
+    )
+
+    HolyAuctionScanSeedPackCandidates(
+        map
+    )
+
+    HolyAuctionScanSeedCandidates(
+        map
+    )
+
+    HolyAuctionScanMiscCandidates(
+        map
+    )
+
+    for _, itemName in ipairs(HOLY_SHOP_STATE.AuctionKnownItems or {}) do
+
+        HolyAuctionAddCandidate(
+            map,
+            itemName,
+            "KnownAuctionItems",
+            {
+                Category =
+                    "Known",
+            }
+        )
+    end
+
+    local rows =
+        {}
+
+    for _, row in pairs(map) do
+
+        table.insert(
+            rows,
+            row
+        )
+    end
+
+    table.sort(rows, function(a, b)
+
+        local nameA =
+            tostring(a.Name or "")
+
+        local nameB =
+            tostring(b.Name or "")
+
+        return nameA:lower() < nameB:lower()
+    end)
+
+    HOLY_SHOP_STATE.AuctionItemCache =
+        rows
+
+    return rows
+end
+
+function HolyAuctionGetDropdownValues(forceRefresh)
+
+    local values = {
+        "All",
+    }
+
+    for _, row in ipairs(HolyAuctionBuildItemRows(forceRefresh == true)) do
+
+        table.insert(
+            values,
+            row.Name
+        )
+    end
+
+    return values
+end
+
+function HolyAuctionRefreshDropdown(forceRefresh)
+
+    HOLY_SHOP_UI =
+        type(HOLY_SHOP_UI) == "table"
+        and HOLY_SHOP_UI
+        or {}
+
+    local dropdown =
+        HOLY_SHOP_UI.AuctionDropdown
+
+    if type(dropdown) ~= "table" then
+        return false
+    end
+
+    local values =
+        HolyAuctionGetDropdownValues(
+            forceRefresh == true
+        )
+
+    HOLY_SHOP_STATE.SelectedAuctions =
+        HolyShopSelectionArray(
+            HOLY_SHOP_STATE.SelectedAuctions
+        )
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+
+    pcall(function()
+
+        if type(dropdown.SetValue) == "function" then
+
+            dropdown:SetValue(
+                HOLY_SHOP_STATE.SelectedAuctions
+            )
+        end
+    end)
+
+    return true
+end
+
+function HolyAuctionGetPlayerGui()
+
+    if not LocalPlayer then
+        return nil
+    end
+
+    return LocalPlayer:FindFirstChildOfClass(
+        "PlayerGui"
+    )
+    or LocalPlayer:FindFirstChild(
+        "PlayerGui"
+    )
+end
+
+function HolyAuctionReadText(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return ""
+    end
+
+    if instance:IsA("TextLabel")
+    or instance:IsA("TextButton")
+    or instance:IsA("TextBox") then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return instance.Text
+            end)
+
+        if ok == true then
+
+            return HolyCleanText(
+                result
+            )
+        end
+    end
+
+    return ""
+end
+
+function HolyAuctionFindText(root, name)
+
+    if typeof(root) ~= "Instance" then
+        return ""
+    end
+
+    local object =
+        root:FindFirstChild(
+            name,
+            true
+        )
+
+    return HolyAuctionReadText(
+        object
+    )
+end
+
+function HolyAuctionFindAuctionGui()
+
+    local playerGui =
+        HolyAuctionGetPlayerGui()
+
+    if typeof(playerGui) ~= "Instance" then
+        return nil
+    end
+
+    local auctionGui =
+        playerGui:FindFirstChild(
+            "Auction"
+        )
+
+    if typeof(auctionGui) == "Instance" then
+        return auctionGui
+    end
+
+    for _, child in ipairs(playerGui:GetChildren()) do
+
+        if tostring(child.Name):lower():find("auction", 1, true) then
+
+            return child
+        end
+    end
+
+    return nil
+end
+
+function HolyAuctionFindAuctionRoot(auctionGui)
+
+    if typeof(auctionGui) ~= "Instance" then
+        return nil
+    end
+
+    local frame =
+        auctionGui:FindFirstChild(
+            "Frame"
+        )
+
+    if typeof(frame) == "Instance"
+    and frame:IsA("GuiObject") then
+
+        return frame
+    end
+
+    local best =
+        nil
+
+    local bestArea =
+        0
+
+    for _, child in ipairs(auctionGui:GetChildren()) do
+
+        if child:IsA("GuiObject") then
+
+            local area =
+                0
+
+            pcall(function()
+
+                local size =
+                    child.AbsoluteSize
+
+                area =
+                    size.X * size.Y
+            end)
+
+            if area > bestArea then
+
+                best =
+                    child
+
+                bestArea =
+                    area
+            end
+        end
+    end
+
+    return best
+end
+
+function HolyAuctionFindScrollingFrame(auctionGui)
+
+    if typeof(auctionGui) ~= "Instance" then
+        return nil
+    end
+
+    local scrollingFrame =
+        auctionGui:FindFirstChild(
+            "ScrollingFrame",
+            true
+        )
+
+    if typeof(scrollingFrame) == "Instance" then
+        return scrollingFrame
+    end
+
+    return nil
+end
+
+function HolyAuctionExtractCycle(lotId)
+
+    local raw =
+        tostring(lotId or ""):match(
+            "^auction:(%d+):%d+$"
+        )
+
+    return tonumber(raw)
+end
+
+function HolyAuctionExtractSlot(lotId)
+
+    local raw =
+        tostring(lotId or ""):match(
+            "^auction:%d+:(%d+)$"
+        )
+
+    return tonumber(raw)
+end
+
+function HolyAuctionCalculateStockCycle()
+
+    HolyAuctionEnsureState()
+
+    local counts =
+        {}
+
+    local bestCycle =
+        nil
+
+    local bestCount =
+        0
+
+    for lotId in pairs(HOLY_SHOP_STATE.AuctionStockMap or {}) do
+
+        local cycle =
+            HolyAuctionExtractCycle(
+                lotId
+            )
+
+        if cycle ~= nil then
+
+            counts[cycle] =
+                (
+                    counts[cycle]
+                    or 0
+                )
+                + 1
+
+            if counts[cycle] > bestCount
+            or (
+                counts[cycle] == bestCount
+                and (
+                    bestCycle == nil
+                    or cycle > bestCycle
+                )
+            ) then
+
+                bestCycle =
+                    cycle
+
+                bestCount =
+                    counts[cycle]
+            end
+        end
+    end
+
+    HOLY_SHOP_STATE.AuctionStockCycle =
+        bestCycle
+
+    return bestCycle
+end
+
+function HolyAuctionGetStockCycle()
+
+    HolyAuctionEnsureState()
+
+    return HOLY_SHOP_STATE.AuctionStockCycle
+        or HolyAuctionCalculateStockCycle()
+end
+
+function HolyAuctionStockAge()
+
+    HolyAuctionEnsureState()
+
+    local at =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionLastStockUpdateAt
+        )
+        or 0
+
+    if at <= 0 then
+        return math.huge
+    end
+
+    return os.clock() - at
+end
+
+function HolyAuctionFormatAge(seconds)
+
+    seconds =
+        tonumber(seconds)
+        or 0
+
+    if seconds <= 0 then
+        return "now"
+    end
+
+    if seconds < 10 then
+
+        return string.format(
+            "%.1fs ago",
+            seconds
+        )
+    end
+
+    if seconds < 60 then
+
+        return tostring(
+            math.floor(seconds + 0.5)
+        )
+        .. "s ago"
+    end
+
+    return tostring(
+        math.floor(seconds / 60)
+    )
+    .. "m ago"
+end
+
+function HolyAuctionParseDurationSeconds(text)
+
+    text =
+        HolyCleanText(
+            text
+        )
+
+    local hours,
+        minutes =
+        text:match(
+            "(%d+)%s*h%s*(%d+)%s*m"
+        )
+
+    if hours
+    and minutes then
+
+        return (
+            tonumber(hours)
+            or 0
+        ) * 3600
+        + (
+            tonumber(minutes)
+            or 0
+        ) * 60
+    end
+
+    local mins,
+        secs =
+        text:match(
+            "(%d+)%s*m%s*(%d+)%s*s"
+        )
+
+    if mins
+    and secs then
+
+        return (
+            tonumber(mins)
+            or 0
+        ) * 60
+        + (
+            tonumber(secs)
+            or 0
+        )
+    end
+
+    local colonMins,
+        colonSecs =
+        text:match(
+            "(%d+)%s*:%s*(%d+)"
+        )
+
+    if colonMins
+    and colonSecs then
+
+        return (
+            tonumber(colonMins)
+            or 0
+        ) * 60
+        + (
+            tonumber(colonSecs)
+            or 0
+        )
+    end
+
+    local onlySeconds =
+        text:match(
+            "(%d+)%s*s"
+        )
+
+    if onlySeconds then
+        return tonumber(onlySeconds) or 0
+    end
+
+    return 0
+end
+
+function HolyAuctionFormatDuration(seconds)
+
+    seconds =
+        math.max(
+            0,
+            math.floor(
+                tonumber(seconds)
+                or 0
+            )
+        )
+
+    local hours =
+        math.floor(seconds / 3600)
+
+    local minutes =
+        math.floor((seconds % 3600) / 60)
+
+    local remaining =
+        seconds % 60
+
+    if hours > 0 then
+
+        return tostring(hours)
+            .. "h "
+            .. tostring(minutes)
+            .. "m"
+    end
+
+    return tostring(minutes)
+        .. "m "
+        .. tostring(remaining)
+        .. "s"
+end
+
+function HolyAuctionGetEffectiveRefreshSeconds()
+
+    HolyAuctionEnsureState()
+
+    local seconds =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionRefreshSeconds
+        )
+        or 0
+
+    local readAt =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionRefreshReadAt
+        )
+        or 0
+
+    if seconds <= 0
+    or readAt <= 0 then
+
+        return seconds
+    end
+
+    return math.max(
+        0,
+        seconds - (os.clock() - readAt)
+    )
+end
+
+function HolyAuctionRefreshHeaderText()
+
+    local seconds =
+        HolyAuctionGetEffectiveRefreshSeconds()
+
+    if seconds > 0 then
+
+        return "Refresh "
+            .. HolyAuctionFormatDuration(
+                seconds
+            )
+    end
+
+    local text =
+        HolyCleanText(
+            HOLY_SHOP_STATE.AuctionRefreshText
+            or ""
+        )
+
+    if text == ""
+    or text == "Refresh in --" then
+        return "Refresh --"
+    end
+
+    text =
+        text:gsub(
+            "^Refresh%s+in%s+",
+            "Refresh "
+        )
+
+    return text
+end
+
+function HolyAuctionIsUnderLotFrame(instance)
+
+    local current =
+        instance
+
+    while current ~= nil do
+
+        if tostring(current.Name):sub(1, 4) == "Lot_" then
+            return true
+        end
+
+        current =
+            current.Parent
+    end
+
+    return false
+end
+
+function HolyAuctionNormalizeRefreshText(text)
+
+    text =
+        HolyCleanText(
+            text
+        )
+
+    if text == "" then
+        return ""
+    end
+
+    local lower =
+        text:lower()
+
+    if lower:find("refresh", 1, true) then
+        return text
+    end
+
+    if text:match("^%d+%s*m%s*%d+%s*s$")
+    or text:match("^%d+%s*h%s*%d+%s*m$")
+    or text:match("^%d+:%d+$") then
+
+        return "Refresh in "
+            .. text
+    end
+
+    return ""
+end
+
+function HolyAuctionReadRefreshText(auctionGui)
+
+    if typeof(auctionGui) ~= "Instance" then
+        return "Refresh in --"
+    end
+
+    for _, descendant in ipairs(auctionGui:GetDescendants()) do
+
+        if HolyAuctionIsUnderLotFrame(descendant) ~= true then
+
+            local text =
+                HolyAuctionReadText(
+                    descendant
+                )
+
+            local normalized =
+                HolyAuctionNormalizeRefreshText(
+                    text
+                )
+
+            if normalized ~= "" then
+                return normalized
+            end
+        end
+    end
+
+    return "Refresh in --"
+end
+
+function HolyAuctionGuiObjectVisible(instance)
+
+    if typeof(instance) ~= "Instance"
+    or instance:IsA("GuiObject") ~= true then
+
+        return false
+    end
+
+    local visible =
+        false
+
+    pcall(function()
+
+        visible =
+            instance.Visible
+    end)
+
+    return visible == true
+end
+
+function HolyAuctionReadHudScale(value)
+
+    local raw =
+        tostring(value or "80%")
+            :gsub("%%", "")
+
+    local number =
+        tonumber(raw)
+        or 80
+
+    return math.clamp(
+        math.floor(number + 0.5),
+        60,
+        110
+    )
+end
+
+function HolyAuctionFormatHudScale(value)
+
+    return tostring(
+        HolyAuctionReadHudScale(
+            value
+        )
+    )
+    .. "%"
+end
+
+function HolyAuctionShouldUseOffscreen()
+
+    HolyAuctionEnsureState()
+
+    return HOLY_SHOP_STATE.AutoBuyAuctions == true
+        or HOLY_SHOP_STATE.AuctionHudEnabled == true
+end
+
+function HolyAuctionSaveOffscreenState(auctionGui, root)
+
+    HolyAuctionEnsureState()
+
+    if HOLY_SHOP_STATE.AuctionOffscreenSaved == true then
+        return false
+    end
+
+    HOLY_SHOP_STATE.AuctionOffscreenSaved =
+        true
+
+    HOLY_SHOP_STATE.AuctionOffscreenState = {
+        AuctionGui =
+            auctionGui,
+
+        Root =
+            root,
+    }
+
+    if typeof(auctionGui) == "Instance"
+    and auctionGui:IsA("LayerCollector") then
+
+        pcall(function()
+
+            HOLY_SHOP_STATE.AuctionOffscreenState.Enabled =
+                auctionGui.Enabled
+        end)
+    end
+
+    if typeof(root) == "Instance"
+    and root:IsA("GuiObject") then
+
+        pcall(function()
+
+            HOLY_SHOP_STATE.AuctionOffscreenState.Visible =
+                root.Visible
+
+            HOLY_SHOP_STATE.AuctionOffscreenState.Position =
+                root.Position
+
+            HOLY_SHOP_STATE.AuctionOffscreenState.AnchorPoint =
+                root.AnchorPoint
+
+            HOLY_SHOP_STATE.AuctionOffscreenState.Size =
+                root.Size
+        end)
+    end
+
+    return true
+end
+
+function HolyAuctionRestoreOffscreen()
+
+    HolyAuctionEnsureState()
+
+    local saved =
+        HOLY_SHOP_STATE.AuctionOffscreenState
+
+    if type(saved) ~= "table" then
+        return false
+    end
+
+    if typeof(saved.Root) == "Instance"
+    and saved.Root:IsA("GuiObject") then
+
+        pcall(function()
+
+            if saved.AnchorPoint ~= nil then
+
+                saved.Root.AnchorPoint =
+                    saved.AnchorPoint
+            end
+
+            if saved.Position ~= nil then
+
+                saved.Root.Position =
+                    saved.Position
+            end
+
+            if saved.Size ~= nil then
+
+                saved.Root.Size =
+                    saved.Size
+            end
+
+            if saved.Visible ~= nil then
+
+                saved.Root.Visible =
+                    saved.Visible
+            end
+        end)
+    end
+
+    if typeof(saved.AuctionGui) == "Instance"
+    and saved.AuctionGui:IsA("LayerCollector")
+    and saved.Enabled ~= nil then
+
+        pcall(function()
+
+            saved.AuctionGui.Enabled =
+                saved.Enabled
+        end)
+    end
+
+    HOLY_SHOP_STATE.AuctionOffscreenSaved =
+        false
+
+    HOLY_SHOP_STATE.AuctionOffscreenEnabled =
+        false
+
+    HOLY_SHOP_STATE.AuctionOffscreenState =
+        {}
+
+    return true
+end
+
+function HolyAuctionEnsureOffscreen()
+
+    HolyAuctionEnsureState()
+
+    if HolyAuctionShouldUseOffscreen() ~= true then
+
+        HolyAuctionRestoreOffscreen()
+
+        return false,
+            "offscreen not needed"
+    end
+
+    local auctionGui =
+        HolyAuctionFindAuctionGui()
+
+    if typeof(auctionGui) ~= "Instance" then
+
+        HOLY_SHOP_STATE.AuctionOffscreenEnabled =
+            false
+
+        return false,
+            "Auction GUI missing"
+    end
+
+    local root =
+        HolyAuctionFindAuctionRoot(
+            auctionGui
+        )
+
+    if typeof(root) ~= "Instance"
+    or root:IsA("GuiObject") ~= true then
+
+        HOLY_SHOP_STATE.AuctionOffscreenEnabled =
+            false
+
+        return false,
+            "Auction root missing"
+    end
+
+    HolyAuctionSaveOffscreenState(
+        auctionGui,
+        root
+    )
+
+    local ok,
+        err =
+        pcall(function()
+
+            if auctionGui:IsA("LayerCollector") then
+
+                auctionGui.Enabled =
+                    true
+            end
+
+            root.Visible =
+                true
+
+            root.Position =
+                UDim2.fromOffset(
+                    -12000,
+                    -12000
+                )
+        end)
+
+    if ok == true then
+
+        HOLY_SHOP_STATE.AuctionOffscreenEnabled =
+            true
+
+        return true,
+            "offscreen"
+    end
+
+    HOLY_SHOP_STATE.AuctionOffscreenEnabled =
+        false
+
+    return false,
+        tostring(err)
+end
+
+function HolyAuctionRowStale(row, requireServerStock)
+
+    HolyAuctionEnsureState()
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    local currentCycle =
+        HolyAuctionGetStockCycle()
+
+    if currentCycle ~= nil
+    and row.Cycle ~= nil
+    and tonumber(row.Cycle) ~= tonumber(currentCycle) then
+
+        return true,
+            "cycle mismatch"
+    end
+
+    if row.Cached == true then
+
+        local scanAt =
+            tonumber(
+                HOLY_SHOP_STATE.AuctionLastScanAt
+            )
+            or 0
+
+        if scanAt <= 0 then
+            return true, "cached"
+        end
+
+        if os.clock() - scanAt >= 40 then
+            return true, "cached stale"
+        end
+    end
+
+    if requireServerStock == true then
+
+        if row.StockSource ~= "Server" then
+            return true, "waiting server stock"
+        end
+
+        if HOLY_SHOP_STATE.AuctionStockMap[
+            tostring(row.LotId)
+        ] == nil then
+
+            return true, "stock missing"
+        end
+
+        if HolyAuctionStockAge() >= 40 then
+            return true, "stock stale"
+        end
+    end
+
+    return false,
+        ""
+end
+
+function HolyAuctionScanLiveLots()
+
+    HolyAuctionEnsureState()
+
+    if HolyAuctionShouldUseOffscreen() == true then
+
+        HolyAuctionEnsureOffscreen()
+
+    else
+
+        HolyAuctionRestoreOffscreen()
+    end
+
+    local rows =
+        {}
+
+    local auctionGui =
+        HolyAuctionFindAuctionGui()
+
+    if typeof(auctionGui) ~= "Instance" then
+
+        HOLY_SHOP_STATE.AuctionDataMode =
+            "Waiting GUI"
+
+        return rows
+    end
+
+    local scrollingFrame =
+        HolyAuctionFindScrollingFrame(
+            auctionGui
+        )
+
+    if typeof(scrollingFrame) ~= "Instance" then
+
+        HOLY_SHOP_STATE.AuctionDataMode =
+            "Waiting ScrollingFrame"
+
+        return rows
+    end
+
+    local currentCycle =
+        HolyAuctionGetStockCycle()
+
+    HOLY_SHOP_STATE.AuctionHiddenRowsFound =
+        0
+
+    HOLY_SHOP_STATE.AuctionIgnoredStaleRows =
+        0
+
+    HOLY_SHOP_STATE.AuctionRefreshText =
+        HolyAuctionReadRefreshText(
+            auctionGui
+        )
+
+    HOLY_SHOP_STATE.AuctionRefreshSeconds =
+        HolyAuctionParseDurationSeconds(
+            HOLY_SHOP_STATE.AuctionRefreshText
+        )
+
+    if HOLY_SHOP_STATE.AuctionRefreshSeconds > 0 then
+
+        HOLY_SHOP_STATE.AuctionRefreshReadAt =
+            os.clock()
+    end
+
+    local knownChanged =
+        false
+
+    for _, lotFrame in ipairs(scrollingFrame:GetChildren()) do
+
+        local lotFrameName =
+            tostring(
+                lotFrame.Name
+                or ""
+            )
+
+        if lotFrameName:sub(1, 4) == "Lot_" then
+
+            local lotId =
+                lotFrameName:gsub(
+                    "^Lot_",
+                    ""
+                )
+
+            local cycle =
+                HolyAuctionExtractCycle(
+                    lotId
+                )
+
+            local slot =
+                HolyAuctionExtractSlot(
+                    lotId
+                )
+
+            local cycleMatches =
+                currentCycle == nil
+                or cycle == nil
+                or tonumber(cycle) == tonumber(currentCycle)
+
+            if cycleMatches ~= true then
+
+                HOLY_SHOP_STATE.AuctionIgnoredStaleRows =
+                    (
+                        tonumber(
+                            HOLY_SHOP_STATE.AuctionIgnoredStaleRows
+                        )
+                        or 0
+                    )
+                    + 1
+
+                continue
+            end
+
+            local mainFrame =
+                lotFrame:FindFirstChild(
+                    "Main_Frame",
+                    true
+                )
+
+            local itemName =
+                HolyAuctionFindText(
+                    mainFrame or lotFrame,
+                    "ItemName"
+                )
+
+            local stockText =
+                ""
+
+            local stockObject =
+                mainFrame
+                and mainFrame:FindFirstChild(
+                    "Stock_Text"
+                )
+                or nil
+
+            stockText =
+                HolyAuctionReadText(
+                    stockObject
+                )
+
+            if stockText == "" then
+
+                stockText =
+                    HolyAuctionFindText(
+                        lotFrame,
+                        "Stock_Text"
+                    )
+            end
+
+            local priceText =
+                ""
+
+            local buyButton =
+                lotFrame:FindFirstChild(
+                    "BuyButton",
+                    true
+                )
+
+            if buyButton then
+
+                local textRoot =
+                    buyButton:FindFirstChild(
+                        "Text",
+                        true
+                    )
+
+                priceText =
+                    HolyAuctionReadText(
+                        textRoot
+                        and textRoot:FindFirstChild(
+                            "TextLabel",
+                            true
+                        )
+                        or buyButton:FindFirstChild(
+                            "TextLabel",
+                            true
+                        )
+                    )
+
+                if priceText == "" then
+
+                    priceText =
+                        HolyAuctionReadText(
+                            buyButton
+                        )
+                end
+            end
+
+            local amountText =
+                ""
+
+            local imageDisplay =
+                lotFrame:FindFirstChild(
+                    "ImageDisplay",
+                    true
+                )
+
+            if imageDisplay then
+
+                amountText =
+                    HolyAuctionReadText(
+                        imageDisplay:FindFirstChild(
+                            "Amount",
+                            true
+                        )
+                    )
+                or ""
+            end
+
+            local timerText =
+                ""
+
+            local refreshIn =
+                mainFrame
+                and mainFrame:FindFirstChild(
+                    "RefreshIn",
+                    true
+                )
+                or lotFrame:FindFirstChild(
+                    "RefreshIn",
+                    true
+                )
+
+            if refreshIn then
+
+                timerText =
+                    HolyAuctionReadText(
+                        refreshIn:FindFirstChild(
+                            "Timer",
+                            true
+                        )
+                    )
+            end
+
+            local expiredFrame =
+                mainFrame
+                and mainFrame:FindFirstChild(
+                    "EXPIRED",
+                    true
+                )
+                or lotFrame:FindFirstChild(
+                    "EXPIRED",
+                    true
+                )
+
+            local outOfStockFrame =
+                mainFrame
+                and mainFrame:FindFirstChild(
+                    "OUT_OF_STOCK",
+                    true
+                )
+                or lotFrame:FindFirstChild(
+                    "OUT_OF_STOCK",
+                    true
+                )
+
+            if itemName ~= ""
+            and lotId ~= "" then
+
+                if HolyAuctionRememberKnownItem(
+                    itemName
+                ) == true then
+
+                    knownChanged =
+                        true
+                end
+
+                HOLY_SHOP_STATE.AuctionHiddenRowsFound =
+                    (
+                        tonumber(
+                            HOLY_SHOP_STATE.AuctionHiddenRowsFound
+                        )
+                        or 0
+                    )
+                    + 1
+
+                local uiStock =
+                    HolyAuctionReadStock(
+                        stockText
+                    )
+
+                local serverStock =
+                    type(HOLY_SHOP_STATE.AuctionStockMap) == "table"
+                    and HOLY_SHOP_STATE.AuctionStockMap[lotId]
+                    or nil
+
+                local stock =
+                    uiStock
+
+                local stockSource =
+                    "UI"
+
+                if serverStock ~= nil then
+
+                    stock =
+                        math.max(
+                            0,
+                            math.floor(
+                                tonumber(serverStock)
+                                or 0
+                            )
+                        )
+
+                    stockSource =
+                        "Server"
+
+                elseif HolyAuctionGuiObjectVisible(outOfStockFrame) == true then
+
+                    stock =
+                        0
+                end
+
+                local price =
+                    HolyAuctionReadMoney(
+                        priceText
+                    )
+
+                local expired =
+                    HolyAuctionGuiObjectVisible(
+                        expiredFrame
+                    )
+                    or timerText == "0m 00s"
+                    or timerText == "00:00"
+                    or timerText == "0:00"
+
+                local row = {
+                    LotId =
+                        lotId,
+
+                    Cycle =
+                        cycle,
+
+                    Slot =
+                        slot,
+
+                    Name =
+                        itemName,
+
+                    Stock =
+                        stock,
+
+                    UiStock =
+                        uiStock,
+
+                    ServerStock =
+                        serverStock,
+
+                    StockSource =
+                        stockSource,
+
+                    StockText =
+                        stockText,
+
+                    Price =
+                        price,
+
+                    PriceText =
+                        priceText ~= ""
+                        and priceText
+                        or HolyAuctionFormatMoney(price),
+
+                    AmountText =
+                        amountText,
+
+                    Timer =
+                        timerText ~= ""
+                        and timerText
+                        or "--",
+
+                    SoldOut =
+                        stock <= 0,
+
+                    Expired =
+                        expired == true,
+
+                    Active =
+                        stock > 0
+                        and expired ~= true,
+
+                    SortIndex =
+                        slot or 999,
+
+                    Cached =
+                        false,
+
+                    OffscreenLive =
+                        HOLY_SHOP_STATE.AuctionOffscreenEnabled == true,
+
+                    CycleMatched =
+                        cycleMatches,
+                }
+
+                table.insert(
+                    rows,
+                    row
+                )
+            end
+        end
+    end
+
+    table.sort(rows, function(a, b)
+
+        local selectedA =
+            HolyAuctionSelectionAllows(
+                a.Name
+            )
+
+        local selectedB =
+            HolyAuctionSelectionAllows(
+                b.Name
+            )
+
+        if selectedA ~= selectedB then
+            return selectedA == true
+        end
+
+        if a.Active ~= b.Active then
+            return a.Active == true
+        end
+
+        return tonumber(a.SortIndex or 999)
+            < tonumber(b.SortIndex or 999)
+    end)
+
+    HOLY_SHOP_STATE.AuctionLastLots =
+        rows
+
+    HOLY_SHOP_STATE.AuctionLastScanAt =
+        os.clock()
+
+    if HOLY_SHOP_STATE.AuctionOffscreenEnabled == true
+    and HolyAuctionStockAge() < 40 then
+
+        HOLY_SHOP_STATE.AuctionDataMode =
+            "Offscreen live + Server stock"
+
+    elseif HOLY_SHOP_STATE.AuctionOffscreenEnabled == true then
+
+        HOLY_SHOP_STATE.AuctionDataMode =
+            "Offscreen live"
+
+    elseif #rows > 0 then
+
+        HOLY_SHOP_STATE.AuctionDataMode =
+            "Auction GUI"
+    end
+
+    if knownChanged == true then
+
+        HolyAuctionRefreshDropdown(
+            true
+        )
+    end
+
+    return rows
+end
+
+function HolyAuctionBuildLiveText(rows)
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or HolyAuctionScanLiveLots()
+
+    if #rows <= 0 then
+
+        return "Live: waiting auction data."
+    end
+
+    local stockText =
+        HolyAuctionStockAge() < 40
+        and (
+            "Server "
+            .. HolyAuctionFormatAge(
+                HolyAuctionStockAge()
+            )
+        )
+        or "waiting stock"
+
+    local parts =
+        {}
+
+    for index, row in ipairs(rows) do
+
+        if index > 3 then
+            break
+        end
+
+        local state =
+            row.Active == true
+            and (
+                "x"
+                .. tostring(row.Stock)
+            )
+            or (
+                row.Expired == true
+                and "expired"
+                or "sold"
+            )
+
+        table.insert(
+            parts,
+            tostring(row.Name)
+                .. " "
+                .. state
+                .. " "
+                .. tostring(row.PriceText)
+        )
+    end
+
+    if #rows > 3 then
+
+        table.insert(
+            parts,
+            "+"
+                .. tostring(#rows - 3)
+                .. " more"
+        )
+    end
+
+    return "Live: "
+        .. tostring(HOLY_SHOP_STATE.AuctionDataMode or "Auction")
+        .. " | "
+        .. HolyAuctionRefreshHeaderText()
+        .. " | "
+        .. stockText
+        .. " | "
+        .. table.concat(
+            parts,
+            " | "
+        )
+end
+
+function HolyAuctionSetLabel(label, text)
+
+    text =
+        tostring(text or "")
+
+    if type(label) == "table" then
+
+        if type(label.SetText) == "function" then
+
+            pcall(function()
+
+                label:SetText(
+                    text
+                )
+            end)
+
+            return true
+        end
+
+        if label.TextLabel
+        and typeof(label.TextLabel) == "Instance" then
+
+            pcall(function()
+
+                label.TextLabel.Text =
+                    text
+            end)
+
+            return true
+        end
+    end
+
+    if typeof(label) == "Instance" then
+
+        pcall(function()
+
+            label.Text =
+                text
+        end)
+
+        return true
+    end
+
+    return false
+end
+
+function HolyAuctionSetStatus(text)
+
+    HolyAuctionEnsureState()
+
+    HOLY_SHOP_STATE.AuctionStatus =
+        tostring(text or "Ready")
+
+    HOLY_SHOP_UI =
+        type(HOLY_SHOP_UI) == "table"
+        and HOLY_SHOP_UI
+        or {}
+
+    HolyAuctionSetLabel(
+        HOLY_SHOP_UI.AuctionStatusLabel,
+        "Status: "
+            .. tostring(HOLY_SHOP_STATE.AuctionStatus)
+    )
+
+    return true
+end
+
+HOLY_AUCTION_HUD =
+    type(HOLY_AUCTION_HUD) == "table"
+    and HOLY_AUCTION_HUD
+    or {}
+
+function HolyAuctionHudDestroy(skipRestore)
+
+    local hud =
+        HOLY_AUCTION_HUD
+
+    if type(hud) == "table"
+    and type(hud.Connections) == "table" then
+
+        for _, connection in ipairs(hud.Connections) do
+
+            pcall(function()
+
+                connection:Disconnect()
+            end)
+        end
+    end
+
+    if type(hud) == "table"
+    and typeof(hud.ScreenGui) == "Instance" then
+
+        pcall(function()
+
+            hud.ScreenGui:Destroy()
+        end)
+    end
+
+    HOLY_AUCTION_HUD = {
+        Connections = {},
+        Rows = {},
+        RowFrames = {},
+    }
+
+    if skipRestore ~= true
+    and HOLY_SHOP_STATE.AutoBuyAuctions ~= true
+    and HOLY_SHOP_STATE.AuctionHudEnabled ~= true then
+
+        HolyAuctionRestoreOffscreen()
+    end
+
+    return true
+end
+
+function HolyAuctionHudAddConnection(connection)
+
+    HOLY_AUCTION_HUD =
+        type(HOLY_AUCTION_HUD) == "table"
+        and HOLY_AUCTION_HUD
+        or {}
+
+    HOLY_AUCTION_HUD.Connections =
+        type(HOLY_AUCTION_HUD.Connections) == "table"
+        and HOLY_AUCTION_HUD.Connections
+        or {}
+
+    if connection ~= nil then
+
+        table.insert(
+            HOLY_AUCTION_HUD.Connections,
+            connection
+        )
+    end
+
+    return connection
+end
+
+function HolyAuctionHudCreate(instanceType, props)
+
+    local object =
+        Instance.new(
+            instanceType
+        )
+
+    for key, value in pairs(props or {}) do
+
+        object[key] =
+            value
+    end
+
+    return object
+end
+
+function HolyAuctionHudCorner(parent, radius)
+
+    return HolyAuctionHudCreate(
+        "UICorner",
+        {
+            CornerRadius =
+                radius
+                or UDim.new(0, 8),
+
+            Parent =
+                parent,
+        }
+    )
+end
+
+function HolyAuctionHudStroke(parent, color, transparency, thickness)
+
+    return HolyAuctionHudCreate(
+        "UIStroke",
+        {
+            Color =
+                color
+                or Color3.fromRGB(255, 184, 60),
+
+            Transparency =
+                transparency
+                or 0.15,
+
+            Thickness =
+                thickness
+                or 1,
+
+            ApplyStrokeMode =
+                Enum.ApplyStrokeMode.Border,
+
+            Parent =
+                parent,
+        }
+    )
+end
+
+function HolyAuctionHudLabel(parent, text, x, y, w, h, size, color, bold)
+
+    return HolyAuctionHudCreate(
+        "TextLabel",
+        {
+            BackgroundTransparency =
+                1,
+
+            Position =
+                UDim2.fromOffset(
+                    x,
+                    y
+                ),
+
+            Size =
+                UDim2.fromOffset(
+                    w,
+                    h
+                ),
+
+            Font =
+                bold == true
+                and Enum.Font.GothamBold
+                or Enum.Font.GothamMedium,
+
+            Text =
+                tostring(text or ""),
+
+            TextColor3 =
+                color
+                or Color3.fromRGB(230, 234, 245),
+
+            TextSize =
+                size
+                or 11,
+
+            TextXAlignment =
+                Enum.TextXAlignment.Left,
+
+            TextYAlignment =
+                Enum.TextYAlignment.Center,
+
+            TextTruncate =
+                Enum.TextTruncate.AtEnd,
+
+            TextWrapped =
+                false,
+
+            Parent =
+                parent,
+        }
+    )
+end
+
+function HolyAuctionHudButton(parent, text, x, y, w, h)
+
+    local button =
+        HolyAuctionHudCreate(
+            "TextButton",
+            {
+                BackgroundColor3 =
+                    Color3.fromRGB(21, 23, 32),
+
+                BorderSizePixel =
+                    0,
+
+                Position =
+                    UDim2.fromOffset(
+                        x,
+                        y
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        w,
+                        h
+                    ),
+
+                Font =
+                    Enum.Font.GothamBold,
+
+                Text =
+                    tostring(text or "Button"),
+
+                TextColor3 =
+                    Color3.fromRGB(240, 243, 250),
+
+                TextSize =
+                    11,
+
+                AutoButtonColor =
+                    true,
+
+                Parent =
+                    parent,
+            }
+        )
+
+    HolyAuctionHudCorner(
+        button,
+        UDim.new(0, 7)
+    )
+
+    HolyAuctionHudStroke(
+        button,
+        Color3.fromRGB(75, 68, 60),
+        0.25,
+        1
+    )
+
+    return button
+end
+
+function HolyAuctionHudApplyScale()
+
+    local hud =
+        HOLY_AUCTION_HUD
+
+    if type(hud) ~= "table"
+    or typeof(hud.ScaleObject) ~= "Instance" then
+
+        return false
+    end
+
+    local scale =
+        HolyAuctionReadHudScale(
+            HOLY_SHOP_STATE.AuctionHudScale
+            or "80%"
+        )
+
+    hud.ScaleObject.Scale =
+        scale / 100
+
+    if typeof(hud.ScaleButton) == "Instance" then
+
+        hud.ScaleButton.Text =
+            HolyAuctionFormatHudScale(
+                scale
+            )
+    end
+
+    return true
+end
+
+function HolyAuctionHudSavePosition(frame)
+
+    if typeof(frame) ~= "Instance"
+    or frame:IsA("GuiObject") ~= true then
+
+        return false
+    end
+
+    HOLY_SHOP_STATE.AuctionHudPosition = {
+        X =
+            frame.Position.X.Offset,
+
+        Y =
+            frame.Position.Y.Offset,
+    }
+
+    return true
+end
+
+function HolyAuctionHudMakeDraggable(frame, handle)
+
+    handle =
+        handle
+        or frame
+
+    local dragging =
+        false
+
+    local dragStart =
+        nil
+
+    local startPosition =
+        nil
+
+    local dragInput =
+        nil
+
+    HolyAuctionHudAddConnection(
+        handle.InputBegan:Connect(function(input)
+
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+
+                dragging =
+                    true
+
+                dragStart =
+                    input.Position
+
+                startPosition =
+                    frame.Position
+
+                input.Changed:Connect(function()
+
+                    if input.UserInputState == Enum.UserInputState.End then
+
+                        dragging =
+                            false
+
+                        HolyAuctionHudSavePosition(
+                            frame
+                        )
+
+                        HolySaveShopSettings()
+                    end
+                end)
+            end
+        end)
+    )
+
+    HolyAuctionHudAddConnection(
+        handle.InputChanged:Connect(function(input)
+
+            if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then
+
+                dragInput =
+                    input
+            end
+        end)
+    )
+
+    HolyAuctionHudAddConnection(
+        UserInputService.InputChanged:Connect(function(input)
+
+            if dragging ~= true
+            or input ~= dragInput
+            or dragStart == nil
+            or startPosition == nil then
+
+                return
+            end
+
+            local delta =
+                input.Position - dragStart
+
+            frame.Position =
+                UDim2.fromOffset(
+                    startPosition.X.Offset + delta.X,
+                    startPosition.Y.Offset + delta.Y
+                )
+        end)
+    )
+end
+
+function HolyAuctionHudSelectRow(row)
+
+    if type(row) ~= "table"
+    or HolyCleanText(row.Name) == "" then
+
+        return false
+    end
+
+    HOLY_SHOP_STATE.SelectedAuctions = {
+        row.Name,
+    }
+
+    local dropdown =
+        HOLY_SHOP_UI
+        and HOLY_SHOP_UI.AuctionDropdown
+        or nil
+
+    if type(dropdown) == "table"
+    and type(dropdown.SetValue) == "function" then
+
+        pcall(function()
+
+            dropdown:SetValue(
+                HOLY_SHOP_STATE.SelectedAuctions
+            )
+        end)
+    end
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoBuyAuctions == true then
+
+        HolyAuctionQueueWorker(
+            "hud selected"
+        )
+    end
+
+    HolyAuctionRefreshUI()
+
+    return true
+end
+
+function HolyAuctionHudDecision(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    if row.Expired == true then
+        return "EXPIRED"
+    end
+
+    if tonumber(row.Stock) == nil
+    or tonumber(row.Stock) <= 0 then
+
+        return "SOLD"
+    end
+
+    if tonumber(row.Price) == nil
+    or tonumber(row.Price) <= 0 then
+
+        return "NO PRICE"
+    end
+
+    if HolyAuctionSelectionAllows(row.Name) ~= true then
+
+        if row.Cached == true then
+            return "CACHED"
+        end
+
+        return "LIVE"
+    end
+
+    local desired =
+        HolyAuctionReadMoney(
+            HOLY_SHOP_STATE.AuctionMaxPrice
+            or "0"
+        )
+
+    if desired <= 0 then
+        return "SET PRICE"
+    end
+
+    if HolyAuctionRowStale(row, true) == true then
+        return "STALE"
+    end
+
+    if tonumber(row.Price) <= desired then
+        return "READY"
+    end
+
+    return "WAIT"
+end
+
+function HolyAuctionHudDecisionColors(decision)
+
+    decision =
+        tostring(decision or "")
+
+    if decision == "READY" then
+
+        return Color3.fromRGB(80, 255, 135),
+            Color3.fromRGB(14, 30, 20),
+            Color3.fromRGB(45, 125, 70)
+
+    elseif decision == "WAIT" then
+
+        return Color3.fromRGB(255, 210, 85),
+            Color3.fromRGB(34, 25, 12),
+            Color3.fromRGB(145, 100, 30)
+
+    elseif decision == "STALE" then
+
+        return Color3.fromRGB(255, 160, 80),
+            Color3.fromRGB(36, 22, 12),
+            Color3.fromRGB(130, 75, 35)
+
+    elseif decision == "EXPIRED"
+    or decision == "SOLD" then
+
+        return Color3.fromRGB(255, 88, 112),
+            Color3.fromRGB(34, 14, 18),
+            Color3.fromRGB(130, 45, 58)
+
+    elseif decision == "SET PRICE" then
+
+        return Color3.fromRGB(235, 210, 145),
+            Color3.fromRGB(28, 22, 14),
+            Color3.fromRGB(130, 90, 35)
+    end
+
+    return Color3.fromRGB(175, 185, 205),
+        Color3.fromRGB(15, 18, 25),
+        Color3.fromRGB(52, 58, 72)
+end
+
+function HolyAuctionHudCreateRow(parent, index)
+
+    local row =
+        HolyAuctionHudCreate(
+            "TextButton",
+            {
+                BackgroundColor3 =
+                    Color3.fromRGB(12, 15, 23),
+
+                BackgroundTransparency =
+                    0.08,
+
+                BorderSizePixel =
+                    0,
+
+                Size =
+                    UDim2.new(
+                        1,
+                        0,
+                        0,
+                        28
+                    ),
+
+                Text =
+                    "",
+
+                AutoButtonColor =
+                    true,
+
+                LayoutOrder =
+                    index,
+
+                Parent =
+                    parent,
+            }
+        )
+
+    HolyAuctionHudCorner(
+        row,
+        UDim.new(0, 8)
+    )
+
+    local stroke =
+        HolyAuctionHudStroke(
+            row,
+            Color3.fromRGB(45, 52, 68),
+            0.45,
+            1
+        )
+
+    local accent =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    Color3.fromRGB(255, 105, 36),
+
+                BorderSizePixel =
+                    0,
+
+                Position =
+                    UDim2.fromOffset(
+                        0,
+                        6
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        4,
+                        16
+                    ),
+
+                Visible =
+                    false,
+
+                Parent =
+                    row,
+            }
+        )
+
+    HolyAuctionHudCorner(
+        accent,
+        UDim.new(0, 3)
+    )
+
+    local nameLabel =
+        HolyAuctionHudLabel(
+            row,
+            "--",
+            8,
+            0,
+            174,
+            28,
+            10,
+            Color3.fromRGB(238, 241, 250),
+            true
+        )
+
+    local stockLabel =
+        HolyAuctionHudLabel(
+            row,
+            "x0",
+            184,
+            0,
+            58,
+            28,
+            10,
+            Color3.fromRGB(205, 211, 225),
+            false
+        )
+
+    stockLabel.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    local priceLabel =
+        HolyAuctionHudLabel(
+            row,
+            "--",
+            244,
+            0,
+            78,
+            28,
+            10,
+            Color3.fromRGB(255, 214, 96),
+            true
+        )
+
+    priceLabel.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    local timerLabel =
+        HolyAuctionHudLabel(
+            row,
+            "--",
+            324,
+            0,
+            54,
+            28,
+            10,
+            Color3.fromRGB(185, 193, 210),
+            false
+        )
+
+    timerLabel.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    local pill =
+        HolyAuctionHudCreate(
+            "TextButton",
+            {
+                AnchorPoint =
+                    Vector2.new(1, 0.5),
+
+                BackgroundColor3 =
+                    Color3.fromRGB(18, 21, 30),
+
+                Position =
+                    UDim2.fromOffset(
+                        438,
+                        14
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        64,
+                        20
+                    ),
+
+                Font =
+                    Enum.Font.GothamBold,
+
+                Text =
+                    "LIVE",
+
+                TextColor3 =
+                    Color3.fromRGB(175, 185, 205),
+
+                TextSize =
+                    9,
+
+                AutoButtonColor =
+                    true,
+
+                Parent =
+                    row,
+            }
+        )
+
+    HolyAuctionHudCorner(
+        pill,
+        UDim.new(0, 7)
+    )
+
+    local pillStroke =
+        HolyAuctionHudStroke(
+            pill,
+            Color3.fromRGB(70, 78, 95),
+            0.20,
+            1
+        )
+
+    HolyAuctionHudAddConnection(
+        row.MouseButton1Click:Connect(function()
+
+            local data =
+                HOLY_AUCTION_HUD.Rows
+                and HOLY_AUCTION_HUD.Rows[index]
+                or nil
+
+            if type(data) == "table" then
+
+                HolyAuctionHudSelectRow(
+                    data
+                )
+            end
+        end)
+    )
+
+    HolyAuctionHudAddConnection(
+        pill.MouseButton1Click:Connect(function()
+
+            local data =
+                HOLY_AUCTION_HUD.Rows
+                and HOLY_AUCTION_HUD.Rows[index]
+                or nil
+
+            if type(data) ~= "table" then
+                return
+            end
+
+            HolyAuctionHudSelectRow(
+                data
+            )
+
+            if HolyAuctionHudDecision(data) == "READY" then
+
+                HolyAuctionManualBuyOnce(
+                    "hud ready pill"
+                )
+
+            else
+
+                HolyAuctionSetStatus(
+                    "Buy blocked: "
+                        .. HolyAuctionHudDecision(data)
+                )
+            end
+        end)
+    )
+
+    HOLY_AUCTION_HUD.RowFrames[index] = {
+        Holder =
+            row,
+
+        Stroke =
+            stroke,
+
+        Accent =
+            accent,
+
+        Name =
+            nameLabel,
+
+        Stock =
+            stockLabel,
+
+        Price =
+            priceLabel,
+
+        Timer =
+            timerLabel,
+
+        Pill =
+            pill,
+
+        PillStroke =
+            pillStroke,
+    }
+end
+
+function HolyAuctionHudUpdateRow(index, row)
+
+    local hud =
+        HOLY_AUCTION_HUD
+
+    local rowUi =
+        hud
+        and hud.RowFrames
+        and hud.RowFrames[index]
+        or nil
+
+    if type(rowUi) ~= "table" then
+        return false
+    end
+
+    if type(row) ~= "table" then
+
+        rowUi.Holder.Visible =
+            false
+
+        return false
+    end
+
+    rowUi.Holder.Visible =
+        true
+
+    local selected =
+        HolyAuctionSelectionAllows(
+            row.Name
+        )
+
+    local decision =
+        HolyAuctionHudDecision(
+            row
+        )
+
+    local color,
+        bgColor,
+        strokeColor =
+        HolyAuctionHudDecisionColors(
+            decision
+        )
+
+    local nameText =
+        tostring(row.Name or "--")
+
+    if HolyCleanText(row.AmountText) ~= "" then
+
+        nameText =
+            nameText
+            .. "  "
+            .. tostring(row.AmountText)
+    end
+
+    rowUi.Name.Text =
+        nameText
+
+    rowUi.Stock.Text =
+        "x"
+        .. tostring(
+            math.max(
+                0,
+                math.floor(
+                    tonumber(row.Stock)
+                    or 0
+                )
+            )
+        )
+
+    rowUi.Price.Text =
+        tostring(
+            row.PriceText
+            or HolyAuctionFormatMoney(row.Price)
+        )
+
+    rowUi.Timer.Text =
+        tostring(
+            row.Timer
+            or "--"
+        )
+
+    rowUi.Pill.Text =
+        decision
+
+    rowUi.Pill.TextColor3 =
+        color
+
+    rowUi.Pill.BackgroundColor3 =
+        bgColor
+
+    rowUi.PillStroke.Color =
+        strokeColor
+
+    if selected == true then
+
+        rowUi.Accent.Visible =
+            true
+
+        rowUi.Stroke.Color =
+            Color3.fromRGB(255, 184, 60)
+
+        rowUi.Stroke.Transparency =
+            0.02
+
+        rowUi.Stroke.Thickness =
+            1.65
+
+        if decision == "READY" then
+
+            rowUi.Holder.BackgroundColor3 =
+                Color3.fromRGB(14, 32, 18)
+
+        else
+
+            rowUi.Holder.BackgroundColor3 =
+                Color3.fromRGB(35, 23, 13)
+        end
+
+        rowUi.Name.TextColor3 =
+            Color3.fromRGB(255, 236, 210)
+
+    else
+
+        rowUi.Accent.Visible =
+            false
+
+        rowUi.Stroke.Color =
+            Color3.fromRGB(45, 52, 68)
+
+        rowUi.Stroke.Transparency =
+            0.45
+
+        rowUi.Stroke.Thickness =
+            1
+
+        rowUi.Holder.BackgroundColor3 =
+            Color3.fromRGB(12, 15, 23)
+
+        rowUi.Name.TextColor3 =
+            Color3.fromRGB(238, 241, 250)
+    end
+
+    if row.Active ~= true then
+
+        rowUi.Holder.BackgroundColor3 =
+            Color3.fromRGB(12, 13, 18)
+
+        rowUi.Holder.BackgroundTransparency =
+            0.22
+
+        rowUi.Name.TextColor3 =
+            Color3.fromRGB(160, 166, 184)
+    else
+
+        rowUi.Holder.BackgroundTransparency =
+            selected == true
+            and 0.03
+            or 0.08
+    end
+
+    rowUi.Price.TextColor3 =
+        Color3.fromRGB(255, 214, 96)
+
+    return true
+end
+
+function HolyAuctionHudCreateUI()
+
+    HolyAuctionHudDestroy(
+        true
+    )
+
+    local screenGui =
+        Instance.new(
+            "ScreenGui"
+        )
+
+    screenGui.Name =
+        "HolyAuctionHud"
+
+    screenGui.ResetOnSpawn =
+        false
+
+    screenGui.IgnoreGuiInset =
+        true
+
+    screenGui.ZIndexBehavior =
+        Enum.ZIndexBehavior.Sibling
+
+    local parent =
+        HolyAuctionGetPlayerGui()
+
+    if typeof(parent) ~= "Instance" then
+
+        return false
+    end
+
+    screenGui.Parent =
+        parent
+
+    HOLY_AUCTION_HUD.ScreenGui =
+        screenGui
+
+    local positionData =
+        type(HOLY_SHOP_STATE.AuctionHudPosition) == "table"
+        and HOLY_SHOP_STATE.AuctionHudPosition
+        or {}
+
+    local holder =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                Active =
+                    true,
+
+                BackgroundColor3 =
+                    Color3.fromRGB(7, 8, 11),
+
+                BackgroundTransparency =
+                    0.04,
+
+                BorderSizePixel =
+                    0,
+
+                Position =
+                    UDim2.fromOffset(
+                        tonumber(positionData.X)
+                        or 60,
+                        tonumber(positionData.Y)
+                        or 110
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        470,
+                        HOLY_SHOP_STATE.AuctionHudMinimized == true
+                        and 38
+                        or 365
+                    ),
+
+                Parent =
+                    screenGui,
+            }
+        )
+
+    HOLY_AUCTION_HUD.Holder =
+        holder
+
+    HolyAuctionHudCorner(
+        holder,
+        UDim.new(0, 11)
+    )
+
+    HolyAuctionHudStroke(
+        holder,
+        Color3.fromRGB(105, 68, 38),
+        0.08,
+        1
+    )
+
+    local scaleObject =
+        HolyAuctionHudCreate(
+            "UIScale",
+            {
+                Scale =
+                    HolyAuctionReadHudScale(
+                        HOLY_SHOP_STATE.AuctionHudScale
+                    ) / 100,
+
+                Parent =
+                    holder,
+            }
+        )
+
+    HOLY_AUCTION_HUD.ScaleObject =
+        scaleObject
+
+    local top =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    Color3.fromRGB(11, 13, 18),
+
+                BackgroundTransparency =
+                    0.02,
+
+                BorderSizePixel =
+                    0,
+
+                Position =
+                    UDim2.fromOffset(
+                        0,
+                        0
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        470,
+                        38
+                    ),
+
+                Parent =
+                    holder,
+            }
+        )
+
+    HOLY_AUCTION_HUD.Top =
+        top
+
+    HolyAuctionHudCorner(
+        top,
+        UDim.new(0, 11)
+    )
+
+    HOLY_AUCTION_HUD.TitleLabel =
+        HolyAuctionHudLabel(
+            top,
+            "🧺 HOLY Auctions",
+            12,
+            0,
+            160,
+            38,
+            14,
+            Color3.fromRGB(245, 247, 255),
+            true
+        )
+
+    HOLY_AUCTION_HUD.RefreshButton =
+        HolyAuctionHudButton(
+            top,
+            "Refresh --",
+            176,
+            8,
+            104,
+            22
+        )
+
+    HOLY_AUCTION_HUD.RefreshButton.TextSize =
+        10
+
+    HolyAuctionHudAddConnection(
+        HOLY_AUCTION_HUD.RefreshButton.MouseButton1Click:Connect(function()
+
+            HolyAuctionRequestSnapshot()
+
+            HolyAuctionRefreshUI()
+
+            HolyAuctionSetStatus(
+                "Manual offscreen scan"
+            )
+        end)
+    )
+
+    HOLY_AUCTION_HUD.BuyButton =
+        HolyAuctionHudButton(
+            top,
+            "Buy",
+            286,
+            8,
+            38,
+            22
+        )
+
+    HOLY_AUCTION_HUD.BuyButton.BackgroundColor3 =
+        Color3.fromRGB(35, 24, 14)
+
+    HolyAuctionHudAddConnection(
+        HOLY_AUCTION_HUD.BuyButton.MouseButton1Click:Connect(function()
+
+            HolyAuctionManualBuyOnce(
+                "hud buy"
+            )
+
+            HolyAuctionRefreshUI()
+        end)
+    )
+
+    HOLY_AUCTION_HUD.ScaleButton =
+        HolyAuctionHudButton(
+            top,
+            HolyAuctionFormatHudScale(
+                HOLY_SHOP_STATE.AuctionHudScale
+            ),
+            330,
+            8,
+            62,
+            22
+        )
+
+    HolyAuctionHudAddConnection(
+        HOLY_AUCTION_HUD.ScaleButton.MouseButton1Click:Connect(function()
+
+            local values = {
+                60,
+                70,
+                80,
+                90,
+                100,
+                110,
+            }
+
+            local current =
+                HolyAuctionReadHudScale(
+                    HOLY_SHOP_STATE.AuctionHudScale
+                )
+
+            local nextValue =
+                80
+
+            for index, value in ipairs(values) do
+
+                if value == current then
+
+                    nextValue =
+                        values[index + 1]
+                        or values[1]
+
+                    break
+                end
+            end
+
+            HOLY_SHOP_STATE.AuctionHudScale =
+                HolyAuctionFormatHudScale(
+                    nextValue
+                )
+
+            HolyAuctionHudApplyScale()
+
+            HolySaveShopSettings()
+        end)
+    )
+
+    HOLY_AUCTION_HUD.MinimizeButton =
+        HolyAuctionHudButton(
+            top,
+            HOLY_SHOP_STATE.AuctionHudMinimized == true
+            and "+"
+            or "—",
+            400,
+            8,
+            28,
+            22
+        )
+
+    HolyAuctionHudAddConnection(
+        HOLY_AUCTION_HUD.MinimizeButton.MouseButton1Click:Connect(function()
+
+            HOLY_SHOP_STATE.AuctionHudMinimized =
+                HOLY_SHOP_STATE.AuctionHudMinimized ~= true
+
+            holder.Size =
+                HOLY_SHOP_STATE.AuctionHudMinimized == true
+                and UDim2.fromOffset(
+                    470,
+                    38
+                )
+                or UDim2.fromOffset(
+                    470,
+                    365
+                )
+
+            HOLY_AUCTION_HUD.MinimizeButton.Text =
+                HOLY_SHOP_STATE.AuctionHudMinimized == true
+                and "+"
+                or "—"
+
+            if typeof(HOLY_AUCTION_HUD.Body) == "Instance" then
+
+                HOLY_AUCTION_HUD.Body.Visible =
+                    HOLY_SHOP_STATE.AuctionHudMinimized ~= true
+            end
+
+            HolySaveShopSettings()
+
+            HolyAuctionHudRefresh()
+        end)
+    )
+
+    local closeButton =
+        HolyAuctionHudButton(
+            top,
+            "X",
+            432,
+            8,
+            28,
+            22
+        )
+
+    closeButton.BackgroundColor3 =
+        Color3.fromRGB(35, 16, 23)
+
+    HolyAuctionHudAddConnection(
+        closeButton.MouseButton1Click:Connect(function()
+
+            HolyAuctionSetHudVisible(
+                false,
+                "closed"
+            )
+        end)
+    )
+
+    local body =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                BackgroundTransparency =
+                    1,
+
+                Position =
+                    UDim2.fromOffset(
+                        0,
+                        38
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        470,
+                        327
+                    ),
+
+                Visible =
+                    HOLY_SHOP_STATE.AuctionHudMinimized ~= true,
+
+                Parent =
+                    holder,
+            }
+        )
+
+    HOLY_AUCTION_HUD.Body =
+        body
+
+    HOLY_AUCTION_HUD.AutoSelectedLabel =
+        HolyAuctionHudLabel(
+            body,
+            "Auto: OFF | Selected: None",
+            14,
+            6,
+            438,
+            17,
+            11,
+            Color3.fromRGB(225, 231, 245),
+            true
+        )
+
+    HOLY_AUCTION_HUD.DesiredLabel =
+        HolyAuctionHudLabel(
+            body,
+            "Desired: Not set | Stock: waiting",
+            14,
+            24,
+            438,
+            16,
+            10,
+            Color3.fromRGB(170, 178, 198),
+            false
+        )
+
+    HOLY_AUCTION_HUD.ScanNextLabel =
+        HolyAuctionHudLabel(
+            body,
+            "Scan: -- | Lots: 0 | Next: Ready",
+            14,
+            42,
+            438,
+            15,
+            10,
+            Color3.fromRGB(165, 174, 195),
+            false
+        )
+
+    HOLY_AUCTION_HUD.StatusLabel =
+        HolyAuctionHudLabel(
+            body,
+            "Status: Ready",
+            14,
+            60,
+            438,
+            15,
+            10,
+            Color3.fromRGB(145, 153, 172),
+            false
+        )
+
+    local progressBack =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    Color3.fromRGB(24, 29, 42),
+
+                BackgroundTransparency =
+                    0.20,
+
+                BorderSizePixel =
+                    0,
+
+                Position =
+                    UDim2.fromOffset(
+                        12,
+                        84
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        446,
+                        3
+                    ),
+
+                Parent =
+                    body,
+            }
+        )
+
+    HolyAuctionHudCorner(
+        progressBack,
+        UDim.new(0, 3)
+    )
+
+    HOLY_AUCTION_HUD.ProgressFill =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                BackgroundColor3 =
+                    Color3.fromRGB(255, 184, 60),
+
+                BackgroundTransparency =
+                    0.05,
+
+                BorderSizePixel =
+                    0,
+
+                Position =
+                    UDim2.fromOffset(
+                        0,
+                        0
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        0,
+                        3
+                    ),
+
+                Parent =
+                    progressBack,
+            }
+        )
+
+    HolyAuctionHudCorner(
+        HOLY_AUCTION_HUD.ProgressFill,
+        UDim.new(0, 3)
+    )
+
+    HolyAuctionHudLabel(
+        body,
+        "Item",
+        20,
+        94,
+        170,
+        14,
+        10,
+        Color3.fromRGB(195, 203, 222),
+        true
+    )
+
+    local stockHead =
+        HolyAuctionHudLabel(
+            body,
+            "Stock",
+            196,
+            94,
+            60,
+            14,
+            10,
+            Color3.fromRGB(195, 203, 222),
+            true
+        )
+
+    stockHead.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    local priceHead =
+        HolyAuctionHudLabel(
+            body,
+            "Price",
+            258,
+            94,
+            75,
+            14,
+            10,
+            Color3.fromRGB(195, 203, 222),
+            true
+        )
+
+    priceHead.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    local timeHead =
+        HolyAuctionHudLabel(
+            body,
+            "Time",
+            336,
+            94,
+            50,
+            14,
+            10,
+            Color3.fromRGB(195, 203, 222),
+            true
+        )
+
+    timeHead.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    local rowsHolder =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                BackgroundTransparency =
+                    1,
+
+                ClipsDescendants =
+                    true,
+
+                Position =
+                    UDim2.fromOffset(
+                        12,
+                        112
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        446,
+                        204
+                    ),
+
+                Parent =
+                    body,
+            }
+        )
+
+    HOLY_AUCTION_HUD.RowsHolder =
+        rowsHolder
+
+    HolyAuctionHudCreate(
+        "UIListLayout",
+        {
+            Padding =
+                UDim.new(
+                    0,
+                    4
+                ),
+
+            FillDirection =
+                Enum.FillDirection.Vertical,
+
+            HorizontalAlignment =
+                Enum.HorizontalAlignment.Center,
+
+            SortOrder =
+                Enum.SortOrder.LayoutOrder,
+
+            Parent =
+                rowsHolder,
+        }
+    )
+
+    HOLY_AUCTION_HUD.RowFrames =
+        {}
+
+    for index = 1, 6 do
+
+        HolyAuctionHudCreateRow(
+            rowsHolder,
+            index
+        )
+    end
+
+    HolyAuctionHudMakeDraggable(
+        holder,
+        top
+    )
+
+    HolyAuctionHudApplyScale()
+
+    return true
+end
+
+function HolyAuctionHudStart()
+
+    HolyAuctionEnsureState()
+
+    if HOLY_SHOP_STATE.AuctionHudEnabled ~= true then
+        return false
+    end
+
+    local alreadyOpen =
+        false
+
+    pcall(function()
+
+        alreadyOpen =
+            type(HOLY_AUCTION_HUD) == "table"
+            and typeof(HOLY_AUCTION_HUD.ScreenGui) == "Instance"
+            and HOLY_AUCTION_HUD.ScreenGui.Parent ~= nil
+    end)
+
+    if alreadyOpen == true then
+        return true
+    end
+
+    return HolyAuctionHudCreateUI()
+end
+
+function HolyAuctionHudRefresh(rows)
+
+    HolyAuctionEnsureState()
+
+    if HOLY_SHOP_STATE.AuctionHudEnabled ~= true then
+        return false
+    end
+
+    HolyAuctionHudStart()
+
+    local hud =
+        HOLY_AUCTION_HUD
+
+    if type(hud) ~= "table"
+    or typeof(hud.Holder) ~= "Instance" then
+
+        return false
+    end
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or HOLY_SHOP_STATE.AuctionLastLots
+        or {}
+
+    hud.Rows =
+        rows
+
+    local desired =
+        HolyAuctionReadMoney(
+            HOLY_SHOP_STATE.AuctionMaxPrice
+            or "0"
+        )
+
+    local desiredText =
+        desired > 0
+        and HolyAuctionFormatMoney(
+            desired
+        )
+        or "Not set"
+
+    local stockText =
+        HolyAuctionStockAge() < 40
+        and (
+            "Server · "
+            .. HolyAuctionFormatAge(
+                HolyAuctionStockAge()
+            )
+        )
+        or "waiting"
+
+    local selected =
+        HolyShopSelectionArray(
+            HOLY_SHOP_STATE.SelectedAuctions
+        )
+
+    local selectedText =
+        #selected > 0
+        and table.concat(
+            selected,
+            ", "
+        )
+        or "None"
+
+    local statusText =
+        tostring(
+            HOLY_SHOP_STATE.AuctionStatus
+            or "Ready"
+        )
+
+    local nextAction =
+        "Select auction item"
+
+    local target,
+        targetReason =
+        HolyAuctionFindBuyTarget()
+
+    if type(target) == "table" then
+
+        nextAction =
+            "Ready to buy"
+
+    else
+
+        nextAction =
+            tostring(
+                targetReason
+                or nextAction
+            )
+    end
+
+    if typeof(hud.TitleLabel) == "Instance" then
+
+        if HOLY_SHOP_STATE.AuctionHudMinimized == true then
+
+            hud.TitleLabel.Text =
+                "🧺 Auctions · "
+                .. tostring(nextAction)
+
+        else
+
+            hud.TitleLabel.Text =
+                "🧺 HOLY Auctions"
+        end
+    end
+
+    if typeof(hud.RefreshButton) == "Instance" then
+
+        hud.RefreshButton.Text =
+            HolyAuctionRefreshHeaderText()
+    end
+
+    if typeof(hud.AutoSelectedLabel) == "Instance" then
+
+        hud.AutoSelectedLabel.Text =
+            "Auto: "
+            .. (
+                HOLY_SHOP_STATE.AutoBuyAuctions == true
+                and "ON"
+                or "OFF"
+            )
+            .. " | Selected: "
+            .. selectedText
+    end
+
+    if typeof(hud.DesiredLabel) == "Instance" then
+
+        hud.DesiredLabel.Text =
+            "Desired: "
+            .. desiredText
+            .. " | Stock: "
+            .. stockText
+    end
+
+    if typeof(hud.ScanNextLabel) == "Instance" then
+
+        hud.ScanNextLabel.Text =
+            "Scan: "
+            .. tostring(
+                HOLY_SHOP_STATE.AuctionDataMode
+                or "Waiting"
+            )
+            .. " | Lots: "
+            .. tostring(#rows)
+            .. " | Next: "
+            .. tostring(nextAction)
+    end
+
+    if typeof(hud.StatusLabel) == "Instance" then
+
+        hud.StatusLabel.Text =
+            "Status: "
+            .. statusText
+    end
+
+    if typeof(hud.ProgressFill) == "Instance" then
+
+        local ratio =
+            0
+
+        local seconds =
+            HolyAuctionGetEffectiveRefreshSeconds()
+
+        if seconds > 0 then
+
+            ratio =
+                math.clamp(
+                    seconds / 1800,
+                    0,
+                    1
+                )
+        end
+
+        hud.ProgressFill.Size =
+            UDim2.fromOffset(
+                math.floor(446 * ratio + 0.5),
+                3
+            )
+    end
+
+    for index = 1, 6 do
+
+        HolyAuctionHudUpdateRow(
+            index,
+            rows[index]
+        )
+    end
+
+    return true
+end
+
+function HolyAuctionSetHudVisible(value, reason)
+
+    HolyAuctionEnsureState()
+
+    HOLY_SHOP_STATE.AuctionHudEnabled =
+        value == true
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AuctionHudEnabled == true then
+
+        HolyAuctionHudStart()
+
+        HolyAuctionRequestSnapshot()
+
+        HolyAuctionRefreshUI()
+
+        HolyAuctionSetStatus(
+            "Live HUD on"
+        )
+
+        return true
+    end
+
+    HolyAuctionHudDestroy()
+
+    HolyAuctionSetStatus(
+        "Live HUD off"
+    )
+
+    if HOLY_SHOP_STATE.AutoBuyAuctions ~= true then
+
+        HolyAuctionRestoreOffscreen()
+    end
+
+    return true
+end
+
+function HolyAuctionSetHudScale(value)
+
+    HolyAuctionEnsureState()
+
+    HOLY_SHOP_STATE.AuctionHudScale =
+        HolyAuctionFormatHudScale(
+            value
+        )
+
+    HolySaveShopSettings()
+
+    HolyAuctionHudApplyScale()
+
+    return true
+end
+
+function HolyAuctionRefreshUI()
+
+    HolyAuctionEnsureState()
+
+    HOLY_SHOP_UI =
+        type(HOLY_SHOP_UI) == "table"
+        and HOLY_SHOP_UI
+        or {}
+
+    local rows =
+        HolyAuctionScanLiveLots()
+
+    HolyAuctionSetLabel(
+        HOLY_SHOP_UI.AuctionLiveLabel,
+        HolyAuctionBuildLiveText(
+            rows
+        )
+    )
+
+    HolyAuctionSetStatus(
+        HOLY_SHOP_STATE.AuctionStatus
+    )
+
+    if HOLY_SHOP_STATE.AuctionHudEnabled == true then
+
+        HolyAuctionHudRefresh(
+            rows
+        )
+    end
+
+    return rows
+end
+
+function HolyAuctionSelectionMap()
+
+    return HolyShopNormalizeSelection(
+        HOLY_SHOP_STATE.SelectedAuctions
+    )
+end
+
+function HolyAuctionSelectionAllows(name)
+
+    local map =
+        HolyAuctionSelectionMap()
+
+    local hasSelection =
+        false
+
+    for _ in pairs(map) do
+
+        hasSelection =
+            true
+
+        break
+    end
+
+    if hasSelection ~= true then
+        return false
+    end
+
+    if map.All == true then
+        return true
+    end
+
+    return map[
+        HolyCleanText(
+            name
+        )
+    ] == true
+end
+
+function HolyAuctionPriceAllows(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    local desiredPrice =
+        HolyAuctionReadMoney(
+            HOLY_SHOP_STATE.AuctionMaxPrice
+            or "0"
+        )
+
+    if desiredPrice <= 0 then
+        return false
+    end
+
+    local currentPrice =
+        tonumber(row.Price)
+        or 0
+
+    if currentPrice <= 0 then
+        return false
+    end
+
+    return currentPrice <= desiredPrice
+end
+
+function HolyAuctionLotAllowed(row)
+
+    if type(row) ~= "table" then
+        return false
+    end
+
+    if row.Active ~= true then
+        return false
+    end
+
+    if HolyAuctionSelectionAllows(row.Name) ~= true then
+        return false
+    end
+
+    if HolyAuctionPriceAllows(row) ~= true then
+        return false
+    end
+
+    if HolyAuctionRowStale(
+        row,
+        true
+    ) == true then
+
+        return false
+    end
+
+    if HOLY_SHOP_STATE.AuctionBuyUntilSoldOut ~= true
+    and HOLY_SHOP_STATE.AuctionAttemptedLots[row.LotId] == true then
+
+        return false
+    end
+
+    return true
+end
+
+function HolyAuctionResolvePurchasePacket(forceRefresh)
+
+    HolyAuctionEnsureState()
+
+    HOLY_SHOP_STATE.AuctionPacketCache =
+        type(HOLY_SHOP_STATE.AuctionPacketCache) == "table"
+        and HOLY_SHOP_STATE.AuctionPacketCache
+        or {}
+
+    if forceRefresh == true then
+
+        HOLY_SHOP_STATE.AuctionPacketCache.PurchaseLot =
+            nil
+    end
+
+    local cached =
+        HOLY_SHOP_STATE.AuctionPacketCache.PurchaseLot
+
+    if type(cached) == "table"
+    and type(cached.Fire) == "function" then
+
+        return cached
+    end
+
+    local networking =
+        HolyShopRequireModule(
+            "SharedModules.Networking"
+        )
+
+    local packet =
+        type(networking) == "table"
+        and type(networking.Auctioneer) == "table"
+        and networking.Auctioneer.PurchaseLot
+        or nil
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        HOLY_SHOP_STATE.AuctionPacketCache.PurchaseLot =
+            false
+
+        return nil
+    end
+
+    HOLY_SHOP_STATE.AuctionPacketCache.PurchaseLot =
+        packet
+
+    return packet
+end
+
+function HolyAuctionFirePurchase(row)
+
+    HolyAuctionEnsureState()
+
+    if type(row) ~= "table" then
+        return false, "missing row"
+    end
+
+    local lotId =
+        HolyCleanText(
+            row.LotId
+        )
+
+    if lotId == "" then
+        return false, "missing lot id"
+    end
+
+    local price =
+        tonumber(row.Price)
+        or HolyAuctionReadMoney(
+            row.PriceText
+            or ""
+        )
+
+    if price == nil
+    or price <= 0 then
+
+        return false,
+            "missing price"
+    end
+
+    price =
+        math.max(
+            0,
+            math.floor(price + 0.5)
+        )
+
+    -- Best path:
+    -- Use the real Auction GUI BuyButton callback.
+    -- Research proved the real button sends:
+    -- PurchaseLot:Fire(lotId, exactCurrentPrice)
+    -- This avoids guessing the hidden exact server price from rounded UI text.
+    local guiBuyAttempted =
+        false
+
+    if type(firesignal) == "function" then
+
+        pcall(function()
+
+            if type(HolyAuctionEnsureOffscreen) == "function" then
+
+                HolyAuctionEnsureOffscreen()
+            end
+        end)
+
+        local auctionGui =
+            HolyAuctionFindAuctionGui()
+
+        local scrollingFrame =
+            auctionGui
+            and HolyAuctionFindScrollingFrame(
+                auctionGui
+            )
+            or nil
+
+        local lotFrame =
+            scrollingFrame
+            and scrollingFrame:FindFirstChild(
+                "Lot_"
+                    .. lotId
+            )
+            or nil
+
+        local mainFrame =
+            lotFrame
+            and lotFrame:FindFirstChild(
+                "Main_Frame",
+                true
+            )
+            or nil
+
+        local buyButton =
+            mainFrame
+            and mainFrame:FindFirstChild(
+                "BuyButton",
+                true
+            )
+            or (
+                lotFrame
+                and lotFrame:FindFirstChild(
+                    "BuyButton",
+                    true
+                )
+            )
+
+        if typeof(buyButton) == "Instance"
+        and buyButton:IsA("GuiButton") then
+
+            local ok,
+                err =
+                pcall(function()
+
+                    firesignal(
+                        buyButton.Activated
+                    )
+                end)
+
+            if ok == true then
+
+                guiBuyAttempted =
+                    true
+
+                HOLY_SHOP_STATE.AuctionAttemptedLots[lotId] =
+                    true
+
+                return true,
+                    "gui activated"
+            end
+        end
+    end
+
+    -- Fallback path:
+    -- Direct packet must include BOTH lotId and price.
+    local packet =
+        HolyAuctionResolvePurchasePacket(
+            false
+        )
+
+    if type(packet) ~= "table" then
+
+        packet =
+            HolyAuctionResolvePurchasePacket(
+                true
+            )
+    end
+
+    if type(packet) ~= "table" then
+        return false, "PurchaseLot missing"
+    end
+
+    local ok,
+        result =
+        pcall(function()
+
+            return packet:Fire(
+                lotId,
+                price
+            )
+        end)
+
+    if ok ~= true then
+
+        return false,
+            tostring(result)
+    end
+
+    HOLY_SHOP_STATE.AuctionAttemptedLots[lotId] =
+        true
+
+    return true,
+        guiBuyAttempted == true
+        and "gui activated"
+        or "fired with price"
+end
+
+function HolyAuctionFindBuyTarget()
+
+    local rows =
+        HolyAuctionScanLiveLots()
+
+    local desiredPrice =
+        HolyAuctionReadMoney(
+            HOLY_SHOP_STATE.AuctionMaxPrice
+            or "0"
+        )
+
+    if desiredPrice <= 0 then
+
+        return nil,
+            "Set desired price first"
+    end
+
+    if #rows <= 0 then
+
+        return nil,
+            "Waiting auction data"
+    end
+
+    local selectedTooExpensive =
+        nil
+
+    local selectedStale =
+        nil
+
+    for _, row in ipairs(rows) do
+
+        if row.Active == true
+        and HolyAuctionSelectionAllows(row.Name) == true then
+
+            local stale,
+                staleReason =
+                HolyAuctionRowStale(
+                    row,
+                    true
+                )
+
+            if stale == true then
+
+                selectedStale =
+                    selectedStale
+                    or staleReason
+
+            elseif HolyAuctionPriceAllows(row) == true then
+
+                return row,
+                    "ok"
+
+            else
+
+                selectedTooExpensive =
+                    selectedTooExpensive
+                    or row
+            end
+        end
+    end
+
+    if type(selectedTooExpensive) == "table" then
+
+        return nil,
+            "Waiting price: "
+                .. tostring(selectedTooExpensive.Name)
+                .. " "
+                .. HolyAuctionFormatMoney(
+                    selectedTooExpensive.Price
+                )
+                .. " > "
+                .. HolyAuctionFormatMoney(
+                    desiredPrice
+                )
+    end
+
+    if selectedStale ~= nil then
+
+        return nil,
+            "Waiting data: "
+                .. tostring(selectedStale)
+    end
+
+    return nil,
+        "Waiting selected auction item"
+end
+
+function HolyAuctionManualBuyOnce(reason)
+
+    HolyAuctionEnsureState()
+
+    local now =
+        os.clock()
+
+    local nextBuyAt =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionNextBuyAt
+        )
+        or 0
+
+    if now < nextBuyAt then
+
+        HolyAuctionSetStatus(
+            "Buy blocked: cooldown "
+                .. tostring(
+                    math.max(
+                        0,
+                        math.floor(nextBuyAt - now + 0.5)
+                    )
+                )
+                .. "s"
+        )
+
+        return false
+    end
+
+    local target,
+        targetReason =
+        HolyAuctionFindBuyTarget()
+
+    if type(target) ~= "table" then
+
+        HolyAuctionSetStatus(
+            "Buy blocked: "
+                .. tostring(
+                    targetReason
+                    or "no target"
+                )
+        )
+
+        return false
+    end
+
+    local ok,
+        fireReason =
+        HolyAuctionFirePurchase(
+            target
+        )
+
+    HOLY_SHOP_STATE.AuctionNextBuyAt =
+        os.clock()
+        + HolyAuctionReadCooldown()
+
+    if ok == true then
+
+        HolyAuctionSetStatus(
+            "Buying "
+                .. tostring(target.Name)
+                .. " at "
+                .. tostring(target.PriceText)
+        )
+
+        return true
+    end
+
+    HolyAuctionSetStatus(
+        "Buy failed: "
+            .. tostring(fireReason)
+    )
+
+    return false
+end
+
+function HolyAuctionRunWorker(reason)
+
+    HolyAuctionEnsureState()
+
+    if HOLY_SHOP_STATE.AutoBuyAuctions ~= true then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    local nextBuyAt =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionNextBuyAt
+        )
+        or 0
+
+    if now < nextBuyAt then
+
+        HolyAuctionSetStatus(
+            "Cooldown "
+                .. tostring(
+                    math.max(
+                        0,
+                        math.floor(
+                            nextBuyAt - now + 0.5
+                        )
+                    )
+                )
+                .. "s"
+        )
+
+        return false
+    end
+
+    local target,
+        targetReason =
+        HolyAuctionFindBuyTarget()
+
+    if type(target) ~= "table" then
+
+        HolyAuctionSetStatus(
+            tostring(
+                targetReason
+                or "Waiting selected auction item"
+            )
+        )
+
+        return false
+    end
+
+    local ok,
+        fireReason =
+        HolyAuctionFirePurchase(
+            target
+        )
+
+    HOLY_SHOP_STATE.AuctionNextBuyAt =
+        os.clock()
+        + HolyAuctionReadCooldown()
+
+    if ok == true then
+
+        HolyAuctionSetStatus(
+            "Buying "
+                .. tostring(target.Name)
+                .. " at "
+                .. tostring(target.PriceText)
+        )
+
+        return true
+    end
+
+    HolyAuctionSetStatus(
+        "Buy failed: "
+            .. tostring(fireReason)
+    )
+
+    return false
+end
+
+function HolyAuctionQueueWorker(reason)
+
+    HolyAuctionEnsureState()
+
+    if HOLY_SHOP_STATE.AuctionWorkerRunning == true then
+        return false
+    end
+
+    HOLY_SHOP_STATE.AuctionWorkerRunning =
+        true
+
+    task.spawn(function()
+
+        local ok,
+            err =
+            pcall(function()
+
+                HolyAuctionRunWorker(
+                    reason or "queue"
+                )
+            end)
+
+        if ok ~= true then
+
+            HolyAuctionSetStatus(
+                "Error: "
+                    .. tostring(err)
+            )
+        end
+
+        HOLY_SHOP_STATE.AuctionWorkerRunning =
+            false
+    end)
+
+    return true
+end
+
+function HolyAuctionConnectPacketSignals()
+
+    HolyAuctionEnsureState()
+
+    if HOLY_SHOP_STATE.AuctionSignalsConnected == true then
+        return true
+    end
+
+    local networking =
+        HolyShopRequireModule(
+            "SharedModules.Networking"
+        )
+
+    local auction =
+        type(networking) == "table"
+        and type(networking.Auctioneer) == "table"
+        and networking.Auctioneer
+        or nil
+
+    if type(auction) ~= "table" then
+        return false
+    end
+
+    local function connectPacket(packetName, callback)
+
+        local packet =
+            auction[packetName]
+
+        if type(packet) ~= "table"
+        or packet.OnClientEvent == nil then
+
+            return false
+        end
+
+        local ok,
+            connection =
+            pcall(function()
+
+                return packet.OnClientEvent:Connect(
+                    callback
+                )
+            end)
+
+        if ok == true
+        and connection ~= nil then
+
+            table.insert(
+                HOLY_SHOP_STATE.AuctionConnections,
+                connection
+            )
+
+            return true
+        end
+
+        return false
+    end
+
+    connectPacket(
+        "PurchaseResult",
+        function(lotId, success, resultReason)
+
+            lotId =
+                HolyCleanText(
+                    lotId
+                )
+
+            if success == true then
+
+                HolyAuctionSetStatus(
+                    "Bought lot "
+                        .. lotId
+                )
+
+            else
+
+                HolyAuctionSetStatus(
+                    "Result: "
+                        .. lotId
+                        .. " "
+                        .. tostring(resultReason or "failed")
+                )
+            end
+
+            task.defer(function()
+
+                HolyAuctionRequestSnapshot()
+
+                HolyAuctionRefreshUI()
+
+                if HOLY_SHOP_STATE.AutoBuyAuctions == true then
+
+                    HolyAuctionQueueWorker(
+                        "purchase result"
+                    )
+                end
+            end)
+        end
+    )
+
+    connectPacket(
+        "StockUpdate",
+        function(payload)
+
+            HolyAuctionEnsureState()
+
+            if type(payload) == "table"
+            and type(payload.stock) == "table" then
+
+                HOLY_SHOP_STATE.AuctionStockMap =
+                    {}
+
+                for lotId, stock in pairs(payload.stock) do
+
+                    HOLY_SHOP_STATE.AuctionStockMap[
+                        tostring(lotId)
+                    ] =
+                        math.max(
+                            0,
+                            math.floor(
+                                tonumber(stock)
+                                or 0
+                            )
+                        )
+                end
+
+                HOLY_SHOP_STATE.AuctionServerNow =
+                    tonumber(payload.serverNow)
+                    or HOLY_SHOP_STATE.AuctionServerNow
+                    or 0
+
+                HOLY_SHOP_STATE.AuctionLastStockUpdateAt =
+                    os.clock()
+
+                HolyAuctionCalculateStockCycle()
+            end
+
+            task.defer(function()
+
+                HolyAuctionRefreshUI()
+
+                if HOLY_SHOP_STATE.AutoBuyAuctions == true then
+
+                    HolyAuctionQueueWorker(
+                        "stock update"
+                    )
+                end
+            end)
+        end
+    )
+
+    connectPacket(
+        "Snapshot",
+        function()
+
+            task.defer(function()
+
+                HolyAuctionRefreshUI()
+            end)
+        end
+    )
+
+    HOLY_SHOP_STATE.AuctionSignalsConnected =
+        true
+
+    return true
+end
+
+function HolyAuctionRequestSnapshot()
+
+    local networking =
+        HolyShopRequireModule(
+            "SharedModules.Networking"
+        )
+
+    local request =
+        type(networking) == "table"
+        and type(networking.Auctioneer) == "table"
+        and networking.Auctioneer.RequestSnapshot
+        or nil
+
+    if type(request) ~= "table"
+    or type(request.Fire) ~= "function" then
+
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            request:Fire()
+        end)
+
+    return ok == true
+end
+
+function HolyAuctionStartWatcher()
+
+    HolyAuctionEnsureState()
+
+    if HOLY_SHOP_STATE.AuctionWatcherStarted == true then
+        return false
+    end
+
+    HOLY_SHOP_STATE.AuctionWatcherStarted =
+        true
+
+    HolyAuctionConnectPacketSignals()
+
+    task.spawn(function()
+
+        local lastRequest =
+            0
+
+        while HOLY_SHOP_STATE.AuctionWatcherStarted == true do
+
+            if os.clock() - lastRequest >= 8 then
+
+                lastRequest =
+                    os.clock()
+
+                HolyAuctionRequestSnapshot()
+            end
+
+            HolyAuctionRefreshUI()
+
+            if HOLY_SHOP_STATE.AutoBuyAuctions == true then
+
+                HolyAuctionQueueWorker(
+                    "watcher"
+                )
+            end
+
+            task.wait(
+                (
+                    HOLY_SHOP_STATE.AutoBuyAuctions == true
+                    or HOLY_SHOP_STATE.AuctionHudEnabled == true
+                )
+                and 0.50
+                or 1.25
+            )
+        end
+    end)
+
+    task.defer(function()
+
+        HolyAuctionRequestSnapshot()
+
+        HolyAuctionRefreshDropdown(
+            false
+        )
+
+        HolyAuctionRefreshUI()
+
+        if HOLY_SHOP_STATE.AuctionHudEnabled == true then
+
+            HolyAuctionHudStart()
+        end
+    end)
+
+    return true
+end
+
+function HolyAuctionStartWatcher()
+
+    HolyAuctionEnsureState()
+
+    if HOLY_SHOP_STATE.AuctionWatcherStarted == true then
+        return false
+    end
+
+    HOLY_SHOP_STATE.AuctionWatcherStarted =
+        true
+
+    HolyAuctionConnectPacketSignals()
+
+    task.spawn(function()
+
+        while HOLY_SHOP_STATE.AuctionWatcherStarted == true do
+
+            HolyAuctionRefreshUI()
+
+            if HOLY_SHOP_STATE.AutoBuyAuctions == true then
+
+                HolyAuctionQueueWorker(
+                    "watcher"
+                )
+            end
+
+            task.wait(
+                HOLY_SHOP_STATE.AutoBuyAuctions == true
+                and 0.65
+                or 1.25
+            )
+        end
+    end)
+
+    task.defer(function()
+
+        HolyAuctionRequestSnapshot()
+
+        HolyAuctionRefreshDropdown(
+            false
+        )
+
+        HolyAuctionRefreshUI()
+    end)
+
+    return true
+end
+
+--==================================================
 -- [2.6] SELL CORE
 --==================================================
 
@@ -22731,6 +28911,2220 @@ function HolySellFirePacket(packetName, ...)
         end, ...)
 
     return ok == true
+end
+
+--==================================================
+-- [2.605] AUTO DAILY DEAL CORE
+--==================================================
+
+HOLY_DAILY_DEAL_RUNTIME =
+    type(HOLY_DAILY_DEAL_RUNTIME) == "table"
+    and HOLY_DAILY_DEAL_RUNTIME
+    or {}
+
+function HolyDailyDealEnsureState()
+
+    HOLY_SHOP_STATE =
+        type(HOLY_SHOP_STATE) == "table"
+        and HOLY_SHOP_STATE
+        or {}
+
+    HOLY_SHOP_UI =
+        type(HOLY_SHOP_UI) == "table"
+        and HOLY_SHOP_UI
+        or {}
+
+    HOLY_DAILY_DEAL_RUNTIME =
+        type(HOLY_DAILY_DEAL_RUNTIME) == "table"
+        and HOLY_DAILY_DEAL_RUNTIME
+        or {}
+
+    HOLY_DAILY_DEAL_RUNTIME.InputErrors =
+        type(HOLY_DAILY_DEAL_RUNTIME.InputErrors) == "table"
+        and HOLY_DAILY_DEAL_RUNTIME.InputErrors
+        or {}
+
+    HOLY_SHOP_STATE.AutoDailyDealAll =
+        HOLY_SHOP_STATE.AutoDailyDealAll == true
+
+    HOLY_SHOP_STATE.DailyDealTriggerFruits =
+        HolyShopSelectionArray(
+            HOLY_SHOP_STATE.DailyDealTriggerFruits
+            or {
+                "All",
+            }
+        )
+
+    if #HOLY_SHOP_STATE.DailyDealTriggerFruits <= 0 then
+
+        HOLY_SHOP_STATE.DailyDealTriggerFruits = {
+            "All",
+        }
+    end
+
+    HOLY_SHOP_STATE.DailyDealMinStockMultiplier =
+        tostring(
+            HOLY_SHOP_STATE.DailyDealMinStockMultiplier
+            or "2"
+        )
+
+    HOLY_SHOP_STATE.DailyDealMinFriendBoost =
+        tostring(
+            HOLY_SHOP_STATE.DailyDealMinFriendBoost
+            or "0"
+        )
+
+    HOLY_SHOP_STATE.DailyDealMinInventoryValue =
+        tostring(
+            HOLY_SHOP_STATE.DailyDealMinInventoryValue
+            or "0"
+        )
+
+    HOLY_SHOP_STATE.DailyDealMinValue =
+        tostring(
+            HOLY_SHOP_STATE.DailyDealMinValue
+            or "0"
+        )
+
+    HOLY_SHOP_STATE.DailyDealAutoDisable =
+        HOLY_SHOP_STATE.DailyDealAutoDisable ~= false
+
+    HOLY_SHOP_STATE.DailyDealRequirePreview =
+        HOLY_SHOP_STATE.DailyDealRequirePreview ~= false
+
+    HOLY_SHOP_STATE.DailyDealStatus =
+        tostring(
+            HOLY_SHOP_STATE.DailyDealStatus
+            or "Ready"
+        )
+
+    HOLY_SHOP_STATE.DailyDealLastStock =
+        tostring(
+            HOLY_SHOP_STATE.DailyDealLastStock
+            or "Stock: --"
+        )
+
+    HOLY_SHOP_STATE.DailyDealLastPreview =
+        tostring(
+            HOLY_SHOP_STATE.DailyDealLastPreview
+            or "Preview: --"
+        )
+
+    HOLY_SHOP_STATE.DailyDealLastResult =
+        tostring(
+            HOLY_SHOP_STATE.DailyDealLastResult
+            or "Last: --"
+        )
+
+    return HOLY_SHOP_STATE
+end
+
+function HolyDailyDealFormatDecimal(value)
+
+    local number =
+        tonumber(value)
+
+    if number == nil then
+        return "0"
+    end
+
+    local text =
+        string.format(
+            "%.4f",
+            number
+        )
+
+    text =
+        text:gsub(
+            "0+$",
+            ""
+        )
+
+    text =
+        text:gsub(
+            "%.$",
+            ""
+        )
+
+    if text == "" then
+        text = "0"
+    end
+
+    return text
+end
+
+function HolyDailyDealFormatMoney(value)
+
+    value =
+        math.max(
+            0,
+            math.floor(
+                tonumber(value)
+                or 0
+            )
+        )
+
+    if value >= 1000000000000 then
+
+        return string.format(
+            "%.2fT¢",
+            value / 1000000000000
+        )
+    end
+
+    if value >= 1000000000 then
+
+        return string.format(
+            "%.2fB¢",
+            value / 1000000000
+        )
+    end
+
+    if value >= 1000000 then
+
+        return string.format(
+            "%.2fM¢",
+            value / 1000000
+        )
+    end
+
+    if value >= 1000 then
+
+        return string.format(
+            "%.2fK¢",
+            value / 1000
+        )
+    end
+
+    return tostring(value)
+        .. "¢"
+end
+
+function HolyDailyDealFormatDuration(seconds)
+
+    seconds =
+        math.max(
+            0,
+            math.floor(
+                tonumber(seconds)
+                or 0
+            )
+        )
+
+    local hours =
+        math.floor(seconds / 3600)
+
+    local minutes =
+        math.floor((seconds % 3600) / 60)
+
+    local remaining =
+        seconds % 60
+
+    if hours > 0 then
+
+        return tostring(hours)
+            .. "h "
+            .. tostring(minutes)
+            .. "m"
+    end
+
+    if minutes > 0 then
+
+        return tostring(minutes)
+            .. "m "
+            .. tostring(remaining)
+            .. "s"
+    end
+
+    return tostring(remaining)
+        .. "s"
+end
+
+function HolyDailyDealRefreshUI()
+
+    HolyDailyDealEnsureState()
+
+    if type(HolySniperSetLabel) ~= "function" then
+        return false
+    end
+
+    HolySniperSetLabel(
+        HOLY_SHOP_UI.DailyDealStatusLabel,
+        "Daily: "
+            .. tostring(HOLY_SHOP_STATE.DailyDealStatus or "Ready")
+    )
+
+    HolySniperSetLabel(
+        HOLY_SHOP_UI.DailyDealStockLabel,
+        tostring(HOLY_SHOP_STATE.DailyDealLastStock or "Stock: --")
+    )
+
+    HolySniperSetLabel(
+        HOLY_SHOP_UI.DailyDealPreviewLabel,
+        tostring(HOLY_SHOP_STATE.DailyDealLastPreview or "Preview: --")
+    )
+
+    HolySniperSetLabel(
+        HOLY_SHOP_UI.DailyDealLastLabel,
+        tostring(HOLY_SHOP_STATE.DailyDealLastResult or "Last: --")
+    )
+
+    return true
+end
+
+function HolyDailyDealSetStatus(status)
+
+    HolyDailyDealEnsureState()
+
+    HOLY_SHOP_STATE.DailyDealStatus =
+        tostring(status or "Ready")
+
+    HolyDailyDealRefreshUI()
+
+    return true
+end
+
+function HolyDailyDealSetStockText(text)
+
+    HolyDailyDealEnsureState()
+
+    HOLY_SHOP_STATE.DailyDealLastStock =
+        tostring(text or "Stock: --")
+
+    HolyDailyDealRefreshUI()
+
+    return true
+end
+
+function HolyDailyDealSetPreviewText(text)
+
+    HolyDailyDealEnsureState()
+
+    HOLY_SHOP_STATE.DailyDealLastPreview =
+        tostring(text or "Preview: --")
+
+    HolyDailyDealRefreshUI()
+
+    return true
+end
+
+function HolyDailyDealSetLastText(text)
+
+    HolyDailyDealEnsureState()
+
+    HOLY_SHOP_STATE.DailyDealLastResult =
+        tostring(text or "Last: --")
+
+    HolyDailyDealRefreshUI()
+
+    return true
+end
+
+function HolyDailyDealSetFieldError(fieldName, message)
+
+    HolyDailyDealEnsureState()
+
+    fieldName =
+        tostring(fieldName or "")
+
+    if fieldName == "" then
+        return false
+    end
+
+    HOLY_DAILY_DEAL_RUNTIME.InputErrors[fieldName] =
+        tostring(message or "Invalid input")
+
+    HolyDailyDealSetStatus(
+        "⚠️ "
+        .. tostring(message or "Invalid input")
+    )
+
+    return true
+end
+
+function HolyDailyDealClearFieldError(fieldName)
+
+    HolyDailyDealEnsureState()
+
+    fieldName =
+        tostring(fieldName or "")
+
+    if fieldName ~= "" then
+
+        HOLY_DAILY_DEAL_RUNTIME.InputErrors[fieldName] =
+            nil
+    end
+
+    return true
+end
+
+function HolyDailyDealGetInputError()
+
+    HolyDailyDealEnsureState()
+
+    local order = {
+        "MinStockMultiplier",
+        "MinFriendBoost",
+        "MinInventoryValue",
+        "MinValue",
+    }
+
+    for _, key in ipairs(order) do
+
+        local message =
+            HOLY_DAILY_DEAL_RUNTIME.InputErrors[key]
+
+        if message ~= nil then
+
+            return tostring(message)
+        end
+    end
+
+    for _, message in pairs(HOLY_DAILY_DEAL_RUNTIME.InputErrors) do
+
+        return tostring(message)
+    end
+
+    return ""
+end
+
+function HolyDailyDealStrictNumber(value, minValue, maxValue, allowPercent)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == "" then
+        return nil, "empty"
+    end
+
+    text =
+        text:gsub(
+            "%s+",
+            ""
+        )
+
+    if allowPercent == true
+    and text:sub(-1) == "%" then
+
+        text =
+            text:sub(1, #text - 1)
+    end
+
+    if text:find("%%", 1, true) then
+        return nil, "bad percent"
+    end
+
+    if text:find(",", 1, true) then
+        return nil, "commas not allowed"
+    end
+
+    local lower =
+        text:lower()
+
+    if lower:find("nan", 1, true)
+    or lower:find("inf", 1, true) then
+
+        return nil, "bad number"
+    end
+
+    if text:match("^%d+%.?%d*$") == nil then
+        return nil, "numbers only"
+    end
+
+    local _,
+        dotCount =
+        text:gsub(
+            "%.",
+            ""
+        )
+
+    if dotCount > 1 then
+        return nil, "too many decimals"
+    end
+
+    local number =
+        tonumber(text)
+
+    if number == nil then
+        return nil, "bad number"
+    end
+
+    if minValue ~= nil
+    and number < minValue then
+
+        return nil,
+            "minimum "
+            .. tostring(minValue)
+    end
+
+    if maxValue ~= nil
+    and number > maxValue then
+
+        return nil,
+            "maximum "
+            .. tostring(maxValue)
+    end
+
+    return number,
+        nil
+end
+
+function HolyDailyDealMoneySuffixMultiplier(suffix)
+
+    suffix =
+        HolyCleanText(
+            suffix
+        )
+        :lower()
+
+    local multipliers = {
+        [""] = 1,
+
+        k = 1000,
+        thousand = 1000,
+
+        m = 1000000,
+        mil = 1000000,
+        million = 1000000,
+
+        b = 1000000000,
+        bil = 1000000000,
+        billion = 1000000000,
+
+        t = 1000000000000,
+        tril = 1000000000000,
+        trillion = 1000000000000,
+
+        q = 1000000000000000,
+        qa = 1000000000000000,
+        quad = 1000000000000000,
+        quadrillion = 1000000000000000,
+    }
+
+    return multipliers[suffix]
+end
+
+function HolyDailyDealStrictMoney(value, minValue, maxValue)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == "" then
+        return nil, "empty"
+    end
+
+    text =
+        text:gsub(
+            "%s+",
+            ""
+        )
+
+    text =
+        text:gsub("¢", "")
+            :gsub("%$", "")
+
+    if text:find(",", 1, true) then
+        return nil, "commas not allowed"
+    end
+
+    local lower =
+        text:lower()
+
+    if lower:find("nan", 1, true)
+    or lower:find("inf", 1, true)
+    or lower:find("-", 1, true) then
+
+        return nil, "bad number"
+    end
+
+    local numberText,
+        suffix =
+        lower:match(
+            "^(%d+%.?%d*)([a-z]*)$"
+        )
+
+    if numberText == nil then
+        return nil, "bad format"
+    end
+
+    local _,
+        dotCount =
+        numberText:gsub(
+            "%.",
+            ""
+        )
+
+    if dotCount > 1 then
+        return nil, "too many decimals"
+    end
+
+    local number =
+        tonumber(numberText)
+
+    if number == nil then
+        return nil, "bad number"
+    end
+
+    local multiplier =
+        HolyDailyDealMoneySuffixMultiplier(
+            suffix
+        )
+
+    if multiplier == nil then
+
+        return nil,
+            "bad suffix"
+    end
+
+    local final =
+        number * multiplier
+
+    if minValue ~= nil
+    and final < minValue then
+
+        return nil,
+            "minimum "
+            .. tostring(minValue)
+    end
+
+    if maxValue ~= nil
+    and final > maxValue then
+
+        return nil,
+            "maximum "
+            .. tostring(maxValue)
+    end
+
+    return final,
+        nil
+end
+
+function HolyDailyDealSetMinStockMultiplier(value)
+
+    local number,
+        reason =
+        HolyDailyDealStrictNumber(
+            value,
+            0.01,
+            100,
+            false
+        )
+
+    if number == nil then
+
+        return HolyDailyDealSetFieldError(
+            "MinStockMultiplier",
+            "Invalid Min Stock Multiplier"
+        )
+    end
+
+    HolyDailyDealClearFieldError(
+        "MinStockMultiplier"
+    )
+
+    HOLY_SHOP_STATE.DailyDealMinStockMultiplier =
+        HolyDailyDealFormatDecimal(
+            number
+        )
+
+    HolySaveShopSettings()
+
+    HolyDailyDealSetStatus(
+        "Min stock set to X"
+        .. tostring(HOLY_SHOP_STATE.DailyDealMinStockMultiplier)
+    )
+
+    return true
+end
+
+function HolyDailyDealSetMinFriendBoost(value)
+
+    local number,
+        reason =
+        HolyDailyDealStrictNumber(
+            value,
+            0,
+            100,
+            true
+        )
+
+    if number == nil then
+
+        return HolyDailyDealSetFieldError(
+            "MinFriendBoost",
+            "Invalid Min Friend Boost"
+        )
+    end
+
+    HolyDailyDealClearFieldError(
+        "MinFriendBoost"
+    )
+
+    HOLY_SHOP_STATE.DailyDealMinFriendBoost =
+        HolyDailyDealFormatDecimal(
+            number
+        )
+
+    HolySaveShopSettings()
+
+    HolyDailyDealSetStatus(
+        "Min boost set to "
+        .. tostring(HOLY_SHOP_STATE.DailyDealMinFriendBoost)
+        .. "%"
+    )
+
+    return true
+end
+
+function HolyDailyDealSetMinInventoryValue(value)
+
+    local number,
+        reason =
+        HolyDailyDealStrictMoney(
+            value,
+            0,
+            1000000000000000000
+        )
+
+    if number == nil then
+
+        return HolyDailyDealSetFieldError(
+            "MinInventoryValue",
+            "Invalid Min Inventory Value"
+        )
+    end
+
+    HolyDailyDealClearFieldError(
+        "MinInventoryValue"
+    )
+
+    HOLY_SHOP_STATE.DailyDealMinInventoryValue =
+        tostring(
+            math.floor(number)
+        )
+
+    HolySaveShopSettings()
+
+    if number <= 0 then
+
+        HolyDailyDealSetStatus(
+            "Min inventory disabled"
+        )
+
+    else
+
+        HolyDailyDealSetStatus(
+            "Min inventory set to "
+            .. HolyDailyDealFormatMoney(
+                number
+            )
+        )
+    end
+
+    return true
+end
+
+function HolyDailyDealSetMinValue(value)
+
+    local number,
+        reason =
+        HolyDailyDealStrictMoney(
+            value,
+            0,
+            1000000000000000000
+        )
+
+    if number == nil then
+
+        return HolyDailyDealSetFieldError(
+            "MinValue",
+            "Invalid Min Daily Payout"
+        )
+    end
+
+    HolyDailyDealClearFieldError(
+        "MinValue"
+    )
+
+    HOLY_SHOP_STATE.DailyDealMinValue =
+        tostring(
+            math.floor(number)
+        )
+
+    HolySaveShopSettings()
+
+    if number <= 0 then
+
+        HolyDailyDealSetStatus(
+            "Min daily payout disabled"
+        )
+
+    else
+
+        HolyDailyDealSetStatus(
+            "Min daily payout set to "
+            .. HolyDailyDealFormatMoney(
+                number
+            )
+        )
+    end
+
+    return true
+end
+
+function HolyDailyDealNameKey(value)
+
+    if type(HolySellKey) == "function" then
+
+        return HolySellKey(
+            value
+        )
+    end
+
+    return HolyCleanText(
+        value
+    )
+        :lower()
+        :gsub("[%s_%-%[%]%(%)%.'\"_/{}:]", "")
+end
+
+function HolyDailyDealAddTriggerValue(values, seen, value)
+
+    value =
+        HolyCleanText(
+            value
+        )
+
+    if value == ""
+    or value == "All" then
+
+        return false
+    end
+
+    local key =
+        HolyDailyDealNameKey(
+            value
+        )
+
+    if key == ""
+    or seen[key] == true then
+
+        return false
+    end
+
+    seen[key] =
+        true
+
+    table.insert(
+        values,
+        value
+    )
+
+    return true
+end
+
+function HolyDailyDealGetTriggerFruitDropdownValues()
+
+    local values = {}
+
+    local seen = {}
+
+    if type(HolySellGetFruitDropdownValues) == "function" then
+
+        for _, fruitName in ipairs(HolySellGetFruitDropdownValues()) do
+
+            HolyDailyDealAddTriggerValue(
+                values,
+                seen,
+                fruitName
+            )
+        end
+    end
+
+    if type(HolyFarmGetPlantDropdownValues) == "function" then
+
+        for _, fruitName in ipairs(HolyFarmGetPlantDropdownValues()) do
+
+            HolyDailyDealAddTriggerValue(
+                values,
+                seen,
+                fruitName
+            )
+        end
+    end
+
+    local sellValueData =
+        HolyShopRequireModule(
+            "SharedModules.SellValueData"
+        )
+
+    if type(sellValueData) == "table" then
+
+        for fruitName, value in pairs(sellValueData) do
+
+            if type(fruitName) == "string"
+            and tonumber(value) ~= nil then
+
+                HolyDailyDealAddTriggerValue(
+                    values,
+                    seen,
+                    fruitName
+                )
+            end
+        end
+    end
+
+    table.sort(values, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    table.insert(
+        values,
+        1,
+        "All"
+    )
+
+    return values
+end
+
+function HolyDailyDealSetTriggerFruits(value)
+
+    HolyDailyDealEnsureState()
+
+    local selection =
+        HolyShopSelectionArray(
+            value
+        )
+
+    if #selection <= 0 then
+
+        selection = {
+            "All",
+        }
+    end
+
+    HOLY_SHOP_STATE.DailyDealTriggerFruits =
+        selection
+
+    HolySaveShopSettings()
+
+    HolyDailyDealSetStatus(
+        "Trigger fruits updated."
+    )
+
+    return true
+end
+
+function HolyDailyDealSetAutoDisable(value)
+
+    HolyDailyDealEnsureState()
+
+    HOLY_SHOP_STATE.DailyDealAutoDisable =
+        value == true
+
+    HolySaveShopSettings()
+
+    return true
+end
+
+function HolyDailyDealTextBoxFocused()
+
+    local focused =
+        nil
+
+    pcall(function()
+
+        focused =
+            UserInputService:GetFocusedTextBox()
+    end)
+
+    return focused ~= nil
+end
+
+function HolyDailyDealValidateSettings()
+
+    local inputError =
+        HolyDailyDealGetInputError()
+
+    if inputError ~= "" then
+
+        return false,
+            inputError
+    end
+
+    local minStock =
+        nil
+
+    minStock =
+        HolyDailyDealStrictNumber(
+            HOLY_SHOP_STATE.DailyDealMinStockMultiplier,
+            0.01,
+            100,
+            false
+        )
+
+    if minStock == nil then
+
+        return false,
+            "Invalid Min Stock Multiplier"
+    end
+
+    local minBoost =
+        nil
+
+    minBoost =
+        HolyDailyDealStrictNumber(
+            HOLY_SHOP_STATE.DailyDealMinFriendBoost,
+            0,
+            100,
+            true
+        )
+
+    if minBoost == nil then
+
+        return false,
+            "Invalid Min Friend Boost"
+    end
+
+    local minInventoryValue =
+        nil
+
+    minInventoryValue =
+        HolyDailyDealStrictMoney(
+            HOLY_SHOP_STATE.DailyDealMinInventoryValue,
+            0,
+            1000000000000000000
+        )
+
+    if minInventoryValue == nil then
+
+        return false,
+            "Invalid Min Inventory Value"
+    end
+
+    local minValue =
+        nil
+
+    minValue =
+        HolyDailyDealStrictMoney(
+            HOLY_SHOP_STATE.DailyDealMinValue,
+            0,
+            1000000000000000000
+        )
+
+    if minValue == nil then
+
+        return false,
+            "Invalid Min Daily Payout"
+    end
+
+    return true,
+        {
+            MinStockMultiplier =
+                minStock,
+
+            MinFriendBoost =
+                minBoost,
+
+            MinInventoryValue =
+                math.floor(minInventoryValue),
+
+            MinValue =
+                math.floor(minValue),
+        }
+end
+
+function HolyDailyDealReadFriendBoost()
+
+    local playerGui =
+        LocalPlayer
+        and LocalPlayer:FindFirstChildOfClass(
+            "PlayerGui"
+        )
+        or nil
+
+    local text =
+        ""
+
+    pcall(function()
+
+        local hud =
+            playerGui
+            and playerGui:FindFirstChild(
+                "HUD"
+            )
+
+        local currencies =
+            hud
+            and hud:FindFirstChild(
+                "Currencies"
+            )
+
+        local friendBoost =
+            currencies
+            and currencies:FindFirstChild(
+                "FriendBoost"
+            )
+
+        local label =
+            friendBoost
+            and friendBoost:FindFirstChild(
+                "TextLabel",
+                true
+            )
+
+        if label
+        and label:IsA("TextLabel") then
+
+            text =
+                label.Text
+        end
+    end)
+
+    local percent =
+        tonumber(
+            tostring(text):match("(%d+%.?%d*)%s*%%")
+        )
+        or 0
+
+    return percent,
+        text ~= "" and text or "FRIEND BOOST: 0%"
+end
+
+function HolyDailyDealGetDailyMultiplier()
+
+    local sellFlags =
+        HolyShopRequireModule(
+            "SharedModules.Flags.SellFlags"
+        )
+
+    local flag =
+        type(sellFlags) == "table"
+        and sellFlags.DailyDealMultiplier
+        or nil
+
+    if type(flag) == "table" then
+
+        if type(flag.Get) == "function" then
+
+            local ok,
+                result =
+                pcall(function()
+
+                    return flag:Get()
+                end)
+
+            if ok == true
+            and tonumber(result) then
+
+                return tonumber(result)
+            end
+        end
+
+        if tonumber(flag.Value) then
+
+            return tonumber(flag.Value)
+        end
+    end
+
+    return 1
+end
+
+function HolyDailyDealFireNpcPacket(packetName)
+
+    local packet =
+        HolySellResolvePacket(
+            packetName
+        )
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return nil,
+            false,
+            "packet missing: "
+            .. tostring(packetName)
+    end
+
+    local ok,
+        result =
+        pcall(function()
+
+            return packet:Fire()
+        end)
+
+    if ok ~= true then
+
+        return nil,
+            false,
+            tostring(result)
+    end
+
+    return result,
+        true,
+        "ok"
+end
+
+function HolyDailyDealFireFruitStockRequest()
+
+    local networking =
+        HolyShopRequireModule(
+            "SharedModules.Networking"
+        )
+
+    local packet =
+        type(networking) == "table"
+        and type(networking.FruitStock) == "table"
+        and networking.FruitStock.Request
+        or nil
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return nil,
+            false,
+            "FruitStock.Request missing"
+    end
+
+    local ok,
+        result =
+        pcall(function()
+
+            return packet:Fire()
+        end)
+
+    if ok ~= true then
+
+        return nil,
+            false,
+            tostring(result)
+    end
+
+    return result,
+        true,
+        "ok"
+end
+
+function HolyDailyDealStockMultiplier(entries, fruitName)
+
+    fruitName =
+        HolyCleanText(
+            fruitName
+        )
+
+    if fruitName == ""
+    or type(entries) ~= "table" then
+
+        return 0,
+            "",
+            ""
+    end
+
+    local direct =
+        entries[fruitName]
+
+    if type(direct) == "table" then
+
+        return tonumber(direct.multiplier)
+            or 0,
+            fruitName,
+            tostring(direct.tier or "")
+    end
+
+    local wantedKey =
+        HolySellKey(
+            fruitName
+        )
+
+    for stockFruitName, row in pairs(entries) do
+
+        if HolySellKey(stockFruitName) == wantedKey
+        and type(row) == "table" then
+
+            return tonumber(row.multiplier)
+                or 0,
+                tostring(stockFruitName),
+                tostring(row.tier or "")
+        end
+    end
+
+    return 0,
+        "",
+        ""
+end
+
+function HolyDailyDealSelectionAllows(fruitName)
+
+    HolyDailyDealEnsureState()
+
+    fruitName =
+        HolyCleanText(
+            fruitName
+        )
+
+    if fruitName == "" then
+        return false
+    end
+
+    local selected =
+        HolyShopSelectionArray(
+            HOLY_SHOP_STATE.DailyDealTriggerFruits
+        )
+
+    if #selected <= 0 then
+        return true
+    end
+
+    for _, selectedFruit in ipairs(selected) do
+
+        if selectedFruit == "All" then
+            return true
+        end
+
+        if HolySellKey(selectedFruit) == HolySellKey(fruitName) then
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyDailyDealFindBestTrigger(entries)
+
+    HolyDailyDealEnsureState()
+
+    if type(entries) ~= "table" then
+
+        return nil,
+            "Waiting for stock data"
+    end
+
+    local selected =
+        HolyShopSelectionArray(
+            HOLY_SHOP_STATE.DailyDealTriggerFruits
+            or {
+                "All",
+            }
+        )
+
+    if #selected <= 0 then
+
+        selected = {
+            "All",
+        }
+    end
+
+    local useAll =
+        false
+
+    for _, fruitName in ipairs(selected) do
+
+        if fruitName == "All" then
+
+            useAll =
+                true
+
+            break
+        end
+    end
+
+    local best =
+        nil
+
+    local function consider(stockFruitName, row)
+
+        if type(row) ~= "table" then
+            return
+        end
+
+        local multiplier =
+            tonumber(row.multiplier)
+            or 0
+
+        local candidate = {
+            Fruit =
+                tostring(stockFruitName),
+
+            StockName =
+                tostring(stockFruitName),
+
+            Multiplier =
+                multiplier,
+
+            Tier =
+                tostring(row.tier or ""),
+        }
+
+        if best == nil
+        or candidate.Multiplier > best.Multiplier then
+
+            best =
+                candidate
+        end
+    end
+
+    if useAll == true then
+
+        for stockFruitName, row in pairs(entries) do
+
+            consider(
+                stockFruitName,
+                row
+            )
+        end
+
+    else
+
+        for _, selectedFruitName in ipairs(selected) do
+
+            selectedFruitName =
+                HolyCleanText(
+                    selectedFruitName
+                )
+
+            if selectedFruitName ~= ""
+            and selectedFruitName ~= "All" then
+
+                local multiplier,
+                    stockName,
+                    tier =
+                    HolyDailyDealStockMultiplier(
+                        entries,
+                        selectedFruitName
+                    )
+
+                if stockName ~= "" then
+
+                    local candidate = {
+                        Fruit =
+                            selectedFruitName,
+
+                        StockName =
+                            stockName,
+
+                        Multiplier =
+                            tonumber(multiplier)
+                            or 0,
+
+                        Tier =
+                            tostring(tier or ""),
+                    }
+
+                    if best == nil
+                    or candidate.Multiplier > best.Multiplier then
+
+                        best =
+                            candidate
+                    end
+                end
+            end
+        end
+    end
+
+    if best == nil then
+
+        return nil,
+            "Waiting for selected stock"
+    end
+
+    return best,
+        "ok"
+end
+
+function HolyDailyDealOtherSystemBlocked()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+        return "Auto Sell Fruits is ON"
+    end
+
+    if HOLY_SHOP_STATE.AutoDoubleOrNothing == true
+    or HOLY_SHOP_STATE.DoubleWorkerRunning == true
+    or HOLY_SHOP_STATE.DoubleManualBusy == true then
+
+        return "Gamble is busy"
+    end
+
+    local sniper =
+        type(HOLY_SNIPER_RUNTIME) == "table"
+        and HOLY_SNIPER_RUNTIME
+        or {}
+
+    if sniper.Buying == true
+    or sniper.Returning == true
+    or sniper.AutoHopInProgress == true then
+
+        return "Sniper/server hop busy"
+    end
+
+    return ""
+end
+
+function HolyDailyDealExpectedValue(preview)
+
+    preview =
+        type(preview) == "table"
+        and preview
+        or {}
+
+    local base =
+        tonumber(preview.TotalBaseValue)
+        or tonumber(preview.TotalValue)
+        or 0
+
+    local multiplier =
+        HolyDailyDealGetDailyMultiplier()
+
+    local expected =
+        math.floor(
+            base * multiplier
+        )
+
+    return expected,
+        base,
+        multiplier
+end
+
+function HolyDailyDealSetNextWait(seconds)
+
+    HOLY_DAILY_DEAL_RUNTIME.NextWait =
+        math.clamp(
+            tonumber(seconds)
+            or 10,
+            3,
+            60
+        )
+
+    return HOLY_DAILY_DEAL_RUNTIME.NextWait
+end
+
+function HolyDailyDealGetNextWait()
+
+    return math.clamp(
+        tonumber(HOLY_DAILY_DEAL_RUNTIME.NextWait)
+        or 10,
+        3,
+        60
+    )
+end
+
+function HolyDailyDealEvaluate(mode)
+
+    HolyDailyDealEnsureState()
+
+    mode =
+        tostring(mode or "check")
+
+    HolyDailyDealSetNextWait(
+        10
+    )
+
+    if mode == "auto"
+    and HolyDailyDealTextBoxFocused() == true then
+
+        HolyDailyDealSetStatus(
+            "Paused while typing"
+        )
+
+        HolyDailyDealSetNextWait(
+            3
+        )
+
+        return false,
+            "typing"
+    end
+
+    local settingsOk,
+        settings =
+        HolyDailyDealValidateSettings()
+
+    if settingsOk ~= true then
+
+        HolyDailyDealSetStatus(
+            "⚠️ "
+            .. tostring(settings)
+        )
+
+        HolyDailyDealSetNextWait(
+            3
+        )
+
+        return false,
+            tostring(settings)
+    end
+
+    if mode ~= "check" then
+
+        local blocked =
+            HolyDailyDealOtherSystemBlocked()
+
+        if blocked ~= "" then
+
+            HolyDailyDealSetStatus(
+                "Blocked: "
+                .. blocked
+            )
+
+            HolyDailyDealSetNextWait(
+                8
+            )
+
+            return false,
+                blocked
+        end
+    end
+
+    HolyDailyDealSetStatus(
+        "Checking stock..."
+    )
+
+    local stockResult,
+        stockOk,
+        stockReason =
+        HolyDailyDealFireFruitStockRequest()
+
+    if stockOk ~= true
+    or type(stockResult) ~= "table"
+    or type(stockResult.entries) ~= "table" then
+
+        HolyDailyDealSetStatus(
+            "Stock check failed"
+        )
+
+        HolyDailyDealSetStockText(
+            "Stock: "
+            .. tostring(stockReason or "missing")
+        )
+
+        return false,
+            "stock failed"
+    end
+
+    local best,
+        triggerReason =
+        HolyDailyDealFindBestTrigger(
+            stockResult.entries
+        )
+
+    if best == nil then
+
+        HolyDailyDealSetStatus(
+            tostring(triggerReason)
+        )
+
+        HolyDailyDealSetStockText(
+            "Stock: no trigger fruit"
+        )
+
+        return false,
+            tostring(triggerReason)
+    end
+
+    HolyDailyDealSetStockText(
+        "Stock: "
+        .. tostring(best.StockName)
+        .. " X"
+        .. HolyDailyDealFormatDecimal(best.Multiplier)
+        .. " / Need X"
+        .. HolyDailyDealFormatDecimal(settings.MinStockMultiplier)
+    )
+
+    if tonumber(best.Multiplier) < tonumber(settings.MinStockMultiplier) then
+
+        HolyDailyDealSetStatus(
+            "Waiting stock X"
+            .. HolyDailyDealFormatDecimal(settings.MinStockMultiplier)
+        )
+
+        local waitSeconds =
+            30
+
+        if tonumber(stockResult.nextRefreshUnix)
+        and tonumber(stockResult.server_now_unix) then
+
+            waitSeconds =
+                tonumber(stockResult.nextRefreshUnix)
+                - tonumber(stockResult.server_now_unix)
+        end
+
+        HolyDailyDealSetNextWait(
+            waitSeconds
+        )
+
+        return false,
+            "stock too low"
+    end
+
+    local boost,
+        boostText =
+        HolyDailyDealReadFriendBoost()
+
+    if boost < settings.MinFriendBoost then
+
+        HolyDailyDealSetStatus(
+            "Waiting boost "
+            .. HolyDailyDealFormatDecimal(settings.MinFriendBoost)
+            .. "%"
+        )
+
+        HolyDailyDealSetNextWait(
+            20
+        )
+
+        return false,
+            "boost too low"
+    end
+
+    HolyDailyDealSetStatus(
+        "Checking availability..."
+    )
+
+    local checkResult,
+        checkOk,
+        checkReason =
+        HolyDailyDealFireNpcPacket(
+            "CheckDailyDeal"
+        )
+
+    if checkOk ~= true
+    or type(checkResult) ~= "table" then
+
+        HolyDailyDealSetStatus(
+            "Daily check failed"
+        )
+
+        return false,
+            tostring(checkReason or "check failed")
+    end
+
+    if checkResult.Available ~= true then
+
+        local remaining =
+            tonumber(checkResult.TimeRemaining)
+            or 0
+
+        HolyDailyDealSetStatus(
+            "Cooldown "
+            .. HolyDailyDealFormatDuration(
+                remaining
+            )
+        )
+
+        HolyDailyDealSetPreviewText(
+            "Preview: skipped, cooldown"
+        )
+
+        HolyDailyDealSetNextWait(
+            remaining
+        )
+
+        return false,
+            "cooldown"
+    end
+
+    HolyDailyDealSetStatus(
+        "Checking preview..."
+    )
+
+    local preview,
+        previewOk,
+        previewReason =
+        HolyDailyDealFireNpcPacket(
+            "PreviewSellAll"
+        )
+
+    if previewOk ~= true
+    or type(preview) ~= "table" then
+
+        HolyDailyDealSetStatus(
+            "Preview failed"
+        )
+
+        HolyDailyDealSetPreviewText(
+            "Preview: "
+            .. tostring(previewReason or "failed")
+        )
+
+        return false,
+            "preview failed"
+    end
+
+    local fruitCount =
+        tonumber(preview.FruitCount)
+        or 0
+
+    local expectedDaily,
+        baseValue,
+        dailyMultiplier =
+        HolyDailyDealExpectedValue(
+            preview
+        )
+
+    HolyDailyDealSetPreviewText(
+        "Preview: "
+        .. tostring(fruitCount)
+        .. " fruits | Inv "
+        .. HolyDailyDealFormatMoney(
+            baseValue
+        )
+        .. " → Daily "
+        .. HolyDailyDealFormatMoney(
+            expectedDaily
+        )
+    )
+
+    if fruitCount <= 0 then
+
+        HolyDailyDealSetStatus(
+            "Preview has no fruit"
+        )
+
+        return false,
+            "no preview fruit"
+    end
+
+    if settings.MinInventoryValue > 0
+    and baseValue < settings.MinInventoryValue then
+
+        HolyDailyDealSetStatus(
+            "Inventory too low"
+        )
+
+        HolyDailyDealSetNextWait(
+            20
+        )
+
+        return false,
+            "inventory too low"
+    end
+
+    if settings.MinValue > 0
+    and expectedDaily < settings.MinValue then
+
+        HolyDailyDealSetStatus(
+            "Daily payout too low"
+        )
+
+        HolyDailyDealSetNextWait(
+            20
+        )
+
+        return false,
+            "daily payout too low"
+    end
+
+    HolyDailyDealSetStatus(
+        "Ready"
+    )
+
+    return true,
+        "ready",
+        {
+            Settings =
+                settings,
+
+            Stock =
+                stockResult,
+
+            Best =
+                best,
+
+            FriendBoost =
+                boost,
+
+            FriendBoostText =
+                boostText,
+
+            Check =
+                checkResult,
+
+            Preview =
+                preview,
+
+            ExpectedDaily =
+                expectedDaily,
+
+            BaseValue =
+                baseValue,
+
+            DailyMultiplier =
+                dailyMultiplier,
+        }
+end
+
+function HolyDailyDealSyncAutoToggle()
+
+    local options =
+        HOLY_DEV_LIBRARY
+        and HOLY_DEV_LIBRARY.Options
+        or Options
+
+    local toggle =
+        type(options) == "table"
+        and options.HolyShopAutoDailyDealAll
+        or nil
+
+    if type(toggle) == "table"
+    and type(toggle.SetValue) == "function" then
+
+        pcall(function()
+
+            toggle:SetValue(
+                HOLY_SHOP_STATE.AutoDailyDealAll == true,
+                true
+            )
+        end)
+    end
+
+    return true
+end
+
+function HolyDailyDealRunUseAll(source)
+
+    HolyDailyDealEnsureState()
+
+    source =
+        tostring(source or "manual")
+
+    if HOLY_SHOP_STATE.DailyDealManualBusy == true then
+
+        HolyDailyDealSetStatus(
+            "Busy"
+        )
+
+        return false,
+            "busy"
+    end
+
+    HOLY_SHOP_STATE.DailyDealManualBusy =
+        true
+
+    local success =
+        false
+
+    local reason =
+        "unknown"
+
+    local ok,
+        err =
+        pcall(function()
+
+            local ready,
+                readyReason,
+                context =
+                HolyDailyDealEvaluate(
+                    source == "auto"
+                    and "auto"
+                    or "manual"
+                )
+
+            if ready ~= true then
+
+                reason =
+                    tostring(readyReason or "not ready")
+
+                return
+            end
+
+            HolyDailyDealSetStatus(
+                "Ready → selling"
+            )
+
+            local beforeMoney =
+                type(HolySniperReadSheckles) == "function"
+                and HolySniperReadSheckles()
+                or nil
+
+            local result,
+                fireOk,
+                fireReason =
+                HolyDailyDealFireNpcPacket(
+                    "UseDailyDealAll"
+                )
+
+            task.wait(
+                0.25
+            )
+
+            local afterMoney =
+                type(HolySniperReadSheckles) == "function"
+                and HolySniperReadSheckles()
+                or nil
+
+            local moneyDelta =
+                beforeMoney ~= nil
+                and afterMoney ~= nil
+                and afterMoney - beforeMoney
+                or 0
+
+            result =
+                type(result) == "table"
+                and result
+                or {}
+
+            local soldCount =
+                tonumber(result.SoldCount)
+                or 0
+
+            local sellPrice =
+                tonumber(result.SellPrice)
+                or moneyDelta
+                or 0
+
+            if fireOk == true
+            and (
+                result.Success == true
+                or soldCount > 0
+                or moneyDelta > 0
+            ) then
+
+                success =
+                    true
+
+                reason =
+                    "sold"
+
+                HolyDailyDealSetLastText(
+                    "Last: Sold "
+                    .. tostring(soldCount)
+                    .. " for "
+                    .. HolyDailyDealFormatMoney(
+                        sellPrice
+                    )
+                )
+
+                if HOLY_SHOP_STATE.DailyDealAutoDisable == true then
+
+                    HOLY_SHOP_STATE.AutoDailyDealAll =
+                        false
+
+                    HOLY_SHOP_STATE.DailyDealToken =
+                        nil
+
+                    HOLY_SHOP_STATE.DailyDealWorkerRunning =
+                        false
+
+                    HolySaveShopSettings()
+
+                    HolyDailyDealSyncAutoToggle()
+                end
+
+                HolyDailyDealSetStatus(
+                    "Sold "
+                    .. tostring(soldCount)
+                    .. " for "
+                    .. HolyDailyDealFormatMoney(
+                        sellPrice
+                    )
+                )
+
+                if type(HolyNotify) == "function" then
+
+                    HolyNotify(
+                        "HOLY Daily Deal",
+                        "Sold "
+                        .. tostring(soldCount)
+                        .. " fruit(s) for "
+                        .. HolyDailyDealFormatMoney(sellPrice)
+                        .. ".",
+                        4
+                    )
+                end
+
+            else
+
+                reason =
+                    tostring(fireReason or "sale failed")
+
+                HolyDailyDealSetStatus(
+                    "Failed: "
+                    .. reason
+                )
+
+                HolyDailyDealSetLastText(
+                    "Last: failed"
+                )
+            end
+        end)
+
+    if ok ~= true then
+
+        reason =
+            tostring(err)
+
+        HolyDailyDealSetStatus(
+            "Error: "
+            .. reason
+        )
+    end
+
+    HOLY_SHOP_STATE.DailyDealManualBusy =
+        false
+
+    return success,
+        reason
+end
+
+function HolyDailyDealCheckNow()
+
+    task.spawn(function()
+
+        local ready,
+            reason =
+            HolyDailyDealEvaluate(
+                "check"
+            )
+
+        if ready == true then
+
+            HolyDailyDealSetStatus(
+                "Ready / check only"
+            )
+
+        else
+
+            HolyDailyDealSetLastText(
+                "Last check: "
+                .. tostring(reason)
+            )
+        end
+    end)
+
+    return true
+end
+
+function HolyDailyDealUseOnce()
+
+    task.spawn(function()
+
+        HolyDailyDealRunUseAll(
+            "manual"
+        )
+    end)
+
+    return true
+end
+
+function HolyDailyDealStopWorker(reason)
+
+    HolyDailyDealEnsureState()
+
+    HOLY_SHOP_STATE.AutoDailyDealAll =
+        false
+
+    HOLY_SHOP_STATE.DailyDealToken =
+        nil
+
+    HOLY_SHOP_STATE.DailyDealWorkerRunning =
+        false
+
+    HolySaveShopSettings()
+
+    HolyDailyDealSetStatus(
+        tostring(reason or "Off")
+    )
+
+    return true
+end
+
+function HolyDailyDealStartWorker(reason)
+
+    HolyDailyDealEnsureState()
+
+    if HOLY_SHOP_STATE.AutoDailyDealAll ~= true then
+        return false
+    end
+
+    if HOLY_SHOP_STATE.DailyDealWorkerRunning == true then
+        return false
+    end
+
+    local token =
+        {}
+
+    HOLY_SHOP_STATE.DailyDealToken =
+        token
+
+    HOLY_SHOP_STATE.DailyDealWorkerRunning =
+        true
+
+    HolyDailyDealSetStatus(
+        "Starting..."
+    )
+
+    task.spawn(function()
+
+        while HOLY_SHOP_STATE.AutoDailyDealAll == true
+        and HOLY_SHOP_STATE.DailyDealToken == token do
+
+            local ok,
+                err =
+                pcall(function()
+
+                    HolyDailyDealRunUseAll(
+                        "auto"
+                    )
+                end)
+
+            if ok ~= true then
+
+                HolyDailyDealSetStatus(
+                    "Error: "
+                    .. tostring(err)
+                )
+
+                HolyDailyDealSetNextWait(
+                    10
+                )
+            end
+
+            if HOLY_SHOP_STATE.AutoDailyDealAll ~= true then
+                break
+            end
+
+            task.wait(
+                HolyDailyDealGetNextWait()
+            )
+        end
+
+        if HOLY_SHOP_STATE.DailyDealToken == token then
+
+            HOLY_SHOP_STATE.DailyDealWorkerRunning =
+                false
+
+            HOLY_SHOP_STATE.DailyDealToken =
+                nil
+        end
+    end)
+
+    return true
+end
+
+function HolyDailyDealSetAutoEnabled(value, reason)
+
+    HolyDailyDealEnsureState()
+
+    HOLY_SHOP_STATE.AutoDailyDealAll =
+        value == true
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoDailyDealAll == true then
+
+        return HolyDailyDealStartWorker(
+            reason or "toggle on"
+        )
+    end
+
+    return HolyDailyDealStopWorker(
+        reason or "Off"
+    )
 end
 
 --==================================================
@@ -26209,12 +34603,35 @@ function HolyVisualGetRuntime()
         and runtime.Labels
         or {}
 
+    runtime.GardenFruitLabels =
+        type(runtime.GardenFruitLabels) == "table"
+        and runtime.GardenFruitLabels
+        or {}
+
     runtime.UpdateDelay =
         math.clamp(
             tonumber(runtime.UpdateDelay)
             or 0.75,
             0.25,
             2
+        )
+
+    runtime.GardenFruitUpdateDelay =
+        math.clamp(
+            tonumber(runtime.GardenFruitUpdateDelay)
+            or 1.0,
+            0.35,
+            3
+        )
+
+    runtime.GardenFruitMaxLabels =
+        math.clamp(
+            math.floor(
+                tonumber(runtime.GardenFruitMaxLabels)
+                or 160
+            ),
+            20,
+            250
         )
 
     return runtime
@@ -28296,6 +36713,2125 @@ function HolyVisualSetFruitTotalValue(value)
         "toggle off",
         false
     )
+end
+
+function HolyVisualGardenRichEscape(value)
+
+    local text =
+        tostring(value or "")
+
+    text =
+        text:gsub("&", "&amp;")
+            :gsub("<", "&lt;")
+            :gsub(">", "&gt;")
+            :gsub('"', "&quot;")
+            :gsub("'", "&apos;")
+
+    return text
+end
+
+function HolyVisualGardenCleanInstanceName(instance)
+
+    local name =
+        tostring(
+            instance
+            and instance.Name
+            or ""
+        )
+
+    name =
+        name:gsub(
+            "^%d+_",
+            ""
+        )
+
+    name =
+        name:gsub(
+            "_[%w]+%-%w+%-%w+%-%w+%-%w+$",
+            ""
+        )
+
+    name =
+        name:gsub(
+            "[_%s]*Fruit$",
+            ""
+        )
+
+    return HolyCleanText(
+        name
+    )
+end
+
+function HolyVisualGardenReadFruitName(plant, fruit)
+
+    local name =
+        ""
+
+    if type(HolyFarmReadAttribute) == "function" then
+
+        name =
+            HolyFarmReadAttribute(
+                fruit,
+                {
+                    "CorePartName",
+                    "FruitName",
+                    "SeedName",
+                    "PlantName",
+                    "CropName",
+                    "DisplayName",
+                    "ItemName",
+                    "Name",
+                }
+            )
+    end
+
+    if name == ""
+    and type(HolyFarmReadAttribute) == "function" then
+
+        name =
+            HolyFarmReadAttribute(
+                plant,
+                {
+                    "SeedName",
+                    "PlantName",
+                    "CropName",
+                    "FruitName",
+                    "DisplayName",
+                    "ItemName",
+                    "Name",
+                }
+            )
+    end
+
+    if name == ""
+    and type(HolyFarmReadPlantName) == "function" then
+
+        name =
+            HolyFarmReadPlantName(
+                plant,
+                fruit
+            )
+    end
+
+    if name == ""
+    or name == "Unknown" then
+
+        name =
+            HolyVisualGardenCleanInstanceName(
+                fruit
+            )
+    end
+
+    if name == ""
+    or name == "Unknown" then
+
+        name =
+            HolyVisualGardenCleanInstanceName(
+                plant
+            )
+    end
+
+    return HolyCleanText(
+        name
+    )
+end
+
+function HolyVisualGardenReadNumberAttribute(instance, names)
+
+    if type(HolyFarmReadNumberAttribute) == "function" then
+
+        return HolyFarmReadNumberAttribute(
+            instance,
+            names
+        )
+    end
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    for _, name in ipairs(names or {}) do
+
+        local ok,
+            value =
+            pcall(function()
+
+                return instance:GetAttribute(
+                    name
+                )
+            end)
+
+        local number =
+            tonumber(
+                ok == true
+                and value
+                or nil
+            )
+
+        if number ~= nil then
+            return number
+        end
+    end
+
+    return nil
+end
+
+function HolyVisualGardenReadSizeMultiplier(plant, fruit, kind)
+
+    local target =
+        kind == "PlantHarvest"
+        and plant
+        or fruit
+
+    local size =
+        HolyVisualGardenReadNumberAttribute(
+            target,
+            {
+                "SizeMultiplier",
+                "SizeMulti",
+                "ScaleMultiplier",
+                "ScaleMulti",
+                "Scale",
+                "SizeScale",
+            }
+        )
+
+    if size ~= nil
+    and size > 0 then
+
+        return size
+    end
+
+    if typeof(target) == "Instance"
+    and target:IsA("Model") then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return target:GetScale()
+            end)
+
+        result =
+            tonumber(result)
+
+        if ok == true
+        and result ~= nil
+        and result > 0 then
+
+            return result
+        end
+    end
+
+    return 1
+end
+
+function HolyVisualGardenReadWeightKg(plant, fruit, fruitName, sizeMultiplier, kind)
+
+    local target =
+        kind == "PlantHarvest"
+        and plant
+        or fruit
+
+    local direct =
+        HolyVisualGardenReadNumberAttribute(
+            target,
+            {
+                "WeightKg",
+                "WeightKG",
+                "KG",
+                "Kg",
+                "Weight",
+                "Mass",
+            }
+        )
+
+    if direct ~= nil
+    and direct > 0 then
+
+        return direct
+    end
+
+    local plantDirect =
+        HolyVisualGardenReadNumberAttribute(
+            plant,
+            {
+                "WeightKg",
+                "WeightKG",
+                "KG",
+                "Kg",
+                "Weight",
+                "Mass",
+            }
+        )
+
+    if kind == "PlantHarvest"
+    and plantDirect ~= nil
+    and plantDirect > 0 then
+
+        return plantDirect
+    end
+
+    local baseKg =
+        nil
+
+    if type(HolyFarmGetBaseKg) == "function" then
+
+        baseKg =
+            HolyFarmGetBaseKg(
+                fruitName,
+                kind
+            )
+    end
+
+    baseKg =
+        tonumber(baseKg)
+        or 1
+
+    return baseKg
+        * (
+            tonumber(sizeMultiplier)
+            or 1
+        )
+end
+
+function HolyVisualGardenSplitMutationText(value)
+
+    local output =
+        {}
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == "" then
+        return output
+    end
+
+    text =
+        text:gsub("^%[", "")
+            :gsub("%]$", "")
+            :gsub("^%{", "")
+            :gsub("%}$", "")
+
+    for part in text:gmatch("[^,%|/;]+") do
+
+        part =
+            HolyCleanText(
+                part
+            )
+
+        if part ~= "" then
+
+            table.insert(
+                output,
+                part
+            )
+        end
+    end
+
+    if #output <= 0 then
+
+        table.insert(
+            output,
+            text
+        )
+    end
+
+    return output
+end
+
+function HolyVisualGardenReadRawAttribute(instance, names)
+
+    if type(HolyFarmReadAttribute) == "function" then
+
+        return HolyFarmReadAttribute(
+            instance,
+            names
+        )
+    end
+
+    if typeof(instance) ~= "Instance" then
+        return ""
+    end
+
+    for _, name in ipairs(names or {}) do
+
+        local ok,
+            value =
+            pcall(function()
+
+                return instance:GetAttribute(
+                    name
+                )
+            end)
+
+        value =
+            HolyCleanText(
+                ok == true
+                and value
+                or ""
+            )
+
+        if value ~= "" then
+            return value
+        end
+    end
+
+    return ""
+end
+
+function HolyVisualGardenReadInstanceMutations(instance)
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    if typeof(instance) ~= "Instance" then
+        return output
+    end
+
+    for _, attributeName in ipairs({
+        "Mutation",
+        "Mutations",
+        "Variant",
+        "FruitVariant",
+        "Type",
+    }) do
+
+        local raw =
+            HolyVisualGardenReadRawAttribute(
+                instance,
+                {
+                    attributeName,
+                }
+            )
+
+        for _, part in ipairs(HolyVisualGardenSplitMutationText(raw)) do
+
+            local mutation =
+                ""
+
+            if type(HolyFarmNormalizeMutationName) == "function" then
+
+                mutation =
+                    HolyFarmNormalizeMutationName(
+                        part
+                    )
+
+            else
+
+                mutation =
+                    HolyCleanText(
+                        part
+                    )
+            end
+
+            if mutation ~= ""
+            and seen[mutation] ~= true then
+
+                seen[mutation] =
+                    true
+
+                table.insert(
+                    output,
+                    mutation
+                )
+            end
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
+function HolyVisualGardenReadMutations(plant, fruit, kind)
+
+    if kind == "PlantHarvest" then
+
+        return HolyVisualGardenReadInstanceMutations(
+            plant
+        )
+    end
+
+    -- Important: fruit ESP should not inherit plant mutations.
+    return HolyVisualGardenReadInstanceMutations(
+        fruit
+    )
+end
+
+function HolyVisualGardenFindAdornee(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    if instance:IsA("BasePart") then
+        return instance
+    end
+
+    local harvestPart =
+        instance:FindFirstChild(
+            "HarvestPart",
+            true
+        )
+
+    if typeof(harvestPart) == "Instance" then
+
+        if harvestPart:IsA("BasePart") then
+            return harvestPart
+        end
+
+        local nested =
+            harvestPart:FindFirstChildWhichIsA(
+                "BasePart",
+                true
+            )
+
+        if nested then
+            return nested
+        end
+    end
+
+    if instance:IsA("Model") then
+
+        if instance.PrimaryPart then
+            return instance.PrimaryPart
+        end
+
+        local rootPart =
+            instance:FindFirstChild(
+                "RootPart",
+                true
+            )
+
+        if rootPart
+        and rootPart:IsA("BasePart") then
+
+            return rootPart
+        end
+    end
+
+    return instance:FindFirstChildWhichIsA(
+        "BasePart",
+        true
+    )
+end
+
+function HolyVisualGardenGetRootPart()
+
+    local character =
+        LocalPlayer
+        and LocalPlayer.Character
+        or nil
+
+    if typeof(character) ~= "Instance" then
+        return nil
+    end
+
+    return character:FindFirstChild(
+        "HumanoidRootPart"
+    )
+    or character:FindFirstChild(
+        "RootPart"
+    )
+    or character.PrimaryPart
+end
+
+function HolyVisualGardenGetDistance(adornee)
+
+    if typeof(adornee) ~= "Instance"
+    or adornee:IsA("BasePart") ~= true then
+
+        return 0
+    end
+
+    local root =
+        HolyVisualGardenGetRootPart()
+
+    if typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true then
+
+        return 0
+    end
+
+    return (
+        root.Position
+        - adornee.Position
+    ).Magnitude
+end
+
+function HolyVisualGardenSelectedFruitMap()
+
+    HolyVisualEnsureState()
+
+    local map =
+        {}
+
+    for _, fruitName in ipairs(HOLY_VISUAL_STATE.GardenFruitSelectedFruits or {}) do
+
+        local normalized =
+            ""
+
+        if type(HolyFarmNormalizePlantName) == "function" then
+
+            normalized =
+                HolyFarmNormalizePlantName(
+                    fruitName
+                )
+
+        else
+
+            normalized =
+                HolyCleanText(
+                    fruitName
+                )
+        end
+
+        if normalized ~= "" then
+
+            map[normalized] =
+                true
+        end
+    end
+
+    return map
+end
+
+function HolyVisualGardenFruitAllows(fruitName)
+
+    HolyVisualEnsureState()
+
+    local mode =
+        HolyVisualNormalizeGardenFruitMode(
+            HOLY_VISUAL_STATE.GardenFruitMode
+            or "All"
+        )
+
+    if mode == "All" then
+        return true
+    end
+
+    fruitName =
+        HolyCleanText(
+            fruitName
+        )
+
+    local normalized =
+        fruitName
+
+    if type(HolyFarmNormalizePlantName) == "function" then
+
+        normalized =
+            HolyFarmNormalizePlantName(
+                fruitName
+            )
+    end
+
+    local selectedMap =
+        HolyVisualGardenSelectedFruitMap()
+
+    local hasSelected =
+        false
+
+    for _ in pairs(selectedMap) do
+
+        hasSelected =
+            true
+
+        break
+    end
+
+    if mode == "Only Selected" then
+
+        if hasSelected ~= true then
+            return false
+        end
+
+        return selectedMap[normalized] == true
+            or selectedMap[fruitName] == true
+    end
+
+    if mode == "Skip Selected" then
+
+        if hasSelected ~= true then
+            return true
+        end
+
+        return selectedMap[normalized] ~= true
+            and selectedMap[fruitName] ~= true
+    end
+
+    return true
+end
+
+function HolyVisualGardenSelectedMutationMap()
+
+    HolyVisualEnsureState()
+
+    local map =
+        {}
+
+    for _, mutationName in ipairs(HOLY_VISUAL_STATE.GardenFruitSelectedMutations or {}) do
+
+        local normalized =
+            ""
+
+        if type(HolyFarmNormalizeMutationName) == "function" then
+
+            normalized =
+                HolyFarmNormalizeMutationName(
+                    mutationName
+                )
+
+        else
+
+            normalized =
+                HolyCleanText(
+                    mutationName
+                )
+        end
+
+        if normalized ~= "" then
+
+            map[normalized] =
+                true
+        end
+    end
+
+    return map
+end
+
+function HolyVisualGardenMutationAllows(mutations)
+
+    HolyVisualEnsureState()
+
+    local mode =
+        HolyVisualNormalizeGardenMutationMode(
+            HOLY_VISUAL_STATE.GardenFruitMutationMode
+            or "All"
+        )
+
+    local hasMutation =
+        type(mutations) == "table"
+        and #mutations > 0
+
+    if mode == "All" then
+        return true
+    end
+
+    if mode == "Only Mutated" then
+        return hasMutation == true
+    end
+
+    local selectedMap =
+        HolyVisualGardenSelectedMutationMap()
+
+    local hasSelected =
+        false
+
+    for _ in pairs(selectedMap) do
+
+        hasSelected =
+            true
+
+        break
+    end
+
+    if mode == "Only Selected" then
+
+        if hasSelected ~= true then
+            return false
+        end
+
+        for _, mutationName in ipairs(mutations or {}) do
+
+            if selectedMap[mutationName] == true then
+                return true
+            end
+        end
+
+        return false
+    end
+
+    if mode == "Skip Selected" then
+
+        if hasSelected ~= true then
+            return true
+        end
+
+        for _, mutationName in ipairs(mutations or {}) do
+
+            if selectedMap[mutationName] == true then
+                return false
+            end
+        end
+
+        return true
+    end
+
+    return true
+end
+
+function HolyVisualGardenWeightAllows(weight)
+
+    HolyVisualEnsureState()
+
+    local mode =
+        "Off"
+
+    if type(HolyFarmNormalizeWeightMode) == "function" then
+
+        mode =
+            HolyFarmNormalizeWeightMode(
+                HOLY_VISUAL_STATE.GardenFruitWeightMode
+                or "Off"
+            )
+    end
+
+    if mode == "Off" then
+        return true
+    end
+
+    local threshold =
+        0
+
+    if type(HolyFarmReadWeightThresholdKg) == "function" then
+
+        threshold =
+            HolyFarmReadWeightThresholdKg(
+                HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg
+            )
+
+    else
+
+        threshold =
+            tonumber(
+                HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg
+            )
+            or 0
+    end
+
+    if threshold <= 0 then
+        return true
+    end
+
+    weight =
+        tonumber(weight)
+        or 0
+
+    if mode == "Above" then
+        return weight >= threshold
+    end
+
+    if mode == "Below" then
+        return weight <= threshold
+    end
+
+    return true
+end
+
+function HolyVisualGardenValueAllows(value)
+
+    HolyVisualEnsureState()
+
+    local minValue =
+        tonumber(
+            HOLY_VISUAL_STATE.GardenFruitMinValue
+        )
+        or 0
+
+    if minValue <= 0 then
+        return true
+    end
+
+    return (
+        tonumber(value)
+        or 0
+    ) >= minValue
+end
+
+function HolyVisualGardenCalculateValue(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    row.RawMutation =
+        table.concat(
+            row.Mutations
+            or {},
+            ","
+        )
+
+    local value =
+        HolyVisualCalculateFruitValue(
+            row.Fruit,
+            row
+        )
+
+    return math.max(
+        0,
+        tonumber(value)
+        or 0
+    )
+end
+
+function HolyVisualGardenFormatMoney(value)
+
+    local number =
+        math.max(
+            0,
+            tonumber(value)
+            or 0
+        )
+
+    local suffix =
+        ""
+
+    if number >= 1000000000 then
+
+        number =
+            number / 1000000000
+
+        suffix =
+            "B"
+
+    elseif number >= 1000000 then
+
+        number =
+            number / 1000000
+
+        suffix =
+            "M"
+
+    elseif number >= 1000 then
+
+        number =
+            number / 1000
+
+        suffix =
+            "K"
+    end
+
+    if suffix ~= "" then
+
+        local text =
+            string.format(
+                "%.3f",
+                number
+            )
+
+        text =
+            text:gsub("0+$", "")
+                :gsub("%.$", "")
+
+        return "$"
+            .. text
+            .. suffix
+    end
+
+    return "$"
+        .. tostring(
+            math.floor(number + 0.5)
+        )
+end
+
+function HolyVisualGardenFormatKg(value)
+
+    return string.format(
+        "%.2fkg",
+        tonumber(value)
+        or 0
+    )
+end
+
+function HolyVisualGardenKgColor(weight)
+
+    weight =
+        tonumber(weight)
+        or 0
+
+    if weight >= 100 then
+        return "#FF2D2D"
+    end
+
+    if weight >= 50 then
+        return "#FFD84A"
+    end
+
+    return "#D8D8D8"
+end
+
+function HolyVisualGardenMutationColor(mutationName)
+
+    local key =
+        HolyVisualNameKey(
+            mutationName
+        )
+
+    local colors = {
+        gold = "#FFD84A",
+        rainbow = "#FF4DFF",
+        electric = "#00E5FF",
+        frozen = "#9CEBFF",
+        bloodlit = "#FF3D3D",
+        starstruck = "#FFF06A",
+        aurora = "#B56CFF",
+        solarflare = "#FF8A00",
+        ignited = "#FF4B1F",
+        chained = "#B8B8B8",
+        pizza = "#FFB347",
+    }
+
+    return colors[key]
+        or "#FFFFFF"
+end
+
+function HolyVisualGardenMutationEmoji(mutationName)
+
+    local key =
+        HolyVisualNameKey(
+            mutationName
+        )
+
+    local emojis = {
+        gold = "🥇",
+        rainbow = "🌈",
+        electric = "⚡",
+        frozen = "❄️",
+        bloodlit = "🩸",
+        starstruck = "✨",
+        aurora = "🟣",
+        solarflare = "☀️",
+        ignited = "🔥",
+        chained = "⛓️",
+        pizza = "🍕",
+    }
+
+    return emojis[key]
+        or ""
+end
+
+function HolyVisualGardenBuildRichText(row)
+
+    local lineOneParts =
+        {}
+
+    table.insert(
+        lineOneParts,
+        '<font color="#FFFFFF">'
+            .. HolyVisualGardenRichEscape(row.Name)
+            .. '</font>'
+    )
+
+    table.insert(
+        lineOneParts,
+        '<font color="'
+            .. HolyVisualGardenKgColor(row.Weight)
+            .. '">'
+            .. HolyVisualGardenRichEscape(
+                HolyVisualGardenFormatKg(
+                    row.Weight
+                )
+            )
+            .. '</font>'
+    )
+
+    if HOLY_VISUAL_STATE.GardenFruitShowValue == true then
+
+        table.insert(
+            lineOneParts,
+            '<font color="#39FF14">['
+                .. HolyVisualGardenRichEscape(
+                    HolyVisualGardenFormatMoney(
+                        row.Value
+                    )
+                )
+                .. ']</font>'
+        )
+    end
+
+    local lineOne =
+        table.concat(
+            lineOneParts,
+            " "
+        )
+
+    local badges =
+        {}
+
+    for _, mutationName in ipairs(row.Mutations or {}) do
+
+        local emoji =
+            HolyVisualGardenMutationEmoji(
+                mutationName
+            )
+
+        local prefix =
+            emoji ~= ""
+            and (
+                emoji
+                .. " "
+            )
+            or ""
+
+        table.insert(
+            badges,
+            '<font color="'
+                .. HolyVisualGardenMutationColor(mutationName)
+                .. '">'
+                .. HolyVisualGardenRichEscape(prefix .. mutationName)
+                .. '</font>'
+        )
+    end
+
+    if #badges > 0 then
+
+        return lineOne
+            .. "\n"
+            .. table.concat(
+                badges,
+                "  "
+            )
+    end
+
+    return lineOne
+end
+
+function HolyVisualGardenReadRow(plant, fruit, kind)
+
+    if typeof(plant) ~= "Instance"
+    or typeof(fruit) ~= "Instance"
+    or fruit.Parent == nil then
+
+        return nil
+    end
+
+    local adornee =
+        HolyVisualGardenFindAdornee(
+            fruit
+        )
+
+    if typeof(adornee) ~= "Instance"
+    or adornee:IsA("BasePart") ~= true then
+
+        return nil
+    end
+
+    local maxDistance =
+        tonumber(
+            HOLY_VISUAL_STATE.GardenFruitMaxDistance
+        )
+        or 150
+
+    local distance =
+        HolyVisualGardenGetDistance(
+            adornee
+        )
+
+    if maxDistance > 0
+    and distance > maxDistance then
+
+        return nil
+    end
+
+    local fruitName =
+        HolyVisualGardenReadFruitName(
+            plant,
+            fruit
+        )
+
+    if fruitName == ""
+    or fruitName == "Unknown" then
+
+        return nil
+    end
+
+    if HolyVisualGardenFruitAllows(
+        fruitName
+    ) ~= true then
+
+        return nil
+    end
+
+    local sizeMultiplier =
+        HolyVisualGardenReadSizeMultiplier(
+            plant,
+            fruit,
+            kind
+        )
+
+    local weight =
+        HolyVisualGardenReadWeightKg(
+            plant,
+            fruit,
+            fruitName,
+            sizeMultiplier,
+            kind
+        )
+
+    if HolyVisualGardenWeightAllows(weight) ~= true then
+        return nil
+    end
+
+    local mutations =
+        HolyVisualGardenReadMutations(
+            plant,
+            fruit,
+            kind
+        )
+
+    if HolyVisualGardenMutationAllows(mutations) ~= true then
+        return nil
+    end
+
+    local row = {
+        Key =
+            fruit,
+
+        Plant =
+            plant,
+
+        Fruit =
+            fruit,
+
+        Kind =
+            kind,
+
+        Adornee =
+            adornee,
+
+        Name =
+            fruitName,
+
+        RawMutation =
+            table.concat(
+                mutations,
+                ","
+            ),
+
+        Mutations =
+            mutations,
+
+        Weight =
+            tonumber(weight)
+            or 0,
+
+        SizeMultiplier =
+            tonumber(sizeMultiplier)
+            or 1,
+
+        Distance =
+            tonumber(distance)
+            or 0,
+    }
+
+    row.Value =
+        HolyVisualGardenCalculateValue(
+            row
+        )
+
+    if HolyVisualGardenValueAllows(row.Value) ~= true then
+        return nil
+    end
+
+    row.Score =
+        (
+            tonumber(row.Value)
+            or 0
+        )
+        + (
+            #mutations
+            * 100000000
+        )
+        + (
+            tonumber(row.Weight)
+            or 0
+        )
+        * 250
+        - (
+            tonumber(row.Distance)
+            or 0
+        )
+
+    return row
+end
+
+function HolyVisualGardenBuildRows()
+
+    HolyVisualEnsureState()
+
+    local rows =
+        {}
+
+    local plot =
+        nil
+
+    if type(HolyFarmResolveOwnPlot) == "function" then
+
+        plot =
+            HolyFarmResolveOwnPlot(
+                false
+            )
+    end
+
+    if typeof(plot) ~= "Instance" then
+        return rows
+    end
+
+    local plantsFolder =
+        plot:FindFirstChild(
+            "Plants"
+        )
+
+    if typeof(plantsFolder) ~= "Instance" then
+        return rows
+    end
+
+    for _, plant in ipairs(plantsFolder:GetChildren()) do
+
+        if typeof(plant) == "Instance" then
+
+            local fruitsFolder =
+                plant:FindFirstChild(
+                    "Fruits"
+                )
+
+            if typeof(fruitsFolder) == "Instance" then
+
+                for _, fruit in ipairs(fruitsFolder:GetChildren()) do
+
+                    local row =
+                        HolyVisualGardenReadRow(
+                            plant,
+                            fruit,
+                            "FruitHarvest"
+                        )
+
+                    if row then
+
+                        table.insert(
+                            rows,
+                            row
+                        )
+                    end
+                end
+
+            elseif plant:FindFirstChild("HarvestPart", true) then
+
+                local row =
+                    HolyVisualGardenReadRow(
+                        plant,
+                        plant,
+                        "PlantHarvest"
+                    )
+
+                if row then
+
+                    table.insert(
+                        rows,
+                        row
+                    )
+                end
+            end
+        end
+    end
+
+    table.sort(rows, function(a, b)
+
+        return tonumber(a.Score or 0)
+            > tonumber(b.Score or 0)
+    end)
+
+    return rows
+end
+
+function HolyVisualGardenGetGui()
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    if typeof(runtime.GardenFruitGui) == "Instance"
+    and runtime.GardenFruitGui.Parent ~= nil then
+
+        return runtime.GardenFruitGui
+    end
+
+    local playerGui =
+        HolyVisualGetPlayerGui()
+
+    if typeof(playerGui) ~= "Instance" then
+        return nil
+    end
+
+    local oldGui =
+        playerGui:FindFirstChild(
+            "HolyGardenFruitESPGui"
+        )
+
+    if typeof(oldGui) == "Instance" then
+
+        pcall(function()
+
+            oldGui:Destroy()
+        end)
+    end
+
+    local gui =
+        Instance.new(
+            "ScreenGui"
+        )
+
+    gui.Name =
+        "HolyGardenFruitESPGui"
+
+    gui.ResetOnSpawn =
+        false
+
+    gui.IgnoreGuiInset =
+        true
+
+    gui.DisplayOrder =
+        999999
+
+    gui.ZIndexBehavior =
+        Enum.ZIndexBehavior.Global
+
+    gui.Parent =
+        playerGui
+
+    runtime.GardenFruitGui =
+        gui
+
+    return gui
+end
+
+function HolyVisualGardenEnsureLabel(row)
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    local gui =
+        HolyVisualGardenGetGui()
+
+    if typeof(gui) ~= "Instance" then
+        return nil
+    end
+
+    local label =
+        runtime.GardenFruitLabels[row.Key]
+
+    if typeof(label) == "Instance"
+    and label.Parent == gui then
+
+        return label
+    end
+
+    label =
+        Instance.new(
+            "BillboardGui"
+        )
+
+    label.Name =
+        "HolyGardenFruitESPLabel"
+
+    label.AlwaysOnTop =
+        true
+
+    label.LightInfluence =
+        0
+
+    label.MaxDistance =
+        tonumber(
+            HOLY_VISUAL_STATE.GardenFruitMaxDistance
+        )
+        or 150
+
+    label.Size =
+        UDim2.fromOffset(
+            285,
+            44
+        )
+
+    label.StudsOffset =
+        Vector3.new(
+            0,
+            2.2,
+            0
+        )
+
+    label.Adornee =
+        row.Adornee
+
+    label.Parent =
+        gui
+
+    local text =
+        Instance.new(
+            "TextLabel"
+        )
+
+    text.Name =
+        "Text"
+
+    text.BackgroundTransparency =
+        1
+
+    text.Size =
+        UDim2.fromScale(
+            1,
+            1
+        )
+
+    text.RichText =
+        true
+
+    text.Text =
+        ""
+
+    text.TextColor3 =
+        Color3.fromRGB(
+            255,
+            255,
+            255
+        )
+
+    text.TextStrokeColor3 =
+        Color3.fromRGB(
+            0,
+            0,
+            0
+        )
+
+    text.TextStrokeTransparency =
+        0
+
+    text.TextSize =
+        12
+
+    text.Font =
+        Enum.Font.GothamBold
+
+    text.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    text.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    text.ZIndex =
+        10
+
+    text.Parent =
+        label
+
+    runtime.GardenFruitLabels[row.Key] =
+        label
+
+    return label
+end
+
+function HolyVisualGardenRemoveLabel(key)
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    local label =
+        runtime.GardenFruitLabels[key]
+
+    if typeof(label) == "Instance" then
+
+        pcall(function()
+
+            label:Destroy()
+        end)
+    end
+
+    runtime.GardenFruitLabels[key] =
+        nil
+end
+
+function HolyVisualClearGardenFruitESP()
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    for key, label in pairs(runtime.GardenFruitLabels or {}) do
+
+        if typeof(label) == "Instance" then
+
+            pcall(function()
+
+                label:Destroy()
+            end)
+        end
+
+        runtime.GardenFruitLabels[key] =
+            nil
+    end
+
+    if typeof(runtime.GardenFruitGui) == "Instance" then
+
+        pcall(function()
+
+            runtime.GardenFruitGui:Destroy()
+        end)
+    end
+
+    runtime.GardenFruitGui =
+        nil
+
+    return true
+end
+
+function HolyVisualRefreshGardenFruitESP()
+
+    HolyVisualEnsureState()
+
+    if HOLY_VISUAL_STATE.GardenFruitESP ~= true then
+
+        HolyVisualClearGardenFruitESP()
+
+        return false
+    end
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    HolyVisualLoadValueCaches(
+        false
+    )
+
+    if type(HolyFarmPrimeStaticCaches) == "function" then
+
+        pcall(function()
+
+            HolyFarmPrimeStaticCaches(
+                false
+            )
+        end)
+    end
+
+    local rows =
+        HolyVisualGardenBuildRows()
+
+    local maxLabels =
+        math.clamp(
+            math.floor(
+                tonumber(runtime.GardenFruitMaxLabels)
+                or 160
+            ),
+            20,
+            250
+        )
+
+    local touched =
+        {}
+
+    local shown =
+        0
+
+    for _, row in ipairs(rows) do
+
+        if shown >= maxLabels then
+            break
+        end
+
+        local label =
+            HolyVisualGardenEnsureLabel(
+                row
+            )
+
+        if label then
+
+            label.Adornee =
+                row.Adornee
+
+            label.MaxDistance =
+                tonumber(
+                    HOLY_VISUAL_STATE.GardenFruitMaxDistance
+                )
+                or 150
+
+            label.Size =
+                UDim2.fromOffset(
+                    285,
+                    #row.Mutations > 0
+                    and 44
+                    or 28
+                )
+
+            local text =
+                label:FindFirstChild(
+                    "Text"
+                )
+
+            if typeof(text) == "Instance"
+            and text:IsA("TextLabel") then
+
+                text.Text =
+                    HolyVisualGardenBuildRichText(
+                        row
+                    )
+
+                text.TextSize =
+                    12
+
+                text.Font =
+                    Enum.Font.GothamBold
+            end
+
+            label.Enabled =
+                true
+
+            touched[row.Key] =
+                true
+
+            shown =
+                shown + 1
+        end
+    end
+
+    local stale =
+        {}
+
+    for key in pairs(runtime.GardenFruitLabels or {}) do
+
+        if touched[key] ~= true then
+
+            table.insert(
+                stale,
+                key
+            )
+        end
+    end
+
+    for _, key in ipairs(stale) do
+
+        HolyVisualGardenRemoveLabel(
+            key
+        )
+    end
+
+    return true
+end
+
+function HolyVisualStartGardenFruitESP(reason, skipSave)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitESP =
+        true
+
+    if skipSave ~= true then
+
+        HolySaveVisualSettings()
+    end
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    HolyVisualLoadValueCaches(
+        true
+    )
+
+    if runtime.GardenFruitRunning == true then
+
+        HolyVisualRefreshGardenFruitESP()
+
+        return true
+    end
+
+    local token =
+        {}
+
+    runtime.GardenFruitToken =
+        token
+
+    runtime.GardenFruitRunning =
+        true
+
+    task.spawn(function()
+
+        while runtime.GardenFruitToken == token
+        and HOLY_VISUAL_STATE.GardenFruitESP == true do
+
+            pcall(function()
+
+                HolyVisualRefreshGardenFruitESP()
+            end)
+
+            task.wait(
+                runtime.GardenFruitUpdateDelay
+            )
+        end
+
+        if runtime.GardenFruitToken == token then
+
+            runtime.GardenFruitRunning =
+                false
+        end
+
+        if HOLY_VISUAL_STATE.GardenFruitESP ~= true then
+
+            HolyVisualClearGardenFruitESP()
+        end
+    end)
+
+    HolyVisualRefreshGardenFruitESP()
+
+    return true
+end
+
+function HolyVisualStopGardenFruitESP(reason, skipSave)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitESP =
+        false
+
+    if skipSave ~= true then
+
+        HolySaveVisualSettings()
+    end
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    runtime.GardenFruitToken =
+        nil
+
+    runtime.GardenFruitRunning =
+        false
+
+    HolyVisualClearGardenFruitESP()
+
+    return true
+end
+
+function HolyVisualSetGardenFruitESP(value)
+
+    if value == true then
+
+        return HolyVisualStartGardenFruitESP(
+            "toggle on",
+            false
+        )
+    end
+
+    return HolyVisualStopGardenFruitESP(
+        "toggle off",
+        false
+    )
+end
+
+function HolyVisualGardenRefreshIfEnabled()
+
+    if HOLY_VISUAL_STATE.GardenFruitESP == true then
+
+        task.defer(function()
+
+            pcall(function()
+
+                HolyVisualRefreshGardenFruitESP()
+            end)
+        end)
+    end
+end
+
+function HolyVisualGardenSetShowValue(value)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitShowValue =
+        value == true
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenSetFruitMode(value)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitMode =
+        HolyVisualNormalizeGardenFruitMode(
+            value
+        )
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenSetSelectedFruits(value)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitSelectedFruits =
+        HolyVisualNormalizeGardenFruitSelection(
+            value
+        )
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenRefreshFruitDropdown(forceRefresh)
+
+    HOLY_VISUAL_UI =
+        type(HOLY_VISUAL_UI) == "table"
+        and HOLY_VISUAL_UI
+        or {}
+
+    if forceRefresh == true
+    and type(HolyFarmInvalidatePlantNameCache) == "function" then
+
+        HolyFarmInvalidatePlantNameCache()
+    end
+
+    local dropdown =
+        HOLY_VISUAL_UI.GardenFruitFruitsDropdown
+
+    if type(dropdown) ~= "table" then
+        return false
+    end
+
+    local values =
+        {}
+
+    if type(HolyFarmGetPlantDropdownValues) == "function" then
+
+        values =
+            HolyFarmGetPlantDropdownValues()
+    end
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+
+    pcall(function()
+
+        if type(dropdown.SetValue) == "function" then
+
+            dropdown:SetValue(
+                HOLY_VISUAL_STATE.GardenFruitSelectedFruits
+                or {}
+            )
+        end
+    end)
+
+    return true
+end
+
+function HolyVisualGardenSetMaxDistance(value)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitMaxDistance =
+        HolyVisualReadNumberText(
+            value,
+            150,
+            1000
+        )
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenSetMinValue(value)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitMinValue =
+        HolyVisualReadNumberText(
+            value,
+            0,
+            nil
+        )
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenSetWeightMode(value)
+
+    HolyVisualEnsureState()
+
+    if type(HolyFarmNormalizeWeightMode) == "function" then
+
+        HOLY_VISUAL_STATE.GardenFruitWeightMode =
+            HolyFarmNormalizeWeightMode(
+                value
+            )
+
+    else
+
+        HOLY_VISUAL_STATE.GardenFruitWeightMode =
+            "Off"
+    end
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenSetWeightThresholdKg(value)
+
+    HolyVisualEnsureState()
+
+    if type(HolyFarmReadWeightThresholdKg) == "function" then
+
+        HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg =
+            tostring(
+                HolyFarmReadWeightThresholdKg(
+                    value
+                )
+            )
+
+    else
+
+        HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg =
+            HolyVisualReadNumberText(
+                value,
+                0,
+                nil
+            )
+    end
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenSetMutationMode(value)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitMutationMode =
+        HolyVisualNormalizeGardenMutationMode(
+            value
+        )
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenSetSelectedMutations(value)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.GardenFruitSelectedMutations =
+        HolyVisualNormalizeGardenMutationSelection(
+            value
+        )
+
+    HolySaveVisualSettings()
+
+    HolyVisualGardenRefreshIfEnabled()
+
+    return true
+end
+
+function HolyVisualGardenRefreshMutationDropdown(forceRefresh)
+
+    HOLY_VISUAL_UI =
+        type(HOLY_VISUAL_UI) == "table"
+        and HOLY_VISUAL_UI
+        or {}
+
+    if forceRefresh == true
+    and type(HolyFarmInvalidateMutationNameCache) == "function" then
+
+        HolyFarmInvalidateMutationNameCache()
+    end
+
+    local dropdown =
+        HOLY_VISUAL_UI.GardenFruitMutationsDropdown
+
+    if type(dropdown) ~= "table" then
+        return false
+    end
+
+    local values =
+        {}
+
+    if type(HolyFarmGetMutationDropdownValues) == "function" then
+
+        values =
+            HolyFarmGetMutationDropdownValues()
+    end
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+
+    pcall(function()
+
+        if type(dropdown.SetValue) == "function" then
+
+            dropdown:SetValue(
+                HOLY_VISUAL_STATE.GardenFruitSelectedMutations
+                or {}
+            )
+        end
+    end)
+
+    return true
 end
 
 function HolySellPruneRecentFruitIds()
@@ -30650,6 +41186,9 @@ local SniperModeControl =
 local ShopModeControl =
     nil
 
+local FarmModeControl =
+    nil
+
 local ShopSeedsBox =
     HolyAddLeftGroupbox(
         Tabs.Shop,
@@ -30672,6 +41211,14 @@ local ShopCratesBox =
         "Shop.Props",
         "Props",
         "package"
+    )
+
+local ShopAuctionBox =
+    HolyAddRightGroupbox(
+        Tabs.Shop,
+        "Shop.Auctions",
+        "Auctions",
+        "shopping-basket"
     )
 
 local ShopSellBox =
@@ -30698,12 +41245,76 @@ local ShopDoubleBox =
         "dice-5"
     )
 
+local ShopDailyDealBox =
+    HolyAddRightGroupbox(
+        Tabs.Shop,
+        "Shop.DailyDeal",
+        "Daily Deal",
+        "badge-dollar-sign"
+    )
+
 local FarmCollectionBox =
     HolyAddLeftGroupbox(
         Tabs.Farm,
         "Farm.FruitCollection",
-        "Fruit Collection",
-        "leaf"
+        "Auto Collect Fruits",
+        "zap"
+    )
+
+local FarmOverridesBox =
+    HolyAddRightGroupbox(
+        Tabs.Farm,
+        "Farm.CollectionOverrides",
+        "Collection Overrides",
+        "shield"
+    )
+
+local FarmPlantBox =
+    HolyAddLeftGroupbox(
+        Tabs.Farm,
+        "Farm.AutoPlant",
+        "Auto Plant Seeds",
+        "sprout"
+    )
+
+local FarmPlantSettingsBox =
+    HolyAddRightGroupbox(
+        Tabs.Farm,
+        "Farm.PlantSettings",
+        "Plant Settings",
+        "settings"
+    )
+
+local FarmToolsWaterBox =
+    HolyAddLeftGroupbox(
+        Tabs.Farm,
+        "Farm.WateringSprinklers",
+        "Watering & Sprinklers",
+        "droplets"
+    )
+
+local FarmToolsUtilityBox =
+    HolyAddRightGroupbox(
+        Tabs.Farm,
+        "Farm.UtilityTools",
+        "Utility Tools",
+        "wrench"
+    )
+
+local FarmExtraUtilitiesBox =
+    HolyAddLeftGroupbox(
+        Tabs.Farm,
+        "Farm.Utilities",
+        "Farm Utilities",
+        "settings"
+    )
+
+local FarmExtraExperimentalBox =
+    HolyAddRightGroupbox(
+        Tabs.Farm,
+        "Farm.Experimental",
+        "Experimental",
+        "flask-conical"
     )
 
 local VisualInventoryBox =
@@ -30712,6 +41323,14 @@ local VisualInventoryBox =
         "Visual.InventoryVisuals",
         "Inventory Visuals",
         "eye"
+    )
+
+local VisualGardenBox =
+    HolyAddLeftGroupbox(
+        Tabs.Visual,
+        "Visual.GardenVisuals",
+        "Garden Visuals",
+        "sprout"
     )
 
 local SettingsUIBox =
@@ -30745,6 +41364,144 @@ local DevToolsBox =
         "Developer Tools",
         "terminal"
     )
+
+function HolyFarmNormalizePageMode(mode)
+
+    local text =
+        HolyCleanText(
+            mode
+        )
+
+    local lower =
+        text:lower()
+
+    if lower:find("plant", 1, true) then
+        return "Plant"
+    end
+
+    if lower:find("tool", 1, true) then
+        return "Tools"
+    end
+
+    if lower:find("extra", 1, true)
+    or lower:find("misc", 1, true)
+    or lower:find("setting", 1, true) then
+
+        return "Extra"
+    end
+
+    return "Collect"
+end
+
+function HolyFarmRefreshPage()
+
+    HOLY_FARM_PAGE_STATE =
+        type(HOLY_FARM_PAGE_STATE) == "table"
+        and HOLY_FARM_PAGE_STATE
+        or {}
+
+    local mode =
+        HolyFarmNormalizePageMode(
+            HOLY_FARM_PAGE_STATE.Mode
+            or "Collect"
+        )
+
+    HOLY_FARM_PAGE_STATE.Mode =
+        mode
+
+    local isCollect =
+        mode == "Collect"
+
+    local isPlant =
+        mode == "Plant"
+
+    local isTools =
+        mode == "Tools"
+
+    local isExtra =
+        mode == "Extra"
+
+    HolySetGroupboxVisible(
+        FarmCollectionBox,
+        isCollect
+    )
+
+    HolySetGroupboxVisible(
+        FarmOverridesBox,
+        isCollect
+    )
+
+    HolySetGroupboxVisible(
+        FarmPlantBox,
+        isPlant
+    )
+
+    HolySetGroupboxVisible(
+        FarmPlantSettingsBox,
+        isPlant
+    )
+
+    HolySetGroupboxVisible(
+        FarmToolsWaterBox,
+        isTools
+    )
+
+    HolySetGroupboxVisible(
+        FarmToolsUtilityBox,
+        isTools
+    )
+
+    HolySetGroupboxVisible(
+        FarmExtraUtilitiesBox,
+        isExtra
+    )
+
+    HolySetGroupboxVisible(
+        FarmExtraExperimentalBox,
+        isExtra
+    )
+
+    if Tabs.Farm
+    and type(Tabs.Farm.RefreshSides) == "function" then
+
+        task.defer(function()
+
+            Tabs.Farm:RefreshSides()
+        end)
+    end
+
+    return mode
+end
+
+function HolyFarmSetPage(mode)
+
+    HOLY_FARM_PAGE_STATE =
+        type(HOLY_FARM_PAGE_STATE) == "table"
+        and HOLY_FARM_PAGE_STATE
+        or {}
+
+    mode =
+        HolyFarmNormalizePageMode(
+            mode
+        )
+
+    HOLY_FARM_PAGE_STATE.Mode =
+        mode
+
+    if FarmModeControl
+    and type(FarmModeControl.SetValue) == "function" then
+
+        pcall(function()
+
+            FarmModeControl:SetValue(
+                mode,
+                true
+            )
+        end)
+    end
+
+    return HolyFarmRefreshPage()
+end
 
 --==================================================
 -- [5.45] SERVER FINDER HUD
@@ -41480,6 +52237,91 @@ end
 -- [6.25] FARM TAB
 --==================================================
 
+if Tabs.Farm
+and type(Tabs.Farm.AddTopNavigation) == "function" then
+
+    FarmModeControl =
+        Tabs.Farm:AddTopNavigation({
+            Items = {
+                {
+                    Key = "Collect",
+                    Text = "🎯 Collect",
+                    AccentColor = Color3.fromRGB(255, 70, 88),
+                },
+
+                {
+                    Key = "Plant",
+                    Text = "🌱 Plant",
+                    AccentColor = Color3.fromRGB(94, 255, 120),
+                },
+
+                {
+                    Key = "Tools",
+                    Text = "🛠️ Tools",
+                    AccentColor = Color3.fromRGB(86, 160, 255),
+                },
+
+                {
+                    Key = "Extra",
+                    Text = "⭐ Extra",
+                    AccentColor = Color3.fromRGB(255, 216, 74),
+                },
+            },
+
+            Default =
+                HOLY_FARM_PAGE_STATE.Mode
+                or "Collect",
+
+            Height =
+                58,
+
+            BarHeight =
+                42,
+
+            Callback =
+                function(value)
+
+                    HolyFarmSetPage(
+                        value
+                    )
+                end,
+        })
+
+elseif Tabs.Farm
+and type(Tabs.Farm.AddTopSegmentedControl) == "function" then
+
+    FarmModeControl =
+        Tabs.Farm:AddTopSegmentedControl({
+            Values = {
+                "Collect",
+                "Plant",
+                "Tools",
+                "Extra",
+            },
+
+            Default =
+                HOLY_FARM_PAGE_STATE.Mode
+                or "Collect",
+
+            Width =
+                520,
+
+            Height =
+                46,
+
+            PillHeight =
+                32,
+
+            Callback =
+                function(value)
+
+                    HolyFarmSetPage(
+                        value
+                    )
+                end,
+        })
+end
+
 if FarmCollectionBox
 and type(FarmCollectionBox.AddToggle) == "function" then
 
@@ -41742,7 +52584,77 @@ and type(FarmCollectionBox.AddInput) == "function" then
     end)
 end
 
+local function HolyFarmAddPageNote(box, text)
+
+    if type(box) ~= "table"
+    or type(box.AddLabel) ~= "function" then
+
+        return false
+    end
+
+    pcall(function()
+
+        box:AddLabel({
+            Text =
+                text,
+
+            DoesWrap =
+                true,
+
+            Size =
+                13,
+        })
+    end)
+
+    return true
+end
+
+HolyFarmAddPageNote(
+    FarmOverridesBox,
+    "No overrides added yet.\nMutation Weight Override will go here."
+)
+
+HolyFarmAddPageNote(
+    FarmPlantBox,
+    "Auto Plant Seeds will go here.\nThis page is ready for seed planting features."
+)
+
+HolyFarmAddPageNote(
+    FarmPlantSettingsBox,
+    "Plant position, random position, and replant settings will go here."
+)
+
+HolyFarmAddPageNote(
+    FarmToolsWaterBox,
+    "Watering can and sprinkler automation will go here."
+)
+
+HolyFarmAddPageNote(
+    FarmToolsUtilityBox,
+    "Trowel, shovel, pickup, and farm utility tools will go here."
+)
+
+HolyFarmAddPageNote(
+    FarmExtraUtilitiesBox,
+    "Farm middle, safety, and maintenance options will go here."
+)
+
+HolyFarmAddPageNote(
+    FarmExtraExperimentalBox,
+    "Experimental farm systems and debug tools will go here."
+)
+
+HolyFarmSetPage(
+    HOLY_FARM_PAGE_STATE.Mode
+    or "Collect"
+)
+
 task.defer(function()
+
+    HolyFarmSetPage(
+        HOLY_FARM_PAGE_STATE.Mode
+        or "Collect"
+    )
 
     HolyFarmPrimeStaticCaches(
         true
@@ -41796,6 +52708,11 @@ function HolyShopRefreshMode()
     )
 
     HolySetGroupboxVisible(
+        ShopAuctionBox,
+        isBuy
+    )
+
+    HolySetGroupboxVisible(
         ShopSellBox,
         not isBuy
     )
@@ -41807,6 +52724,11 @@ function HolyShopRefreshMode()
 
     HolySetGroupboxVisible(
         ShopDoubleBox,
+        not isBuy
+    )
+
+    HolySetGroupboxVisible(
+        ShopDailyDealBox,
         not isBuy
     )
 end
@@ -42055,6 +52977,315 @@ ShopCratesBox:AddDropdown(
         "Props"
     )
 end)
+
+HOLY_SHOP_UI =
+    type(HOLY_SHOP_UI) == "table"
+    and HOLY_SHOP_UI
+    or {}
+
+ShopAuctionBox:AddToggle(
+    "HolyShopAutoBuyAuctions",
+    {
+        Text =
+            "Auto Buy Auctions",
+
+        Default =
+            HOLY_SHOP_STATE.AutoBuyAuctions == true,
+
+        Tooltip =
+            "Buys selected live auction lots only when server stock is fresh and price is at or below Desired Price.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.AutoBuyAuctions =
+        value == true
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoBuyAuctions == true then
+
+        HolyAuctionEnsureOffscreen()
+
+        HolyAuctionSetStatus(
+            "Auto buy enabled"
+        )
+
+        HolyAuctionQueueWorker(
+            "toggle on"
+        )
+
+    else
+
+        HolyAuctionSetStatus(
+            "Auto buy off"
+        )
+
+        if HOLY_SHOP_STATE.AuctionHudEnabled ~= true then
+
+            HolyAuctionRestoreOffscreen()
+        end
+    end
+end)
+
+HOLY_SHOP_UI.AuctionDropdown =
+    ShopAuctionBox:AddDropdown(
+        "HolyShopSelectedAuctions",
+        {
+            Text =
+                "Auction Items",
+
+            Values =
+                HolyAuctionGetDropdownValues(
+                    false
+                ),
+
+            Default =
+                HolyShopSelectionArray(
+                    HOLY_SHOP_STATE.SelectedAuctions
+                ),
+
+            Multi =
+                true,
+
+            Searchable =
+                true,
+
+            MaxVisibleDropdownItems =
+                8,
+
+            Tooltip =
+                "Dynamic list from auction-capable modules plus any live auction item the script sees.",
+        }
+    )
+
+HOLY_SHOP_UI.AuctionDropdown:OnChanged(function(value)
+
+    HOLY_SHOP_STATE.SelectedAuctions =
+        HolyShopSelectionArray(
+            value
+        )
+
+    HolySaveShopSettings()
+
+    HolyAuctionRefreshUI()
+
+    if HOLY_SHOP_STATE.AutoBuyAuctions == true then
+
+        HolyAuctionQueueWorker(
+            "selection changed"
+        )
+    end
+end)
+
+ShopAuctionBox:AddInput(
+    "HolyShopAuctionMaxPrice",
+    {
+        Text =
+            "Max Price",
+
+        Default =
+            tostring(
+                HOLY_SHOP_STATE.AuctionMaxPrice
+                or "0"
+            ),
+
+        Placeholder =
+            "Example: 2M, 100M, 1.5B",
+
+        Numeric =
+            false,
+
+        Finished =
+            false,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Only buys when the live auction price is at or below this price. Supports K/M/B. 0 disables buying.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.AuctionMaxPrice =
+        tostring(value or "0")
+
+    HolySaveShopSettings()
+
+    HolyAuctionRefreshUI()
+
+    if HOLY_SHOP_STATE.AutoBuyAuctions == true then
+
+        HolyAuctionQueueWorker(
+            "desired price changed"
+        )
+    end
+end)
+
+ShopAuctionBox:AddInput(
+    "HolyShopAuctionCooldown",
+    {
+        Text =
+            "Buy Cooldown",
+
+        Default =
+            tostring(
+                HOLY_SHOP_STATE.AuctionCooldown
+                or "10"
+            ),
+
+        Placeholder =
+            "10",
+
+        Numeric =
+            true,
+
+        Finished =
+            false,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Auctioneer purchase cooldown is 10s by flag, so 10 is safest.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.AuctionCooldown =
+        tostring(value or "10")
+
+    HolySaveShopSettings()
+end)
+
+ShopAuctionBox:AddToggle(
+    "HolyShopAuctionBuyUntilSoldOut",
+    {
+        Text =
+            "Buy Until Sold Out",
+
+        Default =
+            HOLY_SHOP_STATE.AuctionBuyUntilSoldOut ~= false,
+
+        Tooltip =
+            "ON = keep buying selected lots every cooldown until sold out/expired. OFF = one buy attempt per lot.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.AuctionBuyUntilSoldOut =
+        value == true
+
+    HolySaveShopSettings()
+end)
+
+ShopAuctionBox:AddToggle(
+    "HolyShopAuctionLiveHud",
+    {
+        Text =
+            "Live Auction HUD",
+
+        Default =
+            HOLY_SHOP_STATE.AuctionHudEnabled == true,
+
+        Tooltip =
+            "Shows the live auction control HUD. It keeps the Auction UI enabled offscreen so price and timer update without opening the NPC UI.",
+    }
+):OnChanged(function(value)
+
+    HolyAuctionSetHudVisible(
+        value == true,
+        "toggle"
+    )
+end)
+
+ShopAuctionBox:AddDropdown(
+    "HolyShopAuctionHudScale",
+    {
+        Text =
+            "HUD Scale",
+
+        Values = {
+            "60%",
+            "70%",
+            "80%",
+            "90%",
+            "100%",
+            "110%",
+        },
+
+        Default =
+            HolyAuctionFormatHudScale(
+                HOLY_SHOP_STATE.AuctionHudScale
+                or "80%"
+            ),
+
+        Multi =
+            false,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            6,
+
+        Tooltip =
+            "Changes the Live Auction HUD size.",
+    }
+):OnChanged(function(value)
+
+    HolyAuctionSetHudScale(
+        value
+    )
+end)
+
+local HolyAuctionButtons =
+    ShopAuctionBox:AddButton({
+        Text =
+            "Refresh Auctions",
+
+        Tooltip =
+            "Requests server stock and refreshes current live auction lots.",
+
+        Func =
+            function()
+
+                HolyAuctionRefreshDropdown(
+                    true
+                )
+
+                HolyAuctionRequestSnapshot()
+
+                HolyAuctionRefreshUI()
+            end,
+    })
+
+HolyAuctionButtons:AddButton({
+    Text =
+        "Buy Once",
+
+    Tooltip =
+        "Attempts one safe buy for the best selected live auction lot. Requires selected item, desired price, fresh server stock, and price <= desired.",
+
+    Func =
+        function()
+
+            HolyAuctionManualBuyOnce(
+                "button"
+            )
+
+            HolyAuctionRefreshUI()
+        end,
+})
+
+HOLY_SHOP_UI.AuctionLiveLabel =
+    HolySniperAddLabel(
+        ShopAuctionBox,
+        "Live: waiting auction data."
+    )
+
+HOLY_SHOP_UI.AuctionStatusLabel =
+    HolySniperAddLabel(
+        ShopAuctionBox,
+        "Status: Ready"
+    )
 
 ShopSellBox:AddToggle(
     "HolyShopAutoSellFruits",
@@ -42392,6 +53623,276 @@ if HOLY_SHOP_STATE.DoubleHudEnabled == true then
         )
     end)
 end
+
+HolySniperAddLabel(
+    ShopDailyDealBox,
+    "Daily Deal All sells every eligible harvested fruit.\nTrigger Fruits only decide when to activate."
+)
+
+ShopDailyDealBox:AddToggle(
+    "HolyShopAutoDailyDealAll",
+    {
+        Text =
+            "⚡ Auto Daily Deal All",
+
+        Default =
+            HOLY_SHOP_STATE.AutoDailyDealAll == true,
+
+        Tooltip =
+            "Strict auto Daily Deal. Uses CheckDailyDeal, FruitStock.Request, and PreviewSellAll before UseDailyDealAll.",
+    }
+):OnChanged(function(value)
+
+    HolyDailyDealSetAutoEnabled(
+        value == true,
+        value == true
+        and "toggle on"
+        or "toggle off"
+    )
+end)
+
+ShopDailyDealBox:AddDropdown(
+    "HolyShopDailyDealTriggerFruits",
+    {
+        Text =
+            "🍅 Trigger Fruits",
+
+        Values =
+            HolyDailyDealGetTriggerFruitDropdownValues(),
+
+        Default =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.DailyDealTriggerFruits
+            ),
+
+        Multi =
+            true,
+
+        Searchable =
+            true,
+
+        MaxVisibleDropdownItems =
+            8,
+
+        Tooltip =
+            "These fruits only decide WHEN Daily Deal All triggers. Daily Deal All still sells every eligible fruit.",
+    }
+):OnChanged(function(value)
+
+    HolyDailyDealSetTriggerFruits(
+        value
+    )
+end)
+
+ShopDailyDealBox:AddInput(
+    "HolyShopDailyDealMinStockMultiplier",
+    {
+        Text =
+            "📈 Min Stock Multiplier",
+
+        Default =
+            tostring(
+                HOLY_SHOP_STATE.DailyDealMinStockMultiplier
+                or "2"
+            ),
+
+        Placeholder =
+            "2",
+
+        Numeric =
+            false,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Text input only. Commits only after Enter/click-away. Valid range: 0.01 to 100.",
+    }
+):OnChanged(function(value)
+
+    HolyDailyDealSetMinStockMultiplier(
+        value
+    )
+end)
+
+ShopDailyDealBox:AddInput(
+    "HolyShopDailyDealMinFriendBoost",
+    {
+        Text =
+            "👥 Min Friend Boost %",
+
+        Default =
+            tostring(
+                HOLY_SHOP_STATE.DailyDealMinFriendBoost
+                or "0"
+            ),
+
+        Placeholder =
+            "0",
+
+        Numeric =
+            false,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Text input only. Commits only after Enter/click-away. Accepts 10 or 10%. Valid range: 0 to 100.",
+    }
+):OnChanged(function(value)
+
+    HolyDailyDealSetMinFriendBoost(
+        value
+    )
+end)
+
+ShopDailyDealBox:AddInput(
+    "HolyShopDailyDealMinInventoryValue",
+    {
+        Text =
+            "🎒 Min Inventory Value",
+
+        Default =
+            tostring(
+                HOLY_SHOP_STATE.DailyDealMinInventoryValue
+                or "0"
+            ),
+
+        Placeholder =
+            "500B",
+
+        Numeric =
+            false,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Optional. 0 disables this check. Uses PreviewSellAll base inventory value before Daily Deal multiplier. Supports K, M, B, T, Q.",
+    }
+):OnChanged(function(value)
+
+    HolyDailyDealSetMinInventoryValue(
+        value
+    )
+end)
+
+ShopDailyDealBox:AddInput(
+    "HolyShopDailyDealMinValue",
+    {
+        Text =
+            "💰 Min Daily Payout",
+
+        Default =
+            tostring(
+                HOLY_SHOP_STATE.DailyDealMinValue
+                or "0"
+            ),
+
+        Placeholder =
+            "1T",
+
+        Numeric =
+            false,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Optional. 0 disables this check. Expected payout after Daily Deal multiplier. Supports K, M, B, T, Q.",
+    }
+):OnChanged(function(value)
+
+    HolyDailyDealSetMinValue(
+        value
+    )
+end)
+
+ShopDailyDealBox:AddToggle(
+    "HolyShopDailyDealAutoDisable",
+    {
+        Text =
+            "🛑 Disable After Success",
+
+        Default =
+            HOLY_SHOP_STATE.DailyDealAutoDisable ~= false,
+
+        Tooltip =
+            "Recommended ON. Turns Auto Daily Deal off after a successful sale.",
+    }
+):OnChanged(function(value)
+
+    HolyDailyDealSetAutoDisable(
+        value == true
+    )
+end)
+
+local HolyDailyDealCheckButton =
+    ShopDailyDealBox:AddButton({
+        Text =
+            "🔎 Check Now",
+
+        Tooltip =
+            "Safe check only. Reads stock, cooldown, boost, and preview. Does not sell.",
+
+        Func =
+            function()
+
+                HolyDailyDealCheckNow()
+            end,
+    })
+
+HolyDailyDealCheckButton:AddButton({
+    Text =
+        "⚡ Use Once",
+
+    Tooltip =
+        "Runs the same strict checks, then uses Daily Deal All once if every condition passes.",
+
+    Func =
+        function()
+
+            HolyDailyDealUseOnce()
+        end,
+})
+
+HOLY_SHOP_UI.DailyDealStatusLabel =
+    HolySniperAddLabel(
+        ShopDailyDealBox,
+        "Daily: Ready"
+    )
+
+HOLY_SHOP_UI.DailyDealStockLabel =
+    HolySniperAddLabel(
+        ShopDailyDealBox,
+        "Stock: --"
+    )
+
+HOLY_SHOP_UI.DailyDealPreviewLabel =
+    HolySniperAddLabel(
+        ShopDailyDealBox,
+        "Preview: --"
+    )
+
+HOLY_SHOP_UI.DailyDealLastLabel =
+    HolySniperAddLabel(
+        ShopDailyDealBox,
+        "Last: --"
+    )
+
+HolyDailyDealRefreshUI()
 
 ShopFiltersBox:AddToggle(
     "HolyShopUseSellFilters",
@@ -42780,11 +54281,26 @@ end)
 
 HolyShopConnectStockSignals()
 
+HolyAuctionStartWatcher()
+
 HolyShopRefreshMode()
 
 task.defer(function()
 
     HolyShopQueueAll()
+
+    HolyAuctionRefreshDropdown(
+        false
+    )
+
+    HolyAuctionRefreshUI()
+
+    if HOLY_SHOP_STATE.AutoBuyAuctions == true then
+
+        HolyAuctionQueueWorker(
+            "startup"
+        )
+    end
 
     if HOLY_SHOP_STATE.AutoDoubleOrNothing == true then
 
@@ -42795,6 +54311,13 @@ task.defer(function()
     elseif HOLY_SHOP_STATE.AutoSellFruits == true then
 
         HolySellStartWorker()
+    end
+
+    if HOLY_SHOP_STATE.AutoDailyDealAll == true then
+
+        HolyDailyDealStartWorker(
+            "startup"
+        )
     end
 end)
 
@@ -42857,6 +54380,360 @@ if type(VisualInventoryBox) == "table" then
     end
 end
 
+if type(VisualGardenBox) == "table" then
+
+    HOLY_VISUAL_UI.GardenFruitESPToggle =
+        VisualGardenBox:AddToggle(
+            "HolyVisualGardenFruitESP",
+            {
+                Text =
+                    "Garden Fruit ESP",
+
+                Default =
+                    HOLY_VISUAL_STATE.GardenFruitESP == true,
+
+                Tooltip =
+                    "Shows fruit name, weight, value, and fruit mutations above fruits in your own garden only.",
+            }
+        )
+
+    if type(HOLY_VISUAL_UI.GardenFruitESPToggle) == "table"
+    and type(HOLY_VISUAL_UI.GardenFruitESPToggle.OnChanged) == "function" then
+
+        HOLY_VISUAL_UI.GardenFruitESPToggle:OnChanged(function(value)
+
+            HolyVisualSetGardenFruitESP(
+                value == true
+            )
+        end)
+    end
+
+    HOLY_VISUAL_UI.GardenFruitShowValueToggle =
+        VisualGardenBox:AddToggle(
+            "HolyVisualGardenFruitShowValue",
+            {
+                Text =
+                    "Show Value",
+
+                Default =
+                    HOLY_VISUAL_STATE.GardenFruitShowValue == true,
+
+                Tooltip =
+                    "When disabled, labels only show name, weight, and mutations.",
+            }
+        )
+
+    if type(HOLY_VISUAL_UI.GardenFruitShowValueToggle) == "table"
+    and type(HOLY_VISUAL_UI.GardenFruitShowValueToggle.OnChanged) == "function" then
+
+        HOLY_VISUAL_UI.GardenFruitShowValueToggle:OnChanged(function(value)
+
+            HolyVisualGardenSetShowValue(
+                value == true
+            )
+        end)
+    end
+
+    HOLY_VISUAL_UI.GardenFruitModeDropdown =
+        VisualGardenBox:AddDropdown(
+            "HolyVisualGardenFruitMode",
+            {
+                Text =
+                    "Fruit Mode",
+
+                Values = {
+                    "All",
+                    "Only Selected",
+                    "Skip Selected",
+                },
+
+                Default =
+                    HolyVisualNormalizeGardenFruitMode(
+                        HOLY_VISUAL_STATE.GardenFruitMode
+                        or "All"
+                    ),
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    3,
+
+                Tooltip =
+                    "All shows every fruit. Only Selected and Skip Selected use the Select Fruits dropdown.",
+            }
+        )
+
+    HOLY_VISUAL_UI.GardenFruitModeDropdown:OnChanged(function(value)
+
+        HolyVisualGardenSetFruitMode(
+            value
+        )
+    end)
+
+    HOLY_VISUAL_UI.GardenFruitFruitsDropdown =
+        VisualGardenBox:AddDropdown(
+            "HolyVisualGardenFruitSelectedFruits",
+            {
+                Text =
+                    "Select Fruits",
+
+                Values =
+                    HolyFarmGetPlantDropdownValues(),
+
+                Default =
+                    HolyVisualNormalizeGardenFruitSelection(
+                        HOLY_VISUAL_STATE.GardenFruitSelectedFruits
+                        or {}
+                    ),
+
+                Multi =
+                    true,
+
+                Searchable =
+                    true,
+
+                MaxVisibleDropdownItems =
+                    8,
+
+                Tooltip =
+                    "Used by Only Selected and Skip Selected. This filters fruit labels by fruit/crop name.",
+            }
+        )
+
+    HOLY_VISUAL_UI.GardenFruitFruitsDropdown:OnChanged(function(value)
+
+        HolyVisualGardenSetSelectedFruits(
+            value
+        )
+    end)
+
+    HOLY_VISUAL_UI.GardenFruitMaxDistanceInput =
+        VisualGardenBox:AddInput(
+            "HolyVisualGardenFruitMaxDistance",
+            {
+                Text =
+                    "Max Distance",
+
+                Default =
+                    tostring(
+                        HOLY_VISUAL_STATE.GardenFruitMaxDistance
+                        or "150"
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Only show garden fruit labels within this distance. 0 disables distance filtering.",
+            }
+        )
+
+    HOLY_VISUAL_UI.GardenFruitMaxDistanceInput:OnChanged(function(value)
+
+        HolyVisualGardenSetMaxDistance(
+            value
+        )
+    end)
+
+    HOLY_VISUAL_UI.GardenFruitMinValueInput =
+        VisualGardenBox:AddInput(
+            "HolyVisualGardenFruitMinValue",
+            {
+                Text =
+                    "Minimum Value",
+
+                Default =
+                    tostring(
+                        HOLY_VISUAL_STATE.GardenFruitMinValue
+                        or "0"
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Only show fruits at or above this value. 0 disables value filtering.",
+            }
+        )
+
+    HOLY_VISUAL_UI.GardenFruitMinValueInput:OnChanged(function(value)
+
+        HolyVisualGardenSetMinValue(
+            value
+        )
+    end)
+
+    HOLY_VISUAL_UI.GardenFruitWeightModeDropdown =
+        VisualGardenBox:AddDropdown(
+            "HolyVisualGardenFruitWeightMode",
+            {
+                Text =
+                    "Weight Mode",
+
+                Values = {
+                    "Off",
+                    "Above",
+                    "Below",
+                },
+
+                Default =
+                    HolyFarmNormalizeWeightMode(
+                        HOLY_VISUAL_STATE.GardenFruitWeightMode
+                        or "Off"
+                    ),
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    3,
+
+                Tooltip =
+                    "Off ignores weight. Above shows fruits at or above the threshold. Below shows fruits at or below the threshold.",
+            }
+        )
+
+    HOLY_VISUAL_UI.GardenFruitWeightModeDropdown:OnChanged(function(value)
+
+        HolyVisualGardenSetWeightMode(
+            value
+        )
+    end)
+
+    HOLY_VISUAL_UI.GardenFruitWeightThresholdInput =
+        VisualGardenBox:AddInput(
+            "HolyVisualGardenFruitWeightThresholdKg",
+            {
+                Text =
+                    "Weight Threshold KG",
+
+                Default =
+                    tostring(
+                        HolyFarmReadWeightThresholdKg(
+                            HOLY_VISUAL_STATE.GardenFruitWeightThresholdKg
+                            or "0"
+                        )
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Used only when Weight Mode is Above or Below. 0 disables the weight filter.",
+            }
+        )
+
+    HOLY_VISUAL_UI.GardenFruitWeightThresholdInput:OnChanged(function(value)
+
+        HolyVisualGardenSetWeightThresholdKg(
+            value
+        )
+    end)
+
+    HOLY_VISUAL_UI.GardenFruitMutationModeDropdown =
+        VisualGardenBox:AddDropdown(
+            "HolyVisualGardenFruitMutationMode",
+            {
+                Text =
+                    "Mutation Mode",
+
+                Values = {
+                    "All",
+                    "Only Mutated",
+                    "Only Selected",
+                    "Skip Selected",
+                },
+
+                Default =
+                    HolyVisualNormalizeGardenMutationMode(
+                        HOLY_VISUAL_STATE.GardenFruitMutationMode
+                        or "All"
+                    ),
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    4,
+
+                Tooltip =
+                    "All shows every fruit. Only Mutated shows fruits with mutation. Only Selected and Skip Selected use the mutation dropdown.",
+            }
+        )
+
+    HOLY_VISUAL_UI.GardenFruitMutationModeDropdown:OnChanged(function(value)
+
+        HolyVisualGardenSetMutationMode(
+            value
+        )
+    end)
+
+    HOLY_VISUAL_UI.GardenFruitMutationsDropdown =
+        VisualGardenBox:AddDropdown(
+            "HolyVisualGardenFruitSelectedMutations",
+            {
+                Text =
+                    "Select Mutations",
+
+                Values =
+                    HolyFarmGetMutationDropdownValues(),
+
+                Default =
+                    HolyVisualNormalizeGardenMutationSelection(
+                        HOLY_VISUAL_STATE.GardenFruitSelectedMutations
+                        or {}
+                    ),
+
+                Multi =
+                    true,
+
+                Searchable =
+                    true,
+
+                MaxVisibleDropdownItems =
+                    8,
+
+                Tooltip =
+                    "Used by Only Selected and Skip Selected. Fruit labels only read fruit mutations, not plant mutations.",
+            }
+        )
+
+    HOLY_VISUAL_UI.GardenFruitMutationsDropdown:OnChanged(function(value)
+
+        HolyVisualGardenSetSelectedMutations(
+            value
+        )
+    end)
+end
+
 task.defer(function()
 
     if HOLY_VISUAL_STATE.FruitValueOverlay == true then
@@ -42882,7 +54759,28 @@ task.defer(function()
 
         HolyVisualClearTotalValueLabel()
     end
+
+    HolyVisualGardenRefreshFruitDropdown(
+        false
+    )
+
+    HolyVisualGardenRefreshMutationDropdown(
+        false
+    )
+
+    if HOLY_VISUAL_STATE.GardenFruitESP == true then
+
+        HolyVisualStartGardenFruitESP(
+            "startup",
+            true
+        )
+
+    else
+
+        HolyVisualClearGardenFruitESP()
+    end
 end)
+
 
 --==================================================
 -- [6] SETTINGS TAB
