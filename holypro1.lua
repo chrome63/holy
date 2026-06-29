@@ -23362,18 +23362,50 @@ function HolyAuctionItemKey(value)
         :gsub("[%s_%-%[%]%(%)%.'\"_/{}:]", "")
 end
 
+function HolyAuctionSafeTonumber(value)
+
+    local ok,
+        result =
+        pcall(function()
+
+            return tonumber(
+                value
+            )
+        end)
+
+    if ok == true
+    and result ~= nil then
+
+        return result
+    end
+
+    return nil
+end
+
 function HolyAuctionReadMoney(value)
+
+    if type(value) == "number" then
+
+        return math.max(
+            0,
+            math.floor(value + 0.5)
+        )
+    end
 
     local text =
         HolyCleanText(
             value
         )
 
+    if text == "" then
+        return 0
+    end
+
     text =
         text:gsub("¢", "")
-        :gsub("%$", "")
-        :gsub(",", "")
-        :gsub("%s+", "")
+            :gsub("%$", "")
+            :gsub(",", "")
+            :gsub("%s+", "")
 
     local lower =
         text:lower()
@@ -23397,17 +23429,23 @@ function HolyAuctionReadMoney(value)
             1000
     end
 
+    local rawNumber =
+        lower:match("%d+%.?%d*")
+
     local number =
-        tonumber(
-            lower:match("%d+%.?%d*")
+        HolyAuctionSafeTonumber(
+            rawNumber
         )
 
     if number == nil then
         return 0
     end
 
-    return math.floor(
-        number * multiplier + 0.5
+    return math.max(
+        0,
+        math.floor(
+            number * multiplier + 0.5
+        )
     )
 end
 
@@ -24842,20 +24880,32 @@ end
 
 function HolyAuctionPriceAllows(row)
 
-    local maxPrice =
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    local desiredPrice =
         HolyAuctionReadMoney(
             HOLY_SHOP_STATE.AuctionMaxPrice
             or "0"
         )
 
-    if maxPrice <= 0 then
-        return true
+    -- Desired price is required for safety.
+    -- 0 / blank means do not auto-buy.
+    if desiredPrice <= 0 then
+        return false
     end
 
-    return (
+    local currentPrice =
         tonumber(row.Price)
         or 0
-    ) <= maxPrice
+
+    if currentPrice <= 0 then
+        return false
+    end
+
+    return currentPrice <= desiredPrice
 end
 
 function HolyAuctionLotAllowed(row)
@@ -24994,15 +25044,74 @@ function HolyAuctionFindBuyTarget()
     local rows =
         HolyAuctionScanLiveLots()
 
+    local desiredPrice =
+        HolyAuctionReadMoney(
+            HOLY_SHOP_STATE.AuctionMaxPrice
+            or "0"
+        )
+
+    if desiredPrice <= 0 then
+
+        return nil,
+            "Set desired price first"
+    end
+
+    local selectedActive =
+        nil
+
+    local selectedTooExpensive =
+        nil
+
     for _, row in ipairs(rows) do
 
-        if HolyAuctionLotAllowed(row) == true then
+        if row.Active == true
+        and HolyAuctionSelectionAllows(row.Name) == true then
 
-            return row
+            selectedActive =
+                selectedActive
+                or row
+
+            if HolyAuctionPriceAllows(row) == true then
+
+                return row,
+                    "ok"
+            end
+
+            selectedTooExpensive =
+                selectedTooExpensive
+                or row
         end
     end
 
-    return nil
+    if type(selectedTooExpensive) == "table" then
+
+        return nil,
+            "Waiting price: "
+                .. tostring(selectedTooExpensive.Name)
+                .. " "
+                .. HolyAuctionFormatMoney(
+                    selectedTooExpensive.Price
+                )
+                .. " > "
+                .. HolyAuctionFormatMoney(
+                    desiredPrice
+                )
+    end
+
+    if type(selectedActive) == "table" then
+
+        return nil,
+            "Waiting price"
+    end
+
+    if #rows <= 0 then
+
+        return nil,
+            "Open Auctions UI to read lots"
+    end
+
+    return nil,
+        "Waiting selected auction item"
 end
 
 function HolyAuctionRunWorker(reason)
@@ -25040,13 +25149,17 @@ function HolyAuctionRunWorker(reason)
         return false
     end
 
-    local target =
+    local target,
+        targetReason =
         HolyAuctionFindBuyTarget()
 
     if type(target) ~= "table" then
 
         HolyAuctionSetStatus(
-            "Waiting selected auction item"
+            tostring(
+                targetReason
+                or "Waiting selected auction item"
+            )
         )
 
         return false
@@ -25067,7 +25180,7 @@ function HolyAuctionRunWorker(reason)
         HolyAuctionSetStatus(
             "Buying "
                 .. tostring(target.Name)
-                .. " "
+                .. " at "
                 .. tostring(target.PriceText)
         )
 
@@ -47342,7 +47455,7 @@ ShopAuctionBox:AddInput(
             ),
 
         Placeholder =
-            "0 = no limit, 100M, 1.5B",
+            "Example: 2M, 100M, 1.5B",
 
         Numeric =
             false,
@@ -47354,7 +47467,7 @@ ShopAuctionBox:AddInput(
             false,
 
         Tooltip =
-            "Skips auction lots above this price. Supports K/M/B. 0 means no limit.",
+            "Only buys when the live auction price is at or below this price. Supports K/M/B. 0 disables buying.",
     }
 ):OnChanged(function(value)
 
