@@ -722,6 +722,10 @@ HOLY_SHOP_STATE = {
     AuctionAttemptedLots = {},
     AuctionConnections = {},
 
+    AuctionStockMap = {},
+    AuctionServerNow = 0,
+    AuctionLastStockUpdateAt = 0,
+
     AutoSellFruits = false,
     SellMethod = "Sell All",
 
@@ -2759,8 +2763,10 @@ function HolyLoadShopSettings()
             or data.SelectedCrates
         )
 
+    -- Temporarily forced OFF while Auction Lab testing is active.
+    -- Remove this later when the final auction system is ready.
     HOLY_SHOP_STATE.AutoBuyAuctions =
-        data.AutoBuyAuctions == true
+        false
 
     HOLY_SHOP_STATE.SelectedAuctions =
         HolyShopSelectionArray(
@@ -23345,6 +23351,19 @@ function HolyAuctionEnsureState()
         and HOLY_SHOP_STATE.AuctionConnections
         or {}
 
+    HOLY_SHOP_STATE.AuctionStockMap =
+        type(HOLY_SHOP_STATE.AuctionStockMap) == "table"
+        and HOLY_SHOP_STATE.AuctionStockMap
+        or {}
+
+    HOLY_SHOP_STATE.AuctionServerNow =
+        tonumber(HOLY_SHOP_STATE.AuctionServerNow)
+        or 0
+
+    HOLY_SHOP_STATE.AuctionLastStockUpdateAt =
+        tonumber(HOLY_SHOP_STATE.AuctionLastStockUpdateAt)
+        or 0
+
     HOLY_SHOP_STATE.AuctionItemCache =
         type(HOLY_SHOP_STATE.AuctionItemCache) == "table"
         and HOLY_SHOP_STATE.AuctionItemCache
@@ -23506,6 +23525,12 @@ function HolyAuctionReadStock(value)
         return 0
     end
 
+    -- Strict UI stock safety:
+    -- only trust text like "x19,631 in Stock".
+    if lower:find("stock", 1, true) == nil then
+        return 0
+    end
+
     local raw =
         text:match("x%s*([%d,]+)")
         or text:match("([%d,]+)")
@@ -23514,12 +23539,24 @@ function HolyAuctionReadStock(value)
         return 0
     end
 
+    local digits =
+        tostring(raw or "")
+
+    digits =
+        digits:gsub(
+            ",",
+            ""
+        )
+
+    local number =
+        HolyAuctionSafeTonumber(
+            digits
+        )
+
     return math.max(
         0,
         math.floor(
-            tonumber(
-                raw:gsub(",", "")
-            )
+            number
             or 0
         )
     )
@@ -24440,6 +24477,8 @@ end
 
 function HolyAuctionScanLiveLots()
 
+    HolyAuctionEnsureState()
+
     local rows =
         {}
 
@@ -24602,10 +24641,42 @@ function HolyAuctionScanLiveLots()
                         true
                 end
 
-                local stock =
+                local uiStock =
                     HolyAuctionReadStock(
                         stockText
                     )
+
+                local serverStock =
+                    nil
+
+                if type(HOLY_SHOP_STATE.AuctionStockMap) == "table" then
+
+                    serverStock =
+                        HOLY_SHOP_STATE.AuctionStockMap[
+                            lotId
+                        ]
+                end
+
+                local stock =
+                    uiStock
+
+                local stockSource =
+                    "UI"
+
+                if serverStock ~= nil then
+
+                    stock =
+                        math.max(
+                            0,
+                            math.floor(
+                                tonumber(serverStock)
+                                or 0
+                            )
+                        )
+
+                    stockSource =
+                        "Server"
+                end
 
                 local price =
                     HolyAuctionReadMoney(
@@ -24626,6 +24697,15 @@ function HolyAuctionScanLiveLots()
 
                     Stock =
                         stock,
+
+                    UiStock =
+                        uiStock,
+
+                    ServerStock =
+                        serverStock,
+
+                    StockSource =
+                        stockSource,
 
                     StockText =
                         stockText,
@@ -25331,7 +25411,35 @@ function HolyAuctionConnectPacketSignals()
 
     connectPacket(
         "StockUpdate",
-        function()
+        function(payload)
+
+            HolyAuctionEnsureState()
+
+            if type(payload) == "table"
+            and type(payload.stock) == "table" then
+
+                for lotId, stock in pairs(payload.stock) do
+
+                    HOLY_SHOP_STATE.AuctionStockMap[
+                        tostring(lotId)
+                    ] =
+                        math.max(
+                            0,
+                            math.floor(
+                                tonumber(stock)
+                                or 0
+                            )
+                        )
+                end
+
+                HOLY_SHOP_STATE.AuctionServerNow =
+                    tonumber(payload.serverNow)
+                    or HOLY_SHOP_STATE.AuctionServerNow
+                    or 0
+
+                HOLY_SHOP_STATE.AuctionLastStockUpdateAt =
+                    os.clock()
+            end
 
             task.defer(function()
 
