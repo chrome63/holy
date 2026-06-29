@@ -29043,6 +29043,14 @@ function HolyDailyDealFormatMoney(value)
             )
         )
 
+    if value >= 1000000000000 then
+
+        return string.format(
+            "%.2fT¢",
+            value / 1000000000000
+        )
+    end
+
     if value >= 1000000000 then
 
         return string.format(
@@ -29303,13 +29311,11 @@ function HolyDailyDealStrictNumber(value, minValue, maxValue, allowPercent)
         return nil, "numbers only"
     end
 
-    local dotCount =
-        select(
-            2,
-            text:gsub(
-                "%.",
-                ""
-            )
+    local _,
+        dotCount =
+        text:gsub(
+            "%.",
+            ""
         )
 
     if dotCount > 1 then
@@ -29340,6 +29346,135 @@ function HolyDailyDealStrictNumber(value, minValue, maxValue, allowPercent)
     end
 
     return number,
+        nil
+end
+
+function HolyDailyDealMoneySuffixMultiplier(suffix)
+
+    suffix =
+        HolyCleanText(
+            suffix
+        )
+        :lower()
+
+    local multipliers = {
+        [""] = 1,
+
+        k = 1000,
+        thousand = 1000,
+
+        m = 1000000,
+        mil = 1000000,
+        million = 1000000,
+
+        b = 1000000000,
+        bil = 1000000000,
+        billion = 1000000000,
+
+        t = 1000000000000,
+        tril = 1000000000000,
+        trillion = 1000000000000,
+
+        q = 1000000000000000,
+        qa = 1000000000000000,
+        quad = 1000000000000000,
+        quadrillion = 1000000000000000,
+    }
+
+    return multipliers[suffix]
+end
+
+function HolyDailyDealStrictMoney(value, minValue, maxValue)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == "" then
+        return nil, "empty"
+    end
+
+    text =
+        text:gsub(
+            "%s+",
+            ""
+        )
+
+    text =
+        text:gsub("¢", "")
+            :gsub("%$", "")
+            :gsub(",", "")
+
+    local lower =
+        text:lower()
+
+    if lower:find("nan", 1, true)
+    or lower:find("inf", 1, true)
+    or lower:find("%-", 1, false) then
+
+        return nil, "bad number"
+    end
+
+    local numberText,
+        suffix =
+        lower:match(
+            "^(%d+%.?%d*)([a-z]*)$"
+        )
+
+    if numberText == nil then
+        return nil, "bad format"
+    end
+
+    local _,
+        dotCount =
+        numberText:gsub(
+            "%.",
+            ""
+        )
+
+    if dotCount > 1 then
+        return nil, "too many decimals"
+    end
+
+    local number =
+        tonumber(numberText)
+
+    if number == nil then
+        return nil, "bad number"
+    end
+
+    local multiplier =
+        HolyDailyDealMoneySuffixMultiplier(
+            suffix
+        )
+
+    if multiplier == nil then
+
+        return nil,
+            "bad suffix"
+    end
+
+    local final =
+        number * multiplier
+
+    if minValue ~= nil
+    and final < minValue then
+
+        return nil,
+            "minimum "
+            .. tostring(minValue)
+    end
+
+    if maxValue ~= nil
+    and final > maxValue then
+
+        return nil,
+            "maximum "
+            .. tostring(maxValue)
+    end
+
+    return final,
         nil
 end
 
@@ -29424,11 +29559,10 @@ function HolyDailyDealSetMinValue(value)
 
     local number,
         reason =
-        HolyDailyDealStrictNumber(
+        HolyDailyDealStrictMoney(
             value,
             0,
-            1000000000000000,
-            false
+            1000000000000000000
         )
 
     if number == nil then
@@ -29458,6 +29592,123 @@ function HolyDailyDealSetMinValue(value)
     )
 
     return true
+end
+
+function HolyDailyDealNameKey(value)
+
+    if type(HolySellKey) == "function" then
+
+        return HolySellKey(
+            value
+        )
+    end
+
+    return HolyCleanText(
+        value
+    )
+        :lower()
+        :gsub("[%s_%-%[%]%(%)%.'\"_/{}:]", "")
+end
+
+function HolyDailyDealAddTriggerValue(values, seen, value)
+
+    value =
+        HolyCleanText(
+            value
+        )
+
+    if value == ""
+    or value == "All" then
+
+        return false
+    end
+
+    local key =
+        HolyDailyDealNameKey(
+            value
+        )
+
+    if key == ""
+    or seen[key] == true then
+
+        return false
+    end
+
+    seen[key] =
+        true
+
+    table.insert(
+        values,
+        value
+    )
+
+    return true
+end
+
+function HolyDailyDealGetTriggerFruitDropdownValues()
+
+    local values = {}
+
+    local seen = {}
+
+    if type(HolySellGetFruitDropdownValues) == "function" then
+
+        for _, fruitName in ipairs(HolySellGetFruitDropdownValues()) do
+
+            HolyDailyDealAddTriggerValue(
+                values,
+                seen,
+                fruitName
+            )
+        end
+    end
+
+    if type(HolyFarmGetPlantDropdownValues) == "function" then
+
+        for _, fruitName in ipairs(HolyFarmGetPlantDropdownValues()) do
+
+            HolyDailyDealAddTriggerValue(
+                values,
+                seen,
+                fruitName
+            )
+        end
+    end
+
+    local sellValueData =
+        HolyShopRequireModule(
+            "SharedModules.SellValueData"
+        )
+
+    if type(sellValueData) == "table" then
+
+        for fruitName, value in pairs(sellValueData) do
+
+            if type(fruitName) == "string"
+            and tonumber(value) ~= nil then
+
+                HolyDailyDealAddTriggerValue(
+                    values,
+                    seen,
+                    fruitName
+                )
+            end
+        end
+    end
+
+    table.sort(values, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    table.insert(
+        values,
+        1,
+        "All"
+    )
+
+    return values
 end
 
 function HolyDailyDealSetTriggerFruits(value)
@@ -29563,11 +29814,10 @@ function HolyDailyDealValidateSettings()
         nil
 
     minValue =
-        HolyDailyDealStrictNumber(
+        HolyDailyDealStrictMoney(
             HOLY_SHOP_STATE.DailyDealMinValue,
             0,
-            1000000000000000,
-            false
+            1000000000000000000
         )
 
     if minValue == nil then
@@ -29846,89 +30096,140 @@ end
 
 function HolyDailyDealFindBestTrigger(entries)
 
-    local fruits =
-        {}
+    HolyDailyDealEnsureState()
 
-    if type(HolySellGetFruitTools) == "function" then
-
-        fruits =
-            HolySellGetFruitTools()
-    end
-
-    if #fruits <= 0 then
+    if type(entries) ~= "table" then
 
         return nil,
-            "Waiting for harvested fruit"
+            "Waiting for stock data"
     end
 
-    local sawSelected =
+    local selected =
+        HolyShopSelectionArray(
+            HOLY_SHOP_STATE.DailyDealTriggerFruits
+            or {
+                "All",
+            }
+        )
+
+    if #selected <= 0 then
+
+        selected = {
+            "All",
+        }
+    end
+
+    local useAll =
         false
+
+    for _, fruitName in ipairs(selected) do
+
+        if fruitName == "All" then
+
+            useAll =
+                true
+
+            break
+        end
+    end
 
     local best =
         nil
 
-    for _, tool in ipairs(fruits) do
+    local function consider(stockFruitName, row)
 
-        local fruitName =
-            HolySellGetToolFruitName(
-                tool
-            )
+        if type(row) ~= "table" then
+            return
+        end
 
-        if fruitName ~= ""
-        and HolyDailyDealSelectionAllows(
-            fruitName
-        ) == true then
+        local multiplier =
+            tonumber(row.multiplier)
+            or 0
 
-            sawSelected =
-                true
+        local candidate = {
+            Fruit =
+                tostring(stockFruitName),
 
-            local multiplier,
-                stockName,
-                tier =
-                HolyDailyDealStockMultiplier(
-                    entries,
-                    fruitName
-                )
+            StockName =
+                tostring(stockFruitName),
 
-            local row = {
-                Tool =
-                    tool,
+            Multiplier =
+                multiplier,
 
-                Fruit =
-                    fruitName,
+            Tier =
+                tostring(row.tier or ""),
+        }
 
-                StockName =
-                    stockName ~= ""
-                    and stockName
-                    or fruitName,
+        if best == nil
+        or candidate.Multiplier > best.Multiplier then
 
-                Multiplier =
-                    tonumber(multiplier)
-                    or 0,
-
-                Tier =
-                    tier,
-            }
-
-            if best == nil
-            or row.Multiplier > best.Multiplier then
-
-                best =
-                    row
-            end
+            best =
+                candidate
         end
     end
 
-    if sawSelected ~= true then
+    if useAll == true then
 
-        return nil,
-            "Waiting for trigger fruit"
+        for stockFruitName, row in pairs(entries) do
+
+            consider(
+                stockFruitName,
+                row
+            )
+        end
+
+    else
+
+        for _, selectedFruitName in ipairs(selected) do
+
+            selectedFruitName =
+                HolyCleanText(
+                    selectedFruitName
+                )
+
+            if selectedFruitName ~= ""
+            and selectedFruitName ~= "All" then
+
+                local multiplier,
+                    stockName,
+                    tier =
+                    HolyDailyDealStockMultiplier(
+                        entries,
+                        selectedFruitName
+                    )
+
+                if stockName ~= "" then
+
+                    local candidate = {
+                        Fruit =
+                            selectedFruitName,
+
+                        StockName =
+                            stockName,
+
+                        Multiplier =
+                            tonumber(multiplier)
+                            or 0,
+
+                        Tier =
+                            tostring(tier or ""),
+                    }
+
+                    if best == nil
+                    or candidate.Multiplier > best.Multiplier then
+
+                        best =
+                            candidate
+                    end
+                end
+            end
+        end
     end
 
     if best == nil then
 
         return nil,
-            "Waiting for stock data"
+            "Waiting for selected stock"
     end
 
     return best,
@@ -53236,7 +53537,7 @@ ShopDailyDealBox:AddDropdown(
             "🍅 Trigger Fruits",
 
         Values =
-            HolySellGetFruitDropdownValues(),
+            HolyDailyDealGetTriggerFruitDropdownValues(),
 
         Default =
             HolyShopSelectionArray(
@@ -53343,7 +53644,7 @@ ShopDailyDealBox:AddInput(
             ),
 
         Placeholder =
-            "0",
+            "500B",
 
         Numeric =
             false,
@@ -53355,7 +53656,7 @@ ShopDailyDealBox:AddInput(
             false,
 
         Tooltip =
-            "Minimum expected Daily Deal payout. Text input only. Numbers only, no commas or K/M shorthand.",
+            "Minimum expected Daily Deal payout. Supports K, M, B, T, Q. Examples: 500B, 2.5M, 1T.",
     }
 ):OnChanged(function(value)
 
