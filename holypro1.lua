@@ -788,6 +788,25 @@ HOLY_SHOP_STATE = {
     DoubleLastResult = "Ready",
     DoubleTouchedRows = {},
 
+    AutoDailyDealAll = false,
+    DailyDealTriggerFruits = {
+        "All",
+    },
+    DailyDealMinStockMultiplier = "2",
+    DailyDealMinFriendBoost = "0",
+    DailyDealMinValue = "0",
+    DailyDealAutoDisable = true,
+    DailyDealRequirePreview = true,
+
+    DailyDealWorkerRunning = false,
+    DailyDealManualBusy = false,
+    DailyDealToken = nil,
+    DailyDealStatus = "Ready",
+    DailyDealLastStock = "Stock: --",
+    DailyDealLastPreview = "Preview: --",
+    DailyDealLastResult = "Last: --",
+    DailyDealLastCheckAt = 0,
+
     UseSellFilters = false,
 
     SellFruits = {},
@@ -2654,6 +2673,38 @@ function HolySaveShopSettings()
         DoubleHudPosition =
             HOLY_SHOP_STATE.DoubleHudPosition,
 
+        AutoDailyDealAll =
+            HOLY_SHOP_STATE.AutoDailyDealAll == true,
+
+        DailyDealTriggerFruits =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.DailyDealTriggerFruits
+            ),
+
+        DailyDealMinStockMultiplier =
+            tostring(
+                HOLY_SHOP_STATE.DailyDealMinStockMultiplier
+                or "2"
+            ),
+
+        DailyDealMinFriendBoost =
+            tostring(
+                HOLY_SHOP_STATE.DailyDealMinFriendBoost
+                or "0"
+            ),
+
+        DailyDealMinValue =
+            tostring(
+                HOLY_SHOP_STATE.DailyDealMinValue
+                or "0"
+            ),
+
+        DailyDealAutoDisable =
+            HOLY_SHOP_STATE.DailyDealAutoDisable ~= false,
+
+        DailyDealRequirePreview =
+            HOLY_SHOP_STATE.DailyDealRequirePreview ~= false,
+
         SellMethod =
             HolySellNormalizeMethod(
                 HOLY_SHOP_STATE.SellMethod
@@ -2932,6 +2983,68 @@ function HolyLoadShopSettings()
         type(data.DoubleHudPosition) == "table"
         and data.DoubleHudPosition
         or nil
+
+    HOLY_SHOP_STATE.AutoDailyDealAll =
+        data.AutoDailyDealAll == true
+
+    HOLY_SHOP_STATE.DailyDealTriggerFruits =
+        HolyShopSelectionArray(
+            data.DailyDealTriggerFruits
+            or data.DailyDealFruits
+            or {
+                "All",
+            }
+        )
+
+    if #HOLY_SHOP_STATE.DailyDealTriggerFruits <= 0 then
+
+        HOLY_SHOP_STATE.DailyDealTriggerFruits = {
+            "All",
+        }
+    end
+
+    HOLY_SHOP_STATE.DailyDealMinStockMultiplier =
+        tostring(
+            data.DailyDealMinStockMultiplier
+            or HOLY_SHOP_STATE.DailyDealMinStockMultiplier
+            or "2"
+        )
+
+    HOLY_SHOP_STATE.DailyDealMinFriendBoost =
+        tostring(
+            data.DailyDealMinFriendBoost
+            or HOLY_SHOP_STATE.DailyDealMinFriendBoost
+            or "0"
+        )
+
+    HOLY_SHOP_STATE.DailyDealMinValue =
+        tostring(
+            data.DailyDealMinValue
+            or HOLY_SHOP_STATE.DailyDealMinValue
+            or "0"
+        )
+
+    if type(data.DailyDealAutoDisable) == "boolean" then
+
+        HOLY_SHOP_STATE.DailyDealAutoDisable =
+            data.DailyDealAutoDisable
+
+    else
+
+        HOLY_SHOP_STATE.DailyDealAutoDisable =
+            true
+    end
+
+    if type(data.DailyDealRequirePreview) == "boolean" then
+
+        HOLY_SHOP_STATE.DailyDealRequirePreview =
+            data.DailyDealRequirePreview
+
+    else
+
+        HOLY_SHOP_STATE.DailyDealRequirePreview =
+            true
+    end
 
     HOLY_SHOP_STATE.SellMethod =
         HolySellNormalizeMethod(
@@ -28786,6 +28899,1813 @@ function HolySellFirePacket(packetName, ...)
 end
 
 --==================================================
+-- [2.605] AUTO DAILY DEAL CORE
+--==================================================
+
+HOLY_DAILY_DEAL_RUNTIME =
+    type(HOLY_DAILY_DEAL_RUNTIME) == "table"
+    and HOLY_DAILY_DEAL_RUNTIME
+    or {}
+
+function HolyDailyDealEnsureState()
+
+    HOLY_SHOP_STATE =
+        type(HOLY_SHOP_STATE) == "table"
+        and HOLY_SHOP_STATE
+        or {}
+
+    HOLY_SHOP_UI =
+        type(HOLY_SHOP_UI) == "table"
+        and HOLY_SHOP_UI
+        or {}
+
+    HOLY_DAILY_DEAL_RUNTIME =
+        type(HOLY_DAILY_DEAL_RUNTIME) == "table"
+        and HOLY_DAILY_DEAL_RUNTIME
+        or {}
+
+    HOLY_DAILY_DEAL_RUNTIME.InputErrors =
+        type(HOLY_DAILY_DEAL_RUNTIME.InputErrors) == "table"
+        and HOLY_DAILY_DEAL_RUNTIME.InputErrors
+        or {}
+
+    HOLY_SHOP_STATE.AutoDailyDealAll =
+        HOLY_SHOP_STATE.AutoDailyDealAll == true
+
+    HOLY_SHOP_STATE.DailyDealTriggerFruits =
+        HolyShopSelectionArray(
+            HOLY_SHOP_STATE.DailyDealTriggerFruits
+            or {
+                "All",
+            }
+        )
+
+    if #HOLY_SHOP_STATE.DailyDealTriggerFruits <= 0 then
+
+        HOLY_SHOP_STATE.DailyDealTriggerFruits = {
+            "All",
+        }
+    end
+
+    HOLY_SHOP_STATE.DailyDealMinStockMultiplier =
+        tostring(
+            HOLY_SHOP_STATE.DailyDealMinStockMultiplier
+            or "2"
+        )
+
+    HOLY_SHOP_STATE.DailyDealMinFriendBoost =
+        tostring(
+            HOLY_SHOP_STATE.DailyDealMinFriendBoost
+            or "0"
+        )
+
+    HOLY_SHOP_STATE.DailyDealMinValue =
+        tostring(
+            HOLY_SHOP_STATE.DailyDealMinValue
+            or "0"
+        )
+
+    HOLY_SHOP_STATE.DailyDealAutoDisable =
+        HOLY_SHOP_STATE.DailyDealAutoDisable ~= false
+
+    HOLY_SHOP_STATE.DailyDealRequirePreview =
+        HOLY_SHOP_STATE.DailyDealRequirePreview ~= false
+
+    HOLY_SHOP_STATE.DailyDealStatus =
+        tostring(
+            HOLY_SHOP_STATE.DailyDealStatus
+            or "Ready"
+        )
+
+    HOLY_SHOP_STATE.DailyDealLastStock =
+        tostring(
+            HOLY_SHOP_STATE.DailyDealLastStock
+            or "Stock: --"
+        )
+
+    HOLY_SHOP_STATE.DailyDealLastPreview =
+        tostring(
+            HOLY_SHOP_STATE.DailyDealLastPreview
+            or "Preview: --"
+        )
+
+    HOLY_SHOP_STATE.DailyDealLastResult =
+        tostring(
+            HOLY_SHOP_STATE.DailyDealLastResult
+            or "Last: --"
+        )
+
+    return HOLY_SHOP_STATE
+end
+
+function HolyDailyDealFormatDecimal(value)
+
+    local number =
+        tonumber(value)
+
+    if number == nil then
+        return "0"
+    end
+
+    local text =
+        string.format(
+            "%.4f",
+            number
+        )
+
+    text =
+        text:gsub(
+            "0+$",
+            ""
+        )
+
+    text =
+        text:gsub(
+            "%.$",
+            ""
+        )
+
+    if text == "" then
+        text = "0"
+    end
+
+    return text
+end
+
+function HolyDailyDealFormatMoney(value)
+
+    value =
+        math.max(
+            0,
+            math.floor(
+                tonumber(value)
+                or 0
+            )
+        )
+
+    if value >= 1000000000 then
+
+        return string.format(
+            "%.2fB¢",
+            value / 1000000000
+        )
+    end
+
+    if value >= 1000000 then
+
+        return string.format(
+            "%.2fM¢",
+            value / 1000000
+        )
+    end
+
+    if value >= 1000 then
+
+        return string.format(
+            "%.2fK¢",
+            value / 1000
+        )
+    end
+
+    return tostring(value)
+        .. "¢"
+end
+
+function HolyDailyDealFormatDuration(seconds)
+
+    seconds =
+        math.max(
+            0,
+            math.floor(
+                tonumber(seconds)
+                or 0
+            )
+        )
+
+    local hours =
+        math.floor(seconds / 3600)
+
+    local minutes =
+        math.floor((seconds % 3600) / 60)
+
+    local remaining =
+        seconds % 60
+
+    if hours > 0 then
+
+        return tostring(hours)
+            .. "h "
+            .. tostring(minutes)
+            .. "m"
+    end
+
+    if minutes > 0 then
+
+        return tostring(minutes)
+            .. "m "
+            .. tostring(remaining)
+            .. "s"
+    end
+
+    return tostring(remaining)
+        .. "s"
+end
+
+function HolyDailyDealRefreshUI()
+
+    HolyDailyDealEnsureState()
+
+    if type(HolySniperSetLabel) ~= "function" then
+        return false
+    end
+
+    HolySniperSetLabel(
+        HOLY_SHOP_UI.DailyDealStatusLabel,
+        "Daily: "
+            .. tostring(HOLY_SHOP_STATE.DailyDealStatus or "Ready")
+    )
+
+    HolySniperSetLabel(
+        HOLY_SHOP_UI.DailyDealStockLabel,
+        tostring(HOLY_SHOP_STATE.DailyDealLastStock or "Stock: --")
+    )
+
+    HolySniperSetLabel(
+        HOLY_SHOP_UI.DailyDealPreviewLabel,
+        tostring(HOLY_SHOP_STATE.DailyDealLastPreview or "Preview: --")
+    )
+
+    HolySniperSetLabel(
+        HOLY_SHOP_UI.DailyDealLastLabel,
+        tostring(HOLY_SHOP_STATE.DailyDealLastResult or "Last: --")
+    )
+
+    return true
+end
+
+function HolyDailyDealSetStatus(status)
+
+    HolyDailyDealEnsureState()
+
+    HOLY_SHOP_STATE.DailyDealStatus =
+        tostring(status or "Ready")
+
+    HolyDailyDealRefreshUI()
+
+    return true
+end
+
+function HolyDailyDealSetStockText(text)
+
+    HolyDailyDealEnsureState()
+
+    HOLY_SHOP_STATE.DailyDealLastStock =
+        tostring(text or "Stock: --")
+
+    HolyDailyDealRefreshUI()
+
+    return true
+end
+
+function HolyDailyDealSetPreviewText(text)
+
+    HolyDailyDealEnsureState()
+
+    HOLY_SHOP_STATE.DailyDealLastPreview =
+        tostring(text or "Preview: --")
+
+    HolyDailyDealRefreshUI()
+
+    return true
+end
+
+function HolyDailyDealSetLastText(text)
+
+    HolyDailyDealEnsureState()
+
+    HOLY_SHOP_STATE.DailyDealLastResult =
+        tostring(text or "Last: --")
+
+    HolyDailyDealRefreshUI()
+
+    return true
+end
+
+function HolyDailyDealSetFieldError(fieldName, message)
+
+    HolyDailyDealEnsureState()
+
+    fieldName =
+        tostring(fieldName or "")
+
+    if fieldName == "" then
+        return false
+    end
+
+    HOLY_DAILY_DEAL_RUNTIME.InputErrors[fieldName] =
+        tostring(message or "Invalid input")
+
+    HolyDailyDealSetStatus(
+        "⚠️ "
+        .. tostring(message or "Invalid input")
+    )
+
+    return true
+end
+
+function HolyDailyDealClearFieldError(fieldName)
+
+    HolyDailyDealEnsureState()
+
+    fieldName =
+        tostring(fieldName or "")
+
+    if fieldName ~= "" then
+
+        HOLY_DAILY_DEAL_RUNTIME.InputErrors[fieldName] =
+            nil
+    end
+
+    return true
+end
+
+function HolyDailyDealGetInputError()
+
+    HolyDailyDealEnsureState()
+
+    local order = {
+        "MinStockMultiplier",
+        "MinFriendBoost",
+        "MinValue",
+    }
+
+    for _, key in ipairs(order) do
+
+        local message =
+            HOLY_DAILY_DEAL_RUNTIME.InputErrors[key]
+
+        if message ~= nil then
+
+            return tostring(message)
+        end
+    end
+
+    for _, message in pairs(HOLY_DAILY_DEAL_RUNTIME.InputErrors) do
+
+        return tostring(message)
+    end
+
+    return ""
+end
+
+function HolyDailyDealStrictNumber(value, minValue, maxValue, allowPercent)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text == "" then
+        return nil, "empty"
+    end
+
+    text =
+        text:gsub(
+            "%s+",
+            ""
+        )
+
+    if allowPercent == true
+    and text:sub(-1) == "%" then
+
+        text =
+            text:sub(1, #text - 1)
+    end
+
+    if text:find("%%", 1, true) then
+        return nil, "bad percent"
+    end
+
+    if text:find(",", 1, true) then
+        return nil, "commas not allowed"
+    end
+
+    local lower =
+        text:lower()
+
+    if lower:find("nan", 1, true)
+    or lower:find("inf", 1, true) then
+
+        return nil, "bad number"
+    end
+
+    if text:match("^%d+%.?%d*$") == nil then
+        return nil, "numbers only"
+    end
+
+    local dotCount =
+        select(
+            2,
+            text:gsub(
+                "%.",
+                ""
+            )
+        )
+
+    if dotCount > 1 then
+        return nil, "too many decimals"
+    end
+
+    local number =
+        tonumber(text)
+
+    if number == nil then
+        return nil, "bad number"
+    end
+
+    if minValue ~= nil
+    and number < minValue then
+
+        return nil,
+            "minimum "
+            .. tostring(minValue)
+    end
+
+    if maxValue ~= nil
+    and number > maxValue then
+
+        return nil,
+            "maximum "
+            .. tostring(maxValue)
+    end
+
+    return number,
+        nil
+end
+
+function HolyDailyDealSetMinStockMultiplier(value)
+
+    local number,
+        reason =
+        HolyDailyDealStrictNumber(
+            value,
+            0.01,
+            100,
+            false
+        )
+
+    if number == nil then
+
+        return HolyDailyDealSetFieldError(
+            "MinStockMultiplier",
+            "Invalid Min Stock Multiplier"
+        )
+    end
+
+    HolyDailyDealClearFieldError(
+        "MinStockMultiplier"
+    )
+
+    HOLY_SHOP_STATE.DailyDealMinStockMultiplier =
+        HolyDailyDealFormatDecimal(
+            number
+        )
+
+    HolySaveShopSettings()
+
+    HolyDailyDealSetStatus(
+        "Min stock set to X"
+        .. tostring(HOLY_SHOP_STATE.DailyDealMinStockMultiplier)
+    )
+
+    return true
+end
+
+function HolyDailyDealSetMinFriendBoost(value)
+
+    local number,
+        reason =
+        HolyDailyDealStrictNumber(
+            value,
+            0,
+            100,
+            true
+        )
+
+    if number == nil then
+
+        return HolyDailyDealSetFieldError(
+            "MinFriendBoost",
+            "Invalid Min Friend Boost"
+        )
+    end
+
+    HolyDailyDealClearFieldError(
+        "MinFriendBoost"
+    )
+
+    HOLY_SHOP_STATE.DailyDealMinFriendBoost =
+        HolyDailyDealFormatDecimal(
+            number
+        )
+
+    HolySaveShopSettings()
+
+    HolyDailyDealSetStatus(
+        "Min boost set to "
+        .. tostring(HOLY_SHOP_STATE.DailyDealMinFriendBoost)
+        .. "%"
+    )
+
+    return true
+end
+
+function HolyDailyDealSetMinValue(value)
+
+    local number,
+        reason =
+        HolyDailyDealStrictNumber(
+            value,
+            0,
+            1000000000000000,
+            false
+        )
+
+    if number == nil then
+
+        return HolyDailyDealSetFieldError(
+            "MinValue",
+            "Invalid Min Daily Deal Value"
+        )
+    end
+
+    HolyDailyDealClearFieldError(
+        "MinValue"
+    )
+
+    HOLY_SHOP_STATE.DailyDealMinValue =
+        tostring(
+            math.floor(number)
+        )
+
+    HolySaveShopSettings()
+
+    HolyDailyDealSetStatus(
+        "Min value set to "
+        .. HolyDailyDealFormatMoney(
+            number
+        )
+    )
+
+    return true
+end
+
+function HolyDailyDealSetTriggerFruits(value)
+
+    HolyDailyDealEnsureState()
+
+    local selection =
+        HolyShopSelectionArray(
+            value
+        )
+
+    if #selection <= 0 then
+
+        selection = {
+            "All",
+        }
+    end
+
+    HOLY_SHOP_STATE.DailyDealTriggerFruits =
+        selection
+
+    HolySaveShopSettings()
+
+    HolyDailyDealSetStatus(
+        "Trigger fruits updated."
+    )
+
+    return true
+end
+
+function HolyDailyDealSetAutoDisable(value)
+
+    HolyDailyDealEnsureState()
+
+    HOLY_SHOP_STATE.DailyDealAutoDisable =
+        value == true
+
+    HolySaveShopSettings()
+
+    return true
+end
+
+function HolyDailyDealTextBoxFocused()
+
+    local focused =
+        nil
+
+    pcall(function()
+
+        focused =
+            UserInputService:GetFocusedTextBox()
+    end)
+
+    return focused ~= nil
+end
+
+function HolyDailyDealValidateSettings()
+
+    local inputError =
+        HolyDailyDealGetInputError()
+
+    if inputError ~= "" then
+
+        return false,
+            inputError
+    end
+
+    local minStock =
+        nil
+
+    minStock =
+        HolyDailyDealStrictNumber(
+            HOLY_SHOP_STATE.DailyDealMinStockMultiplier,
+            0.01,
+            100,
+            false
+        )
+
+    if minStock == nil then
+
+        return false,
+            "Invalid Min Stock Multiplier"
+    end
+
+    local minBoost =
+        nil
+
+    minBoost =
+        HolyDailyDealStrictNumber(
+            HOLY_SHOP_STATE.DailyDealMinFriendBoost,
+            0,
+            100,
+            true
+        )
+
+    if minBoost == nil then
+
+        return false,
+            "Invalid Min Friend Boost"
+    end
+
+    local minValue =
+        nil
+
+    minValue =
+        HolyDailyDealStrictNumber(
+            HOLY_SHOP_STATE.DailyDealMinValue,
+            0,
+            1000000000000000,
+            false
+        )
+
+    if minValue == nil then
+
+        return false,
+            "Invalid Min Daily Deal Value"
+    end
+
+    return true,
+        {
+            MinStockMultiplier =
+                minStock,
+
+            MinFriendBoost =
+                minBoost,
+
+            MinValue =
+                math.floor(minValue),
+        }
+end
+
+function HolyDailyDealReadFriendBoost()
+
+    local playerGui =
+        LocalPlayer
+        and LocalPlayer:FindFirstChildOfClass(
+            "PlayerGui"
+        )
+        or nil
+
+    local text =
+        ""
+
+    pcall(function()
+
+        local hud =
+            playerGui
+            and playerGui:FindFirstChild(
+                "HUD"
+            )
+
+        local currencies =
+            hud
+            and hud:FindFirstChild(
+                "Currencies"
+            )
+
+        local friendBoost =
+            currencies
+            and currencies:FindFirstChild(
+                "FriendBoost"
+            )
+
+        local label =
+            friendBoost
+            and friendBoost:FindFirstChild(
+                "TextLabel",
+                true
+            )
+
+        if label
+        and label:IsA("TextLabel") then
+
+            text =
+                label.Text
+        end
+    end)
+
+    local percent =
+        tonumber(
+            tostring(text):match("(%d+%.?%d*)%s*%%")
+        )
+        or 0
+
+    return percent,
+        text ~= "" and text or "FRIEND BOOST: 0%"
+end
+
+function HolyDailyDealGetDailyMultiplier()
+
+    local sellFlags =
+        HolyShopRequireModule(
+            "SharedModules.Flags.SellFlags"
+        )
+
+    local flag =
+        type(sellFlags) == "table"
+        and sellFlags.DailyDealMultiplier
+        or nil
+
+    if type(flag) == "table" then
+
+        if type(flag.Get) == "function" then
+
+            local ok,
+                result =
+                pcall(function()
+
+                    return flag:Get()
+                end)
+
+            if ok == true
+            and tonumber(result) then
+
+                return tonumber(result)
+            end
+        end
+
+        if tonumber(flag.Value) then
+
+            return tonumber(flag.Value)
+        end
+    end
+
+    return 1
+end
+
+function HolyDailyDealFireNpcPacket(packetName)
+
+    local packet =
+        HolySellResolvePacket(
+            packetName
+        )
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return nil,
+            false,
+            "packet missing: "
+            .. tostring(packetName)
+    end
+
+    local ok,
+        result =
+        pcall(function()
+
+            return packet:Fire()
+        end)
+
+    if ok ~= true then
+
+        return nil,
+            false,
+            tostring(result)
+    end
+
+    return result,
+        true,
+        "ok"
+end
+
+function HolyDailyDealFireFruitStockRequest()
+
+    local networking =
+        HolyShopRequireModule(
+            "SharedModules.Networking"
+        )
+
+    local packet =
+        type(networking) == "table"
+        and type(networking.FruitStock) == "table"
+        and networking.FruitStock.Request
+        or nil
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return nil,
+            false,
+            "FruitStock.Request missing"
+    end
+
+    local ok,
+        result =
+        pcall(function()
+
+            return packet:Fire()
+        end)
+
+    if ok ~= true then
+
+        return nil,
+            false,
+            tostring(result)
+    end
+
+    return result,
+        true,
+        "ok"
+end
+
+function HolyDailyDealStockMultiplier(entries, fruitName)
+
+    fruitName =
+        HolyCleanText(
+            fruitName
+        )
+
+    if fruitName == ""
+    or type(entries) ~= "table" then
+
+        return 0,
+            "",
+            ""
+    end
+
+    local direct =
+        entries[fruitName]
+
+    if type(direct) == "table" then
+
+        return tonumber(direct.multiplier)
+            or 0,
+            fruitName,
+            tostring(direct.tier or "")
+    end
+
+    local wantedKey =
+        HolySellKey(
+            fruitName
+        )
+
+    for stockFruitName, row in pairs(entries) do
+
+        if HolySellKey(stockFruitName) == wantedKey
+        and type(row) == "table" then
+
+            return tonumber(row.multiplier)
+                or 0,
+                tostring(stockFruitName),
+                tostring(row.tier or "")
+        end
+    end
+
+    return 0,
+        "",
+        ""
+end
+
+function HolyDailyDealSelectionAllows(fruitName)
+
+    HolyDailyDealEnsureState()
+
+    fruitName =
+        HolyCleanText(
+            fruitName
+        )
+
+    if fruitName == "" then
+        return false
+    end
+
+    local selected =
+        HolyShopSelectionArray(
+            HOLY_SHOP_STATE.DailyDealTriggerFruits
+        )
+
+    if #selected <= 0 then
+        return true
+    end
+
+    for _, selectedFruit in ipairs(selected) do
+
+        if selectedFruit == "All" then
+            return true
+        end
+
+        if HolySellKey(selectedFruit) == HolySellKey(fruitName) then
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyDailyDealFindBestTrigger(entries)
+
+    local fruits =
+        {}
+
+    if type(HolySellGetFruitTools) == "function" then
+
+        fruits =
+            HolySellGetFruitTools()
+    end
+
+    if #fruits <= 0 then
+
+        return nil,
+            "Waiting for harvested fruit"
+    end
+
+    local sawSelected =
+        false
+
+    local best =
+        nil
+
+    for _, tool in ipairs(fruits) do
+
+        local fruitName =
+            HolySellGetToolFruitName(
+                tool
+            )
+
+        if fruitName ~= ""
+        and HolyDailyDealSelectionAllows(
+            fruitName
+        ) == true then
+
+            sawSelected =
+                true
+
+            local multiplier,
+                stockName,
+                tier =
+                HolyDailyDealStockMultiplier(
+                    entries,
+                    fruitName
+                )
+
+            local row = {
+                Tool =
+                    tool,
+
+                Fruit =
+                    fruitName,
+
+                StockName =
+                    stockName ~= ""
+                    and stockName
+                    or fruitName,
+
+                Multiplier =
+                    tonumber(multiplier)
+                    or 0,
+
+                Tier =
+                    tier,
+            }
+
+            if best == nil
+            or row.Multiplier > best.Multiplier then
+
+                best =
+                    row
+            end
+        end
+    end
+
+    if sawSelected ~= true then
+
+        return nil,
+            "Waiting for trigger fruit"
+    end
+
+    if best == nil then
+
+        return nil,
+            "Waiting for stock data"
+    end
+
+    return best,
+        "ok"
+end
+
+function HolyDailyDealOtherSystemBlocked()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+        return "Auto Sell Fruits is ON"
+    end
+
+    if HOLY_SHOP_STATE.AutoDoubleOrNothing == true
+    or HOLY_SHOP_STATE.DoubleWorkerRunning == true
+    or HOLY_SHOP_STATE.DoubleManualBusy == true then
+
+        return "Gamble is busy"
+    end
+
+    local sniper =
+        type(HOLY_SNIPER_RUNTIME) == "table"
+        and HOLY_SNIPER_RUNTIME
+        or {}
+
+    if sniper.Buying == true
+    or sniper.Returning == true
+    or sniper.AutoHopInProgress == true then
+
+        return "Sniper/server hop busy"
+    end
+
+    return ""
+end
+
+function HolyDailyDealExpectedValue(preview)
+
+    preview =
+        type(preview) == "table"
+        and preview
+        or {}
+
+    local base =
+        tonumber(preview.TotalBaseValue)
+        or tonumber(preview.TotalValue)
+        or 0
+
+    local multiplier =
+        HolyDailyDealGetDailyMultiplier()
+
+    local expected =
+        math.floor(
+            base * multiplier
+        )
+
+    return expected,
+        base,
+        multiplier
+end
+
+function HolyDailyDealSetNextWait(seconds)
+
+    HOLY_DAILY_DEAL_RUNTIME.NextWait =
+        math.clamp(
+            tonumber(seconds)
+            or 10,
+            3,
+            60
+        )
+
+    return HOLY_DAILY_DEAL_RUNTIME.NextWait
+end
+
+function HolyDailyDealGetNextWait()
+
+    return math.clamp(
+        tonumber(HOLY_DAILY_DEAL_RUNTIME.NextWait)
+        or 10,
+        3,
+        60
+    )
+end
+
+function HolyDailyDealEvaluate(mode)
+
+    HolyDailyDealEnsureState()
+
+    mode =
+        tostring(mode or "check")
+
+    HolyDailyDealSetNextWait(
+        10
+    )
+
+    if mode == "auto"
+    and HolyDailyDealTextBoxFocused() == true then
+
+        HolyDailyDealSetStatus(
+            "Paused while typing"
+        )
+
+        HolyDailyDealSetNextWait(
+            3
+        )
+
+        return false,
+            "typing"
+    end
+
+    local settingsOk,
+        settings =
+        HolyDailyDealValidateSettings()
+
+    if settingsOk ~= true then
+
+        HolyDailyDealSetStatus(
+            "⚠️ "
+            .. tostring(settings)
+        )
+
+        HolyDailyDealSetNextWait(
+            3
+        )
+
+        return false,
+            tostring(settings)
+    end
+
+    if mode ~= "check" then
+
+        local blocked =
+            HolyDailyDealOtherSystemBlocked()
+
+        if blocked ~= "" then
+
+            HolyDailyDealSetStatus(
+                "Blocked: "
+                .. blocked
+            )
+
+            HolyDailyDealSetNextWait(
+                8
+            )
+
+            return false,
+                blocked
+        end
+    end
+
+    HolyDailyDealSetStatus(
+        "Checking stock..."
+    )
+
+    local stockResult,
+        stockOk,
+        stockReason =
+        HolyDailyDealFireFruitStockRequest()
+
+    if stockOk ~= true
+    or type(stockResult) ~= "table"
+    or type(stockResult.entries) ~= "table" then
+
+        HolyDailyDealSetStatus(
+            "Stock check failed"
+        )
+
+        HolyDailyDealSetStockText(
+            "Stock: "
+            .. tostring(stockReason or "missing")
+        )
+
+        return false,
+            "stock failed"
+    end
+
+    local best,
+        triggerReason =
+        HolyDailyDealFindBestTrigger(
+            stockResult.entries
+        )
+
+    if best == nil then
+
+        HolyDailyDealSetStatus(
+            tostring(triggerReason)
+        )
+
+        HolyDailyDealSetStockText(
+            "Stock: no trigger fruit"
+        )
+
+        return false,
+            tostring(triggerReason)
+    end
+
+    HolyDailyDealSetStockText(
+        "Stock: "
+        .. tostring(best.StockName)
+        .. " X"
+        .. HolyDailyDealFormatDecimal(best.Multiplier)
+        .. " / Need X"
+        .. HolyDailyDealFormatDecimal(settings.MinStockMultiplier)
+    )
+
+    if tonumber(best.Multiplier) < tonumber(settings.MinStockMultiplier) then
+
+        HolyDailyDealSetStatus(
+            "Waiting stock X"
+            .. HolyDailyDealFormatDecimal(settings.MinStockMultiplier)
+        )
+
+        local waitSeconds =
+            30
+
+        if tonumber(stockResult.nextRefreshUnix)
+        and tonumber(stockResult.server_now_unix) then
+
+            waitSeconds =
+                tonumber(stockResult.nextRefreshUnix)
+                - tonumber(stockResult.server_now_unix)
+        end
+
+        HolyDailyDealSetNextWait(
+            waitSeconds
+        )
+
+        return false,
+            "stock too low"
+    end
+
+    local boost,
+        boostText =
+        HolyDailyDealReadFriendBoost()
+
+    if boost < settings.MinFriendBoost then
+
+        HolyDailyDealSetStatus(
+            "Waiting boost "
+            .. HolyDailyDealFormatDecimal(settings.MinFriendBoost)
+            .. "%"
+        )
+
+        HolyDailyDealSetNextWait(
+            20
+        )
+
+        return false,
+            "boost too low"
+    end
+
+    HolyDailyDealSetStatus(
+        "Checking availability..."
+    )
+
+    local checkResult,
+        checkOk,
+        checkReason =
+        HolyDailyDealFireNpcPacket(
+            "CheckDailyDeal"
+        )
+
+    if checkOk ~= true
+    or type(checkResult) ~= "table" then
+
+        HolyDailyDealSetStatus(
+            "Daily check failed"
+        )
+
+        return false,
+            tostring(checkReason or "check failed")
+    end
+
+    if checkResult.Available ~= true then
+
+        local remaining =
+            tonumber(checkResult.TimeRemaining)
+            or 0
+
+        HolyDailyDealSetStatus(
+            "Cooldown "
+            .. HolyDailyDealFormatDuration(
+                remaining
+            )
+        )
+
+        HolyDailyDealSetPreviewText(
+            "Preview: skipped, cooldown"
+        )
+
+        HolyDailyDealSetNextWait(
+            remaining
+        )
+
+        return false,
+            "cooldown"
+    end
+
+    HolyDailyDealSetStatus(
+        "Checking preview..."
+    )
+
+    local preview,
+        previewOk,
+        previewReason =
+        HolyDailyDealFireNpcPacket(
+            "PreviewSellAll"
+        )
+
+    if previewOk ~= true
+    or type(preview) ~= "table" then
+
+        HolyDailyDealSetStatus(
+            "Preview failed"
+        )
+
+        HolyDailyDealSetPreviewText(
+            "Preview: "
+            .. tostring(previewReason or "failed")
+        )
+
+        return false,
+            "preview failed"
+    end
+
+    local fruitCount =
+        tonumber(preview.FruitCount)
+        or 0
+
+    local expectedDaily,
+        baseValue,
+        dailyMultiplier =
+        HolyDailyDealExpectedValue(
+            preview
+        )
+
+    HolyDailyDealSetPreviewText(
+        "Preview: "
+        .. tostring(fruitCount)
+        .. " fruits → "
+        .. HolyDailyDealFormatMoney(
+            expectedDaily
+        )
+    )
+
+    if fruitCount <= 0 then
+
+        HolyDailyDealSetStatus(
+            "Preview has no fruit"
+        )
+
+        return false,
+            "no preview fruit"
+    end
+
+    if expectedDaily < settings.MinValue then
+
+        HolyDailyDealSetStatus(
+            "Preview too low"
+        )
+
+        HolyDailyDealSetNextWait(
+            20
+        )
+
+        return false,
+            "preview too low"
+    end
+
+    HolyDailyDealSetStatus(
+        "Ready"
+    )
+
+    return true,
+        "ready",
+        {
+            Settings =
+                settings,
+
+            Stock =
+                stockResult,
+
+            Best =
+                best,
+
+            FriendBoost =
+                boost,
+
+            FriendBoostText =
+                boostText,
+
+            Check =
+                checkResult,
+
+            Preview =
+                preview,
+
+            ExpectedDaily =
+                expectedDaily,
+
+            BaseValue =
+                baseValue,
+
+            DailyMultiplier =
+                dailyMultiplier,
+        }
+end
+
+function HolyDailyDealSyncAutoToggle()
+
+    local options =
+        HOLY_DEV_LIBRARY
+        and HOLY_DEV_LIBRARY.Options
+        or Options
+
+    local toggle =
+        type(options) == "table"
+        and options.HolyShopAutoDailyDealAll
+        or nil
+
+    if type(toggle) == "table"
+    and type(toggle.SetValue) == "function" then
+
+        pcall(function()
+
+            toggle:SetValue(
+                HOLY_SHOP_STATE.AutoDailyDealAll == true,
+                true
+            )
+        end)
+    end
+
+    return true
+end
+
+function HolyDailyDealRunUseAll(source)
+
+    HolyDailyDealEnsureState()
+
+    source =
+        tostring(source or "manual")
+
+    if HOLY_SHOP_STATE.DailyDealManualBusy == true then
+
+        HolyDailyDealSetStatus(
+            "Busy"
+        )
+
+        return false,
+            "busy"
+    end
+
+    HOLY_SHOP_STATE.DailyDealManualBusy =
+        true
+
+    local success =
+        false
+
+    local reason =
+        "unknown"
+
+    local ok,
+        err =
+        pcall(function()
+
+            local ready,
+                readyReason,
+                context =
+                HolyDailyDealEvaluate(
+                    source == "auto"
+                    and "auto"
+                    or "manual"
+                )
+
+            if ready ~= true then
+
+                reason =
+                    tostring(readyReason or "not ready")
+
+                return
+            end
+
+            HolyDailyDealSetStatus(
+                "Ready → selling"
+            )
+
+            local beforeMoney =
+                type(HolySniperReadSheckles) == "function"
+                and HolySniperReadSheckles()
+                or nil
+
+            local result,
+                fireOk,
+                fireReason =
+                HolyDailyDealFireNpcPacket(
+                    "UseDailyDealAll"
+                )
+
+            task.wait(
+                0.25
+            )
+
+            local afterMoney =
+                type(HolySniperReadSheckles) == "function"
+                and HolySniperReadSheckles()
+                or nil
+
+            local moneyDelta =
+                beforeMoney ~= nil
+                and afterMoney ~= nil
+                and afterMoney - beforeMoney
+                or 0
+
+            result =
+                type(result) == "table"
+                and result
+                or {}
+
+            local soldCount =
+                tonumber(result.SoldCount)
+                or 0
+
+            local sellPrice =
+                tonumber(result.SellPrice)
+                or moneyDelta
+                or 0
+
+            if fireOk == true
+            and (
+                result.Success == true
+                or soldCount > 0
+                or moneyDelta > 0
+            ) then
+
+                success =
+                    true
+
+                reason =
+                    "sold"
+
+                HolyDailyDealSetLastText(
+                    "Last: Sold "
+                    .. tostring(soldCount)
+                    .. " for "
+                    .. HolyDailyDealFormatMoney(
+                        sellPrice
+                    )
+                )
+
+                if HOLY_SHOP_STATE.DailyDealAutoDisable == true then
+
+                    HOLY_SHOP_STATE.AutoDailyDealAll =
+                        false
+
+                    HOLY_SHOP_STATE.DailyDealToken =
+                        nil
+
+                    HOLY_SHOP_STATE.DailyDealWorkerRunning =
+                        false
+
+                    HolySaveShopSettings()
+
+                    HolyDailyDealSyncAutoToggle()
+                end
+
+                HolyDailyDealSetStatus(
+                    "Sold "
+                    .. tostring(soldCount)
+                    .. " for "
+                    .. HolyDailyDealFormatMoney(
+                        sellPrice
+                    )
+                )
+
+                if type(HolyNotify) == "function" then
+
+                    HolyNotify(
+                        "HOLY Daily Deal",
+                        "Sold "
+                        .. tostring(soldCount)
+                        .. " fruit(s) for "
+                        .. HolyDailyDealFormatMoney(sellPrice)
+                        .. ".",
+                        4
+                    )
+                end
+
+            else
+
+                reason =
+                    tostring(fireReason or "sale failed")
+
+                HolyDailyDealSetStatus(
+                    "Failed: "
+                    .. reason
+                )
+
+                HolyDailyDealSetLastText(
+                    "Last: failed"
+                )
+            end
+        end)
+
+    if ok ~= true then
+
+        reason =
+            tostring(err)
+
+        HolyDailyDealSetStatus(
+            "Error: "
+            .. reason
+        )
+    end
+
+    HOLY_SHOP_STATE.DailyDealManualBusy =
+        false
+
+    return success,
+        reason
+end
+
+function HolyDailyDealCheckNow()
+
+    task.spawn(function()
+
+        local ready,
+            reason =
+            HolyDailyDealEvaluate(
+                "check"
+            )
+
+        if ready == true then
+
+            HolyDailyDealSetStatus(
+                "Ready / check only"
+            )
+
+        else
+
+            HolyDailyDealSetLastText(
+                "Last check: "
+                .. tostring(reason)
+            )
+        end
+    end)
+
+    return true
+end
+
+function HolyDailyDealUseOnce()
+
+    task.spawn(function()
+
+        HolyDailyDealRunUseAll(
+            "manual"
+        )
+    end)
+
+    return true
+end
+
+function HolyDailyDealStopWorker(reason)
+
+    HolyDailyDealEnsureState()
+
+    HOLY_SHOP_STATE.AutoDailyDealAll =
+        false
+
+    HOLY_SHOP_STATE.DailyDealToken =
+        nil
+
+    HOLY_SHOP_STATE.DailyDealWorkerRunning =
+        false
+
+    HolySaveShopSettings()
+
+    HolyDailyDealSetStatus(
+        tostring(reason or "Off")
+    )
+
+    return true
+end
+
+function HolyDailyDealStartWorker(reason)
+
+    HolyDailyDealEnsureState()
+
+    if HOLY_SHOP_STATE.AutoDailyDealAll ~= true then
+        return false
+    end
+
+    if HOLY_SHOP_STATE.DailyDealWorkerRunning == true then
+        return false
+    end
+
+    local token =
+        {}
+
+    HOLY_SHOP_STATE.DailyDealToken =
+        token
+
+    HOLY_SHOP_STATE.DailyDealWorkerRunning =
+        true
+
+    HolyDailyDealSetStatus(
+        "Starting..."
+    )
+
+    task.spawn(function()
+
+        while HOLY_SHOP_STATE.AutoDailyDealAll == true
+        and HOLY_SHOP_STATE.DailyDealToken == token do
+
+            local ok,
+                err =
+                pcall(function()
+
+                    HolyDailyDealRunUseAll(
+                        "auto"
+                    )
+                end)
+
+            if ok ~= true then
+
+                HolyDailyDealSetStatus(
+                    "Error: "
+                    .. tostring(err)
+                )
+
+                HolyDailyDealSetNextWait(
+                    10
+                )
+            end
+
+            if HOLY_SHOP_STATE.AutoDailyDealAll ~= true then
+                break
+            end
+
+            task.wait(
+                HolyDailyDealGetNextWait()
+            )
+        end
+
+        if HOLY_SHOP_STATE.DailyDealToken == token then
+
+            HOLY_SHOP_STATE.DailyDealWorkerRunning =
+                false
+
+            HOLY_SHOP_STATE.DailyDealToken =
+                nil
+        end
+    end)
+
+    return true
+end
+
+function HolyDailyDealSetAutoEnabled(value, reason)
+
+    HolyDailyDealEnsureState()
+
+    HOLY_SHOP_STATE.AutoDailyDealAll =
+        value == true
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoDailyDealAll == true then
+
+        return HolyDailyDealStartWorker(
+            reason or "toggle on"
+        )
+    end
+
+    return HolyDailyDealStopWorker(
+        reason or "Off"
+    )
+end
+
+--==================================================
 -- [2.61] AUTO DOUBLE OR NOTHING CORE
 --==================================================
 
@@ -38901,6 +40821,14 @@ local ShopDoubleBox =
         "Shop.AutoDoubleOrNothing",
         "Gamble",
         "dice-5"
+    )
+
+local ShopDailyDealBox =
+    HolyAddRightGroupbox(
+        Tabs.Shop,
+        "Shop.DailyDeal",
+        "Daily Deal",
+        "badge-dollar-sign"
     )
 
 local FarmCollectionBox =
@@ -50376,6 +52304,11 @@ function HolyShopRefreshMode()
         ShopDoubleBox,
         not isBuy
     )
+
+    HolySetGroupboxVisible(
+        ShopDailyDealBox,
+        not isBuy
+    )
 end
 
 function HolyShopSetMode(mode)
@@ -50726,7 +52659,7 @@ ShopAuctionBox:AddInput(
     "HolyShopAuctionMaxPrice",
     {
         Text =
-            "Desired Price",
+            "Max Price",
 
         Default =
             tostring(
@@ -51269,6 +53202,242 @@ if HOLY_SHOP_STATE.DoubleHudEnabled == true then
     end)
 end
 
+HolySniperAddLabel(
+    ShopDailyDealBox,
+    "Daily Deal All sells every eligible harvested fruit.\nTrigger Fruits only decide when to activate."
+)
+
+ShopDailyDealBox:AddToggle(
+    "HolyShopAutoDailyDealAll",
+    {
+        Text =
+            "⚡ Auto Daily Deal All",
+
+        Default =
+            HOLY_SHOP_STATE.AutoDailyDealAll == true,
+
+        Tooltip =
+            "Strict auto Daily Deal. Uses CheckDailyDeal, FruitStock.Request, and PreviewSellAll before UseDailyDealAll.",
+    }
+):OnChanged(function(value)
+
+    HolyDailyDealSetAutoEnabled(
+        value == true,
+        value == true
+        and "toggle on"
+        or "toggle off"
+    )
+end)
+
+ShopDailyDealBox:AddDropdown(
+    "HolyShopDailyDealTriggerFruits",
+    {
+        Text =
+            "🍅 Trigger Fruits",
+
+        Values =
+            HolySellGetFruitDropdownValues(),
+
+        Default =
+            HolyShopSelectionArray(
+                HOLY_SHOP_STATE.DailyDealTriggerFruits
+            ),
+
+        Multi =
+            true,
+
+        Searchable =
+            true,
+
+        MaxVisibleDropdownItems =
+            8,
+
+        Tooltip =
+            "These fruits only decide WHEN Daily Deal All triggers. Daily Deal All still sells every eligible fruit.",
+    }
+):OnChanged(function(value)
+
+    HolyDailyDealSetTriggerFruits(
+        value
+    )
+end)
+
+ShopDailyDealBox:AddInput(
+    "HolyShopDailyDealMinStockMultiplier",
+    {
+        Text =
+            "📈 Min Stock Multiplier",
+
+        Default =
+            tostring(
+                HOLY_SHOP_STATE.DailyDealMinStockMultiplier
+                or "2"
+            ),
+
+        Placeholder =
+            "2",
+
+        Numeric =
+            false,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Text input only. Commits only after Enter/click-away. Valid range: 0.01 to 100.",
+    }
+):OnChanged(function(value)
+
+    HolyDailyDealSetMinStockMultiplier(
+        value
+    )
+end)
+
+ShopDailyDealBox:AddInput(
+    "HolyShopDailyDealMinFriendBoost",
+    {
+        Text =
+            "👥 Min Friend Boost %",
+
+        Default =
+            tostring(
+                HOLY_SHOP_STATE.DailyDealMinFriendBoost
+                or "0"
+            ),
+
+        Placeholder =
+            "0",
+
+        Numeric =
+            false,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Text input only. Commits only after Enter/click-away. Accepts 10 or 10%. Valid range: 0 to 100.",
+    }
+):OnChanged(function(value)
+
+    HolyDailyDealSetMinFriendBoost(
+        value
+    )
+end)
+
+ShopDailyDealBox:AddInput(
+    "HolyShopDailyDealMinValue",
+    {
+        Text =
+            "💰 Min Daily Value",
+
+        Default =
+            tostring(
+                HOLY_SHOP_STATE.DailyDealMinValue
+                or "0"
+            ),
+
+        Placeholder =
+            "0",
+
+        Numeric =
+            false,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Minimum expected Daily Deal payout. Text input only. Numbers only, no commas or K/M shorthand.",
+    }
+):OnChanged(function(value)
+
+    HolyDailyDealSetMinValue(
+        value
+    )
+end)
+
+ShopDailyDealBox:AddToggle(
+    "HolyShopDailyDealAutoDisable",
+    {
+        Text =
+            "🛑 Disable After Success",
+
+        Default =
+            HOLY_SHOP_STATE.DailyDealAutoDisable ~= false,
+
+        Tooltip =
+            "Recommended ON. Turns Auto Daily Deal off after a successful sale.",
+    }
+):OnChanged(function(value)
+
+    HolyDailyDealSetAutoDisable(
+        value == true
+    )
+end)
+
+local HolyDailyDealCheckButton =
+    ShopDailyDealBox:AddButton({
+        Text =
+            "🔎 Check Now",
+
+        Tooltip =
+            "Safe check only. Reads stock, cooldown, boost, and preview. Does not sell.",
+
+        Func =
+            function()
+
+                HolyDailyDealCheckNow()
+            end,
+    })
+
+HolyDailyDealCheckButton:AddButton({
+    Text =
+        "⚡ Use Once",
+
+    Tooltip =
+        "Runs the same strict checks, then uses Daily Deal All once if every condition passes.",
+
+    Func =
+        function()
+
+            HolyDailyDealUseOnce()
+        end,
+})
+
+HOLY_SHOP_UI.DailyDealStatusLabel =
+    HolySniperAddLabel(
+        ShopDailyDealBox,
+        "Daily: Ready"
+    )
+
+HOLY_SHOP_UI.DailyDealStockLabel =
+    HolySniperAddLabel(
+        ShopDailyDealBox,
+        "Stock: --"
+    )
+
+HOLY_SHOP_UI.DailyDealPreviewLabel =
+    HolySniperAddLabel(
+        ShopDailyDealBox,
+        "Preview: --"
+    )
+
+HOLY_SHOP_UI.DailyDealLastLabel =
+    HolySniperAddLabel(
+        ShopDailyDealBox,
+        "Last: --"
+    )
+
+HolyDailyDealRefreshUI()
+
 ShopFiltersBox:AddToggle(
     "HolyShopUseSellFilters",
     {
@@ -51686,6 +53855,13 @@ task.defer(function()
     elseif HOLY_SHOP_STATE.AutoSellFruits == true then
 
         HolySellStartWorker()
+    end
+
+    if HOLY_SHOP_STATE.AutoDailyDealAll == true then
+
+        HolyDailyDealStartWorker(
+            "startup"
+        )
     end
 end)
 
