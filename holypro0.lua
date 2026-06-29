@@ -26901,24 +26901,16 @@ function HolyAuctionHudCreateUI()
     screenGui.ZIndexBehavior =
         Enum.ZIndexBehavior.Sibling
 
-    local parented =
-        false
+    local parent =
+        HolyAuctionGetPlayerGui()
 
-    pcall(function()
+    if typeof(parent) ~= "Instance" then
 
-        screenGui.Parent =
-            CoreGui
-
-        parented =
-            true
-    end)
-
-    if parented ~= true
-    or screenGui.Parent == nil then
-
-        screenGui.Parent =
-            HolyAuctionGetPlayerGui()
+        return false
     end
+
+    screenGui.Parent =
+        parent
 
     HOLY_AUCTION_HUD.ScreenGui =
         screenGui
@@ -27516,10 +27508,18 @@ function HolyAuctionHudStart()
         return false
     end
 
-    if type(HOLY_AUCTION_HUD) == "table"
-    and typeof(HOLY_AUCTION_HUD.ScreenGui) == "Instance"
-    and HOLY_AUCTION_HUD.ScreenGui.Parent ~= nil then
+    local alreadyOpen =
+        false
 
+    pcall(function()
+
+        alreadyOpen =
+            type(HOLY_AUCTION_HUD) == "table"
+            and typeof(HOLY_AUCTION_HUD.ScreenGui) == "Instance"
+            and HOLY_AUCTION_HUD.ScreenGui.Parent ~= nil
+    end)
+
+    if alreadyOpen == true then
         return true
     end
 
@@ -27957,6 +27957,8 @@ end
 
 function HolyAuctionFirePurchase(row)
 
+    HolyAuctionEnsureState()
+
     if type(row) ~= "table" then
         return false, "missing row"
     end
@@ -27970,6 +27972,112 @@ function HolyAuctionFirePurchase(row)
         return false, "missing lot id"
     end
 
+    local price =
+        tonumber(row.Price)
+        or HolyAuctionReadMoney(
+            row.PriceText
+            or ""
+        )
+
+    if price == nil
+    or price <= 0 then
+
+        return false,
+            "missing price"
+    end
+
+    price =
+        math.max(
+            0,
+            math.floor(price + 0.5)
+        )
+
+    -- Best path:
+    -- Use the real Auction GUI BuyButton callback.
+    -- Research proved the real button sends:
+    -- PurchaseLot:Fire(lotId, exactCurrentPrice)
+    -- This avoids guessing the hidden exact server price from rounded UI text.
+    local guiBuyAttempted =
+        false
+
+    if type(firesignal) == "function" then
+
+        pcall(function()
+
+            if type(HolyAuctionEnsureOffscreen) == "function" then
+
+                HolyAuctionEnsureOffscreen()
+            end
+        end)
+
+        local auctionGui =
+            HolyAuctionFindAuctionGui()
+
+        local scrollingFrame =
+            auctionGui
+            and HolyAuctionFindScrollingFrame(
+                auctionGui
+            )
+            or nil
+
+        local lotFrame =
+            scrollingFrame
+            and scrollingFrame:FindFirstChild(
+                "Lot_"
+                    .. lotId
+            )
+            or nil
+
+        local mainFrame =
+            lotFrame
+            and lotFrame:FindFirstChild(
+                "Main_Frame",
+                true
+            )
+            or nil
+
+        local buyButton =
+            mainFrame
+            and mainFrame:FindFirstChild(
+                "BuyButton",
+                true
+            )
+            or (
+                lotFrame
+                and lotFrame:FindFirstChild(
+                    "BuyButton",
+                    true
+                )
+            )
+
+        if typeof(buyButton) == "Instance"
+        and buyButton:IsA("GuiButton") then
+
+            local ok,
+                err =
+                pcall(function()
+
+                    firesignal(
+                        buyButton.Activated
+                    )
+                end)
+
+            if ok == true then
+
+                guiBuyAttempted =
+                    true
+
+                HOLY_SHOP_STATE.AuctionAttemptedLots[lotId] =
+                    true
+
+                return true,
+                    "gui activated"
+            end
+        end
+    end
+
+    -- Fallback path:
+    -- Direct packet must include BOTH lotId and price.
     local packet =
         HolyAuctionResolvePurchasePacket(
             false
@@ -27992,7 +28100,8 @@ function HolyAuctionFirePurchase(row)
         pcall(function()
 
             return packet:Fire(
-                lotId
+                lotId,
+                price
             )
         end)
 
@@ -28006,7 +28115,9 @@ function HolyAuctionFirePurchase(row)
         true
 
     return true,
-        "fired"
+        guiBuyAttempted == true
+        and "gui activated"
+        or "fired with price"
 end
 
 function HolyAuctionFindBuyTarget()
