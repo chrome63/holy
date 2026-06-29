@@ -100,8 +100,8 @@ local REPORT_INTERVAL =
 local RARE_SCAN_INTERVAL =
     0.85
 
-local RARE_HOLD_SECONDS =
-    60
+local HUNT_GONE_CONFIRM_DEFAULT =
+    1
 
 local SERVER_MIN_PLAYERS =
     1
@@ -159,11 +159,18 @@ HOLY_SCANNER_STATE = {
         "All",
     },
 
+    HuntMode = false,
+
+    -- Legacy setting name. Kept only so old saved settings migrate safely.
     AutoHop = false,
 
     SearchPages = 5,
 
-    HopDelay = 25,
+    -- No target in server -> hop after this many seconds.
+    HopDelay = 3,
+
+    -- Watched target disappeared -> confirm gone for this many seconds, then hop.
+    GoneConfirmDelay = 1,
 }
 
 HOLY_SCANNER_SHOP_STATE = {
@@ -182,6 +189,14 @@ HOLY_SCANNER_SERVER_STATE = {
     HopToken = 0,
     HopAttempt = 0,
     LastHopAt = 0,
+
+    HoldTargets = {},
+    NoTargetSince = 0,
+    GoneSince = 0,
+    LastTargetSeenAt = 0,
+    LastTargetText = "None",
+    LastStatus = "Starting",
+
     RecentServers = {},
     FailedServers = {},
 }
@@ -227,6 +242,7 @@ HOLY_SCANNER_DATA_STATE = {
 HOLY_SCANNER_UI = {
     SeedDropdown = nil,
     GearDropdown = nil,
+    StatusLabel = nil,
 }
 
 HolyScannerEnv.HOLY_SCANNER_STATE =
@@ -1048,8 +1064,21 @@ function HolyScannerNormalizeState()
     HOLY_SCANNER_STATE.AutoBuyGear =
         HOLY_SCANNER_STATE.AutoBuyGear == true
 
+    local huntMode =
+        HOLY_SCANNER_STATE.HuntMode
+
+    if huntMode == nil then
+
+        huntMode =
+            HOLY_SCANNER_STATE.AutoHop
+    end
+
+    HOLY_SCANNER_STATE.HuntMode =
+        huntMode == true
+
+    -- Keep legacy field synced for old settings/users.
     HOLY_SCANNER_STATE.AutoHop =
-        HOLY_SCANNER_STATE.AutoHop == true
+        HOLY_SCANNER_STATE.HuntMode == true
 
     HOLY_SCANNER_STATE.SearchPages =
         math.clamp(
@@ -1065,10 +1094,20 @@ function HolyScannerNormalizeState()
         math.clamp(
             HolyScannerReadNumber(
                 HOLY_SCANNER_STATE.HopDelay,
-                25
+                3
             ),
-            3,
+            1,
             300
+        )
+
+    HOLY_SCANNER_STATE.GoneConfirmDelay =
+        math.clamp(
+            HolyScannerReadNumber(
+                HOLY_SCANNER_STATE.GoneConfirmDelay,
+                HUNT_GONE_CONFIRM_DEFAULT
+            ),
+            0.25,
+            10
         )
 
     HOLY_SCANNER_STATE.SelectedSeeds =
@@ -1125,14 +1164,21 @@ function HolyScannerSaveSettings()
                 HOLY_SCANNER_STATE.SelectedGear
             ),
 
+        HuntMode =
+            HOLY_SCANNER_STATE.HuntMode == true,
+
+        -- Legacy compatibility.
         AutoHop =
-            HOLY_SCANNER_STATE.AutoHop == true,
+            HOLY_SCANNER_STATE.HuntMode == true,
 
         SearchPages =
             HOLY_SCANNER_STATE.SearchPages,
 
         HopDelay =
             HOLY_SCANNER_STATE.HopDelay,
+
+        GoneConfirmDelay =
+            HOLY_SCANNER_STATE.GoneConfirmDelay,
     }
 
     local encodeOk,
@@ -1229,8 +1275,19 @@ function HolyScannerLoadSettings()
             data.SelectedGear
         )
 
+    if type(data.HuntMode) == "boolean" then
+
+        HOLY_SCANNER_STATE.HuntMode =
+            data.HuntMode
+
+    else
+
+        HOLY_SCANNER_STATE.HuntMode =
+            data.AutoHop == true
+    end
+
     HOLY_SCANNER_STATE.AutoHop =
-        data.AutoHop == true
+        HOLY_SCANNER_STATE.HuntMode == true
 
     HOLY_SCANNER_STATE.SearchPages =
         data.SearchPages
@@ -1239,6 +1296,10 @@ function HolyScannerLoadSettings()
     HOLY_SCANNER_STATE.HopDelay =
         data.HopDelay
         or HOLY_SCANNER_STATE.HopDelay
+
+    HOLY_SCANNER_STATE.GoneConfirmDelay =
+        data.GoneConfirmDelay
+        or HOLY_SCANNER_STATE.GoneConfirmDelay
 
     HolyScannerNormalizeState()
 
@@ -3398,11 +3459,11 @@ end
 function HolyScannerShopConnectStockSignals()
 
     if HOLY_SCANNER_SHOP_STATE.StockConnected == true then
-        return
+        return true
     end
 
-    HOLY_SCANNER_SHOP_STATE.StockConnected =
-        true
+    local connectedAny =
+        false
 
     for category, config in pairs(HOLY_SCANNER_SHOP_CATEGORIES) do
 
@@ -3426,6 +3487,9 @@ function HolyScannerShopConnectStockSignals()
             or nil
 
         if typeof(items) == "Instance" then
+
+            connectedAny =
+                true
 
             for _, child in ipairs(items:GetChildren()) do
 
@@ -3458,6 +3522,47 @@ function HolyScannerShopConnectStockSignals()
             )
         end
     end
+
+    if connectedAny == true then
+
+        HOLY_SCANNER_SHOP_STATE.StockConnected =
+            true
+
+        HolyScannerShopQueueAll()
+
+        return true
+    end
+
+    return false
+end
+
+function HolyScannerStartShopSignalWatcher()
+
+    task.spawn(function()
+
+        local startedAt =
+            os.clock()
+
+        while HOLY_SCANNER_RUNNING == true
+        and HOLY_SCANNER_SHOP_STATE.StockConnected ~= true do
+
+            HolyScannerShopConnectStockSignals()
+
+            HolyScannerShopQueueAll()
+
+            if HOLY_SCANNER_SHOP_STATE.StockConnected == true then
+                break
+            end
+
+            task.wait(
+                os.clock() - startedAt < 15
+                and 0.50
+                or 2.00
+            )
+        end
+    end)
+
+    return true
 end
 
 function HolyScannerShopRefreshDropdowns()
@@ -5375,6 +5480,510 @@ function HolyScannerStartReporter()
 end
 
 --==================================================
+-- [11.5] HUNT MODE / HOLD TARGETS
+--==================================================
+
+function HolyScannerSetLabel(label, text)
+
+    text =
+        tostring(text or "")
+
+    if type(label) == "table" then
+
+        if type(label.SetText) == "function" then
+
+            pcall(function()
+
+                label:SetText(
+                    text
+                )
+            end)
+
+            return true
+        end
+
+        if label.TextLabel
+        and typeof(label.TextLabel) == "Instance" then
+
+            pcall(function()
+
+                label.TextLabel.Text =
+                    text
+            end)
+
+            return true
+        end
+    end
+
+    if typeof(label) == "Instance" then
+
+        pcall(function()
+
+            label.Text =
+                text
+        end)
+
+        return true
+    end
+
+    return false
+end
+
+function HolyScannerSetStatus(text)
+
+    HOLY_SCANNER_SERVER_STATE.LastStatus =
+        tostring(text or "Ready")
+
+    HolyScannerSetLabel(
+        HOLY_SCANNER_UI
+        and HOLY_SCANNER_UI.StatusLabel
+        or nil,
+        "Status: "
+            .. tostring(HOLY_SCANNER_SERVER_STATE.LastStatus)
+    )
+
+    return true
+end
+
+function HolyScannerHuntAlias(value)
+
+    return HolyScannerCleanText(
+        value
+    )
+        :lower()
+        :gsub("[%s_%-%[%]%(%)%.'\"_/{}]", "")
+end
+
+function HolyScannerHuntRowKey(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    return HolyScannerCleanText(
+        row.UUID
+        or row.Key
+        or ""
+    )
+end
+
+function HolyScannerHuntIsSpecificPet(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    local key =
+        HolyScannerHuntAlias(
+            row.Pet
+            or row.PetName
+            or row.DisplayName
+        )
+
+    return key == "raccoon"
+        or key == "unicorn"
+        or key == "goldendragonfly"
+        or key == "dragonfly"
+end
+
+function HolyScannerHuntIsTargetRow(row)
+
+    if type(row) ~= "table" then
+        return false
+    end
+
+    local size =
+        HolyScannerRareNormalizeSize(
+            row.Size
+        )
+
+    local variant =
+        HolyScannerRareNormalizeVariant(
+            row.Variant
+            or row.Mutation
+        )
+
+    if size == "Big"
+    or size == "Huge" then
+
+        return true
+    end
+
+    if variant == "Rainbow" then
+        return true
+    end
+
+    return HolyScannerHuntIsSpecificPet(
+        row
+    ) == true
+end
+
+function HolyScannerHuntFormatTimeLeft(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    local timeLeft =
+        tonumber(row.TimeLeftNumber)
+        or tonumber(row.TimeLeft)
+        or 0
+
+    if timeLeft <= 0 then
+        return "--"
+    end
+
+    timeLeft =
+        math.max(
+            0,
+            math.floor(timeLeft)
+        )
+
+    local minutes =
+        math.floor(
+            timeLeft / 60
+        )
+
+    local seconds =
+        timeLeft % 60
+
+    return string.format(
+        "%02d:%02d",
+        minutes,
+        seconds
+    )
+end
+
+function HolyScannerHuntDisplay(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    local name =
+        HolyScannerCleanText(
+            row.DisplayName
+            or row.Pet
+            or "Target"
+        )
+
+    local timer =
+        HolyScannerHuntFormatTimeLeft(
+            row
+        )
+
+    if timer ~= "--" then
+
+        return name
+            .. " ("
+            .. timer
+            .. ")"
+    end
+
+    return name
+end
+
+function HolyScannerHuntEnsureState()
+
+    HOLY_SCANNER_SERVER_STATE =
+        type(HOLY_SCANNER_SERVER_STATE) == "table"
+        and HOLY_SCANNER_SERVER_STATE
+        or {}
+
+    HOLY_SCANNER_SERVER_STATE.HoldTargets =
+        type(HOLY_SCANNER_SERVER_STATE.HoldTargets) == "table"
+        and HOLY_SCANNER_SERVER_STATE.HoldTargets
+        or {}
+
+    HOLY_SCANNER_SERVER_STATE.NoTargetSince =
+        tonumber(HOLY_SCANNER_SERVER_STATE.NoTargetSince)
+        or 0
+
+    HOLY_SCANNER_SERVER_STATE.GoneSince =
+        tonumber(HOLY_SCANNER_SERVER_STATE.GoneSince)
+        or 0
+
+    HOLY_SCANNER_SERVER_STATE.LastTargetSeenAt =
+        tonumber(HOLY_SCANNER_SERVER_STATE.LastTargetSeenAt)
+        or 0
+
+    HOLY_SCANNER_SERVER_STATE.LastTargetText =
+        tostring(
+            HOLY_SCANNER_SERVER_STATE.LastTargetText
+            or "None"
+        )
+
+    return HOLY_SCANNER_SERVER_STATE
+end
+
+function HolyScannerHuntBuildSummary(rows)
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    local parts =
+        {}
+
+    for _, row in ipairs(rows) do
+
+        table.insert(
+            parts,
+            HolyScannerHuntDisplay(
+                row
+            )
+        )
+
+        if #parts >= 3 then
+            break
+        end
+    end
+
+    if #rows > 3 then
+
+        table.insert(
+            parts,
+            "+"
+                .. tostring(#rows - 3)
+                .. " more"
+        )
+    end
+
+    if #parts <= 0 then
+        return "None"
+    end
+
+    return table.concat(
+        parts,
+        " | "
+    )
+end
+
+function HolyScannerHuntUpdateTargets(rows, reason)
+
+    local state =
+        HolyScannerHuntEnsureState()
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    local now =
+        os.clock()
+
+    local liveRows =
+        {}
+
+    local newTargetRows =
+        {}
+
+    for _, row in ipairs(rows) do
+
+        local key =
+            HolyScannerHuntRowKey(
+                row
+            )
+
+        if key ~= "" then
+
+            liveRows[key] =
+                row
+
+            if HolyScannerHuntIsTargetRow(row) == true then
+
+                table.insert(
+                    newTargetRows,
+                    row
+                )
+
+                local existing =
+                    state.HoldTargets[key]
+
+                if type(existing) ~= "table" then
+
+                    existing =
+                        {
+                            Key =
+                                key,
+
+                            FirstSeenAt =
+                                now,
+                        }
+
+                    state.HoldTargets[key] =
+                        existing
+                end
+
+                existing.Row =
+                    row
+
+                existing.Name =
+                    HolyScannerHuntDisplay(
+                        row
+                    )
+
+                existing.LastSeenAt =
+                    now
+            end
+        end
+    end
+
+    local liveHeldRows =
+        {}
+
+    local removedAny =
+        false
+
+    for key, held in pairs(state.HoldTargets) do
+
+        local liveRow =
+            liveRows[key]
+
+        if type(liveRow) == "table" then
+
+            held.Row =
+                liveRow
+
+            held.LastSeenAt =
+                now
+
+            table.insert(
+                liveHeldRows,
+                liveRow
+            )
+
+        else
+
+            state.HoldTargets[key] =
+                nil
+
+            removedAny =
+                true
+        end
+    end
+
+    table.sort(liveHeldRows, function(a, b)
+
+        local priceA =
+            tonumber(a.PriceNumber)
+            or 0
+
+        local priceB =
+            tonumber(b.PriceNumber)
+            or 0
+
+        if priceA ~= priceB then
+            return priceA > priceB
+        end
+
+        return tostring(a.DisplayName or a.Pet)
+            < tostring(b.DisplayName or b.Pet)
+    end)
+
+    if #liveHeldRows > 0 then
+
+        state.NoTargetSince =
+            0
+
+        state.GoneSince =
+            0
+
+        state.LastTargetSeenAt =
+            now
+
+        state.LastTargetText =
+            HolyScannerHuntBuildSummary(
+                liveHeldRows
+            )
+
+        if HOLY_SCANNER_SERVER_STATE.Hopping == true then
+
+            HolyScannerCancelServerHop(
+                "hunt target found"
+            )
+        end
+
+        HolyScannerSetStatus(
+            "Holding "
+                .. tostring(#liveHeldRows)
+                .. " target(s): "
+                .. state.LastTargetText
+        )
+
+        return #liveHeldRows,
+            liveHeldRows
+    end
+
+    if removedAny == true
+    or state.LastTargetSeenAt > 0 then
+
+        if state.GoneSince <= 0 then
+
+            state.GoneSince =
+                now
+        end
+
+        HolyScannerSetStatus(
+            "Target gone: "
+                .. tostring(state.LastTargetText or "None")
+        )
+
+    else
+
+        if state.NoTargetSince <= 0 then
+
+            state.NoTargetSince =
+                now
+        end
+
+        HolyScannerSetStatus(
+            "Searching: no hunt target"
+        )
+    end
+
+    return 0,
+        {}
+end
+
+function HolyScannerHuntShouldStayOnCurrentServer(forceScan)
+
+    local rows =
+        {}
+
+    if forceScan == true then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return HolyScannerScanLivePetRows()
+            end)
+
+        if ok == true
+        and type(result) == "table" then
+
+            rows =
+                result
+        end
+    end
+
+    local count =
+        HolyScannerHuntUpdateTargets(
+            rows,
+            "pre-hop"
+        )
+
+    return tonumber(count)
+        and tonumber(count) > 0
+end
+
+--==================================================
 -- [12] SERVER HOP
 --==================================================
 
@@ -5875,6 +6484,16 @@ function HolyScannerQueueServerHop(reason)
 
                 else
 
+                    if HOLY_SCANNER_STATE.HuntMode == true
+                    and HolyScannerHuntShouldStayOnCurrentServer(true) == true then
+
+                        HolyScannerCancelServerHop(
+                            "hunt target found before teleport"
+                        )
+
+                        return
+                    end
+
                     HolyScannerServerRememberRecent(
                         target.id
                     )
@@ -5979,46 +6598,162 @@ function HolyScannerStartAutoHopLoop()
     task.spawn(function()
 
         task.wait(
-            8
+            0.25
         )
 
         while HOLY_SCANNER_RUNNING == true do
 
             HolyScannerNormalizeState()
 
-            if HOLY_SCANNER_STATE.AutoHop == true
-            and HOLY_SCANNER_SERVER_STATE.Hopping ~= true then
+            local refRoot =
+                HolyScannerGetWildPetRefRoot()
 
-                local rareHold =
-                    os.clock() - (
-                        tonumber(HOLY_SCANNER_REPORT_STATE.LastRareAt)
-                        or 0
-                    ) < RARE_HOLD_SECONDS
+            if HOLY_SCANNER_STATE.HuntMode == true
+            and HOLY_SCANNER_SERVER_STATE.Hopping ~= true
+            and typeof(refRoot) == "Instance" then
 
-                if rareHold ~= true then
+                local rows =
+                    {}
 
-                    local delay =
-                        math.clamp(
-                            tonumber(HOLY_SCANNER_STATE.HopDelay)
-                            or 25,
-                            3,
-                            300
+                local scanOk,
+                    scanResult =
+                    pcall(function()
+
+                        return HolyScannerScanLivePetRows()
+                    end)
+
+                if scanOk == true
+                and type(scanResult) == "table" then
+
+                    rows =
+                        scanResult
+                end
+
+                local liveTargetCount =
+                    HolyScannerHuntUpdateTargets(
+                        rows,
+                        "hunt loop"
+                    )
+
+                if tonumber(liveTargetCount) <= 0 then
+
+                    local now =
+                        os.clock()
+
+                    local state =
+                        HolyScannerHuntEnsureState()
+
+                    local hadTargetBefore =
+                        tonumber(state.LastTargetSeenAt)
+                        and tonumber(state.LastTargetSeenAt) > 0
+
+                    local waitFrom =
+                        0
+
+                    local requiredDelay =
+                        0
+
+                    if hadTargetBefore == true
+                    and tonumber(state.GoneSince) > 0 then
+
+                        waitFrom =
+                            tonumber(state.GoneSince)
+                            or now
+
+                        requiredDelay =
+                            math.clamp(
+                                tonumber(HOLY_SCANNER_STATE.GoneConfirmDelay)
+                                or HUNT_GONE_CONFIRM_DEFAULT,
+                                0.25,
+                                10
+                            )
+
+                    else
+
+                        if tonumber(state.NoTargetSince) <= 0 then
+
+                            state.NoTargetSince =
+                                now
+                        end
+
+                        waitFrom =
+                            tonumber(state.NoTargetSince)
+                            or now
+
+                        requiredDelay =
+                            math.clamp(
+                                tonumber(HOLY_SCANNER_STATE.HopDelay)
+                                or 3,
+                                1,
+                                300
+                            )
+                    end
+
+                    local remaining =
+                        requiredDelay - (
+                            now - waitFrom
                         )
 
-                    if os.clock() - (
-                        tonumber(HOLY_SCANNER_SERVER_STATE.LastHopAt)
-                        or 0
-                    ) >= delay then
+                    if remaining <= 0 then
 
-                        HolyScannerQueueServerHop(
-                            "auto hop"
+                        if HolyScannerHuntShouldStayOnCurrentServer(true) ~= true then
+
+                            HolyScannerSetStatus(
+                                hadTargetBefore == true
+                                and "Hopping: watched target disappeared"
+                                or "Hopping: no hunt target"
+                            )
+
+                            HolyScannerQueueServerHop(
+                                hadTargetBefore == true
+                                and "hunt target gone"
+                                or "no hunt target"
+                            )
+                        end
+
+                    else
+
+                        HolyScannerSetStatus(
+                            hadTargetBefore == true
+                            and (
+                                "Target gone, confirming "
+                                .. tostring(
+                                    math.max(
+                                        0,
+                                        math.floor(remaining + 0.5)
+                                    )
+                                )
+                                .. "s"
+                            )
+                            or (
+                                "No target, hopping in "
+                                .. tostring(
+                                    math.max(
+                                        0,
+                                        math.floor(remaining + 0.5)
+                                    )
+                                )
+                                .. "s"
+                            )
                         )
                     end
                 end
+
+            elseif HOLY_SCANNER_STATE.HuntMode == true then
+
+                HolyScannerSetStatus(
+                    "Waiting for Live Wild Pets"
+                )
+
+            elseif HOLY_SCANNER_SERVER_STATE.Hopping ~= true then
+
+                HolyScannerSetStatus(
+                    "Hunt Mode off"
+                )
             end
 
             task.wait(
-                0.5
+                0.35
             )
         end
     end)
@@ -6210,10 +6945,9 @@ function HolyScannerCreateUI()
                     Text =
                         "Seeds",
 
-                    Values =
-                        HolyScannerShopGetDropdownValues(
-                            "Seeds"
-                        ),
+                    Values = {
+                        "All",
+                    },
 
                     Default =
                         HolyScannerSelectionArray(
@@ -6276,10 +7010,9 @@ function HolyScannerCreateUI()
                     Text =
                         "Gear",
 
-                    Values =
-                        HolyScannerShopGetDropdownValues(
-                            "Gear"
-                        ),
+                    Values = {
+                        "All",
+                    },
 
                     Default =
                         HolyScannerSelectionArray(
@@ -6315,31 +7048,60 @@ function HolyScannerCreateUI()
     if type(ServerBox) == "table" then
 
         ServerBox:AddToggle(
-            "HolyScannerAutoHop",
+            "HolyScannerHuntMode",
             {
                 Text =
-                    "Auto Hop",
+                    "🎯 Hunt Mode",
 
                 Default =
-                    HOLY_SCANNER_STATE.AutoHop == true,
+                    HOLY_SCANNER_STATE.HuntMode == true,
+
+                Tooltip =
+                    "Hops until a hunt target is found, then stays until that exact pet disappears from Live Wild Pets.",
             }
         ):OnChanged(function(value)
 
-            HOLY_SCANNER_STATE.AutoHop =
+            HOLY_SCANNER_STATE.HuntMode =
                 value == true
+
+            HOLY_SCANNER_STATE.AutoHop =
+                HOLY_SCANNER_STATE.HuntMode == true
 
             HolyScannerQueueSaveSettings()
 
             if value ~= true then
 
                 HolyScannerCancelServerHop(
-                    "auto hop off"
+                    "hunt mode off"
+                )
+
+                HOLY_SCANNER_SERVER_STATE.HoldTargets =
+                    {}
+
+                HOLY_SCANNER_SERVER_STATE.NoTargetSince =
+                    0
+
+                HOLY_SCANNER_SERVER_STATE.GoneSince =
+                    0
+
+                HolyScannerSetStatus(
+                    "Hunt Mode off"
                 )
 
             else
 
                 HOLY_SCANNER_SERVER_STATE.LastHopAt =
-                    os.clock()
+                    0
+
+                HOLY_SCANNER_SERVER_STATE.NoTargetSince =
+                    0
+
+                HOLY_SCANNER_SERVER_STATE.GoneSince =
+                    0
+
+                HolyScannerSetStatus(
+                    "Hunt Mode enabled"
+                )
             end
         end)
 
@@ -6402,7 +7164,7 @@ function HolyScannerCreateUI()
             "HolyScannerHopDelay",
             {
                 Text =
-                    "Hop Delay",
+                    "No Target Hop Delay",
 
                 Default =
                     tostring(
@@ -6413,13 +7175,13 @@ function HolyScannerCreateUI()
                     true,
 
                 Finished =
-                    true,
+                    false,
 
                 ClearTextOnFocus =
                     false,
 
                 Placeholder =
-                    "25",
+                    "3",
             }
         ):OnChanged(function(value)
 
@@ -6427,14 +7189,69 @@ function HolyScannerCreateUI()
                 math.clamp(
                     HolyScannerReadNumber(
                         value,
-                        25
+                        3
                     ),
-                    3,
+                    1,
                     300
                 )
 
             HolyScannerQueueSaveSettings()
         end)
+
+        ServerBox:AddInput(
+            "HolyScannerGoneConfirmDelay",
+            {
+                Text =
+                    "Gone Confirm Delay",
+
+                Default =
+                    tostring(
+                        HOLY_SCANNER_STATE.GoneConfirmDelay
+                        or HUNT_GONE_CONFIRM_DEFAULT
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    false,
+
+                ClearTextOnFocus =
+                    false,
+
+                Placeholder =
+                    "1",
+            }
+        ):OnChanged(function(value)
+
+            HOLY_SCANNER_STATE.GoneConfirmDelay =
+                math.clamp(
+                    HolyScannerReadNumber(
+                        value,
+                        HUNT_GONE_CONFIRM_DEFAULT
+                    ),
+                    0.25,
+                    10
+                )
+
+            HolyScannerQueueSaveSettings()
+        end)
+
+        if type(ServerBox.AddLabel) == "function" then
+
+            HOLY_SCANNER_UI.StatusLabel =
+                ServerBox:AddLabel({
+                    Text =
+                        "Status: "
+                            .. tostring(
+                                HOLY_SCANNER_SERVER_STATE.LastStatus
+                                or "Starting"
+                            ),
+
+                    DoesWrap =
+                        true,
+                })
+        end
 
         ServerBox:AddButton({
             Text =
@@ -6552,6 +7369,47 @@ HolyScannerStartAntiAfk()
 
 HolyScannerStartDeleteLag()
 
+-- Headless scanner starts immediately. UI is only a control panel.
+HolyScannerStartReporter()
+
+HolyScannerStartAutoHopLoop()
+
+HolyScannerStartShopSignalWatcher()
+
+HolyScannerShopQueueAll()
+
+task.spawn(function()
+
+    local ok,
+        err =
+        pcall(function()
+
+            HolyScannerCreateUI()
+        end)
+
+    if ok == true then
+
+        HolyScannerSetStatus(
+            HOLY_SCANNER_STATE.HuntMode == true
+            and "Hunt Mode starting"
+            or "Scanner running"
+        )
+
+        HolyScannerNotify(
+            "HOLY Scanner",
+            "Loaded. Toggle UI with LeftAlt.",
+            4
+        )
+
+    else
+
+        warn(
+            "[HOLY SCANNER UI]",
+            tostring(err)
+        )
+    end
+end)
+
 task.spawn(function()
 
     HolyScannerWaitForLoadingReady(
@@ -6568,17 +7426,7 @@ task.spawn(function()
 
     HolyScannerShopQueueAll()
 
-    HolyScannerStartReporter()
-
-    HolyScannerStartAutoHopLoop()
-
-    HolyScannerCreateUI()
-
-    HolyScannerNotify(
-        "HOLY Scanner",
-        "Loaded. Toggle UI with LeftAlt.",
-        4
-    )
+    HolyScannerShopRefreshDropdowns()
 end)
 
 --==================================================
