@@ -674,30 +674,10 @@ HOLY_ANTI_AFK_STATE = {
 
 if type(HOLY_SHOP_STATE) == "table" then
 
-    if type(HolyAuctionSetHudVisible) == "function" then
-
-        pcall(function()
-
-            HolyAuctionSetHudVisible(
-                false,
-                "restart"
-            )
-        end)
-    end
-
-    if type(HolyAuctionRestoreOffscreen) == "function" then
-
-        pcall(function()
-
-            HolyAuctionRestoreOffscreen()
-        end)
-    end
-
     for _, connectionListName in ipairs({
         "StockConnections",
         "SellConnections",
         "AuctionConnections",
-        "AuctionHudConnections",
     }) do
 
         local connectionList =
@@ -745,26 +725,6 @@ HOLY_SHOP_STATE = {
     AuctionStockMap = {},
     AuctionServerNow = 0,
     AuctionLastStockUpdateAt = 0,
-    AuctionStockCycle = nil,
-
-    AuctionRefreshText = "Refresh in --",
-    AuctionRefreshSeconds = 0,
-    AuctionRefreshReadAt = 0,
-
-    AuctionHudEnabled = false,
-    AuctionHudScale = "80%",
-    AuctionHudMinimized = false,
-    AuctionHudPosition = nil,
-    AuctionHudClickSelect = true,
-    AuctionHudConnections = {},
-
-    AuctionOffscreenSaved = false,
-    AuctionOffscreenState = {},
-    AuctionOffscreenEnabled = false,
-
-    AuctionHiddenRowsFound = 0,
-    AuctionIgnoredStaleRows = 0,
-    AuctionDataMode = "Waiting",
 
     AutoSellFruits = false,
     SellMethod = "Sell All",
@@ -2606,24 +2566,6 @@ function HolySaveShopSettings()
         AuctionBuyUntilSoldOut =
             HOLY_SHOP_STATE.AuctionBuyUntilSoldOut ~= false,
 
-        AuctionHudEnabled =
-            HOLY_SHOP_STATE.AuctionHudEnabled == true,
-
-        AuctionHudScale =
-            tostring(
-                HOLY_SHOP_STATE.AuctionHudScale
-                or "80%"
-            ),
-
-        AuctionHudMinimized =
-            HOLY_SHOP_STATE.AuctionHudMinimized == true,
-
-        AuctionHudPosition =
-            HOLY_SHOP_STATE.AuctionHudPosition,
-
-        AuctionHudClickSelect =
-            HOLY_SHOP_STATE.AuctionHudClickSelect ~= false,
-
         AutoSellFruits =
             HOLY_SHOP_STATE.AutoSellFruits == true,
 
@@ -2821,8 +2763,10 @@ function HolyLoadShopSettings()
             or data.SelectedCrates
         )
 
+    -- Temporarily forced OFF while Auction Lab testing is active.
+    -- Remove this later when the final auction system is ready.
     HOLY_SHOP_STATE.AutoBuyAuctions =
-        data.AutoBuyAuctions == true
+        false
 
     HOLY_SHOP_STATE.SelectedAuctions =
         HolyShopSelectionArray(
@@ -2856,35 +2800,6 @@ function HolyLoadShopSettings()
     else
 
         HOLY_SHOP_STATE.AuctionBuyUntilSoldOut =
-            true
-    end
-
-    HOLY_SHOP_STATE.AuctionHudEnabled =
-        data.AuctionHudEnabled == true
-
-    HOLY_SHOP_STATE.AuctionHudScale =
-        tostring(
-            data.AuctionHudScale
-            or HOLY_SHOP_STATE.AuctionHudScale
-            or "80%"
-        )
-
-    HOLY_SHOP_STATE.AuctionHudMinimized =
-        data.AuctionHudMinimized == true
-
-    HOLY_SHOP_STATE.AuctionHudPosition =
-        type(data.AuctionHudPosition) == "table"
-        and data.AuctionHudPosition
-        or nil
-
-    if type(data.AuctionHudClickSelect) == "boolean" then
-
-        HOLY_SHOP_STATE.AuctionHudClickSelect =
-            data.AuctionHudClickSelect
-
-    else
-
-        HOLY_SHOP_STATE.AuctionHudClickSelect =
             true
     end
 
@@ -24560,777 +24475,9 @@ function HolyAuctionFindAuctionGui()
     return nil
 end
 
-function HolyAuctionFindAuctionRoot(auctionGui)
-
-    if typeof(auctionGui) ~= "Instance" then
-        return nil
-    end
-
-    local frame =
-        auctionGui:FindFirstChild(
-            "Frame"
-        )
-
-    if typeof(frame) == "Instance"
-    and frame:IsA("GuiObject") then
-
-        return frame
-    end
-
-    local best =
-        nil
-
-    local bestArea =
-        0
-
-    for _, child in ipairs(auctionGui:GetChildren()) do
-
-        if child:IsA("GuiObject") then
-
-            local area =
-                0
-
-            pcall(function()
-
-                local size =
-                    child.AbsoluteSize
-
-                area =
-                    size.X * size.Y
-            end)
-
-            if area > bestArea then
-
-                best =
-                    child
-
-                bestArea =
-                    area
-            end
-        end
-    end
-
-    return best
-end
-
-function HolyAuctionFindScrollingFrame(auctionGui)
-
-    if typeof(auctionGui) ~= "Instance" then
-        return nil
-    end
-
-    local scrollingFrame =
-        auctionGui:FindFirstChild(
-            "ScrollingFrame",
-            true
-        )
-
-    if typeof(scrollingFrame) == "Instance" then
-        return scrollingFrame
-    end
-
-    return nil
-end
-
-function HolyAuctionExtractCycle(lotId)
-
-    local raw =
-        tostring(lotId or ""):match(
-            "^auction:(%d+):%d+$"
-        )
-
-    return tonumber(raw)
-end
-
-function HolyAuctionExtractSlot(lotId)
-
-    local raw =
-        tostring(lotId or ""):match(
-            "^auction:%d+:(%d+)$"
-        )
-
-    return tonumber(raw)
-end
-
-function HolyAuctionCalculateStockCycle()
-
-    HolyAuctionEnsureState()
-
-    local counts =
-        {}
-
-    local bestCycle =
-        nil
-
-    local bestCount =
-        0
-
-    for lotId in pairs(HOLY_SHOP_STATE.AuctionStockMap or {}) do
-
-        local cycle =
-            HolyAuctionExtractCycle(
-                lotId
-            )
-
-        if cycle ~= nil then
-
-            counts[cycle] =
-                (
-                    counts[cycle]
-                    or 0
-                )
-                + 1
-
-            if counts[cycle] > bestCount
-            or (
-                counts[cycle] == bestCount
-                and (
-                    bestCycle == nil
-                    or cycle > bestCycle
-                )
-            ) then
-
-                bestCycle =
-                    cycle
-
-                bestCount =
-                    counts[cycle]
-            end
-        end
-    end
-
-    HOLY_SHOP_STATE.AuctionStockCycle =
-        bestCycle
-
-    return bestCycle
-end
-
-function HolyAuctionGetStockCycle()
-
-    HolyAuctionEnsureState()
-
-    return HOLY_SHOP_STATE.AuctionStockCycle
-        or HolyAuctionCalculateStockCycle()
-end
-
-function HolyAuctionStockAge()
-
-    HolyAuctionEnsureState()
-
-    local at =
-        tonumber(
-            HOLY_SHOP_STATE.AuctionLastStockUpdateAt
-        )
-        or 0
-
-    if at <= 0 then
-        return math.huge
-    end
-
-    return os.clock() - at
-end
-
-function HolyAuctionFormatAge(seconds)
-
-    seconds =
-        tonumber(seconds)
-        or 0
-
-    if seconds <= 0 then
-        return "now"
-    end
-
-    if seconds < 10 then
-
-        return string.format(
-            "%.1fs ago",
-            seconds
-        )
-    end
-
-    if seconds < 60 then
-
-        return tostring(
-            math.floor(seconds + 0.5)
-        )
-        .. "s ago"
-    end
-
-    return tostring(
-        math.floor(seconds / 60)
-    )
-    .. "m ago"
-end
-
-function HolyAuctionParseDurationSeconds(text)
-
-    text =
-        HolyCleanText(
-            text
-        )
-
-    local hours,
-        minutes =
-        text:match(
-            "(%d+)%s*h%s*(%d+)%s*m"
-        )
-
-    if hours
-    and minutes then
-
-        return (
-            tonumber(hours)
-            or 0
-        ) * 3600
-        + (
-            tonumber(minutes)
-            or 0
-        ) * 60
-    end
-
-    local mins,
-        secs =
-        text:match(
-            "(%d+)%s*m%s*(%d+)%s*s"
-        )
-
-    if mins
-    and secs then
-
-        return (
-            tonumber(mins)
-            or 0
-        ) * 60
-        + (
-            tonumber(secs)
-            or 0
-        )
-    end
-
-    local colonMins,
-        colonSecs =
-        text:match(
-            "(%d+)%s*:%s*(%d+)"
-        )
-
-    if colonMins
-    and colonSecs then
-
-        return (
-            tonumber(colonMins)
-            or 0
-        ) * 60
-        + (
-            tonumber(colonSecs)
-            or 0
-        )
-    end
-
-    local onlySeconds =
-        text:match(
-            "(%d+)%s*s"
-        )
-
-    if onlySeconds then
-        return tonumber(onlySeconds) or 0
-    end
-
-    return 0
-end
-
-function HolyAuctionFormatDuration(seconds)
-
-    seconds =
-        math.max(
-            0,
-            math.floor(
-                tonumber(seconds)
-                or 0
-            )
-        )
-
-    local hours =
-        math.floor(seconds / 3600)
-
-    local minutes =
-        math.floor((seconds % 3600) / 60)
-
-    local remaining =
-        seconds % 60
-
-    if hours > 0 then
-
-        return tostring(hours)
-            .. "h "
-            .. tostring(minutes)
-            .. "m"
-    end
-
-    return tostring(minutes)
-        .. "m "
-        .. tostring(remaining)
-        .. "s"
-end
-
-function HolyAuctionGetEffectiveRefreshSeconds()
-
-    HolyAuctionEnsureState()
-
-    local seconds =
-        tonumber(
-            HOLY_SHOP_STATE.AuctionRefreshSeconds
-        )
-        or 0
-
-    local readAt =
-        tonumber(
-            HOLY_SHOP_STATE.AuctionRefreshReadAt
-        )
-        or 0
-
-    if seconds <= 0
-    or readAt <= 0 then
-
-        return seconds
-    end
-
-    return math.max(
-        0,
-        seconds - (os.clock() - readAt)
-    )
-end
-
-function HolyAuctionRefreshHeaderText()
-
-    local seconds =
-        HolyAuctionGetEffectiveRefreshSeconds()
-
-    if seconds > 0 then
-
-        return "Refresh "
-            .. HolyAuctionFormatDuration(
-                seconds
-            )
-    end
-
-    local text =
-        HolyCleanText(
-            HOLY_SHOP_STATE.AuctionRefreshText
-            or ""
-        )
-
-    if text == ""
-    or text == "Refresh in --" then
-        return "Refresh --"
-    end
-
-    text =
-        text:gsub(
-            "^Refresh%s+in%s+",
-            "Refresh "
-        )
-
-    return text
-end
-
-function HolyAuctionIsUnderLotFrame(instance)
-
-    local current =
-        instance
-
-    while current ~= nil do
-
-        if tostring(current.Name):sub(1, 4) == "Lot_" then
-            return true
-        end
-
-        current =
-            current.Parent
-    end
-
-    return false
-end
-
-function HolyAuctionNormalizeRefreshText(text)
-
-    text =
-        HolyCleanText(
-            text
-        )
-
-    if text == "" then
-        return ""
-    end
-
-    local lower =
-        text:lower()
-
-    if lower:find("refresh", 1, true) then
-        return text
-    end
-
-    if text:match("^%d+%s*m%s*%d+%s*s$")
-    or text:match("^%d+%s*h%s*%d+%s*m$")
-    or text:match("^%d+:%d+$") then
-
-        return "Refresh in "
-            .. text
-    end
-
-    return ""
-end
-
-function HolyAuctionReadRefreshText(auctionGui)
-
-    if typeof(auctionGui) ~= "Instance" then
-        return "Refresh in --"
-    end
-
-    for _, descendant in ipairs(auctionGui:GetDescendants()) do
-
-        if HolyAuctionIsUnderLotFrame(descendant) ~= true then
-
-            local text =
-                HolyAuctionReadText(
-                    descendant
-                )
-
-            local normalized =
-                HolyAuctionNormalizeRefreshText(
-                    text
-                )
-
-            if normalized ~= "" then
-                return normalized
-            end
-        end
-    end
-
-    return "Refresh in --"
-end
-
-function HolyAuctionGuiObjectVisible(instance)
-
-    if typeof(instance) ~= "Instance"
-    or instance:IsA("GuiObject") ~= true then
-
-        return false
-    end
-
-    local visible =
-        false
-
-    pcall(function()
-
-        visible =
-            instance.Visible
-    end)
-
-    return visible == true
-end
-
-function HolyAuctionReadHudScale(value)
-
-    local raw =
-        tostring(value or "80%")
-            :gsub("%%", "")
-
-    local number =
-        tonumber(raw)
-        or 80
-
-    return math.clamp(
-        math.floor(number + 0.5),
-        60,
-        110
-    )
-end
-
-function HolyAuctionFormatHudScale(value)
-
-    return tostring(
-        HolyAuctionReadHudScale(
-            value
-        )
-    )
-    .. "%"
-end
-
-function HolyAuctionShouldUseOffscreen()
-
-    HolyAuctionEnsureState()
-
-    return HOLY_SHOP_STATE.AutoBuyAuctions == true
-        or HOLY_SHOP_STATE.AuctionHudEnabled == true
-end
-
-function HolyAuctionSaveOffscreenState(auctionGui, root)
-
-    HolyAuctionEnsureState()
-
-    if HOLY_SHOP_STATE.AuctionOffscreenSaved == true then
-        return false
-    end
-
-    HOLY_SHOP_STATE.AuctionOffscreenSaved =
-        true
-
-    HOLY_SHOP_STATE.AuctionOffscreenState = {
-        AuctionGui =
-            auctionGui,
-
-        Root =
-            root,
-    }
-
-    if typeof(auctionGui) == "Instance"
-    and auctionGui:IsA("LayerCollector") then
-
-        pcall(function()
-
-            HOLY_SHOP_STATE.AuctionOffscreenState.Enabled =
-                auctionGui.Enabled
-        end)
-    end
-
-    if typeof(root) == "Instance"
-    and root:IsA("GuiObject") then
-
-        pcall(function()
-
-            HOLY_SHOP_STATE.AuctionOffscreenState.Visible =
-                root.Visible
-
-            HOLY_SHOP_STATE.AuctionOffscreenState.Position =
-                root.Position
-
-            HOLY_SHOP_STATE.AuctionOffscreenState.AnchorPoint =
-                root.AnchorPoint
-
-            HOLY_SHOP_STATE.AuctionOffscreenState.Size =
-                root.Size
-        end)
-    end
-
-    return true
-end
-
-function HolyAuctionRestoreOffscreen()
-
-    HolyAuctionEnsureState()
-
-    local saved =
-        HOLY_SHOP_STATE.AuctionOffscreenState
-
-    if type(saved) ~= "table" then
-        return false
-    end
-
-    if typeof(saved.Root) == "Instance"
-    and saved.Root:IsA("GuiObject") then
-
-        pcall(function()
-
-            if saved.AnchorPoint ~= nil then
-
-                saved.Root.AnchorPoint =
-                    saved.AnchorPoint
-            end
-
-            if saved.Position ~= nil then
-
-                saved.Root.Position =
-                    saved.Position
-            end
-
-            if saved.Size ~= nil then
-
-                saved.Root.Size =
-                    saved.Size
-            end
-
-            if saved.Visible ~= nil then
-
-                saved.Root.Visible =
-                    saved.Visible
-            end
-        end)
-    end
-
-    if typeof(saved.AuctionGui) == "Instance"
-    and saved.AuctionGui:IsA("LayerCollector")
-    and saved.Enabled ~= nil then
-
-        pcall(function()
-
-            saved.AuctionGui.Enabled =
-                saved.Enabled
-        end)
-    end
-
-    HOLY_SHOP_STATE.AuctionOffscreenSaved =
-        false
-
-    HOLY_SHOP_STATE.AuctionOffscreenEnabled =
-        false
-
-    HOLY_SHOP_STATE.AuctionOffscreenState =
-        {}
-
-    return true
-end
-
-function HolyAuctionEnsureOffscreen()
-
-    HolyAuctionEnsureState()
-
-    if HolyAuctionShouldUseOffscreen() ~= true then
-
-        HolyAuctionRestoreOffscreen()
-
-        return false,
-            "offscreen not needed"
-    end
-
-    local auctionGui =
-        HolyAuctionFindAuctionGui()
-
-    if typeof(auctionGui) ~= "Instance" then
-
-        HOLY_SHOP_STATE.AuctionOffscreenEnabled =
-            false
-
-        return false,
-            "Auction GUI missing"
-    end
-
-    local root =
-        HolyAuctionFindAuctionRoot(
-            auctionGui
-        )
-
-    if typeof(root) ~= "Instance"
-    or root:IsA("GuiObject") ~= true then
-
-        HOLY_SHOP_STATE.AuctionOffscreenEnabled =
-            false
-
-        return false,
-            "Auction root missing"
-    end
-
-    HolyAuctionSaveOffscreenState(
-        auctionGui,
-        root
-    )
-
-    local ok,
-        err =
-        pcall(function()
-
-            if auctionGui:IsA("LayerCollector") then
-
-                auctionGui.Enabled =
-                    true
-            end
-
-            root.Visible =
-                true
-
-            root.Position =
-                UDim2.fromOffset(
-                    -12000,
-                    -12000
-                )
-        end)
-
-    if ok == true then
-
-        HOLY_SHOP_STATE.AuctionOffscreenEnabled =
-            true
-
-        return true,
-            "offscreen"
-    end
-
-    HOLY_SHOP_STATE.AuctionOffscreenEnabled =
-        false
-
-    return false,
-        tostring(err)
-end
-
-function HolyAuctionRowStale(row, requireServerStock)
-
-    HolyAuctionEnsureState()
-
-    row =
-        type(row) == "table"
-        and row
-        or {}
-
-    local currentCycle =
-        HolyAuctionGetStockCycle()
-
-    if currentCycle ~= nil
-    and row.Cycle ~= nil
-    and tonumber(row.Cycle) ~= tonumber(currentCycle) then
-
-        return true,
-            "cycle mismatch"
-    end
-
-    if row.Cached == true then
-
-        local scanAt =
-            tonumber(
-                HOLY_SHOP_STATE.AuctionLastScanAt
-            )
-            or 0
-
-        if scanAt <= 0 then
-            return true, "cached"
-        end
-
-        if os.clock() - scanAt >= 40 then
-            return true, "cached stale"
-        end
-    end
-
-    if requireServerStock == true then
-
-        if row.StockSource ~= "Server" then
-            return true, "waiting server stock"
-        end
-
-        if HOLY_SHOP_STATE.AuctionStockMap[
-            tostring(row.LotId)
-        ] == nil then
-
-            return true, "stock missing"
-        end
-
-        if HolyAuctionStockAge() >= 40 then
-            return true, "stock stale"
-        end
-    end
-
-    return false,
-        ""
-end
-
 function HolyAuctionScanLiveLots()
 
     HolyAuctionEnsureState()
-
-    if HolyAuctionShouldUseOffscreen() == true then
-
-        HolyAuctionEnsureOffscreen()
-
-    else
-
-        HolyAuctionRestoreOffscreen()
-    end
 
     local rows =
         {}
@@ -25339,49 +24486,17 @@ function HolyAuctionScanLiveLots()
         HolyAuctionFindAuctionGui()
 
     if typeof(auctionGui) ~= "Instance" then
-
-        HOLY_SHOP_STATE.AuctionDataMode =
-            "Waiting GUI"
-
         return rows
     end
 
     local scrollingFrame =
-        HolyAuctionFindScrollingFrame(
-            auctionGui
+        auctionGui:FindFirstChild(
+            "ScrollingFrame",
+            true
         )
 
     if typeof(scrollingFrame) ~= "Instance" then
-
-        HOLY_SHOP_STATE.AuctionDataMode =
-            "Waiting ScrollingFrame"
-
         return rows
-    end
-
-    local currentCycle =
-        HolyAuctionGetStockCycle()
-
-    HOLY_SHOP_STATE.AuctionHiddenRowsFound =
-        0
-
-    HOLY_SHOP_STATE.AuctionIgnoredStaleRows =
-        0
-
-    HOLY_SHOP_STATE.AuctionRefreshText =
-        HolyAuctionReadRefreshText(
-            auctionGui
-        )
-
-    HOLY_SHOP_STATE.AuctionRefreshSeconds =
-        HolyAuctionParseDurationSeconds(
-            HOLY_SHOP_STATE.AuctionRefreshText
-        )
-
-    if HOLY_SHOP_STATE.AuctionRefreshSeconds > 0 then
-
-        HOLY_SHOP_STATE.AuctionRefreshReadAt =
-            os.clock()
     end
 
     local knownChanged =
@@ -25402,35 +24517,6 @@ function HolyAuctionScanLiveLots()
                     "^Lot_",
                     ""
                 )
-
-            local cycle =
-                HolyAuctionExtractCycle(
-                    lotId
-                )
-
-            local slot =
-                HolyAuctionExtractSlot(
-                    lotId
-                )
-
-            local cycleMatches =
-                currentCycle == nil
-                or cycle == nil
-                or tonumber(cycle) == tonumber(currentCycle)
-
-            if cycleMatches ~= true then
-
-                HOLY_SHOP_STATE.AuctionIgnoredStaleRows =
-                    (
-                        tonumber(
-                            HOLY_SHOP_STATE.AuctionIgnoredStaleRows
-                        )
-                        or 0
-                    )
-                    + 1
-
-                continue
-            end
 
             local mainFrame =
                 lotFrame:FindFirstChild(
@@ -25497,14 +24583,6 @@ function HolyAuctionScanLiveLots()
                             true
                         )
                     )
-
-                if priceText == "" then
-
-                    priceText =
-                        HolyAuctionReadText(
-                            buyButton
-                        )
-                end
             end
 
             local amountText =
@@ -25525,7 +24603,6 @@ function HolyAuctionScanLiveLots()
                             true
                         )
                     )
-                or ""
             end
 
             local timerText =
@@ -25553,28 +24630,6 @@ function HolyAuctionScanLiveLots()
                     )
             end
 
-            local expiredFrame =
-                mainFrame
-                and mainFrame:FindFirstChild(
-                    "EXPIRED",
-                    true
-                )
-                or lotFrame:FindFirstChild(
-                    "EXPIRED",
-                    true
-                )
-
-            local outOfStockFrame =
-                mainFrame
-                and mainFrame:FindFirstChild(
-                    "OUT_OF_STOCK",
-                    true
-                )
-                or lotFrame:FindFirstChild(
-                    "OUT_OF_STOCK",
-                    true
-                )
-
             if itemName ~= ""
             and lotId ~= "" then
 
@@ -25586,24 +24641,21 @@ function HolyAuctionScanLiveLots()
                         true
                 end
 
-                HOLY_SHOP_STATE.AuctionHiddenRowsFound =
-                    (
-                        tonumber(
-                            HOLY_SHOP_STATE.AuctionHiddenRowsFound
-                        )
-                        or 0
-                    )
-                    + 1
-
                 local uiStock =
                     HolyAuctionReadStock(
                         stockText
                     )
 
                 local serverStock =
-                    type(HOLY_SHOP_STATE.AuctionStockMap) == "table"
-                    and HOLY_SHOP_STATE.AuctionStockMap[lotId]
-                    or nil
+                    nil
+
+                if type(HOLY_SHOP_STATE.AuctionStockMap) == "table" then
+
+                    serverStock =
+                        HOLY_SHOP_STATE.AuctionStockMap[
+                            lotId
+                        ]
+                end
 
                 local stock =
                     uiStock
@@ -25624,11 +24676,6 @@ function HolyAuctionScanLiveLots()
 
                     stockSource =
                         "Server"
-
-                elseif HolyAuctionGuiObjectVisible(outOfStockFrame) == true then
-
-                    stock =
-                        0
                 end
 
                 local price =
@@ -25637,22 +24684,13 @@ function HolyAuctionScanLiveLots()
                     )
 
                 local expired =
-                    HolyAuctionGuiObjectVisible(
-                        expiredFrame
-                    )
-                    or timerText == "0m 00s"
+                    timerText == "0m 00s"
                     or timerText == "00:00"
                     or timerText == "0:00"
 
                 local row = {
                     LotId =
                         lotId,
-
-                    Cycle =
-                        cycle,
-
-                    Slot =
-                        slot,
 
                     Name =
                         itemName,
@@ -25676,17 +24714,13 @@ function HolyAuctionScanLiveLots()
                         price,
 
                     PriceText =
-                        priceText ~= ""
-                        and priceText
-                        or HolyAuctionFormatMoney(price),
+                        priceText,
 
                     AmountText =
                         amountText,
 
                     Timer =
-                        timerText ~= ""
-                        and timerText
-                        or "--",
+                        timerText,
 
                     SoldOut =
                         stock <= 0,
@@ -25697,18 +24731,6 @@ function HolyAuctionScanLiveLots()
                     Active =
                         stock > 0
                         and expired ~= true,
-
-                    SortIndex =
-                        slot or 999,
-
-                    Cached =
-                        false,
-
-                    OffscreenLive =
-                        HOLY_SHOP_STATE.AuctionOffscreenEnabled == true,
-
-                    CycleMatched =
-                        cycleMatches,
                 }
 
                 table.insert(
@@ -25721,50 +24743,19 @@ function HolyAuctionScanLiveLots()
 
     table.sort(rows, function(a, b)
 
-        local selectedA =
-            HolyAuctionSelectionAllows(
-                a.Name
-            )
-
-        local selectedB =
-            HolyAuctionSelectionAllows(
-                b.Name
-            )
-
-        if selectedA ~= selectedB then
-            return selectedA == true
-        end
-
         if a.Active ~= b.Active then
             return a.Active == true
         end
 
-        return tonumber(a.SortIndex or 999)
-            < tonumber(b.SortIndex or 999)
+        if a.Price ~= b.Price then
+            return a.Price > b.Price
+        end
+
+        return tostring(a.Name) < tostring(b.Name)
     end)
 
     HOLY_SHOP_STATE.AuctionLastLots =
         rows
-
-    HOLY_SHOP_STATE.AuctionLastScanAt =
-        os.clock()
-
-    if HOLY_SHOP_STATE.AuctionOffscreenEnabled == true
-    and HolyAuctionStockAge() < 40 then
-
-        HOLY_SHOP_STATE.AuctionDataMode =
-            "Offscreen live + Server stock"
-
-    elseif HOLY_SHOP_STATE.AuctionOffscreenEnabled == true then
-
-        HOLY_SHOP_STATE.AuctionDataMode =
-            "Offscreen live"
-
-    elseif #rows > 0 then
-
-        HOLY_SHOP_STATE.AuctionDataMode =
-            "Auction GUI"
-    end
 
     if knownChanged == true then
 
@@ -25785,25 +24776,15 @@ function HolyAuctionBuildLiveText(rows)
 
     if #rows <= 0 then
 
-        return "Live: waiting auction data."
+        return "Live: open Auctions UI to read current lots."
     end
-
-    local stockText =
-        HolyAuctionStockAge() < 40
-        and (
-            "Server "
-            .. HolyAuctionFormatAge(
-                HolyAuctionStockAge()
-            )
-        )
-        or "waiting stock"
 
     local parts =
         {}
 
     for index, row in ipairs(rows) do
 
-        if index > 3 then
+        if index > 4 then
             break
         end
 
@@ -25829,23 +24810,17 @@ function HolyAuctionBuildLiveText(rows)
         )
     end
 
-    if #rows > 3 then
+    if #rows > 4 then
 
         table.insert(
             parts,
             "+"
-                .. tostring(#rows - 3)
+                .. tostring(#rows - 4)
                 .. " more"
         )
     end
 
     return "Live: "
-        .. tostring(HOLY_SHOP_STATE.AuctionDataMode or "Auction")
-        .. " | "
-        .. HolyAuctionRefreshHeaderText()
-        .. " | "
-        .. stockText
-        .. " | "
         .. table.concat(
             parts,
             " | "
@@ -25919,1858 +24894,6 @@ function HolyAuctionSetStatus(text)
     return true
 end
 
-HOLY_AUCTION_HUD =
-    type(HOLY_AUCTION_HUD) == "table"
-    and HOLY_AUCTION_HUD
-    or {}
-
-function HolyAuctionHudDestroy(skipRestore)
-
-    local hud =
-        HOLY_AUCTION_HUD
-
-    if type(hud) == "table"
-    and type(hud.Connections) == "table" then
-
-        for _, connection in ipairs(hud.Connections) do
-
-            pcall(function()
-
-                connection:Disconnect()
-            end)
-        end
-    end
-
-    if type(hud) == "table"
-    and typeof(hud.ScreenGui) == "Instance" then
-
-        pcall(function()
-
-            hud.ScreenGui:Destroy()
-        end)
-    end
-
-    HOLY_AUCTION_HUD = {
-        Connections = {},
-        Rows = {},
-        RowFrames = {},
-    }
-
-    if skipRestore ~= true
-    and HOLY_SHOP_STATE.AutoBuyAuctions ~= true
-    and HOLY_SHOP_STATE.AuctionHudEnabled ~= true then
-
-        HolyAuctionRestoreOffscreen()
-    end
-
-    return true
-end
-
-function HolyAuctionHudAddConnection(connection)
-
-    HOLY_AUCTION_HUD =
-        type(HOLY_AUCTION_HUD) == "table"
-        and HOLY_AUCTION_HUD
-        or {}
-
-    HOLY_AUCTION_HUD.Connections =
-        type(HOLY_AUCTION_HUD.Connections) == "table"
-        and HOLY_AUCTION_HUD.Connections
-        or {}
-
-    if connection ~= nil then
-
-        table.insert(
-            HOLY_AUCTION_HUD.Connections,
-            connection
-        )
-    end
-
-    return connection
-end
-
-function HolyAuctionHudCreate(instanceType, props)
-
-    local object =
-        Instance.new(
-            instanceType
-        )
-
-    for key, value in pairs(props or {}) do
-
-        object[key] =
-            value
-    end
-
-    return object
-end
-
-function HolyAuctionHudCorner(parent, radius)
-
-    return HolyAuctionHudCreate(
-        "UICorner",
-        {
-            CornerRadius =
-                radius
-                or UDim.new(0, 8),
-
-            Parent =
-                parent,
-        }
-    )
-end
-
-function HolyAuctionHudStroke(parent, color, transparency, thickness)
-
-    return HolyAuctionHudCreate(
-        "UIStroke",
-        {
-            Color =
-                color
-                or Color3.fromRGB(255, 184, 60),
-
-            Transparency =
-                transparency
-                or 0.15,
-
-            Thickness =
-                thickness
-                or 1,
-
-            ApplyStrokeMode =
-                Enum.ApplyStrokeMode.Border,
-
-            Parent =
-                parent,
-        }
-    )
-end
-
-function HolyAuctionHudLabel(parent, text, x, y, w, h, size, color, bold)
-
-    return HolyAuctionHudCreate(
-        "TextLabel",
-        {
-            BackgroundTransparency =
-                1,
-
-            Position =
-                UDim2.fromOffset(
-                    x,
-                    y
-                ),
-
-            Size =
-                UDim2.fromOffset(
-                    w,
-                    h
-                ),
-
-            Font =
-                bold == true
-                and Enum.Font.GothamBold
-                or Enum.Font.GothamMedium,
-
-            Text =
-                tostring(text or ""),
-
-            TextColor3 =
-                color
-                or Color3.fromRGB(230, 234, 245),
-
-            TextSize =
-                size
-                or 11,
-
-            TextXAlignment =
-                Enum.TextXAlignment.Left,
-
-            TextYAlignment =
-                Enum.TextYAlignment.Center,
-
-            TextTruncate =
-                Enum.TextTruncate.AtEnd,
-
-            TextWrapped =
-                false,
-
-            Parent =
-                parent,
-        }
-    )
-end
-
-function HolyAuctionHudButton(parent, text, x, y, w, h)
-
-    local button =
-        HolyAuctionHudCreate(
-            "TextButton",
-            {
-                BackgroundColor3 =
-                    Color3.fromRGB(21, 23, 32),
-
-                BorderSizePixel =
-                    0,
-
-                Position =
-                    UDim2.fromOffset(
-                        x,
-                        y
-                    ),
-
-                Size =
-                    UDim2.fromOffset(
-                        w,
-                        h
-                    ),
-
-                Font =
-                    Enum.Font.GothamBold,
-
-                Text =
-                    tostring(text or "Button"),
-
-                TextColor3 =
-                    Color3.fromRGB(240, 243, 250),
-
-                TextSize =
-                    11,
-
-                AutoButtonColor =
-                    true,
-
-                Parent =
-                    parent,
-            }
-        )
-
-    HolyAuctionHudCorner(
-        button,
-        UDim.new(0, 7)
-    )
-
-    HolyAuctionHudStroke(
-        button,
-        Color3.fromRGB(75, 68, 60),
-        0.25,
-        1
-    )
-
-    return button
-end
-
-function HolyAuctionHudApplyScale()
-
-    local hud =
-        HOLY_AUCTION_HUD
-
-    if type(hud) ~= "table"
-    or typeof(hud.ScaleObject) ~= "Instance" then
-
-        return false
-    end
-
-    local scale =
-        HolyAuctionReadHudScale(
-            HOLY_SHOP_STATE.AuctionHudScale
-            or "80%"
-        )
-
-    hud.ScaleObject.Scale =
-        scale / 100
-
-    if typeof(hud.ScaleButton) == "Instance" then
-
-        hud.ScaleButton.Text =
-            HolyAuctionFormatHudScale(
-                scale
-            )
-    end
-
-    return true
-end
-
-function HolyAuctionHudSavePosition(frame)
-
-    if typeof(frame) ~= "Instance"
-    or frame:IsA("GuiObject") ~= true then
-
-        return false
-    end
-
-    HOLY_SHOP_STATE.AuctionHudPosition = {
-        X =
-            frame.Position.X.Offset,
-
-        Y =
-            frame.Position.Y.Offset,
-    }
-
-    return true
-end
-
-function HolyAuctionHudMakeDraggable(frame, handle)
-
-    handle =
-        handle
-        or frame
-
-    local dragging =
-        false
-
-    local dragStart =
-        nil
-
-    local startPosition =
-        nil
-
-    local dragInput =
-        nil
-
-    HolyAuctionHudAddConnection(
-        handle.InputBegan:Connect(function(input)
-
-            if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-
-                dragging =
-                    true
-
-                dragStart =
-                    input.Position
-
-                startPosition =
-                    frame.Position
-
-                input.Changed:Connect(function()
-
-                    if input.UserInputState == Enum.UserInputState.End then
-
-                        dragging =
-                            false
-
-                        HolyAuctionHudSavePosition(
-                            frame
-                        )
-
-                        HolySaveShopSettings()
-                    end
-                end)
-            end
-        end)
-    )
-
-    HolyAuctionHudAddConnection(
-        handle.InputChanged:Connect(function(input)
-
-            if input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch then
-
-                dragInput =
-                    input
-            end
-        end)
-    )
-
-    HolyAuctionHudAddConnection(
-        UserInputService.InputChanged:Connect(function(input)
-
-            if dragging ~= true
-            or input ~= dragInput
-            or dragStart == nil
-            or startPosition == nil then
-
-                return
-            end
-
-            local delta =
-                input.Position - dragStart
-
-            frame.Position =
-                UDim2.fromOffset(
-                    startPosition.X.Offset + delta.X,
-                    startPosition.Y.Offset + delta.Y
-                )
-        end)
-    )
-end
-
-function HolyAuctionHudSelectRow(row)
-
-    if type(row) ~= "table"
-    or HolyCleanText(row.Name) == "" then
-
-        return false
-    end
-
-    HOLY_SHOP_STATE.SelectedAuctions = {
-        row.Name,
-    }
-
-    local dropdown =
-        HOLY_SHOP_UI
-        and HOLY_SHOP_UI.AuctionDropdown
-        or nil
-
-    if type(dropdown) == "table"
-    and type(dropdown.SetValue) == "function" then
-
-        pcall(function()
-
-            dropdown:SetValue(
-                HOLY_SHOP_STATE.SelectedAuctions
-            )
-        end)
-    end
-
-    HolySaveShopSettings()
-
-    if HOLY_SHOP_STATE.AutoBuyAuctions == true then
-
-        HolyAuctionQueueWorker(
-            "hud selected"
-        )
-    end
-
-    HolyAuctionRefreshUI()
-
-    return true
-end
-
-function HolyAuctionHudDecision(row)
-
-    row =
-        type(row) == "table"
-        and row
-        or {}
-
-    if row.Expired == true then
-        return "EXPIRED"
-    end
-
-    if tonumber(row.Stock) == nil
-    or tonumber(row.Stock) <= 0 then
-
-        return "SOLD"
-    end
-
-    if tonumber(row.Price) == nil
-    or tonumber(row.Price) <= 0 then
-
-        return "NO PRICE"
-    end
-
-    if HolyAuctionSelectionAllows(row.Name) ~= true then
-
-        if row.Cached == true then
-            return "CACHED"
-        end
-
-        return "LIVE"
-    end
-
-    local desired =
-        HolyAuctionReadMoney(
-            HOLY_SHOP_STATE.AuctionMaxPrice
-            or "0"
-        )
-
-    if desired <= 0 then
-        return "SET PRICE"
-    end
-
-    if HolyAuctionRowStale(row, true) == true then
-        return "STALE"
-    end
-
-    if tonumber(row.Price) <= desired then
-        return "READY"
-    end
-
-    return "WAIT"
-end
-
-function HolyAuctionHudDecisionColors(decision)
-
-    decision =
-        tostring(decision or "")
-
-    if decision == "READY" then
-
-        return Color3.fromRGB(80, 255, 135),
-            Color3.fromRGB(14, 30, 20),
-            Color3.fromRGB(45, 125, 70)
-
-    elseif decision == "WAIT" then
-
-        return Color3.fromRGB(255, 210, 85),
-            Color3.fromRGB(34, 25, 12),
-            Color3.fromRGB(145, 100, 30)
-
-    elseif decision == "STALE" then
-
-        return Color3.fromRGB(255, 160, 80),
-            Color3.fromRGB(36, 22, 12),
-            Color3.fromRGB(130, 75, 35)
-
-    elseif decision == "EXPIRED"
-    or decision == "SOLD" then
-
-        return Color3.fromRGB(255, 88, 112),
-            Color3.fromRGB(34, 14, 18),
-            Color3.fromRGB(130, 45, 58)
-
-    elseif decision == "SET PRICE" then
-
-        return Color3.fromRGB(235, 210, 145),
-            Color3.fromRGB(28, 22, 14),
-            Color3.fromRGB(130, 90, 35)
-    end
-
-    return Color3.fromRGB(175, 185, 205),
-        Color3.fromRGB(15, 18, 25),
-        Color3.fromRGB(52, 58, 72)
-end
-
-function HolyAuctionHudCreateRow(parent, index)
-
-    local row =
-        HolyAuctionHudCreate(
-            "TextButton",
-            {
-                BackgroundColor3 =
-                    Color3.fromRGB(12, 15, 23),
-
-                BackgroundTransparency =
-                    0.08,
-
-                BorderSizePixel =
-                    0,
-
-                Size =
-                    UDim2.new(
-                        1,
-                        0,
-                        0,
-                        28
-                    ),
-
-                Text =
-                    "",
-
-                AutoButtonColor =
-                    true,
-
-                LayoutOrder =
-                    index,
-
-                Parent =
-                    parent,
-            }
-        )
-
-    HolyAuctionHudCorner(
-        row,
-        UDim.new(0, 8)
-    )
-
-    local stroke =
-        HolyAuctionHudStroke(
-            row,
-            Color3.fromRGB(45, 52, 68),
-            0.45,
-            1
-        )
-
-    local accent =
-        HolyAuctionHudCreate(
-            "Frame",
-            {
-                BackgroundColor3 =
-                    Color3.fromRGB(255, 105, 36),
-
-                BorderSizePixel =
-                    0,
-
-                Position =
-                    UDim2.fromOffset(
-                        0,
-                        6
-                    ),
-
-                Size =
-                    UDim2.fromOffset(
-                        4,
-                        16
-                    ),
-
-                Visible =
-                    false,
-
-                Parent =
-                    row,
-            }
-        )
-
-    HolyAuctionHudCorner(
-        accent,
-        UDim.new(0, 3)
-    )
-
-    local nameLabel =
-        HolyAuctionHudLabel(
-            row,
-            "--",
-            8,
-            0,
-            174,
-            28,
-            10,
-            Color3.fromRGB(238, 241, 250),
-            true
-        )
-
-    local stockLabel =
-        HolyAuctionHudLabel(
-            row,
-            "x0",
-            184,
-            0,
-            58,
-            28,
-            10,
-            Color3.fromRGB(205, 211, 225),
-            false
-        )
-
-    stockLabel.TextXAlignment =
-        Enum.TextXAlignment.Center
-
-    local priceLabel =
-        HolyAuctionHudLabel(
-            row,
-            "--",
-            244,
-            0,
-            78,
-            28,
-            10,
-            Color3.fromRGB(255, 214, 96),
-            true
-        )
-
-    priceLabel.TextXAlignment =
-        Enum.TextXAlignment.Center
-
-    local timerLabel =
-        HolyAuctionHudLabel(
-            row,
-            "--",
-            324,
-            0,
-            54,
-            28,
-            10,
-            Color3.fromRGB(185, 193, 210),
-            false
-        )
-
-    timerLabel.TextXAlignment =
-        Enum.TextXAlignment.Center
-
-    local pill =
-        HolyAuctionHudCreate(
-            "TextButton",
-            {
-                AnchorPoint =
-                    Vector2.new(1, 0.5),
-
-                BackgroundColor3 =
-                    Color3.fromRGB(18, 21, 30),
-
-                Position =
-                    UDim2.fromOffset(
-                        438,
-                        14
-                    ),
-
-                Size =
-                    UDim2.fromOffset(
-                        64,
-                        20
-                    ),
-
-                Font =
-                    Enum.Font.GothamBold,
-
-                Text =
-                    "LIVE",
-
-                TextColor3 =
-                    Color3.fromRGB(175, 185, 205),
-
-                TextSize =
-                    9,
-
-                AutoButtonColor =
-                    true,
-
-                Parent =
-                    row,
-            }
-        )
-
-    HolyAuctionHudCorner(
-        pill,
-        UDim.new(0, 7)
-    )
-
-    local pillStroke =
-        HolyAuctionHudStroke(
-            pill,
-            Color3.fromRGB(70, 78, 95),
-            0.20,
-            1
-        )
-
-    HolyAuctionHudAddConnection(
-        row.MouseButton1Click:Connect(function()
-
-            local data =
-                HOLY_AUCTION_HUD.Rows
-                and HOLY_AUCTION_HUD.Rows[index]
-                or nil
-
-            if type(data) == "table" then
-
-                HolyAuctionHudSelectRow(
-                    data
-                )
-            end
-        end)
-    )
-
-    HolyAuctionHudAddConnection(
-        pill.MouseButton1Click:Connect(function()
-
-            local data =
-                HOLY_AUCTION_HUD.Rows
-                and HOLY_AUCTION_HUD.Rows[index]
-                or nil
-
-            if type(data) ~= "table" then
-                return
-            end
-
-            HolyAuctionHudSelectRow(
-                data
-            )
-
-            if HolyAuctionHudDecision(data) == "READY" then
-
-                HolyAuctionManualBuyOnce(
-                    "hud ready pill"
-                )
-
-            else
-
-                HolyAuctionSetStatus(
-                    "Buy blocked: "
-                        .. HolyAuctionHudDecision(data)
-                )
-            end
-        end)
-    )
-
-    HOLY_AUCTION_HUD.RowFrames[index] = {
-        Holder =
-            row,
-
-        Stroke =
-            stroke,
-
-        Accent =
-            accent,
-
-        Name =
-            nameLabel,
-
-        Stock =
-            stockLabel,
-
-        Price =
-            priceLabel,
-
-        Timer =
-            timerLabel,
-
-        Pill =
-            pill,
-
-        PillStroke =
-            pillStroke,
-    }
-end
-
-function HolyAuctionHudUpdateRow(index, row)
-
-    local hud =
-        HOLY_AUCTION_HUD
-
-    local rowUi =
-        hud
-        and hud.RowFrames
-        and hud.RowFrames[index]
-        or nil
-
-    if type(rowUi) ~= "table" then
-        return false
-    end
-
-    if type(row) ~= "table" then
-
-        rowUi.Holder.Visible =
-            false
-
-        return false
-    end
-
-    rowUi.Holder.Visible =
-        true
-
-    local selected =
-        HolyAuctionSelectionAllows(
-            row.Name
-        )
-
-    local decision =
-        HolyAuctionHudDecision(
-            row
-        )
-
-    local color,
-        bgColor,
-        strokeColor =
-        HolyAuctionHudDecisionColors(
-            decision
-        )
-
-    local nameText =
-        tostring(row.Name or "--")
-
-    if HolyCleanText(row.AmountText) ~= "" then
-
-        nameText =
-            nameText
-            .. "  "
-            .. tostring(row.AmountText)
-    end
-
-    rowUi.Name.Text =
-        nameText
-
-    rowUi.Stock.Text =
-        "x"
-        .. tostring(
-            math.max(
-                0,
-                math.floor(
-                    tonumber(row.Stock)
-                    or 0
-                )
-            )
-        )
-
-    rowUi.Price.Text =
-        tostring(
-            row.PriceText
-            or HolyAuctionFormatMoney(row.Price)
-        )
-
-    rowUi.Timer.Text =
-        tostring(
-            row.Timer
-            or "--"
-        )
-
-    rowUi.Pill.Text =
-        decision
-
-    rowUi.Pill.TextColor3 =
-        color
-
-    rowUi.Pill.BackgroundColor3 =
-        bgColor
-
-    rowUi.PillStroke.Color =
-        strokeColor
-
-    if selected == true then
-
-        rowUi.Accent.Visible =
-            true
-
-        rowUi.Stroke.Color =
-            Color3.fromRGB(255, 184, 60)
-
-        rowUi.Stroke.Transparency =
-            0.02
-
-        rowUi.Stroke.Thickness =
-            1.65
-
-        if decision == "READY" then
-
-            rowUi.Holder.BackgroundColor3 =
-                Color3.fromRGB(14, 32, 18)
-
-        else
-
-            rowUi.Holder.BackgroundColor3 =
-                Color3.fromRGB(35, 23, 13)
-        end
-
-        rowUi.Name.TextColor3 =
-            Color3.fromRGB(255, 236, 210)
-
-    else
-
-        rowUi.Accent.Visible =
-            false
-
-        rowUi.Stroke.Color =
-            Color3.fromRGB(45, 52, 68)
-
-        rowUi.Stroke.Transparency =
-            0.45
-
-        rowUi.Stroke.Thickness =
-            1
-
-        rowUi.Holder.BackgroundColor3 =
-            Color3.fromRGB(12, 15, 23)
-
-        rowUi.Name.TextColor3 =
-            Color3.fromRGB(238, 241, 250)
-    end
-
-    if row.Active ~= true then
-
-        rowUi.Holder.BackgroundColor3 =
-            Color3.fromRGB(12, 13, 18)
-
-        rowUi.Holder.BackgroundTransparency =
-            0.22
-
-        rowUi.Name.TextColor3 =
-            Color3.fromRGB(160, 166, 184)
-    else
-
-        rowUi.Holder.BackgroundTransparency =
-            selected == true
-            and 0.03
-            or 0.08
-    end
-
-    rowUi.Price.TextColor3 =
-        Color3.fromRGB(255, 214, 96)
-
-    return true
-end
-
-function HolyAuctionHudCreateUI()
-
-    HolyAuctionHudDestroy(
-        true
-    )
-
-    local screenGui =
-        Instance.new(
-            "ScreenGui"
-        )
-
-    screenGui.Name =
-        "HolyAuctionHud"
-
-    screenGui.ResetOnSpawn =
-        false
-
-    screenGui.IgnoreGuiInset =
-        true
-
-    screenGui.ZIndexBehavior =
-        Enum.ZIndexBehavior.Sibling
-
-    local parent =
-        HolyAuctionGetPlayerGui()
-
-    if typeof(parent) ~= "Instance" then
-
-        return false
-    end
-
-    screenGui.Parent =
-        parent
-
-    HOLY_AUCTION_HUD.ScreenGui =
-        screenGui
-
-    local positionData =
-        type(HOLY_SHOP_STATE.AuctionHudPosition) == "table"
-        and HOLY_SHOP_STATE.AuctionHudPosition
-        or {}
-
-    local holder =
-        HolyAuctionHudCreate(
-            "Frame",
-            {
-                Active =
-                    true,
-
-                BackgroundColor3 =
-                    Color3.fromRGB(7, 8, 11),
-
-                BackgroundTransparency =
-                    0.04,
-
-                BorderSizePixel =
-                    0,
-
-                Position =
-                    UDim2.fromOffset(
-                        tonumber(positionData.X)
-                        or 60,
-                        tonumber(positionData.Y)
-                        or 110
-                    ),
-
-                Size =
-                    UDim2.fromOffset(
-                        470,
-                        HOLY_SHOP_STATE.AuctionHudMinimized == true
-                        and 38
-                        or 365
-                    ),
-
-                Parent =
-                    screenGui,
-            }
-        )
-
-    HOLY_AUCTION_HUD.Holder =
-        holder
-
-    HolyAuctionHudCorner(
-        holder,
-        UDim.new(0, 11)
-    )
-
-    HolyAuctionHudStroke(
-        holder,
-        Color3.fromRGB(105, 68, 38),
-        0.08,
-        1
-    )
-
-    local scaleObject =
-        HolyAuctionHudCreate(
-            "UIScale",
-            {
-                Scale =
-                    HolyAuctionReadHudScale(
-                        HOLY_SHOP_STATE.AuctionHudScale
-                    ) / 100,
-
-                Parent =
-                    holder,
-            }
-        )
-
-    HOLY_AUCTION_HUD.ScaleObject =
-        scaleObject
-
-    local top =
-        HolyAuctionHudCreate(
-            "Frame",
-            {
-                BackgroundColor3 =
-                    Color3.fromRGB(11, 13, 18),
-
-                BackgroundTransparency =
-                    0.02,
-
-                BorderSizePixel =
-                    0,
-
-                Position =
-                    UDim2.fromOffset(
-                        0,
-                        0
-                    ),
-
-                Size =
-                    UDim2.fromOffset(
-                        470,
-                        38
-                    ),
-
-                Parent =
-                    holder,
-            }
-        )
-
-    HOLY_AUCTION_HUD.Top =
-        top
-
-    HolyAuctionHudCorner(
-        top,
-        UDim.new(0, 11)
-    )
-
-    HOLY_AUCTION_HUD.TitleLabel =
-        HolyAuctionHudLabel(
-            top,
-            "🧺 HOLY Auctions",
-            12,
-            0,
-            160,
-            38,
-            14,
-            Color3.fromRGB(245, 247, 255),
-            true
-        )
-
-    HOLY_AUCTION_HUD.RefreshButton =
-        HolyAuctionHudButton(
-            top,
-            "Refresh --",
-            176,
-            8,
-            104,
-            22
-        )
-
-    HOLY_AUCTION_HUD.RefreshButton.TextSize =
-        10
-
-    HolyAuctionHudAddConnection(
-        HOLY_AUCTION_HUD.RefreshButton.MouseButton1Click:Connect(function()
-
-            HolyAuctionRequestSnapshot()
-
-            HolyAuctionRefreshUI()
-
-            HolyAuctionSetStatus(
-                "Manual offscreen scan"
-            )
-        end)
-    )
-
-    HOLY_AUCTION_HUD.BuyButton =
-        HolyAuctionHudButton(
-            top,
-            "Buy",
-            286,
-            8,
-            38,
-            22
-        )
-
-    HOLY_AUCTION_HUD.BuyButton.BackgroundColor3 =
-        Color3.fromRGB(35, 24, 14)
-
-    HolyAuctionHudAddConnection(
-        HOLY_AUCTION_HUD.BuyButton.MouseButton1Click:Connect(function()
-
-            HolyAuctionManualBuyOnce(
-                "hud buy"
-            )
-
-            HolyAuctionRefreshUI()
-        end)
-    )
-
-    HOLY_AUCTION_HUD.ScaleButton =
-        HolyAuctionHudButton(
-            top,
-            HolyAuctionFormatHudScale(
-                HOLY_SHOP_STATE.AuctionHudScale
-            ),
-            330,
-            8,
-            62,
-            22
-        )
-
-    HolyAuctionHudAddConnection(
-        HOLY_AUCTION_HUD.ScaleButton.MouseButton1Click:Connect(function()
-
-            local values = {
-                60,
-                70,
-                80,
-                90,
-                100,
-                110,
-            }
-
-            local current =
-                HolyAuctionReadHudScale(
-                    HOLY_SHOP_STATE.AuctionHudScale
-                )
-
-            local nextValue =
-                80
-
-            for index, value in ipairs(values) do
-
-                if value == current then
-
-                    nextValue =
-                        values[index + 1]
-                        or values[1]
-
-                    break
-                end
-            end
-
-            HOLY_SHOP_STATE.AuctionHudScale =
-                HolyAuctionFormatHudScale(
-                    nextValue
-                )
-
-            HolyAuctionHudApplyScale()
-
-            HolySaveShopSettings()
-        end)
-    )
-
-    HOLY_AUCTION_HUD.MinimizeButton =
-        HolyAuctionHudButton(
-            top,
-            HOLY_SHOP_STATE.AuctionHudMinimized == true
-            and "+"
-            or "—",
-            400,
-            8,
-            28,
-            22
-        )
-
-    HolyAuctionHudAddConnection(
-        HOLY_AUCTION_HUD.MinimizeButton.MouseButton1Click:Connect(function()
-
-            HOLY_SHOP_STATE.AuctionHudMinimized =
-                HOLY_SHOP_STATE.AuctionHudMinimized ~= true
-
-            holder.Size =
-                HOLY_SHOP_STATE.AuctionHudMinimized == true
-                and UDim2.fromOffset(
-                    470,
-                    38
-                )
-                or UDim2.fromOffset(
-                    470,
-                    365
-                )
-
-            HOLY_AUCTION_HUD.MinimizeButton.Text =
-                HOLY_SHOP_STATE.AuctionHudMinimized == true
-                and "+"
-                or "—"
-
-            if typeof(HOLY_AUCTION_HUD.Body) == "Instance" then
-
-                HOLY_AUCTION_HUD.Body.Visible =
-                    HOLY_SHOP_STATE.AuctionHudMinimized ~= true
-            end
-
-            HolySaveShopSettings()
-
-            HolyAuctionHudRefresh()
-        end)
-    )
-
-    local closeButton =
-        HolyAuctionHudButton(
-            top,
-            "X",
-            432,
-            8,
-            28,
-            22
-        )
-
-    closeButton.BackgroundColor3 =
-        Color3.fromRGB(35, 16, 23)
-
-    HolyAuctionHudAddConnection(
-        closeButton.MouseButton1Click:Connect(function()
-
-            HolyAuctionSetHudVisible(
-                false,
-                "closed"
-            )
-        end)
-    )
-
-    local body =
-        HolyAuctionHudCreate(
-            "Frame",
-            {
-                BackgroundTransparency =
-                    1,
-
-                Position =
-                    UDim2.fromOffset(
-                        0,
-                        38
-                    ),
-
-                Size =
-                    UDim2.fromOffset(
-                        470,
-                        327
-                    ),
-
-                Visible =
-                    HOLY_SHOP_STATE.AuctionHudMinimized ~= true,
-
-                Parent =
-                    holder,
-            }
-        )
-
-    HOLY_AUCTION_HUD.Body =
-        body
-
-    HOLY_AUCTION_HUD.AutoSelectedLabel =
-        HolyAuctionHudLabel(
-            body,
-            "Auto: OFF | Selected: None",
-            14,
-            6,
-            438,
-            17,
-            11,
-            Color3.fromRGB(225, 231, 245),
-            true
-        )
-
-    HOLY_AUCTION_HUD.DesiredLabel =
-        HolyAuctionHudLabel(
-            body,
-            "Desired: Not set | Stock: waiting",
-            14,
-            24,
-            438,
-            16,
-            10,
-            Color3.fromRGB(170, 178, 198),
-            false
-        )
-
-    HOLY_AUCTION_HUD.ScanNextLabel =
-        HolyAuctionHudLabel(
-            body,
-            "Scan: -- | Lots: 0 | Next: Ready",
-            14,
-            42,
-            438,
-            15,
-            10,
-            Color3.fromRGB(165, 174, 195),
-            false
-        )
-
-    HOLY_AUCTION_HUD.StatusLabel =
-        HolyAuctionHudLabel(
-            body,
-            "Status: Ready",
-            14,
-            60,
-            438,
-            15,
-            10,
-            Color3.fromRGB(145, 153, 172),
-            false
-        )
-
-    local progressBack =
-        HolyAuctionHudCreate(
-            "Frame",
-            {
-                BackgroundColor3 =
-                    Color3.fromRGB(24, 29, 42),
-
-                BackgroundTransparency =
-                    0.20,
-
-                BorderSizePixel =
-                    0,
-
-                Position =
-                    UDim2.fromOffset(
-                        12,
-                        84
-                    ),
-
-                Size =
-                    UDim2.fromOffset(
-                        446,
-                        3
-                    ),
-
-                Parent =
-                    body,
-            }
-        )
-
-    HolyAuctionHudCorner(
-        progressBack,
-        UDim.new(0, 3)
-    )
-
-    HOLY_AUCTION_HUD.ProgressFill =
-        HolyAuctionHudCreate(
-            "Frame",
-            {
-                BackgroundColor3 =
-                    Color3.fromRGB(255, 184, 60),
-
-                BackgroundTransparency =
-                    0.05,
-
-                BorderSizePixel =
-                    0,
-
-                Position =
-                    UDim2.fromOffset(
-                        0,
-                        0
-                    ),
-
-                Size =
-                    UDim2.fromOffset(
-                        0,
-                        3
-                    ),
-
-                Parent =
-                    progressBack,
-            }
-        )
-
-    HolyAuctionHudCorner(
-        HOLY_AUCTION_HUD.ProgressFill,
-        UDim.new(0, 3)
-    )
-
-    HolyAuctionHudLabel(
-        body,
-        "Item",
-        20,
-        94,
-        170,
-        14,
-        10,
-        Color3.fromRGB(195, 203, 222),
-        true
-    )
-
-    local stockHead =
-        HolyAuctionHudLabel(
-            body,
-            "Stock",
-            196,
-            94,
-            60,
-            14,
-            10,
-            Color3.fromRGB(195, 203, 222),
-            true
-        )
-
-    stockHead.TextXAlignment =
-        Enum.TextXAlignment.Center
-
-    local priceHead =
-        HolyAuctionHudLabel(
-            body,
-            "Price",
-            258,
-            94,
-            75,
-            14,
-            10,
-            Color3.fromRGB(195, 203, 222),
-            true
-        )
-
-    priceHead.TextXAlignment =
-        Enum.TextXAlignment.Center
-
-    local timeHead =
-        HolyAuctionHudLabel(
-            body,
-            "Time",
-            336,
-            94,
-            50,
-            14,
-            10,
-            Color3.fromRGB(195, 203, 222),
-            true
-        )
-
-    timeHead.TextXAlignment =
-        Enum.TextXAlignment.Center
-
-    local rowsHolder =
-        HolyAuctionHudCreate(
-            "Frame",
-            {
-                BackgroundTransparency =
-                    1,
-
-                ClipsDescendants =
-                    true,
-
-                Position =
-                    UDim2.fromOffset(
-                        12,
-                        112
-                    ),
-
-                Size =
-                    UDim2.fromOffset(
-                        446,
-                        204
-                    ),
-
-                Parent =
-                    body,
-            }
-        )
-
-    HOLY_AUCTION_HUD.RowsHolder =
-        rowsHolder
-
-    HolyAuctionHudCreate(
-        "UIListLayout",
-        {
-            Padding =
-                UDim.new(
-                    0,
-                    4
-                ),
-
-            FillDirection =
-                Enum.FillDirection.Vertical,
-
-            HorizontalAlignment =
-                Enum.HorizontalAlignment.Center,
-
-            SortOrder =
-                Enum.SortOrder.LayoutOrder,
-
-            Parent =
-                rowsHolder,
-        }
-    )
-
-    HOLY_AUCTION_HUD.RowFrames =
-        {}
-
-    for index = 1, 6 do
-
-        HolyAuctionHudCreateRow(
-            rowsHolder,
-            index
-        )
-    end
-
-    HolyAuctionHudMakeDraggable(
-        holder,
-        top
-    )
-
-    HolyAuctionHudApplyScale()
-
-    return true
-end
-
-function HolyAuctionHudStart()
-
-    HolyAuctionEnsureState()
-
-    if HOLY_SHOP_STATE.AuctionHudEnabled ~= true then
-        return false
-    end
-
-    local alreadyOpen =
-        false
-
-    pcall(function()
-
-        alreadyOpen =
-            type(HOLY_AUCTION_HUD) == "table"
-            and typeof(HOLY_AUCTION_HUD.ScreenGui) == "Instance"
-            and HOLY_AUCTION_HUD.ScreenGui.Parent ~= nil
-    end)
-
-    if alreadyOpen == true then
-        return true
-    end
-
-    return HolyAuctionHudCreateUI()
-end
-
-function HolyAuctionHudRefresh(rows)
-
-    HolyAuctionEnsureState()
-
-    if HOLY_SHOP_STATE.AuctionHudEnabled ~= true then
-        return false
-    end
-
-    HolyAuctionHudStart()
-
-    local hud =
-        HOLY_AUCTION_HUD
-
-    if type(hud) ~= "table"
-    or typeof(hud.Holder) ~= "Instance" then
-
-        return false
-    end
-
-    rows =
-        type(rows) == "table"
-        and rows
-        or HOLY_SHOP_STATE.AuctionLastLots
-        or {}
-
-    hud.Rows =
-        rows
-
-    local desired =
-        HolyAuctionReadMoney(
-            HOLY_SHOP_STATE.AuctionMaxPrice
-            or "0"
-        )
-
-    local desiredText =
-        desired > 0
-        and HolyAuctionFormatMoney(
-            desired
-        )
-        or "Not set"
-
-    local stockText =
-        HolyAuctionStockAge() < 40
-        and (
-            "Server · "
-            .. HolyAuctionFormatAge(
-                HolyAuctionStockAge()
-            )
-        )
-        or "waiting"
-
-    local selected =
-        HolyShopSelectionArray(
-            HOLY_SHOP_STATE.SelectedAuctions
-        )
-
-    local selectedText =
-        #selected > 0
-        and table.concat(
-            selected,
-            ", "
-        )
-        or "None"
-
-    local statusText =
-        tostring(
-            HOLY_SHOP_STATE.AuctionStatus
-            or "Ready"
-        )
-
-    local nextAction =
-        "Select auction item"
-
-    local target,
-        targetReason =
-        HolyAuctionFindBuyTarget()
-
-    if type(target) == "table" then
-
-        nextAction =
-            "Ready to buy"
-
-    else
-
-        nextAction =
-            tostring(
-                targetReason
-                or nextAction
-            )
-    end
-
-    if typeof(hud.TitleLabel) == "Instance" then
-
-        if HOLY_SHOP_STATE.AuctionHudMinimized == true then
-
-            hud.TitleLabel.Text =
-                "🧺 Auctions · "
-                .. tostring(nextAction)
-
-        else
-
-            hud.TitleLabel.Text =
-                "🧺 HOLY Auctions"
-        end
-    end
-
-    if typeof(hud.RefreshButton) == "Instance" then
-
-        hud.RefreshButton.Text =
-            HolyAuctionRefreshHeaderText()
-    end
-
-    if typeof(hud.AutoSelectedLabel) == "Instance" then
-
-        hud.AutoSelectedLabel.Text =
-            "Auto: "
-            .. (
-                HOLY_SHOP_STATE.AutoBuyAuctions == true
-                and "ON"
-                or "OFF"
-            )
-            .. " | Selected: "
-            .. selectedText
-    end
-
-    if typeof(hud.DesiredLabel) == "Instance" then
-
-        hud.DesiredLabel.Text =
-            "Desired: "
-            .. desiredText
-            .. " | Stock: "
-            .. stockText
-    end
-
-    if typeof(hud.ScanNextLabel) == "Instance" then
-
-        hud.ScanNextLabel.Text =
-            "Scan: "
-            .. tostring(
-                HOLY_SHOP_STATE.AuctionDataMode
-                or "Waiting"
-            )
-            .. " | Lots: "
-            .. tostring(#rows)
-            .. " | Next: "
-            .. tostring(nextAction)
-    end
-
-    if typeof(hud.StatusLabel) == "Instance" then
-
-        hud.StatusLabel.Text =
-            "Status: "
-            .. statusText
-    end
-
-    if typeof(hud.ProgressFill) == "Instance" then
-
-        local ratio =
-            0
-
-        local seconds =
-            HolyAuctionGetEffectiveRefreshSeconds()
-
-        if seconds > 0 then
-
-            ratio =
-                math.clamp(
-                    seconds / 1800,
-                    0,
-                    1
-                )
-        end
-
-        hud.ProgressFill.Size =
-            UDim2.fromOffset(
-                math.floor(446 * ratio + 0.5),
-                3
-            )
-    end
-
-    for index = 1, 6 do
-
-        HolyAuctionHudUpdateRow(
-            index,
-            rows[index]
-        )
-    end
-
-    return true
-end
-
-function HolyAuctionSetHudVisible(value, reason)
-
-    HolyAuctionEnsureState()
-
-    HOLY_SHOP_STATE.AuctionHudEnabled =
-        value == true
-
-    HolySaveShopSettings()
-
-    if HOLY_SHOP_STATE.AuctionHudEnabled == true then
-
-        HolyAuctionHudStart()
-
-        HolyAuctionRequestSnapshot()
-
-        HolyAuctionRefreshUI()
-
-        HolyAuctionSetStatus(
-            "Live HUD on"
-        )
-
-        return true
-    end
-
-    HolyAuctionHudDestroy()
-
-    HolyAuctionSetStatus(
-        "Live HUD off"
-    )
-
-    if HOLY_SHOP_STATE.AutoBuyAuctions ~= true then
-
-        HolyAuctionRestoreOffscreen()
-    end
-
-    return true
-end
-
-function HolyAuctionSetHudScale(value)
-
-    HolyAuctionEnsureState()
-
-    HOLY_SHOP_STATE.AuctionHudScale =
-        HolyAuctionFormatHudScale(
-            value
-        )
-
-    HolySaveShopSettings()
-
-    HolyAuctionHudApplyScale()
-
-    return true
-end
-
 function HolyAuctionRefreshUI()
 
     HolyAuctionEnsureState()
@@ -27793,13 +24916,6 @@ function HolyAuctionRefreshUI()
     HolyAuctionSetStatus(
         HOLY_SHOP_STATE.AuctionStatus
     )
-
-    if HOLY_SHOP_STATE.AuctionHudEnabled == true then
-
-        HolyAuctionHudRefresh(
-            rows
-        )
-    end
 
     return rows
 end
@@ -27855,6 +24971,8 @@ function HolyAuctionPriceAllows(row)
             or "0"
         )
 
+    -- Desired price is required for safety.
+    -- 0 / blank means do not auto-buy.
     if desiredPrice <= 0 then
         return false
     end
@@ -27885,14 +25003,6 @@ function HolyAuctionLotAllowed(row)
     end
 
     if HolyAuctionPriceAllows(row) ~= true then
-        return false
-    end
-
-    if HolyAuctionRowStale(
-        row,
-        true
-    ) == true then
-
         return false
     end
 
@@ -27957,8 +25067,6 @@ end
 
 function HolyAuctionFirePurchase(row)
 
-    HolyAuctionEnsureState()
-
     if type(row) ~= "table" then
         return false, "missing row"
     end
@@ -27972,112 +25080,6 @@ function HolyAuctionFirePurchase(row)
         return false, "missing lot id"
     end
 
-    local price =
-        tonumber(row.Price)
-        or HolyAuctionReadMoney(
-            row.PriceText
-            or ""
-        )
-
-    if price == nil
-    or price <= 0 then
-
-        return false,
-            "missing price"
-    end
-
-    price =
-        math.max(
-            0,
-            math.floor(price + 0.5)
-        )
-
-    -- Best path:
-    -- Use the real Auction GUI BuyButton callback.
-    -- Research proved the real button sends:
-    -- PurchaseLot:Fire(lotId, exactCurrentPrice)
-    -- This avoids guessing the hidden exact server price from rounded UI text.
-    local guiBuyAttempted =
-        false
-
-    if type(firesignal) == "function" then
-
-        pcall(function()
-
-            if type(HolyAuctionEnsureOffscreen) == "function" then
-
-                HolyAuctionEnsureOffscreen()
-            end
-        end)
-
-        local auctionGui =
-            HolyAuctionFindAuctionGui()
-
-        local scrollingFrame =
-            auctionGui
-            and HolyAuctionFindScrollingFrame(
-                auctionGui
-            )
-            or nil
-
-        local lotFrame =
-            scrollingFrame
-            and scrollingFrame:FindFirstChild(
-                "Lot_"
-                    .. lotId
-            )
-            or nil
-
-        local mainFrame =
-            lotFrame
-            and lotFrame:FindFirstChild(
-                "Main_Frame",
-                true
-            )
-            or nil
-
-        local buyButton =
-            mainFrame
-            and mainFrame:FindFirstChild(
-                "BuyButton",
-                true
-            )
-            or (
-                lotFrame
-                and lotFrame:FindFirstChild(
-                    "BuyButton",
-                    true
-                )
-            )
-
-        if typeof(buyButton) == "Instance"
-        and buyButton:IsA("GuiButton") then
-
-            local ok,
-                err =
-                pcall(function()
-
-                    firesignal(
-                        buyButton.Activated
-                    )
-                end)
-
-            if ok == true then
-
-                guiBuyAttempted =
-                    true
-
-                HOLY_SHOP_STATE.AuctionAttemptedLots[lotId] =
-                    true
-
-                return true,
-                    "gui activated"
-            end
-        end
-    end
-
-    -- Fallback path:
-    -- Direct packet must include BOTH lotId and price.
     local packet =
         HolyAuctionResolvePurchasePacket(
             false
@@ -28100,8 +25102,7 @@ function HolyAuctionFirePurchase(row)
         pcall(function()
 
             return packet:Fire(
-                lotId,
-                price
+                lotId
             )
         end)
 
@@ -28115,9 +25116,7 @@ function HolyAuctionFirePurchase(row)
         true
 
     return true,
-        guiBuyAttempted == true
-        and "gui activated"
-        or "fired with price"
+        "fired"
 end
 
 function HolyAuctionFindBuyTarget()
@@ -28137,16 +25136,10 @@ function HolyAuctionFindBuyTarget()
             "Set desired price first"
     end
 
-    if #rows <= 0 then
-
-        return nil,
-            "Waiting auction data"
-    end
-
-    local selectedTooExpensive =
+    local selectedActive =
         nil
 
-    local selectedStale =
+    local selectedTooExpensive =
         nil
 
     for _, row in ipairs(rows) do
@@ -28154,30 +25147,19 @@ function HolyAuctionFindBuyTarget()
         if row.Active == true
         and HolyAuctionSelectionAllows(row.Name) == true then
 
-            local stale,
-                staleReason =
-                HolyAuctionRowStale(
-                    row,
-                    true
-                )
+            selectedActive =
+                selectedActive
+                or row
 
-            if stale == true then
-
-                selectedStale =
-                    selectedStale
-                    or staleReason
-
-            elseif HolyAuctionPriceAllows(row) == true then
+            if HolyAuctionPriceAllows(row) == true then
 
                 return row,
                     "ok"
-
-            else
-
-                selectedTooExpensive =
-                    selectedTooExpensive
-                    or row
             end
+
+            selectedTooExpensive =
+                selectedTooExpensive
+                or row
         end
     end
 
@@ -28196,91 +25178,20 @@ function HolyAuctionFindBuyTarget()
                 )
     end
 
-    if selectedStale ~= nil then
+    if type(selectedActive) == "table" then
 
         return nil,
-            "Waiting data: "
-                .. tostring(selectedStale)
+            "Waiting price"
+    end
+
+    if #rows <= 0 then
+
+        return nil,
+            "Open Auctions UI to read lots"
     end
 
     return nil,
         "Waiting selected auction item"
-end
-
-function HolyAuctionManualBuyOnce(reason)
-
-    HolyAuctionEnsureState()
-
-    local now =
-        os.clock()
-
-    local nextBuyAt =
-        tonumber(
-            HOLY_SHOP_STATE.AuctionNextBuyAt
-        )
-        or 0
-
-    if now < nextBuyAt then
-
-        HolyAuctionSetStatus(
-            "Buy blocked: cooldown "
-                .. tostring(
-                    math.max(
-                        0,
-                        math.floor(nextBuyAt - now + 0.5)
-                    )
-                )
-                .. "s"
-        )
-
-        return false
-    end
-
-    local target,
-        targetReason =
-        HolyAuctionFindBuyTarget()
-
-    if type(target) ~= "table" then
-
-        HolyAuctionSetStatus(
-            "Buy blocked: "
-                .. tostring(
-                    targetReason
-                    or "no target"
-                )
-        )
-
-        return false
-    end
-
-    local ok,
-        fireReason =
-        HolyAuctionFirePurchase(
-            target
-        )
-
-    HOLY_SHOP_STATE.AuctionNextBuyAt =
-        os.clock()
-        + HolyAuctionReadCooldown()
-
-    if ok == true then
-
-        HolyAuctionSetStatus(
-            "Buying "
-                .. tostring(target.Name)
-                .. " at "
-                .. tostring(target.PriceText)
-        )
-
-        return true
-    end
-
-    HolyAuctionSetStatus(
-        "Buy failed: "
-            .. tostring(fireReason)
-    )
-
-    return false
 end
 
 function HolyAuctionRunWorker(reason)
@@ -28486,8 +25397,6 @@ function HolyAuctionConnectPacketSignals()
 
             task.defer(function()
 
-                HolyAuctionRequestSnapshot()
-
                 HolyAuctionRefreshUI()
 
                 if HOLY_SHOP_STATE.AutoBuyAuctions == true then
@@ -28508,9 +25417,6 @@ function HolyAuctionConnectPacketSignals()
 
             if type(payload) == "table"
             and type(payload.stock) == "table" then
-
-                HOLY_SHOP_STATE.AuctionStockMap =
-                    {}
 
                 for lotId, stock in pairs(payload.stock) do
 
@@ -28533,8 +25439,6 @@ function HolyAuctionConnectPacketSignals()
 
                 HOLY_SHOP_STATE.AuctionLastStockUpdateAt =
                     os.clock()
-
-                HolyAuctionCalculateStockCycle()
             end
 
             task.defer(function()
@@ -28594,73 +25498,6 @@ function HolyAuctionRequestSnapshot()
         end)
 
     return ok == true
-end
-
-function HolyAuctionStartWatcher()
-
-    HolyAuctionEnsureState()
-
-    if HOLY_SHOP_STATE.AuctionWatcherStarted == true then
-        return false
-    end
-
-    HOLY_SHOP_STATE.AuctionWatcherStarted =
-        true
-
-    HolyAuctionConnectPacketSignals()
-
-    task.spawn(function()
-
-        local lastRequest =
-            0
-
-        while HOLY_SHOP_STATE.AuctionWatcherStarted == true do
-
-            if os.clock() - lastRequest >= 8 then
-
-                lastRequest =
-                    os.clock()
-
-                HolyAuctionRequestSnapshot()
-            end
-
-            HolyAuctionRefreshUI()
-
-            if HOLY_SHOP_STATE.AutoBuyAuctions == true then
-
-                HolyAuctionQueueWorker(
-                    "watcher"
-                )
-            end
-
-            task.wait(
-                (
-                    HOLY_SHOP_STATE.AutoBuyAuctions == true
-                    or HOLY_SHOP_STATE.AuctionHudEnabled == true
-                )
-                and 0.50
-                or 1.25
-            )
-        end
-    end)
-
-    task.defer(function()
-
-        HolyAuctionRequestSnapshot()
-
-        HolyAuctionRefreshDropdown(
-            false
-        )
-
-        HolyAuctionRefreshUI()
-
-        if HOLY_SHOP_STATE.AuctionHudEnabled == true then
-
-            HolyAuctionHudStart()
-        end
-    end)
-
-    return true
 end
 
 function HolyAuctionStartWatcher()
@@ -50638,7 +47475,7 @@ ShopAuctionBox:AddToggle(
             HOLY_SHOP_STATE.AutoBuyAuctions == true,
 
         Tooltip =
-            "Buys selected live auction lots only when server stock is fresh and price is at or below Desired Price.",
+            "Buys selected live auction lots with cooldown. Uses Auctioneer.PurchaseLot.",
     }
 ):OnChanged(function(value)
 
@@ -50648,8 +47485,6 @@ ShopAuctionBox:AddToggle(
     HolySaveShopSettings()
 
     if HOLY_SHOP_STATE.AutoBuyAuctions == true then
-
-        HolyAuctionEnsureOffscreen()
 
         HolyAuctionSetStatus(
             "Auto buy enabled"
@@ -50664,11 +47499,6 @@ ShopAuctionBox:AddToggle(
         HolyAuctionSetStatus(
             "Auto buy off"
         )
-
-        if HOLY_SHOP_STATE.AuctionHudEnabled ~= true then
-
-            HolyAuctionRestoreOffscreen()
-        end
     end
 end)
 
@@ -50712,8 +47542,6 @@ HOLY_SHOP_UI.AuctionDropdown:OnChanged(function(value)
 
     HolySaveShopSettings()
 
-    HolyAuctionRefreshUI()
-
     if HOLY_SHOP_STATE.AutoBuyAuctions == true then
 
         HolyAuctionQueueWorker(
@@ -50726,7 +47554,7 @@ ShopAuctionBox:AddInput(
     "HolyShopAuctionMaxPrice",
     {
         Text =
-            "Desired Price",
+            "Max Price",
 
         Default =
             tostring(
@@ -50756,12 +47584,10 @@ ShopAuctionBox:AddInput(
 
     HolySaveShopSettings()
 
-    HolyAuctionRefreshUI()
-
     if HOLY_SHOP_STATE.AutoBuyAuctions == true then
 
         HolyAuctionQueueWorker(
-            "desired price changed"
+            "max price changed"
         )
     end
 end)
@@ -50821,73 +47647,13 @@ ShopAuctionBox:AddToggle(
     HolySaveShopSettings()
 end)
 
-ShopAuctionBox:AddToggle(
-    "HolyShopAuctionLiveHud",
-    {
-        Text =
-            "Live Auction HUD",
-
-        Default =
-            HOLY_SHOP_STATE.AuctionHudEnabled == true,
-
-        Tooltip =
-            "Shows the live auction control HUD. It keeps the Auction UI enabled offscreen so price and timer update without opening the NPC UI.",
-    }
-):OnChanged(function(value)
-
-    HolyAuctionSetHudVisible(
-        value == true,
-        "toggle"
-    )
-end)
-
-ShopAuctionBox:AddDropdown(
-    "HolyShopAuctionHudScale",
-    {
-        Text =
-            "HUD Scale",
-
-        Values = {
-            "60%",
-            "70%",
-            "80%",
-            "90%",
-            "100%",
-            "110%",
-        },
-
-        Default =
-            HolyAuctionFormatHudScale(
-                HOLY_SHOP_STATE.AuctionHudScale
-                or "80%"
-            ),
-
-        Multi =
-            false,
-
-        Searchable =
-            false,
-
-        MaxVisibleDropdownItems =
-            6,
-
-        Tooltip =
-            "Changes the Live Auction HUD size.",
-    }
-):OnChanged(function(value)
-
-    HolyAuctionSetHudScale(
-        value
-    )
-end)
-
 local HolyAuctionButtons =
     ShopAuctionBox:AddButton({
         Text =
             "Refresh Auctions",
 
         Tooltip =
-            "Requests server stock and refreshes current live auction lots.",
+            "Refresh dynamic dropdown and current live auction lots.",
 
         Func =
             function()
@@ -50907,23 +47673,21 @@ HolyAuctionButtons:AddButton({
         "Buy Once",
 
     Tooltip =
-        "Attempts one safe buy for the best selected live auction lot. Requires selected item, desired price, fresh server stock, and price <= desired.",
+        "Attempts one safe buy for the best selected live auction lot.",
 
     Func =
         function()
 
-            HolyAuctionManualBuyOnce(
-                "button"
+            HolyAuctionQueueWorker(
+                "manual"
             )
-
-            HolyAuctionRefreshUI()
         end,
 })
 
 HOLY_SHOP_UI.AuctionLiveLabel =
     HolySniperAddLabel(
         ShopAuctionBox,
-        "Live: waiting auction data."
+        "Live: open Auctions UI to read current lots."
     )
 
 HOLY_SHOP_UI.AuctionStatusLabel =
