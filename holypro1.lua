@@ -794,6 +794,7 @@ HOLY_SHOP_STATE = {
     },
     DailyDealMinStockMultiplier = "2",
     DailyDealMinFriendBoost = "0",
+    DailyDealMinInventoryValue = "0",
     DailyDealMinValue = "0",
     DailyDealAutoDisable = true,
     DailyDealRequirePreview = true,
@@ -2693,6 +2694,12 @@ function HolySaveShopSettings()
                 or "0"
             ),
 
+        DailyDealMinInventoryValue =
+            tostring(
+                HOLY_SHOP_STATE.DailyDealMinInventoryValue
+                or "0"
+            ),
+
         DailyDealMinValue =
             tostring(
                 HOLY_SHOP_STATE.DailyDealMinValue
@@ -3014,6 +3021,14 @@ function HolyLoadShopSettings()
         tostring(
             data.DailyDealMinFriendBoost
             or HOLY_SHOP_STATE.DailyDealMinFriendBoost
+            or "0"
+        )
+
+    HOLY_SHOP_STATE.DailyDealMinInventoryValue =
+        tostring(
+            data.DailyDealMinInventoryValue
+            or HOLY_SHOP_STATE.DailyDealMinInventory
+            or HOLY_SHOP_STATE.DailyDealMinInventoryValue
             or "0"
         )
 
@@ -28959,6 +28974,12 @@ function HolyDailyDealEnsureState()
             or "0"
         )
 
+    HOLY_SHOP_STATE.DailyDealMinInventoryValue =
+        tostring(
+            HOLY_SHOP_STATE.DailyDealMinInventoryValue
+            or "0"
+        )
+
     HOLY_SHOP_STATE.DailyDealMinValue =
         tostring(
             HOLY_SHOP_STATE.DailyDealMinValue
@@ -29244,6 +29265,7 @@ function HolyDailyDealGetInputError()
     local order = {
         "MinStockMultiplier",
         "MinFriendBoost",
+        "MinInventoryValue",
         "MinValue",
     }
 
@@ -29404,14 +29426,17 @@ function HolyDailyDealStrictMoney(value, minValue, maxValue)
     text =
         text:gsub("¢", "")
             :gsub("%$", "")
-            :gsub(",", "")
+
+    if text:find(",", 1, true) then
+        return nil, "commas not allowed"
+    end
 
     local lower =
         text:lower()
 
     if lower:find("nan", 1, true)
     or lower:find("inf", 1, true)
-    or lower:find("%-", 1, false) then
+    or lower:find("-", 1, true) then
 
         return nil, "bad number"
     end
@@ -29555,6 +29580,54 @@ function HolyDailyDealSetMinFriendBoost(value)
     return true
 end
 
+function HolyDailyDealSetMinInventoryValue(value)
+
+    local number,
+        reason =
+        HolyDailyDealStrictMoney(
+            value,
+            0,
+            1000000000000000000
+        )
+
+    if number == nil then
+
+        return HolyDailyDealSetFieldError(
+            "MinInventoryValue",
+            "Invalid Min Inventory Value"
+        )
+    end
+
+    HolyDailyDealClearFieldError(
+        "MinInventoryValue"
+    )
+
+    HOLY_SHOP_STATE.DailyDealMinInventoryValue =
+        tostring(
+            math.floor(number)
+        )
+
+    HolySaveShopSettings()
+
+    if number <= 0 then
+
+        HolyDailyDealSetStatus(
+            "Min inventory disabled"
+        )
+
+    else
+
+        HolyDailyDealSetStatus(
+            "Min inventory set to "
+            .. HolyDailyDealFormatMoney(
+                number
+            )
+        )
+    end
+
+    return true
+end
+
 function HolyDailyDealSetMinValue(value)
 
     local number,
@@ -29569,7 +29642,7 @@ function HolyDailyDealSetMinValue(value)
 
         return HolyDailyDealSetFieldError(
             "MinValue",
-            "Invalid Min Daily Deal Value"
+            "Invalid Min Daily Payout"
         )
     end
 
@@ -29584,12 +29657,21 @@ function HolyDailyDealSetMinValue(value)
 
     HolySaveShopSettings()
 
-    HolyDailyDealSetStatus(
-        "Min value set to "
-        .. HolyDailyDealFormatMoney(
-            number
+    if number <= 0 then
+
+        HolyDailyDealSetStatus(
+            "Min daily payout disabled"
         )
-    )
+
+    else
+
+        HolyDailyDealSetStatus(
+            "Min daily payout set to "
+            .. HolyDailyDealFormatMoney(
+                number
+            )
+        )
+    end
 
     return true
 end
@@ -29810,6 +29892,22 @@ function HolyDailyDealValidateSettings()
             "Invalid Min Friend Boost"
     end
 
+    local minInventoryValue =
+        nil
+
+    minInventoryValue =
+        HolyDailyDealStrictMoney(
+            HOLY_SHOP_STATE.DailyDealMinInventoryValue,
+            0,
+            1000000000000000000
+        )
+
+    if minInventoryValue == nil then
+
+        return false,
+            "Invalid Min Inventory Value"
+    end
+
     local minValue =
         nil
 
@@ -29823,7 +29921,7 @@ function HolyDailyDealValidateSettings()
     if minValue == nil then
 
         return false,
-            "Invalid Min Daily Deal Value"
+            "Invalid Min Daily Payout"
     end
 
     return true,
@@ -29833,6 +29931,9 @@ function HolyDailyDealValidateSettings()
 
             MinFriendBoost =
                 minBoost,
+
+            MinInventoryValue =
+                math.floor(minInventoryValue),
 
             MinValue =
                 math.floor(minValue),
@@ -30568,7 +30669,11 @@ function HolyDailyDealEvaluate(mode)
     HolyDailyDealSetPreviewText(
         "Preview: "
         .. tostring(fruitCount)
-        .. " fruits → "
+        .. " fruits | Inv "
+        .. HolyDailyDealFormatMoney(
+            baseValue
+        )
+        .. " → Daily "
         .. HolyDailyDealFormatMoney(
             expectedDaily
         )
@@ -30584,10 +30689,11 @@ function HolyDailyDealEvaluate(mode)
             "no preview fruit"
     end
 
-    if expectedDaily < settings.MinValue then
+    if settings.MinInventoryValue > 0
+    and baseValue < settings.MinInventoryValue then
 
         HolyDailyDealSetStatus(
-            "Preview too low"
+            "Inventory too low"
         )
 
         HolyDailyDealSetNextWait(
@@ -30595,7 +30701,22 @@ function HolyDailyDealEvaluate(mode)
         )
 
         return false,
-            "preview too low"
+            "inventory too low"
+    end
+
+    if settings.MinValue > 0
+    and expectedDaily < settings.MinValue then
+
+        HolyDailyDealSetStatus(
+            "Daily payout too low"
+        )
+
+        HolyDailyDealSetNextWait(
+            20
+        )
+
+        return false,
+            "daily payout too low"
     end
 
     HolyDailyDealSetStatus(
@@ -53632,14 +53753,14 @@ ShopDailyDealBox:AddInput(
 end)
 
 ShopDailyDealBox:AddInput(
-    "HolyShopDailyDealMinValue",
+    "HolyShopDailyDealMinInventoryValue",
     {
         Text =
-            "💰 Min Daily Value",
+            "🎒 Min Inventory Value",
 
         Default =
             tostring(
-                HOLY_SHOP_STATE.DailyDealMinValue
+                HOLY_SHOP_STATE.DailyDealMinInventoryValue
                 or "0"
             ),
 
@@ -53656,7 +53777,41 @@ ShopDailyDealBox:AddInput(
             false,
 
         Tooltip =
-            "Minimum expected Daily Deal payout. Supports K, M, B, T, Q. Examples: 500B, 2.5M, 1T.",
+            "Optional. 0 disables this check. Uses PreviewSellAll base inventory value before Daily Deal multiplier. Supports K, M, B, T, Q.",
+    }
+):OnChanged(function(value)
+
+    HolyDailyDealSetMinInventoryValue(
+        value
+    )
+end)
+
+ShopDailyDealBox:AddInput(
+    "HolyShopDailyDealMinValue",
+    {
+        Text =
+            "💰 Min Daily Payout",
+
+        Default =
+            tostring(
+                HOLY_SHOP_STATE.DailyDealMinValue
+                or "0"
+            ),
+
+        Placeholder =
+            "1T",
+
+        Numeric =
+            false,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Optional. 0 disables this check. Expected payout after Daily Deal multiplier. Supports K, M, B, T, Q.",
     }
 ):OnChanged(function(value)
 
