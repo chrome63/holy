@@ -74,7 +74,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-scanner-20260627-v1"
+    "holy-scanner-20260630-hop_fix_autohide_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -92,7 +92,7 @@ local SERVER_FINDER_API_BASE =
     "https://holy-server-finder-api.benjicapalot041.workers.dev"
 
 local SERVER_FINDER_API_KEY =
-    "holy_2026_private_backend_key_92841"
+    "holy_write_9Keb90_IL1br3x81ROQPxJS3fdJlAEvf1a8MECc1PNs"
 
 local SCANNER_ACCOUNT_LABEL =
     HolyScannerEnv.HOLY_SCANNER_ACCOUNT_LABEL
@@ -133,13 +133,25 @@ local SERVER_FAILED_COOLDOWN =
     120
 
 local SERVER_RETRY_DELAY =
-    0.1
+    1.75
 
 local SERVER_TELEPORT_TIMEOUT =
+    6
+
+local SERVER_JOIN_BACKOFF_MIN =
     3
 
+local SERVER_JOIN_BACKOFF_MAX =
+    22
+
+local SERVER_MIN_FREE_SLOTS =
+    2
+
+local SERVER_PICK_TOP_RANDOM =
+    12
+
 local SERVER_POOL_TARGET =
-    18
+    32
 
 local SHOP_MAX_BURST_FIRES =
     120
@@ -210,6 +222,14 @@ HOLY_SCANNER_SERVER_STATE = {
     LastTargetSeenAt = 0,
     LastTargetText = "None",
     LastStatus = "Starting",
+
+    LastTeleportError = "",
+    LastTeleportFailAt = 0,
+    LastTargetServer = "",
+    LastTargetPlayers = "",
+    TeleportBackoffUntil = 0,
+    TeleportFailCount = 0,
+    TeleportErrorWatcherStarted = false,
 
     RecentServers = {},
     FailedServers = {},
@@ -5203,12 +5223,86 @@ function HolyScannerSendRarePayload(payload, sentKeys)
         tostring(reason or "request failed")
 end
 
+function HolyScannerBuildScannerExpiresAt(row)
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    local now =
+        os.time()
+
+    local expiresAt =
+        tonumber(row.ExpiresAt)
+        or 0
+
+    if expiresAt > now then
+
+        return math.floor(
+            expiresAt
+        )
+    end
+
+    local spawnedAt =
+        tonumber(row.SpawnedAt)
+        or 0
+
+    local lifetime =
+        tonumber(row.Lifetime)
+        or 0
+
+    if spawnedAt > 0
+    and lifetime > 0 then
+
+        expiresAt =
+            spawnedAt + lifetime
+
+        if expiresAt > now then
+
+            return math.floor(
+                expiresAt
+            )
+        end
+    end
+
+    local timeLeft =
+        tonumber(
+            row.TimeLeftNumber
+            or row.TimeLeft
+        )
+        or 0
+
+    if timeLeft > 0 then
+
+        return now
+            + math.floor(
+                timeLeft
+            )
+    end
+
+    -- Fallback for active pets where the game does not expose spawned/lifetime.
+    -- The scanner refreshes every few seconds, so this stays accurate enough.
+    return now + 300
+end
+
 function HolyScannerBuildScannerPetPayload(row)
 
     row =
         type(row) == "table"
         and row
         or {}
+
+    local expiresAt =
+        HolyScannerBuildScannerExpiresAt(
+            row
+        )
+
+    local timeLeft =
+        math.max(
+            0,
+            expiresAt - os.time()
+        )
 
     return {
         Key =
@@ -5264,9 +5358,11 @@ function HolyScannerBuildScannerPetPayload(row)
             tonumber(row.Lifetime)
             or 0,
 
+        ExpiresAt =
+            expiresAt,
+
         TimeLeft =
-            tonumber(row.TimeLeftNumber)
-            or 0,
+            timeLeft,
 
         Price =
             tonumber(row.PriceNumber)
@@ -6404,6 +6500,426 @@ function HolyScannerServerRememberFailed(jobId, reason)
     return true
 end
 
+function HolyScannerServerBackoffLeft()
+
+    local untilTime =
+        tonumber(
+            HOLY_SCANNER_SERVER_STATE.TeleportBackoffUntil
+        )
+        or 0
+
+    return math.max(
+        0,
+        untilTime - os.clock()
+    )
+end
+
+function HolyScannerServerSetBackoff(reason)
+
+    reason =
+        HolyScannerCleanText(
+            reason
+        )
+
+    if reason == "" then
+        reason =
+            "teleport failed"
+    end
+
+    HOLY_SCANNER_SERVER_STATE.TeleportFailCount =
+        math.min(
+            8,
+            (
+                tonumber(
+                    HOLY_SCANNER_SERVER_STATE.TeleportFailCount
+                )
+                or 0
+            )
+            + 1
+        )
+
+    local failCount =
+        tonumber(
+            HOLY_SCANNER_SERVER_STATE.TeleportFailCount
+        )
+        or 1
+
+    local lower =
+        reason:lower()
+
+    local delay =
+        SERVER_JOIN_BACKOFF_MIN
+        + (failCount * 2)
+        + math.random(0, 3)
+
+    if lower:find("529", 1, true)
+    or lower:find("http", 1, true) then
+
+        delay =
+            math.max(
+                delay,
+                15
+            )
+    end
+
+    if lower:find("772", 1, true)
+    or lower:find("full", 1, true) then
+
+        delay =
+            math.max(
+                delay,
+                5
+            )
+    end
+
+    delay =
+        math.clamp(
+            delay,
+            SERVER_JOIN_BACKOFF_MIN,
+            SERVER_JOIN_BACKOFF_MAX
+        )
+
+    HOLY_SCANNER_SERVER_STATE.TeleportBackoffUntil =
+        os.clock() + delay
+
+    HOLY_SCANNER_SERVER_STATE.LastTeleportError =
+        reason
+
+    HOLY_SCANNER_SERVER_STATE.LastTeleportFailAt =
+        os.clock()
+
+    HolyScannerSetStatus(
+        "Teleport retry in "
+            .. tostring(
+                math.ceil(delay)
+            )
+            .. "s: "
+            .. reason
+    )
+
+    return delay
+end
+
+function HolyScannerServerClearBackoff()
+
+    HOLY_SCANNER_SERVER_STATE.TeleportBackoffUntil =
+        0
+
+    HOLY_SCANNER_SERVER_STATE.TeleportFailCount =
+        0
+
+    HOLY_SCANNER_SERVER_STATE.LastTeleportError =
+        ""
+
+    HOLY_SCANNER_SERVER_STATE.LastTeleportFailAt =
+        0
+
+    return true
+end
+
+function HolyScannerGetPlayerGui()
+
+    if not LocalPlayer then
+        return nil
+    end
+
+    return LocalPlayer:FindFirstChildOfClass(
+        "PlayerGui"
+    )
+    or LocalPlayer:FindFirstChild(
+        "PlayerGui"
+    )
+end
+
+function HolyScannerFindTeleportErrorTextAndButton()
+
+    local roots = {
+        CoreGui,
+        HolyScannerGetPlayerGui(),
+    }
+
+    local foundError =
+        false
+
+    local okButton =
+        nil
+
+    for _, root in ipairs(roots) do
+
+        if typeof(root) == "Instance" then
+
+            local ok,
+                descendants =
+                pcall(function()
+
+                    return root:GetDescendants()
+                end)
+
+            if ok == true
+            and type(descendants) == "table" then
+
+                for _, descendant in ipairs(descendants) do
+
+                    if descendant:IsA("TextLabel")
+                    or descendant:IsA("TextButton")
+                    or descendant:IsA("TextBox") then
+
+                        local text =
+                            HolyScannerCleanText(
+                                pcall(function()
+
+                                    return descendant.Text
+                                end)
+                            )
+
+                        local readOk,
+                            rawText =
+                            pcall(function()
+
+                                return descendant.Text
+                            end)
+
+                        if readOk == true then
+
+                            text =
+                                HolyScannerCleanText(
+                                    rawText
+                                )
+                        end
+
+                        local lower =
+                            text:lower()
+
+                        if lower:find("error code: 772", 1, true)
+                        or lower:find("server is full", 1, true)
+                        or lower:find("please try again later", 1, true)
+                        or lower:find("join error", 1, true)
+                        or lower:find("error code: 529", 1, true) then
+
+                            foundError =
+                                true
+                        end
+
+                        if descendant:IsA("TextButton") then
+
+                            if lower == "ok"
+                            or lower == "cancel" then
+
+                                okButton =
+                                    okButton
+                                    or descendant
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return foundError,
+        okButton
+end
+
+function HolyScannerDismissTeleportErrorPrompt()
+
+    local foundError,
+        button =
+        HolyScannerFindTeleportErrorTextAndButton()
+
+    if foundError ~= true then
+        return false
+    end
+
+    if typeof(button) == "Instance"
+    and button:IsA("GuiButton") then
+
+        local center =
+            HolyScannerLoadingGetGuiCenter(
+                button
+            )
+
+        if center then
+
+            HolyScannerClickAt(
+                center
+            )
+
+            return true
+        end
+    end
+
+    HolyScannerPressKey(
+        Enum.KeyCode.Return
+    )
+
+    task.wait(
+        0.08
+    )
+
+    HolyScannerPressKey(
+        Enum.KeyCode.Escape
+    )
+
+    task.wait(
+        0.08
+    )
+
+    HolyScannerClickAt(
+        HolyScannerLoadingGetScreenCenter()
+    )
+
+    return true
+end
+
+function HolyScannerStartTeleportWatchers()
+
+    if HOLY_SCANNER_SERVER_STATE.TeleportErrorWatcherStarted == true then
+        return false
+    end
+
+    HOLY_SCANNER_SERVER_STATE.TeleportErrorWatcherStarted =
+        true
+
+    pcall(function()
+
+        HolyScannerTrackConnection(
+            TeleportService.TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
+
+                if player ~= LocalPlayer then
+                    return
+                end
+
+                local reason =
+                    tostring(teleportResult or "TeleportInitFailed")
+                    .. " "
+                    .. tostring(errorMessage or "")
+
+                local targetServer =
+                    HolyScannerCleanText(
+                        HOLY_SCANNER_SERVER_STATE.LastTargetServer
+                    )
+
+                if targetServer ~= "" then
+
+                    HolyScannerServerRememberFailed(
+                        targetServer,
+                        reason
+                    )
+                end
+
+                HolyScannerServerSetBackoff(
+                    reason
+                )
+
+                HOLY_SCANNER_SERVER_STATE.HopToken =
+                    (
+                        tonumber(
+                            HOLY_SCANNER_SERVER_STATE.HopToken
+                        )
+                        or 0
+                    )
+                    + 1
+
+                HOLY_SCANNER_SERVER_STATE.Hopping =
+                    false
+
+                task.defer(
+                    HolyScannerDismissTeleportErrorPrompt
+                )
+            end)
+        )
+    end)
+
+    task.spawn(function()
+
+        while HOLY_SCANNER_RUNNING == true do
+
+            local found =
+                HolyScannerDismissTeleportErrorPrompt()
+
+            if found == true then
+
+                local targetServer =
+                    HolyScannerCleanText(
+                        HOLY_SCANNER_SERVER_STATE.LastTargetServer
+                    )
+
+                if targetServer ~= "" then
+
+                    HolyScannerServerRememberFailed(
+                        targetServer,
+                        "join error popup"
+                    )
+                end
+
+                HolyScannerServerSetBackoff(
+                    "join error popup"
+                )
+
+                HOLY_SCANNER_SERVER_STATE.HopToken =
+                    (
+                        tonumber(
+                            HOLY_SCANNER_SERVER_STATE.HopToken
+                        )
+                        or 0
+                    )
+                    + 1
+
+                HOLY_SCANNER_SERVER_STATE.Hopping =
+                    false
+            end
+
+            if HOLY_SCANNER_SERVER_STATE.Hopping == true then
+
+                local lastHopAt =
+                    tonumber(
+                        HOLY_SCANNER_SERVER_STATE.LastHopAt
+                    )
+                    or 0
+
+                if lastHopAt > 0
+                and os.clock() - lastHopAt >= 18 then
+
+                    local targetServer =
+                        HolyScannerCleanText(
+                            HOLY_SCANNER_SERVER_STATE.LastTargetServer
+                        )
+
+                    if targetServer ~= "" then
+
+                        HolyScannerServerRememberFailed(
+                            targetServer,
+                            "teleport stuck"
+                        )
+                    end
+
+                    HolyScannerServerSetBackoff(
+                        "teleport stuck"
+                    )
+
+                    HOLY_SCANNER_SERVER_STATE.HopToken =
+                        (
+                            tonumber(
+                                HOLY_SCANNER_SERVER_STATE.HopToken
+                            )
+                            or 0
+                        )
+                        + 1
+
+                    HOLY_SCANNER_SERVER_STATE.Hopping =
+                        false
+                end
+            end
+
+            task.wait(
+                1
+            )
+        end
+    end)
+
+    return true
+end
+
 function HolyScannerServerBuildPublicUrl(cursor, sortOrder)
 
     sortOrder =
@@ -6478,7 +6994,14 @@ function HolyScannerServerRowAllowed(server, seenServers, allowRecent)
         return false
     end
 
+    local freeSlots =
+        maxPlayers - playing
+
     if playing < SERVER_MIN_PLAYERS then
+        return false
+    end
+
+    if freeSlots < SERVER_MIN_FREE_SLOTS then
         return false
     end
 
@@ -6666,7 +7189,55 @@ function HolyScannerServerPickLowest(servers)
         return nil
     end
 
-    table.sort(servers, function(a, b)
+    local usable =
+        {}
+
+    for _, server in ipairs(servers) do
+
+        local freeSlots =
+            tonumber(server.FreeSlots)
+            or (
+                (
+                    tonumber(server.maxPlayers)
+                    or 0
+                )
+                -
+                (
+                    tonumber(server.playing)
+                    or 0
+                )
+            )
+
+        if freeSlots >= SERVER_MIN_FREE_SLOTS then
+
+            table.insert(
+                usable,
+                server
+            )
+        end
+    end
+
+    if #usable <= 0 then
+
+        usable =
+            servers
+    end
+
+    for index = #usable, 2, -1 do
+
+        local swap =
+            math.random(
+                1,
+                index
+            )
+
+        usable[index],
+            usable[swap] =
+            usable[swap],
+            usable[index]
+    end
+
+    table.sort(usable, function(a, b)
 
         local playingA =
             tonumber(a.playing)
@@ -6696,10 +7267,41 @@ function HolyScannerServerPickLowest(servers)
             > tonumber(b.HolyRandom or 0)
     end)
 
-    return servers[1]
+    local pickLimit =
+        math.min(
+            #usable,
+            math.max(
+                1,
+                SERVER_PICK_TOP_RANDOM
+            )
+        )
+
+    return usable[
+        math.random(
+            1,
+            pickLimit
+        )
+    ]
 end
 
 function HolyScannerQueueServerHop(reason)
+
+    local backoffLeft =
+        HolyScannerServerBackoffLeft()
+
+    if backoffLeft > 0 then
+
+        HolyScannerSetStatus(
+            "Teleport backoff "
+                .. tostring(
+                    math.ceil(backoffLeft)
+                )
+                .. "s"
+        )
+
+        return false,
+            "backoff"
+    end
 
     if HOLY_SCANNER_SERVER_STATE.Hopping == true then
         return false,
@@ -6728,12 +7330,44 @@ function HolyScannerQueueServerHop(reason)
         and HOLY_SCANNER_SERVER_STATE.Hopping == true
         and HOLY_SCANNER_SERVER_STATE.HopToken == token do
 
+            local backoff =
+                HolyScannerServerBackoffLeft()
+
+            if backoff > 0 then
+
+                HolyScannerSetStatus(
+                    "Teleport retry in "
+                        .. tostring(
+                            math.ceil(backoff)
+                        )
+                        .. "s"
+                )
+
+                task.wait(
+                    math.min(
+                        2,
+                        backoff
+                    )
+                )
+
+                continue
+            end
+
             HOLY_SCANNER_SERVER_STATE.HopAttempt =
                 (
-                    tonumber(HOLY_SCANNER_SERVER_STATE.HopAttempt)
+                    tonumber(
+                        HOLY_SCANNER_SERVER_STATE.HopAttempt
+                    )
                     or 0
                 )
                 + 1
+
+            HolyScannerSetStatus(
+                "Finding server · try "
+                    .. tostring(
+                        HOLY_SCANNER_SERVER_STATE.HopAttempt
+                    )
+            )
 
             local servers,
                 fetchReason =
@@ -6761,19 +7395,133 @@ function HolyScannerQueueServerHop(reason)
             if type(servers) ~= "table"
             or #servers <= 0 then
 
+                HolyScannerSetStatus(
+                    "No servers found, retrying..."
+                )
+
+                HolyScannerServerSetBackoff(
+                    tostring(fetchReason or "no servers")
+                )
+
                 task.wait(
                     SERVER_RETRY_DELAY
                 )
 
-            else
+                continue
+            end
 
-                local target =
-                    HolyScannerServerPickLowest(
-                        servers
+            local target =
+                HolyScannerServerPickLowest(
+                    servers
+                )
+
+            if type(target) ~= "table"
+            or HolyScannerCleanText(target.id) == "" then
+
+                HolyScannerSetStatus(
+                    "No target server, retrying..."
+                )
+
+                task.wait(
+                    SERVER_RETRY_DELAY
+                )
+
+                continue
+            end
+
+            if HOLY_SCANNER_STATE.HuntMode == true
+            and HolyScannerHuntShouldStayOnCurrentServer(true) == true then
+
+                HolyScannerCancelServerHop(
+                    "hunt target found before teleport"
+                )
+
+                return
+            end
+
+            local targetId =
+                HolyScannerCleanText(
+                    target.id
+                )
+
+            local targetText =
+                tostring(target.playing or "?")
+                .. "/"
+                .. tostring(target.maxPlayers or "?")
+                .. " · free "
+                .. tostring(target.FreeSlots or "?")
+                .. " · "
+                .. targetId:sub(1, 8)
+
+            HOLY_SCANNER_SERVER_STATE.LastTargetServer =
+                targetId
+
+            HOLY_SCANNER_SERVER_STATE.LastTargetPlayers =
+                targetText
+
+            HolyScannerServerRememberRecent(
+                targetId
+            )
+
+            HolyScannerSetStatus(
+                "Joining "
+                    .. targetText
+            )
+
+            local startedJobId =
+                tostring(game.JobId)
+
+            local ok,
+                err =
+                pcall(function()
+
+                    TeleportService:TeleportToPlaceInstance(
+                        game.PlaceId,
+                        targetId,
+                        LocalPlayer
+                    )
+                end)
+
+            if ok == true then
+
+                HOLY_SCANNER_SERVER_STATE.LastHopAt =
+                    os.clock()
+
+                local startedAt =
+                    os.clock()
+
+                while HOLY_SCANNER_RUNNING == true
+                and HOLY_SCANNER_SERVER_STATE.Hopping == true
+                and HOLY_SCANNER_SERVER_STATE.HopToken == token
+                and os.clock() - startedAt < SERVER_TELEPORT_TIMEOUT do
+
+                    if tostring(game.JobId) ~= startedJobId then
+                        return
+                    end
+
+                    task.wait(
+                        0.25
+                    )
+                end
+
+                if HOLY_SCANNER_SERVER_STATE.Hopping ~= true
+                or HOLY_SCANNER_SERVER_STATE.HopToken ~= token then
+
+                    return
+                end
+
+                if tostring(game.JobId) == startedJobId then
+
+                    HolyScannerServerRememberFailed(
+                        targetId,
+                        "teleport timeout / possible full server"
                     )
 
-                if type(target) ~= "table"
-                or HolyScannerCleanText(target.id) == "" then
+                    HolyScannerServerSetBackoff(
+                        "teleport timeout / possible full server"
+                    )
+
+                    HolyScannerDismissTeleportErrorPrompt()
 
                     task.wait(
                         SERVER_RETRY_DELAY
@@ -6781,83 +7529,26 @@ function HolyScannerQueueServerHop(reason)
 
                 else
 
-                    if HOLY_SCANNER_STATE.HuntMode == true
-                    and HolyScannerHuntShouldStayOnCurrentServer(true) == true then
-
-                        HolyScannerCancelServerHop(
-                            "hunt target found before teleport"
-                        )
-
-                        return
-                    end
-
-                    HolyScannerServerRememberRecent(
-                        target.id
-                    )
-
-                    local startedJobId =
-                        tostring(game.JobId)
-
-                    local ok,
-                        err =
-                        pcall(function()
-
-                            TeleportService:TeleportToPlaceInstance(
-                                game.PlaceId,
-                                target.id,
-                                LocalPlayer
-                            )
-                        end)
-
-                    if ok == true then
-
-                        HOLY_SCANNER_SERVER_STATE.LastHopAt =
-                            os.clock()
-
-                        local startedAt =
-                            os.clock()
-
-                        while HOLY_SCANNER_RUNNING == true
-                        and HOLY_SCANNER_SERVER_STATE.Hopping == true
-                        and HOLY_SCANNER_SERVER_STATE.HopToken == token
-                        and os.clock() - startedAt < SERVER_TELEPORT_TIMEOUT do
-
-                            if tostring(game.JobId) ~= startedJobId then
-                                return
-                            end
-
-                            task.wait(
-                                0.25
-                            )
-                        end
-
-                        if tostring(game.JobId) == startedJobId then
-
-                            HolyScannerServerRememberFailed(
-                                target.id,
-                                "teleport timeout"
-                            )
-
-                            task.wait(
-                                SERVER_RETRY_DELAY
-                            )
-                        else
-
-                            return
-                        end
-
-                    else
-
-                        HolyScannerServerRememberFailed(
-                            target.id,
-                            "teleport failed"
-                        )
-
-                        task.wait(
-                            SERVER_RETRY_DELAY
-                        )
-                    end
+                    return
                 end
+
+            else
+
+                HolyScannerServerRememberFailed(
+                    targetId,
+                    "teleport failed"
+                )
+
+                HolyScannerServerSetBackoff(
+                    "teleport failed: "
+                        .. tostring(err)
+                )
+
+                HolyScannerDismissTeleportErrorPrompt()
+
+                task.wait(
+                    SERVER_RETRY_DELAY
+                )
             end
         end
 
@@ -7155,7 +7846,7 @@ function HolyScannerCreateUI()
                 true,
 
             AutoShow =
-                true,
+                false,
 
             Size =
                 UDim2.fromOffset(
@@ -7661,6 +8352,8 @@ HolyScannerNormalizeState()
 HolyScannerStartLoadingSkip(
     "startup"
 )
+
+HolyScannerStartTeleportWatchers()
 
 HolyScannerStartAntiAfk()
 
