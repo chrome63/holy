@@ -87,16 +87,8 @@ local SERVER_FINDER_SETTINGS_FILE =
 local SERVER_FINDER_API_BASE =
     "https://holy-server-finder-api.benjicapalot041.workers.dev"
 
-local SERVER_FINDER_READ_KEY =
-    "holy_read_pGvjdbPCqI2I88HikyY_QNtEwamToXpIBCTxiH8w42A"
-
-local SERVER_FINDER_WRITE_KEY =
-    "holy_write_9Keb90_IL1br3x81ROQPxJS3fdJlAEvf1a8MECc1PNs"
-
--- Backward compatibility for old finder code.
--- The Server Finder UI only needs read access for /servers.
 local SERVER_FINDER_API_KEY =
-    SERVER_FINDER_READ_KEY
+    "holy_2026_private_backend_key_92841"
 
 local SERVER_FINDER_REPORT_INTERVAL =
     5
@@ -53642,6 +53634,11 @@ function HolySniperSetPageMode(value)
 
     HolySetGroupboxVisible(
         SniperEngineBox,
+        setupVisible
+    )
+
+    HolySetGroupboxVisible(
+        SniperDefenseBox,
         setupVisible
     )
 
