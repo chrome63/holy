@@ -94,8 +94,22 @@ local SERVER_FINDER_API_BASE =
 local SERVER_FINDER_API_KEY =
     "holy_2026_private_backend_key_92841"
 
+local SCANNER_ACCOUNT_LABEL =
+    HolyScannerEnv.HOLY_SCANNER_ACCOUNT_LABEL
+    or ""
+
+local SCANNER_VPS_LABEL =
+    HolyScannerEnv.HOLY_SCANNER_VPS_LABEL
+    or ""
+
 local REPORT_INTERVAL =
     5
+
+local CLIENT_HEARTBEAT_INTERVAL =
+    5
+
+local CLIENT_HEARTBEAT_BACKOFF =
+    15
 
 local RARE_SCAN_INTERVAL =
     0.85
@@ -209,7 +223,11 @@ HOLY_SCANNER_REPORT_STATE = {
     LastRareScanAt = 0,
     LastRareReportAt = 0,
     LastScannerReportAt = 0,
+    LastClientHeartbeatAt = 0,
     ScannerBackoffUntil = 0,
+    ClientHeartbeatBackoffUntil = 0,
+    StartedAt = os.time(),
+    LastError = "",
 }
 
 HOLY_SCANNER_LOADING_STATE = {
@@ -5374,6 +5392,260 @@ function HolyScannerSendScannerPayload(payload)
     HOLY_SCANNER_REPORT_STATE.ScannerBackoffUntil =
         os.clock() + 30
 
+    HOLY_SCANNER_REPORT_STATE.LastError =
+        tostring(reason or "scanner report failed")
+
+    return false,
+        tostring(reason or "request failed")
+end
+
+function HolyScannerGetScannerId()
+
+    return tostring(
+        LocalPlayer
+        and LocalPlayer.Name
+        or "unknown"
+    )
+        .. "-"
+        .. tostring(
+            LocalPlayer
+            and LocalPlayer.UserId
+            or 0
+        )
+end
+
+function HolyScannerGetAccountLabel()
+
+    local label =
+        HolyScannerCleanText(
+            SCANNER_ACCOUNT_LABEL
+        )
+
+    if label ~= "" then
+        return label
+    end
+
+    return tostring(
+        LocalPlayer
+        and LocalPlayer.Name
+        or "unknown"
+    )
+end
+
+function HolyScannerGetVpsLabel()
+
+    return HolyScannerCleanText(
+        SCANNER_VPS_LABEL
+    )
+end
+
+function HolyScannerBuildClientHeartbeatPayload(rows)
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or {}
+
+    local targetRows =
+        {}
+
+    for _, row in ipairs(rows) do
+
+        local ok,
+            isTarget =
+            pcall(function()
+
+                return HolyScannerHuntIsTargetRow(
+                    row
+                )
+            end)
+
+        if ok == true
+        and isTarget == true then
+
+            table.insert(
+                targetRows,
+                row
+            )
+        end
+    end
+
+    local targetSummary =
+        ""
+
+    if #targetRows > 0 then
+
+        local ok,
+            summary =
+            pcall(function()
+
+                return HolyScannerHuntBuildSummary(
+                    targetRows
+                )
+            end)
+
+        if ok == true then
+
+            targetSummary =
+                HolyScannerCleanText(
+                    summary
+                )
+        end
+    end
+
+    local bestPet =
+        ""
+
+    if type(rows[1]) == "table" then
+
+        bestPet =
+            HolyScannerCleanText(
+                rows[1].DisplayName
+                or rows[1].Pet
+                or ""
+            )
+    end
+
+    local playing,
+        maxPlayers =
+        HolyScannerGetPlayerCounts()
+
+    return {
+        Key =
+            tostring(
+                SERVER_FINDER_API_KEY
+                or ""
+            ),
+
+        Type =
+            "client_heartbeat",
+
+        ScannerId =
+            HolyScannerGetScannerId(),
+
+        Reporter =
+            tostring(
+                LocalPlayer
+                and LocalPlayer.Name
+                or "unknown"
+            ),
+
+        UserId =
+            tonumber(
+                LocalPlayer
+                and LocalPlayer.UserId
+            )
+            or 0,
+
+        AccountLabel =
+            HolyScannerGetAccountLabel(),
+
+        VpsLabel =
+            HolyScannerGetVpsLabel(),
+
+        PlaceId =
+            game.PlaceId,
+
+        JobId =
+            tostring(
+                game.JobId
+            ),
+
+        Playing =
+            playing,
+
+        MaxPlayers =
+            maxPlayers,
+
+        ServerVersion =
+            HolyScannerReadServerVersion(),
+
+        HuntMode =
+            HOLY_SCANNER_STATE.HuntMode == true,
+
+        Hopping =
+            HOLY_SCANNER_SERVER_STATE.Hopping == true,
+
+        Status =
+            tostring(
+                HOLY_SCANNER_SERVER_STATE.LastStatus
+                or ""
+            ),
+
+        TargetCount =
+            #targetRows,
+
+        TargetSummary =
+            targetSummary,
+
+        PetCount =
+            #rows,
+
+        BestPet =
+            bestPet,
+
+        LastError =
+            tostring(
+                HOLY_SCANNER_REPORT_STATE.LastError
+                or ""
+            ),
+
+        StartedAt =
+            tonumber(
+                HOLY_SCANNER_REPORT_STATE.StartedAt
+            )
+            or os.time(),
+
+        ReportedAt =
+            os.time(),
+    }
+end
+
+function HolyScannerSendClientHeartbeat(payload)
+
+    if type(payload) ~= "table" then
+        return false,
+            "empty"
+    end
+
+    if os.clock() < (
+        tonumber(HOLY_SCANNER_REPORT_STATE.ClientHeartbeatBackoffUntil)
+        or 0
+    ) then
+
+        return false,
+            "backoff"
+    end
+
+    local data,
+        reason =
+        HolyScannerRequestJson(
+            "POST",
+            HolyScannerBackendUrl(
+                "/client-heartbeat"
+            ),
+            payload
+        )
+
+    if type(data) == "table"
+    and data.ok == true then
+
+        HOLY_SCANNER_REPORT_STATE.LastClientHeartbeatAt =
+            os.time()
+
+        HOLY_SCANNER_REPORT_STATE.LastError =
+            ""
+
+        return true,
+            "ok"
+    end
+
+    HOLY_SCANNER_REPORT_STATE.ClientHeartbeatBackoffUntil =
+        os.clock() + CLIENT_HEARTBEAT_BACKOFF
+
+    HOLY_SCANNER_REPORT_STATE.LastError =
+        tostring(reason or "client heartbeat failed")
+
     return false,
         tostring(reason or "request failed")
 end
@@ -5468,6 +5740,26 @@ function HolyScannerStartReporter()
 
                     HolyScannerSendScannerPayload(
                         scannerPayload
+                    )
+                end)
+            end
+
+            if os.time() - (
+                tonumber(
+                    HOLY_SCANNER_REPORT_STATE.LastClientHeartbeatAt
+                )
+                or 0
+            ) >= CLIENT_HEARTBEAT_INTERVAL then
+
+                local clientPayload =
+                    HolyScannerBuildClientHeartbeatPayload(
+                        rows
+                    )
+
+                pcall(function()
+
+                    HolyScannerSendClientHeartbeat(
+                        clientPayload
                     )
                 end)
             end
