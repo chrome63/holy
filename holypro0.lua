@@ -532,8 +532,14 @@ HOLY_SNIPER_STATE = {
     BuilderVariants = {
         "Any",
     },
-    BuilderAmount = "1",
+    BuilderMaxPrice = "0",
+    BuilderAmount = "999",
     BuilderPriority = "High",
+
+    DefendBoughtPets = true,
+    DefendGear = "Strawberry Sniper",
+    DefendMovement = "Walk",
+    DefendRebuyIfStolen = true,
 
     Watchlist = {},
 
@@ -565,6 +571,11 @@ HOLY_SNIPER_UI = {
 
     LivePetsList = nil,
     LivePetsActions = nil,
+
+    DefenseToggle = nil,
+    DefenseGearDropdown = nil,
+    DefenseMovementDropdown = nil,
+    DefenseRebuyToggle = nil,
 }
 
 HOLY_SNIPER_PAGE_STATE = {
@@ -8166,6 +8177,42 @@ function HolySniperNormalizeMovementMode(value)
     return "Walk"
 end
 
+function HolyDefenseNormalizeMovement(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+        :lower()
+
+    if text:find("hybrid", 1, true) then
+        return "Hybrid"
+    end
+
+    if text:find("tween", 1, true) then
+        return "Tween"
+    end
+
+    return "Walk"
+end
+
+function HolyDefenseNormalizeGear(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    local lower =
+        text:lower()
+
+    if lower == "shovel" then
+        return "Shovel"
+    end
+
+    return "Strawberry Sniper"
+end
+
 function HolySniperNormalizeBuyMode(value)
 
     local text =
@@ -8302,7 +8349,7 @@ function HolySniperReadAmount(value)
     local amount =
         math.floor(
             tonumber(value)
-            or 1
+            or 999
         )
 
     return math.clamp(
@@ -8310,6 +8357,83 @@ function HolySniperReadAmount(value)
         1,
         999
     )
+end
+
+function HolySniperReadMaxPrice(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    text =
+        text:gsub("¢", "")
+            :gsub("%$", "")
+            :gsub(",", "")
+            :gsub("%s+", "")
+
+    local lower =
+        text:lower()
+
+    if lower == ""
+    or lower == "0"
+    or lower == "none"
+    or lower == "off"
+    or lower == "no" then
+
+        return 0
+    end
+
+    local multiplier =
+        1
+
+    if lower:find("b", 1, true) then
+
+        multiplier =
+            1000000000
+
+    elseif lower:find("m", 1, true) then
+
+        multiplier =
+            1000000
+
+    elseif lower:find("k", 1, true) then
+
+        multiplier =
+            1000
+    end
+
+    local rawNumber =
+        lower:match("%d+%.?%d*")
+
+    local number =
+        tonumber(rawNumber)
+
+    if number == nil then
+        return 0
+    end
+
+    return math.max(
+        0,
+        math.floor(number * multiplier + 0.5)
+    )
+end
+
+function HolySniperFormatMaxPrice(value)
+
+    local number =
+        HolySniperReadMaxPrice(
+            value
+        )
+
+    if number <= 0 then
+        return "No Cap"
+    end
+
+    return "Max "
+        .. HolySniperFormatMoney(
+            number
+        )
 end
 
 function HolySniperArrayText(values, fallback)
@@ -8383,17 +8507,21 @@ end
 
 function HolySniperBuildPetMaps()
 
-    local values =
-        {}
+    local values = {
+        "Any Pet",
+    }
 
-    local seen =
-        {}
+    local seen = {
+        ["Any Pet"] = true,
+    }
 
-    local displayToKey =
-        {}
+    local displayToKey = {
+        ["Any Pet"] = "*",
+    }
 
-    local keyToDisplay =
-        {}
+    local keyToDisplay = {
+        ["*"] = "Any Pet",
+    }
 
     local petData =
         HolySniperGetPetData()
@@ -8440,17 +8568,32 @@ function HolySniperBuildPetMaps()
 
     table.sort(values, function(a, b)
 
+        if a == "Any Pet" then
+            return true
+        end
+
+        if b == "Any Pet" then
+            return false
+        end
+
         return tostring(a) < tostring(b)
     end)
 
-    if #values <= 0 then
+    if #values <= 1 then
 
         values = {
+            "Any Pet",
             "Raccoon",
         }
 
+        displayToKey["Any Pet"] =
+            "*"
+
         displayToKey.Raccoon =
             "Raccoon"
+
+        keyToDisplay["*"] =
+            "Any Pet"
 
         keyToDisplay.Raccoon =
             "Raccoon"
@@ -8497,6 +8640,18 @@ function HolySniperResolvePetKey(value)
         HolyCleanText(
             value
         )
+
+    local lower =
+        text:lower()
+
+    if lower == "any"
+    or lower == "all"
+    or lower == "any pet"
+    or lower == "all pets"
+    or lower == "*" then
+
+        return "*"
+    end
 
     if text == "" then
         return "Raccoon"
@@ -8546,6 +8701,18 @@ function HolySniperResolvePetDisplay(value)
             value
         )
 
+    local lower =
+        text:lower()
+
+    if lower == "any"
+    or lower == "all"
+    or lower == "any pet"
+    or lower == "all pets"
+    or lower == "*" then
+
+        return "Any Pet"
+    end
+
     if text == "" then
         return HolySniperGetDefaultPetName()
     end
@@ -8594,12 +8761,15 @@ function HolySniperNormalizeFilter(row)
         and row
         or {}
 
+    local rawPet =
+        row.Pet
+        or row.PetName
+        or row.Name
+        or HolySniperGetDefaultPetName()
+
     local petName =
         HolySniperResolvePetDisplay(
-            row.Pet
-            or row.PetName
-            or row.Name
-            or HolySniperGetDefaultPetName()
+            rawPet
         )
 
     if petName == "" then
@@ -8607,6 +8777,15 @@ function HolySniperNormalizeFilter(row)
         petName =
             HolySniperGetDefaultPetName()
     end
+
+    local maxPrice =
+        HolySniperReadMaxPrice(
+            row.MaxPrice
+            or row.Max
+            or row.PriceLimit
+            or row.BuilderMaxPrice
+            or 0
+        )
 
     return {
         Pet =
@@ -8635,12 +8814,11 @@ function HolySniperNormalizeFilter(row)
                 }
             ),
 
+        MaxPrice =
+            maxPrice,
+
         Amount =
-            HolySniperReadAmount(
-                row.Amount
-                or row.TargetAmount
-                or 1
-            ),
+            999,
 
         Priority =
             HolySniperNormalizePriority(
@@ -8693,6 +8871,11 @@ function HolySniperFilterKey(row)
         HolySniperArrayText(row.Sizes, "Any"):lower(),
 
         HolySniperArrayText(row.Variants, "Any"):lower(),
+
+        tostring(
+            tonumber(row.MaxPrice)
+            or 0
+        ),
     }, "|")
 end
 
@@ -8927,6 +9110,7 @@ function HolySniperMatchesSearch(row, searchText)
             tostring(row.Value or ""),
             tostring(row.Size or ""),
             tostring(row.Variant or ""),
+            tostring(row.MaxPrice or ""),
             tostring(row.Amount or ""),
             tostring(row.Priority or ""),
             tostring(row.PriorityFull or ""),
@@ -8962,6 +9146,11 @@ function HolySniperBuildAllWatchlistRows()
                 filter
             )
 
+        local maxPriceText =
+            HolySniperFormatMaxPrice(
+                filter.MaxPrice
+            )
+
         local tableRow = {
             SourceIndex =
                 sourceIndex,
@@ -8980,6 +9169,13 @@ function HolySniperBuildAllWatchlistRows()
             ValueNumber =
                 price,
 
+            MaxPrice =
+                maxPriceText,
+
+            MaxPriceNumber =
+                tonumber(filter.MaxPrice)
+                or 0,
+
             Size =
                 HolySniperShortArrayText(
                     filter.Sizes,
@@ -8993,12 +9189,11 @@ function HolySniperBuildAllWatchlistRows()
                 ),
 
             Amount =
-                "x"
-                .. tostring(filter.Amount),
+                maxPriceText,
 
             AmountNumber =
-                tonumber(filter.Amount)
-                or 1,
+                tonumber(filter.MaxPrice)
+                or 0,
 
             Priority =
                 HolySniperPriorityShort(
@@ -9263,7 +9458,7 @@ function HolySniperBuildWatchlistText()
             .. " "
             .. tostring(row.Variant)
             .. " "
-            .. tostring(row.Amount)
+            .. tostring(row.MaxPrice or row.Amount or "No Cap")
     end
 
     return table.concat(
@@ -11597,31 +11792,7 @@ end
 
 function HolySniperFilterComplete(filter)
 
-    filter =
-        HolySniperNormalizeFilter(
-            filter
-        )
-
-    local key =
-        HolySniperFilterKey(
-            filter
-        )
-
-    HOLY_SNIPER_RUNTIME.BoughtCounts =
-        type(HOLY_SNIPER_RUNTIME.BoughtCounts) == "table"
-        and HOLY_SNIPER_RUNTIME.BoughtCounts
-        or {}
-
-    local bought =
-        tonumber(
-            HOLY_SNIPER_RUNTIME.BoughtCounts[key]
-        )
-        or 0
-
-    return bought >= (
-        tonumber(filter.Amount)
-        or 1
-    )
+    return false
 end
 
 function HolySniperScanLivePets()
@@ -11726,23 +11897,45 @@ function HolySniperEntryMatchesFilter(entry, filter)
         return false
     end
 
-    if HolySniperFilterComplete(filter) == true then
-        return false
-    end
-
     local entryPet =
         HolySniperPetAliasKey(
             entry.PetKey
             or entry.Pet
         )
 
+    local filterPetKey =
+        HolyCleanText(
+            filter.PetKey
+            or HolySniperResolvePetKey(
+                filter.Pet
+            )
+        )
+
     local filterPet =
         HolySniperPetAliasKey(
-            filter.PetKey
+            filterPetKey ~= ""
+            and filterPetKey
             or filter.Pet
         )
 
-    if entryPet ~= filterPet then
+    if filterPetKey ~= "*"
+    and filterPet ~= "*"
+    and entryPet ~= filterPet then
+
+        return false
+    end
+
+    local maxPrice =
+        tonumber(filter.MaxPrice)
+        or 0
+
+    local entryPrice =
+        tonumber(entry.Price)
+        or 0
+
+    if maxPrice > 0
+    and entryPrice > maxPrice then
+
         return false
     end
 
@@ -15139,6 +15332,18 @@ function HolySniperExecuteMatch(match, token)
                     entry
                 )
 
+                if type(HolyDefenseArm) == "function" then
+
+                    task.spawn(function()
+
+                        HolyDefenseArm(
+                            entry,
+                            filter,
+                            "confirmed buy"
+                        )
+                    end)
+                end
+
                 success =
                     true
 
@@ -15315,6 +15520,2278 @@ function HolySniperRunScan()
     end
 
     return matches
+end
+
+--==================================================
+-- [2.44] PET DEFENSE CORE
+--==================================================
+
+if type(HOLY_DEFENSE_RUNTIME) == "table" then
+
+    HOLY_DEFENSE_RUNTIME.Token =
+        nil
+
+    HOLY_DEFENSE_RUNTIME.Active =
+        false
+
+    if type(HOLY_DEFENSE_RUNTIME.Connections) == "table" then
+
+        for _, connection in ipairs(HOLY_DEFENSE_RUNTIME.Connections) do
+
+            pcall(function()
+
+                connection:Disconnect()
+            end)
+        end
+    end
+end
+
+HOLY_DEFENSE_RUNTIME = {
+    Active = false,
+    Token = nil,
+    Target = nil,
+    Entry = nil,
+    Filter = nil,
+    Connections = {},
+
+    RebuyCount = 0,
+    MaxRebuys = 3,
+
+    LastEquipAt = 0,
+    LastMoveAt = 0,
+    LastMoveToAt = 0,
+    LastShotAt = 0,
+    LastShovelAt = 0,
+    LastPreAimAt = 0,
+
+    LastPetSamplePos = nil,
+    LastPetSampleAt = 0,
+    StablePetDirection = nil,
+    SmoothedFollowGoal = nil,
+
+    OriginalWalkSpeed = nil,
+    PlayerControls = nil,
+    ControlsDisabled = false,
+
+    Networking = nil,
+    WildTamePacket = nil,
+    StrawberryPacket = nil,
+    ShovelSwingPacket = nil,
+    ShovelHitPacket = nil,
+    PetScarePacket = nil,
+}
+
+function HolyDefenseEnsureRuntime()
+
+    HOLY_DEFENSE_RUNTIME =
+        type(HOLY_DEFENSE_RUNTIME) == "table"
+        and HOLY_DEFENSE_RUNTIME
+        or {}
+
+    local runtime =
+        HOLY_DEFENSE_RUNTIME
+
+    runtime.Connections =
+        type(runtime.Connections) == "table"
+        and runtime.Connections
+        or {}
+
+    runtime.MaxRebuys =
+        tonumber(runtime.MaxRebuys)
+        or 3
+
+    return runtime
+end
+
+function HolyDefenseDisconnect()
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    for _, connection in ipairs(runtime.Connections or {}) do
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+
+    runtime.Connections =
+        {}
+end
+
+function HolyDefenseAddConnection(connection)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if connection ~= nil then
+
+        table.insert(
+            runtime.Connections,
+            connection
+        )
+    end
+
+    return connection
+end
+
+function HolyDefenseReadAttr(instance, name)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    local ok,
+        value =
+        pcall(function()
+
+            return instance:GetAttribute(
+                name
+            )
+        end)
+
+    if ok == true then
+        return value
+    end
+
+    return nil
+end
+
+function HolyDefenseGetPosition(object)
+
+    if typeof(object) ~= "Instance" then
+        return nil
+    end
+
+    if object:IsA("BasePart") then
+        return object.Position
+    end
+
+    if object:IsA("Model") then
+
+        local ok,
+            pivot =
+            pcall(function()
+
+                return object:GetPivot()
+            end)
+
+        if ok == true
+        and typeof(pivot) == "CFrame" then
+
+            return pivot.Position
+        end
+    end
+
+    local part =
+        object:FindFirstChild(
+            "HumanoidRootPart",
+            true
+        )
+        or object:FindFirstChild(
+            "RootPart",
+            true
+        )
+        or object:FindFirstChildWhichIsA(
+            "BasePart",
+            true
+        )
+
+    if typeof(part) == "Instance"
+    and part:IsA("BasePart") then
+
+        return part.Position
+    end
+
+    return nil
+end
+
+function HolyDefenseDeepGet(root, path)
+
+    local current =
+        root
+
+    for part in tostring(path or ""):gmatch("[^%.]+") do
+
+        if type(current) ~= "table" then
+            return nil
+        end
+
+        current =
+            current[part]
+    end
+
+    return current
+end
+
+function HolyDefenseGetNetworking()
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if type(runtime.Networking) == "table" then
+        return runtime.Networking
+    end
+
+    local networking =
+        nil
+
+    if type(HolyShopRequireModule) == "function" then
+
+        networking =
+            HolyShopRequireModule(
+                "SharedModules.Networking"
+            )
+    end
+
+    if type(networking) ~= "table" then
+
+        local module =
+            ReplicatedStorage:FindFirstChild("SharedModules")
+            and ReplicatedStorage.SharedModules:FindFirstChild("Networking")
+
+        if typeof(module) == "Instance"
+        and module:IsA("ModuleScript") then
+
+            local ok,
+                result =
+                pcall(function()
+
+                    return require(
+                        module
+                    )
+                end)
+
+            if ok == true
+            and type(result) == "table" then
+
+                networking =
+                    result
+            end
+        end
+    end
+
+    runtime.Networking =
+        type(networking) == "table"
+        and networking
+        or nil
+
+    return runtime.Networking
+end
+
+function HolyDefenseResolvePackets()
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    local networking =
+        HolyDefenseGetNetworking()
+
+    if type(networking) ~= "table" then
+        return false
+    end
+
+    runtime.WildTamePacket =
+        runtime.WildTamePacket
+        or HolyDefenseDeepGet(
+            networking,
+            "Pets.WildPetTame"
+        )
+
+    runtime.StrawberryPacket =
+        runtime.StrawberryPacket
+        or HolyDefenseDeepGet(
+            networking,
+            "StrawberrySniper.Fire"
+        )
+
+    runtime.ShovelSwingPacket =
+        runtime.ShovelSwingPacket
+        or HolyDefenseDeepGet(
+            networking,
+            "Shovel.SwingShovel"
+        )
+
+    runtime.ShovelHitPacket =
+        runtime.ShovelHitPacket
+        or HolyDefenseDeepGet(
+            networking,
+            "Shovel.HitPlayer"
+        )
+
+    runtime.PetScarePacket =
+        runtime.PetScarePacket
+        or HolyDefenseDeepGet(
+            networking,
+            "Pets.ScarePet"
+        )
+
+    return true
+end
+
+function HolyDefenseFirePacket(packet, ...)
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return false
+    end
+
+    local ok =
+        pcall(function(...)
+
+            packet:Fire(
+                ...
+            )
+        end, ...)
+
+    return ok == true
+end
+
+function HolyDefenseGetCharacter()
+
+    return LocalPlayer
+        and LocalPlayer.Character
+        or nil
+end
+
+function HolyDefenseGetHumanoid()
+
+    local character =
+        HolyDefenseGetCharacter()
+
+    if typeof(character) ~= "Instance" then
+        return nil
+    end
+
+    return character:FindFirstChildOfClass(
+        "Humanoid"
+    )
+end
+
+function HolyDefenseGetRoot()
+
+    local character =
+        HolyDefenseGetCharacter()
+
+    if typeof(character) ~= "Instance" then
+        return nil
+    end
+
+    return character:FindFirstChild(
+        "HumanoidRootPart"
+    )
+    or character:FindFirstChild(
+        "RootPart"
+    )
+    or character.PrimaryPart
+end
+
+function HolyDefenseToolMatches(tool, gearName)
+
+    if typeof(tool) ~= "Instance"
+    or tool:IsA("Tool") ~= true then
+
+        return false
+    end
+
+    gearName =
+        HolyDefenseNormalizeGear(
+            gearName
+        )
+
+    local lowerName =
+        tostring(tool.Name or "")
+            :lower()
+
+    local attrs =
+        ""
+
+    pcall(function()
+
+        for key, value in pairs(tool:GetAttributes()) do
+
+            attrs =
+                attrs
+                .. " "
+                .. tostring(key)
+                .. "="
+                .. tostring(value)
+        end
+    end)
+
+    attrs =
+        attrs:lower()
+
+    if gearName == "Shovel" then
+
+        return lowerName == "shovel"
+            or attrs:find("shovel", 1, true) ~= nil
+    end
+
+    return lowerName == "strawberry sniper"
+        or (
+            lowerName:find("strawberry", 1, true)
+            and lowerName:find("sniper", 1, true)
+        )
+        or attrs:find("strawberrysniper", 1, true) ~= nil
+        or attrs:find("strawberry sniper", 1, true) ~= nil
+end
+
+function HolyDefenseGetEquippedTool()
+
+    local character =
+        HolyDefenseGetCharacter()
+
+    if typeof(character) ~= "Instance" then
+        return nil
+    end
+
+    return character:FindFirstChildOfClass(
+        "Tool"
+    )
+end
+
+function HolyDefenseFindTool(gearName)
+
+    gearName =
+        HolyDefenseNormalizeGear(
+            gearName
+        )
+
+    local containers =
+        {}
+
+    local character =
+        HolyDefenseGetCharacter()
+
+    if typeof(character) == "Instance" then
+
+        table.insert(
+            containers,
+            character
+        )
+    end
+
+    local backpack =
+        LocalPlayer
+        and LocalPlayer:FindFirstChildOfClass("Backpack")
+        or nil
+
+    if typeof(backpack) == "Instance" then
+
+        table.insert(
+            containers,
+            backpack
+        )
+    end
+
+    for _, container in ipairs(containers) do
+
+        for _, child in ipairs(container:GetChildren()) do
+
+            if HolyDefenseToolMatches(
+                child,
+                gearName
+            ) == true then
+
+                return child
+            end
+        end
+    end
+
+    return nil
+end
+
+function HolyDefenseEquipSelectedGear(reason)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if runtime.Active ~= true then
+        return false
+    end
+
+    local gear =
+        HolyDefenseNormalizeGear(
+            HOLY_SNIPER_STATE.DefendGear
+        )
+
+    if HolyDefenseToolMatches(
+        HolyDefenseGetEquippedTool(),
+        gear
+    ) == true then
+
+        return true
+    end
+
+    local tool =
+        HolyDefenseFindTool(
+            gear
+        )
+
+    if typeof(tool) ~= "Instance" then
+        return false
+    end
+
+    local humanoid =
+        HolyDefenseGetHumanoid()
+
+    if typeof(humanoid) ~= "Instance" then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            humanoid:EquipTool(
+                tool
+            )
+        end)
+
+    if ok == true then
+
+        runtime.LastEquipAt =
+            os.clock()
+    end
+
+    return ok == true
+end
+
+function HolyDefenseGetPlayerRoot(player)
+
+    local character =
+        player
+        and player.Character
+        or nil
+
+    if typeof(character) ~= "Instance" then
+        return nil
+    end
+
+    return character:FindFirstChild(
+        "HumanoidRootPart"
+    )
+    or character:FindFirstChild(
+        "RootPart"
+    )
+    or character.PrimaryPart
+end
+
+function HolyDefenseFindThreat(targetPos)
+
+    if typeof(targetPos) ~= "Vector3" then
+        return nil
+    end
+
+    local best =
+        nil
+
+    for _, player in ipairs(Players:GetPlayers()) do
+
+        if player ~= LocalPlayer then
+
+            local root =
+                HolyDefenseGetPlayerRoot(
+                    player
+                )
+
+            if typeof(root) == "Instance"
+            and root:IsA("BasePart") then
+
+                local distance =
+                    (
+                        root.Position
+                        - targetPos
+                    ).Magnitude
+
+                if distance <= 45
+                and (
+                    best == nil
+                    or distance < best.Distance
+                ) then
+
+                    best = {
+                        Player =
+                            player,
+
+                        Root =
+                            root,
+
+                        Distance =
+                            distance,
+                    }
+                end
+            end
+        end
+    end
+
+    return best
+end
+
+function HolyDefenseGetPlayerControls()
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if runtime.PlayerControls ~= nil then
+        return runtime.PlayerControls
+    end
+
+    local playerScripts =
+        LocalPlayer
+        and LocalPlayer:FindFirstChild("PlayerScripts")
+        or nil
+
+    local playerModule =
+        playerScripts
+        and playerScripts:FindFirstChild("PlayerModule")
+        or nil
+
+    if typeof(playerModule) ~= "Instance"
+    or playerModule:IsA("ModuleScript") ~= true then
+
+        return nil
+    end
+
+    local okModule,
+        module =
+        pcall(require, playerModule)
+
+    if okModule ~= true
+    or type(module) ~= "table"
+    or type(module.GetControls) ~= "function" then
+
+        return nil
+    end
+
+    local okControls,
+        controls =
+        pcall(function()
+
+            return module:GetControls()
+        end)
+
+    if okControls == true then
+
+        runtime.PlayerControls =
+            controls
+
+        return controls
+    end
+
+    return nil
+end
+
+function HolyDefenseDisableControls()
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if runtime.ControlsDisabled == true then
+        return true
+    end
+
+    local controls =
+        HolyDefenseGetPlayerControls()
+
+    if controls == nil then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            controls:Disable()
+        end)
+
+    if ok == true then
+
+        runtime.ControlsDisabled =
+            true
+    end
+
+    return ok == true
+end
+
+function HolyDefenseRestoreControls()
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if runtime.ControlsDisabled ~= true then
+        return
+    end
+
+    local controls =
+        runtime.PlayerControls
+
+    if controls ~= nil then
+
+        pcall(function()
+
+            controls:Enable()
+        end)
+    end
+
+    runtime.ControlsDisabled =
+        false
+end
+
+function HolyDefenseUpdatePetDirection(targetPos)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    local root =
+        HolyDefenseGetRoot()
+
+    local now =
+        os.clock()
+
+    if runtime.StablePetDirection == nil then
+
+        if typeof(root) == "Instance"
+        and root:IsA("BasePart") then
+
+            local fromPetToSelf =
+                root.Position
+                - targetPos
+
+            local flat =
+                Vector3.new(
+                    fromPetToSelf.X,
+                    0,
+                    fromPetToSelf.Z
+                )
+
+            if flat.Magnitude > 0.2 then
+
+                runtime.StablePetDirection =
+                    -flat.Unit
+
+            else
+
+                runtime.StablePetDirection =
+                    Vector3.new(0, 0, 1)
+            end
+
+        else
+
+            runtime.StablePetDirection =
+                Vector3.new(0, 0, 1)
+        end
+    end
+
+    if runtime.LastPetSamplePos == nil then
+
+        runtime.LastPetSamplePos =
+            targetPos
+
+        runtime.LastPetSampleAt =
+            now
+
+        return runtime.StablePetDirection
+    end
+
+    if now - (
+        tonumber(runtime.LastPetSampleAt)
+        or 0
+    ) < 0.10 then
+
+        return runtime.StablePetDirection
+    end
+
+    local delta =
+        targetPos
+        - runtime.LastPetSamplePos
+
+    local flatDelta =
+        Vector3.new(
+            delta.X,
+            0,
+            delta.Z
+        )
+
+    runtime.LastPetSamplePos =
+        targetPos
+
+    runtime.LastPetSampleAt =
+        now
+
+    if flatDelta.Magnitude >= 0.22 then
+
+        local fresh =
+            flatDelta.Unit
+
+        local mixed =
+            runtime.StablePetDirection:Lerp(
+                fresh,
+                0.22
+            )
+
+        if mixed.Magnitude > 0.05 then
+
+            runtime.StablePetDirection =
+                mixed.Unit
+
+        else
+
+            runtime.StablePetDirection =
+                fresh
+        end
+    end
+
+    return runtime.StablePetDirection
+end
+
+function HolyDefenseSmoothGoal(rawGoal)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if typeof(rawGoal) ~= "Vector3" then
+        return rawGoal
+    end
+
+    if runtime.SmoothedFollowGoal == nil
+    or (
+        runtime.SmoothedFollowGoal
+        - rawGoal
+    ).Magnitude >= 18 then
+
+        runtime.SmoothedFollowGoal =
+            rawGoal
+
+    else
+
+        runtime.SmoothedFollowGoal =
+            runtime.SmoothedFollowGoal:Lerp(
+                rawGoal,
+                0.30
+            )
+    end
+
+    return runtime.SmoothedFollowGoal
+end
+
+function HolyDefenseChooseGoal(targetPos, threat)
+
+    local root =
+        HolyDefenseGetRoot()
+
+    if typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true then
+
+        return nil
+    end
+
+    if threat
+    and threat.Root
+    and threat.Distance <= 18 then
+
+        local diff =
+            threat.Root.Position
+            - targetPos
+
+        local flat =
+            Vector3.new(
+                diff.X,
+                0,
+                diff.Z
+            )
+
+        if flat.Magnitude > 0.1 then
+
+            local threatDir =
+                flat.Unit
+
+            local guardDistance =
+                threat.Distance <= 8
+                and 3.85
+                or 4.75
+
+            return Vector3.new(
+                targetPos.X,
+                root.Position.Y,
+                targetPos.Z
+            )
+            + threatDir * guardDistance
+        end
+    end
+
+    local stableDir =
+        HolyDefenseUpdatePetDirection(
+            targetPos
+        )
+
+    local rawGoal =
+        targetPos
+        - stableDir * 5.75
+
+    rawGoal =
+        Vector3.new(
+            rawGoal.X,
+            root.Position.Y,
+            rawGoal.Z
+        )
+
+    return HolyDefenseSmoothGoal(
+        rawGoal
+    )
+end
+
+function HolyDefenseSetWalkSpeed(distance, threat)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    local humanoid =
+        HolyDefenseGetHumanoid()
+
+    if typeof(humanoid) ~= "Instance" then
+        return
+    end
+
+    if runtime.OriginalWalkSpeed == nil then
+
+        runtime.OriginalWalkSpeed =
+            humanoid.WalkSpeed
+    end
+
+    local base =
+        tonumber(runtime.OriginalWalkSpeed)
+        or humanoid.WalkSpeed
+
+    local wanted =
+        math.max(
+            base,
+            22
+        )
+
+    if threat
+    and threat.Distance <= 8 then
+
+        wanted =
+            math.max(
+                base,
+                31
+            )
+
+    elseif threat
+    and threat.Distance <= 24 then
+
+        wanted =
+            math.max(
+                base,
+                27
+            )
+
+    elseif distance >= 14 then
+
+        wanted =
+            math.max(
+                base,
+                27
+            )
+    end
+
+    pcall(function()
+
+        humanoid.WalkSpeed =
+            wanted
+
+        humanoid.AutoRotate =
+            true
+    end)
+end
+
+function HolyDefenseWalkTo(goal, threat)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    local humanoid =
+        HolyDefenseGetHumanoid()
+
+    local root =
+        HolyDefenseGetRoot()
+
+    if typeof(goal) ~= "Vector3"
+    or typeof(humanoid) ~= "Instance"
+    or typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true then
+
+        return false
+    end
+
+    HolyDefenseDisableControls()
+
+    local delta =
+        goal
+        - root.Position
+
+    local flat =
+        Vector3.new(
+            delta.X,
+            0,
+            delta.Z
+        )
+
+    local distance =
+        flat.Magnitude
+
+    HolyDefenseSetWalkSpeed(
+        distance,
+        threat
+    )
+
+    if distance <= 2.30 then
+
+        pcall(function()
+
+            humanoid:Move(
+                Vector3.zero,
+                false
+            )
+        end)
+
+        return true
+    end
+
+    local now =
+        os.clock()
+
+    if now - (
+        tonumber(runtime.LastMoveAt)
+        or 0
+    ) >= 0.04 then
+
+        runtime.LastMoveAt =
+            now
+
+        pcall(function()
+
+            humanoid:Move(
+                flat.Unit,
+                false
+            )
+        end)
+    end
+
+    if now - (
+        tonumber(runtime.LastMoveToAt)
+        or 0
+    ) >= 0.16 then
+
+        runtime.LastMoveToAt =
+            now
+
+        pcall(function()
+
+            humanoid:MoveTo(
+                goal
+            )
+        end)
+    end
+
+    return true
+end
+
+function HolyDefenseTweenTo(goal)
+
+    local root =
+        HolyDefenseGetRoot()
+
+    if typeof(goal) ~= "Vector3"
+    or typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true then
+
+        return false
+    end
+
+    local distance =
+        (
+            root.Position
+            - goal
+        ).Magnitude
+
+    if distance <= 2.30 then
+        return true
+    end
+
+    local speed =
+        30
+
+    local duration =
+        math.clamp(
+            distance / speed,
+            0.10,
+            0.35
+        )
+
+    local TweenService =
+        game:GetService("TweenService")
+
+    local tween =
+        TweenService:Create(
+            root,
+            TweenInfo.new(
+                duration,
+                Enum.EasingStyle.Linear,
+                Enum.EasingDirection.Out
+            ),
+            {
+                CFrame =
+                    CFrame.new(
+                        goal,
+                        goal + root.CFrame.LookVector
+                    ),
+            }
+        )
+
+    pcall(function()
+
+        tween:Play()
+    end)
+
+    return true
+end
+
+function HolyDefenseMoveTo(goal, threat)
+
+    local movement =
+        HolyDefenseNormalizeMovement(
+            HOLY_SNIPER_STATE.DefendMovement
+        )
+
+    local root =
+        HolyDefenseGetRoot()
+
+    if typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true then
+
+        return false
+    end
+
+    local distance =
+        typeof(goal) == "Vector3"
+        and (
+            root.Position
+            - goal
+        ).Magnitude
+        or 0
+
+    if movement == "Tween" then
+
+        return HolyDefenseTweenTo(
+            goal
+        )
+    end
+
+    if movement == "Hybrid" then
+
+        if distance >= 15
+        or (
+            threat
+            and threat.Distance <= 8
+        ) then
+
+            return HolyDefenseTweenTo(
+                goal
+            )
+        end
+    end
+
+    return HolyDefenseWalkTo(
+        goal,
+        threat
+    )
+end
+
+function HolyDefenseRayClear(fromPos, toPos, targetCharacter)
+
+    if typeof(fromPos) ~= "Vector3"
+    or typeof(toPos) ~= "Vector3" then
+
+        return false
+    end
+
+    local params =
+        RaycastParams.new()
+
+    params.FilterType =
+        Enum.RaycastFilterType.Exclude
+
+    local ignore =
+        {}
+
+    local character =
+        HolyDefenseGetCharacter()
+
+    if typeof(character) == "Instance" then
+
+        table.insert(
+            ignore,
+            character
+        )
+    end
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if typeof(runtime.Target) == "Instance" then
+
+        table.insert(
+            ignore,
+            runtime.Target
+        )
+    end
+
+    params.FilterDescendantsInstances =
+        ignore
+
+    local result =
+        workspace:Raycast(
+            fromPos,
+            toPos - fromPos,
+            params
+        )
+
+    if result == nil then
+        return true
+    end
+
+    if typeof(targetCharacter) == "Instance"
+    and result.Instance
+    and result.Instance:IsDescendantOf(
+        targetCharacter
+    ) then
+
+        return true
+    end
+
+    return false
+end
+
+function HolyDefenseGetThreatParts(threat)
+
+    local character =
+        threat
+        and threat.Player
+        and threat.Player.Character
+        or nil
+
+    if typeof(character) ~= "Instance" then
+        return nil
+    end
+
+    local root =
+        character:FindFirstChild(
+            "HumanoidRootPart"
+        )
+        or character:FindFirstChild(
+            "RootPart"
+        )
+        or character.PrimaryPart
+
+    local head =
+        character:FindFirstChild(
+            "Head"
+        )
+
+    return {
+        Character =
+            character,
+
+        Root =
+            root,
+
+        Head =
+            head,
+    }
+end
+
+function HolyDefenseGetVelocity(part)
+
+    if typeof(part) ~= "Instance"
+    or part:IsA("BasePart") ~= true then
+
+        return Vector3.zero
+    end
+
+    local ok,
+        velocity =
+        pcall(function()
+
+            return part.AssemblyLinearVelocity
+        end)
+
+    if ok == true
+    and typeof(velocity) == "Vector3" then
+
+        return velocity
+    end
+
+    return Vector3.zero
+end
+
+function HolyDefenseChooseAim(threat)
+
+    local parts =
+        HolyDefenseGetThreatParts(
+            threat
+        )
+
+    if parts == nil
+    or typeof(parts.Root) ~= "Instance"
+    or parts.Root:IsA("BasePart") ~= true then
+
+        return nil
+    end
+
+    local root =
+        HolyDefenseGetRoot()
+
+    if typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true then
+
+        return nil
+    end
+
+    local velocity =
+        HolyDefenseGetVelocity(
+            parts.Root
+        )
+
+    local distance =
+        tonumber(threat.Distance)
+        or 0
+
+    local tinyLead =
+        math.clamp(
+            distance / 470,
+            0.010,
+            0.050
+        )
+
+    local softLead =
+        math.clamp(
+            distance / 330,
+            0.020,
+            0.090
+        )
+
+    local headPos =
+        typeof(parts.Head) == "Instance"
+        and parts.Head:IsA("BasePart")
+        and (
+            parts.Head.Position
+            + Vector3.new(0, -0.05, 0)
+        )
+        or (
+            parts.Root.Position
+            + Vector3.new(0, 2.3, 0)
+        )
+
+    local rootHigh =
+        parts.Root.Position
+        + Vector3.new(0, 1.45, 0)
+
+    local candidates = {
+        headPos + velocity * tinyLead,
+        headPos + velocity * softLead,
+        rootHigh,
+        rootHigh + velocity * tinyLead,
+    }
+
+    local camera =
+        workspace.CurrentCamera
+
+    local rootFrom =
+        root.Position
+        + Vector3.new(0, 1.5, 0)
+
+    local cameraFrom =
+        camera
+        and camera.CFrame.Position
+        or rootFrom
+
+    for _, aim in ipairs(candidates) do
+
+        if HolyDefenseRayClear(
+            rootFrom,
+            aim,
+            parts.Character
+        ) == true
+        and HolyDefenseRayClear(
+            cameraFrom,
+            aim,
+            parts.Character
+        ) == true then
+
+            return aim
+        end
+    end
+
+    return nil
+end
+
+function HolyDefensePreAim(aim)
+
+    local camera =
+        workspace.CurrentCamera
+
+    if typeof(camera) == "Instance"
+    and typeof(aim) == "Vector3" then
+
+        pcall(function()
+
+            camera.CFrame =
+                CFrame.new(
+                    camera.CFrame.Position,
+                    aim
+                )
+        end)
+    end
+end
+
+function HolyDefenseFaceShot(aim)
+
+    local root =
+        HolyDefenseGetRoot()
+
+    if typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true
+    or typeof(aim) ~= "Vector3" then
+
+        return
+    end
+
+    local lookAt =
+        Vector3.new(
+            aim.X,
+            root.Position.Y,
+            aim.Z
+        )
+
+    if (
+        lookAt
+        - root.Position
+    ).Magnitude < 0.35 then
+
+        return
+    end
+
+    pcall(function()
+
+        root.CFrame =
+            CFrame.lookAt(
+                root.Position,
+                lookAt
+            )
+    end)
+end
+
+function HolyDefenseUseStrawberry(threat)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if threat == nil
+    or threat.Player == nil
+    or threat.Root == nil then
+
+        return false
+    end
+
+    if threat.Distance > 30 then
+        return false
+    end
+
+    local velocity =
+        HolyDefenseGetVelocity(
+            threat.Root
+        )
+
+    local flatSpeed =
+        Vector3.new(
+            velocity.X,
+            0,
+            velocity.Z
+        ).Magnitude
+
+    if threat.Distance > 22
+    and flatSpeed > 7 then
+
+        return false
+    end
+
+    local cooldown =
+        threat.Distance <= 8
+        and 2.78
+        or 3.00
+
+    if os.clock() - (
+        tonumber(runtime.LastShotAt)
+        or 0
+    ) < cooldown then
+
+        return false
+    end
+
+    HolyDefenseResolvePackets()
+
+    local packet =
+        runtime.StrawberryPacket
+
+    if type(packet) ~= "table" then
+        return false
+    end
+
+    local aim =
+        HolyDefenseChooseAim(
+            threat
+        )
+
+    if typeof(aim) ~= "Vector3" then
+        return false
+    end
+
+    if HolyDefenseEquipSelectedGear(
+        "shot"
+    ) ~= true then
+
+        return false
+    end
+
+    local tool =
+        HolyDefenseFindTool(
+            "Strawberry Sniper"
+        )
+
+    if typeof(tool) ~= "Instance" then
+        return false
+    end
+
+    HolyDefensePreAim(
+        aim
+    )
+
+    HolyDefenseFaceShot(
+        aim
+    )
+
+    task.wait()
+
+    local ok =
+        HolyDefenseFirePacket(
+            packet,
+            aim,
+            tool,
+            threat.Player
+        )
+
+    if ok == true then
+
+        runtime.LastShotAt =
+            os.clock()
+    end
+
+    return ok
+end
+
+function HolyDefenseReadTargetPetId()
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    local target =
+        runtime.Target
+
+    if typeof(target) ~= "Instance" then
+        return ""
+    end
+
+    local petId =
+        HolyCleanText(
+            HolyDefenseReadAttr(
+                target,
+                "PetId"
+            )
+            or HolyDefenseReadAttr(
+                target,
+                "PetID"
+            )
+            or HolyDefenseReadAttr(
+                target,
+                "UUID"
+            )
+            or ""
+        )
+
+    if petId ~= "" then
+        return petId
+    end
+
+    return HolySniperUuidFromName(
+        target.Name
+    )
+end
+
+function HolyDefenseUseShovel(threat)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if threat == nil
+    or threat.Player == nil
+    or threat.Distance > 7 then
+
+        return false
+    end
+
+    if os.clock() - (
+        tonumber(runtime.LastShovelAt)
+        or 0
+    ) < 0.85 then
+
+        return false
+    end
+
+    HolyDefenseResolvePackets()
+
+    if HolyDefenseEquipSelectedGear(
+        "shovel"
+    ) ~= true then
+
+        return false
+    end
+
+    local ok =
+        false
+
+    if type(runtime.ShovelSwingPacket) == "table" then
+
+        ok =
+            HolyDefenseFirePacket(
+                runtime.ShovelSwingPacket
+            )
+            or ok
+    end
+
+    if type(runtime.ShovelHitPacket) == "table" then
+
+        ok =
+            HolyDefenseFirePacket(
+                runtime.ShovelHitPacket,
+                threat.Player.UserId
+            )
+            or ok
+    end
+
+    local petId =
+        HolyDefenseReadTargetPetId()
+
+    if petId ~= ""
+    and type(runtime.PetScarePacket) == "table" then
+
+        ok =
+            HolyDefenseFirePacket(
+                runtime.PetScarePacket,
+                threat.Player.UserId,
+                petId
+            )
+            or ok
+    end
+
+    runtime.LastShovelAt =
+        os.clock()
+
+    return ok
+end
+
+function HolyDefenseUseGear(threat)
+
+    local gear =
+        HolyDefenseNormalizeGear(
+            HOLY_SNIPER_STATE.DefendGear
+        )
+
+    if gear == "Shovel" then
+
+        return HolyDefenseUseShovel(
+            threat
+        )
+    end
+
+    return HolyDefenseUseStrawberry(
+        threat
+    )
+end
+
+function HolyDefenseStop(reason)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    runtime.Token =
+        nil
+
+    runtime.Active =
+        false
+
+    runtime.Target =
+        nil
+
+    runtime.Entry =
+        nil
+
+    runtime.Filter =
+        nil
+
+    runtime.SmoothedFollowGoal =
+        nil
+
+    runtime.StablePetDirection =
+        nil
+
+    runtime.LastPetSamplePos =
+        nil
+
+    HolyDefenseDisconnect()
+
+    HolyDefenseRestoreControls()
+
+    local humanoid =
+        HolyDefenseGetHumanoid()
+
+    if typeof(humanoid) == "Instance" then
+
+        pcall(function()
+
+            humanoid:Move(
+                Vector3.zero,
+                false
+            )
+
+            if runtime.OriginalWalkSpeed ~= nil then
+
+                humanoid.WalkSpeed =
+                    runtime.OriginalWalkSpeed
+            end
+
+            humanoid.AutoRotate =
+                true
+        end)
+    end
+
+    return true
+end
+
+function HolyDefenseCanRebuy(target)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if HOLY_SNIPER_STATE.DefendRebuyIfStolen ~= true then
+        return false
+    end
+
+    local filter =
+        type(runtime.Filter) == "table"
+        and HolySniperNormalizeFilter(
+            runtime.Filter
+        )
+        or {}
+
+    local maxPrice =
+        tonumber(filter.MaxPrice)
+        or 0
+
+    if maxPrice <= 0 then
+        return false
+    end
+
+    if runtime.RebuyCount >= runtime.MaxRebuys then
+        return false
+    end
+
+    local price =
+        tonumber(
+            HolyDefenseReadAttr(
+                target,
+                "Price"
+            )
+        )
+        or 0
+
+    if price <= 0
+    or price > maxPrice then
+
+        return false
+    end
+
+    local state =
+        HolyCleanText(
+            HolyDefenseReadAttr(
+                target,
+                "State"
+            )
+            or ""
+        )
+
+    if HolySniperPetBuyStateLooksPending(
+        state
+    ) ~= true then
+
+        return false
+    end
+
+    return true
+end
+
+function HolyDefenseTryRebuy(target)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if typeof(target) ~= "Instance" then
+        return false
+    end
+
+    if HolyDefenseCanRebuy(target) ~= true then
+        return false
+    end
+
+    HolyDefenseResolvePackets()
+
+    if type(runtime.WildTamePacket) ~= "table" then
+        return false
+    end
+
+    local ok =
+        HolyDefenseFirePacket(
+            runtime.WildTamePacket,
+            target
+        )
+
+    if ok == true then
+
+        runtime.RebuyCount =
+            (
+                tonumber(runtime.RebuyCount)
+                or 0
+            )
+            + 1
+
+        runtime.Target =
+            target
+
+        HolyDefenseEquipSelectedGear(
+            "rebuy"
+        )
+    end
+
+    return ok
+end
+
+function HolyDefenseHandleOwnerChanged(target)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if runtime.Active ~= true
+    or target ~= runtime.Target then
+
+        return
+    end
+
+    task.delay(0.05, function()
+
+        local liveRuntime =
+            HolyDefenseEnsureRuntime()
+
+        if liveRuntime.Active ~= true
+        or target ~= liveRuntime.Target
+        or typeof(target) ~= "Instance"
+        or target.Parent == nil then
+
+            return
+        end
+
+        local owner =
+            tonumber(
+                HolyDefenseReadAttr(
+                    target,
+                    "OwnerUserId"
+                )
+            )
+            or 0
+
+        if owner == 0
+        or owner == tonumber(LocalPlayer.UserId) then
+
+            return
+        end
+
+        if HolyDefenseTryRebuy(
+            target
+        ) == true then
+
+            return
+        end
+
+        HolyDefenseStop(
+            "stolen"
+        )
+    end)
+end
+
+function HolyDefenseWatchTarget(target)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    HolyDefenseDisconnect()
+
+    for _, attrName in ipairs({
+        "OwnerUserId",
+        "OwnerName",
+        "State",
+        "Price",
+    }) do
+
+        pcall(function()
+
+            HolyDefenseAddConnection(
+                target:GetAttributeChangedSignal(
+                    attrName
+                ):Connect(function()
+
+                    if attrName == "OwnerUserId" then
+
+                        HolyDefenseHandleOwnerChanged(
+                            target
+                        )
+                    end
+                end)
+            )
+        end)
+    end
+
+    HolyDefenseAddConnection(
+        target.AncestryChanged:Connect(function(_, parent)
+
+            if parent == nil
+            and runtime.Target == target then
+
+                HolyDefenseStop(
+                    "target removed"
+                )
+            end
+        end)
+    )
+end
+
+function HolyDefenseRunWorker(token)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    while runtime.Token == token
+    and runtime.Active == true do
+
+        local target =
+            runtime.Target
+
+        if typeof(target) ~= "Instance"
+        or target.Parent == nil then
+
+            HolyDefenseStop(
+                "target gone"
+            )
+
+            return
+        end
+
+        local owner =
+            tonumber(
+                HolyDefenseReadAttr(
+                    target,
+                    "OwnerUserId"
+                )
+            )
+            or 0
+
+        if owner ~= tonumber(LocalPlayer.UserId) then
+
+            HolyDefenseHandleOwnerChanged(
+                target
+            )
+
+            task.wait(
+                0.15
+            )
+
+            continue
+        end
+
+        HolyDefenseEquipSelectedGear(
+            "defending"
+        )
+
+        local targetPos =
+            HolyDefenseGetPosition(
+                target
+            )
+
+        if typeof(targetPos) == "Vector3" then
+
+            local threat =
+                HolyDefenseFindThreat(
+                    targetPos
+                )
+
+            local goal =
+                HolyDefenseChooseGoal(
+                    targetPos,
+                    threat
+                )
+
+            if typeof(goal) == "Vector3" then
+
+                HolyDefenseMoveTo(
+                    goal,
+                    threat
+                )
+            end
+
+            if threat ~= nil then
+
+                HolyDefenseUseGear(
+                    threat
+                )
+            end
+        end
+
+        task.wait(
+            0.04
+        )
+    end
+end
+
+function HolyDefenseWaitForOwnedTarget(entry)
+
+    entry =
+        type(entry) == "table"
+        and entry
+        or {}
+
+    local ref =
+        entry.Ref
+
+    if typeof(ref) ~= "Instance"
+    or ref.Parent == nil then
+
+        ref =
+            HolySniperFindPetBuyProtectionRef({
+                UUID =
+                    entry.UUID
+                    or entry.Key,
+
+                Key =
+                    entry.Key,
+            })
+    end
+
+    if typeof(ref) ~= "Instance" then
+        return nil
+    end
+
+    local deadline =
+        os.clock() + 2.5
+
+    while os.clock() <= deadline do
+
+        if typeof(ref) ~= "Instance"
+        or ref.Parent == nil then
+
+            return nil
+        end
+
+        local owner =
+            tonumber(
+                HolyDefenseReadAttr(
+                    ref,
+                    "OwnerUserId"
+                )
+            )
+            or 0
+
+        local state =
+            HolyCleanText(
+                HolyDefenseReadAttr(
+                    ref,
+                    "State"
+                )
+                or ""
+            )
+
+        if owner == tonumber(LocalPlayer.UserId)
+        and HolySniperPetBuyStateLooksPending(
+            state
+        ) == true then
+
+            return ref
+        end
+
+        task.wait(
+            0.05
+        )
+    end
+
+    return ref
+end
+
+function HolyDefenseArm(entry, filter, reason)
+
+    if HOLY_SNIPER_STATE.DefendBoughtPets ~= true then
+        return false
+    end
+
+    local target =
+        HolyDefenseWaitForOwnedTarget(
+            entry
+        )
+
+    if typeof(target) ~= "Instance" then
+        return false
+    end
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    HolyDefenseStop(
+        "new defense"
+    )
+
+    runtime =
+        HolyDefenseEnsureRuntime()
+
+    runtime.Active =
+        true
+
+    runtime.Token =
+        {}
+
+    runtime.Target =
+        target
+
+    runtime.Entry =
+        entry
+
+    runtime.Filter =
+        filter
+
+    runtime.RebuyCount =
+        0
+
+    runtime.SmoothedFollowGoal =
+        nil
+
+    runtime.StablePetDirection =
+        nil
+
+    runtime.LastPetSamplePos =
+        nil
+
+    runtime.LastPetSampleAt =
+        0
+
+    local humanoid =
+        HolyDefenseGetHumanoid()
+
+    if typeof(humanoid) == "Instance"
+    and runtime.OriginalWalkSpeed == nil then
+
+        runtime.OriginalWalkSpeed =
+            humanoid.WalkSpeed
+    end
+
+    HolyDefenseResolvePackets()
+
+    HolyDefenseWatchTarget(
+        target
+    )
+
+    HolyDefenseEquipSelectedGear(
+        reason or "defense start"
+    )
+
+    local token =
+        runtime.Token
+
+    task.spawn(function()
+
+        HolyDefenseRunWorker(
+            token
+        )
+    end)
+
+    return true
+end
+
+function HolyDefenseSetDefendBoughtPets(value)
+
+    HOLY_SNIPER_STATE.DefendBoughtPets =
+        value == true
+
+    if HOLY_SNIPER_STATE.DefendBoughtPets ~= true then
+
+        HolyDefenseStop(
+            "toggle off"
+        )
+    end
+
+    HolySaveSniperSettings()
+end
+
+function HolyDefenseSetGear(value)
+
+    HOLY_SNIPER_STATE.DefendGear =
+        HolyDefenseNormalizeGear(
+            value
+        )
+
+    if HOLY_DEFENSE_RUNTIME
+    and HOLY_DEFENSE_RUNTIME.Active == true then
+
+        HolyDefenseEquipSelectedGear(
+            "gear changed"
+        )
+    end
+
+    HolySaveSniperSettings()
+end
+
+function HolyDefenseSetMovement(value)
+
+    HOLY_SNIPER_STATE.DefendMovement =
+        HolyDefenseNormalizeMovement(
+            value
+        )
+
+    HolySaveSniperSettings()
+end
+
+function HolyDefenseSetRebuyIfStolen(value)
+
+    HOLY_SNIPER_STATE.DefendRebuyIfStolen =
+        value == true
+
+    HolySaveSniperSettings()
 end
 
 --==================================================
@@ -17805,6 +20282,22 @@ function HolySaveSniperSettings()
         SavedReturnCFrameData =
             HOLY_SNIPER_STATE.SavedReturnCFrameData,
 
+        DefendBoughtPets =
+            HOLY_SNIPER_STATE.DefendBoughtPets == true,
+
+        DefendGear =
+            HolyDefenseNormalizeGear(
+                HOLY_SNIPER_STATE.DefendGear
+            ),
+
+        DefendMovement =
+            HolyDefenseNormalizeMovement(
+                HOLY_SNIPER_STATE.DefendMovement
+            ),
+
+        DefendRebuyIfStolen =
+            HOLY_SNIPER_STATE.DefendRebuyIfStolen == true,
+
         BuilderPet =
             HolySniperResolvePetDisplay(
                 HOLY_SNIPER_STATE.BuilderPet
@@ -17821,12 +20314,16 @@ function HolySaveSniperSettings()
                 HOLY_SNIPER_STATE.BuilderVariants
             ),
 
-        BuilderAmount =
+        BuilderMaxPrice =
             tostring(
-                HolySniperReadAmount(
-                    HOLY_SNIPER_STATE.BuilderAmount
+                HolySniperReadMaxPrice(
+                    HOLY_SNIPER_STATE.BuilderMaxPrice
+                    or "0"
                 )
             ),
+
+        BuilderAmount =
+            "999",
 
         BuilderPriority =
             HolySniperNormalizePriority(
@@ -17982,6 +20479,26 @@ function HolyLoadSniperSettings()
         and data.SavedReturnCFrameData
         or nil
 
+    HOLY_SNIPER_STATE.DefendBoughtPets =
+        data.DefendBoughtPets ~= false
+
+    HOLY_SNIPER_STATE.DefendGear =
+        HolyDefenseNormalizeGear(
+            data.DefendGear
+            or HOLY_SNIPER_STATE.DefendGear
+            or "Strawberry Sniper"
+        )
+
+    HOLY_SNIPER_STATE.DefendMovement =
+        HolyDefenseNormalizeMovement(
+            data.DefendMovement
+            or HOLY_SNIPER_STATE.DefendMovement
+            or "Walk"
+        )
+
+    HOLY_SNIPER_STATE.DefendRebuyIfStolen =
+        data.DefendRebuyIfStolen ~= false
+
     HOLY_SNIPER_STATE.BuilderPet =
         HolySniperResolvePetDisplay(
             data.BuilderPet
@@ -17998,12 +20515,19 @@ function HolyLoadSniperSettings()
             data.BuilderVariants
         )
 
-    HOLY_SNIPER_STATE.BuilderAmount =
+    HOLY_SNIPER_STATE.BuilderMaxPrice =
         tostring(
-            HolySniperReadAmount(
-                data.BuilderAmount
+            HolySniperReadMaxPrice(
+                data.BuilderMaxPrice
+                or data.BuilderMax
+                or data.MaxPrice
+                or HOLY_SNIPER_STATE.BuilderMaxPrice
+                or "0"
             )
         )
+
+    HOLY_SNIPER_STATE.BuilderAmount =
+        "999"
 
     HOLY_SNIPER_STATE.BuilderPriority =
         HolySniperNormalizePriority(
@@ -18036,8 +20560,11 @@ function HolySniperSaveFilterFromBuilder()
             Variants =
                 HOLY_SNIPER_STATE.BuilderVariants,
 
+            MaxPrice =
+                HOLY_SNIPER_STATE.BuilderMaxPrice,
+
             Amount =
-                HOLY_SNIPER_STATE.BuilderAmount,
+                999,
 
             Priority =
                 HOLY_SNIPER_STATE.BuilderPriority,
@@ -18179,10 +20706,14 @@ function HolySniperEditSelectedFilter()
     HOLY_SNIPER_STATE.BuilderVariants =
         filter.Variants
 
-    HOLY_SNIPER_STATE.BuilderAmount =
+    HOLY_SNIPER_STATE.BuilderMaxPrice =
         tostring(
-            filter.Amount
+            tonumber(filter.MaxPrice)
+            or 0
         )
+
+    HOLY_SNIPER_STATE.BuilderAmount =
+        "999"
 
     HOLY_SNIPER_STATE.BuilderPriority =
         filter.Priority
@@ -18218,11 +20749,24 @@ function HolySniperEditSelectedFilter()
             )
         end
 
-        if options.HolySniperTargetAmount
+        if options.HolySniperMaxPrice
+        and type(options.HolySniperMaxPrice.SetValue) == "function" then
+
+            options.HolySniperMaxPrice:SetValue(
+                tostring(
+                    tonumber(filter.MaxPrice)
+                    or 0
+                )
+            )
+
+        elseif options.HolySniperTargetAmount
         and type(options.HolySniperTargetAmount.SetValue) == "function" then
 
             options.HolySniperTargetAmount:SetValue(
-                tostring(filter.Amount)
+                tostring(
+                    tonumber(filter.MaxPrice)
+                    or 0
+                )
             )
         end
 
@@ -22466,6 +25010,7 @@ function HolyDataRefreshPetDropdowns()
     or #values <= 0 then
 
         values = {
+            "Any Pet",
             "Raccoon",
         }
     end
@@ -41148,6 +43693,14 @@ local SniperEngineBox =
         "crosshair"
     )
 
+local SniperDefenseBox =
+    HolyAddLeftGroupbox(
+        Tabs.Sniper,
+        "Sniper.PetDefense",
+        "Pet Defense",
+        "shield"
+    )
+
 local SniperExecutionBox =
     HolyAddLeftGroupbox(
         Tabs.Sniper,
@@ -51583,6 +54136,127 @@ HOLY_SNIPER_UI.StatusLabel =
         HolySniperBuildStatusText()
     )
 
+HOLY_SNIPER_UI.DefenseToggle =
+    SniperDefenseBox:AddToggle(
+        "HolySniperDefendBoughtPets",
+        {
+            Text =
+                "Defend Bought Pets",
+
+            Default =
+                HOLY_SNIPER_STATE.DefendBoughtPets == true,
+
+            Tooltip =
+                "Defends bought wild pets while they walk to your garden.",
+        }
+    )
+
+HOLY_SNIPER_UI.DefenseToggle:OnChanged(function(value)
+
+    HolyDefenseSetDefendBoughtPets(
+        value == true
+    )
+end)
+
+HOLY_SNIPER_UI.DefenseGearDropdown =
+    SniperDefenseBox:AddDropdown(
+        "HolySniperDefendGear",
+        {
+            Text =
+                "Defend Gear",
+
+            Values = {
+                "Strawberry Sniper",
+                "Shovel",
+            },
+
+            Default =
+                HolyDefenseNormalizeGear(
+                    HOLY_SNIPER_STATE.DefendGear
+                ),
+
+            Multi =
+                false,
+
+            Searchable =
+                false,
+
+            MaxVisibleDropdownItems =
+                2,
+
+            Tooltip =
+                "Auto-equips only while defense is active.",
+        }
+    )
+
+HOLY_SNIPER_UI.DefenseGearDropdown:OnChanged(function(value)
+
+    HolyDefenseSetGear(
+        value
+    )
+end)
+
+HOLY_SNIPER_UI.DefenseMovementDropdown =
+    SniperDefenseBox:AddDropdown(
+        "HolySniperDefendMovement",
+        {
+            Text =
+                "Movement",
+
+            Values = {
+                "Walk",
+                "Tween",
+                "Hybrid",
+            },
+
+            Default =
+                HolyDefenseNormalizeMovement(
+                    HOLY_SNIPER_STATE.DefendMovement
+                ),
+
+            Multi =
+                false,
+
+            Searchable =
+                false,
+
+            MaxVisibleDropdownItems =
+                3,
+
+            Tooltip =
+                "Walk = clean no-spin follow. Tween = faster movement. Hybrid = walk normally, tween if far/emergency.",
+        }
+    )
+
+HOLY_SNIPER_UI.DefenseMovementDropdown:OnChanged(function(value)
+
+    HolyDefenseSetMovement(
+        value
+    )
+end)
+
+HOLY_SNIPER_UI.DefenseRebuyToggle =
+    SniperDefenseBox:AddToggle(
+        "HolySniperDefendRebuyIfStolen",
+        {
+            Text =
+                "Rebuy If Stolen",
+
+            Default =
+                HOLY_SNIPER_STATE.DefendRebuyIfStolen == true,
+
+            Tooltip =
+                "If stolen, rebuy only when current Price is <= the filter Max Price. Hard cap: 3 rebuys.",
+        }
+    )
+
+HOLY_SNIPER_UI.DefenseRebuyToggle:OnChanged(function(value)
+
+    HolyDefenseSetRebuyIfStolen(
+        value == true
+    )
+end)
+
 SniperExecutionBox:AddDropdown(
     "HolySniperMovementMode",
     {
@@ -51908,19 +54582,21 @@ SniperFilterBox:AddDropdown(
 end)
 
 SniperFilterBox:AddInput(
-    "HolySniperTargetAmount",
+    "HolySniperMaxPrice",
     {
         Text =
-            "Target Amount",
+            "Max Price",
 
         Default =
             tostring(
-                HOLY_SNIPER_STATE.BuilderAmount
-                or "1"
+                HolySniperReadMaxPrice(
+                    HOLY_SNIPER_STATE.BuilderMaxPrice
+                    or "0"
+                )
             ),
 
         Numeric =
-            true,
+            false,
 
         Finished =
             true,
@@ -51929,16 +54605,19 @@ SniperFilterBox:AddInput(
             false,
 
         Tooltip =
-            "How many pets this filter should buy before it is considered done.",
+            "0 or blank = no price cap and no stolen-pet rebuy. Supports 100k / 2.5m / 1b.",
     }
 ):OnChanged(function(value)
 
-    HOLY_SNIPER_STATE.BuilderAmount =
+    HOLY_SNIPER_STATE.BuilderMaxPrice =
         tostring(
-            HolySniperReadAmount(
+            HolySniperReadMaxPrice(
                 value
             )
         )
+
+    HOLY_SNIPER_STATE.BuilderAmount =
+        "999"
 
     HolySaveSniperSettings()
 end)
