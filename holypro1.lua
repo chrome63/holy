@@ -9683,6 +9683,127 @@ function HolySniperGetCharacterRoot()
     or character.PrimaryPart
 end
 
+function HolySniperGetEquippedToolForMovement()
+
+    local character =
+        HolySniperGetCharacter()
+
+    if typeof(character) ~= "Instance" then
+        return nil
+    end
+
+    return character:FindFirstChildOfClass(
+        "Tool"
+    )
+end
+
+function HolySniperMovementToolClearBlocked()
+
+    if type(HOLY_DEFENSE_RUNTIME) == "table"
+    and HOLY_DEFENSE_RUNTIME.Active == true then
+
+        local sniper =
+            type(HOLY_SNIPER_RUNTIME) == "table"
+            and HOLY_SNIPER_RUNTIME
+            or {}
+
+        if sniper.Buying == true
+        or sniper.Returning == true
+        or sniper.CurrentTarget ~= nil
+        or HolyCleanText(
+            sniper.CurrentTargetKey
+            or ""
+        ) ~= "" then
+
+            return false
+        end
+
+        return true
+    end
+
+    return false
+end
+
+function HolySniperClearHeldToolForMovement(reason)
+
+    HOLY_SNIPER_RUNTIME =
+        type(HOLY_SNIPER_RUNTIME) == "table"
+        and HOLY_SNIPER_RUNTIME
+        or {}
+
+    if HolySniperMovementToolClearBlocked() == true then
+        return false
+    end
+
+    local equippedTool =
+        HolySniperGetEquippedToolForMovement()
+
+    if typeof(equippedTool) ~= "Instance"
+    or equippedTool:IsA("Tool") ~= true then
+
+        return false
+    end
+
+    local humanoid =
+        HolySniperGetCharacterHumanoid()
+
+    if typeof(humanoid) ~= "Instance"
+    or humanoid:IsA("Humanoid") ~= true then
+
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    if now - (
+        tonumber(HOLY_SNIPER_RUNTIME.LastMovementUnequipAt)
+        or 0
+    ) < 0.28 then
+
+        return true
+    end
+
+    HOLY_SNIPER_RUNTIME.LastMovementUnequipAt =
+        now
+
+    HOLY_SNIPER_RUNTIME.LastMovementUnequipTool =
+        tostring(
+            equippedTool.Name
+            or "Tool"
+        )
+
+    HOLY_SNIPER_RUNTIME.LastMovementUnequipReason =
+        tostring(
+            reason
+            or "movement"
+        )
+
+    pcall(function()
+
+        humanoid:UnequipTools()
+    end)
+
+    task.wait(
+        0.10
+    )
+
+    return true
+end
+
+function HolySniperGetEquippedToolForBuy()
+
+    return HolySniperGetEquippedToolForMovement()
+end
+
+function HolySniperClearHeldToolForBuy(reason)
+
+    return HolySniperClearHeldToolForMovement(
+        reason
+        or "buy"
+    )
+end
+
 function HolySniperStillActive(token)
 
     HOLY_SNIPER_RUNTIME =
@@ -13723,6 +13844,13 @@ function HolyFarmMiddleRunWorker(token, reason)
                 targetPosition.Z
             )
 
+        if type(HolySniperClearHeldToolForMovement) == "function" then
+
+            HolySniperClearHeldToolForMovement(
+                "farm middle walk"
+            )
+        end
+
         pcall(function()
 
             humanoid:MoveTo(
@@ -14059,6 +14187,10 @@ end
 
 function HolySniperReturnTeleport(cframe, token)
 
+    HolySniperClearHeldToolForMovement(
+        "return teleport"
+    )
+
     if typeof(cframe) ~= "CFrame" then
         return false, "missing return cframe"
     end
@@ -14110,6 +14242,10 @@ end
 
 function HolySniperReturnWalk(cframe, token)
 
+    HolySniperClearHeldToolForMovement(
+        "return walk start"
+    )
+
     if typeof(cframe) ~= "CFrame" then
         return false, "missing return cframe"
     end
@@ -14137,6 +14273,10 @@ function HolySniperReturnWalk(cframe, token)
 
     while HolySniperStillActive(token) == true
     and os.clock() - startedAt <= timeout do
+
+        HolySniperClearHeldToolForMovement(
+            "return walk loop"
+        )
 
         local humanoid =
             HolySniperGetCharacterHumanoid()
@@ -14465,6 +14605,10 @@ end
 
 function HolySniperMoveWalkToEntry(entry, filter, token)
 
+    HolySniperClearHeldToolForMovement(
+        "walk to pet start"
+    )
+
     local startedAt =
         os.clock()
 
@@ -14479,6 +14623,10 @@ function HolySniperMoveWalkToEntry(entry, filter, token)
 
     while HolySniperStillActive(token) == true
     and os.clock() - startedAt <= timeout do
+
+        HolySniperClearHeldToolForMovement(
+            "walk to pet loop"
+        )
 
         local valid,
             refreshed,
@@ -14585,6 +14733,10 @@ function HolySniperMoveWalkToEntry(entry, filter, token)
 end
 
 function HolySniperMoveTeleportToEntry(entry, filter, token)
+
+    HolySniperClearHeldToolForMovement(
+        "teleport to pet start"
+    )
 
     local valid,
         refreshed,
@@ -14704,6 +14856,10 @@ function HolySniperMoveTeleportToEntry(entry, filter, token)
 
     task.wait(
         0.035
+    )
+
+    HolySniperClearHeldToolForMovement(
+        "teleport to pet verify"
     )
 
     valid,
@@ -15097,6 +15253,10 @@ function HolySniperExecuteMatch(match, token)
 
     HOLY_SNIPER_RUNTIME.Buying =
         true
+
+    HolySniperClearHeldToolForMovement(
+        "buy flow"
+    )
 
     local entry =
         match.Entry
@@ -17502,6 +17662,21 @@ function HolyDefenseRunWorker(token)
 
     while runtime.Token == token
     and runtime.Active == true do
+
+        local sniper =
+            type(HOLY_SNIPER_RUNTIME) == "table"
+            and HOLY_SNIPER_RUNTIME
+            or {}
+
+        if sniper.Buying == true
+        or sniper.Returning == true then
+
+            task.wait(
+                0.10
+            )
+
+            continue
+        end
 
         local target =
             runtime.Target
@@ -19909,6 +20084,10 @@ function HolySniperTick(token)
 
         return false
     end
+
+    HolySniperClearHeldToolForMovement(
+        "scan"
+    )
 
     local matches =
         HolySniperRunScan()
