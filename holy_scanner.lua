@@ -159,10 +159,10 @@ HOLY_SCANNER_STATE = {
         "All",
     },
 
-    HuntMode = false,
+    HuntMode = true,
 
     -- Legacy setting name. Kept only so old saved settings migrate safely.
-    AutoHop = false,
+    AutoHop = true,
 
     SearchPages = 5,
 
@@ -1280,10 +1280,15 @@ function HolyScannerLoadSettings()
         HOLY_SCANNER_STATE.HuntMode =
             data.HuntMode
 
+    elseif type(data.AutoHop) == "boolean" then
+
+        HOLY_SCANNER_STATE.HuntMode =
+            data.AutoHop
+
     else
 
         HOLY_SCANNER_STATE.HuntMode =
-            data.AutoHop == true
+            true
     end
 
     HOLY_SCANNER_STATE.AutoHop =
