@@ -1,5 +1,5 @@
 --==================================================
--- HOLY GAG2 OFFICIAL LOADER
+-- HOLY GAG2 PUBLIC LOADER - OBSIDIAN VERSION
 --==================================================
 
 local Players =
@@ -24,60 +24,226 @@ local HOLY_PRO_API =
 local HOLY_SNIPER_API =
     "https://holy-sniper-loader-api.benjicapalot041.workers.dev"
 
-local HOLY_SETTINGS_FOLDER =
+local HOLY_OBSIDIAN_REPO =
+    "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+
+local HOLY_OBSIDIAN_LIBRARY_URL =
+    HOLY_OBSIDIAN_REPO
+    .. "Library.lua"
+
+local HOLY_FOLDER =
     "HolyGAG2"
 
 local HOLY_KEY_FILE =
-    HOLY_SETTINGS_FOLDER
-    .. "/HolyLoaderGAG2Key.json"
+    HOLY_FOLDER
+    .. "/HolyLoaderGAG2Key.txt"
+
+local HOLY_SESSION_FILE =
+    HOLY_FOLDER
+    .. "/HolyLoaderGAG2Session.json"
 
 local HOLY_LOADER_VERSION =
-    "holy_loader_gag2_v1"
+    "holy_loader_gag2_obsidian_v1"
 
-local HolyLoaderRunning =
+local HOLY_PUBLIC_LOADSTRING =
+    [[loadstring(game:HttpGet("https://raw.githubusercontent.com/bencapalot041/holy/main/holy_loader_gag2.lua", true))()]]
+
+local HOLY_DISCORD_INVITE =
+    ""
+
+local HolyEnv =
+    type(getgenv) == "function"
+    and getgenv()
+    or _G
+
+pcall(function()
+
+    if type(HolyEnv.HOLY_LOADER_STOP) == "function" then
+
+        HolyEnv.HOLY_LOADER_STOP(
+            "reload"
+        )
+    end
+end)
+
+local HOLY_CONNECTIONS =
+    {}
+
+local HOLY_LIBRARY =
+    nil
+
+local HOLY_WINDOW =
+    nil
+
+local HOLY_BUSY =
     false
 
-local HolyLoaderGui =
-    nil
+local HOLY_UI =
+    {}
 
-local HolyStatusLabel =
-    nil
+--==================================================
+-- BASIC HELPERS
+--==================================================
 
-local HolyKeyBox =
-    nil
+local function HolyTrack(connection)
 
-local function HolyCleanText(value)
+    if connection then
+
+        table.insert(
+            HOLY_CONNECTIONS,
+            connection
+        )
+    end
+
+    return connection
+end
+
+local function HolyClean(value)
 
     local text =
         tostring(value or "")
 
     text =
-        text:gsub("^%s+", "")
+        text:gsub(
+            "^%s+",
+            ""
+        )
 
     text =
-        text:gsub("%s+$", "")
+        text:gsub(
+            "%s+$",
+            ""
+        )
 
     return text
 end
 
+local function HolyStop(reason)
+
+    for _, connection in ipairs(HOLY_CONNECTIONS) do
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+
+    HOLY_CONNECTIONS =
+        {}
+
+    if type(HOLY_LIBRARY) == "table"
+    and type(HOLY_LIBRARY.Unload) == "function" then
+
+        pcall(function()
+
+            HOLY_LIBRARY:Unload()
+        end)
+    end
+
+    HOLY_LIBRARY =
+        nil
+
+    HOLY_WINDOW =
+        nil
+
+    HOLY_UI =
+        {}
+end
+
+HolyEnv.HOLY_LOADER_STOP =
+    HolyStop
+
 local function HolySetStatus(text)
 
     text =
-        tostring(text or "Ready.")
+        tostring(text or "")
 
-    if HolyStatusLabel then
+    local label =
+        HOLY_UI.StatusLabel
 
-        HolyStatusLabel.Text =
-            text
+    if typeof(label) == "Instance" then
+
+        pcall(function()
+
+            label.Text =
+                text
+        end)
+
+        return true
+    end
+
+    if type(label) == "table" then
+
+        if type(label.SetText) == "function" then
+
+            local ok =
+                pcall(function()
+
+                    label:SetText(
+                        text
+                    )
+                end)
+
+            if ok == true then
+                return true
+            end
+        end
+
+        if label.TextLabel
+        and typeof(label.TextLabel) == "Instance" then
+
+            pcall(function()
+
+                label.TextLabel.Text =
+                    text
+            end)
+
+            return true
+        end
     end
 
     print(
         "[HOLY LOADER]",
         text
     )
+
+    return false
 end
 
-local function HolyNotify(title, text, duration)
+local function HolyNotify(title, description, duration)
+
+    title =
+        tostring(title or "HOLY")
+
+    description =
+        tostring(description or "")
+
+    duration =
+        tonumber(duration)
+        or 4
+
+    if type(HOLY_LIBRARY) == "table"
+    and type(HOLY_LIBRARY.Notify) == "function" then
+
+        local ok =
+            pcall(function()
+
+                HOLY_LIBRARY:Notify({
+                    Title =
+                        title,
+
+                    Description =
+                        description,
+
+                    Time =
+                        duration,
+                })
+            end)
+
+        if ok == true then
+            return true
+        end
+    end
 
     pcall(function()
 
@@ -85,17 +251,24 @@ local function HolyNotify(title, text, duration)
             "SendNotification",
             {
                 Title =
-                    tostring(title or "HOLY"),
+                    title,
 
                 Text =
-                    tostring(text or ""),
+                    description,
 
                 Duration =
-                    tonumber(duration)
-                    or 5,
+                    duration,
             }
         )
     end)
+
+    print(
+        "[HOLY LOADER]",
+        title,
+        description
+    )
+
+    return true
 end
 
 local function HolyCanUseFiles()
@@ -116,10 +289,10 @@ local function HolyEnsureFolder()
     local ok =
         pcall(function()
 
-            if not isfolder(HOLY_SETTINGS_FOLDER) then
+            if not isfolder(HOLY_FOLDER) then
 
                 makefolder(
-                    HOLY_SETTINGS_FOLDER
+                    HOLY_FOLDER
                 )
             end
         end)
@@ -127,60 +300,7 @@ local function HolyEnsureFolder()
     return ok == true
 end
 
-local function HolySaveKey(key)
-
-    key =
-        HolyCleanText(key)
-
-    if key == "" then
-        return false
-    end
-
-    if HolyCanUseFiles() ~= true then
-        return false
-    end
-
-    HolyEnsureFolder()
-
-    local payload = {
-        Key =
-            key,
-
-        SavedAt =
-            os.time(),
-
-        Version =
-            HOLY_LOADER_VERSION,
-    }
-
-    local ok,
-        encoded =
-        pcall(function()
-
-            return HttpService:JSONEncode(
-                payload
-            )
-        end)
-
-    if ok ~= true
-    or type(encoded) ~= "string" then
-
-        return false
-    end
-
-    local writeOk =
-        pcall(function()
-
-            writefile(
-                HOLY_KEY_FILE,
-                encoded
-            )
-        end)
-
-    return writeOk == true
-end
-
-local function HolyLoadSavedKey()
+local function HolyReadFile(path)
 
     if HolyCanUseFiles() ~= true then
         return ""
@@ -193,7 +313,7 @@ local function HolyLoadSavedKey()
 
         exists =
             isfile(
-                HOLY_KEY_FILE
+                path
             )
     end)
 
@@ -206,63 +326,89 @@ local function HolyLoadSavedKey()
         pcall(function()
 
             return readfile(
-                HOLY_KEY_FILE
+                path
             )
         end)
 
-    if ok ~= true
-    or type(raw) ~= "string"
-    or raw == "" then
-
+    if ok ~= true then
         return ""
     end
 
-    local decodeOk,
-        data =
+    return HolyClean(raw)
+end
+
+local function HolyWriteFile(path, text)
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local ok =
         pcall(function()
 
-            return HttpService:JSONDecode(
-                raw
+            writefile(
+                path,
+                tostring(text or "")
             )
         end)
 
-    if decodeOk == true
-    and type(data) == "table" then
-
-        return HolyCleanText(
-            data.Key
-            or data.key
-            or ""
-        )
-    end
-
-    return HolyCleanText(raw)
+    return ok == true
 end
 
-local function HolyResetSavedKey()
+local function HolyDeleteFile(path)
 
-    if type(delfile) == "function" then
+    if type(delfile) ~= "function" then
+        return false
+    end
 
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                path
+            )
+    end)
+
+    if exists ~= true then
+        return false
+    end
+
+    local ok =
         pcall(function()
 
-            if isfile(HOLY_KEY_FILE) then
-
-                delfile(
-                    HOLY_KEY_FILE
-                )
-            end
+            delfile(
+                path
+            )
         end)
+
+    return ok == true
+end
+
+local function HolyCopyText(text)
+
+    local clipboard =
+        setclipboard
+        or toclipboard
+        or set_clipboard
+
+    if type(clipboard) ~= "function" then
+        return false
     end
 
-    if HolyKeyBox then
+    local ok =
+        pcall(function()
 
-        HolyKeyBox.Text =
-            ""
-    end
+            clipboard(
+                tostring(text or "")
+            )
+        end)
 
-    HolySetStatus(
-        "Saved key reset."
-    )
+    return ok == true
 end
 
 local function HolyGetRequestFunction()
@@ -287,29 +433,24 @@ local function HolyGetRequestFunction()
         return fluxus.request
     end
 
-    local env =
-        type(getgenv) == "function"
-        and getgenv()
-        or _G
+    if type(HolyEnv) == "table" then
 
-    if type(env) == "table" then
-
-        if type(env.request) == "function" then
-            return env.request
+        if type(HolyEnv.request) == "function" then
+            return HolyEnv.request
         end
 
-        if type(env.http_request) == "function" then
-            return env.http_request
+        if type(HolyEnv.http_request) == "function" then
+            return HolyEnv.http_request
         end
     end
 
     return nil
 end
 
-local function HolyJsonEncode(value)
+local function HolyEncodeJson(value)
 
     local ok,
-        encoded =
+        result =
         pcall(function()
 
             return HttpService:JSONEncode(
@@ -318,22 +459,32 @@ local function HolyJsonEncode(value)
         end)
 
     if ok == true
-    and type(encoded) == "string" then
+    and type(result) == "string" then
 
-        return encoded
+        return result
     end
 
     return "{}"
 end
 
-local function HolyJsonDecode(text)
+local function HolyDecodeJson(body)
+
+    if type(body) ~= "string" then
+        return nil
+    end
+
+    if body:sub(1, 3) == "\239\187\191" then
+
+        body =
+            body:sub(4)
+    end
 
     local ok,
         data =
         pcall(function()
 
             return HttpService:JSONDecode(
-                tostring(text or "")
+                body
             )
         end)
 
@@ -346,92 +497,250 @@ local function HolyJsonDecode(text)
     return nil
 end
 
-local function HolyHttpJsonPost(url, payload)
+local function HolyHttpRaw(method, url, payload, accept)
+
+    method =
+        tostring(method or "GET")
+
+    url =
+        HolyClean(url)
+
+    if url == "" then
+
+        return nil,
+            "empty url",
+            0
+    end
 
     local requestFunction =
         HolyGetRequestFunction()
 
-    if type(requestFunction) ~= "function" then
+    if type(requestFunction) == "function" then
+
+        local options = {
+            Url =
+                url,
+
+            Method =
+                method,
+
+            Headers = {
+                ["Accept"] =
+                    accept
+                    or "application/json, text/plain",
+
+                ["Cache-Control"] =
+                    "no-cache",
+            },
+        }
+
+        if payload ~= nil then
+
+            options.Headers["Content-Type"] =
+                "application/json"
+
+            options.Body =
+                HolyEncodeJson(
+                    payload
+                )
+        end
+
+        local ok,
+            response =
+            pcall(
+                requestFunction,
+                options
+            )
+
+        if ok ~= true then
+
+            return nil,
+                tostring(response),
+                0
+        end
+
+        if type(response) == "string" then
+
+            return response,
+                nil,
+                200
+        end
+
+        if type(response) == "table" then
+
+            return tostring(
+                response.Body
+                or response.body
+                or response.ResponseBody
+                or response.responseBody
+                or ""
+            ),
+                nil,
+                tonumber(
+                    response.StatusCode
+                    or response.Status
+                    or response.status
+                    or response.status_code
+                    or 200
+                )
+                or 200
+        end
 
         return nil,
-            "Executor request/http_request is missing."
+            "bad response",
+            0
     end
 
-    local body =
-        HolyJsonEncode(
-            payload or {}
-        )
+    if method == "POST" then
+
+        local ok,
+            body =
+            pcall(function()
+
+                return HttpService:PostAsync(
+                    url,
+                    HolyEncodeJson(payload or {}),
+                    Enum.HttpContentType.ApplicationJson,
+                    false
+                )
+            end)
+
+        if ok == true then
+
+            return tostring(body or ""),
+                nil,
+                200
+        end
+
+        return nil,
+            tostring(body),
+            0
+    end
 
     local ok,
-        response =
+        body =
         pcall(function()
 
-            return requestFunction({
-                Url =
-                    url,
-
-                Method =
-                    "POST",
-
-                Headers = {
-                    ["Content-Type"] =
-                        "application/json",
-
-                    ["Accept"] =
-                        "application/json, text/plain",
-
-                    ["Cache-Control"] =
-                        "no-cache",
-                },
-
-                Body =
-                    body,
-            })
+            return game:HttpGet(
+                url,
+                true
+            )
         end)
 
-    if ok ~= true then
+    if ok == true then
 
-        return nil,
-            tostring(response)
+        return tostring(body or ""),
+            nil,
+            200
     end
 
-    if type(response) == "string" then
+    return nil,
+        tostring(body),
+        0
+end
 
-        return {
-            StatusCode =
-                200,
+local function HolyHttpJson(method, url, payload)
 
-            Body =
-                response,
-        },
-            nil
-    end
-
-    if type(response) ~= "table" then
-
-        return nil,
-            "bad response"
-    end
-
-    response.StatusCode =
-        tonumber(
-            response.StatusCode
-            or response.Status
-            or response.status
-            or response.status_code
-            or 200
+    local body,
+        err,
+        status =
+        HolyHttpRaw(
+            method,
+            url,
+            payload,
+            "application/json"
         )
-        or 200
 
-    response.Body =
-        response.Body
-        or response.body
-        or response.ResponseBody
-        or response.responseBody
-        or ""
+    if body == nil then
 
-    return response,
-        nil
+        return nil,
+            err,
+            status
+    end
+
+    local data =
+        HolyDecodeJson(
+            body
+        )
+
+    if type(data) ~= "table" then
+
+        return nil,
+            "invalid json",
+            status
+    end
+
+    return data,
+        nil,
+        status
+end
+
+local function HolyHttpGetText(url)
+
+    local body,
+        err =
+        HolyHttpRaw(
+            "GET",
+            url,
+            nil,
+            "text/plain"
+        )
+
+    return body,
+        err
+end
+
+local function HolyCompiler()
+
+    if type(loadstring) == "function" then
+        return loadstring
+    end
+
+    if type(load) == "function" then
+        return load
+    end
+
+    return nil
+end
+
+local function HolyFormatTime(seconds)
+
+    seconds =
+        math.max(
+            0,
+            math.floor(
+                tonumber(seconds)
+                or 0
+            )
+        )
+
+    local days =
+        math.floor(seconds / 86400)
+
+    local hours =
+        math.floor((seconds % 86400) / 3600)
+
+    local minutes =
+        math.floor((seconds % 3600) / 60)
+
+    if days > 0 then
+
+        return tostring(days)
+            .. "d "
+            .. tostring(hours)
+            .. "h"
+    end
+
+    if hours > 0 then
+
+        return tostring(hours)
+            .. "h "
+            .. tostring(minutes)
+            .. "m"
+    end
+
+    return tostring(minutes)
+        .. "m"
 end
 
 local function HolyNormalizeFeatures(features)
@@ -448,7 +757,7 @@ local function HolyNormalizeFeatures(features)
         if type(key) == "number" then
 
             local name =
-                HolyCleanText(value)
+                HolyClean(value)
 
             if name ~= "" then
 
@@ -466,28 +775,21 @@ local function HolyNormalizeFeatures(features)
     return output
 end
 
-local function HolyFeatureEnabled(features, name)
+local function HolyHasFeature(features, featureName)
 
-    name =
-        tostring(name or "")
+    featureName =
+        tostring(featureName or ""):lower()
 
     if type(features) ~= "table"
-    or name == "" then
+    or featureName == "" then
 
         return false
     end
 
-    if features[name] == true then
-        return true
-    end
-
-    local lower =
-        name:lower()
-
     for key, value in pairs(features) do
 
         if value == true
-        and tostring(key):lower() == lower then
+        and tostring(key):lower() == featureName then
 
             return true
         end
@@ -496,7 +798,87 @@ local function HolyFeatureEnabled(features, name)
     return false
 end
 
-local function HolyExtractAuth(data, apiBase, key)
+local function HolyFeatureText(features)
+
+    features =
+        type(features) == "table"
+        and features
+        or {}
+
+    if HolyHasFeature(features, "admin") == true
+    or HolyHasFeature(features, "dev_tools") == true then
+
+        return "Owner/Admin"
+    end
+
+    if HolyHasFeature(features, "server_finder") == true
+    or HolyHasFeature(features, "pet_sniper") == true
+    or HolyHasFeature(features, "pet_sniper_autobuy") == true then
+
+        return "Server Sniper"
+    end
+
+    if HolyHasFeature(features, "basic") == true then
+
+        return "HOLY Pro"
+    end
+
+    return "Access"
+end
+
+local function HolyShortKey(key)
+
+    key =
+        HolyClean(key)
+
+    if key == "" then
+        return "None"
+    end
+
+    return key:sub(1, 10)
+        .. "..."
+end
+
+--==================================================
+-- AUTH / PRODUCT ROUTING
+--==================================================
+
+local function HolyBuildVerifyPayload(key)
+
+    return {
+        Key =
+            key,
+
+        key =
+            key,
+
+        UserId =
+            tostring(LocalPlayer.UserId),
+
+        RobloxUserId =
+            tostring(LocalPlayer.UserId),
+
+        Username =
+            tostring(LocalPlayer.Name),
+
+        RobloxUsername =
+            tostring(LocalPlayer.Name),
+
+        PlaceId =
+            tostring(game.PlaceId),
+
+        JobId =
+            tostring(game.JobId),
+
+        Loader =
+            "holy_loader_gag2",
+
+        LoaderVersion =
+            HOLY_LOADER_VERSION,
+    }
+end
+
+local function HolyExtractAuth(apiBase, key, data)
 
     data =
         type(data) == "table"
@@ -517,6 +899,41 @@ local function HolyExtractAuth(data, apiBase, key)
         and data.Session
         or {}
 
+    local ok =
+        data.ok == true
+        or data.valid == true
+        or data.Valid == true
+        or data.active == true
+
+    if ok ~= true then
+
+        return nil,
+            tostring(
+                data.error
+                or data.message
+                or data.Error
+                or "key rejected"
+            )
+    end
+
+    local sessionId =
+        HolyClean(
+            data.sessionId
+            or data.SessionId
+            or data.session_id
+            or sessionData.id
+            or sessionData.Id
+            or sessionData.sessionId
+            or sessionData.SessionId
+            or ""
+        )
+
+    if sessionId == "" then
+
+        return nil,
+            "missing session id"
+    end
+
     local features =
         data.features
         or data.Features
@@ -533,49 +950,7 @@ local function HolyExtractAuth(data, apiBase, key)
             features
         )
 
-    local sessionId =
-        HolyCleanText(
-            data.sessionId
-            or data.SessionId
-            or data.session_id
-            or sessionData.id
-            or sessionData.Id
-            or sessionData.sessionId
-            or sessionData.SessionId
-            or ""
-        )
-
-    local plan =
-        HolyCleanText(
-            data.plan
-            or data.Plan
-            or keyData.plan
-            or keyData.Plan
-            or ""
-        )
-
-    local valid =
-        data.ok == true
-        or data.valid == true
-        or data.Valid == true
-
-    if valid ~= true then
-
-        return nil,
-            tostring(
-                data.error
-                or data.Error
-                or "invalid key"
-            )
-    end
-
-    if sessionId == "" then
-
-        return nil,
-            "missing session id"
-    end
-
-    return {
+    local auth = {
         Valid =
             true,
 
@@ -585,11 +960,39 @@ local function HolyExtractAuth(data, apiBase, key)
         SessionId =
             sessionId,
 
+        KeyPrefix =
+            data.keyPrefix
+            or data.KeyPrefix
+            or keyData.keyPrefix
+            or keyData.KeyPrefix
+            or HolyShortKey(key),
+
+        Plan =
+            data.plan
+            or data.Plan
+            or keyData.plan
+            or keyData.Plan
+            or "",
+
         Features =
             features,
 
-        Plan =
-            plan,
+        ExpiresAt =
+            tonumber(data.expiresAt or data.ExpiresAt or keyData.expiresAt or keyData.ExpiresAt)
+            or 0,
+
+        SlotExpiresAt =
+            tonumber(data.slotExpiresAt or data.SlotExpiresAt or keyData.slotExpiresAt or keyData.SlotExpiresAt)
+            or 0,
+
+        TimeLeft =
+            tonumber(data.timeLeft or data.TimeLeft)
+            or 0,
+
+        Slots =
+            data.slots
+            or data.Slots
+            or {},
 
         ApiBase =
             apiBase,
@@ -597,123 +1000,62 @@ local function HolyExtractAuth(data, apiBase, key)
         VerifiedAt =
             os.time(),
 
-        RobloxUserId =
-            tostring(LocalPlayer.UserId),
-
-        RobloxUsername =
-            tostring(LocalPlayer.Name),
-
-        LoaderVersion =
-            HOLY_LOADER_VERSION,
-    },
-        nil
-end
-
-local function HolyBuildVerifyPayload(key)
-
-    return {
-        Key =
-            key,
-
-        key =
-            key,
-
-        RobloxUserId =
-            tostring(LocalPlayer.UserId),
-
-        RobloxUsername =
-            tostring(LocalPlayer.Name),
-
-        UserId =
-            tostring(LocalPlayer.UserId),
-
-        Username =
-            tostring(LocalPlayer.Name),
-
-        PlaceId =
-            tostring(game.PlaceId),
-
-        JobId =
-            tostring(game.JobId),
-
-        Loader =
-            "holy_loader_gag2",
-
         LoaderVersion =
             HOLY_LOADER_VERSION,
     }
+
+    return auth,
+        nil
 end
 
 local function HolyVerifyAt(apiBase, key)
 
-    local response,
-        requestError =
-        HolyHttpJsonPost(
+    local data,
+        err =
+        HolyHttpJson(
+            "POST",
             apiBase .. "/verify",
             HolyBuildVerifyPayload(key)
-        )
-
-    if response == nil then
-
-        return nil,
-            requestError
-    end
-
-    local data =
-        HolyJsonDecode(
-            response.Body
         )
 
     if type(data) ~= "table" then
 
         return nil,
-            "verify returned non-json"
+            tostring(err or "verify failed")
     end
 
     return HolyExtractAuth(
-        data,
         apiBase,
-        key
+        key,
+        data
     )
 end
 
-local function HolyIsServerSniperAuth(auth)
+local function HolyShouldUseSniper(auth)
 
-    if type(auth) ~= "table" then
-        return false
-    end
+    auth =
+        type(auth) == "table"
+        and auth
+        or {}
+
+    local plan =
+        tostring(auth.Plan or ""):lower()
 
     local features =
         type(auth.Features) == "table"
         and auth.Features
         or {}
 
-    if HolyFeatureEnabled(features, "admin") == true then
-        return true
-    end
-
-    if HolyFeatureEnabled(features, "dev_tools") == true then
-        return true
-    end
-
-    if HolyFeatureEnabled(features, "server_finder") == true then
-        return true
-    end
-
-    if HolyFeatureEnabled(features, "pet_sniper") == true then
-        return true
-    end
-
-    if HolyFeatureEnabled(features, "pet_sniper_autobuy") == true then
-        return true
-    end
-
-    local plan =
-        tostring(auth.Plan or ""):lower()
-
     if plan:find("finder", 1, true)
-    or plan:find("sniper", 1, true)
-    or plan:find("server", 1, true) then
+    or plan:find("server_sniper", 1, true)
+    or plan:find("server sniper", 1, true)
+    or plan:find("sniper_slot", 1, true) then
+
+        return true
+    end
+
+    if HolyHasFeature(features, "server_finder") == true
+    and HolyHasFeature(features, "basic") ~= true then
 
         return true
     end
@@ -724,7 +1066,7 @@ end
 local function HolyVerifyKey(key)
 
     key =
-        HolyCleanText(key)
+        HolyClean(key)
 
     if key == "" then
 
@@ -733,7 +1075,7 @@ local function HolyVerifyKey(key)
     end
 
     local proAuth,
-        proError =
+        proErr =
         HolyVerifyAt(
             HOLY_PRO_API,
             key
@@ -742,10 +1084,10 @@ local function HolyVerifyKey(key)
     if type(proAuth) == "table"
     and proAuth.Valid == true then
 
-        if HolyIsServerSniperAuth(proAuth) == true then
+        if HolyShouldUseSniper(proAuth) == true then
 
             local sniperAuth,
-                sniperError =
+                sniperErr =
                 HolyVerifyAt(
                     HOLY_SNIPER_API,
                     key
@@ -754,21 +1096,26 @@ local function HolyVerifyKey(key)
             if type(sniperAuth) == "table"
             and sniperAuth.Valid == true then
 
-                return sniperAuth,
+                sniperAuth.Product =
                     "sniper"
+
+                return sniperAuth,
+                    nil
             end
 
             return nil,
-                sniperError
-                or "Server Sniper verify failed."
+                tostring(sniperErr or "Server Sniper verify failed.")
         end
 
-        return proAuth,
+        proAuth.Product =
             "pro"
+
+        return proAuth,
+            nil
     end
 
     local sniperAuth,
-        sniperError =
+        sniperErr =
         HolyVerifyAt(
             HOLY_SNIPER_API,
             key
@@ -777,26 +1124,40 @@ local function HolyVerifyKey(key)
     if type(sniperAuth) == "table"
     and sniperAuth.Valid == true then
 
-        return sniperAuth,
+        sniperAuth.Product =
             "sniper"
+
+        return sniperAuth,
+            nil
     end
 
     return nil,
-        proError
-        or sniperError
-        or "Key verify failed."
+        tostring(proErr or sniperErr or "Key verify failed.")
 end
 
-local function HolySetAuth(auth)
+local function HolyApplyAuth(auth)
 
-    if type(getgenv) == "function" then
-
-        getgenv().HOLY_AUTH =
-            auth
+    if type(auth) ~= "table" then
+        return false
     end
+
+    HolyEnv.HOLY_AUTH =
+        auth
 
     _G.HOLY_AUTH =
         auth
+
+    HolyWriteFile(
+        HOLY_KEY_FILE,
+        tostring(auth.Key or "")
+    )
+
+    HolyWriteFile(
+        HOLY_SESSION_FILE,
+        HolyEncodeJson(auth)
+    )
+
+    return true
 end
 
 local function HolyValidateSource(body)
@@ -815,7 +1176,7 @@ local function HolyValidateSource(body)
     end
 
     local decoded =
-        HolyJsonDecode(
+        HolyDecodeJson(
             body
         )
 
@@ -840,7 +1201,7 @@ local function HolyValidateSource(body)
             tostring(
                 decoded.error
                 or decoded.Error
-                or "source json had no source"
+                or "source json missing source"
             )
     end
 
@@ -853,7 +1214,7 @@ local function HolyValidateSource(body)
     or preview:find("not found", 1, true) then
 
         return nil,
-            "source fetch failed / bad source"
+            "source_fetch_failed / bad source"
     end
 
     return body,
@@ -862,10 +1223,13 @@ end
 
 local function HolyFetchSource(auth)
 
+    auth =
+        type(auth) == "table"
+        and auth
+        or {}
+
     local apiBase =
-        HolyCleanText(
-            auth.ApiBase
-        )
+        HolyClean(auth.ApiBase)
 
     if apiBase == "" then
 
@@ -873,71 +1237,96 @@ local function HolyFetchSource(auth)
             "missing api base"
     end
 
-    local response,
-        requestError =
-        HolyHttpJsonPost(
+    local payload = {
+        Key =
+            auth.Key,
+
+        key =
+            auth.Key,
+
+        SessionId =
+            auth.SessionId,
+
+        sessionId =
+            auth.SessionId,
+
+        UserId =
+            tostring(LocalPlayer.UserId),
+
+        RobloxUserId =
+            tostring(LocalPlayer.UserId),
+
+        Username =
+            tostring(LocalPlayer.Name),
+
+        RobloxUsername =
+            tostring(LocalPlayer.Name),
+
+        PlaceId =
+            tostring(game.PlaceId),
+
+        JobId =
+            tostring(game.JobId),
+
+        Loader =
+            "holy_loader_gag2",
+
+        LoaderVersion =
+            HOLY_LOADER_VERSION,
+    }
+
+    local body,
+        postErr,
+        status =
+        HolyHttpRaw(
+            "POST",
             apiBase .. "/source",
-            {
-                Key =
-                    auth.Key,
-
-                key =
-                    auth.Key,
-
-                SessionId =
-                    auth.SessionId,
-
-                sessionId =
-                    auth.SessionId,
-
-                RobloxUserId =
-                    tostring(LocalPlayer.UserId),
-
-                RobloxUsername =
-                    tostring(LocalPlayer.Name),
-
-                PlaceId =
-                    tostring(game.PlaceId),
-
-                JobId =
-                    tostring(game.JobId),
-
-                Loader =
-                    "holy_loader_gag2",
-
-                LoaderVersion =
-                    HOLY_LOADER_VERSION,
-            }
+            payload,
+            "application/json, text/plain"
         )
 
-    if response == nil then
+    if type(body) == "string"
+    and body ~= ""
+    and tonumber(status) >= 200
+    and tonumber(status) < 300 then
 
-        return nil,
-            requestError
+        local source,
+            sourceErr =
+            HolyValidateSource(
+                body
+            )
+
+        if source then
+            return source, nil
+        end
     end
 
-    local statusCode =
-        tonumber(response.StatusCode)
-        or 200
+    local getBody,
+        getErr =
+        HolyHttpGetText(
+            apiBase
+            .. "/source?sessionId="
+            .. HttpService:UrlEncode(
+                tostring(auth.SessionId or "")
+            )
+        )
 
-    if statusCode < 200
-    or statusCode >= 300 then
+    if type(getBody) ~= "string"
+    or getBody == "" then
 
         return nil,
-            "source_fetch_failed status "
-            .. tostring(statusCode)
+            tostring(postErr or getErr or "source fetch failed")
     end
 
     return HolyValidateSource(
-        response.Body
+        getBody
     )
 end
 
 local function HolyRunSource(source)
 
     local compiler =
-        loadstring
-        or load
+        HolyCompiler()
 
     if type(compiler) ~= "function" then
 
@@ -947,7 +1336,7 @@ local function HolyRunSource(source)
 
     local compileOk,
         chunk,
-        compileError =
+        compileErr =
         pcall(
             compiler,
             source
@@ -958,578 +1347,1510 @@ local function HolyRunSource(source)
 
         return false,
             "compile failed: "
-            .. tostring(compileError or chunk)
+            .. tostring(compileErr or chunk)
     end
 
     local runOk,
-        runError =
+        runErr =
         pcall(chunk)
 
     if runOk ~= true then
 
         return false,
             "run failed: "
-            .. tostring(runError)
+            .. tostring(runErr)
     end
 
     return true,
         "loaded"
 end
 
-local function HolyExecuteKey(key)
+--==================================================
+-- OBSIDIAN UI HELPERS
+--==================================================
 
-    if HolyLoaderRunning == true then
-        return
+local function HolyLoadObsidian()
+
+    if type(HOLY_LIBRARY) == "table" then
+
+        return HOLY_LIBRARY,
+            nil
     end
-
-    HolyLoaderRunning =
-        true
-
-    key =
-        HolyCleanText(key)
-
-    HolySetStatus(
-        "Verifying key..."
-    )
-
-    local auth,
-        productOrError =
-        HolyVerifyKey(key)
-
-    if type(auth) ~= "table"
-    or auth.Valid ~= true then
-
-        HolyLoaderRunning =
-            false
-
-        HolySetStatus(
-            "Load failed: "
-            .. tostring(productOrError)
-        )
-
-        HolyNotify(
-            "HOLY",
-            "Key failed: "
-            .. tostring(productOrError),
-            6
-        )
-
-        return false
-    end
-
-    local product =
-        tostring(productOrError or "pro")
-
-    HolySaveKey(
-        key
-    )
-
-    HolySetAuth(
-        auth
-    )
-
-    HolySetStatus(
-        product == "sniper"
-        and "Loading Server Sniper..."
-        or "Loading HOLY Pro..."
-    )
 
     local source,
-        sourceError =
-        HolyFetchSource(
-            auth
+        err =
+        HolyHttpGetText(
+            HOLY_OBSIDIAN_LIBRARY_URL
         )
 
     if type(source) ~= "string"
     or source == "" then
 
-        HolyLoaderRunning =
-            false
-
-        HolySetStatus(
-            "Load failed: "
-            .. tostring(sourceError)
-        )
-
-        HolyNotify(
-            "HOLY",
-            "Source failed: "
-            .. tostring(sourceError),
-            6
-        )
-
-        return false
+        return nil,
+            "Obsidian download failed: "
+            .. tostring(err)
     end
 
-    HolySetStatus(
-        "Running..."
-    )
+    local lower =
+        source:sub(1, 200):lower()
 
-    local ok,
-        runError =
-        HolyRunSource(
+    if lower:find("<html", 1, true)
+    or lower:find("<!doctype", 1, true) then
+
+        return nil,
+            "Obsidian returned HTML"
+    end
+
+    local compiler =
+        HolyCompiler()
+
+    if type(compiler) ~= "function" then
+
+        return nil,
+            "loadstring/load missing"
+    end
+
+    local compileOk,
+        chunk,
+        compileErr =
+        pcall(
+            compiler,
             source
         )
 
-    if ok ~= true then
+    if compileOk ~= true
+    or type(chunk) ~= "function" then
 
-        HolyLoaderRunning =
-            false
+        return nil,
+            "Obsidian compile failed: "
+            .. tostring(compileErr or chunk)
+    end
 
-        HolySetStatus(
-            "Load failed: "
-            .. tostring(runError)
-        )
+    local runOk,
+        library =
+        pcall(chunk)
 
-        HolyNotify(
-            "HOLY",
-            tostring(runError),
-            7
-        )
+    if runOk ~= true
+    or type(library) ~= "table" then
+
+        return nil,
+            "Obsidian run failed: "
+            .. tostring(library)
+    end
+
+    HOLY_LIBRARY =
+        library
+
+    return library,
+        nil
+end
+
+local function HolyAddLabel(parent, text, wrap)
+
+    if type(parent) ~= "table"
+    or type(parent.AddLabel) ~= "function" then
+
+        return nil
+    end
+
+    local ok,
+        label =
+        pcall(function()
+
+            return parent:AddLabel({
+                Text =
+                    tostring(text or ""),
+
+                DoesWrap =
+                    wrap == true,
+
+                Size =
+                    14,
+            })
+        end)
+
+    if ok == true
+    and label ~= nil then
+
+        return label
+    end
+
+    ok,
+        label =
+        pcall(function()
+
+            return parent:AddLabel(
+                tostring(text or ""),
+                wrap == true
+            )
+        end)
+
+    if ok == true then
+        return label
+    end
+
+    return nil
+end
+
+local function HolyAddDivider(parent)
+
+    if type(parent) ~= "table"
+    or type(parent.AddDivider) ~= "function" then
 
         return false
     end
 
-    HolySetStatus(
-        "Loaded."
-    )
+    pcall(function()
 
-    HolyNotify(
-        "HOLY",
-        product == "sniper"
-        and "Server Sniper loaded."
-        or "HOLY Pro loaded.",
-        4
-    )
-
-    task.delay(0.5, function()
-
-        if HolyLoaderGui then
-
-            pcall(function()
-
-                HolyLoaderGui.Enabled =
-                    false
-            end)
-        end
+        parent:AddDivider()
     end)
 
     return true
 end
 
-local function HolyCreate(className, props, parent)
+local function HolyAddButton(parent, text, callback, tooltip, doubleClick)
 
-    local object =
-        Instance.new(
-            className
-        )
+    if type(parent) ~= "table"
+    or type(parent.AddButton) ~= "function" then
 
-    for key, value in pairs(props or {}) do
-
-        object[key] =
-            value
+        return nil
     end
 
-    object.Parent =
-        parent
+    local ok,
+        button =
+        pcall(function()
 
-    return object
-end
-
-local function HolyCorner(parent, radius)
-
-    return HolyCreate(
-        "UICorner",
-        {
-            CornerRadius =
-                radius
-                or UDim.new(0, 8),
-        },
-        parent
-    )
-end
-
-local function HolyStroke(parent, color, transparency, thickness)
-
-    return HolyCreate(
-        "UIStroke",
-        {
-            Color =
-                color
-                or Color3.fromRGB(80, 80, 95),
-
-            Transparency =
-                transparency
-                or 0.25,
-
-            Thickness =
-                thickness
-                or 1,
-        },
-        parent
-    )
-end
-
-local function HolyMakeButton(parent, text, pos, size)
-
-    local button =
-        HolyCreate(
-            "TextButton",
-            {
-                BackgroundColor3 =
-                    Color3.fromRGB(24, 24, 32),
-
-                BorderSizePixel =
-                    0,
-
-                Position =
-                    pos,
-
-                Size =
-                    size,
-
-                Font =
-                    Enum.Font.GothamBold,
-
+            return parent:AddButton({
                 Text =
                     tostring(text or "Button"),
 
-                TextColor3 =
-                    Color3.fromRGB(235, 238, 245),
+                Func =
+                    function()
 
-                TextSize =
-                    13,
+                        if type(callback) == "function" then
 
-                AutoButtonColor =
-                    true,
-            },
-            parent
-        )
+                            callback()
+                        end
+                    end,
 
-    HolyCorner(
-        button,
-        UDim.new(0, 8)
-    )
+                Tooltip =
+                    tostring(tooltip or ""),
 
-    HolyStroke(
-        button,
-        Color3.fromRGB(90, 90, 115),
-        0.35,
-        1
-    )
+                DoubleClick =
+                    doubleClick == true,
+            })
+        end)
 
-    return button
+    if ok == true
+    and button ~= nil then
+
+        return button
+    end
+
+    ok,
+        button =
+        pcall(function()
+
+            return parent:AddButton(
+                tostring(text or "Button"),
+                function()
+
+                    if type(callback) == "function" then
+
+                        callback()
+                    end
+                end
+            )
+        end)
+
+    if ok == true then
+        return button
+    end
+
+    return nil
 end
 
-local function HolyBuildLoaderGui()
+local function HolyAddGroupbox(tab, side, title, icon)
 
-    if HolyLoaderGui then
+    if type(tab) ~= "table" then
+        return nil
+    end
+
+    local method =
+        side == "Right"
+        and "AddRightGroupbox"
+        or "AddLeftGroupbox"
+
+    if type(tab[method]) ~= "function" then
+        return nil
+    end
+
+    local ok,
+        groupbox =
+        pcall(function()
+
+            return tab[method](
+                tab,
+                title,
+                icon
+            )
+        end)
+
+    if ok == true
+    and groupbox ~= nil then
+
+        return groupbox
+    end
+
+    ok,
+        groupbox =
+        pcall(function()
+
+            return tab[method](
+                tab,
+                title
+            )
+        end)
+
+    if ok == true then
+        return groupbox
+    end
+
+    return nil
+end
+
+local function HolySetAnyLabel(label, text)
+
+    text =
+        tostring(text or "")
+
+    if typeof(label) == "Instance" then
 
         pcall(function()
 
-            HolyLoaderGui:Destroy()
+            label.Text =
+                text
         end)
+
+        return true
     end
 
-    local gui =
-        HolyCreate(
-            "ScreenGui",
-            {
-                Name =
-                    "HOLY_GAG2_LOADER",
+    if type(label) == "table" then
 
-                ResetOnSpawn =
-                    false,
+        if type(label.SetText) == "function" then
 
-                IgnoreGuiInset =
-                    true,
+            local ok =
+                pcall(function()
 
-                ZIndexBehavior =
-                    Enum.ZIndexBehavior.Sibling,
-            },
-            CoreGui
-        )
+                    label:SetText(
+                        text
+                    )
+                end)
 
-    HolyLoaderGui =
-        gui
-
-    local holder =
-        HolyCreate(
-            "Frame",
-            {
-                AnchorPoint =
-                    Vector2.new(0.5, 0.5),
-
-                Position =
-                    UDim2.fromScale(0.5, 0.5),
-
-                Size =
-                    UDim2.fromOffset(560, 250),
-
-                BackgroundColor3 =
-                    Color3.fromRGB(12, 12, 16),
-
-                BorderSizePixel =
-                    0,
-            },
-            gui
-        )
-
-    HolyCorner(
-        holder,
-        UDim.new(0, 12)
-    )
-
-    HolyStroke(
-        holder,
-        Color3.fromRGB(120, 85, 255),
-        0.20,
-        1
-    )
-
-    local title =
-        HolyCreate(
-            "TextLabel",
-            {
-                BackgroundTransparency =
-                    1,
-
-                Position =
-                    UDim2.fromOffset(0, 12),
-
-                Size =
-                    UDim2.new(1, 0, 0, 32),
-
-                Font =
-                    Enum.Font.GothamBold,
-
-                Text =
-                    "HOLY GAG2 LOADER",
-
-                TextColor3 =
-                    Color3.fromRGB(245, 245, 255),
-
-                TextSize =
-                    20,
-
-                TextXAlignment =
-                    Enum.TextXAlignment.Center,
-            },
-            holder
-        )
-
-    local subtitle =
-        HolyCreate(
-            "TextLabel",
-            {
-                BackgroundTransparency =
-                    1,
-
-                Position =
-                    UDim2.fromOffset(24, 48),
-
-                Size =
-                    UDim2.new(1, -48, 0, 34),
-
-                Font =
-                    Enum.Font.GothamMedium,
-
-                Text =
-                    "Enter your HOLY key. The loader will open the correct product automatically.",
-
-                TextColor3 =
-                    Color3.fromRGB(185, 188, 205),
-
-                TextSize =
-                    13,
-
-                TextWrapped =
-                    true,
-
-                TextXAlignment =
-                    Enum.TextXAlignment.Center,
-            },
-            holder
-        )
-
-    HolyStatusLabel =
-        HolyCreate(
-            "TextLabel",
-            {
-                BackgroundColor3 =
-                    Color3.fromRGB(18, 18, 24),
-
-                BorderSizePixel =
-                    0,
-
-                Position =
-                    UDim2.fromOffset(24, 88),
-
-                Size =
-                    UDim2.new(1, -48, 0, 42),
-
-                Font =
-                    Enum.Font.GothamMedium,
-
-                Text =
-                    "Status: Ready.",
-
-                TextColor3 =
-                    Color3.fromRGB(220, 225, 240),
-
-                TextSize =
-                    13,
-
-                TextWrapped =
-                    true,
-
-                TextXAlignment =
-                    Enum.TextXAlignment.Center,
-            },
-            holder
-        )
-
-    HolyCorner(
-        HolyStatusLabel,
-        UDim.new(0, 8)
-    )
-
-    HolyStroke(
-        HolyStatusLabel,
-        Color3.fromRGB(48, 48, 60),
-        0.35,
-        1
-    )
-
-    HolyKeyBox =
-        HolyCreate(
-            "TextBox",
-            {
-                BackgroundColor3 =
-                    Color3.fromRGB(18, 18, 24),
-
-                BorderSizePixel =
-                    0,
-
-                Position =
-                    UDim2.fromOffset(24, 146),
-
-                Size =
-                    UDim2.new(1, -168, 0, 36),
-
-                Font =
-                    Enum.Font.GothamMedium,
-
-                PlaceholderText =
-                    "HOLY-XXXX-XXXX-XXXX",
-
-                Text =
-                    HolyLoadSavedKey(),
-
-                TextColor3 =
-                    Color3.fromRGB(240, 240, 250),
-
-                PlaceholderColor3 =
-                    Color3.fromRGB(105, 108, 120),
-
-                TextSize =
-                    13,
-
-                ClearTextOnFocus =
-                    false,
-            },
-            holder
-        )
-
-    HolyCorner(
-        HolyKeyBox,
-        UDim.new(0, 8)
-    )
-
-    HolyStroke(
-        HolyKeyBox,
-        Color3.fromRGB(60, 60, 75),
-        0.30,
-        1
-    )
-
-    local executeButton =
-        HolyMakeButton(
-            holder,
-            "Execute",
-            UDim2.new(1, -132, 0, 146),
-            UDim2.fromOffset(108, 36)
-        )
-
-    local savedButton =
-        HolyMakeButton(
-            holder,
-            "Use Saved Key",
-            UDim2.fromOffset(24, 194),
-            UDim2.new(0.5, -30, 0, 34)
-        )
-
-    local resetButton =
-        HolyMakeButton(
-            holder,
-            "Reset Saved Key",
-            UDim2.new(0.5, 6, 0, 194),
-            UDim2.new(0.5, -30, 0, 34)
-        )
-
-    executeButton.MouseButton1Click:Connect(function()
-
-        HolyExecuteKey(
-            HolyKeyBox.Text
-        )
-    end)
-
-    savedButton.MouseButton1Click:Connect(function()
-
-        local savedKey =
-            HolyLoadSavedKey()
-
-        if savedKey ~= "" then
-
-            HolyKeyBox.Text =
-                savedKey
+            if ok == true then
+                return true
+            end
         end
 
-        HolyExecuteKey(
-            HolyKeyBox.Text
-        )
-    end)
+        if label.TextLabel
+        and typeof(label.TextLabel) == "Instance" then
 
-    resetButton.MouseButton1Click:Connect(function()
+            pcall(function()
 
-        HolyResetSavedKey()
-    end)
+                label.TextLabel.Text =
+                    text
+            end)
 
-    local savedKey =
-        HolyLoadSavedKey()
-
-    if savedKey ~= "" then
-
-        HolySetStatus(
-            "Saved key found. Auto-loading..."
-        )
-
-        task.delay(0.35, function()
-
-            if HolyLoaderRunning ~= true then
-
-                HolyExecuteKey(
-                    savedKey
-                )
-            end
-        end)
-
-    else
-
-        HolySetStatus(
-            "Status: Ready."
-        )
+            return true
+        end
     end
+
+    return false
 end
 
-HolyBuildLoaderGui()
+local function HolyRefreshStatusAuth(auth, message)
+
+    auth =
+        type(auth) == "table"
+        and auth
+        or HolyEnv.HOLY_AUTH
+        or {}
+
+    local features =
+        type(auth.Features) == "table"
+        and auth.Features
+        or {}
+
+    local slots =
+        type(auth.Slots) == "table"
+        and auth.Slots
+        or {}
+
+    local featureList =
+        {}
+
+    for key, value in pairs(features) do
+
+        if value == true then
+
+            table.insert(
+                featureList,
+                tostring(key)
+            )
+        end
+    end
+
+    table.sort(
+        featureList
+    )
+
+    HolySetStatus(
+        message
+        or "Waiting for key..."
+    )
+
+    HolySetAnyLabel(
+        HOLY_UI.AccountLabel,
+        "Account: "
+            .. tostring(LocalPlayer.Name)
+            .. " | "
+            .. tostring(LocalPlayer.UserId)
+    )
+
+    HolySetAnyLabel(
+        HOLY_UI.KeyLabel,
+        "Key: "
+            .. tostring(auth.KeyPrefix or "None")
+    )
+
+    HolySetAnyLabel(
+        HOLY_UI.PlanLabel,
+        "Plan: "
+            .. tostring(auth.Plan or "--")
+            .. " | "
+            .. HolyFeatureText(features)
+    )
+
+    HolySetAnyLabel(
+        HOLY_UI.TimeLabel,
+        "Time Left: "
+            .. HolyFormatTime(
+                tonumber(auth.TimeLeft)
+                or 0
+            )
+    )
+
+    HolySetAnyLabel(
+        HOLY_UI.SlotLabel,
+        "Finder Slots: "
+            .. tostring(slots.active or slots.Active or 0)
+            .. "/"
+            .. tostring(slots.max or slots.Max or 3)
+    )
+
+    HolySetAnyLabel(
+        HOLY_UI.FeaturesLabel,
+        "Features: "
+            .. (
+                #featureList > 0
+                and table.concat(featureList, ", ")
+                or "None"
+            )
+    )
+end
+
+--==================================================
+-- LOAD FLOW
+--==================================================
+
+local function HolyVerifyAndLoad(key)
+
+    if HOLY_BUSY == true then
+
+        HolyNotify(
+            "HOLY Loader",
+            "Already checking a key.",
+            3
+        )
+
+        return false
+    end
+
+    HOLY_BUSY =
+        true
+
+    key =
+        HolyClean(key)
+
+    HolySetStatus(
+        "Checking key..."
+    )
+
+    HolyNotify(
+        "HOLY Key System",
+        "Checking key...",
+        2
+    )
+
+    task.spawn(function()
+
+        local auth,
+            verifyErr =
+            HolyVerifyKey(
+                key
+            )
+
+        if type(auth) ~= "table" then
+
+            HOLY_BUSY =
+                false
+
+            HolySetStatus(
+                "Key failed: "
+                .. tostring(verifyErr)
+            )
+
+            HolyNotify(
+                "Key Failed",
+                tostring(verifyErr),
+                5
+            )
+
+            return
+        end
+
+        HolyApplyAuth(
+            auth
+        )
+
+        local productText =
+            auth.Product == "sniper"
+            and "Server Sniper"
+            or "HOLY Pro"
+
+        HolyRefreshStatusAuth(
+            auth,
+            "Verified. Loading "
+                .. productText
+                .. "..."
+        )
+
+        HolyNotify(
+            "Key Verified",
+            productText
+                .. " | "
+                .. HolyFormatTime(auth.TimeLeft)
+                .. " left.",
+            4
+        )
+
+        task.wait(
+            0.25
+        )
+
+        local source,
+            sourceErr =
+            HolyFetchSource(
+                auth
+            )
+
+        if type(source) ~= "string"
+        or source == "" then
+
+            HOLY_BUSY =
+                false
+
+            HolySetStatus(
+                "Load failed: "
+                .. tostring(sourceErr)
+            )
+
+            HolyNotify(
+                "Source Failed",
+                tostring(sourceErr),
+                6
+            )
+
+            return
+        end
+
+        local ok,
+            runErr =
+            HolyRunSource(
+                source
+            )
+
+        HOLY_BUSY =
+            false
+
+        if ok ~= true then
+
+            HolySetStatus(
+                "Load failed: "
+                .. tostring(runErr)
+            )
+
+            HolyNotify(
+                "Load Failed",
+                tostring(runErr),
+                6
+            )
+
+            return
+        end
+
+        HolyNotify(
+            "HOLY",
+            productText
+                .. " loaded.",
+            4
+        )
+
+        HolyStop(
+            "loaded"
+        )
+    end)
+
+    return true
+end
+
+--==================================================
+-- FALLBACK UI
+--==================================================
+
+local function HolyCreateFallback(savedKey, lastError)
+
+    local gui =
+        Instance.new(
+            "ScreenGui"
+        )
+
+    gui.Name =
+        "HOLY_GAG2_LOADER_FALLBACK"
+
+    gui.ResetOnSpawn =
+        false
+
+    gui.IgnoreGuiInset =
+        true
+
+    pcall(function()
+
+        gui.Parent =
+            CoreGui
+    end)
+
+    if gui.Parent == nil then
+
+        gui.Parent =
+            LocalPlayer:WaitForChild(
+                "PlayerGui"
+            )
+    end
+
+    local frame =
+        Instance.new(
+            "Frame"
+        )
+
+    frame.AnchorPoint =
+        Vector2.new(0.5, 0.5)
+
+    frame.Position =
+        UDim2.fromScale(0.5, 0.5)
+
+    frame.Size =
+        UDim2.fromOffset(460, 230)
+
+    frame.BackgroundColor3 =
+        Color3.fromRGB(12, 12, 16)
+
+    frame.BorderSizePixel =
+        0
+
+    frame.Parent =
+        gui
+
+    local corner =
+        Instance.new("UICorner")
+
+    corner.CornerRadius =
+        UDim.new(0, 12)
+
+    corner.Parent =
+        frame
+
+    local title =
+        Instance.new("TextLabel")
+
+    title.BackgroundTransparency =
+        1
+
+    title.Position =
+        UDim2.fromOffset(22, 18)
+
+    title.Size =
+        UDim2.new(1, -44, 0, 30)
+
+    title.Font =
+        Enum.Font.GothamBold
+
+    title.TextSize =
+        20
+
+    title.TextColor3 =
+        Color3.fromRGB(255, 255, 255)
+
+    title.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    title.Text =
+        "HOLY Loader"
+
+    title.Parent =
+        frame
+
+    local input =
+        Instance.new("TextBox")
+
+    input.BackgroundColor3 =
+        Color3.fromRGB(20, 21, 28)
+
+    input.BorderSizePixel =
+        0
+
+    input.Position =
+        UDim2.fromOffset(22, 72)
+
+    input.Size =
+        UDim2.new(1, -44, 0, 40)
+
+    input.Font =
+        Enum.Font.GothamMedium
+
+    input.TextSize =
+        13
+
+    input.TextColor3 =
+        Color3.fromRGB(245, 245, 247)
+
+    input.PlaceholderText =
+        "HOLY-XXXX-XXXX-XXXX"
+
+    input.ClearTextOnFocus =
+        false
+
+    input.Text =
+        tostring(savedKey or "")
+
+    input.Parent =
+        frame
+
+    Instance.new("UICorner", input).CornerRadius =
+        UDim.new(0, 8)
+
+    local verify =
+        Instance.new("TextButton")
+
+    verify.BackgroundColor3 =
+        Color3.fromRGB(130, 90, 255)
+
+    verify.BorderSizePixel =
+        0
+
+    verify.Position =
+        UDim2.fromOffset(22, 126)
+
+    verify.Size =
+        UDim2.new(0.5, -28, 0, 38)
+
+    verify.Font =
+        Enum.Font.GothamBold
+
+    verify.TextSize =
+        14
+
+    verify.TextColor3 =
+        Color3.fromRGB(255, 255, 255)
+
+    verify.Text =
+        "Verify Key"
+
+    verify.Parent =
+        frame
+
+    Instance.new("UICorner", verify).CornerRadius =
+        UDim.new(0, 8)
+
+    local reset =
+        Instance.new("TextButton")
+
+    reset.BackgroundColor3 =
+        Color3.fromRGB(24, 25, 34)
+
+    reset.BorderSizePixel =
+        0
+
+    reset.Position =
+        UDim2.new(0.5, 6, 0, 126)
+
+    reset.Size =
+        UDim2.new(0.5, -28, 0, 38)
+
+    reset.Font =
+        Enum.Font.GothamBold
+
+    reset.TextSize =
+        14
+
+    reset.TextColor3 =
+        Color3.fromRGB(245, 245, 247)
+
+    reset.Text =
+        "Reset Key"
+
+    reset.Parent =
+        frame
+
+    Instance.new("UICorner", reset).CornerRadius =
+        UDim.new(0, 8)
+
+    local status =
+        Instance.new("TextLabel")
+
+    status.BackgroundTransparency =
+        1
+
+    status.Position =
+        UDim2.fromOffset(22, 178)
+
+    status.Size =
+        UDim2.new(1, -44, 0, 42)
+
+    status.Font =
+        Enum.Font.GothamMedium
+
+    status.TextSize =
+        12
+
+    status.TextWrapped =
+        true
+
+    status.TextColor3 =
+        Color3.fromRGB(170, 175, 190)
+
+    status.TextXAlignment =
+        Enum.TextXAlignment.Left
+
+    status.TextYAlignment =
+        Enum.TextYAlignment.Top
+
+    status.Text =
+        tostring(lastError or "Obsidian failed. Fallback active.")
+
+    status.Parent =
+        frame
+
+    HOLY_UI.StatusLabel =
+        status
+
+    HolyTrack(
+        verify.MouseButton1Click:Connect(function()
+
+            HolyVerifyAndLoad(
+                input.Text
+            )
+        end)
+    )
+
+    HolyTrack(
+        reset.MouseButton1Click:Connect(function()
+
+            HolyDeleteFile(
+                HOLY_KEY_FILE
+            )
+
+            HolyDeleteFile(
+                HOLY_SESSION_FILE
+            )
+
+            input.Text =
+                ""
+
+            status.Text =
+                "Saved key reset."
+        end)
+    )
+
+    return gui
+end
+
+--==================================================
+-- OBSIDIAN UI
+--==================================================
+
+local function HolyCreateObsidian(savedKey, lastError)
+
+    HolyStop(
+        "rebuild"
+    )
+
+    local Library,
+        libraryErr =
+        HolyLoadObsidian()
+
+    if type(Library) ~= "table" then
+
+        return HolyCreateFallback(
+            savedKey,
+            libraryErr
+                or lastError
+                or "Obsidian failed."
+        )
+    end
+
+    HOLY_LIBRARY =
+        Library
+
+    pcall(function()
+
+        Library.ShowToggleFrameInKeybinds =
+            true
+    end)
+
+    local ok,
+        window =
+        pcall(function()
+
+            return Library:CreateWindow({
+                Title =
+                    "HOLY HUB",
+
+                Footer =
+                    "loader v1.2",
+
+                Center =
+                    true,
+
+                AutoShow =
+                    true,
+
+                Resizable =
+                    true,
+
+                NotifySide =
+                    "Right",
+
+                ShowCustomCursor =
+                    true,
+
+                Size =
+                    UDim2.fromOffset(
+                        620,
+                        430
+                    ),
+            })
+        end)
+
+    if ok ~= true
+    or type(window) ~= "table" then
+
+        return HolyCreateFallback(
+            savedKey,
+            "Obsidian window failed: "
+                .. tostring(window)
+        )
+    end
+
+    HOLY_WINDOW =
+        window
+
+    local tabs =
+        {}
+
+    pcall(function()
+
+        tabs.Key =
+            window:AddKeyTab(
+                "Key System"
+            )
+    end)
+
+    if type(tabs.Key) ~= "table" then
+
+        pcall(function()
+
+            tabs.Key =
+                window:AddTab(
+                    "Key System",
+                    "key-round"
+                )
+        end)
+    end
+
+    pcall(function()
+
+        tabs.Status =
+            window:AddTab(
+                "Status",
+                "activity"
+            )
+    end)
+
+    pcall(function()
+
+        tabs.Links =
+            window:AddTab(
+                "Links",
+                "link"
+            )
+    end)
+
+    pcall(function()
+
+        tabs.UI =
+            window:AddTab(
+                "UI",
+                "settings"
+            )
+    end)
+
+    if type(tabs.Key) == "table" then
+
+        HolyAddLabel(
+            tabs.Key,
+            "HOLY Access",
+            false
+        )
+
+        HolyAddLabel(
+            tabs.Key,
+            "Enter your HOLY key below. The loader automatically opens HOLY Pro or Server Sniper based on your key.",
+            true
+        )
+
+        HolyAddDivider(
+            tabs.Key
+        )
+
+        HOLY_UI.StatusLabel =
+            HolyAddLabel(
+                tabs.Key,
+                tostring(
+                    lastError
+                    or (
+                        savedKey ~= ""
+                        and "Saved key found. Auto-loading..."
+                        or "Waiting for key..."
+                    )
+                ),
+                true
+            )
+
+        HolyAddDivider(
+            tabs.Key
+        )
+
+        if type(tabs.Key.AddKeyBox) == "function" then
+
+            pcall(function()
+
+                tabs.Key:AddKeyBox(function(receivedKey)
+
+                    HolyVerifyAndLoad(
+                        receivedKey
+                    )
+                end)
+            end)
+
+        else
+
+            local manualBox =
+                HolyAddGroupbox(
+                    tabs.Key,
+                    "Left",
+                    "Manual Key",
+                    "key"
+                )
+
+            if type(manualBox) == "table" then
+
+                local typedKey =
+                    savedKey
+
+                if type(manualBox.AddInput) == "function" then
+
+                    pcall(function()
+
+                        manualBox:AddInput("HolyLoaderGAG2ManualKey", {
+                            Default =
+                                tostring(savedKey or ""),
+
+                            Numeric =
+                                false,
+
+                            Finished =
+                                false,
+
+                            ClearTextOnFocus =
+                                false,
+
+                            Text =
+                                "Key",
+
+                            Placeholder =
+                                "HOLY-XXXX-XXXX-XXXX",
+
+                            Callback =
+                                function(value)
+
+                                    typedKey =
+                                        tostring(value or "")
+                                end,
+                        })
+                    end)
+                end
+
+                HolyAddButton(
+                    manualBox,
+                    "Verify Key",
+                    function()
+
+                        HolyVerifyAndLoad(
+                            typedKey
+                        )
+                    end,
+                    "Verify and load."
+                )
+            end
+        end
+
+        HolyAddButton(
+            tabs.Key,
+            "Use Saved Key",
+            function()
+
+                local key =
+                    HolyReadFile(
+                        HOLY_KEY_FILE
+                    )
+
+                if key == "" then
+
+                    HolyNotify(
+                        "HOLY Key System",
+                        "No saved key found.",
+                        3
+                    )
+
+                    return
+                end
+
+                HolyVerifyAndLoad(
+                    key
+                )
+            end,
+            "Verify and load saved key."
+        )
+
+        HolyAddButton(
+            tabs.Key,
+            "Reset Saved Key",
+            function()
+
+                HolyDeleteFile(
+                    HOLY_KEY_FILE
+                )
+
+                HolyDeleteFile(
+                    HOLY_SESSION_FILE
+                )
+
+                HolySetStatus(
+                    "Saved key reset. Enter a new key."
+                )
+
+                HolyNotify(
+                    "HOLY Key System",
+                    "Saved key reset.",
+                    3
+                )
+            end,
+            "Deletes local key/session files.",
+            true
+        )
+    end
+
+    if type(tabs.Status) == "table" then
+
+        local accountBox =
+            HolyAddGroupbox(
+                tabs.Status,
+                "Left",
+                "Account",
+                "user"
+            )
+
+        local licenseBox =
+            HolyAddGroupbox(
+                tabs.Status,
+                "Right",
+                "License",
+                "badge-check"
+            )
+
+        local finderBox =
+            HolyAddGroupbox(
+                tabs.Status,
+                "Left",
+                "Finder Slot",
+                "radar"
+            )
+
+        local featureBox =
+            HolyAddGroupbox(
+                tabs.Status,
+                "Right",
+                "Features",
+                "list-checks"
+            )
+
+        if type(accountBox) == "table" then
+
+            HOLY_UI.AccountLabel =
+                HolyAddLabel(
+                    accountBox,
+                    "Account: "
+                        .. tostring(LocalPlayer.Name)
+                        .. " | "
+                        .. tostring(LocalPlayer.UserId),
+                    true
+                )
+
+            HolyAddLabel(
+                accountBox,
+                "PlaceId: "
+                    .. tostring(game.PlaceId),
+                true
+            )
+        end
+
+        if type(licenseBox) == "table" then
+
+            HOLY_UI.KeyLabel =
+                HolyAddLabel(
+                    licenseBox,
+                    "Key: "
+                        .. (
+                            savedKey ~= ""
+                            and HolyShortKey(savedKey)
+                            or "None"
+                        ),
+                    true
+                )
+
+            HOLY_UI.PlanLabel =
+                HolyAddLabel(
+                    licenseBox,
+                    "Plan: --",
+                    true
+                )
+
+            HOLY_UI.TimeLabel =
+                HolyAddLabel(
+                    licenseBox,
+                    "Time Left: --",
+                    true
+                )
+        end
+
+        if type(finderBox) == "table" then
+
+            HOLY_UI.SlotLabel =
+                HolyAddLabel(
+                    finderBox,
+                    "Finder Slots: --/3",
+                    true
+                )
+
+            HolyAddLabel(
+                finderBox,
+                "Server Sniper is slot-based. Normal HOLY Pro keys load Pro instead.",
+                true
+            )
+        end
+
+        if type(featureBox) == "table" then
+
+            HOLY_UI.FeaturesLabel =
+                HolyAddLabel(
+                    featureBox,
+                    "Features: --",
+                    true
+                )
+
+            HolyAddButton(
+                featureBox,
+                "Refresh Saved Key",
+                function()
+
+                    local key =
+                        HolyReadFile(
+                            HOLY_KEY_FILE
+                        )
+
+                    if key == "" then
+
+                        HolyNotify(
+                            "HOLY Key System",
+                            "No saved key found.",
+                            3
+                        )
+
+                        return
+                    end
+
+                    HolyVerifyAndLoad(
+                        key
+                    )
+                end,
+                "Verify the saved key again."
+            )
+        end
+    end
+
+    if type(tabs.Links) == "table" then
+
+        local actionsBox =
+            HolyAddGroupbox(
+                tabs.Links,
+                "Left",
+                "Actions",
+                "mouse-pointer-click"
+            )
+
+        local infoBox =
+            HolyAddGroupbox(
+                tabs.Links,
+                "Right",
+                "Info",
+                "info"
+            )
+
+        if type(actionsBox) == "table" then
+
+            HolyAddButton(
+                actionsBox,
+                "Copy Public Loadstring",
+                function()
+
+                    if HolyCopyText(
+                        HOLY_PUBLIC_LOADSTRING
+                    ) == true then
+
+                        HolyNotify(
+                            "Copied",
+                            "Public loadstring copied.",
+                            3
+                        )
+
+                    else
+
+                        HolyNotify(
+                            "Clipboard Failed",
+                            "Your executor does not support clipboard.",
+                            4
+                        )
+                    end
+                end,
+                "Copies the public HOLY loader loadstring."
+            )
+
+            HolyAddButton(
+                actionsBox,
+                "Copy Discord Invite",
+                function()
+
+                    if HolyClean(HOLY_DISCORD_INVITE) == "" then
+
+                        HolyNotify(
+                            "Discord",
+                            "Discord invite is not set yet.",
+                            4
+                        )
+
+                        return
+                    end
+
+                    if HolyCopyText(
+                        HOLY_DISCORD_INVITE
+                    ) == true then
+
+                        HolyNotify(
+                            "Copied",
+                            "Discord invite copied.",
+                            3
+                        )
+
+                    else
+
+                        HolyNotify(
+                            "Clipboard Failed",
+                            "Your executor does not support clipboard.",
+                            4
+                        )
+                    end
+                end,
+                "Copies Discord invite."
+            )
+
+            HolyAddButton(
+                actionsBox,
+                "Reset Saved Key",
+                function()
+
+                    HolyDeleteFile(
+                        HOLY_KEY_FILE
+                    )
+
+                    HolyDeleteFile(
+                        HOLY_SESSION_FILE
+                    )
+
+                    HolySetStatus(
+                        "Saved key reset. Enter a new key."
+                    )
+
+                    HolyNotify(
+                        "HOLY Key System",
+                        "Saved key reset.",
+                        3
+                    )
+                end,
+                "Deletes local key/session files.",
+                true
+            )
+        end
+
+        if type(infoBox) == "table" then
+
+            HolyAddLabel(
+                infoBox,
+                "Current public loader:",
+                false
+            )
+
+            HolyAddLabel(
+                infoBox,
+                HOLY_PUBLIC_LOADSTRING,
+                true
+            )
+
+            HolyAddDivider(
+                infoBox
+            )
+
+            HolyAddLabel(
+                infoBox,
+                "Keys are saved locally in HolyGAG2/HolyLoaderGAG2Key.txt after successful verification.",
+                true
+            )
+        end
+    end
+
+    if type(tabs.UI) == "table" then
+
+        local menuBox =
+            HolyAddGroupbox(
+                tabs.UI,
+                "Left",
+                "Menu",
+                "wrench"
+            )
+
+        if type(menuBox) == "table" then
+
+            HolyAddLabel(
+                menuBox,
+                "This tab is only for loader actions. The main script UI opens after your key loads.",
+                true
+            )
+
+            HolyAddButton(
+                menuBox,
+                "Unload Loader",
+                function()
+
+                    HolyStop(
+                        "manual unload"
+                    )
+                end,
+                "Closes the loader window."
+            )
+        end
+    end
+
+    HolyRefreshStatusAuth(
+        {
+            KeyPrefix =
+                savedKey ~= ""
+                and HolyShortKey(savedKey)
+                or "None",
+
+            Plan =
+                "--",
+
+            Features =
+                {},
+
+            TimeLeft =
+                0,
+
+            Slots =
+                {
+                    active =
+                        0,
+
+                    max =
+                        3,
+                },
+        },
+        lastError
+            or (
+                savedKey ~= ""
+                and "Saved key found. Auto-loading..."
+                or "Waiting for key..."
+            )
+    )
+
+    return window
+end
+
+--==================================================
+-- STARTUP
+--==================================================
+
+local savedKey =
+    HolyReadFile(
+        HOLY_KEY_FILE
+    )
+
+HolyCreateObsidian(
+    savedKey,
+    savedKey ~= ""
+    and "Saved key found. Auto-loading..."
+    or "Waiting for key..."
+)
+
+if savedKey ~= "" then
+
+    task.delay(0.35, function()
+
+        if HOLY_BUSY ~= true then
+
+            HolyVerifyAndLoad(
+                savedKey
+            )
+        end
+    end)
+end
