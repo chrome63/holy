@@ -141,6 +141,151 @@ function HolyAuthRequirePetFinder(actionName)
     return false
 end
 
+function HolyAuthHasServerSniperSlot()
+
+    if HolyAuthIsAdmin() == true then
+
+        return true
+    end
+
+    return HolyAuthHasFeature(
+        "server_finder"
+    )
+    or HolyAuthHasFeature(
+        "pet_sniper"
+    )
+    or HolyAuthHasFeature(
+        "pet_sniper_autobuy"
+    )
+end
+
+function HolyServerSniperLockedMessage(actionName)
+
+    return tostring(actionName or "Server Sniper")
+        .. " requires an active Server Sniper slot."
+end
+
+function HolyServerSniperNotifyLocked(actionName)
+
+    local message =
+        HolyServerSniperLockedMessage(
+            actionName
+        )
+
+    warn(
+        "[HOLY AUTH]",
+        message
+    )
+
+    if type(HolyNotify) == "function" then
+
+        HolyNotify(
+            "HOLY Locked",
+            message,
+            5
+        )
+    end
+
+    if type(HolyServerSetStatus) == "function" then
+
+        HolyServerSetStatus(
+            "Locked: Server Sniper slot required"
+        )
+    end
+
+    return false
+end
+
+function HolyServerSniperForceLockedOff(reason, notifyUser)
+
+    if HolyAuthHasServerSniperSlot() == true then
+
+        return false
+    end
+
+    if type(HOLY_SERVER_FINDER_STATE) == "table" then
+
+        HOLY_SERVER_FINDER_STATE.Enabled =
+            false
+
+        HOLY_SERVER_FINDER_STATE.AutoJoinMode =
+            "Off"
+
+        HOLY_SERVER_FINDER_STATE.AutoRefresh =
+            false
+    end
+
+    if type(HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME) == "table" then
+
+        HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.Teleporting =
+            false
+    end
+
+    if type(HOLY_SERVER_FINDER_HUD) == "table" then
+
+        if type(HOLY_SERVER_FINDER_HUD.SetAutoJoinMode) == "function" then
+
+            pcall(function()
+
+                HOLY_SERVER_FINDER_HUD:SetAutoJoinMode(
+                    "Off"
+                )
+            end)
+        end
+
+        if type(HOLY_SERVER_FINDER_HUD.Hide) == "function" then
+
+            pcall(function()
+
+                HOLY_SERVER_FINDER_HUD:Hide()
+            end)
+        end
+    end
+
+    if type(HolyServerFinderSyncToggle) == "function" then
+
+        HolyServerFinderSyncToggle(
+            false
+        )
+    end
+
+    if type(HolyQueueSaveServerFinderSettings) == "function" then
+
+        HolyQueueSaveServerFinderSettings()
+    end
+
+    if notifyUser == true then
+
+        HolyServerSniperNotifyLocked(
+            reason or "Server Sniper"
+        )
+    end
+
+    return true
+end
+
+function HolyAuthRequireServerSniper(actionName, notifyUser)
+
+    if HolyAuthHasServerSniperSlot() == true then
+
+        return true
+    end
+
+    HolyServerSniperForceLockedOff(
+        actionName or "Server Sniper",
+        false
+    )
+
+    if notifyUser ~= false then
+
+        HolyServerSniperNotifyLocked(
+            actionName or "Server Sniper"
+        )
+    end
+
+    return false
+end
+
 --==================================================
 -- [1] CONSTANTS
 --==================================================
@@ -45666,10 +45811,43 @@ function HolyServerFinderSetAutoJoinMode(value)
 
     HolyServerFinderEnsureAutoJoinState()
 
-    HOLY_SERVER_FINDER_STATE.AutoJoinMode =
+    local wantedMode =
         HolyServerFinderNormalizeAutoJoinMode(
             value
         )
+
+    if wantedMode ~= "Off"
+    and HolyAuthRequireServerSniper(
+        "Auto Join",
+        true
+    ) ~= true then
+
+        HOLY_SERVER_FINDER_STATE.AutoJoinMode =
+            "Off"
+
+        if type(HOLY_SERVER_FINDER_HUD) == "table"
+        and type(HOLY_SERVER_FINDER_HUD.SetAutoJoinMode) == "function" then
+
+            pcall(function()
+
+                HOLY_SERVER_FINDER_HUD:SetAutoJoinMode(
+                    "Off"
+                )
+            end)
+        end
+
+        HolyQueueSaveServerFinderSettings()
+
+        if type(HolyServerFinderRefreshAutoJoinRulesPopup) == "function" then
+
+            HolyServerFinderRefreshAutoJoinRulesPopup()
+        end
+
+        return "Off"
+    end
+
+    HOLY_SERVER_FINDER_STATE.AutoJoinMode =
+        wantedMode
 
     if type(HOLY_SERVER_FINDER_HUD) == "table"
     and type(HOLY_SERVER_FINDER_HUD.SetAutoJoinMode) == "function" then
@@ -47013,6 +47191,14 @@ end
 
 function HolyServerFinderJoinRow(row, source, targetInfo)
 
+    if HolyAuthRequireServerSniper(
+        tostring(source or "Server Finder Join"),
+        true
+    ) ~= true then
+
+        return false
+    end
+
     if type(row) ~= "table" then
         return false
     end
@@ -47163,6 +47349,30 @@ function HolyServerFinderEvaluateAutoJoin(hud)
         )
 
     if mode == "Off" then
+        return false
+    end
+
+    if HolyAuthRequireServerSniper(
+        "Auto Join",
+        false
+    ) ~= true then
+
+        HOLY_SERVER_FINDER_STATE.AutoJoinMode =
+            "Off"
+
+        if type(hud) == "table"
+        and type(hud.SetAutoJoinMode) == "function" then
+
+            pcall(function()
+
+                hud:SetAutoJoinMode(
+                    "Off"
+                )
+            end)
+        end
+
+        HolyQueueSaveServerFinderSettings()
+
         return false
     end
 
@@ -49645,6 +49855,14 @@ end
 
 function HolyServerFinderShowAutoJoinRulesPopup()
 
+    if HolyAuthRequireServerSniper(
+        "Auto Join Rules",
+        true
+    ) ~= true then
+
+        return false
+    end
+
     local ui =
         HolyServerFinderCreateAutoJoinRulesPopup()
 
@@ -50003,6 +50221,11 @@ function HolyLoadServerFinderSettings()
         or HolyServerFinderGetDefaultAutoJoinRules()
 
     HolyServerFinderEnsureAutoJoinState()
+
+    HolyServerSniperForceLockedOff(
+        "saved Server Sniper settings",
+        false
+    )
 
     return true
 end
@@ -52479,6 +52702,15 @@ end
 
 function HolyServerFinderFetchBackendRows()
 
+    if HolyAuthRequireServerSniper(
+        "Server Finder Backend",
+        false
+    ) ~= true then
+
+        return nil,
+            "server sniper slot required"
+    end
+
     if type(HolyGetRequestFunction()) ~= "function" then
         return nil,
             "request unsupported"
@@ -53272,6 +53504,14 @@ end
 
 function HolyServerFinderRefreshRows(hud, reason)
 
+    if HolyAuthRequireServerSniper(
+        "Server Finder Refresh",
+        true
+    ) ~= true then
+
+        return false
+    end
+
     if type(hud) ~= "table"
     or type(hud.SetRows) ~= "function" then
         return false
@@ -53513,6 +53753,33 @@ function HolyServerFinderSetHudVisible(value)
     value =
         value == true
 
+    if value == true
+    and HolyAuthRequireServerSniper(
+        "Server Pet Finder HUD",
+        true
+    ) ~= true then
+
+        HOLY_SERVER_FINDER_STATE.Enabled =
+            false
+
+        HOLY_SERVER_FINDER_STATE.AutoJoinMode =
+            "Off"
+
+        HolyServerFinderSyncToggle(
+            false
+        )
+
+        HolyQueueSaveServerFinderSettings()
+
+        if type(HOLY_SERVER_FINDER_HUD) == "table"
+        and type(HOLY_SERVER_FINDER_HUD.Hide) == "function" then
+
+            HOLY_SERVER_FINDER_HUD:Hide()
+        end
+
+        return false
+    end
+
     HOLY_SERVER_FINDER_STATE.Enabled =
         value
 
@@ -53535,6 +53802,14 @@ function HolyServerFinderSetHudVisible(value)
 end
 
 function HolyServerFinderOpenHud()
+
+    if HolyAuthRequireServerSniper(
+        "Server Pet Finder HUD",
+        true
+    ) ~= true then
+
+        return false
+    end
 
     local filterOptions =
         HolyServerFinderBuildFilterOptions()
@@ -53735,6 +54010,18 @@ function HolySniperSetPageMode(value)
     local setupVisible =
         HOLY_SNIPER_PAGE_STATE.Mode == "Sniper Setup"
 
+    local serverVisible =
+        setupVisible ~= true
+
+    if serverVisible == true
+    and HolyAuthHasServerSniperSlot() ~= true then
+
+        HolyServerSniperForceLockedOff(
+            "Server Sniper page",
+            false
+        )
+    end
+
     HolySetGroupboxVisible(
         SniperEngineBox,
         setupVisible
@@ -53762,7 +54049,7 @@ function HolySniperSetPageMode(value)
 
     HolySetGroupboxVisible(
         ServerSniperBox,
-        setupVisible ~= true
+        serverVisible
     )
 end
 
@@ -55141,24 +55428,47 @@ SniperWatchlistBox:AddButton({
         end,
 })
 
+HolySniperAddLabel(
+    ServerSniperBox,
+    HolyAuthHasServerSniperSlot() == true
+    and "✅ Server Sniper slot active. Server Pet Finder HUD, auto join, and join buttons are unlocked."
+    or "🔒 Server Sniper Slot Required\nServer Pet Finder HUD, auto join, server rows, and join buttons require an active slot. Sniper Setup still works normally."
+)
+
 HOLY_SERVER_FINDER_TOGGLE =
     ServerSniperBox:AddCheckbox(
         "HolyServerFinderHudToggle",
         {
             Text =
-                "Server Pet Finder HUD",
+                HolyAuthHasServerSniperSlot() == true
+                and "Server Pet Finder HUD"
+                or "🔒 Server Pet Finder HUD",
 
             Default =
-                HOLY_SERVER_FINDER_STATE.Enabled == true,
+                HOLY_SERVER_FINDER_STATE.Enabled == true
+                and HolyAuthHasServerSniperSlot() == true,
 
             Tooltip =
-                "Toggle the HOLY Server Finder HUD.",
+                "Requires an active Server Sniper slot.",
         }
     )
 
 HOLY_SERVER_FINDER_TOGGLE:OnChanged(function(value)
 
     if HOLY_SERVER_FINDER_TOGGLE_LOCK == true then
+        return
+    end
+
+    if value == true
+    and HolyAuthRequireServerSniper(
+        "Server Pet Finder HUD",
+        true
+    ) ~= true then
+
+        HolyServerFinderSyncToggle(
+            false
+        )
+
         return
     end
 
@@ -55174,12 +55484,25 @@ end)
 
 if HOLY_SERVER_FINDER_STATE.Enabled == true then
 
-    task.defer(function()
+    if HolyAuthHasServerSniperSlot() == true then
 
-        HolyServerFinderSetHudVisible(
-            true
-        )
-    end)
+        task.defer(function()
+
+            HolyServerFinderSetHudVisible(
+                true
+            )
+        end)
+
+    else
+
+        task.defer(function()
+
+            HolyServerSniperForceLockedOff(
+                "startup",
+                false
+            )
+        end)
+    end
 end
 
 HolySniperSetPageMode(
