@@ -123,6 +123,28 @@ local SERVER_MIN_PLAYERS =
 local SERVER_MAX_PLAYERS =
     8
 
+local SERVER_TARGET_MAX_PLAYERS =
+    5
+
+local FLEET_HOP_ENABLED =
+    true
+
+local FLEET_TARGET_MAX_PLAYERS =
+    5
+
+local FLEET_SEARCH_PAGES =
+    6
+
+local FLEET_REQUEST_BACKOFF =
+    8
+
+local FLEET_JOIN_REPORT_MAX_AGE =
+    180
+
+local FLEET_JOIN_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyScannerFleetJoin.json"
+
 local SERVER_DEFAULT_SEARCH_PAGES =
     5
 
@@ -227,6 +249,13 @@ HOLY_SCANNER_SERVER_STATE = {
     LastTeleportFailAt = 0,
     LastTargetServer = "",
     LastTargetPlayers = "",
+
+    LastFleetError = "",
+    LastFleetAt = 0,
+    FleetBackoffUntil = 0,
+    FleetLastAssignedJobId = "",
+    FleetLastAssignedText = "",
+
     TeleportBackoffUntil = 0,
     TeleportFailCount = 0,
     TeleportErrorWatcherStarted = false,
@@ -5746,6 +5775,536 @@ function HolyScannerSendClientHeartbeat(payload)
         tostring(reason or "request failed")
 end
 
+function HolyScannerFleetEnabled()
+
+    return FLEET_HOP_ENABLED == true
+        and HolyScannerCleanText(
+            SERVER_FINDER_API_KEY
+        ) ~= ""
+end
+
+function HolyScannerFleetBackoffLeft()
+
+    local untilTime =
+        tonumber(
+            HOLY_SCANNER_SERVER_STATE.FleetBackoffUntil
+        )
+        or 0
+
+    return math.max(
+        0,
+        untilTime - os.clock()
+    )
+end
+
+function HolyScannerFleetSetBackoff(reason, seconds)
+
+    reason =
+        HolyScannerCleanText(
+            reason
+        )
+
+    seconds =
+        tonumber(seconds)
+        or FLEET_REQUEST_BACKOFF
+
+    seconds =
+        math.clamp(
+            seconds,
+            2,
+            45
+        )
+
+    HOLY_SCANNER_SERVER_STATE.FleetBackoffUntil =
+        os.clock() + seconds
+
+    HOLY_SCANNER_SERVER_STATE.LastFleetError =
+        reason
+
+    return seconds
+end
+
+function HolyScannerFleetBuildBasePayload(reason)
+
+    return {
+        Key =
+            tostring(
+                SERVER_FINDER_API_KEY
+                or ""
+            ),
+
+        Type =
+            "fleet",
+
+        ScannerId =
+            HolyScannerGetScannerId(),
+
+        Reporter =
+            tostring(
+                LocalPlayer
+                and LocalPlayer.Name
+                or "unknown"
+            ),
+
+        UserId =
+            tonumber(
+                LocalPlayer
+                and LocalPlayer.UserId
+            )
+            or 0,
+
+        AccountLabel =
+            HolyScannerGetAccountLabel(),
+
+        VpsLabel =
+            HolyScannerGetVpsLabel(),
+
+        PlaceId =
+            game.PlaceId,
+
+        JobId =
+            tostring(
+                game.JobId
+            ),
+
+        CurrentJobId =
+            tostring(
+                game.JobId
+            ),
+
+        MaxPlayers =
+            FLEET_TARGET_MAX_PLAYERS,
+
+        Pages =
+            FLEET_SEARCH_PAGES,
+
+        Reason =
+            tostring(reason or "hop"),
+
+        ReportedAt =
+            os.time(),
+    }
+end
+
+function HolyScannerFleetNextServer(reason)
+
+    if HolyScannerFleetEnabled() ~= true then
+
+        return nil,
+            "fleet disabled"
+    end
+
+    local backoff =
+        HolyScannerFleetBackoffLeft()
+
+    if backoff > 0 then
+
+        return nil,
+            "fleet backoff "
+            .. tostring(
+                math.ceil(backoff)
+            )
+            .. "s"
+    end
+
+    HOLY_SCANNER_SERVER_STATE.LastFleetAt =
+        os.clock()
+
+    local payload =
+        HolyScannerFleetBuildBasePayload(
+            reason
+        )
+
+    local data,
+        requestError =
+        HolyScannerRequestJson(
+            "POST",
+            HolyScannerBackendUrl(
+                "/fleet/next-server"
+            ),
+            payload
+        )
+
+    if type(data) == "table"
+    and data.ok == true
+    and (
+        data.assigned == true
+        or data.Assigned == true
+    ) then
+
+        local jobId =
+            HolyScannerCleanText(
+                data.JobId
+                or data.jobId
+                or data.Id
+                or data.id
+            )
+
+        if jobId ~= "" then
+
+            local playing =
+                tonumber(
+                    data.Playing
+                    or data.playing
+                )
+                or 0
+
+            local maxPlayers =
+                tonumber(
+                    data.MaxPlayers
+                    or data.maxPlayers
+                )
+                or 8
+
+            local freeSlots =
+                tonumber(
+                    data.FreeSlots
+                    or data.freeSlots
+                )
+                or math.max(
+                    0,
+                    maxPlayers - playing
+                )
+
+            HOLY_SCANNER_SERVER_STATE.FleetBackoffUntil =
+                0
+
+            HOLY_SCANNER_SERVER_STATE.LastFleetError =
+                ""
+
+            HOLY_SCANNER_SERVER_STATE.FleetLastAssignedJobId =
+                jobId
+
+            HOLY_SCANNER_SERVER_STATE.FleetLastAssignedText =
+                tostring(playing)
+                .. "/"
+                .. tostring(maxPlayers)
+                .. " · free "
+                .. tostring(freeSlots)
+                .. " · "
+                .. jobId:sub(1, 8)
+
+            return {
+                id =
+                    jobId,
+
+                playing =
+                    playing,
+
+                maxPlayers =
+                    maxPlayers,
+
+                FreeSlots =
+                    freeSlots,
+
+                Source =
+                    "fleet",
+            },
+                "fleet"
+        end
+    end
+
+    local reasonText =
+        "fleet no server"
+
+    if type(data) == "table" then
+
+        reasonText =
+            tostring(
+                data.error
+                or data.reason
+                or data.message
+                or reasonText
+            )
+
+    elseif requestError then
+
+        reasonText =
+            tostring(
+                requestError
+            )
+    end
+
+    HolyScannerFleetSetBackoff(
+        reasonText,
+        FLEET_REQUEST_BACKOFF
+    )
+
+    return nil,
+        reasonText
+end
+
+function HolyScannerFleetJoinResult(jobId, success, reason)
+
+    if HolyScannerFleetEnabled() ~= true then
+        return false,
+            "fleet disabled"
+    end
+
+    jobId =
+        HolyScannerCleanText(
+            jobId
+        )
+
+    if jobId == "" then
+        return false,
+            "missing job"
+    end
+
+    local payload =
+        HolyScannerFleetBuildBasePayload(
+            reason
+        )
+
+    payload.JobId =
+        jobId
+
+    payload.TargetJobId =
+        jobId
+
+    payload.Success =
+        success == true
+
+    payload.Joined =
+        success == true
+
+    payload.Reason =
+        tostring(
+            reason
+            or (
+                success == true
+                and "joined"
+                or "failed"
+            )
+        )
+
+    local data,
+        requestError =
+        HolyScannerRequestJson(
+            "POST",
+            HolyScannerBackendUrl(
+                "/fleet/join-result"
+            ),
+            payload
+        )
+
+    if type(data) == "table"
+    and data.ok == true then
+
+        return true,
+            "ok"
+    end
+
+    return false,
+        tostring(
+            requestError
+            or "join-result failed"
+        )
+end
+
+function HolyScannerFleetWritePendingJoin(jobId, source)
+
+    if HolyScannerCanUseFiles() ~= true then
+        return false
+    end
+
+    jobId =
+        HolyScannerCleanText(
+            jobId
+        )
+
+    if jobId == "" then
+        return false
+    end
+
+    HolyScannerEnsureFolder()
+
+    local payload = {
+        JobId =
+            jobId,
+
+        PlaceId =
+            game.PlaceId,
+
+        ScannerId =
+            HolyScannerGetScannerId(),
+
+        Source =
+            tostring(source or "fleet"),
+
+        At =
+            os.time(),
+    }
+
+    local encodeOk,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                FLEET_JOIN_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function HolyScannerFleetReadPendingJoin()
+
+    if HolyScannerCanUseFiles() ~= true then
+        return nil
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                FLEET_JOIN_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return nil
+    end
+
+    local readOk,
+        raw =
+        pcall(function()
+
+            return readfile(
+                FLEET_JOIN_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        return nil
+    end
+
+    local decodeOk,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk == true
+    and type(data) == "table" then
+
+        return data
+    end
+
+    return nil
+end
+
+function HolyScannerFleetClearPendingJoin()
+
+    if type(delfile) ~= "function" then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            if isfile(
+                FLEET_JOIN_FILE
+            ) then
+
+                delfile(
+                    FLEET_JOIN_FILE
+                )
+            end
+        end)
+
+    return ok == true
+end
+
+function HolyScannerFleetReportPendingJoin()
+
+    local pending =
+        HolyScannerFleetReadPendingJoin()
+
+    if type(pending) ~= "table" then
+        return false
+    end
+
+    local jobId =
+        HolyScannerCleanText(
+            pending.JobId
+            or pending.jobId
+        )
+
+    if jobId == "" then
+
+        HolyScannerFleetClearPendingJoin()
+
+        return false
+    end
+
+    local createdAt =
+        tonumber(
+            pending.At
+            or pending.at
+        )
+        or 0
+
+    local age =
+        os.time() - createdAt
+
+    if age > FLEET_JOIN_REPORT_MAX_AGE then
+
+        HolyScannerFleetClearPendingJoin()
+
+        return false
+    end
+
+    local joined =
+        tostring(game.JobId) == jobId
+
+    local ok =
+        false
+
+    ok =
+        select(
+            1,
+            HolyScannerFleetJoinResult(
+                jobId,
+                joined,
+                joined == true
+                and "joined"
+                or "loaded different server"
+            )
+        )
+
+    if ok == true
+    or age > 45 then
+
+        HolyScannerFleetClearPendingJoin()
+    end
+
+    return ok == true
+end
+
 function HolyScannerStartReporter()
 
     if HOLY_SCANNER_REPORT_STATE.Running == true then
@@ -7001,6 +7560,10 @@ function HolyScannerServerRowAllowed(server, seenServers, allowRecent)
         return false
     end
 
+    if playing > SERVER_TARGET_MAX_PLAYERS then
+        return false
+    end
+
     if freeSlots < SERVER_MIN_FREE_SLOTS then
         return false
     end
@@ -7363,57 +7926,97 @@ function HolyScannerQueueServerHop(reason)
                 + 1
 
             HolyScannerSetStatus(
-                "Finding server · try "
+                "Fleet finding server · try "
                     .. tostring(
                         HOLY_SCANNER_SERVER_STATE.HopAttempt
                     )
             )
 
-            local servers,
-                fetchReason =
-                HolyScannerServerFetchCandidates(
-                    false
+            local target =
+                nil
+
+            local fetchReason =
+                ""
+
+            local targetSource =
+                "local"
+
+            if HolyScannerFleetEnabled() == true then
+
+                target,
+                    fetchReason =
+                    HolyScannerFleetNextServer(
+                        reason
+                    )
+
+                if type(target) == "table"
+                and HolyScannerCleanText(target.id) ~= "" then
+
+                    targetSource =
+                        "fleet"
+                end
+            end
+
+            if type(target) ~= "table"
+            or HolyScannerCleanText(target.id) == "" then
+
+                HolyScannerSetStatus(
+                    "Fleet fallback: "
+                        .. tostring(fetchReason or "local search")
                 )
 
-            if (
-                type(servers) ~= "table"
-                or #servers <= 0
-            ) then
+                local servers =
+                    nil
 
                 servers,
                     fetchReason =
                     HolyScannerServerFetchCandidates(
-                        true
+                        false
                     )
+
+                if (
+                    type(servers) ~= "table"
+                    or #servers <= 0
+                ) then
+
+                    servers,
+                        fetchReason =
+                        HolyScannerServerFetchCandidates(
+                            true
+                        )
+                end
+
+                if HOLY_SCANNER_SERVER_STATE.Hopping ~= true
+                or HOLY_SCANNER_SERVER_STATE.HopToken ~= token then
+                    return
+                end
+
+                if type(servers) ~= "table"
+                or #servers <= 0 then
+
+                    HolyScannerSetStatus(
+                        "No servers found, retrying..."
+                    )
+
+                    HolyScannerServerSetBackoff(
+                        tostring(fetchReason or "no servers")
+                    )
+
+                    task.wait(
+                        SERVER_RETRY_DELAY
+                    )
+
+                    continue
+                end
+
+                target =
+                    HolyScannerServerPickLowest(
+                        servers
+                    )
+
+                targetSource =
+                    "local"
             end
-
-            if HOLY_SCANNER_SERVER_STATE.Hopping ~= true
-            or HOLY_SCANNER_SERVER_STATE.HopToken ~= token then
-                return
-            end
-
-            if type(servers) ~= "table"
-            or #servers <= 0 then
-
-                HolyScannerSetStatus(
-                    "No servers found, retrying..."
-                )
-
-                HolyScannerServerSetBackoff(
-                    tostring(fetchReason or "no servers")
-                )
-
-                task.wait(
-                    SERVER_RETRY_DELAY
-                )
-
-                continue
-            end
-
-            local target =
-                HolyScannerServerPickLowest(
-                    servers
-                )
 
             if type(target) ~= "table"
             or HolyScannerCleanText(target.id) == "" then
@@ -7442,14 +8045,42 @@ function HolyScannerQueueServerHop(reason)
             local targetId =
                 HolyScannerCleanText(
                     target.id
+                    or target.JobId
+                    or target.jobId
+                )
+
+            local playing =
+                tonumber(
+                    target.playing
+                    or target.Playing
+                )
+                or 0
+
+            local maxPlayers =
+                tonumber(
+                    target.maxPlayers
+                    or target.MaxPlayers
+                )
+                or 8
+
+            local freeSlots =
+                tonumber(
+                    target.FreeSlots
+                    or target.freeSlots
+                )
+                or math.max(
+                    0,
+                    maxPlayers - playing
                 )
 
             local targetText =
-                tostring(target.playing or "?")
+                tostring(playing)
                 .. "/"
-                .. tostring(target.maxPlayers or "?")
+                .. tostring(maxPlayers)
                 .. " · free "
-                .. tostring(target.FreeSlots or "?")
+                .. tostring(freeSlots)
+                .. " · "
+                .. tostring(targetSource)
                 .. " · "
                 .. targetId:sub(1, 8)
 
@@ -7470,6 +8101,14 @@ function HolyScannerQueueServerHop(reason)
 
             local startedJobId =
                 tostring(game.JobId)
+
+            if targetSource == "fleet" then
+
+                HolyScannerFleetWritePendingJoin(
+                    targetId,
+                    "fleet"
+                )
+            end
 
             local ok,
                 err =
@@ -7512,13 +8151,27 @@ function HolyScannerQueueServerHop(reason)
 
                 if tostring(game.JobId) == startedJobId then
 
+                    local failReason =
+                        "teleport timeout / possible full server"
+
                     HolyScannerServerRememberFailed(
                         targetId,
-                        "teleport timeout / possible full server"
+                        failReason
                     )
 
+                    if targetSource == "fleet" then
+
+                        HolyScannerFleetJoinResult(
+                            targetId,
+                            false,
+                            failReason
+                        )
+
+                        HolyScannerFleetClearPendingJoin()
+                    end
+
                     HolyScannerServerSetBackoff(
-                        "teleport timeout / possible full server"
+                        failReason
                     )
 
                     HolyScannerDismissTeleportErrorPrompt()
@@ -7534,14 +8187,28 @@ function HolyScannerQueueServerHop(reason)
 
             else
 
+                local failReason =
+                    "teleport failed: "
+                    .. tostring(err)
+
                 HolyScannerServerRememberFailed(
                     targetId,
-                    "teleport failed"
+                    failReason
                 )
 
+                if targetSource == "fleet" then
+
+                    HolyScannerFleetJoinResult(
+                        targetId,
+                        false,
+                        failReason
+                    )
+
+                    HolyScannerFleetClearPendingJoin()
+                end
+
                 HolyScannerServerSetBackoff(
-                    "teleport failed: "
-                        .. tostring(err)
+                    failReason
                 )
 
                 HolyScannerDismissTeleportErrorPrompt()
@@ -8348,6 +9015,8 @@ end)
 HolyScannerLoadSettings()
 
 HolyScannerNormalizeState()
+
+HolyScannerFleetReportPendingJoin()
 
 HolyScannerStartLoadingSkip(
     "startup"
