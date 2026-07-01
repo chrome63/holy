@@ -74,7 +74,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-scanner-20260630-hop_fix_autohide_v1"
+    "holy-scanner-20260627-v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -123,28 +123,6 @@ local SERVER_MIN_PLAYERS =
 local SERVER_MAX_PLAYERS =
     8
 
-local SERVER_TARGET_MAX_PLAYERS =
-    5
-
-local FLEET_HOP_ENABLED =
-    true
-
-local FLEET_TARGET_MAX_PLAYERS =
-    5
-
-local FLEET_SEARCH_PAGES =
-    6
-
-local FLEET_REQUEST_BACKOFF =
-    8
-
-local FLEET_JOIN_REPORT_MAX_AGE =
-    180
-
-local FLEET_JOIN_FILE =
-    UI_SETTINGS_FOLDER
-    .. "/HolyScannerFleetJoin.json"
-
 local SERVER_DEFAULT_SEARCH_PAGES =
     5
 
@@ -155,25 +133,13 @@ local SERVER_FAILED_COOLDOWN =
     120
 
 local SERVER_RETRY_DELAY =
-    1.75
+    0.1
 
 local SERVER_TELEPORT_TIMEOUT =
-    6
-
-local SERVER_JOIN_BACKOFF_MIN =
     3
 
-local SERVER_JOIN_BACKOFF_MAX =
-    22
-
-local SERVER_MIN_FREE_SLOTS =
-    2
-
-local SERVER_PICK_TOP_RANDOM =
-    12
-
 local SERVER_POOL_TARGET =
-    32
+    18
 
 local SHOP_MAX_BURST_FIRES =
     120
@@ -245,21 +211,6 @@ HOLY_SCANNER_SERVER_STATE = {
     LastTargetText = "None",
     LastStatus = "Starting",
 
-    LastTeleportError = "",
-    LastTeleportFailAt = 0,
-    LastTargetServer = "",
-    LastTargetPlayers = "",
-
-    LastFleetError = "",
-    LastFleetAt = 0,
-    FleetBackoffUntil = 0,
-    FleetLastAssignedJobId = "",
-    FleetLastAssignedText = "",
-
-    TeleportBackoffUntil = 0,
-    TeleportFailCount = 0,
-    TeleportErrorWatcherStarted = false,
-
     RecentServers = {},
     FailedServers = {},
 }
@@ -287,6 +238,14 @@ HOLY_SCANNER_LOADING_STATE = {
     PressedFinal = false,
     LogsPrinted = 0,
     Ready = false,
+}
+
+HOLY_SCANNER_ERROR_PROMPT_STATE = {
+    Running = false,
+    Token = nil,
+    HiddenCount = 0,
+    LastHiddenAt = 0,
+    LastHiddenText = "",
 }
 
 HOLY_SCANNER_ANTI_AFK_STATE = {
@@ -2174,6 +2133,747 @@ function HolyScannerWaitForLoadingReady(timeout)
     end
 
     return false
+end
+
+--==================================================
+-- [6.5] ROBLOX ERROR PROMPT HIDER
+--==================================================
+
+function HolyScannerErrorPromptTextMatches(text)
+
+    text =
+        HolyScannerCleanText(text)
+            :lower()
+
+    if text == "" then
+        return false
+    end
+
+    if text:find("error code", 1, true) then
+        return true
+    end
+
+    if text:find("this experience is full", 1, true) then
+        return true
+    end
+
+    if text:find("this game is full", 1, true) then
+        return true
+    end
+
+    if text:find("requested server is full", 1, true) then
+        return true
+    end
+
+    if text:find("please try again later", 1, true) then
+        return true
+    end
+
+    if text:find("join another server", 1, true) then
+        return true
+    end
+
+    if text:find("teleport failed", 1, true) then
+        return true
+    end
+
+    if text:find("failed to connect", 1, true) then
+        return true
+    end
+
+    if text:find("connection error", 1, true) then
+        return true
+    end
+
+    if text:find("disconnected", 1, true) then
+        return true
+    end
+
+    if text:find("kicked", 1, true) then
+        return true
+    end
+
+    return false
+end
+
+function HolyScannerErrorPromptPathMatches(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return false
+    end
+
+    local path =
+        ""
+
+    pcall(function()
+
+        path =
+            instance:GetFullName()
+                :lower()
+    end)
+
+    if path:find("robloxpromptgui", 1, true) then
+        return true
+    end
+
+    if path:find("promptoverlay", 1, true) then
+        return true
+    end
+
+    if path:find("errorprompt", 1, true) then
+        return true
+    end
+
+    if path:find("teleport", 1, true) then
+        return true
+    end
+
+    return false
+end
+
+function HolyScannerErrorPromptFindRoot(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    local current =
+        instance
+
+    local fallback =
+        nil
+
+    while typeof(current) == "Instance"
+    and current ~= game do
+
+        local name =
+            tostring(current.Name)
+                :lower()
+
+        if name == "errorprompt"
+        or name:find("errorprompt", 1, true)
+        or name == "promptoverlay"
+        or name:find("promptoverlay", 1, true) then
+
+            return current
+        end
+
+        if current:IsA("GuiObject") then
+
+            if name:find("prompt", 1, true)
+            or name:find("error", 1, true)
+            or name:find("dialog", 1, true)
+            or name:find("modal", 1, true) then
+
+                fallback =
+                    current
+            end
+        end
+
+        if current:IsA("ScreenGui")
+        or current:IsA("LayerCollector") then
+
+            break
+        end
+
+        current =
+            current.Parent
+    end
+
+    return fallback
+end
+
+function HolyScannerErrorPromptClickButton(prompt)
+
+    if typeof(prompt) ~= "Instance" then
+        return false
+    end
+
+    local buttons =
+        {}
+
+    local function addButton(button)
+
+        if typeof(button) ~= "Instance" then
+            return
+        end
+
+        if button:IsA("TextButton") ~= true
+        and button:IsA("ImageButton") ~= true then
+
+            return
+        end
+
+        local text =
+            ""
+
+        if button:IsA("TextButton") then
+
+            text =
+                HolyScannerLoadingGetText(button)
+                    :lower()
+        end
+
+        local priority =
+            0
+
+        if text == "ok"
+        or text == "okay"
+        or text == "close"
+        or text == "leave"
+        or text == "reconnect" then
+
+            priority =
+                5
+
+        elseif text:find("ok", 1, true)
+        or text:find("close", 1, true)
+        or text:find("leave", 1, true)
+        or text:find("reconnect", 1, true) then
+
+            priority =
+                4
+
+        elseif button:IsA("ImageButton") then
+
+            priority =
+                1
+        end
+
+        if priority > 0 then
+
+            table.insert(
+                buttons,
+                {
+                    Button = button,
+                    Priority = priority,
+                }
+            )
+        end
+    end
+
+    addButton(
+        prompt
+    )
+
+    local descendants =
+        {}
+
+    pcall(function()
+
+        descendants =
+            prompt:GetDescendants()
+    end)
+
+    for _, child in ipairs(descendants) do
+
+        addButton(
+            child
+        )
+    end
+
+    table.sort(buttons, function(a, b)
+
+        return tonumber(a.Priority or 0)
+            > tonumber(b.Priority or 0)
+    end)
+
+    for _, row in ipairs(buttons) do
+
+        local button =
+            row.Button
+
+        if typeof(button) == "Instance"
+        and button.Parent ~= nil
+        and HolyScannerVisibleChainReady(button) == true then
+
+            local center =
+                HolyScannerLoadingGetGuiCenter(
+                    button
+                )
+
+            if center then
+
+                HolyScannerClickAt(
+                    center
+                )
+
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+function HolyScannerErrorPromptDismiss(prompt, matchedText)
+
+    if typeof(prompt) ~= "Instance" then
+        return false
+    end
+
+    HolyScannerErrorPromptClickButton(
+        prompt
+    )
+
+    pcall(function()
+
+        if prompt:IsA("GuiObject") then
+
+            prompt.Visible =
+                false
+
+            prompt.Active =
+                false
+        end
+    end)
+
+    pcall(function()
+
+        if prompt:IsA("LayerCollector") then
+
+            prompt.Enabled =
+                false
+        end
+    end)
+
+    pcall(function()
+
+        local name =
+            tostring(prompt.Name)
+                :lower()
+
+        if name ~= "robloxpromptgui"
+        and prompt ~= CoreGui then
+
+            prompt:Destroy()
+        end
+    end)
+
+    HOLY_SCANNER_ERROR_PROMPT_STATE.HiddenCount =
+        (
+            tonumber(HOLY_SCANNER_ERROR_PROMPT_STATE.HiddenCount)
+            or 0
+        )
+        + 1
+
+    HOLY_SCANNER_ERROR_PROMPT_STATE.LastHiddenAt =
+        os.clock()
+
+    HOLY_SCANNER_ERROR_PROMPT_STATE.LastHiddenText =
+        HolyScannerCleanText(
+            matchedText
+        )
+
+    HOLY_SCANNER_REPORT_STATE.LastError =
+        HolyScannerCleanText(
+            matchedText
+        )
+
+    return true
+end
+
+function HolyScannerErrorPromptAddRoot(roots, seen, root)
+
+    if typeof(root) ~= "Instance" then
+        return false
+    end
+
+    if seen[root] == true then
+        return false
+    end
+
+    seen[root] =
+        true
+
+    table.insert(
+        roots,
+        root
+    )
+
+    return true
+end
+
+function HolyScannerErrorPromptGetRoots()
+
+    local roots =
+        {}
+
+    local seen =
+        {}
+
+    pcall(function()
+
+        HolyScannerErrorPromptAddRoot(
+            roots,
+            seen,
+            CoreGui
+        )
+
+        HolyScannerErrorPromptAddRoot(
+            roots,
+            seen,
+            CoreGui:FindFirstChild("RobloxPromptGui")
+        )
+
+        for _, child in ipairs(CoreGui:GetChildren()) do
+
+            local name =
+                tostring(child.Name)
+                    :lower()
+
+            if name:find("prompt", 1, true)
+            or name:find("roblox", 1, true)
+            or name:find("teleport", 1, true)
+            or name:find("error", 1, true) then
+
+                HolyScannerErrorPromptAddRoot(
+                    roots,
+                    seen,
+                    child
+                )
+            end
+        end
+    end)
+
+    pcall(function()
+
+        local playerGui =
+            LocalPlayer
+            and LocalPlayer:FindFirstChildOfClass("PlayerGui")
+            or nil
+
+        HolyScannerErrorPromptAddRoot(
+            roots,
+            seen,
+            playerGui
+        )
+    end)
+
+    if type(gethui) == "function" then
+
+        pcall(function()
+
+            local hui =
+                gethui()
+
+            HolyScannerErrorPromptAddRoot(
+                roots,
+                seen,
+                hui
+            )
+
+            if typeof(hui) == "Instance" then
+
+                HolyScannerErrorPromptAddRoot(
+                    roots,
+                    seen,
+                    hui:FindFirstChild("RobloxPromptGui")
+                )
+
+                for _, child in ipairs(hui:GetChildren()) do
+
+                    local name =
+                        tostring(child.Name)
+                            :lower()
+
+                    if name:find("prompt", 1, true)
+                    or name:find("roblox", 1, true)
+                    or name:find("teleport", 1, true)
+                    or name:find("error", 1, true) then
+
+                        HolyScannerErrorPromptAddRoot(
+                            roots,
+                            seen,
+                            child
+                        )
+                    end
+                end
+            end
+        end)
+    end
+
+    return roots
+end
+
+function HolyScannerErrorPromptScanInstance(instance, prompts)
+
+    if typeof(instance) ~= "Instance" then
+        return false
+    end
+
+    if instance:IsA("TextLabel") ~= true
+    and instance:IsA("TextButton") ~= true
+    and instance:IsA("TextBox") ~= true then
+
+        return false
+    end
+
+    local text =
+        HolyScannerLoadingGetText(
+            instance
+        )
+
+    if HolyScannerErrorPromptTextMatches(text) ~= true then
+        return false
+    end
+
+    local prompt =
+        HolyScannerErrorPromptFindRoot(
+            instance
+        )
+
+    if typeof(prompt) ~= "Instance" then
+
+        if HolyScannerErrorPromptPathMatches(instance) == true then
+
+            prompt =
+                instance
+        end
+    end
+
+    if typeof(prompt) ~= "Instance" then
+        return false
+    end
+
+    prompts[prompt] =
+        text
+
+    return true
+end
+
+function HolyScannerErrorPromptScanRoot(root)
+
+    if typeof(root) ~= "Instance" then
+        return 0
+    end
+
+    local prompts =
+        {}
+
+    HolyScannerErrorPromptScanInstance(
+        root,
+        prompts
+    )
+
+    local descendants =
+        {}
+
+    pcall(function()
+
+        descendants =
+            root:GetDescendants()
+    end)
+
+    for _, instance in ipairs(descendants) do
+
+        HolyScannerErrorPromptScanInstance(
+            instance,
+            prompts
+        )
+    end
+
+    local hidden =
+        0
+
+    for prompt, text in pairs(prompts) do
+
+        if typeof(prompt) == "Instance"
+        and prompt.Parent ~= nil then
+
+            if HolyScannerErrorPromptDismiss(
+                prompt,
+                text
+            ) == true then
+
+                hidden =
+                    hidden + 1
+            end
+        end
+    end
+
+    return hidden
+end
+
+function HolyScannerErrorPromptScanNow(reason)
+
+    local hidden =
+        0
+
+    for _, root in ipairs(HolyScannerErrorPromptGetRoots()) do
+
+        hidden =
+            hidden
+            + HolyScannerErrorPromptScanRoot(
+                root
+            )
+    end
+
+    return hidden
+end
+
+function HolyScannerStartErrorPromptHider()
+
+    HOLY_SCANNER_ERROR_PROMPT_STATE =
+        type(HOLY_SCANNER_ERROR_PROMPT_STATE) == "table"
+        and HOLY_SCANNER_ERROR_PROMPT_STATE
+        or {}
+
+    if HOLY_SCANNER_ERROR_PROMPT_STATE.Running == true then
+        return false
+    end
+
+    HOLY_SCANNER_ERROR_PROMPT_STATE.Running =
+        true
+
+    local token =
+        {}
+
+    HOLY_SCANNER_ERROR_PROMPT_STATE.Token =
+        token
+
+    local ok,
+        connection =
+        pcall(function()
+
+            return CoreGui.DescendantAdded:Connect(function(instance)
+
+                task.defer(function()
+
+                    task.wait(
+                        0.03
+                    )
+
+                    if HOLY_SCANNER_RUNNING ~= true then
+                        return
+                    end
+
+                    if HolyScannerErrorPromptPathMatches(instance) == true
+                    or HolyScannerErrorPromptTextMatches(
+                        HolyScannerLoadingGetText(instance)
+                    ) == true then
+
+                        HolyScannerErrorPromptScanNow(
+                            "coregui descendant added"
+                        )
+                    end
+                end)
+            end)
+        end)
+
+    if ok == true
+    and connection then
+
+        HolyScannerTrackConnection(
+            connection
+        )
+    end
+
+    pcall(function()
+
+        local playerGui =
+            LocalPlayer
+            and LocalPlayer:FindFirstChildOfClass("PlayerGui")
+            or nil
+
+        if typeof(playerGui) == "Instance" then
+
+            HolyScannerTrackConnection(
+                playerGui.DescendantAdded:Connect(function(instance)
+
+                    task.defer(function()
+
+                        task.wait(
+                            0.03
+                        )
+
+                        if HOLY_SCANNER_RUNNING ~= true then
+                            return
+                        end
+
+                        if HolyScannerErrorPromptPathMatches(instance) == true
+                        or HolyScannerErrorPromptTextMatches(
+                            HolyScannerLoadingGetText(instance)
+                        ) == true then
+
+                            HolyScannerErrorPromptScanNow(
+                                "playergui descendant added"
+                            )
+                        end
+                    end)
+                end)
+            )
+        end
+    end)
+
+    local teleportOk,
+        teleportConnection =
+        pcall(function()
+
+            return TeleportService.TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
+
+                if typeof(player) == "Instance"
+                and player ~= LocalPlayer then
+
+                    return
+                end
+
+                HOLY_SCANNER_REPORT_STATE.LastError =
+                    "Teleport failed: "
+                    .. tostring(teleportResult)
+                    .. " "
+                    .. tostring(errorMessage)
+
+                task.defer(function()
+
+                    task.wait(
+                        0.03
+                    )
+
+                    HolyScannerErrorPromptScanNow(
+                        "teleport init failed"
+                    )
+                end)
+            end)
+        end)
+
+    if teleportOk == true
+    and teleportConnection then
+
+        HolyScannerTrackConnection(
+            teleportConnection
+        )
+    end
+
+    task.spawn(function()
+
+        task.wait(
+            0.10
+        )
+
+        while HOLY_SCANNER_RUNNING == true
+        and HOLY_SCANNER_ERROR_PROMPT_STATE.Token == token do
+
+            HolyScannerErrorPromptScanNow(
+                "loop"
+            )
+
+            task.wait(
+                0.15
+            )
+        end
+
+        if HOLY_SCANNER_ERROR_PROMPT_STATE.Token == token then
+
+            HOLY_SCANNER_ERROR_PROMPT_STATE.Token =
+                nil
+        end
+
+        HOLY_SCANNER_ERROR_PROMPT_STATE.Running =
+            false
+    end)
+
+    return true
 end
 
 --==================================================
@@ -5775,536 +6475,6 @@ function HolyScannerSendClientHeartbeat(payload)
         tostring(reason or "request failed")
 end
 
-function HolyScannerFleetEnabled()
-
-    return FLEET_HOP_ENABLED == true
-        and HolyScannerCleanText(
-            SERVER_FINDER_API_KEY
-        ) ~= ""
-end
-
-function HolyScannerFleetBackoffLeft()
-
-    local untilTime =
-        tonumber(
-            HOLY_SCANNER_SERVER_STATE.FleetBackoffUntil
-        )
-        or 0
-
-    return math.max(
-        0,
-        untilTime - os.clock()
-    )
-end
-
-function HolyScannerFleetSetBackoff(reason, seconds)
-
-    reason =
-        HolyScannerCleanText(
-            reason
-        )
-
-    seconds =
-        tonumber(seconds)
-        or FLEET_REQUEST_BACKOFF
-
-    seconds =
-        math.clamp(
-            seconds,
-            2,
-            45
-        )
-
-    HOLY_SCANNER_SERVER_STATE.FleetBackoffUntil =
-        os.clock() + seconds
-
-    HOLY_SCANNER_SERVER_STATE.LastFleetError =
-        reason
-
-    return seconds
-end
-
-function HolyScannerFleetBuildBasePayload(reason)
-
-    return {
-        Key =
-            tostring(
-                SERVER_FINDER_API_KEY
-                or ""
-            ),
-
-        Type =
-            "fleet",
-
-        ScannerId =
-            HolyScannerGetScannerId(),
-
-        Reporter =
-            tostring(
-                LocalPlayer
-                and LocalPlayer.Name
-                or "unknown"
-            ),
-
-        UserId =
-            tonumber(
-                LocalPlayer
-                and LocalPlayer.UserId
-            )
-            or 0,
-
-        AccountLabel =
-            HolyScannerGetAccountLabel(),
-
-        VpsLabel =
-            HolyScannerGetVpsLabel(),
-
-        PlaceId =
-            game.PlaceId,
-
-        JobId =
-            tostring(
-                game.JobId
-            ),
-
-        CurrentJobId =
-            tostring(
-                game.JobId
-            ),
-
-        MaxPlayers =
-            FLEET_TARGET_MAX_PLAYERS,
-
-        Pages =
-            FLEET_SEARCH_PAGES,
-
-        Reason =
-            tostring(reason or "hop"),
-
-        ReportedAt =
-            os.time(),
-    }
-end
-
-function HolyScannerFleetNextServer(reason)
-
-    if HolyScannerFleetEnabled() ~= true then
-
-        return nil,
-            "fleet disabled"
-    end
-
-    local backoff =
-        HolyScannerFleetBackoffLeft()
-
-    if backoff > 0 then
-
-        return nil,
-            "fleet backoff "
-            .. tostring(
-                math.ceil(backoff)
-            )
-            .. "s"
-    end
-
-    HOLY_SCANNER_SERVER_STATE.LastFleetAt =
-        os.clock()
-
-    local payload =
-        HolyScannerFleetBuildBasePayload(
-            reason
-        )
-
-    local data,
-        requestError =
-        HolyScannerRequestJson(
-            "POST",
-            HolyScannerBackendUrl(
-                "/fleet/next-server"
-            ),
-            payload
-        )
-
-    if type(data) == "table"
-    and data.ok == true
-    and (
-        data.assigned == true
-        or data.Assigned == true
-    ) then
-
-        local jobId =
-            HolyScannerCleanText(
-                data.JobId
-                or data.jobId
-                or data.Id
-                or data.id
-            )
-
-        if jobId ~= "" then
-
-            local playing =
-                tonumber(
-                    data.Playing
-                    or data.playing
-                )
-                or 0
-
-            local maxPlayers =
-                tonumber(
-                    data.MaxPlayers
-                    or data.maxPlayers
-                )
-                or 8
-
-            local freeSlots =
-                tonumber(
-                    data.FreeSlots
-                    or data.freeSlots
-                )
-                or math.max(
-                    0,
-                    maxPlayers - playing
-                )
-
-            HOLY_SCANNER_SERVER_STATE.FleetBackoffUntil =
-                0
-
-            HOLY_SCANNER_SERVER_STATE.LastFleetError =
-                ""
-
-            HOLY_SCANNER_SERVER_STATE.FleetLastAssignedJobId =
-                jobId
-
-            HOLY_SCANNER_SERVER_STATE.FleetLastAssignedText =
-                tostring(playing)
-                .. "/"
-                .. tostring(maxPlayers)
-                .. " · free "
-                .. tostring(freeSlots)
-                .. " · "
-                .. jobId:sub(1, 8)
-
-            return {
-                id =
-                    jobId,
-
-                playing =
-                    playing,
-
-                maxPlayers =
-                    maxPlayers,
-
-                FreeSlots =
-                    freeSlots,
-
-                Source =
-                    "fleet",
-            },
-                "fleet"
-        end
-    end
-
-    local reasonText =
-        "fleet no server"
-
-    if type(data) == "table" then
-
-        reasonText =
-            tostring(
-                data.error
-                or data.reason
-                or data.message
-                or reasonText
-            )
-
-    elseif requestError then
-
-        reasonText =
-            tostring(
-                requestError
-            )
-    end
-
-    HolyScannerFleetSetBackoff(
-        reasonText,
-        FLEET_REQUEST_BACKOFF
-    )
-
-    return nil,
-        reasonText
-end
-
-function HolyScannerFleetJoinResult(jobId, success, reason)
-
-    if HolyScannerFleetEnabled() ~= true then
-        return false,
-            "fleet disabled"
-    end
-
-    jobId =
-        HolyScannerCleanText(
-            jobId
-        )
-
-    if jobId == "" then
-        return false,
-            "missing job"
-    end
-
-    local payload =
-        HolyScannerFleetBuildBasePayload(
-            reason
-        )
-
-    payload.JobId =
-        jobId
-
-    payload.TargetJobId =
-        jobId
-
-    payload.Success =
-        success == true
-
-    payload.Joined =
-        success == true
-
-    payload.Reason =
-        tostring(
-            reason
-            or (
-                success == true
-                and "joined"
-                or "failed"
-            )
-        )
-
-    local data,
-        requestError =
-        HolyScannerRequestJson(
-            "POST",
-            HolyScannerBackendUrl(
-                "/fleet/join-result"
-            ),
-            payload
-        )
-
-    if type(data) == "table"
-    and data.ok == true then
-
-        return true,
-            "ok"
-    end
-
-    return false,
-        tostring(
-            requestError
-            or "join-result failed"
-        )
-end
-
-function HolyScannerFleetWritePendingJoin(jobId, source)
-
-    if HolyScannerCanUseFiles() ~= true then
-        return false
-    end
-
-    jobId =
-        HolyScannerCleanText(
-            jobId
-        )
-
-    if jobId == "" then
-        return false
-    end
-
-    HolyScannerEnsureFolder()
-
-    local payload = {
-        JobId =
-            jobId,
-
-        PlaceId =
-            game.PlaceId,
-
-        ScannerId =
-            HolyScannerGetScannerId(),
-
-        Source =
-            tostring(source or "fleet"),
-
-        At =
-            os.time(),
-    }
-
-    local encodeOk,
-        encoded =
-        pcall(function()
-
-            return HttpService:JSONEncode(
-                payload
-            )
-        end)
-
-    if encodeOk ~= true
-    or type(encoded) ~= "string" then
-        return false
-    end
-
-    local writeOk =
-        pcall(function()
-
-            writefile(
-                FLEET_JOIN_FILE,
-                encoded
-            )
-        end)
-
-    return writeOk == true
-end
-
-function HolyScannerFleetReadPendingJoin()
-
-    if HolyScannerCanUseFiles() ~= true then
-        return nil
-    end
-
-    local exists =
-        false
-
-    pcall(function()
-
-        exists =
-            isfile(
-                FLEET_JOIN_FILE
-            )
-    end)
-
-    if exists ~= true then
-        return nil
-    end
-
-    local readOk,
-        raw =
-        pcall(function()
-
-            return readfile(
-                FLEET_JOIN_FILE
-            )
-        end)
-
-    if readOk ~= true
-    or type(raw) ~= "string"
-    or raw == "" then
-
-        return nil
-    end
-
-    local decodeOk,
-        data =
-        pcall(function()
-
-            return HttpService:JSONDecode(
-                raw
-            )
-        end)
-
-    if decodeOk == true
-    and type(data) == "table" then
-
-        return data
-    end
-
-    return nil
-end
-
-function HolyScannerFleetClearPendingJoin()
-
-    if type(delfile) ~= "function" then
-        return false
-    end
-
-    local ok =
-        pcall(function()
-
-            if isfile(
-                FLEET_JOIN_FILE
-            ) then
-
-                delfile(
-                    FLEET_JOIN_FILE
-                )
-            end
-        end)
-
-    return ok == true
-end
-
-function HolyScannerFleetReportPendingJoin()
-
-    local pending =
-        HolyScannerFleetReadPendingJoin()
-
-    if type(pending) ~= "table" then
-        return false
-    end
-
-    local jobId =
-        HolyScannerCleanText(
-            pending.JobId
-            or pending.jobId
-        )
-
-    if jobId == "" then
-
-        HolyScannerFleetClearPendingJoin()
-
-        return false
-    end
-
-    local createdAt =
-        tonumber(
-            pending.At
-            or pending.at
-        )
-        or 0
-
-    local age =
-        os.time() - createdAt
-
-    if age > FLEET_JOIN_REPORT_MAX_AGE then
-
-        HolyScannerFleetClearPendingJoin()
-
-        return false
-    end
-
-    local joined =
-        tostring(game.JobId) == jobId
-
-    local ok =
-        false
-
-    ok =
-        select(
-            1,
-            HolyScannerFleetJoinResult(
-                jobId,
-                joined,
-                joined == true
-                and "joined"
-                or "loaded different server"
-            )
-        )
-
-    if ok == true
-    or age > 45 then
-
-        HolyScannerFleetClearPendingJoin()
-    end
-
-    return ok == true
-end
-
 function HolyScannerStartReporter()
 
     if HOLY_SCANNER_REPORT_STATE.Running == true then
@@ -7059,426 +7229,6 @@ function HolyScannerServerRememberFailed(jobId, reason)
     return true
 end
 
-function HolyScannerServerBackoffLeft()
-
-    local untilTime =
-        tonumber(
-            HOLY_SCANNER_SERVER_STATE.TeleportBackoffUntil
-        )
-        or 0
-
-    return math.max(
-        0,
-        untilTime - os.clock()
-    )
-end
-
-function HolyScannerServerSetBackoff(reason)
-
-    reason =
-        HolyScannerCleanText(
-            reason
-        )
-
-    if reason == "" then
-        reason =
-            "teleport failed"
-    end
-
-    HOLY_SCANNER_SERVER_STATE.TeleportFailCount =
-        math.min(
-            8,
-            (
-                tonumber(
-                    HOLY_SCANNER_SERVER_STATE.TeleportFailCount
-                )
-                or 0
-            )
-            + 1
-        )
-
-    local failCount =
-        tonumber(
-            HOLY_SCANNER_SERVER_STATE.TeleportFailCount
-        )
-        or 1
-
-    local lower =
-        reason:lower()
-
-    local delay =
-        SERVER_JOIN_BACKOFF_MIN
-        + (failCount * 2)
-        + math.random(0, 3)
-
-    if lower:find("529", 1, true)
-    or lower:find("http", 1, true) then
-
-        delay =
-            math.max(
-                delay,
-                15
-            )
-    end
-
-    if lower:find("772", 1, true)
-    or lower:find("full", 1, true) then
-
-        delay =
-            math.max(
-                delay,
-                5
-            )
-    end
-
-    delay =
-        math.clamp(
-            delay,
-            SERVER_JOIN_BACKOFF_MIN,
-            SERVER_JOIN_BACKOFF_MAX
-        )
-
-    HOLY_SCANNER_SERVER_STATE.TeleportBackoffUntil =
-        os.clock() + delay
-
-    HOLY_SCANNER_SERVER_STATE.LastTeleportError =
-        reason
-
-    HOLY_SCANNER_SERVER_STATE.LastTeleportFailAt =
-        os.clock()
-
-    HolyScannerSetStatus(
-        "Teleport retry in "
-            .. tostring(
-                math.ceil(delay)
-            )
-            .. "s: "
-            .. reason
-    )
-
-    return delay
-end
-
-function HolyScannerServerClearBackoff()
-
-    HOLY_SCANNER_SERVER_STATE.TeleportBackoffUntil =
-        0
-
-    HOLY_SCANNER_SERVER_STATE.TeleportFailCount =
-        0
-
-    HOLY_SCANNER_SERVER_STATE.LastTeleportError =
-        ""
-
-    HOLY_SCANNER_SERVER_STATE.LastTeleportFailAt =
-        0
-
-    return true
-end
-
-function HolyScannerGetPlayerGui()
-
-    if not LocalPlayer then
-        return nil
-    end
-
-    return LocalPlayer:FindFirstChildOfClass(
-        "PlayerGui"
-    )
-    or LocalPlayer:FindFirstChild(
-        "PlayerGui"
-    )
-end
-
-function HolyScannerFindTeleportErrorTextAndButton()
-
-    local roots = {
-        CoreGui,
-        HolyScannerGetPlayerGui(),
-    }
-
-    local foundError =
-        false
-
-    local okButton =
-        nil
-
-    for _, root in ipairs(roots) do
-
-        if typeof(root) == "Instance" then
-
-            local ok,
-                descendants =
-                pcall(function()
-
-                    return root:GetDescendants()
-                end)
-
-            if ok == true
-            and type(descendants) == "table" then
-
-                for _, descendant in ipairs(descendants) do
-
-                    if descendant:IsA("TextLabel")
-                    or descendant:IsA("TextButton")
-                    or descendant:IsA("TextBox") then
-
-                        local text =
-                            HolyScannerCleanText(
-                                pcall(function()
-
-                                    return descendant.Text
-                                end)
-                            )
-
-                        local readOk,
-                            rawText =
-                            pcall(function()
-
-                                return descendant.Text
-                            end)
-
-                        if readOk == true then
-
-                            text =
-                                HolyScannerCleanText(
-                                    rawText
-                                )
-                        end
-
-                        local lower =
-                            text:lower()
-
-                        if lower:find("error code: 772", 1, true)
-                        or lower:find("server is full", 1, true)
-                        or lower:find("please try again later", 1, true)
-                        or lower:find("join error", 1, true)
-                        or lower:find("error code: 529", 1, true) then
-
-                            foundError =
-                                true
-                        end
-
-                        if descendant:IsA("TextButton") then
-
-                            if lower == "ok"
-                            or lower == "cancel" then
-
-                                okButton =
-                                    okButton
-                                    or descendant
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    return foundError,
-        okButton
-end
-
-function HolyScannerDismissTeleportErrorPrompt()
-
-    local foundError,
-        button =
-        HolyScannerFindTeleportErrorTextAndButton()
-
-    if foundError ~= true then
-        return false
-    end
-
-    if typeof(button) == "Instance"
-    and button:IsA("GuiButton") then
-
-        local center =
-            HolyScannerLoadingGetGuiCenter(
-                button
-            )
-
-        if center then
-
-            HolyScannerClickAt(
-                center
-            )
-
-            return true
-        end
-    end
-
-    HolyScannerPressKey(
-        Enum.KeyCode.Return
-    )
-
-    task.wait(
-        0.08
-    )
-
-    HolyScannerPressKey(
-        Enum.KeyCode.Escape
-    )
-
-    task.wait(
-        0.08
-    )
-
-    HolyScannerClickAt(
-        HolyScannerLoadingGetScreenCenter()
-    )
-
-    return true
-end
-
-function HolyScannerStartTeleportWatchers()
-
-    if HOLY_SCANNER_SERVER_STATE.TeleportErrorWatcherStarted == true then
-        return false
-    end
-
-    HOLY_SCANNER_SERVER_STATE.TeleportErrorWatcherStarted =
-        true
-
-    pcall(function()
-
-        HolyScannerTrackConnection(
-            TeleportService.TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
-
-                if player ~= LocalPlayer then
-                    return
-                end
-
-                local reason =
-                    tostring(teleportResult or "TeleportInitFailed")
-                    .. " "
-                    .. tostring(errorMessage or "")
-
-                local targetServer =
-                    HolyScannerCleanText(
-                        HOLY_SCANNER_SERVER_STATE.LastTargetServer
-                    )
-
-                if targetServer ~= "" then
-
-                    HolyScannerServerRememberFailed(
-                        targetServer,
-                        reason
-                    )
-                end
-
-                HolyScannerServerSetBackoff(
-                    reason
-                )
-
-                HOLY_SCANNER_SERVER_STATE.HopToken =
-                    (
-                        tonumber(
-                            HOLY_SCANNER_SERVER_STATE.HopToken
-                        )
-                        or 0
-                    )
-                    + 1
-
-                HOLY_SCANNER_SERVER_STATE.Hopping =
-                    false
-
-                task.defer(
-                    HolyScannerDismissTeleportErrorPrompt
-                )
-            end)
-        )
-    end)
-
-    task.spawn(function()
-
-        while HOLY_SCANNER_RUNNING == true do
-
-            local found =
-                HolyScannerDismissTeleportErrorPrompt()
-
-            if found == true then
-
-                local targetServer =
-                    HolyScannerCleanText(
-                        HOLY_SCANNER_SERVER_STATE.LastTargetServer
-                    )
-
-                if targetServer ~= "" then
-
-                    HolyScannerServerRememberFailed(
-                        targetServer,
-                        "join error popup"
-                    )
-                end
-
-                HolyScannerServerSetBackoff(
-                    "join error popup"
-                )
-
-                HOLY_SCANNER_SERVER_STATE.HopToken =
-                    (
-                        tonumber(
-                            HOLY_SCANNER_SERVER_STATE.HopToken
-                        )
-                        or 0
-                    )
-                    + 1
-
-                HOLY_SCANNER_SERVER_STATE.Hopping =
-                    false
-            end
-
-            if HOLY_SCANNER_SERVER_STATE.Hopping == true then
-
-                local lastHopAt =
-                    tonumber(
-                        HOLY_SCANNER_SERVER_STATE.LastHopAt
-                    )
-                    or 0
-
-                if lastHopAt > 0
-                and os.clock() - lastHopAt >= 18 then
-
-                    local targetServer =
-                        HolyScannerCleanText(
-                            HOLY_SCANNER_SERVER_STATE.LastTargetServer
-                        )
-
-                    if targetServer ~= "" then
-
-                        HolyScannerServerRememberFailed(
-                            targetServer,
-                            "teleport stuck"
-                        )
-                    end
-
-                    HolyScannerServerSetBackoff(
-                        "teleport stuck"
-                    )
-
-                    HOLY_SCANNER_SERVER_STATE.HopToken =
-                        (
-                            tonumber(
-                                HOLY_SCANNER_SERVER_STATE.HopToken
-                            )
-                            or 0
-                        )
-                        + 1
-
-                    HOLY_SCANNER_SERVER_STATE.Hopping =
-                        false
-                end
-            end
-
-            task.wait(
-                1
-            )
-        end
-    end)
-
-    return true
-end
-
 function HolyScannerServerBuildPublicUrl(cursor, sortOrder)
 
     sortOrder =
@@ -7553,18 +7303,7 @@ function HolyScannerServerRowAllowed(server, seenServers, allowRecent)
         return false
     end
 
-    local freeSlots =
-        maxPlayers - playing
-
     if playing < SERVER_MIN_PLAYERS then
-        return false
-    end
-
-    if playing > SERVER_TARGET_MAX_PLAYERS then
-        return false
-    end
-
-    if freeSlots < SERVER_MIN_FREE_SLOTS then
         return false
     end
 
@@ -7752,55 +7491,7 @@ function HolyScannerServerPickLowest(servers)
         return nil
     end
 
-    local usable =
-        {}
-
-    for _, server in ipairs(servers) do
-
-        local freeSlots =
-            tonumber(server.FreeSlots)
-            or (
-                (
-                    tonumber(server.maxPlayers)
-                    or 0
-                )
-                -
-                (
-                    tonumber(server.playing)
-                    or 0
-                )
-            )
-
-        if freeSlots >= SERVER_MIN_FREE_SLOTS then
-
-            table.insert(
-                usable,
-                server
-            )
-        end
-    end
-
-    if #usable <= 0 then
-
-        usable =
-            servers
-    end
-
-    for index = #usable, 2, -1 do
-
-        local swap =
-            math.random(
-                1,
-                index
-            )
-
-        usable[index],
-            usable[swap] =
-            usable[swap],
-            usable[index]
-    end
-
-    table.sort(usable, function(a, b)
+    table.sort(servers, function(a, b)
 
         local playingA =
             tonumber(a.playing)
@@ -7830,41 +7521,10 @@ function HolyScannerServerPickLowest(servers)
             > tonumber(b.HolyRandom or 0)
     end)
 
-    local pickLimit =
-        math.min(
-            #usable,
-            math.max(
-                1,
-                SERVER_PICK_TOP_RANDOM
-            )
-        )
-
-    return usable[
-        math.random(
-            1,
-            pickLimit
-        )
-    ]
+    return servers[1]
 end
 
 function HolyScannerQueueServerHop(reason)
-
-    local backoffLeft =
-        HolyScannerServerBackoffLeft()
-
-    if backoffLeft > 0 then
-
-        HolyScannerSetStatus(
-            "Teleport backoff "
-                .. tostring(
-                    math.ceil(backoffLeft)
-                )
-                .. "s"
-        )
-
-        return false,
-            "backoff"
-    end
 
     if HOLY_SCANNER_SERVER_STATE.Hopping == true then
         return false,
@@ -7893,288 +7553,52 @@ function HolyScannerQueueServerHop(reason)
         and HOLY_SCANNER_SERVER_STATE.Hopping == true
         and HOLY_SCANNER_SERVER_STATE.HopToken == token do
 
-            local backoff =
-                HolyScannerServerBackoffLeft()
-
-            if backoff > 0 then
-
-                HolyScannerSetStatus(
-                    "Teleport retry in "
-                        .. tostring(
-                            math.ceil(backoff)
-                        )
-                        .. "s"
-                )
-
-                task.wait(
-                    math.min(
-                        2,
-                        backoff
-                    )
-                )
-
-                continue
-            end
-
             HOLY_SCANNER_SERVER_STATE.HopAttempt =
                 (
-                    tonumber(
-                        HOLY_SCANNER_SERVER_STATE.HopAttempt
-                    )
+                    tonumber(HOLY_SCANNER_SERVER_STATE.HopAttempt)
                     or 0
                 )
                 + 1
 
-            HolyScannerSetStatus(
-                "Fleet finding server · try "
-                    .. tostring(
-                        HOLY_SCANNER_SERVER_STATE.HopAttempt
-                    )
-            )
-
-            local target =
-                nil
-
-            local fetchReason =
-                ""
-
-            local targetSource =
-                "local"
-
-            if HolyScannerFleetEnabled() == true then
-
-                target,
-                    fetchReason =
-                    HolyScannerFleetNextServer(
-                        reason
-                    )
-
-                if type(target) == "table"
-                and HolyScannerCleanText(target.id) ~= "" then
-
-                    targetSource =
-                        "fleet"
-                end
-            end
-
-            if type(target) ~= "table"
-            or HolyScannerCleanText(target.id) == "" then
-
-                HolyScannerSetStatus(
-                    "Fleet fallback: "
-                        .. tostring(fetchReason or "local search")
+            local servers,
+                fetchReason =
+                HolyScannerServerFetchCandidates(
+                    false
                 )
 
-                local servers =
-                    nil
+            if (
+                type(servers) ~= "table"
+                or #servers <= 0
+            ) then
 
                 servers,
                     fetchReason =
                     HolyScannerServerFetchCandidates(
-                        false
+                        true
                     )
-
-                if (
-                    type(servers) ~= "table"
-                    or #servers <= 0
-                ) then
-
-                    servers,
-                        fetchReason =
-                        HolyScannerServerFetchCandidates(
-                            true
-                        )
-                end
-
-                if HOLY_SCANNER_SERVER_STATE.Hopping ~= true
-                or HOLY_SCANNER_SERVER_STATE.HopToken ~= token then
-                    return
-                end
-
-                if type(servers) ~= "table"
-                or #servers <= 0 then
-
-                    HolyScannerSetStatus(
-                        "No servers found, retrying..."
-                    )
-
-                    HolyScannerServerSetBackoff(
-                        tostring(fetchReason or "no servers")
-                    )
-
-                    task.wait(
-                        SERVER_RETRY_DELAY
-                    )
-
-                    continue
-                end
-
-                target =
-                    HolyScannerServerPickLowest(
-                        servers
-                    )
-
-                targetSource =
-                    "local"
             end
 
-            if type(target) ~= "table"
-            or HolyScannerCleanText(target.id) == "" then
+            if HOLY_SCANNER_SERVER_STATE.Hopping ~= true
+            or HOLY_SCANNER_SERVER_STATE.HopToken ~= token then
+                return
+            end
 
-                HolyScannerSetStatus(
-                    "No target server, retrying..."
-                )
+            if type(servers) ~= "table"
+            or #servers <= 0 then
 
                 task.wait(
                     SERVER_RETRY_DELAY
                 )
 
-                continue
-            end
+            else
 
-            if HOLY_SCANNER_STATE.HuntMode == true
-            and HolyScannerHuntShouldStayOnCurrentServer(true) == true then
-
-                HolyScannerCancelServerHop(
-                    "hunt target found before teleport"
-                )
-
-                return
-            end
-
-            local targetId =
-                HolyScannerCleanText(
-                    target.id
-                    or target.JobId
-                    or target.jobId
-                )
-
-            local playing =
-                tonumber(
-                    target.playing
-                    or target.Playing
-                )
-                or 0
-
-            local maxPlayers =
-                tonumber(
-                    target.maxPlayers
-                    or target.MaxPlayers
-                )
-                or 8
-
-            local freeSlots =
-                tonumber(
-                    target.FreeSlots
-                    or target.freeSlots
-                )
-                or math.max(
-                    0,
-                    maxPlayers - playing
-                )
-
-            local targetText =
-                tostring(playing)
-                .. "/"
-                .. tostring(maxPlayers)
-                .. " · free "
-                .. tostring(freeSlots)
-                .. " · "
-                .. tostring(targetSource)
-                .. " · "
-                .. targetId:sub(1, 8)
-
-            HOLY_SCANNER_SERVER_STATE.LastTargetServer =
-                targetId
-
-            HOLY_SCANNER_SERVER_STATE.LastTargetPlayers =
-                targetText
-
-            HolyScannerServerRememberRecent(
-                targetId
-            )
-
-            HolyScannerSetStatus(
-                "Joining "
-                    .. targetText
-            )
-
-            local startedJobId =
-                tostring(game.JobId)
-
-            if targetSource == "fleet" then
-
-                HolyScannerFleetWritePendingJoin(
-                    targetId,
-                    "fleet"
-                )
-            end
-
-            local ok,
-                err =
-                pcall(function()
-
-                    TeleportService:TeleportToPlaceInstance(
-                        game.PlaceId,
-                        targetId,
-                        LocalPlayer
-                    )
-                end)
-
-            if ok == true then
-
-                HOLY_SCANNER_SERVER_STATE.LastHopAt =
-                    os.clock()
-
-                local startedAt =
-                    os.clock()
-
-                while HOLY_SCANNER_RUNNING == true
-                and HOLY_SCANNER_SERVER_STATE.Hopping == true
-                and HOLY_SCANNER_SERVER_STATE.HopToken == token
-                and os.clock() - startedAt < SERVER_TELEPORT_TIMEOUT do
-
-                    if tostring(game.JobId) ~= startedJobId then
-                        return
-                    end
-
-                    task.wait(
-                        0.25
-                    )
-                end
-
-                if HOLY_SCANNER_SERVER_STATE.Hopping ~= true
-                or HOLY_SCANNER_SERVER_STATE.HopToken ~= token then
-
-                    return
-                end
-
-                if tostring(game.JobId) == startedJobId then
-
-                    local failReason =
-                        "teleport timeout / possible full server"
-
-                    HolyScannerServerRememberFailed(
-                        targetId,
-                        failReason
+                local target =
+                    HolyScannerServerPickLowest(
+                        servers
                     )
 
-                    if targetSource == "fleet" then
-
-                        HolyScannerFleetJoinResult(
-                            targetId,
-                            false,
-                            failReason
-                        )
-
-                        HolyScannerFleetClearPendingJoin()
-                    end
-
-                    HolyScannerServerSetBackoff(
-                        failReason
-                    )
-
-                    HolyScannerDismissTeleportErrorPrompt()
+                if type(target) ~= "table"
+                or HolyScannerCleanText(target.id) == "" then
 
                     task.wait(
                         SERVER_RETRY_DELAY
@@ -8182,40 +7606,83 @@ function HolyScannerQueueServerHop(reason)
 
                 else
 
-                    return
-                end
+                    if HOLY_SCANNER_STATE.HuntMode == true
+                    and HolyScannerHuntShouldStayOnCurrentServer(true) == true then
 
-            else
+                        HolyScannerCancelServerHop(
+                            "hunt target found before teleport"
+                        )
 
-                local failReason =
-                    "teleport failed: "
-                    .. tostring(err)
+                        return
+                    end
 
-                HolyScannerServerRememberFailed(
-                    targetId,
-                    failReason
-                )
-
-                if targetSource == "fleet" then
-
-                    HolyScannerFleetJoinResult(
-                        targetId,
-                        false,
-                        failReason
+                    HolyScannerServerRememberRecent(
+                        target.id
                     )
 
-                    HolyScannerFleetClearPendingJoin()
+                    local startedJobId =
+                        tostring(game.JobId)
+
+                    local ok,
+                        err =
+                        pcall(function()
+
+                            TeleportService:TeleportToPlaceInstance(
+                                game.PlaceId,
+                                target.id,
+                                LocalPlayer
+                            )
+                        end)
+
+                    if ok == true then
+
+                        HOLY_SCANNER_SERVER_STATE.LastHopAt =
+                            os.clock()
+
+                        local startedAt =
+                            os.clock()
+
+                        while HOLY_SCANNER_RUNNING == true
+                        and HOLY_SCANNER_SERVER_STATE.Hopping == true
+                        and HOLY_SCANNER_SERVER_STATE.HopToken == token
+                        and os.clock() - startedAt < SERVER_TELEPORT_TIMEOUT do
+
+                            if tostring(game.JobId) ~= startedJobId then
+                                return
+                            end
+
+                            task.wait(
+                                0.25
+                            )
+                        end
+
+                        if tostring(game.JobId) == startedJobId then
+
+                            HolyScannerServerRememberFailed(
+                                target.id,
+                                "teleport timeout"
+                            )
+
+                            task.wait(
+                                SERVER_RETRY_DELAY
+                            )
+                        else
+
+                            return
+                        end
+
+                    else
+
+                        HolyScannerServerRememberFailed(
+                            target.id,
+                            "teleport failed"
+                        )
+
+                        task.wait(
+                            SERVER_RETRY_DELAY
+                        )
+                    end
                 end
-
-                HolyScannerServerSetBackoff(
-                    failReason
-                )
-
-                HolyScannerDismissTeleportErrorPrompt()
-
-                task.wait(
-                    SERVER_RETRY_DELAY
-                )
             end
         end
 
@@ -8513,7 +7980,7 @@ function HolyScannerCreateUI()
                 true,
 
             AutoShow =
-                false,
+                true,
 
             Size =
                 UDim2.fromOffset(
@@ -8944,17 +8411,38 @@ function HolyScannerStop(reason)
     HOLY_SCANNER_RUNNING =
         false
 
-    HOLY_SCANNER_LOADING_STATE.Token =
-        nil
+    if type(HOLY_SCANNER_LOADING_STATE) == "table" then
 
-    HOLY_SCANNER_ANTI_AFK_STATE.Token =
-        nil
+        HOLY_SCANNER_LOADING_STATE.Token =
+            nil
+    end
 
-    HOLY_SCANNER_REPORT_STATE.Token =
-        nil
+    if type(HOLY_SCANNER_ERROR_PROMPT_STATE) == "table" then
 
-    HOLY_SCANNER_PERFORMANCE_STATE.Token =
-        nil
+        HOLY_SCANNER_ERROR_PROMPT_STATE.Token =
+            nil
+
+        HOLY_SCANNER_ERROR_PROMPT_STATE.Running =
+            false
+    end
+
+    if type(HOLY_SCANNER_ANTI_AFK_STATE) == "table" then
+
+        HOLY_SCANNER_ANTI_AFK_STATE.Token =
+            nil
+    end
+
+    if type(HOLY_SCANNER_REPORT_STATE) == "table" then
+
+        HOLY_SCANNER_REPORT_STATE.Token =
+            nil
+    end
+
+    if type(HOLY_SCANNER_PERFORMANCE_STATE) == "table" then
+
+        HOLY_SCANNER_PERFORMANCE_STATE.Token =
+            nil
+    end
 
     HolyScannerCancelServerHop(
         tostring(reason or "stopped")
@@ -9016,13 +8504,11 @@ HolyScannerLoadSettings()
 
 HolyScannerNormalizeState()
 
-HolyScannerFleetReportPendingJoin()
-
 HolyScannerStartLoadingSkip(
     "startup"
 )
 
-HolyScannerStartTeleportWatchers()
+HolyScannerStartErrorPromptHider()
 
 HolyScannerStartAntiAfk()
 
