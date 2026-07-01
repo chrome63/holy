@@ -293,7 +293,7 @@ end
 if HolyAuthHasServerSniperSlot() ~= true then
 
     error(
-        "[HOLY Server Sniper] Active Server Sniper slot required. Use a finder/server-sniper key.",
+        "[HOLY Sniper] Active Server Sniper slot required. Use a finder/server-sniper key.",
         0
     )
 end
@@ -58494,7 +58494,7 @@ end
 -- Standalone Server Sniper does not start full HOLY Pro rare/webhook alert worker.
 
 HolyNotify(
-    "HOLY Server Sniper",
+    "HOLY Sniper",
     "Loaded. Toggle UI with LeftAlt.",
     4
 )
