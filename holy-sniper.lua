@@ -293,7 +293,7 @@ end
 if HolyAuthHasServerSniperSlot() ~= true then
 
     error(
-        "[HOLY Sniper] Active Server Sniper slot required. Use a finder/server-sniper key.",
+        "[HOLY Server Sniper] Active Server Sniper slot required. Use a finder/server-sniper key.",
         0
     )
 end
@@ -44001,7 +44001,7 @@ end
 local Window =
     Library:CreateWindow({
         Title =
-            '<font color="rgb(245,245,247)"><b>HOLY</b></font> <font color="rgb(232,45,67)"><b>SERVER SNIPER</b></font>',
+            '<font color="rgb(0, 0, 255)"><b>HOLY</b></font> <font color="rgb(255, 238, 0)"><b>SERVER SNIPER</b></font>',
 
         Footer =
             "HOLY +",
@@ -58494,7 +58494,7 @@ end
 -- Standalone Server Sniper does not start full HOLY Pro rare/webhook alert worker.
 
 HolyNotify(
-    "HOLY Sniper",
+    "HOLY Server Sniper",
     "Loaded. Toggle UI with LeftAlt.",
     4
 )
