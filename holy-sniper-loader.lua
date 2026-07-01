@@ -30,11 +30,11 @@ local HOLY_FOLDER =
 
 local HOLY_KEY_FILE =
     HOLY_FOLDER
-    .. "/HolyAccessKey.txt"
+    .. "/HolyServerSniperAccessKey.txt"
 
 local HOLY_SESSION_FILE =
     HOLY_FOLDER
-    .. "/HolySession.json"
+    .. "/HolyServerSniperSession.json"
 
 local HOLY_LOADER_VERSION =
     "holy-server-sniper-loader-v1"
@@ -760,7 +760,7 @@ function HolyLoaderFeatureText(features)
     or features.server_finder == true
     or features.pet_sniper_autobuy == true then
 
-        return "Pet Finder Slot"
+        return "Server Sniper Slot"
     end
 
     if features.basic == true then
@@ -2780,23 +2780,44 @@ if savedKey ~= "" then
 
     if type(data) == "table" then
 
-        HolyLoaderApplyAuth(
-            savedKey,
-            data
-        )
+        if HolyLoaderHasServerSniperSlot(
+            data.features
+        ) ~= true then
 
-        local loaded,
-            loadErr =
-            HolyLoaderLoadPremium()
+            HolyLoaderDeleteFile(
+                HOLY_KEY_FILE
+            )
 
-        if loaded ~= true then
+            HolyLoaderDeleteFile(
+                HOLY_SESSION_FILE
+            )
 
             HolyLoaderCreateObsidianGui(
+                "",
+                "Saved key failed: Server Sniper slot required.",
+                nil
+            )
+
+        else
+
+            HolyLoaderApplyAuth(
                 savedKey,
-                "Saved key load failed: "
-                    .. tostring(loadErr),
                 data
             )
+
+            local loaded,
+                loadErr =
+                HolyLoaderLoadPremium()
+
+            if loaded ~= true then
+
+                HolyLoaderCreateObsidianGui(
+                    savedKey,
+                    "Saved key load failed: "
+                        .. tostring(loadErr),
+                    data
+                )
+            end
         end
 
     else
