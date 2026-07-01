@@ -39,6 +39,109 @@ print(
 )
 
 --==================================================
+-- [0.5] LOADER AUTH GATE
+--==================================================
+
+local HOLY_AUTH =
+    (
+        type(getgenv) == "function"
+        and getgenv().HOLY_AUTH
+    )
+    or _G.HOLY_AUTH
+
+if type(HOLY_AUTH) ~= "table"
+or HOLY_AUTH.Valid ~= true
+or type(HOLY_AUTH.Features) ~= "table"
+or tostring(HOLY_AUTH.SessionId or "") == "" then
+
+    error(
+        "[HOLY] Access denied. Please run the official HOLY loader and enter a valid key.",
+        0
+    )
+end
+
+function HolyAuthGet()
+
+    return (
+        type(getgenv) == "function"
+        and getgenv().HOLY_AUTH
+    )
+    or _G.HOLY_AUTH
+    or HOLY_AUTH
+end
+
+function HolyAuthHasFeature(featureName)
+
+    local auth =
+        HolyAuthGet()
+
+    local features =
+        type(auth) == "table"
+        and type(auth.Features) == "table"
+        and auth.Features
+        or {}
+
+    return features[featureName] == true
+end
+
+function HolyAuthIsAdmin()
+
+    return HolyAuthHasFeature(
+        "admin"
+    )
+    or HolyAuthHasFeature(
+        "dev_tools"
+    )
+end
+
+function HolyAuthHasPetFinder()
+
+    return HolyAuthHasFeature(
+        "server_finder"
+    )
+    or HolyAuthHasFeature(
+        "pet_sniper"
+    )
+    or HolyAuthHasFeature(
+        "pet_sniper_autobuy"
+    )
+end
+
+function HolyAuthRequireFeature(featureName, featureLabel)
+
+    if HolyAuthHasFeature(
+        featureName
+    ) == true then
+
+        return true
+    end
+
+    warn(
+        "[HOLY AUTH]",
+        tostring(featureLabel or featureName),
+        "locked"
+    )
+
+    return false
+end
+
+function HolyAuthRequirePetFinder(actionName)
+
+    if HolyAuthHasPetFinder() == true then
+
+        return true
+    end
+
+    warn(
+        "[HOLY AUTH]",
+        tostring(actionName or "Pet Finder"),
+        "locked"
+    )
+
+    return false
+end
+
+--==================================================
 -- [1] CONSTANTS
 --==================================================
 
