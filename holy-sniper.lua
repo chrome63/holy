@@ -44004,7 +44004,7 @@ local Window =
             '<font color="rgb(245,245,247)"><b>HOLY</b></font> <font color="rgb(232,45,67)"><b>SERVER SNIPER</b></font>',
 
         Footer =
-            "HOLY Server Sniper",
+            "HOLY +",
 
         ToggleKeybind =
             Enum.KeyCode.LeftAlt,
