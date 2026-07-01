@@ -46,7 +46,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260629-auction_v1"
+    "holy-server-sniper-v2"
 
 local LIBRARY_URL =
     REPO_URL
@@ -41111,15 +41111,67 @@ if HOLY_DEV_UI_STATE.AntiAfk == true then
     )
 end
 
-if HOLY_DEV_UI_STATE.AutoFarmMiddle == true then
+-- Server Sniper standalone does not use full HOLY Pro farm middle restore.
+HOLY_DEV_UI_STATE.AutoFarmMiddle =
+    false
 
-    HolyFarmMiddleRestoreState()
+if type(HolyFarmMiddleStop) == "function" then
+
+    HolyFarmMiddleStop(
+        "server sniper standalone"
+    )
 end
 
 HolyLoadShopSettings()
 HolyLoadFarmSettings()
 HolyLoadSniperSettings()
 HolyLoadServerSettings()
+
+-- Server Sniper standalone: never restore full HOLY Pro farm/shop/visual/webhook automations.
+HOLY_DEV_UI_STATE.AutoFarmMiddle =
+    false
+
+if type(HOLY_SHOP_STATE) == "table" then
+
+    HOLY_SHOP_STATE.AutoBuySeeds =
+        false
+
+    HOLY_SHOP_STATE.AutoBuyGear =
+        false
+
+    HOLY_SHOP_STATE.AutoBuyProps =
+        false
+
+    HOLY_SHOP_STATE.AutoBuyAuctions =
+        false
+
+    HOLY_SHOP_STATE.AutoSellFruits =
+        false
+
+    HOLY_SHOP_STATE.AutoDoubleOrNothing =
+        false
+
+    HOLY_SHOP_STATE.AutoDailyDealAll =
+        false
+end
+
+if type(HOLY_FARM_STATE) == "table" then
+
+    HOLY_FARM_STATE.AutoCollectFruits =
+        false
+end
+
+if type(HOLY_VISUAL_STATE) == "table" then
+
+    HOLY_VISUAL_STATE.FruitValueOverlay =
+        false
+
+    HOLY_VISUAL_STATE.FruitTotalValue =
+        false
+
+    HOLY_VISUAL_STATE.GardenFruitESP =
+        false
+end
 
 local Library =
     HolyLoadUrl(
@@ -41287,10 +41339,10 @@ end
 local Window =
     Library:CreateWindow({
         Title =
-            '<font color="rgb(245,245,247)"><b>HOLY</b></font> <font color="rgb(232,45,67)"><b>PRO</b></font>',
+            '<font color="rgb(245,245,247)"><b>HOLY</b></font> <font color="rgb(232,45,67)"><b>SERVER SNIPER</b></font>',
 
         Footer =
-            "HOLY Premium",
+            "HOLY Server Sniper",
 
         ToggleKeybind =
             Enum.KeyCode.LeftAlt,
@@ -41334,76 +41386,422 @@ HolyApplyUIScale(
 -- [5] TABS
 --==================================================
 
+local function HolyCreateDummyOption(defaultValue)
+
+    local option = {
+        Value =
+            defaultValue,
+    }
+
+    function option:OnChanged(callback)
+
+        self.Callback =
+            callback
+
+        return self
+    end
+
+    function option:SetValue(value, skipCallback)
+
+        self.Value =
+            value
+
+        if skipCallback ~= true
+        and type(self.Callback) == "function" then
+
+            pcall(
+                self.Callback,
+                value
+            )
+        end
+
+        return self
+    end
+
+    function option:SetValues(values)
+
+        self.Values =
+            values
+
+        return self
+    end
+
+    function option:SetItems(values)
+
+        self.Values =
+            values
+
+        return self
+    end
+
+    function option:SetText(...)
+
+        return self
+    end
+
+    function option:SetRows(...)
+
+        return self
+    end
+
+    function option:SetSummary(...)
+
+        return self
+    end
+
+    function option:SetModeText(...)
+
+        return self
+    end
+
+    function option:SetStateByKey(...)
+
+        return self
+    end
+
+    function option:SetScale(...)
+
+        return self
+    end
+
+    function option:SetAutoJoinMode(...)
+
+        return self
+    end
+
+    function option:SetDisabled(...)
+
+        return self
+    end
+
+    function option:SetSelected(value)
+
+        self.Selected =
+            value
+
+        return self
+    end
+
+    function option:GetSelectedData()
+
+        return self.Selected
+    end
+
+    function option:AddButton(...)
+
+        return HolyCreateDummyOption()
+    end
+
+    function option:Hide()
+
+        return self
+    end
+
+    function option:Show()
+
+        return self
+    end
+
+    function option:Destroy()
+
+        return self
+    end
+
+    return option
+end
+
+function HolyCreateDummyGroupbox(title, icon)
+
+    local groupbox = {
+        Title =
+            tostring(title or "Hidden"),
+
+        Icon =
+            icon,
+
+        Hidden =
+            true,
+
+        Collapsible =
+            false,
+
+        Collapsed =
+            false,
+    }
+
+    function groupbox:AddLabel(config)
+
+        return HolyCreateDummyOption(
+            type(config) == "table"
+            and config.Text
+            or config
+        )
+    end
+
+    function groupbox:AddButton(config)
+
+        return HolyCreateDummyOption()
+    end
+
+    function groupbox:AddToggle(key, config)
+
+        return HolyCreateDummyOption(
+            type(config) == "table"
+            and config.Default
+            or false
+        )
+    end
+
+    function groupbox:AddCheckbox(key, config)
+
+        return HolyCreateDummyOption(
+            type(config) == "table"
+            and config.Default
+            or false
+        )
+    end
+
+    function groupbox:AddDropdown(key, config)
+
+        return HolyCreateDummyOption(
+            type(config) == "table"
+            and config.Default
+            or nil
+        )
+    end
+
+    function groupbox:AddInput(key, config)
+
+        return HolyCreateDummyOption(
+            type(config) == "table"
+            and config.Default
+            or ""
+        )
+    end
+
+    function groupbox:AddSlider(key, config)
+
+        return HolyCreateDummyOption(
+            type(config) == "table"
+            and config.Default
+            or 0
+        )
+    end
+
+    function groupbox:AddDivider()
+
+        return HolyCreateDummyOption()
+    end
+
+    function groupbox:AddTable(...)
+
+        return HolyCreateDummyOption()
+    end
+
+    function groupbox:AddPetMarketList(...)
+
+        return HolyCreateDummyOption()
+    end
+
+    function groupbox:AddSniperWatchlist(...)
+
+        return HolyCreateDummyOption()
+    end
+
+    function groupbox:AddActionRow(...)
+
+        return HolyCreateDummyOption()
+    end
+
+    function groupbox:AddDependencyBox(...)
+
+        return HolyCreateDummyOption()
+    end
+
+    function groupbox:AddDependencyGroupbox(...)
+
+        return HolyCreateDummyOption()
+    end
+
+    function groupbox:SetCollapsed(...)
+
+        return self
+    end
+
+    function groupbox:Resize()
+
+        return self
+    end
+
+    function groupbox:Hide()
+
+        return self
+    end
+
+    function groupbox:Show()
+
+        return self
+    end
+
+    function groupbox:Destroy()
+
+        return self
+    end
+
+    return groupbox
+end
+
+local function HolyCreateDummyTab(name)
+
+    local tab = {
+        Name =
+            tostring(name or "Hidden"),
+
+        Hidden =
+            true,
+    }
+
+    function tab:AddLeftGroupbox(title, icon)
+
+        return HolyCreateDummyGroupbox(
+            title,
+            icon
+        )
+    end
+
+    function tab:AddRightGroupbox(title, icon)
+
+        return HolyCreateDummyGroupbox(
+            title,
+            icon
+        )
+    end
+
+    function tab:AddLeftCollapsibleGroupbox(title, icon, defaultOpen)
+
+        return HolyCreateDummyGroupbox(
+            title,
+            icon
+        )
+    end
+
+    function tab:AddRightCollapsibleGroupbox(title, icon, defaultOpen)
+
+        return HolyCreateDummyGroupbox(
+            title,
+            icon
+        )
+    end
+
+    function tab:AddTopNavigation(...)
+
+        return HolyCreateDummyOption()
+    end
+
+    function tab:AddTopSegmentedControl(...)
+
+        return HolyCreateDummyOption()
+    end
+
+    function tab:RefreshSides()
+
+        return self
+    end
+
+    function tab:Hide()
+
+        return self
+    end
+
+    function tab:Show()
+
+        return self
+    end
+
+    function tab:Destroy()
+
+        return self
+    end
+
+    return tab
+end
+
 local Tabs = {
-    Main =
-        Window:AddTab({
-            Name = "Main",
-            Icon = "house",
-            Description = "Quick actions.",
-        }),
-
-    Farm =
-        Window:AddTab({
-            Name = "Farm",
-            Icon = "sprout",
-            Description = "Garden automation.",
-        }),
-
-    Shop =
-        Window:AddTab({
-            Name = "Shop",
-            Icon = "shopping-cart",
-            Description = "Shop automation.",
-        }),
-
     Sniper =
         Window:AddTab({
-            Name = "Sniper",
-            Icon = "crosshair",
-            Description = "Wild pet sniper.",
-        }),
+            Name =
+                "Snipe",
 
-    PetTeams =
-        Window:AddTab({
-            Name = "Pet Teams",
-            Icon = "paw-print",
-            Description = "Pet team automation.",
-        }),
+            Icon =
+                "crosshair",
 
-    Visual =
-        Window:AddTab({
-            Name = "Visual",
-            Icon = "eye",
-            Description = "ESP and performance.",
-        }),
-
-    Webhook =
-        Window:AddTab({
-            Name = "Webhook",
-            Icon = "webhook",
-            Description = "Discord alerts.",
-        }),
-
-    Server =
-        Window:AddTab({
-            Name = "Server",
-            Icon = "server",
-            Description = "Server tools.",
+            Description =
+                "Server sniper and pet finder.",
         }),
 
     Settings =
         Window:AddTab({
-            Name = "Settings",
-            Icon = "sliders-horizontal",
-            Description = "UI settings.",
+            Name =
+                "Settings",
+
+            Icon =
+                "sliders-horizontal",
+
+            Description =
+                "Session and performance.",
         }),
 
-    Dev =
+    UI =
         Window:AddTab({
-            Name = "Dev",
-            Icon = "terminal",
-            Description = "Developer tools.",
+            Name =
+                "UI",
+
+            Icon =
+                "settings",
+
+            Description =
+                "Menu and HUD settings.",
         }),
+
+    Main =
+        HolyCreateDummyTab(
+            "Main"
+        ),
+
+    Farm =
+        HolyCreateDummyTab(
+            "Farm"
+        ),
+
+    Shop =
+        HolyCreateDummyTab(
+            "Shop"
+        ),
+
+    PetTeams =
+        HolyCreateDummyTab(
+            "Pet Teams"
+        ),
+
+    Visual =
+        HolyCreateDummyTab(
+            "Visual"
+        ),
+
+    Webhook =
+        HolyCreateDummyTab(
+            "Webhook"
+        ),
+
+    Server =
+        HolyCreateDummyTab(
+            "Server"
+        ),
+
+    Dev =
+        HolyCreateDummyTab(
+            "Dev"
+        ),
 }
 
 local MainQuickBox =
@@ -41446,46 +41844,45 @@ local SniperEngineBox =
         "crosshair"
     )
 
-local SniperExecutionBox =
+local SniperDefenseBox =
     HolyAddLeftGroupbox(
         Tabs.Sniper,
-        "Sniper.Execution",
-        "Snipe Execution",
-        "zap"
+        "Sniper.PetDefense",
+        "Pet Defense",
+        "shield"
     )
 
 local SniperFilterBox =
     HolyAddRightGroupbox(
         Tabs.Sniper,
-        "Sniper.Filter",
+        "Sniper.FilterBuilder",
         "Pet Filter",
-        "paw-print"
+        "filter"
     )
 
 local SniperWatchlistBox =
     HolyAddRightGroupbox(
         Tabs.Sniper,
         "Sniper.Watchlist",
-        "Sniper Watchlist",
-        "list"
+        "Watchlist",
+        "list-checks"
     )
 
-local ServerSniperBox =
+local LivePetsBox =
     HolyAddLeftGroupbox(
         Tabs.Sniper,
-        "Sniper.ServerSniper",
-        "Server Sniper",
-        "server"
+        "Sniper.LivePets",
+        "Live Wild Pets",
+        "paw-print"
     )
 
-local SniperModeControl =
-    nil
-
-local ShopModeControl =
-    nil
-
-local FarmModeControl =
-    nil
+local ServerFinderBox =
+    HolyAddRightGroupbox(
+        Tabs.Sniper,
+        "Sniper.ServerFinder",
+        "Server Finder",
+        "radar"
+    )
 
 local ShopSeedsBox =
     HolyAddLeftGroupbox(
@@ -41504,10 +41901,10 @@ local ShopGearBox =
     )
 
 local ShopCratesBox =
-    HolyAddLeftGroupbox(
+    HolyAddRightGroupbox(
         Tabs.Shop,
         "Shop.Props",
-        "Props",
+        "Props / Crates",
         "package"
     )
 
@@ -41516,7 +41913,7 @@ local ShopAuctionBox =
         Tabs.Shop,
         "Shop.Auctions",
         "Auctions",
-        "shopping-basket"
+        "badge-dollar-sign"
     )
 
 local ShopSellBox =
@@ -41530,8 +41927,8 @@ local ShopSellBox =
 local ShopFiltersBox =
     HolyAddLeftGroupbox(
         Tabs.Shop,
-        "Shop.FruitFilters",
-        "Fruit Filters",
+        "Shop.SellFilters",
+        "Sell Filters",
         "filter"
     )
 
@@ -41633,7 +42030,7 @@ local VisualGardenBox =
 
 local SettingsUIBox =
     HolyAddLeftGroupbox(
-        Tabs.Settings,
+        Tabs.UI,
         "Settings.UI",
         "UI",
         "sliders-horizontal"
@@ -55423,18 +55820,10 @@ end
 -- [8] FINISH
 --==================================================
 
-if type(HolyRareAlertStart) == "function" then
-
-    task.defer(function()
-
-        HolyRareAlertStart(
-            "startup"
-        )
-    end)
-end
+-- Standalone Server Sniper does not start full HOLY Pro rare/webhook alert worker.
 
 HolyNotify(
-    "HOLY Premium",
+    "HOLY Server Sniper",
     "Loaded. Toggle UI with LeftAlt.",
     4
 )
@@ -55443,4 +55832,4 @@ HolyNotify(
 -- [9] END MARKER
 --==================================================
 
--- HOLY_PREMIUM_END_MARKER
+-- HOLY_SERVER_SNIPER_END_MARKER
