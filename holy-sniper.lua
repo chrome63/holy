@@ -91,7 +91,7 @@ local State = {
     ServerLastRefreshAt = 0,
     ServerLastRefreshCount = 0,
     ServerLastRefreshError = "",
-    ServerRefreshSeconds = HOLY_PUBLIC_SERVER_REFRESH_SECONDS,
+    ServerRefreshSeconds = 5,
 
     Status = "Ready",
     LastAction = "None",
@@ -135,7 +135,7 @@ HOLY_PUBLIC_SERVER_READ_KEY =
         and getgenv().HOLY_PUBLIC_SERVER_READ_KEY
     )
     or _G.HOLY_PUBLIC_SERVER_READ_KEY
-    or ""
+    or "holy_read_20260701"
 
 HOLY_PUBLIC_SERVER_REFRESH_SECONDS =
     5
@@ -1484,20 +1484,20 @@ function HolyPublicRefreshServerRows(allowTeleport)
     if readKey == "" then
 
         State.ServerLastRefreshError =
-            "Missing read key"
+            "Server access missing"
 
         State.LastAction =
-            "Server scan missing read key"
+            "Server scan unavailable"
 
         RefreshStatus()
 
         Notify(
             "Server Scan",
-            "Missing HOLY_PUBLIC_SERVER_READ_KEY."
+            "Server access is not configured."
         )
 
         return false,
-            "Missing read key"
+            "Server access missing"
     end
 
     local url =
