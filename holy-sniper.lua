@@ -44001,10 +44001,10 @@ end
 local Window =
     Library:CreateWindow({
         Title =
-            '<font color="rgb(0, 0, 255)"><b>HOLY</b></font> <font color="rgb(255, 238, 0)"><b>SERVER SNIPER</b></font>',
+            '<font color="rgb(255, 0, 0)"><b>HOLY</b></font> <font color="rgb(255, 238, 0)"><b>+</b></font>',
 
         Footer =
-            "HOLY +",
+            "HOLY Sniper",
 
         ToggleKeybind =
             Enum.KeyCode.LeftAlt,
@@ -48800,6 +48800,10 @@ function HolyServerFinderApplyAutoJoinRulesPopup()
 
     HolyServerFinderRefreshAutoJoinRulesPopup()
 
+    HolyServerFinderForceFastEvaluate(
+        "priority rule saved"
+    )
+
     return true
 end
 
@@ -49368,6 +49372,10 @@ function HolyServerFinderRemoveSelectedAutoJoinRule()
 
     HolyServerFinderRefreshAutoJoinRulesPopup()
 
+    HolyServerFinderForceFastEvaluate(
+        "priority rule moved"
+    )
+
     return true
 end
 
@@ -49496,6 +49504,10 @@ function HolyServerFinderCreateAutoJoinRulesPopup()
                     )
 
                     HolyServerFinderRefreshAutoJoinRulesPopup()
+
+                    HolyServerFinderForceFastEvaluate(
+                        "priority mode changed"
+                    )
                 end
             )
     end
@@ -53647,6 +53659,127 @@ function HolyServerFinderRefreshRows(hud, reason)
     return true
 end
 
+function HolyServerFinderResetAutoJoinRuntime(reason)
+
+    HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME =
+        type(HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME) == "table"
+        and HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME
+        or {}
+
+    HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.LastAttemptAt =
+        0
+
+    HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.LastNotifyAt =
+        0
+
+    HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.LastTargetKey =
+        ""
+
+    HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.Teleporting =
+        false
+
+    HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.LastHoldStatus =
+        ""
+
+    if type(HolyServerFinderClearAutoJoinHold) == "function" then
+
+        pcall(function()
+
+            HolyServerFinderClearAutoJoinHold(
+                reason or "fast evaluate"
+            )
+        end)
+    end
+
+    return true
+end
+
+function HolyServerFinderForceFastEvaluate(reason)
+
+    reason =
+        tostring(
+            reason
+            or "fast evaluate"
+        )
+
+    HOLY_SERVER_FINDER_FAST_EVALUATE_TOKEN =
+        (
+            tonumber(
+                HOLY_SERVER_FINDER_FAST_EVALUATE_TOKEN
+            )
+            or 0
+        )
+        + 1
+
+    local token =
+        HOLY_SERVER_FINDER_FAST_EVALUATE_TOKEN
+
+    local hud =
+        HOLY_SERVER_FINDER_HUD
+
+    if type(hud) ~= "table"
+    or type(hud.SetRows) ~= "function" then
+
+        return false
+    end
+
+    HolyServerFinderEnsureAutoJoinState()
+
+    local mode =
+        HolyServerFinderNormalizeAutoJoinMode(
+            HOLY_SERVER_FINDER_STATE.AutoJoinMode
+            or "Off"
+        )
+
+    if mode ~= "Off" then
+
+        HolyServerFinderResetAutoJoinRuntime(
+            reason
+        )
+    end
+
+    local delays =
+        mode ~= "Off"
+        and {
+            0,
+            0.30,
+            0.85,
+        }
+        or {
+            0,
+        }
+
+    for _, delaySeconds in ipairs(delays) do
+
+        task.delay(delaySeconds, function()
+
+            if HOLY_SERVER_FINDER_FAST_EVALUATE_TOKEN ~= token then
+                return
+            end
+
+            if type(HOLY_SERVER_FINDER_HUD) ~= "table"
+            or type(HOLY_SERVER_FINDER_HUD.SetRows) ~= "function" then
+
+                return
+            end
+
+            if type(HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME) == "table"
+            and HOLY_SERVER_FINDER_AUTO_JOIN_RUNTIME.Teleporting == true then
+
+                return
+            end
+
+            HolyServerFinderRefreshRows(
+                HOLY_SERVER_FINDER_HUD,
+                reason
+                .. " fast"
+            )
+        end)
+    end
+
+    return true
+end
+
 function HolyServerFinderPullStateFromHud(hud)
 
     if type(hud) ~= "table"
@@ -53995,6 +54128,10 @@ function HolyServerFinderOpenHud()
                         )
 
                         HolyQueueSaveServerFinderSettings()
+
+                        HolyServerFinderForceFastEvaluate(
+                            "settings changed"
+                        )
                     end,
 
                 OnAutoJoinModeChanged =
@@ -54004,8 +54141,8 @@ function HolyServerFinderOpenHud()
                             mode
                         )
 
-                        HolyServerFinderEvaluateAutoJoin(
-                            hud
+                        HolyServerFinderForceFastEvaluate(
+                            "auto join mode changed"
                         )
                     end,
 
@@ -54043,16 +54180,15 @@ function HolyServerFinderOpenHud()
         HOLY_SERVER_FINDER_HUD
     )
 
-    HolyServerFinderRefreshRows(
-        HOLY_SERVER_FINDER_HUD,
-        "hud open"
-    )
-
     HOLY_SERVER_FINDER_HUD:SetCurrentServer(
         tostring(game.JobId)
     )
 
     HOLY_SERVER_FINDER_HUD:Show()
+
+    HolyServerFinderForceFastEvaluate(
+        "hud open"
+    )
 end
 
 
@@ -58498,6 +58634,35 @@ HolyNotify(
     "Loaded. Toggle UI with LeftAlt.",
     4
 )
+
+task.defer(function()
+
+    task.wait(
+        0.35
+    )
+
+    if type(HOLY_SERVER_FINDER_STATE) ~= "table" then
+        return
+    end
+
+    local autoJoinMode =
+        HolyServerFinderNormalizeAutoJoinMode(
+            HOLY_SERVER_FINDER_STATE.AutoJoinMode
+            or "Off"
+        )
+
+    if HOLY_SERVER_FINDER_STATE.Enabled == true
+    or autoJoinMode ~= "Off" then
+
+        HolyServerFinderSetHudVisible(
+            true
+        )
+
+        HolyServerFinderForceFastEvaluate(
+            "startup restore"
+        )
+    end
+end)
 
 --==================================================
 -- [9] END MARKER
