@@ -2412,9 +2412,30 @@ function HolyAddGroupbox(tab, side, key, title, icon, defaultCollapsed)
     and tab
     and type(tab[fallbackMethod]) == "function" then
 
+        local ok,
+            result =
+            pcall(function()
+
+                return tab[fallbackMethod](
+                    tab,
+                    title,
+                    icon
+                )
+            end)
+
+        if ok == true
+        and result ~= nil then
+
+            groupbox =
+                result
+        end
+    end
+
+    if groupbox == nil
+    and type(HolyCreateDummyGroupbox) == "function" then
+
         groupbox =
-            tab[fallbackMethod](
-                tab,
+            HolyCreateDummyGroupbox(
                 title,
                 icon
             )
@@ -41844,12 +41865,12 @@ local SniperEngineBox =
         "crosshair"
     )
 
-local SniperDefenseBox =
+local SniperExecutionBox =
     HolyAddLeftGroupbox(
         Tabs.Sniper,
-        "Sniper.PetDefense",
-        "Pet Defense",
-        "shield"
+        "Sniper.Execution",
+        "Movement / Return",
+        "route"
     )
 
 local SniperFilterBox =
@@ -41868,21 +41889,37 @@ local SniperWatchlistBox =
         "list-checks"
     )
 
-local LivePetsBox =
-    HolyAddLeftGroupbox(
+local ServerSniperBox =
+    HolyAddRightGroupbox(
         Tabs.Sniper,
-        "Sniper.LivePets",
+        "Sniper.ServerSniper",
+        "Server Sniper",
+        "radar"
+    )
+
+local SniperDefenseBox =
+    type(HolyCreateDummyGroupbox) == "function"
+    and HolyCreateDummyGroupbox(
+        "Pet Defense",
+        "shield"
+    )
+    or nil
+
+local LivePetsBox =
+    type(HolyCreateDummyGroupbox) == "function"
+    and HolyCreateDummyGroupbox(
         "Live Wild Pets",
         "paw-print"
     )
+    or nil
 
 local ServerFinderBox =
-    HolyAddRightGroupbox(
-        Tabs.Sniper,
-        "Sniper.ServerFinder",
+    type(HolyCreateDummyGroupbox) == "function"
+    and HolyCreateDummyGroupbox(
         "Server Finder",
         "radar"
     )
+    or nil
 
 local ShopSeedsBox =
     HolyAddLeftGroupbox(
