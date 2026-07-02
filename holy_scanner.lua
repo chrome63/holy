@@ -114,8 +114,11 @@ local CLIENT_HEARTBEAT_BACKOFF =
 local RARE_SCAN_INTERVAL =
     0.85
 
+local HUNT_NO_TARGET_HOP_DELAY =
+    5
+
 local HUNT_GONE_CONFIRM_DEFAULT =
-    1
+    2
 
 local SERVER_MIN_PLAYERS =
     1
@@ -238,11 +241,13 @@ HOLY_SCANNER_STATE = {
 
     SearchPages = 5,
 
-    -- No target in server -> hop after this many seconds.
-    HopDelay = 3,
+    -- No target in server -> hardcoded hop delay.
+    HopDelay =
+        HUNT_NO_TARGET_HOP_DELAY,
 
-    -- Watched target disappeared -> confirm gone for this many seconds, then hop.
-    GoneConfirmDelay = 1,
+    -- Watched target disappeared -> hardcoded confirm delay.
+    GoneConfirmDelay =
+        HUNT_GONE_CONFIRM_DEFAULT,
 }
 
 HOLY_SCANNER_SHOP_STATE = {
@@ -1181,25 +1186,13 @@ function HolyScannerNormalizeState()
             10
         )
 
+    -- Hardcoded scanner hop timing.
+    -- Saved settings and UI cannot override these.
     HOLY_SCANNER_STATE.HopDelay =
-        math.clamp(
-            HolyScannerReadNumber(
-                HOLY_SCANNER_STATE.HopDelay,
-                3
-            ),
-            1,
-            300
-        )
+        HUNT_NO_TARGET_HOP_DELAY
 
     HOLY_SCANNER_STATE.GoneConfirmDelay =
-        math.clamp(
-            HolyScannerReadNumber(
-                HOLY_SCANNER_STATE.GoneConfirmDelay,
-                HUNT_GONE_CONFIRM_DEFAULT
-            ),
-            0.25,
-            10
-        )
+        HUNT_GONE_CONFIRM_DEFAULT
 
     HOLY_SCANNER_STATE.SelectedSeeds =
         HolyScannerSelectionArray(
@@ -1389,13 +1382,12 @@ function HolyScannerLoadSettings()
         data.SearchPages
         or HOLY_SCANNER_STATE.SearchPages
 
+    -- Hop timing is intentionally hardcoded for scanner accounts.
     HOLY_SCANNER_STATE.HopDelay =
-        data.HopDelay
-        or HOLY_SCANNER_STATE.HopDelay
+        HUNT_NO_TARGET_HOP_DELAY
 
     HOLY_SCANNER_STATE.GoneConfirmDelay =
-        data.GoneConfirmDelay
-        or HOLY_SCANNER_STATE.GoneConfirmDelay
+        HUNT_GONE_CONFIRM_DEFAULT
 
     HolyScannerNormalizeState()
 
@@ -9067,7 +9059,7 @@ function HolyScannerCreateUI()
 
                 Default =
                     tostring(
-                        HOLY_SCANNER_STATE.HopDelay
+                        HUNT_NO_TARGET_HOP_DELAY
                     ),
 
                 Numeric =
@@ -9080,19 +9072,18 @@ function HolyScannerCreateUI()
                     false,
 
                 Placeholder =
-                    "3",
+                    tostring(
+                        HUNT_NO_TARGET_HOP_DELAY
+                    ),
+
+                Tooltip =
+                    "Hardcoded. No target found means hop after 5 seconds.",
             }
         ):OnChanged(function(value)
 
+            -- Hardcoded. Ignore UI edits.
             HOLY_SCANNER_STATE.HopDelay =
-                math.clamp(
-                    HolyScannerReadNumber(
-                        value,
-                        3
-                    ),
-                    1,
-                    300
-                )
+                HUNT_NO_TARGET_HOP_DELAY
 
             HolyScannerQueueSaveSettings()
         end)
@@ -9105,8 +9096,7 @@ function HolyScannerCreateUI()
 
                 Default =
                     tostring(
-                        HOLY_SCANNER_STATE.GoneConfirmDelay
-                        or HUNT_GONE_CONFIRM_DEFAULT
+                        HUNT_GONE_CONFIRM_DEFAULT
                     ),
 
                 Numeric =
@@ -9119,19 +9109,18 @@ function HolyScannerCreateUI()
                     false,
 
                 Placeholder =
-                    "1",
+                    tostring(
+                        HUNT_GONE_CONFIRM_DEFAULT
+                    ),
+
+                Tooltip =
+                    "Hardcoded. Watched target gone means confirm for 2 seconds before hopping.",
             }
         ):OnChanged(function(value)
 
+            -- Hardcoded. Ignore UI edits.
             HOLY_SCANNER_STATE.GoneConfirmDelay =
-                math.clamp(
-                    HolyScannerReadNumber(
-                        value,
-                        HUNT_GONE_CONFIRM_DEFAULT
-                    ),
-                    0.25,
-                    10
-                )
+                HUNT_GONE_CONFIRM_DEFAULT
 
             HolyScannerQueueSaveSettings()
         end)
