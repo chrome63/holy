@@ -18,6 +18,16 @@ local ALLOWED_DEV_USER_IDS = {
     
     [8668060320] =
         true,
+
+    [8842726746] =
+        true,
+
+    [9317135728] =
+        true,
+
+    [8842696762] =
+        true,
+    
     
 }
 
