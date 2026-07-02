@@ -22,6 +22,9 @@ local ReplicatedStorage =
 local CoreGui =
     game:GetService("CoreGui")
 
+local GuiService =
+    game:GetService("GuiService")
+
 local UserInputService =
     game:GetService("UserInputService")
 
@@ -74,7 +77,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-scanner-20260630-hop_fix_autohide_v1"
+    "holy-scanner-20260702-clearerror_005_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -123,6 +126,15 @@ local MAX_NO_TARGET_SERVER_AGE_SECONDS =
 local ERROR_POPUP_REHOP_DELAY =
     5
 
+local ERROR_GUI_CLEANER_ENABLED =
+    true
+
+local ERROR_GUI_CLEAR_INTERVAL =
+    0.005
+
+local ERROR_GUI_RECOVERY_SCAN_INTERVAL =
+    0.15
+
 local RARE_SCAN_INTERVAL =
     0.85
 
@@ -139,13 +151,13 @@ local SERVER_MAX_PLAYERS =
     8
 
 local SERVER_TARGET_MAX_PLAYERS =
-    5
+    4
 
 local FLEET_HOP_ENABLED =
     true
 
 local FLEET_TARGET_MAX_PLAYERS =
-    5
+    4
 
 local FLEET_SEARCH_PAGES =
     6
@@ -338,6 +350,15 @@ HOLY_SCANNER_COMMAND_STATE = {
     PollBackoffUntil = 0,
 }
 
+HOLY_SCANNER_ERROR_GUI_STATE = {
+    Running = false,
+    Token = nil,
+    ClearCount = 0,
+    LastClearAt = 0,
+    LastDetectedAt = 0,
+    LastRecoveryAt = 0,
+}
+
 HOLY_SCANNER_LOADING_STATE = {
     Running = false,
     Token = nil,
@@ -379,6 +400,12 @@ HolyScannerEnv.HOLY_SCANNER_SHOP_STATE =
 
 HolyScannerEnv.HOLY_SCANNER_REPORT_STATE =
     HOLY_SCANNER_REPORT_STATE
+
+HolyScannerEnv.HOLY_SCANNER_COMMAND_STATE =
+    HOLY_SCANNER_COMMAND_STATE
+
+HolyScannerEnv.HOLY_SCANNER_ERROR_GUI_STATE =
+    HOLY_SCANNER_ERROR_GUI_STATE
 
 --==================================================
 -- [4] BASIC HELPERS
@@ -7943,6 +7970,114 @@ function HolyScannerGetPlayerGui()
     )
 end
 
+function HolyScannerClearRobloxErrorGui(reason)
+
+    if ERROR_GUI_CLEANER_ENABLED ~= true then
+        return false
+    end
+
+    HOLY_SCANNER_ERROR_GUI_STATE =
+        type(HOLY_SCANNER_ERROR_GUI_STATE) == "table"
+        and HOLY_SCANNER_ERROR_GUI_STATE
+        or {}
+
+    local ok =
+        pcall(function()
+
+            local service =
+                GuiService
+
+            if type(cloneref) == "function" then
+
+                service =
+                    cloneref(
+                        GuiService
+                    )
+            end
+
+            service:ClearError()
+        end)
+
+    if ok == true then
+
+        HOLY_SCANNER_ERROR_GUI_STATE.ClearCount =
+            (
+                tonumber(
+                    HOLY_SCANNER_ERROR_GUI_STATE.ClearCount
+                )
+                or 0
+            )
+            + 1
+
+        HOLY_SCANNER_ERROR_GUI_STATE.LastClearAt =
+            os.clock()
+    end
+
+    return ok == true
+end
+
+function HolyScannerStartErrorGuiCleaner()
+
+    HOLY_SCANNER_ERROR_GUI_STATE =
+        type(HOLY_SCANNER_ERROR_GUI_STATE) == "table"
+        and HOLY_SCANNER_ERROR_GUI_STATE
+        or {}
+
+    if HOLY_SCANNER_ERROR_GUI_STATE.Running == true then
+        return false
+    end
+
+    HOLY_SCANNER_ERROR_GUI_STATE.Running =
+        true
+
+    local token =
+        {}
+
+    HOLY_SCANNER_ERROR_GUI_STATE.Token =
+        token
+
+    task.spawn(function()
+
+        while HOLY_SCANNER_RUNNING == true
+        and HOLY_SCANNER_ERROR_GUI_STATE.Token == token do
+
+            HolyScannerClearRobloxErrorGui(
+                "fast loop"
+            )
+
+            task.wait(
+                ERROR_GUI_CLEAR_INTERVAL
+            )
+        end
+
+        HOLY_SCANNER_ERROR_GUI_STATE.Running =
+            false
+    end)
+
+    task.spawn(function()
+
+        while HOLY_SCANNER_RUNNING == true
+        and HOLY_SCANNER_ERROR_GUI_STATE.Token == token do
+
+            HOLY_SCANNER_ERROR_GUI_STATE.LastRecoveryAt =
+                os.clock()
+
+            pcall(function()
+
+                HolyScannerRecoverFromTeleportPopup(
+                    "join error popup"
+                )
+            end)
+
+            task.wait(
+                ERROR_GUI_RECOVERY_SCAN_INTERVAL
+            )
+        end
+    end)
+
+    return true
+end
+
 function HolyScannerFindTeleportErrorTextAndButton()
 
     local roots = {
@@ -8039,8 +8174,20 @@ function HolyScannerDismissTeleportErrorPrompt()
         HolyScannerFindTeleportErrorTextAndButton()
 
     if foundError ~= true then
+
+        HolyScannerClearRobloxErrorGui(
+            "background clear"
+        )
+
         return false
     end
+
+    HOLY_SCANNER_ERROR_GUI_STATE.LastDetectedAt =
+        os.clock()
+
+    HolyScannerClearRobloxErrorGui(
+        "detected teleport popup"
+    )
 
     if typeof(button) == "Instance"
     and button:IsA("GuiButton") then
@@ -8056,6 +8203,10 @@ function HolyScannerDismissTeleportErrorPrompt()
                 center
             )
 
+            HolyScannerClearRobloxErrorGui(
+                "after button click"
+            )
+
             return true
         end
     end
@@ -8065,7 +8216,7 @@ function HolyScannerDismissTeleportErrorPrompt()
     )
 
     task.wait(
-        0.08
+        0.03
     )
 
     HolyScannerPressKey(
@@ -8073,11 +8224,15 @@ function HolyScannerDismissTeleportErrorPrompt()
     )
 
     task.wait(
-        0.08
+        0.03
     )
 
     HolyScannerClickAt(
         HolyScannerLoadingGetScreenCenter()
+    )
+
+    HolyScannerClearRobloxErrorGui(
+        "after fallback input"
     )
 
     return true
@@ -8314,7 +8469,7 @@ function HolyScannerStartTeleportWatchers()
             end
 
             task.wait(
-                1
+                ERROR_GUI_RECOVERY_SCAN_INTERVAL
             )
         end
     end)
@@ -9810,6 +9965,12 @@ function HolyScannerStop(reason)
             nil
     end
 
+    if type(HOLY_SCANNER_ERROR_GUI_STATE) == "table" then
+
+        HOLY_SCANNER_ERROR_GUI_STATE.Token =
+            nil
+    end
+
     HOLY_SCANNER_PERFORMANCE_STATE.Token =
         nil
 
@@ -9883,6 +10044,8 @@ HolyScannerStartLoadingSkip(
 )
 
 HolyScannerStartTeleportWatchers()
+
+HolyScannerStartErrorGuiCleaner()
 
 HolyScannerStartAntiAfk()
 
