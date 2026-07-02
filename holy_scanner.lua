@@ -111,6 +111,18 @@ local CLIENT_HEARTBEAT_INTERVAL =
 local CLIENT_HEARTBEAT_BACKOFF =
     15
 
+local CLIENT_COMMAND_INTERVAL =
+    4
+
+local CLIENT_COMMAND_BACKOFF =
+    12
+
+local MAX_NO_TARGET_SERVER_AGE_SECONDS =
+    120
+
+local ERROR_POPUP_REHOP_DELAY =
+    5
+
 local RARE_SCAN_INTERVAL =
     0.85
 
@@ -170,7 +182,7 @@ local SERVER_JOIN_BACKOFF_MAX =
     22
 
 local SERVER_MIN_FREE_SLOTS =
-    2
+    1
 
 local SERVER_PICK_TOP_RANDOM =
     12
@@ -267,6 +279,15 @@ HOLY_SCANNER_SERVER_STATE = {
     HopAttempt = 0,
     LastHopAt = 0,
 
+    ServerJoinedAt =
+        os.time(),
+
+    CurrentJobId =
+        tostring(game.JobId),
+
+    LastServerAgeHopAt = 0,
+    LastErrorPopupAt = 0,
+
     HoldTargets = {},
     NoTargetSince = 0,
     GoneSince = 0,
@@ -306,6 +327,15 @@ HOLY_SCANNER_REPORT_STATE = {
     ClientHeartbeatBackoffUntil = 0,
     StartedAt = os.time(),
     LastError = "",
+}
+
+HOLY_SCANNER_COMMAND_STATE = {
+    Running = false,
+    Token = nil,
+    LastCommandId = "",
+    LastCommandResult = "",
+    LastCommandAt = 0,
+    PollBackoffUntil = 0,
 }
 
 HOLY_SCANNER_LOADING_STATE = {
@@ -5957,6 +5987,26 @@ function HolyScannerBuildClientHeartbeatPayload(rows)
             )
             or os.time(),
 
+        ServerJoinedAt =
+            HolyScannerRefreshServerSession(),
+
+        TimeInServer =
+            HolyScannerGetTimeInServer(),
+
+        LastCommandId =
+            tostring(
+                HOLY_SCANNER_COMMAND_STATE
+                and HOLY_SCANNER_COMMAND_STATE.LastCommandId
+                or ""
+            ),
+
+        LastCommandResult =
+            tostring(
+                HOLY_SCANNER_COMMAND_STATE
+                and HOLY_SCANNER_COMMAND_STATE.LastCommandResult
+                or ""
+            ),
+
         ReportedAt =
             os.time(),
     }
@@ -6009,6 +6059,419 @@ function HolyScannerSendClientHeartbeat(payload)
 
     return false,
         tostring(reason or "request failed")
+end
+
+function HolyScannerRefreshServerSession()
+
+    HOLY_SCANNER_SERVER_STATE =
+        type(HOLY_SCANNER_SERVER_STATE) == "table"
+        and HOLY_SCANNER_SERVER_STATE
+        or {}
+
+    local currentJobId =
+        tostring(game.JobId)
+
+    if HOLY_SCANNER_SERVER_STATE.CurrentJobId ~= currentJobId then
+
+        HOLY_SCANNER_SERVER_STATE.CurrentJobId =
+            currentJobId
+
+        HOLY_SCANNER_SERVER_STATE.ServerJoinedAt =
+            os.time()
+
+        HOLY_SCANNER_SERVER_STATE.LastServerAgeHopAt =
+            0
+
+        HOLY_SCANNER_SERVER_STATE.LastErrorPopupAt =
+            0
+    end
+
+    if tonumber(HOLY_SCANNER_SERVER_STATE.ServerJoinedAt) == nil
+    or tonumber(HOLY_SCANNER_SERVER_STATE.ServerJoinedAt) <= 0 then
+
+        HOLY_SCANNER_SERVER_STATE.ServerJoinedAt =
+            os.time()
+    end
+
+    return tonumber(
+        HOLY_SCANNER_SERVER_STATE.ServerJoinedAt
+    )
+    or os.time()
+end
+
+function HolyScannerGetTimeInServer()
+
+    return math.max(
+        0,
+        os.time()
+        - HolyScannerRefreshServerSession()
+    )
+end
+
+function HolyScannerBuildCommandPayload(extra)
+
+    extra =
+        type(extra) == "table"
+        and extra
+        or {}
+
+    local playing,
+        maxPlayers =
+        HolyScannerGetPlayerCounts()
+
+    local payload = {
+        Key =
+            tostring(
+                SERVER_FINDER_API_KEY
+                or ""
+            ),
+
+        ScannerId =
+            HolyScannerGetScannerId(),
+
+        Reporter =
+            tostring(
+                LocalPlayer
+                and LocalPlayer.Name
+                or "unknown"
+            ),
+
+        UserId =
+            tonumber(
+                LocalPlayer
+                and LocalPlayer.UserId
+            )
+            or 0,
+
+        AccountLabel =
+            HolyScannerGetAccountLabel(),
+
+        VpsLabel =
+            HolyScannerGetVpsLabel(),
+
+        PlaceId =
+            game.PlaceId,
+
+        JobId =
+            tostring(
+                game.JobId
+            ),
+
+        Playing =
+            playing,
+
+        MaxPlayers =
+            maxPlayers,
+
+        ServerJoinedAt =
+            HolyScannerRefreshServerSession(),
+
+        TimeInServer =
+            HolyScannerGetTimeInServer(),
+
+        Status =
+            tostring(
+                HOLY_SCANNER_SERVER_STATE.LastStatus
+                or ""
+            ),
+
+        ReportedAt =
+            os.time(),
+    }
+
+    for key,
+        value in pairs(extra) do
+
+        payload[key] =
+            value
+    end
+
+    return payload
+end
+
+function HolyScannerSendCommandResult(commandId, success, resultText)
+
+    commandId =
+        HolyScannerCleanText(
+            commandId
+        )
+
+    if commandId == "" then
+        return false
+    end
+
+    local payload =
+        HolyScannerBuildCommandPayload({
+            CommandId =
+                commandId,
+
+            Success =
+                success == true,
+
+            Result =
+                tostring(
+                    resultText
+                    or ""
+                ),
+        })
+
+    local data,
+        reason =
+        HolyScannerRequestJson(
+            "POST",
+            HolyScannerBackendUrl(
+                "/client-command-result"
+            ),
+            payload
+        )
+
+    return type(data) == "table"
+        and data.ok == true,
+        tostring(reason or "")
+end
+
+function HolyScannerExecuteCommand(command)
+
+    command =
+        type(command) == "table"
+        and command
+        or {}
+
+    local commandId =
+        HolyScannerCleanText(
+            command.CommandId
+            or command.commandId
+            or command.Id
+            or command.id
+        )
+
+    if commandId == "" then
+        return false
+    end
+
+    HOLY_SCANNER_COMMAND_STATE =
+        type(HOLY_SCANNER_COMMAND_STATE) == "table"
+        and HOLY_SCANNER_COMMAND_STATE
+        or {}
+
+    if HOLY_SCANNER_COMMAND_STATE.LastCommandId == commandId then
+        return false
+    end
+
+    local commandName =
+        HolyScannerCleanText(
+            command.Command
+            or command.command
+            or command.Name
+            or command.name
+        )
+        :lower()
+
+    HOLY_SCANNER_COMMAND_STATE.LastCommandId =
+        commandId
+
+    HOLY_SCANNER_COMMAND_STATE.LastCommandAt =
+        os.time()
+
+    local success =
+        false
+
+    local resultText =
+        "unknown command"
+
+    if commandName == "hop_random"
+    or commandName == "hop"
+    or commandName == "force_hop" then
+
+        HolyScannerServerClearBackoff()
+
+        HolyScannerCancelServerHop(
+            "admin command reset"
+        )
+
+        HOLY_SCANNER_SERVER_STATE.NoTargetSince =
+            0
+
+        HOLY_SCANNER_SERVER_STATE.GoneSince =
+            0
+
+        local ok,
+            reason =
+            HolyScannerQueueServerHop(
+                "admin command"
+            )
+
+        success =
+            ok == true
+
+        resultText =
+            ok == true
+            and "queued hop"
+            or tostring(reason or "hop failed")
+
+    elseif commandName == "pause_hunt" then
+
+        HOLY_SCANNER_STATE.HuntMode =
+            false
+
+        HOLY_SCANNER_STATE.AutoHop =
+            false
+
+        HolyScannerCancelServerHop(
+            "admin pause"
+        )
+
+        HolyScannerQueueSaveSettings()
+
+        HolyScannerSetStatus(
+            "Paused by admin"
+        )
+
+        success =
+            true
+
+        resultText =
+            "hunt paused"
+
+    elseif commandName == "resume_hunt" then
+
+        HOLY_SCANNER_STATE.HuntMode =
+            true
+
+        HOLY_SCANNER_STATE.AutoHop =
+            true
+
+        HOLY_SCANNER_SERVER_STATE.NoTargetSince =
+            0
+
+        HOLY_SCANNER_SERVER_STATE.GoneSince =
+            0
+
+        HolyScannerQueueSaveSettings()
+
+        HolyScannerSetStatus(
+            "Resumed by admin"
+        )
+
+        success =
+            true
+
+        resultText =
+            "hunt resumed"
+    end
+
+    HOLY_SCANNER_COMMAND_STATE.LastCommandResult =
+        resultText
+
+    HolyScannerSendCommandResult(
+        commandId,
+        success,
+        resultText
+    )
+
+    return success
+end
+
+function HolyScannerPollCommandOnce()
+
+    if os.clock() < (
+        tonumber(
+            HOLY_SCANNER_COMMAND_STATE.PollBackoffUntil
+        )
+        or 0
+    ) then
+
+        return false
+    end
+
+    local payload =
+        HolyScannerBuildCommandPayload({
+            LastCommandId =
+                tostring(
+                    HOLY_SCANNER_COMMAND_STATE.LastCommandId
+                    or ""
+                ),
+        })
+
+    local data,
+        reason =
+        HolyScannerRequestJson(
+            "POST",
+            HolyScannerBackendUrl(
+                "/client-command"
+            ),
+            payload
+        )
+
+    if type(data) ~= "table"
+    or data.ok ~= true then
+
+        HOLY_SCANNER_COMMAND_STATE.PollBackoffUntil =
+            os.clock() + CLIENT_COMMAND_BACKOFF
+
+        return false
+    end
+
+    local command =
+        data.Command
+        or data.command
+
+    if type(command) == "table" then
+
+        HolyScannerExecuteCommand(
+            command
+        )
+
+        return true
+    end
+
+    return false
+end
+
+function HolyScannerStartCommandPoller()
+
+    HOLY_SCANNER_COMMAND_STATE =
+        type(HOLY_SCANNER_COMMAND_STATE) == "table"
+        and HOLY_SCANNER_COMMAND_STATE
+        or {}
+
+    if HOLY_SCANNER_COMMAND_STATE.Running == true then
+        return false
+    end
+
+    HOLY_SCANNER_COMMAND_STATE.Running =
+        true
+
+    local token =
+        {}
+
+    HOLY_SCANNER_COMMAND_STATE.Token =
+        token
+
+    task.spawn(function()
+
+        task.wait(
+            2
+        )
+
+        while HOLY_SCANNER_RUNNING == true
+        and HOLY_SCANNER_COMMAND_STATE.Token == token do
+
+            pcall(function()
+
+                HolyScannerPollCommandOnce()
+            end)
+
+            task.wait(
+                CLIENT_COMMAND_INTERVAL
+            )
+        end
+
+        HOLY_SCANNER_COMMAND_STATE.Running =
+            false
+    end)
+
+    return true
 end
 
 function HolyScannerFleetEnabled()
@@ -7171,6 +7634,60 @@ function HolyScannerHuntShouldStayOnCurrentServer(forceScan)
         and tonumber(count) > 0
 end
 
+function HolyScannerForceHopIfServerTooOld(liveTargetCount)
+
+    if HOLY_SCANNER_STATE.HuntMode ~= true then
+        return false
+    end
+
+    if HOLY_SCANNER_SERVER_STATE.Hopping == true then
+        return false
+    end
+
+    if tonumber(liveTargetCount) ~= nil
+    and tonumber(liveTargetCount) > 0 then
+
+        return false
+    end
+
+    local age =
+        HolyScannerGetTimeInServer()
+
+    if age < MAX_NO_TARGET_SERVER_AGE_SECONDS then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    if now - (
+        tonumber(
+            HOLY_SCANNER_SERVER_STATE.LastServerAgeHopAt
+        )
+        or 0
+    ) < 25 then
+
+        return false
+    end
+
+    HOLY_SCANNER_SERVER_STATE.LastServerAgeHopAt =
+        now
+
+    HolyScannerSetStatus(
+        "Force hopping: same server "
+            .. tostring(
+                math.floor(age)
+            )
+            .. "s with no target"
+    )
+
+    HolyScannerQueueServerHop(
+        "same server too long"
+    )
+
+    return true
+end
+
 --==================================================
 -- [12] SERVER HOP
 --==================================================
@@ -7566,6 +8083,116 @@ function HolyScannerDismissTeleportErrorPrompt()
     return true
 end
 
+function HolyScannerHandleTeleportFailure(reason, targetServer)
+
+    reason =
+        HolyScannerCleanText(
+            reason
+            or "teleport failed"
+        )
+
+    if reason == "" then
+        reason =
+            "teleport failed"
+    end
+
+    targetServer =
+        HolyScannerCleanText(
+            targetServer
+            or HOLY_SCANNER_SERVER_STATE.LastTargetServer
+            or ""
+        )
+
+    if targetServer ~= "" then
+
+        HolyScannerServerRememberFailed(
+            targetServer,
+            reason
+        )
+
+        pcall(function()
+
+            HolyScannerFleetJoinResult(
+                targetServer,
+                false,
+                reason
+            )
+
+            HolyScannerFleetClearPendingJoin()
+        end)
+    end
+
+    HolyScannerServerSetBackoff(
+        reason
+    )
+
+    HOLY_SCANNER_SERVER_STATE.HopToken =
+        (
+            tonumber(
+                HOLY_SCANNER_SERVER_STATE.HopToken
+            )
+            or 0
+        )
+        + 1
+
+    HOLY_SCANNER_SERVER_STATE.Hopping =
+        false
+
+    return true
+end
+
+function HolyScannerRecoverFromTeleportPopup(reason)
+
+    local found =
+        HolyScannerDismissTeleportErrorPrompt()
+
+    if found ~= true then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    if now - (
+        tonumber(
+            HOLY_SCANNER_SERVER_STATE.LastErrorPopupAt
+        )
+        or 0
+    ) < 1.25 then
+
+        return true
+    end
+
+    HOLY_SCANNER_SERVER_STATE.LastErrorPopupAt =
+        now
+
+    HolyScannerHandleTeleportFailure(
+        reason or "join error popup",
+        HOLY_SCANNER_SERVER_STATE.LastTargetServer
+    )
+
+    task.delay(ERROR_POPUP_REHOP_DELAY, function()
+
+        if HOLY_SCANNER_RUNNING ~= true then
+            return
+        end
+
+        if HOLY_SCANNER_STATE.HuntMode ~= true then
+            return
+        end
+
+        if HOLY_SCANNER_SERVER_STATE.Hopping == true then
+            return
+        end
+
+        HolyScannerQueueServerHop(
+            "error popup recovery"
+        )
+    end)
+
+    return true
+end
+
 function HolyScannerStartTeleportWatchers()
 
     if HOLY_SCANNER_SERVER_STATE.TeleportErrorWatcherStarted == true then
@@ -7600,6 +8227,17 @@ function HolyScannerStartTeleportWatchers()
                         targetServer,
                         reason
                     )
+
+                    pcall(function()
+
+                        HolyScannerFleetJoinResult(
+                            targetServer,
+                            false,
+                            reason
+                        )
+
+                        HolyScannerFleetClearPendingJoin()
+                    end)
                 end
 
                 HolyScannerServerSetBackoff(
@@ -7629,40 +8267,9 @@ function HolyScannerStartTeleportWatchers()
 
         while HOLY_SCANNER_RUNNING == true do
 
-            local found =
-                HolyScannerDismissTeleportErrorPrompt()
-
-            if found == true then
-
-                local targetServer =
-                    HolyScannerCleanText(
-                        HOLY_SCANNER_SERVER_STATE.LastTargetServer
-                    )
-
-                if targetServer ~= "" then
-
-                    HolyScannerServerRememberFailed(
-                        targetServer,
-                        "join error popup"
-                    )
-                end
-
-                HolyScannerServerSetBackoff(
-                    "join error popup"
-                )
-
-                HOLY_SCANNER_SERVER_STATE.HopToken =
-                    (
-                        tonumber(
-                            HOLY_SCANNER_SERVER_STATE.HopToken
-                        )
-                        or 0
-                    )
-                    + 1
-
-                HOLY_SCANNER_SERVER_STATE.Hopping =
-                    false
-            end
+            HolyScannerRecoverFromTeleportPopup(
+                "join error popup"
+            )
 
             if HOLY_SCANNER_SERVER_STATE.Hopping == true then
 
@@ -8526,6 +9133,10 @@ function HolyScannerStartAutoHopLoop()
                         "hunt loop"
                     )
 
+                HolyScannerForceHopIfServerTooOld(
+                    liveTargetCount
+                )
+
                 if tonumber(liveTargetCount) <= 0 then
 
                     local now =
@@ -8632,9 +9243,16 @@ function HolyScannerStartAutoHopLoop()
 
             elseif HOLY_SCANNER_STATE.HuntMode == true then
 
-                HolyScannerSetStatus(
-                    "Waiting for Live Wild Pets"
+                HolyScannerForceHopIfServerTooOld(
+                    0
                 )
+
+                if HOLY_SCANNER_SERVER_STATE.Hopping ~= true then
+
+                    HolyScannerSetStatus(
+                        "Waiting for Live Wild Pets"
+                    )
+                end
 
             elseif HOLY_SCANNER_SERVER_STATE.Hopping ~= true then
 
@@ -9186,6 +9804,12 @@ function HolyScannerStop(reason)
     HOLY_SCANNER_REPORT_STATE.Token =
         nil
 
+    if type(HOLY_SCANNER_COMMAND_STATE) == "table" then
+
+        HOLY_SCANNER_COMMAND_STATE.Token =
+            nil
+    end
+
     HOLY_SCANNER_PERFORMANCE_STATE.Token =
         nil
 
@@ -9266,6 +9890,8 @@ HolyScannerStartDeleteLag()
 
 -- Headless scanner starts immediately. UI is only a control panel.
 HolyScannerStartReporter()
+
+HolyScannerStartCommandPoller()
 
 HolyScannerStartAutoHopLoop()
 
