@@ -12,6 +12,19 @@ local LocalPlayer =
     Players.LocalPlayer
     or Players.PlayerAdded:Wait()
 
+local ALLOWED_DEV_USER_IDS = {
+    [78428093] =
+        true,
+}
+
+if ALLOWED_DEV_USER_IDS[LocalPlayer.UserId] ~= true then
+
+    error(
+        "[HOLY DEV] You are not allowed to use this dev loader.",
+        0
+    )
+end
+
 -- Change this to "pro" when testing Pro.
 -- Keep "sniper" when testing Server Sniper.
 local DEV_PRODUCT =
