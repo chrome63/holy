@@ -77,7 +77,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-scanner-20260702-fast_retry_v1"
+    "holy-scanner-20260702_fleet_control_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -119,6 +119,12 @@ local CLIENT_COMMAND_INTERVAL =
 
 local CLIENT_COMMAND_BACKOFF =
     12
+
+local HUNT_MODE_HARDCODED_ON =
+    true
+
+local HUNT_TEMP_PAUSE_DEFAULT =
+    false
 
 local MAX_NO_TARGET_SERVER_AGE_SECONDS =
     120
@@ -363,6 +369,14 @@ HOLY_SCANNER_COMMAND_STATE = {
     PollBackoffUntil = 0,
 }
 
+HOLY_SCANNER_PAUSE_STATE = {
+    Paused =
+        HUNT_TEMP_PAUSE_DEFAULT,
+
+    Reason = "",
+    PausedAt = 0,
+}
+
 HOLY_SCANNER_ERROR_GUI_STATE = {
     Running = false,
     Token = nil,
@@ -417,6 +431,9 @@ HolyScannerEnv.HOLY_SCANNER_REPORT_STATE =
 
 HolyScannerEnv.HOLY_SCANNER_COMMAND_STATE =
     HOLY_SCANNER_COMMAND_STATE
+
+HolyScannerEnv.HOLY_SCANNER_PAUSE_STATE =
+    HOLY_SCANNER_PAUSE_STATE
 
 HolyScannerEnv.HOLY_SCANNER_ERROR_GUI_STATE =
     HOLY_SCANNER_ERROR_GUI_STATE
@@ -1231,21 +1248,13 @@ function HolyScannerNormalizeState()
     HOLY_SCANNER_STATE.AutoBuyGear =
         HOLY_SCANNER_STATE.AutoBuyGear == true
 
-    local huntMode =
-        HOLY_SCANNER_STATE.HuntMode
-
-    if huntMode == nil then
-
-        huntMode =
-            HOLY_SCANNER_STATE.AutoHop
-    end
-
+    -- Scanner accounts should always boot with hunt enabled.
+    -- Temporary pause is stored separately in HOLY_SCANNER_PAUSE_STATE.
     HOLY_SCANNER_STATE.HuntMode =
-        huntMode == true
+        true
 
-    -- Keep legacy field synced for old settings/users.
     HOLY_SCANNER_STATE.AutoHop =
-        HOLY_SCANNER_STATE.HuntMode == true
+        true
 
     HOLY_SCANNER_STATE.SearchPages =
         math.clamp(
@@ -1319,12 +1328,13 @@ function HolyScannerSaveSettings()
                 HOLY_SCANNER_STATE.SelectedGear
             ),
 
+        -- Scanner alts always save hunt as ON.
         HuntMode =
-            HOLY_SCANNER_STATE.HuntMode == true,
+            true,
 
         -- Legacy compatibility.
         AutoHop =
-            HOLY_SCANNER_STATE.HuntMode == true,
+            true,
 
         SearchPages =
             HOLY_SCANNER_STATE.SearchPages,
@@ -1430,24 +1440,22 @@ function HolyScannerLoadSettings()
             data.SelectedGear
         )
 
-    if type(data.HuntMode) == "boolean" then
-
-        HOLY_SCANNER_STATE.HuntMode =
-            data.HuntMode
-
-    elseif type(data.AutoHop) == "boolean" then
-
-        HOLY_SCANNER_STATE.HuntMode =
-            data.AutoHop
-
-    else
-
-        HOLY_SCANNER_STATE.HuntMode =
-            true
-    end
+    -- Ignore old saved HuntMode/AutoHop false values.
+    -- Scanner accounts should always restart with hunting enabled.
+    HOLY_SCANNER_STATE.HuntMode =
+        true
 
     HOLY_SCANNER_STATE.AutoHop =
-        HOLY_SCANNER_STATE.HuntMode == true
+        true
+
+    HOLY_SCANNER_PAUSE_STATE.Paused =
+        false
+
+    HOLY_SCANNER_PAUSE_STATE.Reason =
+        ""
+
+    HOLY_SCANNER_PAUSE_STATE.PausedAt =
+        0
 
     HOLY_SCANNER_STATE.SearchPages =
         data.SearchPages
@@ -5871,6 +5879,172 @@ function HolyScannerGetVpsLabel()
     )
 end
 
+function HolyScannerEffectiveHuntMode()
+
+    HOLY_SCANNER_STATE.HuntMode =
+        true
+
+    HOLY_SCANNER_STATE.AutoHop =
+        true
+
+    HOLY_SCANNER_PAUSE_STATE =
+        type(HOLY_SCANNER_PAUSE_STATE) == "table"
+        and HOLY_SCANNER_PAUSE_STATE
+        or {
+            Paused = false,
+            Reason = "",
+            PausedAt = 0,
+        }
+
+    return HOLY_SCANNER_PAUSE_STATE.Paused ~= true
+end
+
+function HolyScannerSetTemporaryPause(paused, reason)
+
+    HOLY_SCANNER_PAUSE_STATE =
+        type(HOLY_SCANNER_PAUSE_STATE) == "table"
+        and HOLY_SCANNER_PAUSE_STATE
+        or {}
+
+    HOLY_SCANNER_STATE.HuntMode =
+        true
+
+    HOLY_SCANNER_STATE.AutoHop =
+        true
+
+    HOLY_SCANNER_PAUSE_STATE.Paused =
+        paused == true
+
+    HOLY_SCANNER_PAUSE_STATE.Reason =
+        tostring(
+            reason
+            or (
+                paused == true
+                and "paused"
+                or ""
+            )
+        )
+
+    HOLY_SCANNER_PAUSE_STATE.PausedAt =
+        paused == true
+        and os.time()
+        or 0
+
+    if paused == true then
+
+        HolyScannerCancelServerHop(
+            "temporary pause"
+        )
+
+        HolyScannerSetStatus(
+            "Hunt temporarily paused"
+        )
+
+    else
+
+        HolyScannerSetStatus(
+            "Hunt Mode enabled"
+        )
+    end
+
+    return true
+end
+
+function HolyScannerResumeAndHop(reason)
+
+    HolyScannerSetTemporaryPause(
+        false,
+        tostring(reason or "resume and hop")
+    )
+
+    HOLY_SCANNER_STATE.HuntMode =
+        true
+
+    HOLY_SCANNER_STATE.AutoHop =
+        true
+
+    HOLY_SCANNER_SERVER_STATE.NoTargetSince =
+        0
+
+    HOLY_SCANNER_SERVER_STATE.GoneSince =
+        0
+
+    HolyScannerServerClearBackoff()
+
+    HolyScannerCancelServerHop(
+        tostring(reason or "resume and hop reset")
+    )
+
+    HolyScannerQueueSaveSettings()
+
+    return HolyScannerQueueServerHop(
+        tostring(reason or "resume and hop")
+    )
+end
+
+function HolyScannerForceRandomRejoin(reason)
+
+    HolyScannerSetTemporaryPause(
+        false,
+        tostring(reason or "force rejoin")
+    )
+
+    HolyScannerServerClearBackoff()
+
+    HolyScannerCancelServerHop(
+        tostring(reason or "force rejoin reset")
+    )
+
+    HolyScannerSetStatus(
+        "Force rejoin by admin"
+    )
+
+    task.delay(0.25, function()
+
+        if HOLY_SCANNER_RUNNING ~= true then
+            return
+        end
+
+        pcall(function()
+
+            TeleportService:Teleport(
+                game.PlaceId,
+                LocalPlayer
+            )
+        end)
+    end)
+
+    return true
+end
+
+function HolyScannerDisconnectByAdmin(reason)
+
+    HolyScannerSetTemporaryPause(
+        true,
+        tostring(reason or "admin disconnect")
+    )
+
+    HolyScannerCancelServerHop(
+        "admin disconnect"
+    )
+
+    HolyScannerSetStatus(
+        "Disconnecting by admin"
+    )
+
+    task.delay(0.35, function()
+
+        pcall(function()
+
+            LocalPlayer:Kick(
+                "[HOLY] Disconnected by admin"
+            )
+        end)
+    end)
+
+    return true
+end
+
 function HolyScannerBuildClientHeartbeatPayload(rows)
 
     rows =
@@ -5993,7 +6167,7 @@ function HolyScannerBuildClientHeartbeatPayload(rows)
             HolyScannerReadServerVersion(),
 
         HuntMode =
-            HOLY_SCANNER_STATE.HuntMode == true,
+            HolyScannerEffectiveHuntMode() == true,
 
         Hopping =
             HOLY_SCANNER_SERVER_STATE.Hopping == true,
@@ -6323,11 +6497,25 @@ function HolyScannerExecuteCommand(command)
     HOLY_SCANNER_COMMAND_STATE.LastCommandAt =
         os.time()
 
-    local success =
-        false
+    local function finish(success, resultText)
 
-    local resultText =
-        "unknown command"
+        resultText =
+            tostring(
+                resultText
+                or ""
+            )
+
+        HOLY_SCANNER_COMMAND_STATE.LastCommandResult =
+            resultText
+
+        HolyScannerSendCommandResult(
+            commandId,
+            success == true,
+            resultText
+        )
+
+        return success == true
+    end
 
     if commandName == "hop_random"
     or commandName == "hop"
@@ -6351,75 +6539,83 @@ function HolyScannerExecuteCommand(command)
                 "admin command"
             )
 
-        success =
-            ok == true
-
-        resultText =
+        return finish(
+            ok == true,
             ok == true
             and "queued hop"
             or tostring(reason or "hop failed")
+        )
 
     elseif commandName == "pause_hunt" then
 
-        HOLY_SCANNER_STATE.HuntMode =
-            false
-
-        HOLY_SCANNER_STATE.AutoHop =
-            false
-
-        HolyScannerCancelServerHop(
+        HolyScannerSetTemporaryPause(
+            true,
             "admin pause"
         )
 
-        HolyScannerQueueSaveSettings()
-
-        HolyScannerSetStatus(
-            "Paused by admin"
+        return finish(
+            true,
+            "hunt temporarily paused"
         )
-
-        success =
-            true
-
-        resultText =
-            "hunt paused"
 
     elseif commandName == "resume_hunt" then
 
-        HOLY_SCANNER_STATE.HuntMode =
-            true
-
-        HOLY_SCANNER_STATE.AutoHop =
-            true
-
-        HOLY_SCANNER_SERVER_STATE.NoTargetSince =
-            0
-
-        HOLY_SCANNER_SERVER_STATE.GoneSince =
-            0
+        HolyScannerSetTemporaryPause(
+            false,
+            "admin resume"
+        )
 
         HolyScannerQueueSaveSettings()
 
-        HolyScannerSetStatus(
-            "Resumed by admin"
+        return finish(
+            true,
+            "hunt resumed"
         )
 
-        success =
-            true
+    elseif commandName == "resume_and_hop" then
 
-        resultText =
-            "hunt resumed"
+        local ok,
+            reason =
+            HolyScannerResumeAndHop(
+                "admin resume and hop"
+            )
+
+        return finish(
+            ok == true,
+            ok == true
+            and "resume and hop queued"
+            or tostring(reason or "resume and hop failed")
+        )
+
+    elseif commandName == "force_rejoin" then
+
+        HolyScannerForceRandomRejoin(
+            "admin force rejoin"
+        )
+
+        return finish(
+            true,
+            "force rejoin queued"
+        )
+
+    elseif commandName == "disconnect" then
+
+        finish(
+            true,
+            "disconnecting"
+        )
+
+        HolyScannerDisconnectByAdmin(
+            "admin command"
+        )
+
+        return true
     end
 
-    HOLY_SCANNER_COMMAND_STATE.LastCommandResult =
-        resultText
-
-    HolyScannerSendCommandResult(
-        commandId,
-        success,
-        resultText
+    return finish(
+        false,
+        "unknown command"
     )
-
-    return success
 end
 
 function HolyScannerPollCommandOnce()
@@ -7686,7 +7882,7 @@ end
 
 function HolyScannerForceHopIfServerTooOld(liveTargetCount)
 
-    if HOLY_SCANNER_STATE.HuntMode ~= true then
+    if HolyScannerEffectiveHuntMode() ~= true then
         return false
     end
 
@@ -8178,7 +8374,7 @@ function HolyScannerFastRetryTeleport(reason, targetServer)
             return
         end
 
-        if HOLY_SCANNER_STATE.HuntMode ~= true then
+        if HolyScannerEffectiveHuntMode() ~= true then
             return
         end
 
@@ -9260,7 +9456,7 @@ function HolyScannerQueueServerHop(reason)
                 continue
             end
 
-            if HOLY_SCANNER_STATE.HuntMode == true
+            if HolyScannerEffectiveHuntMode() == true
             and HolyScannerHuntShouldStayOnCurrentServer(true) == true then
 
                 HolyScannerCancelServerHop(
@@ -9475,7 +9671,7 @@ function HolyScannerStartAutoHopLoop()
             local refRoot =
                 HolyScannerGetWildPetRefRoot()
 
-            if HOLY_SCANNER_STATE.HuntMode == true
+            if HolyScannerEffectiveHuntMode() == true
             and HOLY_SCANNER_SERVER_STATE.Hopping ~= true
             and typeof(refRoot) == "Instance" then
 
@@ -9610,7 +9806,7 @@ function HolyScannerStartAutoHopLoop()
                     end
                 end
 
-            elseif HOLY_SCANNER_STATE.HuntMode == true then
+            elseif HolyScannerEffectiveHuntMode() == true then
 
                 HolyScannerForceHopIfServerTooOld(
                     0
@@ -9626,7 +9822,7 @@ function HolyScannerStartAutoHopLoop()
             elseif HOLY_SCANNER_SERVER_STATE.Hopping ~= true then
 
                 HolyScannerSetStatus(
-                    "Hunt Mode off"
+                    "Hunt temporarily paused"
                 )
             end
 
@@ -9940,17 +10136,16 @@ function HolyScannerCreateUI()
         ):OnChanged(function(value)
 
             HOLY_SCANNER_STATE.HuntMode =
-                value == true
+                true
 
             HOLY_SCANNER_STATE.AutoHop =
-                HOLY_SCANNER_STATE.HuntMode == true
-
-            HolyScannerQueueSaveSettings()
+                true
 
             if value ~= true then
 
-                HolyScannerCancelServerHop(
-                    "hunt mode off"
+                HolyScannerSetTemporaryPause(
+                    true,
+                    "ui temporary pause"
                 )
 
                 HOLY_SCANNER_SERVER_STATE.HoldTargets =
@@ -9962,11 +10157,12 @@ function HolyScannerCreateUI()
                 HOLY_SCANNER_SERVER_STATE.GoneSince =
                     0
 
-                HolyScannerSetStatus(
-                    "Hunt Mode off"
-                )
-
             else
+
+                HolyScannerSetTemporaryPause(
+                    false,
+                    "ui resume"
+                )
 
                 HOLY_SCANNER_SERVER_STATE.LastHopAt =
                     0
@@ -9977,9 +10173,7 @@ function HolyScannerCreateUI()
                 HOLY_SCANNER_SERVER_STATE.GoneSince =
                     0
 
-                HolyScannerSetStatus(
-                    "Hunt Mode enabled"
-                )
+                HolyScannerQueueSaveSettings()
             end
         end)
 
@@ -10294,7 +10488,7 @@ task.spawn(function()
     if ok == true then
 
         HolyScannerSetStatus(
-            HOLY_SCANNER_STATE.HuntMode == true
+            HolyScannerEffectiveHuntMode() == true
             and "Hunt Mode starting"
             or "Scanner running"
         )
