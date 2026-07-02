@@ -181,6 +181,30 @@ local SHOP_MAX_BURST_FIRES =
 local SHOP_YIELD_EVERY =
     24
 
+local HOLY_SCANNER_HARDCODED_SHOP_ENABLED =
+    true
+
+-- true = scanner only buys this hardcoded list.
+-- false = scanner buys hardcoded list + whatever the UI toggles/dropdowns select.
+local HOLY_SCANNER_BUY_ONLY_HARDCODED_LIST =
+    true
+
+local HOLY_SCANNER_HARDCODED_SEEDS = {
+    "Moon Bloom",
+    "Hypno Bloom",
+    "Dragon's Breath",
+    "Venom Spitter",
+    "Venom Splitter",
+    "Venus Fly Trap",
+    "Carrot",
+}
+
+local HOLY_SCANNER_HARDCODED_GEAR = {
+    "Super Sprinkler",
+    "Super Watering Can",
+    "Common Watering Can",
+}
+
 local Library =
     nil
 
@@ -3112,6 +3136,140 @@ function HolyScannerShopNormalizeSelection(value)
     return output
 end
 
+function HolyScannerShopAliasKey(value)
+
+    local key =
+        HolyScannerCleanText(
+            value
+        )
+        :lower()
+        :gsub(
+            "[%s_%-%[%]%(%)%.'\"_/{}:]",
+            ""
+        )
+
+    -- User typo compatibility.
+    if key == "venomsplitter" then
+        key =
+            "venomspitter"
+    end
+
+    return key
+end
+
+function HolyScannerShopGetHardcodedList(category)
+
+    if category == "Seeds" then
+        return HOLY_SCANNER_HARDCODED_SEEDS
+            or {}
+    end
+
+    if category == "Gear" then
+        return HOLY_SCANNER_HARDCODED_GEAR
+            or {}
+    end
+
+    return {}
+end
+
+function HolyScannerShopBuildHardcodedMap(category)
+
+    local map =
+        {}
+
+    if HOLY_SCANNER_HARDCODED_SHOP_ENABLED ~= true then
+        return map
+    end
+
+    for _, itemName in ipairs(
+        HolyScannerShopGetHardcodedList(
+            category
+        )
+    ) do
+
+        local key =
+            HolyScannerShopAliasKey(
+                itemName
+            )
+
+        if key ~= "" then
+
+            map[key] =
+                true
+        end
+    end
+
+    return map
+end
+
+function HolyScannerShopMapHasEntries(map)
+
+    if type(map) ~= "table" then
+        return false
+    end
+
+    for _ in pairs(map) do
+        return true
+    end
+
+    return false
+end
+
+function HolyScannerShopHardcodedEnabled(category)
+
+    if HOLY_SCANNER_HARDCODED_SHOP_ENABLED ~= true then
+        return false
+    end
+
+    return HolyScannerShopMapHasEntries(
+        HolyScannerShopBuildHardcodedMap(
+            category
+        )
+    ) == true
+end
+
+function HolyScannerShopRowMatchesMap(category, rowName, map)
+
+    if type(map) ~= "table" then
+        return false
+    end
+
+    local rowKey =
+        HolyScannerShopAliasKey(
+            rowName
+        )
+
+    if rowKey == "" then
+        return false
+    end
+
+    if map[rowKey] == true then
+        return true
+    end
+
+    if category == "Seeds" then
+
+        local withoutSeed =
+            rowKey:gsub(
+                "seed$",
+                ""
+            )
+
+        if map[withoutSeed] == true then
+            return true
+        end
+
+        for wantedKey in pairs(map) do
+
+            if rowKey == wantedKey .. "seed" then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
 function HolyScannerShopGetSelection(category)
 
     if category == "Seeds" then
@@ -3132,6 +3290,13 @@ end
 
 function HolyScannerShopCategoryEnabled(category)
 
+    if HolyScannerShopHardcodedEnabled(
+        category
+    ) == true then
+
+        return true
+    end
+
     if category == "Seeds" then
         return HOLY_SCANNER_STATE.AutoBuySeeds == true
     end
@@ -3145,8 +3310,43 @@ end
 
 function HolyScannerShopGetSelectedRows(category)
 
+    local hardcodedMap =
+        HolyScannerShopBuildHardcodedMap(
+            category
+        )
+
+    local useHardcoded =
+        HolyScannerShopMapHasEntries(
+            hardcodedMap
+        ) == true
+
+    local useUiSelection =
+        HOLY_SCANNER_BUY_ONLY_HARDCODED_LIST ~= true
+
+    if category == "Seeds" then
+
+        useUiSelection =
+            useUiSelection
+            and HOLY_SCANNER_STATE.AutoBuySeeds == true
+
+    elseif category == "Gear" then
+
+        useUiSelection =
+            useUiSelection
+            and HOLY_SCANNER_STATE.AutoBuyGear == true
+
+    else
+
+        useUiSelection =
+            false
+    end
+
     local selection =
-        HolyScannerShopGetSelection(category)
+        useUiSelection == true
+        and HolyScannerShopGetSelection(
+            category
+        )
+        or {}
 
     local hasSelection =
         false
@@ -3159,20 +3359,60 @@ function HolyScannerShopGetSelectedRows(category)
         break
     end
 
-    if hasSelection ~= true then
+    if useHardcoded ~= true
+    and hasSelection ~= true then
+
         return {}
     end
 
     local useAll =
-        selection.All == true
+        useUiSelection == true
+        and selection.All == true
 
     local rows =
         {}
 
+    local added =
+        {}
+
     for _, row in ipairs(HolyScannerShopGetItemRows(category)) do
 
-        if useAll == true
-        or selection[row.Name] == true then
+        local include =
+            false
+
+        if useHardcoded == true
+        and HolyScannerShopRowMatchesMap(
+            category,
+            row.Name,
+            hardcodedMap
+        ) == true then
+
+            include =
+                true
+        end
+
+        if include ~= true
+        and useUiSelection == true
+        and hasSelection == true then
+
+            if useAll == true
+            or selection[row.Name] == true
+            or HolyScannerShopRowMatchesMap(
+                category,
+                row.Name,
+                selection
+            ) == true then
+
+                include =
+                    true
+            end
+        end
+
+        if include == true
+        and added[row.Name] ~= true then
+
+            added[row.Name] =
+                true
 
             table.insert(
                 rows,
@@ -3513,14 +3753,18 @@ end
 
 function HolyScannerShopQueueAll()
 
-    if HOLY_SCANNER_STATE.AutoBuySeeds == true then
+    if HolyScannerShopCategoryEnabled(
+        "Seeds"
+    ) == true then
 
         HolyScannerShopQueueCategory(
             "Seeds"
         )
     end
 
-    if HOLY_SCANNER_STATE.AutoBuyGear == true then
+    if HolyScannerShopCategoryEnabled(
+        "Gear"
+    ) == true then
 
         HolyScannerShopQueueCategory(
             "Gear"
@@ -9015,6 +9259,9 @@ end)
 HolyScannerLoadSettings()
 
 HolyScannerNormalizeState()
+
+HOLY_SCANNER_SHOP_STATE.ItemCache =
+    {}
 
 HolyScannerFleetReportPendingJoin()
 
