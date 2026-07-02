@@ -30,13 +30,16 @@ end
 local DEV_PRODUCT =
     "sniper"
 
-local DEV_SOURCES = {
-    sniper =
-        "https://raw.githubusercontent.com/bencapalot041/holy/main/holy-sniper-dev.lua",
+local HOLY_DEV_API =
+    "https://holy-dev-api.benjicapalot041.workers.dev"
 
-    pro =
-        "https://raw.githubusercontent.com/bencapalot041/holy/main/holypro-dev.lua",
-}
+local DEV_KEY =
+    (
+        type(getgenv) == "function"
+        and getgenv().HOLY_DEV_KEY
+    )
+    or _G.HOLY_DEV_KEY
+    or ""
 
 local function HolyDevClean(value)
 
@@ -47,21 +50,10 @@ end
 
 local function HolyDevGetSourceUrl()
 
-    local url =
-        DEV_SOURCES[
-            DEV_PRODUCT
-        ]
-
-    url =
-        HolyDevClean(
-            url
-        )
-
-    if url == "" then
+    if DEV_KEY == "" then
 
         error(
-            "[HOLY DEV] Missing dev source URL for product: "
-            .. tostring(DEV_PRODUCT),
+            "[HOLY DEV] Missing dev key. Run getgenv().HOLY_DEV_KEY first.",
             0
         )
     end
@@ -71,15 +63,12 @@ local function HolyDevGetSourceUrl()
         .. "_"
         .. tostring(math.floor(os.clock() * 100000))
 
-    if url:find("?", 1, true) then
-
-        return url
-            .. "&dev="
-            .. cacheBreaker
-    end
-
-    return url
-        .. "?dev="
+    return HOLY_DEV_API
+        .. "/source?product="
+        .. tostring(DEV_PRODUCT)
+        .. "&key="
+        .. tostring(DEV_KEY)
+        .. "&dev="
         .. cacheBreaker
 end
 
