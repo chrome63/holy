@@ -15,6 +15,10 @@ local LocalPlayer =
 local ALLOWED_DEV_USER_IDS = {
     [78428093] =
         true,
+    
+    [8668060320] =
+        true,
+    
 }
 
 if ALLOWED_DEV_USER_IDS[LocalPlayer.UserId] ~= true then
