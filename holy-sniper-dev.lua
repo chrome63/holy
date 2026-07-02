@@ -1,4 +1,3 @@
-
 --==================================================
 -- HOLY PREMIUM
 --==================================================
@@ -316,6 +315,10 @@ local SHOP_SETTINGS_FILE =
 local FARM_SETTINGS_FILE =
     UI_SETTINGS_FOLDER
     .. "/HolyPremiumFarmSettings.json"
+
+local FRUIT_AUTOMATION_SETTINGS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyPremiumFruitAutomationSettings.json"
 
 local VISUAL_SETTINGS_FILE =
     UI_SETTINGS_FOLDER
@@ -1225,6 +1228,90 @@ HOLY_FARM_UI = {
 
 HOLY_FARM_PAGE_STATE = {
     Mode = "Collect",
+}
+
+if type(HOLY_FRUIT_AUTOMATION_RUNTIME) == "table" then
+
+    HOLY_FRUIT_AUTOMATION_RUNTIME.DropToken =
+        nil
+
+    HOLY_FRUIT_AUTOMATION_RUNTIME.DropRunning =
+        false
+
+    HOLY_FRUIT_AUTOMATION_RUNTIME.PickupToken =
+        nil
+
+    HOLY_FRUIT_AUTOMATION_RUNTIME.PickupRunning =
+        false
+
+    local oldConnections =
+        HOLY_FRUIT_AUTOMATION_RUNTIME.DroppedConnections
+
+    if type(oldConnections) == "table" then
+
+        for _, connection in ipairs(oldConnections) do
+
+            if typeof(connection) == "RBXScriptConnection" then
+
+                pcall(function()
+
+                    connection:Disconnect()
+                end)
+            end
+        end
+    end
+end
+
+HOLY_FRUIT_AUTOMATION_STATE = {
+    AutoDropFruits = false,
+    AutoCollectDroppedFruits = false,
+
+    SelectedFruits = {},
+    SelectedMutations = {},
+
+    WeightKg = "0",
+    WeightMode = "Above",
+
+    DropLimit = "0",
+}
+
+HOLY_FRUIT_AUTOMATION_RUNTIME = {
+    DropRunning = false,
+    DropToken = nil,
+
+    PickupRunning = false,
+    PickupToken = nil,
+
+    DroppedConnections = {},
+    DroppedCache = {},
+    DroppedLastAttempt = {},
+
+    DropLastAttempt = {},
+    DroppedThisRun = 0,
+
+    DropScanDelay = 0.20,
+    DropRetryDelay = 1.15,
+
+    PickupRange3D = 14.75,
+    PickupHorizontalRange = 14.75,
+    PickupVerticalRange = 25,
+
+    PickupScanDelay = 0.06,
+    PickupRetryDelay = 1.75,
+    PickupResultTimeout = 2.35,
+}
+
+HOLY_FRUIT_AUTOMATION_UI = {
+    AutoDropToggle = nil,
+    AutoPickupToggle = nil,
+
+    FruitsDropdown = nil,
+    MutationsDropdown = nil,
+
+    WeightInput = nil,
+    WeightModeDropdown = nil,
+
+    DropLimitInput = nil,
 }
 
 --==================================================
@@ -7805,6 +7892,2577 @@ function HolyFarmSetAutoCollectFruits(value)
     return HolyFarmStopAutoCollect(
         "toggle off"
     )
+end
+
+--==================================================
+-- [2.13] FARM / FRUIT DROP & PICKUP CORE
+--==================================================
+
+function HolyFruitAutomationCleanDisplayName(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    text =
+        text:gsub(
+            "%s*%[[^%]]+%]",
+            ""
+        )
+
+    text =
+        text:gsub(
+            "%s*%([^%)]+%)",
+            ""
+        )
+
+    return HolyCleanText(
+        text
+    )
+end
+
+function HolyFruitAutomationReadNumber(value)
+
+    if type(value) == "number" then
+        return value
+    end
+
+    local text =
+        tostring(value or "")
+
+    local number =
+        tonumber(
+            text:match("%d+%.?%d*")
+        )
+
+    return tonumber(number)
+        or 0
+end
+
+function HolyFruitAutomationReadDropLimit(value)
+
+    local number =
+        math.floor(
+            HolyFruitAutomationReadNumber(
+                value
+            )
+        )
+
+    return math.max(
+        0,
+        number
+    )
+end
+
+function HolyFruitAutomationDecodeData(raw)
+
+    if type(raw) == "table" then
+        return raw
+    end
+
+    if type(raw) ~= "string"
+    or raw == "" then
+
+        return {}
+    end
+
+    local ok,
+        decoded =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if ok == true
+    and type(decoded) == "table" then
+
+        return decoded
+    end
+
+    return {}
+end
+
+function HolyFruitAutomationReadAttribute(instance, names)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    for _, name in ipairs(names or {}) do
+
+        local ok,
+            value =
+            pcall(function()
+
+                return instance:GetAttribute(
+                    name
+                )
+            end)
+
+        if ok == true
+        and value ~= nil
+        and tostring(value) ~= "" then
+
+            return value
+        end
+    end
+
+    return nil
+end
+
+function HolyFruitAutomationNormalizeFruitName(value)
+
+    value =
+        HolyCleanText(
+            value
+        )
+
+    if value == "" then
+        return ""
+    end
+
+    if type(HolyFarmNormalizePlantName) == "function" then
+
+        return HolyFarmNormalizePlantName(
+            value
+        )
+    end
+
+    return value
+end
+
+function HolyFruitAutomationNormalizeFruitSelection(value)
+
+    local raw =
+        HolyShopSelectionArray(
+            value
+        )
+
+    if #raw <= 0 then
+        return {}
+    end
+
+    for _, fruitName in ipairs(raw) do
+
+        if fruitName == "All" then
+            return {}
+        end
+    end
+
+    local validMap =
+        {}
+
+    if type(HolyFarmGetPlantValueMap) == "function" then
+
+        validMap =
+            HolyFarmGetPlantValueMap()
+    end
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    for _, fruitName in ipairs(raw) do
+
+        fruitName =
+            HolyFruitAutomationNormalizeFruitName(
+                fruitName
+            )
+
+        if fruitName ~= ""
+        and fruitName ~= "All"
+        and seen[fruitName] ~= true
+        and (
+            next(validMap) == nil
+            or validMap[fruitName] == true
+        ) then
+
+            seen[fruitName] =
+                true
+
+            table.insert(
+                output,
+                fruitName
+            )
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
+function HolyFruitAutomationNormalizeMutationSelection(value)
+
+    local raw =
+        HolyShopSelectionArray(
+            value
+        )
+
+    if #raw <= 0 then
+        return {}
+    end
+
+    for _, mutationName in ipairs(raw) do
+
+        if mutationName == "All" then
+            return {}
+        end
+    end
+
+    local validMap =
+        {}
+
+    if type(HolyFarmGetMutationValueMap) == "function" then
+
+        validMap =
+            HolyFarmGetMutationValueMap()
+    end
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    for _, mutationName in ipairs(raw) do
+
+        if type(HolyFarmNormalizeMutationName) == "function" then
+
+            mutationName =
+                HolyFarmNormalizeMutationName(
+                    mutationName
+                )
+
+        else
+
+            mutationName =
+                HolyCleanText(
+                    mutationName
+                )
+        end
+
+        if mutationName ~= ""
+        and mutationName ~= "All"
+        and seen[mutationName] ~= true
+        and (
+            next(validMap) == nil
+            or validMap[mutationName] == true
+        ) then
+
+            seen[mutationName] =
+                true
+
+            table.insert(
+                output,
+                mutationName
+            )
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
+function HolyFruitAutomationNormalizeWeightMode(value)
+
+    local mode =
+        HolyFarmNormalizeWeightMode(
+            value
+        )
+
+    if mode == "Below" then
+        return "Below"
+    end
+
+    return "Above"
+end
+
+function HolyFruitAutomationEnsureState()
+
+    HOLY_FRUIT_AUTOMATION_STATE =
+        type(HOLY_FRUIT_AUTOMATION_STATE) == "table"
+        and HOLY_FRUIT_AUTOMATION_STATE
+        or {}
+
+    HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits =
+        HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits == true
+
+    HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits =
+        HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits == true
+
+    HOLY_FRUIT_AUTOMATION_STATE.SelectedFruits =
+        HolyFruitAutomationNormalizeFruitSelection(
+            HOLY_FRUIT_AUTOMATION_STATE.SelectedFruits
+            or {}
+        )
+
+    HOLY_FRUIT_AUTOMATION_STATE.SelectedMutations =
+        HolyFruitAutomationNormalizeMutationSelection(
+            HOLY_FRUIT_AUTOMATION_STATE.SelectedMutations
+            or {}
+        )
+
+    HOLY_FRUIT_AUTOMATION_STATE.WeightKg =
+        tostring(
+            HolyFarmReadWeightThresholdKg(
+                HOLY_FRUIT_AUTOMATION_STATE.WeightKg
+                or "0"
+            )
+        )
+
+    HOLY_FRUIT_AUTOMATION_STATE.WeightMode =
+        HolyFruitAutomationNormalizeWeightMode(
+            HOLY_FRUIT_AUTOMATION_STATE.WeightMode
+            or "Above"
+        )
+
+    HOLY_FRUIT_AUTOMATION_STATE.DropLimit =
+        tostring(
+            HolyFruitAutomationReadDropLimit(
+                HOLY_FRUIT_AUTOMATION_STATE.DropLimit
+                or "0"
+            )
+        )
+
+    return HOLY_FRUIT_AUTOMATION_STATE
+end
+
+function HolyFruitAutomationEnsureRuntime()
+
+    HOLY_FRUIT_AUTOMATION_RUNTIME =
+        type(HOLY_FRUIT_AUTOMATION_RUNTIME) == "table"
+        and HOLY_FRUIT_AUTOMATION_RUNTIME
+        or {}
+
+    local runtime =
+        HOLY_FRUIT_AUTOMATION_RUNTIME
+
+    runtime.DroppedConnections =
+        type(runtime.DroppedConnections) == "table"
+        and runtime.DroppedConnections
+        or {}
+
+    runtime.DroppedCache =
+        type(runtime.DroppedCache) == "table"
+        and runtime.DroppedCache
+        or {}
+
+    runtime.DroppedLastAttempt =
+        type(runtime.DroppedLastAttempt) == "table"
+        and runtime.DroppedLastAttempt
+        or {}
+
+    runtime.DropLastAttempt =
+        type(runtime.DropLastAttempt) == "table"
+        and runtime.DropLastAttempt
+        or {}
+
+    runtime.DroppedThisRun =
+        tonumber(runtime.DroppedThisRun)
+        or 0
+
+    runtime.PickupRange3D =
+        math.clamp(
+            tonumber(runtime.PickupRange3D)
+            or 14.75,
+            10,
+            15.25
+        )
+
+    runtime.PickupHorizontalRange =
+        math.clamp(
+            tonumber(runtime.PickupHorizontalRange)
+            or 14.75,
+            10,
+            15.25
+        )
+
+    runtime.PickupVerticalRange =
+        math.clamp(
+            tonumber(runtime.PickupVerticalRange)
+            or 25,
+            5,
+            60
+        )
+
+    runtime.PickupScanDelay =
+        math.clamp(
+            tonumber(runtime.PickupScanDelay)
+            or 0.06,
+            0.04,
+            0.50
+        )
+
+    runtime.PickupRetryDelay =
+        math.clamp(
+            tonumber(runtime.PickupRetryDelay)
+            or 1.75,
+            0.35,
+            6
+        )
+
+    runtime.PickupResultTimeout =
+        math.clamp(
+            tonumber(runtime.PickupResultTimeout)
+            or 2.35,
+            0.75,
+            6
+        )
+
+    runtime.DropScanDelay =
+        math.clamp(
+            tonumber(runtime.DropScanDelay)
+            or 0.20,
+            0.08,
+            1.50
+        )
+
+    runtime.DropRetryDelay =
+        math.clamp(
+            tonumber(runtime.DropRetryDelay)
+            or 1.15,
+            0.35,
+            6
+        )
+
+    runtime.DropRunning =
+        runtime.DropRunning == true
+
+    runtime.PickupRunning =
+        runtime.PickupRunning == true
+
+    return runtime
+end
+
+function HolySaveFruitAutomationSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+    HolyFruitAutomationEnsureState()
+
+    local payload = {
+        AutoDropFruits =
+            HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits == true,
+
+        AutoCollectDroppedFruits =
+            HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits == true,
+
+        SelectedFruits =
+            HolyShopSelectionArray(
+                HOLY_FRUIT_AUTOMATION_STATE.SelectedFruits
+            ),
+
+        SelectedMutations =
+            HolyShopSelectionArray(
+                HOLY_FRUIT_AUTOMATION_STATE.SelectedMutations
+            ),
+
+        WeightKg =
+            tostring(
+                HolyFarmReadWeightThresholdKg(
+                    HOLY_FRUIT_AUTOMATION_STATE.WeightKg
+                )
+            ),
+
+        WeightMode =
+            HolyFruitAutomationNormalizeWeightMode(
+                HOLY_FRUIT_AUTOMATION_STATE.WeightMode
+            ),
+
+        DropLimit =
+            tostring(
+                HolyFruitAutomationReadDropLimit(
+                    HOLY_FRUIT_AUTOMATION_STATE.DropLimit
+                )
+            ),
+    }
+
+    local encodeOk,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+
+        return false
+    end
+
+    local writeOk =
+        pcall(function()
+
+            writefile(
+                FRUIT_AUTOMATION_SETTINGS_FILE,
+                encoded
+            )
+        end)
+
+    return writeOk == true
+end
+
+function HolyLoadFruitAutomationSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(
+                FRUIT_AUTOMATION_SETTINGS_FILE
+            )
+    end)
+
+    if exists ~= true then
+        return false
+    end
+
+    local readOk,
+        raw =
+        pcall(function()
+
+            return readfile(
+                FRUIT_AUTOMATION_SETTINGS_FILE
+            )
+        end)
+
+    if readOk ~= true
+    or type(raw) ~= "string"
+    or raw == "" then
+
+        return false
+    end
+
+    local decodeOk,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(data) ~= "table" then
+
+        return false
+    end
+
+    HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits =
+        data.AutoDropFruits == true
+
+    HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits =
+        data.AutoCollectDroppedFruits == true
+        or data.AutoPickupDroppedFruits == true
+        or data.CollectDroppedFruits == true
+
+    HOLY_FRUIT_AUTOMATION_STATE.SelectedFruits =
+        HolyFruitAutomationNormalizeFruitSelection(
+            data.SelectedFruits
+            or data.Fruits
+            or {}
+        )
+
+    HOLY_FRUIT_AUTOMATION_STATE.SelectedMutations =
+        HolyFruitAutomationNormalizeMutationSelection(
+            data.SelectedMutations
+            or data.Mutations
+            or {}
+        )
+
+    HOLY_FRUIT_AUTOMATION_STATE.WeightKg =
+        tostring(
+            HolyFarmReadWeightThresholdKg(
+                data.WeightKg
+                or "0"
+            )
+        )
+
+    HOLY_FRUIT_AUTOMATION_STATE.WeightMode =
+        HolyFruitAutomationNormalizeWeightMode(
+            data.WeightMode
+            or "Above"
+        )
+
+    HOLY_FRUIT_AUTOMATION_STATE.DropLimit =
+        tostring(
+            HolyFruitAutomationReadDropLimit(
+                data.DropLimit
+                or "0"
+            )
+        )
+
+    HolyFruitAutomationEnsureState()
+
+    return true
+end
+
+function HolyFruitAutomationGetFruitDropdownValues()
+
+    local values = {
+        "All",
+    }
+
+    for _, fruitName in ipairs(
+        HolyFarmGetPlantDropdownValues()
+    ) do
+
+        table.insert(
+            values,
+            fruitName
+        )
+    end
+
+    return values
+end
+
+function HolyFruitAutomationGetMutationDropdownValues()
+
+    local values = {
+        "All",
+    }
+
+    for _, mutationName in ipairs(
+        HolyFarmGetMutationDropdownValues()
+    ) do
+
+        table.insert(
+            values,
+            mutationName
+        )
+    end
+
+    return values
+end
+
+function HolyFruitAutomationSelectedFruitMap()
+
+    HolyFruitAutomationEnsureState()
+
+    local map =
+        {}
+
+    for _, fruitName in ipairs(
+        HOLY_FRUIT_AUTOMATION_STATE.SelectedFruits
+        or {}
+    ) do
+
+        fruitName =
+            HolyFruitAutomationNormalizeFruitName(
+                fruitName
+            )
+
+        if fruitName ~= "" then
+
+            map[fruitName] =
+                true
+        end
+    end
+
+    return map
+end
+
+function HolyFruitAutomationSelectedMutationMap()
+
+    HolyFruitAutomationEnsureState()
+
+    local map =
+        {}
+
+    for _, mutationName in ipairs(
+        HOLY_FRUIT_AUTOMATION_STATE.SelectedMutations
+        or {}
+    ) do
+
+        if type(HolyFarmNormalizeMutationName) == "function" then
+
+            mutationName =
+                HolyFarmNormalizeMutationName(
+                    mutationName
+                )
+
+        else
+
+            mutationName =
+                HolyCleanText(
+                    mutationName
+                )
+        end
+
+        if mutationName ~= "" then
+
+            map[mutationName] =
+                true
+        end
+    end
+
+    return map
+end
+
+function HolyFruitAutomationAddMutation(output, seen, value)
+
+    output =
+        type(output) == "table"
+        and output
+        or {}
+
+    seen =
+        type(seen) == "table"
+        and seen
+        or {}
+
+    if type(value) == "table" then
+
+        for key, childValue in pairs(value) do
+
+            if type(key) == "number" then
+
+                HolyFruitAutomationAddMutation(
+                    output,
+                    seen,
+                    childValue
+                )
+
+            elseif childValue == true then
+
+                HolyFruitAutomationAddMutation(
+                    output,
+                    seen,
+                    key
+                )
+            end
+        end
+
+        return output
+    end
+
+    for _, part in ipairs(
+        HolyFarmSplitMutationText(
+            value
+        )
+    ) do
+
+        local mutation =
+            HolyFarmNormalizeMutationName(
+                part
+            )
+
+        if mutation ~= ""
+        and seen[mutation] ~= true then
+
+            seen[mutation] =
+                true
+
+            table.insert(
+                output,
+                mutation
+            )
+        end
+    end
+
+    return output
+end
+
+function HolyFruitAutomationReadBracketMutations(displayName, output, seen)
+
+    displayName =
+        tostring(displayName or "")
+
+    for bracket in displayName:gmatch("%[([^%]]+)%]") do
+
+        local lower =
+            bracket:lower()
+
+        if lower:find("kg", 1, true) == nil then
+
+            HolyFruitAutomationAddMutation(
+                output,
+                seen,
+                bracket
+            )
+        end
+    end
+
+    return output
+end
+
+function HolyFruitAutomationReadCommonFruitInfo(instance, fallbackName)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    local fruitData =
+        HolyFruitAutomationDecodeData(
+            HolyFruitAutomationReadAttribute(
+                instance,
+                {
+                    "FruitData",
+                    "ItemData",
+                    "Data",
+                }
+            )
+        )
+
+    local displayName =
+        HolyCleanText(
+            HolyFruitAutomationReadAttribute(
+                instance,
+                {
+                    "DisplayName",
+                    "ItemName",
+                    "Name",
+                }
+            )
+            or fallbackName
+            or instance.Name
+        )
+
+    local fruitName =
+        HolyCleanText(
+            fruitData.FruitName
+            or fruitData.Fruit
+            or fruitData.Name
+            or HolyFruitAutomationReadAttribute(
+                instance,
+                {
+                    "FruitName",
+                    "SeedName",
+                    "PlantName",
+                    "CropName",
+                    "ItemName",
+                }
+            )
+            or ""
+        )
+
+    if fruitName == "" then
+
+        fruitName =
+            HolyFruitAutomationCleanDisplayName(
+                displayName
+            )
+    end
+
+    fruitName =
+        HolyFruitAutomationNormalizeFruitName(
+            fruitName
+        )
+
+    if fruitName == "" then
+        return nil
+    end
+
+    local weight =
+        tonumber(
+            fruitData.Weight
+            or fruitData.WeightKg
+            or fruitData.Kg
+            or fruitData.Mass
+            or HolyFruitAutomationReadAttribute(
+                instance,
+                {
+                    "Weight",
+                    "WeightKg",
+                    "Kg",
+                    "Mass",
+                }
+            )
+        )
+
+    if weight == nil then
+
+        weight =
+            tonumber(
+                tostring(displayName):match("([%d%.]+)%s*[Kk][Gg]")
+            )
+            or tonumber(
+                tostring(instance.Name):match("([%d%.]+)%s*[Kk][Gg]")
+            )
+    end
+
+    local mutations =
+        {}
+
+    local seen =
+        {}
+
+    HolyFruitAutomationAddMutation(
+        mutations,
+        seen,
+        fruitData.Mutation
+        or fruitData.Mutations
+        or fruitData.Variant
+        or fruitData.Type
+        or HolyFruitAutomationReadAttribute(
+            instance,
+            {
+                "Mutation",
+                "Mutations",
+                "Variant",
+                "Type",
+            }
+        )
+        or ""
+    )
+
+    HolyFruitAutomationReadBracketMutations(
+        displayName,
+        mutations,
+        seen
+    )
+
+    table.sort(mutations, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return {
+        Instance =
+            instance,
+
+        FruitName =
+            fruitName,
+
+        DisplayName =
+            displayName ~= ""
+            and displayName
+            or fruitName,
+
+        WeightKg =
+            tonumber(weight)
+            or 0,
+
+        Mutations =
+            mutations,
+
+        HadFruitData =
+            next(fruitData) ~= nil,
+    }
+end
+
+function HolyFruitAutomationLooksLikeFruit(info)
+
+    if type(info) ~= "table" then
+        return false
+    end
+
+    local fruitName =
+        HolyFruitAutomationNormalizeFruitName(
+            info.FruitName
+        )
+
+    if fruitName == "" then
+        return false
+    end
+
+    local validMap =
+        {}
+
+    if type(HolyFarmGetPlantValueMap) == "function" then
+
+        validMap =
+            HolyFarmGetPlantValueMap()
+    end
+
+    if next(validMap) == nil then
+        return true
+    end
+
+    if validMap[fruitName] == true then
+        return true
+    end
+
+    return info.HadFruitData == true
+end
+
+function HolyFruitAutomationMutationListHasSelected(mutations, selectedMap)
+
+    if type(mutations) ~= "table"
+    or type(selectedMap) ~= "table" then
+
+        return false
+    end
+
+    for _, mutation in ipairs(mutations) do
+
+        if selectedMap[mutation] == true then
+            return true
+        end
+    end
+
+    return false
+end
+
+function HolyFruitAutomationPassesFilters(info)
+
+    HolyFruitAutomationEnsureState()
+
+    if type(info) ~= "table" then
+        return false
+    end
+
+    if HolyFruitAutomationLooksLikeFruit(
+        info
+    ) ~= true then
+
+        return false
+    end
+
+    local selectedFruits =
+        HOLY_FRUIT_AUTOMATION_STATE.SelectedFruits
+        or {}
+
+    if #selectedFruits > 0 then
+
+        local fruitMap =
+            HolyFruitAutomationSelectedFruitMap()
+
+        if fruitMap[
+            HolyFruitAutomationNormalizeFruitName(
+                info.FruitName
+            )
+        ] ~= true then
+
+            return false
+        end
+    end
+
+    local selectedMutations =
+        HOLY_FRUIT_AUTOMATION_STATE.SelectedMutations
+        or {}
+
+    if #selectedMutations > 0 then
+
+        local mutationMap =
+            HolyFruitAutomationSelectedMutationMap()
+
+        if HolyFruitAutomationMutationListHasSelected(
+            info.Mutations,
+            mutationMap
+        ) ~= true then
+
+            return false
+        end
+    end
+
+    local threshold =
+        HolyFarmReadWeightThresholdKg(
+            HOLY_FRUIT_AUTOMATION_STATE.WeightKg
+        )
+
+    if threshold > 0 then
+
+        local weight =
+            tonumber(info.WeightKg)
+
+        if weight == nil then
+            return false
+        end
+
+        local mode =
+            HolyFruitAutomationNormalizeWeightMode(
+                HOLY_FRUIT_AUTOMATION_STATE.WeightMode
+            )
+
+        if mode == "Below" then
+            return weight <= threshold
+        end
+
+        return weight >= threshold
+    end
+
+    return true
+end
+
+function HolyFruitAutomationGetCharacter()
+
+    return LocalPlayer
+        and LocalPlayer.Character
+        or nil
+end
+
+function HolyFruitAutomationGetHumanoid()
+
+    local character =
+        HolyFruitAutomationGetCharacter()
+
+    if typeof(character) ~= "Instance" then
+        return nil
+    end
+
+    return character:FindFirstChildOfClass(
+        "Humanoid"
+    )
+end
+
+function HolyFruitAutomationGetRoot()
+
+    local character =
+        HolyFruitAutomationGetCharacter()
+
+    if typeof(character) ~= "Instance" then
+        return nil
+    end
+
+    return character:FindFirstChild(
+        "HumanoidRootPart"
+    )
+    or character:FindFirstChild(
+        "RootPart"
+    )
+    or character.PrimaryPart
+end
+
+function HolyFruitAutomationReadToolInfo(tool)
+
+    if typeof(tool) ~= "Instance"
+    or tool:IsA("Tool") ~= true then
+
+        return nil
+    end
+
+    local info =
+        HolyFruitAutomationReadCommonFruitInfo(
+            tool,
+            tool.Name
+        )
+
+    if HolyFruitAutomationLooksLikeFruit(
+        info
+    ) ~= true then
+
+        return nil
+    end
+
+    info.Tool =
+        tool
+
+    return info
+end
+
+function HolyFruitAutomationGetFruitTools()
+
+    local tools =
+        {}
+
+    local containers =
+        {}
+
+    local character =
+        HolyFruitAutomationGetCharacter()
+
+    if typeof(character) == "Instance" then
+
+        table.insert(
+            containers,
+            character
+        )
+    end
+
+    local backpack =
+        LocalPlayer
+        and LocalPlayer:FindFirstChildOfClass(
+            "Backpack"
+        )
+        or nil
+
+    if typeof(backpack) == "Instance" then
+
+        table.insert(
+            containers,
+            backpack
+        )
+    end
+
+    for _, container in ipairs(containers) do
+
+        for _, child in ipairs(container:GetChildren()) do
+
+            local info =
+                HolyFruitAutomationReadToolInfo(
+                    child
+                )
+
+            if HolyFruitAutomationPassesFilters(
+                info
+            ) == true then
+
+                table.insert(
+                    tools,
+                    info
+                )
+            end
+        end
+    end
+
+    table.sort(tools, function(a, b)
+
+        local weightA =
+            tonumber(a.WeightKg)
+            or 0
+
+        local weightB =
+            tonumber(b.WeightKg)
+            or 0
+
+        if weightA ~= weightB then
+            return weightA > weightB
+        end
+
+        return tostring(a.FruitName)
+            < tostring(b.FruitName)
+    end)
+
+    return tools
+end
+
+function HolyFruitAutomationInputManager()
+
+    if type(HolyLoadingGetInputManager) == "function" then
+
+        local manager =
+            HolyLoadingGetInputManager()
+
+        if manager then
+            return manager
+        end
+    end
+
+    local ok,
+        manager =
+        pcall(function()
+
+            return game:GetService(
+                "VirtualInputManager"
+            )
+        end)
+
+    if ok == true then
+        return manager
+    end
+
+    return nil
+end
+
+function HolyFruitAutomationPressBackspace()
+
+    local inputManager =
+        HolyFruitAutomationInputManager()
+
+    if not inputManager then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            inputManager:SendKeyEvent(
+                true,
+                Enum.KeyCode.Backspace,
+                false,
+                game
+            )
+
+            task.wait(
+                0.05
+            )
+
+            inputManager:SendKeyEvent(
+                false,
+                Enum.KeyCode.Backspace,
+                false,
+                game
+            )
+        end)
+
+    return ok == true
+end
+
+function HolyFruitAutomationToolLeftInventory(tool)
+
+    if typeof(tool) ~= "Instance" then
+        return true
+    end
+
+    local character =
+        HolyFruitAutomationGetCharacter()
+
+    local backpack =
+        LocalPlayer
+        and LocalPlayer:FindFirstChildOfClass(
+            "Backpack"
+        )
+        or nil
+
+    if tool.Parent == nil then
+        return true
+    end
+
+    if typeof(character) == "Instance"
+    and tool.Parent == character then
+
+        return false
+    end
+
+    if typeof(backpack) == "Instance"
+    and tool.Parent == backpack then
+
+        return false
+    end
+
+    return true
+end
+
+function HolyFruitAutomationDropTool(tool)
+
+    if typeof(tool) ~= "Instance"
+    or tool:IsA("Tool") ~= true then
+
+        return false
+    end
+
+    local character =
+        HolyFruitAutomationGetCharacter()
+
+    local humanoid =
+        HolyFruitAutomationGetHumanoid()
+
+    if typeof(character) ~= "Instance"
+    or typeof(humanoid) ~= "Instance" then
+
+        return false
+    end
+
+    if tool.Parent ~= character then
+
+        pcall(function()
+
+            humanoid:EquipTool(
+                tool
+            )
+        end)
+
+        task.wait(
+            0.12
+        )
+    end
+
+    pcall(function()
+
+        tool.CanBeDropped =
+            true
+    end)
+
+    HolyFruitAutomationPressBackspace()
+
+    task.wait(
+        0.25
+    )
+
+    if HolyFruitAutomationToolLeftInventory(
+        tool
+    ) == true then
+
+        return true
+    end
+
+    pcall(function()
+
+        tool.Parent =
+            workspace
+    end)
+
+    task.wait(
+        0.10
+    )
+
+    return HolyFruitAutomationToolLeftInventory(
+        tool
+    ) == true
+end
+
+function HolyFruitAutomationTryDropInfo(info)
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    info =
+        type(info) == "table"
+        and info
+        or {}
+
+    local tool =
+        info.Tool
+
+    if typeof(tool) ~= "Instance"
+    or tool.Parent == nil then
+
+        return false
+    end
+
+    local lastAttempt =
+        tonumber(
+            runtime.DropLastAttempt[tool]
+        )
+        or 0
+
+    if os.clock() - lastAttempt < runtime.DropRetryDelay then
+        return false
+    end
+
+    runtime.DropLastAttempt[tool] =
+        os.clock()
+
+    if HolyFruitAutomationPassesFilters(
+        info
+    ) ~= true then
+
+        return false
+    end
+
+    local dropped =
+        HolyFruitAutomationDropTool(
+            tool
+        )
+
+    if dropped == true then
+
+        runtime.DroppedThisRun =
+            (
+                tonumber(runtime.DroppedThisRun)
+                or 0
+            )
+            + 1
+
+        runtime.DropLastAttempt[tool] =
+            nil
+
+        return true
+    end
+
+    return false
+end
+
+function HolyFruitAutomationDropLimitReached()
+
+    HolyFruitAutomationEnsureState()
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    local limit =
+        HolyFruitAutomationReadDropLimit(
+            HOLY_FRUIT_AUTOMATION_STATE.DropLimit
+        )
+
+    if limit <= 0 then
+        return false
+    end
+
+    return (
+        tonumber(runtime.DroppedThisRun)
+        or 0
+    ) >= limit
+end
+
+function HolyFruitAutomationSyncToggles()
+
+    local ui =
+        type(HOLY_FRUIT_AUTOMATION_UI) == "table"
+        and HOLY_FRUIT_AUTOMATION_UI
+        or {}
+
+    if type(ui.AutoDropToggle) == "table"
+    and type(ui.AutoDropToggle.SetValue) == "function" then
+
+        pcall(function()
+
+            ui.AutoDropToggle:SetValue(
+                HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits == true,
+                true
+            )
+        end)
+    end
+
+    if type(ui.AutoPickupToggle) == "table"
+    and type(ui.AutoPickupToggle.SetValue) == "function" then
+
+        pcall(function()
+
+            ui.AutoPickupToggle:SetValue(
+                HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits == true,
+                true
+            )
+        end)
+    end
+end
+
+function HolyFruitAutomationRunDropWorker(token)
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    runtime.DropRunning =
+        true
+
+    runtime.DroppedThisRun =
+        0
+
+    while runtime.DropToken == token
+    and HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits == true do
+
+        if HolyFarmAutoCollectBlocked() == true then
+
+            task.wait(
+                0.20
+            )
+
+        elseif HolyFruitAutomationDropLimitReached() == true then
+
+            HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits =
+                false
+
+            HolySaveFruitAutomationSettings()
+            HolyFruitAutomationSyncToggles()
+
+            if type(HolyNotify) == "function" then
+
+                HolyNotify(
+                    "HOLY Farm",
+                    "Auto Drop Fruits reached the drop limit.",
+                    4
+                )
+            end
+
+            break
+
+        else
+
+            local targets =
+                HolyFruitAutomationGetFruitTools()
+
+            if #targets <= 0 then
+
+                task.wait(
+                    runtime.DropScanDelay
+                )
+
+            else
+
+                for _, info in ipairs(targets) do
+
+                    if runtime.DropToken ~= token
+                    or HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits ~= true then
+
+                        break
+                    end
+
+                    if HolyFruitAutomationDropLimitReached() == true then
+                        break
+                    end
+
+                    HolyFruitAutomationTryDropInfo(
+                        info
+                    )
+
+                    task.wait(
+                        0.05
+                    )
+                end
+
+                task.wait(
+                    runtime.DropScanDelay
+                )
+            end
+        end
+    end
+
+    if runtime.DropToken == token then
+
+        runtime.DropRunning =
+            false
+    end
+end
+
+function HolyFruitAutomationStartDrop(reason)
+
+    HolyFruitAutomationEnsureState()
+
+    if HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits ~= true then
+        return false
+    end
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    if runtime.DropRunning == true then
+        return false
+    end
+
+    runtime.DropLastAttempt =
+        {}
+
+    runtime.DroppedThisRun =
+        0
+
+    runtime.DropToken =
+        {}
+
+    local token =
+        runtime.DropToken
+
+    runtime.DropRunning =
+        true
+
+    task.spawn(function()
+
+        HolyFruitAutomationRunDropWorker(
+            token
+        )
+    end)
+
+    return true
+end
+
+function HolyFruitAutomationStopDrop(reason)
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    runtime.DropToken =
+        nil
+
+    runtime.DropRunning =
+        false
+
+    runtime.DropLastAttempt =
+        {}
+
+    return true
+end
+
+function HolyFruitAutomationGetDroppedFolder()
+
+    local folder =
+        workspace:FindFirstChild(
+            "DroppedItems"
+        )
+
+    if typeof(folder) == "Instance" then
+        return folder
+    end
+
+    folder =
+        workspace:FindFirstChild(
+            "DroppedItems",
+            true
+        )
+
+    if typeof(folder) == "Instance" then
+        return folder
+    end
+
+    return nil
+end
+
+function HolyFruitAutomationGetDroppedPrompt(item)
+
+    if typeof(item) ~= "Instance" then
+        return nil
+    end
+
+    local anchor =
+        item:FindFirstChild(
+            "PromptAnchor",
+            true
+        )
+
+    if typeof(anchor) == "Instance" then
+
+        local prompt =
+            anchor:FindFirstChildWhichIsA(
+                "ProximityPrompt",
+                true
+            )
+
+        if typeof(prompt) == "Instance" then
+            return prompt
+        end
+    end
+
+    return item:FindFirstChildWhichIsA(
+        "ProximityPrompt",
+        true
+    )
+end
+
+function HolyFruitAutomationGetDroppedPromptPart(item)
+
+    local prompt =
+        HolyFruitAutomationGetDroppedPrompt(
+            item
+        )
+
+    if typeof(prompt) == "Instance" then
+
+        local parent =
+            prompt.Parent
+
+        if typeof(parent) == "Instance" then
+
+            if parent:IsA("BasePart") then
+                return parent
+            end
+
+            if parent:IsA("Attachment")
+            and typeof(parent.Parent) == "Instance"
+            and parent.Parent:IsA("BasePart") then
+
+                return parent.Parent
+            end
+        end
+    end
+
+    if typeof(item) == "Instance"
+    and item:IsA("Model")
+    and item.PrimaryPart then
+
+        return item.PrimaryPart
+    end
+
+    if typeof(item) == "Instance" then
+
+        return item:FindFirstChildWhichIsA(
+            "BasePart",
+            true
+        )
+    end
+
+    return nil
+end
+
+function HolyFruitAutomationDroppedGetDistances(item)
+
+    local root =
+        HolyFruitAutomationGetRoot()
+
+    local part =
+        HolyFruitAutomationGetDroppedPromptPart(
+            item
+        )
+
+    if typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true
+    or typeof(part) ~= "Instance"
+    or part:IsA("BasePart") ~= true then
+
+        return nil,
+            nil,
+            nil
+    end
+
+    local delta =
+        root.Position
+        - part.Position
+
+    local horizontal =
+        Vector3.new(
+            delta.X,
+            0,
+            delta.Z
+        ).Magnitude
+
+    local vertical =
+        math.abs(
+            delta.Y
+        )
+
+    return delta.Magnitude,
+        horizontal,
+        vertical
+end
+
+function HolyFruitAutomationReadDroppedInfo(item, forceRefresh)
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    if typeof(item) ~= "Instance"
+    or item.Parent == nil then
+
+        runtime.DroppedCache[item] =
+            nil
+
+        runtime.DroppedLastAttempt[item] =
+            nil
+
+        return nil
+    end
+
+    if forceRefresh ~= true
+    and type(runtime.DroppedCache[item]) == "table" then
+
+        local cached =
+            runtime.DroppedCache[item]
+
+        if cached.Item == item
+        and item.Parent ~= nil then
+
+            return cached
+        end
+    end
+
+    local prompt =
+        HolyFruitAutomationGetDroppedPrompt(
+            item
+        )
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true then
+
+        return nil
+    end
+
+    local info =
+        HolyFruitAutomationReadCommonFruitInfo(
+            item,
+            item:GetAttribute("DisplayName")
+            or prompt.ObjectText
+            or item.Name
+        )
+
+    if HolyFruitAutomationLooksLikeFruit(
+        info
+    ) ~= true then
+
+        return nil
+    end
+
+    info.Item =
+        item
+
+    info.Prompt =
+        prompt
+
+    runtime.DroppedCache[item] =
+        info
+
+    return info
+end
+
+function HolyFruitAutomationDroppedDistanceAllowed(item)
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    local distance3D,
+        horizontal,
+        vertical =
+        HolyFruitAutomationDroppedGetDistances(
+            item
+        )
+
+    if distance3D == nil then
+
+        return false,
+            distance3D,
+            horizontal,
+            vertical
+    end
+
+    if distance3D <= runtime.PickupRange3D then
+
+        return true,
+            distance3D,
+            horizontal,
+            vertical
+    end
+
+    if horizontal <= runtime.PickupHorizontalRange
+    and vertical <= runtime.PickupVerticalRange then
+
+        return true,
+            distance3D,
+            horizontal,
+            vertical
+    end
+
+    return false,
+        distance3D,
+        horizontal,
+        vertical
+end
+
+function HolyFruitAutomationFireDroppedPrompt(prompt)
+
+    if typeof(prompt) ~= "Instance"
+    or prompt:IsA("ProximityPrompt") ~= true
+    or prompt.Parent == nil then
+
+        return false,
+            "missing prompt"
+    end
+
+    local oldEnabled =
+        prompt.Enabled
+
+    local oldDistance =
+        prompt.MaxActivationDistance
+
+    local oldHold =
+        prompt.HoldDuration
+
+    local oldLineOfSight =
+        prompt.RequiresLineOfSight
+
+    pcall(function()
+
+        prompt.Enabled =
+            true
+
+        prompt.MaxActivationDistance =
+            9999
+
+        prompt.HoldDuration =
+            0
+
+        prompt.RequiresLineOfSight =
+            false
+    end)
+
+    local ok,
+        err =
+        false,
+        nil
+
+    if type(fireproximityprompt) == "function" then
+
+        ok,
+            err =
+            pcall(function()
+
+                fireproximityprompt(
+                    prompt
+                )
+            end)
+
+    else
+
+        ok,
+            err =
+            pcall(function()
+
+                prompt:InputHoldBegin()
+
+                task.wait(
+                    0.06
+                )
+
+                prompt:InputHoldEnd()
+            end)
+    end
+
+    task.delay(0.50, function()
+
+        if typeof(prompt) == "Instance"
+        and prompt.Parent ~= nil then
+
+            pcall(function()
+
+                prompt.Enabled =
+                    oldEnabled
+
+                prompt.MaxActivationDistance =
+                    oldDistance
+
+                prompt.HoldDuration =
+                    oldHold
+
+                prompt.RequiresLineOfSight =
+                    oldLineOfSight
+            end)
+        end
+    end)
+
+    return ok == true,
+        err
+end
+
+function HolyFruitAutomationWaitDroppedRemoved(item, timeout)
+
+    local startedAt =
+        os.clock()
+
+    timeout =
+        tonumber(timeout)
+        or 2.35
+
+    while os.clock() - startedAt <= timeout do
+
+        if typeof(item) ~= "Instance"
+        or item.Parent == nil then
+
+            return true
+        end
+
+        task.wait(
+            0.05
+        )
+    end
+
+    return false
+end
+
+function HolyFruitAutomationTryPickupDroppedInfo(info)
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    info =
+        type(info) == "table"
+        and info
+        or {}
+
+    local item =
+        info.Item
+
+    if typeof(item) ~= "Instance"
+    or item.Parent == nil then
+
+        runtime.DroppedCache[item] =
+            nil
+
+        runtime.DroppedLastAttempt[item] =
+            nil
+
+        return false
+    end
+
+    info =
+        HolyFruitAutomationReadDroppedInfo(
+            item,
+            false
+        )
+
+    if HolyFruitAutomationPassesFilters(
+        info
+    ) ~= true then
+
+        return false
+    end
+
+    local distanceAllowed =
+        HolyFruitAutomationDroppedDistanceAllowed(
+            item
+        )
+
+    if distanceAllowed ~= true then
+        return false
+    end
+
+    local lastAttempt =
+        tonumber(
+            runtime.DroppedLastAttempt[item]
+        )
+        or 0
+
+    if os.clock() - lastAttempt < runtime.PickupRetryDelay then
+        return false
+    end
+
+    runtime.DroppedLastAttempt[item] =
+        os.clock()
+
+    local fired =
+        HolyFruitAutomationFireDroppedPrompt(
+            info.Prompt
+        )
+
+    if fired ~= true then
+        return false
+    end
+
+    local removed =
+        HolyFruitAutomationWaitDroppedRemoved(
+            item,
+            runtime.PickupResultTimeout
+        )
+
+    if removed == true then
+
+        runtime.DroppedCache[item] =
+            nil
+
+        runtime.DroppedLastAttempt[item] =
+            nil
+
+        return true
+    end
+
+    return false
+end
+
+function HolyFruitAutomationGetDroppedTargets()
+
+    local folder =
+        HolyFruitAutomationGetDroppedFolder()
+
+    local targets =
+        {}
+
+    if typeof(folder) ~= "Instance" then
+        return targets
+    end
+
+    for _, item in ipairs(folder:GetChildren()) do
+
+        if item:IsA("Model") then
+
+            local info =
+                HolyFruitAutomationReadDroppedInfo(
+                    item,
+                    false
+                )
+
+            if HolyFruitAutomationPassesFilters(
+                info
+            ) == true then
+
+                table.insert(
+                    targets,
+                    info
+                )
+            end
+        end
+    end
+
+    table.sort(targets, function(a, b)
+
+        local distanceA =
+            HolyFruitAutomationDroppedGetDistances(
+                a.Item
+            )
+            or math.huge
+
+        local distanceB =
+            HolyFruitAutomationDroppedGetDistances(
+                b.Item
+            )
+            or math.huge
+
+        return distanceA < distanceB
+    end)
+
+    return targets
+end
+
+function HolyFruitAutomationConnectDroppedFolder()
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    HolyFarmDisconnectConnectionList(
+        runtime.DroppedConnections
+    )
+
+    runtime.DroppedConnections =
+        {}
+
+    local folder =
+        HolyFruitAutomationGetDroppedFolder()
+
+    if typeof(folder) ~= "Instance" then
+        return false
+    end
+
+    table.insert(
+        runtime.DroppedConnections,
+        folder.ChildRemoved:Connect(function(item)
+
+            runtime.DroppedCache[item] =
+                nil
+
+            runtime.DroppedLastAttempt[item] =
+                nil
+        end)
+    )
+
+    return true
+end
+
+function HolyFruitAutomationRunPickupWorker(token)
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    runtime.PickupRunning =
+        true
+
+    HolyFruitAutomationConnectDroppedFolder()
+
+    while runtime.PickupToken == token
+    and HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits == true do
+
+        if HolyFarmAutoCollectBlocked() == true then
+
+            task.wait(
+                0.20
+            )
+
+        else
+
+            local targets =
+                HolyFruitAutomationGetDroppedTargets()
+
+            if #targets <= 0 then
+
+                task.wait(
+                    runtime.PickupScanDelay
+                )
+
+            else
+
+                for _, info in ipairs(targets) do
+
+                    if runtime.PickupToken ~= token
+                    or HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits ~= true then
+
+                        break
+                    end
+
+                    HolyFruitAutomationTryPickupDroppedInfo(
+                        info
+                    )
+
+                    task.wait(
+                        0.02
+                    )
+                end
+
+                task.wait(
+                    runtime.PickupScanDelay
+                )
+            end
+        end
+    end
+
+    if runtime.PickupToken == token then
+
+        runtime.PickupRunning =
+            false
+    end
+end
+
+function HolyFruitAutomationStartPickup(reason)
+
+    HolyFruitAutomationEnsureState()
+
+    if HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits ~= true then
+        return false
+    end
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    if runtime.PickupRunning == true then
+        return false
+    end
+
+    runtime.DroppedCache =
+        {}
+
+    runtime.DroppedLastAttempt =
+        {}
+
+    runtime.PickupToken =
+        {}
+
+    local token =
+        runtime.PickupToken
+
+    runtime.PickupRunning =
+        true
+
+    task.spawn(function()
+
+        HolyFruitAutomationRunPickupWorker(
+            token
+        )
+    end)
+
+    return true
+end
+
+function HolyFruitAutomationStopPickup(reason)
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    runtime.PickupToken =
+        nil
+
+    runtime.PickupRunning =
+        false
+
+    HolyFarmDisconnectConnectionList(
+        runtime.DroppedConnections
+    )
+
+    runtime.DroppedConnections =
+        {}
+
+    runtime.DroppedCache =
+        {}
+
+    runtime.DroppedLastAttempt =
+        {}
+
+    return true
+end
+
+function HolyFruitAutomationSetAutoDropFruits(value)
+
+    HolyFruitAutomationEnsureState()
+
+    HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits =
+        value == true
+
+    HolySaveFruitAutomationSettings()
+
+    if HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits == true then
+
+        return HolyFruitAutomationStartDrop(
+            "toggle on"
+        )
+    end
+
+    return HolyFruitAutomationStopDrop(
+        "toggle off"
+    )
+end
+
+function HolyFruitAutomationSetAutoCollectDroppedFruits(value)
+
+    HolyFruitAutomationEnsureState()
+
+    HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits =
+        value == true
+
+    HolySaveFruitAutomationSettings()
+
+    if HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits == true then
+
+        return HolyFruitAutomationStartPickup(
+            "toggle on"
+        )
+    end
+
+    return HolyFruitAutomationStopPickup(
+        "toggle off"
+    )
+end
+
+function HolyFruitAutomationSetSelectedFruits(value)
+
+    HolyFruitAutomationEnsureState()
+
+    HOLY_FRUIT_AUTOMATION_STATE.SelectedFruits =
+        HolyFruitAutomationNormalizeFruitSelection(
+            value
+        )
+
+    HolySaveFruitAutomationSettings()
+
+    return true
+end
+
+function HolyFruitAutomationSetSelectedMutations(value)
+
+    HolyFruitAutomationEnsureState()
+
+    HOLY_FRUIT_AUTOMATION_STATE.SelectedMutations =
+        HolyFruitAutomationNormalizeMutationSelection(
+            value
+        )
+
+    HolySaveFruitAutomationSettings()
+
+    return true
+end
+
+function HolyFruitAutomationSetWeightKg(value)
+
+    HolyFruitAutomationEnsureState()
+
+    HOLY_FRUIT_AUTOMATION_STATE.WeightKg =
+        tostring(
+            HolyFarmReadWeightThresholdKg(
+                value
+            )
+        )
+
+    HolySaveFruitAutomationSettings()
+
+    return true
+end
+
+function HolyFruitAutomationSetWeightMode(value)
+
+    HolyFruitAutomationEnsureState()
+
+    HOLY_FRUIT_AUTOMATION_STATE.WeightMode =
+        HolyFruitAutomationNormalizeWeightMode(
+            value
+        )
+
+    HolySaveFruitAutomationSettings()
+
+    return true
+end
+
+function HolyFruitAutomationSetDropLimit(value)
+
+    HolyFruitAutomationEnsureState()
+
+    HOLY_FRUIT_AUTOMATION_STATE.DropLimit =
+        tostring(
+            HolyFruitAutomationReadDropLimit(
+                value
+            )
+        )
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    runtime.DroppedThisRun =
+        0
+
+    HolySaveFruitAutomationSettings()
+
+    return true
+end
+
+function HolyFruitAutomationRefreshDropdowns(forceRefresh)
+
+    HOLY_FRUIT_AUTOMATION_UI =
+        type(HOLY_FRUIT_AUTOMATION_UI) == "table"
+        and HOLY_FRUIT_AUTOMATION_UI
+        or {}
+
+    if forceRefresh == true then
+
+        if type(HolyFarmInvalidatePlantNameCache) == "function" then
+
+            HolyFarmInvalidatePlantNameCache()
+        end
+
+        if type(HolyFarmInvalidateMutationNameCache) == "function" then
+
+            HolyFarmInvalidateMutationNameCache()
+        end
+    end
+
+    HolyFruitAutomationEnsureState()
+
+    local fruitsDropdown =
+        HOLY_FRUIT_AUTOMATION_UI.FruitsDropdown
+
+    if type(fruitsDropdown) == "table" then
+
+        local values =
+            HolyFruitAutomationGetFruitDropdownValues()
+
+        pcall(function()
+
+            if type(fruitsDropdown.SetValues) == "function" then
+
+                fruitsDropdown:SetValues(
+                    values
+                )
+
+            elseif type(fruitsDropdown.SetItems) == "function" then
+
+                fruitsDropdown:SetItems(
+                    values
+                )
+            end
+        end)
+
+        pcall(function()
+
+            if type(fruitsDropdown.SetValue) == "function" then
+
+                fruitsDropdown:SetValue(
+                    HOLY_FRUIT_AUTOMATION_STATE.SelectedFruits
+                )
+            end
+        end)
+    end
+
+    local mutationsDropdown =
+        HOLY_FRUIT_AUTOMATION_UI.MutationsDropdown
+
+    if type(mutationsDropdown) == "table" then
+
+        local values =
+            HolyFruitAutomationGetMutationDropdownValues()
+
+        pcall(function()
+
+            if type(mutationsDropdown.SetValues) == "function" then
+
+                mutationsDropdown:SetValues(
+                    values
+                )
+
+            elseif type(mutationsDropdown.SetItems) == "function" then
+
+                mutationsDropdown:SetItems(
+                    values
+                )
+            end
+        end)
+
+        pcall(function()
+
+            if type(mutationsDropdown.SetValue) == "function" then
+
+                mutationsDropdown:SetValue(
+                    HOLY_FRUIT_AUTOMATION_STATE.SelectedMutations
+                )
+            end
+        end)
+    end
+
+    return true
 end
 
 function HolySniperNormalizeAnySelection(value)
@@ -43793,6 +46451,7 @@ end
 
 HolyLoadShopSettings()
 HolyLoadFarmSettings()
+HolyLoadFruitAutomationSettings()
 HolyLoadSniperSettings()
 HolyLoadServerSettings()
 
@@ -44290,6 +46949,14 @@ local FarmExtraUtilitiesBox =
         "settings"
     )
 
+local FarmFruitAutomationBox =
+    HolyAddLeftGroupbox(
+        Tabs.Farm,
+        "Farm.FruitDropPickup",
+        "Fruit Drop & Pickup",
+        "target"
+    )
+
 local FarmExtraExperimentalBox =
     HolyAddRightGroupbox(
         Tabs.Farm,
@@ -44434,6 +47101,11 @@ function HolyFarmRefreshPage()
 
     HolySetGroupboxVisible(
         FarmExtraUtilitiesBox,
+        isExtra
+    )
+
+    HolySetGroupboxVisible(
+        FarmFruitAutomationBox,
         isExtra
     )
 
@@ -55874,6 +58546,245 @@ and type(FarmCollectionBox.AddInput) == "function" then
     end)
 end
 
+if FarmFruitAutomationBox
+and type(FarmFruitAutomationBox.AddToggle) == "function" then
+
+    HOLY_FRUIT_AUTOMATION_UI.AutoDropToggle =
+        FarmFruitAutomationBox:AddToggle(
+            "HolyFruitAutomationAutoDropFruits",
+            {
+                Text =
+                    "Auto Drop Fruits",
+
+                Default =
+                    HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits == true,
+
+                Tooltip =
+                    "Drops matching fruit tools from your backpack using the filters below.",
+            }
+        )
+
+    HOLY_FRUIT_AUTOMATION_UI.AutoDropToggle:OnChanged(function(value)
+
+        HolyFruitAutomationSetAutoDropFruits(
+            value == true
+        )
+    end)
+
+    HOLY_FRUIT_AUTOMATION_UI.AutoPickupToggle =
+        FarmFruitAutomationBox:AddToggle(
+            "HolyFruitAutomationAutoCollectDroppedFruits",
+            {
+                Text =
+                    "Auto Collect Dropped Fruits",
+
+                Default =
+                    HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits == true,
+
+                Tooltip =
+                    "Picks up matching dropped fruits near you without teleporting.",
+            }
+        )
+
+    HOLY_FRUIT_AUTOMATION_UI.AutoPickupToggle:OnChanged(function(value)
+
+        HolyFruitAutomationSetAutoCollectDroppedFruits(
+            value == true
+        )
+    end)
+end
+
+if FarmFruitAutomationBox
+and type(FarmFruitAutomationBox.AddDropdown) == "function" then
+
+    HOLY_FRUIT_AUTOMATION_UI.FruitsDropdown =
+        FarmFruitAutomationBox:AddDropdown(
+            "HolyFruitAutomationSelectedFruits",
+            {
+                Text =
+                    "Fruits",
+
+                Values =
+                    HolyFruitAutomationGetFruitDropdownValues(),
+
+                Default =
+                    HolyFruitAutomationNormalizeFruitSelection(
+                        HOLY_FRUIT_AUTOMATION_STATE.SelectedFruits
+                    ),
+
+                Multi =
+                    true,
+
+                Searchable =
+                    true,
+
+                MaxVisibleDropdownItems =
+                    10,
+
+                Tooltip =
+                    "Empty or All means every fruit. Used by Auto Drop Fruits and Auto Collect Dropped Fruits.",
+            }
+        )
+
+    HOLY_FRUIT_AUTOMATION_UI.FruitsDropdown:OnChanged(function(value)
+
+        HolyFruitAutomationSetSelectedFruits(
+            value
+        )
+    end)
+
+    HOLY_FRUIT_AUTOMATION_UI.MutationsDropdown =
+        FarmFruitAutomationBox:AddDropdown(
+            "HolyFruitAutomationSelectedMutations",
+            {
+                Text =
+                    "Mutations",
+
+                Values =
+                    HolyFruitAutomationGetMutationDropdownValues(),
+
+                Default =
+                    HolyFruitAutomationNormalizeMutationSelection(
+                        HOLY_FRUIT_AUTOMATION_STATE.SelectedMutations
+                    ),
+
+                Multi =
+                    true,
+
+                Searchable =
+                    true,
+
+                MaxVisibleDropdownItems =
+                    8,
+
+                Tooltip =
+                    "Empty or All means every mutation.",
+            }
+        )
+
+    HOLY_FRUIT_AUTOMATION_UI.MutationsDropdown:OnChanged(function(value)
+
+        HolyFruitAutomationSetSelectedMutations(
+            value
+        )
+    end)
+
+    HOLY_FRUIT_AUTOMATION_UI.WeightModeDropdown =
+        FarmFruitAutomationBox:AddDropdown(
+            "HolyFruitAutomationWeightMode",
+            {
+                Text =
+                    "Weight Mode",
+
+                Values = {
+                    "Above",
+                    "Below",
+                },
+
+                Default =
+                    HolyFruitAutomationNormalizeWeightMode(
+                        HOLY_FRUIT_AUTOMATION_STATE.WeightMode
+                        or "Above"
+                    ),
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    2,
+
+                Tooltip =
+                    "Above keeps fruits at or above Weight Kg. Below keeps fruits at or below Weight Kg.",
+            }
+        )
+
+    HOLY_FRUIT_AUTOMATION_UI.WeightModeDropdown:OnChanged(function(value)
+
+        HolyFruitAutomationSetWeightMode(
+            value
+        )
+    end)
+end
+
+if FarmFruitAutomationBox
+and type(FarmFruitAutomationBox.AddInput) == "function" then
+
+    HOLY_FRUIT_AUTOMATION_UI.WeightInput =
+        FarmFruitAutomationBox:AddInput(
+            "HolyFruitAutomationWeightKg",
+            {
+                Text =
+                    "Weight Kg (0 = off)",
+
+                Default =
+                    tostring(
+                        HolyFarmReadWeightThresholdKg(
+                            HOLY_FRUIT_AUTOMATION_STATE.WeightKg
+                            or "0"
+                        )
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "0 disables the weight filter.",
+            }
+        )
+
+    HOLY_FRUIT_AUTOMATION_UI.WeightInput:OnChanged(function(value)
+
+        HolyFruitAutomationSetWeightKg(
+            value
+        )
+    end)
+
+    HOLY_FRUIT_AUTOMATION_UI.DropLimitInput =
+        FarmFruitAutomationBox:AddInput(
+            "HolyFruitAutomationDropLimit",
+            {
+                Text =
+                    "Drop Limit (0 = no limit)",
+
+                Default =
+                    tostring(
+                        HolyFruitAutomationReadDropLimit(
+                            HOLY_FRUIT_AUTOMATION_STATE.DropLimit
+                            or "0"
+                        )
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Auto Drop Fruits stops after this many drops. 0 means no limit.",
+            }
+        )
+
+    HOLY_FRUIT_AUTOMATION_UI.DropLimitInput:OnChanged(function(value)
+
+        HolyFruitAutomationSetDropLimit(
+            value
+        )
+    end)
+end
+
 local function HolyFarmAddPageNote(box, text)
 
     if type(box) ~= "table"
@@ -55958,9 +58869,27 @@ task.defer(function()
         false
     )
 
+    HolyFruitAutomationRefreshDropdowns(
+        false
+    )
+
     if HOLY_FARM_STATE.AutoCollectFruits == true then
 
         HolyFarmStartAutoCollect(
+            "startup"
+        )
+    end
+
+    if HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits == true then
+
+        HolyFruitAutomationStartDrop(
+            "startup"
+        )
+    end
+
+    if HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits == true then
+
+        HolyFruitAutomationStartPickup(
             "startup"
         )
     end
