@@ -74,7 +74,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-scanner-20260702_error_gui_cleaner_v2"
+    "holy-scanner-20260630-hop_fix_autohide_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -262,20 +262,6 @@ HOLY_SCANNER_SERVER_STATE = {
 
     RecentServers = {},
     FailedServers = {},
-}
-
-HOLY_SCANNER_ERROR_GUI_STATE = {
-    Running = false,
-    Token = nil,
-
-    HiddenCount = 0,
-    LastHiddenAt = 0,
-    LastAppliedAt = 0,
-
-    LastReason = "",
-    LastCode = "",
-
-    WatchedRoots = {},
 }
 
 HOLY_SCANNER_REPORT_STATE = {
@@ -7204,375 +7190,6 @@ function HolyScannerGetPlayerGui()
     )
 end
 
-function HolyScannerTeleportErrorInfo(text)
-
-    text =
-        HolyScannerCleanText(
-            text
-        )
-
-    local lower =
-        text:lower()
-
-    if lower == "" then
-        return false,
-            "",
-            ""
-    end
-
-    local code =
-        ""
-
-    if lower:find("772", 1, true) then
-
-        code =
-            "772"
-
-    elseif lower:find("529", 1, true) then
-
-        code =
-            "529"
-    end
-
-    if lower:find("error code", 1, true) then
-
-        return true,
-            code ~= ""
-            and (
-                "error code "
-                .. code
-            )
-            or "error code",
-            code
-    end
-
-    local checks = {
-        {
-            Text = "server is full",
-            Reason = "server is full",
-            Code = "772",
-        },
-        {
-            Text = "experience is full",
-            Reason = "experience is full",
-            Code = "772",
-        },
-        {
-            Text = "this experience is full",
-            Reason = "experience is full",
-            Code = "772",
-        },
-        {
-            Text = "another server",
-            Reason = "try another server",
-            Code = "772",
-        },
-        {
-            Text = "please try again later",
-            Reason = "please try again later",
-            Code = code,
-        },
-        {
-            Text = "teleport failed",
-            Reason = "teleport failed",
-            Code = code,
-        },
-        {
-            Text = "teleport init failed",
-            Reason = "teleport init failed",
-            Code = code,
-        },
-        {
-            Text = "join error",
-            Reason = "join error",
-            Code = code,
-        },
-        {
-            Text = "attempted to teleport",
-            Reason = "teleport error",
-            Code = code,
-        },
-        {
-            Text = "failed to connect",
-            Reason = "failed to connect",
-            Code = code,
-        },
-        {
-            Text = "disconnected",
-            Reason = "disconnected",
-            Code = code,
-        },
-    }
-
-    for _, row in ipairs(checks) do
-
-        if lower:find(row.Text, 1, true) then
-
-            return true,
-                row.Reason,
-                row.Code or code
-        end
-    end
-
-    return false,
-        "",
-        ""
-end
-
-function HolyScannerReadGuiText(instance)
-
-    if typeof(instance) ~= "Instance" then
-        return ""
-    end
-
-    if instance:IsA("TextLabel")
-    or instance:IsA("TextButton")
-    or instance:IsA("TextBox") then
-
-        local ok,
-            text =
-            pcall(function()
-
-                return instance.Text
-            end)
-
-        if ok == true then
-
-            return HolyScannerCleanText(
-                text
-            )
-        end
-    end
-
-    return ""
-end
-
-function HolyScannerGuiObjectVisible(instance)
-
-    if typeof(instance) ~= "Instance" then
-        return false
-    end
-
-    local current =
-        instance
-
-    while current
-    and current ~= game do
-
-        if current:IsA("GuiObject") then
-
-            local visible =
-                true
-
-            local size =
-                Vector2.new(
-                    10,
-                    10
-                )
-
-            pcall(function()
-
-                visible =
-                    current.Visible == true
-
-                size =
-                    current.AbsoluteSize
-            end)
-
-            if visible ~= true then
-                return false
-            end
-
-            if current == instance
-            and typeof(size) == "Vector2"
-            and (
-                size.X <= 2
-                or size.Y <= 2
-            ) then
-
-                return false
-            end
-        end
-
-        if current:IsA("LayerCollector") then
-
-            local enabled =
-                true
-
-            pcall(function()
-
-                enabled =
-                    current.Enabled == true
-            end)
-
-            if enabled ~= true then
-                return false
-            end
-        end
-
-        current =
-            current.Parent
-    end
-
-    return true
-end
-
-function HolyScannerFindTeleportErrorModalRoot(instance)
-
-    if typeof(instance) ~= "Instance" then
-        return nil
-    end
-
-    local current =
-        instance
-
-    local lastGuiObject =
-        nil
-
-    local namedPrompt =
-        nil
-
-    while current
-    and current ~= game do
-
-        if current:IsA("GuiObject") then
-
-            if current ~= instance then
-
-                lastGuiObject =
-                    current
-
-                local name =
-                    tostring(current.Name or "")
-                        :lower()
-
-                if name:find("error", 1, true)
-                or name:find("prompt", 1, true)
-                or name:find("modal", 1, true)
-                or name:find("dialog", 1, true)
-                or name:find("message", 1, true) then
-
-                    namedPrompt =
-                        current
-                end
-            end
-
-        elseif current:IsA("LayerCollector") then
-
-            return namedPrompt
-                or lastGuiObject
-                or current
-        end
-
-        current =
-            current.Parent
-    end
-
-    return namedPrompt
-        or lastGuiObject
-end
-
-function HolyScannerFindButtonInside(root)
-
-    if typeof(root) ~= "Instance" then
-        return nil
-    end
-
-    local descendants =
-        {}
-
-    pcall(function()
-
-        descendants =
-            root:GetDescendants()
-    end)
-
-    local fallback =
-        nil
-
-    for _, descendant in ipairs(descendants) do
-
-        if descendant:IsA("GuiButton")
-        and HolyScannerGuiObjectVisible(descendant) == true then
-
-            local text =
-                HolyScannerReadGuiText(
-                    descendant
-                )
-
-            local lower =
-                text:lower()
-
-            if lower == "ok"
-            or lower == "okay"
-            or lower == "cancel"
-            or lower == "close"
-            or lower == "retry"
-            or lower == "leave" then
-
-                return descendant
-            end
-
-            fallback =
-                fallback
-                or descendant
-        end
-    end
-
-    return fallback
-end
-
-function HolyScannerHideTeleportGui(instance)
-
-    if typeof(instance) ~= "Instance" then
-        return false
-    end
-
-    local changed =
-        false
-
-    pcall(function()
-
-        if instance:IsA("LayerCollector") then
-
-            instance.Enabled =
-                false
-
-            changed =
-                true
-        end
-    end)
-
-    pcall(function()
-
-        if instance:IsA("GuiObject") then
-
-            instance.Visible =
-                false
-
-            instance.Active =
-                false
-
-            changed =
-                true
-        end
-    end)
-
-    pcall(function()
-
-        if instance:IsA("GuiObject") then
-
-            instance.Parent =
-                nil
-
-            changed =
-                true
-        end
-    end)
-
-    return changed
-end
-
 function HolyScannerFindTeleportErrorTextAndButton()
 
     local roots = {
@@ -7583,84 +7200,75 @@ function HolyScannerFindTeleportErrorTextAndButton()
     local foundError =
         false
 
-    local foundButton =
+    local okButton =
         nil
-
-    local foundRoot =
-        nil
-
-    local foundReason =
-        ""
-
-    local foundCode =
-        ""
 
     for _, root in ipairs(roots) do
 
         if typeof(root) == "Instance" then
 
-            local descendants =
-                {}
-
-            pcall(function()
-
+            local ok,
                 descendants =
-                    root:GetDescendants()
-            end)
+                pcall(function()
 
-            for _, descendant in ipairs(descendants) do
+                    return root:GetDescendants()
+                end)
 
-                if descendant:IsA("GuiButton")
-                and foundButton == nil
-                and HolyScannerGuiObjectVisible(descendant) == true then
+            if ok == true
+            and type(descendants) == "table" then
 
-                    foundButton =
-                        descendant
-                end
+                for _, descendant in ipairs(descendants) do
 
-                if descendant:IsA("TextLabel")
-                or descendant:IsA("TextButton")
-                or descendant:IsA("TextBox") then
+                    if descendant:IsA("TextLabel")
+                    or descendant:IsA("TextButton")
+                    or descendant:IsA("TextBox") then
 
-                    local text =
-                        HolyScannerReadGuiText(
-                            descendant
-                        )
+                        local text =
+                            HolyScannerCleanText(
+                                pcall(function()
 
-                    local matched,
-                        reason,
-                        code =
-                        HolyScannerTeleportErrorInfo(
-                            text
-                        )
-
-                    if matched == true then
-
-                        foundError =
-                            true
-
-                        foundReason =
-                            reason
-
-                        foundCode =
-                            code
-
-                        foundRoot =
-                            HolyScannerFindTeleportErrorModalRoot(
-                                descendant
+                                    return descendant.Text
+                                end)
                             )
 
-                        foundButton =
-                            HolyScannerFindButtonInside(
-                                foundRoot
-                            )
-                            or foundButton
+                        local readOk,
+                            rawText =
+                            pcall(function()
 
-                        return foundError,
-                            foundButton,
-                            foundRoot,
-                            foundReason,
-                            foundCode
+                                return descendant.Text
+                            end)
+
+                        if readOk == true then
+
+                            text =
+                                HolyScannerCleanText(
+                                    rawText
+                                )
+                        end
+
+                        local lower =
+                            text:lower()
+
+                        if lower:find("error code: 772", 1, true)
+                        or lower:find("server is full", 1, true)
+                        or lower:find("please try again later", 1, true)
+                        or lower:find("join error", 1, true)
+                        or lower:find("error code: 529", 1, true) then
+
+                            foundError =
+                                true
+                        end
+
+                        if descendant:IsA("TextButton") then
+
+                            if lower == "ok"
+                            or lower == "cancel" then
+
+                                okButton =
+                                    okButton
+                                    or descendant
+                            end
+                        end
                     end
                 end
             end
@@ -7668,49 +7276,18 @@ function HolyScannerFindTeleportErrorTextAndButton()
     end
 
     return foundError,
-        foundButton,
-        foundRoot,
-        foundReason,
-        foundCode
+        okButton
 end
 
 function HolyScannerDismissTeleportErrorPrompt()
 
     local foundError,
-        button,
-        modalRoot,
-        reason,
-        code =
+        button =
         HolyScannerFindTeleportErrorTextAndButton()
 
     if foundError ~= true then
-        return false,
-            "",
-            ""
+        return false
     end
-
-    HOLY_SCANNER_ERROR_GUI_STATE =
-        type(HOLY_SCANNER_ERROR_GUI_STATE) == "table"
-        and HOLY_SCANNER_ERROR_GUI_STATE
-        or {}
-
-    HOLY_SCANNER_ERROR_GUI_STATE.HiddenCount =
-        (
-            tonumber(
-                HOLY_SCANNER_ERROR_GUI_STATE.HiddenCount
-            )
-            or 0
-        )
-        + 1
-
-    HOLY_SCANNER_ERROR_GUI_STATE.LastHiddenAt =
-        os.clock()
-
-    HOLY_SCANNER_ERROR_GUI_STATE.LastReason =
-        tostring(reason or "join error popup")
-
-    HOLY_SCANNER_ERROR_GUI_STATE.LastCode =
-        tostring(code or "")
 
     if typeof(button) == "Instance"
     and button:IsA("GuiButton") then
@@ -7726,17 +7303,8 @@ function HolyScannerDismissTeleportErrorPrompt()
                 center
             )
 
-            task.wait(
-                0.04
-            )
+            return true
         end
-    end
-
-    if typeof(modalRoot) == "Instance" then
-
-        HolyScannerHideTeleportGui(
-            modalRoot
-        )
     end
 
     HolyScannerPressKey(
@@ -7744,7 +7312,7 @@ function HolyScannerDismissTeleportErrorPrompt()
     )
 
     task.wait(
-        0.035
+        0.08
     )
 
     HolyScannerPressKey(
@@ -7752,124 +7320,12 @@ function HolyScannerDismissTeleportErrorPrompt()
     )
 
     task.wait(
-        0.035
+        0.08
     )
 
     HolyScannerClickAt(
         HolyScannerLoadingGetScreenCenter()
     )
-
-    return true,
-        tostring(reason or "join error popup"),
-        tostring(code or "")
-end
-
-function HolyScannerApplyTeleportFailure(reason, source)
-
-    HOLY_SCANNER_ERROR_GUI_STATE =
-        type(HOLY_SCANNER_ERROR_GUI_STATE) == "table"
-        and HOLY_SCANNER_ERROR_GUI_STATE
-        or {}
-
-    local now =
-        os.clock()
-
-    if now - (
-        tonumber(
-            HOLY_SCANNER_ERROR_GUI_STATE.LastAppliedAt
-        )
-        or 0
-    ) < 0.25 then
-
-        return false
-    end
-
-    HOLY_SCANNER_ERROR_GUI_STATE.LastAppliedAt =
-        now
-
-    reason =
-        HolyScannerCleanText(
-            reason
-        )
-
-    if reason == "" then
-        reason =
-            "join error popup"
-    end
-
-    local targetServer =
-        HolyScannerCleanText(
-            HOLY_SCANNER_SERVER_STATE.LastTargetServer
-        )
-
-    if targetServer ~= "" then
-
-        HolyScannerServerRememberFailed(
-            targetServer,
-            reason
-        )
-
-        pcall(function()
-
-            HolyScannerFleetJoinResult(
-                targetServer,
-                false,
-                reason
-            )
-
-            HolyScannerFleetClearPendingJoin()
-        end)
-    end
-
-    local lower =
-        reason:lower()
-
-    local fastFullFailure =
-        lower:find("772", 1, true) ~= nil
-        or lower:find("full", 1, true) ~= nil
-        or lower:find("another server", 1, true) ~= nil
-
-    if fastFullFailure == true then
-
-        HOLY_SCANNER_SERVER_STATE.TeleportBackoffUntil =
-            os.clock()
-            + 0.75
-            + (
-                math.random()
-                * 0.25
-            )
-
-        HOLY_SCANNER_SERVER_STATE.TeleportFailCount =
-            0
-
-        HOLY_SCANNER_SERVER_STATE.LastTeleportError =
-            reason
-
-        HOLY_SCANNER_SERVER_STATE.LastTeleportFailAt =
-            os.clock()
-
-        HolyScannerSetStatus(
-            "Full server hidden, retrying"
-        )
-
-    else
-
-        HolyScannerServerSetBackoff(
-            reason
-        )
-    end
-
-    HOLY_SCANNER_SERVER_STATE.HopToken =
-        (
-            tonumber(
-                HOLY_SCANNER_SERVER_STATE.HopToken
-            )
-            or 0
-        )
-        + 1
-
-    HOLY_SCANNER_SERVER_STATE.Hopping =
-        false
 
     return true
 end
@@ -7882,134 +7338,6 @@ function HolyScannerStartTeleportWatchers()
 
     HOLY_SCANNER_SERVER_STATE.TeleportErrorWatcherStarted =
         true
-
-    HOLY_SCANNER_ERROR_GUI_STATE =
-        type(HOLY_SCANNER_ERROR_GUI_STATE) == "table"
-        and HOLY_SCANNER_ERROR_GUI_STATE
-        or {}
-
-    HOLY_SCANNER_ERROR_GUI_STATE.WatchedRoots =
-        type(HOLY_SCANNER_ERROR_GUI_STATE.WatchedRoots) == "table"
-        and HOLY_SCANNER_ERROR_GUI_STATE.WatchedRoots
-        or {}
-
-    local function processTeleportPopup(source)
-
-        local hidden,
-            reason,
-            code =
-            HolyScannerDismissTeleportErrorPrompt()
-
-        if hidden == true then
-
-            local finalReason =
-                HolyScannerCleanText(
-                    reason
-                )
-
-            if code ~= ""
-            and finalReason:find(code, 1, true) == nil then
-
-                finalReason =
-                    finalReason
-                    .. " "
-                    .. code
-            end
-
-            HolyScannerApplyTeleportFailure(
-                finalReason,
-                source
-            )
-
-            return true
-        end
-
-        return false
-    end
-
-    local function watchRoot(root)
-
-        if typeof(root) ~= "Instance" then
-            return false
-        end
-
-        if HOLY_SCANNER_ERROR_GUI_STATE.WatchedRoots[root] == true then
-            return true
-        end
-
-        HOLY_SCANNER_ERROR_GUI_STATE.WatchedRoots[root] =
-            true
-
-        local ok =
-            pcall(function()
-
-                HolyScannerTrackConnection(
-                    root.DescendantAdded:Connect(function(descendant)
-
-                        task.defer(function()
-
-                            if HOLY_SCANNER_RUNNING ~= true then
-                                return
-                            end
-
-                            if typeof(descendant) ~= "Instance" then
-                                return
-                            end
-
-                            if descendant:IsA("TextLabel")
-                            or descendant:IsA("TextButton")
-                            or descendant:IsA("TextBox")
-                            or descendant:IsA("GuiObject")
-                            or descendant:IsA("LayerCollector") then
-
-                                processTeleportPopup(
-                                    "gui added"
-                                )
-                            end
-                        end)
-                    end)
-                )
-            end)
-
-        return ok == true
-    end
-
-    pcall(function()
-
-        watchRoot(
-            CoreGui
-        )
-    end)
-
-    pcall(function()
-
-        watchRoot(
-            HolyScannerGetPlayerGui()
-        )
-    end)
-
-    pcall(function()
-
-        HolyScannerTrackConnection(
-            LocalPlayer.ChildAdded:Connect(function(child)
-
-                if child.Name == "PlayerGui"
-                or child:IsA("PlayerGui") then
-
-                    task.defer(function()
-
-                        watchRoot(
-                            child
-                        )
-
-                        processTeleportPopup(
-                            "player gui added"
-                        )
-                    end)
-                end
-            end)
-        )
-    end)
 
     pcall(function()
 
@@ -8025,14 +7353,37 @@ function HolyScannerStartTeleportWatchers()
                     .. " "
                     .. tostring(errorMessage or "")
 
-                task.defer(function()
+                local targetServer =
+                    HolyScannerCleanText(
+                        HOLY_SCANNER_SERVER_STATE.LastTargetServer
+                    )
 
-                    HolyScannerDismissTeleportErrorPrompt()
-                end)
+                if targetServer ~= "" then
 
-                HolyScannerApplyTeleportFailure(
-                    reason,
-                    "TeleportInitFailed"
+                    HolyScannerServerRememberFailed(
+                        targetServer,
+                        reason
+                    )
+                end
+
+                HolyScannerServerSetBackoff(
+                    reason
+                )
+
+                HOLY_SCANNER_SERVER_STATE.HopToken =
+                    (
+                        tonumber(
+                            HOLY_SCANNER_SERVER_STATE.HopToken
+                        )
+                        or 0
+                    )
+                    + 1
+
+                HOLY_SCANNER_SERVER_STATE.Hopping =
+                    false
+
+                task.defer(
+                    HolyScannerDismissTeleportErrorPrompt
                 )
             end)
         )
@@ -8042,13 +7393,40 @@ function HolyScannerStartTeleportWatchers()
 
         while HOLY_SCANNER_RUNNING == true do
 
-            watchRoot(
-                HolyScannerGetPlayerGui()
-            )
+            local found =
+                HolyScannerDismissTeleportErrorPrompt()
 
-            processTeleportPopup(
-                "loop"
-            )
+            if found == true then
+
+                local targetServer =
+                    HolyScannerCleanText(
+                        HOLY_SCANNER_SERVER_STATE.LastTargetServer
+                    )
+
+                if targetServer ~= "" then
+
+                    HolyScannerServerRememberFailed(
+                        targetServer,
+                        "join error popup"
+                    )
+                end
+
+                HolyScannerServerSetBackoff(
+                    "join error popup"
+                )
+
+                HOLY_SCANNER_SERVER_STATE.HopToken =
+                    (
+                        tonumber(
+                            HOLY_SCANNER_SERVER_STATE.HopToken
+                        )
+                        or 0
+                    )
+                    + 1
+
+                HOLY_SCANNER_SERVER_STATE.Hopping =
+                    false
+            end
 
             if HOLY_SCANNER_SERVER_STATE.Hopping == true then
 
@@ -8061,19 +7439,39 @@ function HolyScannerStartTeleportWatchers()
                 if lastHopAt > 0
                 and os.clock() - lastHopAt >= 18 then
 
-                    HolyScannerDismissTeleportErrorPrompt()
+                    local targetServer =
+                        HolyScannerCleanText(
+                            HOLY_SCANNER_SERVER_STATE.LastTargetServer
+                        )
 
-                    HolyScannerApplyTeleportFailure(
-                        "teleport stuck",
-                        "timeout"
+                    if targetServer ~= "" then
+
+                        HolyScannerServerRememberFailed(
+                            targetServer,
+                            "teleport stuck"
+                        )
+                    end
+
+                    HolyScannerServerSetBackoff(
+                        "teleport stuck"
                     )
+
+                    HOLY_SCANNER_SERVER_STATE.HopToken =
+                        (
+                            tonumber(
+                                HOLY_SCANNER_SERVER_STATE.HopToken
+                            )
+                            or 0
+                        )
+                        + 1
+
+                    HOLY_SCANNER_SERVER_STATE.Hopping =
+                        false
                 end
             end
 
             task.wait(
-                HOLY_SCANNER_SERVER_STATE.Hopping == true
-                and 0.10
-                or 0.35
+                1
             )
         end
     end)
