@@ -77,7 +77,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-scanner-20260702-clearerror_005_v1"
+    "holy-scanner-20260702-fast_retry_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -124,7 +124,7 @@ local MAX_NO_TARGET_SERVER_AGE_SECONDS =
     120
 
 local ERROR_POPUP_REHOP_DELAY =
-    5
+    1.25
 
 local ERROR_GUI_CLEANER_ENABLED =
     true
@@ -182,7 +182,16 @@ local SERVER_FAILED_COOLDOWN =
     120
 
 local SERVER_RETRY_DELAY =
-    1.75
+    0.75
+
+local SERVER_FAST_RETRY_DELAY =
+    0.35
+
+local SERVER_FAST_RETRY_MAX_ATTEMPTS =
+    8
+
+local SERVER_FAST_RETRY_LIMIT_COOLDOWN =
+    2.50
 
 local SERVER_TELEPORT_TIMEOUT =
     6
@@ -194,7 +203,7 @@ local SERVER_JOIN_BACKOFF_MAX =
     22
 
 local SERVER_MIN_FREE_SLOTS =
-    1
+    3
 
 local SERVER_PICK_TOP_RANDOM =
     12
@@ -291,6 +300,10 @@ HOLY_SCANNER_SERVER_STATE = {
     HopAttempt = 0,
     LastHopAt = 0,
 
+    FastRetryCount = 0,
+    LastFastRetryAt = 0,
+    LastFastRetryReason = "",
+
     ServerJoinedAt =
         os.time(),
 
@@ -356,6 +369,7 @@ HOLY_SCANNER_ERROR_GUI_STATE = {
     ClearCount = 0,
     LastClearAt = 0,
     LastDetectedAt = 0,
+    LastDetectedText = "",
     LastRecoveryAt = 0,
 }
 
@@ -6111,6 +6125,15 @@ function HolyScannerRefreshServerSession()
 
         HOLY_SCANNER_SERVER_STATE.LastErrorPopupAt =
             0
+
+        HOLY_SCANNER_SERVER_STATE.FastRetryCount =
+            0
+
+        HOLY_SCANNER_SERVER_STATE.LastFastRetryAt =
+            0
+
+        HOLY_SCANNER_SERVER_STATE.LastFastRetryReason =
+            ""
     end
 
     if tonumber(HOLY_SCANNER_SERVER_STATE.ServerJoinedAt) == nil
@@ -7956,6 +7979,231 @@ function HolyScannerServerClearBackoff()
     return true
 end
 
+function HolyScannerTeleportReasonIsFastRetry(reason)
+
+    local lower =
+        HolyScannerCleanText(
+            reason
+        )
+        :lower()
+
+    if lower == "" then
+        return false
+    end
+
+    -- These are real Roblox/network backoff cases.
+    -- Do not spam retry these.
+    if lower:find("529", 1, true)
+    or lower:find("http", 1, true)
+    or lower:find("rate limit", 1, true)
+    or lower:find("too many", 1, true) then
+
+        return false
+    end
+
+    if lower:find("gamefull", 1, true)
+    or lower:find("game full", 1, true)
+    or lower:find("requested experience is full", 1, true)
+    or lower:find("server is full", 1, true)
+    or lower:find("error code: 772", 1, true)
+    or lower:find("772", 1, true)
+    or lower:find("possible full server", 1, true)
+    or lower:find("teleport timeout", 1, true)
+    or lower:find("teleport stuck", 1, true)
+    or lower:find("join error popup", 1, true) then
+
+        return true
+    end
+
+    return false
+end
+
+function HolyScannerReportTeleportFailure(targetServer, reason)
+
+    targetServer =
+        HolyScannerCleanText(
+            targetServer
+            or HOLY_SCANNER_SERVER_STATE.LastTargetServer
+            or ""
+        )
+
+    reason =
+        HolyScannerCleanText(
+            reason
+            or "teleport failed"
+        )
+
+    if reason == "" then
+        reason =
+            "teleport failed"
+    end
+
+    if targetServer ~= "" then
+
+        HolyScannerServerRememberFailed(
+            targetServer,
+            reason
+        )
+
+        pcall(function()
+
+            HolyScannerFleetJoinResult(
+                targetServer,
+                false,
+                reason
+            )
+
+            HolyScannerFleetClearPendingJoin()
+        end)
+    end
+
+    return true
+end
+
+function HolyScannerResetHopLockForRetry(reason)
+
+    HOLY_SCANNER_SERVER_STATE.HopToken =
+        (
+            tonumber(
+                HOLY_SCANNER_SERVER_STATE.HopToken
+            )
+            or 0
+        )
+        + 1
+
+    HOLY_SCANNER_SERVER_STATE.Hopping =
+        false
+
+    return true
+end
+
+function HolyScannerFastRetryTeleport(reason, targetServer)
+
+    reason =
+        HolyScannerCleanText(
+            reason
+            or "fast retry"
+        )
+
+    if reason == "" then
+        reason =
+            "fast retry"
+    end
+
+    local now =
+        os.clock()
+
+    if now - (
+        tonumber(
+            HOLY_SCANNER_SERVER_STATE.LastFastRetryAt
+        )
+        or 0
+    ) < math.max(
+        0.20,
+        SERVER_FAST_RETRY_DELAY
+    ) then
+
+        return true
+    end
+
+    HOLY_SCANNER_SERVER_STATE.LastFastRetryAt =
+        now
+
+    HOLY_SCANNER_SERVER_STATE.LastFastRetryReason =
+        reason
+
+    HolyScannerReportTeleportFailure(
+        targetServer,
+        reason
+    )
+
+    HolyScannerServerClearBackoff()
+
+    HolyScannerClearRobloxErrorGui(
+        "fast retry"
+    )
+
+    local attempt =
+        (
+            tonumber(
+                HOLY_SCANNER_SERVER_STATE.FastRetryCount
+            )
+            or 0
+        )
+        + 1
+
+    local retryDelay =
+        SERVER_FAST_RETRY_DELAY
+
+    local statusText =
+        "Full server, fast retry "
+        .. tostring(attempt)
+        .. "/"
+        .. tostring(SERVER_FAST_RETRY_MAX_ATTEMPTS)
+
+    if attempt >= SERVER_FAST_RETRY_MAX_ATTEMPTS then
+
+        retryDelay =
+            SERVER_FAST_RETRY_LIMIT_COOLDOWN
+
+        HOLY_SCANNER_SERVER_STATE.FastRetryCount =
+            0
+
+        statusText =
+            "Fast retry limit reached, cooling "
+            .. tostring(
+                math.floor(
+                    retryDelay + 0.5
+                )
+            )
+            .. "s"
+
+    else
+
+        HOLY_SCANNER_SERVER_STATE.FastRetryCount =
+            attempt
+    end
+
+    HolyScannerResetHopLockForRetry(
+        reason
+    )
+
+    HolyScannerSetStatus(
+        statusText
+    )
+
+    task.delay(retryDelay, function()
+
+        if HOLY_SCANNER_RUNNING ~= true then
+            return
+        end
+
+        if HOLY_SCANNER_STATE.HuntMode ~= true then
+            return
+        end
+
+        if HOLY_SCANNER_SERVER_STATE.Hopping == true then
+            return
+        end
+
+        if HolyScannerHuntShouldStayOnCurrentServer(
+            true
+        ) == true then
+
+            return
+        end
+
+        HolyScannerServerClearBackoff()
+
+        HolyScannerQueueServerHop(
+            "fast retry: "
+                .. reason
+        )
+    end)
+
+    return true
+end
+
 function HolyScannerGetPlayerGui()
 
     if not LocalPlayer then
@@ -8088,6 +8336,9 @@ function HolyScannerFindTeleportErrorTextAndButton()
     local foundError =
         false
 
+    local errorText =
+        ""
+
     local okButton =
         nil
 
@@ -8111,14 +8362,6 @@ function HolyScannerFindTeleportErrorTextAndButton()
                     or descendant:IsA("TextButton")
                     or descendant:IsA("TextBox") then
 
-                        local text =
-                            HolyScannerCleanText(
-                                pcall(function()
-
-                                    return descendant.Text
-                                end)
-                            )
-
                         local readOk,
                             rawText =
                             pcall(function()
@@ -8126,31 +8369,39 @@ function HolyScannerFindTeleportErrorTextAndButton()
                                 return descendant.Text
                             end)
 
-                        if readOk == true then
-
-                            text =
-                                HolyScannerCleanText(
-                                    rawText
-                                )
-                        end
+                        local text =
+                            HolyScannerCleanText(
+                                readOk == true
+                                and rawText
+                                or ""
+                            )
 
                         local lower =
                             text:lower()
 
                         if lower:find("error code: 772", 1, true)
                         or lower:find("server is full", 1, true)
+                        or lower:find("requested experience is full", 1, true)
                         or lower:find("please try again later", 1, true)
                         or lower:find("join error", 1, true)
+                        or lower:find("teleport failed", 1, true)
                         or lower:find("error code: 529", 1, true) then
 
                             foundError =
                                 true
+
+                            if errorText == "" then
+
+                                errorText =
+                                    text
+                            end
                         end
 
                         if descendant:IsA("TextButton") then
 
                             if lower == "ok"
-                            or lower == "cancel" then
+                            or lower == "cancel"
+                            or lower:find("join another", 1, true) then
 
                                 okButton =
                                     okButton
@@ -8164,13 +8415,15 @@ function HolyScannerFindTeleportErrorTextAndButton()
     end
 
     return foundError,
-        okButton
+        okButton,
+        errorText
 end
 
 function HolyScannerDismissTeleportErrorPrompt()
 
     local foundError,
-        button =
+        button,
+        errorText =
         HolyScannerFindTeleportErrorTextAndButton()
 
     if foundError ~= true then
@@ -8184,6 +8437,11 @@ function HolyScannerDismissTeleportErrorPrompt()
 
     HOLY_SCANNER_ERROR_GUI_STATE.LastDetectedAt =
         os.clock()
+
+    HOLY_SCANNER_ERROR_GUI_STATE.LastDetectedText =
+        HolyScannerCleanText(
+            errorText
+        )
 
     HolyScannerClearRobloxErrorGui(
         "detected teleport popup"
@@ -8258,42 +8516,32 @@ function HolyScannerHandleTeleportFailure(reason, targetServer)
             or ""
         )
 
-    if targetServer ~= "" then
+    if HolyScannerTeleportReasonIsFastRetry(
+        reason
+    ) == true then
 
-        HolyScannerServerRememberFailed(
-            targetServer,
-            reason
+        HolyScannerFastRetryTeleport(
+            reason,
+            targetServer
         )
 
-        pcall(function()
-
-            HolyScannerFleetJoinResult(
-                targetServer,
-                false,
-                reason
-            )
-
-            HolyScannerFleetClearPendingJoin()
-        end)
+        return true
     end
+
+    HolyScannerReportTeleportFailure(
+        targetServer,
+        reason
+    )
 
     HolyScannerServerSetBackoff(
         reason
     )
 
-    HOLY_SCANNER_SERVER_STATE.HopToken =
-        (
-            tonumber(
-                HOLY_SCANNER_SERVER_STATE.HopToken
-            )
-            or 0
-        )
-        + 1
+    HolyScannerResetHopLockForRetry(
+        reason
+    )
 
-    HOLY_SCANNER_SERVER_STATE.Hopping =
-        false
-
-    return true
+    return false
 end
 
 function HolyScannerRecoverFromTeleportPopup(reason)
@@ -8313,7 +8561,7 @@ function HolyScannerRecoverFromTeleportPopup(reason)
             HOLY_SCANNER_SERVER_STATE.LastErrorPopupAt
         )
         or 0
-    ) < 1.25 then
+    ) < 0.60 then
 
         return true
     end
@@ -8321,10 +8569,30 @@ function HolyScannerRecoverFromTeleportPopup(reason)
     HOLY_SCANNER_SERVER_STATE.LastErrorPopupAt =
         now
 
-    HolyScannerHandleTeleportFailure(
-        reason or "join error popup",
-        HOLY_SCANNER_SERVER_STATE.LastTargetServer
-    )
+    local popupReason =
+        HolyScannerCleanText(
+            HOLY_SCANNER_ERROR_GUI_STATE.LastDetectedText
+            or ""
+        )
+
+    if popupReason == "" then
+
+        popupReason =
+            HolyScannerCleanText(
+                reason
+                or "join error popup"
+            )
+    end
+
+    local fastRetry =
+        HolyScannerHandleTeleportFailure(
+            popupReason,
+            HOLY_SCANNER_SERVER_STATE.LastTargetServer
+        )
+
+    if fastRetry == true then
+        return true
+    end
 
     task.delay(ERROR_POPUP_REHOP_DELAY, function()
 
@@ -8376,40 +8644,10 @@ function HolyScannerStartTeleportWatchers()
                         HOLY_SCANNER_SERVER_STATE.LastTargetServer
                     )
 
-                if targetServer ~= "" then
-
-                    HolyScannerServerRememberFailed(
-                        targetServer,
-                        reason
-                    )
-
-                    pcall(function()
-
-                        HolyScannerFleetJoinResult(
-                            targetServer,
-                            false,
-                            reason
-                        )
-
-                        HolyScannerFleetClearPendingJoin()
-                    end)
-                end
-
-                HolyScannerServerSetBackoff(
-                    reason
+                HolyScannerHandleTeleportFailure(
+                    reason,
+                    targetServer
                 )
-
-                HOLY_SCANNER_SERVER_STATE.HopToken =
-                    (
-                        tonumber(
-                            HOLY_SCANNER_SERVER_STATE.HopToken
-                        )
-                        or 0
-                    )
-                    + 1
-
-                HOLY_SCANNER_SERVER_STATE.Hopping =
-                    false
 
                 task.defer(
                     HolyScannerDismissTeleportErrorPrompt
@@ -8437,34 +8675,10 @@ function HolyScannerStartTeleportWatchers()
                 if lastHopAt > 0
                 and os.clock() - lastHopAt >= 18 then
 
-                    local targetServer =
-                        HolyScannerCleanText(
-                            HOLY_SCANNER_SERVER_STATE.LastTargetServer
-                        )
-
-                    if targetServer ~= "" then
-
-                        HolyScannerServerRememberFailed(
-                            targetServer,
-                            "teleport stuck"
-                        )
-                    end
-
-                    HolyScannerServerSetBackoff(
-                        "teleport stuck"
+                    HolyScannerHandleTeleportFailure(
+                        "teleport stuck",
+                        HOLY_SCANNER_SERVER_STATE.LastTargetServer
                     )
-
-                    HOLY_SCANNER_SERVER_STATE.HopToken =
-                        (
-                            tonumber(
-                                HOLY_SCANNER_SERVER_STATE.HopToken
-                            )
-                            or 0
-                        )
-                        + 1
-
-                    HOLY_SCANNER_SERVER_STATE.Hopping =
-                        false
                 end
             end
 
@@ -8847,6 +9061,22 @@ end
 
 function HolyScannerQueueServerHop(reason)
 
+    reason =
+        tostring(
+            reason
+            or "hop"
+        )
+
+    local lowerReason =
+        reason:lower()
+
+    if lowerReason:find("manual", 1, true)
+    or lowerReason:find("admin", 1, true)
+    or lowerReason:find("fast retry", 1, true) then
+
+        HolyScannerServerClearBackoff()
+    end
+
     local backoffLeft =
         HolyScannerServerBackoffLeft()
 
@@ -9152,31 +9382,23 @@ function HolyScannerQueueServerHop(reason)
                     local failReason =
                         "teleport timeout / possible full server"
 
-                    HolyScannerServerRememberFailed(
-                        targetId,
-                        failReason
-                    )
-
-                    if targetSource == "fleet" then
-
-                        HolyScannerFleetJoinResult(
-                            targetId,
-                            false,
-                            failReason
+                    local fastRetry =
+                        HolyScannerHandleTeleportFailure(
+                            failReason,
+                            targetId
                         )
 
-                        HolyScannerFleetClearPendingJoin()
-                    end
-
-                    HolyScannerServerSetBackoff(
-                        failReason
-                    )
-
                     HolyScannerDismissTeleportErrorPrompt()
+
+                    if fastRetry == true then
+                        return
+                    end
 
                     task.wait(
                         SERVER_RETRY_DELAY
                     )
+
+                    return
 
                 else
 
@@ -9189,31 +9411,23 @@ function HolyScannerQueueServerHop(reason)
                     "teleport failed: "
                     .. tostring(err)
 
-                HolyScannerServerRememberFailed(
-                    targetId,
-                    failReason
-                )
-
-                if targetSource == "fleet" then
-
-                    HolyScannerFleetJoinResult(
-                        targetId,
-                        false,
-                        failReason
+                local fastRetry =
+                    HolyScannerHandleTeleportFailure(
+                        failReason,
+                        targetId
                     )
 
-                    HolyScannerFleetClearPendingJoin()
-                end
-
-                HolyScannerServerSetBackoff(
-                    failReason
-                )
-
                 HolyScannerDismissTeleportErrorPrompt()
+
+                if fastRetry == true then
+                    return
+                end
 
                 task.wait(
                     SERVER_RETRY_DELAY
                 )
+
+                return
             end
         end
 
@@ -9920,6 +10134,12 @@ function HolyScannerCreateUI()
 
             Func =
                 function()
+
+                    HolyScannerServerClearBackoff()
+
+                    HolyScannerCancelServerHop(
+                        "manual reset"
+                    )
 
                     HolyScannerQueueServerHop(
                         "manual"
