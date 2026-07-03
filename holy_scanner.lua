@@ -38,6 +38,226 @@ if not game:IsLoaded() then
 end
 
 --==================================================
+-- [0.5] TASK COMPATIBILITY
+--==================================================
+
+local HolyUnpack =
+    table.unpack
+    or unpack
+
+local task =
+    type(task) == "table"
+    and task
+    or {}
+
+if type(task.wait) ~= "function" then
+
+    task.wait =
+        function(seconds)
+
+            seconds =
+                tonumber(seconds)
+                or 0
+
+            if type(wait) == "function" then
+
+                return wait(seconds)
+            end
+
+            local startedAt =
+                os.clock()
+
+            repeat
+
+                coroutine.yield()
+
+            until os.clock() - startedAt >= seconds
+
+            return os.clock() - startedAt
+        end
+end
+
+if type(task.spawn) ~= "function" then
+
+    task.spawn =
+        function(callback, ...)
+
+            if type(callback) ~= "function" then
+                return nil
+            end
+
+            local args =
+                {
+                    ...
+                }
+
+            local thread =
+                coroutine.create(function()
+
+                    callback(
+                        HolyUnpack(args)
+                    )
+                end)
+
+            coroutine.resume(
+                thread
+            )
+
+            return thread
+        end
+end
+
+if type(task.defer) ~= "function" then
+
+    task.defer =
+        function(callback, ...)
+
+            return task.spawn(
+                callback,
+                ...
+            )
+        end
+end
+
+if type(task.delay) ~= "function" then
+
+    task.delay =
+        function(seconds, callback, ...)
+
+            if type(callback) ~= "function" then
+                return nil
+            end
+
+            local args =
+                {
+                    ...
+                }
+
+            return task.spawn(function()
+
+                task.wait(
+                    tonumber(seconds)
+                    or 0
+                )
+
+                callback(
+                    HolyUnpack(args)
+                )
+            end)
+        end
+end
+
+--==================================================
+-- [0.5] TASK COMPATIBILITY
+--==================================================
+
+local HolyUnpack =
+    table.unpack
+    or unpack
+
+local task =
+    type(task) == "table"
+    and task
+    or {}
+
+if type(task.wait) ~= "function" then
+
+    task.wait =
+        function(seconds)
+
+            seconds =
+                tonumber(seconds)
+                or 0
+
+            if type(wait) == "function" then
+
+                return wait(seconds)
+            end
+
+            local startedAt =
+                os.clock()
+
+            repeat
+
+                coroutine.yield()
+
+            until os.clock() - startedAt >= seconds
+
+            return os.clock() - startedAt
+        end
+end
+
+if type(task.spawn) ~= "function" then
+
+    task.spawn =
+        function(callback, ...)
+
+            if type(callback) ~= "function" then
+                return nil
+            end
+
+            local args =
+                {
+                    ...
+                }
+
+            local thread =
+                coroutine.create(function()
+
+                    callback(
+                        HolyUnpack(args)
+                    )
+                end)
+
+            coroutine.resume(
+                thread
+            )
+
+            return thread
+        end
+end
+
+if type(task.defer) ~= "function" then
+
+    task.defer =
+        function(callback, ...)
+
+            return task.spawn(
+                callback,
+                ...
+            )
+        end
+end
+
+if type(task.delay) ~= "function" then
+
+    task.delay =
+        function(seconds, callback, ...)
+
+            if type(callback) ~= "function" then
+                return nil
+            end
+
+            local args =
+                {
+                    ...
+                }
+
+            return task.spawn(function()
+
+                task.wait(
+                    tonumber(seconds)
+                    or 0
+                )
+
+                callback(
+                    HolyUnpack(args)
+                )
+            end)
+        end
+end
+
+--==================================================
 -- [1] CLEAN OLD RUN
 --==================================================
 
@@ -136,7 +356,7 @@ local ERROR_GUI_CLEANER_ENABLED =
     true
 
 local ERROR_GUI_CLEAR_INTERVAL =
-    0.005
+    0.10
 
 local ERROR_GUI_RECOVERY_SCAN_INTERVAL =
     0.15
@@ -8425,19 +8645,38 @@ function HolyScannerClearRobloxErrorGui(reason)
         and HOLY_SCANNER_ERROR_GUI_STATE
         or {}
 
+    local service =
+        GuiService
+
+    if type(cloneref) == "function" then
+
+        local cloneOk,
+            cloned =
+            pcall(function()
+
+                return cloneref(
+                    GuiService
+                )
+            end)
+
+        if cloneOk == true
+        and typeof(cloned) == "Instance" then
+
+            service =
+                cloned
+        end
+    end
+
+    if typeof(service) ~= "Instance" then
+        return false
+    end
+
+    if type(service.ClearError) ~= "function" then
+        return false
+    end
+
     local ok =
         pcall(function()
-
-            local service =
-                GuiService
-
-            if type(cloneref) == "function" then
-
-                service =
-                    cloneref(
-                        GuiService
-                    )
-            end
 
             service:ClearError()
         end)
@@ -8485,12 +8724,19 @@ function HolyScannerStartErrorGuiCleaner()
         while HOLY_SCANNER_RUNNING == true
         and HOLY_SCANNER_ERROR_GUI_STATE.Token == token do
 
-            HolyScannerClearRobloxErrorGui(
-                "fast loop"
-            )
+            pcall(function()
+
+                HolyScannerClearRobloxErrorGui(
+                    "safe loop"
+                )
+            end)
 
             task.wait(
-                ERROR_GUI_CLEAR_INTERVAL
+                math.max(
+                    0.10,
+                    tonumber(ERROR_GUI_CLEAR_INTERVAL)
+                    or 0.10
+                )
             )
         end
 
@@ -8514,7 +8760,11 @@ function HolyScannerStartErrorGuiCleaner()
             end)
 
             task.wait(
-                ERROR_GUI_RECOVERY_SCAN_INTERVAL
+                math.max(
+                    0.15,
+                    tonumber(ERROR_GUI_RECOVERY_SCAN_INTERVAL)
+                    or 0.15
+                )
             )
         end
     end)
