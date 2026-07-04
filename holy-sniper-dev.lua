@@ -294,7 +294,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260704-fruit_drop_value_v1"
+    "holy-premium-20260704-filtered_sell_value_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -1083,6 +1083,9 @@ HOLY_SHOP_STATE = {
 
     MinWeightKg = "0",
     MaxWeightKg = "0",
+
+    SellValueMode = "Below",
+    SellValueThreshold = "0",
 
     WorkerRunning = false,
     PendingCategories = {},
@@ -3116,6 +3119,20 @@ function HolySaveShopSettings()
                 or "0"
             ),
 
+        SellValueMode =
+            HolySellNormalizeValueMode(
+                HOLY_SHOP_STATE.SellValueMode
+                or "Below"
+            ),
+
+        SellValueThreshold =
+            tostring(
+                HolySellReadValueThreshold(
+                    HOLY_SHOP_STATE.SellValueThreshold
+                    or "0"
+                )
+            ),
+
         SellAllInterval =
             math.clamp(
                 tonumber(HOLY_SHOP_STATE.SellAllInterval)
@@ -3464,6 +3481,26 @@ function HolyLoadShopSettings()
         tostring(
             data.MaxWeightKg
             or "0"
+        )
+
+    HOLY_SHOP_STATE.SellValueMode =
+        HolySellNormalizeValueMode(
+            data.SellValueMode
+            or data.ValueMode
+            or data.FilteredSellValueMode
+            or "Below"
+        )
+
+    HOLY_SHOP_STATE.SellValueThreshold =
+        tostring(
+            HolySellReadValueThreshold(
+                data.SellValueThreshold
+                or data.ValueThreshold
+                or data.FilteredSellValueThreshold
+                or data.MinValue
+                or data.MaxValue
+                or "0"
+            )
         )
 
     HOLY_SHOP_STATE.SellAllInterval =
@@ -40193,6 +40230,395 @@ function HolySellReadWeightSetting(value)
     )
 end
 
+function HolySellNormalizeValueMode(value)
+
+    local mode =
+        HolyFarmNormalizeWeightMode(
+            value
+        )
+
+    if mode == "Above" then
+        return "Above"
+    end
+
+    return "Below"
+end
+
+function HolySellReadValueThreshold(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    text =
+        text:gsub("¢", "")
+            :gsub("%$", "")
+            :gsub(",", "")
+            :gsub("%s+", "")
+
+    local lower =
+        text:lower()
+
+    if lower == ""
+    or lower == "0"
+    or lower == "none"
+    or lower == "off"
+    or lower == "no" then
+
+        return 0
+    end
+
+    if type(HolyDailyDealStrictMoney) == "function" then
+
+        local ok,
+            result =
+            pcall(function()
+
+                return HolyDailyDealStrictMoney(
+                    lower,
+                    0,
+                    nil
+                )
+            end)
+
+        result =
+            tonumber(result)
+
+        if ok == true
+        and result ~= nil
+        and result >= 0 then
+
+            return math.floor(
+                result + 0.5
+            )
+        end
+    end
+
+    local numberText,
+        suffix =
+        lower:match("^(%d+%.?%d*)([a-z]*)$")
+
+    local number =
+        tonumber(numberText)
+
+    if number == nil then
+        return 0
+    end
+
+    local multipliers = {
+        [""] = 1,
+
+        k = 1000,
+        thousand = 1000,
+
+        m = 1000000,
+        mil = 1000000,
+        million = 1000000,
+
+        b = 1000000000,
+        bil = 1000000000,
+        billion = 1000000000,
+
+        t = 1000000000000,
+        tril = 1000000000000,
+        trillion = 1000000000000,
+
+        q = 1000000000000000,
+        qa = 1000000000000000,
+        quad = 1000000000000000,
+        quadrillion = 1000000000000000,
+    }
+
+    local multiplier =
+        multipliers[suffix or ""]
+
+    if multiplier == nil then
+        multiplier = 1
+    end
+
+    return math.max(
+        0,
+        math.floor(number * multiplier + 0.5)
+    )
+end
+
+function HolySellFormatValue(value)
+
+    value =
+        tonumber(value)
+
+    if value == nil then
+        return "$0"
+    end
+
+    if type(HolyVisualFormatFruitValue) == "function" then
+
+        return HolyVisualFormatFruitValue(
+            value
+        )
+    end
+
+    return tostring(
+        math.floor(value + 0.5)
+    )
+end
+
+function HolySellGetToolValue(tool)
+
+    if HolySellLooksLikeFruitTool(tool) ~= true then
+        return nil
+    end
+
+    if type(HolyVisualReadFruitTool) == "function" then
+
+        local ok,
+            row =
+            pcall(function()
+
+                return HolyVisualReadFruitTool(
+                    tool,
+                    0
+                )
+            end)
+
+        if ok == true
+        and type(row) == "table" then
+
+            local value =
+                tonumber(
+                    row.Value
+                )
+
+            if value ~= nil
+            and value > 0 then
+
+                return math.floor(value + 0.5),
+                    row.ValueText
+                    or HolySellFormatValue(value)
+            end
+        end
+    end
+
+    if type(HolyVisualCalculateFruitValue) == "function" then
+
+        local attrs =
+            HolySellGetToolAttributes(
+                tool
+            )
+
+        local weight =
+            HolySellGetToolWeight(
+                tool
+            )
+
+        local sizeMultiplier =
+            tonumber(
+                attrs.SizeMultiplier
+                or attrs.SizeMulti
+                or attrs.ScaleMultiplier
+                or attrs.ScaleMulti
+                or attrs.Scale
+                or attrs.SizeScale
+            )
+
+        if sizeMultiplier == nil
+        or sizeMultiplier <= 0 then
+
+            sizeMultiplier =
+                math.max(
+                    0.01,
+                    tonumber(weight)
+                    or 0
+                )
+        end
+
+        local row = {
+            Tool =
+                tool,
+
+            Name =
+                HolySellGetToolFruitName(
+                    tool
+                ),
+
+            RawName =
+                tostring(
+                    tool
+                    and tool.Name
+                    or ""
+                ),
+
+            RawMutation =
+                HolySellGetRawToolMutation(
+                    tool
+                ),
+
+            Weight =
+                tonumber(weight)
+                or 0,
+
+            SizeMultiplier =
+                sizeMultiplier,
+
+            Index =
+                0,
+        }
+
+        local ok,
+            result =
+            pcall(function()
+
+                return HolyVisualCalculateFruitValue(
+                    tool,
+                    row
+                )
+            end)
+
+        result =
+            tonumber(result)
+
+        if ok == true
+        and result ~= nil
+        and result > 0 then
+
+            return math.floor(result + 0.5),
+                HolySellFormatValue(result)
+        end
+    end
+
+    return nil
+end
+
+function HolySellValueFilterActive()
+
+    if HOLY_SHOP_STATE.UseSellFilters ~= true then
+        return false
+    end
+
+    return HolySellReadValueThreshold(
+        HOLY_SHOP_STATE.SellValueThreshold
+        or "0"
+    ) > 0
+end
+
+function HolySellPassesValueFilter(tool)
+
+    local threshold =
+        HolySellReadValueThreshold(
+            HOLY_SHOP_STATE.SellValueThreshold
+            or "0"
+        )
+
+    if threshold <= 0 then
+        return true
+    end
+
+    local value =
+        HolySellGetToolValue(
+            tool
+        )
+
+    value =
+        tonumber(value)
+
+    if value == nil
+    or value <= 0 then
+
+        return false
+    end
+
+    local mode =
+        HolySellNormalizeValueMode(
+            HOLY_SHOP_STATE.SellValueMode
+            or "Below"
+        )
+
+    if mode == "Above" then
+
+        return value >= threshold
+    end
+
+    return value <= threshold
+end
+
+function HolySellSortQueue()
+
+    HOLY_SHOP_STATE.SellQueue =
+        type(HOLY_SHOP_STATE.SellQueue) == "table"
+        and HOLY_SHOP_STATE.SellQueue
+        or {}
+
+    if HolySellValueFilterActive() ~= true then
+        return false
+    end
+
+    local mode =
+        HolySellNormalizeValueMode(
+            HOLY_SHOP_STATE.SellValueMode
+            or "Below"
+        )
+
+    table.sort(HOLY_SHOP_STATE.SellQueue, function(a, b)
+
+        a =
+            type(a) == "table"
+            and a
+            or {}
+
+        b =
+            type(b) == "table"
+            and b
+            or {}
+
+        local valueA =
+            tonumber(a.Value)
+            or 0
+
+        local valueB =
+            tonumber(b.Value)
+            or 0
+
+        if valueA ~= valueB then
+
+            if mode == "Above" then
+
+                return valueA > valueB
+            end
+
+            return valueA < valueB
+        end
+
+        local weightA =
+            tonumber(a.Weight)
+            or 0
+
+        local weightB =
+            tonumber(b.Weight)
+            or 0
+
+        if weightA ~= weightB then
+            return weightA > weightB
+        end
+
+        return tostring(a.Name or "")
+            < tostring(b.Name or "")
+    end)
+
+    return true
+end
+
+function HolySellClearQueue()
+
+    HOLY_SHOP_STATE.SellQueue =
+        {}
+
+    HOLY_SHOP_STATE.SellQueueMap =
+        {}
+
+    return true
+end
+
 function HolySellIsPetTool(instance)
 
     if typeof(instance) ~= "Instance" then
@@ -40683,6 +41109,13 @@ function HolySellPassesFilters(tool)
 
     if maxWeight > 0
     and weight > maxWeight then
+
+        return false
+    end
+
+    if HolySellPassesValueFilter(
+        tool
+    ) ~= true then
 
         return false
     end
@@ -45062,6 +45495,16 @@ function HolySellQueueFruitTool(tool, reason)
         return false
     end
 
+    local value,
+        valueText =
+        HolySellGetToolValue(
+            tool
+        )
+
+    value =
+        tonumber(value)
+        or 0
+
     HOLY_SHOP_STATE.SellQueueMap[fruitId] =
         true
 
@@ -45081,10 +45524,21 @@ function HolySellQueueFruitTool(tool, reason)
                     tool
                 ),
 
+            Value =
+                value,
+
+            ValueText =
+                valueText
+                or HolySellFormatValue(
+                    value
+                ),
+
             Reason =
                 tostring(reason or "detected"),
         }
     )
+
+    HolySellSortQueue()
 
     return true
 end
@@ -61087,6 +61541,104 @@ ShopFiltersBox:AddInput(
         HolySellStartWorker()
     end
 end)
+
+ShopFiltersBox:AddDropdown(
+    "HolyShopSellValueMode",
+    {
+        Text =
+            "💸 Value Mode",
+
+        Values = {
+            "Below",
+            "Above",
+        },
+
+        Default =
+            HolySellNormalizeValueMode(
+                HOLY_SHOP_STATE.SellValueMode
+                or "Below"
+            ),
+
+        Multi =
+            false,
+
+        Searchable =
+            false,
+
+        MaxVisibleDropdownItems =
+            2,
+
+        Tooltip =
+            "Filtered Sell only. Below sells fruits at or below Value $. Above sells fruits at or above Value $.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.SellValueMode =
+        HolySellNormalizeValueMode(
+            value
+        )
+
+    HolySaveShopSettings()
+    HolySellClearQueue()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+        HolySellScanExistingFruitTools(
+            "value mode changed"
+        )
+
+        HolySellStartWorker()
+    end
+end)
+
+ShopFiltersBox:AddInput(
+    "HolyShopSellValueThreshold",
+    {
+        Text =
+            "💰 Value $ (0 = off)",
+
+        Default =
+            tostring(
+                HolySellReadValueThreshold(
+                    HOLY_SHOP_STATE.SellValueThreshold
+                    or "0"
+                )
+            ),
+
+        Numeric =
+            false,
+
+        Finished =
+            true,
+
+        ClearTextOnFocus =
+            false,
+
+        Tooltip =
+            "Filtered Sell only. Supports 500k, 1.5m, 2b, 1t, or 250000. 0 disables value filtering.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.SellValueThreshold =
+        tostring(
+            HolySellReadValueThreshold(
+                value
+            )
+        )
+
+    HolySaveShopSettings()
+    HolySellClearQueue()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+        HolySellScanExistingFruitTools(
+            "value threshold changed"
+        )
+
+        HolySellStartWorker()
+    end
+end)
+
 
 HolyShopConnectStockSignals()
 
