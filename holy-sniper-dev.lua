@@ -294,7 +294,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260629-auction_v1"
+    "holy-premium-20260704-fruit_drop_value_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -1272,6 +1272,9 @@ HOLY_FRUIT_AUTOMATION_STATE = {
     WeightKg = "0",
     WeightMode = "Above",
 
+    ValueMode = "Below",
+    ValueThreshold = "0",
+
     DropLimit = "0",
 }
 
@@ -1310,6 +1313,9 @@ HOLY_FRUIT_AUTOMATION_UI = {
 
     WeightInput = nil,
     WeightModeDropdown = nil,
+
+    ValueInput = nil,
+    ValueModeDropdown = nil,
 
     DropLimitInput = nil,
 }
@@ -8192,6 +8198,397 @@ function HolyFruitAutomationNormalizeWeightMode(value)
     return "Above"
 end
 
+function HolyFruitAutomationNormalizeValueMode(value)
+
+    local mode =
+        HolyFarmNormalizeWeightMode(
+            value
+        )
+
+    if mode == "Above" then
+        return "Above"
+    end
+
+    return "Below"
+end
+
+function HolyFruitAutomationReadValueThreshold(value)
+
+    if type(HolySniperReadMaxPrice) == "function" then
+
+        return HolySniperReadMaxPrice(
+            value
+        )
+    end
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    text =
+        text:gsub("¢", "")
+            :gsub("%$", "")
+            :gsub(",", "")
+            :gsub("%s+", "")
+
+    local lower =
+        text:lower()
+
+    if lower == ""
+    or lower == "0"
+    or lower == "none"
+    or lower == "off"
+    or lower == "no" then
+
+        return 0
+    end
+
+    local multiplier =
+        1
+
+    if lower:find("b", 1, true) then
+
+        multiplier =
+            1000000000
+
+    elseif lower:find("m", 1, true) then
+
+        multiplier =
+            1000000
+
+    elseif lower:find("k", 1, true) then
+
+        multiplier =
+            1000
+    end
+
+    local rawNumber =
+        lower:match("%d+%.?%d*")
+
+    local number =
+        tonumber(rawNumber)
+
+    if number == nil then
+        return 0
+    end
+
+    return math.max(
+        0,
+        math.floor(number * multiplier + 0.5)
+    )
+end
+
+function HolyFruitAutomationBuildMutationText(info)
+
+    info =
+        type(info) == "table"
+        and info
+        or {}
+
+    if HolyCleanText(info.RawMutation) ~= "" then
+
+        return HolyCleanText(
+            info.RawMutation
+        )
+    end
+
+    local mutations =
+        type(info.Mutations) == "table"
+        and info.Mutations
+        or {}
+
+    local output =
+        {}
+
+    for _, mutationName in ipairs(mutations) do
+
+        mutationName =
+            HolyCleanText(
+                mutationName
+            )
+
+        if mutationName ~= "" then
+
+            table.insert(
+                output,
+                mutationName
+            )
+        end
+    end
+
+    return table.concat(
+        output,
+        ","
+    )
+end
+
+function HolyFruitAutomationReadSizeMultiplierFromInfo(info)
+
+    info =
+        type(info) == "table"
+        and info
+        or {}
+
+    local tool =
+        info.Tool
+        or info.Instance
+
+    if typeof(tool) == "Instance" then
+
+        local sizeMultiplier =
+            tonumber(
+                HolyFruitAutomationReadAttribute(
+                    tool,
+                    {
+                        "SizeMultiplier",
+                        "SizeMulti",
+                        "ScaleMultiplier",
+                        "ScaleMulti",
+                        "Scale",
+                        "SizeScale",
+                    }
+                )
+            )
+
+        if sizeMultiplier ~= nil
+        and sizeMultiplier > 0 then
+
+            return sizeMultiplier
+        end
+    end
+
+    local weight =
+        tonumber(
+            info.WeightKg
+        )
+        or 0
+
+    if weight > 0 then
+
+        return math.max(
+            0.01,
+            weight
+        )
+    end
+
+    return 1
+end
+
+function HolyFruitAutomationCalculateInfoValue(info)
+
+    info =
+        type(info) == "table"
+        and info
+        or {}
+
+    local cached =
+        tonumber(
+            info.ValueNumber
+            or info.Value
+        )
+
+    if cached ~= nil
+    and cached > 0 then
+
+        return cached
+    end
+
+    local tool =
+        info.Tool
+        or info.Instance
+
+    local value =
+        nil
+
+    if type(HolyVisualReadFruitTool) == "function"
+    and typeof(tool) == "Instance"
+    and tool:IsA("Tool") then
+
+        local ok,
+            row =
+            pcall(function()
+
+                return HolyVisualReadFruitTool(
+                    tool,
+                    0
+                )
+            end)
+
+        if ok == true
+        and type(row) == "table" then
+
+            value =
+                tonumber(
+                    row.Value
+                )
+
+            if value ~= nil
+            and value > 0 then
+
+                info.ValueNumber =
+                    value
+
+                info.ValueText =
+                    row.ValueText
+                    or (
+                        type(HolyVisualFormatFruitValue) == "function"
+                        and HolyVisualFormatFruitValue(value)
+                    )
+                    or tostring(value)
+
+                return value
+            end
+        end
+    end
+
+    if value == nil
+    and type(HolyVisualCalculateFruitValue) == "function" then
+
+        local row = {
+            Tool =
+                tool,
+
+            Name =
+                HolyFruitAutomationNormalizeFruitName(
+                    info.FruitName
+                    or info.Name
+                    or info.DisplayName
+                ),
+
+            RawName =
+                HolyCleanText(
+                    info.DisplayName
+                    or info.FruitName
+                    or ""
+                ),
+
+            RawMutation =
+                HolyFruitAutomationBuildMutationText(
+                    info
+                ),
+
+            Weight =
+                tonumber(
+                    info.WeightKg
+                )
+                or 0,
+
+            SizeMultiplier =
+                HolyFruitAutomationReadSizeMultiplierFromInfo(
+                    info
+                ),
+
+            Index =
+                0,
+        }
+
+        local ok,
+            result =
+            pcall(function()
+
+                return HolyVisualCalculateFruitValue(
+                    tool,
+                    row
+                )
+            end)
+
+        result =
+            tonumber(result)
+
+        if ok == true
+        and result ~= nil
+        and result > 0 then
+
+            value =
+                result
+        end
+    end
+
+    value =
+        tonumber(value)
+
+    if value == nil
+    or value <= 0 then
+
+        return nil
+    end
+
+    value =
+        math.floor(value + 0.5)
+
+    info.ValueNumber =
+        value
+
+    if type(HolyVisualFormatFruitValue) == "function" then
+
+        info.ValueText =
+            HolyVisualFormatFruitValue(
+                value
+            )
+
+    else
+
+        info.ValueText =
+            tostring(value)
+    end
+
+    return value
+end
+
+function HolyFruitAutomationPassesDropValueFilter(info)
+
+    HolyFruitAutomationEnsureState()
+
+    local threshold =
+        HolyFruitAutomationReadValueThreshold(
+            HOLY_FRUIT_AUTOMATION_STATE.ValueThreshold
+            or "0"
+        )
+
+    if threshold <= 0 then
+        return true
+    end
+
+    local value =
+        HolyFruitAutomationCalculateInfoValue(
+            info
+        )
+
+    if value == nil
+    or value <= 0 then
+
+        return false
+    end
+
+    local mode =
+        HolyFruitAutomationNormalizeValueMode(
+            HOLY_FRUIT_AUTOMATION_STATE.ValueMode
+            or "Below"
+        )
+
+    if mode == "Above" then
+
+        return value >= threshold
+    end
+
+    return value <= threshold
+end
+
+function HolyFruitAutomationPassesDropFilters(info)
+
+    if HolyFruitAutomationPassesFilters(
+        info
+    ) ~= true then
+
+        return false
+    end
+
+    return HolyFruitAutomationPassesDropValueFilter(
+        info
+    ) == true
+end
+
 function HolyFruitAutomationEnsureState()
 
     HOLY_FRUIT_AUTOMATION_STATE =
@@ -8229,6 +8626,20 @@ function HolyFruitAutomationEnsureState()
         HolyFruitAutomationNormalizeWeightMode(
             HOLY_FRUIT_AUTOMATION_STATE.WeightMode
             or "Above"
+        )
+
+    HOLY_FRUIT_AUTOMATION_STATE.ValueMode =
+        HolyFruitAutomationNormalizeValueMode(
+            HOLY_FRUIT_AUTOMATION_STATE.ValueMode
+            or "Below"
+        )
+
+    HOLY_FRUIT_AUTOMATION_STATE.ValueThreshold =
+        tostring(
+            HolyFruitAutomationReadValueThreshold(
+                HOLY_FRUIT_AUTOMATION_STATE.ValueThreshold
+                or "0"
+            )
         )
 
     HOLY_FRUIT_AUTOMATION_STATE.DropLimit =
@@ -8387,6 +8798,18 @@ function HolySaveFruitAutomationSettings()
                 HOLY_FRUIT_AUTOMATION_STATE.WeightMode
             ),
 
+        ValueMode =
+            HolyFruitAutomationNormalizeValueMode(
+                HOLY_FRUIT_AUTOMATION_STATE.ValueMode
+            ),
+
+        ValueThreshold =
+            tostring(
+                HolyFruitAutomationReadValueThreshold(
+                    HOLY_FRUIT_AUTOMATION_STATE.ValueThreshold
+                )
+            ),
+
         DropLimit =
             tostring(
                 HolyFruitAutomationReadDropLimit(
@@ -8508,6 +8931,25 @@ function HolyLoadFruitAutomationSettings()
         HolyFruitAutomationNormalizeWeightMode(
             data.WeightMode
             or "Above"
+        )
+
+    HOLY_FRUIT_AUTOMATION_STATE.ValueMode =
+        HolyFruitAutomationNormalizeValueMode(
+            data.ValueMode
+            or data.DropValueMode
+            or "Below"
+        )
+
+    HOLY_FRUIT_AUTOMATION_STATE.ValueThreshold =
+        tostring(
+            HolyFruitAutomationReadValueThreshold(
+                data.ValueThreshold
+                or data.DropValueThreshold
+                or data.Value
+                or data.MinValue
+                or data.MaxValue
+                or "0"
+            )
         )
 
     HOLY_FRUIT_AUTOMATION_STATE.DropLimit =
@@ -9111,9 +9553,13 @@ function HolyFruitAutomationGetFruitTools()
                     child
                 )
 
-            if HolyFruitAutomationPassesFilters(
+            if HolyFruitAutomationPassesDropFilters(
                 info
             ) == true then
+
+                HolyFruitAutomationCalculateInfoValue(
+                    info
+                )
 
                 table.insert(
                     tools,
@@ -9123,7 +9569,46 @@ function HolyFruitAutomationGetFruitTools()
         end
     end
 
+    local valueThreshold =
+        HolyFruitAutomationReadValueThreshold(
+            HOLY_FRUIT_AUTOMATION_STATE.ValueThreshold
+            or "0"
+        )
+
+    local valueMode =
+        HolyFruitAutomationNormalizeValueMode(
+            HOLY_FRUIT_AUTOMATION_STATE.ValueMode
+            or "Below"
+        )
+
     table.sort(tools, function(a, b)
+
+        if valueThreshold > 0 then
+
+            local valueA =
+                tonumber(
+                    a.ValueNumber
+                    or HolyFruitAutomationCalculateInfoValue(a)
+                )
+                or 0
+
+            local valueB =
+                tonumber(
+                    b.ValueNumber
+                    or HolyFruitAutomationCalculateInfoValue(b)
+                )
+                or 0
+
+            if valueA ~= valueB then
+
+                if valueMode == "Below" then
+
+                    return valueA < valueB
+                end
+
+                return valueA > valueB
+            end
+        end
 
         local weightA =
             tonumber(a.WeightKg)
@@ -9341,7 +9826,7 @@ function HolyFruitAutomationTryDropInfo(info)
     runtime.DropLastAttempt[tool] =
         os.clock()
 
-    if HolyFruitAutomationPassesFilters(
+    if HolyFruitAutomationPassesDropFilters(
         info
     ) ~= true then
 
@@ -10341,6 +10826,36 @@ function HolyFruitAutomationSetWeightMode(value)
     HOLY_FRUIT_AUTOMATION_STATE.WeightMode =
         HolyFruitAutomationNormalizeWeightMode(
             value
+        )
+
+    HolySaveFruitAutomationSettings()
+
+    return true
+end
+
+function HolyFruitAutomationSetValueMode(value)
+
+    HolyFruitAutomationEnsureState()
+
+    HOLY_FRUIT_AUTOMATION_STATE.ValueMode =
+        HolyFruitAutomationNormalizeValueMode(
+            value
+        )
+
+    HolySaveFruitAutomationSettings()
+
+    return true
+end
+
+function HolyFruitAutomationSetValueThreshold(value)
+
+    HolyFruitAutomationEnsureState()
+
+    HOLY_FRUIT_AUTOMATION_STATE.ValueThreshold =
+        tostring(
+            HolyFruitAutomationReadValueThreshold(
+                value
+            )
         )
 
     HolySaveFruitAutomationSettings()
@@ -58707,6 +59222,45 @@ and type(FarmFruitAutomationBox.AddDropdown) == "function" then
             value
         )
     end)
+
+    HOLY_FRUIT_AUTOMATION_UI.ValueModeDropdown =
+        FarmFruitAutomationBox:AddDropdown(
+            "HolyFruitAutomationValueMode",
+            {
+                Text =
+                    "Value Mode",
+
+                Values = {
+                    "Below",
+                    "Above",
+                },
+
+                Default =
+                    HolyFruitAutomationNormalizeValueMode(
+                        HOLY_FRUIT_AUTOMATION_STATE.ValueMode
+                        or "Below"
+                    ),
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    2,
+
+                Tooltip =
+                    "Auto Drop only. Below drops fruits at or below Value $. Above drops fruits at or above Value $.",
+            }
+        )
+
+    HOLY_FRUIT_AUTOMATION_UI.ValueModeDropdown:OnChanged(function(value)
+
+        HolyFruitAutomationSetValueMode(
+            value
+        )
+    end)
 end
 
 if FarmFruitAutomationBox
@@ -58744,6 +59298,42 @@ and type(FarmFruitAutomationBox.AddInput) == "function" then
     HOLY_FRUIT_AUTOMATION_UI.WeightInput:OnChanged(function(value)
 
         HolyFruitAutomationSetWeightKg(
+            value
+        )
+    end)
+
+    HOLY_FRUIT_AUTOMATION_UI.ValueInput =
+        FarmFruitAutomationBox:AddInput(
+            "HolyFruitAutomationValueThreshold",
+            {
+                Text =
+                    "Value $ (0 = off)",
+
+                Default =
+                    tostring(
+                        HolyFruitAutomationReadValueThreshold(
+                            HOLY_FRUIT_AUTOMATION_STATE.ValueThreshold
+                            or "0"
+                        )
+                    ),
+
+                Numeric =
+                    false,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Auto Drop only. Supports values like 500k, 1.5m, or 250000. 0 disables value filtering.",
+            }
+        )
+
+    HOLY_FRUIT_AUTOMATION_UI.ValueInput:OnChanged(function(value)
+
+        HolyFruitAutomationSetValueThreshold(
             value
         )
     end)
