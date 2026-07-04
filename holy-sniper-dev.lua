@@ -45436,6 +45436,124 @@ function HolySellPruneRecentFruitIds()
     end
 end
 
+function HolySellFindToolByFruitId(fruitId)
+
+    fruitId =
+        HolyCleanText(
+            fruitId
+        )
+
+    if fruitId == "" then
+        return nil
+    end
+
+    for _, tool in ipairs(HolySellGetFruitTools()) do
+
+        local toolId =
+            HolyCleanText(
+                HolySellResolveFruitId(
+                    tool
+                )
+            )
+
+        if toolId ~= ""
+        and toolId == fruitId then
+
+            return tool
+        end
+    end
+
+    return nil
+end
+
+function HolySellDescribeSkip(tool, fruitId, reason)
+
+    local name =
+        typeof(tool) == "Instance"
+        and tostring(tool.Name)
+        or tostring(fruitId or "unknown")
+
+    return tostring(name)
+        .. " skipped: "
+        .. tostring(reason or "filter blocked")
+end
+
+function HolySellLiveToolStillSafeToSell(fruitId)
+
+    fruitId =
+        HolyCleanText(
+            fruitId
+        )
+
+    if fruitId == "" then
+        return false, nil, "missing fruit id"
+    end
+
+    local tool =
+        HolySellFindToolByFruitId(
+            fruitId
+        )
+
+    if typeof(tool) ~= "Instance"
+    or tool.Parent == nil then
+
+        return false, nil, "tool no longer in inventory"
+    end
+
+    if HolySellLooksLikeFruitTool(tool) ~= true then
+
+        return false, tool, "not a fruit tool"
+    end
+
+    if HolySellPassesFilters(tool) ~= true then
+
+        return false, tool, "live filters blocked"
+    end
+
+    if HolySellValueFilterActive() == true then
+
+        local liveValue =
+            HolySellGetToolValue(
+                tool
+            )
+
+        liveValue =
+            tonumber(liveValue)
+
+        if liveValue == nil
+        or liveValue <= 0 then
+
+            return false, tool, "value missing"
+        end
+
+        local threshold =
+            HolySellReadValueThreshold(
+                HOLY_SHOP_STATE.SellValueThreshold
+                or "0"
+            )
+
+        local mode =
+            HolySellNormalizeValueMode(
+                HOLY_SHOP_STATE.SellValueMode
+                or "Below"
+            )
+
+        if mode == "Above"
+        and liveValue < threshold then
+
+            return false, tool, "value below threshold"
+        end
+
+        if mode ~= "Above"
+        and liveValue > threshold then
+
+            return false, tool, "value above threshold"
+        end
+    end
+
+    return true, tool, "ok"
+end
+
 function HolySellQueueFruitTool(tool, reason)
 
     if HOLY_SHOP_STATE.AutoSellFruits ~= true then
@@ -45459,6 +45577,15 @@ function HolySellQueueFruitTool(tool, reason)
         )
 
     if fruitId == "" then
+        return false
+    end
+
+    local liveSafe =
+        HolySellLiveToolStillSafeToSell(
+            fruitId
+        )
+
+    if liveSafe ~= true then
         return false
     end
 
@@ -45531,6 +45658,21 @@ function HolySellQueueFruitTool(tool, reason)
                 valueText
                 or HolySellFormatValue(
                     value
+                ),
+
+            QueuedAt =
+                os.clock(),
+
+            ValueMode =
+                HolySellNormalizeValueMode(
+                    HOLY_SHOP_STATE.SellValueMode
+                    or "Below"
+                ),
+
+            ValueThreshold =
+                HolySellReadValueThreshold(
+                    HOLY_SHOP_STATE.SellValueThreshold
+                    or "0"
                 ),
 
             Reason =
@@ -45716,6 +45858,8 @@ function HolySellSelectedOnce()
         and HOLY_SHOP_STATE.SellRecentFruitIds
         or {}
 
+    HolySellSortQueue()
+
     local sold =
         0
 
@@ -45751,22 +45895,54 @@ function HolySellSelectedOnce()
             HOLY_SHOP_STATE.SellQueueMap[fruitId] =
                 nil
 
-            if HolySellFirePacket(
-                "SellFruit",
-                fruitId
-            ) == true then
+            local liveSafe,
+                liveTool,
+                liveReason =
+                HolySellLiveToolStillSafeToSell(
+                    fruitId
+                )
 
-                HOLY_SHOP_STATE.SellRecentFruitIds[fruitId] =
-                    os.clock()
+            if liveSafe == true then
 
-                sold =
-                    sold + 1
+                if HolySellFirePacket(
+                    "SellFruit",
+                    fruitId
+                ) == true then
+
+                    HOLY_SHOP_STATE.SellRecentFruitIds[fruitId] =
+                        os.clock()
+
+                    sold =
+                        sold + 1
+                end
+
+                task.wait(
+                    tonumber(HOLY_SHOP_STATE.SellFruitInterval)
+                    or 0.05
+                )
+
+            else
+
+                if type(HOLY_SHOP_STATE.LastSellSkipPrintAt) ~= "number"
+                or os.clock() - HOLY_SHOP_STATE.LastSellSkipPrintAt >= 1 then
+
+                    HOLY_SHOP_STATE.LastSellSkipPrintAt =
+                        os.clock()
+
+                    print(
+                        "[HOLY SELL]",
+                        HolySellDescribeSkip(
+                            liveTool,
+                            fruitId,
+                            liveReason
+                        )
+                    )
+                end
+
+                task.wait(
+                    0.01
+                )
             end
-
-            task.wait(
-                tonumber(HOLY_SHOP_STATE.SellFruitInterval)
-                or 0.05
-            )
         end
     end
 
@@ -61631,11 +61807,17 @@ ShopFiltersBox:AddInput(
 
     if HOLY_SHOP_STATE.AutoSellFruits == true then
 
-        HolySellScanExistingFruitTools(
-            "value threshold changed"
-        )
+        task.delay(0.10, function()
 
-        HolySellStartWorker()
+            if HOLY_SHOP_STATE.AutoSellFruits == true then
+
+                HolySellScanExistingFruitTools(
+                    "value threshold changed"
+                )
+
+                HolySellStartWorker()
+            end
+        end)
     end
 end)
 
