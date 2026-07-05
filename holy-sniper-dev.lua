@@ -294,7 +294,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260705-daily_deal_live_client_v1"
+    "holy-premium-20260705-daily_deal_live_client_v3"
 
 local LIBRARY_URL =
     REPO_URL
@@ -36636,9 +36636,36 @@ function HolyDailyDealLiveReadNumber(value)
     return number
 end
 
-function HolyDailyDealLiveNormalizeEntry(entry)
+function HolyDailyDealLiveNormalizeEntry(entry, fallbackName)
+
+    local fallback =
+        HolyCleanText(
+            fallbackName
+            or ""
+        )
 
     if type(entry) ~= "table" then
+
+        local multiplier =
+            HolyDailyDealLiveReadNumber(
+                entry
+            )
+
+        if fallback ~= ""
+        and multiplier > 0 then
+
+            return {
+                Name =
+                    fallback,
+
+                Multiplier =
+                    multiplier,
+
+                Tier =
+                    "",
+            }
+        end
+
         return nil
     end
 
@@ -36656,6 +36683,7 @@ function HolyDailyDealLiveNormalizeEntry(entry)
             or entry.itemName
             or entry.DisplayName
             or entry.displayName
+            or fallback
             or ""
         )
 
@@ -36690,6 +36718,15 @@ function HolyDailyDealLiveNormalizeEntry(entry)
 
         Multiplier =
             multiplier,
+
+        Tier =
+            HolyCleanText(
+                entry.Tier
+                or entry.tier
+                or entry.Rarity
+                or entry.rarity
+                or ""
+            ),
     }
 end
 
@@ -36698,24 +36735,63 @@ function HolyDailyDealLiveBuildEntries(entries)
     local output =
         {}
 
+    local seen =
+        {}
+
     if type(entries) ~= "table" then
         return output
     end
 
-    for _, entry in ipairs(entries) do
+    local function addEntry(entry, fallbackName)
 
         local normalized =
             HolyDailyDealLiveNormalizeEntry(
-                entry
+                entry,
+                fallbackName
             )
 
-        if type(normalized) == "table" then
-
-            table.insert(
-                output,
-                normalized
-            )
+        if type(normalized) ~= "table" then
+            return false
         end
+
+        local key =
+            HolyCleanText(
+                normalized.Name
+            )
+                :lower()
+                :gsub("%s+", "")
+                :gsub("[_%-%[%]%(%)%.'\"]", "")
+
+        if key == "" then
+            return false
+        end
+
+        if seen[key] == true then
+            return false
+        end
+
+        seen[key] =
+            true
+
+        table.insert(
+            output,
+            normalized
+        )
+
+        return true
+    end
+
+    for stockFruitName, row in pairs(entries) do
+
+        local fallbackName =
+            type(stockFruitName) == "string"
+            and stockFruitName
+            or ""
+
+        addEntry(
+            row,
+            fallbackName
+        )
     end
 
     table.sort(output, function(a, b)
@@ -37224,6 +37300,11 @@ end
 
 function HolyDailyDealLiveResolveWait(stockResult)
 
+    stockResult =
+        type(stockResult) == "table"
+        and stockResult
+        or {}
+
     local nextRestockAt =
         HolyDailyDealLiveResolveNextRestockAt(
             stockResult
@@ -37232,10 +37313,21 @@ function HolyDailyDealLiveResolveWait(stockResult)
     local seconds =
         nextRestockAt - os.time() + 2
 
+    local cycleSeconds =
+        tonumber(
+            stockResult.cycleSeconds
+            or stockResult.CycleSeconds
+            or 600
+        )
+        or 600
+
     return math.clamp(
         seconds,
         15,
-        310
+        math.max(
+            610,
+            cycleSeconds + 10
+        )
     )
 end
 
