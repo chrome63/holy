@@ -46,7 +46,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-server-sniper-v2"
+    "holy-server-sniper-v3-anypet-maxprice"
 
 local LIBRARY_URL =
     REPO_URL
@@ -532,7 +532,11 @@ HOLY_SNIPER_STATE = {
     BuilderVariants = {
         "Any",
     },
-    BuilderAmount = "1",
+    BuilderMaxPrice = "0",
+
+    -- Legacy only. Old public saves used Target Amount.
+    BuilderAmount = "999",
+
     BuilderPriority = "High",
 
     Watchlist = {},
@@ -8323,7 +8327,7 @@ function HolySniperReadAmount(value)
     local amount =
         math.floor(
             tonumber(value)
-            or 1
+            or 999
         )
 
     return math.clamp(
@@ -8331,6 +8335,85 @@ function HolySniperReadAmount(value)
         1,
         999
     )
+end
+
+function HolySniperReadMaxPrice(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    text =
+        text:gsub("¢", "")
+            :gsub("%$", "")
+            :gsub(",", "")
+            :gsub("%s+", "")
+
+    local lower =
+        text:lower()
+
+    if lower == ""
+    or lower == "0"
+    or lower == "none"
+    or lower == "off"
+    or lower == "no"
+    or lower == "nocap"
+    or lower == "n/a" then
+
+        return 0
+    end
+
+    local multiplier =
+        1
+
+    if lower:find("b", 1, true) then
+
+        multiplier =
+            1000000000
+
+    elseif lower:find("m", 1, true) then
+
+        multiplier =
+            1000000
+
+    elseif lower:find("k", 1, true) then
+
+        multiplier =
+            1000
+    end
+
+    local rawNumber =
+        lower:match("%d+%.?%d*")
+
+    local number =
+        tonumber(rawNumber)
+
+    if number == nil then
+        return 0
+    end
+
+    return math.max(
+        0,
+        math.floor(number * multiplier + 0.5)
+    )
+end
+
+function HolySniperFormatMaxPrice(value)
+
+    local number =
+        HolySniperReadMaxPrice(
+            value
+        )
+
+    if number <= 0 then
+        return "No Cap"
+    end
+
+    return "Max "
+        .. HolySniperFormatMoney(
+            number
+        )
 end
 
 function HolySniperArrayText(values, fallback)
@@ -8404,17 +8487,21 @@ end
 
 function HolySniperBuildPetMaps()
 
-    local values =
-        {}
+    local values = {
+        "Any Pet",
+    }
 
-    local seen =
-        {}
+    local seen = {
+        ["Any Pet"] = true,
+    }
 
-    local displayToKey =
-        {}
+    local displayToKey = {
+        ["Any Pet"] = "*",
+    }
 
-    local keyToDisplay =
-        {}
+    local keyToDisplay = {
+        ["*"] = "Any Pet",
+    }
 
     local petData =
         HolySniperGetPetData()
@@ -8461,17 +8548,32 @@ function HolySniperBuildPetMaps()
 
     table.sort(values, function(a, b)
 
+        if a == "Any Pet" then
+            return true
+        end
+
+        if b == "Any Pet" then
+            return false
+        end
+
         return tostring(a) < tostring(b)
     end)
 
-    if #values <= 0 then
+    if #values <= 1 then
 
         values = {
+            "Any Pet",
             "Raccoon",
         }
 
+        displayToKey["Any Pet"] =
+            "*"
+
         displayToKey.Raccoon =
             "Raccoon"
+
+        keyToDisplay["*"] =
+            "Any Pet"
 
         keyToDisplay.Raccoon =
             "Raccoon"
@@ -8518,6 +8620,18 @@ function HolySniperResolvePetKey(value)
         HolyCleanText(
             value
         )
+
+    local lower =
+        text:lower()
+
+    if lower == "any"
+    or lower == "all"
+    or lower == "any pet"
+    or lower == "all pets"
+    or lower == "*" then
+
+        return "*"
+    end
 
     if text == "" then
         return "Raccoon"
@@ -8567,6 +8681,18 @@ function HolySniperResolvePetDisplay(value)
             value
         )
 
+    local lower =
+        text:lower()
+
+    if lower == "any"
+    or lower == "all"
+    or lower == "any pet"
+    or lower == "all pets"
+    or lower == "*" then
+
+        return "Any Pet"
+    end
+
     if text == "" then
         return HolySniperGetDefaultPetName()
     end
@@ -8615,12 +8741,15 @@ function HolySniperNormalizeFilter(row)
         and row
         or {}
 
+    local rawPet =
+        row.Pet
+        or row.PetName
+        or row.Name
+        or HolySniperGetDefaultPetName()
+
     local petName =
         HolySniperResolvePetDisplay(
-            row.Pet
-            or row.PetName
-            or row.Name
-            or HolySniperGetDefaultPetName()
+            rawPet
         )
 
     if petName == "" then
@@ -8628,6 +8757,15 @@ function HolySniperNormalizeFilter(row)
         petName =
             HolySniperGetDefaultPetName()
     end
+
+    local maxPrice =
+        HolySniperReadMaxPrice(
+            row.MaxPrice
+            or row.Max
+            or row.PriceLimit
+            or row.BuilderMaxPrice
+            or 0
+        )
 
     return {
         Pet =
@@ -8656,12 +8794,13 @@ function HolySniperNormalizeFilter(row)
                 }
             ),
 
+        MaxPrice =
+            maxPrice,
+
+        -- Public sniper now uses max price instead of target amount.
+        -- Keep Amount high so filters do not finish after one buy.
         Amount =
-            HolySniperReadAmount(
-                row.Amount
-                or row.TargetAmount
-                or 1
-            ),
+            999,
 
         Priority =
             HolySniperNormalizePriority(
@@ -8714,6 +8853,11 @@ function HolySniperFilterKey(row)
         HolySniperArrayText(row.Sizes, "Any"):lower(),
 
         HolySniperArrayText(row.Variants, "Any"):lower(),
+
+        tostring(
+            tonumber(row.MaxPrice)
+            or 0
+        ),
     }, "|")
 end
 
@@ -8983,6 +9127,11 @@ function HolySniperBuildAllWatchlistRows()
                 filter
             )
 
+        local maxPriceText =
+            HolySniperFormatMaxPrice(
+                filter.MaxPrice
+            )
+
         local tableRow = {
             SourceIndex =
                 sourceIndex,
@@ -9001,6 +9150,13 @@ function HolySniperBuildAllWatchlistRows()
             ValueNumber =
                 price,
 
+            MaxPrice =
+                maxPriceText,
+
+            MaxPriceNumber =
+                tonumber(filter.MaxPrice)
+                or 0,
+
             Size =
                 HolySniperShortArrayText(
                     filter.Sizes,
@@ -9014,12 +9170,11 @@ function HolySniperBuildAllWatchlistRows()
                 ),
 
             Amount =
-                "x"
-                .. tostring(filter.Amount),
+                maxPriceText,
 
             AmountNumber =
-                tonumber(filter.Amount)
-                or 1,
+                tonumber(filter.MaxPrice)
+                or 0,
 
             Priority =
                 HolySniperPriorityShort(
@@ -11751,20 +11906,32 @@ function HolySniperEntryMatchesFilter(entry, filter)
         return false
     end
 
-    local entryPet =
-        HolySniperPetAliasKey(
-            entry.PetKey
-            or entry.Pet
-        )
-
-    local filterPet =
-        HolySniperPetAliasKey(
+    local filterPetKey =
+        HolyCleanText(
             filter.PetKey
-            or filter.Pet
+            or HolySniperResolvePetKey(
+                filter.Pet
+            )
         )
 
-    if entryPet ~= filterPet then
-        return false
+    if filterPetKey ~= "*" then
+
+        local entryPet =
+            HolySniperPetAliasKey(
+                entry.PetKey
+                or entry.Pet
+            )
+
+        local filterPet =
+            HolySniperPetAliasKey(
+                filterPetKey ~= ""
+                and filterPetKey
+                or filter.Pet
+            )
+
+        if entryPet ~= filterPet then
+            return false
+        end
     end
 
     if HolySniperSelectionHasAny(filter.Sizes) ~= true
@@ -11777,6 +11944,22 @@ function HolySniperEntryMatchesFilter(entry, filter)
     and HolySniperSelectionContains(filter.Variants, entry.Variant) ~= true then
 
         return false
+    end
+
+    local maxPrice =
+        tonumber(filter.MaxPrice)
+        or 0
+
+    if maxPrice > 0 then
+
+        local entryPrice =
+            tonumber(entry.Price)
+            or tonumber(entry.BasePrice)
+            or 0
+
+        if entryPrice > maxPrice then
+            return false
+        end
     end
 
     return true
@@ -16120,19 +16303,42 @@ function HolyLivePetsFilterMatches(entry)
 
         if filter.Enabled ~= false then
 
-            local entryPet =
-                HolySniperPetAliasKey(
-                    entry.PetKey
-                    or entry.Pet
-                )
-
-            local filterPet =
-                HolySniperPetAliasKey(
+            local filterPetKey =
+                HolyCleanText(
                     filter.PetKey
-                    or filter.Pet
+                    or HolySniperResolvePetKey(
+                        filter.Pet
+                    )
                 )
 
-            if entryPet == filterPet then
+            local petOk =
+                false
+
+            if filterPetKey == "*" then
+
+                petOk =
+                    true
+
+            else
+
+                local entryPet =
+                    HolySniperPetAliasKey(
+                        entry.PetKey
+                        or entry.Pet
+                    )
+
+                local filterPet =
+                    HolySniperPetAliasKey(
+                        filterPetKey ~= ""
+                        and filterPetKey
+                        or filter.Pet
+                    )
+
+                petOk =
+                    entryPet == filterPet
+            end
+
+            if petOk == true then
 
                 local sizeOk =
                     HolySniperSelectionHasAny(
@@ -16152,8 +16358,27 @@ function HolyLivePetsFilterMatches(entry)
                         entry.Variant
                     )
 
+                local maxPrice =
+                    tonumber(filter.MaxPrice)
+                    or 0
+
+                local priceOk =
+                    true
+
+                if maxPrice > 0 then
+
+                    local entryPrice =
+                        tonumber(entry.Price)
+                        or tonumber(entry.PriceNumber)
+                        or 0
+
+                    priceOk =
+                        entryPrice <= maxPrice
+                end
+
                 if sizeOk == true
-                and variantOk == true then
+                and variantOk == true
+                and priceOk == true then
                     return true
                 end
             end
@@ -18140,10 +18365,10 @@ function HolySaveSniperSettings()
                 HOLY_SNIPER_STATE.BuilderVariants
             ),
 
-        BuilderAmount =
+        BuilderMaxPrice =
             tostring(
-                HolySniperReadAmount(
-                    HOLY_SNIPER_STATE.BuilderAmount
+                HolySniperReadMaxPrice(
+                    HOLY_SNIPER_STATE.BuilderMaxPrice
                 )
             ),
 
@@ -18317,10 +18542,21 @@ function HolyLoadSniperSettings()
             data.BuilderVariants
         )
 
+    HOLY_SNIPER_STATE.BuilderMaxPrice =
+        tostring(
+            HolySniperReadMaxPrice(
+                data.BuilderMaxPrice
+                or data.MaxPrice
+                or HOLY_SNIPER_STATE.BuilderMaxPrice
+                or "0"
+            )
+        )
+
     HOLY_SNIPER_STATE.BuilderAmount =
         tostring(
             HolySniperReadAmount(
                 data.BuilderAmount
+                or 999
             )
         )
 
@@ -18355,8 +18591,8 @@ function HolySniperSaveFilterFromBuilder()
             Variants =
                 HOLY_SNIPER_STATE.BuilderVariants,
 
-            Amount =
-                HOLY_SNIPER_STATE.BuilderAmount,
+            MaxPrice =
+                HOLY_SNIPER_STATE.BuilderMaxPrice,
 
             Priority =
                 HOLY_SNIPER_STATE.BuilderPriority,
@@ -18416,7 +18652,9 @@ function HolySniperSaveFilterFromBuilder()
                 and "Updated filter: "
                 or "Saved filter: "
             )
-            .. tostring(filter.Pet),
+            .. tostring(filter.Pet)
+            .. " / "
+            .. HolySniperFormatMaxPrice(filter.MaxPrice),
             3
         )
     end
@@ -18498,9 +18736,16 @@ function HolySniperEditSelectedFilter()
     HOLY_SNIPER_STATE.BuilderVariants =
         filter.Variants
 
+    HOLY_SNIPER_STATE.BuilderMaxPrice =
+        tostring(
+            filter.MaxPrice
+            or 0
+        )
+
     HOLY_SNIPER_STATE.BuilderAmount =
         tostring(
             filter.Amount
+            or 999
         )
 
     HOLY_SNIPER_STATE.BuilderPriority =
@@ -18537,11 +18782,11 @@ function HolySniperEditSelectedFilter()
             )
         end
 
-        if options.HolySniperTargetAmount
-        and type(options.HolySniperTargetAmount.SetValue) == "function" then
+        if options.HolySniperMaxPrice
+        and type(options.HolySniperMaxPrice.SetValue) == "function" then
 
-            options.HolySniperTargetAmount:SetValue(
-                tostring(filter.Amount)
+            options.HolySniperMaxPrice:SetValue(
+                tostring(filter.MaxPrice or 0)
             )
         end
 
@@ -42341,11 +42586,11 @@ HOLY_SERVER_FINDER_STATE = {
         {
             {
                 PetScope =
-                    "Selected Pets",
+                    "Any Pet",
 
                 Pets =
                     {
-                        "Bunny",
+                        "Any",
                     },
 
                 Sizes =
@@ -42370,6 +42615,7 @@ HOLY_SERVER_FINDER_STATE = {
                 Enabled =
                     true,
             },
+        },
 
             {
                 PetScope =
@@ -42758,38 +43004,6 @@ function HolyServerFinderGetDefaultAutoJoinRules()
     return {
         {
             PetScope =
-                "Selected Pets",
-
-            Pets =
-                {
-                    "Bunny",
-                },
-
-            Sizes =
-                {
-                    "Big",
-                    "Huge",
-                },
-
-            Variants =
-                {
-                    "Rainbow",
-                },
-
-            Rarities =
-                {
-                    "Any",
-                },
-
-            MatchMode =
-                "Any Selected",
-
-            Enabled =
-                true,
-        },
-
-        {
-            PetScope =
                 "Any Pet",
 
             Pets =
@@ -42805,69 +43019,7 @@ function HolyServerFinderGetDefaultAutoJoinRules()
 
             Variants =
                 {
-                    "Any",
-                },
-
-            Rarities =
-                {
-                    "Any",
-                },
-
-            MatchMode =
-                "Any Selected",
-
-            Enabled =
-                true,
-        },
-
-        {
-            PetScope =
-                "Selected Pets",
-
-            Pets =
-                {
-                    "Raccoon",
-                },
-
-            Sizes =
-                {
-                    "Any",
-                },
-
-            Variants =
-                {
-                    "Any",
-                },
-
-            Rarities =
-                {
-                    "Any",
-                },
-
-            MatchMode =
-                "Any Selected",
-
-            Enabled =
-                true,
-        },
-
-        {
-            PetScope =
-                "Selected Pets",
-
-            Pets =
-                {
-                    "Golden Dragonfly",
-                },
-
-            Sizes =
-                {
-                    "Any",
-                },
-
-            Variants =
-                {
-                    "Any",
+                    "Rainbow",
                 },
 
             Rarities =
@@ -46475,11 +46627,11 @@ function HolyServerFinderDefaultEditableRule()
 
     return HolyServerFinderCloneRule({
         PetScope =
-            "Selected Pets",
+            "Any Pet",
 
         Pets =
             {
-                "Bunny",
+                "Any",
             },
 
         Sizes =
@@ -52629,19 +52781,22 @@ SniperFilterBox:AddDropdown(
 end)
 
 SniperFilterBox:AddInput(
-    "HolySniperTargetAmount",
+    "HolySniperMaxPrice",
     {
         Text =
-            "Target Amount",
+            "Max Price",
 
         Default =
             tostring(
-                HOLY_SNIPER_STATE.BuilderAmount
-                or "1"
+                HOLY_SNIPER_STATE.BuilderMaxPrice
+                or "0"
             ),
 
+        Placeholder =
+            "0 / 50k / 1.5m",
+
         Numeric =
-            true,
+            false,
 
         Finished =
             true,
@@ -52650,13 +52805,13 @@ SniperFilterBox:AddInput(
             false,
 
         Tooltip =
-            "How many pets this filter should buy before it is considered done.",
+            "Only buys pets at or below this price. Use 0 for no cap.",
     }
 ):OnChanged(function(value)
 
-    HOLY_SNIPER_STATE.BuilderAmount =
+    HOLY_SNIPER_STATE.BuilderMaxPrice =
         tostring(
-            HolySniperReadAmount(
+            HolySniperReadMaxPrice(
                 value
             )
         )
