@@ -294,7 +294,7 @@ local REPO_URL =
     "https://raw.githubusercontent.com/bencapalot041/goons/main/"
 
 local REMOTE_SOURCE_VERSION =
-    "holy-premium-20260704-filtered_sell_value_v1"
+    "holy-premium-20260705-daily_deal_live_client_v1"
 
 local LIBRARY_URL =
     REPO_URL
@@ -341,6 +341,10 @@ local SERVER_FINDER_API_BASE =
 
 local SERVER_FINDER_API_KEY =
     "holy_2026_private_backend_key_92841"
+
+local DAILY_DEAL_REPORT_API_URL =
+    SERVER_FINDER_API_BASE
+    .. "/daily-deal/report"
 
 local SERVER_FINDER_REPORT_INTERVAL =
     5
@@ -36574,6 +36578,667 @@ function HolyDailyDealExpectedValue(preview)
         multiplier
 end
 
+--==================================================
+-- HOLY SYSTEM DAILY DEAL LIVE WEBHOOK
+--==================================================
+
+if type(HOLY_DAILY_DEAL_LIVE_RUNTIME) == "table" then
+
+    HOLY_DAILY_DEAL_LIVE_RUNTIME.Token =
+        nil
+
+    HOLY_DAILY_DEAL_LIVE_RUNTIME.Running =
+        false
+end
+
+HOLY_DAILY_DEAL_LIVE_RUNTIME = {
+    Running = false,
+    Token = nil,
+
+    LastHash = "",
+    LastSentAt = 0,
+    LastResult = "Live: --",
+    LastErrorAt = 0,
+}
+
+function HolyDailyDealLiveReadNumber(value)
+
+    if type(value) == "number" then
+
+        if value == value
+        and value ~= math.huge
+        and value ~= -math.huge then
+
+            return value
+        end
+
+        return 0
+    end
+
+    local text =
+        tostring(value or "")
+
+    text =
+        text:gsub(",", "")
+
+    local raw =
+        text:match(
+            "%-?%d+%.?%d*"
+        )
+
+    local number =
+        tonumber(raw)
+
+    if number == nil then
+        return 0
+    end
+
+    return number
+end
+
+function HolyDailyDealLiveNormalizeEntry(entry)
+
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local name =
+        HolyCleanText(
+            entry.StockName
+            or entry.stockName
+            or entry.Name
+            or entry.name
+            or entry.FruitName
+            or entry.fruitName
+            or entry.Fruit
+            or entry.fruit
+            or entry.ItemName
+            or entry.itemName
+            or entry.DisplayName
+            or entry.displayName
+            or ""
+        )
+
+    if name == "" then
+        return nil
+    end
+
+    local multiplier =
+        HolyDailyDealLiveReadNumber(
+            entry.Multiplier
+            or entry.multiplier
+            or entry.StockMultiplier
+            or entry.stockMultiplier
+            or entry.ValueMultiplier
+            or entry.valueMultiplier
+            or entry.DailyMultiplier
+            or entry.dailyMultiplier
+            or entry.Value
+            or entry.value
+            or entry.X
+            or entry.x
+            or 0
+        )
+
+    if multiplier <= 0 then
+        return nil
+    end
+
+    return {
+        Name =
+            name,
+
+        Multiplier =
+            multiplier,
+    }
+end
+
+function HolyDailyDealLiveBuildEntries(entries)
+
+    local output =
+        {}
+
+    if type(entries) ~= "table" then
+        return output
+    end
+
+    for _, entry in ipairs(entries) do
+
+        local normalized =
+            HolyDailyDealLiveNormalizeEntry(
+                entry
+            )
+
+        if type(normalized) == "table" then
+
+            table.insert(
+                output,
+                normalized
+            )
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        local multiplierA =
+            tonumber(a.Multiplier)
+            or 0
+
+        local multiplierB =
+            tonumber(b.Multiplier)
+            or 0
+
+        if multiplierA ~= multiplierB then
+            return multiplierA > multiplierB
+        end
+
+        return tostring(a.Name)
+            < tostring(b.Name)
+    end)
+
+    return output
+end
+
+function HolyDailyDealLiveReadUnix(value)
+
+    local number =
+        HolyDailyDealLiveReadNumber(
+            value
+        )
+
+    if number > 1000000000 then
+        return math.floor(number)
+    end
+
+    return 0
+end
+
+function HolyDailyDealLiveReadSeconds(value)
+
+    local number =
+        HolyDailyDealLiveReadNumber(
+            value
+        )
+
+    if number <= 0 then
+        return 0
+    end
+
+    return math.floor(
+        number
+    )
+end
+
+function HolyDailyDealLiveResolveNextRestockAt(stockResult)
+
+    stockResult =
+        type(stockResult) == "table"
+        and stockResult
+        or {}
+
+    local directValues = {
+        stockResult.NextRestockAt,
+        stockResult.nextRestockAt,
+        stockResult.NextRefreshAt,
+        stockResult.nextRefreshAt,
+        stockResult.NextRefreshUnix,
+        stockResult.nextRefreshUnix,
+        stockResult.next_refresh_unix,
+        stockResult.UnixNextRestock,
+        stockResult.unixNextRestock,
+    }
+
+    for _, value in ipairs(directValues) do
+
+        local unix =
+            HolyDailyDealLiveReadUnix(
+                value
+            )
+
+        if unix > 0 then
+            return unix
+        end
+    end
+
+    local serverNow =
+        HolyDailyDealLiveReadUnix(
+            stockResult.ServerNowUnix
+            or stockResult.serverNowUnix
+            or stockResult.server_now_unix
+            or stockResult.NowUnix
+            or stockResult.nowUnix
+            or stockResult.now
+        )
+
+    if serverNow <= 0 then
+
+        serverNow =
+            os.time()
+    end
+
+    local secondsUntil =
+        HolyDailyDealLiveReadSeconds(
+            stockResult.NextRestockIn
+            or stockResult.nextRestockIn
+            or stockResult.RefreshIn
+            or stockResult.refreshIn
+            or stockResult.NextRefreshSeconds
+            or stockResult.nextRefreshSeconds
+            or stockResult.RefreshSeconds
+            or stockResult.refreshSeconds
+            or stockResult.SecondsUntilRefresh
+            or stockResult.secondsUntilRefresh
+            or stockResult.seconds_until_refresh
+        )
+
+    if secondsUntil > 0 then
+
+        return serverNow + secondsUntil
+    end
+
+    return os.time() + 300
+end
+
+function HolyDailyDealLiveBuildRestockKey(stockResult)
+
+    stockResult =
+        type(stockResult) == "table"
+        and stockResult
+        or {}
+
+    local key =
+        HolyCleanText(
+            stockResult.RestockKey
+            or stockResult.restockKey
+            or stockResult.StockKey
+            or stockResult.stockKey
+            or stockResult.CycleKey
+            or stockResult.cycleKey
+            or ""
+        )
+
+    if key ~= "" then
+        return key
+    end
+
+    return tostring(
+        HolyDailyDealLiveResolveNextRestockAt(
+            stockResult
+        )
+    )
+end
+
+function HolyDailyDealLiveBuildHash(stockResult, entries)
+
+    local parts =
+        {}
+
+    for _, entry in ipairs(entries or {}) do
+
+        table.insert(
+            parts,
+            HolyCleanText(entry.Name)
+            .. ":"
+            .. string.format(
+                "%.4f",
+                tonumber(entry.Multiplier)
+                or 0
+            )
+        )
+    end
+
+    return HolyDailyDealLiveBuildRestockKey(
+        stockResult
+    )
+        .. "|"
+        .. table.concat(
+            parts,
+            "|"
+        )
+end
+
+function HolyDailyDealLivePostNow(stockResult, source)
+
+    local runtime =
+        HOLY_DAILY_DEAL_LIVE_RUNTIME
+
+    stockResult =
+        type(stockResult) == "table"
+        and stockResult
+        or {}
+
+    local entries =
+        HolyDailyDealLiveBuildEntries(
+            stockResult.entries
+            or stockResult.Entries
+            or stockResult.Stock
+            or stockResult.stock
+            or {}
+        )
+
+    if #entries <= 0 then
+
+        runtime.LastResult =
+            "Live: no entries"
+
+        return false,
+            "no entries"
+    end
+
+    local reportHash =
+        HolyDailyDealLiveBuildHash(
+            stockResult,
+            entries
+        )
+
+    local nowClock =
+        os.clock()
+
+    if runtime.LastHash == reportHash
+    and nowClock - (
+        tonumber(runtime.LastSentAt)
+        or 0
+    ) < 20 then
+
+        return false,
+            "duplicate"
+    end
+
+    runtime.LastHash =
+        reportHash
+
+    runtime.LastSentAt =
+        nowClock
+
+    local nextRestockAt =
+        HolyDailyDealLiveResolveNextRestockAt(
+            stockResult
+        )
+
+    local payload = {
+        Key =
+            SERVER_FINDER_API_KEY,
+
+        PlaceId =
+            game.PlaceId,
+
+        JobId =
+            game.JobId,
+
+        Reporter =
+            LocalPlayer
+            and LocalPlayer.Name
+            or "",
+
+        Source =
+            tostring(source or "client"),
+
+        RestockKey =
+            HolyDailyDealLiveBuildRestockKey(
+                stockResult
+            ),
+
+        NextRestockAt =
+            nextRestockAt,
+
+        NextRefreshAt =
+            nextRestockAt,
+
+        Entries =
+            entries,
+    }
+
+    local encodeOk,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeOk ~= true
+    or type(encoded) ~= "string" then
+
+        runtime.LastResult =
+            "Live: encode failed"
+
+        return false,
+            "encode failed"
+    end
+
+    local requestFunction =
+        HolyGetRequestFunction()
+
+    if type(requestFunction) ~= "function" then
+
+        runtime.LastResult =
+            "Live: no request"
+
+        return false,
+            "no request"
+    end
+
+    local requestOk,
+        response =
+        pcall(function()
+
+            return requestFunction({
+                Url =
+                    DAILY_DEAL_REPORT_API_URL,
+
+                Method =
+                    "POST",
+
+                Headers = {
+                    ["Content-Type"] =
+                        "application/json",
+
+                    ["Accept"] =
+                        "application/json",
+
+                    ["x-api-key"] =
+                        SERVER_FINDER_API_KEY,
+                },
+
+                Body =
+                    encoded,
+            })
+        end)
+
+    if requestOk ~= true then
+
+        runtime.LastResult =
+            "Live: request failed"
+
+        local now =
+            os.clock()
+
+        if now - (
+            tonumber(runtime.LastErrorAt)
+            or 0
+        ) > 15 then
+
+            runtime.LastErrorAt =
+                now
+
+            warn(
+                "[HOLY DAILY DEAL LIVE]",
+                "request failed:",
+                tostring(response)
+            )
+        end
+
+        return false,
+            tostring(response)
+    end
+
+    local statusCode =
+        nil
+
+    local body =
+        ""
+
+    if type(response) == "table" then
+
+        statusCode =
+            tonumber(
+                response.StatusCode
+                or response.status_code
+                or response.Status
+                or response.status
+            )
+
+        body =
+            tostring(
+                response.Body
+                or response.body
+                or response.ResponseBody
+                or response.responseBody
+                or ""
+            )
+
+    elseif type(response) == "string" then
+
+        body =
+            response
+    end
+
+    if statusCode ~= nil
+    and statusCode ~= 200
+    and statusCode ~= 204 then
+
+        runtime.LastResult =
+            "Live: HTTP "
+            .. tostring(statusCode)
+
+        warn(
+            "[HOLY DAILY DEAL LIVE]",
+            runtime.LastResult,
+            body
+        )
+
+        return false,
+            runtime.LastResult
+    end
+
+    local decoded =
+        nil
+
+    if body ~= "" then
+
+        pcall(function()
+
+            decoded =
+                HttpService:JSONDecode(
+                    body
+                )
+        end)
+    end
+
+    if type(decoded) == "table"
+    and decoded.ok == false then
+
+        runtime.LastResult =
+            "Live: "
+            .. tostring(decoded.error or "failed")
+
+        warn(
+            "[HOLY DAILY DEAL LIVE]",
+            runtime.LastResult
+        )
+
+        return false,
+            runtime.LastResult
+    end
+
+    local top =
+        entries[1]
+
+    runtime.LastResult =
+        "Live: sent "
+        .. tostring(#entries)
+        .. " fruit(s)"
+
+    if type(top) == "table" then
+
+        runtime.LastResult =
+            runtime.LastResult
+            .. " | Top: "
+            .. tostring(top.Name)
+            .. " x"
+            .. tostring(
+                math.floor(
+                    (
+                        tonumber(top.Multiplier)
+                        or 0
+                    ) * 100
+                    + 0.5
+                ) / 100
+            )
+    end
+
+    print(
+        "[HOLY DAILY DEAL LIVE]",
+        runtime.LastResult
+    )
+
+    return true,
+        runtime.LastResult
+end
+
+function HolyDailyDealSendLiveReportAsync(stockResult, source)
+
+    task.spawn(function()
+
+        local ok,
+            success,
+            reason =
+            pcall(function()
+
+                return HolyDailyDealLivePostNow(
+                    stockResult,
+                    source
+                )
+            end)
+
+        if ok ~= true then
+
+            HOLY_DAILY_DEAL_LIVE_RUNTIME.LastResult =
+                "Live: error"
+
+            warn(
+                "[HOLY DAILY DEAL LIVE]",
+                tostring(success)
+            )
+
+            return
+        end
+
+        return success,
+            reason
+    end)
+
+    return true
+end
+
+function HolyDailyDealLiveResolveWait(stockResult)
+
+    local nextRestockAt =
+        HolyDailyDealLiveResolveNextRestockAt(
+            stockResult
+        )
+
+    local seconds =
+        nextRestockAt - os.time() + 2
+
+    return math.clamp(
+        seconds,
+        15,
+        310
+    )
+end
+
 function HolyDailyDealSetNextWait(seconds)
 
     HOLY_DAILY_DEAL_RUNTIME.NextWait =
@@ -36688,6 +37353,11 @@ function HolyDailyDealEvaluate(mode)
         return false,
             "stock failed"
     end
+
+    HolyDailyDealSendLiveReportAsync(
+        stockResult,
+        mode
+    )
 
     local best,
         triggerReason =
@@ -37309,6 +37979,145 @@ function HolyDailyDealSetAutoEnabled(value, reason)
         reason or "Off"
     )
 end
+
+function HolyDailyDealLiveStopWorker(reason)
+
+    local runtime =
+        HOLY_DAILY_DEAL_LIVE_RUNTIME
+
+    runtime.Token =
+        nil
+
+    runtime.Running =
+        false
+
+    runtime.LastResult =
+        tostring(reason or "Live: stopped")
+
+    return true
+end
+
+function HolyDailyDealLiveStartWorker(reason)
+
+    local runtime =
+        HOLY_DAILY_DEAL_LIVE_RUNTIME
+
+    if runtime.Running == true
+    and runtime.Token ~= nil then
+
+        return false
+    end
+
+    local token =
+        {}
+
+    runtime.Token =
+        token
+
+    runtime.Running =
+        true
+
+    runtime.LastResult =
+        "Live: starting"
+
+    task.spawn(function()
+
+        task.wait(
+            8
+        )
+
+        while runtime.Token == token do
+
+            local waitSeconds =
+                45
+
+            local requestOk,
+                stockResult,
+                stockOk,
+                stockReason =
+                pcall(function()
+
+                    return HolyDailyDealFireFruitStockRequest()
+                end)
+
+            if requestOk == true
+            and stockOk == true
+            and type(stockResult) == "table"
+            and type(stockResult.entries) == "table" then
+
+                HolyDailyDealSendLiveReportAsync(
+                    stockResult,
+                    "live"
+                )
+
+                waitSeconds =
+                    HolyDailyDealLiveResolveWait(
+                        stockResult
+                    )
+
+            else
+
+                runtime.LastResult =
+                    "Live: stock failed"
+
+                local now =
+                    os.clock()
+
+                if now - (
+                    tonumber(runtime.LastErrorAt)
+                    or 0
+                ) > 20 then
+
+                    runtime.LastErrorAt =
+                        now
+
+                    warn(
+                        "[HOLY DAILY DEAL LIVE]",
+                        "stock failed:",
+                        tostring(stockReason)
+                    )
+                end
+            end
+
+            local untilClock =
+                os.clock()
+                + waitSeconds
+
+            while runtime.Token == token
+            and os.clock() < untilClock do
+
+                task.wait(
+                    1
+                )
+            end
+        end
+
+        if runtime.Token == token then
+
+            runtime.Running =
+                false
+
+            runtime.Token =
+                nil
+        end
+    end)
+
+    return true
+end
+
+task.defer(function()
+
+    task.wait(
+        8
+    )
+
+    if type(HolyDailyDealFireFruitStockRequest) == "function" then
+
+        HolyDailyDealLiveStartWorker(
+            "script load"
+        )
+    end
+end)
 
 --==================================================
 -- [2.61] AUTO DOUBLE OR NOTHING CORE
