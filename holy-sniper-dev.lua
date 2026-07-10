@@ -799,6 +799,15 @@ HOLY_WATERING_REJOIN_STATE = {
     RejoinDelay =
         5,
 
+    MovementMode =
+        "Tween",
+
+    TweenSpeed =
+        30,
+
+    HidePlants =
+        true,
+
     TargetUsername =
         "",
 
@@ -825,7 +834,17 @@ HOLY_WATERING_REJOIN_RUNTIME = {
     SetupHookRestore = nil,
 
     PlantCollisionOriginal = {},
-    PlantConnection = nil,
+    PlantConnections = {},
+
+    ActiveTween = nil,
+
+    CharacterConnection = nil,
+    DiedConnection = nil,
+    RespawnPending = false,
+
+    CompletedUses = 0,
+    WateringFinished = false,
+    RejoinAt = nil,
 
     ToggleSyncing = false,
     Stop = nil,
@@ -51415,6 +51434,26 @@ function HolyWateringRejoinNormalizeState()
             60
         )
 
+    if state.MovementMode ~= "Walk"
+    and state.MovementMode ~= "Tween" then
+
+        state.MovementMode =
+            "Tween"
+    end
+
+    state.TweenSpeed =
+        math.clamp(
+            tonumber(
+                state.TweenSpeed
+            )
+            or 30,
+            5,
+            100
+        )
+
+    state.HidePlants =
+        state.HidePlants ~= false
+
     state.TargetUsername =
         tostring(
             state.TargetUsername
@@ -51466,7 +51505,7 @@ function HolyWateringRejoinSaveSettings()
         HolyWateringRejoinNormalizeState()
 
     local payload = {
-        Version = 2,
+        Version = 3,
 
         Enabled =
             state.Enabled == true,
@@ -51491,6 +51530,15 @@ function HolyWateringRejoinSaveSettings()
 
         RejoinDelay =
             state.RejoinDelay,
+
+        MovementMode =
+            state.MovementMode,
+
+        TweenSpeed =
+            state.TweenSpeed,
+
+        HidePlants =
+            state.HidePlants == true,
 
         TargetUsername =
             state.TargetUsername,
@@ -51636,6 +51684,26 @@ function HolyWateringRejoinLoadSettings()
             data.RejoinDelay
         )
         or state.RejoinDelay
+
+    state.MovementMode =
+        tostring(
+            data.MovementMode
+            or state.MovementMode
+            or "Tween"
+        )
+
+    state.TweenSpeed =
+        tonumber(
+            data.TweenSpeed
+        )
+        or state.TweenSpeed
+        or 30
+
+    if data.HidePlants ~= nil then
+
+        state.HidePlants =
+            data.HidePlants == true
+    end
 
     state.TargetUsername =
         tostring(
@@ -52333,29 +52401,39 @@ function HolyWateringRejoinRestorePlantCollision()
     local runtime =
         HOLY_WATERING_REJOIN_RUNTIME
 
-    if runtime.PlantConnection then
+    for _, connection in ipairs(
+        runtime.PlantConnections
+        or {}
+    ) do
 
         pcall(function()
 
-            runtime.PlantConnection:Disconnect()
+            connection:Disconnect()
         end)
-
-        runtime.PlantConnection =
-            nil
     end
 
-    for part, originalValue in pairs(
+    runtime.PlantConnections =
+        {}
+
+    for object, original in pairs(
         runtime.PlantCollisionOriginal
         or {}
     ) do
 
-        if typeof(part) == "Instance"
-        and part:IsA("BasePart") then
+        if typeof(object) == "Instance"
+        and object:IsA("BasePart")
+        and type(original) == "table" then
 
             pcall(function()
 
-                part.CanCollide =
-                    originalValue == true
+                object.CanCollide =
+                    original.CanCollide == true
+
+                object.LocalTransparencyModifier =
+                    tonumber(
+                        original.LocalTransparencyModifier
+                    )
+                    or 0
             end)
         end
     end
@@ -52368,42 +52446,84 @@ function HolyWateringRejoinApplyPlantCollision(garden)
 
     HolyWateringRejoinRestorePlantCollision()
 
-    if typeof(garden) ~= "Instance" then
-        return false
-    end
-
-    local plants =
-        garden:FindFirstChild(
-            "Plants"
-        )
-
-    if not plants then
-        return false
-    end
+    local state =
+        HOLY_WATERING_REJOIN_STATE
 
     local runtime =
         HOLY_WATERING_REJOIN_RUNTIME
 
+    local gardensRoot =
+        workspace:FindFirstChild(
+            "Gardens"
+        )
+
+    local scanRoot =
+        gardensRoot
+        or garden
+
+    if typeof(scanRoot) ~= "Instance" then
+
+        return false
+    end
+
+    local function isInsidePlants(object)
+
+        local current =
+            object.Parent
+
+        while current do
+
+            if current.Name == "Plants" then
+
+                return true
+            end
+
+            if current == scanRoot then
+                break
+            end
+
+            current =
+                current.Parent
+        end
+
+        return false
+    end
+
     local function apply(object)
 
         if typeof(object) ~= "Instance"
-        or object:IsA("BasePart") ~= true then
+        or object:IsA("BasePart") ~= true
+        or isInsidePlants(object) ~= true then
 
             return
         end
 
         if runtime.PlantCollisionOriginal[object] == nil then
 
-            runtime.PlantCollisionOriginal[object] =
-                object.CanCollide == true
+            runtime.PlantCollisionOriginal[object] = {
+                CanCollide =
+                    object.CanCollide == true,
+
+                LocalTransparencyModifier =
+                    object.LocalTransparencyModifier,
+            }
         end
 
-        object.CanCollide =
-            false
+        pcall(function()
+
+            object.CanCollide =
+                false
+
+            if state.HidePlants == true then
+
+                object.LocalTransparencyModifier =
+                    1
+            end
+        end)
     end
 
     for _, object in ipairs(
-        plants:GetDescendants()
+        scanRoot:GetDescendants()
     ) do
 
         apply(
@@ -52411,16 +52531,21 @@ function HolyWateringRejoinApplyPlantCollision(garden)
         )
     end
 
-    runtime.PlantConnection =
-        plants.DescendantAdded:Connect(function(object)
+    table.insert(
+        runtime.PlantConnections,
+        scanRoot.DescendantAdded:Connect(function(object)
 
             task.defer(function()
 
-                apply(
-                    object
-                )
+                if state.Enabled == true then
+
+                    apply(
+                        object
+                    )
+                end
             end)
         end)
+    )
 
     return true
 end
@@ -52841,6 +52966,226 @@ function HolyWateringRejoinWalkTo(
 
     return finalDistance <= arrivalDistance,
         finalDistance
+end
+
+function HolyWateringRejoinCancelTween()
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    local tween =
+        runtime.ActiveTween
+
+    runtime.ActiveTween =
+        nil
+
+    if tween then
+
+        pcall(function()
+
+            tween:Cancel()
+        end)
+    end
+end
+
+function HolyWateringRejoinTweenTo(
+    destinationCFrame,
+    generation
+)
+
+    if typeof(destinationCFrame) ~= "CFrame" then
+
+        return false,
+            math.huge
+    end
+
+    local character,
+        humanoid,
+        root =
+        HolyWateringRejoinGetCharacter()
+
+    if not character
+    or not humanoid
+    or not root then
+
+        return false,
+            math.huge
+    end
+
+    local state =
+        HOLY_WATERING_REJOIN_STATE
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    local destination =
+        destinationCFrame.Position
+
+    local startingDistance =
+        HolyWateringRejoinHorizontalDistanceTo(
+            root,
+            destination
+        )
+
+    if startingDistance <= 4 then
+
+        pcall(function()
+
+            root.CFrame =
+                destinationCFrame
+        end)
+
+        return true,
+            startingDistance
+    end
+
+    pcall(function()
+
+        humanoid:UnequipTools()
+
+        humanoid.Sit =
+            false
+
+        humanoid.PlatformStand =
+            false
+
+        humanoid.AutoRotate =
+            false
+    end)
+
+    local speed =
+        math.clamp(
+            tonumber(
+                state.TweenSpeed
+            )
+            or 30,
+            5,
+            100
+        )
+
+    local duration =
+        math.max(
+            0.1,
+            (
+                root.Position
+                - destination
+            ).Magnitude
+            / speed
+        )
+
+    local TweenService =
+        game:GetService(
+            "TweenService"
+        )
+
+    local tween =
+        TweenService:Create(
+            root,
+            TweenInfo.new(
+                duration,
+                Enum.EasingStyle.Linear,
+                Enum.EasingDirection.Out
+            ),
+            {
+                CFrame =
+                    destinationCFrame,
+            }
+        )
+
+    runtime.ActiveTween =
+        tween
+
+    local completed =
+        false
+
+    local completedConnection =
+        tween.Completed:Connect(function()
+
+            completed =
+                true
+        end)
+
+    tween:Play()
+
+    local deadline =
+        os.clock()
+        + duration
+        + 3
+
+    while state.Enabled == true
+    and runtime.Running == true
+    and runtime.Generation == generation
+    and runtime.RespawnPending ~= true
+    and completed ~= true
+    and os.clock() < deadline do
+
+        task.wait(
+            0.05
+        )
+    end
+
+    pcall(function()
+
+        completedConnection:Disconnect()
+    end)
+
+    if runtime.ActiveTween == tween then
+
+        runtime.ActiveTween =
+            nil
+    end
+
+    if state.Enabled ~= true
+    or runtime.Running ~= true
+    or runtime.Generation ~= generation
+    or runtime.RespawnPending == true then
+
+        pcall(function()
+
+            tween:Cancel()
+        end)
+
+        return false,
+            HolyWateringRejoinHorizontalDistanceTo(
+                root,
+                destination
+            )
+    end
+
+    pcall(function()
+
+        humanoid.AutoRotate =
+            true
+    end)
+
+    local finalDistance =
+        HolyWateringRejoinHorizontalDistanceTo(
+            root,
+            destination
+        )
+
+    return finalDistance <= 4,
+        finalDistance
+end
+
+function HolyWateringRejoinMoveTo(
+    destinationCFrame,
+    generation
+)
+
+    if HOLY_WATERING_REJOIN_STATE.MovementMode
+        == "Tween" then
+
+        return HolyWateringRejoinTweenTo(
+            destinationCFrame,
+            generation
+        )
+    end
+
+    return HolyWateringRejoinWalkTo(
+        destinationCFrame,
+        generation
+    )
 end
 
 function HolyWateringRejoinRestoreSetupHook()
@@ -53424,6 +53769,83 @@ function HolyWateringRejoinAbort(message)
     return false
 end
 
+function HolyWateringRejoinFinishRejoin(generation)
+
+    local state =
+        HOLY_WATERING_REJOIN_STATE
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    if runtime.RejoinAt == nil then
+
+        runtime.RejoinAt =
+            os.clock()
+            + math.clamp(
+                tonumber(
+                    state.RejoinDelay
+                )
+                or 5,
+                1,
+                60
+            )
+    end
+
+    HolyWateringRejoinEnsureRollback()
+
+    while state.Enabled == true
+    and runtime.Running == true
+    and runtime.Generation == generation
+    and os.clock() < runtime.RejoinAt do
+
+        task.wait(
+            0.05
+        )
+    end
+
+    if state.Enabled ~= true
+    or runtime.Running ~= true
+    or runtime.Generation ~= generation then
+
+        return false
+    end
+
+    HolyWateringRejoinEnsureRollback()
+    HolyWateringRejoinSaveSettings()
+
+    runtime.Teleporting =
+        true
+
+    local teleportSuccess,
+        teleportError =
+        pcall(function()
+
+            TeleportService:Teleport(
+                game.PlaceId,
+                LocalPlayer
+            )
+        end)
+
+    if teleportSuccess ~= true then
+
+        runtime.Teleporting =
+            false
+
+        warn(
+            "[HOLY Watering Rejoin] Rejoin failed: "
+            .. tostring(teleportError)
+        )
+
+        HolyWateringRejoinAbort(
+            "Rejoin failed."
+        )
+
+        return false
+    end
+
+    return true
+end
+
 function HolyWateringRejoinRunCycle(generation)
 
     local state =
@@ -53448,6 +53870,15 @@ function HolyWateringRejoinRunCycle(generation)
 
         HolyWateringRejoinAbort(
             "Rollback could not be started."
+        )
+
+        return
+    end
+
+    if runtime.WateringFinished == true then
+
+        HolyWateringRejoinFinishRejoin(
+            generation
         )
 
         return
@@ -53506,6 +53937,13 @@ function HolyWateringRejoinRunCycle(generation)
         )
     end
 
+    if state.Enabled ~= true
+    or runtime.Running ~= true
+    or runtime.Generation ~= generation then
+
+        return
+    end
+
     if not garden
     or not savedStandCFrame
     or not savedAimPosition then
@@ -53533,12 +53971,21 @@ function HolyWateringRejoinRunCycle(generation)
 
     local arrived,
         finalDistance =
-        HolyWateringRejoinWalkTo(
+        HolyWateringRejoinMoveTo(
             savedStandCFrame,
             generation
         )
 
     if arrived ~= true then
+
+        if state.Enabled == true
+        and (
+            runtime.Generation ~= generation
+            or runtime.RespawnPending == true
+        ) then
+
+            return
+        end
 
         HolyWateringRejoinAbort(
             "Could not reach the saved position. Distance: "
@@ -53596,7 +54043,15 @@ function HolyWateringRejoinRunCycle(generation)
     end
 
     local attemptedUses =
-        0
+        math.max(
+            0,
+            math.floor(
+                tonumber(
+                    runtime.CompletedUses
+                )
+                or 0
+            )
+        )
 
     local confirmedUses =
         0
@@ -53655,6 +54110,13 @@ function HolyWateringRejoinRunCycle(generation)
                 generation
             )
 
+        if state.Enabled ~= true
+        or runtime.Running ~= true
+        or runtime.Generation ~= generation then
+
+            return
+        end
+
         if packetSent ~= true then
 
             wateringFailure =
@@ -53665,6 +54127,9 @@ function HolyWateringRejoinRunCycle(generation)
 
         attemptedUses +=
             1
+
+        runtime.CompletedUses =
+            attemptedUses
 
         if confirmed == true then
 
@@ -53774,70 +54239,190 @@ function HolyWateringRejoinRunCycle(generation)
         return
     end
 
-    local rejoinDelay =
-        math.clamp(
-            tonumber(
-                state.RejoinDelay
+    runtime.WateringFinished =
+        true
+
+    if runtime.RejoinAt == nil then
+
+        runtime.RejoinAt =
+            os.clock()
+            + math.clamp(
+                tonumber(
+                    state.RejoinDelay
+                )
+                or 5,
+                1,
+                60
             )
-            or 5,
-            1,
-            60
-        )
-
-    local rejoinAt =
-        os.clock()
-        + rejoinDelay
-
-    HolyWateringRejoinEnsureRollback()
-
-    while state.Enabled == true
-    and runtime.Running == true
-    and runtime.Generation == generation
-    and os.clock() < rejoinAt do
-
-        task.wait(
-            0.05
-        )
     end
 
+    HolyWateringRejoinFinishRejoin(
+        generation
+    )
+end
+
+function HolyWateringRejoinDisconnectCharacterWatcher()
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    if runtime.CharacterConnection then
+
+        pcall(function()
+
+            runtime.CharacterConnection:Disconnect()
+        end)
+
+        runtime.CharacterConnection =
+            nil
+    end
+
+    if runtime.DiedConnection then
+
+        pcall(function()
+
+            runtime.DiedConnection:Disconnect()
+        end)
+
+        runtime.DiedConnection =
+            nil
+    end
+end
+
+function HolyWateringRejoinHandleDeath()
+
+    local state =
+        HOLY_WATERING_REJOIN_STATE
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
     if state.Enabled ~= true
-    or runtime.Running ~= true
-    or runtime.Generation ~= generation then
+    or runtime.Teleporting == true then
 
         return
     end
 
-    HolyWateringRejoinEnsureRollback()
-
-    HolyWateringRejoinSaveSettings()
-
-    runtime.Teleporting =
+    runtime.RespawnPending =
         true
 
-    local teleportSuccess,
-        teleportError =
+    runtime.Running =
+        false
+
+    runtime.Busy =
+        false
+
+    runtime.Generation +=
+        1
+
+    HolyWateringRejoinCancelTween()
+    HolyWateringRejoinEnsureRollback()
+end
+
+function HolyWateringRejoinBindCharacter(character)
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    if runtime.DiedConnection then
+
         pcall(function()
 
-            TeleportService:Teleport(
-                game.PlaceId,
-                LocalPlayer
-            )
+            runtime.DiedConnection:Disconnect()
         end)
 
-    if teleportSuccess ~= true then
-
-        runtime.Teleporting =
-            false
-
-        warn(
-            "[HOLY Watering Rejoin] Rejoin failed: "
-            .. tostring(teleportError)
-        )
-
-        HolyWateringRejoinAbort(
-            "Rejoin failed."
-        )
+        runtime.DiedConnection =
+            nil
     end
+
+    if typeof(character) ~= "Instance" then
+        return false
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass(
+            "Humanoid"
+        )
+        or character:WaitForChild(
+            "Humanoid",
+            10
+        )
+
+    if typeof(humanoid) ~= "Instance" then
+        return false
+    end
+
+    runtime.DiedConnection =
+        humanoid.Died:Connect(function()
+
+            HolyWateringRejoinHandleDeath()
+        end)
+
+    return true
+end
+
+function HolyWateringRejoinConnectCharacterWatcher()
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    if runtime.CharacterConnection then
+        return true
+    end
+
+    HolyWateringRejoinBindCharacter(
+        LocalPlayer.Character
+    )
+
+    runtime.CharacterConnection =
+        LocalPlayer.CharacterAdded:Connect(function(character)
+
+            task.spawn(function()
+
+                runtime.RespawnPending =
+                    true
+
+                if runtime.Running == true then
+
+                    runtime.Generation +=
+                        1
+                end
+
+                runtime.Running =
+                    false
+
+                runtime.Busy =
+                    false
+
+                HolyWateringRejoinCancelTween()
+
+                HolyWateringRejoinBindCharacter(
+                    character
+                )
+
+                character:WaitForChild(
+                    "HumanoidRootPart",
+                    15
+                )
+
+                task.wait(
+                    1
+                )
+
+                if HOLY_WATERING_REJOIN_STATE.Enabled == true
+                and runtime.Teleporting ~= true then
+
+                    runtime.RespawnPending =
+                        false
+
+                    HolyWateringRejoinStart(
+                        "respawn"
+                    )
+                end
+            end)
+        end)
+
+    return true
 end
 
 function HolyWateringRejoinStart(reason)
@@ -53876,7 +54461,8 @@ function HolyWateringRejoinStart(reason)
         return true
     end
 
-    if type(HolyFarmMiddlePauseForWatering) == "function" then
+    if type(HolyFarmMiddlePauseForWatering)
+        == "function" then
 
         HolyFarmMiddlePauseForWatering(
             "watering rejoin started"
@@ -53885,6 +54471,21 @@ function HolyWateringRejoinStart(reason)
 
     state.Enabled =
         true
+
+    if tostring(reason) ~= "respawn" then
+
+        runtime.CompletedUses =
+            0
+
+        runtime.WateringFinished =
+            false
+
+        runtime.RejoinAt =
+            nil
+    end
+
+    runtime.RespawnPending =
+        false
 
     runtime.Running =
         true
@@ -53901,6 +54502,7 @@ function HolyWateringRejoinStart(reason)
     local generation =
         runtime.Generation
 
+    HolyWateringRejoinConnectCharacterWatcher()
     HolyWateringRejoinSaveSettings()
 
     HolyWateringRejoinSyncToggle(
@@ -53949,9 +54551,23 @@ function HolyWateringRejoinStop(
     runtime.Teleporting =
         false
 
+    runtime.RespawnPending =
+        false
+
     runtime.Generation +=
         1
 
+    runtime.CompletedUses =
+        0
+
+    runtime.WateringFinished =
+        false
+
+    runtime.RejoinAt =
+        nil
+
+    HolyWateringRejoinCancelTween()
+    HolyWateringRejoinDisconnectCharacterWatcher()
     HolyWateringRejoinRestoreSetupHook()
     HolyWateringRejoinRestorePlantCollision()
 
@@ -53968,6 +54584,9 @@ function HolyWateringRejoinStop(
             humanoid:MoveTo(
                 root.Position
             )
+
+            humanoid.AutoRotate =
+                true
         end)
     end
 
@@ -53982,7 +54601,8 @@ function HolyWateringRejoinStop(
             false
         )
 
-        if type(HolyFarmMiddleResumeAfterWatering) == "function" then
+        if type(HolyFarmMiddleResumeAfterWatering)
+            == "function" then
 
             task.defer(function()
 
@@ -54015,6 +54635,61 @@ function HolyWateringRejoinSetEnabled(value)
         "toggle",
         false
     )
+end
+
+function HolyWateringRejoinSetMovementMode(value)
+
+    value =
+        tostring(value)
+
+    if value ~= "Walk"
+    and value ~= "Tween" then
+
+        value =
+            "Tween"
+    end
+
+    HOLY_WATERING_REJOIN_STATE.MovementMode =
+        value
+
+    HolyWateringRejoinSaveSettings()
+
+    return value
+end
+
+function HolyWateringRejoinSetTweenSpeed(value)
+
+    HOLY_WATERING_REJOIN_STATE.TweenSpeed =
+        math.clamp(
+            tonumber(value)
+            or 30,
+            5,
+            100
+        )
+
+    HolyWateringRejoinSaveSettings()
+
+    return HOLY_WATERING_REJOIN_STATE.TweenSpeed
+end
+
+function HolyWateringRejoinSetHidePlants(value)
+
+    HOLY_WATERING_REJOIN_STATE.HidePlants =
+        value == true
+
+    HolyWateringRejoinSaveSettings()
+
+    if HOLY_WATERING_REJOIN_STATE.Enabled == true then
+
+        HolyWateringRejoinApplyPlantCollision(
+            nil
+        )
+    else
+
+        HolyWateringRejoinRestorePlantCollision()
+    end
+
+    return HOLY_WATERING_REJOIN_STATE.HidePlants
 end
 
 function HolyWateringRejoinSetCan(value)
@@ -69366,6 +70041,101 @@ VulnWateringRejoinBox:AddButton({
             HolyWateringRejoinArmSetup()
         end,
 })
+
+HOLY_WATERING_REJOIN_UI.MovementModeDropdown =
+    VulnWateringRejoinBox:AddDropdown(
+        "HolyWateringRejoinMovementMode",
+        {
+            Text =
+                "Movement Mode",
+
+            Values = {
+                "Walk",
+                "Tween",
+            },
+
+            Default =
+                HOLY_WATERING_REJOIN_STATE.MovementMode,
+
+            Multi =
+                false,
+
+            Searchable =
+                false,
+
+            MaxVisibleDropdownItems =
+                2,
+
+            Tooltip =
+                "Walk uses pathfinding. Tween moves directly to the saved position.",
+        }
+    )
+
+HOLY_WATERING_REJOIN_UI.MovementModeDropdown:OnChanged(function(value)
+
+    HolyWateringRejoinSetMovementMode(
+        value
+    )
+end)
+
+HOLY_WATERING_REJOIN_UI.TweenSpeedSlider =
+    VulnWateringRejoinBox:AddSlider(
+        "HolyWateringRejoinTweenSpeed",
+        {
+            Text =
+                "Tween Speed",
+
+            Default =
+                HOLY_WATERING_REJOIN_STATE.TweenSpeed,
+
+            Min =
+                5,
+
+            Max =
+                100,
+
+            Rounding =
+                0,
+
+            Suffix =
+                " studs/s",
+
+            HideMax =
+                true,
+
+            Tooltip =
+                "Movement speed used in Tween mode.",
+        }
+    )
+
+HOLY_WATERING_REJOIN_UI.TweenSpeedSlider:OnChanged(function(value)
+
+    HolyWateringRejoinSetTweenSpeed(
+        value
+    )
+end)
+
+HOLY_WATERING_REJOIN_UI.HidePlantsToggle =
+    VulnWateringRejoinBox:AddToggle(
+        "HolyWateringRejoinHidePlants",
+        {
+            Text =
+                "Hide Plants",
+
+            Default =
+                HOLY_WATERING_REJOIN_STATE.HidePlants == true,
+
+            Tooltip =
+                "Hides plants and disables their collision locally while Watering Rejoin is enabled.",
+        }
+    )
+
+HOLY_WATERING_REJOIN_UI.HidePlantsToggle:OnChanged(function(value)
+
+    HolyWateringRejoinSetHidePlants(
+        value == true
+    )
+end)
 
 HOLY_WATERING_REJOIN_UI.WateringCanDropdown =
     VulnWateringRejoinBox:AddDropdown(
