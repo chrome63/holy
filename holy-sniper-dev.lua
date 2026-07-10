@@ -28739,9 +28739,8 @@ function HolyRejoin()
         err =
         pcall(function()
 
-            TeleportService:TeleportToPlaceInstance(
+            TeleportService:Teleport(
                 game.PlaceId,
-                game.JobId,
                 LocalPlayer
             )
         end)
@@ -53308,9 +53307,8 @@ function HolyWateringRejoinRunCycle(generation)
         teleportError =
         pcall(function()
 
-            TeleportService:TeleportToPlaceInstance(
+            TeleportService:Teleport(
                 game.PlaceId,
-                game.JobId,
                 LocalPlayer
             )
         end)
@@ -53326,7 +53324,7 @@ function HolyWateringRejoinRunCycle(generation)
         )
 
         HolyWateringRejoinAbort(
-            "Same-server rejoin failed."
+            "Rejoin failed."
         )
     end
 end
