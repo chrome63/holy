@@ -7740,6 +7740,12 @@ end
 
 function HolyFarmAutoCollectBlocked()
 
+    if type(HOLY_DEFENSE_RUNTIME) == "table"
+    and HOLY_DEFENSE_RUNTIME.Active == true then
+
+        return true
+    end
+
     local sniper =
         type(HOLY_SNIPER_RUNTIME) == "table"
         and HOLY_SNIPER_RUNTIME
@@ -13162,29 +13168,8 @@ end
 
 function HolySniperMovementToolClearBlocked()
 
-    if type(HOLY_DEFENSE_RUNTIME) == "table"
-    and HOLY_DEFENSE_RUNTIME.Active == true then
-
-        local sniper =
-            type(HOLY_SNIPER_RUNTIME) == "table"
-            and HOLY_SNIPER_RUNTIME
-            or {}
-
-        if sniper.Buying == true
-        or sniper.Returning == true
-        or sniper.CurrentTarget ~= nil
-        or HolyCleanText(
-            sniper.CurrentTargetKey
-            or ""
-        ) ~= "" then
-
-            return false
-        end
-
-        return true
-    end
-
-    return false
+    return type(HOLY_DEFENSE_RUNTIME) == "table"
+        and HOLY_DEFENSE_RUNTIME.Active == true
 end
 
 function HolySniperClearHeldToolForMovement(reason)
@@ -15299,6 +15284,23 @@ end
 
 function HolySniperServerSwitchBlocked(actionName, notify)
 
+    if type(HOLY_DEFENSE_RUNTIME) == "table"
+    and HOLY_DEFENSE_RUNTIME.Active == true then
+
+        if notify == true
+        and type(HolyNotify) == "function" then
+
+            HolyNotify(
+                "HOLY Protection",
+                tostring(actionName or "Server switch")
+                .. " blocked while a bought pet is being defended.",
+                4
+            )
+        end
+
+        return true
+    end
+
     if HolySniperPetBuyProtectionBlocks(
         actionName,
         notify
@@ -16895,6 +16897,13 @@ end
 
 function HolyFarmMiddleSniperBusy()
 
+    if type(HOLY_DEFENSE_RUNTIME) == "table"
+    and HOLY_DEFENSE_RUNTIME.Active == true then
+
+        return true,
+            "pet defense"
+    end
+
     local runtime =
         type(HOLY_SNIPER_RUNTIME) == "table"
         and HOLY_SNIPER_RUNTIME
@@ -17847,6 +17856,12 @@ function HolySniperReturnToDestination(reason, token)
         return false
     end
 
+    if type(HOLY_DEFENSE_RUNTIME) == "table"
+    and HOLY_DEFENSE_RUNTIME.Active == true then
+
+        return false
+    end
+
     if HOLY_SNIPER_RUNTIME.Returning == true then
         return false
     end
@@ -18691,6 +18706,17 @@ function HolySniperExecuteMatch(match, token)
             "bad match"
     end
 
+        if type(HOLY_DEFENSE_RUNTIME) == "table"
+    and HOLY_DEFENSE_RUNTIME.Active == true then
+
+        HolySniperSetStatus(
+            "Paused: pet defense active"
+        )
+
+        return false,
+            "defense active"
+    end
+
     if type(HolyFarmMiddleCancelForSniper) == "function" then
 
         HolyFarmMiddleCancelForSniper(
@@ -18957,14 +18983,11 @@ function HolySniperExecuteMatch(match, token)
 
                 if type(HolyDefenseArm) == "function" then
 
-                    task.spawn(function()
-
-                        HolyDefenseArm(
-                            entry,
-                            filter,
-                            "confirmed buy"
-                        )
-                    end)
+                    HolyDefenseArm(
+                        entry,
+                        filter,
+                        "confirmed buy"
+                    )
                 end
 
                 success =
@@ -19154,17 +19177,35 @@ if type(HOLY_DEFENSE_RUNTIME) == "table" then
     HOLY_DEFENSE_RUNTIME.Token =
         nil
 
+    HOLY_DEFENSE_RUNTIME.MonitorToken =
+        nil
+
     HOLY_DEFENSE_RUNTIME.Active =
         false
 
-    if type(HOLY_DEFENSE_RUNTIME.Connections) == "table" then
+    HOLY_DEFENSE_RUNTIME.MonitorRunning =
+        false
 
-        for _, connection in ipairs(HOLY_DEFENSE_RUNTIME.Connections) do
+    HOLY_DEFENSE_RUNTIME.GearLockActive =
+        false
 
-            pcall(function()
+    for _, listName in ipairs({
+        "Connections",
+        "GearConnections",
+    }) do
 
-                connection:Disconnect()
-            end)
+        local connections =
+            HOLY_DEFENSE_RUNTIME[listName]
+
+        if type(connections) == "table" then
+
+            for _, connection in ipairs(connections) do
+
+                pcall(function()
+
+                    connection:Disconnect()
+                end)
+            end
         end
     end
 end
@@ -19172,10 +19213,35 @@ end
 HOLY_DEFENSE_RUNTIME = {
     Active = false,
     Token = nil,
+
+    MonitorRunning = false,
+    MonitorToken = nil,
+    MonitorScanDelay = 0.15,
+
     Target = nil,
     Entry = nil,
     Filter = nil,
+
+    TargetPetId = "",
+    TargetPetName = "",
+    TargetMissingAt = 0,
+    CompletionStartedAt = 0,
+
+    InventoryConfirmed = false,
+    InventoryConfirmationItem = nil,
+    InventoryBaselineInstances = {},
+    InventoryBaselineIds = {},
+    CompletedTargets = {},
+    LastInventoryCheckAt = 0,
+
     Connections = {},
+    GearConnections = {},
+
+    GearLockActive = false,
+    DefenseTool = nil,
+    EquipPending = false,
+    ReequipToken = 0,
+    ReequipCooldown = 0.18,
 
     RebuyCount = 0,
     MaxRebuys = 3,
@@ -19218,6 +19284,46 @@ function HolyDefenseEnsureRuntime()
         type(runtime.Connections) == "table"
         and runtime.Connections
         or {}
+
+    runtime.GearConnections =
+        type(runtime.GearConnections) == "table"
+        and runtime.GearConnections
+        or {}
+
+    runtime.InventoryBaselineInstances =
+        type(runtime.InventoryBaselineInstances) == "table"
+        and runtime.InventoryBaselineInstances
+        or {}
+
+    runtime.InventoryBaselineIds =
+        type(runtime.InventoryBaselineIds) == "table"
+        and runtime.InventoryBaselineIds
+        or {}
+
+    runtime.CompletedTargets =
+        type(runtime.CompletedTargets) == "table"
+        and runtime.CompletedTargets
+        or {}
+
+    runtime.ReequipToken =
+        tonumber(runtime.ReequipToken)
+        or 0
+
+    runtime.ReequipCooldown =
+        math.clamp(
+            tonumber(runtime.ReequipCooldown)
+            or 0.18,
+            0.08,
+            1
+        )
+
+    runtime.MonitorScanDelay =
+        math.clamp(
+            tonumber(runtime.MonitorScanDelay)
+            or 0.15,
+            0.08,
+            1
+        )
 
     runtime.MaxRebuys =
         tonumber(runtime.MaxRebuys)
@@ -19627,43 +19733,411 @@ function HolyDefenseFindTool(gearName)
     return nil
 end
 
+function HolyDefenseDisconnectGearLock()
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    runtime.GearLockActive =
+        false
+
+    runtime.EquipPending =
+        false
+
+    runtime.ReequipToken =
+        (
+            tonumber(runtime.ReequipToken)
+            or 0
+        )
+        + 1
+
+    for _, connection in ipairs(
+        runtime.GearConnections
+        or {}
+    ) do
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+
+    runtime.GearConnections =
+        {}
+
+    runtime.DefenseTool =
+        nil
+end
+
+function HolyDefenseAddGearConnection(connection)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if connection ~= nil then
+
+        table.insert(
+            runtime.GearConnections,
+            connection
+        )
+    end
+
+    return connection
+end
+
+function HolyDefenseNormalizeId(value)
+
+    return HolyCleanText(
+        value
+    )
+        :lower()
+        :gsub(
+            "[^%w]",
+            ""
+        )
+end
+
+function HolyDefenseReadAnyAttr(instance, names)
+
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+
+    for _, name in ipairs(names or {}) do
+
+        local value =
+            HolyDefenseReadAttr(
+                instance,
+                name
+            )
+
+        if value ~= nil
+        and HolyCleanText(value) ~= "" then
+
+            return value
+        end
+    end
+
+    return nil
+end
+
+function HolyDefenseReadPetId(instance)
+
+    return HolyCleanText(
+        HolyDefenseReadAnyAttr(
+            instance,
+            {
+                "PetId",
+                "PetID",
+                "WildPetId",
+                "WildPetID",
+                "WildPetUUID",
+                "UUID",
+                "Uuid",
+                "Id",
+                "ID",
+            }
+        )
+        or ""
+    )
+end
+
+function HolyDefenseReadPetName(instance)
+
+    return HolyCleanText(
+        HolyDefenseReadAnyAttr(
+            instance,
+            {
+                "PetName",
+                "Pet",
+                "DisplayName",
+            }
+        )
+        or ""
+    )
+end
+
+function HolyDefenseRefKey(ref)
+
+    local key =
+        HolyDefenseReadPetId(
+            ref
+        )
+
+    if key == ""
+    and typeof(ref) == "Instance" then
+
+        key =
+            HolySniperUuidFromName(
+                ref.Name
+            )
+    end
+
+    return HolyDefenseNormalizeId(
+        key
+    )
+end
+
+function HolyDefenseGetInventoryPetRows()
+
+    local rows =
+        {}
+
+    local seen =
+        {}
+
+    local roots = {
+        HolyDefenseGetCharacter(),
+
+        LocalPlayer
+        and LocalPlayer:FindFirstChildOfClass(
+            "Backpack"
+        )
+        or nil,
+    }
+
+    local function inspect(instance)
+
+        if typeof(instance) ~= "Instance"
+        or seen[instance] == true then
+
+            return
+        end
+
+        seen[instance] =
+            true
+
+        local petId =
+            HolyDefenseReadPetId(
+                instance
+            )
+
+        local petName =
+            HolyDefenseReadPetName(
+                instance
+            )
+
+        if petId == ""
+        and petName == "" then
+
+            return
+        end
+
+        if petName == ""
+        and instance:IsA("Tool") then
+
+            petName =
+                HolyCleanText(
+                    instance.Name
+                )
+        end
+
+        table.insert(
+            rows,
+            {
+                Instance =
+                    instance,
+
+                PetIdKey =
+                    HolyDefenseNormalizeId(
+                        petId
+                    ),
+
+                PetNameKey =
+                    HolySniperPetAliasKey(
+                        petName
+                    ),
+            }
+        )
+    end
+
+    for _, root in ipairs(roots) do
+
+        if typeof(root) == "Instance" then
+
+            for _, descendant in ipairs(
+                root:GetDescendants()
+            ) do
+
+                inspect(
+                    descendant
+                )
+            end
+        end
+    end
+
+    return rows
+end
+
+function HolyDefenseCaptureInventoryBaseline()
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    runtime.InventoryBaselineInstances =
+        {}
+
+    runtime.InventoryBaselineIds =
+        {}
+
+    for _, row in ipairs(
+        HolyDefenseGetInventoryPetRows()
+    ) do
+
+        runtime.InventoryBaselineInstances[
+            row.Instance
+        ] =
+            true
+
+        if row.PetIdKey ~= "" then
+
+            runtime.InventoryBaselineIds[
+                row.PetIdKey
+            ] =
+                true
+        end
+    end
+end
+
+function HolyDefenseInventoryConfirmed(forceCheck)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if runtime.InventoryConfirmed == true then
+
+        return true,
+            runtime.InventoryConfirmationItem
+    end
+
+    local now =
+        os.clock()
+
+    if forceCheck ~= true
+    and now - (
+        tonumber(runtime.LastInventoryCheckAt)
+        or 0
+    ) < 0.10 then
+
+        return false,
+            nil
+    end
+
+    runtime.LastInventoryCheckAt =
+        now
+
+    local targetIdKey =
+        HolyDefenseNormalizeId(
+            runtime.TargetPetId
+        )
+
+    local targetNameKey =
+        HolySniperPetAliasKey(
+            runtime.TargetPetName
+        )
+
+    for _, row in ipairs(
+        HolyDefenseGetInventoryPetRows()
+    ) do
+
+        local exactId =
+            targetIdKey ~= ""
+            and row.PetIdKey ~= ""
+            and row.PetIdKey == targetIdKey
+
+        local newMatchingPet =
+            targetNameKey ~= ""
+            and row.PetNameKey == targetNameKey
+            and (
+                runtime.InventoryBaselineInstances[
+                    row.Instance
+                ] ~= true
+                or (
+                    row.PetIdKey ~= ""
+                    and runtime.InventoryBaselineIds[
+                        row.PetIdKey
+                    ] ~= true
+                )
+            )
+
+        if exactId == true
+        or newMatchingPet == true then
+
+            runtime.InventoryConfirmed =
+                true
+
+            runtime.InventoryConfirmationItem =
+                row.Instance
+
+            return true,
+                row.Instance
+        end
+    end
+
+    return false,
+        nil
+end
+
+function HolyDefenseSelectedGearEquipped()
+
+    return HolyDefenseToolMatches(
+        HolyDefenseGetEquippedTool(),
+        HOLY_SNIPER_STATE.DefendGear
+    ) == true
+end
+
 function HolyDefenseEquipSelectedGear(reason)
 
     local runtime =
         HolyDefenseEnsureRuntime()
 
-    if runtime.Active ~= true then
+    if HOLY_SNIPER_STATE.DefendBoughtPets ~= true
+    or runtime.Active ~= true
+    or runtime.GearLockActive ~= true
+    or runtime.InventoryConfirmed == true then
+
         return false
     end
 
-    local gear =
-        HolyDefenseNormalizeGear(
-            HOLY_SNIPER_STATE.DefendGear
-        )
+    if HolyDefenseSelectedGearEquipped() == true then
 
-    if HolyDefenseToolMatches(
-        HolyDefenseGetEquippedTool(),
-        gear
-    ) == true then
+        runtime.DefenseTool =
+            HolyDefenseGetEquippedTool()
 
         return true
     end
 
-    local tool =
-        HolyDefenseFindTool(
-            gear
-        )
-
-    if typeof(tool) ~= "Instance" then
+    if runtime.EquipPending == true then
         return false
     end
+
+    local now =
+        os.clock()
+
+    if now - (
+        tonumber(runtime.LastEquipAt)
+        or 0
+    ) < runtime.ReequipCooldown then
+
+        return false
+    end
+
+    local tool =
+        HolyDefenseFindTool(
+            HOLY_SNIPER_STATE.DefendGear
+        )
 
     local humanoid =
         HolyDefenseGetHumanoid()
 
-    if typeof(humanoid) ~= "Instance" then
+    if typeof(tool) ~= "Instance"
+    or typeof(humanoid) ~= "Instance" then
+
         return false
     end
+
+    runtime.EquipPending =
+        true
 
     local ok =
         pcall(function()
@@ -19673,13 +20147,544 @@ function HolyDefenseEquipSelectedGear(reason)
             )
         end)
 
+    runtime.EquipPending =
+        false
+
     if ok == true then
+
+        runtime.DefenseTool =
+            tool
 
         runtime.LastEquipAt =
             os.clock()
+
+        runtime.LastEquipReason =
+            tostring(
+                reason
+                or "defense"
+            )
     end
 
     return ok == true
+end
+
+function HolyDefenseQueueReequip(reason)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if HOLY_SNIPER_STATE.DefendBoughtPets ~= true
+    or runtime.Active ~= true
+    or runtime.GearLockActive ~= true
+    or runtime.InventoryConfirmed == true then
+
+        return false
+    end
+
+    runtime.ReequipToken =
+        (
+            tonumber(runtime.ReequipToken)
+            or 0
+        )
+        + 1
+
+    local token =
+        runtime.ReequipToken
+
+    task.delay(0.12, function()
+
+        local liveRuntime =
+            HolyDefenseEnsureRuntime()
+
+        if liveRuntime.ReequipToken ~= token
+        or HOLY_SNIPER_STATE.DefendBoughtPets ~= true
+        or liveRuntime.Active ~= true
+        or liveRuntime.GearLockActive ~= true
+        or liveRuntime.InventoryConfirmed == true
+        or HolyDefenseSelectedGearEquipped() == true then
+
+            return
+        end
+
+        HolyDefenseEquipSelectedGear(
+            reason
+            or "defense tool unequipped"
+        )
+    end)
+
+    return true
+end
+
+function HolyDefenseStartGearLock()
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    HolyDefenseDisconnectGearLock()
+
+    if HOLY_SNIPER_STATE.DefendBoughtPets ~= true
+    or runtime.Active ~= true then
+
+        return false
+    end
+
+    runtime.GearLockActive =
+        true
+
+    runtime.InventoryConfirmed =
+        false
+
+    runtime.InventoryConfirmationItem =
+        nil
+
+    runtime.LastEquipAt =
+        0
+
+    HolyDefenseCaptureInventoryBaseline()
+
+    local character =
+        HolyDefenseGetCharacter()
+
+    if typeof(character) == "Instance" then
+
+        HolyDefenseAddGearConnection(
+            character.ChildRemoved:Connect(function(child)
+
+                if child == runtime.DefenseTool
+                or HolyDefenseToolMatches(
+                    child,
+                    HOLY_SNIPER_STATE.DefendGear
+                ) == true then
+
+                    HolyDefenseQueueReequip(
+                        "defense tool unequipped"
+                    )
+                end
+            end)
+        )
+
+        HolyDefenseAddGearConnection(
+            character.ChildAdded:Connect(function(child)
+
+                if child:IsA("Tool")
+                and HolyDefenseToolMatches(
+                    child,
+                    HOLY_SNIPER_STATE.DefendGear
+                ) ~= true then
+
+                    HolyDefenseQueueReequip(
+                        "another tool equipped"
+                    )
+                end
+            end)
+        )
+    end
+
+    local backpack =
+        LocalPlayer
+        and LocalPlayer:FindFirstChildOfClass(
+            "Backpack"
+        )
+        or nil
+
+    if typeof(backpack) == "Instance" then
+
+        HolyDefenseAddGearConnection(
+            backpack.ChildAdded:Connect(function(child)
+
+                if HolyDefenseToolMatches(
+                    child,
+                    HOLY_SNIPER_STATE.DefendGear
+                ) == true then
+
+                    HolyDefenseQueueReequip(
+                        "defense tool returned to backpack"
+                    )
+                end
+            end)
+        )
+    end
+
+    HolyDefenseEquipSelectedGear(
+        "defense start"
+    )
+
+    return true
+end
+
+function HolyDefenseBuildEntryFromRef(ref)
+
+    if typeof(ref) ~= "Instance"
+    or ref.Parent == nil then
+
+        return nil
+    end
+
+    local model =
+        nil
+
+    if type(HolyLivePetsFindModelForRef) == "function" then
+
+        model =
+            HolyLivePetsFindModelForRef(
+                ref
+            )
+    end
+
+    local petName =
+        HolySniperReadLivePetName(
+            model,
+            ref
+        )
+
+    petName =
+        HolySniperResolvePetDisplay(
+            petName
+        )
+
+    if petName == "" then
+        return nil
+    end
+
+    local uuid =
+        HolySniperUuidFromName(
+            ref.Name
+        )
+
+    if uuid == "" then
+
+        uuid =
+            HolyDefenseReadPetId(
+                ref
+            )
+    end
+
+    return {
+        Key =
+            uuid,
+
+        UUID =
+            uuid,
+
+        Ref =
+            ref,
+
+        Model =
+            model,
+
+        Pet =
+            petName,
+
+        PetKey =
+            HolySniperResolvePetKey(
+                petName
+            ),
+
+        Size =
+            HolySniperReadLiveSize(
+                model,
+                ref
+            ),
+
+        Variant =
+            HolySniperReadLiveVariant(
+                model,
+                ref
+            ),
+
+        Price =
+            tonumber(
+                HolyDefenseReadAnyAttr(
+                    ref,
+                    {
+                        "Price",
+                        "Cost",
+                        "TameCost",
+                    }
+                )
+            )
+            or 0,
+    }
+end
+
+function HolyDefenseFindFilterForEntry(entry)
+
+    local best =
+        nil
+
+    local bestRank =
+        math.huge
+
+    for _, rawFilter in ipairs(
+        type(HOLY_SNIPER_STATE.Watchlist) == "table"
+        and HOLY_SNIPER_STATE.Watchlist
+        or {}
+    ) do
+
+        local filter =
+            HolySniperNormalizeFilter(
+                rawFilter
+            )
+
+        local filterPetKey =
+            HolyCleanText(
+                filter.PetKey
+            )
+
+        local petMatches =
+            filterPetKey == "*"
+            or HolySniperPetAliasKey(
+                filterPetKey
+            ) == HolySniperPetAliasKey(
+                entry.PetKey
+                or entry.Pet
+            )
+
+        local sizeMatches =
+            HolySniperSelectionHasAny(
+                filter.Sizes
+            )
+            or HolySniperSelectionContains(
+                filter.Sizes,
+                entry.Size
+            )
+
+        local variantMatches =
+            HolySniperSelectionHasAny(
+                filter.Variants
+            )
+            or HolySniperSelectionContains(
+                filter.Variants,
+                entry.Variant
+            )
+
+        local rank =
+            HolySniperPriorityRank(
+                filter.Priority
+            )
+
+        if filter.Enabled ~= false
+        and petMatches == true
+        and sizeMatches == true
+        and variantMatches == true
+        and rank < bestRank then
+
+            best =
+                filter
+
+            bestRank =
+                rank
+        end
+    end
+
+    if type(best) == "table" then
+        return best
+    end
+
+    return HolySniperNormalizeFilter({
+        Pet =
+            entry.Pet,
+
+        Sizes = {
+            entry.Size
+            or "Any",
+        },
+
+        Variants = {
+            entry.Variant
+            or "Any",
+        },
+
+        MaxPrice =
+            0,
+
+        Priority =
+            "Medium",
+
+        Enabled =
+            true,
+    })
+end
+
+function HolyDefenseRefReady(ref)
+
+    if typeof(ref) ~= "Instance"
+    or ref.Parent == nil then
+
+        return false
+    end
+
+    local owner =
+        tonumber(
+            HolyDefenseReadAnyAttr(
+                ref,
+                {
+                    "OwnerUserId",
+                    "OwnerUserID",
+                    "Owner",
+                    "UserId",
+                    "UserID",
+                }
+            )
+        )
+        or 0
+
+    local state =
+        HolyCleanText(
+            HolyDefenseReadAnyAttr(
+                ref,
+                {
+                    "State",
+                    "PetState",
+                }
+            )
+            or ""
+        )
+
+    return owner == tonumber(LocalPlayer.UserId)
+        and HolySniperPetBuyStateLooksPending(
+            state
+        ) == true
+end
+
+function HolyDefenseMonitorScan()
+
+    if HOLY_SNIPER_STATE.DefendBoughtPets ~= true then
+        return false
+    end
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if runtime.Active == true then
+        return true
+    end
+
+    local root =
+        HolySniperGetWildPetRefRoot()
+
+    if typeof(root) ~= "Instance" then
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    for key, expiresAt in pairs(
+        runtime.CompletedTargets
+        or {}
+    ) do
+
+        if tonumber(expiresAt) == nil
+        or tonumber(expiresAt) <= now then
+
+            runtime.CompletedTargets[key] =
+                nil
+        end
+    end
+
+    for _, ref in ipairs(root:GetChildren()) do
+
+        local refKey =
+            HolyDefenseRefKey(
+                ref
+            )
+
+        local recentlyCompleted =
+            refKey ~= ""
+            and (
+                tonumber(
+                    runtime.CompletedTargets[
+                        refKey
+                    ]
+                )
+                or 0
+            ) > now
+
+        if recentlyCompleted ~= true
+        and HolyDefenseRefReady(
+            ref
+        ) == true then
+
+            local entry =
+                HolyDefenseBuildEntryFromRef(
+                    ref
+                )
+
+            if type(entry) == "table"
+            and type(HolyDefenseStartTarget) == "function" then
+
+                return HolyDefenseStartTarget(
+                    ref,
+                    entry,
+                    HolyDefenseFindFilterForEntry(
+                        entry
+                    ),
+                    "defense monitor"
+                )
+            end
+        end
+    end
+
+    return false
+end
+
+function HolyDefenseStartMonitor(reason)
+
+    if HOLY_SNIPER_STATE.DefendBoughtPets ~= true then
+        return false
+    end
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if runtime.MonitorRunning == true then
+        return true
+    end
+
+    runtime.MonitorToken =
+        {}
+
+    local token =
+        runtime.MonitorToken
+
+    runtime.MonitorRunning =
+        true
+
+    task.spawn(function()
+
+        while runtime.MonitorToken == token
+        and HOLY_SNIPER_STATE.DefendBoughtPets == true do
+
+            HolyDefenseMonitorScan()
+
+            task.wait(
+                runtime.MonitorScanDelay
+            )
+        end
+
+        if runtime.MonitorToken == token then
+
+            runtime.MonitorRunning =
+                false
+        end
+    end)
+
+    return true
+end
+
+function HolyDefenseStopMonitor(reason)
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    runtime.MonitorToken =
+        nil
+
+    runtime.MonitorRunning =
+        false
+
+    return true
 end
 
 function HolyDefenseGetPlayerRoot(player)
@@ -20682,19 +21687,18 @@ function HolyDefenseUseStrawberry(threat)
         return false
     end
 
-    if HolyDefenseEquipSelectedGear(
-        "shot"
-    ) ~= true then
-
+    if HolyDefenseSelectedGearEquipped() ~= true then
         return false
     end
 
     local tool =
-        HolyDefenseFindTool(
-            "Strawberry Sniper"
-        )
+        HolyDefenseGetEquippedTool()
 
-    if typeof(tool) ~= "Instance" then
+    if HolyDefenseToolMatches(
+        tool,
+        "Strawberry Sniper"
+    ) ~= true then
+
         return false
     end
 
@@ -20785,10 +21789,7 @@ function HolyDefenseUseShovel(threat)
 
     HolyDefenseResolvePackets()
 
-    if HolyDefenseEquipSelectedGear(
-        "shovel"
-    ) ~= true then
-
+    if HolyDefenseSelectedGearEquipped() ~= true then
         return false
     end
 
@@ -20859,11 +21860,76 @@ function HolyDefenseStop(reason)
     local runtime =
         HolyDefenseEnsureRuntime()
 
+    local wasActive =
+        runtime.Active == true
+        or runtime.ControlsDisabled == true
+
+    local wasConfirmed =
+        runtime.InventoryConfirmed == true
+
+    local completedKey =
+        HolyDefenseNormalizeId(
+            runtime.TargetPetId
+        )
+
+    if completedKey == ""
+    and typeof(runtime.Target) == "Instance" then
+
+        completedKey =
+            HolyDefenseRefKey(
+                runtime.Target
+            )
+    end
+
+    runtime.GearLockActive =
+        false
+
+    HolyDefenseDisconnectGearLock()
+
     runtime.Token =
         nil
 
     runtime.Active =
         false
+
+    HolyDefenseDisconnect()
+
+    if wasActive == true then
+
+        HolyDefenseRestoreControls()
+
+        local humanoid =
+            HolyDefenseGetHumanoid()
+
+        if typeof(humanoid) == "Instance" then
+
+            pcall(function()
+
+                humanoid:Move(
+                    Vector3.zero,
+                    false
+                )
+
+                if runtime.OriginalWalkSpeed ~= nil then
+
+                    humanoid.WalkSpeed =
+                        runtime.OriginalWalkSpeed
+                end
+
+                humanoid.AutoRotate =
+                    true
+            end)
+        end
+    end
+
+    if wasConfirmed == true
+    and completedKey ~= "" then
+
+        runtime.CompletedTargets[
+            completedKey
+        ] =
+            os.clock() + 30
+    end
 
     runtime.Target =
         nil
@@ -20874,6 +21940,30 @@ function HolyDefenseStop(reason)
     runtime.Filter =
         nil
 
+    runtime.TargetPetId =
+        ""
+
+    runtime.TargetPetName =
+        ""
+
+    runtime.TargetMissingAt =
+        0
+
+    runtime.CompletionStartedAt =
+        0
+
+    runtime.InventoryConfirmed =
+        false
+
+    runtime.InventoryConfirmationItem =
+        nil
+
+    runtime.InventoryBaselineInstances =
+        {}
+
+    runtime.InventoryBaselineIds =
+        {}
+
     runtime.SmoothedFollowGoal =
         nil
 
@@ -20883,30 +21973,24 @@ function HolyDefenseStop(reason)
     runtime.LastPetSamplePos =
         nil
 
-    HolyDefenseDisconnect()
+    runtime.LastPetSampleAt =
+        0
 
-    HolyDefenseRestoreControls()
+    runtime.OriginalWalkSpeed =
+        nil
 
-    local humanoid =
-        HolyDefenseGetHumanoid()
+    runtime.LastStopReason =
+        tostring(
+            reason
+            or "stopped"
+        )
 
-    if typeof(humanoid) == "Instance" then
+    if HOLY_SNIPER_STATE.DefendBoughtPets == true
+    and runtime.MonitorRunning == true then
 
-        pcall(function()
+        task.defer(function()
 
-            humanoid:Move(
-                Vector3.zero,
-                false
-            )
-
-            if runtime.OriginalWalkSpeed ~= nil then
-
-                humanoid.WalkSpeed =
-                    runtime.OriginalWalkSpeed
-            end
-
-            humanoid.AutoRotate =
-                true
+            HolyDefenseMonitorScan()
         end)
     end
 
@@ -20918,7 +22002,9 @@ function HolyDefenseCanRebuy(target)
     local runtime =
         HolyDefenseEnsureRuntime()
 
-    if HOLY_SNIPER_STATE.DefendRebuyIfStolen ~= true then
+    if HOLY_SNIPER_STATE.DefendBoughtPets ~= true
+    or HOLY_SNIPER_STATE.DefendRebuyIfStolen ~= true then
+
         return false
     end
 
@@ -20965,14 +22051,9 @@ function HolyDefenseCanRebuy(target)
             or ""
         )
 
-    if HolySniperPetBuyStateLooksPending(
+    return HolySniperPetBuyStateLooksPending(
         state
-    ) ~= true then
-
-        return false
-    end
-
-    return true
+    ) == true
 end
 
 function HolyDefenseTryRebuy(target)
@@ -20980,11 +22061,11 @@ function HolyDefenseTryRebuy(target)
     local runtime =
         HolyDefenseEnsureRuntime()
 
-    if typeof(target) ~= "Instance" then
-        return false
-    end
+    if typeof(target) ~= "Instance"
+    or HolyDefenseCanRebuy(
+        target
+    ) ~= true then
 
-    if HolyDefenseCanRebuy(target) ~= true then
         return false
     end
 
@@ -21011,10 +22092,6 @@ function HolyDefenseTryRebuy(target)
 
         runtime.Target =
             target
-
-        HolyDefenseEquipSelectedGear(
-            "rebuy"
-        )
     end
 
     return ok
@@ -21025,7 +22102,8 @@ function HolyDefenseHandleOwnerChanged(target)
     local runtime =
         HolyDefenseEnsureRuntime()
 
-    if runtime.Active ~= true
+    if HOLY_SNIPER_STATE.DefendBoughtPets ~= true
+    or runtime.Active ~= true
     or target ~= runtime.Target then
 
         return
@@ -21036,7 +22114,8 @@ function HolyDefenseHandleOwnerChanged(target)
         local liveRuntime =
             HolyDefenseEnsureRuntime()
 
-        if liveRuntime.Active ~= true
+        if HOLY_SNIPER_STATE.DefendBoughtPets ~= true
+        or liveRuntime.Active ~= true
         or target ~= liveRuntime.Target
         or typeof(target) ~= "Instance"
         or target.Parent == nil then
@@ -21108,14 +22187,46 @@ function HolyDefenseWatchTarget(target)
         target.AncestryChanged:Connect(function(_, parent)
 
             if parent == nil
-            and runtime.Target == target then
+            and runtime.Active == true
+            and runtime.Target == target
+            and (
+                tonumber(runtime.TargetMissingAt)
+                or 0
+            ) <= 0 then
 
-                HolyDefenseStop(
-                    "target removed"
-                )
+                runtime.TargetMissingAt =
+                    os.clock()
             end
         end)
     )
+end
+
+function HolyDefenseStopMovementOnly()
+
+    local humanoid =
+        HolyDefenseGetHumanoid()
+
+    local root =
+        HolyDefenseGetRoot()
+
+    if typeof(humanoid) == "Instance" then
+
+        pcall(function()
+
+            humanoid:Move(
+                Vector3.zero,
+                false
+            )
+
+            if typeof(root) == "Instance"
+            and root:IsA("BasePart") then
+
+                humanoid:MoveTo(
+                    root.Position
+                )
+            end
+        end)
+    end
 end
 
 function HolyDefenseRunWorker(token)
@@ -21126,19 +22237,24 @@ function HolyDefenseRunWorker(token)
     while runtime.Token == token
     and runtime.Active == true do
 
-        local sniper =
-            type(HOLY_SNIPER_RUNTIME) == "table"
-            and HOLY_SNIPER_RUNTIME
-            or {}
+        if HOLY_SNIPER_STATE.DefendBoughtPets ~= true then
 
-        if sniper.Buying == true
-        or sniper.Returning == true then
-
-            task.wait(
-                0.10
+            HolyDefenseStop(
+                "toggle off"
             )
 
-            continue
+            return
+        end
+
+        if HolyDefenseInventoryConfirmed(
+            false
+        ) == true then
+
+            HolyDefenseStop(
+                "inventory confirmed"
+            )
+
+            return
         end
 
         local target =
@@ -21147,12 +22263,26 @@ function HolyDefenseRunWorker(token)
         if typeof(target) ~= "Instance"
         or target.Parent == nil then
 
-            HolyDefenseStop(
-                "target gone"
+            if (
+                tonumber(runtime.TargetMissingAt)
+                or 0
+            ) <= 0 then
+
+                runtime.TargetMissingAt =
+                    os.clock()
+            end
+
+            HolyDefenseStopMovementOnly()
+
+            task.wait(
+                0.08
             )
 
-            return
+            continue
         end
+
+        runtime.TargetMissingAt =
+            0
 
         local owner =
             tonumber(
@@ -21170,15 +22300,48 @@ function HolyDefenseRunWorker(token)
             )
 
             task.wait(
-                0.15
+                0.12
             )
 
             continue
         end
 
-        HolyDefenseEquipSelectedGear(
-            "defending"
-        )
+        local state =
+            HolyCleanText(
+                HolyDefenseReadAttr(
+                    target,
+                    "State"
+                )
+                or ""
+            )
+
+        local walking =
+            HolySniperPetBuyStateLooksPending(
+                state
+            ) == true
+
+        if walking ~= true then
+
+            if (
+                tonumber(runtime.CompletionStartedAt)
+                or 0
+            ) <= 0 then
+
+                runtime.CompletionStartedAt =
+                    os.clock()
+            end
+
+            HolyDefenseStopMovementOnly()
+
+            task.wait(
+                0.08
+            )
+
+            continue
+        end
+
+        runtime.CompletionStartedAt =
+            0
 
         local targetPos =
             HolyDefenseGetPosition(
@@ -21253,33 +22416,15 @@ function HolyDefenseWaitForOwnedTarget(entry)
 
     while os.clock() <= deadline do
 
-        if typeof(ref) ~= "Instance"
+        if HOLY_SNIPER_STATE.DefendBoughtPets ~= true
+        or typeof(ref) ~= "Instance"
         or ref.Parent == nil then
 
             return nil
         end
 
-        local owner =
-            tonumber(
-                HolyDefenseReadAttr(
-                    ref,
-                    "OwnerUserId"
-                )
-            )
-            or 0
-
-        local state =
-            HolyCleanText(
-                HolyDefenseReadAttr(
-                    ref,
-                    "State"
-                )
-                or ""
-            )
-
-        if owner == tonumber(LocalPlayer.UserId)
-        and HolySniperPetBuyStateLooksPending(
-            state
+        if HolyDefenseRefReady(
+            ref
         ) == true then
 
             return ref
@@ -21290,33 +22435,35 @@ function HolyDefenseWaitForOwnedTarget(entry)
         )
     end
 
-    return ref
+    return nil
 end
 
-function HolyDefenseArm(entry, filter, reason)
+function HolyDefenseStartTarget(target, entry, filter, reason)
 
-    if HOLY_SNIPER_STATE.DefendBoughtPets ~= true then
+    if HOLY_SNIPER_STATE.DefendBoughtPets ~= true
+    or typeof(target) ~= "Instance"
+    or target.Parent == nil
+    or HolyDefenseRefReady(
+        target
+    ) ~= true then
+
         return false
     end
 
-    local target =
-        HolyDefenseWaitForOwnedTarget(
-            entry
-        )
+    if type(HolyFarmMiddleCancelForSniper) == "function" then
 
-    if typeof(target) ~= "Instance" then
-        return false
+        HolyFarmMiddleCancelForSniper(
+            "pet defense"
+        )
     end
 
     local runtime =
         HolyDefenseEnsureRuntime()
 
-    HolyDefenseStop(
-        "new defense"
-    )
+    if runtime.Active == true then
 
-    runtime =
-        HolyDefenseEnsureRuntime()
+        return runtime.Target == target
+    end
 
     runtime.Active =
         true
@@ -21328,10 +22475,63 @@ function HolyDefenseArm(entry, filter, reason)
         target
 
     runtime.Entry =
-        entry
+        type(entry) == "table"
+        and entry
+        or HolyDefenseBuildEntryFromRef(
+            target
+        )
 
     runtime.Filter =
-        filter
+        type(filter) == "table"
+        and filter
+        or HolyDefenseFindFilterForEntry(
+            runtime.Entry
+            or {}
+        )
+
+    runtime.TargetPetId =
+        HolyCleanText(
+            HolyDefenseReadPetId(
+                target
+            )
+        )
+
+    if runtime.TargetPetId == "" then
+
+        runtime.TargetPetId =
+            HolyCleanText(
+                runtime.Entry
+                and (
+                    runtime.Entry.UUID
+                    or runtime.Entry.Key
+                )
+                or ""
+            )
+    end
+
+    runtime.TargetPetName =
+        HolyCleanText(
+            runtime.Entry
+            and runtime.Entry.Pet
+            or HolyDefenseReadPetName(
+                target
+            )
+        )
+
+    runtime.TargetMissingAt =
+        0
+
+    runtime.CompletionStartedAt =
+        0
+
+    runtime.InventoryConfirmed =
+        false
+
+    runtime.InventoryConfirmationItem =
+        nil
+
+    runtime.LastInventoryCheckAt =
+        0
 
     runtime.RebuyCount =
         0
@@ -21351,12 +22551,10 @@ function HolyDefenseArm(entry, filter, reason)
     local humanoid =
         HolyDefenseGetHumanoid()
 
-    if typeof(humanoid) == "Instance"
-    and runtime.OriginalWalkSpeed == nil then
-
-        runtime.OriginalWalkSpeed =
-            humanoid.WalkSpeed
-    end
+    runtime.OriginalWalkSpeed =
+        typeof(humanoid) == "Instance"
+        and humanoid.WalkSpeed
+        or nil
 
     HolyDefenseResolvePackets()
 
@@ -21364,21 +22562,43 @@ function HolyDefenseArm(entry, filter, reason)
         target
     )
 
-    HolyDefenseEquipSelectedGear(
-        reason or "defense start"
-    )
+    HolyDefenseStartGearLock()
 
-    local token =
+    local workerToken =
         runtime.Token
 
     task.spawn(function()
 
         HolyDefenseRunWorker(
-            token
+            workerToken
         )
     end)
 
     return true
+end
+
+function HolyDefenseArm(entry, filter, reason)
+
+    if HOLY_SNIPER_STATE.DefendBoughtPets ~= true then
+        return false
+    end
+
+    local target =
+        HolyDefenseWaitForOwnedTarget(
+            entry
+        )
+
+    if typeof(target) ~= "Instance" then
+        return false
+    end
+
+    return HolyDefenseStartTarget(
+        target,
+        entry,
+        filter,
+        reason
+        or "confirmed buy"
+    )
 end
 
 function HolyDefenseSetDefendBoughtPets(value)
@@ -21386,14 +22606,26 @@ function HolyDefenseSetDefendBoughtPets(value)
     HOLY_SNIPER_STATE.DefendBoughtPets =
         value == true
 
-    if HOLY_SNIPER_STATE.DefendBoughtPets ~= true then
+    HolySaveSniperSettings()
 
-        HolyDefenseStop(
-            "toggle off"
+    if HOLY_SNIPER_STATE.DefendBoughtPets == true then
+
+        HolyDefenseStartMonitor(
+            "toggle on"
         )
+
+        HolyDefenseMonitorScan()
+
+        return
     end
 
-    HolySaveSniperSettings()
+    HolyDefenseStopMonitor(
+        "toggle off"
+    )
+
+    HolyDefenseStop(
+        "toggle off"
+    )
 end
 
 function HolyDefenseSetGear(value)
@@ -21403,15 +22635,16 @@ function HolyDefenseSetGear(value)
             value
         )
 
-    if HOLY_DEFENSE_RUNTIME
-    and HOLY_DEFENSE_RUNTIME.Active == true then
-
-        HolyDefenseEquipSelectedGear(
-            "gear changed"
-        )
-    end
-
     HolySaveSniperSettings()
+
+    local runtime =
+        HolyDefenseEnsureRuntime()
+
+    if HOLY_SNIPER_STATE.DefendBoughtPets == true
+    and runtime.Active == true then
+
+        HolyDefenseStartGearLock()
+    end
 end
 
 function HolyDefenseSetMovement(value)
@@ -21430,6 +22663,30 @@ function HolyDefenseSetRebuyIfStolen(value)
         value == true
 
     HolySaveSniperSettings()
+end
+
+function HolyDefenseRestoreState()
+
+    if HOLY_SNIPER_STATE.DefendBoughtPets == true then
+
+        HolyDefenseStartMonitor(
+            "startup"
+        )
+
+        HolyDefenseMonitorScan()
+
+        return true
+    end
+
+    HolyDefenseStopMonitor(
+        "disabled"
+    )
+
+    HolyDefenseStop(
+        "disabled"
+    )
+
+    return false
 end
 
 --==================================================
@@ -23172,6 +24429,16 @@ function HolySniperAutoHopCanRun()
         return false
     end
 
+    if type(HOLY_DEFENSE_RUNTIME) == "table"
+    and HOLY_DEFENSE_RUNTIME.Active == true then
+
+        HolySniperAutoHopReset(
+            "pet defense active"
+        )
+
+        return false
+    end
+
     if HOLY_SNIPER_STATE.AutoHop ~= true then
 
         HolySniperAutoHopReset(
@@ -23540,6 +24807,20 @@ function HolySniperTick(token)
         return false
     end
 
+    if type(HOLY_DEFENSE_RUNTIME) == "table"
+    and HOLY_DEFENSE_RUNTIME.Active == true then
+
+        HolySniperAutoHopReset(
+            "pet defense active"
+        )
+
+        HolySniperSetStatus(
+            "Paused: defending bought pet"
+        )
+
+        return false
+    end
+
     if HolySniperPetBuyProtectionBlocks(
         "Sniper",
         false
@@ -23547,10 +24828,6 @@ function HolySniperTick(token)
 
         return false
     end
-
-    HolySniperClearHeldToolForMovement(
-        "scan"
-    )
 
     local matches =
         HolySniperRunScan()
@@ -60233,6 +61510,8 @@ HolySniperRefreshUI()
 HolyDataStartPetLoader(
     "sniper ui ready"
 )
+
+HolyDefenseRestoreState()
 
 if HOLY_SNIPER_STATE.ActivateSniper == true then
 
