@@ -16582,6 +16582,95 @@ function HolySniperGetFarmCenterCFrame(forceRefresh)
     return cframe
 end
 
+function HolyFarmMiddleWateringRejoinActive()
+
+    local state =
+        type(HOLY_WATERING_REJOIN_STATE) == "table"
+        and HOLY_WATERING_REJOIN_STATE
+        or {}
+
+    local runtime =
+        type(HOLY_WATERING_REJOIN_RUNTIME) == "table"
+        and HOLY_WATERING_REJOIN_RUNTIME
+        or {}
+
+    return state.Enabled == true
+        or runtime.Running == true
+        or runtime.Teleporting == true
+end
+
+function HolyFarmMiddlePauseForWatering(reason)
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    state.Token =
+        nil
+
+    state.Running =
+        false
+
+    state.Moving =
+        false
+
+    state.CancelArmed =
+        false
+
+    state.ManualCancelled =
+        false
+
+    state.SniperCancelled =
+        false
+
+    HolyFarmMiddleStopMovement()
+
+    HolyFarmMiddleSetStatus(
+        "Paused",
+        reason or "watering rejoin"
+    )
+
+    return true
+end
+
+function HolyFarmMiddleResumeAfterWatering()
+
+    if HOLY_DEV_UI_STATE.AutoFarmMiddle ~= true then
+        return false
+    end
+
+    if HolyFarmMiddleWateringRejoinActive() == true then
+        return false
+    end
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    if state.Running == true then
+        return true
+    end
+
+    state.ManualCancelled =
+        false
+
+    state.SniperCancelled =
+        false
+
+    state.Done =
+        false
+
+    state.Moving =
+        false
+
+    state.CancelArmed =
+        false
+
+    HolyFarmMiddleConnectCharacterWatcher()
+
+    return HolyFarmMiddleStart(
+        "watering rejoin ended"
+    )
+end
+
 function HolyFarmMiddleGetState()
 
     HOLY_FARM_MIDDLE_STATE =
@@ -17576,6 +17665,28 @@ function HolyFarmMiddleStart(reason)
 
     state.Enabled =
         true
+
+    if HolyFarmMiddleWateringRejoinActive() == true then
+
+        state.Token =
+            nil
+
+        state.Running =
+            false
+
+        state.Moving =
+            false
+
+        state.CancelArmed =
+            false
+
+        HolyFarmMiddleSetStatus(
+            "Paused",
+            "watering rejoin active"
+        )
+
+        return false
+    end
 
     if state.Running == true then
         return false
@@ -53365,6 +53476,13 @@ function HolyWateringRejoinStart(reason)
         return true
     end
 
+    if type(HolyFarmMiddlePauseForWatering) == "function" then
+
+        HolyFarmMiddlePauseForWatering(
+            "watering rejoin started"
+        )
+    end
+
     state.Enabled =
         true
 
@@ -53463,6 +53581,18 @@ function HolyWateringRejoinStop(
         HolyWateringRejoinSyncToggle(
             false
         )
+
+        if type(HolyFarmMiddleResumeAfterWatering) == "function" then
+
+            task.defer(function()
+
+                task.wait(
+                    0.1
+                )
+
+                HolyFarmMiddleResumeAfterWatering()
+            end)
+        end
     end
 
     return true
