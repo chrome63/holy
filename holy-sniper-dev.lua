@@ -16671,6 +16671,70 @@ function HolyFarmMiddleResumeAfterWatering()
     )
 end
 
+function HolyFarmMiddleStart(reason)
+
+    local state =
+        HolyFarmMiddleGetState()
+
+    if HOLY_DEV_UI_STATE.AutoFarmMiddle ~= true then
+
+        return false
+    end
+
+    state.Enabled =
+        true
+
+    if HolyFarmMiddleWateringRejoinActive() == true then
+
+        HolyFarmMiddlePauseForWatering(
+            "watering rejoin active"
+        )
+
+        return false
+    end
+
+    if state.Running == true then
+
+        return false
+    end
+
+    HolyFarmMiddleConnectInputWatcher()
+
+    local token =
+        {}
+
+    state.Token =
+        token
+
+    state.Running =
+        true
+
+    state.Done =
+        false
+
+    state.ManualCancelled =
+        false
+
+    state.SniperCancelled =
+        false
+
+    state.Moving =
+        false
+
+    state.CancelArmed =
+        false
+
+    task.spawn(function()
+
+        HolyFarmMiddleRunWorker(
+            token,
+            reason or "startup"
+        )
+    end)
+
+    return true
+end
+
 function HolyFarmMiddleGetState()
 
     HOLY_FARM_MIDDLE_STATE =
@@ -17660,13 +17724,14 @@ function HolyFarmMiddleStart(reason)
         HolyFarmMiddleGetState()
 
     if HOLY_DEV_UI_STATE.AutoFarmMiddle ~= true then
+
         return false
     end
 
     state.Enabled =
         true
 
-    if HolyFarmMiddleWateringRejoinActive() == true then
+    if HolyFarmMiddleWateringRejoinActive() then
 
         state.Token =
             nil
@@ -17680,22 +17745,28 @@ function HolyFarmMiddleStart(reason)
         state.CancelArmed =
             false
 
-        HolyFarmMiddleSetStatus(
-            "Paused",
-            "watering rejoin active"
-        )
+        HolyFarmMiddleStopMovement()
+
+        state.Status =
+            "Paused for Watering Rejoin"
+
+        HolyFarmMiddleSyncUI()
 
         return false
     end
 
     if state.Running == true then
+
         return false
     end
 
     HolyFarmMiddleConnectInputWatcher()
 
+    state.TokenCounter +=
+        1
+
     local token =
-        {}
+        state.TokenCounter
 
     state.Token =
         token
@@ -17703,26 +17774,16 @@ function HolyFarmMiddleStart(reason)
     state.Running =
         true
 
-    state.Done =
-        false
+    state.Status =
+        "Starting"
 
-    state.ManualCancelled =
-        false
-
-    state.SniperCancelled =
-        false
-
-    state.Moving =
-        false
-
-    state.CancelArmed =
-        false
+    HolyFarmMiddleSyncUI()
 
     task.spawn(function()
 
         HolyFarmMiddleRunWorker(
             token,
-            reason or "startup"
+            reason
         )
     end)
 
