@@ -2476,8 +2476,16 @@ function HolyLoadVisualSettings()
     HOLY_VISUAL_STATE.GardenFruitESP =
         data.GardenFruitESP == true
 
-    HOLY_VISUAL_STATE.SprinklerTimerESP =
-        data.SprinklerTimerESP == true
+    if type(data.SprinklerTimerESP) == "boolean" then
+
+        HOLY_VISUAL_STATE.SprinklerTimerESP =
+            data.SprinklerTimerESP
+
+    else
+
+        HOLY_VISUAL_STATE.SprinklerTimerESP =
+            true
+    end
 
     if type(data.GardenFruitShowValue) == "boolean" then
 
