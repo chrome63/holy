@@ -672,6 +672,29 @@ HOLY_GROUPBOX_STATE = {
     Collapsed = {},
 }
 
+if type(HOLY_ROLLBACK_RUNTIME) == "table"
+and type(HOLY_ROLLBACK_RUNTIME.Stop) == "function" then
+
+    pcall(function()
+
+        HOLY_ROLLBACK_RUNTIME.Stop(
+            "restart"
+        )
+    end)
+end
+
+HOLY_ROLLBACK_STATE = {
+    Enabled = false,
+    FireDelay = 0.1,
+}
+
+HOLY_ROLLBACK_RUNTIME = {
+    Generation = 0,
+    Running = false,
+    Packet = nil,
+    Stop = nil,
+}
+
 if type(HOLY_LOADING_SKIP_STATE) == "table" then
 
     if type(HOLY_LOADING_SKIP_STATE.Stop) == "function" then
@@ -49746,6 +49769,252 @@ function HolyPerformanceStopHideMiddle(reason)
 end
 
 --==================================================
+-- ROLLBACK SYSTEM
+--==================================================
+
+function HolyRollbackResolvePacket()
+
+    local runtime =
+        HOLY_ROLLBACK_RUNTIME
+
+    if type(runtime.Packet) == "table"
+    and type(runtime.Packet.Fire) == "function" then
+
+        return runtime.Packet
+    end
+
+    local networking =
+        nil
+
+    if type(HolyShopRequireModule) == "function" then
+
+        networking =
+            HolyShopRequireModule(
+                "SharedModules.Networking"
+            )
+    end
+
+    if type(networking) ~= "table" then
+
+        local sharedModules =
+            ReplicatedStorage:FindFirstChild(
+                "SharedModules"
+            )
+
+        local networkingModule =
+            sharedModules
+            and sharedModules:FindFirstChild(
+                "Networking"
+            )
+
+        if typeof(networkingModule) == "Instance"
+        and networkingModule:IsA("ModuleScript") then
+
+            local success,
+                result =
+                pcall(function()
+
+                    return require(
+                        networkingModule
+                    )
+                end)
+
+            if success == true
+            and type(result) == "table" then
+
+                networking =
+                    result
+            end
+        end
+    end
+
+    local packet =
+        type(networking) == "table"
+        and type(networking.SignTool) == "table"
+        and networking.SignTool.SetSignImage
+        or nil
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        warn(
+            "[HOLY Rollback] SetSignImage packet is missing."
+        )
+
+        return nil
+    end
+
+    runtime.Packet =
+        packet
+
+    return packet
+end
+
+function HolyRollbackFire(payload)
+
+    local packet =
+        HolyRollbackResolvePacket()
+
+    if packet == nil then
+        return false
+    end
+
+    local success,
+        errorMessage =
+        pcall(function()
+
+            packet:Fire(
+                payload
+            )
+        end)
+
+    if success ~= true then
+
+        warn(
+            "[HOLY Rollback] "
+            .. tostring(errorMessage)
+        )
+    end
+
+    return success == true
+end
+
+function HolyRollbackStop(reason)
+
+    local state =
+        HOLY_ROLLBACK_STATE
+
+    local runtime =
+        HOLY_ROLLBACK_RUNTIME
+
+    state.Enabled =
+        false
+
+    runtime.Running =
+        false
+
+    runtime.Generation +=
+        1
+
+    HolyRollbackFire(
+        ""
+    )
+
+    return true
+end
+
+function HolyRollbackStart(reason)
+
+    local state =
+        HOLY_ROLLBACK_STATE
+
+    local runtime =
+        HOLY_ROLLBACK_RUNTIME
+
+    if state.Enabled == true
+    and runtime.Running == true then
+
+        return true
+    end
+
+    local packet =
+        HolyRollbackResolvePacket()
+
+    if packet == nil then
+
+        state.Enabled =
+            false
+
+        runtime.Running =
+            false
+
+        return false
+    end
+
+    state.Enabled =
+        true
+
+    runtime.Running =
+        true
+
+    runtime.Generation +=
+        1
+
+    local generation =
+        runtime.Generation
+
+    task.spawn(function()
+
+        while state.Enabled == true
+        and runtime.Running == true
+        and runtime.Generation == generation do
+
+            local success =
+                HolyRollbackFire(
+                    string.char(255)
+                )
+
+            if success ~= true then
+
+                state.Enabled =
+                    false
+
+                runtime.Running =
+                    false
+
+                runtime.Generation +=
+                    1
+
+                break
+            end
+
+            task.wait(
+                math.clamp(
+                    tonumber(
+                        state.FireDelay
+                    )
+                    or 0.1,
+                    0,
+                    10
+                )
+            )
+        end
+    end)
+
+    return true
+end
+
+function HolyRollbackSetEnabled(value)
+
+    if value == true then
+
+        return HolyRollbackStart(
+            "toggle on"
+        )
+    end
+
+    return HolyRollbackStop(
+        "toggle off"
+    )
+end
+
+function HolyRollbackSetFireDelay(value)
+
+    HOLY_ROLLBACK_STATE.FireDelay =
+        math.clamp(
+            tonumber(value)
+            or 0.1,
+            0,
+            10
+        )
+
+    return HOLY_ROLLBACK_STATE.FireDelay
+end
+
+HOLY_ROLLBACK_RUNTIME.Stop =
+    HolyRollbackStop
+
+--==================================================
 -- [3] LOAD SETTINGS + LIBRARY
 --==================================================
 
@@ -50048,6 +50317,13 @@ local Tabs = {
             Description = "Server tools.",
         }),
 
+    Vuln =
+        Window:AddTab({
+            Name = "Vuln",
+            Icon = "bug",
+            Description = "Vulnerability tools.",
+        }),
+
     Settings =
         Window:AddTab({
             Name = "Settings",
@@ -50286,6 +50562,14 @@ local FarmExtraExperimentalBox =
         "Farm.Experimental",
         "Experimental",
         "flask-conical"
+    )
+
+local VulnRollbackBox =
+    HolyAddLeftGroupbox(
+        Tabs.Vuln,
+        "Vuln.Rollback",
+        "Rollback",
+        "rotate-ccw"
     )
 
 local VisualInventoryBox =
@@ -64838,6 +65122,63 @@ for _, tool in ipairs(DEV_TOOLS) do
             end,
     })
 end
+
+--==================================================
+-- [7.5] VULN TAB
+--==================================================
+
+VulnRollbackBox:AddToggle(
+    "HolyRollbackEnabled",
+    {
+        Text =
+            "Enable Rollback",
+
+        Default =
+            false,
+
+        Tooltip =
+            "Continuously runs rollback while enabled.",
+    }
+):OnChanged(function(value)
+
+    HolyRollbackSetEnabled(
+        value == true
+    )
+end)
+
+VulnRollbackBox:AddSlider(
+    "HolyRollbackFireDelay",
+    {
+        Text =
+            "Rollback Delay",
+
+        Default =
+            0.1,
+
+        Min =
+            0,
+
+        Max =
+            10,
+
+        Rounding =
+            2,
+
+        Suffix =
+            "s",
+
+        HideMax =
+            true,
+
+        Tooltip =
+            "Delay between rollback packets. 0 = fastest possible.",
+    }
+):OnChanged(function(value)
+
+    HolyRollbackSetFireDelay(
+        value
+    )
+end)
 
 --==================================================
 -- [8] FINISH
