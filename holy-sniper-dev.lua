@@ -24,6 +24,9 @@ local CoreGui =
 local UserInputService =
     game:GetService("UserInputService")
 
+local PathfindingService =
+    game:GetService("PathfindingService")
+
 local LocalPlayer =
     Players.LocalPlayer
     or Players.PlayerAdded:Wait()
@@ -376,6 +379,13 @@ local SERVER_HOP_FAST_CANDIDATES =
 local GROUPBOX_SETTINGS_FILE =
     UI_SETTINGS_FOLDER
     .. "/HolyPremiumGroupboxes.json"
+
+local WATERING_REJOIN_SETTINGS_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyPremiumWateringRejoinSettings.json"
+
+local WATERING_REJOIN_LEGACY_FILE =
+    "HOLY_WateringRejoin_Setup.json"
 
 local DEV_TOOLS = {
     {
@@ -754,6 +764,73 @@ HOLY_ROLLBACK_RUNTIME = {
     Running = false,
     Packet = nil,
     Stop = nil,
+}
+
+if type(HOLY_WATERING_REJOIN_RUNTIME) == "table"
+and type(HOLY_WATERING_REJOIN_RUNTIME.Stop) == "function" then
+
+    pcall(function()
+
+        HOLY_WATERING_REJOIN_RUNTIME.Stop(
+            "restart",
+            true
+        )
+    end)
+end
+
+HOLY_WATERING_REJOIN_STATE = {
+    Enabled = false,
+
+    WateringCan =
+        "Super Watering Can",
+
+    WateringMode =
+        "Delay",
+
+    WateringDelay =
+        1,
+
+    RejoinDelay =
+        5,
+
+    TargetUsername =
+        "",
+
+    TargetOwnerUserId =
+        nil,
+
+    StandOffset =
+        nil,
+
+    AimOffset =
+        nil,
+}
+
+HOLY_WATERING_REJOIN_RUNTIME = {
+    Generation = 0,
+    Running = false,
+    Busy = false,
+    Teleporting = false,
+
+    Packet = nil,
+
+    SetupArmed = false,
+    SetupGeneration = 0,
+    SetupHookRestore = nil,
+
+    PlantCollisionOriginal = {},
+    PlantConnection = nil,
+
+    ToggleSyncing = false,
+    Stop = nil,
+}
+
+HOLY_WATERING_REJOIN_UI = {
+    Toggle = nil,
+    WateringCanDropdown = nil,
+    WateringModeDropdown = nil,
+    WateringDelaySlider = nil,
+    RejoinDelaySlider = nil,
 }
 
 if type(HOLY_LOADING_SKIP_STATE) == "table" then
@@ -51123,6 +51200,20 @@ function HolyRollbackSetEnabled(value)
         )
     end
 
+    if type(HOLY_WATERING_REJOIN_STATE) == "table"
+    and HOLY_WATERING_REJOIN_STATE.Enabled == true then
+
+        task.defer(function()
+
+            if type(HolyWateringRejoinEnsureRollback) == "function" then
+
+                HolyWateringRejoinEnsureRollback()
+            end
+        end)
+
+        return true
+    end
+
     return HolyRollbackStop(
         "toggle off"
     )
@@ -51145,12 +51236,2340 @@ HOLY_ROLLBACK_RUNTIME.Stop =
     HolyRollbackStop
 
 --==================================================
+-- WATERING REJOIN SYSTEM
+--==================================================
+
+function HolyWateringRejoinNormalizeState()
+
+    local state =
+        HOLY_WATERING_REJOIN_STATE
+
+    state.Enabled =
+        state.Enabled == true
+
+    if state.WateringCan ~= "Common Watering Can"
+    and state.WateringCan ~= "Super Watering Can" then
+
+        state.WateringCan =
+            "Super Watering Can"
+    end
+
+    if state.WateringMode ~= "Delay"
+    and state.WateringMode ~= "Decay" then
+
+        state.WateringMode =
+            "Delay"
+    end
+
+    state.WateringDelay =
+        math.clamp(
+            tonumber(
+                state.WateringDelay
+            )
+            or 1,
+            0.1,
+            10
+        )
+
+    state.RejoinDelay =
+        math.clamp(
+            tonumber(
+                state.RejoinDelay
+            )
+            or 5,
+            1,
+            60
+        )
+
+    state.TargetUsername =
+        tostring(
+            state.TargetUsername
+            or ""
+        )
+
+    state.TargetOwnerUserId =
+        tonumber(
+            state.TargetOwnerUserId
+        )
+
+    if type(state.StandOffset) ~= "table" then
+
+        state.StandOffset =
+            nil
+    end
+
+    if type(state.AimOffset) ~= "table" then
+
+        state.AimOffset =
+            nil
+    end
+
+    return state
+end
+
+function HolyWateringRejoinHasSetup()
+
+    local state =
+        HolyWateringRejoinNormalizeState()
+
+    return tonumber(
+        state.TargetOwnerUserId
+    ) ~= nil
+        and type(state.StandOffset) == "table"
+        and #state.StandOffset == 12
+        and type(state.AimOffset) == "table"
+end
+
+function HolyWateringRejoinSaveSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local state =
+        HolyWateringRejoinNormalizeState()
+
+    local payload = {
+        Version = 1,
+
+        Enabled =
+            state.Enabled == true,
+
+        WateringCan =
+            state.WateringCan,
+
+        ToolName =
+            state.WateringCan,
+
+        WateringMode =
+            state.WateringMode,
+
+        WateringDelay =
+            state.WateringDelay,
+
+        RejoinDelay =
+            state.RejoinDelay,
+
+        TargetUsername =
+            state.TargetUsername,
+
+        TargetOwnerUserId =
+            state.TargetOwnerUserId,
+
+        StandOffset =
+            state.StandOffset,
+
+        AimOffset =
+            state.AimOffset,
+    }
+
+    local encodeSuccess,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodeSuccess ~= true
+    or type(encoded) ~= "string" then
+
+        return false
+    end
+
+    local writeSuccess =
+        pcall(function()
+
+            writefile(
+                WATERING_REJOIN_SETTINGS_FILE,
+                encoded
+            )
+        end)
+
+    return writeSuccess == true
+end
+
+function HolyWateringRejoinLoadSettings()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    local selectedFile =
+        nil
+
+    pcall(function()
+
+        if isfile(
+            WATERING_REJOIN_SETTINGS_FILE
+        ) then
+
+            selectedFile =
+                WATERING_REJOIN_SETTINGS_FILE
+        elseif isfile(
+            WATERING_REJOIN_LEGACY_FILE
+        ) then
+
+            selectedFile =
+                WATERING_REJOIN_LEGACY_FILE
+        end
+    end)
+
+    if not selectedFile then
+        return false
+    end
+
+    local readSuccess,
+        raw =
+        pcall(function()
+
+            return readfile(
+                selectedFile
+            )
+        end)
+
+    if readSuccess ~= true
+    or type(raw) ~= "string" then
+
+        return false
+    end
+
+    local decodeSuccess,
+        data =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeSuccess ~= true
+    or type(data) ~= "table" then
+
+        return false
+    end
+
+    local state =
+        HOLY_WATERING_REJOIN_STATE
+
+    state.Enabled =
+        data.Enabled == true
+
+    state.WateringCan =
+        tostring(
+            data.WateringCan
+            or data.ToolName
+            or state.WateringCan
+        )
+
+    state.WateringMode =
+        tostring(
+            data.WateringMode
+            or state.WateringMode
+        )
+
+    state.WateringDelay =
+        tonumber(
+            data.WateringDelay
+        )
+        or state.WateringDelay
+
+    state.RejoinDelay =
+        tonumber(
+            data.RejoinDelay
+        )
+        or state.RejoinDelay
+
+    state.TargetUsername =
+        tostring(
+            data.TargetUsername
+            or state.TargetUsername
+            or ""
+        )
+
+    state.TargetOwnerUserId =
+        tonumber(
+            data.TargetOwnerUserId
+        )
+
+    state.StandOffset =
+        type(data.StandOffset) == "table"
+        and data.StandOffset
+        or nil
+
+    state.AimOffset =
+        type(data.AimOffset) == "table"
+        and data.AimOffset
+        or nil
+
+    HolyWateringRejoinNormalizeState()
+
+    if HolyWateringRejoinHasSetup() ~= true then
+
+        state.Enabled =
+            false
+    end
+
+    if selectedFile == WATERING_REJOIN_LEGACY_FILE then
+
+        HolyWateringRejoinSaveSettings()
+    end
+
+    return true
+end
+
+function HolyWateringRejoinCFrameToData(value)
+
+    if typeof(value) ~= "CFrame" then
+        return nil
+    end
+
+    return {
+        value:GetComponents()
+    }
+end
+
+function HolyWateringRejoinDataToCFrame(value)
+
+    if type(value) ~= "table"
+    or #value ~= 12 then
+
+        return nil
+    end
+
+    return CFrame.new(
+        table.unpack(
+            value
+        )
+    )
+end
+
+function HolyWateringRejoinVectorToData(value)
+
+    if typeof(value) ~= "Vector3" then
+        return nil
+    end
+
+    return {
+        X = value.X,
+        Y = value.Y,
+        Z = value.Z,
+    }
+end
+
+function HolyWateringRejoinDataToVector(value)
+
+    if type(value) ~= "table" then
+        return nil
+    end
+
+    local x =
+        tonumber(value.X)
+
+    local y =
+        tonumber(value.Y)
+
+    local z =
+        tonumber(value.Z)
+
+    if not x
+    or not y
+    or not z then
+
+        return nil
+    end
+
+    return Vector3.new(
+        x,
+        y,
+        z
+    )
+end
+
+function HolyWateringRejoinGetCharacter()
+
+    local character =
+        LocalPlayer.Character
+
+    if typeof(character) ~= "Instance" then
+        return nil
+    end
+
+    local humanoid =
+        character:FindFirstChildOfClass(
+            "Humanoid"
+        )
+
+    local root =
+        character:FindFirstChild(
+            "HumanoidRootPart"
+        )
+
+    return character,
+        humanoid,
+        root
+end
+
+function HolyWateringRejoinFindTool(toolName)
+
+    toolName =
+        tostring(
+            toolName
+            or HOLY_WATERING_REJOIN_STATE.WateringCan
+        )
+
+    local character =
+        LocalPlayer.Character
+
+    local backpack =
+        LocalPlayer:FindFirstChildOfClass(
+            "Backpack"
+        )
+
+    return (
+        character
+        and character:FindFirstChild(
+            toolName
+        )
+    )
+        or (
+            backpack
+            and backpack:FindFirstChild(
+                toolName
+            )
+        )
+end
+
+function HolyWateringRejoinEquipTool(tool)
+
+    local character,
+        humanoid =
+        HolyWateringRejoinGetCharacter()
+
+    if typeof(character) ~= "Instance"
+    or typeof(humanoid) ~= "Instance"
+    or typeof(tool) ~= "Instance"
+    or tool:IsA("Tool") ~= true then
+
+        return false
+    end
+
+    if tool.Parent ~= character then
+
+        humanoid:EquipTool(
+            tool
+        )
+
+        task.wait(
+            0.25
+        )
+    end
+
+    return tool.Parent == character
+end
+
+function HolyWateringRejoinResolvePacket()
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    if type(runtime.Packet) == "table"
+    and type(runtime.Packet.Fire) == "function" then
+
+        return runtime.Packet
+    end
+
+    local networking =
+        nil
+
+    if type(HolyShopRequireModule) == "function" then
+
+        networking =
+            HolyShopRequireModule(
+                "SharedModules.Networking"
+            )
+    end
+
+    if type(networking) ~= "table" then
+
+        local sharedModules =
+            ReplicatedStorage:FindFirstChild(
+                "SharedModules"
+            )
+
+        local networkingModule =
+            sharedModules
+            and sharedModules:FindFirstChild(
+                "Networking"
+            )
+
+        if typeof(networkingModule) == "Instance"
+        and networkingModule:IsA("ModuleScript") then
+
+            local success,
+                result =
+                pcall(function()
+
+                    return require(
+                        networkingModule
+                    )
+                end)
+
+            if success == true
+            and type(result) == "table" then
+
+                networking =
+                    result
+            end
+        end
+    end
+
+    local packet =
+        type(networking) == "table"
+        and type(networking.WateringCan) == "table"
+        and networking.WateringCan.UseWateringCan
+        or nil
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        warn(
+            "[HOLY Watering Rejoin] UseWateringCan packet is missing."
+        )
+
+        return nil
+    end
+
+    runtime.Packet =
+        packet
+
+    return packet
+end
+
+function HolyWateringRejoinGetGardenAnchor(garden)
+
+    if typeof(garden) ~= "Instance" then
+        return nil
+    end
+
+    local visual =
+        garden:FindFirstChild(
+            "Visual"
+        )
+
+    local anchor =
+        visual
+        and visual:FindFirstChild(
+            "GardenZonePart"
+        )
+
+    if not anchor then
+
+        anchor =
+            garden:FindFirstChild(
+                "GardenZonePart",
+                true
+            )
+    end
+
+    if typeof(anchor) == "Instance"
+    and anchor:IsA("BasePart") then
+
+        return anchor.CFrame,
+            anchor
+    end
+
+    return nil
+end
+
+function HolyWateringRejoinGetGardenOwner(garden)
+
+    if typeof(garden) ~= "Instance" then
+        return nil
+    end
+
+    local ownerUserId =
+        tonumber(
+            garden:GetAttribute(
+                "OwnerUserId"
+            )
+        )
+
+    local ownerName =
+        tostring(
+            garden:GetAttribute(
+                "Owner"
+            )
+            or ""
+        )
+
+    if not ownerUserId
+    and ownerName ~= "" then
+
+        local ownerPlayer =
+            Players:FindFirstChild(
+                ownerName
+            )
+
+        if ownerPlayer then
+
+            ownerUserId =
+                ownerPlayer.UserId
+        else
+
+            pcall(function()
+
+                ownerUserId =
+                    Players:GetUserIdFromNameAsync(
+                        ownerName
+                    )
+            end)
+        end
+    end
+
+    if ownerUserId
+    and ownerName == "" then
+
+        local ownerPlayer =
+            Players:GetPlayerByUserId(
+                ownerUserId
+            )
+
+        if ownerPlayer then
+
+            ownerName =
+                ownerPlayer.Name
+        end
+    end
+
+    return ownerUserId,
+        ownerName
+end
+
+function HolyWateringRejoinFindGardenByOwner(
+    ownerUserId,
+    ownerName
+)
+
+    local gardens =
+        workspace:FindFirstChild(
+            "Gardens"
+        )
+
+    if not gardens then
+        return nil
+    end
+
+    for _, garden in ipairs(
+        gardens:GetChildren()
+    ) do
+
+        local gardenOwnerUserId =
+            tonumber(
+                garden:GetAttribute(
+                    "OwnerUserId"
+                )
+            )
+
+        local gardenOwnerName =
+            tostring(
+                garden:GetAttribute(
+                    "Owner"
+                )
+                or ""
+            )
+
+        if ownerUserId
+        and gardenOwnerUserId == tonumber(ownerUserId) then
+
+            return garden
+        end
+
+        if tostring(ownerName or "") ~= ""
+        and gardenOwnerName == tostring(ownerName) then
+
+            return garden
+        end
+    end
+
+    return nil
+end
+
+function HolyWateringRejoinFindGardenAtPosition(position)
+
+    if typeof(position) ~= "Vector3" then
+        return nil
+    end
+
+    local gardens =
+        workspace:FindFirstChild(
+            "Gardens"
+        )
+
+    if not gardens then
+        return nil
+    end
+
+    local bestGarden =
+        nil
+
+    local bestScore =
+        math.huge
+
+    for _, garden in ipairs(
+        gardens:GetChildren()
+    ) do
+
+        local anchorCFrame,
+            anchor =
+            HolyWateringRejoinGetGardenAnchor(
+                garden
+            )
+
+        if anchorCFrame
+        and anchor then
+
+            local localPosition =
+                anchorCFrame:PointToObjectSpace(
+                    position
+                )
+
+            local overflowX =
+                math.max(
+                    0,
+                    math.abs(localPosition.X)
+                    - (
+                        anchor.Size.X / 2
+                    )
+                )
+
+            local overflowZ =
+                math.max(
+                    0,
+                    math.abs(localPosition.Z)
+                    - (
+                        anchor.Size.Z / 2
+                    )
+                )
+
+            local score =
+                overflowX
+                + overflowZ
+
+            if score < bestScore then
+
+                bestScore =
+                    score
+
+                bestGarden =
+                    garden
+            end
+        end
+    end
+
+    if bestScore <= 12 then
+
+        return bestGarden
+    end
+
+    return nil
+end
+
+function HolyWateringRejoinResolveSavedPositions()
+
+    local state =
+        HOLY_WATERING_REJOIN_STATE
+
+    local garden =
+        HolyWateringRejoinFindGardenByOwner(
+            state.TargetOwnerUserId,
+            state.TargetUsername
+        )
+
+    local anchorCFrame,
+        anchor =
+        HolyWateringRejoinGetGardenAnchor(
+            garden
+        )
+
+    local standOffset =
+        HolyWateringRejoinDataToCFrame(
+            state.StandOffset
+        )
+
+    local aimOffset =
+        HolyWateringRejoinDataToVector(
+            state.AimOffset
+        )
+
+    if not garden
+    or not anchorCFrame
+    or not standOffset
+    or not aimOffset then
+
+        return nil
+    end
+
+    return garden,
+        anchor,
+        anchorCFrame * standOffset,
+        anchorCFrame:PointToWorldSpace(
+            aimOffset
+        )
+end
+
+function HolyWateringRejoinSyncToggle(value)
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    if runtime.ToggleSyncing == true then
+        return false
+    end
+
+    local toggle =
+        HOLY_WATERING_REJOIN_UI
+        and HOLY_WATERING_REJOIN_UI.Toggle
+        or nil
+
+    if type(toggle) ~= "table"
+    or type(toggle.SetValue) ~= "function" then
+
+        return false
+    end
+
+    runtime.ToggleSyncing =
+        true
+
+    task.defer(function()
+
+        pcall(function()
+
+            toggle:SetValue(
+                value == true
+            )
+        end)
+
+        runtime.ToggleSyncing =
+            false
+    end)
+
+    return true
+end
+
+function HolyWateringRejoinSyncRollbackToggle()
+
+    local library =
+        HOLY_DEV_LIBRARY
+
+    local toggles =
+        type(library) == "table"
+        and library.Toggles
+        or nil
+
+    local toggle =
+        type(toggles) == "table"
+        and toggles.HolyRollbackEnabled
+        or nil
+
+    if type(toggle) == "table"
+    and type(toggle.SetValue) == "function" then
+
+        task.defer(function()
+
+            pcall(function()
+
+                toggle:SetValue(
+                    true
+                )
+            end)
+        end)
+    end
+end
+
+function HolyWateringRejoinEnsureRollback()
+
+    if HOLY_WATERING_REJOIN_STATE.Enabled ~= true then
+        return false
+    end
+
+    local success =
+        HolyRollbackStart(
+            "watering rejoin"
+        )
+
+    if success == true then
+
+        HolyWateringRejoinSyncRollbackToggle()
+    end
+
+    return success == true
+end
+
+function HolyWateringRejoinRestorePlantCollision()
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    if runtime.PlantConnection then
+
+        pcall(function()
+
+            runtime.PlantConnection:Disconnect()
+        end)
+
+        runtime.PlantConnection =
+            nil
+    end
+
+    for part, originalValue in pairs(
+        runtime.PlantCollisionOriginal
+        or {}
+    ) do
+
+        if typeof(part) == "Instance"
+        and part:IsA("BasePart") then
+
+            pcall(function()
+
+                part.CanCollide =
+                    originalValue == true
+            end)
+        end
+    end
+
+    runtime.PlantCollisionOriginal =
+        {}
+end
+
+function HolyWateringRejoinApplyPlantCollision(garden)
+
+    HolyWateringRejoinRestorePlantCollision()
+
+    if typeof(garden) ~= "Instance" then
+        return false
+    end
+
+    local plants =
+        garden:FindFirstChild(
+            "Plants"
+        )
+
+    if not plants then
+        return false
+    end
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    local function apply(object)
+
+        if typeof(object) ~= "Instance"
+        or object:IsA("BasePart") ~= true then
+
+            return
+        end
+
+        if runtime.PlantCollisionOriginal[object] == nil then
+
+            runtime.PlantCollisionOriginal[object] =
+                object.CanCollide == true
+        end
+
+        object.CanCollide =
+            false
+    end
+
+    for _, object in ipairs(
+        plants:GetDescendants()
+    ) do
+
+        apply(
+            object
+        )
+    end
+
+    runtime.PlantConnection =
+        plants.DescendantAdded:Connect(function(object)
+
+            task.defer(function()
+
+                apply(
+                    object
+                )
+            end)
+        end)
+
+    return true
+end
+
+function HolyWateringRejoinDistanceTo(
+    root,
+    destination
+)
+
+    if typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true
+    or typeof(destination) ~= "Vector3" then
+
+        return math.huge
+    end
+
+    return (
+        root.Position
+        - destination
+    ).Magnitude
+end
+
+function HolyWateringRejoinComputeMovementPoint(
+    root,
+    destination
+)
+
+    local path =
+        PathfindingService:CreatePath({
+            AgentRadius = 1,
+            AgentHeight = 4,
+            AgentCanJump = true,
+            AgentCanClimb = true,
+            WaypointSpacing = 3,
+        })
+
+    local success =
+        pcall(function()
+
+            path:ComputeAsync(
+                root.Position,
+                destination
+            )
+        end)
+
+    if success ~= true
+    or path.Status ~= Enum.PathStatus.Success then
+
+        return destination,
+            Enum.PathWaypointAction.Walk
+    end
+
+    local waypoints =
+        path:GetWaypoints()
+
+    for index = 2, #waypoints do
+
+        local waypoint =
+            waypoints[index]
+
+        if (
+            root.Position
+            - waypoint.Position
+        ).Magnitude > 1.5 then
+
+            return waypoint.Position,
+                waypoint.Action
+        end
+    end
+
+    local finalWaypoint =
+        waypoints[#waypoints]
+
+    if finalWaypoint then
+
+        return finalWaypoint.Position,
+            finalWaypoint.Action
+    end
+
+    return destination,
+        Enum.PathWaypointAction.Walk
+end
+
+function HolyWateringRejoinWalkTo(
+    destinationCFrame,
+    generation
+)
+
+    if typeof(destinationCFrame) ~= "CFrame" then
+
+        return false,
+            math.huge
+    end
+
+    local character,
+        humanoid,
+        root =
+        HolyWateringRejoinGetCharacter()
+
+    if not character
+    or not humanoid
+    or not root then
+
+        return false,
+            math.huge
+    end
+
+    humanoid:UnequipTools()
+
+    humanoid.Sit =
+        false
+
+    humanoid.PlatformStand =
+        false
+
+    humanoid.AutoRotate =
+        true
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    local destination =
+        destinationCFrame.Position
+
+    local arrivalDistance =
+        5
+
+    local startedAt =
+        os.clock()
+
+    local stallCount =
+        0
+
+    while HOLY_WATERING_REJOIN_STATE.Enabled == true
+    and runtime.Running == true
+    and runtime.Generation == generation
+    and os.clock() - startedAt < 60 do
+
+        local currentDistance =
+            HolyWateringRejoinDistanceTo(
+                root,
+                destination
+            )
+
+        if currentDistance <= arrivalDistance then
+
+            local lookVector =
+                destinationCFrame.LookVector
+
+            local flatLook =
+                Vector3.new(
+                    lookVector.X,
+                    0,
+                    lookVector.Z
+                )
+
+            if flatLook.Magnitude > 0.01 then
+
+                root.CFrame =
+                    CFrame.lookAt(
+                        root.Position,
+                        root.Position
+                        + flatLook.Unit
+                    )
+            end
+
+            return true,
+                currentDistance
+        end
+
+        local movementPoint,
+            action =
+            HolyWateringRejoinComputeMovementPoint(
+                root,
+                destination
+            )
+
+        local startingPosition =
+            root.Position
+
+        local startingDistance =
+            currentDistance
+
+        if action == Enum.PathWaypointAction.Jump then
+
+            humanoid.Jump =
+                true
+        end
+
+        humanoid:MoveTo(
+            movementPoint
+        )
+
+        local segmentDeadline =
+            os.clock()
+            + 3
+
+        while HOLY_WATERING_REJOIN_STATE.Enabled == true
+        and runtime.Running == true
+        and runtime.Generation == generation
+        and os.clock() < segmentDeadline do
+
+            if HolyWateringRejoinDistanceTo(
+                root,
+                destination
+            ) <= arrivalDistance then
+
+                break
+            end
+
+            if (
+                root.Position
+                - movementPoint
+            ).Magnitude <= 2 then
+
+                break
+            end
+
+            task.wait(
+                0.1
+            )
+        end
+
+        local movedDistance =
+            (
+                root.Position
+                - startingPosition
+            ).Magnitude
+
+        local improvement =
+            startingDistance
+            - HolyWateringRejoinDistanceTo(
+                root,
+                destination
+            )
+
+        if movedDistance < 0.4
+        or improvement < 0.2 then
+
+            stallCount +=
+                1
+
+            humanoid.Jump =
+                true
+
+            humanoid:MoveTo(
+                destination
+            )
+
+            task.wait(
+                0.75
+            )
+        else
+
+            stallCount =
+                0
+        end
+
+        if stallCount >= 8 then
+            break
+        end
+    end
+
+    local finalDistance =
+        HolyWateringRejoinDistanceTo(
+            root,
+            destination
+        )
+
+    return finalDistance <= 5,
+        finalDistance
+end
+
+function HolyWateringRejoinRestoreSetupHook()
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    if type(runtime.SetupHookRestore) == "function" then
+
+        pcall(
+            runtime.SetupHookRestore
+        )
+    end
+
+    runtime.SetupHookRestore =
+        nil
+
+    runtime.SetupArmed =
+        false
+end
+
+function HolyWateringRejoinFinishSetupCapture(
+    aimPosition,
+    canName,
+    tool,
+    standCFrame,
+    startingCount,
+    setupGeneration
+)
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    local deadline =
+        os.clock()
+        + 5
+
+    local finalCount =
+        startingCount
+
+    while runtime.SetupGeneration == setupGeneration
+    and os.clock() < deadline do
+
+        finalCount =
+            tonumber(
+                tool:GetAttribute(
+                    "Count"
+                )
+            )
+            or startingCount
+
+        if finalCount < startingCount then
+            break
+        end
+
+        task.wait(
+            0.02
+        )
+    end
+
+    HolyWateringRejoinRestoreSetupHook()
+
+    pcall(function()
+
+        tool:Deactivate()
+    end)
+
+    if finalCount >= startingCount then
+
+        HolyNotify(
+            "Watering Rejoin",
+            "Position was not saved because watering was not confirmed.",
+            5
+        )
+
+        return false
+    end
+
+    local garden =
+        HolyWateringRejoinFindGardenAtPosition(
+            aimPosition
+        )
+
+    local anchorCFrame =
+        HolyWateringRejoinGetGardenAnchor(
+            garden
+        )
+
+    local ownerUserId,
+        ownerName =
+        HolyWateringRejoinGetGardenOwner(
+            garden
+        )
+
+    if not garden
+    or not anchorCFrame
+    or not ownerUserId then
+
+        HolyNotify(
+            "Watering Rejoin",
+            "Could not detect the target garden owner.",
+            5
+        )
+
+        return false
+    end
+
+    local state =
+        HOLY_WATERING_REJOIN_STATE
+
+    state.TargetOwnerUserId =
+        ownerUserId
+
+    state.TargetUsername =
+        ownerName
+
+    state.WateringCan =
+        canName
+
+    state.StandOffset =
+        HolyWateringRejoinCFrameToData(
+            anchorCFrame:ToObjectSpace(
+                standCFrame
+            )
+        )
+
+    state.AimOffset =
+        HolyWateringRejoinVectorToData(
+            anchorCFrame:PointToObjectSpace(
+                aimPosition
+            )
+        )
+
+    HolyWateringRejoinSaveSettings()
+
+    HolyNotify(
+        "Watering Rejoin",
+        "Target position saved for "
+        .. tostring(
+            ownerName ~= ""
+            and ownerName
+            or ownerUserId
+        )
+        .. ".",
+        5
+    )
+
+    return true
+end
+
+function HolyWateringRejoinInstallSetupHook()
+
+    if type(hookfunction) ~= "function" then
+
+        HolyNotify(
+            "Watering Rejoin",
+            "Position capture is unavailable.",
+            5
+        )
+
+        return false
+    end
+
+    HolyWateringRejoinRestoreSetupHook()
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    local packet =
+        HolyWateringRejoinResolvePacket()
+
+    if not packet then
+        return false
+    end
+
+    local hookTarget =
+        packet.Fire
+
+    local originalFunction =
+        nil
+
+    local wrapper =
+        function(self, ...)
+
+            local arguments =
+                table.pack(...)
+
+            local shouldCapture =
+                runtime.SetupArmed == true
+                and self == packet
+                and typeof(arguments[1]) == "Vector3"
+                and type(arguments[2]) == "string"
+                and typeof(arguments[3]) == "Instance"
+                and arguments[2] == HOLY_WATERING_REJOIN_STATE.WateringCan
+
+            local aimPosition =
+                nil
+
+            local canName =
+                nil
+
+            local tool =
+                nil
+
+            local standCFrame =
+                nil
+
+            local startingCount =
+                nil
+
+            local setupGeneration =
+                nil
+
+            if shouldCapture then
+
+                local _,
+                    _,
+                    root =
+                    HolyWateringRejoinGetCharacter()
+
+                if root then
+
+                    aimPosition =
+                        arguments[1]
+
+                    canName =
+                        arguments[2]
+
+                    tool =
+                        arguments[3]
+
+                    standCFrame =
+                        root.CFrame
+
+                    startingCount =
+                        tonumber(
+                            tool:GetAttribute(
+                                "Count"
+                            )
+                        )
+
+                    if startingCount then
+
+                        runtime.SetupArmed =
+                            false
+
+                        runtime.SetupGeneration +=
+                            1
+
+                        setupGeneration =
+                            runtime.SetupGeneration
+                    else
+
+                        shouldCapture =
+                            false
+                    end
+                else
+
+                    shouldCapture =
+                        false
+                end
+            end
+
+            local returnValues =
+                table.pack(
+                    originalFunction(
+                        self,
+                        table.unpack(
+                            arguments,
+                            1,
+                            arguments.n
+                        )
+                    )
+                )
+
+            if shouldCapture then
+
+                task.defer(function()
+
+                    pcall(function()
+
+                        tool:Deactivate()
+                    end)
+                end)
+
+                task.spawn(
+                    HolyWateringRejoinFinishSetupCapture,
+                    aimPosition,
+                    canName,
+                    tool,
+                    standCFrame,
+                    startingCount,
+                    setupGeneration
+                )
+            end
+
+            return table.unpack(
+                returnValues,
+                1,
+                returnValues.n
+            )
+        end
+
+    if type(newcclosure) == "function" then
+
+        wrapper =
+            newcclosure(
+                wrapper
+            )
+    end
+
+    local success,
+        result =
+        pcall(
+            hookfunction,
+            hookTarget,
+            wrapper
+        )
+
+    if success ~= true
+    or type(result) ~= "function" then
+
+        HolyNotify(
+            "Watering Rejoin",
+            "Could not install position capture.",
+            5
+        )
+
+        return false
+    end
+
+    originalFunction =
+        result
+
+    runtime.SetupHookRestore =
+        function()
+
+            hookfunction(
+                hookTarget,
+                originalFunction
+            )
+        end
+
+    return true
+end
+
+function HolyWateringRejoinArmSetup()
+
+    local state =
+        HOLY_WATERING_REJOIN_STATE
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    if state.Enabled == true
+    or runtime.Running == true then
+
+        HolyNotify(
+            "Watering Rejoin",
+            "Disable Auto Watering Rejoin before setting a position.",
+            5
+        )
+
+        return false
+    end
+
+    local tool =
+        HolyWateringRejoinFindTool(
+            state.WateringCan
+        )
+
+    if not tool then
+
+        HolyNotify(
+            "Watering Rejoin",
+            state.WateringCan
+            .. " was not found.",
+            5
+        )
+
+        return false
+    end
+
+    if HolyWateringRejoinEquipTool(
+        tool
+    ) ~= true then
+
+        HolyNotify(
+            "Watering Rejoin",
+            "Could not equip "
+            .. state.WateringCan
+            .. ".",
+            5
+        )
+
+        return false
+    end
+
+    pcall(function()
+
+        tool:Deactivate()
+    end)
+
+    if HolyWateringRejoinInstallSetupHook() ~= true then
+        return false
+    end
+
+    runtime.SetupArmed =
+        true
+
+    runtime.SetupGeneration +=
+        1
+
+    local generation =
+        runtime.SetupGeneration
+
+    HolyNotify(
+        "Watering Rejoin",
+        "Manually water the target spot once to save it.",
+        6
+    )
+
+    task.delay(
+        15,
+        function()
+
+            if runtime.SetupArmed == true
+            and runtime.SetupGeneration == generation then
+
+                HolyWateringRejoinRestoreSetupHook()
+
+                HolyNotify(
+                    "Watering Rejoin",
+                    "Position capture timed out.",
+                    4
+                )
+            end
+        end
+    )
+
+    return true
+end
+
+function HolyWateringRejoinConfirmUse(
+    packet,
+    aimPosition,
+    toolName,
+    tool,
+    generation
+)
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    local startingCount =
+        tonumber(
+            tool:GetAttribute(
+                "Count"
+            )
+        )
+
+    if not startingCount
+    or startingCount <= 0 then
+
+        return false,
+            startingCount or 0
+    end
+
+    local fireSuccess,
+        fireError =
+        pcall(function()
+
+            packet:Fire(
+                aimPosition,
+                toolName,
+                tool
+            )
+        end)
+
+    if fireSuccess ~= true then
+
+        warn(
+            "[HOLY Watering Rejoin] "
+            .. tostring(fireError)
+        )
+
+        return false,
+            startingCount
+    end
+
+    local deadline =
+        os.clock()
+        + 5
+
+    local finalCount =
+        startingCount
+
+    while HOLY_WATERING_REJOIN_STATE.Enabled == true
+    and runtime.Running == true
+    and runtime.Generation == generation
+    and os.clock() < deadline do
+
+        finalCount =
+            tonumber(
+                tool:GetAttribute(
+                    "Count"
+                )
+            )
+            or startingCount
+
+        if finalCount < startingCount then
+
+            return true,
+                finalCount
+        end
+
+        task.wait(
+            0.02
+        )
+    end
+
+    return false,
+        finalCount
+end
+
+function HolyWateringRejoinAbort(message)
+
+    if type(HolyNotify) == "function" then
+
+        HolyNotify(
+            "Watering Rejoin",
+            tostring(message),
+            5
+        )
+    end
+
+    if type(HOLY_WATERING_REJOIN_RUNTIME.Stop) == "function" then
+
+        HOLY_WATERING_REJOIN_RUNTIME.Stop(
+            "abort",
+            false
+        )
+    end
+
+    return false
+end
+
+function HolyWateringRejoinRunCycle(generation)
+
+    local state =
+        HOLY_WATERING_REJOIN_STATE
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    local packet =
+        HolyWateringRejoinResolvePacket()
+
+    if not packet then
+
+        HolyWateringRejoinAbort(
+            "Watering packet is unavailable."
+        )
+
+        return
+    end
+
+    if HolyWateringRejoinEnsureRollback() ~= true then
+
+        HolyWateringRejoinAbort(
+            "Rollback could not be started."
+        )
+
+        return
+    end
+
+    local garden,
+        anchor,
+        savedStandCFrame,
+        savedAimPosition =
+        nil,
+        nil,
+        nil,
+        nil
+
+    local tool =
+        nil
+
+    local loadDeadline =
+        os.clock()
+        + 30
+
+    while state.Enabled == true
+    and runtime.Running == true
+    and runtime.Generation == generation
+    and os.clock() < loadDeadline do
+
+        garden,
+            anchor,
+            savedStandCFrame,
+            savedAimPosition =
+            HolyWateringRejoinResolveSavedPositions()
+
+        tool =
+            HolyWateringRejoinFindTool(
+                state.WateringCan
+            )
+
+        local _,
+            humanoid,
+            root =
+            HolyWateringRejoinGetCharacter()
+
+        if garden
+        and anchor
+        and savedStandCFrame
+        and savedAimPosition
+        and tool
+        and humanoid
+        and root then
+
+            break
+        end
+
+        task.wait(
+            0.5
+        )
+    end
+
+    if not garden
+    or not savedStandCFrame
+    or not savedAimPosition then
+
+        HolyWateringRejoinAbort(
+            "The saved target garden is unavailable."
+        )
+
+        return
+    end
+
+    if not tool then
+
+        HolyWateringRejoinAbort(
+            state.WateringCan
+            .. " was not found."
+        )
+
+        return
+    end
+
+    HolyWateringRejoinApplyPlantCollision(
+        garden
+    )
+
+    local arrived,
+        finalDistance =
+        HolyWateringRejoinWalkTo(
+            savedStandCFrame,
+            generation
+        )
+
+    if arrived ~= true then
+
+        HolyWateringRejoinAbort(
+            "Could not reach the saved position. Distance: "
+            .. string.format(
+                "%.1f",
+                tonumber(finalDistance)
+                or -1
+            )
+        )
+
+        return
+    end
+
+    if state.Enabled ~= true
+    or runtime.Running ~= true
+    or runtime.Generation ~= generation then
+
+        return
+    end
+
+    HolyWateringRejoinEnsureRollback()
+
+    tool =
+        HolyWateringRejoinFindTool(
+            state.WateringCan
+        )
+
+    if not tool
+    or HolyWateringRejoinEquipTool(tool) ~= true then
+
+        HolyWateringRejoinAbort(
+            "Could not equip "
+            .. state.WateringCan
+            .. "."
+        )
+
+        return
+    end
+
+    local wateringWindow =
+        math.clamp(
+            tonumber(
+                state.RejoinDelay
+            )
+            or 5,
+            1,
+            60
+        )
+
+    local wateringDeadline =
+        os.clock()
+        + wateringWindow
+
+    local successfulUses =
+        0
+
+    while state.Enabled == true
+    and runtime.Running == true
+    and runtime.Generation == generation
+    and os.clock() < wateringDeadline do
+
+        HolyWateringRejoinEnsureRollback()
+
+        local currentCount =
+            tonumber(
+                tool:GetAttribute(
+                    "Count"
+                )
+            )
+            or 0
+
+        if currentCount <= 0 then
+            break
+        end
+
+        local sentAt =
+            os.clock()
+
+        local confirmed =
+            HolyWateringRejoinConfirmUse(
+                packet,
+                savedAimPosition,
+                state.WateringCan,
+                tool,
+                generation
+            )
+
+        if confirmed ~= true then
+            break
+        end
+
+        successfulUses +=
+            1
+
+        local interval
+
+        if state.WateringMode == "Decay" then
+
+            interval =
+                state.WateringCan == "Super Watering Can"
+                and 15
+                or 10
+        else
+
+            interval =
+                math.clamp(
+                    tonumber(
+                        state.WateringDelay
+                    )
+                    or 1,
+                    0.1,
+                    10
+                )
+        end
+
+        local nextUseAt =
+            math.min(
+                wateringDeadline,
+                sentAt + interval
+            )
+
+        while state.Enabled == true
+        and runtime.Running == true
+        and runtime.Generation == generation
+        and os.clock() < nextUseAt do
+
+            task.wait(
+                0.05
+            )
+        end
+    end
+
+    if successfulUses <= 0 then
+
+        HolyWateringRejoinAbort(
+            "Watering was not confirmed. Rejoin cancelled."
+        )
+
+        return
+    end
+
+    while state.Enabled == true
+    and runtime.Running == true
+    and runtime.Generation == generation
+    and os.clock() < wateringDeadline do
+
+        task.wait(
+            0.05
+        )
+    end
+
+    if state.Enabled ~= true
+    or runtime.Running ~= true
+    or runtime.Generation ~= generation then
+
+        return
+    end
+
+    HolyWateringRejoinEnsureRollback()
+
+    task.wait(
+        0.5
+    )
+
+    HolyWateringRejoinSaveSettings()
+
+    runtime.Teleporting =
+        true
+
+    local teleportSuccess,
+        teleportError =
+        pcall(function()
+
+            TeleportService:TeleportToPlaceInstance(
+                game.PlaceId,
+                game.JobId,
+                LocalPlayer
+            )
+        end)
+
+    if teleportSuccess ~= true then
+
+        runtime.Teleporting =
+            false
+
+        warn(
+            "[HOLY Watering Rejoin] Rejoin failed: "
+            .. tostring(teleportError)
+        )
+
+        HolyWateringRejoinAbort(
+            "Same-server rejoin failed."
+        )
+    end
+end
+
+function HolyWateringRejoinStart(reason)
+
+    local state =
+        HOLY_WATERING_REJOIN_STATE
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    if HolyWateringRejoinHasSetup() ~= true then
+
+        state.Enabled =
+            false
+
+        HolyWateringRejoinSaveSettings()
+
+        HolyWateringRejoinSyncToggle(
+            false
+        )
+
+        HolyNotify(
+            "Watering Rejoin",
+            "Set a target position before enabling.",
+            5
+        )
+
+        return false
+    end
+
+    if runtime.Running == true
+    and state.Enabled == true then
+
+        HolyWateringRejoinEnsureRollback()
+
+        return true
+    end
+
+    state.Enabled =
+        true
+
+    runtime.Running =
+        true
+
+    runtime.Busy =
+        true
+
+    runtime.Teleporting =
+        false
+
+    runtime.Generation +=
+        1
+
+    local generation =
+        runtime.Generation
+
+    HolyWateringRejoinSaveSettings()
+
+    HolyWateringRejoinSyncToggle(
+        true
+    )
+
+    HolyWateringRejoinEnsureRollback()
+
+    task.spawn(function()
+
+        HolyWateringRejoinRunCycle(
+            generation
+        )
+
+        if runtime.Generation == generation
+        and runtime.Teleporting ~= true then
+
+            runtime.Running =
+                false
+
+            runtime.Busy =
+                false
+        end
+    end)
+
+    return true
+end
+
+function HolyWateringRejoinStop(
+    reason,
+    preserveEnabled
+)
+
+    local state =
+        HOLY_WATERING_REJOIN_STATE
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    runtime.Running =
+        false
+
+    runtime.Busy =
+        false
+
+    runtime.Teleporting =
+        false
+
+    runtime.Generation +=
+        1
+
+    HolyWateringRejoinRestoreSetupHook()
+    HolyWateringRejoinRestorePlantCollision()
+
+    local _,
+        humanoid,
+        root =
+        HolyWateringRejoinGetCharacter()
+
+    if humanoid
+    and root then
+
+        pcall(function()
+
+            humanoid:MoveTo(
+                root.Position
+            )
+        end)
+    end
+
+    if preserveEnabled ~= true then
+
+        state.Enabled =
+            false
+
+        HolyWateringRejoinSaveSettings()
+
+        HolyWateringRejoinSyncToggle(
+            false
+        )
+    end
+
+    return true
+end
+
+function HolyWateringRejoinSetEnabled(value)
+
+    if HOLY_WATERING_REJOIN_RUNTIME.ToggleSyncing == true then
+        return false
+    end
+
+    if value == true then
+
+        return HolyWateringRejoinStart(
+            "toggle"
+        )
+    end
+
+    return HolyWateringRejoinStop(
+        "toggle",
+        false
+    )
+end
+
+function HolyWateringRejoinSetCan(value)
+
+    value =
+        tostring(value)
+
+    if value ~= "Common Watering Can"
+    and value ~= "Super Watering Can" then
+
+        value =
+            "Super Watering Can"
+    end
+
+    HOLY_WATERING_REJOIN_STATE.WateringCan =
+        value
+
+    HolyWateringRejoinSaveSettings()
+
+    return value
+end
+
+function HolyWateringRejoinSetMode(value)
+
+    value =
+        tostring(value)
+
+    if value ~= "Delay"
+    and value ~= "Decay" then
+
+        value =
+            "Delay"
+    end
+
+    HOLY_WATERING_REJOIN_STATE.WateringMode =
+        value
+
+    HolyWateringRejoinSaveSettings()
+
+    return value
+end
+
+function HolyWateringRejoinSetWateringDelay(value)
+
+    HOLY_WATERING_REJOIN_STATE.WateringDelay =
+        math.clamp(
+            tonumber(value)
+            or 1,
+            0.1,
+            10
+        )
+
+    HolyWateringRejoinSaveSettings()
+
+    return HOLY_WATERING_REJOIN_STATE.WateringDelay
+end
+
+function HolyWateringRejoinSetRejoinDelay(value)
+
+    HOLY_WATERING_REJOIN_STATE.RejoinDelay =
+        math.clamp(
+            tonumber(value)
+            or 5,
+            1,
+            60
+        )
+
+    HolyWateringRejoinSaveSettings()
+
+    return HOLY_WATERING_REJOIN_STATE.RejoinDelay
+end
+
+HOLY_WATERING_REJOIN_RUNTIME.Stop =
+    HolyWateringRejoinStop
+
+--==================================================
 -- [3] LOAD SETTINGS + LIBRARY
 --==================================================
 
 HolyLoadUISettings()
 HolyLoadGroupboxSettings()
 HolyLoadVisualSettings()
+HolyWateringRejoinLoadSettings()
 
 if HOLY_DEV_UI_STATE.AutoSkipLoading == true then
 
@@ -51700,6 +54119,14 @@ local VulnRollbackBox =
         "Vuln.Rollback",
         "Rollback",
         "rotate-ccw"
+    )
+
+local VulnWateringRejoinBox =
+    HolyAddLeftGroupbox(
+        Tabs.Vuln,
+        "Vuln.WateringRejoin",
+        "Watering Rejoin",
+        "droplets"
     )
 
 local VisualInventoryBox =
@@ -66348,6 +68775,188 @@ VulnRollbackBox:AddSlider(
     )
 end)
 
+VulnWateringRejoinBox:AddButton({
+    Text =
+        "Set Target Position",
+
+    Tooltip =
+        "Stand at the desired position, then manually water the target spot once.",
+
+    Func =
+        function()
+
+            HolyWateringRejoinArmSetup()
+        end,
+})
+
+HOLY_WATERING_REJOIN_UI.WateringCanDropdown =
+    VulnWateringRejoinBox:AddDropdown(
+        "HolyWateringRejoinCan",
+        {
+            Text =
+                "Watering Can",
+
+            Values = {
+                "Common Watering Can",
+                "Super Watering Can",
+            },
+
+            Default =
+                HOLY_WATERING_REJOIN_STATE.WateringCan,
+
+            Multi =
+                false,
+
+            Searchable =
+                false,
+
+            MaxVisibleDropdownItems =
+                2,
+
+            Tooltip =
+                "Selects which watering can the cycle will equip and use.",
+        }
+    )
+
+HOLY_WATERING_REJOIN_UI.WateringCanDropdown:OnChanged(function(value)
+
+    HolyWateringRejoinSetCan(
+        value
+    )
+end)
+
+HOLY_WATERING_REJOIN_UI.WateringModeDropdown =
+    VulnWateringRejoinBox:AddDropdown(
+        "HolyWateringRejoinMode",
+        {
+            Text =
+                "Watering Mode",
+
+            Values = {
+                "Delay",
+                "Decay",
+            },
+
+            Default =
+                HOLY_WATERING_REJOIN_STATE.WateringMode,
+
+            Multi =
+                false,
+
+            Searchable =
+                false,
+
+            MaxVisibleDropdownItems =
+                2,
+
+            Tooltip =
+                "Delay uses the selected interval. Decay uses 10 seconds for Common or 15 seconds for Super.",
+        }
+    )
+
+HOLY_WATERING_REJOIN_UI.WateringModeDropdown:OnChanged(function(value)
+
+    HolyWateringRejoinSetMode(
+        value
+    )
+end)
+
+HOLY_WATERING_REJOIN_UI.Toggle =
+    VulnWateringRejoinBox:AddToggle(
+        "HolyWateringRejoinEnabled",
+        {
+            Text =
+                "Auto Watering Rejoin",
+
+            Default =
+                HOLY_WATERING_REJOIN_STATE.Enabled == true,
+
+            Tooltip =
+                "Walks to the saved position, waters after arriving, and rejoins the same server.",
+        }
+    )
+
+HOLY_WATERING_REJOIN_UI.Toggle:OnChanged(function(value)
+
+    HolyWateringRejoinSetEnabled(
+        value == true
+    )
+end)
+
+HOLY_WATERING_REJOIN_UI.WateringDelaySlider =
+    VulnWateringRejoinBox:AddSlider(
+        "HolyWateringRejoinDelay",
+        {
+            Text =
+                "Watering Delay",
+
+            Default =
+                HOLY_WATERING_REJOIN_STATE.WateringDelay,
+
+            Min =
+                0.1,
+
+            Max =
+                10,
+
+            Rounding =
+                2,
+
+            Suffix =
+                "s",
+
+            HideMax =
+                true,
+
+            Tooltip =
+                "Delay between watering uses in Delay mode.",
+        }
+    )
+
+HOLY_WATERING_REJOIN_UI.WateringDelaySlider:OnChanged(function(value)
+
+    HolyWateringRejoinSetWateringDelay(
+        value
+    )
+end)
+
+HOLY_WATERING_REJOIN_UI.RejoinDelaySlider =
+    VulnWateringRejoinBox:AddSlider(
+        "HolyWateringRejoinRejoinDelay",
+        {
+            Text =
+                "Rejoin Delay",
+
+            Default =
+                HOLY_WATERING_REJOIN_STATE.RejoinDelay,
+
+            Min =
+                1,
+
+            Max =
+                60,
+
+            Rounding =
+                1,
+
+            Suffix =
+                "s",
+
+            HideMax =
+                true,
+
+            Tooltip =
+                "How long watering runs after reaching the saved position before rejoining.",
+        }
+    )
+
+HOLY_WATERING_REJOIN_UI.RejoinDelaySlider:OnChanged(function(value)
+
+    HolyWateringRejoinSetRejoinDelay(
+        value
+    )
+end)
+
 --==================================================
 -- [8] FINISH
 --==================================================
@@ -66358,6 +68967,20 @@ if type(HolyRareAlertStart) == "function" then
 
         HolyRareAlertStart(
             "startup"
+        )
+    end)
+end
+
+if HOLY_WATERING_REJOIN_STATE.Enabled == true then
+
+    task.defer(function()
+
+        task.wait(
+            1
+        )
+
+        HolyWateringRejoinStart(
+            "saved startup"
         )
     end)
 end
