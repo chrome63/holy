@@ -51767,7 +51767,7 @@ function HolyWateringRejoinGetCharacter()
         root
 end
 
-function HolyWateringRejoinFindTool(toolName)
+function HolyWateringRejoinFindUsableTool(toolName)
 
     toolName =
         tostring(
@@ -51775,26 +51775,61 @@ function HolyWateringRejoinFindTool(toolName)
             or HOLY_WATERING_REJOIN_STATE.WateringCan
         )
 
-    local character =
-        LocalPlayer.Character
+    local function scanContainer(container)
+
+        if typeof(container) ~= "Instance" then
+
+            return nil,
+                0
+        end
+
+        for _, object in ipairs(
+            container:GetChildren()
+        ) do
+
+            if object.Name == toolName
+            and object:IsA("Tool") then
+
+                local count =
+                    tonumber(
+                        object:GetAttribute(
+                            "Count"
+                        )
+                    )
+                    or 0
+
+                if count > 0 then
+
+                    return object,
+                        count
+                end
+            end
+        end
+
+        return nil,
+            0
+    end
+
+    local characterTool,
+        characterCount =
+        scanContainer(
+            LocalPlayer.Character
+        )
+
+    if characterTool then
+
+        return characterTool,
+            characterCount
+    end
 
     local backpack =
         LocalPlayer:FindFirstChildOfClass(
             "Backpack"
         )
 
-    return (
-        character
-        and character:FindFirstChild(
-            toolName
-        )
+    return scanContainer(
+        backpack
     )
-        or (
-            backpack
-            and backpack:FindFirstChild(
-                toolName
-            )
-        )
 end
 
 function HolyWateringRejoinEquipTool(tool)
@@ -53241,7 +53276,8 @@ function HolyWateringRejoinConfirmUse(
     or startingCount <= 0 then
 
         return false,
-            startingCount or 0
+            startingCount or 0,
+            false
     end
 
     local fireSuccess,
@@ -53263,7 +53299,8 @@ function HolyWateringRejoinConfirmUse(
         )
 
         return false,
-            startingCount
+            startingCount,
+            false
     end
 
     local deadline =
@@ -53273,23 +53310,56 @@ function HolyWateringRejoinConfirmUse(
     local finalCount =
         startingCount
 
+    local missingSince =
+        nil
+
     while HOLY_WATERING_REJOIN_STATE.Enabled == true
     and runtime.Running == true
     and runtime.Generation == generation
     and os.clock() < deadline do
 
-        finalCount =
+        local observedCount =
             tonumber(
                 tool:GetAttribute(
                     "Count"
                 )
             )
-            or startingCount
+
+        if observedCount then
+
+            finalCount =
+                observedCount
+        end
 
         if finalCount < startingCount then
 
             return true,
-                finalCount
+                finalCount,
+                true
+        end
+
+        local usableTool =
+            HolyWateringRejoinFindUsableTool(
+                toolName
+            )
+
+        if not usableTool then
+
+            missingSince =
+                missingSince
+                or os.clock()
+
+            if os.clock() - missingSince >= 0.25 then
+
+                return true,
+                    0,
+                    true
+            end
+
+        else
+
+            missingSince =
+                nil
         end
 
         task.wait(
@@ -53298,7 +53368,8 @@ function HolyWateringRejoinConfirmUse(
     end
 
     return false,
-        finalCount
+        finalCount,
+        true
 end
 
 function HolyWateringRejoinAbort(message)
@@ -53494,8 +53565,14 @@ function HolyWateringRejoinRunCycle(generation)
             )
     end
 
-    local successfulUses =
+    local attemptedUses =
         0
+
+    local confirmedUses =
+        0
+
+    local depleted =
+        false
 
     local wateringFailure =
         nil
@@ -53503,28 +53580,24 @@ function HolyWateringRejoinRunCycle(generation)
     while state.Enabled == true
     and runtime.Running == true
     and runtime.Generation == generation
-    and successfulUses < useLimit do
+    and attemptedUses < useLimit do
 
         HolyWateringRejoinEnsureRollback()
 
-        tool =
-            HolyWateringRejoinFindTool(
+        local usableCount
+
+        tool,
+            usableCount =
+            HolyWateringRejoinFindUsableTool(
                 state.WateringCan
             )
 
-        if not tool then
-            break
-        end
+        if not tool
+        or usableCount <= 0 then
 
-        local currentCount =
-            tonumber(
-                tool:GetAttribute(
-                    "Count"
-                )
-            )
-            or 0
+            depleted =
+                true
 
-        if currentCount <= 0 then
             break
         end
 
@@ -53542,7 +53615,8 @@ function HolyWateringRejoinRunCycle(generation)
             os.clock()
 
         local confirmed,
-            remainingCount =
+            remainingCount,
+            packetSent =
             HolyWateringRejoinConfirmUse(
                 packet,
                 savedAimPosition,
@@ -53551,33 +53625,52 @@ function HolyWateringRejoinRunCycle(generation)
                 generation
             )
 
-        if confirmed ~= true then
+        if packetSent ~= true then
 
             wateringFailure =
-                "Watering stopped before the requested amount was completed."
+                "The watering packet could not be fired."
 
             break
         end
 
-        successfulUses +=
+        attemptedUses +=
             1
+
+        if confirmed == true then
+
+            confirmedUses +=
+                1
+        end
+
+        local remainingTool,
+            detectedRemainingCount =
+            HolyWateringRejoinFindUsableTool(
+                state.WateringCan
+            )
 
         remainingCount =
             tonumber(
                 remainingCount
             )
-            or tonumber(
-                tool:GetAttribute(
-                    "Count"
-                )
-            )
-            or math.max(
-                0,
-                currentCount - 1
-            )
+            or detectedRemainingCount
+            or 0
 
-        if successfulUses >= useLimit
+        if not remainingTool
+        or detectedRemainingCount <= 0
         or remainingCount <= 0 then
+
+            depleted =
+                true
+        end
+
+        if attemptedUses >= useLimit
+        or depleted == true then
+
+            break
+        end
+
+        if confirmed ~= true
+        and state.UseMode == "All Available" then
 
             break
         end
@@ -53627,15 +53720,23 @@ function HolyWateringRejoinRunCycle(generation)
         return
     end
 
-    if successfulUses <= 0 then
+    local requestedAmountReached =
+        attemptedUses >= useLimit
+
+    local wateringCompleted =
+        requestedAmountReached == true
+        or depleted == true
+        or attemptedUses > 0
+        or confirmedUses > 0
+
+    if wateringCompleted ~= true then
 
         HolyWateringRejoinAbort(
-            "Watering was not confirmed. Rejoin cancelled."
+            "No watering attempt was completed. Rejoin cancelled."
         )
 
         return
     end
-
     if state.Enabled ~= true
     or runtime.Running ~= true
     or runtime.Generation ~= generation then
