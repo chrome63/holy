@@ -48738,8 +48738,6 @@ end
 
 function HolySellPruneRecentFruitIds()
 
-function HolySellPruneRecentFruitIds()
-
     HOLY_SHOP_STATE.SellRecentFruitIds =
         type(HOLY_SHOP_STATE.SellRecentFruitIds) == "table"
         and HOLY_SHOP_STATE.SellRecentFruitIds
