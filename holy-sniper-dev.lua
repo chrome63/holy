@@ -784,6 +784,12 @@ HOLY_WATERING_REJOIN_STATE = {
     WateringCan =
         "Super Watering Can",
 
+    UseMode =
+        "All Available",
+
+    UseAmount =
+        1,
+
     WateringMode =
         "Delay",
 
@@ -51353,6 +51359,35 @@ function HolyWateringRejoinNormalizeState()
             "Super Watering Can"
     end
 
+    if state.UseMode ~= "All Available"
+    and state.UseMode ~= "Custom Amount" then
+
+        state.UseMode =
+            "All Available"
+    end
+
+    local useAmount =
+        tonumber(
+            state.UseAmount
+        )
+
+    if not useAmount
+    or useAmount ~= useAmount
+    or useAmount == math.huge
+    or useAmount == -math.huge then
+
+        useAmount =
+            1
+    end
+
+    state.UseAmount =
+        math.max(
+            1,
+            math.floor(
+                useAmount
+            )
+        )
+
     if state.WateringMode ~= "Delay"
     and state.WateringMode ~= "Decay" then
 
@@ -51431,7 +51466,7 @@ function HolyWateringRejoinSaveSettings()
         HolyWateringRejoinNormalizeState()
 
     local payload = {
-        Version = 1,
+        Version = 2,
 
         Enabled =
             state.Enabled == true,
@@ -51441,6 +51476,12 @@ function HolyWateringRejoinSaveSettings()
 
         ToolName =
             state.WateringCan,
+
+        UseMode =
+            state.UseMode,
+
+        UseAmount =
+            state.UseAmount,
 
         WateringMode =
             state.WateringMode,
@@ -51563,6 +51604,20 @@ function HolyWateringRejoinLoadSettings()
             or data.ToolName
             or state.WateringCan
         )
+
+    state.UseMode =
+        tostring(
+            data.UseMode
+            or state.UseMode
+            or "All Available"
+        )
+
+    state.UseAmount =
+        tonumber(
+            data.UseAmount
+        )
+        or state.UseAmount
+        or 1
 
     state.WateringMode =
         tostring(
@@ -53422,29 +53477,44 @@ function HolyWateringRejoinRunCycle(generation)
         return
     end
 
-    local wateringWindow =
-        math.clamp(
-            tonumber(
-                state.RejoinDelay
-            )
-            or 5,
-            1,
-            60
-        )
+    local useLimit =
+        math.huge
 
-    local wateringDeadline =
-        os.clock()
-        + wateringWindow
+    if state.UseMode == "Custom Amount" then
+
+        useLimit =
+            math.max(
+                1,
+                math.floor(
+                    tonumber(
+                        state.UseAmount
+                    )
+                    or 1
+                )
+            )
+    end
 
     local successfulUses =
         0
 
+    local wateringFailure =
+        nil
+
     while state.Enabled == true
     and runtime.Running == true
     and runtime.Generation == generation
-    and os.clock() < wateringDeadline do
+    and successfulUses < useLimit do
 
         HolyWateringRejoinEnsureRollback()
+
+        tool =
+            HolyWateringRejoinFindTool(
+                state.WateringCan
+            )
+
+        if not tool then
+            break
+        end
 
         local currentCount =
             tonumber(
@@ -53458,10 +53528,21 @@ function HolyWateringRejoinRunCycle(generation)
             break
         end
 
+        if HolyWateringRejoinEquipTool(tool) ~= true then
+
+            wateringFailure =
+                "Could not equip "
+                .. state.WateringCan
+                .. " while watering."
+
+            break
+        end
+
         local sentAt =
             os.clock()
 
-        local confirmed =
+        local confirmed,
+            remainingCount =
             HolyWateringRejoinConfirmUse(
                 packet,
                 savedAimPosition,
@@ -53471,11 +53552,35 @@ function HolyWateringRejoinRunCycle(generation)
             )
 
         if confirmed ~= true then
+
+            wateringFailure =
+                "Watering stopped before the requested amount was completed."
+
             break
         end
 
         successfulUses +=
             1
+
+        remainingCount =
+            tonumber(
+                remainingCount
+            )
+            or tonumber(
+                tool:GetAttribute(
+                    "Count"
+                )
+            )
+            or math.max(
+                0,
+                currentCount - 1
+            )
+
+        if successfulUses >= useLimit
+        or remainingCount <= 0 then
+
+            break
+        end
 
         local interval
 
@@ -53499,10 +53604,8 @@ function HolyWateringRejoinRunCycle(generation)
         end
 
         local nextUseAt =
-            math.min(
-                wateringDeadline,
-                sentAt + interval
-            )
+            sentAt
+            + interval
 
         while state.Enabled == true
         and runtime.Running == true
@@ -53515,6 +53618,15 @@ function HolyWateringRejoinRunCycle(generation)
         end
     end
 
+    if wateringFailure then
+
+        HolyWateringRejoinAbort(
+            wateringFailure
+        )
+
+        return
+    end
+
     if successfulUses <= 0 then
 
         HolyWateringRejoinAbort(
@@ -53524,10 +53636,33 @@ function HolyWateringRejoinRunCycle(generation)
         return
     end
 
+    if state.Enabled ~= true
+    or runtime.Running ~= true
+    or runtime.Generation ~= generation then
+
+        return
+    end
+
+    local rejoinDelay =
+        math.clamp(
+            tonumber(
+                state.RejoinDelay
+            )
+            or 5,
+            1,
+            60
+        )
+
+    local rejoinAt =
+        os.clock()
+        + rejoinDelay
+
+    HolyWateringRejoinEnsureRollback()
+
     while state.Enabled == true
     and runtime.Running == true
     and runtime.Generation == generation
-    and os.clock() < wateringDeadline do
+    and os.clock() < rejoinAt do
 
         task.wait(
             0.05
@@ -53542,10 +53677,6 @@ function HolyWateringRejoinRunCycle(generation)
     end
 
     HolyWateringRejoinEnsureRollback()
-
-    task.wait(
-        0.5
-    )
 
     HolyWateringRejoinSaveSettings()
 
@@ -53773,6 +53904,56 @@ function HolyWateringRejoinSetCan(value)
     HolyWateringRejoinSaveSettings()
 
     return value
+end
+
+function HolyWateringRejoinSetUseMode(value)
+
+    value =
+        tostring(value)
+
+    if value ~= "All Available"
+    and value ~= "Custom Amount" then
+
+        value =
+            "All Available"
+    end
+
+    HOLY_WATERING_REJOIN_STATE.UseMode =
+        value
+
+    HolyWateringRejoinSaveSettings()
+
+    return value
+end
+
+function HolyWateringRejoinSetUseAmount(value)
+
+    local amount =
+        tonumber(value)
+
+    if not amount
+    or amount ~= amount
+    or amount == math.huge
+    or amount == -math.huge then
+
+        amount =
+            1
+    end
+
+    amount =
+        math.max(
+            1,
+            math.floor(
+                amount
+            )
+        )
+
+    HOLY_WATERING_REJOIN_STATE.UseAmount =
+        amount
+
+    HolyWateringRejoinSaveSettings()
+
+    return amount
 end
 
 function HolyWateringRejoinSetMode(value)
@@ -69091,6 +69272,75 @@ HOLY_WATERING_REJOIN_UI.WateringCanDropdown:OnChanged(function(value)
     )
 end)
 
+HOLY_WATERING_REJOIN_UI.UseModeDropdown =
+    VulnWateringRejoinBox:AddDropdown(
+        "HolyWateringRejoinUseMode",
+        {
+            Text =
+                "Use Mode",
+
+            Values = {
+                "All Available",
+                "Custom Amount",
+            },
+
+            Default =
+                HOLY_WATERING_REJOIN_STATE.UseMode,
+
+            Multi =
+                false,
+
+            Searchable =
+                false,
+
+            MaxVisibleDropdownItems =
+                2,
+
+            Tooltip =
+                "All Available uses every selected watering can charge. Custom Amount uses the entered amount per rejoin.",
+        }
+    )
+
+HOLY_WATERING_REJOIN_UI.UseModeDropdown:OnChanged(function(value)
+
+    HolyWateringRejoinSetUseMode(
+        value
+    )
+end)
+
+HOLY_WATERING_REJOIN_UI.UseAmountInput =
+    VulnWateringRejoinBox:AddInput(
+        "HolyWateringRejoinUseAmount",
+        {
+            Text =
+                "Amount Per Rejoin",
+
+            Default =
+                tostring(
+                    HOLY_WATERING_REJOIN_STATE.UseAmount
+                ),
+
+            Numeric =
+                true,
+
+            Finished =
+                true,
+
+            ClearTextOnFocus =
+                false,
+
+            Tooltip =
+                "Number of watering can charges used in Custom Amount mode. Minimum is 1.",
+        }
+    )
+
+HOLY_WATERING_REJOIN_UI.UseAmountInput:OnChanged(function(value)
+
+    HolyWateringRejoinSetUseAmount(
+        value
+    )
+end)
+
 HOLY_WATERING_REJOIN_UI.WateringModeDropdown =
     VulnWateringRejoinBox:AddDropdown(
         "HolyWateringRejoinMode",
@@ -69212,7 +69462,7 @@ HOLY_WATERING_REJOIN_UI.RejoinDelaySlider =
                 true,
 
             Tooltip =
-                "How long watering runs after reaching the saved position before rejoining.",
+                "How long to wait after all planned watering uses finish before rejoining.",
         }
     )
 
