@@ -51767,6 +51767,36 @@ function HolyWateringRejoinGetCharacter()
         root
 end
 
+function HolyWateringRejoinFindTool(toolName)
+
+    toolName =
+        tostring(
+            toolName
+            or HOLY_WATERING_REJOIN_STATE.WateringCan
+        )
+
+    local character =
+        LocalPlayer.Character
+
+    local backpack =
+        LocalPlayer:FindFirstChildOfClass(
+            "Backpack"
+        )
+
+    return (
+        character
+        and character:FindFirstChild(
+            toolName
+        )
+    )
+        or (
+            backpack
+            and backpack:FindFirstChild(
+                toolName
+            )
+        )
+end
+
 function HolyWateringRejoinFindUsableTool(toolName)
 
     toolName =
