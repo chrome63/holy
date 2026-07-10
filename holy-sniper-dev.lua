@@ -544,6 +544,16 @@ HOLY_PERFORMANCE_STATE = {
 
 HOLY_PERFORMANCE_UI = {}
 
+if type(getgenv().HOLY_SprinklerESPStop) == "function" then
+
+    pcall(
+        getgenv().HOLY_SprinklerESPStop
+    )
+
+    getgenv().HOLY_SprinklerESPStop =
+        nil
+end
+
 if type(HOLY_VISUAL_RUNTIME) == "table" then
 
     HOLY_VISUAL_RUNTIME.Token =
@@ -607,6 +617,48 @@ if type(HOLY_VISUAL_RUNTIME) == "table" then
             HOLY_VISUAL_RUNTIME.GardenFruitGui:Destroy()
         end)
     end
+
+    HOLY_VISUAL_RUNTIME.SprinklerTimerToken =
+        nil
+
+    HOLY_VISUAL_RUNTIME.SprinklerTimerRunning =
+        false
+
+    local oldSprinklerLabels =
+        HOLY_VISUAL_RUNTIME.SprinklerTimerLabels
+
+    if type(oldSprinklerLabels) == "table" then
+
+        for _, label in pairs(oldSprinklerLabels) do
+
+            if typeof(label) == "Instance" then
+
+                pcall(function()
+
+                    label:Destroy()
+                end)
+            end
+        end
+    end
+
+    local oldTimerStates =
+        HOLY_VISUAL_RUNTIME.SprinklerTimerOriginalStates
+
+    if type(oldTimerStates) == "table" then
+
+        for timerGui, originalState in pairs(oldTimerStates) do
+
+            if typeof(timerGui) == "Instance"
+            and timerGui.Parent then
+
+                pcall(function()
+
+                    timerGui.Enabled =
+                        originalState
+                end)
+            end
+        end
+    end
 end
 
 HOLY_VISUAL_STATE = {
@@ -614,6 +666,7 @@ HOLY_VISUAL_STATE = {
     FruitTotalValue = false,
 
     GardenFruitESP = false,
+    SprinklerTimerESP = true,
     GardenFruitShowValue = true,
 
     GardenFruitMode = "All",
@@ -643,6 +696,13 @@ HOLY_VISUAL_RUNTIME = {
     GardenFruitUpdateDelay = 1.0,
     GardenFruitMaxLabels = 160,
 
+    SprinklerTimerRunning = false,
+    SprinklerTimerToken = nil,
+    SprinklerTimerLabels = {},
+    SprinklerTimerOriginalStates = {},
+    SprinklerTimerData = nil,
+    SprinklerTimerUpdateDelay = 0.25,
+
     FruitValueCalc = nil,
     SellValueData = nil,
     MutationMultipliers = nil,
@@ -656,6 +716,7 @@ HOLY_VISUAL_UI = {
     FruitTotalValueToggle = nil,
 
     GardenFruitESPToggle = nil,
+    SprinklerTimerESPToggle = nil,
     GardenFruitShowValueToggle = nil,
     GardenFruitModeDropdown = nil,
     GardenFruitFruitsDropdown = nil,
@@ -2161,6 +2222,9 @@ function HolyVisualEnsureState()
     HOLY_VISUAL_STATE.GardenFruitESP =
         HOLY_VISUAL_STATE.GardenFruitESP == true
 
+    HOLY_VISUAL_STATE.SprinklerTimerESP =
+        HOLY_VISUAL_STATE.SprinklerTimerESP == true
+
     if HOLY_VISUAL_STATE.GardenFruitShowValue == nil then
 
         HOLY_VISUAL_STATE.GardenFruitShowValue =
@@ -2268,6 +2332,9 @@ function HolySaveVisualSettings()
 
         GardenFruitESP =
             HOLY_VISUAL_STATE.GardenFruitESP == true,
+
+        SprinklerTimerESP =
+            HOLY_VISUAL_STATE.SprinklerTimerESP == true,
 
         GardenFruitShowValue =
             HOLY_VISUAL_STATE.GardenFruitShowValue == true,
@@ -2408,6 +2475,9 @@ function HolyLoadVisualSettings()
 
     HOLY_VISUAL_STATE.GardenFruitESP =
         data.GardenFruitESP == true
+
+    HOLY_VISUAL_STATE.SprinklerTimerESP =
+        data.SprinklerTimerESP == true
 
     if type(data.GardenFruitShowValue) == "boolean" then
 
@@ -43388,6 +43458,24 @@ function HolyVisualGetRuntime()
         and runtime.GardenFruitLabels
         or {}
 
+    runtime.SprinklerTimerLabels =
+        type(runtime.SprinklerTimerLabels) == "table"
+        and runtime.SprinklerTimerLabels
+        or {}
+
+    runtime.SprinklerTimerOriginalStates =
+        type(runtime.SprinklerTimerOriginalStates) == "table"
+        and runtime.SprinklerTimerOriginalStates
+        or {}
+
+    runtime.SprinklerTimerUpdateDelay =
+        math.clamp(
+            tonumber(runtime.SprinklerTimerUpdateDelay)
+            or 0.25,
+            0.1,
+            2
+        )
+
     runtime.UpdateDelay =
         math.clamp(
             tonumber(runtime.UpdateDelay)
@@ -47613,6 +47701,1042 @@ function HolyVisualGardenRefreshMutationDropdown(forceRefresh)
 
     return true
 end
+
+--==================================================
+-- [2.666] VISUAL / SPRINKLER TIMER ESP
+--==================================================
+
+HOLY_SPRINKLER_TIMER_STYLES = {
+    ["Common Sprinkler"] = {
+        Emoji = "💧",
+
+        Color = Color3.fromRGB(
+            105,
+            210,
+            255
+        ),
+
+        Offset = 3.0,
+    },
+
+    ["Uncommon Sprinkler"] = {
+        Emoji = "🌿",
+
+        Color = Color3.fromRGB(
+            85,
+            225,
+            120
+        ),
+
+        Offset = 3.2,
+    },
+
+    ["Rare Sprinkler"] = {
+        Emoji = "🌧️",
+
+        Color = Color3.fromRGB(
+            65,
+            145,
+            255
+        ),
+
+        Offset = 3.4,
+    },
+
+    ["Legendary Sprinkler"] = {
+        Emoji = "⚡",
+
+        Color = Color3.fromRGB(
+            255,
+            205,
+            65
+        ),
+
+        Offset = 3.6,
+    },
+
+    ["Super Sprinkler"] = {
+        Emoji = "🌈",
+
+        Color = Color3.fromRGB(
+            235,
+            90,
+            255
+        ),
+
+        Offset = 3.8,
+    },
+}
+
+HOLY_SPRINKLER_TIMER_DEFAULT_STYLE = {
+    Emoji = "💦",
+
+    Color = Color3.fromRGB(
+        100,
+        200,
+        255
+    ),
+
+    Offset = 3.2,
+}
+
+function HolyVisualSprinklerColorToHex(color)
+
+    return string.format(
+        "#%02X%02X%02X",
+        math.floor(
+            color.R * 255
+        ),
+        math.floor(
+            color.G * 255
+        ),
+        math.floor(
+            color.B * 255
+        )
+    )
+end
+
+function HolyVisualSprinklerFormatTime(seconds)
+
+    seconds =
+        math.max(
+            0,
+            math.floor(
+                tonumber(seconds)
+                or 0
+            )
+        )
+
+    local yearSeconds =
+        365 * 24 * 60 * 60
+
+    local daySeconds =
+        24 * 60 * 60
+
+    local hourSeconds =
+        60 * 60
+
+    local years =
+        math.floor(
+            seconds / yearSeconds
+        )
+
+    seconds =
+        seconds % yearSeconds
+
+    local days =
+        math.floor(
+            seconds / daySeconds
+        )
+
+    seconds =
+        seconds % daySeconds
+
+    local hours =
+        math.floor(
+            seconds / hourSeconds
+        )
+
+    seconds =
+        seconds % hourSeconds
+
+    local minutes =
+        math.floor(
+            seconds / 60
+        )
+
+    local remainingSeconds =
+        seconds % 60
+
+    if years > 0 then
+
+        return string.format(
+            "%dy %dd · %02dh %02dm %02ds",
+            years,
+            days,
+            hours,
+            minutes,
+            remainingSeconds
+        )
+    end
+
+    if days > 0 then
+
+        return string.format(
+            "%dd · %02dh %02dm %02ds",
+            days,
+            hours,
+            minutes,
+            remainingSeconds
+        )
+    end
+
+    if hours > 0 then
+
+        return string.format(
+            "%dh · %02dm %02ds",
+            hours,
+            minutes,
+            remainingSeconds
+        )
+    end
+
+    if minutes > 0 then
+
+        return string.format(
+            "%dm %02ds",
+            minutes,
+            remainingSeconds
+        )
+    end
+
+    return string.format(
+        "%ds",
+        remainingSeconds
+    )
+end
+
+function HolyVisualSprinklerGetFunctionUpvalues(func)
+
+    local getter =
+        type(debug) == "table"
+        and debug.getupvalues
+        or getupvalues
+
+    if type(getter) ~= "function" then
+        return {}
+    end
+
+    local success,
+        result =
+        pcall(function()
+
+            return getter(
+                func
+            )
+        end)
+
+    return success
+        and result
+        or {}
+end
+
+function HolyVisualSprinklerIsTimerData(tbl)
+
+    if type(tbl) ~= "table" then
+        return false
+    end
+
+    local checked =
+        0
+
+    for key, value in pairs(tbl) do
+
+        checked =
+            checked + 1
+
+        if type(key) == "string"
+        and type(value) == "table"
+        and type(value.PlacedAt) == "number"
+        and type(value.Lifetime) == "number" then
+
+            return true
+        end
+
+        if checked >= 100 then
+            break
+        end
+    end
+
+    return false
+end
+
+function HolyVisualSprinklerResolveTimerData()
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    if HolyVisualSprinklerIsTimerData(
+        runtime.SprinklerTimerData
+    ) then
+
+        return runtime.SprinklerTimerData
+    end
+
+    local playerScripts =
+        LocalPlayer
+        and LocalPlayer:FindFirstChild(
+            "PlayerScripts"
+        )
+
+    local controllers =
+        playerScripts
+        and playerScripts:FindFirstChild(
+            "Controllers"
+        )
+
+    local controllerModule =
+        controllers
+        and controllers:FindFirstChild(
+            "SprinklerVisualizerController"
+        )
+
+    if typeof(controllerModule) ~= "Instance"
+    or not controllerModule:IsA("ModuleScript") then
+
+        return nil
+    end
+
+    local success,
+        controller =
+        pcall(function()
+
+            return require(
+                controllerModule
+            )
+        end)
+
+    if success ~= true
+    or type(controller) ~= "table" then
+
+        return nil
+    end
+
+    local updateFunction =
+        controller.UpdateSprinklerTimers
+
+    if type(updateFunction) ~= "function" then
+        return nil
+    end
+
+    for _, upvalue in pairs(
+        HolyVisualSprinklerGetFunctionUpvalues(
+            updateFunction
+        )
+    ) do
+
+        if HolyVisualSprinklerIsTimerData(
+            upvalue
+        ) then
+
+            runtime.SprinklerTimerData =
+                upvalue
+
+            return runtime.SprinklerTimerData
+        end
+    end
+
+    return nil
+end
+
+function HolyVisualSprinklerGetOwnGarden()
+
+    local gardens =
+        Workspace:FindFirstChild(
+            "Gardens"
+        )
+
+    if typeof(gardens) ~= "Instance" then
+        return nil
+    end
+
+    for _, garden in ipairs(
+        gardens:GetChildren()
+    ) do
+
+        if garden:GetAttribute(
+            "OwnerUserId"
+        ) == LocalPlayer.UserId then
+
+            return garden
+        end
+    end
+
+    return nil
+end
+
+function HolyVisualSprinklerGetAdornee(model)
+
+    if typeof(model) ~= "Instance" then
+        return nil
+    end
+
+    local root =
+        model:FindFirstChild(
+            "Root"
+        )
+
+    if typeof(root) == "Instance"
+    and root:IsA("BasePart") then
+
+        return root
+    end
+
+    if model:IsA("Model")
+    and typeof(model.PrimaryPart) == "Instance" then
+
+        return model.PrimaryPart
+    end
+
+    return model:FindFirstChildWhichIsA(
+        "BasePart",
+        true
+    )
+end
+
+function HolyVisualSprinklerHideDefaultTimer(model)
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    local timerGui =
+        model
+        and model:FindFirstChild(
+            "SprinklerTimerUI"
+        )
+
+    if typeof(timerGui) == "Instance"
+    and timerGui:IsA("BillboardGui") then
+
+        if runtime.SprinklerTimerOriginalStates[
+            timerGui
+        ] == nil then
+
+            runtime.SprinklerTimerOriginalStates[
+                timerGui
+            ] =
+                timerGui.Enabled
+        end
+
+        timerGui.Enabled =
+            false
+    end
+end
+
+function HolyVisualSprinklerRestoreDefaultTimers()
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    for timerGui, originalState in pairs(
+        runtime.SprinklerTimerOriginalStates
+        or {}
+    ) do
+
+        if typeof(timerGui) == "Instance"
+        and timerGui.Parent then
+
+            pcall(function()
+
+                timerGui.Enabled =
+                    originalState
+            end)
+        end
+
+        runtime.SprinklerTimerOriginalStates[
+            timerGui
+        ] =
+            nil
+    end
+
+    return true
+end
+
+function HolyVisualSprinklerRemoveLabel(model)
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    local label =
+        runtime.SprinklerTimerLabels[
+            model
+        ]
+
+    if typeof(label) == "Instance" then
+
+        pcall(function()
+
+            label:Destroy()
+        end)
+    end
+
+    runtime.SprinklerTimerLabels[
+        model
+    ] =
+        nil
+
+    return true
+end
+
+function HolyVisualClearSprinklerTimerESP()
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    local models =
+        {}
+
+    for model in pairs(
+        runtime.SprinklerTimerLabels
+        or {}
+    ) do
+
+        table.insert(
+            models,
+            model
+        )
+    end
+
+    for _, model in ipairs(models) do
+
+        HolyVisualSprinklerRemoveLabel(
+            model
+        )
+    end
+
+    HolyVisualSprinklerRestoreDefaultTimers()
+
+    return true
+end
+
+function HolyVisualSprinklerEnsureLabel(model)
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    local existing =
+        runtime.SprinklerTimerLabels[
+            model
+        ]
+
+    if typeof(existing) == "Instance"
+    and existing.Parent then
+
+        return existing
+    end
+
+    HolyVisualSprinklerRemoveLabel(
+        model
+    )
+
+    local adornee =
+        HolyVisualSprinklerGetAdornee(
+            model
+        )
+
+    if typeof(adornee) ~= "Instance" then
+        return nil
+    end
+
+    local sprinklerName =
+        model:GetAttribute(
+            "SprinklerName"
+        )
+        or "Sprinkler"
+
+    local style =
+        HOLY_SPRINKLER_TIMER_STYLES[
+            sprinklerName
+        ]
+        or HOLY_SPRINKLER_TIMER_DEFAULT_STYLE
+
+    local billboard =
+        Instance.new(
+            "BillboardGui"
+        )
+
+    billboard.Name =
+        "HolySprinklerTimerESP"
+
+    billboard.Adornee =
+        adornee
+
+    billboard.AlwaysOnTop =
+        true
+
+    billboard.LightInfluence =
+        0
+
+    billboard.MaxDistance =
+        200
+
+    billboard.Size =
+        UDim2.fromOffset(
+            205,
+            46
+        )
+
+    billboard.StudsOffsetWorldSpace =
+        Vector3.new(
+            0,
+            style.Offset,
+            0
+        )
+
+    billboard.ResetOnSpawn =
+        false
+
+    billboard.Parent =
+        model
+
+    local background =
+        Instance.new(
+            "Frame"
+        )
+
+    background.Name =
+        "Background"
+
+    background.Size =
+        UDim2.fromScale(
+            1,
+            1
+        )
+
+    background.BackgroundColor3 =
+        Color3.fromRGB(
+            8,
+            8,
+            11
+        )
+
+    background.BackgroundTransparency =
+        0.42
+
+    background.BorderSizePixel =
+        0
+
+    background.Parent =
+        billboard
+
+    local corner =
+        Instance.new(
+            "UICorner"
+        )
+
+    corner.CornerRadius =
+        UDim.new(
+            0,
+            6
+        )
+
+    corner.Parent =
+        background
+
+    local stroke =
+        Instance.new(
+            "UIStroke"
+        )
+
+    stroke.Name =
+        "Stroke"
+
+    stroke.Color =
+        style.Color
+
+    stroke.Transparency =
+        0.5
+
+    stroke.Thickness =
+        1
+
+    stroke.Parent =
+        background
+
+    local text =
+        Instance.new(
+            "TextLabel"
+        )
+
+    text.Name =
+        "Text"
+
+    text.Size =
+        UDim2.new(
+            1,
+            -8,
+            1,
+            -4
+        )
+
+    text.Position =
+        UDim2.fromOffset(
+            4,
+            2
+        )
+
+    text.BackgroundTransparency =
+        1
+
+    text.RichText =
+        true
+
+    text.Text =
+        "Loading..."
+
+    text.TextColor3 =
+        Color3.fromRGB(
+            255,
+            255,
+            255
+        )
+
+    text.TextSize =
+        14
+
+    text.TextScaled =
+        false
+
+    text.TextWrapped =
+        false
+
+    text.TextStrokeColor3 =
+        Color3.fromRGB(
+            0,
+            0,
+            0
+        )
+
+    text.TextStrokeTransparency =
+        0.38
+
+    text.Font =
+        Enum.Font.GothamBold
+
+    text.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    text.TextYAlignment =
+        Enum.TextYAlignment.Center
+
+    text.Parent =
+        background
+
+    runtime.SprinklerTimerLabels[
+        model
+    ] =
+        billboard
+
+    return billboard
+end
+
+function HolyVisualSprinklerUpdateLabel(
+    model,
+    timerData
+)
+
+    if typeof(model) ~= "Instance"
+    or not model.Parent then
+
+        HolyVisualSprinklerRemoveLabel(
+            model
+        )
+
+        return false
+    end
+
+    HolyVisualSprinklerHideDefaultTimer(
+        model
+    )
+
+    local billboard =
+        HolyVisualSprinklerEnsureLabel(
+            model
+        )
+
+    if typeof(billboard) ~= "Instance" then
+        return false
+    end
+
+    local background =
+        billboard:FindFirstChild(
+            "Background"
+        )
+
+    local text =
+        background
+        and background:FindFirstChild(
+            "Text"
+        )
+
+    local stroke =
+        background
+        and background:FindFirstChild(
+            "Stroke"
+        )
+
+    if typeof(text) ~= "Instance" then
+        return false
+    end
+
+    local sprinklerName =
+        model:GetAttribute(
+            "SprinklerName"
+        )
+        or "Sprinkler"
+
+    local style =
+        HOLY_SPRINKLER_TIMER_STYLES[
+            sprinklerName
+        ]
+        or HOLY_SPRINKLER_TIMER_DEFAULT_STYLE
+
+    billboard.StudsOffsetWorldSpace =
+        Vector3.new(
+            0,
+            style.Offset,
+            0
+        )
+
+    if typeof(stroke) == "Instance" then
+
+        stroke.Color =
+            style.Color
+    end
+
+    local record =
+        timerData[
+            model.Name
+        ]
+
+    if type(record) ~= "table"
+    or type(record.PlacedAt) ~= "number" then
+
+        text.Text =
+            string.format(
+                '<font color="%s"><b>%s %s</b></font>\n'
+                .. '<font color="#FF7777"><b>Timer unavailable</b></font>',
+                HolyVisualSprinklerColorToHex(
+                    style.Color
+                ),
+                style.Emoji,
+                sprinklerName
+            )
+
+        return false
+    end
+
+    local remaining =
+        record.PlacedAt
+        + (
+            tonumber(record.Lifetime)
+            or 120
+        )
+        - os.time()
+
+    text.Text =
+        string.format(
+            '<font color="%s"><b>%s %s</b></font>\n'
+            .. '<font color="#FFD166">⏳</font> '
+            .. '<font color="#71FF71"><b>%s</b></font>',
+            HolyVisualSprinklerColorToHex(
+                style.Color
+            ),
+            style.Emoji,
+            sprinklerName,
+            HolyVisualSprinklerFormatTime(
+                remaining
+            )
+        )
+
+    return true
+end
+
+function HolyVisualRefreshSprinklerTimerESP()
+
+    HolyVisualEnsureState()
+
+    if HOLY_VISUAL_STATE.SprinklerTimerESP ~= true then
+
+        HolyVisualClearSprinklerTimerESP()
+
+        return false
+    end
+
+    local timerData =
+        HolyVisualSprinklerResolveTimerData()
+
+    if type(timerData) ~= "table" then
+        return false
+    end
+
+    local ownGarden =
+        HolyVisualSprinklerGetOwnGarden()
+
+    local sprinklersFolder =
+        ownGarden
+        and ownGarden:FindFirstChild(
+            "Sprinklers"
+        )
+
+    if typeof(sprinklersFolder) ~= "Instance" then
+        return false
+    end
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    local touched =
+        {}
+
+    for _, model in ipairs(
+        sprinklersFolder:GetChildren()
+    ) do
+
+        if model:IsA("Model")
+        and model:GetAttribute(
+            "UserId"
+        ) == LocalPlayer.UserId
+        and type(
+            model:GetAttribute(
+                "SprinklerId"
+            )
+        ) == "string" then
+
+            touched[model] =
+                true
+
+            HolyVisualSprinklerUpdateLabel(
+                model,
+                timerData
+            )
+        end
+    end
+
+    local stale =
+        {}
+
+    for model in pairs(
+        runtime.SprinklerTimerLabels
+        or {}
+    ) do
+
+        if touched[model] ~= true
+        or not model.Parent then
+
+            table.insert(
+                stale,
+                model
+            )
+        end
+    end
+
+    for _, model in ipairs(stale) do
+
+        HolyVisualSprinklerRemoveLabel(
+            model
+        )
+    end
+
+    return true
+end
+
+function HolyVisualStartSprinklerTimerESP(reason, skipSave)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.SprinklerTimerESP =
+        true
+
+    if skipSave ~= true then
+
+        HolySaveVisualSettings()
+    end
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    if runtime.SprinklerTimerRunning == true then
+
+        HolyVisualRefreshSprinklerTimerESP()
+
+        return true
+    end
+
+    local token =
+        {}
+
+    runtime.SprinklerTimerToken =
+        token
+
+    runtime.SprinklerTimerRunning =
+        true
+
+    task.spawn(function()
+
+        while runtime.SprinklerTimerToken == token
+        and HOLY_VISUAL_STATE.SprinklerTimerESP == true do
+
+            pcall(function()
+
+                HolyVisualRefreshSprinklerTimerESP()
+            end)
+
+            task.wait(
+                runtime.SprinklerTimerUpdateDelay
+            )
+        end
+
+        if runtime.SprinklerTimerToken == token then
+
+            runtime.SprinklerTimerRunning =
+                false
+        end
+
+        if HOLY_VISUAL_STATE.SprinklerTimerESP ~= true then
+
+            HolyVisualClearSprinklerTimerESP()
+        end
+    end)
+
+    HolyVisualRefreshSprinklerTimerESP()
+
+    return true
+end
+
+function HolyVisualStopSprinklerTimerESP(reason, skipSave)
+
+    HolyVisualEnsureState()
+
+    HOLY_VISUAL_STATE.SprinklerTimerESP =
+        false
+
+    if skipSave ~= true then
+
+        HolySaveVisualSettings()
+    end
+
+    local runtime =
+        HolyVisualGetRuntime()
+
+    runtime.SprinklerTimerToken =
+        nil
+
+    runtime.SprinklerTimerRunning =
+        false
+
+    HolyVisualClearSprinklerTimerESP()
+
+    return true
+end
+
+function HolyVisualSetSprinklerTimerESP(value)
+
+    if value == true then
+
+        return HolyVisualStartSprinklerTimerESP(
+            "toggle on",
+            false
+        )
+    end
+
+    return HolyVisualStopSprinklerTimerESP(
+        "toggle off",
+        false
+    )
+end
+
+function HolySellPruneRecentFruitIds()
 
 function HolySellPruneRecentFruitIds()
 
@@ -64415,6 +65539,32 @@ if type(VisualGardenBox) == "table" then
         end)
     end
 
+    HOLY_VISUAL_UI.SprinklerTimerESPToggle =
+        VisualGardenBox:AddToggle(
+            "HolyVisualSprinklerTimerESP",
+            {
+                Text =
+                    "Sprinkler Timer ESP",
+
+                Default =
+                    HOLY_VISUAL_STATE.SprinklerTimerESP == true,
+
+                Tooltip =
+                    "Shows the real remaining time above sprinklers in your own garden.",
+            }
+        )
+
+    if type(HOLY_VISUAL_UI.SprinklerTimerESPToggle) == "table"
+    and type(HOLY_VISUAL_UI.SprinklerTimerESPToggle.OnChanged) == "function" then
+
+        HOLY_VISUAL_UI.SprinklerTimerESPToggle:OnChanged(function(value)
+
+            HolyVisualSetSprinklerTimerESP(
+                value == true
+            )
+        end)
+    end
+
     HOLY_VISUAL_UI.GardenFruitShowValueToggle =
         VisualGardenBox:AddToggle(
             "HolyVisualGardenFruitShowValue",
@@ -64774,6 +65924,18 @@ task.defer(function()
     HolyVisualGardenRefreshMutationDropdown(
         false
     )
+
+    if HOLY_VISUAL_STATE.SprinklerTimerESP == true then
+
+        HolyVisualStartSprinklerTimerESP(
+            "startup",
+            true
+        )
+
+    else
+
+        HolyVisualClearSprinklerTimerESP()
+    end
 
     if HOLY_VISUAL_STATE.GardenFruitESP == true then
 
