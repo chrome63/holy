@@ -1459,6 +1459,9 @@ HOLY_FRUIT_AUTOMATION_STATE = {
     AutoDropFruits = false,
     AutoCollectDroppedFruits = false,
 
+    PickupMovement =
+        "Nearby Only",
+
     SelectedFruits = {},
     SelectedMutations = {},
 
@@ -1477,6 +1480,13 @@ HOLY_FRUIT_AUTOMATION_RUNTIME = {
 
     PickupRunning = false,
     PickupToken = nil,
+
+    PickupOwnsMovement = false,
+    PickupMoving = false,
+    PickupTarget = nil,
+    PickupLastDropPosition = nil,
+    PickupLastMoveAt = 0,
+    PickupMoveInterval = 0.15,
 
     DroppedConnections = {},
     DroppedCache = {},
@@ -1500,6 +1510,7 @@ HOLY_FRUIT_AUTOMATION_RUNTIME = {
 HOLY_FRUIT_AUTOMATION_UI = {
     AutoDropToggle = nil,
     AutoPickupToggle = nil,
+    PickupMovementDropdown = nil,
 
     FruitsDropdown = nil,
     MutationsDropdown = nil,
@@ -8852,6 +8863,15 @@ function HolyFruitAutomationEnsureState()
     HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits =
         HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits == true
 
+    if HOLY_FRUIT_AUTOMATION_STATE.PickupMovement
+        ~= "Nearby Only"
+    and HOLY_FRUIT_AUTOMATION_STATE.PickupMovement
+        ~= "Walk to Fruits" then
+
+        HOLY_FRUIT_AUTOMATION_STATE.PickupMovement =
+            "Nearby Only"
+    end
+
     HOLY_FRUIT_AUTOMATION_STATE.SelectedFruits =
         HolyFruitAutomationNormalizeFruitSelection(
             HOLY_FRUIT_AUTOMATION_STATE.SelectedFruits
@@ -9007,6 +9027,28 @@ function HolyFruitAutomationEnsureRuntime()
     runtime.PickupRunning =
         runtime.PickupRunning == true
 
+    runtime.PickupOwnsMovement =
+        runtime.PickupOwnsMovement == true
+
+    runtime.PickupMoving =
+        runtime.PickupMoving == true
+
+    runtime.PickupLastMoveAt =
+        tonumber(
+            runtime.PickupLastMoveAt
+        )
+        or 0
+
+    runtime.PickupMoveInterval =
+        math.clamp(
+            tonumber(
+                runtime.PickupMoveInterval
+            )
+            or 0.15,
+            0.08,
+            0.50
+        )
+
     return runtime
 end
 
@@ -9025,6 +9067,9 @@ function HolySaveFruitAutomationSettings()
 
         AutoCollectDroppedFruits =
             HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits == true,
+
+        PickupMovement =
+            HOLY_FRUIT_AUTOMATION_STATE.PickupMovement,
 
         SelectedFruits =
             HolyShopSelectionArray(
@@ -9154,6 +9199,12 @@ function HolyLoadFruitAutomationSettings()
         data.AutoCollectDroppedFruits == true
         or data.AutoPickupDroppedFruits == true
         or data.CollectDroppedFruits == true
+
+    HOLY_FRUIT_AUTOMATION_STATE.PickupMovement =
+        tostring(
+            data.PickupMovement
+            or "Nearby Only"
+        )
 
     HOLY_FRUIT_AUTOMATION_STATE.SelectedFruits =
         HolyFruitAutomationNormalizeFruitSelection(
@@ -10853,6 +10904,326 @@ function HolyFruitAutomationConnectDroppedFolder()
     return true
 end
 
+function HolyFruitAutomationPickupMovementEnabled()
+
+    HolyFruitAutomationEnsureState()
+
+    return HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits == true
+        and HOLY_FRUIT_AUTOMATION_STATE.PickupMovement
+            == "Walk to Fruits"
+end
+
+function HolyFruitAutomationOfflineCutsceneActive()
+
+    local playerGui =
+        LocalPlayer:FindFirstChild(
+            "PlayerGui"
+        )
+
+    local offlineGui =
+        playerGui
+        and playerGui:FindFirstChild(
+            "OfflineAnimation"
+        )
+
+    if typeof(offlineGui) ~= "Instance" then
+
+        return false
+    end
+
+    local enabled =
+        true
+
+    pcall(function()
+
+        enabled =
+            offlineGui.Enabled == true
+    end)
+
+    if enabled ~= true then
+
+        return false
+    end
+
+    local holdLabel =
+        offlineGui:FindFirstChild(
+            "HTSLabel",
+            true
+        )
+
+    local title =
+        offlineGui:FindFirstChild(
+            "Title",
+            true
+        )
+
+    local holdVisible =
+        false
+
+    local titleVisible =
+        false
+
+    pcall(function()
+
+        holdVisible =
+            holdLabel
+            and holdLabel.Visible == true
+    end)
+
+    pcall(function()
+
+        titleVisible =
+            title
+            and title.Visible == true
+    end)
+
+    return holdVisible == true
+        or titleVisible == true
+end
+
+function HolyFruitAutomationPickupHigherPriorityActive()
+
+    if HolyFarmAutoCollectBlocked() == true then
+
+        return true
+    end
+
+    if type(HOLY_WATERING_REJOIN_STATE) == "table"
+    and HOLY_WATERING_REJOIN_STATE.Enabled == true then
+
+        return true
+    end
+
+    if type(HOLY_WATERING_REJOIN_RUNTIME) == "table"
+    and (
+        HOLY_WATERING_REJOIN_RUNTIME.Running == true
+        or HOLY_WATERING_REJOIN_RUNTIME.Teleporting == true
+    ) then
+
+        return true
+    end
+
+    if HolyFruitAutomationOfflineCutsceneActive() == true then
+
+        return true
+    end
+
+    return false
+end
+
+function HolyFruitAutomationStopPickupMovement()
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    if runtime.PickupMoving ~= true then
+        return false
+    end
+
+    runtime.PickupMoving =
+        false
+
+    local humanoid =
+        HolyFruitAutomationGetHumanoid()
+
+    local root =
+        HolyFruitAutomationGetRoot()
+
+    if humanoid
+    and root then
+
+        pcall(function()
+
+            humanoid:MoveTo(
+                root.Position
+            )
+        end)
+    end
+
+    return true
+end
+
+function HolyFruitAutomationAcquirePickupMovement()
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    if runtime.PickupOwnsMovement == true then
+
+        return true
+    end
+
+    runtime.PickupOwnsMovement =
+        true
+
+    if type(HolyFarmMiddleStop) == "function" then
+
+        HolyFarmMiddleStop(
+            "dropped fruit walking"
+        )
+    end
+
+    return true
+end
+
+function HolyFruitAutomationReleasePickupMovement()
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    local previouslyOwned =
+        runtime.PickupOwnsMovement == true
+
+    HolyFruitAutomationStopPickupMovement()
+
+    runtime.PickupOwnsMovement =
+        false
+
+    runtime.PickupTarget =
+        nil
+
+    runtime.PickupLastDropPosition =
+        nil
+
+    if previouslyOwned ~= true then
+
+        return false
+    end
+
+    task.defer(function()
+
+        task.wait(
+            0.15
+        )
+
+        if HolyFruitAutomationPickupMovementEnabled() == true then
+            return
+        end
+
+        if HolyFruitAutomationPickupHigherPriorityActive() == true then
+            return
+        end
+
+        if HOLY_DEV_UI_STATE.AutoFarmMiddle == true
+        and type(HolyFarmMiddleStart) == "function" then
+
+            HolyFarmMiddleStart(
+                "dropped fruit walking ended"
+            )
+        end
+    end)
+
+    return true
+end
+
+function HolyFruitAutomationPickupOwnsMovement()
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    return HolyFruitAutomationPickupMovementEnabled() == true
+        and runtime.PickupOwnsMovement == true
+end
+
+function HolyFruitAutomationWalkToDroppedInfo(
+    info
+)
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    info =
+        type(info) == "table"
+        and info
+        or {}
+
+    local item =
+        info.Item
+
+    if typeof(item) ~= "Instance"
+    or item.Parent == nil then
+
+        runtime.PickupTarget =
+            nil
+
+        HolyFruitAutomationStopPickupMovement()
+
+        return false
+    end
+
+    local part =
+        HolyFruitAutomationGetDroppedPromptPart(
+            item
+        )
+
+    local humanoid =
+        HolyFruitAutomationGetHumanoid()
+
+    local root =
+        HolyFruitAutomationGetRoot()
+
+    if typeof(part) ~= "Instance"
+    or part:IsA("BasePart") ~= true
+    or typeof(humanoid) ~= "Instance"
+    or typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true
+    or humanoid.Health <= 0 then
+
+        HolyFruitAutomationStopPickupMovement()
+
+        return false
+    end
+
+    runtime.PickupTarget =
+        item
+
+    runtime.PickupLastDropPosition =
+        part.Position
+
+    local distanceAllowed =
+        HolyFruitAutomationDroppedDistanceAllowed(
+            item
+        )
+
+    if distanceAllowed == true then
+
+        HolyFruitAutomationStopPickupMovement()
+
+        return true
+    end
+
+    local now =
+        os.clock()
+
+    if now - runtime.PickupLastMoveAt
+        >= runtime.PickupMoveInterval then
+
+        runtime.PickupLastMoveAt =
+            now
+
+        runtime.PickupMoving =
+            true
+
+        pcall(function()
+
+            humanoid.Sit =
+                false
+
+            humanoid.PlatformStand =
+                false
+
+            humanoid.AutoRotate =
+                true
+
+            humanoid:MoveTo(
+                part.Position
+            )
+        end)
+    end
+
+    return false
+end
+
 function HolyFruitAutomationRunPickupWorker(token)
 
     local runtime =
@@ -10866,46 +11237,97 @@ function HolyFruitAutomationRunPickupWorker(token)
     while runtime.PickupToken == token
     and HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits == true do
 
-        if HolyFarmAutoCollectBlocked() == true then
+        local walkingEnabled =
+            HolyFruitAutomationPickupMovementEnabled()
+
+        if walkingEnabled == true then
+
+            HolyFruitAutomationAcquirePickupMovement()
+
+        elseif runtime.PickupOwnsMovement == true then
+
+            HolyFruitAutomationReleasePickupMovement()
+        end
+
+        if HolyFruitAutomationPickupHigherPriorityActive() == true then
+
+            if runtime.PickupMoving == true then
+
+                HolyFruitAutomationStopPickupMovement()
+            end
 
             task.wait(
                 0.20
             )
 
+            continue
+        end
+
+        local targets =
+            HolyFruitAutomationGetDroppedTargets()
+
+        if #targets <= 0 then
+
+            if runtime.PickupMoving == true then
+
+                HolyFruitAutomationStopPickupMovement()
+            end
+
+            runtime.PickupTarget =
+                nil
+
+            task.wait(
+                runtime.PickupScanDelay
+            )
+
+            continue
+        end
+
+        if walkingEnabled == true then
+
+            local info =
+                targets[1]
+
+            local inRange =
+                HolyFruitAutomationWalkToDroppedInfo(
+                    info
+                )
+
+            if inRange == true then
+
+                HolyFruitAutomationTryPickupDroppedInfo(
+                    info
+                )
+
+                HolyFruitAutomationStopPickupMovement()
+            end
+
+            task.wait(
+                runtime.PickupScanDelay
+            )
+
         else
 
-            local targets =
-                HolyFruitAutomationGetDroppedTargets()
+            for _, info in ipairs(targets) do
 
-            if #targets <= 0 then
+                if runtime.PickupToken ~= token
+                or HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits ~= true then
 
-                task.wait(
-                    runtime.PickupScanDelay
-                )
-
-            else
-
-                for _, info in ipairs(targets) do
-
-                    if runtime.PickupToken ~= token
-                    or HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits ~= true then
-
-                        break
-                    end
-
-                    HolyFruitAutomationTryPickupDroppedInfo(
-                        info
-                    )
-
-                    task.wait(
-                        0.02
-                    )
+                    break
                 end
 
+                HolyFruitAutomationTryPickupDroppedInfo(
+                    info
+                )
+
                 task.wait(
-                    runtime.PickupScanDelay
+                    0.02
                 )
             end
+
+            task.wait(
+                runtime.PickupScanDelay
+            )
         end
     end
 
@@ -10913,6 +11335,8 @@ function HolyFruitAutomationRunPickupWorker(token)
 
         runtime.PickupRunning =
             false
+
+        HolyFruitAutomationReleasePickupMovement()
     end
 end
 
@@ -10921,6 +11345,7 @@ function HolyFruitAutomationStartPickup(reason)
     HolyFruitAutomationEnsureState()
 
     if HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits ~= true then
+
         return false
     end
 
@@ -10928,6 +11353,12 @@ function HolyFruitAutomationStartPickup(reason)
         HolyFruitAutomationEnsureRuntime()
 
     if runtime.PickupRunning == true then
+
+        if HolyFruitAutomationPickupMovementEnabled() == true then
+
+            HolyFruitAutomationAcquirePickupMovement()
+        end
+
         return false
     end
 
@@ -10937,6 +11368,15 @@ function HolyFruitAutomationStartPickup(reason)
     runtime.DroppedLastAttempt =
         {}
 
+    runtime.PickupTarget =
+        nil
+
+    runtime.PickupMoving =
+        false
+
+    runtime.PickupLastMoveAt =
+        0
+
     runtime.PickupToken =
         {}
 
@@ -10945,6 +11385,11 @@ function HolyFruitAutomationStartPickup(reason)
 
     runtime.PickupRunning =
         true
+
+    if HolyFruitAutomationPickupMovementEnabled() == true then
+
+        HolyFruitAutomationAcquirePickupMovement()
+    end
 
     task.spawn(function()
 
@@ -10967,6 +11412,8 @@ function HolyFruitAutomationStopPickup(reason)
     runtime.PickupRunning =
         false
 
+    HolyFruitAutomationReleasePickupMovement()
+
     HolyFarmDisconnectConnectionList(
         runtime.DroppedConnections
     )
@@ -10979,6 +11426,9 @@ function HolyFruitAutomationStopPickup(reason)
 
     runtime.DroppedLastAttempt =
         {}
+
+    runtime.PickupTarget =
+        nil
 
     return true
 end
@@ -11023,6 +11473,48 @@ function HolyFruitAutomationSetAutoCollectDroppedFruits(value)
     return HolyFruitAutomationStopPickup(
         "toggle off"
     )
+end
+
+function HolyFruitAutomationSetPickupMovement(value)
+
+    HolyFruitAutomationEnsureState()
+
+    value =
+        tostring(value)
+
+    if value ~= "Nearby Only"
+    and value ~= "Walk to Fruits" then
+
+        value =
+            "Nearby Only"
+    end
+
+    HOLY_FRUIT_AUTOMATION_STATE.PickupMovement =
+        value
+
+    HolySaveFruitAutomationSettings()
+
+    if HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits == true then
+
+        if value == "Walk to Fruits" then
+
+            HolyFruitAutomationAcquirePickupMovement()
+
+            HolyFruitAutomationStartPickup(
+                "movement changed"
+            )
+
+        else
+
+            HolyFruitAutomationReleasePickupMovement()
+        end
+
+    else
+
+        HolyFruitAutomationReleasePickupMovement()
+    end
+
+    return value
 end
 
 function HolyFruitAutomationSetSelectedFruits(value)
@@ -17691,6 +18183,32 @@ function HolyFarmMiddleStart(reason)
 
     state.Enabled =
         true
+
+    if type(HolyFruitAutomationPickupOwnsMovement)
+        == "function"
+    and HolyFruitAutomationPickupOwnsMovement() == true then
+
+        state.Token =
+            nil
+
+        state.Running =
+            false
+
+        state.Moving =
+            false
+
+        state.CancelArmed =
+            false
+
+        HolyFarmMiddleStopMovement()
+
+        HolyFarmMiddleSetStatus(
+            "Paused",
+            "dropped fruit walking"
+        )
+
+        return false
+    end
 
     if HolyFarmMiddleWateringRejoinActive() == true then
 
@@ -67015,7 +67533,7 @@ and type(FarmFruitAutomationBox.AddToggle) == "function" then
                     HOLY_FRUIT_AUTOMATION_STATE.AutoCollectDroppedFruits == true,
 
                 Tooltip =
-                    "Picks up matching dropped fruits near you without teleporting.",
+                    "Collects matching dropped fruits. Pickup Movement controls whether the character walks to them.",
             }
         )
 
@@ -67029,6 +67547,42 @@ end
 
 if FarmFruitAutomationBox
 and type(FarmFruitAutomationBox.AddDropdown) == "function" then
+
+    HOLY_FRUIT_AUTOMATION_UI.PickupMovementDropdown =
+        FarmFruitAutomationBox:AddDropdown(
+            "HolyFruitAutomationPickupMovement",
+            {
+                Text =
+                    "Pickup Movement",
+
+                Values = {
+                    "Nearby Only",
+                    "Walk to Fruits",
+                },
+
+                Default =
+                    HOLY_FRUIT_AUTOMATION_STATE.PickupMovement,
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    2,
+
+                Tooltip =
+                    "Nearby Only collects fruits already in range. Walk to Fruits walks to the nearest matching dropped fruit and stays there.",
+            }
+        )
+
+    HOLY_FRUIT_AUTOMATION_UI.PickupMovementDropdown:OnChanged(function(value)
+
+        HolyFruitAutomationSetPickupMovement(
+            value
+        )
+    end)
 
     HOLY_FRUIT_AUTOMATION_UI.FruitsDropdown =
         FarmFruitAutomationBox:AddDropdown(
