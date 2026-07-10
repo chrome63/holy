@@ -55132,14 +55132,22 @@ local Tabs = {
             Icon = "sliders-horizontal",
             Description = "UI settings.",
         }),
-
-    Dev =
-        Window:AddTab({
-            Name = "Dev",
-            Icon = "terminal",
-            Description = "Developer tools.",
-        }),
 }
+
+if HolyAuthIsAdmin() == true then
+
+    Tabs.Dev =
+        Window:AddTab({
+            Name =
+                "Dev",
+
+            Icon =
+                "terminal",
+
+            Description =
+                "Developer tools.",
+        })
+end
 
 local MainQuickBox =
     HolyAddLeftGroupbox(
@@ -55423,12 +55431,18 @@ local SettingsPerformanceBox =
     )
 
 local DevToolsBox =
-    HolyAddLeftGroupbox(
-        Tabs.Dev,
-        "Dev.Tools",
-        "Developer Tools",
-        "terminal"
-    )
+    nil
+
+if Tabs.Dev then
+
+    DevToolsBox =
+        HolyAddLeftGroupbox(
+            Tabs.Dev,
+            "Dev.Tools",
+            "Developer Tools",
+            "terminal"
+        )
+end
 
 function HolyFarmNormalizePageMode(mode)
 
@@ -69951,24 +69965,29 @@ end)
 -- [7] DEV TAB
 --==================================================
 
-for _, tool in ipairs(DEV_TOOLS) do
+if DevToolsBox then
 
-    DevToolsBox:AddButton({
-        Text =
-            tool.Name,
+    for _, tool in ipairs(
+        DEV_TOOLS
+    ) do
 
-        Tooltip =
-            tool.Tooltip,
+        DevToolsBox:AddButton({
+            Text =
+                tool.Name,
 
-        Func =
-            function()
+            Tooltip =
+                tool.Tooltip,
 
-                HolyOpenDevTool(
-                    tool.Url,
-                    tool.Name
-                )
-            end,
-    })
+            Func =
+                function()
+
+                    HolyOpenDevTool(
+                        tool.Url,
+                        tool.Name
+                    )
+                end,
+        })
+    end
 end
 
 --==================================================
