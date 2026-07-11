@@ -763,6 +763,11 @@ HOLY_ROLLBACK_RUNTIME = {
     Generation = 0,
     Running = false,
     Packet = nil,
+
+    ManualRequested = false,
+    WateringRequested = false,
+    WateringFireDelay = 0.1,
+
     Stop = nil,
 }
 
@@ -808,6 +813,12 @@ HOLY_WATERING_REJOIN_STATE = {
     HidePlants =
         true,
 
+    AvoidPlantAttacks =
+        true,
+
+    RetreatDistance =
+        30,
+
     TargetUsername =
         "",
 
@@ -841,6 +852,7 @@ HOLY_WATERING_REJOIN_RUNTIME = {
     CharacterConnection = nil,
     DiedConnection = nil,
     RespawnPending = false,
+    RecoveryScheduled = false,
 
     CompletedUses = 0,
     WateringFinished = false,
@@ -52446,7 +52458,16 @@ function HolyRollbackFire(payload)
     return success == true
 end
 
-function HolyRollbackStop(reason)
+function HolyRollbackHasAnyOwner()
+
+    local runtime =
+        HOLY_ROLLBACK_RUNTIME
+
+    return runtime.ManualRequested == true
+        or runtime.WateringRequested == true
+end
+
+function HolyRollbackRefreshWorker()
 
     local state =
         HOLY_ROLLBACK_STATE
@@ -52454,8 +52475,154 @@ function HolyRollbackStop(reason)
     local runtime =
         HOLY_ROLLBACK_RUNTIME
 
-    state.Enabled =
-        false
+    if HolyRollbackHasAnyOwner() ~= true then
+
+        runtime.Running =
+            false
+
+        runtime.Generation +=
+            1
+
+        HolyRollbackFire(
+            ""
+        )
+
+        return true
+    end
+
+    local packet =
+        HolyRollbackResolvePacket()
+
+    if packet == nil then
+
+        runtime.Running =
+            false
+
+        return false
+    end
+
+    if runtime.Running == true then
+
+        return true
+    end
+
+    runtime.Running =
+        true
+
+    runtime.Generation +=
+        1
+
+    local generation =
+        runtime.Generation
+
+    task.spawn(function()
+
+        while runtime.Running == true
+        and runtime.Generation == generation
+        and HolyRollbackHasAnyOwner() == true do
+
+            local success =
+                HolyRollbackFire(
+                    string.char(255)
+                )
+
+            if success ~= true then
+
+                runtime.Running =
+                    false
+
+                runtime.Generation +=
+                    1
+
+                break
+            end
+
+            local delay =
+                10
+
+            if runtime.ManualRequested == true then
+
+                delay =
+                    math.min(
+                        delay,
+                        math.clamp(
+                            tonumber(
+                                state.FireDelay
+                            )
+                            or 0.1,
+                            0,
+                            10
+                        )
+                    )
+            end
+
+            if runtime.WateringRequested == true then
+
+                delay =
+                    math.min(
+                        delay,
+                        math.clamp(
+                            tonumber(
+                                runtime.WateringFireDelay
+                            )
+                            or 0.1,
+                            0,
+                            10
+                        )
+                    )
+            end
+
+            task.wait(
+                delay
+            )
+        end
+
+        if runtime.Generation == generation then
+
+            runtime.Running =
+                false
+        end
+    end)
+
+    return true
+end
+
+function HolyRollbackSetOwner(
+    owner,
+    value
+)
+
+    local state =
+        HOLY_ROLLBACK_STATE
+
+    local runtime =
+        HOLY_ROLLBACK_RUNTIME
+
+    value =
+        value == true
+
+    if owner == "Manual" then
+
+        runtime.ManualRequested =
+            value
+
+        state.Enabled =
+            value
+
+    elseif owner == "Watering" then
+
+        runtime.WateringRequested =
+            value
+
+    else
+
+        return false
+    end
+
+    if HolyRollbackHasAnyOwner() == true then
+
+        return HolyRollbackRefreshWorker()
+    end
 
     runtime.Running =
         false
@@ -52470,7 +52637,31 @@ function HolyRollbackStop(reason)
     return true
 end
 
+function HolyRollbackStop(reason)
+
+    return HolyRollbackSetOwner(
+        "Manual",
+        false
+    )
+end
+
 function HolyRollbackStart(reason)
+
+    return HolyRollbackSetOwner(
+        "Manual",
+        true
+    )
+end
+
+function HolyRollbackSetEnabled(value)
+
+    return HolyRollbackSetOwner(
+        "Manual",
+        value == true
+    )
+end
+
+function HolyRollbackStopAll(reason)
 
     local state =
         HOLY_ROLLBACK_STATE
@@ -52478,105 +52669,26 @@ function HolyRollbackStart(reason)
     local runtime =
         HOLY_ROLLBACK_RUNTIME
 
-    if state.Enabled == true
-    and runtime.Running == true then
-
-        return true
-    end
-
-    local packet =
-        HolyRollbackResolvePacket()
-
-    if packet == nil then
-
-        state.Enabled =
-            false
-
-        runtime.Running =
-            false
-
-        return false
-    end
-
     state.Enabled =
-        true
+        false
+
+    runtime.ManualRequested =
+        false
+
+    runtime.WateringRequested =
+        false
 
     runtime.Running =
-        true
+        false
 
     runtime.Generation +=
         1
 
-    local generation =
-        runtime.Generation
-
-    task.spawn(function()
-
-        while state.Enabled == true
-        and runtime.Running == true
-        and runtime.Generation == generation do
-
-            local success =
-                HolyRollbackFire(
-                    string.char(255)
-                )
-
-            if success ~= true then
-
-                state.Enabled =
-                    false
-
-                runtime.Running =
-                    false
-
-                runtime.Generation +=
-                    1
-
-                break
-            end
-
-            task.wait(
-                math.clamp(
-                    tonumber(
-                        state.FireDelay
-                    )
-                    or 0.1,
-                    0,
-                    10
-                )
-            )
-        end
-    end)
+    HolyRollbackFire(
+        ""
+    )
 
     return true
-end
-
-function HolyRollbackSetEnabled(value)
-
-    if value == true then
-
-        return HolyRollbackStart(
-            "toggle on"
-        )
-    end
-
-    if type(HOLY_WATERING_REJOIN_STATE) == "table"
-    and HOLY_WATERING_REJOIN_STATE.Enabled == true then
-
-        task.defer(function()
-
-            if type(HolyWateringRejoinEnsureRollback) == "function" then
-
-                HolyWateringRejoinEnsureRollback()
-            end
-        end)
-
-        return true
-    end
-
-    return HolyRollbackStop(
-        "toggle off"
-    )
 end
 
 function HolyRollbackSetFireDelay(value)
@@ -52593,7 +52705,7 @@ function HolyRollbackSetFireDelay(value)
 end
 
 HOLY_ROLLBACK_RUNTIME.Stop =
-    HolyRollbackStop
+    HolyRollbackStopAll
 
 --==================================================
 -- WATERING REJOIN SYSTEM
@@ -52690,6 +52802,19 @@ function HolyWateringRejoinNormalizeState()
     state.HidePlants =
         state.HidePlants ~= false
 
+    state.AvoidPlantAttacks =
+        state.AvoidPlantAttacks ~= false
+
+    state.RetreatDistance =
+        math.clamp(
+            tonumber(
+                state.RetreatDistance
+            )
+            or 30,
+            15,
+            80
+        )
+
     state.TargetUsername =
         tostring(
             state.TargetUsername
@@ -52741,7 +52866,7 @@ function HolyWateringRejoinSaveSettings()
         HolyWateringRejoinNormalizeState()
 
     local payload = {
-        Version = 3,
+        Version = 4,
 
         Enabled =
             state.Enabled == true,
@@ -52775,6 +52900,12 @@ function HolyWateringRejoinSaveSettings()
 
         HidePlants =
             state.HidePlants == true,
+
+        AvoidPlantAttacks =
+            state.AvoidPlantAttacks == true,
+
+        RetreatDistance =
+            state.RetreatDistance,
 
         TargetUsername =
             state.TargetUsername,
@@ -52940,6 +53071,19 @@ function HolyWateringRejoinLoadSettings()
         state.HidePlants =
             data.HidePlants == true
     end
+
+    if data.AvoidPlantAttacks ~= nil then
+
+        state.AvoidPlantAttacks =
+            data.AvoidPlantAttacks == true
+    end
+
+    state.RetreatDistance =
+        tonumber(
+            data.RetreatDistance
+        )
+        or state.RetreatDistance
+        or 30
 
     state.TargetUsername =
         tostring(
@@ -53616,20 +53760,17 @@ end
 function HolyWateringRejoinEnsureRollback()
 
     if HOLY_WATERING_REJOIN_STATE.Enabled ~= true then
+
         return false
     end
 
-    local success =
-        HolyRollbackStart(
-            "watering rejoin"
-        )
+    HOLY_ROLLBACK_RUNTIME.WateringFireDelay =
+        0.1
 
-    if success == true then
-
-        HolyWateringRejoinSyncRollbackToggle()
-    end
-
-    return success == true
+    return HolyRollbackSetOwner(
+        "Watering",
+        true
+    )
 end
 
 function HolyWateringRejoinRestorePlantCollision()
@@ -54424,6 +54565,114 @@ function HolyWateringRejoinMoveTo(
     )
 end
 
+function HolyWateringRejoinBuildSafeCFrame(
+    savedStandCFrame,
+    savedAimPosition
+)
+
+    if typeof(savedStandCFrame) ~= "CFrame"
+    or typeof(savedAimPosition) ~= "Vector3" then
+
+        return nil
+    end
+
+    local standPosition =
+        savedStandCFrame.Position
+
+    local awayDirection =
+        Vector3.new(
+            standPosition.X - savedAimPosition.X,
+            0,
+            standPosition.Z - savedAimPosition.Z
+        )
+
+    if awayDirection.Magnitude <= 0.01 then
+
+        local lookVector =
+            savedStandCFrame.LookVector
+
+        awayDirection =
+            Vector3.new(
+                -lookVector.X,
+                0,
+                -lookVector.Z
+            )
+    end
+
+    if awayDirection.Magnitude <= 0.01 then
+
+        return nil
+    end
+
+    local retreatDistance =
+        math.clamp(
+            tonumber(
+                HOLY_WATERING_REJOIN_STATE.RetreatDistance
+            )
+            or 30,
+            15,
+            80
+        )
+
+    local safePosition =
+        standPosition
+        + awayDirection.Unit
+        * retreatDistance
+
+    local flatAim =
+        Vector3.new(
+            savedAimPosition.X,
+            safePosition.Y,
+            savedAimPosition.Z
+        )
+
+    if (
+        flatAim
+        - safePosition
+    ).Magnitude <= 0.01 then
+
+        return CFrame.new(
+            safePosition
+        )
+    end
+
+    return CFrame.lookAt(
+        safePosition,
+        flatAim
+    )
+end
+
+function HolyWateringRejoinRetreatToSafety(
+    savedStandCFrame,
+    savedAimPosition,
+    generation
+)
+
+    if HOLY_WATERING_REJOIN_STATE.AvoidPlantAttacks ~= true then
+
+        return true
+    end
+
+    local safeCFrame =
+        HolyWateringRejoinBuildSafeCFrame(
+            savedStandCFrame,
+            savedAimPosition
+        )
+
+    if typeof(safeCFrame) ~= "CFrame" then
+
+        return false
+    end
+
+    local arrived =
+        HolyWateringRejoinMoveTo(
+            safeCFrame,
+            generation
+        )
+
+    return arrived == true
+end
+
 function HolyWateringRejoinRestoreSetupHook()
 
     local runtime =
@@ -54983,6 +55232,145 @@ function HolyWateringRejoinConfirmUse(
         true
 end
 
+function HolyWateringRejoinOfflineAnimationActive()
+
+    local playerGui =
+        LocalPlayer
+        and LocalPlayer:FindFirstChild(
+            "PlayerGui"
+        )
+
+    local offlineAnimation =
+        playerGui
+        and playerGui:FindFirstChild(
+            "OfflineAnimation"
+        )
+
+    if typeof(offlineAnimation) ~= "Instance" then
+
+        return false
+    end
+
+    if offlineAnimation:IsA("ScreenGui")
+    and offlineAnimation.Enabled ~= true then
+
+        return false
+    end
+
+    local holdLabel =
+        offlineAnimation:FindFirstChild(
+            "HTSLabel",
+            true
+        )
+
+    if typeof(holdLabel) == "Instance"
+    and holdLabel:IsA("GuiObject") then
+
+        return holdLabel.Visible == true
+    end
+
+    return true
+end
+
+function HolyWateringRejoinScheduleRecovery(
+    reason,
+    delay
+)
+
+    local state =
+        HOLY_WATERING_REJOIN_STATE
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    if state.Enabled ~= true
+    or runtime.Teleporting == true then
+
+        return false
+    end
+
+    if runtime.RecoveryScheduled == true then
+
+        return true
+    end
+
+    runtime.RecoveryScheduled =
+        true
+
+    runtime.Running =
+        false
+
+    runtime.Busy =
+        false
+
+    runtime.Generation +=
+        1
+
+    local recoveryGeneration =
+        runtime.Generation
+
+    HolyWateringRejoinCancelTween()
+    HolyWateringRejoinEnsureRollback()
+
+    task.spawn(function()
+
+        task.wait(
+            math.clamp(
+                tonumber(delay)
+                or 1,
+                0.25,
+                10
+            )
+        )
+
+        local readyDeadline =
+            os.clock()
+            + 30
+
+        while state.Enabled == true
+        and runtime.Teleporting ~= true
+        and runtime.Generation == recoveryGeneration
+        and os.clock() < readyDeadline do
+
+            local character,
+                humanoid,
+                root =
+                HolyWateringRejoinGetCharacter()
+
+            if character
+            and humanoid
+            and root
+            and humanoid.Health > 0
+            and HolyWateringRejoinOfflineAnimationActive() ~= true then
+
+                runtime.RecoveryScheduled =
+                    false
+
+                runtime.RespawnPending =
+                    false
+
+                HolyWateringRejoinStart(
+                    "recovery"
+                )
+
+                return
+            end
+
+            task.wait(
+                0.25
+            )
+        end
+
+        if runtime.Generation == recoveryGeneration then
+
+            runtime.RecoveryScheduled =
+                false
+        end
+    end)
+
+    return true
+end
+
 function HolyWateringRejoinAbort(message)
 
     if type(HolyNotify) == "function" then
@@ -55193,9 +55581,10 @@ function HolyWateringRejoinRunCycle(generation)
 
     if not tool then
 
-        HolyWateringRejoinAbort(
+        HolyWateringRejoinScheduleRecovery(
             state.WateringCan
-            .. " was not found."
+            .. " is not ready yet.",
+            1
         )
 
         return
@@ -55223,13 +55612,9 @@ function HolyWateringRejoinRunCycle(generation)
             return
         end
 
-        HolyWateringRejoinAbort(
-            "Could not reach the saved position. Distance: "
-            .. string.format(
-                "%.1f",
-                tonumber(finalDistance)
-                or -1
-            )
+        HolyWateringRejoinScheduleRecovery(
+            "Movement to the saved position was interrupted.",
+            1
         )
 
         return
@@ -55252,10 +55637,11 @@ function HolyWateringRejoinRunCycle(generation)
     if not tool
     or HolyWateringRejoinEquipTool(tool) ~= true then
 
-        HolyWateringRejoinAbort(
+        HolyWateringRejoinScheduleRecovery(
             "Could not equip "
             .. state.WateringCan
-            .. "."
+            .. ".",
+            1
         )
 
         return
@@ -55394,14 +55780,40 @@ function HolyWateringRejoinRunCycle(generation)
                 true
         end
 
-        if attemptedUses >= useLimit
-        or depleted == true then
+        local shouldContinue =
+            attemptedUses < useLimit
+            and depleted ~= true
+            and not (
+                confirmed ~= true
+                and state.UseMode == "All Available"
+            )
 
-            break
+        if state.AvoidPlantAttacks == true then
+
+            local retreated =
+                HolyWateringRejoinRetreatToSafety(
+                    savedStandCFrame,
+                    savedAimPosition,
+                    generation
+                )
+
+            if retreated ~= true then
+
+                if state.Enabled == true
+                and runtime.Generation == generation
+                and runtime.RespawnPending ~= true then
+
+                    HolyWateringRejoinScheduleRecovery(
+                        "Could not retreat from the plants.",
+                        1
+                    )
+                end
+
+                return
+            end
         end
 
-        if confirmed ~= true
-        and state.UseMode == "All Available" then
+        if shouldContinue ~= true then
 
             break
         end
@@ -55440,12 +55852,44 @@ function HolyWateringRejoinRunCycle(generation)
                 0.05
             )
         end
+
+        if state.Enabled ~= true
+        or runtime.Running ~= true
+        or runtime.Generation ~= generation then
+
+            return
+        end
+
+        if state.AvoidPlantAttacks == true then
+
+            local returnedToTarget =
+                HolyWateringRejoinMoveTo(
+                    savedStandCFrame,
+                    generation
+                )
+
+            if returnedToTarget ~= true then
+
+                if state.Enabled == true
+                and runtime.Generation == generation
+                and runtime.RespawnPending ~= true then
+
+                    HolyWateringRejoinScheduleRecovery(
+                        "Could not return to the watering position.",
+                        1
+                    )
+                end
+
+                return
+            end
+        end
     end
 
     if wateringFailure then
 
-        HolyWateringRejoinAbort(
-            wateringFailure
+        HolyWateringRejoinScheduleRecovery(
+            wateringFailure,
+            1
         )
 
         return
@@ -55542,6 +55986,9 @@ function HolyWateringRejoinHandleDeath()
     runtime.RespawnPending =
         true
 
+    runtime.RecoveryScheduled =
+        false
+
     runtime.Running =
         false
 
@@ -55572,6 +56019,7 @@ function HolyWateringRejoinBindCharacter(character)
     end
 
     if typeof(character) ~= "Instance" then
+
         return false
     end
 
@@ -55585,6 +56033,7 @@ function HolyWateringRejoinBindCharacter(character)
         )
 
     if typeof(humanoid) ~= "Instance" then
+
         return false
     end
 
@@ -55603,6 +56052,7 @@ function HolyWateringRejoinConnectCharacterWatcher()
         HOLY_WATERING_REJOIN_RUNTIME
 
     if runtime.CharacterConnection then
+
         return true
     end
 
@@ -55618,11 +56068,8 @@ function HolyWateringRejoinConnectCharacterWatcher()
                 runtime.RespawnPending =
                     true
 
-                if runtime.Running == true then
-
-                    runtime.Generation +=
-                        1
-                end
+                runtime.RecoveryScheduled =
+                    false
 
                 runtime.Running =
                     false
@@ -55630,23 +56077,61 @@ function HolyWateringRejoinConnectCharacterWatcher()
                 runtime.Busy =
                     false
 
+                runtime.Generation +=
+                    1
+
+                local respawnGeneration =
+                    runtime.Generation
+
                 HolyWateringRejoinCancelTween()
+                HolyWateringRejoinEnsureRollback()
 
                 HolyWateringRejoinBindCharacter(
                     character
                 )
 
-                character:WaitForChild(
-                    "HumanoidRootPart",
-                    15
-                )
+                local humanoid =
+                    character:WaitForChild(
+                        "Humanoid",
+                        15
+                    )
 
-                task.wait(
-                    1
-                )
+                local root =
+                    character:WaitForChild(
+                        "HumanoidRootPart",
+                        15
+                    )
+
+                if LocalPlayer.Character ~= character
+                or typeof(humanoid) ~= "Instance"
+                or typeof(root) ~= "Instance"
+                or humanoid.Health <= 0 then
+
+                    return
+                end
+
+                local readyDeadline =
+                    os.clock()
+                    + 15
+
+                while HOLY_WATERING_REJOIN_STATE.Enabled == true
+                and runtime.Teleporting ~= true
+                and runtime.Generation == respawnGeneration
+                and LocalPlayer.Character == character
+                and humanoid.Health > 0
+                and HolyWateringRejoinOfflineAnimationActive() == true
+                and os.clock() < readyDeadline do
+
+                    task.wait(
+                        0.25
+                    )
+                end
 
                 if HOLY_WATERING_REJOIN_STATE.Enabled == true
-                and runtime.Teleporting ~= true then
+                and runtime.Teleporting ~= true
+                and runtime.Generation == respawnGeneration
+                and LocalPlayer.Character == character
+                and humanoid.Health > 0 then
 
                     runtime.RespawnPending =
                         false
@@ -55708,7 +56193,8 @@ function HolyWateringRejoinStart(reason)
     state.Enabled =
         true
 
-    if tostring(reason) ~= "respawn" then
+    if tostring(reason) ~= "respawn"
+    and tostring(reason) ~= "recovery" then
 
         runtime.CompletedUses =
             0
@@ -55721,6 +56207,9 @@ function HolyWateringRejoinStart(reason)
     end
 
     runtime.RespawnPending =
+        false
+
+    runtime.RecoveryScheduled =
         false
 
     runtime.Running =
@@ -55790,6 +56279,9 @@ function HolyWateringRejoinStop(
     runtime.RespawnPending =
         false
 
+    runtime.RecoveryScheduled =
+        false
+
     runtime.Generation +=
         1
 
@@ -55806,6 +56298,14 @@ function HolyWateringRejoinStop(
     HolyWateringRejoinDisconnectCharacterWatcher()
     HolyWateringRejoinRestoreSetupHook()
     HolyWateringRejoinRestorePlantCollision()
+
+    if type(HolyRollbackSetOwner) == "function" then
+
+        HolyRollbackSetOwner(
+            "Watering",
+            false
+        )
+    end
 
     local _,
         humanoid,
@@ -55926,6 +56426,16 @@ function HolyWateringRejoinSetHidePlants(value)
     end
 
     return HOLY_WATERING_REJOIN_STATE.HidePlants
+end
+
+function HolyWateringRejoinSetAvoidPlantAttacks(value)
+
+    HOLY_WATERING_REJOIN_STATE.AvoidPlantAttacks =
+        value == true
+
+    HolyWateringRejoinSaveSettings()
+
+    return HOLY_WATERING_REJOIN_STATE.AvoidPlantAttacks
 end
 
 function HolyWateringRejoinSetCan(value)
@@ -71333,6 +71843,28 @@ VulnWateringRejoinBox:AddButton({
         end,
 })
 
+HOLY_WATERING_REJOIN_UI.Toggle =
+    VulnWateringRejoinBox:AddToggle(
+        "HolyWateringRejoinEnabled",
+        {
+            Text =
+                "Auto Watering Rejoin",
+
+            Default =
+                HOLY_WATERING_REJOIN_STATE.Enabled == true,
+
+            Tooltip =
+                "Runs its own rollback, travels to the saved position, waters, retreats from hostile plants, and rejoins.",
+        }
+    )
+
+HOLY_WATERING_REJOIN_UI.Toggle:OnChanged(function(value)
+
+    HolyWateringRejoinSetEnabled(
+        value == true
+    )
+end)
+
 HOLY_WATERING_REJOIN_UI.MovementModeDropdown =
     VulnWateringRejoinBox:AddDropdown(
         "HolyWateringRejoinMovementMode",
@@ -71424,6 +71956,28 @@ HOLY_WATERING_REJOIN_UI.HidePlantsToggle =
 HOLY_WATERING_REJOIN_UI.HidePlantsToggle:OnChanged(function(value)
 
     HolyWateringRejoinSetHidePlants(
+        value == true
+    )
+end)
+
+HOLY_WATERING_REJOIN_UI.AvoidPlantAttacksToggle =
+    VulnWateringRejoinBox:AddToggle(
+        "HolyWateringRejoinAvoidPlantAttacks",
+        {
+            Text =
+                "Avoid Plant Attacks",
+
+            Default =
+                HOLY_WATERING_REJOIN_STATE.AvoidPlantAttacks == true,
+
+            Tooltip =
+                "Retreats away from the target between watering uses and before rejoining.",
+        }
+    )
+
+HOLY_WATERING_REJOIN_UI.AvoidPlantAttacksToggle:OnChanged(function(value)
+
+    HolyWateringRejoinSetAvoidPlantAttacks(
         value == true
     )
 end)
@@ -71566,28 +72120,6 @@ HOLY_WATERING_REJOIN_UI.WateringModeDropdown:OnChanged(function(value)
 
     HolyWateringRejoinSetMode(
         value
-    )
-end)
-
-HOLY_WATERING_REJOIN_UI.Toggle =
-    VulnWateringRejoinBox:AddToggle(
-        "HolyWateringRejoinEnabled",
-        {
-            Text =
-                "Auto Watering Rejoin",
-
-            Default =
-                HOLY_WATERING_REJOIN_STATE.Enabled == true,
-
-            Tooltip =
-                "Walks to the saved position, waters after arriving, and rejoins the same server.",
-        }
-    )
-
-HOLY_WATERING_REJOIN_UI.Toggle:OnChanged(function(value)
-
-    HolyWateringRejoinSetEnabled(
-        value == true
     )
 end)
 
