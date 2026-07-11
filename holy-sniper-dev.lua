@@ -10926,59 +10926,68 @@ function HolyFruitAutomationOfflineCutsceneActive()
             "OfflineAnimation"
         )
 
-    if typeof(offlineGui) ~= "Instance" then
+    if typeof(offlineGui) ~= "Instance"
+    or offlineGui:IsA("ScreenGui") ~= true
+    or offlineGui.Enabled ~= true then
 
         return false
     end
 
-    local enabled =
-        true
+    local function visibleThroughParents(object)
 
-    pcall(function()
+        if typeof(object) ~= "Instance"
+        or object:IsA("GuiObject") ~= true then
 
-        enabled =
-            offlineGui.Enabled == true
-    end)
+            return false
+        end
 
-    if enabled ~= true then
+        local current =
+            object
 
-        return false
+        while current
+        and current ~= offlineGui do
+
+            if current:IsA("GuiObject")
+            and current.Visible ~= true then
+
+                return false
+            end
+
+            current =
+                current.Parent
+        end
+
+        return current == offlineGui
     end
+
+    local bottomBar =
+        offlineGui:FindFirstChild(
+            "BottomBar"
+        )
+
+    local topBar =
+        offlineGui:FindFirstChild(
+            "TopBar"
+        )
 
     local holdLabel =
-        offlineGui:FindFirstChild(
-            "HTSLabel",
-            true
+        bottomBar
+        and bottomBar:FindFirstChild(
+            "HTSLabel"
         )
 
     local title =
-        offlineGui:FindFirstChild(
-            "Title",
-            true
+        topBar
+        and topBar:FindFirstChild(
+            "Title"
         )
 
-    local holdVisible =
-        false
-
-    local titleVisible =
-        false
-
-    pcall(function()
-
-        holdVisible =
-            holdLabel
-            and holdLabel.Visible == true
-    end)
-
-    pcall(function()
-
-        titleVisible =
-            title
-            and title.Visible == true
-    end)
-
-    return holdVisible == true
-        or titleVisible == true
+    return visibleThroughParents(
+        holdLabel
+    )
+    or visibleThroughParents(
+        title
+    )
 end
 
 function HolyFruitAutomationPickupHigherPriorityActive()
