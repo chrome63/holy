@@ -9786,8 +9786,36 @@ end
 
 function HolyFruitAutomationReadToolInfo(tool)
 
-    if typeof(tool) ~= "Instance"
-    or tool:IsA("Tool") ~= true then
+    if typeof(tool) ~= "Instance" then
+
+        return nil
+    end
+
+    local isTool =
+        tool:IsA("Tool")
+
+    local isFruitProxy =
+        tool:IsA("Configuration")
+        and tool:GetAttribute("FruitProxy") == true
+
+    if isTool ~= true
+    and isFruitProxy ~= true then
+
+        return nil
+    end
+
+    if tool:GetAttribute("HarvestedFruit") ~= true then
+
+        return nil
+    end
+
+    local fruitId =
+        tostring(
+            tool:GetAttribute("Id")
+            or ""
+        )
+
+    if fruitId == "" then
 
         return nil
     end
@@ -9807,6 +9835,12 @@ function HolyFruitAutomationReadToolInfo(tool)
 
     info.Tool =
         tool
+
+    info.FruitId =
+        fruitId
+
+    info.IsFruitProxy =
+        isFruitProxy
 
     return info
 end
@@ -10069,6 +10103,75 @@ function HolyFruitAutomationGetCallbackUpvalues(callback)
     return nil
 end
 
+function HolyFruitAutomationFindCapturedInventoryTool(
+    value,
+    visited,
+    depth
+)
+
+    if type(value) ~= "table" then
+
+        return nil
+    end
+
+    visited =
+        type(visited) == "table"
+        and visited
+        or {}
+
+    if visited[value] then
+
+        return nil
+    end
+
+    visited[value] =
+        true
+
+    local capturedTool =
+        rawget(
+            value,
+            "Tool"
+        )
+
+    if typeof(capturedTool) == "Instance"
+    and (
+        capturedTool:IsA("Tool")
+        or capturedTool:IsA("Configuration")
+    ) then
+
+        return capturedTool
+    end
+
+    depth =
+        tonumber(depth)
+        or 0
+
+    if depth <= 0 then
+
+        return nil
+    end
+
+    for _, childValue in pairs(value) do
+
+        if type(childValue) == "table" then
+
+            local result =
+                HolyFruitAutomationFindCapturedInventoryTool(
+                    childValue,
+                    visited,
+                    depth - 1
+                )
+
+            if typeof(result) == "Instance" then
+
+                return result
+            end
+        end
+    end
+
+    return nil
+end
+
 function HolyFruitAutomationReadInventoryButtonTool(button)
 
     if typeof(button) ~= "Instance"
@@ -10106,6 +10209,7 @@ function HolyFruitAutomationReadInventoryButtonTool(button)
 
             callback =
                 connection.Function
+                or connection.Callback
         end)
 
         if enabled == true
@@ -10120,19 +10224,16 @@ function HolyFruitAutomationReadInventoryButtonTool(button)
 
                 for _, upvalue in pairs(upvalues) do
 
-                    if type(upvalue) == "table" then
+                    local capturedTool =
+                        HolyFruitAutomationFindCapturedInventoryTool(
+                            upvalue,
+                            {},
+                            3
+                        )
 
-                        local capturedTool =
-                            rawget(
-                                upvalue,
-                                "Tool"
-                            )
+                    if typeof(capturedTool) == "Instance" then
 
-                        if typeof(capturedTool) == "Instance"
-                        and capturedTool:IsA("Tool") then
-
-                            return capturedTool
-                        end
+                        return capturedTool
                     end
                 end
             end
@@ -10190,7 +10291,13 @@ end
 function HolyFruitAutomationFindInventoryButton(tool)
 
     if typeof(tool) ~= "Instance"
-    or tool:IsA("Tool") ~= true then
+    or tool.Parent == nil then
+
+        return nil
+    end
+
+    if tool:IsA("Tool") ~= true
+    and tool:IsA("Configuration") ~= true then
 
         return nil
     end
@@ -10264,24 +10371,74 @@ function HolyFruitAutomationFindInventoryButton(tool)
 end
 
 function HolyFruitAutomationEquipDropTool(
-    tool,
+    source,
     character,
     humanoid
 )
 
-    if typeof(tool) ~= "Instance"
-    or tool:IsA("Tool") ~= true
-    or tool.Parent == nil
+    if typeof(source) ~= "Instance"
+    or source.Parent == nil
     or typeof(character) ~= "Instance"
     or typeof(humanoid) ~= "Instance"
     or humanoid.Health <= 0 then
 
-        return false
+        return nil
     end
 
-    if tool.Parent == character then
+    local isTool =
+        source:IsA("Tool")
 
-        return true
+    local isFruitProxy =
+        source:IsA("Configuration")
+        and source:GetAttribute("FruitProxy") == true
+
+    if isTool ~= true
+    and isFruitProxy ~= true then
+
+        return nil
+    end
+
+    local fruitId =
+        tostring(
+            source:GetAttribute("Id")
+            or ""
+        )
+
+    if fruitId == "" then
+
+        return nil
+    end
+
+    local function findEquippedTool()
+
+        if typeof(character) ~= "Instance"
+        or character.Parent == nil then
+
+            return nil
+        end
+
+        for _, child in ipairs(character:GetChildren()) do
+
+            if child:IsA("Tool")
+            and child:GetAttribute("HarvestedFruit") == true
+            and tostring(
+                child:GetAttribute("Id")
+                or ""
+            ) == fruitId then
+
+                return child
+            end
+        end
+
+        return nil
+    end
+
+    local alreadyEquipped =
+        findEquippedTool()
+
+    if alreadyEquipped then
+
+        return alreadyEquipped
     end
 
     pcall(function()
@@ -10293,14 +10450,9 @@ function HolyFruitAutomationEquipDropTool(
         0.15
     )
 
-    if tool.Parent == nil then
-
-        return false
-    end
-
     local inventoryButton =
         HolyFruitAutomationFindInventoryButton(
-            tool
+            source
         )
 
     local inventoryActivationSucceeded =
@@ -10316,19 +10468,21 @@ function HolyFruitAutomationEquipDropTool(
             )
     end
 
-    if inventoryActivationSucceeded ~= true then
+    if inventoryActivationSucceeded ~= true
+    and isTool == true
+    and source.Parent ~= nil then
 
         pcall(function()
 
             humanoid:EquipTool(
-                tool
+                source
             )
         end)
     end
 
     local equipDeadline =
         os.clock()
-        + 4
+        + 5
 
     local fallbackAt =
         os.clock()
@@ -10340,17 +10494,17 @@ function HolyFruitAutomationEquipDropTool(
     while os.clock() < equipDeadline
     and HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits == true do
 
-        if tool.Parent == character then
+        local equippedTool =
+            findEquippedTool()
 
-            return true
-        end
+        if equippedTool then
 
-        if tool.Parent == nil then
-
-            return false
+            return equippedTool
         end
 
         if fallbackUsed ~= true
+        and isTool == true
+        and source.Parent ~= nil
         and os.clock() >= fallbackAt then
 
             fallbackUsed =
@@ -10359,7 +10513,7 @@ function HolyFruitAutomationEquipDropTool(
             pcall(function()
 
                 humanoid:EquipTool(
-                    tool
+                    source
                 )
             end)
         end
@@ -10369,14 +10523,26 @@ function HolyFruitAutomationEquipDropTool(
         )
     end
 
-    return tool.Parent == character
+    return findEquippedTool()
 end
 
 function HolyFruitAutomationDropTool(tool)
 
     if typeof(tool) ~= "Instance"
-    or tool:IsA("Tool") ~= true
     or tool.Parent == nil then
+
+        return false
+    end
+
+    local isTool =
+        tool:IsA("Tool")
+
+    local isFruitProxy =
+        tool:IsA("Configuration")
+        and tool:GetAttribute("FruitProxy") == true
+
+    if isTool ~= true
+    and isFruitProxy ~= true then
 
         return false
     end
@@ -10482,11 +10648,24 @@ function HolyFruitAutomationDropTool(tool)
         return false
     end
 
-    if HolyFruitAutomationEquipDropTool(
-        tool,
-        character,
-        humanoid
-    ) ~= true then
+    local equippedTool =
+        HolyFruitAutomationEquipDropTool(
+            tool,
+            character,
+            humanoid
+        )
+
+    if typeof(equippedTool) ~= "Instance"
+    or equippedTool:IsA("Tool") ~= true
+    or equippedTool.Parent ~= character then
+
+        return false
+    end
+
+    if tostring(
+        equippedTool:GetAttribute("Id")
+        or ""
+    ) ~= fruitId then
 
         return false
     end
@@ -10498,7 +10677,7 @@ function HolyFruitAutomationDropTool(tool)
     while os.clock() < equipSettledAt
     and HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits == true do
 
-        if tool.Parent ~= character then
+        if equippedTool.Parent ~= character then
 
             return false
         end
@@ -10509,7 +10688,7 @@ function HolyFruitAutomationDropTool(tool)
     end
 
     if HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits ~= true
-    or tool.Parent ~= character then
+    or equippedTool.Parent ~= character then
 
         return false
     end
