@@ -10030,7 +10030,96 @@ end
 function HolyFruitAutomationDropTool(tool)
 
     if typeof(tool) ~= "Instance"
-    or tool:IsA("Tool") ~= true then
+    or tool:IsA("Tool") ~= true
+    or tool.Parent == nil then
+
+        return false
+    end
+
+    if tool:GetAttribute(
+        "HarvestedFruit"
+    ) ~= true then
+
+        return false
+    end
+
+    local fruitId =
+        tostring(
+            tool:GetAttribute(
+                "Id"
+            )
+            or ""
+        )
+
+    if fruitId == "" then
+        return false
+    end
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    local dropPacket =
+        runtime.DropPacket
+
+    if type(dropPacket) ~= "table"
+    or type(dropPacket.Fire) ~= "function" then
+
+        runtime.DropPacket =
+            nil
+
+        local sharedModules =
+            ReplicatedStorage:FindFirstChild(
+                "SharedModules"
+            )
+
+        local networkingModule =
+            sharedModules
+            and sharedModules:FindFirstChild(
+                "Networking"
+            )
+
+        if typeof(networkingModule) ~= "Instance"
+        or networkingModule:IsA("ModuleScript") ~= true then
+
+            return false
+        end
+
+        local requireSuccess,
+            networking =
+            pcall(function()
+
+                return require(
+                    networkingModule
+                )
+            end)
+
+        if requireSuccess ~= true
+        or type(networking) ~= "table" then
+
+            return false
+        end
+
+        dropPacket =
+            type(networking.DroppedItem) == "table"
+            and networking.DroppedItem.RequestDrop
+            or nil
+
+        if type(dropPacket) ~= "table"
+        or type(dropPacket.Fire) ~= "function" then
+
+            return false
+        end
+
+        runtime.DropPacket =
+            dropPacket
+    end
+
+    local droppedFolder =
+        workspace:FindFirstChild(
+            "DroppedItems"
+        )
+
+    if typeof(droppedFolder) ~= "Instance" then
 
         return false
     end
@@ -10042,7 +10131,8 @@ function HolyFruitAutomationDropTool(tool)
         HolyFruitAutomationGetHumanoid()
 
     if typeof(character) ~= "Instance"
-    or typeof(humanoid) ~= "Instance" then
+    or typeof(humanoid) ~= "Instance"
+    or humanoid.Health <= 0 then
 
         return false
     end
@@ -10051,48 +10141,182 @@ function HolyFruitAutomationDropTool(tool)
 
         pcall(function()
 
+            humanoid:UnequipTools()
+        end)
+
+        task.wait(
+            0.15
+        )
+
+        if tool.Parent == nil then
+            return false
+        end
+
+        pcall(function()
+
             humanoid:EquipTool(
                 tool
             )
         end)
+    end
+
+    local equipDeadline =
+        os.clock()
+        + 3
+
+    while os.clock() < equipDeadline
+    and HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits == true do
+
+        if tool.Parent == character then
+            break
+        end
+
+        if tool.Parent == nil then
+            return false
+        end
 
         task.wait(
-            0.12
+            0.05
         )
     end
 
-    pcall(function()
+    if tool.Parent ~= character then
 
-        tool.CanBeDropped =
-            true
-    end)
-
-    HolyFruitAutomationPressBackspace()
-
-    task.wait(
-        0.25
-    )
-
-    if HolyFruitAutomationToolLeftInventory(
-        tool
-    ) == true then
-
-        return true
+        return false
     end
 
-    pcall(function()
+    local equipSettledAt =
+        os.clock()
+        + 0.75
 
-        tool.Parent =
-            workspace
-    end)
+    while os.clock() < equipSettledAt
+    and HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits == true do
 
-    task.wait(
-        0.10
-    )
+        if tool.Parent ~= character then
 
-    return HolyFruitAutomationToolLeftInventory(
-        tool
-    ) == true
+            return false
+        end
+
+        task.wait(
+            0.05
+        )
+    end
+
+    if HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits ~= true
+    or tool.Parent ~= character then
+
+        return false
+    end
+
+    local addedItems =
+        {}
+
+    local childAddedConnection =
+        droppedFolder.ChildAdded:Connect(function(item)
+
+            table.insert(
+                addedItems,
+                item
+            )
+        end)
+
+    local packetSuccess =
+        pcall(function()
+
+            dropPacket:Fire(
+                "HarvestedFruits",
+                fruitId
+            )
+        end)
+
+    if packetSuccess ~= true then
+
+        childAddedConnection:Disconnect()
+
+        runtime.DropPacket =
+            nil
+
+        return false
+    end
+
+    local confirmationDeadline =
+        os.clock()
+        + 5
+
+    local confirmedItem =
+        nil
+
+    while os.clock() < confirmationDeadline
+    and HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits == true do
+
+        for _, item in ipairs(addedItems) do
+
+            if typeof(item) == "Instance" then
+
+                local itemCategory =
+                    tostring(
+                        item:GetAttribute(
+                            "ItemCategory"
+                        )
+                        or ""
+                    )
+
+                local itemName =
+                    tostring(
+                        item:GetAttribute(
+                            "ItemName"
+                        )
+                        or ""
+                    )
+
+                local droppedBy =
+                    tonumber(
+                        item:GetAttribute(
+                            "DroppedBy"
+                        )
+                    )
+
+                if itemCategory == "HarvestedFruits"
+                and itemName == fruitId
+                and droppedBy == LocalPlayer.UserId then
+
+                    confirmedItem =
+                        item
+
+                    break
+                end
+            end
+        end
+
+        if confirmedItem then
+            break
+        end
+
+        task.wait(
+            0.05
+        )
+    end
+
+    childAddedConnection:Disconnect()
+
+    if not confirmedItem then
+
+        return false
+    end
+
+    local nextDropAt =
+        os.clock()
+        + 0.75
+
+    while os.clock() < nextDropAt
+    and HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits == true do
+
+        task.wait(
+            0.05
+        )
+    end
+
+    return true
 end
 
 function HolyFruitAutomationTryDropInfo(info)
