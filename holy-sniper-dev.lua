@@ -10027,6 +10027,351 @@ function HolyFruitAutomationToolLeftInventory(tool)
     return true
 end
 
+function HolyFruitAutomationGetCallbackUpvalues(callback)
+
+    if type(callback) ~= "function" then
+        return nil
+    end
+
+    if type(getupvalues) == "function" then
+
+        local success,
+            values =
+            pcall(
+                getupvalues,
+                callback
+            )
+
+        if success == true
+        and type(values) == "table" then
+
+            return values
+        end
+    end
+
+    if type(debug) == "table"
+    and type(debug.getupvalues) == "function" then
+
+        local success,
+            values =
+            pcall(
+                debug.getupvalues,
+                callback
+            )
+
+        if success == true
+        and type(values) == "table" then
+
+            return values
+        end
+    end
+
+    return nil
+end
+
+function HolyFruitAutomationReadInventoryButtonTool(button)
+
+    if typeof(button) ~= "Instance"
+    or button:IsA("GuiButton") ~= true
+    or type(getconnections) ~= "function" then
+
+        return nil
+    end
+
+    local connectionSuccess,
+        connections =
+        pcall(
+            getconnections,
+            button.MouseButton1Click
+        )
+
+    if connectionSuccess ~= true
+    or type(connections) ~= "table" then
+
+        return nil
+    end
+
+    for _, connection in ipairs(connections) do
+
+        local enabled =
+            true
+
+        local callback =
+            nil
+
+        pcall(function()
+
+            enabled =
+                connection.Enabled ~= false
+
+            callback =
+                connection.Function
+        end)
+
+        if enabled == true
+        and type(callback) == "function" then
+
+            local upvalues =
+                HolyFruitAutomationGetCallbackUpvalues(
+                    callback
+                )
+
+            if type(upvalues) == "table" then
+
+                for _, upvalue in pairs(upvalues) do
+
+                    if type(upvalue) == "table" then
+
+                        local capturedTool =
+                            rawget(
+                                upvalue,
+                                "Tool"
+                            )
+
+                        if typeof(capturedTool) == "Instance"
+                        and capturedTool:IsA("Tool") then
+
+                            return capturedTool
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function HolyFruitAutomationGetInventoryGrid()
+
+    local playerGui =
+        LocalPlayer:FindFirstChild(
+            "PlayerGui"
+        )
+
+    local backpackGui =
+        playerGui
+        and playerGui:FindFirstChild(
+            "BackpackGui"
+        )
+
+    local backpackFrame =
+        backpackGui
+        and backpackGui:FindFirstChild(
+            "Backpack"
+        )
+
+    local inventory =
+        backpackFrame
+        and backpackFrame:FindFirstChild(
+            "Inventory"
+        )
+
+    local scrollingFrame =
+        inventory
+        and inventory:FindFirstChild(
+            "ScrollingFrame"
+        )
+
+    local grid =
+        scrollingFrame
+        and scrollingFrame:FindFirstChild(
+            "UIGridFrame"
+        )
+
+    if typeof(grid) == "Instance" then
+
+        return grid
+    end
+
+    return nil
+end
+
+function HolyFruitAutomationFindInventoryButton(tool)
+
+    if typeof(tool) ~= "Instance"
+    or tool:IsA("Tool") ~= true then
+
+        return nil
+    end
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    runtime.InventoryButtonCache =
+        type(runtime.InventoryButtonCache) == "table"
+        and runtime.InventoryButtonCache
+        or setmetatable(
+            {},
+            {
+                __mode =
+                    "k",
+            }
+        )
+
+    local cachedButton =
+        runtime.InventoryButtonCache[tool]
+
+    if typeof(cachedButton) == "Instance"
+    and cachedButton.Parent ~= nil
+    and HolyFruitAutomationReadInventoryButtonTool(
+        cachedButton
+    ) == tool then
+
+        return cachedButton
+    end
+
+    runtime.InventoryButtonCache[tool] =
+        nil
+
+    local grid =
+        HolyFruitAutomationGetInventoryGrid()
+
+    if typeof(grid) ~= "Instance" then
+
+        return nil
+    end
+
+    local matchedButton =
+        nil
+
+    for _, object in ipairs(
+        grid:GetDescendants()
+    ) do
+
+        if object:IsA("GuiButton") then
+
+            local capturedTool =
+                HolyFruitAutomationReadInventoryButtonTool(
+                    object
+                )
+
+            if typeof(capturedTool) == "Instance" then
+
+                runtime.InventoryButtonCache[capturedTool] =
+                    object
+
+                if capturedTool == tool then
+
+                    matchedButton =
+                        object
+                end
+            end
+        end
+    end
+
+    return matchedButton
+end
+
+function HolyFruitAutomationEquipDropTool(
+    tool,
+    character,
+    humanoid
+)
+
+    if typeof(tool) ~= "Instance"
+    or tool:IsA("Tool") ~= true
+    or tool.Parent == nil
+    or typeof(character) ~= "Instance"
+    or typeof(humanoid) ~= "Instance"
+    or humanoid.Health <= 0 then
+
+        return false
+    end
+
+    if tool.Parent == character then
+
+        return true
+    end
+
+    pcall(function()
+
+        humanoid:UnequipTools()
+    end)
+
+    task.wait(
+        0.15
+    )
+
+    if tool.Parent == nil then
+
+        return false
+    end
+
+    local inventoryButton =
+        HolyFruitAutomationFindInventoryButton(
+            tool
+        )
+
+    local inventoryActivationSucceeded =
+        false
+
+    if typeof(inventoryButton) == "Instance"
+    and type(firesignal) == "function" then
+
+        inventoryActivationSucceeded =
+            pcall(
+                firesignal,
+                inventoryButton.MouseButton1Click
+            )
+    end
+
+    if inventoryActivationSucceeded ~= true then
+
+        pcall(function()
+
+            humanoid:EquipTool(
+                tool
+            )
+        end)
+    end
+
+    local equipDeadline =
+        os.clock()
+        + 4
+
+    local fallbackAt =
+        os.clock()
+        + 2
+
+    local fallbackUsed =
+        false
+
+    while os.clock() < equipDeadline
+    and HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits == true do
+
+        if tool.Parent == character then
+
+            return true
+        end
+
+        if tool.Parent == nil then
+
+            return false
+        end
+
+        if fallbackUsed ~= true
+        and os.clock() >= fallbackAt then
+
+            fallbackUsed =
+                true
+
+            pcall(function()
+
+                humanoid:EquipTool(
+                    tool
+                )
+            end)
+        end
+
+        task.wait(
+            0.05
+        )
+    end
+
+    return tool.Parent == character
+end
+
 function HolyFruitAutomationDropTool(tool)
 
     if typeof(tool) ~= "Instance"
@@ -10137,50 +10482,11 @@ function HolyFruitAutomationDropTool(tool)
         return false
     end
 
-    if tool.Parent ~= character then
-
-        pcall(function()
-
-            humanoid:UnequipTools()
-        end)
-
-        task.wait(
-            0.15
-        )
-
-        if tool.Parent == nil then
-            return false
-        end
-
-        pcall(function()
-
-            humanoid:EquipTool(
-                tool
-            )
-        end)
-    end
-
-    local equipDeadline =
-        os.clock()
-        + 3
-
-    while os.clock() < equipDeadline
-    and HOLY_FRUIT_AUTOMATION_STATE.AutoDropFruits == true do
-
-        if tool.Parent == character then
-            break
-        end
-
-        if tool.Parent == nil then
-            return false
-        end
-
-        task.wait(
-            0.05
-        )
-    end
-
-    if tool.Parent ~= character then
+    if HolyFruitAutomationEquipDropTool(
+        tool,
+        character,
+        humanoid
+    ) ~= true then
 
         return false
     end
