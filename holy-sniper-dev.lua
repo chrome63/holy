@@ -1435,6 +1435,88 @@ HOLY_FARM_PAGE_STATE = {
     Mode = "Collect",
 }
 
+if type(HOLY_AUTO_TROWEL_RUNTIME) == "table" then
+
+    HOLY_AUTO_TROWEL_RUNTIME.Token =
+        nil
+
+    HOLY_AUTO_TROWEL_RUNTIME.Running =
+        false
+
+    for _, connectionName in ipairs({
+        "ClickConnection",
+        "RejectionConnection",
+    }) do
+
+        local connection =
+            HOLY_AUTO_TROWEL_RUNTIME[connectionName]
+
+        if connection
+        and type(connection.Disconnect) == "function" then
+
+            pcall(function()
+
+                connection:Disconnect()
+            end)
+        end
+    end
+
+    local marker =
+        HOLY_AUTO_TROWEL_RUNTIME.Marker
+
+    if typeof(marker) == "Instance" then
+
+        pcall(function()
+
+            marker:Destroy()
+        end)
+    end
+end
+
+HOLY_AUTO_TROWEL_STATE = {
+    PositionMethod = "Click Position",
+    TargetLocal = nil,
+
+    SelectedPlants = {},
+
+    MoveAmount = 1,
+
+    Layout = "Exact Point",
+    Spacing = 0.75,
+}
+
+HOLY_AUTO_TROWEL_RUNTIME = {
+    Running = false,
+    Token = nil,
+
+    ClickConnection = nil,
+    RejectionConnection = nil,
+
+    Marker = nil,
+    MarkerToken = 0,
+
+    UpdatingUI = false,
+
+    DisplayToPlant = {},
+    PlantToDisplay = {},
+
+    MovePacket = nil,
+    RejectionPacket = nil,
+}
+
+HOLY_AUTO_TROWEL_UI = {
+    PositionMethodDropdown = nil,
+    PositionActions = nil,
+
+    PlantsDropdown = nil,
+    MoveAmountInput = nil,
+
+    LayoutDropdown = nil,
+    SpacingInput = nil,
+
+    RunActions = nil,
+}
+
 if type(HOLY_FRUIT_AUTOMATION_RUNTIME) == "table" then
 
     HOLY_FRUIT_AUTOMATION_RUNTIME.DropToken =
@@ -4770,6 +4852,11 @@ function HolySaveFarmSettings()
                     HOLY_FARM_STATE.WeightThresholdKg
                 )
             ),
+
+        AutoTrowel =
+            type(HolyAutoTrowelGetSettingsData) == "function"
+            and HolyAutoTrowelGetSettingsData()
+            or nil,
     }
 
     local encodeOk,
@@ -4892,6 +4979,13 @@ function HolyLoadFarmSettings()
                 or "0"
             )
         )
+
+    if type(HolyAutoTrowelLoadSettingsData) == "function" then
+
+        HolyAutoTrowelLoadSettingsData(
+            data.AutoTrowel
+        )
+    end
 
     return true
 end
@@ -8171,6 +8265,2049 @@ function HolyFarmSetAutoCollectFruits(value)
     return HolyFarmStopAutoCollect(
         "toggle off"
     )
+end
+
+--==================================================
+-- [2.125] FARM / AUTO TROWEL CORE
+--==================================================
+
+function HolyAutoTrowelNormalizePositionMethod(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text:lower():find(
+        "standing",
+        1,
+        true
+    ) then
+
+        return "Standing Position"
+    end
+
+    return "Click Position"
+end
+
+function HolyAutoTrowelNormalizeLayout(value)
+
+    local text =
+        HolyCleanText(
+            value
+        )
+
+    if text:lower():find(
+        "spiral",
+        1,
+        true
+    ) then
+
+        return "Compact Spiral"
+    end
+
+    return "Exact Point"
+end
+
+function HolyAutoTrowelReadMoveAmount(value)
+
+    local amount =
+        math.floor(
+            tonumber(value)
+            or 1
+        )
+
+    return math.clamp(
+        amount,
+        0,
+        100000
+    )
+end
+
+function HolyAutoTrowelReadSpacing(value)
+
+    return math.clamp(
+        tonumber(value)
+        or 0.75,
+        0,
+        25
+    )
+end
+
+function HolyAutoTrowelNormalizeSelection(value)
+
+    local raw =
+        HolyShopSelectionArray(
+            value
+        )
+
+    local runtime =
+        HOLY_AUTO_TROWEL_RUNTIME
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    for _, selectedValue in ipairs(raw) do
+
+        local displayText =
+            HolyCleanText(
+                selectedValue
+            )
+
+        local plantName =
+            runtime.DisplayToPlant[displayText]
+            or displayText:gsub(
+                "%s+%(%d+%)$",
+                ""
+            )
+
+        plantName =
+            HolyCleanText(
+                plantName
+            )
+
+        if plantName:lower() == "all plants" then
+
+            plantName =
+                "All Plants"
+        end
+
+        if plantName ~= ""
+        and seen[plantName] ~= true then
+
+            seen[plantName] =
+                true
+
+            table.insert(
+                output,
+                plantName
+            )
+        end
+    end
+
+    table.sort(output, function(a, b)
+
+        if a == "All Plants" then
+            return true
+        end
+
+        if b == "All Plants" then
+            return false
+        end
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
+function HolyAutoTrowelGetSettingsData()
+
+    local state =
+        HOLY_AUTO_TROWEL_STATE
+
+    local targetLocal =
+        nil
+
+    if type(state.TargetLocal) == "table" then
+
+        local x =
+            tonumber(state.TargetLocal.X)
+
+        local y =
+            tonumber(state.TargetLocal.Y)
+
+        local z =
+            tonumber(state.TargetLocal.Z)
+
+        if x and y and z then
+
+            targetLocal = {
+                X = x,
+                Y = y,
+                Z = z,
+            }
+        end
+    end
+
+    return {
+        PositionMethod =
+            HolyAutoTrowelNormalizePositionMethod(
+                state.PositionMethod
+            ),
+
+        TargetLocal =
+            targetLocal,
+
+        SelectedPlants =
+            HolyAutoTrowelNormalizeSelection(
+                state.SelectedPlants
+            ),
+
+        MoveAmount =
+            HolyAutoTrowelReadMoveAmount(
+                state.MoveAmount
+            ),
+
+        Layout =
+            HolyAutoTrowelNormalizeLayout(
+                state.Layout
+            ),
+
+        Spacing =
+            HolyAutoTrowelReadSpacing(
+                state.Spacing
+            ),
+    }
+end
+
+function HolyAutoTrowelLoadSettingsData(data)
+
+    if type(data) ~= "table" then
+        return false
+    end
+
+    local state =
+        HOLY_AUTO_TROWEL_STATE
+
+    state.PositionMethod =
+        HolyAutoTrowelNormalizePositionMethod(
+            data.PositionMethod
+        )
+
+    state.SelectedPlants =
+        HolyAutoTrowelNormalizeSelection(
+            data.SelectedPlants
+        )
+
+    state.MoveAmount =
+        HolyAutoTrowelReadMoveAmount(
+            data.MoveAmount
+        )
+
+    state.Layout =
+        HolyAutoTrowelNormalizeLayout(
+            data.Layout
+        )
+
+    state.Spacing =
+        HolyAutoTrowelReadSpacing(
+            data.Spacing
+        )
+
+    local targetLocal =
+        data.TargetLocal
+
+    if type(targetLocal) == "table" then
+
+        local x =
+            tonumber(targetLocal.X)
+
+        local y =
+            tonumber(targetLocal.Y)
+
+        local z =
+            tonumber(targetLocal.Z)
+
+        if x and y and z then
+
+            state.TargetLocal = {
+                X = x,
+                Y = y,
+                Z = z,
+            }
+
+        else
+
+            state.TargetLocal =
+                nil
+        end
+
+    else
+
+        state.TargetLocal =
+            nil
+    end
+
+    return true
+end
+
+function HolyAutoTrowelDisconnect(connection)
+
+    if connection
+    and type(connection.Disconnect) == "function" then
+
+        pcall(function()
+
+            connection:Disconnect()
+        end)
+    end
+end
+
+function HolyAutoTrowelGetPlotAnchor(plot)
+
+    if typeof(plot) ~= "Instance" then
+        return nil
+    end
+
+    local direct =
+        plot:FindFirstChild(
+            "GardenZonePart",
+            true
+        )
+
+    if typeof(direct) == "Instance"
+    and direct:IsA("BasePart") then
+
+        return direct
+    end
+
+    for _, descendant in ipairs(plot:GetDescendants()) do
+
+        if descendant:IsA("BasePart")
+        and descendant.Name == "GardenZonePart" then
+
+            return descendant
+        end
+    end
+
+    return nil
+end
+
+function HolyAutoTrowelPointInsideAnchor(point, anchor)
+
+    if typeof(point) ~= "Vector3"
+    or typeof(anchor) ~= "Instance"
+    or anchor:IsA("BasePart") ~= true then
+
+        return false
+    end
+
+    local localPoint =
+        anchor.CFrame:PointToObjectSpace(
+            point
+        )
+
+    local halfX =
+        math.abs(anchor.Size.X) * 0.5
+
+    local halfZ =
+        math.abs(anchor.Size.Z) * 0.5
+
+    return math.abs(localPoint.X) <= halfX
+        and math.abs(localPoint.Z) <= halfZ
+end
+
+function HolyAutoTrowelResolveGroundPoint(point)
+
+    if typeof(point) ~= "Vector3" then
+
+        return nil,
+            "Invalid position."
+    end
+
+    local plot =
+        HolyFarmResolveOwnPlot(
+            false
+        )
+
+    if typeof(plot) ~= "Instance" then
+
+        return nil,
+            "Your garden plot is not ready."
+    end
+
+    local anchor =
+        HolyAutoTrowelGetPlotAnchor(
+            plot
+        )
+
+    if typeof(anchor) ~= "Instance" then
+
+        return nil,
+            "GardenZonePart was not found."
+    end
+
+    if HolyAutoTrowelPointInsideAnchor(
+        point,
+        anchor
+    ) ~= true then
+
+        return nil,
+            "The selected position is outside your garden."
+    end
+
+    local filter =
+        {}
+
+    local character =
+        LocalPlayer.Character
+
+    if typeof(character) == "Instance" then
+
+        table.insert(
+            filter,
+            character
+        )
+    end
+
+    local plantsFolder =
+        plot:FindFirstChild(
+            "Plants"
+        )
+
+    if typeof(plantsFolder) == "Instance" then
+
+        table.insert(
+            filter,
+            plantsFolder
+        )
+    end
+
+    table.insert(
+        filter,
+        anchor
+    )
+
+    local marker =
+        HOLY_AUTO_TROWEL_RUNTIME.Marker
+
+    if typeof(marker) == "Instance" then
+
+        table.insert(
+            filter,
+            marker
+        )
+    end
+
+    local params =
+        RaycastParams.new()
+
+    params.FilterType =
+        Enum.RaycastFilterType.Exclude
+
+    params.FilterDescendantsInstances =
+        filter
+
+    params.IgnoreWater =
+        true
+
+    local rayStart =
+        Vector3.new(
+            point.X,
+            anchor.Position.Y
+                + math.abs(anchor.Size.Y) * 0.5
+                + 100,
+            point.Z
+        )
+
+    local result =
+        workspace:Raycast(
+            rayStart,
+            Vector3.new(
+                0,
+                -1000,
+                0
+            ),
+            params
+        )
+
+    if not result then
+
+        return nil,
+            "Could not find the garden floor."
+    end
+
+    if result.Instance:IsDescendantOf(
+        plot
+    ) ~= true then
+
+        return nil,
+            "The selected position did not hit your garden floor."
+    end
+
+    local groundPoint =
+        result.Position
+
+    if HolyAutoTrowelPointInsideAnchor(
+        groundPoint,
+        anchor
+    ) ~= true then
+
+        return nil,
+            "The selected position is outside your garden."
+    end
+
+    return groundPoint,
+        plot,
+        anchor
+end
+
+function HolyAutoTrowelClearMarker()
+
+    local runtime =
+        HOLY_AUTO_TROWEL_RUNTIME
+
+    runtime.MarkerToken =
+        (
+            tonumber(runtime.MarkerToken)
+            or 0
+        )
+        + 1
+
+    local marker =
+        runtime.Marker
+
+    runtime.Marker =
+        nil
+
+    if typeof(marker) == "Instance" then
+
+        pcall(function()
+
+            marker:Destroy()
+        end)
+    end
+end
+
+function HolyAutoTrowelShowMarker(point)
+
+    HolyAutoTrowelClearMarker()
+
+    if typeof(point) ~= "Vector3" then
+        return false
+    end
+
+    local runtime =
+        HOLY_AUTO_TROWEL_RUNTIME
+
+    local marker =
+        Instance.new(
+            "Part"
+        )
+
+    marker.Name =
+        "HolyAutoTrowelTarget"
+
+    marker.Shape =
+        Enum.PartType.Cylinder
+
+    marker.Size =
+        Vector3.new(
+            0.12,
+            2.4,
+            2.4
+        )
+
+    marker.CFrame =
+        CFrame.new(
+            point
+            + Vector3.new(
+                0,
+                0.08,
+                0
+            )
+        )
+        * CFrame.Angles(
+            0,
+            0,
+            math.rad(90)
+        )
+
+    marker.Anchored =
+        true
+
+    marker.CanCollide =
+        false
+
+    marker.CanTouch =
+        false
+
+    marker.CanQuery =
+        false
+
+    marker.CastShadow =
+        false
+
+    marker.Material =
+        Enum.Material.Neon
+
+    marker.Color =
+        Color3.fromRGB(
+            180,
+            120,
+            255
+        )
+
+    marker.Transparency =
+        0.22
+
+    marker.Parent =
+        workspace
+
+    runtime.Marker =
+        marker
+
+    runtime.MarkerToken =
+        (
+            tonumber(runtime.MarkerToken)
+            or 0
+        )
+        + 1
+
+    local markerToken =
+        runtime.MarkerToken
+
+    task.delay(4, function()
+
+        if runtime.MarkerToken == markerToken
+        and runtime.Marker == marker then
+
+            HolyAutoTrowelClearMarker()
+        end
+    end)
+
+    return true
+end
+
+function HolyAutoTrowelGetWorldTarget()
+
+    local targetLocal =
+        HOLY_AUTO_TROWEL_STATE.TargetLocal
+
+    if type(targetLocal) ~= "table" then
+
+        return nil,
+            "Set a position first."
+    end
+
+    local x =
+        tonumber(targetLocal.X)
+
+    local y =
+        tonumber(targetLocal.Y)
+
+    local z =
+        tonumber(targetLocal.Z)
+
+    if not x or not y or not z then
+
+        return nil,
+            "The saved position is invalid."
+    end
+
+    local plot =
+        HolyFarmResolveOwnPlot(
+            false
+        )
+
+    if typeof(plot) ~= "Instance" then
+
+        return nil,
+            "Your garden plot is not ready."
+    end
+
+    local anchor =
+        HolyAutoTrowelGetPlotAnchor(
+            plot
+        )
+
+    if typeof(anchor) ~= "Instance" then
+
+        return nil,
+            "GardenZonePart was not found."
+    end
+
+    local worldPoint =
+        anchor.CFrame:PointToWorldSpace(
+            Vector3.new(
+                x,
+                y,
+                z
+            )
+        )
+
+    if HolyAutoTrowelPointInsideAnchor(
+        worldPoint,
+        anchor
+    ) ~= true then
+
+        return nil,
+            "The saved position is outside your garden."
+    end
+
+    return worldPoint,
+        plot,
+        anchor
+end
+
+function HolyAutoTrowelSetWorldPosition(point)
+
+    local groundPoint,
+        plot,
+        anchor =
+        HolyAutoTrowelResolveGroundPoint(
+            point
+        )
+
+    if typeof(groundPoint) ~= "Vector3" then
+
+        HolyNotify(
+            "Auto Trowel",
+            tostring(plot),
+            4
+        )
+
+        return false
+    end
+
+    local localPoint =
+        anchor.CFrame:PointToObjectSpace(
+            groundPoint
+        )
+
+    HOLY_AUTO_TROWEL_STATE.TargetLocal = {
+        X = localPoint.X,
+        Y = localPoint.Y,
+        Z = localPoint.Z,
+    }
+
+    HolySaveFarmSettings()
+
+    HolyAutoTrowelShowMarker(
+        groundPoint
+    )
+
+    HolyNotify(
+        "Auto Trowel",
+        "Trowel position saved.",
+        3
+    )
+
+    return true
+end
+
+function HolyAutoTrowelCancelClickPosition(notifyUser)
+
+    local runtime =
+        HOLY_AUTO_TROWEL_RUNTIME
+
+    HolyAutoTrowelDisconnect(
+        runtime.ClickConnection
+    )
+
+    runtime.ClickConnection =
+        nil
+
+    if notifyUser == true then
+
+        HolyNotify(
+            "Auto Trowel",
+            "Position selection cancelled.",
+            3
+        )
+    end
+
+    return true
+end
+
+function HolyAutoTrowelArmClickPosition()
+
+    HolyAutoTrowelCancelClickPosition(
+        false
+    )
+
+    local runtime =
+        HOLY_AUTO_TROWEL_RUNTIME
+
+    local mouse =
+        LocalPlayer:GetMouse()
+
+    HolyNotify(
+        "Auto Trowel",
+        "Click inside your garden. Right-click or press Escape to cancel.",
+        5
+    )
+
+    runtime.ClickConnection =
+        UserInputService.InputBegan:Connect(function(input, gameProcessed)
+
+            if input.KeyCode == Enum.KeyCode.Escape
+            or input.UserInputType == Enum.UserInputType.MouseButton2 then
+
+                HolyAutoTrowelCancelClickPosition(
+                    true
+                )
+
+                return
+            end
+
+            if gameProcessed == true then
+                return
+            end
+
+            if input.UserInputType
+                ~= Enum.UserInputType.MouseButton1 then
+
+                return
+            end
+
+            local hit =
+                mouse.Hit
+
+            if typeof(hit) ~= "CFrame" then
+
+                HolyNotify(
+                    "Auto Trowel",
+                    "Could not read the clicked position.",
+                    4
+                )
+
+                return
+            end
+
+            local saved =
+                HolyAutoTrowelSetWorldPosition(
+                    hit.Position
+                )
+
+            if saved == true then
+
+                HolyAutoTrowelCancelClickPosition(
+                    false
+                )
+            end
+        end)
+
+    return true
+end
+
+function HolyAutoTrowelSetStandingPosition()
+
+    local character =
+        LocalPlayer.Character
+
+    local root =
+        character
+        and character:FindFirstChild(
+            "HumanoidRootPart"
+        )
+
+    if typeof(root) ~= "Instance" then
+
+        HolyNotify(
+            "Auto Trowel",
+            "Your character is not ready.",
+            4
+        )
+
+        return false
+    end
+
+    return HolyAutoTrowelSetWorldPosition(
+        root.Position
+    )
+end
+
+function HolyAutoTrowelUseSelectedPositionMethod()
+
+    local method =
+        HolyAutoTrowelNormalizePositionMethod(
+            HOLY_AUTO_TROWEL_STATE.PositionMethod
+        )
+
+    if method == "Standing Position" then
+
+        HolyAutoTrowelCancelClickPosition(
+            false
+        )
+
+        return HolyAutoTrowelSetStandingPosition()
+    end
+
+    return HolyAutoTrowelArmClickPosition()
+end
+
+function HolyAutoTrowelClearPosition()
+
+    HolyAutoTrowelCancelClickPosition(
+        false
+    )
+
+    HolyAutoTrowelClearMarker()
+
+    HOLY_AUTO_TROWEL_STATE.TargetLocal =
+        nil
+
+    HolySaveFarmSettings()
+
+    HolyNotify(
+        "Auto Trowel",
+        "Saved position cleared.",
+        3
+    )
+
+    return true
+end
+
+function HolyAutoTrowelOwnsPlant(plant, plantsFolder)
+
+    if typeof(plant) ~= "Instance"
+    or plant:IsA("Model") ~= true
+    or plant.Parent ~= plantsFolder then
+
+        return false
+    end
+
+    local ownUserId =
+        tostring(
+            LocalPlayer.UserId
+        )
+
+    local plantUserId =
+        plant:GetAttribute(
+            "UserId"
+        )
+
+    if plantUserId ~= nil
+    and tostring(plantUserId) == ownUserId then
+
+        return true
+    end
+
+    local prefix =
+        ownUserId
+        .. "_"
+
+    return tostring(plant.Name):sub(
+        1,
+        #prefix
+    ) == prefix
+end
+
+function HolyAutoTrowelReadPlantType(plant)
+
+    local plantName =
+        HolyFarmReadAttribute(
+            plant,
+            {
+                "SeedName",
+                "PlantName",
+                "CropName",
+                "DisplayName",
+            }
+        )
+
+    return HolyFarmCleanPlantName(
+        plantName
+    )
+end
+
+function HolyAutoTrowelBuildDropdownValues()
+
+    local runtime =
+        HOLY_AUTO_TROWEL_RUNTIME
+
+    runtime.DisplayToPlant =
+        {
+            ["All Plants"] =
+                "All Plants",
+        }
+
+    runtime.PlantToDisplay =
+        {
+            ["All Plants"] =
+                "All Plants",
+        }
+
+    local values = {
+        "All Plants",
+    }
+
+    local plot =
+        HolyFarmResolveOwnPlot(
+            false
+        )
+
+    local plantsFolder =
+        plot
+        and plot:FindFirstChild(
+            "Plants"
+        )
+
+    if typeof(plantsFolder) ~= "Instance" then
+
+        return values
+    end
+
+    local counts =
+        {}
+
+    for _, plant in ipairs(plantsFolder:GetChildren()) do
+
+        if HolyAutoTrowelOwnsPlant(
+            plant,
+            plantsFolder
+        ) == true then
+
+            local plantType =
+                HolyAutoTrowelReadPlantType(
+                    plant
+                )
+
+            if plantType ~= "" then
+
+                counts[plantType] =
+                    (
+                        tonumber(
+                            counts[plantType]
+                        )
+                        or 0
+                    )
+                    + 1
+            end
+        end
+    end
+
+    local names =
+        {}
+
+    for plantType in pairs(counts) do
+
+        table.insert(
+            names,
+            plantType
+        )
+    end
+
+    table.sort(names, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    for _, plantType in ipairs(names) do
+
+        local display =
+            plantType
+            .. " ("
+            .. tostring(counts[plantType])
+            .. ")"
+
+        runtime.DisplayToPlant[display] =
+            plantType
+
+        runtime.PlantToDisplay[plantType] =
+            display
+
+        table.insert(
+            values,
+            display
+        )
+    end
+
+    return values
+end
+
+function HolyAutoTrowelGetSelectedDisplayValues()
+
+    local runtime =
+        HOLY_AUTO_TROWEL_RUNTIME
+
+    local output =
+        {}
+
+    for _, plantName in ipairs(
+        HOLY_AUTO_TROWEL_STATE.SelectedPlants
+        or {}
+    ) do
+
+        local display =
+            runtime.PlantToDisplay[plantName]
+
+        if display then
+
+            table.insert(
+                output,
+                display
+            )
+        end
+    end
+
+    return output
+end
+
+function HolyAutoTrowelRefreshPlantDropdown()
+
+    local dropdown =
+        HOLY_AUTO_TROWEL_UI.PlantsDropdown
+
+    if type(dropdown) ~= "table" then
+        return false
+    end
+
+    local runtime =
+        HOLY_AUTO_TROWEL_RUNTIME
+
+    local values =
+        HolyAutoTrowelBuildDropdownValues()
+
+    local selected =
+        HolyAutoTrowelGetSelectedDisplayValues()
+
+    runtime.UpdatingUI =
+        true
+
+    pcall(function()
+
+        if type(dropdown.SetValues) == "function" then
+
+            dropdown:SetValues(
+                values
+            )
+
+        elseif type(dropdown.SetItems) == "function" then
+
+            dropdown:SetItems(
+                values
+            )
+        end
+    end)
+
+    pcall(function()
+
+        if type(dropdown.SetValue) == "function" then
+
+            dropdown:SetValue(
+                selected
+            )
+        end
+    end)
+
+    runtime.UpdatingUI =
+        false
+
+    return true
+end
+
+function HolyAutoTrowelRefreshLayoutUI()
+
+    local spacingInput =
+        HOLY_AUTO_TROWEL_UI.SpacingInput
+
+    if type(spacingInput) ~= "table"
+    or type(spacingInput.SetVisible) ~= "function" then
+
+        return false
+    end
+
+    local visible =
+        HolyAutoTrowelNormalizeLayout(
+            HOLY_AUTO_TROWEL_STATE.Layout
+        ) == "Compact Spiral"
+
+    pcall(function()
+
+        spacingInput:SetVisible(
+            visible
+        )
+    end)
+
+    return true
+end
+
+function HolyAutoTrowelSetPositionMethod(value)
+
+    HOLY_AUTO_TROWEL_STATE.PositionMethod =
+        HolyAutoTrowelNormalizePositionMethod(
+            value
+        )
+
+    HolyAutoTrowelCancelClickPosition(
+        false
+    )
+
+    HolySaveFarmSettings()
+
+    return HOLY_AUTO_TROWEL_STATE.PositionMethod
+end
+
+function HolyAutoTrowelSetSelectedPlants(value)
+
+    HOLY_AUTO_TROWEL_STATE.SelectedPlants =
+        HolyAutoTrowelNormalizeSelection(
+            value
+        )
+
+    HolySaveFarmSettings()
+
+    return HOLY_AUTO_TROWEL_STATE.SelectedPlants
+end
+
+function HolyAutoTrowelSetMoveAmount(value)
+
+    HOLY_AUTO_TROWEL_STATE.MoveAmount =
+        HolyAutoTrowelReadMoveAmount(
+            value
+        )
+
+    HolySaveFarmSettings()
+
+    return HOLY_AUTO_TROWEL_STATE.MoveAmount
+end
+
+function HolyAutoTrowelSetLayout(value)
+
+    HOLY_AUTO_TROWEL_STATE.Layout =
+        HolyAutoTrowelNormalizeLayout(
+            value
+        )
+
+    HolySaveFarmSettings()
+
+    HolyAutoTrowelRefreshLayoutUI()
+
+    return HOLY_AUTO_TROWEL_STATE.Layout
+end
+
+function HolyAutoTrowelSetSpacing(value)
+
+    HOLY_AUTO_TROWEL_STATE.Spacing =
+        HolyAutoTrowelReadSpacing(
+            value
+        )
+
+    HolySaveFarmSettings()
+
+    return HOLY_AUTO_TROWEL_STATE.Spacing
+end
+
+function HolyAutoTrowelResolvePackets()
+
+    local runtime =
+        HOLY_AUTO_TROWEL_RUNTIME
+
+    if type(runtime.MovePacket) == "table"
+    and type(runtime.MovePacket.Fire) == "function" then
+
+        return runtime.MovePacket,
+            runtime.RejectionPacket
+    end
+
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild(
+            "SharedModules"
+        )
+
+    local networkingModule =
+        sharedModules
+        and sharedModules:FindFirstChild(
+            "Networking"
+        )
+
+    if typeof(networkingModule) ~= "Instance"
+    or networkingModule:IsA("ModuleScript") ~= true then
+
+        return nil,
+            nil,
+            "SharedModules.Networking is missing."
+    end
+
+    local ok,
+        networking =
+        pcall(function()
+
+            return require(
+                networkingModule
+            )
+        end)
+
+    if ok ~= true
+    or type(networking) ~= "table" then
+
+        return nil,
+            nil,
+            "Networking could not be loaded."
+    end
+
+    local trowelNetworking =
+        networking.Trowel
+
+    local movePacket =
+        type(trowelNetworking) == "table"
+        and trowelNetworking.MovePlant
+        or nil
+
+    if type(movePacket) ~= "table"
+    or type(movePacket.Fire) ~= "function" then
+
+        return nil,
+            nil,
+            "Trowel.MovePlant is missing."
+    end
+
+    runtime.MovePacket =
+        movePacket
+
+    runtime.RejectionPacket =
+        trowelNetworking.MoveRejected
+        or trowelNetworking.MovePlantRejected
+
+    return runtime.MovePacket,
+        runtime.RejectionPacket
+end
+
+function HolyAutoTrowelFindTool()
+
+    local character =
+        LocalPlayer.Character
+
+    local backpack =
+        LocalPlayer:FindFirstChildOfClass(
+            "Backpack"
+        )
+
+    local function findIn(container)
+
+        if typeof(container) ~= "Instance" then
+            return nil
+        end
+
+        for _, child in ipairs(container:GetChildren()) do
+
+            if child:IsA("Tool")
+            and (
+                child:GetAttribute("Trowel") ~= nil
+                or tostring(child.Name):lower():find(
+                    "trowel",
+                    1,
+                    true
+                ) ~= nil
+            ) then
+
+                return child
+            end
+        end
+
+        return nil
+    end
+
+    local tool =
+        findIn(
+            character
+        )
+
+    if tool then
+        return tool
+    end
+
+    tool =
+        findIn(
+            backpack
+        )
+
+    if not tool then
+
+        return nil,
+            "A real Trowel was not found."
+    end
+
+    local humanoid =
+        character
+        and character:FindFirstChildOfClass(
+            "Humanoid"
+        )
+
+    if typeof(humanoid) ~= "Instance" then
+
+        return nil,
+            "Your Humanoid is missing."
+    end
+
+    pcall(function()
+
+        humanoid:EquipTool(
+            tool
+        )
+    end)
+
+    task.wait(
+        0.15
+    )
+
+    if tool.Parent ~= character then
+
+        return nil,
+            "The Trowel could not be equipped."
+    end
+
+    return tool
+end
+
+function HolyAutoTrowelReadToolCount()
+
+    local containers = {
+        LocalPlayer.Character,
+        LocalPlayer:FindFirstChildOfClass(
+            "Backpack"
+        ),
+    }
+
+    for _, container in ipairs(containers) do
+
+        if typeof(container) == "Instance" then
+
+            for _, child in ipairs(container:GetChildren()) do
+
+                if child:IsA("Tool")
+                and (
+                    child:GetAttribute("Trowel") ~= nil
+                    or tostring(child.Name):lower():find(
+                        "trowel",
+                        1,
+                        true
+                    ) ~= nil
+                ) then
+
+                    local count =
+                        tonumber(
+                            child:GetAttribute(
+                                "Count"
+                            )
+                        )
+
+                    if count then
+                        return count
+                    end
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function HolyAutoTrowelSelectedPlantMap()
+
+    local map =
+        {}
+
+    for _, plantName in ipairs(
+        HOLY_AUTO_TROWEL_STATE.SelectedPlants
+        or {}
+    ) do
+
+        map[
+            HolyCleanText(
+                plantName
+            )
+        ] =
+            true
+    end
+
+    return map
+end
+
+function HolyAutoTrowelBuildMoveList()
+
+    local plot =
+        HolyFarmResolveOwnPlot(
+            false
+        )
+
+    local plantsFolder =
+        plot
+        and plot:FindFirstChild(
+            "Plants"
+        )
+
+    if typeof(plantsFolder) ~= "Instance" then
+
+        return {},
+            "Your Plants folder is not ready."
+    end
+
+    local selected =
+        HolyAutoTrowelSelectedPlantMap()
+
+    local allPlants =
+        selected["All Plants"] == true
+
+    if allPlants ~= true
+    and next(selected) == nil then
+
+        return {},
+            "Select at least one plant type."
+    end
+
+    local rows =
+        {}
+
+    for _, plant in ipairs(plantsFolder:GetChildren()) do
+
+        if HolyAutoTrowelOwnsPlant(
+            plant,
+            plantsFolder
+        ) == true then
+
+            local plantType =
+                HolyAutoTrowelReadPlantType(
+                    plant
+                )
+
+            if allPlants == true
+            or selected[plantType] == true then
+
+                table.insert(rows, {
+                    Plant =
+                        plant,
+
+                    PlantName =
+                        plantType,
+
+                    PlantId =
+                        tostring(
+                            plant.Name
+                        ),
+                })
+            end
+        end
+    end
+
+    table.sort(rows, function(a, b)
+
+        if a.PlantName ~= b.PlantName then
+
+            return tostring(a.PlantName):lower()
+                < tostring(b.PlantName):lower()
+        end
+
+        return tostring(a.PlantId)
+            < tostring(b.PlantId)
+    end)
+
+    local amount =
+        HolyAutoTrowelReadMoveAmount(
+            HOLY_AUTO_TROWEL_STATE.MoveAmount
+        )
+
+    if amount > 0
+    and #rows > amount then
+
+        local limited =
+            {}
+
+        for index = 1, amount do
+
+            limited[index] =
+                rows[index]
+        end
+
+        rows =
+            limited
+    end
+
+    return rows
+end
+
+function HolyAutoTrowelGetDestination(target, index)
+
+    local layout =
+        HolyAutoTrowelNormalizeLayout(
+            HOLY_AUTO_TROWEL_STATE.Layout
+        )
+
+    if layout ~= "Compact Spiral"
+    or index <= 1 then
+
+        return target
+    end
+
+    local spacing =
+        HolyAutoTrowelReadSpacing(
+            HOLY_AUTO_TROWEL_STATE.Spacing
+        )
+
+    if spacing <= 0 then
+        return target
+    end
+
+    local angle =
+        (index - 1)
+        * 2.399963229728653
+
+    local radius =
+        spacing
+        * math.sqrt(
+            index - 1
+        )
+
+    return target
+        + Vector3.new(
+            math.cos(angle) * radius,
+            0,
+            math.sin(angle) * radius
+        )
+end
+
+function HolyAutoTrowelPlantReachedTarget(plant, target)
+
+    if typeof(plant) ~= "Instance"
+    or plant.Parent == nil then
+
+        return false
+    end
+
+    local ok,
+        pivot =
+        pcall(function()
+
+            return plant:GetPivot()
+        end)
+
+    if ok ~= true then
+        return false
+    end
+
+    return (
+        pivot.Position
+        - target
+    ).Magnitude <= 0.15
+end
+
+function HolyAutoTrowelStop(notifyUser)
+
+    local runtime =
+        HOLY_AUTO_TROWEL_RUNTIME
+
+    runtime.Token =
+        nil
+
+    HolyAutoTrowelCancelClickPosition(
+        false
+    )
+
+    if notifyUser == true then
+
+        HolyNotify(
+            "Auto Trowel",
+            runtime.Running == true
+            and "Stopping Auto Trowel."
+            or "Auto Trowel is not running.",
+            3
+        )
+    end
+
+    return true
+end
+
+function HolyAutoTrowelStart()
+
+    local runtime =
+        HOLY_AUTO_TROWEL_RUNTIME
+
+    if runtime.Running == true then
+
+        HolyNotify(
+            "Auto Trowel",
+            "Auto Trowel is already running.",
+            3
+        )
+
+        return false
+    end
+
+    HolyAutoTrowelCancelClickPosition(
+        false
+    )
+
+    local target,
+        plot,
+        anchor =
+        HolyAutoTrowelGetWorldTarget()
+
+    if typeof(target) ~= "Vector3" then
+
+        HolyNotify(
+            "Auto Trowel",
+            tostring(plot),
+            4
+        )
+
+        return false
+    end
+
+    local moveList,
+        listReason =
+        HolyAutoTrowelBuildMoveList()
+
+    if #moveList <= 0 then
+
+        HolyNotify(
+            "Auto Trowel",
+            tostring(
+                listReason
+                or "No matching plants were found."
+            ),
+            4
+        )
+
+        return false
+    end
+
+    local movePacket,
+        rejectionPacket,
+        packetReason =
+        HolyAutoTrowelResolvePackets()
+
+    if not movePacket then
+
+        HolyNotify(
+            "Auto Trowel",
+            tostring(packetReason),
+            4
+        )
+
+        return false
+    end
+
+    local tool,
+        toolReason =
+        HolyAutoTrowelFindTool()
+
+    if not tool then
+
+        HolyNotify(
+            "Auto Trowel",
+            tostring(toolReason),
+            4
+        )
+
+        return false
+    end
+
+    local toolCount =
+        HolyAutoTrowelReadToolCount()
+
+    if toolCount
+    and toolCount < #moveList then
+
+        HolyNotify(
+            "Auto Trowel",
+            "Not enough Trowel uses. Need "
+                .. tostring(#moveList)
+                .. ", have "
+                .. tostring(toolCount)
+                .. ".",
+            5
+        )
+
+        return false
+    end
+
+    local entries =
+        {}
+
+    for index, row in ipairs(moveList) do
+
+        local destination =
+            HolyAutoTrowelGetDestination(
+                target,
+                index
+            )
+
+        if HolyAutoTrowelPointInsideAnchor(
+            destination,
+            anchor
+        ) ~= true then
+
+            HolyNotify(
+                "Auto Trowel",
+                "The selected layout leaves your garden. Reduce the amount or spacing.",
+                5
+            )
+
+            return false
+        end
+
+        local pivot =
+            row.Plant:GetPivot()
+
+        local _,
+            yawRadians =
+            pivot:ToOrientation()
+
+        entries[index] = {
+            Plant =
+                row.Plant,
+
+            PlantId =
+                row.PlantId,
+
+            Destination =
+                destination,
+
+            RotationDegrees =
+                math.deg(
+                    yawRadians
+                ),
+
+            Sent =
+                false,
+
+            Rejected =
+                false,
+        }
+    end
+
+    runtime.Running =
+        true
+
+    runtime.Token =
+        {}
+
+    local token =
+        runtime.Token
+
+    local rejected =
+        {}
+
+    HolyAutoTrowelDisconnect(
+        runtime.RejectionConnection
+    )
+
+    runtime.RejectionConnection =
+        nil
+
+    local rejectionSignal =
+        rejectionPacket
+        and rejectionPacket.OnClientEvent
+
+    if rejectionSignal
+    and type(rejectionSignal.Connect) == "function" then
+
+        local connection =
+            rejectionSignal:Connect(function(plantId)
+
+                plantId =
+                    tostring(
+                        plantId
+                        or ""
+                    )
+
+                rejected[plantId] =
+                    true
+            end)
+
+        runtime.RejectionConnection =
+            connection
+    end
+
+    HolyNotify(
+        "Auto Trowel",
+        "Moving "
+            .. tostring(#entries)
+            .. " plant"
+            .. (
+                #entries == 1
+                and ""
+                or "s"
+            )
+            .. ".",
+        3
+    )
+
+    task.spawn(function()
+
+        local batchSize =
+            8
+
+        for index, entry in ipairs(entries) do
+
+            if runtime.Token ~= token then
+                break
+            end
+
+            local ok =
+                pcall(function()
+
+                    movePacket:Fire(
+                        entry.PlantId,
+                        entry.Destination,
+                        entry.RotationDegrees
+                    )
+                end)
+
+            entry.Sent =
+                ok == true
+
+            if ok ~= true then
+
+                entry.FireFailed =
+                    true
+            end
+
+            if index % batchSize == 0
+            and index < #entries then
+
+                task.wait()
+            end
+        end
+
+        task.wait(
+            0.75
+        )
+
+        if runtime.Token ~= token then
+
+            if runtime.RejectionConnection then
+
+                HolyAutoTrowelDisconnect(
+                    runtime.RejectionConnection
+                )
+
+                runtime.RejectionConnection =
+                    nil
+            end
+
+            runtime.Running =
+                false
+
+            return
+        end
+
+        local retry =
+            {}
+
+        for _, entry in ipairs(entries) do
+
+            entry.Rejected =
+                rejected[entry.PlantId] == true
+
+            if entry.Sent ~= true
+            or HolyAutoTrowelPlantReachedTarget(
+                entry.Plant,
+                entry.Destination
+            ) ~= true then
+
+                table.insert(
+                    retry,
+                    entry
+                )
+            end
+        end
+
+        for index, entry in ipairs(retry) do
+
+            if runtime.Token ~= token then
+                break
+            end
+
+            pcall(function()
+
+                movePacket:Fire(
+                    entry.PlantId,
+                    entry.Destination,
+                    entry.RotationDegrees
+                )
+            end)
+
+            if index % batchSize == 0
+            and index < #retry then
+
+                task.wait()
+            end
+        end
+
+        if #retry > 0 then
+
+            task.wait(
+                0.75
+            )
+        end
+
+        local moved =
+            0
+
+        local failed =
+            0
+
+        for _, entry in ipairs(entries) do
+
+            if HolyAutoTrowelPlantReachedTarget(
+                entry.Plant,
+                entry.Destination
+            ) == true then
+
+                moved =
+                    moved + 1
+
+            else
+
+                failed =
+                    failed + 1
+            end
+        end
+
+        local stopped =
+            runtime.Token ~= token
+
+        if runtime.Token == token then
+
+            runtime.Token =
+                nil
+        end
+
+        runtime.Running =
+            false
+
+        HolyAutoTrowelDisconnect(
+            runtime.RejectionConnection
+        )
+
+        runtime.RejectionConnection =
+            nil
+
+        HolyAutoTrowelRefreshPlantDropdown()
+
+        if stopped ~= true then
+
+            if failed <= 0 then
+
+                HolyNotify(
+                    "Auto Trowel",
+                    "Moved "
+                        .. tostring(moved)
+                        .. " plant"
+                        .. (
+                            moved == 1
+                            and ""
+                            or "s"
+                        )
+                        .. " successfully.",
+                    4
+                )
+
+            else
+
+                HolyNotify(
+                    "Auto Trowel",
+                    "Moved "
+                        .. tostring(moved)
+                        .. ". Failed "
+                        .. tostring(failed)
+                        .. ".",
+                    5
+                )
+            end
+        end
+    end)
+
+    return true
 end
 
 --==================================================
@@ -57266,9 +59403,9 @@ local FarmToolsWaterBox =
 local FarmToolsUtilityBox =
     HolyAddRightGroupbox(
         Tabs.Farm,
-        "Farm.UtilityTools",
-        "Utility Tools",
-        "wrench"
+        "Farm.AutoTrowel",
+        "Auto Trowel",
+        "move-3d"
     )
 
 local FarmExtraUtilitiesBox =
@@ -69295,10 +71432,316 @@ HolyFarmAddPageNote(
     "Watering can and sprinkler automation will go here."
 )
 
-HolyFarmAddPageNote(
-    FarmToolsUtilityBox,
-    "Trowel, shovel, pickup, and farm utility tools will go here."
-)
+if FarmToolsUtilityBox
+and type(FarmToolsUtilityBox.AddDropdown) == "function" then
+
+    HOLY_AUTO_TROWEL_UI.PositionMethodDropdown =
+        FarmToolsUtilityBox:AddDropdown(
+            "HolyAutoTrowelPositionMethod",
+            {
+                Text =
+                    "Position Method",
+
+                Values = {
+                    "Click Position",
+                    "Standing Position",
+                },
+
+                Default =
+                    HolyAutoTrowelNormalizePositionMethod(
+                        HOLY_AUTO_TROWEL_STATE.PositionMethod
+                    ),
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    2,
+
+                Tooltip =
+                    "Click Position uses your next garden click. Standing Position uses the garden floor beneath your character.",
+            }
+        )
+
+    HOLY_AUTO_TROWEL_UI.PositionMethodDropdown:OnChanged(function(value)
+
+        HolyAutoTrowelSetPositionMethod(
+            value
+        )
+    end)
+end
+
+if FarmToolsUtilityBox
+and type(FarmToolsUtilityBox.AddActionRow) == "function" then
+
+    HOLY_AUTO_TROWEL_UI.PositionActions =
+        FarmToolsUtilityBox:AddActionRow(
+            "HolyAutoTrowelPositionActions",
+            {
+                Height =
+                    21,
+
+                Buttons = {
+                    {
+                        Id =
+                            "SetPosition",
+
+                        Text =
+                            "Set Position",
+
+                        Tooltip =
+                            "Uses the selected Position Method.",
+
+                        Callback =
+                            function()
+
+                                HolyAutoTrowelUseSelectedPositionMethod()
+                            end,
+                    },
+
+                    {
+                        Id =
+                            "ClearPosition",
+
+                        Text =
+                            "Clear Position",
+
+                        Tooltip =
+                            "Clears the saved Auto Trowel position.",
+
+                        Callback =
+                            function()
+
+                                HolyAutoTrowelClearPosition()
+                            end,
+                    },
+                },
+            }
+        )
+end
+
+if FarmToolsUtilityBox
+and type(FarmToolsUtilityBox.AddDropdown) == "function" then
+
+    HolyAutoTrowelBuildDropdownValues()
+
+    HOLY_AUTO_TROWEL_UI.PlantsDropdown =
+        FarmToolsUtilityBox:AddDropdown(
+            "HolyAutoTrowelPlants",
+            {
+                Text =
+                    "Plants To Trowel",
+
+                Values =
+                    HolyAutoTrowelBuildDropdownValues(),
+
+                Default =
+                    HolyAutoTrowelGetSelectedDisplayValues(),
+
+                Multi =
+                    true,
+
+                Searchable =
+                    true,
+
+                AllowNull =
+                    true,
+
+                MaxVisibleDropdownItems =
+                    10,
+
+                Tooltip =
+                    "Select one or more planted crop types. All Plants selects every owned plant.",
+            }
+        )
+
+    HOLY_AUTO_TROWEL_UI.PlantsDropdown:OnChanged(function(value)
+
+        if HOLY_AUTO_TROWEL_RUNTIME.UpdatingUI ~= true then
+
+            HolyAutoTrowelSetSelectedPlants(
+                value
+            )
+        end
+    end)
+
+    HOLY_AUTO_TROWEL_UI.LayoutDropdown =
+        FarmToolsUtilityBox:AddDropdown(
+            "HolyAutoTrowelLayout",
+            {
+                Text =
+                    "Placement Layout",
+
+                Values = {
+                    "Exact Point",
+                    "Compact Spiral",
+                },
+
+                Default =
+                    HolyAutoTrowelNormalizeLayout(
+                        HOLY_AUTO_TROWEL_STATE.Layout
+                    ),
+
+                Multi =
+                    false,
+
+                Searchable =
+                    false,
+
+                MaxVisibleDropdownItems =
+                    2,
+
+                Tooltip =
+                    "Exact Point stacks plants at the saved position. Compact Spiral spreads them around it.",
+            }
+        )
+
+    HOLY_AUTO_TROWEL_UI.LayoutDropdown:OnChanged(function(value)
+
+        HolyAutoTrowelSetLayout(
+            value
+        )
+    end)
+end
+
+if FarmToolsUtilityBox
+and type(FarmToolsUtilityBox.AddInput) == "function" then
+
+    HOLY_AUTO_TROWEL_UI.MoveAmountInput =
+        FarmToolsUtilityBox:AddInput(
+            "HolyAutoTrowelMoveAmount",
+            {
+                Text =
+                    "Move Amount",
+
+                Default =
+                    tostring(
+                        HolyAutoTrowelReadMoveAmount(
+                            HOLY_AUTO_TROWEL_STATE.MoveAmount
+                        )
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Maximum number of matching plants to move. 0 moves every matching plant.",
+            }
+        )
+
+    HOLY_AUTO_TROWEL_UI.MoveAmountInput:OnChanged(function(value)
+
+        HolyAutoTrowelSetMoveAmount(
+            value
+        )
+    end)
+
+    HOLY_AUTO_TROWEL_UI.SpacingInput =
+        FarmToolsUtilityBox:AddInput(
+            "HolyAutoTrowelSpacing",
+            {
+                Text =
+                    "Spacing",
+
+                Default =
+                    tostring(
+                        HolyAutoTrowelReadSpacing(
+                            HOLY_AUTO_TROWEL_STATE.Spacing
+                        )
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Distance between plants when Compact Spiral is selected.",
+            }
+        )
+
+    HOLY_AUTO_TROWEL_UI.SpacingInput:OnChanged(function(value)
+
+        HolyAutoTrowelSetSpacing(
+            value
+        )
+    end)
+end
+
+if FarmToolsUtilityBox
+and type(FarmToolsUtilityBox.AddActionRow) == "function" then
+
+    HOLY_AUTO_TROWEL_UI.RunActions =
+        FarmToolsUtilityBox:AddActionRow(
+            "HolyAutoTrowelRunActions",
+            {
+                Height =
+                    21,
+
+                Buttons = {
+                    {
+                        Id =
+                            "Start",
+
+                        Text =
+                            "Start Auto Trowel",
+
+                        Tooltip =
+                            "Moves the selected plants using real Trowel uses.",
+
+                        Callback =
+                            function()
+
+                                HolyAutoTrowelStart()
+                            end,
+                    },
+
+                    {
+                        Id =
+                            "Stop",
+
+                        Text =
+                            "Stop",
+
+                        Tooltip =
+                            "Stops any unsent Auto Trowel packets.",
+
+                        Callback =
+                            function()
+
+                                HolyAutoTrowelStop(
+                                    true
+                                )
+                            end,
+                    },
+                },
+            }
+        )
+end
+
+HolyAutoTrowelRefreshLayoutUI()
+
+task.defer(function()
+
+    task.wait(
+        0.75
+    )
+
+    HolyAutoTrowelRefreshPlantDropdown()
+end)
 
 HolyFarmAddPageNote(
     FarmExtraUtilitiesBox,
