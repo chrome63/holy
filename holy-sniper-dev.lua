@@ -1361,8 +1361,44 @@ if type(HOLY_FARM_RUNTIME) == "table" then
     end
 end
 
+if type(HOLY_PRO_FARM_RUNTIME) == "table" then
+
+    HOLY_PRO_FARM_RUNTIME.Token =
+        nil
+
+    HOLY_PRO_FARM_RUNTIME.Running =
+        false
+
+    for _, listName in ipairs({
+        "Connections",
+        "VisualConnections",
+    }) do
+
+        local list =
+            HOLY_PRO_FARM_RUNTIME[listName]
+
+        if type(list) == "table" then
+
+            for _, connection in pairs(list) do
+
+                if connection
+                and type(connection.Disconnect) == "function" then
+
+                    pcall(function()
+
+                        connection:Disconnect()
+                    end)
+                end
+            end
+        end
+    end
+end
+
 HOLY_FARM_STATE = {
     AutoCollectFruits = false,
+
+    ProFruitCollector = false,
+    LowGardenDetail = false,
 
     CollectMode = "All",
 
@@ -1419,6 +1455,40 @@ HOLY_FARM_RUNTIME = {
     LastPlotWarnAt = 0,
 }
 
+HOLY_PRO_FARM_RUNTIME = {
+    Running = false,
+    Token = nil,
+
+    Connections = {},
+    VisualConnections = {},
+
+    Networking = nil,
+    GardenNetworking = nil,
+
+    RequestPacket = nil,
+    SnapshotPacket = nil,
+    CollectPacket = nil,
+
+    Cache = {
+        Plants = {},
+    },
+
+    SnapshotReady = false,
+    LastSnapshotAt = 0,
+    LastRequestAt = 0,
+
+    Status = "Disabled",
+
+    Confirmed = 0,
+    Failed = 0,
+    ConsecutiveFailures = 0,
+
+    Cooldowns = {},
+
+    VisualBlockerActive = false,
+    HiddenVisualRoots = 0,
+}
+
 HOLY_FARM_UI = {
     PageControl = nil,
 
@@ -1428,7 +1498,12 @@ HOLY_FARM_UI = {
     MutationsDropdown = nil,
     WeightModeDropdown = nil,
     WeightThresholdInput = nil,
+
     AutoCollectToggle = nil,
+
+    ProCollectorToggle = nil,
+    LowGardenDetailToggle = nil,
+    ProStatusLabel = nil,
 }
 
 HOLY_FARM_PAGE_STATE = {
@@ -4236,21 +4311,48 @@ function HolyFarmPredictEntryWeightKg(entry)
     local sizeMulti =
         nil
 
-    if entry.Kind == "PlantHarvest" then
+    if type(entry.FruitData) == "table" then
 
         sizeMulti =
-            HolyFarmReadSizeMultiplier(
-                entry.Plant,
-                true
+            tonumber(
+                entry.FruitData.SizeMultiplier
+                or entry.FruitData.SizeMulti
+                or entry.FruitData.ScaleMultiplier
+                or entry.FruitData.Scale
             )
+    end
 
-    else
+    if sizeMulti == nil
+    and entry.Kind == "PlantHarvest"
+    and type(entry.PlantData) == "table" then
 
         sizeMulti =
-            HolyFarmReadSizeMultiplier(
-                entry.Fruit,
-                false
+            tonumber(
+                entry.PlantData.SizeMultiplier
+                or entry.PlantData.SizeMulti
+                or entry.PlantData.ScaleMultiplier
+                or entry.PlantData.Scale
             )
+    end
+
+    if sizeMulti == nil then
+
+        if entry.Kind == "PlantHarvest" then
+
+            sizeMulti =
+                HolyFarmReadSizeMultiplier(
+                    entry.Plant,
+                    true
+                )
+
+        else
+
+            sizeMulti =
+                HolyFarmReadSizeMultiplier(
+                    entry.Fruit,
+                    false
+                )
+        end
     end
 
     if sizeMulti == nil then
@@ -4412,10 +4514,165 @@ function HolyFarmReadInstanceMutations(instance)
     return output
 end
 
+function HolyFarmReadTableMutations(data)
+
+    local output =
+        {}
+
+    local seen =
+        {}
+
+    if type(data) ~= "table" then
+        return output
+    end
+
+    local function addMutation(value)
+
+        value =
+            HolyFarmNormalizeMutationName(
+                value
+            )
+
+        local lower =
+            tostring(value or "")
+                :lower()
+
+        if value == ""
+        or lower == "none"
+        or lower == "normal"
+        or lower == "off" then
+
+            return
+        end
+
+        if seen[value] ~= true then
+
+            seen[value] =
+                true
+
+            table.insert(
+                output,
+                value
+            )
+        end
+    end
+
+    local function readValue(value, depth)
+
+        depth =
+            tonumber(depth)
+            or 0
+
+        if depth > 3 then
+            return
+        end
+
+        if type(value) == "string" then
+
+            for _, mutation in ipairs(
+                HolyFarmSplitMutationText(
+                    value
+                )
+            ) do
+
+                addMutation(
+                    mutation
+                )
+            end
+
+            return
+        end
+
+        if type(value) ~= "table" then
+            return
+        end
+
+        if type(value.Name) == "string" then
+
+            addMutation(
+                value.Name
+            )
+        end
+
+        if type(value.Mutation) == "string" then
+
+            addMutation(
+                value.Mutation
+            )
+        end
+
+        for key, child in pairs(value) do
+
+            if child == true
+            and type(key) == "string" then
+
+                addMutation(
+                    key
+                )
+
+            elseif type(child) == "string" then
+
+                addMutation(
+                    child
+                )
+
+            elseif type(child) == "table" then
+
+                readValue(
+                    child,
+                    depth + 1
+                )
+            end
+        end
+    end
+
+    readValue(
+        data.Mutations,
+        0
+    )
+
+    readValue(
+        data.Mutation,
+        0
+    )
+
+    table.sort(output, function(a, b)
+
+        return tostring(a):lower()
+            < tostring(b):lower()
+    end)
+
+    return output
+end
+
 function HolyFarmReadEntryMutations(entry)
 
     if type(entry) ~= "table" then
         return {}
+    end
+
+    if type(entry.FruitData) == "table" then
+
+        local mutations =
+            HolyFarmReadTableMutations(
+                entry.FruitData
+            )
+
+        if #mutations > 0 then
+            return mutations
+        end
+    end
+
+    if type(entry.PlantData) == "table" then
+
+        local mutations =
+            HolyFarmReadTableMutations(
+                entry.PlantData
+            )
+
+        if #mutations > 0 then
+            return mutations
+        end
     end
 
     if entry.Kind == "PlantHarvest" then
@@ -4579,6 +4836,12 @@ function HolyFarmEnsureState()
 
     HOLY_FARM_STATE.AutoCollectFruits =
         HOLY_FARM_STATE.AutoCollectFruits == true
+
+    HOLY_FARM_STATE.ProFruitCollector =
+        HOLY_FARM_STATE.ProFruitCollector == true
+
+    HOLY_FARM_STATE.LowGardenDetail =
+        HOLY_FARM_STATE.LowGardenDetail == true
 
     return HOLY_FARM_STATE
 end
@@ -4821,6 +5084,12 @@ function HolySaveFarmSettings()
         AutoCollectFruits =
             HOLY_FARM_STATE.AutoCollectFruits == true,
 
+        ProFruitCollector =
+            HOLY_FARM_STATE.ProFruitCollector == true,
+
+        LowGardenDetail =
+            HOLY_FARM_STATE.LowGardenDetail == true,
+
         CollectMode =
             HolyFarmNormalizeCollectMode(
                 HOLY_FARM_STATE.CollectMode
@@ -4940,6 +5209,18 @@ function HolyLoadFarmSettings()
 
     HOLY_FARM_STATE.AutoCollectFruits =
         data.AutoCollectFruits == true
+
+    HOLY_FARM_STATE.ProFruitCollector =
+        data.ProFruitCollector == true
+
+    HOLY_FARM_STATE.LowGardenDetail =
+        data.LowGardenDetail == true
+
+    if HOLY_FARM_STATE.ProFruitCollector == true then
+
+        HOLY_FARM_STATE.AutoCollectFruits =
+            false
+    end
 
     HOLY_FARM_STATE.CollectMode =
         HolyFarmNormalizeCollectMode(
@@ -8246,12 +8527,1663 @@ function HolyFarmStopAutoCollect(reason)
     return true
 end
 
+function HolyProFarmEnsureRuntime()
+
+    HOLY_PRO_FARM_RUNTIME =
+        type(HOLY_PRO_FARM_RUNTIME) == "table"
+        and HOLY_PRO_FARM_RUNTIME
+        or {}
+
+    local runtime =
+        HOLY_PRO_FARM_RUNTIME
+
+    runtime.Connections =
+        type(runtime.Connections) == "table"
+        and runtime.Connections
+        or {}
+
+    runtime.VisualConnections =
+        type(runtime.VisualConnections) == "table"
+        and runtime.VisualConnections
+        or {}
+
+    runtime.Cache =
+        type(runtime.Cache) == "table"
+        and runtime.Cache
+        or {
+            Plants = {},
+        }
+
+    runtime.Cache.Plants =
+        type(runtime.Cache.Plants) == "table"
+        and runtime.Cache.Plants
+        or {}
+
+    runtime.Cooldowns =
+        type(runtime.Cooldowns) == "table"
+        and runtime.Cooldowns
+        or {}
+
+    runtime.Status =
+        tostring(
+            runtime.Status
+            or "Disabled"
+        )
+
+    return runtime
+end
+
+function HolyProFarmDisconnectList(list)
+
+    if type(list) ~= "table" then
+        return
+    end
+
+    for _, connection in pairs(list) do
+
+        if connection
+        and type(connection.Disconnect) == "function" then
+
+            pcall(function()
+
+                connection:Disconnect()
+            end)
+        end
+    end
+
+    table.clear(
+        list
+    )
+end
+
+function HolyProFarmSetStatus(status)
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    runtime.Status =
+        tostring(
+            status
+            or "Ready"
+        )
+
+    if type(HolyProFarmRefreshUI) == "function" then
+
+        HolyProFarmRefreshUI()
+    end
+
+    return runtime.Status
+end
+
+function HolyProFarmCurrentAge(data)
+
+    if type(data) ~= "table" then
+        return 0
+    end
+
+    local age =
+        tonumber(
+            data.Age
+            or data.CurrentAge
+        )
+        or 0
+
+    local maxAge =
+        tonumber(
+            data.MaxAge
+        )
+
+    local lastClock =
+        tonumber(
+            data._HolyLastClock
+        )
+
+    local growthRate =
+        tonumber(
+            data.GrowRate
+            or data.GrowthRate
+            or data.StableGrowthAmount
+        )
+        or 0
+
+    if lastClock ~= nil
+    and growthRate > 0 then
+
+        age +=
+            math.max(
+                0,
+                os.clock() - lastClock
+            )
+            * growthRate
+    end
+
+    if maxAge ~= nil
+    and maxAge > 0 then
+
+        age =
+            math.min(
+                age,
+                maxAge
+            )
+    end
+
+    return age
+end
+
+function HolyProFarmDataReady(data)
+
+    if type(data) ~= "table" then
+        return false
+    end
+
+    local maxAge =
+        tonumber(
+            data.MaxAge
+        )
+        or 0
+
+    if maxAge <= 0 then
+        return false
+    end
+
+    return HolyProFarmCurrentAge(data)
+        >= maxAge - 0.01
+end
+
+function HolyProFarmPrepareFruit(fruitData)
+
+    if type(fruitData) ~= "table" then
+        return
+    end
+
+    fruitData._HolyLastClock =
+        os.clock()
+end
+
+function HolyProFarmPreparePlant(plantData)
+
+    if type(plantData) ~= "table" then
+        return
+    end
+
+    plantData._HolyLastClock =
+        os.clock()
+
+    plantData.Fruits =
+        type(plantData.Fruits) == "table"
+        and plantData.Fruits
+        or {}
+
+    for _, fruitData in pairs(plantData.Fruits) do
+
+        HolyProFarmPrepareFruit(
+            fruitData
+        )
+    end
+end
+
+function HolyProFarmPrepareCache()
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    for _, plantData in pairs(runtime.Cache.Plants) do
+
+        HolyProFarmPreparePlant(
+            plantData
+        )
+    end
+end
+
+function HolyProFarmCountCache()
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    local plants =
+        0
+
+    local fruits =
+        0
+
+    local ready =
+        0
+
+    for _, plantData in pairs(runtime.Cache.Plants) do
+
+        if type(plantData) == "table" then
+
+            plants +=
+                1
+
+            local fruitCount =
+                0
+
+            if type(plantData.Fruits) == "table" then
+
+                for _, fruitData in pairs(plantData.Fruits) do
+
+                    if type(fruitData) == "table" then
+
+                        fruitCount +=
+                            1
+
+                        fruits +=
+                            1
+
+                        if HolyProFarmDataReady(
+                            fruitData
+                        ) then
+
+                            ready +=
+                                1
+                        end
+                    end
+                end
+            end
+
+            if fruitCount == 0
+            and (
+                tonumber(
+                    plantData.MaxFruitSpawnLocations
+                )
+                or 0
+            ) <= 0
+            and HolyProFarmDataReady(
+                plantData
+            ) then
+
+                ready +=
+                    1
+            end
+        end
+    end
+
+    return plants,
+        fruits,
+        ready
+end
+
+function HolyProFarmBuildStatusText()
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    local plants,
+        fruits,
+        ready =
+        HolyProFarmCountCache()
+
+    local text =
+        "Status: "
+        .. tostring(
+            runtime.Status
+            or "Disabled"
+        )
+
+    if runtime.SnapshotReady == true then
+
+        text ..=
+            "\n"
+            .. tostring(ready)
+            .. " ready • "
+            .. tostring(fruits)
+            .. " fruits • "
+            .. tostring(plants)
+            .. " plants"
+    end
+
+    return text
+end
+
+function HolyProFarmRefreshUI()
+
+    HOLY_FARM_UI =
+        type(HOLY_FARM_UI) == "table"
+        and HOLY_FARM_UI
+        or {}
+
+    local label =
+        HOLY_FARM_UI.ProStatusLabel
+
+    local text =
+        HolyProFarmBuildStatusText()
+
+    if type(HolySniperSetLabel) == "function" then
+
+        HolySniperSetLabel(
+            label,
+            text
+        )
+
+        return true
+    end
+
+    if type(label) == "table"
+    and type(label.SetText) == "function" then
+
+        pcall(function()
+
+            label:SetText(
+                text
+            )
+        end)
+
+        return true
+    end
+
+    return false
+end
+
+function HolyProFarmGetNetworking()
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    if type(runtime.Networking) == "table"
+    and type(runtime.GardenNetworking) == "table" then
+
+        return runtime.Networking,
+            runtime.GardenNetworking
+    end
+
+    local networking =
+        nil
+
+    if type(HolyShopRequireModule) == "function" then
+
+        networking =
+            HolyShopRequireModule(
+                "SharedModules.Networking"
+            )
+    end
+
+    if type(networking) ~= "table" then
+
+        local sharedModules =
+            ReplicatedStorage:FindFirstChild(
+                "SharedModules"
+            )
+
+        local module =
+            sharedModules
+            and sharedModules:FindFirstChild(
+                "Networking"
+            )
+
+        if typeof(module) == "Instance"
+        and module:IsA("ModuleScript") then
+
+            local ok,
+                result =
+                pcall(function()
+
+                    return require(
+                        module
+                    )
+                end)
+
+            if ok == true
+            and type(result) == "table" then
+
+                networking =
+                    result
+            end
+        end
+    end
+
+    local garden =
+        type(networking) == "table"
+        and type(networking.Garden) == "table"
+        and networking.Garden
+        or nil
+
+    runtime.Networking =
+        networking
+
+    runtime.GardenNetworking =
+        garden
+
+    runtime.RequestPacket =
+        type(garden) == "table"
+        and garden.RequestGardens
+        or nil
+
+    runtime.SnapshotPacket =
+        type(garden) == "table"
+        and garden.SyncAllGardens
+        or nil
+
+    runtime.CollectPacket =
+        type(garden) == "table"
+        and garden.CollectFruit
+        or nil
+
+    return networking,
+        garden
+end
+
+function HolyProFarmOwnerMatches(owner)
+
+    return tostring(owner or "")
+        == tostring(
+            LocalPlayer.UserId
+        )
+end
+
+function HolyProFarmConnectPacket(packet, callback)
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    if type(packet) ~= "table"
+    or packet.OnClientEvent == nil then
+
+        return false
+    end
+
+    local ok,
+        connection =
+        pcall(function()
+
+            return packet.OnClientEvent:Connect(
+                callback
+            )
+        end)
+
+    if ok == true
+    and connection ~= nil then
+
+        table.insert(
+            runtime.Connections,
+            connection
+        )
+
+        return true
+    end
+
+    return false
+end
+
+function HolyProFarmApplySnapshot(snapshot)
+
+    if type(snapshot) ~= "table" then
+        return false
+    end
+
+    local userId =
+        LocalPlayer.UserId
+
+    local gardenData =
+        snapshot[userId]
+        or snapshot[tostring(userId)]
+
+    if type(gardenData) ~= "table"
+    or type(gardenData.Plants) ~= "table" then
+
+        return false
+    end
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    runtime.Cache.Plants =
+        gardenData.Plants
+
+    HolyProFarmPrepareCache()
+
+    runtime.SnapshotReady =
+        true
+
+    runtime.LastSnapshotAt =
+        os.clock()
+
+    runtime.ConsecutiveFailures =
+        0
+
+    HolyProFarmSetStatus(
+        "Ready"
+    )
+
+    return true
+end
+
+function HolyProFarmConnectEvents()
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    HolyProFarmDisconnectList(
+        runtime.Connections
+    )
+
+    local _,
+        garden =
+        HolyProFarmGetNetworking()
+
+    if type(garden) ~= "table" then
+        return false
+    end
+
+    HolyProFarmConnectPacket(
+        garden.SyncAllGardens,
+        function(snapshot)
+
+            HolyProFarmApplySnapshot(
+                snapshot
+            )
+        end
+    )
+
+    HolyProFarmConnectPacket(
+        garden.PlantAdded,
+        function(owner, plantId, plantData)
+
+            if HolyProFarmOwnerMatches(owner) ~= true then
+                return
+            end
+
+            if type(plantData) ~= "table" then
+                return
+            end
+
+            plantId =
+                tostring(plantId)
+
+            HolyProFarmPreparePlant(
+                plantData
+            )
+
+            runtime.Cache.Plants[plantId] =
+                plantData
+
+            HolyProFarmRefreshUI()
+        end
+    )
+
+    HolyProFarmConnectPacket(
+        garden.PlantRemoved,
+        function(owner, plantId)
+
+            if HolyProFarmOwnerMatches(owner) ~= true then
+                return
+            end
+
+            runtime.Cache.Plants[tostring(plantId)] =
+                nil
+
+            HolyProFarmRefreshUI()
+        end
+    )
+
+    HolyProFarmConnectPacket(
+        garden.FruitAdded,
+        function(owner, plantId, fruitId, fruitData)
+
+            if HolyProFarmOwnerMatches(owner) ~= true then
+                return
+            end
+
+            if type(fruitData) ~= "table" then
+                return
+            end
+
+            plantId =
+                tostring(plantId)
+
+            fruitId =
+                tostring(fruitId)
+
+            local plantData =
+                runtime.Cache.Plants[plantId]
+
+            if type(plantData) ~= "table" then
+
+                plantData = {
+                    Fruits = {},
+                }
+
+                runtime.Cache.Plants[plantId] =
+                    plantData
+            end
+
+            plantData.Fruits =
+                type(plantData.Fruits) == "table"
+                and plantData.Fruits
+                or {}
+
+            HolyProFarmPrepareFruit(
+                fruitData
+            )
+
+            plantData.Fruits[fruitId] =
+                fruitData
+
+            HolyProFarmRefreshUI()
+        end
+    )
+
+    HolyProFarmConnectPacket(
+        garden.FruitRemoved,
+        function(owner, plantId, fruitId)
+
+            if HolyProFarmOwnerMatches(owner) ~= true then
+                return
+            end
+
+            local plantData =
+                runtime.Cache.Plants[tostring(plantId)]
+
+            if type(plantData) == "table"
+            and type(plantData.Fruits) == "table" then
+
+                plantData.Fruits[tostring(fruitId)] =
+                    nil
+            end
+
+            HolyProFarmRefreshUI()
+        end
+    )
+
+    HolyProFarmConnectPacket(
+        garden.PlantGrowthUpdated,
+        function(owner, plantId, currentAge, growthRate)
+
+            if HolyProFarmOwnerMatches(owner) ~= true then
+                return
+            end
+
+            local plantData =
+                runtime.Cache.Plants[tostring(plantId)]
+
+            if type(plantData) == "table" then
+
+                plantData.Age =
+                    tonumber(currentAge)
+                    or plantData.Age
+                    or 0
+
+                plantData.GrowRate =
+                    tonumber(growthRate)
+                    or plantData.GrowRate
+                    or 0
+
+                plantData._HolyLastClock =
+                    os.clock()
+            end
+        end
+    )
+
+    HolyProFarmConnectPacket(
+        garden.FruitGrowthUpdated,
+        function(owner, plantId, fruitId, currentAge, growthRate)
+
+            if HolyProFarmOwnerMatches(owner) ~= true then
+                return
+            end
+
+            local plantData =
+                runtime.Cache.Plants[tostring(plantId)]
+
+            local fruitData =
+                type(plantData) == "table"
+                and type(plantData.Fruits) == "table"
+                and plantData.Fruits[tostring(fruitId)]
+                or nil
+
+            if type(fruitData) == "table" then
+
+                fruitData.Age =
+                    tonumber(currentAge)
+                    or fruitData.Age
+                    or 0
+
+                fruitData.GrowRate =
+                    tonumber(growthRate)
+                    or fruitData.GrowRate
+                    or 0
+
+                fruitData._HolyLastClock =
+                    os.clock()
+            end
+        end
+    )
+
+    HolyProFarmConnectPacket(
+        garden.FruitMutationUpdated,
+        function(owner, plantId, fruitId, mutationData)
+
+            if HolyProFarmOwnerMatches(owner) ~= true then
+                return
+            end
+
+            local plantData =
+                runtime.Cache.Plants[tostring(plantId)]
+
+            local fruitData =
+                type(plantData) == "table"
+                and type(plantData.Fruits) == "table"
+                and plantData.Fruits[tostring(fruitId)]
+                or nil
+
+            if type(fruitData) == "table" then
+
+                fruitData.Mutation =
+                    mutationData
+            end
+        end
+    )
+
+    return true
+end
+
+function HolyProFarmRequestSnapshot(reason)
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    local _,
+        garden =
+        HolyProFarmGetNetworking()
+
+    local packet =
+        type(garden) == "table"
+        and garden.RequestGardens
+        or nil
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        HolyProFarmSetStatus(
+            "Unavailable"
+        )
+
+        return false
+    end
+
+    runtime.LastRequestAt =
+        os.clock()
+
+    HolyProFarmSetStatus(
+        "Refreshing"
+    )
+
+    local ok =
+        pcall(function()
+
+            packet:Fire()
+        end)
+
+    if ok ~= true then
+
+        HolyProFarmSetStatus(
+            "Refresh Failed"
+        )
+
+        return false
+    end
+
+    return true
+end
+
+function HolyProFarmIsOwnVisualRoot(instance)
+
+    if typeof(instance) ~= "Instance" then
+        return false
+    end
+
+    local prefix =
+        tostring(
+            LocalPlayer.UserId
+        )
+        .. "_"
+
+    return instance.Name:sub(
+        1,
+        #prefix
+    ) == prefix
+end
+
+function HolyProFarmFindPlantFolders()
+
+    local folders =
+        {}
+
+    local gardens =
+        workspace:FindFirstChild(
+            "Gardens"
+        )
+
+    if typeof(gardens) ~= "Instance" then
+        return folders
+    end
+
+    for _, plot in ipairs(gardens:GetChildren()) do
+
+        local plants =
+            plot:FindFirstChild(
+                "Plants"
+            )
+
+        if typeof(plants) == "Instance" then
+
+            table.insert(
+                folders,
+                plants
+            )
+        end
+    end
+
+    return folders
+end
+
+function HolyProFarmRemoveOwnVisuals()
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    local removed =
+        0
+
+    for _, folder in ipairs(
+        HolyProFarmFindPlantFolders()
+    ) do
+
+        for _, child in ipairs(folder:GetChildren()) do
+
+            if HolyProFarmIsOwnVisualRoot(child) then
+
+                removed +=
+                    1
+
+                pcall(function()
+
+                    child:Destroy()
+                end)
+            end
+        end
+    end
+
+    runtime.HiddenVisualRoots +=
+        removed
+
+    return removed
+end
+
+function HolyProFarmStopVisualBlocker()
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    runtime.VisualBlockerActive =
+        false
+
+    HolyProFarmDisconnectList(
+        runtime.VisualConnections
+    )
+
+    return true
+end
+
+function HolyProFarmStartVisualBlocker()
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    HolyProFarmStopVisualBlocker()
+
+    if HOLY_FARM_STATE.LowGardenDetail ~= true
+    or HOLY_FARM_STATE.ProFruitCollector ~= true then
+
+        return false
+    end
+
+    runtime.VisualBlockerActive =
+        true
+
+    for _, folder in ipairs(
+        HolyProFarmFindPlantFolders()
+    ) do
+
+        table.insert(
+            runtime.VisualConnections,
+            folder.ChildAdded:Connect(function(child)
+
+                task.defer(function()
+
+                    if runtime.VisualBlockerActive ~= true
+                    or HOLY_FARM_STATE.LowGardenDetail ~= true
+                    or HOLY_FARM_STATE.ProFruitCollector ~= true then
+
+                        return
+                    end
+
+                    if child.Parent == folder
+                    and HolyProFarmIsOwnVisualRoot(child) then
+
+                        runtime.HiddenVisualRoots +=
+                            1
+
+                        pcall(function()
+
+                            child:Destroy()
+                        end)
+                    end
+                end)
+            end)
+        )
+    end
+
+    HolyProFarmRemoveOwnVisuals()
+
+    return true
+end
+
+function HolyProFarmBuildEntry(
+    plantId,
+    plantData,
+    fruitId,
+    fruitData
+)
+
+    local isPlantHarvest =
+        fruitId == nil
+        or tostring(fruitId) == ""
+
+    local entry = {
+        Kind =
+            isPlantHarvest
+            and "PlantHarvest"
+            or "FruitHarvest",
+
+        Plant =
+            nil,
+
+        Fruit =
+            nil,
+
+        PlantData =
+            plantData,
+
+        FruitData =
+            fruitData,
+
+        PlantId =
+            tostring(plantId or ""),
+
+        FruitId =
+            isPlantHarvest
+            and ""
+            or tostring(fruitId),
+
+        PlantName =
+            HolyCleanText(
+                type(plantData) == "table"
+                and (
+                    plantData.PlantName
+                    or plantData.FruitName
+                    or plantData.SeedName
+                    or plantData.Name
+                )
+                or ""
+            ),
+    }
+
+    entry.Key =
+        isPlantHarvest
+        and HolyFarmBuildPlantHarvestKey(
+            entry.PlantId
+        )
+        or HolyFarmBuildFruitKey(
+            entry.PlantId,
+            entry.FruitId
+        )
+
+    return entry
+end
+
+function HolyProFarmEntryAllowed(entry)
+
+    if type(entry) ~= "table"
+    or entry.Key == "" then
+
+        return false
+    end
+
+    if HolyFarmSelectionAllowsPlant(
+        entry.PlantName
+    ) ~= true then
+
+        return false
+    end
+
+    if HolyFarmMutationAllowsEntry(
+        entry
+    ) ~= true then
+
+        return false
+    end
+
+    if HolyFarmWeightAllowsEntry(
+        entry
+    ) ~= true then
+
+        return false
+    end
+
+    return true
+end
+
+function HolyProFarmFindTarget()
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    local now =
+        os.clock()
+
+    local candidates =
+        {}
+
+    for plantId, plantData in pairs(runtime.Cache.Plants) do
+
+        if type(plantData) == "table" then
+
+            local fruitCount =
+                0
+
+            if type(plantData.Fruits) == "table" then
+
+                for fruitId, fruitData in pairs(plantData.Fruits) do
+
+                    if type(fruitData) == "table" then
+
+                        fruitCount +=
+                            1
+
+                        if HolyProFarmDataReady(
+                            fruitData
+                        ) then
+
+                            local entry =
+                                HolyProFarmBuildEntry(
+                                    plantId,
+                                    plantData,
+                                    fruitId,
+                                    fruitData
+                                )
+
+                            local cooldown =
+                                tonumber(
+                                    runtime.Cooldowns[entry.Key]
+                                )
+                                or 0
+
+                            if cooldown <= now
+                            and HolyProFarmEntryAllowed(
+                                entry
+                            ) then
+
+                                table.insert(
+                                    candidates,
+                                    entry
+                                )
+                            end
+                        end
+                    end
+                end
+            end
+
+            if fruitCount == 0
+            and (
+                tonumber(
+                    plantData.MaxFruitSpawnLocations
+                )
+                or 0
+            ) <= 0
+            and HolyProFarmDataReady(
+                plantData
+            ) then
+
+                local entry =
+                    HolyProFarmBuildEntry(
+                        plantId,
+                        plantData,
+                        "",
+                        plantData
+                    )
+
+                local cooldown =
+                    tonumber(
+                        runtime.Cooldowns[entry.Key]
+                    )
+                    or 0
+
+                if cooldown <= now
+                and HolyProFarmEntryAllowed(
+                    entry
+                ) then
+
+                    table.insert(
+                        candidates,
+                        entry
+                    )
+                end
+            end
+        end
+    end
+
+    if #candidates == 0 then
+        return nil
+    end
+
+    return candidates[
+        math.random(
+            1,
+            #candidates
+        )
+    ]
+end
+
+function HolyProFarmTargetExists(entry)
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    if type(entry) ~= "table" then
+        return false
+    end
+
+    local plantData =
+        runtime.Cache.Plants[entry.PlantId]
+
+    if entry.Kind == "PlantHarvest" then
+
+        return type(plantData) == "table"
+    end
+
+    return type(plantData) == "table"
+        and type(plantData.Fruits) == "table"
+        and plantData.Fruits[entry.FruitId] ~= nil
+end
+
+function HolyProFarmWaitForConfirmation(
+    token,
+    entry,
+    timeout
+)
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    local deadline =
+        os.clock()
+        + (
+            tonumber(timeout)
+            or 2.5
+        )
+
+    while runtime.Token == token
+    and HOLY_FARM_STATE.ProFruitCollector == true
+    and os.clock() < deadline do
+
+        if HolyProFarmTargetExists(
+            entry
+        ) ~= true then
+
+            return true
+        end
+
+        task.wait(
+            0.08
+        )
+    end
+
+    return HolyProFarmTargetExists(
+        entry
+    ) ~= true
+end
+
+function HolyProFarmFireEntry(token, entry)
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    local packet =
+        runtime.CollectPacket
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        local _,
+            garden =
+            HolyProFarmGetNetworking()
+
+        packet =
+            type(garden) == "table"
+            and garden.CollectFruit
+            or nil
+
+        runtime.CollectPacket =
+            packet
+    end
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return false,
+            "Collect packet unavailable"
+    end
+
+    HolyProFarmSetStatus(
+        "Collecting"
+    )
+
+    local ok,
+        result =
+        pcall(function()
+
+            return packet:Fire(
+                entry.PlantId,
+                entry.FruitId
+            )
+        end)
+
+    if ok ~= true then
+
+        return false,
+            tostring(result)
+    end
+
+    if HolyProFarmWaitForConfirmation(
+        token,
+        entry,
+        2.5
+    ) then
+
+        return true,
+            "confirmed"
+    end
+
+    task.wait(
+        0.75
+    )
+
+    ok,
+        result =
+        pcall(function()
+
+            return packet:Fire(
+                entry.PlantId,
+                entry.FruitId
+            )
+        end)
+
+    if ok ~= true then
+
+        return false,
+            tostring(result)
+    end
+
+    if HolyProFarmWaitForConfirmation(
+        token,
+        entry,
+        2.5
+    ) then
+
+        return true,
+            "confirmed after retry"
+    end
+
+    return false,
+        "not confirmed"
+end
+
+function HolyProFarmRunWorker(token)
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    while runtime.Token == token
+    and HOLY_FARM_STATE.ProFruitCollector == true do
+
+        if HolyFarmAutoCollectBlocked() == true then
+
+            HolyProFarmSetStatus(
+                "Paused"
+            )
+
+            task.wait(
+                0.25
+            )
+
+            continue
+        end
+
+        if runtime.SnapshotReady ~= true then
+
+            if os.clock() - (
+                tonumber(runtime.LastRequestAt)
+                or 0
+            ) >= 5 then
+
+                HolyProFarmRequestSnapshot(
+                    "waiting"
+                )
+            end
+
+            task.wait(
+                0.25
+            )
+
+            continue
+        end
+
+        if os.clock() - (
+            tonumber(runtime.LastSnapshotAt)
+            or 0
+        ) >= 60 then
+
+            HolyProFarmRequestSnapshot(
+                "safety refresh"
+            )
+        end
+
+        local entry =
+            HolyProFarmFindTarget()
+
+        if type(entry) ~= "table" then
+
+            HolyProFarmSetStatus(
+                "Ready"
+            )
+
+            task.wait(
+                0.25
+            )
+
+            continue
+        end
+
+        local success =
+            HolyProFarmFireEntry(
+                token,
+                entry
+            )
+
+        if success == true then
+
+            runtime.Confirmed +=
+                1
+
+            runtime.ConsecutiveFailures =
+                0
+
+            runtime.Cooldowns[entry.Key] =
+                nil
+
+            HolyProFarmSetStatus(
+                "Ready"
+            )
+
+            task.wait(
+                0.12
+            )
+
+        else
+
+            runtime.Failed +=
+                1
+
+            runtime.ConsecutiveFailures +=
+                1
+
+            runtime.Cooldowns[entry.Key] =
+                os.clock()
+                + 8
+
+            if runtime.ConsecutiveFailures >= 3 then
+
+                runtime.ConsecutiveFailures =
+                    0
+
+                HolyProFarmRequestSnapshot(
+                    "recovery"
+                )
+            end
+
+            HolyProFarmSetStatus(
+                "Retrying"
+            )
+
+            task.wait(
+                0.35
+            )
+        end
+    end
+
+    if runtime.Token == token then
+
+        runtime.Running =
+            false
+    end
+end
+
+function HolyProFarmStart(reason)
+
+    HolyFarmEnsureState()
+
+    if HOLY_FARM_STATE.ProFruitCollector ~= true then
+        return false
+    end
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    if runtime.Running == true then
+        return false
+    end
+
+    HolyFarmStopAutoCollect(
+        "pro collector"
+    )
+
+    HolyProFarmDisconnectList(
+        runtime.Connections
+    )
+
+    HolyProFarmDisconnectList(
+        runtime.VisualConnections
+    )
+
+    runtime.Cache = {
+        Plants = {},
+    }
+
+    runtime.Cooldowns =
+        {}
+
+    runtime.SnapshotReady =
+        false
+
+    runtime.Confirmed =
+        0
+
+    runtime.Failed =
+        0
+
+    runtime.ConsecutiveFailures =
+        0
+
+    runtime.Token =
+        {}
+
+    runtime.Running =
+        true
+
+    local token =
+        runtime.Token
+
+    if HolyProFarmConnectEvents() ~= true then
+
+        runtime.Running =
+            false
+
+        runtime.Token =
+            nil
+
+        HolyProFarmSetStatus(
+            "Unavailable"
+        )
+
+        return false
+    end
+
+    if HOLY_FARM_STATE.LowGardenDetail == true then
+
+        HolyProFarmStartVisualBlocker()
+    end
+
+    HolyProFarmRequestSnapshot(
+        reason or "start"
+    )
+
+    task.spawn(function()
+
+        HolyProFarmRunWorker(
+            token
+        )
+    end)
+
+    return true
+end
+
+function HolyProFarmStop(reason)
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    runtime.Token =
+        nil
+
+    runtime.Running =
+        false
+
+    runtime.SnapshotReady =
+        false
+
+    HolyProFarmDisconnectList(
+        runtime.Connections
+    )
+
+    HolyProFarmStopVisualBlocker()
+
+    HolyProFarmSetStatus(
+        "Disabled"
+    )
+
+    return true
+end
+
+function HolyProFarmSetEnabled(value)
+
+    HolyFarmEnsureState()
+
+    value =
+        value == true
+
+    HOLY_FARM_STATE.ProFruitCollector =
+        value
+
+    if value == true then
+
+        HOLY_FARM_STATE.AutoCollectFruits =
+            false
+
+        if type(HOLY_FARM_UI.AutoCollectToggle) == "table"
+        and type(HOLY_FARM_UI.AutoCollectToggle.SetValue) == "function" then
+
+            pcall(function()
+
+                HOLY_FARM_UI.AutoCollectToggle:SetValue(
+                    false,
+                    true
+                )
+            end)
+        end
+
+        HolyFarmStopAutoCollect(
+            "pro enabled"
+        )
+
+        HolySaveFarmSettings()
+
+        return HolyProFarmStart(
+            "toggle on"
+        )
+    end
+
+    HolySaveFarmSettings()
+
+    return HolyProFarmStop(
+        "toggle off"
+    )
+end
+
+function HolyProFarmSetLowGardenDetail(value)
+
+    HolyFarmEnsureState()
+
+    HOLY_FARM_STATE.LowGardenDetail =
+        value == true
+
+    HolySaveFarmSettings()
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    if HOLY_FARM_STATE.LowGardenDetail == true
+    and HOLY_FARM_STATE.ProFruitCollector == true
+    and runtime.Running == true then
+
+        return HolyProFarmStartVisualBlocker()
+    end
+
+    return HolyProFarmStopVisualBlocker()
+end
+
 function HolyFarmSetAutoCollectFruits(value)
 
     HolyFarmEnsureState()
 
-    HOLY_FARM_STATE.AutoCollectFruits =
+    value =
         value == true
+
+    if value == true
+    and HOLY_FARM_STATE.ProFruitCollector == true then
+
+        HOLY_FARM_STATE.ProFruitCollector =
+            false
+
+        if type(HOLY_FARM_UI.ProCollectorToggle) == "table"
+        and type(HOLY_FARM_UI.ProCollectorToggle.SetValue) == "function" then
+
+            pcall(function()
+
+                HOLY_FARM_UI.ProCollectorToggle:SetValue(
+                    false,
+                    true
+                )
+            end)
+        end
+
+        HolyProFarmStop(
+            "normal collector enabled"
+        )
+    end
+
+    HOLY_FARM_STATE.AutoCollectFruits =
+        value
 
     HolySaveFarmSettings()
 
@@ -59368,6 +61300,14 @@ local FarmCollectionBox =
         "zap"
     )
 
+local FarmProCollectionBox =
+    HolyAddRightGroupbox(
+        Tabs.Farm,
+        "Farm.ProFruitCollector",
+        "Pro Fruit Collector",
+        "star"
+    )
+
 local FarmOverridesBox =
     HolyAddRightGroupbox(
         Tabs.Farm,
@@ -59560,6 +61500,11 @@ function HolyFarmRefreshPage()
 
     HolySetGroupboxVisible(
         FarmCollectionBox,
+        isCollect
+    )
+
+    HolySetGroupboxVisible(
+        FarmProCollectionBox,
         isCollect
     )
 
@@ -71037,6 +72982,93 @@ and type(FarmCollectionBox.AddInput) == "function" then
     end)
 end
 
+if FarmProCollectionBox
+and type(FarmProCollectionBox.AddToggle) == "function" then
+
+    HOLY_FARM_UI.ProCollectorToggle =
+        FarmProCollectionBox:AddToggle(
+            "HolyFarmProFruitCollector",
+            {
+                Text =
+                    "Enable Pro Collector",
+
+                Default =
+                    HOLY_FARM_STATE.ProFruitCollector == true,
+
+                Tooltip =
+                    "Enables the Pro fruit collection system. This replaces the normal Auto Collect Fruits worker.",
+            }
+        )
+
+    HOLY_FARM_UI.ProCollectorToggle:OnChanged(function(value)
+
+        HolyProFarmSetEnabled(
+            value == true
+        )
+    end)
+
+    HOLY_FARM_UI.LowGardenDetailToggle =
+        FarmProCollectionBox:AddToggle(
+            "HolyFarmLowGardenDetail",
+            {
+                Text =
+                    "Low Garden Detail",
+
+                Default =
+                    HOLY_FARM_STATE.LowGardenDetail == true,
+
+                Tooltip =
+                    "Reduces your local garden visuals while the Pro Collector is active. Rejoin to restore visuals immediately.",
+            }
+        )
+
+    HOLY_FARM_UI.LowGardenDetailToggle:OnChanged(function(value)
+
+        HolyProFarmSetLowGardenDetail(
+            value == true
+        )
+    end)
+end
+
+HOLY_FARM_UI.ProStatusLabel =
+    HolySniperAddLabel(
+        FarmProCollectionBox,
+        HolyProFarmBuildStatusText()
+    )
+
+if FarmProCollectionBox
+and type(FarmProCollectionBox.AddButton) == "function" then
+
+    FarmProCollectionBox:AddButton({
+        Text =
+            "Refresh Collector",
+
+        Tooltip =
+            "Refreshes the current garden information if the collector becomes stuck.",
+
+        Func =
+            function()
+
+                if HOLY_FARM_STATE.ProFruitCollector == true then
+
+                    HolyProFarmRequestSnapshot(
+                        "button"
+                    )
+
+                elseif type(HolyNotify) == "function" then
+
+                    HolyNotify(
+                        "HOLY Farm",
+                        "Enable Pro Collector first.",
+                        3
+                    )
+                end
+            end,
+    })
+end
+
+HolyProFarmRefreshUI()
+
 if FarmFruitAutomationBox
 and type(FarmFruitAutomationBox.AddToggle) == "function" then
 
@@ -71781,7 +73813,16 @@ task.defer(function()
         false
     )
 
-    if HOLY_FARM_STATE.AutoCollectFruits == true then
+    if HOLY_FARM_STATE.ProFruitCollector == true then
+
+        HOLY_FARM_STATE.AutoCollectFruits =
+            false
+
+        HolyProFarmStart(
+            "startup"
+        )
+
+    elseif HOLY_FARM_STATE.AutoCollectFruits == true then
 
         HolyFarmStartAutoCollect(
             "startup"
