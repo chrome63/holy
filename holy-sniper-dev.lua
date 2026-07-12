@@ -849,9 +849,6 @@ HOLY_WATERING_REJOIN_RUNTIME = {
 
     ActiveTween = nil,
 
-    DodgeSide = 1,
-    DodgeExtraDistance = 0,
-
     CharacterConnection = nil,
     DiedConnection = nil,
     RespawnPending = false,
@@ -54190,8 +54187,7 @@ end
 
 function HolyWateringRejoinWalkTo(
     destinationCFrame,
-    generation,
-    keepToolEquipped
+    generation
 )
 
     if typeof(destinationCFrame) ~= "CFrame" then
@@ -54305,10 +54301,7 @@ function HolyWateringRejoinWalkTo(
 
     pcall(function()
 
-        if keepToolEquipped ~= true then
-
-            humanoid:UnequipTools()
-        end
+        humanoid:UnequipTools()
 
         humanoid.Sit =
             false
@@ -54454,8 +54447,7 @@ end
 
 function HolyWateringRejoinTweenTo(
     destinationCFrame,
-    generation,
-    keepToolEquipped
+    generation
 )
 
     if typeof(destinationCFrame) ~= "CFrame" then
@@ -54506,10 +54498,7 @@ function HolyWateringRejoinTweenTo(
 
     pcall(function()
 
-        if keepToolEquipped ~= true then
-
-            humanoid:UnequipTools()
-        end
+        humanoid:UnequipTools()
 
         humanoid.Sit =
             false
@@ -54638,8 +54627,7 @@ end
 
 function HolyWateringRejoinMoveTo(
     destinationCFrame,
-    generation,
-    keepToolEquipped
+    generation
 )
 
     if HOLY_WATERING_REJOIN_STATE.MovementMode
@@ -54647,22 +54635,19 @@ function HolyWateringRejoinMoveTo(
 
         return HolyWateringRejoinTweenTo(
             destinationCFrame,
-            generation,
-            keepToolEquipped
+            generation
         )
     end
 
     return HolyWateringRejoinWalkTo(
         destinationCFrame,
-        generation,
-        keepToolEquipped
+        generation
     )
 end
 
-function HolyWateringRejoinBuildEvasionCFrames(
+function HolyWateringRejoinBuildSafeCFrame(
     savedStandCFrame,
-    savedAimPosition,
-    dodgeSide
+    savedAimPosition
 )
 
     if typeof(savedStandCFrame) ~= "CFrame"
@@ -54699,22 +54684,6 @@ function HolyWateringRejoinBuildEvasionCFrames(
         return nil
     end
 
-    awayDirection =
-        awayDirection.Unit
-
-    dodgeSide =
-        dodgeSide == -1
-        and -1
-        or 1
-
-    local sideDirection =
-        Vector3.new(
-            -awayDirection.Z,
-            0,
-            awayDirection.X
-        )
-        * dodgeSide
-
     local retreatDistance =
         math.clamp(
             tonumber(
@@ -54725,80 +54694,32 @@ function HolyWateringRejoinBuildEvasionCFrames(
             80
         )
 
-    local extraDistance =
-        math.clamp(
-            tonumber(
-                HOLY_WATERING_REJOIN_RUNTIME.DodgeExtraDistance
-            )
-            or 0,
-            0,
-            12
-        )
-
-    local dodgePosition =
-        standPosition
-        + awayDirection
-        * 6
-        + sideDirection
-        * (
-            16
-            + extraDistance
-        )
-
     local safePosition =
         standPosition
-        + awayDirection
+        + awayDirection.Unit
         * retreatDistance
-        + sideDirection
-        * (
-            22
-            + extraDistance
+
+    local flatAim =
+        Vector3.new(
+            savedAimPosition.X,
+            safePosition.Y,
+            savedAimPosition.Z
         )
 
-    local approachPosition =
-        standPosition
-        + awayDirection
-        * 8
-        + sideDirection
-        * (
-            12
-            + extraDistance * 0.5
-        )
+    if (
+        flatAim
+        - safePosition
+    ).Magnitude <= 0.01 then
 
-    local function buildFacingCFrame(position)
-
-        local flatAim =
-            Vector3.new(
-                savedAimPosition.X,
-                position.Y,
-                savedAimPosition.Z
-            )
-
-        if (
-            flatAim
-            - position
-        ).Magnitude <= 0.01 then
-
-            return CFrame.new(
-                position
-            )
-        end
-
-        return CFrame.lookAt(
-            position,
-            flatAim
+        return CFrame.new(
+            safePosition
         )
     end
 
-    return buildFacingCFrame(
-        dodgePosition
-    ),
-        buildFacingCFrame(
-            safePosition
-        ),
-        buildFacingCFrame(
-            approachPosition
-        )
+    return CFrame.lookAt(
+        safePosition,
+        flatAim
+    )
 end
 
 function HolyWateringRejoinIsNight()
@@ -54832,141 +54753,27 @@ end
 function HolyWateringRejoinRetreatToSafety(
     savedStandCFrame,
     savedAimPosition,
-    generation,
-    dodgeSide
+    generation
 )
 
-    local dodgeCFrame,
-        safeCFrame =
-        HolyWateringRejoinBuildEvasionCFrames(
+    local safeCFrame =
+        HolyWateringRejoinBuildSafeCFrame(
             savedStandCFrame,
-            savedAimPosition,
-            dodgeSide
+            savedAimPosition
         )
 
-    if typeof(dodgeCFrame) ~= "CFrame"
-    or typeof(safeCFrame) ~= "CFrame" then
+    if typeof(safeCFrame) ~= "CFrame" then
 
         return false
     end
 
-    local _,
-        humanoid =
-        HolyWateringRejoinGetCharacter()
-
-    local startingHealth =
-        typeof(humanoid) == "Instance"
-        and tonumber(
-            humanoid.Health
-        )
-        or nil
-
-    local reachedDodge =
-        HolyWateringRejoinMoveTo(
-            dodgeCFrame,
-            generation,
-            true
-        )
-
-    if reachedDodge ~= true then
-
-        return false
-    end
-
-    local reachedSafety =
+    local arrived =
         HolyWateringRejoinMoveTo(
             safeCFrame,
-            generation,
-            true
+            generation
         )
 
-    if reachedSafety ~= true then
-
-        return false
-    end
-
-    local endingHealth =
-        typeof(humanoid) == "Instance"
-        and tonumber(
-            humanoid.Health
-        )
-        or nil
-
-    if startingHealth
-    and endingHealth
-    and endingHealth < startingHealth then
-
-        HOLY_WATERING_REJOIN_RUNTIME.DodgeExtraDistance =
-            math.min(
-                12,
-                (
-                    tonumber(
-                        HOLY_WATERING_REJOIN_RUNTIME.DodgeExtraDistance
-                    )
-                    or 0
-                )
-                + 4
-            )
-
-    else
-
-        HOLY_WATERING_REJOIN_RUNTIME.DodgeExtraDistance =
-            math.max(
-                0,
-                (
-                    tonumber(
-                        HOLY_WATERING_REJOIN_RUNTIME.DodgeExtraDistance
-                    )
-                    or 0
-                )
-                - 1
-            )
-    end
-
-    return true
-end
-
-function HolyWateringRejoinReturnFromSafety(
-    savedStandCFrame,
-    savedAimPosition,
-    generation,
-    dodgeSide
-)
-
-    local _,
-        _,
-        approachCFrame =
-        HolyWateringRejoinBuildEvasionCFrames(
-            savedStandCFrame,
-            savedAimPosition,
-            dodgeSide
-        )
-
-    if typeof(approachCFrame) ~= "CFrame" then
-
-        return false
-    end
-
-    local reachedApproach =
-        HolyWateringRejoinMoveTo(
-            approachCFrame,
-            generation,
-            true
-        )
-
-    if reachedApproach ~= true then
-
-        return false
-    end
-
-    local reachedTarget =
-        HolyWateringRejoinMoveTo(
-            savedStandCFrame,
-            generation,
-            true
-        )
-
-    return reachedTarget == true
+    return arrived == true
 end
 
 function HolyWateringRejoinRestoreSetupHook()
@@ -55415,8 +55222,7 @@ function HolyWateringRejoinConfirmUse(
     aimPosition,
     toolName,
     tool,
-    generation,
-    afterFire
+    generation
 )
 
     local runtime =
@@ -55434,8 +55240,7 @@ function HolyWateringRejoinConfirmUse(
 
         return false,
             startingCount or 0,
-            false,
-            true
+            false
     end
 
     local fireSuccess,
@@ -55458,38 +55263,11 @@ function HolyWateringRejoinConfirmUse(
 
         return false,
             startingCount,
-            false,
-            true
-    end
-
-    local firedAt =
-        os.clock()
-
-    local afterFireSucceeded =
-        true
-
-    if type(afterFire) == "function" then
-
-        local callbackSuccess,
-            callbackResult =
-            pcall(
-                afterFire
-            )
-
-        afterFireSucceeded =
-            callbackSuccess == true
-            and callbackResult ~= false
-
-        if afterFireSucceeded ~= true then
-
-            warn(
-                "[HOLY Watering Rejoin] Evasive movement after watering failed."
-            )
-        end
+            false
     end
 
     local deadline =
-        firedAt
+        os.clock()
         + 5
 
     local finalCount =
@@ -55498,7 +55276,10 @@ function HolyWateringRejoinConfirmUse(
     local missingSince =
         nil
 
-    local function readConfirmation()
+    while HOLY_WATERING_REJOIN_STATE.Enabled == true
+    and runtime.Running == true
+    and runtime.Generation == generation
+    and os.clock() < deadline do
 
         local observedCount =
             tonumber(
@@ -55516,7 +55297,8 @@ function HolyWateringRejoinConfirmUse(
         if finalCount < startingCount then
 
             return true,
-                finalCount
+                finalCount,
+                true
         end
 
         local usableTool =
@@ -55528,51 +55310,19 @@ function HolyWateringRejoinConfirmUse(
 
             missingSince =
                 missingSince
-                or firedAt
+                or os.clock()
 
             if os.clock() - missingSince >= 0.25 then
 
                 return true,
-                    0
+                    0,
+                    true
             end
 
         else
 
             missingSince =
                 nil
-        end
-
-        return false,
-            finalCount
-    end
-
-    local confirmedNow,
-        confirmedCount =
-        readConfirmation()
-
-    if confirmedNow == true then
-
-        return true,
-            confirmedCount,
-            true,
-            afterFireSucceeded
-    end
-
-    while HOLY_WATERING_REJOIN_STATE.Enabled == true
-    and runtime.Running == true
-    and runtime.Generation == generation
-    and os.clock() < deadline do
-
-        confirmedNow,
-            confirmedCount =
-            readConfirmation()
-
-        if confirmedNow == true then
-
-            return true,
-                confirmedCount,
-                true,
-                afterFireSucceeded
         end
 
         task.wait(
@@ -55582,8 +55332,7 @@ function HolyWateringRejoinConfirmUse(
 
     return false,
         finalCount,
-        true,
-        afterFireSucceeded
+        true
 end
 
 function HolyWateringRejoinOfflineAnimationActive()
@@ -55948,30 +55697,11 @@ function HolyWateringRejoinRunCycle(generation)
         garden
     )
 
-    local keepToolEquipped =
-        HolyWateringRejoinShouldAvoidPlantAttacks()
-
-    if keepToolEquipped == true
-    and HolyWateringRejoinEquipTool(
-        tool
-    ) ~= true then
-
-        HolyWateringRejoinScheduleRecovery(
-            "Could not equip "
-            .. state.WateringCan
-            .. " before approaching the target.",
-            1
-        )
-
-        return
-    end
-
     local arrived,
         finalDistance =
         HolyWateringRejoinMoveTo(
             savedStandCFrame,
-            generation,
-            keepToolEquipped
+            generation
         )
 
     if arrived ~= true then
@@ -56091,136 +55821,23 @@ function HolyWateringRejoinRunCycle(generation)
             break
         end
 
-        local retreatedForPlantAttacks =
-            false
-
-        local activeDodgeSide =
-            nil
-
-        local function retreatFromPlantAttacks()
-
-            if retreatedForPlantAttacks == true then
-
-                return true
-            end
-
-            local selectedSide =
-                runtime.DodgeSide == -1
-                and -1
-                or 1
-
-            local retreated =
-                HolyWateringRejoinRetreatToSafety(
-                    savedStandCFrame,
-                    savedAimPosition,
-                    generation,
-                    selectedSide
-                )
-
-            if retreated ~= true then
-
-                if state.Enabled == true
-                and runtime.Generation == generation
-                and runtime.RespawnPending ~= true then
-
-                    HolyWateringRejoinScheduleRecovery(
-                        "Could not complete the evasive retreat.",
-                        1
-                    )
-                end
-
-                return false
-            end
-
-            activeDodgeSide =
-                selectedSide
-
-            runtime.DodgeSide =
-                -selectedSide
-
-            retreatedForPlantAttacks =
-                true
-
-            return true
-        end
-
-        local function returnToWateringPosition()
-
-            if retreatedForPlantAttacks ~= true then
-
-                return true
-            end
-
-            local returnedToTarget =
-                HolyWateringRejoinReturnFromSafety(
-                    savedStandCFrame,
-                    savedAimPosition,
-                    generation,
-                    activeDodgeSide
-                    or 1
-                )
-
-            if returnedToTarget ~= true then
-
-                if state.Enabled == true
-                and runtime.Generation == generation
-                and runtime.RespawnPending ~= true then
-
-                    HolyWateringRejoinScheduleRecovery(
-                        "Could not complete the evasive return route.",
-                        1
-                    )
-                end
-
-                return false
-            end
-
-            retreatedForPlantAttacks =
-                false
-
-            return true
-        end
-
         local sentAt =
             os.clock()
 
         local confirmed,
             remainingCount,
-            packetSent,
-            afterFireSucceeded =
+            packetSent =
             HolyWateringRejoinConfirmUse(
                 packet,
                 savedAimPosition,
                 state.WateringCan,
                 tool,
-                generation,
-                function()
-
-                    if HolyWateringRejoinShouldAvoidPlantAttacks() == true then
-
-                        return retreatFromPlantAttacks()
-                    end
-
-                    return true
-                end
+                generation
             )
 
         if state.Enabled ~= true
         or runtime.Running ~= true
         or runtime.Generation ~= generation then
-
-            return
-        end
-
-        if afterFireSucceeded ~= true then
-
-            if runtime.RecoveryScheduled ~= true then
-
-                HolyWateringRejoinScheduleRecovery(
-                    "Evasive movement was interrupted.",
-                    1
-                )
-            end
 
             return
         end
@@ -56274,6 +55891,78 @@ function HolyWateringRejoinRunCycle(generation)
                 and state.UseMode == "All Available"
             )
 
+        local retreatedForPlantAttacks =
+            false
+
+        local function retreatFromPlantAttacks()
+
+            if retreatedForPlantAttacks == true then
+
+                return true
+            end
+
+            local retreated =
+                HolyWateringRejoinRetreatToSafety(
+                    savedStandCFrame,
+                    savedAimPosition,
+                    generation
+                )
+
+            if retreated ~= true then
+
+                if state.Enabled == true
+                and runtime.Generation == generation
+                and runtime.RespawnPending ~= true then
+
+                    HolyWateringRejoinScheduleRecovery(
+                        "Could not retreat from the plants.",
+                        1
+                    )
+                end
+
+                return false
+            end
+
+            retreatedForPlantAttacks =
+                true
+
+            return true
+        end
+
+        local function returnToWateringPosition()
+
+            if retreatedForPlantAttacks ~= true then
+
+                return true
+            end
+
+            local returnedToTarget =
+                HolyWateringRejoinMoveTo(
+                    savedStandCFrame,
+                    generation
+                )
+
+            if returnedToTarget ~= true then
+
+                if state.Enabled == true
+                and runtime.Generation == generation
+                and runtime.RespawnPending ~= true then
+
+                    HolyWateringRejoinScheduleRecovery(
+                        "Could not return to the watering position.",
+                        1
+                    )
+                end
+
+                return false
+            end
+
+            retreatedForPlantAttacks =
+                false
+
+            return true
+        end
+
         if HolyWateringRejoinShouldAvoidPlantAttacks() == true then
 
             if retreatFromPlantAttacks() ~= true then
@@ -56302,7 +55991,7 @@ function HolyWateringRejoinRunCycle(generation)
                     tonumber(
                         state.WateringDelay
                     )
-                    or 3,
+                    or 1,
                     0.1,
                     10
                 )
@@ -57019,7 +56708,7 @@ function HolyWateringRejoinSetWateringDelay(value)
     HOLY_WATERING_REJOIN_STATE.WateringDelay =
         math.clamp(
             tonumber(value)
-            or 3,
+            or 1,
             0.1,
             10
         )
