@@ -1301,6 +1301,7 @@ HOLY_SHOP_STATE = {
 
     SellWorkerRunning = false,
     SellWatcherStarted = false,
+    SellAllPending = false,
 
     SellPacketCache = {},
     SellConnections = {},
@@ -1309,10 +1310,10 @@ HOLY_SHOP_STATE = {
     SellQueueMap = {},
     SellRecentFruitIds = {},
 
-    SellAllInterval = 0.5,
-    SellFruitInterval = 0.05,
-    SelectedScanInterval = 0.25,
-    MaxSellFruitPerPass = 75,
+    SellAllInterval = 0.10,
+    FruitsAtOnce = 25,
+    SelectedScanInterval = 0.10,
+    SellAllRescanInterval = 0.50,
 }
 
 if type(HOLY_FARM_RUNTIME) == "table" then
@@ -3315,6 +3316,26 @@ function HolySellIsFilteredMethod(value)
     ) == "Filtered Sell"
 end
 
+function HolySellReadFruitsAtOnce(value)
+
+    local amount =
+        tonumber(value)
+
+    if type(amount) ~= "number"
+    or amount ~= amount
+    or amount == math.huge
+    or amount == -math.huge then
+
+        amount =
+            25
+    end
+
+    return math.max(
+        1,
+        math.floor(amount)
+    )
+end
+
 function HolySaveShopSettings()
 
     if HolyCanUseFiles() ~= true then
@@ -3535,9 +3556,14 @@ function HolySaveShopSettings()
         SellAllInterval =
             math.clamp(
                 tonumber(HOLY_SHOP_STATE.SellAllInterval)
-                or 0.5,
+                or 0.10,
                 0,
                 5
+            ),
+
+        FruitsAtOnce =
+            HolySellReadFruitsAtOnce(
+                HOLY_SHOP_STATE.FruitsAtOnce
             ),
     }
 
@@ -3905,9 +3931,15 @@ function HolyLoadShopSettings()
     HOLY_SHOP_STATE.SellAllInterval =
         math.clamp(
             tonumber(data.SellAllInterval)
-            or 0.5,
+            or 0.10,
             0,
             5
+        )
+
+    HOLY_SHOP_STATE.FruitsAtOnce =
+        HolySellReadFruitsAtOnce(
+            data.FruitsAtOnce
+            or 25
         )
 
     return true
@@ -48369,17 +48401,59 @@ end
 
 function HolySellAllOnce()
 
-    HolySellFirePacket(
-        "PreviewSellAll"
-    )
-
-    task.wait(
-        0.05
-    )
-
     return HolySellFirePacket(
         "SellAll"
     )
+end
+
+function HolySellScheduleSellAll(reason)
+
+    if HOLY_SHOP_STATE.AutoSellFruits ~= true then
+        return false
+    end
+
+    if HolySellIsFilteredMethod(
+        HOLY_SHOP_STATE.SellMethod
+    ) == true then
+
+        return false
+    end
+
+    if HOLY_SHOP_STATE.SellAllPending == true then
+        return false
+    end
+
+    HOLY_SHOP_STATE.SellAllPending =
+        true
+
+    local delay =
+        math.clamp(
+            tonumber(HOLY_SHOP_STATE.SellAllInterval)
+            or 0.10,
+            0,
+            5
+        )
+
+    task.delay(delay, function()
+
+        HOLY_SHOP_STATE.SellAllPending =
+            false
+
+        if HOLY_SHOP_STATE.AutoSellFruits ~= true then
+            return
+        end
+
+        if HolySellIsFilteredMethod(
+            HOLY_SHOP_STATE.SellMethod
+        ) == true then
+
+            return
+        end
+
+        HolySellAllOnce()
+    end)
+
+    return true
 end
 
 function HolySellGetToolAttributes(tool)
@@ -55297,18 +55371,32 @@ function HolySellHookContainer(container, reason)
         and HOLY_SHOP_STATE.SellConnections
         or {}
 
-    local function tryQueue(child, queueReason)
+    local function tryHandle(child, triggerReason)
 
         if HOLY_SHOP_STATE.AutoSellFruits ~= true then
             return
         end
 
-        if HolySellQueueFruitTool(
-            child,
-            queueReason
+        if HolySellIsFilteredMethod(
+            HOLY_SHOP_STATE.SellMethod
         ) == true then
 
-            HolySellStartWorker()
+            if HolySellQueueFruitTool(
+                child,
+                triggerReason
+            ) == true then
+
+                HolySellStartWorker()
+            end
+
+            return
+        end
+
+        if HolySellLooksLikeFruitTool(child) == true then
+
+            HolySellScheduleSellAll(
+                triggerReason
+            )
         end
     end
 
@@ -55318,7 +55406,7 @@ function HolySellHookContainer(container, reason)
 
             task.defer(function()
 
-                tryQueue(
+                tryHandle(
                     child,
                     reason or "child added"
                 )
@@ -55326,7 +55414,7 @@ function HolySellHookContainer(container, reason)
 
             task.delay(0.12, function()
 
-                tryQueue(
+                tryHandle(
                     child,
                     tostring(reason or "child added")
                     .. " delayed"
@@ -55335,7 +55423,7 @@ function HolySellHookContainer(container, reason)
 
             task.delay(0.35, function()
 
-                tryQueue(
+                tryHandle(
                     child,
                     tostring(reason or "child added")
                     .. " settled"
@@ -55430,24 +55518,20 @@ function HolySellSelectedOnce()
 
     HolySellSortQueue()
 
-    local sold =
-        0
-
-    local maxPerPass =
-        math.max(
-            1,
-            math.floor(
-                tonumber(HOLY_SHOP_STATE.MaxSellFruitPerPass)
-                or 75
-            )
+    local fruitsAtOnce =
+        HolySellReadFruitsAtOnce(
+            HOLY_SHOP_STATE.FruitsAtOnce
         )
+
+    local batch =
+        {}
 
     while HOLY_SHOP_STATE.AutoSellFruits == true
     and HolySellIsFilteredMethod(
         HOLY_SHOP_STATE.SellMethod
     ) == true
     and #HOLY_SHOP_STATE.SellQueue > 0
-    and sold < maxPerPass do
+    and #batch < fruitsAtOnce do
 
         local row =
             table.remove(
@@ -55474,46 +55558,83 @@ function HolySellSelectedOnce()
 
             if liveSafe == true then
 
-                if HolySellFirePacket(
-                    "SellFruit",
-                    fruitId
-                ) == true then
+                table.insert(
+                    batch,
+                    {
+                        Id =
+                            fruitId,
 
-                    HOLY_SHOP_STATE.SellRecentFruitIds[fruitId] =
-                        os.clock()
-
-                    sold =
-                        sold + 1
-                end
-
-                task.wait(
-                    tonumber(HOLY_SHOP_STATE.SellFruitInterval)
-                    or 0.05
+                        Tool =
+                            liveTool,
+                    }
                 )
 
-            else
+            elseif type(HOLY_SHOP_STATE.LastSellSkipPrintAt) ~= "number"
+            or os.clock() - HOLY_SHOP_STATE.LastSellSkipPrintAt >= 1 then
 
-                if type(HOLY_SHOP_STATE.LastSellSkipPrintAt) ~= "number"
-                or os.clock() - HOLY_SHOP_STATE.LastSellSkipPrintAt >= 1 then
+                HOLY_SHOP_STATE.LastSellSkipPrintAt =
+                    os.clock()
 
-                    HOLY_SHOP_STATE.LastSellSkipPrintAt =
-                        os.clock()
-
-                    print(
-                        "[HOLY SELL]",
-                        HolySellDescribeSkip(
-                            liveTool,
-                            fruitId,
-                            liveReason
-                        )
+                print(
+                    "[HOLY SELL]",
+                    HolySellDescribeSkip(
+                        liveTool,
+                        fruitId,
+                        liveReason
                     )
-                end
-
-                task.wait(
-                    0.01
                 )
             end
         end
+    end
+
+    local launched =
+        #batch
+
+    if launched <= 0 then
+        return 0
+    end
+
+    local completed =
+        0
+
+    local sold =
+        0
+
+    for _, item in ipairs(batch) do
+
+        task.spawn(function()
+
+            local success =
+                false
+
+            if HOLY_SHOP_STATE.AutoSellFruits == true
+            and HolySellIsFilteredMethod(
+                HOLY_SHOP_STATE.SellMethod
+            ) == true then
+
+                success =
+                    HolySellFirePacket(
+                        "SellFruit",
+                        item.Id
+                    ) == true
+            end
+
+            if success == true then
+
+                HOLY_SHOP_STATE.SellRecentFruitIds[item.Id] =
+                    os.clock()
+
+                sold =
+                    sold + 1
+            end
+
+            completed =
+                completed + 1
+        end)
+    end
+
+    while completed < launched do
+        task.wait()
     end
 
     return sold
@@ -55538,7 +55659,15 @@ function HolySellRunOnce()
         return true
     end
 
-    HolySellAllOnce()
+    local fruitTools =
+        HolySellGetFruitTools()
+
+    if #fruitTools > 0 then
+
+        HolySellScheduleSellAll(
+            "inventory rescan"
+        )
+    end
 
     return true
 end
@@ -55558,26 +55687,42 @@ function HolySellStartWorker()
 
             HolySellRunOnce()
 
-            local method =
-                tostring(
+            local filtered =
+                HolySellIsFilteredMethod(
                     HOLY_SHOP_STATE.SellMethod
-                    or "Sell All"
                 )
 
-            local waitTime =
-                HolySellIsFilteredMethod(method) == true
-                and math.clamp(
-                    tonumber(HOLY_SHOP_STATE.SelectedScanInterval)
-                    or 0.25,
-                    0.05,
-                    2
-                )
-                or math.clamp(
-                    tonumber(HOLY_SHOP_STATE.SellAllInterval)
-                    or 0.5,
-                    0,
-                    5
-                )
+            local waitTime
+
+            if filtered == true then
+
+                if type(HOLY_SHOP_STATE.SellQueue) == "table"
+                and #HOLY_SHOP_STATE.SellQueue > 0 then
+
+                    waitTime =
+                        0
+
+                else
+
+                    waitTime =
+                        math.clamp(
+                            tonumber(HOLY_SHOP_STATE.SelectedScanInterval)
+                            or 0.10,
+                            0.03,
+                            2
+                        )
+                end
+
+            else
+
+                waitTime =
+                    math.clamp(
+                        tonumber(HOLY_SHOP_STATE.SellAllRescanInterval)
+                        or 0.50,
+                        0.10,
+                        5
+                    )
+            end
 
             task.wait(
                 waitTime
@@ -75074,16 +75219,55 @@ HOLY_SHOP_UI.AuctionStatusLabel =
         "Status: Ready"
     )
 
-ShopSellBox:AddToggle(
-    "HolyShopAutoSellFruits",
-    {
-        Text =
-            "💰 Auto Sell Fruits",
+function HolyShopRefreshSellControls()
 
-        Default =
-            HOLY_SHOP_STATE.AutoSellFruits,
-    }
-):OnChanged(function(value)
+    local filtered =
+        HolySellIsFilteredMethod(
+            HOLY_SHOP_STATE.SellMethod
+        )
+
+    local sellDelayControl =
+        HOLY_SHOP_UI.SellDelayControl
+
+    local fruitsAtOnceControl =
+        HOLY_SHOP_UI.FruitsAtOnceControl
+
+    if type(sellDelayControl) == "table"
+    and type(sellDelayControl.SetVisible) == "function" then
+
+        pcall(function()
+
+            sellDelayControl:SetVisible(
+                filtered ~= true
+            )
+        end)
+    end
+
+    if type(fruitsAtOnceControl) == "table"
+    and type(fruitsAtOnceControl.SetVisible) == "function" then
+
+        pcall(function()
+
+            fruitsAtOnceControl:SetVisible(
+                filtered == true
+            )
+        end)
+    end
+end
+
+HOLY_SHOP_UI.AutoSellToggle =
+    ShopSellBox:AddToggle(
+        "HolyShopAutoSellFruits",
+        {
+            Text =
+                "💰 Auto Sell Fruits",
+
+            Default =
+                HOLY_SHOP_STATE.AutoSellFruits,
+        }
+    )
+
+HOLY_SHOP_UI.AutoSellToggle:OnChanged(function(value)
 
     HOLY_SHOP_STATE.AutoSellFruits =
         value == true
@@ -75094,9 +75278,20 @@ ShopSellBox:AddToggle(
 
         HolySellStartWatcher()
 
-        HolySellScanExistingFruitTools(
-            "toggle on"
-        )
+        if HolySellIsFilteredMethod(
+            HOLY_SHOP_STATE.SellMethod
+        ) == true then
+
+            HolySellScanExistingFruitTools(
+                "toggle on"
+            )
+
+        else
+
+            HolySellScheduleSellAll(
+                "toggle on"
+            )
+        end
 
         HolySellStartWorker()
 
@@ -75106,104 +75301,174 @@ ShopSellBox:AddToggle(
     end
 end)
 
-ShopSellBox:AddDropdown(
-    "HolyShopSellMethod",
-    {
-        Text =
-            "⚙️ Method",
+HOLY_SHOP_UI.SellMethodControl =
+    ShopSellBox:AddDropdown(
+        "HolyShopSellMethod",
+        {
+            Text =
+                "⚙️ Method",
 
-        Values = {
-            HolySellMethodDisplay(
-                "Sell All"
-            ),
+            Values = {
+                HolySellMethodDisplay(
+                    "Sell All"
+                ),
 
-            HolySellMethodDisplay(
-                "Filtered Sell"
-            ),
-        },
+                HolySellMethodDisplay(
+                    "Filtered Sell"
+                ),
+            },
 
-        Default =
-            HolySellMethodDisplay(
-                HOLY_SHOP_STATE.SellMethod
-            ),
+            Default =
+                HolySellMethodDisplay(
+                    HOLY_SHOP_STATE.SellMethod
+                ),
 
-        Multi =
-            false,
+            Multi =
+                false,
 
-        Searchable =
-            false,
+            Searchable =
+                false,
 
-        MaxVisibleDropdownItems =
-            2,
+            MaxVisibleDropdownItems =
+                2,
 
-        Tooltip =
-            "💰 Sell All uses bulk SellAll. 🎯 Filtered Sell sells fruits one by one with filters.",
-    }
-):OnChanged(function(value)
+            Tooltip =
+                "💰 Sell All sells the full inventory. 🎯 Filtered Sell concurrently sells matching fruits.",
+        }
+    )
+
+HOLY_SHOP_UI.SellMethodControl:OnChanged(function(value)
 
     HOLY_SHOP_STATE.SellMethod =
         HolySellNormalizeMethod(
             value
         )
 
+    HolySellClearQueue()
     HolySaveShopSettings()
+    HolyShopRefreshSellControls()
 
     if HOLY_SHOP_STATE.AutoSellFruits == true then
 
         HolySellStartWatcher()
 
-        HolySellScanExistingFruitTools(
-            "saved toggle"
-        )
+        if HolySellIsFilteredMethod(
+            HOLY_SHOP_STATE.SellMethod
+        ) == true then
+
+            HolySellScanExistingFruitTools(
+                "method changed"
+            )
+
+        else
+
+            HolySellScheduleSellAll(
+                "method changed"
+            )
+        end
 
         HolySellStartWorker()
     end
 end)
 
-ShopSellBox:AddSlider(
-    "HolyShopSellAllSpeed",
-    {
-        Text =
-            "⚡ Sell Speed",
+HOLY_SHOP_UI.SellDelayControl =
+    ShopSellBox:AddSlider(
+        "HolyShopSellAllSpeed",
+        {
+            Text =
+                "⚡ Sell Delay",
 
-        Default =
-            math.clamp(
-                tonumber(HOLY_SHOP_STATE.SellAllInterval)
-                or 0.5,
+            Default =
+                math.clamp(
+                    tonumber(HOLY_SHOP_STATE.SellAllInterval)
+                    or 0.10,
+                    0,
+                    5
+                ),
+
+            Min =
                 0,
-                5
-            ),
 
-        Min =
-            0,
+            Max =
+                5,
 
-        Max =
-            5,
+            Rounding =
+                2,
 
-        Rounding =
-            2,
+            Suffix =
+                "s",
 
-        Suffix =
-            "s",
+            HideMax =
+                true,
 
-        HideMax =
-            true,
+            Tooltip =
+                "How long Sell All waits after detecting fruit. 0 = immediate.",
+        }
+    )
 
-        Tooltip =
-            "Speed for 💰 Sell All mode. 0 = fastest.",
-    }
-):OnChanged(function(value)
+HOLY_SHOP_UI.SellDelayControl:OnChanged(function(value)
 
     HOLY_SHOP_STATE.SellAllInterval =
         math.clamp(
             tonumber(value)
-            or 0.5,
+            or 0.10,
             0,
             5
         )
 
     HolySaveShopSettings()
 end)
+
+HOLY_SHOP_UI.FruitsAtOnceControl =
+    ShopSellBox:AddInput(
+        "HolyShopFruitsAtOnce",
+        {
+            Text =
+                "🍎 Fruits at Once",
+
+            Default =
+                tostring(
+                    HolySellReadFruitsAtOnce(
+                        HOLY_SHOP_STATE.FruitsAtOnce
+                    )
+                ),
+
+            Numeric =
+                true,
+
+            Finished =
+                true,
+
+            ClearTextOnFocus =
+                false,
+
+            Placeholder =
+                "25",
+
+            Tooltip =
+                "Number of filtered fruits sold concurrently. There is no upper limit.",
+        }
+    )
+
+HOLY_SHOP_UI.FruitsAtOnceControl:OnChanged(function(value)
+
+    HOLY_SHOP_STATE.FruitsAtOnce =
+        HolySellReadFruitsAtOnce(
+            value
+        )
+
+    HolySaveShopSettings()
+
+    if HOLY_SHOP_STATE.AutoSellFruits == true
+    and HolySellIsFilteredMethod(
+        HOLY_SHOP_STATE.SellMethod
+    ) == true then
+
+        HolySellStartWorker()
+    end
+end)
+
+HolyShopRefreshSellControls()
 
 HOLY_SHOP_UI =
     type(HOLY_SHOP_UI) == "table"
