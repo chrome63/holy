@@ -1400,8 +1400,7 @@ HOLY_FARM_STATE = {
     ProFruitCollector = false,
     LowGardenDetail = false,
 
-    ProBatchMode = false,
-    ProBatchAmount = 10,
+    ProCollectionDelay = 0.05,
 
     CollectMode = "All",
 
@@ -1488,6 +1487,13 @@ HOLY_PRO_FARM_RUNTIME = {
 
     Cooldowns = {},
 
+    Pending = {},
+    NextSendAt = 0,
+
+    MaxPending = 10,
+    ConfirmationTimeout = 2.5,
+    RetryDelay = 0.75,
+
     VisualBlockerActive = false,
     HiddenVisualRoots = 0,
 }
@@ -1507,8 +1513,7 @@ HOLY_FARM_UI = {
     ProCollectorToggle = nil,
     LowGardenDetailToggle = nil,
 
-    ProBatchModeToggle = nil,
-    ProBatchAmountInput = nil,
+    ProCollectionDelaySlider = nil,
 
     ProStatusLabel = nil,
 }
@@ -4850,19 +4855,14 @@ function HolyFarmEnsureState()
     HOLY_FARM_STATE.LowGardenDetail =
         HOLY_FARM_STATE.LowGardenDetail == true
 
-    HOLY_FARM_STATE.ProBatchMode =
-        HOLY_FARM_STATE.ProBatchMode == true
-
-    HOLY_FARM_STATE.ProBatchAmount =
+    HOLY_FARM_STATE.ProCollectionDelay =
         math.clamp(
-            math.floor(
-                tonumber(
-                    HOLY_FARM_STATE.ProBatchAmount
-                )
-                or 10
-            ),
-            2,
-            50
+            tonumber(
+                HOLY_FARM_STATE.ProCollectionDelay
+            )
+            or 0.05,
+            0.035,
+            1
         )
 
     return HOLY_FARM_STATE
@@ -5112,19 +5112,14 @@ function HolySaveFarmSettings()
         LowGardenDetail =
             HOLY_FARM_STATE.LowGardenDetail == true,
 
-        ProBatchMode =
-            HOLY_FARM_STATE.ProBatchMode == true,
-
-        ProBatchAmount =
+        ProCollectionDelay =
             math.clamp(
-                math.floor(
-                    tonumber(
-                        HOLY_FARM_STATE.ProBatchAmount
-                    )
-                    or 10
-                ),
-                2,
-                50
+                tonumber(
+                    HOLY_FARM_STATE.ProCollectionDelay
+                )
+                or 0.05,
+                0.035,
+                1
             ),
 
         CollectMode =
@@ -5253,19 +5248,14 @@ function HolyLoadFarmSettings()
     HOLY_FARM_STATE.LowGardenDetail =
         data.LowGardenDetail == true
 
-    HOLY_FARM_STATE.ProBatchMode =
-        data.ProBatchMode == true
-
-    HOLY_FARM_STATE.ProBatchAmount =
+    HOLY_FARM_STATE.ProCollectionDelay =
         math.clamp(
-            math.floor(
-                tonumber(
-                    data.ProBatchAmount
-                )
-                or 10
-            ),
-            2,
-            50
+            tonumber(
+                data.ProCollectionDelay
+            )
+            or 0.05,
+            0.035,
+            1
         )
 
     if HOLY_FARM_STATE.ProFruitCollector == true then
@@ -8616,6 +8606,41 @@ function HolyProFarmEnsureRuntime()
         and runtime.Cooldowns
         or {}
 
+    runtime.Pending =
+        type(runtime.Pending) == "table"
+        and runtime.Pending
+        or {}
+
+    runtime.NextSendAt =
+        tonumber(runtime.NextSendAt)
+        or 0
+
+    runtime.MaxPending =
+        math.clamp(
+            math.floor(
+                tonumber(runtime.MaxPending)
+                or 10
+            ),
+            1,
+            25
+        )
+
+    runtime.ConfirmationTimeout =
+        math.clamp(
+            tonumber(runtime.ConfirmationTimeout)
+            or 2.5,
+            0.5,
+            10
+        )
+
+    runtime.RetryDelay =
+        math.clamp(
+            tonumber(runtime.RetryDelay)
+            or 0.75,
+            0,
+            5
+        )
+
     runtime.Status =
         tostring(
             runtime.Status
@@ -9626,7 +9651,7 @@ function HolyProFarmEntryAllowed(entry)
     return true
 end
 
-function HolyProFarmBuildCandidates()
+function HolyProFarmFindTarget()
 
     local runtime =
         HolyProFarmEnsureRuntime()
@@ -9637,9 +9662,32 @@ function HolyProFarmBuildCandidates()
     local candidates =
         {}
 
+    local pendingPlants =
+        {}
+
+    for _, pending in pairs(runtime.Pending) do
+
+        local pendingEntry =
+            type(pending) == "table"
+            and pending.Entry
+            or nil
+
+        if type(pendingEntry) == "table" then
+
+            pendingPlants[
+                tostring(
+                    pendingEntry.PlantId
+                    or ""
+                )
+            ] =
+                true
+        end
+    end
+
     for plantId, plantData in pairs(runtime.Cache.Plants) do
 
-        if type(plantData) == "table" then
+        if type(plantData) == "table"
+        and pendingPlants[tostring(plantId)] ~= true then
 
             local fruitCount =
                 0
@@ -9672,6 +9720,7 @@ function HolyProFarmBuildCandidates()
                                 or 0
 
                             if cooldown <= now
+                            and runtime.Pending[entry.Key] == nil
                             and HolyProFarmEntryAllowed(
                                 entry
                             ) then
@@ -9712,6 +9761,7 @@ function HolyProFarmBuildCandidates()
                     or 0
 
                 if cooldown <= now
+                and runtime.Pending[entry.Key] == nil
                 and HolyProFarmEntryAllowed(
                     entry
                 ) then
@@ -9725,91 +9775,16 @@ function HolyProFarmBuildCandidates()
         end
     end
 
-    return candidates
-end
-
-function HolyProFarmShuffleCandidates(candidates)
-
-    if type(candidates) ~= "table" then
-        return {}
+    if #candidates == 0 then
+        return nil
     end
 
-    for index = #candidates, 2, -1 do
-
-        local swapIndex =
-            math.random(
-                1,
-                index
-            )
-
-        candidates[index],
-        candidates[swapIndex] =
-            candidates[swapIndex],
-            candidates[index]
-    end
-
-    return candidates
-end
-
-function HolyProFarmFindTargets(amount, uniquePlants)
-
-    amount =
-        math.max(
+    return candidates[
+        math.random(
             1,
-            math.floor(
-                tonumber(amount)
-                or 1
-            )
+            #candidates
         )
-
-    local candidates =
-        HolyProFarmShuffleCandidates(
-            HolyProFarmBuildCandidates()
-        )
-
-    local selected =
-        {}
-
-    local usedPlants =
-        {}
-
-    for _, entry in ipairs(candidates) do
-
-        local plantId =
-            tostring(
-                entry.PlantId
-                or ""
-            )
-
-        if uniquePlants ~= true
-        or usedPlants[plantId] ~= true then
-
-            usedPlants[plantId] =
-                true
-
-            table.insert(
-                selected,
-                entry
-            )
-
-            if #selected >= amount then
-                break
-            end
-        end
-    end
-
-    return selected
-end
-
-function HolyProFarmFindTarget()
-
-    local targets =
-        HolyProFarmFindTargets(
-            1,
-            false
-        )
-
-    return targets[1]
+    ]
 end
 
 function HolyProFarmTargetExists(entry)
@@ -9966,7 +9941,34 @@ function HolyProFarmFireEntry(token, entry)
         "not confirmed"
 end
 
-function HolyProFarmResolveBatchPacket()
+function HolyProFarmReadCollectionDelay(value)
+
+    return math.clamp(
+        tonumber(value)
+        or 0.05,
+        0.035,
+        1
+    )
+end
+
+function HolyProFarmGetPendingCount()
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    local count =
+        0
+
+    for _ in pairs(runtime.Pending) do
+
+        count +=
+            1
+    end
+
+    return count
+end
+
+function HolyProFarmGetPipelinePacket()
 
     local runtime =
         HolyProFarmEnsureRuntime()
@@ -10002,239 +10004,439 @@ function HolyProFarmResolveBatchPacket()
     return packet
 end
 
-function HolyProFarmWaitForSendTime(token, targetTime)
+function HolyProFarmSetPipelineStatus()
 
     local runtime =
         HolyProFarmEnsureRuntime()
 
-    while runtime.Token == token
-    and HOLY_FARM_STATE.ProFruitCollector == true
-    and os.clock() < targetTime do
+    local pendingCount =
+        HolyProFarmGetPendingCount()
 
-        task.wait()
+    local status =
+        pendingCount > 0
+        and (
+            "Collecting "
+            .. tostring(pendingCount)
+        )
+        or "Ready"
+
+    if runtime.Status ~= status then
+
+        HolyProFarmSetStatus(
+            status
+        )
     end
 
-    return runtime.Token == token
-        and HOLY_FARM_STATE.ProFruitCollector == true
+    return status
 end
 
-function HolyProFarmSendBatchEntries(
-    token,
-    packet,
-    entries
-)
+function HolyProFarmRecordPipelineConfirmed(key, pending)
 
     local runtime =
         HolyProFarmEnsureRuntime()
 
-    local nextSendAt =
+    runtime.Pending[key] =
+        nil
+
+    runtime.Cooldowns[key] =
+        nil
+
+    runtime.Confirmed +=
+        1
+
+    runtime.ConsecutiveFailures =
+        0
+
+    return true
+end
+
+function HolyProFarmRecordPipelineFailure(key, pending, reason)
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    local entry =
+        type(pending) == "table"
+        and pending.Entry
+        or nil
+
+    runtime.Pending[key] =
+        nil
+
+    runtime.Cooldowns[key] =
+        os.clock()
+        + 8
+
+    runtime.Failed +=
+        1
+
+    runtime.ConsecutiveFailures +=
+        1
+
+    if runtime.ConsecutiveFailures >= 3 then
+
+        runtime.ConsecutiveFailures =
+            0
+
+        HolyProFarmRequestSnapshot(
+            "pipeline recovery"
+        )
+    end
+
+    return entry,
+        tostring(reason or "failed")
+end
+
+function HolyProFarmProcessPending(token)
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    local now =
         os.clock()
 
-    for _, entry in ipairs(entries or {}) do
+    for key, pending in pairs(runtime.Pending) do
 
-        if HolyProFarmWaitForSendTime(
-            token,
-            nextSendAt
+        if runtime.Token ~= token then
+            break
+        end
+
+        local entry =
+            type(pending) == "table"
+            and pending.Entry
+            or nil
+
+        if type(entry) ~= "table" then
+
+            runtime.Pending[key] =
+                nil
+
+            continue
+        end
+
+        if HolyProFarmTargetExists(
+            entry
         ) ~= true then
 
-            return false
-        end
-
-        if HolyProFarmTargetExists(
-            entry
-        ) == true then
-
-            local ok =
-                pcall(function()
-
-                    packet:Fire(
-                        entry.PlantId,
-                        entry.FruitId
-                    )
-                end)
-
-            entry.BatchFireSucceeded =
-                ok == true
-        end
-
-        nextSendAt =
-            os.clock()
-            + 0.035
-    end
-
-    return runtime.Token == token
-        and HOLY_FARM_STATE.ProFruitCollector == true
-end
-
-function HolyProFarmGetUnconfirmedEntries(entries)
-
-    local remaining =
-        {}
-
-    for _, entry in ipairs(entries or {}) do
-
-        if HolyProFarmTargetExists(
-            entry
-        ) == true then
-
-            table.insert(
-                remaining,
-                entry
+            HolyProFarmRecordPipelineConfirmed(
+                key,
+                pending
             )
+
+            continue
+        end
+
+        local lastSentAt =
+            tonumber(
+                pending.LastSentAt
+            )
+            or now
+
+        local attempts =
+            math.max(
+                1,
+                math.floor(
+                    tonumber(
+                        pending.Attempts
+                    )
+                    or 1
+                )
+            )
+
+        if pending.RetryReadyAt ~= nil then
+
+            continue
+        end
+
+        if now - lastSentAt
+            >= runtime.ConfirmationTimeout then
+
+            if attempts < 2 then
+
+                pending.RetryReadyAt =
+                    now
+                    + runtime.RetryDelay
+
+            else
+
+                HolyProFarmRecordPipelineFailure(
+                    key,
+                    pending,
+                    "not confirmed"
+                )
+            end
         end
     end
 
-    return remaining
+    return true
 end
 
-function HolyProFarmWaitForBatchConfirmation(
-    token,
-    entries,
-    timeout
-)
+function HolyProFarmFindRetryReady()
 
     local runtime =
         HolyProFarmEnsureRuntime()
 
-    local deadline =
+    local now =
         os.clock()
-        + (
-            tonumber(timeout)
-            or 2.5
-        )
 
-    local lastConfirmed =
-        -1
+    local bestKey =
+        nil
 
-    while runtime.Token == token
-    and HOLY_FARM_STATE.ProFruitCollector == true
-    and os.clock() < deadline do
+    local bestPending =
+        nil
 
-        local remaining =
-            HolyProFarmGetUnconfirmedEntries(
-                entries
+    local bestTime =
+        math.huge
+
+    for key, pending in pairs(runtime.Pending) do
+
+        local retryReadyAt =
+            type(pending) == "table"
+            and tonumber(
+                pending.RetryReadyAt
             )
+            or nil
 
-        local confirmed =
-            #entries
-            - #remaining
+        if retryReadyAt
+        and retryReadyAt <= now
+        and retryReadyAt < bestTime then
 
-        if confirmed ~= lastConfirmed then
+            bestKey =
+                key
 
-            lastConfirmed =
-                confirmed
+            bestPending =
+                pending
 
-            HolyProFarmSetStatus(
-                "Collecting "
-                    .. tostring(confirmed)
-                    .. "/"
-                    .. tostring(#entries)
-            )
+            bestTime =
+                retryReadyAt
         end
-
-        if #remaining <= 0 then
-
-            return remaining
-        end
-
-        task.wait(
-            0.05
-        )
     end
 
-    return HolyProFarmGetUnconfirmedEntries(
-        entries
-    )
+    return bestKey,
+        bestPending
 end
 
-function HolyProFarmFireBatch(token, entries)
+function HolyProFarmSendRetry(token, packet, key, pending)
 
-    local packet,
-        packetReason =
-        HolyProFarmResolveBatchPacket()
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    if runtime.Token ~= token
+    or type(pending) ~= "table"
+    or type(pending.Entry) ~= "table" then
+
+        return false
+    end
+
+    local entry =
+        pending.Entry
+
+    if HolyProFarmTargetExists(
+        entry
+    ) ~= true then
+
+        HolyProFarmRecordPipelineConfirmed(
+            key,
+            pending
+        )
+
+        return true
+    end
+
+    local ok =
+        pcall(function()
+
+            packet:Fire(
+                entry.PlantId,
+                entry.FruitId
+            )
+        end)
+
+    runtime.NextSendAt =
+        os.clock()
+        + HolyProFarmReadCollectionDelay(
+            HOLY_FARM_STATE.ProCollectionDelay
+        )
+
+    if ok ~= true then
+
+        HolyProFarmRecordPipelineFailure(
+            key,
+            pending,
+            "retry fire failed"
+        )
+
+        return false
+    end
+
+    pending.Attempts =
+        (
+            tonumber(
+                pending.Attempts
+            )
+            or 1
+        )
+        + 1
+
+    pending.LastSentAt =
+        os.clock()
+
+    pending.RetryReadyAt =
+        nil
+
+    return true
+end
+
+function HolyProFarmSendNewTarget(token, packet)
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    if runtime.Token ~= token then
+        return false
+    end
+
+    if HolyProFarmGetPendingCount()
+        >= runtime.MaxPending then
+
+        return false
+    end
+
+    local entry =
+        HolyProFarmFindTarget()
+
+    if type(entry) ~= "table" then
+        return false
+    end
+
+    local ok =
+        pcall(function()
+
+            packet:Fire(
+                entry.PlantId,
+                entry.FruitId
+            )
+        end)
+
+    runtime.NextSendAt =
+        os.clock()
+        + HolyProFarmReadCollectionDelay(
+            HOLY_FARM_STATE.ProCollectionDelay
+        )
+
+    if ok ~= true then
+
+        runtime.Cooldowns[entry.Key] =
+            os.clock()
+            + 8
+
+        runtime.Failed +=
+            1
+
+        runtime.ConsecutiveFailures +=
+            1
+
+        if runtime.ConsecutiveFailures >= 3 then
+
+            runtime.ConsecutiveFailures =
+                0
+
+            HolyProFarmRequestSnapshot(
+                "pipeline fire recovery"
+            )
+        end
+
+        return false
+    end
+
+    runtime.Pending[entry.Key] = {
+        Entry =
+            entry,
+
+        Attempts =
+            1,
+
+        LastSentAt =
+            os.clock(),
+
+        RetryReadyAt =
+            nil,
+    }
+
+    return true
+end
+
+function HolyProFarmPipelineStep(token)
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    HolyProFarmProcessPending(
+        token
+    )
+
+    if runtime.Token ~= token
+    or HOLY_FARM_STATE.ProFruitCollector ~= true then
+
+        return false
+    end
+
+    if os.clock() < (
+        tonumber(runtime.NextSendAt)
+        or 0
+    ) then
+
+        HolyProFarmSetPipelineStatus()
+
+        return false
+    end
+
+    local packet =
+        HolyProFarmGetPipelinePacket()
 
     if not packet then
 
-        return {},
-            entries,
-            packetReason
+        HolyProFarmSetStatus(
+            "Unavailable"
+        )
+
+        runtime.NextSendAt =
+            os.clock()
+            + 1
+
+        return false
     end
 
-    HolyProFarmSetStatus(
-        "Collecting 0/"
-            .. tostring(#entries)
-    )
+    local retryKey,
+        retryPending =
+        HolyProFarmFindRetryReady()
 
-    HolyProFarmSendBatchEntries(
-        token,
-        packet,
-        entries
-    )
+    local sent =
+        false
 
-    local remaining =
-        HolyProFarmWaitForBatchConfirmation(
-            token,
-            entries,
-            2.5
-        )
+    if retryKey
+    and retryPending then
 
-    if #remaining > 0
-    and HOLY_PRO_FARM_RUNTIME.Token == token
-    and HOLY_FARM_STATE.ProFruitCollector == true then
-
-        task.wait(
-            0.75
-        )
-
-        HolyProFarmSendBatchEntries(
-            token,
-            packet,
-            remaining
-        )
-
-        remaining =
-            HolyProFarmWaitForBatchConfirmation(
+        sent =
+            HolyProFarmSendRetry(
                 token,
-                entries,
-                2.5
+                packet,
+                retryKey,
+                retryPending
+            )
+
+    else
+
+        sent =
+            HolyProFarmSendNewTarget(
+                token,
+                packet
             )
     end
 
-    local failedMap =
-        {}
+    HolyProFarmSetPipelineStatus()
 
-    for _, entry in ipairs(remaining) do
-
-        failedMap[entry.Key] =
-            true
-    end
-
-    local confirmed =
-        {}
-
-    local failed =
-        {}
-
-    for _, entry in ipairs(entries) do
-
-        if failedMap[entry.Key] == true then
-
-            table.insert(
-                failed,
-                entry
-            )
-
-        else
-
-            table.insert(
-                confirmed,
-                entry
-            )
-        end
-    end
-
-    return confirmed,
-        failed
+    return sent
 end
 
 function HolyProFarmRunWorker(token)
@@ -10245,14 +10447,21 @@ function HolyProFarmRunWorker(token)
     while runtime.Token == token
     and HOLY_FARM_STATE.ProFruitCollector == true do
 
+        HolyProFarmProcessPending(
+            token
+        )
+
         if HolyFarmAutoCollectBlocked() == true then
 
-            HolyProFarmSetStatus(
-                "Paused"
-            )
+            if runtime.Status ~= "Paused" then
+
+                HolyProFarmSetStatus(
+                    "Paused"
+                )
+            end
 
             task.wait(
-                0.25
+                0.05
             )
 
             continue
@@ -10271,7 +10480,7 @@ function HolyProFarmRunWorker(token)
             end
 
             task.wait(
-                0.25
+                0.05
             )
 
             continue
@@ -10287,180 +10496,13 @@ function HolyProFarmRunWorker(token)
             )
         end
 
-        if HOLY_FARM_STATE.ProBatchMode == true then
+        HolyProFarmPipelineStep(
+            token
+        )
 
-            local batchAmount =
-                math.clamp(
-                    math.floor(
-                        tonumber(
-                            HOLY_FARM_STATE.ProBatchAmount
-                        )
-                        or 10
-                    ),
-                    2,
-                    50
-                )
-
-            local entries =
-                HolyProFarmFindTargets(
-                    batchAmount,
-                    true
-                )
-
-            if #entries <= 0 then
-
-                HolyProFarmSetStatus(
-                    "Ready"
-                )
-
-                task.wait(
-                    0.25
-                )
-
-                continue
-            end
-
-            local confirmed,
-                failed =
-                HolyProFarmFireBatch(
-                    token,
-                    entries
-                )
-
-            if runtime.Token ~= token then
-                break
-            end
-
-            runtime.Confirmed +=
-                #confirmed
-
-            runtime.Failed +=
-                #failed
-
-            for _, entry in ipairs(confirmed) do
-
-                runtime.Cooldowns[entry.Key] =
-                    nil
-            end
-
-            for _, entry in ipairs(failed) do
-
-                runtime.Cooldowns[entry.Key] =
-                    os.clock()
-                    + 8
-            end
-
-            if #failed <= 0 then
-
-                runtime.ConsecutiveFailures =
-                    0
-
-                HolyProFarmSetStatus(
-                    "Ready"
-                )
-
-                task.wait(
-                    0.05
-                )
-
-            else
-
-                runtime.ConsecutiveFailures +=
-                    #failed
-
-                if runtime.ConsecutiveFailures >= 3 then
-
-                    runtime.ConsecutiveFailures =
-                        0
-
-                    HolyProFarmRequestSnapshot(
-                        "batch recovery"
-                    )
-                end
-
-                HolyProFarmSetStatus(
-                    "Retrying"
-                )
-
-                task.wait(
-                    0.35
-                )
-            end
-
-            continue
-        end
-
-        local entry =
-            HolyProFarmFindTarget()
-
-        if type(entry) ~= "table" then
-
-            HolyProFarmSetStatus(
-                "Ready"
-            )
-
-            task.wait(
-                0.25
-            )
-
-            continue
-        end
-
-        local success =
-            HolyProFarmFireEntry(
-                token,
-                entry
-            )
-
-        if success == true then
-
-            runtime.Confirmed +=
-                1
-
-            runtime.ConsecutiveFailures =
-                0
-
-            runtime.Cooldowns[entry.Key] =
-                nil
-
-            HolyProFarmSetStatus(
-                "Ready"
-            )
-
-            task.wait(
-                0.12
-            )
-
-        else
-
-            runtime.Failed +=
-                1
-
-            runtime.ConsecutiveFailures +=
-                1
-
-            runtime.Cooldowns[entry.Key] =
-                os.clock()
-                + 8
-
-            if runtime.ConsecutiveFailures >= 3 then
-
-                runtime.ConsecutiveFailures =
-                    0
-
-                HolyProFarmRequestSnapshot(
-                    "recovery"
-                )
-            end
-
-            HolyProFarmSetStatus(
-                "Retrying"
-            )
-
-            task.wait(
-                0.35
-            )
-        end
+        task.wait(
+            0.01
+        )
     end
 
     if runtime.Token == token then
@@ -10503,6 +10545,12 @@ function HolyProFarmStart(reason)
 
     runtime.Cooldowns =
         {}
+
+    runtime.Pending =
+        {}
+
+    runtime.NextSendAt =
+        0
 
     runtime.SnapshotReady =
         false
@@ -10573,6 +10621,12 @@ function HolyProFarmStop(reason)
     runtime.SnapshotReady =
         false
 
+    runtime.Pending =
+        {}
+
+    runtime.NextSendAt =
+        0
+
     HolyProFarmDisconnectList(
         runtime.Connections
     )
@@ -10631,66 +10685,25 @@ function HolyProFarmSetEnabled(value)
     )
 end
 
-function HolyProFarmReadBatchAmount(value)
-
-    return math.clamp(
-        math.floor(
-            tonumber(value)
-            or 10
-        ),
-        2,
-        50
-    )
-end
-
-function HolyProFarmRefreshBatchUI()
-
-    local input =
-        HOLY_FARM_UI
-        and HOLY_FARM_UI.ProBatchAmountInput
-
-    if type(input) ~= "table"
-    or type(input.SetVisible) ~= "function" then
-
-        return false
-    end
-
-    pcall(function()
-
-        input:SetVisible(
-            HOLY_FARM_STATE.ProBatchMode == true
-        )
-    end)
-
-    return true
-end
-
-function HolyProFarmSetBatchMode(value)
+function HolyProFarmSetCollectionDelay(value)
 
     HolyFarmEnsureState()
 
-    HOLY_FARM_STATE.ProBatchMode =
-        value == true
-
-    HolySaveFarmSettings()
-
-    HolyProFarmRefreshBatchUI()
-
-    return HOLY_FARM_STATE.ProBatchMode
-end
-
-function HolyProFarmSetBatchAmount(value)
-
-    HolyFarmEnsureState()
-
-    HOLY_FARM_STATE.ProBatchAmount =
-        HolyProFarmReadBatchAmount(
+    HOLY_FARM_STATE.ProCollectionDelay =
+        HolyProFarmReadCollectionDelay(
             value
         )
 
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    runtime.NextSendAt =
+        os.clock()
+        + HOLY_FARM_STATE.ProCollectionDelay
+
     HolySaveFarmSettings()
 
-    return HOLY_FARM_STATE.ProBatchAmount
+    return HOLY_FARM_STATE.ProCollectionDelay
 end
 
 function HolyProFarmSetLowGardenDetail(value)
@@ -73591,70 +73604,50 @@ and type(FarmProCollectionBox.AddToggle) == "function" then
             value == true
         )
     end)
-
-    HOLY_FARM_UI.ProBatchModeToggle =
-        FarmProCollectionBox:AddToggle(
-            "HolyFarmProBatchMode",
-            {
-                Text =
-                    "Batch Mode",
-
-                Default =
-                    HOLY_FARM_STATE.ProBatchMode == true,
-
-                Tooltip =
-                    "Collects multiple ready fruits during each collection cycle.",
-            }
-        )
-
-    HOLY_FARM_UI.ProBatchModeToggle:OnChanged(function(value)
-
-        HolyProFarmSetBatchMode(
-            value == true
-        )
-    end)
 end
 
 if FarmProCollectionBox
-and type(FarmProCollectionBox.AddInput) == "function" then
+and type(FarmProCollectionBox.AddSlider) == "function" then
 
-    HOLY_FARM_UI.ProBatchAmountInput =
-        FarmProCollectionBox:AddInput(
-            "HolyFarmProBatchAmount",
+    HOLY_FARM_UI.ProCollectionDelaySlider =
+        FarmProCollectionBox:AddSlider(
+            "HolyFarmProCollectionDelay",
             {
                 Text =
-                    "Batch Amount",
+                    "Collection Delay",
 
                 Default =
-                    tostring(
-                        HolyProFarmReadBatchAmount(
-                            HOLY_FARM_STATE.ProBatchAmount
-                        )
+                    HolyProFarmReadCollectionDelay(
+                        HOLY_FARM_STATE.ProCollectionDelay
                     ),
 
-                Numeric =
-                    true,
+                Min =
+                    0.035,
 
-                Finished =
-                    true,
+                Max =
+                    1,
 
-                ClearTextOnFocus =
-                    false,
+                Rounding =
+                    3,
+
+                Suffix =
+                    "s",
+
+                HideMax =
+                    true,
 
                 Tooltip =
-                    "Maximum number of ready fruits collected in each batch. Range: 2 to 50.",
+                    "Delay between fruit collection packets. 0.035 seconds is the fastest tested value.",
             }
         )
 
-    HOLY_FARM_UI.ProBatchAmountInput:OnChanged(function(value)
+    HOLY_FARM_UI.ProCollectionDelaySlider:OnChanged(function(value)
 
-        HolyProFarmSetBatchAmount(
+        HolyProFarmSetCollectionDelay(
             value
         )
     end)
 end
-
-HolyProFarmRefreshBatchUI()
 
 HOLY_FARM_UI.ProStatusLabel =
     HolySniperAddLabel(
