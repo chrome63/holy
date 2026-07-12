@@ -23905,6 +23905,34 @@ function HolyDefenseRunWorker(token)
     while runtime.Token == token
     and runtime.Active == true do
 
+        local wateringState =
+            type(HOLY_WATERING_REJOIN_STATE) == "table"
+            and HOLY_WATERING_REJOIN_STATE
+            or {}
+
+        local wateringRuntime =
+            type(HOLY_WATERING_REJOIN_RUNTIME) == "table"
+            and HOLY_WATERING_REJOIN_RUNTIME
+            or {}
+
+        local wateringOwnsMovement =
+            wateringState.Enabled == true
+            and (
+                wateringRuntime.Running == true
+                or wateringRuntime.Busy == true
+                or wateringRuntime.RespawnPending == true
+                or wateringRuntime.RecoveryScheduled == true
+            )
+
+        if wateringOwnsMovement == true then
+
+            task.wait(
+                0.08
+            )
+
+            continue
+        end
+
         if HOLY_SNIPER_STATE.DefendBoughtPets ~= true then
 
             HolyDefenseStop(
@@ -54159,12 +54187,102 @@ function HolyWateringRejoinWalkTo(
         root =
         HolyWateringRejoinGetCharacter()
 
-    if not character
-    or not humanoid
-    or not root then
+    if typeof(character) ~= "Instance"
+    or typeof(humanoid) ~= "Instance"
+    or typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true
+    or humanoid.Health <= 0 then
 
         return false,
             math.huge
+    end
+
+    local runtime =
+        HOLY_WATERING_REJOIN_RUNTIME
+
+    local destination =
+        destinationCFrame.Position
+
+    local arrivalDistance =
+        4
+
+    local startedAt =
+        os.clock()
+
+    local maximumDuration =
+        90
+
+    local lastMoveCommandAt =
+        0
+
+    local lastProgressPosition =
+        root.Position
+
+    local lastProgressAt =
+        os.clock()
+
+    local lastJumpAt =
+        0
+
+    local function isActive()
+
+        return HOLY_WATERING_REJOIN_STATE.Enabled == true
+            and runtime.Running == true
+            and runtime.Generation == generation
+            and runtime.RespawnPending ~= true
+            and LocalPlayer.Character == character
+            and character.Parent ~= nil
+            and humanoid.Parent ~= nil
+            and humanoid.Health > 0
+            and root.Parent ~= nil
+            and os.clock() - startedAt < maximumDuration
+    end
+
+    local function faceSavedDirection()
+
+        local lookVector =
+            destinationCFrame.LookVector
+
+        local flatLook =
+            Vector3.new(
+                lookVector.X,
+                0,
+                lookVector.Z
+            )
+
+        if flatLook.Magnitude <= 0.01 then
+            return
+        end
+
+        pcall(function()
+
+            root.CFrame =
+                CFrame.lookAt(
+                    root.Position,
+                    root.Position
+                    + flatLook.Unit
+                )
+        end)
+    end
+
+    local function stopAtDestination()
+
+        pcall(function()
+
+            humanoid:MoveTo(
+                root.Position
+            )
+
+            humanoid:Move(
+                Vector3.zero,
+                false
+            )
+
+            humanoid.AutoRotate =
+                true
+        end)
+
+        faceSavedDirection()
     end
 
     pcall(function()
@@ -54181,67 +54299,7 @@ function HolyWateringRejoinWalkTo(
             true
     end)
 
-    local runtime =
-        HOLY_WATERING_REJOIN_RUNTIME
-
-    local destination =
-        destinationCFrame.Position
-
-    local arrivalDistance =
-        4
-
-    local startedAt =
-        os.clock()
-
-    local replanCount =
-        0
-
-    local maximumReplans =
-        5
-
-    local function isActive()
-
-        return HOLY_WATERING_REJOIN_STATE.Enabled == true
-            and runtime.Running == true
-            and runtime.Generation == generation
-            and os.clock() - startedAt < 60
-    end
-
-    local function stopAndFaceSavedDirection()
-
-        pcall(function()
-
-            humanoid:MoveTo(
-                root.Position
-            )
-        end)
-
-        local lookVector =
-            destinationCFrame.LookVector
-
-        local flatLook =
-            Vector3.new(
-                lookVector.X,
-                0,
-                lookVector.Z
-            )
-
-        if flatLook.Magnitude > 0.01 then
-
-            pcall(function()
-
-                root.CFrame =
-                    CFrame.lookAt(
-                        root.Position,
-                        root.Position
-                        + flatLook.Unit
-                    )
-            end)
-        end
-    end
-
-    while isActive()
-    and replanCount < maximumReplans do
+    while isActive() do
 
         local currentDistance =
             HolyWateringRejoinHorizontalDistanceTo(
@@ -54251,198 +54309,84 @@ function HolyWateringRejoinWalkTo(
 
         if currentDistance <= arrivalDistance then
 
-            stopAndFaceSavedDirection()
+            stopAtDestination()
 
             return true,
                 currentDistance
         end
 
-        local route =
-            HolyWateringRejoinBuildRoute(
-                root,
-                destination
-            )
+        local now =
+            os.clock()
 
-        local routeFailed =
-            false
+        local progressDelta =
+            root.Position
+            - lastProgressPosition
 
-        for _, waypoint in ipairs(route) do
+        local horizontalProgress =
+            Vector3.new(
+                progressDelta.X,
+                0,
+                progressDelta.Z
+            ).Magnitude
 
-            if isActive() ~= true then
-                break
-            end
+        if horizontalProgress >= 0.35 then
 
-            local waypointPosition =
-                waypoint.Position
+            lastProgressPosition =
+                root.Position
 
-            if typeof(waypointPosition) ~= "Vector3" then
+            lastProgressAt =
+                now
 
-                routeFailed =
-                    true
+        elseif now - lastProgressAt >= 1.25
+        and now - lastJumpAt >= 1 then
 
-                break
-            end
+            lastJumpAt =
+                now
 
-            if waypoint.Action
-                == Enum.PathWaypointAction.Jump then
+            lastProgressAt =
+                now
 
-                pcall(function()
-
-                    humanoid.Jump =
-                        true
-                end)
-            end
-
-            local waypointDistance =
-                HolyWateringRejoinHorizontalDistanceTo(
-                    root,
-                    waypointPosition
-                )
-
-            if waypointDistance > 2 then
-
-                pcall(function()
-
-                    humanoid:MoveTo(
-                        waypointPosition
-                    )
-                end)
-
-                local lastProgressPosition =
-                    root.Position
-
-                local lastProgressAt =
-                    os.clock()
-
-                local walkSpeed =
-                    math.max(
-                        tonumber(humanoid.WalkSpeed)
-                        or 16,
-                        1
-                    )
-
-                local segmentDeadline =
-                    os.clock()
-                    + math.clamp(
-                        waypointDistance
-                        / walkSpeed
-                        + 2,
-                        2,
-                        8
-                    )
-
-                while isActive()
-                and os.clock() < segmentDeadline do
-
-                    local destinationDistance =
-                        HolyWateringRejoinHorizontalDistanceTo(
-                            root,
-                            destination
-                        )
-
-                    if destinationDistance <= arrivalDistance then
-
-                        stopAndFaceSavedDirection()
-
-                        return true,
-                            destinationDistance
-                    end
-
-                    local remainingWaypointDistance =
-                        HolyWateringRejoinHorizontalDistanceTo(
-                            root,
-                            waypointPosition
-                        )
-
-                    if remainingWaypointDistance <= 2 then
-                        break
-                    end
-
-                    local progressDistance =
-                        (
-                            root.Position
-                            - lastProgressPosition
-                        ).Magnitude
-
-                    if progressDistance >= 0.3 then
-
-                        lastProgressPosition =
-                            root.Position
-
-                        lastProgressAt =
-                            os.clock()
-
-                    elseif os.clock() - lastProgressAt >= 1.25 then
-
-                        routeFailed =
-                            true
-
-                        break
-                    end
-
-                    task.wait(
-                        0.08
-                    )
-                end
-
-                if isActive() ~= true then
-                    break
-                end
-
-                if HolyWateringRejoinHorizontalDistanceTo(
-                    root,
-                    waypointPosition
-                ) > 2.5 then
-
-                    routeFailed =
-                        true
-                end
-
-                if routeFailed == true then
-                    break
-                end
-            end
-        end
-
-        local finalRouteDistance =
-            HolyWateringRejoinHorizontalDistanceTo(
-                root,
-                destination
-            )
-
-        if finalRouteDistance <= arrivalDistance then
-
-            stopAndFaceSavedDirection()
-
-            return true,
-                finalRouteDistance
-        end
-
-        if isActive() ~= true then
-            break
-        end
-
-        replanCount +=
-            1
-
-        if routeFailed == true then
+            lastProgressPosition =
+                root.Position
 
             pcall(function()
+
+                humanoid.Sit =
+                    false
+
+                humanoid.PlatformStand =
+                    false
 
                 humanoid.Jump =
                     true
             end)
-
-            task.wait(
-                0.15
-            )
-
-        else
-
-            task.wait(
-                0.05
-            )
         end
+
+        if now - lastMoveCommandAt >= 0.12 then
+
+            lastMoveCommandAt =
+                now
+
+            pcall(function()
+
+                humanoid.Sit =
+                    false
+
+                humanoid.PlatformStand =
+                    false
+
+                humanoid.AutoRotate =
+                    true
+
+                humanoid:MoveTo(
+                    destination
+                )
+            end)
+        end
+
+        task.wait(
+            0.04
+        )
     end
 
     local finalDistance =
@@ -54451,14 +54395,19 @@ function HolyWateringRejoinWalkTo(
             destination
         )
 
-    pcall(function()
+    if finalDistance <= arrivalDistance then
 
-        humanoid:MoveTo(
-            root.Position
-        )
-    end)
+        stopAtDestination()
 
-    return finalDistance <= arrivalDistance,
+        return true,
+            finalDistance
+    end
+
+    -- Do not issue MoveTo(root.Position) here.
+    -- Keeping the existing destination prevents a visible pause
+    -- while recovery prepares the next movement worker.
+
+    return false,
         finalDistance
 end
 
@@ -56299,7 +56248,9 @@ function HolyWateringRejoinStart(reason)
         return true
     end
 
-    if type(HolyFarmMiddlePauseForWatering)
+    if tostring(reason) ~= "recovery"
+    and tostring(reason) ~= "respawn"
+    and type(HolyFarmMiddlePauseForWatering)
         == "function" then
 
         HolyFarmMiddlePauseForWatering(
