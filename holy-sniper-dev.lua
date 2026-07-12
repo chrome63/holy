@@ -387,6 +387,14 @@ local WATERING_REJOIN_SETTINGS_FILE =
 local WATERING_REJOIN_LEGACY_FILE =
     "HOLY_WateringRejoin_Setup.json"
 
+local DEV_UPDATE_BASELINE_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyDevUpdateBaseline.json"
+
+local DEV_PERSISTENCE_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyDevPersistenceTest.json"
+
 local DEV_TOOLS = {
     {
         Name = "Remote Spy",
@@ -768,7 +776,54 @@ HOLY_ROLLBACK_RUNTIME = {
 
     ManualRequested = false,
     WateringRequested = false,
+    PersistenceRequested = false,
     WateringFireDelay = 0.1,
+
+    Stop = nil,
+}
+
+if type(HOLY_DEV_SUITE_RUNTIME) == "table"
+and type(HOLY_DEV_SUITE_RUNTIME.Stop) == "function" then
+
+    pcall(function()
+
+        HOLY_DEV_SUITE_RUNTIME.Stop(
+            "restart"
+        )
+    end)
+end
+
+HOLY_DEV_SUITE_STATE = {
+    PersistenceTarget = "",
+    ActionScope = "Player Tools",
+    DataModule = "",
+}
+
+HOLY_DEV_SUITE_RUNTIME = {
+    Active = true,
+    RefreshGeneration = 0,
+
+    UI = {},
+
+    ToolRows = {},
+    ToolDisplayToName = {},
+    ToolNameToDisplay = {},
+    ToolSignature = nil,
+
+    PersistenceSession = nil,
+    LastPersistenceReport = nil,
+
+    ActionBefore = nil,
+    LastActionReport = nil,
+
+    LastUpdateDiff = nil,
+    LastDataReport = nil,
+
+    ModuleMap = {},
+
+    Errors = {},
+    ErrorOrder = {},
+    ErrorConnection = nil,
 
     Stop = nil,
 }
@@ -3354,10 +3409,10 @@ function HolySellMethodDisplay(value)
         )
 
     if method == "Filtered Sell" then
-        return "🎯 Filtered Sell"
+        return "Filtered Sell"
     end
 
-    return "💰 Sell All"
+    return "Sell All"
 end
 
 function HolySellIsFilteredMethod(value)
@@ -57570,6 +57625,7 @@ function HolyRollbackHasAnyOwner()
 
     return runtime.ManualRequested == true
         or runtime.WateringRequested == true
+        or runtime.PersistenceRequested == true
 end
 
 function HolyRollbackRefreshWorker()
@@ -57677,6 +57733,15 @@ function HolyRollbackRefreshWorker()
                     )
             end
 
+            if runtime.PersistenceRequested == true then
+
+                delay =
+                    math.min(
+                        delay,
+                        0.1
+                    )
+            end
+
             task.wait(
                 delay
             )
@@ -57717,6 +57782,11 @@ function HolyRollbackSetOwner(
     elseif owner == "Watering" then
 
         runtime.WateringRequested =
+            value
+
+    elseif owner == "Persistence" then
+
+        runtime.PersistenceRequested =
             value
 
     else
@@ -57781,6 +57851,9 @@ function HolyRollbackStopAll(reason)
         false
 
     runtime.WateringRequested =
+        false
+
+    runtime.PersistenceRequested =
         false
 
     runtime.Running =
@@ -61890,6 +61963,2064 @@ function HolyOpenDevTool(url, name)
 end
 
 --==================================================
+-- DEV SUITE
+--==================================================
+
+function HolyDevSafeValue(value, depth, seen)
+
+    depth =
+        tonumber(depth)
+        or 0
+
+    seen =
+        type(seen) == "table"
+        and seen
+        or {}
+
+    local valueType =
+        typeof(value)
+
+    if value == nil then
+
+        return {
+            Type = "nil",
+        }
+    end
+
+    if valueType == "boolean" then
+        return value
+    end
+
+    if valueType == "number" then
+
+        if value ~= value
+        or value == math.huge
+        or value == -math.huge then
+
+            return tostring(value)
+        end
+
+        return value
+    end
+
+    if valueType == "string" then
+
+        local valid,
+            length =
+            pcall(
+                utf8.len,
+                value
+            )
+
+        if valid == true
+        and length ~= nil then
+
+            if #value > 2000 then
+
+                return value:sub(1, 2000)
+                    .. "...<truncated>"
+            end
+
+            return value
+        end
+
+        local bytes =
+            {}
+
+        for index = 1, #value do
+
+            bytes[#bytes + 1] =
+                string.format(
+                    "%02X",
+                    string.byte(
+                        value,
+                        index
+                    )
+                )
+        end
+
+        return {
+            Type = "binary-string",
+            Length = #value,
+            Hex = table.concat(bytes, " "),
+        }
+    end
+
+    if valueType == "Instance" then
+
+        local fullName =
+            value.Name
+
+        pcall(function()
+
+            fullName =
+                value:GetFullName()
+        end)
+
+        return {
+            Type = "Instance",
+            ClassName = value.ClassName,
+            Name = value.Name,
+            FullName = fullName,
+        }
+    end
+
+    if valueType == "Vector3" then
+
+        return {
+            Type = "Vector3",
+            X = value.X,
+            Y = value.Y,
+            Z = value.Z,
+        }
+    end
+
+    if valueType == "CFrame" then
+
+        return {
+            Type = "CFrame",
+            Components = {
+                value:GetComponents()
+            },
+        }
+    end
+
+    if valueType == "Color3" then
+
+        return {
+            Type = "Color3",
+            R = value.R,
+            G = value.G,
+            B = value.B,
+        }
+    end
+
+    if valueType == "EnumItem" then
+        return tostring(value)
+    end
+
+    if valueType == "function" then
+        return "<function>"
+    end
+
+    if valueType == "buffer" then
+
+        local length =
+            0
+
+        pcall(function()
+
+            length =
+                buffer.len(value)
+        end)
+
+        return {
+            Type = "buffer",
+            Length = length,
+        }
+    end
+
+    if valueType == "table" then
+
+        if seen[value] == true then
+            return "<cycle>"
+        end
+
+        if depth >= 6 then
+            return "<maximum depth>"
+        end
+
+        seen[value] =
+            true
+
+        local output =
+            {}
+
+        local count =
+            0
+
+        for key, child in pairs(value) do
+
+            count +=
+                1
+
+            if count > 250 then
+
+                output.__Truncated =
+                    true
+
+                break
+            end
+
+            output[
+                tostring(key)
+            ] =
+                HolyDevSafeValue(
+                    child,
+                    depth + 1,
+                    seen
+                )
+        end
+
+        seen[value] =
+            nil
+
+        return output
+    end
+
+    return {
+        Type = valueType,
+        Text = tostring(value),
+    }
+end
+
+function HolyDevEncode(value)
+
+    local success,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                HolyDevSafeValue(value)
+            )
+        end)
+
+    if success == true
+    and type(encoded) == "string" then
+
+        return encoded
+    end
+
+    return nil,
+        encoded
+end
+
+function HolyDevReadJson(fileName)
+
+    if HolyCanUseFiles() ~= true then
+        return nil
+    end
+
+    local exists =
+        false
+
+    pcall(function()
+
+        exists =
+            isfile(fileName)
+    end)
+
+    if exists ~= true then
+        return nil
+    end
+
+    local success,
+        result =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                readfile(fileName)
+            )
+        end)
+
+    if success == true
+    and type(result) == "table" then
+
+        return result
+    end
+
+    return nil
+end
+
+function HolyDevWriteJson(fileName, value)
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local encoded =
+        HolyDevEncode(value)
+
+    if type(encoded) ~= "string" then
+        return false
+    end
+
+    local success =
+        pcall(function()
+
+            writefile(
+                fileName,
+                encoded
+            )
+        end)
+
+    return success == true
+end
+
+function HolyDevCopyReport(value)
+
+    local encoded =
+        type(value) == "string"
+        and value
+        or HolyDevEncode(value)
+
+    if type(encoded) ~= "string" then
+        return false
+    end
+
+    return HolyCopyText(encoded)
+end
+
+function HolyDevSetStatus(key, text)
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    local label =
+        runtime
+        and runtime.UI
+        and runtime.UI[key]
+
+    return HolySniperSetLabel(
+        label,
+        text
+    )
+end
+
+function HolyDevGetFullName(instance)
+
+    local fullName =
+        tostring(
+            instance
+            and instance.Name
+            or "<missing>"
+        )
+
+    if typeof(instance) == "Instance" then
+
+        pcall(function()
+
+            fullName =
+                instance:GetFullName()
+        end)
+    end
+
+    return fullName
+end
+
+function HolyDevIsUsableGear(tool)
+
+    if typeof(tool) ~= "Instance"
+    or tool:IsA("Tool") ~= true then
+
+        return false
+    end
+
+    local category =
+        tostring(
+            tool:GetAttribute(
+                "MainCategory"
+            )
+            or ""
+        )
+
+    if category == "Gear" then
+        return true
+    end
+
+    if tool:GetAttribute("WateringCan") ~= nil then
+        return true
+    end
+
+    return false
+end
+
+function HolyDevCollectOwnedTools()
+
+    local byName =
+        {}
+
+    local roots = {
+        LocalPlayer:FindFirstChildOfClass(
+            "Backpack"
+        ),
+
+        LocalPlayer.Character,
+    }
+
+    for _, root in ipairs(roots) do
+
+        if root then
+
+            for _, child in ipairs(
+                root:GetChildren()
+            ) do
+
+                if HolyDevIsUsableGear(child) == true then
+
+                    local name =
+                        tostring(child.Name)
+
+                    local count =
+                        tonumber(
+                            child:GetAttribute(
+                                "Count"
+                            )
+                        )
+
+                    if count == nil then
+                        count = 1
+                    end
+
+                    local current =
+                        byName[name]
+
+                    if current == nil
+                    or count > current.Count then
+
+                        byName[name] = {
+                            Name = name,
+                            Count = count,
+                            Tool = child,
+
+                            Location =
+                                root == LocalPlayer.Character
+                                and "Character"
+                                or "Backpack",
+                        }
+                    end
+                end
+            end
+        end
+    end
+
+    local rows =
+        {}
+
+    for _, row in pairs(byName) do
+
+        if row.Count > 0 then
+
+            rows[#rows + 1] =
+                row
+        end
+    end
+
+    table.sort(rows, function(a, b)
+
+        return a.Name:lower()
+            < b.Name:lower()
+    end)
+
+    return rows
+end
+
+function HolyDevGetToolCount(toolName)
+
+    toolName =
+        tostring(toolName or "")
+
+    for _, row in ipairs(
+        HolyDevCollectOwnedTools()
+    ) do
+
+        if row.Name == toolName then
+
+            return row.Count,
+                true
+        end
+    end
+
+    return nil,
+        false
+end
+
+function HolyDevRefreshToolDropdown()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    local rows =
+        HolyDevCollectOwnedTools()
+
+    local values =
+        {}
+
+    local displayToName =
+        {}
+
+    local nameToDisplay =
+        {}
+
+    for _, row in ipairs(rows) do
+
+        local display =
+            row.Name
+            .. " — "
+            .. tostring(
+                math.floor(row.Count)
+            )
+
+        values[#values + 1] =
+            display
+
+        displayToName[display] =
+            row.Name
+
+        nameToDisplay[row.Name] =
+            display
+    end
+
+    if #values == 0 then
+
+        values[1] =
+            "No usable gear found"
+    end
+
+    runtime.ToolRows =
+        rows
+
+    runtime.ToolDisplayToName =
+        displayToName
+
+    runtime.ToolNameToDisplay =
+        nameToDisplay
+
+    local signature =
+        table.concat(
+            values,
+            "\0"
+        )
+
+    local selectedName =
+        tostring(
+            HOLY_DEV_SUITE_STATE.PersistenceTarget
+            or ""
+        )
+
+    if nameToDisplay[selectedName] == nil then
+
+        selectedName =
+            rows[1]
+            and rows[1].Name
+            or ""
+
+        HOLY_DEV_SUITE_STATE.PersistenceTarget =
+            selectedName
+    end
+
+    local dropdown =
+        runtime.UI.PersistenceDropdown
+
+    if type(dropdown) == "table" then
+
+        if runtime.ToolSignature == signature then
+            return true
+        end
+
+        runtime.ToolSignature =
+            signature
+
+        pcall(function()
+
+            if type(dropdown.SetValues) == "function" then
+
+                dropdown:SetValues(
+                    values
+                )
+
+            elseif type(dropdown.SetItems) == "function" then
+
+                dropdown:SetItems(
+                    values
+                )
+            end
+        end)
+
+        local selectedDisplay =
+            nameToDisplay[selectedName]
+            or values[1]
+
+        pcall(function()
+
+            if type(dropdown.SetValue) == "function" then
+
+                dropdown:SetValue(
+                    selectedDisplay
+                )
+            end
+        end)
+    end
+
+    return true
+end
+
+function HolyDevStartToolRefresh()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    runtime.RefreshGeneration +=
+        1
+
+    local generation =
+        runtime.RefreshGeneration
+
+    task.spawn(function()
+
+        while runtime.Active == true
+        and runtime.RefreshGeneration == generation do
+
+            HolyDevRefreshToolDropdown()
+
+            task.wait(
+                2
+            )
+        end
+    end)
+end
+
+function HolyDevSnapshotToolRows()
+
+    local output =
+        {}
+
+    for _, row in ipairs(
+        HolyDevCollectOwnedTools()
+    ) do
+
+        output[row.Name] = {
+            Count = row.Count,
+            Location = row.Location,
+
+            Attributes =
+                HolyDevSafeValue(
+                    row.Tool:GetAttributes()
+                ),
+        }
+    end
+
+    return output
+end
+
+function HolyDevSnapshotAttributedRoot(root, output)
+
+    if typeof(root) ~= "Instance" then
+        return output
+    end
+
+    output =
+        type(output) == "table"
+        and output
+        or {}
+
+    local objects = {
+        root,
+    }
+
+    for _, descendant in ipairs(
+        root:GetDescendants()
+    ) do
+
+        objects[#objects + 1] =
+            descendant
+    end
+
+    for _, object in ipairs(objects) do
+
+        local attributes =
+            object:GetAttributes()
+
+        if next(attributes) ~= nil then
+
+            output[
+                HolyDevGetFullName(object)
+            ] = {
+                ClassName = object.ClassName,
+
+                Attributes =
+                    HolyDevSafeValue(
+                        attributes
+                    ),
+            }
+        end
+    end
+
+    return output
+end
+
+function HolyDevFindOwnPlot()
+
+    local gardens =
+        workspace:FindFirstChild(
+            "Gardens"
+        )
+
+    if not gardens then
+        return nil
+    end
+
+    for _, plot in ipairs(
+        gardens:GetChildren()
+    ) do
+
+        if tonumber(
+            plot:GetAttribute(
+                "OwnerUserId"
+            )
+        ) == LocalPlayer.UserId then
+
+            return plot
+        end
+    end
+
+    return nil
+end
+
+function HolyDevCaptureActionScope(scope)
+
+    scope =
+        tostring(
+            scope
+            or HOLY_DEV_SUITE_STATE.ActionScope
+            or "Player Tools"
+        )
+
+    local snapshot = {
+        Scope = scope,
+        Time = os.time(),
+        JobId = game.JobId,
+        Values = {},
+    }
+
+    if scope == "Player Tools"
+    or scope == "Everything" then
+
+        snapshot.Values.PlayerTools =
+            HolyDevSnapshotToolRows()
+    end
+
+    if scope == "Own Garden"
+    or scope == "Everything" then
+
+        local plot =
+            HolyDevFindOwnPlot()
+
+        if plot then
+
+            snapshot.Values.OwnGarden =
+                HolyDevSnapshotAttributedRoot(
+                    plot,
+                    {}
+                )
+        end
+    end
+
+    if scope == "Wild Pets"
+    or scope == "Everything" then
+
+        local map =
+            workspace:FindFirstChild(
+                "Map"
+            )
+
+        local wildPets =
+            map
+            and map:FindFirstChild(
+                "WildPetRef"
+            )
+
+        if wildPets then
+
+            snapshot.Values.WildPets =
+                HolyDevSnapshotAttributedRoot(
+                    wildPets,
+                    {}
+                )
+        end
+    end
+
+    return snapshot
+end
+
+function HolyDevFlatten(
+    value,
+    prefix,
+    output,
+    depth,
+    seen
+)
+
+    output =
+        type(output) == "table"
+        and output
+        or {}
+
+    prefix =
+        tostring(prefix or "Root")
+
+    depth =
+        tonumber(depth)
+        or 0
+
+    seen =
+        type(seen) == "table"
+        and seen
+        or {}
+
+    local valueType =
+        typeof(value)
+
+    if valueType ~= "table"
+    or depth >= 6 then
+
+        local encoded =
+            HolyDevEncode(value)
+
+        output[prefix] =
+            encoded
+            or tostring(value)
+
+        return output
+    end
+
+    if seen[value] == true then
+
+        output[prefix] =
+            "<cycle>"
+
+        return output
+    end
+
+    seen[value] =
+        true
+
+    local found =
+        false
+
+    for key, child in pairs(value) do
+
+        found =
+            true
+
+        HolyDevFlatten(
+            child,
+            prefix
+                .. "."
+                .. tostring(key),
+            output,
+            depth + 1,
+            seen
+        )
+    end
+
+    if found ~= true then
+
+        output[prefix] =
+            "{}"
+    end
+
+    seen[value] =
+        nil
+
+    return output
+end
+
+function HolyDevDiffMaps(beforeMap, afterMap)
+
+    beforeMap =
+        type(beforeMap) == "table"
+        and beforeMap
+        or {}
+
+    afterMap =
+        type(afterMap) == "table"
+        and afterMap
+        or {}
+
+    local report = {
+        Added = {},
+        Removed = {},
+        Changed = {},
+    }
+
+    for key, afterValue in pairs(afterMap) do
+
+        local beforeValue =
+            beforeMap[key]
+
+        if beforeValue == nil then
+
+            report.Added[#report.Added + 1] = {
+                Path = key,
+                Value = afterValue,
+            }
+
+        elseif beforeValue ~= afterValue then
+
+            report.Changed[#report.Changed + 1] = {
+                Path = key,
+                Before = beforeValue,
+                After = afterValue,
+            }
+        end
+    end
+
+    for key, beforeValue in pairs(beforeMap) do
+
+        if afterMap[key] == nil then
+
+            report.Removed[#report.Removed + 1] = {
+                Path = key,
+                Value = beforeValue,
+            }
+        end
+    end
+
+    local function sortRows(rows)
+
+        table.sort(rows, function(a, b)
+
+            return tostring(a.Path):lower()
+                < tostring(b.Path):lower()
+        end)
+    end
+
+    sortRows(report.Added)
+    sortRows(report.Removed)
+    sortRows(report.Changed)
+
+    report.AddedCount =
+        #report.Added
+
+    report.RemovedCount =
+        #report.Removed
+
+    report.ChangedCount =
+        #report.Changed
+
+    return report
+end
+
+function HolyDevBeginActionCapture()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    runtime.ActionBefore =
+        HolyDevCaptureActionScope(
+            HOLY_DEV_SUITE_STATE.ActionScope
+        )
+
+    HolyDevSetStatus(
+        "ActionStatusLabel",
+        "Capturing — perform one action."
+    )
+
+    HolyNotify(
+        "HOLY Dev",
+        "Action capture started.",
+        4
+    )
+
+    return true
+end
+
+function HolyDevEndActionCapture()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if type(runtime.ActionBefore) ~= "table" then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Press Begin Capture first.",
+            4
+        )
+
+        return false
+    end
+
+    local after =
+        HolyDevCaptureActionScope(
+            runtime.ActionBefore.Scope
+        )
+
+    local beforeFlat =
+        HolyDevFlatten(
+            runtime.ActionBefore.Values,
+            "Action",
+            {}
+        )
+
+    local afterFlat =
+        HolyDevFlatten(
+            after.Values,
+            "Action",
+            {}
+        )
+
+    local diff =
+        HolyDevDiffMaps(
+            beforeFlat,
+            afterFlat
+        )
+
+    local report = {
+        Version =
+            "HOLY_DEV_ACTION_CAPTURE_V1",
+
+        Scope =
+            runtime.ActionBefore.Scope,
+
+        StartedAt =
+            runtime.ActionBefore.Time,
+
+        FinishedAt =
+            os.time(),
+
+        JobId =
+            game.JobId,
+
+        Diff =
+            diff,
+
+        Before =
+            runtime.ActionBefore,
+
+        After =
+            after,
+    }
+
+    runtime.LastActionReport =
+        report
+
+    runtime.ActionBefore =
+        nil
+
+    HolyDevCopyReport(
+        report
+    )
+
+    HolyDevSetStatus(
+        "ActionStatusLabel",
+        "+"
+            .. tostring(diff.AddedCount)
+            .. "  -"
+            .. tostring(diff.RemovedCount)
+            .. "  ~"
+            .. tostring(diff.ChangedCount)
+            .. " — copied"
+    )
+
+    return true
+end
+
+function HolyDevSnapshotUpdateState()
+
+    local snapshot = {
+        PlaceId = game.PlaceId,
+        PlaceVersion = nil,
+        CapturedAt = os.time(),
+        Values = {},
+    }
+
+    pcall(function()
+
+        snapshot.PlaceVersion =
+            game.PlaceVersion
+    end)
+
+    local values =
+        snapshot.Values
+
+    local function captureTree(root, prefix)
+
+        if typeof(root) ~= "Instance" then
+            return
+        end
+
+        values[prefix] =
+            root.ClassName
+
+        for _, object in ipairs(
+            root:GetDescendants()
+        ) do
+
+            values[
+                "Instance."
+                    .. HolyDevGetFullName(object)
+            ] =
+                object.ClassName
+        end
+    end
+
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild(
+            "SharedModules"
+        )
+
+    local clientModules =
+        ReplicatedStorage:FindFirstChild(
+            "ClientModules"
+        )
+
+    captureTree(
+        sharedModules,
+        "Root.SharedModules"
+    )
+
+    captureTree(
+        clientModules,
+        "Root.ClientModules"
+    )
+
+    local dataModules = {
+        "ItemCatalog",
+        "GearShopData",
+        "WateringcanData",
+        "SprinklerData",
+        "Networking",
+    }
+
+    for _, moduleName in ipairs(dataModules) do
+
+        local module =
+            sharedModules
+            and sharedModules:FindFirstChild(
+                moduleName
+            )
+
+        if module
+        and module:IsA("ModuleScript") then
+
+            local success,
+                result =
+                pcall(
+                    require,
+                    module
+                )
+
+            if success == true then
+
+                HolyDevFlatten(
+                    result,
+                    "Module." .. moduleName,
+                    values,
+                    0,
+                    {}
+                )
+
+            else
+
+                values[
+                    "Module."
+                        .. moduleName
+                        .. ".RequireError"
+                ] =
+                    tostring(result)
+            end
+        end
+    end
+
+    local gearImages =
+        sharedModules
+        and sharedModules:FindFirstChild(
+            "GearImages"
+        )
+
+    if gearImages then
+
+        for _, child in ipairs(
+            gearImages:GetChildren()
+        ) do
+
+            values[
+                "GearCatalog."
+                    .. child.Name
+            ] =
+                child.ClassName
+        end
+    end
+
+    return snapshot
+end
+
+function HolyDevSaveUpdateBaseline()
+
+    local snapshot =
+        HolyDevSnapshotUpdateState()
+
+    local success =
+        HolyDevWriteJson(
+            DEV_UPDATE_BASELINE_FILE,
+            snapshot
+        )
+
+    if success == true then
+
+        HolyDevSetStatus(
+            "UpdateStatusLabel",
+            "Baseline saved • v"
+                .. tostring(
+                    snapshot.PlaceVersion
+                    or "?"
+                )
+        )
+
+        HolyNotify(
+            "HOLY Dev",
+            "Update baseline saved.",
+            4
+        )
+
+    else
+
+        HolyDevSetStatus(
+            "UpdateStatusLabel",
+            "Could not save baseline."
+        )
+    end
+
+    return success
+end
+
+function HolyDevScanUpdateChanges(copyResult)
+
+    local baseline =
+        HolyDevReadJson(
+            DEV_UPDATE_BASELINE_FILE
+        )
+
+    if type(baseline) ~= "table"
+    or type(baseline.Values) ~= "table" then
+
+        HolyDevSetStatus(
+            "UpdateStatusLabel",
+            "No baseline — save one first."
+        )
+
+        return false
+    end
+
+    local current =
+        HolyDevSnapshotUpdateState()
+
+    local diff =
+        HolyDevDiffMaps(
+            baseline.Values,
+            current.Values
+        )
+
+    local report = {
+        Version =
+            "HOLY_DEV_UPDATE_DIFF_V1",
+
+        PlaceId =
+            game.PlaceId,
+
+        BaselinePlaceVersion =
+            baseline.PlaceVersion,
+
+        CurrentPlaceVersion =
+            current.PlaceVersion,
+
+        ScannedAt =
+            os.time(),
+
+        Diff =
+            diff,
+    }
+
+    HOLY_DEV_SUITE_RUNTIME.LastUpdateDiff =
+        report
+
+    HolyDevSetStatus(
+        "UpdateStatusLabel",
+        "v"
+            .. tostring(
+                baseline.PlaceVersion
+                or "?"
+            )
+            .. " → v"
+            .. tostring(
+                current.PlaceVersion
+                or "?"
+            )
+            .. "  +"
+            .. tostring(diff.AddedCount)
+            .. " -"
+            .. tostring(diff.RemovedCount)
+            .. " ~"
+            .. tostring(diff.ChangedCount)
+    )
+
+    if copyResult == true then
+
+        HolyDevCopyReport(
+            report
+        )
+    end
+
+    return true
+end
+
+function HolyDevStartPersistenceTest()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if type(runtime.PersistenceSession) == "table" then
+
+        HolyNotify(
+            "HOLY Dev",
+            "A persistence test is already running.",
+            4
+        )
+
+        return false
+    end
+
+    local target =
+        tostring(
+            HOLY_DEV_SUITE_STATE.PersistenceTarget
+            or ""
+        )
+
+    local count,
+        found =
+        HolyDevGetToolCount(
+            target
+        )
+
+    if target == ""
+    or found ~= true then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Select an owned usable tool first.",
+            5
+        )
+
+        return false
+    end
+
+    runtime.PersistenceSession = {
+        Target = target,
+        BeforeCount = count,
+        StartedAt = os.time(),
+        JobId = game.JobId,
+    }
+
+    HolyRollbackSetOwner(
+        "Persistence",
+        true
+    )
+
+    HolyDevSetStatus(
+        "PersistenceStatusLabel",
+        target
+            .. ": "
+            .. tostring(count)
+            .. " • use it once"
+    )
+
+    HolyNotify(
+        "HOLY Dev",
+        "Test running. Use "
+            .. target
+            .. " once, then press Finish + Save.",
+        7
+    )
+
+    return true
+end
+
+function HolyDevFinishPersistenceTest()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    local session =
+        runtime.PersistenceSession
+
+    if type(session) ~= "table" then
+
+        HolyNotify(
+            "HOLY Dev",
+            "Press Begin Test first.",
+            4
+        )
+
+        return false
+    end
+
+    HolyRollbackSetOwner(
+        "Persistence",
+        false
+    )
+
+    task.wait(
+        0.75
+    )
+
+    local afterCount,
+        found =
+        HolyDevGetToolCount(
+            session.Target
+        )
+
+    local payload = {
+        Version =
+            "HOLY_DEV_PERSISTENCE_V1",
+
+        Phase =
+            "AwaitingRejoin",
+
+        PlaceId =
+            game.PlaceId,
+
+        JobId =
+            game.JobId,
+
+        Player = {
+            Name = LocalPlayer.Name,
+            UserId = LocalPlayer.UserId,
+        },
+
+        Target =
+            session.Target,
+
+        BeforeCount =
+            session.BeforeCount,
+
+        AfterUseCount =
+            found == true
+            and afterCount
+            or nil,
+
+        StartedAt =
+            session.StartedAt,
+
+        SavedAt =
+            os.time(),
+    }
+
+    local saved =
+        HolyDevWriteJson(
+            DEV_PERSISTENCE_FILE,
+            payload
+        )
+
+    HolyDevCopyReport(
+        payload
+    )
+
+    runtime.PersistenceSession =
+        nil
+
+    HolyDevSetStatus(
+        "PersistenceStatusLabel",
+        saved == true
+        and "Saved • rejoin, then execute again."
+        or "Could not save test state."
+    )
+
+    return saved
+end
+
+function HolyDevCheckPersistenceRejoin()
+
+    local payload =
+        HolyDevReadJson(
+            DEV_PERSISTENCE_FILE
+        )
+
+    if type(payload) ~= "table"
+    or payload.Phase ~= "AwaitingRejoin" then
+
+        return false
+    end
+
+    if tostring(payload.JobId)
+    == tostring(game.JobId) then
+
+        HolyDevSetStatus(
+            "PersistenceStatusLabel",
+            "Saved • rejoin to complete."
+        )
+
+        return false
+    end
+
+    task.wait(
+        3
+    )
+
+    local afterRejoin,
+        found =
+        HolyDevGetToolCount(
+            payload.Target
+        )
+
+    local verdict =
+        "INCONCLUSIVE"
+
+    if found == true then
+
+        if tonumber(afterRejoin)
+        == tonumber(payload.AfterUseCount) then
+
+            verdict =
+                "PERSISTED"
+
+        elseif tonumber(afterRejoin)
+        == tonumber(payload.BeforeCount) then
+
+            verdict =
+                "ROLLED BACK"
+
+        else
+
+            verdict =
+                "CHANGED"
+        end
+    end
+
+    local finalReport = {
+        Version =
+            "HOLY_DEV_PERSISTENCE_V1",
+
+        Phase =
+            "Complete",
+
+        PlaceId =
+            game.PlaceId,
+
+        PreviousJobId =
+            payload.JobId,
+
+        CurrentJobId =
+            game.JobId,
+
+        Target =
+            payload.Target,
+
+        BeforeCount =
+            payload.BeforeCount,
+
+        AfterUseCount =
+            payload.AfterUseCount,
+
+        AfterRejoinCount =
+            found == true
+            and afterRejoin
+            or nil,
+
+        Verdict =
+            verdict,
+
+        FinishedAt =
+            os.time(),
+    }
+
+    HolyDevWriteJson(
+        DEV_PERSISTENCE_FILE,
+        finalReport
+    )
+
+    HolyDevCopyReport(
+        finalReport
+    )
+
+    HOLY_DEV_SUITE_RUNTIME.LastPersistenceReport =
+        finalReport
+
+    HolyDevSetStatus(
+        "PersistenceStatusLabel",
+        tostring(payload.BeforeCount)
+            .. " → "
+            .. tostring(payload.AfterUseCount)
+            .. " → "
+            .. tostring(
+                found == true
+                and afterRejoin
+                or "?"
+            )
+            .. " • "
+            .. verdict
+            .. " • copied"
+    )
+
+    HolyNotify(
+        "HOLY Dev",
+        payload.Target
+            .. ": "
+            .. verdict
+            .. ". Report copied.",
+        8
+    )
+
+    return true
+end
+
+function HolyDevRefreshModuleDropdown()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    local sharedModules =
+        ReplicatedStorage:FindFirstChild(
+            "SharedModules"
+        )
+
+    local values =
+        {}
+
+    local moduleMap =
+        {}
+
+    if sharedModules then
+
+        for _, object in ipairs(
+            sharedModules:GetDescendants()
+        ) do
+
+            if object:IsA("ModuleScript") then
+
+                local fullName =
+                    HolyDevGetFullName(object)
+
+                local display =
+                    fullName:gsub(
+                        "^ReplicatedStorage%.SharedModules%.",
+                        ""
+                    )
+
+                values[#values + 1] =
+                    display
+
+                moduleMap[display] =
+                    object
+            end
+        end
+    end
+
+    table.sort(values, function(a, b)
+
+        return a:lower()
+            < b:lower()
+    end)
+
+    if #values == 0 then
+
+        values[1] =
+            "No modules found"
+    end
+
+    runtime.ModuleMap =
+        moduleMap
+
+    local selected =
+        tostring(
+            HOLY_DEV_SUITE_STATE.DataModule
+            or ""
+        )
+
+    if moduleMap[selected] == nil then
+
+        selected =
+            moduleMap["ItemCatalog"]
+            and "ItemCatalog"
+            or values[1]
+
+        HOLY_DEV_SUITE_STATE.DataModule =
+            selected
+    end
+
+    local dropdown =
+        runtime.UI.DataDropdown
+
+    if type(dropdown) == "table" then
+
+        pcall(function()
+
+            if type(dropdown.SetValues) == "function" then
+
+                dropdown:SetValues(
+                    values
+                )
+            end
+
+            if type(dropdown.SetValue) == "function" then
+
+                dropdown:SetValue(
+                    selected
+                )
+            end
+        end)
+    end
+
+    return true
+end
+
+function HolyDevInspectSelectedModule()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    local selected =
+        tostring(
+            HOLY_DEV_SUITE_STATE.DataModule
+            or ""
+        )
+
+    local module =
+        runtime.ModuleMap
+        and runtime.ModuleMap[selected]
+
+    if typeof(module) ~= "Instance"
+    or module:IsA("ModuleScript") ~= true then
+
+        HolyDevSetStatus(
+            "DataStatusLabel",
+            "Select a module first."
+        )
+
+        return false
+    end
+
+    local success,
+        result =
+        pcall(
+            require,
+            module
+        )
+
+    local report = {
+        Version =
+            "HOLY_DEV_DATA_INSPECTOR_V1",
+
+        Module =
+            selected,
+
+        FullName =
+            HolyDevGetFullName(module),
+
+        Success =
+            success,
+
+        CapturedAt =
+            os.time(),
+
+        Data =
+            success == true
+            and HolyDevSafeValue(result)
+            or nil,
+
+        Error =
+            success ~= true
+            and tostring(result)
+            or nil,
+    }
+
+    runtime.LastDataReport =
+        report
+
+    HolyDevCopyReport(
+        report
+    )
+
+    HolyDevSetStatus(
+        "DataStatusLabel",
+        success == true
+        and selected
+            .. " copied."
+        or selected
+            .. " require failed."
+    )
+
+    return success == true
+end
+
+function HolyDevRefreshErrorStatus()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    local uniqueCount =
+        #runtime.ErrorOrder
+
+    local totalCount =
+        0
+
+    local latest =
+        nil
+
+    for _, key in ipairs(
+        runtime.ErrorOrder
+    ) do
+
+        local row =
+            runtime.Errors[key]
+
+        if row then
+
+            totalCount +=
+                tonumber(row.Count)
+                or 0
+
+            latest =
+                row
+        end
+    end
+
+    local text =
+        "Capturing • 0 errors"
+
+    if totalCount > 0 then
+
+        text =
+            tostring(totalCount)
+            .. " errors • "
+            .. tostring(uniqueCount)
+            .. " unique"
+
+        if latest then
+
+            local preview =
+                tostring(
+                    latest.Message
+                    or ""
+                )
+
+            if #preview > 42 then
+
+                preview =
+                    preview:sub(1, 42)
+                    .. "..."
+            end
+
+            text =
+                text
+                .. " • "
+                .. preview
+        end
+    end
+
+    HolyDevSetStatus(
+        "ErrorStatusLabel",
+        text
+    )
+end
+
+function HolyDevStartErrorMonitor()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    if runtime.ErrorConnection then
+        return true
+    end
+
+    local ScriptContext =
+        game:GetService(
+            "ScriptContext"
+        )
+
+    local success,
+        connection =
+        pcall(function()
+
+            return ScriptContext.Error:Connect(function(
+                message,
+                stackTrace,
+                source
+            )
+
+                local key =
+                    tostring(message)
+                    .. "\n"
+                    .. tostring(stackTrace)
+
+                local row =
+                    runtime.Errors[key]
+
+                if row == nil then
+
+                    row = {
+                        Message = tostring(message),
+                        StackTrace = tostring(stackTrace),
+                        Source = HolyDevSafeValue(source),
+                        Count = 0,
+                        FirstAt = os.time(),
+                    }
+
+                    runtime.Errors[key] =
+                        row
+
+                    runtime.ErrorOrder[
+                        #runtime.ErrorOrder + 1
+                    ] =
+                        key
+                end
+
+                row.Count +=
+                    1
+
+                row.LastAt =
+                    os.time()
+
+                HolyDevRefreshErrorStatus()
+            end)
+        end)
+
+    if success == true then
+
+        runtime.ErrorConnection =
+            connection
+
+        HolyDevRefreshErrorStatus()
+
+        return true
+    end
+
+    HolyDevSetStatus(
+        "ErrorStatusLabel",
+        "Error capture unavailable."
+    )
+
+    return false
+end
+
+function HolyDevCopyErrors()
+
+    local runtime =
+        HOLY_DEV_SUITE_RUNTIME
+
+    local rows =
+        {}
+
+    for _, key in ipairs(
+        runtime.ErrorOrder
+    ) do
+
+        if runtime.Errors[key] then
+
+            rows[#rows + 1] =
+                runtime.Errors[key]
+        end
+    end
+
+    return HolyDevCopyReport({
+        Version = "HOLY_DEV_ERRORS_V1",
+        PlaceId = game.PlaceId,
+        JobId = game.JobId,
+        CapturedAt = os.time(),
+        Errors = rows,
+    })
+end
+
+function HolyDevClearErrors()
+
+    HOLY_DEV_SUITE_RUNTIME.Errors =
+        {}
+
+    HOLY_DEV_SUITE_RUNTIME.ErrorOrder =
+        {}
+
+    HolyDevRefreshErrorStatus()
+
+    return true
+end
+
+function HolyDevAutoCheckUpdate()
+
+    local baseline =
+        HolyDevReadJson(
+            DEV_UPDATE_BASELINE_FILE
+        )
+
+    if type(baseline) ~= "table" then
+
+        HolyDevSetStatus(
+            "UpdateStatusLabel",
+            "No baseline saved."
+        )
+
+        return false
+    end
+
+    local currentVersion =
+        nil
+
+    pcall(function()
+
+        currentVersion =
+            game.PlaceVersion
+    end)
+
+    if tostring(currentVersion)
+    ~= tostring(baseline.PlaceVersion) then
+
+        return HolyDevScanUpdateChanges(
+            false
+        )
+    end
+
+    HolyDevSetStatus(
+        "UpdateStatusLabel",
+        "No version change • v"
+            .. tostring(
+                currentVersion
+                or "?"
+            )
+    )
+
+    return true
+end
+
+HOLY_DEV_SUITE_RUNTIME.Stop =
+    function(reason)
+
+        local runtime =
+            HOLY_DEV_SUITE_RUNTIME
+
+        runtime.Active =
+            false
+
+        runtime.RefreshGeneration +=
+            1
+
+        if runtime.ErrorConnection then
+
+            pcall(function()
+
+                runtime.ErrorConnection:Disconnect()
+            end)
+
+            runtime.ErrorConnection =
+                nil
+        end
+
+        if type(HolyRollbackSetOwner) == "function" then
+
+            pcall(function()
+
+                HolyRollbackSetOwner(
+                    "Persistence",
+                    false
+                )
+            end)
+        end
+
+        return true
+    end
+
+--==================================================
 -- [4] WINDOW
 --==================================================
 
@@ -62322,6 +64453,21 @@ local SettingsPerformanceBox =
 local DevToolsBox =
     nil
 
+local DevUpdateBox =
+    nil
+
+local DevPersistenceBox =
+    nil
+
+local DevActionBox =
+    nil
+
+local DevErrorBox =
+    nil
+
+local DevDataBox =
+    nil
+
 if Tabs.Dev then
 
     DevToolsBox =
@@ -62330,6 +64476,46 @@ if Tabs.Dev then
             "Dev.Tools",
             "Developer Tools",
             "terminal"
+        )
+
+    DevUpdateBox =
+        HolyAddRightGroupbox(
+            Tabs.Dev,
+            "Dev.UpdateScanner",
+            "Update Scanner",
+            "git-compare"
+        )
+
+    DevPersistenceBox =
+        HolyAddRightGroupbox(
+            Tabs.Dev,
+            "Dev.PersistenceTester",
+            "Persistence Tester",
+            "database-zap"
+        )
+
+    DevActionBox =
+        HolyAddLeftGroupbox(
+            Tabs.Dev,
+            "Dev.ActionRecorder",
+            "Action Recorder",
+            "scan-search"
+        )
+
+    DevErrorBox =
+        HolyAddLeftGroupbox(
+            Tabs.Dev,
+            "Dev.ErrorMonitor",
+            "Error Monitor",
+            "triangle-alert"
+        )
+
+    DevDataBox =
+        HolyAddRightGroupbox(
+            Tabs.Dev,
+            "Dev.DataInspector",
+            "Data Inspector",
+            "braces"
         )
 end
 
@@ -75503,7 +77689,7 @@ HOLY_SHOP_UI.SellMethodControl =
                 2,
 
             Tooltip =
-                "💰 Sell All sells the full inventory. 🎯 Filtered Sell concurrently sells matching fruits.",
+                "Sell All sells the full inventory. Filtered Sell concurrently sells matching fruits.",
         }
     )
 
@@ -77541,6 +79727,384 @@ if DevToolsBox then
                 end,
         })
     end
+end
+
+if DevUpdateBox then
+
+    HOLY_DEV_SUITE_RUNTIME.UI.UpdateStatusLabel =
+        HolySniperAddLabel(
+            DevUpdateBox,
+            "Checking saved baseline..."
+        )
+
+    DevUpdateBox:AddButton({
+        Text =
+            "Save Current Baseline",
+
+        Tooltip =
+            "Saves the current modules, networking table, catalog, and important data values as the known-good baseline.",
+
+        Func =
+            function()
+
+                HolyDevSaveUpdateBaseline()
+            end,
+    })
+
+    DevUpdateBox:AddButton({
+        Text =
+            "Scan Update Changes",
+
+        Tooltip =
+            "Compares the current game against the saved baseline.",
+
+        Func =
+            function()
+
+                HolyDevScanUpdateChanges(
+                    false
+                )
+            end,
+    })
+
+    DevUpdateBox:AddButton({
+        Text =
+            "Copy Update Diff",
+
+        Tooltip =
+            "Copies the latest added, removed, and changed data report.",
+
+        Func =
+            function()
+
+                local report =
+                    HOLY_DEV_SUITE_RUNTIME.LastUpdateDiff
+
+                if type(report) ~= "table" then
+
+                    if HolyDevScanUpdateChanges(false) ~= true then
+                        return
+                    end
+
+                    report =
+                        HOLY_DEV_SUITE_RUNTIME.LastUpdateDiff
+                end
+
+                if HolyDevCopyReport(report) == true then
+
+                    HolyNotify(
+                        "HOLY Dev",
+                        "Update diff copied.",
+                        4
+                    )
+                end
+            end,
+    })
+end
+
+if DevPersistenceBox then
+
+    HOLY_DEV_SUITE_RUNTIME.UI.PersistenceDropdown =
+        DevPersistenceBox:AddDropdown(
+            "HolyDevPersistenceTarget",
+            {
+                Text =
+                    "Target Tool",
+
+                Values = {
+                    "Scanning usable gear...",
+                },
+
+                Default =
+                    "Scanning usable gear...",
+
+                Multi =
+                    false,
+
+                Searchable =
+                    true,
+
+                MaxVisibleDropdownItems =
+                    12,
+
+                Tooltip =
+                    "Automatically lists every owned usable Gear tool and its live Count attribute.",
+            }
+        )
+
+    HOLY_DEV_SUITE_RUNTIME.UI.PersistenceDropdown:OnChanged(function(value)
+
+        local selectedName =
+            HOLY_DEV_SUITE_RUNTIME
+                .ToolDisplayToName[
+                    tostring(value)
+                ]
+
+        if selectedName then
+
+            HOLY_DEV_SUITE_STATE.PersistenceTarget =
+                selectedName
+        end
+    end)
+
+    HOLY_DEV_SUITE_RUNTIME.UI.PersistenceStatusLabel =
+        HolySniperAddLabel(
+            DevPersistenceBox,
+            "Ready — select a tool."
+        )
+
+    DevPersistenceBox:AddButton({
+        Text =
+            "Begin Test",
+
+        Tooltip =
+            "Captures the selected tool count and starts the isolated persistence test worker.",
+
+        Func =
+            function()
+
+                HolyDevStartPersistenceTest()
+            end,
+    })
+
+    DevPersistenceBox:AddButton({
+        Text =
+            "Finish + Save",
+
+        Tooltip =
+            "Stops the worker, captures the used count, saves phase one, and copies the report. Rejoin afterward.",
+
+        Func =
+            function()
+
+                HolyDevFinishPersistenceTest()
+            end,
+    })
+
+    DevPersistenceBox:AddButton({
+        Text =
+            "Copy Last Result",
+
+        Tooltip =
+            "Copies the latest persistence result.",
+
+        Func =
+            function()
+
+                local report =
+                    HOLY_DEV_SUITE_RUNTIME.LastPersistenceReport
+                    or HolyDevReadJson(
+                        DEV_PERSISTENCE_FILE
+                    )
+
+                if type(report) == "table" then
+
+                    HolyDevCopyReport(
+                        report
+                    )
+                end
+            end,
+    })
+end
+
+if DevActionBox then
+
+    DevActionBox:AddDropdown(
+        "HolyDevActionScope",
+        {
+            Text =
+                "Capture Scope",
+
+            Values = {
+                "Player Tools",
+                "Own Garden",
+                "Wild Pets",
+                "Everything",
+            },
+
+            Default =
+                HOLY_DEV_SUITE_STATE.ActionScope,
+
+            Multi =
+                false,
+
+            Searchable =
+                false,
+
+            MaxVisibleDropdownItems =
+                4,
+
+            Tooltip =
+                "Chooses which replicated attributes are compared before and after one action.",
+        }
+    ):OnChanged(function(value)
+
+        HOLY_DEV_SUITE_STATE.ActionScope =
+            tostring(value)
+    end)
+
+    HOLY_DEV_SUITE_RUNTIME.UI.ActionStatusLabel =
+        HolySniperAddLabel(
+            DevActionBox,
+            "Ready — begin before one action."
+        )
+
+    DevActionBox:AddButton({
+        Text =
+            "Begin Capture",
+
+        Tooltip =
+            "Takes the before snapshot.",
+
+        Func =
+            function()
+
+                HolyDevBeginActionCapture()
+            end,
+    })
+
+    DevActionBox:AddButton({
+        Text =
+            "End Capture + Copy",
+
+        Tooltip =
+            "Takes the after snapshot, builds a change diff, and copies the report.",
+
+        Func =
+            function()
+
+                HolyDevEndActionCapture()
+            end,
+    })
+end
+
+if DevErrorBox then
+
+    HOLY_DEV_SUITE_RUNTIME.UI.ErrorStatusLabel =
+        HolySniperAddLabel(
+            DevErrorBox,
+            "Starting error capture..."
+        )
+
+    DevErrorBox:AddButton({
+        Text =
+            "Copy Errors",
+
+        Tooltip =
+            "Copies grouped errors with counts and stack traces.",
+
+        Func =
+            function()
+
+                if HolyDevCopyErrors() == true then
+
+                    HolyNotify(
+                        "HOLY Dev",
+                        "Error report copied.",
+                        4
+                    )
+                end
+            end,
+    })
+
+    DevErrorBox:AddButton({
+        Text =
+            "Clear Errors",
+
+        Tooltip =
+            "Clears the current grouped error list.",
+
+        Func =
+            function()
+
+                HolyDevClearErrors()
+            end,
+    })
+end
+
+if DevDataBox then
+
+    HOLY_DEV_SUITE_RUNTIME.UI.DataDropdown =
+        DevDataBox:AddDropdown(
+            "HolyDevDataModule",
+            {
+                Text =
+                    "Shared Module",
+
+                Values = {
+                    "Scanning modules...",
+                },
+
+                Default =
+                    "Scanning modules...",
+
+                Multi =
+                    false,
+
+                Searchable =
+                    true,
+
+                MaxVisibleDropdownItems =
+                    14,
+
+                Tooltip =
+                    "Lists SharedModules dynamically, including modules added by future game updates.",
+            }
+        )
+
+    HOLY_DEV_SUITE_RUNTIME.UI.DataDropdown:OnChanged(function(value)
+
+        HOLY_DEV_SUITE_STATE.DataModule =
+            tostring(value)
+    end)
+
+    HOLY_DEV_SUITE_RUNTIME.UI.DataStatusLabel =
+        HolySniperAddLabel(
+            DevDataBox,
+            "Select a module to inspect."
+        )
+
+    DevDataBox:AddButton({
+        Text =
+            "Inspect + Copy",
+
+        Tooltip =
+            "Requires the selected module, converts its public result into JSON-safe data, and copies it.",
+
+        Func =
+            function()
+
+                HolyDevInspectSelectedModule()
+            end,
+    })
+
+    DevDataBox:AddButton({
+        Text =
+            "Refresh Module List",
+
+        Tooltip =
+            "Finds newly added or removed SharedModules without reopening the UI.",
+
+        Func =
+            function()
+
+                HolyDevRefreshModuleDropdown()
+            end,
+    })
+end
+
+if Tabs.Dev then
+
+    HolyDevRefreshToolDropdown()
+    HolyDevRefreshModuleDropdown()
+    HolyDevStartToolRefresh()
+    HolyDevStartErrorMonitor()
+
+    task.spawn(function()
+
+        HolyDevAutoCheckUpdate()
+        HolyDevCheckPersistenceRejoin()
+    end)
 end
 
 --==================================================
