@@ -42782,6 +42782,2543 @@ function HolyAuctionStartWatcher()
 end
 
 --==================================================
+-- [2.56] AUCTION NETWORK ENGINE V3
+--==================================================
+
+local HOLY_AUCTION_MANIFEST_CACHE_FILE =
+    UI_SETTINGS_FOLDER
+    .. "/HolyAuctionManifestCacheV3.json"
+
+local HolyAuctionLegacyEnsureState =
+    HolyAuctionEnsureState
+
+function HolyAuctionEnsureState()
+
+    HolyAuctionLegacyEnsureState()
+
+    HOLY_SHOP_STATE.AuctionManifest =
+        type(HOLY_SHOP_STATE.AuctionManifest) == "table"
+        and HOLY_SHOP_STATE.AuctionManifest
+        or {}
+
+    HOLY_SHOP_STATE.AuctionManifestByLotId =
+        type(HOLY_SHOP_STATE.AuctionManifestByLotId) == "table"
+        and HOLY_SHOP_STATE.AuctionManifestByLotId
+        or {}
+
+    HOLY_SHOP_STATE.AuctionManifestCycle =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionManifestCycle
+        )
+
+    HOLY_SHOP_STATE.AuctionManifestHash =
+        tostring(
+            HOLY_SHOP_STATE.AuctionManifestHash
+            or ""
+        )
+
+    HOLY_SHOP_STATE.AuctionManifestSource =
+        tostring(
+            HOLY_SHOP_STATE.AuctionManifestSource
+            or "None"
+        )
+
+    HOLY_SHOP_STATE.AuctionManifestReceivedAt =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionManifestReceivedAt
+        )
+        or 0
+
+    HOLY_SHOP_STATE.AuctionServerClockAt =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionServerClockAt
+        )
+        or 0
+
+    HOLY_SHOP_STATE.AuctionRollIntervalSeconds =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionRollIntervalSeconds
+        )
+        or 1800
+
+    HOLY_SHOP_STATE.AuctionNetworkReady =
+        HOLY_SHOP_STATE.AuctionNetworkReady == true
+
+    HOLY_SHOP_STATE.AuctionDryRun =
+        HOLY_SHOP_STATE.AuctionDryRun ~= false
+
+    HOLY_SHOP_STATE.AuctionLastDecision =
+        tostring(
+            HOLY_SHOP_STATE.AuctionLastDecision
+            or "Waiting network data"
+        )
+
+    return HOLY_SHOP_STATE
+end
+
+function HolyAuctionShouldUseOffscreen()
+
+    return false
+end
+
+function HolyAuctionEnsureOffscreen()
+
+    HolyAuctionRestoreOffscreen()
+
+    return false,
+        "network mode"
+end
+
+function HolyAuctionSetServerClock(serverNow)
+
+    serverNow =
+        tonumber(serverNow)
+
+    if serverNow == nil
+    or serverNow <= 0 then
+
+        return false
+    end
+
+    HOLY_SHOP_STATE.AuctionServerNow =
+        serverNow
+
+    HOLY_SHOP_STATE.AuctionServerClockAt =
+        os.clock()
+
+    return true
+end
+
+function HolyAuctionEstimatedServerNow()
+
+    HolyAuctionEnsureState()
+
+    local serverNow =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionServerNow
+        )
+        or 0
+
+    local clockAt =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionServerClockAt
+        )
+        or 0
+
+    if serverNow <= 0
+    or clockAt <= 0 then
+
+        return 0
+    end
+
+    return serverNow
+        + math.max(
+            0,
+            os.clock() - clockAt
+        )
+end
+
+function HolyAuctionGetAuctioneerModule()
+
+    HolyAuctionEnsureState()
+
+    if type(HOLY_SHOP_STATE.AuctioneerModule) == "table" then
+
+        return HOLY_SHOP_STATE.AuctioneerModule
+    end
+
+    local auctioneer =
+        HolyShopRequireModule(
+            "SharedModules.Auctioneer"
+        )
+
+    if type(auctioneer) == "table" then
+
+        HOLY_SHOP_STATE.AuctioneerModule =
+            auctioneer
+
+        return auctioneer
+    end
+
+    return nil
+end
+
+function HolyAuctionDisplayName(lot)
+
+    lot =
+        type(lot) == "table"
+        and lot
+        or {}
+
+    local displayName =
+        HolyCleanText(
+            lot.displayName
+            or lot.DisplayName
+            or lot.name
+            or lot.Name
+        )
+
+    if displayName ~= "" then
+
+        return displayName
+    end
+
+    local auctioneer =
+        HolyAuctionGetAuctioneerModule()
+
+    if type(auctioneer) == "table"
+    and type(auctioneer.DisplayName) == "function" then
+
+        local ok,
+            result =
+            pcall(
+                auctioneer.DisplayName,
+                lot
+            )
+
+        if ok == true then
+
+            displayName =
+                HolyCleanText(
+                    result
+                )
+        end
+    end
+
+    if displayName == "" then
+
+        displayName =
+            HolyCleanText(
+                lot.item
+                or lot.Item
+                or lot.listingId
+                or lot.LotId
+                or lot.lotId
+                or "Unknown Auction Item"
+            )
+    end
+
+    return displayName
+end
+
+function HolyAuctionPrimitiveLot(lot)
+
+    local result =
+        {}
+
+    for key, value in pairs(lot or {}) do
+
+        local valueType =
+            type(value)
+
+        if valueType == "string"
+        or valueType == "number"
+        or valueType == "boolean" then
+
+            result[tostring(key)] =
+                value
+        end
+    end
+
+    result.lotId =
+        tostring(
+            lot.lotId
+            or lot.LotId
+            or result.lotId
+            or ""
+        )
+
+    result.displayName =
+        HolyAuctionDisplayName(
+            lot
+        )
+
+    return result
+end
+
+function HolyAuctionSaveManifestCache()
+
+    HolyAuctionEnsureState()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    if #HOLY_SHOP_STATE.AuctionManifest <= 0 then
+        return false
+    end
+
+    HolyEnsureFolder()
+
+    local safeLots =
+        {}
+
+    for _, lot in ipairs(HOLY_SHOP_STATE.AuctionManifest) do
+
+        table.insert(
+            safeLots,
+            HolyAuctionPrimitiveLot(
+                lot
+            )
+        )
+    end
+
+    local payload = {
+        Version =
+            "HOLY_AUCTION_MANIFEST_CACHE_V3",
+
+        PlaceId =
+            game.PlaceId,
+
+        Cycle =
+            HOLY_SHOP_STATE.AuctionManifestCycle,
+
+        Hash =
+            HOLY_SHOP_STATE.AuctionManifestHash,
+
+        RollIntervalSeconds =
+            HOLY_SHOP_STATE.AuctionRollIntervalSeconds,
+
+        SavedAt =
+            os.time(),
+
+        Lots =
+            safeLots,
+    }
+
+    local encodedOk,
+        encoded =
+        pcall(function()
+
+            return HttpService:JSONEncode(
+                payload
+            )
+        end)
+
+    if encodedOk ~= true then
+        return false
+    end
+
+    return pcall(function()
+
+        writefile(
+            HOLY_AUCTION_MANIFEST_CACHE_FILE,
+            encoded
+        )
+    end)
+end
+
+function HolyAuctionRefreshNetworkReady()
+
+    HolyAuctionEnsureState()
+
+    local manifestCycle =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionManifestCycle
+        )
+
+    local stockCycle =
+        HolyAuctionCalculateStockCycle()
+
+    local ready =
+        manifestCycle ~= nil
+        and stockCycle ~= nil
+        and manifestCycle == stockCycle
+        and #HOLY_SHOP_STATE.AuctionManifest > 0
+
+    if ready == true then
+
+        for _, lot in ipairs(HOLY_SHOP_STATE.AuctionManifest) do
+
+            local lotId =
+                tostring(
+                    lot.lotId
+                    or lot.LotId
+                    or ""
+                )
+
+            if lotId == ""
+            or HOLY_SHOP_STATE.AuctionStockMap[lotId] == nil then
+
+                ready =
+                    false
+
+                break
+            end
+        end
+    end
+
+    HOLY_SHOP_STATE.AuctionNetworkReady =
+        ready
+
+    if ready == true then
+
+        HOLY_SHOP_STATE.AuctionDataMode =
+            "Network ready"
+
+    elseif manifestCycle == nil then
+
+        HOLY_SHOP_STATE.AuctionDataMode =
+            "Waiting manifest"
+
+    elseif stockCycle == nil then
+
+        HOLY_SHOP_STATE.AuctionDataMode =
+            "Waiting stock"
+
+    else
+
+        HOLY_SHOP_STATE.AuctionDataMode =
+            "Syncing cycles "
+            .. tostring(manifestCycle)
+            .. "/"
+            .. tostring(stockCycle)
+    end
+
+    return ready
+end
+
+function HolyAuctionApplyManifestPayload(payload, source)
+
+    HolyAuctionEnsureState()
+
+    payload =
+        type(payload) == "table"
+        and payload
+        or {}
+
+    local manifest =
+        type(payload.manifest) == "table"
+        and payload.manifest
+        or payload
+
+    local sourceLots =
+        type(manifest.lots) == "table"
+        and manifest.lots
+        or (
+            type(manifest.Lots) == "table"
+            and manifest.Lots
+            or nil
+        )
+
+    if type(sourceLots) ~= "table" then
+
+        return false,
+            "manifest lots missing"
+    end
+
+    local lots =
+        {}
+
+    local byLotId =
+        {}
+
+    local cycleCounts =
+        {}
+
+    local bestCycle =
+        nil
+
+    local bestCycleCount =
+        0
+
+    for _, rawLot in pairs(sourceLots) do
+
+        if type(rawLot) == "table" then
+
+            local lot =
+                rawLot
+
+            local lotId =
+                tostring(
+                    lot.lotId
+                    or lot.LotId
+                    or ""
+                )
+
+            if lotId ~= "" then
+
+                lot.lotId =
+                    lotId
+
+                lot.displayName =
+                    HolyAuctionDisplayName(
+                        lot
+                    )
+
+                table.insert(
+                    lots,
+                    lot
+                )
+
+                byLotId[lotId] =
+                    lot
+
+                local cycle =
+                    HolyAuctionExtractCycle(
+                        lotId
+                    )
+
+                if cycle ~= nil then
+
+                    cycleCounts[cycle] =
+                        (
+                            cycleCounts[cycle]
+                            or 0
+                        )
+                        + 1
+
+                    if cycleCounts[cycle] > bestCycleCount then
+
+                        bestCycle =
+                            cycle
+
+                        bestCycleCount =
+                            cycleCounts[cycle]
+                    end
+                end
+            end
+        end
+    end
+
+    if #lots <= 0 then
+
+        return false,
+            "manifest contains no lots"
+    end
+
+    if bestCycle == nil then
+
+        bestCycle =
+            tonumber(
+                payload.rollWindowUnix
+                or manifest.rollWindowUnix
+            )
+    end
+
+    table.sort(lots, function(a, b)
+
+        return (
+            HolyAuctionExtractSlot(
+                a.lotId
+            )
+            or 999
+        ) < (
+            HolyAuctionExtractSlot(
+                b.lotId
+            )
+            or 999
+        )
+    end)
+
+    HOLY_SHOP_STATE.AuctionManifest =
+        lots
+
+    HOLY_SHOP_STATE.AuctionManifestByLotId =
+        byLotId
+
+    HOLY_SHOP_STATE.AuctionManifestCycle =
+        bestCycle
+
+    HOLY_SHOP_STATE.AuctionManifestHash =
+        tostring(
+            manifest.hash
+            or manifest.Hash
+            or payload.hash
+            or ""
+        )
+
+    HOLY_SHOP_STATE.AuctionManifestSource =
+        tostring(
+            source
+            or "Packet 335"
+        )
+
+    HOLY_SHOP_STATE.AuctionManifestReceivedAt =
+        os.clock()
+
+    HOLY_SHOP_STATE.AuctionRollIntervalSeconds =
+        tonumber(
+            payload.rollIntervalSeconds
+            or manifest.rollIntervalSeconds
+        )
+        or HOLY_SHOP_STATE.AuctionRollIntervalSeconds
+        or 1800
+
+    HolyAuctionSetServerClock(
+        payload.serverNow
+        or manifest.serverNow
+    )
+
+    -- Intentionally do not read payload.stock here.
+    -- Snapshot stock can still belong to the previous cycle.
+
+    for _, lot in ipairs(lots) do
+
+        HolyAuctionRememberKnownItem(
+            lot.displayName
+        )
+    end
+
+    HolyAuctionRefreshNetworkReady()
+
+    if source ~= "Cache" then
+
+        HolyAuctionSaveManifestCache()
+    end
+
+    HolyAuctionRefreshDropdown(
+        true
+    )
+
+    return true
+end
+
+function HolyAuctionLoadManifestCache()
+
+    HolyAuctionEnsureState()
+
+    if HolyCanUseFiles() ~= true then
+        return false
+    end
+
+    local existsOk,
+        exists =
+        pcall(function()
+
+            return isfile(
+                HOLY_AUCTION_MANIFEST_CACHE_FILE
+            )
+        end)
+
+    if existsOk ~= true
+    or exists ~= true then
+
+        return false
+    end
+
+    local readOk,
+        raw =
+        pcall(function()
+
+            return readfile(
+                HOLY_AUCTION_MANIFEST_CACHE_FILE
+            )
+        end)
+
+    if readOk ~= true then
+        return false
+    end
+
+    local decodeOk,
+        cache =
+        pcall(function()
+
+            return HttpService:JSONDecode(
+                raw
+            )
+        end)
+
+    if decodeOk ~= true
+    or type(cache) ~= "table"
+    or tonumber(cache.PlaceId) ~= game.PlaceId
+    or type(cache.Lots) ~= "table" then
+
+        return false
+    end
+
+    return HolyAuctionApplyManifestPayload(
+        {
+            manifest = {
+                lots =
+                    cache.Lots,
+
+                hash =
+                    cache.Hash,
+            },
+
+            rollWindowUnix =
+                cache.Cycle,
+
+            rollIntervalSeconds =
+                cache.RollIntervalSeconds,
+        },
+        "Cache"
+    )
+end
+
+function HolyAuctionCurrentPrice(lot, serverNow)
+
+    lot =
+        type(lot) == "table"
+        and lot
+        or {}
+
+    serverNow =
+        tonumber(serverNow)
+        or HolyAuctionEstimatedServerNow()
+
+    if serverNow <= 0 then
+
+        return nil,
+            "server clock missing"
+    end
+
+    local auctioneer =
+        HolyAuctionGetAuctioneerModule()
+
+    if type(auctioneer) ~= "table"
+    or type(auctioneer.CurrentPrice) ~= "function" then
+
+        return nil,
+            "Auctioneer.CurrentPrice missing"
+    end
+
+    local ok,
+        price =
+        pcall(
+            auctioneer.CurrentPrice,
+            lot,
+            serverNow
+        )
+
+    price =
+        tonumber(price)
+
+    if ok ~= true
+    or price == nil
+    or price ~= price
+    or price == math.huge
+    or price <= 0 then
+
+        return nil,
+            "CurrentPrice failed"
+    end
+
+    return math.max(
+        1,
+        math.floor(
+            price + 0.5
+        )
+    )
+end
+
+function HolyAuctionIsNetworkLotActive(lot, serverNow, stock)
+
+    stock =
+        math.max(
+            0,
+            math.floor(
+                tonumber(stock)
+                or 0
+            )
+        )
+
+    if stock <= 0 then
+        return false
+    end
+
+    local auctioneer =
+        HolyAuctionGetAuctioneerModule()
+
+    if type(auctioneer) == "table"
+    and type(auctioneer.IsActive) == "function" then
+
+        local ok,
+            active =
+            pcall(
+                auctioneer.IsActive,
+                lot,
+                serverNow,
+                stock
+            )
+
+        if ok == true
+        and type(active) == "boolean" then
+
+            return active
+        end
+    end
+
+    local expiresAt =
+        tonumber(
+            lot.expiresAt
+            or lot.ExpiresAt
+        )
+
+    if expiresAt ~= nil
+    and serverNow > 0
+    and serverNow >= expiresAt then
+
+        return false
+    end
+
+    return true
+end
+
+function HolyAuctionRowStale(row, requireServerStock)
+
+    HolyAuctionEnsureState()
+
+    row =
+        type(row) == "table"
+        and row
+        or {}
+
+    if HOLY_SHOP_STATE.AuctionNetworkReady ~= true then
+
+        return true,
+            "network not synchronized"
+    end
+
+    if row.Network ~= true then
+
+        return true,
+            "not network data"
+    end
+
+    local manifestCycle =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionManifestCycle
+        )
+
+    local stockCycle =
+        tonumber(
+            HolyAuctionGetStockCycle()
+        )
+
+    if manifestCycle == nil
+    or stockCycle == nil
+    or manifestCycle ~= stockCycle
+    or tonumber(row.Cycle) ~= manifestCycle then
+
+        return true,
+            "cycle mismatch"
+    end
+
+    if requireServerStock == true then
+
+        local lotId =
+            tostring(
+                row.LotId
+                or ""
+            )
+
+        if HOLY_SHOP_STATE.AuctionStockMap[lotId] == nil then
+
+            return true,
+                "stock missing"
+        end
+
+        if HolyAuctionStockAge() >= 40 then
+
+            return true,
+                "stock stale"
+        end
+    end
+
+    return false,
+        ""
+end
+
+function HolyAuctionScanLiveLots()
+
+    HolyAuctionEnsureState()
+
+    HolyAuctionRestoreOffscreen()
+
+    HolyAuctionRefreshNetworkReady()
+
+    local rows =
+        {}
+
+    local serverNow =
+        HolyAuctionEstimatedServerNow()
+
+    local manifestCycle =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionManifestCycle
+        )
+
+    local rollInterval =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionRollIntervalSeconds
+        )
+        or 1800
+
+    if manifestCycle ~= nil
+    and serverNow > 0 then
+
+        HOLY_SHOP_STATE.AuctionRefreshSeconds =
+            math.max(
+                0,
+                manifestCycle
+                    + rollInterval
+                    - serverNow
+            )
+
+        HOLY_SHOP_STATE.AuctionRefreshReadAt =
+            os.clock()
+
+        HOLY_SHOP_STATE.AuctionRefreshText =
+            "Refresh in "
+            .. HolyAuctionFormatDuration(
+                HOLY_SHOP_STATE.AuctionRefreshSeconds
+            )
+    end
+
+    for _, lot in ipairs(HOLY_SHOP_STATE.AuctionManifest) do
+
+        local lotId =
+            tostring(
+                lot.lotId
+                or lot.LotId
+                or ""
+            )
+
+        local stockValue =
+            HOLY_SHOP_STATE.AuctionStockMap[
+                lotId
+            ]
+
+        local stock =
+            math.max(
+                0,
+                math.floor(
+                    tonumber(stockValue)
+                    or 0
+                )
+            )
+
+        local price =
+            HolyAuctionCurrentPrice(
+                lot,
+                serverNow
+            )
+
+        local expiresAt =
+            tonumber(
+                lot.expiresAt
+                or lot.ExpiresAt
+            )
+
+        local expired =
+            expiresAt ~= nil
+            and serverNow > 0
+            and serverNow >= expiresAt
+
+        local networkReady =
+            HOLY_SHOP_STATE.AuctionNetworkReady == true
+            and stockValue ~= nil
+
+        local active =
+            networkReady
+            and price ~= nil
+            and HolyAuctionIsNetworkLotActive(
+                lot,
+                serverNow,
+                stock
+            )
+
+        local remaining =
+            expiresAt ~= nil
+            and serverNow > 0
+            and math.max(
+                0,
+                expiresAt - serverNow
+            )
+            or math.max(
+                0,
+                HOLY_SHOP_STATE.AuctionRefreshSeconds
+                or 0
+            )
+
+        local count =
+            math.max(
+                1,
+                math.floor(
+                    tonumber(
+                        lot.count
+                        or lot.Count
+                    )
+                    or 1
+                )
+            )
+
+        table.insert(
+            rows,
+            {
+                LotId =
+                    lotId,
+
+                Cycle =
+                    HolyAuctionExtractCycle(
+                        lotId
+                    ),
+
+                Slot =
+                    HolyAuctionExtractSlot(
+                        lotId
+                    ),
+
+                Name =
+                    HolyAuctionDisplayName(
+                        lot
+                    ),
+
+                Stock =
+                    stock,
+
+                ServerStock =
+                    stockValue,
+
+                StockSource =
+                    "Server",
+
+                StockText =
+                    stockValue ~= nil
+                    and (
+                        "x"
+                        .. tostring(stock)
+                    )
+                    or "syncing",
+
+                Price =
+                    price or 0,
+
+                PriceText =
+                    price ~= nil
+                    and HolyAuctionFormatMoney(
+                        price
+                    )
+                    or "--",
+
+                AmountText =
+                    count > 1
+                    and (
+                        "x"
+                        .. tostring(count)
+                    )
+                    or "",
+
+                Timer =
+                    HolyAuctionFormatDuration(
+                        remaining
+                    ),
+
+                SoldOut =
+                    stockValue ~= nil
+                    and stock <= 0,
+
+                Expired =
+                    expired,
+
+                Active =
+                    active == true,
+
+                SortIndex =
+                    HolyAuctionExtractSlot(
+                        lotId
+                    )
+                    or 999,
+
+                Cached =
+                    HOLY_SHOP_STATE.AuctionManifestSource == "Cache",
+
+                Network =
+                    true,
+
+                NetworkReady =
+                    networkReady,
+
+                Manifest =
+                    lot,
+            }
+        )
+    end
+
+    table.sort(rows, function(a, b)
+
+        local selectedA =
+            HolyAuctionSelectionAllows(
+                a.Name
+            )
+
+        local selectedB =
+            HolyAuctionSelectionAllows(
+                b.Name
+            )
+
+        if selectedA ~= selectedB then
+
+            return selectedA == true
+        end
+
+        if a.Active ~= b.Active then
+
+            return a.Active == true
+        end
+
+        return tonumber(a.SortIndex)
+            < tonumber(b.SortIndex)
+    end)
+
+    HOLY_SHOP_STATE.AuctionLastLots =
+        rows
+
+    HOLY_SHOP_STATE.AuctionLastScanAt =
+        os.clock()
+
+    return rows
+end
+
+function HolyAuctionBuildLiveText(rows)
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or HolyAuctionScanLiveLots()
+
+    local mode =
+        tostring(
+            HOLY_SHOP_STATE.AuctionDataMode
+            or "Waiting network"
+        )
+
+    if #rows <= 0 then
+
+        return "Live: "
+            .. mode
+            .. " | Auction GUI not required."
+    end
+
+    local parts =
+        {}
+
+    for index, row in ipairs(rows) do
+
+        if index > 3 then
+            break
+        end
+
+        table.insert(
+            parts,
+            tostring(row.Name)
+                .. " x"
+                .. tostring(row.Stock)
+                .. " "
+                .. tostring(row.PriceText)
+        )
+    end
+
+    return "Live: "
+        .. mode
+        .. " | "
+        .. HolyAuctionRefreshHeaderText()
+        .. " | "
+        .. table.concat(
+            parts,
+            " | "
+        )
+end
+
+function HolyAuctionRepriceRow(row)
+
+    HolyAuctionEnsureState()
+
+    if HOLY_SHOP_STATE.AuctionNetworkReady ~= true then
+
+        return nil,
+            "network not synchronized"
+    end
+
+    local lotId =
+        tostring(
+            type(row) == "table"
+            and row.LotId
+            or ""
+        )
+
+    local manifestLot =
+        HOLY_SHOP_STATE.AuctionManifestByLotId[
+            lotId
+        ]
+
+    if type(manifestLot) ~= "table" then
+
+        return nil,
+            "manifest lot missing"
+    end
+
+    local stock =
+        HOLY_SHOP_STATE.AuctionStockMap[
+            lotId
+        ]
+
+    if stock == nil then
+
+        return nil,
+            "server stock missing"
+    end
+
+    local serverNow =
+        HolyAuctionEstimatedServerNow()
+
+    local price,
+        priceReason =
+        HolyAuctionCurrentPrice(
+            manifestLot,
+            serverNow
+        )
+
+    if price == nil then
+
+        return nil,
+            priceReason
+    end
+
+    local result =
+        {}
+
+    for key, value in pairs(row or {}) do
+
+        result[key] =
+            value
+    end
+
+    result.Price =
+        price
+
+    result.PriceText =
+        HolyAuctionFormatMoney(
+            price
+        )
+
+    result.Stock =
+        math.max(
+            0,
+            math.floor(
+                tonumber(stock)
+                or 0
+            )
+        )
+
+    result.ServerStock =
+        stock
+
+    result.Active =
+        HolyAuctionIsNetworkLotActive(
+            manifestLot,
+            serverNow,
+            stock
+        )
+
+    result.Network =
+        true
+
+    result.NetworkReady =
+        true
+
+    result.Manifest =
+        manifestLot
+
+    if HolyAuctionLotAllowed(result) ~= true then
+
+        return nil,
+            "final safety check blocked"
+    end
+
+    return result
+end
+
+function HolyAuctionFirePurchase(row)
+
+    local finalRow,
+        safetyReason =
+        HolyAuctionRepriceRow(
+            row
+        )
+
+    if type(finalRow) ~= "table" then
+
+        return false,
+            tostring(
+                safetyReason
+                or "reprice failed"
+            )
+    end
+
+    local lotId =
+        tostring(
+            finalRow.LotId
+        )
+
+    local price =
+        math.max(
+            1,
+            math.floor(
+                tonumber(finalRow.Price)
+                or 0
+            )
+        )
+
+    if HOLY_SHOP_STATE.AuctionDryRun == true then
+
+        HOLY_SHOP_STATE.AuctionLastDecision =
+            "DRY RUN eligible: "
+            .. tostring(finalRow.Name)
+            .. " at "
+            .. HolyAuctionFormatMoney(price)
+
+        return true,
+            "dry run",
+            finalRow
+    end
+
+    local packet =
+        HolyAuctionResolvePurchasePacket(
+            false
+        )
+
+    if type(packet) ~= "table" then
+
+        packet =
+            HolyAuctionResolvePurchasePacket(
+                true
+            )
+    end
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return false,
+            "PurchaseLot packet missing"
+    end
+
+    local ok,
+        result =
+        pcall(function()
+
+            return packet:Fire(
+                lotId,
+                price
+            )
+        end)
+
+    if ok ~= true then
+
+        return false,
+            tostring(result)
+    end
+
+    HOLY_SHOP_STATE.AuctionAttemptedLots[lotId] =
+        true
+
+    HOLY_SHOP_STATE.AuctionPendingLotId =
+        lotId
+
+    HOLY_SHOP_STATE.AuctionPendingPrice =
+        price
+
+    HOLY_SHOP_STATE.AuctionLastDecision =
+        "Packet 333 fired: "
+        .. tostring(finalRow.Name)
+        .. " at "
+        .. HolyAuctionFormatMoney(price)
+
+    return true,
+        "packet fired",
+        finalRow
+end
+
+function HolyAuctionAttemptPurchase(reason, automatic)
+
+    HolyAuctionEnsureState()
+
+    if automatic == true
+    and HOLY_SHOP_STATE.AutoBuyAuctions ~= true then
+
+        return false
+    end
+
+    local now =
+        os.clock()
+
+    local nextBuyAt =
+        tonumber(
+            HOLY_SHOP_STATE.AuctionNextBuyAt
+        )
+        or 0
+
+    if now < nextBuyAt then
+
+        HolyAuctionSetStatus(
+            "Cooldown "
+            .. tostring(
+                math.max(
+                    0,
+                    math.ceil(
+                        nextBuyAt - now
+                    )
+                )
+            )
+            .. "s"
+        )
+
+        return false
+    end
+
+    local target,
+        targetReason =
+        HolyAuctionFindBuyTarget()
+
+    if type(target) ~= "table" then
+
+        HOLY_SHOP_STATE.AuctionLastDecision =
+            tostring(
+                targetReason
+                or "no target"
+            )
+
+        HolyAuctionSetStatus(
+            tostring(
+                targetReason
+                or "Waiting selected auction item"
+            )
+        )
+
+        return false
+    end
+
+    local ok,
+        fireMode,
+        finalRow =
+        HolyAuctionFirePurchase(
+            target
+        )
+
+    if ok ~= true then
+
+        HOLY_SHOP_STATE.AuctionNextBuyAt =
+            os.clock() + 1
+
+        HolyAuctionSetStatus(
+            "Buy blocked: "
+            .. tostring(fireMode)
+        )
+
+        return false
+    end
+
+    HOLY_SHOP_STATE.AuctionNextBuyAt =
+        os.clock()
+        + HolyAuctionReadCooldown()
+
+    finalRow =
+        type(finalRow) == "table"
+        and finalRow
+        or target
+
+    if fireMode == "dry run" then
+
+        HolyAuctionSetStatus(
+            "DRY RUN eligible: "
+            .. tostring(finalRow.Name)
+            .. " at "
+            .. tostring(finalRow.PriceText)
+        )
+
+        return true
+    end
+
+    HolyAuctionSetStatus(
+        "Sent purchase: "
+        .. tostring(finalRow.Name)
+        .. " at "
+        .. tostring(finalRow.PriceText)
+    )
+
+    return true
+end
+
+function HolyAuctionManualBuyOnce(reason)
+
+    return HolyAuctionAttemptPurchase(
+        reason or "manual",
+        false
+    )
+end
+
+function HolyAuctionRunWorker(reason)
+
+    return HolyAuctionAttemptPurchase(
+        reason or "automatic",
+        true
+    )
+end
+
+function HolyAuctionConnectPacketSignals()
+
+    HolyAuctionEnsureState()
+
+    if HOLY_SHOP_STATE.AuctionSignalsConnected == true then
+        return true
+    end
+
+    local networking =
+        HolyShopRequireModule(
+            "SharedModules.Networking"
+        )
+
+    local auction =
+        type(networking) == "table"
+        and type(networking.Auctioneer) == "table"
+        and networking.Auctioneer
+        or nil
+
+    if type(auction) ~= "table" then
+
+        HolyAuctionSetStatus(
+            "Auction networking missing"
+        )
+
+        return false
+    end
+
+    local function connectPacket(packetName, callback)
+
+        local packet =
+            auction[packetName]
+
+        if type(packet) ~= "table"
+        or packet.OnClientEvent == nil then
+
+            return false
+        end
+
+        local ok,
+            connection =
+            pcall(function()
+
+                return packet.OnClientEvent:Connect(
+                    callback
+                )
+            end)
+
+        if ok == true
+        and connection ~= nil then
+
+            table.insert(
+                HOLY_SHOP_STATE.AuctionConnections,
+                connection
+            )
+
+            return true
+        end
+
+        return false
+    end
+
+    connectPacket(
+        "Snapshot",
+        function(payload)
+
+            local applied,
+                applyReason =
+                HolyAuctionApplyManifestPayload(
+                    payload,
+                    "Packet 335"
+                )
+
+            if applied == true then
+
+                HolyAuctionSetStatus(
+                    "Manifest "
+                    .. tostring(
+                        HOLY_SHOP_STATE.AuctionManifestCycle
+                    )
+                    .. " received; waiting matching stock"
+                )
+
+            else
+
+                HolyAuctionSetStatus(
+                    "Snapshot rejected: "
+                    .. tostring(applyReason)
+                )
+            end
+
+            task.defer(function()
+
+                HolyAuctionRefreshUI()
+            end)
+        end
+    )
+
+    connectPacket(
+        "StockUpdate",
+        function(payload)
+
+            HolyAuctionEnsureState()
+
+            if type(payload) == "table"
+            and type(payload.stock) == "table" then
+
+                local nextStock =
+                    {}
+
+                for lotId, stock in pairs(payload.stock) do
+
+                    nextStock[
+                        tostring(lotId)
+                    ] =
+                        math.max(
+                            0,
+                            math.floor(
+                                tonumber(stock)
+                                or 0
+                            )
+                        )
+                end
+
+                HOLY_SHOP_STATE.AuctionStockMap =
+                    nextStock
+
+                HOLY_SHOP_STATE.AuctionLastStockUpdateAt =
+                    os.clock()
+
+                HolyAuctionSetServerClock(
+                    payload.serverNow
+                )
+
+                HolyAuctionCalculateStockCycle()
+
+                local ready =
+                    HolyAuctionRefreshNetworkReady()
+
+                if ready == true then
+
+                    HolyAuctionSetStatus(
+                        HOLY_SHOP_STATE.AuctionDryRun == true
+                        and "Network ready — safety dry run"
+                        or "Network ready — purchases armed"
+                    )
+
+                else
+
+                    HolyAuctionSetStatus(
+                        tostring(
+                            HOLY_SHOP_STATE.AuctionDataMode
+                        )
+                    )
+                end
+            end
+
+            task.defer(function()
+
+                HolyAuctionRefreshUI()
+
+                if HOLY_SHOP_STATE.AutoBuyAuctions == true
+                and HOLY_SHOP_STATE.AuctionNetworkReady == true then
+
+                    HolyAuctionQueueWorker(
+                        "stock update"
+                    )
+                end
+            end)
+        end
+    )
+
+    connectPacket(
+        "PurchaseResult",
+        function(...)
+
+            local arguments = {
+                ...,
+            }
+
+            local lotId =
+                ""
+
+            local success =
+                false
+
+            local resultReason =
+                nil
+
+            if type(arguments[1]) == "table" then
+
+                local payload =
+                    arguments[1]
+
+                lotId =
+                    HolyCleanText(
+                        payload.lotId
+                        or payload.LotId
+                        or payload.id
+                    )
+
+                success =
+                    payload.success == true
+                    or payload.Success == true
+
+                resultReason =
+                    payload.reason
+                    or payload.Reason
+                    or payload.message
+                    or payload.Message
+
+            else
+
+                lotId =
+                    HolyCleanText(
+                        arguments[1]
+                    )
+
+                success =
+                    arguments[2] == true
+
+                resultReason =
+                    arguments[3]
+            end
+
+            if lotId == "" then
+
+                lotId =
+                    tostring(
+                        HOLY_SHOP_STATE.AuctionPendingLotId
+                        or ""
+                    )
+            end
+
+            if success == true then
+
+                HolyAuctionSetStatus(
+                    "Purchase confirmed: "
+                    .. lotId
+                )
+
+            else
+
+                HOLY_SHOP_STATE.AuctionAttemptedLots[lotId] =
+                    nil
+
+                HolyAuctionSetStatus(
+                    "Purchase rejected: "
+                    .. lotId
+                    .. " "
+                    .. tostring(
+                        resultReason
+                        or "unknown reason"
+                    )
+                )
+            end
+
+            HOLY_SHOP_STATE.AuctionPendingLotId =
+                nil
+
+            HOLY_SHOP_STATE.AuctionPendingPrice =
+                nil
+
+            task.defer(function()
+
+                HolyAuctionRefreshUI()
+            end)
+        end
+    )
+
+    HOLY_SHOP_STATE.AuctionSignalsConnected =
+        true
+
+    return true
+end
+
+function HolyAuctionStartWatcher()
+
+    HolyAuctionEnsureState()
+
+    if HOLY_SHOP_STATE.AuctionWatcherStarted == true then
+        return false
+    end
+
+    HOLY_SHOP_STATE.AuctionWatcherStarted =
+        true
+
+    HolyAuctionRestoreOffscreen()
+
+    HolyAuctionLoadManifestCache()
+
+    HolyAuctionConnectPacketSignals()
+
+    HolyAuctionRequestSnapshot()
+
+    task.spawn(function()
+
+        while HOLY_SHOP_STATE.AuctionWatcherStarted == true do
+
+            HolyAuctionRefreshUI()
+
+            if HOLY_SHOP_STATE.AutoBuyAuctions == true
+            and HOLY_SHOP_STATE.AuctionNetworkReady == true then
+
+                HolyAuctionQueueWorker(
+                    "network watcher"
+                )
+            end
+
+            task.wait(
+                HOLY_SHOP_STATE.AutoBuyAuctions == true
+                and 0.25
+                or 0.75
+            )
+        end
+    end)
+
+    task.defer(function()
+
+        HolyAuctionRefreshDropdown(
+            true
+        )
+
+        HolyAuctionRefreshUI()
+
+        if HOLY_SHOP_STATE.AuctionHudEnabled == true then
+
+            HolyAuctionHudStart()
+        end
+    end)
+
+    return true
+end
+
+
+--==================================================
+-- [2.57] COMPACT NETWORK AUCTION HUD
+--==================================================
+
+function HolyAuctionHudCreateUI()
+
+    HolyAuctionHudDestroy(
+        true
+    )
+
+    local playerGui =
+        HolyAuctionGetPlayerGui()
+
+    if typeof(playerGui) ~= "Instance" then
+        return false
+    end
+
+    local screenGui =
+        HolyAuctionHudCreate(
+            "ScreenGui",
+            {
+                Name =
+                    "HolyAuctionNetworkHud",
+
+                ResetOnSpawn =
+                    false,
+
+                IgnoreGuiInset =
+                    true,
+
+                ZIndexBehavior =
+                    Enum.ZIndexBehavior.Sibling,
+
+                Parent =
+                    playerGui,
+            }
+        )
+
+    HOLY_AUCTION_HUD.ScreenGui =
+        screenGui
+
+    local savedPosition =
+        type(HOLY_SHOP_STATE.AuctionHudPosition) == "table"
+        and HOLY_SHOP_STATE.AuctionHudPosition
+        or {}
+
+    local minimized =
+        HOLY_SHOP_STATE.AuctionHudMinimized == true
+
+    local holder =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                Active =
+                    true,
+
+                BackgroundColor3 =
+                    Color3.fromRGB(7, 8, 11),
+
+                BorderSizePixel =
+                    0,
+
+                Position =
+                    UDim2.fromOffset(
+                        tonumber(savedPosition.X)
+                        or 60,
+                        tonumber(savedPosition.Y)
+                        or 110
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        390,
+                        minimized
+                        and 36
+                        or 230
+                    ),
+
+                Parent =
+                    screenGui,
+            }
+        )
+
+    HOLY_AUCTION_HUD.Holder =
+        holder
+
+    HolyAuctionHudCorner(
+        holder,
+        UDim.new(0, 9)
+    )
+
+    HolyAuctionHudStroke(
+        holder,
+        Color3.fromRGB(92, 24, 35),
+        0.05,
+        1
+    )
+
+    HOLY_AUCTION_HUD.ScaleObject =
+        HolyAuctionHudCreate(
+            "UIScale",
+            {
+                Scale =
+                    HolyAuctionReadHudScale(
+                        HOLY_SHOP_STATE.AuctionHudScale
+                    ) / 100,
+
+                Parent =
+                    holder,
+            }
+        )
+
+    local top =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                Active =
+                    true,
+
+                BackgroundColor3 =
+                    Color3.fromRGB(10, 11, 15),
+
+                BorderSizePixel =
+                    0,
+
+                Size =
+                    UDim2.fromOffset(
+                        390,
+                        36
+                    ),
+
+                Parent =
+                    holder,
+            }
+        )
+
+    HOLY_AUCTION_HUD.Top =
+        top
+
+    HolyAuctionHudCorner(
+        top,
+        UDim.new(0, 9)
+    )
+
+    HolyAuctionHudCreate(
+        "Frame",
+        {
+            BackgroundColor3 =
+                Color3.fromRGB(240, 38, 65),
+
+            BorderSizePixel =
+                0,
+
+            Position =
+                UDim2.fromOffset(
+                    0,
+                    35
+                ),
+
+            Size =
+                UDim2.fromOffset(
+                    390,
+                    1
+                ),
+
+            Parent =
+                top,
+        }
+    )
+
+    HOLY_AUCTION_HUD.TitleLabel =
+        HolyAuctionHudLabel(
+            top,
+            "HOLY PRO · AUCTIONEER",
+            12,
+            0,
+            172,
+            36,
+            12,
+            Color3.fromRGB(245, 245, 248),
+            true
+        )
+
+    HOLY_AUCTION_HUD.AutoBadge =
+        HolyAuctionHudLabel(
+            top,
+            "AUTO OFF",
+            190,
+            7,
+            88,
+            22,
+            10,
+            Color3.fromRGB(165, 170, 181),
+            true
+        )
+
+    HOLY_AUCTION_HUD.AutoBadge.TextXAlignment =
+        Enum.TextXAlignment.Center
+
+    local minimizeButton =
+        HolyAuctionHudButton(
+            top,
+            minimized
+            and "+"
+            or "—",
+            326,
+            7,
+            25,
+            22
+        )
+
+    minimizeButton.BackgroundColor3 =
+        Color3.fromRGB(18, 19, 24)
+
+    local closeButton =
+        HolyAuctionHudButton(
+            top,
+            "X",
+            356,
+            7,
+            25,
+            22
+        )
+
+    closeButton.BackgroundColor3 =
+        Color3.fromRGB(42, 13, 20)
+
+    local body =
+        HolyAuctionHudCreate(
+            "Frame",
+            {
+                BackgroundTransparency =
+                    1,
+
+                Position =
+                    UDim2.fromOffset(
+                        0,
+                        36
+                    ),
+
+                Size =
+                    UDim2.fromOffset(
+                        390,
+                        194
+                    ),
+
+                Visible =
+                    not minimized,
+
+                Parent =
+                    holder,
+            }
+        )
+
+    HOLY_AUCTION_HUD.Body =
+        body
+
+    HOLY_AUCTION_HUD.SyncLabel =
+        HolyAuctionHudLabel(
+            body,
+            "SYNCING NETWORK",
+            12,
+            5,
+            180,
+            17,
+            10,
+            Color3.fromRGB(245, 183, 73),
+            true
+        )
+
+    HOLY_AUCTION_HUD.SummaryLabel =
+        HolyAuctionHudLabel(
+            body,
+            "Max: not set · Selected: 0",
+            12,
+            23,
+            366,
+            16,
+            10,
+            Color3.fromRGB(184, 187, 198),
+            false
+        )
+
+    HOLY_AUCTION_HUD.StatusLabel =
+        HolyAuctionHudLabel(
+            body,
+            "Waiting for packet 335",
+            12,
+            41,
+            366,
+            17,
+            10,
+            Color3.fromRGB(139, 143, 154),
+            false
+        )
+
+    HOLY_AUCTION_HUD.RowFrames =
+        {}
+
+    for index = 1, 4 do
+
+        local rowHolder =
+            HolyAuctionHudCreate(
+                "Frame",
+                {
+                    BackgroundColor3 =
+                        Color3.fromRGB(12, 13, 17),
+
+                    BorderSizePixel =
+                        0,
+
+                    Position =
+                        UDim2.fromOffset(
+                            10,
+                            64 + ((index - 1) * 31)
+                        ),
+
+                    Size =
+                        UDim2.fromOffset(
+                            370,
+                            27
+                        ),
+
+                    Visible =
+                        false,
+
+                    Parent =
+                        body,
+                }
+            )
+
+        HolyAuctionHudCorner(
+            rowHolder,
+            UDim.new(0, 6)
+        )
+
+        local rowStroke =
+            HolyAuctionHudStroke(
+                rowHolder,
+                Color3.fromRGB(39, 41, 49),
+                0.25,
+                1
+            )
+
+        local nameLabel =
+            HolyAuctionHudLabel(
+                rowHolder,
+                "--",
+                8,
+                0,
+                166,
+                27,
+                10,
+                Color3.fromRGB(232, 233, 239),
+                true
+            )
+
+        local priceLabel =
+            HolyAuctionHudLabel(
+                rowHolder,
+                "--",
+                177,
+                0,
+                76,
+                27,
+                10,
+                Color3.fromRGB(210, 212, 220),
+                true
+            )
+
+        priceLabel.TextXAlignment =
+            Enum.TextXAlignment.Right
+
+        local stockLabel =
+            HolyAuctionHudLabel(
+                rowHolder,
+                "x0",
+                258,
+                0,
+                42,
+                27,
+                9,
+                Color3.fromRGB(151, 155, 166),
+                false
+            )
+
+        stockLabel.TextXAlignment =
+            Enum.TextXAlignment.Center
+
+        local decisionLabel =
+            HolyAuctionHudLabel(
+                rowHolder,
+                "SYNC",
+                301,
+                0,
+                61,
+                27,
+                8,
+                Color3.fromRGB(245, 183, 73),
+                true
+            )
+
+        decisionLabel.TextXAlignment =
+            Enum.TextXAlignment.Center
+
+        HOLY_AUCTION_HUD.RowFrames[index] = {
+            Holder =
+                rowHolder,
+
+            Stroke =
+                rowStroke,
+
+            Name =
+                nameLabel,
+
+            Price =
+                priceLabel,
+
+            Stock =
+                stockLabel,
+
+            Decision =
+                decisionLabel,
+        }
+    end
+
+    HolyAuctionHudAddConnection(
+        minimizeButton.MouseButton1Click:Connect(function()
+
+            HOLY_SHOP_STATE.AuctionHudMinimized =
+                HOLY_SHOP_STATE.AuctionHudMinimized ~= true
+
+            local nowMinimized =
+                HOLY_SHOP_STATE.AuctionHudMinimized == true
+
+            body.Visible =
+                not nowMinimized
+
+            holder.Size =
+                UDim2.fromOffset(
+                    390,
+                    nowMinimized
+                    and 36
+                    or 230
+                )
+
+            minimizeButton.Text =
+                nowMinimized
+                and "+"
+                or "—"
+
+            HolySaveShopSettings()
+
+            HolyAuctionHudRefresh()
+        end)
+    )
+
+    HolyAuctionHudAddConnection(
+        closeButton.MouseButton1Click:Connect(function()
+
+            HolyAuctionSetHudVisible(
+                false,
+                "closed"
+            )
+        end)
+    )
+
+    HolyAuctionHudMakeDraggable(
+        holder,
+        top
+    )
+
+    HolyAuctionHudApplyScale()
+
+    return true
+end
+
+function HolyAuctionHudRefresh(rows)
+
+    HolyAuctionEnsureState()
+
+    if HOLY_SHOP_STATE.AuctionHudEnabled ~= true then
+        return false
+    end
+
+    HolyAuctionHudStart()
+
+    local hud =
+        HOLY_AUCTION_HUD
+
+    if type(hud) ~= "table"
+    or typeof(hud.Holder) ~= "Instance" then
+
+        return false
+    end
+
+    rows =
+        type(rows) == "table"
+        and rows
+        or HOLY_SHOP_STATE.AuctionLastLots
+        or {}
+
+    local ready =
+        HOLY_SHOP_STATE.AuctionNetworkReady == true
+        and HolyAuctionStockAge() < 40
+
+    local selected =
+        HolyShopSelectionArray(
+            HOLY_SHOP_STATE.SelectedAuctions
+        )
+
+    local maxPrice =
+        HolyAuctionReadMoney(
+            HOLY_SHOP_STATE.AuctionMaxPrice
+            or "0"
+        )
+
+    if typeof(hud.AutoBadge) == "Instance" then
+
+        hud.AutoBadge.Text =
+            HOLY_SHOP_STATE.AutoBuyAuctions == true
+            and (
+                HOLY_SHOP_STATE.AuctionDryRun == true
+                and "AUTO TEST"
+                or "AUTO ON"
+            )
+            or "AUTO OFF"
+
+        hud.AutoBadge.TextColor3 =
+            HOLY_SHOP_STATE.AutoBuyAuctions == true
+            and Color3.fromRGB(255, 58, 85)
+            or Color3.fromRGB(155, 159, 170)
+    end
+
+    if typeof(hud.TitleLabel) == "Instance" then
+
+        hud.TitleLabel.Text =
+            HOLY_SHOP_STATE.AuctionHudMinimized == true
+            and (
+                "AUCTIONEER · "
+                .. (
+                    ready
+                    and HolyAuctionRefreshHeaderText()
+                    or "SYNCING"
+                )
+            )
+            or "HOLY PRO · AUCTIONEER"
+    end
+
+    if typeof(hud.SyncLabel) == "Instance" then
+
+        hud.SyncLabel.Text =
+            ready
+            and (
+                HOLY_SHOP_STATE.AuctionDryRun == true
+                and "NETWORK READY · DRY RUN"
+                or "NETWORK READY · ARMED"
+            )
+            or "SYNCING MANIFEST + STOCK"
+
+        hud.SyncLabel.TextColor3 =
+            ready
+            and Color3.fromRGB(61, 218, 121)
+            or Color3.fromRGB(245, 183, 73)
+    end
+
+    if typeof(hud.SummaryLabel) == "Instance" then
+
+        hud.SummaryLabel.Text =
+            "Max: "
+            .. (
+                maxPrice > 0
+                and HolyAuctionFormatMoney(maxPrice)
+                or "not set"
+            )
+            .. " · Selected: "
+            .. tostring(#selected)
+            .. " · "
+            .. HolyAuctionRefreshHeaderText()
+    end
+
+    if typeof(hud.StatusLabel) == "Instance" then
+
+        hud.StatusLabel.Text =
+            tostring(
+                HOLY_SHOP_STATE.AuctionStatus
+                or "Ready"
+            )
+    end
+
+    for index = 1, 4 do
+
+        local rowUi =
+            hud.RowFrames[index]
+
+        local row =
+            rows[index]
+
+        if type(rowUi) == "table" then
+
+            if type(row) ~= "table" then
+
+                rowUi.Holder.Visible =
+                    false
+
+            else
+
+                rowUi.Holder.Visible =
+                    true
+
+                local selectedRow =
+                    HolyAuctionSelectionAllows(
+                        row.Name
+                    )
+
+                local decision =
+                    "LIVE"
+
+                local decisionColor =
+                    Color3.fromRGB(145, 149, 160)
+
+                if ready ~= true
+                or row.NetworkReady ~= true then
+
+                    decision =
+                        "SYNC"
+
+                    decisionColor =
+                        Color3.fromRGB(245, 183, 73)
+
+                elseif row.Expired == true then
+
+                    decision =
+                        "EXPIRED"
+
+                    decisionColor =
+                        Color3.fromRGB(255, 72, 93)
+
+                elseif tonumber(row.Stock) <= 0 then
+
+                    decision =
+                        "SOLD"
+
+                    decisionColor =
+                        Color3.fromRGB(255, 72, 93)
+
+                elseif selectedRow == true
+                and maxPrice <= 0 then
+
+                    decision =
+                        "SET MAX"
+
+                    decisionColor =
+                        Color3.fromRGB(245, 183, 73)
+
+                elseif selectedRow == true
+                and tonumber(row.Price) <= maxPrice then
+
+                    decision =
+                        "ELIGIBLE"
+
+                    decisionColor =
+                        Color3.fromRGB(61, 218, 121)
+
+                elseif selectedRow == true then
+
+                    decision =
+                        "ABOVE"
+
+                    decisionColor =
+                        Color3.fromRGB(255, 72, 93)
+                end
+
+                rowUi.Name.Text =
+                    tostring(row.Name)
+
+                rowUi.Price.Text =
+                    tostring(row.PriceText)
+
+                rowUi.Stock.Text =
+                    "x"
+                    .. tostring(
+                        math.max(
+                            0,
+                            math.floor(
+                                tonumber(row.Stock)
+                                or 0
+                            )
+                        )
+                    )
+
+                rowUi.Decision.Text =
+                    decision
+
+                rowUi.Decision.TextColor3 =
+                    decisionColor
+
+                if selectedRow == true then
+
+                    rowUi.Holder.BackgroundColor3 =
+                        Color3.fromRGB(24, 12, 17)
+
+                    rowUi.Stroke.Color =
+                        Color3.fromRGB(168, 31, 52)
+
+                    rowUi.Name.TextColor3 =
+                        Color3.fromRGB(255, 225, 230)
+
+                else
+
+                    rowUi.Holder.BackgroundColor3 =
+                        Color3.fromRGB(12, 13, 17)
+
+                    rowUi.Stroke.Color =
+                        Color3.fromRGB(39, 41, 49)
+
+                    rowUi.Name.TextColor3 =
+                        Color3.fromRGB(232, 233, 239)
+                end
+            end
+        end
+    end
+
+    return true
+end
+
+--==================================================
 -- [2.6] SELL CORE
 --==================================================
 
@@ -77281,7 +79818,7 @@ ShopAuctionBox:AddToggle(
             HOLY_SHOP_STATE.AutoBuyAuctions == true,
 
         Tooltip =
-            "Buys selected live auction lots only when server stock is fresh and price is at or below Desired Price.",
+            "Uses packet 335 manifest data, packet 336 stock, and Auctioneer.CurrentPrice. It never reads the Auction GUI.",
     }
 ):OnChanged(function(value)
 
@@ -77292,27 +79829,60 @@ ShopAuctionBox:AddToggle(
 
     if HOLY_SHOP_STATE.AutoBuyAuctions == true then
 
-        HolyAuctionEnsureOffscreen()
+        if HOLY_SHOP_STATE.AuctionNetworkReady == true then
 
-        HolyAuctionSetStatus(
-            "Auto buy enabled"
-        )
+            HolyAuctionSetStatus(
+                HOLY_SHOP_STATE.AuctionDryRun == true
+                and "Auto enabled — safety dry run"
+                or "Auto enabled — purchases armed"
+            )
 
-        HolyAuctionQueueWorker(
-            "toggle on"
-        )
+            HolyAuctionQueueWorker(
+                "toggle on"
+            )
+
+        else
+
+            HolyAuctionSetStatus(
+                "Auto enabled — waiting synchronized network data"
+            )
+        end
 
     else
 
         HolyAuctionSetStatus(
             "Auto buy off"
         )
-
-        if HOLY_SHOP_STATE.AuctionHudEnabled ~= true then
-
-            HolyAuctionRestoreOffscreen()
-        end
     end
+end)
+
+ShopAuctionBox:AddToggle(
+    "HolyShopAuctionDryRun",
+    {
+        Text =
+            "Safety Dry Run",
+
+        Default =
+            true,
+
+        Tooltip =
+            "ON performs every selection, stock, cycle, and price check but never fires PurchaseLot. Turn this off only after verifying an ELIGIBLE result.",
+    }
+):OnChanged(function(value)
+
+    HOLY_SHOP_STATE.AuctionDryRun =
+        value == true
+
+    HOLY_SHOP_STATE.AuctionNextBuyAt =
+        0
+
+    HolyAuctionSetStatus(
+        HOLY_SHOP_STATE.AuctionDryRun == true
+        and "Safety dry run enabled"
+        or "Real purchases armed"
+    )
+
+    HolyAuctionRefreshUI()
 end)
 
 HOLY_SHOP_UI.AuctionDropdown =
@@ -77384,7 +79954,7 @@ ShopAuctionBox:AddInput(
             false,
 
         Finished =
-            false,
+            true,
 
         ClearTextOnFocus =
             false,
@@ -77428,7 +79998,7 @@ ShopAuctionBox:AddInput(
             true,
 
         Finished =
-            false,
+            true,
 
         ClearTextOnFocus =
             false,
@@ -77474,7 +80044,7 @@ ShopAuctionBox:AddToggle(
             HOLY_SHOP_STATE.AuctionHudEnabled == true,
 
         Tooltip =
-            "Shows the live auction control HUD. It keeps the Auction UI enabled offscreen so price and timer update without opening the NPC UI.",
+            "Shows the compact networking HUD. The original Auction GUI can remain completely closed.",
     }
 ):OnChanged(function(value)
 
