@@ -799,7 +799,7 @@ HOLY_WATERING_REJOIN_STATE = {
         "Delay",
 
     WateringDelay =
-        1,
+        3,
 
     RejoinDelay =
         5,
@@ -813,8 +813,8 @@ HOLY_WATERING_REJOIN_STATE = {
     HidePlants =
         true,
 
-    AvoidPlantAttacks =
-        true,
+    AvoidPlantAttacksMode =
+        "Night Only",
 
     RetreatDistance =
         30,
@@ -52912,7 +52912,7 @@ function HolyWateringRejoinNormalizeState()
             tonumber(
                 state.WateringDelay
             )
-            or 1,
+            or 3,
             0.1,
             10
         )
@@ -52947,8 +52947,13 @@ function HolyWateringRejoinNormalizeState()
     state.HidePlants =
         state.HidePlants ~= false
 
-    state.AvoidPlantAttacks =
-        state.AvoidPlantAttacks ~= false
+    if state.AvoidPlantAttacksMode ~= "Off"
+    and state.AvoidPlantAttacksMode ~= "Night Only"
+    and state.AvoidPlantAttacksMode ~= "Always" then
+
+        state.AvoidPlantAttacksMode =
+            "Night Only"
+    end
 
     state.RetreatDistance =
         math.clamp(
@@ -53011,7 +53016,7 @@ function HolyWateringRejoinSaveSettings()
         HolyWateringRejoinNormalizeState()
 
     local payload = {
-        Version = 4,
+        Version = 5,
 
         Enabled =
             state.Enabled == true,
@@ -53046,8 +53051,8 @@ function HolyWateringRejoinSaveSettings()
         HidePlants =
             state.HidePlants == true,
 
-        AvoidPlantAttacks =
-            state.AvoidPlantAttacks == true,
+        AvoidPlantAttacksMode =
+            state.AvoidPlantAttacksMode,
 
         RetreatDistance =
             state.RetreatDistance,
@@ -53217,10 +53222,19 @@ function HolyWateringRejoinLoadSettings()
             data.HidePlants == true
     end
 
-    if data.AvoidPlantAttacks ~= nil then
+    if data.AvoidPlantAttacksMode ~= nil then
 
-        state.AvoidPlantAttacks =
+        state.AvoidPlantAttacksMode =
+            tostring(
+                data.AvoidPlantAttacksMode
+            )
+
+    elseif data.AvoidPlantAttacks ~= nil then
+
+        state.AvoidPlantAttacksMode =
             data.AvoidPlantAttacks == true
+            and "Night Only"
+            or "Off"
     end
 
     state.RetreatDistance =
@@ -54708,16 +54722,39 @@ function HolyWateringRejoinBuildSafeCFrame(
     )
 end
 
+function HolyWateringRejoinIsNight()
+
+    return workspace:GetAttribute(
+        "ActivePhase"
+    ) == "Night"
+end
+
+function HolyWateringRejoinShouldAvoidPlantAttacks()
+
+    local mode =
+        tostring(
+            HOLY_WATERING_REJOIN_STATE.AvoidPlantAttacksMode
+            or "Night Only"
+        )
+
+    if mode == "Always" then
+
+        return true
+    end
+
+    if mode == "Night Only" then
+
+        return HolyWateringRejoinIsNight()
+    end
+
+    return false
+end
+
 function HolyWateringRejoinRetreatToSafety(
     savedStandCFrame,
     savedAimPosition,
     generation
 )
-
-    if HOLY_WATERING_REJOIN_STATE.AvoidPlantAttacks ~= true then
-
-        return true
-    end
 
     local safeCFrame =
         HolyWateringRejoinBuildSafeCFrame(
@@ -55854,7 +55891,15 @@ function HolyWateringRejoinRunCycle(generation)
                 and state.UseMode == "All Available"
             )
 
-        if state.AvoidPlantAttacks == true then
+        local retreatedForPlantAttacks =
+            false
+
+        local function retreatFromPlantAttacks()
+
+            if retreatedForPlantAttacks == true then
+
+                return true
+            end
 
             local retreated =
                 HolyWateringRejoinRetreatToSafety(
@@ -55874,6 +55919,53 @@ function HolyWateringRejoinRunCycle(generation)
                         1
                     )
                 end
+
+                return false
+            end
+
+            retreatedForPlantAttacks =
+                true
+
+            return true
+        end
+
+        local function returnToWateringPosition()
+
+            if retreatedForPlantAttacks ~= true then
+
+                return true
+            end
+
+            local returnedToTarget =
+                HolyWateringRejoinMoveTo(
+                    savedStandCFrame,
+                    generation
+                )
+
+            if returnedToTarget ~= true then
+
+                if state.Enabled == true
+                and runtime.Generation == generation
+                and runtime.RespawnPending ~= true then
+
+                    HolyWateringRejoinScheduleRecovery(
+                        "Could not return to the watering position.",
+                        1
+                    )
+                end
+
+                return false
+            end
+
+            retreatedForPlantAttacks =
+                false
+
+            return true
+        end
+
+        if HolyWateringRejoinShouldAvoidPlantAttacks() == true then
+
+            if retreatFromPlantAttacks() ~= true then
 
                 return
             end
@@ -55914,6 +56006,26 @@ function HolyWateringRejoinRunCycle(generation)
         and runtime.Generation == generation
         and os.clock() < nextUseAt do
 
+            local shouldAvoidNow =
+                HolyWateringRejoinShouldAvoidPlantAttacks()
+
+            if shouldAvoidNow == true
+            and retreatedForPlantAttacks ~= true then
+
+                if retreatFromPlantAttacks() ~= true then
+
+                    return
+                end
+
+            elseif shouldAvoidNow ~= true
+            and retreatedForPlantAttacks == true then
+
+                if returnToWateringPosition() ~= true then
+
+                    return
+                end
+            end
+
             task.wait(
                 0.05
             )
@@ -55926,25 +56038,9 @@ function HolyWateringRejoinRunCycle(generation)
             return
         end
 
-        if state.AvoidPlantAttacks == true then
+        if retreatedForPlantAttacks == true then
 
-            local returnedToTarget =
-                HolyWateringRejoinMoveTo(
-                    savedStandCFrame,
-                    generation
-                )
-
-            if returnedToTarget ~= true then
-
-                if state.Enabled == true
-                and runtime.Generation == generation
-                and runtime.RespawnPending ~= true then
-
-                    HolyWateringRejoinScheduleRecovery(
-                        "Could not return to the watering position.",
-                        1
-                    )
-                end
+            if returnToWateringPosition() ~= true then
 
                 return
             end
@@ -56496,14 +56592,25 @@ function HolyWateringRejoinSetHidePlants(value)
     return HOLY_WATERING_REJOIN_STATE.HidePlants
 end
 
-function HolyWateringRejoinSetAvoidPlantAttacks(value)
+function HolyWateringRejoinSetAvoidPlantAttacksMode(value)
 
-    HOLY_WATERING_REJOIN_STATE.AvoidPlantAttacks =
-        value == true
+    value =
+        tostring(value)
+
+    if value ~= "Off"
+    and value ~= "Night Only"
+    and value ~= "Always" then
+
+        value =
+            "Night Only"
+    end
+
+    HOLY_WATERING_REJOIN_STATE.AvoidPlantAttacksMode =
+        value
 
     HolyWateringRejoinSaveSettings()
 
-    return HOLY_WATERING_REJOIN_STATE.AvoidPlantAttacks
+    return value
 end
 
 function HolyWateringRejoinSetCan(value)
@@ -72028,25 +72135,40 @@ HOLY_WATERING_REJOIN_UI.HidePlantsToggle:OnChanged(function(value)
     )
 end)
 
-HOLY_WATERING_REJOIN_UI.AvoidPlantAttacksToggle =
-    VulnWateringRejoinBox:AddToggle(
-        "HolyWateringRejoinAvoidPlantAttacks",
+HOLY_WATERING_REJOIN_UI.AvoidPlantAttacksModeDropdown =
+    VulnWateringRejoinBox:AddDropdown(
+        "HolyWateringRejoinAvoidPlantAttacksMode",
         {
             Text =
                 "Avoid Plant Attacks",
 
+            Values = {
+                "Off",
+                "Night Only",
+                "Always",
+            },
+
             Default =
-                HOLY_WATERING_REJOIN_STATE.AvoidPlantAttacks == true,
+                HOLY_WATERING_REJOIN_STATE.AvoidPlantAttacksMode,
+
+            Multi =
+                false,
+
+            Searchable =
+                false,
+
+            MaxVisibleDropdownItems =
+                3,
 
             Tooltip =
-                "Retreats away from the target between watering uses and before rejoining.",
+                "Off stays at the target. Night Only retreats while ActivePhase is Night. Always retreats between every watering use.",
         }
     )
 
-HOLY_WATERING_REJOIN_UI.AvoidPlantAttacksToggle:OnChanged(function(value)
+HOLY_WATERING_REJOIN_UI.AvoidPlantAttacksModeDropdown:OnChanged(function(value)
 
-    HolyWateringRejoinSetAvoidPlantAttacks(
-        value == true
+    HolyWateringRejoinSetAvoidPlantAttacksMode(
+        value
     )
 end)
 
