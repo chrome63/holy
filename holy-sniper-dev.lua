@@ -1400,6 +1400,9 @@ HOLY_FARM_STATE = {
     ProFruitCollector = false,
     LowGardenDetail = false,
 
+    ProBatchMode = false,
+    ProBatchAmount = 10,
+
     CollectMode = "All",
 
     SelectedPlants = {},
@@ -1503,6 +1506,10 @@ HOLY_FARM_UI = {
 
     ProCollectorToggle = nil,
     LowGardenDetailToggle = nil,
+
+    ProBatchModeToggle = nil,
+    ProBatchAmountInput = nil,
+
     ProStatusLabel = nil,
 }
 
@@ -4843,6 +4850,21 @@ function HolyFarmEnsureState()
     HOLY_FARM_STATE.LowGardenDetail =
         HOLY_FARM_STATE.LowGardenDetail == true
 
+    HOLY_FARM_STATE.ProBatchMode =
+        HOLY_FARM_STATE.ProBatchMode == true
+
+    HOLY_FARM_STATE.ProBatchAmount =
+        math.clamp(
+            math.floor(
+                tonumber(
+                    HOLY_FARM_STATE.ProBatchAmount
+                )
+                or 10
+            ),
+            2,
+            50
+        )
+
     return HOLY_FARM_STATE
 end
 
@@ -5090,6 +5112,21 @@ function HolySaveFarmSettings()
         LowGardenDetail =
             HOLY_FARM_STATE.LowGardenDetail == true,
 
+        ProBatchMode =
+            HOLY_FARM_STATE.ProBatchMode == true,
+
+        ProBatchAmount =
+            math.clamp(
+                math.floor(
+                    tonumber(
+                        HOLY_FARM_STATE.ProBatchAmount
+                    )
+                    or 10
+                ),
+                2,
+                50
+            ),
+
         CollectMode =
             HolyFarmNormalizeCollectMode(
                 HOLY_FARM_STATE.CollectMode
@@ -5215,6 +5252,21 @@ function HolyLoadFarmSettings()
 
     HOLY_FARM_STATE.LowGardenDetail =
         data.LowGardenDetail == true
+
+    HOLY_FARM_STATE.ProBatchMode =
+        data.ProBatchMode == true
+
+    HOLY_FARM_STATE.ProBatchAmount =
+        math.clamp(
+            math.floor(
+                tonumber(
+                    data.ProBatchAmount
+                )
+                or 10
+            ),
+            2,
+            50
+        )
 
     if HOLY_FARM_STATE.ProFruitCollector == true then
 
@@ -9574,7 +9626,7 @@ function HolyProFarmEntryAllowed(entry)
     return true
 end
 
-function HolyProFarmFindTarget()
+function HolyProFarmBuildCandidates()
 
     local runtime =
         HolyProFarmEnsureRuntime()
@@ -9673,16 +9725,91 @@ function HolyProFarmFindTarget()
         end
     end
 
-    if #candidates == 0 then
-        return nil
+    return candidates
+end
+
+function HolyProFarmShuffleCandidates(candidates)
+
+    if type(candidates) ~= "table" then
+        return {}
     end
 
-    return candidates[
-        math.random(
+    for index = #candidates, 2, -1 do
+
+        local swapIndex =
+            math.random(
+                1,
+                index
+            )
+
+        candidates[index],
+        candidates[swapIndex] =
+            candidates[swapIndex],
+            candidates[index]
+    end
+
+    return candidates
+end
+
+function HolyProFarmFindTargets(amount, uniquePlants)
+
+    amount =
+        math.max(
             1,
-            #candidates
+            math.floor(
+                tonumber(amount)
+                or 1
+            )
         )
-    ]
+
+    local candidates =
+        HolyProFarmShuffleCandidates(
+            HolyProFarmBuildCandidates()
+        )
+
+    local selected =
+        {}
+
+    local usedPlants =
+        {}
+
+    for _, entry in ipairs(candidates) do
+
+        local plantId =
+            tostring(
+                entry.PlantId
+                or ""
+            )
+
+        if uniquePlants ~= true
+        or usedPlants[plantId] ~= true then
+
+            usedPlants[plantId] =
+                true
+
+            table.insert(
+                selected,
+                entry
+            )
+
+            if #selected >= amount then
+                break
+            end
+        end
+    end
+
+    return selected
+end
+
+function HolyProFarmFindTarget()
+
+    local targets =
+        HolyProFarmFindTargets(
+            1,
+            false
+        )
+
+    return targets[1]
 end
 
 function HolyProFarmTargetExists(entry)
@@ -9839,6 +9966,277 @@ function HolyProFarmFireEntry(token, entry)
         "not confirmed"
 end
 
+function HolyProFarmResolveBatchPacket()
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    local packet =
+        runtime.CollectPacket
+
+    if type(packet) == "table"
+    and type(packet.Fire) == "function" then
+
+        return packet
+    end
+
+    local _,
+        garden =
+        HolyProFarmGetNetworking()
+
+    packet =
+        type(garden) == "table"
+        and garden.CollectFruit
+        or nil
+
+    runtime.CollectPacket =
+        packet
+
+    if type(packet) ~= "table"
+    or type(packet.Fire) ~= "function" then
+
+        return nil,
+            "Collect packet unavailable"
+    end
+
+    return packet
+end
+
+function HolyProFarmWaitForSendTime(token, targetTime)
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    while runtime.Token == token
+    and HOLY_FARM_STATE.ProFruitCollector == true
+    and os.clock() < targetTime do
+
+        task.wait()
+    end
+
+    return runtime.Token == token
+        and HOLY_FARM_STATE.ProFruitCollector == true
+end
+
+function HolyProFarmSendBatchEntries(
+    token,
+    packet,
+    entries
+)
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    local nextSendAt =
+        os.clock()
+
+    for _, entry in ipairs(entries or {}) do
+
+        if HolyProFarmWaitForSendTime(
+            token,
+            nextSendAt
+        ) ~= true then
+
+            return false
+        end
+
+        if HolyProFarmTargetExists(
+            entry
+        ) == true then
+
+            local ok =
+                pcall(function()
+
+                    packet:Fire(
+                        entry.PlantId,
+                        entry.FruitId
+                    )
+                end)
+
+            entry.BatchFireSucceeded =
+                ok == true
+        end
+
+        nextSendAt =
+            os.clock()
+            + 0.035
+    end
+
+    return runtime.Token == token
+        and HOLY_FARM_STATE.ProFruitCollector == true
+end
+
+function HolyProFarmGetUnconfirmedEntries(entries)
+
+    local remaining =
+        {}
+
+    for _, entry in ipairs(entries or {}) do
+
+        if HolyProFarmTargetExists(
+            entry
+        ) == true then
+
+            table.insert(
+                remaining,
+                entry
+            )
+        end
+    end
+
+    return remaining
+end
+
+function HolyProFarmWaitForBatchConfirmation(
+    token,
+    entries,
+    timeout
+)
+
+    local runtime =
+        HolyProFarmEnsureRuntime()
+
+    local deadline =
+        os.clock()
+        + (
+            tonumber(timeout)
+            or 2.5
+        )
+
+    local lastConfirmed =
+        -1
+
+    while runtime.Token == token
+    and HOLY_FARM_STATE.ProFruitCollector == true
+    and os.clock() < deadline do
+
+        local remaining =
+            HolyProFarmGetUnconfirmedEntries(
+                entries
+            )
+
+        local confirmed =
+            #entries
+            - #remaining
+
+        if confirmed ~= lastConfirmed then
+
+            lastConfirmed =
+                confirmed
+
+            HolyProFarmSetStatus(
+                "Collecting "
+                    .. tostring(confirmed)
+                    .. "/"
+                    .. tostring(#entries)
+            )
+        end
+
+        if #remaining <= 0 then
+
+            return remaining
+        end
+
+        task.wait(
+            0.05
+        )
+    end
+
+    return HolyProFarmGetUnconfirmedEntries(
+        entries
+    )
+end
+
+function HolyProFarmFireBatch(token, entries)
+
+    local packet,
+        packetReason =
+        HolyProFarmResolveBatchPacket()
+
+    if not packet then
+
+        return {},
+            entries,
+            packetReason
+    end
+
+    HolyProFarmSetStatus(
+        "Collecting 0/"
+            .. tostring(#entries)
+    )
+
+    HolyProFarmSendBatchEntries(
+        token,
+        packet,
+        entries
+    )
+
+    local remaining =
+        HolyProFarmWaitForBatchConfirmation(
+            token,
+            entries,
+            2.5
+        )
+
+    if #remaining > 0
+    and HOLY_PRO_FARM_RUNTIME.Token == token
+    and HOLY_FARM_STATE.ProFruitCollector == true then
+
+        task.wait(
+            0.75
+        )
+
+        HolyProFarmSendBatchEntries(
+            token,
+            packet,
+            remaining
+        )
+
+        remaining =
+            HolyProFarmWaitForBatchConfirmation(
+                token,
+                entries,
+                2.5
+            )
+    end
+
+    local failedMap =
+        {}
+
+    for _, entry in ipairs(remaining) do
+
+        failedMap[entry.Key] =
+            true
+    end
+
+    local confirmed =
+        {}
+
+    local failed =
+        {}
+
+    for _, entry in ipairs(entries) do
+
+        if failedMap[entry.Key] == true then
+
+            table.insert(
+                failed,
+                entry
+            )
+
+        else
+
+            table.insert(
+                confirmed,
+                entry
+            )
+        end
+    end
+
+    return confirmed,
+        failed
+end
+
 function HolyProFarmRunWorker(token)
 
     local runtime =
@@ -9887,6 +10285,109 @@ function HolyProFarmRunWorker(token)
             HolyProFarmRequestSnapshot(
                 "safety refresh"
             )
+        end
+
+        if HOLY_FARM_STATE.ProBatchMode == true then
+
+            local batchAmount =
+                math.clamp(
+                    math.floor(
+                        tonumber(
+                            HOLY_FARM_STATE.ProBatchAmount
+                        )
+                        or 10
+                    ),
+                    2,
+                    50
+                )
+
+            local entries =
+                HolyProFarmFindTargets(
+                    batchAmount,
+                    true
+                )
+
+            if #entries <= 0 then
+
+                HolyProFarmSetStatus(
+                    "Ready"
+                )
+
+                task.wait(
+                    0.25
+                )
+
+                continue
+            end
+
+            local confirmed,
+                failed =
+                HolyProFarmFireBatch(
+                    token,
+                    entries
+                )
+
+            if runtime.Token ~= token then
+                break
+            end
+
+            runtime.Confirmed +=
+                #confirmed
+
+            runtime.Failed +=
+                #failed
+
+            for _, entry in ipairs(confirmed) do
+
+                runtime.Cooldowns[entry.Key] =
+                    nil
+            end
+
+            for _, entry in ipairs(failed) do
+
+                runtime.Cooldowns[entry.Key] =
+                    os.clock()
+                    + 8
+            end
+
+            if #failed <= 0 then
+
+                runtime.ConsecutiveFailures =
+                    0
+
+                HolyProFarmSetStatus(
+                    "Ready"
+                )
+
+                task.wait(
+                    0.05
+                )
+
+            else
+
+                runtime.ConsecutiveFailures +=
+                    #failed
+
+                if runtime.ConsecutiveFailures >= 3 then
+
+                    runtime.ConsecutiveFailures =
+                        0
+
+                    HolyProFarmRequestSnapshot(
+                        "batch recovery"
+                    )
+                end
+
+                HolyProFarmSetStatus(
+                    "Retrying"
+                )
+
+                task.wait(
+                    0.35
+                )
+            end
+
+            continue
         end
 
         local entry =
@@ -10128,6 +10629,68 @@ function HolyProFarmSetEnabled(value)
     return HolyProFarmStop(
         "toggle off"
     )
+end
+
+function HolyProFarmReadBatchAmount(value)
+
+    return math.clamp(
+        math.floor(
+            tonumber(value)
+            or 10
+        ),
+        2,
+        50
+    )
+end
+
+function HolyProFarmRefreshBatchUI()
+
+    local input =
+        HOLY_FARM_UI
+        and HOLY_FARM_UI.ProBatchAmountInput
+
+    if type(input) ~= "table"
+    or type(input.SetVisible) ~= "function" then
+
+        return false
+    end
+
+    pcall(function()
+
+        input:SetVisible(
+            HOLY_FARM_STATE.ProBatchMode == true
+        )
+    end)
+
+    return true
+end
+
+function HolyProFarmSetBatchMode(value)
+
+    HolyFarmEnsureState()
+
+    HOLY_FARM_STATE.ProBatchMode =
+        value == true
+
+    HolySaveFarmSettings()
+
+    HolyProFarmRefreshBatchUI()
+
+    return HOLY_FARM_STATE.ProBatchMode
+end
+
+function HolyProFarmSetBatchAmount(value)
+
+    HolyFarmEnsureState()
+
+    HOLY_FARM_STATE.ProBatchAmount =
+        HolyProFarmReadBatchAmount(
+            value
+        )
+
+    HolySaveFarmSettings()
+
+    return HOLY_FARM_STATE.ProBatchAmount
 end
 
 function HolyProFarmSetLowGardenDetail(value)
@@ -73028,7 +73591,70 @@ and type(FarmProCollectionBox.AddToggle) == "function" then
             value == true
         )
     end)
+
+    HOLY_FARM_UI.ProBatchModeToggle =
+        FarmProCollectionBox:AddToggle(
+            "HolyFarmProBatchMode",
+            {
+                Text =
+                    "Batch Mode",
+
+                Default =
+                    HOLY_FARM_STATE.ProBatchMode == true,
+
+                Tooltip =
+                    "Collects multiple ready fruits during each collection cycle.",
+            }
+        )
+
+    HOLY_FARM_UI.ProBatchModeToggle:OnChanged(function(value)
+
+        HolyProFarmSetBatchMode(
+            value == true
+        )
+    end)
 end
+
+if FarmProCollectionBox
+and type(FarmProCollectionBox.AddInput) == "function" then
+
+    HOLY_FARM_UI.ProBatchAmountInput =
+        FarmProCollectionBox:AddInput(
+            "HolyFarmProBatchAmount",
+            {
+                Text =
+                    "Batch Amount",
+
+                Default =
+                    tostring(
+                        HolyProFarmReadBatchAmount(
+                            HOLY_FARM_STATE.ProBatchAmount
+                        )
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Tooltip =
+                    "Maximum number of ready fruits collected in each batch. Range: 2 to 50.",
+            }
+        )
+
+    HOLY_FARM_UI.ProBatchAmountInput:OnChanged(function(value)
+
+        HolyProFarmSetBatchAmount(
+            value
+        )
+    end)
+end
+
+HolyProFarmRefreshBatchUI()
 
 HOLY_FARM_UI.ProStatusLabel =
     HolySniperAddLabel(
