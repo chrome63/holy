@@ -677,6 +677,7 @@ HOLY_VISUAL_STATE = {
 
     GardenFruitESP = false,
     SprinklerTimerESP = true,
+    SprinklerTimerESPScale = "80",
     GardenFruitShowValue = true,
 
     GardenFruitMode = "All",
@@ -727,6 +728,7 @@ HOLY_VISUAL_UI = {
 
     GardenFruitESPToggle = nil,
     SprinklerTimerESPToggle = nil,
+    SprinklerTimerESPScaleInput = nil,
     GardenFruitShowValueToggle = nil,
     GardenFruitModeDropdown = nil,
     GardenFruitFruitsDropdown = nil,
@@ -2501,6 +2503,30 @@ function HolyVisualNormalizeGardenMutationSelection(value)
     return output
 end
 
+function HolyVisualReadSprinklerESPScale(value)
+
+    local text =
+        tostring(value or "")
+            :gsub("%%", "")
+
+    local scale =
+        tonumber(text)
+
+    if type(scale) ~= "number"
+    or scale ~= scale
+    or scale == math.huge
+    or scale == -math.huge then
+
+        scale =
+            80
+    end
+
+    return math.max(
+        10,
+        scale
+    )
+end
+
 function HolyVisualEnsureState()
 
     HOLY_VISUAL_STATE =
@@ -2519,6 +2545,14 @@ function HolyVisualEnsureState()
 
     HOLY_VISUAL_STATE.SprinklerTimerESP =
         HOLY_VISUAL_STATE.SprinklerTimerESP == true
+
+    HOLY_VISUAL_STATE.SprinklerTimerESPScale =
+        tostring(
+            HolyVisualReadSprinklerESPScale(
+                HOLY_VISUAL_STATE.SprinklerTimerESPScale
+                or "80"
+            )
+        )
 
     if HOLY_VISUAL_STATE.GardenFruitShowValue == nil then
 
@@ -2630,6 +2664,14 @@ function HolySaveVisualSettings()
 
         SprinklerTimerESP =
             HOLY_VISUAL_STATE.SprinklerTimerESP == true,
+
+        SprinklerTimerESPScale =
+            tostring(
+                HolyVisualReadSprinklerESPScale(
+                    HOLY_VISUAL_STATE.SprinklerTimerESPScale
+                    or "80"
+                )
+            ),
 
         GardenFruitShowValue =
             HOLY_VISUAL_STATE.GardenFruitShowValue == true,
@@ -2781,6 +2823,15 @@ function HolyLoadVisualSettings()
         HOLY_VISUAL_STATE.SprinklerTimerESP =
             true
     end
+
+    HOLY_VISUAL_STATE.SprinklerTimerESPScale =
+        tostring(
+            HolyVisualReadSprinklerESPScale(
+                data.SprinklerTimerESPScale
+                or HOLY_VISUAL_STATE.SprinklerTimerESPScale
+                or "80"
+            )
+        )
 
     if type(data.GardenFruitShowValue) == "boolean" then
 
@@ -54520,6 +54571,93 @@ function HolyVisualClearSprinklerTimerESP()
     return true
 end
 
+function HolyVisualSprinklerApplyESPScale(billboard)
+
+    if typeof(billboard) ~= "Instance"
+    or billboard:IsA("BillboardGui") ~= true then
+
+        return false
+    end
+
+    local percent =
+        HolyVisualReadSprinklerESPScale(
+            HOLY_VISUAL_STATE.SprinklerTimerESPScale
+            or "80"
+        )
+
+    local scale =
+        percent / 100
+
+    billboard.Size =
+        UDim2.fromOffset(
+            205 * scale,
+            46 * scale
+        )
+
+    local background =
+        billboard:FindFirstChild(
+            "Background"
+        )
+
+    if typeof(background) ~= "Instance" then
+        return true
+    end
+
+    local corner =
+        background:FindFirstChildOfClass(
+            "UICorner"
+        )
+
+    if typeof(corner) == "Instance" then
+
+        corner.CornerRadius =
+            UDim.new(
+                0,
+                6 * scale
+            )
+    end
+
+    local stroke =
+        background:FindFirstChild(
+            "Stroke"
+        )
+
+    if typeof(stroke) == "Instance"
+    and stroke:IsA("UIStroke") then
+
+        stroke.Thickness =
+            scale
+    end
+
+    local text =
+        background:FindFirstChild(
+            "Text"
+        )
+
+    if typeof(text) == "Instance"
+    and text:IsA("TextLabel") then
+
+        text.Size =
+            UDim2.new(
+                1,
+                -8 * scale,
+                1,
+                -4 * scale
+            )
+
+        text.Position =
+            UDim2.fromOffset(
+                4 * scale,
+                2 * scale
+            )
+
+        text.TextSize =
+            14 * scale
+    end
+
+    return true
+end
+
 function HolyVisualSprinklerEnsureLabel(model)
 
     local runtime =
@@ -54733,6 +54871,10 @@ function HolyVisualSprinklerEnsureLabel(model)
     text.Parent =
         background
 
+    HolyVisualSprinklerApplyESPScale(
+        billboard
+    )
+
     runtime.SprinklerTimerLabels[
         model
     ] =
@@ -54789,6 +54931,10 @@ function HolyVisualSprinklerUpdateLabel(
     if typeof(text) ~= "Instance" then
         return false
     end
+
+    HolyVisualSprinklerApplyESPScale(
+        billboard
+    )
 
     local sprinklerName =
         model:GetAttribute(
@@ -55055,6 +55201,30 @@ function HolyVisualSetSprinklerTimerESP(value)
         "toggle off",
         false
     )
+end
+
+function HolyVisualSetSprinklerESPScale(value)
+
+    HolyVisualEnsureState()
+
+    local normalized =
+        tostring(
+            HolyVisualReadSprinklerESPScale(
+                value
+            )
+        )
+
+    HOLY_VISUAL_STATE.SprinklerTimerESPScale =
+        normalized
+
+    HolySaveVisualSettings()
+
+    if HOLY_VISUAL_STATE.SprinklerTimerESP == true then
+
+        HolyVisualRefreshSprinklerTimerESP()
+    end
+
+    return normalized
 end
 
 function HolySellPruneRecentFruitIds()
@@ -76587,6 +76757,64 @@ if type(VisualGardenBox) == "table" then
             HolyVisualSetSprinklerTimerESP(
                 value == true
             )
+        end)
+    end
+
+    HOLY_VISUAL_UI.SprinklerTimerESPScaleInput =
+        VisualGardenBox:AddInput(
+            "HolyVisualSprinklerTimerESPScale",
+            {
+                Text =
+                    "ESP Scale (%)",
+
+                Default =
+                    tostring(
+                        HolyVisualReadSprinklerESPScale(
+                            HOLY_VISUAL_STATE.SprinklerTimerESPScale
+                            or "80"
+                        )
+                    ),
+
+                Numeric =
+                    true,
+
+                Finished =
+                    true,
+
+                ClearTextOnFocus =
+                    false,
+
+                Placeholder =
+                    "80",
+
+                Tooltip =
+                    "Size of the Sprinkler Timer ESP. Minimum 10%. There is no maximum.",
+            }
+        )
+
+    if type(HOLY_VISUAL_UI.SprinklerTimerESPScaleInput) == "table"
+    and type(HOLY_VISUAL_UI.SprinklerTimerESPScaleInput.OnChanged) == "function" then
+
+        HOLY_VISUAL_UI.SprinklerTimerESPScaleInput:OnChanged(function(value)
+
+            local normalized =
+                HolyVisualSetSprinklerESPScale(
+                    value
+                )
+
+            if tostring(value) ~= normalized
+            and type(HOLY_VISUAL_UI.SprinklerTimerESPScaleInput.SetValue) == "function" then
+
+                task.defer(function()
+
+                    pcall(function()
+
+                        HOLY_VISUAL_UI.SprinklerTimerESPScaleInput:SetValue(
+                            normalized
+                        )
+                    end)
+                end)
+            end
         end)
     end
 
