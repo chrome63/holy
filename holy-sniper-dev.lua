@@ -11954,6 +11954,110 @@ function HolyFruitAutomationWalkToDroppedInfo(
     return false
 end
 
+function HolyFruitAutomationContinueToRemovedTarget()
+
+    local runtime =
+        HolyFruitAutomationEnsureRuntime()
+
+    local target =
+        runtime.PickupTarget
+
+    if typeof(target) ~= "Instance"
+    or target.Parent ~= nil then
+
+        return "None"
+    end
+
+    local savedPosition =
+        runtime.PickupLastDropPosition
+
+    if typeof(savedPosition) ~= "Vector3" then
+
+        runtime.PickupTarget =
+            nil
+
+        HolyFruitAutomationStopPickupMovement()
+
+        return "Unavailable"
+    end
+
+    local humanoid =
+        HolyFruitAutomationGetHumanoid()
+
+    local root =
+        HolyFruitAutomationGetRoot()
+
+    if typeof(humanoid) ~= "Instance"
+    or typeof(root) ~= "Instance"
+    or root:IsA("BasePart") ~= true
+    or humanoid.Health <= 0 then
+
+        return "Waiting"
+    end
+
+    local flatTarget =
+        Vector3.new(
+            savedPosition.X,
+            root.Position.Y,
+            savedPosition.Z
+        )
+
+    local delta =
+        flatTarget
+        - root.Position
+
+    local horizontalDistance =
+        Vector3.new(
+            delta.X,
+            0,
+            delta.Z
+        ).Magnitude
+
+    if horizontalDistance <= 4.5 then
+
+        HolyFruitAutomationStopPickupMovement()
+
+        runtime.PickupTarget =
+            nil
+
+        runtime.PickupLastDropPosition =
+            nil
+
+        return "Arrived"
+    end
+
+    local now =
+        os.clock()
+
+    if now - runtime.PickupLastMoveAt
+        >= runtime.PickupMoveInterval then
+
+        runtime.PickupLastMoveAt =
+            now
+
+        runtime.PickupMoving =
+            true
+
+        pcall(function()
+
+            humanoid.Sit =
+                false
+
+            humanoid.PlatformStand =
+                false
+
+            humanoid.AutoRotate =
+                true
+
+            humanoid:MoveTo(
+                flatTarget
+            )
+        end)
+    end
+
+    return "Moving"
+end
+
 function HolyFruitAutomationRunPickupWorker(token)
 
     local runtime =
@@ -11988,6 +12092,19 @@ function HolyFruitAutomationRunPickupWorker(token)
 
             task.wait(
                 0.20
+            )
+
+            continue
+        end
+
+        local removedTargetStatus =
+            HolyFruitAutomationContinueToRemovedTarget()
+
+        if removedTargetStatus == "Moving"
+        or removedTargetStatus == "Waiting" then
+
+            task.wait(
+                runtime.PickupScanDelay
             )
 
             continue
